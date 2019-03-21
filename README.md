@@ -1,4 +1,4 @@
-# l2hmc-qcd:
+# l2hmc-qcd
 
 ---
 
