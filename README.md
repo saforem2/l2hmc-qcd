@@ -1,10 +1,7 @@
 # l2hmc-qcd
 
----
-
-Application of the L2HMC algorithm to simulations in lattice QCD.
-
-A description of the L2HMC algorithm can be found in the paper:
+Application of the L2HMC algorithm to simulations in lattice QCD. A description
+of the L2HMC algorithm can be found in the paper:
 
 [*Generalizing Hamiltonian Monte Carlo with Neural Network*](https://arxiv.org/abs/1711.09268)
 
@@ -27,7 +24,7 @@ My current focus is on applying this algorithm to simulations in lattice gauge
 theory and lattice QCD, in hopes of obtaining greater efficiency compared to
 generic HMC.
 
-This new implementation includes the algorithm as applied to the $2D U{(1)}$ lattice gauge theory model (i.e. compact QED).
+This new implementation includes the algorithm as applied to the $2D$ $U{(1)}$ lattice gauge theory model (i.e. compact QED).
 
 Additionally, this implementation includes a convolutional neural network
 architecture that is prepended to the network described in the original paper.
@@ -35,7 +32,7 @@ The purpose of this additional structure is to better incorporate information
 about the geometry of the lattice.
 
 Lattice code can be found in `l2hmc/lattice/` and the particular code for the
-$2D U{(1)}$ lattice gauge model can be found in `l2hmc/lattice/lattice.py`.
+$2D$ $U{(1)}$ lattice gauge model can be found in `l2hmc/lattice/lattice.py`.
 
 
 ## Contact
