@@ -770,21 +770,16 @@ class GaugeModel(object):
 
             top_charges = (tf.reduce_sum(ps_proj, axis=(1, 2),
                                          name='top_charges')) / (2 * np.pi)
-            #  top_charges = (
-            #      0.1 + (tf.reduce_sum(projector(self._calc_plaq_sums(x)),
-            #                           axis=(1, 2), name='top_charges')
-            #             / (2 * np.pi))
-            #  )
 
         return top_charges
 
     def _calc_top_charges_diff(self, x1, x2, fft=False):
         """Calculate difference in topological charges between x1 and x2."""
         with tf.name_scope('calc_top_charges_diff'):
-            dq = tf.abs(self._calc_top_charges(x1, fft)
-                        - self._calc_top_charges(x2, fft))
-            #  dq = tf.abs(tf.cast(self._calc_top_charges(x1, fft), tf.float32)
-            #  - tf.cast(self._calc_top_charges(x2, fft), tf.float32))
+            #  dq = tf.abs(self._calc_top_charges(x1, fft)
+            #              - self._calc_top_charges(x2, fft))
+            dq = tf.sqrt(tf.square(self._calc_top_charges(x1, fft)
+                                   - self._calc_top_charges(x2, fft)))
         return dq
 
     # pylint: disable=too-many-locals
@@ -811,46 +806,49 @@ class GaugeModel(object):
         aux_weight = weights.get('aux_weight', 1.)
         std_weight = weights.get('std_weight', 1.)
         charge_weight = weights.get('charge_weight', 1.)
+        ls = self.loss_scale
 
         with tf.name_scope('x_update'):
-            x_, _, px, x_out = self.dynamics(x, beta)
-            #  xn = x_[0]                  # dynamics update:    x  -->  xn
-            #  xf = tf.squeeze(x_out)      # accept/reject:      xn -->  xf
+            x_proposed, _, px, x_out = self.dynamics(x, beta)
         with tf.name_scope('z_update'):
             z = tf.random_normal(tf.shape(x), name='z')  # Auxiliary variable
-            z_, _, pz, _ = self.dynamics(z, beta)
-            #  zn = z_[0]
+            z_proposed, _, pz, _ = self.dynamics(z, beta)
 
         with tf.name_scope('top_charge_diff'):
             x_dq = tf.cast(self._calc_top_charges_diff(x, x_out, fft=False),
                            dtype=tf.int32)
 
         # Add eps for numerical stability; following released impl
+        # NOTE: 
+        #  std_loss: "standard" loss
+        #  charge_loss: loss contribution from the difference in top. charge   
         with tf.name_scope('calc_loss'):
             with tf.name_scope('std_loss'):
                 with tf.name_scope('x_loss'):
-                    x_std_loss = (
-                        tf.reduce_sum(self.metric_fn(x, x_), axis=1) * px + eps
-                    )
+                    x_std_loss = (tf.reduce_sum(self.metric_fn(x, x_proposed),
+                                                axis=1) * px)
+                    x_std_loss += eps
 
                 with tf.name_scope('z_loss'):
-                    z_std_loss = aux_weight * (
-                        tf.reduce_sum(self.metric_fn(z, x_), axis=1) * pz + eps
-                    )
+                    z_std_loss = (tf.reduce_sum(self.metric_fn(z, z_proposed),
+                                                axis=1) * pz) * aux_weight
+                    z_std_loss += eps
 
                 with tf.name_scope('tot_loss'):
-                    ls = self.loss_scale
                     std_loss = (ls * (1. / x_std_loss + 1. / z_std_loss)
                                 - (x_std_loss + z_std_loss) / ls)
                     std_loss *= std_weight
 
             with tf.name_scope('charge_loss'):
                 with tf.name_scope('x_loss'):
-                    x_dq_fft = self._calc_top_charges_diff(x, x_, fft=True)
+                    x_dq_fft = self._calc_top_charges_diff(x, x_proposed,
+                                                           fft=True)
                     xq_loss = px * x_dq_fft + eps
+
                 with tf.name_scope('z_loss'):
-                    z_dq_fft = self._calc_top_charges_diff(z, x_, fft=True)
-                    zq_loss = aux_weight * (pz * z_dq_fft + eps)
+                    z_dq_fft = self._calc_top_charges_diff(z, z_proposed,
+                                                           fft=True)
+                    zq_loss = aux_weight * (pz * z_dq_fft) + eps
 
                 with tf.name_scope('tot_loss'):
                     charge_loss = charge_weight * (xq_loss + zq_loss)
@@ -888,9 +886,6 @@ class GaugeModel(object):
                 grads = tf.gradients(loss, self.dynamics.variables)
                 if self.clip_grads:
                     grads, _ = tf.clip_by_global_norm(grads, self.clip_value)
-                    #  grads = tf.check_numerics(
-                    #      grads, 'check_numerics caught bad gradients'
-                    #  )
 
         return loss, grads, x_out, accept_prob, x_dq
 
@@ -902,16 +897,11 @@ class GaugeModel(object):
             building unnecessary operations for calculating loss.
         """
         with tf.name_scope('sampler'):
-            #  inputs = (self.x, self.beta)
-            #  _, _, self.px, self.x_out = self.dynamics(self.x, self.beta)
-            _, _, px, x_out = self.dynamics(self.x, self.beta)
-            #  xn = x_[0]                  # dynamics update:    x  -->  xn
+            _, _, px, self.x_out = self.dynamics(self.x, self.beta)
             self.px = px
-            self.x_out = tf.squeeze(x_out)      # accept/reject:      xn -->  xf
 
             x_dq = self._calc_top_charges_diff(self.x, self.x_out, fft=False)
             self.charge_diff_op = tf.reduce_sum(x_dq) / self.num_samples
-            #  self.charge_diff_op = x_dq) / self.num_samples
 
     def _create_summaries(self):
         """Create summary objects for logging in TensorBoard."""
@@ -947,7 +937,6 @@ class GaugeModel(object):
                 variable_summaries(grad, name + '_gradient')
 
         self.summary_op = tf.summary.merge_all(name='summary_op')
-
 
     def _log_write_graph_creation_time(self, **times):
         if self.using_hvd or HAS_HOROVOD:
@@ -1003,14 +992,16 @@ class GaugeModel(object):
         start_time = time.time()
 
         if self.hmc:  # if running generic HMC, all we need is the sampler
-            if config is None:
-                self.config = tf.ConfigProto()
-            else:
-                self.config = config
-            if sess is None:
-                self.sess = tf.Session(config=self.config)
-            else:
-                self.sess = sess
+            self.config = tf.ConfigProto() if config is None else config
+            self.sess = tf.Session(self.config) if sess is None else sess
+            #  if config is None:
+            #      self.config = tf.ConfigProto()
+            #  else:
+            #      self.config = config
+            #  if sess is None:
+            #      self.sess = tf.Session(config=self.config)
+            #  else:
+            #      self.sess = sess
 
             if self.space_size > 8:
                 off = rewriter_config_pb2.RewriterConfig.OFF
@@ -1034,12 +1025,10 @@ class GaugeModel(object):
                                                  staircase=True,
                                                  name='learning_rate')
         with tf.name_scope('optimizer'):
+            self.optimizer = tf.train.AdamOptimizer(self.lr)
             if self.using_hvd:
-                #  self.optimizer = tf.train.AdamOptimizer(self.lr * hvd.size())
-                self.optimizer = tf.train.AdamOptimizer(self.lr)
+                # self.optimizer = tf.train.AdamOptimizer(self.lr * hvd.size())
                 self.optimizer = hvd.DistributedOptimizer(self.optimizer)
-            else:
-                self.optimizer = tf.train.AdamOptimizer(self.lr)
 
         with tf.name_scope('loss'):
             t0_loss = time.time()
@@ -1049,7 +1038,6 @@ class GaugeModel(object):
 
             self.loss_op, self.grads, self.x_out, self.px, x_dq = output
             self.charge_diff_op = tf.reduce_sum(x_dq) / self.num_samples
-            #  self.charge_diff_op = tf.reduce_mean(x_dq)
 
             t_diff_loss = time.time() - t0_loss
 
@@ -1065,11 +1053,12 @@ class GaugeModel(object):
 
         if self.summaries:
             t0_summaries = time.time()
+
             self._create_summaries()
+
             t_diff_summaries = time.time() - t0_summaries
         else:
             t_diff_summaries = 0.
-
 
         if config is None:
             self.config = tf.ConfigProto()
@@ -1119,7 +1108,6 @@ class GaugeModel(object):
             )
         else:
             self.sess = sess
-
 
         times = {
             't_diff_loss': t_diff_loss,
@@ -1193,7 +1181,8 @@ class GaugeModel(object):
 
         #  if self.condition1 or self.condition2:
         #      self.saver = tf.train.Saver(max_to_keep=2)
-            #  self.writer = tf.summary.FileWriter(self.log_dir, self.sess.graph)
+        #      self.writer = tf.summary.FileWriter(self.log_dir,
+        #                                          self.sess.graph)
 
         samples_init = kwargs.get('samples_init', None)
         beta_init = kwargs.get('beta_init', None)
@@ -1202,7 +1191,8 @@ class GaugeModel(object):
         #  if self.condition1 or self.condition2:
         if self.condition1 or self.condition2:
             try:
-                self.writer = tf.summary.FileWriter(self.log_dir, self.sess.graph)
+                self.writer = tf.summary.FileWriter(self.log_dir,
+                                                    self.sess.graph)
             except AttributeError:
                 pass
 
@@ -1262,7 +1252,6 @@ class GaugeModel(object):
             except AttributeError:
                 pass
 
-            #  while not self.sess.should_stop():
             for step in range(initial_step, train_steps):
                 start_step_time = time.time()
 
@@ -1348,8 +1337,6 @@ class GaugeModel(object):
                 if (step + 1) % self.save_steps == 0:
                     if self.condition1 or self.condition2:
                         self._save_model(samples=samples_np)
-                        #  helpers.write_run_data(self.files['run_info_file'],
-                        #                         self.data)
 
                 if step % self.logging_steps == 0:
                     if self.using_hvd:
@@ -1358,8 +1345,7 @@ class GaugeModel(object):
 
                     io.log(self.train_header)
 
-                    if trace:
-                        # This saves the timeline to a chrome trace format:
+                    if trace:  # save the timeline to a chrome trace format
                         options = tf.RunOptions(
                             trace_level=tf.RunOptions.FULL_TRACE
                         )
@@ -2278,25 +2264,21 @@ def main(FLAGS):
                             beta_init=None, trace=FLAGS.trace)
 
     try:
-        run_steps = 5e4
-        model.run(run_steps, beta=model.beta_final)
-        model.run(run_steps, beta=model.beta_final - 1)
-        #  run_steps_grid = [100, 500, 1000, 2500, 5000, 10000]
-        #  run_steps_grid = [20000, 50000]
-        #  run_steps = 50000
-        #  run_steps_grid = [50000]
-        #  betas = [model.beta_final - 1, model.beta_final]
-        #  betas = [model.beta_final]
-        #  for steps in run_steps_grid:
-        #      for beta1 in betas:
-        #          model.run(steps, beta=beta1)
+        run_steps = int(5e4)
+        condition1 = FLAGS.horovod and hvd.rank() == 0
+        condition2 = not FLAGS.horovod
+        if condition1 or condition2:
+            model.run(run_steps, beta=model.beta_final)
+            model.run(run_steps, beta=model.beta_final - 1)
+            #  run_steps_grid = [20000, 50000]
+            #  betas = [model.beta_final, model.beta_final - 1]
+            #  for steps in run_steps_grid:
+            #      for beta1 in betas:
+            #          model.run(steps, beta=beta1)
 
     except (KeyboardInterrupt, SystemExit):
         io.log("\nKeyboardInterrupt detected! \n")
-
-        import pdb
-
-        pdb.set_trace()
+        import pdb; pdb.set_trace()  # pylint: ignore=multiple-statements
 
 
 # =============================================================================
