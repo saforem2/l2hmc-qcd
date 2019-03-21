@@ -1,4 +1,8 @@
-# l2hmc-qcd: Application of the L2HMC algorithm to simulations in lattice QCD.
+# l2hmc-qcd:
+
+---
+
+Application of the L2HMC algorithm to simulations in lattice QCD.
 
 A description of the L2HMC algorithm can be found in the paper:
 
