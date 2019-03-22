@@ -93,7 +93,7 @@ def project_angle(x):
     return x - 2 * np.pi * tf.floor((x + np.pi) / (2 * np.pi))
 
 
-def project_angle_approx(x, N=5):
+def project_angle_approx(x, N=2):
     """Use the fourier series representation `x` to approx `project_angle`.
 
     NOTE: Because `project_angle` suffers a discontinuity, we approximate `x`
@@ -917,12 +917,16 @@ class GaugeModel(object):
         with tf.name_scope('loss'):
             tf.summary.scalar('loss', self.loss_op)
 
+        with tf.name_scope('learning_rate'):
+            tf.summary.scalar('learning_rate', self.lr)
+
         with tf.name_scope('step_size'):
             tf.summary.scalar('step_size', self.dynamics.eps)
 
         with tf.name_scope('tunneling_events'):
             tf.summary.scalar('tunneling_events_per_sample',
                               self.charge_diff_op)
+
         with tf.name_scope('avg_plaq'):
             tf.summary.scalar('avg_plaq', self.avg_plaq_op)
 
@@ -1670,10 +1674,10 @@ class GaugeModel(object):
         title_str = (r"$\beta = $"
                      f"{beta}, {num_steps} {key} steps, "
                      f"{self.num_samples} samples")
-        actions_plt_file = os.path.join(out_dir, 'total_actions_vs_step.png')
-        plaqs_plt_file = os.path.join(out_dir, 'avg_plaquettes_vs_step.png')
-        charges_plt_file = os.path.join(out_dir, 'top_charges_vs_step.png')
-        charge_diff_plt_file = os.path.join(out_dir, 'charge_diff_vs_step.png')
+        actions_plt_file = os.path.join(out_dir, 'total_actions_vs_step.eps')
+        plaqs_plt_file = os.path.join(out_dir, 'avg_plaquettes_vs_step.eps')
+        charges_plt_file = os.path.join(out_dir, 'top_charges_vs_step.eps')
+        charge_diff_plt_file = os.path.join(out_dir, 'charge_diff_vs_step.eps')
 
         ######################
         # Total actions plots
@@ -1703,6 +1707,7 @@ class GaugeModel(object):
 
         _ = ax.plot(steps_arr, plaqs_arr.T.mean(axis=0),
                     color='k', label='average', alpha=0.75)
+        plt.tight_layout()
 
         plt.savefig(plaqs_plt_file, dpi=400, bbox_inches='tight')
 
@@ -1727,6 +1732,7 @@ class GaugeModel(object):
         ax.set_ylabel('Number of tunneling events', fontsize=14)
         ax.set_title(title_str, fontsize=16)
         io.log(f"Saving figure to: {charge_diff_plt_file}")
+        plt.tight_layout()
         plt.savefig(charge_diff_plt_file, dpi=400, bbox_inches='tight')
         io.log('done.')
 
@@ -1743,14 +1749,15 @@ class GaugeModel(object):
                 label=f'total across {self.num_samples} samples')
         ax.set_xlabel('Training step', fontsize=14)
         ax.set_ylabel(r"$\delta Q_{\mathrm{top}} / N$", fontsize=14)
-        ax.set_title(rf"""$N = #{self.num_samples} samples / batch""",
+        ax.set_title(rf"""$N =$ {self.num_samples} samples / batch""",
                      fontsize=16)
 
         #  title_str = (f'Number of tunneling events vs. '
         #               f'training step for {self.num_samples} samples')
         #  ax.set_title(title_str, fontsize=16)
+        plt.tight_layout()
         out_file = os.path.join(self.figs_dir,
-                                'tunneling_events_vs_training_step.png')
+                                'tunneling_events_vs_training_step.eps')
         print(f"Saving figure to: {out_file}.")
         plt.savefig(out_file, dpi=400, bbox_inches='tight')
 
@@ -1785,7 +1792,8 @@ class GaugeModel(object):
             _ = ax.set_xlabel('Step', fontsize=14)
             _ = ax.set_ylabel('Topological charge', fontsize=14)
             _ = ax.set_title(title_str, fontsize=16)
-            out_file = os.path.join(out_dir, f'top_charge_vs_step_{idx}.png')
+            plt.tight_layout()
+            out_file = os.path.join(out_dir, f'top_charge_vs_step_{idx}.eps')
             io.log(f"  Saving top. charge plot to {out_file}.")
             plt.savefig(out_file, dpi=400, bbox_inches='tight')
         io.log(f'done. took: {time.time() - t0:.4g}')
@@ -1822,8 +1830,9 @@ class GaugeModel(object):
             _ = ax.set_xlabel('Topological charge', fontsize=14)
             _ = ax.set_ylabel('Probability', fontsize=14)
             _ = ax.set_title(title_str, fontsize=16)
+            plt.tight_layout()
             out_file = os.path.join(out_dir,
-                                    f'top_charge_prob_vs_val_{idx}.png')
+                                    f'top_charge_prob_vs_val_{idx}.eps')
             io.log(f'Saving figure to: {out_file}.')
             _ = plt.savefig(out_file, dpi=400, bbox_inches='tight')
             plt.close('all')
@@ -1844,7 +1853,7 @@ class GaugeModel(object):
         _ = ax.set_ylabel('Probability', fontsize=14)
         #  _ = ax.set_title(title_str, fontsize=16)
         out_file = os.path.join(out_dir,
-                                f'TOP_CHARGE_FREQUENCY_VS_VAL_TOTAL.png')
+                                f'TOP_CHARGE_FREQUENCY_VS_VAL_TOTAL.eps')
         io.log(f'Saving figure to: {out_file}.')
         _ = plt.savefig(out_file, dpi=400, bbox_inches='tight')
         plt.close('all')
