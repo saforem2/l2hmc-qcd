@@ -15,7 +15,7 @@ Given an analytically described distributions (simple examples can be found in
 `utils/distributions.py`), L2HMC enables training of fast-mixing samplers.
 
 ---
-## Forked implementation for Lattice Gauge Theory models. 
+## Modified implementation for Lattice Gauge Theory / Lattice QCD models. 
 
 This work is based on the original implementation which can be found at
 [brain-research/l2hmc/](https://github.com/brain-research/l2hmc). 
