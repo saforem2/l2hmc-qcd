@@ -5,18 +5,18 @@
 #                                                                #
 #================================================================#
 
---time_size 16                  
---space_size 16                  
---num_samples 64
---num_steps 5
---eps 0.2
+--time_size 8                  
+--space_size 8                  
+--num_samples 128
+--num_steps 4 
+--eps 0.4
 --annealing
 --beta_init 2.                  
 --beta_final 4.                 
---lr_init 0.0001
---lr_decay_steps 1000            
---lr_decay_rate 0.95            
---train_steps 5000             
+--lr_init 0.001
+--lr_decay_steps 500            
+--lr_decay_rate 0.93            
+--train_steps 2500             
 --save_steps 1000               
 --print_steps 1               
 --training_samples_steps 1000 
@@ -31,7 +31,7 @@
 --eps_trainable
 #--clip_grads
 #--clip_val 10.
---log_dir 'conv3D_logs/lattice_L16/fourier_approx/num_steps5'
+--log_dir 'conv3D_logs/lattice_L8/fourier_approx/num_steps4'
 
 
 #============================================================================================
