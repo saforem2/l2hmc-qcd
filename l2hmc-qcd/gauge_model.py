@@ -82,10 +82,11 @@ def check_else_make_dir(d):
         except OSError as e:
             raise
 
-def tf_accept(x, _x, px):
+
+def tf_accept(x1, x2, px):
     """Helper function for determining if x is accepted given _x."""
     mask = (px - tf.random_uniform(tf.shape(px)) > 0.)
-    return tf.where(mask, _x, x)
+    return tf.where(mask, x2, x1)
 
 
 def project_angle(x):
@@ -93,7 +94,7 @@ def project_angle(x):
     return x - 2 * np.pi * tf.floor((x + np.pi) / (2 * np.pi))
 
 
-def project_angle_approx(x, N=2):
+def project_angle_approx(x, N=10):
     """Use the fourier series representation `x` to approx `project_angle`.
 
     NOTE: Because `project_angle` suffers a discontinuity, we approximate `x`
@@ -996,16 +997,14 @@ class GaugeModel(object):
         start_time = time.time()
 
         if self.hmc:  # if running generic HMC, all we need is the sampler
-            self.config = tf.ConfigProto() if config is None else config
-            self.sess = tf.Session(self.config) if sess is None else sess
-            #  if config is None:
-            #      self.config = tf.ConfigProto()
-            #  else:
-            #      self.config = config
-            #  if sess is None:
-            #      self.sess = tf.Session(config=self.config)
-            #  else:
-            #      self.sess = sess
+            if config is None:
+                self.config = tf.ConfigProto()
+            else:
+                self.config = config
+            if sess is None:
+                self.sess = tf.Session(config=self.config)
+            else:
+                self.sess = sess
 
             if self.space_size > 8:
                 off = rewriter_config_pb2.RewriterConfig.OFF
