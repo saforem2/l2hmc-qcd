@@ -498,14 +498,20 @@ class GaugeDynamics(tf.keras.Model):
 
             with tf.name_scope('scale'):
                 scale *= 0.5 * self.eps
+                #  scale_exp = exp(scale, 'vf_scale')
+
             with tf.name_scope('transformed'):
                 transformed *= self.eps
+                #  transformed_exp = exp(transformed, 'vf_transformed')
+
             with tf.name_scope('momentum_update'):
+                #  term1 = momentum * scale_exp
+                #  term2 = 0.5 * self.eps * (grad * transformed_exp + translation)
+                #  momentum = term1 + term2
                 momentum = (momentum * exp(scale, 'vf_scale')
                             - (0.5 * self.eps
                                * (exp(transformed, name='vf_transformed')
                                   * grad + translation)))
-
 
         return momentum, tf.reduce_sum(scale, axis=1)
 
@@ -520,22 +526,39 @@ class GaugeDynamics(tf.keras.Model):
 
             with tf.name_scope('scale'):
                 scale *= self.eps
+                #  scale_exp = exp(scale, 'xf_scale')
 
             with tf.name_scope('transformed'):
                 transformed *= self.eps
+                #  transformed_exp = exp(transformed, 'xf_transformed')
 
             with tf.name_scope('position_update'):
+                #  term1 = position * scale_exp
+                #  term2 = self.eps * (momentum * transformed_exp + translation)
+                #  position = mask * position + mask_inv * (term1 + term2)
                 position = (mask * position + mask_inv
                             * (position * exp(scale, 'xf_scale') + self.eps
                                * (exp(transformed, 'xf_transformed')
                                   * momentum + translation)))
 
+                #  outer = position * scale_exp + self.eps
+                #  inner = self.eps * momentum * transformed_exp + translation
+                #  term2 = outer
+                #  position = (mask * position + mask_inv
+                #              * (position * scale_exp + self.eps
+                #                 * (momentum * transformed_exp + translation)))
+                #  position = (mask * position
+                #              + mask_inv * (position * exp(scale, 'xf_scale')
+                #                            + self.eps * (exp(transformed,
+                #                                              'xf_transformed')
+                #                                          * momentum
+                #                                          + translation)))
 
         return position, tf.reduce_sum(mask_inv * scale, axis=1)
 
     # pylint:disable=invalid-name
     def _update_momentum_backward(self, position, momentum, beta, t):
-        """Update v in the backward leapforg step. Invert the forward update"""
+        """Update v in the backward leapfrog step. Invert the forward update"""
         #  grad = self.grad_potential(position, beta)
         with tf.name_scope('update_momentum_backward'):
             with tf.name_scope('grad_potential'):
@@ -548,17 +571,24 @@ class GaugeDynamics(tf.keras.Model):
 
             with tf.name_scope('scale'):
                 scale *= -0.5 * self.eps
+                #  scale_exp = exp(scale, 'vb_scale')
+
             with tf.name_scope('transformed'):
                 transformed *= self.eps
+                #  transformed_exp = exp(transformed, 'vb_transformed')
 
             with tf.name_scope('momentum_update'):
+                #  term1 = momentum * scale_exp
+                #  term2 = scale_exp * (
+                #      0.5 * self.eps * (grad * transformed_exp + translation)
+                #  )
+                #  momentum = term1 + term2
                 momentum = (exp(scale, 'vb_scale')
                             * (momentum + 0.5 * self.eps
                                * (exp(transformed, 'vb_transformed')
                                   * grad + translation)))
 
         return momentum, tf.reduce_sum(scale, axis=1)
-
 
     # pylint:disable=invalid-name
     def _update_position_backward(self, position, momentum, t, mask, mask_inv):
@@ -571,10 +601,19 @@ class GaugeDynamics(tf.keras.Model):
 
             with tf.name_scope('scale'):
                 scale *= -self.eps
+                #  scale_exp = exp(scale, 'xb_scale')
+
             with tf.name_scope('transformed'):
                 transformed *= self.eps
+                #  transformed_exp = exp(transformed, 'xb_transformed')
 
             with tf.name_scope('position_update'):
+                #  term1 = position * scale_exp
+                #  term2 = scale_exp * (
+                #      position - self.eps * (momentum * transformed_exp
+                #                             + translation)
+                #  )
+                #  position = mask * term1 + mask_inv * term2
                 position = (mask * position + mask_inv * exp(scale, 'xb_scale')
                             * (position - self.eps
                                * (exp(transformed, 'xb_transformed')
