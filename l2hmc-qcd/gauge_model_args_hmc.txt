@@ -5,15 +5,15 @@
 #                                                                #
 #================================================================#
 
---time_size 16                   
---space_size 16                  
---num_samples 16               
---num_steps 3                
---eps 0.2921
+--time_size 8                   
+--space_size 8                  
+--num_samples 128
+--num_steps 4                
+--eps 0.3001
 --hmc
 --beta_init 4.
 --beta_final 4.
---log_dir 'conv3D_logs/HMC/runs_L16'
+--log_dir 'conv3D_logs/HMC/runs_L8/num_steps4_eps03001_num_samples128/'
 
 
 #============================================================================================
