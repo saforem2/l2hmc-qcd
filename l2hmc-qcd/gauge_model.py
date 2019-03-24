@@ -59,6 +59,9 @@ from dynamics.gauge_dynamics import GaugeDynamics
 if HAS_MATPLOTLIB:
     from utils.plot_helper import plot_multiple_lines
 
+###########################################
+# Set global seed for numpy and tensorflow
+###########################################
 np.random.seed(GLOBAL_SEED)
 
 if '2.' not in tf.__version__:
@@ -184,8 +187,64 @@ def project_angle_fft(x, num_components=50):
     return y_fft
 
 
+def _create_lattice(self):
+    """Create GaugeLattice object."""
+    return GaugeLattice(time_size=self.time_size,
+                        space_size=self.space_size,
+                        dim=self.dim,
+                        link_type=self.link_type,
+                        num_samples=self.num_samples,
+                        rand=self.rand)
+
+
+def create_dynamics(samples, **kwargs):
+    """Initialize dynamics object.
+
+    Args:
+        lattice: GaugeLattice object (defined in
+            `lattice.lattice.GaugeLattice').
+        samples (array-like): Array of samples, each sample representing a
+            gauge configuration (of link variables).
+        **kwargs (optional, dictionary): Keyword-arguments. 
+            'eps' (float): Step size to use in leapfrog integrator  .
+            'hmc' (bool): Whether or not to use generic HMC.
+            'network_arch':
+    """
+    batch_size = samples.shape[0]
+    time_size = samples.shape[1]
+    space_size = samples.shape[2]
+    dim = len(samples.shape[2:])
+
+    dynamics_kwargs = {
+        'eps': kwargs.get('eps', 0.1),
+        'hmc': kwargs.get('hmc', False),
+        'network_arch': kwargs.get('network_arch', 'conv3D'),
+        'num_steps': kwargs.get('num_steps', 5),
+        'eps_trainable': kwargs.get('eps_trainable', True),
+        'data_format': kwargs.get('data_format', 'channels_last'),
+        'rand': kwargs.get('rand', False),
+        'link_type': kwargs.get('link_type')
+    }
+
+    lattice = GaugeLattice(time_size=time_size,
+                           space_size=space_size,
+                           dim=dim,
+                           link_type=dynamics_kwargs['link_type'],
+                           num_samples=batch_size,
+                           rand=dynamics_kwargs['rand'])
+
+    potential_fn = lattice.get_energy_function(samples)
+
+    dynamics = GaugeDynamics(lattice=lattice,
+                             potential_fn=potential_fn,
+                             **dynamics_kwargs)
+
+    return dynamics, potential_fn
+
+
+
 # pylint: disable=attribute-defined-outside-init, too-many-instance-attributes
-class GaugeModel(object):
+class GaugeModel:
     """Wrapper class implementing L2HMC algorithm on lattice gauge models."""
     def __init__(self,
                  params=None,
@@ -1673,10 +1732,10 @@ class GaugeModel(object):
         title_str = (r"$\beta = $"
                      f"{beta}, {num_steps} {key} steps, "
                      f"{self.num_samples} samples")
-        actions_plt_file = os.path.join(out_dir, 'total_actions_vs_step.eps')
-        plaqs_plt_file = os.path.join(out_dir, 'avg_plaquettes_vs_step.eps')
-        charges_plt_file = os.path.join(out_dir, 'top_charges_vs_step.eps')
-        charge_diff_plt_file = os.path.join(out_dir, 'charge_diff_vs_step.eps')
+        actions_plt_file = os.path.join(out_dir, 'total_actions_vs_step.png')
+        plaqs_plt_file = os.path.join(out_dir, 'avg_plaquettes_vs_step.png')
+        charges_plt_file = os.path.join(out_dir, 'top_charges_vs_step.png')
+        charge_diff_plt_file = os.path.join(out_dir, 'charge_diff_vs_step.png')
 
         ######################
         # Total actions plots
@@ -1708,7 +1767,7 @@ class GaugeModel(object):
                     color='k', label='average', alpha=0.75)
         plt.tight_layout()
 
-        plt.savefig(plaqs_plt_file, dpi=400, bbox_inches='tight')
+        plt.savefig(plaqs_plt_file, dpi=200, bbox_inches='tight')
 
         ###########################
         # Topological charge plots
@@ -1732,7 +1791,7 @@ class GaugeModel(object):
         ax.set_title(title_str, fontsize=16)
         io.log(f"Saving figure to: {charge_diff_plt_file}")
         plt.tight_layout()
-        plt.savefig(charge_diff_plt_file, dpi=400, bbox_inches='tight')
+        plt.savefig(charge_diff_plt_file, dpi=200, bbox_inches='tight')
         io.log('done.')
 
         return 1
@@ -1756,9 +1815,10 @@ class GaugeModel(object):
         #  ax.set_title(title_str, fontsize=16)
         plt.tight_layout()
         out_file = os.path.join(self.figs_dir,
-                                'tunneling_events_vs_training_step.eps')
-        print(f"Saving figure to: {out_file}.")
-        plt.savefig(out_file, dpi=400, bbox_inches='tight')
+                                'tunneling_events_vs_training_step.png')
+        io.log(f"Saving figure to: {out_file}.")
+        #  plt.savefig(eps_file, dpi=400, bbox_inches='tight', rasterize=True)
+        plt.savefig(out_file, dpi=200, bbox_inches='tight')#, rasterize=True)
 
     def _plot_top_charges(self, charges, beta, current_step=None):
         """Plot top. charge history using samples generated from `self.run`."""
@@ -1792,9 +1852,10 @@ class GaugeModel(object):
             _ = ax.set_ylabel('Topological charge', fontsize=14)
             _ = ax.set_title(title_str, fontsize=16)
             plt.tight_layout()
-            out_file = os.path.join(out_dir, f'top_charge_vs_step_{idx}.eps')
-            io.log(f"  Saving top. charge plot to {out_file}.")
-            plt.savefig(out_file, dpi=400, bbox_inches='tight')
+            out_file = os.path.join(out_dir, f'top_charge_vs_step_{idx}.png')
+            plt.savefig(out_file, dpi=200, bbox_inches='tight')#, rasterize=True)
+            #  io.log(f"  Saving top. charge plot to {out_file}.")
+            #  plt.savefig(out_file, dpi=400, bbox_inches='tight')
         io.log(f'done. took: {time.time() - t0:.4g}')
         plt.close('all')
 
@@ -1831,9 +1892,10 @@ class GaugeModel(object):
             _ = ax.set_title(title_str, fontsize=16)
             plt.tight_layout()
             out_file = os.path.join(out_dir,
-                                    f'top_charge_prob_vs_val_{idx}.eps')
+                                    f'top_charge_prob_vs_val_{idx}.png')
             io.log(f'Saving figure to: {out_file}.')
-            _ = plt.savefig(out_file, dpi=400, bbox_inches='tight')
+            plt.savefig(out_file, dpi=200, bbox_inches='tight')#, rasterize=True)
+            #  _ = plt.savefig(out_file, dpi=400, bbox_inches='tight')
             plt.close('all')
 
         all_counts = Counter(list(charges.flatten()))
@@ -1852,9 +1914,10 @@ class GaugeModel(object):
         _ = ax.set_ylabel('Probability', fontsize=14)
         #  _ = ax.set_title(title_str, fontsize=16)
         out_file = os.path.join(out_dir,
-                                f'TOP_CHARGE_FREQUENCY_VS_VAL_TOTAL.eps')
+                                f'TOP_CHARGE_FREQUENCY_VS_VAL_TOTAL.png')
         io.log(f'Saving figure to: {out_file}.')
-        _ = plt.savefig(out_file, dpi=400, bbox_inches='tight')
+        plt.savefig(out_file, dpi=200, bbox_inches='tight')#, rasterize=True)
+        #  _ = plt.savefig(out_file, dpi=400, bbox_inches='tight')
         plt.close('all')
 
     def _get_plot_dir(self, charges, beta, current_step=None):
@@ -2089,7 +2152,6 @@ class GaugeModel(object):
         log_and_write(sep_str3, str3, therm_str, charge_probs_strings,
                       statistics_txt_file)
 
-
     def _get_run_files(self, *_args):
         """Create dir and files for storing observables from `self.run`."""
         if not HAS_MATPLOTLIB or (self.using_hvd and hvd.rank() != 0):
@@ -2162,30 +2224,8 @@ class GaugeModel(object):
         return files
 
 
-# pylint: disable=too-many-statements, too-many-branches
-def main(FLAGS):
-    """Main method for creating/training U(1) gauge model from command line."""
-    if HAS_HOROVOD and FLAGS.horovod:
-        io.log("INFO: USING HOROVOD")
-        hvd.init()
 
-    #  params = PARAMS  # use default parameters if no command line args passed
-    params = {}
-
-    for key, val in FLAGS.__dict__.items():
-        params[key] = val
-
-    if FLAGS.hmc:
-        params['eps_trainable'] = False
-        beta1 = params.get('beta', 4.)
-        beta2 = params.get('beta_init', 4.)
-        beta3 = params.get('beta_final', 4.)
-        beta = max((beta1, beta2, beta3))
-
-        params['beta'] = beta
-        params['beta_init'] = beta
-        params['beta_final'] = beta
-
+def create_config(FLAGS, params):
     config = tf.ConfigProto()
     if FLAGS.time_size > 8:
         off = rewriter_config_pb2.RewriterConfig.OFF
@@ -2213,17 +2253,48 @@ def main(FLAGS):
         io.log("Training on Theta @ ALCF...")
         params['data_format'] = 'channels_last'
         os.environ["KMP_BLOCKTIME"] = str(0)
-        #  os.environ["KMP_AFFINITY"] = "granularity=fine,verbose,compact,1,0"
+        os.environ["KMP_AFFINITY"] = (
+            "granularity=fine,verbose,compact,1,0"
+        )
         # NOTE: KMP affinity taken care of by passing -cc depth to aprun call
         OMP_NUM_THREADS = 62
         config.allow_soft_placement = True
         config.intra_op_parallelism_threads = OMP_NUM_THREADS
         config.inter_op_parallelism_threads = 1
 
+    return config, params
+
+
+# pylint: disable=too-many-statements, too-many-branches, too-many-locals
+def main(FLAGS):
+    """Main method for creating/training U(1) gauge model from command line."""
+    if HAS_HOROVOD and FLAGS.horovod:
+        io.log("INFO: USING HOROVOD")
+        hvd.init()
+
+    #  params = PARAMS  # use default parameters if no command line args passed
+    params = {}
+
+    for key, val in FLAGS.__dict__.items():
+        params[key] = val
+
+    if FLAGS.hmc:
+        params['eps_trainable'] = False
+        beta1 = params.get('beta', 4.)
+        beta2 = params.get('beta_init', 4.)
+        beta3 = params.get('beta_final', 4.)
+        beta = max((beta1, beta2, beta3))
+
+        params['beta'] = beta
+        params['beta_init'] = beta
+        params['beta_final'] = beta
+
     #  if HAS_HOROVOD and FLAGS.horovod:
         #  params['lr_init'] *= hvd.size()
         #  params['train_steps'] /= hvd.size()
         #  params['lr_decay_steps'] /= hvd.size()
+
+    config, params = create_config(FLAGS, params)
 
     model = GaugeModel(params=params,
                        config=config,
@@ -2272,21 +2343,56 @@ def main(FLAGS):
                             beta_init=None, trace=FLAGS.trace)
 
     try:
-        run_steps = int(5e4)
+        #  run_steps = int(5e4)
+        run_steps = FLAGS.run_steps
         condition1 = FLAGS.horovod and hvd.rank() == 0
         condition2 = not FLAGS.horovod
         if condition1 or condition2:
             model.run(run_steps, beta=model.beta_final)
-            model.run(run_steps, beta=model.beta_final - 1)
+            #  model.run(run_steps, beta=model.beta_final - 1)
             #  run_steps_grid = [20000, 50000]
             #  betas = [model.beta_final, model.beta_final - 1]
             #  for steps in run_steps_grid:
             #      for beta1 in betas:
             #          model.run(steps, beta=beta1)
 
+        model.sess.close()
+        tf.reset_default_graph()
+
+        io.log('\n')
+        io.log(80*'=')
+        io.log('Running generic HMC using params from trained model for '
+               'performance comparison.')
+        io.log(80*'=' + '\n')
+
+        ###########################################################
+        # Create separate HMC instance for performance comparison
+        ###########################################################
+        hmc_params = model.params
+        hmc_params['eps'] = model._current_state['eps']
+        hmc_params['hmc'] = True
+        hmc_params['beta_init'] = model.beta_init
+        hmc_params['beta_final'] = model.beta_final
+
+        hmc_config, hmc_params = create_config(FLAGS, hmc_params)
+        hmc_log_dir = os.path.join(model.log_dir, 'HMC')
+
+        hmc_model = GaugeModel(params=hmc_params,
+                               sess=None,
+                               config=hmc_config,
+                               log_dir=hmc_log_dir,
+                               restore=False,
+                               build_graph=True)
+
+        if condition1 or condition2:
+            hmc_model.run(run_steps, beta=hmc_model.beta_final)
+
+        hmc_model.sess.close()
+
     except (KeyboardInterrupt, SystemExit):
         io.log("\nKeyboardInterrupt detected! \n")
-        import pdb; pdb.set_trace()  # pylint: ignore=multiple-statements
+        import pdb
+        pdb.set_trace()
 
 
 # =============================================================================
@@ -2401,10 +2507,17 @@ if __name__ == '__main__':
 
 # ========================== Training parameters ==============================
 
-    parser.add_argument("--train_steps", type=int, default=1000,
+    parser.add_argument("--train_steps", type=int, default=5000,
                         required=False, dest="train_steps",
                         help=("Number of training steps to perform. "
                               "(Default: 1000)"))
+
+    parser.add_argument("--run_steps", type=int, default=50000,
+                        required=False, dest="run_steps",
+                        help=("Number of evaluation 'run' steps to perform "
+                              "after training (i.e. length of desired chain "
+                              "generate using trained L2HMC sampler.) "
+                              "(Default: 5e4)"))
 
     parser.add_argument("--trace", action="store_true",
                         required=False, dest="trace",

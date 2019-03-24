@@ -17,9 +17,19 @@ import numpy as np
 import numpy.random as npr
 import tensorflow as tf
 
+from globals import GLOBAL_SEED
 from network.conv_net import ConvNet2D, ConvNet3D
 from network.generic_net import GenericNet
 from lattice.lattice import GaugeLattice
+
+
+###########################################
+# Set global seed for numpy and tensorflow
+###########################################
+np.random.seed(GLOBAL_SEED)
+
+if '2' not in tf.__version__:
+    tf.set_random_seed(GLOBAL_SEED)
 
 
 # pylint:disable=invalid-name
