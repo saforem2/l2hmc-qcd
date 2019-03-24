@@ -13,14 +13,32 @@ authors https://github.com/brain-research/l2hmc.
 Author: Sam Foreman (github: @saforem2)
 Date: 01/16/2019
 """
-import tensorflow as tf
 import numpy as np
+import tensorflow as tf
+
+from globals import GLOBAL_SEED
+
+
+np.random.seed(GLOBAL_SEED)
+
+if '2.' not in tf.__version__:
+    tf.set_random_seed(GLOBAL_SEED)
+
+#      HAS_TF2 = True
+    #  variance_scaling_initializer = tf.keras.initializers.VarianceScaling
+    #  KERNEL_INITIALIZER=tf.keras.initializers.VarianceScaling
+#  else:
+#      TF2 = False
+    #  KERNEL_INITIALIZER = tf.contrib.layesrs.variance_scaling_initializer
+    #  variance_scaling_initializer = tf.keras.initializers.VarianceScaling
+
 
 #  from .generic_net import _custom_dense
 
+
 # pylint: disable=invalid-name
 def create_periodic_padding(samples, filter_size):
-    """Create periodic padding for each sample in samples, using filter_size."""
+    """Create periodic padding for multiple samples, using filter_size."""
     original_size = np.shape(samples)
     N = original_size[1]  # number of links in lattice
     #  N = np.shape(samples)[1] # number of links in lattice
@@ -63,7 +81,6 @@ class ConvNet3D(tf.keras.Model):
 
         for key, val in kwargs.items():
             setattr(self, key, val)
-
 
         #  with tf.variable_scope(self.variable_scope):
         with tf.name_scope(self.name_scope):
@@ -501,14 +518,32 @@ class ConvNet2D(tf.keras.Model):
 
 def _custom_dense(units, factor=1., name=None):
     """Custom dense layer with specified weight intialization."""
+    if '2.' not in tf.__version__:
+        #  KERNEL_INITIALIZER = tf.contrib.layesrs.variance_scaling_initializer
+        #  variance_scaling_initializer = tf.keras.initializers.VarianceScaling
+        kernel_initializer = tf.keras.initializers.VarianceScaling(
+            scale=factor,
+            mode='fan_in',
+            distribution='uniform',
+            dtype=tf.float32,
+            seed=GLOBAL_SEED
+        )
+    else:
+        kernel_initializer = tf.contrib.layers.variance_scaling_initializer(
+            factor=factor,
+            mode='FAN_IN',
+            uniform=True,
+        )
+
     return tf.keras.layers.Dense(
         units=units,
         use_bias=True,
-        kernel_initializer=tf.contrib.layers.variance_scaling_initializer(
-            factor=factor * 2.,
-            mode='FAN_IN',
-            uniform=False
-        ),
+        kernel_initializer=kernel_initializer,
         bias_initializer=tf.constant_initializer(0., dtype=tf.float32),
         name=name
     )
+    #  KERNEL_INITIALIZER(
+    #              factor=factor * 2.,
+    #              mode='FAN_IN',
+    #              uniform=False
+    #          ),
