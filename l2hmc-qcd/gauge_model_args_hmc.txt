@@ -7,13 +7,14 @@
 
 --time_size 8                   
 --space_size 8                  
---num_samples 128
---num_steps 4                
---eps 0.3001
+--num_samples 64 
+--num_steps 5
+--eps 0.2
 --hmc
---beta_init 4.
---beta_final 4.
---log_dir 'conv3D_logs/HMC/runs_L8/num_steps4_eps03001_num_samples128/'
+--beta_init 6.
+--beta_final 6.
+--run_steps 50000
+--log_dir 'conv3D_logs/HMC/runs_L8/num_steps5/eps02/num_samples64/beta6'
 
 
 #============================================================================================

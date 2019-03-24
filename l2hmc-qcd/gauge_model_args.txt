@@ -8,18 +8,19 @@
 --time_size 8                  
 --space_size 8                  
 --num_samples 128
---num_steps 4 
---eps 0.4
+--num_steps 3 
+--eps 0.25
 --annealing
 --beta_init 2.                  
---beta_final 4.                 
+--beta_final 5.                 
 --lr_init 0.001
---lr_decay_steps 500            
---lr_decay_rate 0.93            
---train_steps 2500             
---save_steps 1000               
---print_steps 1               
---training_samples_steps 1000 
+--lr_decay_steps 1000
+--lr_decay_rate 0.96            
+--train_steps 10000
+--run_steps 50000
+--save_steps 2500
+--print_steps 5               
+--training_samples_steps 2500
 --training_samples_length 500
 --network_arch 'conv3D'
 --metric 'cos_diff'
@@ -31,7 +32,7 @@
 --eps_trainable
 #--clip_grads
 #--clip_val 10.
---log_dir 'conv3D_logs/lattice_L8/fourier_approx/num_steps4'
+--log_dir 'conv3D_logs/lattice_L8/num_steps3/eps_init02/num_samples128/beta_final5/'
 
 
 #============================================================================================
@@ -46,9 +47,10 @@
 #   beta_init:                      initial value of beta used in annealing schedule        #
 #   beta_final:                     final value of beta in annealing schedule               #
 #   lr_init:                        initial value of learning rate                          #
-#   lr_decay_steps:                 steps after which lr is decayed by lr_decay_rat  e      #
+#   lr_decay_steps:                 steps after which lr is decayed by lr_decay_rate        #
 #   lr_decay_rate:                  factor by which lr is decayed                           #
 #   train_steps:                    number of training steps to perform                     #
+#   train_steps:                    number of evaluation steps to run trained sampler for   #
 #   save_steps:                     when to save model checkpoint                           #
 #   print_steps:                    how often to print information during train ing         #
 #   training_samples_steps:         when to run sampler during training                     #
