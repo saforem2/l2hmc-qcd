@@ -35,17 +35,17 @@ def plot_broken_xaxis(x_data,
     # plot the same data on both axes
     for idx in range(y_data.shape[1]):
         _ = ax.plot(x_data, y_data[:, idx], marker='', ls='-',
-                    alpha=1.0, label=f'sample {idx}')
+                    alpha=1.0, label=f'sample {idx}')#, rasterized=True)
 
     _ = ax.plot(x_data, y_data.mean(axis=1), marker='', ls='-',
-                alpha=0.7, color='k', label='average')
+                alpha=0.7, color='k', label='average')#, rasterized=True)
 
     for idx in range(y_data.shape[1]):
         _ = ax2.plot(x_data, y_data[:, idx], marker='', ls='-',
-                     alpha=1.0, label=f'sample {idx}')
+                     alpha=1.0, label=f'sample {idx}')#, rasterized=True)
 
     _ = ax2.plot(x_data, y_data.mean(axis=1), marker='', ls='-',
-                 alpha=0.7, color='k', label='average')
+                 alpha=0.7, color='k', label='average')#, rasterized=True)
 
     # zoom-in / limit the view to different portions of the data
     num_points = len(x_data)
@@ -70,7 +70,7 @@ def plot_broken_xaxis(x_data,
     _ = ax.tick_params(labelright=False)
     _ = ax2.yaxis.tick_right()
 
-    D = 0.015 # how big to make the diagonal lines in axes coordinates
+    D = 0.015  # how big to make the diagonal lines in axes coordinates
     # arguments to pass plot, just so we don't keep repeating them
     kwargs = dict(transform=ax.transAxes, color='k', clip_on=False)
     _ = ax.plot((1 - D, 1 + D), (-D, +D), **kwargs)
@@ -87,8 +87,11 @@ def plot_broken_xaxis(x_data,
         _ = ax2.legend(loc='best', fontsize=10)
 
     if out_file:
+        #  eps_file = out_file + '.eps'
+        png_file = out_file + '.png'
         print(f'Saving figure to {out_file}.')
-        fig.savefig(out_file, dpi=400, bbox_inches='tight')
+        #  fig.savefig(eps_file, dpi=400, bbox_inches='tight', rasterize=True)
+        fig.savefig(png_file, dpi=400, bbox_inches='tight')#, rasterize=True)
 
     return fig, ax, ax2
 
@@ -106,12 +109,16 @@ def plot_multiple_lines(x_data, y_data, x_label, y_label, **kwargs):
     title = kwargs.get('title', None)
     ret = kwargs.get('ret', False)
 
+    if y_data.shape[0] > 10:
+        y_sample = y_data[:10, :]
+
+
     fig, ax = plt.subplots()
 
     marker = None
     ls = '-'
     fillstyle = 'full'
-    for idx, row in enumerate(y_data):
+    for idx, row in enumerate(y_sample):
         if markers:
             marker = MARKERS[idx]
             fillstyle = 'none'
@@ -119,21 +126,26 @@ def plot_multiple_lines(x_data, y_data, x_label, y_label, **kwargs):
         if not lines:
             ls = ''
         _ = ax.plot(x_data, row, label=f'sample {idx}', fillstyle=fillstyle,
-                    marker=marker, ls=ls, alpha=alpha)
+                    marker=marker, ls=ls, alpha=alpha)#, rasterized=True)
 
     _ = ax.plot(
         x_data, y_data.mean(axis=0), color='k', label='average', alpha=0.75,
+        #  rasterized=True
     )
 
     ax.set_xlabel(x_label, fontsize=14)
     ax.set_ylabel(y_label, fontsize=14)
+    plt.tight_layout()
     if legend:
         ax.legend(loc='best')
     if title is not None:
         ax.set_title(title)
     if out_file:
+        #  eps_file = out_file + '.eps'
+        #  png_file = out_file + '.png'
         print(f'Saving figure to {out_file}.')
-        fig.savefig(out_file, dpi=400, bbox_inches='tight')
+        #  fig.savefig(eps_file, dpi=400, bbox_inches='tight', rasterize=True)
+        fig.savefig(out_file, dpi=400, bbox_inches='tight')#, rasterize=True)
 
     if ret:
         return fig, ax
