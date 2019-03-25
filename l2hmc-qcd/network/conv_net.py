@@ -488,13 +488,19 @@ class ConvNet2D(tf.keras.Model):
         x = tf.nn.local_response_normalization(x)
         x = self.flatten(x)
 
+        x = tf.nn.relu(self.x_layer(x))
+
         v = self.max_pool_v1(self.conv_v1(v))
         v = tf.nn.local_response_normalization(v)
         v = self.max_pool_v2(self.conv_v2(v))
         v = tf.nn.local_response_normalization(v)
         v = self.flatten(v)
 
-        h = tf.nn.relu(self.v_layer(v) + self.x_layer(x) + self.t_layer(t))
+        v = tf.nn.relu(self.v_layer(v))
+
+        t = tf.nn.relu(self.t_layer(t))
+
+        h = tf.nn.relu(x + v + t)
         h = tf.nn.relu(self.h_layer(h))
         #  h = self.hidden_layer1(h)
 

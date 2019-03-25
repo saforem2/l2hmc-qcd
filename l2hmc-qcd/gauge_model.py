@@ -836,10 +836,10 @@ class GaugeModel:
     def _calc_top_charges_diff(self, x1, x2, fft=False):
         """Calculate difference in topological charges between x1 and x2."""
         with tf.name_scope('calc_top_charges_diff'):
-            #  dq = tf.abs(self._calc_top_charges(x1, fft)
-            #              - self._calc_top_charges(x2, fft))
-            dq = tf.sqrt(tf.square(self._calc_top_charges(x1, fft)
-                                   - self._calc_top_charges(x2, fft)))
+            dq = tf.abs(self._calc_top_charges(x1, fft)
+                        - self._calc_top_charges(x2, fft))
+            #  dq = tf.sqrt(tf.square(self._calc_top_charges(x1, fft)
+            #                         - self._calc_top_charges(x2, fft)))
         return dq
 
     # pylint: disable=too-many-locals
