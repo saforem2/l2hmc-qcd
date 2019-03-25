@@ -9,11 +9,11 @@
 --space_size 8                  
 --num_samples 128
 --num_steps 3 
---eps 0.25
+--eps 0.35
 --annealing
 --beta_init 2.                  
 --beta_final 5.                 
---lr_init 0.001
+--lr_init 0.0001
 --lr_decay_steps 1000
 --lr_decay_rate 0.96            
 --train_steps 10000
