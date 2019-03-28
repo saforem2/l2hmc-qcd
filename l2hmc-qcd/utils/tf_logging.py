@@ -1,5 +1,13 @@
-import tensorflow as tf
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
+
 import os
+import re
+
+import tensorflow as tf
+
+TOWER_NAME = 'tower'
 
 def get_run_num(log_dir):
     if not os.path.isdir(log_dir):
@@ -83,3 +91,20 @@ def variable_summaries(var, name):
         tf.summary.scalar('max', tf.reduce_max(var))
         tf.summary.scalar('min', tf.reduce_min(var))
         tf.summary.histogram('histogram', var)
+
+def activation_summary(x):
+    """Helper to create summaries for activations.A
+    
+    Creates a summary that provides a histogram of activations.
+    Creates a summary that measures the sparisty of activations.
+
+    Args:
+        x: Tensor
+    Returns:
+        None
+    """
+    # Remove 'tower_[0-9]/' from the name in case this is a multi-GPU training
+    # session. This helps the clarity of presentation in tensorboard.
+    tensor_name = re.sub('%s_[0-9]*/' % TOWER_NAME, '', x.op.name)
+    tf.summary.histogram(tensor_name + '/activations', x)
+    tf.summary.scalar(tensor_name + '/sparsity', tf.nn.zero_fraction(x))
