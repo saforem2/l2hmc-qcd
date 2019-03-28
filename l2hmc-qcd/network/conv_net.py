@@ -35,6 +35,53 @@ if '2.' not in tf.__version__:
 
 #  from .generic_net import _custom_dense
 
+def variable_on_cpu(name, shape, initializer):
+    """Helper to create a Variable stored on CPU memory.
+
+    Args:
+        name: name of the variable
+        shape: list of ints
+        initializer: initializer for Variable
+
+    Returns:
+        Variable Tensor
+    """
+    with tf.device('/cpu:0'):
+        var = tf.get_variable(name, shape, initializer, tf.float32)
+    return var
+
+def variable_with_weight_decay(name, shape, stddev, wd, cpu=True):
+    """Helper to create an initialized Variable with weight decay.
+
+    Note that the Variable is initialized with a truncated normal distribution.
+    A weight decay is added only if one is specified.
+
+    Args:
+        name: Name of the variable
+        shape: list of ints
+        stddev: standard deviation of a truncated Gaussian
+        wd: Add L2Loss weight decay multiplied by this float. If None, weight
+            decay is not added for this variable.
+
+    Returns:
+        Variable Tensor
+    """
+    if cpu:
+        var = variable_on_cpu(
+            name, shape, tf.truncated_normal_initializer(stddev=stddev,
+                                                         dtype=tf.float32)
+        )
+    else:
+        var = tf.get_variable(
+            name, shape, tf.truncated_normal_initializer(stddev=stddev,
+                                                         dtype=tf.float32)
+        )
+    if wd is not None:
+        weight_decay = tf.multiply(tf.nn.l2_loss(var), wd, name='weight_loss')
+        tf.add_to_collection('losses', weight_decay)
+
+    return var
+
 
 # pylint: disable=invalid-name
 def create_periodic_padding(samples, filter_size):
@@ -82,12 +129,17 @@ class ConvNet3D(tf.keras.Model):
         for key, val in kwargs.items():
             setattr(self, key, val)
 
+        if self.use_bn:
+            if self.data_format == 'channels_first':
+                self.bn_axis = 1
+            elif self.data_format == 'channels_last':
+                self.bn_axis = -1
+            else:
+                raise AttributeError("Expected 'data_format' to be "
+                                     "'channels_first'  or 'channels_last'")
+
         #  with tf.variable_scope(self.variable_scope):
         with tf.name_scope(self.name_scope):
-
-            #  with tf.name_scope('batch_norm'):
-            #      self.batch_norm = tf.keras.layers.BatchNormalization()
-
             with tf.name_scope('coeff_scale'):
                 self.coeff_scale = tf.Variable(
                     initial_value=tf.zeros([1, self.x_dim]),
@@ -269,15 +321,26 @@ class ConvNet3D(tf.keras.Model):
         with tf.name_scope('x'):
             x = self.max_pool_x1(self.conv_x1(x))
             x = self.max_pool_x2(self.conv_x2(x))
+            if self.use_bn:
+                x = tf.keras.layers.BatchNormalization(axis=self.bn_axis)(x)
+            #  x = self.batch_norm(x)
             x = self.flatten(x)
+            x = tf.nn.relu(self.x_layer(x))
 
         with tf.name_scope('v'):
             v = self.max_pool_v1(self.conv_v1(v))
             v = self.max_pool_v2(self.conv_v2(v))
+            if self.use_bn:
+                v = tf.keras.layers.BatchNormalization(axis=self.bn_axis)(v)
+            #  v = self.batch_norm(v)
             v = self.flatten(v)
+            v = tf.nn.relu(self.v_layer(v))
+
+        with tf.name_scope('t'):
+            t = tf.nn.relu(self.t_layer(t))
 
         with tf.name_scope('h'):
-            h = tf.nn.relu(self.v_layer(v) + self.x_layer(x) + self.t_layer(t))
+            h = tf.nn.relu(v + x + t)
             h = tf.nn.relu(self.h_layer(h))
 
         def reshape(t, name):
@@ -314,7 +377,7 @@ class ConvNet3D(tf.keras.Model):
 
             return tf.reshape(tensor, (N, 1, D, H, W))
 
-        elif self.data_format == 'channels_last':
+        if self.data_format == 'channels_last':
             #  N, H, W, D = tensor.shape
             N, H, W, D = self._input_shape
             if isinstance(tensor, np.ndarray):
@@ -322,9 +385,8 @@ class ConvNet3D(tf.keras.Model):
 
             return tf.reshape(tensor, (N, H, W, D, 1))
 
-        else:
-            raise AttributeError("`self.data_format` should be one of "
-                                 "'channels_first' or 'channels_last'")
+        raise AttributeError("`self.data_format` should be one of "
+                             "'channels_first' or 'channels_last'")
 
 
 # pylint:disable=too-many-arguments, too-many-instance-attributes
@@ -488,19 +550,13 @@ class ConvNet2D(tf.keras.Model):
         x = tf.nn.local_response_normalization(x)
         x = self.flatten(x)
 
-        x = tf.nn.relu(self.x_layer(x))
-
         v = self.max_pool_v1(self.conv_v1(v))
         v = tf.nn.local_response_normalization(v)
         v = self.max_pool_v2(self.conv_v2(v))
         v = tf.nn.local_response_normalization(v)
         v = self.flatten(v)
 
-        v = tf.nn.relu(self.v_layer(v))
-
-        t = tf.nn.relu(self.t_layer(t))
-
-        h = tf.nn.relu(x + v + t)
+        h = tf.nn.relu(self.v_layer(v) + self.x_layer(x) + self.t_layer(t))
         h = tf.nn.relu(self.h_layer(h))
         #  h = self.hidden_layer1(h)
 
