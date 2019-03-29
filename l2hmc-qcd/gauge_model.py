@@ -1024,6 +1024,7 @@ class GaugeModel:
                                                                      **weights)
                 grads = tape.gradient(loss, self.dynamics.trainable_variables)
         else:
+            #  loss, x_out, accept_prob = self._calc_loss(x, beta, **weights)
             loss, x_out, accept_prob, x_dq = self._calc_loss(x, beta,
                                                              **weights)
             if self.summaries:
@@ -1081,7 +1082,6 @@ class GaugeModel:
             tf.summary.scalar(l.op.name, loss_averages.average(l))
 
         return loss_averages_op
-
 
     def _create_summaries(self):
         """Create summary objects for logging in TensorBoard."""
@@ -1227,6 +1227,7 @@ class GaugeModel:
             output = self._calc_loss_and_grads(x=self.x, beta=self.beta,
                                                **self.loss_weights)
 
+            #  self.loss_op, self.grads, self.x_out, self.px = output
             self.loss_op, self.grads, self.x_out, self.px, x_dq = output
             self.charge_diff_op = tf.reduce_sum(x_dq) / self.num_samples
 
@@ -1436,6 +1437,8 @@ class GaugeModel:
                     f"{0.:^9.4g} "                       # tunneling events
                     f"{self.lr_init:^9.4g}")             # learning rate
 
+        charges_arr = []
+
         try:
             io.log(self.train_header)
             try:
@@ -1461,8 +1464,9 @@ class GaugeModel:
                     self.plaqs_op,         # calculate avg. plaquettes
                     self.charges_op,       # calculate top. charges
                     self.lr,               # evaluate learning rate
-                    self.charge_diff_op,   # change in top charge / num_samples 
                 ], feed_dict=fd)
+
+                #  self.charge_diff_op,   # change in top charge / num_samples
 
                 loss_np = outputs[1]
                 samples_np = np.mod(outputs[2], 2 * np.pi)
@@ -1473,7 +1477,18 @@ class GaugeModel:
                 plaqs_np = outputs[6]
                 charges_np = outputs[7]
                 lr_np = outputs[8]
-                charge_diff = outputs[9]
+                #  charge_diff = outputs[9]
+
+                charges_arr.append(charges_np)
+
+                try:
+                    charge_diff = np.sum(
+                        np.abs(np.array(charges_arr[-1] - charges_arr[-2],
+                                        dtype=np.int32))
+                    ) / self.num_samples
+
+                except IndexError:
+                    charge_diff = 0
 
                 self._current_state['samples'] = samples_np
                 self._current_state['step'] = step
@@ -1688,7 +1703,7 @@ class GaugeModel:
                     self.actions_op,
                     self.plaqs_op,
                     self.charges_op,
-                    self.charge_diff_op,
+                    #  self.charge_diff_op,
                 ], feed_dict=fd)
 
                 samples = np.mod(outputs[0], 2 * np.pi)
@@ -1697,17 +1712,17 @@ class GaugeModel:
                 actions_np = outputs[2]
                 plaqs_np = outputs[3]
                 charges_np = outputs[4]
-                charge_diff = outputs[5]
+                #  charge_diff = outputs[5]
 
                 charges_arr.append(charges_np)
 
-                #  try:
-                #      tunneling_events = np.sum(
-                #          np.abs(charges_arr[-1] - charges_arr[-2])
-                #      )
-                #
-                #  except IndexError:
-                #      tunneling_events = 0
+                try:
+                    charge_diff = np.sum(
+                        np.abs(np.array(charges_arr[-1] - charges_arr[-2],
+                                        dtype=np.int32))
+                    ) / self.num_samples
+                except IndexError:
+                    charge_diff = 0
 
                 #  samples_history.append(np.squeeze(samples))
 
@@ -1729,19 +1744,10 @@ class GaugeModel:
                             f'{plaq_exact:^9.4g} '
                             f'{charge_diff:^9.4g} ')
 
-                io.log(eval_str)
+                if step % self.print_steps == 0:
+                    io.log(eval_str)
 
                 eval_strings.append(eval_str)
-                #  log('\n')
-                #  log('top_charges: ', nl=False)
-                #  log(charges_np)
-                #  log('\n')
-
-                #  io.write('accept_prob:', eval_file, 'a', nl=False)
-                #  io.write(str(px), eval_file, 'a', nl=True)
-                #  io.write('top. charges:', eval_file, 'a', nl=False)
-                #  io.write(str(charges_np), eval_file, 'a', nl=True)
-                #  io.write('', eval_file, 'a')
 
                 if step % 100 == 0:
                     io.log(header_str)
@@ -2358,7 +2364,6 @@ class GaugeModel:
         return files
 
 
-
 def create_config(FLAGS, params):
     """Create tensorflow config."""
     config = tf.ConfigProto()
@@ -2395,7 +2400,7 @@ def create_config(FLAGS, params):
         OMP_NUM_THREADS = 62
         config.allow_soft_placement = True
         config.intra_op_parallelism_threads = OMP_NUM_THREADS
-        config.inter_op_parallelism_threads = 1
+        config.inter_op_parallelism_threads = 0
 
     return config, params
 
@@ -2488,8 +2493,13 @@ def main(FLAGS):
         run_steps = FLAGS.run_steps
         condition1 = FLAGS.horovod and hvd.rank() == 0
         condition2 = not FLAGS.horovod
+        if FLAGS.long_run: 
+            beta_vals = [model.beta_final, model.beta_final + 1]
+
         if condition1 or condition2:
             model.run(run_steps, beta=model.beta_final)
+            if FLAGS.long_run:
+                model.run(model.run(run_steps, beta=model.beta_final+1))
             #  model.run(run_steps, beta=model.beta_final - 1)
             #  run_steps_grid = [20000, 50000]
             #  betas = [model.beta_final, model.beta_final - 1]
@@ -2709,6 +2719,11 @@ if __name__ == '__main__':
                         help=("Flag that when passed creates "
                               "summaries of gradients and variables for "
                               "monitoring in tensorboard. (Default: False)"))
+    parser.add_argument('--long_run', action='store_true',
+                        required=False, dest='long_run',
+                        help=("Flag that when passed runs the trained sampler "
+                              "at model.beta_final and model.beta_final + 1. "
+                              "(Default: False)"))
 
     #  parser.add_argument("--conv_net", action="store_true",
     #                      required=False, dest="conv_net",
