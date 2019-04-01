@@ -15,6 +15,7 @@ import tensorflow as tf
 from functools import reduce
 from scipy.linalg import expm
 from scipy.special import i0, i1
+from globals import TF_FLOAT
 from .gauge_generators import generate_SU2, generate_SU3, generate_SU3_array
 
 
@@ -32,21 +33,26 @@ def u1_plaq_exact(beta):
     """Computes the expected value of the `average` plaquette for U(1)."""
     return i1(beta) / i0(beta)
 
+
 def pbc(tup, shape):
     """Returns tup % shape for implementing periodic boundary conditions."""
     return list(np.mod(tup, shape))
+
 
 def pbc_tf(tup, shape):
     """Tensorflow implementation of `pbc` defined above."""
     return list(tf.mod(tup, shape))
 
+
 def mat_adj(mat):
     """Returns the adjoint (i.e. conjugate transpose) of a matrix `mat`."""
     return tf.transpose(tf.conj(mat))  # conjugate transpose
 
+
 def project_angle(x):
     """Returns the projection of an angle `x` from [-4pi, 4pi] to [-pi, pi]."""
     return x - 2 * np.pi * tf.math.floor((x + np.pi) / (2 * np.pi))
+
 
 def save_params_to_pkl_file(params, out_dir):
     if not os.path.isdir(out_dir):
