@@ -8,32 +8,33 @@
 --time_size 8                  
 --space_size 8                  
 --num_samples 64 
---num_steps 4 
---eps 0.35
+--num_steps 5 
+--eps 0.3
 --annealing
 --beta_init 2.                  
---beta_final 5.5                 
---lr_init 0.0005
---lr_decay_steps 500
---lr_decay_rate 0.9            
+--beta_final 5.                 
+--lr_init 0.001
+--lr_decay_steps 1000
+--lr_decay_rate 0.95            
 --train_steps 5000
---run_steps 20000
+--run_steps 25000
 --save_steps 2500
+--long_run
 --print_steps 1               
---training_samples_steps 1000 
---training_samples_length 500
+--training_samples_steps 2500
+--training_samples_length 1000
 --network_arch 'conv3D'
 --metric 'cos_diff'
 --aux_weight 1.
 --std_weight 1.
---charge_weight 1.
+--charge_weight 0.
 --loss_scale 1.
 --summaries
 --eps_trainable
 --use_bn
 #--clip_grads
 #--clip_val 10.
---log_dir 'conv3D_logs/lattice_L8/num_steps2/eps_init035/num_samples64/beta_i2_f55/lr_init5e-4/charge_weight1/'
+--log_dir 'conv3D_logs/lattice_L8/old_charge_loss/num_steps10/eps_init03/num_samples64/beta_i2_f5/lr_init1e-3/charge_weight0/'
 
 
 #============================================================================================
