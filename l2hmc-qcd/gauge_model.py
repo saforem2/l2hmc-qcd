@@ -97,28 +97,6 @@ def tf_accept(x1, x2, px):
     return tf.where(mask, x2, x1)
 
 
-def project_angle(x):
-    """Returns the projection of an angle `x` from [-4pi, 4pi] to [-pi, pi]."""
-    return x - 2 * np.pi * tf.floor((x + np.pi) / (2 * np.pi))
-
-
-def project_angle_fft(x, N=10):
-    """Use the fourier series representation `x` to approx `project_angle`.
-
-    NOTE: Because `project_angle` suffers a discontinuity, we approximate `x`
-    with its Fourier series representation in order to have a differentiable
-    function when computing the loss.
-
-    Args:
-        x (array-like): Array to be projected.
-        N (int): Number of terms to keep in Fourier series.
-    """
-    y = np.zeros(x.shape, dtype=NP_FLOAT)
-    for n in range(1, N):
-        y += (-2 / n) * ((-1) ** n) * tf.sin(n * x)
-    return y
-
-
 def calc_fourier_coeffs(f, T, N, return_complex=False):
     """Calculates the first 2*N+1 Fourier series coeff. of a periodic function.
 
@@ -186,20 +164,11 @@ def calc_fourier_series(a0, a, b, t, T):
                 + bk * tf.sin(p2 * (k+1) * t / T))
     return tmp
 
+
 def project_angle_slow(x, num_components=50):
     a0, a, b = calc_fourier_coeffs(project_angle, 2 * np.pi, num_components)
     y_fft = calc_fourier_series(a0, a, b, x, 2 * np.pi)
     return y_fft
-
-
-def _create_lattice(self):
-    """Create GaugeLattice object."""
-    return GaugeLattice(time_size=self.time_size,
-                        space_size=self.space_size,
-                        dim=self.dim,
-                        link_type=self.link_type,
-                        num_samples=self.num_samples,
-                        rand=self.rand)
 
 
 def create_dynamics(samples, **kwargs):
@@ -238,15 +207,13 @@ def create_dynamics(samples, **kwargs):
                            num_samples=batch_size,
                            rand=dynamics_kwargs['rand'])
 
-    potential_fn = lattice.get_energy_function(samples)
+    potential_fn = lattice.get_potential_fn(samples)
 
     dynamics = GaugeDynamics(lattice=lattice,
                              potential_fn=potential_fn,
                              **dynamics_kwargs)
 
     return dynamics, potential_fn
-
-
 
 # pylint: disable=attribute-defined-outside-init, too-many-instance-attributes
 class GaugeModel:
@@ -271,6 +238,7 @@ class GaugeModel:
             # Create necessary directories for holding checkpoints, data, etc.
             # --------------------------------------------------------------
             if (self.using_hvd and hvd.rank() == 0) or not self.using_hvd:
+                self.is_chief = True
                 self._create_dir_structure(log_dir)
                 # ---------------------------------------------------------
                 # Write relevant instance attributes to .txt file.
@@ -323,15 +291,20 @@ class GaugeModel:
         # ------------------------------------------------------------------
         with tf.name_scope('plaq_observables'):
             with tf.name_scope('plaq_sums'):
-                self.plaq_sums_op = self._calc_plaq_sums(self.x)
+                self.plaq_sums_op = self.lattice.calc_plaq_sums(self.x)
+                #  self.plaq_sums_op = self._calc_plaq_sums(self.x)
             with tf.name_scope('actions'):
-                self.actions_op = self._calc_total_actions(self.x)
+                self.actions_op = self.lattice.calc_actions(self.x)
+                #  self.actions_op = self._calc_total_actions(self.x)
             with tf.name_scope('avg_plaqs'):
-                self.plaqs_op = self._calc_avg_plaqs(self.x)
+                self.plaqs_op = self.lattice.calc_plaqs(self.x)
+                #  self.plaqs_op = self._calc_avg_plaqs(self.x)
                 self.avg_plaq_op = tf.reduce_mean(self.plaqs_op,
                                                   name='avg_plaq')
             with tf.name_scope('top_charges'):
-                self.charges_op = self._calc_top_charges(self.x, fft=False)
+                self.charges_op = self.lattice.calc_top_charges(self.x,
+                                                                fft=False)
+                #  self.charges_op = self._calc_top_charges(self.x, fft=False)
         # ------------------------------------------------------------------
         # If restore, load from most recently saved checkpoint in `log_dir`.
         # ------------------------------------------------------------------
@@ -463,26 +436,13 @@ class GaugeModel:
 
     def _create_dir_structure(self, log_dir):
         """Create self.files and directory structure."""
-        if self.using_hvd or HAS_HOROVOD:
-            io.log('\n')
-            io.log(80 * '-')
-            io.log(f"Calling _create_dir_structure from {hvd.rank()}...")
-            if hvd.rank() != 0:
-                io.log("Returning...")
-                io.log(80 * '-')
-                io.log('\n')
-                return
-        #  log_dir = os.path.join(root_log_dir, f'run_{run_num}')
-        #  if log_dir is None:
-        #      root_log_dir = os.path.join(project_dir, 'gauge_logs_graph')
-        #  else:
-        #      root_log_dir = os.path.join(project_dir, log_dir)
-        #      self.log_dir = log_dir
-        #      io.check_else_make_dir(self.log_dir)
-        #  if self.safe_write:
+        if not self.is_chief:
+            return
+
         project_dir = os.path.abspath(os.path.dirname(FILE_PATH))
         if log_dir is None:
-            if (self.using_hvd and hvd.rank() == 0) or not self.using_hvd:
+            #  if (self.using_hvd and hvd.rank() == 0) or not self.using_hvd:
+            if self.is_chief:
                 root_log_dir = os.path.join(project_dir, 'gauge_logs_graph')
             else:
                 return
@@ -670,19 +630,7 @@ class GaugeModel:
 
     def _write_run_parameters(self, _print=False):
         """Write model parameters out to human readable .txt file."""
-        if self.using_hvd or HAS_HOROVOD:
-            io.log('\n')
-            io.log(80 * '-')
-            io.log(f"Calling _write_run_parameters from {hvd.rank()}...")
-            if hvd.rank() != 0:
-                io.log("Returning...")
-                io.log(80 * '-')
-                io.log('\n')
-                return
-        #  if self.using_hvd:
-        #      if hvd.rank() != 0:
-        #          return
-        if self.info_dir is None:
+        if not self.is_chief or self.info_dir is None:
             return
 
         s0 = 'Parameters'
@@ -729,7 +677,7 @@ class GaugeModel:
 
         dynamics_kwargs.update(kwargs)  # update dynamics_kwargs using kwargs
 
-        potential_fn = lattice.get_energy_function(samples)
+        potential_fn = lattice.get_potential_fn(samples)
 
         dynamics = GaugeDynamics(lattice=lattice,
                                  potential_fn=potential_fn,
@@ -780,69 +728,6 @@ class GaugeModel:
                                  f"'l2', 'cos', 'cos2', or 'cos_diff'.")
 
         return metric_fn
-
-    def _calc_plaq_sums(self, x):
-        """Calculate plaquette sums.
-
-        Explicitly, calculate the sum of the links around each plaquette in the
-        lattice for each sample in samples.
-
-        Args:
-            samples (N, D): Tensor of shape where N is the batch size and D is
-                the number of links on the lattice (flattened)
-
-        Returns:
-            plaq_sums (N, Lx, Lt): Sum of link variables around each plaquette.
-
-            NOTE: Lx, Lt re self.lattice.space_size, time_size respectively.
-        """
-        x = tf.reshape(x, shape=(self.batch_size, *self.lattice.links.shape))
-
-        with tf.name_scope('calc_plaq_sums'):
-            plaq_sums = (x[:, :, :, 0]
-                         - x[:, :, :, 1]
-                         - tf.roll(x[:, :, :, 0], shift=-1, axis=2)
-                         + tf.roll(x[:, :, :, 1], shift=-1, axis=1))
-        return plaq_sums
-
-    def _calc_total_actions(self, x):
-        """Calculate total action for each sample in samples."""
-        with tf.name_scope('calc_total_actions'):
-            total_actions = tf.reduce_sum(
-                1. - tf.cos(self._calc_plaq_sums(x)), axis=(1, 2),
-                name='total_actions'
-            )
-        return total_actions
-
-    def _calc_avg_plaqs(self, x):
-        """Calculate average plaquette values for each sample in samples."""
-        num_plaqs = self.lattice.num_plaquettes
-        with tf.name_scope('calc_avg_plaqs'):
-            avg_plaqs = tf.reduce_sum(tf.cos(self._calc_plaq_sums(x)),
-                                      (1, 2), name='avg_plaqs') / num_plaqs
-        return avg_plaqs
-
-    def _calc_top_charges(self, x, fft=False):
-        """Calculate topological charges for each sample in samples."""
-        with tf.name_scope('calc_top_charges'):
-            if fft:
-                ps_proj = project_angle_fft(self._calc_plaq_sums(x), N=1)
-            else:
-                ps_proj = project_angle(self._calc_plaq_sums(x))
-
-            top_charges = (tf.reduce_sum(ps_proj, axis=(1, 2),
-                                         name='top_charges')) / (2 * np.pi)
-
-        return top_charges
-
-    def _calc_top_charges_diff(self, x1, x2, fft=False):
-        """Calculate difference in topological charges between x1 and x2."""
-        with tf.name_scope('calc_top_charges_diff'):
-            dq = tf.abs(self._calc_top_charges(x1, fft)
-                        - self._calc_top_charges(x2, fft))
-            #  dq = tf.sqrt(tf.square(self._calc_top_charges(x1, fft)
-            #                         - self._calc_top_charges(x2, fft)))
-        return dq
 
     def _calc_std_loss(self, x_tup, z_tup, p_tup, **weights):
         """Calculate standard contribution to loss. 
@@ -911,11 +796,13 @@ class GaugeModel:
         ls = self.loss_scale
         with tf.name_scope('charge_loss'):
             with tf.name_scope('x_loss'):
-                x_dq_fft = self._calc_top_charges_diff(x, x_proposed, fft=True)
+                x_dq_fft = self.lattice.calc_top_charges_diff(x, x_proposed,
+                                                              fft=True)
                 xq_loss = px * x_dq_fft + eps
 
             with tf.name_scope('z_loss'):
-                z_dq_fft = self._calc_top_charges_diff(z, z_proposed, fft=True)
+                z_dq_fft = self.lattice.calc_top_charges_diff(z, z_proposed,
+                                                              fft=True)
                 zq_loss = aux_weight * (pz * z_dq_fft) + eps
 
             with tf.name_scope('tot_loss'):
@@ -955,18 +842,11 @@ class GaugeModel:
             z_proposed, _, pz, _ = self.dynamics(z, beta)
 
         with tf.name_scope('top_charge_diff'):
-            x_dq = tf.cast(self._calc_top_charges_diff(x, x_out, fft=False),
+            x_dq = tf.cast(self.lattice.calc_top_charges_diff(x, x_out,
+                                                              fft=False),
                            dtype=tf.int32)
-
-        io.log('\n')
-        io.log(80*'-')
-        io.log('self.dynamics.position_fn.summary():')
-        io.log(f'\t{self.dynamics.position_fn.summary()}')
-        io.log(80*'-')
-        io.log('self.dynamics.momentum_fn.summary():')
-        io.log(f'\t{self.dynamics.momentum_fn.summary()}')
-        io.log(80*'-')
-        io.log('\n')
+            #  x_dq = tf.cast(self._calc_top_charges_diff(x, x_out, fft=False),
+            #                 dtype=tf.int32)
 
         # Add eps for numerical stability; following released impl
         # NOTE: 
@@ -984,21 +864,6 @@ class GaugeModel:
 
             total_loss = tf.add(std_loss, charge_loss, name='total_loss')
 
-        #  with tf.name_scope('std_loss'):
-        #      with tf.name_scope('x_loss'):
-        #          x_std_loss = (tf.reduce_sum(self.metric_fn(x, x_proposed),
-        #                                      axis=1) * px)
-        #          x_std_loss += eps
-        #
-        #      with tf.name_scope('z_loss'):
-        #          z_std_loss = (tf.reduce_sum(self.metric_fn(z, z_proposed),
-        #                                      axis=1) * pz) * aux_weight
-        #          z_std_loss += eps
-        #
-        #      with tf.name_scope('tot_loss'):
-        #          std_loss = (ls * (1. / x_std_loss + 1. / z_std_loss)
-        #                      - (x_std_loss + z_std_loss) / ls)
-        #          std_loss *= std_weight
 
         #  loss = tf.reduce_mean(std_loss + charge_loss, axis=0, name='loss')
 
@@ -1057,8 +922,10 @@ class GaugeModel:
             _, _, px, self.x_out = self.dynamics(self.x, self.beta)
             self.px = px
 
-            x_dq = self._calc_top_charges_diff(self.x, self.x_out, fft=False)
-            self.charge_diff_op = tf.reduce_sum(x_dq) / self.num_samples
+            x_dq = self.lattice.calc_top_charges_diff(self.x, self.x_out,
+                                                      fft=False)
+            #  x_dq = self._calc_top_charges_diff(self.x, self.x_out, fft=False)
+            self.charge_diffs_op = tf.reduce_sum(x_dq) / self.num_samples
 
     def _add_loss_summaries(self, total_loss):
         """Add summaries for losses in  GaugeModel.
@@ -1094,9 +961,8 @@ class GaugeModel:
 
     def _create_summaries(self):
         """Create summary objects for logging in TensorBoard."""
-        if self.using_hvd:
-            if hvd.rank() != 0:
-                return
+        if not self.is_chief:
+            return
 
         ld = self.log_dir
         self.summary_writer = tf.contrib.summary.create_file_writer(ld)
@@ -1114,7 +980,7 @@ class GaugeModel:
 
         with tf.name_scope('tunneling_events'):
             tf.summary.scalar('tunneling_events_per_sample',
-                              self.charge_diff_op)
+                              self.charge_diffs_op)
 
         with tf.name_scope('avg_plaq'):
             tf.summary.scalar('avg_plaq', self.avg_plaq_op)
@@ -1160,24 +1026,14 @@ class GaugeModel:
         self.summary_op = tf.summary.merge_all(name='summary_op')
 
     def _log_write_graph_creation_time(self, **times):
-        if self.using_hvd or HAS_HOROVOD:
-            io.log('\n')
-            io.log(80 * '-')
-            io.log(f"Calling _write_run_parameters from {hvd.rank()}...")
-            if hvd.rank() != 0:
-                io.log("Returning...")
-                io.log(80 * '-')
-                io.log('\n')
-                return
+        if not self.is_chief:
+            return 0
 
         if self.files is None:
             return
 
         def log_and_write(s, f):
             """Print string `s` to std out and also write to file `f`."""
-            if self.using_hvd:
-                if hvd.rank() != 0:
-                    return
             io.log(s)
             io.write(s, f)
             return
@@ -1206,13 +1062,30 @@ class GaugeModel:
                       self.files['run_info_file'])
         log_and_write(sep_str, self.files['run_info_file'])
 
-    # pylint:disable=too-many-statements
-    def build_graph(self, sess=None, config=None):
-        """Build graph for TensorFlow."""
+    def create_opt(self, lr_init=None):
+        """Create learning rate and optimizer."""
+        if lr_init is None:
+            lr_init = self.lr_init
 
-        start_time = time.time()
+        with tf.name_scope('global_step'):
+            self.global_step = tf.train.get_or_create_global_step()
+            self.global_step.assign(1)
 
-        if self.hmc:  # if running generic HMC, all we need is the sampler
+        with tf.name_scope('learning_rate'):
+            self.lr = tf.train.exponential_decay(lr_init,
+                                                 self.global_step,
+                                                 self.lr_decay_steps,
+                                                 self.lr_decay_rate,
+                                                 staircase=True,
+                                                 name='learning_rate')
+        with tf.name_scope('optimizer'):
+            self.optimizer = tf.train.AdamOptimizer(self.lr)
+            if self.using_hvd:
+                self.optimizer = hvd.DistributedOptimizer(self.optimizer)
+
+    def _create_hmc_sess(self, sess=None, config=None):
+        """Create and initialize session objects for generic HMC sampler."""
+        if self.hmc:
             if config is None:
                 self.config = tf.ConfigProto()
             else:
@@ -1221,7 +1094,6 @@ class GaugeModel:
                 self.sess = tf.Session(config=self.config)
             else:
                 self.sess = sess
-
             if self.space_size > 8:
                 off = rewriter_config_pb2.RewriterConfig.OFF
                 graph_options = self.config.graph_options
@@ -1230,56 +1102,12 @@ class GaugeModel:
 
             self._create_sampler()
             self.sess.run(tf.global_variables_initializer())
-            return
-
-        with tf.name_scope('global_step'):
-            self.global_step = tf.train.get_or_create_global_step()
-            self.global_step.assign(1)
-
-        with tf.name_scope('learning_rate'):
-            self.lr = tf.train.exponential_decay(self.lr_init,
-                                                 self.global_step,
-                                                 self.lr_decay_steps,
-                                                 self.lr_decay_rate,
-                                                 staircase=False,
-                                                 name='learning_rate')
-        with tf.name_scope('optimizer'):
-            self.optimizer = tf.train.AdamOptimizer(self.lr)
-            if self.using_hvd:
-                # self.optimizer = tf.train.AdamOptimizer(self.lr * hvd.size())
-                self.optimizer = hvd.DistributedOptimizer(self.optimizer)
-
-        with tf.name_scope('loss'):
-            t0_loss = time.time()
-
-            output = self._calc_loss_and_grads(x=self.x, beta=self.beta,
-                                               **self.loss_weights)
-
-            #  self.loss_op, self.grads, self.x_out, self.px = output
-            self.loss_op, self.grads, self.x_out, self.px, x_dq = output
-            self.charge_diff_op = tf.reduce_sum(x_dq) / self.num_samples
-
-            t_diff_loss = time.time() - t0_loss
-
-        with tf.name_scope('train'):
-            t0_train = time.time()
-
-            grads_and_vars = zip(self.grads, self.dynamics.variables)
-            self.train_op = self.optimizer.apply_gradients(
-                grads_and_vars, global_step=self.global_step, name='train_op'
-            )
-
-            t_diff_train = time.time() - t0_train
-
-        if self.summaries:
-            t0_summaries = time.time()
-
-            self._create_summaries()
-
-            t_diff_summaries = time.time() - t0_summaries
         else:
-            t_diff_summaries = 0.
+            raise AttributeError('_create_hmc_sess should only be run for '
+                                 'generic HMC sampler.')
 
+    def _create_sess(self, sess=None, config=None):
+        """Create session objects for L2HMC sampler."""
         if config is None:
             self.config = tf.ConfigProto()
             if self.space_size > 8:
@@ -1314,6 +1142,7 @@ class GaugeModel:
             else:
                 hooks = []
                 checkpoint_dir = self.log_dir
+
             # The MonitoredTrainingSession takes care of session
             # initialization, restoring from a checkpoint, saving to a
             # checkpoint, and closing when done or an error occurs.
@@ -1329,6 +1158,45 @@ class GaugeModel:
         else:
             self.sess = sess
 
+    # pylint:disable=too-many-statements
+    def build_graph(self, sess=None, config=None):
+        """Build graph for TensorFlow."""
+        start_time = time.time()
+
+        if self.hmc:  # if running generic HMC, all we need is the sampler
+            self._create_hmc_sess(sess, config)
+            return
+
+        # Create global_step, learning_rate, optimizer
+        self.create_opt()
+
+        with tf.name_scope('loss'):
+            t0_loss = time.time()
+            output = self._calc_loss_and_grads(x=self.x, beta=self.beta,
+                                               **self.loss_weights)
+            self.loss_op, self.grads, self.x_out, self.px, x_dq = output
+            self.charge_diffs_op = tf.reduce_sum(x_dq) / self.num_samples
+            t_diff_loss = time.time() - t0_loss
+
+        with tf.name_scope('train'):
+            t0_train = time.time()
+            grads_and_vars = zip(self.grads, self.dynamics.variables)
+            self.train_op = self.optimizer.apply_gradients(
+                grads_and_vars, global_step=self.global_step, name='train_op'
+            )
+            t_diff_train = time.time() - t0_train
+
+        if self.summaries:
+            t0_summaries = time.time()
+            self._create_summaries()
+            t_diff_summaries = time.time() - t0_summaries
+
+        else:
+            t_diff_summaries = 0.
+
+        # Create and initialize session objects for L2HMC sampler.
+        self._create_sess(sess, config)
+
         times = {
             't_diff_loss': t_diff_loss,
             't_diff_train': t_diff_train,
@@ -1336,10 +1204,6 @@ class GaugeModel:
             't_diff_graph': time.time() - start_time
         }
         self._log_write_graph_creation_time(**times)
-
-        #  self.sess.run(tf.global_variables_initializer())
-        #  if self.using_hvd:
-        #      self.sess.run(hvd.broadcast_global_variables(0))
 
     def update_beta(self, step):
         """Returns new beta to follow annealing schedule."""
@@ -1411,7 +1275,7 @@ class GaugeModel:
             self.plaqs_op,         # calculate avg. plaquettes
             self.charges_op,       # calculate top. charges
             self.lr,               # evaluate learning rate
-            self.charge_diff_op,   # change in top charge / num_samples
+            self.charge_diffs_op,  # change in top charge / num_samples
         ], feed_dict=fd)
 
         dt = time.time() - start_time
@@ -1443,9 +1307,8 @@ class GaugeModel:
         Returns:
             None
         """
-        if self.using_hvd:
-            if hvd.rank() != 0:
-                return
+        if not self.is_chief:
+            return
 
         io.log(self.train_header)
 
@@ -1470,23 +1333,21 @@ class GaugeModel:
             run_metadata = None
 
         if self.summaries:
-            if self.condition1 or self.condition2:
-                summary_str = self.sess.run(
-                    self.summary_op, feed_dict={
-                        self.x: samples_np,
-                        self.beta: beta_np,
-                        #  self.lr: lr_np
-                    }, options=options, run_metadata=run_metadata
-                )
-                self.writer.add_summary(summary_str,
-                                        global_step=step)
-                if trace:
-                    tag = f'metadata_step_{step}'
-                    self.writer.add_run_metadata(run_metadata,
-                                                 tag=tag,
-                                                 global_step=step)
-        if self.condition1 or self.condition1:
-            self.writer.flush()
+            summary_str = self.sess.run(
+                self.summary_op, feed_dict={
+                    self.x: samples_np,
+                    self.beta: beta_np,
+                    #  self.lr: lr_np
+                }, options=options, run_metadata=run_metadata
+            )
+            self.writer.add_summary(summary_str,
+                                    global_step=step)
+            if trace:
+                tag = f'metadata_step_{step}'
+                self.writer.add_run_metadata(run_metadata,
+                                             tag=tag,
+                                             global_step=step)
+        self.writer.flush()
 
     # pylint: disable=too-many-statements, too-many-branches
     def train(self, train_steps, **kwargs):
@@ -1517,7 +1378,7 @@ class GaugeModel:
         trace = kwargs.get('trace', False)
 
         #  if self.condition1 or self.condition2:
-        if self.condition1 or self.condition2:
+        if self.is_chief:
             try:
                 self.writer = tf.summary.FileWriter(self.log_dir,
                                                     self.sess.graph)
@@ -1612,7 +1473,8 @@ class GaugeModel:
                 # We can calculate observables from these samples to
                 # evaluate the samplers performance while we continue training.
                 if (step + 1) % self.training_samples_steps == 0:
-                    if self.condition1 or self.condition2:
+                    #  if self.condition1 or self.condition2:
+                    if self.is_chief:
                         t0 = time.time()
                         io.log(80 * '-')
                         self.run(self.training_samples_length,
@@ -1623,17 +1485,19 @@ class GaugeModel:
                         io.log(self.train_header)
 
                 if (step + 1) % self.save_steps == 0:
-                    if self.condition1 or self.condition2:
+                    #  if self.condition1 or self.condition2:
+                    if self.is_chief:
                         self._save_model(samples=samples_np)
 
                 if step % self.logging_steps == 0:
-                    self.log_step(step, samples_np, beta_np)
+                    self.log_step(step, samples_np, beta_np, trace)
 
             step = self.sess.run(self.global_step)
             train_time = time.time() - start_time
             train_time_str = f"Time to complete training: {train_time:.3g}."
             io.log(train_time_str)
-            if self.condition1 or self.condition2:
+            #  if self.condition1 or self.condition2:
+            if self.is_chief:
                 try:
                     self._save_model(samples=samples_np)
                     self._plot_charge_diff()
@@ -1646,7 +1510,8 @@ class GaugeModel:
             io.log("Saving current state and exiting.\n", nl=False)
             io.log(data_str)
             io.write(data_str, self.files['run_info_file'], 'a')
-            if self.condition1 or self.condition2:
+            #  if self.condition1 or self.condition2:
+            if self.is_chief:
                 try:
                     self._save_model(samples=samples_np)
                     self._plot_charge_diff()
@@ -1682,7 +1547,7 @@ class GaugeModel:
             self.actions_op,
             self.plaqs_op,
             self.charges_op,
-            self.charge_diff_op,
+            self.charge_diffs_op,
         ], feed_dict=fd)
 
         dt = (time.time() - start_time)  # / (norm_factor)
@@ -1724,9 +1589,8 @@ class GaugeModel:
                 (samples_history, actions_dict, plaqs_dict, charges_dict,
                 charge_diff_dict).
         """
-        if self.using_hvd:        # if using horovod, make sure we only perform
-            if hvd.rank() != 0:   # file IO on rank 0.
-                return
+        if not self.is_chief:
+            return
 
         if beta is None:
             beta = self.beta_final
@@ -2516,9 +2380,6 @@ def main(FLAGS):
         run_steps = FLAGS.run_steps
         condition1 = FLAGS.horovod and hvd.rank() == 0
         condition2 = not FLAGS.horovod
-        if FLAGS.long_run: 
-            beta_vals = [model.beta_final, model.beta_final + 1]
-
         if condition1 or condition2:
             model.run(run_steps, beta=model.beta_final)
             if FLAGS.long_run:
