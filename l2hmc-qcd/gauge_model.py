@@ -19,15 +19,14 @@ from __future__ import absolute_import, division, print_function
 import os
 import sys
 import time
-import shlex
 import pickle
-import argparse
 
 import numpy as np
 import tensorflow as tf
 
 try:
     import horovod.tensorflow as hvd
+
     HAS_HOROVOD = True
 
 except ImportError:
@@ -35,6 +34,7 @@ except ImportError:
 
 try:
     import matplotlib.pyplot as plt
+
     HAS_MATPLOTLIB = True
 
 except ImportError:
@@ -42,23 +42,21 @@ except ImportError:
 
 MAKE_SUMMARIES = False
 
-
-#  import utils.gauge_model_helpers as helpers
 import utils.file_io as io
 
 from globals import (
-    COLORS, FILE_PATH, GLOBAL_SEED, MARKERS, PARAMS, TF_FLOAT, NP_FLOAT
+    COLORS, FILE_PATH, GLOBAL_SEED, MARKERS, NP_FLOAT, PARAMS, TF_FLOAT
 )
 from collections import Counter, OrderedDict
 from lattice.lattice import GaugeLattice, u1_plaq_exact
-from utils.tf_logging import variable_summaries, activation_summary
+from dynamics.gauge_dynamics import GaugeDynamics
+from utils.parse_args import parse_args
+from utils.tf_logging import activation_summary, variable_summaries
 
 from scipy.stats import sem
 from tensorflow.python import debug as tf_debug
 from tensorflow.python.client import timeline
 from tensorflow.core.protobuf import rewriter_config_pb2
-
-from dynamics.gauge_dynamics import GaugeDynamics
 
 if HAS_MATPLOTLIB:
     from utils.plot_helper import plot_multiple_lines
@@ -124,7 +122,7 @@ def calc_fourier_coeffs(f, T, N, return_complex=False):
         return_complex: Return Fourier coefficients of complex representation
             of Fourier series. (Deafult: False)
     Returns:
-        if return_complex: 
+        if return_complex:
             c (np.ndarray): Has shape = (N+1,), i.e. the first N+1 Fourier
                 coefficients multiplying the complex exponential representation
                 of the series.
@@ -154,7 +152,7 @@ def calc_fourier_coeffs(f, T, N, return_complex=False):
 def calc_fourier_series(a0, a, b, t, T):
     """Calculates the Fourier series with period T at times t.
 
-    Example: 
+    Example:
         f(t) ~ a0/2 + Σ_{k=1}^{N} [ a_k*cos(2*pi*k*t/T) + b_k*sin(2*pi*k*t/T) ]
     """
     p2 = 2 * np.pi
@@ -179,7 +177,7 @@ def create_dynamics(samples, **kwargs):
             `lattice.lattice.GaugeLattice').
         samples (array-like): Array of samples, each sample representing a
             gauge configuration (of link variables).
-        **kwargs (optional, dictionary): Keyword-arguments. 
+        **kwargs (optional, dictionary): Keyword-arguments.
             'eps' (float): Step size to use in leapfrog integrator  .
             'hmc' (bool): Whether or not to use generic HMC.
             'network_arch':
@@ -215,6 +213,7 @@ def create_dynamics(samples, **kwargs):
 
     return dynamics, potential_fn
 
+
 # pylint: disable=attribute-defined-outside-init, too-many-instance-attributes
 class GaugeModel:
     """Wrapper class implementing L2HMC algorithm on lattice gauge models."""
@@ -232,8 +231,9 @@ class GaugeModel:
         # ------------------------------------------------------------------
         # Create instance attributes from key, val pairs in `params`.
         # ------------------------------------------------------------------
+        self._create_attrs(params)
         if not restore:
-            self._create_attrs(params)
+            #  self._create_attrs(params)
             # --------------------------------------------------------------
             # Create necessary directories for holding checkpoints, data, etc.
             # --------------------------------------------------------------
@@ -244,6 +244,8 @@ class GaugeModel:
                 # Write relevant instance attributes to .txt file.
                 # ---------------------------------------------------------
                 self._write_run_parameters(_print=True)
+        else:
+            self._create_dir_structure(log_dir, params, restore=True)
 
         # ------------------------------------------------------------------
         # Create lattice object.
@@ -309,7 +311,7 @@ class GaugeModel:
         # If restore, load from most recently saved checkpoint in `log_dir`.
         # ------------------------------------------------------------------
         if restore:
-            self._restore_model(log_dir, sess, config)
+            self._restore_model(sess, config)
         # ------------------------------------------------------------------
         # Otherwise, build graph.
         # ------------------------------------------------------------------
@@ -423,18 +425,18 @@ class GaugeModel:
         if self.using_hvd:                    # If we are using horovod:
             if hvd.rank() == 0:               # AND rank == 0:
                 self.condition2 = True        # condition2: True
-        io.log('\n')
-        io.log(80*'-')
-        io.log(f'self.condition1: {self.condition1}')
-        io.log(f'self.condition2: {self.condition2}')
-        io.log(f'self.condition1 or self.condition2: '
-               f'{self.condition1 or self.condition2}')
-        io.log('\n')
-        io.log(80*'-')
+        #  io.log('\n')
+        #  io.log(80*'-')
+        #  io.log(f'self.condition1: {self.condition1}')
+        #  io.log(f'self.condition2: {self.condition2}')
+        #  io.log(f'self.condition1 or self.condition2: '
+        #         f'{self.condition1 or self.condition2}')
+        #  io.log('\n')
+        #  io.log(80*'-')
 
         self.safe_write = self.condition1 or self.condition2
 
-    def _create_dir_structure(self, log_dir):
+    def _create_dir_structure(self, log_dir, restore=False):
         """Create self.files and directory structure."""
         if not self.is_chief:
             return
@@ -450,38 +452,24 @@ class GaugeModel:
             root_log_dir = os.path.join(project_dir, log_dir)
 
         check_else_make_dir(root_log_dir)
-        #  io.check_else_make_dir(root_log_dir)
-
-        #  if self.log_dir is not None:
-        #      io.log("self.log_dir already exists, returning.")
-        #  project_dir = os.path.abspath(os.path.dirname(FILE_PATH))
-        #  root_log_dir = os.path.abspath(os.path.join(project_dir, log_dir))
-        #  if not os.path.exists(log_dir):
-        #      try:
-        #          os.makedirs(log_dir)
-        #      except OSError as e:
-        #          if e.errno == errno.EEXIST and os.path.isdir(log_dir):
-        #              return
-        #          else:
-        #              raise
-
-        #  if self.condition1 or self.condition2:
-        #  if self.safe_write:
 
         if not self.using_hvd or (self.using_hvd and hvd.rank() == 0):
-            run_num = io.get_run_num(root_log_dir)
-            log_dir = os.path.abspath(os.path.join(root_log_dir,
-                                                   f'run_{run_num}'))
-            #  io.check_else_make_dir(log_dir)
-            check_else_make_dir(log_dir)
+            if restore:
+                self.log_dir = root_log_dir
+            else:
 
-            self.log_dir = log_dir
-            if self.using_hvd:
-                io.log('\n')
-                io.log(f"Successfully created and assigned `self.log_dir` on "
-                       f"{hvd.rank()}.")
-                io.log(f"self.log_dir: {self.log_dir}")
-                io.log('\n')
+                run_num = io.get_run_num(root_log_dir)
+                log_dir = os.path.abspath(os.path.join(root_log_dir,
+                                                       f'run_{run_num}'))
+                check_else_make_dir(log_dir)
+
+                self.log_dir = log_dir
+                if self.using_hvd:
+                    io.log('\n')
+                    io.log(f"Successfully created and assigned "
+                           f"`self.log_dir` on {hvd.rank()}.")
+                    io.log(f"self.log_dir: {self.log_dir}")
+                    io.log('\n')
         else:
             return
 
@@ -527,22 +515,29 @@ class GaugeModel:
             ),
         }
 
-    def _restore_model(self, log_dir, sess, config):
+    def _restore_model(self, sess, config):
         """Restore model from previous run contained in `log_dir`."""
+        #  if not hasattr(self, 'using_hvd'):
+        #      self.using_hvd = params.get('using_hvd', False)
+        #
         if self.using_hvd:
             if hvd.rank() != 0:
                 return
+
+        #  if not hasattr(self, 'hmc'):
+        #      self.hmc = params.get('hmc', False)
 
         if self.hmc:
             io.log(f"ERROR: self.hmc: {self.hmc}. "
                    "No model to restore. Exiting.")
             sys.exit(1)
 
-        assert os.path.isdir(log_dir), (f"log_dir: {log_dir} does not exist.")
+        assert os.path.isdir(self.log_dir), (f"log_dir: {self.log_dir} does "
+                                             "not exist.")
 
-        run_info_dir = os.path.join(log_dir, 'run_info')
-        assert os.path.isdir(run_info_dir), (f"run_info_dir: {run_info_dir}"
-                                             " does not exist.")
+        #  run_info_dir = os.path.join(self.log_dir, 'run_info')
+        #  assert os.path.isdir(run_info_dir), (f"run_info_dir: {run_info_dir}"
+        #                                       " does not exist.")
 
         with open(self.files['params_pkl_file'], 'rb') as f:
             self.params = pickle.load(f)
@@ -555,8 +550,7 @@ class GaugeModel:
 
         self._create_attrs(self.params)
 
-        self.global_step.assign(self._current_state['step'])
-        self.lr.assign(self._current_state['lr'])
+        #  self.lr.assign(self._current_state['lr'])
 
         self.lattice = self._create_lattice()
         self.samples = tf.convert_to_tensor(self.lattice.samples,
@@ -566,13 +560,14 @@ class GaugeModel:
             'hmc': self.hmc,
             'eps': self._current_state['eps'],
             'network_arch': self.network_arch,
-            'beta_init': self.data['beta'],
+            'beta_init': self._current_state['beta'],
             'num_steps': self.num_steps,
             'eps_trainable': self.eps_trainable
         }
         self.dynamics, self.potential_fn = self._create_dynamics(self.lattice,
                                                                  self.samples,
                                                                  **kwargs)
+        self._create_tensors()
 
         self.build_graph(sess, config)
 
@@ -730,8 +725,8 @@ class GaugeModel:
         return metric_fn
 
     def _calc_std_loss(self, x_tup, z_tup, p_tup, **weights):
-        """Calculate standard contribution to loss. 
-        
+        """Calculate standard contribution to loss.
+
         NOTE: In contrast to the original paper where the L2 difference was
         used, we are now using 1 - cos(x1 - x2).
 
@@ -831,7 +826,7 @@ class GaugeModel:
             x_out: Output samples obtained after Metropolis-Hastings
                 accept/reject step.
 
-        NOTE: 
+        NOTE:
             If proposed configuration is accepted following Metropolis-Hastings
             accept/reject step, x_ and x_out are equivalent.
         """
@@ -849,9 +844,9 @@ class GaugeModel:
             #                 dtype=tf.int32)
 
         # Add eps for numerical stability; following released impl
-        # NOTE: 
+        # NOTE:
         #  std_loss: "standard" loss
-        #  charge_loss: loss contribution from the difference in top. charge   
+        #  charge_loss: loss contribution from the difference in top. charge
         x_tup = (x, x_proposed)
         z_tup = (z, z_proposed)
         p_tup = (px, pz)
@@ -904,7 +899,8 @@ class GaugeModel:
 
             with tf.name_scope('grads'):
                 with tf.control_dependencies(control_deps):
-                    grads = tf.gradients(loss, self.dynamics.variables)
+                    grads = tf.gradients(loss,
+                                         self.dynamics.trainable_variables)
                     if self.clip_grads:
                         grads, _ = tf.clip_by_global_norm(grads,
                                                           self.clip_value)
@@ -924,7 +920,6 @@ class GaugeModel:
 
             x_dq = self.lattice.calc_top_charges_diff(self.x, self.x_out,
                                                       fft=False)
-            #  x_dq = self._calc_top_charges_diff(self.x, self.x_out, fft=False)
             self.charge_diffs_op = tf.reduce_sum(x_dq) / self.num_samples
 
     def _add_loss_summaries(self, total_loss):
@@ -984,22 +979,6 @@ class GaugeModel:
 
         with tf.name_scope('avg_plaq'):
             tf.summary.scalar('avg_plaq', self.avg_plaq_op)
-
-        #  with tf.name_scope('activations_position_fn'):
-        #      for layer in self.dynamics.position_fn.layers:
-        #          try:
-        #              activation_summary(layer)
-        #          except TypeError:
-        #              activation_summary(tf.convert_to_tensor(layer,
-        #                                                      dtype=TF_FLOAT))
-        #
-        #  with tf.name_scope('activations_momentum_fn'):
-        #      for layer in self.dynamics.momentum_fn.layers:
-        #          try:
-        #              activation_summary(layer)
-        #          except TypeError:
-        #              activation_summary(tf.convert_to_tensor(layer,
-        #                                                      dtype=TF_FLOAT))
 
         for var in tf.trainable_variables():
             if 'batch_normalization' not in var.op.name:
@@ -1180,7 +1159,7 @@ class GaugeModel:
 
         with tf.name_scope('train'):
             t0_train = time.time()
-            grads_and_vars = zip(self.grads, self.dynamics.variables)
+            grads_and_vars = zip(self.grads, self.dynamics.trainable_variables)
             self.train_op = self.optimizer.apply_gradients(
                 grads_and_vars, global_step=self.global_step, name='train_op'
             )
@@ -1228,10 +1207,10 @@ class GaugeModel:
         with tf.contrib.tfprof.ProfileContext(profile_dir,
                                               trace_steps=range(10, 20),
                                               dump_steps=[20]) as pctx:
-            #  Run online profiling with 'op' view and 'opt' options at step 
+            #  Run online profiling with 'op' view and 'opt' options at step
             #  15, 18, 20.
             pctx.add_auto_profiling('op', opt, [15, 18, 20])
-            #  Run online profiling with 'scope' view and 'opt2' options at 
+            #  Run online profiling with 'scope' view and 'opt2' options at
             #  step 20.
             pctx.add_auto_profiling('scope', opt2, [20])
             # High level API, such as slim, Estimator, etc.
@@ -1247,10 +1226,10 @@ class GaugeModel:
             samples_np (np.ndarray): Array of input samples.
 
         Returns:
-            outputs (tuple): 
+            outputs (tuple):
                 Resulting output tuple consisting of:
 
-                    (loss, samples_out, accept_prob, new_eps, avg_actions, 
+                    (loss, samples_out, accept_prob, new_eps, avg_actions,
                     avg_plaqs, top_charges, new_lr, charge_diff)
 
                 Where new eps is the new step size, top_charges is an array of
@@ -1265,7 +1244,8 @@ class GaugeModel:
             self.beta: beta_np
         }
 
-        outputs = self.sess.run([
+        #  if step % 100 == 0:
+        ops = [
             self.train_op,         # apply gradients
             self.loss_op,          # calculate loss
             self.x_out,            # get new samples
@@ -1276,10 +1256,19 @@ class GaugeModel:
             self.charges_op,       # calculate top. charges
             self.lr,               # evaluate learning rate
             self.charge_diffs_op,  # change in top charge / num_samples
-        ], feed_dict=fd)
+        ]
+        #  else:
+        #      ops = [
+        #          self.train_op,         # apply gradients
+        #          self.loss_op,          # calculate loss
+        #          self.x_out,            # get new samples
+        #      ]
+
+        outputs = self.sess.run(ops, feed_dict=fd)
 
         dt = time.time() - start_time
 
+        #  if step % 100 == 0:
         data_str = (f"{step:>5g}/{self.train_steps:<6g} "
                     f"{outputs[1]:^9.4g} "              # loss value
                     f"{dt:^9.4g} "                      # time / step
@@ -1291,6 +1280,26 @@ class GaugeModel:
                     f"{u1_plaq_exact(beta_np):^9.4g} "  # exact plaq.
                     f"{outputs[9]:^9.4g} "              # charge diff
                     f"{outputs[8]:^9.4g}")              # learning rate
+        #  else:
+        #      outputs.append([0.])
+        #      outputs.append(0.)
+        #      outputs.append([0.])
+        #      outputs.append([0.])
+        #      outputs.append([0.])
+        #      outputs.append(0.)
+        #      outputs.append(0.)
+        #
+        #      data_str = (f"{step:>5g}/{self.train_steps:<6g} "
+        #                  f"{outputs[1]:^9.4g} "              # loss value
+        #                  f"{dt:^9.4g} "                      # time / step
+        #                  f"{np.mean(outputs[3]):^9.4g}"      # accept prob
+        #                  f"{outputs[4]:^9.4g} "              # step size
+        #                  f"{beta_np:^9.4g} "                 # beta
+        #                  f"{np.mean(outputs[5]):^9.4g} "     # avg. actions
+        #                  f"{np.mean(outputs[6]):^9.4g} "     # avg. plaqs.
+        #                  f"{u1_plaq_exact(beta_np):^9.4g} "  # exact plaq.
+        #                  f"{outputs[9]:^9.4g} "              # charge diff
+        #                  f"{outputs[8]:^9.4g}")              # learning rate
 
         return outputs, data_str
 
@@ -1356,7 +1365,7 @@ class GaugeModel:
         Args:
             train_steps: Integer specifying the number of training steps to
                 perform.
-            pre_train: Boolean that when True, creates `self.saver`, and 
+            pre_train: Boolean that when True, creates `self.saver`, and
                 `self.writer` objects and finalizes the graph to ensure no
                 additional operations are created during training.
             trace: Boolean that when True performs a full trace of the training
@@ -1565,7 +1574,7 @@ class GaugeModel:
         return outputs, eval_str
 
     # pylint: disable=inconsistent-return-statements, too-many-locals
-    def run(self, 
+    def run(self,
             run_steps,
             current_step=None,
             beta=None,
@@ -1591,6 +1600,9 @@ class GaugeModel:
         """
         if not self.is_chief:
             return
+
+        if not isinstance(run_steps, int):
+            run_steps = int(run_steps)
 
         if beta is None:
             beta = self.beta_final
@@ -1713,7 +1725,7 @@ class GaugeModel:
             stats: Tuple containing (actions_stats, plaqs_stats, charges_stats,
                 charge_probabilities). Where actions_stats, plaqs_stats, and
                 charges_stats are tuples of the form (avg_val, stderr), and
-                charge_probabilities is a dictionary of the form 
+                charge_probabilities is a dictionary of the form
                 {charge_val: charge_val_frequency}.
         """
         #  samples_history = observables[0]
@@ -1873,8 +1885,7 @@ class GaugeModel:
         out_file = os.path.join(self.figs_dir,
                                 'tunneling_events_vs_training_step.png')
         io.log(f"Saving figure to: {out_file}.")
-        #  plt.savefig(eps_file, dpi=400, bbox_inches='tight', rasterize=True)
-        plt.savefig(out_file, dpi=200, bbox_inches='tight')#, rasterize=True)
+        plt.savefig(out_file, dpi=200, bbox_inches='tight')
 
     def _plot_top_charges(self, charges, beta, current_step=None):
         """Plot top. charge history using samples generated from `self.run`."""
@@ -2033,6 +2044,7 @@ class GaugeModel:
                 save_data(val, files[key], name=key)
         except KeyError:
             import pdb
+
             pdb.set_trace()
             io.log(f"Unable to log {key}: {files[keyy]}")
             #  io.log(f'{files[key]}')
@@ -2259,7 +2271,7 @@ def create_config(FLAGS, params):
         config.graph_options.rewrite_options.arithmetic_optimization = off
 
     if FLAGS.gpu:
-        print("Using gpu for training.")
+        io.log("Using gpu for training.")
         params['data_format'] = 'channels_first'
         os.environ["KMP_BLOCKTIME"] = str(0)
         os.environ["KMP_AFFINITY"] = "granularity=fine,verbose,compact,1,0"
@@ -2294,20 +2306,15 @@ def create_config(FLAGS, params):
 
 # pylint: disable=too-many-statements, too-many-branches, too-many-locals
 def main(FLAGS):
-    """Main method for creating/training U(1) gauge model from command line."""
+    """Main method for creating/training/running L2HMC for U(1) gauge model."""
     if HAS_HOROVOD and FLAGS.horovod:
         io.log("INFO: USING HOROVOD")
         hvd.init()
 
-    if FLAGS.summaries:
-        MAKE_SUMMARIES = True
-
     if FLAGS.use_bn:
         io.log("Using batch_norm...")
 
-    #  params = PARAMS  # use default parameters if no command line args passed
     params = {}
-
     for key, val in FLAGS.__dict__.items():
         params[key] = val
 
@@ -2336,10 +2343,10 @@ def main(FLAGS):
                        restore=FLAGS.restore)
 
     io.log('\n\n\n')
-    io.log(80*'~')
+    io.log(len(str(model.log_dir))*'~')
     if not model.using_hvd:
         io.log(f"model.log_dir: {model.log_dir}")
-    io.log(80*'~')
+    io.log(len(str(model.log_dir))*'~')
     io.log('\n\n\n')
 
     #  if not FLAGS.horovod or (FLAGS.horovod and hvd.rank() == 0):
@@ -2376,346 +2383,67 @@ def main(FLAGS):
                             beta_init=None, trace=FLAGS.trace)
 
     try:
-        #  run_steps = int(5e4)
         run_steps = FLAGS.run_steps
         condition1 = FLAGS.horovod and hvd.rank() == 0
         condition2 = not FLAGS.horovod
         if condition1 or condition2:
             model.run(run_steps, beta=model.beta_final)
             if FLAGS.long_run:
-                model.run(model.run(run_steps, beta=model.beta_final+1))
+                model.run(run_steps, beta=model.beta_final+1)
             #  model.run(run_steps, beta=model.beta_final - 1)
             #  run_steps_grid = [20000, 50000]
             #  betas = [model.beta_final, model.beta_final - 1]
             #  for steps in run_steps_grid:
             #      for beta1 in betas:
             #          model.run(steps, beta=beta1)
+            betas = np.arange(1., model.beta_final+1, 1)
+            for beta in betas:
+                model.run(int(1e4), beta=beta)
 
         model.sess.close()
         tf.reset_default_graph()
 
-        io.log('\n')
-        io.log(80*'=')
-        io.log('Running generic HMC using params from trained model for '
-               'performance comparison.')
-        io.log(80*'=' + '\n')
+        if not FLAGS.hmc:
+            ###########################################################
+            # Create separate HMC instance for performance comparison
+            ###########################################################
+            io.log('\n')
+            io.log(80*'=')
+            io.log('Running generic HMC using params from trained model for '
+                   'performance comparison.')
+            io.log(80*'=' + '\n')
+            hmc_params = model.params
+            hmc_params['eps'] = model._current_state['eps']
+            hmc_params['hmc'] = True
+            hmc_params['beta_init'] = model.beta_init
+            hmc_params['beta_final'] = model.beta_final
 
-        ###########################################################
-        # Create separate HMC instance for performance comparison
-        ###########################################################
-        hmc_params = model.params
-        hmc_params['eps'] = model._current_state['eps']
-        hmc_params['hmc'] = True
-        hmc_params['beta_init'] = model.beta_init
-        hmc_params['beta_final'] = model.beta_final
+            hmc_config, hmc_params = create_config(FLAGS, hmc_params)
+            hmc_log_dir = os.path.join(model.log_dir, 'HMC')
 
-        hmc_config, hmc_params = create_config(FLAGS, hmc_params)
-        hmc_log_dir = os.path.join(model.log_dir, 'HMC')
+            hmc_model = GaugeModel(params=hmc_params,
+                                   sess=None,
+                                   config=hmc_config,
+                                   log_dir=hmc_log_dir,
+                                   restore=False,
+                                   build_graph=True)
 
-        hmc_model = GaugeModel(params=hmc_params,
-                               sess=None,
-                               config=hmc_config,
-                               log_dir=hmc_log_dir,
-                               restore=False,
-                               build_graph=True)
+            if condition1 or condition2:
+                hmc_model.run(run_steps, beta=hmc_model.beta_final)
 
-        if condition1 or condition2:
-            hmc_model.run(run_steps, beta=hmc_model.beta_final)
+                for beta in betas:
+                    hmc_model.run(int(1e4), beta=beta)
 
-        hmc_model.sess.close()
+            hmc_model.sess.close()
 
     except (KeyboardInterrupt, SystemExit):
         io.log("\nKeyboardInterrupt detected! \n")
+
         import pdb
+
         pdb.set_trace()
 
 
-# =============================================================================
-#  * NOTE:
-#      - if action == 'store_true':
-#          The argument is FALSE by default. Passing this flag will cause the
-#          argument to be ''stored true''.
-#      - if action == 'store_false':
-#          The argument is TRUE by default. Passing this flag will cause the
-#          argument to be ''stored false''.
-# =============================================================================
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(
-        description=('L2HMC model using U(1) lattice gauge theory for target '
-                     'distribution.'),
-        fromfile_prefix_chars='@',
-    )
-# ========================= Lattice parameters ===============================
-    parser.add_argument("--space_size", type=int, default=8,
-                        required=False, dest="space_size",
-                        help="Spatial extent of lattice. (Default: 8)")
-
-    parser.add_argument("--time_size", type=int, default=8,
-                        required=False, dest="time_size",
-                        help="Temporal extent of lattice. (Default: 8)")
-
-    parser.add_argument("--link_type", type=str, required=False,
-                        default='U1', dest="link_type",
-                        help="Link type for gauge model. (Default: U1)")
-
-    parser.add_argument("--dim", type=int, required=False,
-                        default=2, dest="dim",
-                        help="Dimensionality of lattice (Default: 2)")
-
-    parser.add_argument("--num_samples", type=int, default=10,
-                        required=False, dest="num_samples",
-                        help=("Number of samples (batch size) to use for "
-                              "training. (Default: 2)"))
-
-    parser.add_argument("--rand", action="store_true",
-                        required=False, dest="rand",
-                        help=("Start lattice from randomized initial "
-                              "configuration. (Default: False)"))
-
-# ========================= Leapfrog parameters ==============================
-
-    parser.add_argument("-n", "--num_steps", type=int,
-                        default=5, required=False, dest="num_steps",
-                        help=("Number of leapfrog steps to use in (augmented) "
-                              "HMC sampler. (Default: 5)"))
-
-    parser.add_argument("--eps", type=float, default=0.1,
-                        required=False, dest="eps",
-                        help=("Step size to use in leapfrog integrator. "
-                              "(Default: 0.1)"))
-
-    parser.add_argument("--loss_scale", type=float, default=1.,
-                        required=False, dest="loss_scale",
-                        help=("Scaling factor to be used in loss function. "
-                              "(lambda in Eq. 7 of paper). (Default: 1.)"))
-
-# ========================= Learning rate parameters ==========================
-
-    parser.add_argument("--lr_init", type=float, default=1e-3,
-                        required=False, dest="lr_init",
-                        help=("Initial value of learning rate. "
-                              "(Deafult: 1e-3)"))
-
-    parser.add_argument("--lr_decay_steps", type=int, default=500,
-                        required=False, dest="lr_decay_steps",
-                        help=("Number of steps after which to decay learning "
-                              "rate. (Default: 500)"))
-
-    parser.add_argument("--lr_decay_rate", type=float, default=0.96,
-                        required=False, dest="lr_decay_rate",
-                        help=("Learning rate decay rate to be used during "
-                              "training. (Default: 0.96)"))
-
-# ========================= Annealing rate parameters ========================
-
-    parser.add_argument("--annealing", action="store_true",
-                        required=False, dest="annealing",
-                        help=("Flag that when passed will cause the model "
-                              "to perform simulated annealing during "
-                              "training. (Default: False)"))
-
-    #  parser.add_argument("--annealing_steps", type=float, default=200,
-    #                      required=False, dest="annealing_steps",
-    #                      help=("Number of steps after which to anneal
-    #                      beta."))
-    #
-    #  parser.add_argument("--annealing_factor", type=float, default=0.97,
-    #                      required=False, dest="annealing_factor",
-    #                      help=("Factor by which to anneal beta."))
-    #
-    #  parser.add_argument("-b", "--beta", type=float,
-    #                      required=False, dest="beta",
-    #                      help=("Beta (inverse coupling constant) used in "
-    #                            "gauge model. (Default: 8.)"))
-
-    parser.add_argument("--beta_init", type=float, default=1.,
-                        required=False, dest="beta_init",
-                        help=("Initial value of beta (inverse coupling "
-                              "constant) used in gauge model when annealing. "
-                              "(Default: 1.)"))
-
-    parser.add_argument("--beta_final", type=float, default=8.,
-                        required=False, dest="beta_final",
-                        help=("Final value of beta (inverse coupling "
-                              "constant) used in gauge model when annealing. "
-                              "(Default: 8.)"))
-
-# ========================== Training parameters ==============================
-
-    parser.add_argument("--train_steps", type=int, default=5000,
-                        required=False, dest="train_steps",
-                        help=("Number of training steps to perform. "
-                              "(Default: 1000)"))
-
-    parser.add_argument("--run_steps", type=int, default=50000,
-                        required=False, dest="run_steps",
-                        help=("Number of evaluation 'run' steps to perform "
-                              "after training (i.e. length of desired chain "
-                              "generate using trained L2HMC sampler.) "
-                              "(Default: 5e4)"))
-
-    parser.add_argument("--trace", action="store_true",
-                        required=False, dest="trace",
-                        help=("Flag that when passed will create trace during "
-                              "training loop."))
-
-    parser.add_argument("--save_steps", type=int, default=50,
-                        required=False, dest="save_steps",
-                        help=("Number of steps after which to save the model "
-                              "and current values of all parameters. "
-                              "(Default: 50)"))
-
-    parser.add_argument("--print_steps", type=int, default=1,
-                        required=False, dest="print_steps",
-                        help=("Number of steps after which to display "
-                              "information about the loss and various "
-                              "other quantities (Default: 1)"))
-
-    parser.add_argument("--logging_steps", type=int, default=50,
-                        required=False, dest="logging_steps",
-                        help=("Number of steps after which to write logs for "
-                              "tensorboard. (Default: 50)"))
-
-    parser.add_argument("--training_samples_steps", type=int, default=1000,
-                        required=False, dest="training_samples_steps",
-                        help=("Number of intermittent steps after which "
-                              "the sampler is evaluated at `beta_final`. "
-                              "This allows us to monitor the performance of "
-                              "the sampler during training. (Default: 500)"))
-
-    parser.add_argument("--training_samples_length", type=int, default=500,
-                        required=False, dest="training_samples_length",
-                        help=("Number of steps to run sampler for when "
-                              "evaluating the sampler during training. "
-                              "(Default: 100)"))
-
-# ========================== Model parameters ================================
-
-    parser.add_argument('--network_arch', type=str, default='conv3D',
-                        required=False, dest='network_arch',
-                        help=("String specifying the architecture to use for "
-                              "the neural network. Must be one of: "
-                              "`'conv3D', 'conv2D', 'generic'`. "
-                              "(Default: conv3D)"))
-
-    parser.add_argument('--summaries', action="store_true",
-                        required=False, dest="summaries",
-                        help=("Flag that when passed creates "
-                              "summaries of gradients and variables for "
-                              "monitoring in tensorboard. (Default: False)"))
-    parser.add_argument('--long_run', action='store_true',
-                        required=False, dest='long_run',
-                        help=("Flag that when passed runs the trained sampler "
-                              "at model.beta_final and model.beta_final + 1. "
-                              "(Default: False)"))
-
-    #  parser.add_argument("--conv_net", action="store_true",
-    #                      required=False, dest="conv_net",
-    #                      help=("Whether or not to use convolutional "
-    #                            "neural network for pre-processing lattice "
-    #                            "configurations (prepended to generic FC net "
-    #                            "as outlined in paper). (Default: False)"))
-
-    parser.add_argument("--hmc", action="store_true",
-                        required=False, dest="hmc",
-                        help=("Use generic HMC (without augmented leapfrog "
-                              "integrator described in paper). Used for "
-                              "comparing against L2HMC algorithm. "
-                              "(Default: False)"))
-
-    parser.add_argument("--eps_trainable", action="store_true",
-                        required=False, dest="eps_trainable",
-                        help=("Flag that when passed will allow the step size "
-                              "`eps` to be a trainable parameter."))
-
-    parser.add_argument("--metric", type=str, default="cos_diff",
-                        required=False, dest="metric",
-                        help=("Metric to use in loss function. "
-                              "(Default: `l2`, choices: [`l2`, `l1`, `cos`])"))
-
-    parser.add_argument("--std_weight", type=float, default=1.,
-                        required=False, dest="std_weight",
-                        help=("Multiplicative factor used to weigh relative "
-                              "strength of stdiliary term in loss function. "
-                              "(Default: 1.)"))
-
-    parser.add_argument("--aux_weight", type=float, default=1.,
-                        required=False, dest="aux_weight",
-                        help=("Multiplicative factor used to weigh relative "
-                              "strength of auxiliary term in loss function. "
-                              "(Default: 1.)"))
-
-    parser.add_argument("--charge_weight", type=float, default=1.,
-                        required=False, dest="charge_weight",
-                        help=("Multiplicative factor used to weigh relative "
-                              "strength of chargeiliary term in loss function "
-                              "(Default: 1.)"))
-
-    parser.add_argument("--clip_grads", action="store_true",
-                        required=False, dest="clip_grads",
-                        help=("Flag that when passed will clip gradients by "
-                              "global norm using `--clip_value` command line "
-                              "argument. If `--clip_value` is not passed, "
-                              "it defaults to 100."))
-
-    parser.add_argument("--clip_value", type=float, default=1.,
-                        required=False, dest="clip_value",
-                        help=("Clip value, used for clipping value of "
-                              "gradients by global norm. (Default: 1.)"))
-
-    parser.add_argument("--log_dir", type=str, default=None,
-                        required=False, dest="log_dir",
-                        help=("Log directory to use from previous run. "
-                              "If this argument is not passed, a new "
-                              "directory will be created. (Default: None)"))
-
-    parser.add_argument("--restore", action="store_true",
-                        required=False, dest="restore",
-                        help=("Restore model from previous run. "
-                              "If this argument is passed, a `log_dir` "
-                              "must be specified and passed to `--log_dir` "
-                              "argument. (Default: False)"))
-
-    parser.add_argument("--profiler", action="store_true",
-                        required=False, dest='profiler',
-                        help=("Flag that when passed will profile the graph "
-                              "execution using `TFProf`. (Default: False)"))
-
-    parser.add_argument("--gpu", action="store_true",
-                        required=False, dest="gpu",
-                        help=("Flag that when passed indicates we're training "
-                              "using an NVIDIA GPU."))
-
-    parser.add_argument("--theta", action="store_true",
-                        required=False, dest="theta",
-                        help=("Flag that when passed indicates we're training "
-                              "on theta @ ALCf."))
-
-    parser.add_argument("--use_bn", action="store_true",
-                        required=False, dest='use_bn',
-                        help=("Flag that when passed causes batch "
-                              "normalization layer to be used in ConvNet "
-                              "(Default: False)."))
-
-    parser.add_argument("--horovod", action="store_true",
-                        required=False, dest="horovod",
-                        help=("Flag that when passed uses Horovod for "
-                              "distributed training on multiple nodes."))
-
-    parser.add_argument("--num_intra_threads", type=int, default=0,
-                        required=False, dest="num_intra_threads",
-                        help=("Number of intra op threads to use for "
-                              "tf.ConfigProto.intra_op_parallelism_threads"))
-
-    parser.add_argument("--num_inter_threads", type=int, default=0,
-                        required=False, dest="num_intra_threads",
-                        help=("Number of intra op threads to use for "
-                              "tf.ConfigProto.intra_op_parallelism_threads"))
-
-    if sys.argv[1].startswith('@'):
-        args = parser.parse_args(shlex.split(open(sys.argv[1][1:]).read(),
-                                             comments=True))
-    else:
-        args = parser.parse_args()
-
+    args = parse_args()
     main(args)
