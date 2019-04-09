@@ -14,7 +14,6 @@ by [Daniel Levy](http://ai.stanford.edu/~danilevy), [Matt D. Hoffman](http://mat
 Given an analytically described distributions (simple examples can be found in
 `utils/distributions.py`), L2HMC enables training of fast-mixing samplers.
 
----
 ## Modified implementation for Lattice Gauge Theory / Lattice QCD models. 
 
 This work is based on the original implementation which can be found at
@@ -31,8 +30,8 @@ architecture that is prepended to the network described in the original paper.
 The purpose of this additional structure is to better incorporate information
 about the geometry of the lattice.
 
-Lattice code can be found in `l2hmc/lattice/` and the particular code for the
-$2D$ $U{(1)}$ lattice gauge model can be found in `l2hmc/lattice/lattice.py`.
+Lattice code can be found in `l2hmc-qcd/lattice/` and the particular code for the
+$2D$ $U{(1)}$ lattice gauge model can be found in `l2hmc-qcd/lattice/lattice.py`.
 
 
 ## Contact
