@@ -12,7 +12,7 @@ by [Daniel Levy](http://ai.stanford.edu/~danilevy), [Matt D. Hoffman](http://mat
 ## Overview
 
 Given an analytically described distributions (simple examples can be found in
-`utils/distributions.py`), L2HMC enables training of fast-mixing samplers.
+`l2hmc-qcd/utils/distributions.py`), L2HMC enables training of fast-mixing samplers.
 
 ## Modified implementation for Lattice Gauge Theory / Lattice QCD models. 
 
