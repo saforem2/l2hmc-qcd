@@ -1,27 +1,48 @@
-# Copyright 2017 Google Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     https://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """
-Configuration to switch to float64
-"""
+config.py
 
+Implements methods for dealing with config files stored in json format.
+
+Author: Sam Foreman (github: @saforem2)
+Date: 04/09/2019
+"""
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import tensorflow as tf
-import numpy as np
+import json
+import os
 
-TF_FLOAT = tf.float32
-NP_FLOAT = np.float32
+from attr_dict import AttrDict
+
+
+def get_config_from_json(json_file):
+    """Get the config from a json file.
+
+    Args:
+        json_file
+
+    Returns:
+        config (AttrDict): Attribute dictionary object.
+        config_dict: Config dictionary.
+    """
+    with open(json_file, 'r') as config_file:
+        config_dict = json.load(config_file)
+
+    # Convert the dictionary to an AttrDict
+    config = AttrDict(config_dict)
+
+    return config, config_dict
+
+
+def process_config(json_file):
+    """Process config; create directories for summaries and checkpoints."""
+    config, _ = get_config_from_json(json_file)
+    config.summary_dir = os.path.join(
+        '../experiments', config.exp_name, 'summary/'
+    )
+    config.checkpoint_dir = os.path.join(
+        '../experiments', config.exp_name, 'checkpoint/'
+    )
+
+    return config
