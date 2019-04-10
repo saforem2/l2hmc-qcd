@@ -1,0 +1,28 @@
+#================================================================#
+#                                                                #
+#    To pass the arguments defined below to `gauge_model.py`:    #
+#        python3 gauge_model.py @gauge_model_args_hmc.txt        #
+#                                                                #
+#================================================================#
+
+--time_size 8                   
+--space_size 8                  
+--num_samples 64
+--num_steps 10 
+--eps 0.2245
+--hmc
+--print_steps 10
+--beta_init 4
+--beta_final 4
+--run_steps 50000
+--log_dir 'conv3D_logs/HMC/runs_L8/num_steps10/eps02245/num_samples64/beta5'
+
+
+#============================================================================================
+#                    Description of command line arguments defined above                    #
+#============================================================================================
+#   time_size:                      temporal extent of lattice                              #
+#   space_size:                     spatial extent of lattice                               #
+#   num_samples:                    number of samples per batch                             #
+#   num_steps:                      number of leapfrog steps in MD update                   #
+#============================================================================================
