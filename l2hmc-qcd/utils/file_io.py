@@ -46,6 +46,11 @@ def log(s, nl=True):
         print(s, end='\n' if nl else '')
 
 
+def log_and_write(s, f):
+    """Print string `s` to std out and also write to file `f`."""
+    log(s)
+    write(s, f)
+
 
 def check_else_make_dir(d):
     """If directory `d` doesn't exist, it is created."""
