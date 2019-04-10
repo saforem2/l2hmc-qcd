@@ -4,3 +4,5 @@ l2hmc-qcd/lattice/old
 l2hmc-qcd/remake_plots.py
 l2hmc-qcd/sampler.py
 l2hmc_logs
+logs/
+2019_04_09
