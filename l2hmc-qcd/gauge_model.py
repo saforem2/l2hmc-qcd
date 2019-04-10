@@ -1244,7 +1244,6 @@ class GaugeModel:
             self.beta: beta_np
         }
 
-        #  if step % 100 == 0:
         ops = [
             self.train_op,         # apply gradients
             self.loss_op,          # calculate loss
@@ -1257,18 +1256,11 @@ class GaugeModel:
             self.lr,               # evaluate learning rate
             self.charge_diffs_op,  # change in top charge / num_samples
         ]
-        #  else:
-        #      ops = [
-        #          self.train_op,         # apply gradients
-        #          self.loss_op,          # calculate loss
-        #          self.x_out,            # get new samples
-        #      ]
 
         outputs = self.sess.run(ops, feed_dict=fd)
 
         dt = time.time() - start_time
 
-        #  if step % 100 == 0:
         data_str = (f"{step:>5g}/{self.train_steps:<6g} "
                     f"{outputs[1]:^9.4g} "              # loss value
                     f"{dt:^9.4g} "                      # time / step
@@ -1280,26 +1272,6 @@ class GaugeModel:
                     f"{u1_plaq_exact(beta_np):^9.4g} "  # exact plaq.
                     f"{outputs[9]:^9.4g} "              # charge diff
                     f"{outputs[8]:^9.4g}")              # learning rate
-        #  else:
-        #      outputs.append([0.])
-        #      outputs.append(0.)
-        #      outputs.append([0.])
-        #      outputs.append([0.])
-        #      outputs.append([0.])
-        #      outputs.append(0.)
-        #      outputs.append(0.)
-        #
-        #      data_str = (f"{step:>5g}/{self.train_steps:<6g} "
-        #                  f"{outputs[1]:^9.4g} "              # loss value
-        #                  f"{dt:^9.4g} "                      # time / step
-        #                  f"{np.mean(outputs[3]):^9.4g}"      # accept prob
-        #                  f"{outputs[4]:^9.4g} "              # step size
-        #                  f"{beta_np:^9.4g} "                 # beta
-        #                  f"{np.mean(outputs[5]):^9.4g} "     # avg. actions
-        #                  f"{np.mean(outputs[6]):^9.4g} "     # avg. plaqs.
-        #                  f"{u1_plaq_exact(beta_np):^9.4g} "  # exact plaq.
-        #                  f"{outputs[9]:^9.4g} "              # charge diff
-        #                  f"{outputs[8]:^9.4g}")              # learning rate
 
         return outputs, data_str
 
@@ -2396,7 +2368,7 @@ def main(FLAGS):
             #  for steps in run_steps_grid:
             #      for beta1 in betas:
             #          model.run(steps, beta=beta1)
-            betas = np.arange(1., model.beta_final+1, 1)
+            betas = np.arange(model.beta_init, model.beta_final, 1)
             for beta in betas:
                 model.run(int(1e4), beta=beta)
 
