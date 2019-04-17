@@ -1655,6 +1655,8 @@ class GaugeModel:
             io.log("\nKeyboardInterrupt detected! \n", nl=False)
             io.log("Saving current state and exiting.\n", nl=False)
 
+        #  import pdb
+        #  pdb.set_trace()
         #  io.write(eval_strings, eval_file, 'a')
         _ = [io.write(s, eval_file, 'a') for s in eval_strings]
         stats = self.calc_observables_stats(run_data, therm_frac)
@@ -1958,7 +1960,8 @@ class GaugeModel:
 
     def _get_plot_dir(self, charges, beta, current_step=None):
         """Returns directory where plots of observables are to be saved."""
-        if not HAS_MATPLOTLIB or (self.using_hvd and hvd.rank() != 0):
+        #  if not HAS_MATPLOTLIB or (self.using_hvd and hvd.rank() != 0):
+        if self.using_hvd and hvd.rank() != 0:
             return
 
         run_steps = charges.shape[0]
@@ -1980,7 +1983,8 @@ class GaugeModel:
 
     def _save_run_info(self, run_data, stats, _args):
         """Save samples and observables generated from `self.run` call."""
-        if not HAS_MATPLOTLIB or (self.using_hvd and hvd.rank() != 0):
+        #  if not HAS_MATPLOTLIB or (self.using_hvd and hvd.rank() != 0):
+        if self.using_hvd and hvd.rank() != 0:
             return
 
         run_steps, current_step, beta, therm_frac = _args
@@ -1992,6 +1996,8 @@ class GaugeModel:
         #      training = False
         #  else:
         #      training = True
+        #  import pdb
+        #  pdb.set_trace()
 
         def save_data(data, out_file, name=None):
             out_dir = os.path.dirname(out_file)
@@ -2012,12 +2018,9 @@ class GaugeModel:
             for key, val in stats.items():
                 save_data(val, files[key], name=key)
         except KeyError:
+            io.log(f"Unable to log {key}: {files[key]}")
             import pdb
-
             pdb.set_trace()
-            io.log(f"Unable to log {key}: {files[keyy]}")
-            #  io.log(f'{files[key]}')
-
 
         actions_arr = np.array(
             list(run_data['actions'].values())
@@ -2180,8 +2183,10 @@ class GaugeModel:
 
     def _get_run_files(self, *_args):
         """Create dir and files for storing observables from `self.run`."""
-        if not HAS_MATPLOTLIB or (self.using_hvd and hvd.rank() != 0):
+        #  if not HAS_MATPLOTLIB or (self.using_hvd and hvd.rank() != 0):
+        if self.using_hvd and hvd.rank() != 0:
             return
+
         run_steps, current_step, beta, _ = _args
 
         observables_dir = os.path.join(self.eval_dir, 'observables')
