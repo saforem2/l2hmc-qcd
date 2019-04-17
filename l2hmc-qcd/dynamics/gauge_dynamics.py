@@ -283,35 +283,35 @@ class GaugeDynamics(tf.keras.Model):
         position_post, momentum_post = position, momentum
         sumlogdet = 0.
 
-        for step in range(self.num_steps):
-            position_post, momentum_post, logdet = lf_fn(
-                position_post,
-                momentum_post,
-                beta,
-                step
-            )
-            sumlogdet += logdet
+        #  for step in range(self.num_steps):
+        #      position_post, momentum_post, logdet = lf_fn(
+        #          position_post,
+        #          momentum_post,
+        #          beta,
+        #          step
+        #      )
+        #      sumlogdet += logdet
 
-        #  sumlogdet = 0.
-        #  t = tf.constant(0., name='md_time', dtype=TF_FLOAT)
-        #  batch_size = tf.shape(position)[0]
-        #  logdet = tf.zeros((batch_size,))
+        sumlogdet = 0.
+        t = tf.constant(0., name='md_time', dtype=TF_FLOAT)
+        batch_size = tf.shape(position)[0]
+        logdet = tf.zeros((batch_size,))
         #
-        #  def body(x, v, beta, t, logdet):
-        #      new_x, new_v, j = lf_fn(x, v, beta, t)
-        #      return new_x, new_v, beta, t + 1, logdet + j
-        #
-        #  def cond(x, v, beta, t, logdet):
-        #      return tf.less(t, self.num_steps)
-        #
-        #  with tf.name_scope('while_loop'):
-        #      outputs = tf.while_loop(cond=cond,
-        #                              body=body,
-        #                              loop_vars=[position_post,
-        #                                         momentum_post,
-        #                                         beta, t, logdet])
-        #      position_post, momentum_post, beta, t, sumlogdet = outputs
-        #
+        def body(x, v, beta, t, logdet):
+            new_x, new_v, j = lf_fn(x, v, beta, t)
+            return new_x, new_v, beta, t + 1, logdet + j
+
+        def cond(x, v, beta, t, logdet):
+            return tf.less(t, self.num_steps)
+
+        with tf.name_scope('while_loop'):
+            outputs = tf.while_loop(cond=cond,
+                                    body=body,
+                                    loop_vars=[position_post,
+                                               momentum_post,
+                                               beta, t, logdet])
+            position_post, momentum_post, beta, t, sumlogdet = outputs
+
         with tf.name_scope('accept_prob'):
             accept_prob = self._compute_accept_prob(
                 position,
@@ -425,12 +425,13 @@ class GaugeDynamics(tf.keras.Model):
         """One forward augmented leapfrog step."""
         with tf.name_scope('forward_lf'):
             # use self._get_time when using for loop in transition__kernel
-            t = self._get_time(step)
-            mask, mask_inv = self._get_mask(step)
+            #  t = self._get_time(step)
+            #  mask, mask_inv = self._get_mask(step)
 
             # use self._format_time when using while loop in transition_kernel
-            #  t = self._format_time(step, tile=tf.shape(position)[0])
-            #  mask, mask_inv = self._get_mask_while(step)
+            t = self._format_time(step, tile=tf.shape(position)[0])
+            mask, mask_inv = self._get_mask_while(step)
+
             sumlogdet = 0.
 
             momentum, logdet = self._update_momentum_forward(position,
@@ -462,13 +463,14 @@ class GaugeDynamics(tf.keras.Model):
 
         # Reversed index/sinusoidal time
         with tf.name_scope('backward_lf'):
-            #  t = self._format_time(step, tile=tf.shape(position)[0])
-            #  t = self._format_time(self.num_steps - step - 1,
-            #                        tile=tf.shape(position)[0])
+            # use self._get_time when using for loop in transition__kernel
+            #  t = self._get_time(self.num_steps - step - 1)
+            #  mask, mask_inv = self._get_mask(self.num_steps - step - 1)
 
-            t = self._get_time(self.num_steps - step - 1)
-            mask, mask_inv = self._get_mask(self.num_steps - step - 1)
-            #  mask, mask_inv = self._get_mask_while(self.num_steps - step - 1)
+            # use self._format_time when using while loop in transition_kernel
+            t = self._format_time(self.num_steps - step - 1,
+                                  tile=tf.shape(position)[0])
+            mask, mask_inv = self._get_mask_while(self.num_steps - step - 1)
 
             sumlogdet = 0.
 
@@ -683,9 +685,9 @@ class GaugeDynamics(tf.keras.Model):
     #
     #          self.masks = tf.constant(np.stack(mask_per_step), dtype=TF_FLOAT)
     #
-    #  def _get_mask(self, step):
-    #      m = tf.gather(self.masks, tf.cast(step, dtype=tf.int32))
-    #      return m, 1. - m
+    def _get_mask_while(self, step):
+        m = tf.gather(self.masks, tf.cast(step, dtype=tf.int32))
+        return m, 1. - m
 
     def potential_energy(self, position, beta):
         """Compute potential energy using `self.potential` and beta."""
