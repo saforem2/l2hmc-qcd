@@ -106,7 +106,7 @@ def get_run_num(log_dir):
         run_dirs = [i for i in os.listdir(log_dir) if 'run' in i]
         run_nums = [int(i.split('_')[-1]) for i in run_dirs]
         run_num = sorted(run_nums)[-1] + 1
-    except ValueError:
+    except (ValueError, IndexError):
         log(f"No previous runs found in {log_dir}, setting run_num=1.")
         run_num = 1
 
