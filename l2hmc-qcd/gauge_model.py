@@ -859,9 +859,6 @@ class GaugeModel:
 
             total_loss = tf.add(std_loss, charge_loss, name='total_loss')
 
-
-        #  loss = tf.reduce_mean(std_loss + charge_loss, axis=0, name='loss')
-
         tf.add_to_collection('losses', total_loss)
         return total_loss, x_out, px, x_dq
 
@@ -2292,19 +2289,42 @@ def main(FLAGS):
 
     if FLAGS.hmc:
         params['eps_trainable'] = False
-        beta1 = params.get('beta', 4.)
-        beta2 = params.get('beta_init', 4.)
-        beta3 = params.get('beta_final', 4.)
-        beta = max((beta1, beta2, beta3))
+        #  beta1 = params.get('beta', 4.)
+        #  beta2 = params.get('beta_init', 4.)
+        #  beta3 = params.get('beta_final', 4.)
+        #  beta = max((beta1, beta2, beta3))
 
-        params['beta'] = beta
-        params['beta_init'] = beta
-        params['beta_final'] = beta
+        #  params['beta'] = beta
+        #  params['beta_init'] = beta
+        #  params['beta_final'] = beta
 
     #  if HAS_HOROVOD and FLAGS.horovod:
         #  params['lr_init'] *= hvd.size()
         #  params['train_steps'] /= hvd.size()
         #  params['lr_decay_steps'] /= hvd.size()
+
+    #  if FLAGS.horovod:
+    #      io.log('Number of CPUs: %d' % hvd.size())
+
+    #  io.log('\n\n\n')
+    #  io.log(len(str(model.log_dir))*'~')
+    #  if not model.using_hvd:
+    #      io.log(f"model.log_dir: {model.log_dir}")
+    #  io.log(len(str(model.log_dir))*'~')
+    #  io.log('\n\n\n')
+
+    #  if not FLAGS.horovod or (FLAGS.horovod and hvd.rank() == 0):
+    #  if not model.using_hvd or (model.using_hvd and hvd.rank() == 0):
+    #      io.save_params_to_pkl_file(params, model.info_dir)
+
+    #  if FLAGS.horovod:
+    #      if hvd.rank() == 0:
+    #          io.save_params_to_pkl_file(params, model.info_dir)
+    #  else:
+    #      io.save_params_to_pkl_file(params, model.info_dir)
+    run_steps = FLAGS.run_steps
+    condition1 = FLAGS.horovod and hvd.rank() == 0
+    condition2 = not FLAGS.horovod
 
     config, params = create_config(FLAGS, params)
 
@@ -2314,29 +2334,17 @@ def main(FLAGS):
                        log_dir=FLAGS.log_dir,
                        restore=FLAGS.restore)
 
-    io.log('\n\n\n')
-    io.log(len(str(model.log_dir))*'~')
-    if not model.using_hvd:
-        io.log(f"model.log_dir: {model.log_dir}")
-    io.log(len(str(model.log_dir))*'~')
-    io.log('\n\n\n')
+    if FLAGS.hmc:
+        betas = np.arange(model.beta_init, model.beta_final, 1)
+        if condition1 or condition2:
+            model.run(run_steps, beta=model.beta_final)
+            for beta in betas:
+                model.run(int(5e4), beta=beta)
 
-    #  if not FLAGS.horovod or (FLAGS.horovod and hvd.rank() == 0):
-    #  if not model.using_hvd or (model.using_hvd and hvd.rank() == 0):
-    #      io.save_params_to_pkl_file(params, model.info_dir)
+        model.sess.close()
+        tf.reset_default_graph()
 
-    if FLAGS.horovod:
-        io.log('Number of CPUs: %d' % hvd.size())
-
-    #  if FLAGS.horovod:
-    #      if hvd.rank() == 0:
-    #          io.save_params_to_pkl_file(params, model.info_dir)
-    #  else:
-    #      io.save_params_to_pkl_file(params, model.info_dir)
-
-    io.log(f"Training began at: {time.ctime()}")
-
-    if not FLAGS.hmc:
+    else:
         if FLAGS.profiler:
             model.train_profiler(params['train_steps'], trace=True)
         else:
@@ -2351,69 +2359,52 @@ def main(FLAGS):
                     io.log('Model restored but training completed. '
                            'Preparing to run the trained sampler...')
             else:
+                io.log(f"Training began at: {time.ctime()}")
                 model.train(params['train_steps'], samples_init=None,
                             beta_init=None, trace=FLAGS.trace)
 
-    try:
-        run_steps = FLAGS.run_steps
-        condition1 = FLAGS.horovod and hvd.rank() == 0
-        condition2 = not FLAGS.horovod
+        betas = np.arange(model.beta_init, model.beta_final, 1)
         if condition1 or condition2:
             model.run(run_steps, beta=model.beta_final)
-            if FLAGS.long_run:
-                model.run(run_steps, beta=model.beta_final+1)
-            #  model.run(run_steps, beta=model.beta_final - 1)
-            #  run_steps_grid = [20000, 50000]
-            #  betas = [model.beta_final, model.beta_final - 1]
-            #  for steps in run_steps_grid:
-            #      for beta1 in betas:
-            #          model.run(steps, beta=beta1)
-            betas = np.arange(model.beta_init, model.beta_final, 1)
             for beta in betas:
                 model.run(int(1e4), beta=beta)
+            #  if FLAGS.long_run:
+            #      model.run(run_steps, beta=model.beta_final+1)
 
         model.sess.close()
         tf.reset_default_graph()
 
-        if not FLAGS.hmc:
-            ###########################################################
-            # Create separate HMC instance for performance comparison
-            ###########################################################
-            io.log('\n')
-            io.log(80*'=')
-            io.log('Running generic HMC using params from trained model for '
-                   'performance comparison.')
-            io.log(80*'=' + '\n')
-            hmc_params = model.params
-            hmc_params['eps'] = model._current_state['eps']
-            hmc_params['hmc'] = True
-            hmc_params['beta_init'] = model.beta_init
-            hmc_params['beta_final'] = model.beta_final
+        ###########################################################
+        # Create separate HMC instance for performance comparison
+        ###########################################################
+        io.log('\n')
+        io.log(80*'=')
+        io.log('Running generic HMC using params from trained model for '
+               'performance comparison.')
+        io.log(80*'=' + '\n')
+        hmc_params = model.params
+        hmc_params['eps'] = model._current_state['eps']
+        hmc_params['hmc'] = True
+        hmc_params['beta_init'] = model.beta_init
+        hmc_params['beta_final'] = model.beta_final
 
-            hmc_config, hmc_params = create_config(FLAGS, hmc_params)
-            hmc_log_dir = os.path.join(model.log_dir, 'HMC')
+        hmc_config, hmc_params = create_config(FLAGS, hmc_params)
+        hmc_log_dir = os.path.join(model.log_dir, 'HMC')
 
-            hmc_model = GaugeModel(params=hmc_params,
-                                   sess=None,
-                                   config=hmc_config,
-                                   log_dir=hmc_log_dir,
-                                   restore=False,
-                                   build_graph=True)
+        hmc_model = GaugeModel(params=hmc_params,
+                               sess=None,
+                               config=hmc_config,
+                               log_dir=hmc_log_dir,
+                               restore=False,
+                               build_graph=True)
 
-            if condition1 or condition2:
-                hmc_model.run(run_steps, beta=hmc_model.beta_final)
+        if condition1 or condition2:
+            hmc_model.run(run_steps, beta=hmc_model.beta_final)
 
-                for beta in betas:
-                    hmc_model.run(int(1e4), beta=beta)
+            for beta in betas:
+                hmc_model.run(int(1e4), beta=beta)
 
-            hmc_model.sess.close()
-
-    except (KeyboardInterrupt, SystemExit):
-        io.log("\nKeyboardInterrupt detected! \n")
-
-        import pdb
-
-        pdb.set_trace()
+        hmc_model.sess.close()
 
 
 if __name__ == '__main__':
