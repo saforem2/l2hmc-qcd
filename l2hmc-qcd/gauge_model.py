@@ -888,19 +888,19 @@ class GaugeModel:
             #  loss, x_out, accept_prob = self._calc_loss(x, beta, **weights)
             loss, x_out, accept_prob, x_dq = self._calc_loss(x, beta,
                                                              **weights)
-            if self.summaries:
-                loss_averages_op = self._add_loss_summaries(loss)
-                control_deps = [loss_averages_op]
-            else:
-                control_deps = []
+            #  if self.summaries:
+            #      loss_averages_op = self._add_loss_summaries(loss)
+            #      control_deps = [loss_averages_op]
+            #  else:
+            #      control_deps = []
 
             with tf.name_scope('grads'):
-                with tf.control_dependencies(control_deps):
-                    grads = tf.gradients(loss,
-                                         self.dynamics.trainable_variables)
-                    if self.clip_grads:
-                        grads, _ = tf.clip_by_global_norm(grads,
-                                                          self.clip_value)
+                #  with tf.control_dependencies(control_deps):
+                grads = tf.gradients(loss,
+                                     self.dynamics.trainable_variables)
+                if self.clip_grads:
+                    grads, _ = tf.clip_by_global_norm(grads,
+                                                      self.clip_value)
 
         return loss, grads, x_out, accept_prob, x_dq
 
@@ -1242,7 +1242,7 @@ class GaugeModel:
         }
 
         ops = [
-            self.train_op,         # apply gradients
+            #  self.train_op,         # apply gradients
             self.loss_op,          # calculate loss
             self.x_out,            # get new samples
             self.px,               # calculate accept. prob
@@ -1254,21 +1254,26 @@ class GaugeModel:
             self.charge_diffs_op,  # change in top charge / num_samples
         ]
 
-        outputs = self.sess.run(ops, feed_dict=fd)
+        try:
+            self.sess.run(self.train_op, feed_dict=fd)
+            outputs = self.sess.run(ops, feed_dict=fd)
+        except:
+            import pdb
+            pdb.set_trace()
 
         dt = time.time() - start_time
 
         data_str = (f"{step:>5g}/{self.train_steps:<6g} "
-                    f"{outputs[1]:^9.4g} "              # loss value
+                    f"{outputs[0]:^9.4g} "              # loss value
                     f"{dt:^9.4g} "                      # time / step
-                    f"{np.mean(outputs[3]):^9.4g}"      # accept prob
-                    f"{outputs[4]:^9.4g} "              # step size
+                    f"{np.mean(outputs[2]):^9.4g}"      # accept prob
+                    f"{outputs[3]:^9.4g} "              # step size
                     f"{beta_np:^9.4g} "                 # beta
-                    f"{np.mean(outputs[5]):^9.4g} "     # avg. actions
-                    f"{np.mean(outputs[6]):^9.4g} "     # avg. plaqs.
+                    f"{np.mean(outputs[4]):^9.4g} "     # avg. actions
+                    f"{np.mean(outputs[5]):^9.4g} "     # avg. plaqs.
                     f"{u1_plaq_exact(beta_np):^9.4g} "  # exact plaq.
-                    f"{outputs[9]:^9.4g} "              # charge diff
-                    f"{outputs[8]:^9.4g}")              # learning rate
+                    f"{outputs[8]:^9.4g} "              # charge diff
+                    f"{outputs[7]:^9.4g}")              # learning rate
 
         return outputs, data_str
 
@@ -1412,15 +1417,15 @@ class GaugeModel:
             for step in range(initial_step, train_steps):
                 outputs, data_str = self.train_step(step, samples_np)
 
-                loss_np = outputs[1]
-                samples_np = np.mod(outputs[2], 2 * np.pi)
-                px_np = outputs[3]
-                eps_np = outputs[4]
-                actions_np = outputs[5]
-                plaqs_np = outputs[6]
-                charges_np = outputs[7]
-                lr_np = outputs[8]
-                charge_diff = outputs[9]
+                loss_np = outputs[0]
+                samples_np = np.mod(outputs[1], 2 * np.pi)
+                px_np = outputs[2]
+                eps_np = outputs[3]
+                actions_np = outputs[4]
+                plaqs_np = outputs[5]
+                charges_np = outputs[6]
+                lr_np = outputs[7]
+                charge_diff = outputs[8]
 
                 self._current_state['samples'] = samples_np
                 self._current_state['step'] = step
@@ -1596,7 +1601,7 @@ class GaugeModel:
         #  charges_dict = {}
         #  charge_diff_dict = {}
 
-        self.dynamics.trainable = False
+        #  self.dynamics.trainable = False
 
         if current_step is None:
             txt_file = f'eval_info_steps_{run_steps}_beta_{beta}.txt'
@@ -1655,8 +1660,6 @@ class GaugeModel:
             io.log("\nKeyboardInterrupt detected! \n", nl=False)
             io.log("Saving current state and exiting.\n", nl=False)
 
-        #  import pdb
-        #  pdb.set_trace()
         #  io.write(eval_strings, eval_file, 'a')
         _ = [io.write(s, eval_file, 'a') for s in eval_strings]
         stats = self.calc_observables_stats(run_data, therm_frac)
@@ -1669,7 +1672,7 @@ class GaugeModel:
         io.log(f'\n Time to complete run: {time.time() - start_time} seconds.')
         io.log(80*'-' + '\n', nl=False)
 
-        self.dynamics.trainable = True
+        #  self.dynamics.trainable = True
 
         return run_data, stats
 
