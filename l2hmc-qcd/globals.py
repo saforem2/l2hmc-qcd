@@ -16,6 +16,24 @@ LINESTYLES = 5000 * ['-', '--', ':', '-.', '-', '--', ':', '-.', '-', '--']
 
 GLOBAL_SEED = 42
 
+
+h_str = ("{:^12s}{:^10s}{:^10s}{:^10s}{:^10s}"
+         "{:^10s}{:^10s}{:^10s}{:^10s}{:^10s}{:^10s}")
+h_strf = h_str.format("STEP", "LOSS", "t/STEP", "% ACC", "EPS",
+                      "BETA", "ACTION", "PLAQ", "(EXACT)", "dQ", "LR")
+dash0 = (len(h_strf) + 1) * '-'
+dash1 = (len(h_strf) + 1) * '-'
+TRAIN_HEADER = dash0 + '\n' + h_strf + '\n' + dash1
+
+header = ("{:^12s}{:^10s}{:^10s}{:^10s}"
+          "{:^10s}{:^10s}{:^10s}{:^10s}{:^10s}")
+
+header = header.format("STEP", "t/STEP", "% ACC", "EPS", "BETA",
+                       "ACTIONS", "PLAQS", "(EXACT)", "dQ")
+dash0 = (len(header) + 1) * '='
+dash1 = (len(header) + 1) * '-'
+RUN_HEADER = dash0 + '\n' + header + '\n' + dash1
+
 ########################################
 # Default parameters for gauge_model.py
 ########################################
@@ -61,6 +79,7 @@ PARAMS = {
     'aux_weight': 1.,
     'charge_weight': 1.,
     #  'charge_loss': True,
+    'use_bn': True,
     'summaries': True,
     'clip_grads': False,
     'clip_value': None,
