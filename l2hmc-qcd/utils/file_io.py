@@ -9,6 +9,7 @@ from __future__ import division
 from __future__ import print_function
 import os
 import pickle
+import numpy as np
 
 # pylint:disable=invalid-name
 
@@ -24,6 +25,16 @@ except ImportError:
 from globals import ROOT_DIR, PROJECT_DIR, FILE_PATH
 
 
+def log(s, nl=True):
+    """Print string `s` to stdout if and only if hvd.rank() == 0."""
+    try:
+        if HAS_HOROVOD and hvd.rank() != 0:
+            return
+        print(s, end='\n' if nl else '')
+    except NameError:
+        print(s, end='\n' if nl else '')
+
+
 def write(s, f, mode='a', nl=True):
     """Write string `s` to file `f` if and only if hvd.rank() == 0."""
     try:
@@ -34,16 +45,6 @@ def write(s, f, mode='a', nl=True):
     except NameError:
         with open(f, mode) as ff:
             ff.write(s + '\n' if nl else '')
-
-
-def log(s, nl=True):
-    """Print string `s` to stdout if and only if hvd.rank() == 0."""
-    try:
-        if HAS_HOROVOD and hvd.rank() != 0:
-            return
-        print(s, end='\n' if nl else '')
-    except NameError:
-        print(s, end='\n' if nl else '')
 
 
 def log_and_write(s, f):
@@ -65,6 +66,25 @@ def check_else_make_dir(d):
 def make_dirs(dirs):
     """Make directories if and only if hvd.rank == 0."""
     _ = [check_else_make_dir(d) for d in dirs]
+
+
+def save_data(data, out_file, name=None):
+    """Save data to out_file using either pickle.dump or np.save."""
+    if os.path.isfile(out_file):
+        log(f"WARNING: File {out_file} already exists...")
+        tmp = out_file.split('.')
+        out_file = tmp[0] + '_1' + f'.{tmp[1]}'
+
+    log(f"Saving {name} to {out_file}...")
+    if out_file.endswith('.pkl'):
+        with open(out_file, 'wb') as f:
+            pickle.dump(data, f)
+
+    elif out_file.endswith('.npy'):
+        np.save(out_file, np.array(data))
+
+    else:
+        log("Extension not recognized! out_file must end in .pkl or .npy")
 
 
 def save_params_to_pkl_file(params, out_dir):
@@ -113,12 +133,7 @@ def get_run_num(log_dir):
     return run_num
 
 
-
-
-
 def _get_run_num(log_dir):
-    #  if not os.path.isdir(log_dir):
-    #      os.makedirs(log_dir)
     check_else_make_dir(log_dir)
 
     contents = os.listdir(log_dir)
