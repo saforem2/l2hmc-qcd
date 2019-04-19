@@ -30,6 +30,17 @@ except ImportError:
     HAS_HOROVOD = False
 
 
+def save_params(params, log_dir):
+    io.check_else_make_dir(log_dir)
+    params_txt_file = os.path.join(log_dir, 'parameters.txt')
+    params_pkl_file = os.path.join(log_dir, 'parameters.pkl')
+    with open(params_txt_file, 'w') as f:
+        for key, val in params.items():
+            f.write(f"{key}: {val}\n")
+    with open(params_pkl_file, 'wb') as f:
+        pickle.dump(params, f)
+
+
 class GaugeModelLogger:
     def __init__(self, sess, model, log_dir, summaries=True):
         self.sess = sess
@@ -68,6 +79,7 @@ class GaugeModelLogger:
         # this prevents workers on different ranks from corrupting checkpoints
         #  if log_dir is not None and self.is_chief:
         self._create_dir_structure(log_dir)
+        save_params(self.model.params, self.log_dir)
 
         if self.summaries:
             self.summary_placeholders = {}
@@ -100,6 +112,8 @@ class GaugeModelLogger:
         )
 
         self.train_log_file = os.path.join(self.train_dir, 'training_log.txt')
+        self.current_state_file = os.path.join(self.train_dir,
+                                               'current_state.pkl')
 
         io.make_dirs([self.train_dir, self.figs_dir, self.runs_dir,
                       self.train_runs_dir, self.train_summary_dir,
@@ -189,11 +203,8 @@ class GaugeModelLogger:
             * dynamics.eps
             * training_step
         """
-        current_state_file = os.path.join(self.train_dir, 'current_state.pkl')
-        io.log(f'Saving current state to: {current_state_file}...')
-        with open(current_state_file, 'wb') as f:
+        with open(self.current_state_file, 'wb') as f:
             pickle.dump(self._current_state, f)
-        io.log(f'done.')
 
     def log_step(self, step, samples_np, beta_np):
         """Update self.logger.summaries."""
@@ -229,19 +240,26 @@ class GaugeModelLogger:
         self.train_data['charge_diffs'][key] = data['charge_diffs']
         self.train_data['accept_probs'][key] = data['px']
 
-        self.train_data_strings.append(data_str + '\n')
+        self.train_data_strings.append(data_str)
         if step % self.model.print_steps == 0:
             io.log(data_str)
 
-        if step % self.model.logging_steps == 0:
+        if (step + 1) % self.model.logging_steps == 0:
             self.log_step(step, data['samples'], beta)
 
-        condition1 = step % self.model.save_steps == 0
-        condition2 = step == self.model.train_steps
-        #  if step % self.model.save_steps == 0:
-        if condition1 or condition2:
-            #  self.model.save(self.sess, self.checkpoint_dir)
+        if (step + 1) % self.model.save_steps == 0:
+            self.model.save(self.sess, self.checkpoint_dir)
             self.save_current_state()
+
+        #  if step == self.model.train_steps - 1:
+        #      self.model.save(self.sess, self.checkpoint_dir)
+        #      self.save_current_state()
+        #      self.write_train_strings()
+
+    def write_train_strings(self):
+        """Write training strings out to file."""
+        tlf = self.train_log_file
+        _ = [io.write(s, tlf, 'a') for s in self.train_data_strings]
 
     def update_running(self, step, data, data_str, run_params):
         """Update run_data generated during evaluation of L2HMC algorithm."""
@@ -259,57 +277,35 @@ class GaugeModelLogger:
         if step % self.model.print_steps == 0:
             io.log(data_str)
 
-    def write_train_strings(self):
-        """Write training strings out to file."""
-        io.write(self.train_data_strings, self.train_log_file, 'w')
-
     def write_run_strings(self, run_strings, out_file):
         """Write evaluation (`run`) strings out to file."""
         _ = [io.write(s, out_file, 'a') for s in run_strings]
 
-    def save_run_info(self, run_data, stats, out_dir, **kwargs):
+    def save_run_info(self, run_data, stats, out_dir):
         """Save observables contained in `run_data` to pickle files."""
-        #  therm_steps = kwargs['run_steps'] // kwargs['therm_frac']
-        #  training = bool(kwargs['current_step'] is not None)
-        data_files = {}
-        for key in run_data.keys():
-            out_file = key + '.pkl'
-            data_files[key] = os.path.join(out_dir, out_file)
+        io.check_else_make_dir(out_dir)
 
-        stats_files = {}
-        for key in stats.keys():
-            out_file = key + 'stats' + '.pkl'
-            stats_files[key] = os.path.join(out_dir, out_file)
+        data_file = os.path.join(out_dir, 'run_data.pkl')
+        io.log(f"Saving run_data to: {data_file}.")
+        with open(data_file, 'wb') as f:
+            pickle.dump(run_data, f)
 
-        def save_data(data, out_file, name=None):
-            out_dir = os.path.dirname(out_file)
-            io.log(f"Saving {name} to {out_file}...")
-            io.check_else_make_dir(out_dir)
+        stats_data_file = os.path.join(out_dir, 'run_data_stats.pkl')
+        io.log(f"Saving run_data_stats to: {stats_data_file}.")
+        with open(stats_data_file, 'wb') as f:
+            pickle.dump(stats, f)
 
-            if out_file.endswith('.pkl'):
-                if os.path.isfile(out_file):
-                    io.log(f"WARNING: File {out_file} already exists...")
-                    out_file = out_file.rstrip('.pkl') + '_1.pkl'
-
-                with open(out_file, 'wb') as f:
-                    pickle.dump(data, f)
-
-            if out_file.endswith('.npy'):
-                np.save(out_file, np.array(data))
-
-        #  files = self.get_run_files(**kwargs)
-        #  data_files = files['run_data']
-        #  stats_files = files['run_stats']
-
+        observables_dir = os.path.join(out_dir, 'observables')
+        io.check_else_make_dir(observables_dir)
         for key, val in run_data.items():
-            _file = key + '.pkl'
-            out_file = os.path.join(out_dir, _file)
-            save_data(val, out_file, name=key)
+            out_file = key + '.pkl'
+            out_file = os.path.join(observables_dir, out_file)
+            io.save_data(val, out_file, name=key)
 
         for key, val in stats.items():
-            _file = key + '.pkl'
-            out_file = os.path.join(out_dir, _file)
-            save_data(val, out_file, name=key)
+            out_file = key + '_stats.pkl'
+            out_file = os.path.join(observables_dir, out_file)
+            io.save_data(val, out_file, name=key)
 
     def write_run_stats(self, run_data, stats, out_file, **kwargs):
         """Write statistics in human readable format to .txt file."""

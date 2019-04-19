@@ -31,6 +31,7 @@ Author: Sam Foreman (github: @saforem2)
 Date: 04/10/2019
 """
 import os
+import pickle
 import numpy as np
 import tensorflow as tf
 
@@ -139,8 +140,10 @@ def hmc(FLAGS, l2hmc_model=None, l2hmc_logger=None):
         hmc_model = GaugeModel(params=hmc_params)
 
         hmc_logger = GaugeModelLogger(hmc_sess, hmc_model, hmc_log_dir)
+        runs_dir = os.path.join(hmc_logger.log_dir, 'runs')
+        io.check_else_make_dir(runs_dir)
 
-        hmc_runner = GaugeModelRunner(hmc_sess, hmc_model, hmc_logger)
+        hmc_runner = GaugeModelRunner(hmc_sess, hmc_model, runs_dir)
         hmc_plotter = GaugeModelPlotter(hmc_logger.figs_dir)
 
         hmc_sess.run(tf.global_variables_initializer())
@@ -148,9 +151,10 @@ def hmc(FLAGS, l2hmc_model=None, l2hmc_logger=None):
         run_kwargs = {
             'beta': hmc_model.beta_final
         }
-        run_data = hmc_runner(int(hmc_model.run_steps),
-                              beta_np=run_kwargs['beta'],
-                              ret=True)
+        run_data = hmc_runner.run(int(hmc_model.run_steps),
+                                  beta_np=run_kwargs['beta'],
+                                  ret=True)
+
         hmc_plotter.plot_observables(run_data, **run_kwargs)
 
         betas = np.arange(hmc_model.beta_init, hmc_model.beta_final, 1)
@@ -173,6 +177,8 @@ def l2hmc(FLAGS):
     for key, val in FLAGS.__dict__.items():
         params[key] = val
 
+    params['using_hvd'] = True if FLAGS.horovod else False
+
     if FLAGS.hmc:
         params['eps_trainable'] = False
 
@@ -181,7 +187,7 @@ def l2hmc(FLAGS):
 
     model = GaugeModel(params=params)
 
-    condition1 = FLAGS.horovod
+    condition1 = not FLAGS.horovod
     condition2 = FLAGS.horovod and hvd.rank() == 0
     is_chief = condition1 or condition2
 
@@ -201,8 +207,10 @@ def l2hmc(FLAGS):
         run_kwargs = {
             'beta': model.beta_final
         }
+        runs_dir = os.path.join(logger.log_dir, 'runs')
+        io.check_else_make_dir(runs_dir)
         plotter = GaugeModelPlotter(logger.figs_dir)
-        runner = GaugeModelRunner(sess, model, logger)
+        runner = GaugeModelRunner(sess, model, runs_dir)
 
         run_data = runner.run(int(model.run_steps),
                               beta_np=run_kwargs['beta'],
@@ -215,7 +223,7 @@ def l2hmc(FLAGS):
             run_data = runner.run(int(model.run_steps), beta_np=beta, ret=True)
             plotter.plot_observables(run_data, **run_kwargs)
 
-    return sess, model, runner, logger
+    return sess, model, logger
 
 
 def main(FLAGS):
@@ -223,7 +231,7 @@ def main(FLAGS):
     io.log('\n' + 80 * '-')
     io.log("Running L2HMC algorithm...")
 
-    l2hmc_sess, l2hmc_model, _, l2hmc_logger = l2hmc(FLAGS)
+    l2hmc_sess, l2hmc_model, l2hmc_logger = l2hmc(FLAGS)
 
     l2hmc_sess.close()
     tf.reset_default_graph()
@@ -232,7 +240,7 @@ def main(FLAGS):
     io.log(("Running generic HMC algorithm "
             "with learned parameters from L2HMC..."))
 
-    hmc_sess, _ = hmc(FLAGS, l2hmc_model, l2hmc_logger)
+    hmc_sess, _, _, _ = hmc(FLAGS, l2hmc_model, l2hmc_logger)
 
     hmc_sess.close()
 

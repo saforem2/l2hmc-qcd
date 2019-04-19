@@ -30,7 +30,9 @@ def arr_from_dict(d, key):
 
 def get_out_files(out_dir, out_str):
     png_file = os.path.join(out_dir, out_str + '.png')
-    eps_file = os.path.join(out_dir, out_str + '.eps')
+    eps_dir = os.path.join(out_dir, 'eps_plots')
+    io.check_else_make_dir(eps_dir)
+    eps_file = os.path.join(eps_dir, out_str + '.eps')
     return png_file, eps_file
 
 
@@ -39,7 +41,7 @@ def plot_multiple_lines(data, xy_labels, **kwargs):
     out_file = kwargs.get('out_file', None)
     markers = kwargs.get('markers', False)
     lines = kwargs.get('lines', True)
-    alpha = kwargs.get('alpha', 0.9)
+    alpha = kwargs.get('alpha', 1.)
     legend = kwargs.get('legend', False)
     title = kwargs.get('title', None)
     ret = kwargs.get('ret', False)
@@ -54,11 +56,13 @@ def plot_multiple_lines(data, xy_labels, **kwargs):
 
     if y_data.shape[0] > 10:
         y_sample = y_data[:10, :]
+    else:
+        y_sample = y_data
 
     fig, ax = plt.subplots()
 
     marker = None
-    ls = '-'
+    ls = ':'
     fillstyle = 'full'
     for idx, row in enumerate(y_sample):
         if markers:
@@ -71,7 +75,7 @@ def plot_multiple_lines(data, xy_labels, **kwargs):
                     marker=marker, ls=ls, alpha=alpha)
 
     _ = ax.plot(
-        x_data, y_data.mean(axis=0), color='k', label='average', alpha=0.75,
+        x_data, y_data.mean(axis=0), color='k', label='average', alpha=1.,
     )
 
     ax.set_xlabel(x_label, fontsize=14)
@@ -265,11 +269,14 @@ class GaugeModelPlotter:
         kwargs['out_file'] = get_out_files(self.out_dir, 'top_charge_diffs')
         steps_arr, charge_diffs = xy_data
 
+        # ignore first two data points when plotting since the top. charge
+        # should change dramatically for the very first vew steps when starting
+        # from a random configuration
         _, ax = plt.subplots()
-        ax.plot(xy_data[0], xy_data[1],
+        ax.plot(xy_data[0][2:], xy_data[1][2:],
                 marker='.', ls='', fillstyle='none', color='C0')
         ax.set_xlabel("Steps", fontsize=14)
-        ax.set_ylabel(r"""\delta_{Q}""")
+        ax.set_ylabel(r"""$\delta_{Q}$""")
         ax.set_title(kwargs['title'])
         for f in kwargs['out_file']:
             io.log(f"Saving figure to: {f}")

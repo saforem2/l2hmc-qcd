@@ -119,7 +119,7 @@ class GaugeModel:
         self.saver = tf.train.Saver(max_to_keep=3)
 
     def save(self, sess, checkpoint_dir):
-        io.log("Saving model...")
+        io.log(f"INFO: Saving model to: {checkpoint_dir}")
         self.saver.save(sess, checkpoint_dir, self.global_step)
         io.log("Model saved.")
 
@@ -445,7 +445,7 @@ class GaugeModel:
 
         with tf.name_scope('global_step'):
             self.global_step = tf.train.get_or_create_global_step()
-            self.global_step.assign(1)
+            #  self.global_step.assign(1)
 
         with tf.name_scope('learning_rate'):
             self.lr = tf.train.exponential_decay(lr_init,

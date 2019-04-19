@@ -16,38 +16,52 @@ import numpy as np
 
 import utils.file_io as io
 from lattice.lattice import u1_plaq_exact
-from globals import NP_FLOAT
 
 
 class GaugeModelRunner:
-    def __init__(self, sess, model, logger):
+    def __init__(self, sess, model, runs_dir):
         self.sess = sess
         self.model = model
-        self.logger = logger
-        #  self.plotter = plotter
+        self.runs_dir = runs_dir
 
-    def _save(self, run_data, run_strings, **kwargs):
-        """Update logger and save run information."""
-        therm_frac = kwargs['therm_frac']
+    def save_run_data(self, run_data, run_strings, samples, **kwargs):
+        """Save run information."""
         run_dir = kwargs['run_dir']
-        stats_file = kwargs['stats_file']
-        run_file = kwargs['run_file']
-        data_file = kwargs['data_file']
-        stats_data_file = kwargs['stats_data_file']
+        observables_dir = os.path.join(run_dir, 'observables')
 
+        io.check_else_make_dir(run_dir)
+        io.check_else_make_dir(observables_dir)
+
+        samples_file = os.path.join(run_dir, 'run_samples.pkl')
+        with open(samples_file, 'wb') as f:
+            pickle.dump(samples, f)
+
+        run_stats = self.calc_observables_stats(run_data, kwargs['therm_frac'])
+
+        data_file = os.path.join(run_dir, 'run_data.pkl')
         io.log(f"Saving run_data to: {data_file}.")
         with open(data_file, 'wb') as f:
             pickle.dump(run_data, f)
 
-        stats = self.calc_observables_stats(run_data, therm_frac)
-
-        io.log(f"Saving run_data_stats to: {stats_data_file}.")
+        stats_data_file = os.path.join(run_dir, 'run_stats.pkl')
+        io.log(f"Saving run_stats to: {stats_data_file}.")
         with open(stats_data_file, 'wb') as f:
-            pickle.dump(stats, f)
+            pickle.dump(run_stats, f)
 
-        self.logger.save_run_info(run_data, stats, run_dir, **kwargs)
-        self.logger.write_run_stats(run_data, stats, stats_file, **kwargs)
-        self.logger.write_run_strings(run_strings, run_file)
+        for key, val in run_data.items():
+            out_file = key + '.pkl'
+            out_file = os.path.join(observables_dir, out_file)
+            io.save_data(val, out_file, name=key)
+
+        for key, val in run_stats.items():
+            out_file = key + '_stats.pkl'
+            out_file = os.path.join(observables_dir, out_file)
+            io.save_data(val, out_file, name=key)
+
+        history_file = os.path.join(run_dir, 'run_history.txt')
+        _ = [io.write(s, history_file, 'a') for s in run_strings]
+
+        self.write_run_stats(run_stats, **kwargs)
 
     def run_step(self, step, run_steps, inputs):
         """Perform a single run step.
@@ -133,15 +147,11 @@ class GaugeModelRunner:
             observables: Tuple of observables dictionaries consisting of:
                 (actions_dict, plaqs_dict, charges_dict, charge_diffs_dict).
         """
-
-        if not isinstance(run_steps, int):
-            run_steps = int(run_steps)
+        run_steps = int(run_steps)
 
         if beta_np is None:
             beta_np = self.model.beta_final
 
-        #  run_key = (run_steps, beta_np)
-        charges_arr = []
         run_strings = []
         run_data = {
             'px': {},
@@ -150,36 +160,29 @@ class GaugeModelRunner:
             'charges': {},
             'charge_diffs': {},
         }
-
-        run_params = {
-            'run_steps': run_steps,
-            'beta': beta_np,
-        }
+        samples_arr = []
 
         if current_step is None:
-            _dir = self.logger.runs_dir
-            txt_file = f'run_info_steps_{run_steps}_beta_{beta_np}.txt'
-            stats_file = f'run_stats_steps_{run_steps}_beta_{beta_np}.txt'
+            out_dir = self.runs_dir
             training = False
         else:
-            _dir = self.logger.train_runs_dir
-            txt_file = (f"run_info_{current_step}_TRAIN_"
-                        f"steps_{run_steps}_beta_{beta_np}.txt")
-            stats_file = (f"run_stats_{current_step}_TRAIN_"
-                          f"steps_{run_steps}_beta_{beta_np}.txt")
+            out_dir = os.path.join(self.runs_dir, 'training')
+            io.check_else_make_dir(out_dir)
             training = True
-            # -----------------------------------------------
-            # set to False so batch norm params don't change
-            # -----------------------------------------------
+            # set dynamics.trainable flag to False to freeze trainable vars
             self.model.dynamics.trainable = False
 
-        _dir_name = f"steps_{run_steps}_beta_{beta_np}"
-        run_dir = os.path.join(_dir, _dir_name)
+        run_dir = os.path.join(out_dir, f"steps_{run_steps}_beta_{beta_np}")
 
-        data_file = os.path.join(run_dir, 'run_data.pkl')
-        stats_data_file = os.path.join(run_dir, 'run_data_stats.pkl')
-        run_file = os.path.join(run_dir, txt_file)
-        stats_file = os.path.join(run_dir, stats_file)
+        kwargs = {
+            'run_steps': run_steps,
+            'beta': beta_np,
+            'current_step': current_step,
+            'therm_frac': therm_frac,
+            'therm_steps': run_steps // therm_frac,
+            'training': training,
+            'run_dir': run_dir,
+        }
 
         eps = self.sess.run(self.model.dynamics.eps)
         plaq_exact = u1_plaq_exact(beta_np)
@@ -187,41 +190,26 @@ class GaugeModelRunner:
         # start with randomly generated samples
         samples_np = np.random.randn(*(self.model.batch_size,
                                        self.model.x_dim))
+        samples_arr.append(samples_np)
 
         try:
             for step in range(run_steps):
                 inputs = (samples_np, beta_np, eps, plaq_exact)
                 out_data, data_str = self.run_step(step, run_steps, inputs)
-                self.logger.update_running(step, out_data,
-                                           data_str, run_params)
+
+                # projection of samples onto [0, 2π) done in run_step above
+                samples_np = out_data['samples']
+                samples_arr.append(samples_np)
 
                 key = (step, beta_np)
-
-                samples_np = out_data['samples']
-
                 run_data['px'][key] = out_data['px']
                 run_data['actions'][key] = out_data['actions']
                 run_data['plaqs'][key] = out_data['plaqs']
                 run_data['charges'][key] = out_data['charges']
                 run_data['charge_diffs'][key] = out_data['charge_diffs']
-                charges_arr.append(out_data['charges'])
-
                 run_strings.append(data_str)
 
-            kwargs = {
-                'run_dir': run_dir,
-                'stats_file': stats_file,
-                'run_file': run_file,
-                'data_file': data_file,
-                'stats_data_file': stats_data_file,
-                'run_steps': run_steps,
-                'current_step': current_step,
-                'beta': beta_np,
-                'therm_frac': therm_frac,
-                'training': training,
-                'therm_steps': run_steps // therm_frac,
-            }
-            self._save(run_data, run_strings, **kwargs)
+            self.save_run_data(run_data, run_strings, samples_arr, **kwargs)
 
             if training:
                 self.model.dynamics.trainable = True
@@ -232,7 +220,8 @@ class GaugeModelRunner:
         except (KeyboardInterrupt, SystemExit):
             io.log("\nKeyboardInterrupt detected!")
             io.log("Saving current state and exiting.")
-            self._save(run_data, run_strings, **kwargs)
+
+            self.save_run_data(run_data, run_strings, samples_arr, **kwargs)
             if training:
                 self.model.dynamics.trainable = True
             if ret:
@@ -261,9 +250,9 @@ class GaugeModelRunner:
             therm_steps = num_steps // t_frac
             arr = arr[therm_steps:, :]
             avg = np.mean(arr, axis=0)
-            err = sem(arr)
-
-            return (avg, err)
+            err = sem(arr, axis=0)
+            stats = np.array([avg, err]).T
+            return stats
 
         actions_stats = get_stats(run_data['actions'], therm_frac)
         plaqs_stats = get_stats(run_data['plaqs'], therm_frac)
@@ -292,3 +281,156 @@ class GaugeModelRunner:
         }
 
         return stats
+
+    def write_run_stats(self, stats, **kwargs):
+        """Write statistics in human readable format to .txt file."""
+        run_steps = kwargs['run_steps']
+        beta = kwargs['beta']
+        current_step = kwargs['current_step']
+        therm_steps = kwargs['therm_steps']
+        training = kwargs['training']
+        run_dir = kwargs['run_dir']
+
+        out_file = os.path.join(run_dir, 'run_stats.txt')
+
+        actions_avg, actions_err = stats['actions'].mean(axis=0)
+        plaqs_avg, plaqs_err = stats['plaqs'].mean(axis=0)
+        charges_avg, charges_err = stats['charges'].mean(axis=0)
+        suscept_avg, suscept_err = stats['suscept'].mean(axis=0)
+
+        #  actions_arr = np.array(
+        #      list(run_data['actions'].values())
+        #  )[therm_steps:, :]
+        #
+        #  plaqs_arr = np.array(
+        #      list(run_data['plaqs'].values())
+        #  )[therm_steps:, :]
+        #
+        #  charges_arr = np.array(
+        #      list(run_data['charges'].values()),
+        #      dtype=np.int32
+        #  )[therm_steps:, :]
+        #
+        #  charges_squared_arr = charges_arr ** 2
+        #
+        #  actions_err = sem(actions_arr, axis=None)
+        #
+        #  plaqs_avg = np.mean(plaqs_arr)
+        #  plaqs_err = sem(plaqs_arr, axis=None)
+        #
+        #  q_avg = np.mean(charges_arr)
+        #  q_err = sem(charges_arr, axis=None)
+        #
+        #  q2_avg = np.mean(charges_squared_arr)
+        #  q2_err = sem(charges_squared_arr, axis=None)
+
+        ns = self.model.num_samples
+        suscept_k1 = f'  \navg. over all {ns} samples < Q >'
+        suscept_k2 = f'  \navg. over all {ns} samples < Q^2 >'
+        actions_k1 = f'  \navg. over all {ns} samples < action >'
+        plaqs_k1 = f'  \n avg. over all {ns} samples < plaq >'
+
+        _est_key = '  \nestimate +/- stderr'
+
+        suscept_ss = {
+            suscept_k1: f"{charges_avg:.4g} +/- {charges_err:.4g}",
+            suscept_k2: f"{suscept_avg:.4g} +/- {suscept_err:.4g}",
+            _est_key: {}
+        }
+
+        actions_ss = {
+            actions_k1: f"{actions_avg:.4g} +/- {actions_err:.4g}\n",
+            _est_key: {}
+        }
+
+        plaqs_ss = {
+            'exact_plaq': f"{u1_plaq_exact(beta):.4g}\n",
+            plaqs_k1: f"{plaqs_avg:.4g} +/- {plaqs_err:.4g}\n",
+            _est_key: {}
+        }
+
+        def format_stats(x, name=None):
+            return [f'{name}: {i[0]:.4g} +/- {i[1]:.4g}' for i in x]
+
+        def zip_keys_vals(stats_strings, keys, vals):
+            for k, v in zip(keys, vals):
+                stats_strings[_est_key][k] = v
+            return stats_strings
+
+        keys = [f"sample {idx}" for idx in range(ns)]
+
+        suscept_vals = format_stats(stats['suscept'], '< Q^2 >')
+        actions_vals = format_stats(stats['actions'], '< action >')
+        plaqs_vals = format_stats(stats['plaqs'], '< plaq >')
+
+        suscept_ss = zip_keys_vals(suscept_ss, keys, suscept_vals)
+        actions_ss = zip_keys_vals(actions_ss, keys, actions_vals)
+        plaqs_ss = zip_keys_vals(plaqs_ss, keys, plaqs_vals)
+
+        def accumulate_strings(d):
+            all_strings = []
+            for k1, v1 in d.items():
+                if isinstance(v1, dict):
+                    for k2, v2 in v1.items():
+                        all_strings.append(f'{k2} {v2}')
+                else:
+                    all_strings.append(f'{k1}: {v1}\n')
+
+            return all_strings
+
+        actions_strings = accumulate_strings(actions_ss)
+        plaqs_strings = accumulate_strings(plaqs_ss)
+        suscept_strings = accumulate_strings(suscept_ss)
+
+        charge_probs_strings = []
+        for k, v in stats['charge_probs'].items():
+            charge_probs_strings.append(f'  probability[Q = {k}]: {v}\n')
+
+        train_str = (f" stats after {current_step} training steps.\n"
+                     f"{ns} chains ran for {run_steps} steps at "
+                     f"beta = {beta}.")
+
+        run_str = (f" stats for {ns} chains ran for {run_steps} steps "
+                   f" at beta = {beta}.")
+
+        if training:
+            str0 = "Topological susceptibility" + train_str
+            str1 = "Total actions" + train_str
+            str2 = "Average plaquette" + train_str
+            str3 = "Topological charge probabilities" + train_str[6:]
+            therm_str = ''
+        else:
+            str0 = "Topological susceptibility" + run_str
+            str1 = "Total actions" + run_str
+            str2 = "Average plaquette" + run_str
+            str3 = "Topological charge probabilities" + run_str[6:]
+            therm_str = (
+                f'Ignoring first {therm_steps} steps for thermalization.'
+            )
+
+        ss0 = (1 + max(len(str0), len(therm_str))) * '-'
+        ss1 = (1 + max(len(str1), len(therm_str))) * '-'
+        ss2 = (1 + max(len(str2), len(therm_str))) * '-'
+        ss3 = (1 + max(len(str3), len(therm_str))) * '-'
+
+        io.log(f"Writing statistics to: {out_file}")
+
+        def log_and_write(sep_str, str0, therm_str, stats_strings, file):
+            io.log(sep_str)
+            io.log(str0)
+            io.log(therm_str)
+            io.log('')
+            _ = [io.log(s) for s in stats_strings]
+            io.log(sep_str)
+            io.log('')
+
+            io.write(sep_str, file, 'a')
+            io.write(str0, file, 'a')
+            io.write(therm_str, file, 'a')
+            _ = [io.write(s, file, 'a') for s in stats_strings]
+            io.write('\n', file, 'a')
+
+        log_and_write(ss0, str0, therm_str, suscept_strings, out_file)
+        log_and_write(ss1, str1, therm_str, actions_strings, out_file)
+        log_and_write(ss2, str2, therm_str, plaqs_strings, out_file)
+        log_and_write(ss3, str3, therm_str, charge_probs_strings, out_file)
