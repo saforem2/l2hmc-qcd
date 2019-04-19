@@ -5,10 +5,10 @@
 #                                                                #
 #================================================================#
 
---time_size 8
---space_size 8 
---num_samples 64 
---num_steps 10 
+--time_size 16 
+--space_size 16 
+--num_samples 32
+--num_steps 3 
 --eps 0.2
 --annealing
 --beta_init 2.                  
@@ -16,9 +16,9 @@
 --lr_init 0.001
 --lr_decay_steps 1000
 --lr_decay_rate 0.96            
---train_steps 5000
+--train_steps 10000
 --run_steps 10000
---save_steps 2500
+--save_steps 1000
 --print_steps 1 
 --training_samples_steps 2500
 --training_samples_length 500
@@ -31,7 +31,8 @@
 --summaries
 --eps_trainable
 --use_bn
---log_dir 'logs/april_2019/2019_04_17/lattice_L8/num_steps7/num_samples32/beta_i2_f5/charge_weight0/'
+--log_dir 'logs/april_2019/2019_04_19/lattice16_steps3_batch32_beta25_qweight0/oop/'
+#--log_dir 'logs/april_2019/2019_04_17/lattice_L8/num_steps7/num_samples32/beta_i2_f5/charge_weight0/'
 
 
 #============================================================================================
