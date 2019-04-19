@@ -37,8 +37,7 @@ class GaugeModelTrainer:
     def __init__(self, sess, model, logger=None):
         self.sess = sess
         self.model = model
-        if logger is not None:
-            self.logger = logger
+        self.logger = logger
 
     def update_beta(self, step):
         """Returns new beta to follow annealing schedule."""
@@ -169,6 +168,8 @@ class GaugeModelTrainer:
                 #      condition2 = not self.model.using_hvd
                 #      if condition1 or condition2:
                 #          self.log_step(step, samples_np, out_data['beta'])
+            if self.logger is not None:
+                self.logger.write_train_strings()
 
         except (KeyboardInterrupt, SystemExit):
             io.log("\nKeyboardInterrupt detected!")
