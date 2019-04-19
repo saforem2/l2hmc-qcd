@@ -201,6 +201,10 @@ def l2hmc(FLAGS):
 
     sess.run(tf.global_variables_initializer())
 
+    if FLAGS.horovod:
+        io.log(f"Number of GPUs: {hvd.size())}")
+        sess.run(hvd.broacast_global_variables(0))
+
     trainer.train(model.train_steps)
 
     if is_chief:
