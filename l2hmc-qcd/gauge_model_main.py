@@ -82,6 +82,8 @@ def create_config_proto(FLAGS, params):
         config_proto.allow_soft_placement = True
         config_proto.gpu_options.allow_growth = True
         if HAS_HOROVOD and FLAGS.horovod:
+            num_gpus = hvd.size()
+            io.log(f"Number of GPUs: {num_gpus}")
             config_proto.gpu_options.visible_device_list = str(
                 hvd.local_rank()
             )
@@ -174,6 +176,10 @@ def l2hmc(FLAGS):
     for key, val in FLAGS.__dict__.items():
         params[key] = val
 
+    if FLAGS.horovod:
+        params['using_hvd'] = True
+        params['train_steps'] = params['train_steps'] // hvd.size() + 1
+        params['lr_init'] *= hvd.size()
     params['using_hvd'] = True if FLAGS.horovod else False
 
     if FLAGS.hmc:
@@ -199,7 +205,6 @@ def l2hmc(FLAGS):
     sess.run(tf.global_variables_initializer())
 
     if FLAGS.horovod:
-        io.log(f"Number of GPUs: {hvd.size())}")
         sess.run(hvd.broacast_global_variables(0))
 
     trainer.train(model.train_steps)
