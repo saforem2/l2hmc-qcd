@@ -196,7 +196,7 @@ def l2hmc(FLAGS):
 
     if is_chief:
         log_dir = params.get('log_dir', 'logs')
-        logger = GaugeModelLogger(sess, model, log_dir)
+        logger = GaugeModelLogger(sess, model, log_dir, FLAGS.summaries)
     else:
         logger = None
 
