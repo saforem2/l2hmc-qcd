@@ -205,7 +205,7 @@ def l2hmc(FLAGS):
     sess.run(tf.global_variables_initializer())
 
     if FLAGS.horovod:
-        sess.run(hvd.broacast_global_variables(0))
+        sess.run(hvd.broadcast_global_variables(0))
 
     trainer.train(model.train_steps)
 
