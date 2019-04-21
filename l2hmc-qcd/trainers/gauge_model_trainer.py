@@ -158,16 +158,6 @@ class GaugeModelTrainer:
                 if self.logger is not None:
                     self.logger.update_training(out_data, data_str)
 
-                #  if (step + 1) % self.model.save_steps == 0:
-                #      self.model.save(self.sess,
-                #                      #  self.logger._current_state,
-                #                      self.logger.checkpoint_dir)
-
-                #  if step % self.model.logging_steps == 0:
-                #      condition1 = self.model.using_hvd and hvd.rank() == 0
-                #      condition2 = not self.model.using_hvd
-                #      if condition1 or condition2:
-                #          self.log_step(step, samples_np, out_data['beta'])
             if self.logger is not None:
                 self.logger.write_train_strings()
 
