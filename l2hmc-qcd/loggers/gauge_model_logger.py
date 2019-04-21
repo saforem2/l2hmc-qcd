@@ -251,6 +251,9 @@ class GaugeModelLogger:
             self.model.save(self.sess, self.checkpoint_dir)
             self.save_current_state()
 
+        if step % 100 == 0:
+            io.log(TRAIN_HEADER)
+
         #  if step == self.model.train_steps - 1:
         #      self.model.save(self.sess, self.checkpoint_dir)
         #      self.save_current_state()
