@@ -178,8 +178,8 @@ def l2hmc(FLAGS):
 
     if FLAGS.horovod:
         params['using_hvd'] = True
-        params['train_steps'] = params['train_steps'] // hvd.size() + 1
-        params['lr_init'] *= hvd.size()
+        #  params['train_steps'] = params['train_steps'] // hvd.size() + 1
+        #  params['lr_init'] *= hvd.size()
     params['using_hvd'] = True if FLAGS.horovod else False
 
     if FLAGS.hmc:
