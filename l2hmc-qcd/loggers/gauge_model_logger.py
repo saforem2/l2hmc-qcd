@@ -42,7 +42,7 @@ def save_params(params, log_dir):
 
 
 class GaugeModelLogger:
-    def __init__(self, sess, model, log_dir, summaries=True):
+    def __init__(self, sess, model, log_dir, summaries=False):
         self.sess = sess
         self.model = model
         self.summaries = summaries
