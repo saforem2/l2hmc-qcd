@@ -16,6 +16,7 @@ import numpy as np
 
 import utils.file_io as io
 from lattice.lattice import u1_plaq_exact
+from globals import RUN_HEADER
 
 
 class GaugeModelRunner:
@@ -192,6 +193,8 @@ class GaugeModelRunner:
                                        self.model.x_dim))
         samples_arr.append(samples_np)
 
+        io.log(RUN_HEADER)
+
         try:
             for step in range(run_steps):
                 inputs = (samples_np, beta_np, eps, plaq_exact)
@@ -208,6 +211,12 @@ class GaugeModelRunner:
                 run_data['charges'][key] = out_data['charges']
                 run_data['charge_diffs'][key] = out_data['charge_diffs']
                 run_strings.append(data_str)
+
+                if step % self.model.print_steps == 0:
+                    io.log(data_str)
+
+                if step % 100 == 0:
+                    io.log(RUN_HEADER)
 
             self.save_run_data(run_data, run_strings, samples_arr, **kwargs)
 
