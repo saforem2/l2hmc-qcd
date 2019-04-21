@@ -82,8 +82,8 @@ class GaugeModelLogger:
         save_params(self.model.params, self.log_dir)
 
         if self.summaries:
-            self.summary_placeholders = {}
-            self.summary_ops = {}
+            #  self.summary_placeholders = {}
+            #  self.summary_ops = {}
 
             self.writer = tf.summary.FileWriter(self.train_summary_dir,
                                                 self.sess.graph)
@@ -158,7 +158,7 @@ class GaugeModelLogger:
         with tf.name_scope('loss'):
             tf.summary.scalar('loss', self.model.loss_op)
 
-        self.loss_averages_op = self._add_loss_summaries(self.model.loss_op)
+        #  self.loss_averages_op = self._add_loss_summaries(self.model.loss_op)
 
         with tf.name_scope('learning_rate'):
             tf.summary.scalar('learning_rate', self.model.lr)
