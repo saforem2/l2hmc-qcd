@@ -244,7 +244,7 @@ class GaugeModelLogger:
         if step % self.model.print_steps == 0:
             io.log(data_str)
 
-        if (step + 1) % self.model.logging_steps == 0:
+        if self.summaries and (step + 1) % self.model.logging_steps == 0:
             self.log_step(step, data['samples'], beta)
 
         if (step + 1) % self.model.save_steps == 0:
