@@ -268,6 +268,14 @@ def parse_args():
                               "summaries of gradients and variables for "
                               "monitoring in tensorboard."))
 
+    parser.add_argument('--save_samples',
+                        dest='save_samples',
+                        action='store_true',
+                        required=False,
+                        help=("Flag that when passed will save the samples "
+                              "generated during the `run` phase. "
+                              "WARNING: This is very data intensive."))
+
     parser.add_argument('--long_run',
                         dest='long_run',
                         action='store_true',
