@@ -33,11 +33,14 @@ class GaugeModelRunner:
         io.check_else_make_dir(run_dir)
         io.check_else_make_dir(observables_dir)
 
-        samples_file = os.path.join(run_dir, 'run_samples.pkl')
-        with open(samples_file, 'wb') as f:
-            pickle.dump(samples, f)
+        if self.model.save_samples:
+            samples_file = os.path.join(run_dir, 'run_samples.pkl')
+            io.log(f"Saving samples to: {samples_file}.")
+            with open(samples_file, 'wb') as f:
+                pickle.dump(samples, f)
 
-        run_stats = self.calc_observables_stats(run_data, kwargs['therm_frac'])
+        run_stats = self.calc_observables_stats(run_data,
+                                                kwargs['therm_frac'])
 
         data_file = os.path.join(run_dir, 'run_data.pkl')
         io.log(f"Saving run_data to: {data_file}.")
@@ -191,7 +194,8 @@ class GaugeModelRunner:
         # start with randomly generated samples
         samples_np = np.random.randn(*(self.model.batch_size,
                                        self.model.x_dim))
-        samples_arr.append(samples_np)
+        if self.model.save_samples:
+            samples_arr.append(samples_np)
 
         io.log(RUN_HEADER)
 
@@ -202,7 +206,8 @@ class GaugeModelRunner:
 
                 # projection of samples onto [0, 2π) done in run_step above
                 samples_np = out_data['samples']
-                samples_arr.append(samples_np)
+                if self.model.save_samples:
+                    samples_arr.append(samples_np)
 
                 key = (step, beta_np)
                 run_data['px'][key] = out_data['px']
