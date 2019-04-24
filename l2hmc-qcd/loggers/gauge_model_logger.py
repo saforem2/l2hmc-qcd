@@ -91,8 +91,8 @@ class GaugeModelLogger:
 
     def _create_dir_structure(self, log_dir):
         """Create relevant directories for storing data."""
-        #  project_dir = os.path.abspath(os.path.dirname(FILE_PATH))
-        project_dir = os.path.abspath(os.path.join('..', '..'))
+        project_dir = os.path.abspath(os.path.dirname(FILE_PATH))
+        #  project_dir = os.path.abspath(os.path.join('..', '..'))
         root_log_dir = os.path.join(project_dir, log_dir)
         io.check_else_make_dir(root_log_dir)
 
