@@ -204,6 +204,7 @@ class GaugeModelRunner:
             for step in range(run_steps):
                 inputs = (samples_np, beta, eps, plaq_exact)
                 out_data, data_str = self.run_step(step, run_steps, inputs)
+                samples_np = out_data['samples']
 
                 if self.logger is not None:
                     self.logger.update(out_data, data_str)
