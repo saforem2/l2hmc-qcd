@@ -6,3 +6,5 @@ l2hmc-qcd/sampler.py
 l2hmc_logs
 logs/
 2019_04_09
+animations/
+*.mp4
