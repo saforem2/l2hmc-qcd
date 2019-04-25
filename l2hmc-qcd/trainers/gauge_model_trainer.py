@@ -111,8 +111,8 @@ class GaugeModelTrainer:
             f"{np.mean(outputs[5]):^9.4g} "     # avg. actions
             f"{np.mean(outputs[6]):^9.4g} "     # avg. plaqs.
             f"{u1_plaq_exact(beta_np):^9.4g} "  # exact plaq.
-            f"{outputs[9]:^9.4g} "              # charge diff
-            f"{outputs[8]:^9.4g}"               # learning rate
+            f"{outputs[8]:^9.4g} "              # charge diff
+            f"{outputs[9]:^9.4g}"               # learning rate
         )
 
         return out_data, data_str
