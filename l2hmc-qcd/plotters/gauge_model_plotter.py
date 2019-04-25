@@ -121,7 +121,9 @@ class GaugeModelPlotter:
         """Calculate observables statistics.
 
         Args:
-            therm_frac: Fraction of data to ignore due to thermalization.
+            data (dict): Run data.
+            therm_frac (float): Fraction of data to ignore due to
+                thermalization.
 
         Returns:
             stats: Dictionary containing statistics for actions, plaquettes,
@@ -165,7 +167,7 @@ class GaugeModelPlotter:
 
         return stats
 
-    def plot_observables(self, data, **run_kwargs):
+    def plot_observables(self, data, beta):
         """Plot observables."""
         #  if data is None:
         #      data = self.data
@@ -177,7 +179,7 @@ class GaugeModelPlotter:
 
         num_steps, num_samples = actions.shape
         steps_arr = np.arange(num_steps)
-        beta = run_kwargs['beta']
+        #  beta = run_kwargs['beta']
 
         out_dir = (f'{int(num_steps)}_steps_'
                    f"beta_{beta}")
