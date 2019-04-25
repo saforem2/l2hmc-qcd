@@ -120,55 +120,59 @@ def hmc(FLAGS, l2hmc_model=None, l2hmc_logger=None):
         return -1
 
     if l2hmc_model is not None:
-        hmc_params = l2hmc_model.params
+        params = l2hmc_model.params
 
     else:
         for key, val in FLAGS.__dict__.items():
-            hmc_params[key] = val
+            params[key] = val
 
     if l2hmc_logger is not None:
-        hmc_params['eps'] = l2hmc_logger._current_state['eps']
-        hmc_params['hmc'] = True
-        hmc_params['beta_init'] = l2hmc_model.beta_init
-        hmc_params['beta_final'] = l2hmc_model.beta_final
-        hmc_log_dir = os.path.join(l2hmc_logger.log_dir, 'HMC')
+        params['eps'] = l2hmc_logger._current_state['eps']
+        params['hmc'] = True
+        params['beta_init'] = l2hmc_model.beta_init
+        params['beta_final'] = l2hmc_model.beta_final
+        log_dir = os.path.join(l2hmc_logger.log_dir, 'HMC')
+        figs_dir = os.path.join(log_dir, 'figures')
+        io.check_else_make_dir(log_dir)
+        io.check_else_make_dir(figs_dir)
 
     else:
-        hmc_log_dir = hmc_params.get('log_dir', 'logs')
-        hmc_log_dir = os.path.join(hmc_log_dir, 'HMC')
+        log_dir = params.get('log_dir', 'logs')
+        log_dir = os.path.join(log_dir, 'HMC')
 
-    hmc_config_proto, hmc_params = create_config_proto(FLAGS,
-                                                       hmc_params)
-    hmc_sess = tf.Session(config=hmc_config_proto)
+    config_proto, params = create_config_proto(FLAGS, params)
+    sess = tf.Session(config=config_proto)
 
-    hmc_model = GaugeModel(params=hmc_params)
+    model = GaugeModel(params=params)
 
-    hmc_logger = GaugeModelLogger(hmc_sess, hmc_model, hmc_log_dir)
-    runs_dir = os.path.join(hmc_logger.log_dir, 'runs')
-    io.check_else_make_dir(runs_dir)
+    if is_chief:
+        #  log_dir = params.get('log_dir', 'logs')
+        #  logger = GaugeModelLogger(sess, model, log_dir, FLAGS.summaries)
+        run_logger = GaugeModelRunnerLogger(sess, model, log_dir)
 
-    hmc_runner = GaugeModelRunner(hmc_sess, hmc_model, runs_dir)
-    hmc_plotter = GaugeModelPlotter(hmc_logger.figs_dir)
+        plotter = GaugeModelPlotter(figs_dir)
+    else:
+        run_logger = None
+        plotter = None
 
-    hmc_sess.run(tf.global_variables_initializer())
+    runner = GaugeModelRunner(sess, model, run_logger)
 
-    run_kwargs = {
-        'beta': hmc_model.beta_final
-    }
-    run_data = hmc_runner.run(int(hmc_model.run_steps),
-                              beta_np=run_kwargs['beta'],
-                              ret=True)
+    sess.run(tf.global_variables_initializer())
 
-    hmc_plotter.plot_observables(run_data, **run_kwargs)
+    betas = [l2hmc_model.beta_final - 1,
+             l2hmc_model.beta_final,
+             l2hmc_model.beta_final + 1]
 
-    betas = np.arange(hmc_model.beta_init, hmc_model.beta_final, 1)
     for beta in betas:
-        run_kwargs['beta'] = beta
-        run_data = hmc_runner.run(int(hmc_model.run_steps),
-                                  beta_np=beta, ret=True)
-        hmc_plotter.plot_observables(run_data, **run_kwargs)
+        if run_logger is not None:
+            run_logger.reset(int(model.run_steps), beta)
 
-    return hmc_sess, hmc_model, hmc_runner, hmc_logger
+        runner.run(int(model.run_steps), beta)
+
+        if plotter is not None and run_logger is not None:
+            plotter.plot_observables(run_logger.run_data, beta)
+
+    return sess, model, runner, run_logger
 
 
 def l2hmc(FLAGS):
@@ -179,9 +183,13 @@ def l2hmc(FLAGS):
 
     if FLAGS.horovod:
         params['using_hvd'] = True
-        #  params['train_steps'] = params['train_steps'] // hvd.size() + 1
+        num_workers = hvd.size()
+        params['train_steps'] //= num_workers
+        params['save_steps'] //= num_workers
+        params['lr_decay_steps'] //= num_workers
         #  params['lr_init'] *= hvd.size()
-    params['using_hvd'] = True if FLAGS.horovod else False
+    else:
+        params['using_hvd'] = False
 
     if FLAGS.hmc:
         params['eps_trainable'] = False
@@ -227,7 +235,8 @@ def l2hmc(FLAGS):
     #                        beta_np=run_kwargs['beta'],
     #                        ret=True)
 
-    betas = np.arange(model.beta_init, model.beta_final, 1)
+    #  betas = np.arange(model.beta_init, model.beta_final, 1)
+    betas = [model.beta_final - 1, model.beta_final, model.beta_final + 1]
     for beta in betas:
         if run_logger is not None:
             run_logger.reset(int(model.run_steps), beta)
@@ -258,13 +267,13 @@ def main(FLAGS):
     io.log(("Running generic HMC algorithm "
             "with learned parameters from L2HMC..."))
 
-    condition1 = not FLAGS.horovod
-    condition2 = FLAGS.horovod and hvd.rank() == 0
-    is_chief = condition1 or condition2
-
-    if is_chief:
-        hmc_sess, _, _, _ = hmc(FLAGS, l2hmc_model, l2hmc_logger)
-        hmc_sess.close()
+    #  condition1 = not FLAGS.horovod
+    #  condition2 = FLAGS.horovod and hvd.rank() == 0
+    #  is_chief = condition1 or condition2
+    #
+    #  if is_chief:
+    hmc_sess, _, _, _ = hmc(FLAGS, l2hmc_model, l2hmc_logger)
+    hmc_sess.close()
 
 
 if __name__ == '__main__':

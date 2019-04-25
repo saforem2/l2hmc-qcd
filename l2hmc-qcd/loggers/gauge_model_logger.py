@@ -104,9 +104,9 @@ class GaugeModelLogger:
         self.log_dir = log_dir
         self.train_dir = os.path.join(self.log_dir, 'training')
         self.figs_dir = os.path.join(self.log_dir, 'figures')
-        self.runs_dir = os.path.join(self.log_dir, 'runs')
+        #  self.runs_dir = os.path.join(self.log_dir, 'runs')
         self.checkpoint_dir = os.path.join(self.log_dir, 'checkpoints')
-        self.train_runs_dir = os.path.join(self.runs_dir, 'training')
+        #  self.train_runs_dir = os.path.join(self.runs_dir, 'training')
         self.train_summary_dir = os.path.join(
             self.log_dir, 'summaries', 'train'
         )
@@ -115,9 +115,9 @@ class GaugeModelLogger:
         self.current_state_file = os.path.join(self.train_dir,
                                                'current_state.pkl')
 
-        io.make_dirs([self.train_dir, self.figs_dir, self.runs_dir,
-                      self.train_runs_dir, self.train_summary_dir,
-                      self.checkpoint_dir])
+        io.make_dirs([self.train_dir, self.figs_dir,
+                      # self.runs_dir, self.train_runs_dir,
+                      self.train_summary_dir, self.checkpoint_dir])
 
     def _add_loss_summaries(self, total_loss):
         """Add summaries for losses in GaugeModel.

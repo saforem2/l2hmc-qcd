@@ -20,10 +20,11 @@ from globals import RUN_HEADER
 
 
 class GaugeModelRunner:
-    def __init__(self, sess, model, runs_dir):
+    def __init__(self, sess, model, logger=None):
         self.sess = sess
         self.model = model
-        self.runs_dir = runs_dir
+        self.logger = logger
+        #  self.runs_dir = runs_dir
 
     def save_run_data(self, run_data, run_strings, samples, **kwargs):
         """Save run information."""
@@ -109,6 +110,9 @@ class GaugeModelRunner:
         dt = time.time() - start_time
 
         out_data = {
+            'step': step,
+            'beta': beta_np,
+            'eps': eps,
             'samples': np.mod(outputs[0], 2 * np.pi),
             'px': outputs[1],
             'actions': outputs[2],
@@ -131,10 +135,8 @@ class GaugeModelRunner:
 
     def run(self,
             run_steps,
-            current_step=None,
-            beta_np=None,
-            therm_frac=10,
-            ret=False):
+            beta=None,
+            therm_frac=10):
         """Run the simulation to generate samples and calculate observables.
 
         Args:
@@ -153,93 +155,100 @@ class GaugeModelRunner:
         """
         run_steps = int(run_steps)
 
-        if beta_np is None:
-            beta_np = self.model.beta_final
+        if beta is None:
+            beta = self.model.beta_final
 
-        run_strings = []
-        run_data = {
-            'px': {},
-            'actions': {},
-            'plaqs': {},
-            'charges': {},
-            'charge_diffs': {},
-        }
-        samples_arr = []
+        #  run_strings = []
+        #  run_data = {
+        #      'px': {},
+        #      'actions': {},
+        #      'plaqs': {},
+        #      'charges': {},
+        #      'charge_diffs': {},
+        #  }
+        #  samples_arr = []
 
-        if current_step is None:
-            out_dir = self.runs_dir
-            training = False
-        else:
-            out_dir = os.path.join(self.runs_dir, 'training')
-            io.check_else_make_dir(out_dir)
-            training = True
+        #  if current_step is None:
+        #      out_dir = self.runs_dir
+        #      training = False
+        #  else:
+        #      out_dir = os.path.join(self.runs_dir, 'training')
+        #      io.check_else_make_dir(out_dir)
+            #  training = True
             # set dynamics.trainable flag to False to freeze trainable vars
-            self.model.dynamics.trainable = False
+            #  self.model.dynamics.trainable = False
 
-        run_dir = os.path.join(out_dir, f"steps_{run_steps}_beta_{beta_np}")
+        #  run_dir = os.path.join(out_dir, f"steps_{run_steps}_beta_{beta_np}")
 
-        kwargs = {
-            'run_steps': run_steps,
-            'beta': beta_np,
-            'current_step': current_step,
-            'therm_frac': therm_frac,
-            'therm_steps': run_steps // therm_frac,
-            'training': training,
-            'run_dir': run_dir,
-        }
+        #  kwargs = {
+        #      'run_steps': run_steps,
+        #      'beta': beta,
+        #      'current_step': current_step,
+        #      'therm_frac': therm_frac,
+        #      'therm_steps': run_steps // therm_frac,
+        #      #  'training': training,
+        #      #  'run_dir': run_dir,
+        #  }
 
         eps = self.sess.run(self.model.dynamics.eps)
-        plaq_exact = u1_plaq_exact(beta_np)
+        plaq_exact = u1_plaq_exact(beta)
 
         # start with randomly generated samples
         samples_np = np.random.randn(*(self.model.batch_size,
                                        self.model.x_dim))
-        if self.model.save_samples:
-            samples_arr.append(samples_np)
-
-        io.log(RUN_HEADER)
+        #  if self.model.save_samples:
+        #      samples_arr.append(samples_np)
 
         try:
+            io.log(RUN_HEADER)
             for step in range(run_steps):
-                inputs = (samples_np, beta_np, eps, plaq_exact)
+                inputs = (samples_np, beta, eps, plaq_exact)
                 out_data, data_str = self.run_step(step, run_steps, inputs)
 
+                if self.logger is not None:
+                    self.logger.update(out_data, data_str)
+
                 # projection of samples onto [0, 2π) done in run_step above
-                samples_np = out_data['samples']
-                if self.model.save_samples:
-                    samples_arr.append(samples_np)
+                #  samples_np = out_data['samples']
+                #  if self.model.save_samples:
+                #      samples_arr.append(samples_np)
+                #
+                #  key = (step, beta_np)
+                #  run_data['px'][key] = out_data['px']
+                #  run_data['actions'][key] = out_data['actions']
+                #  run_data['plaqs'][key] = out_data['plaqs']
+                #  run_data['charges'][key] = out_data['charges']
+                #  run_data['charge_diffs'][key] = out_data['charge_diffs']
+                #  run_strings.append(data_str)
 
-                key = (step, beta_np)
-                run_data['px'][key] = out_data['px']
-                run_data['actions'][key] = out_data['actions']
-                run_data['plaqs'][key] = out_data['plaqs']
-                run_data['charges'][key] = out_data['charges']
-                run_data['charge_diffs'][key] = out_data['charge_diffs']
-                run_strings.append(data_str)
+                #  if step % self.model.print_steps == 0:
+                #      io.log(data_str)
+                #
+                #  if step % 100 == 0:
+                #      io.log(RUN_HEADER)
 
-                if step % self.model.print_steps == 0:
-                    io.log(data_str)
+            if self.logger is not None:
+                self.logger.save_run_data(therm_frac=therm_frac)
+                #  self.logger.write_run_strings()
+            #  self.save_run_data(run_data, run_strings, samples_arr, **kwargs)
 
-                if step % 100 == 0:
-                    io.log(RUN_HEADER)
+            #  if training:
+            #      self.model.dynamics.trainable = True
 
-            self.save_run_data(run_data, run_strings, samples_arr, **kwargs)
+            #  if ret:
+            #      return run_data
 
-            if training:
-                self.model.dynamics.trainable = True
-
-            if ret:
-                return run_data
-
+            #  self.save_run_data(run_data, run_strings, samples_arr, **kwargs)
+            #  if training:
+            #      self.model.dynamics.trainable = True
+            #  if ret:
+            #      return run_data
         except (KeyboardInterrupt, SystemExit):
             io.log("\nKeyboardInterrupt detected!")
             io.log("Saving current state and exiting.")
-
-            self.save_run_data(run_data, run_strings, samples_arr, **kwargs)
-            if training:
-                self.model.dynamics.trainable = True
-            if ret:
-                return run_data
+            if self.logger is not None:
+                self.logger.save_run_data(therm_frac=therm_frac)
+                #  self.logger.write_run_strings()
 
     def calc_observables_stats(self, run_data, therm_frac=10):
         """Calculate statistics for lattice observables.
