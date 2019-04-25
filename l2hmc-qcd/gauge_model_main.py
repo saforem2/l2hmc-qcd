@@ -159,6 +159,9 @@ def hmc(FLAGS, l2hmc_model=None, l2hmc_logger=None):
 
     sess.run(tf.global_variables_initializer())
 
+    if FLAGS.horovod:
+        sess.run(hvd.broadcast_global_variables(0))
+
     betas = [l2hmc_model.beta_final - 1,
              l2hmc_model.beta_final,
              l2hmc_model.beta_final + 1]
@@ -187,6 +190,7 @@ def l2hmc(FLAGS):
         params['train_steps'] //= num_workers
         params['save_steps'] //= num_workers
         params['lr_decay_steps'] //= num_workers
+        #  params['run_steps'] //= num_workers
         #  params['lr_init'] *= hvd.size()
     else:
         params['using_hvd'] = False
