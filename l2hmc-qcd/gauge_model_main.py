@@ -31,8 +31,6 @@ Author: Sam Foreman (github: @saforem2)
 Date: 04/10/2019
 """
 import os
-import pickle
-import numpy as np
 import tensorflow as tf
 
 from tensorflow.python import debug as tf_debug
@@ -42,10 +40,9 @@ from tensorflow.core.protobuf import rewriter_config_pb2
 
 import utils.file_io as io
 from utils.parse_args import parse_args
-from lattice.lattice import u1_plaq_exact
 from models.gauge_model import GaugeModel
-from loggers.gauge_model_logger import GaugeModelLogger
-from loggers.gauge_model_runner_logger import GaugeModelRunnerLogger
+from loggers.train_logger import TrainLogger
+from loggers.run_logger import RunLogger
 from trainers.gauge_model_trainer import GaugeModelTrainer
 from plotters.gauge_model_plotter import GaugeModelPlotter
 from runners.gauge_model_runner import GaugeModelRunner
@@ -111,13 +108,13 @@ def create_config_proto(FLAGS, params):
     return config_proto, params
 
 
-def hmc(FLAGS, l2hmc_model=None, l2hmc_logger=None):
+def hmc(FLAGS, l2hmc_model=None, l2hmc_train_logger=None):
     """Create and run generic HMC sampler using trained params from L2HMC."""
     condition1 = not FLAGS.horovod
     condition2 = FLAGS.horovod and hvd.rank() == 0
     is_chief = condition1 or condition2
-    #  if not is_chief:
-    #      return -1
+    if not is_chief:
+        return -1
 
     if l2hmc_model is not None:
         params = l2hmc_model.params
@@ -126,12 +123,12 @@ def hmc(FLAGS, l2hmc_model=None, l2hmc_logger=None):
         for key, val in FLAGS.__dict__.items():
             params[key] = val
 
-    if l2hmc_logger is not None:
-        params['eps'] = l2hmc_logger._current_state['eps']
+    if l2hmc_train_logger is not None:
+        params['eps'] = l2hmc_train_logger._current_state['eps']
         params['hmc'] = True
         params['beta_init'] = l2hmc_model.beta_init
         params['beta_final'] = l2hmc_model.beta_final
-        log_dir = os.path.join(l2hmc_logger.log_dir, 'HMC')
+        log_dir = os.path.join(l2hmc_train_logger.log_dir, 'HMC')
         figs_dir = os.path.join(log_dir, 'figures')
         io.check_else_make_dir(log_dir)
         io.check_else_make_dir(figs_dir)
@@ -145,22 +142,22 @@ def hmc(FLAGS, l2hmc_model=None, l2hmc_logger=None):
 
     model = GaugeModel(params=params)
 
-    if is_chief:
+    #  if is_chief:
         #  log_dir = params.get('log_dir', 'logs')
         #  logger = GaugeModelLogger(sess, model, log_dir, FLAGS.summaries)
-        run_logger = GaugeModelRunnerLogger(sess, model, log_dir)
+    run_logger = RunLogger(sess, model, log_dir)
+    plotter = GaugeModelPlotter(figs_dir)
 
-        plotter = GaugeModelPlotter(figs_dir)
-    else:
-        run_logger = None
-        plotter = None
+    #  else:
+    #      run_logger = None
+    #      plotter = None
 
     runner = GaugeModelRunner(sess, model, run_logger)
 
     sess.run(tf.global_variables_initializer())
 
-    if FLAGS.horovod:
-        sess.run(hvd.broadcast_global_variables(0))
+    #  if FLAGS.horovod:
+    #      sess.run(hvd.broadcast_global_variables(0))
 
     betas = [l2hmc_model.beta_final - 1,
              l2hmc_model.beta_final,
@@ -209,15 +206,15 @@ def l2hmc(FLAGS):
 
     if is_chief:
         log_dir = params.get('log_dir', 'logs')
-        logger = GaugeModelLogger(sess, model, log_dir, FLAGS.summaries)
-        run_logger = GaugeModelRunnerLogger(sess, model, logger.log_dir)
-        plotter = GaugeModelPlotter(logger.figs_dir)
+        train_logger = TrainLogger(sess, model, log_dir, FLAGS.summaries)
+        run_logger = RunLogger(sess, model, train_logger.log_dir)
+        plotter = GaugeModelPlotter(run_logger.figs_dir)
     else:
-        logger = None
+        train_logger = None
         run_logger = None
         plotter = None
 
-    trainer = GaugeModelTrainer(sess, model, logger)
+    trainer = GaugeModelTrainer(sess, model, train_logger)
 
     sess.run(tf.global_variables_initializer())
 
@@ -250,7 +247,7 @@ def l2hmc(FLAGS):
         if plotter is not None and run_logger is not None:
             plotter.plot_observables(run_logger.run_data, beta)
 
-    return sess, model, logger
+    return sess, model, train_logger
 
 
 def main(FLAGS):
@@ -262,7 +259,7 @@ def main(FLAGS):
     io.log('\n' + 80 * '-')
     io.log("Running L2HMC algorithm...")
 
-    l2hmc_sess, l2hmc_model, l2hmc_logger = l2hmc(FLAGS)
+    l2hmc_sess, l2hmc_model, l2hmc_train_logger = l2hmc(FLAGS)
 
     l2hmc_sess.close()
     tf.reset_default_graph()
@@ -271,13 +268,13 @@ def main(FLAGS):
     io.log(("Running generic HMC algorithm "
             "with learned parameters from L2HMC..."))
 
-    #  condition1 = not FLAGS.horovod
-    #  condition2 = FLAGS.horovod and hvd.rank() == 0
-    #  is_chief = condition1 or condition2
-    #
-    #  if is_chief:
-    hmc_sess, _, _, _ = hmc(FLAGS, l2hmc_model, l2hmc_logger)
-    hmc_sess.close()
+    condition1 = not FLAGS.horovod
+    condition2 = FLAGS.horovod and hvd.rank() == 0
+    is_chief = condition1 or condition2
+
+    if is_chief:
+        hmc_sess, _, _, _ = hmc(FLAGS, l2hmc_model, l2hmc_train_logger)
+        hmc_sess.close()
 
 
 if __name__ == '__main__':

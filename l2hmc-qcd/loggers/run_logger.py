@@ -1,14 +1,13 @@
 """
-gauge_model_runner_logger.py
+run_logger.py
 
-Implements GaugeModelRunnerLogger class responsible for saving/logging data
-from `run` phase of GaugeModel. 
+Implements RunLogger class responsible for saving/logging data
+from `run` phase of GaugeModel.
 
 Author: Sam Foreman (github: @saforem2)
 Date: 04/24/2019
 """
 import os
-import time
 import pickle
 
 import numpy as np
@@ -17,36 +16,32 @@ from collections import Counter, OrderedDict
 from scipy.stats import sem
 import utils.file_io as io
 
-from globals import FILE_PATH, NP_FLOAT, RUN_HEADER
+from globals import RUN_HEADER
+
 from lattice.lattice import u1_plaq_exact
-from utils.tf_logging import variable_summaries
 
-try:
-    import horovod.tensorflow as hvd
-    HAS_HOROVOD = True
-except ImportError:
-    HAS_HOROVOD = False
 
-class GaugeModelRunnerLogger:
+class RunLogger:
     def __init__(self, sess, model, log_dir):
         """
         Args:
             sess: tf.Session object.
             model: GaugeModel object.
-            log_dir: Existing logdir from `GaugeModelLogger`.
+            log_dir: Existing logdir from `TrainLogger`.
         """
         self.sess = sess
         self.model = model
         assert os.path.isdir(log_dir)
         self.log_dir = log_dir
         self.runs_dir = os.path.join(self.log_dir, 'runs')
+        self.figs_dir = os.path.join(self.log_dir, 'figures')
         io.check_else_make_dir(self.runs_dir)
 
         self.run_steps = None
         self.beta = None
         self.run_data = {}
         self.run_stats = {}
-        self.run_strings = []
+        self.run_strings = [RUN_HEADER]
 
         self.samples_arr = [] if self.model.save_samples else None
 
