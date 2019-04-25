@@ -45,6 +45,7 @@ from utils.parse_args import parse_args
 from lattice.lattice import u1_plaq_exact
 from models.gauge_model import GaugeModel
 from loggers.gauge_model_logger import GaugeModelLogger
+from loggers.gauge_model_runner_logger import GaugeModelRunnerLogger
 from trainers.gauge_model_trainer import GaugeModelTrainer
 from plotters.gauge_model_plotter import GaugeModelPlotter
 from runners.gauge_model_runner import GaugeModelRunner
@@ -197,8 +198,12 @@ def l2hmc(FLAGS):
     if is_chief:
         log_dir = params.get('log_dir', 'logs')
         logger = GaugeModelLogger(sess, model, log_dir, FLAGS.summaries)
+        run_logger = GaugeModelRunnerLogger(sess, model, logger.log_dir)
+        plotter = GaugeModelPlotter(logger.figs_dir)
     else:
         logger = None
+        run_logger = None
+        plotter = None
 
     trainer = GaugeModelTrainer(sess, model, logger)
 
@@ -209,25 +214,28 @@ def l2hmc(FLAGS):
 
     trainer.train(model.train_steps)
 
-    if is_chief:
-        run_kwargs = {
-            'beta': model.beta_final
-        }
-        runs_dir = os.path.join(logger.log_dir, 'runs')
-        io.check_else_make_dir(runs_dir)
-        plotter = GaugeModelPlotter(logger.figs_dir)
-        runner = GaugeModelRunner(sess, model, runs_dir)
+    #  if is_chief:
+    #  run_kwargs = {
+    #      'beta': model.beta_final
+    #  }
+    #  runs_dir = os.path.join(logger.log_dir, 'runs')
+    #  io.check_else_make_dir(runs_dir)
+    #  plotter = GaugeModelPlotter(logger.figs_dir)
+    runner = GaugeModelRunner(sess, model, run_logger)
 
-        run_data = runner.run(int(model.run_steps),
-                              beta_np=run_kwargs['beta'],
-                              ret=True)
-        plotter.plot_observables(run_data, **run_kwargs)
+    #  run_data = runner.run(int(model.run_steps),
+    #                        beta_np=run_kwargs['beta'],
+    #                        ret=True)
 
-        betas = np.arange(model.beta_init, model.beta_final, 1)
-        for beta in betas:
-            run_kwargs['beta'] = beta
-            run_data = runner.run(int(model.run_steps), beta_np=beta, ret=True)
-            plotter.plot_observables(run_data, **run_kwargs)
+    betas = np.arange(model.beta_init, model.beta_final, 1)
+    for beta in betas:
+        if run_logger is not None:
+            run_logger.reset(int(model.run_steps), beta)
+
+        runner.run(int(model.run_steps), beta)
+
+        if plotter is not None and run_logger is not None:
+            plotter.plot_observables(run_logger.run_data, beta)
 
     return sess, model, logger
 
