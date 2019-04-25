@@ -175,7 +175,6 @@ class GaugeModelRunner:
                 if self.logger is not None:
                     self.logger.update(out_data, data_str)
 
-
             if self.logger is not None:
                 self.logger.save_run_data(therm_frac=therm_frac)
 

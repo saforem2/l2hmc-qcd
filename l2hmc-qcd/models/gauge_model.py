@@ -12,9 +12,6 @@ from __future__ import division
 from __future__ import print_function
 
 import os
-import sys
-import time
-import pickle
 
 import numpy as np
 import tensorflow as tf
@@ -25,20 +22,11 @@ try:
 except ImportError:
     HAS_HOROVOD = False
 
-try:
-    import matplotlib.pyplot as plt
-    HAS_MATPLOTLIB = True
-except ImportError:
-    HAS_MATPLOTLIB = False
-
 import utils.file_io as io
 
-from globals import (
-    COLORS, FILE_PATH, GLOBAL_SEED, MARKERS, PARAMS, NP_FLOAT, TF_FLOAT
-)
-from lattice.lattice import GaugeLattice, u1_plaq_exact
+from globals import GLOBAL_SEED, TF_FLOAT
+from lattice.lattice import GaugeLattice
 from dynamics.gauge_dynamics import GaugeDynamics
-from utils.parse_args import parse_args
 
 from tensorflow.python import debug as tf_debug
 from tensorflow.python.client import timeline
@@ -152,20 +140,17 @@ class GaugeModel:
         with tf.name_scope('plaq_observables'):
             with tf.name_scope('plaq_sums'):
                 obs_ops['plaq_sums'] = self.lattice.calc_plaq_sums(self.x)
-                #  self.plaq_sums_op = self._calc_plaq_sums(self.x)
+
             with tf.name_scope('actions'):
                 obs_ops['actions'] = self.lattice.calc_actions(self.x)
-                #  self.actions_op = self._calc_total_actions(self.x)
+
             with tf.name_scope('avg_plaqs'):
                 plaqs = self.lattice.calc_plaqs(self.x)
                 avg_plaqs = tf.reduce_mean(plaqs, name='avg_plaqs')
 
                 obs_ops['plaqs'] = plaqs
                 obs_ops['avg_plaqs'] = avg_plaqs
-                #  obs_ops['plaqs'] = self.lattice.calc_plaqs(self.x)
-                #  #  self.plaqs_op = self._calc_avg_plaqs(self.x)
-                #  obs_ops['avg_plaqs'] = tf.reduce_mean(obs_ops['plaqs'],
-                #                                        name='avg_plaq')
+
             with tf.name_scope('top_charges'):
                 obs_ops['charges'] = self.lattice.calc_top_charges(self.x,
                                                                    fft=False)
