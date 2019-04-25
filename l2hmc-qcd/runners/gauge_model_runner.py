@@ -158,46 +158,12 @@ class GaugeModelRunner:
         if beta is None:
             beta = self.model.beta_final
 
-        #  run_strings = []
-        #  run_data = {
-        #      'px': {},
-        #      'actions': {},
-        #      'plaqs': {},
-        #      'charges': {},
-        #      'charge_diffs': {},
-        #  }
-        #  samples_arr = []
-
-        #  if current_step is None:
-        #      out_dir = self.runs_dir
-        #      training = False
-        #  else:
-        #      out_dir = os.path.join(self.runs_dir, 'training')
-        #      io.check_else_make_dir(out_dir)
-            #  training = True
-            # set dynamics.trainable flag to False to freeze trainable vars
-            #  self.model.dynamics.trainable = False
-
-        #  run_dir = os.path.join(out_dir, f"steps_{run_steps}_beta_{beta_np}")
-
-        #  kwargs = {
-        #      'run_steps': run_steps,
-        #      'beta': beta,
-        #      'current_step': current_step,
-        #      'therm_frac': therm_frac,
-        #      'therm_steps': run_steps // therm_frac,
-        #      #  'training': training,
-        #      #  'run_dir': run_dir,
-        #  }
-
         eps = self.sess.run(self.model.dynamics.eps)
         plaq_exact = u1_plaq_exact(beta)
 
         # start with randomly generated samples
         samples_np = np.random.randn(*(self.model.batch_size,
                                        self.model.x_dim))
-        #  if self.model.save_samples:
-        #      samples_arr.append(samples_np)
 
         try:
             io.log(RUN_HEADER)
@@ -209,47 +175,15 @@ class GaugeModelRunner:
                 if self.logger is not None:
                     self.logger.update(out_data, data_str)
 
-                # projection of samples onto [0, 2π) done in run_step above
-                #  samples_np = out_data['samples']
-                #  if self.model.save_samples:
-                #      samples_arr.append(samples_np)
-                #
-                #  key = (step, beta_np)
-                #  run_data['px'][key] = out_data['px']
-                #  run_data['actions'][key] = out_data['actions']
-                #  run_data['plaqs'][key] = out_data['plaqs']
-                #  run_data['charges'][key] = out_data['charges']
-                #  run_data['charge_diffs'][key] = out_data['charge_diffs']
-                #  run_strings.append(data_str)
-
-                #  if step % self.model.print_steps == 0:
-                #      io.log(data_str)
-                #
-                #  if step % 100 == 0:
-                #      io.log(RUN_HEADER)
 
             if self.logger is not None:
                 self.logger.save_run_data(therm_frac=therm_frac)
-                #  self.logger.write_run_strings()
-            #  self.save_run_data(run_data, run_strings, samples_arr, **kwargs)
 
-            #  if training:
-            #      self.model.dynamics.trainable = True
-
-            #  if ret:
-            #      return run_data
-
-            #  self.save_run_data(run_data, run_strings, samples_arr, **kwargs)
-            #  if training:
-            #      self.model.dynamics.trainable = True
-            #  if ret:
-            #      return run_data
         except (KeyboardInterrupt, SystemExit):
             io.log("\nKeyboardInterrupt detected!")
             io.log("Saving current state and exiting.")
             if self.logger is not None:
                 self.logger.save_run_data(therm_frac=therm_frac)
-                #  self.logger.write_run_strings()
 
     def calc_observables_stats(self, run_data, therm_frac=10):
         """Calculate statistics for lattice observables.

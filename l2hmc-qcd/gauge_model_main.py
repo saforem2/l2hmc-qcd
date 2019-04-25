@@ -116,8 +116,8 @@ def hmc(FLAGS, l2hmc_model=None, l2hmc_logger=None):
     condition1 = not FLAGS.horovod
     condition2 = FLAGS.horovod and hvd.rank() == 0
     is_chief = condition1 or condition2
-    if not is_chief:
-        return -1
+    #  if not is_chief:
+    #      return -1
 
     if l2hmc_model is not None:
         params = l2hmc_model.params
