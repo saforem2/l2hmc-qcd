@@ -31,6 +31,8 @@ Author: Sam Foreman (github: @saforem2)
 Date: 04/10/2019
 """
 import os
+import pickle
+import datetime
 import tensorflow as tf
 
 from tensorflow.python import debug as tf_debug
@@ -47,7 +49,7 @@ from trainers.gauge_model_trainer import GaugeModelTrainer
 from plotters.gauge_model_plotter import GaugeModelPlotter
 from runners.gauge_model_runner import GaugeModelRunner
 
-from globals import TRAIN_HEADER, RUN_HEADER
+from globals import TRAIN_HEADER, RUN_HEADER, FILE_PATH
 
 try:
     import horovod.tensorflow as hvd
@@ -108,6 +110,11 @@ def create_config_proto(FLAGS, params):
     return config_proto, params
 
 
+def create_log_dir(FLAGS):
+    if FLAGS.hmc:
+        pass
+
+
 def hmc(FLAGS, l2hmc_model=None, l2hmc_train_logger=None):
     """Create and run generic HMC sampler using trained params from L2HMC."""
     condition1 = not FLAGS.horovod
@@ -116,53 +123,71 @@ def hmc(FLAGS, l2hmc_model=None, l2hmc_train_logger=None):
     if not is_chief:
         return -1
 
-    if l2hmc_model is not None:
-        params = l2hmc_model.params
+    if l2hmc_model is None:
+        if FLAGS.log_dir is None:
+            now = datetime.datetime.now()
+            date_str = f'{now.year}_{now.month}_{now.day}'
 
-    else:
+            LX = FLAGS.space_size
+            NS = FLAGS.num_samples
+            #  RS = FLAGS.run_steps
+            LF = FLAGS.num_steps
+            SS = str(FLAGS.eps).lstrip('0.')
+            #  b1 = str(FLAGS.beta_init).rstrip('.0')
+            #  b2 = str(FLAGS.beta_final).rstrip('.0')
+            #  qw = str(FLAGS.charge_weight).rstrip('.0')
+            run_str = f'HMC_lattice{LX}_batch{NS}_lf{LF}_eps{SS}'
+
+            project_dir = os.path.abspath(os.path.dirname(FILE_PATH))
+            root_log_dir = os.path.join(project_dir, 'logs', date_str, run_str)
+
+            io.check_else_make_dir(root_log_dir)
+            run_num = io.get_run_num(root_log_dir)
+            log_dir = os.path.abspath(os.path.join(root_log_dir,
+                                                   f'run_{run_num}'))
+            FLAGS.log_dir = log_dir
+
+        params = {}
+
+        if FLAGS.horovod:
+            params['using_hvd'] = True
+        else:
+            params['using_hvd'] = False
+
         for key, val in FLAGS.__dict__.items():
             params[key] = val
+
+    else:
+        params = l2hmc_model.params
 
     if l2hmc_train_logger is not None:
         params['eps'] = l2hmc_train_logger._current_state['eps']
         params['hmc'] = True
         params['beta_init'] = l2hmc_model.beta_init
         params['beta_final'] = l2hmc_model.beta_final
-        log_dir = os.path.join(l2hmc_train_logger.log_dir, 'HMC')
-        figs_dir = os.path.join(log_dir, 'figures')
-        io.check_else_make_dir(log_dir)
-        io.check_else_make_dir(figs_dir)
+        params['log_dir'] = os.path.join(l2hmc_train_logger.log_dir, 'HMC')
+        io.check_else_make_dir(params['log_dir'])
 
-    else:
-        log_dir = params.get('log_dir', 'logs')
-        log_dir = os.path.join(log_dir, 'HMC')
+    figs_dir = os.path.join(FLAGS.log_dir, 'figures')
+
+    io.check_else_make_dir(FLAGS.log_dir)
+    io.check_else_make_dir(figs_dir)
 
     config_proto, params = create_config_proto(FLAGS, params)
     sess = tf.Session(config=config_proto)
 
     model = GaugeModel(params=params)
 
-    #  if is_chief:
-        #  log_dir = params.get('log_dir', 'logs')
-        #  logger = GaugeModelLogger(sess, model, log_dir, FLAGS.summaries)
-    run_logger = RunLogger(sess, model, log_dir)
+    run_logger = RunLogger(sess, model, FLAGS.log_dir)
     plotter = GaugeModelPlotter(figs_dir)
-
-    #  else:
-    #      run_logger = None
-    #      plotter = None
 
     runner = GaugeModelRunner(sess, model, run_logger)
 
     sess.run(tf.global_variables_initializer())
 
-    #  if FLAGS.horovod:
-    #      sess.run(hvd.broadcast_global_variables(0))
-
-    betas = [l2hmc_model.beta_final - 1,
-             l2hmc_model.beta_final,
-             l2hmc_model.beta_final + 1]
-
+    betas = [FLAGS.beta_final - 1,
+             FLAGS.beta_final,
+             FLAGS.beta_final + 1]
     for beta in betas:
         if run_logger is not None:
             run_logger.reset(int(model.run_steps), beta)
@@ -177,6 +202,25 @@ def hmc(FLAGS, l2hmc_model=None, l2hmc_train_logger=None):
 
 def l2hmc(FLAGS):
     """Create, train, and run L2HMC sampler on 2D U(1) gauge model."""
+    if FLAGS.log_dir is None:
+        now = datetime.datetime.now()
+        date_str = f'{now.year}_{now.month}_{now.day}'
+
+        L = FLAGS.space_size
+        B = FLAGS.num_samples
+        b1 = str(FLAGS.beta_init).rstrip('.0')
+        b2 = str(FLAGS.beta_final).rstrip('.0')
+        qw = str(FLAGS.charge_weight).rstrip('.0')
+        run_str = f'lattice{L}_batch{B}_beta{b1}{b2}_charge_weight{qw}'
+
+        project_dir = os.path.abspath(os.path.dirname(FILE_PATH))
+        root_log_dir = os.path.join(project_dir, 'logs', date_str, run_str)
+        io.check_else_make_dir(root_log_dir)
+        run_num = io.get_run_num(root_log_dir)
+        log_dir = os.path.abspath(os.path.join(root_log_dir,
+                                               f'run_{run_num}'))
+        FLAGS.log_dir = log_dir
+
     params = {}
     for key, val in FLAGS.__dict__.items():
         params[key] = val
@@ -191,9 +235,6 @@ def l2hmc(FLAGS):
         #  params['lr_init'] *= hvd.size()
     else:
         params['using_hvd'] = False
-
-    if FLAGS.hmc:
-        params['eps_trainable'] = False
 
     config_proto, params = create_config_proto(FLAGS, params)
     sess = tf.Session(config=config_proto)
@@ -256,25 +297,29 @@ def main(FLAGS):
         io.log("INFO: USING HOROVOD")
         hvd.init()
 
-    io.log('\n' + 80 * '-')
-    io.log("Running L2HMC algorithm...")
-
-    l2hmc_sess, l2hmc_model, l2hmc_train_logger = l2hmc(FLAGS)
-
-    l2hmc_sess.close()
-    tf.reset_default_graph()
-
-    io.log('\n' + 80 * '-')
-    io.log(("Running generic HMC algorithm "
-            "with learned parameters from L2HMC..."))
-
     condition1 = not FLAGS.horovod
     condition2 = FLAGS.horovod and hvd.rank() == 0
     is_chief = condition1 or condition2
 
-    if is_chief:
-        hmc_sess, _, _, _ = hmc(FLAGS, l2hmc_model, l2hmc_train_logger)
-        hmc_sess.close()
+
+    if not FLAGS.hmc:
+        io.log('\n' + 80 * '-')
+        io.log("Running L2HMC algorithm...")
+        l2hmc_sess, l2hmc_model, l2hmc_train_logger = l2hmc(FLAGS)
+        l2hmc_sess.close()
+        tf.reset_default_graph()
+
+        io.log('\n' + 80 * '-')
+        io.log(("Running generic HMC algorithm "
+                "with learned parameters from L2HMC..."))
+
+        if is_chief:
+            hmc_sess, _, _, _ = hmc(FLAGS, l2hmc_model, l2hmc_train_logger)
+            hmc_sess.close()
+    else:
+        if is_chief:
+            hmc_sess, _, _, _ = hmc(FLAGS)
+            hmc_sess.close()
 
 
 if __name__ == '__main__':

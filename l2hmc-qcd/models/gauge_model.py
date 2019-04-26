@@ -99,9 +99,12 @@ class GaugeModel:
         # -------------------------------------------------------
         # Create optimizer, build graph, create / init. saver
         # -------------------------------------------------------
-        self._create_optimizer()
-        self.build()
-        self.init_saver()
+        if self.hmc:
+            self.create_sampler()
+        else:
+            self._create_optimizer()
+            self.build()
+            self.init_saver()
 
     def init_saver(self):
         self.saver = tf.train.Saver(max_to_keep=3)
@@ -425,6 +428,9 @@ class GaugeModel:
 
     def _create_optimizer(self, lr_init=None):
         """Create learning rate and optimizer."""
+        if self.hmc:
+            return
+
         if lr_init is None:
             lr_init = self.lr_init
 
