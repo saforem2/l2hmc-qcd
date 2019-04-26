@@ -70,6 +70,8 @@ class GaugeModelTrainer:
             self.model.beta: beta_np
         }
 
+        global_step = self.sess.run(self.model.global_step)
+
         ops = [
             self.model.train_op,         # apply gradients
             self.model.loss_op,          # calculate loss
@@ -88,7 +90,7 @@ class GaugeModelTrainer:
         dt = time.time() - start_time
 
         out_data = {
-            'step': step,
+            'step': global_step,
             'loss': outputs[1],
             'samples': np.mod(outputs[2], 2 * np.pi),
             'px': outputs[3],
@@ -101,8 +103,12 @@ class GaugeModelTrainer:
             'beta': beta_np
         }
 
+        #  if self.model.using_hvd:
+        #      num_workers = hvd.size()
+        #      step *= num_workers
+
         data_str = (
-            f"{step:>5g}/{self.model.train_steps:<6g} "
+            f"{global_step:>5g}/{self.model.train_steps:<6g} "
             f"{outputs[1]:^9.4g} "              # loss value
             f"{dt:^9.4g} "                      # time / step
             f"{np.mean(outputs[3]):^9.4g}"      # accept prob
