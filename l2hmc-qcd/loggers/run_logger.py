@@ -20,6 +20,8 @@ from globals import RUN_HEADER
 
 from lattice.lattice import u1_plaq_exact
 
+from .train_logger import save_params
+
 
 class RunLogger:
     def __init__(self, sess, model, log_dir):
@@ -47,7 +49,7 @@ class RunLogger:
 
     def reset(self, run_steps, beta):
         """Reset run_data and run_strings to prep for new run."""
-        self.run_steps = run_steps
+        self.run_steps = int(run_steps)
         self.beta = beta
         self.run_data = {
             'px': {},
@@ -62,6 +64,8 @@ class RunLogger:
         self.run_dir = os.path.join(self.runs_dir,
                                     f"steps_{run_steps}_beta_{beta}")
         io.check_else_make_dir(self.run_dir)
+        save_params(self.model.params, self.run_dir)
+
 
     def update(self, data, data_str):
         """Update run_data and append data_str to data_strings."""
