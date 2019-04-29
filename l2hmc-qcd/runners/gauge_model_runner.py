@@ -21,9 +21,19 @@ from globals import RUN_HEADER
 
 class GaugeModelRunner:
     def __init__(self, sess, model, logger=None):
+        """
+        Args:
+            sess: tf.Session() object.
+            model: GaugeModel object (defined in `models/gauge_model.py`)
+            logger: RunLogger object (defined in `loggers/run_logger.py`),
+                defaults to None. This is to simplify communication when using
+                Horovod since the RunLogger object exists only on 
+                hvd.rank() == 0, which is responsible for all file I/O.
+        """
         self.sess = sess
         self.model = model
         self.logger = logger
+        self.eps = self.sess.run(self.model.dynamics.eps)
         #  self.runs_dir = runs_dir
 
     def save_run_data(self, run_data, run_strings, samples, **kwargs):
@@ -74,33 +84,29 @@ class GaugeModelRunner:
         Args:
             step (int): Current step.
             run_steps (int): Total number of run_steps to perform.
-            inputs (tuple): Tuple consisting of 
-                (samples_np, beta_np, eps, plaq_exact)
-                where samples_np is the input batch of samples, beta_np is the
-                input value of beta, eps is the step size, and plaq_exact is
-                the expected (theoretical) value of the avg. plaquette at that
-                particular beta.
+            inputs (tuple): Tuple consisting of (samples_in, beta_np, eps,
+                plaq_exact) where samples_in (np.ndarray) is the input batch of
+                samples, beta (float)is the input value of beta, eps is the
+                step size, and plaq_exact (float) is the expected avg. value of
+                the plaquette at this value of beta.
         Returns:
-            outputs (tuple): Tuple of outputs consisting of 
-                (new_samples, accept_prob, actions, charges, charge_diffs).
-                Where new_samples has the same shape as input_samples;
-                accept_prob, actions, charges, and charge diffs all have shape
-                (model.batch_size,)
+            out_data: Dictionary containing the output of running all of the
+            tensorflow operations in `ops` defined below. 
         """
-        samples_np, beta_np, eps, plaq_exact = inputs
+        samples_in, beta_np, eps, plaq_exact = inputs
 
         feed_dict = {
-            self.model.x: samples_np,
+            self.model.x: samples_in,
             self.model.beta: beta_np
         }
 
-        ops = [
-            self.model.x_out,
-            self.model.px,
-            self.model.actions_op,
-            self.model.plaqs_op,
-            self.model.charges_op,
-            self.model.charge_diffs_op
+        ops = [                         # list of tensorflow operations to run
+            self.model.x_out,           # new samples (MD + MH accept/reject)
+            self.model.px,              # prob. of accepting proposed samples
+            self.model.actions_op,      # tot. action of each sample  
+            self.model.plaqs_op,        # avg. plaquette of each sample
+            self.model.charges_op,      # topological charge Q, of each sample
+            self.model.charge_diffs_op  # Q(x_out) - Q(samples_in)
         ]
 
         start_time = time.time()
@@ -112,7 +118,7 @@ class GaugeModelRunner:
         out_data = {
             'step': step,
             'beta': beta_np,
-            'eps': eps,
+            'eps': self.eps,
             'samples': np.mod(outputs[0], 2 * np.pi),
             'px': outputs[1],
             'actions': outputs[2],
@@ -124,7 +130,7 @@ class GaugeModelRunner:
         data_str = (f'{step:>5g}/{run_steps:<6g} '
                     f'{dt:^9.4g} '                      # time / step
                     f'{np.mean(outputs[1]):^9.4g} '     # accept. prob
-                    f'{eps:^9.4g} '                     # step size
+                    f'{self.eps:^9.4g} '                     # step size
                     f'{beta_np:^9.4g} '                 # beta val
                     f'{np.mean(outputs[2]):^9.4g} '     # avg. actions
                     f'{np.mean(outputs[3]):^9.4g} '     # avg. plaquettes
@@ -158,7 +164,6 @@ class GaugeModelRunner:
         if beta is None:
             beta = self.model.beta_final
 
-        eps = self.sess.run(self.model.dynamics.eps)
         plaq_exact = u1_plaq_exact(beta)
 
         # start with randomly generated samples
@@ -168,7 +173,7 @@ class GaugeModelRunner:
         try:
             io.log(RUN_HEADER)
             for step in range(run_steps):
-                inputs = (samples_np, beta, eps, plaq_exact)
+                inputs = (samples_np, beta, self.eps, plaq_exact)
                 out_data, data_str = self.run_step(step, run_steps, inputs)
                 samples_np = out_data['samples']
 
