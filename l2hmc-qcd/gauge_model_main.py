@@ -64,29 +64,27 @@ except ImportError:
     HAS_MATPLOTLIB = False
 
 
-def create_config_proto(FLAGS, params):
+def create_config(FLAGS, params):
     """Create tensorflow config."""
-    config_proto = tf.ConfigProto()
+    config = tf.ConfigProto()
     if FLAGS.time_size > 8:
         off = rewriter_config_pb2.RewriterConfig.OFF
-        config_proto_attrs = config_proto.graph_options.rewrite_options
-        config_proto_attrs.arithmetic_optimization = off
+        config_attrs = config.graph_options.rewrite_options
+        config_attrs.arithmetic_optimization = off
 
     if FLAGS.gpu:
         io.log("Using gpu for training.")
         params['data_format'] = 'channels_first'
-        os.environ["KMP_BLOCKTIME"] = str(0)
-        os.environ["KMP_AFFINITY"] = "granularity=fine,verbose,compact,1,0"
+        #  os.environ["KMP_BLOCKTIME"] = str(0)
+        #  os.environ["KMP_AFFINITY"] = "granularity=fine,verbose,compact,1,0"
         # Horovod: pin GPU to be used to process local rank (one GPU per
         # process)
-        config_proto.allow_soft_placement = True
-        config_proto.gpu_options.allow_growth = True
+        #  config.allow_soft_placement = True
+        config.gpu_options.allow_growth = True
         if HAS_HOROVOD and FLAGS.horovod:
             num_gpus = hvd.size()
             io.log(f"Number of GPUs: {num_gpus}")
-            config_proto.gpu_options.visible_device_list = str(
-                hvd.local_rank()
-            )
+            config.gpu_options.visible_device_list = str(hvd.local_rank())
     else:
         params['data_format'] = 'channels_last'
 
@@ -103,16 +101,46 @@ def create_config_proto(FLAGS, params):
         )
         # NOTE: KMP affinity taken care of by passing -cc depth to aprun call
         OMP_NUM_THREADS = 62
-        config_proto.allow_soft_placement = True
-        config_proto.intra_op_parallelism_threads = OMP_NUM_THREADS
-        config_proto.inter_op_parallelism_threads = 0
+        config.allow_soft_placement = True
+        config.intra_op_parallelism_threads = OMP_NUM_THREADS
+        config.inter_op_parallelism_threads = 0
 
-    return config_proto, params
+    return config, params
 
 
 def create_log_dir(FLAGS):
+    """Automatically create and name `log_dir` to save model data to.
+
+    The created directory will be located in `logs/YYYY_M_D/`, and will have
+    the format (without `_qw{QW}` if running generic HMC):
+
+        `lattice{LX}_batch{NS}_lf{LF}_eps{SS}_qw{QW}`
+
+    Returns:
+        FLAGS, with FLAGS.log_dir being equal to the newly created log_dir.
+
+    NOTE: If log_dir does not already exist, it is created.
+    """
+    LX = FLAGS.space_size
+    NS = FLAGS.num_samples
+    LF = FLAGS.num_steps
+    SS = str(FLAGS.eps).lstrip('0.')
+    QW = str(FLAGS.charge_weight).rstrip('.0')
     if FLAGS.hmc:
-        pass
+        run_str = f'HMC_lattice{LX}_batch{NS}_lf{LF}_eps{SS}'
+    else:
+        run_str = f'lattice{LX}_batch{NS}_lf{LF}_eps{SS}_qw{QW}'
+
+    now = datetime.datetime.now()
+    date_str = f'{now.year}_{now.month}_{now.day}'
+    project_dir = os.path.abspath(os.path.dirname(FILE_PATH))
+    root_log_dir = os.path.join(project_dir, 'logs', date_str, run_str)
+    io.check_else_make_dir(root_log_dir)
+    run_num = io.get_run_num(root_log_dir)
+    log_dir = os.path.abspath(os.path.join(root_log_dir,
+                                           f'run_{run_num}'))
+
+    return log_dir
 
 
 def hmc(FLAGS, l2hmc_model=None, l2hmc_train_logger=None):
@@ -125,34 +153,11 @@ def hmc(FLAGS, l2hmc_model=None, l2hmc_train_logger=None):
 
     if l2hmc_model is None:
         if FLAGS.log_dir is None:
-            now = datetime.datetime.now()
-            date_str = f'{now.year}_{now.month}_{now.day}'
+            FLAGS.log_dir = create_log_dir(FLAGS)
 
-            LX = FLAGS.space_size
-            NS = FLAGS.num_samples
-            #  RS = FLAGS.run_steps
-            LF = FLAGS.num_steps
-            SS = str(FLAGS.eps).lstrip('0.')
-            #  b1 = str(FLAGS.beta_init).rstrip('.0')
-            #  b2 = str(FLAGS.beta_final).rstrip('.0')
-            #  qw = str(FLAGS.charge_weight).rstrip('.0')
-            run_str = f'HMC_lattice{LX}_batch{NS}_lf{LF}_eps{SS}'
-
-            project_dir = os.path.abspath(os.path.dirname(FILE_PATH))
-            root_log_dir = os.path.join(project_dir, 'logs', date_str, run_str)
-
-            io.check_else_make_dir(root_log_dir)
-            run_num = io.get_run_num(root_log_dir)
-            log_dir = os.path.abspath(os.path.join(root_log_dir,
-                                                   f'run_{run_num}'))
-            FLAGS.log_dir = log_dir
-
-        params = {}
-
-        if FLAGS.horovod:
-            params['using_hvd'] = True
-        else:
-            params['using_hvd'] = False
+        params = {
+            'using_hvd': FLAGS.horovod,
+        }
 
         for key, val in FLAGS.__dict__.items():
             params[key] = val
@@ -173,15 +178,16 @@ def hmc(FLAGS, l2hmc_model=None, l2hmc_train_logger=None):
     io.check_else_make_dir(FLAGS.log_dir)
     io.check_else_make_dir(figs_dir)
 
-    config_proto, params = create_config_proto(FLAGS, params)
-    sess = tf.Session(config=config_proto)
+    eps = params['eps']  # step size for (generic) HMC leapfrog integrator
+
+    # create tensorflow config (`config_proto`) to configure session
+    config, params = create_config(FLAGS, params)
+    sess = tf.Session(config=config)
 
     model = GaugeModel(params=params)
-
     run_logger = RunLogger(sess, model, FLAGS.log_dir)
-    plotter = GaugeModelPlotter(figs_dir)
-
     runner = GaugeModelRunner(sess, model, run_logger)
+    plotter = GaugeModelPlotter(figs_dir)
 
     sess.run(tf.global_variables_initializer())
 
@@ -190,9 +196,9 @@ def hmc(FLAGS, l2hmc_model=None, l2hmc_train_logger=None):
              FLAGS.beta_final + 1]
     for beta in betas:
         if run_logger is not None:
-            run_logger.reset(int(model.run_steps), beta)
+            run_logger.reset(model.run_steps, beta)
 
-        runner.run(int(model.run_steps), beta)
+        runner.run(model.run_steps, beta)
 
         if plotter is not None and run_logger is not None:
             plotter.plot_observables(run_logger.run_data, beta)
@@ -203,23 +209,7 @@ def hmc(FLAGS, l2hmc_model=None, l2hmc_train_logger=None):
 def l2hmc(FLAGS):
     """Create, train, and run L2HMC sampler on 2D U(1) gauge model."""
     if FLAGS.log_dir is None:
-        now = datetime.datetime.now()
-        date_str = f'{now.year}_{now.month}_{now.day}'
-
-        L = FLAGS.space_size
-        B = FLAGS.num_samples
-        b1 = str(FLAGS.beta_init).rstrip('.0')
-        b2 = str(FLAGS.beta_final).rstrip('.0')
-        qw = str(FLAGS.charge_weight).rstrip('.0')
-        run_str = f'lattice{L}_batch{B}_beta{b1}{b2}_charge_weight{qw}'
-
-        project_dir = os.path.abspath(os.path.dirname(FILE_PATH))
-        root_log_dir = os.path.join(project_dir, 'logs', date_str, run_str)
-        io.check_else_make_dir(root_log_dir)
-        run_num = io.get_run_num(root_log_dir)
-        log_dir = os.path.abspath(os.path.join(root_log_dir,
-                                               f'run_{run_num}'))
-        FLAGS.log_dir = log_dir
+        FLAGS.log_dir = create_log_dir(FLAGS)
 
     params = {}
     for key, val in FLAGS.__dict__.items():
@@ -236,8 +226,8 @@ def l2hmc(FLAGS):
     else:
         params['using_hvd'] = False
 
-    config_proto, params = create_config_proto(FLAGS, params)
-    sess = tf.Session(config=config_proto)
+    config, params = create_config(FLAGS, params)
+    sess = tf.Session(config=config)
 
     model = GaugeModel(params=params)
 
@@ -264,26 +254,15 @@ def l2hmc(FLAGS):
 
     trainer.train(model.train_steps)
 
-    #  if is_chief:
-    #  run_kwargs = {
-    #      'beta': model.beta_final
-    #  }
-    #  runs_dir = os.path.join(logger.log_dir, 'runs')
-    #  io.check_else_make_dir(runs_dir)
-    #  plotter = GaugeModelPlotter(logger.figs_dir)
     runner = GaugeModelRunner(sess, model, run_logger)
-
-    #  run_data = runner.run(int(model.run_steps),
-    #                        beta_np=run_kwargs['beta'],
-    #                        ret=True)
 
     #  betas = np.arange(model.beta_init, model.beta_final, 1)
     betas = [model.beta_final - 1, model.beta_final, model.beta_final + 1]
     for beta in betas:
         if run_logger is not None:
-            run_logger.reset(int(model.run_steps), beta)
+            run_logger.reset(model.run_steps, beta)
 
-        runner.run(int(model.run_steps), beta)
+        runner.run(model.run_steps, beta)
 
         if plotter is not None and run_logger is not None:
             plotter.plot_observables(run_logger.run_data, beta)
@@ -300,7 +279,6 @@ def main(FLAGS):
     condition1 = not FLAGS.horovod
     condition2 = FLAGS.horovod and hvd.rank() == 0
     is_chief = condition1 or condition2
-
 
     if not FLAGS.hmc:
         io.log('\n' + 80 * '-')
