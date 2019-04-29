@@ -22,10 +22,10 @@ import numpy as np
 import tensorflow as tf
 
 
-def save_params(params, log_dir):
-    io.check_else_make_dir(log_dir)
-    params_txt_file = os.path.join(log_dir, 'parameters.txt')
-    params_pkl_file = os.path.join(log_dir, 'parameters.pkl')
+def save_params(params, out_dir):
+    io.check_else_make_dir(out_dir)
+    params_txt_file = os.path.join(out_dir, 'parameters.txt')
+    params_pkl_file = os.path.join(out_dir, 'parameters.pkl')
     with open(params_txt_file, 'w') as f:
         for key, val in params.items():
             f.write(f"{key}: {val}\n")
