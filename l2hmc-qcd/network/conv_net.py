@@ -50,6 +50,7 @@ def variable_on_cpu(name, shape, initializer):
         var = tf.get_variable(name, shape, initializer, tf.float32)
     return var
 
+
 def variable_with_weight_decay(name, shape, stddev, wd, cpu=True):
     """Helper to create an initialized Variable with weight decay.
 
@@ -121,6 +122,7 @@ def create_periodic_padding(samples, filter_size):
 # pylint:disable=too-many-arguments, too-many-instance-attributes
 class ConvNet3D(tf.keras.Model):
     """Conv. neural net with different initialization scale based on input."""
+
     def __init__(self, model_name, **kwargs):
         """Initialization method."""
 
@@ -264,22 +266,19 @@ class ConvNet3D(tf.keras.Model):
                                                      name='scale_layer')
 
                 with tf.name_scope('translation_layer'):
-                    self.translation_layer = _custom_dense(
-                        self.x_dim, 0.001, name='translation_layer'
-                    )
+                    self.translation_layer = _custom_dense(self.x_dim, 0.001,
+                                                           'translation_layer')
 
                 with tf.name_scope('transformation_layer'):
                     self.transformation_layer = _custom_dense(
-                        self.x_dim,
-                        0.001,
-                        name='transformation_layer'
+                        self.x_dim, 0.001, 'transformation_layer'
                     )
 
     # pylint: disable=invalid-name, arguments-differ
     def call(self, inputs):
         """Forward pass through network.
 
-        NOTE: Data flow of forward pass is outlined below. 
+        NOTE: Data flow of forward pass is outlined below.
               ============================================================
               * inputs: x, v, t
               ------------------------------------------------------------
@@ -297,14 +296,14 @@ class ConvNet3D(tf.keras.Model):
               * H_OUT is then fed to three separate layers:
               ------------------------------------------------------------
                   (1.) H_OUT --> (SCALE_LAYER, TANH) * exp(COEFF_SCALE)
-  
+
                        output: scale
-                
+
                   (2.) H_OUT --> TRANSLATION_LAYER --> TRANSLATION_OUT
-  
+
                        output: translation
 
-                  (3.) H_OUT --> (TRANSFORMATION_LAYER, TANH) 
+                  (3.) H_OUT --> (TRANSFORMATION_LAYER, TANH)
                                   * exp(COEFF_TRANSFORMATION)
 
                        output: transformation
@@ -348,13 +347,16 @@ class ConvNet3D(tf.keras.Model):
                                          name=name))
 
         with tf.name_scope('translation'):
-            translation = self.translation_layer(h)
+            translation = self.translation_weight * self.translation_layer(h)
 
         with tf.name_scope('scale'):
-            scale = tf.nn.tanh(self.scale_layer(h)) * tf.exp(self.coeff_scale)
+            scale = (self.scale_weight
+                     * tf.nn.tanh(self.scale_layer(h))
+                     * tf.exp(self.coeff_scale))
 
         with tf.name_scope('transformation'):
-            transformation = (self.transformation_layer(h)
+            transformation = (self.transformation_weight
+                              * self.transformation_layer(h)
                               * tf.exp(self.coeff_transformation))
 
         return scale, translation, transformation
@@ -366,7 +368,7 @@ class ConvNet3D(tf.keras.Model):
         If self.data_format is 'channels_first', and input `tensor` has shape
         (N, 2, L, L), the output tensor has shape (N, 1, 2, L, L).
 
-        If self.data_format is 'channels_last' and input `tensor` has shape 
+        If self.data_format is 'channels_last' and input `tensor` has shape
         (N, L, L, 2), the output tensor has shape (N, 2, L, L, 1).
         """
         if self.data_format == 'channels_first':
@@ -608,4 +610,5 @@ def _custom_dense(units, factor=1., name=None):
     #              factor=factor * 2.,
     #              mode='FAN_IN',
     #              uniform=False
+    #          ),
     #          ),
