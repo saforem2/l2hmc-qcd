@@ -217,10 +217,11 @@ def hmc(FLAGS, params=None):
 
     model = GaugeModel(params=params)
     run_logger = RunLogger(sess, model, params['log_dir'])
-    runner = GaugeModelRunner(sess, model, run_logger)
-    plotter = GaugeModelPlotter(figs_dir)
+    plotter = GaugeModelPlotter(run_logger.figs_dir)
 
     sess.run(tf.global_variables_initializer())
+
+    runner = GaugeModelRunner(sess, model, run_logger)
 
     betas = [FLAGS.beta_final - 1,
              FLAGS.beta_final,
@@ -322,7 +323,8 @@ def main(FLAGS):
         io.log(("Running generic HMC algorithm "
                 "with learned parameters from L2HMC..."))
         params = l2hmc_model.params
-        params['eps'] = l2hmc_model.eps
+        if l2hmc_train_logger is not None:
+            params['eps'] = l2hmc_train_logger._current_state['eps']
         params['hmc'] = True
         params['log_dir'] = FLAGS.log_dir = None
 
