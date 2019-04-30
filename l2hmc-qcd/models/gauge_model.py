@@ -117,7 +117,7 @@ class GaugeModel:
     def load(self, sess, checkpoint_dir):
         latest_ckpt = tf.train.latest_checkpoint(checkpoint_dir)
         if latest_ckpt:
-            io.log(f"Loading model from {latest_ckpt}...\n")
+            io.log(f"INFO: Loading model from {latest_ckpt}...\n")
             self.saver.restore(sess, latest_ckpt)
             io.log("Model loaded.")
 
@@ -460,7 +460,16 @@ class GaugeModel:
             self.charge_diffs_op = tf.reduce_sum(x_dq) / self.num_samples
 
         with tf.name_scope('train'):
+            update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+            #  ! no update ops in the default graph
+            io.log("update_ops: ", update_ops)
+            # Use the update ops of the model itself
+            io.log("model.updates: ", self.dynamics.updates)
+
             grads_and_vars = zip(self.grads, self.dynamics.trainable_variables)
-            self.train_op = self.optimizer.apply_gradients(
-                grads_and_vars, global_step=self.global_step, name='train_op'
-            )
+            with tf.control_dependencies(self.dynamics.updates):
+                self.train_op = self.optimizer.apply_gradients(
+                    grads_and_vars,
+                    global_step=self.global_step,
+                    name='train_op'
+                )
