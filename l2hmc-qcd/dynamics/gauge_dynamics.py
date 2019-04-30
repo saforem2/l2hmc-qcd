@@ -141,8 +141,10 @@ class GaugeDynamics(tf.keras.Model):
             'filter_sizes': [(3, 3, 2), (2, 2, 2)],
             'name_scope': 'position',
             'data_format': self.data_format,
-            'use_bn': self.use_bn
-
+            'use_bn': self.use_bn,
+            'scale_weight': 1.,
+            'translation_weight': 1.,
+            'transformation_weight': 1.,
         }
 
         with tf.name_scope("DynamicsNetwork"):
