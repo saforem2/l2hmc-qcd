@@ -33,10 +33,7 @@ class GaugeModelRunner:
         self.sess = sess
         self.model = model
         self.logger = logger
-        if self.model.hmc:
-            self.eps = self.model.eps
-        else:
-            self.eps = self.sess.run(self.model.dynamics.eps)
+        self.eps = self.model.eps
         #  self.runs_dir = runs_dir
 
     def save_run_data(self, run_data, run_strings, samples, **kwargs):
