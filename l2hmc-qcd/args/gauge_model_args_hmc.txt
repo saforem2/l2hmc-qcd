@@ -7,16 +7,14 @@
 
 --time_size 8                   
 --space_size 8                  
---num_samples 64 
+--num_samples 128 
 --num_steps 5 
---eps 0.228
+--eps 0.35
 --hmc
 --print_steps 10
 --beta_init 1
 --beta_final 5
---run_steps 100
---log_dir '/tmp/'
-#--log_dir 'logs/HMC/runs_L8/num_steps5/eps0228/num_samples64/beta_i1_f5'
+--run_steps 25000
 
 
 #============================================================================================
