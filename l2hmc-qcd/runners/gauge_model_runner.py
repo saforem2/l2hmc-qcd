@@ -27,7 +27,7 @@ class GaugeModelRunner:
             model: GaugeModel object (defined in `models/gauge_model.py`)
             logger: RunLogger object (defined in `loggers/run_logger.py`),
                 defaults to None. This is to simplify communication when using
-                Horovod since the RunLogger object exists only on 
+                Horovod since the RunLogger object exists only on
                 hvd.rank() == 0, which is responsible for all file I/O.
         """
         self.sess = sess
@@ -94,7 +94,7 @@ class GaugeModelRunner:
                 the plaquette at this value of beta.
         Returns:
             out_data: Dictionary containing the output of running all of the
-            tensorflow operations in `ops` defined below. 
+            tensorflow operations in `ops` defined below.
         """
         samples_in, beta_np, eps, plaq_exact = inputs
 
@@ -106,7 +106,7 @@ class GaugeModelRunner:
         ops = [                         # list of tensorflow operations to run
             self.model.x_out,           # new samples (MD + MH accept/reject)
             self.model.px,              # prob. of accepting proposed samples
-            self.model.actions_op,      # tot. action of each sample  
+            self.model.actions_op,      # tot. action of each sample
             self.model.plaqs_op,        # avg. plaquette of each sample
             self.model.charges_op,      # topological charge Q, of each sample
             self.model.charge_diffs_op  # Q(x_out) - Q(samples_in)
@@ -133,7 +133,7 @@ class GaugeModelRunner:
         data_str = (f'{step:>5g}/{run_steps:<6g} '
                     f'{dt:^9.4g} '                      # time / step
                     f'{np.mean(outputs[1]):^9.4g} '     # accept. prob
-                    f'{self.eps:^9.4g} '                     # step size
+                    f'{self.eps:^9.4g} '                # step size
                     f'{beta_np:^9.4g} '                 # beta val
                     f'{np.mean(outputs[2]):^9.4g} '     # avg. actions
                     f'{np.mean(outputs[3]):^9.4g} '     # avg. plaquettes
