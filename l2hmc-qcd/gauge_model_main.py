@@ -132,7 +132,7 @@ def create_log_dir(FLAGS):
     if FLAGS.hmc:
         run_str = f'HMC_lattice{LX}_batch{NS}_lf{LF}_eps{SS[:3]}'
     else:
-        run_str = f'lattice{LX}_batch{NS}_lf{LF}_eps{SS[:3g]}_qw{QW}'
+        run_str = f'lattice{LX}_batch{NS}_lf{LF}_eps{SS[:3]}_qw{QW}'
 
     now = datetime.datetime.now()
     date_str = f'{now.year}_{now.month}_{now.day}'
