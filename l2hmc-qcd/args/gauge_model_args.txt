@@ -7,7 +7,7 @@
 
 --time_size 8 
 --space_size 8 
---num_samples 128
+--num_samples 16
 --num_steps 3 
 --eps 0.2
 --annealing
@@ -31,7 +31,6 @@
 --summaries
 --eps_trainable
 --use_bn
---log_dir 'logs/april_2019/2019_04_19/lattice8_steps3_batch128_beta25_qweight0_ls05/'
 
 
 #============================================================================================
