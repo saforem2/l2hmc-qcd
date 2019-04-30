@@ -125,7 +125,10 @@ def create_log_dir(FLAGS):
     NS = FLAGS.num_samples
     LF = FLAGS.num_steps
     SS = str(FLAGS.eps).lstrip('0.')
-    QW = str(FLAGS.charge_weight).rstrip('.0')
+    if FLAGS.charge_weight == 0:
+        QW = str('0')
+    else:
+        QW = str(FLAGS.charge_weight).rstrip('.0')
     if FLAGS.hmc:
         run_str = f'HMC_lattice{LX}_batch{NS}_lf{LF}_eps{SS}'
     else:
@@ -134,7 +137,11 @@ def create_log_dir(FLAGS):
     now = datetime.datetime.now()
     date_str = f'{now.year}_{now.month}_{now.day}'
     project_dir = os.path.abspath(os.path.dirname(FILE_PATH))
-    root_log_dir = os.path.join(project_dir, 'logs', date_str, run_str)
+    if FLAGS.log_dir is None:
+        root_log_dir = os.path.join(project_dir, 'logs', date_str, run_str)
+    else:
+        root_log_dir = os.path.join(project_dir, FLAGS.log_dir, date_str,
+                                    run_str)
     io.check_else_make_dir(root_log_dir)
     run_num = io.get_run_num(root_log_dir)
     log_dir = os.path.abspath(os.path.join(root_log_dir,
