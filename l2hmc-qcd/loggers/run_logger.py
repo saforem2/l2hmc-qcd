@@ -66,7 +66,6 @@ class RunLogger:
         io.check_else_make_dir(self.run_dir)
         save_params(self.model.params, self.run_dir)
 
-
     def update(self, data, data_str):
         """Update run_data and append data_str to data_strings."""
         # projection of samples onto [0, 2π) done in run_step above
@@ -181,6 +180,7 @@ class RunLogger:
             io.save_data(val, out_file, name=key)
 
         history_file = os.path.join(self.run_dir, 'run_history.txt')
+        io.write(RUN_HEADER, history_file, 'w')
         _ = [io.write(s, history_file, 'a') for s in self.run_strings]
 
         self.write_run_stats(run_stats, therm_frac)
