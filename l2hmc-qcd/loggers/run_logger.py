@@ -83,7 +83,7 @@ class RunLogger:
         self.run_data['charge_diffs'][key] = data['charge_diffs']
         self.run_strings.append(data_str)
 
-        if step % self.model.print_steps == 0:
+        if step % (10 * self.model.print_steps) == 0:
             io.log(data_str)
 
         if step % 100 == 0:
