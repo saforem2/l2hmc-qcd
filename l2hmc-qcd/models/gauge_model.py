@@ -50,7 +50,7 @@ def check_log_dir(log_dir):
 class GaugeModel:
     def __init__(self, params=None):
         # -------------------------------------------------------
-        # Create attributes from (key, val) pairs in params 
+        # Create attributes from (key, val) pairs in params
         # -------------------------------------------------------
         self.loss_weights = {}
         self.params = params
