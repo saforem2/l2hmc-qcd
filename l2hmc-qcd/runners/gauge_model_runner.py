@@ -20,6 +20,7 @@ from globals import RUN_HEADER
 
 
 class GaugeModelRunner:
+
     def __init__(self, sess, model, logger=None):
         """
         Args:
@@ -34,10 +35,16 @@ class GaugeModelRunner:
         self.model = model
         self.logger = logger
         self.eps = self.sess.run(self.model.dynamics.eps)
-        #  self.runs_dir = runs_dir
 
     def save_run_data(self, run_data, run_strings, samples, **kwargs):
-        """Save run information."""
+        """Save run information.
+
+        Args:
+            run_data: All run data generated from `run` method.
+            run_strings: list of all strings generated from `run` method.
+            samples: Optional collection of all samples generated from `run`
+            method. Only relevant if model.sve_samples is True
+        """
         run_dir = kwargs['run_dir']
         observables_dir = os.path.join(run_dir, 'observables')
 
@@ -139,10 +146,7 @@ class GaugeModelRunner:
 
         return out_data, data_str
 
-    def run(self,
-            run_steps,
-            beta=None,
-            therm_frac=10):
+    def run(self, run_steps, beta=None, therm_frac=10):
         """Run the simulation to generate samples and calculate observables.
 
         Args:
