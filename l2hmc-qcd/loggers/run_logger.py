@@ -61,8 +61,10 @@ class RunLogger:
         self.run_stats = {}
         self.run_strings = []
         self.samples_arr = [] if self.model.save_samples else None
-        self.run_dir = os.path.join(self.runs_dir,
-                                    f"steps_{run_steps}_beta_{beta}")
+        eps = self.model.eps
+        self.run_dir = os.path.join(
+            self.runs_dir, f"steps_{run_steps}_beta_{beta}_eps_{eps:.3g}"
+        )
         io.check_else_make_dir(self.run_dir)
         save_params(self.model.params, self.run_dir)
 
