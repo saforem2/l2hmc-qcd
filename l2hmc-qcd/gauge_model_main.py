@@ -168,6 +168,7 @@ def hmc(FLAGS, params=None):
             params[key] = val
 
     params['hmc'] = True
+    params['use_bn'] = False
     params['log_dir'] = FLAGS.log_dir
 
     #  if FLAGS.horovod:
@@ -260,6 +261,7 @@ def l2hmc(FLAGS):
 
     config, params = create_config(FLAGS, params)
     sess = tf.Session(config=config)
+    tf.keras.backend.set_learning_phase(True)
 
     model = GaugeModel(params=params)
 
@@ -285,6 +287,8 @@ def l2hmc(FLAGS):
         sess.run(hvd.broadcast_global_variables(0))
 
     trainer.train(model.train_steps)
+
+    tf.keras.backend.set_learning_phase(False)
 
     runner = GaugeModelRunner(sess, model, run_logger)
 
@@ -325,6 +329,7 @@ def main(FLAGS):
         params = l2hmc_model.params
         if l2hmc_train_logger is not None:
             params['eps'] = l2hmc_train_logger._current_state['eps']
+            FLAGS.eps = params['eps']
         params['hmc'] = True
         params['log_dir'] = FLAGS.log_dir = None
 
