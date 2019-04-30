@@ -128,11 +128,11 @@ def create_log_dir(FLAGS):
     if FLAGS.charge_weight == 0:
         QW = str('0')
     else:
-        QW = str(FLAGS.charge_weight).rstrip('.0')
+        QW = str(FLAGS.charge_weight).lstrip('0.')
     if FLAGS.hmc:
-        run_str = f'HMC_lattice{LX}_batch{NS}_lf{LF}_eps{SS}'
+        run_str = f'HMC_lattice{LX}_batch{NS}_lf{LF}_eps{SS[:3]}'
     else:
-        run_str = f'lattice{LX}_batch{NS}_lf{LF}_eps{SS}_qw{QW}'
+        run_str = f'lattice{LX}_batch{NS}_lf{LF}_eps{SS[:3g]}_qw{QW}'
 
     now = datetime.datetime.now()
     date_str = f'{now.year}_{now.month}_{now.day}'
@@ -150,7 +150,7 @@ def create_log_dir(FLAGS):
     return log_dir
 
 
-def hmc(FLAGS, l2hmc_model=None, l2hmc_train_logger=None):
+def hmc(FLAGS, params=None):
     """Create and run generic HMC sampler using trained params from L2HMC."""
     condition1 = not FLAGS.horovod
     condition2 = FLAGS.horovod and hvd.rank() == 0
@@ -158,41 +158,65 @@ def hmc(FLAGS, l2hmc_model=None, l2hmc_train_logger=None):
     if not is_chief:
         return -1
 
-    if l2hmc_model is None:
-        if FLAGS.log_dir is None:
-            FLAGS.log_dir = create_log_dir(FLAGS)
+    FLAGS.hmc = True
 
-        params = {
-            'using_hvd': FLAGS.horovod,
-        }
+    FLAGS.log_dir = create_log_dir(FLAGS)
 
+    if params is None:
+        params = {}
         for key, val in FLAGS.__dict__.items():
             params[key] = val
 
-    else:
-        params = l2hmc_model.params
+    params['hmc'] = True
+    params['log_dir'] = FLAGS.log_dir
 
-    if l2hmc_train_logger is not None:
-        params['eps'] = l2hmc_train_logger._current_state['eps']
-        params['hmc'] = True
-        params['beta_init'] = l2hmc_model.beta_init
-        params['beta_final'] = l2hmc_model.beta_final
-        params['log_dir'] = os.path.join(l2hmc_train_logger.log_dir, 'HMC')
-        io.check_else_make_dir(params['log_dir'])
+    #  if FLAGS.horovod:
+    #      params['using_hvd'] = True
+    #      #  num_workers = hvd.size()
+    #      #  params['train_steps'] //= num_workers
+    #      #  params['save_steps'] //= num_workers
+    #      #  params['lr_decay_steps'] //= num_workers
+    #      #  params['run_steps'] //= num_workers
+    #      #  params['lr_init'] *= hvd.size()
+    #  else:
+    #      params['using_hvd'] = False
 
-    figs_dir = os.path.join(FLAGS.log_dir, 'figures')
+    #  params['hmc'] = True
+    #
+    #  if l2hmc_model is None:
+    #      if FLAGS.log_dir is None:
+    #          FLAGS.log_dir = create_log_dir(FLAGS)
+    #
+    #      params = {
+    #          'using_hvd': FLAGS.horovod,
+    #      }
+    #
+    #      for key, val in FLAGS.__dict__.items():
+    #          params[key] = val
+    #
+    #  else:
+    #      params = l2hmc_model.params
 
-    io.check_else_make_dir(FLAGS.log_dir)
+    #  if l2hmc_train_logger is not None:
+    #      params['eps'] = l2hmc_train_logger._current_state['eps']
+    #      params['hmc'] = True
+    #      params['beta_init'] = l2hmc_model.beta_init
+    #      params['beta_final'] = l2hmc_model.beta_final
+    #      params['log_dir'] = os.path.join(l2hmc_train_logger.log_dir,
+    #                                       'HMC_eps{}'.format(params['eps']))
+    #      io.check_else_make_dir(params['log_dir'])
+
+    figs_dir = os.path.join(params['log_dir'], 'figures')
     io.check_else_make_dir(figs_dir)
 
-    eps = params['eps']  # step size for (generic) HMC leapfrog integrator
+    #  eps = params['eps']  # step size for (generic) HMC leapfrog integrator
 
     # create tensorflow config (`config_proto`) to configure session
     config, params = create_config(FLAGS, params)
     sess = tf.Session(config=config)
 
     model = GaugeModel(params=params)
-    run_logger = RunLogger(sess, model, FLAGS.log_dir)
+    run_logger = RunLogger(sess, model, params['log_dir'])
     runner = GaugeModelRunner(sess, model, run_logger)
     plotter = GaugeModelPlotter(figs_dir)
 
@@ -297,9 +321,13 @@ def main(FLAGS):
         io.log('\n' + 80 * '-')
         io.log(("Running generic HMC algorithm "
                 "with learned parameters from L2HMC..."))
+        params = l2hmc_model.params
+        params['eps'] = l2hmc_train_logger._current_state['eps']
+        params['hmc'] = True
+        params['log_dir'] = FLAGS.log_dir = None
 
         if is_chief:
-            hmc_sess, _, _, _ = hmc(FLAGS, l2hmc_model, l2hmc_train_logger)
+            hmc_sess, _, _, _ = hmc(FLAGS, params)
             hmc_sess.close()
     else:
         if is_chief:
