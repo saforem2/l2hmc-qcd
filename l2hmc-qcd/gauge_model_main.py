@@ -322,7 +322,7 @@ def main(FLAGS):
         io.log(("Running generic HMC algorithm "
                 "with learned parameters from L2HMC..."))
         params = l2hmc_model.params
-        params['eps'] = l2hmc_train_logger._current_state['eps']
+        params['eps'] = l2hmc_model.eps
         params['hmc'] = True
         params['log_dir'] = FLAGS.log_dir = None
 
