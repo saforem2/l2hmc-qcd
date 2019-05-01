@@ -10,14 +10,10 @@ Date: 04/09/2019
 import os
 import pickle
 
-from scipy.stats import sem
 import utils.file_io as io
 
-from globals import FILE_PATH, TRAIN_HEADER
-from lattice.lattice import u1_plaq_exact
-from utils.tf_logging import variable_summaries
-
-import numpy as np
+from globals import TRAIN_HEADER
+from utils.tf_logging import variable_summaries  # add_loss_summaries
 
 import tensorflow as tf
 
@@ -72,7 +68,14 @@ class TrainLogger:
             self.create_summaries()
 
     def _create_dir_structure(self, log_dir):
-        """Create relevant directories for storing data."""
+        """Create relevant directories for storing data.
+
+        Args:
+            log_dir: Root directory in which all other directories are created.
+
+        Returns:
+            None
+        """
         io.check_else_make_dir(log_dir)
         self.log_dir = log_dir
         self.train_dir = os.path.join(self.log_dir, 'training')
@@ -85,37 +88,8 @@ class TrainLogger:
         self.current_state_file = os.path.join(self.train_dir,
                                                'current_state.pkl')
 
-        io.make_dirs([self.train_dir,
-                      self.train_summary_dir,
+        io.make_dirs([self.train_dir, self.train_summary_dir,
                       self.checkpoint_dir])
-
-    def _add_loss_summaries(self, total_loss):
-        """Add summaries for losses in GaugeModel.
-
-        Generates a moving average for all losses and associated summaries for
-        visualizing the performance of the network.
-
-        Args:
-            total_loss: Total loss from model._calc_loss()
-
-        Returns:
-            loss_averages_op: Op for generating moving averages of losses.
-        """
-        # Compute the moving average of all individual losses and the total
-        # loss.
-        loss_averages = tf.train.ExponentialMovingAverage(0.9, name='avg')
-        losses = tf.get_collection('losses')
-        loss_averages_op = loss_averages.apply(losses + [total_loss])
-
-        # Attach a scalar summary to all individual losses and the total loss;
-        # do the same for the averaged version of the losses.
-        for l in losses + [total_loss]:
-            # Name each loss as '(raw)' and name the moving average version of
-            # the loss as the original loss name.
-            tf.summary.scalar(l.op.name + ' (raw)', l)
-            tf.summary.scalar(l.op.name, loss_averages.average(l))
-
-        return loss_averages_op
 
     def create_summaries(self):
         """Create summary objects for logging in TensorBoard."""
