@@ -110,6 +110,7 @@ class GaugeModel:
         self.saver = tf.train.Saver(max_to_keep=3)
 
     def save(self, sess, checkpoint_dir):
+        """Save model checkpoint to checkpoint directory."""
         io.log(f"INFO: Saving model to: {checkpoint_dir}")
         self.saver.save(sess, checkpoint_dir, self.global_step)
         io.log("Model saved.")
