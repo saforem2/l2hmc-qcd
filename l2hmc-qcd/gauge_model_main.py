@@ -124,18 +124,16 @@ def create_log_dir(FLAGS):
     LX = FLAGS.space_size
     NS = FLAGS.num_samples
     LF = FLAGS.num_steps
-    SS = str(FLAGS.eps).lstrip('0.')
-    if FLAGS.charge_weight == 0:
-        QW = str('0')
-    else:
-        QW = str(FLAGS.charge_weight).lstrip('0.')
+    #  SS = str(FLAGS.eps).lstrip('0.')
+    SS = FLAGS.eps
+    QW = FLAGS.charge_weight
     if FLAGS.hmc:
-        run_str = f'HMC_lattice{LX}_batch{NS}_lf{LF}_eps{SS[:3]}'
+        run_str = f'HMC_lattice{LX}_batch{NS}_lf{LF}_eps{SS:.3g}'
     else:
-        run_str = f'lattice{LX}_batch{NS}_lf{LF}_eps{SS[:3]}_qw{QW}'
+        run_str = f'lattice{LX}_batch{NS}_lf{LF}_eps{SS:.3g}_qw{QW}'
 
     now = datetime.datetime.now()
-    date_str = f'{now.year}_{now.month}_{now.day}'
+    date_str = f'{now.year}_{now.month}_{now.day}_{now.hour}_{now.second}'
     project_dir = os.path.abspath(os.path.dirname(FILE_PATH))
     if FLAGS.log_dir is None:
         root_log_dir = os.path.join(project_dir, 'logs', date_str, run_str)
