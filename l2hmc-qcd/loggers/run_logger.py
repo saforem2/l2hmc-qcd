@@ -23,6 +23,16 @@ from lattice.lattice import u1_plaq_exact
 from .train_logger import save_params
 
 
+def arr_from_dict(d, key):
+    return np.array(list(d[key]))
+
+
+def autocorr(x):
+    autocorr = np.correlate(x, x, mode='full')
+
+    return autocorr[autocorr.size // 2:]
+
+
 class RunLogger:
     def __init__(self, sess, model, log_dir):
         """
@@ -160,6 +170,10 @@ class RunLogger:
                 pickle.dump(self.samples_arr, f)
 
         run_stats = self.calc_observables_stats(self.run_data, therm_frac)
+        charges = self.run_data['charges']
+        charges_arr = np.array(list(charges.values()))
+        charges_autocorrs = [autocorr(x) for x in charges_arr.T]
+        self.run_data['charges_autocorrs'] = charges_autocorrs
 
         data_file = os.path.join(self.run_dir, 'run_data.pkl')
         io.log(f"Saving run_data to: {data_file}.")
@@ -313,4 +327,6 @@ class RunLogger:
         log_and_write(ss0, str0, therm_str, suscept_strings, out_file)
         log_and_write(ss1, str1, therm_str, actions_strings, out_file)
         log_and_write(ss2, str2, therm_str, plaqs_strings, out_file)
+        log_and_write(ss3, str3, therm_str, charge_probs_strings, out_file)
+        log_and_write(ss3, str3, therm_str, charge_probs_strings, out_file)
         log_and_write(ss3, str3, therm_str, charge_probs_strings, out_file)
