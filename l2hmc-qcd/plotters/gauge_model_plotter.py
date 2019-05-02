@@ -8,6 +8,7 @@ Author: Sam Foreman (github: @saforem2)
 Date: 04/10/2019
 """
 import os
+import pickle
 import numpy as np
 
 try:
@@ -45,11 +46,13 @@ def plot_multiple_lines(data, xy_labels, **kwargs):
     legend = kwargs.get('legend', False)
     title = kwargs.get('title', None)
     ret = kwargs.get('ret', False)
+    if isinstance(data, list):
+        data = np.array(data)
 
     try:
         x_data, y_data = data
-    except IndexError:
-        x_data = np.arange(y_data.shape[0])
+    except (IndexError, ValueError):
+        x_data = np.arange(data.shape[0])
         y_data = data
 
     x_label, y_label = xy_labels
@@ -111,8 +114,65 @@ def plot_multiple_lines(data, xy_labels, **kwargs):
     return 1
 
 
+def load_params_from_dir(d):
+    params_file = os.path.join(d, 'params.pkl')
+    with open(params_file, 'rb') as f:
+        params = pickle.load(f)
+    return params
+
+
+class DataLoader:
+    def __init__(self, run_dir=None):
+        self.run_dir = None
+
+    def load_pkl_file(self, pkl_file):
+        with open(pkl_file, 'rb') as f:
+            contents = pickle.load(f)
+
+        return contents
+
+    def load_params(self, run_dir=None):
+        if run_dir is None:
+            run_dir = self.run_dir
+        params_file = os.path.join(run_dir, 'parameters.pkl')
+
+        return self.load_pkl_file(params_file)
+
+    def load_run_data(self, run_dir=None):
+        if run_dir is None:
+            run_dir = self.run_dir
+
+        run_data_file = os.path.join(run_dir, 'run_data.pkl')
+
+        return self.load_pkl_file(run_data_file)
+
+    def load_run_stats(self, run_dir=None):
+        if run_dir is None:
+            run_dir = self.run_dir
+
+        run_stats_file = os.path.join(run_dir, 'run_stats.pkl')
+
+        return self.load_pkl_file(run_stats_file)
+
+    def load_observables(self, run_dir=None):
+        if run_dir is None:
+            run_dir = self.run_dir
+
+        obs_dir = os.path.join(run_dir, 'observables')
+        files = os.listdir(obs_dir)
+
+        obs_names = [i.rstrip('.pkl') for i in files]
+        obs_files = [os.path.join(obs_dir, i) for i in files]
+
+        observables = {
+            n: self.load_pkl_file(f) for (n, f) in zip(obs_names, obs_files)
+        }
+
+        return observables
+
+
 class GaugeModelPlotter:
-    def __init__(self, log_dir):
+    def __init__(self, log_dir=None):
         #  self.params = params
         #  self.data = data
         self.log_dir = log_dir
@@ -133,9 +193,6 @@ class GaugeModelPlotter:
             charge_probabilities is a dictionary of the form:
                 {charge_val: charge_val_probability}
         """
-        #  if data is None:
-        #      data = self.data
-
         actions = arr_from_dict(data, 'actions')
         plaqs = arr_from_dict(data, 'plaqs')
         charges = arr_from_dict(data, 'charges')
@@ -169,13 +226,11 @@ class GaugeModelPlotter:
 
     def plot_observables(self, data, beta):
         """Plot observables."""
-        #  if data is None:
-        #      data = self.data
-
         actions = arr_from_dict(data, 'actions')
         plaqs = arr_from_dict(data, 'plaqs')
         charges = np.array(arr_from_dict(data, 'charges'), dtype=int)
         charge_diffs = arr_from_dict(data, 'charge_diffs')
+        charge_autocorrs = np.array(data['charges_autocorrs'])
 
         num_steps, num_samples = actions.shape
         steps_arr = np.arange(num_steps)
@@ -204,6 +259,11 @@ class GaugeModelPlotter:
         #  self._plot_charge_chains(charges.T, **kwargs)
         self._plot_charge_diffs((steps_arr, charge_diffs.T), **kwargs)
         self._plot_charge_probs(charges, **kwargs)
+        try:
+            self._plot_autocorrs((steps_arr, charge_autocorrs), **kwargs)
+        except:
+            import pdb
+            pdb.set_trace()
 
     def _plot_actions(self, xy_data, **kwargs):
         """Plot actions."""
@@ -290,6 +350,8 @@ class GaugeModelPlotter:
         charges = np.array(charges, dtype=int)
         out_dir = os.path.join(self.out_dir, 'top_charge_probs')
         io.check_else_make_dir(out_dir)
+        if 'title' in list(kwargs.keys()):
+            title = kwargs.pop('title')
         # if we have more than 10 chains in charges, only plot first 10
         for idx in range(min(num_samples, 5)):
             counts = Counter(charges[:, idx])
@@ -304,7 +366,7 @@ class GaugeModelPlotter:
             _ = ax.legend(loc='best')
             _ = ax.set_xlabel(r"$Q$", fontsize=14)
             _ = ax.set_ylabel('Probability', fontsize=14)
-            _ = ax.set_title(kwargs['title'], fontsize=16)
+            _ = ax.set_title(title, fontsize=16)
             plt.tight_layout()
             out_file = get_out_files(out_dir, f'top_charge_vs_step_{idx}')
             for f in out_file:
@@ -327,7 +389,7 @@ class GaugeModelPlotter:
         _ = ax.legend(loc='best')
         _ = ax.set_xlabel(r"$Q$", fontsize=14)
         _ = ax.set_ylabel('Probability', fontsize=14)
-        _ = ax.set_title(kwargs['title'], fontsize=16)
+        _ = ax.set_title(title, fontsize=16)
         plt.tight_layout()
         out_file = get_out_files(self.out_dir, f'TOP_CHARGE_PROBS_ALL')
         for f in out_file:
@@ -335,3 +397,14 @@ class GaugeModelPlotter:
             io.log(f"Saving plot to: {f}.")
             plt.savefig(f, dpi=400, bbox_inches='tight')
         plt.close('all')
+
+    def _plot_autocorrs(self, xy_data, **kwargs):
+        """Plot topological charge autocorrelations."""
+        try:
+            kwargs['out_file'] = get_out_files(
+                self.out_dir, 'charge_autocorrs_vs_step'
+            )
+        except AttributeError:
+            kwargs['out_file'] = None
+        xy_labels = ('Step', 'Autocorrelation of ' + r'$Q$')
+        return plot_multiple_lines(xy_data, xy_labels, **kwargs)

@@ -36,6 +36,10 @@ class GaugeModelRunner:
         self.logger = logger
         self.eps = self.sess.run(self.model.dynamics.eps)
 
+    def calc_charge_autocorrelation(self, charges):
+        autocorr = np.correlate(charges, charges, mode='full')
+        return autocorr[autocorr.size // 2:]
+
     def save_run_data(self, run_data, run_strings, samples, **kwargs):
         """Save run information.
 
