@@ -28,9 +28,9 @@ from globals import GLOBAL_SEED, TF_FLOAT
 from lattice.lattice import GaugeLattice
 from dynamics.gauge_dynamics import GaugeDynamics
 
-from tensorflow.python import debug as tf_debug
-from tensorflow.python.client import timeline
-from tensorflow.core.protobuf import rewriter_config_pb2
+#  from tensorflow.python import debug as tf_debug
+#  from tensorflow.python.client import timeline
+#  from tensorflow.core.protobuf import rewriter_config_pb2
 
 np.random.seed(GLOBAL_SEED)
 
@@ -107,6 +107,7 @@ class GaugeModel:
             self.init_saver()
 
     def init_saver(self):
+        """Initialize saver object for creating and saving checkpoints."""
         self.saver = tf.train.Saver(max_to_keep=3)
 
     def save(self, sess, checkpoint_dir):
@@ -228,59 +229,29 @@ class GaugeModel:
 
         return metric_fn
 
-    def calc_loss(self, x, beta, **weights):
-        """Create operation for calculating the loss.
+    def _create_optimizer(self, lr_init=None):
+        """Create learning rate and optimizer."""
+        if self.hmc:
+            return
 
-        Args:
-            x: Input tensor of shape (self.num_samples,
-                self.lattice.num_links) containing batch of GaugeLattice links
-                variables.
-            beta (float): Inverse coupling strength.
+        if lr_init is None:
+            lr_init = self.lr_init
 
-        Returns:
-            loss (float): Operation responsible for calculating the total loss.
-            px (np.ndarray): Array of acceptance probabilities from
-                Metropolis-Hastings accept/reject step. Has shape:
-                (self.num_samples,)
-            x_out: Output samples obtained after Metropolis-Hastings
-                accept/reject step.
+        with tf.name_scope('global_step'):
+            self.global_step = tf.train.get_or_create_global_step()
+            #  self.global_step.assign(1)
 
-        NOTE: If proposed configuration is accepted following
-            Metropolis-Hastings accept/reject step, x_proposed and x_out are
-            equivalent.
-        """
-        with tf.name_scope('x_update'):
-            x_proposed, _, px, x_out = self.dynamics(x, beta)
-        with tf.name_scope('z_update'):
-            z = tf.random_normal(tf.shape(x), name='z')  # Auxiliary variable
-            z_proposed, _, pz, _ = self.dynamics(z, beta)
-
-        with tf.name_scope('top_charge_diff'):
-            x_dq = tf.cast(
-                self.lattice.calc_top_charges_diff(x, x_out, fft=False),
-                dtype=tf.int32
-            )
-
-        # Add eps for numerical stability; following released implementation
-        # NOTE:
-        #  std:_loss: 'standard' loss
-        #  charge_loss: Contribution from the difference in topological charge
-        #    betweween the initial and proposed configurations  to the total
-        #     loss.
-        x_tup = (x, x_proposed)
-        z_tup = (z, z_proposed)
-        p_tup = (px, pz)
-        with tf.name_scope('calc_loss'):
-            with tf.name_scope('std_loss'):
-                std_loss = self._calc_std_loss(x_tup, z_tup, p_tup, **weights)
-            with tf.name_scope('charge_loss'):
-                charge_loss = self._calc_charge_loss(x_tup, z_tup, p_tup,
-                                                     **weights)
-
-            total_loss = tf.add(std_loss, charge_loss, name='total_loss')
-
-        tf.add_to_collection('losses', total_loss)
-        return total_loss, x_out, px, x_dq
+        with tf.name_scope('learning_rate'):
+            self.lr = tf.train.exponential_decay(lr_init,
+                                                 self.global_step,
+                                                 self.lr_decay_steps,
+                                                 self.lr_decay_rate,
+                                                 staircase=True,
+                                                 name='learning_rate')
+        with tf.name_scope('optimizer'):
+            self.optimizer = tf.train.AdamOptimizer(self.lr)
+            if self.using_hvd:
+                self.optimizer = hvd.DistributedOptimizer(self.optimizer)
 
     def _calc_std_loss(self, x_tup, z_tup, p_tup, **weights):
         """Calculate standard contribution to loss.
@@ -378,6 +349,60 @@ class GaugeModel:
 
         return charge_loss
 
+    def calc_loss(self, x, beta, **weights):
+        """Create operation for calculating the loss.
+
+        Args:
+            x: Input tensor of shape (self.num_samples,
+                self.lattice.num_links) containing batch of GaugeLattice links
+                variables.
+            beta (float): Inverse coupling strength.
+
+        Returns:
+            loss (float): Operation responsible for calculating the total loss.
+            px (np.ndarray): Array of acceptance probabilities from
+                Metropolis-Hastings accept/reject step. Has shape:
+                (self.num_samples,)
+            x_out: Output samples obtained after Metropolis-Hastings
+                accept/reject step.
+
+        NOTE: If proposed configuration is accepted following
+            Metropolis-Hastings accept/reject step, x_proposed and x_out are
+            equivalent.
+        """
+        with tf.name_scope('x_update'):
+            x_proposed, _, px, x_out = self.dynamics(x, beta)
+        with tf.name_scope('z_update'):
+            z = tf.random_normal(tf.shape(x), name='z')  # Auxiliary variable
+            z_proposed, _, pz, _ = self.dynamics(z, beta)
+
+        with tf.name_scope('top_charge_diff'):
+            x_dq = tf.cast(
+                self.lattice.calc_top_charges_diff(x, x_out, fft=False),
+                dtype=tf.int32
+            )
+
+        # Add eps for numerical stability; following released implementation
+        # NOTE:
+        #  std:_loss: 'standard' loss
+        #  charge_loss: Contribution from the difference in topological charge
+        #    betweween the initial and proposed configurations  to the total
+        #     loss.
+        x_tup = (x, x_proposed)
+        z_tup = (z, z_proposed)
+        p_tup = (px, pz)
+        with tf.name_scope('calc_loss'):
+            with tf.name_scope('std_loss'):
+                std_loss = self._calc_std_loss(x_tup, z_tup, p_tup, **weights)
+            with tf.name_scope('charge_loss'):
+                charge_loss = self._calc_charge_loss(x_tup, z_tup, p_tup,
+                                                     **weights)
+
+            total_loss = tf.add(std_loss, charge_loss, name='total_loss')
+
+        tf.add_to_collection('losses', total_loss)
+        return total_loss, x_out, px, x_dq
+
     def calc_loss_and_grads(self, x, beta, **weights):
         """Calculate loss its gradient with respect to all trainable variables.
 
@@ -426,30 +451,6 @@ class GaugeModel:
                                                       fft=False)
 
             self.charge_diffs_op = tf.reduce_sum(x_dq) / self.num_samples
-
-    def _create_optimizer(self, lr_init=None):
-        """Create learning rate and optimizer."""
-        if self.hmc:
-            return
-
-        if lr_init is None:
-            lr_init = self.lr_init
-
-        with tf.name_scope('global_step'):
-            self.global_step = tf.train.get_or_create_global_step()
-            #  self.global_step.assign(1)
-
-        with tf.name_scope('learning_rate'):
-            self.lr = tf.train.exponential_decay(lr_init,
-                                                 self.global_step,
-                                                 self.lr_decay_steps,
-                                                 self.lr_decay_rate,
-                                                 staircase=True,
-                                                 name='learning_rate')
-        with tf.name_scope('optimizer'):
-            self.optimizer = tf.train.AdamOptimizer(self.lr)
-            if self.using_hvd:
-                self.optimizer = hvd.DistributedOptimizer(self.optimizer)
 
     def build(self):
         """Build Tensorflow graph."""
