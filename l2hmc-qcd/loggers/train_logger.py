@@ -140,7 +140,7 @@ class TrainLogger:
         """Save current state to pickle file.
 
         The current state contains the following, which makes life easier if
-        we're trying to restore training from a saved checkpoint: 
+        we're trying to restore training from a saved checkpoint:
             * most recent samples
             * learning_rate
             * beta

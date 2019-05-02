@@ -151,7 +151,7 @@ class GaussianMixtureModel(object):
 
         self.log_dir, self.info_dir, self.figs_dir = dirs
 
-        self.files={
+        self.files = {
             'distances': os.path.join(self.info_dir, 'distances.pkl'),
             'distances_highT': os.path.join(self.info_dir,
                                             'distances_highT.pkl'),
@@ -161,8 +161,9 @@ class GaussianMixtureModel(object):
                                                   'tunneling_rates_highT.pkl'),
             'acceptance_rates': os.path.join(self.info_dir,
                                              'acceptance_rates.pkl'),
-            'acceptance_rates_highT': os.path.join(self.info_dir,
-                                                   'acceptance_rates_highT.pkl'),
+            'acceptance_rates_highT': os.path.join(
+                self.info_dir, 'acceptance_rates_highT.pkl'
+            ),
             'train_times': os.path.join(self.info_dir, 'train_time.pkl')
         }
 
