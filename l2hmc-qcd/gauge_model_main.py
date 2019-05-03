@@ -184,9 +184,7 @@ def hmc(FLAGS, params=None):
 
     runner = GaugeModelRunner(sess, model, run_logger)
 
-    betas = [FLAGS.beta_final - 1,
-             FLAGS.beta_final,
-             FLAGS.beta_final + 1]
+    betas = [FLAGS.beta_final, FLAGS.beta_final + 1]
     for beta in betas:
         if run_logger is not None:
             run_logger.reset(model.run_steps, beta)
@@ -294,7 +292,7 @@ def l2hmc(FLAGS):
     runner = GaugeModelRunner(sess, model, run_logger)
 
     #  betas = np.arange(model.beta_init, model.beta_final, 1)
-    betas = [model.beta_final - 1, model.beta_final, model.beta_final + 1]
+    betas = [model.beta_final, model.beta_final + 1]
     for beta in betas:
         if run_logger is not None:
             run_logger.reset(model.run_steps, beta)
