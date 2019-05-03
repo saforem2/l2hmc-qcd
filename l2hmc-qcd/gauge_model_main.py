@@ -128,7 +128,7 @@ def create_log_dir(FLAGS):
 
     now = datetime.datetime.now()
     day_str = f'{now.year}_{now.month}_{now.day}'
-    time_str = day_str + f'_{now.hour}_{now.second}'
+    time_str = day_str + f'_{now.hour}{now.minute}'
     #  date_str = f'{now.year}_{now.month}_{now.day}_{now.hour}_{now.second}'
     project_dir = os.path.abspath(os.path.dirname(FILE_PATH))
     if FLAGS.log_dir is None:
