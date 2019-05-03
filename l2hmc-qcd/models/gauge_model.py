@@ -104,17 +104,17 @@ class GaugeModel:
         else:
             self._create_optimizer()
             self.build()
-            self.init_saver()
+            #  self.init_saver()
 
-    def init_saver(self):
-        """Initialize saver object for creating and saving checkpoints."""
-        self.saver = tf.train.Saver(max_to_keep=3)
+    #  def init_saver(self):
+    #      """Initialize saver object for creating and saving checkpoints."""
+    #      self.saver = tf.train.Saver(max_to_keep=3)
 
-    def save(self, sess, checkpoint_dir):
-        """Save model checkpoint to checkpoint directory."""
-        io.log(f"INFO: Saving model to: {checkpoint_dir}")
-        self.saver.save(sess, checkpoint_dir, self.global_step)
-        io.log("Model saved.")
+    #  def save(self, sess, checkpoint_dir):
+    #      """Save model checkpoint to checkpoint directory."""
+    #      io.log(f"INFO: Saving model to: {checkpoint_dir}")
+    #      self.saver.save(sess, checkpoint_dir, self.global_step)
+    #      io.log("Model saved.")
 
     def load(self, sess, checkpoint_dir):
         latest_ckpt = tf.train.latest_checkpoint(checkpoint_dir)

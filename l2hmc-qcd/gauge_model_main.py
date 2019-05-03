@@ -73,20 +73,14 @@ def create_config(FLAGS, params):
         config_attrs.arithmetic_optimization = off
 
     if FLAGS.gpu:
-        io.log("Using gpu for training.")
-        params['data_format'] = 'channels_first'
-        #  os.environ["KMP_BLOCKTIME"] = str(0)
-        #  os.environ["KMP_AFFINITY"] = "granularity=fine,verbose,compact,1,0"
         # Horovod: pin GPU to be used to process local rank (one GPU per
         # process)
-        #  config.allow_soft_placement = True
         config.gpu_options.allow_growth = True
+        #  config.allow_soft_placement = True
         if HAS_HOROVOD and FLAGS.horovod:
             num_gpus = hvd.size()
             io.log(f"Number of GPUs: {num_gpus}")
             config.gpu_options.visible_device_list = str(hvd.local_rank())
-    else:
-        params['data_format'] = 'channels_last'
 
     if HAS_MATPLOTLIB:
         params['_plot'] = True
@@ -133,13 +127,16 @@ def create_log_dir(FLAGS):
         run_str = f'lattice{LX}_batch{NS}_lf{LF}_eps{SS:.3g}_qw{QW}'
 
     now = datetime.datetime.now()
-    date_str = f'{now.year}_{now.month}_{now.day}_{now.hour}_{now.second}'
+    day_str = f'{now.year}_{now.month}_{now.day}'
+    time_str = day_str + f'{now.hour}_{now.second}'
+    #  date_str = f'{now.year}_{now.month}_{now.day}_{now.hour}_{now.second}'
     project_dir = os.path.abspath(os.path.dirname(FILE_PATH))
     if FLAGS.log_dir is None:
-        root_log_dir = os.path.join(project_dir, 'logs', date_str, run_str)
+        root_log_dir = os.path.join(project_dir, 'logs',
+                                    day_str, time_str, run_str)
     else:
-        root_log_dir = os.path.join(project_dir, FLAGS.log_dir, date_str,
-                                    run_str)
+        root_log_dir = os.path.join(project_dir, FLAGS.log_dir,
+                                    day_str, time_str, run_str)
     io.check_else_make_dir(root_log_dir)
     run_num = io.get_run_num(root_log_dir)
     log_dir = os.path.abspath(os.path.join(root_log_dir,
@@ -168,42 +165,7 @@ def hmc(FLAGS, params=None):
     params['hmc'] = True
     params['use_bn'] = False
     params['log_dir'] = FLAGS.log_dir
-
-    #  if FLAGS.horovod:
-    #      params['using_hvd'] = True
-    #      #  num_workers = hvd.size()
-    #      #  params['train_steps'] //= num_workers
-    #      #  params['save_steps'] //= num_workers
-    #      #  params['lr_decay_steps'] //= num_workers
-    #      #  params['run_steps'] //= num_workers
-    #      #  params['lr_init'] *= hvd.size()
-    #  else:
-    #      params['using_hvd'] = False
-
-    #  params['hmc'] = True
-    #
-    #  if l2hmc_model is None:
-    #      if FLAGS.log_dir is None:
-    #          FLAGS.log_dir = create_log_dir(FLAGS)
-    #
-    #      params = {
-    #          'using_hvd': FLAGS.horovod,
-    #      }
-    #
-    #      for key, val in FLAGS.__dict__.items():
-    #          params[key] = val
-    #
-    #  else:
-    #      params = l2hmc_model.params
-
-    #  if l2hmc_train_logger is not None:
-    #      params['eps'] = l2hmc_train_logger._current_state['eps']
-    #      params['hmc'] = True
-    #      params['beta_init'] = l2hmc_model.beta_init
-    #      params['beta_final'] = l2hmc_model.beta_final
-    #      params['log_dir'] = os.path.join(l2hmc_train_logger.log_dir,
-    #                                       'HMC_eps{}'.format(params['eps']))
-    #      io.check_else_make_dir(params['log_dir'])
+    params['data_format'] = None
 
     figs_dir = os.path.join(params['log_dir'], 'figures')
     io.check_else_make_dir(figs_dir)
@@ -215,7 +177,7 @@ def hmc(FLAGS, params=None):
     sess = tf.Session(config=config)
 
     model = GaugeModel(params=params)
-    run_logger = RunLogger(sess, model, params['log_dir'])
+    run_logger = RunLogger(model, params['log_dir'])
     plotter = GaugeModelPlotter(run_logger.figs_dir)
 
     sess.run(tf.global_variables_initializer())
@@ -246,43 +208,84 @@ def l2hmc(FLAGS):
     for key, val in FLAGS.__dict__.items():
         params[key] = val
 
+    if FLAGS.gpu:
+        io.log("Using GPU for training.")
+        params['data_format'] = 'channels_first'
+    else:
+        io.log("Using CPU for training.")
+        params['data_format'] = 'channels_last'
+
     if FLAGS.horovod:
         params['using_hvd'] = True
         num_workers = hvd.size()
         params['train_steps'] //= num_workers
         params['save_steps'] //= num_workers
         params['lr_decay_steps'] //= num_workers
+        hooks = [
+            # Horovod: BroadcastGlobalVariablesHook broadcasts initial
+            # variable states from rank 0 to all other processes. This
+            # is necessary to ensure consistent initialization of all
+            # workers when training is started with random weights or
+            # restored from a checkpoint.
+            hvd.BroadcastGlobalVariablesHook(0),
+        ]
         #  params['run_steps'] //= num_workers
         #  params['lr_init'] *= hvd.size()
     else:
         params['using_hvd'] = False
-
-    config, params = create_config(FLAGS, params)
-    sess = tf.Session(config=config)
-    tf.keras.backend.set_learning_phase(True)
-
-    model = GaugeModel(params=params)
+        hooks = []
 
     condition1 = not FLAGS.horovod
     condition2 = FLAGS.horovod and hvd.rank() == 0
     is_chief = condition1 or condition2
 
     if is_chief:
-        log_dir = params.get('log_dir', 'logs')
-        train_logger = TrainLogger(sess, model, log_dir, FLAGS.summaries)
-        run_logger = RunLogger(sess, model, train_logger.log_dir)
+        assert FLAGS.log_dir == params['log_dir']
+        log_dir = FLAGS.log_dir
+        checkpoint_dir = os.path.join(log_dir, 'checkpoints/')
+        io.check_else_make_dir(checkpoint_dir)
+    else:
+        log_dir = None
+        checkpoint_dir = None
+
+    model = GaugeModel(params=params)
+    if is_chief:
+        train_logger = TrainLogger(model, log_dir, FLAGS.summaries)
+        run_logger = RunLogger(model, train_logger.log_dir)
         plotter = GaugeModelPlotter(run_logger.figs_dir)
     else:
         train_logger = None
         run_logger = None
         plotter = None
 
+    config, params = create_config(FLAGS, params)
+    #  sess = tf.Session(config=config)
+    tf.keras.backend.set_learning_phase(True)
+
+    # The MonitoredTrainingSession takes care of session
+    # initialization, restoring from a checkpoint, saving to a
+    # checkpoint, and closing when done or an error occurs.
+    sess = tf.train.MonitoredTrainingSession(
+        checkpoint_dir=checkpoint_dir,
+        hooks=hooks,
+        config=config,
+        save_summaries_secs=None,
+        save_summaries_steps=None
+    )
+
+    #  if is_chief:
+    #      train_logger._create_filewriter(sess)
+    #  else:
+    #      train_logger = None
+    #      run_logger = None
+    #      plotter = None
+
     trainer = GaugeModelTrainer(sess, model, train_logger)
 
-    sess.run(tf.global_variables_initializer())
+    #  sess.run(tf.global_variables_initializer())
 
-    if FLAGS.horovod:
-        sess.run(hvd.broadcast_global_variables(0))
+    #  if FLAGS.horovod:
+    #      sess.run(hvd.broadcast_global_variables(0))
 
     trainer.train(model.train_steps)
 

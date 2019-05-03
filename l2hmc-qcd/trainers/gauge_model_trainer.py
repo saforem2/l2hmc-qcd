@@ -162,7 +162,7 @@ class GaugeModelTrainer:
                 samples_np = out_data['samples']
 
                 if self.logger is not None:
-                    self.logger.update_training(out_data, data_str)
+                    self.logger.update_training(self.sess, out_data, data_str)
 
             if self.logger is not None:
                 self.logger.write_train_strings()

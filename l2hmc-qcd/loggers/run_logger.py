@@ -34,14 +34,13 @@ def autocorr(x):
 
 
 class RunLogger:
-    def __init__(self, sess, model, log_dir):
+    def __init__(self, model, log_dir):
         """
         Args:
-            sess: tf.Session object.
             model: GaugeModel object.
             log_dir: Existing logdir from `TrainLogger`.
         """
-        self.sess = sess
+        #  self.sess = sess
         self.model = model
         assert os.path.isdir(log_dir)
         self.log_dir = log_dir
