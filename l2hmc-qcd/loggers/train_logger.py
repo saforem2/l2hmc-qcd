@@ -30,8 +30,8 @@ def save_params(params, out_dir):
 
 
 class TrainLogger:
-    def __init__(self, sess, model, log_dir, summaries=False):
-        self.sess = sess
+    def __init__(self, model, log_dir, summaries=False):
+        #  self.sess = sess
         self.model = model
         self.summaries = summaries
 
@@ -64,8 +64,12 @@ class TrainLogger:
 
         if self.summaries:
             self.writer = tf.summary.FileWriter(self.train_summary_dir,
-                                                self.sess.graph)
+                                                tf.get_default_graph())
             self.create_summaries()
+
+    #  def _create_filewriter(self, sess):
+    #      self.writer = tf.summary.FileWriter(self.train_summary_dir,
+    #                                          sess.graph)
 
     def _create_dir_structure(self, log_dir):
         """Create relevant directories for storing data.
@@ -150,19 +154,18 @@ class TrainLogger:
         with open(self.current_state_file, 'wb') as f:
             pickle.dump(self._current_state, f)
 
-    def log_step(self, step, samples_np, beta_np):
+    def log_step(self, sess, step, samples_np, beta_np):
         """Update self.logger.summaries."""
         feed_dict = {
             self.model.x: samples_np,
             self.model.beta: beta_np
         }
-        summary_str = self.sess.run(self.summary_op,
-                                    feed_dict=feed_dict)
+        summary_str = sess.run(self.summary_op, feed_dict=feed_dict)
 
         self.writer.add_summary(summary_str, global_step=step)
         self.writer.flush()
 
-    def update_training(self, data, data_str):
+    def update_training(self, sess, data, data_str):
         """Update _current state and train_data."""
         step = data['step']
         beta = data['beta']
@@ -189,10 +192,10 @@ class TrainLogger:
             io.log(data_str)
 
         if self.summaries and (step + 1) % self.model.logging_steps == 0:
-            self.log_step(step, data['samples'], beta)
+            self.log_step(sess, step, data['samples'], beta)
 
         if (step + 1) % self.model.save_steps == 0:
-            self.model.save(self.sess, self.checkpoint_dir)
+            #  self.model.save(self.sess, self.checkpoint_dir)
             self.save_current_state()
 
         if step % 100 == 0:
