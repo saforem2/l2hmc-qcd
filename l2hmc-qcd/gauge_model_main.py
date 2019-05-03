@@ -30,6 +30,7 @@ for each major part of the algorithm:
 Author: Sam Foreman (github: @saforem2)
 Date: 04/10/2019
 """
+import sys
 import os
 import pickle
 import datetime
@@ -281,21 +282,21 @@ def l2hmc(FLAGS):
         save_summaries_steps=None
     )
 
-    #  if is_chief:
-    #      train_logger._create_filewriter(sess)
-    #  else:
-    #      train_logger = None
-    #      run_logger = None
-    #      plotter = None
-
     trainer = GaugeModelTrainer(sess, model, train_logger)
 
-    #  sess.run(tf.global_variables_initializer())
-
-    #  if FLAGS.horovod:
-    #      sess.run(hvd.broadcast_global_variables(0))
-
-    trainer.train(model.train_steps)
+    try:
+        trainer.train(model.train_steps)
+    except tf.python.framework.errors_impl.InvalidArgumentError:
+        # i.e. Tensor had Inf / NaN values caused by high learning rate
+        io.log(80 * '-')
+        io.log('Training crashed! Decreasing lr_init by 10% and retrying...')
+        io.log(f'Previous lr_init: {FLAGS.lr_init}')
+        FLAGS.lr_init *= 0.9
+        io.log(f'New lr_init: {FLAGS.lr_init}')
+        try:
+            l2hmc(FLAGS)
+        except tf.python.framework.errors_impl.InvalidArgumentError:
+            sys.exit(1)
 
     tf.keras.backend.set_learning_phase(False)
 
