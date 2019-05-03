@@ -286,7 +286,7 @@ def l2hmc(FLAGS):
 
     try:
         trainer.train(model.train_steps)
-    except tf.python.framework.errors_impl.InvalidArgumentError:
+    except:
         # i.e. Tensor had Inf / NaN values caused by high learning rate
         io.log(80 * '-')
         io.log('Training crashed! Decreasing lr_init by 10% and retrying...')
@@ -295,7 +295,7 @@ def l2hmc(FLAGS):
         io.log(f'New lr_init: {FLAGS.lr_init}')
         try:
             l2hmc(FLAGS)
-        except tf.python.framework.errors_impl.InvalidArgumentError:
+        except:
             sys.exit(1)
 
     tf.keras.backend.set_learning_phase(False)
