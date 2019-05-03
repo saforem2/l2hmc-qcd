@@ -293,6 +293,8 @@ def l2hmc(FLAGS):
         io.log(f'Previous lr_init: {FLAGS.lr_init}')
         FLAGS.lr_init *= 0.9
         io.log(f'New lr_init: {FLAGS.lr_init}')
+        sess.close()
+        tf.reset_default_graph()
         l2hmc(FLAGS)
 
     tf.keras.backend.set_learning_phase(False)
