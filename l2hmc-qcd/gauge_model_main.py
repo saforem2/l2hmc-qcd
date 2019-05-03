@@ -305,40 +305,56 @@ def l2hmc(FLAGS):
     return sess, model, train_logger
 
 
+def run_hmc(FLAGS, params=None):
+    """Run generic HMC."""
+    condition1 = not FLAGS.horovod
+    condition2 = FLAGS.horovod and hvd.rank() == 0
+    is_chief = condition1 or condition2
+    io.log('\n' + 80 * '-')
+    io.log(("Running generic HMC algorithm "
+            "with learned parameters from L2HMC..."))
+
+    if is_chief:
+        hmc_sess, _, _, _ = hmc(FLAGS, params)
+        hmc_sess.close()
+
+
+def run_l2hmc(FLAGS):
+    """Train and run L2HMC algorithm."""
+    io.log('\n' + 80 * '-')
+    io.log("Running L2HMC algorithm...")
+    l2hmc_sess, l2hmc_model, l2hmc_train_logger = l2hmc(FLAGS)
+    l2hmc_sess.close()
+    tf.reset_default_graph()
+
+    return l2hmc_model, l2hmc_train_logger
+
+
 def main(FLAGS):
     """Main method for creating/training/running L2HMC for U(1) gauge model."""
     if HAS_HOROVOD and FLAGS.horovod:
         io.log("INFO: USING HOROVOD")
         hvd.init()
 
-    condition1 = not FLAGS.horovod
-    condition2 = FLAGS.horovod and hvd.rank() == 0
-    is_chief = condition1 or condition2
+    if FLAGS.hmc:
+        run_hmc(FLAGS)
 
-    if not FLAGS.hmc:
-        io.log('\n' + 80 * '-')
-        io.log("Running L2HMC algorithm...")
-        l2hmc_sess, l2hmc_model, l2hmc_train_logger = l2hmc(FLAGS)
-        l2hmc_sess.close()
-        tf.reset_default_graph()
+    else:
+        # Run L2HMC
+        model, logger = run_l2hmc(FLAGS)
 
-        io.log('\n' + 80 * '-')
-        io.log(("Running generic HMC algorithm "
-                "with learned parameters from L2HMC..."))
-        params = l2hmc_model.params
-        if l2hmc_train_logger is not None:
-            params['eps'] = l2hmc_train_logger._current_state['eps']
-            FLAGS.eps = params['eps']
+        # Run HMC with the trained step size from L2HMC (not ideal)
+        params = model.params
         params['hmc'] = True
         params['log_dir'] = FLAGS.log_dir = None
+        params['eps'] = FLAGS.eps = logger._current_state['eps']
 
-        if is_chief:
-            hmc_sess, _, _, _ = hmc(FLAGS, params)
-            hmc_sess.close()
-    else:
-        if is_chief:
-            hmc_sess, _, _, _ = hmc(FLAGS)
-            hmc_sess.close()
+        run_hmc(FLAGS, params)
+
+        eps_arr = [0.1, 0.2, 0.3]
+        for eps in eps_arr:
+            params['eps'] = FLAGS.eps = eps
+            run_hmc(FLAGS, params)
 
 
 if __name__ == '__main__':
