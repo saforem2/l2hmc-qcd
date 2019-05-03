@@ -170,7 +170,11 @@ def hmc(FLAGS, params=None):
     figs_dir = os.path.join(params['log_dir'], 'figures')
     io.check_else_make_dir(figs_dir)
 
-    #  eps = params['eps']  # step size for (generic) HMC leapfrog integrator
+    io.log(80 * '-' + '\n')
+    io.log('HMC PARAMETERS:')
+    for key, val in params.items():
+        io.log(f'  {key}: {val}')
+    io.log(80 * '-' + '\n')
 
     # create tensorflow config (`config_proto`) to configure session
     config, params = create_config(FLAGS, params)
@@ -245,6 +249,12 @@ def l2hmc(FLAGS):
     else:
         log_dir = None
         checkpoint_dir = None
+
+    io.log(80 * '-' + '\n')
+    io.log('L2HMC PARAMETERS:')
+    for key, val in params.items():
+        io.log(f'  {key}: {val}')
+    io.log(80 * '-' + '\n')
 
     model = GaugeModel(params=params)
     if is_chief:
