@@ -293,10 +293,7 @@ def l2hmc(FLAGS):
         io.log(f'Previous lr_init: {FLAGS.lr_init}')
         FLAGS.lr_init *= 0.9
         io.log(f'New lr_init: {FLAGS.lr_init}')
-        try:
-            l2hmc(FLAGS)
-        except:
-            sys.exit(1)
+        l2hmc(FLAGS)
 
     tf.keras.backend.set_learning_phase(False)
 
