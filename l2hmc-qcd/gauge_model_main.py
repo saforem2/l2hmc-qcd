@@ -247,6 +247,7 @@ def l2hmc(FLAGS):
         log_dir = FLAGS.log_dir
         checkpoint_dir = os.path.join(log_dir, 'checkpoints/')
         io.check_else_make_dir(checkpoint_dir)
+
     else:
         log_dir = None
         checkpoint_dir = None
