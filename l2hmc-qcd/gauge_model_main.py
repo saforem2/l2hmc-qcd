@@ -358,7 +358,10 @@ def main(FLAGS):
         params = model.params
         params['hmc'] = True
         params['log_dir'] = FLAGS.log_dir = None
-        params['eps'] = FLAGS.eps = logger._current_state['eps']
+        if logger is not None:
+            params['eps'] = FLAGS.eps = logger._current_state['eps']
+        else:
+            params['eps'] = FLAGS.eps
 
         run_hmc(FLAGS, params)
 
