@@ -204,8 +204,7 @@ def hmc(FLAGS, params=None):
 
 def l2hmc(FLAGS):
     """Create, train, and run L2HMC sampler on 2D U(1) gauge model."""
-    if FLAGS.log_dir is None:
-        FLAGS.log_dir = create_log_dir(FLAGS)
+    FLAGS.log_dir = create_log_dir(FLAGS)
 
     params = {}
     for key, val in FLAGS.__dict__.items():
