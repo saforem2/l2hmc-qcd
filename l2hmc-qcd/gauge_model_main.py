@@ -103,7 +103,7 @@ def create_config(FLAGS, params):
     return config, params
 
 
-def create_log_dir(FLAGS):
+def create_log_dir(FLAGS, root_dir=None):
     """Automatically create and name `log_dir` to save model data to.
 
     The created directory will be located in `logs/YYYY_M_D/`, and will have
@@ -128,8 +128,12 @@ def create_log_dir(FLAGS):
         run_str = f'lattice{LX}_batch{NS}_lf{LF}_eps{SS:.3g}_qw{QW}'
 
     now = datetime.datetime.now()
-    day_str = f'{now.year}_{now.month}_{now.day}'
-    time_str = day_str + f'_{now.hour}{now.minute}'
+    #  print(now.strftime("%b %d %Y %H:%M:%S"))
+    day_str = now.strftime('%Y_%m_%d')
+    time_str = now.strftime("%Y_%m_%d_%H%M")
+
+    #  day_str = f'{now.year}_{now.month}_{now.day}'
+    #  time_str = day_str + f'_{now.hour}{now.minute}'
     project_dir = os.path.abspath(os.path.dirname(FILE_PATH))
     if FLAGS.log_dir is None:
         root_log_dir = os.path.join(project_dir, 'logs',
@@ -166,6 +170,7 @@ def hmc(FLAGS, params=None):
     params['use_bn'] = False
     params['log_dir'] = FLAGS.log_dir
     params['data_format'] = None
+    params['eps_trainable'] = False
 
     figs_dir = os.path.join(params['log_dir'], 'figures')
     io.check_else_make_dir(figs_dir)
