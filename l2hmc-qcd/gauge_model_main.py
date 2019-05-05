@@ -130,7 +130,6 @@ def create_log_dir(FLAGS):
     now = datetime.datetime.now()
     day_str = f'{now.year}_{now.month}_{now.day}'
     time_str = day_str + f'_{now.hour}{now.minute}'
-    #  date_str = f'{now.year}_{now.month}_{now.day}_{now.hour}_{now.second}'
     project_dir = os.path.abspath(os.path.dirname(FILE_PATH))
     if FLAGS.log_dir is None:
         root_log_dir = os.path.join(project_dir, 'logs',
@@ -346,8 +345,13 @@ def main(FLAGS):
         io.log("INFO: USING HOROVOD")
         hvd.init()
 
+    eps_arr = [0.1, 0.2, 0.3]
+
     if FLAGS.hmc:
         run_hmc(FLAGS)
+        for eps in eps_arr:
+            FLAGS.eps = eps
+            run_hmc(FLAGS)
 
     else:
         # Run L2HMC
@@ -364,7 +368,6 @@ def main(FLAGS):
 
         run_hmc(FLAGS, params)
 
-        eps_arr = [0.1, 0.2, 0.3]
         for eps in eps_arr:
             params['eps'] = FLAGS.eps = eps
             run_hmc(FLAGS, params)
