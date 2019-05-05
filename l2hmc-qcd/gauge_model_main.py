@@ -103,7 +103,7 @@ def create_config(FLAGS, params):
     return config, params
 
 
-def create_log_dir(FLAGS, root_dir=None):
+def create_log_dir(FLAGS, root_dir=None, log_file=None):
     """Automatically create and name `log_dir` to save model data to.
 
     The created directory will be located in `logs/YYYY_M_D/`, and will have
@@ -136,20 +136,31 @@ def create_log_dir(FLAGS, root_dir=None):
     #  time_str = day_str + f'_{now.hour}{now.minute}'
     project_dir = os.path.abspath(os.path.dirname(FILE_PATH))
     if FLAGS.log_dir is None:
-        root_log_dir = os.path.join(project_dir, 'logs',
-                                    day_str, time_str, run_str)
+        if root_dir is None:
+            _dir = 'logs'
+        else:
+            _dir = root_dir
+
     else:
-        root_log_dir = os.path.join(project_dir, FLAGS.log_dir,
-                                    day_str, time_str, run_str)
+        if root_dir is None:
+            _dir = FLAGS.log_dir
+        else:
+            _dir = os.path.join(FLAGS.log_dir, root_dir)
+        #  root_log_dir = os.path.join(project_dir, FLAGS.log_dir,
+        #                              day_str, time_str, run_str)
+    root_log_dir = os.path.join(project_dir, _dir, day_str, time_str, run_str)
     io.check_else_make_dir(root_log_dir)
     run_num = io.get_run_num(root_log_dir)
     log_dir = os.path.abspath(os.path.join(root_log_dir,
                                            f'run_{run_num}'))
+    if log_file is not None:
+        io.write(f'Output saved to: \n\t{log_dir}', log_file, 'a')
+        io.write(80*'-')
 
     return log_dir
 
 
-def hmc(FLAGS, params=None):
+def hmc(FLAGS, params=None, log_file=None):
     """Create and run generic HMC sampler using trained params from L2HMC."""
     condition1 = not FLAGS.horovod
     condition2 = FLAGS.horovod and hvd.rank() == 0
@@ -159,7 +170,7 @@ def hmc(FLAGS, params=None):
 
     FLAGS.hmc = True
 
-    FLAGS.log_dir = create_log_dir(FLAGS)
+    FLAGS.log_dir = create_log_dir(FLAGS, log_file=log_file)
 
     if params is None:
         params = {}
@@ -206,9 +217,9 @@ def hmc(FLAGS, params=None):
     return sess, model, runner, run_logger
 
 
-def l2hmc(FLAGS):
+def l2hmc(FLAGS, log_file=None):
     """Create, train, and run L2HMC sampler on 2D U(1) gauge model."""
-    FLAGS.log_dir = create_log_dir(FLAGS)
+    FLAGS.log_dir = create_log_dir(FLAGS, log_file=log_file)
 
     params = {}
     for key, val in FLAGS.__dict__.items():
@@ -319,7 +330,7 @@ def l2hmc(FLAGS):
     return sess, model, train_logger
 
 
-def run_hmc(FLAGS, params=None):
+def run_hmc(FLAGS, params=None, log_file=None):
     """Run generic HMC."""
     condition1 = not FLAGS.horovod
     condition2 = FLAGS.horovod and hvd.rank() == 0
@@ -329,15 +340,16 @@ def run_hmc(FLAGS, params=None):
             "with learned parameters from L2HMC..."))
 
     if is_chief:
-        hmc_sess, _, _, _ = hmc(FLAGS, params)
+        hmc_sess, _, _, _ = hmc(FLAGS, params, log_file)
         hmc_sess.close()
+        tf.reset_default_graph()
 
 
-def run_l2hmc(FLAGS):
+def run_l2hmc(FLAGS, log_file=None):
     """Train and run L2HMC algorithm."""
     io.log('\n' + 80 * '-')
     io.log("Running L2HMC algorithm...")
-    l2hmc_sess, l2hmc_model, l2hmc_train_logger = l2hmc(FLAGS)
+    l2hmc_sess, l2hmc_model, l2hmc_train_logger = l2hmc(FLAGS, log_file)
     l2hmc_sess.close()
     tf.reset_default_graph()
 
@@ -348,19 +360,22 @@ def main(FLAGS):
     """Main method for creating/training/running L2HMC for U(1) gauge model."""
     if HAS_HOROVOD and FLAGS.horovod:
         io.log("INFO: USING HOROVOD")
+        log_file = 'output_dirs.txt'
         hvd.init()
+    else:
+        log_file = None
 
     eps_arr = [0.1, 0.2, 0.3]
 
     if FLAGS.hmc:
-        run_hmc(FLAGS)
+        run_hmc(FLAGS, log_file)
         for eps in eps_arr:
             FLAGS.eps = eps
-            run_hmc(FLAGS)
+            run_hmc(FLAGS, log_file)
 
     else:
         # Run L2HMC
-        model, logger = run_l2hmc(FLAGS)
+        model, logger = run_l2hmc(FLAGS, log_file)
 
         # Run HMC with the trained step size from L2HMC (not ideal)
         params = model.params
@@ -371,11 +386,11 @@ def main(FLAGS):
         else:
             params['eps'] = FLAGS.eps
 
-        run_hmc(FLAGS, params)
+        run_hmc(FLAGS, params, log_file)
 
         for eps in eps_arr:
             params['eps'] = FLAGS.eps = eps
-            run_hmc(FLAGS, params)
+            run_hmc(FLAGS, params, log_file)
 
 
 if __name__ == '__main__':
