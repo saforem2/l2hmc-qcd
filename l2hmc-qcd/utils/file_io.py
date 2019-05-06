@@ -53,6 +53,37 @@ def log_and_write(s, f):
     write(s, f)
 
 
+def _list_and_join(d):
+    """For each dir `dd` in `d`, return a list of paths ['d/dd1', ...]"""
+    contents = [os.path.join(d, i) for i in os.listdir(d)]
+    paths = [i for i in contents if os.path.isdir(i)]
+
+    return paths
+
+
+def get_eps_from_run_history_txt_file(txt_file):
+    """Parse `run_history.txt` file and return `eps` (step size)."""
+    with open(txt_file, 'r') as f:
+        data_line = [f.readline() for _ in range(10)][-1]
+    eps = float([i for i in data_line.split(' ') if i != ''][3])
+
+    return eps
+
+
+def list_and_join(d):
+    """Deal with the case of `d` containing multiple directories."""
+    if isinstance(d, (list, np.ndarray)):
+        paths = []
+        for dd in d:
+            _path = _list_and_join(dd)[0]
+            paths.append(_path)
+    else:
+        paths = _list_and_join(d)
+
+    return paths
+
+
+
 def check_else_make_dir(d):
     """If directory `d` doesn't exist, it is created."""
     if not os.path.isdir(d):
