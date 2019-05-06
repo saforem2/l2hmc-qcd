@@ -201,7 +201,7 @@ class GaugeModelPlotter:
         self._plot_charge_diffs((steps_arr, charge_diffs.T), **kwargs)
         self._plot_charge_probs(charges, **kwargs)
         self._plot_autocorrs((steps_arr, charge_autocorrs), **kwargs)
-        self._plot_plaqs_diffs((steps_arr, plaqs_diffs), **kwargs)
+        self._plot_plaqs_diffs((steps_arr, plaqs_diffs.T), **kwargs)
 
     def _plot_actions(self, xy_data, **kwargs):
         """Plot actions."""
