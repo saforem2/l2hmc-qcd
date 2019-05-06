@@ -102,7 +102,6 @@ def create_config(FLAGS, params):
 
 
 
-
 def hmc(FLAGS, params=None, log_file=None):
     """Create and run generic HMC sampler using trained params from L2HMC."""
     condition1 = not FLAGS.horovod
@@ -281,7 +280,6 @@ def run_hmc(FLAGS, params=None, log_file=None):
     io.log('\n' + 80 * '-')
     io.log(("Running generic HMC algorithm "
             "with learned parameters from L2HMC..."))
-
     if is_chief:
         hmc_sess, _, _, _ = hmc(FLAGS, params, log_file)
         hmc_sess.close()
@@ -332,6 +330,7 @@ def main(FLAGS):
         run_hmc(FLAGS, params, log_file)
 
         for eps in eps_arr:
+            params['log_dir'] = FLAGS.log_dir = None
             params['eps'] = FLAGS.eps = eps
             run_hmc(FLAGS, params, log_file)
 
