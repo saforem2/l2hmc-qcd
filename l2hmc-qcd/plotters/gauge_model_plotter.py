@@ -227,7 +227,7 @@ class GaugeModelPlotter:
             io.log(f'Saving figure to: {f}')
             plt.savefig(f, dpi=400, bbox_inches='tight')
 
-    def _plot_plaqs_diffs(self, xy_data, beta, **kwargs):
+    def _plot_plaqs_diffs(self, xy_data, **kwargs):
         kwargs['out_file'] = get_out_files(self.out_dir,
                                            'plaqs_diffs_vs_step')
         kwargs['ret'] = False
