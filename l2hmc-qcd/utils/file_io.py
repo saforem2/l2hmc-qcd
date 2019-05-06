@@ -8,6 +8,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 import os
+import datetime
 import pickle
 import numpy as np
 
@@ -53,21 +54,67 @@ def log_and_write(s, f):
     write(s, f)
 
 
+def create_log_dir(FLAGS, root_dir=None, log_file=None):
+    """Automatically create and name `log_dir` to save model data to.
+
+    The created directory will be located in `logs/YYYY_M_D/`, and will have
+    the format (without `_qw{QW}` if running generic HMC):
+
+        `lattice{LX}_batch{NS}_lf{LF}_eps{SS}_qw{QW}`
+
+    Returns:
+        FLAGS, with FLAGS.log_dir being equal to the newly created log_dir.
+
+    NOTE: If log_dir does not already exist, it is created.
+    """
+    LX = FLAGS.space_size
+    NS = FLAGS.num_samples
+    LF = FLAGS.num_steps
+    #  SS = str(FLAGS.eps).lstrip('0.')
+    SS = FLAGS.eps
+    QW = FLAGS.charge_weight
+    if FLAGS.hmc:
+        run_str = f'HMC_lattice{LX}_batch{NS}_lf{LF}_eps{SS:.3g}'
+    else:
+        run_str = f'lattice{LX}_batch{NS}_lf{LF}_eps{SS:.3g}_qw{QW}'
+
+    now = datetime.datetime.now()
+    #  print(now.strftime("%b %d %Y %H:%M:%S"))
+    day_str = now.strftime('%Y_%m_%d')
+    time_str = now.strftime("%Y_%m_%d_%H%M")
+
+    #  day_str = f'{now.year}_{now.month}_{now.day}'
+    #  time_str = day_str + f'_{now.hour}{now.minute}'
+    project_dir = os.path.abspath(os.path.dirname(FILE_PATH))
+    if FLAGS.log_dir is None:
+        if root_dir is None:
+            _dir = 'logs'
+        else:
+            _dir = root_dir
+
+    else:
+        if root_dir is None:
+            _dir = FLAGS.log_dir
+        else:
+            _dir = os.path.join(FLAGS.log_dir, root_dir)
+    root_log_dir = os.path.join(project_dir, _dir, day_str, time_str, run_str)
+    io.check_else_make_dir(root_log_dir)
+    run_num = io.get_run_num(root_log_dir)
+    log_dir = os.path.abspath(os.path.join(root_log_dir,
+                                           f'run_{run_num}'))
+    if log_file is not None:
+        io.write(f'Output saved to: \n\t{log_dir}', log_file, 'a')
+        io.write(80*'-', log_file, 'a')
+
+    return log_dir
+
+
 def _list_and_join(d):
     """For each dir `dd` in `d`, return a list of paths ['d/dd1', ...]"""
     contents = [os.path.join(d, i) for i in os.listdir(d)]
     paths = [i for i in contents if os.path.isdir(i)]
 
     return paths
-
-
-def get_eps_from_run_history_txt_file(txt_file):
-    """Parse `run_history.txt` file and return `eps` (step size)."""
-    with open(txt_file, 'r') as f:
-        data_line = [f.readline() for _ in range(10)][-1]
-    eps = float([i for i in data_line.split(' ') if i != ''][3])
-
-    return eps
 
 
 def list_and_join(d):
@@ -82,6 +129,14 @@ def list_and_join(d):
 
     return paths
 
+
+def get_eps_from_run_history_txt_file(txt_file):
+    """Parse `run_history.txt` file and return `eps` (step size)."""
+    with open(txt_file, 'r') as f:
+        data_line = [f.readline() for _ in range(10)][-1]
+    eps = float([i for i in data_line.split(' ') if i != ''][3])
+
+    return eps
 
 
 def check_else_make_dir(d):
@@ -126,25 +181,6 @@ def save_params_to_pkl_file(params, out_dir):
     log(f"Saving params to: {params_file}.")
     with open(params_file, 'wb') as f:
         pickle.dump(params, f)
-
-
-def create_log_dir(root_dir='gauge_logs_graph'):
-    root_log_dir = os.path.join(PROJECT_DIR, root_dir)
-    check_else_make_dir(root_log_dir)
-    try:
-        run_dirs = [i for i in os.listdir(root_log_dir) if 'run' in i]
-        run_nums = [int(i.split('_')[-1]) for i in run_dirs]
-        run_num = sorted(run_nums)[-1] + 1
-    except:
-        run_num = 1
-
-    log_dir = os.path.join(root_log_dir, f'run_{run_num}')
-    try:
-        check_else_make_dir(log_dir)
-    except:
-        pass
-
-    return log_dir
 
 
 def get_run_num(log_dir):

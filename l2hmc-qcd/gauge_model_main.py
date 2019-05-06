@@ -30,9 +30,7 @@ for each major part of the algorithm:
 Author: Sam Foreman (github: @saforem2)
 Date: 04/10/2019
 """
-import sys
 import os
-import pickle
 import datetime
 import tensorflow as tf
 
@@ -40,17 +38,17 @@ from tensorflow.python import debug as tf_debug
 from tensorflow.python.client import timeline
 from tensorflow.core.protobuf import rewriter_config_pb2
 
-
 import utils.file_io as io
+
+from globals import FILE_PATH
 from utils.parse_args import parse_args
+from utils.model_loader import load_model
 from models.gauge_model import GaugeModel
 from loggers.train_logger import TrainLogger
 from loggers.run_logger import RunLogger
 from trainers.gauge_model_trainer import GaugeModelTrainer
 from plotters.gauge_model_plotter import GaugeModelPlotter
 from runners.gauge_model_runner import GaugeModelRunner
-
-from globals import TRAIN_HEADER, RUN_HEADER, FILE_PATH
 
 try:
     import horovod.tensorflow as hvd
@@ -103,59 +101,6 @@ def create_config(FLAGS, params):
     return config, params
 
 
-def create_log_dir(FLAGS, root_dir=None, log_file=None):
-    """Automatically create and name `log_dir` to save model data to.
-
-    The created directory will be located in `logs/YYYY_M_D/`, and will have
-    the format (without `_qw{QW}` if running generic HMC):
-
-        `lattice{LX}_batch{NS}_lf{LF}_eps{SS}_qw{QW}`
-
-    Returns:
-        FLAGS, with FLAGS.log_dir being equal to the newly created log_dir.
-
-    NOTE: If log_dir does not already exist, it is created.
-    """
-    LX = FLAGS.space_size
-    NS = FLAGS.num_samples
-    LF = FLAGS.num_steps
-    #  SS = str(FLAGS.eps).lstrip('0.')
-    SS = FLAGS.eps
-    QW = FLAGS.charge_weight
-    if FLAGS.hmc:
-        run_str = f'HMC_lattice{LX}_batch{NS}_lf{LF}_eps{SS:.3g}'
-    else:
-        run_str = f'lattice{LX}_batch{NS}_lf{LF}_eps{SS:.3g}_qw{QW}'
-
-    now = datetime.datetime.now()
-    #  print(now.strftime("%b %d %Y %H:%M:%S"))
-    day_str = now.strftime('%Y_%m_%d')
-    time_str = now.strftime("%Y_%m_%d_%H%M")
-
-    #  day_str = f'{now.year}_{now.month}_{now.day}'
-    #  time_str = day_str + f'_{now.hour}{now.minute}'
-    project_dir = os.path.abspath(os.path.dirname(FILE_PATH))
-    if FLAGS.log_dir is None:
-        if root_dir is None:
-            _dir = 'logs'
-        else:
-            _dir = root_dir
-
-    else:
-        if root_dir is None:
-            _dir = FLAGS.log_dir
-        else:
-            _dir = os.path.join(FLAGS.log_dir, root_dir)
-    root_log_dir = os.path.join(project_dir, _dir, day_str, time_str, run_str)
-    io.check_else_make_dir(root_log_dir)
-    run_num = io.get_run_num(root_log_dir)
-    log_dir = os.path.abspath(os.path.join(root_log_dir,
-                                           f'run_{run_num}'))
-    if log_file is not None:
-        io.write(f'Output saved to: \n\t{log_dir}', log_file, 'a')
-        io.write(80*'-', log_file, 'a')
-
-    return log_dir
 
 
 def hmc(FLAGS, params=None, log_file=None):
@@ -168,7 +113,7 @@ def hmc(FLAGS, params=None, log_file=None):
 
     FLAGS.hmc = True
 
-    FLAGS.log_dir = create_log_dir(FLAGS, log_file=log_file)
+    FLAGS.log_dir = io.create_log_dir(FLAGS, log_file=log_file)
 
     if params is None:
         params = {}
@@ -217,7 +162,7 @@ def hmc(FLAGS, params=None, log_file=None):
 
 def l2hmc(FLAGS, log_file=None):
     """Create, train, and run L2HMC sampler on 2D U(1) gauge model."""
-    FLAGS.log_dir = create_log_dir(FLAGS, log_file=log_file)
+    FLAGS.log_dir = io.create_log_dir(FLAGS, log_file=log_file)
 
     params = {}
     for key, val in FLAGS.__dict__.items():
