@@ -8,7 +8,6 @@ Author: Sam Foreman (github: @saforem2)
 Date: 04/10/2019
 """
 import os
-import pickle
 import numpy as np
 
 try:
@@ -114,76 +113,17 @@ def plot_multiple_lines(data, xy_labels, **kwargs):
     return 1
 
 
-def load_params_from_dir(d):
-    params_file = os.path.join(d, 'params.pkl')
-    with open(params_file, 'rb') as f:
-        params = pickle.load(f)
-    return params
-
-
-class DataLoader:
-    def __init__(self, run_dir=None):
-        self.run_dir = None
-
-    def load_pkl_file(self, pkl_file):
-        with open(pkl_file, 'rb') as f:
-            contents = pickle.load(f)
-
-        return contents
-
-    def load_params(self, run_dir=None):
-        if run_dir is None:
-            run_dir = self.run_dir
-        params_file = os.path.join(run_dir, 'parameters.pkl')
-
-        return self.load_pkl_file(params_file)
-
-    def load_run_data(self, run_dir=None):
-        if run_dir is None:
-            run_dir = self.run_dir
-
-        run_data_file = os.path.join(run_dir, 'run_data.pkl')
-
-        return self.load_pkl_file(run_data_file)
-
-    def load_run_stats(self, run_dir=None):
-        if run_dir is None:
-            run_dir = self.run_dir
-
-        run_stats_file = os.path.join(run_dir, 'run_stats.pkl')
-
-        return self.load_pkl_file(run_stats_file)
-
-    def load_observables(self, run_dir=None):
-        if run_dir is None:
-            run_dir = self.run_dir
-
-        obs_dir = os.path.join(run_dir, 'observables')
-        files = os.listdir(obs_dir)
-
-        obs_names = [i.rstrip('.pkl') for i in files]
-        obs_files = [os.path.join(obs_dir, i) for i in files]
-
-        observables = {
-            n: self.load_pkl_file(f) for (n, f) in zip(obs_names, obs_files)
-        }
-
-        return observables
-
-
 class GaugeModelPlotter:
     def __init__(self, log_dir=None):
-        #  self.params = params
-        #  self.data = data
         self.log_dir = log_dir
 
-    def calc_stats(self, data, therm_frac=0.2):
+    def calc_stats(self, data, therm_frac=10):
         """Calculate observables statistics.
 
         Args:
             data (dict): Run data.
-            therm_frac (float): Fraction of data to ignore due to
-                thermalization.
+            therm_frac (int): Percent of total steps to ignore to account for
+            thermalization.
 
         Returns:
             stats: Dictionary containing statistics for actions, plaquettes,
@@ -259,11 +199,7 @@ class GaugeModelPlotter:
         #  self._plot_charge_chains(charges.T, **kwargs)
         self._plot_charge_diffs((steps_arr, charge_diffs.T), **kwargs)
         self._plot_charge_probs(charges, **kwargs)
-        try:
-            self._plot_autocorrs((steps_arr, charge_autocorrs), **kwargs)
-        except:
-            import pdb
-            pdb.set_trace()
+        self._plot_autocorrs((steps_arr, charge_autocorrs), **kwargs)
 
     def _plot_actions(self, xy_data, **kwargs):
         """Plot actions."""
