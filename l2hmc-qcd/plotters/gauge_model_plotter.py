@@ -171,6 +171,7 @@ class GaugeModelPlotter:
         charges = np.array(arr_from_dict(data, 'charges'), dtype=int)
         charge_diffs = arr_from_dict(data, 'charge_diffs')
         charge_autocorrs = np.array(data['charges_autocorrs'])
+        plaqs_diffs = np.abs(plaqs - u1_plaq_exact(beta))
 
         num_steps, num_samples = actions.shape
         steps_arr = np.arange(num_steps)
@@ -200,6 +201,7 @@ class GaugeModelPlotter:
         self._plot_charge_diffs((steps_arr, charge_diffs.T), **kwargs)
         self._plot_charge_probs(charges, **kwargs)
         self._plot_autocorrs((steps_arr, charge_autocorrs), **kwargs)
+        self._plot_plaqs_diffs((steps_arr, plaqs_diffs), **kwargs)
 
     def _plot_actions(self, xy_data, **kwargs):
         """Plot actions."""
@@ -224,6 +226,13 @@ class GaugeModelPlotter:
         for f in out_files:
             io.log(f'Saving figure to: {f}')
             plt.savefig(f, dpi=400, bbox_inches='tight')
+
+    def _plot_plaqs_diffs(self, xy_data, beta, **kwargs):
+        kwargs['out_file'] = get_out_files(self.out_dir,
+                                           'plaqs_diffs_vs_step')
+        kwargs['ret'] = False
+        xy_labels = ('Step', r"$\delta_{\mathrm{plaq}}$")
+        plot_multiple_lines(xy_data, xy_labels, **kwargs)
 
     def _plot_charges(self, xy_data, **kwargs):
         """Plot topological charges."""
