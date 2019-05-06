@@ -146,8 +146,6 @@ def create_log_dir(FLAGS, root_dir=None, log_file=None):
             _dir = FLAGS.log_dir
         else:
             _dir = os.path.join(FLAGS.log_dir, root_dir)
-        #  root_log_dir = os.path.join(project_dir, FLAGS.log_dir,
-        #                              day_str, time_str, run_str)
     root_log_dir = os.path.join(project_dir, _dir, day_str, time_str, run_str)
     io.check_else_make_dir(root_log_dir)
     run_num = io.get_run_num(root_log_dir)
@@ -155,7 +153,7 @@ def create_log_dir(FLAGS, root_dir=None, log_file=None):
                                            f'run_{run_num}'))
     if log_file is not None:
         io.write(f'Output saved to: \n\t{log_dir}', log_file, 'a')
-        io.write(80*'-')
+        io.write(80*'-', log_file, 'a')
 
     return log_dir
 
