@@ -47,6 +47,7 @@ class RunLogger:
         self.runs_dir = os.path.join(self.log_dir, 'runs')
         self.figs_dir = os.path.join(self.log_dir, 'figures')
         io.check_else_make_dir(self.runs_dir)
+        io.check_else_make_dir(self.figs_dir)
 
         self.run_steps = None
         self.beta = None
@@ -172,6 +173,7 @@ class RunLogger:
         charges = self.run_data['charges']
         charges_arr = np.array(list(charges.values()))
         charges_autocorrs = [autocorr(x) for x in charges_arr.T]
+        charges_autocorrs = [x / np.max(x) for x in charges_autocorrs]
         self.run_data['charges_autocorrs'] = charges_autocorrs
 
         data_file = os.path.join(self.run_dir, 'run_data.pkl')
