@@ -306,7 +306,7 @@ def main(FLAGS):
     else:
         log_file = None
 
-    eps_arr = [0.1, 0.2, 0.3]
+    eps_arr = [0.1, 0.15, 0.2, 0.25]
 
     if FLAGS.hmc:
         run_hmc(FLAGS, log_file)
