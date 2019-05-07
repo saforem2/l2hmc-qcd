@@ -101,7 +101,6 @@ def create_config(FLAGS, params):
     return config, params
 
 
-
 def hmc(FLAGS, params=None, log_file=None):
     """Create and run generic HMC sampler using trained params from L2HMC."""
     condition1 = not FLAGS.horovod
@@ -250,6 +249,7 @@ def l2hmc(FLAGS, log_file=None):
         io.log(f'Previous lr_init: {FLAGS.lr_init}')
         FLAGS.lr_init *= 0.9
         io.log(f'New lr_init: {FLAGS.lr_init}')
+        params['log_dir'] = FLAGS.log_dir = None
         sess.close()
         tf.reset_default_graph()
         l2hmc(FLAGS)
