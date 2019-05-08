@@ -32,10 +32,25 @@ class DataLoader:
         if run_dir is None:
             run_dir = self.run_dir
 
-        obs_dir = os.path.join()
+        if not observable_str.endswith('.pkl'):
+            observable_str += '.pkl'
+
+        obs_dir = os.path.join(run_dir, 'observables')
         obs_file = os.path.join(obs_dir, observable_str)
 
         return self.load_pkl_file(obs_file)
+
+    def load_plaqs(self, run_dir):
+        obs_dir = os.path.join(run_dir, 'observables')
+        plaqs_file = os.path.join(obs_dir, 'plaqs.pkl')
+
+        return self.load_pkl_file(plaqs_file)
+
+    def load_autocorrs(self, run_dir):
+        obs_dir = os.path.join(run_dir, 'observables')
+        autocorrs_file = os.path.join(obs_dir, 'charges_autocorrs.pkl')
+
+        return self.load_pkl_file(autocorrs_file)
 
     def load_params(self, run_dir=None):
         if run_dir is None:
