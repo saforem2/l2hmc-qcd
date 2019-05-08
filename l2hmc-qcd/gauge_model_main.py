@@ -160,6 +160,9 @@ def hmc(FLAGS, params=None, log_file=None):
 
 def l2hmc(FLAGS, log_file=None):
     """Create, train, and run L2HMC sampler on 2D U(1) gauge model."""
+    tf.keras.backend.clear_session()
+    tf.reset_default_graph()
+
     FLAGS.log_dir = io.create_log_dir(FLAGS, log_file=log_file)
 
     params = {}
@@ -242,15 +245,18 @@ def l2hmc(FLAGS, log_file=None):
 
     try:
         trainer.train(model.train_steps)
-    except:
+    except NameError:
         # i.e. Tensor had Inf / NaN values caused by high learning rate
-        io.log(80 * '-')
+        io.log('\n\n' + 80 * '-')
         io.log('Training crashed! Decreasing lr_init by 10% and retrying...')
         io.log(f'Previous lr_init: {FLAGS.lr_init}')
-        FLAGS.lr_init *= 0.9
+        FLAGS.lr_init
         io.log(f'New lr_init: {FLAGS.lr_init}')
+        io.log('Restarting training...')
+        io.log(80 * '-' + '\n\n')
         params['log_dir'] = FLAGS.log_dir = None
         sess.close()
+        tf.keras.backend.clear_session()
         tf.reset_default_graph()
         l2hmc(FLAGS)
 
