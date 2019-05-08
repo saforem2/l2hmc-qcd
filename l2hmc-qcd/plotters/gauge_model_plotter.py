@@ -176,6 +176,23 @@ class GaugeModelPlotter:
         num_steps, num_samples = actions.shape
         steps_arr = np.arange(num_steps)
         #  beta = run_kwargs['beta']
+        if num_steps >= 1000:
+            therm_steps = 100
+            skip_steps = 100
+        else:
+            therm_steps = 2
+            skip_steps = 1
+
+        # actions.shape = (num_steps, num_samples)
+        # plot only every 100 steps to smooth out graphs
+        _actions = actions[::skip_steps]
+        _plaqs = plaqs[::skip_steps]
+        _steps_arr = skip_steps * np.arange(_actions.shape[0])
+        # for _charge_diffs and _plaq_diffs, skip first 100 warmup steps
+        _charge_diffs = charge_diffs[therm_steps:][::skip_steps]
+        _plaq_diffs = plaqs_diffs[therm_steps:][::skip_steps]
+        _steps_diffs = (skip_steps * np.arange(_plaq_diffs.shape[0])
+                        + skip_steps)
 
         out_dir = (f'{int(num_steps)}_steps_'
                    f"beta_{beta}")
@@ -194,14 +211,20 @@ class GaugeModelPlotter:
             'out_file': [],
         }
 
-        self._plot_actions((steps_arr, actions.T), **kwargs)
-        self._plot_plaqs((steps_arr, plaqs.T), beta, **kwargs)
-        self._plot_charges((steps_arr, charges.T), **kwargs)
-        #  self._plot_charge_chains(charges.T, **kwargs)
-        self._plot_charge_diffs((steps_arr, charge_diffs.T), **kwargs)
-        self._plot_charge_probs(charges, **kwargs)
-        self._plot_autocorrs((steps_arr, charge_autocorrs), **kwargs)
-        self._plot_plaqs_diffs((steps_arr, plaqs_diffs.T), **kwargs)
+        try:
+            #  self._plot_actions((steps_arr, actions.T), **kwargs)
+            self._plot_actions((_steps_arr, _actions.T), **kwargs)
+            #  self._plot_plaqs((steps_arr, plaqs.T), beta, **kwargs)
+            self._plot_plaqs((_steps_arr, _plaqs.T), beta, **kwargs)
+            self._plot_charges((steps_arr, charges.T), **kwargs)
+            self._plot_autocorrs((steps_arr, charge_autocorrs), **kwargs)
+            #  self._plot_charge_chains(charges.T, **kwargs)
+            self._plot_charge_probs(charges, **kwargs)
+            self._plot_charge_diffs((_steps_diffs, _charge_diffs.T), **kwargs)
+            self._plot_plaqs_diffs((_steps_diffs, _plaq_diffs.T), **kwargs)
+        except ValueError:
+            import pdb
+            pdb.set_trace()
 
     def _plot_actions(self, xy_data, **kwargs):
         """Plot actions."""
