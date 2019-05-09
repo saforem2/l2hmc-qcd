@@ -291,6 +291,14 @@ def parse_args():
                               "integrator described in paper). Used for "
                               "comparing against L2HMC algorithm."))
 
+    parser.add_argument("--run_hmc",
+                        dest="run_hmc",
+                        action="store_true",
+                        required=False,
+                        help=("Flag that when passed causes generic HMC "
+                              "to be ran after running the trained L2HMC "
+                              "sampler. (Default: False)"))
+
     parser.add_argument("--eps_trainable",
                         dest="eps_trainable",
                         action="store_true",

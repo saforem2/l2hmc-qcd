@@ -324,21 +324,22 @@ def main(FLAGS):
         # Run L2HMC
         model, logger = run_l2hmc(FLAGS, log_file)
 
-        # Run HMC with the trained step size from L2HMC (not ideal)
-        params = model.params
-        params['hmc'] = True
-        params['log_dir'] = FLAGS.log_dir = None
-        if logger is not None:
-            params['eps'] = FLAGS.eps = logger._current_state['eps']
-        else:
-            params['eps'] = FLAGS.eps
-
-        run_hmc(FLAGS, params, log_file)
-
-        for eps in eps_arr:
+        if FLAGS.run_hmc:
+            # Run HMC with the trained step size from L2HMC (not ideal)
+            params = model.params
+            params['hmc'] = True
             params['log_dir'] = FLAGS.log_dir = None
-            params['eps'] = FLAGS.eps = eps
+            if logger is not None:
+                params['eps'] = FLAGS.eps = logger._current_state['eps']
+            else:
+                params['eps'] = FLAGS.eps
+
             run_hmc(FLAGS, params, log_file)
+
+            for eps in eps_arr:
+                params['log_dir'] = FLAGS.log_dir = None
+                params['eps'] = FLAGS.eps = eps
+                run_hmc(FLAGS, params, log_file)
 
 
 if __name__ == '__main__':
