@@ -5,6 +5,7 @@ import pickle
 from models.gauge_model import GaugeModel
 from loggers.run_logger import RunLogger
 from plotters.gauge_model_plotter import GaugeModelPlotter
+from runners.gauge_model_runner import GaugeModelRunner
 
 
 def load_model(log_dir):
@@ -16,7 +17,11 @@ def load_model(log_dir):
         params = pickle.load(f)
 
     model = GaugeModel(params=params)
-    run_logger = RunLogger(model, params['log_dir'])
+    run_logger = RunLogger(model, log_dir)
     plotter = GaugeModelPlotter(run_logger.figs_dir)
 
     return model, run_logger, plotter
+
+
+def create_runner(sess, model, run_logger):
+    return GaugeModelRunner(sess, model, run_logger)
