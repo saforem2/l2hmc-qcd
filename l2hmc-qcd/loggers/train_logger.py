@@ -67,10 +67,6 @@ class TrainLogger:
                                                 tf.get_default_graph())
             self.create_summaries()
 
-    #  def _create_filewriter(self, sess):
-    #      self.writer = tf.summary.FileWriter(self.train_summary_dir,
-    #                                          sess.graph)
-
     def _create_dir_structure(self, log_dir):
         """Create relevant directories for storing data.
 

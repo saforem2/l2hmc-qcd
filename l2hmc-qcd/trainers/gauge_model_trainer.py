@@ -103,10 +103,6 @@ class GaugeModelTrainer:
             'beta': beta_np
         }
 
-        #  if self.model.using_hvd:
-        #      num_workers = hvd.size()
-        #      step *= num_workers
-
         data_str = (
             f"{global_step:>5g}/{self.model.train_steps:<6g} "
             f"{outputs[1]:^9.4g} "              # loss value
@@ -140,8 +136,6 @@ class GaugeModelTrainer:
         samples_np = kwargs.get('samples_np', None)
         beta_np = kwargs.get('beta_np', None)
 
-        #  train_strings = []
-
         if beta_np is None:
             beta_np = self.model.beta_init
 
@@ -153,9 +147,7 @@ class GaugeModelTrainer:
 
         assert samples_np.shape == self.model.x.shape
 
-        #  train_file = os.path.join(self.logger.train_dir, 'training_log.txt')
         try:
-            #  io.log_and_write(TRAIN_HEADER, train_file)
             io.log(TRAIN_HEADER)
             for step in range(initial_step, train_steps):
                 out_data, data_str = self.train_step(step, samples_np)
@@ -172,6 +164,3 @@ class GaugeModelTrainer:
             io.log("Saving current state and exiting.")
             if self.logger is not None:
                 self.logger.update_training(out_data, data_str)
-            #  self.model.save(self.sess,
-            #                  #  self.logger._current_state,
-            #                  self.logger.checkpoint_dir)
