@@ -467,11 +467,11 @@ class GaugeModel:
             self.charge_diffs_op = tf.reduce_sum(x_dq) / self.num_samples
 
         with tf.name_scope('train'):
-            update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+            #  update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
             #  ! no update ops in the default graph
-            io.log("update_ops: ", update_ops)
+            #  io.log("update_ops: ", update_ops)
             # Use the update ops of the model itself
-            io.log("model.updates: ", self.dynamics.updates)
+            #  io.log("model.updates: ", self.dynamics.updates)
 
             grads_and_vars = zip(self.grads, self.dynamics.trainable_variables)
             with tf.control_dependencies(self.dynamics.updates):
@@ -480,3 +480,11 @@ class GaugeModel:
                     global_step=self.global_step,
                     name='train_op'
                 )
+        with tf.name_scope('run'):
+            output = self.dynamics(self.x, self.beta, save_lf=True)
+            self.px_lf = output[2]
+            self.x_out_lf = output[3]
+            self.lf_out_f = output[4]
+            self.pxs_out_f = output[4]
+            self.lf_out_b = output[5]
+            self.pxs_out_b = output[6]

@@ -394,6 +394,7 @@ class ConvNet3D(tf.keras.Model):
 # pylint:disable=too-many-arguments, too-many-instance-attributes
 class ConvNet2D(tf.keras.Model):
     """Conv. neural net with different initialization scale based on input."""
+
     def __init__(self, model_name, **kwargs):
         """Initialization method."""
 
@@ -583,14 +584,12 @@ class ConvNet2D(tf.keras.Model):
 def _custom_dense(units, factor=1., name=None):
     """Custom dense layer with specified weight intialization."""
     if '2.' not in tf.__version__:
-        #  KERNEL_INITIALIZER = tf.contrib.layesrs.variance_scaling_initializer
-        #  variance_scaling_initializer = tf.keras.initializers.VarianceScaling
         kernel_initializer = tf.keras.initializers.VarianceScaling(
             scale=factor,
             mode='fan_in',
             distribution='uniform',
             dtype=tf.float32,
-            seed=GLOBAL_SEED
+            seed=GLOBAL_SEED,
         )
     else:
         kernel_initializer = tf.contrib.layers.variance_scaling_initializer(
@@ -606,9 +605,3 @@ def _custom_dense(units, factor=1., name=None):
         bias_initializer=tf.constant_initializer(0., dtype=tf.float32),
         name=name
     )
-    #  KERNEL_INITIALIZER(
-    #              factor=factor * 2.,
-    #              mode='FAN_IN',
-    #              uniform=False
-    #          ),
-    #          ),

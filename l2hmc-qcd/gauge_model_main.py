@@ -31,8 +31,9 @@ Author: Sam Foreman (github: @saforem2)
 Date: 04/10/2019
 """
 import os
-import datetime
+import random
 import tensorflow as tf
+import numpy as np
 
 from tensorflow.python import debug as tf_debug
 from tensorflow.python.client import timeline
@@ -49,6 +50,12 @@ from loggers.run_logger import RunLogger
 from trainers.gauge_model_trainer import GaugeModelTrainer
 from plotters.gauge_model_plotter import GaugeModelPlotter
 from runners.gauge_model_runner import GaugeModelRunner
+from globals import GLOBAL_SEED
+
+os.environ['PYTHONHASHSEED'] = str(GLOBAL_SEED)
+random.seed(GLOBAL_SEED)        # `python` build-in pseudo-random generator
+np.random.seed(GLOBAL_SEED)     # numpy pseudo-random generator
+tf.set_random_seed(GLOBAL_SEED)
 
 try:
     import horovod.tensorflow as hvd
@@ -135,6 +142,7 @@ def hmc(FLAGS, params=None, log_file=None):
 
     # create tensorflow config (`config_proto`) to configure session
     config, params = create_config(FLAGS, params)
+    tf.reset_default_graph()
     sess = tf.Session(config=config)
 
     model = GaugeModel(params=params)

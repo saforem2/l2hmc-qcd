@@ -54,6 +54,14 @@ class RunLogger:
         self.run_data = {}
         self.run_stats = {}
         self.run_strings = [RUN_HEADER]
+        self.lf_out = {
+            'lf_forward': {},
+            'lf_backward': {},
+        }
+        self.pxs_out = {
+            'lf_forward': {},
+            'lf_backward': {},
+        }
 
         self.samples_arr = [] if self.model.save_samples else None
 
@@ -71,6 +79,14 @@ class RunLogger:
         self.run_stats = {}
         self.run_strings = []
         self.samples_arr = [] if self.model.save_samples else None
+        self.lf_out = {
+            'lf_forward': {},
+            'lf_backward': {},
+        }
+        self.pxs_out = {
+            'lf_forward': {},
+            'lf_backward': {},
+        }
         eps = self.model.eps
         self.run_dir = os.path.join(
             self.runs_dir, f"steps_{run_steps}_beta_{beta}_eps_{eps:.3g}"
@@ -93,6 +109,11 @@ class RunLogger:
         self.run_data['plaqs'][key] = data['plaqs']
         self.run_data['charges'][key] = data['charges']
         self.run_data['charge_diffs'][key] = data['charge_diffs']
+        self.lf_out['lf_forward'][key] = data['lf_out_f']
+        self.lf_out['lf_backward'][key] = data['lf_out_b']
+        self.pxs_out['lf_forward'][key] = data['pxs_out_f']
+        self.pxs_out['lf_backward'][key] = data['pxs_out_b']
+
         self.run_strings.append(data_str)
 
         if step % (10 * self.model.print_steps) == 0:
@@ -168,6 +189,16 @@ class RunLogger:
             io.log(f"Saving samples to: {samples_file}.")
             with open(samples_file, 'wb') as f:
                 pickle.dump(self.samples_arr, f)
+
+        lf_out_file = os.path.join(self.run_dir, 'lf_out.pkl')
+        io.log(f'Saving leapfrog outputs to: {lf_out_file}')
+        with open(lf_out_file, 'wb') as f:
+            pickle.dump(self.lf_out, f)
+
+        pxs_out_file = os.path.join(self.run_dir, 'pxs_out.pkl')
+        io.log(f'Saving leapfrog accept_probabilities to: {pxs_out_file}')
+        with open(pxs_out_file, 'wb') as f:
+            pickle.dump(self.pxs_out, f)
 
         run_stats = self.calc_observables_stats(self.run_data, therm_frac)
         charges = self.run_data['charges']
