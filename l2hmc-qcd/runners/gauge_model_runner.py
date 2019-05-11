@@ -18,6 +18,15 @@ import utils.file_io as io
 from lattice.lattice import u1_plaq_exact
 from globals import RUN_HEADER
 
+#  ops = [                         # list of tensorflow operations to run
+#      self.model.x_out,           # new samples (MD + MH accept/reject)
+#      self.model.px,              # prob. of accepting proposed samples
+#      self.model.actions_op,      # tot. action of each sample
+#      self.model.plaqs_op,        # avg. plaquette of each sample
+#      self.model.charges_op,      # topological charge Q, of each sample
+#      self.model.charge_diffs_op  # Q(x_out) - Q(samples_in)
+#  ]
+
 
 class GaugeModelRunner:
 
@@ -38,7 +47,7 @@ class GaugeModelRunner:
 
     def calc_charge_autocorrelation(self, charges):
         autocorr = np.correlate(charges, charges, mode='full')
-        return autocorr[autocorr.size // 2:]
+        return aut
 
     def save_run_data(self, run_data, run_strings, samples, **kwargs):
         """Save run information.
@@ -110,22 +119,22 @@ class GaugeModelRunner:
             self.model.x: samples_in,
             self.model.beta: beta_np
         }
-
-        ops = [                         # list of tensorflow operations to run
-            self.model.x_out,           # new samples (MD + MH accept/reject)
-            self.model.px,              # prob. of accepting proposed samples
-            self.model.actions_op,      # tot. action of each sample
-            self.model.plaqs_op,        # avg. plaquette of each sample
-            self.model.charges_op,      # topological charge Q, of each sample
-            self.model.charge_diffs_op  # Q(x_out) - Q(samples_in)
+        ops = [
+            self.model.x_out_lf,
+            self.model.px_lf,
+            self.model.actions_op,
+            self.model.plaqs_op,
+            self.model.charges_op,
+            self.model.charge_diffs_op,
+            self.model.lf_out_f,
+            self.model.pxs_out_f,
+            self.model.lf_out_b,
+            self.model.pxs_out_b
         ]
 
         start_time = time.time()
-
         outputs = self.sess.run(ops, feed_dict=feed_dict)
-
         dt = time.time() - start_time
-
         out_data = {
             'step': step,
             'beta': beta_np,
@@ -135,7 +144,11 @@ class GaugeModelRunner:
             'actions': outputs[2],
             'plaqs': outputs[3],
             'charges': outputs[4],
-            'charge_diffs': outputs[5]
+            'charge_diffs': outputs[5],
+            'lf_out_f': outputs[6],
+            'pxs_out_f': outputs[7],
+            'lf_out_b': outputs[8],
+            'pxs_out_b': outputs[9],
         }
 
         data_str = (f'{step:>5g}/{run_steps:<6g} '
