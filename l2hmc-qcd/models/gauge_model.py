@@ -376,7 +376,7 @@ class GaugeModel:
             equivalent.
         """
         with tf.name_scope('x_update'):
-            x_proposed, _, px, x_out = self.dynamics(x, beta)
+            x_proposed, _, px, x_out = self.dynamics(x, beta, train=True)
         with tf.name_scope('z_update'):
             z = tf.random_normal(tf.shape(x), name='z')  # Auxiliary variable
             z_proposed, _, pz, _ = self.dynamics(z, beta)
@@ -481,7 +481,8 @@ class GaugeModel:
                     name='train_op'
                 )
         with tf.name_scope('run'):
-            output = self.dynamics(self.x, self.beta, save_lf=True)
+            output = self.dynamics(self.x, self.beta,
+                                   save_lf=True, train=False)
             self.px_lf = output[2]
             self.x_out_lf = output[3]
             self.lf_out_f = output[4]
