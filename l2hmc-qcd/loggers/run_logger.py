@@ -109,10 +109,19 @@ class RunLogger:
         self.run_data['plaqs'][key] = data['plaqs']
         self.run_data['charges'][key] = data['charges']
         self.run_data['charge_diffs'][key] = data['charge_diffs']
-        self.lf_out['lf_forward'][key] = data['lf_out_f']
-        self.lf_out['lf_backward'][key] = data['lf_out_b']
-        self.pxs_out['lf_forward'][key] = data['pxs_out_f']
-        self.pxs_out['lf_backward'][key] = data['pxs_out_b']
+        self.lf_out['lf_forward'][key] = np.array(data['lf_out_f'])
+        self.lf_out['lf_backward'][key] = np.array(data['lf_out_b'])
+        self.pxs_out['lf_forward'][key] = np.array(data['pxs_out_f'])
+        self.pxs_out['lf_backward'][key] = np.array(data['pxs_out_b'])
+
+        #  io.log(80*'-' + '\n')
+        #  io.log(
+        #      f"lf_out['lf_forward'].shape: {np.array(data['lf_out_f']).shape}"
+        #  )
+        #  io.log(
+        #      f"pxs_out['lf_forward'].shape: {np.array(data['pxs_out_f']).shape}"
+        #  )
+        #  io.log(80*'-' + '\n')
 
         self.run_strings.append(data_str)
 
