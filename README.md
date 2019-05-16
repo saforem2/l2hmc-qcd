@@ -67,7 +67,7 @@ There are multiple different neural network architectures defined in `l2hmc-qcd/
 
 ***Code author:*** Sam Foreman
 
-***Pull requests and issues with forked code:*** @saforem2
+***Pull requests and issues should be directed to:*** [saforem2](http://github.com/saforem2)
 
 ## Citation
 
