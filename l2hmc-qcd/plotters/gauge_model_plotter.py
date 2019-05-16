@@ -64,17 +64,17 @@ def plot_multiple_lines(data, xy_labels, **kwargs):
     fig, ax = plt.subplots()
 
     marker = None
-    ls = ':'
+    ls = '-'
     fillstyle = 'full'
     for idx, row in enumerate(y_sample):
         if markers:
             marker = MARKERS[idx]
             fillstyle = 'none'
-            ls = ':'
+            ls = '-'
         if not lines:
             ls = ''
         _ = ax.plot(x_data, row, label=f'sample {idx}', fillstyle=fillstyle,
-                    marker=marker, ls=ls, alpha=alpha)
+                    marker=marker, ls=ls, alpha=alpha, lw=0.5)
 
     _ = ax.plot(
         x_data, y_data.mean(axis=0), color='k', label='average', alpha=1.,
