@@ -86,7 +86,7 @@ class LeapfrogPlotter:
                                      therm_steps, skip_steps)
         _ = ax1.plot(xf_avg, yf_avg, label='avg. diff (forward)',
                      color=reds[-1])
-        _ = ax1.plot(xb_avg, yb_avg, label='avg_diff (backward)',
+        _ = ax1.plot(xb_avg, yb_avg, label='avg. diff (backward)',
                      color=blues[-1])
 
         _ = ax2.plot(samples_x_avg, samples_y_avg, color='k',
