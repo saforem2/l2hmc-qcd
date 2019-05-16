@@ -92,8 +92,6 @@ class LeapfrogPlotter:
         _ = ax2.plot(samples_x_avg, samples_y_avg, color='k',
                      label='avg. output diff')
 
-        fig.tight_layout()
-
         _ = ax1.set_xlabel('Leapfrog step', fontsize=14)
         _ = ax2.set_xlabel('MD step', fontsize=14)
 
@@ -103,6 +101,8 @@ class LeapfrogPlotter:
 
         _ = ax1.legend(loc='best')
         _ = ax2.legend(loc='best')
+        fig.tight_layout()
+        fig.subplots_adjust(hspace=0.5)
 
         out_file = os.path.join(self.figs_dir, 'leapfrog_diffs.png')
         out_file_eps = os.path.join(self.eps_dir, 'leapfrog_diffs.eps')
