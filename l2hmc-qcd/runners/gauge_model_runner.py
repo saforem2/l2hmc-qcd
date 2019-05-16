@@ -129,7 +129,11 @@ class GaugeModelRunner:
             self.model.lf_out_f,
             self.model.pxs_out_f,
             self.model.lf_out_b,
-            self.model.pxs_out_b
+            self.model.pxs_out_b,
+            self.model.masks_f,
+            self.model.masks_b,
+            self.model.logdets_f,
+            self.model.logdets_b
         ]
 
         start_time = time.time()
@@ -149,6 +153,10 @@ class GaugeModelRunner:
             'pxs_out_f': outputs[7],
             'lf_out_b': outputs[8],
             'pxs_out_b': outputs[9],
+            'masks_f': outputs[10],
+            'masks_b': outputs[11],
+            'logdets_f': outputs[12],
+            'logdets_b': outputs[13],
         }
 
         data_str = (f'{step:>5g}/{run_steps:<6g} '
@@ -163,7 +171,7 @@ class GaugeModelRunner:
 
         return out_data, data_str
 
-    def run(self, run_steps, beta=None, therm_frac=10):
+    def run(self, run_steps, beta=None, therm_frac=10, save_lf=False):
         """Run the simulation to generate samples and calculate observables.
 
         Args:
@@ -202,7 +210,8 @@ class GaugeModelRunner:
                     self.logger.update(out_data, data_str)
 
             if self.logger is not None:
-                self.logger.save_run_data(therm_frac=therm_frac)
+                self.logger.save_run_data(therm_frac=therm_frac,
+                                          save_lf=save_lf)
 
         except (KeyboardInterrupt, SystemExit):
             io.log("\nKeyboardInterrupt detected!")
