@@ -48,8 +48,22 @@ def flatten_tensor(tensor):
     batch_size = tensor.shape[0]
     return tf.reshape(tensor, shape=(batch_size, -1))
 
+#  def _construct_masks(self):
+#      """Construct masks to determine which indices to update."""
+#      mask_per_step = []
+#      with tf.name_scope('construct_masks'):
+#          for _ in range(self.num_steps):
+#              idx = npr.permutation(np.arange(self.x_dim))[:self.x_dim //
+#              2]
+#              mask = np.zeros((self.x_dim,))
+#              mask[idx] = 1
+#              mask_per_step.append(mask)
+#
+#          self.masks = tf.constant(np.stack(mask_per_step),
+#          dtype=TF_FLOAT)
+#
 
-# pylint:disable=invalid-name, too-many-instance-attributes
+
 class GaugeDynamics(tf.keras.Model):
     """Dynamics engine of naive L2HMC sampler."""
 
@@ -207,7 +221,6 @@ class GaugeDynamics(tf.keras.Model):
         return self.apply_transition(position, beta,
                                      save_lf=save_lf, train=train)
 
-    # pylint:disable=too-many-locals
     def apply_transition(self, position, beta, save_lf=False, train=True):
         """Propose a new state and perform the accept/reject step.
 
@@ -221,36 +234,34 @@ class GaugeDynamics(tf.keras.Model):
             accept_prob: Probability of accepting the proposed states.
             position_out: Samples after accept/reject step.
         """
-        #  position_f, momentum_f, accept_prob_f = self.transition_kernel(
-        #      position, beta, forward=True, save_lf=save_lf
-        #  )
-        #  position_b, momentum_b, accept_prob_b = self.transition_kernel(
-        #      position, beta, forward=False, save_lf=save_lf
-        #  )
         # Simulate dynamics both forward and backward
         # Use sample masks to compute the actual solutions
         with tf.name_scope('apply_transition'):
             with tf.name_scope('transition_forward'):
-                outputs = self.transition_kernel(
-                    position, beta, forward=True, save_lf=save_lf, train=train
-                )
+                outputs = self.transition_kernel(position, beta,
+                                                 forward=True,
+                                                 save_lf=save_lf,
+                                                 train=train)
                 position_f = outputs[0]
                 momentum_f = outputs[1]
                 accept_prob_f = outputs[2]
                 if save_lf:
                     lf_out_f = outputs[3]
                     accept_probs_f = outputs[4]
+                    logdets_f = outputs[5]
 
             with tf.name_scope('transition_backward'):
-                outputs = self.transition_kernel(
-                    position, beta, forward=False, save_lf=save_lf, train=train
-                )
+                outputs = self.transition_kernel(position, beta,
+                                                 forward=False,
+                                                 save_lf=save_lf,
+                                                 train=train)
                 position_b = outputs[0]
                 momentum_b = outputs[1]
                 accept_prob_b = outputs[2]
                 if save_lf:
                     lf_out_b = outputs[3]
                     accept_probs_b = outputs[4]
+                    logdets_b = outputs[5]
 
             # Decide direction uniformly
             with tf.name_scope('transition_masks'):
@@ -292,7 +303,8 @@ class GaugeDynamics(tf.keras.Model):
                 )
         if save_lf:
             return (position_post, momentum_post, accept_prob, position_out,
-                    lf_out_f, accept_probs_f, lf_out_b, accept_probs_b)
+                    lf_out_f, accept_probs_f, lf_out_b, accept_probs_b,
+                    forward_mask, backward_mask, logdets_f, logdets_b)
         else:
             return position_post, momentum_post, accept_prob, position_out,
 
@@ -334,6 +346,7 @@ class GaugeDynamics(tf.keras.Model):
                 sumlogdet = outputs[4]
         else:
             lf_out = []
+            logdet = []
             #  lf_out = tf.zeros(self.num_steps)
             #  lf_out = np.zeros(self.num_steps)
             sumlogdet = 0.
@@ -342,7 +355,7 @@ class GaugeDynamics(tf.keras.Model):
                                                         momentum_post, beta, t)
                 sumlogdet += j
                 lf_out.append(position_post)
-            #  io.log(f'len(lf_out): {len(lf_out)}')
+                logdet.append(j)
 
         with tf.name_scope('accept_prob'):
             accept_prob = self._compute_accept_prob(
@@ -358,7 +371,7 @@ class GaugeDynamics(tf.keras.Model):
 
         if save_lf:
             return (position_post, momentum_post, accept_prob,
-                    lf_out, accept_probs)
+                    lf_out, accept_probs, logdet)
         else:
             return position_post, momentum_post, accept_prob
 
@@ -439,7 +452,6 @@ class GaugeDynamics(tf.keras.Model):
 
         return position, momentum, sumlogdet
 
-    # pylint:disable=invalid-name
     def _update_momentum_forward(self, position, momentum, beta, t):
         """Update v in the forward leapfrog step."""
         with tf.name_scope('update_momentum_forward'):
@@ -465,7 +477,6 @@ class GaugeDynamics(tf.keras.Model):
 
         return momentum, tf.reduce_sum(scale, axis=1)
 
-    # pylint:disable=invalid-name,too-many-arguments
     def _update_position_forward(self, position, momentum, t, mask, mask_inv):
         """Update x in the forward leapfrog step."""
         with tf.name_scope('update_position_forward'):
@@ -488,7 +499,6 @@ class GaugeDynamics(tf.keras.Model):
 
         return position, tf.reduce_sum(mask_inv * scale, axis=1)
 
-    # pylint:disable=invalid-name
     def _update_momentum_backward(self, position, momentum, beta, t):
         """Update v in the backward leapfrog step. Invert the forward update"""
         #  grad = self.grad_potential(position, beta)
@@ -515,7 +525,6 @@ class GaugeDynamics(tf.keras.Model):
 
         return momentum, tf.reduce_sum(scale, axis=1)
 
-    # pylint:disable=invalid-name
     def _update_position_backward(self, position, momentum, t, mask, mask_inv):
         """Update x in the backward lf step. Inverting the forward update."""
         with tf.name_scope('update_position_backward'):
@@ -613,18 +622,6 @@ class GaugeDynamics(tf.keras.Model):
         m = self.masks[i]
         return m, 1. - m
 
-    #  def _construct_masks(self):
-    #      """Construct masks to determine which indices to update."""
-    #      mask_per_step = []
-    #      with tf.name_scope('construct_masks'):
-    #          for _ in range(self.num_steps):
-    #              idx = npr.permutation(np.arange(self.x_dim))[:self.x_dim // 2]
-    #              mask = np.zeros((self.x_dim,))
-    #              mask[idx] = 1
-    #              mask_per_step.append(mask)
-    #
-    #          self.masks = tf.constant(np.stack(mask_per_step), dtype=TF_FLOAT)
-    #
     def _get_mask_while(self, step):
         m = tf.gather(self.masks, tf.cast(step, dtype=tf.int32))
         return m, 1. - m
