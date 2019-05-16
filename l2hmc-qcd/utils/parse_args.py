@@ -276,7 +276,7 @@ def parse_args():
                               "generated during the `run` phase. "
                               "WARNING: This is very data intensive."))
 
-    parser.add_argument('--save_leaprfrogs',
+    parser.add_argument('--save_leapfrogs',
                         dest='save_leapfrogs',
                         action='store_true',
                         required=False,

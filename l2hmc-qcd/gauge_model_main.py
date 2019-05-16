@@ -49,6 +49,7 @@ from loggers.train_logger import TrainLogger
 from loggers.run_logger import RunLogger
 from trainers.gauge_model_trainer import GaugeModelTrainer
 from plotters.gauge_model_plotter import GaugeModelPlotter
+from plotters.leapfrog_plotters import LeapfrogPlotter
 from runners.gauge_model_runner import GaugeModelRunner
 from globals import GLOBAL_SEED
 
@@ -162,6 +163,8 @@ def hmc(FLAGS, params=None, log_file=None):
 
         if plotter is not None and run_logger is not None:
             plotter.plot_observables(run_logger.run_data, beta)
+            lf_plotter = LeapfrogPlotter(run_logger, plotter.out_dir)
+            lf_plotter.make_plots(num_samples=10)
 
     return sess, model, runner, run_logger
 
@@ -278,10 +281,12 @@ def l2hmc(FLAGS, log_file=None):
         if run_logger is not None:
             run_logger.reset(model.run_steps, beta)
 
-        runner.run(model.run_steps, beta)
+        runner.run(model.run_steps, beta, save_lf=FLAGS.save_leapfrogs)
 
         if plotter is not None and run_logger is not None:
             plotter.plot_observables(run_logger.run_data, beta)
+            lf_plotter = LeapfrogPlotter(run_logger, plotter.out_dir)
+            lf_plotter.make_plots(num_samples=10)
 
     return sess, model, train_logger
 
