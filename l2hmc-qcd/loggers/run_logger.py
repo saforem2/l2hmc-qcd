@@ -71,7 +71,7 @@ class RunLogger:
             'backward': [],
         }
 
-        self.samples_arr = [] if self.model.save_samples else None
+        self.samples_arr = []  # if self.model.save_samples else None
 
     def reset(self, run_steps, beta):
         """Reset run_data and run_strings to prep for new run."""
@@ -86,7 +86,7 @@ class RunLogger:
         }
         self.run_stats = {}
         self.run_strings = []
-        self.samples_arr = [] if self.model.save_samples else None
+        self.samples_arr = []  # if self.model.save_samples else None
         self.lf_out = {
             'forward': [],
             'backward': [],
@@ -114,9 +114,9 @@ class RunLogger:
     def update(self, data, data_str):
         """Update run_data and append data_str to data_strings."""
         # projection of samples onto [0, 2π) done in run_step above
-        if self.model.save_samples:
-            samples_np = data['samples']
-            self.samples_arr.append(samples_np)
+        #  if self.model.save_samples:
+        samples_np = data['samples']
+        self.samples_arr.append(samples_np)
 
         step = data['step']
         beta = data['beta']
@@ -206,13 +206,12 @@ class RunLogger:
         io.check_else_make_dir(self.run_dir)
         io.check_else_make_dir(observables_dir)
 
-        if self.model.save_samples:
+        if save_lf:
             samples_file = os.path.join(self.run_dir, 'run_samples.pkl')
             io.log(f"Saving samples to: {samples_file}.")
             with open(samples_file, 'wb') as f:
                 pickle.dump(self.samples_arr, f)
 
-        if save_lf:
             lf_out_file = os.path.join(self.run_dir, 'lf_out.pkl')
             io.log(f'Saving leapfrog outputs to: {lf_out_file}')
             with open(lf_out_file, 'wb') as f:
