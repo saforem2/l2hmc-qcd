@@ -157,7 +157,7 @@ def hmc(FLAGS, params=None, log_file=None):
     if FLAGS.hmc_beta is None:
         betas = [FLAGS.beta_final, FLAGS.beta_final + 1]
     else:
-        betas = [FLAGS.hmc_beta]
+        betas = [float(FLAGS.hmc_beta)]
 
     for beta in betas:
         if run_logger is not None:
@@ -332,7 +332,7 @@ def main(FLAGS):
     if FLAGS.hmc_eps is None:
         eps_arr = [0.1, 0.15, 0.2, 0.25]
     else:
-        eps_arr = [FLAGS.hmc_eps]
+        eps_arr = [float(FLAGS.hmc_eps)]
 
     if FLAGS.hmc:
         run_hmc(FLAGS, log_file)
