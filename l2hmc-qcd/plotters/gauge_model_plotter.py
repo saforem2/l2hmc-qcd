@@ -26,13 +26,13 @@ except ImportError:
 
 params = {
     'backend': 'ps',
-    'text.latex.preamble': [r'\usepackage{gensymb}'],
+    #  'text.latex.preamble': [r'\usepackage{gensymb}'],
     'axes.labelsize': 14,   # fontsize for x and y labels (was 10)
     'axes.titlesize': 16,
     'legend.fontsize': 10,  # was 10
     'xtick.labelsize': 12,
     'ytick.labelsize': 12,
-    'text.usetex': True,
+    #  'text.usetex': True,
     #  'figure.figsize': [fig_width, fig_height],
     'font.family': 'serif',
 }
@@ -253,20 +253,16 @@ class GaugeModelPlotter:
             'out_file': [],
         }
 
-        try:
-            #  self._plot_actions((steps_arr, actions.T), **kwargs)
-            self._plot_actions((_steps_arr, _actions.T), **kwargs)
-            #  self._plot_plaqs((steps_arr, plaqs.T), beta, **kwargs)
-            self._plot_plaqs((_steps_arr, _plaqs.T), beta, **kwargs)
-            self._plot_charges((steps_arr, charges.T), **kwargs)
-            self._plot_autocorrs((steps_arr, charge_autocorrs), **kwargs)
-            #  self._plot_charge_chains(charges.T, **kwargs)
-            self._plot_charge_probs(charges, **kwargs)
-            self._plot_charge_diffs((_steps_diffs, _charge_diffs.T), **kwargs)
-            self._plot_plaqs_diffs((_steps_diffs, _plaq_diffs.T), **kwargs)
-        except ValueError:
-            import pdb
-            pdb.set_trace()
+        #  self._plot_actions((steps_arr, actions.T), **kwargs)
+        self._plot_actions((_steps_arr, _actions.T), **kwargs)
+        #  self._plot_plaqs((steps_arr, plaqs.T), beta, **kwargs)
+        self._plot_plaqs((_steps_arr, _plaqs.T), beta, **kwargs)
+        self._plot_charges((steps_arr, charges.T), **kwargs)
+        self._plot_autocorrs((steps_arr, charge_autocorrs), **kwargs)
+        #  self._plot_charge_chains(charges.T, **kwargs)
+        self._plot_charge_probs(charges, **kwargs)
+        self._plot_charge_diffs((_steps_diffs, _charge_diffs.T), **kwargs)
+        self._plot_plaqs_diffs((_steps_diffs, _plaq_diffs.T), **kwargs)
 
     def _plot_actions(self, xy_data, **kwargs):
         """Plot actions."""
