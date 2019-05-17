@@ -163,6 +163,7 @@ def parse_args():
 
     parser.add_argument("--hmc_beta",
                         dest="hmc_beta",
+                        type=float,
                         default=None,
                         required=False,
                         help=("""Flag specifying a singular value of beta at
@@ -170,6 +171,7 @@ def parse_args():
 
     parser.add_argument("--hmc_eps",
                         dest="hmc_eps",
+                        type=float,
                         default=None,
                         required=False,
                         help=("""Flag specifying a singular step size value
