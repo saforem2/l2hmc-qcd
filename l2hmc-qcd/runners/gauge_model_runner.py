@@ -133,7 +133,9 @@ class GaugeModelRunner:
             self.model.masks_f,
             self.model.masks_b,
             self.model.logdets_f,
-            self.model.logdets_b
+            self.model.logdets_b,
+            self.model.sumlogdet_f,
+            self.model.sumlogdet_b
         ]
 
         start_time = time.time()
@@ -157,6 +159,8 @@ class GaugeModelRunner:
             'masks_b': outputs[11],
             'logdets_f': outputs[12],
             'logdets_b': outputs[13],
+            'sumlogdet_f': outputs[14],
+            'sumlogdet_b': outputs[15],
         }
 
         data_str = (f'{step:>5g}/{run_steps:<6g} '

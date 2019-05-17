@@ -249,6 +249,7 @@ class GaugeDynamics(tf.keras.Model):
                     lf_out_f = outputs[3]
                     accept_probs_f = outputs[4]
                     logdets_f = outputs[5]
+                    sumlogdet_f = outputs[6]
 
             with tf.name_scope('transition_backward'):
                 outputs = self.transition_kernel(position, beta,
@@ -262,6 +263,7 @@ class GaugeDynamics(tf.keras.Model):
                     lf_out_b = outputs[3]
                     accept_probs_b = outputs[4]
                     logdets_b = outputs[5]
+                    sumlogdet_b = outputs[6]
 
             # Decide direction uniformly
             with tf.name_scope('transition_masks'):
@@ -304,7 +306,8 @@ class GaugeDynamics(tf.keras.Model):
         if save_lf:
             return (position_post, momentum_post, accept_prob, position_out,
                     lf_out_f, accept_probs_f, lf_out_b, accept_probs_b,
-                    forward_mask, backward_mask, logdets_f, logdets_b)
+                    forward_mask, backward_mask, logdets_f, logdets_b,
+                    sumlogdet_f, sumlogdet_b)
         else:
             return position_post, momentum_post, accept_prob, position_out,
 
@@ -371,7 +374,7 @@ class GaugeDynamics(tf.keras.Model):
 
         if save_lf:
             return (position_post, momentum_post, accept_prob,
-                    lf_out, accept_probs, logdet)
+                    lf_out, accept_probs, logdet, sumlogdet)
         else:
             return position_post, momentum_post, accept_prob
 
@@ -557,7 +560,6 @@ class GaugeDynamics(tf.keras.Model):
 
     def _compute_accept_prob(self, xi, vi, xf, vf, sumlogdet, beta):
         """Compute the prob of accepting the proposed state given old state.
-        
         Args:
             xi: Initial state.
             vi: Initial momentum.

@@ -1,9 +1,14 @@
 import os
 import pickle
 import numpy as np
-import matplotlib as mpl
-import matplotlib.pyplot as plt
+try:
+    import matplotlib as mpl
+    import matplotlib.pyplot as plt
+    HAS_MATPLOTLIB = True
+except ImportError:
+    HAS_MATPLOTLIB = False
 
+#  from .formatters import latexify
 import utils.file_io as io
 
 
@@ -15,6 +20,7 @@ def load_and_sep(out_file, keys=('forward', 'backward')):
 
 
 def smooth_data(y_data, therm_steps=10, skip_steps=100):
+    skip_steps = max(1, skip_steps)
     if therm_steps > 0:
         _y_data = y_data[therm_steps:][::skip_steps]
     else:
@@ -22,6 +28,22 @@ def smooth_data(y_data, therm_steps=10, skip_steps=100):
     x_data = skip_steps * np.arange(_y_data.shape[0])
 
     return x_data, _y_data
+
+
+params = {
+    'backend': 'ps',
+    'text.latex.preamble': [r'\usepackage{gensymb}'],
+    'axes.labelsize': 14,   # fontsize for x and y labels (was 10)
+    'axes.titlesize': 16,
+    'legend.fontsize': 10,  # was 10
+    'xtick.labelsize': 12,
+    'ytick.labelsize': 12,
+    'text.usetex': True,
+    #  'figure.figsize': [fig_width, fig_height],
+    'font.family': 'serif'
+}
+
+mpl.rcParams.update(params)
 
 
 class LeapfrogPlotter:
@@ -35,6 +57,8 @@ class LeapfrogPlotter:
         self.lf_b = np.array(run_logger.lf_out['backward'])
         self.logdets_f = np.array(run_logger.logdets['forward'])
         self.logdets_b = np.array(run_logger.logdets['backward'])
+        self.sumlogdet_f = np.array(run_logger.sumlogdet['forward'])
+        self.sumlogdet_b = np.array(run_logger.sumlogdet['backward'])
         self.lf_f_diffs = self.lf_f[1:] - self.lf_f[:-1]
         self.lf_b_diffs = self.lf_b[1:] - self.lf_b[:-1]
         self.samples_diffs = self.samples[1:] - self.samples[:-1]
@@ -44,7 +68,7 @@ class LeapfrogPlotter:
         self.therm_steps = int(therm_perc * self.tot_lf_steps)
         self.skip_steps = int(skip_perc * self.tot_lf_steps)
 
-    def make_plots(self, num_samples=10):
+    def make_plots(self, num_samples=15):
         self.plot_lf_diffs(num_samples)
         self.plot_logdets(num_samples)
 
@@ -90,15 +114,15 @@ class LeapfrogPlotter:
         xb_avg, yb_avg = smooth_data(np.mean(self.lf_b_diffs, axis=(1, 2)),
                                      self.therm_steps, self.skip_steps)
         _ = ax1.plot(xf_avg, yf_avg, label='avg. diff (forward)',
-                     color=reds[-1])
+                     color=reds[-1], lw=1.)
         _ = ax1.plot(xb_avg, yb_avg, label='avg. diff (backward)',
-                     color=blues[-1])
+                     color=blues[-1], lw=1.)
 
-        _ = ax2.plot(samples_x_avg, samples_y_avg, color='k',
+        _ = ax2.plot(samples_x_avg, samples_y_avg, color='k', lw=1.,
                      label='avg. output diff')
 
-        _ = ax1.set_xlabel('Leapfrog step', fontsize=14)
-        _ = ax2.set_xlabel('MD step', fontsize=14)
+        _ = ax1.set_xlabel('Leapfrog step')  # , fontsize=14)
+        _ = ax2.set_xlabel('MD step')
 
         ylabel = r'$\langle \delta\phi_{\mu}(i)\rangle$'
         _ = ax1.set_ylabel(ylabel)
@@ -119,26 +143,49 @@ class LeapfrogPlotter:
         reds, blues = self.get_colors(num_samples)
         #  therm_steps = 10
         #  skip_steps = 100
+        step_multiplier = (self.lf_f_diffs.shape[0]
+                           // self.samples_diffs.shape[0])
+        sumlogdet_xf_avg, sumlogdet_yf_avg = smooth_data(
+            np.mean(self.sumlogdet_f, axis=-1),
+            self.therm_steps // step_multiplier,
+            self.skip_steps // step_multiplier
+        )
 
-        fig, ax = plt.subplots()
+        sumlogdet_xb_avg, sumlogdet_yb_avg = smooth_data(
+            np.mean(self.sumlogdet_b, axis=-1),
+            self.therm_steps // step_multiplier,
+            self.skip_steps // step_multiplier
+        )
+
+        fig, (ax1, ax2) = plt.subplots(2, 1)
         for idx in range(num_samples):
             xf, yf = smooth_data(self.logdets_f[:, idx],
                                  self.therm_steps, self.skip_steps)
             xb, yb = smooth_data(self.logdets_b[:, idx],
                                  self.therm_steps, self.skip_steps)
-            _ = ax.plot(xf, yf, ls='-', color=reds[idx], alpha=0.75, lw=0.5)
-            _ = ax.plot(xb, yb, ls='-', color=blues[idx], alpha=0.75, lw=0.5)
+            _ = ax1.plot(xf, yf, ls='-', color=reds[idx], alpha=0.75, lw=0.5)
+            _ = ax1.plot(xb, yb, ls='-', color=blues[idx], alpha=0.75, lw=0.5)
 
         xf_avg, yf_avg = smooth_data(np.mean(self.logdets_f, axis=-1),
                                      self.therm_steps, self.skip_steps)
         xb_avg, yb_avg = smooth_data(np.mean(self.logdets_b, axis=-1),
                                      self.therm_steps, self.skip_steps)
-        _ = ax.plot(xf_avg, yf_avg, label=f'avg. logdet (forward)',
-                    ls='-', color=reds[-1])
-        _ = ax.plot(xb_avg, yb_avg, label=f'avg. logdet (backward)',
-                    ls='-', color=blues[-1])
-        _ = ax.set_xlabel('Leapfrog step')
-        _ = ax.legend(loc='best')
+        _ = ax1.plot(xf_avg, yf_avg, label=f'avg. logdet (forward)',
+                     ls='-', color=reds[-1], lw=1.)
+        _ = ax1.plot(xb_avg, yb_avg, label=f'avg. logdet (backward)',
+                     ls='-', color=blues[-1], lw=1.)
+
+        _ = ax2.plot(sumlogdet_xf_avg, sumlogdet_yf_avg,
+                     label=f'sumlogdet (f)',
+                     color=reds[-1], lw=1., ls='-')
+        _ = ax2.plot(sumlogdet_xb_avg, sumlogdet_yb_avg,
+                     label=f'sumlogdet (b)',
+                     color=blues[-1], lw=1., ls='-')
+
+        _ = ax1.set_xlabel('Leapfrog step')
+        _ = ax2.set_xlabel('MD step')
+        _ = ax1.legend(loc='best')
+        _ = ax2.legend(loc='best')
 
         out_file = os.path.join(self.figs_dir, 'avg_logdets.png')
         out_file_eps = os.path.join(self.eps_dir, 'avg_logdets.eps')

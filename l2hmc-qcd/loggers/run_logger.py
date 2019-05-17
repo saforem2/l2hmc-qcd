@@ -70,6 +70,10 @@ class RunLogger:
             'forward': [],
             'backward': [],
         }
+        self.sumlogdet = {
+            'forward': [],
+            'backward': [],
+        }
 
         self.samples_arr = []  # if self.model.save_samples else None
 
@@ -100,6 +104,10 @@ class RunLogger:
             'backward': [],
         }
         self.logdets = {
+            'forward': [],
+            'backward': [],
+        }
+        self.sumlogdet = {
             'forward': [],
             'backward': [],
         }
@@ -135,6 +143,8 @@ class RunLogger:
         self.masks['backward'].extend(np.array(data['masks_b']))
         self.logdets['forward'].extend(np.array(data['logdets_f']))
         self.logdets['backward'].extend(np.array(data['logdets_b']))
+        self.sumlogdet['forward'].append(np.array(data['sumlogdet_f']))
+        self.sumlogdet['backward'].append(np.array(data['sumlogdet_b']))
 
         self.run_strings.append(data_str)
 
