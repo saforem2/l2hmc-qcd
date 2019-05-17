@@ -157,9 +157,24 @@ def parse_args():
                         dest="annealing",
                         action="store_true",
                         required=False,
-                        help=("Flag that when passed will cause the model "
-                              "to perform simulated annealing during "
-                              "training."))
+                        help=("""Flag that when passed will cause the model
+                              to perform simulated annealing during
+                              training."""))
+
+    parser.add_argument("--hmc_beta",
+                        dest="hmc_beta",
+                        default=None,
+                        required=False,
+                        help=("""Flag specifying a singular value of beta at
+                              which to run the generic HMC sampler."""))
+
+    parser.add_argument("--hmc_eps",
+                        dest="hmc_eps",
+                        default=None,
+                        required=False,
+                        help=("""Flag specifying a singular step size value
+                              (`eps`) to use when running the generic HMC
+                              sampler."""))
 
     parser.add_argument("--beta_init",
                         dest="beta_init",
