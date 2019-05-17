@@ -154,7 +154,11 @@ def hmc(FLAGS, params=None, log_file=None):
 
     runner = GaugeModelRunner(sess, model, run_logger)
 
-    betas = [FLAGS.beta_final, FLAGS.beta_final + 1]
+    if FLAGS.hmc_beta is None:
+        betas = [FLAGS.beta_final, FLAGS.beta_final + 1]
+    else:
+        betas = [FLAGS.hmc_beta]
+
     for beta in betas:
         if run_logger is not None:
             run_logger.reset(model.run_steps, beta)
@@ -325,7 +329,10 @@ def main(FLAGS):
     else:
         log_file = None
 
-    eps_arr = [0.1, 0.15, 0.2, 0.25]
+    if FLAGS.hmc_eps is None:
+        eps_arr = [0.1, 0.15, 0.2, 0.25]
+    else:
+        eps_arr = [FLAGS.hmc_eps]
 
     if FLAGS.hmc:
         run_hmc(FLAGS, log_file)
