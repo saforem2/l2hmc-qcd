@@ -63,6 +63,27 @@ def flatten_tensor(tensor):
 #          dtype=TF_FLOAT)
 #
 
+#  def _get_time(self, i):
+#      """Get sinusoidal time for i-th augmented leapfrog step."""
+#      return self.ts[i]
+
+#  def _get_mask(self, i):
+#      """Get binary masks for i-th augmented leapfrog step."""
+#      m = self.masks[i]
+#      return m, 1. - m
+
+#  with tf.name_scope('alpha'):
+#      if not self.hmc:
+#          self.alpha = tf.get_variable(
+#              'alpha',
+#              initializer=tf.log(tf.constant(kwargs.get('eps', 0.1))),
+#              trainable=self.eps_trainable,
+#              dtype=TF_FLOAT
+#          )
+#      else:
+#          self.alpha = tf.log(tf.constant(kwargs.get('eps', 0.1),
+#                                          dtype=TF_FLOAT))
+
 
 class GaugeDynamics(tf.keras.Model):
     """Dynamics engine of naive L2HMC sampler."""
@@ -100,17 +121,6 @@ class GaugeDynamics(tf.keras.Model):
             if key != 'eps':  # want to use self.eps as tf.Variable
                 setattr(self, key, val)
 
-        #  with tf.name_scope('alpha'):
-        #      if not self.hmc:
-        #          self.alpha = tf.get_variable(
-        #              'alpha',
-        #              initializer=tf.log(tf.constant(kwargs.get('eps', 0.1))),
-        #              trainable=self.eps_trainable,
-        #              dtype=TF_FLOAT
-        #          )
-        #      else:
-        #          self.alpha = tf.log(tf.constant(kwargs.get('eps', 0.1),
-        #                                          dtype=TF_FLOAT))
 
         with tf.name_scope('eps'):
             #  self.eps = exp(self.alpha, name='eps')
@@ -593,10 +603,6 @@ class GaugeDynamics(tf.keras.Model):
                                 dtype=TF_FLOAT)
                 self.ts.append(t[None, :])
 
-    def _get_time(self, i):
-        """Get sinusoidal time for i-th augmented leapfrog step."""
-        return self.ts[i]
-
     def _format_time(self, i, tile=1):
         """Format time as [cos(..), sin(...)]."""
         with tf.name_scope('format_time'):
@@ -618,11 +624,6 @@ class GaugeDynamics(tf.keras.Model):
             mask[idx] = 1.
             mask = tf.constant(mask, dtype=TF_FLOAT)
             self.masks.append(mask[None, :])
-
-    def _get_mask(self, i):
-        """Get binary masks for i-th augmented leapfrog step."""
-        m = self.masks[i]
-        return m, 1. - m
 
     def _get_mask_while(self, step):
         m = tf.gather(self.masks, tf.cast(step, dtype=tf.int32))
