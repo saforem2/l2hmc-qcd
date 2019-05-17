@@ -40,7 +40,7 @@ params = {
     'ytick.labelsize': 12,
     #  'text.usetex': True,
     #  'figure.figsize': [fig_width, fig_height],
-    'font.family': 'serif'
+    #  'font.family': 'serif'
 }
 
 try:
