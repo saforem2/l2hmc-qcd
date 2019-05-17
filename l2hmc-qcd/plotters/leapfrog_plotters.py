@@ -32,13 +32,13 @@ def smooth_data(y_data, therm_steps=10, skip_steps=100):
 
 params = {
     'backend': 'ps',
-    'text.latex.preamble': [r'\usepackage{gensymb}'],
+    #  'text.latex.preamble': [r'\usepackage{gensymb}'],
     'axes.labelsize': 14,   # fontsize for x and y labels (was 10)
     'axes.titlesize': 16,
     'legend.fontsize': 10,  # was 10
     'xtick.labelsize': 12,
     'ytick.labelsize': 12,
-    'text.usetex': True,
+    #  'text.usetex': True,
     #  'figure.figsize': [fig_width, fig_height],
     'font.family': 'serif'
 }
