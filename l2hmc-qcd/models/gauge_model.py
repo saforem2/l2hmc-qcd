@@ -451,8 +451,25 @@ class GaugeModel:
         operations for generating new sampler.
         """
         with tf.name_scope('sampler'):
-            _, _, self.px, self.x_out = self.dynamics(self.x, self.beta)
-            x_dq = self.lattice.calc_top_charges_diff(self.x, self.x_out,
+            #  _, _, self.px, self.x_out = self.dynamics(self.x, self.beta)
+            output = self.dynamics(self.x, self.beta,
+                                   save_lf=True, train=False)
+
+            self.px_lf = output[2]
+            self.x_out_lf = output[3]
+            self.lf_out_f = output[4]
+            self.pxs_out_f = output[5]
+            self.lf_out_b = output[6]
+            self.pxs_out_b = output[7]
+            self.masks_f = output[8]
+            self.masks_b = output[9]
+            self.logdets_f = output[10]
+            self.logdets_b = output[11]
+            self.sumlogdet_f = output[12]
+            self.sumlogdet_b = output[13]
+
+            x_dq = self.lattice.calc_top_charges_diff(self.x,
+                                                      self.x_out_lf,
                                                       fft=False)
 
             self.charge_diffs_op = tf.reduce_sum(x_dq) / self.num_samples
@@ -480,17 +497,21 @@ class GaugeModel:
                     global_step=self.global_step,
                     name='train_op'
                 )
+
         with tf.name_scope('run'):
-            output = self.dynamics(self.x, self.beta,
-                                   save_lf=True, train=False)
-            self.px_lf = output[2]
-            self.x_out_lf = output[3]
-            self.lf_out_f = output[4]
-            self.pxs_out_f = output[5]
-            self.lf_out_b = output[6]
-            self.pxs_out_b = output[7]
-            self.masks_f = output[8]
-            self.masks_b = output[9]
-            self.logdets_f = output[10]
-            self.logdets_b = output[11]
+            self.create_sampler()
+        #  output = self.dynamics(self.x, self.beta,
+        #                         save_lf=True, train=False)
+        #  self.px_lf = output[2]
+        #  self.x_out_lf = output[3]
+        #  self.lf_out_f = output[4]
+        #  self.pxs_out_f = output[5]
+        #  self.lf_out_b = output[6]
+        #  self.pxs_out_b = output[7]
+        #  self.masks_f = output[8]
+        #  self.masks_b = output[9]
+        #  self.logdets_f = output[10]
+        #  self.logdets_b = output[11]
+        #  self.sumlogdet_f = output[12]
+        #  self.sumlogdet_b = output[13]
 

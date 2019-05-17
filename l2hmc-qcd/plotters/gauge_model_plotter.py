@@ -8,7 +8,14 @@ Author: Sam Foreman (github: @saforem2)
 Date: 04/10/2019
 """
 import os
+import matplotlib as mpl
 import numpy as np
+#  from .formatters import latexify, format_axes
+from collections import Counter, OrderedDict
+from scipy.stats import sem
+from lattice.lattice import u1_plaq_exact
+import utils.file_io as io
+from globals import COLORS, MARKERS
 
 try:
     import matplotlib.pyplot as plt
@@ -17,11 +24,20 @@ try:
 except ImportError:
     HAS_MATPLOTLIB = False
 
-from collections import Counter, OrderedDict
-from scipy.stats import sem
-from lattice.lattice import u1_plaq_exact
-import utils.file_io as io
-from globals import COLORS, MARKERS
+params = {
+    'backend': 'ps',
+    'text.latex.preamble': [r'\usepackage{gensymb}'],
+    'axes.labelsize': 14,   # fontsize for x and y labels (was 10)
+    'axes.titlesize': 16,
+    'legend.fontsize': 10,  # was 10
+    'xtick.labelsize': 12,
+    'ytick.labelsize': 12,
+    'text.usetex': True,
+    #  'figure.figsize': [fig_width, fig_height],
+    'font.family': 'serif',
+}
+
+mpl.rcParams.update(params)
 
 
 def arr_from_dict(d, key):
@@ -36,6 +52,28 @@ def get_out_files(out_dir, out_str):
     return png_file, eps_file
 
 
+def get_colors(num_samples=10, cmaps=None):
+    if cmaps is None:
+        cmap0 = mpl.cm.get_cmap('Reds', num_samples + 1)
+        cmap1 = mpl.cm.get_cmap('Blues', num_samples + 1)
+        cmaps = (cmap0, cmap1)
+
+    idxs = np.linspace(0., 0.75, num_samples + 1)
+    colors_arr = []
+    for cmap in cmaps:
+        colors_arr.append([cmap(i) for i in idxs])
+
+        #  colors0 = [cmap0(i) for i in idxs]
+        #  colors1 = [cmap1(i) for i in idxs]
+        #  cmap0 = mpl.cm.get_cmap(cmaps[0], num_samples + 1)
+        #  cmap1 = mpl.cm.get_cmap(cmaps[1], num_samples + 1)
+    #  reds_cmap = mpl.cm.get_cmap('Reds', num_samples + 1)
+    #  blues_cmap = mpl.cm.get_cmap('Blues', num_samples + 1)
+
+    #  return colors0, colors1
+    return colors_arr
+
+
 def plot_multiple_lines(data, xy_labels, **kwargs):
     """Plot multiple lines along with their average."""
     out_file = kwargs.get('out_file', None)
@@ -45,6 +83,8 @@ def plot_multiple_lines(data, xy_labels, **kwargs):
     legend = kwargs.get('legend', False)
     title = kwargs.get('title', None)
     ret = kwargs.get('ret', False)
+    num_samples = kwargs.get('num_samples', 10)
+    reds, blues = get_colors(num_samples)
     if isinstance(data, list):
         data = np.array(data)
 
@@ -56,8 +96,8 @@ def plot_multiple_lines(data, xy_labels, **kwargs):
 
     x_label, y_label = xy_labels
 
-    if y_data.shape[0] > 10:
-        y_sample = y_data[:10, :]
+    if y_data.shape[0] > num_samples:
+        y_sample = y_data[:num_samples, :]
     else:
         y_sample = y_data
 
@@ -74,10 +114,12 @@ def plot_multiple_lines(data, xy_labels, **kwargs):
         if not lines:
             ls = ''
         _ = ax.plot(x_data, row, label=f'sample {idx}', fillstyle=fillstyle,
-                    marker=marker, ls=ls, alpha=alpha, lw=0.5)
+                    marker=marker, ls=ls, alpha=alpha, lw=0.5,
+                    color=blues[idx])
 
     _ = ax.plot(
-        x_data, y_data.mean(axis=0), color='k', label='average', alpha=1.,
+        x_data, y_data.mean(axis=0), label='average',
+        alpha=1., lw=1.0, color='k'
     )
 
     ax.set_xlabel(x_label, fontsize=14)
@@ -240,12 +282,13 @@ class GaugeModelPlotter:
 
         _, ax = plot_multiple_lines(xy_data, xy_labels, **kwargs)
         _ = ax.axhline(y=u1_plaq_exact(beta),
-                       color='#CC0033', ls='-', lw=2.5, label='exact')
-        _ = ax.plot(xy_data[0], xy_data[1].mean(axis=0),
+                       color='#CC0033', ls='-', lw=1., label='exact')
+        _ = ax.plot(xy_data[0], xy_data[1].mean(axis=0), lw=0.5,
                     color='k', label='average', alpha=0.75)
 
+        _ = plt.tight_layout()
+
         out_files = get_out_files(self.out_dir, 'plaqs_vs_step')
-        plt.tight_layout()
         for f in out_files:
             io.log(f'Saving figure to: {f}')
             plt.savefig(f, dpi=400, bbox_inches='tight')
@@ -264,7 +307,7 @@ class GaugeModelPlotter:
         kwargs['lines'] = False
         kwargs['alpha'] = 1.
         kwargs['ret'] = False
-        xy_labels = ('Step', r"$Q$")
+        xy_labels = ('Step', r'$Q$')
         plot_multiple_lines(xy_data, xy_labels, **kwargs)
 
         charges = np.array(xy_data[1].T, dtype=int)
@@ -284,8 +327,8 @@ class GaugeModelPlotter:
             _ = ax.legend(loc='best')
             _ = ax.set_xlabel(xy_labels[0], fontsize=14)
             _ = ax.set_ylabel(xy_labels[1], fontsize=14)
-            _ = ax.set_title(kwargs['title'])
-            plt.tight_layout()
+            _ = ax.set_title(kwargs['title'], fontsize=16)
+            _ = plt.tight_layout()
             out_file = get_out_files(out_dir, f'top_charge_vs_step_{idx}')
             for f in out_file:
                 io.check_else_make_dir(os.path.dirname(f))
@@ -303,11 +346,13 @@ class GaugeModelPlotter:
         # should change dramatically for the very first vew steps when starting
         # from a random configuration
         _, ax = plt.subplots()
-        ax.plot(xy_data[0][2:], xy_data[1][2:],
-                marker='.', ls='', fillstyle='none', color='C0')
-        ax.set_xlabel("Steps", fontsize=14)
-        ax.set_ylabel(r"""$\delta_{Q}$""")
-        ax.set_title(kwargs['title'])
+        _ = ax.plot(xy_data[0][2:], xy_data[1][2:],
+                    marker='.', ls='', fillstyle='none', color='C0')
+        _ = ax.set_xlabel('Steps', fontsize=14)
+        _ = ax.set_ylabel(r'$\delta_{Q}$', fontsize=14)
+        _ = ax.set_title(kwargs['title'], fontsize=16)
+        _ = plt.tight_layout()
+
         for f in kwargs['out_file']:
             io.log(f"Saving figure to: {f}")
             plt.savefig(f, dpi=400, bbox_inches='tight')
@@ -332,10 +377,10 @@ class GaugeModelPlotter:
                     ls='',
                     label=f'sample {idx}')
             _ = ax.legend(loc='best')
-            _ = ax.set_xlabel(r"$Q$", fontsize=14)
-            _ = ax.set_ylabel('Probability', fontsize=14)
-            _ = ax.set_title(title, fontsize=16)
-            plt.tight_layout()
+            _ = ax.set_xlabel(r"$Q$")  # , fontsize=14)
+            _ = ax.set_ylabel('Probability')  # , fontsize=14)
+            _ = ax.set_title(title)  # , fontsize=16)
+            _ = plt.tight_layout()
             out_file = get_out_files(out_dir, f'top_charge_vs_step_{idx}')
             for f in out_file:
                 io.check_else_make_dir(os.path.dirname(f))
@@ -355,10 +400,10 @@ class GaugeModelPlotter:
                 alpha=0.6,
                 label=f'total across {num_samples} samples')
         _ = ax.legend(loc='best')
-        _ = ax.set_xlabel(r"$Q$", fontsize=14)
-        _ = ax.set_ylabel('Probability', fontsize=14)
-        _ = ax.set_title(title, fontsize=16)
-        plt.tight_layout()
+        _ = ax.set_xlabel(r"$Q$")  # , fontsize=14)
+        _ = ax.set_ylabel('Probability')  # , fontsize=14)
+        _ = ax.set_title(title)  # , fontsize=16)
+        _ = plt.tight_layout()
         out_file = get_out_files(self.out_dir, f'TOP_CHARGE_PROBS_ALL')
         for f in out_file:
             io.check_else_make_dir(os.path.dirname(f))
