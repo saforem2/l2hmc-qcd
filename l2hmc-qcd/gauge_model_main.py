@@ -161,18 +161,14 @@ def hmc(FLAGS, params=None, log_file=None):
 
     for beta in betas:
         if run_logger is not None:
-            run_logger.reset(model.run_steps, beta)
+            run_dir = run_logger.reset(model.run_steps, beta)
 
         runner.run(model.run_steps, beta)
 
         if plotter is not None and run_logger is not None:
             plotter.plot_observables(run_logger.run_data, beta)
             lf_plotter = LeapfrogPlotter(run_logger, plotter.out_dir)
-            try:
-                lf_plotter.make_plots(num_samples=10)
-            except:
-                import pdb
-                pdb.set_trace()
+            lf_plotter.make_plots(run_dir, num_samples=20)
 
     return sess, model, runner, run_logger
 
@@ -287,18 +283,14 @@ def l2hmc(FLAGS, log_file=None):
     betas = [model.beta_final, model.beta_final + 1]
     for beta in betas:
         if run_logger is not None:
-            run_logger.reset(model.run_steps, beta)
+            run_dir = run_logger.reset(model.run_steps, beta)
 
         runner.run(model.run_steps, beta, save_lf=FLAGS.save_leapfrogs)
 
         if plotter is not None and run_logger is not None:
             plotter.plot_observables(run_logger.run_data, beta)
             lf_plotter = LeapfrogPlotter(run_logger, plotter.out_dir)
-            try:
-                lf_plotter.make_plots(num_samples=10)
-            except:
-                import pdb
-                pdb.set_trace()
+            lf_plotter.make_plots(run_dir, num_samples=20)
 
     return sess, model, train_logger
 

@@ -58,14 +58,14 @@ class RunLogger:
             'forward': [],
             'backward': [],
         }
-        self.pxs_out = {
-            'forward': [],
-            'backward': [],
-        }
-        self.masks = {
-            'forward': [],
-            'backward': [],
-        }
+        #  self.pxs_out = {
+        #      'forward': [],
+        #      'backward': [],
+        #  }
+        #  self.masks = {
+        #      'forward': [],
+        #      'backward': [],
+        #  }
         self.logdets = {
             'forward': [],
             'backward': [],
@@ -79,8 +79,16 @@ class RunLogger:
 
     def reset(self, run_steps, beta):
         """Reset run_data and run_strings to prep for new run."""
+        del self.lf_out     # free up some memory and reset all instance attrs
+        del self.logdets
+        del self.sumlogdet
+        del self.run_data
+        #  del self.pxs_out
+        #  del self.masks
+
         self.run_steps = int(run_steps)
         self.beta = beta
+
         self.run_data = {
             'px': {},
             'actions': {},
@@ -119,6 +127,8 @@ class RunLogger:
         io.check_else_make_dir(self.run_dir)
         save_params(self.model.params, self.run_dir)
 
+        return self.run_dir
+
     def update(self, data, data_str):
         """Update run_data and append data_str to data_strings."""
         # projection of samples onto [0, 2π) done in run_step above
@@ -137,14 +147,14 @@ class RunLogger:
 
         self.lf_out['forward'].extend(np.array(data['lf_out_f']))
         self.lf_out['backward'].extend(np.array(data['lf_out_b']))
-        self.pxs_out['forward'].extend(np.array(data['pxs_out_f']))
-        self.pxs_out['backward'].extend(np.array(data['pxs_out_b']))
-        self.masks['forward'].extend(np.array(data['masks_f']))
-        self.masks['backward'].extend(np.array(data['masks_b']))
         self.logdets['forward'].extend(np.array(data['logdets_f']))
         self.logdets['backward'].extend(np.array(data['logdets_b']))
         self.sumlogdet['forward'].append(np.array(data['sumlogdet_f']))
         self.sumlogdet['backward'].append(np.array(data['sumlogdet_b']))
+        #  self.pxs_out['forward'].extend(np.array(data['pxs_out_f']))
+        #  self.pxs_out['backward'].extend(np.array(data['pxs_out_b']))
+        #  self.masks['forward'].extend(np.array(data['masks_f']))
+        #  self.masks['backward'].extend(np.array(data['masks_b']))
 
         self.run_strings.append(data_str)
 
@@ -221,26 +231,38 @@ class RunLogger:
             io.log(f"Saving samples to: {samples_file}.")
             with open(samples_file, 'wb') as f:
                 pickle.dump(self.samples_arr, f)
+            del self.samples_arr
 
             lf_out_file = os.path.join(self.run_dir, 'lf_out.pkl')
             io.log(f'Saving leapfrog outputs to: {lf_out_file}')
             with open(lf_out_file, 'wb') as f:
                 pickle.dump(self.lf_out, f)
-
-            pxs_out_file = os.path.join(self.run_dir, 'pxs_out.pkl')
-            io.log(f'Saving leapfrog accept_probabilities to: {pxs_out_file}')
-            with open(pxs_out_file, 'wb') as f:
-                pickle.dump(self.pxs_out, f)
-
-            masks_out_file = os.path.join(self.run_dir, 'masks_out.pkl')
-            io.log(f'Saving forward/backward masks to: {masks_out_file}')
-            with open(masks_out_file, 'wb') as f:
-                pickle.dump(self.masks, f)
+            del self.lf_out
 
             logdets_out_file = os.path.join(self.run_dir, 'logdets_out.pkl')
             io.log(f'Saving logdets to: {logdets_out_file}')
             with open(logdets_out_file, 'wb') as f:
                 pickle.dump(self.logdets, f)
+            del self.logdets
+
+            sumlogdet_out_file = os.path.join(self.run_dir,
+                                              'sumlogdet_out.pkl')
+            io.log(f'Saving sumlogdet to: {sumlogdet_out_file}')
+            with open(sumlogdet_out_file, 'wb') as f:
+                pickle.dump(self.sumlogdet, f)
+            del self.sumlogdet
+
+            #  pxs_out_file = os.path.join(self.run_dir, 'pxs_out.pkl')
+            #  io.log(
+            #      f'Saving leapfrog accept_probabilities to: {pxs_out_file}'
+            #  )
+            #  with open(pxs_out_file, 'wb') as f:
+            #      pickle.dump(self.pxs_out, f)
+
+            #  masks_out_file = os.path.join(self.run_dir, 'masks_out.pkl')
+            #  io.log(f'Saving forward/backward masks to: {masks_out_file}')
+            #  with open(masks_out_file, 'wb') as f:
+            #      pickle.dump(self.masks, f)
 
         run_stats = self.calc_observables_stats(self.run_data, therm_frac)
         charges = self.run_data['charges']
