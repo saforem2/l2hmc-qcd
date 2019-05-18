@@ -184,19 +184,21 @@ class LeapfrogPlotter:
                                  self.therm_steps, self.skip_steps)
             xb, yb = smooth_data(np.mean(self.lf_b_diffs, axis=-1),
                                  self.therm_steps, self.skip_steps)
-            _ = ax1.plot(xf, yf[:, idx], color=reds[idx], **indiv_kwargs)
-            _ = ax1.plot(xb, yb[:, idx], color=blues[idx], **indiv_kwargs)
+            _ = ax1.plot(xf, np.abs(yf[:, idx]),
+                         color=reds[idx], **indiv_kwargs)
+            _ = ax1.plot(xb, np.abs(yb[:, idx]),
+                         color=blues[idx], **indiv_kwargs) 
 
         xf_avg, yf_avg = smooth_data(np.mean(self.lf_f_diffs, axis=(1, 2)),
                                      self.therm_steps, self.skip_steps)
         xb_avg, yb_avg = smooth_data(np.mean(self.lf_b_diffs, axis=(1, 2)),
                                      self.therm_steps, self.skip_steps)
-        _ = ax1.plot(xf_avg, yf_avg, label='avg. diff (forward)',
+        _ = ax1.plot(xf_avg, np.abs(yf_avg), label='avg. diff (forward)',
                      color=reds[-1], lw=1.)
-        _ = ax1.plot(xb_avg, yb_avg, label='avg. diff (backward)',
+        _ = ax1.plot(xb_avg, np.abs(yb_avg), label='avg. diff (backward)',
                      color=blues[-1], lw=1.)
 
-        _ = ax2.plot(samples_x_avg, samples_y_avg, color='k', lw=1.,
+        _ = ax2.plot(samples_x_avg, np.abs(samples_y_avg), color='k', lw=1.,
                      label='avg. output diff')
 
         _ = ax1.set_xlabel('Leapfrog step')  # , fontsize=14)
