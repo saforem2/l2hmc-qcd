@@ -245,10 +245,10 @@ class LeapfrogPlotter:
         xb_avg, yb_avg = smooth_data(np.mean(self.logdets_b, axis=-1),
                                      self.therm_steps, self.skip_steps)
         _ = ax1.plot(xf_avg, np.abs(yf_avg),
-                     label=r"$|\mathrm{avg. logdet (f)}$|",
+                     label=r"$|\mathrm{avg. logdet (f)}|$",
                      ls='-', color=reds[-1], lw=1.)
         _ = ax1.plot(xb_avg, np.abs(yb_avg),
-                     label=r"$|\mathrm{avg. logdet (b)}$|",
+                     label=r"$|\mathrm{avg. logdet (b)}|$",
                      ls='-', color=blues[-1], lw=1.)
 
         _ = ax2.plot(sumlogdet_xf_avg, np.abs(sumlogdet_yf_avg),
