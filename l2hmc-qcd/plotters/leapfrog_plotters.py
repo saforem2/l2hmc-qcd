@@ -1,4 +1,10 @@
 import os
+try:
+    import psutil
+    HAS_PSUTIL = True
+except ImportError:
+    HAS_PSUTIL = False
+
 import pickle
 import numpy as np
 try:
@@ -40,7 +46,7 @@ params = {
     'ytick.labelsize': 12,
     #  'text.usetex': True,
     #  'figure.figsize': [fig_width, fig_height],
-    #  'font.family': 'serif'
+    'font.family': 'serif'
 }
 
 try:
@@ -59,7 +65,7 @@ class LeapfrogPlotter:
         self.figs_dir = figs_dir
         self.eps_dir = os.path.join(self.figs_dir, 'eps_plots')
         io.check_else_make_dir(self.eps_dir)
-        self.run_logger = run_logger
+        #  self.run_logger = run_logger
         self.samples = np.array(run_logger.samples_arr)
         self.lf_f = np.array(run_logger.lf_out['forward'])
         self.lf_b = np.array(run_logger.lf_out['backward'])
@@ -75,12 +81,69 @@ class LeapfrogPlotter:
         self.num_lf_steps = self.tot_lf_steps // self.tot_md_steps
         self.therm_steps = int(therm_perc * self.tot_lf_steps)
         self.skip_steps = int(skip_perc * self.tot_lf_steps)
+        self.step_multiplier = (
+            self.lf_f_diffs.shape[0] // self.samples_diffs.shape[0]
+        )
 
-    def make_plots(self, num_samples=15):
+    def make_plots(self, run_dir, num_samples=20):
+        """Make plots of the leapfrog differences and logdets.
+
+        Immediately after creating and saving the plots, delete these
+        (no-longer needed) attributes to free up memory.
+
+        Args:
+            run_dir (str): Path to directory in which to save all of the
+                relevant instance attributes.
+            num_samples (int): Number of samples to include when creating
+                plots.
+        """
         self.plot_lf_diffs(num_samples)
+
+        self.print_memory()
+
+        self.save_attr('lf_forward', self.lf_f, out_dir=run_dir)
+        del self.lf_f
+        del self.lf_f_diffs
+        self.print_memory()
+
+        self.save_attr('lf_backward', self.lf_b, out_dir=run_dir)
+        del self.lf_b
+        del self.lf_b_diffs
+        self.print_memory()
+
+        self.save_attr('samples_out', self.samples, out_dir=run_dir)
+        del self.samples
+        del self.samples_diffs
+        self.print_memory()
+
         self.plot_logdets(num_samples)
 
-    def get_colors(self, num_samples=10):
+        self.save_attr('logdets_forward', self.logdets_f, out_dir=run_dir)
+        del self.logdets_f
+        self.print_memory()
+
+        self.save_attr('logdets_backward', self.logdets_b, out_dir=run_dir)
+        del self.logdets_b
+        self.print_memory()
+
+        self.save_attr('sumlogdet_forward', self.sumlogdet_f, out_dir=run_dir)
+        del self.sumlogdet_f
+        self.print_memory()
+
+        self.save_attr('sumlogdet_backward', self.sumlogdet_b, out_dir=run_dir)
+        del self.sumlogdet_b
+        self.print_memory()
+
+    def print_memory(self):
+        if HAS_PSUTIL:
+            pid = os.getpid()
+            py = psutil.Process(pid)
+            memory_use = py.memory_info()[0] / 2. ** 30
+            io.log(80 * '-')
+            io.log(f'memory use: {memory_use}')
+            io.log(80 * '-')
+
+    def get_colors(self, num_samples=20):
         reds_cmap = mpl.cm.get_cmap('Reds', num_samples + 1)
         blues_cmap = mpl.cm.get_cmap('Blues', num_samples + 1)
         idxs = np.linspace(0., 0.75, num_samples + 1)
@@ -89,17 +152,24 @@ class LeapfrogPlotter:
 
         return reds, blues
 
+    def save_attr(self, name, attr, out_dir):
+        assert os.path.isdir(out_dir)
+        out_file = os.path.join(out_dir, name + '.npz')
+        io.log(f'Saving {name} to: {out_file}')
+        np.savez_compressed(out_file, attr)
+
+    #  def save_data(self, out_dir):
+    #      assert os.path.isdir(out_dir)
+    #      for key, val in self.__dict__.items():
+    #          if isinstance(val, np.ndarray):
+    #              self.save_attr(key, val, out_dir)
+
     def plot_lf_diffs(self, num_samples=10):
         reds, blues = self.get_colors(num_samples)
-        #  therm_steps = int(0.005 * num_leapfrog_steps)
-        #  skip_steps = int(0.01 * num_leapfrog_steps)
-
-        step_multiplier = (self.lf_f_diffs.shape[0]
-                           // self.samples_diffs.shape[0])
         samples_x_avg, samples_y_avg = smooth_data(
             np.mean(self.samples_diffs, axis=(1, 2)),
-            self.therm_steps // step_multiplier,
-            self.skip_steps // step_multiplier
+            self.therm_steps // self.step_multiplier,
+            self.skip_steps // self.step_multiplier
         )
 
         indiv_kwargs = {
@@ -147,22 +217,18 @@ class LeapfrogPlotter:
         _ = plt.savefig(out_file, dpi=400, bbox_inches='tight')
         _ = plt.savefig(out_file_eps, dpi=400, bbox_inches='tight')
 
-    def plot_logdets(self, num_samples=10):
+    def plot_logdets(self, num_samples=20):
         reds, blues = self.get_colors(num_samples)
-        #  therm_steps = 10
-        #  skip_steps = 100
-        step_multiplier = (self.lf_f_diffs.shape[0]
-                           // self.samples_diffs.shape[0])
         sumlogdet_xf_avg, sumlogdet_yf_avg = smooth_data(
             np.mean(self.sumlogdet_f, axis=-1),
-            self.therm_steps // step_multiplier,
-            self.skip_steps // step_multiplier
+            self.therm_steps // self.step_multiplier,
+            self.skip_steps // self.step_multiplier
         )
 
         sumlogdet_xb_avg, sumlogdet_yb_avg = smooth_data(
             np.mean(self.sumlogdet_b, axis=-1),
-            self.therm_steps // step_multiplier,
-            self.skip_steps // step_multiplier
+            self.therm_steps // self.step_multiplier,
+            self.skip_steps // self.step_multiplier
         )
 
         fig, (ax1, ax2) = plt.subplots(2, 1)
@@ -171,23 +237,25 @@ class LeapfrogPlotter:
                                  self.therm_steps, self.skip_steps)
             xb, yb = smooth_data(self.logdets_b[:, idx],
                                  self.therm_steps, self.skip_steps)
-            _ = ax1.plot(xf, yf, ls='-', color=reds[idx], alpha=0.75, lw=0.5)
-            _ = ax1.plot(xb, yb, ls='-', color=blues[idx], alpha=0.75, lw=0.5)
+            _ = ax1.plot(xf, np.abs(yf), color=reds[idx], alpha=0.75, lw=0.5)
+            _ = ax1.plot(xb, np.abs(yb), color=blues[idx], alpha=0.75, lw=0.5)
 
         xf_avg, yf_avg = smooth_data(np.mean(self.logdets_f, axis=-1),
                                      self.therm_steps, self.skip_steps)
         xb_avg, yb_avg = smooth_data(np.mean(self.logdets_b, axis=-1),
                                      self.therm_steps, self.skip_steps)
-        _ = ax1.plot(xf_avg, yf_avg, label=f'avg. logdet (forward)',
+        _ = ax1.plot(xf_avg, np.abs(yf_avg),
+                     label=r"$|\mathrm{avg. logdet (f)}$|",
                      ls='-', color=reds[-1], lw=1.)
-        _ = ax1.plot(xb_avg, yb_avg, label=f'avg. logdet (backward)',
+        _ = ax1.plot(xb_avg, np.abs(yb_avg),
+                     label=r"$|\mathrm{avg. logdet (b)}$|",
                      ls='-', color=blues[-1], lw=1.)
 
-        _ = ax2.plot(sumlogdet_xf_avg, sumlogdet_yf_avg,
-                     label=f'sumlogdet (f)',
+        _ = ax2.plot(sumlogdet_xf_avg, np.abs(sumlogdet_yf_avg),
+                     label=r"$|\mathrm{sumlogdet (f)}|$",
                      color=reds[-1], lw=1., ls='-')
-        _ = ax2.plot(sumlogdet_xb_avg, sumlogdet_yb_avg,
-                     label=f'sumlogdet (b)',
+        _ = ax2.plot(sumlogdet_xb_avg, np.abs(sumlogdet_yb_avg),
+                     label=r"$|\mathrm{sumlogdet (b)}|$",
                      color=blues[-1], lw=1., ls='-')
 
         _ = ax1.set_xlabel('Leapfrog step')
