@@ -264,6 +264,8 @@ class LeapfrogPlotter:
         _ = ax2.set_xlabel('MD step')
         _ = ax1.legend(loc='best')
         _ = ax2.legend(loc='best')
+        _ = fig.tight_layout()
+        _ = fig.subplots_adjust(hspace=0.5)
 
         out_file = os.path.join(self.figs_dir, 'avg_logdets.png')
         out_file_eps = os.path.join(self.eps_dir, 'avg_logdets.eps')
