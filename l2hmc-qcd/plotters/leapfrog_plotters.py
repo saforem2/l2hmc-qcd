@@ -102,8 +102,11 @@ class LeapfrogPlotter:
 
     def load_data(self, run_dir):
         loader = DataLoader(run_dir)
+        io.log("Loading leapfrogs...")
         self.lf_f, self.lf_b = loader.load_leapfrogs(run_dir)
+        io.log("Loading logdets...")
         self.logdets_f, self.logdets_b = loader.load_logdets(run_dir)
+        io.log("Loading sumlogdets...")
         self.sumlogdet_f, self.sumlogdet_b = loader.load_sumlogdets(run_dir)
 
 
