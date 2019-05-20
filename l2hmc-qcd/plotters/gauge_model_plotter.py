@@ -58,7 +58,7 @@ def get_colors(num_samples=10, cmaps=None):
         cmap1 = mpl.cm.get_cmap('Blues', num_samples + 1)
         cmaps = (cmap0, cmap1)
 
-    idxs = np.linspace(0., 0.75, num_samples + 1)
+    idxs = np.linspace(0.1, 0.75, num_samples + 1)
     colors_arr = []
     for cmap in cmaps:
         colors_arr.append([cmap(i) for i in idxs])
@@ -119,7 +119,7 @@ def plot_multiple_lines(data, xy_labels, **kwargs):
 
     _ = ax.plot(
         x_data, y_data.mean(axis=0), label='average',
-        alpha=1., lw=1.0, color='k'
+        alpha=1., lw=1.0, color=blues[-1]
     )
 
     ax.set_xlabel(x_label, fontsize=14)
