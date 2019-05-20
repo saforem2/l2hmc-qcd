@@ -77,7 +77,11 @@ class LeapfrogPlotter:
                     """
                 )
             else:
-                self.load_data(run_dir)
+                data = self.load_data(run_dir)
+                self.samples = data[0]
+                self.lf_f, self.lf_b = data[1]
+                self.logdets_f, self.logdets_b = data[2]
+                self.sumlogdet_f, self.sumloget_b = data[3]
 
         else:
             self.samples = np.array(run_logger.samples_arr)
@@ -103,13 +107,15 @@ class LeapfrogPlotter:
     def load_data(self, run_dir):
         loader = DataLoader(run_dir)
         io.log("Loading samples...")
-        self.samples = loader.load_samples(run_dir)
+        samples = loader.load_samples(run_dir)
+        io.log('done.')
         io.log("Loading leapfrogs...")
-        self.lf_f, self.lf_b = loader.load_leapfrogs(run_dir)
+        leapfrogs = loader.load_leapfrogs(run_dir)
         io.log("Loading logdets...")
-        self.logdets_f, self.logdets_b = loader.load_logdets(run_dir)
+        logdets = loader.load_logdets(run_dir)
         io.log("Loading sumlogdets...")
-        self.sumlogdet_f, self.sumlogdet_b = loader.load_sumlogdets(run_dir)
+        sumlogdets = loader.load_sumlogdets(run_dir)
+        return (samples, leapfrogs, logdets, sumlogdets)
 
 
     def make_plots(self, run_dir, num_samples=20):
