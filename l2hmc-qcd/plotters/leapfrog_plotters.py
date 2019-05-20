@@ -92,17 +92,21 @@ class LeapfrogPlotter:
             self.sumlogdet_f = np.array(run_logger.sumlogdet['forward'])
             self.sumlogdet_b = np.array(run_logger.sumlogdet['backward'])
 
-        self.lf_f_diffs = self.lf_f[1:] - self.lf_f[:-1]
-        self.lf_b_diffs = self.lf_b[1:] - self.lf_b[:-1]
-        self.samples_diffs = self.samples[1:] - self.samples[:-1]
-        self.tot_lf_steps = self.lf_f_diffs.shape[0]
-        self.tot_md_steps = self.samples_diffs.shape[0]
-        self.num_lf_steps = self.tot_lf_steps // self.tot_md_steps
-        self.therm_steps = int(therm_perc * self.tot_lf_steps)
-        self.skip_steps = int(skip_perc * self.tot_lf_steps)
-        self.step_multiplier = (
-            self.lf_f_diffs.shape[0] // self.samples_diffs.shape[0]
-        )
+        try:
+            self.lf_f_diffs = self.lf_f[1:] - self.lf_f[:-1]
+            self.lf_b_diffs = self.lf_b[1:] - self.lf_b[:-1]
+            self.samples_diffs = self.samples[1:] - self.samples[:-1]
+            self.tot_lf_steps = self.lf_f_diffs.shape[0]
+            self.tot_md_steps = self.samples_diffs.shape[0]
+            self.num_lf_steps = self.tot_lf_steps // self.tot_md_steps
+            self.therm_steps = int(therm_perc * self.tot_lf_steps)
+            self.skip_steps = int(skip_perc * self.tot_lf_steps)
+            self.step_multiplier = (
+                self.lf_f_diffs.shape[0] // self.samples_diffs.shape[0]
+            )
+        except AttributeError:
+            import pdb
+            pdb.set_trace()
 
     def load_data(self, run_dir):
         loader = DataLoader(run_dir)
