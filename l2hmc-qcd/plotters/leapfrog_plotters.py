@@ -81,7 +81,7 @@ class LeapfrogPlotter:
                 self.samples = data[0]
                 self.lf_f, self.lf_b = data[1]
                 self.logdets_f, self.logdets_b = data[2]
-                self.sumlogdet_f, self.sumloget_b = data[3]
+                self.sumlogdet_f, self.sumlogdet_b = data[3]
 
         else:
             self.samples = np.array(run_logger.samples_arr)
