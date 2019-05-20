@@ -16,6 +16,7 @@ except ImportError:
 
 #  from .formatters import latexify
 import utils.file_io as io
+from utils.data_loader import DataLoader
 
 
 def load_and_sep(out_file, keys=('forward', 'backward')):
@@ -61,18 +62,32 @@ except FileNotFoundError:
 
 
 class LeapfrogPlotter:
-    def __init__(self, run_logger, figs_dir, therm_perc=0.005, skip_perc=0.01):
+    def __init__(self, figs_dir, run_logger=None,
+                 run_dir=None, therm_perc=0.005, skip_perc=0.01):
         self.figs_dir = figs_dir
         self.eps_dir = os.path.join(self.figs_dir, 'eps_plots')
         io.check_else_make_dir(self.eps_dir)
-        #  self.run_logger = run_logger
-        self.samples = np.array(run_logger.samples_arr)
-        self.lf_f = np.array(run_logger.lf_out['forward'])
-        self.lf_b = np.array(run_logger.lf_out['backward'])
-        self.logdets_f = np.array(run_logger.logdets['forward'])
-        self.logdets_b = np.array(run_logger.logdets['backward'])
-        self.sumlogdet_f = np.array(run_logger.sumlogdet['forward'])
-        self.sumlogdet_b = np.array(run_logger.sumlogdet['backward'])
+
+        if run_logger is None:
+            if run_dir is None:
+                raise AttributeError(
+                    """Either a `run_logger` object containing data or a
+                    `run_dir` from which to load data must be specified.
+                    Exiting.
+                    """
+                )
+            else:
+                self.load_data(run_dir)
+
+        else:
+            self.samples = np.array(run_logger.samples_arr)
+            self.lf_f = np.array(run_logger.lf_out['forward'])
+            self.lf_b = np.array(run_logger.lf_out['backward'])
+            self.logdets_f = np.array(run_logger.logdets['forward'])
+            self.logdets_b = np.array(run_logger.logdets['backward'])
+            self.sumlogdet_f = np.array(run_logger.sumlogdet['forward'])
+            self.sumlogdet_b = np.array(run_logger.sumlogdet['backward'])
+
         self.lf_f_diffs = self.lf_f[1:] - self.lf_f[:-1]
         self.lf_b_diffs = self.lf_b[1:] - self.lf_b[:-1]
         self.samples_diffs = self.samples[1:] - self.samples[:-1]
@@ -84,6 +99,13 @@ class LeapfrogPlotter:
         self.step_multiplier = (
             self.lf_f_diffs.shape[0] // self.samples_diffs.shape[0]
         )
+
+    def load_data(self, run_dir):
+        loader = DataLoader(run_dir)
+        self.lf_f, self.lf_b = loader.load_leapfrogs(run_dir)
+        self.logdets_f, self.logdets_b = loader.load_logdets(run_dir)
+        self.sumlogdet_f, self.sumlogdet_b = loader.load_sumlogdets(run_dir)
+
 
     def make_plots(self, run_dir, num_samples=20):
         """Make plots of the leapfrog differences and logdets.
@@ -146,7 +168,7 @@ class LeapfrogPlotter:
     def get_colors(self, num_samples=20):
         reds_cmap = mpl.cm.get_cmap('Reds', num_samples + 1)
         blues_cmap = mpl.cm.get_cmap('Blues', num_samples + 1)
-        idxs = np.linspace(0., 0.75, num_samples + 1)
+        idxs = np.linspace(0.1, 0.75, num_samples + 1)
         reds = [reds_cmap(i) for i in idxs]
         blues = [blues_cmap(i) for i in idxs]
 
@@ -184,21 +206,21 @@ class LeapfrogPlotter:
                                  self.therm_steps, self.skip_steps)
             xb, yb = smooth_data(np.mean(self.lf_b_diffs, axis=-1),
                                  self.therm_steps, self.skip_steps)
-            _ = ax1.plot(xf, np.abs(yf[:, idx]),
+            _ = ax1.plot(xf, yf[:, idx],
                          color=reds[idx], **indiv_kwargs)
-            _ = ax1.plot(xb, np.abs(yb[:, idx]),
-                         color=blues[idx], **indiv_kwargs) 
+            _ = ax1.plot(xb, yb[:, idx],
+                         color=blues[idx], **indiv_kwargs)
 
         xf_avg, yf_avg = smooth_data(np.mean(self.lf_f_diffs, axis=(1, 2)),
                                      self.therm_steps, self.skip_steps)
         xb_avg, yb_avg = smooth_data(np.mean(self.lf_b_diffs, axis=(1, 2)),
                                      self.therm_steps, self.skip_steps)
-        _ = ax1.plot(xf_avg, np.abs(yf_avg), label='avg. diff (forward)',
+        _ = ax1.plot(xf_avg, yf_avg, label='avg. diff (forward)',
                      color=reds[-1], lw=1.)
-        _ = ax1.plot(xb_avg, np.abs(yb_avg), label='avg. diff (backward)',
+        _ = ax1.plot(xb_avg, yb_avg, label='avg. diff (backward)',
                      color=blues[-1], lw=1.)
 
-        _ = ax2.plot(samples_x_avg, np.abs(samples_y_avg), color='k', lw=1.,
+        _ = ax2.plot(samples_x_avg, samples_y_avg, color='k', lw=1.,
                      label='avg. output diff')
 
         _ = ax1.set_xlabel('Leapfrog step')  # , fontsize=14)
@@ -239,24 +261,24 @@ class LeapfrogPlotter:
                                  self.therm_steps, self.skip_steps)
             xb, yb = smooth_data(self.logdets_b[:, idx],
                                  self.therm_steps, self.skip_steps)
-            _ = ax1.plot(xf, np.abs(yf), color=reds[idx], alpha=0.75, lw=0.5)
-            _ = ax1.plot(xb, np.abs(yb), color=blues[idx], alpha=0.75, lw=0.5)
+            _ = ax1.plot(xf, yf, color=reds[idx], alpha=0.75, lw=0.5)
+            _ = ax1.plot(xb, yb, color=blues[idx], alpha=0.75, lw=0.5)
 
         xf_avg, yf_avg = smooth_data(np.mean(self.logdets_f, axis=-1),
                                      self.therm_steps, self.skip_steps)
         xb_avg, yb_avg = smooth_data(np.mean(self.logdets_b, axis=-1),
                                      self.therm_steps, self.skip_steps)
-        _ = ax1.plot(xf_avg, np.abs(yf_avg),
+        _ = ax1.plot(xf_avg, yf_avg,
                      label=r"$|\mathrm{avg. logdet (f)}|$",
                      ls='-', color=reds[-1], lw=1.)
-        _ = ax1.plot(xb_avg, np.abs(yb_avg),
+        _ = ax1.plot(xb_avg, yb_avg,
                      label=r"$|\mathrm{avg. logdet (b)}|$",
                      ls='-', color=blues[-1], lw=1.)
 
-        _ = ax2.plot(sumlogdet_xf_avg, np.abs(sumlogdet_yf_avg),
+        _ = ax2.plot(sumlogdet_xf_avg, sumlogdet_yf_avg,
                      label=r"$|\mathrm{sumlogdet (f)}|$",
                      color=reds[-1], lw=1., ls='-')
-        _ = ax2.plot(sumlogdet_xb_avg, np.abs(sumlogdet_yb_avg),
+        _ = ax2.plot(sumlogdet_xb_avg, sumlogdet_yb_avg,
                      label=r"$|\mathrm{sumlogdet (b)}|$",
                      color=blues[-1], lw=1., ls='-')
 

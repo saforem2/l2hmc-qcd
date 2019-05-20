@@ -9,6 +9,8 @@ Date: 05/03/2019
 import os
 import pickle
 
+import numpy as np
+
 
 def load_params_from_dir(d):
     params_file = os.path.join(d, 'params.pkl')
@@ -28,6 +30,11 @@ class DataLoader:
 
         return contents
 
+    def load_npz_file(self, npz_file):
+        arr = np.load(npz_file)
+
+        return arr.f.arr_0
+
     def load_observable(self, observable_str, run_dir=None):
         if run_dir is None:
             run_dir = self.run_dir
@@ -39,6 +46,32 @@ class DataLoader:
         obs_file = os.path.join(obs_dir, observable_str)
 
         return self.load_pkl_file(obs_file)
+
+    def load_leapfrogs(self, run_dir):
+        lf_f_file = os.path.join(run_dir, 'lf_forward.npz')
+        lf_b_file = os.path.join(run_dir, 'lf_backward.npz')
+        lf_f = self.load_npz_file(lf_f_file)
+        lf_b = self.load_npz_file(lf_b_file)
+
+        return (lf_f, lf_b)
+
+    def load_logdets(self, run_dir):
+        logdets_f_file = os.path.join(run_dir, 'logdets_forward.npz')
+        logdets_b_file = os.path.join(run_dir, 'logdets_backward.npz')
+
+        logdets_f = self.load_npz_file(logdets_f_file)
+        logdets_b = self.load_npz_file(logdets_b_file)
+
+        return (logdets_f, logdets_b)
+
+    def load_sumlogdets(self, run_dir):
+        sumlogdet_f_file = os.path.join(run_dir, 'sumlogdet_forward.npz')
+        sumlogdet_b_file = os.path.join(run_dir, 'sumlogdet_backward.npz')
+
+        sumlogdet_f = self.load_npz_file(sumlogdet_f_file)
+        sumlogdet_b = self.load_npz_file(sumlogdet_b_file)
+
+        return (sumlogdet_f, sumlogdet_b)
 
     def load_plaqs(self, run_dir):
         obs_dir = os.path.join(run_dir, 'observables')

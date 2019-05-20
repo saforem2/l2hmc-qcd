@@ -167,7 +167,7 @@ def hmc(FLAGS, params=None, log_file=None):
 
         if plotter is not None and run_logger is not None:
             plotter.plot_observables(run_logger.run_data, beta)
-            lf_plotter = LeapfrogPlotter(run_logger, plotter.out_dir)
+            lf_plotter = LeapfrogPlotter(plotter.out_dir, run_logger)
             lf_plotter.make_plots(run_dir, num_samples=20)
 
     return sess, model, runner, run_logger
@@ -289,7 +289,7 @@ def l2hmc(FLAGS, log_file=None):
 
         if plotter is not None and run_logger is not None:
             plotter.plot_observables(run_logger.run_data, beta)
-            lf_plotter = LeapfrogPlotter(run_logger, plotter.out_dir)
+            lf_plotter = LeapfrogPlotter(plotter.out_dir, run_logger)
             lf_plotter.make_plots(run_dir, num_samples=20)
 
     return sess, model, train_logger
