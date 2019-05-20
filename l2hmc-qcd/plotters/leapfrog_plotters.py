@@ -26,19 +26,19 @@ def load_and_sep(out_file, keys=('forward', 'backward')):
     return (np.array(data[k]) for k in keys)
 
 
-def smooth_data(y_data, therm_steps=10, skip_steps=100):
-    skip_steps = max(1, skip_steps)
-    if therm_steps > 0:
-        _y_data = y_data[therm_steps:][::skip_steps]
+def smooth_data(y_data, therm_st=10, skip_steps=100):
+    skip_st = max(1, skip_steps)
+    if therm_st > 0:
+        _y_data = y_data[therm_st:][::skip_steps]
     else:
-        _y_data = y_data[::skip_steps]
-    x_data = skip_steps * np.arange(_y_data.shape[0])
+        _y_data = y_data[::skip_st]
+    x_data = skip_st * np.arange(_y_data.shape[0])
 
     return x_data, _y_data
 
 
 params = {
-    'backend': 'ps',
+    #  'backend': 'ps',
     #  'text.latex.preamble': [r'\usepackage{gensymb}'],
     'axes.labelsize': 14,   # fontsize for x and y labels (was 10)
     'axes.titlesize': 16,
@@ -65,8 +65,8 @@ class LeapfrogPlotter:
     def __init__(self, figs_dir, run_logger=None,
                  run_dir=None, therm_perc=0.005, skip_perc=0.01):
         self.figs_dir = figs_dir
-        self.eps_dir = os.path.join(self.figs_dir, 'eps_plots')
-        io.check_else_make_dir(self.eps_dir)
+        self.pdfs_dir = os.path.join(self.figs_dir, 'pdfs_plots')
+        io.check_else_make_dir(self.pdfs_dir)
 
         if run_logger is None:
             if run_dir is None:
@@ -92,21 +92,17 @@ class LeapfrogPlotter:
             self.sumlogdet_f = np.array(run_logger.sumlogdet['forward'])
             self.sumlogdet_b = np.array(run_logger.sumlogdet['backward'])
 
-        try:
             self.lf_f_diffs = self.lf_f[1:] - self.lf_f[:-1]
             self.lf_b_diffs = self.lf_b[1:] - self.lf_b[:-1]
             self.samples_diffs = self.samples[1:] - self.samples[:-1]
-            self.tot_lf_steps = self.lf_f_diffs.shape[0]
-            self.tot_md_steps = self.samples_diffs.shape[0]
-            self.num_lf_steps = self.tot_lf_steps // self.tot_md_steps
-            self.therm_steps = int(therm_perc * self.tot_lf_steps)
-            self.skip_steps = int(skip_perc * self.tot_lf_steps)
+            self.tot_lf_st = self.lf_f_diffs.shape[0]
+            self.tot_md_st = self.samples_diffs.shape[0]
+            self.num_lf_st = self.tot_lf_steps // self.tot_md_steps
+            self.therm_st = int(therm_perc * self.tot_lf_steps)
+            self.skip_st = int(skip_perc * self.tot_lf_steps)
             self.step_multiplier = (
                 self.lf_f_diffs.shape[0] // self.samples_diffs.shape[0]
             )
-        except AttributeError:
-            import pdb
-            pdb.set_trace()
 
     def load_data(self, run_dir):
         loader = DataLoader(run_dir)
@@ -205,8 +201,8 @@ class LeapfrogPlotter:
         reds, blues = self.get_colors(num_samples)
         samples_x_avg, samples_y_avg = smooth_data(
             np.mean(self.samples_diffs, axis=(1, 2)),
-            self.therm_steps // self.step_multiplier,
-            self.skip_steps // self.step_multiplier
+            self.therm_st // self.step_multiplier,
+            self.skip_st // self.step_multiplier
         )
 
         indiv_kwargs = {
@@ -218,18 +214,18 @@ class LeapfrogPlotter:
         fig, (ax1, ax2) = plt.subplots(2, 1)
         for idx in range(num_samples):
             xf, yf = smooth_data(np.mean(self.lf_f_diffs, axis=-1),
-                                 self.therm_steps, self.skip_steps)
+                                 self.therm_st, self.skip_steps)
             xb, yb = smooth_data(np.mean(self.lf_b_diffs, axis=-1),
-                                 self.therm_steps, self.skip_steps)
+                                 self.therm_st, self.skip_steps)
             _ = ax1.plot(xf, yf[:, idx],
                          color=reds[idx], **indiv_kwargs)
             _ = ax1.plot(xb, yb[:, idx],
                          color=blues[idx], **indiv_kwargs)
 
         xf_avg, yf_avg = smooth_data(np.mean(self.lf_f_diffs, axis=(1, 2)),
-                                     self.therm_steps, self.skip_steps)
+                                     self.therm_st, self.skip_steps)
         xb_avg, yb_avg = smooth_data(np.mean(self.lf_b_diffs, axis=(1, 2)),
-                                     self.therm_steps, self.skip_steps)
+                                     self.therm_st, self.skip_steps)
         _ = ax1.plot(xf_avg, yf_avg, label='avg. diff (forward)',
                      color=reds[-1], lw=1.)
         _ = ax1.plot(xb_avg, yb_avg, label='avg. diff (backward)',
@@ -251,38 +247,39 @@ class LeapfrogPlotter:
         fig.subplots_adjust(hspace=0.5)
 
         out_file = os.path.join(self.figs_dir, 'leapfrog_diffs.png')
-        out_file_eps = os.path.join(self.eps_dir, 'leapfrog_diffs.eps')
+        out_file_pdf = os.path.join(self.pdfs_dir, 'leapfrog_diffs.pdf')
         io.log(f'Saving figure to: {out_file}')
         _ = plt.savefig(out_file, dpi=400, bbox_inches='tight')
-        _ = plt.savefig(out_file_eps, dpi=400, bbox_inches='tight')
+        _ = plt.savefig(out_file_pdf, dpi=400, bbox_inches='tight')
+        _ = plt.close('all')
 
     def plot_logdets(self, num_samples=20):
         reds, blues = self.get_colors(num_samples)
         sumlogdet_xf_avg, sumlogdet_yf_avg = smooth_data(
             np.mean(self.sumlogdet_f, axis=-1),
-            self.therm_steps // self.step_multiplier,
-            self.skip_steps // self.step_multiplier
+            self.therm_st // self.step_multiplier,
+            self.skip_st // self.step_multiplier
         )
 
         sumlogdet_xb_avg, sumlogdet_yb_avg = smooth_data(
             np.mean(self.sumlogdet_b, axis=-1),
-            self.therm_steps // self.step_multiplier,
-            self.skip_steps // self.step_multiplier
+            self.therm_st // self.step_multiplier,
+            self.skip_st // self.step_multiplier
         )
 
         fig, (ax1, ax2) = plt.subplots(2, 1)
         for idx in range(num_samples):
             xf, yf = smooth_data(self.logdets_f[:, idx],
-                                 self.therm_steps, self.skip_steps)
+                                 self.therm_st, self.skip_steps)
             xb, yb = smooth_data(self.logdets_b[:, idx],
-                                 self.therm_steps, self.skip_steps)
+                                 self.therm_st, self.skip_steps)
             _ = ax1.plot(xf, yf, color=reds[idx], alpha=0.75, lw=0.5)
             _ = ax1.plot(xb, yb, color=blues[idx], alpha=0.75, lw=0.5)
 
         xf_avg, yf_avg = smooth_data(np.mean(self.logdets_f, axis=-1),
-                                     self.therm_steps, self.skip_steps)
+                                     self.therm_st, self.skip_steps)
         xb_avg, yb_avg = smooth_data(np.mean(self.logdets_b, axis=-1),
-                                     self.therm_steps, self.skip_steps)
+                                     self.therm_st, self.skip_steps)
         _ = ax1.plot(xf_avg, yf_avg,
                      label=r"$|\mathrm{avg. logdet (f)}|$",
                      ls='-', color=reds[-1], lw=1.)
@@ -305,7 +302,7 @@ class LeapfrogPlotter:
         _ = fig.subplots_adjust(hspace=0.5)
 
         out_file = os.path.join(self.figs_dir, 'avg_logdets.png')
-        out_file_eps = os.path.join(self.eps_dir, 'avg_logdets.eps')
+        out_file_pdfs = os.path.join(self.pdfs_dir, 'avg_logdets.pdf')
         io.log(f'Saving figure to: {out_file}')
         _ = plt.savefig(out_file, dpi=400, bbox_inches='tight')
-        _ = plt.savefig(out_file_eps, dpi=400, bbox_inches='tight')
+        _ = plt.savefig(out_file_pdfs, dpi=400, bbox_inches='tight')
