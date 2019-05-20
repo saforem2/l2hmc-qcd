@@ -19,6 +19,27 @@ def load_params_from_dir(d):
 
     return params
 
+def get_run_dirs(root_dir):
+    run_dirs = []
+    root_dir = os.path.abspath(root_dir)
+    for dirpath, dirnames, filenames in os.walk(root_dir):
+        for dirname in dirnames:
+            keys = ['steps_', '_beta_', '_eps_']
+            conditions = [key in dirname for key in keys]
+            if np.alltrue(conditions):
+                run_dirs.append(os.path.join(dirpath, dirname))
+
+    return run_dirs
+
+def make_fig_dirs(run_dirs):
+    for dirpath, dirnames, filenames in os.walk(root_dir):
+        for dirname in dirnames:
+            keys = ['steps_', '_beta_', '_eps_']
+            conditions = [key in dirname for key in keys]
+            if np.alltrue(conditions):
+                run_dirs.append(os.path.join(dirpath, dirname))
+    return run_dirs
+
 
 class DataLoader:
     def __init__(self, run_dir=None):
