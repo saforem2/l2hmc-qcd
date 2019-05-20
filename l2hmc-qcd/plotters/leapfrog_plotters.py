@@ -117,6 +117,34 @@ class LeapfrogPlotter:
         sumlogdets = loader.load_sumlogdets(run_dir)
         return (samples, leapfrogs, logdets, sumlogdets)
 
+    def print_memory(self):
+        if HAS_PSUTIL:
+            pid = os.getpid()
+            py = psutil.Process(pid)
+            memory_use = py.memory_info()[0] / 2. ** 30
+            io.log(80 * '-')
+            io.log(f'memory use: {memory_use}')
+            io.log(80 * '-')
+
+    def get_colors(self, num_samples=20):
+        reds_cmap = mpl.cm.get_cmap('Reds', num_samples + 1)
+        blues_cmap = mpl.cm.get_cmap('Blues', num_samples + 1)
+        idxs = np.linspace(0.1, 0.75, num_samples + 1)
+        reds = [reds_cmap(i) for i in idxs]
+        blues = [blues_cmap(i) for i in idxs]
+
+        return reds, blues
+
+    def save_attr(self, name, attr, out_dir):
+        assert os.path.isdir(out_dir)
+        out_file = os.path.join(out_dir, name + '.npz')
+
+        if os.path.isfile(out_file):
+            io.log(f'File {out_file} already exists. Skipping.')
+        else:
+            io.log(f'Saving {name} to: {out_file}')
+            np.savez_compressed(out_file, attr)
+
     def make_plots(self, run_dir, smooth=True, num_samples=20,
                    therm_steps=None):
         """Make plots of the leapfrog differences and logdets.
@@ -167,29 +195,6 @@ class LeapfrogPlotter:
         del self.sumlogdet_b
         self.print_memory()
 
-    def print_memory(self):
-        if HAS_PSUTIL:
-            pid = os.getpid()
-            py = psutil.Process(pid)
-            memory_use = py.memory_info()[0] / 2. ** 30
-            io.log(80 * '-')
-            io.log(f'memory use: {memory_use}')
-            io.log(80 * '-')
-
-    def get_colors(self, num_samples=20):
-        reds_cmap = mpl.cm.get_cmap('Reds', num_samples + 1)
-        blues_cmap = mpl.cm.get_cmap('Blues', num_samples + 1)
-        idxs = np.linspace(0.1, 0.75, num_samples + 1)
-        reds = [reds_cmap(i) for i in idxs]
-        blues = [blues_cmap(i) for i in idxs]
-
-        return reds, blues
-
-    def save_attr(self, name, attr, out_dir):
-        assert os.path.isdir(out_dir)
-        out_file = os.path.join(out_dir, name + '.npz')
-        io.log(f'Saving {name} to: {out_file}')
-        np.savez_compressed(out_file, attr)
 
     def plot_lf_diffs(self, smooth=True, num_samples=10, therm_steps=None):
         reds, blues = self.get_colors(num_samples)
