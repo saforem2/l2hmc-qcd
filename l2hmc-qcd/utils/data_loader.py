@@ -49,8 +49,9 @@ class DataLoader:
 
     def load_samples(self, run_dir):
         samples_file = os.path.join(run_dir, 'samples_out.npz')
+        samples = self.load_npz_file(samples_file)
 
-        return self.load_npz_file(samples_file)
+        return samples
 
     def load_leapfrogs(self, run_dir):
         lf_f_file = os.path.join(run_dir, 'lf_forward.npz')
