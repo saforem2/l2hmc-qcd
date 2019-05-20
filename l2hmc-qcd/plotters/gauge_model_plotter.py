@@ -25,7 +25,7 @@ except ImportError:
     HAS_MATPLOTLIB = False
 
 params = {
-    'backend': 'ps',
+    #  'backend': 'ps',
     #  'text.latex.preamble': [r'\usepackage{gensymb}'],
     'axes.labelsize': 14,   # fontsize for x and y labels (was 10)
     'axes.titlesize': 16,
