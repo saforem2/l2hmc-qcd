@@ -145,8 +145,7 @@ class LeapfrogPlotter:
             io.log(f'Saving {name} to: {out_file}')
             np.savez_compressed(out_file, attr)
 
-    def make_plots(self, run_dir, smooth=True, num_samples=20,
-                   therm_steps=None):
+    def make_plots(self, run_dir, smooth=True, num_samples=20):
         """Make plots of the leapfrog differences and logdets.
 
         Immediately after creating and saving the plots, delete these
@@ -162,7 +161,7 @@ class LeapfrogPlotter:
         beta_idx = run_key.index('beta') + 1
         beta = run_key[beta_idx]
 
-        self.plot_lf_diffs(beta, smooth, num_samples, therm_steps)
+        self.plot_lf_diffs(beta, smooth, num_samples)
 
         self.print_memory()
 
@@ -181,7 +180,7 @@ class LeapfrogPlotter:
         del self.samples_diffs
         self.print_memory()
 
-        self.plot_logdets(beta, smooth, num_samples, therm_steps)
+        self.plot_logdets(beta, smooth, num_samples)
 
         self.save_attr('logdets_forward', self.logdets_f, out_dir=run_dir)
         del self.logdets_f
@@ -199,7 +198,7 @@ class LeapfrogPlotter:
         del self.sumlogdet_b
         self.print_memory()
 
-    def plot_lf_diffs(self, beta, smooth=True, num_samples=10):
+    def plot_lf_diffs(self, beta, smooth=True, num_samples=20):
         reds, blues = self.get_colors(num_samples)
         samples_y_avg = np.mean(self.samples_diffs, axis=(1, 2))
         samples_x_avg = np.arange(len(samples_y_avg))
@@ -209,14 +208,6 @@ class LeapfrogPlotter:
             arg2 = self.skip_steps // self.step_multiplier
             samples_x_avg, samples_y_avg = smooth_data(samples_y_avg,
                                                        arg1, arg2)
-        #  if therm_steps is not None:
-        #      samples_y_avg = samples_y_avg[therm_steps:]
-        #      samples_x_avg = np.arange(len(samples_y_avg))
-            #  samples_x_avg, samples_y_avg = smooth_data(
-            #      np.mean(self.samples_diffs, axis=(1, 2)),
-            #      self.therm_steps // self.step_multiplier,
-            #      self.skip_steps // self.step_multiplier
-            #  )
 
         indiv_kwargs = {
             'ls': '-',
@@ -234,9 +225,6 @@ class LeapfrogPlotter:
             if smooth:
                 xf, yf = smooth_data(yf, self.therm_steps, self.skip_steps)
                 xb, yb = smooth_data(yb, self.therm_steps, self.skip_steps)
-            #  if therm_steps is not None:
-            #      yf = yf[therm_steps:]
-            #      xf = np.arange(len(yf))
 
             _ = ax1.plot(xf, yf[:, idx], color=reds[idx], **indiv_kwargs)
             _ = ax1.plot(xb, yb[:, idx], color=blues[idx], **indiv_kwargs)
@@ -250,19 +238,7 @@ class LeapfrogPlotter:
                                          self.skip_steps)
             xb_avg, yb_avg = smooth_data(yb_avg, self.therm_steps,
                                          self.skip_steps)
-        #  if therm_steps is not None:
-        #      yf_avg = yf_avg[therm_steps:]
-        #      xf_avg = np.arange(len(yf_avg))
-            #  xf_avg = xf_avg[therm_steps:]
 
-            #  xf_avg, yf_avg = smooth_data(
-            #      np.mean(self.lf_f_diffs, axis=(1, 2)),
-            #      self.therm_steps, self.skip_steps
-            #  )
-            #  xb_avg, yb_avg = smooth_data(
-            #      np.mean(self.lf_b_diffs, axis=(1, 2)),
-            #      self.therm_steps, self.skip_steps
-            #  )
         _ = ax1.plot(xf_avg, yf_avg, label='forward',
                      color=reds[-1], lw=0.75)
         _ = ax1.plot(xb_avg, yb_avg, label='backward',
@@ -292,7 +268,7 @@ class LeapfrogPlotter:
         _ = plt.savefig(out_file_pdf, dpi=400, bbox_inches='tight')
         _ = plt.close('all')
 
-    def plot_logdets(beta, self, smooth=True, num_samples=20):
+    def plot_logdets(self, beta, smooth=True, num_samples=20):
         reds, blues = self.get_colors(num_samples)
 
         sumlogdet_yf_avg = np.mean(self.sumlogdet_f, axis=-1)
@@ -301,7 +277,6 @@ class LeapfrogPlotter:
         sumlogdet_xb_avg = np.arange(len(sumlogdet_yb_avg))
 
         if smooth:
-            #  therm_steps = None
             sumlogdet_xf_avg, sumlogdet_yf_avg = smooth_data(
                 sumlogdet_yf_avg,
                 self.therm_steps, 
@@ -318,16 +293,6 @@ class LeapfrogPlotter:
                 # // self.step_multiplier
             )
 
-        #  if therm_steps is not None:
-        #      #  sumlogdet_xf_avg = sumlogdet_xf_avg[therm_steps:]
-        #      #  sumlogdet_xb_avg = sumlogdet_xb_avg[therm_steps:]
-        #
-        #      sumlogdet_yf_avg = sumlogdet_yf_avg[therm_steps:]
-        #      sumlogdet_yb_avg = sumlogdet_yb_avg[therm_steps:]
-        #
-        #      sumlogdet_xf_avg = np.arange(len(sumlogdet_yf_avg))
-        #      sumlogdet_xb_avg = np.arange(len(sumlogdet_yb_avg))
-
         fig, (ax1, ax2) = plt.subplots(2, 1)
         for idx in range(num_samples):
             yf = self.logdets_f[:, idx]
@@ -339,14 +304,6 @@ class LeapfrogPlotter:
                 xf, yf = smooth_data(yf, self.therm_steps, self.skip_steps)
                 xb, yb = smooth_data(yb, self.therm_steps, self.skip_steps)
 
-            #  if therm_steps is not None:
-            #      yf = yf[therm_steps:]
-            #      xf = np.arange(len(yf))
-            #      #  xf = xf[therm_steps:]
-            #      #  xf, yf = smooth_data(self.logdets_f[:, idx],
-            #      #                       self.therm_steps, self.skip_steps)
-            #      #  xb, yb = smooth_data(self.logdets_b[:, idx],
-            #      #                       self.therm_steps, self.skip_steps)
             _ = ax1.plot(xf, yf, color=reds[idx], alpha=0.75, lw=0.5)
             _ = ax1.plot(xb, yb, color=blues[idx], alpha=0.75, lw=0.5)
 
@@ -357,7 +314,6 @@ class LeapfrogPlotter:
         xb_avg = np.arange(len(yb_avg))
 
         if smooth:
-            #  therm_steps = None
             xf_avg, yf_avg = smooth_data(
                 yf_avg, self.therm_steps, self.skip_steps
             )
@@ -368,15 +324,6 @@ class LeapfrogPlotter:
             #                               self.therm_steps, self.skip_steps)
             #  xb_avg, yb_avg = smooth_data(np.mean(self.logdets_b, axis=-1),
             #                               self.therm_steps, self.skip_steps)
-
-        #  if therm_steps is not None:
-        #      yf_avg = yf_avg[therm_steps:]
-        #      xf_avg = np.arange(len(yf_avg))
-        #      #  xf_avg = xf_avg[therm_steps:]
-        #
-        #      yb_avg = yb_avg[therm_steps:]
-        #      xb_avg = np.arange(len(yb_avg))
-        #      #  xb_avg = xb_avg[therm_steps:]
 
         _ = ax1.plot(xf_avg, yf_avg,
                      label='forward',
