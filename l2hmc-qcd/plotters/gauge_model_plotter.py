@@ -213,7 +213,7 @@ class GaugeModelPlotter:
         charges = np.array(arr_from_dict(data, 'charges'), dtype=int)
         charge_diffs = arr_from_dict(data, 'charge_diffs')
         charge_autocorrs = np.array(data['charges_autocorrs'])
-        plaqs_diffs = np.abs(plaqs - u1_plaq_exact(beta))
+        plaqs_diffs = plaqs - u1_plaq_exact(beta)
 
         num_steps, num_samples = actions.shape
         steps_arr = np.arange(num_steps)
@@ -225,8 +225,6 @@ class GaugeModelPlotter:
             therm_steps = 2
             skip_steps = 1
 
-        # actions.shape = (num_steps, num_samples)
-        # plot only every 100 steps to smooth out graphs
         _actions = actions[::skip_steps]
         _plaqs = plaqs[::skip_steps]
         _steps_arr = skip_steps * np.arange(_actions.shape[0])
