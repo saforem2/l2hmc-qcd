@@ -106,16 +106,6 @@ class GaugeModel:
             self.build()
             #  self.init_saver()
 
-    #  def init_saver(self):
-    #      """Initialize saver object for creating and saving checkpoints."""
-    #      self.saver = tf.train.Saver(max_to_keep=3)
-
-    #  def save(self, sess, checkpoint_dir):
-    #      """Save model checkpoint to checkpoint directory."""
-    #      io.log(f"INFO: Saving model to: {checkpoint_dir}")
-    #      self.saver.save(sess, checkpoint_dir, self.global_step)
-    #      io.log("Model saved.")
-
     def load(self, sess, checkpoint_dir):
         latest_ckpt = tf.train.latest_checkpoint(checkpoint_dir)
         if latest_ckpt:
@@ -378,7 +368,8 @@ class GaugeModel:
         with tf.name_scope('x_update'):
             x_proposed, _, px, x_out = self.dynamics(x, beta, train=True)
         with tf.name_scope('z_update'):
-            z = tf.random_normal(tf.shape(x), name='z')  # Auxiliary variable
+            # Auxiliary variable
+            z = tf.random_normal(tf.shape(x), seed=GLOBAL_SEED, name='z')
             z_proposed, _, pz, _ = self.dynamics(z, beta)
 
         with tf.name_scope('top_charge_diff'):
