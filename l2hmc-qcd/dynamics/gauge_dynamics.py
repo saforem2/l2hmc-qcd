@@ -20,8 +20,8 @@ import tensorflow as tf
 from globals import GLOBAL_SEED, TF_FLOAT
 from network.conv_net import ConvNet2D, ConvNet3D
 from network.generic_net import GenericNet
-from lattice.lattice import GaugeLattice
-import utils.file_io as io
+#  from lattice.lattice import GaugeLattice
+#  import utils.file_io as io
 
 
 ###########################################
@@ -93,20 +93,21 @@ class GaugeDynamics(tf.keras.Model):
 
         Args:
             lattice: Lattice object containing multiple sample lattices.
-            potential_fn: Function specifying minus log-likelihood objective to
-                minimize.
-            Kwargs (expected):
-                num_steps: Number of leapfrog steps to use in integrator.
-                eps: Initial step size to use in leapfrog integrator.
-                network_arch: String specifying network architecture to use.
-                    Must be one of `'conv2D', 'conv3D', 'generic'`. Networks
-                    are defined in `../network/`
-                hmc: Flag indicating whether generic HMC (no augmented
-                    leapfrog) should be used instead of L2HMC. Defaults to
-                    False.
-                eps_trainable: Flag indiciating whether the step size (eps)
-                    should be trainable. Defaults to True.
-                np_seed: Seed to use for numpy.random.
+            potential_fn: Function specifying minus log-likelihood objective
+            to minimize.
+
+        NOTE: kwargs (expected)
+            num_steps: Number of leapfrog steps to use in integrator.
+            eps: Initial step size to use in leapfrog integrator.
+            network_arch: String specifying network architecture to use.
+                Must be one of `'conv2D', 'conv3D', 'generic'`. Networks
+                are defined in `../network/`
+            hmc: Flag indicating whether generic HMC (no augmented
+                leapfrog) should be used instead of L2HMC. Defaults to
+                False.
+            eps_trainable: Flag indiciating whether the step size (eps)
+                should be trainable. Defaults to True.
+            np_seed: Seed to use for numpy.random.
         """
         super(GaugeDynamics, self).__init__(name='GaugeDynamics')
         #  npr.seed(np_seed)
@@ -120,7 +121,6 @@ class GaugeDynamics(tf.keras.Model):
         for key, val in kwargs.items():
             if key != 'eps':  # want to use self.eps as tf.Variable
                 setattr(self, key, val)
-
 
         with tf.name_scope('eps'):
             #  self.eps = exp(self.alpha, name='eps')
@@ -159,15 +159,15 @@ class GaugeDynamics(tf.keras.Model):
             '_input_shape': (self.batch_size, *self.lattice.links.shape),
             'links_shape': self.lattice.links.shape,
             'x_dim': self.lattice.num_links,  # dimensionality of target space
-            'factor': 2.,
+            'factor': 2.,  # scale factor used in original paper
             'spatial_size': self.lattice.space_size,
             'num_hidden': 2 * self.lattice.num_links,
             'num_filters': int(self.lattice.space_size),
-            'filter_sizes': [(3, 3, 2), (2, 2, 2)],
+            'filter_sizes': [(3, 3, 2), (2, 2, 2)],  # size of conv. filters
             'name_scope': 'position',
-            'data_format': self.data_format,
-            'use_bn': self.use_bn,
-            'scale_weight': 1.,
+            'data_format': self.data_format,  # channels_first if using GPU
+            'use_bn': self.use_bn,  # whether or not to use batch normalization
+            'scale_weight': 1.,     # multiplicative factor multiplying
             'translation_weight': 1.,
             'transformation_weight': 1.,
         }
@@ -278,7 +278,8 @@ class GaugeDynamics(tf.keras.Model):
             # Decide direction uniformly
             with tf.name_scope('transition_masks'):
                 forward_mask = tf.cast(
-                    tf.random_uniform((self.batch_size,)) > 0.5,
+                    tf.random_uniform((self.batch_size,),
+                                      seed=GLOBAL_SEED) > 0.5,
                     TF_FLOAT,
                     name='forward_mask'
                 )
@@ -301,7 +302,8 @@ class GaugeDynamics(tf.keras.Model):
             # Accept or reject step
             with tf.name_scope('accept_mask'):
                 accept_mask = tf.cast(
-                    accept_prob > tf.random_uniform(tf.shape(accept_prob)),
+                    accept_prob > tf.random_uniform(tf.shape(accept_prob),
+                                                    seed=GLOBAL_SEED),
                     TF_FLOAT,
                     name='acccept_mask'
                 )
@@ -329,7 +331,7 @@ class GaugeDynamics(tf.keras.Model):
 
         lf_fn = self._forward_lf if forward else self._backward_lf
 
-        momentum = tf.random_normal(tf.shape(position))
+        momentum = tf.random_normal(tf.shape(position), seed=GLOBAL_SEED)
 
         position_post, momentum_post = position, momentum
 
