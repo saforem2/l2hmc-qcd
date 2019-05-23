@@ -360,8 +360,6 @@ class GaugeDynamics(tf.keras.Model):
         else:
             lf_out = []
             logdet = []
-            #  lf_out = tf.zeros(self.num_steps)
-            #  lf_out = np.zeros(self.num_steps)
             sumlogdet = 0.
             for t in range(self.num_steps):
                 position_post, momentum_post, j = lf_fn(position_post,

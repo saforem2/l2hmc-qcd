@@ -26,17 +26,6 @@ def load_and_sep(out_file, keys=('forward', 'backward')):
     return (np.array(data[k]) for k in keys)
 
 
-#  def smooth_data(y_data, therm_steps=10, skip_steps=100):
-#      skip_steps = max(1, skip_steps)
-#      if therm_steps > 0:
-#          _y_data = y_data[therm_steps:][::skip_steps]
-#      else:
-#          _y_data = y_data[::skip_steps]
-#      x_data = skip_steps * np.arange(_y_data.shape[0])
-#
-#      return x_data, _y_data
-
-
 params = {
     #  'backend': 'ps',
     #  'text.latex.preamble': [r'\usepackage{gensymb}'],
@@ -103,11 +92,11 @@ class LeapfrogPlotter:
         self.tot_lf_steps = self.lf_f_diffs.shape[0]
         self.tot_md_steps = self.samples_diffs.shape[0]
         self.num_lf_steps = self.tot_lf_steps // self.tot_md_steps
-        self.therm_steps = int(therm_perc * self.tot_lf_steps)
-        self.skip_steps = int(skip_perc * self.tot_lf_steps)
-        self.step_multiplier = (
-            self.lf_f_diffs.shape[0] // self.samples_diffs.shape[0]
-        )
+        #  self.therm_steps = int(therm_perc * self.tot_lf_steps)
+        #  self.skip_steps = int(skip_perc * self.tot_lf_steps)
+        #  self.step_multiplier = (
+        #      self.lf_f_diffs.shape[0] // self.samples_diffs.shape[0]
+        #  )
 
     def load_data(self, run_dir):
         loader = DataLoader(run_dir)
@@ -205,12 +194,6 @@ class LeapfrogPlotter:
         samples_y_avg = np.mean(self.samples_diffs, axis=(1, 2))
         samples_x_avg = np.arange(len(samples_y_avg))
 
-        #  if smooth:
-        #      arg1 = self.therm_steps // self.step_multiplier
-        #      arg2 = self.skip_steps // self.step_multiplier
-        #      samples_x_avg, samples_y_avg = smooth_data(samples_y_avg,
-        #                                                 arg1, arg2)
-
         indiv_kwargs = {
             'ls': '-',
             'alpha': 0.9,
@@ -224,29 +207,18 @@ class LeapfrogPlotter:
             yb = np.mean(self.lf_b_diffs, axis=-1)
             xb = np.arange(len(yb))
 
-            #  if smooth:
-            #      xf, yf = smooth_data(yf, self.therm_steps, self.skip_steps)
-            #      xb, yb = smooth_data(yb, self.therm_steps, self.skip_steps)
-
-            _ = ax1.plot(1 + xf, yf[:, idx], color=reds[idx], **indiv_kwargs)
-            _ = ax1.plot(1 + xb, yb[:, idx], color=blues[idx], **indiv_kwargs)
+            _ = ax1.plot(xf, yf[:, idx], color=reds[idx], **indiv_kwargs)
+            _ = ax1.plot(xb, yb[:, idx], color=blues[idx], **indiv_kwargs)
 
         yf_avg = np.mean(self.lf_f_diffs, axis=(1, 2))
         yb_avg = np.mean(self.lf_b_diffs, axis=(1, 2))
         xf_avg = np.arange(len(yf))
         xb_avg = np.arange(len(yb))
-        #  if smooth:
-        #      xf_avg, yf_avg = smooth_data(yf_avg, self.therm_steps,
-        #                                   self.skip_steps)
-        #      xb_avg, yb_avg = smooth_data(yb_avg, self.therm_steps,
-        #                                   self.skip_steps)
 
-        _ = ax1.plot(1 + xf_avg, yf_avg, label='forward',
-                     color='r', lw=1.)
-        _ = ax1.plot(1 + xb_avg, yb_avg, label='backward',
-                     color='b', lw=1.)
+        _ = ax1.plot(xf_avg, yf_avg, label='forward', color='r', lw=1.)
+        _ = ax1.plot(xb_avg, yb_avg, label='backward', color='b', lw=1.)
 
-        _ = ax2.plot(1 + samples_x_avg, samples_y_avg, color='k', lw=1.,
+        _ = ax2.plot(samples_x_avg, samples_y_avg, color='k', lw=1.,
                      label='MD avg.')
 
         _ = ax1.set_xlabel('Leapfrog step', fontsize=16)
@@ -261,13 +233,19 @@ class LeapfrogPlotter:
         fig.tight_layout()
         #  fig.subplots_adjust(hspace=0.5)
 
-        out_file = os.path.join(self.figs_dir,
-                                f'leapfrog_diffs_beta{beta}.png')
-        out_file_pdf = os.path.join(self.pdfs_dir,
-                                    f'leapfrog_diffs_beta{beta}.pdf')
+        out_file = os.path.join(self.pdfs_dir,
+                                f'leapfrog_diffs_beta{beta}.pdf')
+        out_file_zoom = os.path.join(self.pdfs_dir,
+                                     f'leapfrog_diffs_beta{beta}_zoom.pdf')
         io.log(f'Saving figure to: {out_file}')
         _ = plt.savefig(out_file, dpi=400, bbox_inches='tight')
-        _ = plt.savefig(out_file_pdf, dpi=400, bbox_inches='tight')
+
+        lf_xlim = 100
+        md_xlim = lf_xlim // self.num_lf_steps
+
+        _ = ax1.set_xlim((0, lf_xlim))
+        _ = ax2.set_xlim((0, md_xlim))
+        _ = plt.savefig(out_file_zoom, dpi=400, bbox_inches='tight')
 
         #  _ = plt.close('all')
         return fig, (ax1, ax2)
@@ -280,32 +258,12 @@ class LeapfrogPlotter:
         sumlogdet_xf_avg = np.arange(len(sumlogdet_yf_avg))
         sumlogdet_xb_avg = np.arange(len(sumlogdet_yb_avg))
 
-        #  if smooth:
-        #      sumlogdet_xf_avg, sumlogdet_yf_avg = smooth_data(
-        #          sumlogdet_yf_avg,
-        #          self.therm_steps,
-        #          #  // self.step_multiplier,
-        #          self.skip_steps,
-        #          #  // self.step_multiplier
-        #      )
-        #
-        #      sumlogdet_xb_avg, sumlogdet_yb_avg = smooth_data(
-        #          sumlogdet_yb_avg,
-        #          self.therm_steps,
-        #          # // self.step_multiplier,
-        #          self.skip_steps,
-        #          # // self.step_multiplier
-        #      )
         fig, (ax1, ax2) = plt.subplots(2, 1)
         for idx in range(num_samples):
             yf = self.logdets_f[:, idx]
             xf = np.arange(len(yf))
             yb = self.logdets_b[:, idx]
             xb = np.arange(len(yb))
-
-            #  if smooth:
-            #      xf, yf = smooth_data(yf, self.therm_steps, self.skip_steps)
-            #      xb, yb = smooth_data(yb, self.therm_steps, self.skip_steps)
 
             _ = ax1.plot(xf, yf, color=reds[idx], alpha=0.9, lw=0.5)
             _ = ax1.plot(xb, yb, color=blues[idx], alpha=0.9, lw=0.5)
@@ -336,12 +294,20 @@ class LeapfrogPlotter:
         _ = fig.tight_layout()
         #  _ = fig.subplots_adjust(hspace=0.5)
 
-        out_file = os.path.join(self.figs_dir,
-                                f'avg_logdets_beta{beta}.png')
-        out_file_pdfs = os.path.join(self.pdfs_dir,
-                                     f'avg_logdets_beta{beta}.pdf')
+        #  out_file = os.path.join(self.figs_dir,
+        #                          f'avg_logdets_beta{beta}.png')
+        out_file = os.path.join(self.pdfs_dir,
+                                f'avg_logdets_beta{beta}.pdf')
+        out_file_zoom = os.path.join(self.pdfs_dir,
+                                     f'avg_logdets_beta{beta}_zoom.pdf')
         io.log(f'Saving figure to: {out_file}')
         _ = plt.savefig(out_file, dpi=400, bbox_inches='tight')
-        _ = plt.savefig(out_file_pdfs, dpi=400, bbox_inches='tight')
+
+        lf_xlim = 100
+        md_xlim = lf_xlim // self.num_lf_steps
+
+        _ = ax1.set_xlim((0, lf_xlim))
+        _ = ax2.set_xlim((0, md_xlim))
+        _ = plt.savefig(out_file_zoom, dpi=400, bbox_inches='tight')
         #  _ = plt.close('all')
         return fig, (ax1, ax2)
