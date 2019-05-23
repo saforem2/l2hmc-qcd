@@ -16,7 +16,7 @@ Date: 01/16/2019
 import numpy as np
 import tensorflow as tf
 
-from globals import GLOBAL_SEED
+from globals import GLOBAL_SEED, TF_FLOAT, NP_FLOAT
 
 
 np.random.seed(GLOBAL_SEED)
@@ -47,7 +47,7 @@ def variable_on_cpu(name, shape, initializer):
         Variable Tensor
     """
     with tf.device('/cpu:0'):
-        var = tf.get_variable(name, shape, initializer, tf.float32)
+        var = tf.get_variable(name, shape, initializer, TF_FLOAT)
     return var
 
 
@@ -70,12 +70,12 @@ def variable_with_weight_decay(name, shape, stddev, wd, cpu=True):
     if cpu:
         var = variable_on_cpu(
             name, shape, tf.truncated_normal_initializer(stddev=stddev,
-                                                         dtype=tf.float32)
+                                                         dtype=TF_FLOAT)
         )
     else:
         var = tf.get_variable(
             name, shape, tf.truncated_normal_initializer(stddev=stddev,
-                                                         dtype=tf.float32)
+                                                         dtype=TF_FLOAT)
         )
     if wd is not None:
         weight_decay = tf.multiply(tf.nn.l2_loss(var), wd, name='weight_loss')
@@ -116,7 +116,7 @@ def create_periodic_padding(samples, filter_size):
 
         x.append(padded)
 
-    return np.array(x, dtype=np.float32).reshape(*original_size)
+    return np.array(x, dtype=NP_FLOAT).reshape(*original_size)
 
 
 # pylint:disable=too-many-arguments, too-many-instance-attributes
@@ -124,8 +124,18 @@ class ConvNet3D(tf.keras.Model):
     """Conv. neural net with different initialization scale based on input."""
 
     def __init__(self, model_name, **kwargs):
-        """Initialization method."""
+        """Initialization method.
 
+        Attributes:
+            coeff_scale: Multiplicative factor (lambda_s in original paper p.
+                13) multiplying tanh(W_s h_2 + b_s).
+            coeff_transformation: Multiplicative factor (lambda_q in original
+                paper p. 13) multiplying tanh(W_q h_2 + b_q).
+            data_format: String (either 'channels_first' or 'channels_last').
+                'channels_first' ('channels_last') is default for GPU (CPU).
+                This value is automatically determined and set to the
+                appropriate value.
+        """
         super(ConvNet3D, self).__init__(name=model_name)
 
         for key, val in kwargs.items():
@@ -140,14 +150,13 @@ class ConvNet3D(tf.keras.Model):
                 raise AttributeError("Expected 'data_format' to be "
                                      "'channels_first'  or 'channels_last'")
 
-        #  with tf.variable_scope(self.variable_scope):
         with tf.name_scope(self.name_scope):
             with tf.name_scope('coeff_scale'):
                 self.coeff_scale = tf.Variable(
                     initial_value=tf.zeros([1, self.x_dim]),
                     name='coeff_scale',
                     trainable=True,
-                    dtype=tf.float32
+                    dtype=TF_FLOAT
                 )
 
             with tf.name_scope('coeff_transformation'):
@@ -155,7 +164,7 @@ class ConvNet3D(tf.keras.Model):
                     initial_value=tf.zeros([1, self.x_dim]),
                     name='coeff_transformation',
                     trainable=True,
-                    dtype=tf.float32
+                    dtype=TF_FLOAT
                 )
 
             with tf.name_scope('conv_layers'):
@@ -167,7 +176,7 @@ class ConvNet3D(tf.keras.Model):
                         #  input_shape=self._input_shape,
                         padding='same',
                         name='conv_x1',
-                        dtype=tf.float32,
+                        dtype=TF_FLOAT,
                         data_format=self.data_format
 
                     )
@@ -188,7 +197,7 @@ class ConvNet3D(tf.keras.Model):
                         #  input_shape=self._input_shape,
                         padding='same',
                         name='conv_v1',
-                        dtype=tf.float32,
+                        dtype=TF_FLOAT,
                         data_format=self.data_format
                     )
 
@@ -207,7 +216,7 @@ class ConvNet3D(tf.keras.Model):
                         activation=tf.nn.relu,
                         padding='same',
                         name='conv_x2',
-                        dtype=tf.float32,
+                        dtype=TF_FLOAT,
                         data_format=self.data_format
                     )
 
@@ -226,7 +235,7 @@ class ConvNet3D(tf.keras.Model):
                         activation=tf.nn.relu,
                         padding='same',
                         name='conv_v2',
-                        dtype=tf.float32,
+                        dtype=TF_FLOAT,
                         data_format=self.data_format
                     )
 
@@ -282,30 +291,26 @@ class ConvNet3D(tf.keras.Model):
               ============================================================
               * inputs: x, v, t
               ------------------------------------------------------------
-                  x --> CONV_X1, MAX_POOL_X1, --> CONV_X1, MAX_POOL_X2 -->
-                         FLATTEN_X --> X_LAYER --> X_OUT
+                  x -->
+                      CONV_X1, MAX_POOL_X1, --> CONV_X1, MAX_POOL_X2 -->
+                      BATCH_NORM --> FLATTEN_X --> X_LAYER --> X_OUT
 
-                  v --> CONV_V1, MAX_POOL_V1, --> CONV_V1, MAX_POOL_V2 -->
-                         FLATTEN_V --> V_LAYER --> V_OUT
+                  v -->
+                      CONV_V1, MAX_POOL_V1, --> CONV_V1, MAX_POOL_V2 -->
+                      BATCH_NORM --> FLATTEN_V --> V_LAYER --> V_OUT
 
                   t --> T_LAYER --> T_OUT
 
                   X_OUT + V_OUT + T_OUT --> H_LAYER --> H_OUT
               ============================================================
-              ============================================================
               * H_OUT is then fed to three separate layers:
               ------------------------------------------------------------
                   (1.) H_OUT --> (SCALE_LAYER, TANH) * exp(COEFF_SCALE)
-
                        output: scale
-
                   (2.) H_OUT --> TRANSLATION_LAYER --> TRANSLATION_OUT
-
                        output: translation
-
                   (3.) H_OUT --> (TRANSFORMATION_LAYER, TANH)
                                   * exp(COEFF_TRANSFORMATION)
-
                        output: transformation
               ============================================================
 
@@ -314,8 +319,9 @@ class ConvNet3D(tf.keras.Model):
         """
         v, x, t = inputs
 
-        v = self.reshape_5D(v)
-        x = self.reshape_5D(x)
+        with tf.name_scope('reshape'):
+            v = self.reshape_5D(v)
+            x = self.reshape_5D(x)
 
         with tf.name_scope('x'):
             x = self.max_pool_x1(self.conv_x1(x))
@@ -409,14 +415,14 @@ class ConvNet2D(tf.keras.Model):
                 initial_value=tf.zeros([1, self.x_dim]),
                 name='coeff_scale',
                 trainable=True,
-                dtype=tf.float32
+                dtype=TF_FLOAT
             )
 
             self.coeff_transformation = tf.Variable(
                 initial_value=tf.zeros([1, self.x_dim]),
                 name='coeff_transformation',
                 trainable=True,
-                dtype=tf.float32
+                dtype=TF_FLOAT
             )
 
             self.conv_x1 = tf.keras.layers.Conv2D(
@@ -425,7 +431,7 @@ class ConvNet2D(tf.keras.Model):
                 activation=tf.nn.relu,
                 input_shape=self._input_shape,
                 name='conv_x1',
-                dtype=tf.float32,
+                dtype=TF_FLOAT,
                 data_format=self.data_format
 
             )
@@ -442,7 +448,7 @@ class ConvNet2D(tf.keras.Model):
                 activation=tf.nn.relu,
                 input_shape=self._input_shape,
                 name='conv_v1',
-                dtype=tf.float32,
+                dtype=TF_FLOAT,
                 data_format=self.data_format
             )
 
@@ -457,7 +463,7 @@ class ConvNet2D(tf.keras.Model):
                 kernel_size=self.filter_sizes[1],
                 activation=tf.nn.relu,
                 name='conv_x2',
-                dtype=tf.float32,
+                dtype=TF_FLOAT,
                 data_format=self.data_format
             )
 
@@ -472,7 +478,7 @@ class ConvNet2D(tf.keras.Model):
                 kernel_size=self.filter_sizes[1],
                 activation=tf.nn.relu,
                 name='conv_v2',
-                dtype=tf.float32,
+                dtype=TF_FLOAT,
                 data_format=self.data_format
             )
 
@@ -517,30 +523,26 @@ class ConvNet2D(tf.keras.Model):
         Returns:
            scale, translation, transformation
 
-        NOTE: Architecture looks like 
+        NOTE: Architecture looks like
             - inputs: x, v, t
+                x -->
+                    CONV_X1, MAX_POOL_X1, --> CONV_X1, MAX_POOL_X2 -->
+                    FLATTEN_X --> X_LAYER --> X_OUT
 
-                x --> CONV_X1, MAX_POOL_X1, --> CONV_X1, MAX_POOL_X2 -->
-                       FLATTEN_X --> X_LAYER --> X_OUT
-
-                v --> CONV_V1, MAX_POOL_V1, --> CONV_V1, MAX_POOL_V2 -->
-                       FLATTEN_V --> V_LAYER --> V_OUT
+                v -->
+                    CONV_V1, MAX_POOL_V1, --> CONV_V1, MAX_POOL_V2 -->
+                    FLATTEN_V --> V_LAYER --> V_OUT
 
                 t --> T_LAYER --> T_OUT
 
                 X_OUT + V_OUT + T_OUT --> H_LAYER --> H_OUT
 
             - H_OUT is then fed to three separate layers:
-
                 (1.) H_OUT --> (SCALE_LAYER, TANH) * exp(COEFF_SCALE)
-
                      output: scale
-                
                 (2.) H_OUT --> TRANSLATION_LAYER --> TRANSLATION_OUT
-
                      output: translation
-
-                (3.) H_OUT --> (TRANSFORMATION_LAYER, TANH) 
+                (3.) H_OUT --> (TRANSFORMATION_LAYER, TANH)
                                 * exp(COEFF_TRANSFORMATION)
 
                      output: transformation
@@ -588,7 +590,7 @@ def _custom_dense(units, factor=1., name=None):
             scale=factor,
             mode='fan_in',
             distribution='uniform',
-            dtype=tf.float32,
+            dtype=TF_FLOAT,
             seed=GLOBAL_SEED,
         )
     else:
@@ -602,6 +604,6 @@ def _custom_dense(units, factor=1., name=None):
         units=units,
         use_bias=True,
         kernel_initializer=kernel_initializer,
-        bias_initializer=tf.constant_initializer(0., dtype=tf.float32),
+        bias_initializer=tf.constant_initializer(0., dtype=TF_FLOAT),
         name=name
     )
