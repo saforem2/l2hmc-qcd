@@ -47,7 +47,7 @@ class GaugeModelRunner:
 
     def calc_charge_autocorrelation(self, charges):
         autocorr = np.correlate(charges, charges, mode='full')
-        return aut
+        return autocorr
 
     def save_run_data(self, run_data, run_strings, samples, **kwargs):
         """Save run information.
@@ -98,7 +98,7 @@ class GaugeModelRunner:
 
         self.write_run_stats(run_stats, **kwargs)
 
-    def run_step(self, step, run_steps, inputs):
+    def run_step(self, step, run_steps, inputs, net_weights):
         """Perform a single run step.
 
         Args:
@@ -115,28 +115,39 @@ class GaugeModelRunner:
         """
         samples_in, beta_np, eps, plaq_exact = inputs
 
-        feed_dict = {
-            self.model.x: samples_in,
-            self.model.beta: beta_np
-        }
         ops = [
-            self.model.x_out_lf,
-            self.model.px_lf,
+            self.model.x_out,
+            self.model.px,
             self.model.actions_op,
             self.model.plaqs_op,
             self.model.charges_op,
             self.model.charge_diffs_op,
-            self.model.lf_out_f,
-            self.model.pxs_out_f,
-            self.model.lf_out_b,
-            self.model.pxs_out_b,
-            self.model.masks_f,
-            self.model.masks_b,
-            self.model.logdets_f,
-            self.model.logdets_b,
-            self.model.sumlogdet_f,
-            self.model.sumlogdet_b
         ]
+        if self.model.save_lf:
+            ops.extend([
+                self.model.lf_out_f,
+                self.model.pxs_out_f,
+                self.model.lf_out_b,
+                self.model.pxs_out_b,
+                self.model.masks_f,
+                self.model.masks_b,
+                self.model.logdets_f,
+                self.model.logdets_b,
+                self.model.sumlogdet_f,
+                self.model.sumlogdet_b
+            ])
+
+        feed_dict = {
+            self.model.x: samples_in,
+            self.model.beta: beta_np,
+            self.model.net_weights[0]: net_weights[0],
+            self.model.net_weights[1]: net_weights[1],
+            self.model.net_weights[2]: net_weights[2],
+            #  self.model.net_weights: net_weights,
+            #  self.model.scale_weight: net_weights[0],
+            #  self.model.transformation_weight: net_weights[1],
+            #  self.model.translation_weight: net_weights[2]
+        }
 
         start_time = time.time()
         outputs = self.sess.run(ops, feed_dict=feed_dict)
@@ -151,17 +162,21 @@ class GaugeModelRunner:
             'plaqs': outputs[3],
             'charges': outputs[4],
             'charge_diffs': outputs[5],
-            'lf_out_f': outputs[6],
-            'pxs_out_f': outputs[7],
-            'lf_out_b': outputs[8],
-            'pxs_out_b': outputs[9],
-            'masks_f': outputs[10],
-            'masks_b': outputs[11],
-            'logdets_f': outputs[12],
-            'logdets_b': outputs[13],
-            'sumlogdet_f': outputs[14],
-            'sumlogdet_b': outputs[15],
         }
+        if self.model.save_lf:
+            lf_outputs = {
+                'lf_out_f': outputs[6],
+                'pxs_out_f': outputs[7],
+                'lf_out_b': outputs[8],
+                'pxs_out_b': outputs[9],
+                'masks_f': outputs[10],
+                'masks_b': outputs[11],
+                'logdets_f': outputs[12],
+                'logdets_b': outputs[13],
+                'sumlogdet_f': outputs[14],
+                'sumlogdet_b': outputs[15],
+            }
+            out_data.update(lf_outputs)
 
         data_str = (f'{step:>5g}/{run_steps:<6g} '
                     f'{dt:^9.4g} '                      # time / step
@@ -175,7 +190,7 @@ class GaugeModelRunner:
 
         return out_data, data_str
 
-    def run(self, run_steps, beta=None, therm_frac=10, save_lf=False):
+    def run(self, run_steps, beta=None, net_weights=None, therm_frac=10):
         """Run the simulation to generate samples and calculate observables.
 
         Args:
@@ -197,6 +212,10 @@ class GaugeModelRunner:
         if beta is None:
             beta = self.model.beta_final
 
+        if net_weights is None:
+            # scale_weight, transformation_weight, translation_weight
+            net_weights = [1., 1., 1.]
+
         plaq_exact = u1_plaq_exact(beta)
 
         # start with randomly generated samples
@@ -207,15 +226,15 @@ class GaugeModelRunner:
             io.log(RUN_HEADER)
             for step in range(run_steps):
                 inputs = (samples_np, beta, self.eps, plaq_exact)
-                out_data, data_str = self.run_step(step, run_steps, inputs)
+                out_data, data_str = self.run_step(step, run_steps,
+                                                   inputs, net_weights)
                 samples_np = out_data['samples']
 
                 if self.logger is not None:
                     self.logger.update(out_data, data_str)
 
             if self.logger is not None:
-                self.logger.save_run_data(therm_frac=therm_frac,
-                                          save_lf=save_lf)
+                self.logger.save_run_data(therm_frac=therm_frac)
 
         except (KeyboardInterrupt, SystemExit):
             io.log("\nKeyboardInterrupt detected!")

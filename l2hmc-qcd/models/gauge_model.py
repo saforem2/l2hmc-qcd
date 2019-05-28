@@ -71,7 +71,9 @@ class GaugeModel:
         # -------------------------------------------------------
         # Create input placeholders
         # -------------------------------------------------------
-        self.x, self.beta = self._create_inputs()
+        self.x, self.beta, self.net_weights = self._create_inputs()
+
+        io.log(f'self.x.dtype: {self.x.dtype}')
 
         # -------------------------------------------------------
         # Create dynamics engine
@@ -159,27 +161,42 @@ class GaugeModel:
             if not tf.executing_eagerly():
                 x = tf.placeholder(dtype=TF_FLOAT,
                                    shape=(self.batch_size, self.x_dim),
-                                   name='x')
+                                   name='x_placeholder')
                 beta = tf.placeholder(dtype=TF_FLOAT,
                                       shape=(),
                                       name='beta')
+                net_weights = [
+                    tf.placeholder(
+                        dtype=TF_FLOAT, shape=(), name='scale_weight'
+                    ),
+                    tf.placeholder(
+                        dtype=TF_FLOAT, shape=(), name='transformation_weight'
+                    ),
+                    tf.placeholder(
+                        dtype=TF_FLOAT, shape=(), name='translation_weight'
+                    )
+                ]
             else:
                 x = self.lattice.samples,
                 beta = self.beta_init
 
-        return x, beta
+        return x, beta, net_weights
 
     def _create_dynamics(self, lattice, samples, **kwargs):
         """Initialize dynamics object."""
         with tf.name_scope('dynamics'):
-            dynamics_kwargs = {  # default values of keyword arguments
+            # default values of keyword arguments
+            dynamics_kwargs = {
                 'eps': self.eps,
                 'hmc': self.hmc,
                 'network_arch': self.network_arch,
                 'num_steps': self.num_steps,
                 'eps_trainable': self.eps_trainable,
                 'data_format': self.data_format,
-                'use_bn': self.use_bn
+                'use_bn': self.use_bn,
+                #  'scale_weight': self.scale_weight,
+                #  'transformation_weight': self.transformation_weight,
+                #  'translation_weight': self.translation_weight
             }
 
             dynamics_kwargs.update(kwargs)
@@ -344,7 +361,7 @@ class GaugeModel:
 
         return charge_loss
 
-    def calc_loss(self, x, beta, **weights):
+    def calc_loss(self, x, beta, net_weights, **weights):
         """Create operation for calculating the loss.
 
         Args:
@@ -366,11 +383,27 @@ class GaugeModel:
             equivalent.
         """
         with tf.name_scope('x_update'):
-            x_proposed, _, px, x_out = self.dynamics(x, beta, train=True)
+            dynamics_output = self.dynamics(x, beta, net_weights, self.save_lf)
+            x_proposed = dynamics_output['x_proposed']
+            px = dynamics_output['accept_prob']
+            x_out = dynamics_output['x_out']
+
+            #  x_proposed = output[0]
+            #  output[1] is v_post, don't need to save
+            #  px = output[2]
+            #  x_out = output[3]
+
+            #  if self.save_lf:
+            #      lf_outputs = output[4:]
+
+        # Auxiliary variable
         with tf.name_scope('z_update'):
-            # Auxiliary variable
             z = tf.random_normal(tf.shape(x), seed=GLOBAL_SEED, name='z')
-            z_proposed, _, pz, _ = self.dynamics(z, beta)
+            z_dynamics_output = self.dynamics(z, beta, net_weights,
+                                              save_lf=False)
+            z_proposed = z_dynamics_output['x_proposed']
+            pz = z_dynamics_output['accept_prob']
+            #  z_proposed, _, pz, _ = self.dynamics(z, beta)
 
         with tf.name_scope('top_charge_diff'):
             x_dq = tf.cast(
@@ -397,9 +430,13 @@ class GaugeModel:
             total_loss = tf.add(std_loss, charge_loss, name='total_loss')
 
         tf.add_to_collection('losses', total_loss)
-        return total_loss, x_out, px, x_dq
+        #  if self.save_lf:
+        #      return total_loss, x_out, px, x_dq, lf_outputs
+        #  else:
+        #      return total_loss, x_out, px, x_dq
+        return total_loss, x_dq, dynamics_output
 
-    def calc_loss_and_grads(self, x, beta, **weights):
+    def calc_loss_and_grads(self, x, beta, net_weights, **weights):
         """Calculate loss its gradient with respect to all trainable variables.
 
         Args:
@@ -419,21 +456,26 @@ class GaugeModel:
             x_dq: Operation for calculating the topological charge difference
                 between the initial and proposed configurations.
         """
+        # TODO: Fix eager execution logic to deal with self.lf_out
         if tf.executing_eagerly():
             with tf.name_scope('grads'):
                 with tf.GradientTape() as tape:
-                    loss, x_out, accept_prob, x_dq = self.calc_loss(x, beta,
-                                                                    **weights)
+                    loss, x_out, accept_prob, x_dq = self.calc_loss(
+                        x, beta, net_weights, **weights
+                    )
                 grads = tape.gradient(loss, self.dynamics.trainable_variables)
         else:
-            loss, x_out, accept_prob, x_dq = self.calc_loss(x, beta, **weights)
-
+            #  loss_outputs = self.calc_loss(x, beta, **weights)
+            #  loss = loss_outputs[0]
+            loss, x_dq, dynamics_output = self.calc_loss(x, beta,
+                                                         net_weights,
+                                                         **weights)
             with tf.name_scope('grads'):
                 grads = tf.gradients(loss, self.dynamics.trainable_variables)
                 if self.clip_grads:
                     grads, _ = tf.clip_by_global_norm(grads, self.clip_value)
 
-        return loss, grads, x_out, accept_prob, x_dq
+        return loss, grads, x_dq, dynamics_output
 
     def create_sampler(self):
         """Create operation for generating new samples using dynamics engine.
@@ -442,7 +484,6 @@ class GaugeModel:
         operations for generating new sampler.
         """
         with tf.name_scope('sampler'):
-            #  _, _, self.px, self.x_out = self.dynamics(self.x, self.beta)
             output = self.dynamics(self.x, self.beta,
                                    save_lf=True, train=False)
 
@@ -459,20 +500,67 @@ class GaugeModel:
             self.sumlogdet_f = output[12]
             self.sumlogdet_b = output[13]
 
-            x_dq = self.lattice.calc_top_charges_diff(self.x,
-                                                      self.x_out_lf,
-                                                      fft=False)
-
-            self.charge_diffs_op = tf.reduce_sum(x_dq) / self.num_samples
-
     def build(self):
         """Build Tensorflow graph."""
-        with tf.name_scope('loss'):
-            output = self.calc_loss_and_grads(x=self.x,
-                                              beta=self.beta,
-                                              **self.loss_weights)
-            self.loss_op, self.grads, self.x_out, self.px, x_dq = output
+        with tf.name_scope('output'):
+            #  self.loss_op, self.grads, self.x_out, self.px, x_dq = output
+            loss, grads, x_dq, dynamics_output = self.calc_loss_and_grads(
+                x=self.x, beta=self.beta,
+                net_weights=self.net_weights,
+                **self.loss_weights
+            )
+            #  self.loss_op = outputs[0]
+            #  self.grads = outputs[1]
+            self.loss_op = loss
+            self.grads = grads
+            self.x_out = dynamics_output['x_out']
+            self.px = dynamics_output['accept_prob']
             self.charge_diffs_op = tf.reduce_sum(x_dq) / self.num_samples
+            if self.save_lf:
+                self.lf_out_f = dynamics_output['lf_out_f']
+                self.pxs_out_f = dynamics_output['accept_probs_f']
+                self.lf_out_b = dynamics_output['lf_out_b']
+                self.pxs_out_b = dynamics_output['accept_probs_b']
+                self.masks_f = dynamics_output['forward_mask']
+                self.masks_b = dynamics_output['backward_mask']
+                self.logdets_f = dynamics_output['logdets_f']
+                self.logdets_b = dynamics_output['logdets_b']
+                self.sumlogdet_f = dynamics_output['sumlogdet_f']
+                self.sumlogdet_b = dynamics_output['sumlogdet_b']
+            #  remaining_outputs = outputs[2:]
+            #  self.x_out = remaining_outputs[0]
+            #  self.px = remaining_outputs[1]
+            #  x_dq = remaining_outputs[2]
+            #  self.charge_diffs_op = tf.reduce_sum(x_dq) / self.num_samples
+            #  if self.save_lf:
+            #      self.lf_out_f = remaining_outputs[3]
+            #      self.pxs_out_f = remaining_outputs[4]
+            #      self.lf_out_b = remaining_outputs[5]
+            #      self.pxs_out_b = remaining_outputs[6]
+            #      self.masks_f = remaining_outputs[7]
+            #      self.masks_b = remaining_outputs[8]
+            #      self.logdets_f = remaining_outputs[9]
+            #      self.logdets_b = remaining_outputs[10]
+            #      self.sumlogdet_f = remaining_outputs[11]
+            #      self.sumlogdet_b = remaining_outputs[12]
+            #  x_out = loss_outputs[1]
+            #  accept_prob = loss_outputs[2]
+            #  x_dq = loss_outputs[3]
+            #  if self.save_lf:
+            #      lf_outputs = outputs[4:]
+            #      x_out_lf = output[3]
+            #      self.px_lf = output[2]
+            #      self.x_out_lf = output[3]
+            #      self.lf_out_f = output[4]
+            #      self.pxs_out_f = output[5]
+            #      self.lf_out_b = output[6]
+            #      self.pxs_out_b = output[7]
+            #      self.masks_f = output[8]
+            #      self.masks_b = output[9]
+            #      self.logdets_f = output[10]
+            #      self.logdets_b = output[11]
+            #      self.sumlogdet_f = output[12]
+            #      self.sumlogdet_b = output[13]
 
         with tf.name_scope('train'):
             # --------------------------------------------------------
@@ -492,5 +580,5 @@ class GaugeModel:
                     name='train_op'
                 )
 
-        with tf.name_scope('run'):
-            self.create_sampler()
+        #  with tf.name_scope('run'):
+        #      self.create_sampler()

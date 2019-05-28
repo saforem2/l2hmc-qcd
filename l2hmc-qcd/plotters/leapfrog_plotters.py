@@ -203,7 +203,11 @@ class LeapfrogPlotter:
         fig, (ax1, ax2) = plt.subplots(2, 1)
         for idx in range(num_samples):
             yf = np.mean(self.lf_f_diffs, axis=-1)
-            xf = np.arange(len(yf))
+            try:
+                xf = np.arange(len(yf))
+            except:
+                import pdb
+                pdb.set_trace()
             yb = np.mean(self.lf_b_diffs, axis=-1)
             xb = np.arange(len(yb))
 

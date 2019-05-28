@@ -44,12 +44,14 @@ def arr_from_dict(d, key):
     return np.array(list(d[key].values()))
 
 
-def get_out_files(out_dir, out_str):
-    png_file = os.path.join(out_dir, out_str + '.png')
-    eps_dir = os.path.join(out_dir, 'eps_plots')
-    io.check_else_make_dir(eps_dir)
-    eps_file = os.path.join(eps_dir, out_str + '.eps')
-    return png_file, eps_file
+def get_out_file(out_dir, out_str):
+    out_file = os.path.join(out_dir, out_str + '.pdf')
+    return out_file
+    #  png_file = os.path.join(out_dir, out_str + '.png')
+    #  eps_dir = os.path.join(out_dir, 'eps_plots')
+    #  io.check_else_make_dir(eps_dir)
+    #  eps_file = os.path.join(eps_dir, out_str + '.eps')
+    #  return png_file, eps_file
 
 
 def get_colors(num_samples=10, cmaps=None):
@@ -130,24 +132,28 @@ def plot_multiple_lines(data, xy_labels, **kwargs):
     if title is not None:
         ax.set_title(title)
     if out_file is not None:
-        if len(out_file) > 1:
-            for f in out_file:
-                out_dir = os.path.dirname(f)
-                io.check_else_make_dir(out_dir)
-                io.log(f'Saving figure to {f}.')
-                fig.savefig(f, dpi=400, bbox_inches='tight')
-        else:
-            out_dir = os.path.dirname(f)
-            io.check_else_make_dir(out_dir)
-            io.log(f'Saving figure to {f}.')
-            fig.savefig(f, dpi=400, bbox_inches='tight')
+        out_dir = os.path.dirname(out_file)
+        io.check_else_make_dir(out_dir)
+        io.log(f'Saving figure to {out_file}.')
+        fig.savefig(out_file, dpi=400, bbox_inches='tight')
+        #  if len(out_file) > 1:
+        #      for f in out_file:
+        #          out_dir = os.path.dirname(f)
+        #          io.check_else_make_dir(out_dir)
+        #          io.log(f'Saving figure to {f}.')
+        #          fig.savefig(f, dpi=400, bbox_inches='tight')
+        #  else:
+        #      out_dir = os.path.dirname(f)
+        #      io.check_else_make_dir(out_dir)
+        #      io.log(f'Saving figure to {f}.')
+        #      fig.savefig(f, dpi=400, bbox_inches='tight')
 
         #  if isinstance(out_file, str):
         #      out_file = [out_file]
         #
         #  for f in out_file:
-            #  print(f'Saving figure to {out_file}.')
-            #  fig.savefig(out_file, dpi=400, bbox_inches='tight')
+        #  print(f'Saving figure to {out_file}.')
+        #  fig.savefig(out_file, dpi=400, bbox_inches='tight')
 
     if ret:
         return fig, ax
@@ -156,8 +162,8 @@ def plot_multiple_lines(data, xy_labels, **kwargs):
 
 
 class GaugeModelPlotter:
-    def __init__(self, log_dir=None):
-        self.log_dir = log_dir
+    def __init__(self, figs_dir=None):
+        self.figs_dir = figs_dir
 
     def calc_stats(self, data, therm_frac=10):
         """Calculate observables statistics.
@@ -206,7 +212,7 @@ class GaugeModelPlotter:
 
         return stats
 
-    def plot_observables(self, data, beta):
+    def plot_observables(self, data, beta, run_str):
         """Plot observables."""
         actions = arr_from_dict(data, 'actions')
         plaqs = arr_from_dict(data, 'plaqs')
@@ -234,9 +240,11 @@ class GaugeModelPlotter:
         _steps_diffs = (skip_steps * np.arange(_plaq_diffs.shape[0])
                         + skip_steps)
 
-        out_dir = (f'{int(num_steps)}_steps_'
-                   f"beta_{beta}")
-        self.out_dir = os.path.join(self.log_dir, out_dir)
+        #  out_dir = (f'{int(num_steps)}_steps_' f"beta_{beta}")
+        #  self.out_dir = os.path.join(self.figs_dir, out_dir)
+        #  self.out_dir = os.path.join
+        self.out_dir = os.path.join(self.figs_dir, run_str)
+        io.check_else_make_dir(self.out_dir)
 
         title_str = (r"$\beta = $"
                      f"{beta}, {num_samples} samples")
@@ -251,20 +259,17 @@ class GaugeModelPlotter:
             'out_file': [],
         }
 
-        #  self._plot_actions((steps_arr, actions.T), **kwargs)
         self._plot_actions((_steps_arr, _actions.T), **kwargs)
-        #  self._plot_plaqs((steps_arr, plaqs.T), beta, **kwargs)
         self._plot_plaqs((_steps_arr, _plaqs.T), beta, **kwargs)
         self._plot_charges((steps_arr, charges.T), **kwargs)
         self._plot_autocorrs((steps_arr, charge_autocorrs), **kwargs)
-        #  self._plot_charge_chains(charges.T, **kwargs)
         self._plot_charge_probs(charges, **kwargs)
         self._plot_charge_diffs((_steps_diffs, _charge_diffs.T), **kwargs)
         self._plot_plaqs_diffs((_steps_diffs, _plaq_diffs.T), **kwargs)
 
     def _plot_actions(self, xy_data, **kwargs):
         """Plot actions."""
-        kwargs['out_file'] = get_out_files(self.out_dir, 'actions_vs_step')
+        kwargs['out_file'] = get_out_file(self.out_dir, 'actions_vs_step')
         xy_labels = ('Step', 'Action')
         plot_multiple_lines(xy_data, xy_labels, **kwargs)
 
@@ -282,21 +287,19 @@ class GaugeModelPlotter:
 
         _ = plt.tight_layout()
 
-        out_files = get_out_files(self.out_dir, 'plaqs_vs_step')
-        for f in out_files:
-            io.log(f'Saving figure to: {f}')
-            plt.savefig(f, dpi=400, bbox_inches='tight')
+        out_file = get_out_file(self.out_dir, 'plaqs_vs_step')
+        io.log(f'Saving figure to: {out_file}')
 
     def _plot_plaqs_diffs(self, xy_data, **kwargs):
-        kwargs['out_file'] = get_out_files(self.out_dir,
-                                           'plaqs_diffs_vs_step')
+        kwargs['out_file'] = get_out_file(self.out_dir,
+                                          'plaqs_diffs_vs_step')
         kwargs['ret'] = False
         xy_labels = ('Step', r"$\delta_{\mathrm{plaq}}$")
         plot_multiple_lines(xy_data, xy_labels, **kwargs)
 
     def _plot_charges(self, xy_data, **kwargs):
         """Plot topological charges."""
-        kwargs['out_file'] = get_out_files(self.out_dir, 'charges_vs_step')
+        kwargs['out_file'] = get_out_file(self.out_dir, 'charges_vs_step')
         kwargs['markers'] = True
         kwargs['lines'] = False
         kwargs['alpha'] = 1.
@@ -323,17 +326,15 @@ class GaugeModelPlotter:
             _ = ax.set_ylabel(xy_labels[1], fontsize=14)
             _ = ax.set_title(kwargs['title'], fontsize=16)
             _ = plt.tight_layout()
-            out_file = get_out_files(out_dir, f'top_charge_vs_step_{idx}')
-            for f in out_file:
-                io.check_else_make_dir(os.path.dirname(f))
-                io.log(f'Saving figure to: {f}')
-                plt.savefig(f, dpi=400, bbox_inches='tight')
+            out_file = get_out_file(out_dir, f'top_charge_vs_step_{idx}')
+            io.check_else_make_dir(os.path.dirname(out_file))
+            io.log(f'Saving figure to: {out_file}')
 
         plt.close('all')
 
     def _plot_charge_diffs(self, xy_data, **kwargs):
         """Plot tunneling events (change in top. charge)."""
-        kwargs['out_file'] = get_out_files(self.out_dir, 'top_charge_diffs')
+        kwargs['out_file'] = get_out_file(self.out_dir, 'top_charge_diffs')
         steps_arr, charge_diffs = xy_data
 
         # ignore first two data points when plotting since the top. charge
@@ -346,10 +347,8 @@ class GaugeModelPlotter:
         _ = ax.set_ylabel(r'$\delta_{Q}$', fontsize=14)
         _ = ax.set_title(kwargs['title'], fontsize=16)
         _ = plt.tight_layout()
-
-        for f in kwargs['out_file']:
-            io.log(f"Saving figure to: {f}")
-            plt.savefig(f, dpi=400, bbox_inches='tight')
+        io.log(f"Saving figure to: {kwargs['out_file']}")
+        plt.savefig(kwargs['out_file'], dpi=400, bbox_inches='tight')
 
     def _plot_charge_probs(self, charges, **kwargs):
         """PLot top. charge probabilities."""
@@ -375,11 +374,13 @@ class GaugeModelPlotter:
             _ = ax.set_ylabel('Probability')  # , fontsize=14)
             _ = ax.set_title(title)  # , fontsize=16)
             _ = plt.tight_layout()
-            out_file = get_out_files(out_dir, f'top_charge_vs_step_{idx}')
-            for f in out_file:
-                io.check_else_make_dir(os.path.dirname(f))
-                io.log(f"Saving plot to: {f}.")
-                plt.savefig(f, dpi=400, bbox_inches='tight')
+            out_file = get_out_file(out_dir, f'top_charge_vs_step_{idx}')
+            io.check_else_make_dir(os.path.dirname(out_file))
+            io.log(f"Saving plot to: {out_file}.")
+            plt.savefig(out_file, dpi=400, bbox_inches='tight')
+            #  for f in out_file:
+            #      io.check_else_make_dir(os.path.dirname(f))
+            #      io.log(f"Saving plot to: {f}.")
         plt.close('all')
 
         all_counts = Counter(list(charges.flatten()))
@@ -398,17 +399,17 @@ class GaugeModelPlotter:
         _ = ax.set_ylabel('Probability')  # , fontsize=14)
         _ = ax.set_title(title)  # , fontsize=16)
         _ = plt.tight_layout()
-        out_file = get_out_files(self.out_dir, f'TOP_CHARGE_PROBS_ALL')
-        for f in out_file:
-            io.check_else_make_dir(os.path.dirname(f))
-            io.log(f"Saving plot to: {f}.")
-            plt.savefig(f, dpi=400, bbox_inches='tight')
+        out_file = get_out_file(self.out_dir, f'TOP_CHARGE_PROBS_ALL')
+        io.check_else_make_dir(os.path.dirname(out_file))
+        io.log(f"Saving plot to: {out_file}.")
+        plt.savefig(out_file, dpi=400, bbox_inches='tight')
+        #  for f in out_file:
         plt.close('all')
 
     def _plot_autocorrs(self, xy_data, **kwargs):
         """Plot topological charge autocorrelations."""
         try:
-            kwargs['out_file'] = get_out_files(
+            kwargs['out_file'] = get_out_file(
                 self.out_dir, 'charge_autocorrs_vs_step'
             )
         except AttributeError:
