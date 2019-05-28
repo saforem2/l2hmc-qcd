@@ -23,7 +23,7 @@ try:
 except ImportError:
     HAS_HOROVOD = False
 
-from globals import ROOT_DIR, PROJECT_DIR, FILE_PATH
+from globals import FILE_PATH
 
 
 def log(s, nl=True):
@@ -142,11 +142,8 @@ def get_eps_from_run_history_txt_file(txt_file):
 def check_else_make_dir(d):
     """If directory `d` doesn't exist, it is created."""
     if not os.path.isdir(d):
-        try:
-            log(f"Creating directory: {d}")
-            os.makedirs(d)
-        except OSError:
-            pass
+        log(f"Creating directory: {d}")
+        os.makedirs(d, exist_ok=True)
 
 
 def make_dirs(dirs):
