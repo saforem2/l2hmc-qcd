@@ -293,8 +293,8 @@ def parse_args():
                               "generated during the `run` phase. "
                               "WARNING: This is very data intensive."))
 
-    parser.add_argument('--save_leapfrogs',
-                        dest='save_leapfrogs',
+    parser.add_argument('--save_lf',
+                        dest='save_lf',
                         action='store_true',
                         required=False,
                         help=("Flag that when passed will save the "
@@ -392,73 +392,80 @@ def parse_args():
                         dest="restore",
                         action="store_true",
                         required=False,
-                        help=("Restore model from previous run. "
-                              "If this argument is passed, a `log_dir` "
-                              "must be specified and passed to `--log_dir` "
-                              "argument."))
+                        help=("""Restore model from previous run.  If this
+                              argument is passed, a `log_dir` must be specified
+                              and passed to `--log_dir argument."""))
 
     parser.add_argument("--profiler",
                         dest='profiler',
                         action="store_true",
                         required=False,
-                        help=("Flag that when passed will profile the graph "
-                              "execution using `TFProf`."))
+                        help=("""Flag that when passed will profile the graph
+                              execution using `TFProf`."""))
 
     parser.add_argument("--gpu",
                         dest="gpu",
                         action="store_true",
                         required=False,
-                        help=("Flag that when passed indicates we're training "
-                              "using an NVIDIA GPU."))
+                        help=("""Flag that when passed indicates we're training
+                              using an NVIDIA GPU."""))
 
     parser.add_argument("--theta",
                         dest="theta",
                         action="store_true",
                         required=False,
-                        help=("Flag that when passed indicates we're training "
-                              "on theta @ ALCf."))
+                        help=("""Flag that when passed indicates we're training
+                              on theta @ ALCf."""))
 
     parser.add_argument("--use_bn",
                         dest='use_bn',
                         action="store_true",
                         required=False,
-                        help=("Flag that when passed causes batch "
-                              "normalization layer to be used in ConvNet"))
+                        help=("""Flag that when passed causes batch
+                              normalization layer to be used in ConvNet."""))
 
     parser.add_argument("--horovod",
                         dest="horovod",
                         action="store_true",
                         required=False,
-                        help=("Flag that when passed uses Horovod for "
-                              "distributed training on multiple nodes."))
+                        help=("""Flag that when passed uses Horovod for
+                              distributed training on multiple nodes."""))
 
     parser.add_argument("--num_intra_threads",
                         dest="num_intra_threads",
                         type=int,
                         default=0,
                         required=False,
-                        help=("Number of intra op threads to use for "
-                              "tf.ConfigProto.intra_op_parallelism_threads"))
+                        help=("""Number of intra op threads to use for
+                              tf.ConfigProto.intra_op_parallelism_threads"""))
 
     parser.add_argument("--num_inter_threads",
                         dest="num_intra_threads",
                         type=int,
                         default=0,
                         required=False,
-                        help=("Number of intra op threads to use for "
-                              "tf.ConfigProto.intra_op_parallelism_threads"))
+                        help=("""Number of intra op threads to use for
+                              tf.ConfigProto.intra_op_parallelism_threads"""))
+
+    parser.add_argument("--float64",
+                        dest="float64",
+                        action="store_true",
+                        required=False,
+                        help=("""When passed, using 64 point floating precision
+                              by settings globals.TF_FLOAT = tf.float64. False
+                              by default (use tf.float32)."""))
 
     if sys.argv[1].startswith('@'):
-        if sys.argv[1].endswith('.json'):
-            try:
-                args_ = get_args()
-                args = process_config(args_.config)
-            except:
-                io.log("Missing or invalid arguments")
-                exit(0)
-        else:
-            args = parser.parse_args(shlex.split(open(sys.argv[1][1:]).read(),
-                                                 comments=True))
+        #  if sys.argv[1].endswith('.json'):
+        #      try:
+        #          args_ = get_args()
+        #          args = process_config(args_.config)
+        #      except:
+        #          io.log("Missing or invalid arguments")
+        #          exit(0)
+        #  else:
+        args = parser.parse_args(shlex.split(open(sys.argv[1][1:]).read(),
+                                             comments=True))
     else:
         args = parser.parse_args()
 
