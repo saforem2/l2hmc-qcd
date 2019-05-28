@@ -41,7 +41,8 @@ from tensorflow.core.protobuf import rewriter_config_pb2
 
 import utils.file_io as io
 
-from globals import FILE_PATH
+import globals
+from globals import FILE_PATH, GLOBAL_SEED, NP_FLOAT
 from utils.parse_args import parse_args
 from utils.model_loader import load_model
 from models.gauge_model import GaugeModel
@@ -51,7 +52,6 @@ from trainers.gauge_model_trainer import GaugeModelTrainer
 from plotters.gauge_model_plotter import GaugeModelPlotter
 from plotters.leapfrog_plotters import LeapfrogPlotter
 from runners.gauge_model_runner import GaugeModelRunner
-from globals import GLOBAL_SEED
 
 os.environ['PYTHONHASHSEED'] = str(GLOBAL_SEED)
 random.seed(GLOBAL_SEED)        # `python` build-in pseudo-random generator
@@ -155,20 +155,31 @@ def hmc(FLAGS, params=None, log_file=None):
     runner = GaugeModelRunner(sess, model, run_logger)
 
     if FLAGS.hmc_beta is None:
-        betas = [FLAGS.beta_final, FLAGS.beta_final + 1]
+        betas = [FLAGS.beta_final]
     else:
         betas = [float(FLAGS.hmc_beta)]
 
-    for beta in betas:
-        if run_logger is not None:
-            run_dir = run_logger.reset(model.run_steps, beta)
+    net_weights_arr = np.array([[1., 1., 1.],
+                                [0., 1., 1.],
+                                [1., 0., 1.],
+                                [1., 1., 0.],
+                                [1., 0., 0.],
+                                [0., 1., 0.],
+                                [0., 0., 1.]])
+    for net_weights in net_weights_arr:
+        for beta in betas:
+            # to ensure hvd.rank() == 0
+            if run_logger is not None:
+                run_dir, run_str = run_logger.reset(model.run_steps,
+                                                    beta, net_weights)
 
-        runner.run(model.run_steps, beta)
+            runner.run(model.run_steps, beta)
 
-        if plotter is not None and run_logger is not None:
-            plotter.plot_observables(run_logger.run_data, beta)
-            lf_plotter = LeapfrogPlotter(plotter.out_dir, run_logger)
-            lf_plotter.make_plots(run_dir, num_samples=20)
+            if plotter is not None and run_logger is not None:
+                plotter.plot_observables(run_logger.run_data, beta, run_str)
+                if FLAGS.save_lf:
+                    lf_plotter = LeapfrogPlotter(plotter.out_dir, run_logger)
+                    lf_plotter.make_plots(run_dir, num_samples=20)
 
     return sess, model, runner, run_logger
 
@@ -245,21 +256,38 @@ def l2hmc(FLAGS, log_file=None):
     #  sess = tf.Session(config=config)
     tf.keras.backend.set_learning_phase(True)
 
+    net_weights_init = [1., 1., 1.]
+    samples_init = np.reshape(np.array(model.lattice.samples, dtype=NP_FLOAT),
+                              (model.num_samples, model.x_dim))
+    beta_init = model.beta_init
+    init_feed_dict = {
+        model.x: samples_init,
+        model.beta: beta_init,
+        model.net_weights[0]: net_weights_init[0],  # scale_weight
+        model.net_weights[1]: net_weights_init[1],  # transformation_weight
+        model.net_weights[2]: net_weights_init[2],  # translation_weight
+    }
+    scaffold = tf.train.Scaffold(init_feed_dict=init_feed_dict)
     # The MonitoredTrainingSession takes care of session
     # initialization, restoring from a checkpoint, saving to a
     # checkpoint, and closing when done or an error occurs.
     sess = tf.train.MonitoredTrainingSession(
         checkpoint_dir=checkpoint_dir,
+        scaffold=scaffold,
         hooks=hooks,
         config=config,
         save_summaries_secs=None,
         save_summaries_steps=None
     )
-
     trainer = GaugeModelTrainer(sess, model, train_logger)
+    kwargs = {
+        'samples_np': samples_init,
+        'beta_np': beta_init,
+        'net_weights': net_weights_init
+    }
 
     try:
-        trainer.train(model.train_steps)
+        trainer.train(model.train_steps, **kwargs)
     except NameError:
         # i.e. Tensor had Inf / NaN values caused by high learning rate
         io.log('\n\n' + 80 * '-')
@@ -280,17 +308,27 @@ def l2hmc(FLAGS, log_file=None):
     runner = GaugeModelRunner(sess, model, run_logger)
 
     #  betas = np.arange(model.beta_init, model.beta_final, 1)
-    betas = [model.beta_final, model.beta_final + 1]
-    for beta in betas:
-        if run_logger is not None:
-            run_dir = run_logger.reset(model.run_steps, beta)
+    betas = [model.beta_final]  # model.beta_final + 1]
+    net_weights_arr = np.array([[0, 1, 1],  # [Q, S, T]
+                                [1, 0, 1],
+                                [1, 1, 0],
+                                [1, 0, 0],
+                                [0, 1, 0],
+                                [0, 0, 1]], dtype=NP_FLOAT)
 
-        runner.run(model.run_steps, beta, save_lf=FLAGS.save_leapfrogs)
+    for net_weights in net_weights_arr:
+        for beta in betas:
+            if run_logger is not None:
+                run_dir, run_str = run_logger.reset(model.run_steps,
+                                                    beta, net_weights)
 
-        if plotter is not None and run_logger is not None:
-            plotter.plot_observables(run_logger.run_data, beta)
-            lf_plotter = LeapfrogPlotter(plotter.out_dir, run_logger)
-            lf_plotter.make_plots(run_dir, num_samples=20)
+            runner.run(model.run_steps, beta, net_weights)
+
+            if plotter is not None and run_logger is not None:
+                plotter.plot_observables(run_logger.run_data, beta, run_str)
+                if FLAGS.save_lf:
+                    lf_plotter = LeapfrogPlotter(plotter.out_dir, run_logger)
+                    lf_plotter.make_plots(run_dir, num_samples=20)
 
     return sess, model, train_logger
 
@@ -322,6 +360,11 @@ def run_l2hmc(FLAGS, log_file=None):
 
 def main(FLAGS):
     """Main method for creating/training/running L2HMC for U(1) gauge model."""
+    #  if FLAGS.float64:
+    #      io.log(f"Using 64 point floating precision...")
+    #      globals.TF_FLOAT = tf.float64
+    #      globals.NP_FLOAT = np.float64
+
     if HAS_HOROVOD and FLAGS.horovod:
         io.log("INFO: USING HOROVOD")
         log_file = 'output_dirs.txt'
