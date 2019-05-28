@@ -186,7 +186,7 @@ class ConvNet3D(tf.keras.Model):
                         pool_size=(2, 2, 2),
                         strides=2,
                         padding='same',
-                        name='pool_x1'
+                        name='pool_x1',
                     )
 
                 with tf.name_scope('conv_v1'):
@@ -317,7 +317,10 @@ class ConvNet3D(tf.keras.Model):
        Returns:
            scale, translation, transformation
         """
-        v, x, t = inputs
+        v, x, t, net_weights = inputs
+        scale_weight = net_weights[0]
+        transformation_weight = net_weights[1]
+        translation_weight = net_weights[2]
 
         with tf.name_scope('reshape'):
             v = self.reshape_5D(v)
@@ -353,15 +356,15 @@ class ConvNet3D(tf.keras.Model):
                                          name=name))
 
         with tf.name_scope('translation'):
-            translation = self.translation_weight * self.translation_layer(h)
+            translation = translation_weight * self.translation_layer(h)
 
         with tf.name_scope('scale'):
-            scale = (self.scale_weight
+            scale = (scale_weight
                      * tf.nn.tanh(self.scale_layer(h))
                      * tf.exp(self.coeff_scale))
 
         with tf.name_scope('transformation'):
-            transformation = (self.transformation_weight
+            transformation = (transformation_weight
                               * self.transformation_layer(h)
                               * tf.exp(self.coeff_transformation))
 
@@ -518,7 +521,7 @@ class ConvNet2D(tf.keras.Model):
         """call method.
 
         Args: 
-            inputs: Tuple consisting of (v, x, t) (momenta, position, time).
+            inputs: Tuple consisting of (v, x, t) (momenta, x, time).
 
         Returns:
            scale, translation, transformation

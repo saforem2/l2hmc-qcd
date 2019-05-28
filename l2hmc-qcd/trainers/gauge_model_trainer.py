@@ -35,6 +35,13 @@ TRAIN_HEADER = dash0 + '\n' + h_strf + '\n' + dash1
 
 class GaugeModelTrainer:
     def __init__(self, sess, model, logger=None):
+        """Initialization method.
+
+        Args:
+            sess: tf.Session object.
+            model: GaugeModel object (defined in `models/gauge_model.py`)
+            logger: TrainLogger object (defined in `loggers/train_logger.py`)
+        """
         self.sess = sess
         self.model = model
         self.logger = logger
@@ -48,7 +55,7 @@ class GaugeModelTrainer:
 
         return new_beta
 
-    def train_step(self, step, samples_np, beta_np=None):
+    def train_step(self, step, samples_np, beta_np=None, net_weights=None):
         """Perform a single training step.
 
         Args:
@@ -65,9 +72,16 @@ class GaugeModelTrainer:
         if beta_np is None:
             beta_np = self.update_beta(step)
 
+        if net_weights is None:
+            # scale_weight, transformation_weight, translation_weight
+            net_weights = [1., 1., 1.]
+
         fd = {
             self.model.x: samples_np,
-            self.model.beta: beta_np
+            self.model.beta: beta_np,
+            self.model.net_weights[0]: net_weights[0],
+            self.model.net_weights[1]: net_weights[1],
+            self.model.net_weights[2]: net_weights[2],
         }
 
         global_step = self.sess.run(self.model.global_step)
@@ -88,7 +102,6 @@ class GaugeModelTrainer:
         outputs = self.sess.run(ops, feed_dict=fd)
 
         dt = time.time() - start_time
-
         out_data = {
             'step': global_step,
             'loss': outputs[1],
@@ -135,6 +148,7 @@ class GaugeModelTrainer:
         initial_step = kwargs.get('initial_step', 0)
         samples_np = kwargs.get('samples_np', None)
         beta_np = kwargs.get('beta_np', None)
+        net_weights = kwargs.get('net_weights', None)
 
         if beta_np is None:
             beta_np = self.model.beta_init
@@ -147,14 +161,22 @@ class GaugeModelTrainer:
 
         assert samples_np.shape == self.model.x.shape
 
+        if net_weights is None:
+            net_weights = [1., 1., 1.]
+
         try:
             io.log(TRAIN_HEADER)
             for step in range(initial_step, train_steps):
-                out_data, data_str = self.train_step(step, samples_np)
+                out_data, data_str = self.train_step(step,
+                                                     samples_np,
+                                                     net_weights=net_weights)
                 samples_np = out_data['samples']
 
                 if self.logger is not None:
-                    self.logger.update_training(self.sess, out_data, data_str)
+                    self.logger.update_training(self.sess,
+                                                out_data,
+                                                net_weights,
+                                                data_str)
 
             if self.logger is not None:
                 self.logger.write_train_strings()
