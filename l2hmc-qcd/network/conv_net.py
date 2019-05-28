@@ -340,7 +340,6 @@ class ConvNet3D(tf.keras.Model):
             v = self.max_pool_v2(self.conv_v2(v))
             if self.use_bn:
                 v = tf.keras.layers.BatchNormalization(axis=self.bn_axis)(v)
-            #  v = self.batch_norm(v)
             v = self.flatten(v)
             v = tf.nn.relu(self.v_layer(v))
 
