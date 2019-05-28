@@ -32,6 +32,7 @@ Date: 04/10/2019
 """
 import os
 import random
+import time
 import tensorflow as tf
 import numpy as np
 
@@ -107,6 +108,42 @@ def create_config(FLAGS, params):
         config.inter_op_parallelism_threads = 0
 
     return config, params
+
+
+def count_trainable_params(out_file):
+    t0 = time.time()
+    io.log(f'Writing parameter counts to: {out_file}.')
+    io.log_and_write(80 * '-', out_file)
+    total_params = 0
+    for var in tf.trainable_variables():
+        # shape is an array of tf.Dimension
+        shape = var.get_shape()
+        io.log_and_write(f'var: {var}', out_file)
+        #  var_shape_str = f'  var.shape: {shape}'
+        io.log_and_write(f'  var.shape: {shape}', out_file)
+        io.log_and_write(f'  len(var.shape): {len(shape)}', out_file)
+        var_params = 1  # variable parameters
+        for dim in shape:
+            io.log_and_write(f'    dim: {dim}', out_file)
+            #  dim_strs += f'    dim: {dim}\'
+            var_params *= dim.value
+        io.log_and_write(f'variable_parameters: {var_params}', out_file)
+        io.log_and_write(80 * '-', out_file)
+        total_params += var_params
+
+    io.log_and_write(80 * '-', out_file)
+    io.log_and_write(f'Total parameters: {total_params}', out_file)
+    t1 = time.time() - t0
+    io.log_and_write(f'Took: {t1} s to complete.', out_file)
+    #  all_strings = [var_str, var_shape_str, len_var_shape_str,
+    #                 dim_strs, var_params_str, total_params_str]
+    #  io.log_and_write([s for s in all_strings], out_file)
+    #  io.log_and_write(var_str, out_file)
+    #  io.log_and_write(var_shape_str, out_file)
+    #  io.log_and_write(len_var_shape_str, out_file)
+    #  _ = [io.log_and_write(s, out_file) for s in dim_strs]
+    #  io.log_and_write(var_params_str, out_file)
+    #  io.log_and_write(total_params_str, out_file)
 
 
 def hmc(FLAGS, params=None, log_file=None):
@@ -302,6 +339,9 @@ def l2hmc(FLAGS, log_file=None):
         tf.keras.backend.clear_session()
         tf.reset_default_graph()
         l2hmc(FLAGS)
+
+    trainable_params_file = os.path.join(FLAGS.log_dir, 'trainable_params.txt')
+    count_trainable_params(trainable_params_file)
 
     tf.keras.backend.set_learning_phase(False)
 
