@@ -54,38 +54,31 @@ class RunLogger:
         self.run_data = {}
         self.run_stats = {}
         self.run_strings = [RUN_HEADER]
-        self.lf_out = {
-            'forward': [],
-            'backward': [],
-        }
-        #  self.pxs_out = {
-        #      'forward': [],
-        #      'backward': [],
-        #  }
-        #  self.masks = {
-        #      'forward': [],
-        #      'backward': [],
-        #  }
-        self.logdets = {
-            'forward': [],
-            'backward': [],
-        }
-        self.sumlogdet = {
-            'forward': [],
-            'backward': [],
-        }
+        if self.model.save_lf:
+            self.samples_arr = []
+            self.lf_out = {
+                'forward': [],
+                'backward': [],
+            }
+            self.pxs_out = {
+                'forward': [],
+                'backward': [],
+            }
+            self.masks = {
+                'forward': [],
+                'backward': [],
+            }
+            self.logdets = {
+                'forward': [],
+                'backward': [],
+            }
+            self.sumlogdet = {
+                'forward': [],
+                'backward': [],
+            }
 
-        self.samples_arr = []  # if self.model.save_samples else None
-
-    def reset(self, run_steps, beta):
+    def reset(self, run_steps, beta, net_weights):
         """Reset run_data and run_strings to prep for new run."""
-        del self.lf_out     # free up some memory and reset all instance attrs
-        del self.logdets
-        del self.sumlogdet
-        del self.run_data
-        #  del self.pxs_out
-        #  del self.masks
-
         self.run_steps = int(run_steps)
         self.beta = beta
 
@@ -98,44 +91,44 @@ class RunLogger:
         }
         self.run_stats = {}
         self.run_strings = []
-        self.samples_arr = []  # if self.model.save_samples else None
-        self.lf_out = {
-            'forward': [],
-            'backward': [],
-        }
-        self.pxs_out = {
-            'forward': [],
-            'backward': [],
-        }
-        self.masks = {
-            'forward': [],
-            'backward': [],
-        }
-        self.logdets = {
-            'forward': [],
-            'backward': [],
-        }
-        self.sumlogdet = {
-            'forward': [],
-            'backward': [],
-        }
+        if self.model.save_lf:
+            self.samples_arr = []
+            self.lf_out = {
+                'forward': [],
+                'backward': [],
+            }
+            self.pxs_out = {
+                'forward': [],
+                'backward': [],
+            }
+            self.masks = {
+                'forward': [],
+                'backward': [],
+            }
+            self.logdets = {
+                'forward': [],
+                'backward': [],
+            }
+            self.sumlogdet = {
+                'forward': [],
+                'backward': [],
+            }
 
         eps = self.model.eps
-        self.run_dir = os.path.join(
-            self.runs_dir, f"steps_{run_steps}_beta_{beta}_eps_{eps:.3g}"
-        )
+        nw_str = [str(i).replace('.', '') for i in net_weights]
+        w_str = nw_str[0] + nw_str[1] + nw_str[2]
+        run_str = (f'steps_{run_steps}_beta_{beta}_'
+                   f'eps_{eps:.3g}_weights_{w_str}')
+        self.run_dir = os.path.join(self.runs_dir, run_str)
         io.check_else_make_dir(self.run_dir)
         save_params(self.model.params, self.run_dir)
 
-        return self.run_dir
+        return self.run_dir, run_str
 
     def update(self, data, data_str):
         """Update run_data and append data_str to data_strings."""
         # projection of samples onto [0, 2π) done in run_step above
         #  if self.model.save_samples:
-        samples_np = data['samples']
-        self.samples_arr.append(samples_np)
-
         step = data['step']
         beta = data['beta']
         key = (step, beta)
@@ -145,16 +138,19 @@ class RunLogger:
         self.run_data['charges'][key] = data['charges']
         self.run_data['charge_diffs'][key] = data['charge_diffs']
 
-        self.lf_out['forward'].extend(np.array(data['lf_out_f']))
-        self.lf_out['backward'].extend(np.array(data['lf_out_b']))
-        self.logdets['forward'].extend(np.array(data['logdets_f']))
-        self.logdets['backward'].extend(np.array(data['logdets_b']))
-        self.sumlogdet['forward'].append(np.array(data['sumlogdet_f']))
-        self.sumlogdet['backward'].append(np.array(data['sumlogdet_b']))
-        #  self.pxs_out['forward'].extend(np.array(data['pxs_out_f']))
-        #  self.pxs_out['backward'].extend(np.array(data['pxs_out_b']))
-        #  self.masks['forward'].extend(np.array(data['masks_f']))
-        #  self.masks['backward'].extend(np.array(data['masks_b']))
+        if self.model.save_lf:
+            samples_np = data['samples']
+            self.samples_arr.append(samples_np)
+            self.lf_out['forward'].extend(np.array(data['lf_out_f']))
+            self.lf_out['backward'].extend(np.array(data['lf_out_b']))
+            self.logdets['forward'].extend(np.array(data['logdets_f']))
+            self.logdets['backward'].extend(np.array(data['logdets_b']))
+            self.sumlogdet['forward'].append(np.array(data['sumlogdet_f']))
+            self.sumlogdet['backward'].append(np.array(data['sumlogdet_b']))
+            #  self.pxs_out['forward'].extend(np.array(data['pxs_out_f']))
+            #  self.pxs_out['backward'].extend(np.array(data['pxs_out_b']))
+            #  self.masks['forward'].extend(np.array(data['masks_f']))
+            #  self.masks['backward'].extend(np.array(data['masks_b']))
 
         self.run_strings.append(data_str)
 
@@ -219,38 +215,39 @@ class RunLogger:
 
         return stats
 
-    def save_run_data(self, therm_frac=10, save_lf=False):
+    def save_run_data(self, therm_frac=10):
         """Save run information."""
         observables_dir = os.path.join(self.run_dir, 'observables')
 
         io.check_else_make_dir(self.run_dir)
         io.check_else_make_dir(observables_dir)
 
-        if save_lf:
+        if self.model.save_lf:
             samples_file = os.path.join(self.run_dir, 'run_samples.pkl')
             io.log(f"Saving samples to: {samples_file}.")
             with open(samples_file, 'wb') as f:
                 pickle.dump(self.samples_arr, f)
-            del self.samples_arr
+            #  del self.samples_arr
 
             lf_out_file = os.path.join(self.run_dir, 'lf_out.pkl')
             io.log(f'Saving leapfrog outputs to: {lf_out_file}')
             with open(lf_out_file, 'wb') as f:
                 pickle.dump(self.lf_out, f)
-            del self.lf_out
+            #  del self.lf_out
 
             logdets_out_file = os.path.join(self.run_dir, 'logdets_out.pkl')
             io.log(f'Saving logdets to: {logdets_out_file}')
             with open(logdets_out_file, 'wb') as f:
                 pickle.dump(self.logdets, f)
-            del self.logdets
+            #  del self.logdets
 
             sumlogdet_out_file = os.path.join(self.run_dir,
                                               'sumlogdet_out.pkl')
             io.log(f'Saving sumlogdet to: {sumlogdet_out_file}')
             with open(sumlogdet_out_file, 'wb') as f:
                 pickle.dump(self.sumlogdet, f)
-            del self.sumlogdet
+
+            #  del self.sumlogdet
 
             #  pxs_out_file = os.path.join(self.run_dir, 'pxs_out.pkl')
             #  io.log(
