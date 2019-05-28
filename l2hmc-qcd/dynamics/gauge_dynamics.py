@@ -20,8 +20,8 @@ import tensorflow as tf
 from globals import GLOBAL_SEED, TF_FLOAT
 from network.conv_net import ConvNet2D, ConvNet3D
 from network.generic_net import GenericNet
-#  from lattice.lattice import GaugeLattice
-#  import utils.file_io as io
+
+import utils.file_io as io
 
 
 ###########################################
@@ -47,42 +47,6 @@ def flatten_tensor(tensor):
     """
     batch_size = tensor.shape[0]
     return tf.reshape(tensor, shape=(batch_size, -1))
-
-#  def _construct_masks(self):
-#      """Construct masks to determine which indices to update."""
-#      mask_per_step = []
-#      with tf.name_scope('construct_masks'):
-#          for _ in range(self.num_steps):
-#              idx = npr.permutation(np.arange(self.x_dim))[:self.x_dim //
-#              2]
-#              mask = np.zeros((self.x_dim,))
-#              mask[idx] = 1
-#              mask_per_step.append(mask)
-#
-#          self.masks = tf.constant(np.stack(mask_per_step),
-#          dtype=TF_FLOAT)
-#
-
-#  def _get_time(self, i):
-#      """Get sinusoidal time for i-th augmented leapfrog step."""
-#      return self.ts[i]
-
-#  def _get_mask(self, i):
-#      """Get binary masks for i-th augmented leapfrog step."""
-#      m = self.masks[i]
-#      return m, 1. - m
-
-#  with tf.name_scope('alpha'):
-#      if not self.hmc:
-#          self.alpha = tf.get_variable(
-#              'alpha',
-#              initializer=tf.log(tf.constant(kwargs.get('eps', 0.1))),
-#              trainable=self.eps_trainable,
-#              dtype=TF_FLOAT
-#          )
-#      else:
-#          self.alpha = tf.log(tf.constant(kwargs.get('eps', 0.1),
-#                                          dtype=TF_FLOAT))
 
 
 class GaugeDynamics(tf.keras.Model):
@@ -130,15 +94,16 @@ class GaugeDynamics(tf.keras.Model):
                 dtype=TF_FLOAT,
                 trainable=self.eps_trainable
             )
+            io.log(f'eps.dtype: {self.eps.dtype}')
 
         self._construct_time()
         self._construct_masks()
 
         if self.hmc:
-            self.position_fn = lambda inp: [
+            self.x_fn = lambda inp: [
                 tf.zeros_like(inp[0]) for t in range(3)
             ]
-            self.momentum_fn = lambda inp: [
+            self.v_fn = lambda inp: [
                 tf.zeros_like(inp[0]) for t in range(3)
             ]
 
@@ -154,7 +119,7 @@ class GaugeDynamics(tf.keras.Model):
                                      "`'conv3D', 'conv2D', 'generic'.`")
 
     def _build_conv_nets_3D(self):
-        """Build ConvNet3D architecture for position and momentum functions."""
+        """Build ConvNet3D architecture for x and v functions."""
         kwargs = {
             '_input_shape': (self.batch_size, *self.lattice.links.shape),
             'links_shape': self.lattice.links.shape,
@@ -167,22 +132,22 @@ class GaugeDynamics(tf.keras.Model):
             'name_scope': 'position',
             'data_format': self.data_format,  # channels_first if using GPU
             'use_bn': self.use_bn,  # whether or not to use batch normalization
-            'scale_weight': 1.,     # multiplicative factor multiplying
-            'translation_weight': 1.,
-            'transformation_weight': 1.,
+            #  'scale_weight': 1.,     # multiplicative factor multiplying
+            #  'translation_weight': 1.,
+            #  'transformation_weight': 1.,
         }
 
         with tf.name_scope("DynamicsNetwork"):
             with tf.name_scope("XNet"):
-                self.position_fn = ConvNet3D(model_name='XNet', **kwargs)
+                self.x_fn = ConvNet3D(model_name='XNet', **kwargs)
 
             kwargs['name_scope'] = 'momentum'
             kwargs['factor'] = 1.
             with tf.name_scope("VNet"):
-                self.momentum_fn = ConvNet3D(model_name='VNet', **kwargs)
+                self.v_fn = ConvNet3D(model_name='VNet', **kwargs)
 
     def _build_conv_nets_2D(self):
-        """Build ConvNet architecture for position and momentum functions."""
+        """Build ConvNet architecture for x and v functions."""
         kwargs = {
             '_input_shape': (self.batch_size, *self.lattice.links.shape),
             'links_shape': self.lattice.links.shape,
@@ -198,15 +163,15 @@ class GaugeDynamics(tf.keras.Model):
 
         with tf.name_scope("DynamicsNetwork"):
             with tf.name_scope("XNet"):
-                self.position_fn = ConvNet2D(model_name='XNet', **kwargs)
+                self.x_fn = ConvNet2D(model_name='XNet', **kwargs)
 
             kwargs['name_scope'] = 'momentum'
             kwargs['factor'] = 1.
             with tf.name_scope("VNet"):
-                self.momentum_fn = ConvNet2D(model_name='VNet', **kwargs)
+                self.v_fn = ConvNet2D(model_name='VNet', **kwargs)
 
     def _build_generic_nets(self):
-        """Build GenericNet FC-architectures for position and momentum fns. """
+        """Build GenericNet FC-architectures for x and v fns. """
 
         kwargs = {
             'x_dim': self.x_dim,
@@ -218,42 +183,40 @@ class GaugeDynamics(tf.keras.Model):
 
         with tf.name_scope("DynamicsNetwork"):
             with tf.name_scope("XNet"):
-                self.position_fn = GenericNet(model_name='XNet', **kwargs)
+                self.x_fn = GenericNet(model_name='XNet', **kwargs)
 
             kwargs['factor'] = 1.
             kwargs['name_scope'] = 'momentum'
             with tf.name_scope("VNet"):
-                self.momentum_fn = GenericNet(model_name='VNet', **kwargs)
+                self.v_fn = GenericNet(model_name='VNet', **kwargs)
 
-    def call(self, position, beta, save_lf=False, train=True):
+    def call(self, x_in, beta, net_weights, save_lf=False):
         """Call method."""
-        #  position, beta = inputs
-        return self.apply_transition(position, beta,
-                                     save_lf=save_lf, train=train)
+        return self.apply_transition(x_in, beta, net_weights, save_lf=save_lf)
 
-    def apply_transition(self, position, beta, save_lf=False, train=True):
+    def apply_transition(self, x_in, beta, net_weights, save_lf=False):
         """Propose a new state and perform the accept/reject step.
 
         Args:
-            position: Batch of (position) samples (batch of links).
+            x: Batch of (x) samples (batch of links).
             beta (float): Inverse coupling constant.
 
         Returns:
-            position_post: Proposed position before accept/reject step.
-            momentum_post: Proposed momentum before accept/reject step.
+            x_proposed: Proposed x before accept/reject step.
+            v_proposed: Proposed v before accept/reject step.
             accept_prob: Probability of accepting the proposed states.
-            position_out: Samples after accept/reject step.
+            x_out: Samples after accept/reject step.
         """
         # Simulate dynamics both forward and backward
         # Use sample masks to compute the actual solutions
         with tf.name_scope('apply_transition'):
             with tf.name_scope('transition_forward'):
-                outputs = self.transition_kernel(position, beta,
+                outputs = self.transition_kernel(x_in, beta,
+                                                 net_weights,
                                                  forward=True,
-                                                 save_lf=save_lf,
-                                                 train=train)
-                position_f = outputs[0]
-                momentum_f = outputs[1]
+                                                 save_lf=save_lf)
+                x_f = outputs[0]
+                v_f = outputs[1]
                 accept_prob_f = outputs[2]
                 if save_lf:
                     lf_out_f = outputs[3]
@@ -262,12 +225,12 @@ class GaugeDynamics(tf.keras.Model):
                     sumlogdet_f = outputs[6]
 
             with tf.name_scope('transition_backward'):
-                outputs = self.transition_kernel(position, beta,
+                outputs = self.transition_kernel(x_in, beta,
+                                                 net_weights,
                                                  forward=False,
-                                                 save_lf=save_lf,
-                                                 train=train)
-                position_b = outputs[0]
-                momentum_b = outputs[1]
+                                                 save_lf=save_lf)
+                x_b = outputs[0]
+                v_b = outputs[1]
                 accept_prob_b = outputs[2]
                 if save_lf:
                     lf_out_b = outputs[3]
@@ -286,13 +249,13 @@ class GaugeDynamics(tf.keras.Model):
                 backward_mask = 1. - forward_mask
 
             # Obtain proposed states
-            with tf.name_scope('position_post'):
-                position_post = (forward_mask[:, None] * position_f
-                                 + backward_mask[:, None] * position_b)
+            with tf.name_scope('x_proposed'):
+                x_proposed = (forward_mask[:, None] * x_f
+                              + backward_mask[:, None] * x_b)
 
-            with tf.name_scope('momentum_post'):
-                momentum_post = (forward_mask[:, None] * momentum_f
-                                 + backward_mask[:, None] * momentum_b)
+            with tf.name_scope('v_proposed'):
+                v_proposed = (forward_mask[:, None] * v_f
+                              + backward_mask[:, None] * v_b)
 
             # Probability of accepting the proposed states
             with tf.name_scope('accept_prob'):
@@ -310,72 +273,117 @@ class GaugeDynamics(tf.keras.Model):
                 reject_mask = 1. - accept_mask
 
             # Samples after accept / reject step
-            with tf.name_scope('position_out'):
-                position_out = (
-                    accept_mask[:, None] * position_post
-                    + reject_mask[:, None] * position
+            with tf.name_scope('x_out'):
+                x_out = (
+                    accept_mask[:, None] * x_proposed
+                    + reject_mask[:, None] * x_in
                 )
+
+        outputs = {
+            'x_proposed': x_proposed,
+            'v_proposed': v_proposed,
+            'accept_prob': accept_prob,
+            'x_out': x_out
+        }
+
         if save_lf:
-            return (position_post, momentum_post, accept_prob, position_out,
-                    lf_out_f, accept_probs_f, lf_out_b, accept_probs_b,
-                    forward_mask, backward_mask, logdets_f, logdets_b,
-                    sumlogdet_f, sumlogdet_b)
-        else:
-            return position_post, momentum_post, accept_prob, position_out,
+            outputs['lf_out_f'] = lf_out_f
+            outputs['accept_probs_f'] = accept_probs_f
+            outputs['lf_out_b'] = lf_out_b
+            outputs['accept_probs_b'] = accept_probs_b
+            outputs['forward_mask'] = forward_mask
+            outputs['backward_mask'] = backward_mask
+            outputs['logdets_f'] = logdets_f
+            outputs['logdets_b'] = logdets_b
+            outputs['sumlogdet_f'] = sumlogdet_f
+            outputs['sumlogdet_b'] = sumlogdet_b
+            #  return (x_proposed, v_proposed, accept_prob,
+            #          x_out, lf_out_f, accept_probs_f, lf_out_b,
+            #          accept_probs_b, forward_mask, backward_mask, logdets_f,
+            #          logdets_b, sumlogdet_f, sumlogdet_b)
+            #  else:
+            #  return (x_proposed, v_proposed, accept_prob,
+            #          x_out)
+        return outputs
 
-    def transition_kernel(self, position, beta,
-                          forward=True, save_lf=False, train=True):
+    def transition_kernel(self, x_in, beta, net_weights,
+                          forward=True, save_lf=False): 
         """Transition kernel of augmented leapfrog integrator."""
-        #  lf_out = []
-        accept_probs = []
-
         lf_fn = self._forward_lf if forward else self._backward_lf
 
-        momentum = tf.random_normal(tf.shape(position), seed=GLOBAL_SEED)
+        v_in = tf.random_normal(tf.shape(x_in), seed=GLOBAL_SEED)
 
-        position_post, momentum_post = position, momentum
+        x_proposed, v_proposed = x_in, v_in
 
-        if train:
-            t = tf.constant(0., name='md_time', dtype=TF_FLOAT)
-            batch_size = tf.shape(position)[0]
-            logdet = tf.zeros((batch_size,))
+        t = tf.constant(0., name='md_time', dtype=TF_FLOAT)
+        batch_size = tf.shape(x_in)[0]
+        logdet = tf.zeros((batch_size,))
+        accept_probs = []
+        lf_out = tf.Variable([x_in])
+        logdets = tf.Variable([tf.zeros(batch_size)])
+        #  nw = tf.convert_to_tensor(net_weights)
+        #  lf_out = tf.Variable([x_in])
+        #  logdets = tf.Variable([])
 
-            def body(x, v, beta, t, logdet):
-                new_x, new_v, j = lf_fn(x, v, beta, t)
-                return new_x, new_v, beta, t + 1, logdet + j
+        #  lf_out = np.zeros((self.num_steps, *x.shape))
+        #  logdets = np.zeros((self.num_steps, x.shape[0]))
+        #  lf_out = tf.zeros((self.num_steps, *x.shape))
+        #  logdets = tf.zeros((self.num_steps, batch_size))
 
-            def cond(x, v, beta, t, logdet):
-                return tf.less(t, self.num_steps)
+        #  def body(x, v, beta, t, logdet):
+        def body(x, v, beta, t, logdet, lf_out, logdets):
+            new_x, new_v, j = lf_fn(x, v, beta, t, net_weights)
+            lf_out = tf.concat([lf_out, [new_x]], 0)
+            logdets = tf.concat([logdets, [j]], 0)
 
-            with tf.name_scope('while_loop'):
-                outputs = tf.while_loop(cond=cond,
-                                        body=body,
-                                        loop_vars=[position_post,
-                                                   momentum_post,
-                                                   beta, t, logdet])
-                #  position_post, momentum_post, beta, t, sumlogdet = outputs
-                position_post = outputs[0]
-                momentum_post = outputs[1]
-                beta = outputs[2]
-                t = outputs[3]
-                sumlogdet = outputs[4]
-        else:
-            lf_out = []
-            logdet = []
-            sumlogdet = 0.
-            for t in range(self.num_steps):
-                position_post, momentum_post, j = lf_fn(position_post,
-                                                        momentum_post, beta, t)
-                sumlogdet += j
-                lf_out.append(position_post)
-                logdet.append(j)
+            return new_x, new_v, beta, t + 1, logdet + j, lf_out, logdets
+
+        #  def cond(x, v, beta, t, logdet):
+        def cond(x, v, beta, t, logdet, lf_out, logdets):
+            return tf.less(t, self.num_steps)
+
+        with tf.name_scope('while_loop'):
+            outputs = tf.while_loop(
+                cond=cond,
+                body=body,
+                loop_vars=[x_proposed, v_proposed,
+                           beta, t, logdet, lf_out, logdets],
+                shape_invariants=[x_in.shape, v_in.shape,
+                                  beta.shape, t.shape,
+                                  logdet.shape,
+                                  tf.TensorShape([None,
+                                                  x_in.shape[0],
+                                                  x_in.shape[1]]),
+                                  tf.TensorShape([None, logdet.shape[0]])]
+            )
+
+            x_proposed = outputs[0]
+            v_proposed = outputs[1]
+            beta = outputs[2]
+            t = outputs[3]
+            sumlogdet = outputs[4]
+            if save_lf:
+                lf_out = outputs[5]
+                logdets = outputs[6]
+
+        #  else:
+        #      lf_out = []
+        #      logdet = []
+        #      sumlogdet = 0.
+        #      for t in range(self.num_steps):
+        #          x_proposed, v_proposed, j = lf_fn(x_proposed,
+        #                                                  v_proposed,
+        #                                                  beta, t)
+        #          sumlogdet += j
+        #          lf_out.append(x_proposed)
+        #          logdet.append(j)
 
         with tf.name_scope('accept_prob'):
             accept_prob = self._compute_accept_prob(
-                position,
-                momentum,
-                position_post,
-                momentum_post,
+                x_in,
+                v_in,
+                x_proposed,
+                v_proposed,
                 sumlogdet,
                 beta
             )
@@ -383,12 +391,12 @@ class GaugeDynamics(tf.keras.Model):
                 accept_probs.append(accept_prob)
 
         if save_lf:
-            return (position_post, momentum_post, accept_prob,
-                    lf_out, accept_probs, logdet, sumlogdet)
+            return (x_proposed, v_proposed, accept_prob,
+                    lf_out, accept_probs, logdets, sumlogdet)
         else:
-            return position_post, momentum_post, accept_prob
+            return x_proposed, v_proposed, accept_prob
 
-    def _forward_lf(self, position, momentum, beta, step):
+    def _forward_lf(self, x, v, beta, step, net_weights):
         """One forward augmented leapfrog step."""
         with tf.name_scope('forward_lf'):
             # use self._get_time when using for loop in transition__kernel
@@ -396,36 +404,31 @@ class GaugeDynamics(tf.keras.Model):
             #  mask, mask_inv = self._get_mask(step)
 
             # use self._format_time when using while loop in transition_kernel
-            t = self._format_time(step, tile=tf.shape(position)[0])
-            mask, mask_inv = self._get_mask_while(step)
+            with tf.name_scope('format_time'):
+                t = self._format_time(step, tile=tf.shape(x)[0])
+            with tf.name_scope('get_mask'):
+                mask, mask_inv = self._get_mask_while(step)
 
-            sumlogdet = 0.
+            with tf.name_scope('augmented_leapfrog'):
+                sumlogdet = 0.
 
-            momentum, logdet = self._update_momentum_forward(position,
-                                                             momentum,
-                                                             beta, t)
-            sumlogdet += logdet
+                v, logdet = self._update_v_forward(x, v, beta, t, net_weights)
+                sumlogdet += logdet
 
-            position, logdet = self._update_position_forward(position,
-                                                             momentum,
-                                                             t, mask,
-                                                             mask_inv)
-            sumlogdet += logdet
+                x, logdet = self._update_x_forward(x, v, t, net_weights,
+                                                   mask, mask_inv)
+                sumlogdet += logdet
 
-            position, logdet = self._update_position_forward(position,
-                                                             momentum,
-                                                             t, mask_inv,
-                                                             mask)
-            sumlogdet += logdet
+                x, logdet = self._update_x_forward(x, v, t, net_weights,
+                                                   mask_inv, mask)
+                sumlogdet += logdet
 
-            momentum, logdet = self._update_momentum_forward(position,
-                                                             momentum,
-                                                             beta, t)
-            sumlogdet += logdet
+                v, logdet = self._update_v_forward(x, v, beta, t, net_weights)
+                sumlogdet += logdet
 
-        return position, momentum, sumlogdet
+        return x, v, sumlogdet
 
-    def _backward_lf(self, position, momentum, beta, step):
+    def _backward_lf(self, x, v, beta, step, net_weights):
         """One backward augmented leapfrog step."""
 
         # Reversed index/sinusoidal time
@@ -435,45 +438,42 @@ class GaugeDynamics(tf.keras.Model):
             #  mask, mask_inv = self._get_mask(self.num_steps - step - 1)
 
             # use self._format_time when using while loop in transition_kernel
-            t = self._format_time(self.num_steps - step - 1,
-                                  tile=tf.shape(position)[0])
-            mask, mask_inv = self._get_mask_while(self.num_steps - step - 1)
+            with tf.name_scope('format_time'):
+                t = self._format_time(self.num_steps - step - 1,
+                                      tile=tf.shape(x)[0])
+            with tf.name_scope('get_mask'):
+                mask, mask_inv = self._get_mask_while(
+                    self.num_steps - step - 1
+                )
 
-            sumlogdet = 0.
+            with tf.name_scope('augmented_leapfrog'):
+                sumlogdet = 0.
 
-            momentum, logdet = self._update_momentum_backward(position,
-                                                              momentum,
-                                                              beta, t)
-            sumlogdet += logdet
+                v, logdet = self._update_v_backward(x, v, beta, t, net_weights)
+                sumlogdet += logdet
 
-            position, logdet = self._update_position_backward(position,
-                                                              momentum,
-                                                              t, mask_inv,
-                                                              mask)
-            sumlogdet += logdet
+                x, logdet = self._update_x_backward(x, v, t, net_weights,
+                                                    mask_inv, mask)
+                sumlogdet += logdet
 
-            position, logdet = self._update_position_backward(position,
-                                                              momentum,
-                                                              t, mask,
-                                                              mask_inv)
-            sumlogdet += logdet
+                x, logdet = self._update_x_backward(x, v, t, net_weights,
+                                                    mask, mask_inv)
+                sumlogdet += logdet
 
-            momentum, logdet = self._update_momentum_backward(position,
-                                                              momentum,
-                                                              beta, t)
-            sumlogdet += logdet
+                v, logdet = self._update_v_backward(x, v, beta, t, net_weights)
+                sumlogdet += logdet
 
-        return position, momentum, sumlogdet
+        return x, v, sumlogdet
 
-    def _update_momentum_forward(self, position, momentum, beta, t):
+    def _update_v_forward(self, x, v, beta, t, net_weights):
         """Update v in the forward leapfrog step."""
-        with tf.name_scope('update_momentum_forward'):
+        with tf.name_scope('update_v_forward'):
             with tf.name_scope('grad_potential'):
-                grad = self.grad_potential(position, beta)
+                grad = self.grad_potential(x, beta)
 
-            with tf.name_scope('momentum_fn'):
-                scale, translation, transformed = self.momentum_fn(
-                    [position, grad, t]
+            with tf.name_scope('v_fn'):
+                scale, translation, transformed = self.v_fn(
+                    [x, grad, t, net_weights]
                 )
 
             with tf.name_scope('scale'):
@@ -482,20 +482,20 @@ class GaugeDynamics(tf.keras.Model):
             with tf.name_scope('transformed'):
                 transformed *= self.eps
 
-            with tf.name_scope('momentum_update'):
-                momentum = (momentum * exp(scale, 'vf_scale')
-                            - (0.5 * self.eps
-                               * (exp(transformed, name='vf_transformed')
-                                  * grad + translation)))
+            with tf.name_scope('v_update'):
+                v = (v * exp(scale, 'vf_scale')
+                     - (0.5 * self.eps
+                        * (exp(transformed, name='vf_transformed')
+                           * grad + translation)))
 
-        return momentum, tf.reduce_sum(scale, axis=1)
+        return v, tf.reduce_sum(scale, axis=1)
 
-    def _update_position_forward(self, position, momentum, t, mask, mask_inv):
+    def _update_x_forward(self, x, v, t, net_weights, mask, mask_inv):
         """Update x in the forward leapfrog step."""
-        with tf.name_scope('update_position_forward'):
-            with tf.name_scope('position_fn'):
-                scale, translation, transformed = self.position_fn(
-                    [momentum, mask * position, t]
+        with tf.name_scope('update_x_forward'):
+            with tf.name_scope('x_fn'):
+                scale, translation, transformed = self.x_fn(
+                    [v, mask * x, t, net_weights]
                 )
 
             with tf.name_scope('scale'):
@@ -504,24 +504,24 @@ class GaugeDynamics(tf.keras.Model):
             with tf.name_scope('transformed'):
                 transformed *= self.eps
 
-            with tf.name_scope('position_update'):
-                position = (mask * position + mask_inv
-                            * (position * exp(scale, 'xf_scale') + self.eps
-                               * (exp(transformed, 'xf_transformed')
-                                  * momentum + translation)))
+            with tf.name_scope('x_update'):
+                x = (mask * x + mask_inv
+                     * (x * exp(scale, 'xf_scale') + self.eps
+                        * (exp(transformed, 'xf_transformed')
+                           * v + translation)))
 
-        return position, tf.reduce_sum(mask_inv * scale, axis=1)
+        return x, tf.reduce_sum(mask_inv * scale, axis=1)
 
-    def _update_momentum_backward(self, position, momentum, beta, t):
+    def _update_v_backward(self, x, v, beta, t, net_weights):
         """Update v in the backward leapfrog step. Invert the forward update"""
-        #  grad = self.grad_potential(position, beta)
-        with tf.name_scope('update_momentum_backward'):
+        #  grad = self.grad_potential(x, beta)
+        with tf.name_scope('update_v_backward'):
             with tf.name_scope('grad_potential'):
-                grad = self.grad_potential(position, beta)
+                grad = self.grad_potential(x, beta)
 
-            with tf.name_scope('momentum_fn'):
-                scale, translation, transformed = self.momentum_fn(
-                    [position, grad, t]
+            with tf.name_scope('v_fn'):
+                scale, translation, transformed = self.v_fn(
+                    [x, grad, t, net_weights]
                 )
 
             with tf.name_scope('scale'):
@@ -530,20 +530,20 @@ class GaugeDynamics(tf.keras.Model):
             with tf.name_scope('transformed'):
                 transformed *= self.eps
 
-            with tf.name_scope('momentum_update'):
-                momentum = (exp(scale, 'vb_scale')
-                            * (momentum + 0.5 * self.eps
-                               * (exp(transformed, 'vb_transformed')
-                                  * grad + translation)))
+            with tf.name_scope('v_update'):
+                v = (exp(scale, 'vb_scale')
+                     * (v + 0.5 * self.eps
+                        * (exp(transformed, 'vb_transformed')
+                           * grad + translation)))
 
-        return momentum, tf.reduce_sum(scale, axis=1)
+        return v, tf.reduce_sum(scale, axis=1)
 
-    def _update_position_backward(self, position, momentum, t, mask, mask_inv):
+    def _update_x_backward(self, x, v, t, net_weights, mask, mask_inv):
         """Update x in the backward lf step. Inverting the forward update."""
-        with tf.name_scope('update_position_backward'):
-            with tf.name_scope('position_fn'):
-                scale, translation, transformed = self.position_fn(
-                    [momentum, mask * position, t]
+        with tf.name_scope('update_x_backward'):
+            with tf.name_scope('x_fn'):
+                scale, translation, transformed = self.x_fn(
+                    [v, mask * x, t, net_weights]
                 )
 
             with tf.name_scope('scale'):
@@ -554,27 +554,27 @@ class GaugeDynamics(tf.keras.Model):
                 transformed *= self.eps
                 #  transformed_exp = exp(transformed, 'xb_transformed')
 
-            with tf.name_scope('position_update'):
-                #  term1 = position * scale_exp
+            with tf.name_scope('x_update'):
+                #  term1 = x * scale_exp
                 #  term2 = scale_exp * (
-                #      position - self.eps * (momentum * transformed_exp
+                #      x - self.eps * (v * transformed_exp
                 #                             + translation)
                 #  )
-                #  position = mask * term1 + mask_inv * term2
-                position = (mask * position + mask_inv * exp(scale, 'xb_scale')
-                            * (position - self.eps
-                               * (exp(transformed, 'xb_transformed')
-                                  * momentum + translation)))
+                #  x = mask * term1 + mask_inv * term2
+                x = (mask * x + mask_inv * exp(scale, 'xb_scale')
+                     * (x - self.eps
+                        * (exp(transformed, 'xb_transformed')
+                           * v + translation)))
 
-        return position, tf.reduce_sum(mask_inv * scale, axis=1)
+        return x, tf.reduce_sum(mask_inv * scale, axis=1)
 
     def _compute_accept_prob(self, xi, vi, xf, vf, sumlogdet, beta):
         """Compute the prob of accepting the proposed state given old state.
         Args:
             xi: Initial state.
-            vi: Initial momentum.
+            vi: Initial v.
             xf: Proposed state.
-            vf: Proposed momentum.
+            vf: Proposed v.
             sumlogdet: Sum of the terms of the log of the determinant. (Eq. 14
                 of original paper).
             beta: Inverse coupling constant of gauge model.
@@ -629,11 +629,11 @@ class GaugeDynamics(tf.keras.Model):
         m = tf.gather(self.masks, tf.cast(step, dtype=tf.int32))
         return m, 1. - m
 
-    def potential_energy(self, position, beta):
+    def potential_energy(self, x, beta):
         """Compute potential energy using `self.potential` and beta."""
-        #  return beta * self.potential(position)
+        #  return beta * self.potential(x)
         with tf.name_scope('potential_energy'):
-            potential_energy = tf.multiply(beta, self.potential(position))
+            potential_energy = tf.multiply(beta, self.potential(x))
 
         return potential_energy
 
@@ -645,22 +645,22 @@ class GaugeDynamics(tf.keras.Model):
 
         return kinetic_energy
 
-    def hamiltonian(self, position, momentum, beta):
+    def hamiltonian(self, x, v, beta):
         """Compute the overall Hamiltonian."""
         with tf.name_scope('hamiltonian'):
-            hamiltonian = (self.potential_energy(position, beta)
-                           + self.kinetic_energy(momentum))
+            hamiltonian = (self.potential_energy(x, beta)
+                           + self.kinetic_energy(v))
         return hamiltonian
 
-    def grad_potential(self, position, beta, check_numerics=True):
+    def grad_potential(self, x, beta, check_numerics=True):
         """Get gradient of potential function at current location."""
         with tf.name_scope('grad_potential'):
             if tf.executing_eagerly():
                 tfe = tf.contrib.eager
                 grad_fn = tfe.gradients_function(self.potential_energy,
-                                                 params=["position"])
-                grad = grad_fn(position, beta)[0]
+                                                 params=["x"])
+                grad = grad_fn(x, beta)[0]
             else:
-                grad = tf.gradients(self.potential_energy(position, beta),
-                                    position)[0]
+                grad = tf.gradients(self.potential_energy(x, beta),
+                                    x)[0]
         return grad
