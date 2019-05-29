@@ -196,27 +196,31 @@ def hmc(FLAGS, params=None, log_file=None):
     else:
         betas = [float(FLAGS.hmc_beta)]
 
-    net_weights_arr = np.array([[1., 1., 1.],
-                                [0., 1., 1.],
-                                [1., 0., 1.],
-                                [1., 1., 0.],
-                                [1., 0., 0.],
-                                [0., 1., 0.],
-                                [0., 0., 1.]])
-    for net_weights in net_weights_arr:
-        for beta in betas:
-            # to ensure hvd.rank() == 0
-            if run_logger is not None:
-                run_dir, run_str = run_logger.reset(model.run_steps,
-                                                    beta, net_weights)
+    #  net_weights_arr = np.array([[0, 1, 1],  # [Q, S, T]
+    #                              [1, 0, 1],
+    #                              [1, 1, 0],
+    #                              [1, 0, 0],
+    #                              [0, 1, 0],
+    #                              [0, 0, 1]], dtype=NP_FLOAT)
+    #  for net_weights in net_weights_arr:
+    for beta in betas:
+        # to ensure hvd.rank() == 0
+        if run_logger is not None:
+            run_dir, run_str = run_logger.reset(model.run_steps,
+                                                beta, net_weights)
 
-            runner.run(model.run_steps, beta)
+        t0 = time.time()
 
-            if plotter is not None and run_logger is not None:
-                plotter.plot_observables(run_logger.run_data, beta, run_str)
-                if FLAGS.save_lf:
-                    lf_plotter = LeapfrogPlotter(plotter.out_dir, run_logger)
-                    lf_plotter.make_plots(run_dir, num_samples=20)
+        runner.run(model.run_steps, beta)
+
+        run_time = time.time() - t0
+        io.log(f'Took: {run_time} s to complete run.')
+
+        if plotter is not None and run_logger is not None:
+            plotter.plot_observables(run_logger.run_data, beta, run_str)
+            if FLAGS.save_lf:
+                lf_plotter = LeapfrogPlotter(plotter.out_dir, run_logger)
+                lf_plotter.make_plots(run_dir, num_samples=20)
 
     return sess, model, runner, run_logger
 

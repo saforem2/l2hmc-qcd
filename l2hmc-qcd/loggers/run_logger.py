@@ -77,7 +77,7 @@ class RunLogger:
                 'backward': [],
             }
 
-    def reset(self, run_steps, beta, net_weights):
+    def reset(self, run_steps, beta, net_weights=None):
         """Reset run_data and run_strings to prep for new run."""
         self.run_steps = int(run_steps)
         self.beta = beta
@@ -115,6 +115,9 @@ class RunLogger:
             }
 
         eps = self.model.eps
+        if net_weights is None:
+            net_weights = [1., 1., 1.]
+
         nw_str = [str(i).replace('.', '') for i in net_weights]
         w_str = nw_str[0] + nw_str[1] + nw_str[2]
         run_str = (f'steps_{run_steps}_beta_{beta}_'
