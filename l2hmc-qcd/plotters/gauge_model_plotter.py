@@ -289,6 +289,7 @@ class GaugeModelPlotter:
 
         out_file = get_out_file(self.out_dir, 'plaqs_vs_step')
         io.log(f'Saving figure to: {out_file}')
+        plt.savefig(out_file, dpi=400, bbox_inches='tight')
 
     def _plot_plaqs_diffs(self, xy_data, **kwargs):
         kwargs['out_file'] = get_out_file(self.out_dir,
@@ -329,12 +330,13 @@ class GaugeModelPlotter:
             out_file = get_out_file(out_dir, f'top_charge_vs_step_{idx}')
             io.check_else_make_dir(os.path.dirname(out_file))
             io.log(f'Saving figure to: {out_file}')
+            plt.savefig(out_file, dpi=400, bbox_inches='tight')
 
         plt.close('all')
 
     def _plot_charge_diffs(self, xy_data, **kwargs):
         """Plot tunneling events (change in top. charge)."""
-        kwargs['out_file'] = get_out_file(self.out_dir, 'top_charge_diffs')
+        out_file = get_out_file(self.out_dir, 'top_charge_diffs')
         steps_arr, charge_diffs = xy_data
 
         # ignore first two data points when plotting since the top. charge
@@ -347,8 +349,8 @@ class GaugeModelPlotter:
         _ = ax.set_ylabel(r'$\delta_{Q}$', fontsize=14)
         _ = ax.set_title(kwargs['title'], fontsize=16)
         _ = plt.tight_layout()
-        io.log(f"Saving figure to: {kwargs['out_file']}")
-        plt.savefig(kwargs['out_file'], dpi=400, bbox_inches='tight')
+        io.log(f"Saving figure to: {out_file}")
+        plt.savefig(out_file, dpi=400, bbox_inches='tight')
 
     def _plot_charge_probs(self, charges, **kwargs):
         """PLot top. charge probabilities."""
