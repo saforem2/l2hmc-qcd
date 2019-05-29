@@ -206,8 +206,7 @@ def hmc(FLAGS, params=None, log_file=None):
     for beta in betas:
         # to ensure hvd.rank() == 0
         if run_logger is not None:
-            run_dir, run_str = run_logger.reset(model.run_steps,
-                                                beta, net_weights)
+            run_dir, run_str = run_logger.reset(model.run_steps, beta)
 
         t0 = time.time()
 
@@ -365,8 +364,12 @@ def l2hmc(FLAGS, log_file=None):
             if run_logger is not None:
                 run_dir, run_str = run_logger.reset(model.run_steps,
                                                     beta, net_weights)
-
+            t0 = time.time()
             runner.run(model.run_steps, beta, net_weights)
+            run_time = time.time() - t0
+            io.log(80 * '-')
+            io.log(f'Took: {run_time} s to complete run.')
+            io.log(80 * '-')
 
             if plotter is not None and run_logger is not None:
                 plotter.plot_observables(run_logger.run_data, beta, run_str)
