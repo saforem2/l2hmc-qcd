@@ -518,8 +518,8 @@ class GaugeModel:
             self.charge_diffs_op = tf.reduce_sum(x_dq) / self.num_samples
             if self.save_lf:
                 self.lf_out_f = dynamics_output['lf_out_f']
-                self.pxs_out_f = dynamics_output['accept_probs_f']
                 self.lf_out_b = dynamics_output['lf_out_b']
+                self.pxs_out_f = dynamics_output['accept_probs_f']
                 self.pxs_out_b = dynamics_output['accept_probs_b']
                 self.masks_f = dynamics_output['forward_mask']
                 self.masks_b = dynamics_output['backward_mask']
