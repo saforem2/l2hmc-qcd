@@ -211,32 +211,50 @@ class GaugeDynamics(tf.keras.Model):
         # Use sample masks to compute the actual solutions
         with tf.name_scope('apply_transition'):
             with tf.name_scope('transition_forward'):
-                outputs = self.transition_kernel(x_in, beta,
-                                                 net_weights,
-                                                 forward=True,
-                                                 save_lf=save_lf)
-                x_f = outputs[0]
-                v_f = outputs[1]
-                accept_prob_f = outputs[2]
+                outputs_f = self.transition_kernel(x_in, beta,
+                                                   net_weights,
+                                                   forward=True,
+                                                   save_lf=save_lf)
+                x_f = outputs_f['x_proposed']
+                v_f = outputs_f['v_proposed']
+                accept_prob_f = outputs_f['accept_prob']
+
+                #  x_f = outputs[0]
+                #  v_f = outputs[1]
+                #  accept_prob_f = outputs[2]
                 if save_lf:
-                    lf_out_f = outputs[3]
-                    accept_probs_f = outputs[4]
-                    logdets_f = outputs[5]
-                    sumlogdet_f = outputs[6]
+                    lf_out_f = outputs_f['lf_out']
+                    logdets_f = outputs_f['logdets']
+                    sumlogdet_f = outputs_f['sumlogdet']
+                    #  lf_out_f = outputs[3]
+                    #  accept_probs_f = outputs[4]
+                    #  logdets_f = outputs[5]
+                    #  sumlogdet_f = outputs[6]
 
             with tf.name_scope('transition_backward'):
-                outputs = self.transition_kernel(x_in, beta,
-                                                 net_weights,
-                                                 forward=False,
-                                                 save_lf=save_lf)
-                x_b = outputs[0]
-                v_b = outputs[1]
-                accept_prob_b = outputs[2]
+                outputs_b = self.transition_kernel(x_in, beta,
+                                                   net_weights,
+                                                   forward=False,
+                                                   save_lf=save_lf)
+                x_b = outputs_b['x_proposed']
+                v_b = outputs_b['v_proposed']
+                accept_prob_b = outputs_b['accept_prob']
+
+                #  x_f = outputs_b[0]
+                #  v_f = outputs_b[1]
+                #  accept_prob_f = outputs_b[2]
                 if save_lf:
-                    lf_out_b = outputs[3]
-                    accept_probs_b = outputs[4]
-                    logdets_b = outputs[5]
-                    sumlogdet_b = outputs[6]
+                    lf_out_b = outputs_b['lf_out']
+                    logdets_b = outputs_b['logdets']
+                    sumlogdet_b = outputs_b['sumlogdet']
+                #  x_b = outputs[0]
+                #  v_b = outputs[1]
+                #  accept_prob_b = outputs[2]
+                #  if save_lf:
+                    #  lf_out_b = outputs[3]
+                    #  accept_probs_b = outputs[4]
+                    #  logdets_b = outputs[5]
+                    #  sumlogdet_b = outputs[6]
 
             # Decide direction uniformly
             with tf.name_scope('transition_masks'):
@@ -288,9 +306,9 @@ class GaugeDynamics(tf.keras.Model):
 
         if save_lf:
             outputs['lf_out_f'] = lf_out_f
-            outputs['accept_probs_f'] = accept_probs_f
+            outputs['accept_probs_f'] = accept_prob_f
             outputs['lf_out_b'] = lf_out_b
-            outputs['accept_probs_b'] = accept_probs_b
+            outputs['accept_probs_b'] = accept_prob_b
             outputs['forward_mask'] = forward_mask
             outputs['backward_mask'] = backward_mask
             outputs['logdets_f'] = logdets_f
@@ -309,24 +327,37 @@ class GaugeDynamics(tf.keras.Model):
         with tf.name_scope('refresh_momentum'):
             v_in = tf.random_normal(tf.shape(x_in), seed=GLOBAL_SEED)
 
-        x_proposed, v_proposed = x_in, v_in
+        with tf.name_scope('init'):
+            x_proposed, v_proposed = x_in, v_in
 
-        with tf.name_scope('while_loop_setup'):
             t = tf.constant(0., name='md_time', dtype=TF_FLOAT)
             batch_size = tf.shape(x_in)[0]
             logdet = tf.zeros((batch_size,))
-            accept_probs = []
-            lf_out = tf.Variable([x_in])
-            logdets = tf.Variable([tf.zeros(batch_size)])
+            #  accept_probs = []
+            #  lf_out = tf.Variable([x_in])
+            #  dynamic_size=True,
+            #  clear_after_read=False)
+            lf_out = tf.TensorArray(dtype=TF_FLOAT, size=self.num_steps,
+                                    dynamic_size=True, name='lf_out',
+                                    clear_after_read=False)
+            logdets = tf.TensorArray(dtype=TF_FLOAT, size=self.num_steps,
+                                     dynamic_size=True, name='logdets_out',
+                                     clear_after_read=False)
+            lf_out = lf_out.write(0, x_in)
+            logdets = logdets.write(0, logdet)
+            #  logdets = tf.Variable([logdet])
+            #  logdets = tf.zeros((batch_size),)
 
         def body(x, v, beta, t, logdet, lf_out, logdets):
+            i = tf.cast(t, dtype=tf.int32)
             with tf.name_scope('apply_lf'):
                 new_x, new_v, j = lf_fn(x, v, beta, t, net_weights)
             with tf.name_scope('concat_lf_outputs'):
-                lf_out = tf.concat([lf_out, [new_x]], 0)
+                lf_out = lf_out.write(i + 1, new_x)
+                #  lf_out = tf.concat([lf_out, [new_x]], 0)
             with tf.name_scope('concat_logdets'):
-                logdets = tf.concat([logdets, [j]], 0)
-
+                logdets = logdets.write(i + 1, j)
+                #  logdets = tf.concat([logdets + j, [logdet + j]], 0)
             return new_x, new_v, beta, t + 1, logdet + j, lf_out, logdets
 
         def cond(x, v, beta, t, logdet, lf_out, logdets):
@@ -338,24 +369,15 @@ class GaugeDynamics(tf.keras.Model):
                 cond=cond,
                 body=body,
                 loop_vars=[x_proposed, v_proposed,
-                           beta, t, logdet, lf_out, logdets],
-                shape_invariants=[x_in.shape, v_in.shape,
-                                  beta.shape, t.shape,
-                                  logdet.shape,
-                                  tf.TensorShape([None,
-                                                  x_in.shape[0],
-                                                  x_in.shape[1]]),
-                                  tf.TensorShape([None, logdet.shape[0]])]
-            )
+                           beta, t, logdet, lf_out, logdets])
 
             x_proposed = outputs[0]
             v_proposed = outputs[1]
             beta = outputs[2]
             t = outputs[3]
             sumlogdet = outputs[4]
-            if save_lf:
-                lf_out = outputs[5]
-                logdets = outputs[6]
+            lf_out = outputs[5].stack()
+            logdets = outputs[6].stack()
 
         #  else:
         #      lf_out = []
@@ -378,14 +400,24 @@ class GaugeDynamics(tf.keras.Model):
                 sumlogdet,
                 beta
             )
-            if save_lf:
-                accept_probs.append(accept_prob)
+            #  if save_lf:
+            #      accept_probs.append(accept_prob)
+
+        outputs = {
+            'x_proposed': x_proposed,
+            'v_proposed': v_proposed,
+            'accept_prob': accept_prob,
+        }
 
         if save_lf:
-            return (x_proposed, v_proposed, accept_prob,
-                    lf_out, accept_probs, logdets, sumlogdet)
-        else:
-            return x_proposed, v_proposed, accept_prob
+            outputs['lf_out'] = lf_out
+            outputs['logdets'] = logdets
+            outputs['sumlogdet'] = sumlogdet
+            #  return (x_proposed, v_proposed, accept_prob,
+            #          lf_out, accept_probs, logdets, sumlogdet)
+        #  else:
+        #      return x_proposed, v_proposed, accept_prob
+        return outputs
 
     def _forward_lf(self, x, v, beta, step, net_weights):
         """One forward augmented leapfrog step."""

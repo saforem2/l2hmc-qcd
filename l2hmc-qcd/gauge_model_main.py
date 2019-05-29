@@ -352,12 +352,14 @@ def l2hmc(FLAGS, log_file=None):
 
     #  betas = np.arange(model.beta_init, model.beta_final, 1)
     betas = [model.beta_final]  # model.beta_final + 1]
-    net_weights_arr = np.array([[0, 1, 1],  # [Q, S, T]
+    net_weights_arr = np.array([[1, 1, 1],  # [Q, S, T]
+                                [0, 1, 1],
                                 [1, 0, 1],
                                 [1, 1, 0],
                                 [1, 0, 0],
                                 [0, 1, 0],
-                                [0, 0, 1]], dtype=NP_FLOAT)
+                                [0, 0, 1],
+                                [0, 0, 0]], dtype=NP_FLOAT)
 
     for net_weights in net_weights_arr:
         for beta in betas:
