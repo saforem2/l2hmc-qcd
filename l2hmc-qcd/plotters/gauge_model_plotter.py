@@ -56,9 +56,10 @@ def get_out_file(out_dir, out_str):
 
 def get_colors(num_samples=10, cmaps=None):
     if cmaps is None:
-        cmap0 = mpl.cm.get_cmap('Reds', num_samples + 1)
-        cmap1 = mpl.cm.get_cmap('Blues', num_samples + 1)
-        cmaps = (cmap0, cmap1)
+        cmap0 = mpl.cm.get_cmap('Greys', num_samples + 1)
+        cmap1 = mpl.cm.get_cmap('Reds', num_samples + 1)
+        cmap2 = mpl.cm.get_cmap('Blues', num_samples + 1)
+        cmaps = (cmap0, cmap1, cmap2)
 
     idxs = np.linspace(0.1, 0.75, num_samples + 1)
     colors_arr = []
@@ -86,7 +87,7 @@ def plot_multiple_lines(data, xy_labels, **kwargs):
     title = kwargs.get('title', None)
     ret = kwargs.get('ret', False)
     num_samples = kwargs.get('num_samples', 10)
-    reds, blues = get_colors(num_samples)
+    greys, reds, blues = get_colors(num_samples)
     if isinstance(data, list):
         data = np.array(data)
 
@@ -117,11 +118,11 @@ def plot_multiple_lines(data, xy_labels, **kwargs):
             ls = ''
         _ = ax.plot(x_data, row, label=f'sample {idx}', fillstyle=fillstyle,
                     marker=marker, ls=ls, alpha=alpha, lw=0.5,
-                    color=blues[idx])
+                    color=greys[idx])
 
     _ = ax.plot(
         x_data, y_data.mean(axis=0), label='average',
-        alpha=1., lw=1.0, color=blues[-1]
+        alpha=1., lw=1.0, color='k'
     )
 
     ax.set_xlabel(x_label, fontsize=14)
