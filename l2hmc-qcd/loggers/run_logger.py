@@ -16,7 +16,7 @@ from collections import Counter, OrderedDict
 from scipy.stats import sem
 import utils.file_io as io
 
-from globals import RUN_HEADER
+from globals import RUN_HEADER, NP_FLOAT
 
 from lattice.lattice import u1_plaq_exact
 
@@ -218,37 +218,82 @@ class RunLogger:
 
         return stats
 
+    def save_attr(self, name, attr, out_dir):
+        assert os.path.isdir(out_dir)
+        out_file = os.path.join(out_dir, name + '.npz')
+
+        if os.path.isfile(out_file):
+            io.log(f'File {out_file} already exists. Skipping.')
+        else:
+            io.log(f'Saving {name} to: {out_file}')
+            np.savez_compressed(out_file, attr)
+
     def save_run_data(self, therm_frac=10):
         """Save run information."""
         observables_dir = os.path.join(self.run_dir, 'observables')
 
         io.check_else_make_dir(self.run_dir)
         io.check_else_make_dir(observables_dir)
+        NPF = NP_FLOAT
 
         if self.model.save_lf:
-            samples_file = os.path.join(self.run_dir, 'run_samples.pkl')
-            io.log(f"Saving samples to: {samples_file}.")
-            with open(samples_file, 'wb') as f:
-                pickle.dump(self.samples_arr, f)
+            self.save_attr('samples_arr',
+                           np.array(self.samples_arr, dtype=NPF),
+                           self.run_dir)
+            self.save_attr('lf_out_f',
+                           np.array(self.lf_out['forward'], dtype=NPF),
+                           self.run_dir)
+            self.save_attr('lf_out_b',
+                           np.array(self.lf_out['backward'], dtype=NPF),
+                           self.run_dir)
+            self.save_attr('logdets_f',
+                           np.array(self.logdets['forward'], dtype=NPF),
+                           self.run_dir)
+            self.save_attr('logdets_b',
+                           np.array(self.logdets['backward'], dtype=NPF),
+                           self.run_dir)
+            self.save_attr('sumlogdet_f',
+                           np.array(self.sumlogdet['forward'], dtype=NPF),
+                           self.run_dir)
+            self.save_attr('sumlogdet_b',
+                           np.array(self.sumlogdet['backward'], dtype=NPF),
+                           self.run_dir)
+            self.save_attr('pxs_out_f',
+                           np.array(self.pxs_out['forward'], dtype=NPF),
+                           self.run_dir)
+            self.save_attr('pxs_out_b',
+                           np.array(self.pxs_out['backward'], dtype=NPF),
+                           self.run_dir)
+            self.save_attr('masks_f',
+                           np.array(self.masks['forward'], dtype=NPF),
+                           self.run_dir)
+            self.save_attr('masks_b',
+                           np.array(self.masks['backward'], dtype=NPF),
+                           self.run_dir)
+            #  self.save_attr('lf_forward', self.lf_f, out_dir=run_dir)
+            #  samples_file = os.path.join(self.run_dir, 'run_samples.pkl')
+            #  io.log(f"Saving samples to: {samples_file}.")
+            #  with open(samples_file, 'wb') as f:
+            #      pickle.dump(self.samples_arr, f)
             #  del self.samples_arr
 
-            lf_out_file = os.path.join(self.run_dir, 'lf_out.pkl')
-            io.log(f'Saving leapfrog outputs to: {lf_out_file}')
-            with open(lf_out_file, 'wb') as f:
-                pickle.dump(self.lf_out, f)
-            #  del self.lf_out
-
-            logdets_out_file = os.path.join(self.run_dir, 'logdets_out.pkl')
-            io.log(f'Saving logdets to: {logdets_out_file}')
-            with open(logdets_out_file, 'wb') as f:
-                pickle.dump(self.logdets, f)
-            #  del self.logdets
-
-            sumlogdet_out_file = os.path.join(self.run_dir,
-                                              'sumlogdet_out.pkl')
-            io.log(f'Saving sumlogdet to: {sumlogdet_out_file}')
-            with open(sumlogdet_out_file, 'wb') as f:
-                pickle.dump(self.sumlogdet, f)
+            #  lf_out_file = os.path.join(self.run_dir, 'lf_out.pkl')
+            #  io.log(f'Saving leapfrog outputs to: {lf_out_file}')
+            #  with open(lf_out_file, 'wb') as f:
+            #      pickle.dump(self.lf_out, f)
+            #  #  del self.lf_out
+            #
+            #  logdets_out_file = os.path.join(self.run_dir, 'logdets_out.pkl')
+            #  io.log(f'Saving logdets to: {logdets_out_file}')
+            #  with open(logdets_out_file, 'wb') as f:
+            #      pickle.dump(self.logdets, f)
+            #  #  del self.logdets
+            #
+            #  sumlogdet_out_file = os.path.join(self.run_dir,
+            #                                    'sumlogdet_out.pkl')
+            #  io.log(f'Saving sumlogdet to: {sumlogdet_out_file}')
+            #  with open(sumlogdet_out_file, 'wb') as f:
+            #      pickle.dump(self.sumlogdet, f)
 
             #  del self.sumlogdet
 
