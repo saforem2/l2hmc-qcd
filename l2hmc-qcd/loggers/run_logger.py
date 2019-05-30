@@ -218,9 +218,19 @@ class RunLogger:
 
         return stats
 
-    def save_attr(self, name, attr, out_dir):
+    def save_attr(self, name, attr, out_dir=None, dtype=NP_FLOAT):
+        if out_dir is None:
+            out_dir = self.run_dir
+
         assert os.path.isdir(out_dir)
         out_file = os.path.join(out_dir, name + '.npz')
+
+        if not isinstance(attr, np.ndarray) or attr.dtype != dtype:
+            try:
+                attr = np.array(attr, dtype=dtype)
+            except ValueError:
+                import pdb
+                pdb.set_trace()
 
         if os.path.isfile(out_file):
             io.log(f'File {out_file} already exists. Skipping.')
@@ -234,80 +244,19 @@ class RunLogger:
 
         io.check_else_make_dir(self.run_dir)
         io.check_else_make_dir(observables_dir)
-        NPF = NP_FLOAT
 
         if self.model.save_lf:
-            self.save_attr('samples_arr',
-                           np.array(self.samples_arr, dtype=NPF),
-                           self.run_dir)
-            self.save_attr('lf_out_f',
-                           np.array(self.lf_out['forward'], dtype=NPF),
-                           self.run_dir)
-            self.save_attr('lf_out_b',
-                           np.array(self.lf_out['backward'], dtype=NPF),
-                           self.run_dir)
-            self.save_attr('logdets_f',
-                           np.array(self.logdets['forward'], dtype=NPF),
-                           self.run_dir)
-            self.save_attr('logdets_b',
-                           np.array(self.logdets['backward'], dtype=NPF),
-                           self.run_dir)
-            self.save_attr('sumlogdet_f',
-                           np.array(self.sumlogdet['forward'], dtype=NPF),
-                           self.run_dir)
-            self.save_attr('sumlogdet_b',
-                           np.array(self.sumlogdet['backward'], dtype=NPF),
-                           self.run_dir)
-            self.save_attr('pxs_out_f',
-                           np.array(self.pxs_out['forward'], dtype=NPF),
-                           self.run_dir)
-            self.save_attr('pxs_out_b',
-                           np.array(self.pxs_out['backward'], dtype=NPF),
-                           self.run_dir)
-            self.save_attr('masks_f',
-                           np.array(self.masks['forward'], dtype=NPF),
-                           self.run_dir)
-            self.save_attr('masks_b',
-                           np.array(self.masks['backward'], dtype=NPF),
-                           self.run_dir)
-            #  self.save_attr('lf_forward', self.lf_f, out_dir=run_dir)
-            #  samples_file = os.path.join(self.run_dir, 'run_samples.pkl')
-            #  io.log(f"Saving samples to: {samples_file}.")
-            #  with open(samples_file, 'wb') as f:
-            #      pickle.dump(self.samples_arr, f)
-            #  del self.samples_arr
-
-            #  lf_out_file = os.path.join(self.run_dir, 'lf_out.pkl')
-            #  io.log(f'Saving leapfrog outputs to: {lf_out_file}')
-            #  with open(lf_out_file, 'wb') as f:
-            #      pickle.dump(self.lf_out, f)
-            #  #  del self.lf_out
-            #
-            #  logdets_out_file = os.path.join(self.run_dir, 'logdets_out.pkl')
-            #  io.log(f'Saving logdets to: {logdets_out_file}')
-            #  with open(logdets_out_file, 'wb') as f:
-            #      pickle.dump(self.logdets, f)
-            #  #  del self.logdets
-            #
-            #  sumlogdet_out_file = os.path.join(self.run_dir,
-            #                                    'sumlogdet_out.pkl')
-            #  io.log(f'Saving sumlogdet to: {sumlogdet_out_file}')
-            #  with open(sumlogdet_out_file, 'wb') as f:
-            #      pickle.dump(self.sumlogdet, f)
-
-            #  del self.sumlogdet
-
-            #  pxs_out_file = os.path.join(self.run_dir, 'pxs_out.pkl')
-            #  io.log(
-            #      f'Saving leapfrog accept_probabilities to: {pxs_out_file}'
-            #  )
-            #  with open(pxs_out_file, 'wb') as f:
-            #      pickle.dump(self.pxs_out, f)
-
-            #  masks_out_file = os.path.join(self.run_dir, 'masks_out.pkl')
-            #  io.log(f'Saving forward/backward masks to: {masks_out_file}')
-            #  with open(masks_out_file, 'wb') as f:
-            #      pickle.dump(self.masks, f)
+            self.save_attr('samples_out', self.samples_arr)
+            self.save_attr('lf_forward', self.lf_out['forward'])
+            self.save_attr('lf_backward', self.lf_out['backward'])
+            self.save_attr('masks_forward', self.masks['forward'])
+            self.save_attr('masks_backward', self.masks['backward'])
+            self.save_attr('logdets_forward', self.logdets['forward'])
+            self.save_attr('logdets_backward', self.logdets['backward'])
+            self.save_attr('sumlogdet_forward', self.sumlogdet['forward'])
+            self.save_attr('sumlogdet_backward', self.sumlogdet['backward'])
+            self.save_attr('accept_probs_forward', self.pxs_out['forward'])
+            self.save_attr('accept_probs_backward', self.pxs_out['backward'])
 
         run_stats = self.calc_observables_stats(self.run_data, therm_frac)
         charges = self.run_data['charges']

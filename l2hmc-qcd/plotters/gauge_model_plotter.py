@@ -10,12 +10,14 @@ Date: 04/10/2019
 import os
 import matplotlib as mpl
 import numpy as np
-#  from .formatters import latexify, format_axes
+import utils.file_io as io
+
 from collections import Counter, OrderedDict
 from scipy.stats import sem
+
 from lattice.lattice import u1_plaq_exact
-import utils.file_io as io
 from globals import COLORS, MARKERS
+from utils.data_loader import DataLoader
 
 try:
     import matplotlib.pyplot as plt
@@ -166,6 +168,7 @@ class GaugeModelPlotter:
     def __init__(self, figs_dir=None):
         self.figs_dir = figs_dir
 
+
     def calc_stats(self, data, therm_frac=10):
         """Calculate observables statistics.
 
@@ -224,22 +227,21 @@ class GaugeModelPlotter:
 
         num_steps, num_samples = actions.shape
         steps_arr = np.arange(num_steps)
-        #  beta = run_kwargs['beta']
-        if num_steps >= 1000:
-            therm_steps = 100
-            skip_steps = 100
-        else:
-            therm_steps = 2
-            skip_steps = 1
+        # skip 5% of total number of steps 
+        # between successive points when 
+        # plotting to help smooth out graph
+        skip_steps = max((1, int(0.005 * num_steps)))
+        # ignore first 10% of pts (warmup)
+        warmup_steps = max((1, int(0.01 * num_steps)))
 
         _actions = actions[::skip_steps]
         _plaqs = plaqs[::skip_steps]
         _steps_arr = skip_steps * np.arange(_actions.shape[0])
-        # for _charge_diffs and _plaq_diffs, skip first 100 warmup steps
-        _charge_diffs = charge_diffs[therm_steps:][::skip_steps]
-        _plaq_diffs = plaqs_diffs[therm_steps:][::skip_steps]
-        _steps_diffs = (skip_steps * np.arange(_plaq_diffs.shape[0])
-                        + skip_steps)
+        _charge_diffs = charge_diffs[warmup_steps:][::skip_steps]
+        _plaq_diffs = plaqs_diffs[warmup_steps:][::skip_steps]
+        _steps_diffs = (
+            skip_steps * np.arange(_plaq_diffs.shape[0]) + skip_steps
+        )
 
         #  out_dir = (f'{int(num_steps)}_steps_' f"beta_{beta}")
         #  self.out_dir = os.path.join(self.figs_dir, out_dir)
