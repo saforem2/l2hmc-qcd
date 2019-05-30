@@ -57,7 +57,7 @@ class DataLoader:
 
         return arr.f.arr_0
 
-    def load_observable(self, observable_str, run_dir=None):
+    def _load_observable(self, observable_str, run_dir=None):
         if run_dir is None:
             run_dir = self.run_dir
 

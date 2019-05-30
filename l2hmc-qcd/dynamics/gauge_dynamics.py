@@ -343,8 +343,8 @@ class GaugeDynamics(tf.keras.Model):
             logdets = tf.TensorArray(dtype=TF_FLOAT, size=self.num_steps,
                                      dynamic_size=True, name='logdets_out',
                                      clear_after_read=False)
-            lf_out = lf_out.write(0, x_in)
-            logdets = logdets.write(0, logdet)
+            #  lf_out = lf_out.write(0, x_in)
+            #  logdets = logdets.write(0, logdet)
             #  logdets = tf.Variable([logdet])
             #  logdets = tf.zeros((batch_size),)
 
@@ -353,10 +353,10 @@ class GaugeDynamics(tf.keras.Model):
             with tf.name_scope('apply_lf'):
                 new_x, new_v, j = lf_fn(x, v, beta, t, net_weights)
             with tf.name_scope('concat_lf_outputs'):
-                lf_out = lf_out.write(i + 1, new_x)
+                lf_out = lf_out.write(i, new_x)
                 #  lf_out = tf.concat([lf_out, [new_x]], 0)
             with tf.name_scope('concat_logdets'):
-                logdets = logdets.write(i + 1, j)
+                logdets = logdets.write(i, j)
                 #  logdets = tf.concat([logdets + j, [logdet + j]], 0)
             return new_x, new_v, beta, t + 1, logdet + j, lf_out, logdets
 

@@ -203,11 +203,7 @@ class LeapfrogPlotter:
         fig, (ax1, ax2) = plt.subplots(2, 1)
         for idx in range(num_samples):
             yf = np.mean(self.lf_f_diffs, axis=-1)
-            try:
-                xf = np.arange(len(yf))
-            except:
-                import pdb
-                pdb.set_trace()
+            xf = np.arange(len(yf))
             yb = np.mean(self.lf_b_diffs, axis=-1)
             xb = np.arange(len(yb))
 
@@ -241,6 +237,8 @@ class LeapfrogPlotter:
                                 f'leapfrog_diffs_beta{beta}.pdf')
         out_file_zoom = os.path.join(self.pdfs_dir,
                                      f'leapfrog_diffs_beta{beta}_zoom.pdf')
+        out_file_zoom1 = os.path.join(self.pdfs_dir,
+                                      f'leapfrog_diffs_beta{beta}_zoom1.pdf')
         io.log(f'Saving figure to: {out_file}')
         _ = plt.savefig(out_file, dpi=400, bbox_inches='tight')
 
@@ -251,7 +249,12 @@ class LeapfrogPlotter:
         _ = ax2.set_xlim((0, md_xlim))
         _ = plt.savefig(out_file_zoom, dpi=400, bbox_inches='tight')
 
-        #  _ = plt.close('all')
+        lf_xlim //= 4
+        md_xlim //= 4
+        _ = ax1.set_xlim((0, lf_xlim))
+        _ = ax2.set_xlim((0, md_xlim))
+        _ = plt.savefig(out_file_zoom1, dpi=400, bbox_inches='tight')
+
         return fig, (ax1, ax2)
 
     def plot_logdets(self, beta, num_samples=20):
@@ -304,6 +307,8 @@ class LeapfrogPlotter:
                                 f'avg_logdets_beta{beta}.pdf')
         out_file_zoom = os.path.join(self.pdfs_dir,
                                      f'avg_logdets_beta{beta}_zoom.pdf')
+        out_file_zoom1 = os.path.join(self.pdfs_dir,
+                                      f'avg_logdets_beta{beta}_zoom1.pdf')
         io.log(f'Saving figure to: {out_file}')
         _ = plt.savefig(out_file, dpi=400, bbox_inches='tight')
 
@@ -313,5 +318,11 @@ class LeapfrogPlotter:
         _ = ax1.set_xlim((0, lf_xlim))
         _ = ax2.set_xlim((0, md_xlim))
         _ = plt.savefig(out_file_zoom, dpi=400, bbox_inches='tight')
-        #  _ = plt.close('all')
+
+        lf_xlim //= 4
+        md_xlim //= 4
+        _ = ax1.set_xlim((0, lf_xlim))
+        _ = ax2.set_xlim((0, md_xlim))
+        _ = plt.savefig(out_file_zoom1, dpi=400, bbox_inches='tight')
+
         return fig, (ax1, ax2)
