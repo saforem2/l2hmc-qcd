@@ -283,92 +283,6 @@ class ConvNet3D(tf.keras.Model):
                         self.x_dim, 0.001, 'transformation_layer'
                     )
 
-    # pylint: disable=invalid-name, arguments-differ
-    def call(self, inputs):
-        """Forward pass through network.
-
-        NOTE: Data flow of forward pass is outlined below.
-              ============================================================
-              * inputs: x, v, t
-              ------------------------------------------------------------
-                  x -->
-                      CONV_X1, MAX_POOL_X1, --> CONV_X1, MAX_POOL_X2 -->
-                      BATCH_NORM --> FLATTEN_X --> X_LAYER --> X_OUT
-
-                  v -->
-                      CONV_V1, MAX_POOL_V1, --> CONV_V1, MAX_POOL_V2 -->
-                      BATCH_NORM --> FLATTEN_V --> V_LAYER --> V_OUT
-
-                  t --> T_LAYER --> T_OUT
-
-                  X_OUT + V_OUT + T_OUT --> H_LAYER --> H_OUT
-              ============================================================
-              * H_OUT is then fed to three separate layers:
-              ------------------------------------------------------------
-                  (1.) H_OUT --> (SCALE_LAYER, TANH) * exp(COEFF_SCALE)
-                       output: scale
-                  (2.) H_OUT --> TRANSLATION_LAYER --> TRANSLATION_OUT
-                       output: translation
-                  (3.) H_OUT --> (TRANSFORMATION_LAYER, TANH)
-                                  * exp(COEFF_TRANSFORMATION)
-                       output: transformation
-              ============================================================
-
-       Returns:
-           scale, translation, transformation
-        """
-        v, x, t, net_weights = inputs
-        scale_weight = net_weights[0]
-        transformation_weight = net_weights[1]
-        translation_weight = net_weights[2]
-
-        with tf.name_scope('reshape'):
-            v = self.reshape_5D(v)
-            x = self.reshape_5D(x)
-
-        with tf.name_scope('x'):
-            x = self.max_pool_x1(self.conv_x1(x))
-            x = self.max_pool_x2(self.conv_x2(x))
-            if self.use_bn:
-                x = tf.keras.layers.BatchNormalization(axis=self.bn_axis)(x)
-            #  x = self.batch_norm(x)
-            x = self.flatten(x)
-            x = tf.nn.relu(self.x_layer(x))
-
-        with tf.name_scope('v'):
-            v = self.max_pool_v1(self.conv_v1(v))
-            v = self.max_pool_v2(self.conv_v2(v))
-            if self.use_bn:
-                v = tf.keras.layers.BatchNormalization(axis=self.bn_axis)(v)
-            v = self.flatten(v)
-            v = tf.nn.relu(self.v_layer(v))
-
-        with tf.name_scope('t'):
-            t = tf.nn.relu(self.t_layer(t))
-
-        with tf.name_scope('h'):
-            h = tf.nn.relu(v + x + t)
-            h = tf.nn.relu(self.h_layer(h))
-
-        def reshape(t, name):
-            return tf.squeeze(tf.reshape(t, shape=self._input_shape,
-                                         name=name))
-
-        with tf.name_scope('translation'):
-            translation = translation_weight * self.translation_layer(h)
-
-        with tf.name_scope('scale'):
-            scale = (scale_weight
-                     * tf.nn.tanh(self.scale_layer(h))
-                     * tf.exp(self.coeff_scale))
-
-        with tf.name_scope('transformation'):
-            transformation = (transformation_weight
-                              * self.transformation_layer(h)
-                              * tf.exp(self.coeff_transformation))
-
-        return scale, translation, transformation
-
     def reshape_5D(self, tensor):
         """
         Reshape tensor to be compatible with tf.keras.layers.Conv3D.
@@ -397,6 +311,95 @@ class ConvNet3D(tf.keras.Model):
 
         raise AttributeError("`self.data_format` should be one of "
                              "'channels_first' or 'channels_last'")
+
+    # pylint: disable=invalid-name, arguments-differ
+    def call(self, inputs):
+        """Forward pass through network.
+
+        NOTE: Data flow of forward pass is outlined below.
+        ============================================================
+        * inputs: x, v, t
+        ------------------------------------------------------------
+            x -->
+                (conv_x1, max_pool_x1) --> (conv_x1, max_pool_x2) -->
+                batch_norm --> flatten_x --> x_layer --> x_out 
+
+            v -->
+                (conv_v1, max_pool_v1), --> (conv_v1, max_pool_v2) -->
+                batch_norm --> flatten_v --> v_layer --> v_out
+
+            t --> t_layer --> t_out 
+
+            x_out + v_out + t_out --> h_layer --> h_out
+        ============================================================
+        * h_out is then fed to three separate layers:
+        ------------------------------------------------------------
+            (1.) h_out --> (scale_layer, tanh) * exp(coeff_scale)
+                 output: scale (S function in orig. paper)
+
+            (2.) h_out --> translation_layer --> translation_out
+                 output: translation (T function in orig. paper)
+
+            (3.) h_out --> 
+                    (transformation_layer, tanh) * exp(coeff_transformation)
+                 output: transformation (Q function in orig. paper)
+          ============================================================
+
+       Returns:
+           scale, translation, transformation (S, T, Q functions from paper)
+        """
+        v, x, t, net_weights = inputs
+        scale_weight = net_weights[0]
+        transformation_weight = net_weights[1]
+        translation_weight = net_weights[2]
+
+        with tf.name_scope('reshape'):
+            v = self.reshape_5D(v)
+            x = self.reshape_5D(x)
+
+        with tf.name_scope('x'):
+            x = self.max_pool_x1(self.conv_x1(x))
+            x = self.max_pool_x2(self.conv_x2(x))
+            if self.use_bn:
+                x = tf.keras.layers.BatchNormalization(axis=self.bn_axis)(x)
+            x = self.flatten(x)
+            x = tf.nn.relu(self.x_layer(x))
+
+        with tf.name_scope('v'):
+            v = self.max_pool_v1(self.conv_v1(v))
+            v = self.max_pool_v2(self.conv_v2(v))
+            if self.use_bn:
+                v = tf.keras.layers.BatchNormalization(axis=self.bn_axis)(v)
+            v = self.flatten(v)
+            v = tf.nn.relu(self.v_layer(v))
+
+        with tf.name_scope('t'):
+            t = tf.nn.relu(self.t_layer(t))
+
+        with tf.name_scope('h'):
+            h = tf.nn.relu(v + x + t)
+            h = tf.nn.relu(self.h_layer(h))
+
+        def reshape(t, name):
+            return tf.squeeze(
+                tf.reshape(t, shape=self._input_shape, name=name)
+            )
+
+        with tf.name_scope('translation'):
+            translation = translation_weight * self.translation_layer(h)
+
+        with tf.name_scope('scale'):
+            scale = (scale_weight
+                     * tf.nn.tanh(self.scale_layer(h))
+                     * tf.exp(self.coeff_scale))
+
+        with tf.name_scope('transformation'):
+            transformation = (transformation_weight
+                              * self.transformation_layer(h)
+                              * tf.exp(self.coeff_transformation))
+
+        return scale, translation, transformation
+
 
 
 # pylint:disable=too-many-arguments, too-many-instance-attributes
