@@ -495,6 +495,7 @@ class GaugeDynamics(tf.keras.Model):
                 grad = self.grad_potential(x, beta)
 
             with tf.name_scope('v_fn'):
+                # Sv: scale, Qv: transformation, Tv: translation
                 scale, translation, transformed = self.v_fn(
                     [x, grad, t, net_weights]
                 )
