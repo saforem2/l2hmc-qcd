@@ -96,7 +96,6 @@ class GaugeDynamics(tf.keras.Model):
             )
             io.log(f'eps.dtype: {self.eps.dtype}')
 
-        self._construct_time()
         self._construct_masks()
 
         if self.hmc:
@@ -333,20 +332,12 @@ class GaugeDynamics(tf.keras.Model):
             t = tf.constant(0., name='md_time', dtype=TF_FLOAT)
             batch_size = tf.shape(x_in)[0]
             logdet = tf.zeros((batch_size,))
-            #  accept_probs = []
-            #  lf_out = tf.Variable([x_in])
-            #  dynamic_size=True,
-            #  clear_after_read=False)
             lf_out = tf.TensorArray(dtype=TF_FLOAT, size=self.num_steps,
                                     dynamic_size=True, name='lf_out',
                                     clear_after_read=False)
             logdets = tf.TensorArray(dtype=TF_FLOAT, size=self.num_steps,
                                      dynamic_size=True, name='logdets_out',
                                      clear_after_read=False)
-            #  lf_out = lf_out.write(0, x_in)
-            #  logdets = logdets.write(0, logdet)
-            #  logdets = tf.Variable([logdet])
-            #  logdets = tf.zeros((batch_size),)
 
         def body(x, v, beta, t, logdet, lf_out, logdets):
             i = tf.cast(t, dtype=tf.int32)
@@ -354,10 +345,8 @@ class GaugeDynamics(tf.keras.Model):
                 new_x, new_v, j = lf_fn(x, v, beta, t, net_weights)
             with tf.name_scope('concat_lf_outputs'):
                 lf_out = lf_out.write(i, new_x)
-                #  lf_out = tf.concat([lf_out, [new_x]], 0)
             with tf.name_scope('concat_logdets'):
                 logdets = logdets.write(i, j)
-                #  logdets = tf.concat([logdets + j, [logdet + j]], 0)
             return new_x, new_v, beta, t + 1, logdet + j, lf_out, logdets
 
         def cond(x, v, beta, t, logdet, lf_out, logdets):
@@ -379,18 +368,6 @@ class GaugeDynamics(tf.keras.Model):
             lf_out = outputs[5].stack()
             logdets = outputs[6].stack()
 
-        #  else:
-        #      lf_out = []
-        #      logdet = []
-        #      sumlogdet = 0.
-        #      for t in range(self.num_steps):
-        #          x_proposed, v_proposed, j = lf_fn(x_proposed,
-        #                                                  v_proposed,
-        #                                                  beta, t)
-        #          sumlogdet += j
-        #          lf_out.append(x_proposed)
-        #          logdet.append(j)
-
         with tf.name_scope('accept_prob'):
             accept_prob = self._compute_accept_prob(
                 x_in,
@@ -400,8 +377,6 @@ class GaugeDynamics(tf.keras.Model):
                 sumlogdet,
                 beta
             )
-            #  if save_lf:
-            #      accept_probs.append(accept_prob)
 
         outputs = {
             'x_proposed': x_proposed,
@@ -413,20 +388,12 @@ class GaugeDynamics(tf.keras.Model):
             outputs['lf_out'] = lf_out
             outputs['logdets'] = logdets
             outputs['sumlogdet'] = sumlogdet
-            #  return (x_proposed, v_proposed, accept_prob,
-            #          lf_out, accept_probs, logdets, sumlogdet)
-        #  else:
-        #      return x_proposed, v_proposed, accept_prob
+
         return outputs
 
     def _forward_lf(self, x, v, beta, step, net_weights):
         """One forward augmented leapfrog step."""
         with tf.name_scope('forward_lf'):
-            # use self._get_time when using for loop in transition__kernel
-            #  t = self._get_time(step)
-            #  mask, mask_inv = self._get_mask(step)
-
-            # use self._format_time when using while loop in transition_kernel
             with tf.name_scope('format_time'):
                 t = self._format_time(step, tile=tf.shape(x)[0])
             with tf.name_scope('get_mask'):
@@ -456,11 +423,6 @@ class GaugeDynamics(tf.keras.Model):
 
         # Reversed index/sinusoidal time
         with tf.name_scope('backward_lf'):
-            # use self._get_time when using for loop in transition__kernel
-            #  t = self._get_time(self.num_steps - step - 1)
-            #  mask, mask_inv = self._get_mask(self.num_steps - step - 1)
-
-            # use self._format_time when using while loop in transition_kernel
             with tf.name_scope('format_time'):
                 t = self._format_time(self.num_steps - step - 1,
                                       tile=tf.shape(x)[0])
@@ -538,7 +500,6 @@ class GaugeDynamics(tf.keras.Model):
 
     def _update_v_backward(self, x, v, beta, t, net_weights):
         """Update v in the backward leapfrog step. Invert the forward update"""
-        #  grad = self.grad_potential(x, beta)
         with tf.name_scope('update_v_backward'):
             with tf.name_scope('grad_potential'):
                 grad = self.grad_potential(x, beta)
@@ -609,16 +570,6 @@ class GaugeDynamics(tf.keras.Model):
         # Ensure numerical stability as well as correct gradients
         return tf.where(tf.is_finite(prob), prob, tf.zeros_like(prob))
 
-    def _construct_time(self):
-        """Convert leapfrog step index into sinusoidal time."""
-        self.ts = []
-        with tf.name_scope('construct_time'):
-            for i in range(self.num_steps):
-                t = tf.constant([np.cos(2 * np.pi * i / self.num_steps),
-                                 np.sin(2 * np.pi * i / self.num_steps)],
-                                dtype=TF_FLOAT)
-                self.ts.append(t[None, :])
-
     def _format_time(self, i, tile=1):
         """Format time as [cos(..), sin(...)]."""
         with tf.name_scope('format_time'):
@@ -648,7 +599,6 @@ class GaugeDynamics(tf.keras.Model):
 
     def potential_energy(self, x, beta):
         """Compute potential energy using `self.potential` and beta."""
-        #  return beta * self.potential(x)
         with tf.name_scope('potential_energy'):
             potential_energy = tf.multiply(beta, self.potential(x))
 
@@ -657,7 +607,6 @@ class GaugeDynamics(tf.keras.Model):
     def kinetic_energy(self, v):
         """Compute the kinetic energy."""
         with tf.name_scope('kinetic_energy'):
-            #  kinetic_energy = 0.5 * tf.reduce_sum(v**2, axis=self.axes)
             kinetic_energy = 0.5 * tf.reduce_sum(v**2, axis=1)
 
         return kinetic_energy
@@ -671,12 +620,10 @@ class GaugeDynamics(tf.keras.Model):
                 kinetic = self.kinetic_energy(v)
             with tf.name_scope('hamiltonian'):
                 hamiltonian = potential + kinetic
-            #
-            #  hamiltonian = (self.potential_energy(x, beta)
-            #                 + self.kinetic_energy(v))
+
         return hamiltonian
 
-    def grad_potential(self, x, beta, check_numerics=True):
+    def grad_potential(self, x, beta):
         """Get gradient of potential function at current location."""
         with tf.name_scope('grad_potential'):
             if tf.executing_eagerly():
