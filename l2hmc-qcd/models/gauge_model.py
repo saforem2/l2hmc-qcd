@@ -28,16 +28,6 @@ from globals import GLOBAL_SEED, TF_FLOAT
 from lattice.lattice import GaugeLattice
 from dynamics.gauge_dynamics import GaugeDynamics
 
-#  from tensorflow.python import debug as tf_debug
-#  from tensorflow.python.client import timeline
-#  from tensorflow.core.protobuf import rewriter_config_pb2
-
-np.random.seed(GLOBAL_SEED)
-
-if float(tf.__version__.split('.')[0]) <= 2:
-    tf.set_random_seed(GLOBAL_SEED)
-    tf.logging.set_verbosity(tf.logging.INFO)
-
 
 def check_log_dir(log_dir):
     """Check log_dir for existing checkpoints."""

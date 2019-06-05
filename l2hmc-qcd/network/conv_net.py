@@ -24,16 +24,6 @@ np.random.seed(GLOBAL_SEED)
 if '2.' not in tf.__version__:
     tf.set_random_seed(GLOBAL_SEED)
 
-#      HAS_TF2 = True
-    #  variance_scaling_initializer = tf.keras.initializers.VarianceScaling
-    #  KERNEL_INITIALIZER=tf.keras.initializers.VarianceScaling
-#  else:
-#      TF2 = False
-    #  KERNEL_INITIALIZER = tf.contrib.layesrs.variance_scaling_initializer
-    #  variance_scaling_initializer = tf.keras.initializers.VarianceScaling
-
-
-#  from .generic_net import _custom_dense
 
 def variable_on_cpu(name, shape, initializer):
     """Helper to create a Variable stored on CPU memory.
@@ -84,7 +74,6 @@ def variable_with_weight_decay(name, shape, stddev, wd, cpu=True):
     return var
 
 
-# pylint: disable=invalid-name
 def create_periodic_padding(samples, filter_size):
     """Create periodic padding for multiple samples, using filter_size."""
     original_size = np.shape(samples)
@@ -173,7 +162,7 @@ class ConvNet3D(tf.keras.Model):
                         filters=self.num_filters,
                         kernel_size=self.filter_sizes[0],
                         activation=tf.nn.relu,
-                        #  input_shape=self._input_shape,
+                        input_shape=self._input_shape,
                         padding='same',
                         name='conv_x1',
                         dtype=TF_FLOAT,
@@ -194,7 +183,7 @@ class ConvNet3D(tf.keras.Model):
                         filters=self.num_filters,
                         kernel_size=self.filter_sizes[0],
                         activation=tf.nn.relu,
-                        #  input_shape=self._input_shape,
+                        input_shape=self._input_shape,
                         padding='same',
                         name='conv_v1',
                         dtype=TF_FLOAT,
@@ -401,7 +390,6 @@ class ConvNet3D(tf.keras.Model):
         return scale, translation, transformation
 
 
-
 # pylint:disable=too-many-arguments, too-many-instance-attributes
 class ConvNet2D(tf.keras.Model):
     """Conv. neural net with different initialization scale based on input."""
@@ -602,6 +590,7 @@ def _custom_dense(units, factor=1., name=None):
         kernel_initializer = tf.contrib.layers.variance_scaling_initializer(
             factor=factor,
             mode='FAN_IN',
+            seed=GLOBAL_SEED,
             uniform=True,
         )
 

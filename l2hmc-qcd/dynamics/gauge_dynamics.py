@@ -10,7 +10,6 @@ authors https://github.com/brain-research/l2hmc.
 Author: Sam Foreman (github: @saforem2)
 Date: 1/14/2019
 """
-# pylint: disable=invalid-name
 from __future__ import absolute_import, print_function, division
 
 import numpy as np
@@ -24,16 +23,6 @@ from network.generic_net import GenericNet
 import utils.file_io as io
 
 
-###########################################
-# Set global seed for numpy and tensorflow
-###########################################
-np.random.seed(GLOBAL_SEED)
-
-if '2' not in tf.__version__:
-    tf.set_random_seed(GLOBAL_SEED)
-
-
-# pylint:disable=invalid-name
 def exp(x, name=None):
     """Safe exponential using tf.check_numerics."""
     return tf.check_numerics(tf.exp(x), f'{name} is NaN')
@@ -131,9 +120,6 @@ class GaugeDynamics(tf.keras.Model):
             'name_scope': 'position',
             'data_format': self.data_format,  # channels_first if using GPU
             'use_bn': self.use_bn,  # whether or not to use batch normalization
-            #  'scale_weight': 1.,     # multiplicative factor multiplying
-            #  'translation_weight': 1.,
-            #  'transformation_weight': 1.,
         }
 
         with tf.name_scope("DynamicsNetwork"):
@@ -552,8 +538,8 @@ class GaugeDynamics(tf.keras.Model):
             vi: Initial v.
             xf: Proposed state.
             vf: Proposed v.
-            sumlogdet: Sum of the terms of the log of the determinant. (Eq. 14
-                of original paper).
+            sumlogdet: Sum of the terms of the log of the determinant. 
+                (Eq. 14 of original paper).
             beta: Inverse coupling constant of gauge model.
         """
         with tf.name_scope('compute_accept_prob'):

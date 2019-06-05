@@ -18,16 +18,6 @@ from scipy.special import i0, i1
 from globals import TF_FLOAT, NP_FLOAT
 
 
-EPS = 0.1
-
-NUM_SAMPLES = 500
-PHASE_MEAN = 0
-PHASE_SIGMA = 0.5  # for phases within +/- π / 6 ~ 0.5
-PHASE_SAMPLES = np.random.normal(PHASE_MEAN, PHASE_SIGMA, NUM_SAMPLES // 2)
-
-# the random phases must come in +/- pairs to ensure ergodicity
-RANDOM_PHASES = np.append(PHASE_SAMPLES, -PHASE_SAMPLES)
-
 def u1_plaq_exact(beta):
     """Computes the expected value of the `average` plaquette for U(1)."""
     return i1(beta) / i0(beta)

@@ -42,8 +42,7 @@ from tensorflow.core.protobuf import rewriter_config_pb2
 
 import utils.file_io as io
 
-import globals
-from globals import FILE_PATH, GLOBAL_SEED, NP_FLOAT
+from globals import GLOBAL_SEED, NP_FLOAT
 from utils.parse_args import parse_args
 from utils.model_loader import load_model
 from models.gauge_model import GaugeModel
@@ -53,11 +52,6 @@ from trainers.gauge_model_trainer import GaugeModelTrainer
 from plotters.gauge_model_plotter import GaugeModelPlotter
 from plotters.leapfrog_plotters import LeapfrogPlotter
 from runners.gauge_model_runner import GaugeModelRunner
-
-os.environ['PYTHONHASHSEED'] = str(GLOBAL_SEED)
-random.seed(GLOBAL_SEED)        # `python` build-in pseudo-random generator
-np.random.seed(GLOBAL_SEED)     # numpy pseudo-random generator
-tf.set_random_seed(GLOBAL_SEED)
 
 try:
     import horovod.tensorflow as hvd
@@ -70,6 +64,17 @@ try:
     HAS_MATPLOTLIB = True
 except ImportError:
     HAS_MATPLOTLIB = False
+
+if float(tf.__version__.split('.')[0]) <= 2:
+    tf.logging.set_verbosity(tf.logging.INFO)
+
+# -------------------------------------------------------------------------
+# Set random seeds for tensorflow and numpy
+# -------------------------------------------------------------------------
+os.environ['PYTHONHASHSEED'] = str(GLOBAL_SEED)
+random.seed(GLOBAL_SEED)        # `python` build-in pseudo-random generator
+np.random.seed(GLOBAL_SEED)     # numpy pseudo-random generator
+tf.set_random_seed(GLOBAL_SEED)
 
 
 def create_config(FLAGS, params):
@@ -135,15 +140,6 @@ def count_trainable_params(out_file):
     io.log_and_write(f'Total parameters: {total_params}', out_file)
     t1 = time.time() - t0
     io.log_and_write(f'Took: {t1} s to complete.', out_file)
-    #  all_strings = [var_str, var_shape_str, len_var_shape_str,
-    #                 dim_strs, var_params_str, total_params_str]
-    #  io.log_and_write([s for s in all_strings], out_file)
-    #  io.log_and_write(var_str, out_file)
-    #  io.log_and_write(var_shape_str, out_file)
-    #  io.log_and_write(len_var_shape_str, out_file)
-    #  _ = [io.log_and_write(s, out_file) for s in dim_strs]
-    #  io.log_and_write(var_params_str, out_file)
-    #  io.log_and_write(total_params_str, out_file)
 
 
 def hmc(FLAGS, params=None, log_file=None):
@@ -196,13 +192,6 @@ def hmc(FLAGS, params=None, log_file=None):
     else:
         betas = [float(FLAGS.hmc_beta)]
 
-    #  net_weights_arr = np.array([[0, 1, 1],  # [Q, S, T]
-    #                              [1, 0, 1],
-    #                              [1, 1, 0],
-    #                              [1, 0, 0],
-    #                              [0, 1, 0],
-    #                              [0, 0, 1]], dtype=NP_FLOAT)
-    #  for net_weights in net_weights_arr:
     for beta in betas:
         # to ensure hvd.rank() == 0
         if run_logger is not None:
@@ -409,11 +398,6 @@ def run_l2hmc(FLAGS, log_file=None):
 
 def main(FLAGS):
     """Main method for creating/training/running L2HMC for U(1) gauge model."""
-    #  if FLAGS.float64:
-    #      io.log(f"Using 64 point floating precision...")
-    #      globals.TF_FLOAT = tf.float64
-    #      globals.NP_FLOAT = np.float64
-
     if HAS_HOROVOD and FLAGS.horovod:
         io.log("INFO: USING HOROVOD")
         log_file = 'output_dirs.txt'
