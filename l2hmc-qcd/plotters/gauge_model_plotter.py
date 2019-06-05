@@ -285,7 +285,7 @@ class GaugeModelPlotter:
         _, ax = plot_multiple_lines(xy_data, xy_labels, **kwargs)
         _ = ax.axhline(y=u1_plaq_exact(beta),
                        color='#CC0033', ls='-', lw=1., label='exact')
-        _ = ax.plot(xy_data[0], xy_data[1].mean(axis=0), lw=0.5,
+        _ = ax.plot(xy_data[0], xy_data[1].mean(axis=0), lw=1.0,
                     color='k', label='average', alpha=0.75)
 
         _ = plt.tight_layout()
