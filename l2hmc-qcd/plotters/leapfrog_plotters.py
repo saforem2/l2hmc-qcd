@@ -86,9 +86,9 @@ class LeapfrogPlotter:
             self.sumlogdet_f = np.array(run_logger.sumlogdet['forward'])
             self.sumlogdet_b = np.array(run_logger.sumlogdet['backward'])
 
-        self.lf_f_diffs = self.lf_f[1:] - self.lf_f[:-1]
-        self.lf_b_diffs = self.lf_b[1:] - self.lf_b[:-1]
-        self.samples_diffs = self.samples[1:] - self.samples[:-1]
+        self.lf_f_diffs = 1. - np.cos(self.lf_f[1:] - self.lf_f[:-1])
+        self.lf_b_diffs = 1. - np.cos(self.lf_b[1:] - self.lf_b[:-1])
+        self.samples_diffs = 1. - np.cos(self.samples[1:] - self.samples[:-1])
         self.tot_lf_steps = self.lf_f_diffs.shape[0]
         self.tot_md_steps = self.samples_diffs.shape[0]
         self.num_lf_steps = self.tot_lf_steps // self.tot_md_steps
