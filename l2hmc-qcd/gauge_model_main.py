@@ -398,6 +398,7 @@ def run_l2hmc(FLAGS, log_file=None):
 
 def main(FLAGS):
     """Main method for creating/training/running L2HMC for U(1) gauge model."""
+    t0 = time.time()
     if HAS_HOROVOD and FLAGS.horovod:
         io.log("INFO: USING HOROVOD")
         log_file = 'output_dirs.txt'
@@ -436,6 +437,11 @@ def main(FLAGS):
                 params['log_dir'] = FLAGS.log_dir = None
                 params['eps'] = FLAGS.eps = eps
                 run_hmc(FLAGS, params, log_file)
+
+    io.log('\n\n')
+    io.log(80 * '-')
+    io.log(f'Time to complete: {time.time() - t0:.4g}')
+    io.log(80 * '-')
 
 
 if __name__ == '__main__':
