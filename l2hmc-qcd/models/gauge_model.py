@@ -220,9 +220,14 @@ class GaugeModel:
             elif metric == 'cos_diff':
                 def metric_fn(x1, x2):
                     return 1. - tf.cos(x1 - x2)
+            elif metric == 'tan_cos':
+                def metric_fn(x1, x2):
+                    cos_diff = 1. - tf.cos(x1 - x2)
+                    return tf.tan(np.pi * cos_diff / 2)
             else:
-                raise AttributeError(f"metric={metric}. Expected one of: "
-                                     "'l1', 'l2', 'cos', 'cos2' or 'cos_diff'")
+                raise AttributeError(f"""metric={metric}. Expected one of:
+                                     'l1', 'l2', 'cos', 'cos2', 'cos_diff', or
+                                     'tan_cos'.""")
 
         return metric_fn
 
@@ -374,9 +379,9 @@ class GaugeModel:
         """
         with tf.name_scope('x_update'):
             dynamics_output = self.dynamics(x, beta, net_weights, self.save_lf)
-            x_proposed = dynamics_output['x_proposed']
+            x_proposed = tf.mod(dynamics_output['x_proposed'], 2 * np.pi)
             px = dynamics_output['accept_prob']
-            x_out = dynamics_output['x_out']
+            x_out = tf.mod(dynamics_output['x_out'], 2 * np.pi)
 
             #  x_proposed = output[0]
             #  output[1] is v_post, don't need to save
@@ -391,7 +396,7 @@ class GaugeModel:
             z = tf.random_normal(tf.shape(x), seed=GLOBAL_SEED, name='z')
             z_dynamics_output = self.dynamics(z, beta, net_weights,
                                               save_lf=False)
-            z_proposed = z_dynamics_output['x_proposed']
+            z_proposed = tf.mod(z_dynamics_output['x_proposed'], 2 * np.pi)
             pz = z_dynamics_output['accept_prob']
             #  z_proposed, _, pz, _ = self.dynamics(z, beta)
 
