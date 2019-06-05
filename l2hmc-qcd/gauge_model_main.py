@@ -180,7 +180,7 @@ def hmc(FLAGS, params=None, log_file=None):
     sess = tf.Session(config=config)
 
     model = GaugeModel(params=params)
-    run_logger = RunLogger(model, params['log_dir'])
+    run_logger = RunLogger(model, params['log_dir'], save_lf_data=False)
     plotter = GaugeModelPlotter(run_logger.figs_dir)
 
     sess.run(tf.global_variables_initializer())
@@ -274,7 +274,7 @@ def l2hmc(FLAGS, log_file=None):
     model = GaugeModel(params=params)
     if is_chief:
         train_logger = TrainLogger(model, log_dir, FLAGS.summaries)
-        run_logger = RunLogger(model, train_logger.log_dir)
+        run_logger = RunLogger(model, train_logger.log_dir, save_lf_data=False)
         plotter = GaugeModelPlotter(run_logger.figs_dir)
     else:
         train_logger = None

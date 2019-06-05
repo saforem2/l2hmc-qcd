@@ -34,7 +34,7 @@ def autocorr(x):
 
 
 class RunLogger:
-    def __init__(self, model, log_dir):
+    def __init__(self, model, log_dir, save_lf_data=False):
         """
         Args:
             model: GaugeModel object.
@@ -46,6 +46,7 @@ class RunLogger:
         self.log_dir = log_dir
         self.runs_dir = os.path.join(self.log_dir, 'runs')
         self.figs_dir = os.path.join(self.log_dir, 'figures')
+        self.save_lf_data = save_lf_data
         io.check_else_make_dir(self.runs_dir)
         io.check_else_make_dir(self.figs_dir)
 
@@ -245,7 +246,8 @@ class RunLogger:
         io.check_else_make_dir(self.run_dir)
         io.check_else_make_dir(observables_dir)
 
-        if self.model.save_lf:
+        #  if self.model.save_lf:
+        if self.save_lf_data:
             self.save_attr('samples_out', self.samples_arr)
             self.save_attr('lf_forward', self.lf_out['forward'])
             self.save_attr('lf_backward', self.lf_out['backward'])

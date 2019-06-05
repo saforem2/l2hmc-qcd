@@ -129,16 +129,6 @@ class LeapfrogPlotter:
 
         return reds, blues
 
-    def save_attr(self, name, attr, out_dir):
-        assert os.path.isdir(out_dir)
-        out_file = os.path.join(out_dir, name + '.npz')
-
-        if os.path.isfile(out_file):
-            io.log(f'File {out_file} already exists. Skipping.')
-        else:
-            io.log(f'Saving {name} to: {out_file}')
-            np.savez_compressed(out_file, attr)
-
     def update_figs_dir(self, figs_dir):
         self.figs_dir = figs_dir
         self.pdfs_dir = os.path.join(self.figs_dir, 'pdfs')
@@ -146,7 +136,7 @@ class LeapfrogPlotter:
         io.check_else_make_dir(figs_dir)
         io.check_else_make_dir(self.pdfs_dir)
 
-    def make_plots(self, run_dir, num_samples=20, save=True, ret=False):
+    def make_plots(self, run_dir, num_samples=20, ret=False):
         """Make plots of the leapfrog differences and logdets.
 
         Immediately after creating and saving the plots, delete these
@@ -174,18 +164,6 @@ class LeapfrogPlotter:
         self.print_memory()
         fig_ax2 = self.plot_logdets(beta, num_samples)
 
-        if save:
-            self.save_attr('lf_forward', self.lf_f, out_dir=run_dir)
-            self.save_attr('lf_backward', self.lf_b, out_dir=run_dir)
-            self.save_attr('samples_out', self.samples, out_dir=run_dir)
-
-            self.save_attr('logdets_forward', self.logdets_f, out_dir=run_dir)
-            self.save_attr('logdets_backward', self.logdets_b, out_dir=run_dir)
-
-            self.save_attr('sumlogdet_forward',
-                           self.sumlogdet_f, out_dir=run_dir)
-            self.save_attr('sumlogdet_backward',
-                           self.sumlogdet_b, out_dir=run_dir)
         if ret:
             return fig_ax1, fig_ax2
 
