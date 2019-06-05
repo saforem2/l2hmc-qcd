@@ -204,17 +204,10 @@ class GaugeDynamics(tf.keras.Model):
                 v_f = outputs_f['v_proposed']
                 accept_prob_f = outputs_f['accept_prob']
 
-                #  x_f = outputs[0]
-                #  v_f = outputs[1]
-                #  accept_prob_f = outputs[2]
                 if save_lf:
                     lf_out_f = outputs_f['lf_out']
                     logdets_f = outputs_f['logdets']
                     sumlogdet_f = outputs_f['sumlogdet']
-                    #  lf_out_f = outputs[3]
-                    #  accept_probs_f = outputs[4]
-                    #  logdets_f = outputs[5]
-                    #  sumlogdet_f = outputs[6]
 
             with tf.name_scope('transition_backward'):
                 outputs_b = self.transition_kernel(x_in, beta,
@@ -225,21 +218,10 @@ class GaugeDynamics(tf.keras.Model):
                 v_b = outputs_b['v_proposed']
                 accept_prob_b = outputs_b['accept_prob']
 
-                #  x_f = outputs_b[0]
-                #  v_f = outputs_b[1]
-                #  accept_prob_f = outputs_b[2]
                 if save_lf:
                     lf_out_b = outputs_b['lf_out']
                     logdets_b = outputs_b['logdets']
                     sumlogdet_b = outputs_b['sumlogdet']
-                #  x_b = outputs[0]
-                #  v_b = outputs[1]
-                #  accept_prob_b = outputs[2]
-                #  if save_lf:
-                    #  lf_out_b = outputs[3]
-                    #  accept_probs_b = outputs[4]
-                    #  logdets_b = outputs[5]
-                    #  sumlogdet_b = outputs[6]
 
             # Decide direction uniformly
             with tf.name_scope('transition_masks'):
