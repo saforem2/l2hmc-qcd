@@ -418,7 +418,6 @@ def main(FLAGS):
             run_hmc(FLAGS, log_file)
 
     else:
-        # Run L2HMC
         model, logger = run_l2hmc(FLAGS, log_file)
 
         if FLAGS.run_hmc:
