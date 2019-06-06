@@ -94,14 +94,14 @@ class LeapfrogPlotter:
         self.num_lf_steps = self.tot_lf_steps // self.tot_md_steps
         self.indiv_kwargs = {
             'ls': '-',
-            'alpha': 0.7,
+            'alpha': 0.5,
             'lw': 0.5,
             'rasterized': True
         }
 
         self.avg_kwargs = {
             'ls': '-',
-            'alpha': 0.8,
+            'alpha': 0.6,
             'lw': 0.75,
             'rasterized': True
         }
