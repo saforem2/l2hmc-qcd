@@ -92,6 +92,19 @@ class LeapfrogPlotter:
         self.tot_lf_steps = self.lf_f_diffs.shape[0]
         self.tot_md_steps = self.samples_diffs.shape[0]
         self.num_lf_steps = self.tot_lf_steps // self.tot_md_steps
+        self.indiv_kwargs = {
+            'ls': '-',
+            'alpha': 0.7,
+            'lw': 0.5,
+            'rasterized': True
+        }
+
+        self.avg_kwargs = {
+            'ls': '-',
+            'alpha': 0.8,
+            'lw': 0.75,
+            'rasterized': True
+        }
         #  self.therm_steps = int(therm_perc * self.tot_lf_steps)
         #  self.skip_steps = int(skip_perc * self.tot_lf_steps)
         #  self.step_multiplier = (
@@ -172,12 +185,6 @@ class LeapfrogPlotter:
         samples_y_avg = np.mean(self.samples_diffs, axis=(1, 2))
         samples_x_avg = np.arange(len(samples_y_avg))
 
-        indiv_kwargs = {
-            'ls': '-',
-            'alpha': 0.9,
-            'lw': 0.5
-        }
-
         fig, (ax1, ax2) = plt.subplots(2, 1)
         for idx in range(num_samples):
             yf = np.mean(self.lf_f_diffs, axis=-1)
@@ -185,21 +192,21 @@ class LeapfrogPlotter:
             yb = np.mean(self.lf_b_diffs, axis=-1)
             xb = np.arange(len(yb))
 
-            _ = ax1.plot(xf, yf[:, idx], color=reds[idx], **indiv_kwargs,
-                         rasterized=True)
-            _ = ax1.plot(xb, yb[:, idx], color=blues[idx], **indiv_kwargs,
-                         rasterized=True)
+            _ = ax1.plot(xf, yf[:, idx], color=reds[idx], **self.indiv_kwargs)
+            _ = ax1.plot(xb, yb[:, idx], color=blues[idx], **self.indiv_kwargs)
 
         yf_avg = np.mean(self.lf_f_diffs, axis=(1, 2))
         yb_avg = np.mean(self.lf_b_diffs, axis=(1, 2))
         xf_avg = np.arange(len(yf))
         xb_avg = np.arange(len(yb))
 
-        _ = ax1.plot(xf_avg, yf_avg, label='forward', color='r', lw=1.)
-        _ = ax1.plot(xb_avg, yb_avg, label='backward', color='b', lw=1.)
+        _ = ax1.plot(xf_avg, yf_avg, label='forward',
+                     color='r', **self.avg_kwargs)
+        _ = ax1.plot(xb_avg, yb_avg, label='backward',
+                     color='b', **self.avg_kwargs)
 
-        _ = ax2.plot(samples_x_avg, samples_y_avg, color='k', lw=1.,
-                     label='MD avg.', rasterized=True)
+        _ = ax2.plot(samples_x_avg, samples_y_avg, label='MD avg.',
+                     color='k', **self.avg_kwargs)
 
         _ = ax1.set_xlabel('Leapfrog step', fontsize=16)
         _ = ax2.set_xlabel('MD step', fontsize=16)
@@ -213,12 +220,11 @@ class LeapfrogPlotter:
         fig.tight_layout()
         #  fig.subplots_adjust(hspace=0.5)
 
-        out_file = os.path.join(self.pdfs_dir,
-                                f'leapfrog_diffs_beta{beta}.pdf')
-        out_file_zoom = os.path.join(self.pdfs_dir,
-                                     f'leapfrog_diffs_beta{beta}_zoom.pdf')
-        out_file_zoom1 = os.path.join(self.pdfs_dir,
-                                      f'leapfrog_diffs_beta{beta}_zoom1.pdf')
+        beta_str = str(beta).replace('.', '')
+        fn = f'leapfrog_diffs_beta{beta_str}'
+        out_file = os.path.join(self.pdfs_dir, fn + '.pdf')
+        out_file_zoom = os.path.join(self.pdfs_dir, fn + '_zoom.pdf')
+        out_file_zoom1 = os.path.join(self.pdfs_dir, fn + '_zoom1.pdf')
         io.log(f'Saving figure to: {out_file}')
         _ = plt.savefig(out_file, dpi=400, bbox_inches='tight')
 
@@ -253,10 +259,8 @@ class LeapfrogPlotter:
             yb = self.logdets_b[:, idx]
             xb = np.arange(len(yb))
 
-            _ = ax1.plot(xf, yf, color=reds[idx], alpha=0.9, lw=0.5,
-                         rasterized=True)
-            _ = ax1.plot(xb, yb, color=blues[idx], alpha=0.9, lw=0.5,
-                         rasterized=True)
+            _ = ax1.plot(xf, yf, color=reds[idx], **self.indiv_kwargs)
+            _ = ax1.plot(xb, yb, color=blues[idx], **self.indiv_kwargs)
 
         yf_avg = np.mean(self.logdets_f, axis=-1)
         yb_avg = np.mean(self.logdets_b, axis=-1)
@@ -265,15 +269,15 @@ class LeapfrogPlotter:
         xb_avg = np.arange(len(yb_avg))
 
         _ = ax1.plot(xf_avg, yf_avg, label='forward',
-                     alpha=0.9, ls='-', color='r', lw=1.)
+                     color='r', **self.avg_kwargs)
         _ = ax1.plot(xb_avg, yb_avg, label='backward',
-                     alpha=0.9, ls='-', color='b', lw=1.)
+                     color='b', **self.avg_kwargs)
 
         _ = ax2.plot(sumlogdet_xf_avg, sumlogdet_yf_avg, label='forward',
-                     alpha=0.9, color='r', lw=1., ls='-')
+                     color='r', **self.avg_kwargs)
 
         _ = ax2.plot(sumlogdet_xb_avg, sumlogdet_yb_avg, label='backward',
-                     alpha=0.9, color='b', lw=1., ls='-')
+                     color='b', **self.avg_kwargs)
 
         _ = ax1.set_xlabel('Leapfrog step', fontsize=16)
         _ = ax1.set_ylabel(r'$\mathcal{J}^{(t)}$', fontsize=16)
@@ -282,12 +286,11 @@ class LeapfrogPlotter:
         _ = ax1.legend(loc='best', fontsize=10)
         _ = ax2.legend(loc='best', fontsize=10)
         _ = fig.tight_layout()
-        out_file = os.path.join(self.pdfs_dir,
-                                f'avg_logdets_beta{beta}.pdf')
-        out_file_zoom = os.path.join(self.pdfs_dir,
-                                     f'avg_logdets_beta{beta}_zoom.pdf')
-        out_file_zoom1 = os.path.join(self.pdfs_dir,
-                                      f'avg_logdets_beta{beta}_zoom1.pdf')
+        beta_str = str(beta).replace('.', '')
+        fn = f'avg_logdets_beta{beta_str}'
+        out_file = os.path.join(self.pdfs_dir, fn + '.pdf')
+        out_file_zoom = os.path.join(self.pdfs_dir, fn + '_zoom.pdf')
+        out_file_zoom1 = os.path.join(self.pdfs_dir, fn + '_zoom1.pdf')
         io.log(f'Saving figure to: {out_file}')
         _ = plt.savefig(out_file, dpi=400, bbox_inches='tight')
 
