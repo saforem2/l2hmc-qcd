@@ -260,12 +260,14 @@ class ConvNet3D(tf.keras.Model):
                                                  name='h_layer')
 
                 with tf.name_scope('scale_layer'):
-                    self.scale_layer = _custom_dense(self.x_dim, 0.001,
-                                                     name='scale_layer')
+                    self.scale_layer = _custom_dense(
+                        self.x_dim, 0.001, name='scale_layer'
+                    )
 
                 with tf.name_scope('translation_layer'):
-                    self.translation_layer = _custom_dense(self.x_dim, 0.001,
-                                                           'translation_layer')
+                    self.translation_layer = _custom_dense(
+                        self.x_dim, 0.001, 'translation_layer'
+                    )
 
                 with tf.name_scope('transformation_layer'):
                     self.transformation_layer = _custom_dense(
