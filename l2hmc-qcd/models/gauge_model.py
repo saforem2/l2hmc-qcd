@@ -63,8 +63,6 @@ class GaugeModel:
         # -------------------------------------------------------
         self.x, self.beta, self.net_weights = self._create_inputs()
 
-        io.log(f'self.x.dtype: {self.x.dtype}')
-
         # -------------------------------------------------------
         # Create dynamics engine
         # -------------------------------------------------------
@@ -79,7 +77,7 @@ class GaugeModel:
         self.metric_fn = self._create_metric_fn(self.metric)
 
         # -------------------------------------------------------
-        # Create operations for calculating plaquette observables.
+        # Create operations for calculating plaquette observables
         # -------------------------------------------------------
         obs_ops = self._create_observables()
         self.plaq_sums_op = obs_ops['plaq_sums']
