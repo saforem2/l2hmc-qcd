@@ -83,7 +83,6 @@ class GaugeDynamics(tf.keras.Model):
                 dtype=TF_FLOAT,
                 trainable=self.eps_trainable
             )
-            io.log(f'eps.dtype: {self.eps.dtype}')
 
         self._construct_masks()
 
