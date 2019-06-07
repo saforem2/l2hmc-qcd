@@ -237,6 +237,8 @@ def l2hmc(FLAGS, log_file=None):
         params['train_steps'] //= num_workers
         params['save_steps'] //= num_workers
         params['lr_decay_steps'] //= num_workers
+        if params['summaries']:
+            params['logging_steps'] // num_workers
         hooks = [
             # Horovod: BroadcastGlobalVariablesHook broadcasts initial
             # variable states from rank 0 to all other processes. This
@@ -338,17 +340,18 @@ def l2hmc(FLAGS, log_file=None):
     tf.keras.backend.set_learning_phase(False)
 
     runner = GaugeModelRunner(sess, model, run_logger)
-
-    #  betas = np.arange(model.beta_init, model.beta_final, 1)
     betas = [model.beta_final]  # model.beta_final + 1]
-    net_weights_arr = np.array([[1, 1, 1],  # [Q, S, T]
-                                [0, 1, 1],
-                                [1, 0, 1],
-                                [1, 1, 0],
-                                [1, 0, 0],
-                                [0, 1, 0],
-                                [0, 0, 1],
-                                [0, 0, 0]], dtype=NP_FLOAT)
+    if FLAGS.run_net_weights:
+        net_weights_arr = np.array([[1, 1, 1],  # [Q, S, T]
+                                    [0, 1, 1],
+                                    [1, 0, 1],
+                                    [1, 1, 0],
+                                    [1, 0, 0],
+                                    [0, 1, 0],
+                                    [0, 0, 1],
+                                    [0, 0, 0]], dtype=NP_FLOAT)
+    else:
+        net_weights_arr = np.array([[1, 1, 1],], dtype=NP_FLOAT)
 
     for net_weights in net_weights_arr:
         for beta in betas:
