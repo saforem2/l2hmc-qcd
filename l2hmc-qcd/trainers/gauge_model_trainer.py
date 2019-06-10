@@ -55,7 +55,7 @@ class GaugeModelTrainer:
 
         return new_beta
 
-    def train_step(self, step, samples_np, beta_np=None, net_weights=None):
+    def train_step(self, step, samples_np, beta_np=None, **weights):
         """Perform a single training step.
 
         Args:
@@ -72,6 +72,12 @@ class GaugeModelTrainer:
         if beta_np is None:
             beta_np = self.update_beta(step)
 
+        charge_weight = weights.get('charge_weight', None)
+        net_weights = weights.get('net_weights', None)
+
+        if charge_weight is None:
+            charge_weight = 0.
+
         if net_weights is None:
             # scale_weight, transformation_weight, translation_weight
             net_weights = [1., 1., 1.]
@@ -82,6 +88,7 @@ class GaugeModelTrainer:
             self.model.net_weights[0]: net_weights[0],
             self.model.net_weights[1]: net_weights[1],
             self.model.net_weights[2]: net_weights[2],
+            self.model.charge_weight: charge_weight
         }
 
         global_step = self.sess.run(self.model.global_step)
@@ -148,6 +155,7 @@ class GaugeModelTrainer:
         initial_step = kwargs.get('initial_step', 0)
         samples_np = kwargs.get('samples_np', None)
         beta_np = kwargs.get('beta_np', None)
+        charge_weight = kwargs.get('charge_weight', None)
         net_weights = kwargs.get('net_weights', None)
 
         if beta_np is None:
@@ -161,22 +169,21 @@ class GaugeModelTrainer:
 
         assert samples_np.shape == self.model.x.shape
 
-        if net_weights is None:
-            net_weights = [1., 1., 1.]
+        weights = {
+            'charge_weight': charge_weight,
+            'net_weights': net_weights
+        }
 
         try:
             io.log(TRAIN_HEADER)
             for step in range(initial_step, train_steps):
-                out_data, data_str = self.train_step(step,
-                                                     samples_np,
-                                                     net_weights=net_weights)
+                out_data, data_str = self.train_step(step, samples_np,
+                                                     **weights)
                 samples_np = out_data['samples']
 
                 if self.logger is not None:
-                    self.logger.update_training(self.sess,
-                                                out_data,
-                                                net_weights,
-                                                data_str)
+                    self.logger.update_training(self.sess, out_data,
+                                                data_str, **weights)
 
             if self.logger is not None:
                 self.logger.write_train_strings()
@@ -185,4 +192,5 @@ class GaugeModelTrainer:
             io.log("\nKeyboardInterrupt detected!")
             io.log("Saving current state and exiting.")
             if self.logger is not None:
-                self.logger.update_training(out_data, data_str)
+                self.logger.update_training(self.sess, out_data,
+                                            data_str, **weights)

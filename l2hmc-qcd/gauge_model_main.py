@@ -213,6 +213,10 @@ def hmc(FLAGS, params=None, log_file=None):
     return sess, model, runner, run_logger
 
 
+def train_l2hmc(FLAGS, log_file=None):
+    """Train L2HMC using GaugeModelTrainer."""
+    pass
+
 def l2hmc(FLAGS, log_file=None):
     """Create, train, and run L2HMC sampler on 2D U(1) gauge model."""
     tf.keras.backend.clear_session()
@@ -234,6 +238,7 @@ def l2hmc(FLAGS, log_file=None):
     if FLAGS.horovod:
         params['using_hvd'] = True
         num_workers = hvd.size()
+        params['num_workers'] = num_workers
         params['train_steps'] //= num_workers
         params['save_steps'] //= num_workers
         params['lr_decay_steps'] //= num_workers
@@ -253,6 +258,10 @@ def l2hmc(FLAGS, log_file=None):
         params['using_hvd'] = False
         hooks = []
 
+    # conditionals required for file I/O
+    # if we're not using horovod, `is_chief` should always be True
+    # otherwise, if using Horovod, we only want to perform file I/O
+    # on hvd.rank() == 0, so check that first
     condition1 = not FLAGS.horovod
     condition2 = FLAGS.horovod and hvd.rank() == 0
     is_chief = condition1 or condition2
@@ -287,6 +296,8 @@ def l2hmc(FLAGS, log_file=None):
     #  sess = tf.Session(config=config)
     tf.keras.backend.set_learning_phase(True)
 
+    # set initial value of charge weight using value from FLAGS
+    charge_weight_init = FLAGS.charge_weight
     net_weights_init = [1., 1., 1.]
     samples_init = np.reshape(np.array(model.lattice.samples, dtype=NP_FLOAT),
                               (model.num_samples, model.x_dim))
@@ -294,6 +305,7 @@ def l2hmc(FLAGS, log_file=None):
     init_feed_dict = {
         model.x: samples_init,
         model.beta: beta_init,
+        model.charge_weight: charge_weight_init,
         model.net_weights[0]: net_weights_init[0],  # scale_weight
         model.net_weights[1]: net_weights_init[1],  # transformation_weight
         model.net_weights[2]: net_weights_init[2],  # translation_weight
@@ -314,6 +326,7 @@ def l2hmc(FLAGS, log_file=None):
     kwargs = {
         'samples_np': samples_init,
         'beta_np': beta_init,
+        'charge_weight': charge_weight_init,
         'net_weights': net_weights_init
     }
 
@@ -341,7 +354,7 @@ def l2hmc(FLAGS, log_file=None):
 
     runner = GaugeModelRunner(sess, model, run_logger)
     betas = [model.beta_final]  # model.beta_final + 1]
-    if FLAGS.run_net_weights:
+    if FLAGS.loop_net_weights:
         net_weights_arr = np.array([[1, 1, 1],  # [Q, S, T]
                                     [0, 1, 1],
                                     [1, 0, 1],
@@ -351,15 +364,19 @@ def l2hmc(FLAGS, log_file=None):
                                     [0, 0, 1],
                                     [0, 0, 0]], dtype=NP_FLOAT)
     else:
-        net_weights_arr = np.array([[1, 1, 1],], dtype=NP_FLOAT)
+        net_weights_arr = np.array([[1, 1, 1]], dtype=NP_FLOAT)
 
     for net_weights in net_weights_arr:
+        weights = {
+            'charge_weight': charge_weight_init,
+            'net_weights': net_weights
+        }
         for beta in betas:
             if run_logger is not None:
-                run_dir, run_str = run_logger.reset(model.run_steps,
-                                                    beta, net_weights)
+                run_dir, run_str = run_logger.reset(model.run_steps, beta,
+                                                    **weights)
             t0 = time.time()
-            runner.run(model.run_steps, beta, net_weights)
+            runner.run(model.run_steps, beta, **weights)
             run_time = time.time() - t0
             io.log(80 * '-')
             io.log(f'Took: {run_time} s to complete run.')

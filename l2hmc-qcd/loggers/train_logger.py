@@ -150,11 +150,15 @@ class TrainLogger:
         with open(self.current_state_file, 'wb') as f:
             pickle.dump(self._current_state, f)
 
-    def log_step(self, sess, step, samples_np, beta_np, net_weights):
+    def log_step(self, sess, step, samples_np, beta_np, **weights):
         """Update self.logger.summaries."""
+        net_weights = weights['net_weights']
+        charge_weight = weights['charge_weight']
+
         feed_dict = {
             self.model.x: samples_np,
             self.model.beta: beta_np,
+            self.model.charge_weight: charge_weight,
             self.model.net_weights[0]: net_weights[0],
             self.model.net_weights[1]: net_weights[1],
             self.model.net_weights[2]: net_weights[2],
@@ -164,7 +168,7 @@ class TrainLogger:
         self.writer.add_summary(summary_str, global_step=step)
         self.writer.flush()
 
-    def update_training(self, sess, data, net_weights, data_str):
+    def update_training(self, sess, data, data_str, **weights):
         """Update _current state and train_data."""
         step = data['step']
         beta = data['beta']
@@ -173,7 +177,8 @@ class TrainLogger:
         self._current_state['lr'] = data['lr']
         self._current_state['eps'] = data['eps']
         self._current_state['samples'] = data['samples']
-        self._current_state['net_weights'] = net_weights
+        self._current_state['net_weights'] = weights['net_weights']
+        self._current_state['charge_weight'] = weights['charge_weight']
 
         key = (step, beta)
 
@@ -192,7 +197,7 @@ class TrainLogger:
             io.log(data_str)
 
         if self.summaries and (step + 1) % self.model.logging_steps == 0:
-            self.log_step(sess, step, data['samples'], beta, net_weights)
+            self.log_step(sess, step, data['samples'], beta, **weights)
 
         if (step + 1) % self.model.save_steps == 0:
             #  self.model.save(self.sess, self.checkpoint_dir)

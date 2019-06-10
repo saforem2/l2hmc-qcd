@@ -300,8 +300,8 @@ def parse_args():
                         help=("Flag that when passed will save the "
                               "output from each leapfrog step"))
 
-    parser.add_argument('--run_net_weights',
-                        dest='run_net_weights',
+    parser.add_argument('--loop_net_weights',
+                        dest='loop_net_weights',
                         action='store_true',
                         help=("""Flag that when passed will iterate over
                               multiple values of `net_weights`, which are
