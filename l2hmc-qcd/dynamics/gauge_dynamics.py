@@ -446,7 +446,7 @@ class GaugeDynamics(tf.keras.Model):
 
             with tf.name_scope('v_update'):
                 v = (v * scale_exp - 0.5 * self.eps
-                     * (grad * transformation_exp + translation))
+                     * (grad * transformation_exp - translation))
 
         return v, tf.reduce_sum(scale, axis=1)
 
@@ -495,7 +495,7 @@ class GaugeDynamics(tf.keras.Model):
             with tf.name_scope('v_update'):
                 v = scale_exp * (
                     v + 0.5 * self.eps * (
-                        grad * transformation_exp + translation
+                        grad * transformation_exp - translation
                     )
                 )
 
