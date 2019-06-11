@@ -274,10 +274,10 @@ class LeapfrogPlotter:
                      color='b', **self.avg_kwargs)
 
         _ = ax2.plot(sumlogdet_xf_avg, sumlogdet_yf_avg, label='forward',
-                     color='r', lw=1.2, alpha=0.9, marker='o')
+                     color='r', lw=1.2, alpha=0.9, marker='.')
 
         _ = ax2.plot(sumlogdet_xb_avg, sumlogdet_yb_avg, label='backward',
-                     color='b', lw=1.2, alpha=0.9, marker='o')
+                     color='b', lw=1.2, alpha=0.9, marker='.')
 
         _ = ax1.set_xlabel('Leapfrog step', fontsize=16)
         _ = ax1.set_ylabel(r'$\log|\mathcal{J}^{(t)}|$', fontsize=16)
