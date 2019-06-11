@@ -386,7 +386,6 @@ class GaugeDynamics(tf.keras.Model):
 
     def _backward_lf(self, x, v, beta, step, net_weights):
         """One backward augmented leapfrog step."""
-
         # Reversed index/sinusoidal time
         with tf.name_scope('backward_lf'):
             with tf.name_scope('get_time'):
@@ -425,7 +424,7 @@ class GaugeDynamics(tf.keras.Model):
             beta: inverse coupling constant
             t: current leapfrog step
             net_weights: Placeholders for the multiplicative weights by which
-                to multiply the S, Q, and T functions (scale, transformed,
+                to multiply the S, Q, and T functions (scale, transformation,
                 translation resp.)
         Returns:
             v: Updated (output) momentum
@@ -437,7 +436,7 @@ class GaugeDynamics(tf.keras.Model):
 
             with tf.name_scope('v_fn'):
                 # Sv: scale, Qv: transformation, Tv: translation
-                scale, translation, transformed = self.v_fn(
+                scale, translation, transformation = self.v_fn(
                     [x, grad, t, net_weights]
                 )
 
@@ -445,17 +444,17 @@ class GaugeDynamics(tf.keras.Model):
                 scale *= 0.5 * self.eps
                 scale_exp = exp(scale, 'vf_scale')
 
-            with tf.name_scope('transformed'):
-                transformed *= self.eps
-                transformed_exp = exp(transformed, 'vf_transformed')
+            with tf.name_scope('transformation'):
+                transformation *= self.eps
+                transformation_exp = exp(transformation, 'vf_transformation')
 
             with tf.name_scope('v_update'):
-                v = (v * scale_exp
-                     - 0.5 * self.eps * (grad * transformed_exp - translation))
+                v = (v * scale_exp - 0.5 * self.eps
+                     * (grad * transformation_exp + translation))
 
                 #  v = (v * exp(scale, 'vf_scale')
                 #       - (0.5 * self.eps
-                #          * (exp(transformed, name='vf_transformed')
+                #          * (exp(transformation, name='vf_transformation')
                 #             * grad + translation)))
 
         return v, tf.reduce_sum(scale, axis=1)
@@ -464,7 +463,7 @@ class GaugeDynamics(tf.keras.Model):
         """Update x in the forward leapfrog step."""
         with tf.name_scope('update_x_forward'):
             with tf.name_scope('x_fn'):
-                scale, translation, transformed = self.x_fn(
+                scale, translation, transformation = self.x_fn(
                     [v, mask * x, t, net_weights]
                 )
 
@@ -472,17 +471,17 @@ class GaugeDynamics(tf.keras.Model):
                 scale *= self.eps
                 scale_exp = exp(scale, 'xf_scale')
 
-            with tf.name_scope('transformed'):
-                transformed *= self.eps
-                transformed_exp = exp(transformed, 'xf_transformed')
+            with tf.name_scope('transformation'):
+                transformation *= self.eps
+                transformation_exp = exp(transformation, 'xf_transformation')
 
             with tf.name_scope('x_update'):
                 x = (mask * x
                      + mask_inv * (x * scale_exp + self.eps
-                                   * (v * transformed_exp + translation)))
+                                   * (v * transformation_exp + translation)))
                 #  x = (mask * x + mask_inv
                 #       * (x * exp(scale, 'xf_scale') + self.eps
-                #          * (exp(transformed, 'xf_transformed')
+                #          * (exp(transformation, 'xf_transformation')
                 #             * v + translation)))
 
         return x, tf.reduce_sum(mask_inv * scale, axis=1)
@@ -494,7 +493,7 @@ class GaugeDynamics(tf.keras.Model):
                 grad = self.grad_potential(x, beta)
 
             with tf.name_scope('v_fn'):
-                scale, translation, transformed = self.v_fn(
+                scale, translation, transformation = self.v_fn(
                     [x, grad, t, net_weights]
                 )
 
@@ -502,19 +501,19 @@ class GaugeDynamics(tf.keras.Model):
                 scale *= -0.5 * self.eps
                 scale_exp = exp(scale, 'vb_scale')
 
-            with tf.name_scope('transformed'):
-                transformed *= self.eps
-                transformed_exp = exp(transformed, 'vb_transformed')
+            with tf.name_scope('transformation'):
+                transformation *= self.eps
+                transformation_exp = exp(transformation, 'vb_transformation')
 
             with tf.name_scope('v_update'):
                 v = scale_exp * (
                     v + 0.5 * self.eps * (
-                        grad * transformed_exp - translation
+                        grad * transformation_exp + translation
                     )
                 )
                 #  v = (exp(scale, 'vb_scale')
                 #       * (v + 0.5 * self.eps
-                #          * (exp(transformed, 'vb_transformed')
+                #          * (exp(transformation, 'vb_transformation')
                 #             * grad - translation)))
 
         return v, tf.reduce_sum(scale, axis=1)
@@ -523,7 +522,7 @@ class GaugeDynamics(tf.keras.Model):
         """Update x in the backward lf step. Inverting the forward update."""
         with tf.name_scope('update_x_backward'):
             with tf.name_scope('x_fn'):
-                scale, translation, transformed = self.x_fn(
+                scale, translation, transformation = self.x_fn(
                     [v, mask * x, t, net_weights]
                 )
 
@@ -531,17 +530,17 @@ class GaugeDynamics(tf.keras.Model):
                 scale *= -self.eps
                 scale_exp = exp(scale, 'xb_scale')
 
-            with tf.name_scope('transformed'):
-                transformed *= self.eps
-                transformed_exp = exp(transformed, 'xb_transformed')
+            with tf.name_scope('transformation'):
+                transformation *= self.eps
+                transformation_exp = exp(transformation, 'xb_transformation')
 
             with tf.name_scope('x_update'):
                 x = (mask * x + mask_inv * scale_exp
-                     * (x - self.eps * (v * transformed_exp + translation)))
+                     * (x - self.eps * (v * transformation_exp + translation)))
                 #  x = (mask * x
                 #       + mask_inv * exp(scale, 'xb_scale')
                 #       * (x - self.eps
-                #          * (v * exp(transformed, 'xb_transformed')
+                #          * (v * exp(transformation, 'xb_transformation')
                 #             + translation)))
 
         return x, tf.reduce_sum(mask_inv * scale, axis=1)

@@ -30,8 +30,6 @@ class GenericNet(tf.keras.Model):
         if self.name_scope is None:
             self.name_scope = model_name
 
-
-
         #  with tf.variable_scope(variable_scope):
         with tf.name_scope(self.name_scope):
             self.flatten = tf.keras.layers.Flatten(name='flatten')

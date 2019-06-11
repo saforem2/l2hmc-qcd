@@ -217,6 +217,7 @@ def train_l2hmc(FLAGS, log_file=None):
     """Train L2HMC using GaugeModelTrainer."""
     pass
 
+
 def l2hmc(FLAGS, log_file=None):
     """Create, train, and run L2HMC sampler on 2D U(1) gauge model."""
     tf.keras.backend.clear_session()
@@ -384,9 +385,8 @@ def l2hmc(FLAGS, log_file=None):
 
             if plotter is not None and run_logger is not None:
                 plotter.plot_observables(run_logger.run_data, beta, run_str)
-                if FLAGS.save_lf:
-                    lf_plotter = LeapfrogPlotter(plotter.out_dir, run_logger)
-                    lf_plotter.make_plots(run_dir, num_samples=20)
+                lf_plotter = LeapfrogPlotter(plotter.out_dir, run_logger)
+                lf_plotter.make_plots(run_dir, num_samples=20)
 
     return sess, model, train_logger
 
