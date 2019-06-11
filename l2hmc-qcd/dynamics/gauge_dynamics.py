@@ -10,8 +10,6 @@ authors https://github.com/brain-research/l2hmc.
 Author: Sam Foreman (github: @saforem2)
 Date: 1/14/2019
 """
-from __future__ import absolute_import, print_function, division
-
 import numpy as np
 import numpy.random as npr
 import tensorflow as tf
@@ -19,8 +17,6 @@ import tensorflow as tf
 from globals import GLOBAL_SEED, TF_FLOAT
 from network.conv_net import ConvNet2D, ConvNet3D
 from network.generic_net import GenericNet
-
-import utils.file_io as io
 
 
 def exp(x, name=None):
@@ -452,11 +448,6 @@ class GaugeDynamics(tf.keras.Model):
                 v = (v * scale_exp - 0.5 * self.eps
                      * (grad * transformation_exp + translation))
 
-                #  v = (v * exp(scale, 'vf_scale')
-                #       - (0.5 * self.eps
-                #          * (exp(transformation, name='vf_transformation')
-                #             * grad + translation)))
-
         return v, tf.reduce_sum(scale, axis=1)
 
     def _update_x_forward(self, x, v, t, net_weights, mask, mask_inv):
@@ -479,10 +470,6 @@ class GaugeDynamics(tf.keras.Model):
                 x = (mask * x
                      + mask_inv * (x * scale_exp + self.eps
                                    * (v * transformation_exp + translation)))
-                #  x = (mask * x + mask_inv
-                #       * (x * exp(scale, 'xf_scale') + self.eps
-                #          * (exp(transformation, 'xf_transformation')
-                #             * v + translation)))
 
         return x, tf.reduce_sum(mask_inv * scale, axis=1)
 
@@ -511,10 +498,6 @@ class GaugeDynamics(tf.keras.Model):
                         grad * transformation_exp + translation
                     )
                 )
-                #  v = (exp(scale, 'vb_scale')
-                #       * (v + 0.5 * self.eps
-                #          * (exp(transformation, 'vb_transformation')
-                #             * grad - translation)))
 
         return v, tf.reduce_sum(scale, axis=1)
 
@@ -537,11 +520,6 @@ class GaugeDynamics(tf.keras.Model):
             with tf.name_scope('x_update'):
                 x = (mask * x + mask_inv * scale_exp
                      * (x - self.eps * (v * transformation_exp + translation)))
-                #  x = (mask * x
-                #       + mask_inv * exp(scale, 'xb_scale')
-                #       * (x - self.eps
-                #          * (v * exp(transformation, 'xb_transformation')
-                #             + translation)))
 
         return x, tf.reduce_sum(mask_inv * scale, axis=1)
 
