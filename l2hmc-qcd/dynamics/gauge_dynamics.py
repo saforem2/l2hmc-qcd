@@ -493,11 +493,8 @@ class GaugeDynamics(tf.keras.Model):
                 transformation_exp = exp(transformation, 'vb_transformation')
 
             with tf.name_scope('v_update'):
-                v = scale_exp * (
-                    v + 0.5 * self.eps * (
-                        grad * transformation_exp - translation
-                    )
-                )
+                v = (scale_exp * (v + 0.5 * self.eps
+                                  * (grad * transformation_exp - translation)))
 
         return v, tf.reduce_sum(scale, axis=1)
 
