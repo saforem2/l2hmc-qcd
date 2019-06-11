@@ -47,8 +47,6 @@ class GaugeModel:
         for key, val in self.params.items():
             if 'weight' in key and key != 'charge_weight':
                 self.loss_weights[key] = val
-            if key == 'charge_weight':
-                continue
             else:
                 setattr(self, key, val)
 
