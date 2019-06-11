@@ -295,11 +295,19 @@ class GaugeModelPlotter:
         plt.savefig(out_file, dpi=400, bbox_inches='tight')
 
     def _plot_plaqs_diffs(self, xy_data, **kwargs):
-        kwargs['out_file'] = get_out_file(self.out_dir,
-                                          'plaqs_diffs_vs_step')
-        kwargs['ret'] = False
+        kwargs['out_file'] = None
+        kwargs['ret'] = True
         xy_labels = ('Step', r"$\delta_{\mathrm{plaq}}$")
-        plot_multiple_lines(xy_data, xy_labels, **kwargs)
+        _, ax = plot_multiple_lines(xy_data, xy_labels, **kwargs)
+        _ = ax.axhline(y=0, color='#CC0033', ls='-', lw=1.5)
+        _ = ax.plot(xy_data[0], xy_data[1].mean(axis=0), lw=1.25,
+                    color='k', label='average', alpha=0.75)
+
+        _ = plt.tight_layout()
+
+        out_file = get_out_file(self.out_dir, 'plaqs_diffs_vs_step')
+        io.log(f'Saving figure to: {out_file}')
+        plt.savefig(out_file, dpi=400, bbox_inches='tight')
 
     def _plot_charges(self, xy_data, **kwargs):
         """Plot topological charges."""
