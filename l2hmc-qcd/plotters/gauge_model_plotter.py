@@ -234,14 +234,16 @@ class GaugeModelPlotter:
         # ignore first 10% of pts (warmup)
         warmup_steps = max((1, int(0.01 * num_steps)))
 
-        _actions = actions[::skip_steps]
-        _plaqs = plaqs[::skip_steps]
-        _steps_arr = skip_steps * np.arange(_actions.shape[0])
+        #  _actions = actions[::skip_steps]
+        #  _plaqs = plaqs[::skip_steps]
+
+        #  _steps_arr = skip_steps * np.arange(_actions.shape[0])
         _charge_diffs = charge_diffs[warmup_steps:][::skip_steps]
-        _plaq_diffs = plaqs_diffs[warmup_steps:][::skip_steps]
+        _plaqs_diffs = plaqs_diffs[warmup_steps:][::skip_steps]
         _steps_diffs = (
-            skip_steps * np.arange(_plaq_diffs.shape[0]) + skip_steps
+            skip_steps * np.arange(_plaqs_diffs.shape[0]) + skip_steps
         )
+        #  steps_diffs = np.arange(plaqs_diffs.shape[0])
 
         #  out_dir = (f'{int(num_steps)}_steps_' f"beta_{beta}")
         #  self.out_dir = os.path.join(self.figs_dir, out_dir)
@@ -262,13 +264,17 @@ class GaugeModelPlotter:
             'out_file': [],
         }
 
-        self._plot_actions((_steps_arr, _actions.T), **kwargs)
-        self._plot_plaqs((_steps_arr, _plaqs.T), beta, **kwargs)
+        #  self._plot_actions((_steps_arr, _actions.T), **kwargs)
+        #  self._plot_plaqs((_steps_arr, _plaqs.T), beta, **kwargs)
+        self._plot_actions((steps_arr, actions.T), **kwargs)
+        self._plot_plaqs((steps_arr, plaqs.T), beta, **kwargs)
         self._plot_charges((steps_arr, charges.T), **kwargs)
         self._plot_autocorrs((steps_arr, charge_autocorrs), **kwargs)
         self._plot_charge_probs(charges, **kwargs)
         self._plot_charge_diffs((_steps_diffs, _charge_diffs.T), **kwargs)
-        self._plot_plaqs_diffs((_steps_diffs, _plaq_diffs.T), **kwargs)
+        self._plot_plaqs_diffs((_steps_diffs, _plaqs_diffs.T), **kwargs)
+        #  self._plot_charge_diffs((steps_diffs, charge_diffs.T), **kwargs)
+        #  self._plot_plaqs_diffs((steps_diffs, plaqs_diffs.T), **kwargs)
 
     def _plot_actions(self, xy_data, **kwargs):
         """Plot actions."""
