@@ -15,7 +15,8 @@ import numpy.random as npr
 import tensorflow as tf
 
 from globals import GLOBAL_SEED, TF_FLOAT
-from network.conv_net import ConvNet2D, ConvNet3D
+from network.conv_net3d import ConvNet3D
+from network.conv_net2d import ConvNet2D
 from network.generic_net import GenericNet
 
 
@@ -132,13 +133,14 @@ class GaugeDynamics(tf.keras.Model):
             '_input_shape': (self.batch_size, *self.lattice.links.shape),
             'links_shape': self.lattice.links.shape,
             'x_dim': self.lattice.num_links,  # dimensionality of target space
-            'factor': 2.,
-            'spatial_size': self.lattice.space_size,
-            'num_hidden': 2 * self.lattice.num_links,
-            'num_filters': int(2 * self.lattice.space_size),
+            'factor': 2.,  # scale factor used in original paper
+            'spatial_size': self.lattice.space_size,  # spatial size of lattice
+            'num_hidden': 2 * self.lattice.num_links,  # num hidden nodes
+            'num_filters': int(2 * self.lattice.space_size),  # num filters
             'filter_sizes': [(3, 3), (2, 2)],  # for 1st and 2nd conv. layer
-            'name_scope': 'position',
-            'data_format': self.data_format,
+            'name_scope': 'position',  # namespace in which to create network
+            'data_format': self.data_format,  # channels_first if using GPU
+            'use_bn': self.use_bn,  # whether or not to use batch normalization
         }
 
         with tf.name_scope("DynamicsNetwork"):
@@ -154,11 +156,11 @@ class GaugeDynamics(tf.keras.Model):
         """Build GenericNet FC-architectures for x and v fns. """
 
         kwargs = {
-            'x_dim': self.x_dim,
-            'links_shape': self.lattice.links.shape,
-            'num_hidden': int(4 * self.x_dim),
-            'name_scope': 'position',
-            'factor': 2.
+            '_input_shape': (self.batch_size, *self.lattice.links.shape),
+            'x_dim': self.lattice.num_links,  # dimensionality of target space
+            'factor': 2.,  # scale factor used in original paper
+            'num_hidden': 2 * self.lattice.num_links,  # num hidden nodes
+            'name_scope': 'position',  # namespace in which to create network
         }
 
         with tf.name_scope("DynamicsNetwork"):
@@ -195,8 +197,8 @@ class GaugeDynamics(tf.keras.Model):
                                                    net_weights,
                                                    forward=True,
                                                    save_lf=save_lf)
-                x_f = outputs_f['x_proposed']
-                v_f = outputs_f['v_proposed']
+                xf = outputs_f['x_proposed']
+                vf = outputs_f['v_proposed']
                 accept_prob_f = outputs_f['accept_prob']
 
                 if save_lf:
@@ -209,8 +211,8 @@ class GaugeDynamics(tf.keras.Model):
                                                    net_weights,
                                                    forward=False,
                                                    save_lf=save_lf)
-                x_b = outputs_b['x_proposed']
-                v_b = outputs_b['v_proposed']
+                xb = outputs_b['x_proposed']
+                vb = outputs_b['v_proposed']
                 accept_prob_b = outputs_b['accept_prob']
 
                 if save_lf:
@@ -230,12 +232,12 @@ class GaugeDynamics(tf.keras.Model):
 
             # Obtain proposed states
             with tf.name_scope('x_proposed'):
-                x_proposed = (forward_mask[:, None] * x_f
-                              + backward_mask[:, None] * x_b)
+                x_proposed = (forward_mask[:, None] * xf
+                              + backward_mask[:, None] * xb)
 
             with tf.name_scope('v_proposed'):
-                v_proposed = (forward_mask[:, None] * v_f
-                              + backward_mask[:, None] * v_b)
+                v_proposed = (forward_mask[:, None] * vf
+                              + backward_mask[:, None] * vb)
 
             # Probability of accepting the proposed states
             with tf.name_scope('accept_prob'):
@@ -254,10 +256,8 @@ class GaugeDynamics(tf.keras.Model):
 
             # Samples after accept / reject step
             with tf.name_scope('x_out'):
-                x_out = (
-                    accept_mask[:, None] * x_proposed
-                    + reject_mask[:, None] * x_in
-                )
+                x_out = (accept_mask[:, None] * x_proposed
+                         + reject_mask[:, None] * x_in)
 
         outputs = {
             'x_proposed': x_proposed,
@@ -291,7 +291,8 @@ class GaugeDynamics(tf.keras.Model):
         with tf.name_scope('init'):
             x_proposed, v_proposed = x_in, v_in
 
-            t = tf.constant(0., name='md_time', dtype=TF_FLOAT)
+            #  t = tf.constant(0., name='md_time', dtype=TF_FLOAT)
+            step = tf.constant(0., name='md_step', dtype=TF_FLOAT)
             batch_size = tf.shape(x_in)[0]
             logdet = tf.zeros((batch_size,))
             lf_out = tf.TensorArray(dtype=TF_FLOAT, size=self.num_steps,
@@ -301,44 +302,43 @@ class GaugeDynamics(tf.keras.Model):
                                          dynamic_size=True, name='logdets_out',
                                          clear_after_read=False)
 
-        def body(x, v, beta, t, logdet, lf_samples, logdets):
-            i = tf.cast(t, dtype=tf.int32)  # cast leapfrog step to integer
+        def body(x, v, beta, step, logdet, lf_samples, logdets):
+            i = tf.cast(step, dtype=tf.int32, name='lf_step')  # cast as int
             with tf.name_scope('apply_lf'):
-                new_x, new_v, j = lf_fn(x, v, beta, t, net_weights)
+                new_x, new_v, j = lf_fn(x, v, beta, step, net_weights)
             with tf.name_scope('concat_lf_outputs'):
                 lf_samples = lf_samples.write(i, new_x)
             with tf.name_scope('concat_logdets'):
                 logdets = logdets.write(i, j)
-            return new_x, new_v, beta, t + 1, logdet + j, lf_samples, logdets
+            return (new_x, new_v, beta, step + 1,
+                    logdet + j, lf_samples, logdets)
 
-        def cond(x, v, beta, t, logdet, lf_out, logdets):
+        def cond(x, v, beta, step, logdet, lf_out, logdets):
             with tf.name_scope('check_lf_step'):
-                return tf.less(t, self.num_steps)
+                return tf.less(step, self.num_steps)
 
         with tf.name_scope('while_loop'):
             outputs = tf.while_loop(
                 cond=cond,
                 body=body,
                 loop_vars=[x_proposed, v_proposed,
-                           beta, t, logdet, lf_out, logdets_out])
+                           beta, step, logdet,
+                           lf_out, logdets_out])
 
             x_proposed = outputs[0]
             v_proposed = outputs[1]
             beta = outputs[2]
-            t = outputs[3]
+            step = outputs[3]
             sumlogdet = outputs[4]
             lf_out = outputs[5].stack()
             logdets_out = outputs[6].stack()
 
         with tf.name_scope('accept_prob'):
-            accept_prob = self._compute_accept_prob(
-                x_in,
-                v_in,
-                x_proposed,
-                v_proposed,
-                sumlogdet,
-                beta
-            )
+            accept_prob = self._compute_accept_prob(x_in, v_in,
+                                                    x_proposed,
+                                                    v_proposed,
+                                                    sumlogdet,
+                                                    beta)
 
         outputs = {
             'x_proposed': x_proposed,
@@ -388,9 +388,7 @@ class GaugeDynamics(tf.keras.Model):
                 t = self._get_time(self.num_steps - step - 1,
                                    tile=tf.shape(x)[0])
             with tf.name_scope('get_mask'):
-                mask, mask_inv = self._get_mask(
-                    self.num_steps - step - 1
-                )
+                mask, mask_inv = self._get_mask(self.num_steps - step - 1)
 
             with tf.name_scope('augmented_leapfrog'):
                 sumlogdet = 0.
@@ -433,16 +431,19 @@ class GaugeDynamics(tf.keras.Model):
             with tf.name_scope('v_fn'):
                 # Sv: scale, Qv: transformation, Tv: translation
                 scale, translation, transformation = self.v_fn(
-                    [x, grad, t, net_weights]
+                    [x, grad, t]
                 )
 
             with tf.name_scope('scale'):
-                scale *= 0.5 * self.eps
+                scale *= 0.5 * self.eps * net_weights[0]
                 scale_exp = exp(scale, 'vf_scale')
 
             with tf.name_scope('transformation'):
-                transformation *= self.eps
+                transformation *= self.eps * net_weights[1]
                 transformation_exp = exp(transformation, 'vf_transformation')
+
+            with tf.name_scope('translation'):
+                translation *= net_weights[2]
 
             with tf.name_scope('v_update'):
                 v = (v * scale_exp - 0.5 * self.eps
@@ -455,16 +456,19 @@ class GaugeDynamics(tf.keras.Model):
         with tf.name_scope('update_x_forward'):
             with tf.name_scope('x_fn'):
                 scale, translation, transformation = self.x_fn(
-                    [v, mask * x, t, net_weights]
+                    [v, mask * x, t]
                 )
 
             with tf.name_scope('scale'):
-                scale *= self.eps
+                scale *= self.eps * net_weights[0]
                 scale_exp = exp(scale, 'xf_scale')
 
             with tf.name_scope('transformation'):
-                transformation *= self.eps
+                transformation *= self.eps * net_weights[1]
                 transformation_exp = exp(transformation, 'xf_transformation')
+
+            with tf.name_scope('translation'):
+                translation *= net_weights[2]
 
             with tf.name_scope('x_update'):
                 x = (mask * x
@@ -481,16 +485,19 @@ class GaugeDynamics(tf.keras.Model):
 
             with tf.name_scope('v_fn'):
                 scale, translation, transformation = self.v_fn(
-                    [x, grad, t, net_weights]
+                    [x, grad, t]
                 )
 
             with tf.name_scope('scale'):
-                scale *= -0.5 * self.eps
+                scale *= -0.5 * self.eps * net_weights[0]
                 scale_exp = exp(scale, 'vb_scale')
 
             with tf.name_scope('transformation'):
-                transformation *= self.eps
+                transformation *= self.eps * net_weights[1]
                 transformation_exp = exp(transformation, 'vb_transformation')
+
+            with tf.name_scope('translation'):
+                translation *= net_weights[2]
 
             with tf.name_scope('v_update'):
                 v = (scale_exp * (v + 0.5 * self.eps
@@ -503,16 +510,19 @@ class GaugeDynamics(tf.keras.Model):
         with tf.name_scope('update_x_backward'):
             with tf.name_scope('x_fn'):
                 scale, translation, transformation = self.x_fn(
-                    [v, mask * x, t, net_weights]
+                    [v, mask * x, t]
                 )
 
             with tf.name_scope('scale'):
-                scale *= -self.eps
+                scale *= -self.eps * net_weights[0]
                 scale_exp = exp(scale, 'xb_scale')
 
             with tf.name_scope('transformation'):
-                transformation *= self.eps
+                transformation *= self.eps * net_weights[1]
                 transformation_exp = exp(transformation, 'xb_transformation')
+
+            with tf.name_scope('translation'):
+                translation *= net_weights[2]
 
             with tf.name_scope('x_update'):
                 x = (mask * x + mask_inv * scale_exp
@@ -545,13 +555,13 @@ class GaugeDynamics(tf.keras.Model):
         # Ensure numerical stability as well as correct gradients
         return tf.where(tf.is_finite(prob), prob, tf.zeros_like(prob))
 
-    def _get_time(self, i, tile=1):
+    def _get_time(self, step, tile=1):
         """Format time as [cos(..), sin(...)]."""
         with tf.name_scope('get_time'):
             trig_t = tf.squeeze([
-                tf.cos(2 * np.pi * i / self.num_steps),
-                tf.sin(2 * np.pi * i / self.num_steps),
-            ])
+                tf.cos(2 * np.pi * step / self.num_steps),
+                tf.sin(2 * np.pi * step / self.num_steps),
+            ], name='md_time')
 
         return tf.tile(tf.expand_dims(trig_t, 0), (tile, 1))
 
@@ -568,14 +578,18 @@ class GaugeDynamics(tf.keras.Model):
             self.masks.append(mask[None, :])
 
     def _get_mask(self, step):
+        if step.dtype != tf.int32:
+            step = tf.cast(step, dtype=tf.int32)
+
         with tf.name_scope('get_mask'):
-            m = tf.gather(self.masks, tf.cast(step, dtype=tf.int32))
+            m = tf.gather(self.masks, step, name='gather_mask')
         return m, 1. - m
 
     def potential_energy(self, x, beta):
         """Compute potential energy using `self.potential` and beta."""
         with tf.name_scope('potential_energy'):
-            potential_energy = tf.multiply(beta, self.potential(x))
+            potential_energy = tf.multiply(beta, self.potential(x),
+                                           name='potential_energy')
 
         return potential_energy
 
