@@ -285,104 +285,145 @@ class GaugeModel:
                                                  staircase=True,
                                                  name='learning_rate')
         with tf.name_scope('optimizer'):
-            self.optimizer = tf.train.AdamOptimizer(self.lr)
-            if self.using_hvd:
-                self.optimizer = hvd.DistributedOptimizer(self.optimizer)
+            # Define update operations for batch normalization    
+            self.update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+            # Define optimizer
+            with tf.control_dependencies(self.update_ops):
+                self.optimizer = tf.train.AdamOptimizer(self.lr)
+                if self.using_hvd:
+                    self.optimizer = hvd.DistributedOptimizer(self.optimizer)
 
-    def _calc_std_loss(self, x_tup, z_tup, p_tup, **weights):
-        """Calculate standard contribution to loss.
-
-        NOTE: In contrast to the original paper where the L2 difference was
-        used, we are now using 1 - cos(x1 - x2).
-
-        Args:
-            x_tup: Tuple of (x, x_proposed) configurations.
-            z_tup: Tuple of (z, z_proposed) configurations.
-            p_tup: Tuple of (x, z) acceptance probabilities.
-            weights: dictionary of weights giving relative weight of each term
-                in the loss function.
-
-        Returns:
-            std_loss
-        """
+    def _calc_std_loss(self, config_init, config_proposed, accept_prob):
+        """Calculate the (individual) standard contribution to the loss fn."""
         eps = 1e-4
+        with tf.name_scope('_std_loss'):
+            summed_diff = tf.reduce_sum(
+                self.metric_fn(config_init, config_proposed), axis=1
+            )
+
+        return summed_diff * accept_prob + eps
+
+    def calc_std_loss(self, inputs, **weights):
+        """Calculate the standard contribution to the loss.
+
+        Explicitly: This is calculated as the expectation value of the jump
+        loss over both the target and initialization distributions.
+
+        Args: 
+            x_tup: Tuple containing (x_init, x_proposed)
+            z_tup: Tuple containing (z_init, z_proposed) (aux. variable)
+            p_tup: Tuple containing (px, pz) acceptance probabilities.
+            **weights: Dictionary of weights used as multiplicative scaling
+                factors to control the contribution from individual terms to
+                the total loss. 
+        Returns:
+            std_loss: Tensorflow operation responsible for calculating the
+                standard contribution to the loss function.
+        """
         aux_weight = weights.get('aux_weight', 1.)
         std_weight = weights.get('std_weight', 1.)
 
-        x, x_proposed = x_tup
-        z, z_proposed = z_tup
-        px, pz = p_tup
+        x_init = inputs.get('x_init', None)
+        x_proposed = inputs.get('x_proposed', None)
 
-        ls = self.loss_scale
+        z_init = inputs.get('z_init', None)
+        z_proposed = inputs.get('z_proposed', None)
+
+        px = inputs.get('px', None)
+        pz = inputs.get('pz', None)
+
+        with tf.name_scope('x_std_loss'):
+            x_loss = self._calc_std_loss(x_init, x_proposed, px)
+            x_loss_tot = tf.reduce_mean((self.loss_scale / x_loss
+                                        - x_loss / self.loss_scale),
+                                        axis=0, name='x_std_loss_tot')
+            tf.add_to_collection('losses', x_loss_tot)
+
+        if aux_weight > 0 and z_init is not None:
+            with tf.name_scope('z_std_loss'):
+                z_loss = self._calc_std_loss(z_init, z_proposed, pz)
+                z_loss_tot = tf.reduce_mean((self.loss_scale / z_loss
+                                            - z_loss / self.loss_scale),
+                                            axis=0, name='z_std_loss_tot')
+                tf.add_to_collection('losses', z_loss_tot)
+        else:
+            z_loss_tot = 0.
+
         with tf.name_scope('std_loss'):
-            with tf.name_scope('x_loss'):
-                x_std_loss = tf.reduce_sum(self.metric_fn(x, x_proposed), 1)
-                x_std_loss *= px
-                x_std_loss = tf.add(x_std_loss, eps, name='x_std_loss')
+            loss_tot = tf.multiply(std_weight,
+                                   (x_loss_tot + aux_weight * z_loss_tot),
+                                   name='std_loss_tot')
+            tf.add_to_collection('losses', loss_tot)
 
-            with tf.name_scope('z_loss'):
-                z_std_loss = tf.reduce_sum(self.metric_fn(z, z_proposed), 1)
-                z_std_loss *= pz * aux_weight
-                z_std_loss = tf.add(z_std_loss, eps, name='z_std_loss')
+        return loss_tot
 
-            with tf.name_scope('tot_loss'):
-                std_loss = (ls * (1. / x_std_loss + 1. / z_std_loss)
-                            - (x_std_loss + z_std_loss) / ls) * std_weight
-                std_loss = tf.reduce_mean(std_loss, axis=0, name='std_loss')
-
-        tf.add_to_collection('losses', std_loss)
-
-        return std_loss
-
-    def _calc_charge_loss(self, x_tup, z_tup, p_tup, **weights):
-        """Calculate contribution to total loss from charge difference.
-
-        NOTE: This is an additional term introduced to the loss function that
-        measures the difference in the topological charge between the initial
-        configuration and the proposed configuration.
+    def _calc_charge_loss(self, config_init, config_proposed, accept_prob):
+        """Calculate the (individual) top. charge contribution to the loss fn
 
         Args:
-            x_tup: Tuple of (x, x_proposed) configurations.
-            z_tup: Tuple of (z, z_proposed) configurations.
-            p_tup: Tuple of (x, z) acceptance probabilities.
-            weights: dictionary of weights giving relative weight of each term
-                in the loss function.
-
+            config_init: Initial configuration.
+            config_proposed: Proposed configuration.
+            accept_prob: Likelihood of accepting the proposed configuration,
+                usd to calculate the expectation value of the topological
+                charge difference. 
         Returns:
-            std_loss
+            charge_loss: Individual contribution to the loss function from the
+                topological charge difference between the initial and proposed
+                configurations.
         """
-        eps = 1e-4
+        with tf.name_scope('charge_diff'):
+            charge_diff = self.lattice.calc_top_charges_diff(config_init,
+                                                             config_proposed,
+                                                             fft=True)
+        return accept_prob * charge_diff
+
+    def calc_charge_loss(self, inputs, **weights):
+        """Calculate the (individual) top. charge contribution to the loss fn
+
+        Args:
+            inputs: Dictionary containing initial and proposed configurations
+                sampled from both the target ('x_init', 'x_proposed') and
+                initialization ('z_init', 'z_proposed') distributions, as well
+                as the calculated acceptance probabilities ('px', and 'pz').
+            weights: Dictionary containing various multiplicative weights used
+                to scale the contribution from individual terms to the total
+                loss function
+        Returns:
+            charge_loss: Total contribution to the loss function from the
+                topological charge difference between initial and proposed
+                configuratons.
+        """
+        x_init = inputs.get('x_init', None)
+        x_proposed = inputs.get('x_proposed', None)
+
+        z_init = inputs.get('z_init', None)
+        z_proposed = inputs.get('z_proposed', None)
+
+        px = inputs.get('px', None)
+        pz = inputs.get('pz', None)
+
         aux_weight = weights.get('aux_weight', 1.)
 
-        x, x_proposed = x_tup
-        z, z_proposed = z_tup
-        px, pz = p_tup
-
-        ls = self.loss_scale
         # Calculate the difference in topological charge between the initial
         # and proposed configurations multiplied by the probability of
-        # acceptance to get the expected value of the difference in topological
-        # charge
-        with tf.name_scope('charge_loss'):
-            with tf.name_scope('x_loss'):
-                x_dq_fft = self.lattice.calc_top_charges_diff(x, x_proposed,
-                                                              fft=True)
-                xq_loss = px * x_dq_fft + eps
+        # acceptance to get the expected value of the difference in top. charge
+        with tf.name_scope('x_charge_loss'):
+            x_charge_loss = self._calc_charge_loss(x_init, x_proposed, px)
+            tf.add_to_collection('losses', x_charge_loss)
 
-            with tf.name_scope('z_loss'):
-                z_dq_fft = self.lattice.calc_top_charges_diff(z, z_proposed,
-                                                              fft=True)
-                zq_loss = aux_weight * (pz * z_dq_fft) + eps
+        with tf.name_scope('z_charge_loss'):
+            if aux_weight > 0 and z_init is not None:
+                z_charge_loss = self._calc_charge_loss(z_init, z_proposed, pz)
+            else:
+                z_charge_loss = 0.
+            tf.add_to_collection('losses', x_charge_loss)
 
-            with tf.name_scope('tot_loss'):
-                # Each of the loss terms is scaled by the `loss_scale` which
-                # introduces a universal multiplicative factor that scales the
-                # value of the loss
-                charge_loss = ls * (self.charge_weight * (xq_loss + zq_loss))
-                charge_loss = tf.reduce_mean(charge_loss, axis=0,
-                                             name='charge_loss')
+        with tf.name_scope('total_charge_loss'):
+            charge_loss = self.charge_weight * (x_charge_loss + z_charge_loss)
+            charge_loss = tf.reduce_mean(charge_loss, axis=0,
+                                         name='charge_loss')
 
-        tf.add_to_collection('losses', charge_loss)
+            tf.add_to_collection('losses', charge_loss)
 
         return charge_loss
 
@@ -394,6 +435,12 @@ class GaugeModel:
                 self.lattice.num_links) containing batch of GaugeLattice links
                 variables.
             beta (float): Inverse coupling strength.
+            net_weights: Tuple containing multiplicative weights that scale the
+                contributions from the scale (S), transformation (Q) and
+                translation (T) functions.
+            weights: Dictionary containing various multiplicative weights used
+                to scale the contribution from individual terms to the total
+                loss function
 
         Returns:
             loss (float): Operation responsible for calculating the total loss.
@@ -408,27 +455,30 @@ class GaugeModel:
             equivalent.
         """
         with tf.name_scope('x_update'):
-            dynamics_output = self.dynamics(x, beta, net_weights, self.save_lf)
-            x_proposed = tf.mod(dynamics_output['x_proposed'], 2 * np.pi)
-            px = dynamics_output['accept_prob']
-            x_out = tf.mod(dynamics_output['x_out'], 2 * np.pi)
-
-            #  x_proposed = output[0]
-            #  output[1] is v_post, don't need to save
-            #  px = output[2]
-            #  x_out = output[3]
-
-            #  if self.save_lf:
-            #      lf_outputs = output[4:]
+            x_dynamics_output = self.dynamics.apply_transition(x, beta,
+                                                               net_weights,
+                                                               self.save_lf)
+            #  x_proposed = tf.mod(dynamics_output['x_proposed'], 2 * np.pi)
+            #  x_out = tf.mod(x_dynamics_output['x_out'], 2 * np.pi)
+            x_proposed = x_dynamics_output['x_proposed']
+            px = x_dynamics_output['accept_prob']
+            x_out = x_dynamics_output['x_out']
 
         # Auxiliary variable
-        with tf.name_scope('z_update'):
-            z = tf.random_normal(tf.shape(x), seed=GLOBAL_SEED, name='z')
-            z_dynamics_output = self.dynamics(z, beta, net_weights,
-                                              save_lf=False)
-            z_proposed = tf.mod(z_dynamics_output['x_proposed'], 2 * np.pi)
-            pz = z_dynamics_output['accept_prob']
-            #  z_proposed, _, pz, _ = self.dynamics(z, beta)
+        if weights['aux_weight'] > 0:
+            with tf.name_scope('z_update'):
+                z = tf.random_normal(tf.shape(x), seed=GLOBAL_SEED, name='z')
+                z_dynamics_output = self.dynamics.apply_transition(
+                    z, beta, net_weights, save_lf=False
+                )
+                z_proposed = z_dynamics_output['x_proposed']
+                #  z_proposed = tf.mod(z_dynamics_output['x_proposed'],
+                #                      2 * np.pi)
+                pz = z_dynamics_output['accept_prob']
+        else:
+            z = None
+            z_proposed = None
+            pz = None
 
         with tf.name_scope('top_charge_diff'):
             x_dq = tf.cast(
@@ -436,30 +486,29 @@ class GaugeModel:
                 dtype=tf.int32
             )
 
-        # Add eps for numerical stability; following released implementation
         # NOTE:
         #  std:_loss: 'standard' loss
         #  charge_loss: Contribution from the difference in topological charge
         #    betweween the initial and proposed configurations  to the total
         #     loss.
-        x_tup = (x, x_proposed)
-        z_tup = (z, z_proposed)
-        p_tup = (px, pz)
+        inputs = {
+            'x_init': x,
+            'x_proposed': x_proposed,
+            'px': px,
+            'z_init': z,
+            'z_proposed': z_proposed,
+            'pz': pz
+        }
         with tf.name_scope('calc_loss'):
             with tf.name_scope('std_loss'):
-                std_loss = self._calc_std_loss(x_tup, z_tup, p_tup, **weights)
+                std_loss = self.calc_std_loss(inputs, **weights)
             with tf.name_scope('charge_loss'):
-                charge_loss = self._calc_charge_loss(x_tup, z_tup, p_tup,
-                                                     **weights)
+                charge_loss = self.calc_charge_loss(inputs, **weights)
 
             total_loss = tf.add(std_loss, charge_loss, name='total_loss')
+            tf.add_to_collection('losses', total_loss)
 
-        tf.add_to_collection('losses', total_loss)
-        #  if self.save_lf:
-        #      return total_loss, x_out, px, x_dq, lf_outputs
-        #  else:
-        #      return total_loss, x_out, px, x_dq
-        return total_loss, x_dq, dynamics_output
+        return total_loss, x_dq, x_dynamics_output
 
     def calc_loss_and_grads(self, x, beta, net_weights, **weights):
         """Calculate loss its gradient with respect to all trainable variables.
@@ -485,13 +534,11 @@ class GaugeModel:
         if tf.executing_eagerly():
             with tf.name_scope('grads'):
                 with tf.GradientTape() as tape:
-                    loss, x_out, accept_prob, x_dq = self.calc_loss(
+                    loss, x_dq, dynamics_output = self.calc_loss(
                         x, beta, net_weights, **weights
                     )
                 grads = tape.gradient(loss, self.dynamics.trainable_variables)
         else:
-            #  loss_outputs = self.calc_loss(x, beta, **weights)
-            #  loss = loss_outputs[0]
             loss, x_dq, dynamics_output = self.calc_loss(x, beta,
                                                          net_weights,
                                                          **weights)
