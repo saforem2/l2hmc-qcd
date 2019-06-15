@@ -1,3 +1,5 @@
+import time
+
 import os
 try:
     import psutil
@@ -105,6 +107,16 @@ class LeapfrogPlotter:
             'lw': 0.75,
             'rasterized': True
         }
+        plot_lf_steps = self.tot_lf_steps // 4
+        plot_md_steps = self.tot_md_steps // 4
+        self.lf_f_diffs = self.lf_f_diffs[:plot_lf_steps]
+        self.lf_b_diffs = self.lf_b_diffs[:plot_lf_steps]
+        self.samples_diffs = self.samples_diffs[:plot_md_steps]
+        self.logdets_f = self.logdets_f[:plot_lf_steps]
+        self.logdets_b = self.logdets_b[:plot_lf_steps]
+        self.sumlogdet_f = self.sumlogdet_f[:plot_md_steps]
+        self.sumlogdet_b = self.sumlogdet_b[:plot_md_steps]
+
         #  self.therm_steps = int(therm_perc * self.tot_lf_steps)
         #  self.skip_steps = int(skip_perc * self.tot_lf_steps)
         #  self.step_multiplier = (
@@ -181,11 +193,15 @@ class LeapfrogPlotter:
             return fig_ax1, fig_ax2
 
     def plot_lf_diffs(self, beta, num_samples=20):
+        t0 = time.time()
         reds, blues = self.get_colors(num_samples)
         samples_y_avg = np.mean(self.samples_diffs, axis=(1, 2))
         samples_x_avg = np.arange(len(samples_y_avg))
 
         fig, (ax1, ax2) = plt.subplots(2, 1)
+        ax1.set_rasterization_zorder(1)
+        ax2.set_rasterization_zorder(1)
+
         for idx in range(num_samples):
             yf = np.mean(self.lf_f_diffs, axis=-1)
             xf = np.arange(len(yf))
@@ -242,9 +258,14 @@ class LeapfrogPlotter:
         _ = ax2.set_xlim((0, md_xlim))
         _ = plt.savefig(out_file_zoom1, dpi=400, bbox_inches='tight')
 
+        io.log(80 * '-')
+        io.log(f'Time spent plotting lf_diffs: {time.time() - t0}s')
+        io.log(80 * '-')
+
         return fig, (ax1, ax2)
 
     def plot_logdets(self, beta, num_samples=20):
+        t0 = time.time()
         reds, blues = self.get_colors(num_samples)
 
         sumlogdet_yf_avg = np.mean(self.sumlogdet_f, axis=-1)
@@ -307,5 +328,9 @@ class LeapfrogPlotter:
         _ = ax1.set_xlim((0, lf_xlim))
         _ = ax2.set_xlim((0, md_xlim))
         _ = plt.savefig(out_file_zoom1, dpi=400, bbox_inches='tight')
+
+        io.log(80 * '-')
+        io.log(f'Time spent plotting log_dets: {time.time() - t0}s')
+        io.log(80 * '-')
 
         return fig, (ax1, ax2)
