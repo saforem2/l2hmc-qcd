@@ -298,7 +298,8 @@ def parse_args():
                         action='store_true',
                         required=False,
                         help=("""Flag that when passed runs the trained sampler
-                              at model.beta_final and model.beta_final + 1."""))
+                              at model.beta_final and model.beta_final +
+                              1."""))
 
     parser.add_argument("--hmc",
                         dest="hmc",
@@ -353,7 +354,8 @@ def parse_args():
                         default=1.,
                         required=False,
                         help=("""Multiplicative factor used to weigh relative
-                              strength of top. charge term in loss function"""))
+                              strength of top. charge term in loss
+                              function"""))
 
     parser.add_argument("--clip_grads",
                         dest="clip_grads",
@@ -449,14 +451,6 @@ def parse_args():
                               by default (use tf.float32)."""))
 
     if sys.argv[1].startswith('@'):
-        #  if sys.argv[1].endswith('.json'):
-        #      try:
-        #          args_ = get_args()
-        #          args = process_config(args_.config)
-        #      except:
-        #          io.log("Missing or invalid arguments")
-        #          exit(0)
-        #  else:
         args = parser.parse_args(shlex.split(open(sys.argv[1][1:]).read(),
                                              comments=True))
     else:
