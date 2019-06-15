@@ -181,12 +181,18 @@ class GaugeModelTrainer:
                                                      **weights)
                 samples_np = out_data['samples']
 
-                if self.logger is not None:
+                # NOTE: try/except faster than explicitly checking
+                # if self.logger is not None
+                # each training step
+                try:
                     self.logger.update_training(self.sess, out_data,
                                                 data_str, **weights)
-
-            if self.logger is not None:
+                except AttributeError:
+                    continue
+            try:
                 self.logger.write_train_strings()
+            except AttributeError:
+                pass
 
         except (KeyboardInterrupt, SystemExit):
             io.log("\nKeyboardInterrupt detected!")
