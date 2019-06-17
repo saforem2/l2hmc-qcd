@@ -34,6 +34,9 @@ class GenericNet(tf.keras.Model):
         if self.name_scope is None:
             self.name_scope = model_name
 
+        if self.use_bn:
+            self.bn_axis = -1
+
         #  with tf.variable_scope(variable_scope):
         with tf.name_scope(self.name_scope):
             #  self.flatten = tf.keras.layers.Flatten(name='flatten')
@@ -138,6 +141,8 @@ class GenericNet(tf.keras.Model):
         v = self._reshape(v)
 
         h = self.v_layer(v) + self.x_layer(x) + self.t_layer(t)
+        if self.use_bn:
+            h = tf.keras.layers.BatchNormalization(axis=self.bn_axis)(h)
         h = tf.nn.relu(h)
         h = self.h_layer(h)
         h = tf.nn.relu(h)

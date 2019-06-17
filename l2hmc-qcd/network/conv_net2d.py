@@ -175,6 +175,7 @@ class ConvNet2D(tf.keras.Model):
     def _reshape(self, tensor):
         """Reshape tensor to be compatible with tf.keras.layers.Conv2D."""
         if self.data_format == 'channels_first':
+            # batch_size, num_channels, height, width
             N, D, H, W = self._input_shape
             #  N, D, H, W = tensor.shape
             if isinstance(tensor, np.ndarray):

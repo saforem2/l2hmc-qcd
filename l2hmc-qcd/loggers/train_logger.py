@@ -63,8 +63,13 @@ class TrainLogger:
         save_params(self.model.params, self.log_dir)
 
         if self.summaries:
-            self.writer = tf.summary.FileWriter(self.train_summary_dir,
-                                                tf.get_default_graph())
+            #  if tf.executing_eagerly():
+            #      self.writer = tf.contrib.summary.create_file_writer(
+            #          self.train_summary_dir, flush_millis=10000
+            #      )
+            if not tf.executing_eagerly():
+                self.writer = tf.summary.FileWriter(self.train_summary_dir,
+                                                    tf.get_default_graph())
             self.create_summaries()
 
     def _create_dir_structure(self, log_dir):
