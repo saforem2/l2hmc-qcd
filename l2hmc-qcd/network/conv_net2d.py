@@ -197,9 +197,6 @@ class ConvNet2D(tf.keras.Model):
     def call(self, inputs):
         """Forward pass through the network."""
         v, x, t = inputs
-        scale_weight = net_weights[0]
-        transformation_weight = net_weights[1]
-        translation_weight = net_weights[2]
 
         with tf.name_scope('reshape'):
             v = self._reshape(v)
