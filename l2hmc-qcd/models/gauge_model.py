@@ -99,7 +99,6 @@ class GaugeModel:
         else:
             self._create_optimizer()
             self.build()
-            #  self.init_saver()
 
     def load(self, sess, checkpoint_dir):
         latest_ckpt = tf.train.latest_checkpoint(checkpoint_dir)
@@ -192,10 +191,12 @@ class GaugeModel:
                     )
                 ]
             else:
-                x = self.lattice.samples,
-                beta = self.beta_init
-                charge_weight = 0.
-                net_weights = [[1., 1., 1.]]
+                x = tf.convert_to_tensor(
+                    self.lattice.samples.reshape((self.batch_size, self.x_dim))
+                )
+                beta = tf.convert_to_tensor(self.beta_init)
+                charge_weight = tf.convert_to_tensor(0.)
+                net_weights = tf.convert_to_tensor([1., 1., 1.])
 
         outputs = {
             'x': x,
@@ -457,6 +458,8 @@ class GaugeModel:
         with tf.name_scope('x_update'):
             x_dynamics_output = self.dynamics.apply_transition(x, beta,
                                                                net_weights,
+                                                               self.while_loop,
+                                                               None,  # v_in
                                                                self.save_lf)
             #  x_proposed = tf.mod(dynamics_output['x_proposed'], 2 * np.pi)
             #  x_out = tf.mod(x_dynamics_output['x_out'], 2 * np.pi)
@@ -469,7 +472,9 @@ class GaugeModel:
             with tf.name_scope('z_update'):
                 z = tf.random_normal(tf.shape(x), seed=GLOBAL_SEED, name='z')
                 z_dynamics_output = self.dynamics.apply_transition(
-                    z, beta, net_weights, save_lf=False
+                    z, beta, net_weights,
+                    while_loop=self.while_loop,
+                    v_in=None, save_lf=False
                 )
                 z_proposed = z_dynamics_output['x_proposed']
                 #  z_proposed = tf.mod(z_dynamics_output['x_proposed'],
@@ -531,21 +536,23 @@ class GaugeModel:
                 between the initial and proposed configurations.
         """
         # TODO: Fix eager execution logic to deal with self.lf_out
-        if tf.executing_eagerly():
-            with tf.name_scope('grads'):
-                with tf.GradientTape() as tape:
+        with tf.name_scope('grads'):
+            if tf.executing_eagerly():
+                with tf.gradienttape() as tape:
                     loss, x_dq, dynamics_output = self.calc_loss(
                         x, beta, net_weights, **weights
                     )
                 grads = tape.gradient(loss, self.dynamics.trainable_variables)
-        else:
-            loss, x_dq, dynamics_output = self.calc_loss(x, beta,
-                                                         net_weights,
-                                                         **weights)
-            with tf.name_scope('grads'):
-                grads = tf.gradients(loss, self.dynamics.trainable_variables)
-                if self.clip_grads:
-                    grads, _ = tf.clip_by_global_norm(grads, self.clip_value)
+            else:
+                loss, x_dq, dynamics_output = self.calc_loss(x, beta,
+                                                             net_weights,
+                                                             **weights)
+                with tf.name_scope('grads'):
+                    grads = tf.gradients(loss,
+                                         self.dynamics.trainable_variables)
+                    if self.clip_grads:
+                        grads, _ = tf.clip_by_global_norm(grads,
+                                                          self.clip_value)
 
         return loss, grads, x_dq, dynamics_output
 
@@ -558,19 +565,19 @@ class GaugeModel:
         with tf.name_scope('sampler'):
             output = self.dynamics(self.x, self.beta,
                                    save_lf=True, train=False)
-
-            self.px_lf = output[2]
-            self.x_out_lf = output[3]
-            self.lf_out_f = output[4]
-            self.pxs_out_f = output[5]
-            self.lf_out_b = output[6]
-            self.pxs_out_b = output[7]
-            self.masks_f = output[8]
-            self.masks_b = output[9]
-            self.logdets_f = output[10]
-            self.logdets_b = output[11]
-            self.sumlogdet_f = output[12]
-            self.sumlogdet_b = output[13]
+            self.x_out = output['x_out']
+            self.px = output['accept_prob']
+            if self.save_lf:
+                self.lf_out_f = output['lf_out_f']
+                self.pxs_out_f = output['accept_probs_f']
+                self.lf_out_b = output['lf_out_b']
+                self.pxs_out_b = output['accept_probs_b']
+                self.masks_f = output['forward_mask']
+                self.masks_b = output['backward_mask']
+                self.logdets_f = output['logdets_f']
+                self.logdets_b = output['logdets_b']
+                self.sumlogdet_f = output['sumlogdet_f']
+                self.sumlogdet_b = output['sumlogdet_b']
 
     def build(self):
         """Build Tensorflow graph."""
@@ -617,6 +624,3 @@ class GaugeModel:
                     global_step=self.global_step,
                     name='train_op'
                 )
-
-        #  with tf.name_scope('run'):
-        #      self.create_sampler()

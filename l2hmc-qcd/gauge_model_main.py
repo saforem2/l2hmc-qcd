@@ -181,7 +181,7 @@ def hmc(FLAGS, params=None, log_file=None):
 
     model = GaugeModel(params=params)
     run_logger = RunLogger(model, params['log_dir'], save_lf_data=False)
-    plotter = GaugeModelPlotter(run_logger.figs_dir)
+    plotter = GaugeModelPlotter(model, run_logger.figs_dir)
 
     sess.run(tf.global_variables_initializer())
 
@@ -287,7 +287,7 @@ def l2hmc(FLAGS, log_file=None):
     if is_chief:
         train_logger = TrainLogger(model, log_dir, FLAGS.summaries)
         run_logger = RunLogger(model, train_logger.log_dir, save_lf_data=False)
-        plotter = GaugeModelPlotter(run_logger.figs_dir)
+        plotter = GaugeModelPlotter(model, run_logger.figs_dir)
     else:
         train_logger = None
         run_logger = None
@@ -384,7 +384,8 @@ def l2hmc(FLAGS, log_file=None):
             io.log(80 * '-')
 
             if plotter is not None and run_logger is not None:
-                plotter.plot_observables(run_logger.run_data, beta, run_str)
+                plotter.plot_observables(run_logger.run_data,
+                                         beta, run_str, **weights)
                 lf_plotter = LeapfrogPlotter(plotter.out_dir, run_logger)
                 lf_plotter.make_plots(run_dir, num_samples=20)
 
@@ -426,6 +427,8 @@ def main(FLAGS):
     else:
         log_file = None
 
+    FLAGS.__dict__['while_loop'] = not FLAGS.for_loop
+
     if FLAGS.hmc_eps is None:
         eps_arr = [0.1, 0.15, 0.2, 0.25]
     else:
@@ -465,4 +468,10 @@ def main(FLAGS):
 
 if __name__ == '__main__':
     args = parse_args()
+    import pickle
+    args_file = 'args.pkl'
+    io.log(f'writing args to: {args_file}.')
+    with open('args.pkl', 'wb') as f:
+        pickle.dump(args.__dict__, f)
+    io.log('done.')
     main(args)

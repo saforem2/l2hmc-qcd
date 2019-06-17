@@ -109,6 +109,14 @@ def parse_args():
                         help=("""Number of leapfrog steps to use in (augmented)
                               HMC sampler."""))
 
+    parser.add_argument("--for_loop",
+                        dest="for_loop",
+                        action="store_true",
+                        required=False,
+                        help=("""When passed, perform leapfrog updates using
+                              generic `for` loop. Otherwise, use (optimized)
+                              `tf.while_loop`."""))
+
     parser.add_argument("--eps",
                         dest="eps",
                         type=float,
