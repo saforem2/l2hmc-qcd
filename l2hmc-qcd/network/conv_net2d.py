@@ -60,7 +60,7 @@ class ConvNet2D(tf.keras.Model):
                         filters=self.num_filters,
                         kernel_size=self.filter_sizes[0],
                         activation=tf.nn.relu,
-                        input_shape=self._input_shape,
+                        input_shape=self._input_shape[1:],
                         #  padding='same',
                         name='conv_x1',
                         dtype=TF_FLOAT,
@@ -81,7 +81,7 @@ class ConvNet2D(tf.keras.Model):
                         filters=self.num_filters,
                         kernel_size=self.filter_sizes[0],
                         activation=tf.nn.relu,
-                        input_shape=self._input_shape,
+                        input_shape=self._input_shape[1:],
                         #  padding='same',
                         name='conv_v1',
                         dtype=TF_FLOAT,
@@ -206,16 +206,16 @@ class ConvNet2D(tf.keras.Model):
             x = self.max_pool_x2(self.conv_x2(x))
             if self.use_bn:
                 x = tf.keras.layers.BatchNormalization(axis=self.bn_axis)(x)
-            x = self.flatten(x)
-            x = tf.nn.relu(self.x_layer(x))
+            x = tf.nn.relu(self.x_layer(self.flatten(x)))
 
         with tf.name_scope('v'):
             v = self.max_pool_v1(self.conv_v1(v))
             v = self.max_pool_v2(self.conv_v2(v))
             if self.use_bn:
                 v = tf.keras.layers.BatchNormalization(axis=self.bn_axis)(v)
-            v = self.flatten(v)
-            v = tf.nn.relu(self.v_layer(v))
+            v = tf.nn.relu(self.v_layer(self.flatten(v)))
+            #  v = self.flatten(v)
+            #  v = tf.nn.relu(self.v_layer(v))
 
         with tf.name_scope('t'):
             t = tf.nn.relu(self.t_layer(t))
