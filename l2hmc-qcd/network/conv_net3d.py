@@ -206,7 +206,7 @@ class ConvNet3D(tf.keras.Model):
             N, D, H, W = self._input_shape
             #  N, D, H, W = tensor.shape
             if isinstance(tensor, np.ndarray):
-                return np.reshape(tensor, (N, 1, H, W, D))
+                return np.reshape(tensor, (N, 1, D, H, W))
 
             return tf.reshape(tensor, (N, 1, D, H, W))
 

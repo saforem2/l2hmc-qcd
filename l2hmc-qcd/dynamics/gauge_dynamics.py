@@ -140,7 +140,7 @@ class GaugeDynamics(tf.keras.Model):
             'spatial_size': self.lattice.space_size,  # spatial size of lattice
             'num_hidden': self.num_hidden,  # num hidden nodes
             'num_filters': int(2 * self.lattice.space_size),  # num filters
-            'filter_sizes': [(3, 3), (2, 2)],  # for 1st and 2nd conv. layer
+            'filter_sizes': [(2, 2), (2, 2)],  # for 1st and 2nd conv. layer
             'name_scope': 'position',  # namespace in which to create network
             'data_format': self.data_format,  # channels_first if using GPU
             'use_bn': self.use_bn,  # whether or not to use batch normalization
