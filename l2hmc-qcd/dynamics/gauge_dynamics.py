@@ -72,6 +72,9 @@ class GaugeDynamics(tf.keras.Model):
             if key != 'eps':  # want to use self.eps as tf.Variable
                 setattr(self, key, val)
 
+        if self.num_hidden is None:
+            self.num_hidden = 2 * self.lattice.num_links
+
         with tf.name_scope('eps'):
             #  self.eps = exp(self.alpha, name='eps')
             self.eps = tf.Variable(
@@ -110,7 +113,7 @@ class GaugeDynamics(tf.keras.Model):
             'x_dim': self.lattice.num_links,  # dimensionality of target space
             'factor': 2.,  # scale factor used in original paper
             'spatial_size': self.lattice.space_size,  # spatial size of lattice
-            'num_hidden': 2 * self.lattice.num_links,  # num hidden nodes
+            'num_hidden': self.num_hidden,  # num hidden nodes
             'num_filters': int(self.lattice.space_size),  # num conv. filters
             'filter_sizes': [(3, 3, 2), (2, 2, 2)],  # size of conv. filters
             'name_scope': 'position',  # namespace in which to create network
@@ -135,7 +138,7 @@ class GaugeDynamics(tf.keras.Model):
             'x_dim': self.lattice.num_links,  # dimensionality of target space
             'factor': 2.,  # scale factor used in original paper
             'spatial_size': self.lattice.space_size,  # spatial size of lattice
-            'num_hidden': 2 * self.lattice.num_links,  # num hidden nodes
+            'num_hidden': self.num_hidden,  # num hidden nodes
             'num_filters': int(2 * self.lattice.space_size),  # num filters
             'filter_sizes': [(3, 3), (2, 2)],  # for 1st and 2nd conv. layer
             'name_scope': 'position',  # namespace in which to create network
@@ -159,7 +162,7 @@ class GaugeDynamics(tf.keras.Model):
             '_input_shape': (self.batch_size, *self.lattice.links.shape),
             'x_dim': self.lattice.num_links,  # dimensionality of target space
             'factor': 2.,  # scale factor used in original paper
-            'num_hidden': 2 * self.lattice.num_links,  # num hidden nodes
+            'num_hidden': self.num_hidden,  # num hidden nodes
             'name_scope': 'position',  # namespace in which to create network
             'use_bn': self.use_bn
         }

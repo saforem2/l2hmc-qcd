@@ -219,6 +219,7 @@ class GaugeModel:
                 'eps_trainable': self.eps_trainable,
                 'data_format': self.data_format,
                 'use_bn': self.use_bn,
+                'num_hidden': self.num_hidden,
                 #  'scale_weight': self.scale_weight,
                 #  'transformation_weight': self.transformation_weight,
                 #  'translation_weight': self.translation_weight
