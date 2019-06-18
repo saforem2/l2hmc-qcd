@@ -179,12 +179,11 @@ class ConvNet2D(tf.keras.Model):
             N, D, H, W = self._input_shape
             #  N, D, H, W = tensor.shape
             if isinstance(tensor, np.ndarray):
-                return np.reshape(tensor, (N, H, W, D))
+                return np.reshape(tensor, (N, D, H, W))
 
             return tf.reshape(tensor, (N, D, H, W))
 
         if self.data_format == 'channels_last':
-            #  N, H, W, D = tensor.shape
             N, H, W, D = self._input_shape
             if isinstance(tensor, np.ndarray):
                 return np.reshape(tensor, (N, H, W, D))
