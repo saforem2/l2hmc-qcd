@@ -95,9 +95,9 @@ class GaugeDynamics(tf.keras.Model):
             ]
 
         else:
-            if '3D' in self.network_arch.upper():  # should be 'conv3D'
+            if self.network_arch == 'conv3D':  # should be 'conv3D'
                 self._build_conv_nets_3D()
-            if '2D' in self.network_arch.upper():  # should be 'conv2D'
+            if self.network_arch == 'conv2d':  # should be 'conv2D'
                 self._build_conv_nets_2D()
             elif self.network_arch == 'generic':
                 self._build_generic_nets()
@@ -371,21 +371,23 @@ class GaugeDynamics(tf.keras.Model):
             batch_size = tf.shape(x_in)[0]
             #  assert batch_size == self.batch_size
             logdet = tf.zeros((batch_size,))
-            lf_out = tf.TensorArray(dtype=TF_FLOAT, size=self.num_steps,
+            lf_out = tf.TensorArray(dtype=TF_FLOAT, size=self.num_steps+1,
                                     dynamic_size=True, name='lf_out',
                                     clear_after_read=False)
-            logdets_out = tf.TensorArray(dtype=TF_FLOAT, size=self.num_steps,
+            logdets_out = tf.TensorArray(dtype=TF_FLOAT, size=self.num_steps+1,
                                          dynamic_size=True, name='logdets_out',
                                          clear_after_read=False)
+            lf_out = lf_out.write(0, x_in)
+            logdets_out.write(0, logdet)
 
         def body(x, v, beta, step, logdet, lf_samples, logdets):
             i = tf.cast(step, dtype=tf.int32, name='lf_step')  # cast as int
             with tf.name_scope('apply_lf'):
                 new_x, new_v, j = lf_fn(x, v, beta, step, net_weights)
             with tf.name_scope('concat_lf_outputs'):
-                lf_samples = lf_samples.write(i, new_x)
+                lf_samples = lf_samples.write(i+1, new_x)
             with tf.name_scope('concat_logdets'):
-                logdets = logdets.write(i, j)
+                logdets = logdets.write(i+1, logdet+j)
             return (new_x, new_v, beta, step + 1,
                     logdet + j, lf_samples, logdets)
 
