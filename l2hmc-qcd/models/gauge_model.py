@@ -457,11 +457,10 @@ class GaugeModel:
             equivalent.
         """
         with tf.name_scope('x_update'):
-            x_dynamics_output = self.dynamics.apply_transition(x, beta,
-                                                               net_weights,
-                                                               self.while_loop,
-                                                               None,  # v_in
-                                                               self.save_lf)
+            x_dynamics_output = self.dynamics(x, beta, net_weights,
+                                              while_loop=self.while_loop,
+                                              v_in=None,  # v_in
+                                              save_lf=self.save_lf)
             #  x_proposed = tf.mod(dynamics_output['x_proposed'], 2 * np.pi)
             #  x_out = tf.mod(x_dynamics_output['x_out'], 2 * np.pi)
             x_proposed = x_dynamics_output['x_proposed']
@@ -472,7 +471,7 @@ class GaugeModel:
         if weights['aux_weight'] > 0:
             with tf.name_scope('z_update'):
                 z = tf.random_normal(tf.shape(x), seed=GLOBAL_SEED, name='z')
-                z_dynamics_output = self.dynamics.apply_transition(
+                z_dynamics_output = self.dynamics(
                     z, beta, net_weights,
                     while_loop=self.while_loop,
                     v_in=None, save_lf=False
@@ -539,7 +538,7 @@ class GaugeModel:
         # TODO: Fix eager execution logic to deal with self.lf_out
         with tf.name_scope('grads'):
             if tf.executing_eagerly():
-                with tf.gradienttape() as tape:
+                with tf.GradientTape() as tape:
                     loss, x_dq, dynamics_output = self.calc_loss(
                         x, beta, net_weights, **weights
                     )

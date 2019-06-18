@@ -153,5 +153,4 @@ class GenericNet(tf.keras.Model):
 
         transformation = (self.transformation_layer(h)
                           * tf.exp(self.coeff_transformation))
-        #
         return scale, translation, transformation
