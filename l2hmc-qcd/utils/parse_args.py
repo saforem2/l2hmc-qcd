@@ -269,6 +269,15 @@ def parse_args():
                               the neural network. Must be one of:
                               `'conv3D', 'conv2D', 'generic'`."""))
 
+    parser.add_argument('--num_hidden',
+                        dest='num_hidden',
+                        type=int,
+                        default=None,
+                        required=False,
+                        help=("""Number of nodes to include in fully-connected
+                              hidden layer `h`. If not explicitly passed, will
+                              default to 2 * lattice.num_links."""))
+
     parser.add_argument('--summaries',
                         dest="summaries",
                         action="store_true",
