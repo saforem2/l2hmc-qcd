@@ -50,6 +50,12 @@ class GaugeModel:
             else:
                 setattr(self, key, val)
 
+        io.log(80 * '-')
+        io.log(f'Args received by `GaugeModel`:')
+        for key, val in params.items():
+            io.log(f'{key}: {val}')
+        io.log(80 * '-')
+
         # -------------------------------------------------------
         # Create lattice
         # -------------------------------------------------------
