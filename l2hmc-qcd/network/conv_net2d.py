@@ -224,15 +224,23 @@ class ConvNet2D(tf.keras.Model):
             h = tf.nn.relu(v + x + t)
             h = tf.nn.relu(self.h_layer(h))
 
+        with tf.name_scope('scale'):
+            scale = (self.coeff_scale
+                     * tf.nn.tanh(self.scale_layer(h)))
+
+        with tf.name_scope('transformation'):
+            transformation = (self.coeff_transformation
+                              * tf.nn.tanh(self.transformation_layer(h)))
+
         with tf.name_scope('translation'):
             translation = self.translation_layer(h)
 
-        with tf.name_scope('scale'):
-            scale = (tf.nn.tanh(self.scale_layer(h))
-                     * tf.exp(self.coeff_scale))
-
-        with tf.name_scope('transformation'):
-            transformation = (self.transformation_layer(h)
-                              * tf.exp(self.coeff_transformation))
+        #  with tf.name_scope('scale'):
+        #      scale = (tf.nn.tanh(self.scale_layer(h))
+        #               * tf.exp(self.coeff_scale))
+        #
+        #  with tf.name_scope('transformation'):
+        #      transformation = (tf.nn.tanh(self.transformation_layer(h))
+        #                        * tf.exp(self.coeff_transformation))
 
         return scale, translation, transformation
