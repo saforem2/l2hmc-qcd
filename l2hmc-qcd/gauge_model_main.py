@@ -468,6 +468,11 @@ def main(FLAGS):
 
 if __name__ == '__main__':
     args = parse_args()
+    io.log(80 * '-')
+    io.log(f'Args received from `parse_args()`:')
+    for key, val in args.__dict__.items():
+        io.log(f'{key}: {val}')
+    io.log(80 * '-')
     import pickle
     args_file = 'args.pkl'
     io.log(f'writing args to: {args_file}.')

@@ -72,6 +72,12 @@ class GaugeDynamics(tf.keras.Model):
             if key != 'eps':  # want to use self.eps as tf.Variable
                 setattr(self, key, val)
 
+        io.log(80 * '-')
+        io.log(f'Args received by `GaugeDynamics`:')
+        for key, val in params.items():
+            io.log(f'{key}: {val}')
+        io.log(80 * '-')
+
         if self.num_hidden is None:
             self.num_hidden = 2 * self.lattice.num_links
 
