@@ -14,6 +14,8 @@ import numpy as np
 import numpy.random as npr
 import tensorflow as tf
 
+import utils.file_io as io
+
 from globals import GLOBAL_SEED, TF_FLOAT
 from network.conv_net3d import ConvNet3D
 from network.conv_net2d import ConvNet2D
@@ -74,9 +76,10 @@ class GaugeDynamics(tf.keras.Model):
 
         io.log(80 * '-')
         io.log(f'Args received by `GaugeDynamics`:')
-        for key, val in params.items():
+        for key, val in kwargs.items():
             io.log(f'{key}: {val}')
         io.log(80 * '-')
+        io.log(f'network_arch: {self.network_arch}')
 
         if self.num_hidden is None:
             self.num_hidden = 2 * self.lattice.num_links
