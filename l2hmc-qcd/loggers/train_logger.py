@@ -13,7 +13,7 @@ import pickle
 import utils.file_io as io
 
 from globals import TRAIN_HEADER
-from utils.tf_logging import variable_summaries  # add_loss_summaries
+from utils.tf_logging import variable_summaries, add_loss_summaries
 
 import tensorflow as tf
 
@@ -107,7 +107,7 @@ class TrainLogger:
         with tf.name_scope('loss'):
             tf.summary.scalar('loss', self.model.loss_op)
 
-        #  self.loss_averages_op = self._add_loss_summaries(self.model.loss_op)
+        add_loss_summaries(self.model.loss_op)
 
         with tf.name_scope('learning_rate'):
             tf.summary.scalar('learning_rate', self.model.lr)

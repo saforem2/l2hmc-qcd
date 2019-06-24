@@ -56,7 +56,7 @@ class LeapfrogPlotter:
     def __init__(self, figs_dir, run_logger=None,
                  run_dir=None, therm_perc=0.005, skip_perc=0.01):
         self.figs_dir = figs_dir
-        self.pdfs_dir = os.path.join(self.figs_dir, 'pdfs_plots')
+        self.pdfs_dir = os.path.join(self.figs_dir, 'lf_plots')
         io.check_else_make_dir(self.pdfs_dir)
 
         if run_logger is None:
@@ -145,7 +145,7 @@ class LeapfrogPlotter:
             io.log(f'memory use: {memory_use}')
             io.log(80 * '-')
 
-    def get_colors(self, num_samples=20):
+    def get_colors(self, num_samples=10):
         reds_cmap = mpl.cm.get_cmap('Reds', num_samples + 1)
         blues_cmap = mpl.cm.get_cmap('Blues', num_samples + 1)
         idxs = np.linspace(0.2, 0.75, num_samples + 1)
@@ -161,7 +161,7 @@ class LeapfrogPlotter:
         io.check_else_make_dir(figs_dir)
         io.check_else_make_dir(self.pdfs_dir)
 
-    def make_plots(self, run_dir, num_samples=20, ret=False):
+    def make_plots(self, run_dir, num_samples=10, ret=False):
         """Make plots of the leapfrog differences and logdets.
 
         Immediately after creating and saving the plots, delete these
@@ -192,7 +192,7 @@ class LeapfrogPlotter:
         if ret:
             return fig_ax1, fig_ax2
 
-    def plot_lf_diffs(self, beta, num_samples=20):
+    def plot_lf_diffs(self, beta, num_samples=10):
         t0 = time.time()
         reds, blues = self.get_colors(num_samples)
         samples_y_avg = np.mean(self.samples_diffs, axis=(1, 2))
@@ -264,7 +264,7 @@ class LeapfrogPlotter:
 
         return fig, (ax1, ax2)
 
-    def plot_logdets(self, beta, num_samples=20):
+    def plot_logdets(self, beta, num_samples=10):
         t0 = time.time()
         reds, blues = self.get_colors(num_samples)
 

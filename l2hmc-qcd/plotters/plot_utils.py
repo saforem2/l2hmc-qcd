@@ -104,7 +104,7 @@ def plot_multiple_lines(data, xy_labels, **kwargs):
 
     _ = ax.plot(
         x_data, y_data.mean(axis=0), label='average',
-        alpha=1., lw=1.0, color='k'
+        alpha=1., lw=1.25, color='k', zorder=num_samples+5
     )
 
     ax.set_xlabel(x_label, fontsize=14)
