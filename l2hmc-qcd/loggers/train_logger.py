@@ -122,9 +122,10 @@ class TrainLogger:
         with tf.name_scope('avg_plaq'):
             tf.summary.scalar('avg_plaq', self.model.avg_plaqs_op)
 
-        for var in tf.trainable_variables():
-            if 'batch_normalization' not in var.op.name:
-                tf.summary.histogram(var.op.name, var)
+        #  for var in tf.trainable_variables():
+        #  for var in self.model.dynamics.trainable_variables():
+        #      if 'batch_normalization' not in var.op.name:
+        #          tf.summary.histogram(var.op.name, var)
 
         with tf.name_scope('summaries'):
             for grad, var in grads_and_vars:
