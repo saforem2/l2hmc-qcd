@@ -304,14 +304,6 @@ class ConvNet3D(tf.keras.Model):
         with tf.name_scope('translation'):
             translation = self.translation_layer(h)
 
-        #  with tf.name_scope('scale'):
-        #      scale = (tf.nn.tanh(self.scale_layer(h))
-        #               * tf.exp(self.coeff_scale))
-        #
-        #  with tf.name_scope('transformation'):
-        #      transformation = (tf.nn.tanh(self.transformation_layer(h))
-        #                        * tf.exp(self.coeff_transformation))
-
         return scale, translation, transformation
 
 
