@@ -465,7 +465,7 @@ class GaugeModel:
         with tf.name_scope('x_update'):
             x_dynamics_output = self.dynamics(x, beta, net_weights,
                                               while_loop=self.while_loop,
-                                              v_in=None,  # v_in
+                                              #  v_in=None,  # v_in
                                               save_lf=self.save_lf)
             #  x_proposed = tf.mod(dynamics_output['x_proposed'], 2 * np.pi)
             #  x_out = tf.mod(x_dynamics_output['x_out'], 2 * np.pi)
@@ -480,7 +480,8 @@ class GaugeModel:
                 z_dynamics_output = self.dynamics(
                     z, beta, net_weights,
                     while_loop=self.while_loop,
-                    v_in=None, save_lf=False
+                    #  v_in=None,
+                    save_lf=False
                 )
                 z_proposed = z_dynamics_output['x_proposed']
                 #  z_proposed = tf.mod(z_dynamics_output['x_proposed'],
