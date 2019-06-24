@@ -488,9 +488,9 @@ class GaugeModel:
                 #                      2 * np.pi)
                 pz = z_dynamics_output['accept_prob']
         else:
-            z = None
-            z_proposed = None
-            pz = None
+            z = tf.zeros(x.shape, dtype=TF_FLOAT, name='z')
+            z_proposed = tf.zeros(x.shape, dtype=TF_FLOAT)
+            pz = tf.zeros(px.shape, dtype=TF_FLOAT)
 
         with tf.name_scope('top_charge_diff'):
             x_dq = tf.cast(

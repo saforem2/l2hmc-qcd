@@ -183,15 +183,14 @@ class GaugeDynamics(tf.keras.Model):
                 self.v_fn = GenericNet(model_name='VNet', **kwargs)
 
     def call(self, x_in, beta, net_weights, 
-             while_loop=True, save_lf=False):
+             while_loop=True, v_in=None, save_lf=False):
         """Call method."""
         return self.apply_transition(x_in, beta, net_weights,
                                      while_loop=while_loop,
-                                     #  v_in=v_in,
-                                     save_lf=save_lf)
+                                     v_in=v_in, save_lf=save_lf)
 
     def apply_transition(self, x_in, beta, net_weights,
-                         while_loop=True, save_lf=False):
+                         while_loop=True, v_in=None, save_lf=False):
         """Propose a new state and perform the accept/reject step.
 
         Args:
@@ -212,7 +211,7 @@ class GaugeDynamics(tf.keras.Model):
                                                    net_weights,
                                                    while_loop=while_loop,
                                                    forward=True,
-                                                   #  v_in=v_in,
+                                                   v_in=v_in,
                                                    save_lf=save_lf)
                 xf = outputs_f['x_proposed']
                 vf = outputs_f['v_proposed']
@@ -228,7 +227,7 @@ class GaugeDynamics(tf.keras.Model):
                                                    net_weights,
                                                    while_loop=while_loop,
                                                    forward=False,
-                                                   #  v_in=v_in,
+                                                   v_in=v_in,
                                                    save_lf=save_lf)
                 xb = outputs_b['x_proposed']
                 vb = outputs_b['v_proposed']
@@ -300,12 +299,12 @@ class GaugeDynamics(tf.keras.Model):
         return outputs
 
     def transition_kernel(self, x_in, beta, net_weights, while_loop=True,
-                          forward=True, save_lf=False):
+                          forward=True, v_in=None, save_lf=False):
         """Transition kernel of augmented leapfrog integrator."""
 
-        #  if v_in is None:
-        with tf.name_scope('refresh_momentum'):
-            v_in = tf.random_normal(tf.shape(x_in), seed=GLOBAL_SEED)
+        if v_in is None:
+            with tf.name_scope('refresh_momentum'):
+                v_in = tf.random_normal(tf.shape(x_in), seed=GLOBAL_SEED)
 
         if while_loop:
             outputs = self._transition_while_loop(x_in, v_in,
