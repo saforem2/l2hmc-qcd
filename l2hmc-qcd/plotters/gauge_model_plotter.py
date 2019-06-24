@@ -156,8 +156,6 @@ class GaugeModelPlotter:
         self._plot_charge_probs(charges, **kwargs)
         self._plot_charge_diffs((_steps_diffs, _charge_diffs.T), **kwargs)
         self._plot_plaqs_diffs((_steps_diffs, _plaqs_diffs.T), **kwargs)
-        #  self._plot_charge_diffs((steps_diffs, charge_diffs.T), **kwargs)
-        #  self._plot_plaqs_diffs((steps_diffs, plaqs_diffs.T), **kwargs)
 
     def _plot_actions(self, xy_data, **kwargs):
         """Plot actions."""
@@ -174,8 +172,6 @@ class GaugeModelPlotter:
         _, ax = plot_multiple_lines(xy_data, xy_labels, **kwargs)
         _ = ax.axhline(y=u1_plaq_exact(beta),
                        color='#CC0033', ls='-', lw=1.5, label='exact')
-        #  _ = ax.plot(xy_data[0], xy_data[1].mean(axis=0), lw=1.25,
-        #              color='k', label='average', alpha=0.75)
         _ = plt.tight_layout()
 
         out_file = get_out_file(self.out_dir, 'plaqs_vs_step')
@@ -188,8 +184,6 @@ class GaugeModelPlotter:
         xy_labels = ('Step', r"$\delta_{\phi_{P}}$")
         _, ax = plot_multiple_lines(xy_data, xy_labels, **kwargs)
         _ = ax.axhline(y=0, color='#CC0033', ls='-', lw=1.5)
-        #  _ = ax.plot(xy_data[0], xy_data[1].mean(axis=0), lw=1.25,
-        #              color='k', label='average', alpha=0.75)
         _ = ax.legend(loc='best')
         _ = plt.tight_layout()
 

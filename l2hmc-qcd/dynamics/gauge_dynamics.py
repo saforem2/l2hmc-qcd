@@ -17,7 +17,7 @@ import tensorflow as tf
 import utils.file_io as io
 
 from globals import GLOBAL_SEED, TF_FLOAT
-from network.conv_net3d import ConvNet3D
+from network.conv_net3d import ConvNet3D, ConvNet3DShared
 from network.conv_net2d import ConvNet2D
 from network.generic_net import GenericNet
 
@@ -129,12 +129,13 @@ class GaugeDynamics(tf.keras.Model):
 
         with tf.name_scope("DynamicsNetwork"):
             with tf.name_scope("XNet"):
-                self.x_fn = ConvNet3D(model_name='XNet', **kwargs)
+                #  self.x_fn = ConvNet3D(model_name='XNet', **kwargs)
+                self.x_fn = ConvNet3DShared(model_name='XNet', **kwargs)
 
             kwargs['name_scope'] = 'momentum'  # update name scope
             kwargs['factor'] = 1.              # factor used in orig. paper
             with tf.name_scope("VNet"):
-                self.v_fn = ConvNet3D(model_name='VNet', **kwargs)
+                self.v_fn = ConvNet3DShared(model_name='VNet', **kwargs)
 
     def _build_conv_nets_2D(self):
         """Build ConvNet architecture for x and v functions."""
