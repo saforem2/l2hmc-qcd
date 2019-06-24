@@ -106,12 +106,12 @@ class GaugeDynamics(tf.keras.Model):
         else:
             if self.network_arch == 'conv3D':  # should be 'conv3D'
                 self._build_conv_nets_3D()
-            if self.network_arch == 'conv2d':  # should be 'conv2D'
+            if self.network_arch == 'conv2D':  # should be 'conv2D'
                 self._build_conv_nets_2D()
             elif self.network_arch == 'generic':
                 self._build_generic_nets()
             else:
-                raise AttributeError("`self._network_arch` must be one of "
+                raise AttributeError("`self.network_arch` must be one of "
                                      "`'conv3D', 'conv2D', 'generic'.`")
 
     def _build_conv_nets_3D(self):
