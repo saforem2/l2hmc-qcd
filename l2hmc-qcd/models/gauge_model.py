@@ -347,15 +347,15 @@ class GaugeModel:
                                         axis=0, name='x_std_loss_tot')
             tf.add_to_collection('losses', x_loss_tot)
 
-        if aux_weight > 0 and z_init is not None:
-            with tf.name_scope('z_std_loss'):
-                z_loss = self._calc_std_loss(z_init, z_proposed, pz)
-                z_loss_tot = tf.reduce_mean((self.loss_scale / z_loss
-                                            - z_loss / self.loss_scale),
-                                            axis=0, name='z_std_loss_tot')
-                tf.add_to_collection('losses', z_loss_tot)
-        else:
-            z_loss_tot = 0.
+        #  if aux_weight > 0 and z_init is not None:
+        with tf.name_scope('z_std_loss'):
+            z_loss = self._calc_std_loss(z_init, z_proposed, pz)
+            z_loss_tot = tf.reduce_mean((self.loss_scale / z_loss
+                                        - z_loss / self.loss_scale),
+                                        axis=0, name='z_std_loss_tot')
+            tf.add_to_collection('losses', z_loss_tot)
+        #  else:
+        #      z_loss_tot = 0.
 
         with tf.name_scope('std_loss'):
             loss_tot = tf.multiply(std_weight,
@@ -420,10 +420,10 @@ class GaugeModel:
             tf.add_to_collection('losses', x_charge_loss)
 
         with tf.name_scope('z_charge_loss'):
-            if aux_weight > 0 and z_init is not None:
-                z_charge_loss = self._calc_charge_loss(z_init, z_proposed, pz)
-            else:
-                z_charge_loss = 0.
+            #  if aux_weight > 0 and z_init is not None:
+            z_charge_loss = self._calc_charge_loss(z_init, z_proposed, pz)
+            #  else:
+            #      z_charge_loss = 0.
             tf.add_to_collection('losses', x_charge_loss)
 
         with tf.name_scope('total_charge_loss'):
@@ -474,23 +474,23 @@ class GaugeModel:
             x_out = x_dynamics_output['x_out']
 
         # Auxiliary variable
-        if weights['aux_weight'] > 0:
-            with tf.name_scope('z_update'):
-                z = tf.random_normal(tf.shape(x), seed=GLOBAL_SEED, name='z')
-                z_dynamics_output = self.dynamics(
-                    z, beta, net_weights,
-                    while_loop=self.while_loop,
-                    #  v_in=None,
-                    save_lf=False
-                )
-                z_proposed = z_dynamics_output['x_proposed']
-                #  z_proposed = tf.mod(z_dynamics_output['x_proposed'],
-                #                      2 * np.pi)
-                pz = z_dynamics_output['accept_prob']
-        else:
-            z = tf.zeros(x.shape, dtype=TF_FLOAT, name='z')
-            z_proposed = tf.zeros(x.shape, dtype=TF_FLOAT)
-            pz = tf.zeros(px.shape, dtype=TF_FLOAT)
+        #  if weights['aux_weight'] > 0:
+        with tf.name_scope('z_update'):
+            z = tf.random_normal(tf.shape(x), seed=GLOBAL_SEED, name='z')
+            z_dynamics_output = self.dynamics(
+                z, beta, net_weights,
+                while_loop=self.while_loop,
+                #  v_in=None,
+                save_lf=False
+            )
+            z_proposed = z_dynamics_output['x_proposed']
+            #  z_proposed = tf.mod(z_dynamics_output['x_proposed'],
+            #                      2 * np.pi)
+            pz = z_dynamics_output['accept_prob']
+        #  else:
+        #      z = tf.zeros(x.shape, dtype=TF_FLOAT, name='z')
+        #      z_proposed = tf.zeros(x.shape, dtype=TF_FLOAT)
+        #      pz = tf.zeros(px.shape, dtype=TF_FLOAT)
 
         with tf.name_scope('top_charge_diff'):
             x_dq = tf.cast(
