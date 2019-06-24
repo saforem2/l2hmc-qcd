@@ -349,7 +349,10 @@ class GaugeModel:
             tf.add_to_collection('losses', z_loss)
 
         with tf.name_scope('std_loss'):
-            std_loss = std_weight * (x_loss + aux_weight * z_loss)
+            std_loss = tf.reduce_mean(
+                std_weight * (x_loss + aux_weight * z_loss),
+                axis=0, name='std_loss'
+            )
             tf.add_to_collection('losses', std_loss)
 
         return std_loss
