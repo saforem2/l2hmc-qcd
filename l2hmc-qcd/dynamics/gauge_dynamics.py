@@ -377,27 +377,26 @@ class GaugeDynamics(tf.keras.Model):
             batch_size = tf.shape(x_in)[0]
             #  assert batch_size == self.batch_size
             logdet = tf.zeros((batch_size,))
-            lf_out = tf.TensorArray(dtype=TF_FLOAT, size=self.num_steps,
+            lf_out = tf.TensorArray(dtype=TF_FLOAT, size=self.num_steps+1,
                                     dynamic_size=True, name='lf_out',
                                     clear_after_read=False)
-            logdets_out = tf.TensorArray(dtype=TF_FLOAT, size=self.num_steps,
+            logdets_out = tf.TensorArray(dtype=TF_FLOAT, size=self.num_steps+1,
                                          dynamic_size=True, name='logdets_out',
                                          clear_after_read=False)
+            lf_out.write(0, x_in)
+            logdets_out.write(0, logdet)
 
-        def body(x, v, beta, step, logdet, lf_samples, logdets):
+        def body(step, x, v, logdet, lf_samples, logdets):
             i = tf.cast(step, dtype=tf.int32, name='lf_step')  # cast as int
             with tf.name_scope('apply_lf'):
                 new_x, new_v, j = lf_fn(x, v, beta, step, net_weights)
             with tf.name_scope('concat_lf_outputs'):
-                lf_samples = (lf_samples.write(i, new_x)
-                              if tf.greater(i, 0) else
-                              lf_samples.write(i, x))
+                lf_samples = lf_samples.write(i+1, new_x)
             with tf.name_scope('concat_logdets'):
-                logdets = logdets.write(i, logdet+j)
-            return (new_x, new_v, beta, step + 1,
-                    logdet + j, lf_samples, logdets)
+                logdets = logdets.write(i+1, logdet+j)
+            return (step+1, new_x, new_v, logdet + j, lf_samples, logdets)
 
-        def cond(x, v, beta, step, logdet, lf_out, logdets):
+        def cond(step, *args):
             with tf.name_scope('check_lf_step'):
                 return tf.less(step, self.num_steps)
 
@@ -405,18 +404,16 @@ class GaugeDynamics(tf.keras.Model):
             outputs = tf.while_loop(
                 cond=cond,
                 body=body,
-                loop_vars=[x_proposed, v_proposed,
-                           beta, step, logdet,
-                           lf_out, logdets_out]
+                loop_vars=[step, x_proposed, v_proposed,
+                           logdet, lf_out, logdets_out]
             )
 
-            x_proposed = outputs[0]
-            v_proposed = outputs[1]
-            beta = outputs[2]
-            step = outputs[3]
-            sumlogdet = outputs[4]
-            lf_out = outputs[5].stack()
-            logdets_out = outputs[6].stack()
+            step = outputs[0]
+            x_proposed = outputs[1]
+            v_proposed = outputs[2]
+            sumlogdet = outputs[3]
+            lf_out = outputs[4].stack()
+            logdets_out = outputs[5].stack()
 
         outputs = {
             'x_proposed': x_proposed,
