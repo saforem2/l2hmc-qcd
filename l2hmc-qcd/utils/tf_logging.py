@@ -4,7 +4,7 @@ from __future__ import print_function
 
 import os
 from globals import ROOT_DIR
-import file_io as io
+import utils.file_io as io
 
 import tensorflow as tf
 
