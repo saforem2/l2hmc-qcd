@@ -516,23 +516,22 @@ class GaugeModel:
                 between the initial and proposed configurations.
         """
         # TODO: Fix eager execution logic to deal with self.lf_out
-        with tf.name_scope('grads'):
-            if tf.executing_eagerly():
+        if tf.executing_eagerly():
+            with tf.name_scope('grads'):
                 with tf.GradientTape() as tape:
                     loss, x_dq, dynamics_output = self.calc_loss(
                         x, beta, net_weights, **weights
                     )
                 grads = tape.gradient(loss, self.dynamics.trainable_variables)
-            else:
-                loss, x_dq, dynamics_output = self.calc_loss(x, beta,
-                                                             net_weights,
-                                                             **weights)
-                with tf.name_scope('grads'):
-                    grads = tf.gradients(loss,
-                                         self.dynamics.trainable_variables)
-                    if self.clip_grads:
-                        grads, _ = tf.clip_by_global_norm(grads,
-                                                          self.clip_value)
+        else:
+            loss, x_dq, dynamics_output = self.calc_loss(x, beta,
+                                                         net_weights,
+                                                         **weights)
+            with tf.name_scope('grads'):
+                grads = tf.gradients(loss, self.dynamics.trainable_variables)
+                if self.clip_grads:
+                    grads, _ = tf.clip_by_global_norm(grads,
+                                                      self.clip_value)
 
         return loss, grads, x_dq, dynamics_output
 
