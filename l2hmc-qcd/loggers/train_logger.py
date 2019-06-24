@@ -137,8 +137,9 @@ class TrainLogger:
 
                 if 'batch_norm' not in name:
                     variable_summaries(var, name)
-                    variable_summaries(grad, name + '/gradients')
-                    tf.summary.histogram(name + '/gradients', grad)
+                    if grad is not None:
+                        variable_summaries(grad, name + '/gradients')
+                        tf.summary.histogram(name + '/gradients', grad)
 
         self.summary_op = tf.summary.merge_all(name='summary_op')
 
