@@ -390,7 +390,7 @@ class GaugeDynamics(tf.keras.Model):
                 new_x, new_v, j = lf_fn(x, v, beta, step, net_weights)
             with tf.name_scope('concat_lf_outputs'):
                 lf_samples = (lf_samples.write(i, new_x)
-                              if i > 0 else
+                              if tf.greater(i) > 0 else
                               lf_samples.write(i, x))
             with tf.name_scope('concat_logdets'):
                 logdets = logdets.write(i, logdet+j)
