@@ -85,7 +85,6 @@ class ConvNet3D(tf.keras.Model):
                         name='conv_x1',
                         dtype=TF_FLOAT,
                         data_format=self.data_format
-
                     )
 
                 with tf.name_scope('pool_x1'):
