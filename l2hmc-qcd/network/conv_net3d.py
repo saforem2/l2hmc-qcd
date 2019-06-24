@@ -43,7 +43,7 @@ class ConvNet3DShared(tf.keras.Model):
                 This value is automatically determined and set to the
                 appropriate value.
         """
-        super(ConvNet3D, self).__init__(name=model_name)
+        super(ConvNet3DShared, self).__init__(name=model_name)
 
         for key, val in kwargs.items():
             setattr(self, key, val)
