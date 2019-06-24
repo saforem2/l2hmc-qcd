@@ -96,8 +96,6 @@ def variable_summaries(var, name):
             tf.summary.scalar('max', tf.reduce_max(var))
             tf.summary.scalar('min', tf.reduce_min(var))
             tf.summary.histogram('histogram', var)
-            io.log(f'Unable to create histogram summary for: {name}.')
-            io.log(f'Continuing...')
         except ValueError:
             io.log(f'Unable to create variable summary for: {name}.')
             io.log(f'Continuing...')
