@@ -383,20 +383,17 @@ class GaugeDynamics(tf.keras.Model):
             logdets_out = tf.TensorArray(dtype=TF_FLOAT, size=self.num_steps,
                                          dynamic_size=True, name='logdets_out',
                                          clear_after_read=False)
-            #  lf_out = lf_out.write(0, x_in)
-            #  logdets_out.write(0, logdet)
 
         def body(x, v, beta, step, logdet, lf_samples, logdets):
             i = tf.cast(step, dtype=tf.int32, name='lf_step')  # cast as int
             with tf.name_scope('apply_lf'):
                 new_x, new_v, j = lf_fn(x, v, beta, step, net_weights)
             with tf.name_scope('concat_lf_outputs'):
-                #  if i == 0:
-                #      lf_samples = lf_samples.write(i, x)
-                #  else:
-                lf_samples = lf_samples.write(i, new_x)
+                lf_samples = (lf_samples.write(i, new_x)
+                              if i > 0 else
+                              lf_samples.write(i, x))
             with tf.name_scope('concat_logdets'):
-                logdets = logdets.write(i+1, logdet+j)
+                logdets = logdets.write(i, logdet+j)
             return (new_x, new_v, beta, step + 1,
                     logdet + j, lf_samples, logdets)
 
@@ -666,6 +663,7 @@ class GaugeDynamics(tf.keras.Model):
             self.masks.append(mask[None, :])
 
     def _get_mask(self, step):
+        """Get the mask, and its complement, 1. - mask at a given step."""
         if step.dtype != tf.int32:
             step = tf.cast(step, dtype=tf.int32)
 
