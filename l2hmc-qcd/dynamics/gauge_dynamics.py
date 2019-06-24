@@ -377,10 +377,10 @@ class GaugeDynamics(tf.keras.Model):
             batch_size = tf.shape(x_in)[0]
             #  assert batch_size == self.batch_size
             logdet = tf.zeros((batch_size,))
-            lf_out = tf.TensorArray(dtype=TF_FLOAT, size=self.num_steps+1,
+            lf_out = tf.TensorArray(dtype=TF_FLOAT, size=self.num_steps,
                                     dynamic_size=True, name='lf_out',
                                     clear_after_read=False)
-            logdets_out = tf.TensorArray(dtype=TF_FLOAT, size=self.num_steps+1,
+            logdets_out = tf.TensorArray(dtype=TF_FLOAT, size=self.num_steps,
                                          dynamic_size=True, name='logdets_out',
                                          clear_after_read=False)
             #  lf_out = lf_out.write(0, x_in)
@@ -391,10 +391,10 @@ class GaugeDynamics(tf.keras.Model):
             with tf.name_scope('apply_lf'):
                 new_x, new_v, j = lf_fn(x, v, beta, step, net_weights)
             with tf.name_scope('concat_lf_outputs'):
-                if i == 0:
-                    lf_samples = lf_samples.write(i, x)
-                else:
-                    lf_samples = lf_samples.write(i, new_x)
+                #  if i == 0:
+                #      lf_samples = lf_samples.write(i, x)
+                #  else:
+                lf_samples = lf_samples.write(i, new_x)
             with tf.name_scope('concat_logdets'):
                 logdets = logdets.write(i+1, logdet+j)
             return (new_x, new_v, beta, step + 1,
