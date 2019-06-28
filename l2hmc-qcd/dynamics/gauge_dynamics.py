@@ -74,13 +74,6 @@ class GaugeDynamics(tf.keras.Model):
             if key != 'eps':  # want to use self.eps as tf.Variable
                 setattr(self, key, val)
 
-        io.log(80 * '-')
-        io.log(f'Args received by `GaugeDynamics`:')
-        for key, val in kwargs.items():
-            io.log(f'{key}: {val}')
-        io.log(80 * '-')
-        io.log(f'network_arch: {self.network_arch}')
-
         if self.num_hidden is None:
             self.num_hidden = 2 * self.lattice.num_links
 
@@ -130,12 +123,12 @@ class GaugeDynamics(tf.keras.Model):
         with tf.name_scope("DynamicsNetwork"):
             with tf.name_scope("XNet"):
                 #  self.x_fn = ConvNet3D(model_name='XNet', **kwargs)
-                self.x_fn = ConvNet3DShared(model_name='XNet', **kwargs)
+                self.x_fn = ConvNet3D(model_name='XNet', **kwargs)
 
             kwargs['name_scope'] = 'momentum'  # update name scope
             kwargs['factor'] = 1.              # factor used in orig. paper
             with tf.name_scope("VNet"):
-                self.v_fn = ConvNet3DShared(model_name='VNet', **kwargs)
+                self.v_fn = ConvNet3D(model_name='VNet', **kwargs)
 
     def _build_conv_nets_2D(self):
         """Build ConvNet architecture for x and v functions."""
@@ -384,8 +377,8 @@ class GaugeDynamics(tf.keras.Model):
             logdets_out = tf.TensorArray(dtype=TF_FLOAT, size=self.num_steps+1,
                                          dynamic_size=True, name='logdets_out',
                                          clear_after_read=False)
-            lf_out.write(0, x_in)
-            logdets_out.write(0, logdet)
+            lf_out = lf_out.write(0, x_in)
+            logdets_out = logdets_out.write(0, logdet)
 
         def body(step, x, v, logdet, lf_samples, logdets):
             i = tf.cast(step, dtype=tf.int32, name='lf_step')  # cast as int
