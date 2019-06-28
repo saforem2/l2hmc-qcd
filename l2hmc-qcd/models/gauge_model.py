@@ -50,11 +50,7 @@ class GaugeModel:
             else:
                 setattr(self, key, val)
 
-        io.log(80 * '-')
-        io.log(f'Args received by `GaugeModel`:')
-        for key, val in params.items():
-            io.log(f'{key}: {val}')
-        io.log(80 * '-')
+        self.charge_weight_np = params['charge_weight']
 
         # -------------------------------------------------------
         # Create lattice
@@ -337,16 +333,20 @@ class GaugeModel:
                                              inputs['x_proposed'],
                                              inputs['px'])
             x_loss = ls / x_std_loss - x_std_loss / ls
-            tf.add_to_collection('losses', tf.reduce_mean(x_std_loss))
-            tf.add_to_collection('losses', tf.reduce_mean(x_loss))
+            tf.add_to_collection('losses', tf.reduce_mean(x_std_loss,
+                                                          name='x_std_loss'))
+            tf.add_to_collection('losses', tf.reduce_mean(x_loss,
+                                                          name='x_loss'))
 
         with tf.name_scope('z_std_loss'):
             z_std_loss = self._calc_std_loss(inputs['z_init'],
                                              inputs['z_proposed'],
                                              inputs['pz'])
             z_loss = ls / z_std_loss - z_std_loss / ls
-            tf.add_to_collection('losses', tf.reduce_mean(z_std_loss))
-            tf.add_to_collection('losses', tf.reduce_mean(z_loss))
+            tf.add_to_collection('losses', tf.reduce_mean(z_std_loss,
+                                                          name='z_std_loss'))
+            tf.add_to_collection('losses', tf.reduce_mean(z_loss,
+                                                          name='z_loss'))
 
         with tf.name_scope('std_loss'):
             std_loss = tf.reduce_mean(
@@ -402,13 +402,15 @@ class GaugeModel:
             x_charge_loss = self._calc_charge_loss(inputs['x_init'],
                                                    inputs['x_proposed'],
                                                    inputs['px'])
-            tf.add_to_collection('losses', tf.reduce_mean(x_charge_loss))
+            tf.add_to_collection('losses', tf.reduce_mean(x_charge_loss,
+                                                          name='xq_loss'))
 
         with tf.name_scope('z_charge_loss'):
             z_charge_loss = self._calc_charge_loss(inputs['z_init'],
                                                    inputs['z_proposed'],
                                                    inputs['pz'])
-            tf.add_to_collection('losses', tf.reduce_mean(z_charge_loss))
+            tf.add_to_collection('losses', tf.reduce_mean(z_charge_loss,
+                                                          name='zq_loss'))
 
         with tf.name_scope('total_charge_loss'):
             charge_loss = self.charge_weight * (x_charge_loss
@@ -458,12 +460,17 @@ class GaugeModel:
 
         # Auxiliary variable
         with tf.name_scope('z_update'):
-            z = tf.random_normal(tf.shape(x), seed=GLOBAL_SEED, name='z')
-            z_dynamics_output = self.dynamics(z, beta, net_weights,
-                                              while_loop=self.while_loop,
-                                              v_in=None, save_lf=False)
-            z_proposed = z_dynamics_output['x_proposed']
-            pz = z_dynamics_output['accept_prob']
+            if weights['aux_weight'] > 0:
+                z = tf.random_normal(tf.shape(x), seed=GLOBAL_SEED, name='z')
+                z_dynamics_output = self.dynamics(z, beta, net_weights,
+                                                  while_loop=self.while_loop,
+                                                  v_in=None, save_lf=False)
+                z_proposed = z_dynamics_output['x_proposed']
+                pz = z_dynamics_output['accept_prob']
+            else:
+                z = tf.zeros(tf.shape(x), dtype=TF_FLOAT, name='z')
+                z_proposed = tf.zeros(tf.shape(x), dtype=TF_FLOAT, name='z')
+                pz = tf.zeros(tf.shape(px), dtype=TF_FLOAT, name='pz')
 
         with tf.name_scope('top_charge_diff'):
             x_dq = tf.cast(
@@ -488,7 +495,11 @@ class GaugeModel:
             with tf.name_scope('std_loss'):
                 std_loss = self.calc_std_loss(inputs, **weights)
             with tf.name_scope('charge_loss'):
-                charge_loss = self.calc_charge_loss(inputs, **weights)
+                if self.charge_weight_np > 0:
+                    charge_loss = self.calc_charge_loss(inputs, **weights)
+                else:
+                    charge_loss = tf.constant(0., dtype=TF_FLOAT,
+                                              name='charge_loss')
 
             total_loss = tf.add(std_loss, charge_loss, name='total_loss')
             tf.add_to_collection('losses', total_loss)
