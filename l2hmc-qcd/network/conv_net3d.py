@@ -224,21 +224,30 @@ class ConvNet3DShared(tf.keras.Model):
             x = self.reshape_5D(x)
 
         with tf.name_scope('x'):
-            x = self.max_pool2(self.conv2(self.max_pool1(self.conv1(x))))
+            x = self.max_pool1(self.conv1(x))
+            x = self.max_pool2(self.conv2(x))
             if self.use_bn:
                 x = tf.keras.layers.BatchNormalization(axis=self.bn_axis)(x)
             #  x = self.flatten(x)
             x = tf.reshape(x, shape=(self._input_shape[0], -1))
+            x = self.x_layer(x)
 
         with tf.name_scope('v'):
-            v = self.max_pool2(self.conv2(self.max_pool1(self.conv1(v))))
+            v = self.max_pool1(self.conv1(v))
+            v = self.max_pool2(self.conv2(v))
             if self.use_bn:
-                v = tf.keras.layers.BatchNormalization(axis=self.bn_axis)(v)
+                v = tf.keras.layers.BatchNormalization(
+                    axis=self.bn_axis
+                )(v)
             #  v = self.flatten(v)
             v = tf.reshape(v, shape=(self._input_shape[0], -1))
+            v = self.v_layer(v)
+
+        with tf.name_scope('t'):
+            t = self.t_layer(t)
 
         with tf.name_scope('h'):
-            h = tf.nn.relu(self.x_layer(x) + self.v_layer(v) + self.t_layer(t))
+            h = tf.nn.relu(x + v + t)
             h = tf.nn.relu(self.h_layer(h))
 
         def reshape(t, name):
@@ -246,16 +255,13 @@ class ConvNet3DShared(tf.keras.Model):
                 tf.reshape(t, shape=self._input_shape, name=name)
             )
 
-        with tf.name_scope('scale'):
-            scale = (tf.exp(self.coeff_scale)
-                     * tf.nn.tanh(self.scale_layer(h)))
+        scale = (tf.exp(self.coeff_scale)
+                 * tf.nn.tanh(self.scale_layer(h)))
 
-        with tf.name_scope('transformation'):
-            transformation = (tf.exp(self.coeff_transformation)
-                              * tf.nn.tanh(self.transformation_layer(h)))
+        transformation = (tf.exp(self.coeff_transformation)
+                          * tf.nn.tanh(self.transformation_layer(h)))
 
-        with tf.name_scope('translation'):
-            translation = self.translation_layer(h)
+        translation = self.translation_layer(h)
 
         return scale, translation, transformation
 
