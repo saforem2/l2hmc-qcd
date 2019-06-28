@@ -333,27 +333,27 @@ class GaugeModel:
                                              inputs['x_proposed'],
                                              inputs['px'])
             x_loss = ls / x_std_loss - x_std_loss / ls
-            tf.add_to_collection('losses', tf.reduce_mean(x_std_loss,
-                                                          name='x_std_loss'))
-            tf.add_to_collection('losses', tf.reduce_mean(x_loss,
-                                                          name='x_loss'))
+            #  tf.add_to_collection('losses', tf.reduce_mean(x_std_loss,
+            #                                                name='x_std_loss'))
+            #  tf.add_to_collection('losses', tf.reduce_mean(x_loss,
+            #                                                name='x_loss'))
 
         with tf.name_scope('z_std_loss'):
             z_std_loss = self._calc_std_loss(inputs['z_init'],
                                              inputs['z_proposed'],
                                              inputs['pz'])
             z_loss = ls / z_std_loss - z_std_loss / ls
-            tf.add_to_collection('losses', tf.reduce_mean(z_std_loss,
-                                                          name='z_std_loss'))
-            tf.add_to_collection('losses', tf.reduce_mean(z_loss,
-                                                          name='z_loss'))
+            #  tf.add_to_collection('losses', tf.reduce_mean(z_std_loss,
+            #                                                name='z_std_loss'))
+            #  tf.add_to_collection('losses', tf.reduce_mean(z_loss,
+            #                                                name='z_loss'))
 
         with tf.name_scope('std_loss'):
             std_loss = tf.reduce_mean(
                 std_weight * (x_loss + aux_weight * z_loss),
                 axis=0, name='std_loss'
             )
-            tf.add_to_collection('losses', std_loss)
+            #  tf.add_to_collection('losses', std_loss)
 
         return std_loss
 
@@ -402,15 +402,15 @@ class GaugeModel:
             x_charge_loss = self._calc_charge_loss(inputs['x_init'],
                                                    inputs['x_proposed'],
                                                    inputs['px'])
-            tf.add_to_collection('losses', tf.reduce_mean(x_charge_loss,
-                                                          name='xq_loss'))
+            #  tf.add_to_collection('losses', tf.reduce_mean(x_charge_loss,
+            #                                                name='xq_loss'))
 
         with tf.name_scope('z_charge_loss'):
             z_charge_loss = self._calc_charge_loss(inputs['z_init'],
                                                    inputs['z_proposed'],
                                                    inputs['pz'])
-            tf.add_to_collection('losses', tf.reduce_mean(z_charge_loss,
-                                                          name='zq_loss'))
+            #  tf.add_to_collection('losses', tf.reduce_mean(z_charge_loss,
+            #                                                name='zq_loss'))
 
         with tf.name_scope('total_charge_loss'):
             charge_loss = self.charge_weight * (x_charge_loss
@@ -418,7 +418,7 @@ class GaugeModel:
             charge_loss = tf.reduce_mean(charge_loss, axis=0,
                                          name='charge_loss')
 
-            tf.add_to_collection('losses', charge_loss)
+            #  tf.add_to_collection('losses', charge_loss)
 
         return charge_loss
 
@@ -502,7 +502,7 @@ class GaugeModel:
                                               name='charge_loss')
 
             total_loss = tf.add(std_loss, charge_loss, name='total_loss')
-            tf.add_to_collection('losses', total_loss)
+            #  tf.add_to_collection('losses', total_loss)
 
         return total_loss, x_dq, x_dynamics_output
 
