@@ -253,7 +253,7 @@ class GaugeModel:
             if self.using_hvd:
                 self.optimizer = hvd.DistributedOptimizer(self.optimizer)
 
-    def _calc_std_loss(self, x_tup, z_tup, p_tup, **weights):
+    def _calc_std_loss(self, inputs, **weights):
         """Calculate standard contribution to loss.
 
         NOTE: In contrast to the original paper where the L2 difference was
@@ -273,19 +273,30 @@ class GaugeModel:
         aux_weight = weights.get('aux_weight', 1.)
         std_weight = weights.get('std_weight', 1.)
 
-        x, x_proposed = x_tup
-        z, z_proposed = z_tup
-        px, pz = p_tup
+        x_init = inputs['x_init']
+        x_proposed = inputs['x_proposed']
+        z_init = inputs['z_init']
+        z_proposed = inputs['z_proposed']
+        px = inputs['px']
+        pz = inputs['pz']
 
+        #  x, x_proposed = x_tup
+        #  z, z_proposed = z_tup
+        #  px, pz = p_tup
+        #
         ls = self.loss_scale
         with tf.name_scope('std_loss'):
             with tf.name_scope('x_loss'):
-                x_std_loss = tf.reduce_sum(self.metric_fn(x, x_proposed), 1)
+                x_std_loss = tf.reduce_sum(
+                    self.metric_fn(x_init, x_proposed), axis=1
+                )
                 x_std_loss *= px
                 x_std_loss = tf.add(x_std_loss, eps, name='x_std_loss')
 
             with tf.name_scope('z_loss'):
-                z_std_loss = tf.reduce_sum(self.metric_fn(z, z_proposed), 1)
+                z_std_loss = tf.reduce_sum(
+                    self.metric_fn(z_init, z_proposed), axis=1
+                )
                 z_std_loss *= pz * aux_weight
                 z_std_loss = tf.add(z_std_loss, eps, name='z_std_loss')
 
@@ -298,7 +309,7 @@ class GaugeModel:
 
         return std_loss
 
-    def _calc_charge_loss(self, x_tup, z_tup, p_tup, **weights):
+    def _calc_charge_loss(self, inputs, **weights):
         """Calculate contribution to total loss from charge difference.
 
         NOTE: This is an additional term introduced to the loss function that
@@ -322,10 +333,17 @@ class GaugeModel:
         if charge_weight == 0:
             return 0.
 
-        x, x_proposed = x_tup
-        z, z_proposed = z_tup
-        px, pz = p_tup
+        x_init = inputs['x_init']
+        x_proposed = inputs['x_proposed']
+        z_init = inputs['z_init']
+        z_proposed = inputs['z_proposed']
+        px = inputs['px']
+        pz = inputs['pz']
 
+        #  x, x_proposed = x_tup
+        #  z, z_proposed = z_tup
+        #  px, pz = p_tup
+        #
         ls = self.loss_scale
         # Calculate the difference in topological charge between the initial
         # and proposed configurations multiplied by the probability of
@@ -333,12 +351,14 @@ class GaugeModel:
         # charge
         with tf.name_scope('charge_loss'):
             with tf.name_scope('x_loss'):
-                x_dq_fft = self.lattice.calc_top_charges_diff(x, x_proposed,
+                x_dq_fft = self.lattice.calc_top_charges_diff(x_init,
+                                                              x_proposed,
                                                               fft=True)
                 xq_loss = px * x_dq_fft + eps
 
             with tf.name_scope('z_loss'):
-                z_dq_fft = self.lattice.calc_top_charges_diff(z, z_proposed,
+                z_dq_fft = self.lattice.calc_top_charges_diff(z_init,
+                                                              z_proposed,
                                                               fft=True)
                 zq_loss = aux_weight * (pz * z_dq_fft) + eps
 
@@ -410,15 +430,23 @@ class GaugeModel:
         #  charge_loss: Contribution from the difference in topological charge
         #    betweween the initial and proposed configurations  to the total
         #     loss.
-        x_tup = (x, x_proposed)
-        z_tup = (z, z_proposed)
-        p_tup = (px, pz)
+        inputs = {
+            'x_init': x,
+            'x_proposed': x_proposed,
+            'z_init': z,
+            'z_proposed': z_proposed,
+            'px': px,
+            'pz': pz
+        }
+
+        #  x_tup = (x, x_proposed)
+        #  z_tup = (z, z_proposed)
+        #  p_tup = (px, pz)
         with tf.name_scope('calc_loss'):
             with tf.name_scope('std_loss'):
-                std_loss = self._calc_std_loss(x_tup, z_tup, p_tup, **weights)
+                std_loss = self._calc_std_loss(inputs, **weights)
             with tf.name_scope('charge_loss'):
-                charge_loss = self._calc_charge_loss(x_tup, z_tup, p_tup,
-                                                     **weights)
+                charge_loss = self._calc_charge_loss(inputs, **weights)
 
             total_loss = tf.add(std_loss, charge_loss, name='total_loss')
 
@@ -449,17 +477,14 @@ class GaugeModel:
             x_dq: Operation for calculating the topological charge difference
                 between the initial and proposed configurations.
         """
-        # TODO: Fix eager execution logic to deal with self.lf_out
         if tf.executing_eagerly():
             with tf.name_scope('grads'):
                 with tf.GradientTape() as tape:
-                    loss, x_out, accept_prob, x_dq = self.calc_loss(
+                    loss, x_dq, dynamics_output = self.calc_loss(
                         x, beta, net_weights, **weights
                     )
                 grads = tape.gradient(loss, self.dynamics.trainable_variables)
         else:
-            #  loss_outputs = self.calc_loss(x, beta, **weights)
-            #  loss = loss_outputs[0]
             loss, x_dq, dynamics_output = self.calc_loss(x, beta,
                                                          net_weights,
                                                          **weights)
@@ -479,19 +504,19 @@ class GaugeModel:
         with tf.name_scope('sampler'):
             output = self.dynamics(self.x, self.beta,
                                    save_lf=True, train=False)
-
-            self.px_lf = output[2]
-            self.x_out_lf = output[3]
-            self.lf_out_f = output[4]
-            self.pxs_out_f = output[5]
-            self.lf_out_b = output[6]
-            self.pxs_out_b = output[7]
-            self.masks_f = output[8]
-            self.masks_b = output[9]
-            self.logdets_f = output[10]
-            self.logdets_b = output[11]
-            self.sumlogdet_f = output[12]
-            self.sumlogdet_b = output[13]
+            self.x_out = output['x_out']
+            self.px = output['accept_prob']
+            if self.save_lf:
+                self.lf_out_f = output['lf_out_f']
+                self.pxs_out_f = output['accept_probs_f']
+                self.lf_out_b = output['lf_out_b']
+                self.pxs_out_b = output['accept_probs_b']
+                self.masks_f = output['forward_mask']
+                self.masks_b = output['backward_mask']
+                self.logdets_f = output['logdets_f']
+                self.logdets_b = output['logdets_b']
+                self.sumlogdet_f = output['sumlogdet_f']
+                self.sumlogdet_b = output['sumlogdet_b']
 
     def build(self):
         """Build Tensorflow graph."""
@@ -538,6 +563,3 @@ class GaugeModel:
                     global_step=self.global_step,
                     name='train_op'
                 )
-
-        #  with tf.name_scope('run'):
-        #      self.create_sampler()

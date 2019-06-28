@@ -295,44 +295,53 @@ class GaugeDynamics(tf.keras.Model):
         with tf.name_scope('init'):
             x_proposed, v_proposed = x_in, v_in
 
-            t = tf.constant(0., name='md_time', dtype=TF_FLOAT)
+            step = tf.constant(0., name='md_step', dtype=TF_FLOAT)
             batch_size = tf.shape(x_in)[0]
             logdet = tf.zeros((batch_size,))
-            lf_out = tf.TensorArray(dtype=TF_FLOAT, size=self.num_steps,
+            lf_out = tf.TensorArray(dtype=TF_FLOAT, size=self.num_steps+1,
                                     dynamic_size=True, name='lf_out',
                                     clear_after_read=False)
-            logdets_out = tf.TensorArray(dtype=TF_FLOAT, size=self.num_steps,
+            logdets_out = tf.TensorArray(dtype=TF_FLOAT, size=self.num_steps+1,
                                          dynamic_size=True, name='logdets_out',
                                          clear_after_read=False)
 
-        def body(x, v, beta, t, logdet, lf_samples, logdets):
-            i = tf.cast(t, dtype=tf.int32)  # cast leapfrog step to integer
-            with tf.name_scope('apply_lf'):
-                new_x, new_v, j = lf_fn(x, v, beta, t, net_weights)
-            with tf.name_scope('concat_lf_outputs'):
-                lf_samples = lf_samples.write(i, new_x)
-            with tf.name_scope('concat_logdets'):
-                logdets = logdets.write(i, j)
-            return new_x, new_v, beta, t + 1, logdet + j, lf_samples, logdets
+            lf_out = lf_out.write(0, x_in)
+            logdets_out = logdets_out.write(0, logdet)
 
-        def cond(x, v, beta, t, logdet, lf_out, logdets):
+        def body(step, x, v, logdet, lf_samples, logdets):
+            i = tf.cast(step, dtype=tf.int32)  # cast leapfrog step to integer
+            with tf.name_scope('apply_lf'):
+                new_x, new_v, j = lf_fn(x, v, beta, step, net_weights)
+            with tf.name_scope('concat_lf_outputs'):
+                lf_samples = lf_samples.write(i+1, new_x)
+            with tf.name_scope('concat_logdets'):
+                logdets = logdets.write(i+1, logdet+j)
+            return (step+1, new_x, new_v, logdet+j, lf_samples, logdets)
+
+        def cond(step, *args):
             with tf.name_scope('check_lf_step'):
-                return tf.less(t, self.num_steps)
+                return tf.less(step, self.num_steps)
 
         with tf.name_scope('while_loop'):
             outputs = tf.while_loop(
                 cond=cond,
                 body=body,
-                loop_vars=[x_proposed, v_proposed,
-                           beta, t, logdet, lf_out, logdets_out])
+                loop_vars=[step, x_proposed, v_proposed,
+                           logdet, lf_out, logdets_out])
 
-            x_proposed = outputs[0]
-            v_proposed = outputs[1]
-            beta = outputs[2]
-            t = outputs[3]
-            sumlogdet = outputs[4]
-            lf_out = outputs[5].stack()
-            logdets_out = outputs[6].stack()
+            step = outputs[0]
+            x_proposed = outputs[1]
+            v_proposed = outputs[2]
+            sumlogdet = outputs[3]
+            lf_out = outputs[4].stack()
+            logdets_out = outputs[5].stack()
+
+            #  x_proposed = outputs[0]
+            #  v_proposed = outputs[1]
+            #  t = outputs[2]
+            #  sumlogdet = outputs[3]
+            #  lf_out = outputs[4].stack()
+            #  logdets_out = outputs[5].stack()
 
         with tf.name_scope('accept_prob'):
             accept_prob = self._compute_accept_prob(
@@ -347,13 +356,13 @@ class GaugeDynamics(tf.keras.Model):
         outputs = {
             'x_proposed': x_proposed,
             'v_proposed': v_proposed,
+            'sumlogdet': sumlogdet,
             'accept_prob': accept_prob,
         }
 
         if save_lf:
             outputs['lf_out'] = lf_out
             outputs['logdets'] = logdets_out
-            outputs['sumlogdet'] = sumlogdet
 
         return outputs
 
