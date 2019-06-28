@@ -343,19 +343,19 @@ def l2hmc(FLAGS, log_file=None):
     }
 
     # ensure all variables are initialized
-    target_collection = []
-    if is_chief:
-        collection = tf.local_variables() + target_collection
-    else:
-        collection = tf.local_variables()
-
-    local_init_op = tf.variables_initializer(collection)
-    ready_for_local_init_op = tf.report_uninitialized_variables(collection)
+    #  target_collection = []
+    #  if is_chief:
+    #      collection = tf.local_variables() + target_collection
+    #  else:
+    #      collection = tf.local_variables()
+    #
+    #  local_init_op = tf.variables_initializer(collection)
+    #  ready_for_local_init_op = tf.report_uninitialized_variables(collection)
 
     scaffold = tf.train.Scaffold(
         init_feed_dict=init_feed_dict,
-        local_init_op=local_init_op,
-        ready_for_local_init_op=ready_for_local_init_op
+        #  local_init_op=local_init_op,
+        #  ready_for_local_init_op=ready_for_local_init_op
     )
 
     # The MonitoredTrainingSession takes care of session
