@@ -54,6 +54,34 @@ def log_and_write(s, f):
     write(s, f)
 
 
+def get_params_from_log_dir(log_dir):
+    if '/' in log_dir:
+        sep_str = log_dir.split('/')[-1].split('_')
+    else:
+        sep_str = log_dir.split('_')
+
+    space_size = sep_str[0].lstrip('lattice')
+    num_samples = sep_str[1].lstrip('batch')
+    lf = sep_str[2].lstrip('lf')
+    eps_init = sep_str[3].lstrip('eps')
+    qw = sep_str[4].lstrip('qw')
+    if len(sep_str) > 4:
+        arch = sep_str[5].lstrip('NA')
+    else:
+        arch = ''
+
+    params = {
+        'space_size': space_size,
+        'num_samples': num_samples,
+        'num_steps': lf,
+        'eps': eps_init,
+        'charge_weight': qw,
+        'arch': arch
+    }
+
+    return params
+
+
 def create_log_dir(FLAGS, root_dir=None, log_file=None):
     """Automatically create and name `log_dir` to save model data to.
 
@@ -73,10 +101,11 @@ def create_log_dir(FLAGS, root_dir=None, log_file=None):
     #  SS = str(FLAGS.eps).lstrip('0.')
     SS = FLAGS.eps
     QW = FLAGS.charge_weight
+    NA = FLAGS.network_arch
     if FLAGS.hmc:
         run_str = f'HMC_lattice{LX}_batch{NS}_lf{LF}_eps{SS:.3g}'
     else:
-        run_str = f'lattice{LX}_batch{NS}_lf{LF}_eps{SS:.3g}_qw{QW}'
+        run_str = f'lattice{LX}_batch{NS}_lf{LF}_eps{SS:.3g}_qw{QW}_{NA}'
 
     now = datetime.datetime.now()
     #  print(now.strftime("%b %d %Y %H:%M:%S"))
