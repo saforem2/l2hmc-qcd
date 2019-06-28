@@ -124,7 +124,7 @@ class GaugeModelTrainer:
         }
 
         data_str = (
-            f"{global_step:>5g}/{self.model.train_steps:<6g} "
+            f"{global_step:>5g}/{self.train_steps:<6g} "
             f"{outputs[1]:^9.4g} "              # loss value
             f"{dt:^9.4g} "                      # time / step
             f"{np.mean(outputs[3]):^9.4g}"      # accept prob
@@ -157,6 +157,7 @@ class GaugeModelTrainer:
         beta_np = kwargs.get('beta_np', None)
         charge_weight = kwargs.get('charge_weight', None)
         net_weights = kwargs.get('net_weights', None)
+        self.train_steps = train_steps
 
         if beta_np is None:
             beta_np = self.model.beta_init
