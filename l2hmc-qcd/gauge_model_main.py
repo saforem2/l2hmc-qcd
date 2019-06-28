@@ -77,6 +77,30 @@ np.random.seed(GLOBAL_SEED)     # numpy pseudo-random generator
 tf.set_random_seed(GLOBAL_SEED)
 
 
+def guarantee_initialized_variables(sess, vars=None):
+    """Guarantee that all the specified variables are initialized.
+
+    If a variable is already initialized, leave it alone. Otherwise, initialize
+    it.
+
+    If no variables are specified, checks all variables in the default graph.
+
+    Args:
+        variables (list[tf.Variable])
+    """
+    name_to_var = {
+        v.op.name: v for v in tf.global_variables() + tf.local_variables()
+    }
+    uninitialized_variables = list(
+        name_to_var[name] for name in sess.run(
+            tf.report_uninitialized_variables(vars)
+        )
+    )
+    init_op = tf.variables_initializer(uninitialized_variables)
+    sess.run(init_op)
+    return uninitialized_variables
+
+
 def create_config(FLAGS, params):
     """Create tensorflow config."""
     config = tf.ConfigProto()
@@ -223,7 +247,12 @@ def l2hmc(FLAGS, log_file=None):
     tf.keras.backend.clear_session()
     tf.reset_default_graph()
 
+    # -----------------------------------------------------------------------
+    # Parse command line arguments and set parameters to corerct values.
+    # -----------------------------------------------------------------------
     FLAGS.log_dir = io.create_log_dir(FLAGS, log_file=log_file)
+    if FLAGS.save_steps is None and FLAGS.train_steps is not None:
+        FLAGS.save_steps = FLAGS.train_steps // 4
 
     params = {}
     for key, val in FLAGS.__dict__.items():
@@ -244,7 +273,7 @@ def l2hmc(FLAGS, log_file=None):
         params['save_steps'] //= num_workers
         params['lr_decay_steps'] //= num_workers
         if params['summaries']:
-            params['logging_steps'] // num_workers
+            params['logging_steps'] //= num_workers
         hooks = [
             # Horovod: BroadcastGlobalVariablesHook broadcasts initial
             # variable states from rank 0 to all other processes. This
@@ -272,7 +301,6 @@ def l2hmc(FLAGS, log_file=None):
         log_dir = FLAGS.log_dir
         checkpoint_dir = os.path.join(log_dir, 'checkpoints/')
         io.check_else_make_dir(checkpoint_dir)
-
     else:
         log_dir = None
         checkpoint_dir = None
@@ -283,18 +311,19 @@ def l2hmc(FLAGS, log_file=None):
         io.log(f'  {key}: {val}')
     io.log(80 * '-' + '\n')
 
+    # ----------------------------------
+    # Create model and train_logger
+    # ----------------------------------
     model = GaugeModel(params=params)
     if is_chief:
         train_logger = TrainLogger(model, log_dir, FLAGS.summaries)
-        run_logger = RunLogger(model, train_logger.log_dir, save_lf_data=False)
-        plotter = GaugeModelPlotter(model, run_logger.figs_dir)
     else:
         train_logger = None
-        run_logger = None
-        plotter = None
 
+    # -------------------------------------------
+    # Setup config and MonitoredTrainingSession
+    # -------------------------------------------
     config, params = create_config(FLAGS, params)
-    #  sess = tf.Session(config=config)
     tf.keras.backend.set_learning_phase(True)
 
     # set initial value of charge weight using value from FLAGS
@@ -303,6 +332,7 @@ def l2hmc(FLAGS, log_file=None):
     samples_init = np.reshape(np.array(model.lattice.samples, dtype=NP_FLOAT),
                               (model.num_samples, model.x_dim))
     beta_init = model.beta_init
+
     init_feed_dict = {
         model.x: samples_init,
         model.beta: beta_init,
@@ -311,7 +341,23 @@ def l2hmc(FLAGS, log_file=None):
         model.net_weights[1]: net_weights_init[1],  # transformation_weight
         model.net_weights[2]: net_weights_init[2],  # translation_weight
     }
-    scaffold = tf.train.Scaffold(init_feed_dict=init_feed_dict)
+
+    # ensure all variables are initialized
+    target_collection = []
+    if is_chief:
+        collection = tf.local_variables() + target_collection
+    else:
+        collection = tf.local_variables()
+
+    local_init_op = tf.variables_initializer(collection)
+    ready_for_local_init_op = tf.report_uninitialized_variables(collection)
+
+    scaffold = tf.train.Scaffold(
+        init_feed_dict=init_feed_dict,
+        local_init_op=local_init_op,
+        ready_for_local_init_op=ready_for_local_init_op
+    )
+
     # The MonitoredTrainingSession takes care of session
     # initialization, restoring from a checkpoint, saving to a
     # checkpoint, and closing when done or an error occurs.
@@ -323,6 +369,10 @@ def l2hmc(FLAGS, log_file=None):
         save_summaries_secs=None,
         save_summaries_steps=None
     )
+
+    # ------------------------------------------------------
+    # TRAINING
+    # ------------------------------------------------------
     trainer = GaugeModelTrainer(sess, model, train_logger)
     kwargs = {
         'samples_np': samples_init,
@@ -331,28 +381,33 @@ def l2hmc(FLAGS, log_file=None):
         'net_weights': net_weights_init
     }
 
-    try:
-        trainer.train(model.train_steps, **kwargs)
-    except NameError:
-        # i.e. Tensor had Inf / NaN values caused by high learning rate
-        io.log('\n\n' + 80 * '-')
-        io.log('Training crashed! Decreasing lr_init by 10% and retrying...')
-        io.log(f'Previous lr_init: {FLAGS.lr_init}')
-        FLAGS.lr_init
-        io.log(f'New lr_init: {FLAGS.lr_init}')
-        io.log('Restarting training...')
-        io.log(80 * '-' + '\n\n')
-        params['log_dir'] = FLAGS.log_dir = None
-        sess.close()
-        tf.keras.backend.clear_session()
-        tf.reset_default_graph()
-        l2hmc(FLAGS)
+    trainer.train(model.train_steps, **kwargs)
 
     trainable_params_file = os.path.join(FLAGS.log_dir, 'trainable_params.txt')
     count_trainable_params(trainable_params_file)
 
+    # close MonitoredTrainingSession and prepare for inference
+    sess.close()
+
+    # -----------------------------------------------------
+    # INFERENCE
+    # -----------------------------------------------------
     tf.keras.backend.set_learning_phase(False)
 
+    # create new session for inference and restore model from checkpoint_dir
+    sess = tf.Session(config=config)
+    if is_chief:
+        saver = tf.train.Saver()
+        saver.restore(sess,
+                      tf.train.latest_checkpoint(train_logger.checkpoint_dir))
+        model.sess = sess
+        run_logger = RunLogger(model, train_logger.log_dir, save_lf_data=False)
+        plotter = GaugeModelPlotter(model, run_logger.figs_dir)
+    else:
+        run_logger = None
+        plotter = None
+
+    # create GaugeModelRunner for inference
     runner = GaugeModelRunner(sess, model, run_logger)
     betas = [model.beta_final]  # model.beta_final + 1]
     if FLAGS.loop_net_weights:
