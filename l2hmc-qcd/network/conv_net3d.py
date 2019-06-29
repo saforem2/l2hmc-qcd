@@ -15,6 +15,7 @@ Date: 01/16/2019
 """
 import numpy as np
 import tensorflow as tf
+from .network_utils import custom_dense
 
 from globals import GLOBAL_SEED, TF_FLOAT, NP_FLOAT
 
