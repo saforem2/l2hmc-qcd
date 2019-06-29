@@ -164,4 +164,3 @@ class GenericNet(tf.keras.Model):
         #                    * tf.exp(self.coeff_transformation))
 
         return scale, translation, transformation
-<Paste>
