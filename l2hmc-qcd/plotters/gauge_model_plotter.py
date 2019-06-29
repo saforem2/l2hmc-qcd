@@ -165,7 +165,7 @@ def plot_multiple_lines(data, xy_labels, **kwargs):
 
 
 class GaugeModelPlotter:
-    def __init__(self, figs_dir=None):
+    def __init__(self, model, figs_dir=None):
         self.figs_dir = figs_dir
 
 
