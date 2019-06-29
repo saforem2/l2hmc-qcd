@@ -45,10 +45,12 @@ class GaugeModel:
         self.loss_weights = {}
         self.params = params
         for key, val in self.params.items():
-            if 'weight' in key:
+            if 'weight' in key and key != 'charge_weight':
                 self.loss_weights[key] = val
             else:
                 setattr(self, key, val)
+
+        self.charge_weight_np = params['charge_weight']
 
         # -------------------------------------------------------
         # Create lattice
@@ -59,9 +61,14 @@ class GaugeModel:
         self.x_dim = self.lattice.num_links
 
         # -------------------------------------------------------
-        # Create input placeholders
+        # Create input placeholders:
+        #   (x, beta, charge_weight, net_weights)
         # -------------------------------------------------------
-        self.x, self.beta, self.net_weights = self._create_inputs()
+        inputs = self._create_inputs()
+        self.x = inputs['x']
+        self.beta = inputs['beta']
+        self.charge_weight = inputs['charge_weight']
+        self.net_weights = inputs['net_weights']
 
         # -------------------------------------------------------
         # Create dynamics engine
@@ -144,15 +151,36 @@ class GaugeModel:
         return obs_ops
 
     def _create_inputs(self):
-        """Create input placeholders `x` and `beta`.  """
+        """Create input paceholders (if not executing eagerly).
+        Returns:
+            outputs: Dictionary with the following entries:
+                x: Placeholder for input lattice configuration with 
+                    shape = (batch_size, x_dim) where x_dim is the number of
+                    links on the lattice and is equal to lattice.time_size *
+                    lattice.space_size * lattice.dim.
+                beta: Placeholder for inverse coupling constant.
+                charge_weight: Placeholder for the charge_weight (i.e. alpha_Q,
+                    the multiplicative factor that scales the topological
+                    charge term in the modified loss function) .
+                net_weights: Array of placeholders, each of which is a
+                    multiplicative constant used to scale the effects of the
+                    various S, Q, and T functions from the original paper.
+                    net_weights[0] = 'scale_weight', multiplies the S fn.
+                    net_weights[1] = 'transformation_weight', multiplies the Q
+                    fn.  net_weights[2] = 'translation_weight', multiplies the
+                    T fn.
+        """
         with tf.name_scope('inputs'):
             if not tf.executing_eagerly():
                 x = tf.placeholder(dtype=TF_FLOAT,
                                    shape=(self.batch_size, self.x_dim),
-                                   name='x_placeholder')
+                                   name='x')
                 beta = tf.placeholder(dtype=TF_FLOAT,
                                       shape=(),
                                       name='beta')
+                charge_weight = tf.placeholder(dtype=TF_FLOAT,
+                                               shape=(),
+                                               name='charge_weight')
                 net_weights = [
                     tf.placeholder(
                         dtype=TF_FLOAT, shape=(), name='scale_weight'
@@ -165,10 +193,22 @@ class GaugeModel:
                     )
                 ]
             else:
-                x = self.lattice.samples,
-                beta = self.beta_init
+                x = tf.convert_to_tensor(
+                    self.lattice.samples.reshape((self.batch_size,
+                                                  self.x_dim))
+                )
+                beta = tf.convert_to_tensor(self.beta_init)
+                charge_weight = tf.convert_to_tensor(0.)
+                net_weights = tf.convert_to_tensor([1., 1., 1.])
 
-        return x, beta, net_weights
+        outputs = {
+            'x': x,
+            'beta': beta,
+            'charge_weight': charge_weight,
+            'net_weights': net_weights
+        }
+
+        return outputs
 
     def _create_dynamics(self, lattice, samples, **kwargs):
         """Initialize dynamics object."""

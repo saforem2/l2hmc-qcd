@@ -218,7 +218,12 @@ def l2hmc(FLAGS, log_file=None):
     tf.keras.backend.clear_session()
     tf.reset_default_graph()
 
+    # ---------------------------------------------------------------------
+    # Parse command line arguments and set parameters for correct values.
+    # ---------------------------------------------------------------------
     FLAGS.log_dir = io.create_log_dir(FLAGS, log_file=log_file)
+    if FLAGS.save_steps is None and FLAGS.train_steps is not None:
+        FLAGS.save_steps = FLAGS.train_steps // 4
 
     params = {}
     for key, val in FLAGS.__dict__.items():
@@ -234,6 +239,7 @@ def l2hmc(FLAGS, log_file=None):
     if FLAGS.horovod:
         params['using_hvd'] = True
         num_workers = hvd.size()
+        params['num_workers'] = num_workers
         params['train_steps'] //= num_workers
         params['save_steps'] //= num_workers
         params['lr_decay_steps'] //= num_workers
@@ -253,6 +259,10 @@ def l2hmc(FLAGS, log_file=None):
         params['using_hvd'] = False
         hooks = []
 
+    # Conditionals required for file I/O
+    # if we're not using Horovod, `is_chief` should always be True
+    # otheerwise, if using Horovod, we only want to perform file I/O
+    # on hvd.rank() == 0, so check that first
     condition1 = not FLAGS.horovod
     condition2 = FLAGS.horovod and hvd.rank() == 0
     is_chief = condition1 or condition2
@@ -273,27 +283,32 @@ def l2hmc(FLAGS, log_file=None):
         io.log(f'  {key}: {val}')
     io.log(80 * '-' + '\n')
 
+    # --------------------------------------------------------
+    # Create model and train_logger
+    # --------------------------------------------------------
     model = GaugeModel(params=params)
     if is_chief:
         train_logger = TrainLogger(model, log_dir, FLAGS.summaries)
-        run_logger = RunLogger(model, train_logger.log_dir, save_lf_data=False)
-        plotter = GaugeModelPlotter(run_logger.figs_dir)
     else:
         train_logger = None
-        run_logger = None
-        plotter = None
 
+    # --------------------------------------------------
+    # Setup config and MonitoredTrainingSession
+    # --------------------------------------------------
     config, params = create_config(FLAGS, params)
-    #  sess = tf.Session(config=config)
     tf.keras.backend.set_learning_phase(True)
 
+    # set initial value of charge weight using value from FLAGS
+    charge_weight_init = FLAGS.charge_weight_init
     net_weights_init = [1., 1., 1.]
     samples_init = np.reshape(np.array(model.lattice.samples, dtype=NP_FLOAT),
                               (model.num_samples, model.x_dim))
     beta_init = model.beta_init
+
     init_feed_dict = {
         model.x: samples_init,
         model.beta: beta_init,
+        model.charge_weight_init: charge_weight_init,
         model.net_weights[0]: net_weights_init[0],  # scale_weight
         model.net_weights[1]: net_weights_init[1],  # transformation_weight
         model.net_weights[2]: net_weights_init[2],  # translation_weight
