@@ -313,7 +313,22 @@ def l2hmc(FLAGS, log_file=None):
         model.net_weights[1]: net_weights_init[1],  # transformation_weight
         model.net_weights[2]: net_weights_init[2],  # translation_weight
     }
-    scaffold = tf.train.Scaffold(init_feed_dict=init_feed_dict)
+
+    # ensure all variables are initialized
+    target_collection = []
+    if is_chief:
+        collection = tf.local_variables() + target_collection
+    else:
+        collection = tf.local_variables()
+
+    local_init_op = tf.variables_initializer(collection)
+    ready_for_local_init_op = tf.report_uninitialized_variables(collection)
+
+    scaffold = tf.train.Scaffold(
+        init_feed_dict=init_feed_dict,
+        local_init_op=local_init_op,
+        ready_for_local_init_op=ready_for_local_init_op
+    )
     # The MonitoredTrainingSession takes care of session
     # initialization, restoring from a checkpoint, saving to a
     # checkpoint, and closing when done or an error occurs.
@@ -325,6 +340,10 @@ def l2hmc(FLAGS, log_file=None):
         save_summaries_secs=None,
         save_summaries_steps=None
     )
+
+    # ----------------------------------------------------------
+    # TRAINING
+    # ----------------------------------------------------------
     trainer = GaugeModelTrainer(sess, model, train_logger)
     kwargs = {
         'samples_np': samples_init,
@@ -332,28 +351,32 @@ def l2hmc(FLAGS, log_file=None):
         'net_weights': net_weights_init
     }
 
-    try:
-        trainer.train(model.train_steps, **kwargs)
-    except NameError:
-        # i.e. Tensor had Inf / NaN values caused by high learning rate
-        io.log('\n\n' + 80 * '-')
-        io.log('Training crashed! Decreasing lr_init by 10% and retrying...')
-        io.log(f'Previous lr_init: {FLAGS.lr_init}')
-        FLAGS.lr_init
-        io.log(f'New lr_init: {FLAGS.lr_init}')
-        io.log('Restarting training...')
-        io.log(80 * '-' + '\n\n')
-        params['log_dir'] = FLAGS.log_dir = None
-        sess.close()
-        tf.keras.backend.clear_session()
-        tf.reset_default_graph()
-        l2hmc(FLAGS)
+    trainer.train(model.train_steps, **kwargs)
 
     trainable_params_file = os.path.join(FLAGS.log_dir, 'trainable_params.txt')
     count_trainable_params(trainable_params_file)
 
+    # close MonitoredTrainingSession and prepare for inference
+    sess.close()
+
+    # ---------------------------------------------------------
+    # INFERENCE
+    # ---------------------------------------------------------
     tf.keras.backend.set_learning_phase(False)
 
+    sess = tf.Session(config=config)
+    if is_chief:
+        saver = tf.train.Saver()
+        saver.restore(sess,
+                      tf.train.latest_checkpoint(train_logger.checkpoint_dir))
+        model.sess = sess
+        run_logger = RunLogger(model, train_logger.log_dir, save_lf_data=False)
+        plotter = GaugeModelPlotter(model, run_logger.figs_dir)
+    else:
+        run_logger = None
+        plotter = None
+
+    # Create GaugeModelRunner for inference
     runner = GaugeModelRunner(sess, model, run_logger)
     betas = [model.beta_final]  # model.beta_final + 1]
     if FLAGS.run_net_weights:
@@ -366,22 +389,27 @@ def l2hmc(FLAGS, log_file=None):
                                     [0, 0, 1],
                                     [0, 0, 0]], dtype=NP_FLOAT)
     else:
-        net_weights_arr = np.array([[1, 1, 1],], dtype=NP_FLOAT)
+        net_weights_arr = np.array([[1, 1, 1]], dtype=NP_FLOAT)
 
     for net_weights in net_weights_arr:
+        weights = {
+            'charge_weight': charge_weight_init,
+            'net_weights': net_weights
+        }
         for beta in betas:
             if run_logger is not None:
                 run_dir, run_str = run_logger.reset(model.run_steps,
                                                     beta, net_weights)
             t0 = time.time()
-            runner.run(model.run_steps, beta, net_weights)
+            runner.run(model.run_steps, beta, **weights)
             run_time = time.time() - t0
             io.log(80 * '-')
             io.log(f'Took: {run_time} s to complete run.')
             io.log(80 * '-')
 
             if plotter is not None and run_logger is not None:
-                plotter.plot_observables(run_logger.run_data, beta, run_str)
+                plotter.plot_observables(run_logger.run_data, beta, run_str,
+                                         **weights)
                 if FLAGS.save_lf:
                     lf_plotter = LeapfrogPlotter(plotter.out_dir, run_logger)
                     lf_plotter.make_plots(run_dir, num_samples=20)
