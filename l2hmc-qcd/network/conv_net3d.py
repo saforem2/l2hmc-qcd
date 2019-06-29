@@ -159,36 +159,36 @@ class ConvNet3D(tf.keras.Model):
                     self.flatten = tf.keras.layers.Flatten(name='flatten')
 
                 with tf.name_scope('x_layer'):
-                    self.x_layer = _custom_dense(self.num_hidden,
+                    self.x_layer = custom_dense(self.num_hidden,
                                                  self.factor/3.,
                                                  name='x_layer')
 
                 with tf.name_scope('v_layer'):
-                    self.v_layer = _custom_dense(self.num_hidden,
+                    self.v_layer = custom_dense(self.num_hidden,
                                                  1./3.,
                                                  name='v_layer')
 
                 with tf.name_scope('t_layer'):
-                    self.t_layer = _custom_dense(self.num_hidden,
+                    self.t_layer = custom_dense(self.num_hidden,
                                                  1./3.,
                                                  name='t_layer')
 
                 with tf.name_scope('h_layer'):
-                    self.h_layer = _custom_dense(self.num_hidden,
+                    self.h_layer = custom_dense(self.num_hidden,
                                                  name='h_layer')
 
                 with tf.name_scope('scale_layer'):
-                    self.scale_layer = _custom_dense(
+                    self.scale_layer = custom_dense(
                         self.x_dim, 0.001, name='scale_layer'
                     )
 
                 with tf.name_scope('translation_layer'):
-                    self.translation_layer = _custom_dense(
+                    self.translation_layer = custom_dense(
                         self.x_dim, 0.001, 'translation_layer'
                     )
 
                 with tf.name_scope('transformation_layer'):
-                    self.transformation_layer = _custom_dense(
+                    self.transformation_layer = custom_dense(
                         self.x_dim, 0.001, 'transformation_layer'
                     )
 
