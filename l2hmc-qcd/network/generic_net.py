@@ -1,6 +1,4 @@
 """
-generic_net.py
-
 Generic, fully-connected neural network architecture for running L2HMC on a
 gauge lattice configuration of links.
 
@@ -16,6 +14,12 @@ Author: Sam Foreman (github: @saforem2)
 Date: 01/16/2019
 """
 import tensorflow as tf
+import numpy as np
+
+from globals import TF_FLOAT
+
+from .network_utils import custom_dense
+
 
 class GenericNet(tf.keras.Model):
     """Conv. neural net with different initialization scale based on input."""
@@ -30,56 +34,55 @@ class GenericNet(tf.keras.Model):
         if self.name_scope is None:
             self.name_scope = model_name
 
-
+        if self.use_bn:
+            self.bn_axis = -1
 
         #  with tf.variable_scope(variable_scope):
         with tf.name_scope(self.name_scope):
-            self.flatten = tf.keras.layers.Flatten(name='flatten')
+            #  self.flatten = tf.keras.layers.Flatten(name='flatten')
 
             with tf.name_scope('x_layer'):
-                self.x_layer = _custom_dense(self.num_hidden,
-                                             self.factor/3.,
-                                             name='x_layer')
+                self.x_layer = custom_dense(self.num_hidden,
+                                            self.factor/3.,
+                                            name='x_layer')
 
             with tf.name_scope('v_layer'):
-                self.v_layer = _custom_dense(self.num_hidden,
-                                             1./3.,
-                                             name='v_layer')
+                self.v_layer = custom_dense(self.num_hidden,
+                                            1./3.,
+                                            name='v_layer')
 
             with tf.name_scope('t_layer'):
-                self.t_layer = _custom_dense(self.num_hidden,
-                                             1./3.,
-                                             name='t_layer')
+                self.t_layer = custom_dense(self.num_hidden,
+                                            1./3., name='t_layer')
 
             with tf.name_scope('h_layer'):
-                self.h_layer = _custom_dense(self.num_hidden,
-                                             name='h_layer')
+                self.h_layer = custom_dense(self.num_hidden,
+                                            name='h_layer')
 
             with tf.name_scope('scale_layer'):
-                self.scale_layer = _custom_dense(self.x_dim,
-                                                 0.001,
-                                                 name='h_layer')
-
-            with tf.name_scope('coeff_scale'):
-                self.coeff_scale = tf.Variable(
-                    initial_value=tf.zeros([1, self.x_dim]),
-                    name='coeff_scale',
-                    trainable=True,
-                    dtype=tf.float32,
-                )
+                self.scale_layer = custom_dense(self.x_dim, 0.001,
+                                                name='scale_layer')
 
             with tf.name_scope('translation_layer'):
-                self.translation_layer = _custom_dense(
+                self.translation_layer = custom_dense(
                     self.x_dim,
                     0.001,
                     name='translation_layer'
                 )
 
             with tf.name_scope('transformation_layer'):
-                self.transformation_layer = _custom_dense(
+                self.transformation_layer = custom_dense(
                     self.x_dim,
                     0.001,
                     name='transformation_layer'
+                )
+
+            with tf.name_scope('coeff_scale'):
+                self.coeff_scale = tf.Variable(
+                    initial_value=tf.zeros([1, self.x_dim]),
+                    name='coeff_scale',
+                    trainable=True,
+                    dtype=TF_FLOAT,
                 )
 
             with tf.name_scope('coeff_transformation'):
@@ -87,9 +90,15 @@ class GenericNet(tf.keras.Model):
                     initial_value=tf.zeros([1, self.x_dim]),
                     name='coeff_transformation',
                     trainable=True,
-                    dtype=tf.float32
+                    dtype=TF_FLOAT
                 )
 
+    def _reshape(self, tensor):
+        N, D, H, W = self._input_shape
+        if isinstance(tensor, np.ndarray):
+            return np.reshape(tensor, (N, D * H * W))
+
+        return tf.reshape(tensor, (N, D * H * W))
 
     # pylint: disable=invalid-name, arguments-differ
     def call(self, inputs):
@@ -128,34 +137,31 @@ class GenericNet(tf.keras.Model):
         """
         v, x, t = inputs
 
-        x = self.flatten(x)
-        v = self.flatten(v)
+        x = self._reshape(x)
+        v = self._reshape(v)
 
         h = self.v_layer(v) + self.x_layer(x) + self.t_layer(t)
+        if self.use_bn:
+            h = tf.keras.layers.BatchNormalization(axis=self.bn_axis)(h)
         h = tf.nn.relu(h)
         h = self.h_layer(h)
         h = tf.nn.relu(h)
 
-        scale = tf.nn.tanh(self.scale_layer(h)) * tf.exp(self.coeff_scale)
+        with tf.name_scope('scale'):
+            scale = (tf.exp(self.coeff_scale)
+                     * tf.nn.tanh(self.scale_layer(h)))
 
-        translation = self.translation_layer(h)
+        with tf.name_scope('transformation'):
+            transformation = (tf.exp(self.coeff_transformation)
+                              * tf.nn.tanh(self.transformation_layer(h)))
 
-        transformation = (self.transformation_layer(h)
-                          * tf.exp(self.coeff_transformation))
-        #
+        with tf.name_scope('translation'):
+            translation = self.translation_layer(h)
+
+        #  scale = tf.nn.tanh(self.scale_layer(h)) * tf.exp(self.coeff_scale)
+
+        #  transformation = (tf.nn.tanh(self.transformation_layer(h))
+        #                    * tf.exp(self.coeff_transformation))
+
         return scale, translation, transformation
-
-
-def _custom_dense(units, factor=1., name=None):
-    """Custom dense layer with specified weight intialization."""
-    return tf.keras.layers.Dense(
-        units=units,
-        use_bias=True,
-        kernel_initializer=tf.contrib.layers.variance_scaling_initializer(
-            factor=factor * 2.,
-            mode='FAN_IN',
-            uniform=False
-        ),
-        bias_initializer=tf.constant_initializer(0., dtype=tf.float32),
-        name=name
-    )
+<Paste>
