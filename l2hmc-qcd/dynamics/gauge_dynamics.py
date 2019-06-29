@@ -17,7 +17,8 @@ import numpy.random as npr
 import tensorflow as tf
 
 from globals import GLOBAL_SEED, TF_FLOAT
-from network.conv_net import ConvNet2D, ConvNet3D
+from network.conv_net2d import ConvNet2D
+from network.conv_net3d import ConvNet3D
 from network.generic_net import GenericNet
 
 import utils.file_io as io
