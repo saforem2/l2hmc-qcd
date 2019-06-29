@@ -299,7 +299,7 @@ def l2hmc(FLAGS, log_file=None):
     tf.keras.backend.set_learning_phase(True)
 
     # set initial value of charge weight using value from FLAGS
-    charge_weight_init = FLAGS.charge_weight_init
+    charge_weight_init = FLAGS.charge_weight
     net_weights_init = [1., 1., 1.]
     samples_init = np.reshape(np.array(model.lattice.samples, dtype=NP_FLOAT),
                               (model.num_samples, model.x_dim))
