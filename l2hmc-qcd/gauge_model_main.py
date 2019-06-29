@@ -308,7 +308,7 @@ def l2hmc(FLAGS, log_file=None):
     init_feed_dict = {
         model.x: samples_init,
         model.beta: beta_init,
-        model.charge_weight_init: charge_weight_init,
+        model.charge_weight: charge_weight_init,
         model.net_weights[0]: net_weights_init[0],  # scale_weight
         model.net_weights[1]: net_weights_init[1],  # transformation_weight
         model.net_weights[2]: net_weights_init[2],  # translation_weight
