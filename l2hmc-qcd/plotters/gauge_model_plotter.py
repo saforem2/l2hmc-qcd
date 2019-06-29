@@ -216,7 +216,7 @@ class GaugeModelPlotter:
 
         return stats
 
-    def plot_observables(self, data, beta, run_str):
+    def plot_observables(self, data, beta, run_str, **weights):
         """Plot observables."""
         actions = arr_from_dict(data, 'actions')
         plaqs = arr_from_dict(data, 'plaqs')
@@ -234,9 +234,11 @@ class GaugeModelPlotter:
         # ignore first 10% of pts (warmup)
         warmup_steps = max((1, int(0.01 * num_steps)))
 
-        _actions = actions[::skip_steps]
-        _plaqs = plaqs[::skip_steps]
-        _steps_arr = skip_steps * np.arange(_actions.shape[0])
+        #  _actions = actions[::skip_steps]
+        #  _plaqs = plaqs[::skip_steps]
+
+        #  _steps_arr = skip_steps * np.arange(_actions.shape[0])
+
         _charge_diffs = charge_diffs[warmup_steps:][::skip_steps]
         _plaq_diffs = plaqs_diffs[warmup_steps:][::skip_steps]
         _steps_diffs = (
@@ -249,21 +251,31 @@ class GaugeModelPlotter:
         self.out_dir = os.path.join(self.figs_dir, run_str)
         io.check_else_make_dir(self.out_dir)
 
-        title_str = (r"$\beta = $"
-                     f"{beta}, {num_samples} samples")
+        L = self.model.space_size
+        lf_steps = self.model.num_steps
+        bs = self.model.num_samples
+        qw = weights['charge_weight']
+
+        title_str = (r"$L = $" + f"{L}, "
+                     r"$N_{\mathrm{Lf}} = $" + f"{lf_steps}, "
+                     r"$\alpha_{Q} = $" + f"{qw}, "
+                     r"$\beta = $ + f"{beta}, "
+                     r"$N_{\mathrm{samples}} = $" + f"{bs}")
 
         kwargs = {
             'markers': False,
             'lines': True,
             'alpha': 0.6,
             'title': title_str,
-            'legend': False,
+            'legend': True,
             'ret': False,
             'out_file': [],
         }
 
-        self._plot_actions((_steps_arr, _actions.T), **kwargs)
-        self._plot_plaqs((_steps_arr, _plaqs.T), beta, **kwargs)
+        #  self._plot_actions((_steps_arr, _actions.T), **kwargs)
+        #  self._plot_plaqs((_steps_arr, _plaqs.T), beta, **kwargs)
+        self._plot_actions((steps_arr, actions.T), **kwargs)
+        self._plot_plaqs((steps_arr, plaqs.T), beta, **kwargs)
         self._plot_charges((steps_arr, charges.T), **kwargs)
         self._plot_autocorrs((steps_arr, charge_autocorrs), **kwargs)
         self._plot_charge_probs(charges, **kwargs)
@@ -285,8 +297,8 @@ class GaugeModelPlotter:
         _, ax = plot_multiple_lines(xy_data, xy_labels, **kwargs)
         _ = ax.axhline(y=u1_plaq_exact(beta),
                        color='#CC0033', ls='-', lw=1.5, label='exact')
-        _ = ax.plot(xy_data[0], xy_data[1].mean(axis=0), lw=1.25,
-                    color='k', label='average', alpha=0.75)
+        #  _ = ax.plot(xy_data[0], xy_data[1].mean(axis=0), lw=1.25,
+        #              color='k', label='average', alpha=0.75)
 
         _ = plt.tight_layout()
 
@@ -295,11 +307,19 @@ class GaugeModelPlotter:
         plt.savefig(out_file, dpi=400, bbox_inches='tight')
 
     def _plot_plaqs_diffs(self, xy_data, **kwargs):
-        kwargs['out_file'] = get_out_file(self.out_dir,
-                                          'plaqs_diffs_vs_step')
-        kwargs['ret'] = False
-        xy_labels = ('Step', r"$\delta_{\mathrm{plaq}}$")
-        plot_multiple_lines(xy_data, xy_labels, **kwargs)
+        #  kwargs['out_file'] = get_out_file(self.out_dir,
+        #                                    'plaqs_diffs_vs_step')
+        kwargs['out_file'] = None
+        kwargs['ret'] = True
+        xy_labels = ('Step', r"$\delta_{\phi_{P}}$")
+        _, ax = plot_multiple_lines(xy_data, xy_labels, **kwargs)
+        _ = ax.axhline(y=0, color='#CC0033', ls='-', lw=1.5)
+        _ = ax.legend(loc='best')
+        _ = plt.tight_layout()
+
+        out_file = get_out_file(self.out_dir, 'plaqs_diffs_vs_step')
+        io.log(f'Saving figure to: {out_file}.')
+        plt.savefig(out_file, dpi=400, bbox_inches='tight')
 
     def _plot_charges(self, xy_data, **kwargs):
         """Plot topological charges."""
