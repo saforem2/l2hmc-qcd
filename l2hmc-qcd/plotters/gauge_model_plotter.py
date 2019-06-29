@@ -259,7 +259,7 @@ class GaugeModelPlotter:
         title_str = (r"$L = $" + f"{L}, "
                      r"$N_{\mathrm{Lf}} = $" + f"{lf_steps}, "
                      r"$\alpha_{Q} = $" + f"{qw}, "
-                     r"$\beta = $ + f"{beta}, "
+                     r"$\beta = $ " + f"{beta}, "
                      r"$N_{\mathrm{samples}} = $" + f"{bs}")
 
         kwargs = {
