@@ -379,7 +379,7 @@ def l2hmc(FLAGS, log_file=None):
     # Create GaugeModelRunner for inference
     runner = GaugeModelRunner(sess, model, run_logger)
     betas = [model.beta_final]  # model.beta_final + 1]
-    if FLAGS.run_net_weights:
+    if FLAGS.loop_net_weights:
         net_weights_arr = np.array([[1, 1, 1],  # [Q, S, T]
                                     [0, 1, 1],
                                     [1, 0, 1],
