@@ -167,7 +167,7 @@ def plot_multiple_lines(data, xy_labels, **kwargs):
 class GaugeModelPlotter:
     def __init__(self, model, figs_dir=None):
         self.figs_dir = figs_dir
-
+        self.model = model
 
     def calc_stats(self, data, therm_frac=10):
         """Calculate observables statistics.
