@@ -351,7 +351,11 @@ def l2hmc(FLAGS, log_file=None):
         'net_weights': net_weights_init
     }
 
-    trainer.train(model.train_steps, **kwargs)
+    try:
+        trainer.train(model.train_steps, **kwargs)
+    except TypeError:
+        import pdb
+        pdb.set_trace()
 
     trainable_params_file = os.path.join(FLAGS.log_dir, 'trainable_params.txt')
     count_trainable_params(trainable_params_file)
@@ -391,6 +395,7 @@ def l2hmc(FLAGS, log_file=None):
     else:
         net_weights_arr = np.array([[1, 1, 1]], dtype=NP_FLOAT)
 
+    therm_frac = 10
     for net_weights in net_weights_arr:
         weights = {
             'charge_weight': charge_weight_init,
@@ -399,9 +404,10 @@ def l2hmc(FLAGS, log_file=None):
         for beta in betas:
             if run_logger is not None:
                 run_dir, run_str = run_logger.reset(model.run_steps,
-                                                    beta, net_weights)
+                                                    beta, **weights)
             t0 = time.time()
-            runner.run(model.run_steps, beta, **weights)
+            runner.run(model.run_steps, beta,
+                       weights['net_weights'], therm_frac)
             run_time = time.time() - t0
             io.log(80 * '-')
             io.log(f'Took: {run_time} s to complete run.')
