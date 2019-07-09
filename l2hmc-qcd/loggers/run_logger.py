@@ -137,7 +137,7 @@ class RunLogger:
 
     def update(self, data, data_str):
         """Update run_data and append data_str to data_strings."""
-        # projection of samples onto [0, 2π) done in run_step above
+        # projection of samples onto [0, 2pi) done in run_step above
         #  if self.model.save_samples:
         step = data['step']
         beta = data['beta']
