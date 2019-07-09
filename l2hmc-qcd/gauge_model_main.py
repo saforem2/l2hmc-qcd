@@ -33,6 +33,7 @@ Date: 04/10/2019
 import os
 import random
 import time
+import pickle
 import tensorflow as tf
 import numpy as np
 
@@ -42,6 +43,7 @@ from tensorflow.core.protobuf import rewriter_config_pb2
 
 import utils.file_io as io
 
+import gauge_model_inference as inference
 from globals import GLOBAL_SEED, NP_FLOAT
 from utils.parse_args import parse_args
 from utils.model_loader import load_model
@@ -213,8 +215,10 @@ def hmc(FLAGS, params=None, log_file=None):
     return sess, model, runner, run_logger
 
 
-def l2hmc(FLAGS, log_file=None):
+def train_l2hmc(FLAGS, log_file=None):
     """Create, train, and run L2HMC sampler on 2D U(1) gauge model."""
+    io.log('\n' + 80 * '-')
+    io.log("Running L2HMC algorithm...")
     tf.keras.backend.clear_session()
     tf.reset_default_graph()
 
@@ -351,76 +355,36 @@ def l2hmc(FLAGS, log_file=None):
         'net_weights': net_weights_init
     }
 
-    try:
-        trainer.train(model.train_steps, **kwargs)
-    except TypeError:
-        import pdb
-        pdb.set_trace()
+    trainer.train(model.train_steps, **kwargs)
 
     trainable_params_file = os.path.join(FLAGS.log_dir, 'trainable_params.txt')
     count_trainable_params(trainable_params_file)
 
+    if is_chief:
+        params['checkpoint_dir'] = train_logger.checkpoint_dir
+        params_pkl_file = os.path.join(os.getcwd(), 'params.pkl')
+        with open(params_pkl_file, 'wb') as f:
+            pickle.dump(model.params, f)
+
     # close MonitoredTrainingSession and prepare for inference
     sess.close()
-
-    # ---------------------------------------------------------
-    # INFERENCE
-    # ---------------------------------------------------------
     tf.keras.backend.set_learning_phase(False)
 
-    sess = tf.Session(config=config)
-    if is_chief:
-        saver = tf.train.Saver()
-        saver.restore(sess,
-                      tf.train.latest_checkpoint(train_logger.checkpoint_dir))
-        model.sess = sess
-        run_logger = RunLogger(model, train_logger.log_dir, save_lf_data=False)
-        plotter = GaugeModelPlotter(model, run_logger.figs_dir)
-    else:
-        run_logger = None
-        plotter = None
+    # save checkpoint directory to file to be read in when performing inference
+    #  checkpoint_dir_file = os.path.join(os.getcwd(), 'checkpoint_dir.txt')
+    #  io.write(f'{train_logger.checkpoint_dir}', checkpoint_dir_file, 'w',
+    #           nl=False)
 
-    # Create GaugeModelRunner for inference
-    runner = GaugeModelRunner(sess, model, run_logger)
-    betas = [model.beta_final]  # model.beta_final + 1]
-    if FLAGS.loop_net_weights:
-        net_weights_arr = np.array([[1, 1, 1],  # [Q, S, T]
-                                    [0, 1, 1],
-                                    [1, 0, 1],
-                                    [1, 1, 0],
-                                    [1, 0, 0],
-                                    [0, 1, 0],
-                                    [0, 0, 1],
-                                    [0, 0, 0]], dtype=NP_FLOAT)
-    else:
-        net_weights_arr = np.array([[1, 1, 1]], dtype=NP_FLOAT)
+    # save logging directory to file to be read in when performing inference
+    #  log_dir_file = os.path.join(os.getcwd(), 'log_dir.txt')
+    #  io.write(f'{FLAGS.log_dir}', log_dir_file, 'w', nl=False)
 
-    therm_frac = 10
-    for net_weights in net_weights_arr:
-        weights = {
-            'charge_weight': charge_weight_init,
-            'net_weights': net_weights
-        }
-        for beta in betas:
-            if run_logger is not None:
-                run_dir, run_str = run_logger.reset(model.run_steps,
-                                                    beta, **weights)
-            t0 = time.time()
-            runner.run(model.run_steps, beta,
-                       weights['net_weights'], therm_frac)
-            run_time = time.time() - t0
-            io.log(80 * '-')
-            io.log(f'Took: {run_time} s to complete run.')
-            io.log(80 * '-')
+    #  params_pkl_file = os.path.join(os.getcwd(), 'params.pkl')
+    #  if is_chief:
+    #      with open(params_pkl_file, 'wb') as f:
+    #          pickle.dump(params, f)
 
-            if plotter is not None and run_logger is not None:
-                plotter.plot_observables(run_logger.run_data, beta, run_str,
-                                         **weights)
-                if FLAGS.save_lf:
-                    lf_plotter = LeapfrogPlotter(plotter.out_dir, run_logger)
-                    lf_plotter.make_plots(run_dir, num_samples=20)
-
-    return sess, model, train_logger
+    return FLAGS, params, model, train_logger
 
 
 def run_hmc(FLAGS, params=None, log_file=None):
@@ -436,16 +400,16 @@ def run_hmc(FLAGS, params=None, log_file=None):
         hmc_sess.close()
         tf.reset_default_graph()
 
-
-def run_l2hmc(FLAGS, log_file=None):
-    """Train and run L2HMC algorithm."""
-    io.log('\n' + 80 * '-')
-    io.log("Running L2HMC algorithm...")
-    l2hmc_sess, l2hmc_model, l2hmc_train_logger = l2hmc(FLAGS, log_file)
-    l2hmc_sess.close()
-    tf.reset_default_graph()
-
-    return l2hmc_model, l2hmc_train_logger
+#  def train_l2hmc(FLAGS, log_file=None):
+#      """Train and run L2HMC algorithm."""
+#      io.log('\n' + 80 * '-')
+#      io.log("Running L2HMC algorithm...")
+#      FLAGS, params, model, train_logger = l2hmc(FLAGS, log_file)
+#      #  checkpoint_dir = train_logger.checkpoint_dir
+#      #  inference.inference(FLAGS, checkpoint_dir, params=params, model=model)
+#      #  tf.reset_default_graph()
+#
+#      return FLAGS, params, model, train_logger
 
 
 def main(FLAGS):
@@ -464,21 +428,40 @@ def main(FLAGS):
         eps_arr = [float(FLAGS.hmc_eps)]
 
     if FLAGS.hmc:
+        # --------------------
+        #   run generic HMC
+        # --------------------
         run_hmc(FLAGS, log_file)
         for eps in eps_arr:
             FLAGS.eps = eps
             run_hmc(FLAGS, log_file)
-
     else:
-        model, logger = run_l2hmc(FLAGS, log_file)
+        # ------------------------
+        #   train l2hmc sampler
+        # ------------------------
+        FLAGS, params, model, train_logger = train_l2hmc(FLAGS, log_file)
+        checkpoint_dir = train_logger.checkpoint_dir
+        checkpoint_dir_file = os.path.join(os.getcwd(), 'checkpoint_dir.txt')
+        io.log_and_write(checkpoint_dir, checkpoint_dir_file)
 
+        # ---------------------------------------------
+        #   run inference using trained l2hmc sampler
+        # ---------------------------------------------
+        #  FLAGS, params, model, run_logger = inference.inference(FLAGS,
+        #                                                         checkpoint_dir,
+        #                                                         params,
+        #                                                         model)
+
+        # -----------------------------------------------------------
+        #  run HMC following inference if --run_hmc flag was passed
+        # -----------------------------------------------------------
         if FLAGS.run_hmc:
             # Run HMC with the trained step size from L2HMC (not ideal)
             params = model.params
             params['hmc'] = True
             params['log_dir'] = FLAGS.log_dir = None
-            if logger is not None:
-                params['eps'] = FLAGS.eps = logger._current_state['eps']
+            if train_logger is not None:
+                params['eps'] = FLAGS.eps = train_logger._current_state['eps']
             else:
                 params['eps'] = FLAGS.eps
 
