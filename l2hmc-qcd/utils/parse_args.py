@@ -21,19 +21,6 @@ DESCRIPTION = (
 )
 
 
-def get_args():
-    argparser = argparse.ArgumentParser(description=DESCRIPTION)
-    argparser.add_argument(
-        '-c', '--config',
-        metavar='C',
-        default=None,
-        help='The configuration file'
-    )
-    args = argparser.parse_args()
-
-    return args
-
-
 # =============================================================================
 #  * NOTE:
 #      - if action == 'store_true':
@@ -202,6 +189,24 @@ def parse_args():
                         help=("""Final value of beta (inverse coupling
                               constant) used in gauge model when
                               annealing."""))
+
+    parser.add_argument("--beta_inference",
+                        dest="beta_inference",
+                        type=float,
+                        default=None,
+                        required=False,
+                        help=("""Flag specifying a singular value of beta at
+                              which to run inference using the trained
+                              L2HMC sampler."""))
+
+    parser.add_argument("--charge_weight_inference",
+                        dest="charge_weight_inference",
+                        type=float,
+                        default=None,
+                        required=False,
+                        help=("""Flag specifying a singular value of the charge
+                              weight at which to run inference using the
+                              trained L2HMC sampler."""))
 
     # ------------------------------------------------------------------------
     # Training parameters
