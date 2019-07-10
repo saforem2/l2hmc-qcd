@@ -279,6 +279,8 @@ def train_l2hmc(FLAGS, log_file=None):
         #  num_workers = hvd.size()
         #  params['num_workers'] = num_workers
 
+        # Horovod: Scale initial lr by sqrt (instead of linear) of num GPUs.
+        params['lr_init'] *= np.sqrt(num_workers)
         # Horovod: adjust number of training steps based on number of GPUs.
         params['train_steps'] //= num_workers + 1
         # Horovod: adjust save_steps and lr_decay_steps accordingly.
