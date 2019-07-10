@@ -120,39 +120,47 @@ def load_params():
     #              params[key] = val
 
 
-#  def run_l2hmc(FLAGS, checkpoint_dir, params=None, model=None):
 def run_l2hmc(params, **kwargs):
     """Perform inference using saved model."""
-    #  if params is None:
-    #      if FLAGS.__dict__ != {}:
-    #          params = {}
-    #          for key, val in FLAGS.__dict__.items():
-    #              params[key] = val
+    condition1 = not params['using_hvd']
+    condition2 = params['using_hvd'] and hvd.rank() == 0
+    is_chief = condition1 or condition2
 
-    #  config, params = gauge_model_main.create_config(FLAGS, params)
-
-    #  if model is None:
-
-    checkpoint_dir = os.path.join(params['log_dir'], 'checkpoints/')
-    assert os.path.isdir(checkpoint_dir)
+    if is_chief:
+        checkpoint_dir = os.path.join(params['log_dir'], 'checkpoints/')
+        assert os.path.isdir(checkpoint_dir)
+    else:
+        params['log_dir'] = None
+        checkpoint_dir = None
 
     config, params = create_config(params)
     model = GaugeModel(params=params)
+
+    if params['using_hvd']:
+        bcast_op = hvd.broadcast_global_variables(0)
+    else:
+        bcast_op = None
 
     # ---------------------------------------------------------
     # INFERENCE
     # ---------------------------------------------------------
     sess = tf.Session(config=config)
-    saver = tf.train.Saver()
-    saver.restore(sess, tf.train.latest_checkpoint(checkpoint_dir))
+    if is_chief:
+        saver = tf.train.Saver()
+        saver.restore(sess, tf.train.latest_checkpoint(checkpoint_dir))
+        run_logger = RunLogger(model, params['log_dir'], save_lf_data=False)
+        plotter = GaugeModelPlotter(model, run_logger.figs_dir)
+    else:
+        run_logger = plotter = None
+
+    if bcast_op is not None:
+        sess.run(bcast_op)
     #  except ValueError:
     #      import pdb
     #      pdb.set_trace()
 
     #  model.sess = sess
     #  run_logger = RunLogger(model, FLAGS.log_dir, save_lf_data=False)
-    run_logger = RunLogger(model, params['log_dir'], save_lf_data=False)
-    plotter = GaugeModelPlotter(model, run_logger.figs_dir)
 
     # Create GaugeModelRunner for inference
     runner = GaugeModelRunner(sess, model, run_logger)
