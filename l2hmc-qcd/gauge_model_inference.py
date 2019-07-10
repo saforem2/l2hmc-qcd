@@ -145,7 +145,8 @@ def run_l2hmc(params, **kwargs):
         run_logger = RunLogger(model, params['log_dir'], save_lf_data=False)
         plotter = GaugeModelPlotter(model, run_logger.figs_dir)
     else:
-        run_logger = plotter = None
+        run_logger = None
+        plotter =None
 
     if bcast_op is not None:
         sess.run(bcast_op)
@@ -156,14 +157,9 @@ def run_l2hmc(params, **kwargs):
     #  model.sess = sess
     #  run_logger = RunLogger(model, FLAGS.log_dir, save_lf_data=False)
 
-    # Create GaugeModelRunner for inference
-    runner = GaugeModelRunner(sess, model, run_logger)
-    beta = kwargs.get('beta', None)
-    if beta is None:
-        betas = [model.beta_final]
-    else:
-        betas = [beta]
-    #  betas = [model.beta_final]  # model.beta_final + 1]
+    # -------------------------------------------------  
+    #  Set up relevant parameters to use for inference   
+    # -------------------------------------------------  
     if params['loop_net_weights']:
         net_weights_arr = np.array([[1, 1, 1],  # [Q, S, T]
                                     [0, 1, 1],
@@ -176,11 +172,18 @@ def run_l2hmc(params, **kwargs):
     else:
         net_weights_arr = np.array([[1, 1, 1]], dtype=NP_FLOAT)
 
-    #  charge_weight_init = FLAGS.charge_weight
+    beta = kwargs.get('beta', None)
+    if beta is None:
+        betas = [model.beta_final]
+    else:
+        betas = [beta]
+
     charge_weight = kwargs.get('charge_weight', None)
     if charge_weight is None:
         charge_weight = params['charge_weight_init']
-    therm_frac = 10
+
+    # Create GaugeModelRunner for inference
+    runner = GaugeModelRunner(sess, model, run_logger)
     for net_weights in net_weights_arr:
         weights = {
             'charge_weight': charge_weight,
@@ -190,15 +193,15 @@ def run_l2hmc(params, **kwargs):
             if run_logger is not None:
                 run_dir, run_str = run_logger.reset(model.run_steps,
                                                     beta, **weights)
-            t0 = time.time()
+            #  t0 = time.time()
             runner.run(model.run_steps,
                        beta,
                        weights['net_weights'],
-                       therm_frac)
-            run_time = time.time() - t0
-            io.log(80 * '-')
-            io.log(f'Took: {run_time} s to complete run.')
-            io.log(80 * '-')
+                       therm_frac=10)
+            #  run_time = time.time() - t0
+            #  io.log(80 * '-')
+            #  io.log(f'Took: {run_time} s to complete run.')
+            #  io.log(80 * '-')
 
             if plotter is not None and run_logger is not None:
                 plotter.plot_observables(
