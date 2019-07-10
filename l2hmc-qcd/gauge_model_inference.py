@@ -10,7 +10,6 @@ Author: Sam Foreman (github: @saforem2)
 Date: 07/08/2019
 """
 import os
-import random
 import time
 import pickle
 import tensorflow as tf
@@ -18,18 +17,13 @@ import numpy as np
 
 import utils.file_io as io
 
-import gauge_model_main as gauge_model_main
+from globals import NP_FLOAT
 from tensorflow.core.protobuf import rewriter_config_pb2
 #  from gauge_model_main import create_config
 
-from globals import GLOBAL_SEED, NP_FLOAT
 from utils.parse_args import parse_args
-from utils.model_loader import load_model
-from utils.attr_dict import AttrDict
 from models.gauge_model import GaugeModel
-from loggers.train_logger import TrainLogger
 from loggers.run_logger import RunLogger
-from trainers.gauge_model_trainer import GaugeModelTrainer
 from plotters.gauge_model_plotter import GaugeModelPlotter
 from plotters.leapfrog_plotters import LeapfrogPlotter
 from runners.gauge_model_runner import GaugeModelRunner
@@ -197,16 +191,19 @@ def run_l2hmc(params, **kwargs):
                 run_dir, run_str = run_logger.reset(model.run_steps,
                                                     beta, **weights)
             t0 = time.time()
-            runner.run(model.run_steps, beta,
-                       weights['net_weights'], therm_frac)
+            runner.run(model.run_steps,
+                       beta,
+                       weights['net_weights'],
+                       therm_frac)
             run_time = time.time() - t0
             io.log(80 * '-')
             io.log(f'Took: {run_time} s to complete run.')
             io.log(80 * '-')
 
             if plotter is not None and run_logger is not None:
-                plotter.plot_observables(run_logger.run_data, beta, run_str,
-                                         **weights)
+                plotter.plot_observables(
+                    run_logger.run_data, beta, run_str, **weights
+                )
                 if params['save_lf']:
                     lf_plotter = LeapfrogPlotter(plotter.out_dir, run_logger)
                     lf_plotter.make_plots(run_dir, num_samples=20)
@@ -222,7 +219,11 @@ def main_inference(args):
     #  'beta': args.__dict__.get('beta_inference', None),
     #  'charge_weight': args.__dict__.get('charge_weight_inference', None)
 
-    run_l2hmc(params, **kwargs)
+    try:
+        run_l2hmc(params, **kwargs)
+    except:
+        import pdb
+        pdb.set_trace()
     #  params, model, run_logger = run_l2hmc(params)
     #  checkpoint_dir = params['checkpoint_dir']
     #  if FLAGS is not None:
