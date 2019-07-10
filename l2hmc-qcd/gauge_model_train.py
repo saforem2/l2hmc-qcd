@@ -96,9 +96,9 @@ def create_config(FLAGS, params):
         config.gpu_options.allow_growth = True
         #  config.allow_soft_placement = True
         if HAS_HOROVOD and FLAGS.horovod:
-            num_gpus = hvd.size()
-            io.log(f"Number of GPUs: {num_gpus}")
             config.gpu_options.visible_device_list = str(hvd.local_rank())
+            io.log('config.gpu_options.visible_device_list:'
+                   f'{config.gpu_options.visible_device_list}')
 
     if HAS_MATPLOTLIB:
         params['_plot'] = True
@@ -274,8 +274,14 @@ def train_l2hmc(FLAGS, log_file=None):
     if FLAGS.horovod:
         params['using_hvd'] = True
         num_workers = hvd.size()
+        io.log(f"Number of GPUs: {num_workers}")
         params['num_workers'] = num_workers
-        params['train_steps'] //= num_workers
+        #  num_workers = hvd.size()
+        #  params['num_workers'] = num_workers
+
+        # Horovod: adjust number of training steps based on number of GPUs.
+        params['train_steps'] //= num_workers + 1
+        # Horovod: adjust save_steps and lr_decay_steps accordingly.
         params['save_steps'] //= num_workers
         params['lr_decay_steps'] //= num_workers
         if params['summaries']:
