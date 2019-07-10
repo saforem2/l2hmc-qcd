@@ -63,9 +63,9 @@ def create_config(params):
         # process)
         config.gpu_options.allow_growth = True
         #  config.allow_soft_placement = True
-        if HAS_HOROVOD and params['horovod']:
-            num_gpus = hvd.size()
-            io.log(f"Number of GPUs: {num_gpus}")
+        if HAS_HOROVOD and params['using_hvd']:
+            #  num_gpus = hvd.size()
+            #  io.log(f"Number of GPUs: {num_gpus}")
             config.gpu_options.visible_device_list = str(hvd.local_rank())
 
     if HAS_MATPLOTLIB:

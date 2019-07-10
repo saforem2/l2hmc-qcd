@@ -43,10 +43,10 @@ from tensorflow.core.protobuf import rewriter_config_pb2
 
 import utils.file_io as io
 
-import gauge_model_inference as inference
+#  from utils.model_loader import load_model
+#  import gauge_model_inference as inference
 from globals import GLOBAL_SEED, NP_FLOAT
 from utils.parse_args import parse_args
-from utils.model_loader import load_model
 from models.gauge_model import GaugeModel
 from loggers.train_logger import TrainLogger
 from loggers.run_logger import RunLogger
@@ -69,6 +69,8 @@ except ImportError:
 
 if float(tf.__version__.split('.')[0]) <= 2:
     tf.logging.set_verbosity(tf.logging.INFO)
+
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 # -------------------------------------------#
 # Set random seeds for tensorflow and numpy  #
