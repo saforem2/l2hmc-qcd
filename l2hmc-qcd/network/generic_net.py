@@ -37,9 +37,7 @@ class GenericNet(tf.keras.Model):
         if self.use_bn:
             self.bn_axis = -1
 
-        #  with tf.variable_scope(variable_scope):
         with tf.name_scope(self.name_scope):
-            #  self.flatten = tf.keras.layers.Flatten(name='flatten')
 
             with tf.name_scope('x_layer'):
                 self.x_layer = custom_dense(self.num_hidden,
@@ -100,7 +98,6 @@ class GenericNet(tf.keras.Model):
 
         return tf.reshape(tensor, (N, D * H * W))
 
-    # pylint: disable=invalid-name, arguments-differ
     def call(self, inputs):
         """call method.
 
@@ -135,32 +132,34 @@ class GenericNet(tf.keras.Model):
        Returns:
            scale, translation, transformation
         """
-        v, x, t = inputs
+        v, x, t, net_weights = inputs
+        scale_weight = net_weights[0]
+        transformation_weight = net_weights[1]
+        translation_weight = net_weights[2]
 
         x = self._reshape(x)
         v = self._reshape(v)
 
         h = self.v_layer(v) + self.x_layer(x) + self.t_layer(t)
+
         if self.use_bn:
             h = tf.keras.layers.BatchNormalization(axis=self.bn_axis)(h)
+
         h = tf.nn.relu(h)
         h = self.h_layer(h)
         h = tf.nn.relu(h)
 
+        with tf.name_scope('translation'):
+            translation = translation_weight * self.translation_layer(h)
+
         with tf.name_scope('scale'):
-            scale = (tf.exp(self.coeff_scale)
-                     * tf.nn.tanh(self.scale_layer(h)))
+            scale = (scale_weight
+                     * tf.nn.tanh(self.scale_layer(h))
+                     * tf.exp(self.coeff_scale))
 
         with tf.name_scope('transformation'):
-            transformation = (tf.exp(self.coeff_transformation)
-                              * tf.nn.tanh(self.transformation_layer(h)))
-
-        with tf.name_scope('translation'):
-            translation = self.translation_layer(h)
-
-        #  scale = tf.nn.tanh(self.scale_layer(h)) * tf.exp(self.coeff_scale)
-
-        #  transformation = (tf.nn.tanh(self.transformation_layer(h))
-        #                    * tf.exp(self.coeff_transformation))
+            transformation = (transformation_weight
+                              * self.transformation_layer(h)
+                              * tf.exp(self.coeff_transformation))
 
         return scale, translation, transformation
