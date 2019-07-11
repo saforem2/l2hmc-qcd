@@ -50,6 +50,7 @@ class RunLogger:
         io.check_else_make_dir(self.runs_dir)
         io.check_else_make_dir(self.figs_dir)
 
+        self._reset_counter = 0
         self.run_steps = None
         self.beta = None
         self.run_data = {}
@@ -125,13 +126,38 @@ class RunLogger:
         if net_weights is None:
             net_weights = [1., 1., 1.]
 
-        nw_str = [str(i).replace('.', '') for i in net_weights]
-        w_str = nw_str[0] + nw_str[1] + nw_str[2]
-        run_str = (f'steps_{run_steps}_beta_{beta}_'
-                   f'eps_{eps:.3g}_weights_{w_str}')
+        eps_str = f'{eps:.3}'.replace('.', '')
+        beta_str = f'{beta:.3}'.replace('.', '')
+        qw_str = f'{charge_weight:.3}'.replace('.', '')
+
+        run_str = (
+            f'steps_{run_steps}'
+            f'_beta_{beta_str}'
+            f'_eps_{eps_str}'
+            f'_qw_{qw_str:.2}'
+            f'_{self._reset_counter}'
+        )
+        #  nw_str = [str(i).replace('.', '') for i in net_weights]
+        #  w_str = nw_str[0] + nw_str[1] + nw_str[2]
+        #  run_str = (f'steps_{run_steps}_beta_{beta}_'
+        #             f'eps_{eps:.3g}_weights_{w_str}')
         self.run_dir = os.path.join(self.runs_dir, run_str)
         io.check_else_make_dir(self.run_dir)
         save_params(self.model.params, self.run_dir)
+
+        def _round_float_as_str(f):
+            return f'{f:.3g}'
+
+        weights_txt_file = os.path.join(self.run_dir, 'weights.txt')
+        charge_weight_str = f'charge_weight: {charge_weight}\n'
+
+        nw_str = [_round_float_as_str(w) for w in net_weights]
+        w_str = nw_str[0] + nw_str[1] + nw_str[2]
+        with open(weights_txt_file, 'w') as f:
+            f.write(charge_weight_str)
+            f.write(w_str)
+
+        self._reset_counter += 1
 
         return self.run_dir, run_str
 
