@@ -443,7 +443,7 @@ def run_l2hmc(FLAGS, params, checkpoint_dir):
         #                              [0, 0, 1],
         #                              [0, 0, 0]], dtype=NP_FLOAT)
         #  net_weights_random = np.random.randn(5, 3)
-        net_weights_arr = np.array(np.random.randnd(5, 3), dtype=NP_FLOAT)
+        net_weights_arr = np.array(np.random.randn(5, 3), dtype=NP_FLOAT)
     else:  # set [Q, S, T] = [1, 1, 1]
         net_weights_arr = np.array([[1, 1, 1]], dtype=NP_FLOAT)
 
