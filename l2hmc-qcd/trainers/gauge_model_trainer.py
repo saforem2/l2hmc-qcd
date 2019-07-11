@@ -131,18 +131,18 @@ class GaugeModelTrainer:
         )
 
         # HOROVOD: We can calculate averages over all devices using allreduce.
-        if self.model.using_hvd:
-            allreduce_ops = [
-                self.model.actions_op_allreduce,
-                self.model.plaqs_op_allreduce,
-                self.model.charges_op_allreduce,
-            ]
-
-            allreduce_outputs = self.sess.run(allreduce_ops, feed_dict=fd)
-
-            out_data['actions_allreduce'] = allreduce_outputs[0]
-            out_data['plaqs_allreduce'] = allreduce_outputs[1]
-            out_data['charges_allreduce'] = allreduce_outputs[2]
+        #  if self.model.using_hvd:
+        #      allreduce_ops = [
+        #          self.model.actions_op_allreduce,
+        #          self.model.plaqs_op_allreduce,
+        #          self.model.charges_op_allreduce,
+        #      ]
+        #
+        #      allreduce_outputs = self.sess.run(allreduce_ops, feed_dict=fd)
+        #
+        #      out_data['actions_allreduce'] = allreduce_outputs[0]
+        #      out_data['plaqs_allreduce'] = allreduce_outputs[1]
+        #      out_data['charges_allreduce'] = allreduce_outputs[2]
 
         #  ops = {
         #      'train_op': self.model.train_op,             # apply gradients

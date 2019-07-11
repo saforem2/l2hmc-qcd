@@ -96,13 +96,13 @@ class GaugeModel:
         #  self.avg_plaqs_op = obs_ops['avg_plaqs']
         #  self.charges_op = obs_ops['charges']
 
-        if self.using_hvd:
-            allreduce_obs_ops = self._create_allreduce_ops(obs_ops)
-            self._obs_ops_allreduce_keys = [
-                key for key in list(allreduce_obs_ops.keys())
-            ]
-            for key, val in allreduce_obs_ops.items():
-                setattr(self, key, val)
+        #  if self.using_hvd:
+        #      allreduce_obs_ops = self._create_allreduce_ops(obs_ops)
+        #      self._obs_ops_allreduce_keys = [
+        #          key for key in list(allreduce_obs_ops.keys())
+        #      ]
+        #      for key, val in allreduce_obs_ops.items():
+        #          setattr(self, key, val)
 
         # -------------------------------------------------------
         # Create optimizer, build graph, create / init. saver

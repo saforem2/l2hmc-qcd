@@ -56,10 +56,10 @@ class TrainLogger:
             'accept_probs': {},
         }
 
-        if self.model.using_hvd:
-            self.train_data['actions_allreduce'] = {}
-            self.train_data['plaqs_allreduce'] = {}
-            self.train_data['charges_allreduce'] = {}
+        #  if self.model.using_hvd:
+        #      self.train_data['actions_allreduce'] = {}
+        #      self.train_data['plaqs_allreduce'] = {}
+        #      self.train_data['charges_allreduce'] = {}
 
         # log_dir will be None if using_hvd and hvd.rank() != 0
         # this prevents workers on different ranks from corrupting checkpoints
@@ -122,9 +122,12 @@ class TrainLogger:
         with tf.name_scope('avg_plaq'):
             tf.summary.scalar('avg_plaq', self.model.avg_plaqs_op)
 
-        if self.model.using_hvd:
-            for key in self.model._obs_ops_allreduce_keys:
-                tf.summary.scalar(key, getattr(self.model, key))
+        for key in self.model._obs_ops_keys:
+            tf.summary.scalar(key, getattr(self.model, key))
+
+        #  if self.model.using_hvd:
+        #      for key in self.model._obs_ops_allreduce_keys:
+        #          tf.summary.scalar(key, getattr(self.model, key))
 
         for var in tf.trainable_variables():
             if 'batch_normalization' not in var.op.name:
