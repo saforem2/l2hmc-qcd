@@ -32,7 +32,7 @@ class ConvNet2D(tf.keras.Model):
             if self.data_format == 'channels_first':
                 self.bn_axis = 1
             elif self.data_format == 'channels_last':
-                self.bn_axis == -1
+                self.bn_axis = -1
             else:
                 raise AttributeError("Expected 'data_format' to be "
                                      "'channels_first' or 'channels_last'")
@@ -193,7 +193,10 @@ class ConvNet2D(tf.keras.Model):
 
     def call(self, inputs):
         """Forward pass through the network."""
-        v, x, t = inputs
+        v, x, t, net_weights = inputs
+        scale_weight = net_weights[0]
+        transformation_weight = net_weights[1]
+        translation_weight = net_weights[2]
 
         with tf.name_scope('reshape'):
             v = self._reshape(v)
@@ -222,16 +225,18 @@ class ConvNet2D(tf.keras.Model):
             h = tf.nn.relu(v + x + t)
             h = tf.nn.relu(self.h_layer(h))
 
+        with tf.name_scope('translation'):
+            translation = translation_weight * self.translation_layer(h)
+
         with tf.name_scope('scale'):
-            scale = (tf.exp(self.coeff_scale)
-                     * tf.nn.tanh(self.scale_layer(h)))
+            scale = (scale_weight
+                     * tf.nn.tanh(self.scale_layer(h))
+                     * tf.exp(self.coeff_scale))
 
         with tf.name_scope('transformation'):
-            transformation = (tf.exp(self.coeff_transformation)
-                              * tf.nn.tanh(self.transformation_layer(h)))
-
-        with tf.name_scope('translation'):
-            translation = self.translation_layer(h)
+            transformation = (transformation_weight
+                              * self.transformation_layer(h)
+                              * tf.exp(self.coeff_transformation))
 
         #  with tf.name_scope('scale'):
         #      scale = (tf.nn.tanh(self.scale_layer(h))
