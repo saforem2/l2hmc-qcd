@@ -136,15 +136,13 @@ class GaugeModelTrainer:
                 self.model.actions_op_allreduce,
                 self.model.plaqs_op_allreduce,
                 self.model.charges_op_allreduce,
-                self.model.charge_diffs_op_allreduce
             ]
 
             allreduce_outputs = self.sess.run(allreduce_ops, feed_dict=fd)
 
             out_data['actions_allreduce'] = allreduce_outputs[0]
-            out_data['plaqs__allreduce'] = allreduce_outputs[1]
+            out_data['plaqs_allreduce'] = allreduce_outputs[1]
             out_data['charges_allreduce'] = allreduce_outputs[2]
-            out_data['charge_diffs_allreduce'] = allreduce_outputs[3]
 
         #  ops = {
         #      'train_op': self.model.train_op,             # apply gradients
