@@ -51,8 +51,7 @@ except FileNotFoundError:
 
 
 class LeapfrogPlotter:
-    def __init__(self, figs_dir, run_logger=None,
-                 run_dir=None, therm_perc=0.005, skip_perc=0.01):
+    def __init__(self, figs_dir, run_logger=None, run_dir=None):
         self.figs_dir = figs_dir
         self.pdfs_dir = os.path.join(self.figs_dir, 'pdfs_plots')
         io.check_else_make_dir(self.pdfs_dir)
