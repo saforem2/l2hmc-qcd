@@ -113,9 +113,39 @@ def load_params():
     #          for key, val in FLAGS.__dict__.items():
     #              params[key] = val
 
+def run_hmc(params, **kwargs):
+    """Run inference using generic HMC."""
+    pass
+    # -----------------------------------------------------------
+    #  run HMC following inference if --run_hmc flag was passed
+    # -----------------------------------------------------------
+    #  if params['run_hmc']:
+    #      # Run HMC with the trained step size from L2HMC (not ideal)
+    #      params = model.params
+    #      params['hmc'] = True
+    #      params['log_dir'] = None
+    #      #  params['log_dir'] = FLAGS.log_dir = None
+    #      if train_logger is not None:
+    #          params['eps'] = train_logger._current_state['eps']
+    #      else:
+    #          params['eps'] = params['eps']
+    #
+    #      run_hmc(kwargs, params, log_file)
+    #
+    #      for eps in eps_arr:
+    #          params['log_dir'] = FLAGS.log_dir = None
+    #          params['eps'] = FLAGS.eps = eps
+    #          run_hmc(FLAGS, params, log_file)
 
-def run_l2hmc(params, **kwargs):
+
+def main_inference(kwargs):
     """Perform inference using saved model."""
+    params = load_params()  # load parameters used during training
+
+    # We want to restrict all communication (file I/O) to only be performed on
+    # rank 0 (i.e. `is_chief`) so there are two cases:
+    #    1. We're using Horovod, so we have to check hvd.rank() explicitly.
+    #    2. We're not using Horovod, in which case `is_chief` is always True.
     condition1 = not params['using_hvd']
     condition2 = params['using_hvd'] and hvd.rank() == 0
     is_chief = condition1 or condition2
@@ -130,6 +160,7 @@ def run_l2hmc(params, **kwargs):
     config, params = create_config(params)
     model = GaugeModel(params=params)
 
+    # HOROVOD: Create operation for broadcasting global variables to all ranks
     if params['using_hvd']:
         bcast_op = hvd.broadcast_global_variables(0)
     else:
@@ -146,22 +177,16 @@ def run_l2hmc(params, **kwargs):
         plotter = GaugeModelPlotter(model, run_logger.figs_dir)
     else:
         run_logger = None
-        plotter =None
+        plotter = None
 
     if bcast_op is not None:
         sess.run(bcast_op)
-    #  except ValueError:
-    #      import pdb
-    #      pdb.set_trace()
-
-    #  model.sess = sess
-    #  run_logger = RunLogger(model, FLAGS.log_dir, save_lf_data=False)
 
     # -------------------------------------------------  
     #  Set up relevant parameters to use for inference   
     # -------------------------------------------------  
-    if params['loop_net_weights']:
-        net_weights_arr = np.array([[1, 1, 1],  # [Q, S, T]
+    if params['loop_net_weights']:  # loop over different values of [Q, S, T]
+        net_weights_arr = np.array([[1, 1, 1],
                                     [0, 1, 1],
                                     [1, 0, 1],
                                     [1, 1, 0],
@@ -169,14 +194,19 @@ def run_l2hmc(params, **kwargs):
                                     [0, 1, 0],
                                     [0, 0, 1],
                                     [0, 0, 0]], dtype=NP_FLOAT)
-    else:
+    else:  # set [Q, S, T] = [1, 1, 1]
         net_weights_arr = np.array([[1, 1, 1]], dtype=NP_FLOAT)
 
-    beta = kwargs.get('beta', None)
-    if beta is None:
-        betas = [model.beta_final]
-    else:
-        betas = [beta]
+    # if a value has been passed in `kwargs['beta_inference']` use it
+    beta_inference = kwargs['beta_inference']
+    # otherwise, use `model.beta_final`
+    betas = [model.beta_final if beta_inference is None else beta_inference]
+
+    # if a value has been passed in `kwargs['charge_weight_inference']` use it
+    qw_inference = kwargs['charge_weight_inference']
+    # otherwise, use `params['charge_weight_init']`
+    qw_init = params['charge_weight']
+    charge_weight = qw_init if qw_inference is None else qw_inference
 
     charge_weight = kwargs.get('charge_weight', None)
     if charge_weight is None:
@@ -193,49 +223,63 @@ def run_l2hmc(params, **kwargs):
             if run_logger is not None:
                 run_dir, run_str = run_logger.reset(model.run_steps,
                                                     beta, **weights)
-            #  t0 = time.time()
+            t0 = time.time()
             runner.run(model.run_steps,
                        beta,
                        weights['net_weights'],
                        therm_frac=10)
-            #  run_time = time.time() - t0
-            #  io.log(80 * '-')
-            #  io.log(f'Took: {run_time} s to complete run.')
-            #  io.log(80 * '-')
 
+            # log the total time spent running inference
+            run_time = time.time() - t0
+            sep_str = (80 * '-') + '\n'
+            io.log(
+                sep_str + f'Took: {run_time} s to complete run.' + sep_str
+            )
+
+            # --------------------
+            #  Plot observables
+            # --------------------
             if plotter is not None and run_logger is not None:
                 plotter.plot_observables(
                     run_logger.run_data, beta, run_str, **weights
                 )
-                if params['save_lf']:
+                # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+                #  NOTE:
+                # ------------------------------------------------------------
+                #   If `--plot_lf` CLI argument passed, create the
+                #   following plots:
+                #
+                #     * The metric distance observed between individual
+                #       leapfrog steps and complete molecular dynamics
+                #       updates.  
+                #
+                #     * The determinant of the Jacobian for each leapfrog
+                #       step and the sum of the determinant of the Jacobian
+                #       (sumlogdet) for each MD update.
+                # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+                if params['plot_lf']:
                     lf_plotter = LeapfrogPlotter(plotter.out_dir, run_logger)
-                    lf_plotter.make_plots(run_dir, num_samples=20)
+                    num_samples = min((model.num_samples, 20))
+                    lf_plotter.make_plots(run_dir, num_samples=num_samples)
 
-
-def main_inference(args):
-    params = load_params()
-
-    kwargs = {
-        'beta': args.beta_inference,
-        'charge_weight': args.charge_weight_inference
-    }
-    #  'beta': args.__dict__.get('beta_inference', None),
-    #  'charge_weight': args.__dict__.get('charge_weight_inference', None)
-
-    try:
-        run_l2hmc(params, **kwargs)
-    except:
-        import pdb
-        pdb.set_trace()
-    #  params, model, run_logger = run_l2hmc(params)
-    #  checkpoint_dir = params['checkpoint_dir']
-    #  if FLAGS is not None:
-    #      for key, val in FLAGS.__dict__.items():
-
-    #  FLAGS = make_flags(params)
-    #  FLAGS, params, model, run_logger = run_l2hmc(params)
+#
+#  def main_inference(**kwargs):
+#      """Wrapper method for running inference using the trained L2HMC model.
+#
+#      Args:
+#          kwargs (dict): Dictionary containing key, value pairs parsed as command
+#              line arguments.
+#      """
+#      #  kwargs = {
+#      #      'beta': FLAGS.beta_inference,
+#      #      'charge_weight': FLAGS.charge_weight_inference
+#      #  }
+#
+#      params = load_params()
+#      run_l2hmc(params, **kwargs)
 
 
 if __name__ == '__main__':
     args = parse_args()
-    main_inference(args)
+    kwargs = args.__dict__
+    main_inference(kwargs)
