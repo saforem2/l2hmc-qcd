@@ -262,22 +262,6 @@ def main_inference(kwargs):
                     num_samples = min((model.num_samples, 20))
                     lf_plotter.make_plots(run_dir, num_samples=num_samples)
 
-#
-#  def main_inference(**kwargs):
-#      """Wrapper method for running inference using the trained L2HMC model.
-#
-#      Args:
-#          kwargs (dict): Dictionary containing key, value pairs parsed as command
-#              line arguments.
-#      """
-#      #  kwargs = {
-#      #      'beta': FLAGS.beta_inference,
-#      #      'charge_weight': FLAGS.charge_weight_inference
-#      #  }
-#
-#      params = load_params()
-#      run_l2hmc(params, **kwargs)
-
 
 if __name__ == '__main__':
     args = parse_args()
