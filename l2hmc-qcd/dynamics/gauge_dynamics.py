@@ -139,11 +139,12 @@ class GaugeDynamics(tf.keras.Model):
             'x_dim': self.lattice.num_links,  # dimensionality of target space
             'factor': 2.,
             'spatial_size': self.lattice.space_size,
-            'num_hidden': 2 * self.lattice.num_links,
+            'num_hidden': self.lattice.num_links,
             'num_filters': int(2 * self.lattice.space_size),
             'filter_sizes': [(3, 3), (2, 2)],  # for 1st and 2nd conv. layer
             'name_scope': 'position',
-            'data_format': self.data_format,
+            'data_format': self.data_format,  # channels_first if ugin GPU
+            'use_bn': self.use_bn,  # whether or not to use batch normalization
         }
 
         with tf.name_scope("DynamicsNetwork"):
