@@ -157,7 +157,7 @@ class GaugeDynamics(tf.keras.Model):
     def _build_generic_nets(self, net_kwargs):
         """Build GenericNet FC-architectures for x and v fns. """
         net_kwargs['num_hidden'] = int(4 * self.x_dim)
-
+        net_kwargs['name_scope'] = 'position'
         with tf.name_scope("DynamicsNetwork"):
             with tf.name_scope("XNet"):
                 self.x_fn = GenericNet(model_name='XNet', **net_kwargs)
