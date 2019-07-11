@@ -104,9 +104,13 @@ def count_trainable_params(out_file):
     io.log_and_write(f'Took: {t1} s to complete.', out_file)
 
 
-def create_config(FLAGS, params):
+def create_config(FLAGS, params, training=True):
     """Helper method for creating a tf.ConfigProto object."""
-    config = tf.ConfigProto()
+    if training:
+        config = tf.ConfigProto()
+    else:
+        config = tf.ConfigProto(allow_soft_placement=True,
+                                log_device_placement=True)
     if FLAGS.time_size > 8:
         off = rewriter_config_pb2.RewriterConfig.OFF
         config_attrs = config.graph_options.rewrite_options
@@ -405,10 +409,10 @@ def run_l2hmc(FLAGS, params, checkpoint_dir):
     model = GaugeModel(params=params)
     config, params = create_config(FLAGS, params)
 
-    if params['using_hvd']:
-        bcast_op = hvd.broadcast_global_variables(0)
-    else:
-        bcast_op = None
+    #  if params['using_hvd']:
+    #      bcast_op = hvd.broadcast_global_variables(0)
+    #  else:
+    #      bcast_op = None
 
     # create new session for inference and restore model from checkpoint_dir
     sess = tf.Session(config=config)
@@ -421,8 +425,8 @@ def run_l2hmc(FLAGS, params, checkpoint_dir):
         run_logger = None
         plotter = None
 
-    if bcast_op is not None:
-        sess.run(bcast_op)
+    #  if bcast_op is not None:
+    #      sess.run(bcast_op)
 
     # -------------------------------------------------  
     #  Set up relevant parameters to use for inference   
