@@ -170,7 +170,7 @@ class GaugeModel:
         across each separate rank.
         """
         allreduce_ops = {}
-        for key, val in obs_ops:
+        for key, val in obs_ops.items():
             allreduce_key = key + '_allreduce'
             allreduce_ops[allreduce_key] = hvd.allreduce(val)
 
