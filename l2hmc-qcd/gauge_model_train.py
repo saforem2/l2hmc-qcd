@@ -81,46 +81,9 @@ np.random.seed(GLOBAL_SEED)     # numpy pseudo-random generator
 tf.set_random_seed(GLOBAL_SEED)
 
 
-# ---------------- #
-#  Helper methods  #
-# ---------------- #
-def create_config(FLAGS, params):
-    """Create tensorflow config."""
-    config = tf.ConfigProto()
-    if FLAGS.time_size > 8:
-        off = rewriter_config_pb2.RewriterConfig.OFF
-        config_attrs = config.graph_options.rewrite_options
-        config_attrs.arithmetic_optimization = off
-
-    if FLAGS.gpu:
-        # Horovod: pin GPU to be used to process local rank (one GPU per
-        # process)
-        config.gpu_options.allow_growth = True
-        #  config.allow_soft_placement = True
-        if HAS_HOROVOD and FLAGS.horovod:
-            config.gpu_options.visible_device_list = str(hvd.local_rank())
-            io.log('config.gpu_options.visible_device_list:'
-                   f'{config.gpu_options.visible_device_list}')
-
-    if HAS_MATPLOTLIB:
-        params['_plot'] = True
-
-    if FLAGS.theta:
-        params['_plot'] = False
-        io.log("Training on Theta @ ALCF...")
-        params['data_format'] = 'channels_last'
-        os.environ["KMP_BLOCKTIME"] = str(0)
-        os.environ["KMP_AFFINITY"] = (
-            "granularity=fine,verbose,compact,1,0"
-        )
-        # NOTE: KMP affinity taken care of by passing -cc depth to aprun call
-        OMP_NUM_THREADS = 62
-        config.allow_soft_placement = True
-        config.intra_op_parallelism_threads = OMP_NUM_THREADS
-        config.inter_op_parallelism_threads = 0
-
-    return config, params
-
+###############################################################################
+#                           Helper methods                                    #
+###############################################################################
 
 def count_trainable_params(out_file):
     """Helper method for counting the total number of trainable parameters.
@@ -155,6 +118,45 @@ def count_trainable_params(out_file):
     io.log_and_write(f'Total parameters: {total_params}', out_file)
     t1 = time.time() - t0
     io.log_and_write(f'Took: {t1} s to complete.', out_file)
+
+
+def create_config(params):
+    """Create tensorflow config."""
+    config = tf.ConfigProto()
+    if params['time_size'] > 8:
+        off = rewriter_config_pb2.RewriterConfig.OFF
+        config_attrs = config.graph_options.rewrite_options
+        config_attrs.arithmetic_optimization = off
+
+    if params['gpu']:
+        # Horovod: pin GPU to be used to process local rank (one GPU per
+        # process)
+        config.gpu_options.allow_growth = True
+        #  config.allow_soft_placement = True
+        if HAS_HOROVOD and params['horovod']:
+            config.gpu_options.visible_device_list = str(hvd.local_rank())
+            io.log('config.gpu_options.visible_device_list:'
+                   f'{config.gpu_options.visible_device_list}')
+
+    if HAS_MATPLOTLIB:
+        params['_plot'] = True
+
+    if params['theta']:
+        params['_plot'] = False
+        io.log("Training on Theta @ ALCF...")
+        params['data_format'] = 'channels_last'
+        os.environ["KMP_BLOCKTIME"] = str(0)
+        os.environ["KMP_AFFINITY"] = (
+            "granularity=fine,verbose,compact,1,0"
+        )
+        # NOTE: KMP affinity taken care of by passing -cc depth to aprun call
+        OMP_NUM_THREADS = 62
+        config.allow_soft_placement = True
+        config.intra_op_parallelism_threads = OMP_NUM_THREADS
+        config.inter_op_parallelism_threads = 0
+
+    return config, params
+
 
 
 # --------------------------------- #
@@ -231,16 +233,16 @@ def hmc(FLAGS, params=None, log_file=None):
     return sess, model, runner, run_logger
 
 
-def run_hmc(FLAGS, params=None, log_file=None):
+def run_hmc(kwargs, params=None, log_file=None):
     """Run generic HMC."""
-    condition1 = not FLAGS.horovod
-    condition2 = FLAGS.horovod and hvd.rank() == 0
+    condition1 = not kwargs['horovod']
+    condition2 = kwargs['horovod'] and hvd.rank() == 0
     is_chief = condition1 or condition2
     io.log('\n' + 80 * '-')
     io.log(("Running generic HMC algorithm "
             "with learned parameters from L2HMC..."))
     if is_chief:
-        hmc_sess, _, _, _ = hmc(FLAGS, params, log_file)
+        hmc_sess, _, _, _ = hmc(kwargs, params, log_file)
         hmc_sess.close()
         tf.reset_default_graph()
 
@@ -248,7 +250,7 @@ def run_hmc(FLAGS, params=None, log_file=None):
 # ------------------------------------------------------------------- #
 #  Method for training L2HMC sampler on 2D U(1) lattice gauge model.  #
 # ------------------------------------------------------------------- #
-def train_l2hmc(FLAGS, log_file=None):
+def train_l2hmc(kwargs, log_file=None):
     """Create, train, and run L2HMC sampler on 2D U(1) gauge model."""
     io.log('\n' + 80 * '-')
     io.log("Running L2HMC algorithm...")
@@ -258,22 +260,23 @@ def train_l2hmc(FLAGS, log_file=None):
     # ---------------------------------------------------------------------
     # Parse command line arguments and set parameters for correct values.
     # ---------------------------------------------------------------------
-    FLAGS.log_dir = io.create_log_dir(FLAGS, log_file=log_file)
-    if FLAGS.save_steps is None and FLAGS.train_steps is not None:
-        FLAGS.save_steps = FLAGS.train_steps // 4
+    kwargs['log_dir'] = io.create_log_dir(kwargs, log_file=log_file)
+    if kwargs['save_steps'] is None and kwargs['train_steps'] is not None:
+        kwargs['save_steps'] = kwargs['train_steps'] // 4
 
     params = {}
-    for key, val in FLAGS.__dict__.items():
+    #  for key, val in FLAGS.__dict__.items():
+    for key, val in kwargs.items():
         params[key] = val
 
-    if FLAGS.gpu:
+    if kwargs['gpu']:
         io.log("Using GPU for training.")
         params['data_format'] = 'channels_first'
     else:
         io.log("Using CPU for training.")
         params['data_format'] = 'channels_last'
 
-    if FLAGS.horovod:
+    if kwargs['horovod']:
         params['using_hvd'] = True
         num_workers = hvd.size()
         io.log(f"Number of GPUs: {num_workers}")
@@ -308,13 +311,13 @@ def train_l2hmc(FLAGS, log_file=None):
     # if we're not using Horovod, `is_chief` should always be True
     # otheerwise, if using Horovod, we only want to perform file I/O
     # on hvd.rank() == 0, so check that first
-    condition1 = not FLAGS.horovod
-    condition2 = FLAGS.horovod and hvd.rank() == 0
+    condition1 = not params['horovod']
+    condition2 = params['horovod'] and hvd.rank() == 0
     is_chief = condition1 or condition2
 
     if is_chief:
-        assert FLAGS.log_dir == params['log_dir']
-        log_dir = FLAGS.log_dir
+        assert params['log_dir'] == kwargs['log_dir']
+        log_dir = params['log_dir']
         checkpoint_dir = os.path.join(log_dir, 'checkpoints/')
         io.check_else_make_dir(checkpoint_dir)
 
@@ -333,18 +336,18 @@ def train_l2hmc(FLAGS, log_file=None):
     # --------------------------------------------------------
     model = GaugeModel(params=params)
     if is_chief:
-        train_logger = TrainLogger(model, log_dir, FLAGS.summaries)
+        train_logger = TrainLogger(model, log_dir, params['summaries'])
     else:
         train_logger = None
 
     # --------------------------------------------------
     # Setup config and MonitoredTrainingSession
     # --------------------------------------------------
-    config, params = create_config(FLAGS, params)
+    config, params = create_config(params)
     tf.keras.backend.set_learning_phase(True)
 
     # set initial value of charge weight using value from FLAGS
-    charge_weight_init = FLAGS.charge_weight
+    charge_weight_init = params['charge_weight']
     net_weights_init = [1., 1., 1.]
     samples_init = np.reshape(np.array(model.lattice.samples, dtype=NP_FLOAT),
                               (model.num_samples, model.x_dim))
@@ -398,7 +401,8 @@ def train_l2hmc(FLAGS, log_file=None):
 
     trainer.train(model.train_steps, **kwargs)
 
-    trainable_params_file = os.path.join(FLAGS.log_dir, 'trainable_params.txt')
+    trainable_params_file = os.path.join(params['log_dir'],
+                                         'trainable_params.txt')
     count_trainable_params(trainable_params_file)
 
     if is_chief:
@@ -425,71 +429,40 @@ def train_l2hmc(FLAGS, log_file=None):
     #      with open(params_pkl_file, 'wb') as f:
     #          pickle.dump(params, f)
 
-    return FLAGS, params, model, train_logger
+    return params, model, train_logger
 
 
 # ----------------------------------------- #
 #  Main method putting everything together  #
 # ----------------------------------------- #
-def main_training(FLAGS):
+def main_training(kwargs):
     """Main method for training L2HMC sampler on U(1) lattice gauge model."""
     t0 = time.time()
-    if HAS_HOROVOD and FLAGS.horovod:
+    if HAS_HOROVOD and kwargs['horovod']:
         io.log("INFO: USING HOROVOD")
         log_file = 'output_dirs.txt'
         hvd.init()
     else:
         log_file = None
 
-    if FLAGS.hmc_eps is None:
+    if kwargs['hmc_eps'] is None:
         eps_arr = [0.1, 0.15, 0.2, 0.25]
     else:
-        eps_arr = [float(FLAGS.hmc_eps)]
+        eps_arr = [float(kwargs['hmc_eps'])]
 
-    if FLAGS.hmc:
+    if kwargs['hmc']:
         # --------------------
         #   run generic HMC
         # --------------------
-        run_hmc(FLAGS, log_file)
+        run_hmc(kwargs, log_file)
         for eps in eps_arr:
-            FLAGS.eps = eps
-            run_hmc(FLAGS, log_file)
+            kwargs['eps'] = eps
+            run_hmc(kwargs, log_file)
     else:
         # ------------------------
         #   train l2hmc sampler
         # ------------------------
-        FLAGS, params, model, train_logger = train_l2hmc(FLAGS, log_file)
-        #  checkpoint_dir = train_logger.checkpoint_dir
-        #  checkpoint_dir_file = os.path.join(os.getcwd(), 'checkpoint_dir.txt')
-        #  io.log_and_write(checkpoint_dir, checkpoint_dir_file)
-
-        # ---------------------------------------------
-        #   run inference using trained l2hmc sampler
-        # ---------------------------------------------
-        #  FLAGS, params, model, run_logger = inference.inference(FLAGS,
-        #                                                         checkpoint_dir,
-        #                                                         params,
-        #                                                         model)
-
-        # -----------------------------------------------------------
-        #  run HMC following inference if --run_hmc flag was passed
-        # -----------------------------------------------------------
-        if FLAGS.run_hmc:
-            # Run HMC with the trained step size from L2HMC (not ideal)
-            params = model.params
-            params['hmc'] = True
-            params['log_dir'] = FLAGS.log_dir = None
-            if train_logger is not None:
-                params['eps'] = FLAGS.eps = train_logger._current_state['eps']
-            else:
-                params['eps'] = FLAGS.eps
-
-            run_hmc(FLAGS, params, log_file)
-
-            for eps in eps_arr:
-                params['log_dir'] = FLAGS.log_dir = None
-                params['eps'] = FLAGS.eps = eps
-                run_hmc(FLAGS, params, log_file)
+        params, model, train_logger = train_l2hmc(kwargs, log_file)
 
     io.log('\n\n')
     io.log(80 * '-')
@@ -499,4 +472,5 @@ def main_training(FLAGS):
 
 if __name__ == '__main__':
     args = parse_args()
-    main_training(args)
+    kwargs = args.__dict__
+    main_training(kwargs)
