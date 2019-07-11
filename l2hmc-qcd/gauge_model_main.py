@@ -33,7 +33,6 @@ Date: 04/10/2019
 import os
 import random
 import time
-import pickle
 import tensorflow as tf
 import numpy as np
 
@@ -43,10 +42,8 @@ from tensorflow.core.protobuf import rewriter_config_pb2
 
 import utils.file_io as io
 
-import gauge_model_inference as inference
 from globals import GLOBAL_SEED, NP_FLOAT
 from utils.parse_args import parse_args
-from utils.model_loader import load_model
 from models.gauge_model import GaugeModel
 from loggers.train_logger import TrainLogger
 from loggers.run_logger import RunLogger
@@ -79,45 +76,8 @@ np.random.seed(GLOBAL_SEED)     # numpy pseudo-random generator
 tf.set_random_seed(GLOBAL_SEED)
 
 
-def create_config(FLAGS, params):
-    """Create tensorflow config."""
-    config = tf.ConfigProto()
-    if FLAGS.time_size > 8:
-        off = rewriter_config_pb2.RewriterConfig.OFF
-        config_attrs = config.graph_options.rewrite_options
-        config_attrs.arithmetic_optimization = off
-
-    if FLAGS.gpu:
-        # Horovod: pin GPU to be used to process local rank (one GPU per
-        # process)
-        config.gpu_options.allow_growth = True
-        #  config.allow_soft_placement = True
-        if HAS_HOROVOD and FLAGS.horovod:
-            num_gpus = hvd.size()
-            io.log(f"Number of GPUs: {num_gpus}")
-            config.gpu_options.visible_device_list = str(hvd.local_rank())
-
-    if HAS_MATPLOTLIB:
-        params['_plot'] = True
-
-    if FLAGS.theta:
-        params['_plot'] = False
-        io.log("Training on Theta @ ALCF...")
-        params['data_format'] = 'channels_last'
-        os.environ["KMP_BLOCKTIME"] = str(0)
-        os.environ["KMP_AFFINITY"] = (
-            "granularity=fine,verbose,compact,1,0"
-        )
-        # NOTE: KMP affinity taken care of by passing -cc depth to aprun call
-        OMP_NUM_THREADS = 62
-        config.allow_soft_placement = True
-        config.intra_op_parallelism_threads = OMP_NUM_THREADS
-        config.inter_op_parallelism_threads = 0
-
-    return config, params
-
-
 def count_trainable_params(out_file):
+    """Count the total number of trainable parameters in a tf.Graph object."""
     t0 = time.time()
     io.log(f'Writing parameter counts to: {out_file}.')
     io.log_and_write(80 * '-', out_file)
@@ -142,6 +102,42 @@ def count_trainable_params(out_file):
     io.log_and_write(f'Total parameters: {total_params}', out_file)
     t1 = time.time() - t0
     io.log_and_write(f'Took: {t1} s to complete.', out_file)
+
+
+def create_config(FLAGS, params):
+    """Helper method for creating a tf.ConfigProto object."""
+    config = tf.ConfigProto()
+    if FLAGS.time_size > 8:
+        off = rewriter_config_pb2.RewriterConfig.OFF
+        config_attrs = config.graph_options.rewrite_options
+        config_attrs.arithmetic_optimization = off
+
+    if FLAGS.gpu:
+        # Horovod: pin GPU to be used to process local rank (one GPU per
+        # process)
+        config.gpu_options.allow_growth = True
+        #  config.allow_soft_placement = True
+        if HAS_HOROVOD and FLAGS.horovod:
+            config.gpu_options.visible_device_list = str(hvd.local_rank())
+
+    if HAS_MATPLOTLIB:
+        params['_plot'] = True
+
+    if FLAGS.theta:
+        params['_plot'] = False
+        io.log("Training on Theta @ ALCF...")
+        params['data_format'] = 'channels_last'
+        os.environ["KMP_BLOCKTIME"] = str(0)
+        os.environ["KMP_AFFINITY"] = (
+            "granularity=fine,verbose,compact,1,0"
+        )
+        # NOTE: KMP affinity taken care of by passing -cc depth to aprun call
+        OMP_NUM_THREADS = 62
+        config.allow_soft_placement = True
+        config.intra_op_parallelism_threads = OMP_NUM_THREADS
+        config.inter_op_parallelism_threads = 0
+
+    return config, params
 
 
 def hmc(FLAGS, params=None, log_file=None):
@@ -215,6 +211,20 @@ def hmc(FLAGS, params=None, log_file=None):
     return sess, model, runner, run_logger
 
 
+def run_hmc(FLAGS, params=None, log_file=None):
+    """Run generic HMC."""
+    condition1 = not FLAGS.horovod
+    condition2 = FLAGS.horovod and hvd.rank() == 0
+    is_chief = condition1 or condition2
+    io.log('\n' + 80 * '-')
+    io.log(("Running generic HMC algorithm "
+            "with learned parameters from L2HMC..."))
+    if is_chief:
+        hmc_sess, _, _, _ = hmc(FLAGS, params, log_file)
+        hmc_sess.close()
+        tf.reset_default_graph()
+
+
 def train_l2hmc(FLAGS, log_file=None):
     """Create, train, and run L2HMC sampler on 2D U(1) gauge model."""
     io.log('\n' + 80 * '-')
@@ -242,13 +252,22 @@ def train_l2hmc(FLAGS, log_file=None):
 
     if FLAGS.horovod:
         params['using_hvd'] = True
+
         num_workers = hvd.size()
+        io.log(f"Number of GPUs: {num_workers}")
         params['num_workers'] = num_workers
-        params['train_steps'] //= num_workers
+
+        # Horovod: Scale initial lr by sqrt (instead of linear) of num GPUs.
+        params['lr_init'] *= np.sqrt(num_workers)
+        # Horovod: adjust number of training steps based on number of GPUs.
+        params['train_steps'] //= num_workers + 1
+        # Horovod: adjust save_steps and lr_decay_steps accordingly.
         params['save_steps'] //= num_workers
         params['lr_decay_steps'] //= num_workers
+
         if params['summaries']:
             params['logging_steps'] // num_workers
+
         hooks = [
             # Horovod: BroadcastGlobalVariablesHook broadcasts initial
             # variable states from rank 0 to all other processes. This
@@ -360,56 +379,116 @@ def train_l2hmc(FLAGS, log_file=None):
     trainable_params_file = os.path.join(FLAGS.log_dir, 'trainable_params.txt')
     count_trainable_params(trainable_params_file)
 
-    if is_chief:
-        params['checkpoint_dir'] = train_logger.checkpoint_dir
-        params_pkl_file = os.path.join(os.getcwd(), 'params.pkl')
-        with open(params_pkl_file, 'wb') as f:
-            pickle.dump(model.params, f)
+    #  if is_chief:
+    #      params['checkpoint_dir'] = train_logger.checkpoint_dir
+    #      params_pkl_file = os.path.join(os.getcwd(), 'params.pkl')
+    #      with open(params_pkl_file, 'wb') as f:
+    #          pickle.dump(model.params, f)
 
     # close MonitoredTrainingSession and prepare for inference
     sess.close()
-    tf.keras.backend.set_learning_phase(False)
-
-    # save checkpoint directory to file to be read in when performing inference
-    #  checkpoint_dir_file = os.path.join(os.getcwd(), 'checkpoint_dir.txt')
-    #  io.write(f'{train_logger.checkpoint_dir}', checkpoint_dir_file, 'w',
-    #           nl=False)
-
-    # save logging directory to file to be read in when performing inference
-    #  log_dir_file = os.path.join(os.getcwd(), 'log_dir.txt')
-    #  io.write(f'{FLAGS.log_dir}', log_dir_file, 'w', nl=False)
-
-    #  params_pkl_file = os.path.join(os.getcwd(), 'params.pkl')
-    #  if is_chief:
-    #      with open(params_pkl_file, 'wb') as f:
-    #          pickle.dump(params, f)
+    tf.reset_default_graph()
 
     return FLAGS, params, model, train_logger
 
 
-def run_hmc(FLAGS, params=None, log_file=None):
-    """Run generic HMC."""
+def run_l2hmc(FLAGS, params, checkpoint_dir):
+    """Run inference using trained L2HMC sampler."""
+    assert os.path.isdir(checkpoint_dir)
+    tf.keras.backend.set_learning_phase(False)
+
+    # on hvd.rank() == 0, so check that first
     condition1 = not FLAGS.horovod
     condition2 = FLAGS.horovod and hvd.rank() == 0
     is_chief = condition1 or condition2
-    io.log('\n' + 80 * '-')
-    io.log(("Running generic HMC algorithm "
-            "with learned parameters from L2HMC..."))
-    if is_chief:
-        hmc_sess, _, _, _ = hmc(FLAGS, params, log_file)
-        hmc_sess.close()
-        tf.reset_default_graph()
 
-#  def train_l2hmc(FLAGS, log_file=None):
-#      """Train and run L2HMC algorithm."""
-#      io.log('\n' + 80 * '-')
-#      io.log("Running L2HMC algorithm...")
-#      FLAGS, params, model, train_logger = l2hmc(FLAGS, log_file)
-#      #  checkpoint_dir = train_logger.checkpoint_dir
-#      #  inference.inference(FLAGS, checkpoint_dir, params=params, model=model)
-#      #  tf.reset_default_graph()
-#
-#      return FLAGS, params, model, train_logger
+    model = GaugeModel(params=params)
+    config, params = create_config(FLAGS, params)
+
+    if params['using_hvd']:
+        bcast_op = hvd.broadcast_global_variables(0)
+    else:
+        bcast_op = None
+
+    # create new session for inference and restore model from checkpoint_dir
+    sess = tf.Session(config=config)
+    if is_chief:
+        saver = tf.train.Saver()
+        saver.restore(sess, tf.train.latest_checkpoint(checkpoint_dir))
+        run_logger = RunLogger(model, model.log_dir, save_lf_data=False)
+        plotter = GaugeModelPlotter(model, run_logger.figs_dir)
+    else:
+        run_logger = None
+        plotter = None
+
+    if bcast_op is not None:
+        sess.run(bcast_op)
+
+    # -------------------------------------------------  
+    #  Set up relevant parameters to use for inference   
+    # -------------------------------------------------  
+    if params['loop_net_weights']:  # loop over different values of [Q, S, T]
+        net_weights_arr = np.array([[1, 1, 1],
+                                    [0, 1, 1],
+                                    [1, 0, 1],
+                                    [1, 1, 0],
+                                    [1, 0, 0],
+                                    [0, 1, 0],
+                                    [0, 0, 1],
+                                    [0, 0, 0]], dtype=NP_FLOAT)
+    else:  # set [Q, S, T] = [1, 1, 1]
+        net_weights_arr = np.array([[1, 1, 1]], dtype=NP_FLOAT)
+
+    # if a value has been passed in `kwargs['beta_inference']` use it
+    beta_inference = FLAGS.beta_inference
+    # otherwise, use `model.beta_final`
+    betas = [model.beta_final if beta_inference is None else beta_inference]
+
+    # if a value has been passed in `kwargs['charge_weight_inference']` use it
+    #  qw_inference = kwargs['charge_weight_inference']
+    qw_inference = FLAGS.charge_weight_inference
+    # otherwise, use `params['charge_weight_init']`
+    qw_init = params['charge_weight']
+    charge_weight = qw_init if qw_inference is None else qw_inference
+
+    runner = GaugeModelRunner(sess, model, run_logger)
+
+    for net_weights in net_weights_arr:
+        weights = {
+            'charge_weight': charge_weight,
+            'net_weights': net_weights
+        }
+        for beta in betas:
+            if run_logger is not None:
+                # There are two subtle points worth pointing out:
+                #   1. The value of `charge_weight` is specified when resetting
+                #      the run logger, which will  then be used for the
+                #      remainder of inference.
+                #   2. The value of `net_weight` is spcified by passing it
+                #      directly to the GaugeModelRunner.run(...) method.
+                #
+                run_dir, run_str = run_logger.reset(model.run_steps, beta,
+                                                    **weights)
+            t0 = time.time()
+
+            runner.run(model.run_steps,
+                       beta,
+                       weights['net_weights'])
+
+            # log the total time spent running inference
+            run_time = time.time() - t0
+            sep_str = (80 * '-') + '\n'
+            io.log(
+                sep_str + f'Took: {run_time} s to complete run.' + sep_str
+            )
+
+            if plotter is not None and run_logger is not None:
+                plotter.plot_observables(run_logger.run_data,
+                                         beta, run_str, **weights)
+                if FLAGS.plot_lf:
+                    lf_plotter = LeapfrogPlotter(plotter.out_dir, run_logger)
+                    num_samples = min((model.num_samples, 20))
+                    lf_plotter.make_plots(run_dir, num_samples=num_samples)
 
 
 def main(FLAGS):
@@ -441,12 +520,12 @@ def main(FLAGS):
         # ------------------------
         FLAGS, params, model, train_logger = train_l2hmc(FLAGS, log_file)
         checkpoint_dir = train_logger.checkpoint_dir
-        checkpoint_dir_file = os.path.join(os.getcwd(), 'checkpoint_dir.txt')
-        io.log_and_write(checkpoint_dir, checkpoint_dir_file)
 
         # ---------------------------------------------
         #   run inference using trained l2hmc sampler
         # ---------------------------------------------
+        run_l2hmc(FLAGS, params, checkpoint_dir)
+
         #  FLAGS, params, model, run_logger = inference.inference(FLAGS,
         #                                                         checkpoint_dir,
         #                                                         params,
