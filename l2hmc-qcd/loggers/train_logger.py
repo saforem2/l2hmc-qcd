@@ -60,7 +60,6 @@ class TrainLogger:
             self.train_data['actions_allreduce'] = {}
             self.train_data['plaqs_allreduce'] = {}
             self.train_data['charges_allreduce'] = {}
-            self.train_data['charge_diffs_allreduce'] = {}
 
         # log_dir will be None if using_hvd and hvd.rank() != 0
         # this prevents workers on different ranks from corrupting checkpoints
@@ -205,7 +204,6 @@ class TrainLogger:
                 'actions_allreduce',
                 'plaqs_allreduce',
                 'charges_allreduce',
-                'charge_diffs_allreduce'
             ]
             for obs_key in tmp_keys:
                 self.train_data[obs_key][key] = data[obs_key]
