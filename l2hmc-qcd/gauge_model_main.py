@@ -76,32 +76,34 @@ np.random.seed(GLOBAL_SEED)     # numpy pseudo-random generator
 tf.set_random_seed(GLOBAL_SEED)
 
 
-def count_trainable_params(out_file):
+def count_trainable_params(out_file, log=False):
     """Count the total number of trainable parameters in a tf.Graph object."""
-    t0 = time.time()
+    if log:
+        writer = io.log_and_write
+    else:
+        writer = io.write
+
     io.log(f'Writing parameter counts to: {out_file}.')
-    io.log_and_write(80 * '-', out_file)
+    writer(80 * '-', out_file)
     total_params = 0
     for var in tf.trainable_variables():
         # shape is an array of tf.Dimension
         shape = var.get_shape()
-        io.log_and_write(f'var: {var}', out_file)
+        writer(f'var: {var}', out_file)
         #  var_shape_str = f'  var.shape: {shape}'
-        io.log_and_write(f'  var.shape: {shape}', out_file)
-        io.log_and_write(f'  len(var.shape): {len(shape)}', out_file)
+        writer(f'  var.shape: {shape}', out_file)
+        writer(f'  len(var.shape): {len(shape)}', out_file)
         var_params = 1  # variable parameters
         for dim in shape:
-            io.log_and_write(f'    dim: {dim}', out_file)
+            writer(f'    dim: {dim}', out_file)
             #  dim_strs += f'    dim: {dim}\'
             var_params *= dim.value
-        io.log_and_write(f'variable_parameters: {var_params}', out_file)
-        io.log_and_write(80 * '-', out_file)
+        writer(f'variable_parameters: {var_params}', out_file)
+        writer(80 * '-', out_file)
         total_params += var_params
 
-    io.log_and_write(80 * '-', out_file)
-    io.log_and_write(f'Total parameters: {total_params}', out_file)
-    t1 = time.time() - t0
-    io.log_and_write(f'Took: {t1} s to complete.', out_file)
+    writer(80 * '-', out_file)
+    writer(f'Total parameters: {total_params}', out_file)
 
 
 def create_config(FLAGS, params, training=True):
