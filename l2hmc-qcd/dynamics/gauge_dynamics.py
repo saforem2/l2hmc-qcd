@@ -96,85 +96,76 @@ class GaugeDynamics(tf.keras.Model):
             ]
 
         else:
+            net_kwargs = {
+                'x_dim': self.lattice.num_links,  # dim of target space
+                'links_shape': self.lattice.links.shape,
+                'factor': 2.,  # scale factor used in original paper
+                'spatial_size': self.lattice.space_size,  # size of lattice
+                'use_bn': self.use_bn,  # whether or not to use batch norm
+            }
             if self.network_arch == 'conv3D':
-                self._build_conv_nets_3D()
+                self._build_conv_nets_3D(net_kwargs)
             elif self.network_arch == 'conv2D':
-                self._build_conv_nets_2D()
+                self._build_conv_nets_2D(net_kwargs)
             elif self.network_arch == 'generic':
-                self._build_generic_nets()
+                self._build_generic_nets(net_kwargs)
             else:
                 raise AttributeError("`self._network_arch` must be one of "
                                      "`'conv3D', 'conv2D', 'generic'.`")
 
-    def _build_conv_nets_3D(self):
+    def _build_conv_nets_3D(self, net_kwargs):
         """Build ConvNet3D architecture for x and v functions."""
-        kwargs = {
+        net_kwargs.update({
             '_input_shape': (self.batch_size, *self.lattice.links.shape),
-            'links_shape': self.lattice.links.shape,
-            'x_dim': self.lattice.num_links,  # dimensionality of target space
-            'factor': 2.,  # scale factor used in original paper
-            'spatial_size': self.lattice.space_size,  # spatial size of lattice
             'num_hidden': 2 * self.lattice.num_links,  # num hidden nodes
             'num_filters': int(self.lattice.space_size),  # num conv. filters
             'filter_sizes': [(3, 3, 2), (2, 2, 2)],  # size of conv. filters
             'name_scope': 'position',  # namespace in which to create network
             'data_format': self.data_format,  # channels_first if using GPU
-            'use_bn': self.use_bn,  # whether or not to use batch normalization
-        }
+        })
 
         with tf.name_scope("DynamicsNetwork"):
             with tf.name_scope("XNet"):
-                self.x_fn = ConvNet3D(model_name='XNet', **kwargs)
+                self.x_fn = ConvNet3D(model_name='XNet', **net_kwargs)
 
-            kwargs['name_scope'] = 'momentum'  # update name scope
-            kwargs['factor'] = 1.              # factor used in orig. paper
+            net_kwargs['name_scope'] = 'momentum'  # update name scope
+            net_kwargs['factor'] = 1.              # factor used in orig. paper
             with tf.name_scope("VNet"):
-                self.v_fn = ConvNet3D(model_name='VNet', **kwargs)
+                self.v_fn = ConvNet3D(model_name='VNet', **net_kwargs)
 
-    def _build_conv_nets_2D(self):
+    def _build_conv_nets_2D(self, net_kwargs):
         """Build ConvNet architecture for x and v functions."""
-        kwargs = {
+        net_kwargs.update({
             '_input_shape': (self.batch_size, *self.lattice.links.shape),
-            'links_shape': self.lattice.links.shape,
-            'x_dim': self.lattice.num_links,  # dimensionality of target space
-            'factor': 2.,
             'spatial_size': self.lattice.space_size,
             'num_hidden': self.lattice.num_links,
             'num_filters': int(2 * self.lattice.space_size),
             'filter_sizes': [(3, 3), (2, 2)],  # for 1st and 2nd conv. layer
             'name_scope': 'position',
             'data_format': self.data_format,  # channels_first if ugin GPU
-            'use_bn': self.use_bn,  # whether or not to use batch normalization
-        }
+        })
 
         with tf.name_scope("DynamicsNetwork"):
             with tf.name_scope("XNet"):
-                self.x_fn = ConvNet2D(model_name='XNet', **kwargs)
+                self.x_fn = ConvNet2D(model_name='XNet', **net_kwargs)
 
-            kwargs['name_scope'] = 'momentum'
-            kwargs['factor'] = 1.
+            net_kwargs['name_scope'] = 'momentum'
+            net_kwargs['factor'] = 1.
             with tf.name_scope("VNet"):
-                self.v_fn = ConvNet2D(model_name='VNet', **kwargs)
+                self.v_fn = ConvNet2D(model_name='VNet', **net_kwargs)
 
-    def _build_generic_nets(self):
+    def _build_generic_nets(self, net_kwargs):
         """Build GenericNet FC-architectures for x and v fns. """
-
-        kwargs = {
-            'x_dim': self.x_dim,
-            'links_shape': self.lattice.links.shape,
-            'num_hidden': int(4 * self.x_dim),
-            'name_scope': 'position',
-            'factor': 2.
-        }
+        net_kwargs['num_hidden'] = int(4 * self.x_dim)
 
         with tf.name_scope("DynamicsNetwork"):
             with tf.name_scope("XNet"):
-                self.x_fn = GenericNet(model_name='XNet', **kwargs)
+                self.x_fn = GenericNet(model_name='XNet', **net_kwargs)
 
-            kwargs['factor'] = 1.
-            kwargs['name_scope'] = 'momentum'
+            net_kwargs['factor'] = 1.
+            net_kwargs['name_scope'] = 'momentum'
             with tf.name_scope("VNet"):
-                self.v_fn = GenericNet(model_name='VNet', **kwargs)
+                self.v_fn = GenericNet(model_name='VNet', **net_kwargs)
 
     def call(self, x_in, beta, net_weights, save_lf=False):
         """Call method."""
