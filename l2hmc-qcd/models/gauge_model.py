@@ -140,8 +140,6 @@ class GaugeModel:
     def _create_observables(self):
         """Create operations for calculating lattice observables."""
         obs_ops = {}
-        obs_ops_keys = ['plaq_sums_op', 'actions_op', 'avg_plaqs_op',
-                        'charges_op']
         with tf.name_scope('plaq_observables'):
             with tf.name_scope('plaq_sums'):
                 obs_ops['plaq_sums_op'] = self.lattice.calc_plaq_sums(self.x)
@@ -153,6 +151,7 @@ class GaugeModel:
                 plaqs = self.lattice.calc_plaqs(self.x)
                 avg_plaqs = tf.reduce_mean(plaqs, name='avg_plaqs')
 
+                obs_ops['plaqs_op'] = plaqs
                 obs_ops['avg_plaqs_op'] = avg_plaqs
 
             with tf.name_scope('top_charges'):
@@ -176,20 +175,6 @@ class GaugeModel:
             allreduce_ops[allreduce_key] = hvd.allreduce(val)
 
         return allreduce_ops
-
-    def _create_hvd_ops(self):
-        """Calculate obsevables by averaging over data on all ranks.
-
-        Specifically, when using Horovod for distributed training, we can
-        calculate averages of quantities by perforing an allreduce on the data
-        across each separate rank.
-        """
-        self.plaq_sums_allreduce_op = hvd.allreduce(self.plaq_sums_op)
-        self.actions_op_allreduce_op = hvd.allreduce(self.actions_op)
-        self.plaqs_op_allreduce_op = hvd.allreduce(self.plaqs_op)
-        self.avg_plaqs_allreduce_op = hvd.allreduce(self.avg_plaqs_op)
-        self.charges_op = hvd.allreduce(self.charges_op)
-
 
     def _create_inputs(self):
         """Create input paceholders (if not executing eagerly).
