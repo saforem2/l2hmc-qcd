@@ -53,8 +53,14 @@ class TrainLogger:
             'plaqs': {},
             'charges': {},
             'charge_diffs': {},
-            'accept_probs': {}
+            'accept_probs': {},
         }
+
+        if self.model.using_hvd:
+            self.train_data['actions_allreduce'] = {}
+            self.train_data['plaqs_allreduce'] = {}
+            self.train_data['charges_allreduce'] = {}
+            self.train_data['charge_diffs_allreduce'] = {}
 
         # log_dir will be None if using_hvd and hvd.rank() != 0
         # this prevents workers on different ranks from corrupting checkpoints
@@ -116,6 +122,10 @@ class TrainLogger:
 
         with tf.name_scope('avg_plaq'):
             tf.summary.scalar('avg_plaq', self.model.avg_plaqs_op)
+
+        if self.model.using_hvd:
+            for key in self.model._obs_ops_allreduce_keys:
+                tf.summary.scalar(key, getattr(self.model, key))
 
         for var in tf.trainable_variables():
             if 'batch_normalization' not in var.op.name:
@@ -180,12 +190,25 @@ class TrainLogger:
         self.charges_dict[key] = data['charges']
         self.charge_diffs_dict[key] = data['charge_diffs']
 
+        #  for name, val in self.train_data.items():
+        #      setattr(val, name, data[key])
+
         self.train_data['loss'][key] = data['loss']
         self.train_data['actions'][key] = data['actions']
         self.train_data['plaqs'][key] = data['plaqs']
         self.train_data['charges'][key] = data['charges']
         self.train_data['charge_diffs'][key] = data['charge_diffs']
         self.train_data['accept_probs'][key] = data['px']
+
+        if self.model.using_hvd:
+            tmp_keys = [
+                'actions_allreduce',
+                'plaqs_allreduce',
+                'charges_allreduce',
+                'charge_diffs_allreduce'
+            ]
+            for obs_key in tmp_keys:
+                self.train_data[obs_key][key] = data[obs_key]
 
         self.train_data_strings.append(data_str)
         if step % self.model.print_steps == 0:
