@@ -97,11 +97,10 @@ class GaugeDynamics(tf.keras.Model):
 
         else:
             net_kwargs = {
+                'use_bn': self.use_bn,  # whether or not to use batch norm
                 'x_dim': self.lattice.num_links,  # dim of target space
                 'links_shape': self.lattice.links.shape,
-                'factor': 2.,  # scale factor used in original paper
-                'spatial_size': self.lattice.space_size,  # size of lattice
-                'use_bn': self.use_bn,  # whether or not to use batch norm
+                '_input_shape': (self.batch_size, *self.lattice.links.shape),
             }
             if self.network_arch == 'conv3D':
                 self._build_conv_nets_3D(net_kwargs)
@@ -116,11 +115,11 @@ class GaugeDynamics(tf.keras.Model):
     def _build_conv_nets_3D(self, net_kwargs):
         """Build ConvNet3D architecture for x and v functions."""
         net_kwargs.update({
-            '_input_shape': (self.batch_size, *self.lattice.links.shape),
             'num_hidden': 2 * self.lattice.num_links,  # num hidden nodes
             'num_filters': int(self.lattice.space_size),  # num conv. filters
             'filter_sizes': [(3, 3, 2), (2, 2, 2)],  # size of conv. filters
             'name_scope': 'position',  # namespace in which to create network
+            'factor': 2.,  # scale factor used in original paper
             'data_format': self.data_format,  # channels_first if using GPU
         })
 
@@ -136,12 +135,11 @@ class GaugeDynamics(tf.keras.Model):
     def _build_conv_nets_2D(self, net_kwargs):
         """Build ConvNet architecture for x and v functions."""
         net_kwargs.update({
-            '_input_shape': (self.batch_size, *self.lattice.links.shape),
-            'spatial_size': self.lattice.space_size,
             'num_hidden': self.lattice.num_links,
             'num_filters': int(2 * self.lattice.space_size),
             'filter_sizes': [(3, 3), (2, 2)],  # for 1st and 2nd conv. layer
             'name_scope': 'position',
+            'factor': 2.,  # scale factor used in original paper
             'data_format': self.data_format,  # channels_first if ugin GPU
         })
 
@@ -156,8 +154,11 @@ class GaugeDynamics(tf.keras.Model):
 
     def _build_generic_nets(self, net_kwargs):
         """Build GenericNet FC-architectures for x and v fns. """
-        net_kwargs['num_hidden'] = int(4 * self.x_dim)
-        net_kwargs['name_scope'] = 'position'
+        net_kwargs.update({
+            'num_hidden': int(4 * self.x_dim),
+            'name_scope': 'position',
+            'factor': 2.,
+        })
         with tf.name_scope("DynamicsNetwork"):
             with tf.name_scope("XNet"):
                 self.x_fn = GenericNet(model_name='XNet', **net_kwargs)
