@@ -443,7 +443,15 @@ def run_l2hmc(FLAGS, params, checkpoint_dir):
         #                              [0, 0, 1],
         #                              [0, 0, 0]], dtype=NP_FLOAT)
         #  net_weights_random = np.random.randn(5, 3)
-        net_weights_arr = np.array(np.random.randn(5, 3), dtype=NP_FLOAT)
+        net_weights_arr = np.array(np.random.randn(6, 3), dtype=NP_FLOAT)
+        net_weights_arr = np.zeros((6, 3), dtype=NP_FLOAT)
+        net_weights_arr[1:, :] = np.array(np.random.randn(5, 3),
+                                          dtype=NP_FLOAT)
+        if is_chief:
+            net_weights_file = os.path.join(model.log_dir, 'net_weights.txt')
+            np.savetxt(net_weights_file, net_weights_arr, delimiter=', ',
+                       newline='\n', fmt="%-.4g")
+
     else:  # set [Q, S, T] = [1, 1, 1]
         net_weights_arr = np.array([[1, 1, 1]], dtype=NP_FLOAT)
 
