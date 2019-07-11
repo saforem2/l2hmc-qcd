@@ -434,19 +434,17 @@ def run_l2hmc(FLAGS, params, checkpoint_dir):
     #  Set up relevant parameters to use for inference   
     # -------------------------------------------------  
     if params['loop_net_weights']:  # loop over different values of [Q, S, T]
-        #  net_weights_arr = np.array([[1, 1, 1],
-        #                              [0, 1, 1],
-        #                              [1, 0, 1],
-        #                              [1, 1, 0],
-        #                              [1, 0, 0],
-        #                              [0, 1, 0],
-        #                              [0, 0, 1],
-        #                              [0, 0, 0]], dtype=NP_FLOAT)
-        #  net_weights_random = np.random.randn(5, 3)
-        net_weights_arr = np.array(np.random.randn(6, 3), dtype=NP_FLOAT)
-        net_weights_arr = np.zeros((6, 3), dtype=NP_FLOAT)
-        net_weights_arr[1:, :] = np.array(np.random.randn(5, 3),
-                                          dtype=NP_FLOAT)
+        net_weights_arr = np.zeros((9, 3), dtype=NP_FLOAT)
+        mask_arr = np.array([[1, 1, 1],                     # [Q, S, T]
+                             [0, 1, 1],                     # [ , S, T]
+                             [1, 0, 1],                     # [Q,  , T]
+                             [1, 1, 0],                     # [Q, S,  ]
+                             [1, 0, 0],                     # [Q,  ,  ]
+                             [0, 1, 0],                     # [ , S,  ]
+                             [0, 0, 1],                     # [ ,  , T]
+                             [0, 0, 0]], dtype=NP_FLOAT)    # [ ,  ,  ]
+        net_weights_arr[:mask_arr.shape[0], :] = mask_arr   # [?, ?, ?]
+        net_weights_arr[-1, :] = np.random.randn(3)
         if is_chief:
             net_weights_file = os.path.join(model.log_dir, 'net_weights.txt')
             np.savetxt(net_weights_file, net_weights_arr, delimiter=', ',
@@ -535,7 +533,8 @@ def main(FLAGS):
         #   train l2hmc sampler
         # ------------------------
         FLAGS, params, model, train_logger = train_l2hmc(FLAGS, log_file)
-        checkpoint_dir = train_logger.checkpoint_dir
+        if train_logger is not None:
+            checkpoint_dir = train_logger.checkpoint_dir
 
         # ---------------------------------------------
         #   run inference using trained l2hmc sampler
