@@ -491,7 +491,7 @@ def run_l2hmc(FLAGS, params, checkpoint_dir):
             if plotter is not None and run_logger is not None:
                 plotter.plot_observables(run_logger.run_data,
                                          beta, run_str, **weights)
-                if FLAGS.plot_lf:
+                if params['save_lf']:
                     lf_plotter = LeapfrogPlotter(plotter.out_dir, run_logger)
                     num_samples = min((model.num_samples, 20))
                     lf_plotter.make_plots(run_dir, num_samples=num_samples)
