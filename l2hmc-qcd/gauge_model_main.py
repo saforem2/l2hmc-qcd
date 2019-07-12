@@ -533,13 +533,15 @@ def main(FLAGS):
         #   train l2hmc sampler
         # ------------------------
         FLAGS, params, model, train_logger = train_l2hmc(FLAGS, log_file)
-        if train_logger is not None:
-            checkpoint_dir = train_logger.checkpoint_dir
 
-        # ---------------------------------------------
-        #   run inference using trained l2hmc sampler
-        # ---------------------------------------------
-        run_l2hmc(FLAGS, params, checkpoint_dir)
+        if FLAGS.inference:
+            if train_logger is not None:
+                checkpoint_dir = train_logger.checkpoint_dir
+
+            # ---------------------------------------------
+            #   run inference using trained l2hmc sampler
+            # ---------------------------------------------
+            run_l2hmc(FLAGS, params, checkpoint_dir)
 
         #  FLAGS, params, model, run_logger = inference.inference(FLAGS,
         #                                                         checkpoint_dir,
