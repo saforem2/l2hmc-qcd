@@ -207,6 +207,14 @@ def parse_args():
                               constant) used in gauge model when
                               annealing. (Default: 5."""))
 
+    parser.add_argument('--inference',
+                        dest="inference",
+                        action="store_true",
+                        required=False,
+                        help=("""Flag that when passed will run inference using
+                              the trained L2HMC sampler by loading the trained
+                              model.""")
+
     parser.add_argument("--beta_inference",
                         dest="beta_inference",
                         type=float,
