@@ -213,7 +213,7 @@ def parse_args():
                         required=False,
                         help=("""Flag that when passed will run inference using
                               the trained L2HMC sampler by loading the trained
-                              model.""")
+                              model."""))
 
     parser.add_argument("--beta_inference",
                         dest="beta_inference",
