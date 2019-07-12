@@ -27,6 +27,7 @@ import utils.file_io as io
 from globals import GLOBAL_SEED, TF_FLOAT
 from lattice.lattice import GaugeLattice
 from dynamics.gauge_dynamics import GaugeDynamics
+from utils.horovod_utils import configure_learning_rate
 
 
 def check_log_dir(log_dir):
@@ -148,7 +149,6 @@ class GaugeModel:
 
         #  return plaq_sums_op, actions_op, plaqs_op, charges_op
         return obs_ops
-
 
     def _create_inputs(self):
         """Create input paceholders (if not executing eagerly).
@@ -282,12 +282,27 @@ class GaugeModel:
             #  self.global_step.assign(1)
 
         with tf.name_scope('learning_rate'):
-            self.lr = tf.train.exponential_decay(lr_init,
-                                                 self.global_step,
-                                                 self.lr_decay_steps,
-                                                 self.lr_decay_rate,
-                                                 staircase=True,
-                                                 name='learning_rate')
+            # HOROVOD: When performing distributed training, it can be usedful
+            # to "warmup" the learning rate gradually, done using the
+            # `configure_learning_rate` method below..
+            if self.using_hvd:
+                num_workers = hvd.size()
+                lr_warmup = lr_init / num_workers
+                _train_steps = self.train_steps // num_workers
+                warmup_steps = int(0.1 * _train_steps)
+                learning_rate = configure_learning_rate(lr_warmup,
+                                                        lr_init,
+                                                        self.lr_decay_steps,
+                                                        self.lr_decay_rate,
+                                                        self.global_step,
+                                                        warmup_steps)
+            else:
+                self.lr = tf.train.exponential_decay(learning_rate,
+                                                     self.global_step,
+                                                     self.lr_decay_steps,
+                                                     self.lr_decay_rate,
+                                                     staircase=True,
+                                                     name='learning_rate')
         with tf.name_scope('optimizer'):
             self.optimizer = tf.train.AdamOptimizer(self.lr)
             if self.using_hvd:
