@@ -8,12 +8,16 @@ except ImportError:
     HAS_HOROVOD = False
 
 
-def configure_learning_rate(lr_warmup,
-                            lr_init,
-                            decay_steps,
-                            decay_rate,
-                            global_step,
-                            warmup_steps):
+def cast(f):
+    return tf.cast(f, TF_FLOAT)
+
+#  def configure_learning_rate(lr_warmup,
+#                              lr_init,
+#                              decay_steps,
+#                              decay_rate,
+#                              global_step,
+#                              warmup_steps):
+def configure_learning_rate(*args):
     """Implements gradual learning rate warmup:
         
         `lr = lr_init / hvd.size()` --> `lr = lr_init`
@@ -43,16 +47,34 @@ def configure_learning_rate(lr_warmup,
                               size
         lr'(epoch = warmup) = lr
 
+    Args:
+        lr_warmup: Initial (smaller) value of the learning rate.
+        lr_init: Target value of the learning rate. (lr_warmup --> lr_init)
+        decay_steps: Learning rate decay steps following warmup.
+        global_step: Tensorflow global step object. 
+        warmup_steps: Number of steps over which to warmup the learning rate.
     """
+    for i in args:
+        if isinstance(i, float):
+            i = tf.cast(i, dtype=TF_FLOAT)
+
+    lr_warmup = args[0]
+    lr_init, decay_steps, decay_rate, global_step, warmup_steps = args[1:]
+
     learning_rate = tf.train.exponential_decay(lr_init, global_step,
                                                decay_steps, decay_rate)
     if warmup_steps > 0:
         def warmup_decay(lr1, global_step, warmup_steps, lr2):
             from tensorflow.python.ops import math_ops
-            p = (tf.cast(global_step, TF_FLOAT)
-                 / tf.cast(warmup_steps, TF_FLOAT))
-            diff = math_ops.subtract(lr2, lr1)
-            res = math_ops.add(lr1, math_ops.multiply(diff, p))
+            p = global_step / warmup_steps
+            diff = lr2 - lr1
+            res = lr1 + (diff * p)
+            #  p = cast(global_step) /  cast(warmup_steps)
+            #  p = (tf.cast(global_step, TF_FLOAT)
+            #       / tf.cast(warmup_steps, TF_FLOAT))
+            #  diff = tf.cast(math_ops.subtract(lr2, lr1), TF_FLOAT)
+            #  res = math_ops.add(tf.cast(lr1, TF_FLOAT),
+            #                     math_ops.multiply(diff, p))
             return res
 
     learning_rate = tf.cond(global_step < warmup_steps,

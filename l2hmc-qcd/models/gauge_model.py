@@ -290,14 +290,14 @@ class GaugeModel:
                 lr_warmup = lr_init / num_workers
                 _train_steps = self.train_steps // num_workers
                 warmup_steps = int(0.1 * _train_steps)
-                learning_rate = configure_learning_rate(lr_warmup,
-                                                        lr_init,
-                                                        self.lr_decay_steps,
-                                                        self.lr_decay_rate,
-                                                        self.global_step,
-                                                        warmup_steps)
+                self.lr = configure_learning_rate(lr_warmup,
+                                                  lr_init,
+                                                  self.lr_decay_steps,
+                                                  self.lr_decay_rate,
+                                                  self.global_step,
+                                                  warmup_steps)
             else:
-                self.lr = tf.train.exponential_decay(learning_rate,
+                self.lr = tf.train.exponential_decay(lr_init,
                                                      self.global_step,
                                                      self.lr_decay_steps,
                                                      self.lr_decay_rate,
