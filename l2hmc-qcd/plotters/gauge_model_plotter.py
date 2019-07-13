@@ -38,10 +38,16 @@ def get_out_file(out_dir, out_str):
 
 
 class GaugeModelPlotter:
+<<<<<<< HEAD
 
     def __init__(self, model, figs_dir=None):
         self.model = model
         self.figs_dir = figs_dir
+=======
+    def __init__(self, model, figs_dir=None):
+        self.figs_dir = figs_dir
+        self.model = model
+>>>>>>> horovod_working
 
     def calc_stats(self, data, therm_frac=10):
         """Calculate observables statistics.
@@ -112,6 +118,10 @@ class GaugeModelPlotter:
         #  _plaqs = plaqs[::skip_steps]
 
         #  _steps_arr = skip_steps * np.arange(_actions.shape[0])
+<<<<<<< HEAD
+=======
+
+>>>>>>> horovod_working
         _charge_diffs = charge_diffs[warmup_steps:][::skip_steps]
         _plaqs_diffs = plaqs_diffs[warmup_steps:][::skip_steps]
         _steps_diffs = (
@@ -129,12 +139,20 @@ class GaugeModelPlotter:
         lf_steps = self.model.num_steps
         bs = self.model.num_samples
         qw = weights['charge_weight']
+<<<<<<< HEAD
         #  nw = weights['net_weight']
 
         title_str = (r"$L = $" + f"{L}, "
                      r"$N_{\mathrm{LF}} = $" + f"{lf_steps}, "
                      r"$\alpha_{Q} = $" + f"{qw}, "
                      r"$\beta = $" + f"{beta}, "
+=======
+
+        title_str = (r"$L = $" + f"{L}, "
+                     r"$N_{\mathrm{Lf}} = $" + f"{lf_steps}, "
+                     r"$\alpha_{Q} = $" + f"{qw}, "
+                     r"$\beta = $ " + f"{beta}, "
+>>>>>>> horovod_working
                      r"$N_{\mathrm{samples}} = $" + f"{bs}")
 
         kwargs = {
@@ -172,6 +190,12 @@ class GaugeModelPlotter:
         _, ax = plot_multiple_lines(xy_data, xy_labels, **kwargs)
         _ = ax.axhline(y=u1_plaq_exact(beta),
                        color='#CC0033', ls='-', lw=1.5, label='exact')
+<<<<<<< HEAD
+=======
+        #  _ = ax.plot(xy_data[0], xy_data[1].mean(axis=0), lw=1.25,
+        #              color='k', label='average', alpha=0.75)
+
+>>>>>>> horovod_working
         _ = plt.tight_layout()
 
         out_file = get_out_file(self.out_dir, 'plaqs_vs_step')
@@ -179,6 +203,11 @@ class GaugeModelPlotter:
         plt.savefig(out_file, dpi=400, bbox_inches='tight')
 
     def _plot_plaqs_diffs(self, xy_data, **kwargs):
+<<<<<<< HEAD
+=======
+        #  kwargs['out_file'] = get_out_file(self.out_dir,
+        #                                    'plaqs_diffs_vs_step')
+>>>>>>> horovod_working
         kwargs['out_file'] = None
         kwargs['ret'] = True
         xy_labels = ('Step', r"$\delta_{\phi_{P}}$")
@@ -188,7 +217,11 @@ class GaugeModelPlotter:
         _ = plt.tight_layout()
 
         out_file = get_out_file(self.out_dir, 'plaqs_diffs_vs_step')
+<<<<<<< HEAD
         io.log(f'Saving figure to: {out_file}')
+=======
+        io.log(f'Saving figure to: {out_file}.')
+>>>>>>> horovod_working
         plt.savefig(out_file, dpi=400, bbox_inches='tight')
 
     def _plot_charges(self, xy_data, **kwargs):

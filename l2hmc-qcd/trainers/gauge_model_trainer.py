@@ -102,7 +102,7 @@ class GaugeModelTrainer:
             self.model.actions_op,       # calculate avg. actions
             self.model.plaqs_op,         # calculate avg. plaqs
             self.model.charges_op,       # calculate top. charges
-            self.model.charge_diffs_op,  # change in top. charge / num_samples
+            self.model.charge_diffs_op,  # change in top. charge/num_samples
             self.model.lr,               # evaluate learning rate
         ]
 
@@ -136,6 +136,39 @@ class GaugeModelTrainer:
             f"{outputs[8]:^9.4g} "              # charge diff
             f"{outputs[9]:^9.4g}"               # learning rate
         )
+
+        # HOROVOD: We can calculate averages over all devices using allreduce.
+        #  if self.model.using_hvd:
+        #      allreduce_ops = [
+        #          self.model.actions_op_allreduce,
+        #          self.model.plaqs_op_allreduce,
+        #          self.model.charges_op_allreduce,
+        #      ]
+        #
+        #      allreduce_outputs = self.sess.run(allreduce_ops, feed_dict=fd)
+        #
+        #      out_data['actions_allreduce'] = allreduce_outputs[0]
+        #      out_data['plaqs_allreduce'] = allreduce_outputs[1]
+        #      out_data['charges_allreduce'] = allreduce_outputs[2]
+
+        #  ops = {
+        #      'train_op': self.model.train_op,             # apply gradients
+        #      'loss_op': self.model.loss_op,               # calculate loss
+        #      'x_out': self.model.x_out,                   # get new samples
+        #      'px': self.model.px,                         # calc accept prob.
+        #      'dynamics_eps': self.model.dynamics.eps,     # current step size
+        #      'actions_op': self.model.actions_op,         # calc avg. actions
+        #      'plaqs_op': self.model.plaqs_op,             # calc avg. plaqs
+        #      'charges_op': self.model.charges_op,         # calc top. charges
+        #      'lr': self.model.lr,                         # eval lr
+        #      'charge_diffs_op': self.model.charge_diffs_op  # avg. top Q diff
+        #      'actions_op_allreduce': self.model.actions_op_allreduce,
+        #      'plaqs_op_allreduce': self.model.plaqs_op_allreduce,
+        #      'charges_op_allreduce': self.model.charges_op_allreduce,
+        #      'charge_diffs_op_allreduce': (
+        #          self.model.charge_diffs_op_allreduce
+        #      ),
+        #  }
 
         return out_data, data_str
 

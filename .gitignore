@@ -9,3 +9,10 @@ logs/
 animations/
 *.mp4
 figures/
+l2hmc/qcd/args/*
+
+l2hmc-qcd/args/checkpoint_dir.txt
+l2hmc-qcd/args/extras/
+l2hmc-qcd/args/main.sh
+l2hmc-qcd/args/run_l2hmc.sh
+l2hmc-qcd/base/

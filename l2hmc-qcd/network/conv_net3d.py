@@ -1,5 +1,9 @@
 """
+<<<<<<< HEAD
 conv_net3d.py
+=======
+conv_net.py
+>>>>>>> horovod_working
 
 Convolutional neural network architecture for running L2HMC on a gauge lattice
 configuration of links.
@@ -15,11 +19,18 @@ Date: 01/16/2019
 """
 import numpy as np
 import tensorflow as tf
+<<<<<<< HEAD
 
 from globals import GLOBAL_SEED, TF_FLOAT
 
 from .network_utils import custom_dense
 
+=======
+from .network_utils import custom_dense
+
+from globals import GLOBAL_SEED, TF_FLOAT, NP_FLOAT
+
+>>>>>>> horovod_working
 
 np.random.seed(GLOBAL_SEED)
 
@@ -27,6 +38,7 @@ if '2.' not in tf.__version__:
     tf.set_random_seed(GLOBAL_SEED)
 
 
+<<<<<<< HEAD
 class ConvNet3DShared(tf.keras.Model):
     """Conv. neural net with different initialization scale based on input."""
 
@@ -266,6 +278,9 @@ class ConvNet3DShared(tf.keras.Model):
         return scale, translation, transformation
 
 
+=======
+# pylint:disable=too-many-arguments, too-many-instance-attributes
+>>>>>>> horovod_working
 class ConvNet3D(tf.keras.Model):
     """Conv. neural net with different initialization scale based on input."""
 
@@ -324,6 +339,10 @@ class ConvNet3D(tf.keras.Model):
                         name='conv_x1',
                         dtype=TF_FLOAT,
                         data_format=self.data_format
+<<<<<<< HEAD
+=======
+
+>>>>>>> horovod_working
                     )
 
                 with tf.name_scope('pool_x1'):
@@ -398,6 +417,7 @@ class ConvNet3D(tf.keras.Model):
 
                 with tf.name_scope('x_layer'):
                     self.x_layer = custom_dense(self.num_hidden,
+<<<<<<< HEAD
                                                 self.factor/3.,
                                                 name='x_layer')
 
@@ -414,6 +434,24 @@ class ConvNet3D(tf.keras.Model):
                 with tf.name_scope('h_layer'):
                     self.h_layer = custom_dense(self.num_hidden,
                                                 name='h_layer')
+=======
+                                                 self.factor/3.,
+                                                 name='x_layer')
+
+                with tf.name_scope('v_layer'):
+                    self.v_layer = custom_dense(self.num_hidden,
+                                                 1./3.,
+                                                 name='v_layer')
+
+                with tf.name_scope('t_layer'):
+                    self.t_layer = custom_dense(self.num_hidden,
+                                                 1./3.,
+                                                 name='t_layer')
+
+                with tf.name_scope('h_layer'):
+                    self.h_layer = custom_dense(self.num_hidden,
+                                                 name='h_layer')
+>>>>>>> horovod_working
 
                 with tf.name_scope('scale_layer'):
                     self.scale_layer = custom_dense(
@@ -444,7 +482,11 @@ class ConvNet3D(tf.keras.Model):
             N, D, H, W = self._input_shape
             #  N, D, H, W = tensor.shape
             if isinstance(tensor, np.ndarray):
+<<<<<<< HEAD
                 return np.reshape(tensor, (N, 1, D, H, W))
+=======
+                return np.reshape(tensor, (N, 1, H, W, D))
+>>>>>>> horovod_working
 
             return tf.reshape(tensor, (N, 1, D, H, W))
 
@@ -495,10 +537,17 @@ class ConvNet3D(tf.keras.Model):
        Returns:
            scale, translation, transformation (S, T, Q functions from paper)
         """
+<<<<<<< HEAD
         v, x, t = inputs
         #  scale_weight = net_weights[0]
         #  transformation_weight = net_weights[1]
         #  translation_weight = net_weights[2]
+=======
+        v, x, t, net_weights = inputs
+        scale_weight = net_weights[0]
+        transformation_weight = net_weights[1]
+        translation_weight = net_weights[2]
+>>>>>>> horovod_working
 
         with tf.name_scope('reshape'):
             v = self.reshape_5D(v)
@@ -532,6 +581,7 @@ class ConvNet3D(tf.keras.Model):
                 tf.reshape(t, shape=self._input_shape, name=name)
             )
 
+<<<<<<< HEAD
         with tf.name_scope('scale'):
             scale = (tf.exp(self.coeff_scale)
                      * tf.nn.tanh(self.scale_layer(h)))
@@ -544,3 +594,20 @@ class ConvNet3D(tf.keras.Model):
             translation = self.translation_layer(h)
 
         return scale, translation, transformation
+=======
+        with tf.name_scope('translation'):
+            translation = translation_weight * self.translation_layer(h)
+
+        with tf.name_scope('scale'):
+            scale = (scale_weight
+                     * tf.nn.tanh(self.scale_layer(h))
+                     * tf.exp(self.coeff_scale))
+
+        with tf.name_scope('transformation'):
+            transformation = (transformation_weight
+                              * self.transformation_layer(h)
+                              * tf.exp(self.coeff_transformation))
+
+        return scale, translation, transformation
+
+>>>>>>> horovod_working
