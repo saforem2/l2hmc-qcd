@@ -1,7 +1,12 @@
 """
 conv_net2d.py
 
+<<<<<<< HEAD
 Implements a convolutional neural network using 2D convolutions.
+=======
+Implements a 2D convolutional neural network.
+
+>>>>>>> horovod_working
 
 Author: Sam Foreman (github: @saforem2)
 Date: 06/14/2019
@@ -12,7 +17,10 @@ import tensorflow as tf
 from globals import GLOBAL_SEED, TF_FLOAT
 from .network_utils import custom_dense
 
+<<<<<<< HEAD
 
+=======
+>>>>>>> horovod_working
 np.random.seed(GLOBAL_SEED)
 
 if '2.' not in tf.__version__:
@@ -35,7 +43,11 @@ class ConvNet2D(tf.keras.Model):
                 self.bn_axis = -1
             else:
                 raise AttributeError("Expected 'data_format' to be "
+<<<<<<< HEAD
                                      "'channels_first'  or 'channels_last'")
+=======
+                                     "'channels_first' or 'channels_last'")
+>>>>>>> horovod_working
 
         with tf.name_scope(self.name_scope):
             with tf.name_scope('coeff_scale'):
@@ -61,11 +73,17 @@ class ConvNet2D(tf.keras.Model):
                         kernel_size=self.filter_sizes[0],
                         activation=tf.nn.relu,
                         input_shape=self._input_shape[1:],
+<<<<<<< HEAD
                         #  padding='same',
                         name='conv_x1',
                         dtype=TF_FLOAT,
                         data_format=self.data_format
 
+=======
+                        name='conv_x1',
+                        dtype=TF_FLOAT,
+                        data_format=self.data_format
+>>>>>>> horovod_working
                     )
 
                 with tf.name_scope('pool_x1'):
@@ -195,7 +213,14 @@ class ConvNet2D(tf.keras.Model):
 
     def call(self, inputs):
         """Forward pass through the network."""
+<<<<<<< HEAD
         v, x, t = inputs
+=======
+        v, x, t, net_weights = inputs
+        scale_weight = net_weights[0]
+        transformation_weight = net_weights[1]
+        translation_weight = net_weights[2]
+>>>>>>> horovod_working
 
         with tf.name_scope('reshape'):
             v = self._reshape(v)
@@ -224,6 +249,7 @@ class ConvNet2D(tf.keras.Model):
             h = tf.nn.relu(v + x + t)
             h = tf.nn.relu(self.h_layer(h))
 
+<<<<<<< HEAD
         with tf.name_scope('scale'):
             scale = (tf.exp(self.coeff_scale)
                      * tf.nn.tanh(self.scale_layer(h)))
@@ -234,6 +260,20 @@ class ConvNet2D(tf.keras.Model):
 
         with tf.name_scope('translation'):
             translation = self.translation_layer(h)
+=======
+        with tf.name_scope('translation'):
+            translation = translation_weight * self.translation_layer(h)
+
+        with tf.name_scope('scale'):
+            scale = (scale_weight
+                     * tf.nn.tanh(self.scale_layer(h))
+                     * tf.exp(self.coeff_scale))
+
+        with tf.name_scope('transformation'):
+            transformation = (transformation_weight
+                              * self.transformation_layer(h)
+                              * tf.exp(self.coeff_transformation))
+>>>>>>> horovod_working
 
         #  with tf.name_scope('scale'):
         #      scale = (tf.nn.tanh(self.scale_layer(h))
@@ -244,3 +284,7 @@ class ConvNet2D(tf.keras.Model):
         #                        * tf.exp(self.coeff_transformation))
 
         return scale, translation, transformation
+<<<<<<< HEAD
+=======
+
+>>>>>>> horovod_working

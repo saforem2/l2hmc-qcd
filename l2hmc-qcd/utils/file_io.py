@@ -54,6 +54,7 @@ def log_and_write(s, f):
     write(s, f)
 
 
+<<<<<<< HEAD
 def get_params_from_log_dir(log_dir):
     if '/' in log_dir:
         sep_str = log_dir.split('/')[-1].split('_')
@@ -80,6 +81,39 @@ def get_params_from_log_dir(log_dir):
     }
 
     return params
+=======
+def _parse_flags(FLAGS):
+    """Helper method for parsing flags as both AttrDicts or generic dicts."""
+    if isinstance(FLAGS, dict):
+        LX = FLAGS['space_size']
+        NS = FLAGS['num_samples']
+        LF = FLAGS['num_steps']
+        SS = FLAGS['eps']
+        QW = FLAGS['charge_weight']
+        hmc = FLAGS['hmc']
+        _log_dir = FLAGS['log_dir']
+
+    else:
+        LX = FLAGS.space_size
+        NS = FLAGS.num_samples
+        LF = FLAGS.num_steps
+        SS = FLAGS.eps
+        QW = FLAGS.charge_weight
+        hmc = FLAGS.hmc
+        _log_dir = FLAGS.log_dir
+
+    flags_dict = {
+        'LX': LX,
+        'NS': NS,
+        'LF': LF,
+        'SS': SS,
+        'QW': QW,
+        'hmc': hmc,
+        '_log_dir': _log_dir
+    }
+
+    return flags_dict
+>>>>>>> horovod_working
 
 
 def create_log_dir(FLAGS, root_dir=None, log_file=None):
@@ -95,6 +129,7 @@ def create_log_dir(FLAGS, root_dir=None, log_file=None):
 
     NOTE: If log_dir does not already exist, it is created.
     """
+<<<<<<< HEAD
     LX = FLAGS.space_size
     NS = FLAGS.num_samples
     LF = FLAGS.num_steps
@@ -103,6 +138,17 @@ def create_log_dir(FLAGS, root_dir=None, log_file=None):
     QW = FLAGS.charge_weight
     NA = FLAGS.network_arch
     if FLAGS.hmc:
+=======
+    flags_dict = _parse_flags(FLAGS)
+    LX = flags_dict['LX']
+    NS = flags_dict['NS']
+    LF = flags_dict['LF']
+    SS = flags_dict['SS']
+    QW = flags_dict['QW']
+    _log_dir = flags_dict['_log_dir']
+
+    if flags_dict['hmc']:
+>>>>>>> horovod_working
         run_str = f'HMC_lattice{LX}_batch{NS}_lf{LF}_eps{SS:.3g}'
     else:
         run_str = f'lattice{LX}_batch{NS}_lf{LF}_eps{SS:.3g}_qw{QW}_{NA}'
@@ -115,7 +161,8 @@ def create_log_dir(FLAGS, root_dir=None, log_file=None):
     #  day_str = f'{now.year}_{now.month}_{now.day}'
     #  time_str = day_str + f'_{now.hour}{now.minute}'
     project_dir = os.path.abspath(os.path.dirname(FILE_PATH))
-    if FLAGS.log_dir is None:
+    #  if FLAGS.log_dir is None:
+    if _log_dir is None:
         if root_dir is None:
             _dir = 'logs'
         else:
@@ -123,9 +170,10 @@ def create_log_dir(FLAGS, root_dir=None, log_file=None):
 
     else:
         if root_dir is None:
-            _dir = FLAGS.log_dir
+            #  _dir = FLAGS.log_dir
+            _dir = _log_dir
         else:
-            _dir = os.path.join(FLAGS.log_dir, root_dir)
+            _dir = os.path.join(_log_dir, root_dir)
     root_log_dir = os.path.join(project_dir, _dir, day_str, time_str, run_str)
     check_else_make_dir(root_log_dir)
     run_num = get_run_num(root_log_dir)

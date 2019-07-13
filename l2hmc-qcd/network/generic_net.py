@@ -37,9 +37,13 @@ class GenericNet(tf.keras.Model):
         if self.use_bn:
             self.bn_axis = -1
 
+<<<<<<< HEAD
         #  with tf.variable_scope(variable_scope):
         with tf.name_scope(self.name_scope):
             #  self.flatten = tf.keras.layers.Flatten(name='flatten')
+=======
+        with tf.name_scope(self.name_scope):
+>>>>>>> horovod_working
 
             with tf.name_scope('x_layer'):
                 self.x_layer = custom_dense(self.num_hidden,
@@ -100,7 +104,6 @@ class GenericNet(tf.keras.Model):
 
         return tf.reshape(tensor, (N, D * H * W))
 
-    # pylint: disable=invalid-name, arguments-differ
     def call(self, inputs):
         """call method.
 
@@ -135,18 +138,29 @@ class GenericNet(tf.keras.Model):
        Returns:
            scale, translation, transformation
         """
-        v, x, t = inputs
+        v, x, t, net_weights = inputs
+        scale_weight = net_weights[0]
+        transformation_weight = net_weights[1]
+        translation_weight = net_weights[2]
 
         x = self._reshape(x)
         v = self._reshape(v)
 
         h = self.v_layer(v) + self.x_layer(x) + self.t_layer(t)
+<<<<<<< HEAD
         if self.use_bn:
             h = tf.keras.layers.BatchNormalization(axis=self.bn_axis)(h)
+=======
+
+        if self.use_bn:
+            h = tf.keras.layers.BatchNormalization(axis=self.bn_axis)(h)
+
+>>>>>>> horovod_working
         h = tf.nn.relu(h)
         h = self.h_layer(h)
         h = tf.nn.relu(h)
 
+<<<<<<< HEAD
         with tf.name_scope('scale'):
             scale = (tf.exp(self.coeff_scale)
                      * tf.nn.tanh(self.scale_layer(h)))
@@ -163,4 +177,19 @@ class GenericNet(tf.keras.Model):
         #  transformation = (tf.nn.tanh(self.transformation_layer(h))
         #                    * tf.exp(self.coeff_transformation))
 
+=======
+        with tf.name_scope('translation'):
+            translation = translation_weight * self.translation_layer(h)
+
+        with tf.name_scope('scale'):
+            scale = (scale_weight
+                     * tf.nn.tanh(self.scale_layer(h))
+                     * tf.exp(self.coeff_scale))
+
+        with tf.name_scope('transformation'):
+            transformation = (transformation_weight
+                              * self.transformation_layer(h)
+                              * tf.exp(self.coeff_transformation))
+
+>>>>>>> horovod_working
         return scale, translation, transformation

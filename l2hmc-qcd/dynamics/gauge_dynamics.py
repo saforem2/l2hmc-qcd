@@ -17,8 +17,13 @@ import tensorflow as tf
 import utils.file_io as io
 
 from globals import GLOBAL_SEED, TF_FLOAT
+<<<<<<< HEAD
 from network.conv_net3d import ConvNet3D, ConvNet3DShared
 from network.conv_net2d import ConvNet2D
+=======
+from network.conv_net2d import ConvNet2D
+from network.conv_net3d import ConvNet3D
+>>>>>>> horovod_working
 from network.generic_net import GenericNet
 
 
@@ -97,15 +102,31 @@ class GaugeDynamics(tf.keras.Model):
             ]
 
         else:
+<<<<<<< HEAD
             if self.network_arch.upper() == 'CONV3D':  # should be 'conv3D'
                 self._build_conv_nets_3D()
             if self.network_arch.upper() == 'CONV2D':  # should be 'conv2D'
                 self._build_conv_nets_2D()
+=======
+            net_kwargs = {
+                'use_bn': self.use_bn,  # whether or not to use batch norm
+                'x_dim': self.lattice.num_links,  # dim of target space
+                'links_shape': self.lattice.links.shape,
+                '_input_shape': (self.batch_size, *self.lattice.links.shape),
+            }
+            if self.network_arch == 'conv3D':
+                self._build_conv_nets_3D(net_kwargs)
+            elif self.network_arch == 'conv2D':
+                self._build_conv_nets_2D(net_kwargs)
+            elif self.network_arch == 'generic':
+                self._build_generic_nets(net_kwargs)
+>>>>>>> horovod_working
             else:
                 self._build_generic_nets()
 
-    def _build_conv_nets_3D(self):
+    def _build_conv_nets_3D(self, net_kwargs):
         """Build ConvNet3D architecture for x and v functions."""
+<<<<<<< HEAD
         kwargs = {
             '_input_shape': (self.batch_size, *self.lattice.links.shape),
             'links_shape': self.lattice.links.shape,
@@ -113,25 +134,34 @@ class GaugeDynamics(tf.keras.Model):
             'factor': 2.,  # scale factor used in original paper
             'spatial_size': self.lattice.space_size,  # spatial size of lattice
             'num_hidden': self.num_hidden,  # num hidden nodes
+=======
+        net_kwargs.update({
+            'num_hidden': 2 * self.lattice.num_links,  # num hidden nodes
+>>>>>>> horovod_working
             'num_filters': int(self.lattice.space_size),  # num conv. filters
             'filter_sizes': [(3, 3, 2), (2, 2, 2)],  # size of conv. filters
             'name_scope': 'position',  # namespace in which to create network
+            'factor': 2.,  # scale factor used in original paper
             'data_format': self.data_format,  # channels_first if using GPU
-            'use_bn': self.use_bn,  # whether or not to use batch normalization
-        }
+        })
 
         with tf.name_scope("DynamicsNetwork"):
             with tf.name_scope("XNet"):
+<<<<<<< HEAD
                 #  self.x_fn = ConvNet3D(model_name='XNet', **kwargs)
                 self.x_fn = ConvNet3D(model_name='XNet', **kwargs)
+=======
+                self.x_fn = ConvNet3D(model_name='XNet', **net_kwargs)
+>>>>>>> horovod_working
 
-            kwargs['name_scope'] = 'momentum'  # update name scope
-            kwargs['factor'] = 1.              # factor used in orig. paper
+            net_kwargs['name_scope'] = 'momentum'  # update name scope
+            net_kwargs['factor'] = 1.              # factor used in orig. paper
             with tf.name_scope("VNet"):
-                self.v_fn = ConvNet3D(model_name='VNet', **kwargs)
+                self.v_fn = ConvNet3D(model_name='VNet', **net_kwargs)
 
-    def _build_conv_nets_2D(self):
+    def _build_conv_nets_2D(self, net_kwargs):
         """Build ConvNet architecture for x and v functions."""
+<<<<<<< HEAD
         kwargs = {
             '_input_shape': (self.batch_size, *self.lattice.links.shape),
             'links_shape': self.lattice.links.shape,
@@ -145,18 +175,29 @@ class GaugeDynamics(tf.keras.Model):
             'data_format': self.data_format,  # channels_first if using GPU
             'use_bn': self.use_bn,  # whether or not to use batch normalization
         }
+=======
+        net_kwargs.update({
+            'num_hidden': self.lattice.num_links,
+            'num_filters': int(2 * self.lattice.space_size),
+            'filter_sizes': [(3, 3), (2, 2)],  # for 1st and 2nd conv. layer
+            'name_scope': 'position',
+            'factor': 2.,  # scale factor used in original paper
+            'data_format': self.data_format,  # channels_first if ugin GPU
+        })
+>>>>>>> horovod_working
 
         with tf.name_scope("DynamicsNetwork"):
             with tf.name_scope("XNet"):
-                self.x_fn = ConvNet2D(model_name='XNet', **kwargs)
+                self.x_fn = ConvNet2D(model_name='XNet', **net_kwargs)
 
-            kwargs['name_scope'] = 'momentum'
-            kwargs['factor'] = 1.
+            net_kwargs['name_scope'] = 'momentum'
+            net_kwargs['factor'] = 1.
             with tf.name_scope("VNet"):
-                self.v_fn = ConvNet2D(model_name='VNet', **kwargs)
+                self.v_fn = ConvNet2D(model_name='VNet', **net_kwargs)
 
-    def _build_generic_nets(self):
+    def _build_generic_nets(self, net_kwargs):
         """Build GenericNet FC-architectures for x and v fns. """
+<<<<<<< HEAD
 
         kwargs = {
             '_input_shape': (self.batch_size, *self.lattice.links.shape),
@@ -167,14 +208,21 @@ class GaugeDynamics(tf.keras.Model):
             'use_bn': self.use_bn
         }
 
+=======
+        net_kwargs.update({
+            'num_hidden': int(4 * self.x_dim),
+            'name_scope': 'position',
+            'factor': 2.,
+        })
+>>>>>>> horovod_working
         with tf.name_scope("DynamicsNetwork"):
             with tf.name_scope("XNet"):
-                self.x_fn = GenericNet(model_name='XNet', **kwargs)
+                self.x_fn = GenericNet(model_name='XNet', **net_kwargs)
 
-            kwargs['factor'] = 1.
-            kwargs['name_scope'] = 'momentum'
+            net_kwargs['factor'] = 1.
+            net_kwargs['name_scope'] = 'momentum'
             with tf.name_scope("VNet"):
-                self.v_fn = GenericNet(model_name='VNet', **kwargs)
+                self.v_fn = GenericNet(model_name='VNet', **net_kwargs)
 
     def call(self, x_in, beta, net_weights, 
              while_loop=True, v_in=None, save_lf=False):
@@ -347,6 +395,7 @@ class GaugeDynamics(tf.keras.Model):
                 lf_out.append(x_proposed)
                 logdets_out.append(logdet)
 
+<<<<<<< HEAD
         outputs = {
             'x_proposed': x_proposed,
             'v_proposed': v_proposed,
@@ -367,6 +416,8 @@ class GaugeDynamics(tf.keras.Model):
         with tf.name_scope('while_loop_init'):
             x_proposed, v_proposed = x_in, v_in
             #  t = tf.constant(0., name='md_time', dtype=TF_FLOAT)
+=======
+>>>>>>> horovod_working
             step = tf.constant(0., name='md_step', dtype=TF_FLOAT)
             batch_size = tf.shape(x_in)[0]
             #  assert batch_size == self.batch_size
@@ -380,15 +431,27 @@ class GaugeDynamics(tf.keras.Model):
             lf_out = lf_out.write(0, x_in)
             logdets_out = logdets_out.write(0, logdet)
 
+<<<<<<< HEAD
         def body(step, x, v, logdet, lf_samples, logdets):
             i = tf.cast(step, dtype=tf.int32, name='lf_step')  # cast as int
+=======
+            lf_out = lf_out.write(0, x_in)
+            logdets_out = logdets_out.write(0, logdet)
+
+        def body(step, x, v, logdet, lf_samples, logdets):
+            i = tf.cast(step, dtype=tf.int32)  # cast leapfrog step to integer
+>>>>>>> horovod_working
             with tf.name_scope('apply_lf'):
                 new_x, new_v, j = lf_fn(x, v, beta, step, net_weights)
             with tf.name_scope('concat_lf_outputs'):
                 lf_samples = lf_samples.write(i+1, new_x)
             with tf.name_scope('concat_logdets'):
                 logdets = logdets.write(i+1, logdet+j)
+<<<<<<< HEAD
             return (step+1, new_x, new_v, logdet + j, lf_samples, logdets)
+=======
+            return (step+1, new_x, new_v, logdet+j, lf_samples, logdets)
+>>>>>>> horovod_working
 
         def cond(step, *args):
             with tf.name_scope('check_lf_step'):
@@ -399,7 +462,34 @@ class GaugeDynamics(tf.keras.Model):
                 cond=cond,
                 body=body,
                 loop_vars=[step, x_proposed, v_proposed,
+<<<<<<< HEAD
                            logdet, lf_out, logdets_out]
+=======
+                           logdet, lf_out, logdets_out])
+
+            step = outputs[0]
+            x_proposed = outputs[1]
+            v_proposed = outputs[2]
+            sumlogdet = outputs[3]
+            lf_out = outputs[4].stack()
+            logdets_out = outputs[5].stack()
+
+            #  x_proposed = outputs[0]
+            #  v_proposed = outputs[1]
+            #  t = outputs[2]
+            #  sumlogdet = outputs[3]
+            #  lf_out = outputs[4].stack()
+            #  logdets_out = outputs[5].stack()
+
+        with tf.name_scope('accept_prob'):
+            accept_prob = self._compute_accept_prob(
+                x_in,
+                v_in,
+                x_proposed,
+                v_proposed,
+                sumlogdet,
+                beta
+>>>>>>> horovod_working
             )
 
             step = outputs[0]
@@ -412,7 +502,12 @@ class GaugeDynamics(tf.keras.Model):
         outputs = {
             'x_proposed': x_proposed,
             'v_proposed': v_proposed,
+<<<<<<< HEAD
             'sumlogdet': sumlogdet
+=======
+            'sumlogdet': sumlogdet,
+            'accept_prob': accept_prob,
+>>>>>>> horovod_working
         }
 
         if save_lf:
