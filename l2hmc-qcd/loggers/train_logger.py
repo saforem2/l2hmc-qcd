@@ -13,7 +13,7 @@ import pickle
 import utils.file_io as io
 
 from globals import TRAIN_HEADER
-from utils.tf_logging import variable_summaries, add_loss_summaries
+from utils.tf_logging import variable_summaries  # add_loss_summaries
 
 import tensorflow as tf
 
@@ -63,13 +63,8 @@ class TrainLogger:
         save_params(self.model.params, self.log_dir)
 
         if self.summaries:
-            #  if tf.executing_eagerly():
-            #      self.writer = tf.contrib.summary.create_file_writer(
-            #          self.train_summary_dir, flush_millis=10000
-            #      )
-            if not tf.executing_eagerly():
-                self.writer = tf.summary.FileWriter(self.train_summary_dir,
-                                                    tf.get_default_graph())
+            self.writer = tf.summary.FileWriter(self.train_summary_dir,
+                                                tf.get_default_graph())
             self.create_summaries()
 
     def _create_dir_structure(self, log_dir):
@@ -107,7 +102,7 @@ class TrainLogger:
         with tf.name_scope('loss'):
             tf.summary.scalar('loss', self.model.loss_op)
 
-        add_loss_summaries(self.model.loss_op)
+        #  self.loss_averages_op = self._add_loss_summaries(self.model.loss_op)
 
         with tf.name_scope('learning_rate'):
             tf.summary.scalar('learning_rate', self.model.lr)
@@ -122,19 +117,12 @@ class TrainLogger:
         with tf.name_scope('avg_plaq'):
             tf.summary.scalar('avg_plaq', self.model.avg_plaqs_op)
 
-<<<<<<< HEAD
-        #  for var in tf.trainable_variables():
-        #  for var in self.model.dynamics.trainable_variables():
-        #      if 'batch_normalization' not in var.op.name:
-        #          tf.summary.histogram(var.op.name, var)
-=======
         #  with tf.name_scope('avg_plaq'):
         #      tf.summary.scalar('avg_plaq', self.model.avg_plaqs_op)
 
         for var in tf.trainable_variables():
             if 'batch_normalization' not in var.op.name:
                 tf.summary.histogram(var.op.name, var)
->>>>>>> horovod_working
 
         with tf.name_scope('summaries'):
             for grad, var in grads_and_vars:
@@ -146,9 +134,8 @@ class TrainLogger:
 
                 if 'batch_norm' not in name:
                     variable_summaries(var, name)
-                    if grad is not None:
-                        variable_summaries(grad, name + '/gradients')
-                        tf.summary.histogram(name + '/gradients', grad)
+                    variable_summaries(grad, name + '/gradients')
+                    tf.summary.histogram(name + '/gradients', grad)
 
         self.summary_op = tf.summary.merge_all(name='summary_op')
 
@@ -166,15 +153,11 @@ class TrainLogger:
         with open(self.current_state_file, 'wb') as f:
             pickle.dump(self._current_state, f)
 
-    def log_step(self, sess, step, samples_np, beta_np, **weights):
+    def log_step(self, sess, step, samples_np, beta_np, net_weights):
         """Update self.logger.summaries."""
-        net_weights = weights['net_weights']
-        charge_weight = weights['charge_weight']
-
         feed_dict = {
             self.model.x: samples_np,
             self.model.beta: beta_np,
-            self.model.charge_weight: charge_weight,
             self.model.net_weights[0]: net_weights[0],
             self.model.net_weights[1]: net_weights[1],
             self.model.net_weights[2]: net_weights[2],
@@ -184,7 +167,7 @@ class TrainLogger:
         self.writer.add_summary(summary_str, global_step=step)
         self.writer.flush()
 
-    def update_training(self, sess, data, data_str, **weights):
+    def update_training(self, sess, data, net_weights, data_str):
         """Update _current state and train_data."""
         step = data['step']
         beta = data['beta']
@@ -193,8 +176,7 @@ class TrainLogger:
         self._current_state['lr'] = data['lr']
         self._current_state['eps'] = data['eps']
         self._current_state['samples'] = data['samples']
-        self._current_state['net_weights'] = weights['net_weights']
-        self._current_state['charge_weight'] = weights['charge_weight']
+        self._current_state['net_weights'] = net_weights
 
         key = (step, beta)
 
@@ -213,7 +195,7 @@ class TrainLogger:
             io.log(data_str)
 
         if self.summaries and (step + 1) % self.model.logging_steps == 0:
-            self.log_step(sess, step, data['samples'], beta, **weights)
+            self.log_step(sess, step, data['samples'], beta, net_weights)
 
         if (step + 1) % self.model.save_steps == 0:
             #  self.model.save(self.sess, self.checkpoint_dir)

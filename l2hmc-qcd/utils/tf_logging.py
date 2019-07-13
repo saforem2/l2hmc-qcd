@@ -3,13 +3,11 @@ from __future__ import division
 from __future__ import print_function
 
 import os
-from globals import ROOT_DIR
-import utils.file_io as io
+import re
 
 import tensorflow as tf
 
 TOWER_NAME = 'tower'
-
 
 def get_run_num(log_dir):
     if not os.path.isdir(log_dir):
@@ -22,8 +20,7 @@ def get_run_num(log_dir):
         for item in contents:
             try:
                 run_nums.append(int(item.split('_')[-1]))
-                #  run_nums.append(int(''.join(x for x in item if
-                #  x.isdigit())))
+                #  run_nums.append(int(''.join(x for x in item if x.isdigit())))
             except ValueError:
                 continue
         return sorted(run_nums)[-1] + 1
@@ -36,7 +33,6 @@ def get_run_num(log_dir):
     #      run_nums = [int(str(i)[3:]) for i in run_dirs]
     #      prev_run_num = max(run_nums)
     #      return prev_run_num + 1
-
 
 def make_run_dir(log_dir):
     if log_dir.endswith('/'):
@@ -87,18 +83,14 @@ def variable_summaries(var, name):
     """Attach a lot of summaries to a Tensor (for TensorBoard visualization)"""
     #  with tf.name_scope('summaries'):
     with tf.name_scope(name):
-        try:
-            mean = tf.reduce_mean(var)
-            tf.summary.scalar('mean', mean)
-            with tf.name_scope('stddev'):
-                stddev = tf.sqrt(tf.reduce_mean(tf.square(var - mean)))
-            tf.summary.scalar('stddev', stddev)
-            tf.summary.scalar('max', tf.reduce_max(var))
-            tf.summary.scalar('min', tf.reduce_min(var))
-            tf.summary.histogram('histogram', var)
-        except ValueError:
-            io.log(f'Unable to create variable summary for: {name}.')
-            io.log(f'Continuing...')
+        mean = tf.reduce_mean(var)
+        tf.summary.scalar('mean', mean)
+        with tf.name_scope('stddev'):
+            stddev = tf.sqrt(tf.reduce_mean(tf.square(var - mean)))
+        tf.summary.scalar('stddev', stddev)
+        tf.summary.scalar('max', tf.reduce_max(var))
+        tf.summary.scalar('min', tf.reduce_min(var))
+        tf.summary.histogram('histogram', var)
 
 
 def add_loss_summaries(total_loss):
@@ -124,11 +116,10 @@ def add_loss_summaries(total_loss):
     for l in losses + [total_loss]:
         # Name each loss as '(raw)' and name the moving average version of
         # the loss as the original loss name.
-        tf.summary.scalar(l.op.name + '_raw', l)
+        tf.summary.scalar(l.op.name + ' (raw)', l)
         tf.summary.scalar(l.op.name, loss_averages.average(l))
 
     return loss_averages_op
-
 
 def activation_summary(x):
     """Helper to create summaries for activations.A

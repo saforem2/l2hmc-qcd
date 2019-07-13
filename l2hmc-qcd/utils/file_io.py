@@ -54,34 +54,6 @@ def log_and_write(s, f):
     write(s, f)
 
 
-<<<<<<< HEAD
-def get_params_from_log_dir(log_dir):
-    if '/' in log_dir:
-        sep_str = log_dir.split('/')[-1].split('_')
-    else:
-        sep_str = log_dir.split('_')
-
-    space_size = sep_str[0].lstrip('lattice')
-    num_samples = sep_str[1].lstrip('batch')
-    lf = sep_str[2].lstrip('lf')
-    eps_init = sep_str[3].lstrip('eps')
-    qw = sep_str[4].lstrip('qw')
-    if len(sep_str) > 4:
-        arch = sep_str[5].lstrip('NA')
-    else:
-        arch = ''
-
-    params = {
-        'space_size': space_size,
-        'num_samples': num_samples,
-        'num_steps': lf,
-        'eps': eps_init,
-        'charge_weight': qw,
-        'arch': arch
-    }
-
-    return params
-=======
 def _parse_flags(FLAGS):
     """Helper method for parsing flags as both AttrDicts or generic dicts."""
     if isinstance(FLAGS, dict):
@@ -113,7 +85,6 @@ def _parse_flags(FLAGS):
     }
 
     return flags_dict
->>>>>>> horovod_working
 
 
 def create_log_dir(FLAGS, root_dir=None, log_file=None):
@@ -129,16 +100,6 @@ def create_log_dir(FLAGS, root_dir=None, log_file=None):
 
     NOTE: If log_dir does not already exist, it is created.
     """
-<<<<<<< HEAD
-    LX = FLAGS.space_size
-    NS = FLAGS.num_samples
-    LF = FLAGS.num_steps
-    #  SS = str(FLAGS.eps).lstrip('0.')
-    SS = FLAGS.eps
-    QW = FLAGS.charge_weight
-    NA = FLAGS.network_arch
-    if FLAGS.hmc:
-=======
     flags_dict = _parse_flags(FLAGS)
     LX = flags_dict['LX']
     NS = flags_dict['NS']
@@ -148,10 +109,9 @@ def create_log_dir(FLAGS, root_dir=None, log_file=None):
     _log_dir = flags_dict['_log_dir']
 
     if flags_dict['hmc']:
->>>>>>> horovod_working
         run_str = f'HMC_lattice{LX}_batch{NS}_lf{LF}_eps{SS:.3g}'
     else:
-        run_str = f'lattice{LX}_batch{NS}_lf{LF}_eps{SS:.3g}_qw{QW}_{NA}'
+        run_str = f'lattice{LX}_batch{NS}_lf{LF}_eps{SS:.3g}_qw{QW}'
 
     now = datetime.datetime.now()
     #  print(now.strftime("%b %d %Y %H:%M:%S"))

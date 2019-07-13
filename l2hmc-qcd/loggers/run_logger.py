@@ -122,10 +122,7 @@ class RunLogger:
 
         if charge_weight is None:
             charge_weight = 0.
-<<<<<<< HEAD
-=======
 
->>>>>>> horovod_working
         if net_weights is None:
             net_weights = [1., 1., 1.]
 
@@ -176,7 +173,6 @@ class RunLogger:
         self.run_data['plaqs'][key] = data['plaqs']
         self.run_data['charges'][key] = data['charges']
         self.run_data['charge_diffs'][key] = data['charge_diffs']
-        #  self.run_data['charge_weight'][key]
 
         if self.model.save_lf:
             samples_np = data['samples']

@@ -1,5 +1,3 @@
-import time
-
 import os
 try:
     import psutil
@@ -55,7 +53,7 @@ except FileNotFoundError:
 class LeapfrogPlotter:
     def __init__(self, figs_dir, run_logger=None, run_dir=None):
         self.figs_dir = figs_dir
-        self.pdfs_dir = os.path.join(self.figs_dir, 'lf_plots')
+        self.pdfs_dir = os.path.join(self.figs_dir, 'pdfs_plots')
         io.check_else_make_dir(self.pdfs_dir)
 
         if run_logger is None:
@@ -106,16 +104,6 @@ class LeapfrogPlotter:
             'lw': 0.75,
             'rasterized': True
         }
-        plot_lf_steps = self.tot_lf_steps // 4
-        plot_md_steps = self.tot_md_steps // 4
-        self.lf_f_diffs = self.lf_f_diffs[:plot_lf_steps]
-        self.lf_b_diffs = self.lf_b_diffs[:plot_lf_steps]
-        self.samples_diffs = self.samples_diffs[:plot_md_steps]
-        self.logdets_f = self.logdets_f[:plot_lf_steps]
-        self.logdets_b = self.logdets_b[:plot_lf_steps]
-        self.sumlogdet_f = self.sumlogdet_f[:plot_md_steps]
-        self.sumlogdet_b = self.sumlogdet_b[:plot_md_steps]
-
         #  self.therm_steps = int(therm_perc * self.tot_lf_steps)
         #  self.skip_steps = int(skip_perc * self.tot_lf_steps)
         #  self.step_multiplier = (
@@ -144,7 +132,7 @@ class LeapfrogPlotter:
             io.log(f'memory use: {memory_use}')
             io.log(80 * '-')
 
-    def get_colors(self, num_samples=10):
+    def get_colors(self, num_samples=20):
         reds_cmap = mpl.cm.get_cmap('Reds', num_samples + 1)
         blues_cmap = mpl.cm.get_cmap('Blues', num_samples + 1)
         idxs = np.linspace(0.2, 0.75, num_samples + 1)
@@ -160,7 +148,7 @@ class LeapfrogPlotter:
         io.check_else_make_dir(figs_dir)
         io.check_else_make_dir(self.pdfs_dir)
 
-    def make_plots(self, run_dir, num_samples=10, ret=False):
+    def make_plots(self, run_dir, num_samples=20, ret=False):
         """Make plots of the leapfrog differences and logdets.
 
         Immediately after creating and saving the plots, delete these
@@ -191,16 +179,12 @@ class LeapfrogPlotter:
         if ret:
             return fig_ax1, fig_ax2
 
-    def plot_lf_diffs(self, beta, num_samples=10):
-        t0 = time.time()
+    def plot_lf_diffs(self, beta, num_samples=20):
         reds, blues = self.get_colors(num_samples)
         samples_y_avg = np.mean(self.samples_diffs, axis=(1, 2))
         samples_x_avg = np.arange(len(samples_y_avg))
 
         fig, (ax1, ax2) = plt.subplots(2, 1)
-        ax1.set_rasterization_zorder(1)
-        ax2.set_rasterization_zorder(1)
-
         for idx in range(num_samples):
             yf = np.mean(self.lf_f_diffs, axis=-1)
             xf = np.arange(len(yf))
@@ -257,14 +241,9 @@ class LeapfrogPlotter:
         _ = ax2.set_xlim((0, md_xlim))
         _ = plt.savefig(out_file_zoom1, dpi=400, bbox_inches='tight')
 
-        io.log(80 * '-')
-        io.log(f'Time spent plotting lf_diffs: {time.time() - t0}s')
-        io.log(80 * '-')
-
         return fig, (ax1, ax2)
 
-    def plot_logdets(self, beta, num_samples=10):
-        t0 = time.time()
+    def plot_logdets(self, beta, num_samples=20):
         reds, blues = self.get_colors(num_samples)
 
         sumlogdet_yf_avg = np.mean(self.sumlogdet_f, axis=-1)
@@ -294,10 +273,10 @@ class LeapfrogPlotter:
                      color='b', **self.avg_kwargs)
 
         _ = ax2.plot(sumlogdet_xf_avg, sumlogdet_yf_avg, label='forward',
-                     color='r', lw=1.2, alpha=0.9, marker='.')
+                     color='r', lw=1.2, alpha=0.9, marker='o')
 
         _ = ax2.plot(sumlogdet_xb_avg, sumlogdet_yb_avg, label='backward',
-                     color='b', lw=1.2, alpha=0.9, marker='.')
+                     color='b', lw=1.2, alpha=0.9, marker='o')
 
         _ = ax1.set_xlabel('Leapfrog step', fontsize=16)
         _ = ax1.set_ylabel(r'$\log|\mathcal{J}^{(t)}|$', fontsize=16)
@@ -327,9 +306,5 @@ class LeapfrogPlotter:
         _ = ax1.set_xlim((0, lf_xlim))
         _ = ax2.set_xlim((0, md_xlim))
         _ = plt.savefig(out_file_zoom1, dpi=400, bbox_inches='tight')
-
-        io.log(80 * '-')
-        io.log(f'Time spent plotting log_dets: {time.time() - t0}s')
-        io.log(80 * '-')
 
         return fig, (ax1, ax2)

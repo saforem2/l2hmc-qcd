@@ -46,45 +46,29 @@ def parse_args():
                         type=int,
                         default=8,
                         required=False,
-<<<<<<< HEAD
-                        help="""Spatial extent of lattice.""")
-=======
                         help="""Spatial extent of lattice.\n (Default: 8)""")
->>>>>>> horovod_working
 
     parser.add_argument("--time_size",
                         dest="time_size",
                         type=int,
                         default=8,
                         required=False,
-<<<<<<< HEAD
-                        help="""Temporal extent of lattice.""")
-=======
                         help="""Temporal extent of lattice.\n (Default: 8)""")
->>>>>>> horovod_working
 
     parser.add_argument("--link_type",
                         dest="link_type",
                         type=str,
                         required=False,
                         default='U1',
-<<<<<<< HEAD
-                        help="""Link type for gauge model.""")
-=======
                         help="""Link type for gauge model.\n
                         (Default: 'U1')""")
->>>>>>> horovod_working
 
     parser.add_argument("--dim",
                         dest="dim",
                         type=int,
                         required=False,
                         default=2,
-<<<<<<< HEAD
-                        help="""Dimensionality of lattice.""")
-=======
                         help="""Dimensionality of lattice.\n (Default: 2)""")
->>>>>>> horovod_working
 
     parser.add_argument("--num_samples",
                         dest="num_samples",
@@ -92,24 +76,15 @@ def parse_args():
                         default=20,
                         required=False,
                         help=("""Number of samples (batch size) to use for
-<<<<<<< HEAD
-                              training."""))
-=======
                               training.\n (Default: 20)"""))
->>>>>>> horovod_working
 
     parser.add_argument("--rand",
                         dest="rand",
                         action="store_true",
                         required=False,
-<<<<<<< HEAD
-                        help=("""Start lattice from randomized initial
-                              configuration."""))
-=======
                         help=("""If passed, set `rand=True` and start lattice
                               from randomized initial configuration.\n
                               (Default: `rand=False`, i.e. NOT passed.)"""))
->>>>>>> horovod_working
 
     ###########################################################################
     #                          Leapfrog parameters                            #
@@ -121,11 +96,7 @@ def parse_args():
                         default=5,
                         required=False,
                         help=("""Number of leapfrog steps to use in (augmented)
-<<<<<<< HEAD
-                              HMC sampler."""))
-=======
                               HMC sampler. (Default: 5)"""))
->>>>>>> horovod_working
 
     parser.add_argument("--for_loop",
                         dest="for_loop",
@@ -140,12 +111,8 @@ def parse_args():
                         type=float,
                         default=0.1,
                         required=False,
-<<<<<<< HEAD
-                        help="""Step size to use in leapfrog integrator.""")
-=======
                         help=("""Step size to use in leapfrog integrator.
                               (Default: 0.1)"""))
->>>>>>> horovod_working
 
     parser.add_argument("--loss_scale",
                         dest="loss_scale",
@@ -153,11 +120,7 @@ def parse_args():
                         default=1.,
                         required=False,
                         help=("""Scaling factor to be used in loss function.
-<<<<<<< HEAD
-                              (lambda in Eq. 7 of paper)."""))
-=======
                               (lambda in Eq. 7 of paper). (Default: 1.)"""))
->>>>>>> horovod_working
 
     ###########################################################################
     #                       Learning rate parameters                          #
@@ -168,12 +131,8 @@ def parse_args():
                         type=float,
                         default=1e-3,
                         required=False,
-<<<<<<< HEAD
-                        help="""Initial value of learning rate.""")
-=======
                         help=("""Initial value of learning rate.
                               (Default: 1e-3"""))
->>>>>>> horovod_working
 
     parser.add_argument("--lr_decay_steps",
                         dest="lr_decay_steps",
@@ -181,22 +140,14 @@ def parse_args():
                         default=500,
                         required=False,
                         help=("""Number of steps after which to decay learning
-<<<<<<< HEAD
-                              rate."""))
-=======
                               rate. (Default: 500)"""))
->>>>>>> horovod_working
 
     parser.add_argument("--lr_decay_rate",
                         dest="lr_decay_rate",
                         type=float, default=0.96,
                         required=False,
                         help=("""Learning rate decay rate to be used during
-<<<<<<< HEAD
-                              training."""))
-=======
                               training. (Default: 0.96)"""))
->>>>>>> horovod_working
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     # TODO:
@@ -245,11 +196,7 @@ def parse_args():
                         required=False,
                         help=("""Initial value of beta (inverse coupling
                               constant) used in gauge model when
-<<<<<<< HEAD
-                              annealing."""))
-=======
                               annealing. (Default: 2.)"""))
->>>>>>> horovod_working
 
     parser.add_argument("--beta_final",
                         dest="beta_final",
@@ -258,11 +205,7 @@ def parse_args():
                         required=False,
                         help=("""Final value of beta (inverse coupling
                               constant) used in gauge model when
-<<<<<<< HEAD
-                              annealing."""))
-=======
                               annealing. (Default: 5."""))
->>>>>>> horovod_working
 
     parser.add_argument('--inference',
                         dest="inference",
@@ -299,12 +242,8 @@ def parse_args():
                         type=int,
                         default=5000,
                         required=False,
-<<<<<<< HEAD
-                        help="""Number of training steps to perform.""")
-=======
                         help=("""Number of training steps to perform.
                               (Default: 5000)"""))
->>>>>>> horovod_working
 
     parser.add_argument("--run_steps",
                         dest="run_steps",
@@ -313,25 +252,16 @@ def parse_args():
                         required=False,
                         help=("""Number of evaluation 'run' steps to perform
                               after training (i.e. length of desired chain
-<<<<<<< HEAD
-                              generate using trained L2HMC sampler.)"""))
-=======
                               generate using trained L2HMC sample).
                               (Default: 10000)"""))
->>>>>>> horovod_working
 
     parser.add_argument("--trace",
                         dest="trace",
                         action="store_true",
                         required=False,
-<<<<<<< HEAD
-                        help=("""Flag that when passed will create trace during
-                              training loop."""))
-=======
                         help=("""Flag that when passed will set `--trace=True`,
                               and create a trace during training loop.
                               (Default: `--trace=False`, i.e.  not passed)"""))
->>>>>>> horovod_working
 
     parser.add_argument("--save_steps",
                         dest="save_steps",
@@ -339,12 +269,8 @@ def parse_args():
                         default=50,
                         required=False,
                         help=("""Number of steps after which to save the model
-<<<<<<< HEAD
-                              and current values of all parameters."""))
-=======
                               and current values of all parameters.
                               (Default: 50)"""))
->>>>>>> horovod_working
 
     parser.add_argument("--print_steps",
                         dest="print_steps",
@@ -353,11 +279,7 @@ def parse_args():
                         required=False,
                         help=("""Number of steps after which to display
                               information about the loss and various
-<<<<<<< HEAD
-                              other quantities."""))
-=======
                               other quantities. (Default: 1)"""))
->>>>>>> horovod_working
 
     parser.add_argument("--logging_steps",
                         dest="logging_steps",
@@ -365,11 +287,7 @@ def parse_args():
                         default=50,
                         required=False,
                         help=("""Number of steps after which to write logs for
-<<<<<<< HEAD
-                              tensorboard."""))
-=======
                               tensorboard. (default: 50)"""))
->>>>>>> horovod_working
 
     # ------------------------------------------------------------------------
     # Model parameters
@@ -382,12 +300,8 @@ def parse_args():
                         required=False,
                         help=("""String specifying the architecture to use for
                               the neural network. Must be one of:
-<<<<<<< HEAD
-                              `'conv3D', 'conv2D', 'generic'`."""))
-=======
                               `'conv3D', 'conv2D', 'generic'`.
                               (Default: 'conv3D')"""))
->>>>>>> horovod_working
 
     parser.add_argument('--num_hidden',
                         dest='num_hidden',
@@ -396,45 +310,23 @@ def parse_args():
                         required=False,
                         help=("""Number of nodes to include in fully-connected
                               hidden layer `h`. If not explicitly passed, will
-<<<<<<< HEAD
-                              default to 2 * lattice.num_links."""))
-=======
                               default to 2 * lattice.num_links.
                               (Default: None)"""))
->>>>>>> horovod_working
 
     parser.add_argument('--summaries',
                         dest="summaries",
                         action="store_true",
                         required=False,
-<<<<<<< HEAD
-                        help=("""Flag that when passed creates
-                              summaries of gradients and vaiables for
-                              monitoring in tensorboard."""))
-
-    parser.add_argument('--save_samples',
-                        dest='save_samples',
-                        action='store_true',
-                        required=False,
-                        help=("""Flag that when passed will save the samples
-                              generated during the `run` phase.
-                              WARNING: This is very data intensive."""))
-=======
                         help=("""Flag that when passed sets `--summaries=True`,
                               and creates summaries of gradients and vaiables
                               for monitoring in tensorboard.
                               (Default: `--summaries=False, i.e. `--summaries`
                               is not passed.)"""))
->>>>>>> horovod_working
 
     parser.add_argument('--plot_lf',
                         dest='plot_lf',
                         action='store_true',
                         required=False,
-<<<<<<< HEAD
-                        help=("""Flag that when passed will save the
-                              output from each leapfrog step"""))
-=======
                         help=("""Flag that when passed will set
                               `--plot_lf=True`, and will plot the 'metric'
                               distance between subsequent configurations, as
@@ -451,7 +343,6 @@ def parse_args():
                               not passed mostly just beause the plots are
                               extremely large (many LF steps during inference)
                               and take a while to actually generate.)"""))
->>>>>>> horovod_working
 
     parser.add_argument('--loop_net_weights',
                         dest='loop_net_weights',
@@ -461,21 +352,9 @@ def parse_args():
                               multiple values of `net_weights`, which are
                               multiplicative scaling factors applied to each of
                               the Q, S, T functions when running the trained
-<<<<<<< HEAD
-                              sampler."""))
-
-    parser.add_argument('--long_run',
-                        dest='long_run',
-                        action='store_true',
-                        required=False,
-                        help=("""Flag that when passed runs the trained sampler
-                              at model.beta_final and model.beta_final +
-                              1."""))
-=======
                               sampler.
                               (Default: `--loop_net_weights=False, i.e.
                               `--loop_net_weights is not passed)"""))
->>>>>>> horovod_working
 
     parser.add_argument("--hmc",
                         dest="hmc",
@@ -514,12 +393,8 @@ def parse_args():
                         default=1.,
                         required=False,
                         help=("""Multiplicative factor used to weigh relative
-<<<<<<< HEAD
-                              strength of stdiliary term in loss function."""))
-=======
                               strength of stdiliary term in loss function.
                               (Default: 1.)"""))
->>>>>>> horovod_working
 
     parser.add_argument("--aux_weight",
                         dest="aux_weight",
@@ -527,12 +402,8 @@ def parse_args():
                         default=1.,
                         required=False,
                         help=("""Multiplicative factor used to weigh relative
-<<<<<<< HEAD
-                              strength of auxiliary term in loss function."""))
-=======
                               strength of auxiliary term in loss function.
                               (Default: 1.)"""))
->>>>>>> horovod_working
 
     parser.add_argument("--charge_weight",
                         dest="charge_weight",
@@ -541,45 +412,7 @@ def parse_args():
                         required=False,
                         help=("""Multiplicative factor used to weigh relative
                               strength of top. charge term in loss
-<<<<<<< HEAD
-                              function"""))
-
-    parser.add_argument("--clip_grads",
-                        dest="clip_grads",
-                        action="store_true",
-                        required=False,
-                        help=("""Flag that when passed will clip gradients by
-                              global norm using `--clip_value` command line
-                              argument. If `--clip_value` is not passed, "
-                              it defaults to 100."""))
-
-    parser.add_argument("--clip_value",
-                        dest="clip_value",
-                        type=float,
-                        default=1.,
-                        required=False,
-                        help=("""Clip value, used for clipping value of
-                              gradients by global norm."""))
-
-    parser.add_argument("--log_dir",
-                        dest="log_dir",
-                        type=str,
-                        default=None,
-                        required=False,
-                        help=("""Log directory to use from previous run.
-                              If this argument is not passed, a new
-                              directory will be created."""))
-
-    parser.add_argument("--restore",
-                        dest="restore",
-                        action="store_true",
-                        required=False,
-                        help=("""Restore model from previous run.  If this
-                              argument is passed, a `log_dir` must be specified
-                              and passed to `--log_dir argument."""))
-=======
                               function. (Default: 1.)"""))
->>>>>>> horovod_working
 
     parser.add_argument("--profiler",
                         dest='profiler',

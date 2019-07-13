@@ -98,7 +98,7 @@ class GaugeModelRunner:
 
         self.write_run_stats(run_stats, **kwargs)
 
-    def run_step(self, step, run_steps, inputs, **weights):
+    def run_step(self, step, run_steps, inputs, net_weights):
         """Perform a single run step.
 
         Args:
@@ -137,13 +137,9 @@ class GaugeModelRunner:
                 self.model.sumlogdet_b
             ])
 
-        charge_weight = weights['charge_weight']
-        net_weights = weights['net_weights']
-
         feed_dict = {
             self.model.x: samples_in,
             self.model.beta: beta_np,
-            self.model.charge_weight: charge_weight,
             self.model.net_weights[0]: net_weights[0],
             self.model.net_weights[1]: net_weights[1],
             self.model.net_weights[2]: net_weights[2],
@@ -190,7 +186,7 @@ class GaugeModelRunner:
 
         return out_data, data_str
 
-    def run(self, run_steps, beta=None, therm_frac=10, **weights):
+    def run(self, run_steps, beta=None, net_weights=None, therm_frac=10):
         """Run the simulation to generate samples and calculate observables.
 
         Args:
@@ -212,6 +208,10 @@ class GaugeModelRunner:
         if beta is None:
             beta = self.model.beta_final
 
+        if net_weights is None:
+            # scale_weight, transformation_weight, translation_weight
+            net_weights = [1., 1., 1.]
+
         plaq_exact = u1_plaq_exact(beta)
 
         # start with randomly generated samples
@@ -222,10 +222,8 @@ class GaugeModelRunner:
             io.log(RUN_HEADER)
             for step in range(run_steps):
                 inputs = (samples_np, beta, self.eps, plaq_exact)
-                out_data, data_str = self.run_step(step,
-                                                   run_steps,
-                                                   inputs,
-                                                   **weights)
+                out_data, data_str = self.run_step(step, run_steps,
+                                                   inputs, net_weights)
                 samples_np = out_data['samples']
 
                 if self.logger is not None:

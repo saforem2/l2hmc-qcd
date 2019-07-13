@@ -37,13 +37,7 @@ class GenericNet(tf.keras.Model):
         if self.use_bn:
             self.bn_axis = -1
 
-<<<<<<< HEAD
-        #  with tf.variable_scope(variable_scope):
         with tf.name_scope(self.name_scope):
-            #  self.flatten = tf.keras.layers.Flatten(name='flatten')
-=======
-        with tf.name_scope(self.name_scope):
->>>>>>> horovod_working
 
             with tf.name_scope('x_layer'):
                 self.x_layer = custom_dense(self.num_hidden,
@@ -147,37 +141,14 @@ class GenericNet(tf.keras.Model):
         v = self._reshape(v)
 
         h = self.v_layer(v) + self.x_layer(x) + self.t_layer(t)
-<<<<<<< HEAD
-        if self.use_bn:
-            h = tf.keras.layers.BatchNormalization(axis=self.bn_axis)(h)
-=======
 
         if self.use_bn:
             h = tf.keras.layers.BatchNormalization(axis=self.bn_axis)(h)
 
->>>>>>> horovod_working
         h = tf.nn.relu(h)
         h = self.h_layer(h)
         h = tf.nn.relu(h)
 
-<<<<<<< HEAD
-        with tf.name_scope('scale'):
-            scale = (tf.exp(self.coeff_scale)
-                     * tf.nn.tanh(self.scale_layer(h)))
-
-        with tf.name_scope('transformation'):
-            transformation = (tf.exp(self.coeff_transformation)
-                              * tf.nn.tanh(self.transformation_layer(h)))
-
-        with tf.name_scope('translation'):
-            translation = self.translation_layer(h)
-
-        #  scale = tf.nn.tanh(self.scale_layer(h)) * tf.exp(self.coeff_scale)
-
-        #  transformation = (tf.nn.tanh(self.transformation_layer(h))
-        #                    * tf.exp(self.coeff_transformation))
-
-=======
         with tf.name_scope('translation'):
             translation = translation_weight * self.translation_layer(h)
 
@@ -191,5 +162,4 @@ class GenericNet(tf.keras.Model):
                               * self.transformation_layer(h)
                               * tf.exp(self.coeff_transformation))
 
->>>>>>> horovod_working
         return scale, translation, transformation
