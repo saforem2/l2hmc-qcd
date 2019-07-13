@@ -67,9 +67,9 @@ except ImportError:
 if float(tf.__version__.split('.')[0]) <= 2:
     tf.logging.set_verbosity(tf.logging.INFO)
 
-# -------------------------------------------------------------------------
+# -------------------------------------------
 # Set random seeds for tensorflow and numpy
-# -------------------------------------------------------------------------
+# -------------------------------------------
 os.environ['PYTHONHASHSEED'] = str(GLOBAL_SEED)
 random.seed(GLOBAL_SEED)        # `python` build-in pseudo-random generator
 np.random.seed(GLOBAL_SEED)     # numpy pseudo-random generator
