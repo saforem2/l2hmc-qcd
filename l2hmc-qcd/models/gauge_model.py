@@ -287,7 +287,13 @@ class GaugeModel:
             # `configure_learning_rate` method below..
             if self.using_hvd:
                 num_workers = hvd.size()
-                lr_warmup = lr_init / num_workers
+                # lr_init has already been multiplied by num_workers, so to get
+                # back to the original `lr_init` parsed from the command line,
+                # divide once by `num_workers`.
+                _lr_init = lr_init / num_workers
+                # divid by num_workers again to get the value lr_warmup to use
+                # at the beginning of the warmup
+                lr_warmup = _lr_init / num_workers
                 _train_steps = self.train_steps // num_workers
                 warmup_steps = int(0.1 * _train_steps)
                 self.lr = configure_learning_rate(lr_warmup,
