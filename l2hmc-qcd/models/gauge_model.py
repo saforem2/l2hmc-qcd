@@ -293,9 +293,8 @@ class GaugeModel:
                 _lr_init = lr_init / num_workers
                 # divid by num_workers again to get the value lr_warmup to use
                 # at the beginning of the warmup
-                lr_warmup = _lr_init / num_workers
-                _train_steps = self.train_steps // num_workers
-                warmup_steps = int(0.1 * _train_steps)
+                lr_warmup = _lr_init / 10
+                warmup_steps = int(0.1 * self.train_steps)
                 self.lr = configure_learning_rate(lr_warmup,
                                                   lr_init,
                                                   self.lr_decay_steps,

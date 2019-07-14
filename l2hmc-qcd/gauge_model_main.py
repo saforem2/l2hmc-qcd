@@ -269,10 +269,10 @@ def train_l2hmc(FLAGS, log_file=None):
         params['train_steps'] //= num_workers + 1
         # Horovod: adjust save_steps and lr_decay_steps accordingly.
         params['save_steps'] //= num_workers
-        params['lr_decay_steps'] //= num_workers
+        params['lr_decay_steps'] //= num_workers + 1
 
         if params['summaries']:
-            params['logging_steps'] // num_workers
+            params['logging_steps'] // num_workers + 1
 
         hooks = [
             # Horovod: BroadcastGlobalVariablesHook broadcasts initial
@@ -411,8 +411,8 @@ def run_l2hmc(FLAGS, params, checkpoint_dir):
     model = GaugeModel(params=params)
     config, params = create_config(FLAGS, params)
 
-    #  if params['using_hvd']:
-    #      bcast_op = hvd.broadcast_global_variables(0)
+    if params['using_hvd']:
+        bcast_op = hvd.broadcast_global_variables(0)
     #  else:
     #      bcast_op = None
 
@@ -428,7 +428,7 @@ def run_l2hmc(FLAGS, params, checkpoint_dir):
         plotter = None
 
     #  if bcast_op is not None:
-    #      sess.run(bcast_op)
+    sess.run(bcast_op)
 
     # -------------------------------------------------  
     #  Set up relevant parameters to use for inference   

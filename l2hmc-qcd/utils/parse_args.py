@@ -284,7 +284,7 @@ def parse_args():
     parser.add_argument("--logging_steps",
                         dest="logging_steps",
                         type=int,
-                        default=50,
+                        default=10,
                         required=False,
                         help=("""Number of steps after which to write logs for
                               tensorboard. (default: 50)"""))
