@@ -62,10 +62,11 @@ def configure_learning_rate(*args):
     lr_init, decay_steps, decay_rate, global_step, warmup_steps = args[1:]
 
     learning_rate = tf.train.exponential_decay(lr_init, global_step,
-                                               decay_steps, decay_rate)
+                                               decay_steps, decay_rate,
+                                               staircase=True,
+                                               name='learning_rate')
     if warmup_steps > 0:
         def warmup_decay(lr1, global_step, warmup_steps, lr2):
-            from tensorflow.python.ops import math_ops
             p = global_step / warmup_steps
             diff = lr2 - lr1
             res = lr1 + (diff * p)
