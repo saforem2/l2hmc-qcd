@@ -63,7 +63,7 @@ def configure_learning_rate(*args):
 
     learning_rate = tf.train.exponential_decay(lr_init, global_step,
                                                decay_steps, decay_rate,
-                                               staircase=True,
+                                               staircase=False,
                                                name='learning_rate')
     if warmup_steps > 0:
         def warmup_decay(lr1, global_step, warmup_steps, lr2):
