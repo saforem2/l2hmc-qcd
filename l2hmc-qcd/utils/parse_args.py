@@ -215,6 +215,15 @@ def parse_args():
                               the trained L2HMC sampler by loading the trained
                               model."""))
 
+    parser.add_argument("--warmup_lr",
+                        dest="warmup_lr",
+                        action="store_true",
+                        required=False,
+                        help=("""FLag that when passed will 'warmup' the
+                              learning rate (i.e. gradually scale it up to the
+                              value passed to `--lr_init` (performs better when
+                              using Horovod for distributed training)."""))
+
     parser.add_argument("--beta_inference",
                         dest="beta_inference",
                         type=float,

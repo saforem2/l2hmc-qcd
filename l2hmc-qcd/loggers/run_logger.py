@@ -141,9 +141,12 @@ class RunLogger:
         #  w_str = nw_str[0] + nw_str[1] + nw_str[2]
         #  run_str = (f'steps_{run_steps}_beta_{beta}_'
         #             f'eps_{eps:.3g}_weights_{w_str}')
+        params = self.model.params
+        params['net_weights'] = net_weights
+
         self.run_dir = os.path.join(self.runs_dir, run_str)
         io.check_else_make_dir(self.run_dir)
-        save_params(self.model.params, self.run_dir)
+        save_params(params, self.run_dir)
 
         def _round_float_as_str(f):
             return f'{f:.3g}'

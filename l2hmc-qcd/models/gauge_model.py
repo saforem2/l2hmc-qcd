@@ -129,7 +129,7 @@ class GaugeModel:
 
     def _create_observables(self):
         obs_ops = {}
-        with tf.name_scope('plaq_observables'):
+        with tf.name_scope('observables'):
             with tf.name_scope('plaq_sums'):
                 obs_ops['plaq_sums'] = self.lattice.calc_plaq_sums(self.x)
 
@@ -285,15 +285,16 @@ class GaugeModel:
             # HOROVOD: When performing distributed training, it can be usedful
             # to "warmup" the learning rate gradually, done using the
             # `configure_learning_rate` method below..
-            if self.using_hvd:
-                num_workers = hvd.size()
-                # lr_init has already been multiplied by num_workers, so to get
-                # back to the original `lr_init` parsed from the command line,
-                # divide once by `num_workers`.
-                _lr_init = lr_init / num_workers
-                # divid by num_workers again to get the value lr_warmup to use
-                # at the beginning of the warmup
-                lr_warmup = _lr_init / 10
+            if self.using_hvd or self.warmup_lr:
+                if self.using_hvd:
+                    num_workers = hvd.size()
+                    # lr_init has already been multiplied by num_workers, so to
+                    # get back to the original `lr_init` parsed from the
+                    # command line, divide once by `num_workers`.
+                    lr_init /= num_workers
+                # divide by num_workers again to get the value lr_warmup to
+                # use at the beginning of the warmup
+                lr_warmup = lr_init / 10
                 warmup_steps = int(0.1 * self.train_steps)
                 self.lr = configure_learning_rate(lr_warmup,
                                                   lr_init,
@@ -352,6 +353,7 @@ class GaugeModel:
                 )
                 x_std_loss *= px
                 x_std_loss = tf.add(x_std_loss, eps, name='x_std_loss')
+                tf.add_to_collection('losses', x_std_loss)
 
             with tf.name_scope('z_loss'):
                 z_std_loss = tf.reduce_sum(
@@ -359,13 +361,13 @@ class GaugeModel:
                 )
                 z_std_loss *= pz * aux_weight
                 z_std_loss = tf.add(z_std_loss, eps, name='z_std_loss')
+                tf.add_to_collection('losses', z_std_loss)
 
             with tf.name_scope('tot_loss'):
                 std_loss = (ls * (1. / x_std_loss + 1. / z_std_loss)
                             - (x_std_loss + z_std_loss) / ls) * std_weight
                 std_loss = tf.reduce_mean(std_loss, axis=0, name='std_loss')
-
-        tf.add_to_collection('losses', std_loss)
+                tf.add_to_collection('losses', std_loss)
 
         return std_loss
 
@@ -415,12 +417,14 @@ class GaugeModel:
                                                               x_proposed,
                                                               fft=True)
                 xq_loss = px * x_dq_fft + eps
+                tf.add_to_collection('losses', xq_loss)
 
             with tf.name_scope('z_loss'):
                 z_dq_fft = self.lattice.calc_top_charges_diff(z_init,
                                                               z_proposed,
                                                               fft=True)
                 zq_loss = aux_weight * (pz * z_dq_fft) + eps
+                tf.add_to_collection('losses', zq_loss)
 
             with tf.name_scope('tot_loss'):
                 # Each of the loss terms is scaled by the `loss_scale` which
@@ -429,8 +433,7 @@ class GaugeModel:
                 charge_loss = ls * (charge_weight * (xq_loss + zq_loss))
                 charge_loss = tf.reduce_mean(charge_loss, axis=0,
                                              name='charge_loss')
-
-        tf.add_to_collection('losses', charge_loss)
+                tf.add_to_collection('losses', charge_loss)
 
         return charge_loss
 
@@ -461,11 +464,6 @@ class GaugeModel:
             px = dynamics_output['accept_prob']
             x_out = tf.mod(dynamics_output['x_out'], 2 * np.pi)
 
-            #  x_proposed = output[0]
-            #  output[1] is v_post, don't need to save
-            #  px = output[2]
-            #  x_out = output[3]
-
             #  if self.save_lf:
             #      lf_outputs = output[4:]
 
@@ -476,7 +474,6 @@ class GaugeModel:
                                               save_lf=False)
             z_proposed = tf.mod(z_dynamics_output['x_proposed'], 2 * np.pi)
             pz = z_dynamics_output['accept_prob']
-            #  z_proposed, _, pz, _ = self.dynamics(z, beta)
 
         with tf.name_scope('top_charge_diff'):
             x_dq = tf.cast(
@@ -499,22 +496,13 @@ class GaugeModel:
             'pz': pz
         }
 
-        #  x_tup = (x, x_proposed)
-        #  z_tup = (z, z_proposed)
-        #  p_tup = (px, pz)
-        with tf.name_scope('calc_loss'):
-            with tf.name_scope('std_loss'):
-                std_loss = self._calc_std_loss(inputs, **weights)
-            with tf.name_scope('charge_loss'):
-                charge_loss = self._calc_charge_loss(inputs, **weights)
+        with tf.name_scope('loss'):
+            std_loss = self._calc_std_loss(inputs, **weights)
+            charge_loss = self._calc_charge_loss(inputs, **weights)
 
             total_loss = tf.add(std_loss, charge_loss, name='total_loss')
 
         tf.add_to_collection('losses', total_loss)
-        #  if self.save_lf:
-        #      return total_loss, x_out, px, x_dq, lf_outputs
-        #  else:
-        #      return total_loss, x_out, px, x_dq
         return total_loss, x_dq, dynamics_output
 
     def calc_loss_and_grads(self, x, beta, net_weights, **weights):
