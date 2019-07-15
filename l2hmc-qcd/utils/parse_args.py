@@ -381,12 +381,13 @@ def parse_args():
                               to be ran after running the trained L2HMC
                               sampler. (Default: False)"""))
 
-    parser.add_argument("--eps_trainable",
-                        dest="eps_trainable",
+    parser.add_argument("--eps_fixed",
+                        dest="eps_fixed",
                         action="store_true",
                         required=False,
-                        help=("""Flag that when passed will allow the step size
-                              `eps` to be a trainable parameter."""))
+                        help=("""Flag that when passed will cause the step size
+                              `eps` to be a fixed (non-trainable)
+                              parameter."""))
 
     parser.add_argument("--metric",
                         dest="metric",
