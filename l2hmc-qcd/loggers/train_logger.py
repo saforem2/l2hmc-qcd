@@ -127,8 +127,13 @@ class TrainLogger:
         with tf.name_scope('summaries'):
             for grad, var in grads_and_vars:
                 try:
-                    layer, _type = var.name.split('/')[-2:]
-                    name = layer + '_' + _type[:-2]
+                    #  layer, _type = var.name.split('/')[-2:]
+                    _name = var.name.split('/')[-2:]
+                    if len(_name) > 1:
+                        name = _name[0] + '_' + _name[1][:-2]
+                        #  name = layer + '_' + _type[:-2]
+                    else:
+                        name = var.name[:-2]
                 except (AttributeError, IndexError):
                     name = var.name[:-2]
 

@@ -21,8 +21,6 @@ from network.conv_net2d import ConvNet2D
 from network.conv_net3d import ConvNet3D
 from network.generic_net import GenericNet
 
-import utils.file_io as io
-
 
 def exp(x, name=None):
     """Safe exponential using tf.check_numerics."""
@@ -77,13 +75,24 @@ class GaugeDynamics(tf.keras.Model):
                 setattr(self, key, val)
 
         with tf.name_scope('eps'):
+            eps_init = kwargs.get('eps', 0.25)
+            if not self.hmc:
+                self.alpha = tf.get_variable(
+                    'alpha',
+                    initializer=tf.log(tf.constant(eps_init)),
+                    trainable=self.eps_trainable
+                )
+            else:
+                self.alpha = tf.log(tf.constant(eps_init, dtype=TF_FLOAT))
+
+            self.eps = tf.exp(self.alpha, name='eps')
             #  self.eps = exp(self.alpha, name='eps')
-            self.eps = tf.Variable(
-                initial_value=kwargs.get('eps', 0.4),
-                name='eps',
-                dtype=TF_FLOAT,
-                trainable=self.eps_trainable
-            )
+            #  self.eps = tf.Variable(
+            #      initial_value=kwargs.get('eps', 0.4),
+            #      name='eps',
+            #      dtype=TF_FLOAT,
+            #      trainable=self.eps_trainable
+            #  )
 
         self._construct_masks()
 

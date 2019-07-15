@@ -167,7 +167,7 @@ def hmc(FLAGS, params=None, log_file=None):
     params['use_bn'] = False
     params['log_dir'] = FLAGS.log_dir
     params['data_format'] = None
-    params['eps_trainable'] = False
+    params['eps_fixed'] = True
 
     figs_dir = os.path.join(params['log_dir'], 'figures')
     io.check_else_make_dir(figs_dir)
@@ -200,6 +200,7 @@ def hmc(FLAGS, params=None, log_file=None):
         # to ensure hvd.rank() == 0
         if run_logger is not None:
             run_dir, run_str = run_logger.reset(model.run_steps, beta)
+
 
         t0 = time.time()
 

@@ -219,7 +219,7 @@ class GaugeModel:
                 'hmc': self.hmc,
                 'network_arch': self.network_arch,
                 'num_steps': self.num_steps,
-                'eps_trainable': self.eps_trainable,
+                'eps_trainable': not self.eps_fixed,
                 'data_format': self.data_format,
                 'use_bn': self.use_bn,
                 #  'scale_weight': self.scale_weight,
