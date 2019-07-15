@@ -413,8 +413,8 @@ def run_l2hmc(FLAGS, params, checkpoint_dir):
 
     if params['using_hvd']:
         bcast_op = hvd.broadcast_global_variables(0)
-    #  else:
-    #      bcast_op = None
+    else:
+        bcast_op = None
 
     # create new session for inference and restore model from checkpoint_dir
     sess = tf.Session(config=config)
@@ -427,8 +427,8 @@ def run_l2hmc(FLAGS, params, checkpoint_dir):
         run_logger = None
         plotter = None
 
-    #  if bcast_op is not None:
-    sess.run(bcast_op)
+    if bcast_op is not None:
+        sess.run(bcast_op)
 
     # -------------------------------------------------  
     #  Set up relevant parameters to use for inference   

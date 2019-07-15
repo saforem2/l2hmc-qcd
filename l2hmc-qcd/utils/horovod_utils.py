@@ -54,9 +54,9 @@ def configure_learning_rate(*args):
         global_step: Tensorflow global step object. 
         warmup_steps: Number of steps over which to warmup the learning rate.
     """
-    for i in args:
-        if isinstance(i, float):
-            i = tf.cast(i, dtype=TF_FLOAT)
+    #  for i in args:
+    #      if isinstance(i, float):
+    #          i = tf.cast(i, dtype=TF_FLOAT)
 
     lr_warmup = args[0]
     lr_init, decay_steps, decay_rate, global_step, warmup_steps = args[1:]
@@ -70,13 +70,7 @@ def configure_learning_rate(*args):
             p = global_step / warmup_steps
             diff = lr2 - lr1
             res = lr1 + (diff * p)
-            #  p = cast(global_step) /  cast(warmup_steps)
-            #  p = (tf.cast(global_step, TF_FLOAT)
-            #       / tf.cast(warmup_steps, TF_FLOAT))
-            #  diff = tf.cast(math_ops.subtract(lr2, lr1), TF_FLOAT)
-            #  res = math_ops.add(tf.cast(lr1, TF_FLOAT),
-            #                     math_ops.multiply(diff, p))
-            return res
+            return tf.cast(res, TF_FLOAT)
 
     learning_rate = tf.cond(global_step < warmup_steps,
                             lambda: warmup_decay(lr_warmup, global_step,
