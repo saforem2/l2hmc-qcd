@@ -307,7 +307,7 @@ class GaugeModel:
                                                      self.global_step,
                                                      self.lr_decay_steps,
                                                      self.lr_decay_rate,
-                                                     staircase=True,
+                                                     staircase=False,
                                                      name='learning_rate')
         with tf.name_scope('optimizer'):
             self.optimizer = tf.train.AdamOptimizer(self.lr)
@@ -437,73 +437,7 @@ class GaugeModel:
 
         return charge_loss
 
-    def calc_loss(self, x, beta, net_weights, **weights):
-        """Create operation for calculating the loss.
 
-        Args:
-            x: Input tensor of shape (self.num_samples,
-                self.lattice.num_links) containing batch of GaugeLattice links
-                variables.
-            beta (float): Inverse coupling strength.
-
-        Returns:
-            loss (float): Operation responsible for calculating the total loss.
-            px (np.ndarray): Array of acceptance probabilities from
-                Metropolis-Hastings accept/reject step. Has shape:
-                (self.num_samples,)
-            x_out: Output samples obtained after Metropolis-Hastings
-                accept/reject step.
-
-        NOTE: If proposed configuration is accepted following
-            Metropolis-Hastings accept/reject step, x_proposed and x_out are
-            equivalent.
-        """
-        with tf.name_scope('x_update'):
-            dynamics_output = self.dynamics(x, beta, net_weights, self.save_lf)
-            x_proposed = tf.mod(dynamics_output['x_proposed'], 2 * np.pi)
-            px = dynamics_output['accept_prob']
-            x_out = tf.mod(dynamics_output['x_out'], 2 * np.pi)
-
-            #  if self.save_lf:
-            #      lf_outputs = output[4:]
-
-        # Auxiliary variable
-        with tf.name_scope('z_update'):
-            z = tf.random_normal(tf.shape(x), seed=GLOBAL_SEED, name='z')
-            z_dynamics_output = self.dynamics(z, beta, net_weights,
-                                              save_lf=False)
-            z_proposed = tf.mod(z_dynamics_output['x_proposed'], 2 * np.pi)
-            pz = z_dynamics_output['accept_prob']
-
-        with tf.name_scope('top_charge_diff'):
-            x_dq = tf.cast(
-                self.lattice.calc_top_charges_diff(x, x_out, fft=False),
-                dtype=tf.int32
-            )
-
-        # Add eps for numerical stability; following released implementation
-        # NOTE:
-        #  std:_loss: 'standard' loss
-        #  charge_loss: Contribution from the difference in topological charge
-        #    betweween the initial and proposed configurations  to the total
-        #     loss.
-        inputs = {
-            'x_init': x,
-            'x_proposed': x_proposed,
-            'z_init': z,
-            'z_proposed': z_proposed,
-            'px': px,
-            'pz': pz
-        }
-
-        with tf.name_scope('loss'):
-            std_loss = self._calc_std_loss(inputs, **weights)
-            charge_loss = self._calc_charge_loss(inputs, **weights)
-
-            total_loss = tf.add(std_loss, charge_loss, name='total_loss')
-
-        tf.add_to_collection('losses', total_loss)
-        return total_loss, x_dq, dynamics_output
 
     def calc_loss_and_grads(self, x, beta, net_weights, **weights):
         """Calculate loss its gradient with respect to all trainable variables.

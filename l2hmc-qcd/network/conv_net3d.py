@@ -156,26 +156,33 @@ class ConvNet3D(tf.keras.Model):
 
             with tf.name_scope('fc_layers'):
                 with tf.name_scope('flatten'):
-                    self.flatten = tf.keras.layers.Flatten(name='flatten')
+                    self.flatten = tf.keras.layers.Flatten(
+                        data_format=self.data_format,
+                        name='flatten'
+                    )
 
                 with tf.name_scope('x_layer'):
                     self.x_layer = custom_dense(self.num_hidden,
-                                                 self.factor/3.,
-                                                 name='x_layer')
+                                                self.factor/3.,
+                                                name='x_layer')
 
                 with tf.name_scope('v_layer'):
                     self.v_layer = custom_dense(self.num_hidden,
-                                                 1./3.,
-                                                 name='v_layer')
+                                                1./3.,
+                                                name='v_layer')
 
                 with tf.name_scope('t_layer'):
                     self.t_layer = custom_dense(self.num_hidden,
-                                                 1./3.,
-                                                 name='t_layer')
+                                                1./3.,
+                                                name='t_layer')
 
                 with tf.name_scope('h_layer'):
                     self.h_layer = custom_dense(self.num_hidden,
-                                                 name='h_layer')
+                                                name='h_layer')
+
+                #  with tf.name_scope('h_layer1'):
+                #      self.h_layer1 = custom_dense(self.num_hidden // 2,
+                #                                   name='h_layer1')
 
                 with tf.name_scope('scale_layer'):
                     self.scale_layer = custom_dense(
@@ -257,10 +264,10 @@ class ConvNet3D(tf.keras.Model):
        Returns:
            scale, translation, transformation (S, T, Q functions from paper)
         """
-        v, x, t, net_weights = inputs
-        scale_weight = net_weights[0]
-        transformation_weight = net_weights[1]
-        translation_weight = net_weights[2]
+        v, x, t = inputs
+        #  scale_weight = net_weights[0]
+        #  transformation_weight = net_weights[1]
+        #  translation_weight = net_weights[2]
 
         with tf.name_scope('reshape'):
             v = self.reshape_5D(v)
@@ -268,26 +275,35 @@ class ConvNet3D(tf.keras.Model):
 
         with tf.name_scope('x'):
             x = self.max_pool_x1(self.conv_x1(x))
+            #  if self.use_bn:
+            #      x = tf.keras.layers.BatchNormalization(axis=self.bn_axis)(x)
+
             x = self.max_pool_x2(self.conv_x2(x))
             if self.use_bn:
                 x = tf.keras.layers.BatchNormalization(axis=self.bn_axis)(x)
             x = self.flatten(x)
-            x = tf.nn.relu(self.x_layer(x))
+            x = self.x_layer(x)
+            #  x = tf.nn.relu(self.x_layer(x))
 
         with tf.name_scope('v'):
             v = self.max_pool_v1(self.conv_v1(v))
+            #  if self.use_bn:
+            #      v = tf.keras.layers.BatchNormalization(axis=self.bn_axis)(v)
             v = self.max_pool_v2(self.conv_v2(v))
             if self.use_bn:
                 v = tf.keras.layers.BatchNormalization(axis=self.bn_axis)(v)
             v = self.flatten(v)
-            v = tf.nn.relu(self.v_layer(v))
+            v = self.v_layer(v)
+            #  v = tf.nn.relu(self.v_layer(v))
 
         with tf.name_scope('t'):
-            t = tf.nn.relu(self.t_layer(t))
+            #  t = tf.nn.relu(self.t_layer(t))
+            t = self.t_layer(t)
 
         with tf.name_scope('h'):
             h = tf.nn.relu(v + x + t)
             h = tf.nn.relu(self.h_layer(h))
+            #  h = tf.nn.relu(self.h_layer1(h))
 
         def reshape(t, name):
             return tf.squeeze(
@@ -295,16 +311,14 @@ class ConvNet3D(tf.keras.Model):
             )
 
         with tf.name_scope('translation'):
-            translation = translation_weight * self.translation_layer(h)
+            translation = self.translation_layer(h)
 
         with tf.name_scope('scale'):
-            scale = (scale_weight
-                     * tf.nn.tanh(self.scale_layer(h))
+            scale = (tf.nn.tanh(self.scale_layer(h))
                      * tf.exp(self.coeff_scale))
 
         with tf.name_scope('transformation'):
-            transformation = (transformation_weight
-                              * self.transformation_layer(h)
+            transformation = (self.transformation_layer(h)
                               * tf.exp(self.coeff_transformation))
 
         return scale, translation, transformation

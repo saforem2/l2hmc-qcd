@@ -201,7 +201,6 @@ def hmc(FLAGS, params=None, log_file=None):
         if run_logger is not None:
             run_dir, run_str = run_logger.reset(model.run_steps, beta)
 
-
         t0 = time.time()
 
         runner.run(model.run_steps, beta)
