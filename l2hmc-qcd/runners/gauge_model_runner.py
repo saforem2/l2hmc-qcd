@@ -12,6 +12,8 @@ import time
 import pickle
 from scipy.stats import sem
 from collections import Counter, OrderedDict
+
+import tensorflow as tf
 import numpy as np
 
 import utils.file_io as io
@@ -123,6 +125,7 @@ class GaugeModelRunner:
             self.model.charges_op,
             self.model.charge_diffs_op,
         ]
+
         if self.model.save_lf:
             ops.extend([
                 self.model.lf_out_f,
@@ -144,8 +147,6 @@ class GaugeModelRunner:
             self.model.net_weights[1]: net_weights[1],
             self.model.net_weights[2]: net_weights[2],
             self.model.train_phase: False
-
-
         }
 
         start_time = time.time()
@@ -230,7 +231,8 @@ class GaugeModelRunner:
                 samples_np = out_data['samples']
 
                 if self.logger is not None:
-                    self.logger.update(out_data, data_str)
+                    self.logger.update(self.sess, out_data,
+                                       net_weights, data_str)
 
             if self.logger is not None:
                 self.logger.save_run_data(therm_frac=therm_frac)
