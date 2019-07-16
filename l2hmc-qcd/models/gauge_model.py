@@ -609,17 +609,45 @@ class GaugeModel:
             self.x_out = dynamics_output['x_out']
             self.px = dynamics_output['accept_prob']
             self.charge_diffs_op = tf.reduce_sum(x_dq) / self.num_samples
+
+            def _add_to_collection(collection, op):
+                return tf.add_to_collection(collection, op)
+
+            self.ops_dict = {
+                'train_ops': [self.loss_op],
+                'run_ops': [self.x_out, self.dynamics.eps],
+                'observable_ops': [self.actions_op, self.plaqs_op,
+                                   self.charges_op, self.charge_diffs_op],
+            }
+
             if self.save_lf:
-                self.lf_out_f = dynamics_output['lf_out_f']
-                self.lf_out_b = dynamics_output['lf_out_b']
-                self.pxs_out_f = dynamics_output['accept_probs_f']
-                self.pxs_out_b = dynamics_output['accept_probs_b']
-                self.masks_f = dynamics_output['forward_mask']
-                self.masks_b = dynamics_output['backward_mask']
-                self.logdets_f = dynamics_output['logdets_f']
-                self.logdets_b = dynamics_output['logdets_b']
-                self.sumlogdet_f = dynamics_output['sumlogdet_f']
-                self.sumlogdet_b = dynamics_output['sumlogdet_b']
+                op_keys = ['masks_f', 'masks_b',
+                           'lf_out_f', 'lf_out_b',
+                           'pxs_out_f', 'pxs_out_b',
+                           'logdets_f', 'logdets_b',
+                           'sumlogdet_f', 'sumlogdet_b']
+                #  'forward_mask', 'backward_mask',
+                # 'accept_probs_f', 'accept_probs_b']
+                for key in op_keys:
+                    op = dynamics_output[key]
+                    self.ops_dict['run_ops'].append(op)
+                    setattr(self, key, op)
+
+            for collection, ops in self.ops_dict.items():
+                for op in ops:
+                    _add_to_collection(collection, op)
+            #
+            #  ops_dict['run_ops'].append(
+            #  self.lf_out_f = dynamics_output['lf_out_f']
+            #  self.lf_out_b = dynamics_output['lf_out_b']
+            #  self.pxs_out_f = dynamics_output['accept_probs_f']
+            #  self.pxs_out_b = dynamics_output['accept_probs_b']
+            #  self.masks_f = dynamics_output['forward_mask']
+            #  self.masks_b = dynamics_output['backward_mask']
+            #  self.logdets_f = dynamics_output['logdets_f']
+            #  self.logdets_b = dynamics_output['logdets_b']
+            #  self.sumlogdet_f = dynamics_output['sumlogdet_f']
+            #  self.sumlogdet_b = dynamics_output['sumlogdet_b']
 
         with tf.name_scope('train'):
             # --------------------------------------------------------
@@ -650,3 +678,7 @@ class GaugeModel:
                     global_step=self.global_step,
                     name='train_op'
                 )
+
+            self.ops_dict['train_ops'].append(self.train_op)
+            self.ops_dict['train_ops'].append(self.grads)
+            self.ops_dict['train_ops'].append(self.lr)
