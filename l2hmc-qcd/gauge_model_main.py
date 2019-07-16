@@ -341,6 +341,7 @@ def train_l2hmc(FLAGS, log_file=None):
         model.net_weights[0]: net_weights_init[0],  # scale_weight
         model.net_weights[1]: net_weights_init[1],  # transformation_weight
         model.net_weights[2]: net_weights_init[2],  # translation_weight
+        model.train_phase: True
     }
 
     # ensure all variables are initialized
@@ -400,13 +401,19 @@ def train_l2hmc(FLAGS, log_file=None):
 
 def run_l2hmc(FLAGS, params, checkpoint_dir):
     """Run inference using trained L2HMC sampler."""
-    assert os.path.isdir(checkpoint_dir)
+    #  assert os.path.isdir(checkpoint_dir)
     tf.keras.backend.set_learning_phase(False)
 
     # on hvd.rank() == 0, so check that first
     condition1 = not FLAGS.horovod
     condition2 = FLAGS.horovod and hvd.rank() == 0
     is_chief = condition1 or condition2
+
+    if is_chief:
+        if checkpoint_dir is not None:
+            assert os.path.isdir(checkpoint_dir)
+        else:
+            raise ValueError(f'Must pass a `checkpoint_dir` to `run_l2hmc`.')
 
     model = GaugeModel(params=params)
     config, params = create_config(FLAGS, params)

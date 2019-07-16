@@ -177,11 +177,13 @@ class GaugeDynamics(tf.keras.Model):
             with tf.name_scope("VNet"):
                 self.v_fn = GenericNet(model_name='VNet', **net_kwargs)
 
-    def call(self, x_in, beta, net_weights, save_lf=False):
+    def call(self, *args, **kwargs):
         """Call method."""
-        return self.apply_transition(x_in, beta, net_weights, save_lf=save_lf)
+        #  def call(self, x_in, beta, net_weights, train_phase, save_lf=False):
+        return self.apply_transition(*args, **kwargs)
 
-    def apply_transition(self, x_in, beta, net_weights, save_lf=False):
+    def apply_transition(self, x_in, beta, net_weights,
+                         train_phase, save_lf=False):
         """Propose a new state and perform the accept/reject step.
 
         Args:
@@ -200,6 +202,7 @@ class GaugeDynamics(tf.keras.Model):
             with tf.name_scope('transition_forward'):
                 outputs_f = self.transition_kernel(x_in, beta,
                                                    net_weights,
+                                                   train_phase,
                                                    forward=True,
                                                    save_lf=save_lf)
                 x_f = outputs_f['x_proposed']
@@ -214,6 +217,7 @@ class GaugeDynamics(tf.keras.Model):
             with tf.name_scope('transition_backward'):
                 outputs_b = self.transition_kernel(x_in, beta,
                                                    net_weights,
+                                                   train_phase,
                                                    forward=False,
                                                    save_lf=save_lf)
                 x_b = outputs_b['x_proposed']
@@ -288,7 +292,7 @@ class GaugeDynamics(tf.keras.Model):
         return outputs
 
     def transition_kernel(self, x_in, beta, net_weights,
-                          forward=True, save_lf=False):
+                          train_phase, forward=True, save_lf=False):
         """Transition kernel of augmented leapfrog integrator."""
         lf_fn = self._forward_lf if forward else self._backward_lf
 
@@ -314,7 +318,8 @@ class GaugeDynamics(tf.keras.Model):
         def body(step, x, v, logdet, lf_samples, logdets):
             i = tf.cast(step, dtype=tf.int32)  # cast leapfrog step to integer
             with tf.name_scope('apply_lf'):
-                new_x, new_v, j = lf_fn(x, v, beta, step, net_weights)
+                new_x, new_v, j = lf_fn(x, v, beta, step,
+                                        net_weights, train_phase)
             with tf.name_scope('concat_lf_outputs'):
                 lf_samples = lf_samples.write(i+1, new_x)
             with tf.name_scope('concat_logdets'):
@@ -369,7 +374,7 @@ class GaugeDynamics(tf.keras.Model):
 
         return outputs
 
-    def _forward_lf(self, x, v, beta, step, net_weights):
+    def _forward_lf(self, x, v, beta, step, net_weights, train_phase):
         """One forward augmented leapfrog step."""
         with tf.name_scope('forward_lf'):
             with tf.name_scope('get_time'):
@@ -380,23 +385,27 @@ class GaugeDynamics(tf.keras.Model):
             with tf.name_scope('augmented_leapfrog'):
                 sumlogdet = 0.
 
-                v, logdet = self._update_v_forward(x, v, beta, t, net_weights)
+                v, logdet = self._update_v_forward(x, v, beta, t,
+                                                   net_weights, train_phase)
                 sumlogdet += logdet
 
-                x, logdet = self._update_x_forward(x, v, t, net_weights,
+                x, logdet = self._update_x_forward(x, v, t,
+                                                   net_weights, train_phase,
                                                    mask, mask_inv)
                 sumlogdet += logdet
 
-                x, logdet = self._update_x_forward(x, v, t, net_weights,
+                x, logdet = self._update_x_forward(x, v, t,
+                                                   net_weights, train_phase,
                                                    mask_inv, mask)
                 sumlogdet += logdet
 
-                v, logdet = self._update_v_forward(x, v, beta, t, net_weights)
+                v, logdet = self._update_v_forward(x, v, beta, t,
+                                                   net_weights, train_phase)
                 sumlogdet += logdet
 
         return x, v, sumlogdet
 
-    def _backward_lf(self, x, v, beta, step, net_weights):
+    def _backward_lf(self, x, v, beta, step, net_weights, train_phase):
         """One backward augmented leapfrog step."""
 
         # Reversed index/sinusoidal time
@@ -412,23 +421,27 @@ class GaugeDynamics(tf.keras.Model):
             with tf.name_scope('augmented_leapfrog'):
                 sumlogdet = 0.
 
-                v, logdet = self._update_v_backward(x, v, beta, t, net_weights)
+                v, logdet = self._update_v_backward(x, v, beta, t,
+                                                    net_weights, train_phase)
                 sumlogdet += logdet
 
-                x, logdet = self._update_x_backward(x, v, t, net_weights,
+                x, logdet = self._update_x_backward(x, v, t,
+                                                    net_weights, train_phase,
                                                     mask_inv, mask)
                 sumlogdet += logdet
 
-                x, logdet = self._update_x_backward(x, v, t, net_weights,
+                x, logdet = self._update_x_backward(x, v, t,
+                                                    net_weights, train_phase,
                                                     mask, mask_inv)
                 sumlogdet += logdet
 
-                v, logdet = self._update_v_backward(x, v, beta, t, net_weights)
+                v, logdet = self._update_v_backward(x, v, beta, t,
+                                                    net_weights, train_phase)
                 sumlogdet += logdet
 
         return x, v, sumlogdet
 
-    def _update_v_forward(self, x, v, beta, t, net_weights):
+    def _update_v_forward(self, x, v, beta, t, net_weights, train_phase):
         """Update v in the forward leapfrog step.
 
         Args:
@@ -449,9 +462,8 @@ class GaugeDynamics(tf.keras.Model):
 
             with tf.name_scope('v_fn'):
                 # Sv: scale, Qv: transformation, Tv: translation
-                scale, translation, transformation = self.v_fn(
-                    [x, grad, t]
-                )
+                scale, translation, transformation = self.v_fn((x, grad, t),
+                                                               train_phase)
 
                 scale *= net_weights[0]
                 translation *= net_weights[1]
@@ -477,12 +489,13 @@ class GaugeDynamics(tf.keras.Model):
 
         return v, tf.reduce_sum(scale, axis=1)
 
-    def _update_x_forward(self, x, v, t, net_weights, mask, mask_inv):
+    def _update_x_forward(self, x, v, t, net_weights, 
+                          train_phase, mask, mask_inv):
         """Update x in the forward leapfrog step."""
         with tf.name_scope('update_x_forward'):
             with tf.name_scope('x_fn'):
                 scale, translation, transformation = self.x_fn(
-                    [v, mask * x, t]
+                    (v, mask * x, t), train_phase
                 )
 
                 scale *= net_weights[0]
@@ -508,7 +521,7 @@ class GaugeDynamics(tf.keras.Model):
 
         return x, tf.reduce_sum(mask_inv * scale, axis=1)
 
-    def _update_v_backward(self, x, v, beta, t, net_weights):
+    def _update_v_backward(self, x, v, beta, t, net_weights, train_phase):
         """Update v in the backward leapfrog step. Invert the forward update"""
         with tf.name_scope('update_v_backward'):
             with tf.name_scope('grad_potential'):
@@ -516,7 +529,7 @@ class GaugeDynamics(tf.keras.Model):
 
             with tf.name_scope('v_fn'):
                 scale, translation, transformation = self.v_fn(
-                    [x, grad, t]
+                    (x, grad, t), train_phase
                 )
 
                 scale *= net_weights[0]
@@ -544,12 +557,13 @@ class GaugeDynamics(tf.keras.Model):
 
         return v, tf.reduce_sum(scale, axis=1)
 
-    def _update_x_backward(self, x, v, t, net_weights, mask, mask_inv):
+    def _update_x_backward(self, x, v, t, net_weights, 
+                           train_phase, mask, mask_inv):
         """Update x in the backward lf step. Inverting the forward update."""
         with tf.name_scope('update_x_backward'):
             with tf.name_scope('x_fn'):
                 scale, translation, transformation = self.x_fn(
-                    [v, mask * x, t]
+                    (v, mask * x, t), train_phase
                 )
 
                 scale *= net_weights[0]
