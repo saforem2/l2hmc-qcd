@@ -498,10 +498,8 @@ def run_l2hmc(FLAGS, params, checkpoint_dir):
 
             # log the total time spent running inference
             run_time = time.time() - t0
-            sep_str = (80 * '-') + '\n'
-            io.log(
-                sep_str + f'Took: {run_time} s to complete run.' + sep_str
-            )
+            hstr = (80 * '-') + '\n'
+            io.log(hstr + f'Took: {run_time} s to complete run.' + hstr + '\n')
 
             if plotter is not None and run_logger is not None:
                 plotter.plot_observables(run_logger.run_data,
