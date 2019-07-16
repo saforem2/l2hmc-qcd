@@ -17,3 +17,16 @@ l2hmc-qcd/args/main.sh
 l2hmc-qcd/args/run_l2hmc.sh
 l2hmc-qcd/base/
 l2hmc-qcd/args/args.txt
+l2hmc-qcd/l2hmc-qcd/dynamics/lattice_dynamics.py
+l2hmc-qcd/models/gauge_model_old.py
+l2hmc-qcd/notebooks/Untitled.ipynb
+l2hmc-qcd/notebooks/load_and_run_from_saved_model.ipynb
+l2hmc-qcd/notebooks/make_plots.ipynb
+l2hmc-qcd/notebooks/save_leapfrogs.ipynb
+l2hmc-qcd/notebooks/tensorboard_in_notebook.ipynb
+l2hmc-qcd/notebooks/testing_reversability_tf_eager.ipynb
+l2hmc-qcd/notebooks/u1_animations.ipynb
+l2hmc-qcd/plotters/formatters.py
+l2hmc-qcd/dynamics/lattice_dynamics.py
+l2hmc-qcd/test.py
+l2hmc-qcd/utils/optimize_for_inference.py
