@@ -15,7 +15,7 @@ Date: 01/16/2019
 """
 import numpy as np
 import tensorflow as tf
-from .network_utils import custom_dense
+from .network_utils import custom_dense, batch_norm
 
 from globals import GLOBAL_SEED, TF_FLOAT, NP_FLOAT
 
@@ -24,6 +24,9 @@ np.random.seed(GLOBAL_SEED)
 
 if '2.' not in tf.__version__:
     tf.set_random_seed(GLOBAL_SEED)
+
+
+#  HE_INIT = tf.contrib.layers.variance_scaling_initializer(mode="FAN_AVG")
 
 
 # pylint:disable=too-many-arguments, too-many-instance-attributes
@@ -80,6 +83,7 @@ class ConvNet3D(tf.keras.Model):
                         filters=self.num_filters,
                         kernel_size=self.filter_sizes[0],
                         activation=tf.nn.relu,
+                        #  initializer=HE_INIT,
                         input_shape=self._input_shape,
                         padding='same',
                         name='conv_x1',
@@ -101,6 +105,7 @@ class ConvNet3D(tf.keras.Model):
                         filters=self.num_filters,
                         kernel_size=self.filter_sizes[0],
                         activation=tf.nn.relu,
+                        #  initializer=HE_INIT,
                         input_shape=self._input_shape,
                         padding='same',
                         name='conv_v1',
@@ -121,6 +126,7 @@ class ConvNet3D(tf.keras.Model):
                         filters=2*self.num_filters,
                         kernel_size=self.filter_sizes[1],
                         activation=tf.nn.relu,
+                        #  initializer=HE_INIT,
                         padding='same',
                         name='conv_x2',
                         dtype=TF_FLOAT,
@@ -140,6 +146,7 @@ class ConvNet3D(tf.keras.Model):
                         filters=2 * self.num_filters,
                         kernel_size=self.filter_sizes[1],
                         activation=tf.nn.relu,
+                        #  initializer=HE_INIT,
                         padding='same',
                         name='conv_v2',
                         dtype=TF_FLOAT,
@@ -179,10 +186,6 @@ class ConvNet3D(tf.keras.Model):
                 with tf.name_scope('h_layer'):
                     self.h_layer = custom_dense(self.num_hidden,
                                                 name='h_layer')
-
-                #  with tf.name_scope('h_layer1'):
-                #      self.h_layer1 = custom_dense(self.num_hidden // 2,
-                #                                   name='h_layer1')
 
                 with tf.name_scope('scale_layer'):
                     self.scale_layer = custom_dense(
@@ -229,7 +232,7 @@ class ConvNet3D(tf.keras.Model):
                              "'channels_first' or 'channels_last'")
 
     # pylint: disable=invalid-name, arguments-differ
-    def call(self, inputs):
+    def call(self, inputs, train_phase):
         """Forward pass through network.
 
         NOTE: Data flow of forward pass is outlined below.
@@ -275,30 +278,37 @@ class ConvNet3D(tf.keras.Model):
 
         with tf.name_scope('x'):
             x = self.max_pool_x1(self.conv_x1(x))
-            #  if self.use_bn:
-            #      x = tf.keras.layers.BatchNormalization(axis=self.bn_axis)(x)
-
-            x = self.max_pool_x2(self.conv_x2(x))
+            #  x = self.max_pool_x2(self.conv_x2(x))
+            x = self.conv_x2(x)
+            #  x = batch_norm(x, axis=self.bn_axis, is_training=train_phase)
             if self.use_bn:
-                x = tf.keras.layers.BatchNormalization(axis=self.bn_axis)(x)
+                x = tf.keras.layers.BatchNormalization(axis=self.bn_axis)(
+                    x, training=train_phase
+                )
+
+            x = self.max_pool_x2(x)
             x = self.flatten(x)
-            x = self.x_layer(x)
-            #  x = tf.nn.relu(self.x_layer(x))
+            #  x = self.x_layer(x)
+            x = tf.nn.relu(self.x_layer(x))
 
         with tf.name_scope('v'):
             v = self.max_pool_v1(self.conv_v1(v))
-            #  if self.use_bn:
-            #      v = tf.keras.layers.BatchNormalization(axis=self.bn_axis)(v)
-            v = self.max_pool_v2(self.conv_v2(v))
+            #  v = self.max_pool_v2(self.conv_v2(v))
+            v = self.conv_v2(v)
+            #  v = batch_norm(v, axis=self.bn_axis, is_training=train_phase)
             if self.use_bn:
-                v = tf.keras.layers.BatchNormalization(axis=self.bn_axis)(v)
+                v = tf.keras.layers.BatchNormalization(axis=self.bn_axis)(
+                    v, training=train_phase
+                )
+                #  v = tf.keras.layers.BatchNormalization(axis=self.bn_axis)(v)
+            #  v = self.v_layer(v)
+            v = self.max_pool_v2(v)
             v = self.flatten(v)
-            v = self.v_layer(v)
-            #  v = tf.nn.relu(self.v_layer(v))
+            v = tf.nn.relu(self.v_layer(v))
 
         with tf.name_scope('t'):
-            #  t = tf.nn.relu(self.t_layer(t))
-            t = self.t_layer(t)
+            #  t = self.t_layer(t)
+            t = tf.nn.relu(self.t_layer(t))
 
         with tf.name_scope('h'):
             h = tf.nn.relu(v + x + t)
