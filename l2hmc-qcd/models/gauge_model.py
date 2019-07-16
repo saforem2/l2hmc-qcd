@@ -70,6 +70,7 @@ class GaugeModel:
         self.beta = inputs['beta']
         self.charge_weight = inputs['charge_weight']
         self.net_weights = inputs['net_weights']
+        self.train_phase = inputs['train_phase']
 
         # -------------------------------------------------------
         # Create dynamics engine
@@ -100,7 +101,7 @@ class GaugeModel:
         if self.hmc:
             self.create_sampler()
         else:
-            self._create_optimizer()
+            #  self._create_optimizer()
             self.build()
             #  self.init_saver()
 
@@ -192,6 +193,9 @@ class GaugeModel:
                         dtype=TF_FLOAT, shape=(), name='translation_weight'
                     )
                 ]
+
+                train_phase = tf.placeholder(tf.bool, name='is_training')
+
             else:
                 x = tf.convert_to_tensor(
                     self.lattice.samples.reshape((self.batch_size,
@@ -200,12 +204,15 @@ class GaugeModel:
                 beta = tf.convert_to_tensor(self.beta_init)
                 charge_weight = tf.convert_to_tensor(0.)
                 net_weights = tf.convert_to_tensor([1., 1., 1.])
+                train_phase = True
 
         outputs = {
             'x': x,
             'beta': beta,
             'charge_weight': charge_weight,
-            'net_weights': net_weights
+            'net_weights': net_weights,
+            'train_phase': train_phase,
+
         }
 
         return outputs
@@ -286,14 +293,11 @@ class GaugeModel:
             # to "warmup" the learning rate gradually, done using the
             # `configure_learning_rate` method below..
             if self.using_hvd or self.warmup_lr:
-                if self.using_hvd:
-                    num_workers = hvd.size()
-                    # lr_init has already been multiplied by num_workers, so to
-                    # get back to the original `lr_init` parsed from the
-                    # command line, divide once by `num_workers`.
-                    lr_init /= num_workers
-                # divide by num_workers again to get the value lr_warmup to
-                # use at the beginning of the warmup
+                #  num_workers = hvd.size()
+                # lr_init has already been multiplied by num_workers, so to
+                # get back to the original `lr_init` parsed from the
+                # command line, divide once by `num_workers`.
+                #  lr_init /= num_workers
                 lr_warmup = lr_init / 10
                 warmup_steps = int(0.1 * self.train_steps)
                 self.lr = configure_learning_rate(lr_warmup,
@@ -302,14 +306,19 @@ class GaugeModel:
                                                   self.lr_decay_rate,
                                                   self.global_step,
                                                   warmup_steps)
+                #  lr_warmup = lr_init / num_workers
+                #  _train_steps = self.train_steps // num_workers
+                #  warmup_steps = int(0.1 * _train_steps)
             else:
                 self.lr = tf.train.exponential_decay(lr_init,
                                                      self.global_step,
                                                      self.lr_decay_steps,
                                                      self.lr_decay_rate,
-                                                     staircase=False,
+                                                     staircase=True,
                                                      name='learning_rate')
         with tf.name_scope('optimizer'):
+            #  update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+            #  with tf.control_dependencies(update_ops):
             self.optimizer = tf.train.AdamOptimizer(self.lr)
             if self.using_hvd:
                 self.optimizer = hvd.DistributedOptimizer(self.optimizer)
@@ -341,10 +350,6 @@ class GaugeModel:
         px = inputs['px']
         pz = inputs['pz']
 
-        #  x, x_proposed = x_tup
-        #  z, z_proposed = z_tup
-        #  px, pz = p_tup
-        #
         ls = self.loss_scale
         with tf.name_scope('std_loss'):
             with tf.name_scope('x_loss'):
@@ -437,9 +442,92 @@ class GaugeModel:
 
         return charge_loss
 
+    def calc_loss(self, x, beta, net_weights, train_phase, **weights):
+        """Create operation for calculating the loss.
 
+        Args:
+            x: Input tensor of shape (self.num_samples,
+                self.lattice.num_links) containing batch of GaugeLattice links
+                variables.
+            beta (float): Inverse coupling strength.
 
-    def calc_loss_and_grads(self, x, beta, net_weights, **weights):
+        Returns:
+            loss (float): Operation responsible for calculating the total loss.
+            px (np.ndarray): Array of acceptance probabilities from
+                Metropolis-Hastings accept/reject step. Has shape:
+                (self.num_samples,)
+            x_out: Output samples obtained after Metropolis-Hastings
+                accept/reject step.
+
+        NOTE: If proposed configuration is accepted following
+            Metropolis-Hastings accept/reject step, x_proposed and x_out are
+            equivalent.
+        """
+        with tf.name_scope('x_update'):
+            dynamics_output = self.dynamics.apply_transition(x, beta,
+                                                             net_weights,
+                                                             train_phase,
+                                                             self.save_lf)
+            x_proposed = tf.mod(dynamics_output['x_proposed'], 2 * np.pi)
+            px = dynamics_output['accept_prob']
+            x_out = tf.mod(dynamics_output['x_out'], 2 * np.pi)
+
+            #  x_proposed = output[0]
+            #  output[1] is v_post, don't need to save
+            #  px = output[2]
+            #  x_out = output[3]
+
+            #  if self.save_lf:
+            #      lf_outputs = output[4:]
+
+        # Auxiliary variable
+        with tf.name_scope('z_update'):
+            z = tf.random_normal(tf.shape(x), seed=GLOBAL_SEED, name='z')
+            z_dynamics_output = self.dynamics.apply_transition(z, beta,
+                                                               net_weights,
+                                                               train_phase,
+                                                               save_lf=False)
+            z_proposed = tf.mod(z_dynamics_output['x_proposed'], 2 * np.pi)
+            pz = z_dynamics_output['accept_prob']
+            #  z_proposed, _, pz, _ = self.dynamics(z, beta)
+
+        with tf.name_scope('top_charge_diff'):
+            x_dq = tf.cast(
+                self.lattice.calc_top_charges_diff(x, x_out, fft=False),
+                dtype=tf.int32
+            )
+
+        # Add eps for numerical stability; following released implementation
+        # NOTE:
+        #  std:_loss: 'standard' loss
+        #  charge_loss: Contribution from the difference in topological charge
+        #    betweween the initial and proposed configurations  to the total
+        #     loss.
+        inputs = {
+            'x_init': x,
+            'x_proposed': x_proposed,
+            'z_init': z,
+            'z_proposed': z_proposed,
+            'px': px,
+            'pz': pz
+        }
+
+        with tf.name_scope('calc_loss'):
+            with tf.name_scope('std_loss'):
+                std_loss = self._calc_std_loss(inputs, **weights)
+            with tf.name_scope('charge_loss'):
+                charge_loss = self._calc_charge_loss(inputs, **weights)
+
+            total_loss = tf.add(std_loss, charge_loss, name='total_loss')
+            tf.add_to_collection('losses', total_loss)
+        #  if self.save_lf:
+        #      return total_loss, x_out, px, x_dq, lf_outputs
+        #  else:
+        #      return total_loss, x_out, px, x_dq
+        return total_loss, x_dq, dynamics_output
+
+    def calc_loss_and_grads(self, x, beta, net_weights,
+                            train_phase, **weights):
         """Calculate loss its gradient with respect to all trainable variables.
 
         Args:
@@ -463,12 +551,15 @@ class GaugeModel:
             with tf.name_scope('grads'):
                 with tf.GradientTape() as tape:
                     loss, x_dq, dynamics_output = self.calc_loss(
-                        x, beta, net_weights, **weights
+                        x, beta, net_weights, train_phase, **weights
                     )
                 grads = tape.gradient(loss, self.dynamics.trainable_variables)
+                if self.clip_grads:
+                    grads, _ = tf.clip_by_global_norm(grads, self.clip_value)
         else:
             loss, x_dq, dynamics_output = self.calc_loss(x, beta,
                                                          net_weights,
+                                                         train_phase,
                                                          **weights)
             with tf.name_scope('grads'):
                 grads = tf.gradients(loss, self.dynamics.trainable_variables)
@@ -502,11 +593,13 @@ class GaugeModel:
 
     def build(self):
         """Build Tensorflow graph."""
-        with tf.name_scope('output'):
+        with tf.name_scope('loss_and_grads'):
             #  self.loss_op, self.grads, self.x_out, self.px, x_dq = output
             loss, grads, x_dq, dynamics_output = self.calc_loss_and_grads(
-                x=self.x, beta=self.beta,
+                x=self.x,
+                beta=self.beta,
                 net_weights=self.net_weights,
+                train_phase=self.train_phase,
                 **self.loss_weights
             )
             #  self.loss_op = outputs[0]
@@ -537,9 +630,21 @@ class GaugeModel:
             #  io.log("update_ops: ", update_ops)
             #  Use the update ops of the model itself
             #  io.log("model.updates: ", self.dynamics.updates)
+            # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            # PREVIOUS (WORKING but diverging grads as of 07/15/2019):
+            # ```
+            #  with tf.control_dependencies(self.dynamics.updates):
+            #      self.train_op = self.optimizer.apply_gradients(
+            #          grads_and_vars,
+            #          global_step=self.global_step,
+            #          name='train_op'
+            #      )
+            # ```
             # --------------------------------------------------------
             grads_and_vars = zip(self.grads, self.dynamics.trainable_variables)
-            with tf.control_dependencies(self.dynamics.updates):
+            update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+            with tf.control_dependencies(update_ops):
+                self._create_optimizer()
                 self.train_op = self.optimizer.apply_gradients(
                     grads_and_vars,
                     global_step=self.global_step,

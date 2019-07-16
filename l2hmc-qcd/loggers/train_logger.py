@@ -166,6 +166,7 @@ class TrainLogger:
             self.model.net_weights[0]: net_weights[0],
             self.model.net_weights[1]: net_weights[1],
             self.model.net_weights[2]: net_weights[2],
+            self.model.train_phase: True
         }
         summary_str = sess.run(self.summary_op, feed_dict=feed_dict)
 
