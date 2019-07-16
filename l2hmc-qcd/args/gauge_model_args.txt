@@ -17,8 +17,8 @@
 --lr_init 0.001
 --lr_decay_steps 1000
 --lr_decay_rate 0.96
---train_steps 5000 
---run_steps 2000
+--train_steps 10 
+--run_steps 100
 --save_steps 1000
 --print_steps 1
 --network_arch 'conv3D'
@@ -26,9 +26,7 @@
 --aux_weight 1.
 --std_weight 1.
 --charge_weight 1.
---loss_scale 1.
---clip_grads
---clip_val 1.
+--loss_scale 0.1
 --summaries
 --use_bn
 --save_lf
