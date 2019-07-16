@@ -10,6 +10,16 @@ if '2.' not in tf.__version__:
     tf.set_random_seed(GLOBAL_SEED)
 
 
+def batch_norm(x, axis, is_training):
+    return tf.layers.batch_normalization(x,
+                                         axis=axis,
+                                         training=is_training,
+                                         center=True,
+                                         scale=True,
+                                         reuse=False,
+                                         name='batch_norm')
+
+
 def custom_dense(units, factor=1., name=None):
     """Custom dense layer with specified weight intialization."""
     if '2.' not in tf.__version__:
@@ -84,6 +94,7 @@ def variable_with_weight_decay(name, shape, stddev, wd, cpu=True):
         tf.add_to_collection('losses', weight_decay)
 
     return var
+
 
 def create_periodic_padding(samples, filter_size):
     """Create periodic padding for multiple samples, using filter_size."""

@@ -76,12 +76,13 @@ class GaugeModelTrainer:
             # scale_weight, transformation_weight, translation_weight
             net_weights = [1., 1., 1.]
 
-        fd = {
+        feed_dict = {
             self.model.x: samples_np,
             self.model.beta: beta_np,
             self.model.net_weights[0]: net_weights[0],
             self.model.net_weights[1]: net_weights[1],
             self.model.net_weights[2]: net_weights[2],
+            self.model.train_phase: True,
         }
 
         global_step = self.sess.run(self.model.global_step)
@@ -99,7 +100,7 @@ class GaugeModelTrainer:
             self.model.lr,               # evaluate learning rate
         ]
 
-        outputs = self.sess.run(ops, feed_dict=fd)
+        outputs = self.sess.run(ops, feed_dict=feed_dict)
 
         dt = time.time() - start_time
         out_data = {

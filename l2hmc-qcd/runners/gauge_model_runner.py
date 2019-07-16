@@ -143,6 +143,9 @@ class GaugeModelRunner:
             self.model.net_weights[0]: net_weights[0],
             self.model.net_weights[1]: net_weights[1],
             self.model.net_weights[2]: net_weights[2],
+            self.model.train_phase: False
+
+
         }
 
         start_time = time.time()
