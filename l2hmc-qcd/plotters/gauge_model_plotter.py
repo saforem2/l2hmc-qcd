@@ -171,7 +171,7 @@ def plot_with_inset(data, labels=None, **kwargs):
     alpha = kwargs.get('alpha', 1.)
     legend = kwargs.get('legend', False)
     title = kwargs.get('title', None)
-    lw = kwargs.get('lw', 0.5)
+    lw = kwargs.get('lw', 1.)
     ret = kwargs.get('ret', False)
     #  data_lims = kwargs.get('data_lims', None)
 
@@ -232,7 +232,7 @@ def plot_with_inset(data, labels=None, **kwargs):
         _ymin -= 0.1 * _y
         axins.errorbar(_x, _y, yerr=_yerr, label='',
                        marker=marker, fillstyle=fillstyle,
-                       ls=ls, alpha=alpha, lw=2*lw, color=color)
+                       ls=ls, alpha=alpha, lw=1.5*lw, color=color)
     else:
         _ymax = max(_y)
         _ymax += 0.1 * _ymax
@@ -240,7 +240,7 @@ def plot_with_inset(data, labels=None, **kwargs):
         _ymin -= 0.1 * _ymin
         axins.plot(_x, _y, label='',
                    marker=marker, fillstyle=fillstyle,
-                   ls=ls, alpha=alpha, lw=2*lw, color=color)
+                   ls=ls, alpha=alpha, lw=1.5*lw, color=color)
 
     axins.indicate_inset_zoom(axins, label='')
     axins.xaxis.get_major_locator().set_params(nbins=3)

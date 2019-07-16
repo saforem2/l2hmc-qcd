@@ -292,12 +292,14 @@ class GaugeModel:
             # HOROVOD: When performing distributed training, it can be usedful
             # to "warmup" the learning rate gradually, done using the
             # `configure_learning_rate` method below..
-            if self.using_hvd or self.warmup_lr:
-                #  num_workers = hvd.size()
+            if self.warmup_lr:
                 # lr_init has already been multiplied by num_workers, so to
                 # get back to the original `lr_init` parsed from the
                 # command line, divide once by `num_workers`.
-                #  lr_init /= num_workers
+                num_workers = hvd.size()
+                if self.using_hvd:
+                    lr_init /= num_workers
+
                 lr_warmup = lr_init / 10
                 warmup_steps = int(0.1 * self.train_steps)
                 self.lr = configure_learning_rate(lr_warmup,
