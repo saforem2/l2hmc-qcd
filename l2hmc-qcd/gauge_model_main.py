@@ -411,10 +411,10 @@ def run_l2hmc(FLAGS, params, checkpoint_dir):
     model = GaugeModel(params=params)
     config, params = create_config(FLAGS, params)
 
-    if params['using_hvd']:
-        bcast_op = hvd.broadcast_global_variables(0)
-    else:
-        bcast_op = None
+    #  if params['using_hvd']:
+    #      bcast_op = hvd.broadcast_global_variables(0)
+    #  else:
+    #      bcast_op = None
 
     # create new session for inference and restore model from checkpoint_dir
     sess = tf.Session(config=config)
@@ -427,8 +427,8 @@ def run_l2hmc(FLAGS, params, checkpoint_dir):
         run_logger = None
         plotter = None
 
-    if bcast_op is not None:
-        sess.run(bcast_op)
+    #  if bcast_op is not None:
+    #      sess.run(bcast_op)
 
     # -------------------------------------------------  
     #  Set up relevant parameters to use for inference   
@@ -533,20 +533,16 @@ def main(FLAGS):
         #   train l2hmc sampler
         # ------------------------
         FLAGS, params, model, train_logger = train_l2hmc(FLAGS, log_file)
-
         if FLAGS.inference:
             if train_logger is not None:
                 checkpoint_dir = train_logger.checkpoint_dir
+            else:
+                checkpoint_dir = None
 
             # ---------------------------------------------
             #   run inference using trained l2hmc sampler
             # ---------------------------------------------
             run_l2hmc(FLAGS, params, checkpoint_dir)
-
-        #  FLAGS, params, model, run_logger = inference.inference(FLAGS,
-        #                                                         checkpoint_dir,
-        #                                                         params,
-        #                                                         model)
 
         # -----------------------------------------------------------
         #  run HMC following inference if --run_hmc flag was passed
