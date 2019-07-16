@@ -124,7 +124,7 @@ class TrainLogger:
             if 'batch_normalization' not in var.op.name:
                 tf.summary.histogram(var.op.name, var)
 
-        with tf.name_scope('summaries'):
+        with tf.name_scope('train_summaries'):
             for grad, var in grads_and_vars:
                 try:
                     #  layer, _type = var.name.split('/')[-2:]
@@ -142,7 +142,7 @@ class TrainLogger:
                     variable_summaries(grad, name + '/gradients')
                     tf.summary.histogram(name + '/gradients', grad)
 
-        self.summary_op = tf.summary.merge_all(name='summary_op')
+        self.summary_op = tf.summary.merge_all(name='train_summary_op')
 
     def save_current_state(self):
         """Save current state to pickle file.
