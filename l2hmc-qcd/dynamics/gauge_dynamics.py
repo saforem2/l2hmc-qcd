@@ -195,7 +195,7 @@ class GaugeDynamics(tf.keras.Model):
                                                    save_lf=save_lf)
                 x_f = outputs_f['x_proposed']
                 v_f = outputs_f['v_proposed']
-                accept_prob_f = outputs_f['accept_prob']
+                pxs_out_f = outputs_f['accept_prob']
 
                 if save_lf:
                     lf_out_f = outputs_f['lf_out']
@@ -210,7 +210,7 @@ class GaugeDynamics(tf.keras.Model):
                                                    save_lf=save_lf)
                 x_b = outputs_b['x_proposed']
                 v_b = outputs_b['v_proposed']
-                accept_prob_b = outputs_b['accept_prob']
+                pxs_out_b = outputs_b['accept_prob']
 
                 if save_lf:
                     lf_out_b = outputs_b['lf_out']
@@ -219,27 +219,27 @@ class GaugeDynamics(tf.keras.Model):
 
             # Decide direction uniformly
             with tf.name_scope('transition_masks'):
-                forward_mask = tf.cast(
+                masks_f = tf.cast(
                     tf.random_uniform((self.batch_size,),
                                       seed=GLOBAL_SEED) > 0.5,
                     TF_FLOAT,
                     name='forward_mask'
                 )
-                backward_mask = 1. - forward_mask
+                masks_b = 1. - masks_f
 
             # Obtain proposed states
             with tf.name_scope('x_proposed'):
-                x_proposed = (forward_mask[:, None] * x_f
-                              + backward_mask[:, None] * x_b)
+                x_proposed = (masks_f[:, None] * x_f
+                              + masks_b[:, None] * x_b)
 
             with tf.name_scope('v_proposed'):
-                v_proposed = (forward_mask[:, None] * v_f
-                              + backward_mask[:, None] * v_b)
+                v_proposed = (masks_f[:, None] * v_f
+                              + masks_b[:, None] * v_b)
 
             # Probability of accepting the proposed states
             with tf.name_scope('accept_prob'):
-                accept_prob = (forward_mask * accept_prob_f
-                               + backward_mask * accept_prob_b)
+                accept_prob = (masks_f * pxs_out_f
+                               + masks_b * pxs_out_b)
 
             # Accept or reject step
             with tf.name_scope('accept_mask'):
@@ -266,16 +266,21 @@ class GaugeDynamics(tf.keras.Model):
         }
 
         if save_lf:
+            outputs['masks_f'] = masks_f
+            outputs['masks_b'] = masks_b
+
             outputs['lf_out_f'] = lf_out_f
-            outputs['accept_probs_f'] = accept_prob_f
             outputs['lf_out_b'] = lf_out_b
-            outputs['accept_probs_b'] = accept_prob_b
-            outputs['forward_mask'] = forward_mask
-            outputs['backward_mask'] = backward_mask
+
+            outputs['pxs_out_f'] = pxs_out_f
+            outputs['pxs_out_b'] = pxs_out_b
+
             outputs['logdets_f'] = logdets_f
             outputs['logdets_b'] = logdets_b
+
             outputs['sumlogdet_f'] = sumlogdet_f
             outputs['sumlogdet_b'] = sumlogdet_b
+
 
         return outputs
 
