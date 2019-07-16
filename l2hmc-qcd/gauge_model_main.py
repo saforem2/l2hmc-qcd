@@ -76,6 +76,19 @@ np.random.seed(GLOBAL_SEED)     # numpy pseudo-random generator
 tf.set_random_seed(GLOBAL_SEED)
 
 
+def latest_meta_file(checkpoint_dir=None):
+    if not os.path.isdir(checkpoint_dir) or checkpoint_dir is None:
+        return
+
+    meta_files = [i for i in os.listdir(checkpoint_dir) if i.endswith('.meta')]
+    step_nums = [int(i.split('-')[-1].rstrip('.meta')) for i in meta_files]
+    step_num = sorted(step_nums)[-1]
+    meta_file = os.path.join(checkpoint_dir, f'model.ckpt-{step_num}.meta')
+
+    return meta_file
+
+
+
 def count_trainable_params(out_file, log=False):
     """Count the total number of trainable parameters in a tf.Graph object."""
     if log:

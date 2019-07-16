@@ -75,17 +75,6 @@ class GaugeDynamics(tf.keras.Model):
                 setattr(self, key, val)
 
         with tf.name_scope('eps'):
-            #  eps_init = kwargs.get('eps', 0.25)
-            #  if not self.hmc:
-            #      self.alpha = tf.get_variable(
-            #          'alpha',
-            #          initializer=tf.log(tf.constant(eps_init)),
-            #          trainable=self.eps_trainable
-            #      )
-            #  else:
-            #      self.alpha = tf.log(tf.constant(eps_init, dtype=TF_FLOAT))
-            #
-            #  self.eps = tf.exp(self.alpha, name='eps')
             self.eps = tf.Variable(
                 initial_value=kwargs.get('eps', 0.4),
                 name='eps',
