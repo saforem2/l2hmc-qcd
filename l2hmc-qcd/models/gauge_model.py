@@ -266,6 +266,11 @@ class GaugeModel:
             elif metric == 'cos_diff':
                 def metric_fn(x1, x2):
                     return 1. - tf.cos(x1 - x2)
+
+            elif metric == 'sin_diff':
+                def metric_fn(x1, x2):
+                    return 1. - tf.sin(x1 - x2)
+
             elif metric == 'tan_cos':
                 def metric_fn(x1, x2):
                     cos_diff = 1. - tf.cos(x1 - x2)
@@ -471,9 +476,11 @@ class GaugeModel:
                                                              net_weights,
                                                              train_phase,
                                                              self.save_lf)
-            x_proposed = tf.mod(dynamics_output['x_proposed'], 2 * np.pi)
+            x_proposed = dynamics_output['x_proposed']
+            #  x_proposed = tf.mod(dynamics_output['x_proposed'], 2 * np.pi)
             px = dynamics_output['accept_prob']
-            x_out = tf.mod(dynamics_output['x_out'], 2 * np.pi)
+            x_out = dynamics_output['x_out']
+            #  x_out = tf.mod(dynamics_output['x_out'], 2 * np.pi)
 
             #  x_proposed = output[0]
             #  output[1] is v_post, don't need to save
