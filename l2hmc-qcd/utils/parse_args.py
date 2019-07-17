@@ -315,7 +315,7 @@ def parse_args():
     parser.add_argument('--num_hidden',
                         dest='num_hidden',
                         type=int,
-                        default=None,
+                        default=100,
                         required=False,
                         help=("""Number of nodes to include in fully-connected
                               hidden layer `h`. If not explicitly passed, will

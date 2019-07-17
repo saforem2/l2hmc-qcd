@@ -112,7 +112,7 @@ class GaugeDynamics(tf.keras.Model):
     def _build_conv_nets_3D(self, net_kwargs):
         """Build ConvNet3D architecture for x and v functions."""
         net_kwargs.update({
-            'num_hidden': 2 * self.lattice.num_links,  # num hidden nodes
+            'num_hidden': self.num_hidden,  # num hidden nodes
             'num_filters': int(self.lattice.space_size),  # num conv. filters
             'filter_sizes': [(3, 3, 2), (2, 2, 2)],  # size of conv. filters
             'name_scope': 'position',  # namespace in which to create network
