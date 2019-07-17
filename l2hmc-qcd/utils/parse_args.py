@@ -451,6 +451,13 @@ def parse_args():
                         required=False,
                         help=("""Flag that when passed uses Horovod for
                               distributed training on multiple nodes."""))
+    parser.add_argument("--comet",
+                        dest="comet",
+                        action="store_true",
+                        required=False,
+                        help=("""Flag that when passed uses comet.ml for
+                              parameter logging and additonal metric
+                              tracking/displaying."""))
 
     #########################
     #  (Mostly) Deprecated  #
