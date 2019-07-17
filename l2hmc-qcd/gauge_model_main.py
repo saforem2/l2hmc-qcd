@@ -32,8 +32,6 @@ Date: 04/10/2019
 """
 try:
     from comet_ml import Experiment
-    experiment = Experiment(api_key="r7rKFO35BJuaY3KT1Tpj4adco",
-                            project_name="l2hmc-qcd", workspace="saforem2")
     HAS_COMET = True
 except ImportError:
     HAS_COMET = False
@@ -176,7 +174,7 @@ def create_config(FLAGS, params, train_phase=True):
     return config, params
 
 
-def train_l2hmc(FLAGS, log_file=None):
+def train_l2hmc(FLAGS, log_file=None, experiment=None):
     """Create, train, and run L2HMC sampler on 2D U(1) gauge model."""
     io.log('\n' + 80 * '-')
     io.log("Running L2HMC algorithm...")
@@ -324,7 +322,7 @@ def train_l2hmc(FLAGS, log_file=None):
         save_summaries_steps=None
     )
 
-    if HAS_COMET:
+    if HAS_COMET and experiment is not None:
         experiment.log_parameters(params)
         experiment.set_model_graph(sess.graph)
 
@@ -627,6 +625,13 @@ def main(FLAGS):
     else:
         log_file = None
 
+    if FLAGS.comet:
+        experiment = Experiment(api_key="r7rKFO35BJuaY3KT1Tpj4adco",
+                                project_name="l2hmc-qcd",
+                                workspace="saforem2")
+    else:
+        experiment = None
+
     if FLAGS.hmc_eps is None:
         eps_arr = [0.1, 0.15, 0.2, 0.25]
     else:
@@ -645,7 +650,9 @@ def main(FLAGS):
         # ------------------------
         #   train l2hmc sampler
         # ------------------------
-        FLAGS, params, model, train_logger = train_l2hmc(FLAGS, log_file)
+        FLAGS, params, model, train_logger = train_l2hmc(FLAGS,
+                                                         log_file,
+                                                         experiment=experiment)
         if FLAGS.inference:
             if train_logger is not None:
                 checkpoint_dir = train_logger.checkpoint_dir
