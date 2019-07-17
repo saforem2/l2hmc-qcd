@@ -30,6 +30,13 @@ for each major part of the algorithm:
 Author: Sam Foreman (github: @saforem2)
 Date: 04/10/2019
 """
+try:
+    from comet_ml import Experiment
+    experiment = Experiment(api_key="r7rKFO35BJuaY3KT1Tpj4adco",
+                            project_name="l2hmc-qcd", workspace="saforem2")
+except ImportError:
+    pass
+
 import os
 import random
 import time
