@@ -34,8 +34,9 @@ try:
     from comet_ml import Experiment
     experiment = Experiment(api_key="r7rKFO35BJuaY3KT1Tpj4adco",
                             project_name="l2hmc-qcd", workspace="saforem2")
+    HAS_COMET = True
 except ImportError:
-    pass
+    HAS_COMET = False
 
 import os
 import random
@@ -310,6 +311,7 @@ def train_l2hmc(FLAGS, log_file=None):
         local_init_op=local_init_op,
         ready_for_local_init_op=ready_for_local_init_op
     )
+
     # The MonitoredTrainingSession takes care of session
     # initialization, restoring from a checkpoint, saving to a
     # checkpoint, and closing when done or an error occurs.
@@ -321,6 +323,10 @@ def train_l2hmc(FLAGS, log_file=None):
         save_summaries_secs=None,
         save_summaries_steps=None
     )
+
+    if HAS_COMET:
+        experiment.log_parameters(params)
+        experiment.set_model_graph(sess.graph)
 
     # ----------------------------------------------------------
     #   TRAINING
