@@ -161,10 +161,10 @@ def main_inference(kwargs):
     model = GaugeModel(params=params)
 
     # HOROVOD: Create operation for broadcasting global variables to all ranks
-    if params['using_hvd']:
-        bcast_op = hvd.broadcast_global_variables(0)
-    else:
-        bcast_op = None
+    #  if params['using_hvd']:
+    #      bcast_op = hvd.broadcast_global_variables(0)
+    #  else:
+    #      bcast_op = None
 
     # ---------------------------------------------------------
     # INFERENCE
@@ -179,8 +179,8 @@ def main_inference(kwargs):
         run_logger = None
         plotter = None
 
-    if bcast_op is not None:
-        sess.run(bcast_op)
+    #  if bcast_op is not None:
+    #      sess.run(bcast_op)
 
     # -------------------------------------------------  
     #  Set up relevant parameters to use for inference   
