@@ -39,6 +39,7 @@ except ImportError:
 import os
 import random
 import time
+import pickle
 import tensorflow as tf
 import numpy as np
 
@@ -359,6 +360,10 @@ def train_l2hmc(FLAGS, log_file=None, experiment=None):
         experiment.log_parameters(params)
         g = sess.graph
         experiment.set_model_graph(g)
+
+    params_file = os.path.join(os.getcwd(), 'params.pkl')
+    with open(params_file, 'wb') as f:
+        pickle.dump(model.params, f)
 
     # Count all trainable paramters and write them out (w/ shapes) to txt file
     count_trainable_params(os.path.join(FLAGS.log_dir, 'trainable_params.txt'))
