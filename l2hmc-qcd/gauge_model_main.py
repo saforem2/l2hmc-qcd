@@ -446,7 +446,7 @@ def run_setup(FLAGS, params):
     return init_dict
 
 
-def run_l2hmc(FLAGS, params, checkpoint_dir):
+def run_l2hmc(FLAGS, params, checkpoint_dir, experiment=None):
     """Run inference using trained L2HMC sampler."""
     #  assert os.path.isdir(checkpoint_dir)
     tf.keras.backend.set_learning_phase(False)
@@ -488,7 +488,8 @@ def run_l2hmc(FLAGS, params, checkpoint_dir):
                                save_lf_data=False,
                                summaries=False)
 
-        plotter = GaugeModelPlotter(model, run_logger.figs_dir)
+        plotter = GaugeModelPlotter(model, run_logger.figs_dir,
+                                    experiment=experiment)
 
         net_weights_file = os.path.join(model.log_dir, 'net_weights.txt')
         np.savetxt(net_weights_file, net_weights_arr,
@@ -625,7 +626,11 @@ def main(FLAGS):
     else:
         log_file = None
 
-    if FLAGS.comet:
+    condition1 = not FLAGS.horovod
+    condition2 = FLAGS.horovod and hvd.rank() == 0
+    is_chief = condition1 or condition2
+
+    if FLAGS.comet and is_chief:
         experiment = Experiment(api_key="r7rKFO35BJuaY3KT1Tpj4adco",
                                 project_name="l2hmc-qcd",
                                 workspace="saforem2")

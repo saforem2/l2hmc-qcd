@@ -29,6 +29,14 @@ def save_params(params, out_dir):
         pickle.dump(params, f)
 
 
+def make_summaries_from_collection(collection, names):
+    try:
+        for op, name in zip(tf.get_collection(collection), names):
+            variable_summaries(op, name)
+    except AttributeError:
+        pass
+
+
 class TrainLogger:
     def __init__(self, model, log_dir, summaries=False):
         #  self.sess = sess
