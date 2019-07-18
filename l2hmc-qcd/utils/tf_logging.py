@@ -9,6 +9,7 @@ import tensorflow as tf
 
 TOWER_NAME = 'tower'
 
+
 def get_run_num(log_dir):
     if not os.path.isdir(log_dir):
         os.makedirs(log_dir)
@@ -33,6 +34,7 @@ def get_run_num(log_dir):
     #      run_nums = [int(str(i)[3:]) for i in run_dirs]
     #      prev_run_num = max(run_nums)
     #      return prev_run_num + 1
+
 
 def make_run_dir(log_dir):
     if log_dir.endswith('/'):
@@ -64,19 +66,19 @@ def check_log_dir(log_dir):
     return log_dir, info_dir, figs_dir
 
 
-def create_log_dir():
-    """Create directory for storing information about experiment."""
-    #  root_log_dir = '../../log_mog_tf/'
-    #  root_log_dir = os.path.join(ROOT_DIR, log_mog_tf)
-    root_log_dir = os.path.join(os.path.split(ROOT_DIR)[0], 'log_mog_tf')
-    log_dir = make_run_dir(root_log_dir)
-    info_dir = log_dir + 'run_info/'
-    figs_dir = log_dir + 'figures/'
-    if not os.path.isdir(info_dir):
-        os.makedirs(info_dir)
-    if not os.path.isdir(figs_dir):
-        os.makedirs(figs_dir)
-    return log_dir, info_dir, figs_dir
+#  def create_log_dir():
+#      """Create directory for storing information about experiment."""
+#      #  root_log_dir = '../../log_mog_tf/'
+#      #  root_log_dir = os.path.join(ROOT_DIR, log_mog_tf)
+#      root_log_dir = os.path.join(os.path.split(ROOT_DIR)[0], 'log_mog_tf')
+#      log_dir = make_run_dir(root_log_dir)
+#      info_dir = log_dir + 'run_info/'
+#      figs_dir = log_dir + 'figures/'
+#      if not os.path.isdir(info_dir):
+#          os.makedirs(info_dir)
+#      if not os.path.isdir(figs_dir):
+#          os.makedirs(figs_dir)
+#      return log_dir, info_dir, figs_dir
 
 
 def variable_summaries(var, name):
@@ -116,13 +118,14 @@ def add_loss_summaries(total_loss):
     for l in losses + [total_loss]:
         # Name each loss as '(raw)' and name the moving average version of
         # the loss as the original loss name.
-        tf.summary.scalar(l.op.name + ' (raw)', l)
-        tf.summary.scalar(l.op.name, loss_averages.average(l))
+        tf.summary.scalar(l.op.name, l)
+        tf.summary.scalar(l.op.name + 'moving_avg', loss_averages.average(l))
 
-    return loss_averages_op
+    #  return loss_averages_op
+
 
 def activation_summary(x):
-    """Helper to create summaries for activations.A
+    """Helper to create summaries for activations.
     
     Creates a summary that provides a histogram of activations.
     Creates a summary that measures the sparisty of activations.

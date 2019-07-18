@@ -168,16 +168,16 @@ def plot_with_inset(data, labels=None, **kwargs):
     out_file = kwargs.get('out_file', None)
     markers = kwargs.get('markers', False)
     lines = kwargs.get('lines', True)
-    alpha = kwargs.get('alpha', 1.)
+    alpha = kwargs.get('alpha', 7.)
     legend = kwargs.get('legend', False)
     title = kwargs.get('title', None)
-    lw = kwargs.get('lw', 0.5)
+    lw = kwargs.get('lw', 1.5)
     ret = kwargs.get('ret', False)
     #  data_lims = kwargs.get('data_lims', None)
 
     color = kwargs.get('color', 'C0')
     bounds = kwargs.get('bounds', [0.2, 0.2, 0.7, 0.3])
-    inset_range = kwargs.get('inset_xrange', 50)
+    dx = kwargs.get('dx', 100)
 
     plt_label = labels.get('plt_label', None)
     x_label = labels.get('x_label', None)
@@ -219,20 +219,21 @@ def plot_with_inset(data, labels=None, **kwargs):
     axins = ax.inset_axes(bounds)
 
     mid_idx = len(x) // 2
-    idx0 = mid_idx - (inset_range // 2)
-    idx1 = mid_idx + (inset_range // 2)
+    idx0 = mid_idx - dx
+    idx1 = mid_idx + dx
+    skip = 10
 
-    _x = x[idx0:idx1]
-    _y = y[idx0:idx1]
+    _x = x[idx0:idx1:skip]
+    _y = y[idx0:idx1:skip]
     if yerr is not None:
-        _yerr = yerr[idx0:idx1]
+        _yerr = yerr[idx0:idx1:skip]
         _ymax = max(_y + abs(_yerr))
         _ymax += 0.1 * _ymax
         _ymin = min(_y - abs(_yerr))
         _ymin -= 0.1 * _y
         axins.errorbar(_x, _y, yerr=_yerr, label='',
                        marker=marker, fillstyle=fillstyle,
-                       ls=ls, alpha=alpha, lw=2*lw, color=color)
+                       ls=ls, alpha=alpha, lw=lw, color=color)
     else:
         _ymax = max(_y)
         _ymax += 0.1 * _ymax
@@ -240,7 +241,7 @@ def plot_with_inset(data, labels=None, **kwargs):
         _ymin -= 0.1 * _ymin
         axins.plot(_x, _y, label='',
                    marker=marker, fillstyle=fillstyle,
-                   ls=ls, alpha=alpha, lw=2*lw, color=color)
+                   ls=ls, alpha=alpha, lw=lw, color=color)
 
     axins.indicate_inset_zoom(axins, label='')
     axins.xaxis.get_major_locator().set_params(nbins=3)
@@ -265,9 +266,11 @@ def plot_with_inset(data, labels=None, **kwargs):
 
 
 class GaugeModelPlotter:
-    def __init__(self, model, figs_dir=None):
+    def __init__(self, model, figs_dir=None, experiment=None):
         self.figs_dir = figs_dir
         self.model = model
+        if experiment is not None:
+            self.experiment = experiment
 
     def calc_stats(self, data, therm_frac=10):
         """Calculate observables statistics.
@@ -315,6 +318,12 @@ class GaugeModelPlotter:
         }
 
         return stats
+
+    def log_figure(self):
+        try:
+            self.experiment.log_figure()
+        except AttributeError:
+            pass
 
     def plot_observables(self, data, beta, run_str, **weights):
         """Plot observables."""
@@ -383,16 +392,23 @@ class GaugeModelPlotter:
             'out_file': [],
         }
         self._plot_actions((steps_arr, actions_avg, actions_err), **kwargs)
+        self.log_figure()
         self._plot_plaqs((steps_arr, plaqs_avg, plaqs_err), beta, **kwargs)
+        self.log_figure()
         self._plot_charges((steps_arr, charges.T), **kwargs)
+        self.log_figure()
         self._plot_charge_probs(charges, **kwargs)
+        self.log_figure()
         self._plot_charge_diffs((_steps_diffs, _charge_diffs.T), **kwargs)
+        self.log_figure()
         self._plot_autocorrs((steps_arr,
                               charge_autocorrs_avg,
                               charge_autocorrs_err), **kwargs)
+        self.log_figure()
         self._plot_plaqs_diffs((_steps_diffs,
                                 _plaq_diffs_avg,
                                 _plaq_diffs_err), **kwargs)
+        self.log_figure()
 
         #  self._plot_actions((_steps_arr, _actions.T), **kwargs)
         #  self._plot_plaqs((_steps_arr, _plaqs.T), beta, **kwargs)

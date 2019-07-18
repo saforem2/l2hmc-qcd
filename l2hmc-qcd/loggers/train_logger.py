@@ -13,7 +13,7 @@ import pickle
 import utils.file_io as io
 
 from globals import TRAIN_HEADER
-from utils.tf_logging import variable_summaries  # add_loss_summaries
+from utils.tf_logging import variable_summaries, add_loss_summaries
 
 import tensorflow as tf
 
@@ -27,6 +27,26 @@ def save_params(params, out_dir):
             f.write(f"{key}: {val}\n")
     with open(params_pkl_file, 'wb') as f:
         pickle.dump(params, f)
+
+
+def make_summaries_from_collection(collection, names):
+    try:
+        for op, name in zip(tf.get_collection(collection), names):
+            variable_summaries(op, name)
+    except AttributeError:
+        pass
+
+
+def grad_norm_summary(name_scope, grad):
+    with tf.name_scope(name_scope + '_gradients'):
+        grad_norm = tf.sqrt(tf.reduce_mean(grad ** 2))
+        summary_name = name_scope + '_grad_norm'
+        tf.summary.scalar(summary_name, grad_norm)
+
+
+
+def check_var_and_op(name, var):
+    return (name in var.name or name in var.op.name)
 
 
 class TrainLogger:
@@ -117,32 +137,43 @@ class TrainLogger:
         with tf.name_scope('avg_plaq'):
             tf.summary.scalar('avg_plaq', self.model.avg_plaqs_op)
 
-        #  with tf.name_scope('avg_plaq'):
-        #      tf.summary.scalar('avg_plaq', self.model.avg_plaqs_op)
+        #  for var in tf.trainable_variables():
+        #      if 'batch_normalization' not in var.op.name:
+        #          tf.summary.histogram(var.op.name, var)
 
-        for var in tf.trainable_variables():
-            if 'batch_normalization' not in var.op.name:
-                tf.summary.histogram(var.op.name, var)
-
-        with tf.name_scope('summaries'):
-            for grad, var in grads_and_vars:
-                try:
-                    #  layer, _type = var.name.split('/')[-2:]
-                    _name = var.name.split('/')[-2:]
-                    if len(_name) > 1:
-                        name = _name[0] + '_' + _name[1][:-2]
-                        #  name = layer + '_' + _type[:-2]
-                    else:
-                        name = var.name[:-2]
-                except (AttributeError, IndexError):
+        for grad, var in grads_and_vars:
+            try:
+                _name = var.name.split('/')[-2:]
+                if len(_name) > 1:
+                    name = _name[0] + '/' + _name[1][:-2]
+                else:
                     name = var.name[:-2]
+            except (AttributeError, IndexError):
+                name = var.name[:-2]
 
-                if 'batch_norm' not in name:
-                    variable_summaries(var, name)
-                    variable_summaries(grad, name + '/gradients')
-                    tf.summary.histogram(name + '/gradients', grad)
 
-        self.summary_op = tf.summary.merge_all(name='summary_op')
+            with tf.name_scope(name):
+                variable_summaries(var, name)
+                variable_summaries(grad, name + '/gradients')
+                tf.summary.histogram(name, var)
+                tf.summary.histogram(name + '/gradients', grad)
+                if 'kernel' in var.name:
+                    if 'XNet' in var.name:
+                        net_str = 'XNet/'
+                    elif 'VNet' in var.name:
+                        net_str = 'VNet/'
+                    else:
+                        net_str = ''
+
+                    if 'scale' in var.name:
+                        grad_norm_summary(net_str + 'scale', grad)
+                    if 'transformation' in var.name:
+                        grad_norm_summary(net_str + 'transformation', grad)
+                    if 'translation' in var.name:
+                        grad_norm_summary(net_str + 'translation', grad)
+            #  if 'batch_norm' not in name:
+
+        self.summary_op = tf.summary.merge_all(name='train_summary_op')
 
     def save_current_state(self):
         """Save current state to pickle file.
