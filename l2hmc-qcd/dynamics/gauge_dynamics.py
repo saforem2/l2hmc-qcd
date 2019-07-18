@@ -37,6 +37,13 @@ def flatten_tensor(tensor):
     return tf.reshape(tensor, shape=(batch_size, -1))
 
 
+def _add_to_collection(collection, ops):
+    if len(ops) > 1:
+        [tf.add_to_collection(collection, op) for op in ops]
+    else:
+        tf.add_to_collection(collection, ops)
+
+
 class GaugeDynamics(tf.keras.Model):
     """Dynamics engine of naive L2HMC sampler."""
 
@@ -74,13 +81,26 @@ class GaugeDynamics(tf.keras.Model):
             if key != 'eps':  # want to use self.eps as tf.Variable
                 setattr(self, key, val)
 
-        with tf.name_scope('eps'):
-            self.eps = tf.Variable(
-                initial_value=kwargs.get('eps', 0.4),
-                name='eps',
-                dtype=TF_FLOAT,
-                trainable=self.eps_trainable
-            )
+        #  _eps_np = kwargs.get('eps', 0.4)
+        #  with tf.variable_scope(reus):
+        #  self.eps = tf.get_variable('eps', dtype=TF_FLOAT,
+        #                             trainable=self.eps_trainable,
+        #                             initializer=tf.constant(_eps_np))
+
+        #  self.log_eps = tf.Variable(
+        #      initial_value=tf.log(tf.constant(_eps_np)),
+        #      name='log_eps',
+        #      dtype=TF_FLOAT,
+        #      trainable=self.eps_trainable
+        #  )
+        #
+        #  self.eps = tf.exp(self.log_eps, name='eps')
+        self.eps = tf.Variable(
+            initial_value=kwargs.get('eps', 0.4),
+            name='eps',
+            dtype=TF_FLOAT,
+            trainable=self.eps_trainable
+        )
 
         self._construct_masks()
 
@@ -112,7 +132,7 @@ class GaugeDynamics(tf.keras.Model):
     def _build_conv_nets_3D(self, net_kwargs):
         """Build ConvNet3D architecture for x and v functions."""
         net_kwargs.update({
-            'num_hidden': 2 * self.lattice.num_links,  # num hidden nodes
+            'num_hidden': self.num_hidden,  # num hidden nodes
             'num_filters': int(self.lattice.space_size),  # num conv. filters
             'filter_sizes': [(3, 3, 2), (2, 2, 2)],  # size of conv. filters
             'name_scope': 'position',  # namespace in which to create network
@@ -195,7 +215,7 @@ class GaugeDynamics(tf.keras.Model):
                                                    save_lf=save_lf)
                 x_f = outputs_f['x_proposed']
                 v_f = outputs_f['v_proposed']
-                accept_prob_f = outputs_f['accept_prob']
+                pxs_out_f = outputs_f['accept_prob']
 
                 if save_lf:
                     lf_out_f = outputs_f['lf_out']
@@ -210,7 +230,7 @@ class GaugeDynamics(tf.keras.Model):
                                                    save_lf=save_lf)
                 x_b = outputs_b['x_proposed']
                 v_b = outputs_b['v_proposed']
-                accept_prob_b = outputs_b['accept_prob']
+                pxs_out_b = outputs_b['accept_prob']
 
                 if save_lf:
                     lf_out_b = outputs_b['lf_out']
@@ -219,27 +239,27 @@ class GaugeDynamics(tf.keras.Model):
 
             # Decide direction uniformly
             with tf.name_scope('transition_masks'):
-                forward_mask = tf.cast(
+                masks_f = tf.cast(
                     tf.random_uniform((self.batch_size,),
                                       seed=GLOBAL_SEED) > 0.5,
                     TF_FLOAT,
                     name='forward_mask'
                 )
-                backward_mask = 1. - forward_mask
+                masks_b = 1. - masks_f
 
             # Obtain proposed states
             with tf.name_scope('x_proposed'):
-                x_proposed = (forward_mask[:, None] * x_f
-                              + backward_mask[:, None] * x_b)
+                x_proposed = (masks_f[:, None] * x_f
+                              + masks_b[:, None] * x_b)
 
             with tf.name_scope('v_proposed'):
-                v_proposed = (forward_mask[:, None] * v_f
-                              + backward_mask[:, None] * v_b)
+                v_proposed = (masks_f[:, None] * v_f
+                              + masks_b[:, None] * v_b)
 
             # Probability of accepting the proposed states
             with tf.name_scope('accept_prob'):
-                accept_prob = (forward_mask * accept_prob_f
-                               + backward_mask * accept_prob_b)
+                accept_prob = (masks_f * pxs_out_f
+                               + masks_b * pxs_out_b)
 
             # Accept or reject step
             with tf.name_scope('accept_mask'):
@@ -266,14 +286,18 @@ class GaugeDynamics(tf.keras.Model):
         }
 
         if save_lf:
+            outputs['masks_f'] = masks_f
+            outputs['masks_b'] = masks_b
+
             outputs['lf_out_f'] = lf_out_f
-            outputs['accept_probs_f'] = accept_prob_f
             outputs['lf_out_b'] = lf_out_b
-            outputs['accept_probs_b'] = accept_prob_b
-            outputs['forward_mask'] = forward_mask
-            outputs['backward_mask'] = backward_mask
+
+            outputs['pxs_out_f'] = pxs_out_f
+            outputs['pxs_out_b'] = pxs_out_b
+
             outputs['logdets_f'] = logdets_f
             outputs['logdets_b'] = logdets_b
+
             outputs['sumlogdet_f'] = sumlogdet_f
             outputs['sumlogdet_b'] = sumlogdet_b
 
@@ -305,20 +329,20 @@ class GaugeDynamics(tf.keras.Model):
 
         def body(step, x, v, logdet, lf_samples, logdets):
             i = tf.cast(step, dtype=tf.int32)  # cast leapfrog step to integer
-            with tf.name_scope('apply_lf'):
-                new_x, new_v, j = lf_fn(x, v, beta, step,
-                                        net_weights, train_phase)
-            with tf.name_scope('concat_lf_outputs'):
-                lf_samples = lf_samples.write(i+1, new_x)
-            with tf.name_scope('concat_logdets'):
-                logdets = logdets.write(i+1, logdet+j)
+            new_x, new_v, j = lf_fn(x, v, beta, step,
+                                    net_weights, train_phase)
+            lf_samples = lf_samples.write(i+1, new_x)
+            logdets = logdets.write(i+1, logdet+j)
+            #  with tf.name_scope('apply_lf'):
+            #  with tf.name_scope('concat_lf_outputs'):
+            #  with tf.name_scope('concat_logdets'):
+
             return (step+1, new_x, new_v, logdet+j, lf_samples, logdets)
 
         def cond(step, *args):
-            with tf.name_scope('check_lf_step'):
-                return tf.less(step, self.num_steps)
+            return tf.less(step, self.num_steps)
 
-        with tf.name_scope('while_loop'):
+        with tf.name_scope('MD_leapfrog'):
             outputs = tf.while_loop(
                 cond=cond,
                 body=body,
@@ -365,67 +389,66 @@ class GaugeDynamics(tf.keras.Model):
     def _forward_lf(self, x, v, beta, step, net_weights, train_phase):
         """One forward augmented leapfrog step."""
         with tf.name_scope('forward_lf'):
-            with tf.name_scope('get_time'):
-                t = self._get_time(step, tile=tf.shape(x)[0])
-            with tf.name_scope('get_mask'):
-                mask, mask_inv = self._get_mask(step)
+            #  with tf.name_scope('get_time'):
+            t = self._get_time(step, tile=tf.shape(x)[0])
+            #  with tf.name_scope('get_mask'):
+            mask, mask_inv = self._get_mask(step)
 
-            with tf.name_scope('augmented_leapfrog'):
-                sumlogdet = 0.
+            #  with tf.name_scope('augmented_leapfrog'):
+            sumlogdet = 0.
 
-                v, logdet = self._update_v_forward(x, v, beta, t,
-                                                   net_weights, train_phase)
-                sumlogdet += logdet
+            v, logdet = self._update_v_forward(x, v, beta, t,
+                                               net_weights, train_phase)
+            sumlogdet += logdet
 
-                x, logdet = self._update_x_forward(x, v, t,
-                                                   net_weights, train_phase,
-                                                   mask, mask_inv)
-                sumlogdet += logdet
+            x, logdet = self._update_x_forward(x, v, t,
+                                               net_weights, train_phase,
+                                               mask, mask_inv)
+            sumlogdet += logdet
 
-                x, logdet = self._update_x_forward(x, v, t,
-                                                   net_weights, train_phase,
-                                                   mask_inv, mask)
-                sumlogdet += logdet
+            x, logdet = self._update_x_forward(x, v, t,
+                                               net_weights, train_phase,
+                                               mask_inv, mask)
+            sumlogdet += logdet
 
-                v, logdet = self._update_v_forward(x, v, beta, t,
-                                                   net_weights, train_phase)
-                sumlogdet += logdet
+            v, logdet = self._update_v_forward(x, v, beta, t,
+                                               net_weights, train_phase)
+            sumlogdet += logdet
 
         return x, v, sumlogdet
 
     def _backward_lf(self, x, v, beta, step, net_weights, train_phase):
         """One backward augmented leapfrog step."""
-
         # Reversed index/sinusoidal time
         with tf.name_scope('backward_lf'):
-            with tf.name_scope('get_time'):
-                t = self._get_time(self.num_steps - step - 1,
-                                   tile=tf.shape(x)[0])
-            with tf.name_scope('get_mask'):
-                mask, mask_inv = self._get_mask(
-                    self.num_steps - step - 1
-                )
+            #  with tf.name_scope('get_time'):
+            t = self._get_time(self.num_steps - step - 1,
+                               tile=tf.shape(x)[0])
+            #  with tf.name_scope('get_mask'):
+            mask, mask_inv = self._get_mask(
+                self.num_steps - step - 1
+            )
 
-            with tf.name_scope('augmented_leapfrog'):
-                sumlogdet = 0.
+            #  with tf.name_scope('augmented_leapfrog'):
+            sumlogdet = 0.
 
-                v, logdet = self._update_v_backward(x, v, beta, t,
-                                                    net_weights, train_phase)
-                sumlogdet += logdet
+            v, logdet = self._update_v_backward(x, v, beta, t,
+                                                net_weights, train_phase)
+            sumlogdet += logdet
 
-                x, logdet = self._update_x_backward(x, v, t,
-                                                    net_weights, train_phase,
-                                                    mask_inv, mask)
-                sumlogdet += logdet
+            x, logdet = self._update_x_backward(x, v, t,
+                                                net_weights, train_phase,
+                                                mask_inv, mask)
+            sumlogdet += logdet
 
-                x, logdet = self._update_x_backward(x, v, t,
-                                                    net_weights, train_phase,
-                                                    mask, mask_inv)
-                sumlogdet += logdet
+            x, logdet = self._update_x_backward(x, v, t,
+                                                net_weights, train_phase,
+                                                mask, mask_inv)
+            sumlogdet += logdet
 
-                v, logdet = self._update_v_backward(x, v, beta, t,
-                                                    net_weights, train_phase)
-                sumlogdet += logdet
+            v, logdet = self._update_v_backward(x, v, beta, t,
+                                                net_weights, train_phase)
+            sumlogdet += logdet
 
         return x, v, sumlogdet
 
@@ -445,137 +468,129 @@ class GaugeDynamics(tf.keras.Model):
             logdet: Jacobian factor
         """
         with tf.name_scope('update_v_forward'):
-            with tf.name_scope('grad_potential'):
-                grad = self.grad_potential(x, beta)
+            #  with tf.name_scope('grad_potential'):
+            grad = self.grad_potential(x, beta)
 
-            with tf.name_scope('v_fn'):
-                # Sv: scale, Qv: transformation, Tv: translation
-                scale, translation, transformation = self.v_fn((x, grad, t),
-                                                               train_phase)
+            #  with tf.name_scope('v_fn'):
+            # Sv: scale, Qv: transformation, Tv: translation
+            scale, translation, transformation = self.v_fn((x, grad, t),
+                                                           train_phase)
+            scale *= net_weights[0]
+            translation *= net_weights[1]
+            transformation *= net_weights[2]
 
-                scale *= net_weights[0]
-                translation *= net_weights[1]
-                transformation *= net_weights[2]
+        #  with tf.name_scope('scale'):
+            scale *= 0.5 * self.eps
+            scale_exp = exp(scale, 'vf_scale')
 
-            with tf.name_scope('scale'):
-                scale *= 0.5 * self.eps
-                scale_exp = exp(scale, 'vf_scale')
+        #  with tf.name_scope('transformation'):
+            transformation *= self.eps
+            transformation_exp = exp(transformation, 'vf_transformation')
 
-            with tf.name_scope('transformation'):
-                transformation *= self.eps
-                transformation_exp = exp(transformation, 'vf_transformation')
+        #  with tf.name_scope('v_update'):
+            v = (v * scale_exp
+                 - 0.5 * self.eps * (grad * transformation_exp
+                                     - translation))
 
-            with tf.name_scope('v_update'):
-                v = (v * scale_exp
-                     - 0.5 * self.eps * (grad * transformation_exp
-                                         - translation))
+            #  return v, tf.reduce_sum(scale, axis=1)
+            logdet = tf.reduce_sum(scale, axis=1, name='vf_logdet')
 
-                #  v = (v * exp(scale, 'vf_scale')
-                #       - (0.5 * self.eps
-                #          * (exp(transformation, name='vf_transformation')
-                #             * grad + translation)))
-
-        return v, tf.reduce_sum(scale, axis=1)
+        return v, logdet
 
     def _update_x_forward(self, x, v, t, net_weights, 
                           train_phase, mask, mask_inv):
         """Update x in the forward leapfrog step."""
         with tf.name_scope('update_x_forward'):
-            with tf.name_scope('x_fn'):
-                scale, translation, transformation = self.x_fn(
-                    (v, mask * x, t), train_phase
-                )
+            #  with tf.name_scope('x_fn'):
+            scale, translation, transformation = self.x_fn(
+                (v, mask * x, t), train_phase
+            )
 
-                scale *= net_weights[0]
-                translation *= net_weights[1]
-                transformation *= net_weights[2]
+            scale *= net_weights[0]
+            translation *= net_weights[1]
+            transformation *= net_weights[2]
 
-            with tf.name_scope('scale'):
-                scale *= self.eps
-                scale_exp = exp(scale, 'xf_scale')
+        #  with tf.name_scope('scale'):
+            scale *= self.eps
+            scale_exp = exp(scale, 'xf_scale')
 
-            with tf.name_scope('transformation'):
-                transformation *= self.eps
-                transformation_exp = exp(transformation, 'xf_transformation')
+        #  with tf.name_scope('transformation'):
+            transformation *= self.eps
+            transformation_exp = exp(transformation, 'xf_transformation')
 
-            with tf.name_scope('x_update'):
-                x = (mask * x
-                     + mask_inv * (x * scale_exp + self.eps
-                                   * (v * transformation_exp + translation)))
-                #  x = (mask * x + mask_inv
-                #       * (x * exp(scale, 'xf_scale') + self.eps
-                #          * (exp(transformation, 'xf_transformation')
-                #             * v + translation)))
+        #  with tf.name_scope('x_update'):
+            x = (mask * x
+                 + mask_inv * (x * scale_exp + self.eps
+                               * (v * transformation_exp + translation)))
 
-        return x, tf.reduce_sum(mask_inv * scale, axis=1)
+        #  return x, tf.reduce_sum(mask_inv * scale, axis=1)
+            logdet = tf.reduce_sum(mask_inv * scale, axis=1, name='xf_logdet')
+
+        return x, logdet
 
     def _update_v_backward(self, x, v, beta, t, net_weights, train_phase):
         """Update v in the backward leapfrog step. Invert the forward update"""
         with tf.name_scope('update_v_backward'):
-            with tf.name_scope('grad_potential'):
-                grad = self.grad_potential(x, beta)
+            #  with tf.name_scope('grad_potential'):
+            grad = self.grad_potential(x, beta)
 
-            with tf.name_scope('v_fn'):
-                scale, translation, transformation = self.v_fn(
-                    (x, grad, t), train_phase
+            #  with tf.name_scope('v_fn'):
+            scale, translation, transformation = self.v_fn(
+                (x, grad, t), train_phase
+            )
+
+            scale *= net_weights[0]
+            translation *= net_weights[1]
+            transformation *= net_weights[2]
+
+        #  with tf.name_scope('scale'):
+            scale *= -0.5 * self.eps
+            scale_exp = exp(scale, 'vb_scale')
+
+        #  with tf.name_scope('transformation'):
+            transformation *= self.eps
+            transformation_exp = exp(transformation, 'vb_transformation')
+
+        #  with tf.name_scope('v_update'):
+            v = scale_exp * (
+                v + 0.5 * self.eps * (
+                    grad * transformation_exp - translation
                 )
+            )
 
-                scale *= net_weights[0]
-                translation *= net_weights[1]
-                transformation *= net_weights[2]
+            logdet = tf.reduce_sum(scale, axis=1, name='vb_logdet')
 
-            with tf.name_scope('scale'):
-                scale *= -0.5 * self.eps
-                scale_exp = exp(scale, 'vb_scale')
-
-            with tf.name_scope('transformation'):
-                transformation *= self.eps
-                transformation_exp = exp(transformation, 'vb_transformation')
-
-            with tf.name_scope('v_update'):
-                v = scale_exp * (
-                    v + 0.5 * self.eps * (
-                        grad * transformation_exp - translation
-                    )
-                )
-                #  v = (exp(scale, 'vb_scale')
-                #       * (v + 0.5 * self.eps
-                #          * (exp(transformation, 'vb_transformation')
-                #             * grad - translation)))
-
-        return v, tf.reduce_sum(scale, axis=1)
+        return v, logdet
 
     def _update_x_backward(self, x, v, t, net_weights, 
                            train_phase, mask, mask_inv):
         """Update x in the backward lf step. Inverting the forward update."""
         with tf.name_scope('update_x_backward'):
-            with tf.name_scope('x_fn'):
-                scale, translation, transformation = self.x_fn(
-                    (v, mask * x, t), train_phase
-                )
+            #  with tf.name_scope('x_fn'):
+            scale, translation, transformation = self.x_fn(
+                (v, mask * x, t), train_phase
+            )
 
-                scale *= net_weights[0]
-                translation *= net_weights[1]
-                transformation *= net_weights[2]
+            scale *= net_weights[0]
+            translation *= net_weights[1]
+            transformation *= net_weights[2]
 
-            with tf.name_scope('scale'):
-                scale *= -self.eps
-                scale_exp = exp(scale, 'xb_scale')
+            #  with tf.name_scope('scale'):
+            scale *= -self.eps
+            scale_exp = exp(scale, 'xb_scale')
 
-            with tf.name_scope('transformation'):
-                transformation *= self.eps
-                transformation_exp = exp(transformation, 'xb_transformation')
+            #  with tf.name_scope('transformation'):
+            transformation *= self.eps
+            transformation_exp = exp(transformation, 'xb_transformation')
 
-            with tf.name_scope('x_update'):
-                x = (mask * x + mask_inv * scale_exp
-                     * (x - self.eps * (v * transformation_exp + translation)))
-                #  x = (mask * x
-                #       + mask_inv * exp(scale, 'xb_scale')
-                #       * (x - self.eps
-                #          * (v * exp(transformation, 'xb_transformation')
-                #             + translation)))
+            #  with tf.name_scope('x_update'):
+            x = (mask * x + mask_inv * scale_exp
+                 * (x - self.eps * (v * transformation_exp + translation)))
 
-        return x, tf.reduce_sum(mask_inv * scale, axis=1)
+            #  return x, tf.reduce_sum(mask_inv * scale, axis=1)
+            logdet = tf.reduce_sum(mask_inv * scale, axis=1, name='xb_logdet')
+
+        return x, logdet
 
     def _compute_accept_prob(self, xi, vi, xf, vf, sumlogdet, beta):
         """Compute the prob of accepting the proposed state given old state.

@@ -315,7 +315,7 @@ def parse_args():
     parser.add_argument('--num_hidden',
                         dest='num_hidden',
                         type=int,
-                        default=None,
+                        default=100,
                         required=False,
                         help=("""Number of nodes to include in fully-connected
                               hidden layer `h`. If not explicitly passed, will
@@ -451,6 +451,13 @@ def parse_args():
                         required=False,
                         help=("""Flag that when passed uses Horovod for
                               distributed training on multiple nodes."""))
+    parser.add_argument("--comet",
+                        dest="comet",
+                        action="store_true",
+                        required=False,
+                        help=("""Flag that when passed uses comet.ml for
+                              parameter logging and additonal metric
+                              tracking/displaying."""))
 
     #########################
     #  (Mostly) Deprecated  #

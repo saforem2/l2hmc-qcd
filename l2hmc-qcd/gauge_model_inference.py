@@ -161,10 +161,10 @@ def main_inference(kwargs):
     model = GaugeModel(params=params)
 
     # HOROVOD: Create operation for broadcasting global variables to all ranks
-    if params['using_hvd']:
-        bcast_op = hvd.broadcast_global_variables(0)
-    else:
-        bcast_op = None
+    #  if params['using_hvd']:
+    #      bcast_op = hvd.broadcast_global_variables(0)
+    #  else:
+    #      bcast_op = None
 
     # ---------------------------------------------------------
     # INFERENCE
@@ -179,8 +179,8 @@ def main_inference(kwargs):
         run_logger = None
         plotter = None
 
-    if bcast_op is not None:
-        sess.run(bcast_op)
+    #  if bcast_op is not None:
+    #      sess.run(bcast_op)
 
     # -------------------------------------------------  
     #  Set up relevant parameters to use for inference   
@@ -198,12 +198,12 @@ def main_inference(kwargs):
         net_weights_arr = np.array([[1, 1, 1]], dtype=NP_FLOAT)
 
     # if a value has been passed in `kwargs['beta_inference']` use it
-    beta_inference = kwargs['beta_inference']
+    beta_inference = kwargs.get('beta_inference', None)
     # otherwise, use `model.beta_final`
     betas = [model.beta_final if beta_inference is None else beta_inference]
 
     # if a value has been passed in `kwargs['charge_weight_inference']` use it
-    qw_inference = kwargs['charge_weight_inference']
+    qw_inference = kwargs.get('charge_weight_inference', None)
     # otherwise, use `params['charge_weight_init']`
     qw_init = params['charge_weight']
     charge_weight = qw_init if qw_inference is None else qw_inference

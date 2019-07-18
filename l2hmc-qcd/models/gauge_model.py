@@ -148,7 +148,6 @@ class GaugeModel:
                 obs_ops['charges'] = self.lattice.calc_top_charges(self.x,
                                                                    fft=False)
 
-        #  return plaq_sums_op, actions_op, plaqs_op, charges_op
         return obs_ops
 
     def _create_inputs(self):
@@ -229,9 +228,7 @@ class GaugeModel:
                 'eps_trainable': not self.eps_fixed,
                 'data_format': self.data_format,
                 'use_bn': self.use_bn,
-                #  'scale_weight': self.scale_weight,
-                #  'transformation_weight': self.transformation_weight,
-                #  'translation_weight': self.translation_weight
+                'num_hidden': self.num_hidden,
             }
 
             dynamics_kwargs.update(kwargs)
@@ -265,6 +262,11 @@ class GaugeModel:
             elif metric == 'cos_diff':
                 def metric_fn(x1, x2):
                     return 1. - tf.cos(x1 - x2)
+
+            elif metric == 'sin_diff':
+                def metric_fn(x1, x2):
+                    return 1. - tf.sin(x1 - x2)
+
             elif metric == 'tan_cos':
                 def metric_fn(x1, x2):
                     cos_diff = 1. - tf.cos(x1 - x2)
@@ -292,12 +294,14 @@ class GaugeModel:
             # HOROVOD: When performing distributed training, it can be usedful
             # to "warmup" the learning rate gradually, done using the
             # `configure_learning_rate` method below..
-            if self.using_hvd or self.warmup_lr:
-                #  num_workers = hvd.size()
+            if self.warmup_lr:
                 # lr_init has already been multiplied by num_workers, so to
                 # get back to the original `lr_init` parsed from the
                 # command line, divide once by `num_workers`.
-                #  lr_init /= num_workers
+                num_workers = hvd.size()
+                if self.using_hvd:
+                    lr_init /= num_workers
+
                 lr_warmup = lr_init / 10
                 warmup_steps = int(0.1 * self.train_steps)
                 self.lr = configure_learning_rate(lr_warmup,
@@ -407,10 +411,6 @@ class GaugeModel:
         px = inputs['px']
         pz = inputs['pz']
 
-        #  x, x_proposed = x_tup
-        #  z, z_proposed = z_tup
-        #  px, pz = p_tup
-        #
         ls = self.loss_scale
         # Calculate the difference in topological charge between the initial
         # and proposed configurations multiplied by the probability of
@@ -421,14 +421,14 @@ class GaugeModel:
                 x_dq_fft = self.lattice.calc_top_charges_diff(x_init,
                                                               x_proposed,
                                                               fft=True)
-                xq_loss = px * x_dq_fft + eps
+                xq_loss = px * x_dq_fft
                 tf.add_to_collection('losses', xq_loss)
 
             with tf.name_scope('z_loss'):
                 z_dq_fft = self.lattice.calc_top_charges_diff(z_init,
                                                               z_proposed,
                                                               fft=True)
-                zq_loss = aux_weight * (pz * z_dq_fft) + eps
+                zq_loss = aux_weight * pz * z_dq_fft
                 tf.add_to_collection('losses', zq_loss)
 
             with tf.name_scope('tot_loss'):
@@ -468,9 +468,11 @@ class GaugeModel:
                                                              net_weights,
                                                              train_phase,
                                                              self.save_lf)
-            x_proposed = tf.mod(dynamics_output['x_proposed'], 2 * np.pi)
+            x_proposed = dynamics_output['x_proposed']
+            #  x_proposed = tf.mod(dynamics_output['x_proposed'], 2 * np.pi)
             px = dynamics_output['accept_prob']
-            x_out = tf.mod(dynamics_output['x_out'], 2 * np.pi)
+            x_out = dynamics_output['x_out']
+            #  x_out = tf.mod(dynamics_output['x_out'], 2 * np.pi)
 
             #  x_proposed = output[0]
             #  output[1] is v_post, don't need to save
@@ -609,17 +611,45 @@ class GaugeModel:
             self.x_out = dynamics_output['x_out']
             self.px = dynamics_output['accept_prob']
             self.charge_diffs_op = tf.reduce_sum(x_dq) / self.num_samples
+
+            def _add_to_collection(collection, op):
+                return tf.add_to_collection(collection, op)
+
+            self.ops_dict = {
+                'train_ops': [self.loss_op],
+                'run_ops': [self.x_out, self.dynamics.eps],
+                'observable_ops': [self.actions_op, self.plaqs_op,
+                                   self.charges_op, self.charge_diffs_op],
+            }
+
             if self.save_lf:
-                self.lf_out_f = dynamics_output['lf_out_f']
-                self.lf_out_b = dynamics_output['lf_out_b']
-                self.pxs_out_f = dynamics_output['accept_probs_f']
-                self.pxs_out_b = dynamics_output['accept_probs_b']
-                self.masks_f = dynamics_output['forward_mask']
-                self.masks_b = dynamics_output['backward_mask']
-                self.logdets_f = dynamics_output['logdets_f']
-                self.logdets_b = dynamics_output['logdets_b']
-                self.sumlogdet_f = dynamics_output['sumlogdet_f']
-                self.sumlogdet_b = dynamics_output['sumlogdet_b']
+                op_keys = ['masks_f', 'masks_b',
+                           'lf_out_f', 'lf_out_b',
+                           'pxs_out_f', 'pxs_out_b',
+                           'logdets_f', 'logdets_b',
+                           'sumlogdet_f', 'sumlogdet_b']
+                #  'forward_mask', 'backward_mask',
+                # 'accept_probs_f', 'accept_probs_b']
+                for key in op_keys:
+                    op = dynamics_output[key]
+                    self.ops_dict['run_ops'].append(op)
+                    setattr(self, key, op)
+
+            for collection, ops in self.ops_dict.items():
+                for op in ops:
+                    _add_to_collection(collection, op)
+            #
+            #  ops_dict['run_ops'].append(
+            #  self.lf_out_f = dynamics_output['lf_out_f']
+            #  self.lf_out_b = dynamics_output['lf_out_b']
+            #  self.pxs_out_f = dynamics_output['accept_probs_f']
+            #  self.pxs_out_b = dynamics_output['accept_probs_b']
+            #  self.masks_f = dynamics_output['forward_mask']
+            #  self.masks_b = dynamics_output['backward_mask']
+            #  self.logdets_f = dynamics_output['logdets_f']
+            #  self.logdets_b = dynamics_output['logdets_b']
+            #  self.sumlogdet_f = dynamics_output['sumlogdet_f']
+            #  self.sumlogdet_b = dynamics_output['sumlogdet_b']
 
         with tf.name_scope('train'):
             # --------------------------------------------------------
@@ -650,3 +680,7 @@ class GaugeModel:
                     global_step=self.global_step,
                     name='train_op'
                 )
+
+            self.ops_dict['train_ops'].append(self.train_op)
+            self.ops_dict['train_ops'].append(self.grads)
+            self.ops_dict['train_ops'].append(self.lr)

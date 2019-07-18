@@ -10,6 +10,7 @@ Date: 04/24/2019
 import os
 import pickle
 
+import tensorflow as tf
 import numpy as np
 
 from collections import Counter, OrderedDict
@@ -19,6 +20,7 @@ import utils.file_io as io
 from globals import RUN_HEADER, NP_FLOAT
 
 from lattice.lattice import u1_plaq_exact
+from utils.tf_logging import variable_summaries
 
 from .train_logger import save_params
 
@@ -34,21 +36,30 @@ def autocorr(x):
 
 
 class RunLogger:
-    def __init__(self, model, log_dir, save_lf_data=False):
+    def __init__(self, model, log_dir, save_lf_data=False, summaries=False):
         """
         Args:
             model: GaugeModel object.
             log_dir: Existing logdir from `TrainLogger`.
         """
-        #  self.sess = sess
         self.model = model
-        assert os.path.isdir(log_dir)
-        self.log_dir = log_dir
-        self.runs_dir = os.path.join(self.log_dir, 'runs')
-        self.figs_dir = os.path.join(self.log_dir, 'figures')
         self.save_lf_data = save_lf_data
+        self.summaries = summaries
+
+        assert os.path.isdir(log_dir)
+
+        self.log_dir = log_dir
+
+        self.runs_dir = os.path.join(self.log_dir, 'runs')
         io.check_else_make_dir(self.runs_dir)
+
+        self.figs_dir = os.path.join(self.log_dir, 'figures')
         io.check_else_make_dir(self.figs_dir)
+
+        if summaries:
+            self.run_summary_dir = os.path.join(self.log_dir,
+                                                'summaries', 'run')
+            io.check_else_make_dir(self.run_summary_dir)
 
         self._reset_counter = 0
         self.run_steps = None
@@ -78,6 +89,46 @@ class RunLogger:
                 'forward': [],
                 'backward': [],
             }
+
+        if summaries:
+            self.writer = tf.summary.FileWriter(self.run_summary_dir,
+                                                tf.get_default_graph())
+            self.create_summaries()
+
+    def create_summaries(self):
+        """Create summary objects for logging in TensorBoard."""
+        ld = self.log_dir
+        self.summary_writer = tf.contrib.summary.create_file_writer(ld)
+
+        with tf.name_scope('tunneling_events'):
+            tf.summary.scalar('tunneling_events_per_sample',
+                              self.model.charge_diffs_op)
+
+        with tf.name_scope('avg_plaq'):
+            tf.summary.scalar('avg_plaq', self.model.avg_plaqs_op)
+
+        run_ops = tf.get_collection('run_ops')
+        with tf.name_scope('run_summaries'):
+            for op in run_ops:
+                variable_summaries(op, op.name)
+                tf.summary.histogram(op.name, op)
+
+        self.summary_op = tf.summary.merge_all(name='run_summary_op')
+
+    def log_step(self, sess, step, samples_np, beta_np, net_weights):
+        """Update self.logger.summaries."""
+        feed_dict = {
+            self.model.x: samples_np,
+            self.model.beta: beta_np,
+            self.model.net_weights[0]: net_weights[0],
+            self.model.net_weights[1]: net_weights[1],
+            self.model.net_weights[2]: net_weights[2],
+            self.model.train_phase: False
+        }
+        summary_str = sess.run(self.summary_op, feed_dict=feed_dict)
+
+        self.writer.add_summary(summary_str, global_step=step)
+        self.writer.flush()
 
     def reset(self, run_steps, beta, **weights):
         """Reset run_data and run_strings to prep for new run."""
@@ -164,7 +215,7 @@ class RunLogger:
 
         return self.run_dir, run_str
 
-    def update(self, data, data_str):
+    def update(self, sess, data, net_weights, data_str):
         """Update run_data and append data_str to data_strings."""
         # projection of samples onto [0, 2pi) done in run_step above
         #  if self.model.save_samples:
@@ -192,6 +243,9 @@ class RunLogger:
             #  self.masks['backward'].extend(np.array(data['masks_b']))
 
         self.run_strings.append(data_str)
+
+        if self.summaries and (step + 1) % self.model.logging_steps == 0:
+            self.log_step(sess, step, data['samples'], beta, net_weights)
 
         if step % (10 * self.model.print_steps) == 0:
             io.log(data_str)
