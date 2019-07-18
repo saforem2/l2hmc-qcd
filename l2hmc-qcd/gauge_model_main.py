@@ -610,12 +610,12 @@ def main(FLAGS):
                 f'aux{FLAGS.aux_weight}')
         experiment.set_name(name)
 
-        train_scope = experiment.train()
-        test_scope = experiment.test()
+        #  train_scope = experiment.train()
+        #  test_scope = experiment.test()
     else:
         experiment = None
-        train_scope = 'train'
-        test_scope = 'test'
+        #  train_scope = 'train'
+        #  test_scope = 'test'
 
     if FLAGS.hmc_eps is None:
         eps_arr = [0.1, 0.15, 0.2, 0.25]
@@ -635,10 +635,9 @@ def main(FLAGS):
         # ------------------------
         #   train l2hmc sampler
         # ------------------------
-        with train_scope:
-            FLAGS, params, model, train_logger = train_l2hmc(FLAGS,
-                                                             log_file,
-                                                             experiment)
+        FLAGS, params, model, train_logger = train_l2hmc(FLAGS,
+                                                         log_file,
+                                                         experiment)
         if FLAGS.inference:
             if train_logger is not None:
                 checkpoint_dir = train_logger.checkpoint_dir
@@ -648,8 +647,8 @@ def main(FLAGS):
             # ---------------------------------------------
             #   run inference using trained l2hmc sampler
             # ---------------------------------------------
-            with test_scope:
-                run_l2hmc(FLAGS, params, checkpoint_dir)
+            run_l2hmc(FLAGS, params, checkpoint_dir)
+
         # -----------------------------------------------------------
         #  run HMC following inference if --run_hmc flag was passed
         # -----------------------------------------------------------
