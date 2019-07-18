@@ -37,6 +37,13 @@ def flatten_tensor(tensor):
     return tf.reshape(tensor, shape=(batch_size, -1))
 
 
+def _add_to_collection(collection, ops):
+    if len(ops) > 1:
+        [tf.add_to_collection(collection, op) for op in ops]
+    else:
+        tf.add_to_collection(collection, ops)
+
+
 class GaugeDynamics(tf.keras.Model):
     """Dynamics engine of naive L2HMC sampler."""
 
@@ -281,7 +288,6 @@ class GaugeDynamics(tf.keras.Model):
             outputs['sumlogdet_f'] = sumlogdet_f
             outputs['sumlogdet_b'] = sumlogdet_b
 
-
         return outputs
 
     def transition_kernel(self, x_in, beta, net_weights,
@@ -457,7 +463,6 @@ class GaugeDynamics(tf.keras.Model):
                 # Sv: scale, Qv: transformation, Tv: translation
                 scale, translation, transformation = self.v_fn((x, grad, t),
                                                                train_phase)
-
                 scale *= net_weights[0]
                 translation *= net_weights[1]
                 transformation *= net_weights[2]
@@ -474,11 +479,6 @@ class GaugeDynamics(tf.keras.Model):
                 v = (v * scale_exp
                      - 0.5 * self.eps * (grad * transformation_exp
                                          - translation))
-
-                #  v = (v * exp(scale, 'vf_scale')
-                #       - (0.5 * self.eps
-                #          * (exp(transformation, name='vf_transformation')
-                #             * grad + translation)))
 
         return v, tf.reduce_sum(scale, axis=1)
 
@@ -507,10 +507,6 @@ class GaugeDynamics(tf.keras.Model):
                 x = (mask * x
                      + mask_inv * (x * scale_exp + self.eps
                                    * (v * transformation_exp + translation)))
-                #  x = (mask * x + mask_inv
-                #       * (x * exp(scale, 'xf_scale') + self.eps
-                #          * (exp(transformation, 'xf_transformation')
-                #             * v + translation)))
 
         return x, tf.reduce_sum(mask_inv * scale, axis=1)
 
@@ -543,10 +539,6 @@ class GaugeDynamics(tf.keras.Model):
                         grad * transformation_exp - translation
                     )
                 )
-                #  v = (exp(scale, 'vb_scale')
-                #       * (v + 0.5 * self.eps
-                #          * (exp(transformation, 'vb_transformation')
-                #             * grad - translation)))
 
         return v, tf.reduce_sum(scale, axis=1)
 
@@ -574,11 +566,6 @@ class GaugeDynamics(tf.keras.Model):
             with tf.name_scope('x_update'):
                 x = (mask * x + mask_inv * scale_exp
                      * (x - self.eps * (v * transformation_exp + translation)))
-                #  x = (mask * x
-                #       + mask_inv * exp(scale, 'xb_scale')
-                #       * (x - self.eps
-                #          * (v * exp(transformation, 'xb_transformation')
-                #             + translation)))
 
         return x, tf.reduce_sum(mask_inv * scale, axis=1)
 

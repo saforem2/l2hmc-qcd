@@ -148,7 +148,6 @@ class GaugeModel:
                 obs_ops['charges'] = self.lattice.calc_top_charges(self.x,
                                                                    fft=False)
 
-        #  return plaq_sums_op, actions_op, plaqs_op, charges_op
         return obs_ops
 
     def _create_inputs(self):
@@ -230,9 +229,6 @@ class GaugeModel:
                 'data_format': self.data_format,
                 'use_bn': self.use_bn,
                 'num_hidden': self.num_hidden,
-                #  'scale_weight': self.scale_weight,
-                #  'transformation_weight': self.transformation_weight,
-                #  'translation_weight': self.translation_weight
             }
 
             dynamics_kwargs.update(kwargs)
@@ -415,10 +411,6 @@ class GaugeModel:
         px = inputs['px']
         pz = inputs['pz']
 
-        #  x, x_proposed = x_tup
-        #  z, z_proposed = z_tup
-        #  px, pz = p_tup
-        #
         ls = self.loss_scale
         # Calculate the difference in topological charge between the initial
         # and proposed configurations multiplied by the probability of
@@ -429,14 +421,14 @@ class GaugeModel:
                 x_dq_fft = self.lattice.calc_top_charges_diff(x_init,
                                                               x_proposed,
                                                               fft=True)
-                xq_loss = px * x_dq_fft + eps
+                xq_loss = px * x_dq_fft
                 tf.add_to_collection('losses', xq_loss)
 
             with tf.name_scope('z_loss'):
                 z_dq_fft = self.lattice.calc_top_charges_diff(z_init,
                                                               z_proposed,
                                                               fft=True)
-                zq_loss = aux_weight * (pz * z_dq_fft) + eps
+                zq_loss = aux_weight * pz * z_dq_fft
                 tf.add_to_collection('losses', zq_loss)
 
             with tf.name_scope('tot_loss'):

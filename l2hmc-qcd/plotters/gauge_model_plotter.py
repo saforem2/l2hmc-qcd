@@ -266,9 +266,11 @@ def plot_with_inset(data, labels=None, **kwargs):
 
 
 class GaugeModelPlotter:
-    def __init__(self, model, figs_dir=None):
+    def __init__(self, model, figs_dir=None, experiment=None):
         self.figs_dir = figs_dir
         self.model = model
+        if experiment is not None:
+            self.experiment = experiment
 
     def calc_stats(self, data, therm_frac=10):
         """Calculate observables statistics.
@@ -316,6 +318,12 @@ class GaugeModelPlotter:
         }
 
         return stats
+
+    def log_figure(self):
+        try:
+            self.experiment.log_figure()
+        except AttributeError:
+            pass
 
     def plot_observables(self, data, beta, run_str, **weights):
         """Plot observables."""
@@ -384,16 +392,23 @@ class GaugeModelPlotter:
             'out_file': [],
         }
         self._plot_actions((steps_arr, actions_avg, actions_err), **kwargs)
+        self.log_figure()
         self._plot_plaqs((steps_arr, plaqs_avg, plaqs_err), beta, **kwargs)
+        self.log_figure()
         self._plot_charges((steps_arr, charges.T), **kwargs)
+        self.log_figure()
         self._plot_charge_probs(charges, **kwargs)
+        self.log_figure()
         self._plot_charge_diffs((_steps_diffs, _charge_diffs.T), **kwargs)
+        self.log_figure()
         self._plot_autocorrs((steps_arr,
                               charge_autocorrs_avg,
                               charge_autocorrs_err), **kwargs)
+        self.log_figure()
         self._plot_plaqs_diffs((_steps_diffs,
                                 _plaq_diffs_avg,
                                 _plaq_diffs_err), **kwargs)
+        self.log_figure()
 
         #  self._plot_actions((_steps_arr, _actions.T), **kwargs)
         #  self._plot_plaqs((_steps_arr, _plaqs.T), beta, **kwargs)
