@@ -73,6 +73,8 @@ except ImportError:
 if float(tf.__version__.split('.')[0]) <= 2:
     tf.logging.set_verbosity(tf.logging.INFO)
 
+SEP_STR = 80 * '-' + '\n'
+
 # -------------------------------------------
 # Set random seeds for tensorflow and numpy
 # -------------------------------------------
@@ -174,8 +176,7 @@ def create_config(FLAGS, params, train_phase=True):
     return config, params
 
 
-def train_l2hmc(FLAGS, log_file=None, experiment=None):
-    """Create, train, and run L2HMC sampler on 2D U(1) gauge model."""
+def setup_train(FLAGS, log_file=None):
     io.log('\n' + 80 * '-')
     io.log("Running L2HMC algorithm...")
     tf.keras.backend.clear_session()
@@ -231,6 +232,13 @@ def train_l2hmc(FLAGS, log_file=None, experiment=None):
         params['using_hvd'] = False
         hooks = []
 
+    return FLAGS, params, hooks
+
+
+def train_l2hmc(FLAGS, log_file=None, experiment=None):
+    """Create, train, and run L2HMC sampler on 2D U(1) gauge model."""
+    FLAGS, params, hooks = setup_train(FLAGS, log_file)
+
     # Conditionals required for file I/O
     # if we're not using Horovod, `is_chief` should always be True
     # otheerwise, if using Horovod, we only want to perform file I/O
@@ -249,11 +257,11 @@ def train_l2hmc(FLAGS, log_file=None, experiment=None):
         log_dir = None
         checkpoint_dir = None
 
-    io.log(80 * '-' + '\n')
+    io.log(SEP_STR)
     io.log('L2HMC PARAMETERS:')
     for key, val in params.items():
         io.log(f'  {key}: {val}')
-    io.log(80 * '-' + '\n')
+    io.log(SEP_STR)
 
     # --------------------------------------------------------
     # Create model and train_logger
@@ -313,98 +321,53 @@ def train_l2hmc(FLAGS, log_file=None, experiment=None):
     # The MonitoredTrainingSession takes care of session
     # initialization, restoring from a checkpoint, saving to a
     # checkpoint, and closing when done or an error occurs.
-    sess = tf.train.MonitoredTrainingSession(
-        checkpoint_dir=checkpoint_dir,
-        scaffold=scaffold,
-        hooks=hooks,
-        config=config,
-        save_summaries_secs=None,
-        save_summaries_steps=None
-    )
+
+    #  sess = tf.train.MonitoredTrainingSession(
+    #      checkpoint_dir=checkpoint_dir,
+    #      scaffold=scaffold,
+    #      hooks=hooks,
+    #      config=config,
+    #      save_summaries_secs=None,
+    #      save_summaries_steps=None
+    #  )
+    sess_kwargs = {
+        'checkpoint_dir': checkpoint_dir,
+        'scaffold': scaffold,
+        'hooks': hooks,
+        'config': config,
+        'save_summaries_secs': None,
+        'save_summaries_steps': None
+    }
+
+    sess = tf.train.MonitoredTrainingSession(**sess_kwargs)
+
+    #  with tf.train.MonitoredTrainingSession(**kwargs) as sess:
 
     # ----------------------------------------------------------
     #   TRAINING
     # ----------------------------------------------------------
     trainer = GaugeModelTrainer(sess, model, train_logger)
-    kwargs = {
+    train_kwargs = {
         'samples_np': samples_init,
         'beta_np': beta_init,
         'net_weights': net_weights_init
     }
 
-    trainer.train(model.train_steps, **kwargs)
+    trainer.train(model.train_steps, **train_kwargs)
 
     if HAS_COMET and experiment is not None:
         experiment.log_parameters(params)
-        experiment.set_model_graph(sess.graph)
+        g = sess.graph
+        experiment.set_model_graph(g)
 
-    trainable_params_file = os.path.join(FLAGS.log_dir, 'trainable_params.txt')
-    count_trainable_params(trainable_params_file)
+    # Count all trainable paramters and write them out (w/ shapes) to txt file
+    count_trainable_params(os.path.join(FLAGS.log_dir, 'trainable_params.txt'))
 
-    # ----------------------------------------------------------
-    #   INFERENCE
-    # ----------------------------------------------------------
-    #  if FLAGS.inference:
-    #      init_dict = run_setup(FLAGS, params)
-    #
-    #      net_weights_arr = init_dict['net_weights_arr']
-    #      betas = init_dict['betas']
-    #      charge_weight = init_dict['charge_weight']
-    #      samples_init = init_dict['samples_init']
-    #
-    #      if is_chief:
-    #          net_weights_file = os.path.join(model.log_dir, 'net_weights.txt')
-    #          np.savetxt(net_weights_file, net_weights_arr, delimiter=', ',
-    #                     newline='\n', fmt="%-.4g")
-    #
-    #  runner = GaugeModelRunner(sess, model, run_logger)
-    #
-    #  for net_weights in net_weights_arr:
-    #      weights = {
-    #          'charge_weight': charge_weight,
-    #          'net_weights': net_weights
-    #      }
-    #      for beta in betas:
-    #          if run_logger is not None:
-    #              # There are two subtle points worth pointing out:
-    #              #   1. The value of `charge_weight` is specified when resetting
-    #              #      the run logger, which will  then be used for the
-    #              #      remainder of inference.
-    #              #   2. The value of `net_weight` is spcified by passing it
-    #              #      directly to the GaugeModelRunner.run(...) method.
-    #              #
-    #              run_dir, run_str = run_logger.reset(model.run_steps, beta,
-    #                                                  **weights)
-    #          t0 = time.time()
-    #
-    #          runner.run(model.run_steps,
-    #                     beta,
-    #                     weights['net_weights'])
-    #
-    #          # log the total time spent running inference
-    #          run_time = time.time() - t0
-    #          hstr = (80 * '-') + '\n'
-    #          io.log(hstr + f'Took: {run_time} s to complete run.' + hstr + '\n')
-    #
-    #          if plotter is not None and run_logger is not None:
-    #              plotter.plot_observables(run_logger.run_data,
-    #                                       beta, run_str, **weights)
-    #              if params['save_lf']:
-    #                  lf_plotter = LeapfrogPlotter(plotter.out_dir, run_logger)
-    #                  num_samples = min((model.num_samples, 20))
-    #                  lf_plotter.make_plots(run_dir, num_samples=num_samples)
-
-    #  if is_chief:
-    #      params['checkpoint_dir'] = train_logger.checkpoint_dir
-    #      params_pkl_file = os.path.join(os.getcwd(), 'params.pkl')
-    #      with open(params_pkl_file, 'wb') as f:
-    #          pickle.dump(model.params, f)
-
-    # close MonitoredTrainingSession and prepare for inference
+    # close MonitoredTrainingSession and reset the default graph
     sess.close()
     tf.reset_default_graph()
 
-    return FLAGS, params, model, train_logger  # , run_logger)
+    return FLAGS, params, model, train_logger
 
 
 def run_setup(FLAGS, params):
@@ -433,14 +396,14 @@ def run_setup(FLAGS, params):
              else FLAGS.beta_inference]
 
     # if a value has been passed in `kwargs['charge_weight_inference']` use it
-    qw_train = params['charge_weight']
-    qw_run = FLAGS.charge_weight_inference
-    charge_weight = qw_train if qw_run is None else qw_run
+    #  qw_train = params['charge_weight']
+    #  qw_run = FLAGS.charge_weight_inference
+    #  charge_weight = qw_train if qw_run is None else qw_run
 
     init_dict = {
         'net_weights_arr': net_weights_arr,
         'betas': betas,
-        'charge_weight': charge_weight,
+        'charge_weight': params['charge_weight'],
     }
 
     return init_dict
@@ -573,8 +536,9 @@ def run_l2hmc(FLAGS, params, checkpoint_dir, experiment=None):
 
             # log the total time spent running inference
             run_time = time.time() - t0
-            hstr = (80 * '-') + '\n'
-            io.log(hstr + f'Took: {run_time} s to complete run.' + hstr + '\n')
+            io.log(SEP_STR)
+            io.log(f'Took: {run_time} s to complete run.\n')
+            io.log(SEP_STR)
 
             if plotter is not None and run_logger is not None:
                 plotter.plot_observables(run_logger.run_data,
@@ -610,12 +574,8 @@ def main(FLAGS):
                 f'aux{FLAGS.aux_weight}')
         experiment.set_name(name)
 
-        #  train_scope = experiment.train()
-        #  test_scope = experiment.test()
     else:
         experiment = None
-        #  train_scope = 'train'
-        #  test_scope = 'test'
 
     if FLAGS.hmc_eps is None:
         eps_arr = [0.1, 0.15, 0.2, 0.25]
@@ -638,6 +598,9 @@ def main(FLAGS):
         FLAGS, params, model, train_logger = train_l2hmc(FLAGS,
                                                          log_file,
                                                          experiment)
+        if experiment is not None:
+            experiment.log_parameters(model.params)
+
         if FLAGS.inference:
             if train_logger is not None:
                 checkpoint_dir = train_logger.checkpoint_dir
