@@ -54,6 +54,18 @@ def log_and_write(s, f):
     write(s, f)
 
 
+def check_else_make_dir(d):
+    """If directory `d` doesn't exist, it is created."""
+    if not os.path.isdir(d):
+        log(f"Creating directory: {d}")
+        os.makedirs(d, exist_ok=True)
+
+
+def make_dirs(dirs):
+    """Make directories if and only if hvd.rank == 0."""
+    _ = [check_else_make_dir(d) for d in dirs]
+
+
 def _parse_flags(FLAGS):
     """Helper method for parsing flags as both AttrDicts or generic dicts."""
     if isinstance(FLAGS, dict):
@@ -118,8 +130,6 @@ def create_log_dir(FLAGS, root_dir=None, log_file=None):
     day_str = now.strftime('%Y_%m_%d')
     time_str = now.strftime("%Y_%m_%d_%H%M")
 
-    #  day_str = f'{now.year}_{now.month}_{now.day}'
-    #  time_str = day_str + f'_{now.hour}{now.minute}'
     project_dir = os.path.abspath(os.path.dirname(FILE_PATH))
     #  if FLAGS.log_dir is None:
     if _log_dir is None:
@@ -136,9 +146,12 @@ def create_log_dir(FLAGS, root_dir=None, log_file=None):
             _dir = os.path.join(_log_dir, root_dir)
     root_log_dir = os.path.join(project_dir, _dir, day_str, time_str, run_str)
     check_else_make_dir(root_log_dir)
-    run_num = get_run_num(root_log_dir)
-    log_dir = os.path.abspath(os.path.join(root_log_dir,
-                                           f'run_{run_num}'))
+    if any('run_' in i for i in os.listdir(root_log_dir)):
+        run_num = get_run_num(root_log_dir)
+        log_dir = os.path.abspath(os.path.join(root_log_dir,
+                                               f'run_{run_num}'))
+    else:
+        log_dir = root_log_dir
     if log_file is not None:
         write(f'Output saved to: \n\t{log_dir}', log_file, 'a')
         write(80*'-', log_file, 'a')
@@ -165,27 +178,6 @@ def list_and_join(d):
         paths = _list_and_join(d)
 
     return paths
-
-
-def get_eps_from_run_history_txt_file(txt_file):
-    """Parse `run_history.txt` file and return `eps` (step size)."""
-    with open(txt_file, 'r') as f:
-        data_line = [f.readline() for _ in range(10)][-1]
-    eps = float([i for i in data_line.split(' ') if i != ''][3])
-
-    return eps
-
-
-def check_else_make_dir(d):
-    """If directory `d` doesn't exist, it is created."""
-    if not os.path.isdir(d):
-        log(f"Creating directory: {d}")
-        os.makedirs(d, exist_ok=True)
-
-
-def make_dirs(dirs):
-    """Make directories if and only if hvd.rank == 0."""
-    _ = [check_else_make_dir(d) for d in dirs]
 
 
 def save_data(data, out_file, name=None):
@@ -234,20 +226,30 @@ def get_run_num(log_dir):
     return run_num
 
 
-def _get_run_num(log_dir):
-    check_else_make_dir(log_dir)
+#  def _get_run_num(log_dir):
+#      check_else_make_dir(log_dir)
+#
+#      contents = os.listdir(log_dir)
+#      if contents in ([], ['.DS_Store']):
+#          return 1
+#
+#      run_nums = []
+#      for item in contents:
+#          try:
+#              run_nums.append(int(item.split('_')[-1]))
+#          except ValueError:
+#              continue
+#      if run_nums == []:
+#          return 1
+#
+#      return sorted(run_nums)[-1] + 1
 
-    contents = os.listdir(log_dir)
-    if contents in ([], ['.DS_Store']):
-        return 1
 
-    run_nums = []
-    for item in contents:
-        try:
-            run_nums.append(int(item.split('_')[-1]))
-        except ValueError:
-            continue
-    if run_nums == []:
-        return 1
+def get_eps_from_run_history_txt_file(txt_file):
+    """Parse `run_history.txt` file and return `eps` (step size)."""
+    with open(txt_file, 'r') as f:
+        data_line = [f.readline() for _ in range(10)][-1]
+    eps = float([i for i in data_line.split(' ') if i != ''][3])
 
-    return sorted(run_nums)[-1] + 1
+    return eps
+
