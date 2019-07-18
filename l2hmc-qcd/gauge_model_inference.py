@@ -150,6 +150,9 @@ def main_inference(kwargs):
     condition2 = params['using_hvd'] and hvd.rank() == 0
     is_chief = condition1 or condition2
 
+    if not is_chief:
+        return
+
     if is_chief:
         checkpoint_dir = os.path.join(params['log_dir'], 'checkpoints/')
         assert os.path.isdir(checkpoint_dir)
