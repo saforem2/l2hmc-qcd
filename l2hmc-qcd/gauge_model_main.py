@@ -207,7 +207,7 @@ def train_l2hmc(FLAGS, log_file=None, experiment=None):
         params['num_workers'] = num_workers
 
         # Horovod: Scale initial lr by of num GPUs.
-        params['lr_init'] *= num_workers
+        #  params['lr_init'] *= num_workers
         # Horovod: adjust number of training steps based on number of GPUs.
         params['train_steps'] //= num_workers + 1
         # Horovod: adjust save_steps and lr_decay_steps accordingly.
@@ -322,10 +322,6 @@ def train_l2hmc(FLAGS, log_file=None, experiment=None):
         save_summaries_steps=None
     )
 
-    if HAS_COMET and experiment is not None:
-        experiment.log_parameters(params)
-        experiment.set_model_graph(sess.graph)
-
     # ----------------------------------------------------------
     #   TRAINING
     # ----------------------------------------------------------
@@ -337,6 +333,10 @@ def train_l2hmc(FLAGS, log_file=None, experiment=None):
     }
 
     trainer.train(model.train_steps, **kwargs)
+
+    if HAS_COMET and experiment is not None:
+        experiment.log_parameters(params)
+        experiment.set_model_graph(sess.graph)
 
     trainable_params_file = os.path.join(FLAGS.log_dir, 'trainable_params.txt')
     count_trainable_params(trainable_params_file)
@@ -585,37 +585,6 @@ def run_l2hmc(FLAGS, params, checkpoint_dir, experiment=None):
                     lf_plotter.make_plots(run_dir, num_samples=num_samples)
 
 
-def _old_run_l2hmc_comments():
-    #  if params['using_hvd']:
-    #      bcast_op = hvd.broadcast_global_variables(0)
-    #  else:
-    #      bcast_op = None
-
-    # create new session for inference and restore model from checkpoint_dir
-    #  sess = tf.Session(config=config)
-    #  if is_chief:
-    #      saver = tf.train.Saver()
-    #      saver.restore(sess, tf.train.latest_checkpoint(checkpoint_dir))
-    #      run_logger = RunLogger(model,
-    #                             model.log_dir,
-    #                             save_lf_data=False,
-    #                             summaries=FLAGS.summaries)
-    #
-    #      plotter = GaugeModelPlotter(model, run_logger.figs_dir)
-    #  else:
-    #      run_logger = None
-    #      plotter = None
-
-    #  session_creator = tf.train.WorkerSessionCreator(scaffold=scaffold,
-    #                                                  config=config)
-    #  sess = tf.train.MonitoredSession(session_creator=session_creator,
-    #                                   hooks=hooks)
-
-    #  if bcast_op is not None:
-    #      sess.run(bcast_op)
-    pass
-
-
 def main(FLAGS):
     """Main method for creating/training/running L2HMC for U(1) gauge model."""
     t0 = time.time()
@@ -634,8 +603,19 @@ def main(FLAGS):
         experiment = Experiment(api_key="r7rKFO35BJuaY3KT1Tpj4adco",
                                 project_name="l2hmc-qcd",
                                 workspace="saforem2")
+        name = (f'{FLAGS.network_arch}_'
+                f'lf{FLAGS.num_steps}_'
+                f'batch{FLAGS.num_samples}_'
+                f'qw{FLAGS.charge_weight}_'
+                f'aux{FLAGS.aux_weight}')
+        experiment.set_name(name)
+
+        train_scope = experiment.train()
+        test_scope = experiment.test()
     else:
         experiment = None
+        train_scope = 'train'
+        test_scope = 'test'
 
     if FLAGS.hmc_eps is None:
         eps_arr = [0.1, 0.15, 0.2, 0.25]
@@ -655,9 +635,10 @@ def main(FLAGS):
         # ------------------------
         #   train l2hmc sampler
         # ------------------------
-        FLAGS, params, model, train_logger = train_l2hmc(FLAGS,
-                                                         log_file,
-                                                         experiment=experiment)
+        with train_scope:
+            FLAGS, params, model, train_logger = train_l2hmc(FLAGS,
+                                                             log_file,
+                                                             experiment)
         if FLAGS.inference:
             if train_logger is not None:
                 checkpoint_dir = train_logger.checkpoint_dir
@@ -667,7 +648,8 @@ def main(FLAGS):
             # ---------------------------------------------
             #   run inference using trained l2hmc sampler
             # ---------------------------------------------
-            run_l2hmc(FLAGS, params, checkpoint_dir)
+            with test_scope:
+                run_l2hmc(FLAGS, params, checkpoint_dir)
         # -----------------------------------------------------------
         #  run HMC following inference if --run_hmc flag was passed
         # -----------------------------------------------------------

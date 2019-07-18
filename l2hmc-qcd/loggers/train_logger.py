@@ -107,32 +107,34 @@ class TrainLogger:
         grads_and_vars = zip(self.model.grads,
                              self.model.dynamics.trainable_variables)
 
-        with tf.name_scope('loss'):
-            tf.summary.scalar('loss', self.model.loss_op)
+        #  with tf.name_scope('loss'):
+        tf.summary.scalar('loss', self.model.loss_op)
 
         #  self.loss_averages_op = self._add_loss_summaries(self.model.loss_op)
 
-        with tf.name_scope('learning_rate'):
-            tf.summary.scalar('learning_rate', self.model.lr)
+        #  with tf.name_scope('learning_rate'):
+        tf.summary.scalar('learning_rate', self.model.lr)
 
-        with tf.name_scope('step_size'):
-            tf.summary.scalar('step_size', self.model.dynamics.eps)
+        #  with tf.name_scope('step_size'):
+        tf.summary.scalar('step_size', self.model.dynamics.eps)
 
-        with tf.name_scope('tunneling_events'):
-            tf.summary.scalar('tunneling_events_per_sample',
-                              self.model.charge_diffs_op)
-
-        with tf.name_scope('avg_plaq'):
-            tf.summary.scalar('avg_plaq', self.model.avg_plaqs_op)
+        #  with tf.name_scope('tunneling_events'):
+        tf.summary.scalar('tunneling_events_per_sample',
+                          self.model.charge_diffs_op)
 
         #  with tf.name_scope('avg_plaq'):
-        #      tf.summary.scalar('avg_plaq', self.model.avg_plaqs_op)
+        tf.summary.scalar('avg_plaq', self.model.avg_plaqs_op)
 
-        for var in tf.trainable_variables():
-            if 'batch_normalization' not in var.op.name:
-                tf.summary.histogram(var.op.name, var)
+        #  for var in tf.trainable_variables():
+        #      if 'batch_normalization' not in var.op.name:
+        #          tf.summary.histogram(var.op.name, var)
+        def grad_norm_summary(name_scope, grad):
+            with tf.name_scope(name_scope + '_gradients'):
+                grad_norm = tf.sqrt(tf.reduce_mean(grad ** 2))
+                summary_name = name_scope + '_grad_norm'
+                grad_norm_summary = tf.summary.scalar(summary_name, grad_norm)
 
-        with tf.name_scope('train_summaries'):
+        with tf.name_scope('summaries'):
             for grad, var in grads_and_vars:
                 try:
                     #  layer, _type = var.name.split('/')[-2:]
@@ -145,10 +147,19 @@ class TrainLogger:
                 except (AttributeError, IndexError):
                     name = var.name[:-2]
 
-                if 'batch_norm' not in name:
-                    variable_summaries(var, name)
-                    variable_summaries(grad, name + '/gradients')
-                    tf.summary.histogram(name + '/gradients', grad)
+                if 'kernel' in var.name:
+                    if 'scale' in var.name:
+                        grad_norm_summary('scale', grad)
+                    if 'transformation' in var.name:
+                        grad_norm_summary('transformation', grad)
+                    if 'translation' in var.name:
+                        grad_norm_summary('translation', grad)
+
+                variable_summaries(var, name)
+                variable_summaries(grad, name + '/gradients')
+                tf.summary.histogram(name, var)
+                tf.summary.histogram(name + '/gradients', grad)
+                #  if 'batch_norm' not in name:
 
         self.summary_op = tf.summary.merge_all(name='train_summary_op')
 
