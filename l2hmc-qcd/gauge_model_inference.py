@@ -141,7 +141,6 @@ def run_hmc(params, **kwargs):
 def main_inference(kwargs):
     """Perform inference using saved model."""
     params = load_params()  # load parameters used during training
-    params.update(kwargs)
 
     # We want to restrict all communication (file I/O) to only be performed on
     # rank 0 (i.e. `is_chief`) so there are two cases:
@@ -188,7 +187,7 @@ def main_inference(kwargs):
     # -------------------------------------------------  
     #  Set up relevant parameters to use for inference   
     # -------------------------------------------------  
-    if params['loop_net_weights']:  # loop over different values of [Q, S, T]
+    if kwargs['loop_net_weights']:  # loop over different values of [Q, S, T]
         net_weights_arr = np.array([[1, 1, 1],
                                     [0, 1, 1],
                                     [1, 0, 1],
