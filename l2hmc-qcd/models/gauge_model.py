@@ -318,7 +318,7 @@ class GaugeModel:
                                                      self.global_step,
                                                      self.lr_decay_steps,
                                                      self.lr_decay_rate,
-                                                     staircase=True,
+                                                     staircase=False,
                                                      name='learning_rate')
         with tf.name_scope('optimizer'):
             #  update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
