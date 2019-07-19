@@ -141,6 +141,7 @@ def run_hmc(params, **kwargs):
 def main_inference(kwargs):
     """Perform inference using saved model."""
     params = load_params()  # load parameters used during training
+    params.update(kwargs)
 
     # We want to restrict all communication (file I/O) to only be performed on
     # rank 0 (i.e. `is_chief`) so there are two cases:
@@ -149,7 +150,6 @@ def main_inference(kwargs):
     condition1 = not params['using_hvd']
     condition2 = params['using_hvd'] and hvd.rank() == 0
     is_chief = condition1 or condition2
-
     if not is_chief:
         return
 
