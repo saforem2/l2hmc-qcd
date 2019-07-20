@@ -238,6 +238,7 @@ def setup_train(FLAGS, log_file=None):
 
 def train_l2hmc(FLAGS, log_file=None, experiment=None):
     """Create, train, and run L2HMC sampler on 2D U(1) gauge model."""
+    tf.keras.backend.set_learning_phase(True)
     FLAGS, params, hooks = setup_train(FLAGS, log_file)
 
     # Conditionals required for file I/O
@@ -284,7 +285,6 @@ def train_l2hmc(FLAGS, log_file=None, experiment=None):
     # --------------------------------------------------
     config, params = create_config(FLAGS, params, train_phase=True)
 
-    tf.keras.backend.set_learning_phase(True)
 
     # set initial value of charge weight using value from FLAGS
     charge_weight_init = FLAGS.charge_weight
@@ -341,6 +341,7 @@ def train_l2hmc(FLAGS, log_file=None, experiment=None):
     }
 
     sess = tf.train.MonitoredTrainingSession(**sess_kwargs)
+    #  tf.keras.backend.set_session(sess)
 
     #  with tf.train.MonitoredTrainingSession(**kwargs) as sess:
 
@@ -471,6 +472,7 @@ def run_l2hmc(FLAGS, params, checkpoint_dir, experiment=None):
     # --------------------------------------------------
     config, params = create_config(FLAGS, params)
     sess = tf.Session(config=config)
+    #  tf.keras.backend.set_session(sess)
     if is_chief:
         saver = tf.train.Saver()
         saver.restore(sess, tf.train.latest_checkpoint(checkpoint_dir))

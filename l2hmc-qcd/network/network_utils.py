@@ -1,5 +1,6 @@
 import numpy as np
 import tensorflow as tf
+from tensorflow.contrib.framework import add_arg_scope, arg_scope
 
 from globals import GLOBAL_SEED, TF_FLOAT, NP_FLOAT
 
@@ -10,14 +11,102 @@ if '2.' not in tf.__version__:
     tf.set_random_seed(GLOBAL_SEED)
 
 
-def batch_norm(x, axis, is_training):
-    return tf.layers.batch_normalization(x,
-                                         axis=axis,
-                                         training=is_training,
-                                         center=True,
-                                         scale=True,
-                                         reuse=False,
-                                         name='batch_norm')
+def flatten(_list):
+    return [item for sublist in _list for item in sublist]
+
+
+def add_elements_to_collection(elements, collection_list):
+    elements = flatten(elements)
+    collection_list = flatten(collection_list)
+    #  collection_list = tf.nest.flatten(collection_list)
+    for name in collection_list:
+        collection = tf.get_collection_ref(name)
+        collection_set = set(collection)
+        for element in elements:
+            if element not in collection_set:
+                collection.append(element)
+
+
+def _assign_moving_average(orig_val, new_val, momentum, name):
+    with tf.name_scope(name):
+        scaled_diff = (1 - momentum) * (new_val - orig_val)
+        return tf.assign_add(orig_val, scaled_diff)
+
+
+@add_arg_scope
+def batch_norm(x,
+               phase,
+               axis=-1,
+               shift=True,
+               scale=True,
+               momentum=0.99,
+               eps=1e-3,
+               internal_update=False,
+               scope=None,
+               reuse=None):
+
+    C = x._shape_as_list()[axis]
+    ndim = len(x.shape)
+    var_shape = [1] * (ndim - 1) + [C]
+
+    with tf.variable_scope(scope, 'batch_norm', reuse=reuse):
+        def training():
+            m, v = tf.nn.moments(x, list(range(ndim - 1)), keep_dims=True)
+            update_m = _assign_moving_average(moving_m,
+                                              m, momentum,
+                                              'update_mean')
+            update_v = _assign_moving_average(moving_v,
+                                              v, momentum,
+                                              'update_var')
+            tf.add_to_collection('update_ops', update_m)
+            tf.add_to_collection('update_ops', update_v)
+
+            if internal_update:
+                with tf.control_dependencies([update_m, update_v]):
+                    output = (x - m) * tf.rsqrt(v + eps)
+            else:
+                output = (x - m) * tf.rsqrt(v + eps)
+            return output
+
+        def testing():
+            m, v = moving_m, moving_v
+            output = (x - m) * tf.rsqrt(v + eps)
+            return output
+
+        # Get mean and variance, normalize input
+        moving_m = tf.get_variable('mean', var_shape,
+                                   initializer=tf.zeros_initializer,
+                                   trainable=False)
+        moving_v = tf.get_variable('var', var_shape,
+                                   initializer=tf.ones_initializer,
+                                   trainable=False)
+
+        if isinstance(phase, bool):
+            output = training() if phase else testing()
+        else:
+            output = tf.cond(phase, training, testing)
+
+        if scale:
+            output *= tf.get_variable('gamma', var_shape,
+                                      initializer=tf.ones_initializer)
+
+        if shift:
+            output += tf.get_variable('beta', var_shape,
+                                      initializer=tf.zeros_initializer)
+
+    return output
+
+
+#  def batch_norm(x, axis, is_training):
+#      with tf.variable_scope(reuse=True):
+#          batch_norm = tf.layers.batch_normalization(x, axis=axis,
+#                                                     training=is_training,
+#                                                     center=True,
+#                                                     scale=True,
+#                                                     reuse=False,
+#                                                     name='batch_norm')
+#      return batch_norm
+#
 
 
 def custom_dense(units, factor=1., name=None):

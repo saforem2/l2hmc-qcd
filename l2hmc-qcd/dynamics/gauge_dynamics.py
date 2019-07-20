@@ -115,6 +115,7 @@ class GaugeDynamics(tf.keras.Model):
         else:
             net_kwargs = {
                 'use_bn': self.use_bn,  # whether or not to use batch norm
+                'dropout_prob': self.dropout_prob,
                 'x_dim': self.lattice.num_links,  # dim of target space
                 'links_shape': self.lattice.links.shape,
                 '_input_shape': (self.batch_size, *self.lattice.links.shape),
@@ -135,7 +136,7 @@ class GaugeDynamics(tf.keras.Model):
             'num_hidden': self.num_hidden,  # num hidden nodes
             'num_filters': int(self.lattice.space_size),  # num conv. filters
             'filter_sizes': [(3, 3, 2), (2, 2, 2)],  # size of conv. filters
-            'name_scope': 'position',  # namespace in which to create network
+            'name_scope': 'x',  # namespace in which to create network
             'factor': 2.,  # scale factor used in original paper
             'data_format': self.data_format,  # channels_first if using GPU
         })
@@ -144,7 +145,7 @@ class GaugeDynamics(tf.keras.Model):
             with tf.name_scope("XNet"):
                 self.x_fn = ConvNet3D(model_name='XNet', **net_kwargs)
 
-            net_kwargs['name_scope'] = 'momentum'  # update name scope
+            net_kwargs['name_scope'] = 'v'  # update name scope
             net_kwargs['factor'] = 1.              # factor used in orig. paper
             with tf.name_scope("VNet"):
                 self.v_fn = ConvNet3D(model_name='VNet', **net_kwargs)
@@ -328,14 +329,12 @@ class GaugeDynamics(tf.keras.Model):
             logdets_out = logdets_out.write(0, logdet)
 
         def body(step, x, v, logdet, lf_samples, logdets):
-            i = tf.cast(step, dtype=tf.int32)  # cast leapfrog step to integer
+            # cast leapfrog step to integer
+            i = tf.cast(step, dtype=tf.int32)
             new_x, new_v, j = lf_fn(x, v, beta, step,
                                     net_weights, train_phase)
             lf_samples = lf_samples.write(i+1, new_x)
             logdets = logdets.write(i+1, logdet+j)
-            #  with tf.name_scope('apply_lf'):
-            #  with tf.name_scope('concat_lf_outputs'):
-            #  with tf.name_scope('concat_logdets'):
 
             return (step+1, new_x, new_v, logdet+j, lf_samples, logdets)
 

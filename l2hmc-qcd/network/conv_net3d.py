@@ -15,7 +15,11 @@ Date: 01/16/2019
 """
 import numpy as np
 import tensorflow as tf
-from .network_utils import custom_dense, batch_norm
+from .network_utils import (custom_dense, batch_norm,
+                            add_elements_to_collection)
+import utils.file_io as io
+from tensorflow.keras import backend as K
+#  import utils.file_io as io
 
 from globals import GLOBAL_SEED, TF_FLOAT, NP_FLOAT
 
@@ -27,6 +31,9 @@ if '2.' not in tf.__version__:
 
 
 #  HE_INIT = tf.contrib.layers.variance_scaling_initializer(mode="FAN_AVG")
+
+def flatten_list(_list):
+    return [item for sublist in _list for item in sublist]
 
 
 # pylint:disable=too-many-arguments, too-many-instance-attributes
@@ -54,14 +61,48 @@ class ConvNet3D(tf.keras.Model):
         if self.use_bn:
             if self.data_format == 'channels_first':
                 self.bn_axis = 1
+                self._data_format = 'NCHW'
             elif self.data_format == 'channels_last':
                 self.bn_axis = -1
+                self._data_format = 'NHWC'
             else:
                 raise AttributeError("Expected 'data_format' to be "
                                      "'channels_first'  or 'channels_last'")
+            #  with tf.variable_scope('batch_norm_x'):
+                #  self.batch_norm_x = tf.keras.layers.BatchNormalization(
+                #      axis=self.bn_axis, trainable=True
+                #  )
+            #  with tf.variable_scope('batch_norm_v'):
+                #  self.batch_norm_v = tf.keras.layers.BatchNormalization(
+                #      axis=self.bn_axis, trainable=True
+                #  )
+            #  self.batch_norm_v = tf.keras.layers.BatchNormalization(
+            #      axis=self.bn_axis
+            #  )
+            #  with tf.variable_scope('batch_norm_v'):
+            #  self.batch_norm_v = tf.layers.BatchNormalization(
+            #      axis=self.bn_axis,
+            #  )
+            #  with tf.variable_scope('batch_norm_x'):
+            #  self.batch_norm_x = tf.layers.BatchNormalization(
+            #      axis=self.bn_axis
+            #  )
+            #  add_elements_to_collection(self.batch_norm_v.updates,
+            #                             tf.GraphKeys.UPDATE_OPS)
+            #  self.batch_norm_x = tf.keras.layers.BatchNormalization(
+            #      axis=self.bn_axis
+            #  )
+            #  add_elements_to_collection(self.batch_norm_x.updates,
+            #                             tf.GraphKeys.UPDATE_OPS)
 
+        if self.dropout_prob > 0:
+            self.dropout_x = tf.keras.layers.Dropout(self.dropout_prob,
+                                                     seed=GLOBAL_SEED)
+            self.dropout_v = tf.keras.layers.Dropout(self.dropout_prob,
+                                                     seed=GLOBAL_SEED)
+
+        #  with tf.name_scope('coeff_scale'):
         with tf.name_scope(self.name_scope):
-            #  with tf.name_scope('coeff_scale'):
             self.coeff_scale = tf.Variable(
                 initial_value=tf.zeros([1, self.x_dim]),
                 name='coeff_scale',
@@ -89,7 +130,6 @@ class ConvNet3D(tf.keras.Model):
                 name='conv_x1',
                 dtype=TF_FLOAT,
                 data_format=self.data_format
-
             )
 
             #  with tf.name_scope('pool_x1'):
@@ -125,7 +165,7 @@ class ConvNet3D(tf.keras.Model):
             self.conv_x2 = tf.keras.layers.Conv3D(
                 filters=2*self.num_filters,
                 kernel_size=self.filter_sizes[1],
-                activation=tf.nn.relu,
+                activation=None if self.use_bn else tf.nn.relu,
                 #  initializer=HE_INIT,
                 padding='same',
                 name='conv_x2',
@@ -145,7 +185,7 @@ class ConvNet3D(tf.keras.Model):
             self.conv_v2 = tf.keras.layers.Conv3D(
                 filters=2 * self.num_filters,
                 kernel_size=self.filter_sizes[1],
-                activation=tf.nn.relu,
+                activation=None if self.use_bn else tf.nn.relu,
                 #  initializer=HE_INIT,
                 padding='same',
                 name='conv_v2',
@@ -235,42 +275,19 @@ class ConvNet3D(tf.keras.Model):
     def call(self, inputs, train_phase):
         """Forward pass through network.
 
-        NOTE: Data flow of forward pass is outlined below.
-        ============================================================
-        * inputs: x, v, t
-        ------------------------------------------------------------
-            x -->
-                (conv_x1, max_pool_x1) --> (conv_x1, max_pool_x2) -->
-                batch_norm --> flatten_x --> x_layer --> x_out 
-
-            v -->
-                (conv_v1, max_pool_v1), --> (conv_v1, max_pool_v2) -->
-                batch_norm --> flatten_v --> v_layer --> v_out
-
-            t --> t_layer --> t_out 
-
-            x_out + v_out + t_out --> h_layer --> h_out
-        ============================================================
-        * h_out is then fed to three separate layers:
-        ------------------------------------------------------------
-            (1.) h_out --> (scale_layer, tanh) * exp(coeff_scale)
-                 output: scale (S function in orig. paper)
-
-            (2.) h_out --> translation_layer --> translation_out
-                 output: translation (T function in orig. paper)
-
-            (3.) h_out --> 
-                    (transformation_layer, tanh) * exp(coeff_transformation)
-                 output: transformation (Q function in orig. paper)
-          ============================================================
+        Args:
+            input (list or tuple): Inputs to the network (x, v, t).
+            train_phase (bool or tf.placeholder): Run the network in
+            either `training` phase or `inference` phase.
 
        Returns:
            scale, translation, transformation (S, T, Q functions from paper)
         """
         v, x, t = inputs
-        #  scale_weight = net_weights[0]
-        #  transformation_weight = net_weights[1]
-        #  translation_weight = net_weights[2]
+
+        #  assert train_phase == K.learning_phase()
+        #  io.log(f'K.learning_phase(): {K.learning_phase()}')
+        #  io.log(f'train_phase: {train_phase}')
 
         #  with tf.name_scope('reshape'):
         v = self.reshape_5D(v)
@@ -279,15 +296,25 @@ class ConvNet3D(tf.keras.Model):
         with tf.name_scope('x_layers'):
             x = self.max_pool_x1(self.conv_x1(x))
             #  x = self.max_pool_x2(self.conv_x2(x))
-            x = self.conv_x2(x)
             #  x = batch_norm(x, axis=self.bn_axis, is_training=train_phase)
+            #  x = self.batch_norm_x(x, training=train_phase)
+            x = self.conv_x2(x)
             if self.use_bn:
-                x = tf.keras.layers.BatchNormalization(axis=self.bn_axis)(
-                    x, training=train_phase
-                )
-
+                x = batch_norm(x, train_phase,
+                               axis=self.bn_axis,
+                               internal_update=True)
+                #  x = self.batch_norm_x(x, training=train_phase)
+                #  tf.add_to_collection(tf.GraphKeys.UPDATE_OPS,
+                #                       self.batch_norm_x.updates)
+                #  x = self.batch_norm_x(x, training=train_phase)
+                #  x = tf.contrib.layers.batch_norm(x, is_training=train_phase,
+                #                                   data_format=self._data_format,
+                #                                   updates_collections=None)
+            x = tf.nn.relu(x)
             x = self.max_pool_x2(x)
             x = self.flatten(x)
+            if self.dropout_prob > 0:
+                x = self.dropout_x(x, training=train_phase)
             #  x = self.x_layer(x)
             x = tf.nn.relu(self.x_layer(x))
 
@@ -296,13 +323,25 @@ class ConvNet3D(tf.keras.Model):
             #  v = self.max_pool_v2(self.conv_v2(v))
             v = self.conv_v2(v)
             #  v = batch_norm(v, axis=self.bn_axis, is_training=train_phase)
+            #  v = batch_norm(v, axis=self.bn_axis, is_training=train_phase)
+            #  v = self.batch_norm_v(v, training=train_phase)
+            #  v = tf.keras.layers.BatchNormalization(axis=self.bn_axis)(v)
             if self.use_bn:
-                v = tf.keras.layers.BatchNormalization(axis=self.bn_axis)(
-                    v, training=train_phase
-                )
-                #  v = tf.keras.layers.BatchNormalization(axis=self.bn_axis)(v)
+                v = batch_norm(v, train_phase,
+                               axis=self.bn_axis,
+                               internal_update=True)
+                #  v = self.batch_norm_v(v, training=train_phase)
+                #  tf.add_to_collection(tf.GraphKeys.UPDATE_OPS,
+                #                       self.batch_norm_v.updates)
+                #  v = self.batch_norm_v(v, training=train_phase)
+                #  v = tf.contrib.layers.batch_norm(v, is_training=train_phase,
+                #                                   data_format=self._data_format,
+                #                                   updates_collections=None)
+            v = tf.nn.relu(v)
             #  v = self.v_layer(v)
             v = self.max_pool_v2(v)
+            if self.dropout_prob > 0:
+                v = self.dropout_v(v, training=train_phase)
             v = self.flatten(v)
             v = tf.nn.relu(self.v_layer(v))
 
