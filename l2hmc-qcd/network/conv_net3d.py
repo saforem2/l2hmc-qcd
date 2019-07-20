@@ -253,20 +253,19 @@ class ConvNet3D(tf.keras.Model):
         (N, L, L, 2), the output tensor has shape (N, 2, L, L, 1).
         """
         if self.data_format == 'channels_first':
-            N, D, H, W = self._input_shape
+            N, C, H, W = self._input_shape
             #  N, D, H, W = tensor.shape
             if isinstance(tensor, np.ndarray):
-                return np.reshape(tensor, (N, 1, H, W, D))
+                return np.reshape(tensor, (N, C, 1, H, W))
 
-            return tf.reshape(tensor, (N, 1, D, H, W))
+            return tf.reshape(tensor, (N, C, 1, H, W))
 
         if self.data_format == 'channels_last':
-            #  N, H, W, D = tensor.shape
-            N, H, W, D = self._input_shape
+            N, H, W, C = self._input_shape
             if isinstance(tensor, np.ndarray):
-                return np.reshape(tensor, (N, H, W, D, 1))
+                return np.reshape(tensor, (N, H, W, C, 1))
 
-            return tf.reshape(tensor, (N, H, W, D, 1))
+            return tf.reshape(tensor, (N, H, W, C, 1))
 
         raise AttributeError("`self.data_format` should be one of "
                              "'channels_first' or 'channels_last'")
