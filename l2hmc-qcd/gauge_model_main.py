@@ -198,7 +198,7 @@ def train_setup(FLAGS, log_file=None):
 
     if FLAGS.gpu:
         io.log("Using GPU for training.")
-        params['data_format'] = 'channels_first'
+        params['data_format'] = 'channels_last'
     else:
         io.log("Using CPU for training.")
         params['data_format'] = 'channels_last'
