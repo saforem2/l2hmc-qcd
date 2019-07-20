@@ -459,6 +459,13 @@ def parse_args():
                               parameter logging and additonal metric
                               tracking/displaying."""))
 
+    parser.add_argument("--dropout_prob",
+                        dest="dropout_prob",
+                        required=False,
+                        default=0.,
+                        help=("""Dropout probability in network. If > 0,
+                              dropout will be used. (Default: 0.)"""))
+
     #########################
     #  (Mostly) Deprecated  #
     #########################
