@@ -461,6 +461,7 @@ def parse_args():
 
     parser.add_argument("--dropout_prob",
                         dest="dropout_prob",
+                        type=float,
                         required=False,
                         default=0.,
                         help=("""Dropout probability in network. If > 0,
