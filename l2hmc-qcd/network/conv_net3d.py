@@ -252,16 +252,17 @@ class ConvNet3D(tf.keras.Model):
         If self.data_format is 'channels_last' and input `tensor` has shape
         (N, L, L, 2), the output tensor has shape (N, 2, L, L, 1).
         """
+        N, H, W, C = self._input_shape
         if self.data_format == 'channels_first':
-            N, C, H, W = self._input_shape
+            #  N, C, H, W = self._input_shape
             #  N, D, H, W = tensor.shape
             if isinstance(tensor, np.ndarray):
-                return np.reshape(tensor, (N, C, 1, H, W))
+                return np.reshape(tensor, (N, 1, C, H, W))
 
-            return tf.reshape(tensor, (N, C, 1, H, W))
+            return tf.reshape(tensor, (N, 1, C, H, W))
 
         if self.data_format == 'channels_last':
-            N, H, W, C = self._input_shape
+            #  N, H, W, C = self._input_shape
             if isinstance(tensor, np.ndarray):
                 return np.reshape(tensor, (N, H, W, C, 1))
 
