@@ -345,17 +345,13 @@ class GaugeModelPlotter:
 
         num_steps, num_samples = actions.shape
         steps_arr = np.arange(num_steps)
+
         # skip 5% of total number of steps 
         # between successive points when 
         # plotting to help smooth out graph
         skip_steps = max((1, int(0.005 * num_steps)))
         # ignore first 10% of pts (warmup)
         warmup_steps = max((1, int(0.01 * num_steps)))
-
-        #  _actions = actions[::skip_steps]
-        #  _plaqs = plaqs[::skip_steps]
-
-        #  _steps_arr = skip_steps * np.arange(_actions.shape[0])
 
         _charge_diffs = charge_diffs[warmup_steps:][::skip_steps]
         _plaq_diffs = plaqs_diffs[warmup_steps:][::skip_steps]
@@ -365,9 +361,6 @@ class GaugeModelPlotter:
         _plaq_diffs_avg = np.mean(_plaq_diffs, axis=1)
         _plaq_diffs_err = sem(_plaq_diffs, axis=1)
 
-        #  out_dir = (f'{int(num_steps)}_steps_' f"beta_{beta}")
-        #  self.out_dir = os.path.join(self.figs_dir, out_dir)
-        #  self.out_dir = os.path.join
         self.out_dir = os.path.join(self.figs_dir, run_str)
         io.check_else_make_dir(self.out_dir)
 
@@ -409,17 +402,6 @@ class GaugeModelPlotter:
                                 _plaq_diffs_avg,
                                 _plaq_diffs_err), **kwargs)
         self.log_figure()
-
-        #  self._plot_actions((_steps_arr, _actions.T), **kwargs)
-        #  self._plot_plaqs((_steps_arr, _plaqs.T), beta, **kwargs)
-        #############
-        #  self._plot_actions((steps_arr, actions.T), **kwargs)
-        #  self._plot_plaqs((steps_arr, plaqs.T), beta, **kwargs)
-        #  self._plot_charges((steps_arr, charges.T), **kwargs)
-        #  self._plot_autocorrs((steps_arr, charge_autocorrs), **kwargs)
-        #  self._plot_charge_probs(charges, **kwargs)
-        #  self._plot_charge_diffs((_steps_diffs, _charge_diffs.T), **kwargs)
-        #  self._plot_plaqs_diffs((_steps_diffs, _plaq_diffs.T), **kwargs)
 
     def _plot_actions(self, xy_data, **kwargs):
         """Plot actions."""
@@ -464,10 +446,6 @@ class GaugeModelPlotter:
         plt.savefig(out_file, dpi=400, bbox_inches='tight')
 
     def _plot_plaqs_diffs(self, xy_data, **kwargs):
-        #  kwargs['out_file'] = get_out_file(self.out_dir,
-        #                                    'plaqs_diffs_vs_step')
-        #  xy_labels = ('Step', r"$\delta_{\phi_{P}}$")
-        #  _, ax = plot_multiple_lines(xy_data, xy_labels, **kwargs)
         kwargs['out_file'] = None
         kwargs['ret'] = True
         labels = {
@@ -475,12 +453,24 @@ class GaugeModelPlotter:
             'y_label': r"$\delta_{\phi_{P}}$",
             'plt_label': r"$\delta_{\phi_{P}}$"
         }
-        _, ax, axins = plot_with_inset(xy_data, labels, **kwargs)
-        _ = ax.axhline(y=0, color='#CC0033', ls='-', lw=1.5)
-        _ = axins.axhline(y=0, color='#CC0033', ls='-', lw=1.5)
-        _ = ax.legend(loc='best')
-        _ = plt.tight_layout()
+        #  num_samples = kwargs.get('num_samples', 10)
+        #  greys, reds, blues = get_colors(num_samples)
+        x, y, yerr = xy_data
+        fig, ax = plt.subplots()
+        _ = ax.plot(x, y, label='', ls='-', lw=2., color='C0')
+        _ = ax.errorbar(x, y, yerr=yerr, label='', marker=None,
+                        ls='-', alpha=0.7, lw=1.5, color='C0')
+        _ = ax.axhline(y=0, color='#CC0033', ls='-', lw=2.)
 
+        _ = ax.set_xlabel(labels['x_label'], fontsize=14)
+        _ = ax.set_ylabel(labels['y_label'], fontsize=14)
+        #  _ = axins.axhline(y=0, color='#CC0033', ls='-', lw=1.5)
+        #  _ = ax.legend(loc='best')
+        title = kwargs.get('title', None)
+        if title is not None:
+            _ = ax.set_title(title)
+
+        _ = plt.tight_layout()
         out_file = get_out_file(self.out_dir, 'plaqs_diffs_vs_step')
         io.log(f'Saving figure to: {out_file}.')
         plt.savefig(out_file, dpi=400, bbox_inches='tight')
