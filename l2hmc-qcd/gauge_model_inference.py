@@ -138,6 +138,45 @@ def run_hmc(params, **kwargs):
     #          run_hmc(FLAGS, params, log_file)
 
 
+def inference_setup(kwargs):
+    """Set up relevant (initial) values to use when running inference."""
+    # -------------------------------------------------  
+    if kwargs['loop_net_weights']:  # loop over different values of [Q, S, T]
+        net_weights_arr = np.zeros((9, 3), dtype=NP_FLOAT)
+        mask_arr = np.array([[1, 1, 1],                     # [Q, S, T]
+                             [0, 1, 1],                     # [ , S, T]
+                             [1, 0, 1],                     # [Q,  , T]
+                             [1, 1, 0],                     # [Q, S,  ]
+                             [1, 0, 0],                     # [Q,  ,  ]
+                             [0, 1, 0],                     # [ , S,  ]
+                             [0, 0, 1],                     # [ ,  , T]
+                             [0, 0, 0]], dtype=NP_FLOAT)    # [ ,  ,  ]
+        net_weights_arr[:mask_arr.shape[0], :] = mask_arr   # [?, ?, ?]
+        net_weights_arr[-1, :] = np.random.randn(3)
+
+    else:  # set [Q, S, T] = [1, 1, 1]
+        net_weights_arr = np.array([[1, 1, 1]], dtype=NP_FLOAT)
+
+    # if a value has been passed in `kwargs['beta_inference']` use it
+    # otherwise, use `model.beta_final`
+    beta_final = kwargs['beta_final']
+    beta_inference = kwargs['beta_inference']
+    betas = [beta_final if beta_inference is None else beta_inference]
+
+    # if a value has been passed in `kwargs['charge_weight_inference']` use it
+    #  qw_train = params['charge_weight']
+    #  qw_run = FLAGS.charge_weight_inference
+    #  charge_weight = qw_train if qw_run is None else qw_run
+
+    inference_dict = {
+        'net_weights_arr': net_weights_arr,
+        'betas': betas,
+        'charge_weight': kwargs['charge_weight'],
+    }
+
+    return inference_dict
+
+
 def main_inference(kwargs):
     """Perform inference using saved model."""
     params = load_params()  # load parameters used during training
@@ -149,6 +188,8 @@ def main_inference(kwargs):
     condition1 = not params['using_hvd']
     condition2 = params['using_hvd'] and hvd.rank() == 0
     is_chief = condition1 or condition2
+    if not is_chief:
+        return
 
     if is_chief:
         checkpoint_dir = os.path.join(params['log_dir'], 'checkpoints/')
@@ -182,38 +223,19 @@ def main_inference(kwargs):
     #  if bcast_op is not None:
     #      sess.run(bcast_op)
 
-    # -------------------------------------------------  
-    #  Set up relevant parameters to use for inference   
-    # -------------------------------------------------  
-    if params['loop_net_weights']:  # loop over different values of [Q, S, T]
-        net_weights_arr = np.array([[1, 1, 1],
-                                    [0, 1, 1],
-                                    [1, 0, 1],
-                                    [1, 1, 0],
-                                    [1, 0, 0],
-                                    [0, 1, 0],
-                                    [0, 0, 1],
-                                    [0, 0, 0]], dtype=NP_FLOAT)
-    else:  # set [Q, S, T] = [1, 1, 1]
-        net_weights_arr = np.array([[1, 1, 1]], dtype=NP_FLOAT)
+    # -------------------------------------------------------------------
+    #  Set up relevant values to use for inference (parsed from kwargs)
+    # -------------------------------------------------------------------
+    inference_dict = inference_setup(kwargs)
+    net_weights_arr = inference_dict['net_weights_arr']
+    betas = inference_dict['betas']
+    charge_weight = inference_dict['charge_weight']
 
-    # if a value has been passed in `kwargs['beta_inference']` use it
-    beta_inference = kwargs.get('beta_inference', None)
-    # otherwise, use `model.beta_final`
-    betas = [model.beta_final if beta_inference is None else beta_inference]
-
-    # if a value has been passed in `kwargs['charge_weight_inference']` use it
-    qw_inference = kwargs.get('charge_weight_inference', None)
-    # otherwise, use `params['charge_weight_init']`
-    qw_init = params['charge_weight']
-    charge_weight = qw_init if qw_inference is None else qw_inference
-
-    charge_weight = kwargs.get('charge_weight', None)
-    if charge_weight is None:
-        charge_weight = params['charge_weight_init']
-
+    # --------------------------------------
     # Create GaugeModelRunner for inference
+    # --------------------------------------
     runner = GaugeModelRunner(sess, model, run_logger)
+
     for net_weights in net_weights_arr:
         weights = {
             'charge_weight': charge_weight,
