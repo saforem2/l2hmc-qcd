@@ -199,6 +199,7 @@ def train_setup(FLAGS, log_file=None):
     if FLAGS.gpu:
         io.log("Using GPU for training.")
         params['data_format'] = 'channels_last'
+        #  params['data_format'] = 'channels_first'
     else:
         io.log("Using CPU for training.")
         params['data_format'] = 'channels_last'
@@ -430,15 +431,17 @@ def run_l2hmc(params, checkpoint_dir, experiment=None):
     condition2 = params['horovod'] and hvd.rank() == 0
     is_chief = condition1 or condition2
 
-    if is_chief:
-        if checkpoint_dir is not None:
-            assert os.path.isdir(checkpoint_dir)
-        else:
-            raise ValueError(f'Must pass a `checkpoint_dir` to `run_l2hmc`.')
-        #  params['run_steps'] //= num_workers
-        #  params['lr_init'] *= hvd.size()
+    if not is_chief:
+        return
+
+    if checkpoint_dir is not None:
+        assert os.path.isdir(checkpoint_dir)
     else:
-        checkpoint_dir = None
+        raise ValueError(f'Must pass a `checkpoint_dir` to `run_l2hmc`.')
+    #  params['run_steps'] //= num_workers
+    #  params['lr_init'] *= hvd.size()
+    #  else:
+    #      checkpoint_dir = None
 
     # --------------------------------------------------------
     # Create model and train_logger
@@ -451,23 +454,23 @@ def run_l2hmc(params, checkpoint_dir, experiment=None):
     betas = init_dict['betas']
     charge_weight = init_dict['charge_weight']
 
-    if is_chief:
-        #  if run_logger is None:
-        #  TODO: Fix RunLogger summaries
-        run_logger = RunLogger(model,
-                               model.log_dir,
-                               save_lf_data=False,
-                               summaries=False)
+    #  if is_chief:
+    #  if run_logger is None:
+    #  TODO: Fix RunLogger summaries
+    run_logger = RunLogger(model,
+                           model.log_dir,
+                           save_lf_data=False,
+                           summaries=False)
 
-        plotter = GaugeModelPlotter(model, run_logger.figs_dir,
-                                    experiment=experiment)
+    plotter = GaugeModelPlotter(model, run_logger.figs_dir,
+                                experiment=experiment)
 
-        net_weights_file = os.path.join(model.log_dir, 'net_weights.txt')
-        np.savetxt(net_weights_file, net_weights_arr,
-                   delimiter=', ', newline='\n', fmt="%-.4g")
+    net_weights_file = os.path.join(model.log_dir, 'net_weights.txt')
+    np.savetxt(net_weights_file, net_weights_arr,
+               delimiter=', ', newline='\n', fmt="%-.4g")
 
-    else:
-        run_logger = plotter = None
+    #  else:
+    #      run_logger = plotter = None
 
     # --------------------------------------------------
     # Setup config and MonitoredTrainingSession
@@ -475,9 +478,9 @@ def run_l2hmc(params, checkpoint_dir, experiment=None):
     config, params = create_config(params)
     sess = tf.Session(config=config)
     #  tf.keras.backend.set_session(sess)
-    if is_chief:
-        saver = tf.train.Saver()
-        saver.restore(sess, tf.train.latest_checkpoint(checkpoint_dir))
+    #  if is_chief:
+    saver = tf.train.Saver()
+    saver.restore(sess, tf.train.latest_checkpoint(checkpoint_dir))
 
     # ensure all variables are initialized
     #  target_collection = []
