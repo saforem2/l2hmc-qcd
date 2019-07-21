@@ -11,11 +11,12 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+from tensorflow.python.ops import control_flow_ops as control_flow_ops
+
 import os
 
 import numpy as np
 import tensorflow as tf
-
 try:
     import horovod.tensorflow as hvd
     HAS_HOROVOD = True
@@ -28,6 +29,7 @@ from globals import GLOBAL_SEED, TF_FLOAT
 from lattice.lattice import GaugeLattice
 from dynamics.gauge_dynamics import GaugeDynamics
 from utils.horovod_utils import configure_learning_rate
+from network.network_utils import flatten
 
 
 def check_log_dir(log_dir):
@@ -71,6 +73,7 @@ class GaugeModel:
         self.charge_weight = inputs['charge_weight']
         self.net_weights = inputs['net_weights']
         self.train_phase = inputs['train_phase']
+        self.train_bool = inputs['train_bool']
 
         # -------------------------------------------------------
         # Create dynamics engine
@@ -194,6 +197,7 @@ class GaugeModel:
                 ]
 
                 train_phase = tf.placeholder(tf.bool, name='is_training')
+                train_bool = True
 
             else:
                 x = tf.convert_to_tensor(
@@ -204,6 +208,7 @@ class GaugeModel:
                 charge_weight = tf.convert_to_tensor(0.)
                 net_weights = tf.convert_to_tensor([1., 1., 1.])
                 train_phase = True
+                train_bool = True
 
         outputs = {
             'x': x,
@@ -211,6 +216,7 @@ class GaugeModel:
             'charge_weight': charge_weight,
             'net_weights': net_weights,
             'train_phase': train_phase,
+            'train_bool': train_bool
 
         }
 
@@ -228,6 +234,7 @@ class GaugeModel:
                 'eps_trainable': not self.eps_fixed,
                 'data_format': self.data_format,
                 'use_bn': self.use_bn,
+                'dropout_prob': self.dropout_prob,
                 'num_hidden': self.num_hidden,
             }
 
@@ -318,11 +325,11 @@ class GaugeModel:
                                                      self.global_step,
                                                      self.lr_decay_steps,
                                                      self.lr_decay_rate,
-                                                     staircase=True,
+                                                     staircase=False,
                                                      name='learning_rate')
+        #  with tf.control_dependencies(update_ops):
         with tf.name_scope('optimizer'):
             #  update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
-            #  with tf.control_dependencies(update_ops):
             self.optimizer = tf.train.AdamOptimizer(self.lr)
             if self.using_hvd:
                 self.optimizer = hvd.DistributedOptimizer(self.optimizer)
@@ -593,9 +600,17 @@ class GaugeModel:
                 self.sumlogdet_f = output['sumlogdet_f']
                 self.sumlogdet_b = output['sumlogdet_b']
 
+    def _append_update_ops(self, train_op):
+        """Returns `train_op` appending `UPDATE_OPS` collection if prsent."""
+        update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+        if update_ops:
+            io.log(f'Update ops: {update_ops}')
+            return control_flow_ops(train_op, *update_ops)
+        return train_op
+
     def build(self):
         """Build Tensorflow graph."""
-        with tf.name_scope('loss_and_grads'):
+        with tf.name_scope('l2hmc'):
             #  self.loss_op, self.grads, self.x_out, self.px, x_dq = output
             loss, grads, x_dq, dynamics_output = self.calc_loss_and_grads(
                 x=self.x,
@@ -652,7 +667,7 @@ class GaugeModel:
             #  self.sumlogdet_b = dynamics_output['sumlogdet_b']
 
         with tf.name_scope('train'):
-            # --------------------------------------------------------
+            # ----------------------------------------------------------
             #  TODO:
             #
             #  update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
@@ -660,7 +675,7 @@ class GaugeModel:
             #  io.log("update_ops: ", update_ops)
             #  Use the update ops of the model itself
             #  io.log("model.updates: ", self.dynamics.updates)
-            # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
             # PREVIOUS (WORKING but diverging grads as of 07/15/2019):
             # ```
             #  with tf.control_dependencies(self.dynamics.updates):
@@ -670,16 +685,20 @@ class GaugeModel:
             #          name='train_op'
             #      )
             # ```
-            # --------------------------------------------------------
+            # ----------------------------------------------------------
             grads_and_vars = zip(self.grads, self.dynamics.trainable_variables)
-            update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
-            with tf.control_dependencies(update_ops):
-                self._create_optimizer()
-                self.train_op = self.optimizer.apply_gradients(
-                    grads_and_vars,
-                    global_step=self.global_step,
-                    name='train_op'
-                )
+            self._create_optimizer()
+            self.train_op = self.optimizer.apply_gradients(
+                grads_and_vars,
+                global_step=self.global_step,
+                name='train_op'
+            )
+            #  self.train_op = tf.group(minimize_op, self.dynamics.updates)
+            #  try:
+            #      self.train_op = self._append_update_ops(train_op)
+            #  except TypeError:
+            #      import pdb
+            #      pdb.set_trace()
 
             self.ops_dict['train_ops'].append(self.train_op)
             self.ops_dict['train_ops'].append(self.grads)
