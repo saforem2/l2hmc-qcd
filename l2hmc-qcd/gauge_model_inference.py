@@ -230,6 +230,7 @@ def main_inference(kwargs):
     net_weights_arr = inference_dict['net_weights_arr']
     betas = inference_dict['betas']
     charge_weight = inference_dict['charge_weight']
+    run_steps = kwargs.get('run_steps', model.run_steps)
 
     # --------------------------------------
     # Create GaugeModelRunner for inference
@@ -243,13 +244,10 @@ def main_inference(kwargs):
         }
         for beta in betas:
             if run_logger is not None:
-                run_dir, run_str = run_logger.reset(model.run_steps,
-                                                    beta, **weights)
+                run_dir, run_str = run_logger.reset(run_steps, beta, **weights)
+
             t0 = time.time()
-            runner.run(model.run_steps,
-                       beta,
-                       weights['net_weights'],
-                       therm_frac=10)
+            runner.run(run_steps, beta, weights['net_weights'], therm_frac=10)
 
             # log the total time spent running inference
             run_time = time.time() - t0
