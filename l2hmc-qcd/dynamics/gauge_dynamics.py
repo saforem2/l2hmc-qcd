@@ -508,9 +508,6 @@ class GaugeDynamics(tf.keras.Model):
             with tf.name_scope('call_vf'):
                 scale, translation, transformation = self.v_fn((x, grad, t),
                                                                train_phase)
-                scale *= net_weights[0]
-                translation *= net_weights[1]
-                transformation *= net_weights[2]
 
             with tf.name_scope('net_weights_mult'):
                 scale *= net_weights[0]
