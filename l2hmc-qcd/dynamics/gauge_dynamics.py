@@ -18,8 +18,9 @@ import tensorflow as tf
 
 from globals import GLOBAL_SEED, TF_FLOAT
 from network.conv_net2d import ConvNet2D
-from network.conv_net3d import ConvNet3D
+#  from network.conv_net3d import ConvNet3D
 from network.generic_net import GenericNet
+from network.conv_net3d import FullNet3D
 
 
 def exp(x, name=None):
@@ -135,7 +136,7 @@ class GaugeDynamics(tf.keras.Model):
         net_kwargs.update({
             'num_hidden': self.num_hidden,  # num hidden nodes
             'num_filters': int(self.lattice.space_size),  # num conv. filters
-            'filter_sizes': [(3, 3, 2), (2, 2, 2)],  # size of conv. filters
+            'filter_sizes': [(3, 3, 1), (2, 2, 1)],  # size of conv. filters
             'name_scope': 'x',  # namespace in which to create network
             'factor': 2.,  # scale factor used in original paper
             'data_format': self.data_format,  # channels_first if using GPU
@@ -143,12 +144,14 @@ class GaugeDynamics(tf.keras.Model):
 
         with tf.name_scope("DynamicsNetwork"):
             with tf.name_scope("XNet"):
-                self.x_fn = ConvNet3D(model_name='XNet', **net_kwargs)
+                #  self.x_fn = ConvNet3D(model_name='XNet', **net_kwargs)
+                self.x_fn = FullNet3D(model_name="XNet", **net_kwargs)
 
             net_kwargs['name_scope'] = 'v'  # update name scope
             net_kwargs['factor'] = 1.              # factor used in orig. paper
             with tf.name_scope("VNet"):
-                self.v_fn = ConvNet3D(model_name='VNet', **net_kwargs)
+                #  self.v_fn = ConvNet3D(model_name='VNet', **net_kwargs)
+                self.v_fn = FullNet3D(model_name="VNet", **net_kwargs)
 
     def _build_conv_nets_2D(self, net_kwargs):
         """Build ConvNet architecture for x and v functions."""

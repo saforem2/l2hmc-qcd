@@ -36,211 +36,78 @@ def flatten_list(_list):
     return [item for sublist in _list for item in sublist]
 
 
-# pylint:disable=too-many-arguments, too-many-instance-attributes
-class ConvNet3D(tf.keras.Model):
-    """Conv. neural net with different initialization scale based on input."""
-
+class ConvBlock(tf.keras.Model):
+    """Convolutional block used in ConvNet3D."""
     def __init__(self, model_name, **kwargs):
-        """Initialization method.
-
-        Attributes:
-            coeff_scale: Multiplicative factor (lambda_s in original paper p.
-                13) multiplying tanh(W_s h_2 + b_s).
-            coeff_transformation: Multiplicative factor (lambda_q in original
-                paper p. 13) multiplying tanh(W_q h_2 + b_q).
-            data_format: String (either 'channels_first' or 'channels_last').
-                'channels_first' ('channels_last') is default for GPU (CPU).
-                This value is automatically determined and set to the
-                appropriate value.
         """
-        super(ConvNet3D, self).__init__(name=model_name)
+        Initialization method.
+
+        Args:
+            model_name: Name of the model.
+            kwargs: Keyword arguments used to specify specifics of
+                convolutional structure.
+        """
+        super(ConvBlock, self).__init__(name=model_name)
 
         for key, val in kwargs.items():
             setattr(self, key, val)
 
-        if self.use_bn:
-            if self.data_format == 'channels_first':
-                self.bn_axis = 1
-                self._data_format = 'NCHW'
-            elif self.data_format == 'channels_last':
-                self.bn_axis = -1
-                self._data_format = 'NHWC'
-            else:
-                raise AttributeError("Expected 'data_format' to be "
-                                     "'channels_first'  or 'channels_last'")
-            #  with tf.variable_scope('batch_norm_x'):
-                #  self.batch_norm_x = tf.keras.layers.BatchNormalization(
-                #      axis=self.bn_axis, trainable=True
-                #  )
-            #  with tf.variable_scope('batch_norm_v'):
-                #  self.batch_norm_v = tf.keras.layers.BatchNormalization(
-                #      axis=self.bn_axis, trainable=True
-                #  )
-            #  self.batch_norm_v = tf.keras.layers.BatchNormalization(
-            #      axis=self.bn_axis
-            #  )
-            #  with tf.variable_scope('batch_norm_v'):
-            #  self.batch_norm_v = tf.layers.BatchNormalization(
-            #      axis=self.bn_axis,
-            #  )
-            #  with tf.variable_scope('batch_norm_x'):
-            #  self.batch_norm_x = tf.layers.BatchNormalization(
-            #      axis=self.bn_axis
-            #  )
-            #  add_elements_to_collection(self.batch_norm_v.updates,
-            #                             tf.GraphKeys.UPDATE_OPS)
-            #  self.batch_norm_x = tf.keras.layers.BatchNormalization(
-            #      axis=self.bn_axis
-            #  )
-            #  add_elements_to_collection(self.batch_norm_x.updates,
-            #                             tf.GraphKeys.UPDATE_OPS)
-
-        if self.dropout_prob > 0:
-            self.dropout_x = tf.keras.layers.Dropout(self.dropout_prob,
-                                                     seed=GLOBAL_SEED)
-            self.dropout_v = tf.keras.layers.Dropout(self.dropout_prob,
-                                                     seed=GLOBAL_SEED)
-
-        #  with tf.name_scope('coeff_scale'):
         with tf.name_scope(self.name_scope):
-            self.coeff_scale = tf.Variable(
-                initial_value=tf.zeros([1, self.x_dim]),
-                name='coeff_scale',
-                trainable=True,
-                dtype=TF_FLOAT
-            )
+            if self.use_bn:
+                if self.data_format == 'channels_first':
+                    self.bn_axis = 1
+                elif self.data_format == 'channels_last':
+                    self.bn_axis = -1
+                else:
+                    raise AttributeError("Expected 'data_format' "
+                                         "to be 'channels_first' "
+                                         "or 'channels_last'.")
 
-            #  with tf.name_scope('coeff_transformation'):
-            self.coeff_transformation = tf.Variable(
-                initial_value=tf.zeros([1, self.x_dim]),
-                name='coeff_transformation',
-                trainable=True,
-                dtype=TF_FLOAT
-            )
+            #  if self.dropout_prob > 0:
+            #      self.dropout = tf.keras.layers.Dropout(self.dropout_prob,
+            #                                             seed=GLOBAL_SEED)
 
-            #  with tf.name_scope('conv_layers'):
-            #  with tf.name_scope('conv_x1'):
-            self.conv_x1 = tf.keras.layers.Conv3D(
+            self.conv1 = tf.keras.layers.Conv3D(
                 filters=self.num_filters,
                 kernel_size=self.filter_sizes[0],
-                activation=tf.nn.relu,
-                #  initializer=HE_INIT,
+                activation=kwargs.get('conv_act', tf.nn.relu),
                 input_shape=self._input_shape,
                 padding='same',
-                name='conv_x1',
+                name='conv1',
                 dtype=TF_FLOAT,
                 data_format=self.data_format
             )
 
-            #  with tf.name_scope('pool_x1'):
-            self.max_pool_x1 = tf.keras.layers.MaxPooling3D(
+            self.max_pool1 = tf.keras.layers.MaxPooling3D(
                 pool_size=(2, 2, 2),
                 strides=2,
                 padding='same',
-                name='pool_x1',
+                name='pool1',
             )
 
-            #  with tf.name_scope('conv_v1'):
-            self.conv_v1 = tf.keras.layers.Conv3D(
-                filters=self.num_filters,
-                kernel_size=self.filter_sizes[0],
-                activation=tf.nn.relu,
-                #  initializer=HE_INIT,
-                input_shape=self._input_shape,
-                padding='same',
-                name='conv_v1',
-                dtype=TF_FLOAT,
-                data_format=self.data_format
-            )
+            activation2 = (None if self.use_bn
+                           else kwargs.get('conv_act', tf.nn.relu))
 
-            #  with tf.name_scope('pool_v1'):
-            self.max_pool_v1 = tf.keras.layers.MaxPooling3D(
-                pool_size=(2, 2, 2),
-                strides=2,
-                padding='same',
-                name='pool_v1'
-            )
-
-            #  with tf.name_scope('conv_x2'):
-            self.conv_x2 = tf.keras.layers.Conv3D(
+            self.conv2 = tf.keras.layers.Conv3D(
                 filters=2*self.num_filters,
                 kernel_size=self.filter_sizes[1],
-                activation=None if self.use_bn else tf.nn.relu,
+                activation=activation2,
+                #  activation=None if self.use_bn else tf.nn.relu,
                 #  initializer=HE_INIT,
                 padding='same',
-                name='conv_x2',
+                name='conv2',
                 dtype=TF_FLOAT,
                 data_format=self.data_format
             )
 
-            #  with tf.name_scope('pool_x2'):
-            self.max_pool_x2 = tf.keras.layers.MaxPooling3D(
+            self.max_pool2 = tf.keras.layers.MaxPooling3D(
                 pool_size=(2, 2, 2),
                 strides=2,
                 padding='same',
-                name='pool_x2'
+                name='pool2',
             )
 
-            #  with tf.name_scope('conv_v2'):
-            self.conv_v2 = tf.keras.layers.Conv3D(
-                filters=2 * self.num_filters,
-                kernel_size=self.filter_sizes[1],
-                activation=None if self.use_bn else tf.nn.relu,
-                #  initializer=HE_INIT,
-                padding='same',
-                name='conv_v2',
-                dtype=TF_FLOAT,
-                data_format=self.data_format
-            )
-
-            #  with tf.name_scope('pool_v2'):
-            self.max_pool_v2 = tf.keras.layers.MaxPooling3D(
-                pool_size=(2, 2, 2),
-                strides=2,
-                padding='same',
-                name='pool_v2'
-            )
-
-            #  with tf.name_scope('fc_layers'):
-            #  with tf.name_scope('flatten'):
-            self.flatten = tf.keras.layers.Flatten(
-                data_format=self.data_format,
-                name='flatten'
-            )
-
-            #  with tf.name_scope('x_layer'):
-            self.x_layer = custom_dense(self.num_hidden,
-                                        self.factor/3.,
-                                        name='x_layer')
-
-            #  with tf.name_scope('v_layer'):
-            self.v_layer = custom_dense(self.num_hidden,
-                                        1./3.,
-                                        name='v_layer')
-
-            #  with tf.name_scope('t_layer'):
-            self.t_layer = custom_dense(self.num_hidden,
-                                        1./3.,
-                                        name='t_layer')
-
-            #  with tf.name_scope('h_layer'):
-            self.h_layer = custom_dense(self.num_hidden,
-                                        name='h_layer')
-
-            #  with tf.name_scope('scale_layer'):
-            self.scale_layer = custom_dense(
-                self.x_dim, 0.001, name='scale_layer'
-            )
-
-            #  with tf.name_scope('translation_layer'):
-            self.translation_layer = custom_dense(
-                self.x_dim, 0.001, 'translation_layer'
-            )
-
-            #  with tf.name_scope('transformation_layer'):
-            self.transformation_layer = custom_dense(
-                self.x_dim, 0.001, 'transformation_layer'
-            )
+            self.flatten = tf.keras.layers.Flatten(name='flatten')
 
     def reshape_5D(self, tensor):
         """
@@ -271,104 +138,141 @@ class ConvNet3D(tf.keras.Model):
         raise AttributeError("`self.data_format` should be one of "
                              "'channels_first' or 'channels_last'")
 
-    # pylint: disable=invalid-name, arguments-differ
-    def call(self, inputs, train_phase):
-        """Forward pass through network.
+    def call(self, input, train_phase):
+        """Forward pass through the network."""
+        #  if input.shape[1:] != self._input_shape[1:]:
+        #      input = tf.reshape(input, (-1, *self._input_shape[1:]))
+        input = self.reshape_5D(input)
+
+        input = self.max_pool1(self.conv1(input))
+        input = self.conv2(input)
+        if self.use_bn:
+            input = batch_norm(input, train_phase,
+                               axis=self.bn_axis,
+                               internal_update=True)
+        input = tf.nn.tanh(input)
+        input = self.max_pool2(input)
+        input = self.flatten(input)
+        #  if self.dropout_prob > 0:
+        #      input = self.dropout(input, training=train_phase)
+
+        return input
+
+
+class GenericNet(tf.keras.Model):
+    """Generic (fully-connected) network used in training L2HMC."""
+    def __init__(self, model_name, **kwargs):
+        """
+        Initialization method.
 
         Args:
-            input (list or tuple): Inputs to the network (x, v, t).
-            train_phase (bool or tf.placeholder): Run the network in
-            either `training` phase or `inference` phase.
-
-       Returns:
-           scale, translation, transformation (S, T, Q functions from paper)
+            model_name: Name of the model.
+            kwargs: Keyword arguments used to specify specifics of
+                convolutional structure.
         """
-        v, x, t = inputs
+        super(GenericNet, self).__init__(name=model_name)
 
-        #  assert train_phase == K.learning_phase()
-        #  io.log(f'K.learning_phase(): {K.learning_phase()}')
-        #  io.log(f'train_phase: {train_phase}')
+        for key, val in kwargs.items():
+            setattr(self, key, val)
 
-        #  with tf.name_scope('reshape'):
-        v = self.reshape_5D(v)
-        x = self.reshape_5D(x)
-
-        with tf.name_scope('x_layers'):
-            x = self.max_pool_x1(self.conv_x1(x))
-            #  x = self.max_pool_x2(self.conv_x2(x))
-            #  x = batch_norm(x, axis=self.bn_axis, is_training=train_phase)
-            #  x = self.batch_norm_x(x, training=train_phase)
-            x = self.conv_x2(x)
-            if self.use_bn:
-                x = batch_norm(x, train_phase,
-                               axis=self.bn_axis,
-                               internal_update=True)
-                #  x = self.batch_norm_x(x, training=train_phase)
-                #  tf.add_to_collection(tf.GraphKeys.UPDATE_OPS,
-                #                       self.batch_norm_x.updates)
-                #  x = self.batch_norm_x(x, training=train_phase)
-                #  x = tf.contrib.layers.batch_norm(x, is_training=train_phase,
-                #                                   data_format=self._data_format,
-                #                                   updates_collections=None)
-            x = tf.nn.relu(x)
-            x = self.max_pool_x2(x)
-            x = self.flatten(x)
-            if self.dropout_prob > 0:
-                x = self.dropout_x(x, training=train_phase)
-            #  x = self.x_layer(x)
-            x = tf.nn.relu(self.x_layer(x))
-
-        with tf.name_scope('v_layers'):
-            v = self.max_pool_v1(self.conv_v1(v))
-            #  v = self.max_pool_v2(self.conv_v2(v))
-            v = self.conv_v2(v)
-            #  v = batch_norm(v, axis=self.bn_axis, is_training=train_phase)
-            #  v = batch_norm(v, axis=self.bn_axis, is_training=train_phase)
-            #  v = self.batch_norm_v(v, training=train_phase)
-            #  v = tf.keras.layers.BatchNormalization(axis=self.bn_axis)(v)
-            if self.use_bn:
-                v = batch_norm(v, train_phase,
-                               axis=self.bn_axis,
-                               internal_update=True)
-                #  v = self.batch_norm_v(v, training=train_phase)
-                #  tf.add_to_collection(tf.GraphKeys.UPDATE_OPS,
-                #                       self.batch_norm_v.updates)
-                #  v = self.batch_norm_v(v, training=train_phase)
-                #  v = tf.contrib.layers.batch_norm(v, is_training=train_phase,
-                #                                   data_format=self._data_format,
-                #                                   updates_collections=None)
-            v = tf.nn.relu(v)
-            #  v = self.v_layer(v)
-            v = self.max_pool_v2(v)
-            if self.dropout_prob > 0:
-                v = self.dropout_v(v, training=train_phase)
-            v = self.flatten(v)
-            v = tf.nn.relu(self.v_layer(v))
-
-        with tf.name_scope('t_layer'):
-            #  t = self.t_layer(t)
-            t = tf.nn.relu(self.t_layer(t))
-
-        def reshape(t, name):
-            return tf.squeeze(
-                tf.reshape(t, shape=self._input_shape, name=name)
+        with tf.name_scope(self.name_scope):
+            self.coeff_scale = tf.Variable(
+                initial_value=tf.zeros([1, self.x_dim]),
+                name='coeff_scale',
+                trainable=True,
+                dtype=TF_FLOAT
             )
 
-        with tf.name_scope('generic_layers'):
+            #  with tf.name_scope('coeff_transformation'):
+            self.coeff_transformation = tf.Variable(
+                initial_value=tf.zeros([1, self.x_dim]),
+                name='coeff_transformation',
+                trainable=True,
+                dtype=TF_FLOAT
+            )
+
+            if self.dropout_prob > 0:
+                self.dropout_x = tf.keras.layers.Dropout(self.dropout_prob,
+                                                         seed=GLOBAL_SEED)
+                self.dropout_v = tf.keras.layers.Dropout(self.dropout_prob,
+                                                         seed=GLOBAL_SEED)
+
+            x_factor = self.factor / 3.
+            self.x_layer = custom_dense(self.num_hidden, x_factor, name='fc_x')
+            self.v_layer = custom_dense(self.num_hidden, 1./3., name='fc_v')
+            self.t_layer = custom_dense(self.num_hidden, 1./3., name='fc_t')
+
+            self.h_layer = custom_dense(self.num_hidden,
+                                        name='fc_h')
+
+            self.scale_layer = custom_dense(
+                self.x_dim, 0.001, name='fc_scale'
+            )
+
+            self.translation_layer = custom_dense(
+                self.x_dim, 0.001, 'fc_translation'
+            )
+
+            self.transformation_layer = custom_dense(
+                self.x_dim, 0.001, 'fc_transformation'
+            )
+
+    def call(self, inputs):
+        v, x, t = inputs
+
+        with tf.name_scope('fc_layers'):
+            v = tf.nn.relu(self.v_layer(v))
+            x = tf.nn.relu(self.x_layer(x))
+
+            # dropout gets applied to the output of the previous layer
+            if self.dropout_prob > 0:
+                v = self.dropout_v(v)
+                x = self.dropout_x(x)
+
+            t = tf.nn.relu(self.t_layer(t))
+
             h = tf.nn.relu(v + x + t)
             h = tf.nn.relu(self.h_layer(h))
             #  h = tf.nn.relu(self.h_layer1(h))
 
-            with tf.name_scope('translation'):
-                translation = self.translation_layer(h)
+            translation = self.translation_layer(h)
 
-            with tf.name_scope('scale'):
-                scale = (tf.nn.tanh(self.scale_layer(h))
-                         * tf.exp(self.coeff_scale))
+            scale = (tf.nn.tanh(self.scale_layer(h))
+                     * tf.exp(self.coeff_scale))
 
-            with tf.name_scope('transformation'):
-                transformation = (self.transformation_layer(h)
-                                  * tf.exp(self.coeff_transformation))
+            transformation = (tf.nn.tanh(self.transformation_layer(h))
+                              * tf.exp(self.coeff_transformation))
 
         return scale, translation, transformation
 
+
+class FullNet3D(tf.keras.Model):
+    """Complete network used for training L2HMC model."""
+    def __init__(self, model_name, **kwargs):
+        """
+        Initialization method.
+
+        Args:
+            model_name: Name of the model.
+            kwargs: Keyword arguments used to specify specifics of
+                convolutional structure.
+        """
+        super(FullNet3D, self).__init__(name=model_name)
+        kwargs['name_scope'] = 'x_conv_block'
+        self.x_conv_block = ConvBlock("ConvBlockX", **kwargs)
+
+        kwargs['name_scope'] = 'v_conv_block'
+        self.v_conv_block = ConvBlock("ConvBlockV", **kwargs)
+
+        kwargs['name_scope'] = 'generic_block'
+        self.generic_block = GenericNet("GenericNet", **kwargs)
+
+    def call(self, inputs, train_phase):
+        v, x, t = inputs
+
+        v = self.v_conv_block(v, train_phase)
+        x = self.x_conv_block(x, train_phase)
+
+        scale, translation, transformation = self.generic_block([v, x, t])
+
+        return scale, translation, transformation

@@ -138,13 +138,13 @@ def count_trainable_params(out_file, log=False):
     writer(f'Total parameters: {total_params}', out_file)
 
 
-def create_config(params, train_phase=True):
+def create_config(params):
     """Helper method for creating a tf.ConfigProto object."""
-    if train_phase:
-        config = tf.ConfigProto()
-    else:
-        config = tf.ConfigProto(allow_soft_placement=True,
-                                log_device_placement=True)
+    #  if train_phase:
+    config = tf.ConfigProto(allow_soft_placement=True)
+    #  else:
+    #      config = tf.ConfigProto(allow_soft_placement=True,
+    #                              log_device_placement=True)
     if params['time_size'] > 8:
         off = rewriter_config_pb2.RewriterConfig.OFF
         config_attrs = config.graph_options.rewrite_options
