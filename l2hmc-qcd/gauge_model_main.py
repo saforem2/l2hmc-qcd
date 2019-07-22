@@ -230,8 +230,6 @@ def train_setup(FLAGS, log_file=None):
             # restored from a checkpoint.
             hvd.BroadcastGlobalVariablesHook(0),
         ]
-        #  params['run_steps'] //= num_workers
-        #  params['lr_init'] *= hvd.size()
     else:
         params['using_hvd'] = False
         hooks = []
@@ -274,19 +272,13 @@ def train_l2hmc(FLAGS, log_file=None, experiment=None):
     model = GaugeModel(params=params)
     if is_chief:
         train_logger = TrainLogger(model, log_dir, params['summaries'])
-        #  run_logger = RunLogger(model,
-        #                         log_dir,
-        #                         save_lf_data=False,
-        #                         summaries=False)
-        #  plotter = GaugeModelPlotter(model, run_logger.figs_dir)
     else:
         train_logger = None
-        #  train_logger = run_logger = plotter = None
 
     # --------------------------------------------------
     # Setup config and MonitoredTrainingSession
     # --------------------------------------------------
-    config, params = create_config(params, train_phase=True)
+    config, params = create_config(params)
 
     # set initial value of charge weight using value from FLAGS
     charge_weight_init = params['charge_weight']
@@ -325,14 +317,6 @@ def train_l2hmc(FLAGS, log_file=None, experiment=None):
     # initialization, restoring from a checkpoint, saving to a
     # checkpoint, and closing when done or an error occurs.
 
-    #  sess = tf.train.MonitoredTrainingSession(
-    #      checkpoint_dir=checkpoint_dir,
-    #      scaffold=scaffold,
-    #      hooks=hooks,
-    #      config=config,
-    #      save_summaries_secs=None,
-    #      save_summaries_steps=None
-    #  )
     sess_kwargs = {
         'checkpoint_dir': checkpoint_dir,
         'scaffold': scaffold,
@@ -343,9 +327,7 @@ def train_l2hmc(FLAGS, log_file=None, experiment=None):
     }
 
     sess = tf.train.MonitoredTrainingSession(**sess_kwargs)
-    #  tf.keras.backend.set_session(sess)
-
-    #  with tf.train.MonitoredTrainingSession(**kwargs) as sess:
+    tf.keras.backend.set_session(sess)
 
     # ----------------------------------------------------------
     #   TRAINING
@@ -404,11 +386,6 @@ def run_setup(params):
     beta_inference = params['beta_inference']
     betas = [beta_final if beta_inference is None else beta_inference]
 
-    # if a value has been passed in `kwargs['charge_weight_inference']` use it
-    #  qw_train = params['charge_weight']
-    #  qw_run = FLAGS.charge_weight_inference
-    #  charge_weight = qw_train if qw_run is None else qw_run
-
     init_dict = {
         'net_weights_arr': net_weights_arr,
         'betas': betas,
@@ -438,10 +415,6 @@ def run_l2hmc(params, checkpoint_dir, experiment=None):
         assert os.path.isdir(checkpoint_dir)
     else:
         raise ValueError(f'Must pass a `checkpoint_dir` to `run_l2hmc`.')
-    #  params['run_steps'] //= num_workers
-    #  params['lr_init'] *= hvd.size()
-    #  else:
-    #      checkpoint_dir = None
 
     # --------------------------------------------------------
     # Create model and train_logger
@@ -469,11 +442,8 @@ def run_l2hmc(params, checkpoint_dir, experiment=None):
     np.savetxt(net_weights_file, net_weights_arr,
                delimiter=', ', newline='\n', fmt="%-.4g")
 
-    #  else:
-    #      run_logger = plotter = None
-
     # --------------------------------------------------
-    # Setup config and MonitoredTrainingSession
+    # Setup config and tf.Session object for inference
     # --------------------------------------------------
     config, params = create_config(params)
     sess = tf.Session(config=config)
@@ -481,33 +451,6 @@ def run_l2hmc(params, checkpoint_dir, experiment=None):
     #  if is_chief:
     saver = tf.train.Saver()
     saver.restore(sess, tf.train.latest_checkpoint(checkpoint_dir))
-
-    # ensure all variables are initialized
-    #  target_collection = []
-    #  if is_chief:
-    #      collection = tf.local_variables() + target_collection
-    #  else:
-    #      collection = tf.local_variables()
-    #
-    #  local_init_op = tf.variables_initializer(collection)
-    #  ready_for_local_init_op = tf.report_uninitialized_variables(collection)
-
-    #  scaffold = tf.train.Scaffold(
-    #      init_feed_dict=init_feed_dict,
-    #      local_init_op=local_init_op,
-    #      ready_for_local_init_op=ready_for_local_init_op
-    #  )
-    # The MonitoredTrainingSession takes care of session
-    # initialization, restoring from a checkpoint, saving to a
-    # checkpoint, and closing when done or an error occurs.
-    #  sess = tf.train.MonitoredTrainingSession(
-    #      checkpoint_dir=checkpoint_dir,
-    #      scaffold=scaffold,
-    #      hooks=hooks,
-    #      config=config,
-    #      save_summaries_secs=None,
-    #      save_summaries_steps=None
-    #  )
 
     # ----------------------------------------------------------
     # INFERENCE
@@ -521,13 +464,15 @@ def run_l2hmc(params, checkpoint_dir, experiment=None):
         }
         for beta in betas:
             if run_logger is not None:
-                # There are two subtle points worth pointing out:
+                # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+                # NOTE:
+                # -------
                 #   1. The value of `charge_weight` is specified when resetting
                 #      the run logger, which will  then be used for the
                 #      remainder of inference.
                 #   2. The value of `net_weight` is spcified by passing it
                 #      directly to the GaugeModelRunner.run(...) method.
-                #
+                # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
                 run_dir, run_str = run_logger.reset(model.run_steps, beta,
                                                     **weights)
             t0 = time.time()
