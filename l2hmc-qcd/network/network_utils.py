@@ -11,6 +11,24 @@ if '2.' not in tf.__version__:
     tf.set_random_seed(GLOBAL_SEED)
 
 
+def activation_model(model):
+    """Create Keras Model that outputs activations of all conv./pool layers.
+
+    Args:
+        model (tf.keraas.Model): Model for which we wish to visualize
+            activations.
+    Returns:
+        activation_model (tf.keras.Model): Model that outputs the activations
+            for each layer in `model.
+    """
+    layer_outputs = [layer.output for layer in model.layers]
+
+    output_model = tf.keras.models.Model(inputs=model.input,
+                                         output=layer_outputs)
+
+    return output_model
+
+
 def flatten(_list):
     return [item for sublist in _list for item in sublist]
 
@@ -95,18 +113,6 @@ def batch_norm(x,
                                       initializer=tf.zeros_initializer)
 
     return output
-
-
-#  def batch_norm(x, axis, is_training):
-#      with tf.variable_scope(reuse=True):
-#          batch_norm = tf.layers.batch_normalization(x, axis=axis,
-#                                                     training=is_training,
-#                                                     center=True,
-#                                                     scale=True,
-#                                                     reuse=False,
-#                                                     name='batch_norm')
-#      return batch_norm
-#
 
 
 def custom_dense(units, factor=1., name=None):
