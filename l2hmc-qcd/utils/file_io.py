@@ -69,34 +69,54 @@ def make_dirs(dirs):
 def _parse_flags(FLAGS):
     """Helper method for parsing flags as both AttrDicts or generic dicts."""
     if isinstance(FLAGS, dict):
-        LX = FLAGS['space_size']
-        NS = FLAGS['num_samples']
-        LF = FLAGS['num_steps']
-        SS = FLAGS['eps']
-        QW = FLAGS['charge_weight']
-        hmc = FLAGS['hmc']
-        _log_dir = FLAGS['log_dir']
-
+        flags_dict = FLAGS
     else:
+        try:
+            flags_dict = FLAGS.__dict__
+        except (NameError, AttributeError):
+            pass
+    #  if isinstance(FLAGS, dict):
+    try:
+        LX = flags_dict['space_size']
+        NS = flags_dict['num_samples']
+        LF = flags_dict['num_steps']
+        SS = flags_dict['eps']
+        QW = flags_dict['charge_weight']
+        NA = flags_dict['network_arch']
+        BN = flags_dict['use_bn']
+        DP = flags_dict['dropout_prob']
+        AW = flags_dict['aux_weight']
+        hmc = flags_dict['hmc']
+        _log_dir = flags_dict['log_dir']
+
+    except (NameError, AttributeError):
         LX = FLAGS.space_size
         NS = FLAGS.num_samples
         LF = FLAGS.num_steps
         SS = FLAGS.eps
         QW = FLAGS.charge_weight
+        NA = FLAGS.network_arch
+        BN = FLAGS.use_bn
+        DP = FLAGS.dropout_prob
+        AW = FLAGS.aux_weight
         hmc = FLAGS.hmc
         _log_dir = FLAGS.log_dir
 
-    flags_dict = {
+    out_dict = {
         'LX': LX,
         'NS': NS,
         'LF': LF,
         'SS': SS,
         'QW': QW,
+        'NA': NA,
+        'BN': BN,
+        'DP': DP,
+        'AW': AW,
         'hmc': hmc,
         '_log_dir': _log_dir
     }
 
-    return flags_dict
+    return out_dict
 
 
 def create_log_dir(FLAGS, root_dir=None, log_file=None):
@@ -118,12 +138,22 @@ def create_log_dir(FLAGS, root_dir=None, log_file=None):
     LF = flags_dict['LF']
     SS = flags_dict['SS']
     QW = flags_dict['QW']
+    NA = flags_dict['NA']
+    BN = flags_dict['BN']
+    DP = flags_dict['DP']
+    AW = flags_dict['AW']
     _log_dir = flags_dict['_log_dir']
+
+    aw = str(AW).replace('.', '')
+    qw = str(QW).replace('.', '')
+    dp = str(DP).replace('.', '')
 
     if flags_dict['hmc']:
         run_str = f'HMC_lattice{LX}_batch{NS}_lf{LF}_eps{SS:.3g}'
     else:
-        run_str = f'lattice{LX}_batch{NS}_lf{LF}_eps{SS:.3g}_qw{QW}'
+        run_str = f'lattice{LX}_batch{NS}_lf{LF}_qw{qw}_aw{aw}_{NA}_dp{dp}'
+        if BN:
+            run_str += '_bn'
 
     now = datetime.datetime.now()
     #  print(now.strftime("%b %d %Y %H:%M:%S"))
