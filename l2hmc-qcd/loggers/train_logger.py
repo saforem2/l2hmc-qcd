@@ -151,7 +151,6 @@ class TrainLogger:
             except (AttributeError, IndexError):
                 name = var.name[:-2]
 
-
             with tf.name_scope(name):
                 variable_summaries(var, name)
                 variable_summaries(grad, name + '/gradients')
