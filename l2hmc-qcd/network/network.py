@@ -44,22 +44,25 @@ class FullNet(tf.keras.Model):
         network_arch = kwargs.get('network_arch', 'conv3D')
 
         if network_arch == 'conv2D':
+            io.log('Training using ConvNet2D architecture...')
             self.x_conv_net = ConvNet2D('ConvNet2Dx', **kwargs)
 
             kwargs['name_scope'] = 'v_conv_block'
             self.v_conv_net = ConvNet2D('ConvNet2Dv', **kwargs)
 
         elif network_arch == 'conv3D':
+            io.log('Training using ConvNet3D architecture...')
             self.x_conv_net = ConvNet3D('ConvNet3Dx', **kwargs)
 
             kwargs['name_scope'] = 'v_conv_block'
             self.v_conv_net = ConvNet3D('ConvNet3Dv', **kwargs)
 
         else:
+            io.log('Training using GenericNet architecture...')
             self.x_conv_net = self.v_conv_net = None
 
         kwargs['name_scope'] = 'generic_block'
-        self.generic_block = GenericNet("GenericNet", **kwargs)
+        self.generic_net = GenericNet("GenericNet", **kwargs)
 
     def call(self, inputs, train_phase):
         v, x, t = inputs
@@ -68,7 +71,7 @@ class FullNet(tf.keras.Model):
             v = self.v_conv_net(v, train_phase)
             x = self.x_conv_net(x, train_phase)
 
-        scale, translation, transformation = self.generic_block([v, x, t],
-                                                                train_phase)
+        scale, translation, transformation = self.generic_net([v, x, t],
+                                                              train_phase)
 
         return scale, translation, transformation
