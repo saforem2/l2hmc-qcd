@@ -70,7 +70,7 @@ class ConvNet3D(tf.keras.Model):
                 filters=self.num_filters[0],
                 kernel_size=self.filter_sizes[0],
                 activation=self.activation,
-                input_shape=self._input_shape[1:],
+                #  input_shape=self._input_shape,
                 padding='same',
                 name='conv1',
                 dtype=TF_FLOAT,
