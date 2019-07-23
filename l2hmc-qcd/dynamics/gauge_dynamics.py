@@ -19,6 +19,8 @@ import tensorflow as tf
 from globals import GLOBAL_SEED, TF_FLOAT
 #  from network.conv_net2d import ConvNet2D
 #  from network.generic_net import GenericNet
+#  from network.old.conv_net3d import FullNet3D
+from network.conv_net3d_old import ConvNet3D
 from network.network import FullNet
 #  from network.conv_net3d import ConvNet3D
 
@@ -147,78 +149,14 @@ class GaugeDynamics(tf.keras.Model):
         """Build neural network used to train model."""
         with tf.name_scope("DynamicsNetwork"):
             with tf.name_scope("XNet"):
+                import utils.file_io as io
+                io.log(f'Using `FullNet` architecture...')
                 self.x_fn = FullNet(model_name='XNet', **net_kwargs)
 
             net_kwargs['name_scope'] = 'v'  # update name scope
             net_kwargs['factor'] = 1.              # factor used in orig. paper
             with tf.name_scope("VNet"):
                 self.v_fn = FullNet(model_name='VNet', **net_kwargs)
-
-    def _build_conv_nets_3D(self, net_kwargs):
-        """Build ConvNet3D architecture for x and v functions."""
-        net_kwargs.update({
-            'num_hidden': self.num_hidden,  # num hidden nodes
-            'num_filters': int(self.lattice.space_size),  # num conv. filters
-            'filter_sizes': [(3, 3, 1), (2, 2, 1)],  # size of conv. filters
-            'name_scope': 'x',  # namespace in which to create network
-            'factor': 2.,  # scale factor used in original paper
-            'data_format': self.data_format,  # channels_first if using GPU
-        })
-
-        with tf.name_scope("DynamicsNetwork"):
-            with tf.name_scope("XNet"):
-                #  self.x_fn = ConvNet3D(model_name='XNet', **net_kwargs)
-                #  self.x_fn = FullNet3D(model_name="XNet", **net_kwargs)
-                self.x_fn = FullNet(model_name='XNet', **net_kwargs)
-
-            net_kwargs['name_scope'] = 'v'  # update name scope
-            net_kwargs['factor'] = 1.              # factor used in orig. paper
-            with tf.name_scope("VNet"):
-                #  self.v_fn = ConvNet3D(model_name='VNet', **net_kwargs)
-                #  self.v_fn = FullNet3D(model_name="VNet", **net_kwargs)
-                self.v_fn = FullNet(model_name='VNet', **net_kwargs)
-
-    def _build_conv_nets_2D(self, net_kwargs):
-        """Build ConvNet architecture for x and v functions."""
-        num_filters = int(self.lattice.space_size)
-        #  'num_filters': int(2 * self.lattice.space_size),
-        net_kwargs.update({
-            'num_hidden': self.num_hidden,
-            'num_filters': [num_filters, int(2 * num_filters)],
-            'filter_sizes': [(3, 3), (2, 2)],  # for 1st and 2nd conv. layer
-            'name_scope': 'x',
-            'factor': 2.,  # scale factor used in original paper
-            'data_format': self.data_format,  # channels_first if ugin GPU
-        })
-
-        with tf.name_scope("DynamicsNetwork"):
-            with tf.name_scope("XNet"):
-                #  self.x_fn = ConvNet2D(model_name='XNet', **net_kwargs)
-                self.x_fn = FullNet(model_name='XNet', **net_kwargs)
-
-            net_kwargs['name_scope'] = 'momentum'
-            net_kwargs['factor'] = 1.
-            with tf.name_scope("VNet"):
-                #  self.v_fn = ConvNet2D(model_name='VNet', **net_kwargs)
-                self.v_fn = FullNet(model_name='VNet', **net_kwargs)
-
-    def _build_generic_nets(self, net_kwargs):
-        """Build GenericNet FC-architectures for x and v fns. """
-        net_kwargs.update({
-            'num_hidden': int(4 * self.x_dim),
-            'name_scope': 'position',
-            'factor': 2.,
-        })
-        with tf.name_scope("DynamicsNetwork"):
-            with tf.name_scope("XNet"):
-                #  self.x_fn = GenericNet(model_name='XNet', **net_kwargs)
-                self.x_fn = FullNet(model_name='XNet', **net_kwargs)
-
-            net_kwargs['factor'] = 1.
-            net_kwargs['name_scope'] = 'momentum'
-            with tf.name_scope("VNet"):
-                self.v_fn = FullNet(model_name='VNet', **net_kwargs)
-                #  self.v_fn = GenericNet(model_name='VNet', **net_kwargs)
 
     def call(self, *args, **kwargs):
         """Call method."""
@@ -248,8 +186,8 @@ class GaugeDynamics(tf.keras.Model):
                                                    train_phase,
                                                    forward=True,
                                                    save_lf=save_lf)
-                x_f = outputs_f['x_proposed']
-                v_f = outputs_f['v_proposed']
+                xf = outputs_f['x_proposed']
+                vf = outputs_f['v_proposed']
                 pxs_out_f = outputs_f['accept_prob']
 
                 if save_lf:
@@ -263,8 +201,8 @@ class GaugeDynamics(tf.keras.Model):
                                                    train_phase,
                                                    forward=False,
                                                    save_lf=save_lf)
-                x_b = outputs_b['x_proposed']
-                v_b = outputs_b['v_proposed']
+                xb = outputs_b['x_proposed']
+                vb = outputs_b['v_proposed']
                 pxs_out_b = outputs_b['accept_prob']
 
                 if save_lf:
@@ -284,12 +222,12 @@ class GaugeDynamics(tf.keras.Model):
 
             # Obtain proposed states
             with tf.name_scope('x_proposed'):
-                x_proposed = (masks_f[:, None] * x_f
-                              + masks_b[:, None] * x_b)
+                x_proposed = (masks_f[:, None] * xf
+                              + masks_b[:, None] * xb)
 
             with tf.name_scope('v_proposed'):
-                v_proposed = (masks_f[:, None] * v_f
-                              + masks_b[:, None] * v_b)
+                v_proposed = (masks_f[:, None] * vf
+                              + masks_b[:, None] * vb)
 
             # Probability of accepting the proposed states
             with tf.name_scope('accept_prob'):
@@ -308,10 +246,8 @@ class GaugeDynamics(tf.keras.Model):
 
             # Samples after accept / reject step
             with tf.name_scope('x_out'):
-                x_out = (
-                    accept_mask[:, None] * x_proposed
-                    + reject_mask[:, None] * x_in
-                )
+                x_out = (accept_mask[:, None] * x_proposed
+                         + reject_mask[:, None] * x_in)
 
         outputs = {
             'x_proposed': x_proposed,
@@ -515,13 +451,12 @@ class GaugeDynamics(tf.keras.Model):
                 transformation *= net_weights[2]
 
             with tf.name_scope('scale_exp'):
-                #  scale *= 0.5 * self.eps
-                scale_exp = exp(0.5 * scale * self.eps, 'vf_scale')
+                scale *= 0.5 * self.eps
+                scale_exp = exp(scale, 'vf_scale')
 
             with tf.name_scope('transformation'):
-                #  transformation *= self.eps
-                transformation_exp = exp(transformation * self.eps,
-                                         'vf_transformation')
+                transformation *= self.eps
+                transformation_exp = exp(transformation, 'vf_transformation')
 
             with tf.name_scope('v_update'):
                 v = (v * scale_exp
@@ -539,7 +474,7 @@ class GaugeDynamics(tf.keras.Model):
         with tf.name_scope('update_x_forward'):
             with tf.name_scope('call_xf'):
                 scale, translation, transformation = self.x_fn(
-                    (v, mask * x, t), train_phase
+                    [v, mask * x, t], train_phase
                 )
 
             with tf.name_scope('net_weights_mult'):
@@ -548,12 +483,12 @@ class GaugeDynamics(tf.keras.Model):
                 transformation *= net_weights[2]
 
             with tf.name_scope('scale_exp'):
-                #  scale *= self.eps
-                scale_exp = exp(scale * self.eps, 'xf_scale')
+                scale *= self.eps
+                scale_exp = exp(scale, 'xf_scale')
 
             with tf.name_scope('transformation_exp'):
-                #  transformation *= self.eps
-                transformation_exp = exp(transformation * self.eps,
+                transformation *= self.eps
+                transformation_exp = exp(transformation,
                                          'xf_transformation')
 
             with tf.name_scope('x_update'):
@@ -576,7 +511,7 @@ class GaugeDynamics(tf.keras.Model):
 
             with tf.name_scope('call_vb'):
                 scale, translation, transformation = self.v_fn(
-                    (x, grad, t), train_phase
+                    [x, grad, t], train_phase
                 )
 
             with tf.name_scope('net_weights_mult'):
@@ -585,12 +520,12 @@ class GaugeDynamics(tf.keras.Model):
                 transformation *= net_weights[2]
 
             with tf.name_scope('scale_exp'):
-                #  scale *= -0.5 * self.eps
-                scale_exp = exp(-0.5 * scale * self.eps, 'vb_scale')
+                scale *= -0.5 * self.eps
+                scale_exp = exp(scale, 'vb_scale')
 
             with tf.name_scope('transformation'):
-                #  transformation *= self.eps
-                transformation_exp = exp(transformation * self.eps,
+                transformation *= self.eps
+                transformation_exp = exp(transformation,
                                          'vb_transformation')
 
             with tf.name_scope('v_update'):
@@ -611,7 +546,7 @@ class GaugeDynamics(tf.keras.Model):
         with tf.name_scope('update_x_backward'):
             with tf.name_scope('call_xb'):
                 scale, translation, transformation = self.x_fn(
-                    (v, mask * x, t), train_phase
+                    [v, mask * x, t], train_phase
                 )
 
             with tf.name_scope('net_weights_mult'):
@@ -620,12 +555,12 @@ class GaugeDynamics(tf.keras.Model):
                 transformation *= net_weights[2]
 
             with tf.name_scope('scale_exp'):
-                #  scale *= -self.eps
-                scale_exp = exp(-self.eps * scale, 'xb_scale')
+                scale *= -self.eps
+                scale_exp = exp(scale, 'xb_scale')
 
             with tf.name_scope('transformation_exp'):
-                #  transformation *= self.eps
-                transformation_exp = exp(transformation * self.eps,
+                transformation *= self.eps
+                transformation_exp = exp(transformation,
                                          'xb_transformation')
 
             with tf.name_scope('x_update'):
