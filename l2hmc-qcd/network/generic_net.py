@@ -82,26 +82,24 @@ class GenericNet(tf.keras.Model):
     def call(self, inputs, train_phase):
         v, x, t = inputs
 
-        with tf.name_scope('fc_layers'):
-            v = tf.nn.relu(self.v_layer(v))
-            x = tf.nn.relu(self.x_layer(x))
+        v = tf.nn.relu(self.v_layer(v))
+        x = tf.nn.relu(self.x_layer(x))
 
-            # dropout gets applied to the output of the previous layer
-            if self.dropout_prob > 0:
-                v = self.dropout_v(v, training=train_phase)
-                x = self.dropout_x(x, training=train_phase)
+        # dropout gets applied to the output of the previous layer
+        if self.dropout_prob > 0:
+            v = self.dropout_v(v, training=train_phase)
+            x = self.dropout_x(x, training=train_phase)
 
-            t = tf.nn.relu(self.t_layer(t))
+        t = tf.nn.relu(self.t_layer(t))
 
-            h = tf.nn.relu(v + x + t)
-            h = tf.nn.relu(self.h_layer(h))
+        h = tf.nn.relu(v + x + t)
+        h = tf.nn.relu(self.h_layer(h))
 
-            translation = self.translation_layer(h)
+        translation = self.translation_layer(h)
 
-            scale = (tf.nn.tanh(self.scale_layer(h))
-                     * tf.exp(self.coeff_scale))
+        scale = tf.nn.tanh(self.scale_layer(h)) * tf.exp(self.coeff_scale)
 
-            transformation = (tf.nn.tanh(self.transformation_layer(h))
-                              * tf.exp(self.coeff_transformation))
+        transformation = (tf.nn.tanh(self.transformation_layer(h))
+                          * tf.exp(self.coeff_transformation))
 
         return scale, translation, transformation
