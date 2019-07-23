@@ -22,7 +22,7 @@ from tensorflow.core.protobuf import rewriter_config_pb2
 #  from gauge_model_main import create_config
 
 from utils.parse_args import parse_args
-from models.gauge_model import GaugeModel
+from models.model import GaugeModel
 from loggers.run_logger import RunLogger
 from plotters.gauge_model_plotter import GaugeModelPlotter
 from plotters.leapfrog_plotters import LeapfrogPlotter

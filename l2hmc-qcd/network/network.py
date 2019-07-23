@@ -40,29 +40,30 @@ class FullNet(tf.keras.Model):
         """
         super(FullNet, self).__init__(name=model_name)
 
-        kwargs['name_scope'] = 'x_conv_block'
-        network_arch = kwargs.get('network_arch', 'conv3D')
+        with tf.name_scope(kwargs['name_scope']):
+            kwargs['name_scope'] = 'x_conv_block'
+            network_arch = kwargs.get('network_arch', 'conv3D')
 
-        if network_arch == 'conv2D':
-            io.log('Training using ConvNet2D architecture...')
-            self.x_conv_net = ConvNet2D('ConvNet2Dx', **kwargs)
+            if network_arch == 'conv2D':
+                io.log('Using ConvNet2D architecture...')
+                self.x_conv_net = ConvNet2D('ConvNet2Dx', **kwargs)
 
-            kwargs['name_scope'] = 'v_conv_block'
-            self.v_conv_net = ConvNet2D('ConvNet2Dv', **kwargs)
+                kwargs['name_scope'] = 'v_conv_block'
+                self.v_conv_net = ConvNet2D('ConvNet2Dv', **kwargs)
 
-        elif network_arch == 'conv3D':
-            io.log('Training using ConvNet3D architecture...')
-            self.x_conv_net = ConvNet3D('ConvNet3Dx', **kwargs)
+            elif network_arch == 'conv3D':
+                io.log('Using ConvNet3D architecture...')
+                self.x_conv_net = ConvNet3D('ConvNet3Dx', **kwargs)
 
-            kwargs['name_scope'] = 'v_conv_block'
-            self.v_conv_net = ConvNet3D('ConvNet3Dv', **kwargs)
+                kwargs['name_scope'] = 'v_conv_block'
+                self.v_conv_net = ConvNet3D('ConvNet3Dv', **kwargs)
 
-        else:
-            io.log('Training using GenericNet architecture...')
-            self.x_conv_net = self.v_conv_net = None
+            else:
+                io.log('Using GenericNet architecture...')
+                self.x_conv_net = self.v_conv_net = None
 
-        kwargs['name_scope'] = 'generic_block'
-        self.generic_net = GenericNet("GenericNet", **kwargs)
+            kwargs['name_scope'] = 'generic_block'
+            self.generic_net = GenericNet("GenericNet", **kwargs)
 
     def call(self, inputs, train_phase):
         v, x, t = inputs

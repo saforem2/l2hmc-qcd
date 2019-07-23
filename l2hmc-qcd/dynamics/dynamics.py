@@ -147,19 +147,14 @@ class GaugeDynamics(tf.keras.Model):
     def build_network(self, net_kwargs):
         """Build neural network used to train model."""
         with tf.name_scope("DynamicsNetwork"):
-            with tf.name_scope("XNet"):
-                import utils.file_io as io
-                io.log(f'Using `FullNet` architecture...')
-                self.x_fn = FullNet(model_name='XNet', **net_kwargs)
+            self.x_fn = FullNet(model_name='XNet', **net_kwargs)
 
             net_kwargs['name_scope'] = 'v'  # update name scope
-            net_kwargs['factor'] = 1.              # factor used in orig. paper
-            with tf.name_scope("VNet"):
-                self.v_fn = FullNet(model_name='VNet', **net_kwargs)
+            net_kwargs['factor'] = 1.       # factor used in orig. paper
+            self.v_fn = FullNet(model_name='VNet', **net_kwargs)
 
     def call(self, *args, **kwargs):
         """Call method."""
-        #  def call(self, x_in, beta, net_weights, train_phase, save_lf=False):
         return self.apply_transition(*args, **kwargs)
 
     def apply_transition(self, x_in, beta, net_weights,
