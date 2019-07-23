@@ -27,7 +27,7 @@ import utils.file_io as io
 
 from globals import GLOBAL_SEED, TF_FLOAT
 from lattice.lattice import GaugeLattice
-from dynamics.gauge_dynamics import GaugeDynamics
+from dynamics.dynamics import GaugeDynamics
 from utils.horovod_utils import configure_learning_rate
 from network.network_utils import flatten
 
