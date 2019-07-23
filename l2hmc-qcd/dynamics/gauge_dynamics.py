@@ -20,7 +20,6 @@ from globals import GLOBAL_SEED, TF_FLOAT
 #  from network.conv_net2d import ConvNet2D
 #  from network.generic_net import GenericNet
 #  from network.old.conv_net3d import FullNet3D
-from network.conv_net3d_old import ConvNet3D
 from network.network import FullNet
 #  from network.conv_net3d import ConvNet3D
 
