@@ -256,7 +256,7 @@ def run_inference(run_dict,
             # --------------------
             #  if plotter is not None and run_logger is not None:
             plotter.plot_observables(
-                run_logger.run_data, beta, run_str, **weights
+                run_logger.run_data, beta, run_str, weights, dir_append
             )
             if plot_lf:
                 lf_plotter = LeapfrogPlotter(plotter.out_dir, run_logger)
@@ -310,7 +310,7 @@ def main_inference(kwargs):
     # Create GaugeModelRunner for inference
     # --------------------------------------
     runner = GaugeModelRunner(sess, model, run_logger)
-    #  run_inference(inference_dict, runner, run_logger, plotter)
+    run_inference(inference_dict, runner, run_logger, plotter)
 
     # set 'net_weights_arr' = [1., 1., 1.] so each Q, S, T contribute
     inference_dict['net_weights_arr'] = np.array([[1, 1, 1]], dtype=NP_FLOAT)
