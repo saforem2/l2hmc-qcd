@@ -70,7 +70,10 @@ class GaugeModelTrainer:
         start_time = time.time()
 
         if beta_np is None:
-            beta_np = self.update_beta(step)
+            if self.model.fixed_beta:
+                beta_np = self.model.beta_init
+            else:
+                beta_np = self.update_beta(step)
 
         if net_weights is None:
             # scale_weight, transformation_weight, translation_weight

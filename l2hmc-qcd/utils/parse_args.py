@@ -37,9 +37,9 @@ def parse_args():
         fromfile_prefix_chars='@',
     )
 
-    ########################
-    #  Lattice parameters  #
-    ########################
+    ###########################################################################
+    #                          Lattice parameters                             #
+    ###########################################################################
 
     parser.add_argument("--space_size",
                         dest="space_size",
@@ -73,7 +73,7 @@ def parse_args():
     parser.add_argument("--num_samples",
                         dest="num_samples",
                         type=int,
-                        default=20,
+                        default=128,
                         required=False,
                         help=("""Number of samples (batch size) to use for
                               training.\n (Default: 20)"""))
@@ -97,14 +97,6 @@ def parse_args():
                         required=False,
                         help=("""Number of leapfrog steps to use in (augmented)
                               HMC sampler. (Default: 5)"""))
-
-    parser.add_argument("--for_loop",
-                        dest="for_loop",
-                        action="store_true",
-                        required=False,
-                        help=("""When passed, perform leapfrog updates using
-                              generic `for` loop. Otherwise, use (optimized)
-                              `tf.while_loop`."""))
 
     parser.add_argument("--eps",
                         dest="eps",
@@ -161,15 +153,13 @@ def parse_args():
     #                      Annealing rate parameters                          #
     ###########################################################################
 
-    parser.add_argument("--annealing",
-                        dest="annealing",
+    parser.add_argument("--fixed_beta",
+                        dest="fixed_beta",
                         action="store_true",
                         required=False,
-                        help=("""Flag that when passed sets `annealing=True`,
-                              and will cause the model to perform simulated
-                              annealing during training.
-                              (Default: `annealing=True` i.e. `--annealing`
-                              should be passed)"""))
+                        help=("""Flag that when passed runs the training loop
+                              at fixed beta (i.e. no annealing is done).
+                              (Default: `fixed_beta=False`)"""))
 
     parser.add_argument("--hmc_beta",
                         dest="hmc_beta",
@@ -242,9 +232,9 @@ def parse_args():
                               weight at which to run inference using the
                               trained L2HMC sampler. (Default: None"""))
 
-    #########################
-    #  Training parameters  #
-    #########################
+    ###########################################################################
+    #                       Training parameters                               #
+    ###########################################################################
 
     parser.add_argument("--train_steps",
                         dest="train_steps",
@@ -397,6 +387,14 @@ def parse_args():
                         help=("""Metric to use in loss function. Must be one
                               of: `l1`, `l2`, `cos`, `cos2`, `cos_diff`."""))
 
+    parser.add_argument("--inverse_loss",
+                        dest="inverse_loss",
+                        action="store_true",
+                        required=False,
+                        help=("""Flag that when passed includes the reciprocal
+                              term (1 / metric(x1, x2)) when calculating the
+                              loss usedduring training."""))
+
     parser.add_argument("--std_weight",
                         dest="std_weight",
                         type=float,
@@ -451,6 +449,7 @@ def parse_args():
                         required=False,
                         help=("""Flag that when passed uses Horovod for
                               distributed training on multiple nodes."""))
+
     parser.add_argument("--comet",
                         dest="comet",
                         action="store_true",
@@ -489,30 +488,15 @@ def parse_args():
                         help=("""Flag that when passed will save the
                               output from each leapfrog step."""))
 
-    parser.add_argument('--long_run',
-                        dest='long_run',
-                        action='store_true',
-                        required=False,
-                        help=("""Flag that when passed runs the trained sampler
-                              at model.beta_final and model.beta_final +
-                              1."""))
-
-    parser.add_argument("--clip_grads",
-                        dest="clip_grads",
-                        action="store_true",
-                        required=False,
-                        help=("""Flag that when passed will clip gradients by
-                              global norm using `--clip_value` command line
-                              argument. If `--clip_value` is not passed, "
-                              it defaults to 100."""))
-
     parser.add_argument("--clip_value",
                         dest="clip_value",
                         type=float,
-                        default=1.,
+                        default=0.,
                         required=False,
                         help=("""Clip value, used for clipping value of
-                              gradients by global norm."""))
+                              gradients by global norm. (Default: 0.) If a
+                              value greater than 0. is passed, gradient
+                              clipping will be performed."""))
 
     parser.add_argument("--restore",
                         dest="restore",
