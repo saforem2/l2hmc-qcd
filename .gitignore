@@ -30,3 +30,6 @@ l2hmc-qcd/plotters/formatters.py
 l2hmc-qcd/dynamics/lattice_dynamics.py
 l2hmc-qcd/test.py
 l2hmc-qcd/utils/optimize_for_inference.py
+l2hmc-qcd/main_old.py
+l2hmc-qcd/models/old/
+l2hmc-qcd/notebooks/Untitled1.ipynb
