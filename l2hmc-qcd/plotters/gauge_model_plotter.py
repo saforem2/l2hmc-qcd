@@ -325,7 +325,7 @@ class GaugeModelPlotter:
         except AttributeError:
             pass
 
-    def plot_observables(self, data, beta, run_str, **weights):
+    def plot_observables(self, data, beta, run_str, weights, dir_append=None):
         """Plot observables."""
         actions = arr_from_dict(data, 'actions')
         plaqs = arr_from_dict(data, 'plaqs')
@@ -361,6 +361,8 @@ class GaugeModelPlotter:
         _plaq_diffs_avg = np.mean(_plaq_diffs, axis=1)
         _plaq_diffs_err = sem(_plaq_diffs, axis=1)
 
+        if dir_append:
+            run_str += dir_append
         self.out_dir = os.path.join(self.figs_dir, run_str)
         io.check_else_make_dir(self.out_dir)
 
