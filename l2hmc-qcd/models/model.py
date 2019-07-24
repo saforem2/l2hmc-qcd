@@ -380,9 +380,13 @@ class GaugeModel:
                 tf.add_to_collection('losses', z_std_loss)
 
             with tf.name_scope('tot_loss'):
-                std_loss = (ls * (1. / x_std_loss + 1. / z_std_loss)
+                if self.inverse_loss:
+                    loss = (ls * (1. / x_std_loss + 1. / z_std_loss)
                             - (x_std_loss + z_std_loss) / ls) * std_weight
-                std_loss = tf.reduce_mean(std_loss, axis=0, name='std_loss')
+                else:
+                    loss = std_weight * (x_std_loss + z_std_loss) / ls
+
+                std_loss = tf.reduce_mean(loss, axis=0, name='std_loss')
                 tf.add_to_collection('losses', std_loss)
 
         return std_loss
@@ -404,7 +408,6 @@ class GaugeModel:
         Returns:
             std_loss
         """
-        eps = 1e-4
         aux_weight = weights.get('aux_weight', 1.)
         charge_weight = weights.get('charge_weight', 1.)
 
@@ -563,7 +566,7 @@ class GaugeModel:
                         x, beta, net_weights, train_phase, **weights
                     )
                 grads = tape.gradient(loss, self.dynamics.trainable_variables)
-                if self.clip_grads:
+                if self.clip_value > 0.:
                     grads, _ = tf.clip_by_global_norm(grads, self.clip_value)
         else:
             loss, x_dq, dynamics_output = self.calc_loss(x, beta,
@@ -572,7 +575,7 @@ class GaugeModel:
                                                          **weights)
             with tf.name_scope('grads'):
                 grads = tf.gradients(loss, self.dynamics.trainable_variables)
-                if self.clip_grads:
+                if self.clip_value > 0.:
                     grads, _ = tf.clip_by_global_norm(grads, self.clip_value)
 
         return loss, grads, x_dq, dynamics_output
