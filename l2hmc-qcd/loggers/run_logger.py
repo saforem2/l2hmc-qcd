@@ -130,7 +130,7 @@ class RunLogger:
         self.writer.add_summary(summary_str, global_step=step)
         self.writer.flush()
 
-    def reset(self, run_steps, beta, **weights):
+    def reset(self, run_steps, beta, weights, dir_append=None):
         """Reset run_data and run_strings to prep for new run."""
         self.run_steps = int(run_steps)
         self.beta = beta
@@ -188,6 +188,8 @@ class RunLogger:
             f'_qw_{qw_str:.2}'
             f'_{self._reset_counter}'
         )
+        if dir_append:
+            run_str += dir_append
         #  nw_str = [str(i).replace('.', '') for i in net_weights]
         #  w_str = nw_str[0] + nw_str[1] + nw_str[2]
         #  run_str = (f'steps_{run_steps}_beta_{beta}_'
