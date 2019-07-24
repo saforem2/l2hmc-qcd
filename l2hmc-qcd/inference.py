@@ -6,6 +6,21 @@ Runs inference using the trained L2HMC sampler contained in a saved model.
 This is done by reading in the location of the saved model from a .txt file
 containing the location of the checkpoint directory.
 
+ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  NOTE:
+ ------------------------------------------------------------
+   If `--plot_lf` CLI argument passed, create the
+   following plots:
+
+     * The metric distance observed between individual
+       leapfrog steps and complete molecular dynamics
+       updates.
+
+     * The determinant of the Jacobian for each leapfrog
+       step and the sum of the determinant of the Jacobian
+       (sumlogdet) for each MD update.
+ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
 Author: Sam Foreman (github: @saforem2)
 Date: 07/08/2019
 """
@@ -43,6 +58,8 @@ except ImportError:
 if float(tf.__version__.split('.')[0]) <= 2:
     tf.logging.set_verbosity(tf.logging.INFO)
 
+
+SEP_STR = (80 * '-') + '\n'
 
 def create_config(params):
     """Create tensorflow config."""
@@ -90,32 +107,45 @@ def load_params():
     return params
 
 
-#  def make_flags(params):
-#      FLAGS = AttrDict()
-#      for key, val in params.items():
-#          setattr(FLAGS, key, val)
-#
-#      return FLAGS
+def set_model_weights(model, dest='rand'):
+    """Randomize model weights."""
+    if dest == 'rand':
+        io.log('Randomizing model weights...')
+    elif 'zero' in dest:
+        io.log(f'Zeroing model weights...')
 
-    #  log_dir = os.path.dirname(checkpoint_dir)
+    xnet = model.dynamics.x_fn
+    vnet = model.dynamics.v_fn
 
-    #  if params is None:
-    #      params_pkl_file = os.path.join(os.getcwd(), 'params.pkl')
-    #      with open(params_pkl_file, 'rb') as f:
-    #          params = pickle.load(f)
-    #  else:
-    #      if FLAGS is None:
-    #          FLAGS = AttrDict()
-    #          for key, val in params.items():
-    #              setattr(FLAGS, key, val)
-    #      else:
-    #          params = {}
-    #          for key, val in FLAGS.__dict__.items():
-    #              params[key] = val
+    for xblock, vblock in zip(xnet.layers, vnet.layers):
+        for xlayer, vlayer in zip(xblock.layers, vblock.layers):
+            try:
+                print(f'xlayer.name: {xlayer.name}')
+                print(f'vlayer.name: {vlayer.name}')
+                kx, bx = xlayer.get_weights()
+                kv, bv = vlayer.get_weights()
+                if dest == 'rand':
+                    kx_new = np.random.randn(*kx.shape)
+                    bx_new = np.random.randn(*bx.shape)
+                    kv_new = np.random.randn(*kv.shape)
+                    bv_new = np.random.randn(*bv.shape)
+                elif 'zero' in dest:
+                    kx_new = np.zeros(kx.shape)
+                    bx_new = np.zeros(bx.shape)
+                    kv_new = np.zeros(kv.shape)
+                    bv_new = np.zeros(bv.shape)
+
+                xlayer.set_weights([kx_new, bx_new])
+                vlayer.set_weights([kv_new, bv_new])
+            except ValueError:
+                print(f'Unable to set weights for: {xlayer.name}')
+                print(f'Unable to set weights for: {vlayer.name}')
+
+    return model
+
 
 def run_hmc(params, **kwargs):
     """Run inference using generic HMC."""
-    pass
     # -----------------------------------------------------------
     #  run HMC following inference if --run_hmc flag was passed
     # -----------------------------------------------------------
@@ -136,6 +166,7 @@ def run_hmc(params, **kwargs):
     #          params['log_dir'] = FLAGS.log_dir = None
     #          params['eps'] = FLAGS.eps = eps
     #          run_hmc(FLAGS, params, log_file)
+    pass
 
 
 def inference_setup(kwargs):
@@ -152,7 +183,7 @@ def inference_setup(kwargs):
                              [0, 0, 1],                     # [ ,  , T]
                              [0, 0, 0]], dtype=NP_FLOAT)    # [ ,  ,  ]
         net_weights_arr[:mask_arr.shape[0], :] = mask_arr   # [?, ?, ?]
-        net_weights_arr[-1, :] = np.random.randn(3)
+        #  net_weights_arr[-1, :] = np.random.randn(3)
 
     else:  # set [Q, S, T] = [1, 1, 1]
         net_weights_arr = np.array([[1, 1, 1]], dtype=NP_FLOAT)
@@ -163,18 +194,74 @@ def inference_setup(kwargs):
     beta_inference = kwargs['beta_inference']
     betas = [beta_final if beta_inference is None else beta_inference]
 
-    # if a value has been passed in `kwargs['charge_weight_inference']` use it
-    #  qw_train = params['charge_weight']
-    #  qw_run = FLAGS.charge_weight_inference
-    #  charge_weight = qw_train if qw_run is None else qw_run
-
     inference_dict = {
         'net_weights_arr': net_weights_arr,
         'betas': betas,
-        'charge_weight': kwargs['charge_weight'],
+        'charge_weight': kwargs.get('charge_weight', 1.),
+        'run_steps': kwargs.get('run_steps', 5000),
+        'plot_lf': kwargs.get('plot_lf', True)
     }
 
     return inference_dict
+
+
+def run_inference(run_dict,
+                  runner,
+                  run_logger=None,
+                  plotter=None,
+                  dir_append=None):
+    """Run inference.
+
+    Args:
+        inference_dict: Dictionary containing parameters to use for inference.
+        runner: GaugeModelRunner object that actually performs the inference.
+        run_logger: RunLogger object that logs observables and other data
+            generated during inference.
+        plotter: GaugeModelPlotter object responsible for plotting observables
+            generated during inference.
+    """
+    if plotter is None and run_logger is None:
+        return
+
+    net_weights_arr = run_dict['net_weights_arr']
+    betas = run_dict['betas']
+    charge_weight = run_dict['charge_weight']
+    run_steps = run_dict['run_steps']
+    plot_lf = run_dict['plot_lf']
+
+    for net_weights in net_weights_arr:
+        weights = {
+            'charge_weight': charge_weight,
+            'net_weights': net_weights
+        }
+        for beta in betas:
+            #  if run_logger is not None:
+            run_dir, run_str = run_logger.reset(run_steps,
+                                                beta,
+                                                weights,
+                                                dir_append)
+
+            t0 = time.time()
+            runner.run(run_steps, beta, weights['net_weights'], therm_frac=10)
+            io.log(SEP_STR)
+
+            # log the total time spent running inference
+            run_time = time.time() - t0
+            io.log(
+                SEP_STR + f'Took: {run_time} s to complete run.\n' + SEP_STR
+            )
+
+            # --------------------
+            #  Plot observables
+            # --------------------
+            #  if plotter is not None and run_logger is not None:
+            plotter.plot_observables(
+                run_logger.run_data, beta, run_str, **weights
+            )
+            if plot_lf:
+                lf_plotter = LeapfrogPlotter(plotter.out_dir, run_logger)
+                num_samples = min((runner.model.num_samples, 20))
+                lf_plotter.make_plots(run_dir, num_samples=num_samples)
 
 
 def main_inference(kwargs):
@@ -201,12 +288,6 @@ def main_inference(kwargs):
     config, params = create_config(params)
     model = GaugeModel(params=params)
 
-    # HOROVOD: Create operation for broadcasting global variables to all ranks
-    #  if params['using_hvd']:
-    #      bcast_op = hvd.broadcast_global_variables(0)
-    #  else:
-    #      bcast_op = None
-
     # ---------------------------------------------------------
     # INFERENCE
     # ---------------------------------------------------------
@@ -220,67 +301,34 @@ def main_inference(kwargs):
         run_logger = None
         plotter = None
 
-    #  if bcast_op is not None:
-    #      sess.run(bcast_op)
-
     # -------------------------------------------------------------------
     #  Set up relevant values to use for inference (parsed from kwargs)
     # -------------------------------------------------------------------
     inference_dict = inference_setup(kwargs)
-    net_weights_arr = inference_dict['net_weights_arr']
-    betas = inference_dict['betas']
-    charge_weight = inference_dict['charge_weight']
-    run_steps = kwargs.get('run_steps', model.run_steps)
 
     # --------------------------------------
     # Create GaugeModelRunner for inference
     # --------------------------------------
     runner = GaugeModelRunner(sess, model, run_logger)
+    #  run_inference(inference_dict, runner, run_logger, plotter)
 
-    for net_weights in net_weights_arr:
-        weights = {
-            'charge_weight': charge_weight,
-            'net_weights': net_weights
-        }
-        for beta in betas:
-            if run_logger is not None:
-                run_dir, run_str = run_logger.reset(run_steps, beta, **weights)
+    # set 'net_weights_arr' = [1., 1., 1.] so each Q, S, T contribute
+    inference_dict['net_weights_arr'] = np.array([[1, 1, 1]], dtype=NP_FLOAT)
 
-            t0 = time.time()
-            runner.run(run_steps, beta, weights['net_weights'], therm_frac=10)
+    # set 'betas' to be a single value
+    #  inference_dict['betas'] = inference_dict['betas'][-1]
 
-            # log the total time spent running inference
-            run_time = time.time() - t0
-            sep_str = (80 * '-') + '\n'
-            io.log(
-                sep_str + f'Took: {run_time} s to complete run.' + sep_str
-            )
+    # randomize the model weights and run inference using these weights
+    runner.model = set_model_weights(runner.model, dest='rand')
+    run_inference(inference_dict,
+                  runner, run_logger,
+                  plotter, dir_append='_rand')
 
-            # --------------------
-            #  Plot observables
-            # --------------------
-            if plotter is not None and run_logger is not None:
-                plotter.plot_observables(
-                    run_logger.run_data, beta, run_str, **weights
-                )
-                # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-                #  NOTE:
-                # ------------------------------------------------------------
-                #   If `--plot_lf` CLI argument passed, create the
-                #   following plots:
-                #
-                #     * The metric distance observed between individual
-                #       leapfrog steps and complete molecular dynamics
-                #       updates.  
-                #
-                #     * The determinant of the Jacobian for each leapfrog
-                #       step and the sum of the determinant of the Jacobian
-                #       (sumlogdet) for each MD update.
-                # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-                if params['plot_lf']:
-                    lf_plotter = LeapfrogPlotter(plotter.out_dir, run_logger)
-                    num_samples = min((model.num_samples, 20))
-                    lf_plotter.make_plots(run_dir, num_samples=num_samples)
+    # zero the model weights and run inference using these weights
+    runner.model = set_model_weights(runner.model, dest='zero')
+    run_inference(inference_dict,
+                  runner, run_logger,
+                  plotter, dir_append='_zero')
 
 
 if __name__ == '__main__':
