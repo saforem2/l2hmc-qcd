@@ -166,8 +166,10 @@ class GaugeLattice(object):
             samples = self.samples
 
         with tf.name_scope('calc_plaqs'):
-            plaqs = tf.reduce_sum(tf.cos(self.calc_plaq_sums(samples)),
-                                  axis=(1, 2), name='plaqs') / self.num_plaqs
+            plaqs = tf.reduce_mean(tf.cos(self.calc_plaq_sums(samples)),
+                                   axis=(1, 2), name='plaqs')
+        #  plaqs = tf.reduce_sum(tf.cos(self.calc_plaq_sums(samples)),
+        #                        axis=(1, 2), name='plaqs') / self.num_plaqs
         return plaqs
 
     def calc_top_charges(self, samples=None, fft=False):
@@ -177,7 +179,8 @@ class GaugeLattice(object):
 
         with tf.name_scope('calc_top_charges'):
             if fft:
-                ps_proj = project_angle_fft(self.calc_plaq_sums(samples), N=1)
+                ps_proj = tf.sin(self.calc_plaq_sums(samples))
+            #  ps_proj = project_angle_fft(self.calc_plaq_sums(samples), N=1)
             else:
                 ps_proj = project_angle(self.calc_plaq_sums(samples))
 
