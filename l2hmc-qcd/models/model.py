@@ -28,6 +28,7 @@ import utils.file_io as io
 from globals import GLOBAL_SEED, TF_FLOAT
 from lattice.lattice import GaugeLattice
 from dynamics.dynamics import GaugeDynamics
+from dynamics.nnehmc_dynamics import nnehmcDynamics
 from utils.horovod_utils import configure_learning_rate
 from network.network_utils import flatten
 
@@ -240,9 +241,14 @@ class GaugeModel:
 
             dynamics_kwargs.update(kwargs)
             potential_fn = lattice.get_potential_fn(samples)
-            dynamics = GaugeDynamics(lattice=lattice,
-                                     potential_fn=potential_fn,
-                                     **dynamics_kwargs)
+            if self.nnehmc_loss:
+                dynamics = nnehmcDynamics(lattice=lattice,
+                                          potential_fn=potential_fn,
+                                          **dynamics_kwargs)
+            else:
+                dynamics = GaugeDynamics(lattice=lattice,
+                                         potential_fn=potential_fn,
+                                         **dynamics_kwargs)
 
         return dynamics, potential_fn
 
@@ -452,6 +458,39 @@ class GaugeModel:
 
         return charge_loss
 
+    def _calc_nnehmc_loss(self, x_dynamics_out, z_dynamics_out, **weights):
+        """Implements the loss from the NNEHMC paper."""
+        old_hamil_x = x_dynamics_out['old_hamil']
+        new_hamil_x = x_dynamics_out['new_hamil']
+
+        eta = 1.
+
+        _px = tf.exp(tf.minimum(
+            (old_hamil_x - new_hamil_x), 0.
+        ), name='hmc_px')
+
+        hmc_px = tf.where(tf.is_finite(_px), _px, tf.zeros_like(_px))
+
+        if weights['aux_weight'] > 0.:
+            old_hamil_z = z_dynamics_out['old_hamil']
+            new_hamil_z = z_dynamics_out['new_hamil']
+
+            _pz = tf.exp(tf.minimum(
+                (old_hamil_z - new_hamil_z), 0.
+            ), name='hmc_pz')
+
+            hmc_pz = tf.where(tf.is_finite(_pz), _pz, tf.zeros_like(_pz))
+
+        else:
+            hmc_pz = tf.zeros_like(_px)
+
+        loss = - eta * (hmc_px + weights['aux_weight'] * hmc_pz)
+
+        nnehmc_loss = tf.reduce_mean(loss, axis=0, name='nnehmc_loss')
+        tf.add_to_collection('losses', nnehmc_loss)
+
+        return nnehmc_loss
+
     def calc_loss(self, x, beta, net_weights, train_phase, **weights):
         """Create operation for calculating the loss.
 
@@ -474,23 +513,15 @@ class GaugeModel:
             equivalent.
         """
         with tf.name_scope('x_update'):
-            dynamics_output = self.dynamics.apply_transition(x, beta,
-                                                             net_weights,
-                                                             train_phase,
-                                                             self.save_lf)
-            x_proposed = dynamics_output['x_proposed']
-            #  x_proposed = tf.mod(dynamics_output['x_proposed'], 2 * np.pi)
-            px = dynamics_output['accept_prob']
-            x_out = dynamics_output['x_out']
-            #  x_out = tf.mod(dynamics_output['x_out'], 2 * np.pi)
-
-            #  x_proposed = output[0]
-            #  output[1] is v_post, don't need to save
-            #  px = output[2]
-            #  x_out = output[3]
-
-            #  if self.save_lf:
-            #      lf_outputs = output[4:]
+            x_dynamics_output = self.dynamics.apply_transition(x, beta,
+                                                               net_weights,
+                                                               train_phase,
+                                                               self.save_lf)
+            x_proposed = x_dynamics_output['x_proposed']
+            x_proposed = tf.mod(x_dynamics_output['x_proposed'], 2 * np.pi)
+            px = x_dynamics_output['accept_prob']
+            x_out = x_dynamics_output['x_out']
+            x_out = tf.mod(x_dynamics_output['x_out'], 2 * np.pi)
 
         # Auxiliary variable
         with tf.name_scope('z_update'):
@@ -527,16 +558,26 @@ class GaugeModel:
         with tf.name_scope('calc_loss'):
             with tf.name_scope('std_loss'):
                 std_loss = self._calc_std_loss(inputs, **weights)
+
             with tf.name_scope('charge_loss'):
                 charge_loss = self._calc_charge_loss(inputs, **weights)
 
-            total_loss = tf.add(std_loss, charge_loss, name='total_loss')
+            if self.nnehmc_loss:
+                with tf.name_scope('nnehmc_loss'):
+                    nnehmc_loss = self._calc_nnehmc_loss(x_dynamics_output,
+                                                         z_dynamics_output,
+                                                         **weights)
+
+                    total_loss = std_loss + charge_loss + nnehmc_loss
+            else:
+                total_loss = tf.add(std_loss, charge_loss, name='total_loss')
+
             tf.add_to_collection('losses', total_loss)
         #  if self.save_lf:
         #      return total_loss, x_out, px, x_dq, lf_outputs
         #  else:
         #      return total_loss, x_out, px, x_dq
-        return total_loss, x_dq, dynamics_output
+        return total_loss, x_dq, x_dynamics_output
 
     def calc_loss_and_grads(self, x, beta, net_weights,
                             train_phase, **weights):
@@ -649,9 +690,12 @@ class GaugeModel:
                 #  'forward_mask', 'backward_mask',
                 # 'accept_probs_f', 'accept_probs_b']
                 for key in op_keys:
-                    op = dynamics_output[key]
-                    self.ops_dict['run_ops'].append(op)
-                    setattr(self, key, op)
+                    try:
+                        op = dynamics_output[key]
+                        self.ops_dict['run_ops'].append(op)
+                        setattr(self, key, op)
+                    except KeyError:
+                        continue
 
             for collection, ops in self.ops_dict.items():
                 for op in ops:
