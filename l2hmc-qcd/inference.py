@@ -24,6 +24,10 @@ containing the location of the checkpoint directory.
 Author: Sam Foreman (github: @saforem2)
 Date: 07/08/2019
 """
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
+
 import os
 import time
 import pickle
