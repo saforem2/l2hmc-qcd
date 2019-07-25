@@ -395,6 +395,15 @@ def parse_args():
                               term (1 / metric(x1, x2)) when calculating the
                               loss usedduring training."""))
 
+    parser.add_argument("--nnehmc_loss",
+                        dest="nnehmc_loss",
+                        action="store_true",
+                        required=False,
+                        help=("""Flag that when passed will calculate the
+                              'NNEHMC Loss' from
+                              (https://infoscience.epfl.ch/record/264887/files/robust_parameter_estimation.pdf)
+                              (Default: False)."""))
+
     parser.add_argument("--std_weight",
                         dest="std_weight",
                         type=float,
