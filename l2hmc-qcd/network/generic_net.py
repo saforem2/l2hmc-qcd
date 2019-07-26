@@ -14,9 +14,8 @@ Author: Sam Foreman (github: @saforem2)
 Date: 01/16/2019
 """
 import tensorflow as tf
-import numpy as np
 
-from globals import TF_FLOAT, GLOBAL_SEED
+from variables import TF_FLOAT, GLOBAL_SEED
 
 from .network_utils import custom_dense
 

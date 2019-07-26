@@ -12,8 +12,9 @@ import pickle
 
 import utils.file_io as io
 
-from globals import TRAIN_HEADER
-from utils.tf_logging import variable_summaries, add_loss_summaries
+from utils.tf_logging import variable_summaries
+
+from variables import TRAIN_HEADER
 
 import tensorflow as tf
 

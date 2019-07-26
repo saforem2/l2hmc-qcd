@@ -13,12 +13,11 @@ import pickle
 from scipy.stats import sem
 from collections import Counter, OrderedDict
 
-import tensorflow as tf
 import numpy as np
 
 import utils.file_io as io
 from lattice.lattice import u1_plaq_exact
-from globals import RUN_HEADER
+from variables import RUN_HEADER
 
 #  ops = [                         # list of tensorflow operations to run
 #      self.model.x_out,           # new samples (MD + MH accept/reject)

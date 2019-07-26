@@ -25,12 +25,11 @@ except ImportError:
 
 import utils.file_io as io
 
-from globals import GLOBAL_SEED, TF_FLOAT
+from variables import GLOBAL_SEED, TF_FLOAT
 from lattice.lattice import GaugeLattice
 from dynamics.dynamics import GaugeDynamics
 from dynamics.nnehmc_dynamics import nnehmcDynamics
 from utils.horovod_utils import configure_learning_rate
-from network.network_utils import flatten
 
 
 def check_log_dir(log_dir):
@@ -701,17 +700,6 @@ class GaugeModel:
                 for op in ops:
                     _add_to_collection(collection, op)
             #
-            #  ops_dict['run_ops'].append(
-            #  self.lf_out_f = dynamics_output['lf_out_f']
-            #  self.lf_out_b = dynamics_output['lf_out_b']
-            #  self.pxs_out_f = dynamics_output['accept_probs_f']
-            #  self.pxs_out_b = dynamics_output['accept_probs_b']
-            #  self.masks_f = dynamics_output['forward_mask']
-            #  self.masks_b = dynamics_output['backward_mask']
-            #  self.logdets_f = dynamics_output['logdets_f']
-            #  self.logdets_b = dynamics_output['logdets_b']
-            #  self.sumlogdet_f = dynamics_output['sumlogdet_f']
-            #  self.sumlogdet_b = dynamics_output['sumlogdet_b']
 
         with tf.name_scope('train'):
             # ----------------------------------------------------------
@@ -735,11 +723,16 @@ class GaugeModel:
             # ----------------------------------------------------------
             grads_and_vars = zip(self.grads, self.dynamics.trainable_variables)
             self._create_optimizer()
-            self.train_op = self.optimizer.apply_gradients(
-                grads_and_vars,
-                global_step=self.global_step,
-                name='train_op'
-            )
+            #  update_ops = [self.dynamics.updates,
+            #                tf.get_collection(tf.GraphKeys.UPDATE_OPS)]
+            #  tf.add_to_collection(tf.GraphKeys.UPDATE_OPS,
+            #                       *[i for i in self.dynamics.updates])
+            with tf.control_dependencies(self.dynamics.updates):
+                self.train_op = self.optimizer.apply_gradients(
+                    grads_and_vars,
+                    global_step=self.global_step,
+                    name='train_op'
+                )
             #  self.train_op = tf.group(minimize_op, self.dynamics.updates)
             #  try:
             #      self.train_op = self._append_update_ops(train_op)
@@ -750,3 +743,6 @@ class GaugeModel:
             self.ops_dict['train_ops'].append(self.train_op)
             self.ops_dict['train_ops'].append(self.grads)
             self.ops_dict['train_ops'].append(self.lr)
+            for key, val in self.ops_dict.items():
+                tf.add_to_collection(key, val)
+

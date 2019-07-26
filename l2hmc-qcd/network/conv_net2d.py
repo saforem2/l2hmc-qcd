@@ -10,7 +10,7 @@ Date: 06/14/2019
 import numpy as np
 import tensorflow as tf
 
-from globals import GLOBAL_SEED, TF_FLOAT
+from variables import GLOBAL_SEED, TF_FLOAT
 from .network_utils import batch_norm
 
 np.random.seed(GLOBAL_SEED)
@@ -35,6 +35,22 @@ class ConvNet2D(tf.keras.Model):
         for key, val in kwargs.items():
             setattr(self, key, val)
 
+        if model_name == 'ConvNet2Dx':
+            self.bn_name = 'batch_norm_x'
+        elif model_name == 'ConvNet2Dv':
+            self.bn_name = 'batch_norm_v'
+
+        if self.name_scope == 'x_conv_block':
+            conv1_name = 'conv_x1'
+            pool1_name = 'pool_x1'
+            conv2_name = 'conv_x2'
+            pool2_name = 'pool_x2'
+        elif self.name_scope == 'v_conv_block':
+            conv1_name = 'conv_v1'
+            pool1_name = 'pool_v1'
+            conv2_name = 'conv_v2'
+            pool2_name = 'pool_v2'
+
         with tf.name_scope(self.name_scope):
             if self.use_bn:
                 if self.data_format == 'channels_first':
@@ -54,7 +70,7 @@ class ConvNet2D(tf.keras.Model):
                 kernel_size=self.filter_sizes[0],
                 activation=self.activation,
                 #  input_shape=self._input_shape[1:],
-                name='conv1',
+                name=conv1_name,
                 padding='same',
                 dtype=TF_FLOAT,
                 data_format=self.data_format
@@ -65,7 +81,7 @@ class ConvNet2D(tf.keras.Model):
                 pool_size=(2, 2),
                 strides=2,
                 #  padding='same',
-                name='pool1',
+                name=pool1_name,
             )
 
             self.conv2 = tf.keras.layers.Conv2D(
@@ -73,7 +89,7 @@ class ConvNet2D(tf.keras.Model):
                 kernel_size=self.filter_sizes[1],
                 activation=activation2,
                 padding='same',
-                name='conv2',
+                name=conv2_name,
                 dtype=TF_FLOAT,
                 data_format=self.data_format
             )
@@ -82,7 +98,7 @@ class ConvNet2D(tf.keras.Model):
                 pool_size=(2, 2),
                 strides=2,
                 #  padding='same',
-                name='pool1',
+                name=pool2_name,
             )
 
             self.flatten = tf.keras.layers.Flatten(name='flatten')
@@ -125,7 +141,9 @@ class ConvNet2D(tf.keras.Model):
         if self.use_bn:
             input = self.activation(batch_norm(input, train_phase,
                                                axis=self.bn_axis,
-                                               internal_update=True))
+                                               internal_update=True,
+                                               scope=self.bn_name,
+                                               reuse=tf.AUTO_REUSE))
         input = self.max_pool2(input)
         input = self.flatten(input)
 

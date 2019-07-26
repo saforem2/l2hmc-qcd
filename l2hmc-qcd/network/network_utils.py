@@ -2,7 +2,7 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.contrib.framework import add_arg_scope, arg_scope
 
-from globals import GLOBAL_SEED, TF_FLOAT, NP_FLOAT
+from variables import GLOBAL_SEED, TF_FLOAT, NP_FLOAT
 
 
 np.random.seed(GLOBAL_SEED)
@@ -76,6 +76,8 @@ def batch_norm(x,
             update_v = _assign_moving_average(moving_v,
                                               v, momentum,
                                               'update_var')
+            #  tf.add_to_collection(tf.GraphKeys.UPDATE_OPS, update_m)
+            #  tf.add_to_collection(tf.GraphKeys.UPDATE_OPS, update_v)
             tf.add_to_collection('update_ops', update_m)
             tf.add_to_collection('update_ops', update_v)
 

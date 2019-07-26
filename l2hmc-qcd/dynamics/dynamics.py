@@ -16,12 +16,8 @@ import numpy as np
 import numpy.random as npr
 import tensorflow as tf
 
-from globals import GLOBAL_SEED, TF_FLOAT
-#  from network.conv_net2d import ConvNet2D
-#  from network.generic_net import GenericNet
-#  from network.old.conv_net3d import FullNet3D
+from variables import GLOBAL_SEED, TF_FLOAT
 from network.network import FullNet
-#  from network.conv_net3d import ConvNet3D
 
 
 def exp(x, name=None):
@@ -134,13 +130,10 @@ class GaugeDynamics(tf.keras.Model):
                 net_kwargs.update({
                     'filter_sizes': [(3, 3, 1), (2, 2, 1)],
                 })
-                #  self._build_conv_nets_3D(net_kwargs)
             elif self.network_arch == 'conv2D':
-                #  'num_filters': int(2 * self.lattice.space_size),
                 net_kwargs.update({
                     'filter_sizes': [(3, 3), (2, 2)],
                 })
-                #  self._build_conv_nets_2D(net_kwargs)
 
             self.build_network(net_kwargs)
 
@@ -206,13 +199,15 @@ class GaugeDynamics(tf.keras.Model):
 
             # Decide direction uniformly
             with tf.name_scope('transition_masks'):
-                masks_f = tf.cast(
-                    tf.random_uniform((self.batch_size,),
-                                      seed=GLOBAL_SEED) > 0.5,
-                    TF_FLOAT,
-                    name='forward_mask'
-                )
-                masks_b = 1. - masks_f
+                with tf.name_scope('forward_mask'):
+                    masks_f = tf.cast(
+                        tf.random_uniform((self.batch_size,),
+                                          seed=GLOBAL_SEED) > 0.5,
+                        TF_FLOAT,
+                        name='forward_mask'
+                    )
+                with tf.name_scope('backward_mask'):
+                    masks_b = 1. - masks_f
 
             # Obtain proposed states
             with tf.name_scope('x_proposed'):
@@ -289,8 +284,8 @@ class GaugeDynamics(tf.keras.Model):
                                          dynamic_size=True, name='logdets_out',
                                          clear_after_read=False)
 
-            lf_out = lf_out.write(0, x_in)
-            logdets_out = logdets_out.write(0, logdet)
+            lf_out = lf_out.write(0., x_in)
+            logdets_out = logdets_out.write(0., logdet)
 
         def body(step, x, v, logdet, lf_samples, logdets):
             # cast leapfrog step to integer

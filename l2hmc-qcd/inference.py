@@ -36,7 +36,7 @@ import numpy as np
 
 import utils.file_io as io
 
-from globals import NP_FLOAT
+from variables import NP_FLOAT
 from tensorflow.core.protobuf import rewriter_config_pb2
 #  from gauge_model_main import create_config
 

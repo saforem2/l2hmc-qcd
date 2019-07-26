@@ -17,7 +17,7 @@ from collections import Counter, OrderedDict
 from scipy.stats import sem
 import utils.file_io as io
 
-from globals import RUN_HEADER, NP_FLOAT
+from variables import RUN_HEADER, NP_FLOAT
 
 from lattice.lattice import u1_plaq_exact
 from utils.tf_logging import variable_summaries
