@@ -102,12 +102,12 @@ class RunLogger:
             }
 
         if self.summaries:
-            self.run_summary_dir = os.path.join(self.log_dir,
-                                                'summaries', 'run',
-                                                f'run_{self._reset_counter}')
-            io.check_else_make_dir(self.run_summary_dir)
+            self.run_summaries_dir = os.path.join(self.log_dir,
+                                                  'summaries', 'run')
+                                                #  f'run_{self._reset_counter}')
+            io.check_else_make_dir(self.run_summaries_dir)
 
-            self.writer = tf.summary.FileWriter(self.run_summary_dir,
+            self.writer = tf.summary.FileWriter(self.run_summaries_dir,
                                                 tf.get_default_graph())
             self.create_summaries()
 
@@ -218,7 +218,6 @@ class RunLogger:
             f'_qw_{qw_str:.2}'
             f'_{self._reset_counter}'
         )
-        self._reset_counter += 1
 
         if dir_append:
             run_str += dir_append
@@ -230,14 +229,15 @@ class RunLogger:
         io.check_else_make_dir(self.run_dir)
 
         if self.summaries:
-            self.run_summary_dir = os.path.join(self.log_dir,
-                                                'summaries', 'run',
-                                                f'run_{self._reset_counter}')
+            self.run_summary_dir = os.path.join(self.run_summaries_dir,
+                                                run_str)
             io.check_else_make_dir(self.run_summary_dir)
 
             self.writer = tf.summary.FileWriter(self.run_summary_dir,
                                                 tf.get_default_graph())
         save_params(params, self.run_dir)
+
+        self._reset_counter += 1
 
         def _round_float_as_str(f):
             return f'{f:.3g}'
