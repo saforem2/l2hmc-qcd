@@ -65,6 +65,7 @@ if float(tf.__version__.split('.')[0]) <= 2:
 
 SEP_STR = (80 * '-') + '\n'
 
+
 def create_config(params):
     """Create tensorflow config."""
     config = tf.ConfigProto()

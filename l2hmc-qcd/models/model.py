@@ -686,8 +686,6 @@ class GaugeModel:
                            'pxs_out_f', 'pxs_out_b',
                            'logdets_f', 'logdets_b',
                            'sumlogdet_f', 'sumlogdet_b']
-                #  'forward_mask', 'backward_mask',
-                # 'accept_probs_f', 'accept_probs_b']
                 for key in op_keys:
                     try:
                         op = dynamics_output[key]
@@ -699,7 +697,6 @@ class GaugeModel:
             for collection, ops in self.ops_dict.items():
                 for op in ops:
                     _add_to_collection(collection, op)
-            #
 
         with tf.name_scope('train'):
             # ----------------------------------------------------------
@@ -740,9 +737,13 @@ class GaugeModel:
             #      import pdb
             #      pdb.set_trace()
 
-            self.ops_dict['train_ops'].append(self.train_op)
-            self.ops_dict['train_ops'].append(self.grads)
-            self.ops_dict['train_ops'].append(self.lr)
-            for key, val in self.ops_dict.items():
-                tf.add_to_collection(key, val)
+            #  self.ops_dict['train_ops'].append(self.train_op)
+            #  self.ops_dict['train_ops'].append(self.grads)
+            #  self.ops_dict['train_ops'].append(self.lr)
+            #  for key, val in self.ops_dict.items():
+            #      if len(val) > 1:
+            #          for v in val:
+            #              tf.add_to_collection(key, v)
+            #      else:
+            #          tf.add_to_collection(key, val)
 
