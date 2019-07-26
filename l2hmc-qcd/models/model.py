@@ -426,7 +426,6 @@ class GaugeModel:
         px = inputs['px']
         pz = inputs['pz']
 
-        ls = self.loss_scale
         # Calculate the difference in topological charge between the initial
         # and proposed configurations multiplied by the probability of
         # acceptance to get the expected value of the difference in topological
@@ -440,17 +439,22 @@ class GaugeModel:
                 tf.add_to_collection('losses', xq_loss)
 
             with tf.name_scope('z_loss'):
-                z_dq_fft = self.lattice.calc_top_charges_diff(z_init,
-                                                              z_proposed,
-                                                              fft=True)
-                zq_loss = aux_weight * pz * z_dq_fft
+                if aux_weight > 0:
+                    z_dq_fft = self.lattice.calc_top_charges_diff(z_init,
+                                                                  z_proposed,
+                                                                  fft=True)
+                    zq_loss = aux_weight * pz * z_dq_fft
+
+                else:
+                    z_dq_fft = tf.zeros_like(x_dq_fft)
+
                 tf.add_to_collection('losses', zq_loss)
 
             with tf.name_scope('tot_loss'):
                 # Each of the loss terms is scaled by the `loss_scale` which
                 # introduces a universal multiplicative factor that scales the
                 # value of the loss
-                charge_loss = ls * (charge_weight * (xq_loss + zq_loss))
+                charge_loss = - charge_weight * (xq_loss + zq_loss)
                 charge_loss = tf.reduce_mean(charge_loss, axis=0,
                                              name='charge_loss')
                 tf.add_to_collection('losses', charge_loss)
