@@ -10,13 +10,13 @@ Date: 04/09/2019
 import os
 import pickle
 
+import tensorflow as tf
+
 import utils.file_io as io
 
-from utils.tf_logging import variable_summaries
-
 from variables import TRAIN_HEADER
-
-import tensorflow as tf
+from utils.tf_logging import variable_summaries
+from lattice.lattice import u1_plaq_exact_tf
 
 
 def save_params(params, out_dir):
@@ -43,7 +43,6 @@ def grad_norm_summary(name_scope, grad):
         grad_norm = tf.sqrt(tf.reduce_mean(grad ** 2))
         summary_name = name_scope + '_grad_norm'
         tf.summary.scalar(summary_name, grad_norm)
-
 
 
 def check_var_and_op(name, var):
@@ -135,8 +134,13 @@ class TrainLogger:
             tf.summary.scalar('tunneling_events_per_sample',
                               self.model.charge_diffs_op)
 
-        with tf.name_scope('avg_plaq'):
+        with tf.name_scope('avg_plaq_training'):
             tf.summary.scalar('avg_plaq', self.model.avg_plaqs_op)
+
+        with tf.name_scope('avg_plaq_diff_training'):
+            tf.summary.scalar('avg_plaq_diff',
+                              (u1_plaq_exact_tf(self.model.beta)
+                               - self.model.avg_plaqs_op))
 
         #  for var in tf.trainable_variables():
         #      if 'batch_normalization' not in var.op.name:
@@ -155,8 +159,8 @@ class TrainLogger:
             with tf.name_scope(name):
                 variable_summaries(var, name)
                 variable_summaries(grad, name + '/gradients')
-                tf.summary.histogram(name, var)
-                tf.summary.histogram(name + '/gradients', grad)
+                #  tf.summary.histogram(name, var)
+                #  tf.summary.histogram(name + '/gradients', grad)
                 if 'kernel' in var.name:
                     if 'XNet' in var.name:
                         net_str = 'XNet/'
