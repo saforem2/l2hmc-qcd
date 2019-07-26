@@ -9,6 +9,7 @@ Date: 04/24/2019
 """
 import os
 import pickle
+import datetime
 
 import tensorflow as tf
 import numpy as np
@@ -17,9 +18,9 @@ from collections import Counter, OrderedDict
 from scipy.stats import sem
 import utils.file_io as io
 
-from variables import RUN_HEADER, NP_FLOAT
+from variables import RUN_HEADER, NP_FLOAT, TF_FLOAT
 
-from lattice.lattice import u1_plaq_exact
+from lattice.lattice import u1_plaq_exact, u1_plaq_exact_tf
 from utils.tf_logging import variable_summaries
 
 from .train_logger import save_params
@@ -36,7 +37,7 @@ def autocorr(x):
 
 
 class RunLogger:
-    def __init__(self, model, log_dir, save_lf_data=False, summaries=False):
+    def __init__(self, model, log_dir, save_lf_data=False):
         """
         Args:
             model: GaugeModel object.
@@ -44,22 +45,32 @@ class RunLogger:
         """
         self.model = model
         self.save_lf_data = save_lf_data
-        self.summaries = summaries
+        self.summaries = model.summaries
 
         assert os.path.isdir(log_dir)
 
         self.log_dir = log_dir
 
-        self.runs_dir = os.path.join(self.log_dir, 'runs')
+        runs_dir = os.path.join(self.log_dir, 'runs')
+        figs_dir = os.path.join(self.log_dir, 'figures')
+        if os.path.isdir(runs_dir) or os.path.isdir(figs_dir):
+            now = datetime.datetime.now()
+            #  print(now.strftime("%b %d %Y %H:%M:%S"))
+            time_str = now.strftime("%H%M")
+            if os.path.isdir(runs_dir):
+                renamed_runs_dir = runs_dir + f'_{time_str}'
+                io.log(f'Renaming existing runs_dir to: {renamed_runs_dir}')
+                os.rename(runs_dir, renamed_runs_dir)
+            if os.path.isdir(figs_dir):
+                renamed_figs_dir = figs_dir + f'_{time_str}'
+                io.log(f'Renaming existing figs_dir to: {renamed_figs_dir}')
+                os.rename(figs_dir, renamed_figs_dir)
+
+        self.runs_dir = runs_dir
         io.check_else_make_dir(self.runs_dir)
 
-        self.figs_dir = os.path.join(self.log_dir, 'figures')
+        self.figs_dir = figs_dir
         io.check_else_make_dir(self.figs_dir)
-
-        if summaries:
-            self.run_summary_dir = os.path.join(self.log_dir,
-                                                'summaries', 'run')
-            io.check_else_make_dir(self.run_summary_dir)
 
         self._reset_counter = 0
         self.run_steps = None
@@ -90,7 +101,12 @@ class RunLogger:
                 'backward': [],
             }
 
-        if summaries:
+        if self.summaries:
+            self.run_summary_dir = os.path.join(self.log_dir,
+                                                'summaries', 'run',
+                                                f'run_{self._reset_counter}')
+            io.check_else_make_dir(self.run_summary_dir)
+
             self.writer = tf.summary.FileWriter(self.run_summary_dir,
                                                 tf.get_default_graph())
             self.create_summaries()
@@ -100,18 +116,32 @@ class RunLogger:
         ld = self.log_dir
         self.summary_writer = tf.contrib.summary.create_file_writer(ld)
 
-        with tf.name_scope('tunneling_events'):
-            tf.summary.scalar('tunneling_events_per_sample',
-                              self.model.charge_diffs_op)
+        #  tf.summary.scalar('charges_sq', tf.square(self.model.charges_op))
+        #  with tf.name_scope('inference_summaries'):
+        #  variable_summaries(self.model.actions_op, 'actions')
+        #  variable_summaries(self.model.plaqs_op, 'plaqs')
+        #  variable_summaries(self.model.charge_diffs_op, 'tunneling_events')
 
-        with tf.name_scope('avg_plaq'):
-            tf.summary.scalar('avg_plaq', self.model.avg_plaqs_op)
+        with tf.name_scope('avg_actions_inference'):
+            tf.summary.scalar('avg_actions',
+                              tf.reduce_mean(self.model.actions_op))
 
-        run_ops = tf.get_collection('run_ops')
-        with tf.name_scope('run_summaries'):
-            for op in run_ops:
-                variable_summaries(op, op.name)
-                tf.summary.histogram(op.name, op)
+        with tf.name_scope('avg_plaqs_inference'):
+            tf.summary.scalar('avg_plaqs', self.model.avg_plaqs_op)
+
+        with tf.name_scope('avg_plaq_diff_inference'):
+            tf.summary.scalar('avg_plaq_diff',
+                              (u1_plaq_exact_tf(self.model.beta)
+                               - self.model.avg_plaqs_op))
+
+        with tf.name_scope('avg_charge_diffs_inference'):
+            tf.summary.scalar('avg_charge_diffs',
+                              tf.reduce_mean(self.model.charge_diffs_op))
+
+            #  tf.summary.scalar('actions', self.model.actions_op)
+            #  tf.summary.scalar('plaqs', self.model.plaqs_op)
+            #  tf.summary.scalar('tunneling_events_per_sample',
+            #                    self.model.charge_diffs_op)
 
         self.summary_op = tf.summary.merge_all(name='run_summary_op')
 
@@ -188,17 +218,25 @@ class RunLogger:
             f'_qw_{qw_str:.2}'
             f'_{self._reset_counter}'
         )
+        self._reset_counter += 1
+
         if dir_append:
             run_str += dir_append
-        #  nw_str = [str(i).replace('.', '') for i in net_weights]
-        #  w_str = nw_str[0] + nw_str[1] + nw_str[2]
-        #  run_str = (f'steps_{run_steps}_beta_{beta}_'
-        #             f'eps_{eps:.3g}_weights_{w_str}')
+
         params = self.model.params
         params['net_weights'] = net_weights
 
         self.run_dir = os.path.join(self.runs_dir, run_str)
         io.check_else_make_dir(self.run_dir)
+
+        if self.summaries:
+            self.run_summary_dir = os.path.join(self.log_dir,
+                                                'summaries', 'run',
+                                                f'run_{self._reset_counter}')
+            io.check_else_make_dir(self.run_summary_dir)
+
+            self.writer = tf.summary.FileWriter(self.run_summary_dir,
+                                                tf.get_default_graph())
         save_params(params, self.run_dir)
 
         def _round_float_as_str(f):
@@ -212,8 +250,6 @@ class RunLogger:
         with open(weights_txt_file, 'w') as f:
             f.write(charge_weight_str)
             f.write(w_str)
-
-        self._reset_counter += 1
 
         return self.run_dir, run_str
 

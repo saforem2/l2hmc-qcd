@@ -18,6 +18,11 @@ def u1_plaq_exact(beta):
     return i1(beta) / i0(beta)
 
 
+def u1_plaq_exact_tf(beta):
+    return tf.math.bessel_i1(beta) / tf.math.bessel_i0(beta)
+
+
+
 def pbc(tup, shape):
     """Returns tup % shape for implementing periodic boundary conditions."""
     return list(np.mod(tup, shape))
@@ -120,7 +125,7 @@ class GaugeLattice(object):
         plaquette in the lattice for each sample in samples.
 
         Args:
-            samples (tf tensor): Tensor of shape (N, D) where N is the batch
+            samples (tf.Tensor): Tensor of shape (N, D) where N is the batch
                 size and D is the number of links on the lattice. If samples is
                 None, self.samples will be used.
 
@@ -131,14 +136,21 @@ class GaugeLattice(object):
         if samples is None:
             samples = self.samples
 
+        # self.samples.shape = (N, L, T, D), where:
+        #    N = num_samples
+        #    L = space_size
+        #    T = time_size
+        #    D = dimensionality
         if samples.shape != self.samples.shape:
             samples = tf.reshape(samples, shape=(self.samples.shape))
 
+        # assuming D = 2
         with tf.name_scope('calc_plaq_sums'):
             plaq_sums = (samples[:, :, :, 0]
                          - samples[:, :, :, 1]
                          - tf.roll(samples[:, :, :, 0], shift=-1, axis=2)
                          + tf.roll(samples[:, :, :, 1], shift=-1, axis=1))
+            # plaq_sums.shape = (N, L, T)
 
         return plaq_sums
 
@@ -161,10 +173,10 @@ class GaugeLattice(object):
             samples = self.samples
 
         with tf.name_scope('calc_plaqs'):
-            plaqs = tf.reduce_mean(tf.cos(self.calc_plaq_sums(samples)),
-                                   axis=(1, 2), name='plaqs')
-        #  plaqs = tf.reduce_sum(tf.cos(self.calc_plaq_sums(samples)),
-        #                        axis=(1, 2), name='plaqs') / self.num_plaqs
+            #  plaqs = tf.reduce_mean(tf.cos(self.calc_plaq_sums(samples)),
+            #                         axis=(1, 2), name='plaqs')
+            plaqs = tf.reduce_sum(tf.cos(self.calc_plaq_sums(samples)),
+                                  axis=(1, 2), name='plaqs') / self.num_plaqs
         return plaqs
 
     def calc_top_charges(self, samples=None, fft=False):
