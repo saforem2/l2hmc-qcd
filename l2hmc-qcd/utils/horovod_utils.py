@@ -1,22 +1,11 @@
-from globals import TF_FLOAT
+from variables import TF_FLOAT
 import tensorflow as tf
-
-try:
-    import horovod.tensorflow as hvd
-    HAS_HOROVOD = True
-except ImportError:
-    HAS_HOROVOD = False
 
 
 def cast(f):
     return tf.cast(f, TF_FLOAT)
 
-#  def configure_learning_rate(lr_warmup,
-#                              lr_init,
-#                              decay_steps,
-#                              decay_rate,
-#                              global_step,
-#                              warmup_steps):
+
 def configure_learning_rate(*args):
     """Implements gradual learning rate warmup:
         

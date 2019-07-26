@@ -9,16 +9,13 @@ Date: 07/22/2019
 """
 import numpy as np
 import tensorflow as tf
-from .network_utils import (custom_dense, batch_norm,
-                            add_elements_to_collection)
 from .conv_net3d import ConvNet3D
 from .conv_net2d import ConvNet2D
 from .generic_net import GenericNet
 import utils.file_io as io
-from tensorflow.keras import backend as K
 #  import utils.file_io as io
 
-from globals import GLOBAL_SEED, TF_FLOAT, NP_FLOAT
+from variables import GLOBAL_SEED
 
 
 np.random.seed(GLOBAL_SEED)
@@ -40,7 +37,12 @@ class FullNet(tf.keras.Model):
         """
         super(FullNet, self).__init__(name=model_name)
 
-        with tf.name_scope(kwargs['name_scope']):
+        if model_name == 'XNet':
+            generic_name_scope = 'x_generic_block'
+        elif model_name == 'VNet':
+            generic_name_scope = 'v_generic_block'
+
+        with tf.name_scope(model_name):
             kwargs['name_scope'] = 'x_conv_block'
             network_arch = kwargs.get('network_arch', 'conv3D')
 
@@ -62,7 +64,8 @@ class FullNet(tf.keras.Model):
                 io.log('Using GenericNet architecture...')
                 self.x_conv_net = self.v_conv_net = None
 
-            kwargs['name_scope'] = 'generic_block'
+            #  kwargs['name_scope'] = 'generic_block'
+            kwargs['name_scope'] = generic_name_scope
             self.generic_net = GenericNet("GenericNet", **kwargs)
 
     def call(self, inputs, train_phase):

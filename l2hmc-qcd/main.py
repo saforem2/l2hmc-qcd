@@ -49,7 +49,7 @@ from tensorflow.core.protobuf import rewriter_config_pb2
 
 import utils.file_io as io
 
-from globals import GLOBAL_SEED, NP_FLOAT
+from variables import GLOBAL_SEED, NP_FLOAT
 from utils.parse_args import parse_args
 #  from utils.attr_dict import AttrDict
 from models.model import GaugeModel
@@ -58,7 +58,7 @@ from loggers.run_logger import RunLogger
 from trainers.trainer import GaugeModelTrainer
 from plotters.gauge_model_plotter import GaugeModelPlotter
 from plotters.leapfrog_plotters import LeapfrogPlotter
-from runners.gauge_model_runner import GaugeModelRunner
+from runners.runner import GaugeModelRunner
 
 try:
     import horovod.tensorflow as hvd
@@ -275,9 +275,9 @@ def train_l2hmc(FLAGS, log_file=None, experiment=None):
     else:
         train_logger = None
 
-    # --------------------------------------------------
-    # Setup config and MonitoredTrainingSession
-    # --------------------------------------------------
+    # -------------------------------------------------------
+    # Setup config and init_feed_dict for tf.train.Scaffold
+    # -------------------------------------------------------
     config, params = create_config(params)
 
     # set initial value of charge weight using value from FLAGS
@@ -306,6 +306,7 @@ def train_l2hmc(FLAGS, log_file=None, experiment=None):
 
     local_init_op = tf.variables_initializer(collection)
     ready_for_local_init_op = tf.report_uninitialized_variables(collection)
+    init_op = tf.global_variables_initializer()
 
     scaffold = tf.train.Scaffold(
         init_feed_dict=init_feed_dict,
@@ -313,10 +314,13 @@ def train_l2hmc(FLAGS, log_file=None, experiment=None):
         ready_for_local_init_op=ready_for_local_init_op
     )
 
-    # The MonitoredTrainingSession takes care of session
-    # initialization, restoring from a checkpoint, saving to a
-    # checkpoint, and closing when done or an error occurs.
-
+    # ----------------------------------------------------------------
+    #  Create MonitoredTrainingSession
+    #
+    #  NOTE: The MonitoredTrainingSession takes care of session
+    #        initialization, restoring from a checkpoint, saving to a
+    #        checkpoint, and closing when done or an error occurs.
+    # ----------------------------------------------------------------
     sess_kwargs = {
         'checkpoint_dir': checkpoint_dir,
         'scaffold': scaffold,
@@ -328,9 +332,10 @@ def train_l2hmc(FLAGS, log_file=None, experiment=None):
 
     sess = tf.train.MonitoredTrainingSession(**sess_kwargs)
     tf.keras.backend.set_session(sess)
+    sess.run(init_op)
 
     # ----------------------------------------------------------
-    #   TRAINING
+    #                       TRAINING
     # ----------------------------------------------------------
     trainer = GaugeModelTrainer(sess, model, train_logger)
     train_kwargs = {

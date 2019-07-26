@@ -15,14 +15,13 @@ import numpy as np
 import numpy.random as npr
 import tensorflow as tf
 
-from globals import GLOBAL_SEED, TF_FLOAT
+from variables import GLOBAL_SEED, TF_FLOAT
 from network.network import FullNet
 
 
 def exp(x, name=None):
     """Safe exponential using tf.check_numerics."""
     return tf.check_numerics(tf.exp(x), f'{name} is NaN')
-
 
 
 class nnehmcDynamics(tf.keras.Model):

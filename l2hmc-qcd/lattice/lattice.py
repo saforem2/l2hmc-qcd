@@ -6,16 +6,11 @@ Contains implementation of GaugeLattice class.
 Author: Sam Foreman (github: @saforem2)
 Date: 01/15/2019
 """
-import os
-import random
-import pickle
 
 import numpy as np
 import tensorflow as tf
-from functools import reduce
-from scipy.linalg import expm
 from scipy.special import i0, i1
-from globals import TF_FLOAT, NP_FLOAT
+from variables import TF_FLOAT, NP_FLOAT
 
 
 def u1_plaq_exact(beta):
@@ -202,4 +197,3 @@ class GaugeLattice(object):
         def fn(samples):
             return self.calc_actions(samples)
         return fn
-

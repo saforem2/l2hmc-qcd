@@ -16,8 +16,7 @@ from collections import Counter, OrderedDict
 from scipy.stats import sem
 
 from lattice.lattice import u1_plaq_exact
-from globals import COLORS, MARKERS
-from utils.data_loader import DataLoader
+from variables import COLORS, MARKERS
 
 try:
     import matplotlib.pyplot as plt

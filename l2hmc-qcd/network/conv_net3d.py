@@ -15,13 +15,10 @@ Date: 01/16/2019
 """
 import numpy as np
 import tensorflow as tf
-from .network_utils import (custom_dense, batch_norm,
-                            add_elements_to_collection)
-import utils.file_io as io
-from tensorflow.keras import backend as K
+from .network_utils import batch_norm
 #  import utils.file_io as io
 
-from globals import GLOBAL_SEED, TF_FLOAT, NP_FLOAT
+from variables import GLOBAL_SEED, TF_FLOAT
 
 
 np.random.seed(GLOBAL_SEED)
@@ -52,6 +49,22 @@ class ConvNet3D(tf.keras.Model):
         for key, val in kwargs.items():
             setattr(self, key, val)
 
+        if model_name == 'ConvNet3Dx':
+            self.bn_name = 'batch_norm_x'
+        elif model_name == 'ConvNet3Dv':
+            self.bn_name = 'batch_norm_v'
+
+        if self.name_scope == 'x_conv_block':
+            conv1_name = 'conv_x1'
+            pool1_name = 'pool_x1'
+            conv2_name = 'conv_x2'
+            pool2_name = 'pool_x2'
+        elif self.name_scope == 'v_conv_block':
+            conv1_name = 'conv_v1'
+            pool1_name = 'pool_v1'
+            conv2_name = 'conv_v2'
+            pool2_name = 'pool_v2'
+
         with tf.name_scope(self.name_scope):
             if self.use_bn:
                 if self.data_format == 'channels_first':
@@ -72,7 +85,7 @@ class ConvNet3D(tf.keras.Model):
                 activation=self.activation,
                 #  input_shape=self._input_shape,
                 padding='same',
-                name='conv1',
+                name=conv1_name,
                 dtype=TF_FLOAT,
                 data_format=self.data_format
             )
@@ -81,7 +94,7 @@ class ConvNet3D(tf.keras.Model):
                 pool_size=(2, 2, 2),
                 strides=2,
                 padding='same',
-                name='pool1',
+                name=pool1_name,
             )
 
             self.conv2 = tf.keras.layers.Conv3D(
@@ -91,7 +104,7 @@ class ConvNet3D(tf.keras.Model):
                 #  activation=None if self.use_bn else tf.nn.relu,
                 #  initializer=HE_INIT,
                 padding='same',
-                name='conv2',
+                name=conv2_name,
                 dtype=TF_FLOAT,
                 data_format=self.data_format
             )
@@ -100,7 +113,7 @@ class ConvNet3D(tf.keras.Model):
                 pool_size=(2, 2, 2),
                 strides=2,
                 padding='same',
-                name='pool2',
+                name=pool2_name,
             )
 
             self.flatten = tf.keras.layers.Flatten(name='flatten')
@@ -143,7 +156,9 @@ class ConvNet3D(tf.keras.Model):
         if self.use_bn:
             input = self.activation(batch_norm(input, train_phase,
                                                axis=self.bn_axis,
-                                               internal_update=True))
+                                               internal_update=True,
+                                               scope=self.bn_name,
+                                               reuse=tf.AUTO_REUSE))
         input = self.max_pool2(input)
         input = self.flatten(input)
 

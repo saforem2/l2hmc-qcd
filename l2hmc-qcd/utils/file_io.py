@@ -23,7 +23,7 @@ try:
 except ImportError:
     HAS_HOROVOD = False
 
-from globals import FILE_PATH
+from variables import FILE_PATH
 
 
 def log(s, nl=True):
@@ -256,25 +256,6 @@ def get_run_num(log_dir):
     return run_num
 
 
-#  def _get_run_num(log_dir):
-#      check_else_make_dir(log_dir)
-#
-#      contents = os.listdir(log_dir)
-#      if contents in ([], ['.DS_Store']):
-#          return 1
-#
-#      run_nums = []
-#      for item in contents:
-#          try:
-#              run_nums.append(int(item.split('_')[-1]))
-#          except ValueError:
-#              continue
-#      if run_nums == []:
-#          return 1
-#
-#      return sorted(run_nums)[-1] + 1
-
-
 def get_eps_from_run_history_txt_file(txt_file):
     """Parse `run_history.txt` file and return `eps` (step size)."""
     with open(txt_file, 'r') as f:
@@ -282,4 +263,3 @@ def get_eps_from_run_history_txt_file(txt_file):
     eps = float([i for i in data_line.split(' ') if i != ''][3])
 
     return eps
-

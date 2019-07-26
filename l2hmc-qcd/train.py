@@ -11,21 +11,21 @@ for each major part of the algorithm:
     building the corresponding TensorFlow graph.
 
         - This is done using the `GaugeModel` class, found in
-        `models/gauge_model.py`.
+        `models/model.py`.
 
         - The `GaugeModel` class depends on the `GaugeDynamics` class
-        (found in `dynamics/gauge_dynamics.py`) that performs the augmented
+        (found in `dynamics/dynamics.py`) that performs the augmented
         leapfrog steps outlined in the original paper.
 
     (2.) Training the model by minimizing the loss function over both the
     target and initialization distributions.
         - This is done using the `GaugeModelTrainer` class, found in
-        `trainers/gauge_model_trainer.py`.
+        `trainers/trainer.py`.
 
     (3.) Running the trained sampler to generate statistics for lattice
     observables.
         - This is done using the `GaugeModelRunner` class, found in
-        `runners/gauge_model_runner.py`.
+        `runners/runner.py`.
 
 Author: Sam Foreman (github: @saforem2)
 Date: 04/10/2019
@@ -45,15 +45,15 @@ import utils.file_io as io
 
 #  from utils.model_loader import load_model
 #  import gauge_model_inference as inference
-from globals import GLOBAL_SEED, NP_FLOAT
+from variables import GLOBAL_SEED, NP_FLOAT
 from utils.parse_args import parse_args
 from models.gauge_model import GaugeModel
 from loggers.train_logger import TrainLogger
 from loggers.run_logger import RunLogger
-from trainers.gauge_model_trainer import GaugeModelTrainer
+from trainers.trainer import GaugeModelTrainer
 from plotters.gauge_model_plotter import GaugeModelPlotter
 from plotters.leapfrog_plotters import LeapfrogPlotter
-from runners.gauge_model_runner import GaugeModelRunner
+from runners.runner import GaugeModelRunner
 
 try:
     import horovod.tensorflow as hvd
@@ -156,7 +156,6 @@ def create_config(params):
         config.inter_op_parallelism_threads = 0
 
     return config, params
-
 
 
 # --------------------------------- #
