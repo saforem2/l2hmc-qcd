@@ -45,7 +45,7 @@ from models.model import GaugeModel
 from loggers.run_logger import RunLogger
 from plotters.gauge_model_plotter import GaugeModelPlotter
 from plotters.leapfrog_plotters import LeapfrogPlotter
-from runners.gauge_model_runner import GaugeModelRunner
+from runners.runner import GaugeModelRunner
 
 try:
     import horovod.tensorflow as hvd
