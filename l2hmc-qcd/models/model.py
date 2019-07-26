@@ -521,10 +521,10 @@ class GaugeModel:
                                                                train_phase,
                                                                self.save_lf)
             x_proposed = x_dynamics_output['x_proposed']
-            x_proposed = tf.mod(x_dynamics_output['x_proposed'], 2 * np.pi)
+            #  x_proposed = tf.mod(x_dynamics_output['x_proposed'], 2 * np.pi)
             px = x_dynamics_output['accept_prob']
             x_out = x_dynamics_output['x_out']
-            x_out = tf.mod(x_dynamics_output['x_out'], 2 * np.pi)
+            #  x_out = tf.mod(x_dynamics_output['x_out'], 2 * np.pi)
 
         # Auxiliary variable
         with tf.name_scope('z_update'):
@@ -533,7 +533,7 @@ class GaugeModel:
                                                                net_weights,
                                                                train_phase,
                                                                save_lf=False)
-            z_proposed = tf.mod(z_dynamics_output['x_proposed'], 2 * np.pi)
+            z_proposed = z_dynamics_output['x_proposed']
             pz = z_dynamics_output['accept_prob']
             #  z_proposed, _, pz, _ = self.dynamics(z, beta)
 
