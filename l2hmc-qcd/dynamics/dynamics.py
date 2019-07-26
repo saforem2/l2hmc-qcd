@@ -284,8 +284,8 @@ class GaugeDynamics(tf.keras.Model):
                                          dynamic_size=True, name='logdets_out',
                                          clear_after_read=False)
 
-            lf_out = lf_out.write(0., x_in)
-            logdets_out = logdets_out.write(0., logdet)
+            lf_out = lf_out.write(0, x_in)
+            logdets_out = logdets_out.write(0, logdet)
 
         def body(step, x, v, logdet, lf_samples, logdets):
             # cast leapfrog step to integer
