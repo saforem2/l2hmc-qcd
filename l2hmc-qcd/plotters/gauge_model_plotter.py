@@ -265,9 +265,10 @@ def plot_with_inset(data, labels=None, **kwargs):
 
 
 class GaugeModelPlotter:
-    def __init__(self, model, figs_dir=None, experiment=None):
+    def __init__(self, params, figs_dir=None, experiment=None):
         self.figs_dir = figs_dir
-        self.model = model
+        self.params = params
+        #  self.model = model
         if experiment is not None:
             self.experiment = experiment
 
@@ -365,9 +366,12 @@ class GaugeModelPlotter:
         self.out_dir = os.path.join(self.figs_dir, run_str)
         io.check_else_make_dir(self.out_dir)
 
-        L = self.model.space_size
-        lf_steps = self.model.num_steps
-        bs = self.model.num_samples
+        #  L = self.model.space_size
+        #  lf_steps = self.model.num_steps
+        #  bs = self.model.num_samples
+        L = self.params['space_size']
+        lf_steps = self.params['num_steps']
+        bs = self.params['num_samples']
         qw = weights['charge_weight']
 
         title_str = (r"$L = $" + f"{L}, "

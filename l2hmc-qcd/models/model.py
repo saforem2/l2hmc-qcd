@@ -73,7 +73,7 @@ class GaugeModel:
         self.charge_weight = inputs['charge_weight']
         self.net_weights = inputs['net_weights']
         self.train_phase = inputs['train_phase']
-        self.train_bool = inputs['train_bool']
+        #  self.train_bool = inputs['train_bool']
 
         # -------------------------------------------------------
         # Create dynamics engine
@@ -197,7 +197,6 @@ class GaugeModel:
                 ]
 
                 train_phase = tf.placeholder(tf.bool, name='is_training')
-                train_bool = True
 
             else:
                 x = tf.convert_to_tensor(
@@ -208,17 +207,32 @@ class GaugeModel:
                 charge_weight = tf.convert_to_tensor(0.)
                 net_weights = tf.convert_to_tensor([1., 1., 1.])
                 train_phase = True
-                train_bool = True
 
-        outputs = {
-            'x': x,
-            'beta': beta,
-            'charge_weight': charge_weight,
-            'net_weights': net_weights,
-            'train_phase': train_phase,
-            'train_bool': train_bool
+        names = ['x', 'beta', 'charge_weight', 'train_phase', 'net_weights']
+        tensors = [x, beta, charge_weight, train_phase, net_weights]
+        outputs = dict(zip(names, tensors))
 
-        }
+        #  outputs = {
+        #      'x': x,
+        #      'beta': beta,
+        #      'charge_weight': charge_weight,
+        #      'train_phase': train_phase,
+        #      'net_weights': net_weights,
+        #  }
+
+        #  for tensor in tensors:
+        #      if not isinstance(tensor, list):
+        #          tf.add_to_collection('inputs', tensor)
+
+        for name, tensor in outputs.items():
+            if name != 'net_weights':
+                tf.add_to_collection('inputs', tensor)
+            else:
+                [tf.add_to_collection('inputs', t) for t in tensor]
+                #  for ph in tensor:
+                #      tf.add_to_collection('inputs', ph)
+
+        #  [tf.add_to_collection('inputs', t) for t in list(outputs.values())]
 
         return outputs
 
@@ -655,6 +669,58 @@ class GaugeModel:
             return control_flow_ops(train_op, *update_ops)
         return train_op
 
+    def group_ops(self):
+        """Build `self.ops_dict` containing grouped operations."""
+        train_ops = {
+            'train_op': self.train_op,
+            'loss_op': self.loss_op,
+            'x_out': self.x_out,
+            'px': self.px,
+            'dynamics.eps': self.dynamics.eps,
+            'actions_op': self.actions_op,
+            'plaqs_op': self.plaqs_op,
+            'charges_op': self.charges_op,
+            'charge_diffs_op': self.charge_diffs_op,
+            'lr': self.lr
+        }
+
+        run_ops = {
+            'x_out': self.x_out,
+            'px': self.px,
+            'actions_op': self.actions_op,
+            'plaqs_op': self.plaqs_op,
+            'avg_plaqs_op': self.avg_plaqs_op,
+            'charges_op': self.charges_op,
+            'charge_diffs_op': self.charge_diffs_op,
+        }
+
+        if self.save_lf:
+            run_ops.update({
+                'lf_out_f': self.lf_out_f,
+                'pxs_out_f': self.pxs_out_f,
+                'masks_f': self.masks_f,
+                'logdets_f': self.logdets_f,
+                'sumlogdet_f': self.sumlogdet_f,
+                'lf_out_b': self.lf_out_b,
+                'pxs_out_b': self.pxs_out_b,
+                'masks_b': self.masks_b,
+                'logdets_b': self.logdets_b,
+                'sumlogdet_b': self.sumlogdet_b
+            })
+
+        run_ops['dynamics_eps'] = self.dynamics.eps
+
+        self.ops_dict = {
+            'train_ops': train_ops,
+            'run_ops': run_ops,
+        }
+
+        for key, val in self.ops_dict.items():
+            [tf.add_to_collection(key, op) for op in list(val.values())]
+
+        #  tf.add_to_collection('dynamics_x_fn', self.dynamics.x_fn)
+        #  tf.add_to_collection('dynamics_v_fn', self.dynamics.v_fn)
+
     def build(self):
         """Build Tensorflow graph."""
         with tf.name_scope('l2hmc'):
@@ -674,16 +740,6 @@ class GaugeModel:
             self.px = dynamics_output['accept_prob']
             self.charge_diffs_op = tf.reduce_sum(x_dq) / self.num_samples
 
-            def _add_to_collection(collection, op):
-                return tf.add_to_collection(collection, op)
-
-            self.ops_dict = {
-                'train_ops': [self.loss_op],
-                'run_ops': [self.x_out, self.dynamics.eps],
-                'observable_ops': [self.actions_op, self.plaqs_op,
-                                   self.charges_op, self.charge_diffs_op],
-            }
-
             if self.save_lf:
                 op_keys = ['masks_f', 'masks_b',
                            'lf_out_f', 'lf_out_b',
@@ -693,14 +749,9 @@ class GaugeModel:
                 for key in op_keys:
                     try:
                         op = dynamics_output[key]
-                        self.ops_dict['run_ops'].append(op)
                         setattr(self, key, op)
                     except KeyError:
                         continue
-
-            for collection, ops in self.ops_dict.items():
-                for op in ops:
-                    _add_to_collection(collection, op)
 
         with tf.name_scope('train'):
             # ----------------------------------------------------------
@@ -737,17 +788,5 @@ class GaugeModel:
             #  self.train_op = tf.group(minimize_op, self.dynamics.updates)
             #  try:
             #      self.train_op = self._append_update_ops(train_op)
-            #  except TypeError:
-            #      import pdb
-            #      pdb.set_trace()
 
-            #  self.ops_dict['train_ops'].append(self.train_op)
-            #  self.ops_dict['train_ops'].append(self.grads)
-            #  self.ops_dict['train_ops'].append(self.lr)
-            #  for key, val in self.ops_dict.items():
-            #      if len(val) > 1:
-            #          for v in val:
-            #              tf.add_to_collection(key, v)
-            #      else:
-            #          tf.add_to_collection(key, val)
-
+        self.group_ops()

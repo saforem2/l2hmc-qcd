@@ -31,7 +31,7 @@ from variables import RUN_HEADER
 
 class GaugeModelRunner:
 
-    def __init__(self, sess, model, logger=None):
+    def __init__(self, sess, params, inputs, run_ops, logger=None):
         """
         Args:
             sess: tf.Session() object.
@@ -42,9 +42,54 @@ class GaugeModelRunner:
                 hvd.rank() == 0, which is responsible for all file I/O.
         """
         self.sess = sess
-        self.model = model
+        self.params = params
         self.logger = logger
-        self.eps = self.sess.run(self.model.dynamics.eps)
+        self.run_ops_dict = self.build_run_ops_dict(params, run_ops)
+        self.inputs_dict = self.build_inputs_dict(inputs)
+        self.eps = self.sess.run(self.run_ops_dict['dynamics_eps'])
+        #  self.eps = self.sess.run(self.model.dynamics.eps)
+
+    def build_run_ops_dict(self, params, run_ops):
+        """Build dictionary of tensorflow operations used for inference."""
+        run_ops_dict = {
+            'x_out': run_ops[0],
+            'px': run_ops[1],
+            'actions_op': run_ops[2],
+            'plaqs_op': run_ops[3],
+            'avg_plaqs_op': run_ops[4],
+            'charges_op': run_ops[5],
+            'charge_diffs_op': run_ops[6]
+        }
+
+        if params['save_lf']:
+            run_ops_dict.update({
+                'lf_out_f': run_ops[7],
+                'pxs_out_f': run_ops[8],
+                'masks_f': run_ops[9],
+                'logdets_f': run_ops[10],
+                'sumlogdet_f': run_ops[11],
+                'lf_out_b': run_ops[12],
+                'pxs_out_b': run_ops[13],
+                'masks_b': run_ops[14],
+                'logdets_b': run_ops[15],
+                'sumlogdet_b': run_ops[16],
+            })
+
+        run_ops_dict['dynamics_eps'] = run_ops[-1]
+
+        return run_ops_dict
+
+    def build_inputs_dict(self, inputs):
+        """Build dictionary of tensorflow placeholders used as inputs."""
+        inputs_dict = {
+            'x': inputs[0],
+            'beta': inputs[1],
+            'charge_weight': inputs[2],
+            'train_phase': inputs[3],
+            'net_weights': [inputs[4], inputs[5], inputs[6]]
+        }
+
+        return inputs_dict
 
     def calc_charge_autocorrelation(self, charges):
         autocorr = np.correlate(charges, charges, mode='full')
@@ -65,7 +110,9 @@ class GaugeModelRunner:
         io.check_else_make_dir(run_dir)
         io.check_else_make_dir(observables_dir)
 
-        if self.model.save_samples:
+        save_samples = self.params.get('save_samples', False)
+        #  if self.model.save_samples:
+        if save_samples:
             samples_file = os.path.join(run_dir, 'run_samples.pkl')
             io.log(f"Saving samples to: {samples_file}.")
             with open(samples_file, 'wb') as f:
@@ -116,36 +163,54 @@ class GaugeModelRunner:
         """
         samples_in, beta_np, eps, plaq_exact = inputs
 
+        #  ops = [
+        #      self.model.x_out,
+        #      self.model.px,
+        #      self.model.actions_op,
+        #      self.model.plaqs_op,
+        #      self.model.charges_op,
+        #      self.model.charge_diffs_op,
+        #  ]
         ops = [
-            self.model.x_out,
-            self.model.px,
-            self.model.actions_op,
-            self.model.plaqs_op,
-            self.model.charges_op,
-            self.model.charge_diffs_op,
+            self.run_ops_dict['x_out'],
+            self.run_ops_dict['px'],
+            self.run_ops_dict['actions_op'],
+            self.run_ops_dict['plaqs_op'],
+            self.run_ops_dict['charges_op'],
+            self.run_ops_dict['charge_diffs_op']
         ]
 
-        if self.model.save_lf:
+        #  if self.model.save_lf:
+        if self.params['save_lf']:
             ops.extend([
-                self.model.lf_out_f,
-                self.model.pxs_out_f,
-                self.model.lf_out_b,
-                self.model.pxs_out_b,
-                self.model.masks_f,
-                self.model.masks_b,
-                self.model.logdets_f,
-                self.model.logdets_b,
-                self.model.sumlogdet_f,
-                self.model.sumlogdet_b
+                self.run_ops_dict['lf_out_f'],
+                self.run_ops_dict['pxs_out_f'],
+                self.run_ops_dict['lf_out_b'],
+                self.run_ops_dict['pxs_out_b'],
+                self.run_ops_dict['masks_f'],
+                self.run_ops_dict['masks_b'],
+                self.run_ops_dict['logdets_f'],
+                self.run_ops_dict['logdets_b'],
+                self.run_ops_dict['sumlogdet_f'],
+                self.run_ops_dict['sumlogdet_b']
             ])
 
+        #  feed_dict = {
+        #      self.model.x: samples_in,
+        #      self.model.beta: beta_np,
+        #      self.model.net_weights[0]: net_weights[0],
+        #      self.model.net_weights[1]: net_weights[1],
+        #      self.model.net_weights[2]: net_weights[2],
+        #      self.model.train_phase: False
+        #  }
+
         feed_dict = {
-            self.model.x: samples_in,
-            self.model.beta: beta_np,
-            self.model.net_weights[0]: net_weights[0],
-            self.model.net_weights[1]: net_weights[1],
-            self.model.net_weights[2]: net_weights[2],
-            self.model.train_phase: False
+            self.inputs_dict['x']: samples_in,
+            self.inputs_dict['beta']: beta_np,
+            self.inputs_dict['net_weights'][0]: net_weights[0],
+            self.inputs_dict['net_weights'][1]: net_weights[1],
+            self.inputs_dict['net_weights'][2]: net_weights[2],
+            self.inputs_dict['train_phase']: False
         }
 
         start_time = time.time()
@@ -162,7 +227,8 @@ class GaugeModelRunner:
             'charges': outputs[4],
             'charge_diffs': outputs[5],
         }
-        if self.model.save_lf:
+        #  if self.model.save_lf:
+        if self.params['save_lf']:
             lf_outputs = {
                 'lf_out_f': outputs[6],
                 'pxs_out_f': outputs[7],
@@ -189,7 +255,7 @@ class GaugeModelRunner:
 
         return out_data, data_str
 
-    def run(self, run_steps, beta=None, net_weights=None, therm_frac=10):
+    def run(self, run_steps, **kwargs):
         """Run the simulation to generate samples and calculate observables.
 
         Args:
@@ -208,8 +274,13 @@ class GaugeModelRunner:
         """
         run_steps = int(run_steps)
 
+        beta = kwargs.get('beta_final', self.params.get('beta_final', 5))
+        net_weights = kwargs.get('net_weights', [1., 1., 1.])
+        therm_frac = kwargs.get('therm_frac', 10)
+
         if beta is None:
-            beta = self.model.beta_final
+            beta = self.params['beta_final']
+            #  beta = self.model.beta_final
 
         if net_weights is None:
             # scale_weight, transformation_weight, translation_weight
@@ -218,8 +289,13 @@ class GaugeModelRunner:
         plaq_exact = u1_plaq_exact(beta)
 
         # start with randomly generated samples
-        samples_np = np.random.randn(*(self.model.batch_size,
-                                       self.model.x_dim))
+        #  samples_np = np.random.randn(*(self.model.batch_size,
+        #                                 self.model.x_dim))
+        x_dim = (self.params['space_size']
+                 * self.params['time_size']
+                 * self.params['dim'])
+
+        samples_np = np.random.randn(*(self.params['num_samples'], x_dim))
 
         try:
             io.log(RUN_HEADER)
@@ -339,7 +415,8 @@ class GaugeModelRunner:
         #  q2_avg = np.mean(charges_squared_arr)
         #  q2_err = sem(charges_squared_arr, axis=None)
 
-        ns = self.model.num_samples
+        ns = self.params['num_samples']
+        #  ns = self.model.num_samples
         suscept_k1 = f'  \navg. over all {ns} samples < Q >'
         suscept_k2 = f'  \navg. over all {ns} samples < Q^2 >'
         actions_k1 = f'  \navg. over all {ns} samples < action >'

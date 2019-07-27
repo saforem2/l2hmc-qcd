@@ -37,19 +37,20 @@ def autocorr(x):
 
 
 class RunLogger:
-    def __init__(self, model, log_dir, save_lf_data=False):
+    def __init__(self, params, inputs, run_ops, save_lf_data=False):
         """
         Args:
             model: GaugeModel object.
             log_dir: Existing logdir from `TrainLogger`.
         """
-        self.model = model
+        #  self.model = model
+        self.params = params
         self.save_lf_data = save_lf_data
-        self.summaries = model.summaries
+        self.summaries = params['summaries']
+        #  self.summaries = model.summaries
+        assert os.path.isdir(params['log_dir'])
 
-        assert os.path.isdir(log_dir)
-
-        self.log_dir = log_dir
+        self.log_dir = params['log_dir']
 
         runs_dir = os.path.join(self.log_dir, 'runs')
         figs_dir = os.path.join(self.log_dir, 'figures')
@@ -78,7 +79,8 @@ class RunLogger:
         self.run_data = {}
         self.run_stats = {}
         self.run_strings = [RUN_HEADER]
-        if self.model.save_lf:
+        #  if self.model.save_lf:
+        if params['save_lf']:
             self.samples_arr = []
             self.lf_out = {
                 'forward': [],
@@ -101,15 +103,57 @@ class RunLogger:
                 'backward': [],
             }
 
+        self.run_ops_dict = self.build_run_ops_dict(params, run_ops)
+        self.inputs_dict = self.build_inputs_dict(inputs)
+
         if self.summaries:
             self.run_summaries_dir = os.path.join(self.log_dir,
                                                   'summaries', 'run')
-                                                #  f'run_{self._reset_counter}')
             io.check_else_make_dir(self.run_summaries_dir)
 
             self.writer = tf.summary.FileWriter(self.run_summaries_dir,
                                                 tf.get_default_graph())
             self.create_summaries()
+
+    def build_run_ops_dict(self, params, run_ops):
+        """Build dictionary of tensorflow operations used for inference."""
+        run_ops_dict = {
+            'x_out': run_ops[0],
+            'px': run_ops[1],
+            'actions_op': run_ops[2],
+            'plaqs_op': run_ops[3],
+            'avg_plaqs_op': run_ops[4],
+            'charges_op': run_ops[5],
+            'charge_diffs_op': run_ops[6]
+        }
+
+        if params['save_lf']:
+            run_ops_dict.update({
+                'lf_out_f': run_ops[7],
+                'pxs_out_f': run_ops[8],
+                'masks_f': run_ops[9],
+                'logdets_f': run_ops[10],
+                'sumlogdet_f': run_ops[11],
+                'lf_out_b': run_ops[12],
+                'pxs_out_b': run_ops[13],
+                'masks_b': run_ops[14],
+                'logdets_b': run_ops[15],
+                'sumlogdet_b': run_ops[16],
+            })
+
+        return run_ops_dict
+
+    def build_inputs_dict(self, inputs):
+        """Build dictionary of tensorflow placeholders used as inputs."""
+        inputs_dict = {
+            'x': inputs[0],
+            'beta': inputs[1],
+            'charge_weight': inputs[2],
+            'train_phase': inputs[3],
+            'net_weights': [inputs[4], inputs[5], inputs[6]]
+        }
+
+        return inputs_dict
 
     def create_summaries(self):
         """Create summary objects for logging in TensorBoard."""
@@ -124,19 +168,27 @@ class RunLogger:
 
         with tf.name_scope('avg_actions_inference'):
             tf.summary.scalar('avg_actions',
-                              tf.reduce_mean(self.model.actions_op))
+                              tf.reduce_mean(self.run_ops_dict['actions_op']))
+            #  tf.reduce_mean(self.model.actions_op))
 
         with tf.name_scope('avg_plaqs_inference'):
-            tf.summary.scalar('avg_plaqs', self.model.avg_plaqs_op)
+            #  tf.summary.scalar('avg_plaqs', self.model.avg_plaqs_op)
+            tf.summary.scalar('avg_plaqs', self.run_ops_dict['avg_plaqs_op'])
 
         with tf.name_scope('avg_plaq_diff_inference'):
             tf.summary.scalar('avg_plaq_diff',
-                              (u1_plaq_exact_tf(self.model.beta)
-                               - self.model.avg_plaqs_op))
+                              (u1_plaq_exact_tf(self.inputs_dict['beta'])
+                               - self.run_ops_dict['avg_plaqs_op']))
+            #  (u1_plaq_exact_tf(self.model.beta)
+            #   - self.model.avg_plaqs_op))
 
         with tf.name_scope('avg_charge_diffs_inference'):
             tf.summary.scalar('avg_charge_diffs',
-                              tf.reduce_mean(self.model.charge_diffs_op))
+                              tf.reduce_mean(
+                                  self.run_ops_dict['charge_diffs_op']
+                              ))
+            #  tf.summary.scalar('avg_charge_diffs',
+            #                    tf.reduce_mean(self.model.charge_diffs_op))
 
             #  tf.summary.scalar('actions', self.model.actions_op)
             #  tf.summary.scalar('plaqs', self.model.plaqs_op)
@@ -148,19 +200,27 @@ class RunLogger:
     def log_step(self, sess, step, samples_np, beta_np, net_weights):
         """Update self.logger.summaries."""
         feed_dict = {
-            self.model.x: samples_np,
-            self.model.beta: beta_np,
-            self.model.net_weights[0]: net_weights[0],
-            self.model.net_weights[1]: net_weights[1],
-            self.model.net_weights[2]: net_weights[2],
-            self.model.train_phase: False
+            self.inputs_dict['x']: samples_np,
+            self.inputs_dict['beta']: beta_np,
+            self.inputs_dict['net_weights'][0]: net_weights[0],
+            self.inputs_dict['net_weights'][1]: net_weights[1],
+            self.inputs_dict['net_weights'][2]: net_weights[2],
+            self.inputs_dict['train_phase']: False
         }
+        #  feed_dict = {
+        #      self.model.x: samples_np,
+        #      self.model.beta: beta_np,
+        #      self.model.net_weights[0]: net_weights[0],
+        #      self.model.net_weights[1]: net_weights[1],
+        #      self.model.net_weights[2]: net_weights[2],
+        #      self.model.train_phase: False
+        #  }
         summary_str = sess.run(self.summary_op, feed_dict=feed_dict)
 
         self.writer.add_summary(summary_str, global_step=step)
         self.writer.flush()
 
-    def reset(self, run_steps, beta, weights, dir_append=None):
+    def reset(self, run_steps, beta, weights, eps_np, dir_append=None):
         """Reset run_data and run_strings to prep for new run."""
         self.run_steps = int(run_steps)
         self.beta = beta
@@ -174,7 +234,8 @@ class RunLogger:
         }
         self.run_stats = {}
         self.run_strings = []
-        if self.model.save_lf:
+        #  if self.model.save_lf:
+        if self.params['save_lf']:
             self.samples_arr = []
             self.lf_out = {
                 'forward': [],
@@ -197,7 +258,7 @@ class RunLogger:
                 'backward': [],
             }
 
-        eps = self.model.eps
+        #  eps = self.model.eps
         charge_weight = weights['charge_weight']
         net_weights = weights['net_weights']
 
@@ -207,7 +268,7 @@ class RunLogger:
         if net_weights is None:
             net_weights = [1., 1., 1.]
 
-        eps_str = f'{eps:.3}'.replace('.', '')
+        eps_str = f'{eps_np:.3}'.replace('.', '')
         beta_str = f'{beta:.3}'.replace('.', '')
         qw_str = f'{charge_weight:.3}'.replace('.', '')
 
@@ -222,8 +283,8 @@ class RunLogger:
         if dir_append:
             run_str += dir_append
 
-        params = self.model.params
-        params['net_weights'] = net_weights
+        #  params = self.model.params
+        self.params['net_weights'] = net_weights
 
         self.run_dir = os.path.join(self.runs_dir, run_str)
         io.check_else_make_dir(self.run_dir)
@@ -235,7 +296,7 @@ class RunLogger:
 
             self.writer = tf.summary.FileWriter(self.run_summary_dir,
                                                 tf.get_default_graph())
-        save_params(params, self.run_dir)
+        save_params(self.params, self.run_dir)
 
         self._reset_counter += 1
 
@@ -266,7 +327,8 @@ class RunLogger:
         self.run_data['charges'][key] = data['charges']
         self.run_data['charge_diffs'][key] = data['charge_diffs']
 
-        if self.model.save_lf:
+        #  if self.model.save_lf:
+        if self.params['save_lf']:
             samples_np = data['samples']
             self.samples_arr.append(samples_np)
             self.lf_out['forward'].extend(np.array(data['lf_out_f']))
@@ -282,10 +344,12 @@ class RunLogger:
 
         self.run_strings.append(data_str)
 
-        if self.summaries and (step + 1) % self.model.logging_steps == 0:
+        #  if self.summaries and (step + 1) % self.model.logging_steps == 0:
+        if self.summaries and (step + 1) % self.params['logging_steps'] == 0:
             self.log_step(sess, step, data['samples'], beta, net_weights)
 
-        if step % (10 * self.model.print_steps) == 0:
+        #  if step % (10 * self.model.print_steps) == 0:
+        if step % (10 * self.params['print_steps']) == 0:
             io.log(data_str)
 
         if step % 100 == 0:
@@ -437,7 +501,8 @@ class RunLogger:
         charges_avg, charges_err = stats['charges'].mean(axis=0)
         suscept_avg, suscept_err = stats['suscept'].mean(axis=0)
 
-        ns = self.model.num_samples
+        #  ns = self.model.num_samples
+        ns = self.params['num_samples']
         suscept_k1 = f'  \navg. over all {ns} samples < Q >'
         suscept_k2 = f'  \navg. over all {ns} samples < Q^2 >'
         actions_k1 = f'  \navg. over all {ns} samples < action >'
