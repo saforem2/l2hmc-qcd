@@ -263,10 +263,6 @@ def run_inference(run_dict,
                 SEP_STR + f'Took: {run_time} s to complete run.\n' + SEP_STR
             )
 
-            # --------------------
-            #  Plot observables
-            # --------------------
-            #  if plotter is not None and run_logger is not None:
             plotter.plot_observables(
                 run_logger.run_data, beta, run_str, weights, dir_append
             )
@@ -280,8 +276,9 @@ def main_inference(kwargs):
     """Perform inference using saved model."""
     params = load_params()  # load parameters used during training
 
-    # We want to restrict all communication (file I/O) to only be performed on
-    # rank 0 (i.e. `is_chief`) so there are two cases:
+    # -----------------------------------------------------------------------
+    # (NOTE) We want to restrict all communication (file I/O) to only be
+    # performed on rank 0 (i.e. `is_chief`) so there are two cases:
     #    1. We're using Horovod, so we have to check hvd.rank() explicitly.
     #    2. We're not using Horovod, in which case `is_chief` is always True.
     condition1 = not params['using_hvd']
@@ -289,6 +286,7 @@ def main_inference(kwargs):
     is_chief = condition1 or condition2
     if not is_chief:
         return
+    # -----------------------------------------------------------------------
 
     #  if is_chief:
     checkpoint_dir = os.path.join(params['log_dir'], 'checkpoints/')
