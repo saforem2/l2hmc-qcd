@@ -346,6 +346,7 @@ def parse_args():
     parser.add_argument('--loop_net_weights',
                         dest='loop_net_weights',
                         action='store_true',
+                        required=False,
                         help=("""Flag that when passed sets
                               `--loop_net_weights=True`, and will iterate over
                               multiple values of `net_weights`, which are
