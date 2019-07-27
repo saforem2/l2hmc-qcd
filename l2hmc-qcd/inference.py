@@ -233,6 +233,7 @@ def run_inference(run_dict,
     charge_weight = run_dict['charge_weight']
     run_steps = run_dict['run_steps']
     plot_lf = run_dict['plot_lf']
+    num_samples = runner.params['num_samples']
 
     for net_weights in net_weights_arr:
         weights = {
@@ -244,10 +245,16 @@ def run_inference(run_dict,
             run_dir, run_str = run_logger.reset(run_steps,
                                                 beta,
                                                 weights,
+                                                runner.eps,
                                                 dir_append)
 
             t0 = time.time()
-            runner.run(run_steps, beta, weights['net_weights'], therm_frac=10)
+            run_kwargs = {
+                'beta': beta,
+                'net_weights': weights['net_weights'],
+                'therm_frac': 10
+            }
+            runner.run(run_steps, **run_kwargs)
             io.log(SEP_STR)
 
             # log the total time spent running inference
@@ -265,7 +272,7 @@ def run_inference(run_dict,
             )
             if plot_lf:
                 lf_plotter = LeapfrogPlotter(plotter.out_dir, run_logger)
-                num_samples = min((runner.model.num_samples, 20))
+                num_samples = min((num_samples, 20))
                 lf_plotter.make_plots(run_dir, num_samples=num_samples)
 
 
@@ -283,38 +290,44 @@ def main_inference(kwargs):
     if not is_chief:
         return
 
-    if is_chief:
-        checkpoint_dir = os.path.join(params['log_dir'], 'checkpoints/')
-        assert os.path.isdir(checkpoint_dir)
-    else:
-        params['log_dir'] = None
-        checkpoint_dir = None
+    #  if is_chief:
+    checkpoint_dir = os.path.join(params['log_dir'], 'checkpoints/')
+    assert os.path.isdir(checkpoint_dir)
+    checkpoint_file = tf.train.latest_checkpoint(checkpoint_dir)
+    #  else:
+    #      params['log_dir'] = None
+    #      checkpoint_dir = None
 
     config, params = create_config(params)
-    model = GaugeModel(params=params)
+    #  model = GaugeModel(params=params)
 
     # ---------------------------------------------------------
     # INFERENCE
     # ---------------------------------------------------------
     sess = tf.Session(config=config)
-    if is_chief:
-        saver = tf.train.Saver()
-        saver.restore(sess, tf.train.latest_checkpoint(checkpoint_dir))
-        run_logger = RunLogger(model, params['log_dir'], save_lf_data=False)
-        plotter = GaugeModelPlotter(model, run_logger.figs_dir)
-    else:
-        run_logger = None
-        plotter = None
+    #  if is_chief:
+    #  saver = tf.train.Saver()
+    #  saver.restore(sess, tf.train.latest_checkpoint(checkpoint_dir))
+    saver = tf.train.import_meta_graph(f'{checkpoint_file}.meta')
+    saver.restore(sess, checkpoint_file)
+    run_ops = tf.get_collection('run_ops')
+    inputs = tf.get_collection('inputs')
+    run_logger = RunLogger(params, inputs, run_ops, save_lf_data=False)
+    plotter = GaugeModelPlotter(params, run_logger.figs_dir)
+    #  else:
+    #      run_logger = None
+    #      plotter = None
 
     # -------------------------------------------------------------------
     #  Set up relevant values to use for inference (parsed from kwargs)
     # -------------------------------------------------------------------
-    inference_dict = inference_setup(kwargs)
+    params.update(kwargs.items())
+    inference_dict = inference_setup(params)
 
     # --------------------------------------
     # Create GaugeModelRunner for inference
     # --------------------------------------
-    runner = GaugeModelRunner(sess, model, run_logger)
+    runner = GaugeModelRunner(sess, params, inputs, run_ops, run_logger)
     run_inference(inference_dict, runner, run_logger, plotter)
 
     # set 'net_weights_arr' = [1., 1., 1.] so each Q, S, T contribute
