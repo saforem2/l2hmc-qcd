@@ -457,10 +457,10 @@ class GaugeModel:
                     z_dq_fft = self.lattice.calc_top_charges_diff(z_init,
                                                                   z_proposed,
                                                                   fft=True)
-                    zq_loss = aux_weight * pz * z_dq_fft
-
                 else:
                     z_dq_fft = tf.zeros_like(x_dq_fft)
+
+                zq_loss = aux_weight * pz * z_dq_fft
 
                 tf.add_to_collection('losses', zq_loss)
 
