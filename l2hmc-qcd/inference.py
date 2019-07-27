@@ -318,11 +318,13 @@ def main_inference(kwargs):
     #      run_logger = None
     #      plotter = None
 
-    # -------------------------------------------------------------------
+    # ------------------------------------------------------------------------
     #  Set up relevant values to use for inference (parsed from kwargs)
-    # -------------------------------------------------------------------
-    params.update(kwargs.items())
-    inference_dict = inference_setup(params)
+    #
+    #  NOTE: We are only interested in the command line arguments that 
+    #        were passed to `inference.py` (i.e. those contained in kwargs)
+    # ------------------------------------------------------------------------
+    inference_dict = inference_setup(kwargs)
 
     # --------------------------------------
     # Create GaugeModelRunner for inference
