@@ -188,8 +188,12 @@ def train_setup(FLAGS, log_file=None):
     # Parse command line arguments and set parameters for correct values.
     # ---------------------------------------------------------------------
     params = {}
-    for key, val in FLAGS.__dict__.items():
-        params[key] = val
+    try:
+        for key, val in FLAGS.__dict__.items():
+            params[key] = val
+    except AttributeError:
+        for key, val in FLAGS.items():
+            params[key] = val
 
     params['log_dir'] = io.create_log_dir(FLAGS, log_file=log_file)
 
