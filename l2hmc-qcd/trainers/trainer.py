@@ -40,16 +40,20 @@ class GaugeModelTrainer:
         self.model = model
         self.logger = logger
 
-    def update_beta(self, step):
+    def update_beta(self, step, **kwargs):
         """Returns new beta to follow annealing schedule."""
-        temp = ((1. / self.model.beta_init - 1. / self.model.beta_final)
-                * (1. - step / float(self.model.train_steps))
-                + 1. / self.model.beta_final)
+        beta_init = kwargs.get('beta_init', self.model.beta_init)
+        beta_final = kwargs.get('beta_final', self.model.beta_final)
+        train_steps = kwargs.get('train_steps', self.model.train_steps)
+
+        temp = ((1. / beta_init - 1. / beta_final)
+                * (1. - step / float(train_steps))
+                + 1. / beta_final)
         new_beta = 1. / temp
 
         return new_beta
 
-    def train_step(self, step, samples_np, beta_np=None, net_weights=None):
+    def train_step(self, step, samples_np, **kwargs):
         """Perform a single training step.
 
         Args:
@@ -61,17 +65,17 @@ class GaugeModelTrainer:
         Returns:
             out_data (dict)
         """
-        start_time = time.time()
+        beta_np = kwargs.get('beta_np', None)
+
+        # net_weights: [scale_w, transformation_w, translation_w]
+        net_weights = kwargs.get('net_weights', [1., 1., 1.])
+        train_steps = kwargs.get('train_steps', self.model.train_steps)
 
         if beta_np is None:
             if self.model.fixed_beta:
                 beta_np = self.model.beta_init
             else:
-                beta_np = self.update_beta(step)
-
-        if net_weights is None:
-            # scale_weight, transformation_weight, translation_weight
-            net_weights = [1., 1., 1.]
+                beta_np = self.update_beta(step, train_steps=train_steps)
 
         feed_dict = {
             self.model.x: samples_np,
@@ -97,9 +101,10 @@ class GaugeModelTrainer:
             self.model.lr,               # evaluate learning rate
         ]
 
+        start_time = time.time()
         outputs = self.sess.run(ops, feed_dict=feed_dict)
-
         dt = time.time() - start_time
+
         out_data = {
             'step': global_step,
             'loss': outputs[1],
@@ -115,7 +120,7 @@ class GaugeModelTrainer:
         }
 
         data_str = (
-            f"{global_step:>5g}/{self.model.train_steps:<6g} "
+            f"{global_step:>5g}/{train_steps:<6g} "
             f"{outputs[1]:^9.4g} "              # loss value
             f"{dt:^9.4g} "                      # time / step
             f"{np.mean(outputs[3]):^9.4g}"      # accept prob
@@ -146,7 +151,7 @@ class GaugeModelTrainer:
         initial_step = kwargs.get('initial_step', 0)
         samples_np = kwargs.get('samples_np', None)
         beta_np = kwargs.get('beta_np', None)
-        net_weights = kwargs.get('net_weights', None)
+        net_weights = kwargs.get('net_weights', [1., 1., 1.])
 
         if beta_np is None:
             beta_np = self.model.beta_init
@@ -159,15 +164,13 @@ class GaugeModelTrainer:
 
         assert samples_np.shape == self.model.x.shape
 
-        if net_weights is None:
-            net_weights = [1., 1., 1.]
-
         try:
             io.log(TRAIN_HEADER)
             for step in range(initial_step, train_steps):
                 out_data, data_str = self.train_step(step,
                                                      samples_np,
-                                                     net_weights=net_weights)
+                                                     net_weights=net_weights,
+                                                     train_steps=train_steps)
                 samples_np = out_data['samples']
 
                 if self.logger is not None:
