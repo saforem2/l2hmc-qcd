@@ -149,31 +149,6 @@ def set_model_weights(model, dest='rand'):
     return model
 
 
-def run_hmc(params, **kwargs):
-    """Run inference using generic HMC."""
-    # -----------------------------------------------------------
-    #  run HMC following inference if --run_hmc flag was passed
-    # -----------------------------------------------------------
-    #  if params['run_hmc']:
-    #      # Run HMC with the trained step size from L2HMC (not ideal)
-    #      params = model.params
-    #      params['hmc'] = True
-    #      params['log_dir'] = None
-    #      #  params['log_dir'] = FLAGS.log_dir = None
-    #      if train_logger is not None:
-    #          params['eps'] = train_logger._current_state['eps']
-    #      else:
-    #          params['eps'] = params['eps']
-    #
-    #      run_hmc(kwargs, params, log_file)
-    #
-    #      for eps in eps_arr:
-    #          params['log_dir'] = FLAGS.log_dir = None
-    #          params['eps'] = FLAGS.eps = eps
-    #          run_hmc(FLAGS, params, log_file)
-    pass
-
-
 def inference_setup(kwargs):
     """Set up relevant (initial) values to use when running inference."""
     # -------------------------------------------------  
@@ -208,6 +183,57 @@ def inference_setup(kwargs):
     }
 
     return inference_dict
+
+
+def run_hmc(FLAGS, log_file=None):
+    """Run inference using generic HMC."""
+    condition1 = not FLAGS.horovod
+    condition2 = FLAGS.horovod and hvd.rank() == 0
+
+    is_chief = condition1 or condition2
+    if not is_chief:
+        return -1
+
+    FLAGS.hmc = True
+    FLAGS.log_dir = io.create_log_dir(FLAGS, log_file=log_file)
+
+    params = {}
+    for key, val in FLAGS.__dict__.items():
+        params[key] = val
+
+    params['hmc'] = True
+    params['use_bn'] = False
+    params['log_dir'] = FLAGS.log_dir
+
+    figs_dir = os.path.join(params['log_dir'], 'figures')
+    io.check_else_make_dir(figs_dir)
+
+    io.log(80 * '-' + '\n')
+    io.log('HMC PARAMETERS:')
+    for key, val in params.items():
+        io.log(f'  {key}: {val}')
+    io.log(80 * '-' + '\n')
+
+    config, params = create_config(params)
+    tf.reset_default_graph()
+
+    _ = GaugeModel(params=params)
+
+    sess = tf.Session(config=config)
+    sess.run(tf.global_variables_initializer())
+
+    run_ops = tf.get_collection('run_ops')
+    inputs = tf.get_collection('inputs')
+    run_logger = RunLogger(params, inputs, run_ops, save_lf_data=False)
+    plotter = GaugeModelPlotter(params, run_logger.figs_dir)
+
+    inference_dict = inference_setup(params)
+
+    # --------------------------------------
+    # Create GaugeModelRunner for inference
+    # --------------------------------------
+    runner = GaugeModelRunner(sess, params, inputs, run_ops, run_logger)
+    run_inference(inference_dict, runner, run_logger, plotter)
 
 
 def run_inference(run_dict,
@@ -297,7 +323,6 @@ def main_inference(kwargs):
     #      checkpoint_dir = None
 
     config, params = create_config(params)
-    #  model = GaugeModel(params=params)
 
     # ---------------------------------------------------------
     # INFERENCE

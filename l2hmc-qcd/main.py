@@ -442,7 +442,7 @@ def run_l2hmc(params, checkpoint_dir, experiment=None):
     run_logger = RunLogger(model,
                            model.log_dir,
                            save_lf_data=False,
-                           summaries=False)
+                           summaries=True)
 
     plotter = GaugeModelPlotter(model, run_logger.figs_dir,
                                 experiment=experiment)
@@ -542,11 +542,8 @@ def main(FLAGS):
         # --------------------
         #   run generic HMC
         # --------------------
-        import gauge_model_hmc as hmc
-        hmc.run_hmc(FLAGS, log_file)
-        for eps in eps_arr:
-            FLAGS.eps = eps
-            hmc.run_hmc(FLAGS, log_file)
+        import inference as inference
+        inference.run_hmc(FLAGS, log_file=log_file)
     else:
         # ------------------------
         #   train l2hmc sampler

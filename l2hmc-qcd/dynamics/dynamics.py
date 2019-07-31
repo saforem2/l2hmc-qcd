@@ -35,6 +35,9 @@ def flatten_tensor(tensor):
     return tf.reshape(tensor, shape=(batch_size, -1))
 
 
+def hmc_network(inputs, train_phase):
+    return [tf.zeros_like(inputs[0]) for _ in range(3)]
+
 def _add_to_collection(collection, ops):
     if len(ops) > 1:
         [tf.add_to_collection(collection, op) for op in ops]
@@ -103,10 +106,10 @@ class GaugeDynamics(tf.keras.Model):
         self._construct_masks()
 
         if self.hmc:
-            self.x_fn = lambda inp: [
+            self.x_fn = lambda inp, train_phase: [
                 tf.zeros_like(inp[0]) for t in range(3)
             ]
-            self.v_fn = lambda inp: [
+            self.v_fn = lambda inp, train_phase: [
                 tf.zeros_like(inp[0]) for t in range(3)
             ]
 
