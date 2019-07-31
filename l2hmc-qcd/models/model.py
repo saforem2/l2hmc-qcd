@@ -399,11 +399,8 @@ class GaugeModel:
                 tf.add_to_collection('losses', z_std_loss)
 
             with tf.name_scope('tot_loss'):
-                if self.inverse_loss:
-                    loss = (ls * (1. / x_std_loss + 1. / z_std_loss)
-                            - (x_std_loss + z_std_loss) / ls) * std_weight
-                else:
-                    loss = std_weight * (x_std_loss + z_std_loss) / ls
+                loss = (ls * (1. / x_std_loss + 1. / z_std_loss)
+                        - (x_std_loss + z_std_loss) / ls) * std_weight
 
                 std_loss = tf.reduce_mean(loss, axis=0, name='std_loss')
                 tf.add_to_collection('losses', std_loss)

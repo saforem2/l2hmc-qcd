@@ -388,14 +388,6 @@ def parse_args():
                         help=("""Metric to use in loss function. Must be one
                               of: `l1`, `l2`, `cos`, `cos2`, `cos_diff`."""))
 
-    parser.add_argument("--inverse_loss",
-                        dest="inverse_loss",
-                        action="store_true",
-                        required=False,
-                        help=("""Flag that when passed includes the reciprocal
-                              term (1 / metric(x1, x2)) when calculating the
-                              loss usedduring training."""))
-
     parser.add_argument("--nnehmc_loss",
                         dest="nnehmc_loss",
                         action="store_true",
