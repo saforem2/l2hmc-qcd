@@ -163,14 +163,6 @@ class GaugeModelRunner:
         """
         samples_in, beta_np, eps, plaq_exact = inputs
 
-        #  ops = [
-        #      self.model.x_out,
-        #      self.model.px,
-        #      self.model.actions_op,
-        #      self.model.plaqs_op,
-        #      self.model.charges_op,
-        #      self.model.charge_diffs_op,
-        #  ]
         ops = [
             self.run_ops_dict['x_out'],
             self.run_ops_dict['px'],
@@ -180,7 +172,6 @@ class GaugeModelRunner:
             self.run_ops_dict['charge_diffs_op']
         ]
 
-        #  if self.model.save_lf:
         if self.params['save_lf']:
             ops.extend([
                 self.run_ops_dict['lf_out_f'],
@@ -194,15 +185,6 @@ class GaugeModelRunner:
                 self.run_ops_dict['sumlogdet_f'],
                 self.run_ops_dict['sumlogdet_b']
             ])
-
-        #  feed_dict = {
-        #      self.model.x: samples_in,
-        #      self.model.beta: beta_np,
-        #      self.model.net_weights[0]: net_weights[0],
-        #      self.model.net_weights[1]: net_weights[1],
-        #      self.model.net_weights[2]: net_weights[2],
-        #      self.model.train_phase: False
-        #  }
 
         feed_dict = {
             self.inputs_dict['x']: samples_in,
@@ -227,7 +209,7 @@ class GaugeModelRunner:
             'charges': outputs[4],
             'charge_diffs': outputs[5],
         }
-        #  if self.model.save_lf:
+
         if self.params['save_lf']:
             lf_outputs = {
                 'lf_out_f': outputs[6],
@@ -288,13 +270,11 @@ class GaugeModelRunner:
 
         plaq_exact = u1_plaq_exact(beta)
 
-        # start with randomly generated samples
-        #  samples_np = np.random.randn(*(self.model.batch_size,
-        #                                 self.model.x_dim))
         x_dim = (self.params['space_size']
                  * self.params['time_size']
                  * self.params['dim'])
 
+        # start with randomly generated samples
         samples_np = np.random.randn(*(self.params['num_samples'], x_dim))
 
         try:
