@@ -424,8 +424,8 @@ class GaugeDynamics(tf.keras.Model):
             logdet: Jacobian factor
         """
         with tf.name_scope('update_v_forward'):
-            with tf.name_scope('grad_potential'):
-                grad = self.grad_potential(x, beta)
+            #  with tf.name_scope('grad_potential'):
+            grad = self.grad_potential(x, beta)
 
             # Sv: scale, Qv: transformation, Tv: translation
             #  with tf.name_scope('call_vf'):
@@ -433,25 +433,25 @@ class GaugeDynamics(tf.keras.Model):
                                                            train_phase)
 
             #  with tf.name_scope('net_weights_mult'):
-            scale *= net_weights[0]
+            #  scale *= net_weights[0]
+            #  translation *= net_weights[1]
+            #  transformation *= net_weights[2]
+
+            #  with tf.name_scope('scale_exp'):
+            scale *= 0.5 * self.eps * net_weights[0]
+            s_exp = exp(scale, 'vf_scale')
+
             translation *= net_weights[1]
-            transformation *= net_weights[2]
 
-            with tf.name_scope('scale_exp'):
-                scale *= 0.5 * self.eps
-                scale_exp = exp(scale, 'vf_scale')
+            #  with tf.name_scope('transformation_exp'):
+            transformation *= self.eps * net_weights[2]
+            t_exp = exp(transformation, 'vf_transformation')
 
-            with tf.name_scope('transformation_exp'):
-                transformation *= self.eps
-                transformation_exp = exp(transformation, 'vf_transformation')
+            #  with tf.name_scope('v_update'):
+            v = v * s_exp - 0.5 * self.eps * (grad * t_exp - translation)
 
-            with tf.name_scope('v_update'):
-                v = (v * scale_exp
-                     - 0.5 * self.eps * (grad * transformation_exp
-                                         - translation))
-
-            with tf.name_scope('logdet_vf'):
-                logdet = tf.reduce_sum(scale, axis=1, name='logdet_vf')
+            #  with tf.name_scope('logdet_vf'):
+            logdet = tf.reduce_sum(scale, axis=1, name='logdet_vf')
 
         return v, logdet
 
@@ -464,66 +464,60 @@ class GaugeDynamics(tf.keras.Model):
                 [v, mask * x, t], train_phase
             )
 
-            with tf.name_scope('net_weights_mult'):
-                scale *= net_weights[0]
-                translation *= net_weights[1]
-                transformation *= net_weights[2]
+            #  with tf.name_scope('net_weights_mult'):
+            #      scale *= net_weights[0]
+            #      translation *= net_weights[1]
+            #      transformation *= net_weights[2]
 
-            with tf.name_scope('scale_exp'):
-                scale *= self.eps
-                scale_exp = exp(scale, 'xf_scale')
+            #  with tf.name_scope('scale_exp'):
+            scale *= self.eps * net_weights[0]
+            s_exp = exp(scale, 'xf_scale')
 
-            with tf.name_scope('transformation_exp'):
-                transformation *= self.eps
-                transformation_exp = exp(transformation,
-                                         'xf_transformation')
+            translation *= net_weights[1]
 
-            with tf.name_scope('x_update'):
-                x = (mask * x
-                     + mask_inv * (x * scale_exp + self.eps
-                                   * (v * transformation_exp + translation)))
+            #  with tf.name_scope('transformation_exp'):
+            transformation *= self.eps * net_weights[2]
+            t_exp = exp(transformation, 'xf_transformation')
+
+            #  with tf.name_scope('x_update'):
+            x = (mask * x + mask_inv
+                 * (x * s_exp + self.eps * (v * t_exp + translation)))
 
             #  return x, tf.reduce_sum(mask_inv * scale, axis=1)
-            with tf.name_scope('logdet_xf'):
-                logdet = tf.reduce_sum(mask_inv * scale, axis=1,
-                                       name='logdet_xf')
+            #  with tf.name_scope('logdet_xf'):
+            logdet = tf.reduce_sum(mask_inv * scale, axis=1, name='logdet_xf')
 
         return x, logdet
 
     def _update_v_backward(self, x, v, beta, t, net_weights, train_phase):
         """Update v in the backward leapfrog step. Invert the forward update"""
         with tf.name_scope('update_v_backward'):
-            with tf.name_scope('grad_potential'):
-                grad = self.grad_potential(x, beta)
+            #  with tf.name_scope('grad_potential'):
+            grad = self.grad_potential(x, beta)
 
             #  with tf.name_scope('call_vb'):
             scale, translation, transformation = self.v_fn(
                 [x, grad, t], train_phase
             )
 
-            with tf.name_scope('net_weights_mult'):
-                scale *= net_weights[0]
-                translation *= net_weights[1]
-                transformation *= net_weights[2]
+            #  with tf.name_scope('net_weights_mult'):
 
-            with tf.name_scope('scale_exp'):
-                scale *= -0.5 * self.eps
-                scale_exp = exp(scale, 'vb_scale')
+            #  with tf.name_scope('scale_exp'):
+            scale *= net_weights[0]
+            scale *= -0.5 * self.eps * net_weights[0]
+            s_exp = exp(scale, 'vb_scale')
 
-            with tf.name_scope('transformation_exp'):
-                transformation *= self.eps
-                transformation_exp = exp(transformation,
-                                         'vb_transformation')
+            translation *= net_weights[1]
 
-            with tf.name_scope('v_update'):
-                v = scale_exp * (
-                    v + 0.5 * self.eps * (
-                        grad * transformation_exp - translation
-                    )
-                )
+            #  with tf.name_scope('transformation_exp'):
+            transformation *= self.eps * net_weights[2]
+            t_exp = exp(transformation, 'vb_transformation')
 
-            with tf.name_scope('logdet_vb'):
-                logdet = tf.reduce_sum(scale, axis=1, name='logdet_vb')
+            #  with tf.name_scope('v_update'):
+            v = s_exp * (v + 0.5 * self.eps * (grad * t_exp - translation))
+
+            #  with tf.name_scope('logdet_vb'):
+            logdet = tf.reduce_sum(scale, axis=1, name='logdet_vb')
 
         return v, logdet
 
@@ -536,28 +530,26 @@ class GaugeDynamics(tf.keras.Model):
                 [v, mask * x, t], train_phase
             )
 
-            with tf.name_scope('net_weights_mult'):
-                scale *= net_weights[0]
-                translation *= net_weights[1]
-                transformation *= net_weights[2]
+            #  with tf.name_scope('net_weights_mult'):
 
-            with tf.name_scope('scale_exp'):
-                scale *= -self.eps
-                scale_exp = exp(scale, 'xb_scale')
+            #  with tf.name_scope('scale_exp'):
+            scale *= -self.eps * net_weights[0]
+            s_exp = exp(scale, 'xb_scale')
 
-            with tf.name_scope('transformation_exp'):
-                transformation *= self.eps
-                transformation_exp = exp(transformation,
-                                         'xb_transformation')
+            translation *= net_weights[1]
 
-            with tf.name_scope('x_update'):
-                x = (mask * x + mask_inv * scale_exp
-                     * (x - self.eps * (v * transformation_exp + translation)))
+            #  with tf.name_scope('transformation_exp'):
+            transformation *= self.eps * net_weights[2]
+            t_exp = exp(transformation, 'xb_transformation')
+
+            #  with tf.name_scope('x_update'):
+            x = (mask * x + mask_inv * s_exp
+                 * (x - self.eps * (v * t_exp + translation)))
 
             #  return x, tf.reduce_sum(mask_inv * scale, axis=1)
-            with tf.name_scope('logdet_xb'):
-                logdet = tf.reduce_sum(mask_inv * scale, axis=1,
-                                       name='logdet_xb')
+            #  with tf.name_scope('logdet_xb'):
+            logdet = tf.reduce_sum(mask_inv * scale, axis=1,
+                                   name='logdet_xb')
 
         return x, logdet
 
