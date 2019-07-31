@@ -91,6 +91,7 @@ class LeapfrogPlotter:
         self.tot_lf_steps = self.lf_f_diffs.shape[0]
         self.tot_md_steps = self.samples_diffs.shape[0]
         self.num_lf_steps = self.tot_lf_steps // self.tot_md_steps
+
         self.indiv_kwargs = {
             'ls': '-',
             'alpha': 0.5,
