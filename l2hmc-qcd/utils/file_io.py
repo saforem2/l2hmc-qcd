@@ -229,6 +229,17 @@ def save_data(data, out_file, name=None):
         log("Extension not recognized! out_file must end in .pkl or .npy")
 
 
+def save_params(params, out_dir):
+    check_else_make_dir(out_dir)
+    params_txt_file = os.path.join(out_dir, 'parameters.txt')
+    params_pkl_file = os.path.join(out_dir, 'parameters.pkl')
+    with open(params_txt_file, 'w') as f:
+        for key, val in params.items():
+            f.write(f"{key}: {val}\n")
+    with open(params_pkl_file, 'wb') as f:
+        pickle.dump(params, f)
+
+
 def save_params_to_pkl_file(params, out_dir):
     """Save `params` dictionary to `parameters.pkl` in `out_dir.`"""
     check_else_make_dir(out_dir)

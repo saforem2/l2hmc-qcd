@@ -80,6 +80,16 @@ def check_log_dir(log_dir):
 #          os.makedirs(figs_dir)
 #      return log_dir, info_dir, figs_dir
 
+def grad_norm_summary(name_scope, grad):
+    with tf.name_scope(name_scope + '_gradients'):
+        grad_norm = tf.sqrt(tf.reduce_mean(grad ** 2))
+        summary_name = name_scope + '_grad_norm'
+        tf.summary.scalar(summary_name, grad_norm)
+
+
+def check_var_and_op(name, var):
+    return (name in var.name or name in var.op.name)
+
 
 def variable_summaries(var, name):
     """Attach a lot of summaries to a Tensor (for TensorBoard visualization)"""
@@ -121,7 +131,15 @@ def add_loss_summaries(total_loss):
         tf.summary.scalar(l.op.name, l)
         tf.summary.scalar(l.op.name + 'moving_avg', loss_averages.average(l))
 
-    #  return loss_averages_op
+    return loss_averages_op
+
+
+def make_summaries_from_collection(collection, names):
+    try:
+        for op, name in zip(tf.get_collection(collection), names):
+            variable_summaries(op, name)
+    except AttributeError:
+        pass
 
 
 def activation_summary(x):
