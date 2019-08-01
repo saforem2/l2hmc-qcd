@@ -126,7 +126,7 @@ class GaugeDynamics(tf.keras.Model):
                 'name_scope': 'x',  # namespace in which to create network
                 'factor': 2.,  # scale factor used in original paper
                 '_input_shape': (self.batch_size, *self.lattice.links.shape),
-                'data_format': self.data_format,
+                #  'data_format': self.data_format,
             }
 
             if self.network_arch == 'conv3D':
