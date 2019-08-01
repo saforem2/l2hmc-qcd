@@ -4,6 +4,34 @@ gauge_model.py
 Implements GaugeModel class responsible for building computation graph used in
 tensorflow.
 
+----------------------------------------------------------
+TODO (taken from [1.]):
+
+update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+! no update ops in the default graph
+io.log("update_ops: ", update_ops)
+Use the update ops of the model itself
+io.log("model.updates: ", self.dynamics.updates)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+PREVIOUS (WORKING but diverging grads as of 07/15/2019):
+```
+with tf.control_dependencies(self.dynamics.updates):
+    self.train_op = self.optimizer.apply_gradients(
+        grads_and_vars,
+        global_step=self.global_step,
+        name='train_op'
+    )
+```
+    self.train_op = tf.group(minimize_op,
+                             self.dynamics.updates)
+    try:
+        self.train_op = self._append_update_ops(train_op)
+    update_ops = [self.dynamics.updates,
+                  tf.get_collection(tf.GraphKeys.UPDATE_OPS)]
+    tf.add_to_collection(tf.GraphKeys.UPDATE_OPS,
+                         *[i for i in self.dynamics.updates])
+----------------------------------------------------------
+
 Author: Sam Foreman (github: @saforem2)
 Date: 04/12/2019
 """
@@ -614,29 +642,6 @@ class GaugeModel:
 
         return loss, grads, x_dq, dynamics_output
 
-    def _create_sampler(self):
-        """Create operation for generating new samples using dynamics engine.
-
-        NOTE: This method is to be used when running generic HMC to create
-        operations for generating new sampler.
-        """
-        with tf.name_scope('sampler'):
-            output = self.dynamics(self.x, self.beta,
-                                   save_lf=True, train=False)
-            self.x_out = output['x_out']
-            self.px = output['accept_prob']
-            if self.save_lf:
-                self.lf_out_f = output['lf_out_f']
-                self.pxs_out_f = output['accept_probs_f']
-                self.lf_out_b = output['lf_out_b']
-                self.pxs_out_b = output['accept_probs_b']
-                self.masks_f = output['forward_mask']
-                self.masks_b = output['backward_mask']
-                self.logdets_f = output['logdets_f']
-                self.logdets_b = output['logdets_b']
-                self.sumlogdet_f = output['sumlogdet_f']
-                self.sumlogdet_b = output['sumlogdet_b']
-
     def _append_update_ops(self, train_op):
         """Returns `train_op` appending `UPDATE_OPS` collection if prsent."""
         update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
@@ -677,24 +682,28 @@ class GaugeModel:
 
     def build_train_ops(self):
         """Build train_ops dict containing grouped operations for training."""
-        train_ops = {
-            'train_op': self.train_op,
-            'loss_op': self.loss_op,
-            'x_out': self.x_out,
-            'px': self.px,
-            'dynamics.eps': self.dynamics.eps,
-            'actions_op': self.actions_op,
-            'plaqs_op': self.plaqs_op,
-            'charges_op': self.charges_op,
-            'charge_diffs_op': self.charge_diffs_op,
-            'lr': self.lr
-        }
+        if self.hmc:
+            train_ops = {}
+
+        else:
+            train_ops = {
+                'train_op': self.train_op,
+                'loss_op': self.loss_op,
+                'x_out': self.x_out,
+                'px': self.px,
+                'dynamics.eps': self.dynamics.eps,
+                'actions_op': self.actions_op,
+                'plaqs_op': self.plaqs_op,
+                'charges_op': self.charges_op,
+                'charge_diffs_op': self.charge_diffs_op,
+                'lr': self.lr
+            }
 
         return train_ops
 
     def build_sampler(self):
         """Build TensorFlow graph."""
-        with tf.name_scope('l2hmc'):
+        with tf.name_scope('l2hmc_sampler'):
             #  self.loss_op, self.grads, self.x_out, self.px, x_dq = output
             loss, grads, x_dq, dynamics_output = self.calc_loss_and_grads(
                 x=self.x,
@@ -703,8 +712,6 @@ class GaugeModel:
                 train_phase=self.train_phase,
                 **self.loss_weights
             )
-            #  self.loss_op = outputs[0]
-            #  self.grads = outputs[1]
             self.loss_op = loss
             self.grads = grads
             self.x_out = dynamics_output['x_out']
@@ -727,54 +734,24 @@ class GaugeModel:
     def build(self):
         """Build Tensorflow graph."""
         self.build_sampler()
-        run_ops = self.build_run_ops()
 
-        if self.hmc:
-            train_ops = {}
-
-        else:
-            # ----------------------------------------------------------
-            #  TODO:
-            #
-            #  update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
-            #  ! no update ops in the default graph
-            #  io.log("update_ops: ", update_ops)
-            #  Use the update ops of the model itself
-            #  io.log("model.updates: ", self.dynamics.updates)
-            # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-            # PREVIOUS (WORKING but diverging grads as of 07/15/2019):
-            # ```
-            #  with tf.control_dependencies(self.dynamics.updates):
-            #      self.train_op = self.optimizer.apply_gradients(
-            #          grads_and_vars,
-            #          global_step=self.global_step,
-            #          name='train_op'
-            #      )
-            # ```
-            # ----------------------------------------------------------
-            with tf.name_scope('train'):
-                grads_and_vars = zip(self.grads,
-                                     self.dynamics.trainable_variables)
-                self._create_optimizer()
-                #  update_ops = [self.dynamics.updates,
-                #                tf.get_collection(tf.GraphKeys.UPDATE_OPS)]
-                #  tf.add_to_collection(tf.GraphKeys.UPDATE_OPS,
-                #                       *[i for i in self.dynamics.updates])
-                with tf.control_dependencies(self.dynamics.updates):
-                    self.train_op = self.optimizer.apply_gradients(
-                        grads_and_vars,
-                        global_step=self.global_step,
-                        name='train_op'
-                    )
-                train_ops = self.build_train_ops()
-                #  self.train_op = tf.group(minimize_op,
-                #                           self.dynamics.updates)
-                #  try:
-                #      self.train_op = self._append_update_ops(train_op)
+        # ------------------------------
+        # Ref. [1.] in TODO (line 8)
+        # ------------------------------
+        with tf.name_scope('train'):
+            grads_and_vars = zip(self.grads,
+                                 self.dynamics.trainable_variables)
+            self._create_optimizer()
+            with tf.control_dependencies(self.dynamics.updates):
+                self.train_op = self.optimizer.apply_gradients(
+                    grads_and_vars,
+                    global_step=self.global_step,
+                    name='train_op'
+                )
 
         self.ops_dict = {
-            'train_ops': train_ops,
-            'run_ops': run_ops,
+            'train_ops': self.build_train_ops(),
+            'run_ops': self.build_run_ops(),
         }
 
         for key, val in self.ops_dict.items():
