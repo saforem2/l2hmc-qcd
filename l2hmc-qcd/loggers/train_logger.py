@@ -15,38 +15,9 @@ import tensorflow as tf
 import utils.file_io as io
 
 from variables import TRAIN_HEADER
-from utils.tf_logging import variable_summaries
+from utils.tf_logging import variable_summaries, grad_norm_summary
+from utils.file_io import save_params
 from lattice.lattice import u1_plaq_exact_tf
-
-
-def save_params(params, out_dir):
-    io.check_else_make_dir(out_dir)
-    params_txt_file = os.path.join(out_dir, 'parameters.txt')
-    params_pkl_file = os.path.join(out_dir, 'parameters.pkl')
-    with open(params_txt_file, 'w') as f:
-        for key, val in params.items():
-            f.write(f"{key}: {val}\n")
-    with open(params_pkl_file, 'wb') as f:
-        pickle.dump(params, f)
-
-
-def make_summaries_from_collection(collection, names):
-    try:
-        for op, name in zip(tf.get_collection(collection), names):
-            variable_summaries(op, name)
-    except AttributeError:
-        pass
-
-
-def grad_norm_summary(name_scope, grad):
-    with tf.name_scope(name_scope + '_gradients'):
-        grad_norm = tf.sqrt(tf.reduce_mean(grad ** 2))
-        summary_name = name_scope + '_grad_norm'
-        tf.summary.scalar(summary_name, grad_norm)
-
-
-def check_var_and_op(name, var):
-    return (name in var.name or name in var.op.name)
 
 
 class TrainLogger:
@@ -122,17 +93,18 @@ class TrainLogger:
         with tf.name_scope('loss'):
             tf.summary.scalar('loss', self.model.loss_op)
 
-        #  self.loss_averages_op = self._add_loss_summaries(self.model.loss_op)
-
         with tf.name_scope('learning_rate'):
             tf.summary.scalar('learning_rate', self.model.lr)
 
         with tf.name_scope('step_size'):
             tf.summary.scalar('step_size', self.model.dynamics.eps)
 
-        with tf.name_scope('tunneling_events'):
-            tf.summary.scalar('tunneling_events_per_sample',
-                              self.model.charge_diffs_op)
+        with tf.name_scope('avg_charge_diffs_training'):
+            tf.summary.scalar('avg_charge_diffs',
+                              tf.reduce_mean(self.model.charge_diffs_op))
+        #  with tf.name_scope('tunneling_events'):
+        #      tf.summary.scalar('tunneling_events_per_sample',
+        #                        self.model.charge_diffs_op)
 
         with tf.name_scope('avg_plaq_training'):
             tf.summary.scalar('avg_plaq', self.model.avg_plaqs_op)
@@ -147,28 +119,32 @@ class TrainLogger:
         #          tf.summary.histogram(var.op.name, var)
 
         for grad, var in grads_and_vars:
-            try:
-                _name = var.name.split('/')[-2:]
-                if len(_name) > 1:
-                    name = _name[0] + '/' + _name[1][:-2]
-                else:
-                    name = var.name[:-2]
-            except (AttributeError, IndexError):
-                name = var.name[:-2]
+            #  try:
+            #      _name = var.name.split('/')[-2:]
+            #      if len(_name) > 1:
+            #          name = _name[0] + '/' + _name[1][:-2]
+            #      else:
+            #          name = var.name[:-2]
+            #  except (AttributeError, IndexError):
+            #      name = var.name[:-2]
 
-            with tf.name_scope(name):
-                variable_summaries(var, name)
-                variable_summaries(grad, name + '/gradients')
+            with tf.name_scope(var.name + '/training'):
+                variable_summaries(var, var.name)
+            with tf.name_scope(var.name + 'training/gradients'):
+                variable_summaries(grad, var.name + '/gradients')
+                #  variable_summaries(var, name)
+                #  variable_summaries(grad, name + '/gradients')
                 #  tf.summary.histogram(name, var)
                 #  tf.summary.histogram(name + '/gradients', grad)
-                if 'kernel' in var.name:
-                    if 'XNet' in var.name:
-                        net_str = 'XNet/'
-                    elif 'VNet' in var.name:
-                        net_str = 'VNet/'
-                    else:
-                        net_str = ''
+            if 'kernel' in var.name:
+                if 'XNet' in var.name:
+                    net_str = 'XNet/'
+                elif 'VNet' in var.name:
+                    net_str = 'VNet/'
+                else:
+                    net_str = ''
 
+                with tf.name_scope(net_str):
                     if 'scale' in var.name:
                         grad_norm_summary(net_str + 'scale', grad)
                     if 'transformation' in var.name:
@@ -239,7 +215,6 @@ class TrainLogger:
             self.log_step(sess, step, data['samples'], beta, net_weights)
 
         if (step + 1) % self.model.save_steps == 0:
-            #  self.model.save(self.sess, self.checkpoint_dir)
             self.save_current_state()
 
         if step % 100 == 0:
