@@ -208,11 +208,11 @@ def run_hmc(FLAGS, log_file=None):
     figs_dir = os.path.join(params['log_dir'], 'figures')
     io.check_else_make_dir(figs_dir)
 
-    io.log(80 * '-' + '\n')
+    io.log(SEP_STR)
     io.log('HMC PARAMETERS:')
     for key, val in params.items():
         io.log(f'  {key}: {val}')
-    io.log(80 * '-' + '\n')
+    io.log(SEP_STR)
 
     config, params = create_config(params)
     tf.reset_default_graph()
@@ -337,9 +337,6 @@ def main_inference(kwargs):
     inputs = tf.get_collection('inputs')
     run_logger = RunLogger(params, inputs, run_ops, save_lf_data=False)
     plotter = GaugeModelPlotter(params, run_logger.figs_dir)
-    #  else:
-    #      run_logger = None
-    #      plotter = None
 
     # ------------------------------------------------------------------------
     #  Set up relevant values to use for inference (parsed from kwargs)
