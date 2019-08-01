@@ -98,15 +98,10 @@ class GaugeModel:
         self.avg_plaqs_op = obs_ops['avg_plaqs']
         self.charges_op = obs_ops['charges']
 
-        # -------------------------------------------------------
-        # Create optimizer, build graph, create / init. saver
-        # -------------------------------------------------------
+        # ---------------------------------
+        # Create optimizer, build graph
+        # ---------------------------------
         self.build()
-        #  if self.hmc:
-        #      self.create_sampler()
-        #  else:
-            #  self._create_optimizer()
-            #  self.init_saver()
 
     def load(self, sess, checkpoint_dir):
         latest_ckpt = tf.train.latest_checkpoint(checkpoint_dir)
