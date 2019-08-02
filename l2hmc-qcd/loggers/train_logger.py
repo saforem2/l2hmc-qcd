@@ -119,18 +119,17 @@ class TrainLogger:
         #          tf.summary.histogram(var.op.name, var)
 
         for grad, var in grads_and_vars:
-            #  try:
-            #      _name = var.name.split('/')[-2:]
-            #      if len(_name) > 1:
-            #          name = _name[0] + '/' + _name[1][:-2]
-            #      else:
-            #          name = var.name[:-2]
-            #  except (AttributeError, IndexError):
-            #      name = var.name[:-2]
-
-            with tf.name_scope(var.name + '/training'):
+            try:
+                _name = var.name.split('/')[-2:]
+                if len(_name) > 1:
+                    name = _name[0] + '/' + _name[1][:-2]
+                else:
+                    name = var.name[:-2]
+            except (AttributeError, IndexError):
+                name = var.name[:-2]
+            with tf.name_scope(name + '/training'):
                 variable_summaries(var, var.name)
-            with tf.name_scope(var.name + 'training/gradients'):
+            with tf.name_scope(name + '/training/gradients'):
                 variable_summaries(grad, var.name + '/gradients')
                 #  variable_summaries(var, name)
                 #  variable_summaries(grad, name + '/gradients')
