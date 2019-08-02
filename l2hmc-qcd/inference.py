@@ -170,13 +170,13 @@ def inference_setup(kwargs):
 
     # if a value has been passed in `kwargs['beta_inference']` use it
     # otherwise, use `model.beta_final`
-    beta_final = kwargs['beta_final']
-    beta_inference = kwargs['beta_inference']
-    betas = [beta_final if beta_inference is None else beta_inference]
+    #  beta_final = kwargs['beta_final']
+    #  beta_inference = kwargs['beta_inference']
+    #  betas = [beta_final if beta_inference is None else beta_inference]
 
     inference_dict = {
         'net_weights_arr': net_weights_arr,
-        'betas': betas,
+        #  'betas': betas,
         'charge_weight': kwargs.get('charge_weight', 1.),
         'run_steps': kwargs.get('run_steps', 5000),
         'plot_lf': kwargs.get('plot_lf', True)
@@ -236,7 +236,7 @@ def run_hmc(FLAGS, log_file=None):
     run_inference(inference_dict, runner, run_logger, plotter)
 
 
-def run_inference(run_dict,
+def run_inference(inference_dict,
                   runner,
                   run_logger=None,
                   plotter=None,
@@ -254,11 +254,11 @@ def run_inference(run_dict,
     if plotter is None and run_logger is None:
         return
 
-    net_weights_arr = run_dict['net_weights_arr']
-    betas = run_dict['betas']
-    charge_weight = run_dict['charge_weight']
-    run_steps = run_dict['run_steps']
-    plot_lf = run_dict['plot_lf']
+    net_weights_arr = inference_dict['net_weights_arr']
+    beta = inference_dict['beta']
+    charge_weight = inference_dict['charge_weight']
+    run_steps = inference_dict['run_steps']
+    plot_lf = inference_dict['plot_lf']
     num_samples = runner.params['num_samples']
 
     for net_weights in net_weights_arr:
@@ -266,36 +266,36 @@ def run_inference(run_dict,
             'charge_weight': charge_weight,
             'net_weights': net_weights
         }
-        for beta in betas:
-            #  if run_logger is not None:
-            run_dir, run_str = run_logger.reset(run_steps,
-                                                beta,
-                                                weights,
-                                                runner.eps,
-                                                dir_append)
+        #  for beta in betas:
+        #  if run_logger is not None:
+        run_dir, run_str = run_logger.reset(run_steps,
+                                            beta,
+                                            weights,
+                                            runner.eps,
+                                            dir_append)
 
-            t0 = time.time()
-            run_kwargs = {
-                'beta': beta,
-                'net_weights': weights['net_weights'],
-                'therm_frac': 10
-            }
-            runner.run(run_steps, **run_kwargs)
-            io.log(SEP_STR)
+        t0 = time.time()
+        run_kwargs = {
+            'beta': beta,
+            'net_weights': weights['net_weights'],
+            'therm_frac': 10
+        }
+        runner.run(run_steps, **run_kwargs)
+        io.log(SEP_STR)
 
-            # log the total time spent running inference
-            run_time = time.time() - t0
-            io.log(
-                SEP_STR + f'Took: {run_time} s to complete run.\n' + SEP_STR
-            )
+        # log the total time spent running inference
+        run_time = time.time() - t0
+        io.log(
+            SEP_STR + f'Took: {run_time} s to complete run.\n' + SEP_STR
+        )
 
-            plotter.plot_observables(
-                run_logger.run_data, beta, run_str, weights, dir_append
-            )
-            if plot_lf:
-                lf_plotter = LeapfrogPlotter(plotter.out_dir, run_logger)
-                num_samples = min((num_samples, 20))
-                lf_plotter.make_plots(run_dir, num_samples=num_samples)
+        plotter.plot_observables(
+            run_logger.run_data, beta, run_str, weights, dir_append
+        )
+        if plot_lf:
+            lf_plotter = LeapfrogPlotter(plotter.out_dir, run_logger)
+            num_samples = min((num_samples, 20))
+            lf_plotter.make_plots(run_dir, num_samples=num_samples)
 
 
 def main_inference(kwargs):
