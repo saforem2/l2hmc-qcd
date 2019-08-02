@@ -53,7 +53,7 @@ except ImportError:
 
 import utils.file_io as io
 
-from variables import GLOBAL_SEED, TF_FLOAT
+from variables import GLOBAL_SEED, TF_FLOAT, PARAMS
 from lattice.lattice import GaugeLattice
 from dynamics.dynamics import GaugeDynamics
 from dynamics.nnehmc_dynamics import nnehmcDynamics
@@ -74,6 +74,9 @@ class GaugeModel:
         # Create attributes from (key, val) pairs in params
         # -------------------------------------------------------
         self.loss_weights = {}
+        if params is None:
+            params = PARAMS  # default parameters, defined in `variables.py`
+
         self.params = params
         for key, val in self.params.items():
             if 'weight' in key and key != 'charge_weight':
@@ -83,42 +86,25 @@ class GaugeModel:
 
         self.charge_weight_np = params['charge_weight']
 
-        # -------------------------------------------------------
-        # Create lattice
-        # -------------------------------------------------------
         self.lattice, self.samples = self._create_lattice()
-
         self.batch_size = self.lattice.samples.shape[0]
         self.x_dim = self.lattice.num_links
 
-        # -------------------------------------------------------
-        # Create input placeholders:
-        #   (x, beta, charge_weight, net_weights)
-        # -------------------------------------------------------
         inputs = self._create_inputs()
         self.x = inputs['x']
         self.beta = inputs['beta']
         self.charge_weight = inputs['charge_weight']
         self.net_weights = inputs['net_weights']
         self.train_phase = inputs['train_phase']
-        #  self.train_bool = inputs['train_bool']
 
-        # -------------------------------------------------------
-        # Create dynamics engine
-        # -------------------------------------------------------
         self.dynamics, self.potential_fn = self._create_dynamics(
             self.lattice,
             self.samples
         )
 
-        # -------------------------------------------------------
-        # Create metric function used in loss
-        # -------------------------------------------------------
+        # metric function used when calculating the loss
         self.metric_fn = self._create_metric_fn(self.metric)
 
-        # -------------------------------------------------------
-        # Create operations for calculating plaquette observables
-        # -------------------------------------------------------
         obs_ops = self._create_observables()
         self.plaq_sums_op = obs_ops['plaq_sums']
         self.actions_op = obs_ops['actions']
@@ -126,9 +112,11 @@ class GaugeModel:
         self.avg_plaqs_op = obs_ops['avg_plaqs']
         self.charges_op = obs_ops['charges']
 
-        # ---------------------------------
-        # Create optimizer, build graph
-        # ---------------------------------
+        self._build_sampler()
+
+        self._create_lr()
+        self._create_optimizer()
+
         self.build()
 
     def load(self, sess, checkpoint_dir):
@@ -204,20 +192,22 @@ class GaugeModel:
                 beta = tf.placeholder(dtype=TF_FLOAT,
                                       shape=(),
                                       name='beta')
+
                 charge_weight = tf.placeholder(dtype=TF_FLOAT,
                                                shape=(),
                                                name='charge_weight')
-                net_weights = [
-                    tf.placeholder(
-                        dtype=TF_FLOAT, shape=(), name='scale_weight'
-                    ),
-                    tf.placeholder(
-                        dtype=TF_FLOAT, shape=(), name='transformation_weight'
-                    ),
-                    tf.placeholder(
-                        dtype=TF_FLOAT, shape=(), name='translation_weight'
-                    )
-                ]
+
+                scale_weight = tf.placeholder(dtype=TF_FLOAT,
+                                              shape=(),
+                                              name='scale_weight')
+                transf_weight = tf.placeholder(dtype=TF_FLOAT,
+                                               shape=(),
+                                               name='transformation_weight')
+                transl_weight = tf.placeholder(dtype=TF_FLOAT,
+                                               shape=(),
+                                               name='translation_weight')
+
+                net_weights = [scale_weight, transf_weight, transl_weight]
 
                 train_phase = tf.placeholder(tf.bool, name='is_training')
 
@@ -311,8 +301,8 @@ class GaugeModel:
 
         return metric_fn
 
-    def _create_optimizer(self, lr_init=None):
-        """Create learning rate and optimizer."""
+    def _create_lr(self, lr_init=None):
+        """Create learning rate."""
         if self.hmc:
             return
 
@@ -321,7 +311,6 @@ class GaugeModel:
 
         with tf.name_scope('global_step'):
             self.global_step = tf.train.get_or_create_global_step()
-            #  self.global_step.assign(1)
 
         with tf.name_scope('learning_rate'):
             # HOROVOD: When performing distributed training, it can be usedful
@@ -353,6 +342,12 @@ class GaugeModel:
                                                      self.lr_decay_rate,
                                                      staircase=False,
                                                      name='learning_rate')
+
+    def _create_optimizer(self):
+        """Create learning rate and optimizer."""
+        if self.lr is None:
+            self._create_lr()
+
         #  with tf.control_dependencies(update_ops):
         with tf.name_scope('optimizer'):
             #  update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
@@ -512,6 +507,65 @@ class GaugeModel:
 
         return nnehmc_loss
 
+    def _append_update_ops(self, train_op):
+        """Returns `train_op` appending `UPDATE_OPS` collection if prsent."""
+        update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+        if update_ops:
+            io.log(f'Update ops: {update_ops}')
+            return control_flow_ops(train_op, *update_ops)
+        return train_op
+
+    def _build_run_ops(self):
+        """Build run_ops dict containing grouped operations for inference."""
+        run_ops = {
+            'x_out': self.x_out,
+            'px': self.px,
+            'actions_op': self.actions_op,
+            'plaqs_op': self.plaqs_op,
+            'avg_plaqs_op': self.avg_plaqs_op,
+            'charges_op': self.charges_op,
+            'charge_diffs_op': self.charge_diffs_op,
+        }
+
+        if self.save_lf:
+            run_ops.update({
+                'lf_out_f': self.lf_out_f,
+                'pxs_out_f': self.pxs_out_f,
+                'masks_f': self.masks_f,
+                'logdets_f': self.logdets_f,
+                'sumlogdet_f': self.sumlogdet_f,
+                'lf_out_b': self.lf_out_b,
+                'pxs_out_b': self.pxs_out_b,
+                'masks_b': self.masks_b,
+                'logdets_b': self.logdets_b,
+                'sumlogdet_b': self.sumlogdet_b
+            })
+
+        run_ops['dynamics_eps'] = self.dynamics.eps
+
+        return run_ops
+
+    def _build_train_ops(self):
+        """Build train_ops dict containing grouped operations for training."""
+        if self.hmc:
+            train_ops = {}
+
+        else:
+            train_ops = {
+                'train_op': self.train_op,
+                'loss_op': self.loss_op,
+                'x_out': self.x_out,
+                'px': self.px,
+                'dynamics.eps': self.dynamics.eps,
+                'actions_op': self.actions_op,
+                'plaqs_op': self.plaqs_op,
+                'charges_op': self.charges_op,
+                'charge_diffs_op': self.charge_diffs_op,
+                'lr': self.lr
+            }
+
+        return train_ops
+
     def calc_loss(self, x, beta, net_weights, train_phase, **weights):
         """Create operation for calculating the loss.
 
@@ -594,14 +648,15 @@ class GaugeModel:
                 total_loss = tf.add(std_loss, charge_loss, name='total_loss')
 
             tf.add_to_collection('losses', total_loss)
-        #  if self.save_lf:
-        #      return total_loss, x_out, px, x_dq, lf_outputs
-        #  else:
-        #      return total_loss, x_out, px, x_dq
+
         return total_loss, x_dq, x_dynamics_output
 
-    def calc_loss_and_grads(self, x, beta, net_weights,
-                            train_phase, **weights):
+    def calc_loss_and_grads(self,
+                            x,
+                            beta,
+                            net_weights,
+                            train_phase,
+                            **weights):
         """Calculate loss its gradient with respect to all trainable variables.
 
         Args:
@@ -624,9 +679,12 @@ class GaugeModel:
         if tf.executing_eagerly():
             with tf.name_scope('grads'):
                 with tf.GradientTape() as tape:
-                    loss, x_dq, dynamics_output = self.calc_loss(
-                        x, beta, net_weights, train_phase, **weights
-                    )
+                    loss, x_dq, dynamics_output = self.calc_loss(x,
+                                                                 beta,
+                                                                 net_weights,
+                                                                 train_phase,
+                                                                 **weights)
+
                 grads = tape.gradient(loss, self.dynamics.trainable_variables)
                 if self.clip_value > 0.:
                     grads, _ = tf.clip_by_global_norm(grads, self.clip_value)
@@ -642,66 +700,7 @@ class GaugeModel:
 
         return loss, grads, x_dq, dynamics_output
 
-    def _append_update_ops(self, train_op):
-        """Returns `train_op` appending `UPDATE_OPS` collection if prsent."""
-        update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
-        if update_ops:
-            io.log(f'Update ops: {update_ops}')
-            return control_flow_ops(train_op, *update_ops)
-        return train_op
-
-    def build_run_ops(self):
-        """Build run_ops dict containing grouped operations for inference."""
-        run_ops = {
-            'x_out': self.x_out,
-            'px': self.px,
-            'actions_op': self.actions_op,
-            'plaqs_op': self.plaqs_op,
-            'avg_plaqs_op': self.avg_plaqs_op,
-            'charges_op': self.charges_op,
-            'charge_diffs_op': self.charge_diffs_op,
-        }
-
-        if self.save_lf:
-            run_ops.update({
-                'lf_out_f': self.lf_out_f,
-                'pxs_out_f': self.pxs_out_f,
-                'masks_f': self.masks_f,
-                'logdets_f': self.logdets_f,
-                'sumlogdet_f': self.sumlogdet_f,
-                'lf_out_b': self.lf_out_b,
-                'pxs_out_b': self.pxs_out_b,
-                'masks_b': self.masks_b,
-                'logdets_b': self.logdets_b,
-                'sumlogdet_b': self.sumlogdet_b
-            })
-
-        run_ops['dynamics_eps'] = self.dynamics.eps
-
-        return run_ops
-
-    def build_train_ops(self):
-        """Build train_ops dict containing grouped operations for training."""
-        if self.hmc:
-            train_ops = {}
-
-        else:
-            train_ops = {
-                'train_op': self.train_op,
-                'loss_op': self.loss_op,
-                'x_out': self.x_out,
-                'px': self.px,
-                'dynamics.eps': self.dynamics.eps,
-                'actions_op': self.actions_op,
-                'plaqs_op': self.plaqs_op,
-                'charges_op': self.charges_op,
-                'charge_diffs_op': self.charge_diffs_op,
-                'lr': self.lr
-            }
-
-        return train_ops
-
-    def build_sampler(self):
+    def _build_sampler(self):
         """Build TensorFlow graph."""
         with tf.name_scope('l2hmc_sampler'):
             #  self.loss_op, self.grads, self.x_out, self.px, x_dq = output
@@ -733,25 +732,24 @@ class GaugeModel:
 
     def build(self):
         """Build Tensorflow graph."""
-        self.build_sampler()
+        run_ops = self._build_run_ops()
 
         # ------------------------------
         # Ref. [1.] in TODO (line 8)
         # ------------------------------
         with tf.name_scope('train'):
-            grads_and_vars = zip(self.grads,
-                                 self.dynamics.trainable_variables)
-            self._create_optimizer()
+            grads_and_vars = zip(self.grads, self.dynamics.trainable_variables)
             with tf.control_dependencies(self.dynamics.updates):
                 self.train_op = self.optimizer.apply_gradients(
                     grads_and_vars,
                     global_step=self.global_step,
                     name='train_op'
                 )
+            train_ops = self._build_train_ops()
 
         self.ops_dict = {
-            'train_ops': self.build_train_ops(),
-            'run_ops': self.build_run_ops(),
+            'run_ops': run_ops,
+            'train_ops': train_ops
         }
 
         for key, val in self.ops_dict.items():
