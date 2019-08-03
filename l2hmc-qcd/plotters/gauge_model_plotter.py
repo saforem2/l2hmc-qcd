@@ -325,8 +325,8 @@ class GaugeModelPlotter:
         except AttributeError:
             pass
 
-    def plot_observables(self, data, beta, run_str, weights, dir_append=None):
-        """Plot observables."""
+    def _parse_data(self, data, beta):
+        """Helper method for extracting relevant data from `data`.'"""
         actions = arr_from_dict(data, 'actions')
         plaqs = arr_from_dict(data, 'plaqs')
         charges = np.array(arr_from_dict(data, 'charges'), dtype=int)
@@ -340,14 +340,13 @@ class GaugeModelPlotter:
         plaqs_avg = np.mean(plaqs, axis=1)
         plaqs_err = sem(plaqs, axis=1)
 
-        charge_autocorrs_avg = np.mean(charge_autocorrs.T, axis=1)
-        charge_autocorrs_err = sem(charge_autocorrs.T, axis=1)
+        autocorrs_avg = np.mean(charge_autocorrs.T, axis=1)
+        autocorrs_err = sem(charge_autocorrs.T, axis=1)
 
         num_steps, num_samples = actions.shape
         steps_arr = np.arange(num_steps)
 
-        # skip 5% of total number of steps 
-        # between successive points when 
+        # skip 5% of total number of steps between successive points when
         # plotting to help smooth out graph
         skip_steps = max((1, int(0.005 * num_steps)))
         # ignore first 10% of pts (warmup)
@@ -361,17 +360,29 @@ class GaugeModelPlotter:
         _plaq_diffs_avg = np.mean(_plaq_diffs, axis=1)
         _plaq_diffs_err = sem(_plaq_diffs, axis=1)
 
+        xy_data = {
+            'actions': (steps_arr, actions_avg, actions_err),
+            'plaqs': (steps_arr, plaqs_avg, plaqs_err),
+            'charges': (steps_arr, charges.T),
+            'charge_diffs': (_steps_diffs, _charge_diffs.T),
+            'autocorrs': (steps_arr, autocorrs_avg, autocorrs_err),
+            'plaqs_diffs': (_steps_diffs, _plaq_diffs_avg, _plaq_diffs_err)
+        }
+
+        return xy_data
+
+    def plot_observables(self, data, beta, run_str, weights, dir_append=None):
+        """Plot observables."""
+
         if dir_append:
             run_str += dir_append
+
         self.out_dir = os.path.join(self.figs_dir, run_str)
         io.check_else_make_dir(self.out_dir)
 
-        #  L = self.model.space_size
-        #  lf_steps = self.model.num_steps
-        #  bs = self.model.num_samples
         L = self.params['space_size']
         lf_steps = self.params['num_steps']
-        bs = self.params['num_samples']
+        bs = self.params['num_samples']  # batch size
         qw = weights['charge_weight']
 
         title_str = (r"$L = $" + f"{L}, "
@@ -385,66 +396,134 @@ class GaugeModelPlotter:
             'lines': True,
             'alpha': 0.6,
             'title': title_str,
-            'legend': True,
+            'legend': False,
             'ret': False,
             'out_file': [],
         }
-        self._plot_actions((steps_arr, actions_avg, actions_err), **kwargs)
+
+        xy_data = self._parse_data(data, beta)
+        self._plot_actions(xy_data['actions'], **kwargs)
         self.log_figure()
-        self._plot_plaqs((steps_arr, plaqs_avg, plaqs_err), beta, **kwargs)
+        self._plot_plaqs(xy_data['plaqs'], beta, **kwargs)
         self.log_figure()
-        self._plot_charges((steps_arr, charges.T), **kwargs)
+        self._plot_charges(xy_data['charges'], **kwargs)
         self.log_figure()
-        self._plot_charge_probs(charges, **kwargs)
+        self._plot_charge_probs(xy_data['charges'][1], **kwargs)
         self.log_figure()
-        self._plot_charge_diffs((_steps_diffs, _charge_diffs.T), **kwargs)
+        self._plot_charge_diffs(xy_data['charge_diffs'], **kwargs)
         self.log_figure()
-        self._plot_autocorrs((steps_arr,
-                              charge_autocorrs_avg,
-                              charge_autocorrs_err), **kwargs)
+        self._plot_autocorrs(xy_data['autocorrs'], **kwargs)
         self.log_figure()
-        self._plot_plaqs_diffs((_steps_diffs,
-                                _plaq_diffs_avg,
-                                _plaq_diffs_err), **kwargs)
+        self._plot_plaqs_diffs(xy_data['plaqs_diffs'], **kwargs)
         self.log_figure()
+
+    def _plot(self, xy_data, **kwargs):
+        """Basic plotting wrapper."""
+        x, y, yerr = xy_data
+
+        labels = kwargs.get('labels', None)
+        if labels is not None:
+            xlabel = labels.get('x_label', '')
+            ylabel = labels.get('y_label', '')
+        else:
+            xlabel = ''
+            ylabel = ''
+
+        _leg = kwargs.get('legend', False)
+
+        if kwargs.get('two_rows', False):
+            fig, (ax0, ax1) = plt.subplots(nrows=2, ncols=1,
+                                           gridspec_kw={
+                                               'height_ratios': [2.5, 1],
+                                               'hspace': 0.175
+                                           })
+            n = len(x)
+            mid = n // 2
+            x0 = int(mid - 0.025 * n)
+            x1 = int(mid + 0.025 * n)
+        else:
+            fig, ax0 = plt.subplots()
+            ax1 = None
+
+        plt_kwargs = {
+            'color': 'k',
+            'lw': 1.5,
+            'ls': '-',
+            'alpha': 1.,
+        }
+        #  err_kwargs = plt_kwargs.update({'lw': 1.5, 'alpha': 0.7})
+
+        ax0.plot(x, y, **plt_kwargs)
+        ax0.errorbar(x[::2], y[::2], yerr=yerr[::2],
+                     ls='-', lw=1.5, alpha=0.7, color='k',
+                     ecolor='gray')
+
+        if ax1 is not None:
+            ax1.plot(x[x0:x1:10], y[x0:x1:10], **plt_kwargs)
+            ax1.errorbar(x[x0:x1:10], y[x0:x1:10], yerr=yerr[x0:x1:10],
+                         ls='-', lw=1.5, alpha=0.7, color='k', ecolor='gray')
+
+        ax1.set_xlabel(xlabel, fontsize=14)
+        ax0.set_ylabel(ylabel, fontsize=14)
+        ax1.set_ylabel('', fontsize=14)
+        if _leg:
+            ax0.legend(loc='best')
+
+        title = kwargs.get('title', None)
+        if title is not None:
+            _ = ax0.set_title(title)
+
+        plt.tight_layout()
+        if kwargs.get('save', True):
+            fname = kwargs.get('fname', f'plot_{np.random.randint(10)}')
+            out_file = get_out_file(self.out_dir, fname)
+            io.log(f'Saving figure to: {out_file}.')
+            plt.savefig(out_file, dpi=400, bbox_inches='tight')
+
+        return fig, (ax0, ax1)
 
     def _plot_actions(self, xy_data, **kwargs):
         """Plot actions."""
-        kwargs['out_file'] = get_out_file(self.out_dir, 'actions_vs_step')
+        #  kwargs['out_file'] = get_out_file(self.out_dir, 'actions_vs_step')
         labels = {
             'x_label': 'Step',
             'y_label': 'Action',
             'plt_label': 'Action'
         }
-        kwargs['bounds'] = [0.2, 0.6, 0.7, 0.3]
+
+        kwargs.update({
+            'fname': 'actions_vs_step',
+            'labels': labels,
+            'two_rows': True,
+        })
+        self._plot(xy_data, **kwargs)
+        #  kwargs['bounds'] = [0.2, 0.6, 0.7, 0.3]
 
         #  xy_labels = ('Step', 'Action')
         #  plot_multiple_lines(xy_data, xy_labels, **kwargs)
-        plot_with_inset(xy_data, labels, **kwargs)
+        #  plot_with_inset(xy_data, labels, **kwargs)
 
     def _plot_plaqs(self, xy_data, beta, **kwargs):
         """PLot average plaquette."""
-        kwargs['out_file'] = None
-        kwargs['ret'] = True
         labels = {
             'x_label': 'Step',
             'y_label': r"""$\langle \phi_{P} \rangle$""",
             'plt_label': r"""$\langle \phi_{P} \rangle$"""
         }
+        kwargs.update({
+            'labels': labels,
+            'fname': 'plaqs_vs_step',
+            'two_rows': True,
+            'save': False,
+        })
+        fig, (ax0, ax1) = self._plot(xy_data, **kwargs)
 
-        _, ax, axins = plot_with_inset(xy_data, labels, **kwargs)
+        ax0.axhline(y=u1_plaq_exact(beta),
+                    color='#CC0033', ls='-', lw=1.5, label='exact')
+        ax1.axhline(y=u1_plaq_exact(beta),
+                    color='#CC0033', ls='-', lw=1.5, label='exact')
 
-        #  xy_labels = ('Step', r"""$\langle \phi_{P} \rangle$""")
-
-        #  _, ax = plot_multiple_lines(xy_data, xy_labels, **kwargs)
-        _ = ax.axhline(y=u1_plaq_exact(beta),
-                       color='#CC0033', ls='-', lw=1.5, label='exact')
-        _ = axins.axhline(y=u1_plaq_exact(beta),
-                          color='#CC0033', ls='-', lw=1.5, label='exact')
-        #  _ = ax.plot(xy_data[0], xy_data[1].mean(axis=0), lw=1.25,
-        #              color='k', label='average', alpha=0.75)
-
-        _ = plt.tight_layout()
+        plt.tight_layout()
 
         out_file = get_out_file(self.out_dir, 'plaqs_vs_step')
         io.log(f'Saving figure to: {out_file}')
@@ -458,19 +537,15 @@ class GaugeModelPlotter:
             'y_label': r"$\delta_{\phi_{P}}$",
             'plt_label': r"$\delta_{\phi_{P}}$"
         }
-        #  num_samples = kwargs.get('num_samples', 10)
-        #  greys, reds, blues = get_colors(num_samples)
         x, y, yerr = xy_data
         fig, ax = plt.subplots()
-        _ = ax.plot(x, y, label='', ls='-', lw=2., color='C0')
+        _ = ax.plot(x, y, label='', ls='-', lw=1.5, color='k')
         _ = ax.errorbar(x, y, yerr=yerr, label='', marker=None,
-                        ls='-', alpha=0.7, lw=1.5, color='C0')
+                        ls='-', alpha=0.7, lw=1.5, color='k', ecolor='gray')
         _ = ax.axhline(y=0, color='#CC0033', ls='-', lw=2.)
 
         _ = ax.set_xlabel(labels['x_label'], fontsize=14)
         _ = ax.set_ylabel(labels['y_label'], fontsize=14)
-        #  _ = axins.axhline(y=0, color='#CC0033', ls='-', lw=1.5)
-        #  _ = ax.legend(loc='best')
         title = kwargs.get('title', None)
         if title is not None:
             _ = ax.set_title(title)
@@ -594,10 +669,10 @@ class GaugeModelPlotter:
         """Plot topological charge autocorrelations."""
         #  xy_labels = ('Step', 'Autocorrelation of ' + r'$Q$')
         #  return plot_multiple_lines(xy_data, xy_labels, **kwargs)
-        kwargs['out_file'] = get_out_file(self.out_dir,
-                                          'charge_autocorrs_vs_step')
-        kwargs['ret'] = True
-        kwargs['bounds'] = [0.2, 0.6, 0.7, 0.3]
+        #  kwargs['out_file'] = get_out_file(self.out_dir,
+        #                                    'charge_autocorrs_vs_step')
+        #  kwargs['ret'] = True
+        #  kwargs['bounds'] = [0.2, 0.6, 0.7, 0.3]
         #  try:
         #      kwargs['out_file'] = get_out_file(
         #          self.out_dir, 'charge_autocorrs_vs_step'
@@ -609,6 +684,12 @@ class GaugeModelPlotter:
             'y_label': 'Autocorrelation of ' + r'$Q$',
             'plt_label': 'Autocorrelation of ' + r'$Q$',
         }
-        _, ax, axins = plot_with_inset(xy_data, labels, **kwargs)
+        kwargs.update({
+            'labels': labels,
+            'fname': 'charge_autocorrs',
+            'two_rows': True,
+        })
+        self._plot(xy_data, **kwargs)
+        #  _, ax, axins = plot_with_inset(xy_data, labels, **kwargs)
         #  xy_labels = ('Step', 'Autocorrelation of ' + r'$Q$')
         #  return plot_multiple_lines(xy_data, xy_labels, **kwargs)
