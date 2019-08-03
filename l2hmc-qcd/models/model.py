@@ -113,11 +113,23 @@ class GaugeModel:
         self.charges_op = obs_ops['charges']
 
         self._build_sampler()
+        run_ops = self._build_run_ops()
 
-        self._create_lr()
-        self._create_optimizer()
+        if self.hmc:
+            train_ops = {}
+        else:
+            self._creat_lr()
+            self._create_optimizer()
+            self._apply_grads()
+            train_ops = self._build_train_ops()
 
-        self.build()
+        self.ops_dict = {
+            'run_ops': run_ops,
+            'train_ops': train_ops
+        }
+
+        for key, val in self.ops_dict.items():
+            [tf.add_to_collection(key, op) for op in list(val.values())]
 
     def load(self, sess, checkpoint_dir):
         latest_ckpt = tf.train.latest_checkpoint(checkpoint_dir)
@@ -345,7 +357,7 @@ class GaugeModel:
 
     def _create_optimizer(self):
         """Create learning rate and optimizer."""
-        if self.lr is None:
+        if not hasattr(self, 'lr'):
             self._create_lr()
 
         #  with tf.control_dependencies(update_ops):
@@ -730,10 +742,8 @@ class GaugeModel:
                     except KeyError:
                         continue
 
-    def build(self):
+    def _apply_grads(self):
         """Build Tensorflow graph."""
-        run_ops = self._build_run_ops()
-
         # ------------------------------
         # Ref. [1.] in TODO (line 8)
         # ------------------------------
@@ -745,12 +755,4 @@ class GaugeModel:
                     global_step=self.global_step,
                     name='train_op'
                 )
-            train_ops = self._build_train_ops()
 
-        self.ops_dict = {
-            'run_ops': run_ops,
-            'train_ops': train_ops
-        }
-
-        for key, val in self.ops_dict.items():
-            [tf.add_to_collection(key, op) for op in list(val.values())]
