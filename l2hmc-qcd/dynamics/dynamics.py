@@ -467,11 +467,6 @@ class GaugeDynamics(tf.keras.Model):
                 [v, mask * x, t], train_phase
             )
 
-            #  with tf.name_scope('net_weights_mult'):
-            #      scale *= net_weights[0]
-            #      translation *= net_weights[1]
-            #      transformation *= net_weights[2]
-
             #  with tf.name_scope('scale_exp'):
             scale *= self.eps * net_weights[0]
             s_exp = exp(scale, 'xf_scale')
@@ -498,21 +493,16 @@ class GaugeDynamics(tf.keras.Model):
             #  with tf.name_scope('grad_potential'):
             grad = self.grad_potential(x, beta)
 
-            #  with tf.name_scope('call_vb'):
             scale, translation, transformation = self.v_fn(
                 [x, grad, t], train_phase
             )
 
-            #  with tf.name_scope('net_weights_mult'):
-
-            #  with tf.name_scope('scale_exp'):
             scale *= net_weights[0]
             scale *= -0.5 * self.eps * net_weights[0]
             s_exp = exp(scale, 'vb_scale')
 
             translation *= net_weights[1]
 
-            #  with tf.name_scope('transformation_exp'):
             transformation *= self.eps * net_weights[2]
             t_exp = exp(transformation, 'vb_transformation')
 
