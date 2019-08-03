@@ -118,7 +118,7 @@ class GaugeModel:
         if self.hmc:
             train_ops = {}
         else:
-            self._creat_lr()
+            self._create_lr()
             self._create_optimizer()
             self._apply_grads()
             train_ops = self._build_train_ops()
