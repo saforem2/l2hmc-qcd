@@ -53,10 +53,12 @@ class GenericNet(tf.keras.Model):
             )
 
             if self.dropout_prob > 0:
-                self.dropout_x = tf.keras.layers.Dropout(self.dropout_prob,
-                                                         seed=GLOBAL_SEED)
-                self.dropout_v = tf.keras.layers.Dropout(self.dropout_prob,
-                                                         seed=GLOBAL_SEED)
+                self.dropout = tf.keras.layers.Dropout(self.dropout_prob,
+                                                       seed=GLOBAL_SEED)
+                #  self.dropout_x = tf.keras.layers.Dropout(self.dropout_prob,
+                #                                           seed=GLOBAL_SEED)
+                #  self.dropout_v = tf.keras.layers.Dropout(self.dropout_prob,
+                #                                           seed=GLOBAL_SEED)
 
             x_factor = self.factor / 3.
             self.x_layer = custom_dense(self.num_hidden, x_factor, name='fc_x')
@@ -85,20 +87,25 @@ class GenericNet(tf.keras.Model):
         x = tf.nn.relu(self.x_layer(x))
 
         # dropout gets applied to the output of the previous layer
-        if self.dropout_prob > 0:
-            v = self.dropout_v(v, training=train_phase)
-            x = self.dropout_x(x, training=train_phase)
+        #  if self.dropout_prob > 0:
+        #      v = self.dropout_v(v, training=train_phase)
+        #      x = self.dropout_x(x, training=train_phase)
 
         t = tf.nn.relu(self.t_layer(t))
 
         h = tf.nn.relu(v + x + t)
         h = tf.nn.relu(self.h_layer(h))
 
+        if self.dropout_prob > 0:
+            h = self.dropout(h, training=train_phase)
+
         translation = self.translation_layer(h)
 
-        scale = tf.nn.tanh(self.scale_layer(h)) * tf.exp(self.coeff_scale)
+        scale = (tf.nn.tanh(self.scale_layer(h))
+                 * tf.exp(self.coeff_scale, name='exp_coeff_scale'))
 
         transformation = (tf.nn.tanh(self.transformation_layer(h))
-                          * tf.exp(self.coeff_transformation))
+                          * tf.exp(self.coeff_transformation,
+                                   name='exp_coeff_transformation'))
 
         return scale, translation, transformation
