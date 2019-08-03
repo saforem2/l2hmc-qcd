@@ -172,11 +172,14 @@ def inference_setup(kwargs):
     # otherwise, use `model.beta_final`
     #  beta_final = kwargs['beta_final']
     #  beta_inference = kwargs['beta_inference']
+    beta_final = kwargs.get('beta_final', None)
+    beta_inference = kwargs.get('beta_inference', None)
+    beta = beta_final if beta_inference is None else beta_inference
     #  betas = [beta_final if beta_inference is None else beta_inference]
 
     inference_dict = {
         'net_weights_arr': net_weights_arr,
-        #  'betas': betas,
+        'beta': beta,
         'charge_weight': kwargs.get('charge_weight', 1.),
         'run_steps': kwargs.get('run_steps', 5000),
         'plot_lf': kwargs.get('plot_lf', True)
@@ -345,6 +348,8 @@ def main_inference(kwargs):
     #        were passed to `inference.py` (i.e. those contained in kwargs)
     # ------------------------------------------------------------------------
     inference_dict = inference_setup(kwargs)
+    if inference_dict['beta'] is None:
+        inference_dict['beta'] = params['beta_final']
 
     # --------------------------------------
     # Create GaugeModelRunner for inference
@@ -357,18 +362,24 @@ def main_inference(kwargs):
 
     # set 'betas' to be a single value
     #  inference_dict['betas'] = inference_dict['betas'][-1]
-
-    # randomize the model weights and run inference using these weights
-    runner.model = set_model_weights(runner.model, dest='rand')
-    run_inference(inference_dict,
-                  runner, run_logger,
-                  plotter, dir_append='_rand')
-
-    # zero the model weights and run inference using these weights
-    runner.model = set_model_weights(runner.model, dest='zero')
-    run_inference(inference_dict,
-                  runner, run_logger,
-                  plotter, dir_append='_zero')
+    #
+    # ========================================================================
+    #  THE FOLLOWING WONT WORK WHEN RESTORING FROM CHECKPOINT (FOR INFERENCE)
+    #  UNLESS `GaugeModel` IS ENTIRELY REBUILT:
+    #
+    #
+    #  # randomize the model weights and run inference using these weights
+    #  runner.model = set_model_weights(runner.model, dest='rand')
+    #  run_inference(inference_dict,
+    #                runner, run_logger,
+    #                plotter, dir_append='_rand')
+    #
+    #  #  zero the model weights and run inference using these weights
+    #  runner.model = set_model_weights(runner.model, dest='zero')
+    #  run_inference(inference_dict,
+    #                runner, run_logger,
+    #                plotter, dir_append='_zero')
+    # ========================================================================
 
 
 if __name__ == '__main__':
