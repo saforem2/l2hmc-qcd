@@ -108,12 +108,11 @@ class GaugeLattice(object):
             + list(self.link_shape)
         )
         samples_shape = (num_samples, *links_shape)
-        #  np.random.normal(-np.pi, np.pi, samples_shape),
         if rand:
-            samples = np.mod(np.array(
-                np.random.randn(*samples_shape),
+            samples = np.array(
+                np.random.uniform(0, 2*np.pi, samples_shape),
                 dtype=NP_FLOAT
-            ), 2*np.pi)
+            )
         else:
             samples = np.zeros(samples_shape, dtype=NP_FLOAT)
 
