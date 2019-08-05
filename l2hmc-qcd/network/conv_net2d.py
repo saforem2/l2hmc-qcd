@@ -32,6 +32,8 @@ class ConvNet2D(tf.keras.Model):
         """
         super(ConvNet2D, self).__init__(name=model_name)
 
+        self.data_format = 'channels_last'
+
         for key, val in kwargs.items():
             setattr(self, key, val)
 
