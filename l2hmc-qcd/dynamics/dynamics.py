@@ -427,33 +427,23 @@ class GaugeDynamics(tf.keras.Model):
             logdet: Jacobian factor
         """
         with tf.name_scope('update_v_forward'):
-            #  with tf.name_scope('grad_potential'):
             grad = self.grad_potential(x, beta)
 
-            # Sv: scale, Qv: transformation, Tv: translation
-            #  with tf.name_scope('call_vf'):
-            scale, translation, transformation = self.v_fn((x, grad, t),
-                                                           train_phase)
+            scale, transl, transf = self.v_fn((x, grad, t), train_phase)
 
-            #  with tf.name_scope('net_weights_mult'):
-            #  scale *= net_weights[0]
-            #  translation *= net_weights[1]
-            #  transformation *= net_weights[2]
+            with tf.name_scope('vf_mul'):
+                scale *= 0.5 * self.eps * net_weights[0]
+                transl *= net_weights[1]
+                transf *= self.eps * net_weights[2]
 
-            #  with tf.name_scope('scale_exp'):
-            scale *= 0.5 * self.eps * net_weights[0]
-            s_exp = exp(scale, 'vf_scale')
+            with tf.name_scope('vf_exp'):
+                scale_exp = exp(scale, 'vf_scale')
+                transf_exp = exp(transf, 'vf_transformation')
 
-            translation *= net_weights[1]
+            with tf.name_scope('vf_update'):
+                v = (v * scale_exp
+                     - 0.5 * self.eps * (grad * transf_exp - transl))
 
-            #  with tf.name_scope('transformation_exp'):
-            transformation *= self.eps * net_weights[2]
-            t_exp = exp(transformation, 'vf_transformation')
-
-            #  with tf.name_scope('v_update'):
-            v = v * s_exp - 0.5 * self.eps * (grad * t_exp - translation)
-
-            #  with tf.name_scope('logdet_vf'):
             logdet = tf.reduce_sum(scale, axis=1, name='logdet_vf')
 
         return v, logdet
@@ -462,27 +452,21 @@ class GaugeDynamics(tf.keras.Model):
                           train_phase, mask, mask_inv):
         """Update x in the forward leapfrog step."""
         with tf.name_scope('update_x_forward'):
-            #  with tf.name_scope('call_xf'):
-            scale, translation, transformation = self.x_fn(
-                [v, mask * x, t], train_phase
-            )
+            scale, transl, transf = self.x_fn([v, mask * x, t], train_phase)
 
-            #  with tf.name_scope('scale_exp'):
-            scale *= self.eps * net_weights[0]
-            s_exp = exp(scale, 'xf_scale')
+            with tf.name_scope('xf_mul'):
+                scale *= self.eps * net_weights[0]
+                transl *= net_weights[1]
+                transf *= self.eps * net_weights[2]
 
-            translation *= net_weights[1]
+            with tf.name_scope('xf_exp'):
+                scale_exp = exp(scale, 'xf_scale')
+                transf_exp = exp(transf, 'xf_transformation')
 
-            #  with tf.name_scope('transformation_exp'):
-            transformation *= self.eps * net_weights[2]
-            t_exp = exp(transformation, 'xf_transformation')
+            with tf.name_scope('xf_update'):
+                x = (mask * x + mask_inv
+                     * (x * scale_exp + self.eps * (v * transf_exp + transl)))
 
-            #  with tf.name_scope('x_update'):
-            x = (mask * x + mask_inv
-                 * (x * s_exp + self.eps * (v * t_exp + translation)))
-
-            #  return x, tf.reduce_sum(mask_inv * scale, axis=1)
-            #  with tf.name_scope('logdet_xf'):
             logdet = tf.reduce_sum(mask_inv * scale, axis=1, name='logdet_xf')
 
         return x, logdet
@@ -490,26 +474,25 @@ class GaugeDynamics(tf.keras.Model):
     def _update_v_backward(self, x, v, beta, t, net_weights, train_phase):
         """Update v in the backward leapfrog step. Invert the forward update"""
         with tf.name_scope('update_v_backward'):
-            #  with tf.name_scope('grad_potential'):
             grad = self.grad_potential(x, beta)
 
-            scale, translation, transformation = self.v_fn(
+            scale, transl, transf = self.v_fn(
                 [x, grad, t], train_phase
             )
 
-            scale *= net_weights[0]
-            scale *= -0.5 * self.eps * net_weights[0]
-            s_exp = exp(scale, 'vb_scale')
+            with tf.name_scope('vb_mul'):
+                scale *= -0.5 * self.eps * net_weights[0]
+                transl *= net_weights[1]
+                transf *= self.eps * net_weights[2]
 
-            translation *= net_weights[1]
+            with tf.name_scope('vb_exp'):
+                scale_exp = exp(scale, 'vb_scale')
+                transf_exp = exp(transf, 'vb_transformation')
 
-            transformation *= self.eps * net_weights[2]
-            t_exp = exp(transformation, 'vb_transformation')
+            with tf.name_scope('vb_update'):
+                v = scale_exp * (v + 0.5 * self.eps
+                                 * (grad * transf_exp - transl))
 
-            #  with tf.name_scope('v_update'):
-            v = s_exp * (v + 0.5 * self.eps * (grad * t_exp - translation))
-
-            #  with tf.name_scope('logdet_vb'):
             logdet = tf.reduce_sum(scale, axis=1, name='logdet_vb')
 
         return v, logdet
@@ -518,29 +501,23 @@ class GaugeDynamics(tf.keras.Model):
                            train_phase, mask, mask_inv):
         """Update x in the backward lf step. Inverting the forward update."""
         with tf.name_scope('update_x_backward'):
-            #  with tf.name_scope('call_xb'):
-            scale, translation, transformation = self.x_fn(
+            scale, transl, transf = self.x_fn(
                 [v, mask * x, t], train_phase
             )
 
-            #  with tf.name_scope('net_weights_mult'):
+            with tf.name_scope('xb_mul'):
+                scale *= -self.eps * net_weights[0]
+                transl *= net_weights[1]
+                transf *= self.eps * net_weights[2]
 
-            #  with tf.name_scope('scale_exp'):
-            scale *= -self.eps * net_weights[0]
-            s_exp = exp(scale, 'xb_scale')
+            with tf.name_scope('xb_exp'):
+                scale_exp = exp(scale, 'xb_scale')
+                transf_exp = exp(transf, 'xb_transformation')
 
-            translation *= net_weights[1]
+            with tf.name_scope('xb_update'):
+                x = (mask * x + mask_inv * scale_exp
+                     * (x - self.eps * (v * transf_exp + transl)))
 
-            #  with tf.name_scope('transformation_exp'):
-            transformation *= self.eps * net_weights[2]
-            t_exp = exp(transformation, 'xb_transformation')
-
-            #  with tf.name_scope('x_update'):
-            x = (mask * x + mask_inv * s_exp
-                 * (x - self.eps * (v * t_exp + translation)))
-
-            #  return x, tf.reduce_sum(mask_inv * scale, axis=1)
-            #  with tf.name_scope('logdet_xb'):
             logdet = tf.reduce_sum(mask_inv * scale, axis=1,
                                    name='logdet_xb')
 
@@ -615,12 +592,9 @@ class GaugeDynamics(tf.keras.Model):
     def hamiltonian(self, x, v, beta):
         """Compute the overall Hamiltonian."""
         with tf.name_scope('hamiltonian'):
-            with tf.name_scope('potential'):
-                potential = self.potential_energy(x, beta)
-            with tf.name_scope('kinetic'):
-                kinetic = self.kinetic_energy(v)
-            with tf.name_scope('hamiltonian'):
-                hamiltonian = potential + kinetic
+            potential = self.potential_energy(x, beta)
+            kinetic = self.kinetic_energy(v)
+            hamiltonian = potential + kinetic
 
         return hamiltonian
 
