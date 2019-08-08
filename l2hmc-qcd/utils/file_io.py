@@ -87,7 +87,10 @@ def _parse_flags(FLAGS):
         DP = flags_dict['dropout_prob']
         AW = flags_dict['aux_weight']
         hmc = flags_dict['hmc']
-        _log_dir = flags_dict['log_dir']
+        try:
+            _log_dir = flags_dict['log_dir']
+        except KeyError:
+            _log_dir = ''
 
     except (NameError, AttributeError):
         LX = FLAGS.space_size
@@ -100,7 +103,10 @@ def _parse_flags(FLAGS):
         DP = FLAGS.dropout_prob
         AW = FLAGS.aux_weight
         hmc = FLAGS.hmc
-        _log_dir = FLAGS.log_dir
+        try:
+            _log_dir = FLAGS.log_dir
+        except AttributeError:
+            _log_dir = ''
 
     out_dict = {
         'LX': LX,
