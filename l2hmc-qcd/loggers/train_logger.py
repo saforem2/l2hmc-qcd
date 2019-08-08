@@ -47,6 +47,12 @@ class TrainLogger:
             'accept_probs': {}
         }
 
+        if self.model.save_lf:
+            self.train_data['l2hmc_fns'] = {
+                'forward': [],
+                'backward': [],
+            }
+
         # log_dir will be None if using_hvd and hvd.rank() != 0
         # this prevents workers on different ranks from corrupting checkpoints
         #  if log_dir is not None and self.is_chief:
@@ -67,20 +73,25 @@ class TrainLogger:
         Returns:
             None
         """
-        io.check_else_make_dir(log_dir)
-        self.log_dir = log_dir
-        self.train_dir = os.path.join(self.log_dir, 'training')
-        self.checkpoint_dir = os.path.join(self.log_dir, 'checkpoints')
-        self.train_summary_dir = os.path.join(
-            self.log_dir, 'summaries', 'train'
-        )
-
-        self.train_log_file = os.path.join(self.train_dir, 'training_log.txt')
-        self.current_state_file = os.path.join(self.train_dir,
+        dirs = {
+            'log_dir': log_dir,
+            'checkpoint_dir': os.path.join(log_dir, 'checkpoints'),
+            'train_dir': os.path.join(log_dir, 'training'),
+            'train_summary_dir': os.path.join(log_dir, 'summaries', 'train'),
+        }
+        files = {
+            'train_log_file': os.path.join(dirs['train_dir'],
+                                           'training_log.txt'),
+            'current_state_file': os.path.join(dirs['train_dir'],
                                                'current_state.pkl')
+        }
 
-        io.make_dirs([self.train_dir, self.train_summary_dir,
-                      self.checkpoint_dir])
+        for key, val in dirs.items():
+            io.check_else_make_dir(val)
+            setattr(self, key, val)
+
+        for key, val in files.items():
+            setattr(self, key, val)
 
     def create_summaries(self):
         """Create summary objects for logging in TensorBoard."""
@@ -102,9 +113,6 @@ class TrainLogger:
         with tf.name_scope('avg_charge_diffs_training'):
             tf.summary.scalar('avg_charge_diffs',
                               tf.reduce_mean(self.model.charge_diffs_op))
-        #  with tf.name_scope('tunneling_events'):
-        #      tf.summary.scalar('tunneling_events_per_sample',
-        #                        self.model.charge_diffs_op)
 
         with tf.name_scope('avg_plaq_training'):
             tf.summary.scalar('avg_plaq', self.model.avg_plaqs_op)
@@ -114,9 +122,15 @@ class TrainLogger:
                               (u1_plaq_exact_tf(self.model.beta)
                                - self.model.avg_plaqs_op))
 
-        #  for var in tf.trainable_variables():
-        #      if 'batch_normalization' not in var.op.name:
-        #          tf.summary.histogram(var.op.name, var)
+        for k1, v1 in self.model.l2hmc_fns['out_fns_f'].items():
+            with tf.name_scope(f'{k1}_fn_f'):
+                for k2, v2 in v1.items():
+                    tf.summary.scalar(f'{k2}_avg', tf.reduce_mean(v2))
+
+        for k1, v1 in self.model.l2hmc_fns['out_fns_b'].items():
+            with tf.name_scope(f'{k1}_fn_b'):
+                for k2, v2 in v1.items():
+                    tf.summary.scalar(f'{k2}_avg', tf.reduce_mean(v2))
 
         for grad, var in grads_and_vars:
             try:
@@ -131,10 +145,6 @@ class TrainLogger:
                 variable_summaries(var, var.name)
             with tf.name_scope(name + '/training/gradients'):
                 variable_summaries(grad, var.name + '/gradients')
-                #  variable_summaries(var, name)
-                #  variable_summaries(grad, name + '/gradients')
-                #  tf.summary.histogram(name, var)
-                #  tf.summary.histogram(name + '/gradients', grad)
             if 'kernel' in var.name:
                 if 'XNet' in var.name:
                     net_str = 'XNet/'
@@ -150,7 +160,6 @@ class TrainLogger:
                         grad_norm_summary(net_str + 'transformation', grad)
                     if 'translation' in var.name:
                         grad_norm_summary(net_str + 'translation', grad)
-            #  if 'batch_norm' not in name:
 
         self.summary_op = tf.summary.merge_all(name='train_summary_op')
 
