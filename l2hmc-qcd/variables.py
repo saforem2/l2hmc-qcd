@@ -4,6 +4,7 @@ import os
 
 
 TF_FLOAT = tf.float32
+TF_INT = tf.int32
 NP_FLOAT = np.float32
 
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
