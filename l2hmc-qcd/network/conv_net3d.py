@@ -13,10 +13,13 @@ authors https://github.com/brain-research/l2hmc.
 Author: Sam Foreman (github: @saforem2)
 Date: 01/16/2019
 """
+from __future__ import absolute_import
+from __future__ import print_function
+from __future__ import division
+
 import numpy as np
 import tensorflow as tf
 from .network_utils import batch_norm
-#  import utils.file_io as io
 
 from variables import GLOBAL_SEED, TF_FLOAT
 
