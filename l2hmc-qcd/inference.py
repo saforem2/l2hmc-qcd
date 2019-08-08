@@ -317,27 +317,18 @@ def main_inference(kwargs):
         return
     # -----------------------------------------------------------------------
 
-    #  if is_chief:
     checkpoint_dir = os.path.join(params['log_dir'], 'checkpoints/')
     assert os.path.isdir(checkpoint_dir)
     checkpoint_file = tf.train.latest_checkpoint(checkpoint_dir)
-    #  else:
-    #      params['log_dir'] = None
-    #      checkpoint_dir = None
 
     config, params = create_config(params)
-
-    # ---------------------------------------------------------
-    # INFERENCE
-    # ---------------------------------------------------------
     sess = tf.Session(config=config)
-    #  if is_chief:
-    #  saver = tf.train.Saver()
-    #  saver.restore(sess, tf.train.latest_checkpoint(checkpoint_dir))
     saver = tf.train.import_meta_graph(f'{checkpoint_file}.meta')
     saver.restore(sess, checkpoint_file)
+
     run_ops = tf.get_collection('run_ops')
     inputs = tf.get_collection('inputs')
+
     run_logger = RunLogger(params, inputs, run_ops, save_lf_data=False)
     plotter = GaugeModelPlotter(params, run_logger.figs_dir)
 
@@ -346,10 +337,14 @@ def main_inference(kwargs):
     #
     #  NOTE: We are only interested in the command line arguments that 
     #        were passed to `inference.py` (i.e. those contained in kwargs)
-    # ------------------------------------------------------------------------
     inference_dict = inference_setup(kwargs)
     if inference_dict['beta'] is None:
         inference_dict['beta'] = params['beta_final']
+    # ------------------------------------------------------------------------
+
+    net_weights_file = os.path.join(params['log_dir'], 'net_weights.txt')
+    np.savetxt(net_weights_file, inference_dict['net_weights_arr'],
+               delimiter=', ', newline='\n', fmt='%-.4g')
 
     # --------------------------------------
     # Create GaugeModelRunner for inference
