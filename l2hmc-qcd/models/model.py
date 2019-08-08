@@ -115,6 +115,11 @@ class GaugeModel:
         self._build_sampler()
         run_ops = self._build_run_ops()
 
+        #  self.l2hmc_fns = {
+        #      'out_fns_f': self.extract_l2hmc_fns(self.fns_out_f),
+        #      'out_fns_b': self.extract_l2hmc_fns(self.fns_out_b),
+        #  }
+
         if self.hmc:
             train_ops = {}
         else:
@@ -605,10 +610,8 @@ class GaugeModel:
                                                                train_phase,
                                                                self.save_lf)
             x_proposed = x_dynamics_output['x_proposed']
-            #  x_proposed = tf.mod(x_dynamics_output['x_proposed'], 2 * np.pi)
             px = x_dynamics_output['accept_prob']
             x_out = x_dynamics_output['x_out']
-            #  x_out = tf.mod(x_dynamics_output['x_out'], 2 * np.pi)
 
         # Auxiliary variable
         with tf.name_scope('z_update'):
@@ -619,7 +622,6 @@ class GaugeModel:
                                                                save_lf=False)
             z_proposed = z_dynamics_output['x_proposed']
             pz = z_dynamics_output['accept_prob']
-            #  z_proposed, _, pz, _ = self.dynamics(z, beta)
 
         with tf.name_scope('top_charge_diff'):
             x_dq = tf.cast(
@@ -734,6 +736,7 @@ class GaugeModel:
                            'lf_out_f', 'lf_out_b',
                            'pxs_out_f', 'pxs_out_b',
                            'logdets_f', 'logdets_b',
+                           'fns_out_f', 'fns_out_b',
                            'sumlogdet_f', 'sumlogdet_b']
                 for key in op_keys:
                     try:
@@ -741,6 +744,30 @@ class GaugeModel:
                         setattr(self, key, op)
                     except KeyError:
                         continue
+
+                with tf.name_scope('l2hmc_fns'):
+                    self.l2hmc_fns = {
+                        'out_fns_f': self.extract_l2hmc_fns(self.fns_out_f),
+                        'out_fns_b': self.extract_l2hmc_fns(self.fns_out_b),
+                    }
+
+    def extract_l2hmc_fns(self, fns):
+        """Method for extracting each of the Q, S, T functions as tensors."""
+        if not self.save_lf:
+            return
+
+        # fns has shape: (num_steps, 4, 3, num_samples, lattice.num_links)
+        fnsT = tf.transpose(fns, perm=[2, 1, 0, 3, 4], name='fns_transposed')
+
+        out_fns = {}
+        names = ['scale', 'transl', 'transf']
+        subnames = ['v1', 'x1', 'x2', 'v2']
+        for idx, name in enumerate(names):
+            out_fns[name] = {}
+            for subidx, subname in enumerate(subnames):
+                out_fns[name][subname] = fnsT[idx][subidx]
+
+        return out_fns
 
     def _apply_grads(self):
         """Build Tensorflow graph."""
