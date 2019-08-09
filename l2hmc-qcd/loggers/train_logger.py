@@ -14,7 +14,7 @@ import tensorflow as tf
 
 import utils.file_io as io
 
-from variables import TRAIN_HEADER
+from config import TRAIN_HEADER
 from utils.tf_logging import variable_summaries, grad_norm_summary
 from utils.file_io import save_params
 from lattice.lattice import u1_plaq_exact_tf
@@ -44,7 +44,7 @@ class TrainLogger:
             'plaqs': {},
             'charges': {},
             'charge_diffs': {},
-            'accept_probs': {}
+            'px': {}
         }
 
         if self.model.save_lf:
@@ -208,12 +208,18 @@ class TrainLogger:
         self.charges_dict[key] = data['charges']
         self.charge_diffs_dict[key] = data['charge_diffs']
 
-        self.train_data['loss'][key] = data['loss']
-        self.train_data['actions'][key] = data['actions']
-        self.train_data['plaqs'][key] = data['plaqs']
-        self.train_data['charges'][key] = data['charges']
-        self.train_data['charge_diffs'][key] = data['charge_diffs']
-        self.train_data['accept_probs'][key] = data['px']
+        obs_keys = ['loss', 'actions',
+                    'plaqs', 'charges',
+                    'charge_diffs', 'px']
+        for obs_key in obs_keys:
+            self.train_data[obs_key][key] = data[obs_key]
+
+        #  self.train_data['loss'][key] = data['loss']
+        #  self.train_data['actions'][key] = data['actions']
+        #  self.train_data['plaqs'][key] = data['plaqs']
+        #  self.train_data['charges'][key] = data['charges']
+        #  self.train_data['charge_diffs'][key] = data['charge_diffs']
+        #  self.train_data['px'][key] = data['px']
 
         self.train_data_strings.append(data_str)
         if step % self.model.print_steps == 0:
