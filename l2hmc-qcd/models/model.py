@@ -53,7 +53,7 @@ except ImportError:
 
 import utils.file_io as io
 
-from variables import GLOBAL_SEED, TF_FLOAT, TF_INT, PARAMS
+from config import GLOBAL_SEED, TF_FLOAT, TF_INT, PARAMS
 from lattice.lattice import GaugeLattice
 from dynamics.dynamics import GaugeDynamics
 from dynamics.nnehmc_dynamics import nnehmcDynamics
@@ -539,31 +539,43 @@ class GaugeModel:
 
     def _build_run_ops(self):
         """Build run_ops dict containing grouped operations for inference."""
-        run_ops = {
-            'x_out': self.x_out,
-            'px': self.px,
-            'actions_op': self.actions_op,
-            'plaqs_op': self.plaqs_op,
-            'avg_plaqs_op': self.avg_plaqs_op,
-            'charges_op': self.charges_op,
-            'charge_diffs_op': self.charge_diffs_op,
-        }
+        keys = ['x_out', 'px', 'actions_op',
+                'plaqs_op', 'avg_plaqs_op',
+                'charges_op', 'charge_diffs_op']
+        run_ops = {k: getattr(self, k) for k in keys}
+        #  run_ops = {
+        #      'x_out': self.x_out,
+        #      'px': self.px,
+        #      'actions_op': self.actions_op,
+        #      'plaqs_op': self.plaqs_op,
+        #      'avg_plaqs_op': self.avg_plaqs_op,
+        #      'charges_op': self.charges_op,
+        #      'charge_diffs_op': self.charge_diffs_op,
+        #  }
 
         if self.save_lf:
-            run_ops.update({
-                'lf_out_f': self.lf_out_f,
-                'pxs_out_f': self.pxs_out_f,
-                'masks_f': self.masks_f,
-                'logdets_f': self.logdets_f,
-                'sumlogdet_f': self.sumlogdet_f,
-                'fns_out_f': self.fns_out_f,
-                'lf_out_b': self.lf_out_b,
-                'pxs_out_b': self.pxs_out_b,
-                'masks_b': self.masks_b,
-                'logdets_b': self.logdets_b,
-                'sumlogdet_b': self.sumlogdet_b,
-                'fns_out_b': self.fns_out_b,
-            })
+            keys = ['lf_out', 'pxs_out', 'masks',
+                    'logdets', 'sumlogdet', 'fns_out']
+
+            fkeys = [k + '_f' for k in keys]
+            bkeys = [k + '_b' for k in keys]
+
+            run_ops.update({k: getattr(self, k) for k in fkeys})
+            run_ops.update({k: getattr(self, k) for k in bkeys})
+            #  run_ops.update({
+            #      'lf_out_f': self.lf_out_f,
+            #      'pxs_out_f': self.pxs_out_f,
+            #      'masks_f': self.masks_f,
+            #      'logdets_f': self.logdets_f,
+            #      'sumlogdet_f': self.sumlogdet_f,
+            #      'fns_out_f': self.fns_out_f,
+            #      'lf_out_b': self.lf_out_b,
+            #      'pxs_out_b': self.pxs_out_b,
+            #      'masks_b': self.masks_b,
+            #      'logdets_b': self.logdets_b,
+            #      'sumlogdet_b': self.sumlogdet_b,
+            #      'fns_out_b': self.fns_out_b,
+            #  })
 
         run_ops['dynamics_eps'] = self.dynamics.eps
 
@@ -575,18 +587,24 @@ class GaugeModel:
             train_ops = {}
 
         else:
-            train_ops = {
-                'train_op': self.train_op,
-                'loss_op': self.loss_op,
-                'x_out': self.x_out,
-                'px': self.px,
-                'dynamics.eps': self.dynamics.eps,
-                'actions_op': self.actions_op,
-                'plaqs_op': self.plaqs_op,
-                'charges_op': self.charges_op,
-                'charge_diffs_op': self.charge_diffs_op,
-                'lr': self.lr
-            }
+            keys = ['train_op', 'loss_op', 'x_out',
+                    'px', 'actions_op', 'plaqs_op',
+                    'charges_op', 'charge_diffs_op', 'lr']
+            train_ops = {k: getattr(self, k) for k in keys}
+
+            train_ops['dynamics.eps'] = self.dynamics.eps
+            #  train_ops = {
+            #      'train_op': self.train_op,
+            #      'loss_op': self.loss_op,
+            #      'x_out': self.x_out,
+            #      'px': self.px,
+            #      'dynamics.eps': self.dynamics.eps,
+            #      'actions_op': self.actions_op,
+            #      'plaqs_op': self.plaqs_op,
+            #      'charges_op': self.charges_op,
+            #      'charge_diffs_op': self.charge_diffs_op,
+            #      'lr': self.lr
+            #  }
 
         return train_ops
 

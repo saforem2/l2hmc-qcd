@@ -18,12 +18,18 @@ from collections import Counter, OrderedDict
 from scipy.stats import sem
 import utils.file_io as io
 
-from variables import RUN_HEADER, NP_FLOAT, TF_FLOAT
+from config import RUN_HEADER, NP_FLOAT, TF_FLOAT
 
 from lattice.lattice import u1_plaq_exact, u1_plaq_exact_tf
 from utils.tf_logging import variable_summaries
 
 from .train_logger import save_params
+
+
+FB_DICT = {
+    'forward': [],
+    'backward': [],
+}
 
 
 def arr_from_dict(d, key):
@@ -79,26 +85,32 @@ class RunLogger:
 
         if params['save_lf']:
             self.samples_arr = []
-            self.lf_out = {
-                'forward': [],
-                'backward': [],
-            }
-            self.pxs_out = {
-                'forward': [],
-                'backward': [],
-            }
-            self.masks = {
-                'forward': [],
-                'backward': [],
-            }
-            self.logdets = {
-                'forward': [],
-                'backward': [],
-            }
-            self.sumlogdet = {
-                'forward': [],
-                'backward': [],
-            }
+            self.lf_out = FB_DICT.copy()
+            self.pxs_out = FB_DICT.copy()
+            self.masks = FB_DICT.copy()
+            self.logdets = FB_DICT.copy()
+            self.sumlogdet = FB_DICT.copy()
+            self.l2hmc_fns = FB_DICT.copy()
+            #  self.lf_out = {
+            #      'forward': [],
+            #      'backward': [],
+            #  }
+            #  self.pxs_out = {
+            #      'forward': [],
+            #      'backward': [],
+            #  }
+            #  self.masks = {
+            #      'forward': [],
+            #      'backward': [],
+            #  }
+            #  self.logdets = {
+            #      'forward': [],
+            #      'backward': [],
+            #  }
+            #  self.sumlogdet = {
+            #      'forward': [],
+            #      'backward': [],
+            #  }
 
         self.run_ops_dict = self.build_run_ops_dict(params, run_ops)
         self.inputs_dict = self.build_inputs_dict(inputs)
@@ -114,31 +126,49 @@ class RunLogger:
 
     def build_run_ops_dict(self, params, run_ops):
         """Build dictionary of tensorflow operations used for inference."""
-        run_ops_dict = {
-            'x_out': run_ops[0],
-            'px': run_ops[1],
-            'actions_op': run_ops[2],
-            'plaqs_op': run_ops[3],
-            'avg_plaqs_op': run_ops[4],
-            'charges_op': run_ops[5],
-            'charge_diffs_op': run_ops[6]
-        }
+        def get_lf_keys(direction):
+            base_keys = ['lf_out', 'pxs_out', 'masks',
+                         'logdets', 'sumlogdet', 'fns_out']
+            return [k + f'_{direction}' for k in base_keys]
+
+        keys = ['x_out', 'px', 'actions_op',
+                'plaqs_op', 'avg_plaqs_op',
+                'charges_op', 'charge_diffs_op']
+
+        run_ops_dict = {key: run_ops[idx] for idx, key in enumerate(keys)}
 
         if params['save_lf']:
-            run_ops_dict.update({
-                'lf_out_f': run_ops[7],
-                'pxs_out_f': run_ops[8],
-                'masks_f': run_ops[9],
-                'logdets_f': run_ops[10],
-                'sumlogdet_f': run_ops[11],
-                'fns_out_f': run_ops[12],
-                'lf_out_b': run_ops[13],
-                'pxs_out_b': run_ops[14],
-                'masks_b': run_ops[15],
-                'logdets_b': run_ops[16],
-                'sumlogdet_b': run_ops[17],
-                'fns_out_b': run_ops[18]
-            })
+            keys.extend(get_lf_keys('f'))
+            keys.extend(get_lf_keys('b'))
+            for key, val in zip(keys[7:], run_ops[7:]):
+                run_ops_dict.update({key: val})
+        #  for idx, key in enumerate(keys):
+        #      run_ops_dict[key] = run_ops[idx]
+
+        #  run_ops_dict = {
+        #      'x_out': run_ops[0],
+        #      'px': run_ops[1],
+        #      'actions_op': run_ops[2],
+        #      'plaqs_op': run_ops[3],
+        #      'avg_plaqs_op': run_ops[4],
+        #      'charges_op': run_ops[5],
+        #      'charge_diffs_op': run_ops[6]
+        #  }
+
+        #  run_ops_dict.update({
+        #      'lf_out_f': run_ops[7],
+        #      'pxs_out_f': run_ops[8],
+        #      'masks_f': run_ops[9],
+        #      'logdets_f': run_ops[10],
+        #      'sumlogdet_f': run_ops[11],
+        #      'fns_out_f': run_ops[12],
+        #      'lf_out_b': run_ops[13],
+        #      'pxs_out_b': run_ops[14],
+        #      'masks_b': run_ops[15],
+        #      'logdets_b': run_ops[16],
+        #      'sumlogdet_b': run_ops[17],
+        #      'fns_out_b': run_ops[18]
+        #  })
 
         return run_ops_dict
 
@@ -159,45 +189,23 @@ class RunLogger:
         ld = self.log_dir
         self.summary_writer = tf.contrib.summary.create_file_writer(ld)
 
-        #  tf.summary.scalar('charges_sq', tf.square(self.model.charges_op))
-        #  with tf.name_scope('inference_summaries'):
-        #  variable_summaries(self.model.actions_op, 'actions')
-        #  variable_summaries(self.model.plaqs_op, 'plaqs')
-        #  variable_summaries(self.model.charge_diffs_op, 'tunneling_events')
-
         with tf.name_scope('avg_actions_inference'):
             tf.summary.scalar('avg_actions',
                               tf.reduce_mean(self.run_ops_dict['actions_op']))
-            #  tf.reduce_mean(self.model.actions_op))
 
         with tf.name_scope('avg_plaqs_inference'):
-            #  tf.summary.scalar('avg_plaqs', self.model.avg_plaqs_op)
             tf.summary.scalar('avg_plaqs', self.run_ops_dict['avg_plaqs_op'])
 
         with tf.name_scope('avg_plaq_diff_inference'):
             tf.summary.scalar('avg_plaq_diff',
                               (u1_plaq_exact_tf(self.inputs_dict['beta'])
                                - self.run_ops_dict['avg_plaqs_op']))
-            #  (u1_plaq_exact_tf(self.model.beta)
-            #   - self.model.avg_plaqs_op))
 
         with tf.name_scope('avg_charge_diffs_inference'):
             tf.summary.scalar('avg_charge_diffs',
                               tf.reduce_mean(
                                   self.run_ops_dict['charge_diffs_op']
                               ))
-        #  names = ['scale', 'transl', 'transf']
-        #  subnames = ['v1', 'x1', 'x2', 'v2']
-        #  fns_out_fT = tf.transpose(self.run_ops_dict['fns_out_f'],
-        #                            perm=[2, 1, 0, 3, 4])
-        #  for idx
-            #  tf.summary.scalar('avg_charge_diffs',
-            #                    tf.reduce_mean(self.model.charge_diffs_op))
-
-            #  tf.summary.scalar('actions', self.model.actions_op)
-            #  tf.summary.scalar('plaqs', self.model.plaqs_op)
-            #  tf.summary.scalar('tunneling_events_per_sample',
-            #                    self.model.charge_diffs_op)
 
         self.summary_op = tf.summary.merge_all(name='run_summary_op')
 
@@ -241,30 +249,12 @@ class RunLogger:
         #  if self.model.save_lf:
         if self.params['save_lf']:
             self.samples_arr = []
-            self.lf_out = {
-                'forward': [],
-                'backward': [],
-            }
-            self.pxs_out = {
-                'forward': [],
-                'backward': [],
-            }
-            self.masks = {
-                'forward': [],
-                'backward': [],
-            }
-            self.logdets = {
-                'forward': [],
-                'backward': [],
-            }
-            self.sumlogdet = {
-                'forward': [],
-                'backward': [],
-            }
-            self.l2hmc_fns = {
-                'forward': [],
-                'backward': [],
-            }
+            self.lf_out = FB_DICT.copy()
+            self.pxs_out = FB_DICT.copy()
+            self.masks = FB_DICT.copy()
+            self.logdets = FB_DICT.copy()
+            self.sumlogdet = FB_DICT.copy()
+            self.l2hmc_fns = FB_DICT.copy()
 
         #  eps = self.model.eps
         charge_weight = weights['charge_weight']
@@ -329,11 +319,15 @@ class RunLogger:
         step = data['step']
         beta = data['beta']
         key = (step, beta)
-        self.run_data['px'][key] = data['px']
-        self.run_data['actions'][key] = data['actions']
-        self.run_data['plaqs'][key] = data['plaqs']
-        self.run_data['charges'][key] = data['charges']
-        self.run_data['charge_diffs'][key] = data['charge_diffs']
+
+        obs_keys = ['px', 'actions', 'plaqs', 'charges', 'charge_diffs']
+        for k in obs_keys:
+            self.run_data[k][key] = data[key]
+        #  self.run_data['px'][key] = data['px']
+        #  self.run_data['actions'][key] = data['actions']
+        #  self.run_data['plaqs'][key] = data['plaqs']
+        #  self.run_data['charges'][key] = data['charges']
+        #  self.run_data['charge_diffs'][key] = data['charge_diffs']
 
         #  if self.model.save_lf:
         if self.params['save_lf']:
@@ -441,19 +435,26 @@ class RunLogger:
         io.check_else_make_dir(self.run_dir)
         io.check_else_make_dir(observables_dir)
 
-        #  if self.model.save_lf:
         if self.save_lf_data:
-            self.save_attr('samples_out', self.samples_arr)
-            self.save_attr('lf_forward', self.lf_out['forward'])
-            self.save_attr('lf_backward', self.lf_out['backward'])
-            self.save_attr('masks_forward', self.masks['forward'])
-            self.save_attr('masks_backward', self.masks['backward'])
-            self.save_attr('logdets_forward', self.logdets['forward'])
-            self.save_attr('logdets_backward', self.logdets['backward'])
-            self.save_attr('sumlogdet_forward', self.sumlogdet['forward'])
-            self.save_attr('sumlogdet_backward', self.sumlogdet['backward'])
-            self.save_attr('accept_probs_forward', self.pxs_out['forward'])
-            self.save_attr('accept_probs_backward', self.pxs_out['backward'])
+            keys = ['lf_out', 'masks', 'logdets', 'sumlogdet', 'pxs_out']
+            for key in keys:
+                f = 'forward'
+                b = 'backward'
+                self.save_attr(key + f'_{f}', getattr(self, key)[f])
+                self.save_attr(key + f'_{b}', getattr(self, key)[b])
+
+        #  if self.save_lf_data:
+        #      self.save_attr('samples_out', self.samples_arr)
+        #      self.save_attr('lf_out_forward', self.lf_out['forward'])
+        #      self.save_attr('lf_out_backward', self.lf_out['backward'])
+        #      self.save_attr('masks_forward', self.masks['forward'])
+        #      self.save_attr('masks_backward', self.masks['backward'])
+        #      self.save_attr('logdets_forward', self.logdets['forward'])
+        #      self.save_attr('logdets_backward', self.logdets['backward'])
+        #      self.save_attr('sumlogdet_forward', self.sumlogdet['forward'])
+        #      self.save_attr('sumlogdet_backward', self.sumlogdet['backward'])
+        #      self.save_attr('accept_probs_forward', self.pxs_out['forward'])
+        #     self.save_attr('accept_probs_backward', self.pxs_out['backward'])
 
         run_stats = self.calc_observables_stats(self.run_data, therm_frac)
         charges = self.run_data['charges']

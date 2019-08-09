@@ -27,7 +27,7 @@ import numpy as np
 import numpy.random as npr
 import tensorflow as tf
 
-from variables import GLOBAL_SEED, TF_FLOAT, TF_INT
+from config import GLOBAL_SEED, TF_FLOAT, TF_INT
 from network.network import FullNet
 
 
@@ -183,6 +183,17 @@ class GaugeDynamics(tf.keras.Model):
         # Simulate dynamics both forward and backward
         # Use sampled masks to compute the actual solutions
         #  with tf.name_scope('apply_transition'):
+        tmp_dict = {}
+
+        def get_lf_keys(direction):
+            base_keys = ['lf_out', 'logdets', 'sumlogdet', 'fns_out']
+            new_keys = [k + f'_{direction}' for k in base_keys]
+            return list(zip(new_keys, base_keys))
+
+        keys_f = get_lf_keys('f')
+        keys_b = get_lf_keys('b')
+        #  lf_keys = [('lf_out_f', 'lf_out'), ('logdets_f', 'logdets'),
+        #             ('sumlogdet_f', 'sumlogdet'), ('fns_out_f', 'fns_out')]
         with tf.name_scope('transition_forward'):
             outputs_f = self.transition_kernel(x_in, beta,
                                                net_weights,
@@ -191,13 +202,17 @@ class GaugeDynamics(tf.keras.Model):
                                                save_lf=save_lf)
             xf = outputs_f['x_proposed']
             vf = outputs_f['v_proposed']
-            pxs_out_f = outputs_f['accept_prob']
+            tmp_dict['pxs_out_f'] = outputs_f['accept_prob']
 
-            if save_lf:
-                lf_out_f = outputs_f['lf_out']
-                logdets_f = outputs_f['logdets']
-                sumlogdet_f = outputs_f['sumlogdet']
-                fns_out_f = outputs_f['fns_out']
+            #  if save_lf:
+            #      tmp_dict.update({k[0]: outputs_f[k[1]] for k in keys_f})
+            #      for key in lf_keys:
+            #          tmp_dict[key[0]] = outputs_f[key[1]]
+            #
+            #      tmp_dict['lf_out_f'] = outputs_f['lf_out']
+            #      tmp_dict['logdets_f'] = outputs_f['logdets']
+            #      tmp_dict['sumlogdet_f'] = outputs_f['sumlogdet']
+            #      tmp_dict['fns_out_f'] = outputs_f['fns_out']
 
         with tf.name_scope('transition_backward'):
             outputs_b = self.transition_kernel(x_in, beta,
@@ -207,18 +222,20 @@ class GaugeDynamics(tf.keras.Model):
                                                save_lf=save_lf)
             xb = outputs_b['x_proposed']
             vb = outputs_b['v_proposed']
-            pxs_out_b = outputs_b['accept_prob']
+            tmp_dict['pxs_out_b'] = outputs_b['accept_prob']
 
-            if save_lf:
-                lf_out_b = outputs_b['lf_out']
-                logdets_b = outputs_b['logdets']
-                sumlogdet_b = outputs_b['sumlogdet']
-                fns_out_b = outputs_b['fns_out']
+        if save_lf:
+            tmp_dict.update({k[0]: outputs_f[k[1]] for k in keys_f})
+            tmp_dict.update({k[0]: outputs_b[k[1]] for k in keys_b})
+            #  lf_out_b = outputs_b['lf_out']
+            #  logdets_b = outputs_b['logdets']
+            #  sumlogdet_b = outputs_b['sumlogdet']
+            #  fns_out_b = outputs_b['fns_out']
 
         # Decide direction uniformly
         with tf.name_scope('transition_masks'):
             with tf.name_scope('forward_mask'):
-                masks_f = tf.cast(
+                tmp_dict['masks_f'] = tf.cast(
                     tf.random_uniform((self.batch_size,),
                                       dtype=TF_FLOAT,
                                       seed=GLOBAL_SEED) > 0.5,
@@ -226,21 +243,21 @@ class GaugeDynamics(tf.keras.Model):
                     name='forward_mask'
                 )
             with tf.name_scope('backward_mask'):
-                masks_b = 1. - masks_f
+                tmp_dict['masks_b'] = 1. - tmp_dict['masks_f']
 
         # Obtain proposed states
         with tf.name_scope('x_proposed'):
-            x_proposed = (masks_f[:, None] * xf
-                          + masks_b[:, None] * xb)
+            x_proposed = (tmp_dict['masks_f'][:, None] * xf
+                          + tmp_dict['masks_b'][:, None] * xb)
 
         with tf.name_scope('v_proposed'):
-            v_proposed = (masks_f[:, None] * vf
-                          + masks_b[:, None] * vb)
+            v_proposed = (tmp_dict['masks_f'][:, None] * vf
+                          + tmp_dict['masks_b'][:, None] * vb)
 
         # Probability of accepting the proposed states
         with tf.name_scope('accept_prob'):
-            accept_prob = (masks_f * pxs_out_f
-                           + masks_b * pxs_out_b)
+            accept_prob = (tmp_dict['masks_f'] * tmp_dict['pxs_out_f']
+                           + tmp_dict['masks_b'] * tmp_dict['pxs_out_b'])
 
         # Accept or reject step
         with tf.name_scope('accept_mask'):
@@ -266,23 +283,24 @@ class GaugeDynamics(tf.keras.Model):
         }
 
         if save_lf:
-            outputs['masks_f'] = masks_f
-            outputs['masks_b'] = masks_b
-
-            outputs['lf_out_f'] = lf_out_f
-            outputs['lf_out_b'] = lf_out_b
-
-            outputs['pxs_out_f'] = pxs_out_f
-            outputs['pxs_out_b'] = pxs_out_b
-
-            outputs['logdets_f'] = logdets_f
-            outputs['logdets_b'] = logdets_b
-
-            outputs['sumlogdet_f'] = sumlogdet_f
-            outputs['sumlogdet_b'] = sumlogdet_b
-
-            outputs['fns_out_f'] = fns_out_f
-            outputs['fns_out_b'] = fns_out_b
+            outputs.update(tmp_dict)
+            #  outputs['masks_f'] = tmp_dict['masks_f']
+            #  outputs['masks_b'] = tmp_dict['masks_b']
+            #
+            #  outputs['lf_out_f'] = lf_out_f
+            #  outputs['lf_out_b'] = lf_out_b
+            #
+            #  outputs['pxs_out_f'] = pxs_out_f
+            #  outputs['pxs_out_b'] = pxs_out_b
+            #
+            #  outputs['logdets_f'] = logdets_f
+            #  outputs['logdets_b'] = logdets_b
+            #
+            #  outputs['sumlogdet_f'] = sumlogdet_f
+            #  outputs['sumlogdet_b'] = sumlogdet_b
+            #
+            #  outputs['fns_out_f'] = fns_out_f
+            #  outputs['fns_out_b'] = fns_out_b
 
         return outputs
 
