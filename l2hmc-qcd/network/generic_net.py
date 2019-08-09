@@ -72,9 +72,9 @@ class GenericNet(tf.keras.Model):
                 self.x_dim, 0.001, name='fc_scale'
             )
 
-            self.translation_layer = custom_dense(
-                self.x_dim, 0.001, 'fc_translation'
-            )
+            #  self.translation_layer = custom_dense(
+            #      self.x_dim, 0.001, 'fc_translation'
+            #  )
 
             self.transformation_layer = custom_dense(
                 self.x_dim, 0.001, 'fc_transformation'
@@ -99,10 +99,12 @@ class GenericNet(tf.keras.Model):
         if self.dropout_prob > 0:
             h = self.dropout(h, training=train_phase)
 
-        translation = self.translation_layer(h)
+        #  translation = self.translation_layer(h)
 
         scale = (tf.nn.tanh(self.scale_layer(h))
                  * tf.exp(self.coeff_scale, name='exp_coeff_scale'))
+
+        translation = tf.zeros_like(scale, name='translation')
 
         transformation = (tf.nn.tanh(self.transformation_layer(h))
                           * tf.exp(self.coeff_transformation,
