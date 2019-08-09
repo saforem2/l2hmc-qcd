@@ -10,7 +10,7 @@ Date: 01/15/2019
 import numpy as np
 import tensorflow as tf
 from scipy.special import i0, i1
-from variables import TF_FLOAT, NP_FLOAT
+from config import TF_FLOAT, NP_FLOAT
 
 
 def u1_plaq_exact(beta):

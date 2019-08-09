@@ -23,7 +23,7 @@ try:
 except ImportError:
     HAS_HOROVOD = False
 
-from variables import FILE_PATH
+from config import FILE_PATH
 
 
 def log(s, nl=True):

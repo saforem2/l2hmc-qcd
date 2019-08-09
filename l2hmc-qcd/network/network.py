@@ -15,7 +15,7 @@ from .generic_net import GenericNet
 import utils.file_io as io
 #  import utils.file_io as io
 
-from variables import GLOBAL_SEED
+from config import GLOBAL_SEED
 
 
 np.random.seed(GLOBAL_SEED)

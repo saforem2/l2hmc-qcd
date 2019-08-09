@@ -49,7 +49,8 @@ from tensorflow.core.protobuf import rewriter_config_pb2
 
 import utils.file_io as io
 
-from variables import GLOBAL_SEED, NP_FLOAT
+from config import GLOBAL_SEED, NP_FLOAT
+from update import set_precision
 from utils.parse_args import parse_args
 #  from utils.attr_dict import AttrDict
 from models.model import GaugeModel
@@ -179,8 +180,8 @@ def create_config(params):
 
 
 def train_setup(FLAGS, log_file=None):
-    io.log('\n' + 80 * '-')
-    io.log("Running L2HMC algorithm...")
+    io.log(SEP_STR)
+    io.log("Starting training using L2HMC algorithm...")
     tf.keras.backend.clear_session()
     tf.reset_default_graph()
 
@@ -208,8 +209,13 @@ def train_setup(FLAGS, log_file=None):
         io.log("Using CPU for training.")
         params['data_format'] = 'channels_last'
 
+    io.log(SEP_STR)
     if FLAGS.float64:
-        tf.keras.backend.set_floatx('float64')
+        io.log(f'Setting floating point precision to `float64`.')
+        set_precision('float64')
+    else:
+        io.log(f'Using `float32` for floating point precision.')
+    io.log(SEP_STR)
 
     if FLAGS.horovod:
         params['using_hvd'] = True
