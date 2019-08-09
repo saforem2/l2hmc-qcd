@@ -21,7 +21,7 @@ import numpy as np
 import tensorflow as tf
 from .network_utils import batch_norm
 
-from variables import GLOBAL_SEED, TF_FLOAT
+from config import GLOBAL_SEED, TF_FLOAT
 
 
 np.random.seed(GLOBAL_SEED)

@@ -45,7 +45,7 @@ import utils.file_io as io
 
 #  from utils.model_loader import load_model
 #  import gauge_model_inference as inference
-from variables import GLOBAL_SEED, NP_FLOAT
+from config import GLOBAL_SEED, NP_FLOAT
 from utils.parse_args import parse_args
 from models.gauge_model import GaugeModel
 from loggers.train_logger import TrainLogger

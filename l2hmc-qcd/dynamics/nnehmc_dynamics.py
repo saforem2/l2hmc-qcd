@@ -15,7 +15,7 @@ import numpy as np
 import numpy.random as npr
 import tensorflow as tf
 
-from variables import GLOBAL_SEED, TF_FLOAT
+from config import GLOBAL_SEED, TF_FLOAT
 from network.network import FullNet
 
 

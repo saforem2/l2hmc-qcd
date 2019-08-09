@@ -1,4 +1,4 @@
-from variables import TF_FLOAT
+from config import TF_FLOAT
 import tensorflow as tf
 
 

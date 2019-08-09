@@ -2,7 +2,7 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.contrib.framework import add_arg_scope, arg_scope
 
-from variables import GLOBAL_SEED, TF_FLOAT, NP_FLOAT
+from config import GLOBAL_SEED, TF_FLOAT, NP_FLOAT
 
 
 np.random.seed(GLOBAL_SEED)

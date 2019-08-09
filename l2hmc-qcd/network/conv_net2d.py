@@ -10,7 +10,7 @@ Date: 06/14/2019
 import numpy as np
 import tensorflow as tf
 
-from variables import GLOBAL_SEED, TF_FLOAT
+from config import GLOBAL_SEED, TF_FLOAT
 from .network_utils import batch_norm
 
 np.random.seed(GLOBAL_SEED)
