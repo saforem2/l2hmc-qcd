@@ -17,7 +17,7 @@ import numpy as np
 
 import utils.file_io as io
 from lattice.lattice import u1_plaq_exact
-from variables import RUN_HEADER
+from config import RUN_HEADER
 
 #  ops = [                         # list of tensorflow operations to run
 #      self.model.x_out,           # new samples (MD + MH accept/reject)
@@ -165,28 +165,17 @@ class GaugeModelRunner:
         """
         samples_in, beta_np, eps, plaq_exact = inputs
 
-        ops = [
-            self.run_ops_dict['x_out'],
-            self.run_ops_dict['px'],
-            self.run_ops_dict['actions_op'],
-            self.run_ops_dict['plaqs_op'],
-            self.run_ops_dict['charges_op'],
-            self.run_ops_dict['charge_diffs_op']
-        ]
+        keys = ['x_out', 'px', 'actions_op',
+                'plaqs_op', 'charges_op', 'charge_diffs_op']
 
         if self.params['save_lf']:
-            ops.extend([
-                self.run_ops_dict['lf_out_f'],
-                self.run_ops_dict['pxs_out_f'],
-                self.run_ops_dict['lf_out_b'],
-                self.run_ops_dict['pxs_out_b'],
-                self.run_ops_dict['masks_f'],
-                self.run_ops_dict['masks_b'],
-                self.run_ops_dict['logdets_f'],
-                self.run_ops_dict['logdets_b'],
-                self.run_ops_dict['sumlogdet_f'],
-                self.run_ops_dict['sumlogdet_b']
-            ])
+            keys.extend(['lf_out_f', 'pxs_out_f',
+                         'lf_out_b', 'pxs_out_b',
+                         'masks_f', 'masks_b',
+                         'logdets_f', 'logdets_b',
+                         'sumlogdet_f', 'sumlogdet_b'])
+
+        ops = [self.run_ops_dict[k] for k in keys]
 
         feed_dict = {
             self.inputs_dict['x']: samples_in,
@@ -214,18 +203,9 @@ class GaugeModelRunner:
         }
 
         if self.params['save_lf']:
-            lf_outputs = {
-                'lf_out_f': outputs[6],
-                'pxs_out_f': outputs[7],
-                'lf_out_b': outputs[8],
-                'pxs_out_b': outputs[9],
-                'masks_f': outputs[10],
-                'masks_b': outputs[11],
-                'logdets_f': outputs[12],
-                'logdets_b': outputs[13],
-                'sumlogdet_f': outputs[14],
-                'sumlogdet_b': outputs[15],
-            }
+            lf_outputs = {}
+            for key, val in enumerate(zip(keys[6:], outputs[6:])):
+                lf_outputs[key] = val
             out_data.update(lf_outputs)
 
         data_str = (f'{step:>5g}/{run_steps:<6g} '
@@ -265,10 +245,9 @@ class GaugeModelRunner:
 
         if beta is None:
             beta = self.params['beta_final']
-            #  beta = self.model.beta_final
 
         if net_weights is None:
-            # scale_weight, transformation_weight, translation_weight
+            # scale_weight, translation weight, transformation weight
             net_weights = [1., 1., 1.]
 
         plaq_exact = u1_plaq_exact(beta)
@@ -372,34 +351,8 @@ class GaugeModelRunner:
         charges_avg, charges_err = stats['charges'].mean(axis=0)
         suscept_avg, suscept_err = stats['suscept'].mean(axis=0)
 
-        #  actions_arr = np.array(
-        #      list(run_data['actions'].values())
-        #  )[therm_steps:, :]
-        #
-        #  plaqs_arr = np.array(
-        #      list(run_data['plaqs'].values())
-        #  )[therm_steps:, :]
-        #
-        #  charges_arr = np.array(
-        #      list(run_data['charges'].values()),
-        #      dtype=np.int32
-        #  )[therm_steps:, :]
-        #
-        #  charges_squared_arr = charges_arr ** 2
-        #
-        #  actions_err = sem(actions_arr, axis=None)
-        #
-        #  plaqs_avg = np.mean(plaqs_arr)
-        #  plaqs_err = sem(plaqs_arr, axis=None)
-        #
-        #  q_avg = np.mean(charges_arr)
-        #  q_err = sem(charges_arr, axis=None)
-        #
-        #  q2_avg = np.mean(charges_squared_arr)
-        #  q2_err = sem(charges_squared_arr, axis=None)
-
         ns = self.params['num_samples']
-        #  ns = self.model.num_samples
+
         suscept_k1 = f'  \navg. over all {ns} samples < Q >'
         suscept_k2 = f'  \navg. over all {ns} samples < Q^2 >'
         actions_k1 = f'  \navg. over all {ns} samples < action >'
@@ -432,16 +385,6 @@ class GaugeModelRunner:
                 stats_strings[_est_key][k] = v
             return stats_strings
 
-        keys = [f"sample {idx}" for idx in range(ns)]
-
-        suscept_vals = format_stats(stats['suscept'], '< Q^2 >')
-        actions_vals = format_stats(stats['actions'], '< action >')
-        plaqs_vals = format_stats(stats['plaqs'], '< plaq >')
-
-        suscept_ss = zip_keys_vals(suscept_ss, keys, suscept_vals)
-        actions_ss = zip_keys_vals(actions_ss, keys, actions_vals)
-        plaqs_ss = zip_keys_vals(plaqs_ss, keys, plaqs_vals)
-
         def accumulate_strings(d):
             all_strings = []
             for k1, v1 in d.items():
@@ -452,6 +395,16 @@ class GaugeModelRunner:
                     all_strings.append(f'{k1}: {v1}\n')
 
             return all_strings
+
+        keys = [f"sample {idx}" for idx in range(ns)]
+
+        suscept_vals = format_stats(stats['suscept'], '< Q^2 >')
+        actions_vals = format_stats(stats['actions'], '< action >')
+        plaqs_vals = format_stats(stats['plaqs'], '< plaq >')
+
+        suscept_ss = zip_keys_vals(suscept_ss, keys, suscept_vals)
+        actions_ss = zip_keys_vals(actions_ss, keys, actions_vals)
+        plaqs_ss = zip_keys_vals(plaqs_ss, keys, plaqs_vals)
 
         actions_strings = accumulate_strings(actions_ss)
         plaqs_strings = accumulate_strings(plaqs_ss)

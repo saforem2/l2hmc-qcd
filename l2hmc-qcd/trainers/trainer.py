@@ -13,7 +13,7 @@ import numpy as np
 
 import utils.file_io as io
 from lattice.lattice import u1_plaq_exact
-from variables import NP_FLOAT
+from config import NP_FLOAT
 
 
 h_str = ("{:^12s}{:^10s}{:^10s}{:^10s}{:^10s}"
