@@ -43,11 +43,9 @@ class RunLogger:
             model: GaugeModel object.
             log_dir: Existing logdir from `TrainLogger`.
         """
-        #  self.model = model
         self.params = params
         self.save_lf_data = save_lf_data
         self.summaries = params['summaries']
-        #  self.summaries = model.summaries
         assert os.path.isdir(params['log_dir'])
 
         self.log_dir = params['log_dir']
@@ -56,7 +54,6 @@ class RunLogger:
         figs_dir = os.path.join(self.log_dir, 'figures')
         if os.path.isdir(runs_dir) or os.path.isdir(figs_dir):
             now = datetime.datetime.now()
-            #  print(now.strftime("%b %d %Y %H:%M:%S"))
             time_str = now.strftime("%H%M")
             if os.path.isdir(runs_dir):
                 renamed_runs_dir = runs_dir + f'_{time_str}'
@@ -79,7 +76,7 @@ class RunLogger:
         self.run_data = {}
         self.run_stats = {}
         self.run_strings = [RUN_HEADER]
-        #  if self.model.save_lf:
+
         if params['save_lf']:
             self.samples_arr = []
             self.lf_out = {
@@ -134,11 +131,13 @@ class RunLogger:
                 'masks_f': run_ops[9],
                 'logdets_f': run_ops[10],
                 'sumlogdet_f': run_ops[11],
-                'lf_out_b': run_ops[12],
-                'pxs_out_b': run_ops[13],
-                'masks_b': run_ops[14],
-                'logdets_b': run_ops[15],
-                'sumlogdet_b': run_ops[16],
+                'fns_out_f': run_ops[12],
+                'lf_out_b': run_ops[13],
+                'pxs_out_b': run_ops[14],
+                'masks_b': run_ops[15],
+                'logdets_b': run_ops[16],
+                'sumlogdet_b': run_ops[17],
+                'fns_out_b': run_ops[18]
             })
 
         return run_ops_dict
@@ -187,6 +186,11 @@ class RunLogger:
                               tf.reduce_mean(
                                   self.run_ops_dict['charge_diffs_op']
                               ))
+        #  names = ['scale', 'transl', 'transf']
+        #  subnames = ['v1', 'x1', 'x2', 'v2']
+        #  fns_out_fT = tf.transpose(self.run_ops_dict['fns_out_f'],
+        #                            perm=[2, 1, 0, 3, 4])
+        #  for idx
             #  tf.summary.scalar('avg_charge_diffs',
             #                    tf.reduce_mean(self.model.charge_diffs_op))
 
@@ -254,6 +258,10 @@ class RunLogger:
                 'backward': [],
             }
             self.sumlogdet = {
+                'forward': [],
+                'backward': [],
+            }
+            self.l2hmc_fns = {
                 'forward': [],
                 'backward': [],
             }
@@ -418,11 +426,7 @@ class RunLogger:
         out_file = os.path.join(out_dir, name + '.npz')
 
         if not isinstance(attr, np.ndarray) or attr.dtype != dtype:
-            try:
-                attr = np.array(attr, dtype=dtype)
-            except ValueError:
-                import pdb
-                pdb.set_trace()
+            attr = np.array(attr, dtype=dtype)
 
         if os.path.isfile(out_file):
             io.log(f'File {out_file} already exists. Skipping.')
