@@ -220,6 +220,7 @@ class GaugeDynamics(tf.keras.Model):
             with tf.name_scope('forward_mask'):
                 masks_f = tf.cast(
                     tf.random_uniform((self.batch_size,),
+                                      dtype=TF_FLOAT,
                                       seed=GLOBAL_SEED) > 0.5,
                     TF_FLOAT,
                     name='forward_mask'
@@ -245,6 +246,7 @@ class GaugeDynamics(tf.keras.Model):
         with tf.name_scope('accept_mask'):
             accept_mask = tf.cast(
                 accept_prob > tf.random_uniform(tf.shape(accept_prob),
+                                                dtype=TF_FLOAT,
                                                 seed=GLOBAL_SEED),
                 TF_FLOAT,
                 name='acccept_mask'
@@ -295,14 +297,16 @@ class GaugeDynamics(tf.keras.Model):
         lf_fn = self._forward_lf if forward else self._backward_lf
 
         with tf.name_scope('refresh_momentum'):
-            v_in = tf.random_normal(tf.shape(x_in), seed=GLOBAL_SEED)
+            v_in = tf.random_normal(tf.shape(x_in),
+                                    dtype=TF_FLOAT,
+                                    seed=GLOBAL_SEED)
 
         with tf.name_scope('init'):
             x_proposed, v_proposed = x_in, v_in
 
             step = tf.constant(0., name='md_step', dtype=TF_FLOAT)
             batch_size = tf.shape(x_in)[0]
-            logdet = tf.zeros((batch_size,))
+            logdet = tf.zeros((batch_size,), dtype=TF_FLOAT)
             #  fns0 = tf.zeros((4, 3, *x_in.shape),)
             lf_out = tf.TensorArray(dtype=TF_FLOAT,
                                     size=self.num_steps+1,
@@ -325,7 +329,7 @@ class GaugeDynamics(tf.keras.Model):
 
         def body(step, x, v, logdet, lf_samples, logdets, fns):
             # cast leapfrog step to integer
-            i = tf.cast(step, dtype=TF_INT)
+            i = tf.cast(step, dtype=tf.int32)
             new_x, new_v, j, _fns = lf_fn(x, v, beta, step,
                                           net_weights, train_phase)
             lf_samples = lf_samples.write(i+1, new_x)
@@ -338,12 +342,11 @@ class GaugeDynamics(tf.keras.Model):
         def cond(step, *args):
             return tf.less(step, self.num_steps)
 
-        #  with tf.name_scope('MD_leapfrog'):
         outputs = tf.while_loop(
             cond=cond,
             body=body,
             loop_vars=[step, x_proposed, v_proposed,
-                       logdet, lf_out, logdets_out, fns_out])  # , fns_out])
+                       logdet, lf_out, logdets_out, fns_out])
 
         step = outputs[0]
         x_proposed = outputs[1]
@@ -352,9 +355,7 @@ class GaugeDynamics(tf.keras.Model):
         lf_out = outputs[4].stack()
         logdets_out = outputs[5].stack()
         fns_out = outputs[6].stack()
-        #  fns_out = outputs[6].stack()
 
-        #  with tf.name_scope('accept_prob'):
         accept_prob = self._compute_accept_prob(
             x_in,
             v_in,
@@ -392,33 +393,28 @@ class GaugeDynamics(tf.keras.Model):
             v, logdet, vf_fns = self._update_v_forward(x, v, beta, t,
                                                        net_weights,
                                                        train_phase)
-            forward_fns.append(vf_fns)
-            #  forward_fns['vf1'] = vf_fns
-
             sumlogdet += logdet
+            forward_fns.append(vf_fns)
 
             x, logdet, xf_fns = self._update_x_forward(x, v, t,
                                                        net_weights,
                                                        train_phase,
                                                        mask, mask_inv)
-            forward_fns.append(xf_fns)
-            #  forward_fns['xf1'] = xf_fns
             sumlogdet += logdet
+            forward_fns.append(xf_fns)
 
             x, logdet, xf_fns = self._update_x_forward(x, v, t,
                                                        net_weights,
                                                        train_phase,
                                                        mask_inv, mask)
-            forward_fns.append(vf_fns)
-            #  forward_fns['xf2'] = xf_fns
             sumlogdet += logdet
+            forward_fns.append(xf_fns)
 
             v, logdet, vf_fns = self._update_v_forward(x, v, beta, t,
                                                        net_weights,
                                                        train_phase)
-            forward_fns.append(xf_fns)
-            #  forward_fns['vf2'] = vf_fns
             sumlogdet += logdet
+            forward_fns.append(vf_fns)
 
             return x, v, sumlogdet, forward_fns
 
@@ -441,31 +437,28 @@ class GaugeDynamics(tf.keras.Model):
             v, logdet, vb_fns = self._update_v_backward(x, v, beta, t,
                                                         net_weights,
                                                         train_phase)
-            backward_fns.append(vb_fns)
             sumlogdet += logdet
+            backward_fns.append(vb_fns)
 
             x, logdet, xb_fns = self._update_x_backward(x, v, t,
                                                         net_weights,
                                                         train_phase,
                                                         mask_inv, mask)
-            backward_fns.append(xb_fns)
-            #  backward_fns['xb1'] = xb_fns
             sumlogdet += logdet
+            backward_fns.append(xb_fns)
 
             x, logdet, xb_fns = self._update_x_backward(x, v, t,
                                                         net_weights,
                                                         train_phase,
                                                         mask, mask_inv)
-            backward_fns.append(xb_fns)
-            #  backward_fns['xb2'] = xb_fns
             sumlogdet += logdet
+            backward_fns.append(xb_fns)
 
             v, logdet, vb_fns = self._update_v_backward(x, v, beta, t,
                                                         net_weights,
                                                         train_phase)
-            backward_fns.append(vb_fns)
-            #  backward_fns['vb2'] = vb_fns
             sumlogdet += logdet
+            backward_fns.append(vb_fns)
 
         return x, v, sumlogdet, backward_fns
 
@@ -488,6 +481,7 @@ class GaugeDynamics(tf.keras.Model):
             grad = self.grad_potential(x, beta)
 
             scale, transl, transf = self.v_fn((x, grad, t), train_phase)
+            fns = [scale, transl, transf]
 
             with tf.name_scope('vf_mul'):
                 scale *= 0.5 * self.eps * net_weights[0]
@@ -495,15 +489,15 @@ class GaugeDynamics(tf.keras.Model):
                 transf *= self.eps * net_weights[2]
 
             with tf.name_scope('vf_exp'):
-                scale_exp = exp(scale, 'scale_exp')
-                transf_exp = exp(transf, 'transformation_exp')
+                scale_exp = tf.cast(exp(scale, 'scale_exp'), dtype=TF_FLOAT)
+                transf_exp = tf.cast(exp(transf, 'transf_exp'),
+                                     dtype=TF_FLOAT)
 
             with tf.name_scope('proposed'):
                 v = (v * scale_exp
                      - 0.5 * self.eps * (grad * transf_exp - transl))
 
             logdet = tf.reduce_sum(scale, axis=1, name='logdet_vf')
-            fns = [scale_exp, transl, transf_exp]
 
         return v, logdet, fns
 
@@ -630,7 +624,7 @@ class GaugeDynamics(tf.keras.Model):
 
     def _get_mask(self, step):
         with tf.name_scope('get_mask'):
-            m = tf.gather(self.masks, tf.cast(step, dtype=tf.int32))
+            m = tf.gather(self.masks, tf.cast(step, dtype=TF_INT))
         return m, 1. - m
 
     def potential_energy(self, x, beta):
