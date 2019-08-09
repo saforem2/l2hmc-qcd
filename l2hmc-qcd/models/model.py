@@ -53,7 +53,7 @@ except ImportError:
 
 import utils.file_io as io
 
-from variables import GLOBAL_SEED, TF_FLOAT, PARAMS
+from variables import GLOBAL_SEED, TF_FLOAT, TF_INT, PARAMS
 from lattice.lattice import GaugeLattice
 from dynamics.dynamics import GaugeDynamics
 from dynamics.nnehmc_dynamics import nnehmcDynamics
@@ -392,6 +392,9 @@ class GaugeModel:
         aux_weight = weights.get('aux_weight', 1.)
         std_weight = weights.get('std_weight', 1.)
 
+        if std_weight == 0.:  # don't bother calculating loss if weight is 0
+            return 0.
+
         x_init = inputs['x_init']
         x_proposed = inputs['x_proposed']
         z_init = inputs['z_init']
@@ -406,6 +409,8 @@ class GaugeModel:
                     self.metric_fn(x_init, x_proposed), axis=1
                 )
                 x_std_loss *= px
+
+                # Add eps for numerical stability
                 x_std_loss = tf.add(x_std_loss, eps, name='x_std_loss')
                 tf.add_to_collection('losses', x_std_loss)
 
@@ -551,11 +556,13 @@ class GaugeModel:
                 'masks_f': self.masks_f,
                 'logdets_f': self.logdets_f,
                 'sumlogdet_f': self.sumlogdet_f,
+                'fns_out_f': self.fns_out_f,
                 'lf_out_b': self.lf_out_b,
                 'pxs_out_b': self.pxs_out_b,
                 'masks_b': self.masks_b,
                 'logdets_b': self.logdets_b,
-                'sumlogdet_b': self.sumlogdet_b
+                'sumlogdet_b': self.sumlogdet_b,
+                'fns_out_b': self.fns_out_b,
             })
 
         run_ops['dynamics_eps'] = self.dynamics.eps
@@ -615,7 +622,10 @@ class GaugeModel:
 
         # Auxiliary variable
         with tf.name_scope('z_update'):
-            z = tf.random_normal(tf.shape(x), seed=GLOBAL_SEED, name='z')
+            z = tf.random_normal(tf.shape(x),
+                                 dtype=TF_FLOAT,
+                                 seed=GLOBAL_SEED,
+                                 name='z')
             z_dynamics_output = self.dynamics.apply_transition(z, beta,
                                                                net_weights,
                                                                train_phase,
@@ -626,10 +636,9 @@ class GaugeModel:
         with tf.name_scope('top_charge_diff'):
             x_dq = tf.cast(
                 self.lattice.calc_top_charges_diff(x, x_out, fft=False),
-                dtype=tf.int32
+                dtype=TF_INT
             )
 
-        # Add eps for numerical stability; following released implementation
         # NOTE:
         #  std:_loss: 'standard' loss
         #  charge_loss: Contribution from the difference in topological charge
@@ -646,7 +655,8 @@ class GaugeModel:
 
         with tf.name_scope('calc_loss'):
             with tf.name_scope('std_loss'):
-                std_loss = self._calc_std_loss(inputs, **weights)
+                std_loss = tf.cast(self._calc_std_loss(inputs, **weights),
+                                   dtype=TF_FLOAT)
 
             with tf.name_scope('charge_loss'):
                 charge_loss = self._calc_charge_loss(inputs, **weights)
@@ -659,7 +669,9 @@ class GaugeModel:
 
                     total_loss = std_loss + charge_loss + nnehmc_loss
             else:
-                total_loss = tf.add(std_loss, charge_loss, name='total_loss')
+                total_loss = tf.add(std_loss,
+                                    charge_loss,
+                                    name='total_loss')
 
             tf.add_to_collection('losses', total_loss)
 

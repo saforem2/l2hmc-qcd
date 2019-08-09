@@ -38,7 +38,7 @@ class GenericNet(tf.keras.Model):
 
         with tf.name_scope(self.name_scope):
             self.coeff_scale = tf.Variable(
-                initial_value=tf.zeros([1, self.x_dim]),
+                initial_value=tf.zeros([1, self.x_dim], dtype=TF_FLOAT),
                 name='coeff_scale',
                 trainable=True,
                 dtype=TF_FLOAT
@@ -46,7 +46,7 @@ class GenericNet(tf.keras.Model):
 
             #  with tf.name_scope('coeff_transformation'):
             self.coeff_transformation = tf.Variable(
-                initial_value=tf.zeros([1, self.x_dim]),
+                initial_value=tf.zeros([1, self.x_dim], dtype=TF_FLOAT),
                 name='coeff_transformation',
                 trainable=True,
                 dtype=TF_FLOAT
@@ -54,7 +54,7 @@ class GenericNet(tf.keras.Model):
 
             if self.dropout_prob > 0:
                 self.dropout = tf.keras.layers.Dropout(self.dropout_prob,
-                                                       seed=GLOBAL_SEED)
+                                                       seed=GLOBAL_SEED,)
                 #  self.dropout_x = tf.keras.layers.Dropout(self.dropout_prob,
                 #                                           seed=GLOBAL_SEED)
                 #  self.dropout_v = tf.keras.layers.Dropout(self.dropout_prob,

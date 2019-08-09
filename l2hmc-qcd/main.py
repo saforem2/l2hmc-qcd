@@ -208,6 +208,9 @@ def train_setup(FLAGS, log_file=None):
         io.log("Using CPU for training.")
         params['data_format'] = 'channels_last'
 
+    if FLAGS.float64:
+        tf.keras.backend.set_floatx('float64')
+
     if FLAGS.horovod:
         params['using_hvd'] = True
         num_workers = hvd.size()

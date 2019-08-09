@@ -132,6 +132,7 @@ def custom_dense(units, factor=1., name=None):
             factor=factor,
             mode='FAN_IN',
             seed=GLOBAL_SEED,
+            dtype=TF_FLOAT,
             uniform=True,
         )
 
