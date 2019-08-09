@@ -1,0 +1,15 @@
+--hmc
+--time_size 16 
+--space_size 16 
+--rand
+--num_samples 128 
+--num_steps 16 
+--eps 0.1
+--beta_init 2.
+--beta_final 5.
+--logging_steps 10
+--save_steps 1000
+--run_steps 10000
+--print_steps 1
+--summaries
+--save_lf
