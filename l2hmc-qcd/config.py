@@ -3,9 +3,9 @@ import numpy as np
 import os
 
 TF_FLOAT = tf.float64
-TF_INT = tf.int64
 NP_FLOAT = np.float64
-
+TF_INT = tf.int64
+NP_INT = np.int64
 
 #  TF_FLOAT = tf.float32
 #  TF_INT = tf.int32
