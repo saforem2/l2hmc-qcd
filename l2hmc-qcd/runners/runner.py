@@ -68,11 +68,13 @@ class GaugeModelRunner:
                 'masks_f': run_ops[9],
                 'logdets_f': run_ops[10],
                 'sumlogdet_f': run_ops[11],
-                'lf_out_b': run_ops[12],
-                'pxs_out_b': run_ops[13],
-                'masks_b': run_ops[14],
-                'logdets_b': run_ops[15],
-                'sumlogdet_b': run_ops[16],
+                'fns_out_f': run_ops[12],
+                'lf_out_b': run_ops[13],
+                'pxs_out_b': run_ops[14],
+                'masks_b': run_ops[15],
+                'logdets_b': run_ops[16],
+                'sumlogdet_b': run_ops[17],
+                'fns_out_b': run_ops[18]
             })
 
         run_ops_dict['dynamics_eps'] = run_ops[-1]
@@ -203,6 +205,7 @@ class GaugeModelRunner:
             'beta': beta_np,
             'eps': self.eps,
             'samples': np.mod(outputs[0], 2 * np.pi),
+            'samples_orig': outputs[0],
             'px': outputs[1],
             'actions': outputs[2],
             'plaqs': outputs[3],
