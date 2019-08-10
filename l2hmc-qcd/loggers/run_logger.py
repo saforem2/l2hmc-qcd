@@ -322,7 +322,7 @@ class RunLogger:
 
         obs_keys = ['px', 'actions', 'plaqs', 'charges', 'charge_diffs']
         for k in obs_keys:
-            self.run_data[k][key] = data[key]
+            self.run_data[k][key] = data[k]
         #  self.run_data['px'][key] = data['px']
         #  self.run_data['actions'][key] = data['actions']
         #  self.run_data['plaqs'][key] = data['plaqs']
