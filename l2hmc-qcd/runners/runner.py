@@ -204,7 +204,7 @@ class GaugeModelRunner:
 
         if self.params['save_lf']:
             lf_outputs = {}
-            for key, val in enumerate(zip(keys[6:], outputs[6:])):
+            for key, val in zip(keys[6:], outputs[6:]):
                 lf_outputs[key] = val
             out_data.update(lf_outputs)
 
