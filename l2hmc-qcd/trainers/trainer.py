@@ -56,13 +56,6 @@ class GaugeModelTrainer:
     def run_l2hmc_fns(self, key, samples_np, **kwargs):
         """Get numerical values of the scale, transl, and transf fns."""
         l2hmc_fns = self.model.dynamics.l2hmc_fns[key]
-        #  beta_np = kwargs.get('beta_np', None)
-        #  net_weights = kwargs.get('net_weights', [1., 1., 1.])
-        #  if beta_np is None:
-        #      if self.model.fixed_beta:
-        #          beta_np = self.model.beta_init
-        #      else:
-        #          beta_np = self.update_beta(
 
         feed_dict = {
             self.model.x: samples_np,
@@ -89,7 +82,7 @@ class GaugeModelTrainer:
         """
         beta_np = kwargs.get('beta_np', None)
 
-        # net_weights: [scale_w, transformation_w, translation_w]
+        # net_weights: [scale_w, translation_w, transformation_w]
         net_weights = kwargs.get('net_weights', [1., 1., 1.])
         train_steps = kwargs.get('train_steps', self.model.train_steps)
 
