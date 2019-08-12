@@ -61,24 +61,30 @@ class GenericNet(tf.keras.Model):
                 #                                           seed=GLOBAL_SEED)
 
             x_factor = self.factor / 3.
-            self.x_layer = custom_dense(self.num_hidden, x_factor, name='fc_x')
-            self.v_layer = custom_dense(self.num_hidden, 1./3., name='fc_v')
-            self.t_layer = custom_dense(self.num_hidden, 1./3., name='fc_t')
+            self.x_layer = custom_dense(self.num_hidden,
+                                        x_factor,
+                                        name='x_layer')
+            self.v_layer = custom_dense(self.num_hidden,
+                                        1./3.,
+                                        name='v_layer')
+            self.t_layer = custom_dense(self.num_hidden,
+                                        1./3.,
+                                        name='t_layer')
 
             self.h_layer = custom_dense(self.num_hidden,
-                                        name='fc_h')
+                                        name='hidden_layer')
 
-            self.scale_layer = custom_dense(
-                self.x_dim, 0.001, name='fc_scale'
-            )
+            self.scale_layer = custom_dense(self.x_dim,
+                                            0.001,
+                                            name='scale_layer')
 
-            #  self.translation_layer = custom_dense(
-            #      self.x_dim, 0.001, 'fc_translation'
-            #  )
+            self.translation_layer = custom_dense(self.x_dim,
+                                                  0.001,
+                                                  'transl_layer')
 
-            self.transformation_layer = custom_dense(
-                self.x_dim, 0.001, 'fc_transformation'
-            )
+            self.transformation_layer = custom_dense(self.x_dim,
+                                                     0.001,
+                                                     'transf_layer')
 
     def call(self, inputs, train_phase):
         v, x, t = inputs
