@@ -9,11 +9,9 @@ Date: 07/22/2019
 """
 import numpy as np
 import tensorflow as tf
-from .conv_net3d import ConvNet3D
-from .conv_net2d import ConvNet2D
+from .conv_net import ConvNet2D, ConvNet3D
 from .generic_net import GenericNet
 import utils.file_io as io
-#  import utils.file_io as io
 
 from config import GLOBAL_SEED
 
@@ -64,7 +62,6 @@ class FullNet(tf.keras.Model):
                 io.log('Using GenericNet architecture...')
                 self.x_conv_net = self.v_conv_net = None
 
-            #  kwargs['name_scope'] = 'generic_block'
             kwargs['name_scope'] = generic_name_scope
             self.generic_net = GenericNet("GenericNet", **kwargs)
 
