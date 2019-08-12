@@ -126,25 +126,34 @@ class TrainLogger:
             with tf.name_scope(f'{k1}_fn_f'):
                 for k2, v2 in v1.items():
                     tf.summary.scalar(f'{k2}_avg', tf.reduce_mean(v2))
+                    tf.summary.histogram(f'{k2}', v2)
 
         for k1, v1 in self.model.l2hmc_fns['out_fns_b'].items():
             with tf.name_scope(f'{k1}_fn_b'):
                 for k2, v2 in v1.items():
                     tf.summary.scalar(f'{k2}_avg', tf.reduce_mean(v2))
+                    tf.summary.histogram(f'{k2}', v2)
 
         for grad, var in grads_and_vars:
-            try:
-                _name = var.name.split('/')[-2:]
-                if len(_name) > 1:
-                    name = _name[0] + '/' + _name[1][:-2]
-                else:
-                    name = var.name[:-2]
-            except (AttributeError, IndexError):
-                name = var.name[:-2]
-            with tf.name_scope(name + '/training'):
-                variable_summaries(var, var.name)
-            with tf.name_scope(name + '/training/gradients'):
-                variable_summaries(grad, var.name + '/gradients')
+            #  try:
+            #      _name = var.name.split('/')[-2:]
+            #      if len(_name) > 1:
+            #          name = _name[0] + '/' + _name[1][:-2]
+            #      else:
+            #          name = var.name[:-2]
+            #  except (AttributeError, IndexError):
+            #      name = var.name[:-2]
+            #  with tf.name_scope(name + '/training'):
+            #  with tf.name_scope(name + '/training/gradients'):
+            with tf.name_scope(var.name.replace(':', '')):
+                tf.summary.scalar(var.name + '/mean', tf.reduce_mean(var))
+                tf.summary.histogram(var.name, var)
+                #  variable_summaries(var, var.name)
+            grad_name = var.name.replace(':', '') + '/gradient'
+            with tf.name_scope(grad_name):
+                tf.summary.scalar(grad_name + '/mean', tf.reduce_mean(grad))
+                tf.summary.histogram(grad_name, grad)
+                #  variable_summaries(grad, var.name + '/gradients')
             if 'kernel' in var.name:
                 if 'XNet' in var.name:
                     net_str = 'XNet/'
@@ -156,10 +165,13 @@ class TrainLogger:
                 with tf.name_scope(net_str):
                     if 'scale' in var.name:
                         grad_norm_summary(net_str + 'scale', grad)
+                        tf.summary.histogram(net_str + 'scale', grad)
                     if 'transformation' in var.name:
                         grad_norm_summary(net_str + 'transformation', grad)
+                        tf.summary.histogram(net_str + 'transformation', grad)
                     if 'translation' in var.name:
                         grad_norm_summary(net_str + 'translation', grad)
+                        tf.summary.histogram(net_str + 'translation', grad)
 
         self.summary_op = tf.summary.merge_all(name='train_summary_op')
 
