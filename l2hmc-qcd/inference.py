@@ -165,6 +165,14 @@ def inference_setup(kwargs):
         net_weights_arr[:mask_arr.shape[0], :] = mask_arr   # [?, ?, ?]
         #  net_weights_arr[-1, :] = np.random.randn(3)
 
+    elif kwargs['loop_transl_weights']:
+        net_weights_arr = np.array([[1.0, 0.00, 1.0],
+                                    [1.0, 0.10, 1.0],
+                                    [1.0, 0.25, 1.0],
+                                    [1.0, 0.50, 1.0],
+                                    [1.0, 0.75, 1.0],
+                                    [1.0, 1.00, 1.0]], dtype=NP_FLOAT)
+
     else:  # set [Q, S, T] = [1, 1, 1]
         net_weights_arr = np.array([[1, 1, 1]], dtype=NP_FLOAT)
 
@@ -306,7 +314,7 @@ def main_inference(kwargs):
     params = load_params()  # load parameters used during training
 
     # -----------------------------------------------------------------------
-    # (NOTE) We want to restrict all communication (file I/O) to only be
+    # NOTE: We want to restrict all communication (file I/O) to only be
     # performed on rank 0 (i.e. `is_chief`) so there are two cases:
     #    1. We're using Horovod, so we have to check hvd.rank() explicitly.
     #    2. We're not using Horovod, in which case `is_chief` is always True.
