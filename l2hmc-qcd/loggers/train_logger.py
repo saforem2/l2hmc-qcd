@@ -60,9 +60,11 @@ class TrainLogger:
         save_params(self.model.params, self.log_dir)
 
         if self.summaries:
+            with tf.variable_scope('train_summaries'):
+                self.create_summaries()
+
             self.writer = tf.summary.FileWriter(self.train_summary_dir,
                                                 tf.get_default_graph())
-            self.create_summaries()
 
     def _create_dir_structure(self, log_dir):
         """Create relevant directories for storing data.
@@ -95,8 +97,9 @@ class TrainLogger:
 
     def create_summaries(self):
         """Create summary objects for logging in TensorBoard."""
-        ld = self.log_dir
-        self.summary_writer = tf.contrib.summary.create_file_writer(ld)
+        #  ld = self.log_dir
+        tsd = self.train_summary_dir
+        self.summary_writer = tf.contrib.summary.create_file_writer(tsd)
 
         grads_and_vars = zip(self.model.grads,
                              self.model.dynamics.trainable_variables)
@@ -110,29 +113,30 @@ class TrainLogger:
         with tf.name_scope('step_size'):
             tf.summary.scalar('step_size', self.model.dynamics.eps)
 
-        with tf.name_scope('avg_charge_diffs_training'):
+        with tf.name_scope('avg_charge_diffs'):
             tf.summary.scalar('avg_charge_diffs',
                               tf.reduce_mean(self.model.charge_diffs_op))
 
-        with tf.name_scope('avg_plaq_training'):
+        with tf.name_scope('avg_plaq'):
             tf.summary.scalar('avg_plaq', self.model.avg_plaqs_op)
 
-        with tf.name_scope('avg_plaq_diff_training'):
+        with tf.name_scope('avg_plaq_diff'):
             tf.summary.scalar('avg_plaq_diff',
                               (u1_plaq_exact_tf(self.model.beta)
                                - self.model.avg_plaqs_op))
 
         for k1, v1 in self.model.l2hmc_fns['out_fns_f'].items():
-            with tf.name_scope(f'{k1}_fn_f'):
-                for k2, v2 in v1.items():
-                    variable_summaries(v2)
+            for k2, v2 in v1.items():
+                if 'x1' in v2.name or 'v1' in v2.name:
+                    with tf.name_scope(f'{k1}_fn_{k2}_f'):
+                        variable_summaries(v2)
                     #  tf.summary.scalar(f'{k2}_avg', tf.reduce_mean(v2))
                     #  tf.summary.histogram(f'{k2}', v2)
 
-        for k1, v1 in self.model.l2hmc_fns['out_fns_b'].items():
-            with tf.name_scope(f'{k1}_fn_b'):
-                for k2, v2 in v1.items():
-                    variable_summaries(v2)
+        #  for k1, v1 in self.model.l2hmc_fns['out_fns_b'].items():
+        #      for k2, v2 in v1.items():
+        #          with tf.name_scope(f'{k1}_fn_{k2}_b'):
+        #              variable_summaries(v2)
                     #  tf.summary.scalar(f'{k2}_avg', tf.reduce_mean(v2))
                     #  tf.summary.histogram(f'{k2}', v2)
 
@@ -143,18 +147,18 @@ class TrainLogger:
             variable_summaries(self.model.lf_out_b)
 
         for grad, var in grads_and_vars:
-            #  try:
-            #      _name = var.name.split('/')[-2:]
-            #      if len(_name) > 1:
-            #          name = _name[0] + '/' + _name[1][:-2]
-            #      else:
-            #          name = var.name[:-2]
-            #  except (AttributeError, IndexError):
-            #      name = var.name[:-2]
+            try:
+                _name = var.name.split('/')[-2:]
+                if len(_name) > 1:
+                    name = _name[0] + '/' + _name[1][:-2]
+                else:
+                    name = var.name[:-2]
+            except (AttributeError, IndexError):
+                name = var.name[:-2]
             #  with tf.name_scope(name + '/training'):
             #  with tf.name_scope(name + '/training/gradients'):
-            var_name = var.name.replace(':', '')
-            with tf.name_scope(var_name):
+            with tf.name_scope(name):
+                var_name = var.name.replace(':', '')
                 tf.summary.scalar(var_name + '/mean', tf.reduce_mean(var))
                 tf.summary.histogram(var_name, var)
                 #  variable_summaries(var, var.name)
@@ -175,10 +179,10 @@ class TrainLogger:
                     if 'scale' in var.name:
                         grad_norm_summary(net_str + 'scale', grad)
                         tf.summary.histogram(net_str + 'scale', grad)
-                    if 'transformation' in var.name:
+                    if 'transf' in var.name:
                         grad_norm_summary(net_str + 'transformation', grad)
                         tf.summary.histogram(net_str + 'transformation', grad)
-                    if 'translation' in var.name:
+                    if 'transl' in var.name:
                         grad_norm_summary(net_str + 'translation', grad)
                         tf.summary.histogram(net_str + 'translation', grad)
 
