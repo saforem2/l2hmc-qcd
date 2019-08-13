@@ -119,7 +119,6 @@ class RunLogger:
             self.run_summaries_dir = os.path.join(self.log_dir,
                                                   'summaries', 'run')
             io.check_else_make_dir(self.run_summaries_dir)
-
             self.writer = tf.summary.FileWriter(self.run_summaries_dir,
                                                 tf.get_default_graph())
             self.create_summaries()
@@ -159,9 +158,19 @@ class RunLogger:
 
     def create_summaries(self):
         """Create summary objects for logging in TensorBoard."""
+        summary_list = tf.get_collection(tf.GraphKeys.SUMMARIES)
+        bad_strings = ['loss', 'learning_rate',
+                       'step_size', 'train', 'eps']
+        run_summaries = [
+            i for i in summary_list if not any(
+                s in i.name for s in bad_strings
+            )
+        ]
+        self.summary_op = tf.summary.merge(run_summaries)
+
+    def _create_summaries_old(self):
         ld = self.log_dir
         self.summary_writer = tf.contrib.summary.create_file_writer(ld)
-
         with tf.name_scope('avg_actions_inference'):
             tf.summary.scalar('avg_actions',
                               tf.reduce_mean(self.run_ops_dict['actions_op']))
