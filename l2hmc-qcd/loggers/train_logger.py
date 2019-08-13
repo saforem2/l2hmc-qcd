@@ -136,6 +136,12 @@ class TrainLogger:
                     #  tf.summary.scalar(f'{k2}_avg', tf.reduce_mean(v2))
                     #  tf.summary.histogram(f'{k2}', v2)
 
+        with tf.name_scope('lf_out_f'):
+            variable_summaries(self.model.lf_out_f)
+
+        with tf.name_scope('lf_out_b'):
+            variable_summaries(self.model.lf_out_b)
+
         for grad, var in grads_and_vars:
             #  try:
             #      _name = var.name.split('/')[-2:]
