@@ -125,14 +125,16 @@ class TrainLogger:
         for k1, v1 in self.model.l2hmc_fns['out_fns_f'].items():
             with tf.name_scope(f'{k1}_fn_f'):
                 for k2, v2 in v1.items():
-                    tf.summary.scalar(f'{k2}_avg', tf.reduce_mean(v2))
-                    tf.summary.histogram(f'{k2}', v2)
+                    variable_summaries(v2)
+                    #  tf.summary.scalar(f'{k2}_avg', tf.reduce_mean(v2))
+                    #  tf.summary.histogram(f'{k2}', v2)
 
         for k1, v1 in self.model.l2hmc_fns['out_fns_b'].items():
             with tf.name_scope(f'{k1}_fn_b'):
                 for k2, v2 in v1.items():
-                    tf.summary.scalar(f'{k2}_avg', tf.reduce_mean(v2))
-                    tf.summary.histogram(f'{k2}', v2)
+                    variable_summaries(v2)
+                    #  tf.summary.scalar(f'{k2}_avg', tf.reduce_mean(v2))
+                    #  tf.summary.histogram(f'{k2}', v2)
 
         for grad, var in grads_and_vars:
             #  try:
@@ -145,9 +147,10 @@ class TrainLogger:
             #      name = var.name[:-2]
             #  with tf.name_scope(name + '/training'):
             #  with tf.name_scope(name + '/training/gradients'):
-            with tf.name_scope(var.name.replace(':', '')):
-                tf.summary.scalar(var.name + '/mean', tf.reduce_mean(var))
-                tf.summary.histogram(var.name, var)
+            var_name = var.name.replace(':', '')
+            with tf.name_scope(var_name):
+                tf.summary.scalar(var_name + '/mean', tf.reduce_mean(var))
+                tf.summary.histogram(var_name, var)
                 #  variable_summaries(var, var.name)
             grad_name = var.name.replace(':', '') + '/gradient'
             with tf.name_scope(grad_name):
