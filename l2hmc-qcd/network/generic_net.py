@@ -85,28 +85,27 @@ class GenericNet(tf.keras.Model):
     def call(self, inputs, train_phase):
         v, x, t = inputs
 
-        v = tf.nn.relu(self.v_layer(v))
-        x = tf.nn.relu(self.x_layer(x))
+        #  v = tf.nn.relu(self.v_layer(v))
+        #  x = tf.nn.relu(self.x_layer(x))
+        #  t = tf.nn.relu(self.t_layer(t))
 
-        # dropout gets applied to the output of the previous layer
-        #  if self.dropout_prob > 0:
-        #      v = self.dropout_v(v, training=train_phase)
-        #      x = self.dropout_x(x, training=train_phase)
-
-        t = tf.nn.relu(self.t_layer(t))
+        v = self.v_layer(v)
+        x = self.x_layer(x)
+        t = self.t_layer(t)
 
         h = tf.nn.relu(v + x + t)
         h = tf.nn.relu(self.h_layer(h))
 
+        # dropout gets applied to the output of the previous layer
         if self.dropout_prob > 0:
             h = self.dropout(h, training=train_phase)
 
-        #  translation = self.translation_layer(h)
+        translation = self.translation_layer(h)
 
         scale = (tf.nn.tanh(self.scale_layer(h))
                  * tf.exp(self.coeff_scale, name='exp_coeff_scale'))
 
-        translation = tf.zeros_like(scale, name='translation')
+        #  translation = tf.zeros_like(scale, name='translation')
 
         transformation = (tf.nn.tanh(self.transformation_layer(h))
                           * tf.exp(self.coeff_transformation,
