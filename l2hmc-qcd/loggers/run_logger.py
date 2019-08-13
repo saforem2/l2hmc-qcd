@@ -142,33 +142,6 @@ class RunLogger:
             keys.extend(get_lf_keys('b'))
             for key, val in zip(keys[7:], run_ops[7:]):
                 run_ops_dict.update({key: val})
-        #  for idx, key in enumerate(keys):
-        #      run_ops_dict[key] = run_ops[idx]
-
-        #  run_ops_dict = {
-        #      'x_out': run_ops[0],
-        #      'px': run_ops[1],
-        #      'actions_op': run_ops[2],
-        #      'plaqs_op': run_ops[3],
-        #      'avg_plaqs_op': run_ops[4],
-        #      'charges_op': run_ops[5],
-        #      'charge_diffs_op': run_ops[6]
-        #  }
-
-        #  run_ops_dict.update({
-        #      'lf_out_f': run_ops[7],
-        #      'pxs_out_f': run_ops[8],
-        #      'masks_f': run_ops[9],
-        #      'logdets_f': run_ops[10],
-        #      'sumlogdet_f': run_ops[11],
-        #      'fns_out_f': run_ops[12],
-        #      'lf_out_b': run_ops[13],
-        #      'pxs_out_b': run_ops[14],
-        #      'masks_b': run_ops[15],
-        #      'logdets_b': run_ops[16],
-        #      'sumlogdet_b': run_ops[17],
-        #      'fns_out_b': run_ops[18]
-        #  })
 
         return run_ops_dict
 
@@ -219,14 +192,6 @@ class RunLogger:
             self.inputs_dict['net_weights'][2]: net_weights[2],
             self.inputs_dict['train_phase']: False
         }
-        #  feed_dict = {
-        #      self.model.x: samples_np,
-        #      self.model.beta: beta_np,
-        #      self.model.net_weights[0]: net_weights[0],
-        #      self.model.net_weights[1]: net_weights[1],
-        #      self.model.net_weights[2]: net_weights[2],
-        #      self.model.train_phase: False
-        #  }
         summary_str = sess.run(self.summary_op, feed_dict=feed_dict)
 
         self.writer.add_summary(summary_str, global_step=step)
@@ -268,13 +233,19 @@ class RunLogger:
 
         eps_str = f'{eps_np:.3}'.replace('.', '')
         beta_str = f'{beta:.3}'.replace('.', '')
-        qw_str = f'{charge_weight:.3}'.replace('.', '')
+        #  qw_str = f'{charge_weight:.3}'.replace('.', '')
+        scale_wstr = f'{net_weights[0]:.3}'.replace('.', '')
+        transl_wstr = f'{net_weights[1]:.3}'.replace('.', '')
+        transf_wstr = f'{net_weights[2]:.3}'.replace('.', '')
 
         run_str = (
-            f'steps_{run_steps}'
-            f'_beta_{beta_str}'
-            f'_eps_{eps_str}'
-            f'_qw_{qw_str:.2}'
+            f'steps{run_steps}'
+            f'_beta{beta_str}'
+            f'_eps{eps_str}'
+            #  f'_qw_{qw_str:.2}'
+            f'_S{scale_wstr}'
+            f'_T{transl_wstr}'
+            f'_Q{transf_wstr}'
             f'_{self._reset_counter}'
         )
 
@@ -286,6 +257,10 @@ class RunLogger:
 
         self.run_dir = os.path.join(self.runs_dir, run_str)
         io.check_else_make_dir(self.run_dir)
+
+        net_weights_file = os.path.join(self.run_dir, 'net_weights.txt')
+        np.savetxt(net_weights_file, net_weights,
+                   delimiter=', ', newline='\n', fmt='%-.4g')
 
         if self.summaries:
             self.run_summary_dir = os.path.join(self.run_summaries_dir,
@@ -315,7 +290,6 @@ class RunLogger:
     def update(self, sess, data, net_weights, data_str):
         """Update run_data and append data_str to data_strings."""
         # projection of samples onto [0, 2pi) done in run_step above
-        #  if self.model.save_samples:
         step = data['step']
         beta = data['beta']
         key = (step, beta)
@@ -323,13 +297,7 @@ class RunLogger:
         obs_keys = ['px', 'actions', 'plaqs', 'charges', 'charge_diffs']
         for k in obs_keys:
             self.run_data[k][key] = data[k]
-        #  self.run_data['px'][key] = data['px']
-        #  self.run_data['actions'][key] = data['actions']
-        #  self.run_data['plaqs'][key] = data['plaqs']
-        #  self.run_data['charges'][key] = data['charges']
-        #  self.run_data['charge_diffs'][key] = data['charge_diffs']
 
-        #  if self.model.save_lf:
         if self.params['save_lf']:
             samples_np = data['samples']
             self.samples_arr.append(samples_np)
@@ -346,11 +314,9 @@ class RunLogger:
 
         self.run_strings.append(data_str)
 
-        #  if self.summaries and (step + 1) % self.model.logging_steps == 0:
         if self.summaries and (step + 1) % self.params['logging_steps'] == 0:
             self.log_step(sess, step, data['samples'], beta, net_weights)
 
-        #  if step % (10 * self.model.print_steps) == 0:
         if step % (10 * self.params['print_steps']) == 0:
             io.log(data_str)
 
@@ -442,19 +408,6 @@ class RunLogger:
                 b = 'backward'
                 self.save_attr(key + f'_{f}', getattr(self, key)[f])
                 self.save_attr(key + f'_{b}', getattr(self, key)[b])
-
-        #  if self.save_lf_data:
-        #      self.save_attr('samples_out', self.samples_arr)
-        #      self.save_attr('lf_out_forward', self.lf_out['forward'])
-        #      self.save_attr('lf_out_backward', self.lf_out['backward'])
-        #      self.save_attr('masks_forward', self.masks['forward'])
-        #      self.save_attr('masks_backward', self.masks['backward'])
-        #      self.save_attr('logdets_forward', self.logdets['forward'])
-        #      self.save_attr('logdets_backward', self.logdets['backward'])
-        #      self.save_attr('sumlogdet_forward', self.sumlogdet['forward'])
-        #      self.save_attr('sumlogdet_backward', self.sumlogdet['backward'])
-        #      self.save_attr('accept_probs_forward', self.pxs_out['forward'])
-        #     self.save_attr('accept_probs_backward', self.pxs_out['backward'])
 
         run_stats = self.calc_observables_stats(self.run_data, therm_frac)
         charges = self.run_data['charges']
