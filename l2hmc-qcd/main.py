@@ -295,11 +295,7 @@ def train_l2hmc(FLAGS, log_file=None, experiment=None):
 
     # set initial value of charge weight using value from FLAGS
     charge_weight_init = params['charge_weight']
-    #############################################
-    # CHANGED net_weights_init below
-    # original: net_weights_init = [1., 1., 1.]
-    net_weights_init = [1., 0., 1.]
-    #############################################
+    net_weights_init = [1., 1., 1.]
     samples_init = np.reshape(np.array(model.lattice.samples, dtype=NP_FLOAT),
                               (model.num_samples, model.x_dim))
     beta_init = model.beta_init
