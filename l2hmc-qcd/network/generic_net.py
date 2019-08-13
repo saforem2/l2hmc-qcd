@@ -76,11 +76,11 @@ class GenericNet(tf.keras.Model):
 
             self.translation_layer = custom_dense(self.x_dim,
                                                   0.001,
-                                                  'transl_layer')
+                                                  'translation_layer')
 
             self.transformation_layer = custom_dense(self.x_dim,
                                                      0.001,
-                                                     'transf_layer')
+                                                     'transformation_layer')
 
     def call(self, inputs, train_phase):
         v, x, t = inputs
