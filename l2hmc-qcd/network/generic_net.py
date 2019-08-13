@@ -89,9 +89,9 @@ class GenericNet(tf.keras.Model):
         #  x = tf.nn.relu(self.x_layer(x))
         #  t = tf.nn.relu(self.t_layer(t))
 
-        v = self.v_layer(v)
-        x = self.x_layer(x)
-        t = self.t_layer(t)
+        #  v = self.v_layer(v)
+        #  x = self.x_layer(x)
+        #  t = self.t_layer(t)
 
         h = tf.nn.relu(v + x + t)
         h = tf.nn.relu(self.h_layer(h))
