@@ -35,10 +35,10 @@ class FullNet(tf.keras.Model):
         """
         super(FullNet, self).__init__(name=model_name)
 
-        if model_name == 'XNet':
-            generic_name_scope = 'x_generic_block'
-        elif model_name == 'VNet':
-            generic_name_scope = 'v_generic_block'
+        #  if model_name == 'XNet':
+        #      generic_name_scope = 'x_generic_block'
+        #  elif model_name == 'VNet':
+        #      generic_name_scope = ''
 
         with tf.name_scope(model_name):
             kwargs['name_scope'] = 'x_conv_block'
@@ -62,7 +62,7 @@ class FullNet(tf.keras.Model):
                 io.log('Using GenericNet architecture...')
                 self.x_conv_net = self.v_conv_net = None
 
-            kwargs['name_scope'] = generic_name_scope
+            #  kwargs['name_scope'] = generic_name_scope
             self.generic_net = GenericNet("GenericNet", **kwargs)
 
     def call(self, inputs, train_phase):
