@@ -755,7 +755,7 @@ class GaugeModel:
         fnsT = tf.transpose(fns, perm=[2, 1, 0, 3, 4], name='fns_transposed')
 
         out_fns = {}
-        names = ['scale', 'transl', 'transf']
+        names = ['scale', 'translation', 'transformation']
         subnames = ['v1', 'x1', 'x2', 'v2']
         for idx, name in enumerate(names):
             out_fns[name] = {}
