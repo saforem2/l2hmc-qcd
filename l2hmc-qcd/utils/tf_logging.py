@@ -91,10 +91,8 @@ def check_var_and_op(name, var):
     return (name in var.name or name in var.op.name)
 
 
-def variable_summaries(var, name):
+def variable_summaries(var, name=''):
     """Attach a lot of summaries to a Tensor (for TensorBoard visualization)"""
-    #  with tf.name_scope('summaries'):
-    #  with tf.name_scope(name):
     mean = tf.reduce_mean(var)
     tf.summary.scalar('mean', mean)
     with tf.name_scope('stddev'):
