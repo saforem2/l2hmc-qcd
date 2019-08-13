@@ -85,9 +85,9 @@ class GenericNet(tf.keras.Model):
     def call(self, inputs, train_phase):
         v, x, t = inputs
 
-        #  v = tf.nn.relu(self.v_layer(v))
-        #  x = tf.nn.relu(self.x_layer(x))
-        #  t = tf.nn.relu(self.t_layer(t))
+        v = tf.nn.relu(self.v_layer(v))
+        x = tf.nn.relu(self.x_layer(x))
+        t = tf.nn.relu(self.t_layer(t))
 
         #  v = self.v_layer(v)
         #  x = self.x_layer(x)
