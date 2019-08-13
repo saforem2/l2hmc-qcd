@@ -126,16 +126,15 @@ class TrainLogger:
 
         for k1, v1 in self.model.l2hmc_fns['out_fns_f'].items():
             for k2, v2 in v1.items():
-                if 'x1' in v2.name or 'v1' in v2.name:
-                    with tf.name_scope(f'{k1}_fn_{k2}_f'):
-                        variable_summaries(v2)
+                with tf.name_scope(f'{k1}_fn_{k2}_f'):
+                    variable_summaries(v2)
                     #  tf.summary.scalar(f'{k2}_avg', tf.reduce_mean(v2))
                     #  tf.summary.histogram(f'{k2}', v2)
 
-        #  for k1, v1 in self.model.l2hmc_fns['out_fns_b'].items():
-        #      for k2, v2 in v1.items():
-        #          with tf.name_scope(f'{k1}_fn_{k2}_b'):
-        #              variable_summaries(v2)
+        for k1, v1 in self.model.l2hmc_fns['out_fns_b'].items():
+            for k2, v2 in v1.items():
+                with tf.name_scope(f'{k1}_fn_{k2}_b'):
+                    variable_summaries(v2)
                     #  tf.summary.scalar(f'{k2}_avg', tf.reduce_mean(v2))
                     #  tf.summary.histogram(f'{k2}', v2)
 
