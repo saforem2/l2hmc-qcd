@@ -60,11 +60,10 @@ class TrainLogger:
         save_params(self.model.params, self.log_dir)
 
         if self.summaries:
-            with tf.variable_scope('train_summaries'):
-                self.create_summaries()
-
+            #  with tf.variable_scope('train_summaries'):
             self.writer = tf.summary.FileWriter(self.train_summary_dir,
                                                 tf.get_default_graph())
+            self.create_summaries()
 
     def _create_dir_structure(self, log_dir):
         """Create relevant directories for storing data.
