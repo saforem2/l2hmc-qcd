@@ -36,11 +36,9 @@ def parse_args():
         description=DESCRIPTION,
         fromfile_prefix_chars='@',
     )
-
     ###########################################################################
     #                          Lattice parameters                             #
     ###########################################################################
-
     parser.add_argument("--space_size",
                         dest="space_size",
                         type=int,
@@ -342,6 +340,17 @@ def parse_args():
                               not passed mostly just beause the plots are
                               extremely large (many LF steps during inference)
                               and take a while to actually generate.)"""))
+
+    parser.add_argument('--loop_transl_weights',
+                        dest='loop_transl_weights',
+                        action='store_true',
+                        required=False,
+                        help=("""Flag that when passed will loop over different
+                              values for the `translation_weight` in
+                              `net_weights`, which is believed to be causing
+                              the discrepancy between the observed and expected
+                              value of the average plaquette when running
+                              inference."""))
 
     parser.add_argument('--loop_net_weights',
                         dest='loop_net_weights',
