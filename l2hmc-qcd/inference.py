@@ -151,18 +151,17 @@ def set_model_weights(model, dest='rand'):
 
 def inference_setup(kwargs):
     """Set up relevant (initial) values to use when running inference."""
-    # -------------------------------------------------  
     if kwargs['loop_net_weights']:  # loop over different values of [Q, S, T]
-        net_weights_arr = np.zeros((9, 3), dtype=NP_FLOAT)
-        mask_arr = np.array([[1, 1, 1],                     # [Q, S, T]
-                             [0, 1, 1],                     # [ , S, T]
-                             [1, 0, 1],                     # [Q,  , T]
-                             [1, 1, 0],                     # [Q, S,  ]
-                             [1, 0, 0],                     # [Q,  ,  ]
-                             [0, 1, 0],                     # [ , S,  ]
-                             [0, 0, 1],                     # [ ,  , T]
-                             [0, 0, 0]], dtype=NP_FLOAT)    # [ ,  ,  ]
-        net_weights_arr[:mask_arr.shape[0], :] = mask_arr   # [?, ?, ?]
+        #  net_weights_arr = np.zeros((9, 3), dtype=NP_FLOAT)
+        net_weights_arr = np.array([[1, 1, 1],                     # [S, T, Q]
+                                    [0, 1, 1],                     # [ , T, Q]
+                                    [1, 0, 1],                     # [S,  , Q]
+                                    [1, 1, 0],                     # [S, T,  ]
+                                    [1, 0, 0],                     # [S,  ,  ]
+                                    [0, 1, 0],                     # [ , T,  ]
+                                    [0, 0, 1],                     # [ ,  , Q]
+                                    [0, 0, 0]], dtype=NP_FLOAT)    # [ ,  ,  ]
+        #  net_weights_arr[:mask_arr.shape[0], :] = mask_arr   # [?, ?, ?]
         #  net_weights_arr[-1, :] = np.random.randn(3)
 
     elif kwargs['loop_transl_weights']:
@@ -173,13 +172,11 @@ def inference_setup(kwargs):
                                     [1.0, 0.75, 1.0],
                                     [1.0, 1.00, 1.0]], dtype=NP_FLOAT)
 
-    else:  # set [Q, S, T] = [1, 1, 1]
+    else:  # set [S, T, Q] = [1, 1, 1]
         net_weights_arr = np.array([[1, 1, 1]], dtype=NP_FLOAT)
 
     # if a value has been passed in `kwargs['beta_inference']` use it
     # otherwise, use `model.beta_final`
-    #  beta_final = kwargs['beta_final']
-    #  beta_inference = kwargs['beta_inference']
     beta_final = kwargs.get('beta_final', None)
     beta_inference = kwargs.get('beta_inference', None)
     beta = beta_final if beta_inference is None else beta_inference
@@ -361,7 +358,8 @@ def main_inference(kwargs):
     run_inference(inference_dict, runner, run_logger, plotter)
 
     # set 'net_weights_arr' = [1., 1., 1.] so each Q, S, T contribute
-    inference_dict['net_weights_arr'] = np.array([[1, 1, 1]], dtype=NP_FLOAT)
+    #  inference_dict['net_weights_arr'] = np.array([[1, 1, 1]],
+    #                                               dtype=NP_FLOAT)
 
     # set 'betas' to be a single value
     #  inference_dict['betas'] = inference_dict['betas'][-1]
