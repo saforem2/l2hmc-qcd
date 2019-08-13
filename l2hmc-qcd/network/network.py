@@ -35,34 +35,34 @@ class FullNet(tf.keras.Model):
         """
         super(FullNet, self).__init__(name=model_name)
 
-        #  if model_name == 'XNet':
-        #      generic_name_scope = 'x_generic_block'
-        #  elif model_name == 'VNet':
-        #      generic_name_scope = ''
+        if model_name == 'XNet':
+            generic_name_scope = 'GenericNetX'
+        elif model_name == 'VNet':
+            generic_name_scope = 'GenericNetV'
 
         with tf.name_scope(model_name):
-            kwargs['name_scope'] = 'x_conv_block'
+            kwargs['name_scope'] = 'ConvNetX'
             network_arch = kwargs.get('network_arch', 'conv3D')
 
             if network_arch == 'conv2D':
                 io.log('Using ConvNet2D architecture...')
                 self.x_conv_net = ConvNet2D('ConvNet2Dx', **kwargs)
 
-                kwargs['name_scope'] = 'v_conv_block'
+                kwargs['name_scope'] = 'ConvNetV'
                 self.v_conv_net = ConvNet2D('ConvNet2Dv', **kwargs)
 
             elif network_arch == 'conv3D':
                 io.log('Using ConvNet3D architecture...')
                 self.x_conv_net = ConvNet3D('ConvNet3Dx', **kwargs)
 
-                kwargs['name_scope'] = 'v_conv_block'
+                kwargs['name_scope'] = 'ConvNetV'
                 self.v_conv_net = ConvNet3D('ConvNet3Dv', **kwargs)
 
             else:
                 io.log('Using GenericNet architecture...')
                 self.x_conv_net = self.v_conv_net = None
 
-            #  kwargs['name_scope'] = generic_name_scope
+            kwargs['name_scope'] = generic_name_scope
             self.generic_net = GenericNet("GenericNet", **kwargs)
 
     def call(self, inputs, train_phase):
