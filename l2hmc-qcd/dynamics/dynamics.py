@@ -449,7 +449,6 @@ class GaugeDynamics(tf.keras.Model):
                     self.num_steps - step - 1
                 )
 
-            #  with tf.name_scope('augmented_leapfrog'):
             sumlogdet = 0.
 
             v, logdet, vb_fns = self._update_v_backward(x, v, beta, t,
