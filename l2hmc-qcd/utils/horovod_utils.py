@@ -82,8 +82,9 @@ def warmup_lr(**kwargs):
                                                staircase=False,
                                                name='learning_rate')
 
-    def warmup(step):
-        return step * target_lr / warmup_steps
+    def warmup(global_step):
+        return tf.cast(target_lr * (global_step / warmup_steps),
+                       dtype=TF_FLOAT)
 
     learning_rate = tf.cond(global_step < warmup_steps,
                             lambda: warmup(global_step),
