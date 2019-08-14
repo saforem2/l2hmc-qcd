@@ -57,7 +57,7 @@ from config import GLOBAL_SEED, TF_FLOAT, TF_INT, PARAMS
 from lattice.lattice import GaugeLattice
 from dynamics.dynamics import GaugeDynamics
 from dynamics.nnehmc_dynamics import nnehmcDynamics
-from utils.horovod_utils import configure_learning_rate
+from utils.horovod_utils import configure_learning_rate, warmup_lr
 
 
 def check_log_dir(log_dir):
@@ -339,18 +339,26 @@ class GaugeModel:
                 # lr_init has already been multiplied by num_workers, so to
                 # get back to the original `lr_init` parsed from the
                 # command line, divide once by `num_workers`.
-                num_workers = hvd.size()
-                if self.using_hvd:
-                    lr_init /= num_workers
-
-                lr_warmup = lr_init / 10
-                warmup_steps = int(0.1 * self.train_steps)
-                self.lr = configure_learning_rate(lr_warmup,
-                                                  lr_init,
-                                                  self.lr_decay_steps,
-                                                  self.lr_decay_rate,
-                                                  self.global_step,
-                                                  warmup_steps)
+                #  num_workers = hvd.size()
+                #  if self.using_hvd:
+                #      lr_init /= num_workers
+                #
+                #  lr_warmup = lr_init / 10
+                kwargs = {
+                    'target_lr': lr_init,
+                    'warmup_steps': int(0.1 * self.train_steps),
+                    'global_step': self.global_step,
+                    'decay_steps': self.lr_decay_steps,
+                    'decay_rate': self.lr_decay_rate,
+                }
+                self.lr = warmup_lr(**kwargs)
+                #
+                #  self.lr = configure_learning_rate(lr_warmup,
+                #                                    lr_init,
+                #                                    self.lr_decay_steps,
+                #                                    self.lr_decay_rate,
+                #                                    self.global_step,
+                #                                    warmup_steps)
                 #  lr_warmup = lr_init / num_workers
                 #  _train_steps = self.train_steps // num_workers
                 #  warmup_steps = int(0.1 * _train_steps)
