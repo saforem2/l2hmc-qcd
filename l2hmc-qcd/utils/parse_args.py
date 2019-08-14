@@ -300,8 +300,17 @@ def parse_args():
                               `'conv3D', 'conv2D', 'generic'`.
                               (Default: 'conv3D')"""))
 
-    parser.add_argument('--num_hidden',
-                        dest='num_hidden',
+    parser.add_argument('--num_hidden1',
+                        dest='num_hidden1',
+                        type=int,
+                        default=100,
+                        required=False,
+                        help=("""Number of nodes to include in each of the
+                              fully-connected hidden layers for x, v, and t.
+                              (Default: 100)"""))
+
+    parser.add_argument('--num_hidden2',
+                        dest='num_hidden2',
                         type=int,
                         default=100,
                         required=False,
@@ -309,6 +318,14 @@ def parse_args():
                               hidden layer `h`. If not explicitly passed, will
                               default to 2 * lattice.num_links.
                               (Default: None)"""))
+
+    parser.add_argument('--zero_translation',
+                        dest='zero_translation',
+                        action='store_true',
+                        required=False,
+                        help=("""Flag that when passed explicitly sets the
+                              translation function (T in the original paper) to
+                              be zero. (Default: False)"""))
 
     parser.add_argument('--summaries',
                         dest="summaries",
