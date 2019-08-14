@@ -68,3 +68,26 @@ def configure_learning_rate(*args):
                             lambda: learning_rate)
 
     return learning_rate
+
+
+def warmup_lr(**kwargs):
+    target_lr = kwargs.get('target_lr', 1e-3)
+    warmup_steps = kwargs.get('warmup_steps', 1000)
+    global_step = kwargs.get('global_step')
+    decay_steps = kwargs.get('decay_steps', 1000)
+    decay_rate = kwargs.get('decay_rate', 0.96)
+
+    learning_rate = tf.train.exponential_decay(target_lr, global_step,
+                                               decay_steps, decay_rate,
+                                               staircase=False,
+                                               name='learning_rate')
+
+    def warmup(step):
+        return step * target_lr / warmup_steps
+
+    learning_rate = tf.cond(global_step < warmup_steps,
+                            lambda: warmup(global_step),
+                            lambda: learning_rate)
+
+    return learning_rate
+
