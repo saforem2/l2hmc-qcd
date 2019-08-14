@@ -243,9 +243,9 @@ class RunLogger:
         eps_str = f'{eps_np:.3}'.replace('.', '')
         beta_str = f'{beta:.3}'.replace('.', '')
         #  qw_str = f'{charge_weight:.3}'.replace('.', '')
-        scale_wstr = f'{net_weights[0]:.3}'.replace('.', '')
-        transl_wstr = f'{net_weights[1]:.3}'.replace('.', '')
-        transf_wstr = f'{net_weights[2]:.3}'.replace('.', '')
+        scale_wstr = f'{net_weights[0]:3.2f}'.replace('.', '')
+        transl_wstr = f'{net_weights[1]:3.2f}'.replace('.', '')
+        transf_wstr = f'{net_weights[2]:3.2f}'.replace('.', '')
 
         run_str = (
             f'steps{run_steps}'
