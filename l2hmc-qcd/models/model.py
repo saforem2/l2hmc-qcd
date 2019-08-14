@@ -263,7 +263,9 @@ class GaugeModel:
                 #  'data_format': self.data_format,
                 'use_bn': self.use_bn,
                 'dropout_prob': self.dropout_prob,
-                'num_hidden': self.num_hidden,
+                'num_hidden1': self.num_hidden1,
+                'num_hidden2': self.num_hidden2,
+                'zero_translation': self.zero_translation
             }
 
             dynamics_kwargs.update(kwargs)
