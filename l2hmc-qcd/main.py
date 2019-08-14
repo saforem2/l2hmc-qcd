@@ -302,12 +302,12 @@ def train_l2hmc(FLAGS, log_file=None, experiment=None):
 
     init_feed_dict = {
         model.x: samples_init,
-        model.beta: beta_init,
-        model.charge_weight: charge_weight_init,
-        model.net_weights[0]: net_weights_init[0],  # scale_weight
-        model.net_weights[1]: net_weights_init[1],  # transformation_weight
-        model.net_weights[2]: net_weights_init[2],  # translation_weight
-        model.train_phase: True
+        model.beta: beta_init,                      # ------------------------
+        model.charge_weight: charge_weight_init,    # NOTE net_weights are:
+        model.net_weights[0]: net_weights_init[0],  # - scale (S fn)
+        model.net_weights[1]: net_weights_init[1],  # - translation (T fn)
+        model.net_weights[2]: net_weights_init[2],  # - transformation (Q fn)
+        model.train_phase: True                     # ------------------------
     }
 
     # ensure all variables are initialized
