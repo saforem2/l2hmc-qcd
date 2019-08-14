@@ -121,7 +121,7 @@ def custom_dense(units, factor=1., name=None):
     """Custom dense layer with specified weight intialization."""
     if '2.' not in tf.__version__:
         kernel_initializer = tf.keras.initializers.VarianceScaling(
-            scale=2*factor,
+            scale=factor,
             mode='fan_in',
             distribution='truncated_normal',
             #  distribution='uniform',
@@ -130,7 +130,7 @@ def custom_dense(units, factor=1., name=None):
         )
     else:
         kernel_initializer = tf.contrib.layers.variance_scaling_initializer(
-            factor=2*factor,
+            factor=factor,
             mode='FAN_IN',
             seed=GLOBAL_SEED,
             dtype=TF_FLOAT,
