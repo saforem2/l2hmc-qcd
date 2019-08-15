@@ -2,6 +2,31 @@ import tensorflow as tf
 import numpy as np
 import os
 
+try:
+    import matplotlib.pyplot as plt
+    HAS_MATPLOTLIB = True
+except ImportError:
+    HAS_MATPLOTLIB = False
+
+try:
+    import horovod.tensorflow as hvd
+    HAS_HOROVOD = True
+except ImportError:
+    HAS_HOROVOD = False
+
+try:
+    import psutil
+    HAS_PSUTIL = True
+except ImportError:
+    HAS_PSUTIL = False
+
+try:
+    from comet_ml import Experiment
+    HAS_COMET = True
+except ImportError:
+    HAS_COMET = False
+
+
 #  TF_FLOAT = tf.float64
 #  NP_FLOAT = np.float64
 #  TF_INT = tf.int64
