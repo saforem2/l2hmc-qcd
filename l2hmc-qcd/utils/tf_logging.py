@@ -93,14 +93,26 @@ def check_var_and_op(name, var):
 
 def variable_summaries(var, name=''):
     """Attach a lot of summaries to a Tensor (for TensorBoard visualization)"""
+    mean_name = 'mean'
+    stddev_name = 'stddev'
+    max_name = 'max'
+    min_name = 'min'
+    hist_name = 'histogram'
+    if name != '':
+        mean_name = name + '/' + mean_name
+        stddev_name = name + '/' + stddev_name
+        max_name = name + '/' + max_name
+        min_name = name + '/' + min_name
+        hist_name = name + '/' + hist_name
+
     mean = tf.reduce_mean(var)
-    tf.summary.scalar('mean', mean)
+    tf.summary.scalar(mean_name, mean)
     with tf.name_scope('stddev'):
         stddev = tf.sqrt(tf.reduce_mean(tf.square(var - mean)))
-    tf.summary.scalar('stddev', stddev)
-    tf.summary.scalar('max', tf.reduce_max(var))
-    tf.summary.scalar('min', tf.reduce_min(var))
-    tf.summary.histogram('histogram', var)
+    tf.summary.scalar(stddev_name, stddev)
+    tf.summary.scalar(max_name, tf.reduce_max(var))
+    tf.summary.scalar(min_name, tf.reduce_min(var))
+    tf.summary.histogram(hist_name, var)
 
 
 def add_loss_summaries(total_loss):
