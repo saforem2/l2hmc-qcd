@@ -123,7 +123,8 @@ class RunLogger:
                                                 tf.get_default_graph())
             self.create_summaries()
 
-    def build_run_ops_dict(self, params, run_ops):
+    @staticmethod
+    def build_run_ops_dict(params, run_ops):
         """Build dictionary of tensorflow operations used for inference."""
         def get_lf_keys(direction):
             base_keys = ['lf_out', 'pxs_out', 'masks',
@@ -142,14 +143,18 @@ class RunLogger:
             for key, val in zip(keys[7:], run_ops[7:]):
                 run_ops_dict.update({key: val})
 
+        run_ops_dict['dynamics_eps'] = run_ops[-1]
+
         return run_ops_dict
 
     @staticmethod
     def build_inputs_dict(inputs):
         """Build dictionary of tensorflow placeholders used as inputs."""
         keys = ['x', 'beta', 'charge_weight', 'train_phase']
-        inputs_dict = dict(zip(keys, inputs[:3]))
-        inputs_dict.update({'net_weights': inputs[4:]})
+        num_keys = len(keys)
+
+        inputs_dict = dict(zip(keys, inputs[:num_keys]))
+        inputs_dict.update({'net_weights': inputs[num_keys:]})
         #  inputs_dict = {
         #      'x': inputs[0],
         #      'beta': inputs[1],
