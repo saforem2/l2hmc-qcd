@@ -444,15 +444,16 @@ class GaugeModelPlotter:
             'color': 'k',
             'lw': 1.,
             'ls': '-',
-            'alpha': 1.,
+            'alpha': 0.8,
+            'marker': '.',
         }
         #  err_kwargs = plt_kwargs.update({'lw': 1.5, 'alpha': 0.7})
 
         ax0.plot(x, y, **plt_kwargs)
         #  ax0.errorbar(x[::2], y[::2], yerr=yerr[::2],
         ax0.errorbar(x, y, yerr=yerr,
-                     ls='-', lw=1., alpha=0.7, color='k',
-                     ecolor='gray')
+                     ls='-', lw=1., alpha=0.7,
+                     color='k', ecolor='gray')
 
         if ax1 is not None:
             ax1.plot(x[x0:x1:10], y[x0:x1:10], **plt_kwargs)
