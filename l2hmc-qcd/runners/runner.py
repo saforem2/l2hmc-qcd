@@ -48,47 +48,44 @@ class GaugeModelRunner:
 
         if logger is not None:
             self.inputs_dict = self.logger.inputs_dict
+            self.run_ops_dict = self.logger.run_ops_dict
         else:
             self.inputs_dict = RunLogger.build_inputs_dict(inputs)
+            self.run_ops_dict = RunLogger.build_run_ops_dict(params, run_ops)
 
-        self.run_ops_dict = self.build_run_ops_dict(params, run_ops)
-        self.inputs_dict = self.build_inputs_dict(inputs)
         self.eps = self.sess.run(self.run_ops_dict['dynamics_eps'])
 
-    def build_run_ops_dict(self, params, run_ops):
-        """Build dictionary of tensorflow operations used for inference."""
-        run_ops_dict = {
-            'x_out': run_ops[0],
-            'px': run_ops[1],
-            'actions_op': run_ops[2],
-            'plaqs_op': run_ops[3],
-            'avg_plaqs_op': run_ops[4],
-            'charges_op': run_ops[5],
-            'charge_diffs_op': run_ops[6]
-        }
-
-        if params['save_lf']:
-            run_ops_dict.update({
-                'lf_out_f': run_ops[7],
-                'pxs_out_f': run_ops[8],
-                'masks_f': run_ops[9],
-                'logdets_f': run_ops[10],
-                'sumlogdet_f': run_ops[11],
-                'fns_out_f': run_ops[12],
-                'lf_out_b': run_ops[13],
-                'pxs_out_b': run_ops[14],
-                'masks_b': run_ops[15],
-                'logdets_b': run_ops[16],
-                'sumlogdet_b': run_ops[17],
-                'fns_out_b': run_ops[18]
-            })
-
-        run_ops_dict['dynamics_eps'] = run_ops[-1]
-
-        return run_ops_dict
-
-
-        return inputs_dict
+    #  def build_run_ops_dict(self, params, run_ops):
+    #      """Build dictionary of tensorflow operations used for inference."""
+    #      run_ops_dict = {
+    #          'x_out': run_ops[0],
+    #          'px': run_ops[1],
+    #          'actions_op': run_ops[2],
+    #          'plaqs_op': run_ops[3],
+    #          'avg_plaqs_op': run_ops[4],
+    #          'charges_op': run_ops[5],
+    #          'charge_diffs_op': run_ops[6]
+    #      }
+    #
+    #      if params['save_lf']:
+    #          run_ops_dict.update({
+    #              'lf_out_f': run_ops[7],
+    #              'pxs_out_f': run_ops[8],
+    #              'masks_f': run_ops[9],
+    #              'logdets_f': run_ops[10],
+    #              'sumlogdet_f': run_ops[11],
+    #              'fns_out_f': run_ops[12],
+    #              'lf_out_b': run_ops[13],
+    #              'pxs_out_b': run_ops[14],
+    #              'masks_b': run_ops[15],
+    #              'logdets_b': run_ops[16],
+    #              'sumlogdet_b': run_ops[17],
+    #              'fns_out_b': run_ops[18]
+    #          })
+    #
+    #      run_ops_dict['dynamics_eps'] = run_ops[-1]
+    #
+    #      return run_ops_dict
 
     def calc_charge_autocorrelation(self, charges):
         autocorr = np.correlate(charges, charges, mode='full')
