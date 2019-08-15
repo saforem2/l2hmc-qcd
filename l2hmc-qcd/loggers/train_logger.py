@@ -157,13 +157,16 @@ class TrainLogger:
             #  with tf.name_scope(name + '/training/gradients'):
             with tf.name_scope(name):
                 var_name = var.name.replace(':', '')
-                tf.summary.scalar(var_name + '/mean', tf.reduce_mean(var))
-                tf.summary.histogram(var_name, var)
+                variable_summaries(var, name=var_name)
+                #  tf.summary.scalar(var_name + '/mean', tf.reduce_mean(var))
+                #  tf.summary.histogram(var_name, var)
                 #  variable_summaries(var, var.name)
-            grad_name = var.name.replace(':', '') + '/gradient'
+            #  grad_name = var.name.replace(':', '') + '/gradient'
+            grad_name = name + '/gradient'
             with tf.name_scope(grad_name):
-                tf.summary.scalar(grad_name + '/mean', tf.reduce_mean(grad))
-                tf.summary.histogram(grad_name, grad)
+                variable_summaries(grad, name=grad_name)
+                #  tf.summary.scalar(grad_name + '/mean', tf.reduce_mean(grad))
+                #  tf.summary.histogram(grad_name, grad)
                 #  variable_summaries(grad, var.name + '/gradients')
             if 'kernel' in var.name:
                 if 'XNet' in var.name:
