@@ -227,4 +227,3 @@ def create_periodic_padding(samples, filter_size):
         x.append(padded)
 
     return np.array(x, dtype=NP_FLOAT).reshape(*original_size)
-
