@@ -56,8 +56,7 @@ import utils.file_io as io
 from config import GLOBAL_SEED, TF_FLOAT, TF_INT, PARAMS
 from lattice.lattice import GaugeLattice
 from dynamics.dynamics import GaugeDynamics
-from dynamics.nnehmc_dynamics import nnehmcDynamics
-from utils.horovod_utils import configure_learning_rate, warmup_lr
+from utils.horovod_utils import warmup_lr
 
 
 def check_log_dir(log_dir):
@@ -270,14 +269,9 @@ class GaugeModel:
 
             dynamics_kwargs.update(kwargs)
             potential_fn = lattice.get_potential_fn(samples)
-            if self.nnehmc_loss:
-                dynamics = nnehmcDynamics(lattice=lattice,
-                                          potential_fn=potential_fn,
-                                          **dynamics_kwargs)
-            else:
-                dynamics = GaugeDynamics(lattice=lattice,
-                                         potential_fn=potential_fn,
-                                         **dynamics_kwargs)
+            dynamics = GaugeDynamics(lattice=lattice,
+                                     potential_fn=potential_fn,
+                                     **dynamics_kwargs)
 
         return dynamics, potential_fn
 
@@ -505,39 +499,6 @@ class GaugeModel:
                 tf.add_to_collection('losses', charge_loss)
 
         return charge_loss
-
-    def _calc_nnehmc_loss(self, x_dynamics_out, z_dynamics_out, **weights):
-        """Implements the loss from the NNEHMC paper."""
-        old_hamil_x = x_dynamics_out['old_hamil']
-        new_hamil_x = x_dynamics_out['new_hamil']
-
-        eta = 1.
-
-        _px = tf.exp(tf.minimum(
-            (old_hamil_x - new_hamil_x), 0.
-        ), name='hmc_px')
-
-        hmc_px = tf.where(tf.is_finite(_px), _px, tf.zeros_like(_px))
-
-        if weights['aux_weight'] > 0.:
-            old_hamil_z = z_dynamics_out['old_hamil']
-            new_hamil_z = z_dynamics_out['new_hamil']
-
-            _pz = tf.exp(tf.minimum(
-                (old_hamil_z - new_hamil_z), 0.
-            ), name='hmc_pz')
-
-            hmc_pz = tf.where(tf.is_finite(_pz), _pz, tf.zeros_like(_pz))
-
-        else:
-            hmc_pz = tf.zeros_like(_px)
-
-        loss = - eta * (hmc_px + weights['aux_weight'] * hmc_pz)
-
-        nnehmc_loss = tf.reduce_mean(loss, axis=0, name='nnehmc_loss')
-        tf.add_to_collection('losses', nnehmc_loss)
-
-        return nnehmc_loss
 
     def _append_update_ops(self, train_op):
         """Returns `train_op` appending `UPDATE_OPS` collection if prsent."""
