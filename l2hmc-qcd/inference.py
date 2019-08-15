@@ -37,12 +37,14 @@ import numpy as np
 import utils.file_io as io
 
 from config import PARAMS, NP_FLOAT, HAS_MATPLOTLIB, HAS_HOROVOD
+from update import set_precision
 from tensorflow.core.protobuf import rewriter_config_pb2
 #  from gauge_model_main import create_config
 
 #  from utils.parse_args import parse_args
 from utils.parse_inference_args import parse_args
 from models.model import GaugeModel
+from loggers.train_logger import TrainLogger
 from loggers.run_logger import RunLogger
 from plotters.gauge_model_plotter import GaugeModelPlotter
 from plotters.leapfrog_plotters import LeapfrogPlotter
@@ -58,7 +60,7 @@ if float(tf.__version__.split('.')[0]) <= 2:
     tf.logging.set_verbosity(tf.logging.INFO)
 
 
-SEP_STR = (80 * '-') + '\n'
+SEP_STR = 80 * '-'  # + '\n'
 
 
 def create_config(params):
@@ -97,6 +99,32 @@ def create_config(params):
         config.inter_op_parallelism_threads = 0
 
     return config, params
+
+
+def parse_flags(FLAGS, log_file=None):
+    """Parse command line FLAGS and create dictionary of parameters."""
+    try:
+        kv_pairs = FLAGS.__dict__.items()
+    except AttributeError:
+        kv_pairs = FLAGS.items()
+
+    params = {}
+    for key, val in kv_pairs:
+        params[key] = val
+
+    params['log_dir'] = io.create_log_dir(FLAGS, log_file=log_file)
+    params['summaries'] = not FLAGS.no_summaries
+    if 'no_summaries' in params:
+        del params['no_summaries']
+
+    if FLAGS.save_steps is None and FLAGS.train_steps is not None:
+        params['save_steps'] = params['train_steps'] // 4
+
+    if FLAGS.float64:
+        io.log(f'INFO: Setting floating point precision to `float64`.')
+        set_precision('float64')
+
+    return params
 
 
 def load_params(params_pkl_file=None, log_file=None):
@@ -192,7 +220,7 @@ def inference_setup(kwargs):
         'beta': beta,
         'charge_weight': kwargs.get('charge_weight', 1.),
         'run_steps': kwargs.get('run_steps', 5000),
-        'plot_lf': kwargs.get('plot_lf', True)
+        'plot_lf': kwargs.get('plot_lf', False)
     }
 
     return inference_dict
@@ -210,13 +238,18 @@ def run_hmc(FLAGS, log_file=None):
     FLAGS.hmc = True
     FLAGS.log_dir = io.create_log_dir(FLAGS, log_file=log_file)
 
-    params = {}
-    for key, val in FLAGS.__dict__.items():
-        params[key] = val
+    params = parse_flags(FLAGS)
+
+    #  params = {}
+    #  for key, val in FLAGS.__dict__.items():
+    #      params[key] = val
 
     params['hmc'] = True
     params['use_bn'] = False
     params['log_dir'] = FLAGS.log_dir
+    params['loop_net_weights'] = False
+    params['loop_transl_weights'] = False
+    params['plot_lf'] = False
 
     figs_dir = os.path.join(params['log_dir'], 'figures')
     io.check_else_make_dir(figs_dir)
@@ -230,13 +263,19 @@ def run_hmc(FLAGS, log_file=None):
     config, params = create_config(params)
     tf.reset_default_graph()
 
-    _ = GaugeModel(params=params)
+    model = GaugeModel(params=params)
 
     sess = tf.Session(config=config)
     sess.run(tf.global_variables_initializer())
 
     run_ops = tf.get_collection('run_ops')
     inputs = tf.get_collection('inputs')
+    run_summaries_dir = os.path.join(model.log_dir, 'summaries', 'run')
+    io.check_else_make_dir(run_summaries_dir)
+    # create summary objects without having to train model
+    _, _ = TrainLogger.create_summaries(model,
+                                        run_summaries_dir,
+                                        training=False)
     run_logger = RunLogger(params, inputs, run_ops, save_lf_data=False)
     plotter = GaugeModelPlotter(params, run_logger.figs_dir)
 
@@ -313,9 +352,8 @@ def run_inference(inference_dict,
 
 def main_inference(inference_kwargs):
     """Perform inference using saved model."""
-
     params_file = inference_kwargs.get('params_file', None)
-    params = load_params(params_file)  # load parameters used during training
+    params = load_params(params_file)  # load params used during training
 
     # -----------------------------------------------------------------------
     # NOTE: We want to restrict all communication (file I/O) to only be
@@ -391,6 +429,13 @@ def main_inference(inference_kwargs):
 
 
 if __name__ == '__main__':
-    args = parse_args()
-    kwargs = args.__dict__
+    FLAGS = parse_args()
+
+    t0 = time.time()
+    log_file = 'output_dirs.txt'
+    kwargs = FLAGS.__dict__
+
     main_inference(kwargs)
+
+    io.log('\n\n' + SEP_STR)
+    io.log(f'Time to complete: {time.time() - t0:.4g}')

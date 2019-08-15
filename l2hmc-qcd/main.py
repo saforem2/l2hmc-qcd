@@ -34,6 +34,7 @@ import os
 import random
 import time
 import pickle
+import inference
 import tensorflow as tf
 import numpy as np
 
@@ -69,7 +70,7 @@ if HAS_HOROVOD:
 if float(tf.__version__.split('.')[0]) <= 2:
     tf.logging.set_verbosity(tf.logging.INFO)
 
-SEP_STR = 80 * '-' + '\n'
+SEP_STR = 80 * '-'  # + '\n'
 
 # -------------------------------------------
 # Set random seeds for tensorflow and numpy
@@ -379,39 +380,38 @@ def train_l2hmc(FLAGS, log_file=None, experiment=None):
 
     return model, train_logger
 
-
-def run_setup(params):
-    """Set up relevant (initial) values to use when running inference."""
-    # -------------------------------------------------  
-    if params['loop_net_weights']:  # loop over different values of [Q, S, T]
-        net_weights_arr = np.zeros((9, 3), dtype=NP_FLOAT)
-        mask_arr = np.array([[1, 1, 1],                     # [Q, S, T]
-                             [0, 1, 1],                     # [ , S, T]
-                             [1, 0, 1],                     # [Q,  , T]
-                             [1, 1, 0],                     # [Q, S,  ]
-                             [1, 0, 0],                     # [Q,  ,  ]
-                             [0, 1, 0],                     # [ , S,  ]
-                             [0, 0, 1],                     # [ ,  , T]
-                             [0, 0, 0]], dtype=NP_FLOAT)    # [ ,  ,  ]
-        net_weights_arr[:mask_arr.shape[0], :] = mask_arr   # [?, ?, ?]
-        net_weights_arr[-1, :] = np.random.randn(3)
-
-    else:  # set [Q, S, T] = [1, 1, 1]
-        net_weights_arr = np.array([[1, 1, 1]], dtype=NP_FLOAT)
-
-    # if a value has been passed in `kwargs['beta_inference']` use it
-    # otherwise, use `model.beta_final`
-    beta_final = params['beta_final']
-    beta_inference = params['beta_inference']
-    betas = [beta_final if beta_inference is None else beta_inference]
-
-    init_dict = {
-        'net_weights_arr': net_weights_arr,
-        'betas': betas,
-        'charge_weight': params['charge_weight'],
-    }
-
-    return init_dict
+#
+#  def run_setup(params):
+#      """Set up relevant (initial) values to use when running inference."""
+#      if params['loop_net_weights']:  # loop over different values of [Q, S, T]
+#          net_weights_arr = np.zeros((9, 3), dtype=NP_FLOAT)
+#          mask_arr = np.array([[1, 1, 1],                     # [Q, S, T]
+#                               [0, 1, 1],                     # [ , S, T]
+#                               [1, 0, 1],                     # [Q,  , T]
+#                               [1, 1, 0],                     # [Q, S,  ]
+#                               [1, 0, 0],                     # [Q,  ,  ]
+#                               [0, 1, 0],                     # [ , S,  ]
+#                               [0, 0, 1],                     # [ ,  , T]
+#                               [0, 0, 0]], dtype=NP_FLOAT)    # [ ,  ,  ]
+#          net_weights_arr[:mask_arr.shape[0], :] = mask_arr   # [?, ?, ?]
+#          net_weights_arr[-1, :] = np.random.randn(3)
+#
+#      else:  # set [Q, S, T] = [1, 1, 1]
+#          net_weights_arr = np.array([[1, 1, 1]], dtype=NP_FLOAT)
+#
+#      # if a value has been passed in `kwargs['beta_inference']` use it
+#      # otherwise, use `model.beta_final`
+#      beta_final = params['beta_final']
+#      beta_inference = params['beta_inference']
+#      betas = [beta_final if beta_inference is None else beta_inference]
+#
+#      init_dict = {
+#          'net_weights_arr': net_weights_arr,
+#          'betas': betas,
+#          'charge_weight': params['charge_weight'],
+#      }
+#
+#      return init_dict
 
 
 def run_l2hmc(params, checkpoint_dir, experiment=None):
@@ -439,8 +439,8 @@ def run_l2hmc(params, checkpoint_dir, experiment=None):
     # Create model and train_logger
     # --------------------------------------------------------
     model = GaugeModel(params=params)
-
-    init_dict = run_setup(params)
+    init_dict = inference.inference_setup(params)
+    #  init_dict = run_setup(params)
 
     net_weights_arr = init_dict['net_weights_arr']
     betas = init_dict['betas']
@@ -517,13 +517,11 @@ def run_l2hmc(params, checkpoint_dir, experiment=None):
 
 def main(FLAGS):
     """Main method for creating/training/running L2HMC for U(1) gauge model."""
-    t0 = time.time()
+    log_file = 'output_dirs.txt'
+
     if HAS_HOROVOD and FLAGS.horovod:
         io.log("INFO: USING HOROVOD")
-        log_file = 'output_dirs.txt'
         hvd.init()
-    else:
-        log_file = None
 
     condition1 = not FLAGS.horovod
     condition2 = FLAGS.horovod and hvd.rank() == 0
@@ -547,7 +545,6 @@ def main(FLAGS):
         # --------------------
         #   run generic HMC
         # --------------------
-        import inference as inference
         inference.run_hmc(FLAGS, log_file=log_file)
     else:
         # ------------------------
@@ -557,17 +554,17 @@ def main(FLAGS):
         if experiment is not None:
             experiment.log_parameters(model.params)
 
-        if FLAGS.inference:
-            if train_logger is not None:
-                checkpoint_dir = train_logger.checkpoint_dir
-            else:
-                checkpoint_dir = None
-
-            # ---------------------------------------------
-            #   run inference using trained l2hmc sampler
-            # ---------------------------------------------
-            run_l2hmc(model.params, checkpoint_dir)
-
+        #  if FLAGS.inference:
+        #      if train_logger is not None:
+        #          checkpoint_dir = train_logger.checkpoint_dir
+        #      else:
+        #          checkpoint_dir = None
+        #
+        #      # ---------------------------------------------
+        #      #   run inference using trained l2hmc sampler
+        #      # ---------------------------------------------
+        #      run_l2hmc(model.params, checkpoint_dir)
+        #
         # -----------------------------------------------------------
         #  run HMC following inference if --run_hmc flag was passed
         # -----------------------------------------------------------
@@ -589,12 +586,12 @@ def main(FLAGS):
         #          params['eps'] = FLAGS.eps = eps
         #          hmc.run_hmc(FLAGS, params, log_file)
 
-    io.log('\n\n')
-    io.log(80 * '-')
-    io.log(f'Time to complete: {time.time() - t0:.4g}')
-    io.log(80 * '-')
-
 
 if __name__ == '__main__':
     args = parse_args()
+    t0 = time.time()
+
     main(args)
+
+    io.log('\n\n' + SEP_STR)
+    io.log(f'Time to complete: {time.time() - t0:.4g}')
