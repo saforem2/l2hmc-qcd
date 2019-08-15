@@ -30,12 +30,6 @@ for each major part of the algorithm:
 Author: Sam Foreman (github: @saforem2)
 Date: 04/10/2019
 """
-try:
-    from comet_ml import Experiment
-    HAS_COMET = True
-except ImportError:
-    HAS_COMET = False
-
 import os
 import random
 import time
@@ -43,16 +37,17 @@ import pickle
 import tensorflow as tf
 import numpy as np
 
-from tensorflow.python import debug as tf_debug
-from tensorflow.python.client import timeline
+from tensorflow.python import debug as tf_debug  # noqa: F401
+from tensorflow.python.client import timeline    # noqa: F401
 from tensorflow.core.protobuf import rewriter_config_pb2
 
 import utils.file_io as io
 
-from config import GLOBAL_SEED, NP_FLOAT
+from config import (
+    GLOBAL_SEED, NP_FLOAT, HAS_MATPLOTLIB, HAS_HOROVOD, HAS_COMET
+)
 from update import set_precision
 from utils.parse_args import parse_args
-#  from utils.attr_dict import AttrDict
 from models.model import GaugeModel
 from loggers.train_logger import TrainLogger
 from loggers.run_logger import RunLogger
@@ -61,17 +56,15 @@ from plotters.gauge_model_plotter import GaugeModelPlotter
 from plotters.leapfrog_plotters import LeapfrogPlotter
 from runners.runner import GaugeModelRunner
 
-try:
-    import horovod.tensorflow as hvd
-    HAS_HOROVOD = True
-except ImportError:
-    HAS_HOROVOD = False
 
-try:
-    import matplotlib.pyplot as plt
-    HAS_MATPLOTLIB = True
-except ImportError:
-    HAS_MATPLOTLIB = False
+if HAS_COMET:
+    from comet_ml import Experiment
+
+if HAS_HOROVOD:
+    import horovod.tensorflow as hvd
+
+#  if HAS_MATPLOTLIB:
+#      import matplotlib.pyplot as plt
 
 if float(tf.__version__.split('.')[0]) <= 2:
     tf.logging.set_verbosity(tf.logging.INFO)
@@ -141,19 +134,15 @@ def count_trainable_params(out_file, log=False):
 
 def create_config(params):
     """Helper method for creating a tf.ConfigProto object."""
-    #  if train_phase:
     config = tf.ConfigProto(allow_soft_placement=True)
-    #  else:
-    #      config = tf.ConfigProto(allow_soft_placement=True,
-    #                              log_device_placement=True)
     if params['time_size'] > 8:
         off = rewriter_config_pb2.RewriterConfig.OFF
         config_attrs = config.graph_options.rewrite_options
         config_attrs.arithmetic_optimization = off
 
     if params['gpu']:
-        # Horovod: pin GPU to be used to process local rank (one GPU per
-        # process)
+        # Horovod: pin GPU to be used to process local rank 
+        # (one GPU per process)
         config.gpu_options.allow_growth = True
         #  config.allow_soft_placement = True
         if HAS_HOROVOD and params['horovod']:
@@ -204,23 +193,10 @@ def train_setup(FLAGS, log_file=None):
     params['summaries'] = not FLAGS.no_summaries
     if 'no_summaries' in params:
         del params['no_summaries']
-    #  params['hmc'] = FLAGS.hmc
-    #  params['eps_fixed'] = FLAGS.eps_fixed
-    #  params['data_format'] = 'channels_last'
-    #  params['summaries'] = not FLAGS.no_summaries
-    #  params['use_bn'] = FLAGS.use_bn
 
     if FLAGS.save_steps is None and FLAGS.train_steps is not None:
         params['save_steps'] = params['train_steps'] // 4
 
-    #  try:
-    #      for key, val in FLAGS.__dict__.items():
-    #          if 'summaries' not in key:
-    #              params[key] = val
-    #  except AttributeError:
-    #      for key, val in FLAGS.items():
-    #          if 'summaries' not in key:
-    #              params[key] = val
     #  if FLAGS.gpu:
     #      params['data_format'] = 'channels_last'
     #      #  params['data_format'] = 'channels_first'
@@ -228,18 +204,13 @@ def train_setup(FLAGS, log_file=None):
     #      io.log("Using CPU for training.")
     #      params['data_format'] = 'channels_last'
 
-    #  io.log(SEP_STR)
     if FLAGS.float64:
         io.log(f'INFO: Setting floating point precision to `float64`.')
         set_precision('float64')
-    #  else:
-    #      io.log(f'INFO: Using `float32` for floating point precision.')
-    #  io.log(SEP_STR)
 
     if FLAGS.horovod:
         params['using_hvd'] = True
         num_workers = hvd.size()
-        #  io.log(f"Number of GPUs: {num_workers}")
         params['num_workers'] = num_workers
 
         # ---------------------------------------------------------
@@ -254,6 +225,7 @@ def train_setup(FLAGS, log_file=None):
 
         # Horovod: adjust number of training steps based on number of GPUs.
         params['train_steps'] //= num_workers
+
         # Horovod: adjust save_steps and lr_decay_steps accordingly.
         params['save_steps'] //= num_workers
         params['lr_decay_steps'] //= num_workers
@@ -310,11 +282,8 @@ def train_l2hmc(FLAGS, log_file=None, experiment=None):
     # --------------------------------------------------------
     # Create model and train_logger
     # --------------------------------------------------------
-    #  try:
     model = GaugeModel(params=params)
-    #  except:
-    #      import pdb
-    #      pdb.set_trace()
+
     if is_chief:
         train_logger = TrainLogger(model, log_dir, params['summaries'])
     else:

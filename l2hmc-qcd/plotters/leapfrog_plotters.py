@@ -1,22 +1,17 @@
 import os
-try:
-    import psutil
-    HAS_PSUTIL = True
-except ImportError:
-    HAS_PSUTIL = False
-
 import pickle
 import numpy as np
-try:
-    import matplotlib as mpl
-    import matplotlib.pyplot as plt
-    HAS_MATPLOTLIB = True
-except ImportError:
-    HAS_MATPLOTLIB = False
-
-#  from .formatters import latexify
 import utils.file_io as io
 from utils.data_loader import DataLoader
+
+from config import HAS_MATPLOTLIB, HAS_PSUTIL
+
+if HAS_MATPLOTLIB:
+    import matplotlib as mpl
+    import matplotlib.pyplot as plt
+
+if HAS_PSUTIL:
+    import psutil
 
 
 def load_and_sep(out_file, keys=('forward', 'backward')):
@@ -27,15 +22,11 @@ def load_and_sep(out_file, keys=('forward', 'backward')):
 
 
 params = {
-    #  'backend': 'ps',
-    #  'text.latex.preamble': [r'\usepackage{gensymb}'],
     'axes.labelsize': 16,   # fontsize for x and y labels (was 10)
     'axes.titlesize': 16,
     'legend.fontsize': 10,  # was 10
     'xtick.labelsize': 12,
     'ytick.labelsize': 12,
-    #  'text.usetex': True,
-    #  'figure.figsize': [fig_width, fig_height],
     'font.family': 'serif'
 }
 
@@ -48,6 +39,16 @@ except FileNotFoundError:
         mpl.rcParams.update(params)
     except FileNotFoundError:
         pass
+
+
+def print_memory():
+    if HAS_PSUTIL:
+        pid = os.getpid()
+        py = psutil.Process(pid)
+        memory_use = py.memory_info()[0] / 2. ** 30
+        io.log(80 * '-')
+        io.log(f'memory use: {memory_use}')
+        io.log(80 * '-')
 
 
 class LeapfrogPlotter:
@@ -119,15 +120,6 @@ class LeapfrogPlotter:
         sumlogdets = loader.load_sumlogdets(run_dir)
         return (samples, leapfrogs, logdets, sumlogdets)
 
-    def print_memory(self):
-        if HAS_PSUTIL:
-            pid = os.getpid()
-            py = psutil.Process(pid)
-            memory_use = py.memory_info()[0] / 2. ** 30
-            io.log(80 * '-')
-            io.log(f'memory use: {memory_use}')
-            io.log(80 * '-')
-
     def get_colors(self, num_samples=20):
         reds_cmap = mpl.cm.get_cmap('Reds', num_samples + 1)
         blues_cmap = mpl.cm.get_cmap('Blues', num_samples + 1)
@@ -166,10 +158,10 @@ class LeapfrogPlotter:
         beta_idx = run_key.index('beta') + 1
         beta = run_key[beta_idx]
 
-        self.print_memory()
+        #  print_memory()
         fig_ax1 = self.plot_lf_diffs(beta, num_samples)
 
-        self.print_memory()
+        #  print_memory()
         fig_ax2 = self.plot_logdets(beta, num_samples)
 
         if ret:
