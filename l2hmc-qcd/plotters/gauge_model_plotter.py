@@ -170,7 +170,7 @@ def plot_with_inset(data, labels=None, **kwargs):
     alpha = kwargs.get('alpha', 7.)
     legend = kwargs.get('legend', False)
     title = kwargs.get('title', None)
-    lw = kwargs.get('lw', 1.5)
+    lw = kwargs.get('lw', 1.)
     ret = kwargs.get('ret', False)
     #  data_lims = kwargs.get('data_lims', None)
 
@@ -447,21 +447,22 @@ class GaugeModelPlotter:
 
         plt_kwargs = {
             'color': 'k',
-            'lw': 1.5,
+            'lw': 1.,
             'ls': '-',
             'alpha': 1.,
         }
         #  err_kwargs = plt_kwargs.update({'lw': 1.5, 'alpha': 0.7})
 
         ax0.plot(x, y, **plt_kwargs)
-        ax0.errorbar(x[::2], y[::2], yerr=yerr[::2],
-                     ls='-', lw=1.5, alpha=0.7, color='k',
+        #  ax0.errorbar(x[::2], y[::2], yerr=yerr[::2],
+        ax0.errorbar(x, y, yerr=yerr,
+                     ls='-', lw=1., alpha=0.7, color='k',
                      ecolor='gray')
 
         if ax1 is not None:
             ax1.plot(x[x0:x1:10], y[x0:x1:10], **plt_kwargs)
             ax1.errorbar(x[x0:x1:10], y[x0:x1:10], yerr=yerr[x0:x1:10],
-                         ls='-', lw=1.5, alpha=0.7, color='k', ecolor='gray')
+                         ls='-', lw=1., alpha=0.7, color='k', ecolor='gray')
 
         ax1.set_xlabel(xlabel, fontsize=14)
         ax0.set_ylabel(ylabel, fontsize=14)
@@ -539,9 +540,9 @@ class GaugeModelPlotter:
         }
         x, y, yerr = xy_data
         fig, ax = plt.subplots()
-        _ = ax.plot(x, y, label='', ls='-', lw=1.5, color='k')
+        _ = ax.plot(x, y, label='', ls='-', lw=1., color='k')
         _ = ax.errorbar(x, y, yerr=yerr, label='', marker=None,
-                        ls='-', alpha=0.7, lw=1.5, color='k', ecolor='gray')
+                        ls='-', alpha=0.7, lw=1., color='k', ecolor='gray')
         _ = ax.axhline(y=0, color='#CC0033', ls='-', lw=2.)
 
         _ = ax.set_xlabel(labels['x_label'], fontsize=14)

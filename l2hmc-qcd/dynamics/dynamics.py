@@ -134,11 +134,13 @@ class GaugeDynamics(tf.keras.Model):
                 'dropout_prob': self.dropout_prob,
                 'x_dim': self.lattice.num_links,  # dim of target space
                 'links_shape': self.lattice.links.shape,
-                'num_hidden': self.num_hidden,
+                'num_hidden1': self.num_hidden1,
+                'num_hidden2': self.num_hidden2,
                 'num_filters': [num_filters, int(2 * num_filters)],
                 'name_scope': 'x',  # namespace in which to create network
                 'factor': 2.,  # scale factor used in original paper
                 '_input_shape': (self.batch_size, *self.lattice.links.shape),
+                'zero_translation': self.zero_translation,
                 #  'data_format': self.data_format,
             }
 
@@ -449,7 +451,6 @@ class GaugeDynamics(tf.keras.Model):
                     self.num_steps - step - 1
                 )
 
-            #  with tf.name_scope('augmented_leapfrog'):
             sumlogdet = 0.
 
             v, logdet, vb_fns = self._update_v_backward(x, v, beta, t,

@@ -55,51 +55,49 @@ class GenericNet(tf.keras.Model):
             if self.dropout_prob > 0:
                 self.dropout = tf.keras.layers.Dropout(self.dropout_prob,
                                                        seed=GLOBAL_SEED,)
-                #  self.dropout_x = tf.keras.layers.Dropout(self.dropout_prob,
-                #                                           seed=GLOBAL_SEED)
-                #  self.dropout_v = tf.keras.layers.Dropout(self.dropout_prob,
-                #                                           seed=GLOBAL_SEED)
 
-            x_factor = self.factor / 3.
-            self.x_layer = custom_dense(self.num_hidden, x_factor, name='fc_x')
-            self.v_layer = custom_dense(self.num_hidden, 1./3., name='fc_v')
-            self.t_layer = custom_dense(self.num_hidden, 1./3., name='fc_t')
+            self.x_layer = custom_dense(self.num_hidden1,
+                                        self.factor/3.,
+                                        name='x_layer')
+            self.v_layer = custom_dense(self.num_hidden1,
+                                        1./3.,
+                                        name='v_layer')
+            self.t_layer = custom_dense(self.num_hidden1,
+                                        1./3.,
+                                        name='t_layer')
 
-            self.h_layer = custom_dense(self.num_hidden,
-                                        name='fc_h')
+            self.h_layer = custom_dense(self.num_hidden2,
+                                        name='hidden_layer')
 
-            self.scale_layer = custom_dense(
-                self.x_dim, 0.001, name='fc_scale'
-            )
+            self.scale_layer = custom_dense(self.x_dim,
+                                            0.001,
+                                            name='scale_layer')
+            if not self.zero_translation:
+                self.translation_layer = custom_dense(self.x_dim,
+                                                      0.001,
+                                                      'translation_layer')
 
-            self.translation_layer = custom_dense(
-                self.x_dim, 0.001, 'fc_translation'
-            )
-
-            self.transformation_layer = custom_dense(
-                self.x_dim, 0.001, 'fc_transformation'
-            )
+            self.transformation_layer = custom_dense(self.x_dim,
+                                                     0.001,
+                                                     'transformation_layer')
 
     def call(self, inputs, train_phase):
         v, x, t = inputs
 
-        v = tf.nn.relu(self.v_layer(v))
-        x = tf.nn.relu(self.x_layer(x))
+        #  v = tf.nn.relu(self.v_layer(v))
+        #  x = tf.nn.relu(self.x_layer(x))
+        #  t = tf.nn.relu(self.t_layer(t))
 
-        # dropout gets applied to the output of the previous layer
-        #  if self.dropout_prob > 0:
-        #      v = self.dropout_v(v, training=train_phase)
-        #      x = self.dropout_x(x, training=train_phase)
-
-        t = tf.nn.relu(self.t_layer(t))
+        v = self.v_layer(v)
+        x = self.x_layer(x)
+        t = self.t_layer(t)
 
         h = tf.nn.relu(v + x + t)
         h = tf.nn.relu(self.h_layer(h))
 
+        # dropout gets applied to the output of the previous layer
         if self.dropout_prob > 0:
             h = self.dropout(h, training=train_phase)
-
-        translation = self.translation_layer(h)
 
         scale = (tf.nn.tanh(self.scale_layer(h))
                  * tf.exp(self.coeff_scale, name='exp_coeff_scale'))
@@ -107,5 +105,10 @@ class GenericNet(tf.keras.Model):
         transformation = (tf.nn.tanh(self.transformation_layer(h))
                           * tf.exp(self.coeff_transformation,
                                    name='exp_coeff_transformation'))
+
+        if self.zero_translation:
+            translation = tf.zeros_like(scale, name='translation')
+        else:
+            translation = self.translation_layer(h)
 
         return scale, translation, transformation

@@ -36,11 +36,12 @@ import numpy as np
 
 import utils.file_io as io
 
-from config import NP_FLOAT
+from config import PARAMS, NP_FLOAT
 from tensorflow.core.protobuf import rewriter_config_pb2
 #  from gauge_model_main import create_config
 
-from utils.parse_args import parse_args
+#  from utils.parse_args import parse_args
+from utils.parse_inference_args import parse_args
 from models.model import GaugeModel
 from loggers.run_logger import RunLogger
 from plotters.gauge_model_plotter import GaugeModelPlotter
@@ -104,10 +105,20 @@ def create_config(params):
     return config, params
 
 
-def load_params():
-    params_pkl_file = os.path.join(os.getcwd(), 'params.pkl')
-    with open(params_pkl_file, 'rb') as f:
-        params = pickle.load(f)
+def load_params(params_pkl_file=None, log_file=None):
+    if params_pkl_file is None:
+        params_pkl_file = os.path.join(os.getcwd(), 'params.pkl')
+
+    if os.path.isfile(params_pkl_file):
+        with open(params_pkl_file, 'rb') as f:
+            params = pickle.load(f)
+    else:
+        io.log(f'INFO: Unable to locate: {params_pkl_file}.\n'
+               f'INFO: Using default parameters '
+               f'(PARAMS defined in `config.py`.')
+
+        params = PARAMS.copy()
+        params['log_dir'] = io.create_log_dir(params, log_file=log_file)
 
     return params
 
@@ -151,27 +162,32 @@ def set_model_weights(model, dest='rand'):
 
 def inference_setup(kwargs):
     """Set up relevant (initial) values to use when running inference."""
-    # -------------------------------------------------  
     if kwargs['loop_net_weights']:  # loop over different values of [Q, S, T]
-        net_weights_arr = np.zeros((9, 3), dtype=NP_FLOAT)
-        mask_arr = np.array([[1, 1, 1],                     # [Q, S, T]
-                             [0, 1, 1],                     # [ , S, T]
-                             [1, 0, 1],                     # [Q,  , T]
-                             [1, 1, 0],                     # [Q, S,  ]
-                             [1, 0, 0],                     # [Q,  ,  ]
-                             [0, 1, 0],                     # [ , S,  ]
-                             [0, 0, 1],                     # [ ,  , T]
-                             [0, 0, 0]], dtype=NP_FLOAT)    # [ ,  ,  ]
-        net_weights_arr[:mask_arr.shape[0], :] = mask_arr   # [?, ?, ?]
+        #  net_weights_arr = np.zeros((9, 3), dtype=NP_FLOAT)
+        net_weights_arr = np.array([[1, 1, 1],                     # [S, T, Q]
+                                    [0, 1, 1],                     # [ , T, Q]
+                                    [1, 0, 1],                     # [S,  , Q]
+                                    [1, 1, 0],                     # [S, T,  ]
+                                    [1, 0, 0],                     # [S,  ,  ]
+                                    [0, 1, 0],                     # [ , T,  ]
+                                    [0, 0, 1],                     # [ ,  , Q]
+                                    [0, 0, 0]], dtype=NP_FLOAT)    # [ ,  ,  ]
+        #  net_weights_arr[:mask_arr.shape[0], :] = mask_arr   # [?, ?, ?]
         #  net_weights_arr[-1, :] = np.random.randn(3)
 
-    else:  # set [Q, S, T] = [1, 1, 1]
+    elif kwargs['loop_transl_weights']:
+        net_weights_arr = np.array([[1.0, 0.00, 1.0],
+                                    [1.0, 0.10, 1.0],
+                                    [1.0, 0.25, 1.0],
+                                    [1.0, 0.50, 1.0],
+                                    [1.0, 0.75, 1.0],
+                                    [1.0, 1.00, 1.0]], dtype=NP_FLOAT)
+
+    else:  # set [S, T, Q] = [1, 1, 1]
         net_weights_arr = np.array([[1, 1, 1]], dtype=NP_FLOAT)
 
     # if a value has been passed in `kwargs['beta_inference']` use it
     # otherwise, use `model.beta_final`
-    #  beta_final = kwargs['beta_final']
-    #  beta_inference = kwargs['beta_inference']
     beta_final = kwargs.get('beta_final', None)
     beta_inference = kwargs.get('beta_inference', None)
     beta = beta_final if beta_inference is None else beta_inference
@@ -301,12 +317,14 @@ def run_inference(inference_dict,
             lf_plotter.make_plots(run_dir, num_samples=num_samples)
 
 
-def main_inference(kwargs):
+def main_inference(inference_kwargs):
     """Perform inference using saved model."""
-    params = load_params()  # load parameters used during training
+
+    params_file = inference_kwargs.get('params_file', None)
+    params = load_params(params_file)  # load parameters used during training
 
     # -----------------------------------------------------------------------
-    # (NOTE) We want to restrict all communication (file I/O) to only be
+    # NOTE: We want to restrict all communication (file I/O) to only be
     # performed on rank 0 (i.e. `is_chief`) so there are two cases:
     #    1. We're using Horovod, so we have to check hvd.rank() explicitly.
     #    2. We're not using Horovod, in which case `is_chief` is always True.
@@ -337,7 +355,7 @@ def main_inference(kwargs):
     #
     #  NOTE: We are only interested in the command line arguments that 
     #        were passed to `inference.py` (i.e. those contained in kwargs)
-    inference_dict = inference_setup(kwargs)
+    inference_dict = inference_setup(inference_kwargs)
     if inference_dict['beta'] is None:
         inference_dict['beta'] = params['beta_final']
     # ------------------------------------------------------------------------
@@ -353,7 +371,8 @@ def main_inference(kwargs):
     run_inference(inference_dict, runner, run_logger, plotter)
 
     # set 'net_weights_arr' = [1., 1., 1.] so each Q, S, T contribute
-    inference_dict['net_weights_arr'] = np.array([[1, 1, 1]], dtype=NP_FLOAT)
+    #  inference_dict['net_weights_arr'] = np.array([[1, 1, 1]],
+    #                                               dtype=NP_FLOAT)
 
     # set 'betas' to be a single value
     #  inference_dict['betas'] = inference_dict['betas'][-1]
