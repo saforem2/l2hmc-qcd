@@ -195,13 +195,13 @@ def parse_args():
                               constant) used in gauge model when
                               annealing. (Default: 5."""))
 
-    parser.add_argument('--inference',
-                        dest="inference",
-                        action="store_true",
-                        required=False,
-                        help=("""Flag that when passed will run inference
-                              using the trained L2HMC sampler by loading
-                              the trained model."""))
+    #  parser.add_argument('--inference',
+    #                      dest="inference",
+    #                      action="store_true",
+    #                      required=False,
+    #                      help=("""Flag that when passed will run inference
+    #                            using the trained L2HMC sampler by loading
+    #                            the trained model."""))
 
     parser.add_argument("--warmup_lr",
                         dest="warmup_lr",
@@ -334,6 +334,16 @@ def parse_args():
                         help=("""Use generic HMC (without augmented leapfrog
                               integrator described in paper). Used for
                               comparing against L2HMC algorithm."""))
+
+    parser.add_argument("--run_steps",
+                        dest="run_steps",
+                        type=int,
+                        default=10000,
+                        required=False,
+                        help=("""Number of evaluation 'run' steps to perform
+                              after training (i.e. length of desired chain
+                              generate using trained L2HMC sample).
+                              (Default: 10000)"""))
 
     #  parser.add_argument("--run_hmc",
     #                      dest="run_hmc",
