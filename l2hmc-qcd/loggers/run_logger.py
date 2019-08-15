@@ -144,15 +144,19 @@ class RunLogger:
 
         return run_ops_dict
 
-    def build_inputs_dict(self, inputs):
+    @staticmethod
+    def build_inputs_dict(inputs):
         """Build dictionary of tensorflow placeholders used as inputs."""
-        inputs_dict = {
-            'x': inputs[0],
-            'beta': inputs[1],
-            'charge_weight': inputs[2],
-            'train_phase': inputs[3],
-            'net_weights': [inputs[4], inputs[5], inputs[6]]
-        }
+        keys = ['x', 'beta', 'charge_weight', 'train_phase']
+        inputs_dict = dict(zip(keys, inputs[:3]))
+        inputs_dict.update({'net_weights': inputs[4:]})
+        #  inputs_dict = {
+        #      'x': inputs[0],
+        #      'beta': inputs[1],
+        #      'charge_weight': inputs[2],
+        #      'train_phase': inputs[3],
+        #      'net_weights': [inputs[4], inputs[5], inputs[6]]
+        #  }
 
         return inputs_dict
 
