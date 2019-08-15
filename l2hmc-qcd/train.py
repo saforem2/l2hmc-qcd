@@ -280,8 +280,8 @@ def train_l2hmc(kwargs, log_file=None):
         # Horovod: adjust save_steps and lr_decay_steps accordingly.
         params['save_steps'] //= num_workers
         params['lr_decay_steps'] //= num_workers
-        if params['summaries']:
-            params['logging_steps'] // num_workers
+        #  if params['summaries']:
+        #      params['logging_steps'] // num_workers
         hooks = [
             # Horovod: BroadcastGlobalVariablesHook broadcasts initial
             # variable states from rank 0 to all other processes. This

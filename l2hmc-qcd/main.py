@@ -230,8 +230,8 @@ def train_setup(FLAGS, log_file=None):
         params['save_steps'] //= num_workers
         params['lr_decay_steps'] //= num_workers
 
-        if params['summaries']:
-            params['logging_steps'] // num_workers
+        #  if params['summaries']:
+        #      params['logging_steps'] //= num_workers
 
         # ---------------------------------------------------------
         # Horovod: BroadcastGlobalVariablesHook broadcasts initial
