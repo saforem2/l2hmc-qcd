@@ -133,7 +133,7 @@ class GaugeModel:
         }
 
         for key, val in self.ops_dict.items():
-            [tf.add_to_collection(key, op) for op in list(val.values())]
+            _ = [tf.add_to_collection(key, op) for op in list(val.values())]
 
     def load(self, sess, checkpoint_dir):
         latest_ckpt = tf.train.latest_checkpoint(checkpoint_dir)
@@ -245,7 +245,7 @@ class GaugeModel:
             if name != 'net_weights':
                 tf.add_to_collection('inputs', tensor)
             else:
-                [tf.add_to_collection('inputs', t) for t in tensor]
+                _ = [tf.add_to_collection('inputs', t) for t in tensor]
 
         return outputs
 
@@ -748,4 +748,3 @@ class GaugeModel:
                     global_step=self.global_step,
                     name='train_op'
                 )
-
