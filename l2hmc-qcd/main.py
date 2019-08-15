@@ -30,29 +30,25 @@ for each major part of the algorithm:
 Author: Sam Foreman (github: @saforem2)
 Date: 04/10/2019
 """
-try:
-    from comet_ml import Experiment
-    HAS_COMET = True
-except ImportError:
-    HAS_COMET = False
-
 import os
 import random
 import time
 import pickle
+import inference
 import tensorflow as tf
 import numpy as np
 
-from tensorflow.python import debug as tf_debug
-from tensorflow.python.client import timeline
+from tensorflow.python import debug as tf_debug  # noqa: F401
+from tensorflow.python.client import timeline    # noqa: F401
 from tensorflow.core.protobuf import rewriter_config_pb2
 
 import utils.file_io as io
 
-from config import GLOBAL_SEED, NP_FLOAT
+from config import (
+    GLOBAL_SEED, NP_FLOAT, HAS_MATPLOTLIB, HAS_HOROVOD, HAS_COMET
+)
 from update import set_precision
 from utils.parse_args import parse_args
-#  from utils.attr_dict import AttrDict
 from models.model import GaugeModel
 from loggers.train_logger import TrainLogger
 from loggers.run_logger import RunLogger
@@ -61,22 +57,20 @@ from plotters.gauge_model_plotter import GaugeModelPlotter
 from plotters.leapfrog_plotters import LeapfrogPlotter
 from runners.runner import GaugeModelRunner
 
-try:
-    import horovod.tensorflow as hvd
-    HAS_HOROVOD = True
-except ImportError:
-    HAS_HOROVOD = False
 
-try:
-    import matplotlib.pyplot as plt
-    HAS_MATPLOTLIB = True
-except ImportError:
-    HAS_MATPLOTLIB = False
+if HAS_COMET:
+    from comet_ml import Experiment
+
+if HAS_HOROVOD:
+    import horovod.tensorflow as hvd
+
+#  if HAS_MATPLOTLIB:
+#      import matplotlib.pyplot as plt
 
 if float(tf.__version__.split('.')[0]) <= 2:
     tf.logging.set_verbosity(tf.logging.INFO)
 
-SEP_STR = 80 * '-' + '\n'
+SEP_STR = 80 * '-'  # + '\n'
 
 # -------------------------------------------
 # Set random seeds for tensorflow and numpy
@@ -141,19 +135,15 @@ def count_trainable_params(out_file, log=False):
 
 def create_config(params):
     """Helper method for creating a tf.ConfigProto object."""
-    #  if train_phase:
     config = tf.ConfigProto(allow_soft_placement=True)
-    #  else:
-    #      config = tf.ConfigProto(allow_soft_placement=True,
-    #                              log_device_placement=True)
     if params['time_size'] > 8:
         off = rewriter_config_pb2.RewriterConfig.OFF
         config_attrs = config.graph_options.rewrite_options
         config_attrs.arithmetic_optimization = off
 
     if params['gpu']:
-        # Horovod: pin GPU to be used to process local rank (one GPU per
-        # process)
+        # Horovod: pin GPU to be used to process local rank 
+        # (one GPU per process)
         config.gpu_options.allow_growth = True
         #  config.allow_soft_placement = True
         if HAS_HOROVOD and params['horovod']:
@@ -204,23 +194,10 @@ def train_setup(FLAGS, log_file=None):
     params['summaries'] = not FLAGS.no_summaries
     if 'no_summaries' in params:
         del params['no_summaries']
-    #  params['hmc'] = FLAGS.hmc
-    #  params['eps_fixed'] = FLAGS.eps_fixed
-    #  params['data_format'] = 'channels_last'
-    #  params['summaries'] = not FLAGS.no_summaries
-    #  params['use_bn'] = FLAGS.use_bn
 
     if FLAGS.save_steps is None and FLAGS.train_steps is not None:
         params['save_steps'] = params['train_steps'] // 4
 
-    #  try:
-    #      for key, val in FLAGS.__dict__.items():
-    #          if 'summaries' not in key:
-    #              params[key] = val
-    #  except AttributeError:
-    #      for key, val in FLAGS.items():
-    #          if 'summaries' not in key:
-    #              params[key] = val
     #  if FLAGS.gpu:
     #      params['data_format'] = 'channels_last'
     #      #  params['data_format'] = 'channels_first'
@@ -228,18 +205,13 @@ def train_setup(FLAGS, log_file=None):
     #      io.log("Using CPU for training.")
     #      params['data_format'] = 'channels_last'
 
-    #  io.log(SEP_STR)
     if FLAGS.float64:
         io.log(f'INFO: Setting floating point precision to `float64`.')
         set_precision('float64')
-    #  else:
-    #      io.log(f'INFO: Using `float32` for floating point precision.')
-    #  io.log(SEP_STR)
 
     if FLAGS.horovod:
         params['using_hvd'] = True
         num_workers = hvd.size()
-        #  io.log(f"Number of GPUs: {num_workers}")
         params['num_workers'] = num_workers
 
         # ---------------------------------------------------------
@@ -254,12 +226,13 @@ def train_setup(FLAGS, log_file=None):
 
         # Horovod: adjust number of training steps based on number of GPUs.
         params['train_steps'] //= num_workers
+
         # Horovod: adjust save_steps and lr_decay_steps accordingly.
         params['save_steps'] //= num_workers
         params['lr_decay_steps'] //= num_workers
 
-        if params['summaries']:
-            params['logging_steps'] // num_workers
+        #  if params['summaries']:
+        #      params['logging_steps'] //= num_workers
 
         # ---------------------------------------------------------
         # Horovod: BroadcastGlobalVariablesHook broadcasts initial
@@ -310,11 +283,8 @@ def train_l2hmc(FLAGS, log_file=None, experiment=None):
     # --------------------------------------------------------
     # Create model and train_logger
     # --------------------------------------------------------
-    #  try:
     model = GaugeModel(params=params)
-    #  except:
-    #      import pdb
-    #      pdb.set_trace()
+
     if is_chief:
         train_logger = TrainLogger(model, log_dir, params['summaries'])
     else:
@@ -410,39 +380,38 @@ def train_l2hmc(FLAGS, log_file=None, experiment=None):
 
     return model, train_logger
 
-
-def run_setup(params):
-    """Set up relevant (initial) values to use when running inference."""
-    # -------------------------------------------------  
-    if params['loop_net_weights']:  # loop over different values of [Q, S, T]
-        net_weights_arr = np.zeros((9, 3), dtype=NP_FLOAT)
-        mask_arr = np.array([[1, 1, 1],                     # [Q, S, T]
-                             [0, 1, 1],                     # [ , S, T]
-                             [1, 0, 1],                     # [Q,  , T]
-                             [1, 1, 0],                     # [Q, S,  ]
-                             [1, 0, 0],                     # [Q,  ,  ]
-                             [0, 1, 0],                     # [ , S,  ]
-                             [0, 0, 1],                     # [ ,  , T]
-                             [0, 0, 0]], dtype=NP_FLOAT)    # [ ,  ,  ]
-        net_weights_arr[:mask_arr.shape[0], :] = mask_arr   # [?, ?, ?]
-        net_weights_arr[-1, :] = np.random.randn(3)
-
-    else:  # set [Q, S, T] = [1, 1, 1]
-        net_weights_arr = np.array([[1, 1, 1]], dtype=NP_FLOAT)
-
-    # if a value has been passed in `kwargs['beta_inference']` use it
-    # otherwise, use `model.beta_final`
-    beta_final = params['beta_final']
-    beta_inference = params['beta_inference']
-    betas = [beta_final if beta_inference is None else beta_inference]
-
-    init_dict = {
-        'net_weights_arr': net_weights_arr,
-        'betas': betas,
-        'charge_weight': params['charge_weight'],
-    }
-
-    return init_dict
+#
+#  def run_setup(params):
+#      """Set up relevant (initial) values to use when running inference."""
+#      if params['loop_net_weights']:  # loop over different values of [Q, S, T]
+#          net_weights_arr = np.zeros((9, 3), dtype=NP_FLOAT)
+#          mask_arr = np.array([[1, 1, 1],                     # [Q, S, T]
+#                               [0, 1, 1],                     # [ , S, T]
+#                               [1, 0, 1],                     # [Q,  , T]
+#                               [1, 1, 0],                     # [Q, S,  ]
+#                               [1, 0, 0],                     # [Q,  ,  ]
+#                               [0, 1, 0],                     # [ , S,  ]
+#                               [0, 0, 1],                     # [ ,  , T]
+#                               [0, 0, 0]], dtype=NP_FLOAT)    # [ ,  ,  ]
+#          net_weights_arr[:mask_arr.shape[0], :] = mask_arr   # [?, ?, ?]
+#          net_weights_arr[-1, :] = np.random.randn(3)
+#
+#      else:  # set [Q, S, T] = [1, 1, 1]
+#          net_weights_arr = np.array([[1, 1, 1]], dtype=NP_FLOAT)
+#
+#      # if a value has been passed in `kwargs['beta_inference']` use it
+#      # otherwise, use `model.beta_final`
+#      beta_final = params['beta_final']
+#      beta_inference = params['beta_inference']
+#      betas = [beta_final if beta_inference is None else beta_inference]
+#
+#      init_dict = {
+#          'net_weights_arr': net_weights_arr,
+#          'betas': betas,
+#          'charge_weight': params['charge_weight'],
+#      }
+#
+#      return init_dict
 
 
 def run_l2hmc(params, checkpoint_dir, experiment=None):
@@ -470,8 +439,8 @@ def run_l2hmc(params, checkpoint_dir, experiment=None):
     # Create model and train_logger
     # --------------------------------------------------------
     model = GaugeModel(params=params)
-
-    init_dict = run_setup(params)
+    init_dict = inference.inference_setup(params)
+    #  init_dict = run_setup(params)
 
     net_weights_arr = init_dict['net_weights_arr']
     betas = init_dict['betas']
@@ -548,13 +517,11 @@ def run_l2hmc(params, checkpoint_dir, experiment=None):
 
 def main(FLAGS):
     """Main method for creating/training/running L2HMC for U(1) gauge model."""
-    t0 = time.time()
+    log_file = 'output_dirs.txt'
+
     if HAS_HOROVOD and FLAGS.horovod:
         io.log("INFO: USING HOROVOD")
-        log_file = 'output_dirs.txt'
         hvd.init()
-    else:
-        log_file = None
 
     condition1 = not FLAGS.horovod
     condition2 = FLAGS.horovod and hvd.rank() == 0
@@ -578,7 +545,6 @@ def main(FLAGS):
         # --------------------
         #   run generic HMC
         # --------------------
-        import inference as inference
         inference.run_hmc(FLAGS, log_file=log_file)
     else:
         # ------------------------
@@ -588,17 +554,17 @@ def main(FLAGS):
         if experiment is not None:
             experiment.log_parameters(model.params)
 
-        if FLAGS.inference:
-            if train_logger is not None:
-                checkpoint_dir = train_logger.checkpoint_dir
-            else:
-                checkpoint_dir = None
-
-            # ---------------------------------------------
-            #   run inference using trained l2hmc sampler
-            # ---------------------------------------------
-            run_l2hmc(model.params, checkpoint_dir)
-
+        #  if FLAGS.inference:
+        #      if train_logger is not None:
+        #          checkpoint_dir = train_logger.checkpoint_dir
+        #      else:
+        #          checkpoint_dir = None
+        #
+        #      # ---------------------------------------------
+        #      #   run inference using trained l2hmc sampler
+        #      # ---------------------------------------------
+        #      run_l2hmc(model.params, checkpoint_dir)
+        #
         # -----------------------------------------------------------
         #  run HMC following inference if --run_hmc flag was passed
         # -----------------------------------------------------------
@@ -620,12 +586,12 @@ def main(FLAGS):
         #          params['eps'] = FLAGS.eps = eps
         #          hmc.run_hmc(FLAGS, params, log_file)
 
-    io.log('\n\n')
-    io.log(80 * '-')
-    io.log(f'Time to complete: {time.time() - t0:.4g}')
-    io.log(80 * '-')
-
 
 if __name__ == '__main__':
     args = parse_args()
+    t0 = time.time()
+
     main(args)
+
+    io.log('\n\n' + SEP_STR)
+    io.log(f'Time to complete: {time.time() - t0:.4g}')

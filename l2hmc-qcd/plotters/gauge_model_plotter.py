@@ -8,7 +8,6 @@ Author: Sam Foreman (github: @saforem2)
 Date: 04/10/2019
 """
 import os
-import matplotlib as mpl
 import numpy as np
 import utils.file_io as io
 
@@ -16,29 +15,25 @@ from collections import Counter, OrderedDict
 from scipy.stats import sem
 
 from lattice.lattice import u1_plaq_exact
-from config import COLORS, MARKERS
+from config import COLORS, MARKERS, HAS_MATPLOTLIB
 
-try:
+if HAS_MATPLOTLIB:
+    import matplotlib as mpl
     import matplotlib.pyplot as plt
-    HAS_MATPLOTLIB = True
+    params = {
+        #  'backend': 'ps',
+        #  'text.latex.preamble': [r'\usepackage{gensymb}'],
+        'axes.labelsize': 14,   # fontsize for x and y labels (was 10)
+        'axes.titlesize': 16,
+        'legend.fontsize': 10,  # was 10
+        'xtick.labelsize': 12,
+        'ytick.labelsize': 12,
+        #  'text.usetex': True,
+        #  'figure.figsize': [fig_width, fig_height],
+        #  'font.family': 'serif',
+    }
 
-except ImportError:
-    HAS_MATPLOTLIB = False
-
-params = {
-    #  'backend': 'ps',
-    #  'text.latex.preamble': [r'\usepackage{gensymb}'],
-    'axes.labelsize': 14,   # fontsize for x and y labels (was 10)
-    'axes.titlesize': 16,
-    'legend.fontsize': 10,  # was 10
-    'xtick.labelsize': 12,
-    'ytick.labelsize': 12,
-    #  'text.usetex': True,
-    #  'figure.figsize': [fig_width, fig_height],
-    #  'font.family': 'serif',
-}
-
-mpl.rcParams.update(params)
+    mpl.rcParams.update(params)
 
 
 def arr_from_dict(d, key):
@@ -432,11 +427,10 @@ class GaugeModelPlotter:
         _leg = kwargs.get('legend', False)
 
         if kwargs.get('two_rows', False):
-            fig, (ax0, ax1) = plt.subplots(nrows=2, ncols=1,
-                                           gridspec_kw={
-                                               'height_ratios': [2.5, 1],
-                                               'hspace': 0.175
-                                           })
+            fig, (ax0, ax1) = plt.subplots(
+                nrows=2, ncols=1, gridspec_kw={'height_ratios': [2.5, 1],
+                                               'hspace': 0.175}
+            )
             n = len(x)
             mid = n // 2
             x0 = int(mid - 0.025 * n)
@@ -449,15 +443,15 @@ class GaugeModelPlotter:
             'color': 'k',
             'lw': 1.,
             'ls': '-',
-            'alpha': 1.,
+            'alpha': 0.8,
+            'marker': '.',
         }
         #  err_kwargs = plt_kwargs.update({'lw': 1.5, 'alpha': 0.7})
 
         ax0.plot(x, y, **plt_kwargs)
-        #  ax0.errorbar(x[::2], y[::2], yerr=yerr[::2],
         ax0.errorbar(x, y, yerr=yerr,
-                     ls='-', lw=1., alpha=0.7, color='k',
-                     ecolor='gray')
+                     ls='-', lw=1., alpha=0.7,
+                     color='k', ecolor='gray')
 
         if ax1 is not None:
             ax1.plot(x[x0:x1:10], y[x0:x1:10], **plt_kwargs)

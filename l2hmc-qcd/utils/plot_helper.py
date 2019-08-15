@@ -4,13 +4,11 @@ Helper methods for creating plots.
 Author: Sam Foreman (github: @saforem2)
 Last modified: 2/14/2019
 """
-# pylint: disable=invalid-name
 import numpy as np
-try:
+from config import HAS_MATPLOTLIB
+
+if HAS_MATPLOTLIB:
     import matplotlib.pyplot as plt
-    HAS_MATPLOTLIB = True
-except ImportError:
-    HAS_MATPLOTLIB = False
 
 
 COLORS = 5000 * ['C0', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9']
@@ -35,17 +33,17 @@ def plot_broken_xaxis(x_data,
     # plot the same data on both axes
     for idx in range(y_data.shape[1]):
         _ = ax.plot(x_data, y_data[:, idx], marker='', ls='-',
-                    alpha=1.0, label=f'sample {idx}')#, rasterized=True)
+                    alpha=1.0, label=f'sample {idx}')
 
     _ = ax.plot(x_data, y_data.mean(axis=1), marker='', ls='-',
-                alpha=0.7, color='k', label='average')#, rasterized=True)
+                alpha=0.7, color='k', label='average')
 
     for idx in range(y_data.shape[1]):
         _ = ax2.plot(x_data, y_data[:, idx], marker='', ls='-',
-                     alpha=1.0, label=f'sample {idx}')#, rasterized=True)
+                     alpha=1.0, label=f'sample {idx}')
 
     _ = ax2.plot(x_data, y_data.mean(axis=1), marker='', ls='-',
-                 alpha=0.7, color='k', label='average')#, rasterized=True)
+                 alpha=0.7, color='k', label='average')
 
     # zoom-in / limit the view to different portions of the data
     num_points = len(x_data)
@@ -91,7 +89,7 @@ def plot_broken_xaxis(x_data,
         png_file = out_file + '.png'
         print(f'Saving figure to {out_file}.')
         #  fig.savefig(eps_file, dpi=400, bbox_inches='tight', rasterize=True)
-        fig.savefig(png_file, dpi=400, bbox_inches='tight')#, rasterize=True)
+        fig.savefig(png_file, dpi=400, bbox_inches='tight')
 
     return fig, ax, ax2
 
@@ -112,7 +110,6 @@ def plot_multiple_lines(x_data, y_data, x_label, y_label, **kwargs):
     if y_data.shape[0] > 10:
         y_sample = y_data[:10, :]
 
-
     fig, ax = plt.subplots()
 
     marker = None
@@ -126,7 +123,7 @@ def plot_multiple_lines(x_data, y_data, x_label, y_label, **kwargs):
         if not lines:
             ls = ''
         _ = ax.plot(x_data, row, label=f'sample {idx}', fillstyle=fillstyle,
-                    marker=marker, ls=ls, alpha=alpha)#, rasterized=True)
+                    marker=marker, ls=ls, alpha=alpha)
 
     _ = ax.plot(
         x_data, y_data.mean(axis=0), color='k', label='average', alpha=0.75,
@@ -145,7 +142,7 @@ def plot_multiple_lines(x_data, y_data, x_label, y_label, **kwargs):
         #  png_file = out_file + '.png'
         print(f'Saving figure to {out_file}.')
         #  fig.savefig(eps_file, dpi=400, bbox_inches='tight', rasterize=True)
-        fig.savefig(out_file, dpi=400, bbox_inches='tight')#, rasterize=True)
+        fig.savefig(out_file, dpi=400, bbox_inches='tight')
 
     if ret:
         return fig, ax
