@@ -19,6 +19,7 @@ from config import COLORS, MARKERS, HAS_MATPLOTLIB
 
 if HAS_MATPLOTLIB:
     import matplotlib as mpl
+    import matplotlib.pyplot as plt
     params = {
         #  'backend': 'ps',
         #  'text.latex.preamble': [r'\usepackage{gensymb}'],
