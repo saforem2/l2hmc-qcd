@@ -427,11 +427,10 @@ class GaugeModelPlotter:
         _leg = kwargs.get('legend', False)
 
         if kwargs.get('two_rows', False):
-            fig, (ax0, ax1) = plt.subplots(nrows=2, ncols=1,
-                                           gridspec_kw={
-                                               'height_ratios': [2.5, 1],
-                                               'hspace': 0.175
-                                           })
+            fig, (ax0, ax1) = plt.subplots(
+                nrows=2, ncols=1, gridspec_kw={'height_ratios': [2.5, 1],
+                                               'hspace': 0.175}
+            )
             n = len(x)
             mid = n // 2
             x0 = int(mid - 0.025 * n)
@@ -450,7 +449,6 @@ class GaugeModelPlotter:
         #  err_kwargs = plt_kwargs.update({'lw': 1.5, 'alpha': 0.7})
 
         ax0.plot(x, y, **plt_kwargs)
-        #  ax0.errorbar(x[::2], y[::2], yerr=yerr[::2],
         ax0.errorbar(x, y, yerr=yerr,
                      ls='-', lw=1., alpha=0.7,
                      color='k', ecolor='gray')
