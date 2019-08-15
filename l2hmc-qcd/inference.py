@@ -36,11 +36,12 @@ import numpy as np
 
 import utils.file_io as io
 
-from config import NP_FLOAT
+from config import PARAMS, NP_FLOAT
 from tensorflow.core.protobuf import rewriter_config_pb2
 #  from gauge_model_main import create_config
 
-from utils.parse_args import parse_args
+#  from utils.parse_args import parse_args
+from utils.parse_inference_args import parse_args
 from models.model import GaugeModel
 from loggers.run_logger import RunLogger
 from plotters.gauge_model_plotter import GaugeModelPlotter
@@ -104,10 +105,20 @@ def create_config(params):
     return config, params
 
 
-def load_params():
-    params_pkl_file = os.path.join(os.getcwd(), 'params.pkl')
-    with open(params_pkl_file, 'rb') as f:
-        params = pickle.load(f)
+def load_params(params_pkl_file=None, log_file=None):
+    if params_pkl_file is None:
+        params_pkl_file = os.path.join(os.getcwd(), 'params.pkl')
+
+    if os.path.isfile(params_pkl_file):
+        with open(params_pkl_file, 'rb') as f:
+            params = pickle.load(f)
+    else:
+        io.log(f'INFO: Unable to locate: {params_pkl_file}.\n'
+               f'INFO: Using default parameters '
+               f'(PARAMS defined in `config.py`.')
+
+        params = PARAMS.copy()
+        params['log_dir'] = io.create_log_dir(params, log_file=log_file)
 
     return params
 
@@ -306,9 +317,11 @@ def run_inference(inference_dict,
             lf_plotter.make_plots(run_dir, num_samples=num_samples)
 
 
-def main_inference(kwargs):
+def main_inference(inference_kwargs):
     """Perform inference using saved model."""
-    params = load_params()  # load parameters used during training
+
+    params_file = inference_kwargs.get('params_file', None)
+    params = load_params(params_file)  # load parameters used during training
 
     # -----------------------------------------------------------------------
     # NOTE: We want to restrict all communication (file I/O) to only be
@@ -342,7 +355,7 @@ def main_inference(kwargs):
     #
     #  NOTE: We are only interested in the command line arguments that 
     #        were passed to `inference.py` (i.e. those contained in kwargs)
-    inference_dict = inference_setup(kwargs)
+    inference_dict = inference_setup(inference_kwargs)
     if inference_dict['beta'] is None:
         inference_dict['beta'] = params['beta_final']
     # ------------------------------------------------------------------------
