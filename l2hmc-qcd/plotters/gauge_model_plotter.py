@@ -8,7 +8,6 @@ Author: Sam Foreman (github: @saforem2)
 Date: 04/10/2019
 """
 import os
-import matplotlib as mpl
 import numpy as np
 import utils.file_io as io
 
@@ -16,29 +15,24 @@ from collections import Counter, OrderedDict
 from scipy.stats import sem
 
 from lattice.lattice import u1_plaq_exact
-from config import COLORS, MARKERS
+from config import COLORS, MARKERS, HAS_MATPLOTLIB
 
-try:
-    import matplotlib.pyplot as plt
-    HAS_MATPLOTLIB = True
+if HAS_MATPLOTLIB:
+    import matplotlib as mpl
+    params = {
+        #  'backend': 'ps',
+        #  'text.latex.preamble': [r'\usepackage{gensymb}'],
+        'axes.labelsize': 14,   # fontsize for x and y labels (was 10)
+        'axes.titlesize': 16,
+        'legend.fontsize': 10,  # was 10
+        'xtick.labelsize': 12,
+        'ytick.labelsize': 12,
+        #  'text.usetex': True,
+        #  'figure.figsize': [fig_width, fig_height],
+        #  'font.family': 'serif',
+    }
 
-except ImportError:
-    HAS_MATPLOTLIB = False
-
-params = {
-    #  'backend': 'ps',
-    #  'text.latex.preamble': [r'\usepackage{gensymb}'],
-    'axes.labelsize': 14,   # fontsize for x and y labels (was 10)
-    'axes.titlesize': 16,
-    'legend.fontsize': 10,  # was 10
-    'xtick.labelsize': 12,
-    'ytick.labelsize': 12,
-    #  'text.usetex': True,
-    #  'figure.figsize': [fig_width, fig_height],
-    #  'font.family': 'serif',
-}
-
-mpl.rcParams.update(params)
+    mpl.rcParams.update(params)
 
 
 def arr_from_dict(d, key):

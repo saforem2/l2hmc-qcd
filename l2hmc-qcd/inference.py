@@ -36,7 +36,7 @@ import numpy as np
 
 import utils.file_io as io
 
-from config import PARAMS, NP_FLOAT
+from config import PARAMS, NP_FLOAT, HAS_MATPLOTLIB, HAS_HOROVOD
 from tensorflow.core.protobuf import rewriter_config_pb2
 #  from gauge_model_main import create_config
 
@@ -48,17 +48,11 @@ from plotters.gauge_model_plotter import GaugeModelPlotter
 from plotters.leapfrog_plotters import LeapfrogPlotter
 from runners.runner import GaugeModelRunner
 
-try:
+if HAS_HOROVOD:
     import horovod.tensorflow as hvd
-    HAS_HOROVOD = True
-except ImportError:
-    HAS_HOROVOD = False
 
-try:
-    import matplotlib.pyplot as plt
-    HAS_MATPLOTLIB = True
-except ImportError:
-    HAS_MATPLOTLIB = False
+#  if HAS_MATPLOTLIB:
+#      import matplotlib.pyplot as plt
 
 if float(tf.__version__.split('.')[0]) <= 2:
     tf.logging.set_verbosity(tf.logging.INFO)

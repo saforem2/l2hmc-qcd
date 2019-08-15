@@ -37,15 +37,13 @@ import pickle
 import tensorflow as tf
 import numpy as np
 
-from tensorflow.python import debug as tf_debug
-from tensorflow.python.client import timeline
+from tensorflow.python import debug as tf_debug  # noqa: F401
+from tensorflow.python.client import timeline  # noqa: F401
 from tensorflow.core.protobuf import rewriter_config_pb2
 
 import utils.file_io as io
 
-#  from utils.model_loader import load_model
-#  import gauge_model_inference as inference
-from config import GLOBAL_SEED, NP_FLOAT
+from config import GLOBAL_SEED, NP_FLOAT, HAS_MATPLOTLIB, HAS_HOROVOD
 from utils.parse_args import parse_args
 from models.gauge_model import GaugeModel
 from loggers.train_logger import TrainLogger
@@ -55,17 +53,9 @@ from plotters.gauge_model_plotter import GaugeModelPlotter
 from plotters.leapfrog_plotters import LeapfrogPlotter
 from runners.runner import GaugeModelRunner
 
-try:
+if HAS_HOROVOD:
     import horovod.tensorflow as hvd
-    HAS_HOROVOD = True
-except ImportError:
-    HAS_HOROVOD = False
 
-try:
-    import matplotlib.pyplot as plt
-    HAS_MATPLOTLIB = True
-except ImportError:
-    HAS_MATPLOTLIB = False
 
 if float(tf.__version__.split('.')[0]) <= 2:
     tf.logging.set_verbosity(tf.logging.INFO)
