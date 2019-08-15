@@ -57,7 +57,7 @@ from config import GLOBAL_SEED, TF_FLOAT, TF_INT, PARAMS
 from lattice.lattice import GaugeLattice
 from dynamics.dynamics import GaugeDynamics
 from dynamics.nnehmc_dynamics import nnehmcDynamics
-from utils.horovod_utils import configure_learning_rate
+from utils.horovod_utils import configure_learning_rate, warmup_lr
 
 
 def check_log_dir(log_dir):
@@ -263,7 +263,9 @@ class GaugeModel:
                 #  'data_format': self.data_format,
                 'use_bn': self.use_bn,
                 'dropout_prob': self.dropout_prob,
-                'num_hidden': self.num_hidden,
+                'num_hidden1': self.num_hidden1,
+                'num_hidden2': self.num_hidden2,
+                'zero_translation': self.zero_translation
             }
 
             dynamics_kwargs.update(kwargs)
@@ -337,18 +339,26 @@ class GaugeModel:
                 # lr_init has already been multiplied by num_workers, so to
                 # get back to the original `lr_init` parsed from the
                 # command line, divide once by `num_workers`.
-                num_workers = hvd.size()
-                if self.using_hvd:
-                    lr_init /= num_workers
-
-                lr_warmup = lr_init / 10
-                warmup_steps = int(0.1 * self.train_steps)
-                self.lr = configure_learning_rate(lr_warmup,
-                                                  lr_init,
-                                                  self.lr_decay_steps,
-                                                  self.lr_decay_rate,
-                                                  self.global_step,
-                                                  warmup_steps)
+                #  num_workers = hvd.size()
+                #  if self.using_hvd:
+                #      lr_init /= num_workers
+                #
+                #  lr_warmup = lr_init / 10
+                kwargs = {
+                    'target_lr': lr_init,
+                    'warmup_steps': int(0.1 * self.train_steps),
+                    'global_step': self.global_step,
+                    'decay_steps': self.lr_decay_steps,
+                    'decay_rate': self.lr_decay_rate,
+                }
+                self.lr = warmup_lr(**kwargs)
+                #
+                #  self.lr = configure_learning_rate(lr_warmup,
+                #                                    lr_init,
+                #                                    self.lr_decay_steps,
+                #                                    self.lr_decay_rate,
+                #                                    self.global_step,
+                #                                    warmup_steps)
                 #  lr_warmup = lr_init / num_workers
                 #  _train_steps = self.train_steps // num_workers
                 #  warmup_steps = int(0.1 * _train_steps)
@@ -543,15 +553,6 @@ class GaugeModel:
                 'plaqs_op', 'avg_plaqs_op',
                 'charges_op', 'charge_diffs_op']
         run_ops = {k: getattr(self, k) for k in keys}
-        #  run_ops = {
-        #      'x_out': self.x_out,
-        #      'px': self.px,
-        #      'actions_op': self.actions_op,
-        #      'plaqs_op': self.plaqs_op,
-        #      'avg_plaqs_op': self.avg_plaqs_op,
-        #      'charges_op': self.charges_op,
-        #      'charge_diffs_op': self.charge_diffs_op,
-        #  }
 
         if self.save_lf:
             keys = ['lf_out', 'pxs_out', 'masks',
@@ -562,20 +563,6 @@ class GaugeModel:
 
             run_ops.update({k: getattr(self, k) for k in fkeys})
             run_ops.update({k: getattr(self, k) for k in bkeys})
-            #  run_ops.update({
-            #      'lf_out_f': self.lf_out_f,
-            #      'pxs_out_f': self.pxs_out_f,
-            #      'masks_f': self.masks_f,
-            #      'logdets_f': self.logdets_f,
-            #      'sumlogdet_f': self.sumlogdet_f,
-            #      'fns_out_f': self.fns_out_f,
-            #      'lf_out_b': self.lf_out_b,
-            #      'pxs_out_b': self.pxs_out_b,
-            #      'masks_b': self.masks_b,
-            #      'logdets_b': self.logdets_b,
-            #      'sumlogdet_b': self.sumlogdet_b,
-            #      'fns_out_b': self.fns_out_b,
-            #  })
 
         run_ops['dynamics_eps'] = self.dynamics.eps
 
@@ -593,18 +580,6 @@ class GaugeModel:
             train_ops = {k: getattr(self, k) for k in keys}
 
             train_ops['dynamics.eps'] = self.dynamics.eps
-            #  train_ops = {
-            #      'train_op': self.train_op,
-            #      'loss_op': self.loss_op,
-            #      'x_out': self.x_out,
-            #      'px': self.px,
-            #      'dynamics.eps': self.dynamics.eps,
-            #      'actions_op': self.actions_op,
-            #      'plaqs_op': self.plaqs_op,
-            #      'charges_op': self.charges_op,
-            #      'charge_diffs_op': self.charge_diffs_op,
-            #      'lr': self.lr
-            #  }
 
         return train_ops
 
@@ -790,7 +765,7 @@ class GaugeModel:
         fnsT = tf.transpose(fns, perm=[2, 1, 0, 3, 4], name='fns_transposed')
 
         out_fns = {}
-        names = ['scale', 'transl', 'transf']
+        names = ['scale', 'translation', 'transformation']
         subnames = ['v1', 'x1', 'x2', 'v2']
         for idx, name in enumerate(names):
             out_fns[name] = {}

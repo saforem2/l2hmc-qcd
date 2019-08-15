@@ -123,7 +123,8 @@ def custom_dense(units, factor=1., name=None):
         kernel_initializer = tf.keras.initializers.VarianceScaling(
             scale=factor,
             mode='fan_in',
-            distribution='uniform',
+            distribution='truncated_normal',
+            #  distribution='uniform',
             dtype=TF_FLOAT,
             seed=GLOBAL_SEED,
         )
@@ -133,7 +134,7 @@ def custom_dense(units, factor=1., name=None):
             mode='FAN_IN',
             seed=GLOBAL_SEED,
             dtype=TF_FLOAT,
-            uniform=True,
+            uniform=False,
         )
 
     return tf.keras.layers.Dense(
