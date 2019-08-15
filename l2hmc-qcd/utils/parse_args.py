@@ -159,23 +159,23 @@ def parse_args():
                               at fixed beta (i.e. no annealing is done).
                               (Default: `fixed_beta=False`)"""))
 
-    parser.add_argument("--hmc_beta",
-                        dest="hmc_beta",
-                        type=float,
-                        default=None,
-                        required=False,
-                        help=("""Flag specifying a singular value of beta at
-                              which to run the generic HMC sampler.
-                              (Default: None)"""))
-
-    parser.add_argument("--hmc_eps",
-                        dest="hmc_eps",
-                        type=float,
-                        default=None,
-                        required=False,
-                        help=("""Flag specifying a singular step size value
-                              (`eps`) to use when running the generic HMC
-                              sampler. (Default: None)"""))
+    #  parser.add_argument("--hmc_beta",
+    #                      dest="hmc_beta",
+    #                      type=float,
+    #                      default=None,
+    #                      required=False,
+    #                      help=("""Flag specifying a singular value of beta at
+    #                            which to run the generic HMC sampler.
+    #                            (Default: None)"""))
+    #
+    #  parser.add_argument("--hmc_eps",
+    #                      dest="hmc_eps",
+    #                      type=float,
+    #                      default=None,
+    #                      required=False,
+    #                      help=("""Flag specifying a singular step size value
+    #                            (`eps`) to use when running the generic HMC
+    #                            sampler. (Default: None)"""))
 
     parser.add_argument("--beta_init",
                         dest="beta_init",
@@ -199,9 +199,9 @@ def parse_args():
                         dest="inference",
                         action="store_true",
                         required=False,
-                        help=("""Flag that when passed will run inference using
-                              the trained L2HMC sampler by loading the trained
-                              model."""))
+                        help=("""Flag that when passed will run inference
+                              using the trained L2HMC sampler by loading
+                              the trained model."""))
 
     parser.add_argument("--warmup_lr",
                         dest="warmup_lr",
@@ -212,23 +212,15 @@ def parse_args():
                               value passed to `--lr_init` (performs better when
                               using Horovod for distributed training)."""))
 
-    parser.add_argument("--beta_inference",
-                        dest="beta_inference",
-                        type=float,
-                        default=None,
-                        required=False,
-                        help=("""Flag specifying a singular value of beta at
-                              which to run inference using the trained
-                              L2HMC sampler. (Default: None"""))
-
-    parser.add_argument("--charge_weight_inference",
-                        dest="charge_weight_inference",
-                        type=float,
-                        default=None,
-                        required=False,
-                        help=("""Flag specifying a singular value of the charge
-                              weight at which to run inference using the
-                              trained L2HMC sampler. (Default: None"""))
+    #  parser.add_argument("--charge_weight_inference",
+    #                      dest="charge_weight_inference",
+    #                      type=float,
+    #                      default=None,
+    #                      required=False,
+    #                      help=("""Flag specifying a singular value of the
+    #                            charge weight at which to run inference
+    #                            using the trained L2HMC sampler.
+    #                            (Default: None"""))
 
     ###########################################################################
     #                       Training parameters                               #
@@ -241,16 +233,6 @@ def parse_args():
                         required=False,
                         help=("""Number of training steps to perform.
                               (Default: 5000)"""))
-
-    parser.add_argument("--run_steps",
-                        dest="run_steps",
-                        type=int,
-                        default=10000,
-                        required=False,
-                        help=("""Number of evaluation 'run' steps to perform
-                              after training (i.e. length of desired chain
-                              generate using trained L2HMC sample).
-                              (Default: 10000)"""))
 
     parser.add_argument("--trace",
                         dest="trace",
@@ -327,60 +309,23 @@ def parse_args():
                               translation function (T in the original paper) to
                               be zero. (Default: False)"""))
 
-    parser.add_argument('--summaries',
-                        dest="summaries",
+    parser.add_argument('--no_summaries',
+                        dest="no_summaries",
                         action="store_true",
                         required=False,
-                        help=("""Flag that when passed sets `--summaries=True`,
-                              and creates summaries of gradients and vaiables
-                              for monitoring in tensorboard.
-                              (Default: `--summaries=False, i.e. `--summaries`
-                              is not passed.)"""))
+                        help=("""FLag that when passed will prevent tensorflow
+                              from creating tensorboard summary objects."""))
 
-    parser.add_argument('--plot_lf',
-                        dest='plot_lf',
-                        action='store_true',
-                        required=False,
-                        help=("""Flag that when passed will set
-                              `--plot_lf=True`, and will plot the 'metric'
-                              distance between subsequent configurations, as
-                              well as the determinant of the Jacobian of the
-                              transformation for each individual leapfrog step,
-                              as well as each molecular dynamics step (with
-                              Metrpolis-Hastings accept/reject).\n
-                              When plotting the determinant of the Jacobian
-                              following the MD update, we actually calculate
-                              the sum of the determinants from each individual
-                              LF step since this is the quantity that actually
-                              enters into the MH acceptance probability.
-                              (Default: `--plot_lf=False`, i.e. `--plot_lf` is
-                              not passed mostly just beause the plots are
-                              extremely large (many LF steps during inference)
-                              and take a while to actually generate.)"""))
-
-    parser.add_argument('--loop_transl_weights',
-                        dest='loop_transl_weights',
-                        action='store_true',
-                        required=False,
-                        help=("""Flag that when passed will loop over different
-                              values for the `translation_weight` in
-                              `net_weights`, which is believed to be causing
-                              the discrepancy between the observed and expected
-                              value of the average plaquette when running
-                              inference."""))
-
-    parser.add_argument('--loop_net_weights',
-                        dest='loop_net_weights',
-                        action='store_true',
-                        required=False,
-                        help=("""Flag that when passed sets
-                              `--loop_net_weights=True`, and will iterate over
-                              multiple values of `net_weights`, which are
-                              multiplicative scaling factors applied to each of
-                              the Q, S, T functions when running the trained
-                              sampler.
-                              (Default: `--loop_net_weights=False, i.e.
-                              `--loop_net_weights is not passed)"""))
+    #  parser.add_argument('--summaries',
+    #                      dest="summaries",
+    #                      action="store_true",
+    #                      required=False,
+    #                      help=("""Flag that when passed sets
+    #                            `--summaries=True`, and creates
+    #                            summaries of gradients and vaiables
+    #                            for monitoring in tensorboard.
+    #                            (Default: `--summaries=False,
+    #                            i.e. `--summaries` is not passed.)"""))
 
     parser.add_argument("--hmc",
                         dest="hmc",
@@ -390,13 +335,13 @@ def parse_args():
                               integrator described in paper). Used for
                               comparing against L2HMC algorithm."""))
 
-    parser.add_argument("--run_hmc",
-                        dest="run_hmc",
-                        action="store_true",
-                        required=False,
-                        help=("""Flag that when passed causes generic HMC
-                              to be ran after running the trained L2HMC
-                              sampler. (Default: False)"""))
+    #  parser.add_argument("--run_hmc",
+    #                      dest="run_hmc",
+    #                      action="store_true",
+    #                      required=False,
+    #                      help=("""Flag that when passed causes generic HMC
+    #                            to be ran after running the trained L2HMC
+    #                            sampler. (Default: False)"""))
 
     parser.add_argument("--eps_fixed",
                         dest="eps_fixed",
@@ -581,3 +526,66 @@ def parse_args():
         args = parser.parse_args()
 
     return args
+#  parser.add_argument('--loop_transl_weights',
+#                      dest='loop_transl_weights',
+#                      action='store_true',
+#                      required=False,
+#                      help=("""Flag that when passed will loop over different
+#                            values for the `translation_weight` in
+#                            `net_weights`, which is believed to be causing
+#                            the discrepancy between the observed and expected
+#                            value of the average plaquette when running
+#                            inference."""))
+#  parser.add_argument('--loop_net_weights',
+#                      dest='loop_net_weights',
+#                      action='store_true',
+#                      required=False,
+#                      help=("""Flag that when passed sets
+#                            `--loop_net_weights=True`, and will iterate over
+#                            multiple values of `net_weights`, which are
+#                            multiplicative scaling factors applied to each of
+#                            the Q, S, T functions when running the trained
+#                            sampler.
+#                            (Default: `--loop_net_weights=False, i.e.
+#                            `--loop_net_weights is not passed)"""))
+#
+#  parser.add_argument("--beta_inference",
+#                      dest="beta_inference",
+#                      type=float,
+#                      default=None,
+#                      required=False,
+#                      help=("""Flag specifying a singular value of beta at
+#                            which to run inference using the trained
+#                            L2HMC sampler. (Default: None"""))
+#
+#  parser.add_argument("--run_steps",
+#                      dest="run_steps",
+#                      type=int,
+#                      default=10000,
+#                      required=False,
+#                      help=("""Number of evaluation 'run' steps to perform
+#                            after training (i.e. length of desired chain
+#                            generate using trained L2HMC sample).
+#                            (Default: 10000)"""))
+#
+#
+#  parser.add_argument('--plot_lf',
+#                      dest='plot_lf',
+#                      action='store_true',
+#                      required=False,
+#                      help=("""Flag that when passed will set
+#                            `--plot_lf=True`, and will plot the 'metric'
+#                            distance between subsequent configurations, as
+#                            well as the determinant of the Jacobian of the
+#                            transformation for each individual leapfrog step,
+#                            as well as each molecular dynamics step (with
+#                            Metrpolis-Hastings accept/reject).\n
+#                            When plotting the determinant of the Jacobian
+#                            following the MD update, we actually calculate
+#                            the sum of the determinants from each individual
+#                            LF step since this is the quantity that actually
+#                            enters into the MH acceptance probability.
+#                            (Default: `--plot_lf=False`, i.e. `--plot_lf` is
+#                            not passed mostly just beause the plots are
+#                            extremely large (many LF steps during inference)
+#                            and take a while to actually generate.)"""))
