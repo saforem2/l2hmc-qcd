@@ -91,4 +91,3 @@ def warmup_lr(**kwargs):
                             lambda: learning_rate)
 
     return learning_rate
-
