@@ -134,22 +134,22 @@ class ConvNet2D(tf.keras.Model):
         raise AttributeError("`self.data_format` should be one of "
                              "'channels_first' or 'channels_last'")
 
-    def call(self, input, train_phase):
+    def call(self, inputs, train_phase):
         """Forward pass through the network."""
-        input = self.reshape_4D(input)
+        inputs = self.reshape_4D(inputs)
 
-        input = self.max_pool1(self.conv1(input))
-        input = self.conv2(input)
+        inputs = self.max_pool1(self.conv1(inputs))
+        inputs = self.conv2(inputs)
         if self.use_bn:
-            input = self.activation(batch_norm(input, train_phase,
+            inputs = self.activation(batch_norm(inputs, train_phase,
                                                axis=self.bn_axis,
                                                internal_update=True,
                                                scope=self.bn_name,
                                                reuse=tf.AUTO_REUSE))
-        input = self.max_pool2(input)
-        input = self.flatten(input)
+        inputs = self.max_pool2(inputs)
+        inputs = self.flatten(inputs)
 
-        return input
+        return inputs
 
 
 class ConvNet3D(tf.keras.Model):
@@ -268,19 +268,19 @@ class ConvNet3D(tf.keras.Model):
         raise AttributeError("`self.data_format` should be one of "
                              "'channels_first' or 'channels_last'")
 
-    def call(self, input, train_phase):
+    def call(self, inputs, train_phase):
         """Forward pass through the network."""
-        input = self.reshape_5D(input)
+        inputs = self.reshape_5D(inputs)
 
-        input = self.max_pool1(self.conv1(input))
-        input = self.conv2(input)
+        inputs = self.max_pool1(self.conv1(inputs))
+        inputs = self.conv2(inputs)
         if self.use_bn:
-            input = self.activation(batch_norm(input, train_phase,
+            inputs = self.activation(batch_norm(inputs, train_phase,
                                                axis=self.bn_axis,
                                                internal_update=True,
                                                scope=self.bn_name,
                                                reuse=tf.AUTO_REUSE))
-        input = self.max_pool2(input)
-        input = self.flatten(input)
+        inputs = self.max_pool2(inputs)
+        inputs = self.flatten(inputs)
 
-        return input
+        return inputs
