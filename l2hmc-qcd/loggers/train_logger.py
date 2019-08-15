@@ -63,7 +63,9 @@ class TrainLogger:
             #  with tf.variable_scope('train_summaries'):
             self.writer = tf.summary.FileWriter(self.train_summary_dir,
                                                 tf.get_default_graph())
-            self.create_summaries()
+            self.summary_writer, self.summary_op = self.create_summaries(
+               self.model, self.train_summary_dir, training=True
+            )
 
     def _create_dir_structure(self, log_dir):
         """Create relevant directories for storing data.
@@ -94,44 +96,46 @@ class TrainLogger:
         for key, val in files.items():
             setattr(self, key, val)
 
-    def create_summaries(self):
+    @staticmethod
+    def create_summaries(model, summary_dir, training=True):
         """Create summary objects for logging in TensorBoard."""
         #  ld = self.log_dir
-        tsd = self.train_summary_dir
-        self.summary_writer = tf.contrib.summary.create_file_writer(tsd)
+        #  tsd = self.train_summary_dir
+        summary_writer = tf.contrib.summary.create_file_writer(summary_dir)
 
-        grads_and_vars = zip(self.model.grads,
-                             self.model.dynamics.trainable_variables)
+        grads_and_vars = zip(model.grads,
+                             model.dynamics.trainable_variables)
 
-        with tf.name_scope('loss'):
-            tf.summary.scalar('loss', self.model.loss_op)
+        if training:
+            with tf.name_scope('loss'):
+                tf.summary.scalar('loss', model.loss_op)
 
-        with tf.name_scope('learning_rate'):
-            tf.summary.scalar('learning_rate', self.model.lr)
+            with tf.name_scope('learning_rate'):
+                tf.summary.scalar('learning_rate', model.lr)
 
-        with tf.name_scope('step_size'):
-            tf.summary.scalar('step_size', self.model.dynamics.eps)
+            with tf.name_scope('step_size'):
+                tf.summary.scalar('step_size', model.dynamics.eps)
 
         with tf.name_scope('avg_charge_diffs'):
             tf.summary.scalar('avg_charge_diffs',
-                              tf.reduce_mean(self.model.charge_diffs_op))
+                              tf.reduce_mean(model.charge_diffs_op))
 
         with tf.name_scope('avg_plaq'):
-            tf.summary.scalar('avg_plaq', self.model.avg_plaqs_op)
+            tf.summary.scalar('avg_plaq', model.avg_plaqs_op)
 
         with tf.name_scope('avg_plaq_diff'):
             tf.summary.scalar('avg_plaq_diff',
-                              (u1_plaq_exact_tf(self.model.beta)
-                               - self.model.avg_plaqs_op))
+                              (u1_plaq_exact_tf(model.beta)
+                               - model.avg_plaqs_op))
 
-        for k1, v1 in self.model.l2hmc_fns['out_fns_f'].items():
+        for k1, v1 in model.l2hmc_fns['out_fns_f'].items():
             for k2, v2 in v1.items():
                 with tf.name_scope(f'{k1}_fn_{k2}_f'):
                     variable_summaries(v2)
                     #  tf.summary.scalar(f'{k2}_avg', tf.reduce_mean(v2))
                     #  tf.summary.histogram(f'{k2}', v2)
 
-        for k1, v1 in self.model.l2hmc_fns['out_fns_b'].items():
+        for k1, v1 in model.l2hmc_fns['out_fns_b'].items():
             for k2, v2 in v1.items():
                 with tf.name_scope(f'{k1}_fn_{k2}_b'):
                     variable_summaries(v2)
@@ -139,10 +143,10 @@ class TrainLogger:
                     #  tf.summary.histogram(f'{k2}', v2)
 
         with tf.name_scope('lf_out_f'):
-            variable_summaries(self.model.lf_out_f)
+            variable_summaries(model.lf_out_f)
 
         with tf.name_scope('lf_out_b'):
-            variable_summaries(self.model.lf_out_b)
+            variable_summaries(model.lf_out_b)
 
         for grad, var in grads_and_vars:
             try:
@@ -187,7 +191,9 @@ class TrainLogger:
                         grad_norm_summary(net_str + 'translation', grad)
                         tf.summary.histogram(net_str + 'translation', grad)
 
-        self.summary_op = tf.summary.merge_all(name='train_summary_op')
+        summary_op = tf.summary.merge_all(name='train_summary_op')
+
+        return summary_writer, summary_op
 
     def save_current_state(self):
         """Save current state to pickle file.
