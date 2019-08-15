@@ -185,46 +185,72 @@ def train_setup(FLAGS, log_file=None):
     tf.keras.backend.clear_session()
     tf.reset_default_graph()
 
-    # ---------------------------------------------------------------------
-    # Parse command line arguments and set parameters for correct values.
-    # ---------------------------------------------------------------------
-    params = {}
+    # ------------------------------------------------------------------------
+    # Parse command line arguments; copy key, val pairs from FLAGS to params.
+    # ------------------------------------------------------------------------
     try:
-        for key, val in FLAGS.__dict__.items():
-            params[key] = val
+        kv_pairs = FLAGS.__dict__.items()
     except AttributeError:
-        for key, val in FLAGS.items():
-            params[key] = val
+        kv_pairs = FLAGS.items()
+
+    params = {}
+    for key, val in kv_pairs:
+        params[key] = val
+        #  if isinstance(val, bool) and not val:  # skip if option is `off`
+        #      continue
+        #  else:
 
     params['log_dir'] = io.create_log_dir(FLAGS, log_file=log_file)
+    params['summaries'] = not FLAGS.no_summaries
+    if 'no_summaries' in params:
+        del params['no_summaries']
+    #  params['hmc'] = FLAGS.hmc
+    #  params['eps_fixed'] = FLAGS.eps_fixed
+    #  params['data_format'] = 'channels_last'
+    #  params['summaries'] = not FLAGS.no_summaries
+    #  params['use_bn'] = FLAGS.use_bn
 
     if FLAGS.save_steps is None and FLAGS.train_steps is not None:
         params['save_steps'] = params['train_steps'] // 4
 
-    if FLAGS.gpu:
-        io.log("Using GPU for training.")
-        params['data_format'] = 'channels_last'
-        #  params['data_format'] = 'channels_first'
-    else:
-        io.log("Using CPU for training.")
-        params['data_format'] = 'channels_last'
+    #  try:
+    #      for key, val in FLAGS.__dict__.items():
+    #          if 'summaries' not in key:
+    #              params[key] = val
+    #  except AttributeError:
+    #      for key, val in FLAGS.items():
+    #          if 'summaries' not in key:
+    #              params[key] = val
+    #  if FLAGS.gpu:
+    #      params['data_format'] = 'channels_last'
+    #      #  params['data_format'] = 'channels_first'
+    #  else:
+    #      io.log("Using CPU for training.")
+    #      params['data_format'] = 'channels_last'
 
-    io.log(SEP_STR)
+    #  io.log(SEP_STR)
     if FLAGS.float64:
-        io.log(f'Setting floating point precision to `float64`.')
+        io.log(f'INFO: Setting floating point precision to `float64`.')
         set_precision('float64')
-    else:
-        io.log(f'Using `float32` for floating point precision.')
-    io.log(SEP_STR)
+    #  else:
+    #      io.log(f'INFO: Using `float32` for floating point precision.')
+    #  io.log(SEP_STR)
 
     if FLAGS.horovod:
         params['using_hvd'] = True
         num_workers = hvd.size()
-        io.log(f"Number of GPUs: {num_workers}")
+        #  io.log(f"Number of GPUs: {num_workers}")
         params['num_workers'] = num_workers
 
+        # ---------------------------------------------------------
         # Horovod: Scale initial lr by of num GPUs.
+        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        # NOTE: Even with a linear `warmup` of the learning rate,
+        #       the training remains unstable as evidenced by
+        #       exploding gradients and NaN tensors.
+        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
         #  params['lr_init'] *= num_workers
+        # ---------------------------------------------------------
 
         # Horovod: adjust number of training steps based on number of GPUs.
         params['train_steps'] //= num_workers
@@ -235,14 +261,14 @@ def train_setup(FLAGS, log_file=None):
         if params['summaries']:
             params['logging_steps'] // num_workers
 
-        hooks = [
-            # Horovod: BroadcastGlobalVariablesHook broadcasts initial
-            # variable states from rank 0 to all other processes. This
-            # is necessary to ensure consistent initialization of all
-            # workers when training is started with random weights or
-            # restored from a checkpoint.
-            hvd.BroadcastGlobalVariablesHook(0),
-        ]
+        # ---------------------------------------------------------
+        # Horovod: BroadcastGlobalVariablesHook broadcasts initial
+        # variable states from rank 0 to all other processes. This
+        # is necessary to ensure consistent initialization of all
+        # workers when training is started with random weights or
+        # restored from a checkpoint.
+        # ---------------------------------------------------------
+        hooks = [hvd.BroadcastGlobalVariablesHook(0)]
     else:
         params['using_hvd'] = False
         hooks = []
@@ -255,12 +281,14 @@ def train_l2hmc(FLAGS, log_file=None, experiment=None):
     tf.keras.backend.set_learning_phase(True)
     params, hooks = train_setup(FLAGS, log_file)
 
-    # Conditionals required for file I/O
-    # if we're not using Horovod, `is_chief` should always be True
-    # otheerwise, if using Horovod, we only want to perform file I/O
-    # on hvd.rank() == 0, so check that first
-    condition1 = not params['horovod']
-    condition2 = params['horovod'] and hvd.rank() == 0
+    # ---------------------------------------------------------------
+    # NOTE: Conditionals required for file I/O if we're not using
+    #       Horovod, `is_chief` should always be True otherwise,
+    #       if using Horovod, we only want to perform file I/O
+    #       on hvd.rank() == 0, so check that first.
+    # ---------------------------------------------------------------
+    condition1 = not params['using_hvd']
+    condition2 = params['using_hvd'] and hvd.rank() == 0
     is_chief = condition1 or condition2
 
     if is_chief:
@@ -282,7 +310,11 @@ def train_l2hmc(FLAGS, log_file=None, experiment=None):
     # --------------------------------------------------------
     # Create model and train_logger
     # --------------------------------------------------------
+    #  try:
     model = GaugeModel(params=params)
+    #  except:
+    #      import pdb
+    #      pdb.set_trace()
     if is_chief:
         train_logger = TrainLogger(model, log_dir, params['summaries'])
     else:
@@ -303,10 +335,10 @@ def train_l2hmc(FLAGS, log_file=None, experiment=None):
     init_feed_dict = {
         model.x: samples_init,
         model.beta: beta_init,                      # ------------------------
-        model.charge_weight: charge_weight_init,    # NOTE net_weights are:
-        model.net_weights[0]: net_weights_init[0],  # - scale (S fn)
-        model.net_weights[1]: net_weights_init[1],  # - translation (T fn)
-        model.net_weights[2]: net_weights_init[2],  # - transformation (Q fn)
+        model.charge_weight: charge_weight_init,    # NOTE
+        model.net_weights[0]: net_weights_init[0],  # ~ scale (S fn)
+        model.net_weights[1]: net_weights_init[1],  # ~ translation (T fn)
+        model.net_weights[2]: net_weights_init[2],  # ~ transformation (Q fn)
         model.train_phase: True                     # ------------------------
     }
 
@@ -422,8 +454,8 @@ def run_l2hmc(params, checkpoint_dir, experiment=None):
     # if we're not using Horovod, `is_chief` should always be True
     # otheerwise, if using Horovod, we only want to perform file I/O
     # on hvd.rank() == 0, so check that first
-    condition1 = not params['horovod']
-    condition2 = params['horovod'] and hvd.rank() == 0
+    condition1 = not params['using_hvd']
+    condition2 = params['using_hvd'] and hvd.rank() == 0
     is_chief = condition1 or condition2
 
     if not is_chief:
@@ -542,11 +574,6 @@ def main(FLAGS):
     else:
         experiment = None
 
-    if FLAGS.hmc_eps is None:
-        eps_arr = [0.1, 0.15, 0.2, 0.25]
-    else:
-        eps_arr = [float(FLAGS.hmc_eps)]
-
     if FLAGS.hmc:
         # --------------------
         #   run generic HMC
@@ -575,22 +602,23 @@ def main(FLAGS):
         # -----------------------------------------------------------
         #  run HMC following inference if --run_hmc flag was passed
         # -----------------------------------------------------------
-        if FLAGS.run_hmc:
-            # Run HMC with the trained step size from L2HMC (not ideal)
-            params = model.params
-            params['hmc'] = True
-            params['log_dir'] = FLAGS.log_dir = None
-            if train_logger is not None:
-                params['eps'] = FLAGS.eps = train_logger._current_state['eps']
-            else:
-                params['eps'] = FLAGS.eps
-
-            hmc.run_hmc(FLAGS, params, log_file)
-
-            for eps in eps_arr:
-                params['log_dir'] = FLAGS.log_dir = None
-                params['eps'] = FLAGS.eps = eps
-                hmc.run_hmc(FLAGS, params, log_file)
+        #  if FLAGS.run_hmc:
+        #      # Run HMC with the trained step size from L2HMC (not ideal)
+        #      params = model.params
+        #      params['hmc'] = True
+        #      params['log_dir'] = FLAGS.log_dir = None
+        #      if train_logger is not None:
+        #           params['eps'] = train_logger._current_state['eps']
+        #           FLAGS.eps = train_logger._current_state['eps']
+        #      else:
+        #          params['eps'] = FLAGS.eps
+        #
+        #      hmc.run_hmc(FLAGS, params, log_file)
+        #
+        #      for eps in eps_arr:
+        #          params['log_dir'] = FLAGS.log_dir = None
+        #          params['eps'] = FLAGS.eps = eps
+        #          hmc.run_hmc(FLAGS, params, log_file)
 
     io.log('\n\n')
     io.log(80 * '-')
