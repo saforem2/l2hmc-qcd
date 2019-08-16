@@ -52,7 +52,7 @@ def hmc_network(inputs, train_phase):
 
 def _add_to_collection(collection, ops):
     if len(ops) > 1:
-        [tf.add_to_collection(collection, op) for op in ops]
+        _ = [tf.add_to_collection(collection, op) for op in ops]
     else:
         tf.add_to_collection(collection, ops)
 
