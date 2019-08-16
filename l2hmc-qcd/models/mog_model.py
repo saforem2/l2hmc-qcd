@@ -225,12 +225,8 @@ class GaussianMixtureModel(object):
             setattr(self, key, val)
 
         if distribution is None:
-            try:
-                self.covs, self.distribution = self._distribution(self.sigma,
-                                                                  self.means)
-            except:
-                import pdb
-                pdb.set_trace()
+            self.covs, self.distribution = self._distribution(self.sigma,
+                                                              self.means)
         else:
             self.covs, self.distribution = covs, distribution
         # Initial samples drawn from Normal distribution
@@ -300,7 +296,6 @@ class GaussianMixtureModel(object):
             self.step_init = self.steps_arr[-1]
         except IndexError:
             raise IndexError(f"len(self.temp_arr): {len(self.temp_arr)}")
-            raise IndexError(f"len(self.steps_arr): {len(self.steps_arr)}")
 
     def _distribution(self, sigma, means):
         """Initialize distribution using utils/distributions.py"""
@@ -504,27 +499,38 @@ class GaussianMixtureModel(object):
             def get_val(step, temp):
                 if temp == 1.0:
                     return self.tunneling_rates[(step, temp)]
-                else:
-                    return self.tunneling_rates_highT[(step, temp)]
+                return self.tunneling_rates_highT[(step, temp)]
 
             tr0_old, tr0_old_err = get_val(previous_step, 1.0)
             tr0_new, tr0_new_err = get_val(current_step, 1.0)
             tr1_old, tr1_old_err = get_val(previous_step, previous_temp)
             tr1_new, tr1_new_err = get_val(current_step, current_temp)
 
-            steps_arr0 = np.array(list(self.tunneling_rates.keys()))[:,0]
-            temps_arr0 = np.array(list(self.tunneling_rates.keys()))[:,1]
-            tunn_rates0 = np.array(list(self.tunneling_rates.values()))[:,0]
-            tunn_rates0_err =np.array(list(self.tunneling_rates.values()))[:,1]
-
-            steps_arr1 = np.array(list(self.tunneling_rates_highT.keys()))[:,0]
-            temps_arr1 = np.array(list(self.tunneling_rates_highT.keys()))[:,1]
-            tunn_rates1 = np.array(list(
-                self.tunneling_rates_highT.values()
-            ))[:,0]
-            tunn_rates1_err =np.array(list(
-                self.tunneling_rates_highT.values()
-            ))[:,1]
+            #  steps_arr0 = np.array(
+            #      list(self.tunneling_rates.keys())
+            #  )[:,0]
+            #  temps_arr0 = np.array(
+            #      list(self.tunneling_rates.keys())
+            #  )[:,1]
+            #  tunn_rates0 = np.array(
+            #      list(self.tunneling_rates.values())
+            #  )[:,0]
+            #  tunn_rates0_err =np.array(
+            #      list(self.tunneling_rates.values())
+            #  )[:,1]
+            #
+            #  steps_arr1 = np.array(
+            #      list(self.tunneling_rates_highT.keys())
+            #  )[:,0]
+            #  temps_arr1 = np.array(
+            #      list(self.tunneling_rates_highT.keys())
+            #  )[:,1]
+            #  tunn_rates1 = np.array(list(
+            #      self.tunneling_rates_highT.values()
+            #  ))[:,0]
+            #  tunn_rates1_err =np.array(list(
+            #      self.tunneling_rates_highT.values()
+            #  ))[:,1]
 
             # want the tunneling to either increase or remain
             # constant (within margin of error)
@@ -829,8 +835,8 @@ class GaussianMixtureModel(object):
                 for ax in axes:
                     ax.axvline(x=x, **kwargs)
             else:
-                ax.axvline(x=x, **kwargs)
-            return ax
+                axes.axvline(x=x, **kwargs)
+            return axes
 
         fig0, axes0 = errorbar_plot(x_steps, y_data, y_err,
                                     out_file=out_file0, **kwargs)
