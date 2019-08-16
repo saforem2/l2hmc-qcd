@@ -44,7 +44,7 @@ from tensorflow.core.protobuf import rewriter_config_pb2
 #  from utils.parse_args import parse_args
 from utils.parse_inference_args import parse_args
 from models.model import GaugeModel
-from loggers.train_logger import TrainLogger
+from loggers.summary_utils import create_summaries
 from loggers.run_logger import RunLogger
 from plotters.gauge_model_plotter import GaugeModelPlotter
 from plotters.leapfrog_plotters import LeapfrogPlotter
@@ -239,11 +239,6 @@ def run_hmc(FLAGS, log_file=None):
     FLAGS.log_dir = io.create_log_dir(FLAGS, log_file=log_file)
 
     params = parse_flags(FLAGS)
-
-    #  params = {}
-    #  for key, val in FLAGS.__dict__.items():
-    #      params[key] = val
-
     params['hmc'] = True
     params['use_bn'] = False
     params['log_dir'] = FLAGS.log_dir
@@ -273,9 +268,7 @@ def run_hmc(FLAGS, log_file=None):
     run_summaries_dir = os.path.join(model.log_dir, 'summaries', 'run')
     io.check_else_make_dir(run_summaries_dir)
     # create summary objects without having to train model
-    _, _ = TrainLogger.create_summaries(model,
-                                        run_summaries_dir,
-                                        training=False)
+    _, _ = create_summaries(model, run_summaries_dir, training=False)
     run_logger = RunLogger(params, inputs, run_ops, save_lf_data=False)
     plotter = GaugeModelPlotter(params, run_logger.figs_dir)
 
@@ -402,16 +395,15 @@ def main_inference(inference_kwargs):
     runner = GaugeModelRunner(sess, params, inputs, run_ops, run_logger)
     run_inference(inference_dict, runner, run_logger, plotter)
 
+    ##########################################################################
+    #  NOTE: THE FOLLOWING WONT WORK WHEN RESTORING FROM CHECKPOINT (FOR
+    #        INFERENCE) UNLESS `GaugeModel` IS ENTIRELY REBUILT:
+    # ------------------------------------------------------------------------
     # set 'net_weights_arr' = [1., 1., 1.] so each Q, S, T contribute
     #  inference_dict['net_weights_arr'] = np.array([[1, 1, 1]],
     #                                               dtype=NP_FLOAT)
-
     # set 'betas' to be a single value
     #  inference_dict['betas'] = inference_dict['betas'][-1]
-    #
-    # ========================================================================
-    #  THE FOLLOWING WONT WORK WHEN RESTORING FROM CHECKPOINT (FOR INFERENCE)
-    #  UNLESS `GaugeModel` IS ENTIRELY REBUILT:
     #
     #
     #  # randomize the model weights and run inference using these weights
@@ -425,7 +417,7 @@ def main_inference(inference_kwargs):
     #  run_inference(inference_dict,
     #                runner, run_logger,
     #                plotter, dir_append='_zero')
-    # ========================================================================
+    ##########################################################################
 
 
 if __name__ == '__main__':
