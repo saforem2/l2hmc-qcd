@@ -4,23 +4,6 @@ import numpy as np
 #  from .jackknife import block_resampling, jackknife_err
 from sklearn.model_selection import KFold
 
-def compute_ac_spectrum(samples_history, target_mean, target_var=None):
-    """Compute autocorrelation spectrum using equation 15 from the L2HMC paper.
-    
-    ********** UNABLE TO GET WORKING CORRECTLY FOR U(1) GAUGE MODEL **********
-
-    Args:
-        samples_history: Numpy array of shape [T, B, D], where T is the total
-            number of time steps, B is the batch size, and D is the
-            dimensionality of sample space.
-        target_mean: 1D Numpy array of the mean of target (true) distribution.
-        target_covar: 2D Numpy array representing a symmetric matrix for
-            variance.
-
-    Returns:
-        Autocorrelation spectrum, Numpy array of shape [T-1].
-    """
-    pass
 
 def next_power_two(n):
     i = 1
@@ -89,7 +72,7 @@ def jackknife(x, func, num_blocks=100):
     n = len(x)
     block_size = n // num_blocks
     idx = np.arange(0, n, block_size)
-    return np.sum(func(x[idx!=i]) for i in range(n))/float(n)
+    return np.sum(func(x[idx != i]) for i in range(n))/float(n)
 
 
 def jackknife_var(x, func, num_blocks=100):
@@ -99,7 +82,7 @@ def jackknife_var(x, func, num_blocks=100):
     idx = np.arange(0, n, block_size)
     j_est = jackknife(x, func)
     return (n - 1) / (n + 0.) * np.sum(
-        func(x[idx!=i]) - j_est**2.0 for i in range(n)
+        func(x[idx != i]) - j_est**2.0 for i in range(n)
     )
 
 

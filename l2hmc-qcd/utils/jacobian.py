@@ -62,4 +62,3 @@ def jacobian(fx, x, parallel_iterations=10):
                tf.reshape(fx, [-1]),
                dtype=x.dtype,
                parallel_iterations=parallel_iterations)
-
