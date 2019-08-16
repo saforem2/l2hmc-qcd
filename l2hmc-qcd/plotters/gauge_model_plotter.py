@@ -41,13 +41,7 @@ def arr_from_dict(d, key):
 
 
 def get_out_file(out_dir, out_str):
-    out_file = os.path.join(out_dir, out_str + '.pdf')
-    return out_file
-    #  png_file = os.path.join(out_dir, out_str + '.png')
-    #  eps_dir = os.path.join(out_dir, 'eps_plots')
-    #  io.check_else_make_dir(eps_dir)
-    #  eps_file = os.path.join(eps_dir, out_str + '.eps')
-    #  return png_file, eps_file
+    return os.path.join(out_dir, out_str + '.pdf')
 
 
 def get_colors(num_samples=10, cmaps=None):
@@ -62,14 +56,6 @@ def get_colors(num_samples=10, cmaps=None):
     for cmap in cmaps:
         colors_arr.append([cmap(i) for i in idxs])
 
-        #  colors0 = [cmap0(i) for i in idxs]
-        #  colors1 = [cmap1(i) for i in idxs]
-        #  cmap0 = mpl.cm.get_cmap(cmaps[0], num_samples + 1)
-        #  cmap1 = mpl.cm.get_cmap(cmaps[1], num_samples + 1)
-    #  reds_cmap = mpl.cm.get_cmap('Reds', num_samples + 1)
-    #  blues_cmap = mpl.cm.get_cmap('Blues', num_samples + 1)
-
-    #  return colors0, colors1
     return colors_arr
 
 
@@ -133,24 +119,6 @@ def plot_multiple_lines(data, xy_labels, **kwargs):
         io.check_else_make_dir(out_dir)
         io.log(f'Saving figure to {out_file}.')
         fig.savefig(out_file, dpi=400, bbox_inches='tight')
-        #  if len(out_file) > 1:
-        #      for f in out_file:
-        #          out_dir = os.path.dirname(f)
-        #          io.check_else_make_dir(out_dir)
-        #          io.log(f'Saving figure to {f}.')
-        #          fig.savefig(f, dpi=400, bbox_inches='tight')
-        #  else:
-        #      out_dir = os.path.dirname(f)
-        #      io.check_else_make_dir(out_dir)
-        #      io.log(f'Saving figure to {f}.')
-        #      fig.savefig(f, dpi=400, bbox_inches='tight')
-
-        #  if isinstance(out_file, str):
-        #      out_file = [out_file]
-        #
-        #  for f in out_file:
-        #  print(f'Saving figure to {out_file}.')
-        #  fig.savefig(out_file, dpi=400, bbox_inches='tight')
 
     if ret:
         return fig, ax
@@ -159,6 +127,7 @@ def plot_multiple_lines(data, xy_labels, **kwargs):
 
 
 def plot_with_inset(data, labels=None, **kwargs):
+    """Make plot with zoomed inset."""
     out_file = kwargs.get('out_file', None)
     markers = kwargs.get('markers', False)
     lines = kwargs.get('lines', True)
@@ -441,22 +410,27 @@ class GaugeModelPlotter:
 
         plt_kwargs = {
             'color': 'k',
-            'lw': 1.,
-            'ls': '-',
+            #  'lw': 1.,
+            #  'ls': '-',
             'alpha': 0.8,
-            'marker': '.',
+            'marker': ',',
         }
         #  err_kwargs = plt_kwargs.update({'lw': 1.5, 'alpha': 0.7})
 
         ax0.plot(x, y, **plt_kwargs)
         ax0.errorbar(x, y, yerr=yerr,
-                     ls='-', lw=1., alpha=0.7,
-                     color='k', ecolor='gray')
+                     #  ls='-', lw=1.,
+                     alpha=0.7,
+                     #  color='k',
+                     ecolor='gray')
 
         if ax1 is not None:
             ax1.plot(x[x0:x1:10], y[x0:x1:10], **plt_kwargs)
             ax1.errorbar(x[x0:x1:10], y[x0:x1:10], yerr=yerr[x0:x1:10],
-                         ls='-', lw=1., alpha=0.7, color='k', ecolor='gray')
+                         #  ls='-', lw=1.,
+                         alpha=0.7,
+                         #  color='k',
+                         ecolor='gray')
 
         ax1.set_xlabel(xlabel, fontsize=14)
         ax0.set_ylabel(ylabel, fontsize=14)
@@ -534,9 +508,9 @@ class GaugeModelPlotter:
         }
         x, y, yerr = xy_data
         fig, ax = plt.subplots()
-        _ = ax.plot(x, y, label='', ls='-', lw=1., color='k')
+        _ = ax.plot(x, y, label='', marker=',', color='k', alpha=0.8)
         _ = ax.errorbar(x, y, yerr=yerr, label='', marker=None,
-                        ls='-', alpha=0.7, lw=1., color='k', ecolor='gray')
+                        alpha=0.7, color='gray')
         _ = ax.axhline(y=0, color='#CC0033', ls='-', lw=2.)
 
         _ = ax.set_xlabel(labels['x_label'], fontsize=14)
