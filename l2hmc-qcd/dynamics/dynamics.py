@@ -52,7 +52,7 @@ def hmc_network(inputs, train_phase):
 
 def _add_to_collection(collection, ops):
     if len(ops) > 1:
-        [tf.add_to_collection(collection, op) for op in ops]
+        _ = [tf.add_to_collection(collection, op) for op in ops]
     else:
         tf.add_to_collection(collection, ops)
 
@@ -194,8 +194,7 @@ class GaugeDynamics(tf.keras.Model):
 
         keys_f = get_lf_keys('f')
         keys_b = get_lf_keys('b')
-        #  lf_keys = [('lf_out_f', 'lf_out'), ('logdets_f', 'logdets'),
-        #             ('sumlogdet_f', 'sumlogdet'), ('fns_out_f', 'fns_out')]
+
         with tf.name_scope('transition_forward'):
             outputs_f = self.transition_kernel(x_in, beta,
                                                net_weights,
@@ -205,16 +204,6 @@ class GaugeDynamics(tf.keras.Model):
             xf = outputs_f['x_proposed']
             vf = outputs_f['v_proposed']
             tmp_dict['pxs_out_f'] = outputs_f['accept_prob']
-
-            #  if save_lf:
-            #      tmp_dict.update({k[0]: outputs_f[k[1]] for k in keys_f})
-            #      for key in lf_keys:
-            #          tmp_dict[key[0]] = outputs_f[key[1]]
-            #
-            #      tmp_dict['lf_out_f'] = outputs_f['lf_out']
-            #      tmp_dict['logdets_f'] = outputs_f['logdets']
-            #      tmp_dict['sumlogdet_f'] = outputs_f['sumlogdet']
-            #      tmp_dict['fns_out_f'] = outputs_f['fns_out']
 
         with tf.name_scope('transition_backward'):
             outputs_b = self.transition_kernel(x_in, beta,
@@ -229,10 +218,6 @@ class GaugeDynamics(tf.keras.Model):
         if save_lf:
             tmp_dict.update({k[0]: outputs_f[k[1]] for k in keys_f})
             tmp_dict.update({k[0]: outputs_b[k[1]] for k in keys_b})
-            #  lf_out_b = outputs_b['lf_out']
-            #  logdets_b = outputs_b['logdets']
-            #  sumlogdet_b = outputs_b['sumlogdet']
-            #  fns_out_b = outputs_b['fns_out']
 
         # Decide direction uniformly
         with tf.name_scope('transition_masks'):
@@ -286,23 +271,6 @@ class GaugeDynamics(tf.keras.Model):
 
         if save_lf:
             outputs.update(tmp_dict)
-            #  outputs['masks_f'] = tmp_dict['masks_f']
-            #  outputs['masks_b'] = tmp_dict['masks_b']
-            #
-            #  outputs['lf_out_f'] = lf_out_f
-            #  outputs['lf_out_b'] = lf_out_b
-            #
-            #  outputs['pxs_out_f'] = pxs_out_f
-            #  outputs['pxs_out_b'] = pxs_out_b
-            #
-            #  outputs['logdets_f'] = logdets_f
-            #  outputs['logdets_b'] = logdets_b
-            #
-            #  outputs['sumlogdet_f'] = sumlogdet_f
-            #  outputs['sumlogdet_b'] = sumlogdet_b
-            #
-            #  outputs['fns_out_f'] = fns_out_f
-            #  outputs['fns_out_b'] = fns_out_b
 
         return outputs
 

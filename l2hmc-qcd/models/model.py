@@ -114,11 +114,6 @@ class GaugeModel:
         self._build_sampler()
         run_ops = self._build_run_ops()
 
-        #  self.l2hmc_fns = {
-        #      'out_fns_f': self.extract_l2hmc_fns(self.fns_out_f),
-        #      'out_fns_b': self.extract_l2hmc_fns(self.fns_out_b),
-        #  }
-
         if self.hmc:
             train_ops = {}
         else:
@@ -330,14 +325,6 @@ class GaugeModel:
             # to "warmup" the learning rate gradually, done using the
             # `configure_learning_rate` method below..
             if self.warmup_lr:
-                # lr_init has already been multiplied by num_workers, so to
-                # get back to the original `lr_init` parsed from the
-                # command line, divide once by `num_workers`.
-                #  num_workers = hvd.size()
-                #  if self.using_hvd:
-                #      lr_init /= num_workers
-                #
-                #  lr_warmup = lr_init / 10
                 kwargs = {
                     'target_lr': lr_init,
                     'warmup_steps': int(0.1 * self.train_steps),
@@ -346,16 +333,6 @@ class GaugeModel:
                     'decay_rate': self.lr_decay_rate,
                 }
                 self.lr = warmup_lr(**kwargs)
-                #
-                #  self.lr = configure_learning_rate(lr_warmup,
-                #                                    lr_init,
-                #                                    self.lr_decay_steps,
-                #                                    self.lr_decay_rate,
-                #                                    self.global_step,
-                #                                    warmup_steps)
-                #  lr_warmup = lr_init / num_workers
-                #  _train_steps = self.train_steps // num_workers
-                #  warmup_steps = int(0.1 * _train_steps)
             else:
                 self.lr = tf.train.exponential_decay(lr_init,
                                                      self.global_step,
