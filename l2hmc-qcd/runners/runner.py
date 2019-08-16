@@ -20,15 +20,6 @@ from lattice.lattice import u1_plaq_exact
 from loggers.run_logger import RunLogger
 from config import RUN_HEADER
 
-#  ops = [                         # list of tensorflow operations to run
-#      self.model.x_out,           # new samples (MD + MH accept/reject)
-#      self.model.px,              # prob. of accepting proposed samples
-#      self.model.actions_op,      # tot. action of each sample
-#      self.model.plaqs_op,        # avg. plaquette of each sample
-#      self.model.charges_op,      # topological charge Q, of each sample
-#      self.model.charge_diffs_op  # Q(x_out) - Q(samples_in)
-#  ]
-
 
 class GaugeModelRunner:
 
