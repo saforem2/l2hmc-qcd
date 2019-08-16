@@ -16,15 +16,14 @@ def get_run_num(log_dir):
     contents = os.listdir(log_dir)
     if contents == []:
         return 1
-    else:
-        run_nums = []
-        for item in contents:
-            try:
-                run_nums.append(int(item.split('_')[-1]))
-                #  run_nums.append(int(''.join(x for x in item if x.isdigit())))
-            except ValueError:
-                continue
-        return sorted(run_nums)[-1] + 1
+    run_nums = []
+    for item in contents:
+        try:
+            run_nums.append(int(item.split('_')[-1]))
+            #  run_nums.append(int(''.join(x for x in item if x.isdigit())))
+        except ValueError:
+            continue
+    return sorted(run_nums)[-1] + 1
     #  if contents == ['.DS_Store']:
     #      return 1
     #  else:
@@ -45,24 +44,23 @@ def make_run_dir(log_dir):
     run_dir = _dir + f'run_{run_num}/'
     if os.path.isdir(run_dir):
         raise f'Directory: {run_dir} already exists, exiting!'
-    else:
-        print(f'Creating directory for new run: {run_dir}')
-        os.makedirs(run_dir)
+    print(f'Creating directory for new run: {run_dir}')
+    os.makedirs(run_dir)
     return run_dir
 
 
 def check_log_dir(log_dir):
     if not os.path.isdir(log_dir):
         raise ValueError(f'Unable to locate {log_dir}, exiting.')
-    else:
-        if not log_dir.endswith('/'):
-            log_dir += '/'
-        info_dir = log_dir + 'run_info/'
-        figs_dir = log_dir + 'figures/'
-        if not os.path.isdir(info_dir):
-            os.makedirs(info_dir)
-        if not os.path.isdir(figs_dir):
-            os.makedirs(figs_dir)
+    if not log_dir.endswith('/'):
+        log_dir += '/'
+    info_dir = log_dir + 'run_info/'
+    figs_dir = log_dir + 'figures/'
+    if not os.path.isdir(info_dir):
+        os.makedirs(info_dir)
+    if not os.path.isdir(figs_dir):
+        os.makedirs(figs_dir)
+
     return log_dir, info_dir, figs_dir
 
 
