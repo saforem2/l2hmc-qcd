@@ -30,6 +30,10 @@ for each major part of the algorithm:
 Author: Sam Foreman (github: @saforem2)
 Date: 04/10/2019
 """
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
+
 import os
 import random
 import time
@@ -51,12 +55,7 @@ from update import set_precision
 from utils.parse_args import parse_args
 from models.model import GaugeModel
 from loggers.train_logger import TrainLogger
-from loggers.run_logger import RunLogger
 from trainers.trainer import GaugeModelTrainer
-from plotters.gauge_model_plotter import GaugeModelPlotter
-from plotters.leapfrog_plotters import LeapfrogPlotter
-from runners.runner import GaugeModelRunner
-
 
 if HAS_COMET:
     from comet_ml import Experiment
@@ -380,140 +379,6 @@ def train_l2hmc(FLAGS, log_file=None, experiment=None):
 
     return model, train_logger
 
-#
-#  def run_setup(params):
-#      """Set up relevant (initial) values to use when running inference."""
-#      if params['loop_net_weights']:  # loop over different values of [Q, S, T]
-#          net_weights_arr = np.zeros((9, 3), dtype=NP_FLOAT)
-#          mask_arr = np.array([[1, 1, 1],                     # [Q, S, T]
-#                               [0, 1, 1],                     # [ , S, T]
-#                               [1, 0, 1],                     # [Q,  , T]
-#                               [1, 1, 0],                     # [Q, S,  ]
-#                               [1, 0, 0],                     # [Q,  ,  ]
-#                               [0, 1, 0],                     # [ , S,  ]
-#                               [0, 0, 1],                     # [ ,  , T]
-#                               [0, 0, 0]], dtype=NP_FLOAT)    # [ ,  ,  ]
-#          net_weights_arr[:mask_arr.shape[0], :] = mask_arr   # [?, ?, ?]
-#          net_weights_arr[-1, :] = np.random.randn(3)
-#
-#      else:  # set [Q, S, T] = [1, 1, 1]
-#          net_weights_arr = np.array([[1, 1, 1]], dtype=NP_FLOAT)
-#
-#      # if a value has been passed in `kwargs['beta_inference']` use it
-#      # otherwise, use `model.beta_final`
-#      beta_final = params['beta_final']
-#      beta_inference = params['beta_inference']
-#      betas = [beta_final if beta_inference is None else beta_inference]
-#
-#      init_dict = {
-#          'net_weights_arr': net_weights_arr,
-#          'betas': betas,
-#          'charge_weight': params['charge_weight'],
-#      }
-#
-#      return init_dict
-
-
-def run_l2hmc(params, checkpoint_dir, experiment=None):
-    """Run inference using trained L2HMC sampler."""
-    #  assert os.path.isdir(checkpoint_dir)
-    tf.keras.backend.set_learning_phase(False)
-
-    # Conditionals required for file I/O
-    # if we're not using Horovod, `is_chief` should always be True
-    # otheerwise, if using Horovod, we only want to perform file I/O
-    # on hvd.rank() == 0, so check that first
-    condition1 = not params['using_hvd']
-    condition2 = params['using_hvd'] and hvd.rank() == 0
-    is_chief = condition1 or condition2
-
-    if not is_chief:
-        return
-
-    if checkpoint_dir is not None:
-        assert os.path.isdir(checkpoint_dir)
-    else:
-        raise ValueError(f'Must pass a `checkpoint_dir` to `run_l2hmc`.')
-
-    # --------------------------------------------------------
-    # Create model and train_logger
-    # --------------------------------------------------------
-    model = GaugeModel(params=params)
-    init_dict = inference.inference_setup(params)
-    #  init_dict = run_setup(params)
-
-    net_weights_arr = init_dict['net_weights_arr']
-    betas = init_dict['betas']
-    charge_weight = init_dict['charge_weight']
-
-    #  if is_chief:
-    #  if run_logger is None:
-    #  TODO: Fix RunLogger summaries
-    run_logger = RunLogger(model,
-                           model.log_dir,
-                           save_lf_data=False,
-                           summaries=True)
-
-    plotter = GaugeModelPlotter(model, run_logger.figs_dir,
-                                experiment=experiment)
-
-    net_weights_file = os.path.join(model.log_dir, 'net_weights.txt')
-    np.savetxt(net_weights_file, net_weights_arr,
-               delimiter=', ', newline='\n', fmt="%-.4g")
-
-    # --------------------------------------------------
-    # Setup config and tf.Session object for inference
-    # --------------------------------------------------
-    config, params = create_config(params)
-    sess = tf.Session(config=config)
-    #  tf.keras.backend.set_session(sess)
-    #  if is_chief:
-    saver = tf.train.Saver()
-    saver.restore(sess, tf.train.latest_checkpoint(checkpoint_dir))
-
-    # ----------------------------------------------------------
-    # INFERENCE
-    # ----------------------------------------------------------
-    runner = GaugeModelRunner(sess, model, run_logger)
-
-    for net_weights in net_weights_arr:
-        weights = {
-            'charge_weight': charge_weight,
-            'net_weights': net_weights
-        }
-        for beta in betas:
-            if run_logger is not None:
-                # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-                # NOTE:
-                # -------
-                #   1. The value of `charge_weight` is specified when resetting
-                #      the run logger, which will  then be used for the
-                #      remainder of inference.
-                #   2. The value of `net_weight` is spcified by passing it
-                #      directly to the GaugeModelRunner.run(...) method.
-                # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-                run_dir, run_str = run_logger.reset(model.run_steps, beta,
-                                                    **weights)
-            t0 = time.time()
-
-            runner.run(model.run_steps,
-                       beta,
-                       weights['net_weights'])
-
-            # log the total time spent running inference
-            run_time = time.time() - t0
-            io.log(SEP_STR)
-            io.log(f'Took: {run_time} s to complete run.\n')
-            io.log(SEP_STR)
-
-            if plotter is not None and run_logger is not None:
-                plotter.plot_observables(run_logger.run_data,
-                                         beta, run_str, **weights)
-                if params['save_lf']:
-                    lf_plotter = LeapfrogPlotter(plotter.out_dir, run_logger)
-                    num_samples = min((model.num_samples, 20))
-                    lf_plotter.make_plots(run_dir, num_samples=num_samples)
-
 
 def main(FLAGS):
     """Main method for creating/training/running L2HMC for U(1) gauge model."""
@@ -553,38 +418,6 @@ def main(FLAGS):
         model, train_logger = train_l2hmc(FLAGS, log_file, experiment)
         if experiment is not None:
             experiment.log_parameters(model.params)
-
-        #  if FLAGS.inference:
-        #      if train_logger is not None:
-        #          checkpoint_dir = train_logger.checkpoint_dir
-        #      else:
-        #          checkpoint_dir = None
-        #
-        #      # ---------------------------------------------
-        #      #   run inference using trained l2hmc sampler
-        #      # ---------------------------------------------
-        #      run_l2hmc(model.params, checkpoint_dir)
-        #
-        # -----------------------------------------------------------
-        #  run HMC following inference if --run_hmc flag was passed
-        # -----------------------------------------------------------
-        #  if FLAGS.run_hmc:
-        #      # Run HMC with the trained step size from L2HMC (not ideal)
-        #      params = model.params
-        #      params['hmc'] = True
-        #      params['log_dir'] = FLAGS.log_dir = None
-        #      if train_logger is not None:
-        #           params['eps'] = train_logger._current_state['eps']
-        #           FLAGS.eps = train_logger._current_state['eps']
-        #      else:
-        #          params['eps'] = FLAGS.eps
-        #
-        #      hmc.run_hmc(FLAGS, params, log_file)
-        #
-        #      for eps in eps_arr:
-        #          params['log_dir'] = FLAGS.log_dir = None
-        #          params['eps'] = FLAGS.eps = eps
-        #          hmc.run_hmc(FLAGS, params, log_file)
 
 
 if __name__ == '__main__':

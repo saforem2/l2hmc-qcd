@@ -91,26 +91,6 @@ class RunLogger:
             self.logdets = FB_DICT.copy()
             self.sumlogdet = FB_DICT.copy()
             self.l2hmc_fns = FB_DICT.copy()
-            #  self.lf_out = {
-            #      'forward': [],
-            #      'backward': [],
-            #  }
-            #  self.pxs_out = {
-            #      'forward': [],
-            #      'backward': [],
-            #  }
-            #  self.masks = {
-            #      'forward': [],
-            #      'backward': [],
-            #  }
-            #  self.logdets = {
-            #      'forward': [],
-            #      'backward': [],
-            #  }
-            #  self.sumlogdet = {
-            #      'forward': [],
-            #      'backward': [],
-            #  }
 
         self.run_ops_dict = self.build_run_ops_dict(params, run_ops)
         self.inputs_dict = self.build_inputs_dict(inputs)
@@ -155,50 +135,20 @@ class RunLogger:
 
         inputs_dict = dict(zip(keys, inputs[:num_keys]))
         inputs_dict.update({'net_weights': inputs[num_keys:]})
-        #  inputs_dict = {
-        #      'x': inputs[0],
-        #      'beta': inputs[1],
-        #      'charge_weight': inputs[2],
-        #      'train_phase': inputs[3],
-        #      'net_weights': [inputs[4], inputs[5], inputs[6]]
-        #  }
 
         return inputs_dict
 
     def create_summaries(self):
         """Create summary objects for logging in TensorBoard."""
         summary_list = tf.get_collection(tf.GraphKeys.SUMMARIES)
-        bad_strings = ['loss', 'learning_rate',
-                       'step_size', 'train', 'eps']
+        ignore_strings = ['loss', 'learning_rate',
+                          'step_size', 'train', 'eps']
         run_summaries = [
             i for i in summary_list if not any(
-                s in i.name for s in bad_strings
+                s in i.name for s in ignore_strings
             )
         ]
         self.summary_op = tf.summary.merge(run_summaries)
-
-    def _create_summaries_old(self):
-        ld = self.log_dir
-        self.summary_writer = tf.contrib.summary.create_file_writer(ld)
-        with tf.name_scope('avg_actions_inference'):
-            tf.summary.scalar('avg_actions',
-                              tf.reduce_mean(self.run_ops_dict['actions_op']))
-
-        with tf.name_scope('avg_plaqs_inference'):
-            tf.summary.scalar('avg_plaqs', self.run_ops_dict['avg_plaqs_op'])
-
-        with tf.name_scope('avg_plaq_diff_inference'):
-            tf.summary.scalar('avg_plaq_diff',
-                              (u1_plaq_exact_tf(self.inputs_dict['beta'])
-                               - self.run_ops_dict['avg_plaqs_op']))
-
-        with tf.name_scope('avg_charge_diffs_inference'):
-            tf.summary.scalar('avg_charge_diffs',
-                              tf.reduce_mean(
-                                  self.run_ops_dict['charge_diffs_op']
-                              ))
-
-        self.summary_op = tf.summary.merge_all(name='run_summary_op')
 
     def log_step(self, sess, step, samples_np, beta_np, net_weights):
         """Update self.logger.summaries."""
@@ -540,20 +490,9 @@ class RunLogger:
         for k, v in stats['charge_probs'].items():
             charge_probs_strings.append(f'  probability[Q = {k}]: {v}\n')
 
-        #  train_str = (f" stats after {current_step} training steps.\n"
-        #               f"{ns} chains ran for {self.run_steps} steps at "
-        #               f"beta = {self.beta}.")
-
         run_str = (f" stats for {ns} chains ran for {self.run_steps} steps "
                    f" at beta = {self.beta}.")
 
-        #  if training:
-        #      str0 = "Topological susceptibility" + train_str
-        #      str1 = "Total actions" + train_str
-        #      str2 = "Average plaquette" + train_str
-        #      str3 = "Topological charge probabilities" + train_str[6:]
-        #      therm_str = ''
-        #  else:
         str0 = "Topological susceptibility" + run_str
         str1 = "Total actions" + run_str
         str2 = "Average plaquette" + run_str
