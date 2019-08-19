@@ -129,27 +129,6 @@ class GaugeLattice(object):
 
         self._samples = samples
 
-    '''
-    def _init_samples(self, num_samples, rand):
-        """Initialize samples."""
-        links_shape = tuple(
-            [self.time_size]
-            + [self.space_size for _ in range(self.dim-1)]
-            + [self.dim]
-            + list(self.link_shape)
-        )
-        samples_shape = (num_samples, *links_shape)
-        if rand:
-            samples = np.array(
-                np.random.uniform(0, 2*np.pi, samples_shape),
-                dtype=NP_FLOAT
-            )
-        else:
-            samples = np.zeros(samples_shape, dtype=NP_FLOAT)
-
-        return samples
-    '''
-
     def calc_plaq_sums(self, samples=None):
         """Calculate plaquette sums. 
 
