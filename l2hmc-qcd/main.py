@@ -282,7 +282,7 @@ def train_l2hmc(FLAGS, log_file=None, experiment=None):
     # --------------------------------------------------------
     # Create model and train_logger
     # --------------------------------------------------------
-    model = GaugeModel(params=params)
+    model = GaugeModel(params)
 
     if is_chief:
         train_logger = TrainLogger(model, log_dir, params['summaries'])
