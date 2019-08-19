@@ -91,6 +91,7 @@ class GaugeModelRunner:
         start_time = time.time()
         outputs = self.sess.run(ops, feed_dict=feed_dict)
         dt = time.time() - start_time
+
         out_data = {
             'step': step,
             'beta': beta_np,
