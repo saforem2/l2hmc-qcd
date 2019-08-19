@@ -137,7 +137,6 @@ class GaugeModel:
                 setattr(self, key, val)
 
         self.eps_trainable = not self.eps_fixed
-
         self.charge_weight_np = params['charge_weight']
 
         # Create self.lattice using @lattice.setter property method
@@ -147,12 +146,7 @@ class GaugeModel:
         self.batch_size = self.lattice.samples.shape[0]
         self.x_dim = self.lattice.num_links
 
-        self._x = None
-        self._beta = None
-        self._charge_weight = None
-        self._train_phase = None
-        self._net_weights = None
-
+        # build input placeholders for tensors
         inputs = self._create_inputs()
         _ = [setattr(self, key, val) for key, val in inputs.items()]
 
@@ -213,6 +207,7 @@ class GaugeModel:
 
     @property
     def actions_op(self):
+        """Operation for calculating the total action."""
         if self._actions_op is None:
             with tf.name_scope('observables'):
                 self._actions_op = self.lattice.calc_actions(self.x)
@@ -221,6 +216,7 @@ class GaugeModel:
 
     @property
     def plaqs_op(self):
+        """Operation for calculating the plaquette sum for each plaquette."""
         if self._plaqs_op is None:
             with tf.name_scope('observables'):
                 self._plaqs_op = self.lattice.calc_plaqs(self.x)
@@ -229,6 +225,7 @@ class GaugeModel:
 
     @property
     def avg_plaqs_op(self):
+        """Operation for calculating the average plaquette."""
         if self._avg_plaqs_op is None:
             with tf.name_scope('observables'):
                 self._avg_plaqs_op = tf.reduce_mean(self._plaqs_op)
@@ -237,12 +234,37 @@ class GaugeModel:
 
     @property
     def charges_op(self):
+        """Operation for calculating the topological charge."""
         if self._charges_op is None:
             with tf.name_scope('observables'):
                 self._charges_op = self.lattice.calc_top_charges(self.x,
                                                                  fft=False)
 
         return self._charges_op
+
+    @property
+    def dynamics(self):
+        return self._dynamics
+
+    @dynamics.setter
+    def dynamics(self, kwargs):
+        """Create GaugeDynamics o object.
+
+        Args:
+            lattice: Lattice object.
+            samples: Initial value of samples (configurations) to use.
+        """
+        if hasattr(self, '_dynamics'):
+            raise AttributeError(
+                'GaugeDynamics object has already been created.'
+            )
+
+        with tf.name_scope('dynamics'):
+            samples = self.lattice.samples_tensor
+            potential_fn = self.lattice.get_potential_fn(samples)
+            self._dynamics = GaugeDynamics(lattice=self.lattice,
+                                           potential_fn=potential_fn,
+                                           **kwargs)
 
     def _create_inputs(self):
         """Create input paceholders (if not executing eagerly).
@@ -315,30 +337,6 @@ class GaugeModel:
                 _ = [tf.add_to_collection('inputs', t) for t in tensor]
 
         return outputs
-
-    @property
-    def dynamics(self):
-        return self._dynamics
-
-    @dynamics.setter
-    def dynamics(self, kwargs):
-        """Create GaugeDynamics o object.
-
-        Args:
-            lattice: Lattice object.
-            samples: Initial value of samples (configurations) to use.
-        """
-        if hasattr(self, '_dynamics'):
-            raise AttributeError(
-                'GaugeDynamics object has already been created.'
-            )
-
-        with tf.name_scope('dynamics'):
-            samples = self.lattice.samples_tensor
-            potential_fn = self.lattice.get_potential_fn(samples)
-            self._dynamics = GaugeDynamics(lattice=self.lattice,
-                                           potential_fn=potential_fn,
-                                           **kwargs)
 
     @staticmethod
     def _create_metric_fn(metric):
@@ -547,13 +545,6 @@ class GaugeModel:
 
         return charge_loss
 
-    def _append_update_ops(self, train_op):
-        """Returns `train_op` appending `UPDATE_OPS` collection if prsent."""
-        update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
-        if update_ops:
-            io.log(f'Update ops: {update_ops}')
-            return control_flow_ops(train_op, *update_ops)
-        return train_op
     def _build_run_ops(self):
         """Build run_ops dict containing grouped operations for inference."""
         keys = ['x_out', 'px', 'actions_op',
