@@ -35,28 +35,79 @@ with tf.control_dependencies(self.dynamics.updates):
 Author: Sam Foreman (github: @saforem2)
 Date: 04/12/2019
 """
-from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
-
-from tensorflow.python.ops import control_flow_ops as control_flow_ops
+from __future__ import absolute_import
 
 import os
+import functools
 
 import numpy as np
 import tensorflow as tf
-try:
-    import horovod.tensorflow as hvd
-    HAS_HOROVOD = True
-except ImportError:
-    HAS_HOROVOD = False
-
 import utils.file_io as io
 
-from config import GLOBAL_SEED, TF_FLOAT, TF_INT, PARAMS
 from lattice.lattice import GaugeLattice
-from dynamics.dynamics import GaugeDynamics
 from utils.horovod_utils import warmup_lr
+from dynamics.dynamics import GaugeDynamics
+from config import GLOBAL_SEED, TF_FLOAT, TF_INT, PARAMS, HAS_HOROVOD
+from tensorflow.python.ops import control_flow_ops as control_flow_ops
+
+if HAS_HOROVOD:
+    import horovod.tensorflow as hvd
+
+
+def lazy_property(function):
+    attribute = '_cache_' + function.__name__
+
+    @property
+    @functools.wraps(function)
+    def decorator(self):
+        if not hasattr(self, attribute):
+            setattr(self, attribute, function(self))
+        return getattr(self, attribute)
+
+    return decorator
+
+
+def doublewrap(function):
+    """A decorator decorator.
+
+    This allows for the the decorator to be used without
+    parentheses if no arguments are provided. All arguments must be optional.
+    """
+    @functools.wraps(function)
+    def decorator(*args, **kwargs):
+        if len(args) == 1 and len(kwargs) == 0 and callable(args[0]):
+            return function(args[0])
+        else:
+            return lambda wrapee: function(wrapee, *args, **kwargs)
+
+    return decorator
+
+
+@doublewrap
+def define_scope(function, scope=None, *args, **kwargs):
+    """A decorator for functions that define TensorFlow operations.
+
+    The wrapped function will only be executed once. Subsequent calls to it
+    will directly return the result so that the operations are added to the
+    graph only once.
+
+    The operations added by the function live within a tf.variable_scope(). If
+    this decorator is used with arguments, they will be forwarded to the
+    variable scope. The scope name defaults to the name of the wrapped
+    function.
+    """
+    attribute = '_cache_' + function.__name__
+    name = scope or function.__name__
+    @property
+    @functools.wraps(function)
+    def decorator(self):
+        if not hasattr(self, attribute) or self.attribute is None:
+            with tf.name_scope(name, *args, **kwargs):
+                setattr(self, attribute, function(self))
+            return getattr(self, attribute)
+    return decorator
 
 
 def check_log_dir(log_dir):
@@ -80,39 +131,50 @@ class GaugeModel:
         for key, val in self.params.items():
             if 'weight' in key and key != 'charge_weight':
                 self.loss_weights[key] = val
+            elif key == 'charge_weight':
+                pass
             else:
                 setattr(self, key, val)
 
+        self.eps_trainable = not self.eps_fixed
+
         self.charge_weight_np = params['charge_weight']
 
-        self.lattice, self.samples = self._create_lattice()
+        # Create self.lattice using @lattice.setter property method
+        lattice_keys = ('time_size', 'space_size', 'dim',
+                        'link_type', 'num_samples', 'rand')
+        self.lattice = {key: getattr(self, key) for key in lattice_keys}
         self.batch_size = self.lattice.samples.shape[0]
         self.x_dim = self.lattice.num_links
 
-        inputs = self._create_inputs()
-        self.x = inputs['x']
-        self.beta = inputs['beta']
-        self.charge_weight = inputs['charge_weight']
-        self.net_weights = inputs['net_weights']
-        self.train_phase = inputs['train_phase']
+        self._x = None
+        self._beta = None
+        self._charge_weight = None
+        self._train_phase = None
+        self._net_weights = None
 
-        self.dynamics, self.potential_fn = self._create_dynamics(
-            self.lattice,
-            self.samples
-        )
+        inputs = self._create_inputs()
+        _ = [setattr(self, key, val) for key, val in inputs.items()]
+
+        # Create self.dynamics using @dynamics.setter property method
+        dynamics_keys = ('eps', 'hmc', 'network_arch', 'num_steps',
+                         'eps_trainable', 'use_bn', 'dropout_prob',
+                         'num_hidden1', 'num_hidden2', 'zero_translation')
+        self.dynamics = {key: getattr(self, key) for key in dynamics_keys}
 
         # metric function used when calculating the loss
         self.metric_fn = self._create_metric_fn(self.metric)
 
-        obs_ops = self._create_observables()
-        self.plaq_sums_op = obs_ops['plaq_sums']
-        self.actions_op = obs_ops['actions']
-        self.plaqs_op = obs_ops['plaqs']
-        self.avg_plaqs_op = obs_ops['avg_plaqs']
-        self.charges_op = obs_ops['charges']
+        # Create ops to calc lattice observables using @property methods
+        self._plaq_sums_op = None
+        self._actions_op = None
+        self._plaqs_op = None
+        self._avg_plaqs_op = None
+        self._charges_op = None
 
         self._build_sampler()
         run_ops = self._build_run_ops()
+        #  self._collect_inputs()
 
         if self.hmc:
             train_ops = {}
@@ -130,56 +192,63 @@ class GaugeModel:
         for key, val in self.ops_dict.items():
             _ = [tf.add_to_collection(key, op) for op in list(val.values())]
 
-    def load(self, sess, checkpoint_dir):
-        latest_ckpt = tf.train.latest_checkpoint(checkpoint_dir)
-        if latest_ckpt:
-            io.log(f"INFO: Loading model from {latest_ckpt}...\n")
-            self.saver.restore(sess, latest_ckpt)
-            io.log("Model loaded.")
+    @property
+    def lattice(self):
+        return self._lattice
 
-    def _create_lattice(self):
+    @lattice.setter
+    def lattice(self, kwargs):
         """Create GaugeLattice object."""
         with tf.name_scope('lattice'):
-            lattice = GaugeLattice(time_size=self.time_size,
-                                   space_size=self.space_size,
-                                   dim=self.dim,
-                                   link_type=self.link_type,
-                                   num_samples=self.num_samples,
-                                   rand=self.rand)
+            self._lattice = GaugeLattice(**kwargs)
+            assert self._lattice.samples.shape[0] == self.num_samples
 
-            assert lattice.samples.shape[0] == self.num_samples
+    @property
+    def plaq_sums_op(self):
+        if self._plaq_sums_op is None:
+            with tf.name_scope('observables'):
+                self._plaq_sums_op = self.lattice.calc_plaq_sums(self.x)
 
-            samples = tf.convert_to_tensor(lattice.samples, dtype=TF_FLOAT)
+        return self._plaq_sums_op
 
-        return lattice, samples
+    @property
+    def actions_op(self):
+        if self._actions_op is None:
+            with tf.name_scope('observables'):
+                self._actions_op = self.lattice.calc_actions(self.x)
 
-    def _create_observables(self):
-        obs_ops = {}
-        with tf.name_scope('observables'):
-            with tf.name_scope('plaq_sums'):
-                obs_ops['plaq_sums'] = self.lattice.calc_plaq_sums(self.x)
+        return self._actions_op
 
-            with tf.name_scope('actions'):
-                obs_ops['actions'] = self.lattice.calc_actions(self.x)
+    @property
+    def plaqs_op(self):
+        if self._plaqs_op is None:
+            with tf.name_scope('observables'):
+                self._plaqs_op = self.lattice.calc_plaqs(self.x)
 
-            with tf.name_scope('avg_plaqs'):
-                plaqs = self.lattice.calc_plaqs(self.x)
-                avg_plaqs = tf.reduce_mean(plaqs, name='avg_plaqs')
+        return self._plaqs_op
 
-                obs_ops['plaqs'] = plaqs
-                obs_ops['avg_plaqs'] = avg_plaqs
+    @property
+    def avg_plaqs_op(self):
+        if self._avg_plaqs_op is None:
+            with tf.name_scope('observables'):
+                self._avg_plaqs_op = tf.reduce_mean(self._plaqs_op)
 
-            with tf.name_scope('top_charges'):
-                obs_ops['charges'] = self.lattice.calc_top_charges(self.x,
-                                                                   fft=False)
+        return self._avg_plaqs_op
 
-        return obs_ops
+    @property
+    def charges_op(self):
+        if self._charges_op is None:
+            with tf.name_scope('observables'):
+                self._charges_op = self.lattice.calc_top_charges(self.x,
+                                                                 fft=False)
+
+        return self._charges_op
 
     def _create_inputs(self):
         """Create input paceholders (if not executing eagerly).
         Returns:
             outputs: Dictionary with the following entries:
-                x: Placeholder for input lattice configuration with 
+                x: Placeholder for input lattice configuration with
                     shape = (batch_size, x_dim) where x_dim is the number of
                     links on the lattice and is equal to lattice.time_size *
                     lattice.space_size * lattice.dim.
@@ -194,12 +263,15 @@ class GaugeModel:
                     net_weights[1] = 'transformation_weight', multiplies the Q
                     fn.  net_weights[2] = 'translation_weight', multiplies the
                     T fn.
+                train_phase: Boolean placeholder indicating if the model is
+                    curerntly being trained. 
         """
         with tf.name_scope('inputs'):
             if not tf.executing_eagerly():
                 x = tf.placeholder(dtype=TF_FLOAT,
                                    shape=(self.batch_size, self.x_dim),
                                    name='x')
+
                 beta = tf.placeholder(dtype=TF_FLOAT,
                                       shape=(),
                                       name='beta')
@@ -244,31 +316,29 @@ class GaugeModel:
 
         return outputs
 
-    def _create_dynamics(self, lattice, samples, **kwargs):
-        """Initialize dynamics object."""
+    @property
+    def dynamics(self):
+        return self._dynamics
+
+    @dynamics.setter
+    def dynamics(self, kwargs):
+        """Create GaugeDynamics o object.
+
+        Args:
+            lattice: Lattice object.
+            samples: Initial value of samples (configurations) to use.
+        """
+        if hasattr(self, '_dynamics'):
+            raise AttributeError(
+                'GaugeDynamics object has already been created.'
+            )
+
         with tf.name_scope('dynamics'):
-            # default values of keyword arguments
-            dynamics_kwargs = {
-                'eps': self.eps,
-                'hmc': self.hmc,
-                'network_arch': self.network_arch,
-                'num_steps': self.num_steps,
-                'eps_trainable': not self.eps_fixed,
-                #  'data_format': self.data_format,
-                'use_bn': self.use_bn,
-                'dropout_prob': self.dropout_prob,
-                'num_hidden1': self.num_hidden1,
-                'num_hidden2': self.num_hidden2,
-                'zero_translation': self.zero_translation
-            }
-
-            dynamics_kwargs.update(kwargs)
-            potential_fn = lattice.get_potential_fn(samples)
-            dynamics = GaugeDynamics(lattice=lattice,
-                                     potential_fn=potential_fn,
-                                     **dynamics_kwargs)
-
-        return dynamics, potential_fn
+            samples = self.lattice.samples_tensor
+            potential_fn = self.lattice.get_potential_fn(samples)
+            self._dynamics = GaugeDynamics(lattice=self.lattice,
+                                           potential_fn=potential_fn,
+                                           **kwargs)
 
     @staticmethod
     def _create_metric_fn(metric):
@@ -484,7 +554,6 @@ class GaugeModel:
             io.log(f'Update ops: {update_ops}')
             return control_flow_ops(train_op, *update_ops)
         return train_op
-
     def _build_run_ops(self):
         """Build run_ops dict containing grouped operations for inference."""
         keys = ['x_out', 'px', 'actions_op',
