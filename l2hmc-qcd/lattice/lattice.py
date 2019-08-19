@@ -22,7 +22,6 @@ def u1_plaq_exact_tf(beta):
     return tf.math.bessel_i1(beta) / tf.math.bessel_i0(beta)
 
 
-
 def pbc(tup, shape):
     """Returns tup % shape for implementing periodic boundary conditions."""
     return list(np.mod(tup, shape))
@@ -62,8 +61,8 @@ class GaugeLattice(object):
     """Lattice with Gauge field existing on links."""
 
     def __init__(self, 
-                 time_size,
-                 space_size,
+                 time_size=8,
+                 space_size=8,
                  dim=2,
                  link_type='U1',
                  num_samples=None,
@@ -92,13 +91,45 @@ class GaugeLattice(object):
         self.num_plaqs = self.time_size * self.space_size
         self.bases = np.eye(self.dim, dtype=np.int)
 
-        self.samples = self._init_samples(num_samples, rand)
-        self.samples_tensor = tf.convert_to_tensor(self.samples,
-                                                   dtype=TF_FLOAT)
+        # create samples using @property method: `@samples.setter`
+        self.samples = (num_samples, rand)
+
         self.links = self.samples[0]
         self.batch_size = self.samples.shape[0]
         self.links_shape = self.samples.shape[1:]
+        self.x_dim = self.num_links
+        #  self.samples = self._init_samples(num_samples, rand)
+        self.samples_tensor = tf.convert_to_tensor(
+            self.samples.reshape((self.batch_size, self.x_dim)),
+            dtype=TF_FLOAT
+        )
 
+    @property
+    def samples(self):
+        return self._samples
+
+    @samples.setter
+    def samples(self, args):
+        """Create samples."""
+        num_samples, rand = args
+        links_shape = tuple(
+            [self.time_size]
+            + [self.space_size for _ in range(self.dim-1)]
+            + [self.dim]
+            + list(self.link_shape)
+        )
+        samples_shape = (num_samples, *links_shape)
+        if rand:
+            samples = np.array(
+                np.random.uniform(0, 2*np.pi, samples_shape),
+                dtype=NP_FLOAT
+            )
+        else:
+            samples = np.zeros(samples_shape, dtype=NP_FLOAT)
+
+        self._samples = samples
+
+    '''
     def _init_samples(self, num_samples, rand):
         """Initialize samples."""
         links_shape = tuple(
@@ -117,6 +148,7 @@ class GaugeLattice(object):
             samples = np.zeros(samples_shape, dtype=NP_FLOAT)
 
         return samples
+    '''
 
     def calc_plaq_sums(self, samples=None):
         """Calculate plaquette sums. 
@@ -132,25 +164,25 @@ class GaugeLattice(object):
         Returns:
             plaq_sums (tf operation): Tensorflow operation capable of
                 calculating the plaquette sums.
+
+        NOTE: self.samples.shape = (N, L, T, D), where:
+            N = num_samples
+            L = space_size 
+            T = time_size
+            D = dimensionality
         """
         if samples is None:
             samples = self.samples
 
-        # self.samples.shape = (N, L, T, D), where:
-        #    N = num_samples
-        #    L = space_size
-        #    T = time_size
-        #    D = dimensionality
-        if samples.shape != self.samples.shape:
-            samples = tf.reshape(samples, shape=(self.samples.shape))
-
-        # assuming D = 2
         with tf.name_scope('calc_plaq_sums'):
+            if samples.shape != self.samples.shape:
+                samples = tf.reshape(samples, shape=(self.samples.shape))
+
+            # assuming D = 2, plaq_sums will have shape: (N, L, T)
             plaq_sums = (samples[:, :, :, 0]
                          - samples[:, :, :, 1]
                          - tf.roll(samples[:, :, :, 0], shift=-1, axis=2)
                          + tf.roll(samples[:, :, :, 1], shift=-1, axis=1))
-            # plaq_sums.shape = (N, L, T)
 
         return plaq_sums
 
@@ -159,10 +191,10 @@ class GaugeLattice(object):
         if samples is None:
             samples = self.samples
 
-        with tf.name_scope('calc_total_actions'):
+        with tf.name_scope('calc_actions'):
             total_actions = tf.reduce_sum(
                 1. - tf.cos(self.calc_plaq_sums(samples)), axis=(1, 2),
-                name='total_actions'
+                name='actions'
             )
 
         return total_actions
