@@ -37,7 +37,7 @@ class TrainLogger:
             'beta': self.model.beta_init,
             'eps': self.model.eps,
             'lr': self.model.lr_init,
-            'samples': self.model.samples,
+            'samples': self.model.lattice.samples_tensor,
         }
 
         self.train_data_strings = [TRAIN_HEADER]
