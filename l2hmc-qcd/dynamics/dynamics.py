@@ -404,7 +404,7 @@ class GaugeDynamics(tf.keras.Model):
             sumlogdet += logdet
             forward_fns.append(vf_fns)
 
-            return x, v, sumlogdet, forward_fns
+        return x, v, sumlogdet, forward_fns
 
     def _backward_lf(self, x, v, beta, step, net_weights, train_phase):
         """One backward augmented leapfrog step."""
@@ -584,8 +584,11 @@ class GaugeDynamics(tf.keras.Model):
                     (old_hamil - new_hamil + sumlogdet), 0.
                 ), 'accept_prob')
 
-        # Ensure numerical stability as well as correct gradients
-        return tf.where(tf.is_finite(prob), prob, tf.zeros_like(prob))
+            # Ensure numerical stability as well as correct gradients
+            accept_prob = tf.where(tf.is_finite(prob), prob,
+                                   tf.zeros_like(prob))
+
+        return accept_prob
 
     def _get_time(self, i, tile=1):
         """Format time as [cos(..), sin(...)]."""
@@ -595,7 +598,9 @@ class GaugeDynamics(tf.keras.Model):
                 tf.sin(2 * np.pi * i / self.num_steps),
             ])
 
-        return tf.tile(tf.expand_dims(trig_t, 0), (tile, 1))
+            t = tf.tile(tf.expand_dims(trig_t, 0), (tile, 1))
+
+        return t
 
     def _construct_masks(self):
         """Construct different binary masks for different time steps."""
@@ -612,7 +617,8 @@ class GaugeDynamics(tf.keras.Model):
     def _get_mask(self, step):
         with tf.name_scope('get_mask'):
             m = tf.gather(self.masks, tf.cast(step, dtype=TF_INT))
-        return m, 1. - m
+            _m = 1. - m  # complementary mask
+        return m, _m
 
     def potential_energy(self, x, beta):
         """Compute potential energy using `self.potential` and beta."""
