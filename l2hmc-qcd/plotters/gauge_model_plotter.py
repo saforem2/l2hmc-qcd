@@ -24,7 +24,7 @@ if HAS_MATPLOTLIB:
         #  'backend': 'ps',
         #  'text.latex.preamble': [r'\usepackage{gensymb}'],
         'axes.labelsize': 14,   # fontsize for x and y labels (was 10)
-        'axes.titlesize': 16,
+        'axes.titlesize': 10,
         'legend.fontsize': 10,  # was 10
         'xtick.labelsize': 12,
         'ytick.labelsize': 12,
@@ -344,17 +344,19 @@ class GaugeModelPlotter:
         self.out_dir = os.path.join(self.figs_dir, run_str)
         io.check_else_make_dir(self.out_dir)
 
-        L = self.params['space_size']
+        #  L = self.params['space_size']
         lf_steps = self.params['num_steps']
         bs = self.params['num_samples']  # batch size
-        qw = weights['charge_weight']
+        #  qw = weights['charge_weight']
+        nw = weights['net_weights']
+        sw, translw, transfw = nw
+        title_str = (r"$N_{\mathrm{LF}} = $" + f"{lf_steps}, "
+                     r"$N_{\mathrm{B}} = $" + f"{bs}, "
+                     r"$\mathrm{nw} = $" + f"{nw[0], nw[1], nw[2]}")
 
-        title_str = (r"$L = $" + f"{L}, "
-                     r"$N_{\mathrm{Lf}} = $" + f"{lf_steps}, "
-                     r"$\alpha_{Q} = $" + f"{qw}, "
-                     r"$\beta = $ " + f"{beta}, "
-                     r"$N_{\mathrm{samples}} = $" + f"{bs}")
-
+        #  r"$L = $" + f"{L}, "
+        #  r"$\beta = $ " + f"{beta}, "
+        #  r"$\alpha_{Q} = $" + f"{qw}, "
         kwargs = {
             'markers': False,
             'lines': True,
@@ -421,7 +423,7 @@ class GaugeModelPlotter:
         ax0.errorbar(x, y, yerr=yerr,
                      #  ls='-', lw=1.,
                      alpha=0.7,
-                     #  color='k',
+                     color='k',
                      ecolor='gray')
 
         if ax1 is not None:
@@ -429,7 +431,7 @@ class GaugeModelPlotter:
             ax1.errorbar(x[x0:x1:10], y[x0:x1:10], yerr=yerr[x0:x1:10],
                          #  ls='-', lw=1.,
                          alpha=0.7,
-                         #  color='k',
+                         color='k',
                          ecolor='gray')
 
         ax1.set_xlabel(xlabel, fontsize=14)
@@ -509,8 +511,8 @@ class GaugeModelPlotter:
         x, y, yerr = xy_data
         fig, ax = plt.subplots()
         _ = ax.plot(x, y, label='', marker=',', color='k', alpha=0.8)
-        _ = ax.errorbar(x, y, yerr=yerr, label='', marker=None,
-                        alpha=0.7, color='gray')
+        _ = ax.errorbar(x, y, yerr=yerr, label='', marker=None, ls='',
+                        alpha=0.7, color='gray', ecolor='gray')
         _ = ax.axhline(y=0, color='#CC0033', ls='-', lw=2.)
 
         _ = ax.set_xlabel(labels['x_label'], fontsize=14)
