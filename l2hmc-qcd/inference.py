@@ -36,9 +36,9 @@ import numpy as np
 
 import utils.file_io as io
 
-from config import PARAMS, NP_FLOAT, HAS_MATPLOTLIB, HAS_HOROVOD
+from config import PARAMS, NP_FLOAT, HAS_HOROVOD, create_config
 from update import set_precision
-from tensorflow.core.protobuf import rewriter_config_pb2
+#  from tensorflow.core.protobuf import rewriter_config_pb2
 #  from gauge_model_main import create_config
 
 #  from utils.parse_args import parse_args
@@ -61,44 +61,6 @@ if float(tf.__version__.split('.')[0]) <= 2:
 
 
 SEP_STR = 80 * '-'  # + '\n'
-
-
-def create_config(params):
-    """Create tensorflow config."""
-    config = tf.ConfigProto()
-    if params['time_size'] > 8:
-        off = rewriter_config_pb2.RewriterConfig.OFF
-        config_attrs = config.graph_options.rewrite_options
-        config_attrs.arithmetic_optimization = off
-
-    if params['gpu']:
-        # Horovod: pin GPU to be used to process local rank (one GPU per
-        # process)
-        config.gpu_options.allow_growth = True
-        #  config.allow_soft_placement = True
-        if HAS_HOROVOD and params['using_hvd']:
-            #  num_gpus = hvd.size()
-            #  io.log(f"Number of GPUs: {num_gpus}")
-            config.gpu_options.visible_device_list = str(hvd.local_rank())
-
-    if HAS_MATPLOTLIB:
-        params['_plot'] = True
-
-    if params['theta']:
-        params['_plot'] = False
-        io.log("Training on Theta @ ALCF...")
-        params['data_format'] = 'channels_last'
-        os.environ["KMP_BLOCKTIME"] = str(0)
-        os.environ["KMP_AFFINITY"] = (
-            "granularity=fine,verbose,compact,1,0"
-        )
-        # NOTE: KMP affinity taken care of by passing -cc depth to aprun call
-        OMP_NUM_THREADS = 62
-        config.allow_soft_placement = True
-        config.intra_op_parallelism_threads = OMP_NUM_THREADS
-        config.inter_op_parallelism_threads = 0
-
-    return config, params
 
 
 def parse_flags(FLAGS, log_file=None):
