@@ -509,17 +509,22 @@ class GaugeModelPlotter:
             'plt_label': r"$\delta_{\phi_{P}}$"
         }
         x, y, yerr = xy_data
+        y_mean = np.mean(y)
         fig, ax = plt.subplots()
         _ = ax.plot(x, y, label='', marker=',', color='k', alpha=0.8)
         _ = ax.errorbar(x, y, yerr=yerr, label='', marker=None, ls='',
                         alpha=0.7, color='gray', ecolor='gray')
         _ = ax.axhline(y=0, color='#CC0033', ls='-', lw=2.)
+        _ = ax.axhline(y=y_mean, label=f'avg {y_mean:.3f}',
+                       color='C2', ls='-', lw=2.)
 
         _ = ax.set_xlabel(labels['x_label'], fontsize=14)
         _ = ax.set_ylabel(labels['y_label'], fontsize=14)
         title = kwargs.get('title', None)
         if title is not None:
             _ = ax.set_title(title)
+
+        ax.legend(loc='best')
 
         _ = plt.tight_layout()
         out_file = get_out_file(self.out_dir, 'plaqs_diffs_vs_step')
