@@ -139,10 +139,7 @@ class GaugeModel:
         self.eps_trainable = not self.eps_fixed
         self.charge_weight_np = params['charge_weight']
 
-        # Create self.lattice using @lattice.setter property method
-        lattice_keys = ('time_size', 'space_size', 'dim',
-                        'link_type', 'num_samples', 'rand')
-        self.lattice = {key: getattr(self, key) for key in lattice_keys}
+        self.lattice = self._create_lattice()
         self.batch_size = self.lattice.samples.shape[0]
         self.x_dim = self.lattice.num_links
 
@@ -150,25 +147,16 @@ class GaugeModel:
         inputs = self._create_inputs()
         _ = [setattr(self, key, val) for key, val in inputs.items()]
 
-        # Create self.dynamics using @dynamics.setter property method
-        dynamics_keys = ('eps', 'hmc', 'network_arch', 'num_steps',
-                         'eps_trainable', 'use_bn', 'dropout_prob',
-                         'num_hidden1', 'num_hidden2', 'zero_translation')
-        self.dynamics = {key: getattr(self, key) for key in dynamics_keys}
+        self.dynamics = self._create_dynamics()
 
         # metric function used when calculating the loss
         self.metric_fn = self._create_metric_fn(self.metric)
 
-        # Create ops to calc lattice observables using @property methods
-        self._plaq_sums_op = None
-        self._actions_op = None
-        self._plaqs_op = None
-        self._avg_plaqs_op = None
-        self._charges_op = None
+        obs_ops = self._create_observables()
+        _ = [setattr(self, key, val) for key, val in obs_ops.items()]
 
         self._build_sampler()
         run_ops = self._build_run_ops()
-        #  self._collect_inputs()
 
         if self.hmc:
             train_ops = {}
@@ -186,85 +174,67 @@ class GaugeModel:
         for key, val in self.ops_dict.items():
             _ = [tf.add_to_collection(key, op) for op in list(val.values())]
 
-    @property
-    def lattice(self):
-        return self._lattice
-
-    @lattice.setter
-    def lattice(self, kwargs):
+    def _create_lattice(self):
         """Create GaugeLattice object."""
         with tf.name_scope('lattice'):
-            self._lattice = GaugeLattice(**kwargs)
-            assert self._lattice.samples.shape[0] == self.num_samples
+            lattice = GaugeLattice(time_size=self.time_size,
+                                   space_size=self.space_size,
+                                   dim=self.dim,
+                                   link_type=self.link_type,
+                                   num_samples=self.num_samples,
+                                   rand=self.rand)
 
-    @property
-    def plaq_sums_op(self):
-        if self._plaq_sums_op is None:
-            with tf.name_scope('observables'):
-                self._plaq_sums_op = self.lattice.calc_plaq_sums(self.x)
+        return lattice
 
-        return self._plaq_sums_op
-
-    @property
-    def actions_op(self):
-        """Operation for calculating the total action."""
-        if self._actions_op is None:
-            with tf.name_scope('observables'):
-                self._actions_op = self.lattice.calc_actions(self.x)
-
-        return self._actions_op
-
-    @property
-    def plaqs_op(self):
-        """Operation for calculating the plaquette sum for each plaquette."""
-        if self._plaqs_op is None:
-            with tf.name_scope('observables'):
-                self._plaqs_op = self.lattice.calc_plaqs(self.x)
-
-        return self._plaqs_op
-
-    @property
-    def avg_plaqs_op(self):
-        """Operation for calculating the average plaquette."""
-        if self._avg_plaqs_op is None:
-            with tf.name_scope('observables'):
-                self._avg_plaqs_op = tf.reduce_mean(self._plaqs_op)
-
-        return self._avg_plaqs_op
-
-    @property
-    def charges_op(self):
-        """Operation for calculating the topological charge."""
-        if self._charges_op is None:
-            with tf.name_scope('observables'):
-                self._charges_op = self.lattice.calc_top_charges(self.x,
-                                                                 fft=False)
-
-        return self._charges_op
-
-    @property
-    def dynamics(self):
-        return self._dynamics
-
-    @dynamics.setter
-    def dynamics(self, kwargs):
-        """Create GaugeDynamics o object.
-
-        Args:
-            lattice: Lattice object.
-            samples: Initial value of samples (configurations) to use.
-        """
-        if hasattr(self, '_dynamics'):
-            raise AttributeError(
-                'GaugeDynamics object has already been created.'
-            )
-
+    def _create_dynamics(self, **kwargs):
+        """Initialize dynamics object."""
         with tf.name_scope('dynamics'):
+            # default values of keyword arguments
+            keys = ['eps', 'hmc', 'network_arch',
+                    'num_steps', 'use_bn', 'dropout_prob',
+                    'num_hidden1', 'num_hidden2', 'zero_translation']
+            dynamics_kwargs = {k: getattr(self, k) for k in keys}
+            dynamics_kwargs['eps_trainable'] = not self.eps_fixed
+            #  dynamics_kwargs = {
+            #      'eps': self.eps,
+            #      'hmc': self.hmc,
+            #      'network_arch': self.network_arch,
+            #      'num_steps': self.num_steps,
+            #      'eps_trainable': not self.eps_fixed,
+            #      #  'data_format': self.data_format,
+            #      'use_bn': self.use_bn,
+            #      'dropout_prob': self.dropout_prob,
+            #      'num_hidden1': self.num_hidden1,
+            #      'num_hidden2': self.num_hidden2,
+            #      'zero_translation': self.zero_translation
+            #  }
+            dynamics_kwargs.update(kwargs)
             samples = self.lattice.samples_tensor
             potential_fn = self.lattice.get_potential_fn(samples)
-            self._dynamics = GaugeDynamics(lattice=self.lattice,
-                                           potential_fn=potential_fn,
-                                           **kwargs)
+            dynamics = GaugeDynamics(lattice=self.lattice,
+                                     potential_fn=potential_fn,
+                                     **dynamics_kwargs)
+
+        return dynamics
+
+    def _create_observables(self):
+        """Create operations for calculating lattice observables."""
+        with tf.name_scope('observables'):
+            plaq_sums = self.lattice.calc_plaq_sums(self.x)
+            actions = self.lattice.calc_actions(plaq_sums=plaq_sums)
+            plaqs = self.lattice.calc_plaqs(plaq_sums=plaq_sums)
+            avg_plaqs = tf.reduce_mean(plaqs, name='avg_plaqs')
+            charges = self.lattice.calc_top_charges(plaq_sums=plaq_sums)
+
+        obs_ops = {
+            'plaq_sums_op': plaq_sums,
+            'actions_op': actions,
+            'plaqs_op': plaqs,
+            'avg_plaqs_op': avg_plaqs,
+            'charges_op': charges,
+        }
+
+        return obs_ops
 
     def _create_inputs(self):
         """Create input paceholders (if not executing eagerly).
@@ -516,21 +486,18 @@ class GaugeModel:
         # charge
         with tf.name_scope('charge_loss'):
             with tf.name_scope('x_loss'):
-                x_dq_fft = self.lattice.calc_top_charges_diff(x_init,
-                                                              x_proposed,
-                                                              fft=True)
-                xq_loss = px * x_dq_fft
+                x_dq = self.lattice.calc_top_charges_diff(x_init, x_proposed)
+                xq_loss = px * x_dq
                 tf.add_to_collection('losses', xq_loss)
 
             with tf.name_scope('z_loss'):
                 if aux_weight > 0:
-                    z_dq_fft = self.lattice.calc_top_charges_diff(z_init,
-                                                                  z_proposed,
-                                                                  fft=True)
+                    z_dq = self.lattice.calc_top_charges_diff(z_init,
+                                                              z_proposed)
                 else:
-                    z_dq_fft = tf.zeros_like(x_dq_fft)
+                    z_dq = tf.zeros_like(x_dq)
 
-                zq_loss = aux_weight * pz * z_dq_fft
+                zq_loss = aux_weight * pz * z_dq
 
                 tf.add_to_collection('losses', zq_loss)
 
@@ -626,7 +593,7 @@ class GaugeModel:
 
         with tf.name_scope('top_charge_diff'):
             x_dq = tf.cast(
-                self.lattice.calc_top_charges_diff(x, x_out, fft=False),
+                self.lattice.calc_top_charges_diff(x, x_out),
                 dtype=TF_INT
             )
 
