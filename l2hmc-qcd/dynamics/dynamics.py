@@ -168,13 +168,23 @@ class GaugeDynamics(tf.keras.Model):
         """Call method."""
         return self.apply_transition(*args, **kwargs)
 
-    def apply_transition(self, x_in, beta, net_weights,
-                         train_phase, save_lf=False):
+    def apply_transition(self,
+                         x_in,
+                         beta,
+                         net_weights,
+                         train_phase,
+                         save_lf=False):
         """Propose a new state and perform the accept/reject step.
 
         Args:
-            x: Batch of (x) samples (batch of links).
+            x_in (placeholder): Batch of (x) samples (GaugeLattice.samples).
             beta (float): Inverse coupling constant.
+            net_weights: Array of scaling weights to multiply each of the
+                output functions (scale, translation, transformation).
+            train_phase: Boolean tf.placeholder used to indicate if currently
+                training model or running inference on trained model.
+            save_lf: Flag specifying whether or not to save output leapfrog
+                configs.
 
         Returns:
             x_proposed: Proposed x before accept/reject step.
@@ -186,14 +196,6 @@ class GaugeDynamics(tf.keras.Model):
         # Use sampled masks to compute the actual solutions
         #  with tf.name_scope('apply_transition'):
         tmp_dict = {}
-
-        def get_lf_keys(direction):
-            base_keys = ['lf_out', 'logdets', 'sumlogdet', 'fns_out']
-            new_keys = [k + f'_{direction}' for k in base_keys]
-            return list(zip(new_keys, base_keys))
-
-        keys_f = get_lf_keys('f')
-        keys_b = get_lf_keys('b')
 
         with tf.name_scope('transition_forward'):
             outputs_f = self.transition_kernel(x_in, beta,
@@ -214,6 +216,14 @@ class GaugeDynamics(tf.keras.Model):
             xb = outputs_b['x_proposed']
             vb = outputs_b['v_proposed']
             tmp_dict['pxs_out_b'] = outputs_b['accept_prob']
+
+        def get_lf_keys(direction):
+            base_keys = ['lf_out', 'logdets', 'sumlogdet', 'fns_out']
+            new_keys = [k + f'_{direction}' for k in base_keys]
+            return list(zip(new_keys, base_keys))
+
+        keys_f = get_lf_keys('f')
+        keys_b = get_lf_keys('b')
 
         if save_lf:
             tmp_dict.update({k[0]: outputs_f[k[1]] for k in keys_f})
@@ -298,7 +308,8 @@ class GaugeDynamics(tf.keras.Model):
             #  fns0 = tf.zeros((4, 3, *x_in.shape),)
             lf_out = tf.TensorArray(dtype=TF_FLOAT,
                                     size=self.num_steps+1,
-                                    dynamic_size=True, name='lf_out',
+                                    dynamic_size=True,
+                                    name='lf_out',
                                     clear_after_read=False)
             logdets_out = tf.TensorArray(dtype=TF_FLOAT,
                                          size=self.num_steps+1,
