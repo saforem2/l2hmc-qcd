@@ -153,7 +153,7 @@ class GaugeLattice(object):
         if samples is None:
             samples = self.samples
 
-        with tf.name_scope('calc_plaq_sums'):
+        with tf.name_scope('plaq_sums'):
             if samples.shape != self.samples.shape:
                 samples = tf.reshape(samples, shape=(self.samples.shape))
 
@@ -165,53 +165,58 @@ class GaugeLattice(object):
 
         return plaq_sums
 
-    def calc_actions(self, samples=None):
+    def calc_actions(self, samples=None, plaq_sums=None):
         """Calculate the total action for each sample in samples."""
-        if samples is None:
-            samples = self.samples
+        if plaq_sums is None:
+            if samples is None:
+                samples = self.samples
+            plaq_sums = self.calc_plaq_sums(samples)
 
-        with tf.name_scope('calc_actions'):
-            total_actions = tf.reduce_sum(
-                1. - tf.cos(self.calc_plaq_sums(samples)), axis=(1, 2),
-                name='actions'
-            )
+        with tf.name_scope('actions'):
+            total_actions = tf.reduce_sum(1. - tf.cos(plaq_sums),
+                                          axis=(1, 2), name='actions')
 
         return total_actions
 
-    def calc_plaqs(self, samples=None):
+    def calc_plaqs(self, samples=None, plaq_sums=None):
         """Calculate the average plaq. values for each sample in samples."""
-        if samples is None:
-            samples = self.samples
+        if plaq_sums is None:
+            if samples is None:
+                samples = self.samples
+            plaq_sums = self.calc_plaq_sums(samples)
 
-        with tf.name_scope('calc_plaqs'):
+        with tf.name_scope('plaqs'):
             #  plaqs = tf.reduce_mean(tf.cos(self.calc_plaq_sums(samples)),
             #                         axis=(1, 2), name='plaqs')
-            plaqs = tf.reduce_sum(tf.cos(self.calc_plaq_sums(samples)),
+            plaqs = tf.reduce_sum(tf.cos(plaq_sums),
                                   axis=(1, 2), name='plaqs') / self.num_plaqs
         return plaqs
 
-    def calc_top_charges(self, samples=None, fft=False):
+    def calc_top_charges(self, samples=None, plaq_sums=None):
         """Calculate topological charges for each sample in samples."""
-        if samples is None:
-            samples = self.samples
+        if plaq_sums is None:
+            if samples is None:
+                samples = self.samples
+            plaq_sums = self.calc_plaq_sums(samples)
 
-        with tf.name_scope('calc_top_charges'):
-            if fft:
-                ps_proj = tf.sin(self.calc_plaq_sums(samples))
+        with tf.name_scope('top_charges'):
+            ps_proj = tf.sin(plaq_sums)
+            #  if fft:
+            #      ps_proj = tf.sin(self.calc_plaq_sums(samples))
             #  ps_proj = project_angle_fft(self.calc_plaq_sums(samples), N=1)
-            else:
-                ps_proj = project_angle(self.calc_plaq_sums(samples))
+            #  else:
+            #  ps_proj = tf.sin(self.calc_plaq_sums(samples))
+            #  ps_proj = project_angle(self.calc_plaq_sums(samples))
 
             top_charges = (tf.reduce_sum(ps_proj, axis=(1, 2),
                                          name='top_charges')) / (2 * np.pi)
         return top_charges
 
-    # pylint: disable=invalid-name
-    def calc_top_charges_diff(self, x1, x2, fft=False):
+    def calc_top_charges_diff(self, x1, x2, plaq_sums1=None, plaq_sums2=None):
         """Calculate the difference in topological charge between x1 and x2."""
-        with tf.name_scope('calc_top_charges_diff'):
-            charge_diff = tf.abs(self.calc_top_charges(x1, fft)
-                                 - self.calc_top_charges(x2, fft))
+        with tf.name_scope('top_charges_diff'):
+            charge_diff = tf.abs(self.calc_top_charges(x1, plaq_sums1)
+                                 - self.calc_top_charges(x2, plaq_sums2))
 
         return charge_diff
 
