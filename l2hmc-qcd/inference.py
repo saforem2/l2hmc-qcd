@@ -36,8 +36,9 @@ import numpy as np
 
 import utils.file_io as io
 
-from config import PARAMS, NP_FLOAT, HAS_HOROVOD, create_config
+from config import PARAMS, NP_FLOAT, HAS_HOROVOD
 from update import set_precision
+from main import create_config
 #  from tensorflow.core.protobuf import rewriter_config_pb2
 #  from gauge_model_main import create_config
 

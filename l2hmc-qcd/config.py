@@ -1,13 +1,11 @@
+from __future__ import division
+from __future__ import absolute_import
+from __future__ import print_function
+
 import os
 
 import tensorflow as tf
 import numpy as np
-
-from tensorflow.python import debug as tf_debug  # noqa: F401
-from tensorflow.python.client import timeline    # noqa: F401
-from tensorflow.core.protobuf import rewriter_config_pb2
-
-import utils.file_io as io
 
 try:
     import matplotlib.pyplot as plt
@@ -133,40 +131,4 @@ PARAMS = {
     'using_hvd': False,
     '_plot': True
 }
-
-
-def create_config(params):
-    """Helper method for creating a tf.ConfigProto object."""
-    config = tf.ConfigProto(allow_soft_placement=True)
-    if params['time_size'] > 8:
-        off = rewriter_config_pb2.RewriterConfig.OFF
-        config_attrs = config.graph_options.rewrite_options
-        config_attrs.arithmetic_optimization = off
-
-    if params['gpu']:
-        # Horovod: pin GPU to be used to process local rank 
-        # (one GPU per process)
-        config.gpu_options.allow_growth = True
-        #  config.allow_soft_placement = True
-        if HAS_HOROVOD and params['horovod']:
-            config.gpu_options.visible_device_list = str(hvd.local_rank())
-
-    if HAS_MATPLOTLIB:
-        params['_plot'] = True
-
-    if params['theta']:
-        params['_plot'] = False
-        io.log("Training on Theta @ ALCF...")
-        params['data_format'] = 'channels_last'
-        os.environ["KMP_BLOCKTIME"] = str(0)
-        os.environ["KMP_AFFINITY"] = (
-            "granularity=fine,verbose,compact,1,0"
-        )
-        # NOTE: KMP affinity taken care of by passing -cc depth to aprun call
-        OMP_NUM_THREADS = 62
-        config.allow_soft_placement = True
-        config.intra_op_parallelism_threads = OMP_NUM_THREADS
-        config.inter_op_parallelism_threads = 0
-
-    return config, params
 
