@@ -4,11 +4,11 @@ from __future__ import print_function
 
 import os
 import re
+import time
 
 import tensorflow as tf
 
 TOWER_NAME = 'tower'
-
 
 def get_run_num(log_dir):
     if not os.path.isdir(log_dir):
@@ -24,15 +24,6 @@ def get_run_num(log_dir):
         except ValueError:
             continue
     return sorted(run_nums)[-1] + 1
-    #  if contents == ['.DS_Store']:
-    #      return 1
-    #  else:
-    #      for item in contents:
-    #          if os.path.isdir(log_dir + item):
-    #              run_dirs.append(item)
-    #      run_nums = [int(str(i)[3:]) for i in run_dirs]
-    #      prev_run_num = max(run_nums)
-    #      return prev_run_num + 1
 
 
 def make_run_dir(log_dir):
@@ -63,20 +54,6 @@ def check_log_dir(log_dir):
 
     return log_dir, info_dir, figs_dir
 
-
-#  def create_log_dir():
-#      """Create directory for storing information about experiment."""
-#      #  root_log_dir = '../../log_mog_tf/'
-#      #  root_log_dir = os.path.join(ROOT_DIR, log_mog_tf)
-#      root_log_dir = os.path.join(os.path.split(ROOT_DIR)[0], 'log_mog_tf')
-#      log_dir = make_run_dir(root_log_dir)
-#      info_dir = log_dir + 'run_info/'
-#      figs_dir = log_dir + 'figures/'
-#      if not os.path.isdir(info_dir):
-#          os.makedirs(info_dir)
-#      if not os.path.isdir(figs_dir):
-#          os.makedirs(figs_dir)
-#      return log_dir, info_dir, figs_dir
 
 def grad_norm_summary(name_scope, grad):
     with tf.name_scope(name_scope + '_gradients'):
