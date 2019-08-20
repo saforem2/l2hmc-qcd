@@ -515,7 +515,7 @@ class GaugeModelPlotter:
         _ = ax.errorbar(x, y, yerr=yerr, label='', marker=None, ls='',
                         alpha=0.7, color='gray', ecolor='gray')
         _ = ax.axhline(y=0, color='#CC0033', ls='-', lw=2.)
-        _ = ax.axhline(y=y_mean, label=f'avg {y_mean:.3f}',
+        _ = ax.axhline(y=y_mean, label=f'avg {y_mean:.5f}',
                        color='C2', ls='-', lw=2.)
 
         _ = ax.set_xlabel(labels['x_label'], fontsize=14)
