@@ -92,15 +92,6 @@ class TrainLogger:
                                                'current_state.pkl')
         }
 
-        def self_setter(_dict, _dirs=False):
-            for key, val in _dict.items():
-                if _dirs:
-                    io.check_else_make_dir(val)
-                setattr(self, key, val)
-
-        self_setter(dirs, _dirs=True)
-        self_setter(files, _dirs=False)
-
         for key, val in dirs.items():
             io.check_else_make_dir(val)
             setattr(self, key, val)
