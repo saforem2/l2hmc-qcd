@@ -95,26 +95,26 @@ class GaugeDynamics(tf.keras.Model):
             if key != 'eps':  # want to use self.eps as tf.Variable
                 setattr(self, key, val)
 
-        #  _eps_np = kwargs.get('eps', 0.4)
+        _eps_np = kwargs.get('eps', 0.4)
         #  with tf.variable_scope(reus):
         #  self.eps = tf.get_variable('eps', dtype=TF_FLOAT,
         #                             trainable=self.eps_trainable,
         #                             initializer=tf.constant(_eps_np))
 
-        #  self.log_eps = tf.Variable(
-        #      initial_value=tf.log(tf.constant(_eps_np)),
-        #      name='log_eps',
-        #      dtype=TF_FLOAT,
-        #      trainable=self.eps_trainable
-        #  )
-        #
-        #  self.eps = tf.exp(self.log_eps, name='eps')
-        self.eps = tf.Variable(
-            initial_value=kwargs.get('eps', 0.4),
-            name='eps',
+        self.log_eps = tf.Variable(
+            initial_value=tf.log(tf.constant(_eps_np)),
+            name='log_eps',
             dtype=TF_FLOAT,
             trainable=self.eps_trainable
         )
+
+        self.eps = tf.exp(self.log_eps, name='eps')
+        #  self.eps = tf.Variable(
+        #      initial_value=kwargs.get('eps', 0.4),
+        #      name='eps',
+        #      dtype=TF_FLOAT,
+        #      trainable=self.eps_trainable
+        #  )
 
         self._construct_masks()
 
@@ -176,6 +176,9 @@ class GaugeDynamics(tf.keras.Model):
                          save_lf=False):
         """Propose a new state and perform the accept/reject step.
 
+        We simulate the (molecular) dynamics update both forward and backward,
+        and use sampled masks to compute the actual solutions.
+
         Args:
             x_in (placeholder): Batch of (x) samples (GaugeLattice.samples).
             beta (float): Inverse coupling constant.
@@ -192,10 +195,7 @@ class GaugeDynamics(tf.keras.Model):
             accept_prob: Probability of accepting the proposed states.
             x_out: Samples after accept/reject step.
         """
-        # Simulate dynamics both forward and backward
-        # Use sampled masks to compute the actual solutions
-        #  with tf.name_scope('apply_transition'):
-        tmp_dict = {}
+        lf_dict = {}
 
         with tf.name_scope('transition_forward'):
             outputs_f = self.transition_kernel(x_in, beta,
@@ -205,7 +205,7 @@ class GaugeDynamics(tf.keras.Model):
                                                save_lf=save_lf)
             xf = outputs_f['x_proposed']
             vf = outputs_f['v_proposed']
-            tmp_dict['pxs_out_f'] = outputs_f['accept_prob']
+            lf_dict['pxs_out_f'] = outputs_f['accept_prob']
 
         with tf.name_scope('transition_backward'):
             outputs_b = self.transition_kernel(x_in, beta,
@@ -215,7 +215,7 @@ class GaugeDynamics(tf.keras.Model):
                                                save_lf=save_lf)
             xb = outputs_b['x_proposed']
             vb = outputs_b['v_proposed']
-            tmp_dict['pxs_out_b'] = outputs_b['accept_prob']
+            lf_dict['pxs_out_b'] = outputs_b['accept_prob']
 
         def get_lf_keys(direction):
             base_keys = ['lf_out', 'logdets', 'sumlogdet', 'fns_out']
@@ -226,13 +226,13 @@ class GaugeDynamics(tf.keras.Model):
         keys_b = get_lf_keys('b')
 
         if save_lf:
-            tmp_dict.update({k[0]: outputs_f[k[1]] for k in keys_f})
-            tmp_dict.update({k[0]: outputs_b[k[1]] for k in keys_b})
+            lf_dict.update({k[0]: outputs_f[k[1]] for k in keys_f})
+            lf_dict.update({k[0]: outputs_b[k[1]] for k in keys_b})
 
         # Decide direction uniformly
         with tf.name_scope('transition_masks'):
             with tf.name_scope('forward_mask'):
-                tmp_dict['masks_f'] = tf.cast(
+                lf_dict['masks_f'] = tf.cast(
                     tf.random_uniform((self.batch_size,),
                                       dtype=TF_FLOAT,
                                       seed=GLOBAL_SEED) > 0.5,
@@ -240,21 +240,21 @@ class GaugeDynamics(tf.keras.Model):
                     name='forward_mask'
                 )
             with tf.name_scope('backward_mask'):
-                tmp_dict['masks_b'] = 1. - tmp_dict['masks_f']
+                lf_dict['masks_b'] = 1. - lf_dict['masks_f']
 
         # Obtain proposed states
         with tf.name_scope('x_proposed'):
-            x_proposed = (tmp_dict['masks_f'][:, None] * xf
-                          + tmp_dict['masks_b'][:, None] * xb)
+            x_proposed = (lf_dict['masks_f'][:, None] * xf
+                          + lf_dict['masks_b'][:, None] * xb)
 
         with tf.name_scope('v_proposed'):
-            v_proposed = (tmp_dict['masks_f'][:, None] * vf
-                          + tmp_dict['masks_b'][:, None] * vb)
+            v_proposed = (lf_dict['masks_f'][:, None] * vf
+                          + lf_dict['masks_b'][:, None] * vb)
 
         # Probability of accepting the proposed states
         with tf.name_scope('accept_prob'):
-            accept_prob = (tmp_dict['masks_f'] * tmp_dict['pxs_out_f']
-                           + tmp_dict['masks_b'] * tmp_dict['pxs_out_b'])
+            accept_prob = (lf_dict['masks_f'] * lf_dict['pxs_out_f']
+                           + lf_dict['masks_b'] * lf_dict['pxs_out_b'])
 
         # Accept or reject step
         with tf.name_scope('accept_mask'):
@@ -280,7 +280,7 @@ class GaugeDynamics(tf.keras.Model):
         }
 
         if save_lf:
-            outputs.update(tmp_dict)
+            outputs.update(lf_dict)
 
         return outputs
 
@@ -297,7 +297,8 @@ class GaugeDynamics(tf.keras.Model):
         with tf.name_scope('refresh_momentum'):
             v_in = tf.random_normal(tf.shape(x_in),
                                     dtype=TF_FLOAT,
-                                    seed=GLOBAL_SEED)
+                                    seed=GLOBAL_SEED,
+                                    name='refresh_momentum')
 
         with tf.name_scope('init'):
             x_proposed, v_proposed = x_in, v_in
