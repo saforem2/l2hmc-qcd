@@ -652,17 +652,7 @@ class GaugeModel:
             with tf.name_scope('charge_loss'):
                 charge_loss = self._calc_charge_loss(inputs, **weights)
 
-            if self.nnehmc_loss:
-                with tf.name_scope('nnehmc_loss'):
-                    nnehmc_loss = self._calc_nnehmc_loss(x_dynamics_output,
-                                                         z_dynamics_output,
-                                                         **weights)
-
-                    total_loss = std_loss + charge_loss + nnehmc_loss
-            else:
-                total_loss = tf.add(std_loss,
-                                    charge_loss,
-                                    name='total_loss')
+            total_loss = tf.add(std_loss, charge_loss, name='total_loss')
 
             tf.add_to_collection('losses', total_loss)
 
