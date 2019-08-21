@@ -228,7 +228,7 @@ def create_summaries(model, summary_dir, training=True):
 
     _create_obs_summaries(model)
     _create_md_summaries(model)
-    _ = _create_loss_summaries(model.loss_op)
+    #  _ = _create_loss_summaries(model.loss_op)
 
     for grad, var in grads_and_vars:
         _create_pair_summaries(grad, var)
