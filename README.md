@@ -41,10 +41,18 @@ $2D$ $U{(1)}$ lattice gauge model can be found in `l2hmc-qcd/lattice/lattice.py`
 
 This model can be trained using distributed training through [`horovod`](https://github.com/horovod/horovod), by passing the `--horovod` flag as a command line argument. 
 
-## Organization
+---
 
-### Training
+# Organization
+
+## Training
+
 Example command line arguments can be found in `l2hmc-qcd/args`. The module `l2hmc-qcd/main.py` implements wrapper functions that are used to train the model and save the resulting trained graph which can then be loaded and used for inference.
+
+The code responsible for actually training the model can be found in the
+`GaugeModelTrainer` object inside the `l2hmc-qcd/trainers/trainer.py` module.
+
+Summary objects for monitoring model performance in TensorBoard are created in the various methods found in `l2hmc-qcd/loggers/summary_utils.py`. These objects are then created inside the `create_summaries(...)` method of the `TrainLogger` class (defined in `l2hmc-qcd/loggers/train_logger.py`).
 
 To train the model, you can either specify command line arguments manually
 (descriptions can be found in `utils/parse_args.py`), or use the
@@ -54,6 +62,11 @@ For example, from within the `l2hmc-qcd/args` directory:
 ```
 python3 ../main.py @args.txt
 ```
+
+All of the relevant command line options are well documented and can be found in `l2hmc-qcd/utils/parse_args.py`. Almost all relevant information about different parameters and run options can be found in this file.
+
+## Inference
+
 Once the training is complete, we can use the trained model to run inference
 to gather statistics about relevant lattice observables. This can be done using
 the `inference.py` module which implements helper functions for loading and
@@ -66,15 +79,16 @@ inference via:
 ```
 python ../inference.py --run_steps 5000
 ```
+
 where `--run_steps` indicates the number of complete MD updates to be performed
 (i.e. augmented leapfrog integrator followed by Metroplis-Hastings
 accept/reject).
 
-All of the relevant command line options are well documented and can be found in `l2hmc-qcd/utils/parse_args.py`. Almost all relevant information about different parameters and run options can be found in this file.
+## Model
 
 Model information (including the implementation of the loss function) can be found in `l2hmc-qcd/models/model.py`. This module implements the `GaugeModel` class, which is responsible for building the main tensorflow graph and creating all the relevant tensorflow operations for training and running the L2HMC sampler.
 
-Summary objects for monitoring model performance in TensorBoard are created in the various methods found in `l2hmc-qcd/loggers/summary_utils.py`. These objects are then created inside the `create_summaries(...)` method of the `TrainLogger` class (defined in `l2hmc-qcd/loggers/train_logger.py`).
+## Dynamics / Network
 
 The augmented L2HMC leapfrog integrator is implemented using the
 `GaugeDynamics` object which is located in the `l2hmc-qcd/dynamics/dynamics.py`
@@ -89,8 +103,10 @@ Specific details about the network can be found in
 and data-flow of the L2HMC algorithm, the network is implemented by
 subclassing the `tf.keras.Model`, which is a sufficiently flexible approach.
 
+## Notebooks
 `l2hmc-qcd/notebooks/` contains a random collection of jupyter notebooks that each serve different purposes and should be somewhat self explanatory.
 
+---
 
 ## Contact
 
