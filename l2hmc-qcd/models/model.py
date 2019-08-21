@@ -410,8 +410,8 @@ class GaugeModel:
                     self.metric_fn(x_init, x_proposed), axis=1
                 )
                 x_std_loss *= px
-                x_std_loss_avg = tf.reduce_mean(x_std_loss, axis=0,
-                                                name='x_std_loss_avg')
+                #  x_std_loss_avg = tf.reduce_sum(x_std_loss, axis=0,
+                #                                 name='x_std_loss_avg')
 
                 # Add eps for numerical stability
                 x_std_loss = tf.add(x_std_loss, eps, name='x_std_loss')
@@ -422,8 +422,8 @@ class GaugeModel:
                     self.metric_fn(z_init, z_proposed), axis=1
                 )
                 z_std_loss *= pz * aux_weight
-                z_std_loss_avg = tf.reduce_mean(z_std_loss, axis=0,
-                                                name='z_std_loss_avg')
+                #  z_std_loss_avg = tf.reduce_mean(z_std_loss, axis=0,
+                #                                  name='z_std_loss_avg')
                 z_std_loss = tf.add(z_std_loss, eps, name='z_std_loss')
                 #  tf.add_to_collection('losses', z_std_loss)
 
@@ -434,7 +434,7 @@ class GaugeModel:
                 std_loss = tf.reduce_mean(loss, axis=0, name='std_loss')
                 #  tf.add_to_collection('losses', std_loss)
 
-        return std_loss, x_std_loss_avg, z_std_loss_avg
+        return std_loss  # , x_std_loss_avg, z_std_loss_avg
 
     def _calc_charge_loss(self, inputs, **weights):
         """Calculate contribution to total loss from charge difference.
@@ -474,9 +474,8 @@ class GaugeModel:
             with tf.name_scope('x_loss'):
                 x_dq = self.lattice.calc_top_charges_diff(x_init, x_proposed)
                 xq_loss = px * x_dq
-                xq_loss_avg = tf.reduce_mean(xq_loss, axis=0,
-                                             name='xq_loss_avg')
-                #  tf.add_to_collection('losses', xq_loss)
+                #  xq_loss_avg = tf.reduce_mean(xq_loss, axis=0,
+                #                               name='xq_loss_avg')
 
             with tf.name_scope('z_loss'):
                 if aw > 0:
@@ -486,10 +485,9 @@ class GaugeModel:
                     z_dq = tf.zeros_like(x_dq)
 
                 zq_loss = aw * pz * z_dq
-                zq_loss_avg = tf.reduce_mean(zq_loss, axis=0,
-                                             name='zq_loss_avg')
+                #  zq_loss_avg = tf.reduce_mean(zq_loss, axis=0,
+                #                               name='zq_loss_avg')
 
-                #  tf.add_to_collection('losses', zq_loss)
 
             with tf.name_scope('tot_loss'):
                 # Each of the loss terms is scaled by the `loss_scale` which
@@ -500,7 +498,7 @@ class GaugeModel:
                                              name='charge_loss')
                 #  tf.add_to_collection('losses', charge_loss)
 
-        return charge_loss, xq_loss_avg, zq_loss_avg
+        return charge_loss  # , xq_loss_avg, zq_loss_avg
 
     def calc_loss(self, x, beta, net_weights, train_phase, **weights):
         """Create operation for calculating the loss.
@@ -566,15 +564,12 @@ class GaugeModel:
         }
 
         with tf.name_scope('calc_loss'):
-            std_losses = self._calc_std_loss(inputs, **weights)
-            charge_losses = self._calc_charge_loss(inputs, **weights)
+            std_loss = self._calc_std_loss(inputs, **weights)
+            charge_loss = self._calc_charge_loss(inputs, **weights)
+            total_loss = tf.add(std_loss, charge_loss, name='total_loss')
 
-            total_loss = tf.add(std_losses[0],
-                                charge_losses[0],
-                                name='total_loss')
-
-        losses = [*std_losses, *charge_losses]
-        _ = [tf.add_to_collection('losses', i) for i in losses]
+        #  losses = [*std_losses, *charge_losses]
+        #  _ = [tf.add_to_collection('losses', i) for i in losses]
 
         return total_loss, x_dq, x_dynamics_output
 
