@@ -66,12 +66,9 @@ class TrainLogger:
             #  with tf.variable_scope('train_summaries'):
             self.writer = tf.summary.FileWriter(self.train_summary_dir,
                                                 tf.get_default_graph())
-            summaries_output = create_summaries(
+            self.summary_writer, self.summary_op = create_summaries(
                 model, self.train_summary_dir, training=True
             )
-            self.summary_writer = summaries_output[0]
-            self.summary_op = summaries_output[1]
-            self.loss_averages_op = summaries_output[2]
 
     def _create_dir_structure(self, log_dir):
         """Create relevant directories for storing data.
@@ -126,9 +123,7 @@ class TrainLogger:
             self.model.net_weights[2]: net_weights[2],
             self.model.train_phase: True
         }
-        summary_str, loss_averages = sess.run([self.summary_op,
-                                               self.loss_averages_op],
-                                              feed_dict=feed_dict)
+        summary_str = sess.run(self.summary_op, feed_dict=feed_dict)
 
         self.writer.add_summary(summary_str, global_step=step)
         self.writer.flush()
