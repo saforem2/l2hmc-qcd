@@ -676,7 +676,7 @@ class GaugeModel:
 
     def _build_sampler(self):
         """Build TensorFlow graph."""
-        with tf.name_scope('l2hmc_sampler'):
+        with tf.name_scope('sampler'):
             #  self.loss_op, self.grads, self.x_out, self.px, x_dq = output
             loss, grads, x_dq, dynamics_output = self.calc_loss_and_grads(
                 x=self.x,
