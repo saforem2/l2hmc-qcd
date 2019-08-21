@@ -49,7 +49,7 @@ from tensorflow.core.protobuf import rewriter_config_pb2
 import utils.file_io as io
 
 from config import (
-    GLOBAL_SEED, NP_FLOAT, HAS_MATPLOTLIB, HAS_HOROVOD, HAS_COMET
+    GLOBAL_SEED, NP_FLOAT, HAS_HOROVOD, HAS_COMET, HAS_MATPLOTLIB
 )
 from update import set_precision
 from utils.parse_args import parse_args
@@ -78,6 +78,43 @@ os.environ['PYTHONHASHSEED'] = str(GLOBAL_SEED)
 random.seed(GLOBAL_SEED)        # `python` build-in pseudo-random generator
 np.random.seed(GLOBAL_SEED)     # numpy pseudo-random generator
 tf.set_random_seed(GLOBAL_SEED)
+
+
+def create_config(params):
+    """Helper method for creating a tf.ConfigProto object."""
+    config = tf.ConfigProto(allow_soft_placement=True)
+    if params['time_size'] > 8:
+        off = rewriter_config_pb2.RewriterConfig.OFF
+        config_attrs = config.graph_options.rewrite_options
+        config_attrs.arithmetic_optimization = off
+
+    if params['gpu']:
+        # Horovod: pin GPU to be used to process local rank 
+        # (one GPU per process)
+        config.gpu_options.allow_growth = True
+        #  config.allow_soft_placement = True
+        if HAS_HOROVOD and params['horovod']:
+            config.gpu_options.visible_device_list = str(hvd.local_rank())
+
+    if HAS_MATPLOTLIB:
+        params['_plot'] = True
+
+    if params['theta']:
+        params['_plot'] = False
+        io.log("Training on Theta @ ALCF...")
+        params['data_format'] = 'channels_last'
+        os.environ["KMP_BLOCKTIME"] = str(0)
+        os.environ["KMP_AFFINITY"] = (
+            "granularity=fine,verbose,compact,1,0"
+        )
+        # NOTE: KMP affinity taken care of by passing -cc depth to aprun call
+        OMP_NUM_THREADS = 62
+        config.allow_soft_placement = True
+        config.intra_op_parallelism_threads = OMP_NUM_THREADS
+        config.inter_op_parallelism_threads = 0
+
+    return config, params
+
 
 
 def latest_meta_file(checkpoint_dir=None):
@@ -130,42 +167,6 @@ def count_trainable_params(out_file, log=False):
 
     writer(80 * '-', out_file)
     writer(f'Total parameters: {total_params}', out_file)
-
-
-def create_config(params):
-    """Helper method for creating a tf.ConfigProto object."""
-    config = tf.ConfigProto(allow_soft_placement=True)
-    if params['time_size'] > 8:
-        off = rewriter_config_pb2.RewriterConfig.OFF
-        config_attrs = config.graph_options.rewrite_options
-        config_attrs.arithmetic_optimization = off
-
-    if params['gpu']:
-        # Horovod: pin GPU to be used to process local rank 
-        # (one GPU per process)
-        config.gpu_options.allow_growth = True
-        #  config.allow_soft_placement = True
-        if HAS_HOROVOD and params['horovod']:
-            config.gpu_options.visible_device_list = str(hvd.local_rank())
-
-    if HAS_MATPLOTLIB:
-        params['_plot'] = True
-
-    if params['theta']:
-        params['_plot'] = False
-        io.log("Training on Theta @ ALCF...")
-        params['data_format'] = 'channels_last'
-        os.environ["KMP_BLOCKTIME"] = str(0)
-        os.environ["KMP_AFFINITY"] = (
-            "granularity=fine,verbose,compact,1,0"
-        )
-        # NOTE: KMP affinity taken care of by passing -cc depth to aprun call
-        OMP_NUM_THREADS = 62
-        config.allow_soft_placement = True
-        config.intra_op_parallelism_threads = OMP_NUM_THREADS
-        config.inter_op_parallelism_threads = 0
-
-    return config, params
 
 
 def train_setup(FLAGS, log_file=None):
@@ -224,11 +225,11 @@ def train_setup(FLAGS, log_file=None):
         # ---------------------------------------------------------
 
         # Horovod: adjust number of training steps based on number of GPUs.
-        params['train_steps'] //= num_workers
+        #  params['train_steps'] //= num_workers
 
         # Horovod: adjust save_steps and lr_decay_steps accordingly.
-        params['save_steps'] //= num_workers
-        params['lr_decay_steps'] //= num_workers
+        #  params['save_steps'] //= num_workers
+        #  params['lr_decay_steps'] //= num_workers
 
         #  if params['summaries']:
         #      params['logging_steps'] //= num_workers
@@ -282,7 +283,7 @@ def train_l2hmc(FLAGS, log_file=None, experiment=None):
     # --------------------------------------------------------
     # Create model and train_logger
     # --------------------------------------------------------
-    model = GaugeModel(params=params)
+    model = GaugeModel(params)
 
     if is_chief:
         train_logger = TrainLogger(model, log_dir, params['summaries'])
