@@ -24,7 +24,7 @@ if HAS_MATPLOTLIB:
         #  'backend': 'ps',
         #  'text.latex.preamble': [r'\usepackage{gensymb}'],
         'axes.labelsize': 14,   # fontsize for x and y labels (was 10)
-        'axes.titlesize': 16,
+        'axes.titlesize': 10,
         'legend.fontsize': 10,  # was 10
         'xtick.labelsize': 12,
         'ytick.labelsize': 12,
@@ -228,6 +228,30 @@ def plot_with_inset(data, labels=None, **kwargs):
     return None
 
 
+def plot_plaq_diffs_vs_transl_weight(xy_data, lf_steps, figs_dir):
+    """Plot the average plaquette difference versus translation weight."""
+    if not HAS_MATPLOTLIB:
+        return
+
+    transl_weights = [i[0][1] for i in xy_data]
+    diffs = [i[1] for i in xy_data]
+
+    fig, ax = plt.subplots()
+    ax.plot(transl_weights, diffs,
+            label=r'$N_{\mathrm{LF}} = $' + f'{lf_steps}')
+
+    xlabel = 'Translation weight'
+    ylabel = r"$\langle\delta_{\phi_{P}}^{(\mathrm{obs})}\rangle$"
+
+    ax.grid(True)
+    ax.set_xlabel(xlabel, fontsize=14)
+    ax.set_ylabel(ylabel, fontsize=14)
+    plt.tight_layout()
+    ax.legend(loc='best')
+    out_file = os.path.join(figs_dir, 'avg_plaq_diff_vs_transl_weight.pdf')
+    plt.savefig(out_file, dpi=400, bbox_inches='tight')
+
+
 class GaugeModelPlotter:
     def __init__(self, params, figs_dir=None, experiment=None):
         self.figs_dir = figs_dir
@@ -335,26 +359,27 @@ class GaugeModelPlotter:
 
         return xy_data
 
-    def plot_observables(self, data, beta, run_str, weights, dir_append=None):
-        """Plot observables."""
-
+    def _plot_setup(self, data, beta, run_str, weights, dir_append=None):
+        """Prepare for plotting observables."""
         if dir_append:
             run_str += dir_append
 
         self.out_dir = os.path.join(self.figs_dir, run_str)
         io.check_else_make_dir(self.out_dir)
 
-        L = self.params['space_size']
+        #  L = self.params['space_size']
         lf_steps = self.params['num_steps']
         bs = self.params['num_samples']  # batch size
-        qw = weights['charge_weight']
+        #  qw = weights['charge_weight']
+        nw = weights['net_weights']
+        sw, translw, transfw = nw
+        title_str = (r"$N_{\mathrm{LF}} = $" + f"{lf_steps}, "
+                     r"$N_{\mathrm{B}} = $" + f"{bs}, "
+                     r"$\mathrm{nw} = $" + f"{nw[0], nw[1], nw[2]}")
 
-        title_str = (r"$L = $" + f"{L}, "
-                     r"$N_{\mathrm{Lf}} = $" + f"{lf_steps}, "
-                     r"$\alpha_{Q} = $" + f"{qw}, "
-                     r"$\beta = $ " + f"{beta}, "
-                     r"$N_{\mathrm{samples}} = $" + f"{bs}")
-
+        #  r"$L = $" + f"{L}, "
+        #  r"$\beta = $ " + f"{beta}, "
+        #  r"$\alpha_{Q} = $" + f"{qw}, "
         kwargs = {
             'markers': False,
             'lines': True,
@@ -366,6 +391,14 @@ class GaugeModelPlotter:
         }
 
         xy_data = self._parse_data(data, beta)
+
+        return xy_data, kwargs
+
+    def plot_observables(self, data, beta, run_str, weights, dir_append=None):
+        """Plot observables."""
+        xy_data, kwargs = self._plot_setup(data, beta, run_str,
+                                           weights, dir_append)
+
         self._plot_actions(xy_data['actions'], **kwargs)
         self.log_figure()
         self._plot_plaqs(xy_data['plaqs'], beta, **kwargs)
@@ -378,8 +411,10 @@ class GaugeModelPlotter:
         self.log_figure()
         self._plot_autocorrs(xy_data['autocorrs'], **kwargs)
         self.log_figure()
-        self._plot_plaqs_diffs(xy_data['plaqs_diffs'], **kwargs)
+        mean_diff = self._plot_plaqs_diffs(xy_data['plaqs_diffs'], **kwargs)
         self.log_figure()
+
+        return mean_diff
 
     def _plot(self, xy_data, **kwargs):
         """Basic plotting wrapper."""
@@ -421,7 +456,7 @@ class GaugeModelPlotter:
         ax0.errorbar(x, y, yerr=yerr,
                      #  ls='-', lw=1.,
                      alpha=0.7,
-                     #  color='k',
+                     color='k',
                      ecolor='gray')
 
         if ax1 is not None:
@@ -429,7 +464,7 @@ class GaugeModelPlotter:
             ax1.errorbar(x[x0:x1:10], y[x0:x1:10], yerr=yerr[x0:x1:10],
                          #  ls='-', lw=1.,
                          alpha=0.7,
-                         #  color='k',
+                         color='k',
                          ecolor='gray')
 
         ax1.set_xlabel(xlabel, fontsize=14)
@@ -507,11 +542,14 @@ class GaugeModelPlotter:
             'plt_label': r"$\delta_{\phi_{P}}$"
         }
         x, y, yerr = xy_data
+        y_mean = np.mean(y)
         fig, ax = plt.subplots()
         _ = ax.plot(x, y, label='', marker=',', color='k', alpha=0.8)
-        _ = ax.errorbar(x, y, yerr=yerr, label='', marker=None,
-                        alpha=0.7, color='gray')
+        _ = ax.errorbar(x, y, yerr=yerr, label='', marker=None, ls='',
+                        alpha=0.7, color='gray', ecolor='gray')
         _ = ax.axhline(y=0, color='#CC0033', ls='-', lw=2.)
+        _ = ax.axhline(y=y_mean, label=f'avg {y_mean:.5f}',
+                       color='C2', ls='-', lw=2.)
 
         _ = ax.set_xlabel(labels['x_label'], fontsize=14)
         _ = ax.set_ylabel(labels['y_label'], fontsize=14)
@@ -519,10 +557,14 @@ class GaugeModelPlotter:
         if title is not None:
             _ = ax.set_title(title)
 
+        ax.legend(loc='best')
+
         _ = plt.tight_layout()
         out_file = get_out_file(self.out_dir, 'plaqs_diffs_vs_step')
         io.log(f'Saving figure to: {out_file}.')
         plt.savefig(out_file, dpi=400, bbox_inches='tight')
+
+        return y_mean
 
     def _plot_charges(self, xy_data, **kwargs):
         """Plot topological charges."""

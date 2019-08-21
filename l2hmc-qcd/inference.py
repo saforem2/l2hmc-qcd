@@ -36,8 +36,9 @@ import numpy as np
 
 import utils.file_io as io
 
-from config import PARAMS, NP_FLOAT, HAS_MATPLOTLIB, HAS_HOROVOD
+from config import PARAMS, NP_FLOAT, HAS_HOROVOD, HAS_MATPLOTLIB
 from update import set_precision
+#  from main import create_config
 from tensorflow.core.protobuf import rewriter_config_pb2
 #  from gauge_model_main import create_config
 
@@ -46,7 +47,9 @@ from utils.parse_inference_args import parse_args
 from models.model import GaugeModel
 from loggers.summary_utils import create_summaries
 from loggers.run_logger import RunLogger
-from plotters.gauge_model_plotter import GaugeModelPlotter
+from plotters.gauge_model_plotter import (
+    GaugeModelPlotter, plot_plaq_diffs_vs_transl_weight
+)
 from plotters.leapfrog_plotters import LeapfrogPlotter
 from runners.runner import GaugeModelRunner
 
@@ -64,21 +67,19 @@ SEP_STR = 80 * '-'  # + '\n'
 
 
 def create_config(params):
-    """Create tensorflow config."""
-    config = tf.ConfigProto()
+    """Helper method for creating a tf.ConfigProto object."""
+    config = tf.ConfigProto(allow_soft_placement=True)
     if params['time_size'] > 8:
         off = rewriter_config_pb2.RewriterConfig.OFF
         config_attrs = config.graph_options.rewrite_options
         config_attrs.arithmetic_optimization = off
 
     if params['gpu']:
-        # Horovod: pin GPU to be used to process local rank (one GPU per
-        # process)
+        # Horovod: pin GPU to be used to process local rank 
+        # (one GPU per process)
         config.gpu_options.allow_growth = True
         #  config.allow_soft_placement = True
-        if HAS_HOROVOD and params['using_hvd']:
-            #  num_gpus = hvd.size()
-            #  io.log(f"Number of GPUs: {num_gpus}")
+        if HAS_HOROVOD and params['horovod']:
             config.gpu_options.visible_device_list = str(hvd.local_rank())
 
     if HAS_MATPLOTLIB:
@@ -220,7 +221,9 @@ def inference_setup(kwargs):
         'beta': beta,
         'charge_weight': kwargs.get('charge_weight', 1.),
         'run_steps': kwargs.get('run_steps', 5000),
-        'plot_lf': kwargs.get('plot_lf', False)
+        'plot_lf': kwargs.get('plot_lf', False),
+        'loop_net_weights': kwargs['loop_net_weights'],
+        'loop_transl_weights': kwargs['loop_transl_weights']
     }
 
     return inference_dict
@@ -306,6 +309,8 @@ def run_inference(inference_dict,
     plot_lf = inference_dict['plot_lf']
     num_samples = runner.params['num_samples']
 
+    avg_plaq_diff_arr = []
+
     for net_weights in net_weights_arr:
         weights = {
             'charge_weight': charge_weight,
@@ -334,13 +339,34 @@ def run_inference(inference_dict,
             SEP_STR + f'Took: {run_time} s to complete run.\n' + SEP_STR
         )
 
-        plotter.plot_observables(
+        avg_plaq_diff = plotter.plot_observables(
             run_logger.run_data, beta, run_str, weights, dir_append
         )
+        avg_plaq_diff_arr.append(avg_plaq_diff)
         if plot_lf:
             lf_plotter = LeapfrogPlotter(plotter.out_dir, run_logger)
             num_samples = min((num_samples, 20))
             lf_plotter.make_plots(run_dir, num_samples=num_samples)
+
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    # NOTE: If inference was performed with either the `--loop_net_weights` 
+    #       or `--loop_transl_weights` flags passed, we want to see how the
+    #       difference between the observed and expected value of the average
+    #       plaquette varies with different values of the net weights, so save
+    #       this data to `.pkl` file and  plot the results.
+    # ------------------------------------------------------------------------
+    if inference_dict['loop_transl_weights']:
+        pd_tup = [
+            (nw, md) for nw, md in zip(net_weights_arr, avg_plaq_diff_arr)
+        ]
+        pd_out_file = os.path.join(run_logger.log_dir, 'plaq_diffs_dict.pkl')
+        with open(pd_out_file, 'wb') as f:
+            pickle.dump(pd_tup, f)
+
+        figs_dir = os.path.join(run_logger.log_dir, 'figures')
+        lf_steps = plotter.params['num_steps']
+        _ = plot_plaq_diffs_vs_transl_weight(pd_tup, lf_steps, figs_dir)
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 
 def main_inference(inference_kwargs):
@@ -348,17 +374,18 @@ def main_inference(inference_kwargs):
     params_file = inference_kwargs.get('params_file', None)
     params = load_params(params_file)  # load params used during training
 
-    # -----------------------------------------------------------------------
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     # NOTE: We want to restrict all communication (file I/O) to only be
     # performed on rank 0 (i.e. `is_chief`) so there are two cases:
     #    1. We're using Horovod, so we have to check hvd.rank() explicitly.
     #    2. We're not using Horovod, in which case `is_chief` is always True.
+    # -----------------------------------------------------------------------
     condition1 = not params['using_hvd']
     condition2 = params['using_hvd'] and hvd.rank() == 0
     is_chief = condition1 or condition2
     if not is_chief:
         return
-    # -----------------------------------------------------------------------
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
     checkpoint_dir = os.path.join(params['log_dir'], 'checkpoints/')
     assert os.path.isdir(checkpoint_dir)
@@ -375,7 +402,7 @@ def main_inference(inference_kwargs):
     run_logger = RunLogger(params, inputs, run_ops, save_lf_data=False)
     plotter = GaugeModelPlotter(params, run_logger.figs_dir)
 
-    # ------------------------------------------------------------------------
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     #  Set up relevant values to use for inference (parsed from kwargs)
     #
     #  NOTE: We are only interested in the command line arguments that 
@@ -383,15 +410,15 @@ def main_inference(inference_kwargs):
     inference_dict = inference_setup(inference_kwargs)
     if inference_dict['beta'] is None:
         inference_dict['beta'] = params['beta_final']
-    # ------------------------------------------------------------------------
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
     net_weights_file = os.path.join(params['log_dir'], 'net_weights.txt')
     np.savetxt(net_weights_file, inference_dict['net_weights_arr'],
                delimiter=', ', newline='\n', fmt='%-.4g')
 
-    # --------------------------------------
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     # Create GaugeModelRunner for inference
-    # --------------------------------------
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     runner = GaugeModelRunner(sess, params, inputs, run_ops, run_logger)
     run_inference(inference_dict, runner, run_logger, plotter)
 

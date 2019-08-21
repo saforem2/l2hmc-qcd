@@ -18,10 +18,10 @@ from collections import Counter, OrderedDict
 from scipy.stats import sem
 import utils.file_io as io
 
-from config import RUN_HEADER, NP_FLOAT, TF_FLOAT
+from config import RUN_HEADER, NP_FLOAT
 
-from lattice.lattice import u1_plaq_exact, u1_plaq_exact_tf
-from utils.tf_logging import variable_summaries
+from lattice.lattice import u1_plaq_exact
+#  from utils.tf_logging import variable_summaries
 
 from .train_logger import save_params
 
@@ -58,6 +58,7 @@ class RunLogger:
 
         runs_dir = os.path.join(self.log_dir, 'runs')
         figs_dir = os.path.join(self.log_dir, 'figures')
+        run_summaries_dir = os.path.join(self.log_dir, 'summaries', 'run')
         if os.path.isdir(runs_dir) or os.path.isdir(figs_dir):
             now = datetime.datetime.now()
             time_str = now.strftime("%H%M")
@@ -69,12 +70,18 @@ class RunLogger:
                 renamed_figs_dir = figs_dir + f'_{time_str}'
                 io.log(f'Renaming existing figs_dir to: {renamed_figs_dir}')
                 os.rename(figs_dir, renamed_figs_dir)
+            if os.path.isdir(run_summaries_dir):
+                new_rsd = run_summaries_dir + f'_{time_str}'
+                io.log(f'Renaming existing run summaries dir to: {new_rsd}')
 
         self.runs_dir = runs_dir
         io.check_else_make_dir(self.runs_dir)
 
         self.figs_dir = figs_dir
         io.check_else_make_dir(self.figs_dir)
+
+        self.run_summaries_dir = run_summaries_dir
+        io.check_else_make_dir(self.run_summaries_dir)
 
         self._reset_counter = 0
         self.run_steps = None
@@ -96,9 +103,9 @@ class RunLogger:
         self.inputs_dict = self.build_inputs_dict(inputs)
 
         if self.summaries:
-            self.run_summaries_dir = os.path.join(self.log_dir,
-                                                  'summaries', 'run')
-            io.check_else_make_dir(self.run_summaries_dir)
+            #  self.run_summaries_dir = os.path.join(self.log_dir,
+            #                                        'summaries', 'run')
+            #  io.check_else_make_dir(self.run_summaries_dir)
             self.writer = tf.summary.FileWriter(self.run_summaries_dir,
                                                 tf.get_default_graph())
             self.create_summaries()
