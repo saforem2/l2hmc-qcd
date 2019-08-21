@@ -232,8 +232,6 @@ def plot_plaq_diffs_vs_transl_weight(xy_data, lf_steps, figs_dir):
     """Plot the average plaquette difference versus translation weight."""
     if not HAS_MATPLOTLIB:
         return
-    else:
-        import matplotlib.pyplot as plt
 
     transl_weights = [i[0][1] for i in xy_data]
     diffs = [i[1] for i in xy_data]
