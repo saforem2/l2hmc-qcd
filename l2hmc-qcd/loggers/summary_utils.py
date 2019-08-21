@@ -90,6 +90,46 @@ def make_summaries_from_collection(collection, names):
         pass
 
 
+def _create_loss_summaries(total_loss):
+    """Add summaries for losses in GaugeModel.
+
+    Generates a moving average for all losses and associated summaries for
+    visualizing the performance of the network.
+
+    Args:
+        total_loss: Total loss operation.
+    Returns:
+        loss_averages_op: Operation for generating moving averages of losses.
+    """
+    # Compute the moving avg. of all individ. losses and total loss
+    loss_averages = tf.train.ExponentialMovingAverage(0.9, name='avg')
+    losses = tf.get_collection('losses')
+    loss_averages_op = loss_averages.apply(losses + [total_loss])
+
+    std_names = ['std_loss', 'x_std_loss', 'z_std_loss']
+    std_losses = losses[:3]
+    for name, loss in zip(std_names, std_losses):
+        with tf.name_scope(name):
+            tf.summary.scalar(name + '/raw', loss)
+            tf.summary.scalar(name + '/moving_avg',
+                              loss_averages.average(loss))
+
+    charge_names = ['charge_loss', 'xq_loss', 'zq_loss']
+    charge_losses = losses[3:]
+    for name, loss in zip(charge_names, charge_losses):
+        with tf.name_scope(name):
+            tf.summary.scalar(name + '/raw', loss)
+            tf.summary.scalar(name + '/moving_avg',
+                              loss_averages.average(loss))
+
+    with tf.name_scope('total_loss'):
+        tf.summary.scalar('total_loss/raw', total_loss)
+        tf.summary.scalar('total_loss/moving_avg',
+                          loss_averages.average(total_loss))
+
+    return loss_averages_op
+
+
 def _create_training_summaries(model):
     """Create summary objects for training operations in TensorBoard."""
     with tf.name_scope('loss'):
@@ -188,6 +228,7 @@ def create_summaries(model, summary_dir, training=True):
 
     _create_obs_summaries(model)
     _create_md_summaries(model)
+    loss_averages_op = _create_loss_summaries(model.loss_op)
 
     for grad, var in grads_and_vars:
         _create_pair_summaries(grad, var)
