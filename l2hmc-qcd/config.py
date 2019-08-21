@@ -131,4 +131,3 @@ PARAMS = {
     'using_hvd': False,
     '_plot': True
 }
-
