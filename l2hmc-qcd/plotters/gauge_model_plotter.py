@@ -228,6 +228,32 @@ def plot_with_inset(data, labels=None, **kwargs):
     return None
 
 
+def plot_plaq_diffs_vs_transl_weight(xy_data, lf_steps, figs_dir):
+    """Plot the average plaquette difference versus translation weight."""
+    if not HAS_MATPLOTLIB:
+        return
+    else:
+        import matplotlib.pyplot as plt
+
+    transl_weights = [i[0][1] for i in xy_data]
+    diffs = [i[1] for i in xy_data]
+
+    fig, ax = plt.subplots()
+    ax.plot(transl_weights, diffs,
+            label=r'$N_{\mathrm{LF}} = $' + f'{lf_steps}')
+
+    xlabel = 'Translation weight'
+    ylabel = r"$\langle\delta_{\phi_{P}}^{(\mathrm{obs})}\rangle$"
+
+    ax.grid(True)
+    ax.set_xlabel(xlabel, fontsize=14)
+    ax.set_ylabel(ylabel, fontsize=14)
+    plt.tight_layout()
+    ax.legend(loc='best')
+    out_file = os.path.join(figs_dir, 'avg_plaq_diff_vs_transl_weight.pdf')
+    plt.savefig(out_file, dpi=400, bbox_inches='tight')
+
+
 class GaugeModelPlotter:
     def __init__(self, params, figs_dir=None, experiment=None):
         self.figs_dir = figs_dir
@@ -335,9 +361,8 @@ class GaugeModelPlotter:
 
         return xy_data
 
-    def plot_observables(self, data, beta, run_str, weights, dir_append=None):
-        """Plot observables."""
-
+    def _plot_setup(self, data, beta, run_str, weights, dir_append=None):
+        """Prepare for plotting observables."""
         if dir_append:
             run_str += dir_append
 
@@ -368,6 +393,14 @@ class GaugeModelPlotter:
         }
 
         xy_data = self._parse_data(data, beta)
+
+        return xy_data, kwargs
+
+    def plot_observables(self, data, beta, run_str, weights, dir_append=None):
+        """Plot observables."""
+        xy_data, kwargs = self._plot_setup(data, beta, run_str,
+                                           weights, dir_append)
+
         self._plot_actions(xy_data['actions'], **kwargs)
         self.log_figure()
         self._plot_plaqs(xy_data['plaqs'], beta, **kwargs)
@@ -380,8 +413,10 @@ class GaugeModelPlotter:
         self.log_figure()
         self._plot_autocorrs(xy_data['autocorrs'], **kwargs)
         self.log_figure()
-        self._plot_plaqs_diffs(xy_data['plaqs_diffs'], **kwargs)
+        mean_diff = self._plot_plaqs_diffs(xy_data['plaqs_diffs'], **kwargs)
         self.log_figure()
+
+        return mean_diff
 
     def _plot(self, xy_data, **kwargs):
         """Basic plotting wrapper."""
@@ -530,6 +565,8 @@ class GaugeModelPlotter:
         out_file = get_out_file(self.out_dir, 'plaqs_diffs_vs_step')
         io.log(f'Saving figure to: {out_file}.')
         plt.savefig(out_file, dpi=400, bbox_inches='tight')
+
+        return y_mean
 
     def _plot_charges(self, xy_data, **kwargs):
         """Plot topological charges."""
