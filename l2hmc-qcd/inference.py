@@ -47,9 +47,8 @@ from utils.parse_inference_args import parse_args
 from models.model import GaugeModel
 from loggers.summary_utils import create_summaries
 from loggers.run_logger import RunLogger
-from plotters.gauge_model_plotter import (
-    GaugeModelPlotter, plot_plaq_diffs_vs_transl_weight
-)
+from plotters.gauge_model_plotter import GaugeModelPlotter
+from plotters.plot_utils import plot_plaq_diffs_vs_net_weights
 from plotters.leapfrog_plotters import LeapfrogPlotter
 from runners.runner import GaugeModelRunner
 
@@ -185,8 +184,38 @@ def set_model_weights(model, dest='rand'):
 
 def inference_setup(kwargs):
     """Set up relevant (initial) values to use when running inference."""
-    if kwargs['loop_net_weights']:  # loop over different values of [Q, S, T]
+    if kwargs['loop_net_weights']:  # loop over different values of [S, T, Q]
         #  net_weights_arr = np.zeros((9, 3), dtype=NP_FLOAT)
+        w = np.random.randn(3) + 1.
+        net_weights_arr = np.array([[0.00, 0.00, 0.00],   # set weights to 0.
+                                    # -----------------
+                                    [0.00, 0.00, 0.25],   # loop over Q weights
+                                    [0.00, 0.00, 0.50],
+                                    [0.00, 0.00, 0.75],
+                                    [0.00, 0.00, 1.00],
+                                    [0.00, 0.00, 2.00],
+                                    # -----------------
+                                    [0.00, 0.25, 0.00],   # loop over T weights
+                                    [0.00, 0.50, 0.00],
+                                    [0.00, 0.75, 0.00],
+                                    [0.00, 1.00, 0.00],
+                                    [0.00, 2.00, 0.00],
+                                    # -----------------
+                                    [0.25, 0.00, 0.00],   # loop over S weights
+                                    [0.50, 0.00, 0.00],
+                                    [0.75, 0.00, 0.00],
+                                    [1.00, 0.00, 0.00],
+                                    [2.00, 0.00, 0.00],
+                                    # -----------------
+                                    [0.00, 1.00, 1.00],   # [ , T, Q]
+                                    [1.00, 0.00, 1.00],   # [S,  , Q]
+                                    [1.00, 1.00, 0.00],   # [S, T,  ]
+                                    # -----------------
+                                    [w[0], w[1], w[2]],   # randomize weights
+                                    # -----------------
+                                    [1.00, 1.00, 1.00]])  # set weights to 1.
+
+        """
         net_weights_arr = np.array([[1, 1, 1],                     # [S, T, Q]
                                     [0, 1, 1],                     # [ , T, Q]
                                     [1, 0, 1],                     # [S,  , Q]
@@ -197,6 +226,7 @@ def inference_setup(kwargs):
                                     [0, 0, 0]], dtype=NP_FLOAT)    # [ ,  ,  ]
         #  net_weights_arr[:mask_arr.shape[0], :] = mask_arr   # [?, ?, ?]
         #  net_weights_arr[-1, :] = np.random.randn(3)
+        """
 
     elif kwargs['loop_transl_weights']:
         net_weights_arr = np.array([[1.0, 0.00, 1.0],
@@ -336,7 +366,7 @@ def run_inference(inference_dict,
         # log the total time spent running inference
         run_time = time.time() - t0
         io.log(
-            SEP_STR + f'Took: {run_time} s to complete run.\n' + SEP_STR
+            SEP_STR + f'\nTook: {run_time} s to complete run.\n' + SEP_STR
         )
 
         avg_plaq_diff = plotter.plot_observables(
@@ -355,17 +385,17 @@ def run_inference(inference_dict,
     #       plaquette varies with different values of the net weights, so save
     #       this data to `.pkl` file and  plot the results.
     # ------------------------------------------------------------------------
-    if inference_dict['loop_transl_weights']:
+    if inference_dict['loop_net_weights']:
         pd_tup = [
             (nw, md) for nw, md in zip(net_weights_arr, avg_plaq_diff_arr)
         ]
-        pd_out_file = os.path.join(run_logger.log_dir, 'plaq_diffs_dict.pkl')
+        pd_out_file = os.path.join(run_logger.log_dir, 'plaq_diffs_data.pkl')
         with open(pd_out_file, 'wb') as f:
             pickle.dump(pd_tup, f)
 
-        figs_dir = os.path.join(run_logger.log_dir, 'figures')
-        lf_steps = plotter.params['num_steps']
-        _ = plot_plaq_diffs_vs_transl_weight(pd_tup, lf_steps, figs_dir)
+        #  figs_dir = os.path.join(run_logger.log_dir, 'figures')
+        #  lf_steps = plotter.params['num_steps']
+        #  _ = plot_plaq_diffs_vs_transl_weight(pd_tup, lf_steps, figs_dir)
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 
