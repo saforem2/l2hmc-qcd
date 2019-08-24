@@ -140,8 +140,13 @@ class GaugeModelPlotter:
 
         return xy_data
 
-    def _plot_setup(self, data, beta, run_str, weights, dir_append=None):
+    def _plot_setup(self, data, **kwargs):
         """Prepare for plotting observables."""
+        beta = kwargs.get('beta', 5.)
+        run_str = kwargs.get('run_str', None)
+        net_weights = kwargs.get('net_weights', [1., 1., 1.])
+        dir_append = kwargs.get('dir_append', None)
+
         if dir_append:
             run_str += dir_append
 
@@ -152,7 +157,7 @@ class GaugeModelPlotter:
         lf_steps = self.params['num_steps']
         bs = self.params['num_samples']  # batch size
         #  qw = weights['charge_weight']
-        nw = weights['net_weights']
+        nw = net_weights
         sw, translw, transfw = nw
         title_str = (r"$N_{\mathrm{LF}} = $" + f"{lf_steps}, "
                      r"$N_{\mathrm{B}} = $" + f"{bs}, "
@@ -161,7 +166,7 @@ class GaugeModelPlotter:
         #  r"$L = $" + f"{L}, "
         #  r"$\beta = $ " + f"{beta}, "
         #  r"$\alpha_{Q} = $" + f"{qw}, "
-        kwargs = {
+        kwargs.update({
             'markers': False,
             'lines': True,
             'alpha': 0.6,
@@ -169,20 +174,24 @@ class GaugeModelPlotter:
             'legend': False,
             'ret': False,
             'out_file': [],
-        }
+        })
 
         xy_data = self._parse_data(data, beta)
 
         return xy_data, kwargs
 
-    def plot_observables(self, data, beta, run_str, weights, dir_append=None):
+    def plot_observables(self, data, **kwargs):
         """Plot observables."""
-        xy_data, kwargs = self._plot_setup(data, beta, run_str,
-                                           weights, dir_append)
+        #  beta = kwargs.get('beta', 5.)
+        #  run_str = kwargs.get('run_str', None)
+        #  net_weights = kwargs.get('net_weights', [1., 1., 1.])
+        #  dir_append = kwargs.get('dir_append', None)
+
+        xy_data, kwargs = self._plot_setup(data, **kwargs)
 
         self._plot_actions(xy_data['actions'], **kwargs)
         self.log_figure()
-        self._plot_plaqs(xy_data['plaqs'], beta, **kwargs)
+        self._plot_plaqs(xy_data['plaqs'], **kwargs)
         self.log_figure()
         self._plot_charges(xy_data['charges'], **kwargs)
         self.log_figure()

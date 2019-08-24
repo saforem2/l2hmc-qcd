@@ -59,6 +59,8 @@ def check_else_make_dir(d):
     if not os.path.isdir(d):
         log(f"Creating directory: {d}")
         os.makedirs(d, exist_ok=True)
+    else:
+        log(f'Directory: {d} already exists. Nothing to do!')
 
 
 def make_dirs(dirs):
