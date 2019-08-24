@@ -7,11 +7,11 @@ on a U(1) gauge model.
 Author: Sam Foreman (github: @saforem2)
 Date: 04/09/2019
 """
-import os
+#  import os
 import time
-import pickle
-from scipy.stats import sem
-from collections import Counter, OrderedDict
+#  import pickle
+#  from scipy.stats import sem
+#  from collections import Counter, OrderedDict
 
 import numpy as np
 
@@ -106,10 +106,11 @@ class GaugeModelRunner:
         }
 
         if self.params['save_lf']:
-            lf_outputs = {}
-            for key, val in zip(keys[6:], outputs[6:]):
-                lf_outputs[key] = val
-            out_data.update(lf_outputs)
+            out_data.update({k: v for k, v in zip(keys[6:], outputs[6:])})
+            #  lf_outputs = {}
+            #  for key, val in zip(keys[6:], outputs[6:]):
+            #      lf_outputs[key] = val
+            #  out_data.update(lf_outputs)
 
         data_str = (f'{step:>5g}/{run_steps:<6g} '
                     f'{dt:^9.4g} '                      # time / step
@@ -123,24 +124,19 @@ class GaugeModelRunner:
 
         return out_data, data_str
 
-    def run(self, run_steps, **kwargs):
+    def run(self, **kwargs):
         """Run the simulation to generate samples and calculate observables.
 
         Args:
             run_steps: Number of steps to run the sampler for.
-            current_step: Integer passed when the sampler is ran intermittently
-                during training, as a way to monitor the models performance
-                during training. By passing the current training step as
-                current_step, this data is saved to a unique directory labeled
-                by the current_step.
-            beta: Float value indicating the inverse coupling constant that the
-                sampler is to be run at.
+            kwargs: Dictionary of keyword arguments to use for running
+                inference.
 
         Returns:
             observables: Tuple of observables dictionaries consisting of:
                 (actions_dict, plaqs_dict, charges_dict, charge_diffs_dict).
         """
-        run_steps = int(run_steps)
+        run_steps = int(kwargs.get('run_steps', 5000))
 
         beta = kwargs.get('beta_final', self.params.get('beta_final', 5))
         net_weights = kwargs.get('net_weights', [1., 1., 1.])
@@ -178,7 +174,8 @@ class GaugeModelRunner:
                 self.logger.save_run_data(therm_frac=therm_frac)
 
         except (KeyboardInterrupt, SystemExit):
-            io.log("\nKeyboardInterrupt detected!")
-            io.log("Saving current state and exiting.")
+            io.log(80 * '-' + '\n')
+            io.log("\nWARNING: KeyboardInterrupt detected!")
+            io.log("WARNING: Saving current state and exiting.")
             if self.logger is not None:
                 self.logger.save_run_data(therm_frac=therm_frac)
