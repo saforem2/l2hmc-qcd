@@ -10,6 +10,8 @@ Date: 04/24/2019
 import os
 import pickle
 import datetime
+import shutil
+import errno
 
 import tensorflow as tf
 import numpy as np
@@ -42,6 +44,17 @@ def autocorr(x):
     return autocorr[autocorr.size // 2:]
 
 
+def copy(src, dest):
+    try:
+        shutil.copytree(src, dest)
+    except OSError as e:
+        # If the error was caused because the source wasn't a directory
+        if e.errno == errno.ENOTDIR:
+            shutil.copy(src, dest)
+        else:
+            io.log(f'Directory not copied. Error: {e}')
+
+
 class RunLogger:
     def __init__(self, params, inputs, run_ops, save_lf_data=False):
         """
@@ -53,7 +66,6 @@ class RunLogger:
         self.save_lf_data = save_lf_data
         self.summaries = params['summaries']
         assert os.path.isdir(params['log_dir'])
-
         self.log_dir = params['log_dir']
 
         runs_dir = os.path.join(self.log_dir, 'runs')
@@ -64,15 +76,23 @@ class RunLogger:
             time_str = now.strftime("%H%M")
             if os.path.isdir(runs_dir):
                 renamed_runs_dir = runs_dir + f'_{time_str}'
-                io.log(f'Renaming existing runs_dir to: {renamed_runs_dir}')
-                os.rename(runs_dir, renamed_runs_dir)
+                #  io.log(f'Renaming existing runs_dir to: {renamed_runs_dir}')
+                io.log(f'Copying existing runs_dir to: {renamed_runs_dir}')
+                #  io.check_else_make_dir(renamed_runs_dir)
+                copy(runs_dir, renamed_runs_dir)
+                #  os.rename(runs_dir, renamed_runs_dir)
             if os.path.isdir(figs_dir):
                 renamed_figs_dir = figs_dir + f'_{time_str}'
-                io.log(f'Renaming existing figs_dir to: {renamed_figs_dir}')
-                os.rename(figs_dir, renamed_figs_dir)
+                #  io.log(f'Renaming existing figs_dir to: {renamed_figs_dir}')
+                io.log(f'Copying existing figs_dir to: {renamed_figs_dir}')
+                #  io.check_else_make_dir(renamed_figs_dir)
+                copy(figs_dir, renamed_figs_dir)
+                #  os.rename(figs_dir, renamed_figs_dir)
             if os.path.isdir(run_summaries_dir):
                 new_rsd = run_summaries_dir + f'_{time_str}'
-                io.log(f'Renaming existing run summaries dir to: {new_rsd}')
+                io.log(f'Copying existing run summaries dir to: {new_rsd}')
+                #  io.check_else_make_dir(new_rsd)
+                copy(run_summaries_dir, new_rsd)
 
         self.runs_dir = runs_dir
         io.check_else_make_dir(self.runs_dir)
@@ -83,7 +103,7 @@ class RunLogger:
         self.run_summaries_dir = run_summaries_dir
         io.check_else_make_dir(self.run_summaries_dir)
 
-        self._reset_counter = 0
+        #  self._reset_counter = 0
         self.run_steps = None
         self.beta = None
         self.run_data = {}
@@ -172,8 +192,87 @@ class RunLogger:
         self.writer.add_summary(summary_str, global_step=step)
         self.writer.flush()
 
-    def reset(self, run_steps, beta, weights, eps_np, dir_append=None):
+    @classmethod
+    def _clear(cls):
+        cls.run_data = None
+        cls.run_strings = None
+        if cls.params['save_lf']:
+            cls.samples_arr = None
+            cls.lf_out = None
+            cls.pxs_out = None
+            cls.masks = None
+            cls.logdets = None
+            cls.sumlogdet = None
+            cls.l2hmc_fns = None
+
+        cls.params['net_weights'] = None
+        cls.run_dir = None
+        if cls.summaries:
+            cls.run_summary_dir = None
+            cls.writer = None
+
+    def clear(self):
+        self.run_data = None
+        self.run_strings = None
+        if self.params['save_lf']:
+            self.samples_arr = None
+            self.lf_out = None
+            self.pxs_out = None
+            self.masks = None
+            self.logdets = None
+            self.sumlogdet = None
+            self.l2hmc_fns = None
+        self.params['net_weights'] = None
+        self.run_dir = None
+        if self.summaries:
+            self.run_summary_dir = None
+            self.writer = None
+
+    def existing_run(self, run_str):
+        """Check if this run has been completed previously, if so skip it."""
+        run_dir = os.path.join(self.runs_dir, run_str)
+        run_summary_dir = os.path.join(self.run_summaries_dir, run_str)
+        if os.path.isdir(run_dir) and os.path.isdir(run_summary_dir):
+            return True
+        return False
+
+    def _get_run_str(self, **kwargs):
+        """Parse parameter values and create unique string to name the dir."""
+        run_steps = kwargs.get('run_steps', 5000)
+        beta = kwargs.get('beta', 5.)
+        net_weights = kwargs.get('net_weights', [1., 1., 1.])
+        eps_np = kwargs.get('eps', None)
+        dir_append = kwargs.get('dir_append', None)
+        #  eps = self.model.eps
+        eps_str = f'{eps_np:.3}'.replace('.', '')
+        beta_str = f'{beta:.3}'.replace('.', '')
+        #  qw_str = f'{charge_weight:.3}'.replace('.', '')
+        scale_wstr = f'{net_weights[0]:3.2f}'.replace('.', '')
+        transl_wstr = f'{net_weights[1]:3.2f}'.replace('.', '')
+        transf_wstr = f'{net_weights[2]:3.2f}'.replace('.', '')
+
+        run_str = (f'steps{run_steps}'
+                   f'_beta{beta_str}'
+                   f'_eps{eps_str}'
+                   #  f'_qw_{qw_str:.2}'
+                   f'_S{scale_wstr}'
+                   f'_T{transl_wstr}'
+                   f'_Q{transf_wstr}')
+        #  f'_{self._reset_counter}')
+
+        if dir_append is not None:
+            run_str += dir_append
+
+        return run_str
+
+    def reset(self, **kwargs):
         """Reset run_data and run_strings to prep for new run."""
+        run_steps = kwargs.get('run_steps', 5000)
+        beta = kwargs.get('beta', 5.)
+        net_weights = kwargs.get('net_weights', [1., 1., 1.])
+        #  eps_np = kwargs.get('eps', None)
+        #  dir_append = kwargs.get('dir_append', None)
+
         self.run_steps = int(run_steps)
         self.beta = beta
 
@@ -196,71 +295,47 @@ class RunLogger:
             self.sumlogdet = FB_DICT.copy()
             self.l2hmc_fns = FB_DICT.copy()
 
-        #  eps = self.model.eps
-        charge_weight = weights['charge_weight']
-        net_weights = weights['net_weights']
-
-        if charge_weight is None:
-            charge_weight = 0.
-
-        if net_weights is None:
-            net_weights = [1., 1., 1.]
-
-        eps_str = f'{eps_np:.3}'.replace('.', '')
-        beta_str = f'{beta:.3}'.replace('.', '')
-        #  qw_str = f'{charge_weight:.3}'.replace('.', '')
-        scale_wstr = f'{net_weights[0]:3.2f}'.replace('.', '')
-        transl_wstr = f'{net_weights[1]:3.2f}'.replace('.', '')
-        transf_wstr = f'{net_weights[2]:3.2f}'.replace('.', '')
-
-        run_str = (
-            f'steps{run_steps}'
-            f'_beta{beta_str}'
-            f'_eps{eps_str}'
-            #  f'_qw_{qw_str:.2}'
-            f'_S{scale_wstr}'
-            f'_T{transl_wstr}'
-            f'_Q{transf_wstr}'
-            f'_{self._reset_counter}'
-        )
-
-        if dir_append:
-            run_str += dir_append
-
         #  params = self.model.params
         self.params['net_weights'] = net_weights
 
+        run_str = self._get_run_str(**kwargs)
+        self._set_run_dirs(run_str)
+        self._save_net_weights(net_weights)
+
+        if self.summaries:
+            self.writer = tf.summary.FileWriter(self.run_summary_dir,
+                                                tf.get_default_graph())
+        save_params(self.params, self.run_dir)
+        #  self._reset_counter += 1
+
+        #  return self.run_dir, run_str
+
+    def _save_net_weights(self, net_weights):
+        """Write net weights to a `.txt` file; append if existing."""
+        #  def _round_float_as_str(f):
+        #      return f'{f:.3g}'
+        weights_txt_file = os.path.join(self.run_dir, 'net_weights.txt')
+        nw_str = [f'{w:.3g}' for w in net_weights]
+        #  nw_str = [_round_float_as_str(w) for w in net_weights]
+        w_str = '[' + nw_str[0] + nw_str[1] + nw_str[2] + ']'
+        if not os.path.isfile(weights_txt_file):
+            with open(weights_txt_file, 'w') as f:
+                f.write('[scale_weight,'
+                        ' translation_weight,'
+                        ' transformation_weight]')
+                f.write(80 * '-' + '\n')
+        else:
+            with open(weights_txt_file, 'a') as f:
+                f.write(w_str)
+
+    def _set_run_dirs(self, run_str):
+        """Sets dirs containing data about inference run using run_str."""
         self.run_dir = os.path.join(self.runs_dir, run_str)
         io.check_else_make_dir(self.run_dir)
-
-        net_weights_file = os.path.join(self.run_dir, 'net_weights.txt')
-        np.savetxt(net_weights_file, net_weights,
-                   delimiter=', ', newline='\n', fmt='%-.4g')
-
         if self.summaries:
             self.run_summary_dir = os.path.join(self.run_summaries_dir,
                                                 run_str)
             io.check_else_make_dir(self.run_summary_dir)
-
-            self.writer = tf.summary.FileWriter(self.run_summary_dir,
-                                                tf.get_default_graph())
-        save_params(self.params, self.run_dir)
-
-        self._reset_counter += 1
-
-        def _round_float_as_str(f):
-            return f'{f:.3g}'
-
-        weights_txt_file = os.path.join(self.run_dir, 'weights.txt')
-        charge_weight_str = f'charge_weight: {charge_weight}\n'
-
-        nw_str = [_round_float_as_str(w) for w in net_weights]
-        w_str = nw_str[0] + nw_str[1] + nw_str[2]
-        with open(weights_txt_file, 'w') as f:
-            f.write(charge_weight_str)
-            f.write(w_str)
-
-        return self.run_dir, run_str
 
     def update(self, sess, data, net_weights, data_str):
         """Update run_data and append data_str to data_strings."""

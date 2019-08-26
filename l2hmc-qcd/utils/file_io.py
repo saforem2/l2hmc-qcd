@@ -55,7 +55,12 @@ def log_and_write(s, f):
 
 
 def check_else_make_dir(d):
-    """If directory `d` doesn't exist, it is created."""
+    """If directory `d` doesn't exist, it is created.
+
+    Args:
+        d (str): Location where directory should be created if it doesn't
+            already exist.
+    """
     if not os.path.isdir(d):
         log(f"Creating directory: {d}")
         os.makedirs(d, exist_ok=True)
