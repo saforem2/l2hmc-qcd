@@ -374,16 +374,15 @@ def inference(runner, run_logger, plotter, **kwargs):
 
         return avg_plaq_diff
 
-    else:
-        nw = kwargs.get('net_weights', [1., 1., 1.])
-        io.log(SEP_STR)
-        io.log('\n Inference has already been completed for:\n'
-               f'\t net_weights: [{nw[0]}, {nw[1]}, {nw[2]}]\n'
-               f'\t run_steps: {run_steps}\n'
-               f'\t eps: {runner.eps}\n'
-               f'\t beta: {beta}\n'
-               f' Continuing...\n')
-        io.log(SEP_STR)
+    nw = kwargs.get('net_weights', [1., 1., 1.])
+    io.log(SEP_STR)
+    io.log('\n Inference has already been completed for:\n'
+           f'\t net_weights: [{nw[0]}, {nw[1]}, {nw[2]}]\n'
+           f'\t run_steps: {run_steps}\n'
+           f'\t eps: {runner.eps}\n'
+           f'\t beta: {beta}\n'
+           f' Continuing...\n')
+    io.log(SEP_STR)
 
 
 def run_inference(runner, run_logger=None, plotter=None, **kwargs):
