@@ -58,7 +58,8 @@ def plot_multiple_lines(data, xy_labels, **kwargs):
     title = kwargs.get('title', None)
     ret = kwargs.get('ret', False)
     num_samples = kwargs.get('num_samples', 10)
-    greys, reds, blues = get_colors(num_samples)
+    colors_arr = get_colors(num_samples)
+    greys, reds, blues = colors_arr
     if isinstance(data, list):
         data = np.array(data)
 
