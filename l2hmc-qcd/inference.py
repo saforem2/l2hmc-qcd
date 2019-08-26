@@ -31,14 +31,14 @@ from __future__ import print_function
 import os
 import time
 import pickle
-import memory_profiler
 import tensorflow as tf
 import numpy as np
 
 
 import utils.file_io as io
 
-from config import PARAMS, NP_FLOAT, HAS_HOROVOD, HAS_MATPLOTLIB
+from config import (PARAMS, NP_FLOAT, HAS_HOROVOD, HAS_MATPLOTLIB,
+                    HAS_MEMORY_PROFILER)
 from update import set_precision
 #  from main import create_config
 from tensorflow.core.protobuf import rewriter_config_pb2
@@ -57,13 +57,15 @@ from runners.runner import GaugeModelRunner
 if HAS_HOROVOD:
     import horovod.tensorflow as hvd
 
+if HAS_MEMORY_PROFILER:
+    import memory_profiler
+
 #  if HAS_MATPLOTLIB:
 #      import matplotlib.pyplot as plt
 
 if float(tf.__version__.split('.')[0]) <= 2:
     tf.logging.set_verbosity(tf.logging.INFO)
 
-#  import memory_profiler
 
 SEP_STR = 80 * '-'  # + '\n'
 
@@ -403,11 +405,13 @@ def run_inference(runner, run_logger=None, plotter=None, **kwargs):
     avg_plaq_diff_arr = []
     m_arr = []
     for net_weights in net_weights_arr:
-        usage0 = memory_profiler.memory_usage()
-        m_arr.append(usage0)
+        if HAS_MEMORY_PROFILER:
+            usage0 = memory_profiler.memory_usage()
+            m_arr.append(usage0)
         run_logger.clear()
-        usage1 = memory_profiler.memory_usage()
-        m_arr.append(usage1)
+        if HAS_MEMORY_PROFILER:
+            usage1 = memory_profiler.memory_usage()
+            m_arr.append(usage1)
         kwargs.update({
             'net_weights': net_weights,
             'dir_append': dir_append

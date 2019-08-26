@@ -8,6 +8,12 @@ import tensorflow as tf
 import numpy as np
 
 try:
+    import memory_profiler
+    HAS_MEMORY_PROFILER = True
+except ImportError:
+    HAS_MEMORY_PROFILER = False
+
+try:
     import matplotlib.pyplot as plt
     HAS_MATPLOTLIB = True
 except ImportError:
