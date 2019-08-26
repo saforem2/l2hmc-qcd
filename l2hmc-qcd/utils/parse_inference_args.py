@@ -48,12 +48,12 @@ def parse_args():
     parser.add_argument("--run_steps",
                         dest="run_steps",
                         type=int,
-                        default=10000,
+                        default=5000,
                         required=False,
                         help=("""Number of evaluation 'run' steps to perform
                               after training (i.e. length of desired chain
                               generate using trained L2HMC sample).
-                              (Default: 10000)"""))
+                              (Default: 5000)"""))
 
     parser.add_argument("--beta_inference",
                         dest="beta_inference",

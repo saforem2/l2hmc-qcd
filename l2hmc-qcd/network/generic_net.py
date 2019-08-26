@@ -36,6 +36,8 @@ class GenericNet(tf.keras.Model):
         for key, val in kwargs.items():
             setattr(self, key, val)
 
+        self.activation = kwargs.get('generic_activation', tf.nn.relu)
+
         with tf.name_scope(self.name_scope):
             self.coeff_scale = tf.Variable(
                 initial_value=tf.zeros([1, self.x_dim], dtype=TF_FLOAT),
@@ -84,31 +86,34 @@ class GenericNet(tf.keras.Model):
     def call(self, inputs, train_phase):
         v, x, t = inputs
 
-        #  v = tf.nn.relu(self.v_layer(v))
-        #  x = tf.nn.relu(self.x_layer(x))
-        #  t = tf.nn.relu(self.t_layer(t))
+        with tf.name_scope('v'):
+            v = self.v_layer(v)
+        with tf.name_scope('x'):
+            x = self.x_layer(x)
+        with tf.name_scope('t'):
+            t = self.t_layer(t)
 
-        v = self.v_layer(v)
-        x = self.x_layer(x)
-        t = self.t_layer(t)
+        with tf.name_scope('hidden_layer'):
+            h = self.activation(v + x + t)
+            h = self.activation(self.h_layer(h))
 
-        h = tf.nn.relu(v + x + t)
-        h = tf.nn.relu(self.h_layer(h))
+            # dropout gets applied to the output of the previous layer
+            if self.dropout_prob > 0:
+                h = self.dropout(h, training=train_phase)
 
-        # dropout gets applied to the output of the previous layer
-        if self.dropout_prob > 0:
-            h = self.dropout(h, training=train_phase)
+        with tf.name_scope('scale'):
+            scale = (tf.nn.tanh(self.scale_layer(h))
+                     * tf.exp(self.coeff_scale, name='exp_coeff_scale'))
 
-        scale = (tf.nn.tanh(self.scale_layer(h))
-                 * tf.exp(self.coeff_scale, name='exp_coeff_scale'))
+        with tf.name_scope('transformation'):
+            transformation = (tf.nn.tanh(self.transformation_layer(h))
+                              * tf.exp(self.coeff_transformation,
+                                       name='exp_coeff_transformation'))
 
-        transformation = (tf.nn.tanh(self.transformation_layer(h))
-                          * tf.exp(self.coeff_transformation,
-                                   name='exp_coeff_transformation'))
-
-        if self.zero_translation:
-            translation = tf.zeros_like(scale, name='translation')
-        else:
-            translation = self.translation_layer(h)
+        with tf.name_scope('translation'):
+            if self.zero_translation:
+                translation = tf.zeros_like(scale, name='translation')
+            else:
+                translation = self.translation_layer(h)
 
         return scale, translation, transformation

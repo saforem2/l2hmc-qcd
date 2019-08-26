@@ -18,6 +18,21 @@ np.random.seed(GLOBAL_SEED)
 if '2.' not in tf.__version__:
     tf.set_random_seed(GLOBAL_SEED)
 
+#######################################################################
+# NOTE: Removed from `ConvNet2D.__init__` due to bugs when specifying
+#       `data_format`
+# ------------------------------------------------------------------
+#  if self.use_bn:
+#      if self.data_format == 'channels_first':
+#          self.bn_axis = 1
+#      elif self.data_format == 'channels_last':
+#          self.bn_axis = -1
+#      else:
+#          raise AttributeError("Expected 'data_format' "
+#                               "to be 'channels_first' "
+#                               "or 'channels_last'.")
+#######################################################################
+
 
 class ConvNet2D(tf.keras.Model):
     """Convolutional block used in ConvNet3D."""
@@ -37,35 +52,26 @@ class ConvNet2D(tf.keras.Model):
         for key, val in kwargs.items():
             setattr(self, key, val)
 
+        self.activation = kwargs.get('conv_act', tf.nn.relu)
+        activation2 = None if self.use_bn else self.activation
+
         if model_name == 'ConvNet2Dx':
             self.bn_name = 'batch_norm_x'
         elif model_name == 'ConvNet2Dv':
             self.bn_name = 'batch_norm_v'
 
-        if self.name_scope == 'x_conv_block':
+        if self.name_scope == 'ConvNetX':
             conv1_name = 'conv_x1'
             pool1_name = 'pool_x1'
             conv2_name = 'conv_x2'
             pool2_name = 'pool_x2'
-        elif self.name_scope == 'v_conv_block':
+        elif self.name_scope == 'ConvNetV':
             conv1_name = 'conv_v1'
             pool1_name = 'pool_v1'
             conv2_name = 'conv_v2'
             pool2_name = 'pool_v2'
 
         with tf.name_scope(self.name_scope):
-            if self.use_bn:
-                if self.data_format == 'channels_first':
-                    self.bn_axis = 1
-                elif self.data_format == 'channels_last':
-                    self.bn_axis = -1
-                else:
-                    raise AttributeError("Expected 'data_format' "
-                                         "to be 'channels_first' "
-                                         "or 'channels_last'.")
-
-            self.activation = kwargs.get('conv_act', tf.nn.relu)
-            activation2 = None if self.use_bn else self.activation
 
             self.conv1 = tf.keras.layers.Conv2D(
                 filters=self.num_filters[0],

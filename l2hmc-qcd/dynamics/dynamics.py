@@ -136,6 +136,7 @@ class GaugeDynamics(tf.keras.Model):
                 'links_shape': self.lattice.links.shape,
                 'num_hidden1': self.num_hidden1,
                 'num_hidden2': self.num_hidden2,
+                'generic_activation': tf.nn.relu,
                 'num_filters': [num_filters, int(2 * num_filters)],
                 'name_scope': 'x',  # namespace in which to create network
                 'factor': 2.,  # scale factor used in original paper
@@ -480,12 +481,12 @@ class GaugeDynamics(tf.keras.Model):
             grad = self.grad_potential(x, beta)
 
             scale, transl, transf = self.v_fn((x, grad, t), train_phase)
-            fns = [scale, transl, transf]
 
             with tf.name_scope('vf_mul'):
                 scale *= 0.5 * self.eps * net_weights[0]
                 transl *= net_weights[1]
                 transf *= self.eps * net_weights[2]
+                fns = [scale, transl, transf]
 
             with tf.name_scope('vf_exp'):
                 scale_exp = tf.cast(exp(scale, 'scale_exp'), dtype=TF_FLOAT)
@@ -505,12 +506,12 @@ class GaugeDynamics(tf.keras.Model):
         """Update x in the forward leapfrog step."""
         with tf.name_scope('update_xf'):
             scale, transl, transf = self.x_fn([v, mask * x, t], train_phase)
-            fns = [scale, transl, transf]
 
             with tf.name_scope('xf_mul'):
                 scale *= self.eps * net_weights[0]
                 transl *= net_weights[1]
                 transf *= self.eps * net_weights[2]
+                fns = [scale, transl, transf]
 
             with tf.name_scope('xf_exp'):
                 scale_exp = exp(scale, 'scale_exp')
@@ -530,12 +531,12 @@ class GaugeDynamics(tf.keras.Model):
             grad = self.grad_potential(x, beta)
 
             scale, transl, transf = self.v_fn([x, grad, t], train_phase)
-            fns = [scale, transl, transf]
 
             with tf.name_scope('vb_mul'):
                 scale *= -0.5 * self.eps * net_weights[0]
                 transl *= net_weights[1]
                 transf *= self.eps * net_weights[2]
+                fns = [scale, transl, transf]
 
             with tf.name_scope('vb_exp'):
                 scale_exp = exp(scale, 'scale_exp')
@@ -554,12 +555,12 @@ class GaugeDynamics(tf.keras.Model):
         """Update x in the backward lf step. Inverting the forward update."""
         with tf.name_scope('update_xb'):
             scale, transl, transf = self.x_fn([v, mask * x, t], train_phase)
-            fns = [scale, transl, transf]
 
             with tf.name_scope('xb_mul'):
                 scale *= -self.eps * net_weights[0]
                 transl *= net_weights[1]
                 transf *= self.eps * net_weights[2]
+                fns = [scale, transl, transf]
 
             with tf.name_scope('xb_exp'):
                 scale_exp = exp(scale, 'xb_scale')
