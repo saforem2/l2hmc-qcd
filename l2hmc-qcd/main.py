@@ -355,16 +355,14 @@ def train_l2hmc(FLAGS, log_file=None, experiment=None):
     sess.run([global_var_init, local_var_init])
     uninited_out = sess.run(uninited)
     io.log(f'tf.report_uninitialized_variables() len = {uninited_out}')
-        #  is_initialized = sess.run(is_var_init)
-        '''
-        not_initialized_vars = [
-            var for (var, init) in zip(global_vars, is_initialized) if not init
-        ]'
-        '''
-        #  if len(not_initialized_vars):
-        #      sess.run(tf.variables_initializer(not_initialized_vars))
-        #  #  uninit_vars = inference.initialize_uninitialized(sess)
-        #  io.log([f'{i.name}' for i in not_initialized_vars])
+    #  is_initialized = sess.run(is_var_init)
+    #  not_initialized_vars = [
+    #      var for (var, init) in zip(global_vars, is_initialized) if not init
+    #  ]'
+    #  if len(not_initialized_vars):
+    #      sess.run(tf.variables_initializer(not_initialized_vars))
+    #  #  uninit_vars = inference.initialize_uninitialized(sess)
+    #  io.log([f'{i.name}' for i in not_initialized_vars])
 
     #  sess.run(init_op)
 
