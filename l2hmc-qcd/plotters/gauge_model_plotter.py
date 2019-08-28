@@ -161,11 +161,9 @@ class GaugeModelPlotter:
         sw, translw, transfw = nw
         title_str = (r"$N_{\mathrm{LF}} = $" + f"{lf_steps}, "
                      r"$N_{\mathrm{B}} = $" + f"{bs}, "
-                     r"$\mathrm{nw} = $" + f"{nw[0], nw[1], nw[2]}")
-
-        #  r"$L = $" + f"{L}, "
-        #  r"$\beta = $ " + f"{beta}, "
-        #  r"$\alpha_{Q} = $" + f"{qw}, "
+                     r"$\mathrm{nw} = $" + (f"{nw[0]:.3g}, "
+                                            f"{nw[1]:.3g}, "
+                                            f"{nw[2]:.3g}"))
         kwargs.update({
             'markers': False,
             'lines': True,
