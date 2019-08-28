@@ -299,7 +299,7 @@ class RunLogger:
         self.params['net_weights'] = net_weights
 
         run_str = self._get_run_str(**kwargs)
-        self._set_run_dirs(run_str)
+        self._set_run_dir(run_str)
         self._save_net_weights(net_weights)
 
         if self.summaries:
@@ -308,27 +308,22 @@ class RunLogger:
         save_params(self.params, self.run_dir)
         #  self._reset_counter += 1
 
-        #  return self.run_dir, run_str
-
     def _save_net_weights(self, net_weights):
         """Write net weights to a `.txt` file; append if existing."""
-        #  def _round_float_as_str(f):
-        #      return f'{f:.3g}'
         weights_txt_file = os.path.join(self.run_dir, 'net_weights.txt')
-        nw_str = [f'{w:.3g}' for w in net_weights]
-        #  nw_str = [_round_float_as_str(w) for w in net_weights]
-        w_str = '[' + nw_str[0] + nw_str[1] + nw_str[2] + ']'
         if not os.path.isfile(weights_txt_file):
             with open(weights_txt_file, 'w') as f:
-                f.write('[scale_weight,'
+                f.write('scale_weight,'
                         ' translation_weight,'
-                        ' transformation_weight]')
+                        ' transformation_weight\n')
                 f.write(80 * '-' + '\n')
         else:
             with open(weights_txt_file, 'a') as f:
-                f.write(w_str)
+                f.write(f'{net_weights[0]:.3g}, '
+                        f'{net_weights[1]:.3g}, '
+                        f'{net_weights[2]:.3g}\n')
 
-    def _set_run_dirs(self, run_str):
+    def _set_run_dir(self, run_str):
         """Sets dirs containing data about inference run using run_str."""
         self.run_dir = os.path.join(self.runs_dir, run_str)
         io.check_else_make_dir(self.run_dir)
