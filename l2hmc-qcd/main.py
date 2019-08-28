@@ -352,10 +352,9 @@ def train_l2hmc(FLAGS, log_file=None, experiment=None):
     #  is_var_init = [tf.is_variable_initialized(var) for var in global_vars]
     sess = tf.train.MonitoredTrainingSession(**sess_kwargs)
     tf.keras.backend.set_session(sess)
-    try:
-        sess.run([global_var_init, local_var_init])
-        uninited_out = sess.run(uninited)
-        io.log(f'tf.report_uninitialized_variables() len = {uninited_out}')
+    sess.run([global_var_init, local_var_init])
+    uninited_out = sess.run(uninited)
+    io.log(f'tf.report_uninitialized_variables() len = {uninited_out}')
         #  is_initialized = sess.run(is_var_init)
         '''
         not_initialized_vars = [
@@ -366,9 +365,6 @@ def train_l2hmc(FLAGS, log_file=None, experiment=None):
         #      sess.run(tf.variables_initializer(not_initialized_vars))
         #  #  uninit_vars = inference.initialize_uninitialized(sess)
         #  io.log([f'{i.name}' for i in not_initialized_vars])
-    except:
-        import pudb
-        pudb.set_trace()
 
     #  sess.run(init_op)
 
