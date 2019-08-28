@@ -34,34 +34,29 @@ import pickle
 import tensorflow as tf
 import numpy as np
 
-
 import utils.file_io as io
 
-from config import (PARAMS, NP_FLOAT, HAS_HOROVOD, HAS_MATPLOTLIB,
-                    HAS_MEMORY_PROFILER)
-from update import set_precision
-#  from main import create_config
 from tensorflow.core.protobuf import rewriter_config_pb2
-#  from gauge_model_main import create_config
 
-#  from utils.parse_args import parse_args
-from utils.parse_inference_args import parse_args
+from config import (PARAMS, NP_FLOAT, HAS_HOROVOD,
+                    HAS_MATPLOTLIB, HAS_MEMORY_PROFILER)
+from update import set_precision
+
 from models.model import GaugeModel
 from loggers.summary_utils import create_summaries
 from loggers.run_logger import RunLogger
 from plotters.gauge_model_plotter import GaugeModelPlotter
-#  from plotters.plot_utils import plot_plaq_diffs_vs_net_weights
+from plotters.plot_utils import plot_plaq_diffs_vs_net_weights
 from plotters.leapfrog_plotters import LeapfrogPlotter
 from runners.runner import GaugeModelRunner
+
+from utils.parse_inference_args import parse_args as parse_inference_args
 
 if HAS_HOROVOD:
     import horovod.tensorflow as hvd
 
 if HAS_MEMORY_PROFILER:
     import memory_profiler
-
-#  if HAS_MATPLOTLIB:
-#      import matplotlib.pyplot as plt
 
 if float(tf.__version__.split('.')[0]) <= 2:
     tf.logging.set_verbosity(tf.logging.INFO)
@@ -202,6 +197,28 @@ def set_model_weights(model, dest='rand'):
     return model
 
 
+def log_mem_usage(run_logger, m_arr):
+    """Log memory usage."""
+    m_pkl_file = os.path.join(run_logger.log_dir, 'memory_usage.pkl')
+    m_txt_file = os.path.join(run_logger.log_dir, 'memory_usage.txt')
+    with open(m_pkl_file, 'wb') as f:
+        pickle.dump(m_arr, f)
+    with open(m_txt_file, 'w') as f:
+        for i in m_arr:
+            _ = [f.write(f'{j}\n') for j in i]
+
+
+def collect_mem_usage(m_arr=None):
+    if HAS_MEMORY_PROFILER:
+        usage = memory_profiler.memory_usage()
+        if m_arr is not None:
+            m_arr.append(usage)
+
+            return m_arr
+
+        return usage
+
+
 def log_plaq_diffs(run_logger, net_weights_arr, avg_plaq_diff):
     """Log the average values of the plaquette differences.
 
@@ -220,59 +237,53 @@ def log_plaq_diffs(run_logger, net_weights_arr, avg_plaq_diff):
         pd_tup = [(net_weights_arr, avg_plaq_diff)]
         out_dir = run_logger.run_dir
 
-    pd_pkl_file = os.path.join(out_dir, 'plaq_diffs_data.pkl')
-    with open(pd_pkl_file, 'wb') as f:
-        pickle.dump(pd_tup, f)
-
+    #  pd_pkl_file = os.path.join(out_dir, 'plaq_diffs_data.pkl')
+    #  with open(pd_pkl_file, 'wb') as f:
+    #      pickle.dump(pd_tup, f)
     pd_txt_file = os.path.join(run_logger.log_dir, 'plaq_diffs_data.txt')
     with open(pd_txt_file, 'a') as f:
         for row in pd_tup:
             f.write(f'{row[0][0]}, {row[0][1]}, {row[0][2]}, {row[1]}\n')
 
 
-def log_mem_usage(run_logger, m_arr):
-    """Log memory usage."""
-    m_pkl_file = os.path.join(run_logger.log_dir, 'memory_usage.pkl')
-    m_txt_file = os.path.join(run_logger.log_dir, 'memory_usage.txt')
-    with open(m_pkl_file, 'wb') as f:
-        pickle.dump(m_arr, f)
-    with open(m_txt_file, 'w') as f:
-        for i in m_arr:
-            _ = [f.write(f'{j}\n') for j in i]
-
-
 def inference_setup(kwargs):
     """Set up relevant (initial) values to use when running inference."""
     if kwargs['loop_net_weights']:  # loop over different values of [S, T, Q]
         #  net_weights_arr = np.zeros((9, 3), dtype=NP_FLOAT)
-        w = np.random.randn(3) + 1.
-        net_weights_arr = np.array([[0.00, 0.00, 0.00],   # set weights to 0.
-                                    # -----------------
-                                    [0.00, 0.00, 0.25],   # loop over Q weights
-                                    [0.00, 0.00, 0.50],
-                                    [0.00, 0.00, 0.75],
-                                    [0.00, 0.00, 1.00],
-                                    [0.00, 0.00, 2.00],
-                                    # -----------------
-                                    [0.00, 0.25, 0.00],   # loop over T weights
-                                    [0.00, 0.50, 0.00],
-                                    [0.00, 0.75, 0.00],
-                                    [0.00, 1.00, 0.00],
-                                    [0.00, 2.00, 0.00],
-                                    # -----------------
-                                    [0.25, 0.00, 0.00],   # loop over S weights
-                                    [0.50, 0.00, 0.00],
-                                    [0.75, 0.00, 0.00],
-                                    [1.00, 0.00, 0.00],
-                                    [2.00, 0.00, 0.00],
-                                    # -----------------
-                                    [0.00, 1.00, 1.00],   # [ , T, Q]
-                                    [1.00, 0.00, 1.00],   # [S,  , Q]
-                                    [1.00, 1.00, 0.00],   # [S, T,  ]
-                                    # -----------------
-                                    [w[0], w[1], w[2]],   # randomize weights
-                                    # -----------------
-                                    [1.00, 1.00, 1.00]])  # set weights to 1.
+        #  w = np.random.randn(3) + 1.
+        zero_weights = np.array([0.00, 0.00, 0.00])   # set weights to 0.
+
+        q_weights = np.array([[0.00, 0.00, 0.10],   # loop over Q weights
+                              [0.00, 0.00, 0.25],
+                              [0.00, 0.00, 0.50],
+                              [0.00, 0.00, 0.75],
+                              [0.00, 0.00, 1.00],
+                              [0.00, 0.00, 1.50],
+                              [0.00, 0.00, 2.00],
+                              [0.00, 0.00, 5.00]])
+
+        t_weights = np.array([[0.00, 0.10, 0.00],
+                              [0.00, 0.25, 0.00],
+                              [0.00, 0.50, 0.00],
+                              [0.00, 0.75, 0.00],
+                              [0.00, 1.00, 0.00],
+                              [0.00, 1.50, 0.00],
+                              [0.00, 2.00, 0.00],
+                              [0.00, 5.00, 0.00]])
+
+        s_weights = np.array([[0.10, 0.00, 0.00],
+                              [0.25, 0.00, 0.00],
+                              [0.50, 0.00, 0.00],
+                              [0.75, 0.00, 0.00],
+                              [1.00, 0.00, 0.00],
+                              [1.50, 0.00, 0.00],
+                              [2.00, 0.00, 0.00],
+                              [5.00, 0.00, 0.00]])
+
+        stq_weights = np.array([1.00, 1.00, 1.00])
+
+        net_weights_arr = [zero_weights, q_weights,
+                           t_weights, s_weights, stq_weights]
 
     elif kwargs['loop_transl_weights']:
         net_weights_arr = np.array([[1.0, 0.00, 1.0],
@@ -389,7 +400,7 @@ def inference(runner, run_logger, plotter, **kwargs):
 
         runner.run(**kwargs)
 
-        io.log(SEP_STR)
+        #  io.log(SEP_STR)
         run_time = time.time() - t0
         io.log(SEP_STR + f'\nTook: {run_time}s to complete run.\n' + SEP_STR)
 
@@ -402,11 +413,9 @@ def inference(runner, run_logger, plotter, **kwargs):
             lf_plotter.make_plots(run_logger.run_dir,
                                   num_samples=num_samples)
 
-        return avg_plaq_diff
-
     nw = kwargs.get('net_weights', [1., 1., 1.])
     io.log(SEP_STR)
-    io.log('\n Inference has already been completed for:\n'
+    io.log(f'\n Inference has already been completed for:\n'
            f'\t net_weights: [{nw[0]}, {nw[1]}, {nw[2]}]\n'
            f'\t run_steps: {run_steps}\n'
            f'\t eps: {runner.eps}\n'
@@ -429,76 +438,72 @@ def run_inference(runner, run_logger=None, plotter=None, **kwargs):
     if plotter is None or run_logger is None:
         return
 
-    dir_append = kwargs.get('dir_append', None)
-    net_weights_arr = kwargs.get('net_weights_arr', [1., 1., 1.])
-    avg_plaq_diff_arr = []
-    m_arr = []
-    for net_weights in net_weights_arr:
-        if HAS_MEMORY_PROFILER:
-            usage0 = memory_profiler.memory_usage()
-            m_arr.append(usage0)
+    #  dir_append = kwargs.get('dir_append', None)
+    #  avg_plaq_diff_arr = []
+    #  m_arr = []
+    args = (runner, run_logger, plotter)
 
-        run_logger.clear()
+    src = os.path.join(run_logger.log_dir, 'plaq_diffs_data.txt')
+    if os.path.isfile(src):
+        dst = os.path.join(run_logger.log_dir, 'plaq_diffs_data_orig.txt')
+        os.rename(src, dst)
 
-        if HAS_MEMORY_PROFILER:
-            usage1 = memory_profiler.memory_usage()
-            m_arr.append(usage1)
+    if not kwargs['loop_net_weights']:
+        inference(*args, **kwargs)
 
-        kwargs.update({
-            'net_weights': net_weights,
-            'dir_append': dir_append
-        })
-        avg_plaq_diff = inference(runner, run_logger, plotter, **kwargs)
+    else:  # looping over different values of net_weights
+        nw_arr = kwargs.get('net_weights_arr', None)
+        zero_weights, q_weights, t_weights, s_weights, stq_weights = nw_arr
+        #  net_weights_arr = np.array([zero_weights.tolist(),
+        #                              *q_weights.tolist(),
+        #                              *t_weights.tolist(),
+        #                              *s_weights.tolist(),
+        #                              stq_weights.tolist()])
 
-    avg_plaq_diff_arr.append(avg_plaq_diff)
+        kwargs.update({'net_weights': zero_weights})
+        inference(*args, **kwargs)
 
-    log_mem_usage(run_logger, m_arr)
-    #  if kwargs['loop_net_weights']:
-    #      log_plaq_diffs(run_logger, net_weights_arr, avg_plaq_diff_arr)
+        for net_weights in q_weights:
+            kwargs.update({'net_weights': net_weights})
+            inference(*args, **kwargs)
 
+        for net_weights in t_weights:
+            kwargs.update({'net_weights': net_weights})
+            inference(*args, **kwargs)
 
-'''
-  NOTE: THE FOLLOWING WONT WORK WHEN RESTORING FROM CHECKPOINT (FOR
-        INFERENCE) UNLESS `GaugeModel` IS ENTIRELY REBUILT:
- ------------------------------------------------------------------------
- set 'net_weights_arr' = [1., 1., 1.] so each Q, S, T contribute
-  inference_dict['net_weights_arr'] = np.array([[1, 1, 1]],
-                                               dtype=NP_FLOAT)
- set 'betas' to be a single value
-  inference_dict['betas'] = inference_dict['betas'][-1]
+        for net_weights in s_weights:
+            kwargs.update({'net_weights': net_weights})
+            inference(*args, **kwargs)
 
+        kwargs.update({'net_weights': stq_weights})
+        inference(*args, **kwargs)
 
-  # randomize the model weights and run inference using these weights
-  runner.model = set_model_weights(runner.model, dest='rand')
-  run_inference(inference_dict,
-                runner, run_logger,
-                plotter, dir_append='_rand')
-
-  #  zero the model weights and run inference using these weights
-  runner.model = set_model_weights(runner.model, dest='zero')
-  run_inference(inference_dict,
-                runner, run_logger,
-                plotter, dir_append='_zero')
-'''
+        #  log_mem_usage(run_logger, m_arr)
+        plot_plaq_diffs_vs_net_weights(run_logger.log_dir)
 
 
-def main_inference(inference_kwargs):
-    """Perform inference using saved model."""
-    params_file = inference_kwargs.get('params_file', None)
+def main(kwargs):
+    """Perform inference using saved model.
+
+    NOTE:
+        [1.] We want to restrict all communication (file I/O) to only be
+             performed on rank 0 (i.e. `is_chief`) so there are two cases:
+                1. We're using Horovod, so we have to check hvd.rank()
+                    explicitly.  
+                2. We're not using Horovod, in which case `is_chief` 
+                    is always True.
+        [2.] We are only interested in the command line arguments that were
+             passed to `inference.py` (i.e. those contained in kwargs).
+    """
+    params_file = kwargs.get('params_file', None)
     params = load_params(params_file)  # load params used during training
 
-    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    # NOTE: We want to restrict all communication (file I/O) to only be
-    # performed on rank 0 (i.e. `is_chief`) so there are two cases:
-    #    1. We're using Horovod, so we have to check hvd.rank() explicitly.
-    #    2. We're not using Horovod, in which case `is_chief` is always True.
-    # -----------------------------------------------------------------------
+    # NOTE: [1.]
     condition1 = not params['using_hvd']
     condition2 = params['using_hvd'] and hvd.rank() == 0
     is_chief = condition1 or condition2
     if not is_chief:
         return
-    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
     checkpoint_dir = os.path.join(params['log_dir'], 'checkpoints/')
     assert os.path.isdir(checkpoint_dir)
@@ -509,48 +514,30 @@ def main_inference(inference_kwargs):
     saver = tf.train.import_meta_graph(f'{checkpoint_file}.meta')
     saver.restore(sess, checkpoint_file)
 
-    try:
-        _ = initialize_uninitialized(sess)
-    except:
-        import pdb
-        pdb.set_trace()
-
+    _ = initialize_uninitialized(sess)
     run_ops = tf.get_collection('run_ops')
     inputs = tf.get_collection('inputs')
 
     run_logger = RunLogger(params, inputs, run_ops, save_lf_data=False)
     plotter = GaugeModelPlotter(params, run_logger.figs_dir)
 
-    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    #  Set up relevant values to use for inference (parsed from kwargs)
-    #
-    #  NOTE: We are only interested in the command line arguments that 
-    #        were passed to `inference.py` (i.e. those contained in kwargs)
-    inference_kwargs['loop_net_weights'] = True
-    inference_dict = inference_setup(inference_kwargs)
+    # NOTE: [2.]
+    inference_dict = inference_setup(kwargs)
     if inference_dict['beta'] is None:
         inference_dict['beta'] = params['beta_final']
-    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-    net_weights_file = os.path.join(params['log_dir'], 'net_weights.txt')
-    np.savetxt(net_weights_file, inference_dict['net_weights_arr'],
-               delimiter=', ', newline='\n', fmt='%-.4g')
-
-    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    # Create GaugeModelRunner for inference
-    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     runner = GaugeModelRunner(sess, params, inputs, run_ops, run_logger)
     run_inference(runner, run_logger, plotter, **inference_dict)
 
 
 if __name__ == '__main__':
-    FLAGS = parse_args()
+    FLAGS = parse_inference_args()
 
     t0 = time.time()
     log_file = 'output_dirs.txt'
     kwargs = FLAGS.__dict__
 
-    main_inference(kwargs)
+    main(kwargs)
 
     io.log('\n\n' + SEP_STR)
     io.log(f'Time to complete: {time.time() - t0:.4g}')
