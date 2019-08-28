@@ -27,7 +27,7 @@ def check_var_and_op(name, var):
 
 
 def variable_summaries(var, name=''):
-    """Attach a lot of summaries to a Tensor (for TensorBoard visualization)"""
+    """Attach summaries to a Tensor (for TensorBoard visualization)."""
     mean_name = 'mean'
     stddev_name = 'stddev'
     max_name = 'max'
@@ -98,6 +98,7 @@ def _create_loss_summaries(total_loss):
 
     Args:
         total_loss: Total loss operation.
+
     Returns:
         loss_averages_op: Operation for generating moving averages of losses.
     """
@@ -140,6 +141,15 @@ def _create_training_summaries(model):
 
     with tf.name_scope('step_size'):
         tf.summary.scalar('step_size', model.dynamics.eps)
+
+    with tf.name_scope('px'):
+        tf.summary.scalar('px', tf.reduce_mean(model.px))
+
+    #  with tf.name_scope('kinetic_energy'):
+    #      tf.summary.scalar('kinetic_energy', model.ke_proposed)
+
+    with tf.name_scope('x_out'):
+        variable_summaries(model.x_out, 'x_out')
 
 
 def _create_grad_norm_summaries(grad, var):
@@ -197,7 +207,7 @@ def _create_obs_summaries(model):
                            - model.avg_plaqs_op))
 
 
-def _create_md_summaries(model):
+def _create_l2hmc_summaries(model):
     """Create summary objects for each of the MD functions and outputs."""
     for k1, v1 in model.l2hmc_fns['out_fns_f'].items():
         for k2, v2 in v1.items():
@@ -215,6 +225,18 @@ def _create_md_summaries(model):
     with tf.name_scope('lf_out_b'):
         variable_summaries(model.lf_out_b)
 
+    with tf.name_scope('sumlogdet_f'):
+        variable_summaries(model.sumlogdet_f)
+
+    with tf.name_scope('sumlogdet_b'):
+        variable_summaries(model.sumlogdet_b)
+
+    with tf.name_scope('logdets_f'):
+        variable_summaries(model.logdets_f)
+
+    with tf.name_scope('logdets_b'):
+        variable_summaries(model.logdets_b)
+
 
 def create_summaries(model, summary_dir, training=True):
     """Create summary objects for logging in TensorBoard."""
@@ -224,10 +246,10 @@ def create_summaries(model, summary_dir, training=True):
                          model.dynamics.trainable_variables)
 
     if training:
-        _create_training_summaries(model)
+        _create_training_summaries(model)  # loss, lr, step_size, accept prob 
 
-    _create_obs_summaries(model)
-    _create_md_summaries(model)
+    _create_obs_summaries(model)    # lattice observables
+    _create_l2hmc_summaries(model)  # log S, T, Q functions (forward/backward)
     #  _ = _create_loss_summaries(model.loss_op)
 
     for grad, var in grads_and_vars:
