@@ -44,15 +44,6 @@ def autocorr(x):
     return autocorr[autocorr.size // 2:]
 
 
-def copy(src, dest):
-    try:
-        shutil.copytree(src, dest)
-    except OSError as e:
-        # If the error was caused because the source wasn't a directory
-        if e.errno == errno.ENOTDIR:
-            shutil.copy(src, dest)
-        else:
-            io.log(f'Directory not copied. Error: {e}')
 
 
 class RunLogger:
@@ -79,20 +70,20 @@ class RunLogger:
                 #  io.log(f'Renaming existing runs_dir to: {renamed_runs_dir}')
                 io.log(f'Copying existing runs_dir to: {renamed_runs_dir}')
                 #  io.check_else_make_dir(renamed_runs_dir)
-                copy(runs_dir, renamed_runs_dir)
+                io.copy(runs_dir, renamed_runs_dir)
                 #  os.rename(runs_dir, renamed_runs_dir)
             if os.path.isdir(figs_dir):
                 renamed_figs_dir = figs_dir + f'_{time_str}'
                 #  io.log(f'Renaming existing figs_dir to: {renamed_figs_dir}')
                 io.log(f'Copying existing figs_dir to: {renamed_figs_dir}')
                 #  io.check_else_make_dir(renamed_figs_dir)
-                copy(figs_dir, renamed_figs_dir)
+                io.copy(figs_dir, renamed_figs_dir)
                 #  os.rename(figs_dir, renamed_figs_dir)
             if os.path.isdir(run_summaries_dir):
                 new_rsd = run_summaries_dir + f'_{time_str}'
                 io.log(f'Copying existing run summaries dir to: {new_rsd}')
                 #  io.check_else_make_dir(new_rsd)
-                copy(run_summaries_dir, new_rsd)
+                io.copy(run_summaries_dir, new_rsd)
 
         self.runs_dir = runs_dir
         io.check_else_make_dir(self.runs_dir)
@@ -267,6 +258,10 @@ class RunLogger:
 
     def reset(self, **kwargs):
         """Reset run_data and run_strings to prep for new run."""
+
+        if self.run_data is not None or self.run_dir is not None:
+            self.clear()
+
         run_steps = kwargs.get('run_steps', 5000)
         beta = kwargs.get('beta', 5.)
         net_weights = kwargs.get('net_weights', [1., 1., 1.])
@@ -313,15 +308,16 @@ class RunLogger:
         weights_txt_file = os.path.join(self.run_dir, 'net_weights.txt')
         if not os.path.isfile(weights_txt_file):
             with open(weights_txt_file, 'w') as f:
-                f.write('scale_weight,'
+                _str = ('scale_weight,'
                         ' translation_weight,'
                         ' transformation_weight\n')
-                f.write(80 * '-' + '\n')
-        else:
-            with open(weights_txt_file, 'a') as f:
-                f.write(f'{net_weights[0]:.3g}, '
-                        f'{net_weights[1]:.3g}, '
-                        f'{net_weights[2]:.3g}\n')
+                f.write(_str)
+                #  f.write(len(_str) * '-' + '\n')
+
+        with open(weights_txt_file, 'a') as f:
+            f.write(f'{net_weights[0]:.3g}, '
+                    f'{net_weights[1]:.3g}, '
+                    f'{net_weights[2]:.3g}\n')
 
     def _set_run_dir(self, run_str):
         """Sets dirs containing data about inference run using run_str."""
