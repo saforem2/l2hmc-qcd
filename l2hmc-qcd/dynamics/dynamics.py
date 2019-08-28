@@ -60,7 +60,7 @@ def _add_to_collection(collection, ops):
 class GaugeDynamics(tf.keras.Model):
     """Dynamics engine of naive L2HMC sampler."""
 
-    def __init__(self, lattice, potential_fn, **kwargs):
+    def __init__(self, potential_fn, **kwargs):
         """Initialization.
 
         Args:
@@ -84,10 +84,10 @@ class GaugeDynamics(tf.keras.Model):
         super(GaugeDynamics, self).__init__(name='GaugeDynamics')
         npr.seed(GLOBAL_SEED)
 
-        self.lattice = lattice
+        #  self.lattice = lattice
         self.potential = potential_fn
-        self.batch_size = self.lattice.samples.shape[0]
-        self.x_dim = self.lattice.num_links
+        #  self.batch_size = self.lattice.samples.shape[0]
+        #  self.x_dim = self.lattice.num_links
         self.l2hmc_fns = {}
 
         # create attributes from kwargs.items()
@@ -127,20 +127,20 @@ class GaugeDynamics(tf.keras.Model):
             ]
 
         else:
-            num_filters = int(self.lattice.space_size)
+            num_filters = int(self.num_filters)
             net_kwargs = {
                 'network_arch': self.network_arch,
                 'use_bn': self.use_bn,  # whether or not to use batch norm
                 'dropout_prob': self.dropout_prob,
-                'x_dim': self.lattice.num_links,  # dim of target space
-                'links_shape': self.lattice.links.shape,
+                'x_dim': self.x_dim,  # dim of target space
+                #  'links_shape': self.lattice.links.shape,
                 'num_hidden1': self.num_hidden1,
                 'num_hidden2': self.num_hidden2,
                 'generic_activation': tf.nn.relu,
                 'num_filters': [num_filters, int(2 * num_filters)],
                 'name_scope': 'x',  # namespace in which to create network
                 'factor': 2.,  # scale factor used in original paper
-                '_input_shape': (self.batch_size, *self.lattice.links.shape),
+                '_input_shape': self._input_shape,
                 'zero_translation': self.zero_translation,
                 #  'data_format': self.data_format,
             }
@@ -196,7 +196,7 @@ class GaugeDynamics(tf.keras.Model):
             accept_prob: Probability of accepting the proposed states.
             x_out: Samples after accept/reject step.
         """
-        lf_dict = {}
+        results_dict = {}
 
         with tf.name_scope('transition_forward'):
             outputs_f = self.transition_kernel(x_in, beta,
@@ -206,7 +206,7 @@ class GaugeDynamics(tf.keras.Model):
                                                save_lf=save_lf)
             xf = outputs_f['x_proposed']
             vf = outputs_f['v_proposed']
-            lf_dict['pxs_out_f'] = outputs_f['accept_prob']
+            results_dict['pxs_out_f'] = outputs_f['accept_prob']
 
         with tf.name_scope('transition_backward'):
             outputs_b = self.transition_kernel(x_in, beta,
@@ -216,7 +216,7 @@ class GaugeDynamics(tf.keras.Model):
                                                save_lf=save_lf)
             xb = outputs_b['x_proposed']
             vb = outputs_b['v_proposed']
-            lf_dict['pxs_out_b'] = outputs_b['accept_prob']
+            results_dict['pxs_out_b'] = outputs_b['accept_prob']
 
         def get_lf_keys(direction):
             base_keys = ['lf_out', 'logdets', 'sumlogdet', 'fns_out']
@@ -227,13 +227,13 @@ class GaugeDynamics(tf.keras.Model):
         keys_b = get_lf_keys('b')
 
         if save_lf:
-            lf_dict.update({k[0]: outputs_f[k[1]] for k in keys_f})
-            lf_dict.update({k[0]: outputs_b[k[1]] for k in keys_b})
+            results_dict.update({k[0]: outputs_f[k[1]] for k in keys_f})
+            results_dict.update({k[0]: outputs_b[k[1]] for k in keys_b})
 
         # Decide direction uniformly
         with tf.name_scope('transition_masks'):
             with tf.name_scope('forward_mask'):
-                lf_dict['masks_f'] = tf.cast(
+                results_dict['masks_f'] = tf.cast(
                     tf.random_uniform((self.batch_size,),
                                       dtype=TF_FLOAT,
                                       seed=GLOBAL_SEED) > 0.5,
@@ -241,21 +241,23 @@ class GaugeDynamics(tf.keras.Model):
                     name='forward_mask'
                 )
             with tf.name_scope('backward_mask'):
-                lf_dict['masks_b'] = 1. - lf_dict['masks_f']
+                results_dict['masks_b'] = 1. - results_dict['masks_f']
 
         # Obtain proposed states
         with tf.name_scope('x_proposed'):
-            x_proposed = (lf_dict['masks_f'][:, None] * xf
-                          + lf_dict['masks_b'][:, None] * xb)
+            x_proposed = (results_dict['masks_f'][:, None] * xf
+                          + results_dict['masks_b'][:, None] * xb)
 
         with tf.name_scope('v_proposed'):
-            v_proposed = (lf_dict['masks_f'][:, None] * vf
-                          + lf_dict['masks_b'][:, None] * vb)
+            v_proposed = (results_dict['masks_f'][:, None] * vf
+                          + results_dict['masks_b'][:, None] * vb)
 
         # Probability of accepting the proposed states
         with tf.name_scope('accept_prob'):
-            accept_prob = (lf_dict['masks_f'] * lf_dict['pxs_out_f']
-                           + lf_dict['masks_b'] * lf_dict['pxs_out_b'])
+            accept_prob = (
+                results_dict['masks_f'] * results_dict['pxs_out_f']
+                + results_dict['masks_b'] * results_dict['pxs_out_b']
+            )
 
         # Accept or reject step
         with tf.name_scope('accept_mask'):
@@ -274,6 +276,7 @@ class GaugeDynamics(tf.keras.Model):
                      + reject_mask[:, None] * x_in)
 
         outputs = {
+            'x_in': x_in,
             'x_proposed': x_proposed,
             'v_proposed': v_proposed,
             'accept_prob': accept_prob,
@@ -281,7 +284,7 @@ class GaugeDynamics(tf.keras.Model):
         }
 
         if save_lf:
-            outputs.update(lf_dict)
+            outputs.update(results_dict)
 
         return outputs
 
@@ -307,7 +310,6 @@ class GaugeDynamics(tf.keras.Model):
             step = tf.constant(0., name='md_step', dtype=TF_FLOAT)
             batch_size = tf.shape(x_in)[0]
             logdet = tf.zeros((batch_size,), dtype=TF_FLOAT)
-            #  fns0 = tf.zeros((4, 3, *x_in.shape),)
             lf_out = tf.TensorArray(dtype=TF_FLOAT,
                                     size=self.num_steps+1,
                                     dynamic_size=True,
@@ -326,7 +328,6 @@ class GaugeDynamics(tf.keras.Model):
 
             lf_out = lf_out.write(0, x_in)
             logdets_out = logdets_out.write(0, logdet)
-            #  fns_out.write(0, fns0)
 
         def body(step, x, v, logdet, lf_samples, logdets, fns):
             # cast leapfrog step to integer
@@ -347,7 +348,8 @@ class GaugeDynamics(tf.keras.Model):
             cond=cond,
             body=body,
             loop_vars=[step, x_proposed, v_proposed,
-                       logdet, lf_out, logdets_out, fns_out])
+                       logdet, lf_out, logdets_out, fns_out]
+        )
 
         step = outputs[0]
         x_proposed = outputs[1]
@@ -357,14 +359,10 @@ class GaugeDynamics(tf.keras.Model):
         logdets_out = outputs[5].stack()
         fns_out = outputs[6].stack()
 
-        accept_prob = self._compute_accept_prob(
-            x_in,
-            v_in,
-            x_proposed,
-            v_proposed,
-            sumlogdet,
-            beta
-        )
+        accept_prob = self._compute_accept_prob(x_in, v_in,
+                                                x_proposed,
+                                                v_proposed,
+                                                sumlogdet, beta)
 
         outputs = {
             'x_proposed': x_proposed,
