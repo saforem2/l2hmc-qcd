@@ -313,21 +313,21 @@ def train_l2hmc(FLAGS, log_file=None, experiment=None):
     }
 
     # ensure all variables are initialized
-    target_collection = []
-    if is_chief:
-        collection = tf.local_variables() + target_collection
-    else:
-        collection = tf.local_variables()
-
-    local_init_op = tf.variables_initializer(collection)
-    ready_for_local_init_op = tf.report_uninitialized_variables(collection)
-    init_op = tf.global_variables_initializer()
-
-    scaffold = tf.train.Scaffold(
-        init_feed_dict=init_feed_dict,
-        local_init_op=local_init_op,
-        ready_for_local_init_op=ready_for_local_init_op
-    )
+    #  target_collection = []
+    #  if is_chief:
+    #      collection = tf.local_variables() + target_collection
+    #  else:
+    #      collection = tf.local_variables()
+    #
+    #  local_init_op = tf.variables_initializer(collection)
+    #  ready_for_local_init_op = tf.report_uninitialized_variables(collection)
+    #  init_op = tf.global_variables_initializer()
+    #
+    #  scaffold = tf.train.Scaffold(
+    #      init_feed_dict=init_feed_dict,
+    #      local_init_op=local_init_op,
+    #      ready_for_local_init_op=ready_for_local_init_op
+    #  )
 
     # ----------------------------------------------------------------
     #  Create MonitoredTrainingSession
@@ -338,16 +338,39 @@ def train_l2hmc(FLAGS, log_file=None, experiment=None):
     # ----------------------------------------------------------------
     sess_kwargs = {
         'checkpoint_dir': checkpoint_dir,
-        'scaffold': scaffold,
+        #  'scaffold': scaffold,
         'hooks': hooks,
         'config': config,
         'save_summaries_secs': None,
         'save_summaries_steps': None
     }
 
+    global_var_init = tf.global_variables_initializer()
+    local_var_init = tf.local_variables_initializer()
+    uninited = tf.report_uninitialized_variables()
+    #  global_vars = tf.global_variables()
+    #  is_var_init = [tf.is_variable_initialized(var) for var in global_vars]
     sess = tf.train.MonitoredTrainingSession(**sess_kwargs)
     tf.keras.backend.set_session(sess)
-    sess.run(init_op)
+    try:
+        sess.run([global_var_init, local_var_init])
+        uninited_out = sess.run(uninited)
+        io.log(f'tf.report_uninitialized_variables() len = {uninited_out}')
+        #  is_initialized = sess.run(is_var_init)
+        '''
+        not_initialized_vars = [
+            var for (var, init) in zip(global_vars, is_initialized) if not init
+        ]'
+        '''
+        #  if len(not_initialized_vars):
+        #      sess.run(tf.variables_initializer(not_initialized_vars))
+        #  #  uninit_vars = inference.initialize_uninitialized(sess)
+        #  io.log([f'{i.name}' for i in not_initialized_vars])
+    except:
+        import pudb
+        pudb.set_trace()
+
+    #  sess.run(init_op)
 
     # ----------------------------------------------------------
     #                       TRAINING
