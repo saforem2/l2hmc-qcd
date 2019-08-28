@@ -70,6 +70,21 @@ if float(tf.__version__.split('.')[0]) <= 2:
 SEP_STR = 80 * '-'  # + '\n'
 
 
+def initialize_uninitialized(sess):
+    global_vars = tf.global_variables()
+    is_not_initialized = sess.run(
+        [tf.is_variable_initialized(var) for var in global_vars]
+    )
+    not_initialized_vars = [
+        v for (v, f) in zip(global_vars, is_not_initialized) if not f
+    ]
+    io.log([str(i.name) for i in not_initialized_vars])
+    if len(not_initialized_vars):
+        sess.run(tf.variables_initializer(not_initialized_vars))
+
+    return not_initialized_vars
+
+
 def create_config(params):
     """Helper method for creating a tf.ConfigProto object."""
     config = tf.ConfigProto(allow_soft_placement=True)
@@ -187,7 +202,7 @@ def set_model_weights(model, dest='rand'):
     return model
 
 
-def log_plaq_diffs(run_logger, net_weights_arr, avg_plaq_diff_arr):
+def log_plaq_diffs(run_logger, net_weights_arr, avg_plaq_diff):
     """Log the average values of the plaquette differences.
 
     NOTE: If inference was performed with either the `--loop_net_weights` 
@@ -196,12 +211,23 @@ def log_plaq_diffs(run_logger, net_weights_arr, avg_plaq_diff_arr):
           plaquette varies with different values of the net weights, so save
           this data to `.pkl` file and  plot the results.
     """
-    pd_tup = [
-        (nw, md) for nw, md in zip(net_weights_arr, avg_plaq_diff_arr)
-    ]
-    pd_out_file = os.path.join(run_logger.log_dir, 'plaq_diffs_data.pkl')
-    with open(pd_out_file, 'wb') as f:
+    try:
+        pd_tup = [
+            (nw, md) for nw, md in zip(net_weights_arr, avg_plaq_diff)
+        ]
+        out_dir = run_logger.log_dir
+    except TypeError:
+        pd_tup = [(net_weights_arr, avg_plaq_diff)]
+        out_dir = run_logger.run_dir
+
+    pd_pkl_file = os.path.join(out_dir, 'plaq_diffs_data.pkl')
+    with open(pd_pkl_file, 'wb') as f:
         pickle.dump(pd_tup, f)
+
+    pd_txt_file = os.path.join(run_logger.log_dir, 'plaq_diffs_data.txt')
+    with open(pd_txt_file, 'a') as f:
+        for row in pd_tup:
+            f.write(f'{row[0][0]}, {row[0][1]}, {row[0][2]}, {row[1]}\n')
 
 
 def log_mem_usage(run_logger, m_arr):
@@ -360,11 +386,15 @@ def inference(runner, run_logger, plotter, **kwargs):
     if not run_logger.existing_run(run_str):
         run_logger.reset(**kwargs)
         t0 = time.time()
+
         runner.run(**kwargs)
+
         io.log(SEP_STR)
         run_time = time.time() - t0
         io.log(SEP_STR + f'\nTook: {run_time}s to complete run.\n' + SEP_STR)
+
         avg_plaq_diff = plotter.plot_observables(run_logger.run_data, **kwargs)
+        log_plaq_diffs(run_logger, kwargs['net_weights'], avg_plaq_diff)
 
         if kwargs.get('plot_lf', False):
             lf_plotter = LeapfrogPlotter(plotter.out_dir, run_logger)
@@ -407,19 +437,49 @@ def run_inference(runner, run_logger=None, plotter=None, **kwargs):
         if HAS_MEMORY_PROFILER:
             usage0 = memory_profiler.memory_usage()
             m_arr.append(usage0)
+
         run_logger.clear()
+
         if HAS_MEMORY_PROFILER:
             usage1 = memory_profiler.memory_usage()
             m_arr.append(usage1)
+
         kwargs.update({
             'net_weights': net_weights,
             'dir_append': dir_append
         })
-        inference(runner, run_logger, plotter, **kwargs)
+        avg_plaq_diff = inference(runner, run_logger, plotter, **kwargs)
+
+    avg_plaq_diff_arr.append(avg_plaq_diff)
 
     log_mem_usage(run_logger, m_arr)
-    if kwargs['loop_net_weights']:
-        log_plaq_diffs(run_logger, net_weights_arr, avg_plaq_diff_arr)
+    #  if kwargs['loop_net_weights']:
+    #      log_plaq_diffs(run_logger, net_weights_arr, avg_plaq_diff_arr)
+
+
+'''
+  NOTE: THE FOLLOWING WONT WORK WHEN RESTORING FROM CHECKPOINT (FOR
+        INFERENCE) UNLESS `GaugeModel` IS ENTIRELY REBUILT:
+ ------------------------------------------------------------------------
+ set 'net_weights_arr' = [1., 1., 1.] so each Q, S, T contribute
+  inference_dict['net_weights_arr'] = np.array([[1, 1, 1]],
+                                               dtype=NP_FLOAT)
+ set 'betas' to be a single value
+  inference_dict['betas'] = inference_dict['betas'][-1]
+
+
+  # randomize the model weights and run inference using these weights
+  runner.model = set_model_weights(runner.model, dest='rand')
+  run_inference(inference_dict,
+                runner, run_logger,
+                plotter, dir_append='_rand')
+
+  #  zero the model weights and run inference using these weights
+  runner.model = set_model_weights(runner.model, dest='zero')
+  run_inference(inference_dict,
+                runner, run_logger,
+                plotter, dir_append='_zero')
+'''
 
 
 def main_inference(inference_kwargs):
@@ -449,6 +509,12 @@ def main_inference(inference_kwargs):
     saver = tf.train.import_meta_graph(f'{checkpoint_file}.meta')
     saver.restore(sess, checkpoint_file)
 
+    try:
+        _ = initialize_uninitialized(sess)
+    except:
+        import pdb
+        pdb.set_trace()
+
     run_ops = tf.get_collection('run_ops')
     inputs = tf.get_collection('inputs')
 
@@ -475,30 +541,6 @@ def main_inference(inference_kwargs):
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     runner = GaugeModelRunner(sess, params, inputs, run_ops, run_logger)
     run_inference(runner, run_logger, plotter, **inference_dict)
-
-    ##########################################################################
-    #  NOTE: THE FOLLOWING WONT WORK WHEN RESTORING FROM CHECKPOINT (FOR
-    #        INFERENCE) UNLESS `GaugeModel` IS ENTIRELY REBUILT:
-    # ------------------------------------------------------------------------
-    # set 'net_weights_arr' = [1., 1., 1.] so each Q, S, T contribute
-    #  inference_dict['net_weights_arr'] = np.array([[1, 1, 1]],
-    #                                               dtype=NP_FLOAT)
-    # set 'betas' to be a single value
-    #  inference_dict['betas'] = inference_dict['betas'][-1]
-    #
-    #
-    #  # randomize the model weights and run inference using these weights
-    #  runner.model = set_model_weights(runner.model, dest='rand')
-    #  run_inference(inference_dict,
-    #                runner, run_logger,
-    #                plotter, dir_append='_rand')
-    #
-    #  #  zero the model weights and run inference using these weights
-    #  runner.model = set_model_weights(runner.model, dest='zero')
-    #  run_inference(inference_dict,
-    #                runner, run_logger,
-    #                plotter, dir_append='_zero')
-    ##########################################################################
 
 
 if __name__ == '__main__':
