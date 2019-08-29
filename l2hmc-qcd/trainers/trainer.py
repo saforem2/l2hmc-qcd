@@ -6,10 +6,8 @@ Implements GaugeModelTrainer class responsible for training GaugeModel.
 Author: Sam Foreman (github: @saforem2)
 Date: 04/09/2019
 """
-#  import os
 import time
 import numpy as np
-#  import tensorflow as tf
 
 import utils.file_io as io
 from lattice.lattice import u1_plaq_exact

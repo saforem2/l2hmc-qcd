@@ -10,6 +10,7 @@ from __future__ import print_function
 import os
 import datetime
 import pickle
+import shutil
 import numpy as np
 
 # pylint:disable=invalid-name
@@ -52,6 +53,17 @@ def log_and_write(s, f):
     """Print string `s` to std out and also write to file `f`."""
     log(s)
     write(s, f)
+
+
+def copy(src, dest):
+    try:
+        shutil.copytree(src, dest)
+    except OSError as e:
+        # If the error was caused because the source wasn't a directory
+        if e.errno == errno.ENOTDIR:
+            shutil.copy(src, dest)
+        else:
+            log(f'Directory not copied. Error: {e}')
 
 
 def check_else_make_dir(d):

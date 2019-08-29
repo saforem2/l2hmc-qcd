@@ -9,8 +9,11 @@ Date: 08/21/2019
 import os
 
 import numpy as np
+import pandas as pd
+
 import utils.file_io as io
 
+from collections import namedtuple
 from config import MARKERS, HAS_MATPLOTLIB
 
 MPL_PARAMS = {
@@ -46,6 +49,85 @@ def get_colors(num_samples=10, cmaps=None):
         colors_arr.append([cmap(i) for i in idxs])
 
     return colors_arr
+
+
+def _get_plaq_diff_data(log_dir):
+    """Extract plaq. diff data to use in `plot_plaq_diffs_vs_net_weights`."""
+    f1 = os.path.join(log_dir, 'plaq_diffs_data.txt')
+    f2 = os.path.join(log_dir, 'plaq_diffs_data_orig.txt')
+
+    if os.path.isfile(f1):
+        txt_file = f1
+    elif os.path.isfile(f2):
+        txt_file = f2
+    else:
+        raise FileNotFoundError(f'Unable to locate either {f1} or {f2}.')
+
+    data = pd.read_csv(txt_file, header=None).values
+
+    zero_data = data[0]
+    q_data = data[data[:, 2] > 0][:-1]
+    t_data = data[data[:, 1] > 0][:-1]
+    s_data = data[data[:, 0] > 0][:-1]
+    stq_data = data[-1]
+
+    qx, qy = q_data[:, 2], q_data[:, -1]
+    tx, ty = t_data[:, 1], t_data[:, -1]
+    sx, sy = s_data[:, 0], s_data[:, -1]
+    x0, y0 = 0, zero_data[-1]
+    stqx, stqy = 1, stq_data[-1]
+
+    Pair = namedtuple('Pair', ['x', 'y'])
+    Data = namedtuple('Data', ['q_pair', 't_pair', 's_pair',
+                               'zero_pair', 'stq_pair'])
+
+    data = Data(Pair(qx, qy), Pair(tx, ty),
+                Pair(sx, sy), Pair(x0, y0),
+                Pair(stqx, stqy))
+
+    return data
+
+
+def plot_plaq_diffs_vs_net_weights(log_dir, **kwargs):
+    """Plot avg. plaq diff. vs net_weights.
+
+    Args:
+        log_dir (str): Location of `log_dir` containing `plaq_diffs_data.txt`
+            file containing avg. plaq_diff data.
+
+    Kwargs:
+        passed to ax.plot
+
+    Returns:
+        fig, ax: matplotlib Figure and Axes instances.
+    """
+    plaq_diff_data = _get_plaq_diff_data(log_dir)
+    qx, qy = plaq_diff_data.q_pair
+    tx, ty = plaq_diff_data.t_pair
+    sx, sy = plaq_diff_data.s_pair
+    x0, y0 = plaq_diff_data.zero_pair
+    stqx, stqy = plaq_diff_data.stq_pair
+
+    fig, ax = plt.subplots()
+    ax.plot(qx, qy, label='Transformation (Q) fn', marker='.')
+    ax.plot(tx, ty, label='Translation (T) fn', marker='.')
+    ax.plot(sx, sy, label='Scale (S) fn', marker='.')
+    ax.plot(0, y0, label='S, T, Q = 0', marker='s')
+    ax.plot(1, stqy, label='S, T, Q = 1', marker='v')
+    ax.set_xlabel('Net weight', fontsize=14)
+    ax.set_ylabel('Avg. plaq. difference', fontsize=14)
+    ax.legend(loc='best')
+    plt.tight_layout()
+
+    figs_dir = os.path.join(log_dir, 'figures')
+    io.check_else_make_dir(figs_dir)
+
+    ext = kwargs.get('ext', 'pdf')
+    out_file = os.path.join(figs_dir, f'plaq_diff_vs_net_weights.{ext}')
+    io.log(f'Saving figure to: {out_file}.')
+    plt.savefig(out_file, dpi=400, bbox_inches='tight')
+
+    return fig, ax
 
 
 def plot_multiple_lines(data, xy_labels, **kwargs):
@@ -218,37 +300,3 @@ def plot_with_inset(data, labels=None, **kwargs):
         return fig, ax, axins
 
     return None
-
-
-def plot_plaq_diffs_vs_net_weights(xy_data, lf_steps, xlabel, figs_dir):
-    """Plot the average plaquette difference versus translation weight."""
-    if not HAS_MATPLOTLIB:
-        return
-
-    if len(xy_data) == 3:
-        x, y, yerr = xy_data
-    elif len(xy_data) == 2:
-        x, y = xy_data
-    #  net_weights = [i[0] for i in xy_data]
-    #  diffs = [i[1] for i in xy_data]
-
-    fig, ax = plt.subplots()
-    ax.plot(x, y, label=r'$N_{\mathrm{LF}} = $' + f'{lf_steps}')
-
-    #  xlabel = 'Translation weight'
-    ylabel = r"$\langle\delta_{\phi_{P}}^{(\mathrm{obs})}\rangle$"
-
-    if str(xlabel).lower() == 'translation weight':
-        fstr = 'transl_weight'
-    elif str(xlabel).lower() == 'transformation weight':
-        fstr = 'transf_weight'
-    elif str(xlabel).lower() == 'scale weight':
-        fstr = 'scale_weight'
-
-    ax.grid(True)
-    ax.set_xlabel(xlabel, fontsize=14)
-    ax.set_ylabel(ylabel, fontsize=14)
-    plt.tight_layout()
-    ax.legend(loc='best')
-    out_file = os.path.join(figs_dir, f'avg_plaq_diff_vs_{fstr}.pdf')
-    plt.savefig(out_file, dpi=400, bbox_inches='tight')

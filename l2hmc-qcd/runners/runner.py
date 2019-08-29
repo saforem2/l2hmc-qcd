@@ -7,15 +7,11 @@ on a U(1) gauge model.
 Author: Sam Foreman (github: @saforem2)
 Date: 04/09/2019
 """
-#  import os
 import time
-#  import pickle
-#  from scipy.stats import sem
-#  from collections import Counter, OrderedDict
 
 import numpy as np
-
 import utils.file_io as io
+
 from lattice.lattice import u1_plaq_exact
 from loggers.run_logger import RunLogger
 from config import RUN_HEADER
@@ -27,7 +23,11 @@ class GaugeModelRunner:
         """
         Args:
             sess: tf.Session() object.
-            model: GaugeModel object (defined in `models/gauge_model.py`)
+            params: Dictionary of parameters.
+            inputs: Array-like containing collection of input operations
+                obtained from `tf.get_collection('inputs')`
+            run_ops: Array-like containing collection of run operations
+                obtained from `tf.get_collection('run_ops')`.
             logger: RunLogger object (defined in `loggers/run_logger.py`),
                 defaults to None. This is to simplify communication when using
                 Horovod since the RunLogger object exists only on
@@ -107,10 +107,6 @@ class GaugeModelRunner:
 
         if self.params['save_lf']:
             out_data.update({k: v for k, v in zip(keys[6:], outputs[6:])})
-            #  lf_outputs = {}
-            #  for key, val in zip(keys[6:], outputs[6:]):
-            #      lf_outputs[key] = val
-            #  out_data.update(lf_outputs)
 
         data_str = (f'{step:>5g}/{run_steps:<6g} '
                     f'{dt:^9.4g} '                      # time / step
