@@ -40,17 +40,15 @@ from __future__ import print_function
 from __future__ import absolute_import
 
 import os
-import functools
 
 import numpy as np
 import tensorflow as tf
-import utils.file_io as io
 
 from lattice.lattice import GaugeLattice
 from utils.horovod_utils import warmup_lr
 from dynamics.dynamics import GaugeDynamics
 from config import GLOBAL_SEED, TF_FLOAT, TF_INT, PARAMS, HAS_HOROVOD
-from tensorflow.python.ops import control_flow_ops as control_flow_ops
+#  from tensorflow.python.ops import control_flow_ops as control_flow_ops
 
 if HAS_HOROVOD:
     import horovod.tensorflow as hvd
@@ -85,32 +83,44 @@ class GaugeModel:
         self.eps_trainable = not self.eps_fixed
         self.charge_weight_np = params['charge_weight']
 
-        self.lattice = self._create_lattice()
-        self.batch_size = self.lattice.samples.shape[0]
-        self.x_dim = self.lattice.num_links
+        with tf.name_scope('init'):
+            self.lattice = self._create_lattice()
+            self.batch_size = self.lattice.samples.shape[0]
+            self.x_dim = self.lattice.num_links
 
-        # build input placeholders for tensors
-        inputs = self._create_inputs()
-        _ = [setattr(self, key, val) for key, val in inputs.items()]
+            # build input placeholders for tensors
+            inputs = self._create_inputs()
+            _ = [setattr(self, key, val) for key, val in inputs.items()]
 
-        self.dynamics = self._create_dynamics()
+            self.dynamics = self._create_dynamics()
 
-        # metric function used when calculating the loss
-        self.metric_fn = self._create_metric_fn(self.metric)
+            # metric function used when calculating the loss
+            self.metric_fn = self._create_metric_fn(self.metric)
 
+        # build operations for calculating lattice observables
         obs_ops = self._create_observables()
         _ = [setattr(self, key, val) for key, val in obs_ops.items()]
 
-        self._build_sampler()
-        run_ops = self._build_run_ops()
+        # Calculate loss and collect outputs from L2HMC step
+        loss, dynamics_out, grads = self.calc_loss(self.x, self.beta,
+                                                   self.net_weights,
+                                                   self.train_phase,
+                                                   **self.loss_weights)
+        self.loss_op = loss
+        self.grads = grads
+        self._parse_dynamics_output(dynamics_out)
 
-        if self.hmc:
-            train_ops = {}
+        with tf.name_scope('run_ops'):
+            run_ops = self._build_run_ops()
+
+        if not self.hmc:
+            with tf.name_scope('train'):
+                self.lr = self._create_lr()
+                self.optimizer = self._create_optimizer()
+                self.train_op = self._apply_grads()
+                train_ops = self._build_train_ops()
         else:
-            self._create_lr()
-            self._create_optimizer()
-            self._apply_grads()
-            train_ops = self._build_train_ops()
+            train_ops = {}
 
         self.ops_dict = {
             'run_ops': run_ops,
@@ -134,31 +144,25 @@ class GaugeModel:
 
     def _create_dynamics(self, **kwargs):
         """Initialize dynamics object."""
-        with tf.name_scope('dynamics'):
+        with tf.name_scope('create_dynamics'):
             # default values of keyword arguments
             keys = ['eps', 'hmc', 'network_arch',
                     'num_steps', 'use_bn', 'dropout_prob',
                     'num_hidden1', 'num_hidden2', 'zero_translation']
             dynamics_kwargs = {k: getattr(self, k) for k in keys}
+
             dynamics_kwargs['eps_trainable'] = not self.eps_fixed
-            #  dynamics_kwargs = {
-            #      'eps': self.eps,
-            #      'hmc': self.hmc,
-            #      'network_arch': self.network_arch,
-            #      'num_steps': self.num_steps,
-            #      'eps_trainable': not self.eps_fixed,
-            #      #  'data_format': self.data_format,
-            #      'use_bn': self.use_bn,
-            #      'dropout_prob': self.dropout_prob,
-            #      'num_hidden1': self.num_hidden1,
-            #      'num_hidden2': self.num_hidden2,
-            #      'zero_translation': self.zero_translation
-            #  }
+            dynamics_kwargs['num_filters'] = self.lattice.space_size
+            dynamics_kwargs['x_dim'] = self.lattice.num_links
+            #  dynamics_kwargs['links_shape'] = self.lattice.links.shape
+            dynamics_kwargs['batch_size'] = self.num_samples
+            dynamics_kwargs['_input_shape'] = (self.num_samples,
+                                               *self.lattice.links.shape)
+
             dynamics_kwargs.update(kwargs)
             samples = self.lattice.samples_tensor
             potential_fn = self.lattice.get_potential_fn(samples)
-            dynamics = GaugeDynamics(lattice=self.lattice,
-                                     potential_fn=potential_fn,
+            dynamics = GaugeDynamics(potential_fn=potential_fn,
                                      **dynamics_kwargs)
 
         return dynamics
@@ -316,14 +320,14 @@ class GaugeModel:
                     'decay_steps': self.lr_decay_steps,
                     'decay_rate': self.lr_decay_rate,
                 }
-                self.lr = warmup_lr(**kwargs)
+                lr = warmup_lr(**kwargs)
             else:
-                self.lr = tf.train.exponential_decay(lr_init,
-                                                     self.global_step,
-                                                     self.lr_decay_steps,
-                                                     self.lr_decay_rate,
-                                                     staircase=False,
-                                                     name='learning_rate')
+                lr = tf.train.exponential_decay(lr_init, self.global_step,
+                                                self.lr_decay_steps,
+                                                self.lr_decay_rate,
+                                                staircase=False,
+                                                name='learning_rate')
+        return lr
 
     def _create_optimizer(self):
         """Create learning rate and optimizer."""
@@ -333,9 +337,11 @@ class GaugeModel:
         #  with tf.control_dependencies(update_ops):
         with tf.name_scope('optimizer'):
             #  update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
-            self.optimizer = tf.train.AdamOptimizer(self.lr)
+            optimizer = tf.train.AdamOptimizer(self.lr)
             if self.using_hvd:
-                self.optimizer = hvd.DistributedOptimizer(self.optimizer)
+                optimizer = hvd.DistributedOptimizer(optimizer)
+
+        return optimizer
 
     def _build_run_ops(self):
         """Build run_ops dict containing grouped operations for inference."""
@@ -373,6 +379,48 @@ class GaugeModel:
 
         return train_ops
 
+    def run_dynamics(self, x, z, beta, net_weights, train_phase):
+        """Run dynamics by applying transition.
+
+        Args:
+            x (tf.placeholder): Input configuration.
+            z (tf.Tensor): Input configuration drawn randomly from
+                initialization distribution, contributes to loss function
+                (encourages typical moves to be large; 2nd term in Eq. 8 of
+                original paper)
+            beta (tf.placeholder): Inverse coupling constant (inverse
+                temperature) used for simulated annealing.
+            net_weights (array-like): Array of `net_weights`, which are
+                multiplicative factors used to scale the contributions from
+                each of the S, T, Q functions:
+                    `net_weights = [s_weight, t_weight, q_weight]`
+            train_phase (tf.placeholder): Boolean indicating whether running
+                `training` or `inference`.
+
+        Returns:
+            x_dynamics: Output from `self.dynamics.apply_transition`
+                method, when called on samples drawn from target distribution.
+            z_dynamics: Output from `self.dynamics.apply_transition`
+                method, when called on samples drawn from initialization
+                distribution.
+
+        NOTE: We are drawing from both the target and initialization
+            distributions.
+        """
+        with tf.name_scope('main_update'):
+            x_dynamics = self.dynamics.apply_transition(x, beta,
+                                                        net_weights,
+                                                        train_phase,
+                                                        self.save_lf)
+
+        with tf.name_scope('aux_update'):
+            z_dynamics = self.dynamics.apply_transition(z, beta,
+                                                        net_weights,
+                                                        train_phase,
+                                                        save_lf=False)
+
+        return x_dynamics, z_dynamics
+
     def _calc_std_loss(self, inputs, **weights):
         """Calculate standard contribution to loss.
 
@@ -380,11 +428,12 @@ class GaugeModel:
         used, we are now using 1 - cos(x1 - x2).
 
         Args:
-            x_tup: Tuple of (x, x_proposed) configurations.
-            z_tup: Tuple of (z, z_proposed) configurations.
-            p_tup: Tuple of (x, z) acceptance probabilities.
-            weights: dictionary of weights giving relative weight of each term
-                in the loss function.
+            inputs (dict): Dictionary of input data containing initial
+                configurations, proposed configurations, and acceptance
+                probabilities (drawn from both the target (`x`) and
+                initialization distributions (`z`).
+            weights (dict): Dictionary of weights giving relative weight of
+                each term in the loss function.
 
         Returns:
             std_loss
@@ -444,19 +493,20 @@ class GaugeModel:
         configuration and the proposed configuration.
 
         Args:
-            x_tup: Tuple of (x, x_proposed) configurations.
-            z_tup: Tuple of (z, z_proposed) configurations.
-            p_tup: Tuple of (x, z) acceptance probabilities.
-            weights: dictionary of weights giving relative weight of each term
-                in the loss function.
+            inputs (dict): Dictionary of input data containing initial
+                configurations, proposed configurations, and acceptance
+                probabilities (drawn from both the target (`x`) and
+                initialization distributions (`z`).
+            weights (dict): Dictionary of weights giving relative weight of
+                each term in the loss function.
 
         Returns:
-            std_loss
+            `charge_loss` if `self.charge_weight_np == 0` else, `0.`
         """
         aw = weights.get('aux_weight', 1.)
         qw = weights.get('charge_weight', 1.)
 
-        if qw == 0:
+        if qw == 0. or self.charge_weight_np == 0.:
             return 0.
 
         x_init = inputs['x_init']
@@ -488,7 +538,6 @@ class GaugeModel:
                 #  zq_loss_avg = tf.reduce_mean(zq_loss, axis=0,
                 #                               name='zq_loss_avg')
 
-
             with tf.name_scope('tot_loss'):
                 # Each of the loss terms is scaled by the `loss_scale` which
                 # introduces a universal multiplicative factor that scales the
@@ -500,166 +549,227 @@ class GaugeModel:
 
         return charge_loss  # , xq_loss_avg, zq_loss_avg
 
-    def calc_loss(self, x, beta, net_weights, train_phase, **weights):
-        """Create operation for calculating the loss.
+    def _calc_loss(self, x, beta, net_weights, train_phase, **weights):
+        """Create operation for calculating the loss, when running graph mode.
 
         Args:
-            x: Input tensor of shape (self.num_samples,
-                self.lattice.num_links) containing batch of GaugeLattice links
-                variables.
-            beta (float): Inverse coupling strength.
+            x (tf.placeholder): Input configuration.
+            z (tf.Tensor): Input configuration drawn randomly from
+                initialization distribution, contributes to loss function
+                (encourages typical moves to be large; 2nd term in Eq. 8 of
+                original paper)
+            beta (tf.placeholder): Inverse coupling constant (inverse
+                temperature) used for simulated annealing.
+            net_weights (array-like): Array of `net_weights`, which are
+                multiplicative factors used to scale the contributions from
+                each of the S, T, Q functions:
+                    `net_weights = [s_weight, t_weight, q_weight]`
+            train_phase (tf.placeholder): Boolean indicating whether running
+                `training` or `inference`.
+            weights (dict): Dictionary containing multiplicative weights used
+                to scale the contribution from different terms in the loss
+                function.
 
         Returns:
             loss (float): Operation responsible for calculating the total loss.
-            px (np.ndarray): Array of acceptance probabilities from
-                Metropolis-Hastings accept/reject step. Has shape:
-                (self.num_samples,)
-            x_out: Output samples obtained after Metropolis-Hastings
-                accept/reject step.
+            x_dynamics: Output from `self.dynamics.apply_transition`
+                method, when called on samples drawn from target distribution.
 
         NOTE: If proposed configuration is accepted following
             Metropolis-Hastings accept/reject step, x_proposed and x_out are
             equivalent.
         """
-        with tf.name_scope('x_update'):
-            x_dynamics_output = self.dynamics.apply_transition(x, beta,
-                                                               net_weights,
-                                                               train_phase,
-                                                               self.save_lf)
-            x_proposed = x_dynamics_output['x_proposed']
-            px = x_dynamics_output['accept_prob']
-            x_out = x_dynamics_output['x_out']
+        with tf.name_scope('dynamics'):
+            with tf.name_scope('sample_init_distribution'):
+                z = tf.random_normal(tf.shape(x), dtype=TF_FLOAT,
+                                     seed=GLOBAL_SEED, name='z')
 
-        # Auxiliary variable
-        with tf.name_scope('z_update'):
-            z = tf.random_normal(tf.shape(x),
-                                 dtype=TF_FLOAT,
-                                 seed=GLOBAL_SEED,
-                                 name='z')
-            z_dynamics_output = self.dynamics.apply_transition(z, beta,
-                                                               net_weights,
-                                                               train_phase,
-                                                               save_lf=False)
-            z_proposed = z_dynamics_output['x_proposed']
-            pz = z_dynamics_output['accept_prob']
+            x_dynamics, z_dynamics = self.run_dynamics(x, z, beta,
+                                                       net_weights,
+                                                       train_phase)
 
-        with tf.name_scope('top_charge_diff'):
-            x_dq = tf.cast(
-                self.lattice.calc_top_charges_diff(x, x_out),
-                dtype=TF_INT
-            )
-
-        # NOTE:
-        #  std:_loss: 'standard' loss
-        #  charge_loss: Contribution from the difference in topological charge
-        #    betweween the initial and proposed configurations  to the total
-        #     loss.
         inputs = {
             'x_init': x,
-            'x_proposed': x_proposed,
             'z_init': z,
-            'z_proposed': z_proposed,
-            'px': px,
-            'pz': pz
+            'px': x_dynamics['accept_prob'],
+            'pz': z_dynamics['accept_prob'],
+            'x_proposed': x_dynamics['x_proposed'],
+            'z_proposed': z_dynamics['x_proposed'],
         }
 
-        with tf.name_scope('calc_loss'):
+        with tf.name_scope('loss'):
             std_loss = self._calc_std_loss(inputs, **weights)
-            charge_loss = self._calc_charge_loss(inputs, **weights)
-            total_loss = tf.add(std_loss, charge_loss, name='total_loss')
+            if self.charge_weight_np > 0:
+                charge_loss = self._calc_charge_loss(inputs, **weights)
+                loss = tf.add(std_loss, charge_loss, name='total_loss')
+            else:
+                loss = tf.identity(std_loss, name='total_loss')
 
-        #  losses = [*std_losses, *charge_losses]
-        #  _ = [tf.add_to_collection('losses', i) for i in losses]
+        return loss, x_dynamics
 
-        return total_loss, x_dq, x_dynamics_output
-
-    def calc_loss_and_grads(self,
-                            x,
-                            beta,
-                            net_weights,
-                            train_phase,
-                            **weights):
-        """Calculate loss its gradient with respect to all trainable variables.
+    def _calc_loss_eager(self, x, beta, net_weights, train_phase, **weights):
+        """Calculate the loss, using eager execution.
 
         Args:
-            x: Placeholder (tensor object)representing batch of GaugeLattice
-                link variables.
-            beta: Placeholder (tensor object) representing inverse coupling
-            strength.
+            x (array-like): Input configuration.
+            z (array-like): Input configuration drawn randomly from
+                initialization distribution, contributes to loss function
+                (encourages typical moves to be large; 2nd term in Eq. 8 of
+                original paper)
+            beta (float): Inverse coupling constant (inverse temperature) used
+                for simulated annealing.
+            net_weights (array-like): Array of `net_weights`, which are
+                multiplicative factors used to scale the contributions from
+                each of the S, T, Q functions:
+                    `net_weights = [s_weight, t_weight, q_weight]`
+            train_phase (bool): Boolean indicating whether running `training`
+                or `inference`.
+            weights (dict): Dictionary containing multiplicative weights used
+                to scale the contribution from different terms in the loss
+                function.
 
         Returns:
-            loss: Operation for calculating the total loss.
-            grads: Tensor containing the gradient of the loss function with
-                respect to all trainable variables.
-            x_out: Operation for obtaining new samples (i.e. output of
-                augmented L2HMC algorithm.)
-            accept_prob: Operation for calculating acceptance probabilities
-                used in Metropolis-Hastings accept reject.
-            x_dq: Operation for calculating the topological charge difference
-                between the initial and proposed configurations.
+            loss (float): Operation responsible for calculating the total loss.
+            x_dynamics: Output from `self.dynamics.apply_transition`
+                method, when called on samples drawn from target distribution.
+
+        NOTE: If proposed configuration is accepted following
+            Metropolis-Hastings accept/reject step, x_proposed and x_out are
+            equivalent.
+        """
+        with tf.GradientTape() as tape:
+            output = self.calc_loss(x, beta,
+                                    net_weights,
+                                    train_phase,
+                                    **weights)
+            loss = output[0]
+            dynamics_output = output[1]
+
+        grads = tape.gradient(loss, self.dynamics.trainable_variables)
+        if self.clip_value > 0.:
+            grads, _ = tf.clip_by_global_norm(grads, self.clip_value)
+
+        return loss, dynamics_output, grads
+
+    def calc_loss(self, x, beta, net_weights, train_phase, **weights):
+        """Calculate loss with gradients and get output from MD update.
+
+        Args:
+            x (array-like): Input configuration.
+            z (array-like): Input configuration drawn randomly from
+                initialization distribution, contributes to loss function
+                (encourages typical moves to be large; 2nd term in Eq. 8 of
+                original paper)
+            beta (float): Inverse coupling constant (inverse temperature) used
+                for simulated annealing.
+            net_weights (array-like): Array of `net_weights`, which are
+                multiplicative factors used to scale the contributions from
+                each of the S, T, Q functions:
+                    `net_weights = [s_weight, t_weight, q_weight]`
+            train_phase (bool): Boolean indicating whether running `training`
+                or `inference`.
+            weights (dict): Dictionary containing multiplicative weights used
+                to scale the contribution from different terms in the loss
+                function.
+
+        Returns:
+            loss (float): Operation responsible for calculating the total loss.
+            dynamics_out (dict): Output from `self.dynamics.apply_transition`
+                method, when called on samples drawn from target distribution.
+            grads (tf.gradients): Gradients used for backprop accumulated
+                from the calculation of the loss function.
         """
         if tf.executing_eagerly():
-            with tf.name_scope('grads'):
-                with tf.GradientTape() as tape:
-                    loss, x_dq, dynamics_output = self.calc_loss(x,
-                                                                 beta,
-                                                                 net_weights,
-                                                                 train_phase,
-                                                                 **weights)
-
-                grads = tape.gradient(loss, self.dynamics.trainable_variables)
-                if self.clip_value > 0.:
-                    grads, _ = tf.clip_by_global_norm(grads, self.clip_value)
+            loss, dynamics_out, grads = self._calc_loss_eager(x, beta,
+                                                              net_weights,
+                                                              train_phase,
+                                                              **weights)
         else:
-            loss, x_dq, dynamics_output = self.calc_loss(x, beta,
-                                                         net_weights,
-                                                         train_phase,
-                                                         **weights)
-            with tf.name_scope('grads'):
-                grads = tf.gradients(loss, self.dynamics.trainable_variables)
-                if self.clip_value > 0.:
-                    grads, _ = tf.clip_by_global_norm(grads, self.clip_value)
+            loss, dynamics_out = self._calc_loss(x, beta, net_weights,
+                                                 train_phase, **weights)
+            # calculate gradients for back prop.
+            grads = self.calc_grads(loss)
 
-        return loss, grads, x_dq, dynamics_output
+        return loss, dynamics_out, grads
 
-    def _build_sampler(self):
-        """Build TensorFlow graph."""
-        with tf.name_scope('sampler'):
-            #  self.loss_op, self.grads, self.x_out, self.px, x_dq = output
-            loss, grads, x_dq, dynamics_output = self.calc_loss_and_grads(
-                x=self.x,
-                beta=self.beta,
-                net_weights=self.net_weights,
-                train_phase=self.train_phase,
-                **self.loss_weights
+    def calc_grads(self, loss):
+        """Calculate gradients using automatic differentiation on the loss.
+
+        NOTE: IF `--clip_value x` command line argument was passed to `main.py`
+            with a float `x > 0.`, gradient clipping (by global norm, `x`) will
+            be performed.
+
+        Args:
+            loss: Tensorflow operation used to calculate the loss function to
+                be minimized.
+
+        Returns:
+            grads (tf.gradients): Gradients used for backprop accumulated from
+                the calculation of the loss function.
+        """
+        with tf.name_scope('grads'):
+            grads = tf.gradients(loss, self.dynamics.trainable_variables)
+            if self.clip_value > 0.:
+                grads, _ = tf.clip_by_global_norm(grads, self.clip_value)
+
+        return grads
+
+    def _apply_grads(self):
+        """Apply backpropagated gradients using `self.optimizer`.
+
+        TODO: [1.] (line 8)
+
+        Returns:
+            train_op: Operation used for running a single training step.
+        """
+        grads_and_vars = zip(self.grads, self.dynamics.trainable_variables)
+        with tf.control_dependencies([self.loss_op, *self.dynamics.updates]):
+            train_op = self.optimizer.apply_gradients(grads_and_vars,
+                                                      self.global_step,
+                                                      'train_op')
+
+        return train_op
+
+    def _parse_dynamics_output(self, dynamics_output):
+        """Parse output dictionary from `self.dynamics.apply_transition`.
+
+        This method is responsible for creating instance attributes from the
+        dictionary returned from the `self.dynamics.apply_transition` method.
+        """
+        self.x_out = dynamics_output['x_out']
+        self.px = dynamics_output['accept_prob']
+
+        with tf.name_scope('top_charge_diff'):
+            x_in = dynamics_output['x_in']
+            x_out = dynamics_output['x_out']
+            x_dq = tf.cast(
+                self.lattice.calc_top_charges_diff(x_in, x_out),
+                dtype=TF_INT
             )
-            self.loss_op = loss
-            self.grads = grads
-            self.x_out = dynamics_output['x_out']
-            self.px = dynamics_output['accept_prob']
             self.charge_diffs_op = tf.reduce_sum(x_dq) / self.num_samples
 
-            if self.save_lf:
-                op_keys = ['masks_f', 'masks_b',
-                           'lf_out_f', 'lf_out_b',
-                           'pxs_out_f', 'pxs_out_b',
-                           'logdets_f', 'logdets_b',
-                           'fns_out_f', 'fns_out_b',
-                           'sumlogdet_f', 'sumlogdet_b']
-                for key in op_keys:
-                    try:
-                        op = dynamics_output[key]
-                        setattr(self, key, op)
-                    except KeyError:
-                        continue
+        if self.save_lf:
+            op_keys = ['masks_f', 'masks_b',          # directional masks
+                       'lf_out_f', 'lf_out_b',        # MD output
+                       'pxs_out_f', 'pxs_out_b',      # accept probs
+                       'logdets_f', 'logdets_b',      # individ. logdets
+                       'fns_out_f', 'fns_out_b',      # S, T, Q fns
+                       'sumlogdet_f', 'sumlogdet_b']  # sumlogdet
+            for key in op_keys:
+                try:
+                    op = dynamics_output[key]
+                    setattr(self, key, op)
+                except KeyError:
+                    continue
 
-                with tf.name_scope('l2hmc_fns'):
-                    self.l2hmc_fns = {
-                        'out_fns_f': self.extract_l2hmc_fns(self.fns_out_f),
-                        'out_fns_b': self.extract_l2hmc_fns(self.fns_out_b),
-                    }
+            # Collect outputs from S, T, Q fns for logging in tensorboard
+            with tf.name_scope('l2hmc_fns'):
+                self.l2hmc_fns = {
+                    'out_fns_f': self._extract_l2hmc_fns(self.fns_out_f),
+                    'out_fns_b': self._extract_l2hmc_fns(self.fns_out_b),
+                }
 
-    def extract_l2hmc_fns(self, fns):
+    def _extract_l2hmc_fns(self, fns):
         """Method for extracting each of the Q, S, T functions as tensors."""
         if not self.save_lf:
             return
@@ -676,17 +786,3 @@ class GaugeModel:
                 out_fns[name][subname] = fnsT[idx][subidx]
 
         return out_fns
-
-    def _apply_grads(self):
-        """Build Tensorflow graph."""
-        # ------------------------------
-        # Ref. [1.] in TODO (line 8)
-        # ------------------------------
-        with tf.name_scope('train'):
-            grads_and_vars = zip(self.grads, self.dynamics.trainable_variables)
-            with tf.control_dependencies(self.dynamics.updates):
-                self.train_op = self.optimizer.apply_gradients(
-                    grads_and_vars,
-                    global_step=self.global_step,
-                    name='train_op'
-                )
