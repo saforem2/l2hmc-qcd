@@ -74,7 +74,7 @@ def initialize_uninitialized(sess):
         v for (v, f) in zip(global_vars, is_not_initialized) if not f
     ]
     io.log([str(i.name) for i in not_initialized_vars])
-    if len(not_initialized_vars):
+    if len(not_initialized_vars) > 1:
         sess.run(tf.variables_initializer(not_initialized_vars))
 
     return not_initialized_vars
@@ -356,7 +356,6 @@ def run_hmc(FLAGS, log_file=None):
     inputs = tf.get_collection('inputs')
     run_summaries_dir = os.path.join(model.log_dir, 'summaries', 'run')
     io.check_else_make_dir(run_summaries_dir)
-    # create summary objects without having to train model
     _, _ = create_summaries(model, run_summaries_dir, training=False)
     run_logger = RunLogger(params, inputs, run_ops, save_lf_data=False)
     plotter = GaugeModelPlotter(params, run_logger.figs_dir)
