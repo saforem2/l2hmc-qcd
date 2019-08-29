@@ -638,10 +638,12 @@ class GaugeModel:
             equivalent.
         """
         with tf.GradientTape() as tape:
-            loss, dynamics_output = self.calc_loss(x, beta,
-                                                   net_weights,
-                                                   train_phase,
-                                                   **weights)
+            output = self.calc_loss(x, beta,
+                                    net_weights,
+                                    train_phase,
+                                    **weights)
+            loss = output[0]
+            dynamics_output = output[1]
 
         grads = tape.gradient(loss, self.dynamics.trainable_variables)
         if self.clip_value > 0.:
@@ -784,4 +786,3 @@ class GaugeModel:
                 out_fns[name][subname] = fnsT[idx][subidx]
 
         return out_fns
-
