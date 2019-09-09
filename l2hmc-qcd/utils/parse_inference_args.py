@@ -45,6 +45,15 @@ def parse_args():
                               containing the model parameters needed to run
                               inference."""))
 
+    parser.add_argument('--eps',
+                        dest='eps',
+                        type=float,
+                        default=None,
+                        required=False,
+                        help=("""Step size to use during inference. If no value
+                              is passed, `eps = None` and the optimal step size
+                              (determined during training) will be used."""))
+
     parser.add_argument("--run_steps",
                         dest="run_steps",
                         type=int,
