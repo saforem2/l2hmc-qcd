@@ -74,10 +74,10 @@ class GenericNet(tf.keras.Model):
             self.scale_layer = custom_dense(self.x_dim,
                                             0.001,
                                             name='scale_layer')
-            if not self.zero_translation:
-                self.translation_layer = custom_dense(self.x_dim,
-                                                      0.001,
-                                                      'translation_layer')
+
+            self.translation_layer = custom_dense(self.x_dim,
+                                                  0.001,
+                                                  'translation_layer')
 
             self.transformation_layer = custom_dense(self.x_dim,
                                                      0.001,
@@ -111,9 +111,6 @@ class GenericNet(tf.keras.Model):
                                        name='exp_coeff_transformation'))
 
         with tf.name_scope('translation'):
-            if self.zero_translation:
-                translation = tf.zeros_like(scale, name='translation')
-            else:
-                translation = self.translation_layer(h)
+            translation = self.translation_layer(h)
 
         return scale, translation, transformation
