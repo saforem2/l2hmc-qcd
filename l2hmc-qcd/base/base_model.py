@@ -49,7 +49,10 @@ class BaseModel:
         self.eps_trainable = not self.eps_fixed
         self.charge_weight_np = getattr(params, 'charge_weight', None)
         self.global_step = self._create_global_step()
-        self.lr = self._create_lr(lr_init=self.lr_init, warmup=False)
+
+        warmup = getattr(self, 'warmup_lr', False)
+        self.lr = self._create_lr(warmup)
+
         self.optimizer = self._create_optimizer()
 
     def build(self):
