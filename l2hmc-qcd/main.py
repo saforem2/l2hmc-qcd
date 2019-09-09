@@ -57,7 +57,7 @@ from update import set_precision
 from utils.parse_args import parse_args
 from models.model import GaugeModel
 from loggers.train_logger import TrainLogger
-from trainers.trainer import GaugeModelTrainer
+from trainers.gauge_model_trainer import GaugeModelTrainer
 
 if HAS_COMET:
     from comet_ml import Experiment
