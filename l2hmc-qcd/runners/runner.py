@@ -18,7 +18,7 @@ from config import RUN_HEADER
 
 
 class GaugeModelRunner:
-
+    """GaugeModelRunner object, responsible for running inference."""
     def __init__(self, sess, params, inputs, run_ops, logger=None):
         """
         Args:
@@ -44,7 +44,10 @@ class GaugeModelRunner:
             self.inputs_dict = RunLogger.build_inputs_dict(inputs)
             self.run_ops_dict = RunLogger.build_run_ops_dict(params, run_ops)
 
-        self.eps = self.sess.run(self.run_ops_dict['dynamics_eps'])
+        if self.params['eps'] is None:
+            self.eps = self.sess.run(self.run_ops_dict['dynamics_eps'])
+        else:
+            self.eps = self.params['eps']
 
     def calc_charge_autocorrelation(self, charges):
         autocorr = np.correlate(charges, charges, mode='full')
