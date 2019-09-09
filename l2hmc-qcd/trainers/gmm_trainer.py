@@ -119,16 +119,6 @@ class GaussianMixtureModelTrainer:
         if beta_np is None:
             beta_np = self.model.beta_init
 
-        '''
-        if samples_np is None:
-            samples_np = np.reshape(
-                np.array(self.model.distribution.get_samples(, dtype=NP_FLOAT),
-                (self.model.num_samples, self.model.x_dim)
-            )
-        '''
-
-        assert samples_np.shape == self.model.x.shape
-
         try:
             if self.logger is not None:
                 io.log(self.logger.train_header)

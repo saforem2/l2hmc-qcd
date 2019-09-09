@@ -103,10 +103,9 @@ class RoughWell(object):
             if not self.easy:
                 return (0.5 * n + self.eps * tf.reduce_sum(
                     tf.cos(x/(self.eps * self.eps)), 1))
-            else:
-                return (
-                    0.5 * n + self.eps * tf.reduce_sum(tf.cos(x/self.eps), 1)
-                )
+            return (
+                0.5 * n + self.eps * tf.reduce_sum(tf.cos(x/self.eps), 1)
+            )
         return fn
 
     def get_samples(self, n):
@@ -231,6 +230,3 @@ def gen_ring(r=1.0, var=1.0, nb_mixtures=2):
     pis = [1. / nb_mixtures] * nb_mixtures
     pis[0] += 1-sum(pis)
     return (sigmas, GMM(base_points, sigmas, pis))
-
-
-

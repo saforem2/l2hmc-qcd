@@ -308,23 +308,11 @@ def train_l2hmc(FLAGS, log_file=None, experiment=None):
     config, params = create_config(params)
 
     # set initial value of charge weight using value from FLAGS
-    charge_weight_init = params['charge_weight']
+    #  charge_weight_init = params['charge_weight']
     net_weights_init = [1., 1., 1.]
     samples_init = np.reshape(np.array(model.lattice.samples, dtype=NP_FLOAT),
                               (model.num_samples, model.x_dim))
     beta_init = model.beta_init
-
-    '''
-    init_feed_dict = {
-        model.x: samples_init,
-        model.beta: beta_init,                      # ------------------------
-        model.charge_weight: charge_weight_init,    # NOTE
-        model.net_weights[0]: net_weights_init[0],  # ~ scale (S fn)
-        model.net_weights[1]: net_weights_init[1],  # ~ translation (T fn)
-        model.net_weights[2]: net_weights_init[2],  # ~ transformation (Q fn)
-        model.train_phase: True                     # ------------------------
-    }
-    '''
 
     # ensure all variables are initialized
     #  target_collection = []
