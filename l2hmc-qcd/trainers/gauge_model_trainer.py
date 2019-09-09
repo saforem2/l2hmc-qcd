@@ -6,23 +6,24 @@ Implements GaugeModelTrainer class responsible for training GaugeModel.
 Author: Sam Foreman (github: @saforem2)
 Date: 04/09/2019
 """
+import os
 import time
 import numpy as np
+import tensorflow as tf
 
 import utils.file_io as io
+
+from collections import namedtuple
 from lattice.lattice import u1_plaq_exact
 from config import NP_FLOAT
+from loggers.summary_utils import create_summaries
+from loggers.train_logger import TRAIN_HEADER
 
 
-h_str = ("{:^12s}{:^10s}{:^10s}{:^10s}{:^10s}"
-         "{:^10s}{:^10s}{:^10s}{:^10s}{:^10s}{:^10s}")
-
-h_strf = h_str.format("STEP", "LOSS", "t/STEP", "% ACC", "EPS",
-                      "BETA", "ACTION", "PLAQ", "(EXACT)", "dQ", "LR")
-
-dash0 = (len(h_strf) + 1) * '-'
-dash1 = (len(h_strf) + 1) * '-'
-TRAIN_HEADER = dash0 + '\n' + h_strf + '\n' + dash1
+TrainStepData = namedtuple('TrainStepData', [
+    'step', 'beta', 'loss', 'samples', 'samples_orig', 'prob',
+    'lr', 'eps', 'actions', 'plaqs', 'charges', 'charge_diffs'
+])
 
 
 class GaugeModelTrainer:
@@ -88,7 +89,7 @@ class GaugeModelTrainer:
             if self.model.fixed_beta:
                 beta_np = self.model.beta_init
             else:
-                beta_np = self.update_beta(step, train_steps=train_steps)
+                beta_np = self.update_beta(step, **kwargs)
 
         feed_dict = {
             self.model.x: samples_np,
@@ -118,6 +119,36 @@ class GaugeModelTrainer:
         outputs = self.sess.run(ops, feed_dict=feed_dict)
         dt = time.time() - start_time
 
+        train_step_data = TrainStepData(
+            step=global_step,
+            beta=beta_np,
+            loss=outputs[1],
+            samples=np.mod(outputs[2], 2*np.pi),
+            samples_orig=outputs[2],
+            prob=outputs[3],
+            eps=outputs[4],
+            actions=outputs[5],
+            plaqs=outputs[6],
+            charges=outputs[7],
+            charge_diffs=outputs[8],
+            lr=outputs[9],
+        )
+
+        data_str = (
+            f"{global_step:>5g}/{train_steps:<6g} "
+            f"{outputs[1]:^9.4g} "              # loss value
+            f"{dt:^9.4g} "                      # time / step
+            f"{np.mean(outputs[3]):^9.4g} "      # accept prob
+            f"{outputs[4]:^9.4g} "              # step size
+            f"{beta_np:^9.4g} "                 # beta
+            f"{np.mean(outputs[5]):^9.4g} "     # avg. actions
+            f"{np.mean(outputs[6]):^9.4g} "     # avg. plaqs.
+            f"{u1_plaq_exact(beta_np):^9.4g} "  # exact plaq.
+            f"{outputs[8]:^9.4g} "              # charge diff
+            f"{outputs[9]:^9.4g} "               # learning rate
+        )
+
+        '''
         out_data = {
             'step': global_step,
             'loss': outputs[1],
@@ -132,22 +163,8 @@ class GaugeModelTrainer:
             'lr': outputs[9],
             'beta': beta_np
         }
-
-        data_str = (
-            f"{global_step:>5g}/{train_steps:<6g} "
-            f"{outputs[1]:^9.4g} "              # loss value
-            f"{dt:^9.4g} "                      # time / step
-            f"{np.mean(outputs[3]):^9.4g}"      # accept prob
-            f"{outputs[4]:^9.4g} "              # step size
-            f"{beta_np:^9.4g} "                 # beta
-            f"{np.mean(outputs[5]):^9.4g} "     # avg. actions
-            f"{np.mean(outputs[6]):^9.4g} "     # avg. plaqs.
-            f"{u1_plaq_exact(beta_np):^9.4g} "  # exact plaq.
-            f"{outputs[8]:^9.4g} "              # charge diff
-            f"{outputs[9]:^9.4g}"               # learning rate
-        )
-
-        return out_data, data_str
+        '''
+        return train_step_data, data_str
 
     def train(self, train_steps, **kwargs):
         """Train the L2HMC sampler for `train_steps`.
@@ -171,9 +188,9 @@ class GaugeModelTrainer:
             beta_np = self.model.beta_init
 
         if samples_np is None:
-            samples_np = np.reshape(
-                np.array(self.model.lattice.samples, dtype=NP_FLOAT),
-                (self.model.num_samples, self.model.x_dim)
+            samples_np = np.array(
+                np.random.randn(self.model.num_samples, self.model.x_dim),
+                dtype=NP_FLOAT
             )
 
         assert samples_np.shape == self.model.x.shape
@@ -181,23 +198,20 @@ class GaugeModelTrainer:
         try:
             io.log(TRAIN_HEADER)
             for step in range(initial_step, train_steps):
-                out_data, data_str = self.train_step(step,
-                                                     samples_np,
-                                                     net_weights=net_weights,
-                                                     train_steps=train_steps)
-                samples_np = out_data['samples']
+                data, data_str = self.train_step(step, samples_np,
+                                                 net_weights=net_weights,
+                                                 train_steps=train_steps)
+                samples_np = data.samples
+                #  samples_np = out_data['samples']
 
                 if self.logger is not None:
-                    self.logger.update_training(self.sess,
-                                                out_data,
-                                                net_weights,
-                                                data_str)
+                    self.logger.update(self.sess, data, data_str, net_weights)
 
             if self.logger is not None:
                 self.logger.write_train_strings()
 
         except (KeyboardInterrupt, SystemExit):
-            io.log("\nKeyboardInterrupt detected!")
-            io.log("Saving current state and exiting.")
+            io.log("\nERROR: KeyboardInterrupt detected!")
+            io.log("INFO: Saving current state and exiting.")
             if self.logger is not None:
-                self.logger.update_training(out_data, data_str)
+                self.logger.update(data, data_str, net_weights)
