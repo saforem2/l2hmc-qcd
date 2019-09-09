@@ -4,23 +4,23 @@
 #        python3 gauge_model.py @gauge_model_args.txt            #
 #                                                                #
 #================================================================#
---time_size 8 
---space_size 8 
+--time_size 8
+--space_size 8
 --rand
---num_samples 100 
---num_steps 16 
+--num_samples 256
+--num_steps 16
 --eps 0.2
---beta_init 2.
+--beta_init 1.
 --beta_final 5.
 --lr_init 0.001
 --lr_decay_steps 1000
 --lr_decay_rate 0.96
---train_steps 5000 
+--train_steps 5000
 --logging_steps 10
 --save_steps 1000
 --print_steps 1
 --network_arch 'generic'
---num_hidden1 10 
+--num_hidden1 10
 --num_hidden2 10
 --metric 'cos_diff'
 --aux_weight 1.

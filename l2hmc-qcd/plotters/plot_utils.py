@@ -14,6 +14,7 @@ import pandas as pd
 import utils.file_io as io
 
 from collections import namedtuple
+from scipy.stats import multivariate_normal
 from config import MARKERS, HAS_MATPLOTLIB
 
 MPL_PARAMS = {
@@ -88,6 +89,52 @@ def _get_plaq_diff_data(log_dir):
     return data
 
 
+def plot_gaussian_contours(mus, covs, **kwargs):
+    """Plot contour lines for Gaussian Mixture Model w/ `mus` and `covs`.
+
+    Args:
+        mus (array-like): Array containing the means of each component (mode).
+        covs (array-like): Array of covariances describing the GMM.
+
+    Kwargs:
+        passed to `plt.plot` method.
+
+    Returns:
+        plt (???)
+    """
+    spacing = kwargs.get('spacing', 5)
+    x_lims = kwargs.get('x_lims', [-4, 4])
+    y_lims = kwargs.get('y_lims', [-3, 3])
+    res = kwargs.get('res', 100)
+    cmap = kwargs.get('cmap', None)
+    ax = kwargs.get('ax', None)
+
+    X = np.linspace(x_lims[0], x_lims[1], res)
+    Y = np.linspace(y_lims[0], y_lims[1], res)
+    X, Y = np.meshgrid(X, Y)
+    pos = np.empty(X.shape + (2,))
+    pos[:, :, 0] = X
+    pos[:, :, 1] = Y
+
+    for idx, mu in enumerate(mus):
+        cov = covs[idx]
+        F = multivariate_normal(mu, cov)
+        Z = F.pdf(pos)
+        #  plt.contour(X, Y, Z, spacing, colors=colors[0])
+        if cmap is None:
+            if ax is None:
+                plt.contour(X, Y, Z, spacing)
+            else:
+                ax.contour(X, Y, Z, spacing)
+        else:
+            if ax is None:
+                plt.contour(X, Y, Z, spacing, cmap=cmap)
+            else:
+                ax.contour(X, Y, Z, spacing, cmap=cmap)
+
+    return ax if ax is not None else plt
+
+
 def plot_plaq_diffs_vs_net_weights(log_dir, **kwargs):
     """Plot avg. plaq diff. vs net_weights.
 
@@ -142,8 +189,8 @@ def plot_multiple_lines(data, xy_labels, **kwargs):
     num_samples = kwargs.get('num_samples', 10)
     colors_arr = get_colors(num_samples)
     greys = colors_arr[0]
-    reds = colors_arr[1]
-    blues = colors_arr[2]
+    #  reds = colors_arr[1]
+    #  blues = colors_arr[2]
     if isinstance(data, list):
         data = np.array(data)
 
