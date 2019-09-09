@@ -83,19 +83,6 @@ def make_dirs(dirs):
     _ = [check_else_make_dir(d) for d in dirs]
 
 
-'''
-def _parse_gmm_flags(FLAGS):
-    """Helper method for parsing flags as both AttrDicts or generic dicts."""
-    if isinstance(FLAGS, dict):
-        flags_dict = FLAGS
-    else:
-        try:
-            flags_dict = FLAGS.__dict__
-        except (NameError, AttributeError):
-            pass
-'''
-
-
 def _parse_flags(FLAGS):
     """Helper method for parsing flags as both AttrDicts or generic dicts."""
     if isinstance(FLAGS, dict):
