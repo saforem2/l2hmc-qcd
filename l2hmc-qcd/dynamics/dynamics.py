@@ -57,10 +57,10 @@ def _add_to_collection(collection, ops):
         tf.add_to_collection(collection, ops)
 
 
-class GaugeDynamics(tf.keras.Model):
+class Dynamics(tf.keras.Model):
     """Dynamics engine of naive L2HMC sampler."""
 
-    def __init__(self, potential_fn, **kwargs):
+    def __init__(self, potential_fn, **params):
         """Initialization.
 
         Args:
@@ -81,89 +81,107 @@ class GaugeDynamics(tf.keras.Model):
                 should be trainable. Defaults to True.
             np_seed: Seed to use for numpy.random.
         """
-        super(GaugeDynamics, self).__init__(name='GaugeDynamics')
+        super(Dynamics, self).__init__(name='Dynamics')
         npr.seed(GLOBAL_SEED)
 
-        #  self.lattice = lattice
         self.potential = potential_fn
-        #  self.batch_size = self.lattice.samples.shape[0]
-        #  self.x_dim = self.lattice.num_links
         self.l2hmc_fns = {}
 
         # create attributes from kwargs.items()
-        for key, val in kwargs.items():
+        for key, val in params.items():
             if key != 'eps':  # want to use self.eps as tf.Variable
                 setattr(self, key, val)
 
-        _eps_np = kwargs.get('eps', 0.4)
-        #  with tf.variable_scope(reus):
-        #  self.eps = tf.get_variable('eps', dtype=TF_FLOAT,
-        #                             trainable=self.eps_trainable,
-        #                             initializer=tf.constant(_eps_np))
+        self._eps_np = params.get('eps', 0.4)
+        self.eps = self._get_eps(use_log=False)
 
-        self.log_eps = tf.Variable(
-            initial_value=tf.log(tf.constant(_eps_np)),
-            name='log_eps',
-            dtype=TF_FLOAT,
-            trainable=self.eps_trainable
-        )
+        self.masks = self._build_masks()
 
-        self.eps = tf.exp(self.log_eps, name='eps')
-        #  self.eps = tf.Variable(
-        #      initial_value=kwargs.get('eps', 0.4),
-        #      name='eps',
-        #      dtype=TF_FLOAT,
-        #      trainable=self.eps_trainable
-        #  )
+        net_params = self._network_setup()
+        self.x_fn, self.v_fn = self.build_network(net_params)
 
-        self._construct_masks()
+    def _get_eps(self, use_log=False):
+        """Create `self.eps` (i.e. the step size) as a `tf.Variable`.
 
+        Args:
+            use_log (bool): If True, initialize `log_eps` as the actual
+                `tf.Variable` and set `self.eps = tf.exp(log_eps)`; otherwise,
+                set `self.eps` as a `tf.Variable directly.
+
+        Returns:
+            eps: The (trainable) step size to be used in the L2HMC algorithm.
+        """
+        if use_log:
+            log_eps = tf.Variable(
+                initial_value=tf.log(tf.constant(self._eps_np)),
+                name='log_eps',
+                dtype=TF_FLOAT,
+                trainable=self.eps_trainable
+            )
+
+            eps = tf.exp(log_eps, name='eps')
+
+        else:
+            eps = tf.Variable(
+                initial_value=self._eps_np,
+                name='eps',
+                dtype=TF_FLOAT,
+                trainable=self.eps_trainable
+            )
+
+        return eps
+
+    def _network_setup(self):
+        """Collect parameters needed to build neural network."""
         if self.hmc:
-            self.x_fn = lambda inp, train_phase: [
-                tf.zeros_like(inp[0]) for t in range(3)
+            return {}
+
+        net_params = {
+            'network_arch': self.network_arch,  # network architecture
+            'use_bn': self.use_bn,              # use batch normalization
+            'dropout_prob': self.dropout_prob,  # dropout only used if > 0
+            'x_dim': self.x_dim,                # dim of target distribution
+            'num_hidden1': self.num_hidden1,    # num. nodes in hidden layer 1
+            'num_hidden2': self.num_hidden2,    # num. nodes in hidden layer 2
+            'generic_activation': tf.nn.relu,   # activation fn in generic net
+            'name_scope': 'x',                  # name scope in which to create
+            'factor': 2.,                       # x: factor = 2.; v: factor = 1
+            '_input_shape': self._input_shape,  # input shape (b4 reshaping)
+        }
+
+        network_arch = str(self.network_arch).lower()
+        if network_arch in ['conv3d', 'conv2d']:
+            if network_arch == 'conv2d':
+                filter_sizes = [(3, 3), (2, 2)]  # size of conv. filters
+            elif network_arch == 'conv3d':
+                filter_sizes = [(3, 3, 1), (2, 2, 1)]
+
+            num_filters = int(self.num_filters)  # num. filters in conv layers
+            net_params.update({
+                'num_filters': [num_filters, int(2 * num_filters)],
+                'filter_sizes': filter_sizes
+            })
+
+        return net_params
+
+    def build_network(self, net_params):
+        """Build neural network used to train model."""
+        if self.hmc:
+            x_fn = lambda inputs, train_phase: [  # noqa: E731
+                tf.zeros_like(inputs[0]) for _ in range(3)
             ]
-            self.v_fn = lambda inp, train_phase: [
-                tf.zeros_like(inp[0]) for t in range(3)
+            v_fn = lambda inputs, train_phase: [  # noqa: E731
+                tf.zeros_like(inputs[0]) for _ in range(3)
             ]
 
         else:
-            num_filters = int(self.num_filters)
-            net_kwargs = {
-                'network_arch': self.network_arch,
-                'use_bn': self.use_bn,  # whether or not to use batch norm
-                'dropout_prob': self.dropout_prob,
-                'x_dim': self.x_dim,  # dim of target space
-                #  'links_shape': self.lattice.links.shape,
-                'num_hidden1': self.num_hidden1,
-                'num_hidden2': self.num_hidden2,
-                'generic_activation': tf.nn.relu,
-                'num_filters': [num_filters, int(2 * num_filters)],
-                'name_scope': 'x',  # namespace in which to create network
-                'factor': 2.,  # scale factor used in original paper
-                '_input_shape': self._input_shape,
-                'zero_translation': self.zero_translation,
-                #  'data_format': self.data_format,
-            }
+            x_fn = FullNet(model_name='XNet', **net_params)
 
-            if self.network_arch == 'conv3D':
-                net_kwargs.update({
-                    'filter_sizes': [(3, 3, 1), (2, 2, 1)],
-                })
-            elif self.network_arch == 'conv2D':
-                net_kwargs.update({
-                    'filter_sizes': [(3, 3), (2, 2)],
-                })
+            net_params['name_scope'] = 'v'  # update name scope
+            net_params['factor'] = 1.       # factor used in orig. paper
+            v_fn = FullNet(model_name='VNet', **net_params)
 
-            self.build_network(net_kwargs)
-
-    def build_network(self, net_kwargs):
-        """Build neural network used to train model."""
-        with tf.name_scope("DynamicsNetwork"):
-            self.x_fn = FullNet(model_name='XNet', **net_kwargs)
-
-            net_kwargs['name_scope'] = 'v'  # update name scope
-            net_kwargs['factor'] = 1.       # factor used in orig. paper
-            self.v_fn = FullNet(model_name='VNet', **net_kwargs)
+        return x_fn, v_fn
 
     def call(self, *args, **kwargs):
         """Call method."""
@@ -478,7 +496,7 @@ class GaugeDynamics(tf.keras.Model):
         with tf.name_scope('update_vf'):
             grad = self.grad_potential(x, beta)
 
-            scale, transl, transf = self.v_fn((x, grad, t), train_phase)
+            scale, transl, transf = self.v_fn([x, grad, t], train_phase)
 
             with tf.name_scope('vf_mul'):
                 scale *= 0.5 * self.eps * net_weights[0]
@@ -584,13 +602,13 @@ class GaugeDynamics(tf.keras.Model):
                 (Eq. 14 of original paper).
             beta: Inverse coupling constant of gauge model.
         """
-        with tf.name_scope('compute_accept_prob'):
+        with tf.name_scope('accept_prob'):
             with tf.name_scope('old_hamiltonian'):
                 old_hamil = self.hamiltonian(xi, vi, beta)
             with tf.name_scope('new_hamiltonian'):
                 new_hamil = self.hamiltonian(xf, vf, beta)
 
-            with tf.name_scope('prob'):
+            with tf.name_scope('calc_prob'):
                 prob = exp(tf.minimum(
                     (old_hamil - new_hamil + sumlogdet), 0.
                 ), 'accept_prob')
@@ -613,9 +631,9 @@ class GaugeDynamics(tf.keras.Model):
 
         return t
 
-    def _construct_masks(self):
+    def _build_masks(self):
         """Construct different binary masks for different time steps."""
-        self.masks = []
+        masks = []
         for _ in range(self.num_steps):
             # Need to use npr here because tf would generate different random
             # values across different `sess.run`
@@ -623,13 +641,27 @@ class GaugeDynamics(tf.keras.Model):
             mask = np.zeros((self.x_dim,))
             mask[idx] = 1.
             mask = tf.constant(mask, dtype=TF_FLOAT)
-            self.masks.append(mask[None, :])
+            masks.append(mask[None, :])
+
+        return masks
 
     def _get_mask(self, step):
         with tf.name_scope('get_mask'):
             m = tf.gather(self.masks, tf.cast(step, dtype=TF_INT))
             _m = 1. - m  # complementary mask
         return m, _m
+
+    def grad_potential(self, x, beta):
+        """Get gradient of potential function at current location."""
+        with tf.name_scope('grad_potential'):
+            if tf.executing_eagerly():
+                tfe = tf.contrib.eager
+                grad_fn = tfe.gradients_function(self.potential_energy,
+                                                 params=["x"])
+                grad = grad_fn(x, beta)[0]
+            else:
+                grad = tf.gradients(self.potential_energy(x, beta), x)[0]
+        return grad
 
     def potential_energy(self, x, beta):
         """Compute potential energy using `self.potential` and beta."""
@@ -653,15 +685,3 @@ class GaugeDynamics(tf.keras.Model):
             hamiltonian = potential + kinetic
 
         return hamiltonian
-
-    def grad_potential(self, x, beta):
-        """Get gradient of potential function at current location."""
-        with tf.name_scope('grad_potential'):
-            if tf.executing_eagerly():
-                tfe = tf.contrib.eager
-                grad_fn = tfe.gradients_function(self.potential_energy,
-                                                 params=["x"])
-                grad = grad_fn(x, beta)[0]
-            else:
-                grad = tf.gradients(self.potential_energy(x, beta), x)[0]
-        return grad
