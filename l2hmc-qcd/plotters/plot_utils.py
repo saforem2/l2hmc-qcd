@@ -107,6 +107,7 @@ def plot_gaussian_contours(mus, covs, **kwargs):
     y_lims = kwargs.get('y_lims', [-3, 3])
     res = kwargs.get('res', 100)
     cmap = kwargs.get('cmap', None)
+    ax = kwargs.get('ax', None)
 
     X = np.linspace(x_lims[0], x_lims[1], res)
     Y = np.linspace(y_lims[0], y_lims[1], res)
@@ -122,11 +123,17 @@ def plot_gaussian_contours(mus, covs, **kwargs):
         Z = F.pdf(pos)
         #  plt.contour(X, Y, Z, spacing, colors=colors[0])
         if cmap is None:
-            plt.contour(X, Y, Z, spacing)
+            if ax is None:
+                plt.contour(X, Y, Z, spacing)
+            else:
+                ax.contour(X, Y, Z, spacing)
         else:
-            plt.contour(X, Y, Z, spacing, cmap=cmap)
+            if ax is None:
+                plt.contour(X, Y, Z, spacing, cmap=cmap)
+            else:
+                ax.contour(X, Y, Z, spacing, cmap=cmap)
 
-    return plt
+    return ax if ax is not None else plt
 
 
 def plot_plaq_diffs_vs_net_weights(log_dir, **kwargs):
