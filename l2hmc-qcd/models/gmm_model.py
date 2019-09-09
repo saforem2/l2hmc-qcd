@@ -368,4 +368,3 @@ class GaussianMixtureModel(BaseModel):
                 l2hmc_fns[name][subname] = fnsT[idx][subidx]
 
         return l2hmc_fns
-

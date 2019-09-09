@@ -414,52 +414,6 @@ class GaugeModel(BaseModel):
 
         return train_ops
 
-    '''
-    def _build_run_ops(self):
-        """Build `run_ops` used for running inference w/ trained model."""
-        RunOps = namedtuple('RunOps', [
-            'x_out', 'px', 'dynamics_eps', 'actions_op',
-            'plaqs_op', 'avg_plaqs_op', 'charges_op', 'charge_diffs_op'
-        ])
-
-        run_ops = RunOps(self.x_out, self.px,
-                         self.dynamics.eps, self.actions_op,
-                         self.plaqs_op, self.avg_plaqs_op,
-                         self.charges_op, self.charge_diffs_op)
-
-        if self.save_lf:
-            lfOps = namedtuple('lfOps', ['lf_out', 'pxs_out', 'masks',
-                                         'logdets', 'sumlogdet', 'fns_out'])
-            lf_ops_f = lfOps(self.lf_out_f, self.pxs_out_f, self.masks_f,
-                             self.logdets_f, self.sumlogdet_f, self.fns_out_f)
-            lf_ops_b = lfOps(self.lf_out_b,  self.pxs_out_b, self.masks_b,
-                             self.logdets_b, self.sumlogdet_b, self.fns_out_b)
-
-        tf.add_to_collection('run_ops', [*run_ops, *lf_ops_f, *lf_ops_b])
-
-        return run_ops, lf_ops_f, lf_ops_b
-
-    def _build_train_ops(self):
-        """Build `train_ops` used for training our model."""
-        if self.hmc:
-            train_ops = ()
-        else:
-            TrainOps = namedtuple('TrainOps', [
-                'train_op', 'loss_op', 'x_out', 'px',
-                'dynamics_eps', 'actions_op', 'plaqs_op',
-                'charges_op', 'charge_diffs_op', 'lr'
-            ])
-
-            train_ops = TrainOps(self.train_op, self.loss_op,
-                                 self.x_out, self.px,
-                                 self.dynamics.eps, self.actions_op,
-                                 self.plaqs_op, self.charges_op,
-                                 self.charge_diffs_op, self.lr)
-        tf.add_to_collection('train_ops', train_ops)
-
-        return train_ops
-    '''
-
     def _extract_l2hmc_fns(self, fns):
         """Method for extracting each of the Q, S, T functions as tensors."""
         if not getattr(self, 'save_lf', True):

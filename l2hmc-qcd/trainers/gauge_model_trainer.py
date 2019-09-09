@@ -148,22 +148,6 @@ class GaugeModelTrainer:
             f"{outputs[9]:^9.4g} "               # learning rate
         )
 
-        '''
-        out_data = {
-            'step': global_step,
-            'loss': outputs[1],
-            'samples': np.mod(outputs[2], 2 * np.pi),
-            'samples_orig': outputs[2],
-            'px': outputs[3],
-            'eps': outputs[4],
-            'actions': outputs[5],
-            'plaqs': outputs[6],
-            'charges': outputs[7],
-            'charge_diffs': outputs[8],
-            'lr': outputs[9],
-            'beta': beta_np
-        }
-        '''
         return train_step_data, data_str
 
     def train(self, train_steps, **kwargs):
