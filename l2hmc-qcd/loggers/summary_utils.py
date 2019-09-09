@@ -209,12 +209,12 @@ def _create_obs_summaries(model):
 
 def _create_l2hmc_summaries(model):
     """Create summary objects for each of the MD functions and outputs."""
-    for k1, v1 in model.l2hmc_fns['out_fns_f'].items():
+    for k1, v1 in model.l2hmc_fns['l2hmc_fns_f'].items():
         for k2, v2 in v1.items():
             with tf.name_scope(f'{k1}_fn_{k2}_f'):
                 variable_summaries(v2)
 
-    for k1, v1 in model.l2hmc_fns['out_fns_b'].items():
+    for k1, v1 in model.l2hmc_fns['l2hmc_fns_b'].items():
         for k2, v2 in v1.items():
             with tf.name_scope(f'{k1}_fn_{k2}_b'):
                 variable_summaries(v2)
@@ -246,10 +246,14 @@ def create_summaries(model, summary_dir, training=True):
                          model.dynamics.trainable_variables)
 
     if training:
-        _create_training_summaries(model)  # loss, lr, step_size, accept prob 
+        _create_training_summaries(model)  # loss, lr, eps, accept prob 
 
-    _create_obs_summaries(model)    # lattice observables
-    _create_l2hmc_summaries(model)  # log S, T, Q functions (forward/backward)
+    if model._model_type == 'GaugeModel':
+        _create_obs_summaries(model)    # lattice observables
+
+    # log S, T, Q functions (forward/backward)
+    _create_l2hmc_summaries(model)
+
     #  _ = _create_loss_summaries(model.loss_op)
 
     for grad, var in grads_and_vars:
