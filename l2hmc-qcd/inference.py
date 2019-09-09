@@ -240,7 +240,7 @@ def log_plaq_diffs(run_logger, net_weights_arr, avg_plaq_diff):
     #  pd_pkl_file = os.path.join(out_dir, 'plaq_diffs_data.pkl')
     #  with open(pd_pkl_file, 'wb') as f:
     #      pickle.dump(pd_tup, f)
-    pd_txt_file = os.path.join(run_logger.log_dir, 'plaq_diffs_data.txt')
+    pd_txt_file = os.path.join(out_dir, 'plaq_diffs_data.txt')
     with open(pd_txt_file, 'a') as f:
         for row in pd_tup:
             f.write(f'{row[0][0]}, {row[0][1]}, {row[0][2]}, {row[1]}\n')
@@ -301,11 +301,13 @@ def inference_setup(kwargs):
     beta_final = kwargs.get('beta_final', None)
     beta_inference = kwargs.get('beta_inference', None)
     beta = beta_final if beta_inference is None else beta_inference
+    eps = kwargs.get('eps', None)
     #  betas = [beta_final if beta_inference is None else beta_inference]
 
     inference_dict = {
         'net_weights_arr': net_weights_arr,
         'beta': beta,
+        'eps': eps,
         #  'charge_weight': kwargs.get('charge_weight', 1.),
         'run_steps': kwargs.get('run_steps', 5000),
         'plot_lf': kwargs.get('plot_lf', False),
@@ -369,6 +371,20 @@ def run_hmc(FLAGS, log_file=None):
     run_inference(inference_dict, runner, run_logger, plotter)
 
 
+def _log_inference_header(nw, run_steps, eps, beta, existing=False):
+    if existing:
+        str0 = f'\n Inference has already been completed for:'
+    else:
+        str0 = f'\n Running inference with:'
+    io.log(SEP_STR)
+    io.log(f'\n {str0}\n'
+           f'\t net_weights: [{nw[0]}, {nw[1]}, {nw[2]}]\n'
+           f'\t run_steps: {run_steps}\n'
+           f'\t eps: {eps}\n'
+           f'\t beta: {beta}\n')
+    io.log(SEP_STR)
+
+
 def inference(runner, run_logger, plotter, **kwargs):
     """Perform an inference run, if it hasn't been ran previously.
 
@@ -387,19 +403,28 @@ def inference(runner, run_logger, plotter, **kwargs):
         avg_plaq_diff: If run hasn't been completed previously, else None
     """
     run_steps = kwargs.get('run_steps', 5000)
+    nw = kwargs.get('net_weights', [1., 1., 1.])
     beta = kwargs.get('beta', 5.)
-    kwargs['eps'] = runner.eps
+    eps = kwargs.get('eps', None)
+    if eps is None:
+        eps = runner.eps
+        kwargs['eps'] = eps
 
     run_str = run_logger._get_run_str(**kwargs)
     kwargs['run_str'] = run_str
 
-    if not run_logger.existing_run(run_str):
+    args = (nw, run_steps, eps, beta)
+
+    if run_logger.existing_run(run_str):
+        _log_inference_header(*args, existing=True)
+
+    else:
+        _log_inference_header(*args, existing=False)
         run_logger.reset(**kwargs)
         t0 = time.time()
 
         runner.run(**kwargs)
 
-        #  io.log(SEP_STR)
         run_time = time.time() - t0
         io.log(SEP_STR + f'\nTook: {run_time}s to complete run.\n' + SEP_STR)
 
@@ -411,16 +436,6 @@ def inference(runner, run_logger, plotter, **kwargs):
             num_samples = runner.params.get('num_samples', 20)
             lf_plotter.make_plots(run_logger.run_dir,
                                   num_samples=num_samples)
-
-    nw = kwargs.get('net_weights', [1., 1., 1.])
-    io.log(SEP_STR)
-    io.log(f'\n Inference has already been completed for:\n'
-           f'\t net_weights: [{nw[0]}, {nw[1]}, {nw[2]}]\n'
-           f'\t run_steps: {run_steps}\n'
-           f'\t eps: {runner.eps}\n'
-           f'\t beta: {beta}\n'
-           f' Continuing...\n')
-    io.log(SEP_STR)
 
 
 def run_inference(runner, run_logger=None, plotter=None, **kwargs):
@@ -525,7 +540,10 @@ def main(kwargs):
     if inference_dict['beta'] is None:
         inference_dict['beta'] = params['beta_final']
 
+    params['eps'] = inference_dict.get('eps', None)
+
     runner = GaugeModelRunner(sess, params, inputs, run_ops, run_logger)
+
     run_inference(runner, run_logger, plotter, **inference_dict)
 
 
