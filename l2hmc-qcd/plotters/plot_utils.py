@@ -116,9 +116,8 @@ def plot_gaussian_contours(mus, covs, **kwargs):
     pos[:, :, 0] = X
     pos[:, :, 1] = Y
 
-    for i in range(len(mus)):
-        mu = mus[i]
-        cov = covs[i]
+    for idx, mu in enumerate(mus):
+        cov = covs[idx]
         F = multivariate_normal(mu, cov)
         Z = F.pdf(pos)
         #  plt.contour(X, Y, Z, spacing, colors=colors[0])
