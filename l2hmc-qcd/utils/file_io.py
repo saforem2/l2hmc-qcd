@@ -83,6 +83,19 @@ def make_dirs(dirs):
     _ = [check_else_make_dir(d) for d in dirs]
 
 
+'''
+def _parse_gmm_flags(FLAGS):
+    """Helper method for parsing flags as both AttrDicts or generic dicts."""
+    if isinstance(FLAGS, dict):
+        flags_dict = FLAGS
+    else:
+        try:
+            flags_dict = FLAGS.__dict__
+        except (NameError, AttributeError):
+            pass
+'''
+
+
 def _parse_flags(FLAGS):
     """Helper method for parsing flags as both AttrDicts or generic dicts."""
     if isinstance(FLAGS, dict):
@@ -142,7 +155,33 @@ def _parse_flags(FLAGS):
     return out_dict
 
 
-def create_log_dir(FLAGS, root_dir=None, log_file=None):
+def create_run_str(FLAGS):
+    flags_dict = _parse_flags(FLAGS)
+    LX = flags_dict['LX']
+    NS = flags_dict['NS']
+    LF = flags_dict['LF']
+    SS = flags_dict['SS']
+    QW = flags_dict['QW']
+    NA = flags_dict['NA']
+    BN = flags_dict['BN']
+    DP = flags_dict['DP']
+    AW = flags_dict['AW']
+
+    aw = str(AW).replace('.', '')
+    qw = str(QW).replace('.', '')
+    dp = str(DP).replace('.', '')
+
+    if flags_dict['hmc']:
+        run_str = f'HMC_lattice{LX}_batch{NS}_lf{LF}_eps{SS:.3g}'
+    else:
+        run_str = f'lattice{LX}_batch{NS}_lf{LF}_qw{qw}_aw{aw}_{NA}_dp{dp}'
+        if BN:
+            run_str += '_bn'
+
+    return run_str, flags_dict
+
+
+def create_log_dir(FLAGS, root_dir=None, log_file=None, run_str=True):
     """Automatically create and name `log_dir` to save model data to.
 
     The created directory will be located in `logs/YYYY_M_D/`, and will have
@@ -155,28 +194,13 @@ def create_log_dir(FLAGS, root_dir=None, log_file=None):
 
     NOTE: If log_dir does not already exist, it is created.
     """
-    flags_dict = _parse_flags(FLAGS)
-    LX = flags_dict['LX']
-    NS = flags_dict['NS']
-    LF = flags_dict['LF']
-    SS = flags_dict['SS']
-    QW = flags_dict['QW']
-    NA = flags_dict['NA']
-    BN = flags_dict['BN']
-    DP = flags_dict['DP']
-    AW = flags_dict['AW']
-    _log_dir = flags_dict['_log_dir']
 
-    aw = str(AW).replace('.', '')
-    qw = str(QW).replace('.', '')
-    dp = str(DP).replace('.', '')
-
-    if flags_dict['hmc']:
-        run_str = f'HMC_lattice{LX}_batch{NS}_lf{LF}_eps{SS:.3g}'
+    if run_str:
+        run_str, flags_dict = create_run_str(FLAGS)
+        _log_dir = getattr(flags_dict, '_log_dir', None)
     else:
-        run_str = f'lattice{LX}_batch{NS}_lf{LF}_qw{qw}_aw{aw}_{NA}_dp{dp}'
-        if BN:
-            run_str += '_bn'
+        run_str = ''
+        _log_dir = None
 
     now = datetime.datetime.now()
     #  print(now.strftime("%b %d %Y %H:%M:%S"))
