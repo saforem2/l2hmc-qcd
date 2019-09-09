@@ -13,7 +13,7 @@ for each major part of the algorithm:
         - This is done using the `GaugeModel` class, found in
         `models/gauge_model.py`.
 
-        - The `GaugeModel` class depends on the `GaugeDynamics` class
+        - The `GaugeModel` class depends on the `Dynamics` class
         (found in `dynamics/gauge_dynamics.py`) that performs the augmented
         leapfrog steps outlined in the original paper.
 
@@ -46,6 +46,8 @@ from tensorflow.python import debug as tf_debug  # noqa: F401
 from tensorflow.python.client import timeline    # noqa: F401
 from tensorflow.core.protobuf import rewriter_config_pb2
 
+from collections import namedtuple
+
 import utils.file_io as io
 
 from config import (
@@ -55,16 +57,13 @@ from update import set_precision
 from utils.parse_args import parse_args
 from models.model import GaugeModel
 from loggers.train_logger import TrainLogger
-from trainers.trainer import GaugeModelTrainer
+from trainers.gauge_model_trainer import GaugeModelTrainer
 
 if HAS_COMET:
     from comet_ml import Experiment
 
 if HAS_HOROVOD:
     import horovod.tensorflow as hvd
-
-#  if HAS_MATPLOTLIB:
-#      import matplotlib.pyplot as plt
 
 if float(tf.__version__.split('.')[0]) <= 2:
     tf.logging.set_verbosity(tf.logging.INFO)
@@ -83,12 +82,14 @@ tf.set_random_seed(GLOBAL_SEED)
 def create_config(params):
     """Helper method for creating a tf.ConfigProto object."""
     config = tf.ConfigProto(allow_soft_placement=True)
-    if params['time_size'] > 8:
+    time_size = params.get('time_size', None)
+    if time_size is not None and time_size > 8:
         off = rewriter_config_pb2.RewriterConfig.OFF
         config_attrs = config.graph_options.rewrite_options
         config_attrs.arithmetic_optimization = off
 
-    if params['gpu']:
+    gpu = params.get('gpu', False)
+    if gpu:
         # Horovod: pin GPU to be used to process local rank 
         # (one GPU per process)
         config.gpu_options.allow_growth = True
@@ -99,7 +100,8 @@ def create_config(params):
     if HAS_MATPLOTLIB:
         params['_plot'] = True
 
-    if params['theta']:
+    theta = params.get('theta', False)
+    if theta:
         params['_plot'] = False
         io.log("Training on Theta @ ALCF...")
         params['data_format'] = 'channels_last'
@@ -114,7 +116,6 @@ def create_config(params):
         config.inter_op_parallelism_threads = 0
 
     return config, params
-
 
 
 def latest_meta_file(checkpoint_dir=None):
@@ -169,34 +170,45 @@ def count_trainable_params(out_file, log=False):
     writer(f'Total parameters: {total_params}', out_file)
 
 
-def train_setup(FLAGS, log_file=None):
+def train_setup(FLAGS, log_file=None, root_dir=None, run_str=True):
     io.log(SEP_STR)
     io.log("Starting training using L2HMC algorithm...")
     tf.keras.backend.clear_session()
     tf.reset_default_graph()
+    if isinstance(FLAGS, dict):
+        FLAGS = namedtuple('FLAGS', FLAGS.keys())(**FLAGS)
 
     # ------------------------------------------------------------------------
     # Parse command line arguments; copy key, val pairs from FLAGS to params.
     # ------------------------------------------------------------------------
-    try:
-        kv_pairs = FLAGS.__dict__.items()
-    except AttributeError:
-        kv_pairs = FLAGS.items()
+    #  try:
+    #      kv_pairs = FLAGS.__dict__.items()
+    #  except AttributeError:
+    #      kv_pairs = FLAGS.items()
+    params = FLAGS._asdict()
+    #
+    #  params = {}
+    #  for key, val in kv_pairs:
+    #      params[key] = val
+    #      if isinstance(val, bool) and not val:  # skip if option is `off`
+    #          continue
+    #      else:
 
-    params = {}
-    for key, val in kv_pairs:
-        params[key] = val
-        #  if isinstance(val, bool) and not val:  # skip if option is `off`
-        #      continue
-        #  else:
+    params['log_dir'] = io.create_log_dir(FLAGS,
+                                          log_file=log_file,
+                                          root_dir=root_dir,
+                                          run_str=run_str)
+    params['summaries'] = not getattr(FLAGS, 'no_summaries', False)
+    save_steps = getattr(FLAGS, 'save_steps', None)
 
-    params['log_dir'] = io.create_log_dir(FLAGS, log_file=log_file)
-    params['summaries'] = not FLAGS.no_summaries
     if 'no_summaries' in params:
         del params['no_summaries']
 
-    if FLAGS.save_steps is None and FLAGS.train_steps is not None:
+    if save_steps is None and FLAGS.train_steps is not None:
         params['save_steps'] = params['train_steps'] // 4
+
+    else:
+        params['save_steps'] = 1000
 
     #  if FLAGS.gpu:
     #      params['data_format'] = 'channels_last'
@@ -296,21 +308,11 @@ def train_l2hmc(FLAGS, log_file=None, experiment=None):
     config, params = create_config(params)
 
     # set initial value of charge weight using value from FLAGS
-    charge_weight_init = params['charge_weight']
+    #  charge_weight_init = params['charge_weight']
     net_weights_init = [1., 1., 1.]
     samples_init = np.reshape(np.array(model.lattice.samples, dtype=NP_FLOAT),
                               (model.num_samples, model.x_dim))
     beta_init = model.beta_init
-
-    init_feed_dict = {
-        model.x: samples_init,
-        model.beta: beta_init,                      # ------------------------
-        model.charge_weight: charge_weight_init,    # NOTE
-        model.net_weights[0]: net_weights_init[0],  # ~ scale (S fn)
-        model.net_weights[1]: net_weights_init[1],  # ~ translation (T fn)
-        model.net_weights[2]: net_weights_init[2],  # ~ transformation (Q fn)
-        model.train_phase: True                     # ------------------------
-    }
 
     # ensure all variables are initialized
     #  target_collection = []
@@ -365,7 +367,6 @@ def train_l2hmc(FLAGS, log_file=None, experiment=None):
     #  io.log([f'{i.name}' for i in not_initialized_vars])
 
     #  sess.run(init_op)
-
     # ----------------------------------------------------------
     #                       TRAINING
     # ----------------------------------------------------------
@@ -376,7 +377,12 @@ def train_l2hmc(FLAGS, log_file=None, experiment=None):
         'net_weights': net_weights_init
     }
 
+    t0 = time.time()
     trainer.train(model.train_steps, **train_kwargs)
+
+    io.log(SEP_STR)
+    io.log(f'Training completed in: {time.time() - t0:.3g}s')
+    io.log(SEP_STR)
 
     if HAS_COMET and experiment is not None:
         experiment.log_parameters(params)
@@ -424,15 +430,9 @@ def main(FLAGS):
     else:
         experiment = None
 
-    if FLAGS.hmc:
-        # --------------------
-        #   run generic HMC
-        # --------------------
+    if FLAGS.hmc:   # run generic HMC sampler
         inference.run_hmc(FLAGS, log_file=log_file)
-    else:
-        # ------------------------
-        #   train l2hmc sampler
-        # ------------------------
+    else:           # train l2hmc sampler
         model, train_logger = train_l2hmc(FLAGS, log_file, experiment)
         if experiment is not None:
             experiment.log_parameters(model.params)
@@ -446,3 +446,4 @@ if __name__ == '__main__':
 
     io.log('\n\n' + SEP_STR)
     io.log(f'Time to complete: {time.time() - t0:.4g}')
+    io.log(SEP_STR)

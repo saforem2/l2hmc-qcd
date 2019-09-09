@@ -18,43 +18,87 @@ import tensorflow as tf
 
 import utils.file_io as io
 
-from config import TRAIN_HEADER
+from collections import namedtuple
+from models.model import GaugeModel
+from models.gmm_model import GaussianMixtureModel
 from .summary_utils import create_summaries
 from utils.file_io import save_params
 
 
+h_str = ("{:^12s}" + 10 * "{:^10s}").format(
+    "STEP", "LOSS", "t/STEP", "% ACC", "EPS",
+    "BETA", "ACTION", "PLAQ", "(EXACT)", "dQ", "LR"
+)
+
+dash = (len(h_str) + 1) * '-'
+TRAIN_HEADER = dash + '\n' + h_str + '\n' + dash
+
+
+TrainData = namedtuple('TrainData', ['loss', 'prob', 'eps'])
+
+ObsData = namedtuple('ObsData', [
+    'actions', 'plaqs', 'charges', 'charge_diffs'
+])
+
+l2hmcFn = namedtuple('l2hmcFn', ['v1', 'x1', 'x2', 'v2'])
+l2hmcFns = namedtuple('l2hmcFns', ['scale', 'translation', 'transformation'])
+
+'''
+#  self._current_state = {
+#      'step': 0,
+#      'beta': self.model.beta_init,
+#      'eps': self.model.eps,
+#      'lr': self.model.lr_init,
+#      'samples': self.model.samples_init,
+#  }
+#  self.train_data = {
+#      'loss': {},
+#      'actions': {},
+#      'plaqs': {},
+#      'charges': {},
+#      'charge_diffs': {},
+#      'px': {}
+#  }
+
+if self.model.save_lf:
+    self.l2hmc_fns = {
+        'forward': {},
+        'backward': {},
+    }
+
+    #  self.train_data['l2hmc_fns'] = {
+    #      'forward': [],
+    #      'backward': [],
+    #  }
+'''
+
+
 class TrainLogger:
-    def __init__(self, model, log_dir, summaries=False):
+    def __init__(self, model, log_dir, logging_steps=10, summaries=False):
         #  self.sess = sess
         self.model = model
         self.summaries = summaries
+        self.logging_steps = logging_steps
 
-        self.charges_dict = {}
-        self.charge_diffs_dict = {}
+        self.train_data = {}
+        if model._model_type == 'GaugeModel':
+            self._model_type = model._model_type
+            self.obs_data = {}
+            self.h_strf = ("{:^12s}" + 10 * "{:^10s}").format(
+                "STEP", "LOSS", "t/STEP", "% ACC", "EPS",
+                "BETA", "ACTION", "PLAQ", "(EXACT)", "dQ", "LR"
+            )
 
-        self._current_state = {
-            'step': 0,
-            'beta': self.model.beta_init,
-            'eps': self.model.eps,
-            'lr': self.model.lr_init,
-            'samples': self.model.lattice.samples_tensor,
-        }
+        if model._model_type == 'GaussianMixtureModel':
+            self._model_type = 'GaussianMixtureModel'
+            self.h_strf = ("{:^12s}" + 6 * "{:^10s}").format(
+                "STEP", "LOSS", "t/STEP", "% ACC", "EPS", "BETA", "LR"
+            )
 
-        self.train_data_strings = [TRAIN_HEADER]
-        self.train_data = {
-            'loss': {},
-            'actions': {},
-            'plaqs': {},
-            'charges': {},
-            'charge_diffs': {},
-            'px': {}
-        }
+        self.dash = (len(self.h_strf) + 1) * '-'
+        self.train_header = self.dash + '\n' + self.h_strf + '\n' + self.dash
 
-        if self.model.save_lf:
-            self.train_data['l2hmc_fns'] = {
-                'forward': [],
-                'backward': [],
-            }
+        self.train_data_strings = [self.train_header]
 
         # log_dir will be None if using_hvd and hvd.rank() != 0
         # this prevents workers on different ranks from corrupting checkpoints
@@ -75,9 +119,6 @@ class TrainLogger:
 
         Args:
             log_dir: Root directory in which all other directories are created.
-
-        Returns:
-            None
         """
         dirs = {
             'log_dir': log_dir,
@@ -99,25 +140,11 @@ class TrainLogger:
         for key, val in files.items():
             setattr(self, key, val)
 
-    def save_current_state(self):
-        """Save current state to pickle file.
-
-        The current state contains the following, which makes life easier if
-        we're trying to restore training from a saved checkpoint:
-            * most recent samples
-            * learning_rate
-            * beta
-            * dynamics.eps
-            * training_step
-        """
-        with open(self.current_state_file, 'wb') as f:
-            pickle.dump(self._current_state, f)
-
-    def log_step(self, sess, step, samples_np, beta_np, net_weights):
+    def log_step(self, sess, data, net_weights):
         """Update self.logger.summaries."""
         feed_dict = {
-            self.model.x: samples_np,
-            self.model.beta: beta_np,
+            self.model.x: data.samples,
+            self.model.beta: data.beta,
             self.model.net_weights[0]: net_weights[0],
             self.model.net_weights[1]: net_weights[1],
             self.model.net_weights[2]: net_weights[2],
@@ -125,43 +152,31 @@ class TrainLogger:
         }
         summary_str = sess.run(self.summary_op, feed_dict=feed_dict)
 
-        self.writer.add_summary(summary_str, global_step=step)
+        self.writer.add_summary(summary_str, global_step=data.step)
         self.writer.flush()
 
-    def update_training(self, sess, data, net_weights, data_str):
+    def update(self, sess, data, data_str, net_weights):
         """Update _current state and train_data."""
-        step = data['step']
-        beta = data['beta']
-        self._current_state['step'] = step
-        self._current_state['beta'] = beta
-        self._current_state['lr'] = data['lr']
-        self._current_state['eps'] = data['eps']
-        self._current_state['samples'] = data['samples']
-        self._current_state['net_weights'] = net_weights
+        #  key = (step, beta)
+        print_steps = getattr(self, 'print_steps', 1)
 
-        key = (step, beta)
+        step = data.step
 
-        self.charges_dict[key] = data['charges']
-        self.charge_diffs_dict[key] = data['charge_diffs']
-
-        obs_keys = ['loss', 'actions',
-                    'plaqs', 'charges',
-                    'charge_diffs', 'px']
-        for obs_key in obs_keys:
-            self.train_data[obs_key][key] = data[obs_key]
-
-        self.train_data_strings.append(data_str)
-        if step % self.model.print_steps == 0:
+        if (step + 1) % print_steps == 0:
             io.log(data_str)
 
-        if self.summaries and (step + 1) % self.model.logging_steps == 0:
-            self.log_step(sess, step, data['samples'], beta, net_weights)
+        if (step + 1) % 100 == 0:
+            io.log(self.train_header)
 
-        if (step + 1) % self.model.save_steps == 0:
-            self.save_current_state()
+        self.train_data[step] = TrainData(data.loss, data.prob, data.eps)
 
-        if step % 100 == 0:
-            io.log(TRAIN_HEADER)
+        if self._model_type == 'GaugeModel':
+            self.obs_data[step] = ObsData(data.actions, data.plaqs,
+                                          data.charges, data.charge_diffs)
+
+        self.train_data_strings.append(data_str)
+        if self.summaries and (step + 1) % self.logging_steps == 0:
+            self.log_step(sess, data, net_weights)
 
     def write_train_strings(self):
         """Write training strings out to file."""
