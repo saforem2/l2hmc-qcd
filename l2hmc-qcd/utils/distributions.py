@@ -26,8 +26,9 @@ import collections
 import numpy as np
 import tensorflow as tf
 from scipy.stats import multivariate_normal, ortho_group
+from scipy.misc import logsumexp
 
-from config import GLOBAL_SEED, TF_FLOAT, NP_FLOAT, TF_INT, PARAMS, HAS_HOROVOD
+from config import GLOBAL_SEED, TF_FLOAT, NP_FLOAT, TF_INT, HAS_HOROVOD
 
 
 def quadratic_gaussian(x, mu, S):
@@ -114,17 +115,28 @@ class RoughWell(object):
 
 
 class GMM(object):
+    """Implements the distribution for a GaussianMixtureModel."""
     def __init__(self, mus, sigmas, pis):
+        """Initialization method.
+
+        Args:
+            mus (np.ndarray, list): Array of the means of each mode.
+            sigmas (np.ndarray, list): Array of the covariance matrix for each
+                mode.
+            pis (np.ndarray, list): Array containing relative probability of
+                each mode. Must sum to 1.
+        """
         assert len(mus) == len(sigmas)
+
         if not isinstance(pis, np.ndarray):
             pis = np.array(pis)
         if np.sum(pis) != 1.0:
             # normalize to achieve tolerance for np.random.choice
             pis /= pis.sum()
+
         self.mus = mus
         self.sigmas = sigmas
         self.pis = pis
-
         self.nb_mixtures = len(pis)
 
         self.k = mus[0].shape[0]
@@ -133,24 +145,26 @@ class GMM(object):
         self.constants = []
 
         for i, sigma in enumerate(sigmas):
-            self.i_sigmas.append(np.linalg.inv(sigma).astype('float32'))
-            det = np.sqrt((2 * np.pi) ** self.k *
-                          np.linalg.det(sigma)).astype('float32')
-            self.constants.append((pis[i] / det).astype('float32'))
+            self.i_sigmas.append(np.linalg.inv(sigma).astype(NP_FLOAT))
+            det = np.sqrt(
+                (2 * np.pi) ** self.k * np.linalg.det(sigma)
+            ).astype(NP_FLOAT)
+
+            self.constants.append((pis[i] / det).astype(NP_FLOAT))
 
     def get_energy_function(self):
         def fn(x):
-            V = tf.concat([tf.expand_dims(-quadratic_gaussian(x, self.mus[i],
-                                                              self.i_sigmas[i])
-                                          + tf.log(self.constants[i]), 1)
-                           for i in range(self.nb_mixtures)], axis=1)
+            V = tf.concat([tf.expand_dims(
+                - quadratic_gaussian(x, self.mus[i], self.i_sigmas[i])
+                + tf.log(self.constants[i]), axis=1
+            ) for i in range(self.nb_mixtures)], axis=1)
+
             return -tf.reduce_logsumexp(V, axis=1)
         return fn
 
     def get_samples(self, n):
         categorical = np.random.choice(self.nb_mixtures, size=(n,), p=self.pis)
         counter_samples = collections.Counter(categorical)
-
         samples = []
 
         for k, v in counter_samples.items():
@@ -159,16 +173,16 @@ class GMM(object):
                                                          size=(v,)))
 
         samples = np.concatenate(samples, axis=0)
-
         np.random.shuffle(samples)
 
         return samples
 
     def log_density(self, X):
-        return np.log(sum([self.pis[i]
-                           * multivariate_normal(mean=self.mus[i],
-                                                 cov=self.sigmas[i]).pdf(X)
-                           for i in range(self.nb_mixtures)]))
+        return np.log(sum([
+            self.pis[i] * multivariate_normal(mean=self.mus[i],
+                                              cov=self.sigmas[i]).pdf(X)
+            for i in range(self.nb_mixtures)
+        ]))
 
 
 class GaussianFunnel(object):

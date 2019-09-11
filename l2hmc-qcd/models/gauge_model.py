@@ -31,6 +31,10 @@ if HAS_HOROVOD:
     import horovod.tensorflow as hvd
 
 
+def allclose(x, y, rtol=1e-3, atol=1e-8):
+    return tf.reduce_all(tf.abs(x - y) <= tf.abs(y) * rtol + atol)
+
+
 class GaugeModel(BaseModel):
     def __init__(self, params=None):
         super(GaugeModel, self).__init__(params)
@@ -103,26 +107,29 @@ class GaugeModel(BaseModel):
         # *******************************************************************
         # Run dynamics (i.e. augmented leapfrog) to generate new configs 
         # -------------------------------------------------------------------
-        with tf.name_scope('apply_transition'):
-            with tf.name_scope('main_transition'):
-                x_dynamics = self.dynamics.apply_transition(
-                    self.x, self.beta, self.net_weights,
-                    self.train_phase, save_lf=self.save_lf
-                )
+        with tf.name_scope('l2hmc'):
+            with tf.name_scope('main_dynamics'):
+                x_dynamics = self._apply_transition(self.x, self.beta,
+                                                    self.net_weights,
+                                                    self.train_phase,
+                                                    save_lf=self.save_lf)
             if getattr(self, 'aux_weight', 1.) > 0:
-                with tf.name_scope('aux_transition'):
+                with tf.name_scope('auxiliary_dynamics'):
                     self.z = tf.random_normal(tf.shape(self.x),
                                               dtype=TF_FLOAT,
                                               seed=GLOBAL_SEED,
                                               name='z')
-                    z_dynamics = self.dynamics.apply_transition(
-                        self.z, self.beta, self.net_weights,
-                        self.train_phase, save_lf=False
-                    )
+                    z_dynamics = self._apply_transition(self.z, self.beta,
+                                                        self.net_weights,
+                                                        self.train_phase,
+                                                        save_lf=False)
 
             self.x_out = x_dynamics['x_out']
             self.px = x_dynamics['accept_prob']
             self._parse_dynamics_output(x_dynamics)
+
+        with tf.name_scope('check_reversibility'):
+            self.x_allclose, self.v_allclose = self._check_reversibility()
 
         with tf.name_scope('run_ops'):
             io.log(f'INFO: Building `run_ops`...')
@@ -165,6 +172,25 @@ class GaugeModel(BaseModel):
         io.log(80 * '-')
         # *******************************************************************
 
+    def _apply_transition(self, *args, **kwargs):
+        """Call `self.dynamics.apply_transition, using `x` as input."""
+        return self.dynamics.apply_transition(*args, **kwargs)
+
+    def _check_reversibility(self):
+        v_in = tf.random_normal(self.x.shape, dtype=TF_FLOAT, seed=GLOBAL_SEED,
+                                name='v_reverse_check')
+        dynamics_check = self.dynamics._check_reversibility(self.x,
+                                                            v_in,
+                                                            self.beta,
+                                                            self.net_weights,
+                                                            self.train_phase)
+        xb = dynamics_check['xb']
+        vb = dynamics_check['vb']
+
+        x_allclose = allclose(self.x, xb)
+        v_allclose = allclose(v_in, vb)
+
+        return x_allclose, v_allclose
 
     def _create_lattice(self):
         """Create GaugeLattice object."""
