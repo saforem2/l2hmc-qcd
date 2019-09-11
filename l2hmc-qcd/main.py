@@ -55,7 +55,7 @@ from config import (
 )
 from update import set_precision
 from utils.parse_args import parse_args
-from models.model import GaugeModel
+from models.gauge_model import GaugeModel
 from loggers.train_logger import TrainLogger
 from trainers.gauge_model_trainer import GaugeModelTrainer
 
