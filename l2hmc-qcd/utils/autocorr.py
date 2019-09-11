@@ -191,8 +191,7 @@ def integrated_time(x, c=5, tol=50, quiet=False):
         msg += "N/{0} = {1:.0f};\ntau: {2}".format(tol, n_t/tol, tau_est)
         if not quiet:
             raise AutocorrError(tau_est, msg)
-        else:
-            _flag = 1
+        _flag = 1
         #  logging.warning(msg)
         print(msg)
 
