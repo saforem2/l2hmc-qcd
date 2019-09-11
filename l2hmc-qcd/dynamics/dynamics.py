@@ -217,7 +217,13 @@ class Dynamics(tf.keras.Model):
         results_dict = {}
 
         with tf.name_scope('transition_forward'):
-            outputs_f = self.transition_kernel(x_in, beta,
+            with tf.name_scope('refresh_momentum'):
+                v_rf = tf.random_normal(tf.shape(x_in),
+                                        dtype=TF_FLOAT,
+                                        seed=GLOBAL_SEED,
+                                        name='refresh_momentum_forward')
+
+            outputs_f = self.transition_kernel(x_in, v_rf, beta,
                                                net_weights,
                                                train_phase,
                                                forward=True,
@@ -227,7 +233,13 @@ class Dynamics(tf.keras.Model):
             results_dict['pxs_out_f'] = outputs_f['accept_prob']
 
         with tf.name_scope('transition_backward'):
-            outputs_b = self.transition_kernel(x_in, beta,
+            with tf.name_scope('refresh_momentum'):
+                v_rb = tf.random_normal(tf.shape(x_in),
+                                        dtype=TF_FLOAT,
+                                        seed=GLOBAL_SEED,
+                                        name='refresh_momentum_backward')
+
+            outputs_b = self.transition_kernel(x_in, v_rb, beta,
                                                net_weights,
                                                train_phase,
                                                forward=False,
@@ -308,6 +320,7 @@ class Dynamics(tf.keras.Model):
 
     def transition_kernel(self,
                           x_in,
+                          v_in,
                           beta,
                           net_weights,
                           train_phase,
@@ -316,11 +329,11 @@ class Dynamics(tf.keras.Model):
         """Transition kernel of augmented leapfrog integrator."""
         lf_fn = self._forward_lf if forward else self._backward_lf
 
-        with tf.name_scope('refresh_momentum'):
-            v_in = tf.random_normal(tf.shape(x_in),
-                                    dtype=TF_FLOAT,
-                                    seed=GLOBAL_SEED,
-                                    name='refresh_momentum')
+        #  with tf.name_scope('refresh_momentum'):
+        #      v_in = tf.random_normal(tf.shape(x_in),
+        #                              dtype=TF_FLOAT,
+        #                              seed=GLOBAL_SEED,
+        #                              name='refresh_momentum')
 
         with tf.name_scope('init'):
             x_proposed, v_proposed = x_in, v_in
@@ -396,6 +409,31 @@ class Dynamics(tf.keras.Model):
 
         return outputs
 
+    def _check_reversibility(self, x_in, v_in, beta, net_weights, train_phase):
+        outputs_f = self.transition_kernel(x_in, v_in, beta,
+                                           net_weights,
+                                           train_phase,
+                                           forward=True,
+                                           save_lf=False)
+        xf = outputs_f['x_proposed']
+        vf = outputs_f['v_proposed']
+
+        outputs_b = self.transition_kernel(xf, vf, beta,
+                                           net_weights,
+                                           train_phase,
+                                           forward=False,
+                                           save_lf=False)
+        xb = outputs_b['x_proposed']
+        vb = outputs_b['v_proposed']
+
+        outputs = {
+            'xf': xf,
+            'vf': vf,
+            'xb': xb,
+            'vb': vb
+        }
+
+        return outputs
     def _forward_lf(self, x, v, beta, step, net_weights, train_phase):
         """One forward augmented leapfrog step."""
         forward_fns = []
