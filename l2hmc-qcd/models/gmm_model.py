@@ -22,6 +22,7 @@ from collections import namedtuple
 from utils.horovod_utils import warmup_lr
 from utils.distributions import GMM, gen_ring
 from base.base_model import BaseModel
+from .gauge_model import allclose
 from dynamics.dynamics import Dynamics
 from .params import GMM_PARAMS
 from config import GLOBAL_SEED, TF_FLOAT, TF_INT, HAS_HOROVOD
@@ -50,6 +51,60 @@ def distribution_arr(x_dim, num_distributions):
         pis.extend((x_dim - num_distributions) * [small_pi])
 
     return np.array(pis, dtype=NP_FLOAT)
+
+
+def ring_of_gaussians(num_modes, sigma, x_dim=2, radius=1.):
+    """Create ring of Gaussians for GaussianMixtureModel. 
+
+    Args:
+        num_modes (int): Number of modes for distribution.
+        sigma (float): Standard deviation of each mode.
+        x_dim (int): Spatial dimensionality in which the distribution exists.
+        radius (float): Radius from the origin along which the modes are
+            located.
+
+    Returns:
+        distribution (GMM object): Gaussian mixture distribution.
+        mus (np.ndarray): Array of the means of the distribution.
+        covs (np.array): Covariance matrices.
+        distances (np.ndarray): Array of the differences between different
+            modes. 
+    """
+    covs, distribution = gen_ring(r=1., var=sigma, nb_mixtures=num_modes)
+    mus = np.array(distribution.mus)
+    diffs = mus[1:] - mus[:-1, :]
+    distances = [np.sqrt(np.dot(d, d.T)) for d in diffs]
+
+    return distribution, mus, covs, distances
+
+
+def lattice_of_gaussians(num_modes, sigma, x_dim=2, size=None):
+    """Create lattice of Gaussians for GaussianMixtureModel.
+
+    Args:
+        num_modes (int): Number of modes for distribution.
+        sigma (float): Standard deviation of each mode.
+        x_dim (int): Spatial dimensionality in which the distribution exists.
+        size (int): Spatial extent of lattice.
+
+    Returns:
+        distribution (GMM object): Gaussian mixture distribution.
+        covs (np.array): Covariance matrices.
+        mus (np.ndarray): Array of the means of the distribution.
+        pis (np.ndarray): Array of relative probabilities for each mode. Must
+            sum to 1.
+    """
+    if size is None:
+        size = int(np.sqrt(num_modes))
+
+    mus = np.array([(i, j) for i in range(size) for j in range(size)])
+    covs = np.array([sigma * np.eye(x_dim) for _ in range(num_modes)])
+    pis = [1. / num_modes] * num_modes
+    pis[0] += 1. - sum(pis)
+
+    distribution = GMM(mus, covs, pis)
+
+    return distribution, mus, covs, pis
 
 
 class GaussianMixtureModel(BaseModel):
@@ -115,26 +170,29 @@ class GaussianMixtureModel(BaseModel):
         # *******************************************************************
         # Run dynamics (i.e. augmented leapfrog) to generate new configs 
         # -------------------------------------------------------------------
-        with tf.name_scope('apply_transition'):
-            with tf.name_scope('main_transition'):
-                x_dynamics = self.dynamics.apply_transition(
-                    self.x, self.beta, self.net_weights,
-                    self.train_phase, save_lf=self.save_lf
-                )
+        with tf.name_scope('l2hmc'):
+            with tf.name_scope('main_dynamics'):
+                x_dynamics = self._apply_transition(self.x, self.beta,
+                                                    self.net_weights,
+                                                    self.train_phase,
+                                                    save_lf=self.save_lf)
             if getattr(self, 'aux_weight', 1.) > 0:
-                with tf.name_scope('aux_transition'):
+                with tf.name_scope('auxiliary_dynamics'):
                     self.z = tf.random_normal(tf.shape(self.x),
                                               dtype=TF_FLOAT,
                                               seed=GLOBAL_SEED,
                                               name='z')
-                    z_dynamics = self.dynamics.apply_transition(
-                        self.z, self.beta, self.net_weights,
-                        self.train_phase, save_lf=False
-                    )
+                    z_dynamics = self._apply_transition(self.z, self.beta,
+                                                        self.net_weights,
+                                                        self.train_phase,
+                                                        save_lf=False)
 
             self.x_out = x_dynamics['x_out']
             self.px = x_dynamics['accept_prob']
             self._parse_dynamics_output(x_dynamics)
+
+        with tf.name_scope('check_reversibility'):
+            self.x_allclose, self.v_allclose = self._check_reversibility()
 
         with tf.name_scope('run_ops'):
             io.log(f'INFO: Building `run_ops`...')
@@ -177,6 +235,28 @@ class GaussianMixtureModel(BaseModel):
         io.log(80 * '-')
         # *******************************************************************
 
+    def _apply_transition(self, *args, **kwargs):
+        """Call `self.dynamics.apply_transition, using `x` as input."""
+        return self.dynamics.apply_transition(*args, **kwargs)
+
+    def _check_reversibility(self):
+        v_in = tf.random_normal(self.x.shape,
+                                dtype=TF_FLOAT,
+                                seed=GLOBAL_SEED,
+                                name='v_reverse_check')
+        dynamics_check = self.dynamics._check_reversibility(self.x,
+                                                            v_in,
+                                                            self.beta,
+                                                            self.net_weights,
+                                                            self.train_phase)
+        xb = dynamics_check['xb']
+        vb = dynamics_check['vb']
+
+        x_allclose = allclose(self.x, xb)
+        v_allclose = allclose(v_in, vb)
+
+        return x_allclose, v_allclose
+
     def _create_distribution(self, sigma=0.05, means=None):
         """Initialize distribution using utils/distributions.py."""
         diag = getattr(self, 'diag', False)
@@ -201,7 +281,7 @@ class GaussianMixtureModel(BaseModel):
         cov_mtx = sigma * np.eye(self.x_dim).astype(NP_FLOAT)
         covs = np.array([cov_mtx] * self.x_dim).astype(NP_FLOAT)
         if skewed:
-            covs[0] *= 4
+            covs[0] *= 2.0
 
         dist_arr = distribution_arr(self.x_dim, self.num_distributions)
         distribution = GMM(means, covs, dist_arr)
