@@ -19,7 +19,7 @@ import tensorflow as tf
 import utils.file_io as io
 
 from collections import namedtuple
-from models.model import GaugeModel
+from models.gauge_model import GaugeModel
 from models.gmm_model import GaussianMixtureModel
 from .summary_utils import create_summaries
 from utils.file_io import save_params
