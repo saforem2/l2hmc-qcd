@@ -38,11 +38,11 @@ import utils.file_io as io
 
 from tensorflow.core.protobuf import rewriter_config_pb2
 
-from config import (PARAMS, NP_FLOAT, HAS_HOROVOD,
+from config import (NP_FLOAT, HAS_HOROVOD,
                     HAS_MATPLOTLIB, HAS_MEMORY_PROFILER)
 from update import set_precision
 
-from models.model import GaugeModel
+from models.gauge_model import GaugeModel
 from loggers.summary_utils import create_summaries
 from loggers.run_logger import RunLogger
 from plotters.gauge_model_plotter import GaugeModelPlotter
