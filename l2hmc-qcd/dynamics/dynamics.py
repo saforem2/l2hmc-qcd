@@ -214,91 +214,42 @@ class Dynamics(tf.keras.Model):
             accept_prob: Probability of accepting the proposed states.
             x_out: Samples after accept/reject step.
         """
+        # `results_dict` holds additional data about the method that is
+        # returned if `save_lf=True`.
         results_dict = {}
 
-        with tf.name_scope('transition_forward'):
-            with tf.name_scope('refresh_momentum'):
-                v_rf = tf.random_normal(tf.shape(x_in),
-                                        dtype=TF_FLOAT,
-                                        seed=GLOBAL_SEED,
-                                        name='refresh_momentum_forward')
+        args = (x_in, beta, net_weights, train_phase, save_lf)
 
-            outputs_f = self.transition_kernel(x_in, v_rf, beta,
-                                               net_weights,
-                                               train_phase,
-                                               forward=True,
-                                               save_lf=save_lf)
-            xf = outputs_f['x_proposed']
-            vf = outputs_f['v_proposed']
-            results_dict['pxs_out_f'] = outputs_f['accept_prob']
+        # Forward transition:
+        outputs_f = self._transition_forward(*args)
+        xf = outputs_f['x_proposed']
+        vf = outputs_f['v_proposed']
+        pxf = outputs_f['accept_prob']
 
-        with tf.name_scope('transition_backward'):
-            with tf.name_scope('refresh_momentum'):
-                v_rb = tf.random_normal(tf.shape(x_in),
-                                        dtype=TF_FLOAT,
-                                        seed=GLOBAL_SEED,
-                                        name='refresh_momentum_backward')
-
-            outputs_b = self.transition_kernel(x_in, v_rb, beta,
-                                               net_weights,
-                                               train_phase,
-                                               forward=False,
-                                               save_lf=save_lf)
-            xb = outputs_b['x_proposed']
-            vb = outputs_b['v_proposed']
-            results_dict['pxs_out_b'] = outputs_b['accept_prob']
-
-        def get_lf_keys(direction):
-            base_keys = ['lf_out', 'logdets', 'sumlogdet', 'fns_out']
-            new_keys = [k + f'_{direction}' for k in base_keys]
-            return list(zip(new_keys, base_keys))
-
-        keys_f = get_lf_keys('f')
-        keys_b = get_lf_keys('b')
-
-        if save_lf:
-            results_dict.update({k[0]: outputs_f[k[1]] for k in keys_f})
-            results_dict.update({k[0]: outputs_b[k[1]] for k in keys_b})
+        # Backward transition:
+        outputs_b = self._transition_backward(*args)
+        xb = outputs_b['x_proposed']
+        vb = outputs_b['v_proposed']
+        pxb = outputs_b['accept_prob']
 
         # Decide direction uniformly
-        with tf.name_scope('transition_masks'):
-            with tf.name_scope('forward_mask'):
-                results_dict['masks_f'] = tf.cast(
-                    tf.random_uniform((self.batch_size,),
-                                      dtype=TF_FLOAT,
-                                      seed=GLOBAL_SEED) > 0.5,
-                    TF_FLOAT,
-                    name='forward_mask'
-                )
-            with tf.name_scope('backward_mask'):
-                results_dict['masks_b'] = 1. - results_dict['masks_f']
+        forward_mask, backward_mask = self._get_transition_masks()
 
         # Obtain proposed states
         with tf.name_scope('x_proposed'):
-            x_proposed = (results_dict['masks_f'][:, None] * xf
-                          + results_dict['masks_b'][:, None] * xb)
+            x_proposed = (xf * forward_mask[:, None]
+                          + xb * backward_mask[:, None])
 
         with tf.name_scope('v_proposed'):
-            v_proposed = (results_dict['masks_f'][:, None] * vf
-                          + results_dict['masks_b'][:, None] * vb)
+            v_proposed = (vf * forward_mask[:, None]
+                          + vb * backward_mask[:, None])
 
         # Probability of accepting the proposed states
         with tf.name_scope('accept_prob'):
-            accept_prob = (
-                results_dict['masks_f'] * results_dict['pxs_out_f']
-                + results_dict['masks_b'] * results_dict['pxs_out_b']
-            )
+            accept_prob = pxf * forward_mask + pxb * backward_mask
 
         # Accept or reject step
-        with tf.name_scope('accept_mask'):
-            accept_mask = tf.cast(
-                accept_prob > tf.random_uniform(tf.shape(accept_prob),
-                                                dtype=TF_FLOAT,
-                                                seed=GLOBAL_SEED),
-                TF_FLOAT,
-                name='acccept_mask'
-            )
-            reject_mask = 1. - accept_mask
+        accept_mask, reject_mask = self._get_accept_masks(accept_prob)
 
         # Samples after accept / reject step
         with tf.name_scope('x_out'):
@@ -314,9 +265,89 @@ class Dynamics(tf.keras.Model):
         }
 
         if save_lf:
+            results_dict['pxs_out_f'] = outputs_f['accept_prob']
+            results_dict['pxs_out_b'] = outputs_b['accept_prob']
+            results_dict['masks_f'] = forward_mask
+            results_dict['masks_b'] = backward_mask
+
+            def get_lf_keys(direction):
+                base_keys = ['lf_out', 'logdets', 'sumlogdet', 'fns_out']
+                new_keys = [k + f'_{direction}' for k in base_keys]
+                return list(zip(new_keys, base_keys))
+
+            keys_f = get_lf_keys('f')
+            keys_b = get_lf_keys('b')
+
+            results_dict.update({k[0]: outputs_f[k[1]] for k in keys_f})
+            results_dict.update({k[0]: outputs_b[k[1]] for k in keys_b})
+
             outputs.update(results_dict)
 
         return outputs
+
+    def _transition_forward(self, x, beta, net_weights, train_phase, save_lf):
+        with tf.name_scope('transition_forward'):
+            with tf.name_scope('refresh_momentum'):
+                v_rf = tf.random_normal(tf.shape(x),
+                                        dtype=TF_FLOAT,
+                                        seed=GLOBAL_SEED,
+                                        name='refresh_momentum_forward')
+
+            outputs_f = self.transition_kernel(x, v_rf, beta,
+                                               net_weights,
+                                               train_phase,
+                                               forward=True,
+                                               save_lf=save_lf)
+            #  xf = outputs_f['x_proposed']
+            #  vf = outputs_f['v_proposed']
+            #  results_dict['pxs_out_f'] = outputs_f['accept_prob']
+        return outputs_f
+
+    def _transition_backward(self, x, beta, net_weights, train_phase, save_lf):
+        with tf.name_scope('transition_backward'):
+            with tf.name_scope('refresh_momentum'):
+                v_rb = tf.random_normal(tf.shape(x),
+                                        dtype=TF_FLOAT,
+                                        seed=GLOBAL_SEED,
+                                        name='refresh_momentum_backward')
+
+            outputs_b = self.transition_kernel(x, v_rb, beta,
+                                               net_weights,
+                                               train_phase,
+                                               forward=False,
+                                               save_lf=save_lf)
+            #  xb = outputs_b['x_proposed']
+            #  vb = outputs_b['v_proposed']
+            #  results_dict['pxs_out_b'] = outputs_b['accept_prob']
+        return outputs_b
+
+    def _get_transition_masks(self):
+        with tf.name_scope('transition_masks'):
+            with tf.name_scope('forward_mask'):
+                forward_mask = tf.cast(
+                    tf.random_uniform((self.batch_size,),
+                                      dtype=TF_FLOAT,
+                                      seed=GLOBAL_SEED) > 0.5,
+                    TF_FLOAT,
+                    name='forward_mask'
+                )
+            with tf.name_scope('backward_mask'):
+                backward_mask = 1. - forward_mask
+
+        return forward_mask, backward_mask
+
+    def _get_accept_masks(self, accept_prob):
+        with tf.name_scope('accept_mask'):
+            accept_mask = tf.cast(
+                accept_prob > tf.random_uniform(tf.shape(accept_prob),
+                                                dtype=TF_FLOAT,
+                                                seed=GLOBAL_SEED),
+                TF_FLOAT,
+                name='acccept_mask'
+            )
+            reject_mask = 1. - accept_mask
+
+        return accept_mask, reject_mask
 
     def transition_kernel(self,
                           x_in,
@@ -434,6 +465,7 @@ class Dynamics(tf.keras.Model):
         }
 
         return outputs
+
     def _forward_lf(self, x, v, beta, step, net_weights, train_phase):
         """One forward augmented leapfrog step."""
         forward_fns = []
