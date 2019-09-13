@@ -31,6 +31,13 @@ from scipy.misc import logsumexp
 from config import GLOBAL_SEED, TF_FLOAT, NP_FLOAT, TF_INT, HAS_HOROVOD
 
 
+def quadratic_gaussian_np(x, mu, S):
+    return np.diag(0.5 * np.matmul(
+        np.matmul(x - mu, S),
+        np.transpose(x - mu)
+    ))
+
+
 def quadratic_gaussian(x, mu, S):
     x = tf.cast(x, TF_FLOAT)
     mu = tf.cast(mu, TF_FLOAT)
@@ -161,6 +168,14 @@ class GMM(object):
 
             return -tf.reduce_logsumexp(V, axis=1)
         return fn
+
+    def minus_log_likelihood_np(self, x):
+        V = np.concat([np.expand_dims(
+            -quadratic_gaussian_np(x, self.mus[i], self.i_sigmas[i])
+            + np.log(self.constants[i]), axis=1
+        ) for i in range(self.nb_mixtures)], axis=1)
+
+        return - logsumexp(V, axis=1)  # using scipy.misc.logsumexp
 
     def get_samples(self, n):
         categorical = np.random.choice(self.nb_mixtures, size=(n,), p=self.pis)
