@@ -7,28 +7,19 @@ Networks](https://arxiv.org/pdf/1711.09268.pdf)
 Code adapted from the released TensorFlow graph implementation by original
 authors https://github.com/brain-research/l2hmc.
 
-
-TODO:
-    - Log separately the Q, S, T values for the 'x' and 'v' functions.
-    - Look at raw phase values both before and after mod operation.
-    - Try running generic net using 64-point precision.
-    - See if 64-point precision issues with Conv3D are fixed in tf 1.13-1.14.
-    - JLSE account.
-
-
 Author: Sam Foreman (github: @saforem2)
 Date: 1/14/2019
 """
-from __future__ import absolute_import
-from __future__ import print_function
 from __future__ import division
+from __future__ import print_function
+from __future__ import absolute_import
 
 import numpy as np
-import numpy.random as npr
 import tensorflow as tf
+import numpy.random as npr
 
-from config import GLOBAL_SEED, TF_FLOAT, TF_INT
 from network.network import FullNet
+from config import GLOBAL_SEED, TF_FLOAT, TF_INT
 
 
 def exp(x, name=None):
@@ -44,10 +35,6 @@ def flatten_tensor(tensor):
     """
     batch_size = tensor.shape[0]
     return tf.reshape(tensor, shape=(batch_size, -1))
-
-
-def hmc_network(inputs, train_phase):
-    return [tf.zeros_like(inputs[0]) for _ in range(3)]
 
 
 def _add_to_collection(collection, ops):
@@ -192,7 +179,8 @@ class Dynamics(tf.keras.Model):
                          beta,
                          net_weights,
                          train_phase,
-                         save_lf=False):
+                         save_lf=False,
+                         eps=None):
         """Propose a new state and perform the accept/reject step.
 
         We simulate the (molecular) dynamics update both forward and backward,
@@ -214,9 +202,7 @@ class Dynamics(tf.keras.Model):
             accept_prob: Probability of accepting the proposed states.
             x_out: Samples after accept/reject step.
         """
-        # `results_dict` holds additional data about the method that is
-        # returned if `save_lf=True`.
-        results_dict = {}
+        results_dict = {}  # holds additional data if `save_lf=True`
 
         args = (x_in, beta, net_weights, train_phase, save_lf)
 
@@ -440,18 +426,20 @@ class Dynamics(tf.keras.Model):
 
         return outputs
 
-    def _check_reversibility(self, x_in, v_in, beta, net_weights, train_phase):
+    def _check_reversibility(self, x_in, v_in, beta, weights, training):
         outputs_f = self.transition_kernel(x_in, v_in, beta,
-                                           net_weights,
-                                           train_phase,
+                                           weights,
+                                           training,
                                            forward=True,
                                            save_lf=False)
         xf = outputs_f['x_proposed']
         vf = outputs_f['v_proposed']
 
+        #  backward(forward(x, v)) --> x, v
+
         outputs_b = self.transition_kernel(xf, vf, beta,
-                                           net_weights,
-                                           train_phase,
+                                           weights,
+                                           training,
                                            forward=False,
                                            save_lf=False)
         xb = outputs_b['x_proposed']
@@ -466,7 +454,7 @@ class Dynamics(tf.keras.Model):
 
         return outputs
 
-    def _forward_lf(self, x, v, beta, step, net_weights, train_phase):
+    def _forward_lf(self, x, v, beta, step, weights, training):
         """One forward augmented leapfrog step."""
         forward_fns = []
         with tf.name_scope('forward_lf'):
@@ -478,34 +466,34 @@ class Dynamics(tf.keras.Model):
             sumlogdet = 0.
 
             v, logdet, vf_fns = self._update_v_forward(x, v, beta, t,
-                                                       net_weights,
-                                                       train_phase)
+                                                       weights,
+                                                       training)
             sumlogdet += logdet
             forward_fns.append(vf_fns)
 
             x, logdet, xf_fns = self._update_x_forward(x, v, t,
-                                                       net_weights,
-                                                       train_phase,
-                                                       mask, mask_inv)
+                                                       weights,
+                                                       training,
+                                                       (mask, mask_inv))
             sumlogdet += logdet
             forward_fns.append(xf_fns)
 
             x, logdet, xf_fns = self._update_x_forward(x, v, t,
-                                                       net_weights,
-                                                       train_phase,
-                                                       mask_inv, mask)
+                                                       weights,
+                                                       training,
+                                                       (mask_inv, mask))
             sumlogdet += logdet
             forward_fns.append(xf_fns)
 
             v, logdet, vf_fns = self._update_v_forward(x, v, beta, t,
-                                                       net_weights,
-                                                       train_phase)
+                                                       weights,
+                                                       training)
             sumlogdet += logdet
             forward_fns.append(vf_fns)
 
         return x, v, sumlogdet, forward_fns
 
-    def _backward_lf(self, x, v, beta, step, net_weights, train_phase):
+    def _backward_lf(self, x, v, beta, step, weights, training):
         """One backward augmented leapfrog step."""
         backward_fns = []
         with tf.name_scope('backward_lf'):
@@ -521,34 +509,34 @@ class Dynamics(tf.keras.Model):
             sumlogdet = 0.
 
             v, logdet, vb_fns = self._update_v_backward(x, v, beta, t,
-                                                        net_weights,
-                                                        train_phase)
+                                                        weights,
+                                                        training)
             sumlogdet += logdet
             backward_fns.append(vb_fns)
 
             x, logdet, xb_fns = self._update_x_backward(x, v, t,
-                                                        net_weights,
-                                                        train_phase,
-                                                        mask_inv, mask)
+                                                        weights,
+                                                        training,
+                                                        (mask_inv, mask))
             sumlogdet += logdet
             backward_fns.append(xb_fns)
 
             x, logdet, xb_fns = self._update_x_backward(x, v, t,
-                                                        net_weights,
-                                                        train_phase,
-                                                        mask, mask_inv)
+                                                        weights,
+                                                        training,
+                                                        (mask, mask_inv))
             sumlogdet += logdet
             backward_fns.append(xb_fns)
 
             v, logdet, vb_fns = self._update_v_backward(x, v, beta, t,
-                                                        net_weights,
-                                                        train_phase)
+                                                        weights,
+                                                        training)
             sumlogdet += logdet
             backward_fns.append(vb_fns)
 
         return x, v, sumlogdet, backward_fns
 
-    def _update_v_forward(self, x, v, beta, t, net_weights, train_phase):
+    def _update_v_forward(self, x, v, beta, t, weights, training):
         """Update v in the forward leapfrog step.
 
         Args:
@@ -566,12 +554,12 @@ class Dynamics(tf.keras.Model):
         with tf.name_scope('update_vf'):
             grad = self.grad_potential(x, beta)
 
-            scale, transl, transf = self.v_fn([x, grad, t], train_phase)
+            scale, transl, transf = self.v_fn([x, grad, t], training)
 
             with tf.name_scope('vf_mul'):
-                scale *= 0.5 * self.eps * net_weights[0]
-                transl *= net_weights[1]
-                transf *= self.eps * net_weights[2]
+                scale *= 0.5 * self.eps * weights[0]
+                transl *= weights[1]
+                transf *= self.eps * weights[2]
                 fns = [scale, transl, transf]
 
             with tf.name_scope('vf_exp'):
@@ -587,16 +575,16 @@ class Dynamics(tf.keras.Model):
 
         return v, logdet, fns
 
-    def _update_x_forward(self, x, v, t, net_weights, 
-                          train_phase, mask, mask_inv):
+    def _update_x_forward(self, x, v, t, weights, training, masks):
         """Update x in the forward leapfrog step."""
+        mask, mask_inv = masks
         with tf.name_scope('update_xf'):
-            scale, transl, transf = self.x_fn([v, mask * x, t], train_phase)
+            scale, transl, transf = self.x_fn([v, mask * x, t], training)
 
             with tf.name_scope('xf_mul'):
-                scale *= self.eps * net_weights[0]
-                transl *= net_weights[1]
-                transf *= self.eps * net_weights[2]
+                scale *= self.eps * weights[0]
+                transl *= weights[1]
+                transf *= self.eps * weights[2]
                 fns = [scale, transl, transf]
 
             with tf.name_scope('xf_exp'):
@@ -611,17 +599,17 @@ class Dynamics(tf.keras.Model):
 
         return x, logdet, fns
 
-    def _update_v_backward(self, x, v, beta, t, net_weights, train_phase):
+    def _update_v_backward(self, x, v, beta, t, weights, training):
         """Update v in the backward leapfrog step. Invert the forward update"""
         with tf.name_scope('update_vb'):
             grad = self.grad_potential(x, beta)
 
-            scale, transl, transf = self.v_fn([x, grad, t], train_phase)
+            scale, transl, transf = self.v_fn([x, grad, t], training)
 
             with tf.name_scope('vb_mul'):
-                scale *= -0.5 * self.eps * net_weights[0]
-                transl *= net_weights[1]
-                transf *= self.eps * net_weights[2]
+                scale *= -0.5 * self.eps * weights[0]
+                transl *= weights[1]
+                transf *= self.eps * weights[2]
                 fns = [scale, transl, transf]
 
             with tf.name_scope('vb_exp'):
@@ -636,16 +624,16 @@ class Dynamics(tf.keras.Model):
 
         return v, logdet, fns
 
-    def _update_x_backward(self, x, v, t, net_weights, 
-                           train_phase, mask, mask_inv):
+    def _update_x_backward(self, x, v, t, weights, training, masks):
         """Update x in the backward lf step. Inverting the forward update."""
+        mask, mask_inv = masks
         with tf.name_scope('update_xb'):
-            scale, transl, transf = self.x_fn([v, mask * x, t], train_phase)
+            scale, transl, transf = self.x_fn([v, mask * x, t], training)
 
             with tf.name_scope('xb_mul'):
-                scale *= -self.eps * net_weights[0]
-                transl *= net_weights[1]
-                transf *= self.eps * net_weights[2]
+                scale *= -self.eps * weights[0]
+                transl *= weights[1]
+                transf *= self.eps * weights[2]
                 fns = [scale, transl, transf]
 
             with tf.name_scope('xb_exp'):
