@@ -19,21 +19,18 @@ import tensorflow as tf
 import utils.file_io as io
 
 from collections import namedtuple
-from utils.horovod_utils import warmup_lr
+from utils.horovod_utils import warmup_lr  # noqa: 401
 from utils.distributions import GMM, gen_ring
 from base.base_model import BaseModel
 from .gauge_model import allclose
 from dynamics.dynamics import Dynamics
 from .params import GMM_PARAMS
-from config import GLOBAL_SEED, TF_FLOAT, TF_INT, HAS_HOROVOD
+from config import GLOBAL_SEED, TF_FLOAT, NP_FLOAT, HAS_HOROVOD
 
 if HAS_HOROVOD:
-    import horovod.tensorflow as hvd
+    import horovod.tensorflow as hvd  # noqa: 401
 
-if TF_FLOAT == tf.float32:
-    NP_FLOAT = np.float32
-elif TF_FLOAT == tf.float64:
-    NP_FLOAT = np.float64
+LFdata = namedtuple('LFdata', ['init', 'proposed', 'prob'])
 
 
 def distribution_arr(x_dim, num_distributions):
@@ -119,8 +116,11 @@ class GaussianMixtureModel(BaseModel):
         for key, val in self.params.items():
             setattr(self, key, val)
 
+        sigma1 = params.get('sigma1', 0.05)
+        sigma2 = params.get('sigma2', 0.05)
+        self.sigmas = (sigma1, sigma2)
+        #  self.sigma = params.get('sigma', 0.05)
         self.eps_trainable = not self.eps_fixed
-        self.sigma = params.get('sigma', 0.05)
         self.num_distributions = params.get('num_distributions', 2)
 
         self.build()
@@ -135,7 +135,7 @@ class GaussianMixtureModel(BaseModel):
             # Create distribution defining Gaussian Mixture Model
             # ---------------------------------------------------------------
             means, covs, dist_arr, distribution = self._create_distribution(
-                self.sigma, means=None
+                self.sigmas, means=None
             )
             self.means = means
             self.covs = covs
@@ -191,8 +191,8 @@ class GaussianMixtureModel(BaseModel):
             self.px = x_dynamics['accept_prob']
             self._parse_dynamics_output(x_dynamics)
 
-        with tf.name_scope('check_reversibility'):
-            self.x_allclose, self.v_allclose = self._check_reversibility()
+            with tf.name_scope('check_reversibility'):
+                self.x_allclose, self.v_allclose = self._check_reversibility()
 
         with tf.name_scope('run_ops'):
             io.log(f'INFO: Building `run_ops`...')
@@ -205,14 +205,18 @@ class GaussianMixtureModel(BaseModel):
         if not self.hmc:
             with tf.name_scope('loss'):
                 io.log(f'INFO: Calculating loss function...')
-                lf_data = namedtuple('lf_data', ['x_in', 'x_proposed', 'prob'])
-                x_data = lf_data(x_dynamics['x_in'],
-                                 x_dynamics['x_proposed'],
-                                 x_dynamics['accept_prob'])
-                z_data = lf_data(z_dynamics['x_in'],
-                                 z_dynamics['x_proposed'],
-                                 z_dynamics['accept_prob'])
-                self.loss_op = self.calc_loss(x_data, z_data)
+                x_data = LFdata(x_dynamics['x_in'],
+                                x_dynamics['x_proposed'],
+                                x_dynamics['accept_prob'])
+                z_data = LFdata(z_dynamics['x_in'],
+                                z_dynamics['x_proposed'],
+                                z_dynamics['accept_prob'])
+
+                use_gaussian_loss = getattr(self, 'use_gaussian_loss', False)
+                if use_gaussian_loss:
+                    self.loss_op = self.gaussian_loss(x_data, z_data)
+                else:
+                    self.loss_op = self.calc_loss(x_data, z_data)
 
             with tf.name_scope('train'):
                 io.log(f'INFO: Calculating gradients for backpropagation...')
@@ -240,27 +244,30 @@ class GaussianMixtureModel(BaseModel):
         return self.dynamics.apply_transition(*args, **kwargs)
 
     def _check_reversibility(self):
+        x_in = tf.random_normal(self.x.shape,
+                                dtype=TF_FLOAT,
+                                seed=GLOBAL_SEED,
+                                name='x_reverse_check')
         v_in = tf.random_normal(self.x.shape,
                                 dtype=TF_FLOAT,
                                 seed=GLOBAL_SEED,
                                 name='v_reverse_check')
-        dynamics_check = self.dynamics._check_reversibility(self.x,
-                                                            v_in,
+
+        dynamics_check = self.dynamics._check_reversibility(x_in, v_in,
                                                             self.beta,
                                                             self.net_weights,
                                                             self.train_phase)
         xb = dynamics_check['xb']
         vb = dynamics_check['vb']
 
-        x_allclose = allclose(self.x, xb)
+        x_allclose = allclose(x_in, xb)  # xb = backward(forward(x_in))
         v_allclose = allclose(v_in, vb)
 
         return x_allclose, v_allclose
 
-    def _create_distribution(self, sigma=0.05, means=None):
+    def _create_distribution(self, sigmas, means=None):
         """Initialize distribution using utils/distributions.py."""
         diag = getattr(self, 'diag', False)
-        skewed = getattr(self, 'skewed', False)
 
         if means is None:
             if self.centers is None:
@@ -278,10 +285,16 @@ class GaussianMixtureModel(BaseModel):
         else:
             means = np.array(means).astype(NP_FLOAT)
 
-        cov_mtx = sigma * np.eye(self.x_dim).astype(NP_FLOAT)
-        covs = np.array([cov_mtx] * self.x_dim).astype(NP_FLOAT)
-        if skewed:
-            covs[0] *= 2.0
+        if len(sigmas) > 1:
+            covs = np.array(
+                [s * np.eye(self.x_dim) for s in sigmas]
+            ).astype(NP_FLOAT)
+        else:
+            #  cov_mtx = sigmas * np.eye(self.x_dim).astype(NP_FLOAT)
+            covs = np.array(
+                [sigmas * np.eye(self.x_dim) for _ in self.x_dim]
+            ).astype(NP_FLOAT)
+            #  covs = np.array([cov_mtx] * self.x_dim).astype(NP_FLOAT)
 
         dist_arr = distribution_arr(self.x_dim, self.num_distributions)
         distribution = GMM(means, covs, dist_arr)
@@ -325,9 +338,17 @@ class GaussianMixtureModel(BaseModel):
 
     def calc_loss(self, x_data, z_data):
         """Calculate the total loss and return operation for calculating it."""
-        loss = self._calc_loss(x_data, z_data)
+        return self._calc_loss(x_data, z_data)
+
+    def gaussian_loss(self, x_data, z_data):
+        """Calculate the Gaussian loss and return op. for calculating it."""
+        #  eps = getattr(self, 'eps', 0.2)
+        #  md_dist = eps * self.num_steps
+
+        loss = self._gaussian_loss(x_data, z_data, mean=0., sigma=1.)
 
         return loss
+
 
     def _parse_dynamics_output(self, dynamics_output):
         """Parse output dictionary from `self.dynamics.apply_transition."""
