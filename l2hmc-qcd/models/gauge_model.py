@@ -31,7 +31,7 @@ if HAS_HOROVOD:
     import horovod.tensorflow as hvd
 
 
-def allclose(x, y, rtol=1e-3, atol=1e-8):
+def allclose(x, y, rtol=1e-3, atol=1e-5):
     return tf.reduce_all(tf.abs(x - y) <= tf.abs(y) * rtol + atol)
 
 
@@ -128,8 +128,8 @@ class GaugeModel(BaseModel):
             self.px = x_dynamics['accept_prob']
             self._parse_dynamics_output(x_dynamics)
 
-        with tf.name_scope('check_reversibility'):
-            self.x_allclose, self.v_allclose = self._check_reversibility()
+            with tf.name_scope('check_reversibility'):
+                self.x_allclose, self.v_allclose = self._check_reversibility()
 
         with tf.name_scope('run_ops'):
             io.log(f'INFO: Building `run_ops`...')
