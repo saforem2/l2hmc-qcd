@@ -12,9 +12,11 @@ from __future__ import absolute_import
 
 
 import tensorflow as tf
+import numpy as np
 
 import utils.file_io as io
 from utils.horovod_utils import warmup_lr
+from utils.distributions import quadratic_gaussian
 from config import HAS_HOROVOD
 from models.params import GAUGE_PARAMS
 
@@ -117,6 +119,19 @@ class BaseModel:
         """Create metric function used to measure distatnce between configs."""
         raise NotImplementedError
 
+    def _calc_esjd(self, x1, x2, prob):
+        """Compute the expected squared jump distance (ESJD)."""
+        return prob * tf.reduce_sum(self.metric_fn(x1, x2), axis=1) + 1e-4
+
+    def _loss(self, init, proposed, prob):
+        """Calculate the (standard) contribution to the loss from the ESJD."""
+        ls = getattr(self, 'loss_scale', 0.1)
+        with tf.name_scope('calc_esjd'):
+            esjd = self._calc_esjd(init, proposed, prob)
+        loss = ls * tf.reduce_mean(1. / esjd) - tf.reduce_mean(esjd) / ls
+
+        return loss
+
     def _calc_loss(self, x_data, z_data):
         """Build operation responsible for calculating the total loss.
 
@@ -131,25 +146,57 @@ class BaseModel:
             loss_op: Operation responsible for calculating the total loss (to
                 be minimized).
         """
-        ls = getattr(self, 'loss_scale', 0.1)
+        aux_weight = getattr(self, 'aux_weight', 1.)
 
-        def _diff(x1, x2):
-            return tf.reduce_sum(self.metric_fn(x1, x2), axis=1)
         with tf.name_scope('calc_loss'):
             with tf.name_scope('x_loss'):
-                x_loss = (x_data.prob * _diff(x_data.x_in,
-                                              x_data.x_proposed)) + 1e-4
+                x_loss = self._loss(x_data.init,
+                                    x_data.proposed,
+                                    x_data.prob)
             with tf.name_scope('z_loss'):
-                z_loss = (z_data.prob * _diff(z_data.x_in,
-                                              z_data.x_proposed)) + 1e-4
-                #  z_loss = self._loss(*z_data) if aux_weight > 0. else 0.
+                if aux_weight > 0.:
+                    z_loss = self._loss(z_data.init,
+                                        z_data.proposed,
+                                        z_data.prob)
+                else:
+                    z_loss = 0.
 
-            loss = 0.
-            loss += ls * (tf.reduce_mean(1. / x_loss)
-                          + tf.reduce_mean(1. / z_loss))
-            loss += (- tf.reduce_mean(x_loss) - tf.reduce_mean(z_loss)) / ls
+            loss = tf.add(x_loss, z_loss, name='loss')
 
         return loss
+
+    def _gaussian_loss(self, x_data, z_data, mean, sigma):
+        def _gaussian(x, mu, sigma):
+            norm = 1. / tf.sqrt(2 * np.pi * sigma**2)
+            return (tf.exp(-tf.square(x - mu) / (2 * sigma)) / norm) + 1e-4
+
+        ls = getattr(self, 'loss_scale', 0.1)
+        aux_weight = getattr(self, 'aux_weight', 1.)
+        with tf.name_scope('gaussian_loss'):
+            with tf.name_scope('x_loss'):
+                x_esjd = self._calc_esjd(x_data.init,
+                                         x_data.proposed,
+                                         x_data.prob)
+                x_gauss = _gaussian(x_esjd, mean, sigma)
+                x_loss = ls * tf.reduce_mean(x_gauss)
+                #  x_loss = (ls * tf.reduce_mean(1. / x_gauss)
+                #            - tf.reduce_mean(x_gauss) / ls)
+
+            with tf.name_scope('z_loss'):
+                if aux_weight > 0.:
+                    z_esjd = self._calc_esjd(z_data.init,
+                                             z_data.proposed,
+                                             z_data.prob)
+                    z_gauss = _gaussian(z_esjd, mean, sigma)
+                    z_loss = ls * tf.reduce_mean(z_gauss)
+                    #  z_loss = (ls * tf.reduce_mean(1. / z_gauss)
+                    #            - tf.reduce_mean(z_gauss) / ls)
+                else:
+                    z_loss = 0.
+
+            gaussian_loss = tf.add(x_loss, z_loss, name='gaussian_loss')
+
+        return gaussian_loss
 
     def _calc_grads(self, loss):
         """Calculate the gradients to be used in backpropagation."""
