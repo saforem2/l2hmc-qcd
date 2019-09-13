@@ -73,9 +73,9 @@ SEP_STR = 80 * '-'  # + '\n'
 # -------------------------------------------
 # Set random seeds for tensorflow and numpy
 # -------------------------------------------
-os.environ['PYTHONHASHSEED'] = str(GLOBAL_SEED)
-random.seed(GLOBAL_SEED)        # `python` build-in pseudo-random generator
-np.random.seed(GLOBAL_SEED)     # numpy pseudo-random generator
+#  os.environ['PYTHONHASHSEED'] = str(GLOBAL_SEED)
+#  random.seed(GLOBAL_SEED)        # `python` build-in pseudo-random generator
+#  np.random.seed(GLOBAL_SEED)     # numpy pseudo-random generator
 tf.set_random_seed(GLOBAL_SEED)
 
 
