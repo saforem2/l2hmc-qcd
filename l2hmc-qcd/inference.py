@@ -433,9 +433,9 @@ def inference(runner, run_logger, plotter, **kwargs):
 
         if kwargs.get('plot_lf', False):
             lf_plotter = LeapfrogPlotter(plotter.out_dir, run_logger)
-            num_samples = runner.params.get('num_samples', 20)
+            batch_size = runner.params.get('batch_size', 20)
             lf_plotter.make_plots(run_logger.run_dir,
-                                  num_samples=num_samples)
+                                  batch_size=batch_size)
 
 
 def run_inference(runner, run_logger=None, plotter=None, **kwargs):

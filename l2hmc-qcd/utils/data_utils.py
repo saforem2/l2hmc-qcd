@@ -50,15 +50,15 @@ def block_resampling(data, num_blocks):
     """ Block-resample data to return num_blocks samples of original data. """
     if not isinstance(data, np.ndarray):
         data = np.array(data)
-    num_samples = data.shape[0]
+    batch_size = data.shape[0]
 
-    if num_samples < 1:
+    if batch_size < 1:
         raise ValueError("Data must have at least one sample.")
     if num_blocks < 1:
         raise ValueError("Number of resampled blocks must be greater than or"
                          "equal to 1.")
-    if num_samples < num_blocks:
-        num_blocks = max(2, num_samples)
+    if batch_size < num_blocks:
+        num_blocks = max(2, batch_size)
 
     kf = KFold(n_splits=num_blocks)
     resampled_data = []

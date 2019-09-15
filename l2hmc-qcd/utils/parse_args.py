@@ -68,8 +68,8 @@ def parse_args():
                         default=2,
                         help="""Dimensionality of lattice.\n (Default: 2)""")
 
-    parser.add_argument("--num_samples",
-                        dest="num_samples",
+    parser.add_argument("--batch_size",
+                        dest="batch_size",
                         type=int,
                         default=128,
                         required=False,

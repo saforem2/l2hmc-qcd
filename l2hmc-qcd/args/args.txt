@@ -7,7 +7,7 @@
 --time_size 8
 --space_size 8
 --rand
---num_samples 256
+--batch_size 128
 --num_steps 16
 --eps 0.2
 --beta_init 1.

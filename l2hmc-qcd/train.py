@@ -217,7 +217,7 @@ def hmc(FLAGS, params=None, log_file=None):
             plotter.plot_observables(run_logger.run_data, beta, run_str)
             if FLAGS.save_lf:
                 lf_plotter = LeapfrogPlotter(plotter.out_dir, run_logger)
-                lf_plotter.make_plots(run_dir, num_samples=20)
+                lf_plotter.make_plots(run_dir, batch_size=20)
 
     return sess, model, runner, run_logger
 
@@ -339,7 +339,7 @@ def train_l2hmc(kwargs, log_file=None):
     charge_weight_init = params['charge_weight']
     net_weights_init = [1., 1., 1.]
     samples_init = np.reshape(np.array(model.lattice.samples, dtype=NP_FLOAT),
-                              (model.num_samples, model.x_dim))
+                              (model.batch_size, model.x_dim))
     beta_init = model.beta_init
 
     init_feed_dict = {
