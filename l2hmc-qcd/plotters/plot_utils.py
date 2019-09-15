@@ -37,14 +37,14 @@ if HAS_MATPLOTLIB:
     mpl.rcParams.update(MPL_PARAMS)
 
 
-def get_colors(num_samples=10, cmaps=None):
+def get_colors(batch_size=10, cmaps=None):
     if cmaps is None:
-        cmap0 = mpl.cm.get_cmap('Greys', num_samples + 1)
-        cmap1 = mpl.cm.get_cmap('Reds', num_samples + 1)
-        cmap2 = mpl.cm.get_cmap('Blues', num_samples + 1)
+        cmap0 = mpl.cm.get_cmap('Greys', batch_size + 1)
+        cmap1 = mpl.cm.get_cmap('Reds', batch_size + 1)
+        cmap2 = mpl.cm.get_cmap('Blues', batch_size + 1)
         cmaps = (cmap0, cmap1, cmap2)
 
-    idxs = np.linspace(0.1, 0.75, num_samples + 1)
+    idxs = np.linspace(0.1, 0.75, batch_size + 1)
     colors_arr = []
     for cmap in cmaps:
         colors_arr.append([cmap(i) for i in idxs])
@@ -103,14 +103,14 @@ def plot_gaussian_contours(mus, covs, **kwargs):
         plt (???)
     """
     spacing = kwargs.get('spacing', 5)
-    x_lims = kwargs.get('x_lims', [-4, 4])
-    y_lims = kwargs.get('y_lims', [-3, 3])
+    xlims = kwargs.get('x_lims', [-4, 4])
+    ylims = kwargs.get('y_lims', [-3, 3])
     res = kwargs.get('res', 100)
     cmap = kwargs.get('cmap', None)
     ax = kwargs.get('ax', None)
 
-    X = np.linspace(x_lims[0], x_lims[1], res)
-    Y = np.linspace(y_lims[0], y_lims[1], res)
+    X = np.linspace(xlims[0], xlims[1], res)
+    Y = np.linspace(ylims[0], ylims[1], res)
     X, Y = np.meshgrid(X, Y)
     pos = np.empty(X.shape + (2,))
     pos[:, :, 0] = X
@@ -133,6 +133,78 @@ def plot_gaussian_contours(mus, covs, **kwargs):
                 ax.contour(X, Y, Z, spacing, cmap=cmap)
 
     return ax if ax is not None else plt
+
+
+def gmm_plot(distribution, samples, **kwargs):
+    """
+    Plot contours of target distribution overlaid with scatter plot of samples.
+
+    Args:
+        distribution (`GMM` object): Gaussian Mixture Model distribution.
+            Defined in `utils/distributions.py`.'
+        samples (array-like): Collection of `samples` (np.ndarray of 2-D points
+            [x, y]) for scatter plot.
+        Returns:
+            fig, axes (output from plt.subplots(..))
+    """
+    nrows = kwargs.get('nrows', 3)
+    ncols = kwargs.get('ncols', 3)
+    out_file = kwargs.get('out_file', None)
+    title = kwargs.get('title', None)
+    num_points = kwargs.get('num_points', 2000)
+    xlims = kwargs.get('xlims', None)
+    ylims = kwargs.get('ylims', None)
+
+    mus = distribution.mus
+    sigmas = distribution.sigmas
+
+    if xlims is None:
+        xmin = - np.min(mus) - 5 * np.max(sigmas)
+        xmax = np.max(mus) + 5 * np.max(sigmas)
+
+        xlims = [xmin, xmax]
+    if ylims is None:
+        ymin = xmin
+        ymax = xmax
+        ylims = [ymin, ymax]
+
+    fig, axes = plt.subplots(nrows=nrows, ncols=ncols)
+    idx = 0
+    for row in range(nrows):
+        for col in range(ncols):
+            ax = axes[row, col]
+            _ = plot_gaussian_contours(mus, sigmas,
+                                       xlims=xlims,
+                                       ylims=ylims,
+                                       res=400,
+                                       ax=ax)
+            _ = ax.plot(samples[:num_points, idx, 0],
+                        samples[:num_points, idx, 1],
+                        marker=',', ls='-',  color='gray', alpha=0.4)
+            _ = ax.plot(samples[:num_points, idx, 0],
+                        samples[:num_points, idx, 1],
+                        marker=',', ls='', color='k', alpha=0.6)
+            _ = axes[row, col].axis('equal')
+            _ = axes[row, col].set_xticks([])
+            _ = axes[row, col].set_yticks([])
+            idx += 1
+
+    _ = axes[0, 0].set_yticks(mus[0])
+    _ = axes[0, 0].set_yticklabels([str(i) for i in mus[0]])
+    _ = axes[-1, -1].set_xticks(mus[1])
+    _ = axes[-1, -1].set_xticklabels([str(i) for i in mus[1]])
+
+    if title is not None:
+        _ = fig.suptitle(title)
+
+    _ = ax.axis('equal')
+    _ = fig.tight_layout()
+
+    if out_file is not None:
+        print(f'Saving figure to: {out_file}.')
+        plt.savefig(out_file, dpi=400, bbox_inches='tight')
+
+    return fig, axes
 
 
 def plot_plaq_diffs_vs_net_weights(log_dir, **kwargs):
@@ -186,8 +258,8 @@ def plot_multiple_lines(data, xy_labels, **kwargs):
     legend = kwargs.get('legend', False)
     title = kwargs.get('title', None)
     ret = kwargs.get('ret', False)
-    num_samples = kwargs.get('num_samples', 10)
-    colors_arr = get_colors(num_samples)
+    batch_size = kwargs.get('batch_size', 10)
+    colors_arr = get_colors(batch_size)
     greys = colors_arr[0]
     #  reds = colors_arr[1]
     #  blues = colors_arr[2]
@@ -202,8 +274,8 @@ def plot_multiple_lines(data, xy_labels, **kwargs):
 
     x_label, y_label = xy_labels
 
-    if y_data.shape[0] > num_samples:
-        y_sample = y_data[:num_samples, :]
+    if y_data.shape[0] > batch_size:
+        y_sample = y_data[:batch_size, :]
     else:
         y_sample = y_data
 
@@ -266,8 +338,8 @@ def plot_with_inset(data, labels=None, **kwargs):
     plt_label = labels.get('plt_label', None)
     x_label = labels.get('x_label', None)
     y_label = labels.get('y_label', None)
-    #  num_samples = kwargs.get('num_samples', 10)
-    #  greys, reds, blues = get_colors(num_samples)
+    #  batch_size = kwargs.get('batch_size', 10)
+    #  greys, reds, blues = get_colors(batch_size)
     if isinstance(data, list):
         data = np.array(data)
 
