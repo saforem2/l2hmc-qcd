@@ -209,33 +209,37 @@ def _create_obs_summaries(model):
 
 def _create_l2hmc_summaries(model):
     """Create summary objects for each of the MD functions and outputs."""
-    for k1, v1 in model.l2hmc_fns['l2hmc_fns_f'].items():
-        for k2, v2 in v1.items():
-            with tf.name_scope(f'{k1}_fn_{k2}_f'):
-                variable_summaries(v2)
+    with tf.name_scope('l2hmc_forward'):
+        for k1, v1 in model.l2hmc_fns['l2hmc_fns_f'].items():
+            with tf.name_scope(f'{k1}_fn'):
+                for k2, v2 in v1.items():
+                    with tf.name_scope(f'{k2}'):
+                        variable_summaries(v2)
 
-    for k1, v1 in model.l2hmc_fns['l2hmc_fns_b'].items():
-        for k2, v2 in v1.items():
-            with tf.name_scope(f'{k1}_fn_{k2}_b'):
-                variable_summaries(v2)
+    with tf.name_scope('l2hmc_backward'):
+        for k1, v1 in model.l2hmc_fns['l2hmc_fns_b'].items():
+            with tf.name_scope(f'{k1}_fn'):
+                for k2, v2 in v1.items():
+                    with tf.name_scope(f'{k2}'):
+                        variable_summaries(v2)
 
-    with tf.name_scope('lf_out_f'):
-        variable_summaries(model.lf_out_f)
+    with tf.name_scope('lf_out'):
+        with tf.name_scope('forward'):
+            variable_summaries(model.lf_out_f)
+        with tf.name_scope('backward'):
+            variable_summaries(model.lf_out_b)
 
-    with tf.name_scope('lf_out_b'):
-        variable_summaries(model.lf_out_b)
+    with tf.name_scope('sumlogdet'):
+        with tf.name_scope('forward'):
+            variable_summaries(model.sumlogdet_f)
+        with tf.name_scope('backward'):
+            variable_summaries(model.sumlogdet_b)
 
-    with tf.name_scope('sumlogdet_f'):
-        variable_summaries(model.sumlogdet_f)
-
-    with tf.name_scope('sumlogdet_b'):
-        variable_summaries(model.sumlogdet_b)
-
-    with tf.name_scope('logdets_f'):
-        variable_summaries(model.logdets_f)
-
-    with tf.name_scope('logdets_b'):
-        variable_summaries(model.logdets_b)
+    with tf.name_scope('logdets'):
+        with tf.name_scope('forward'):
+            variable_summaries(model.logdets_f)
+        with tf.name_scope('backward'):
+            variable_summaries(model.logdets_b)
 
 
 def create_summaries(model, summary_dir, training=True):
