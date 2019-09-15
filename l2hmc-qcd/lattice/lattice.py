@@ -65,7 +65,7 @@ class GaugeLattice(object):
                  space_size=8,
                  dim=2,
                  link_type='U1',
-                 num_samples=None,
+                 batch_size=None,
                  rand=False):
         """Initialization for GaugeLattice object.
 
@@ -92,13 +92,13 @@ class GaugeLattice(object):
         self.bases = np.eye(self.dim, dtype=np.int)
 
         # create samples using @property method: `@samples.setter`
-        self.samples = (num_samples, rand)
+        self.samples = (batch_size, rand)
 
         self.links = self.samples[0]
         self.batch_size = self.samples.shape[0]
         self.links_shape = self.samples.shape[1:]
         self.x_dim = self.num_links
-        #  self.samples = self._init_samples(num_samples, rand)
+        #  self.samples = self._init_samples(batch_size, rand)
         self.samples_tensor = tf.convert_to_tensor(
             self.samples.reshape((self.batch_size, self.x_dim)),
             dtype=TF_FLOAT
@@ -111,14 +111,14 @@ class GaugeLattice(object):
     @samples.setter
     def samples(self, args):
         """Create samples."""
-        num_samples, rand = args
+        batch_size, rand = args
         links_shape = tuple(
             [self.time_size]
             + [self.space_size for _ in range(self.dim-1)]
             + [self.dim]
             + list(self.link_shape)
         )
-        samples_shape = (num_samples, *links_shape)
+        samples_shape = (batch_size, *links_shape)
         if rand:
             samples = np.array(
                 np.random.uniform(0, 2*np.pi, samples_shape),
@@ -145,7 +145,7 @@ class GaugeLattice(object):
                 calculating the plaquette sums.
 
         NOTE: self.samples.shape = (N, L, T, D), where:
-            N = num_samples
+            N = batch_size
             L = space_size 
             T = time_size
             D = dimensionality

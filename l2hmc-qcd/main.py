@@ -311,7 +311,7 @@ def train_l2hmc(FLAGS, log_file=None, experiment=None):
     #  charge_weight_init = params['charge_weight']
     net_weights_init = [1., 1., 1.]
     samples_init = np.reshape(np.array(model.lattice.samples, dtype=NP_FLOAT),
-                              (model.num_samples, model.x_dim))
+                              (model.batch_size, model.x_dim))
     beta_init = model.beta_init
 
     # ensure all variables are initialized
@@ -422,7 +422,7 @@ def main(FLAGS):
                                 workspace="saforem2")
         name = (f'{FLAGS.network_arch}_'
                 f'lf{FLAGS.num_steps}_'
-                f'batch{FLAGS.num_samples}_'
+                f'batch{FLAGS.batch_size}_'
                 f'qw{FLAGS.charge_weight}_'
                 f'aux{FLAGS.aux_weight}')
         experiment.set_name(name)
