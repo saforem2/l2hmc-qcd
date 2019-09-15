@@ -14,11 +14,10 @@ from __future__ import absolute_import
 import tensorflow as tf
 import numpy as np
 
-import utils.file_io as io
+#  import utils.file_io as io
 from utils.horovod_utils import warmup_lr
-from utils.distributions import quadratic_gaussian
-from config import HAS_HOROVOD
-from models.params import GAUGE_PARAMS
+#  from utils.distributions import quadratic_gaussian
+from config import HAS_HOROVOD, TF_FLOAT, GLOBAL_SEED
 
 if HAS_HOROVOD:
     import horovod.tensorflow as hvd
@@ -194,9 +193,34 @@ class BaseModel:
                 else:
                     z_loss = 0.
 
-            gaussian_loss = tf.add(x_loss, z_loss, name='gaussian_loss')
+            gaussian_loss = - tf.add(x_loss, z_loss, name='gaussian_loss')
 
         return gaussian_loss
+
+    def _check_reversibility(self):
+        x_in = tf.random_normal(self.x.shape,
+                                dtype=TF_FLOAT,
+                                seed=GLOBAL_SEED,
+                                name='x_reverse_check')
+        v_in = tf.random_normal(self.x.shape,
+                                dtype=TF_FLOAT,
+                                seed=GLOBAL_SEED,
+                                name='v_reverse_check')
+
+        dynamics_check = self.dynamics._check_reversibility(x_in, v_in,
+                                                            self.beta,
+                                                            self.net_weights,
+                                                            self.train_phase)
+        xb = dynamics_check['xb']
+        vb = dynamics_check['vb']
+
+        x_diff = np.sum((x_in - xb).T.dot(x_in - xb))
+        v_diff = np.sum((v_in - vb).T.dot(v_in - vb))
+
+        #  x_allclose = allclose(x_in, xb)  # xb = backward(forward(x_in))
+        #  v_allclose = allclose(v_in, vb)
+
+        return x_diff, v_diff
 
     def _calc_grads(self, loss):
         """Calculate the gradients to be used in backpropagation."""
