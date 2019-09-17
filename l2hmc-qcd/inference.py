@@ -149,13 +149,12 @@ def load_params(params_pkl_file=None, log_file=None):
     if os.path.isfile(params_pkl_file):
         with open(params_pkl_file, 'rb') as f:
             params = pickle.load(f)
-    else:
-        io.log(f'INFO: Unable to locate: {params_pkl_file}.\n'
-               f'INFO: Using default parameters '
-               f'(PARAMS defined in `config.py`.')
-
-        params = PARAMS.copy()
-        params['log_dir'] = io.create_log_dir(params, log_file=log_file)
+    #  else:
+    #      io.log(f'INFO: Unable to locate: {params_pkl_file}.\n'
+    #             f'INFO: Using default parameters...\n')
+    #
+    #      params = GMM_PARAMS.copy()
+    #      params['log_dir'] = io.create_log_dir(params, log_file=log_file)
 
     return params
 
@@ -219,7 +218,7 @@ def collect_mem_usage(m_arr=None):
         return usage
 
 
-def log_plaq_diffs(run_logger, net_weights_arr, avg_plaq_diff):
+def log_plaq_diffs(run_logger, net_weights, avg_plaq_diff):
     """Log the average values of the plaquette differences.
 
     NOTE: If inference was performed with either the `--loop_net_weights` 
@@ -230,20 +229,25 @@ def log_plaq_diffs(run_logger, net_weights_arr, avg_plaq_diff):
     """
     try:
         pd_tup = [
-            (nw, md) for nw, md in zip(net_weights_arr, avg_plaq_diff)
+            (nw, md) for nw, md in zip(net_weights, avg_plaq_diff)
         ]
         out_dir = run_logger.log_dir
     except TypeError:
-        pd_tup = [(net_weights_arr, avg_plaq_diff)]
+        #  pd_tup = [(net_weights, avg_plaq_diff)]
+        pd_tup = [*net_weights, avg_plaq_diff]
         out_dir = run_logger.run_dir
+
+    output_arr = np.array(pd_tup)
 
     #  pd_pkl_file = os.path.join(out_dir, 'plaq_diffs_data.pkl')
     #  with open(pd_pkl_file, 'wb') as f:
     #      pickle.dump(pd_tup, f)
     pd_txt_file = os.path.join(out_dir, 'plaq_diffs_data.txt')
-    with open(pd_txt_file, 'a') as f:
-        for row in pd_tup:
-            f.write(f'{row[0][0]}, {row[0][1]}, {row[0][2]}, {row[1]}\n')
+    np.savetxt(pd_txt_file, output_arr, delimiter=',', fmt='%.4g')
+    #
+    #  with open(pd_txt_file, 'a') as f:
+    #      for row in pd_tup:
+    #          f.write(f'{row[0][0]}, {row[0][1]}, {row[0][2]}, {row[1]}\n')
 
 
 def inference_setup(kwargs):
@@ -294,7 +298,14 @@ def inference_setup(kwargs):
                                     [1.0, 1.00, 1.0]], dtype=NP_FLOAT)
 
     else:  # set [S, T, Q] = [1, 1, 1]
-        net_weights_arr = np.array([[1, 1, 1]], dtype=NP_FLOAT)
+        scale_weight = kwargs.get('scale_weight', 1.)
+        translation_weight = kwargs.get('translation_weight', 1.)
+        transformation_weight = kwargs.get('transformation_weight', 1.)
+        net_weights_arr = np.array([scale_weight,
+                                    translation_weight,
+                                    transformation_weight], dtype=NP_FLOAT)
+
+        #  net_weights_arr = np.array([1, 1, 1], dtype=NP_FLOAT)
 
     # if a value has been passed in `kwargs['beta_inference']` use it
     # otherwise, use `model.beta_final`
@@ -305,7 +316,7 @@ def inference_setup(kwargs):
     #  betas = [beta_final if beta_inference is None else beta_inference]
 
     inference_dict = {
-        'net_weights_arr': net_weights_arr,
+        'net_weights': net_weights_arr,
         'beta': beta,
         'eps': eps,
         #  'charge_weight': kwargs.get('charge_weight', 1.),
@@ -429,7 +440,9 @@ def inference(runner, run_logger, plotter, **kwargs):
         io.log(SEP_STR + f'\nTook: {run_time}s to complete run.\n' + SEP_STR)
 
         avg_plaq_diff = plotter.plot_observables(run_logger.run_data, **kwargs)
-        log_plaq_diffs(run_logger, kwargs['net_weights'], avg_plaq_diff)
+        log_plaq_diffs(run_logger,
+                       kwargs['net_weights'],
+                       avg_plaq_diff)
 
         if kwargs.get('plot_lf', False):
             lf_plotter = LeapfrogPlotter(plotter.out_dir, run_logger)
@@ -466,7 +479,7 @@ def run_inference(runner, run_logger=None, plotter=None, **kwargs):
         inference(*args, **kwargs)
 
     else:  # looping over different values of net_weights
-        nw_arr = kwargs.get('net_weights_arr', None)
+        nw_arr = kwargs.get('net_weights', None)
         zero_weights, q_weights, t_weights, s_weights, stq_weights = nw_arr
         #  net_weights_arr = np.array([zero_weights.tolist(),
         #                              *q_weights.tolist(),
@@ -548,13 +561,14 @@ def main(kwargs):
 
 
 if __name__ == '__main__':
-    FLAGS = parse_inference_args()
+    args = parse_inference_args()
 
     t0 = time.time()
     log_file = 'output_dirs.txt'
-    kwargs = FLAGS.__dict__
+    FLAGS = args.__dict__
+    #  kwargs = FLAGS.__dict__
 
-    main(kwargs)
+    main(FLAGS)
 
     io.log('\n\n' + SEP_STR)
     io.log(f'Time to complete: {time.time() - t0:.4g}')
