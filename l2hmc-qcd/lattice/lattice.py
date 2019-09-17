@@ -155,7 +155,7 @@ class GaugeLattice(object):
 
         with tf.name_scope('plaq_sums'):
             if samples.shape != self.samples.shape:
-                samples = tf.reshape(samples, shape=(self.samples.shape))
+                samples = tf.reshape(samples, shape=self.samples.shape)
 
             # assuming D = 2, plaq_sums will have shape: (N, L, T)
             plaq_sums = (samples[:, :, :, 0]
