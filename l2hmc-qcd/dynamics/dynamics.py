@@ -177,10 +177,9 @@ class Dynamics(tf.keras.Model):
     def apply_transition(self,
                          x_in,
                          beta,
-                         net_weights,
+                         weights,
                          train_phase,
-                         save_lf=False,
-                         eps=None):
+                         save_lf=False):
         """Propose a new state and perform the accept/reject step.
 
         We simulate the (molecular) dynamics update both forward and backward,
@@ -204,7 +203,7 @@ class Dynamics(tf.keras.Model):
         """
         results_dict = {}  # holds additional data if `save_lf=True`
 
-        args = (x_in, beta, net_weights, train_phase, save_lf)
+        args = (x_in, beta, weights, train_phase, save_lf)
 
         # Forward transition:
         outputs_f = self._transition_forward(*args)
@@ -271,7 +270,7 @@ class Dynamics(tf.keras.Model):
 
         return outputs
 
-    def _transition_forward(self, x, beta, net_weights, train_phase, save_lf):
+    def _transition_forward(self, x, beta, weights, train_phase, save_lf):
         with tf.name_scope('transition_forward'):
             with tf.name_scope('refresh_momentum'):
                 v_rf = tf.random_normal(tf.shape(x),
@@ -280,16 +279,13 @@ class Dynamics(tf.keras.Model):
                                         name='refresh_momentum_forward')
 
             outputs_f = self.transition_kernel(x, v_rf, beta,
-                                               net_weights,
+                                               weights,
                                                train_phase,
                                                forward=True,
                                                save_lf=save_lf)
-            #  xf = outputs_f['x_proposed']
-            #  vf = outputs_f['v_proposed']
-            #  results_dict['pxs_out_f'] = outputs_f['accept_prob']
         return outputs_f
 
-    def _transition_backward(self, x, beta, net_weights, train_phase, save_lf):
+    def _transition_backward(self, x, beta, weights, train_phase, save_lf):
         with tf.name_scope('transition_backward'):
             with tf.name_scope('refresh_momentum'):
                 v_rb = tf.random_normal(tf.shape(x),
@@ -298,13 +294,10 @@ class Dynamics(tf.keras.Model):
                                         name='refresh_momentum_backward')
 
             outputs_b = self.transition_kernel(x, v_rb, beta,
-                                               net_weights,
+                                               weights,
                                                train_phase,
                                                forward=False,
                                                save_lf=save_lf)
-            #  xb = outputs_b['x_proposed']
-            #  vb = outputs_b['v_proposed']
-            #  results_dict['pxs_out_b'] = outputs_b['accept_prob']
         return outputs_b
 
     def _get_transition_masks(self):
@@ -339,7 +332,7 @@ class Dynamics(tf.keras.Model):
                           x_in,
                           v_in,
                           beta,
-                          net_weights,
+                          weights,
                           train_phase,
                           forward=True,
                           save_lf=False):
@@ -381,11 +374,10 @@ class Dynamics(tf.keras.Model):
             # cast leapfrog step to integer
             i = tf.cast(step, dtype=tf.int32)
             new_x, new_v, j, _fns = lf_fn(x, v, beta, step,
-                                          net_weights, train_phase)
+                                          weights, train_phase)
             lf_samples = lf_samples.write(i+1, new_x)
             logdets = logdets.write(i+1, logdet+j)
             fns = fns.write(i, _fns)
-            #  fns = fns.write(i, _fns)
 
             return (step+1, new_x, new_v, logdet+j, lf_samples, logdets, fns)
 
@@ -436,7 +428,6 @@ class Dynamics(tf.keras.Model):
         vf = outputs_f['v_proposed']
 
         #  backward(forward(x, v)) --> x, v
-
         outputs_b = self.transition_kernel(xf, vf, beta,
                                            weights,
                                            training,
