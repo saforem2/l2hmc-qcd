@@ -215,7 +215,8 @@ def _gmm_plot(distribution, samples, ax=None, **kwargs):
     sigmas = distribution.sigmas
     pis = distribution.pis
 
-    xlims, ylims = get_lims(samples)
+    target_samples = distribution.get_samples(500)
+    xlims, ylims = get_lims(target_samples)
 
     if ellipse:
         w_factor = 0.2 / np.max(pis)
