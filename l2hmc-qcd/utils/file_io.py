@@ -95,7 +95,7 @@ def _parse_flags(FLAGS):
     #  if isinstance(FLAGS, dict):
     try:
         LX = flags_dict['space_size']
-        NS = flags_dict['num_samples']
+        BS = flags_dict['batch_size']
         LF = flags_dict['num_steps']
         SS = flags_dict['eps']
         QW = flags_dict['charge_weight']
@@ -111,7 +111,7 @@ def _parse_flags(FLAGS):
 
     except (NameError, AttributeError):
         LX = FLAGS.space_size
-        NS = FLAGS.num_samples
+        BS = FLAGS.batch_size
         LF = FLAGS.num_steps
         SS = FLAGS.eps
         QW = FLAGS.charge_weight
@@ -127,7 +127,7 @@ def _parse_flags(FLAGS):
 
     out_dict = {
         'LX': LX,
-        'NS': NS,
+        'NS': BS,
         'LF': LF,
         'SS': SS,
         'QW': QW,

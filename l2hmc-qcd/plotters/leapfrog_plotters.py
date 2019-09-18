@@ -119,10 +119,10 @@ class LeapfrogPlotter:
         sumlogdets = loader.load_sumlogdets(run_dir)
         return (samples, leapfrogs, logdets, sumlogdets)
 
-    def get_colors(self, num_samples=20):
-        reds_cmap = mpl.cm.get_cmap('Reds', num_samples + 1)
-        blues_cmap = mpl.cm.get_cmap('Blues', num_samples + 1)
-        idxs = np.linspace(0.2, 0.75, num_samples + 1)
+    def get_colors(self, batch_size=20):
+        reds_cmap = mpl.cm.get_cmap('Reds', batch_size + 1)
+        blues_cmap = mpl.cm.get_cmap('Blues', batch_size + 1)
+        idxs = np.linspace(0.2, 0.75, batch_size + 1)
         reds = [reds_cmap(i) for i in idxs]
         blues = [blues_cmap(i) for i in idxs]
 
@@ -135,7 +135,7 @@ class LeapfrogPlotter:
         io.check_else_make_dir(figs_dir)
         io.check_else_make_dir(self.pdfs_dir)
 
-    def make_plots(self, run_dir, num_samples=20, ret=False):
+    def make_plots(self, run_dir, batch_size=20, ret=False):
         """Make plots of the leapfrog differences and logdets.
 
         Immediately after creating and saving the plots, delete these
@@ -144,7 +144,7 @@ class LeapfrogPlotter:
         Args:
             run_dir (str): Path to directory in which to save all of the
                 relevant instance attributes.
-            num_samples (int): Number of samples to include when creating
+            batch_size (int): Number of samples to include when creating
                 plots.
             save (bool): Boolean indicating whether or not plotted data should
                 be saved.
@@ -158,21 +158,21 @@ class LeapfrogPlotter:
         beta = run_key[beta_idx]
 
         #  print_memory()
-        fig_ax1 = self.plot_lf_diffs(beta, num_samples)
+        fig_ax1 = self.plot_lf_diffs(beta, batch_size)
 
         #  print_memory()
-        fig_ax2 = self.plot_logdets(beta, num_samples)
+        fig_ax2 = self.plot_logdets(beta, batch_size)
 
         if ret:
             return fig_ax1, fig_ax2
 
-    def plot_lf_diffs(self, beta, num_samples=20):
-        reds, blues = self.get_colors(num_samples)
+    def plot_lf_diffs(self, beta, batch_size=20):
+        reds, blues = self.get_colors(batch_size)
         samples_y_avg = np.mean(self.samples_diffs, axis=(1, 2))
         samples_x_avg = np.arange(len(samples_y_avg))
 
         fig, (ax1, ax2) = plt.subplots(2, 1)
-        for idx in range(num_samples):
+        for idx in range(batch_size):
             yf = np.mean(self.lf_f_diffs, axis=-1)
             xf = np.arange(len(yf))
             yb = np.mean(self.lf_b_diffs, axis=-1)
@@ -230,8 +230,8 @@ class LeapfrogPlotter:
 
         return fig, (ax1, ax2)
 
-    def plot_logdets(self, beta, num_samples=20):
-        reds, blues = self.get_colors(num_samples)
+    def plot_logdets(self, beta, batch_size=20):
+        reds, blues = self.get_colors(batch_size)
 
         sumlogdet_yf_avg = np.mean(self.sumlogdet_f, axis=-1)
         sumlogdet_yb_avg = np.mean(self.sumlogdet_b, axis=-1)
@@ -239,7 +239,7 @@ class LeapfrogPlotter:
         sumlogdet_xb_avg = np.arange(len(sumlogdet_yb_avg))
 
         fig, (ax1, ax2) = plt.subplots(2, 1)
-        for idx in range(num_samples):
+        for idx in range(batch_size):
             yf = self.logdets_f[:, idx]
             xf = np.arange(len(yf))
             yb = self.logdets_b[:, idx]

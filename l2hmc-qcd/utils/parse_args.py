@@ -68,8 +68,8 @@ def parse_args():
                         default=2,
                         help="""Dimensionality of lattice.\n (Default: 2)""")
 
-    parser.add_argument("--num_samples",
-                        dest="num_samples",
+    parser.add_argument("--batch_size",
+                        dest="batch_size",
                         type=int,
                         default=128,
                         required=False,
@@ -341,6 +341,16 @@ def parse_args():
                         help=("""Multiplicative factor used to weigh relative
                               strength of top. charge term in loss
                               function. (Default: 1.)"""))
+
+    parser.add_argument('--use_gaussian_loss',
+                        dest='use_gaussian_loss',
+                        action='store_true',
+                        required=False,
+                        help=("""Flag that when passed will use a `Gaussian`
+                              function, exp((x - x0) ** 2 / (2 * sigma)), where
+                              `x = metric_fn(x_init, x_proposed) * accept_prob`
+                              (i.e. the expected jump distance) is used in the
+                              exponential."""))
 
     parser.add_argument("--profiler",
                         dest='profiler',
