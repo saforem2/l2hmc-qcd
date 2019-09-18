@@ -206,6 +206,9 @@ def _create_obs_summaries(model):
                           (u1_plaq_exact_tf(model.beta)
                            - model.avg_plaqs_op))
 
+    with tf.name_scope('top_charge'):
+        tf.summary.histogram('top_charge', model.charges_op)
+
 
 def _create_l2hmc_summaries(model):
     """Create summary objects for each of the MD functions and outputs."""
@@ -250,7 +253,10 @@ def create_summaries(model, summary_dir, training=True):
                          model.dynamics.trainable_variables)
 
     if training:
+        name = 'train_summary_op'
         _create_training_summaries(model)  # loss, lr, eps, accept prob 
+    else:
+        name = 'inference_summary_op'
 
     if model._model_type == 'GaugeModel':
         _create_obs_summaries(model)    # lattice observables
@@ -266,6 +272,6 @@ def create_summaries(model, summary_dir, training=True):
         if 'kernel' in var.name:
             _create_grad_norm_summaries(grad, var)
 
-    summary_op = tf.summary.merge_all(name='train_summary_op')
+    summary_op = tf.summary.merge_all(name=name)
 
     return summary_writer, summary_op
