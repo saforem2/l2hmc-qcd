@@ -170,6 +170,7 @@ def train_l2hmc(FLAGS, log_file=None, experiment=None):
     return model, train_logger
 
 
+
 def main(FLAGS):
     log_file = 'output_dirs.txt'
 
@@ -199,11 +200,3 @@ if __name__ == '__main__':
     io.log('\n\n' + SEP_STR)
     io.log(f'Time to complete: {time.time() - t0:.4g}s')
     io.log(SEP_STR)
-
-
-
-
-
-
-
-

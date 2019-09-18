@@ -165,7 +165,3 @@ class GaugeModelRunner:
 
         if self._has_logger:
             self.logger.save_run_data(therm_frac=therm_frac)
-
-
-
-
