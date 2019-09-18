@@ -9,9 +9,9 @@ Date: 04/24/2019
 """
 import os
 import pickle
-import datetime
-import shutil
-import errno
+#  import datetime
+#  import shutil
+#  import errno
 
 import tensorflow as tf
 import numpy as np
@@ -20,7 +20,7 @@ from collections import Counter, OrderedDict
 from scipy.stats import sem
 import utils.file_io as io
 
-from config import RUN_HEADER, NP_FLOAT
+from config import NP_FLOAT
 
 from lattice.lattice import u1_plaq_exact
 #  from utils.tf_logging import variable_summaries
@@ -44,11 +44,15 @@ def autocorr(x):
     return autocorr[autocorr.size // 2:]
 
 
+def _rename(src, dst):
+    io.log(f'INFO: Renaming {src} to {dst}')
+    os.rename(src, dst)
 
 
 class RunLogger:
-    def __init__(self, params, inputs, run_ops, save_lf_data=False):
-        """
+    def __init__(self, params, inputs, run_ops,
+                 model_type=None, save_lf_data=True):
+        """Initialization method.
         Args:
             model: GaugeModel object.
             log_dir: Existing logdir from `TrainLogger`.
@@ -58,32 +62,24 @@ class RunLogger:
         self.summaries = params['summaries']
         assert os.path.isdir(params['log_dir'])
         self.log_dir = params['log_dir']
+        if model_type is not None:
+            self.model_type = model_type
+            h_strf = ("{:^12s}" + 4 * "{:^10s}").format(
+                "STEP", "t/STEP", "% ACC", "EPS", "BETA"
+            )
+        else:
+            self.model_type = 'gauge_model'
+            h_strf = ("{:^12s}" + 8 * "{:^10s}").format(
+                "STEP", "t/STEP", "% ACC", "EPS", "BETA",
+                "ACTIONS", "PLAQS", "(EXACT)", "dQ"
+            )
+
+        dash = (len(h_strf) + 1) * '-'
+        self.run_header = dash + '\n' + h_strf + '\n' + dash
 
         runs_dir = os.path.join(self.log_dir, 'runs')
         figs_dir = os.path.join(self.log_dir, 'figures')
         run_summaries_dir = os.path.join(self.log_dir, 'summaries', 'run')
-        if os.path.isdir(runs_dir) or os.path.isdir(figs_dir):
-            now = datetime.datetime.now()
-            time_str = now.strftime("%H%M")
-            if os.path.isdir(runs_dir):
-                renamed_runs_dir = runs_dir + f'_{time_str}'
-                #  io.log(f'Renaming existing runs_dir to: {renamed_runs_dir}')
-                io.log(f'Copying existing runs_dir to: {renamed_runs_dir}')
-                #  io.check_else_make_dir(renamed_runs_dir)
-                io.copy(runs_dir, renamed_runs_dir)
-                #  os.rename(runs_dir, renamed_runs_dir)
-            if os.path.isdir(figs_dir):
-                renamed_figs_dir = figs_dir + f'_{time_str}'
-                #  io.log(f'Renaming existing figs_dir to: {renamed_figs_dir}')
-                io.log(f'Copying existing figs_dir to: {renamed_figs_dir}')
-                #  io.check_else_make_dir(renamed_figs_dir)
-                io.copy(figs_dir, renamed_figs_dir)
-                #  os.rename(figs_dir, renamed_figs_dir)
-            if os.path.isdir(run_summaries_dir):
-                new_rsd = run_summaries_dir + f'_{time_str}'
-                io.log(f'Copying existing run summaries dir to: {new_rsd}')
-                #  io.check_else_make_dir(new_rsd)
-                io.copy(run_summaries_dir, new_rsd)
 
         self.runs_dir = runs_dir
         io.check_else_make_dir(self.runs_dir)
@@ -99,10 +95,11 @@ class RunLogger:
         self.beta = None
         self.run_data = {}
         self.run_stats = {}
-        self.run_strings = [RUN_HEADER]
+        self.run_strings = [self.run_header]
 
         if params['save_lf']:
             self.samples_arr = []
+            self.px_arr = []
             self.lf_out = FB_DICT.copy()
             self.pxs_out = FB_DICT.copy()
             self.masks = FB_DICT.copy()
@@ -110,7 +107,8 @@ class RunLogger:
             self.sumlogdet = FB_DICT.copy()
             self.l2hmc_fns = FB_DICT.copy()
 
-        self.run_ops_dict = self.build_run_ops_dict(params, run_ops)
+        self.run_ops_dict = self.build_run_ops_dict(params, run_ops,
+                                                    self.model_type)
         self.inputs_dict = self.build_inputs_dict(inputs)
 
         if self.summaries:
@@ -122,37 +120,42 @@ class RunLogger:
             self.create_summaries()
 
     @staticmethod
-    def build_run_ops_dict(params, run_ops):
+    def build_run_ops_dict(params, run_ops, model_type):
         """Build dictionary of tensorflow operations used for inference."""
         def get_lf_keys(direction):
             base_keys = ['lf_out', 'pxs_out', 'masks',
                          'logdets', 'sumlogdet', 'fns_out']
             return [k + f'_{direction}' for k in base_keys]
 
-        keys = ['x_out', 'px', 'actions_op',
-                'plaqs_op', 'avg_plaqs_op',
-                'charges_op', 'charge_diffs_op']
+        keys = ['x_out', 'px', 'dynamics_eps']
 
-        run_ops_dict = {key: run_ops[idx] for idx, key in enumerate(keys)}
+        if model_type == 'gauge_model':
+            keys += ['actions_op', 'plaqs_op',
+                     'avg_plaqs_op', 'charges_op',
+                     'charge_diffs_op']
+
+        num_keys = len(keys)
+
+        run_ops_dict = dict(zip(keys, run_ops[:num_keys]))
+        #  run_ops_dict = {key: run_ops[idx] for idx, key in enumerate(keys)}
 
         if params['save_lf']:
             keys.extend(get_lf_keys('f'))
             keys.extend(get_lf_keys('b'))
-            for key, val in zip(keys[7:], run_ops[7:]):
+            for key, val in zip(keys[num_keys:], run_ops[num_keys:]):
                 run_ops_dict.update({key: val})
-
-        run_ops_dict['dynamics_eps'] = run_ops[-1]
 
         return run_ops_dict
 
     @staticmethod
     def build_inputs_dict(inputs):
         """Build dictionary of tensorflow placeholders used as inputs."""
-        keys = ['x', 'beta', 'charge_weight', 'train_phase']
-        num_keys = len(keys)
-
-        inputs_dict = dict(zip(keys, inputs[:num_keys]))
-        inputs_dict.update({'net_weights': inputs[num_keys:]})
+        inputs_dict = {
+            'x': inputs[0],
+            'beta': inputs[1],
+            'net_weights': [inputs[2], inputs[3], inputs[4]],
+            'train_phase': inputs[5]
+        }
 
         return inputs_dict
 
@@ -223,7 +226,14 @@ class RunLogger:
         """Check if this run has been completed previously, if so skip it."""
         run_dir = os.path.join(self.runs_dir, run_str)
         run_summary_dir = os.path.join(self.run_summaries_dir, run_str)
-        if os.path.isdir(run_dir) and os.path.isdir(run_summary_dir):
+        fig_dir = os.path.join(self.figs_dir, run_str)
+
+        exists = [
+            os.path.isdir(run_dir),
+            os.path.isdir(run_summary_dir),
+            os.path.isdir(fig_dir)
+        ]
+        if any(exists):
             return True
         return False
 
@@ -258,7 +268,6 @@ class RunLogger:
 
     def reset(self, **kwargs):
         """Reset run_data and run_strings to prep for new run."""
-
         if self.run_data is not None or self.run_dir is not None:
             self.clear()
 
@@ -273,15 +282,23 @@ class RunLogger:
 
         self.run_data = {
             'px': {},
-            'actions': {},
-            'plaqs': {},
-            'charges': {},
-            'charge_diffs': {},
         }
+
         self.run_stats = {}
         self.run_strings = []
+
+        if self.model_type == 'gauge_model':
+            obs_data = {
+                'actions': {},
+                'plaqs': {},
+                'charges': {},
+                'charge_diffs': {},
+            }
+            self.run_data.update(obs_data.items())
+
         #  if self.model.save_lf:
         if self.params['save_lf']:
+            self.px_arr = []
             self.samples_arr = []
             self.lf_out = FB_DICT.copy()
             self.pxs_out = FB_DICT.copy()
@@ -335,11 +352,14 @@ class RunLogger:
         beta = data['beta']
         key = (step, beta)
 
-        obs_keys = ['px', 'actions', 'plaqs', 'charges', 'charge_diffs']
-        for k in obs_keys:
-            self.run_data[k][key] = data[k]
+        if self.model_type == 'gauge_model':
+            obs_keys = ['px', 'actions', 'plaqs', 'charges', 'charge_diffs']
+            for k in obs_keys:
+                self.run_data[k][key] = data[k]
 
         if self.params['save_lf']:
+            px_np = data['px']
+            self.px_arr.append(px_np)
             samples_np = data['samples']
             self.samples_arr.append(samples_np)
             self.lf_out['forward'].extend(np.array(data['lf_out_f']))
@@ -355,14 +375,16 @@ class RunLogger:
 
         self.run_strings.append(data_str)
 
-        if self.summaries and (step + 1) % self.params['logging_steps'] == 0:
+        log_steps = getattr(self.params, 'logging_steps', 10)
+        if self.summaries and (step + 1) % log_steps == 0:
             self.log_step(sess, step, data['samples'], beta, net_weights)
 
-        if step % (10 * self.params['print_steps']) == 0:
+        print_steps = getattr(self.params, 'print_steps', 1)
+        if step % (10 * print_steps) == 0:
             io.log(data_str)
 
         if step % 100 == 0:
-            io.log(RUN_HEADER)
+            io.log(self.run_header)
 
     def calc_observables_stats(self, run_data, therm_frac=10):
         """Calculate statistics for lattice observables.
@@ -478,7 +500,7 @@ class RunLogger:
             io.save_data(val, out_file, name=key)
 
         history_file = os.path.join(self.run_dir, 'run_history.txt')
-        io.write(RUN_HEADER, history_file, 'w')
+        io.write(self.run_header, history_file, 'w')
         _ = [io.write(s, history_file, 'a') for s in self.run_strings]
 
         self.write_run_stats(run_stats, therm_frac)
@@ -500,12 +522,12 @@ class RunLogger:
         charges_avg, charges_err = stats['charges'].mean(axis=0)
         suscept_avg, suscept_err = stats['suscept'].mean(axis=0)
 
-        #  ns = self.model.num_samples
-        ns = self.params['num_samples']
-        suscept_k1 = f'  \navg. over all {ns} samples < Q >'
-        suscept_k2 = f'  \navg. over all {ns} samples < Q^2 >'
-        actions_k1 = f'  \navg. over all {ns} samples < action >'
-        plaqs_k1 = f'  \n avg. over all {ns} samples < plaq >'
+        #  ns = self.model.batch_size
+        bs = self.params['batch_size']
+        suscept_k1 = f'  \navg. over all {bs} samples < Q >'
+        suscept_k2 = f'  \navg. over all {bs} samples < Q^2 >'
+        actions_k1 = f'  \navg. over all {bs} samples < action >'
+        plaqs_k1 = f'  \n avg. over all {bs} samples < plaq >'
 
         _est_key = '  \nestimate +/- stderr'
 
@@ -534,7 +556,7 @@ class RunLogger:
                 stats_strings[_est_key][k] = v
             return stats_strings
 
-        keys = [f"sample {idx}" for idx in range(ns)]
+        keys = [f"sample {idx}" for idx in range(bs)]
 
         suscept_vals = format_stats(stats['suscept'], '< Q^2 >')
         actions_vals = format_stats(stats['actions'], '< action >')
@@ -563,7 +585,7 @@ class RunLogger:
         for k, v in stats['charge_probs'].items():
             charge_probs_strings.append(f'  probability[Q = {k}]: {v}\n')
 
-        run_str = (f" stats for {ns} chains ran for {self.run_steps} steps "
+        run_str = (f" stats for {bs} chains ran for {self.run_steps} steps "
                    f" at beta = {self.beta}.")
 
         str0 = "Topological susceptibility" + run_str
