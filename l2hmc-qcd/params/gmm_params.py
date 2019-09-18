@@ -19,7 +19,6 @@ GMM_PARAMS = {                # Default parameters for `GaussianMixtureModel`
     'dropout_prob': 0.,
     'num_hidden1': 10,
     'num_hidden2': 10,
-    'batch_size': 200,
     'save_lf': True,
     'loss_scale': 0.1,
     'clip_value': 0.,
