@@ -342,6 +342,16 @@ def parse_args():
                               strength of top. charge term in loss
                               function. (Default: 1.)"""))
 
+    parser.add_argument('--use_gaussian_loss',
+                        dest='use_gaussian_loss',
+                        action='store_true',
+                        required=False,
+                        help=("""Flag that when passed will use a `Gaussian`
+                              function, exp((x - x0) ** 2 / (2 * sigma)), where
+                              `x = metric_fn(x_init, x_proposed) * accept_prob`
+                              (i.e. the expected jump distance) is used in the
+                              exponential."""))
+
     parser.add_argument("--profiler",
                         dest='profiler',
                         action="store_true",
