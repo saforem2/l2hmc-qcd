@@ -136,7 +136,7 @@ class GaugeModelTrainer:
 
         data_str = (
             f"{global_step:>5g}/{train_steps:<6g} "
-            f"{outputs[1]:^9.4g} "              # loss value
+            f"{outputs[1]:^9.5g} "              # loss value
             f"{dt:^9.4g} "                      # time / step
             f"{np.mean(outputs[3]):^9.4g} "     # accept prob
             f"{outputs[4]:^9.4g} "              # step size
