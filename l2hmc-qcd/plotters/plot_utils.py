@@ -17,6 +17,7 @@ from collections import namedtuple
 from scipy.stats import multivariate_normal
 from config import MARKERS, HAS_MATPLOTLIB
 
+
 MPL_PARAMS = {
     #  'backend': 'ps',
     #  'text.latex.preamble': [r'\usepackage{gensymb}'],
@@ -33,6 +34,7 @@ MPL_PARAMS = {
 if HAS_MATPLOTLIB:
     import matplotlib as mpl
     import matplotlib.pyplot as plt
+    from matplotlib.patches import Ellipse
 
     mpl.rcParams.update(MPL_PARAMS)
 
@@ -42,12 +44,22 @@ def get_colors(batch_size=10, cmaps=None):
         cmap0 = mpl.cm.get_cmap('Greys', batch_size + 1)
         cmap1 = mpl.cm.get_cmap('Reds', batch_size + 1)
         cmap2 = mpl.cm.get_cmap('Blues', batch_size + 1)
+
         cmaps = (cmap0, cmap1, cmap2)
 
     idxs = np.linspace(0.1, 0.75, batch_size + 1)
     colors_arr = []
     for cmap in cmaps:
         colors_arr.append([cmap(i) for i in idxs])
+
+    return colors_arr
+
+
+def get_cmap(N=10, cmap=None):
+    cmap_name = 'viridis' if cmap is None else cmap
+    cmap_ = mpl.cm.get_cmap(cmap_name, N)
+    idxs = np.linspace(0., 1., N)
+    colors_arr = [cmap_(i) for i in idxs]
 
     return colors_arr
 
@@ -89,7 +101,7 @@ def _get_plaq_diff_data(log_dir):
     return data
 
 
-def plot_gaussian_contours(mus, covs, **kwargs):
+def plot_gaussian_contours(mus, covs, ax=None, **kwargs):
     """Plot contour lines for Gaussian Mixture Model w/ `mus` and `covs`.
 
     Args:
@@ -102,12 +114,14 @@ def plot_gaussian_contours(mus, covs, **kwargs):
     Returns:
         plt (???)
     """
-    spacing = kwargs.get('spacing', 5)
-    xlims = kwargs.get('x_lims', [-4, 4])
-    ylims = kwargs.get('y_lims', [-3, 3])
+    ax = ax or plt.gca()
+    xlims = kwargs.get('xlims', None)
+    ylims = kwargs.get('ylims', None)
     res = kwargs.get('res', 100)
-    cmap = kwargs.get('cmap', None)
-    ax = kwargs.get('ax', None)
+    cmap = kwargs.get('cmap', 'vidiris')
+    spacing = kwargs.get('spacing', 5)
+    fill = kwargs.get('fill', False)
+    #  ax = kwargs.get('ax', None)
 
     X = np.linspace(xlims[0], xlims[1], res)
     Y = np.linspace(ylims[0], ylims[1], res)
@@ -116,23 +130,127 @@ def plot_gaussian_contours(mus, covs, **kwargs):
     pos[:, :, 0] = X
     pos[:, :, 1] = Y
 
-    for idx, mu in enumerate(mus):
-        cov = covs[idx]
+    for idx, (mu, cov) in enumerate(zip(mus, covs)):
         F = multivariate_normal(mu, cov)
         Z = F.pdf(pos)
         #  plt.contour(X, Y, Z, spacing, colors=colors[0])
-        if cmap is None:
-            if ax is None:
-                plt.contour(X, Y, Z, spacing)
-            else:
-                ax.contour(X, Y, Z, spacing)
+        if fill:
+            _ = ax.contourf(X, Y, Z, spacing, cmap=cmap)
         else:
-            if ax is None:
-                plt.contour(X, Y, Z, spacing, cmap=cmap)
-            else:
-                ax.contour(X, Y, Z, spacing, cmap=cmap)
+            _ = ax.contour(X, Y, Z, spacing, cmap=cmap)
 
-    return ax if ax is not None else plt
+    return ax
+
+
+def draw_ellipse(position, covariance, ax=None, cmap=None, N=4, **kwargs):
+    """Draw an ellipse with a given position and covariance"""
+    ax = ax or plt.gca()
+
+    if cmap is not None:
+        color_arr = get_cmap(N=N, cmap=cmap)
+    else:
+        color_arr = N * ['C0']
+
+    # Convert covariance to principal axes
+    if covariance.shape == (2, 2):
+        U, s, Vt = np.linalg.svd(covariance)
+        angle = np.degrees(np.arctan2(U[1, 0], U[0, 0]))
+        width, height = 2 * np.sqrt(s)
+    else:
+        angle = 0
+        width, height = 2 * np.sqrt(covariance)
+
+    # Draw the Ellipse
+    for idx, nsig in enumerate(range(1, N)):
+        ax.add_patch(Ellipse(position, nsig * width, nsig * height, angle,
+                             color=color_arr[idx], **kwargs))
+
+
+def get_lims(samples):
+    x = samples[:, 0]
+    y = samples[:, 1]
+    # Define the borders
+    deltaX = (max(x) - min(x))/50
+    deltaY = (max(y) - min(y))/50
+    xmin = min(x) - deltaX
+    xmax = max(x) + deltaX
+    ymin = min(y) - deltaY
+    ymax = max(y) + deltaY
+    xlims = [xmin, xmax]
+    ylims = [ymin, ymax]
+
+    return xlims, ylims
+
+
+def _gmm_plot(distribution, samples, ax=None, **kwargs):
+    """
+    Plot contours of target distribution overlaid with scatter plot of samples.
+
+    Args:
+        distribution (`GMM` object): Gaussian Mixture Model distribution.
+            Defined in `utils/distributions.py`.'
+        samples (array-like): Collection of `samples` (np.ndarray of 2-D points
+            [x, y]) for scatter plot.
+        Returns:
+            fig, axes (output from plt.subplots(..))
+    """
+    ax = ax or plt.gca()
+    cmap = kwargs.get('cmap', None)
+    num_points = kwargs.get('num_points', 2000)
+    ellipse = kwargs.get('ellipse', True)
+    num_contours = kwargs.get('num_contours', 4)
+    fill = kwargs.get('fill', False)
+    title = kwargs.get('title', None)
+    out_file = kwargs.get('out_file', None)
+    ls = kwargs.get('ls', '-')
+    line_color = kwargs.get('line_color', 'gray')
+    axis_scale = kwargs.get('axis_scale', 'equal')
+
+    #  if ellipse:
+    #      lc = 'C0'
+    #  else:
+    #      lc = 'k'
+
+    mus = distribution.mus
+    sigmas = distribution.sigmas
+    pis = distribution.pis
+
+    xlims, ylims = get_lims(samples)
+
+    if ellipse:
+        w_factor = 0.2 / np.max(pis)
+        for pos, covar, w in zip(mus, sigmas, pis):
+            _ = draw_ellipse(pos, covar,
+                             ax=ax,
+                             cmap=cmap,
+                             N=num_contours,
+                             alpha=w * w_factor,
+                             fill=fill)
+    else:
+        _ = plot_gaussian_contours(mus, sigmas,
+                                   xlims=xlims,
+                                   ylims=ylims,
+                                   ax=ax,
+                                   cmap=cmap,
+                                   fill=fill)
+
+    _ = ax.plot(samples[:num_points, 0], samples[:num_points, 1],
+                marker=',', ls=ls, color=line_color, alpha=0.4)  # , zorder=2)
+    _ = ax.plot(samples[:num_points, 0], samples[:num_points, 1],
+                marker=',', ls='', color='k', alpha=0.6)  # , zorder=3)
+
+    _ = ax.axis(axis_scale)
+    _ = ax.set_xlim(xlims)
+    _ = ax.set_ylim(ylims)
+
+    if title is not None:
+        _ = ax.set_title(title, fontsize=16)
+
+    if out_file is not None:
+        io.log(f'Saving figure to: {out_file}.')
+        plt.savefig(out_file, dpi=400, bbox_inches='tight')
+
+    return ax
 
 
 def gmm_plot(distribution, samples, **kwargs):
@@ -151,54 +269,66 @@ def gmm_plot(distribution, samples, **kwargs):
     ncols = kwargs.get('ncols', 3)
     out_file = kwargs.get('out_file', None)
     title = kwargs.get('title', None)
+    cmap = kwargs.get('cmap', None)
     num_points = kwargs.get('num_points', 2000)
-    xlims = kwargs.get('xlims', None)
-    ylims = kwargs.get('ylims', None)
+    ellipse = kwargs.get('ellipse', True)
+    num_contours = kwargs.get('num_contours', 4)
+    axis_scale = kwargs.get('axis_scale', 'equal')
+
+    if ellipse:
+        lc = 'C0'
+    else:
+        lc = 'gray'
 
     mus = distribution.mus
     sigmas = distribution.sigmas
-
-    if xlims is None:
-        xmin = - np.min(mus) - 5 * np.max(sigmas)
-        xmax = np.max(mus) + 5 * np.max(sigmas)
-
-        xlims = [xmin, xmax]
-    if ylims is None:
-        ymin = xmin
-        ymax = xmax
-        ylims = [ymin, ymax]
+    pis = distribution.pis
+    target_samples = distribution.get_samples(5000)
+    xlims, ylims = get_lims(target_samples)
 
     fig, axes = plt.subplots(nrows=nrows, ncols=ncols)
     idx = 0
     for row in range(nrows):
         for col in range(ncols):
             ax = axes[row, col]
-            _ = plot_gaussian_contours(mus, sigmas,
-                                       xlims=xlims,
-                                       ylims=ylims,
-                                       res=400,
-                                       ax=ax)
+            #  xlims, ylims = get_lims(samples[:, idx])
+            if ellipse:
+                w_factor = 0.2 / np.max(pis)
+                for pos, covar, w in zip(mus, sigmas, pis):
+                    _ = draw_ellipse(pos, covar,
+                                     ax=ax,
+                                     cmap=cmap,
+                                     N=num_contours,
+                                     alpha=w * w_factor,
+                                     fill=kwargs.get('fill', False))
+            else:
+                _ = plot_gaussian_contours(mus, sigmas,
+                                           xlims=xlims,
+                                           ylims=ylims,
+                                           ax=ax, cmap=cmap)
             _ = ax.plot(samples[:num_points, idx, 0],
                         samples[:num_points, idx, 1],
-                        marker=',', ls='-',  color='gray', alpha=0.4)
+                        marker=',', ls='-',  color=lc, alpha=0.4, zorder=2)
             _ = ax.plot(samples[:num_points, idx, 0],
                         samples[:num_points, idx, 1],
-                        marker=',', ls='', color='k', alpha=0.6)
-            _ = axes[row, col].axis('equal')
-            _ = axes[row, col].set_xticks([])
-            _ = axes[row, col].set_yticks([])
+                        marker=',', ls='', color='k', alpha=0.6, zorder=2)
+            _ = ax.axis(axis_scale)
+            _ = ax.set_xticks([])
+            _ = ax.set_yticks([])
+            _ = ax.set_xlim(xlims)
+            _ = ax.set_ylim(ylims)
+
             idx += 1
 
-    _ = axes[0, 0].set_yticks(mus[0])
-    _ = axes[0, 0].set_yticklabels([str(i) for i in mus[0]])
-    _ = axes[-1, -1].set_xticks(mus[1])
-    _ = axes[-1, -1].set_xticklabels([str(i) for i in mus[1]])
+    _ = axes[-1, -1].set_xticks(mus[:, 0])
+    _ = axes[-1, -1].set_xticklabels([str(i) for i in mus[:, 0]])
+    _ = axes[0, 0].set_yticks(mus[:, 1])
+    _ = axes[0, 0].set_yticklabels([str(i) for i in mus[:, 1]])
+
+    # _ = fig.tight_layout()
 
     if title is not None:
         _ = fig.suptitle(title)
-
-    _ = ax.axis('equal')
-    _ = fig.tight_layout()
 
     if out_file is not None:
         print(f'Saving figure to: {out_file}.')
