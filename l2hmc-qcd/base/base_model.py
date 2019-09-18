@@ -12,11 +12,12 @@ from __future__ import absolute_import
 
 
 import tensorflow as tf
+import numpy as np
 
-import utils.file_io as io
+#  import utils.file_io as io
 from utils.horovod_utils import warmup_lr
-from config import HAS_HOROVOD
-from models.params import GAUGE_PARAMS
+#  from utils.distributions import quadratic_gaussian
+from config import HAS_HOROVOD, TF_FLOAT, GLOBAL_SEED
 
 if HAS_HOROVOD:
     import horovod.tensorflow as hvd
@@ -89,7 +90,7 @@ class BaseModel:
                 lr = tf.train.exponential_decay(lr_init, self.global_step,
                                                 self.lr_decay_steps,
                                                 self.lr_decay_rate,
-                                                staircase=False,
+                                                staircase=True,
                                                 name='learning_rate')
         return lr
 
@@ -110,12 +111,69 @@ class BaseModel:
         raise NotImplementedError
 
     def _create_inputs(self):
-        """Create placeholders to hold configurations."""
-        raise NotImplementedError
+        """Create input paceholders (if not executing eagerly).
+        Returns:
+            outputs: Dictionary with the following entries:
+                x: Placeholder for input lattice configuration with
+                    shape = (batch_size, x_dim) where x_dim is the number of
+                    links on the lattice and is equal to lattice.time_size *
+                    lattice.space_size * lattice.dim.
+                beta: Placeholder for inverse coupling constant.
+                charge_weight: Placeholder for the charge_weight (i.e. alpha_Q,
+                    the multiplicative factor that scales the topological
+                    charge term in the modified loss function) .
+                net_weights: Array of placeholders, each of which is a
+                    multiplicative constant used to scale the effects of the
+                    various S, Q, and T functions from the original paper.
+                    net_weights[0] = 'scale_weight', multiplies the S fn.
+                    net_weights[1] = 'transformation_weight', multiplies the Q
+                    fn.  net_weights[2] = 'translation_weight', multiplies the
+                    T fn.
+                train_phase: Boolean placeholder indicating if the model is
+                    curerntly being trained. 
+        """
+        def make_ph(name, shape=(), dtype=TF_FLOAT):
+            return tf.placeholder(dtype=dtype, shape=shape, name=name)
+
+        with tf.name_scope('inputs'):
+            if not tf.executing_eagerly():
+                x_shape = (self.batch_size, self.x_dim)
+                x = make_ph(dtype=TF_FLOAT, shape=x_shape, name='x')
+                beta = make_ph('beta')
+                scale_weight = make_ph('scale_weight')
+                transl_weight = make_ph('translation_weight')
+                transf_weight = make_ph('transformation_weight')
+                train_phase = make_ph('is_training', dtype=tf.bool)
+
+            inputs = {
+                'x': x,
+                'beta': beta,
+                'scale_weight': scale_weight,
+                'transl_weight': transl_weight,
+                'transf_weight': transf_weight,
+                'train_phase': train_phase
+            }
+
+        _ = [tf.add_to_collection('inputs', i) for i in inputs.values()]
+
+        return inputs
 
     def _create_metric_fn(self, metric):
         """Create metric function used to measure distatnce between configs."""
         raise NotImplementedError
+
+    def _calc_esjd(self, x1, x2, prob):
+        """Compute the expected squared jump distance (ESJD)."""
+        return prob * tf.reduce_sum(self.metric_fn(x1, x2), axis=1)
+
+    def _loss(self, init, proposed, prob):
+        """Calculate the (standard) contribution to the loss from the ESJD."""
+        ls = getattr(self, 'loss_scale', 0.1)
+        with tf.name_scope('calc_esjd'):
+            esjd = self._calc_esjd(init, proposed, prob) + 1e-4  # no div. by 0
+        loss = ls * tf.reduce_mean(1. / esjd) - tf.reduce_mean(esjd) / ls
+
+        return loss
 
     def _calc_loss(self, x_data, z_data):
         """Build operation responsible for calculating the total loss.
@@ -131,25 +189,90 @@ class BaseModel:
             loss_op: Operation responsible for calculating the total loss (to
                 be minimized).
         """
-        ls = getattr(self, 'loss_scale', 0.1)
+        aux_weight = getattr(self, 'aux_weight', 1.)
 
-        def _diff(x1, x2):
-            return tf.reduce_sum(self.metric_fn(x1, x2), axis=1)
         with tf.name_scope('calc_loss'):
             with tf.name_scope('x_loss'):
-                x_loss = (x_data.prob * _diff(x_data.x_in,
-                                              x_data.x_proposed)) + 1e-4
+                x_loss = self._loss(x_data.init,
+                                    x_data.proposed,
+                                    x_data.prob)
             with tf.name_scope('z_loss'):
-                z_loss = (z_data.prob * _diff(z_data.x_in,
-                                              z_data.x_proposed)) + 1e-4
-                #  z_loss = self._loss(*z_data) if aux_weight > 0. else 0.
+                if aux_weight > 0.:
+                    z_loss = self._loss(z_data.init,
+                                        z_data.proposed,
+                                        z_data.prob)
+                else:
+                    z_loss = 0.
 
-            loss = 0.
-            loss += ls * (tf.reduce_mean(1. / x_loss)
-                          + tf.reduce_mean(1. / z_loss))
-            loss += (- tf.reduce_mean(x_loss) - tf.reduce_mean(z_loss)) / ls
+            loss = tf.add(x_loss, z_loss, name='loss')
 
         return loss
+
+    def _gaussian_loss(self, x_data, z_data, mean, sigma):
+        def _gaussian(x, mu, sigma):
+            norm = tf.cast(
+                1. / tf.sqrt(2 * np.pi * sigma ** 2), dtype=TF_FLOAT
+            )
+            exp_ = tf.exp(-tf.square(x - mu) / (2 * sigma))
+
+            return norm * exp_
+
+        ls = getattr(self, 'loss_scale', 0.1)
+        aux_weight = getattr(self, 'aux_weight', 1.)
+        with tf.name_scope('gaussian_loss'):
+            with tf.name_scope('x_loss'):
+                x_esjd = self._calc_esjd(x_data.init,
+                                         x_data.proposed,
+                                         x_data.prob)
+                x_gauss = _gaussian(x_esjd, mean, sigma)
+                x_loss = ls * tf.reduce_mean(x_gauss)
+                #  x_loss = (ls * tf.reduce_mean(1. / x_gauss)
+                #            - tf.reduce_mean(x_gauss) / ls)
+
+            with tf.name_scope('z_loss'):
+                if aux_weight > 0.:
+                    z_esjd = self._calc_esjd(z_data.init,
+                                             z_data.proposed,
+                                             z_data.prob)
+                    z_gauss = _gaussian(z_esjd, mean, sigma)
+                    z_loss = ls * tf.reduce_mean(z_gauss)
+                    #  z_loss = (ls * tf.reduce_mean(1. / z_gauss)
+                    #            - tf.reduce_mean(z_gauss) / ls)
+                else:
+                    z_loss = 0.
+
+            gaussian_loss = tf.add(x_loss, z_loss, name='gaussian_loss')
+
+        return gaussian_loss
+
+    def _check_reversibility(self):
+        x_in = tf.random_normal(self.x.shape,
+                                dtype=TF_FLOAT,
+                                seed=GLOBAL_SEED,
+                                name='x_reverse_check')
+        v_in = tf.random_normal(self.x.shape,
+                                dtype=TF_FLOAT,
+                                seed=GLOBAL_SEED,
+                                name='v_reverse_check')
+
+        dynamics_check = self.dynamics._check_reversibility(x_in, v_in,
+                                                            self.beta,
+                                                            self.net_weights,
+                                                            self.train_phase)
+        xb = dynamics_check['xb']
+        vb = dynamics_check['vb']
+
+        xdiff = (x_in - xb)
+        vdiff = (v_in - vb)
+        x_diff = tf.reduce_sum(tf.matmul(tf.transpose(xdiff), xdiff))
+        v_diff = tf.reduce_sum(tf.matmul(tf.transpose(vdiff), vdiff))
+        #  x_diff = np.sum((x_in - xb).T.dot(x_in - xb))
+        #  v_diff = np.sum((v_in - vb).T.dot(v_in - vb))
+
+        #  x_allclose = allclose(x_in, xb)  # xb = backward(forward(x_in))
+        #  v_allclose = allclose(v_in, vb)
+
+        return x_diff, v_diff
 
     def _calc_grads(self, loss):
         """Calculate the gradients to be used in backpropagation."""

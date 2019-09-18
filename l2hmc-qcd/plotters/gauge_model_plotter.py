@@ -112,7 +112,7 @@ class GaugeModelPlotter:
         autocorrs_avg = np.mean(charge_autocorrs.T, axis=1)
         autocorrs_err = sem(charge_autocorrs.T, axis=1)
 
-        num_steps, num_samples = actions.shape
+        num_steps, batch_size = actions.shape
         steps_arr = np.arange(num_steps)
 
         # skip 5% of total number of steps between successive points when
@@ -155,7 +155,7 @@ class GaugeModelPlotter:
 
         #  L = self.params['space_size']
         lf_steps = self.params['num_steps']
-        bs = self.params['num_samples']  # batch size
+        bs = self.params['batch_size']  # batch size
         #  qw = weights['charge_weight']
         nw = net_weights
         sw, translw, transfw = nw
@@ -365,12 +365,12 @@ class GaugeModelPlotter:
         plot_multiple_lines(xy_data, xy_labels, **kwargs)
 
         charges = np.array(xy_data[1].T, dtype=int)
-        num_steps, num_samples = charges.shape
+        num_steps, batch_size = charges.shape
 
         out_dir = os.path.join(self.out_dir, 'top_charge_plots')
         io.check_else_make_dir(out_dir)
         # if we have more than 10 chains in charges, only plot first 10
-        for idx in range(min(num_samples, 5)):
+        for idx in range(min(batch_size, 5)):
             _, ax = plt.subplots()
             _ = ax.plot(charges[:, idx],
                         marker=MARKERS[idx],
@@ -410,14 +410,14 @@ class GaugeModelPlotter:
 
     def _plot_charge_probs(self, charges, **kwargs):
         """PLot top. charge probabilities."""
-        num_steps, num_samples = charges.shape
+        num_steps, batch_size = charges.shape
         charges = np.array(charges, dtype=int)
         out_dir = os.path.join(self.out_dir, 'top_charge_probs')
         io.check_else_make_dir(out_dir)
         if 'title' in list(kwargs.keys()):
             title = kwargs.pop('title')
         # if we have more than 10 chains in charges, only plot first 10
-        for idx in range(min(num_samples, 5)):
+        for idx in range(min(batch_size, 5)):
             counts = Counter(charges[:, idx])
             total_counts = np.sum(list(counts.values()))
             _, ax = plt.subplots()
@@ -446,12 +446,12 @@ class GaugeModelPlotter:
         _, ax = plt.subplots()
         ax.plot(list(all_counts.keys()),
                 np.array(list(all_counts.values()) / (total_counts *
-                                                      num_samples)),
+                                                      batch_size)),
                 marker='o',
                 color='C0',
                 ls='',
                 alpha=0.6,
-                label=f'total across {num_samples} samples')
+                label=f'total across {batch_size} samples')
         _ = ax.legend(loc='best')
         _ = ax.set_xlabel(r"$Q$")  # , fontsize=14)
         _ = ax.set_ylabel('Probability')  # , fontsize=14)

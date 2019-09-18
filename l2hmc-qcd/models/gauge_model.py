@@ -24,14 +24,16 @@ from lattice.lattice import GaugeLattice
 import utils.file_io as io
 #  from utils.horovod_utils import warmup_lr
 from config import GLOBAL_SEED, TF_FLOAT, TF_INT, HAS_HOROVOD
-#  from .params import GAUGE_PARAMS
+from params.gauge_params import GAUGE_PARAMS
 #  from tensorflow.python.ops import control_flow_ops as control_flow_ops
 
 if HAS_HOROVOD:
     import horovod.tensorflow as hvd
 
+LFdata = namedtuple('LFdata', ['init', 'proposed', 'prob'])
 
-def allclose(x, y, rtol=1e-3, atol=1e-8):
+
+def allclose(x, y, rtol=1e-3, atol=1e-5):
     return tf.reduce_all(tf.abs(x - y) <= tf.abs(y) * rtol + atol)
 
 
@@ -72,12 +74,13 @@ class GaugeModel(BaseModel):
             # Create inputs as `tf.placeholders`
             # -----------------------------------------------
             io.log(f'INFO: Creating input placeholders...')
-            self.inputs = self._create_inputs()
-            self.x = self.inputs.x
-            self.beta = self.inputs.beta
-            #  self.charge_weight = self.inputs.charge_weight
-            self.net_weights = self.inputs.net_weights
-            self.train_phase = self.inputs.train_phase
+            inputs = self._create_inputs()
+            self.x = inputs['x']
+            self.beta = inputs['beta']
+            nw_keys = ['scale_weight', 'transl_weight', 'transf_weight']
+            self.net_weights = [inputs[k] for k in nw_keys]
+            self.train_phase = inputs['train_phase']
+            self._inputs = inputs
             # ***********************************************
 
             # ***********************************************
@@ -96,40 +99,39 @@ class GaugeModel(BaseModel):
         # Create operations for calculating lattice observables
         # -------------------------------------------------------
         io.log(f'INFO: Creating necessary operations...')
-        self.observables = self._create_observables()
-        self.plaq_sums_op = self.observables.plaq_sums_op
-        self.actions_op = self.observables.actions_op
-        self.plaqs_op = self.observables.plaqs_op
-        self.avg_plaqs_op = self.observables.avg_plaqs_op
-        self.charges_op = self.observables.charges_op
+        observables = self._create_observables()
+        self.plaq_sums_op = observables['plaq_sums_op']
+        self.actions_op = observables['actions_op']
+        self.plaqs_op = observables['plaqs_op']
+        self.avg_plaqs_op = observables['avg_plaqs_op']
+        self.charges_op = observables['charges_op']
+        self._observables = observables
         # *******************************************************
 
         # *******************************************************************
         # Run dynamics (i.e. augmented leapfrog) to generate new configs 
         # -------------------------------------------------------------------
         with tf.name_scope('l2hmc'):
+            args = (self.beta, self.net_weights, self.train_phase)
+            slf = self.save_lf
             with tf.name_scope('main_dynamics'):
-                x_dynamics = self._apply_transition(self.x, self.beta,
-                                                    self.net_weights,
-                                                    self.train_phase,
-                                                    save_lf=self.save_lf)
+                x_dynamics = self.dynamics.apply_transition(self.x, *args,
+                                                            save_lf=slf)
             if getattr(self, 'aux_weight', 1.) > 0:
                 with tf.name_scope('auxiliary_dynamics'):
                     self.z = tf.random_normal(tf.shape(self.x),
                                               dtype=TF_FLOAT,
                                               seed=GLOBAL_SEED,
                                               name='z')
-                    z_dynamics = self._apply_transition(self.z, self.beta,
-                                                        self.net_weights,
-                                                        self.train_phase,
-                                                        save_lf=False)
+                    z_dynamics = self.dynamics.apply_transition(self.z, *args,
+                                                                save_lf=False)
 
             self.x_out = x_dynamics['x_out']
             self.px = x_dynamics['accept_prob']
             self._parse_dynamics_output(x_dynamics)
 
-        with tf.name_scope('check_reversibility'):
-            self.x_allclose, self.v_allclose = self._check_reversibility()
+            with tf.name_scope('check_reversibility'):
+                self.x_diff, self.v_diff = self._check_reversibility()
 
         with tf.name_scope('run_ops'):
             io.log(f'INFO: Building `run_ops`...')
@@ -142,15 +144,18 @@ class GaugeModel(BaseModel):
         if not self.hmc:
             with tf.name_scope('loss'):
                 io.log(f'INFO: Calculating loss function...')
-                lf_data = namedtuple('lf_data', ['x_in', 'x_proposed', 'prob'])
-                x_data = lf_data(x_dynamics['x_in'],
-                                 x_dynamics['x_proposed'],
-                                 x_dynamics['accept_prob'])
-                z_data = lf_data(z_dynamics['x_in'],
-                                 z_dynamics['x_proposed'],
-                                 z_dynamics['accept_prob'])
-                self.loss_op = self.calc_loss(x_data, z_data,
-                                              self.loss_weights)
+                x_data = LFdata(x_dynamics['x_in'],
+                                x_dynamics['x_proposed'],
+                                x_dynamics['accept_prob'])
+                z_data = LFdata(z_dynamics['x_in'],
+                                z_dynamics['x_proposed'],
+                                z_dynamics['accept_prob'])
+
+                use_gaussian_loss = getattr(self, 'use_gaussian_loss', False)
+                if use_gaussian_loss:
+                    self.loss_op = self.gaussian_loss(x_data, z_data)
+                else:
+                    self.loss_op = self.calc_loss(x_data, z_data)
 
             with tf.name_scope('train'):
                 io.log(f'INFO: Calculating gradients for backpropagation...')
@@ -172,26 +177,6 @@ class GaugeModel(BaseModel):
         io.log(80 * '-')
         # *******************************************************************
 
-    def _apply_transition(self, *args, **kwargs):
-        """Call `self.dynamics.apply_transition, using `x` as input."""
-        return self.dynamics.apply_transition(*args, **kwargs)
-
-    def _check_reversibility(self):
-        v_in = tf.random_normal(self.x.shape, dtype=TF_FLOAT, seed=GLOBAL_SEED,
-                                name='v_reverse_check')
-        dynamics_check = self.dynamics._check_reversibility(self.x,
-                                                            v_in,
-                                                            self.beta,
-                                                            self.net_weights,
-                                                            self.train_phase)
-        xb = dynamics_check['xb']
-        vb = dynamics_check['vb']
-
-        x_allclose = allclose(self.x, xb)
-        v_allclose = allclose(v_in, vb)
-
-        return x_allclose, v_allclose
-
     def _create_lattice(self):
         """Create GaugeLattice object."""
         with tf.name_scope('lattice'):
@@ -199,7 +184,7 @@ class GaugeModel(BaseModel):
                                    space_size=self.space_size,
                                    dim=self.dim,
                                    link_type=self.link_type,
-                                   num_samples=self.num_samples,
+                                   batch_size=self.batch_size,
                                    rand=self.rand)
 
         return lattice
@@ -221,8 +206,8 @@ class GaugeModel(BaseModel):
                 'eps_trainable': not self.eps_fixed,
                 'num_filters': self.lattice.space_size,
                 'x_dim': self.lattice.num_links,
-                'batch_size': self.num_samples,
-                '_input_shape': (self.num_samples, *self.lattice.links.shape),
+                'batch_size': self.batch_size,
+                '_input_shape': (self.batch_size, *self.lattice.links.shape),
             })
 
             dynamics_params.update(params)
@@ -231,31 +216,6 @@ class GaugeModel(BaseModel):
             dynamics = Dynamics(potential_fn=potential_fn, **dynamics_params)
 
         return dynamics
-
-    def _create_inputs(self):
-        with tf.name_scope('inputs'):
-            if not tf.executing_eagerly():
-                def scalar_ph(name, dtype=TF_FLOAT):
-                    return tf.placeholder(dtype=dtype, shape=(), name=name)
-
-                x = tf.placeholder(dtype=TF_FLOAT,
-                                   shape=(self.batch_size, self.x_dim),
-                                   name='x')
-
-                beta = scalar_ph('beta')
-                train_phase = scalar_ph('is_training', dtype=tf.bool)
-                #  charge_weight = scalar_ph('charge_weight')
-                scale_weight = scalar_ph('scale_weight')
-                transl_weight = scalar_ph('translation_weight')
-                transf_weight = scalar_ph('transformation_weight')
-                net_weights = [scale_weight, transl_weight, transf_weight]
-
-        Inputs = namedtuple('Inputs',
-                            ['x', 'beta', 'net_weights', 'train_phase'])
-        #  inputs = Inputs(x, beta, charge_weight, net_weights, train_phase)
-        inputs = Inputs(x, beta, net_weights, train_phase)
-
-        return inputs
 
     def _create_observables(self):
         """Create operations for calculating lattice observables."""
@@ -266,11 +226,13 @@ class GaugeModel(BaseModel):
             avg_plaqs = tf.reduce_mean(plaqs, name='avg_plaqs')
             charges = self.lattice.calc_top_charges(plaq_sums=plaq_sums)
 
-        Observables = namedtuple('Observables',
-                                 ['plaq_sums_op', 'actions_op',
-                                  'plaqs_op', 'avg_plaqs_op', 'charges_op'])
-        observables = Observables(plaq_sums, actions,
-                                  plaqs, avg_plaqs, charges)
+        observables = {
+            'plaq_sums_op': plaq_sums,
+            'actions_op': actions,
+            'plaqs_op': plaqs,
+            'avg_plaqs_op': avg_plaqs,
+            'charges_op': charges,
+        }
 
         return observables
 
@@ -290,41 +252,6 @@ class GaugeModel(BaseModel):
                              '`\tl1`, `l2`, or `cos_diff`.')
 
         return metric_fn
-
-    def _calc_loss(self, x_data, z_data, weights):
-        """Build operation responsible for calculating the total loss.
-
-        Args:
-            x_data (namedtuple): Contains `x_in`, `x_proposed`, and `px`.
-            z_data (namedtuple): Contains `z_in`, `z_propsed`, and `pz`.'
-            weights (namedtuple): Contains multiplicative factors that
-                determine the contribution from different terms to the total
-                loss function.
-
-        Returns:
-            loss_op: Operation responsible for calculating the total loss (to
-                be minimized).
-        """
-        ls = getattr(self, 'loss_scale', 0.1)
-
-        def _diff(x1, x2):
-            return tf.reduce_sum(self.metric_fn(x1, x2), axis=1)
-
-        #  aux_weight = weights.get('aux_weight', 1.)
-        with tf.name_scope('calc_loss'):
-            with tf.name_scope('x_loss'):
-                x_loss = (x_data.prob * _diff(x_data.x_in,
-                                              x_data.x_proposed)) + 1e-4
-            with tf.name_scope('z_loss'):
-                z_loss = (z_data.prob * _diff(z_data.x_in,
-                                              z_data.x_proposed)) + 1e-4
-
-            loss = 0.
-            loss += ls * (tf.reduce_mean(1. / x_loss)
-                          + tf.reduce_mean(1. / z_loss))
-            loss += (- tf.reduce_mean(x_loss) - tf.reduce_mean(z_loss)) / ls
-
-        return loss
 
     def _charge_loss(self, x_init, x_proposed, prob):
         dq = self.lattice.calc_top_charges_diff(x_init, x_proposed)
@@ -359,7 +286,14 @@ class GaugeModel(BaseModel):
 
         loss = self._calc_loss(x_data, z_data)
         if charge_weight > 0:
+            io.log('INFO: Including topological charge'
+                   ' difference term in loss function.')
             loss += self._calc_charge_loss(x_data, z_data, weights)
+
+        return loss
+
+    def gaussian_loss(self, x_data, z_data):
+        loss = self._gaussian_loss(x_data, z_data, mean=0., sigma=1.)
 
         return loss
 
@@ -372,7 +306,7 @@ class GaugeModel(BaseModel):
                 self.lattice.calc_top_charges_diff(x_in, x_out),
                 dtype=TF_INT
             )
-            self.charge_diffs_op = tf.reduce_sum(x_dq) / self.num_samples
+            self.charge_diffs_op = tf.reduce_sum(x_dq) / self.batch_size
 
         if self.save_lf:
             op_keys = ['masks_f', 'masks_b',
@@ -403,7 +337,7 @@ class GaugeModel(BaseModel):
             'actions_op': self.actions_op,
             'plaqs_op': self.plaqs_op,
             'avg_plaqs_op': self.avg_plaqs_op,
-            'charges_op': self.charge_op,
+            'charges_op': self.charges_op,
             'charge_diffs_op': self.charge_diffs_op
         }
 

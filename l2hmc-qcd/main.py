@@ -35,7 +35,7 @@ from __future__ import division
 from __future__ import print_function
 
 import os
-import random
+#  import random
 import time
 import pickle
 import inference
@@ -73,9 +73,9 @@ SEP_STR = 80 * '-'  # + '\n'
 # -------------------------------------------
 # Set random seeds for tensorflow and numpy
 # -------------------------------------------
-os.environ['PYTHONHASHSEED'] = str(GLOBAL_SEED)
-random.seed(GLOBAL_SEED)        # `python` build-in pseudo-random generator
-np.random.seed(GLOBAL_SEED)     # numpy pseudo-random generator
+#  os.environ['PYTHONHASHSEED'] = str(GLOBAL_SEED)
+#  random.seed(GLOBAL_SEED)        # `python` build-in pseudo-random generator
+#  np.random.seed(GLOBAL_SEED)     # numpy pseudo-random generator
 tf.set_random_seed(GLOBAL_SEED)
 
 
@@ -175,24 +175,16 @@ def train_setup(FLAGS, log_file=None, root_dir=None, run_str=True):
     io.log("Starting training using L2HMC algorithm...")
     tf.keras.backend.clear_session()
     tf.reset_default_graph()
-    if isinstance(FLAGS, dict):
-        FLAGS = namedtuple('FLAGS', FLAGS.keys())(**FLAGS)
 
     # ------------------------------------------------------------------------
     # Parse command line arguments; copy key, val pairs from FLAGS to params.
     # ------------------------------------------------------------------------
-    #  try:
-    #      kv_pairs = FLAGS.__dict__.items()
-    #  except AttributeError:
-    #      kv_pairs = FLAGS.items()
-    params = FLAGS._asdict()
-    #
-    #  params = {}
-    #  for key, val in kv_pairs:
-    #      params[key] = val
-    #      if isinstance(val, bool) and not val:  # skip if option is `off`
-    #          continue
-    #      else:
+    try:
+        FLAGS_DICT = FLAGS.__dict__
+    except AttributeError:
+        FLAGS_DICT = FLAGS
+
+    params = {k: v for k, v in FLAGS_DICT.items()}
 
     params['log_dir'] = io.create_log_dir(FLAGS,
                                           log_file=log_file,
@@ -200,11 +192,12 @@ def train_setup(FLAGS, log_file=None, root_dir=None, run_str=True):
                                           run_str=run_str)
     params['summaries'] = not getattr(FLAGS, 'no_summaries', False)
     save_steps = getattr(FLAGS, 'save_steps', None)
+    train_steps = getattr(FLAGS, 'train_steps', None)
 
     if 'no_summaries' in params:
         del params['no_summaries']
 
-    if save_steps is None and FLAGS.train_steps is not None:
+    if save_steps is None and train_steps is not None:
         params['save_steps'] = params['train_steps'] // 4
 
     else:
@@ -217,11 +210,11 @@ def train_setup(FLAGS, log_file=None, root_dir=None, run_str=True):
     #      io.log("Using CPU for training.")
     #      params['data_format'] = 'channels_last'
 
-    if FLAGS.float64:
+    if getattr(FLAGS, 'float64', False):
         io.log(f'INFO: Setting floating point precision to `float64`.')
         set_precision('float64')
 
-    if FLAGS.horovod:
+    if getattr(FLAGS, 'horovod', False):
         params['using_hvd'] = True
         num_workers = hvd.size()
         params['num_workers'] = num_workers
@@ -298,7 +291,9 @@ def train_l2hmc(FLAGS, log_file=None, experiment=None):
     model = GaugeModel(params)
 
     if is_chief:
-        train_logger = TrainLogger(model, log_dir, params['summaries'])
+        train_logger = TrainLogger(model, log_dir,
+                                   logging_steps=10,
+                                   summaries=params['summaries'])
     else:
         train_logger = None
 
@@ -311,7 +306,7 @@ def train_l2hmc(FLAGS, log_file=None, experiment=None):
     #  charge_weight_init = params['charge_weight']
     net_weights_init = [1., 1., 1.]
     samples_init = np.reshape(np.array(model.lattice.samples, dtype=NP_FLOAT),
-                              (model.num_samples, model.x_dim))
+                              (model.batch_size, model.x_dim))
     beta_init = model.beta_init
 
     # ensure all variables are initialized
@@ -408,12 +403,13 @@ def main(FLAGS):
     """Main method for creating/training/running L2HMC for U(1) gauge model."""
     log_file = 'output_dirs.txt'
 
-    if HAS_HOROVOD and FLAGS.horovod:
+    USING_HVD = getattr(FLAGS, 'horovod', False)
+    if HAS_HOROVOD and USING_HVD:
         io.log("INFO: USING HOROVOD")
         hvd.init()
 
-    condition1 = not FLAGS.horovod
-    condition2 = FLAGS.horovod and hvd.rank() == 0
+    condition1 = not USING_HVD
+    condition2 = USING_HVD and hvd.rank() == 0
     is_chief = condition1 or condition2
 
     if FLAGS.comet and is_chief:
@@ -422,7 +418,7 @@ def main(FLAGS):
                                 workspace="saforem2")
         name = (f'{FLAGS.network_arch}_'
                 f'lf{FLAGS.num_steps}_'
-                f'batch{FLAGS.num_samples}_'
+                f'batch{FLAGS.batch_size}_'
                 f'qw{FLAGS.charge_weight}_'
                 f'aux{FLAGS.aux_weight}')
         experiment.set_name(name)
@@ -439,10 +435,10 @@ def main(FLAGS):
 
 
 if __name__ == '__main__':
-    args = parse_args()
+    FLAGS = parse_args()
     t0 = time.time()
 
-    main(args)
+    main(FLAGS)
 
     io.log('\n\n' + SEP_STR)
     io.log(f'Time to complete: {time.time() - t0:.4g}')

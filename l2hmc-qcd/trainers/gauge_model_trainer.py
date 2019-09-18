@@ -111,7 +111,7 @@ class GaugeModelTrainer:
             self.model.actions_op,       # calculate avg. actions
             self.model.plaqs_op,         # calculate avg. plaqs
             self.model.charges_op,       # calculate top. charges
-            self.model.charge_diffs_op,  # change in top. charge/num_samples
+            self.model.charge_diffs_op,  # change in top. charge/batch_size
             self.model.lr,               # evaluate learning rate
         ]
 
@@ -136,16 +136,16 @@ class GaugeModelTrainer:
 
         data_str = (
             f"{global_step:>5g}/{train_steps:<6g} "
-            f"{outputs[1]:^9.4g} "              # loss value
+            f"{outputs[1]:^9.5g} "              # loss value
             f"{dt:^9.4g} "                      # time / step
-            f"{np.mean(outputs[3]):^9.4g} "      # accept prob
+            f"{np.mean(outputs[3]):^9.4g} "     # accept prob
             f"{outputs[4]:^9.4g} "              # step size
             f"{beta_np:^9.4g} "                 # beta
             f"{np.mean(outputs[5]):^9.4g} "     # avg. actions
             f"{np.mean(outputs[6]):^9.4g} "     # avg. plaqs.
             f"{u1_plaq_exact(beta_np):^9.4g} "  # exact plaq.
             f"{outputs[8]:^9.4g} "              # charge diff
-            f"{outputs[9]:^9.4g} "               # learning rate
+            f"{outputs[9]:^9.4g} "              # learning rate
         )
 
         return train_step_data, data_str
@@ -173,7 +173,7 @@ class GaugeModelTrainer:
 
         if samples_np is None:
             samples_np = np.array(
-                np.random.randn(self.model.num_samples, self.model.x_dim),
+                np.random.randn(self.model.batch_size, self.model.x_dim),
                 dtype=NP_FLOAT
             )
 
