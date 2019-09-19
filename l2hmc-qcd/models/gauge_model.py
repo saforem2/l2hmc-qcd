@@ -241,7 +241,7 @@ class GaugeModel(BaseModel):
         if metric == 'l1':
             def metric_fn(x1, x2):
                 return tf.abs(x1 - x2)
-        elif metric == 'l1':
+        elif metric == 'l2':
             def metric_fn(x1, x2):
                 return tf.square(x1 - x2)
         elif metric == 'cos_diff':
@@ -259,9 +259,9 @@ class GaugeModel(BaseModel):
 
         return charge_loss
 
-    def _calc_charge_loss(self, x_data, z_data, weights):
+    def _calc_charge_loss(self, x_data, z_data):
         """Calculate the total charge loss."""
-        aux_weight = weights.get('aux_weight', 1.)
+        aux_weight = getattr(self, 'aux_weight', 1.)
         ls = self.loss_scale
         with tf.name_scope('calc_charge_loss'):
             with tf.name_scope('xq_loss'):
@@ -279,7 +279,7 @@ class GaugeModel(BaseModel):
 
         return charge_loss
 
-    def calc_loss(self, x_data, z_data, weights):
+    def calc_loss(self, x_data, z_data):
         """Calculate the total loss from all terms."""
         charge_weight = getattr(self, 'charge_weight_np', 1.)
         #  charge_weight = weights.get('charge_weight', 1.)
@@ -288,7 +288,7 @@ class GaugeModel(BaseModel):
         if charge_weight > 0:
             io.log('INFO: Including topological charge'
                    ' difference term in loss function.')
-            loss += self._calc_charge_loss(x_data, z_data, weights)
+            loss += self._calc_charge_loss(x_data, z_data)  # , weights)
 
         return loss
 
