@@ -170,7 +170,8 @@ def count_trainable_params(out_file, log=False):
     writer(f'Total parameters: {total_params}', out_file)
 
 
-def train_setup(FLAGS, log_file=None, root_dir=None, run_str=True):
+def train_setup(FLAGS, log_file=None, root_dir=None,
+                run_str=True, model_type='gauge_model'):
     io.log(SEP_STR)
     io.log("Starting training using L2HMC algorithm...")
     tf.keras.backend.clear_session()
@@ -189,7 +190,8 @@ def train_setup(FLAGS, log_file=None, root_dir=None, run_str=True):
     params['log_dir'] = io.create_log_dir(FLAGS,
                                           log_file=log_file,
                                           root_dir=root_dir,
-                                          run_str=run_str)
+                                          run_str=run_str,
+                                          model_type=model_type)
     params['summaries'] = not getattr(FLAGS, 'no_summaries', False)
     save_steps = getattr(FLAGS, 'save_steps', None)
     train_steps = getattr(FLAGS, 'train_steps', None)
