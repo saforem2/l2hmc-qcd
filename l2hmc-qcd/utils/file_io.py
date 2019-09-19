@@ -83,8 +83,8 @@ def make_dirs(dirs):
     _ = [check_else_make_dir(d) for d in dirs]
 
 
-def _parse_flags(FLAGS):
-    """Helper method for parsing flags as both AttrDicts or generic dicts."""
+def _parse_gauge_flags(FLAGS):
+    """Parse flags for `GaugeModel` instance."""
     if isinstance(FLAGS, dict):
         flags_dict = FLAGS
     else:
@@ -92,7 +92,6 @@ def _parse_flags(FLAGS):
             flags_dict = FLAGS.__dict__
         except (NameError, AttributeError):
             pass
-    #  if isinstance(FLAGS, dict):
     try:
         LX = flags_dict['space_size']
         BS = flags_dict['batch_size']
@@ -139,36 +138,73 @@ def _parse_flags(FLAGS):
         '_log_dir': _log_dir
     }
 
-    return out_dict
-
-
-def create_run_str(FLAGS):
-    flags_dict = _parse_flags(FLAGS)
-    LX = flags_dict['LX']
-    NS = flags_dict['NS']
-    LF = flags_dict['LF']
-    SS = flags_dict['SS']
-    QW = flags_dict['QW']
-    NA = flags_dict['NA']
-    BN = flags_dict['BN']
-    DP = flags_dict['DP']
-    AW = flags_dict['AW']
-
     aw = str(AW).replace('.', '')
     qw = str(QW).replace('.', '')
     dp = str(DP).replace('.', '')
 
     if flags_dict['hmc']:
-        run_str = f'HMC_lattice{LX}_batch{NS}_lf{LF}_eps{SS:.3g}'
+        run_str = f'HMC_lattice{LX}_batch{BS}_lf{LF}_eps{SS:.3g}'
     else:
-        run_str = f'lattice{LX}_batch{NS}_lf{LF}_qw{qw}_aw{aw}_{NA}_dp{dp}'
+        run_str = f'lattice{LX}_batch{BS}_lf{LF}_qw{qw}_aw{aw}_{NA}_dp{dp}'
         if BN:
             run_str += '_bn'
 
     return run_str, flags_dict
 
 
-def create_log_dir(FLAGS, root_dir=None, log_file=None, run_str=True):
+def _parse_gmm_flags(FLAGS):
+    """Parse flags for `GaussianMixtureModel` instance."""
+    if isinstance(FLAGS, dict):
+        flags_dict = FLAGS
+    else:
+        try:
+            flags_dict = FLAGS.__dict__
+        except (NameError, AttributeError):
+            pass
+    try:
+        X0 = flags_dict['center']
+        ND = flags_dict['num_distributions']
+        LF = flags_dict['num_steps']
+        DG = flags_dict['diag']
+        S1 = flags_dict['sigma1']
+        S2 = flags_dict['sigma2']
+    except (NameError, AttributeError):
+        X0 = FLAGS.center
+        ND = FLAGS.num_distributions
+        LF = FLAGS.num_steps
+        DG = FLAGS.diag
+        S1 = FLAGS.sigma1
+        S2 = FLAGS.sigma2
+
+    out_dict = {
+        'X0': X0,
+        'ND': ND,
+        'LF': LF,
+        'DG': DG,
+        'S1': S1,
+        'S2': S2,
+    }
+
+    x0 = str(X0).replace('.', '')
+    s1 = str(S1).replace('.', '')
+    s2 = str(S2).replace('.', '')
+    run_str = f'GMM_lf{LF}_s1_{s1}_s2_{s2}'
+
+    return run_str, out_dict
+
+
+def _parse_flags(FLAGS, model_type='gauge_model'):
+    """Helper method for parsing flags as both AttrDicts or generic dicts."""
+    if model_type == 'gauge_model':
+        run_str, out_dict = _parse_gauge_flags(FLAGS)
+    elif model_type == 'gmm_model':
+        run_str, out_dict = _parse_gmm_flags(FLAGS)
+
+    return run_str, out_dict
+
+
+def create_log_dir(FLAGS, root_dir=None, log_file=None,
+                   run_str=True, model_type='gauge_model'):
     """Automatically create and name `log_dir` to save model data to.
 
     The created directory will be located in `logs/YYYY_M_D/`, and will have
@@ -183,7 +219,7 @@ def create_log_dir(FLAGS, root_dir=None, log_file=None, run_str=True):
     """
 
     if run_str:
-        run_str, flags_dict = create_run_str(FLAGS)
+        run_str, flags_dict = _parse_flags(FLAGS, model_type)
         _log_dir = getattr(flags_dict, '_log_dir', None)
     else:
         run_str = ''
@@ -198,13 +234,12 @@ def create_log_dir(FLAGS, root_dir=None, log_file=None, run_str=True):
     #  if FLAGS.log_dir is None:
     if _log_dir is None:
         if root_dir is None:
-            _dir = 'logs'
+            _dir = 'gauge_logs'
         else:
             _dir = root_dir
 
     else:
         if root_dir is None:
-            #  _dir = FLAGS.log_dir
             _dir = _log_dir
         else:
             _dir = os.path.join(_log_dir, root_dir)
