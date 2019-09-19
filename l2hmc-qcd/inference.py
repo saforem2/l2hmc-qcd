@@ -24,31 +24,28 @@ containing the location of the checkpoint directory.
 Author: Sam Foreman (github: @saforem2)
 Date: 07/08/2019
 """
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
+from __future__ import absolute_import, division, print_function
 
 import os
 import time
 import pickle
-import tensorflow as tf
-import numpy as np
 
-import utils.file_io as io
+from config import HAS_HOROVOD, HAS_MATPLOTLIB, HAS_MEMORY_PROFILER, NP_FLOAT
+from update import set_precision
+from runners.runner import GaugeModelRunner
+from models.gauge_model import GaugeModel
+from loggers.run_logger import RunLogger
+from loggers.summary_utils import create_summaries
+from plotters.plot_utils import plot_plaq_diffs_vs_net_weights
+from plotters.leapfrog_plotters import LeapfrogPlotter
+from plotters.gauge_model_plotter import GaugeModelPlotter
+
+import numpy as np
+import tensorflow as tf
 
 from tensorflow.core.protobuf import rewriter_config_pb2
 
-from config import (NP_FLOAT, HAS_HOROVOD,
-                    HAS_MATPLOTLIB, HAS_MEMORY_PROFILER)
-from update import set_precision
-
-from models.gauge_model import GaugeModel
-from loggers.summary_utils import create_summaries
-from loggers.run_logger import RunLogger
-from plotters.gauge_model_plotter import GaugeModelPlotter
-from plotters.plot_utils import plot_plaq_diffs_vs_net_weights
-from plotters.leapfrog_plotters import LeapfrogPlotter
-from runners.runner import GaugeModelRunner
+import utils.file_io as io
 
 from utils.parse_inference_args import parse_args as parse_inference_args
 
