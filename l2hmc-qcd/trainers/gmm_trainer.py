@@ -47,7 +47,8 @@ class GaussianMixtureModelTrainer:
         train_steps = kwargs.get('train_steps', self.model.train_steps)
 
         if beta_np is None:
-            if self.model.fixed_beta:
+            fixed_beta = getattr(self.model, 'fixed_beta', False)
+            if fixed_beta:
                 beta_np = self.model.beta_init
             else:
                 beta_np = self.update_beta(step, train_steps=train_steps)
