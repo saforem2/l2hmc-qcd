@@ -123,6 +123,10 @@ class GaussianMixtureModel(BaseModel):
         """Build TensorFlow graph."""
         params = self.params if params is None else params
         num_distributions = params.get('num_distributions', 2)
+        use_gaussian_loss = getattr(self, 'use_gaussian_loss', False)
+        use_nnehmc_loss = getattr(self, 'use_nnehmc_loss', False)
+        self.use_gaussian_loss = use_gaussian_loss
+        self.use_nnehmc_loss = use_nnehmc_loss
 
         t0 = time.time()
         io.log(80 * '-')
@@ -170,17 +174,21 @@ class GaussianMixtureModel(BaseModel):
         with tf.name_scope('l2hmc'):
             args = (self.beta, self.net_weights, self.train_phase)
             slf = self.save_lf
+            hmc = True if self.use_nnehmc_loss else False
+
             with tf.name_scope('main_dynamics'):
                 x_dynamics = self.dynamics.apply_transition(self.x, *args,
-                                                            save_lf=slf)
-            if getattr(self, 'aux_weight', 1.) > 0:
+                                                            save_lf=slf,
+                                                            hmc=hmc)
+            if not hmc and getattr(self, 'aux_weight', 1.) > 0:
                 with tf.name_scope('auxiliary_dynamics'):
                     self.z = tf.random_normal(tf.shape(self.x),
                                               dtype=TF_FLOAT,
                                               seed=GLOBAL_SEED,
                                               name='z')
                     z_dynamics = self.dynamics.apply_transition(self.z, *args,
-                                                                save_lf=False)
+                                                                save_lf=False,
+                                                                hmc=hmc)
 
             self.x_out = x_dynamics['x_out']
             self.px = x_dynamics['accept_prob']
@@ -203,13 +211,19 @@ class GaussianMixtureModel(BaseModel):
                 x_data = LFdata(x_dynamics['x_in'],
                                 x_dynamics['x_proposed'],
                                 x_dynamics['accept_prob'])
-                z_data = LFdata(z_dynamics['x_in'],
-                                z_dynamics['x_proposed'],
-                                z_dynamics['accept_prob'])
 
-                use_gaussian_loss = getattr(self, 'use_gaussian_loss', False)
-                if use_gaussian_loss:
+                if not hmc and getattr(self, 'aux_weight', 1.) > 0:
+                    z_data = LFdata(z_dynamics['x_in'],
+                                    z_dynamics['x_proposed'],
+                                    z_dynamics['accept_prob'])
+                else:
+                    z_data = LFdata(0., 0., 0.)
+
+                if self.use_gaussian_loss:
                     self.loss_op = self.gaussian_loss(x_data, z_data)
+                elif self.use_nnehmc_loss:
+                    x_hmc_prob = x_dynamics['accept_prob_hmc']
+                    self.loss_op = self.nnehmc_loss(x_data, x_hmc_prob)
                 else:
                     self.loss_op = self.calc_loss(x_data, z_data)
 
@@ -352,6 +366,13 @@ class GaussianMixtureModel(BaseModel):
     def gaussian_loss(self, x_data, z_data):
         """Calculate the Gaussian loss and return op. for calculating it."""
         return self._gaussian_loss(x_data, z_data, mean=0., sigma=1.)
+
+    def nnehmc_loss(self, x_data, hmc_prob, beta=1.):
+        """Calculate the NNEHMC loss."""
+        x_in, x_proposed, accept_prob = x_data
+        x_esjd = self._calc_esjd(x_in, x_proposed, accept_prob)
+
+        return tf.reduce_mean(- x_esjd - beta * hmc_prob)
 
     def _parse_dynamics_output(self, dynamics_output):
         """Parse output dictionary from `self.dynamics.apply_transition."""
