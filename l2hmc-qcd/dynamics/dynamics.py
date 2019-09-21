@@ -179,7 +179,8 @@ class Dynamics(tf.keras.Model):
                          beta,
                          weights,
                          train_phase,
-                         save_lf=False):
+                         save_lf=False,
+                         hmc=True):
         """Propose a new state and perform the accept/reject step.
 
         We simulate the (molecular) dynamics update both forward and backward,
@@ -203,19 +204,21 @@ class Dynamics(tf.keras.Model):
         """
         results_dict = {}  # holds additional data if `save_lf=True`
 
-        args = (x_in, beta, weights, train_phase, save_lf)
+        args = (x_in, beta, weights, train_phase, save_lf, hmc)
 
         # Forward transition:
         outputs_f = self._transition_forward(*args)
         xf = outputs_f['x_proposed']
         vf = outputs_f['v_proposed']
         pxf = outputs_f['accept_prob']
+        pxf_hmc = outputs_f['accept_prob_hmc']
 
         # Backward transition:
         outputs_b = self._transition_backward(*args)
         xb = outputs_b['x_proposed']
         vb = outputs_b['v_proposed']
         pxb = outputs_b['accept_prob']
+        pxb_hmc = outputs_b['accept_prob_hmc']
 
         # Decide direction uniformly
         forward_mask, backward_mask = self._get_transition_masks()
@@ -232,6 +235,7 @@ class Dynamics(tf.keras.Model):
         # Probability of accepting the proposed states
         with tf.name_scope('accept_prob'):
             accept_prob = pxf * forward_mask + pxb * backward_mask
+            accept_prob_hmc = pxf_hmc * forward_mask + pxb_hmc * backward_mask
 
         # Accept or reject step
         accept_mask, reject_mask = self._get_accept_masks(accept_prob)
@@ -246,7 +250,8 @@ class Dynamics(tf.keras.Model):
             'x_proposed': x_proposed,
             'v_proposed': v_proposed,
             'accept_prob': accept_prob,
-            'x_out': x_out
+            'x_out': x_out,
+            'accept_prob_hmc': accept_prob_hmc,
         }
 
         if save_lf:
@@ -270,7 +275,8 @@ class Dynamics(tf.keras.Model):
 
         return outputs
 
-    def _transition_forward(self, x, beta, weights, train_phase, save_lf):
+    def _transition_forward(self, x, beta, weights, 
+                            train_phase, save_lf, hmc=False):
         with tf.name_scope('transition_forward'):
             with tf.name_scope('refresh_momentum'):
                 v_rf = tf.random_normal(tf.shape(x),
@@ -282,10 +288,12 @@ class Dynamics(tf.keras.Model):
                                                weights,
                                                train_phase,
                                                forward=True,
-                                               save_lf=save_lf)
+                                               save_lf=save_lf,
+                                               hmc=hmc)
         return outputs_f
 
-    def _transition_backward(self, x, beta, weights, train_phase, save_lf):
+    def _transition_backward(self, x, beta, weights,
+                             train_phase, save_lf, hmc=False):
         with tf.name_scope('transition_backward'):
             with tf.name_scope('refresh_momentum'):
                 v_rb = tf.random_normal(tf.shape(x),
@@ -297,7 +305,8 @@ class Dynamics(tf.keras.Model):
                                                weights,
                                                train_phase,
                                                forward=False,
-                                               save_lf=save_lf)
+                                               save_lf=save_lf,
+                                               hmc=hmc)
         return outputs_b
 
     def _get_transition_masks(self):
@@ -335,15 +344,10 @@ class Dynamics(tf.keras.Model):
                           weights,
                           train_phase,
                           forward=True,
-                          save_lf=False):
+                          save_lf=False,
+                          hmc=True):
         """Transition kernel of augmented leapfrog integrator."""
         lf_fn = self._forward_lf if forward else self._backward_lf
-
-        #  with tf.name_scope('refresh_momentum'):
-        #      v_in = tf.random_normal(tf.shape(x_in),
-        #                              dtype=TF_FLOAT,
-        #                              seed=GLOBAL_SEED,
-        #                              name='refresh_momentum')
 
         with tf.name_scope('init'):
             x_proposed, v_proposed = x_in, v_in
@@ -399,16 +403,16 @@ class Dynamics(tf.keras.Model):
         logdets_out = outputs[5].stack()
         fns_out = outputs[6].stack()
 
-        accept_prob = self._compute_accept_prob(x_in, v_in,
-                                                x_proposed,
-                                                v_proposed,
-                                                sumlogdet, beta)
+        accept_prob, accept_prob_hmc = self._compute_accept_prob(
+            x_in, v_in, x_proposed, v_proposed, sumlogdet, beta, hmc=hmc
+        )
 
         outputs = {
             'x_proposed': x_proposed,
             'v_proposed': v_proposed,
             'sumlogdet': sumlogdet,
             'accept_prob': accept_prob,
+            'accept_prob_hmc': accept_prob_hmc,
         }
 
         if save_lf:
@@ -640,7 +644,7 @@ class Dynamics(tf.keras.Model):
 
         return x, logdet, fns
 
-    def _compute_accept_prob(self, xi, vi, xf, vf, sumlogdet, beta):
+    def _compute_accept_prob(self, xi, vi, xf, vf, sumlogdet, beta, hmc=True):
         """Compute the prob of accepting the proposed state given old state.
         Args:
             xi: Initial state.
@@ -663,6 +667,22 @@ class Dynamics(tf.keras.Model):
                 ), 'accept_prob')
 
             # Ensure numerical stability as well as correct gradients
+            accept_prob = tf.where(tf.is_finite(prob), prob,
+                                   tf.zeros_like(prob))
+        if hmc:
+            prob_hmc = self._compute_accept_prob_hmc(old_hamil, new_hamil)
+        else:
+            prob_hmc = tf.zeros_like(accept_prob)
+
+        return accept_prob, prob_hmc
+
+    def _compute_accept_prob_hmc(self, old_hamil, new_hamil):
+        """Compute the prob. of accepting the proposed state given old state.
+
+        NOTE: This computes the accept prob. for generic HMC.
+        """
+        with tf.name_scope('accept_prob_hmc'):
+            prob = exp(tf.minimum((old_hamil - new_hamil), 0.), 'accept_prob')
             accept_prob = tf.where(tf.is_finite(prob), prob,
                                    tf.zeros_like(prob))
 
