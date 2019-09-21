@@ -352,6 +352,13 @@ def parse_args():
                               (i.e. the expected jump distance) is used in the
                               exponential."""))
 
+    parser.add_argument('--use_nnehmc_loss',
+                        dest='use_nnehmc_loss',
+                        action='store_true',
+                        required=False,
+                        help=("""If passed, set `use_nnehmc_loss=True` and
+                              use alternative NNEHMC loss function."""))
+
     parser.add_argument("--profiler",
                         dest='profiler',
                         action="store_true",
