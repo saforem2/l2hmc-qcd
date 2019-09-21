@@ -171,7 +171,7 @@ def count_trainable_params(out_file, log=False):
 
 
 def train_setup(FLAGS, log_file=None, root_dir=None,
-                run_str=True, model_type='gauge_model'):
+                run_str=True, model_type='GaugeModel'):
     io.log(SEP_STR)
     io.log("Starting training using L2HMC algorithm...")
     tf.keras.backend.clear_session()
