@@ -117,13 +117,14 @@ class GaugeModel(BaseModel):
         # Run dynamics (i.e. augmented leapfrog) to generate new configs 
         # -------------------------------------------------------------------
         with tf.name_scope('l2hmc'):
-            args = (self.beta, self.net_weights, self.train_phase)
             slf = self.save_lf
             hmc = True if self.use_nnehmc_loss else False
+            args = (self.beta, self.net_weights, self.train_phase)
 
             with tf.name_scope('main_dynamics'):
                 x_dynamics = self.dynamics.apply_transition(self.x, *args,
-                                                            save_lf=slf)
+                                                            save_lf=slf,
+                                                            hmc=hmc)
             if not hmc and getattr(self, 'aux_weight', 1.) > 0:
                 with tf.name_scope('auxiliary_dynamics'):
                     self.z = tf.random_normal(tf.shape(self.x),
@@ -131,7 +132,8 @@ class GaugeModel(BaseModel):
                                               seed=GLOBAL_SEED,
                                               name='z')
                     z_dynamics = self.dynamics.apply_transition(self.z, *args,
-                                                                save_lf=False)
+                                                                save_lf=False,
+                                                                hmc=hmc)
 
             self.x_out = x_dynamics['x_out']
             self.px = x_dynamics['accept_prob']
@@ -154,10 +156,12 @@ class GaugeModel(BaseModel):
                 x_data = LFdata(x_dynamics['x_in'],
                                 x_dynamics['x_proposed'],
                                 x_dynamics['accept_prob'])
+
                 if not hmc and getattr(self, 'aux_weight', 1.) > 0:
                     z_data = LFdata(z_dynamics['x_in'],
                                     z_dynamics['x_proposed'],
                                     z_dynamics['accept_prob'])
+
                 else:
                     z_data = LFdata(0., 0., 0.)
 
