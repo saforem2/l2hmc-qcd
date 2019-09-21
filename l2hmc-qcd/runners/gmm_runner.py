@@ -24,16 +24,12 @@ class GaussianMixtureModelRunner:
 
         else:
             self.inputs_dict = RunLogger.build_inputs_dict(inputs)
-            model_type = 'gmm_model'
+            model_type = 'GaussianMixtureModel'
             self.run_ops_dict = self.logger.build_run_ops_dict(params,
                                                                run_ops,
                                                                model_type)
 
-
-        #  if self.params['eps'] is None:
         self.eps = self.sess.run(self.run_ops_dict['dynamics_eps'])
-        #  else:
-        #      self.eps = self.params['eps']
 
     def run_step(self, step, run_steps, inputs, net_weights):
         """Perform a single run  (inference) step.
