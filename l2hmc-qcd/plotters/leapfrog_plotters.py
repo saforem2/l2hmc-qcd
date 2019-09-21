@@ -30,16 +30,16 @@ params = {
     'font.family': 'serif'
 }
 
-try:
-    mpl.rcParams.update(params)
-except FileNotFoundError:
-    params['text.usetex'] = False
-    params['text.latex.preamble'] = None
-    try:
-        mpl.rcParams.update(params)
-    except FileNotFoundError:
-        pass
-
+#  try:
+#      mpl.rcParams.update(params)
+#  except FileNotFoundError:
+#      params['text.usetex'] = False
+#      params['text.latex.preamble'] = None
+#      try:
+#          mpl.rcParams.update(params)
+#      except FileNotFoundError:
+#          pass
+#
 
 def print_memory():
     if HAS_PSUTIL:

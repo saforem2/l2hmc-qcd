@@ -375,11 +375,11 @@ class RunLogger:
 
         self.run_strings.append(data_str)
 
-        log_steps = getattr(self.params, 'logging_steps', 10)
+        log_steps = self.params.get('logging_steps', 10)
         if self.summaries and (step + 1) % log_steps == 0:
             self.log_step(sess, step, data['samples'], beta, net_weights)
 
-        print_steps = getattr(self.params, 'print_steps', 1)
+        print_steps = self.params.get('print_steps', 1)
         if step % (10 * print_steps) == 0:
             io.log(data_str)
 

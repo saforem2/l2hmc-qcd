@@ -24,12 +24,12 @@ class GaussianMixtureModelRunner:
 
         else:
             self.inputs_dict = RunLogger.build_inputs_dict(inputs)
-            self.run_ops_dict = self.logger.build_run_ops_dict(params, run_ops)
+            model_type = 'GaussianMixtureModel'
+            self.run_ops_dict = self.logger.build_run_ops_dict(params,
+                                                               run_ops,
+                                                               model_type)
 
-        #  if self.params['eps'] is None:
         self.eps = self.sess.run(self.run_ops_dict['dynamics_eps'])
-        #  else:
-        #      self.eps = self.params['eps']
 
     def run_step(self, step, run_steps, inputs, net_weights):
         """Perform a single run  (inference) step.
@@ -94,7 +94,6 @@ class GaussianMixtureModelRunner:
 
     def run(self, **kwargs):
         """Run inference using the trained sampler."""
-
         run_steps = int(kwargs.get('run_steps', 5000))
         beta = kwargs.get('beta_final', self.params.get('beta_final', 1))
         net_weights = kwargs.get('net_weights', [1., 1., 1.])

@@ -7,33 +7,28 @@ Gaussian Mixture Model.
 Author: Sam Foreman (github: @saforem2)
 Date: 09/18/2019
 """
-from __future__ import division
-from __future__ import absolute_import
-from __future__ import print_function
+from __future__ import absolute_import, division, print_function
 
 import os
-import sys
 import time
 import pickle
 
+from main import count_trainable_params, create_config, train_setup
+from config import GLOBAL_SEED, HAS_HOROVOD, HAS_MATPLOTLIB
+from models.gmm_model import GaussianMixtureModel
+from plotters.plot_utils import _gmm_plot
+from loggers.train_logger import TrainLogger
+from trainers.gmm_trainer import GaussianMixtureModelTrainer
+
 import numpy as np
 import tensorflow as tf
-from collections import namedtuple
 
 import utils.file_io as io
 
-from update import set_precision
-from dynamics.dynamics import Dynamics
 from params.gmm_params import GMM_PARAMS
-from plotters.plot_utils import _gmm_plot
-from loggers.train_logger import TrainLogger
-from utils.distributions import GMM, gen_ring
-from models.gmm_model import GaussianMixtureModel
-from trainers.gmm_trainer import GaussianMixtureModelTrainer
-from main import train_setup, create_config, count_trainable_params
-from config import (
-    GLOBAL_SEED, NP_FLOAT, HAS_HOROVOD, HAS_COMET, HAS_MATPLOTLIB
-)
+from utils.parse_gmm_args import parse_args as parse_gmm_args
+
+#  from utils.distributions import gen_ring, GMM
 
 if HAS_MATPLOTLIB:
     import matplotlib.pyplot as plt
@@ -71,10 +66,32 @@ def plot_target_distribution(distribution, target_samples=None, **kwargs):
     return fig, ax
 
 
-def train_l2hmc(FLAGS, log_file=None, experiment=None):
+def save_distribution_params(distribution, out_dir):
+    mus = distribution.mus
+    sigmas = distribution.sigmas
+    pis = distribution.pis
+
+    mus_file = os.path.join(out_dir, 'mus.pkl')
+    sigmas_file = os.path.join(out_dir, 'sigmas.pkl')
+    pis_file = os.path.join(out_dir, 'pis.pkl')
+
+    def _save(data, name, out_file):
+        with open(out_file, 'wb') as f:
+            pickle.dump(data, f)
+        io.log(f'INFO: `{name}` saved to {out_file}.')
+
+    _save(mus, 'means', mus_file)
+    _save(sigmas, 'sigmas', sigmas_file)
+    _save(pis, 'pis', pis_file)
+
+
+def train_l2hmc(FLAGS, log_file=None):
     """Create, and train `GaussianMixtureModel` via the L2HMC algorithm."""
     tf.keras.backend.set_learning_phase(True)
-    params, hooks = train_setup(FLAGS, log_file)
+    params, hooks = train_setup(FLAGS, log_file,
+                                root_dir='gmm_logs',
+                                run_str=True,
+                                model_type='GaussianMixtureModel')
 
     condition1 = not params['using_hvd']
     condition2 = params['using_hvd'] and hvd.rank() == 0
@@ -119,7 +136,7 @@ def train_l2hmc(FLAGS, log_file=None, experiment=None):
                                    summaries=params['summaries'])
 
         config, params = create_config(params)
-        checkpoint_dir = os.path.join(model.log-dir, 'checkpoints')
+        checkpoint_dir = os.path.join(model.log_dir, 'checkpoints')
         io.check_else_make_dir(checkpoint_dir)
         sess = create_session(config, checkpoint_dir, monitored=True)
         tf.keras.backend.set_session(sess)
@@ -149,13 +166,16 @@ def train_l2hmc(FLAGS, log_file=None, experiment=None):
         'print_steps': 1.,
     }
 
-    train_steps = getattr(FLAGS, 'train_steps', 5000)
+    train_steps = FLAGS.get('train_steps', 5000)
     t0 = time.time()
     trainer.train(train_steps, **train_kwargs)
 
     io.log(SEP_STR)
     io.log(f'Training completed in: {time.time() - t0:.4g}s')
     io.log(SEP_STR)
+
+    if train_logger is not None:
+        save_distribution_params(model.distribution, train_logger.log_dir)
 
     params_file = os.path.join(os.getcwd(), 'params.pkl')
     with open(params_file, 'wb') as f:
@@ -170,19 +190,18 @@ def train_l2hmc(FLAGS, log_file=None, experiment=None):
     return model, train_logger
 
 
-
 def main(FLAGS):
     log_file = 'output_dirs.txt'
 
-    USING_HVD = getattr(FLAGS, 'horovod', False)
+    USING_HVD = FLAGS.get('horovod', False)
     if HAS_HOROVOD and USING_HVD:
         io.log('INFO: USING HOROVOD FOR DISTRIBUTED TRAINING')
         hvd.init()
 
-    if FLAGS.hmc:
-        inference.run_hmc(FLAGS, log_file=log_file)
-    else:
-        model, train_logger = train_l2hmc(FLAGS, log_file)
+    #  if FLAGS.hmc:
+    #      inference.run_hmc(FLAGS, log_file=log_file)
+    #  else:
+    model, train_logger = train_l2hmc(FLAGS, log_file)
 
 
 if __name__ == '__main__':
@@ -193,6 +212,7 @@ if __name__ == '__main__':
         FLAGS.update(args.__dict__)
     except AttributeError:
         import pudb
+
         pudb.set_trace()
 
     t0 = time.time()

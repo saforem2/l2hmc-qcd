@@ -14,7 +14,7 @@ import utils.file_io as io
 
 from lattice.lattice import u1_plaq_exact
 from loggers.run_logger import RunLogger
-from config import RUN_HEADER
+#  from config import RUN_HEADER
 
 
 class GaugeModelRunner:
@@ -40,9 +40,13 @@ class GaugeModelRunner:
         if logger is not None:
             self.inputs_dict = self.logger.inputs_dict
             self.run_ops_dict = self.logger.run_ops_dict
+            self._has_logger = True
+            self._run_header = self.logger.run_header
         else:
             self.inputs_dict = RunLogger.build_inputs_dict(inputs)
             self.run_ops_dict = RunLogger.build_run_ops_dict(params, run_ops)
+            self._has_logger = False
+            self._run_header = ''
 
         if self.params['eps'] is None:
             self.eps = self.sess.run(self.run_ops_dict['dynamics_eps'])
@@ -64,6 +68,7 @@ class GaugeModelRunner:
                 samples, beta (float)is the input value of beta, eps is the
                 step size, and plaq_exact (float) is the expected avg. value of
                 the plaquette at this value of beta.
+
         Returns:
             out_data: Dictionary containing the output of running all of the
             tensorflow operations in `ops` defined below.
@@ -138,15 +143,12 @@ class GaugeModelRunner:
         run_steps = int(kwargs.get('run_steps', 5000))
 
         beta = kwargs.get('beta_final', self.params.get('beta_final', 5))
+        # net_weights = [scale_w, translation_w, transformation_w]
         net_weights = kwargs.get('net_weights', [1., 1., 1.])
         therm_frac = kwargs.get('therm_frac', 10)
 
         if beta is None:
             beta = self.params['beta_final']
-
-        if net_weights is None:
-            # scale_weight, translation weight, transformation weight
-            net_weights = [1., 1., 1.]
 
         plaq_exact = u1_plaq_exact(beta)
 
@@ -158,7 +160,7 @@ class GaugeModelRunner:
         samples_np = np.random.randn(*(self.params['batch_size'], x_dim))
 
         try:
-            io.log(RUN_HEADER)
+            io.log(self._run_header)
             for step in range(run_steps):
                 inputs = (samples_np, beta, self.eps, plaq_exact)
                 out_data, data_str = self.run_step(step, run_steps,

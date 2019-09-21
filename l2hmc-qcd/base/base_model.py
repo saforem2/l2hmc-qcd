@@ -33,6 +33,15 @@ PARAMS = {
 }
 
 
+def _gaussian(x, mu, sigma):
+    norm = tf.cast(
+        1. / tf.sqrt(2 * np.pi * sigma ** 2), dtype=TF_FLOAT
+    )
+    exp_ = tf.exp(-tf.square(x - mu) / (2 * sigma))
+
+    return norm * exp_
+
+
 class BaseModel:
 
     def __init__(self, params=None):
@@ -168,10 +177,21 @@ class BaseModel:
 
     def _loss(self, init, proposed, prob):
         """Calculate the (standard) contribution to the loss from the ESJD."""
-        ls = getattr(self, 'loss_scale', 0.1)
+        ls = getattr(self, 'loss_scale', 1.)
         with tf.name_scope('calc_esjd'):
             esjd = self._calc_esjd(init, proposed, prob) + 1e-4  # no div. by 0
-        loss = ls * tf.reduce_mean(1. / esjd) - tf.reduce_mean(esjd) / ls
+
+        loss = tf.reduce_mean((ls / esjd) - (esjd / ls))
+
+        return loss
+
+    def _alt_loss(self, init, proposed, prob):
+        """Calculate the (standard) contribution to the loss from the ESJD."""
+        ls = getattr(self, 'loss_scale', 1.)
+        with tf.name_scope('calc_esjd'):
+            esjd = self._calc_esjd(init, proposed, prob) + 1e-4  # no div. by 0
+
+        loss = tf.reduce_mean(-esjd / ls)
 
         return loss
 
@@ -208,15 +228,44 @@ class BaseModel:
 
         return loss
 
+    def _alt_gaussian_loss(self, x_data, z_data, mean, sigma):
+        """Alternative Gaussian loss implemntation."""
+        ls = getattr(self, 'loss_scale', 0.1)
+        aux_weight = getattr(self, 'aux_weight', 1.)
+        with tf.name_scope('gaussian_loss'):
+            with tf.name_scope('x_loss'):
+                x_esjd = self._calc_esjd(x_data.init,
+                                         x_data.proposed,
+                                         x_data.prob) + 1e-4
+                #  xg1 = _gaussian(ls / x_esjd, mean, sigma)
+                xg2 = _gaussian(x_esjd / ls, mean, sigma)
+                #  x_diff = ls / x_esjd - x_esjd / ls
+                #  x_gauss = _gaussian(x_diff, mean, sigma)
+                x_loss = - tf.reduce_mean(xg2, name='x_loss')
+                #  x_gauss = _gaussian(x_esjd, mean, sigma)
+                #  x_loss_ = tf.reduce_mean(x_gauss)
+                #
+                #  x_gauss_inv = _gaussian(1. / x_esjd, mean, sigma)
+                #  x_loss_inv_ = tf.reduce_mean(x_gauss_inv)
+                #
+                #  x_loss = - tf.log(ls * x_loss_inv_ - x_loss_ / ls)
+
+            with tf.name_scope('z_loss'):
+                z_esjd = self._calc_esjd(z_data.init,
+                                         z_data.proposed,
+                                         z_data.prob) + 1e-4
+                #  zg1 = _gaussian(ls / z_esjd, mean, sigma)
+                zg2 = _gaussian(z_esjd / ls, mean, sigma)
+                #  z_diff = ls / z_esjd - z_esjd / ls
+                #  z_gauss = _gaussian(z_diff, mean, sigma)
+                z_loss = - tf.reduce_mean(zg2, name='z_loss')
+
+            #  loss = - tf.log(x_loss + z_loss, name='gaussian_loss')
+            loss = tf.add(x_loss, aux_weight * z_loss, name='loss')
+
+        return loss
+
     def _gaussian_loss(self, x_data, z_data, mean, sigma):
-        def _gaussian(x, mu, sigma):
-            norm = tf.cast(
-                1. / tf.sqrt(2 * np.pi * sigma ** 2), dtype=TF_FLOAT
-            )
-            exp_ = tf.exp(-tf.square(x - mu) / (2 * sigma))
-
-            return norm * exp_
-
         ls = getattr(self, 'loss_scale', 0.1)
         aux_weight = getattr(self, 'aux_weight', 1.)
         with tf.name_scope('gaussian_loss'):
