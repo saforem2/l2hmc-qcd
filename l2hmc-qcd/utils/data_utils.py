@@ -61,9 +61,9 @@ def block_resampling(data, num_blocks):
         num_blocks = max(2, batch_size)
 
     kf = KFold(n_splits=num_blocks)
-    resampled_data = []
-    for i, j in kf.split(data):
-        resampled_data.append(data[i])
+    resampled_data = [data[i] for i, j in kf.split(data)]
+    #  for i, j in kf.split(data):
+    #      resampled_data.append(data[i])
     return resampled_data
 
 
@@ -99,7 +99,7 @@ def jackknife_err(y_i, y_full, num_blocks):
     return err
 
 
-def calc_avg_vals_errors(data, num_blocks=100):
+def calc_avg_vals_errors(x, num_blocks=100):
     """Calculate average values and errors of `data` using block jackknife
     resampling method.
 
@@ -113,16 +113,43 @@ def calc_avg_vals_errors(data, num_blocks=100):
         error: The standard error obtained from the block jaccknifed resampling
             of `data`.
     """
-    arr = np.array(data)
-    avg_val = np.mean(arr)
+    denom = num_blocks * (num_blocks - 1)
+
+    def mean_(x):
+        return np.mean(x, dtype=np.float64)
+
+    def err_(x, xm):
+        return np.sqrt(np.sum((mean_(x) - xm) ** 2) / denom)
+
+    x_rs = block_resampling(x, num_blocks)
+    x_rs_mean = mean_(x_rs)
+    mean_rs = [mean_(xb) for xb in x_rs]
+    err_rs = [err_(xb, x_rs_mean) for xb in x_rs]
+
+    return mean_rs, err_rs
+
+
+def old_calc_avg_vals_errors(x, num_blocks=100):
+    '''
+    arr = np.array(x)
+    avg_val = np.mean(arr, dtype=np.float64)
     avg_val_rs = []
+    err_rs = []
     arr_rs = block_resampling(arr, num_blocks)
+
+    mean_rs = np.mean(arr_rs, dtype=np.float64)
     for block in arr_rs:
-        avg_val_rs.append(np.mean(block))
+        block_mean = np.mean(block, dtype=np.float64)
+        block_err = jackknife_err(block_mean, avg_val, num_blocks)
+        avg_val_rs.append(block_mean)
+        err_rs.append(block_err)
+
     error = jackknife_err(y_i=avg_val_rs,
                           y_full=avg_val,
                           num_blocks=num_blocks)
     return avg_val, error
+    '''
+    pass
 
 
 def load_data(data_dir):
