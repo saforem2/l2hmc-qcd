@@ -271,7 +271,7 @@ def gmm_plot(distribution, samples, **kwargs):
     out_file = kwargs.get('out_file', None)
     title = kwargs.get('title', None)
     cmap = kwargs.get('cmap', None)
-    num_points = kwargs.get('num_points', 2000)
+    num_points = kwargs.get('num_points', 5000)
     ellipse = kwargs.get('ellipse', True)
     num_contours = kwargs.get('num_contours', 4)
     axis_scale = kwargs.get('axis_scale', 'equal')
@@ -307,6 +307,7 @@ def gmm_plot(distribution, samples, **kwargs):
                                            xlims=xlims,
                                            ylims=ylims,
                                            ax=ax, cmap=cmap)
+
             _ = ax.plot(samples[:num_points, idx, 0],
                         samples[:num_points, idx, 1],
                         marker=',', ls='-',  color=lc, alpha=0.4, zorder=2)
@@ -321,10 +322,10 @@ def gmm_plot(distribution, samples, **kwargs):
 
             idx += 1
 
-    _ = axes[-1, -1].set_xticks(mus[:, 0])
-    _ = axes[-1, -1].set_xticklabels([str(i) for i in mus[:, 0]])
-    _ = axes[0, 0].set_yticks(mus[:, 1])
-    _ = axes[0, 0].set_yticklabels([str(i) for i in mus[:, 1]])
+    _ = axes[-1, 0].set_yticks(mus[:, 1])
+    _ = axes[-1, 0].set_yticklabels([str(i) for i in mus[:, 1]])
+    _ = axes[-1, 0].set_xticks(mus[:, 0])
+    _ = axes[-1, 0].set_xticklabels([str(i) for i in mus[:, 0]])
 
     # _ = fig.tight_layout()
 
