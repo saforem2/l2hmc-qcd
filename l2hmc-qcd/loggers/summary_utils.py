@@ -48,6 +48,8 @@ def variable_summaries(var, name=''):
     tf.summary.scalar(max_name, tf.reduce_max(var))
     tf.summary.scalar(min_name, tf.reduce_min(var))
     tf.summary.histogram(hist_name, var)
+    if 'layer' in name and 'kernel' in name:
+        tf.summary.scalar(name + '/sparsity', tf.nn.zero_fraction(var))
     # activation summaries
     #  tf.summary.histogram(tensor_name + '/activations', x)
     #  tf.summary.scalar(tensor_name + '/sparsity', tf.nn.zero_fraction(x))
@@ -154,22 +156,23 @@ def _create_training_summaries(model):
 
 def _create_grad_norm_summaries(grad, var):
     """Create grad_norm summaries."""
-    if 'XNet' in var.name:
-        net_str = 'XNet/'
-    elif 'VNet' in var.name:
-        net_str = 'VNet/'
-    else:
-        net_str = ''
-    with tf.name_scope(net_str):
-        if 'scale' in var.name:
-            grad_norm_summary(net_str + 'scale', grad)
-            tf.summary.histogram(net_str + 'scale', grad)
-        if 'transf' in var.name:
-            grad_norm_summary(net_str + 'transformation', grad)
-            tf.summary.histogram(net_str + 'transformation', grad)
-        if 'transl' in var.name:
-            grad_norm_summary(net_str + 'translation', grad)
-            tf.summary.histogram(net_str + 'translation', grad)
+    with tf.name_scope('grad_norm'):
+        if 'XNet' in var.name:
+            net_str = 'XNet/'
+        elif 'VNet' in var.name:
+            net_str = 'VNet/'
+        else:
+            net_str = ''
+        with tf.name_scope(net_str):
+            if 'scale' in var.name:
+                grad_norm_summary(net_str + 'scale', grad)
+                tf.summary.histogram(net_str + 'scale', grad)
+            if 'transf' in var.name:
+                grad_norm_summary(net_str + 'transformation', grad)
+                tf.summary.histogram(net_str + 'transformation', grad)
+            if 'transl' in var.name:
+                grad_norm_summary(net_str + 'translation', grad)
+                tf.summary.histogram(net_str + 'translation', grad)
 
 
 def _create_pair_summaries(grad, var):
@@ -268,6 +271,15 @@ def create_summaries(model, summary_dir, training=True):
 
     for grad, var in grads_and_vars:
         _create_pair_summaries(grad, var)
+
+        if 'layer' in var.name:
+            with tf.name_scope('zero_fraction'):
+                vname = var.name.replace(':', '')
+                gname = vname + '/gradient'
+                tf.summary.histogram(vname,
+                                     tf.nn.zero_fraction(var))
+                tf.summary.histogram(gname,
+                                     tf.nn.zero_fraction(var))
 
         if 'kernel' in var.name:
             _create_grad_norm_summaries(grad, var)
