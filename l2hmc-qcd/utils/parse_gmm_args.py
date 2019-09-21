@@ -14,7 +14,7 @@ import shlex
 import utils.file_io as io
 
 DESCRIPTION = (
-    'Implementation of the L2HMC algorithm for the 2D Gaussian Mixture Model.
+    'Implementation of the L2HMC algorithm for the 2D Gaussian Mixture Model.'
 )
 
 
@@ -25,7 +25,7 @@ def parse_args():
         fromfile_prefix_chars='@',
     )
 
-    parser.add_argument('--center'
+    parser.add_argument('--center',
                         dest='center',
                         type=float,
                         default=1.,
@@ -36,7 +36,15 @@ def parse_args():
                               means located at [-1, 0], and  [0, 1]. (Default:
                               1.)"""))
 
-    parser.add_argument('--num_distributions'
+    parser.add_argument('--diag',
+                        dest='diag',
+                        action='store_true',
+                        required=False,
+                        help=("""Flag that when passed aligns the centers of
+                              each of the component distributions along a
+                              diagonal axis instead of along the x-axis."""))
+
+    parser.add_argument('--num_distributions',
                         dest='num_distributions',
                         type=int,
                         default=2,
@@ -60,7 +68,7 @@ def parse_args():
                         help=("""Variance of first distribution in GMM
                               model. (Default: 0.02)"""))
 
-    parser.add_argument('num_steps',
+    parser.add_argument('--num_steps',
                         dest='num_steps',
                         type=int,
                         default=10,
@@ -94,6 +102,13 @@ def parse_args():
                         help=("""If passed, set `use_gaussian_loss=True` and
                               use alternative gaussian loss function."""))
 
+    parser.add_argument('--use_nnehmc_loss',
+                        dest='use_nnehmc_loss',
+                        action='store_true',
+                        required=False,
+                        help=("""If passed, set `use_nnehmc_loss=True` and
+                              use alternative NNEHMC loss function."""))
+
     parser.add_argument('--loss_scale',
                         dest='loss_scale',
                         type=float,
@@ -114,6 +129,15 @@ def parse_args():
                               from `beta_init` to `beta_final`. Note that
                               `beta_final=1` for the GMM model."""))
 
+    parser.add_argument('--beta_final',
+                        dest='beta_final',
+                        type=float,
+                        default=1.,
+                        required=False,
+                        help=("""Final value of beta (inverse temperature) that
+                              will occur at the end of the training phase.
+                              (Default: 1)"""))
+
     parser.add_argument('--num_hidden1',
                         dest='num_hidden1',
                         type=int,
@@ -131,6 +155,14 @@ def parse_args():
                         help=("""Number of hidden nodes to use in second group
                               of layers in neural network to be trained.
                               (Default: 50)"""))
+
+    parser.add_argument("--train_steps",
+                        dest="train_steps",
+                        type=int,
+                        default=5000,
+                        required=False,
+                        help=("""Number of training steps to perform.
+                              (Default: 5000)"""))
 
     parser.add_argument('--lr_init',
                         dest='lr_init',
@@ -154,6 +186,20 @@ def parse_args():
                         help=("""Learning rate decay rate to be used during
                               training. (Default: 0.96)"""))
 
+    parser.add_argument('--no_summaries',
+                        dest="no_summaries",
+                        action="store_true",
+                        required=False,
+                        help=("""FLag that when passed will prevent tensorflow
+                              from creating tensorboard summary objects."""))
+
+    parser.add_argument('--save_lf',
+                        dest='save_lf',
+                        action='store_true',
+                        required=False,
+                        help=("""Flag that when passed will save the
+                              output from each leapfrog step."""))
+
     parser.add_argument("--float64",
                         dest="float64",
                         action="store_true",
@@ -161,6 +207,13 @@ def parse_args():
                         help=("""When passed, using 64 point floating precision
                               by settings globals.TF_FLOAT = tf.float64. False
                               by default (use tf.float32)."""))
+
+    parser.add_argument("--gpu",
+                        dest="gpu",
+                        action="store_true",
+                        required=False,
+                        help=("""Flag that when passed indicates we're training
+                              using an NVIDIA GPU."""))
 
     parser.add_argument("--horovod",
                         dest="horovod",
