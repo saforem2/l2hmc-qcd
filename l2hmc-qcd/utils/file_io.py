@@ -102,6 +102,8 @@ def _parse_gauge_flags(FLAGS):
         BN = flags_dict['use_bn']
         DP = flags_dict['dropout_prob']
         AW = flags_dict['aux_weight']
+        GL = flags_dict['use_gaussian_loss']
+        NL = flags_dict['use_nnehmc_loss']
         hmc = flags_dict['hmc']
         try:
             _log_dir = flags_dict['log_dir']
@@ -118,6 +120,8 @@ def _parse_gauge_flags(FLAGS):
         BN = FLAGS.use_bn
         DP = FLAGS.dropout_prob
         AW = FLAGS.aux_weight
+        GL = FLAGS.use_gaussian_loss
+        NL = FLAGS.use_nnehmc_loss
         hmc = FLAGS.hmc
         try:
             _log_dir = FLAGS.log_dir
@@ -134,6 +138,8 @@ def _parse_gauge_flags(FLAGS):
         'BN': BN,
         'DP': DP,
         'AW': AW,
+        'GL': GL,
+        'NL': NL,
         'hmc': hmc,
         '_log_dir': _log_dir
     }
@@ -148,8 +154,12 @@ def _parse_gauge_flags(FLAGS):
         run_str = f'lattice{LX}_batch{BS}_lf{LF}_qw{qw}_aw{aw}_{NA}_dp{dp}'
         if BN:
             run_str += '_bn'
+        if GL:
+            run_str += 'gaussian_loss'
+        if NL:
+            run_str += 'nnehmc_loss'
 
-    return run_str, flags_dict
+    return run_str, out_dict
 
 
 def _parse_gmm_flags(FLAGS):
@@ -168,6 +178,7 @@ def _parse_gmm_flags(FLAGS):
         DG = flags_dict['diag']
         S1 = flags_dict['sigma1']
         S2 = flags_dict['sigma2']
+        GL = flags_dict.get('use_gaussian_loss', False)
     except (NameError, AttributeError):
         X0 = FLAGS.center
         ND = FLAGS.num_distributions
@@ -175,6 +186,8 @@ def _parse_gmm_flags(FLAGS):
         DG = FLAGS.diag
         S1 = FLAGS.sigma1
         S2 = FLAGS.sigma2
+        GL = FLAGS.use_gaussian_loss
+        NL = FLAGS.use_nnehmc_loss
 
     out_dict = {
         'X0': X0,
@@ -183,28 +196,35 @@ def _parse_gmm_flags(FLAGS):
         'DG': DG,
         'S1': S1,
         'S2': S2,
+        'GL': GL,
+        'NL': NL,
     }
 
-    x0 = str(X0).replace('.', '')
+    #  x0 = str(X0).replace('.', '')
     s1 = str(S1).replace('.', '')
     s2 = str(S2).replace('.', '')
     run_str = f'GMM_lf{LF}_s1_{s1}_s2_{s2}'
 
+    if GL:
+        run_str += 'gaussian_loss'
+    elif NL:
+        run_str += 'nnehmc_loss'
+
     return run_str, out_dict
 
 
-def _parse_flags(FLAGS, model_type='gauge_model'):
+def _parse_flags(FLAGS, model_type='GaugeModel'):
     """Helper method for parsing flags as both AttrDicts or generic dicts."""
-    if model_type == 'gauge_model':
+    if model_type == 'GaugeModel':
         run_str, out_dict = _parse_gauge_flags(FLAGS)
-    elif model_type == 'gmm_model':
+    elif model_type == 'GaussianMixtureModel':
         run_str, out_dict = _parse_gmm_flags(FLAGS)
 
     return run_str, out_dict
 
 
 def create_log_dir(FLAGS, root_dir=None, log_file=None,
-                   run_str=True, model_type='gauge_model'):
+                   run_str=True, model_type='GaugeModel'):
     """Automatically create and name `log_dir` to save model data to.
 
     The created directory will be located in `logs/YYYY_M_D/`, and will have
