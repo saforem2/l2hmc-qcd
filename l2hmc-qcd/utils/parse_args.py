@@ -306,15 +306,6 @@ def parse_args():
                         help=("""Metric to use in loss function. Must be one
                               of: `l1`, `l2`, `cos`, `cos2`, `cos_diff`."""))
 
-    parser.add_argument("--nnehmc_loss",
-                        dest="nnehmc_loss",
-                        action="store_true",
-                        required=False,
-                        help=("""Flag that when passed will calculate the
-                              'NNEHMC Loss' from
-                              (https://infoscience.epfl.ch/record/264887/files/robust_parameter_estimation.pdf)
-                              (Default: False)."""))
-
     parser.add_argument("--std_weight",
                         dest="std_weight",
                         type=float,
