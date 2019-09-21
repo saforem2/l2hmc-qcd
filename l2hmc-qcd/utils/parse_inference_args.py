@@ -118,6 +118,40 @@ def parse_args():
                               value of the average plaquette when running
                               inference."""))
 
+    parser.add_argument('--scale_weight',
+                        dest='scale_weight',
+                        type=float,
+                        default=None,
+                        required=False,
+                        help=("""Specify the value of the `scale_weight`
+                              parameter, a multiplicative weight that scales
+                              the contribution of the `scale` (S) function when
+                              performing the augmented L2HMC molecular dynamics
+                              update."""))
+
+    parser.add_argument('--translation_weight',
+                        dest='translation_weight',
+                        type=float,
+                        default=None,
+                        required=False,
+                        help=("""Specify the value of the `translation_weight`
+                              parameter, a multiplicative weight that scales
+                              the contribution of the `translation` (T)
+                              function when performing the augmented L2HMC
+                              molecular dynamics update."""))
+
+    parser.add_argument('--transformation_weight',
+                        dest='transformation_weight',
+                        type=float,
+                        default=None,
+                        required=False,
+                        help=("""Specify the value of the
+                              `transformation_weight` parameter, a
+                              multiplicative weight that scales the
+                              contribution of the `transformation` (Q) function
+                              when performing the augmented L2HMC molecular
+                              dynamics update."""))
+
     parser.add_argument('--save_samples',
                         dest='save_samples',
                         action='store_true',
