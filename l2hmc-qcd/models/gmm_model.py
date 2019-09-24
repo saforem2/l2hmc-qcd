@@ -221,9 +221,11 @@ class GaussianMixtureModel(BaseModel):
 
                 if self.use_gaussian_loss:
                     self.loss_op = self.gaussian_loss(x_data, z_data)
+
                 elif self.use_nnehmc_loss:
                     x_hmc_prob = x_dynamics['accept_prob_hmc']
                     self.loss_op = self.nnehmc_loss(x_data, x_hmc_prob)
+
                 else:
                     self.loss_op = self.calc_loss(x_data, z_data)
 
