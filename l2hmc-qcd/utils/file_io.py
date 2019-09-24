@@ -155,9 +155,9 @@ def _parse_gauge_flags(FLAGS):
         if BN:
             run_str += '_bn'
         if GL:
-            run_str += 'gaussian_loss'
+            run_str += '_gaussian_loss'
         if NL:
-            run_str += 'nnehmc_loss'
+            run_str += '_nnehmc_loss'
 
     return run_str, out_dict
 
@@ -172,13 +172,14 @@ def _parse_gmm_flags(FLAGS):
         except (NameError, AttributeError):
             pass
     try:
-        X0 = flags_dict['center']
-        ND = flags_dict['num_distributions']
-        LF = flags_dict['num_steps']
-        DG = flags_dict['diag']
-        S1 = flags_dict['sigma1']
-        S2 = flags_dict['sigma2']
+        X0 = flags_dict.get('center', None)
+        ND = flags_dict.get('num_distributions', None)
+        LF = flags_dict.get('num_steps', None)
+        DG = flags_dict.get('diag', None)
+        S1 = flags_dict.get('sigma1', None)
+        S2 = flags_dict.get('sigma2', None)
         GL = flags_dict.get('use_gaussian_loss', False)
+        NL = flags_dict.get('use_nnehmc_loss', False)
     except (NameError, AttributeError):
         X0 = FLAGS.center
         ND = FLAGS.num_distributions
@@ -206,9 +207,9 @@ def _parse_gmm_flags(FLAGS):
     run_str = f'GMM_lf{LF}_s1_{s1}_s2_{s2}'
 
     if GL:
-        run_str += 'gaussian_loss'
+        run_str += '_gaussian_loss'
     elif NL:
-        run_str += 'nnehmc_loss'
+        run_str += '_nnehmc_loss'
 
     return run_str, out_dict
 
