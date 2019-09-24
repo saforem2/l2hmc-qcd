@@ -5,6 +5,7 @@ l2hmc-qcd/remake_plots.py
 l2hmc-qcd/sampler.py
 l2hmc_logs
 logs/
+gauge_logs/
 gmm_logs/
 2019_04_09
 animations/
