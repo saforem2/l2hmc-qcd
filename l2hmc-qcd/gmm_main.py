@@ -152,9 +152,12 @@ def train_l2hmc(FLAGS, log_file=None):
     }
 
     # Check reversibility
+    reverse_file = os.path.join(model.log_dir, 'reversibility_test.txt')
     x_diff, v_diff = sess.run([model.x_diff,
                                model.v_diff], feed_dict=feed_dict)
-    io.log(f'Reversibility results:\n \t{x_diff:.5g}, {v_diff:.5g}')
+    reverse_str = (f'Reversibility results:\n '
+                   f'\t x_diff: {x_diff:.10g}, v_diff: {v_diff:.10g}')
+    io.log_and_write(reverse_str, reverse_file)
 
     # TRAINING
     trainer = GaussianMixtureModelTrainer(sess, model, logger=train_logger)
