@@ -241,34 +241,7 @@ def error_analysis(samples, num_blocks=None):
     return means, errs
 
 
-def save_inference_data(samples, px, out_dir):
-    if not isinstance(px, np.ndarray):
-        px = np.array(px)
-    if not isinstance(samples, np.ndarray):
-        samples = np.array(samples)
-
-    num_blocks = samples.shape[0] // 50
-    means, errs = error_analysis(samples, num_blocks)
-    '''
-    dim = samples.shape[-1]
-    all_samples = samples.reshape((-1, dim))
-
-    components = all_samples.T
-    means = [i.mean() for i in components]
-    '''
-
-    samples_out_file = os.path.join(out_dir, f'samples_out.pkl')
-    px_out_file = os.path.join(out_dir, 'px_out.pkl')
-
-    io.log(f'Saving samples to: {samples_out_file}')
-    with open(samples_out_file, 'wb') as f:
-        pickle.dump(samples, f)
-
-    io.log(f'Saving output probabilities to: {px_out_file}')
-    with open(px_out_file, 'wb') as f:
-        pickle.dump(px, f)
-
-    means_file = os.path.join(out_dir, 'means.txt')
+def write_means(samples, num_blocks, means, errs, means_file):
     with open(means_file, 'a') as f:
         _ = f.write(f'samples.shape: {samples.shape}\n')
         _ = f.write(
@@ -276,7 +249,49 @@ def save_inference_data(samples, px, out_dir):
         )
         _ = f.write('Component averages:\n')
         for mean, err in zip(means, errs):
-            _ = f.write(f'  {mean:.8g} +/- {err:.8g}\n')
+            _ = f.write(f'  {mean:.5g} +/- {err:.5g}\n')
+
+        _ = f.write(80 * '-' + '\n')
+
+
+def _pickle_dump(data, out_file, name=None):
+    if name is None:
+        name = 'data'
+
+    io.log(f'Saving {name} to {out_file}')
+    with open(out_file, 'wb') as f:
+        pickle.dump(data, f)
+
+
+def save_inference_data(samples, px, out_dir):
+    if not isinstance(px, np.ndarray):
+        px = np.array(px)
+    if not isinstance(samples, np.ndarray):
+        samples = np.array(samples)
+
+    samples_out_file = os.path.join(out_dir, f'samples_out.pkl')
+    px_out_file = os.path.join(out_dir, 'px_out.pkl')
+    _pickle_dump(samples, samples_out_file, name='samples')
+    _pickle_dump(px, px_out_file, name='probs')
+
+    num_blocks = samples.shape[0] // 50
+    means, errs = error_analysis(samples, num_blocks)
+    num_blocks1 = 50
+    means1, errs1 = error_analysis(samples, num_blocks1)
+    samplesT = samples.transpose((-1, 1, 0))
+    m_arr = []
+    e_arr = []
+    for component in samplesT:
+        m_arr.append(np.mean(component, dtype=np.float64))
+        e_arr.append(np.mean(sem(component), dtype=np.float64))
+
+    m_arr = np.array(m_arr)
+    e_arr = np.array(e_arr)
+
+    means_file = os.path.join(out_dir, 'means.txt')
+    write_means(samples, num_blocks, means, errs, means_file)
+    write_means(samples, 50, means1, errs1, means_file)
+    write_means(samples, 0, m_arr, e_arr, means_file)
 
 
 def inference(runner, run_logger, **kwargs):
