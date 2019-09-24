@@ -16,7 +16,7 @@ from config import HAS_HOROVOD, HAS_MATPLOTLIB, HAS_MEMORY_PROFILER, NP_FLOAT
 from update import set_precision
 from inference import _log_inference_header
 from runners.gmm_runner import GaussianMixtureModelRunner
-from plotters.plot_utils import _gmm_plot, gmm_plot
+from plotters.plot_utils import _gmm_plot, gmm_plot, _gmm_plot3d
 from loggers.run_logger import RunLogger
 from loggers.summary_utils import create_summaries
 
@@ -334,6 +334,10 @@ def inference(runner, run_logger, **kwargs):
             }
 
             _ = _gmm_plot(distribution, samples_out[:, 0], **plot_kwargs)
+            #  try:
+            #      _gmm_plot3d(distribution, samples_out[:, 0], **plot_kwargs)
+            #  except:
+            #      import pudb; pudb.set_trace()
 
             plot_kwargs = {
                 'nrows': 3,
