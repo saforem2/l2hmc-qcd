@@ -8,15 +8,17 @@ Date: 08/21/2019
 """
 import os
 
+from config import HAS_MATPLOTLIB, MARKERS
+from collections import namedtuple
+
 import numpy as np
 import pandas as pd
+import scipy.stats as st
+
+from scipy.stats import multivariate_normal
+from mpl_toolkits.mplot3d import Axes3D
 
 import utils.file_io as io
-
-from collections import namedtuple
-from scipy.stats import multivariate_normal
-from config import MARKERS, HAS_MATPLOTLIB
-
 
 MPL_PARAMS = {
     #  'backend': 'ps',
@@ -34,6 +36,7 @@ MPL_PARAMS = {
 if HAS_MATPLOTLIB:
     import matplotlib as mpl
     import matplotlib.pyplot as plt
+
     from matplotlib.patches import Ellipse
 
     mpl.rcParams.update(MPL_PARAMS)
@@ -99,6 +102,38 @@ def _get_plaq_diff_data(log_dir):
                 Pair(stqx, stqy))
 
     return data
+
+
+def plot_histogram(data, ax=None, **kwargs):
+    if ax is None:
+        fig, ax = plt.subplots()
+    #  ax = ax or plt.gca()
+
+    bins = kwargs.get('bins', 100)
+    density = kwargs.get('density', True)
+    stacked = kwargs.get('stacked', True)
+    label = kwargs.get('label', None)
+    out_file = kwargs.get('out_file', None)
+    xlabel = kwargs.get('xlabel', None)
+    ylabel = kwargs.get('ylabel', None)
+
+    _ = ax.hist(data, bins=bins, density=density, stacked=stacked,
+                label=label)
+
+    if label is not None:
+        _ = ax.legend(loc='best')
+
+    if xlabel is not None:
+        _ = ax.set_xlabel(xlabel)
+
+    if ylabel is not None:
+        _ = ax.set_ylabel(ylabel)
+
+    if out_file is not None:
+        io.log(f'Saving histogram plot to: {out_file}')
+        _ = plt.savefig(out_file, dpi=400, bbox_inches='tight')
+
+    return ax
 
 
 def plot_gaussian_contours(mus, covs, ax=None, **kwargs):
@@ -180,6 +215,65 @@ def get_lims(samples):
     ylims = [ymin, ymax]
 
     return xlims, ylims
+
+
+def _gaussian_kde(distribution, samples):
+    if not isinstance(samples, np.ndarray):
+        samples = np.array(samples)
+
+    dim = samples.shape[-1]
+
+    samples.reshape((-1, dim))
+
+    target_samples = distribution.get_samples(5000)
+    xlims, ylims = get_lims(target_samples)
+    xmin, xmax = xlims
+    ymin, ymax = ylims
+
+    xx, yy = np.mgrid[xmin:xmax:100j, ymin:ymax:100j]
+    x, y = samples.T
+
+    positions = np.vstack([xx.ravel(), yy.ravel()])
+    values = np.vstack([x, y])
+    kernel = st.gaussian_kde(values)
+    z = np.reshape(kernel(positions).T, xx.shape)
+
+    return z, (xx, yy), (xlims, ylims)
+
+
+def _gmm_plot3d(distribution, samples, **kwargs):
+    z, coords, lims = _gaussian_kde(distribution, samples)
+    xx, yy = coords
+    xlims, ylims = lims
+    xmin, xmax = xlims
+    ymin, ymax = ylims
+
+    cmap = kwargs.get('cmap', 'coolwarm')
+    out_file = kwargs.get('out_file', None)
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    _ = ax.plot_surface(xx, yy, z, zdir='z', offset=-1., cmap=cmap)
+    # Plot projections of the contours for each dimension.  By choosing offsets
+    # that match the appropriate axes limits, the projected contours will sit
+    # on the 'walls' of the graph
+    _ = ax.contour(xx, yy, z, zdir='z', offset=-0.1, cmap=cmap)
+    _ = ax.contour(xx, yy, z, zdir='x', offset=xmin, cmap=cmap)
+    _ = ax.contour(xx, yy, z, zdir='y', offset=ymax, cmap=cmap)
+    xlim = [xmin, xmax]
+    ylim = [ymin-0.05, ymax+0.05]
+    _ = ax.set_xlim(xlim)
+    _ = ax.set_ylim(ylim)
+    _ = ax.set_xlabel('x')
+    _ = ax.set_ylabel('y')
+
+    zlim = ax.get_zlim()
+    _ = ax.set_zlim((-0.1, zlim[1]))
+
+    if out_file is not None:
+        plt.savefig(out_file, dpi=400, bbox_inches='tight')
+
+    return fig, ax
 
 
 def _gmm_plot(distribution, samples, ax=None, **kwargs):
