@@ -42,17 +42,22 @@ class GaugeModel(BaseModel):
         super(GaugeModel, self).__init__(params)
         self._model_type = 'GaugeModel'
 
-        self.loss_weights = {}
-        for key, val in params.items():
-            if 'weight' in key and key != 'charge_weight':
-                self.loss_weights[key] = val
-            elif key == 'charge_weight':
-                pass
-            else:
-                setattr(self, key, val)
+        if params is None:
+            params = GAUGE_PARAMS
 
-        self.eps_trainable = not self.eps_fixed
-        self.charge_weight_np = params['charge_weight']
+        #  self._model_type = 'GaugeModel'
+
+        #  self.loss_weights = {}
+        #  for key, val in params.items():
+        #      if 'weight' in key and key != 'charge_weight':
+        #          self.loss_weights[key] = val
+        #      elif key == 'charge_weight':
+        #          pass
+        #      else:
+        #          setattr(self, key, val)
+
+        #  self.eps_trainable = not self.eps_fixed
+        #  self.charge_weight_np = params['charge_weight']
         self.build()
 
     def build(self):

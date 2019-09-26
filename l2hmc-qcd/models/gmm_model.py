@@ -112,11 +112,11 @@ class GaussianMixtureModel(BaseModel):
         if params is None:
             params = GMM_PARAMS  # default parameters, defined in `config.py`.
 
-        self.params = params
-        for key, val in self.params.items():
-            setattr(self, key, val)
+        #  self.params = params
+        #  for key, val in self.params.items():
+        #      setattr(self, key, val)
 
-        self.eps_trainable = not self.eps_fixed
+        #  self.eps_trainable = not self.eps_fixed
         self.build(params)
 
     def build(self, params=None):
