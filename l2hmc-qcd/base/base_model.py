@@ -18,6 +18,8 @@ import numpy as np
 from utils.horovod_utils import warmup_lr
 #  from utils.distributions import quadratic_gaussian
 from config import HAS_HOROVOD, TF_FLOAT, GLOBAL_SEED
+from params.gmm_params import GMM_PARAMS
+from params.gauge_params import GAUGE_PARAMS
 
 if HAS_HOROVOD:
     import horovod.tensorflow as hvd
@@ -45,22 +47,22 @@ def _gaussian(x, mu, sigma):
 class BaseModel:
 
     def __init__(self, params=None):
-        self.params = params
 
+        if 'charge_weight' in params:
+            self.charge_weight_np = params.pop('charge_weight', None)
+
+        self.params = params
         self.loss_weights = {}
-        for key, val in params.items():
-            if 'weight' in key and key != 'charge_weight':
+        for key, val in self.params.items():
+            if 'weight' in key:
                 self.loss_weights[key] = val
-            elif key == 'charge_weight':
-                pass
             else:
                 setattr(self, key, val)
 
         self.eps_trainable = not self.eps_fixed
-        self.charge_weight_np = getattr(params, 'charge_weight', None)
         self.global_step = self._create_global_step()
 
-        warmup = getattr(self, 'warmup_lr', False)
+        warmup = self.params.get('warmup_lr', False)
         self.lr = self._create_lr(warmup)
 
         self.optimizer = self._create_optimizer()
@@ -275,8 +277,6 @@ class BaseModel:
                                          x_data.prob)
                 x_gauss = _gaussian(x_esjd, mean, sigma)
                 x_loss = ls * tf.reduce_mean(x_gauss)
-                #  x_loss = (ls * tf.reduce_mean(1. / x_gauss)
-                #            - tf.reduce_mean(x_gauss) / ls)
 
             with tf.name_scope('z_loss'):
                 if aux_weight > 0.:
@@ -285,8 +285,6 @@ class BaseModel:
                                              z_data.prob)
                     z_gauss = _gaussian(z_esjd, mean, sigma)
                     z_loss = ls * tf.reduce_mean(z_gauss)
-                    #  z_loss = (ls * tf.reduce_mean(1. / z_gauss)
-                    #            - tf.reduce_mean(z_gauss) / ls)
                 else:
                     z_loss = 0.
 
