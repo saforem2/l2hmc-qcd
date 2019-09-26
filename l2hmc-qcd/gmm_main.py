@@ -211,13 +211,7 @@ if __name__ == '__main__':
     FLAGS = GMM_PARAMS
 
     args = parse_gmm_args()
-    try:
-        FLAGS.update(args.__dict__)
-    except AttributeError:
-        import pudb
-
-        pudb.set_trace()
-
+    FLAGS.update(args.__dict__)
     t0 = time.time()
     main(FLAGS)
     io.log('\n\n' + SEP_STR)
