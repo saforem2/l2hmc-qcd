@@ -19,4 +19,3 @@ def set_precision(precision):
 
 def set_seed(seed):
     config.GLOBAL_SEED = seed
-
