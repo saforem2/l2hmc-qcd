@@ -333,14 +333,14 @@ def _pickle_dump(data, out_file, name=None):
         pickle.dump(data, f)
 
 
-def save_inference_data(samples, px, out_dir):
+def save_inference_data(samples, px, run_dir, fig_dir=None):
     if not isinstance(px, np.ndarray):
         px = np.array(px)
     if not isinstance(samples, np.ndarray):
         samples = np.array(samples)
 
-    samples_out_file = os.path.join(out_dir, f'samples_out.pkl')
-    px_out_file = os.path.join(out_dir, 'px_out.pkl')
+    samples_out_file = os.path.join(run_dir, f'samples_out.pkl')
+    px_out_file = os.path.join(run_dir, 'px_out.pkl')
     _pickle_dump(samples, samples_out_file, name='samples')
     _pickle_dump(px, px_out_file, name='probs')
 
@@ -349,6 +349,8 @@ def save_inference_data(samples, px, out_dir):
     #  dim = samples.shape[-1]
     #  samples_bs = np.array(samples_bs).reshape((dim, -1))
     means_strs = [f'mean: {i:.4g} +/- {j:.4g}' for i, j in zip(means, errs)]
+
+    out_dir = run_dir if fig_dir is None else fig_dir
     out_files = [os.path.join(out_dir, 'x_mean_histogram.pdf'),
                  os.path.join(out_dir, 'y_mean_histogram.pdf')]
     xlabels = ['mean, x', 'mean, y']
@@ -428,20 +430,19 @@ def inference(runner, run_logger, **kwargs):
 
         samples_out = np.array(run_logger.samples_arr)
         px_out = np.array(run_logger.px_arr)
-        out_dir = run_logger.run_dir
 
-        save_inference_data(samples_out, px_out, out_dir)
+        log_dir = os.path.dirname(run_logger.runs_dir)
+        run_dir = run_logger.run_dir
+        basename = os.path.basename(run_dir)
+        figs_dir = os.path.join(log_dir, 'figures')
+        fig_dir = os.path.join(figs_dir, basename)
+        _ = [io.check_else_make_dir(d) for d in [figs_dir, fig_dir]]
+
+        save_inference_data(samples_out, px_out, run_dir, fig_dir)
 
         if HAS_MATPLOTLIB:
             log_dir = os.path.dirname(run_logger.runs_dir)
             distribution = recreate_distribution(log_dir)
-
-            figs_root_dir = os.path.join(log_dir, 'figures')
-            basename = os.path.basename(run_logger.run_dir)
-            figs_dir = os.path.join(figs_root_dir, basename)
-
-            io.check_else_make_dir(figs_root_dir)
-            io.check_else_make_dir(figs_dir)
 
             plot_kwargs = {
                 'out_file': os.path.join(figs_dir, 'single_l2hmc_chain.pdf'),
