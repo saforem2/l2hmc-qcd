@@ -30,34 +30,33 @@ for each major part of the algorithm:
 Author: Sam Foreman (github: @saforem2)
 Date: 04/10/2019
 """
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
+from __future__ import absolute_import, division, print_function
 
 import os
+
 #  import random
 import time
 import pickle
 import inference
-import tensorflow as tf
-import numpy as np
 
-from tensorflow.python import debug as tf_debug  # noqa: F401
-from tensorflow.python.client import timeline    # noqa: F401
-from tensorflow.core.protobuf import rewriter_config_pb2
-
+from config import (GLOBAL_SEED, HAS_COMET, HAS_HOROVOD, HAS_MATPLOTLIB,
+                    NP_FLOAT)
+from update import set_precision, set_seed
 from collections import namedtuple
-
-import utils.file_io as io
-
-from config import (
-    GLOBAL_SEED, NP_FLOAT, HAS_HOROVOD, HAS_COMET, HAS_MATPLOTLIB
-)
-from update import set_precision
-from utils.parse_args import parse_args
 from models.gauge_model import GaugeModel
 from loggers.train_logger import TrainLogger
 from trainers.gauge_model_trainer import GaugeModelTrainer
+
+import numpy as np
+import tensorflow as tf
+
+from tensorflow.python import debug as tf_debug  # noqa: F401
+from tensorflow.python.client import timeline  # noqa: F401
+from tensorflow.core.protobuf import rewriter_config_pb2
+
+import utils.file_io as io
+
+from utils.parse_args import parse_args
 
 if HAS_COMET:
     from comet_ml import Experiment
@@ -439,6 +438,8 @@ def main(FLAGS):
 if __name__ == '__main__':
     FLAGS = parse_args()
     t0 = time.time()
+
+    set_seed(FLAGS.global_seed)
 
     main(FLAGS)
 
