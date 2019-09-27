@@ -272,15 +272,6 @@ def create_summaries(model, summary_dir, training=True):
     for grad, var in grads_and_vars:
         _create_pair_summaries(grad, var)
 
-        if 'layer' in var.name:
-            with tf.name_scope('zero_fraction'):
-                vname = var.name.replace(':', '')
-                gname = vname + '/gradient'
-                tf.summary.histogram(vname,
-                                     tf.nn.zero_fraction(var))
-                tf.summary.histogram(gname,
-                                     tf.nn.zero_fraction(var))
-
         if 'kernel' in var.name:
             _create_grad_norm_summaries(grad, var)
 
