@@ -42,17 +42,22 @@ class GaugeModel(BaseModel):
         super(GaugeModel, self).__init__(params)
         self._model_type = 'GaugeModel'
 
-        self.loss_weights = {}
-        for key, val in params.items():
-            if 'weight' in key and key != 'charge_weight':
-                self.loss_weights[key] = val
-            elif key == 'charge_weight':
-                pass
-            else:
-                setattr(self, key, val)
+        if params is None:
+            params = GAUGE_PARAMS
 
-        self.eps_trainable = not self.eps_fixed
-        self.charge_weight_np = params['charge_weight']
+        #  self._model_type = 'GaugeModel'
+
+        #  self.loss_weights = {}
+        #  for key, val in params.items():
+        #      if 'weight' in key and key != 'charge_weight':
+        #          self.loss_weights[key] = val
+        #      elif key == 'charge_weight':
+        #          pass
+        #      else:
+        #          setattr(self, key, val)
+
+        #  self.eps_trainable = not self.eps_fixed
+        #  self.charge_weight_np = params['charge_weight']
         self.build()
 
     def build(self):
@@ -311,16 +316,12 @@ class GaugeModel(BaseModel):
         return loss
 
     def gaussian_loss(self, x_data, z_data):
-        loss = self._gaussian_loss(x_data, z_data, mean=0., sigma=1.)
-
-        return loss
+        """Calculate the Gaussian loss."""
+        return self._gaussian_loss(x_data, z_data, mean=0., sigma=1.)
 
     def nnehmc_loss(self, x_data, hmc_prob, beta=1.):
         """Calculate the NNEHMC loss."""
-        x_in, x_proposed, accept_prob = x_data
-        x_esjd = self._calc_esjd(x_in, x_proposed, accept_prob)
-
-        return tf.reduce_mean(- x_esjd - beta * hmc_prob)
+        return self._nnehmc_loss(x_data, hmc_prob, beta=beta)
 
     def _parse_dynamics_output(self, dynamics_output):
         """Parse output dictionary from `self.dynamics.apply_transition`."""

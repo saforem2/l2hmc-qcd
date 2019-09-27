@@ -15,3 +15,7 @@ def set_precision(precision):
         config.NP_FLOAT = np.float32
         config.TF_INT = tf.int32
         config.NP_INT = np.int32
+
+
+def set_seed(seed):
+    config.GLOBAL_SEED = seed

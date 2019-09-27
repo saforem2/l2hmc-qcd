@@ -15,6 +15,7 @@ import pickle
 
 from main import count_trainable_params, create_config, train_setup
 from config import GLOBAL_SEED, HAS_HOROVOD, HAS_MATPLOTLIB
+from update import set_precision, set_seed
 from models.gmm_model import GaussianMixtureModel
 from plotters.plot_utils import _gmm_plot
 from loggers.train_logger import TrainLogger
@@ -152,9 +153,12 @@ def train_l2hmc(FLAGS, log_file=None):
     }
 
     # Check reversibility
+    reverse_file = os.path.join(model.log_dir, 'reversibility_test.txt')
     x_diff, v_diff = sess.run([model.x_diff,
                                model.v_diff], feed_dict=feed_dict)
-    io.log(f'Reversibility results:\n \t{x_diff:.5g}, {v_diff:.5g}')
+    reverse_str = (f'Reversibility results:\n '
+                   f'\t x_diff: {x_diff:.10g}, v_diff: {v_diff:.10g}')
+    io.log_and_write(reverse_str, reverse_file)
 
     # TRAINING
     trainer = GaussianMixtureModelTrainer(sess, model, logger=train_logger)
@@ -207,14 +211,10 @@ def main(FLAGS):
 if __name__ == '__main__':
     FLAGS = GMM_PARAMS
 
+    set_seed(FLAGS.global_seed)
+
     args = parse_gmm_args()
-    try:
-        FLAGS.update(args.__dict__)
-    except AttributeError:
-        import pudb
-
-        pudb.set_trace()
-
+    FLAGS.update(args.__dict__)
     t0 = time.time()
     main(FLAGS)
     io.log('\n\n' + SEP_STR)

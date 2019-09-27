@@ -16,7 +16,9 @@ from config import HAS_HOROVOD, HAS_MATPLOTLIB, HAS_MEMORY_PROFILER, NP_FLOAT
 from update import set_precision
 from inference import _log_inference_header
 from runners.gmm_runner import GaussianMixtureModelRunner
-from plotters.plot_utils import _gmm_plot, gmm_plot
+from plotters.plot_utils import (
+    _gmm_plot, gmm_plot, _gmm_plot3d, plot_histogram
+)
 from loggers.run_logger import RunLogger
 from loggers.summary_utils import create_summaries
 
@@ -30,6 +32,9 @@ import utils.file_io as io
 from utils.data_utils import block_resampling, calc_avg_vals_errors
 from utils.distributions import GMM
 from utils.parse_inference_args import parse_args as parse_inference_args
+
+if HAS_MATPLOTLIB:
+    import matplotlib.pyplot as plt
 
 if HAS_HOROVOD:
     import horovod.tensorflow as hvd
@@ -150,7 +155,69 @@ def recreate_distribution(_dir):
     return GMM(mus, sigmas, pis)
 
 
-def error_analysis(samples, num_blocks=None):
+def _bootstrap_replicate_1d(data, func):
+    """Generate a bootstrap replicate data."""
+    bs_sample = np.random.choice(data, len(data))
+
+    return bs_sample, func(bs_sample)
+
+
+def bootstrap_replicates_1d(data, func, num_replicates=1000):
+    return [_bootstrap_replicate_1d(data, func) for _ in range(num_replicates)]
+
+
+def bootstrap_resample(x, n=None):
+    """Use bootstrap resampling to obtain (re) sampled elements of `x`.
+
+    Args:
+        x (array-like): Data to resample.
+        n (int, optional): Length of resampled array, equal to len(x) if n is
+            None.
+
+    Returns:
+        x_rs: The resampled array.
+    """
+    if n is None:
+        n = len(x)
+
+    resample_i = np.floor(np.random.rand(n)*len(x)).astype(int)
+    x_rs = x[resample_i]
+
+    return x_rs
+
+
+def error_analysis(samples, n=None, num_iters=100):
+    if not isinstance(samples, np.ndarray):
+        samples = np.array(samples)
+
+    samplesT = samples.transpose((-1, 1, 0))
+    samples_rs = []
+    means_arr = []
+    #  errs_arr = []
+    for component in samplesT:
+        x_arr = []
+        for _ in range(num_iters):
+            x_rs = [bootstrap_resample(x, n) for x in component]
+            x_arr.append(x_rs)
+        samples_rs.append(x_arr)
+        x_arr = np.array(x_arr)
+        means = np.mean(x_arr, axis=-1, dtype=np.float64)
+        means_arr.append(means)
+        #  samples_rs.append(x_rs)
+
+    samples_rs = np.array(samples_rs)
+
+    means = np.mean(means_arr, axis=(1, 2), dtype=np.float64)
+    errs = np.std(means_arr, axis=(1, 2), dtype=np.float64)
+    #  means_ = samples_rs.mean(axis=-1, dtype=np.float64)
+    #  errs = np.std(means_, axis=-1, dtype=np.float64)
+    #  errs = sem(means_, axis=-1)
+    #  means = np.mean(means_, axis=-1, dtype=np.float64)
+
+    return means, errs, means_arr, samples_rs
+
+
+def alt_error_analysis(samples, num_blocks=None):
     """Calc the mean and std error using blocked jackknife resampling. 
 
     Args:
@@ -241,42 +308,95 @@ def error_analysis(samples, num_blocks=None):
     return means, errs
 
 
-def save_inference_data(samples, px, out_dir):
+def write_means(samples, num_blocks, means, errs, means_file):
+    with open(means_file, 'a') as f:
+        _ = f.write(f'samples.shape: {samples.shape}\n')
+        '''
+        _ = f.write(
+            f'Using bootstrap resampling, using {num_blocks} replicates '
+            f'for each of the {samples.shape[1]} samples.\n'
+        )
+        '''
+        _ = f.write('Component averages:\n')
+        for mean, err in zip(means, errs):
+            _ = f.write(f'  {mean:.5g} +/- {err:.5g}\n')
+
+        _ = f.write(80 * '-' + '\n')
+
+
+def _pickle_dump(data, out_file, name=None):
+    if name is None:
+        name = 'data'
+
+    io.log(f'Saving {name} to {out_file}')
+    with open(out_file, 'wb') as f:
+        pickle.dump(data, f)
+
+
+def save_inference_data(samples, px, run_dir, fig_dir=None):
     if not isinstance(px, np.ndarray):
         px = np.array(px)
     if not isinstance(samples, np.ndarray):
         samples = np.array(samples)
 
-    num_blocks = samples.shape[0] // 50
-    means, errs = error_analysis(samples, num_blocks)
-    '''
-    dim = samples.shape[-1]
-    all_samples = samples.reshape((-1, dim))
+    samples_out_file = os.path.join(run_dir, f'samples_out.pkl')
+    px_out_file = os.path.join(run_dir, 'px_out.pkl')
+    _pickle_dump(samples, samples_out_file, name='samples')
+    _pickle_dump(px, px_out_file, name='probs')
 
-    components = all_samples.T
-    means = [i.mean() for i in components]
-    '''
+    means, errs, means_, samples_rs = error_analysis(samples, n=None)
+    #  means1, errs1, samples_bs1 = alt_error_analysis(samples, 100)
+    #  dim = samples.shape[-1]
+    #  samples_bs = np.array(samples_bs).reshape((dim, -1))
+    means_strs = [f'mean: {i:.4g} +/- {j:.4g}' for i, j in zip(means, errs)]
 
-    samples_out_file = os.path.join(out_dir, f'samples_out.pkl')
-    px_out_file = os.path.join(out_dir, 'px_out.pkl')
+    out_dir = run_dir if fig_dir is None else fig_dir
+    out_files = [os.path.join(out_dir, 'x_mean_histogram.pdf'),
+                 os.path.join(out_dir, 'y_mean_histogram.pdf')]
+    xlabels = ['mean, x', 'mean, y']
+    kwargs = {
+        'bins': 32,
+        'density': True,
+        'stacked': True,
+        'label': None,
+        'out_file': None,
+        'xlabel': None
+    }
+    if HAS_MATPLOTLIB:
+        for idx, x in enumerate(means_):
+            kwargs.update({
+                'label': means_strs[idx],
+                'out_file': out_files[idx],
+                'xlabel': xlabels[idx]
+            })
+            fig, ax = plt.subplots()
+            _ = plot_histogram(x.flatten(), ax=ax, **kwargs)
+            #  fig, ax = plt.subplots()
+            #  _ = ax.hist(x, bins=100, density=True, stacked=True,
+            #              #  range=(0.6, 0.9),
+            #              label=means_strs[idx])
+            #  _ = ax.legend(loc='best')
+            #  io.log(f'Saving histogram plot to: {out_files[idx]}')
+            #  _ = plt.savefig(out_files[idx], dpi=400, bbox_inches='tight')
 
-    io.log(f'Saving samples to: {samples_out_file}')
-    with open(samples_out_file, 'wb') as f:
-        pickle.dump(samples, f)
-
-    io.log(f'Saving output probabilities to: {px_out_file}')
-    with open(px_out_file, 'wb') as f:
-        pickle.dump(px, f)
+    #  num_blocks = samples.shape[0] // 50
+    #  means, errs = error_analysis(samples, num_blocks)
+    #  num_blocks1 = 50
+    #  means1, errs1 = error_analysis(samples, num_blocks1)
+    #  samplesT = samples.transpose((-1, 1, 0))
+    #  m_arr = []
+    #  e_arr = []
+    #  for component in samplesT:
+    #      m_arr.append(np.mean(component, dtype=np.float64))
+    #      e_arr.append(np.mean(sem(component), dtype=np.float64))
+    #
+    #  m_arr = np.array(m_arr)
+    #  e_arr = np.array(e_arr)
 
     means_file = os.path.join(out_dir, 'means.txt')
-    with open(means_file, 'a') as f:
-        _ = f.write(f'samples.shape: {samples.shape}\n')
-        _ = f.write(
-            f'Using blocked jackknife resampling, with {num_blocks} blocks.\n'
-        )
-        _ = f.write('Component averages:\n')
-        for mean, err in zip(means, errs):
-            _ = f.write(f'  {mean:.8g} +/- {err:.8g}\n')
+    write_means(samples, -1, means, errs, means_file)
+    #  write_means(samples, 100, means1, errs1, means_file)
+    #  write_means(samples, 0, m_arr, e_arr, means_file)
 
 
 def inference(runner, run_logger, **kwargs):
@@ -310,20 +430,19 @@ def inference(runner, run_logger, **kwargs):
 
         samples_out = np.array(run_logger.samples_arr)
         px_out = np.array(run_logger.px_arr)
-        out_dir = run_logger.run_dir
 
-        save_inference_data(samples_out, px_out, out_dir)
+        log_dir = os.path.dirname(run_logger.runs_dir)
+        run_dir = run_logger.run_dir
+        basename = os.path.basename(run_dir)
+        figs_dir = os.path.join(log_dir, 'figures')
+        fig_dir = os.path.join(figs_dir, basename)
+        _ = [io.check_else_make_dir(d) for d in [figs_dir, fig_dir]]
+
+        save_inference_data(samples_out, px_out, run_dir, fig_dir)
 
         if HAS_MATPLOTLIB:
             log_dir = os.path.dirname(run_logger.runs_dir)
             distribution = recreate_distribution(log_dir)
-
-            figs_root_dir = os.path.join(log_dir, 'figures')
-            basename = os.path.basename(run_logger.run_dir)
-            figs_dir = os.path.join(figs_root_dir, basename)
-
-            io.check_else_make_dir(figs_root_dir)
-            io.check_else_make_dir(figs_dir)
 
             plot_kwargs = {
                 'out_file': os.path.join(figs_dir, 'single_l2hmc_chain.pdf'),
@@ -334,6 +453,10 @@ def inference(runner, run_logger, **kwargs):
             }
 
             _ = _gmm_plot(distribution, samples_out[:, 0], **plot_kwargs)
+            #  try:
+            #      _gmm_plot3d(distribution, samples_out[:, 0], **plot_kwargs)
+            #  except:
+            #      import pudb; pudb.set_trace()
 
             plot_kwargs = {
                 'nrows': 3,

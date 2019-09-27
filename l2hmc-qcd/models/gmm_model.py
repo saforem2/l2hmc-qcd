@@ -112,11 +112,11 @@ class GaussianMixtureModel(BaseModel):
         if params is None:
             params = GMM_PARAMS  # default parameters, defined in `config.py`.
 
-        self.params = params
-        for key, val in self.params.items():
-            setattr(self, key, val)
+        #  self.params = params
+        #  for key, val in self.params.items():
+        #      setattr(self, key, val)
 
-        self.eps_trainable = not self.eps_fixed
+        #  self.eps_trainable = not self.eps_fixed
         self.build(params)
 
     def build(self, params=None):
@@ -221,9 +221,11 @@ class GaussianMixtureModel(BaseModel):
 
                 if self.use_gaussian_loss:
                     self.loss_op = self.gaussian_loss(x_data, z_data)
+
                 elif self.use_nnehmc_loss:
                     x_hmc_prob = x_dynamics['accept_prob_hmc']
                     self.loss_op = self.nnehmc_loss(x_data, x_hmc_prob)
+
                 else:
                     self.loss_op = self.calc_loss(x_data, z_data)
 
@@ -368,12 +370,8 @@ class GaussianMixtureModel(BaseModel):
         return self._gaussian_loss(x_data, z_data, mean=0., sigma=1.)
 
     def nnehmc_loss(self, x_data, hmc_prob, beta=1.):
-        """Calculate the NNEHMC loss."""
-        x_in, x_proposed, accept_prob = x_data
-        x_esjd = self._calc_esjd(x_in, x_proposed, accept_prob)
-
-        return tf.reduce_mean(- x_esjd - beta * hmc_prob)
-
+        """Calculate the NNEHMC loss via `self._nnehmc_loss` in `BaseModel`."""
+        return self._nnehmc_loss(x_data, hmc_prob, beta=beta)
     def _parse_dynamics_output(self, dynamics_output):
         """Parse output dictionary from `self.dynamics.apply_transition."""
         if self.save_lf:
