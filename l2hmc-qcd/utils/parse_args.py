@@ -357,6 +357,14 @@ def parse_args():
                         help=("""Flag that when passed will profile the graph
                               execution using `TFProf`."""))
 
+    parser.add_argument("--global_seed",
+                        dest='global_seed',
+                        type=int,
+                        default=42,
+                        required=False,
+                        help=("""Sets global seed to ensure
+                              reproducibility."""))
+
     parser.add_argument("--gpu",
                         dest="gpu",
                         action="store_true",

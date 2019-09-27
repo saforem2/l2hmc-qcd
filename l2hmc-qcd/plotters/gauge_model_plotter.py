@@ -161,6 +161,7 @@ class GaugeModelPlotter:
         sw, translw, transfw = nw
         title_str = (r"$N_{\mathrm{LF}} = $" + f"{lf_steps}, "
                      r"$N_{\mathrm{B}} = $" + f"{bs}, "
+                     r"$\beta =$" + f"{beta:.2g}, "
                      r"$\mathrm{nw} = $" + (f"{nw[0]:.3g}, "
                                             f"{nw[1]:.3g}, "
                                             f"{nw[2]:.3g}"))
