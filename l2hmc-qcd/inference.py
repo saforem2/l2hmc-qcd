@@ -462,11 +462,7 @@ def run_inference(runner, run_logger=None, plotter=None, **kwargs):
     if plotter is None or run_logger is None:
         return
 
-    #  dir_append = kwargs.get('dir_append', None)
-    #  avg_plaq_diff_arr = []
-    #  m_arr = []
     args = (runner, run_logger, plotter)
-
     src = os.path.join(run_logger.log_dir, 'plaq_diffs_data.txt')
     if os.path.isfile(src):
         dst = os.path.join(run_logger.log_dir, 'plaq_diffs_data_orig.txt')
@@ -478,11 +474,6 @@ def run_inference(runner, run_logger=None, plotter=None, **kwargs):
     else:  # looping over different values of net_weights
         nw_arr = kwargs.get('net_weights', None)
         zero_weights, q_weights, t_weights, s_weights, stq_weights = nw_arr
-        #  net_weights_arr = np.array([zero_weights.tolist(),
-        #                              *q_weights.tolist(),
-        #                              *t_weights.tolist(),
-        #                              *s_weights.tolist(),
-        #                              stq_weights.tolist()])
 
         kwargs.update({'net_weights': zero_weights})
         inference(*args, **kwargs)
