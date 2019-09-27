@@ -370,12 +370,8 @@ class GaussianMixtureModel(BaseModel):
         return self._gaussian_loss(x_data, z_data, mean=0., sigma=1.)
 
     def nnehmc_loss(self, x_data, hmc_prob, beta=1.):
-        """Calculate the NNEHMC loss."""
-        x_in, x_proposed, accept_prob = x_data
-        x_esjd = self._calc_esjd(x_in, x_proposed, accept_prob)
-
-        return tf.reduce_mean(- x_esjd - beta * hmc_prob)
-
+        """Calculate the NNEHMC loss via `self._nnehmc_loss` in `BaseModel`."""
+        return self._nnehmc_loss(x_data, hmc_prob, beta=beta)
     def _parse_dynamics_output(self, dynamics_output):
         """Parse output dictionary from `self.dynamics.apply_transition."""
         if self.save_lf:

@@ -1,11 +1,19 @@
-"""
+'''
 base_model.py
 
 Implements BaseModel class.
 
+# noqa: E501
+
+
+References:
+-----------
+[1] https://infoscience.epfl.ch/record/264887/files/robust_parameter_estimation.pdf 
+
+
 Author: Sam Foreman (github: @saforem2)
 Date: 08/28/2019
-"""
+'''
 from __future__ import division
 from __future__ import print_function
 from __future__ import absolute_import
@@ -291,6 +299,13 @@ class BaseModel:
             gaussian_loss = tf.add(x_loss, z_loss, name='gaussian_loss')
 
         return gaussian_loss
+
+    def _nnehmc_loss(self, x_data, hmc_prob, beta=1.):
+        """Calculate the NNEHMC loss from [1] (line 10)."""
+        x_in, x_proposed, accept_prob = x_data
+        x_esjd = self._calc_esjd(x_in, x_proposed, accept_prob)
+
+        return tf.reduce_mean(- x_esjd - beta * hmc_prob)
 
     def _check_reversibility(self):
         x_in = tf.random_normal(self.x.shape,
