@@ -92,6 +92,7 @@ def make_summaries_from_collection(collection, names):
         pass
 
 
+'''
 def _create_loss_summaries(total_loss):
     """Add summaries for losses in GaugeModel.
 
@@ -131,6 +132,7 @@ def _create_loss_summaries(total_loss):
                           loss_averages.average(total_loss))
 
     return loss_averages_op
+'''
 
 
 def _create_training_summaries(model):
@@ -248,6 +250,14 @@ def _create_l2hmc_summaries(model):
             variable_summaries(model.logdets_b)
 
 
+def _loss_summaries():
+    loss_ops = tf.get_collection('losses')[0]
+    names = ['gaussian_loss', 'nnehmc_loss', 'total_loss']
+    with tf.name_scope('losses'):
+        for name, op in zip(names, loss_ops):
+            tf.summary.scalar(name, op)
+
+
 def create_summaries(model, summary_dir, training=True):
     """Create summary objects for logging in TensorBoard."""
     summary_writer = tf.contrib.summary.create_file_writer(summary_dir)
@@ -266,6 +276,9 @@ def create_summaries(model, summary_dir, training=True):
 
     # log S, T, Q functions (forward/backward)
     _create_l2hmc_summaries(model)
+
+    if model.use_gaussian_loss:
+        _loss_summaries()
 
     #  _ = _create_loss_summaries(model.loss_op)
 
