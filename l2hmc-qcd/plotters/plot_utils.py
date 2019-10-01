@@ -16,9 +16,9 @@ import pandas as pd
 import scipy.stats as st
 
 from scipy.stats import multivariate_normal
-from mpl_toolkits.mplot3d import Axes3D
 
 import utils.file_io as io
+#  from mpl_toolkits.mplot3d import Axes3D
 
 MPL_PARAMS = {
     #  'backend': 'ps',
@@ -104,6 +104,36 @@ def _get_plaq_diff_data(log_dir):
     return data
 
 
+def plot_acl_spectrum(acl_spectrum, **kwargs):
+    """Make plot of autocorrelation spectrum.
+
+    Args:
+        acl_spectrum (array-like): Autocorrelation spectrum data.
+
+    Returns:
+        fig, ax (tuple of matplotlib `Figure`, `Axes` objects)
+    """
+    nx = kwargs.get('nx', None)
+    label = kwargs.get('label', None)
+    out_file = kwargs.get('out_file', None)
+
+    if nx is None:
+        nx = (acl_spectrum.shape[0] + 1) // 10
+
+    xaxis = 10 * np.arange(nx)
+
+    fig, ax = plt.subplots()
+    _ = ax.plot(xaxis, np.abs(acl_spectrum[:nx]), label=label)
+    _ = ax.set_xlabel('Gradient computations')
+    _ = ax.set_ylabel('Auto-correlation')
+
+    if out_file is not None:
+        io.log(f'Saving figure to: {out_file}.')
+        _ = plt.savefig(out_file, bbox_inches='tight')
+
+    return fig, ax
+
+
 def plot_histogram(data, ax=None, **kwargs):
     if ax is None:
         fig, ax = plt.subplots()
@@ -131,7 +161,7 @@ def plot_histogram(data, ax=None, **kwargs):
 
     if out_file is not None:
         io.log(f'Saving histogram plot to: {out_file}')
-        _ = plt.savefig(out_file, dpi=400, bbox_inches='tight')
+        _ = plt.savefig(out_file, bbox_inches='tight')
 
     return ax
 
@@ -149,7 +179,10 @@ def plot_gaussian_contours(mus, covs, ax=None, **kwargs):
     Returns:
         plt (???)
     """
-    ax = ax or plt.gca()
+    #  ax = ax or plt.gca()
+    if ax is None:
+        ax = plt.gca()
+
     xlims = kwargs.get('xlims', None)
     ylims = kwargs.get('ylims', None)
     res = kwargs.get('res', 100)
@@ -179,7 +212,9 @@ def plot_gaussian_contours(mus, covs, ax=None, **kwargs):
 
 def draw_ellipse(position, covariance, ax=None, cmap=None, N=4, **kwargs):
     """Draw an ellipse with a given position and covariance"""
-    ax = ax or plt.gca()
+    #  ax = ax or plt.gca()
+    if ax is None:
+        ax = plt.gca()
 
     if cmap is not None:
         color_arr = get_cmap(N=N, cmap=cmap)
@@ -199,6 +234,8 @@ def draw_ellipse(position, covariance, ax=None, cmap=None, N=4, **kwargs):
     for idx, nsig in enumerate(range(1, N)):
         ax.add_patch(Ellipse(position, nsig * width, nsig * height, angle,
                              color=color_arr[idx], **kwargs))
+
+    return ax
 
 
 def get_lims(samples):
@@ -271,7 +308,7 @@ def _gmm_plot3d(distribution, samples, **kwargs):
     _ = ax.set_zlim((-0.1, zlim[1]))
 
     if out_file is not None:
-        plt.savefig(out_file, dpi=400, bbox_inches='tight')
+        plt.savefig(out_file, bbox_inches='tight')
 
     return fig, ax
 
@@ -288,7 +325,7 @@ def _gmm_plot(distribution, samples, ax=None, **kwargs):
         Returns:
             fig, axes (output from plt.subplots(..))
     """
-    ax = ax or plt.gca()
+    #  ax = ax or plt.gca()
     cmap = kwargs.get('cmap', None)
     num_points = kwargs.get('num_points', 2000)
     ellipse = kwargs.get('ellipse', True)
@@ -305,6 +342,9 @@ def _gmm_plot(distribution, samples, ax=None, **kwargs):
     #  else:
     #      lc = 'k'
 
+    if ax is None:
+        fig, ax = plt.subplots()
+
     mus = distribution.mus
     sigmas = distribution.sigmas
     pis = distribution.pis
@@ -315,19 +355,19 @@ def _gmm_plot(distribution, samples, ax=None, **kwargs):
     if ellipse:
         w_factor = 0.2 / np.max(pis)
         for pos, covar, w in zip(mus, sigmas, pis):
-            _ = draw_ellipse(pos, covar,
-                             ax=ax,
-                             cmap=cmap,
-                             N=num_contours,
-                             alpha=w * w_factor,
-                             fill=fill)
+            ax = draw_ellipse(pos, covar,
+                              ax=ax,
+                              cmap=cmap,
+                              N=num_contours,
+                              alpha=w * w_factor,
+                              fill=fill)
     else:
-        _ = plot_gaussian_contours(mus, sigmas,
-                                   xlims=xlims,
-                                   ylims=ylims,
-                                   ax=ax,
-                                   cmap=cmap,
-                                   fill=fill)
+        ax = plot_gaussian_contours(mus, sigmas,
+                                    xlims=xlims,
+                                    ylims=ylims,
+                                    ax=ax,
+                                    cmap=cmap,
+                                    fill=fill)
 
     _ = ax.plot(samples[:num_points, 0], samples[:num_points, 1],
                 marker=',', ls=ls, color=line_color, alpha=0.4)  # , zorder=2)
@@ -343,7 +383,7 @@ def _gmm_plot(distribution, samples, ax=None, **kwargs):
 
     if out_file is not None:
         io.log(f'Saving figure to: {out_file}.')
-        plt.savefig(out_file, dpi=400, bbox_inches='tight')
+        plt.savefig(out_file, bbox_inches='tight')
 
     return ax
 
@@ -428,7 +468,7 @@ def gmm_plot(distribution, samples, **kwargs):
 
     if out_file is not None:
         print(f'Saving figure to: {out_file}.')
-        plt.savefig(out_file, dpi=400, bbox_inches='tight')
+        plt.savefig(out_file, bbox_inches='tight')
 
     return fig, axes
 
@@ -470,7 +510,7 @@ def plot_plaq_diffs_vs_net_weights(log_dir, **kwargs):
     ext = kwargs.get('ext', 'pdf')
     out_file = os.path.join(figs_dir, f'plaq_diff_vs_net_weights.{ext}')
     io.log(f'Saving figure to: {out_file}.')
-    plt.savefig(out_file, dpi=400, bbox_inches='tight')
+    plt.savefig(out_file, bbox_inches='tight')
 
     return fig, ax
 
@@ -537,7 +577,7 @@ def plot_multiple_lines(data, xy_labels, **kwargs):
         out_dir = os.path.dirname(out_file)
         io.check_else_make_dir(out_dir)
         io.log(f'Saving figure to {out_file}.')
-        fig.savefig(out_file, dpi=400, bbox_inches='tight')
+        fig.savefig(out_file, bbox_inches='tight')
 
     if ret:
         return fig, ax
@@ -639,7 +679,7 @@ def plot_with_inset(data, labels=None, **kwargs):
         out_dir = os.path.dirname(out_file)
         io.check_else_make_dir(out_dir)
         io.log(f'Saving figure to {out_file}.')
-        fig.savefig(out_file, dpi=400, bbox_inches='tight')
+        fig.savefig(out_file, bbox_inches='tight')
 
     if ret:
         return fig, ax, axins
