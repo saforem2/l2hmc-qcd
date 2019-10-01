@@ -210,10 +210,8 @@ def main(FLAGS):
 
 if __name__ == '__main__':
     FLAGS = GMM_PARAMS
-
-    set_seed(FLAGS.global_seed)
-
     args = parse_gmm_args()
+    set_seed(args.global_seed)
     FLAGS.update(args.__dict__)
     t0 = time.time()
     main(FLAGS)
