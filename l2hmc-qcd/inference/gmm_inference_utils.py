@@ -5,7 +5,7 @@ import pickle
 
 from config import HAS_HOROVOD, HAS_MATPLOTLIB
 from update import set_precision
-from plotters.plot_utils import plot_histogram
+from plotters.plot_utils import plot_histogram, plot_acl_spectrum
 
 import numpy as np
 import tensorflow as tf
@@ -389,6 +389,7 @@ def save_inference_data(samples, px, run_dir, fig_dir, acl=True):
             _ = plot_histogram(x.flatten(), ax=ax, **kwargs)
 
         if acl:
+            '''
             nx = (spectrum.shape[0] + 1) // 10
             xaxis = 10 * np.arange(nx)
             fig, ax = plt.subplots()
@@ -398,3 +399,9 @@ def save_inference_data(samples, px, run_dir, fig_dir, acl=True):
             out_file = os.path.join(fig_dir, 'autocorrelation_spectrum.pdf')
             io.log(f'Saving figure to: {out_file}.')
             _ = plt.savefig(out_file, bbox_inches='tight')
+            '''
+            kwargs = {
+                'out_file': os.path.join(fig_dir,
+                                         'autocorrelation_spectrum.pdf')
+            }
+            fig, ax = plot_acl_spectrum(spectrum, **kwargs)
