@@ -277,7 +277,7 @@ def create_summaries(model, summary_dir, training=True):
     # log S, T, Q functions (forward/backward)
     _create_l2hmc_summaries(model)
 
-    if model.use_gaussian_loss:
+    if model.use_gaussian_loss and model.use_nnehmc_loss:
         _loss_summaries()
 
     #  _ = _create_loss_summaries(model.loss_op)
