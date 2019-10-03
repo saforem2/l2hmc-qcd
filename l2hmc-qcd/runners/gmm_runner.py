@@ -117,6 +117,8 @@ class GaussianMixtureModelRunner:
             if has_logger:
                 self.logger.update(self.sess, out_data,
                                    net_weights, data_str)
+        if has_logger:
+            self.logger._write_run_history()  # XXX
 
         #  if has_logger:
         #      self.logger.save_run_data(therm_frac=therm_frac)
