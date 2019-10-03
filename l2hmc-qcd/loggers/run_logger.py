@@ -68,7 +68,7 @@ class RunLogger:
                 "STEP", "t/STEP", "% ACC", "EPS", "BETA"
             )
         else:
-            self.model_type = 'gauge_model'
+            self.model_type = 'GaugeModel'
             h_strf = ("{:^12s}" + 8 * "{:^10s}").format(
                 "STEP", "t/STEP", "% ACC", "EPS", "BETA",
                 "ACTIONS", "PLAQS", "(EXACT)", "dQ"
@@ -129,7 +129,7 @@ class RunLogger:
 
         keys = ['x_out', 'px', 'dynamics_eps']
 
-        if model_type == 'gauge_model':
+        if model_type == 'GaugeModel':
             keys += ['actions_op', 'plaqs_op',
                      'avg_plaqs_op', 'charges_op',
                      'charge_diffs_op']
@@ -292,7 +292,7 @@ class RunLogger:
         self.run_stats = {}
         self.run_strings = []
 
-        if self.model_type == 'gauge_model':
+        if self.model_type == 'GaugeModel':
             obs_data = {
                 'actions': {},
                 'plaqs': {},
@@ -357,7 +357,7 @@ class RunLogger:
         beta = data['beta']
         key = (step, beta)
 
-        if self.model_type == 'gauge_model':
+        if self.model_type == 'GaugeModel':
             obs_keys = ['px', 'actions', 'plaqs', 'charges', 'charge_diffs']
             for k in obs_keys:
                 self.run_data[k][key] = data[k]
