@@ -250,12 +250,15 @@ def _create_l2hmc_summaries(model):
             variable_summaries(model.logdets_b)
 
 
-def _loss_summaries():
-    loss_ops = tf.get_collection('losses')[0]
-    names = ['gaussian_loss', 'nnehmc_loss', 'total_loss']
+def _loss_summaries(model):
     with tf.name_scope('losses'):
-        for name, op in zip(names, loss_ops):
-            tf.summary.scalar(name, op)
+        for key, val in model._losses_dict.items():
+            tf.summary.scalar(key, val)
+    #  loss_ops = tf.get_collection('losses')[0]
+    #  names = ['gaussian_loss', 'nnehmc_loss', 'total_loss']
+    #  with tf.name_scope('losses'):
+    #      for name, op in zip(names, loss_ops):
+    #          tf.summary.scalar(name, op)
 
 
 def create_summaries(model, summary_dir, training=True):
@@ -278,7 +281,7 @@ def create_summaries(model, summary_dir, training=True):
     _create_l2hmc_summaries(model)
 
     if model.use_gaussian_loss and model.use_nnehmc_loss:
-        _loss_summaries()
+        _loss_summaries(model)
 
     #  _ = _create_loss_summaries(model.loss_op)
 
