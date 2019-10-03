@@ -54,6 +54,17 @@ def parse_args():
                               is passed, `eps = None` and the optimal step size
                               (determined during training) will be used."""))
 
+    parser.add_argument('--bootstrap_iters',
+                        dest='bootstrap_iters',
+                        type=int,
+                        default=100,
+                        required=False,
+                        help=("""Number of bootstrap replication iterations to
+                              use for error analysis. Note that larger values
+                              will improve statistics at the cost of noticeable
+                              slowdown when running error analysis. (Default:
+                              100)."""))
+
     parser.add_argument("--run_steps",
                         dest="run_steps",
                         type=int,
