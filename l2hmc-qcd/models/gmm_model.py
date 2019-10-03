@@ -25,7 +25,7 @@ from base.base_model import BaseModel
 #  from .gauge_model import allclose
 from dynamics.dynamics import Dynamics
 from params.gmm_params import GMM_PARAMS
-from config import GLOBAL_SEED, TF_FLOAT, NP_FLOAT, HAS_HOROVOD
+from config import NP_FLOAT, HAS_HOROVOD
 
 if HAS_HOROVOD:
     import horovod.tensorflow as hvd  # noqa: 401
@@ -50,7 +50,7 @@ def distribution_arr(x_dim, num_distributions):
     return np.array(pis, dtype=NP_FLOAT)
 
 
-def ring_of_gaussians(num_modes, sigma, x_dim=2, radius=1.):
+def ring_of_gaussians(num_modes, sigma, r=1.):
     """Create ring of Gaussians for GaussianMixtureModel. 
 
     Args:
@@ -67,7 +67,7 @@ def ring_of_gaussians(num_modes, sigma, x_dim=2, radius=1.):
         distances (np.ndarray): Array of the differences between different
             modes. 
     """
-    covs, distribution = gen_ring(r=1., var=sigma, nb_mixtures=num_modes)
+    covs, distribution = gen_ring(r=r, var=sigma, nb_mixtures=num_modes)
     mus = np.array(distribution.mus)
     diffs = mus[1:] - mus[:-1, :]
     distances = [np.sqrt(np.dot(d, d.T)) for d in diffs]
@@ -122,7 +122,8 @@ class GaussianMixtureModel(BaseModel):
     def build(self, params=None):
         """Build TensorFlow graph."""
         params = self.params if params is None else params
-        num_distributions = params.get('num_distributions', 2)
+        self.num_distributions = params.get('num_distributions', 2)
+        #  aux_weight = getattr(self, 'aux_weight', 1.)
         use_gaussian_loss = getattr(self, 'use_gaussian_loss', False)
         use_nnehmc_loss = getattr(self, 'use_nnehmc_loss', False)
         self.use_gaussian_loss = use_gaussian_loss
@@ -132,199 +133,176 @@ class GaussianMixtureModel(BaseModel):
         io.log(80 * '-')
         io.log(f'INFO: Building graph for `GaussianMixtureModel`...')
         with tf.name_scope('init'):
-            # ***************************************************************
+            # ---------------------------------------------------------------
             # Create target distribution for Gaussian Mixture Model
             # ---------------------------------------------------------------
-            self.means = self._create_means(params)
-            self.sigmas, self.covs = self._create_covs(params)
-            self.pis = distribution_arr(self.x_dim, num_distributions)
-            self.distribution = GMM(self.means, self.covs, self.pis)
-            #  self.samples_init = self.distribution.get_samples(
-            #      self.batch_size
-            #  )
-            # ***************************************************************
+            means, covs, pis, distribution = self.create_distribution()
+            self.means = means
+            self.covs = covs
+            self.pis = pis
+            self.distribution = distribution
+            #  self.means = self._create_means(params)
+            #  self.sigmas, self.covs = self._create_covs(params)
+            #  self.pis = distribution_arr(self.x_dim, self.num_distributions)
+            #  self.distribution = GMM(self.means, self.covs, self.pis)
 
-            # ***********************************************
-            # Create inputs as `tf.placeholders`
-            # -----------------------------------------------
+            # ---------------------------------------------------------------
+            # Create inputs as to be fed values using `tf.placeholders`
+            # ---------------------------------------------------------------
             io.log(f'INFO: Creating input placeholders...')
             inputs = self._create_inputs()
-            self.inputs = inputs
             self.x = inputs['x']
             self.beta = inputs['beta']
             nw_keys = ['scale_weight', 'transl_weight', 'transf_weight']
             self.net_weights = [inputs[k] for k in nw_keys]
             self.train_phase = inputs['train_phase']
-            # ***********************************************
+            self.eps_ph = inputs['eps_ph']
+            self._inputs = inputs
 
-            # ***********************************************
-            # Create dynamics for running L2HMC leapfrog
-            # -----------------------------------------------
+            # ---------------------------------------------------------------
+            # Create dynamics for running augmented L2HMC leapfrog
+            # ---------------------------------------------------------------
             io.log(f'INFO: Creating `Dynamics`...')
             self.dynamics = self._create_dynamics()
+            # Create operation for assigning to `dynamics.eps` 
+            # the value fed into the placeholder `eps_ph`.
+            self.eps_setter = tf.assign(self.dynamics.eps,
+                                        self.eps_ph,
+                                        name='eps_setter')
 
-            # ***************************************************************
+            # ---------------------------------------------------------------
             # Create metric function for measuring 'distance' between configs
             # ---------------------------------------------------------------
             self.metric_fn = self._create_metric_fn()
 
         # *******************************************************************
-        # Run dynamics (i.e. augmented leapfrog) to generate new configs 
+        # Build sampler to generate new configs.
         # -------------------------------------------------------------------
-        with tf.name_scope('l2hmc'):
-            args = (self.beta, self.net_weights, self.train_phase)
-            slf = self.save_lf
-            hmc = True if self.use_nnehmc_loss else False
-
-            with tf.name_scope('main_dynamics'):
-                x_dynamics = self.dynamics.apply_transition(self.x, *args,
-                                                            save_lf=slf,
-                                                            hmc=hmc)
-            if not hmc and getattr(self, 'aux_weight', 1.) > 0:
-                with tf.name_scope('auxiliary_dynamics'):
-                    self.z = tf.random_normal(tf.shape(self.x),
-                                              dtype=TF_FLOAT,
-                                              seed=GLOBAL_SEED,
-                                              name='z')
-                    z_dynamics = self.dynamics.apply_transition(self.z, *args,
-                                                                save_lf=False,
-                                                                hmc=hmc)
-
-            self.x_out = x_dynamics['x_out']
-            self.px = x_dynamics['accept_prob']
-            self._parse_dynamics_output(x_dynamics)
-
-            with tf.name_scope('check_reversibility'):
-                self.x_diff, self.v_diff = self._check_reversibility()
-
-        with tf.name_scope('run_ops'):
-            io.log(f'INFO: Building `run_ops`...')
-            run_ops = self._build_run_ops()
-        # *******************************************************************
+        # NOTE: We use the `dynamics.apply_transition` method to run the
+        # augmented l2hmc leapfrog integrator and obtain new samples.
+        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        x_data, z_data = self._build_sampler()
 
         # *******************************************************************
         # Calculate loss_op and train_op to backprop. grads through network
         # -------------------------------------------------------------------
-        if not self.hmc:
-            with tf.name_scope('loss'):
-                io.log(f'INFO: Calculating loss function...')
-                x_data = LFdata(x_dynamics['x_in'],
-                                x_dynamics['x_proposed'],
-                                x_dynamics['accept_prob'])
+        with tf.name_scope('calc_loss'):
+            self.loss_op, self.losses_dict = self.calc_loss(x_data, z_data)
 
-                if not hmc and getattr(self, 'aux_weight', 1.) > 0:
-                    z_data = LFdata(z_dynamics['x_in'],
-                                    z_dynamics['x_proposed'],
-                                    z_dynamics['accept_prob'])
-                else:
-                    z_data = LFdata(0., 0., 0.)
+        # *******************************************************************
+        # Calculate gradients and build training operation
+        # -------------------------------------------------------------------
+        with tf.name_scope('train'):
+            io.log(f'INFO: Calculating gradients for backpropagation...')
+            self.grads = self._calc_grads(self.loss_op)
+            self.train_op = self._apply_grads(self.loss_op, self.grads)
+            train_ops = self._build_train_ops()
 
-                if self.use_gaussian_loss:
-                    self.loss_op = self.gaussian_loss(x_data, z_data)
+        # *******************************************************************
+        # Gather all operations needed to run inference on trained model
+        # -------------------------------------------------------------------
+        with tf.name_scope('run_ops'):
+            io.log(f'INFO: Building `run_ops`...')
+            run_ops = self._build_run_ops()
 
-                elif self.use_nnehmc_loss:
-                    x_hmc_prob = x_dynamics['accept_prob_hmc']
-                    self.loss_op = self.nnehmc_loss(x_data, x_hmc_prob)
-
-                else:
-                    self.loss_op = self.calc_loss(x_data, z_data)
-
-            with tf.name_scope('train'):
-                io.log(f'INFO: Calculating gradients for backpropagation...')
-                self.grads = self._calc_grads(self.loss_op)
-                self.train_op = self._apply_grads(self.loss_op, self.grads)
-
-        train_ops = self._build_train_ops()
-
+        # *******************************************************************
+        # FINISH UP: Make `run_ops` and `train_ops` collections, print time.
+        # -------------------------------------------------------------------
         self.ops_dict = {
             'run_ops': run_ops,
             'train_ops': train_ops
         }
 
-        # Make `run_ops` and `train_ops` collections w/ their respective ops.
         for key, val in self.ops_dict.items():
             for op in list(val.values()):
                 tf.add_to_collection(key, op)
 
-        io.log(f'INFO: Done building graph. Took: {time.time() - t0}s')
-        io.log(80 * '-')
-        # *******************************************************************
+        io.log(f'INFO: Done building graph. '
+               f'Took: {time.time() - t0}s\n' + 80 * '-')
 
     def _double_check(self, key, params, default_val=None):
         """Check if key is in params, else, check if `self.key` is defined."""
         return params.get(key, getattr(self, key, default_val))
 
-    def _create_means(self, params=None):
-        """Create means of target distribution."""
-        params = self.params if params is None else params
-        diag = self._double_check('diag', params, False)
+    def create_distribution(self):
+        """Create distribution."""
+        self.sigmas = self._get_sigmas()
 
-        means = np.zeros((self.x_dim, self.x_dim), dtype=NP_FLOAT)
-        if diag:
+        if self.arrangement == 'lattice':
+            sigma = np.max(self.sigmas)
+            L = int(np.sqrt(self.num_distributions))
+            distribution, means, covs, pis = lattice_of_gaussians(
+                self.num_distributions, sigma, self.x_dim, size=L
+            )
+
+        if self.arrangement == 'ring':
+            sigma = np.max(self.sigmas)
+            r = getattr(self, 'size', 1.)
+
+            distribution, mus, covs, pis = ring_of_gaussians(
+                self.num_distributions, sigma, r=r
+            )
+
+        else:
+            means = self._create_means()
+            covs = self._create_covs()
+            pis = distribution_arr(self.x_dim, self.num_distributions)
+            distribution = GMM(means, covs, pis)
+
+        return means, covs, pis, distribution
+
+    def _create_means(self):
+        """Create means of target distribution."""
+        #  params = self.params if params is None else params
+        #  diag = self._double_check('diag', params, False)
+        means = np.zeros((self.x_dim, self.x_dim))
+
+        if self.arrangement == 'diag':
             for i in range(self.x_dim):
                 means[i::self.x_dim, i] = self.center
-        else:
-            means = np.zeros((self.x_dim, self.x_dim))
+
+        if self.arrangement == 'yaxis':
+            means[::2, 1] = self.center
+            means[1::2, 1] = - self.center
+
+        if self.arrangement == 'xaxis':
             means[::2, 0] = self.center
             means[1::2, 0] = - self.center
 
+        else:
+            if self.arrangement not in ['xaxis', 'yaxis', 'diag']:
+                raise AttributeError(f'Invalid value for `self.arrangement`: '
+                                     f'{self.arrangement}. Expected one of: '
+                                     f"'xaxis', 'yaxis', 'diag', "
+                                     "'lattice', or 'ring'.")
+
         return means.astype(NP_FLOAT)
 
-    def _create_covs(self, params=None):
-        """Create covariance matrix from of individual covariance matrices."""
-        params = self.params if params is None else params
-        sigmas = self._double_check('sigmas', params, None)
+    def _get_sigmas(self):
+        """Get sigmas."""
+        sigmas = getattr(self, 'sigmas', None)
         if sigmas is None:
-            sigma = self._double_check('sigma', params, None)
+            sigma = getattr(self, 'sigma', None)
             if sigma is not None:
                 sigmas = sigma * np.ones(self.x_dim)
             else:
-                sigma1 = self._double_check('sigma1', params, 0.1)
-                sigma2 = self._double_check('sigma2', params, 0.1)
+                sigma1 = getattr(self, 'sigma1', 0.1)
+                sigma2 = getattr(self, 'sigma2', 0.1)
                 sigmas = np.array([sigma1, sigma2])
 
         sigmas = np.array(sigmas, dtype=NP_FLOAT)
+
+        return sigmas
+
+    def _create_covs(self):
+        """Create covariance matrix from of individual covariance matrices."""
+        #  params = self.params if params is None else params
+        #  sigmas = self._double_check('sigmas', params, None)
         covs = np.array(
-            [s * np.eye(self.x_dim) for s in sigmas], dtype=NP_FLOAT
+            [s * np.eye(self.x_dim) for s in self.sigmas], dtype=NP_FLOAT
         )
 
-        return sigmas, covs
-
-    def _create_distribution(self, sigmas, means=None):
-        """Initialize distribution using utils/distributions.py."""
-        diag = getattr(self, 'diag', False)
-
-        if means is None:
-            if self.center is None:
-                center = 1.
-            else:
-                center = self.center
-
-            means = np.zeros((self.x_dim, self.x_dim), dtype=NP_FLOAT)
-            if diag:
-                for i in range(self.x_dim):
-                    means[i::self.x_dim, i] = center
-            else:
-                means[::2, 0] = center
-                means[1::2, 0] = -center
-        else:
-            means = np.array(means).astype(NP_FLOAT)
-
-        if len(sigmas) > 1:
-            covs = np.array(
-                [s * np.eye(self.x_dim) for s in sigmas]
-            ).astype(NP_FLOAT)
-        else:
-            #  cov_mtx = sigmas * np.eye(self.x_dim).astype(NP_FLOAT)
-            covs = np.array(
-                [sigmas * np.eye(self.x_dim) for _ in self.x_dim]
-            ).astype(NP_FLOAT)
-            #  covs = np.array([cov_mtx] * self.x_dim).astype(NP_FLOAT)
-
-        dist_arr = distribution_arr(self.x_dim, self.num_distributions)
-        distribution = GMM(means, covs, dist_arr)
-
-        return means, covs, dist_arr, distribution
+        return covs
 
     def _create_dynamics(self, **params):
         """Create `Dynamics` object."""
@@ -362,16 +340,51 @@ class GaussianMixtureModel(BaseModel):
         return metric_fn
 
     def calc_loss(self, x_data, z_data):
-        """Calculate the total loss and return operation for calculating it."""
-        return self._calc_loss(x_data, z_data)
+        """Calculate the total loss from all terms."""
+        total_loss = 0.
+        ld = {}
+
+        if self.use_gaussian_loss:
+            gaussian_loss = self.gaussian_loss(x_data, z_data)
+            ld['gaussian'] = gaussian_loss
+            total_loss += gaussian_loss
+
+        if self.use_nnehmc_loss:
+            nnehmc_loss = self.nnehmc_loss(x_data, self.px_hmc)
+            ld['nnehmc'] = nnehmc_loss
+            total_loss += nnehmc_loss
+
+        # If not using either Gaussian loss or NNEHMC loss, use standard loss
+        if (not self.use_gaussian_loss) and (not self.use_nnehmc_loss):
+            std_loss = self._calc_loss(x_data, z_data)
+            ld['std'] = std_loss
+            total_loss += std_loss
+
+        tf.add_to_collection('losses', total_loss)
+
+        fd = {k: v / total_loss for k, v in ld.items()}
+
+        losses_dict = {}
+        for key in ld.keys():
+            losses_dict[key + '_loss'] = ld[key]
+            losses_dict[key + '_frac'] = fd[key]
+
+            tf.add_to_collection('losses', ld[key])
+
+        return total_loss, losses_dict
 
     def gaussian_loss(self, x_data, z_data):
         """Calculate the Gaussian loss and return op. for calculating it."""
-        return self._gaussian_loss(x_data, z_data, mean=0., sigma=1.)
+        #  mean = self._eps_np * self.num_steps
+        #  sigma = np.max(self.sigmas)
+        mean = 0.
+        sigma = 1.
+        return self._gaussian_loss(x_data, z_data, mean=mean, sigma=sigma)
 
     def nnehmc_loss(self, x_data, hmc_prob, beta=1.):
         """Calculate the NNEHMC loss via `self._nnehmc_loss` in `BaseModel`."""
         return self._nnehmc_loss(x_data, hmc_prob, beta=beta)
+
     def _parse_dynamics_output(self, dynamics_output):
         """Parse output dictionary from `self.dynamics.apply_transition."""
         if self.save_lf:
