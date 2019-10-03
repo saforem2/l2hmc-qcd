@@ -327,7 +327,7 @@ def _gmm_plot(distribution, samples, ax=None, **kwargs):
     """
     #  ax = ax or plt.gca()
     cmap = kwargs.get('cmap', None)
-    num_points = kwargs.get('num_points', 2000)
+    num_points = kwargs.get('num_points', 1000)
     ellipse = kwargs.get('ellipse', True)
     num_contours = kwargs.get('num_contours', 4)
     fill = kwargs.get('fill', False)
@@ -370,9 +370,12 @@ def _gmm_plot(distribution, samples, ax=None, **kwargs):
                                     fill=fill)
 
     _ = ax.plot(samples[:num_points, 0], samples[:num_points, 1],
-                marker=',', ls=ls, color=line_color, alpha=0.4)  # , zorder=2)
+                marker=',', ls=ls, lw=0.6, color=line_color, alpha=0.4)
     _ = ax.plot(samples[:num_points, 0], samples[:num_points, 1],
                 marker=',', ls='', color='k', alpha=0.6)  # , zorder=3)
+    _ = ax.plot(samples[0, 0], samples[0, 1],
+                marker='X', ls='', color='r', alpha=1.,
+                markersize=1.5, zorder=10)
 
     _ = ax.axis(axis_scale)
     _ = ax.set_xlim(xlims)
@@ -405,7 +408,7 @@ def gmm_plot(distribution, samples, **kwargs):
     out_file = kwargs.get('out_file', None)
     title = kwargs.get('title', None)
     cmap = kwargs.get('cmap', None)
-    num_points = kwargs.get('num_points', 5000)
+    num_points = kwargs.get('num_points', 2000)
     ellipse = kwargs.get('ellipse', True)
     num_contours = kwargs.get('num_contours', 4)
     axis_scale = kwargs.get('axis_scale', 'equal')
@@ -444,10 +447,14 @@ def gmm_plot(distribution, samples, **kwargs):
 
             _ = ax.plot(samples[:num_points, idx, 0],
                         samples[:num_points, idx, 1],
-                        marker=',', ls='-',  color=lc, alpha=0.4, zorder=2)
+                        marker=',', ls='-', lw=0.6,
+                        color=lc, alpha=0.4, zorder=2)
             _ = ax.plot(samples[:num_points, idx, 0],
                         samples[:num_points, idx, 1],
                         marker=',', ls='', color='k', alpha=0.6, zorder=2)
+            _ = ax.plot(samples[0, idx, 0], samples[0, idx, 1],
+                        marker='X', ls='', color='r',
+                        alpha=1., markersize=1.5, zorder=10)
             _ = ax.axis(axis_scale)
             _ = ax.set_xticks([])
             _ = ax.set_yticks([])
