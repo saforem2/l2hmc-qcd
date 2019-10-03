@@ -46,9 +46,38 @@ if float(tf.__version__.split('.')[0]) <= 2:
 SEP_STR = 80 * '-'
 
 
+'''
+def set_num_steps(sess, num_steps, run_ops, inputs, graph=None):
+    """Seet the number of leapfrog steps to `num_steps`. """
+    if graph is None:
+        graph = tf.get_default_graph()
+
+    num_steps_setter = graph.get_operation_by_name('init/num_steps_setter')
+    num_steps_tensor = [i for i in run_
+'''
+
+
+def set_eps(sess, eps, run_ops, inputs, graph=None):
+    if graph is None:
+        graph = tf.get_default_graph()
+
+    eps_setter = graph.get_operation_by_name('init/eps_setter')
+    eps_tensor = [i for i in run_ops if 'eps' in i.name][0]
+    eps_ph = [i for i in inputs if 'eps_ph' in i.name][0]
+
+    eps_np = sess.run(eps_tensor)
+    io.log(f'INFO: Original value of `eps`: {eps_np}')
+    io.log(f'INFO: Setting `eps` to: {eps}.')
+    sess.run(eps_setter, feed_dict={eps_ph: eps})
+    eps_np = sess.run(eps_tensor)
+
+    io.log(f'INFO: New value of `eps`: {eps_np}')
+
+
 def inference(runner, run_logger, **kwargs):
     run_steps = kwargs.get('run_steps', 5000)
     nw = kwargs.get('net_weights', [1., 1., 1.])
+    bs_iters = kwargs.get('bs_iters', 200)
     beta = kwargs.get('beta', 1.)
     eps = kwargs.get('eps', None)
     if eps is None:
@@ -85,26 +114,31 @@ def inference(runner, run_logger, **kwargs):
         fig_dir = os.path.join(figs_dir, basename)
         _ = [io.check_else_make_dir(d) for d in [figs_dir, fig_dir]]
 
-        save_inference_data(samples_out, px_out, run_dir, fig_dir)
+        save_inference_data(samples_out, px_out, run_dir, fig_dir,
+                            bs_iters=bs_iters)
 
         if HAS_MATPLOTLIB:
             log_dir = os.path.dirname(run_logger.runs_dir)
             distribution = recreate_distribution(log_dir)
 
+            title = (r"""$\varepsilon = $""" + f'{eps:.3g} '
+                     + r"""$\langle p_{x} \rangle= $"""
+                     + f'{np.mean(px_out[:, -1]):.3g}')
+
             plot_kwargs = {
-                'out_file': os.path.join(fig_dir, 'single_l2hmc_chain.pdf'),
+                'out_file': os.path.join(fig_dir, 'single_chain.pdf'),
                 'fill': False,
                 'ellipse': False,
                 'ls': '-',
                 'axis_scale': 'scaled',
+                'title': title,
             }
 
-            _ = _gmm_plot(distribution, samples_out[:, 0], **plot_kwargs)
+            _ = _gmm_plot(distribution, samples_out[:, -1], **plot_kwargs)
 
             plot_kwargs = {
-                'nrows': 3,
-                'ncols': 3,
-                'num_points': 1000,
+                'nrows': 2,
+                'ncols': 2,
                 'ellipse': False,
                 'out_file': os.path.join(fig_dir, 'inference_plot.pdf'),
                 'axis_scale': 'equal',
@@ -143,6 +177,11 @@ def main(kwargs):
     run_ops = tf.get_collection('run_ops')
     inputs = tf.get_collection('inputs')
 
+    eps = kwargs.get('eps', None)
+    if eps is not None:
+        graph = tf.get_default_graph()
+        set_eps(sess, eps, run_ops, inputs, graph)
+
     scale_weight = kwargs.get('scale_weight', 1.)
     translation_weight = kwargs.get('translation_weight', 1.)
     transformation_weight = kwargs.get('transformation_weight', 1.)
@@ -160,11 +199,15 @@ def main(kwargs):
                                         inputs, run_ops,
                                         run_logger)
 
+    # NUMBER OF BOOTSTRAP REPLICATIONS TO USE IN ERROR ANALYSIS
+    bs_iters = kwargs.get('bootstrap_iters', 100)
+
     inference_kwargs = {
         'run_steps': kwargs.get('run_steps', 5000),
         'net_weights': net_weights,
         'beta': beta,
-        'eps': kwargs.get('eps', None),
+        'eps': eps,
+        'num_iters': bs_iters,
     }
 
     runner, run_logger = inference(runner, run_logger, **inference_kwargs)
@@ -173,7 +216,8 @@ def main(kwargs):
         'run_steps': kwargs.get('run_steps', 5000),
         'net_weights': [0., 0., 0.],
         'beta': beta,
-        'eps': kwargs.get('eps', None),
+        'eps': eps,
+        'num_iters': bs_iters,
     }
     runner, run_logger = inference(runner, run_logger, **hmc_inference_kwargs)
 
