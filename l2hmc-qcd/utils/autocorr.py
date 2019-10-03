@@ -16,65 +16,7 @@ Author: Sam Foreman (twitter/github @saforem2)
 ==============================================================================
 """
 # pylint:disable=invalid-name
-import logging
 import numpy as np
-
-
-def autocorr_fast(X, kappa=500):
-    """Compute the autocorrelation curve of X using FFT's."""
-    # The autocorrelation has to be truncated at some point so there are enough
-    # data points constructing each lag. Let kappa be the cutoff.
-    X = X - np.mean(X)
-    N = len(X)
-    fvi = np.fft.fft(X, n=2*N)
-    autocorr = np.real(np.fft.ifft(fvi * np.conjugate(fvi))[:N])
-    autocorr /= N - np.arange(N)
-    autocorr /= autocorr[0]
-    autocorr = autocorr[:kappa]
-    return autocorr
-
-def autocorr(X):
-    """Alternative method for calculating the autocorrelation spectrum."""
-    result = np.correlate(X, X, mode='full')
-    result /= result[result.argmax()]
-    return result[result.size//2:]
-
-def autocovariance(X, tau=0):
-    """Compute the autocovariance of X[t] and X[t + tau]."""
-    if not isinstance(X, np.ndarray):
-        X = np.array(X)
-    dT, dN, dX = np.shape(X)
-
-    s = 0.
-    for t in range(dT - tau):
-        x1 = X[t, :, :]
-        x2 = X[t + tau, :, :]
-
-        s += np.sum(x1 * x2) / dN
-
-    return s / (dT - tau)
-
-def acl_spectrum(X, scale):
-    """Compute the autocorrelation spectrum of X."""
-    if not isinstance(X, np.ndarray):
-        X = np.array(X)
-
-    n = X.shape[0]
-    return np.array([autocovariance(X / scale, tau=t) for t in range(n-1)])
-
-def calc_ESS(acl_spectrum):
-    """Compute the expected sample size from an autocorrelation spectrum."""
-    acl_spectrum = acl_spectrum * (acl_spectrum > 0.05)
-
-    return 1. / (1. + 2 * np.sum(acl_spectrum[1:]))
-
-def calc_iat(X, kappa=500):
-    """Calculates the autocorrelation curve and integrated autocorrelation time
-    (IAC) of X."""
-    # autocorr is the UNintegrated autocorrelation curve
-    autocorr = autocorr_fast(X, kappa)
-    tau = 1 + 2 * np.sum(autocorr)
-    return tau, autocorr
 
 
 ###############################################################################
@@ -88,12 +30,14 @@ def next_pow_two(n):
         i = i << 1
     return i
 
+
 def autocorr_gw2010(y, c=5.0):
     """Following the approach described in Goodman & Weare (2010)."""
     f = autocorr_func_1d(np.mean(y, axis=0))
     taus = 2. * np.cumsum(f) - 1.0
     window = auto_window(taus, c)
     return taus[window]
+
 
 def autocorr_new(y, c=5.0):
     f = np.zeros(y.shape[1])
@@ -103,6 +47,7 @@ def autocorr_new(y, c=5.0):
     taus = 2. * np.cumsum(f) - 1.
     window = auto_window(taus, c)
     return taus[window]
+
 
 def autocorr_func_1d(x):
     """Estimate the normalized autocorrelation function of a 1-D series.
@@ -124,11 +69,13 @@ def autocorr_func_1d(x):
 
     return acf
 
+
 def auto_window(taus, c):
     m = np.arange(len(taus)) < c * taus
     if np.any(m):
         return np.argmin(m)
     return len(taus) - 1
+
 
 def integrated_time(x, c=5, tol=50, quiet=False):
     """Estimate the integrated autocorrelation time of a time series.
@@ -197,6 +144,7 @@ def integrated_time(x, c=5, tol=50, quiet=False):
 
     return tau_est, _flag
 
+
 class AutocorrError(Exception):
     """Raised if the chain is too short to estimate an autocorrelation time.
     The current estimate of the autocorrelation time can be accessed via the
@@ -206,3 +154,51 @@ class AutocorrError(Exception):
         self.tau = tau
 
         super(AutocorrError, self).__init__(*args, **kwargs)
+
+
+'''
+def autocorr_fast(X, kappa=500):
+    """Compute the autocorrelation curve of X using FFT's."""
+    # The autocorrelation has to be truncated at some point so there are enough
+    # data points constructing each lag. Let kappa be the cutoff.
+    X = X - np.mean(X)
+    N = len(X)
+    fvi = np.fft.fft(X, n=2*N)
+    autocorr = np.real(np.fft.ifft(fvi * np.conjugate(fvi))[:N])
+    autocorr /= N - np.arange(N)
+    autocorr /= autocorr[0]
+    autocorr = autocorr[:kappa]
+    return autocorr
+
+
+def autocorr(X):
+    """Alternative method for calculating the autocorrelation spectrum."""
+    result = np.correlate(X, X, mode='full')
+    result /= result[result.argmax()]
+    return result[result.size//2:]
+
+
+def autocovariance(X, tau=0):
+    """Compute the autocovariance of X[t] and X[t + tau]."""
+    if not isinstance(X, np.ndarray):
+        X = np.array(X)
+    dT, dN, dX = np.shape(X)
+
+    s = 0.
+    for t in range(dT - tau):
+        x1 = X[t, :, :]
+        x2 = X[t + tau, :, :]
+
+        s += np.sum(x1 * x2) / dN
+
+    return s / (dT - tau)
+
+
+def acl_spectrum(X, scale):
+    """Compute the autocorrelation spectrum of X."""
+    if not isinstance(X, np.ndarray):
+        X = np.array(X)
+
+    n = X.shape[0]
+    return np.array([autocovariance(X / scale, tau=t) for t in range(n-1)])
+'''
