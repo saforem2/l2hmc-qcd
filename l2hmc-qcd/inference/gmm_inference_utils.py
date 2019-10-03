@@ -188,7 +188,7 @@ def bootstrap_resample(x, n=None):
     return x_rs
 
 
-def error_analysis(samples, n=None, num_iters=100):
+def error_analysis(samples, n=None, bs_iters=500):
     if not isinstance(samples, np.ndarray):
         samples = np.array(samples)
 
@@ -198,7 +198,7 @@ def error_analysis(samples, n=None, num_iters=100):
     #  errs_arr = []
     for component in samplesT:
         x_arr = []
-        for _ in range(num_iters):
+        for _ in range(bs_iters):
             x_rs = [bootstrap_resample(x, n) for x in component]
             x_arr.append(x_rs)
         samples_rs.append(x_arr)
@@ -335,7 +335,8 @@ def _pickle_dump(data, out_file, name=None):
         pickle.dump(data, f)
 
 
-def save_inference_data(samples, px, run_dir, fig_dir, acl=True):
+def save_inference_data(samples, px, run_dir, fig_dir,
+                        acl=True, bs_iters=100):
     if not isinstance(px, np.ndarray):
         px = np.array(px)
     if not isinstance(samples, np.ndarray):
@@ -346,11 +347,18 @@ def save_inference_data(samples, px, run_dir, fig_dir, acl=True):
     _pickle_dump(samples, samples_out_file, name='samples')
     _pickle_dump(px, px_out_file, name='probs')
 
-    means, errs, means_, samples_rs = error_analysis(samples, n=None)
-    #  means1, errs1, samples_bs1 = alt_error_analysis(samples, 100)
-    #  dim = samples.shape[-1]
-    #  samples_bs = np.array(samples_bs).reshape((dim, -1))
+    warmup_steps = samples.shape[0] // 20
+    io.log(f'INFO: Ignoring first {warmup_steps} steps for thermalization...')
+    io.log(f'INFO: Using (naive) `np.mean` and `np.std`:')
+    x_mean, y_mean = samples[warmup_steps:].mean(axis=(0, 1))
+    x_std, y_std = samples[warmup_steps:].std(axis=(0, 1))
+    io.log(f'x_mean: {x_mean:.3g} +/- {x_std:.3g}')
+    io.log(f'y_mean: {y_mean:.3g} +/- {y_std:.3g}')
+    means, errs, means_, samples_rs = error_analysis(samples[warmup_steps:],
+                                                     n=None, bs_iters=bs_iters)
+
     means_strs = [f'mean: {i:.4g} +/- {j:.4g}' for i, j in zip(means, errs)]
+    io.log(means_strs)
     means_file = os.path.join(run_dir, 'means.txt')
 
     write_means(samples, -1, means, errs, means_file)
