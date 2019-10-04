@@ -65,6 +65,16 @@ def parse_args():
                               slowdown when running error analysis. (Default:
                               100)."""))
 
+    parser.add_argument('--skip_acl',
+                        dest='skip_acl',
+                        action='store_true',
+                        required=False,
+                        help=("""Flag that when passed will skip the
+                              calculation of the autocorrelation spectrum for
+                              the GaussianMixtureModel (since it is a source of
+                              measurable slowdown, especially for long
+                              runs."""))
+
     parser.add_argument("--run_steps",
                         dest="run_steps",
                         type=int,
