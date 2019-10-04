@@ -18,7 +18,7 @@ import scipy.stats as st
 from scipy.stats import multivariate_normal
 
 import utils.file_io as io
-#  from mpl_toolkits.mplot3d import Axes3D
+
 
 MPL_PARAMS = {
     #  'backend': 'ps',
@@ -40,6 +40,30 @@ if HAS_MATPLOTLIB:
     from matplotlib.patches import Ellipse
 
     mpl.rcParams.update(MPL_PARAMS)
+
+
+def bootstrap(data, n_boot=10000, ci=68):
+    boot_dist = []
+    for i in range(int(n_boot)):
+        resampler = np.random.randint(0, data.shape[0], data.shape[0])
+        sample = data.take(resampler, axis=0)
+        boot_dist.append(np.mean(sample, axis=0))
+    b = np.array(boot_dist)
+    s1 = np.apply_along_axis(stats.scoreatpercentile, 0, b, 50. - ci / 2.)
+    s2 = np.apply_along_axis(stats.scoreatpercentile, 0, b, 50. + ci / 2.)
+
+    mean = np.mean(b)
+    err = max(mean - s1.mean(), s2.mean() - mean)
+
+    return mean, err, b
+
+
+def tsplotboot(ax, data, **kwargs):
+    x = np.arange(data.shape[1])
+    est = np.mean(data, axis=0)
+    cis = bootstrap(data)
+    ax.fill_between(x, cis[0], cis[1], alpha=0.2, **kwargs)
+    ax.plot(x, est, **kwargs)
 
 
 def get_colors(batch_size=10, cmaps=None):
@@ -147,8 +171,8 @@ def plot_histogram(data, ax=None, **kwargs):
     xlabel = kwargs.get('xlabel', None)
     ylabel = kwargs.get('ylabel', None)
 
-    _ = ax.hist(data, bins=bins, density=density, stacked=stacked,
-                label=label)
+    _ = ax.hist(data, bins=bins, density=density,
+                stacked=stacked, label=label)
 
     if label is not None:
         _ = ax.legend(loc='best')
@@ -391,6 +415,15 @@ def _gmm_plot(distribution, samples, ax=None, **kwargs):
     return ax
 
 
+def _get_ticks_labels(ax):
+    xticks = ax.get_xticks()
+    xticklabels = ax.get_xticklabels()
+    yticks = ax.get_yticks()
+    yticklabels = ax.get_yticklabels()
+
+    return (xticks, xticklabels), (yticks, yticklabels)
+
+
 def gmm_plot(distribution, samples, **kwargs):
     """
     Plot contours of target distribution overlaid with scatter plot of samples.
@@ -456,6 +489,8 @@ def gmm_plot(distribution, samples, **kwargs):
                         marker='X', ls='', color='r',
                         alpha=1., markersize=1.5, zorder=10)
             _ = ax.axis(axis_scale)
+
+            xtl, ytl = _get_ticks_labels(ax)
             _ = ax.set_xticks([])
             _ = ax.set_yticks([])
             _ = ax.set_xlim(xlims)
@@ -463,10 +498,14 @@ def gmm_plot(distribution, samples, **kwargs):
 
             idx += 1
 
-    _ = axes[-1, 0].set_yticks(mus[:, 1])
-    _ = axes[-1, 0].set_yticklabels([str(i) for i in mus[:, 1]])
-    _ = axes[-1, 0].set_xticks(mus[:, 0])
-    _ = axes[-1, 0].set_xticklabels([str(i) for i in mus[:, 0]])
+    xticks, xticklabels = xtl
+    yticks, yticklabels = ytl
+
+    _ = axes[-1, 0].set_yticks(yticks)
+    _ = axes[-1, 0].set_yticklabels(yticklabels)
+    _ = axes[-1, 0].set_xticks(xticks)
+    _ = axes[-1, 0].set_xticklabels(xticklabels)
+    _ = axes[-1, 0].axis(axis_scale)
 
     # _ = fig.tight_layout()
 
