@@ -17,7 +17,7 @@ from scipy.stats import sem
 from lattice.lattice import u1_plaq_exact
 from config import COLORS, MARKERS, HAS_MATPLOTLIB
 
-from .plot_utils import MPL_PARAMS, plot_multiple_lines
+from .plot_utils import MPL_PARAMS, plot_multiple_lines, tsplotboot
 
 if HAS_MATPLOTLIB:
     import matplotlib as mpl
@@ -146,6 +146,7 @@ class GaugeModelPlotter:
         run_str = kwargs.get('run_str', None)
         net_weights = kwargs.get('net_weights', [1., 1., 1.])
         dir_append = kwargs.get('dir_append', None)
+        eps = kwargs.get('eps', None)
 
         if dir_append:
             run_str += dir_append
@@ -160,6 +161,7 @@ class GaugeModelPlotter:
         nw = net_weights
         sw, translw, transfw = nw
         title_str = (r"$N_{\mathrm{LF}} = $" + f"{lf_steps}, "
+                     r"$\varepsilon = $" + f"{eps}, "
                      r"$N_{\mathrm{B}} = $" + f"{bs}, "
                      r"$\beta =$" + f"{beta:.2g}, "
                      r"$\mathrm{nw} = $" + (f"{nw[0]:.3g}, "
@@ -181,11 +183,6 @@ class GaugeModelPlotter:
 
     def plot_observables(self, data, **kwargs):
         """Plot observables."""
-        #  beta = kwargs.get('beta', 5.)
-        #  run_str = kwargs.get('run_str', None)
-        #  net_weights = kwargs.get('net_weights', [1., 1., 1.])
-        #  dir_append = kwargs.get('dir_append', None)
-
         xy_data, kwargs = self._plot_setup(data, **kwargs)
 
         self._plot_actions(xy_data['actions'], **kwargs)
@@ -277,7 +274,6 @@ class GaugeModelPlotter:
 
     def _plot_actions(self, xy_data, **kwargs):
         """Plot actions."""
-        #  kwargs['out_file'] = get_out_file(self.out_dir, 'actions_vs_step')
         labels = {
             'x_label': 'Step',
             'y_label': 'Action',
@@ -467,18 +463,6 @@ class GaugeModelPlotter:
 
     def _plot_autocorrs(self, xy_data, **kwargs):
         """Plot topological charge autocorrelations."""
-        #  xy_labels = ('Step', 'Autocorrelation of ' + r'$Q$')
-        #  return plot_multiple_lines(xy_data, xy_labels, **kwargs)
-        #  kwargs['out_file'] = get_out_file(self.out_dir,
-        #                                    'charge_autocorrs_vs_step')
-        #  kwargs['ret'] = True
-        #  kwargs['bounds'] = [0.2, 0.6, 0.7, 0.3]
-        #  try:
-        #      kwargs['out_file'] = get_out_file(
-        #          self.out_dir, 'charge_autocorrs_vs_step'
-        #      )
-        #  except AttributeError:
-        #      kwargs['out_file'] = None
         labels = {
             'x_label': 'Step',
             'y_label': 'Autocorrelation of ' + r'$Q$',
@@ -490,6 +474,3 @@ class GaugeModelPlotter:
             'two_rows': True,
         })
         self._plot(xy_data, **kwargs)
-        #  _, ax, axins = plot_with_inset(xy_data, labels, **kwargs)
-        #  xy_labels = ('Step', 'Autocorrelation of ' + r'$Q$')
-        #  return plot_multiple_lines(xy_data, xy_labels, **kwargs)

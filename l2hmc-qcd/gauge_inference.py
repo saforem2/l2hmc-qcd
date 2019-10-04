@@ -156,6 +156,9 @@ def inference(runner, run_logger, plotter, **kwargs):
         run_time = time.time() - t0
         io.log(SEP_STR + f'\nTook: {run_time}s to complete run.\n' + SEP_STR)
 
+        # -----------------------------------------------------------
+        # PLOT ALL LATTICE OBSERVABLES AND RETURN THE AVG. PLAQ DIFF
+        # -----------------------------------------------------------
         avg_plaq_diff = plotter.plot_observables(run_logger.run_data, **kwargs)
         log_plaq_diffs(run_logger,
                        kwargs['net_weights'],
