@@ -10,6 +10,7 @@ from plotters.plot_utils import plot_histogram, plot_acl_spectrum
 import numpy as np
 import tensorflow as tf
 
+import scipy.stats as stats
 from scipy.stats import sem
 
 import utils.file_io as io
@@ -310,15 +311,29 @@ def alt_error_analysis(samples, num_blocks=None):
     return means, errs
 
 
-def write_means(samples, num_blocks, means, errs, means_file):
+def bootstrap(data, n_boot=10000, ci=68):
+    boot_dist = []
+    for i in range(int(n_boot)):
+        resampler = np.random.randint(0, data.shape[0], data.shape[0])
+        sample = data.take(resampler, axis=0)
+        boot_dist.append(np.mean(sample, axis=0))
+    b = np.array(boot_dist)
+    s1 = np.apply_along_axis(stats.scoreatpercentile, 0, b, 50. - ci / 2.)
+    s2 = np.apply_along_axis(stats.scoreatpercentile, 0, b, 50. + ci / 2.)
+
+    mean = np.mean(b)
+    err = max(mean - s1.mean(), s2.mean() - mean)
+
+    return mean, err, b
+
+
+def write_means(samples, means, errs, means_file, tag=None):
     with open(means_file, 'a') as f:
+        if tag is not None:
+            _ = f.write('\n' + 80 * '-' + '\n')
+            _ = f.write(tag + '\n' + '\n')
+
         _ = f.write(f'samples.shape: {samples.shape}\n')
-        '''
-        _ = f.write(
-            f'Using bootstrap resampling, using {num_blocks} replicates '
-            f'for each of the {samples.shape[1]} samples.\n'
-        )
-        '''
         _ = f.write('Component averages:\n')
         for mean, err in zip(means, errs):
             _ = f.write(f'  {mean:.5g} +/- {err:.5g}\n')
@@ -336,7 +351,37 @@ def _pickle_dump(data, out_file, name=None):
 
 
 def save_inference_data(samples, px, run_dir, fig_dir,
-                        acl=True, bs_iters=100):
+                        acl=True, bs_iters=100, ignore_first=0.1):
+    """Save inference data and estimate the 'average' for each coordinate.
+
+    By comparing, for example, the average `x` location (`x_mean_obs`) across
+    all `samples` and comparing this to the true value dictated from the target
+    distribution (`x_mean_true`), we can try and determine if there is an
+    inherent bias in the trained sampler.
+
+    Args:
+        samples (array-like): Array of sample configurations generated from an
+            inference run.
+        px (array-like): Array of acceptance probabilities generated from an
+            inference run.
+        run_dir (str): String specifying the location of the `run_dir` used for
+            the inference run.
+        fig_dir (str): String specifying the location of the `fig_dir`, i.e.
+            where to save matplotlib figures.
+        acl (bool): Boolean indicating whether or not to perform the
+            `autocorrelation` analysis on samples
+        bs_iters (int): Number of bootstrap replicates to use when estimating
+            the standard error of the mean(s). Note that a larger value will
+            produce better statistics (at a relatively steep computational
+            cost).
+        ignore_first (float): Percentage of total length of chain to 'ignore'
+            when calculting statistics due to thermalization. For example, if
+            `ignore_first = 0.1`, the first 10% of `samples` will be discarded
+            to account for thermalization.
+
+    Returns:
+        None
+    """
     if not isinstance(px, np.ndarray):
         px = np.array(px)
     if not isinstance(samples, np.ndarray):
@@ -347,21 +392,73 @@ def save_inference_data(samples, px, run_dir, fig_dir,
     _pickle_dump(samples, samples_out_file, name='samples')
     _pickle_dump(px, px_out_file, name='probs')
 
-    warmup_steps = samples.shape[0] // 20
+    #  warmup_steps = samples.shape[0] // 20
+    warmup_steps = int(ignore_first * samples.shape[0])
+    samples_therm = samples[warmup_steps:]
+
     io.log(f'INFO: Ignoring first {warmup_steps} steps for thermalization...')
-    io.log(f'INFO: Using (naive) `np.mean` and `np.std`:')
-    x_mean, y_mean = samples[warmup_steps:].mean(axis=(0, 1))
-    x_std, y_std = samples[warmup_steps:].std(axis=(0, 1))
-    io.log(f'x_mean: {x_mean:.3g} +/- {x_std:.3g}')
-    io.log(f'y_mean: {y_mean:.3g} +/- {y_std:.3g}')
+    #  io.log(f'INFO: Using (naive) `np.mean` and `np.std`:')
+    x_means = samples_therm[:, :, 0].mean(axis=0)
+    x_mean = np.mean(x_means)
+    x_std = np.std(x_means)
+    x_sem = sem(x_means)
+
+    y_means = samples_therm[:, :, 1].mean(axis=0)
+    y_mean = np.mean(y_means)
+    y_std = np.std(y_means)
+    y_sem = sem(y_means)
+    #  x_mean, y_mean = samples_therm.mean(axis=(0, 1))
+    #  x_std, y_std = np.std(samples_therm, axis=(0, 1))
+
+    #  x_sem = sem(samples_therm[:, :, 0],)
+    #  y_sem = sem(samples_therm[:, :, 1])
+    #  x_std, y_std = samples[warmup_steps:].std(axis=(0, 1))
+
+    means_naive = (x_mean, y_mean)
+    stds_naive = (x_std, y_std)
+    sems_naive = (x_sem, y_sem)
+    std_str_naive = f'({x_std:.5g}, {y_std:.5g})'
+    sem_str_naive = f'({x_sem:.5g}, {y_sem:.5g})'
+    mean_str_naive = f'({x_mean:.5g}, {y_mean:.5g})'
+    err_str_naive = f'{std_str_naive} (std),  {sem_str_naive} (sem)'
+
+    '''
     means, errs, means_, samples_rs = error_analysis(samples[warmup_steps:],
-                                                     n=None, bs_iters=bs_iters)
+                                                     n=None,
+                                                     bs_iters=bs_iters)
+    '''
+    samples_x = samples_therm[:, :, 0]
+    samples_y = samples_therm[:, :, 1]
+    x_mean_bs, x_err_bs, x_means_arr = bootstrap(samples_x,
+                                                 bs_iters, ci=68)
+    y_mean_bs, y_err_bs, y_means_arr = bootstrap(samples_y,
+                                                 bs_iters, ci=68)
 
-    means_strs = [f'mean: {i:.4g} +/- {j:.4g}' for i, j in zip(means, errs)]
-    io.log(means_strs)
+    means = (x_mean_bs, y_mean_bs)
+    errs = (x_err_bs, y_err_bs)
+    means_arr = (x_means_arr, y_means_arr)
+
+    # labels to be used in histogram plot
+    label_strs = [f'mean: {i:.4g} +/- {j:.4g}' for i, j in zip(means, errs)]
+
+    err_str = f'({errs[0]:.5g}, {errs[1]:.5g})'
+    mean_str = f'({means[0]:.5g}, {means[1]:.5g})'
+
+    means_strs = f'(x, y): {mean_str} +/- {err_str}'
+    means_strs_naive = f'(x, y): {mean_str_naive} +/- {err_str_naive}'
+
+    io.log(f'Using {bs_iters} bootstrap replications:\n  {means_strs}\n')
+    io.log(f'Using np.mean and std/sem:\n  {means_strs_naive}\n')
+
     means_file = os.path.join(run_dir, 'means.txt')
-
-    write_means(samples, -1, means, errs, means_file)
+    write_means(samples, means, errs, means_file)
+    write_means(samples, means_naive,
+                stds_naive, means_file,
+                tag='std[i] = np.std(samples_therm[:, :, i].mean(axis=0))')
+    write_means(samples, means_naive,
+                sems_naive, means_file,
+                tag=('sem[i] = scipy.stats.sem('
+                     'samples_therm[:, :, i].mean(axis=0))'))
 
     if acl:
         spectrum = acl_spectrum(samples)
@@ -378,7 +475,7 @@ def save_inference_data(samples, px, run_dir, fig_dir,
     out_files = [os.path.join(fig_dir, 'x_mean_histogram.pdf'),
                  os.path.join(fig_dir, 'y_mean_histogram.pdf')]
     xlabels = ['mean, x', 'mean, y']
-    kwargs = {
+    hist_kwargs = {
         'bins': 32,
         'density': True,
         'stacked': True,
@@ -387,29 +484,18 @@ def save_inference_data(samples, px, run_dir, fig_dir,
         'xlabel': None
     }
     if HAS_MATPLOTLIB:
-        for idx, x in enumerate(means_):
-            kwargs.update({
-                'label': means_strs[idx],
+        for idx, x in enumerate(means_arr):
+            hist_kwargs.update({
+                'label': label_strs[idx],
                 'out_file': out_files[idx],
                 'xlabel': xlabels[idx]
             })
             fig, ax = plt.subplots()
-            _ = plot_histogram(x.flatten(), ax=ax, **kwargs)
+            _ = plot_histogram(x.flatten(), ax=ax, **hist_kwargs)
 
         if acl:
-            '''
-            nx = (spectrum.shape[0] + 1) // 10
-            xaxis = 10 * np.arange(nx)
-            fig, ax = plt.subplots()
-            _ = ax.plot(xaxis, np.abs(spectrum[:nx]))
-            _ = ax.set_xlabel('Gradient Computations')
-            _ = ax.set_ylabel('Auto-correlation')
-            out_file = os.path.join(fig_dir, 'autocorrelation_spectrum.pdf')
-            io.log(f'Saving figure to: {out_file}.')
-            _ = plt.savefig(out_file, bbox_inches='tight')
-            '''
-            kwargs = {
+            acl_kwargs = {
                 'out_file': os.path.join(fig_dir,
                                          'autocorrelation_spectrum.pdf')
             }
-            fig, ax = plot_acl_spectrum(spectrum, **kwargs)
+            fig, ax = plot_acl_spectrum(spectrum, **acl_kwargs)

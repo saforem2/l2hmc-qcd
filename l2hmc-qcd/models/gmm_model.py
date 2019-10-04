@@ -230,16 +230,15 @@ class GaussianMixtureModel(BaseModel):
 
         if self.arrangement == 'lattice':
             sigma = np.max(self.sigmas)
-            L = int(np.sqrt(self.num_distributions))
+            #  L = int(np.sqrt(self.num_distributions))
             distribution, means, covs, pis = lattice_of_gaussians(
-                self.num_distributions, sigma, self.x_dim, size=L
+                self.num_distributions, sigma, x_dim=self.x_dim
             )
 
-        if self.arrangement == 'ring':
+        elif self.arrangement == 'ring':
             sigma = np.max(self.sigmas)
             r = getattr(self, 'size', 1.)
-
-            distribution, mus, covs, pis = ring_of_gaussians(
+            distribution, means, covs, pis = ring_of_gaussians(
                 self.num_distributions, sigma, r=r
             )
 

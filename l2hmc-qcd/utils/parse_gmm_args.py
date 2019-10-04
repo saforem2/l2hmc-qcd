@@ -47,6 +47,7 @@ def parse_args():
     parser.add_argument('--size',
                         dest='size',
                         default=1.,
+                        type=float,
                         required=False,
                         help=("""The `size` of the distribution. Only relevant
                               when `--arrangement == 'lattice' or 'ring'`. In
