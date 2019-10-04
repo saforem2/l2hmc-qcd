@@ -105,7 +105,9 @@ class GaussianMixtureModelRunner:
             beta = 1.
 
         x_dim = self.params.get('x_dim', None)
-        samples_np = np.random.rand(*(self.params['batch_size'], x_dim))
+        samples_np = kwargs.get('samples', None)  # initial sample configs
+        if samples_np is None:
+            samples_np = np.random.rand(*(self.params['batch_size'], x_dim))
         #  samples_np = np.random.randn(*(self.params['batch_size'], x_dim))
 
         for step in range(run_steps):
