@@ -257,6 +257,7 @@ def create_log_dir(FLAGS, root_dir=None, log_file=None,
     #  print(now.strftime("%b %d %Y %H:%M:%S"))
     day_str = now.strftime('%Y_%m_%d')
     time_str = now.strftime("%Y_%m_%d_%H%M")
+    hour_str = now.strftime('%H%M')
 
     project_dir = os.path.abspath(os.path.dirname(FILE_PATH))
     #  if FLAGS.log_dir is None:
@@ -275,9 +276,12 @@ def create_log_dir(FLAGS, root_dir=None, log_file=None,
     root_log_dir = os.path.join(project_dir, _dir, day_str, time_str, run_str)
     '''
     root_log_dir = os.path.join(project_dir, _dir, day_str, run_str)
+    # if `root_log_dir` already exists, append '_%H%M' (hour, minute) at end
     if os.path.isdir(root_log_dir):
-        root_log_dir = os.path.join(project_dir, _dir,
-                                    day_str, time_str, run_str)
+        root_log_dir = os.path.join(project_dir, _dir, day_str,  # append hr...
+                                    run_str + f'_{hour_str}')    # ...str @ end
+        #  root_log_dir = os.path.join(project_dir, _dir,
+        #                              day_str, time_str, run_str)
     check_else_make_dir(root_log_dir)
     if any('run_' in i for i in os.listdir(root_log_dir)):
         run_num = get_run_num(root_log_dir)
