@@ -75,11 +75,13 @@ def set_eps(sess, eps, run_ops, inputs, graph=None):
 
 
 def inference(runner, run_logger, **kwargs):
-    run_steps = kwargs.get('run_steps', 5000)
-    nw = kwargs.get('net_weights', [1., 1., 1.])
-    bs_iters = kwargs.get('bs_iters', 200)
-    beta = kwargs.get('beta', 1.)
-    eps = kwargs.get('eps', None)
+    run_steps = kwargs.get('run_steps', 5000)     # num. of accept/reject steps
+    nw = kwargs.get('net_weights', [1., 1., 1.])  # custom net_weights
+    bs_iters = kwargs.get('bs_iters', 200)  # num. bootstrap replicates
+    beta = kwargs.get('beta', 1.)  # custom value to use for `beta`
+    eps = kwargs.get('eps', None)  # custom value to use for the step size
+    acl = kwargs.get('acl', True)  # whether or not to calc. autocorrelations
+    ignore_first = kwargs.get('ignore_first', 0.1)  # % to ignore for therm.
     if eps is None:
         eps = runner.eps
         kwargs['eps'] = eps
@@ -114,8 +116,13 @@ def inference(runner, run_logger, **kwargs):
         fig_dir = os.path.join(figs_dir, basename)
         _ = [io.check_else_make_dir(d) for d in [figs_dir, fig_dir]]
 
-        save_inference_data(samples_out, px_out, run_dir, fig_dir,
-                            bs_iters=bs_iters)
+        args = (samples_out, px_out, run_dir, fig_dir)
+        kwargs = {
+            'acl': acl,
+            'bs_iters': bs_iters,
+            'ignore_first': ignore_first,
+        }
+        save_inference_data(*args, **kwargs)
 
         if HAS_MATPLOTLIB:
             log_dir = os.path.dirname(run_logger.runs_dir)
@@ -132,6 +139,7 @@ def inference(runner, run_logger, **kwargs):
                 'ls': '-',
                 'axis_scale': 'scaled',
                 'title': title,
+                'num_contours': 4
             }
 
             _ = _gmm_plot(distribution, samples_out[:, -1], **plot_kwargs)
@@ -191,6 +199,14 @@ def main(kwargs):
     beta_final = params.get('beta_final', None)
     beta = beta_final if beta_inference is None else beta_inference
 
+    # XXX XXX Try changing how samples are initialized below. XXX XXX
+    samples_size = (params['batch_size'], params['x_dim'])
+    tmp = samples_size[0] * samples_size[1]
+    samples_init = np.random.uniform(-1, 1, tmp).reshape(*samples_size)
+    #  samples_init = 2 * np.random.rand(*(params['batch_size'],
+    #                                      params['x_dim']))
+    kwargs['samples'] = samples_init
+
     run_logger = RunLogger(params, inputs, run_ops,
                            model_type='gmm_model',
                            save_lf_data=False)
@@ -201,13 +217,16 @@ def main(kwargs):
 
     # NUMBER OF BOOTSTRAP REPLICATIONS TO USE IN ERROR ANALYSIS
     bs_iters = kwargs.get('bootstrap_iters', 100)
+    acl = not kwargs.get('skip_acl', False)
+    #
 
     inference_kwargs = {
         'run_steps': kwargs.get('run_steps', 5000),
         'net_weights': net_weights,
         'beta': beta,
         'eps': eps,
-        'num_iters': bs_iters,
+        'bs_iters': bs_iters,
+        'acl': acl,
     }
 
     runner, run_logger = inference(runner, run_logger, **inference_kwargs)
@@ -217,7 +236,7 @@ def main(kwargs):
         'net_weights': [0., 0., 0.],
         'beta': beta,
         'eps': eps,
-        'num_iters': bs_iters,
+        'bs_iters': bs_iters,
     }
     runner, run_logger = inference(runner, run_logger, **hmc_inference_kwargs)
 
