@@ -75,6 +75,16 @@ def parse_args():
                               measurable slowdown, especially for long
                               runs."""))
 
+    parser.add_argument('--run_hmc',
+                        dest='run_hmc',
+                        action='store_true',
+                        required=False,
+                        help=("""Flag that when passed will run generic HMC
+                              immediately following the initial inference run
+                              by setting each of the net weights to zero,
+                              using the same step size and number of steps for
+                              both."""))
+
     parser.add_argument("--run_steps",
                         dest="run_steps",
                         type=int,
