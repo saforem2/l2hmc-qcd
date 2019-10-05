@@ -351,7 +351,7 @@ def _pickle_dump(data, out_file, name=None):
 
 
 def save_inference_data(samples, px, run_dir, fig_dir,
-                        acl=True, bs_iters=100, ignore_first=0.1):
+                        skip_acl=False, bs_iters=100, ignore_first=0.1):
     """Save inference data and estimate the 'average' for each coordinate.
 
     By comparing, for example, the average `x` location (`x_mean_obs`) across
@@ -396,6 +396,16 @@ def save_inference_data(samples, px, run_dir, fig_dir,
     warmup_steps = int(ignore_first * samples.shape[0])
     samples_therm = samples[warmup_steps:]
 
+    samples_x = samples_therm[:, :, 0]
+    samples_y = samples_therm[:, :, 1]
+
+    x_mean_bs, x_err_bs, x_means_arr = bootstrap(samples_x, bs_iters, ci=68)
+    y_mean_bs, y_err_bs, y_means_arr = bootstrap(samples_y, bs_iters, ci=68)
+
+    means = (x_mean_bs, y_mean_bs)
+    errs = (x_err_bs, y_err_bs)
+    means_arr = (x_means_arr, y_means_arr)
+
     io.log(f'INFO: Ignoring first {warmup_steps} steps for thermalization...')
     #  io.log(f'INFO: Using (naive) `np.mean` and `np.std`:')
     x_means = samples_therm[:, :, 0].mean(axis=0)
@@ -407,12 +417,6 @@ def save_inference_data(samples, px, run_dir, fig_dir,
     y_mean = np.mean(y_means)
     y_std = np.std(y_means)
     y_sem = sem(y_means)
-    #  x_mean, y_mean = samples_therm.mean(axis=(0, 1))
-    #  x_std, y_std = np.std(samples_therm, axis=(0, 1))
-
-    #  x_sem = sem(samples_therm[:, :, 0],)
-    #  y_sem = sem(samples_therm[:, :, 1])
-    #  x_std, y_std = samples[warmup_steps:].std(axis=(0, 1))
 
     means_naive = (x_mean, y_mean)
     stds_naive = (x_std, y_std)
@@ -422,21 +426,6 @@ def save_inference_data(samples, px, run_dir, fig_dir,
     mean_str_naive = f'({x_mean:.5g}, {y_mean:.5g})'
     err_str_naive = f'{std_str_naive} (std),  {sem_str_naive} (sem)'
 
-    '''
-    means, errs, means_, samples_rs = error_analysis(samples[warmup_steps:],
-                                                     n=None,
-                                                     bs_iters=bs_iters)
-    '''
-    samples_x = samples_therm[:, :, 0]
-    samples_y = samples_therm[:, :, 1]
-    x_mean_bs, x_err_bs, x_means_arr = bootstrap(samples_x,
-                                                 bs_iters, ci=68)
-    y_mean_bs, y_err_bs, y_means_arr = bootstrap(samples_y,
-                                                 bs_iters, ci=68)
-
-    means = (x_mean_bs, y_mean_bs)
-    errs = (x_err_bs, y_err_bs)
-    means_arr = (x_means_arr, y_means_arr)
 
     # labels to be used in histogram plot
     label_strs = [f'mean: {i:.4g} +/- {j:.4g}' for i, j in zip(means, errs)]
@@ -460,7 +449,7 @@ def save_inference_data(samples, px, run_dir, fig_dir,
                 tag=('sem[i] = scipy.stats.sem('
                      'samples_therm[:, :, i].mean(axis=0))'))
 
-    if acl:
+    if not skip_acl:
         spectrum = acl_spectrum(samples)
         ess = ESS(spectrum)
 
@@ -493,7 +482,7 @@ def save_inference_data(samples, px, run_dir, fig_dir,
             fig, ax = plt.subplots()
             _ = plot_histogram(x.flatten(), ax=ax, **hist_kwargs)
 
-        if acl:
+        if not skip_acl:
             acl_kwargs = {
                 'out_file': os.path.join(fig_dir,
                                          'autocorrelation_spectrum.pdf')
