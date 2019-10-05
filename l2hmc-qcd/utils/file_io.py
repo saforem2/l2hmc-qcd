@@ -154,9 +154,11 @@ def _parse_gauge_flags(FLAGS):
         run_str = f'lattice{LX}_batch{BS}_lf{LF}_qw{qw}_aw{aw}_{NA}_dp{dp}'
         if BN:
             run_str += '_bn'
-        if GL:
+        if GL and NL:
+            run_str += '_gaussian_nnehmc_loss'
+        elif GL and not NL:
             run_str += '_gaussian_loss'
-        if NL:
+        elif NL and not GL:
             run_str += '_nnehmc_loss'
 
     return run_str, out_dict
@@ -180,6 +182,7 @@ def _parse_gmm_flags(FLAGS):
         S2 = flags_dict.get('sigma2', None)
         GL = flags_dict.get('use_gaussian_loss', False)
         NL = flags_dict.get('use_nnehmc_loss', False)
+        AR = flags_dict.get('arrangement', 'xaxis')
     except (NameError, AttributeError):
         X0 = FLAGS.center
         ND = FLAGS.num_distributions
@@ -189,6 +192,7 @@ def _parse_gmm_flags(FLAGS):
         S2 = FLAGS.sigma2
         GL = FLAGS.use_gaussian_loss
         NL = FLAGS.use_nnehmc_loss
+        AR = FLAGS.arrangement
 
     out_dict = {
         'X0': X0,
@@ -199,16 +203,19 @@ def _parse_gmm_flags(FLAGS):
         'S2': S2,
         'GL': GL,
         'NL': NL,
+        'AR': AR,
     }
 
     #  x0 = str(X0).replace('.', '')
     s1 = str(S1).replace('.', '')
     s2 = str(S2).replace('.', '')
-    run_str = f'GMM_lf{LF}_s1_{s1}_s2_{s2}'
+    run_str = f'GMM_{AR}_lf{LF}_s1_{s1}_s2_{s2}'
 
-    if GL:
+    if GL and NL:
+        run_str += '_gaussian_nnehmc_loss'
+    elif GL and not NL:
         run_str += '_gaussian_loss'
-    elif NL:
+    elif NL and not GL:
         run_str += '_nnehmc_loss'
 
     return run_str, out_dict
@@ -250,6 +257,7 @@ def create_log_dir(FLAGS, root_dir=None, log_file=None,
     #  print(now.strftime("%b %d %Y %H:%M:%S"))
     day_str = now.strftime('%Y_%m_%d')
     time_str = now.strftime("%Y_%m_%d_%H%M")
+    hour_str = now.strftime('%H%M')
 
     project_dir = os.path.abspath(os.path.dirname(FILE_PATH))
     #  if FLAGS.log_dir is None:
@@ -264,7 +272,13 @@ def create_log_dir(FLAGS, root_dir=None, log_file=None,
             _dir = _log_dir
         else:
             _dir = os.path.join(_log_dir, root_dir)
-    root_log_dir = os.path.join(project_dir, _dir, day_str, time_str, run_str)
+    root_log_dir = os.path.join(project_dir, _dir, day_str, run_str)
+    # if `root_log_dir` already exists, append '_%H%M' (hour, minute) at end
+    if os.path.isdir(root_log_dir):
+        root_log_dir = os.path.join(project_dir, _dir, day_str,  # append hr...
+                                    run_str + f'_{hour_str}')    # ...str @ end
+        #  root_log_dir = os.path.join(project_dir, _dir,
+        #                              day_str, time_str, run_str)
     check_else_make_dir(root_log_dir)
     if any('run_' in i for i in os.listdir(root_log_dir)):
         run_num = get_run_num(root_log_dir)

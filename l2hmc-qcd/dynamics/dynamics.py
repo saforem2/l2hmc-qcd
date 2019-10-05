@@ -399,9 +399,13 @@ class Dynamics(tf.keras.Model):
         x_proposed = outputs[1]
         v_proposed = outputs[2]
         sumlogdet = outputs[3]
-        lf_out = outputs[4].stack()
-        logdets_out = outputs[5].stack()
-        fns_out = outputs[6].stack()
+        with tf.name_scope('MD_outputs'):
+            with tf.name_scope('lf_out'):
+                lf_out = outputs[4].stack()
+            with tf.name_scope('logdets_out'):
+                logdets_out = outputs[5].stack()
+            with tf.name_scope('l2hmc_fns_out'):
+                fns_out = outputs[6].stack()
 
         accept_prob, accept_prob_hmc = self._compute_accept_prob(
             x_in, v_in, x_proposed, v_proposed, sumlogdet, beta, hmc=hmc

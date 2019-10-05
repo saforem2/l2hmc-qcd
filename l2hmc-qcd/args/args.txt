@@ -28,7 +28,7 @@
 --loss_scale 1.
 --save_lf
 #--use_nnehmc_loss
-#--use_gaussian_loss
+--use_gaussian_loss
 ######################
 #--float64
 #--zero_translation

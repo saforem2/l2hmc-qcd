@@ -54,6 +54,37 @@ def parse_args():
                               is passed, `eps = None` and the optimal step size
                               (determined during training) will be used."""))
 
+    parser.add_argument('--bootstrap_iters',
+                        dest='bootstrap_iters',
+                        type=int,
+                        default=100,
+                        required=False,
+                        help=("""Number of bootstrap replication iterations to
+                              use for error analysis. Note that larger values
+                              will improve statistics at the cost of noticeable
+                              slowdown when running error analysis. (Default:
+                              100)."""))
+
+    parser.add_argument('--skip_acl',
+                        dest='skip_acl',
+                        action='store_true',
+                        required=False,
+                        help=("""Flag that when passed will skip the
+                              calculation of the autocorrelation spectrum for
+                              the GaussianMixtureModel (since it is a source of
+                              measurable slowdown, especially for long
+                              runs."""))
+
+    parser.add_argument('--run_hmc',
+                        dest='run_hmc',
+                        action='store_true',
+                        required=False,
+                        help=("""Flag that when passed will run generic HMC
+                              immediately following the initial inference run
+                              by setting each of the net weights to zero,
+                              using the same step size and number of steps for
+                              both."""))
+
     parser.add_argument("--run_steps",
                         dest="run_steps",
                         type=int,

@@ -105,7 +105,9 @@ class GaussianMixtureModelRunner:
             beta = 1.
 
         x_dim = self.params.get('x_dim', None)
-        samples_np = np.random.rand(*(self.params['batch_size'], x_dim))
+        samples_np = kwargs.get('samples', None)  # initial sample configs
+        if samples_np is None:
+            samples_np = np.random.rand(*(self.params['batch_size'], x_dim))
         #  samples_np = np.random.randn(*(self.params['batch_size'], x_dim))
 
         for step in range(run_steps):
@@ -117,6 +119,8 @@ class GaussianMixtureModelRunner:
             if has_logger:
                 self.logger.update(self.sess, out_data,
                                    net_weights, data_str)
+        if has_logger:
+            self.logger._write_run_history()  # XXX
 
         #  if has_logger:
         #      self.logger.save_run_data(therm_frac=therm_frac)

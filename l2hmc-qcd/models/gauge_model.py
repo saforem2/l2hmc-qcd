@@ -6,31 +6,35 @@ Implements `GaugeModel` class, inheriting from `BaseModel`.
 Author: Sam Foreman (github: @saforem2)
 Date: 09/04/2019
 """
-from __future__ import division
-from __future__ import print_function
-from __future__ import absolute_import
+from __future__ import absolute_import, division, print_function
 
-#  import os
 import time
 
-#  import numpy as np
+from collections import namedtuple
+from lattice.lattice import GaugeLattice
+from dynamics.dynamics import Dynamics
+
 import tensorflow as tf
 
-from collections import namedtuple
+import utils.file_io as io
 
 from base.base_model import BaseModel
-from dynamics.dynamics import Dynamics
-from lattice.lattice import GaugeLattice
-import utils.file_io as io
-#  from utils.horovod_utils import warmup_lr
-from config import GLOBAL_SEED, TF_FLOAT, TF_INT, HAS_HOROVOD
+
+from config import HAS_HOROVOD, TF_INT
+
 from params.gauge_params import GAUGE_PARAMS
+
+#  import os
+#  import numpy as np
+#  from utils.horovod_utils import warmup_lr
 #  from tensorflow.python.ops import control_flow_ops as control_flow_ops
 
 if HAS_HOROVOD:
-    import horovod.tensorflow as hvd
+    import horovod.tensorflow as hvd  # noqa: 401
 
 LFdata = namedtuple('LFdata', ['init', 'proposed', 'prob'])
+SEP_STR = 80 * '-'
+SEP_STRN = 80 * '-' + '\n'
 
 
 def allclose(x, y, rtol=1e-3, atol=1e-5):
@@ -45,31 +49,22 @@ class GaugeModel(BaseModel):
         if params is None:
             params = GAUGE_PARAMS
 
-        #  self._model_type = 'GaugeModel'
+        self.build(params)
 
-        #  self.loss_weights = {}
-        #  for key, val in params.items():
-        #      if 'weight' in key and key != 'charge_weight':
-        #          self.loss_weights[key] = val
-        #      elif key == 'charge_weight':
-        #          pass
-        #      else:
-        #          setattr(self, key, val)
-
-        #  self.eps_trainable = not self.eps_fixed
-        #  self.charge_weight_np = params['charge_weight']
-        self.build()
-
-    def build(self):
+    def build(self, params=None):
         """Build TensorFlow graph."""
-        t0 = time.time()
+        params = self.params if params is None else params
         use_gaussian_loss = getattr(self, 'use_gaussian_loss', False)
         use_nnehmc_loss = getattr(self, 'use_nnehmc_loss', False)
         self.use_gaussian_loss = use_gaussian_loss
         self.use_nnehmc_loss = use_nnehmc_loss
 
-        io.log(80 * '-')
-        io.log(f'INFO: Building graph for `GaugeModel`...')
+        #  aux_weight = getattr(self, 'aux_weight', 1.)
+        charge_weight = getattr(self, 'charge_weight_np', 0.)
+        self.use_charge_loss = True if charge_weight > 0. else False
+
+        t0 = time.time()
+        io.log(SEP_STRN + f'INFO: Building graph for `GaugeModel`...')
         with tf.name_scope('init'):
             # ***********************************************
             # Create `Lattice` object
@@ -78,7 +73,6 @@ class GaugeModel(BaseModel):
             self.lattice = self._create_lattice()
             self.batch_size = self.lattice.samples.shape[0]
             self.x_dim = self.lattice.num_links
-            # ***********************************************
 
             # ***********************************************
             # Create inputs as `tf.placeholders`
@@ -90,14 +84,19 @@ class GaugeModel(BaseModel):
             nw_keys = ['scale_weight', 'transl_weight', 'transf_weight']
             self.net_weights = [inputs[k] for k in nw_keys]
             self.train_phase = inputs['train_phase']
+            self.eps_ph = inputs['eps_ph']
             self._inputs = inputs
-            # ***********************************************
 
             # ***********************************************
             # Create dynamics for running L2HMC leapfrog
             # -----------------------------------------------
             io.log(f'INFO: Creating `Dynamics`...')
             self.dynamics = self._create_dynamics()
+            # Create operation for assigning to `dynamics.eps` 
+            # the value fed into the placeholder `eps_ph`.
+            self.eps_setter = tf.assign(self.dynamics.eps,
+                                        self.eps_ph,
+                                        name='eps_setter')
 
             # ***************************************************************
             # Create metric function for measuring 'distance' between configs
@@ -105,10 +104,10 @@ class GaugeModel(BaseModel):
             metric = getattr(self, 'metric', 'cos_diff')
             self.metric_fn = self._create_metric_fn(metric)
 
-        # *******************************************************
+        # *******************************************************************
         # Create operations for calculating lattice observables
-        # -------------------------------------------------------
-        io.log(f'INFO: Creating necessary operations...')
+        # -------------------------------------------------------------------
+        io.log(f'INFO: Creating operations for calculating observables...')
         observables = self._create_observables()
         self.plaq_sums_op = observables['plaq_sums_op']
         self.actions_op = observables['actions_op']
@@ -116,89 +115,51 @@ class GaugeModel(BaseModel):
         self.avg_plaqs_op = observables['avg_plaqs_op']
         self.charges_op = observables['charges_op']
         self._observables = observables
-        # *******************************************************
 
         # *******************************************************************
-        # Run dynamics (i.e. augmented leapfrog) to generate new configs 
+        # Build sampler to generate new configs.
         # -------------------------------------------------------------------
-        with tf.name_scope('l2hmc'):
-            slf = self.save_lf
-            hmc = True if self.use_nnehmc_loss else False
-            args = (self.beta, self.net_weights, self.train_phase)
-
-            with tf.name_scope('main_dynamics'):
-                x_dynamics = self.dynamics.apply_transition(self.x, *args,
-                                                            save_lf=slf,
-                                                            hmc=hmc)
-            if not hmc and getattr(self, 'aux_weight', 1.) > 0:
-                with tf.name_scope('auxiliary_dynamics'):
-                    self.z = tf.random_normal(tf.shape(self.x),
-                                              dtype=TF_FLOAT,
-                                              seed=GLOBAL_SEED,
-                                              name='z')
-                    z_dynamics = self.dynamics.apply_transition(self.z, *args,
-                                                                save_lf=False,
-                                                                hmc=hmc)
-
-            self.x_out = x_dynamics['x_out']
-            self.px = x_dynamics['accept_prob']
-            self._parse_dynamics_output(x_dynamics)
-
-            with tf.name_scope('check_reversibility'):
-                self.x_diff, self.v_diff = self._check_reversibility()
-
-        with tf.name_scope('run_ops'):
-            io.log(f'INFO: Building `run_ops`...')
-            run_ops = self._build_run_ops()
-        # *******************************************************************
+        # NOTE: We use the `dynamics.apply_transition` method to run the
+        # augmented l2hmc leapfrog integrator and obtain new samples.
+        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        x_data, z_data = self._build_sampler()
 
         # *******************************************************************
         # Calculate loss_op and train_op to backprop. grads through network
         # -------------------------------------------------------------------
-        if not self.hmc:
-            with tf.name_scope('loss'):
-                io.log(f'INFO: Calculating loss function...')
-                x_data = LFdata(x_dynamics['x_in'],
-                                x_dynamics['x_proposed'],
-                                x_dynamics['accept_prob'])
+        with tf.name_scope('calc_loss'):
+            self.loss_op, self._losses_dict = self.calc_loss(x_data, z_data)
 
-                if not hmc and getattr(self, 'aux_weight', 1.) > 0:
-                    z_data = LFdata(z_dynamics['x_in'],
-                                    z_dynamics['x_proposed'],
-                                    z_dynamics['accept_prob'])
+        # *******************************************************************
+        # Calculate gradients and build training operation
+        # -------------------------------------------------------------------
+        with tf.name_scope('train'):
+            io.log(f'INFO: Calculating gradients for backpropagation...')
+            self.grads = self._calc_grads(self.loss_op)
+            self.train_op = self._apply_grads(self.loss_op, self.grads)
+            train_ops = self._build_train_ops()
 
-                else:
-                    z_data = LFdata(0., 0., 0.)
+        # *******************************************************************
+        # Gather all operations needed to run inference on trained model
+        # -------------------------------------------------------------------
+        with tf.name_scope('run_ops'):
+            io.log(f'INFO: Building `run_ops`...')
+            run_ops = self._build_run_ops()
 
-                if self.use_gaussian_loss:
-                    self.loss_op = self.gaussian_loss(x_data, z_data)
-
-                elif self.use_nnehmc_loss:
-                    x_hmc_prob = x_dynamics['accept_prob_hmc']
-                    self.loss_op = self.nnehmc_loss(x_data, x_hmc_prob)
-
-                else:
-                    self.loss_op = self.calc_loss(x_data, z_data)
-
-            with tf.name_scope('train'):
-                io.log(f'INFO: Calculating gradients for backpropagation...')
-                self.grads = self._calc_grads(self.loss_op)
-                self.train_op = self._apply_grads(self.loss_op, self.grads)
-
-        train_ops = self._build_train_ops()
+        # *******************************************************************
+        # FINISH UP: Make `run_ops` and `train_ops` collections, print time.
+        # -------------------------------------------------------------------
         self.ops_dict = {
             'run_ops': run_ops,
             'train_ops': train_ops
         }
 
-        # Make `run_ops` and `train_ops` collections w/ their respective ops.
         for key, val in self.ops_dict.items():
             for op in list(val.values()):
                 tf.add_to_collection(key, op)
 
-        io.log(f'INFO: Done building graph. Took: {time.time() - t0}s')
-        io.log(80 * '-')
-        # *******************************************************************
+        io.log(f'INFO: Done building graph. '
+               f'Took: {time.time() - t0}s\n' + SEP_STRN)
 
     def _create_lattice(self):
         """Create GaugeLattice object."""
@@ -304,16 +265,42 @@ class GaugeModel(BaseModel):
 
     def calc_loss(self, x_data, z_data):
         """Calculate the total loss from all terms."""
-        charge_weight = getattr(self, 'charge_weight_np', 1.)
-        #  charge_weight = weights.get('charge_weight', 1.)
+        total_loss = 0.
+        ld = {}
 
-        loss = self._calc_loss(x_data, z_data)
-        if charge_weight > 0:
-            io.log('INFO: Including topological charge'
-                   ' difference term in loss function.')
-            loss += self._calc_charge_loss(x_data, z_data)  # , weights)
+        if self.use_gaussian_loss:
+            gaussian_loss = self.gaussian_loss(x_data, z_data)
+            ld['gaussian'] = gaussian_loss
+            total_loss += gaussian_loss
 
-        return loss
+        if self.use_nnehmc_loss:
+            nnehmc_loss = self.nnehmc_loss(x_data, self.px_hmc)
+            ld['nnehmc'] = nnehmc_loss
+            total_loss += nnehmc_loss
+
+        if self.use_charge_loss:
+            charge_loss = self._calc_charge_loss(x_data, z_data)
+            ld['charge'] = charge_loss
+            total_loss += charge_loss
+
+        # If not using either Gaussian loss or NNEHMC loss, use standard loss
+        if (not self.use_gaussian_loss) and (not self.use_nnehmc_loss):
+            std_loss = self._calc_loss(x_data, z_data)
+            ld['std'] = std_loss
+            total_loss += std_loss
+
+        tf.add_to_collection('losses', total_loss)
+
+        fd = {k: v / total_loss for k, v in ld.items()}
+
+        losses_dict = {}
+        for key in ld.keys():
+            losses_dict[key + '_loss'] = ld[key]
+            losses_dict[key + '_frac'] = fd[key]
+
+            tf.add_to_collection('losses', ld[key])
+
+        return total_loss, losses_dict
 
     def gaussian_loss(self, x_data, z_data):
         """Calculate the Gaussian loss."""

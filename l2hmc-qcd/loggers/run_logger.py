@@ -68,7 +68,7 @@ class RunLogger:
                 "STEP", "t/STEP", "% ACC", "EPS", "BETA"
             )
         else:
-            self.model_type = 'gauge_model'
+            self.model_type = 'GaugeModel'
             h_strf = ("{:^12s}" + 8 * "{:^10s}").format(
                 "STEP", "t/STEP", "% ACC", "EPS", "BETA",
                 "ACTIONS", "PLAQS", "(EXACT)", "dQ"
@@ -129,7 +129,7 @@ class RunLogger:
 
         keys = ['x_out', 'px', 'dynamics_eps']
 
-        if model_type == 'gauge_model':
+        if model_type == 'GaugeModel':
             keys += ['actions_op', 'plaqs_op',
                      'avg_plaqs_op', 'charges_op',
                      'charge_diffs_op']
@@ -154,7 +154,8 @@ class RunLogger:
             'x': inputs[0],
             'beta': inputs[1],
             'net_weights': [inputs[2], inputs[3], inputs[4]],
-            'train_phase': inputs[5]
+            'train_phase': inputs[5],
+            'eps_ph': inputs[6]
         }
 
         return inputs_dict
@@ -228,14 +229,18 @@ class RunLogger:
         run_summary_dir = os.path.join(self.run_summaries_dir, run_str)
         fig_dir = os.path.join(self.figs_dir, run_str)
 
-        exists = [
-            os.path.isdir(run_dir),
-            os.path.isdir(run_summary_dir),
-            os.path.isdir(fig_dir)
-        ]
-        if any(exists):
-            return True
-        return False
+        flag = False
+        if os.path.isdir(run_dir):
+            io.log(f'Found existing run at: {run_dir}. Skipping.')
+            flag = True
+        if os.path.isdir(run_summary_dir):
+            io.log(f'Found existing run at: {run_summary_dir}. Skipping.')
+            flag = True
+        if os.path.isdir(fig_dir):
+            io.log(f'Found existing run at: {fig_dir}. Skipping.')
+            flag = True
+
+        return flag
 
     def _get_run_str(self, **kwargs):
         """Parse parameter values and create unique string to name the dir."""
@@ -287,7 +292,7 @@ class RunLogger:
         self.run_stats = {}
         self.run_strings = []
 
-        if self.model_type == 'gauge_model':
+        if self.model_type == 'GaugeModel':
             obs_data = {
                 'actions': {},
                 'plaqs': {},
@@ -352,7 +357,7 @@ class RunLogger:
         beta = data['beta']
         key = (step, beta)
 
-        if self.model_type == 'gauge_model':
+        if self.model_type == 'GaugeModel':
             obs_keys = ['px', 'actions', 'plaqs', 'charges', 'charge_diffs']
             for k in obs_keys:
                 self.run_data[k][key] = data[k]
@@ -472,38 +477,41 @@ class RunLogger:
                 self.save_attr(key + f'_{f}', getattr(self, key)[f])
                 self.save_attr(key + f'_{b}', getattr(self, key)[b])
 
-        run_stats = self.calc_observables_stats(self.run_data, therm_frac)
-        charges = self.run_data['charges']
-        charges_arr = np.array(list(charges.values()))
-        charges_autocorrs = [autocorr(x) for x in charges_arr.T]
-        charges_autocorrs = [x / np.max(x) for x in charges_autocorrs]
-        self.run_data['charges_autocorrs'] = charges_autocorrs
-
         data_file = os.path.join(self.run_dir, 'run_data.pkl')
         io.log(f"Saving run_data to: {data_file}.")
         with open(data_file, 'wb') as f:
             pickle.dump(self.run_data, f)
-
-        stats_data_file = os.path.join(self.run_dir, 'run_stats.pkl')
-        io.log(f"Saving run_stats to: {stats_data_file}.")
-        with open(stats_data_file, 'wb') as f:
-            pickle.dump(run_stats, f)
 
         for key, val in self.run_data.items():
             out_file = key + '.pkl'
             out_file = os.path.join(observables_dir, out_file)
             io.save_data(val, out_file, name=key)
 
-        for key, val in run_stats.items():
-            out_file = key + '_stats.pkl'
-            out_file = os.path.join(observables_dir, out_file)
-            io.save_data(val, out_file, name=key)
+        if self.model_type == 'GaugeModel':
+            run_stats = self.calc_observables_stats(self.run_data, therm_frac)
+            charges = self.run_data['charges']
+            charges_arr = np.array(list(charges.values()))
+            charges_autocorrs = [autocorr(x) for x in charges_arr.T]
+            charges_autocorrs = [x / np.max(x) for x in charges_autocorrs]
+            self.run_data['charges_autocorrs'] = charges_autocorrs
 
+            stats_data_file = os.path.join(self.run_dir, 'run_stats.pkl')
+            io.log(f"Saving run_stats to: {stats_data_file}.")
+            with open(stats_data_file, 'wb') as f:
+                pickle.dump(run_stats, f)
+
+            for key, val in run_stats.items():
+                out_file = key + '_stats.pkl'
+                out_file = os.path.join(observables_dir, out_file)
+                io.save_data(val, out_file, name=key)
+
+            self.write_run_stats(run_stats, therm_frac)
+
+    def _write_run_history(self):
+        """Write the strings printed during inference to `.txt` file."""
         history_file = os.path.join(self.run_dir, 'run_history.txt')
         io.write(self.run_header, history_file, 'w')
         _ = [io.write(s, history_file, 'a') for s in self.run_strings]
-
-        self.write_run_stats(run_stats, therm_frac)
 
     def write_run_stats(self, stats, therm_frac=10):
         """Write statistics in human readable format to .txt file."""
