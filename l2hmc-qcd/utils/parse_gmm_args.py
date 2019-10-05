@@ -6,12 +6,9 @@ Implements method for parsing command line arguments for `gmm_main.py`.
 Author: Sam Foreman (github: @saforem2)
 Date: 09/18/2019
 """
-import os
 import sys
 import argparse
 import shlex
-
-import utils.file_io as io
 
 DESCRIPTION = (
     'Implementation of the L2HMC algorithm for the 2D Gaussian Mixture Model.'
@@ -35,6 +32,28 @@ def parse_args():
                               is passed, the target distribution will have
                               means located at [-1, 0], and  [0, 1]. (Default:
                               1.)"""))
+
+    parser.add_argument('--arrangement',
+                        dest='arrangement',
+                        type=str,
+                        default='xaxis',
+                        required=False,
+                        help=("""Arrangement of the means of the target
+                              distribution. A string for specifying
+                              alternative arrangements for the target
+                              distribution. Possible values are: `xaxis`,
+                              `yaxis`, `diag`, `lattice`, or `ring`."""))
+
+    parser.add_argument('--size',
+                        dest='size',
+                        default=1.,
+                        type=float,
+                        required=False,
+                        help=("""The `size` of the distribution. Only relevant
+                              when `--arrangement == 'lattice' or 'ring'`. In
+                              the `lattice` case, specifies the linear extent
+                              of the lattice. In the `ring` case, specifies the
+                              radius of the ring."""))
 
     parser.add_argument('--diag',
                         dest='diag',

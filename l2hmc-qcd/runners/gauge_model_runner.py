@@ -142,12 +142,12 @@ class GaugeModelRunner:
     def run(self, **kwargs):
         """Run inference ot generate samples and calculate observables."""
         run_steps = int(kwargs.get('run_steps', 5000))
-
-        beta = kwargs.get('beta', self.params.get('beta_final', 5.))
         net_weights = kwargs.get('net_weights', [1., 1., 1.])
         therm_frac = kwargs.get('therm_frac', 10)
-
+        beta = kwargs.get('beta', self.params.get('beta_final', 5.))
         plaq_exact = u1_plaq_exact(beta)
+
+        has_logger = self.logger is not None
 
         x_dim = self.params['x_dim']
         samples_np = np.random.randn(*(self.params['batch_size'], x_dim))
@@ -159,9 +159,11 @@ class GaugeModelRunner:
                                                net_weights)
             samples_np = out_data['samples']
 
-            if self._has_logger:
+            if has_logger:
                 self.logger.update(self.sess, out_data,
                                    net_weights, data_str)
 
-        if self._has_logger:
+        #  if self._has_logger:
+        if has_logger:
+            self.logger._write_run_history()  # XXX
             self.logger.save_run_data(therm_frac=therm_frac)

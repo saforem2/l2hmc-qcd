@@ -212,7 +212,7 @@ class GaussianFunnel(object):
             log_p_v = tf.square(v / self.sigma)
             s = tf.exp(v)
             sum_sq = tf.reduce_sum(tf.square(x[:, 1:]), axis=1)
-            n = tf.cast(tf.shape(x)[1] - 1, tf.float32)
+            n = tf.cast(tf.shape(x)[1] - 1, TF_FLOAT)
             E = 0.5 * (log_p_v + sum_sq / s + n * tf.log(2.0 * np.pi * s))
             s_min = tf.exp(-self.clip)
             s_max = tf.exp(self.clip)
@@ -252,6 +252,7 @@ def gen_ring(r=1.0, var=1.0, nb_mixtures=2):
         c = np.cos(2 * np.pi * t / nb_mixtures)
         s = np.sin(2 * np.pi * t / nb_mixtures)
         base_points.append(np.array([r * c, r * s]))
+
 
     v = np.array(base_points)
     sigmas = [var * np.eye(2) for t in range(nb_mixtures)]

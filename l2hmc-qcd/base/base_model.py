@@ -14,24 +14,25 @@ References:
 Author: Sam Foreman (github: @saforem2)
 Date: 08/28/2019
 '''
-from __future__ import division
-from __future__ import print_function
-from __future__ import absolute_import
+from __future__ import absolute_import, division, print_function
 
+from config import GLOBAL_SEED, HAS_HOROVOD, TF_FLOAT
+from collections import namedtuple
 
-import tensorflow as tf
 import numpy as np
+import tensorflow as tf
+
+from utils.horovod_utils import warmup_lr
 
 #  import utils.file_io as io
-from utils.horovod_utils import warmup_lr
 #  from utils.distributions import quadratic_gaussian
-from config import HAS_HOROVOD, TF_FLOAT, GLOBAL_SEED
-from params.gmm_params import GMM_PARAMS
-from params.gauge_params import GAUGE_PARAMS
+#  from params.gmm_params import GMM_PARAMS
+#  from params.gauge_params import GAUGE_PARAMS
 
 if HAS_HOROVOD:
     import horovod.tensorflow as hvd
 
+LFdata = namedtuple('LFdata', ['init', 'proposed', 'prob'])
 
 PARAMS = {
     'hmc': False,
@@ -47,7 +48,7 @@ def _gaussian(x, mu, sigma):
     norm = tf.cast(
         1. / tf.sqrt(2 * np.pi * sigma ** 2), dtype=TF_FLOAT
     )
-    exp_ = tf.exp(-tf.square(x - mu) / (2 * sigma))
+    exp_ = tf.exp(-0.5 * ((x - mu) / sigma) ** 2)
 
     return norm * exp_
 
@@ -58,6 +59,8 @@ class BaseModel:
 
         if 'charge_weight' in params:
             self.charge_weight_np = params.pop('charge_weight', None)
+
+        self._eps_np = params.get('eps', None)
 
         self.params = params
         self.loss_weights = {}
@@ -78,6 +81,51 @@ class BaseModel:
     def build(self):
         """Build `tf.Graph` object containing operations for running model."""
         raise NotImplementedError
+
+    def _build_sampler(self):
+        """Build operations used for 'sampling' from the dynamics engine."""
+        with tf.name_scope('l2hmc'):
+            slf = self.save_lf
+            nnehmc = self.use_nnehmc_loss
+            args = (self.beta, self.net_weights, self.train_phase)
+
+            with tf.name_scope('main_dynamics'):
+                x_dynamics = self.dynamics.apply_transition(self.x, *args,
+                                                            save_lf=slf,
+                                                            hmc=nnehmc)
+                x_data = LFdata(x_dynamics['x_in'],
+                                x_dynamics['x_proposed'],
+                                x_dynamics['accept_prob'])
+
+            # NOTE: `self.px_hmc = tf.zeros_like(self.px)` if not NNEHMC
+            self.x_out = x_dynamics['x_out']
+            self.px = x_dynamics['accept_prob']
+            self.px_hmc = x_dynamics['accept_prob_hmc']
+            self._parse_dynamics_output(x_dynamics)
+            if self.hmc:
+                return
+
+            # Run dynamics update using aux. (rand. norm) distribution
+            aux_weight = getattr(self, 'aux_weight', 1.)
+            with tf.name_scope('auxiliary_dynamics'):
+                if aux_weight > 0.:
+                    self.z = tf.random_normal(tf.shape(self.x),
+                                              dtype=TF_FLOAT,
+                                              seed=GLOBAL_SEED,
+                                              name='z')
+                    z_dynamics = self.dynamics.apply_transition(self.z, *args,
+                                                                save_lf=False,
+                                                                hmc=nnehmc)
+                    z_data = LFdata(z_dynamics['x_in'],
+                                    z_dynamics['x_proposed'],
+                                    z_dynamics['accept_prob'])
+                else:
+                    z_data = LFdata(0., 0., 0.)
+
+            with tf.name_scope('check_reversibility'):
+                self.x_diff, self.v_diff = self._check_reversibility()
+
+        return x_data, z_data
 
     def _create_global_step(self):
         """Create global_step tensor."""
@@ -151,6 +199,7 @@ class BaseModel:
                 train_phase: Boolean placeholder indicating if the model is
                     curerntly being trained. 
         """
+
         def make_ph(name, shape=(), dtype=TF_FLOAT):
             return tf.placeholder(dtype=dtype, shape=shape, name=name)
 
@@ -163,6 +212,7 @@ class BaseModel:
                 transl_weight = make_ph('translation_weight')
                 transf_weight = make_ph('transformation_weight')
                 train_phase = make_ph('is_training', dtype=tf.bool)
+                eps_ph = make_ph('eps_ph')
 
             inputs = {
                 'x': x,
@@ -170,7 +220,8 @@ class BaseModel:
                 'scale_weight': scale_weight,
                 'transl_weight': transl_weight,
                 'transf_weight': transf_weight,
-                'train_phase': train_phase
+                'train_phase': train_phase,
+                'eps_ph': eps_ph,
             }
 
         _ = [tf.add_to_collection('inputs', i) for i in inputs.values()]
@@ -183,7 +234,10 @@ class BaseModel:
 
     def _calc_esjd(self, x1, x2, prob):
         """Compute the expected squared jump distance (ESJD)."""
-        return prob * tf.reduce_sum(self.metric_fn(x1, x2), axis=1)
+        with tf.name_scope('esjd'):
+            esjd = prob * tf.reduce_sum(self.metric_fn(x1, x2), axis=1)
+
+        return esjd
 
     def _loss(self, init, proposed, prob):
         """Calculate the (standard) contribution to the loss from the ESJD."""
@@ -238,44 +292,39 @@ class BaseModel:
 
         return loss
 
-    def _alt_gaussian_loss(self, x_data, z_data, mean, sigma):
+    def _gaussian_loss(self, x_data, z_data, mean, sigma):
         """Alternative Gaussian loss implemntation."""
-        ls = getattr(self, 'loss_scale', 0.1)
+        ls = getattr(self, 'loss_scale', 1.)
         aux_weight = getattr(self, 'aux_weight', 1.)
         with tf.name_scope('gaussian_loss'):
             with tf.name_scope('x_loss'):
                 x_esjd = self._calc_esjd(x_data.init,
                                          x_data.proposed,
-                                         x_data.prob) + 1e-4
-                #  xg1 = _gaussian(ls / x_esjd, mean, sigma)
-                xg2 = _gaussian(x_esjd / ls, mean, sigma)
-                #  x_diff = ls / x_esjd - x_esjd / ls
-                #  x_gauss = _gaussian(x_diff, mean, sigma)
-                x_loss = - tf.reduce_mean(xg2, name='x_loss')
-                #  x_gauss = _gaussian(x_esjd, mean, sigma)
-                #  x_loss_ = tf.reduce_mean(x_gauss)
-                #
-                #  x_gauss_inv = _gaussian(1. / x_esjd, mean, sigma)
-                #  x_loss_inv_ = tf.reduce_mean(x_gauss_inv)
-                #
-                #  x_loss = - tf.log(ls * x_loss_inv_ - x_loss_ / ls)
+                                         x_data.prob)
+                x_gauss = _gaussian(x_esjd, mean, sigma)
+                #  x_loss = - ls * tf.reduce_mean(x_gauss, name='x_gauss_mean')
+                x_loss = ls * tf.reduce_mean(x_gauss, name='x_gauss_mean')
+                #  x_loss = ls * tf.log(tf.reduce_mean(x_gauss))
 
             with tf.name_scope('z_loss'):
-                z_esjd = self._calc_esjd(z_data.init,
-                                         z_data.proposed,
-                                         z_data.prob) + 1e-4
-                #  zg1 = _gaussian(ls / z_esjd, mean, sigma)
-                zg2 = _gaussian(z_esjd / ls, mean, sigma)
-                #  z_diff = ls / z_esjd - z_esjd / ls
-                #  z_gauss = _gaussian(z_diff, mean, sigma)
-                z_loss = - tf.reduce_mean(zg2, name='z_loss')
+                if aux_weight > 0.:
+                    z_esjd = self._calc_esjd(z_data.init,
+                                             z_data.proposed,
+                                             z_data.prob)
+                    z_gauss = _gaussian(z_esjd, mean, sigma)
+                    #  aux_factor = - ls * aux_weight
+                    aux_factor = ls * aux_weight
+                    z_loss = aux_factor * tf.reduce_mean(z_gauss,
+                                                         name='z_gauss_mean')
+                    #  z_loss = aux_factor * tf.log(tf.reduce_mean(z_gauss))
+                else:
+                    z_loss = 0.
 
-            #  loss = - tf.log(x_loss + z_loss, name='gaussian_loss')
-            loss = tf.add(x_loss, aux_weight * z_loss, name='loss')
+            gaussian_loss = tf.add(x_loss, z_loss, name='loss')
 
-        return loss
+        return gaussian_loss
 
-    def _gaussian_loss(self, x_data, z_data, mean, sigma):
+    def _orig_gaussian_loss(self, x_data, z_data, mean, sigma):
         ls = getattr(self, 'loss_scale', 0.1)
         aux_weight = getattr(self, 'aux_weight', 1.)
         with tf.name_scope('gaussian_loss'):
@@ -300,12 +349,13 @@ class BaseModel:
 
         return gaussian_loss
 
-    def _nnehmc_loss(self, x_data, hmc_prob, beta=1.):
+    def _nnehmc_loss(self, x_data, hmc_prob, beta=1., x_esjd=None):
         """Calculate the NNEHMC loss from [1] (line 10)."""
-        x_in, x_proposed, accept_prob = x_data
-        x_esjd = self._calc_esjd(x_in, x_proposed, accept_prob)
+        if x_esjd is None:
+            x_in, x_proposed, accept_prob = x_data
+            x_esjd = self._calc_esjd(x_in, x_proposed, accept_prob)
 
-        return tf.reduce_mean(- x_esjd - beta * hmc_prob)
+        return tf.reduce_mean(- x_esjd - beta * hmc_prob, name='nnehmc_loss')
 
     def _check_reversibility(self):
         x_in = tf.random_normal(self.x.shape,

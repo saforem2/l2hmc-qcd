@@ -33,16 +33,12 @@ Date: 04/10/2019
 from __future__ import absolute_import, division, print_function
 
 import os
-
-#  import random
 import time
 import pickle
-import inference
 
 from config import (GLOBAL_SEED, HAS_COMET, HAS_HOROVOD, HAS_MATPLOTLIB,
                     NP_FLOAT)
 from update import set_precision, set_seed
-from collections import namedtuple
 from models.gauge_model import GaugeModel
 from loggers.train_logger import TrainLogger
 from trainers.gauge_model_trainer import GaugeModelTrainer
@@ -54,6 +50,7 @@ from tensorflow.python import debug as tf_debug  # noqa: F401
 from tensorflow.python.client import timeline  # noqa: F401
 from tensorflow.core.protobuf import rewriter_config_pb2
 
+import inference
 import utils.file_io as io
 
 from utils.parse_args import parse_args
@@ -69,12 +66,6 @@ if float(tf.__version__.split('.')[0]) <= 2:
 
 SEP_STR = 80 * '-'  # + '\n'
 
-# -------------------------------------------
-# Set random seeds for tensorflow and numpy
-# -------------------------------------------
-#  os.environ['PYTHONHASHSEED'] = str(GLOBAL_SEED)
-#  random.seed(GLOBAL_SEED)        # `python` build-in pseudo-random generator
-#  np.random.seed(GLOBAL_SEED)     # numpy pseudo-random generator
 tf.set_random_seed(GLOBAL_SEED)
 
 
@@ -437,12 +428,9 @@ def main(FLAGS):
 
 if __name__ == '__main__':
     FLAGS = parse_args()
-    t0 = time.time()
-
     set_seed(FLAGS.global_seed)
-
+    t0 = time.time()
     main(FLAGS)
-
     io.log('\n\n' + SEP_STR)
     io.log(f'Time to complete: {time.time() - t0:.4g}')
     io.log(SEP_STR)
