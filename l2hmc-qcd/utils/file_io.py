@@ -272,9 +272,6 @@ def create_log_dir(FLAGS, root_dir=None, log_file=None,
             _dir = _log_dir
         else:
             _dir = os.path.join(_log_dir, root_dir)
-    '''
-    root_log_dir = os.path.join(project_dir, _dir, day_str, time_str, run_str)
-    '''
     root_log_dir = os.path.join(project_dir, _dir, day_str, run_str)
     # if `root_log_dir` already exists, append '_%H%M' (hour, minute) at end
     if os.path.isdir(root_log_dir):

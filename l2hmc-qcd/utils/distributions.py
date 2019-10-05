@@ -251,11 +251,7 @@ def gen_ring(r=1.0, var=1.0, nb_mixtures=2):
     for t in range(nb_mixtures):
         c = np.cos(2 * np.pi * t / nb_mixtures)
         s = np.sin(2 * np.pi * t / nb_mixtures)
-        try:
-            base_points.append(np.array([r * c, r * s]))
-        except:
-            import pudb; pudb.set_trace()
-        #  base_points.append([r * c, r * s])
+        base_points.append(np.array([r * c, r * s]))
 
 
     v = np.array(base_points)
