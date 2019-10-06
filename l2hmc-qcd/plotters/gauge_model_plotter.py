@@ -161,7 +161,7 @@ class GaugeModelPlotter:
         nw = net_weights
         sw, translw, transfw = nw
         title_str = (r"$N_{\mathrm{LF}} = $" + f"{lf_steps}, "
-                     r"$\varepsilon = $" + f"{eps}, "
+                     r"$\varepsilon = $" + f"{eps:.3g}, "
                      r"$N_{\mathrm{B}} = $" + f"{bs}, "
                      r"$\beta =$" + f"{beta:.2g}, "
                      r"$\mathrm{nw} = $" + (f"{nw[0]:.3g}, "
@@ -268,7 +268,7 @@ class GaugeModelPlotter:
             fname = kwargs.get('fname', f'plot_{np.random.randint(10)}')
             out_file = get_out_file(self.out_dir, fname)
             io.log(f'Saving figure to: {out_file}.')
-            plt.savefig(out_file, dpi=400, bbox_inches='tight')
+            plt.savefig(out_file, bbox_inches='tight')
 
         return fig, (ax0, ax1)
 
@@ -316,7 +316,7 @@ class GaugeModelPlotter:
 
         out_file = get_out_file(self.out_dir, 'plaqs_vs_step')
         io.log(f'Saving figure to: {out_file}')
-        plt.savefig(out_file, dpi=400, bbox_inches='tight')
+        plt.savefig(out_file, bbox_inches='tight')
 
     def _plot_plaqs_diffs(self, xy_data, **kwargs):
         kwargs['out_file'] = None
@@ -347,7 +347,7 @@ class GaugeModelPlotter:
         _ = plt.tight_layout()
         out_file = get_out_file(self.out_dir, 'plaqs_diffs_vs_step')
         io.log(f'Saving figure to: {out_file}.')
-        plt.savefig(out_file, dpi=400, bbox_inches='tight')
+        plt.savefig(out_file, bbox_inches='tight')
 
         return y_mean
 
@@ -383,7 +383,7 @@ class GaugeModelPlotter:
             out_file = get_out_file(out_dir, f'top_charge_vs_step_{idx}')
             io.check_else_make_dir(os.path.dirname(out_file))
             io.log(f'Saving figure to: {out_file}')
-            plt.savefig(out_file, dpi=400, bbox_inches='tight')
+            plt.savefig(out_file, bbox_inches='tight')
 
         plt.close('all')
 
@@ -397,13 +397,13 @@ class GaugeModelPlotter:
         # from a random configuration
         _, ax = plt.subplots()
         _ = ax.plot(xy_data[0][2:], xy_data[1][2:],
-                    marker='.', ls='', fillstyle='none', color='C0')
+                    marker=',', ls='', fillstyle='none', color='C0')
         _ = ax.set_xlabel('Steps', fontsize=14)
         _ = ax.set_ylabel(r'$\delta_{Q}$', fontsize=14)
         _ = ax.set_title(kwargs['title'], fontsize=16)
         _ = plt.tight_layout()
         io.log(f"Saving figure to: {out_file}")
-        plt.savefig(out_file, dpi=400, bbox_inches='tight')
+        plt.savefig(out_file, bbox_inches='tight')
 
     def _plot_charge_probs(self, charges, **kwargs):
         """PLot top. charge probabilities."""
@@ -432,7 +432,7 @@ class GaugeModelPlotter:
             out_file = get_out_file(out_dir, f'top_charge_vs_step_{idx}')
             io.check_else_make_dir(os.path.dirname(out_file))
             io.log(f"Saving plot to: {out_file}.")
-            plt.savefig(out_file, dpi=400, bbox_inches='tight')
+            plt.savefig(out_file, bbox_inches='tight')
             #  for f in out_file:
             #      io.check_else_make_dir(os.path.dirname(f))
             #      io.log(f"Saving plot to: {f}.")
@@ -457,7 +457,7 @@ class GaugeModelPlotter:
         out_file = get_out_file(self.out_dir, f'TOP_CHARGE_PROBS_ALL')
         io.check_else_make_dir(os.path.dirname(out_file))
         io.log(f"Saving plot to: {out_file}.")
-        plt.savefig(out_file, dpi=400, bbox_inches='tight')
+        plt.savefig(out_file, bbox_inches='tight')
         #  for f in out_file:
         plt.close('all')
 
