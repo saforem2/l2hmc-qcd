@@ -490,23 +490,24 @@ def gmm_plot(distribution, samples, **kwargs):
                         alpha=1., markersize=1.5, zorder=10)
             _ = ax.axis(axis_scale)
 
-            xtl, ytl = _get_ticks_labels(ax)
-            _ = ax.set_xticks([])
-            _ = ax.set_yticks([])
-            _ = ax.set_xlim(xlims)
-            _ = ax.set_ylim(ylims)
+            #  xtl, ytl = _get_ticks_labels(ax)
+            if ax != axes[-1, 0]:     # Keep ticks/labels on lower left subplot
+                _ = ax.set_xticks([])
+                _ = ax.set_yticks([])
+                _ = ax.set_xlim(xlims)
+                _ = ax.set_ylim(ylims)
 
             idx += 1
 
-    xticks, xticklabels = xtl
-    yticks, yticklabels = ytl
+    #  xticks, xticklabels = xtl
+    #  yticks, yticklabels = ytl
 
-    _ = axes[-1, 0].set_yticks(yticks)
-    _ = axes[-1, 0].set_yticklabels(yticklabels)
-    _ = axes[-1, 0].set_xticks(xticks)
-    _ = axes[-1, 0].set_xticklabels(xticklabels)
-    _ = axes[-1, 0].axis(axis_scale)
-
+    #  _ = axes[-1, 0].set_yticks(yticks)
+    #  _ = axes[-1, 0].set_yticklabels(yticklabels)
+    #  _ = axes[-1, 0].set_xticks(xticks)
+    #  _ = axes[-1, 0].set_xticklabels(xticklabels)
+    #  _ = axes[-1, 0].axis(axis_scale)
+    #
     # _ = fig.tight_layout()
 
     if title is not None:
