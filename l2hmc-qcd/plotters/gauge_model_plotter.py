@@ -38,8 +38,6 @@ class GaugeModelPlotter:
         self.figs_dir = figs_dir
         self.params = params
         #  self.model = model
-        if experiment is not None:
-            self.experiment = experiment
 
     def calc_stats(self, data, therm_frac=10):
         """Calculate observables statistics.
@@ -87,12 +85,6 @@ class GaugeModelPlotter:
         }
 
         return stats
-
-    def log_figure(self):
-        try:
-            self.experiment.log_figure()
-        except AttributeError:
-            pass
 
     def _parse_data(self, data, beta):
         """Helper method for extracting relevant data from `data`.'"""
@@ -185,20 +177,15 @@ class GaugeModelPlotter:
         """Plot observables."""
         xy_data, kwargs = self._plot_setup(data, **kwargs)
 
-        self._plot_actions(xy_data['actions'], **kwargs)
-        self.log_figure()
         self._plot_plaqs(xy_data['plaqs'], **kwargs)
-        self.log_figure()
+        self._plot_actions(xy_data['actions'], **kwargs)
         self._plot_charges(xy_data['charges'], **kwargs)
-        self.log_figure()
-        self._plot_charge_probs(xy_data['charges'][1], **kwargs)
-        self.log_figure()
-        self._plot_charge_diffs(xy_data['charge_diffs'], **kwargs)
-        self.log_figure()
         self._plot_autocorrs(xy_data['autocorrs'], **kwargs)
-        self.log_figure()
+        # take xy_data['charges'][1] since we're only concerned with 'y' data
+        self._plot_charge_probs(xy_data['charges'][1], **kwargs)
+        self._plot_charges_hist(xy_data['charges'][1], **kwargs)
+        self._plot_charge_diffs(xy_data['charge_diffs'], **kwargs)
         mean_diff = self._plot_plaqs_diffs(xy_data['plaqs_diffs'], **kwargs)
-        self.log_figure()
 
         return mean_diff
 
@@ -433,9 +420,6 @@ class GaugeModelPlotter:
             io.check_else_make_dir(os.path.dirname(out_file))
             io.log(f"Saving plot to: {out_file}.")
             plt.savefig(out_file, bbox_inches='tight')
-            #  for f in out_file:
-            #      io.check_else_make_dir(os.path.dirname(f))
-            #      io.log(f"Saving plot to: {f}.")
         plt.close('all')
 
         all_counts = Counter(list(charges.flatten()))
@@ -458,8 +442,20 @@ class GaugeModelPlotter:
         io.check_else_make_dir(os.path.dirname(out_file))
         io.log(f"Saving plot to: {out_file}.")
         plt.savefig(out_file, bbox_inches='tight')
-        #  for f in out_file:
         plt.close('all')
+
+    def _plot_charges_hist(self, charges, **kwargs):
+        charges = np.array(charges, dtype=int)
+        charges_flat = charges.flatten()
+        bins = np.unique(charges_flat)
+
+        _, ax = plt.subplots()
+        _ = ax.histogram(charges_flat, bins=bins)
+        _ = ax.set_ylabel(r"""Topological charge, $Q$""")
+        out_file = get_out_file(self.out_dir, 'top_charge_histogram')
+        io.check_else_make_dir(os.path.sidrname(out_file))
+        io.log(f'Saving plot to: {out_file}.')
+        plt.savefig(out_file, bbox_inches='tight')
 
     def _plot_autocorrs(self, xy_data, **kwargs):
         """Plot topological charge autocorrelations."""
