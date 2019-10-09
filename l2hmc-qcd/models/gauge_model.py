@@ -190,34 +190,6 @@ class GaugeModel(BaseModel):
 
         return dynamics
 
-    def _create_dynamics1(self, potential_fn, **params):
-        """Create `Dynamics` object."""
-        with tf.name_scope('create_dynamics'):
-            dynamics_keys = [
-                'eps', 'hmc', 'num_steps', 'use_bn',
-                'dropout_prob', 'network_arch',
-                'num_hidden1', 'num_hidden2'
-            ]
-
-            dynamics_params = {
-                k: getattr(self, k, None) for k in dynamics_keys
-            }
-
-            dynamics_params.update({
-                'eps_trainable': not self.eps_fixed,
-                'num_filters': self.lattice.space_size,
-                'x_dim': self.lattice.num_links,
-                'batch_size': self.batch_size,
-                '_input_shape': (self.batch_size, *self.lattice.links.shape),
-            })
-
-            dynamics_params.update(params)
-            samples = self.lattice.samples_tensor
-            potential_fn = self.lattice.get_potential_fn(samples)
-            dynamics = Dynamics(potential_fn=potential_fn, **dynamics_params)
-
-        return dynamics
-
     def _create_observables(self):
         """Create operations for calculating lattice observables."""
         with tf.name_scope('observables'):
