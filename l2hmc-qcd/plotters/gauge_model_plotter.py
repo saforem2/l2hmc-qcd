@@ -453,7 +453,7 @@ class GaugeModelPlotter:
         _ = ax.hist(charges_flat, bins=bins)
         _ = ax.set_ylabel(r"""Topological charge, $Q$""")
         out_file = get_out_file(self.out_dir, 'top_charge_histogram')
-        io.check_else_make_dir(os.path.sidrname(out_file))
+        io.check_else_make_dir(os.path.dirname(out_file))
         io.log(f'Saving plot to: {out_file}.')
         plt.savefig(out_file, bbox_inches='tight')
 
