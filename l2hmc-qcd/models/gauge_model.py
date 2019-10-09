@@ -40,6 +40,9 @@ SEP_STRN = 80 * '-' + '\n'
 def allclose(x, y, rtol=1e-3, atol=1e-5):
     return tf.reduce_all(tf.abs(x - y) <= tf.abs(y) * rtol + atol)
 
+def split_sampler_data(sampler_data):
+    return sampler_data.data, sampler_data.dynamics_output
+
 
 class GaugeModel(BaseModel):
     def __init__(self, params=None):
@@ -122,7 +125,9 @@ class GaugeModel(BaseModel):
         # NOTE: We use the `dynamics.apply_transition` method to run the
         # augmented l2hmc leapfrog integrator and obtain new samples.
         # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        x_data, z_data = self._build_sampler()
+        x_sampler_data, z_sampler_data = self._build_sampler()
+        x_data, self._x_dynamics = split_sampler_data(x_sampler_data)
+        z_data, self._z_dynamics = split_sampler_data(z_sampler_data)
 
         # *******************************************************************
         # Calculate loss_op and train_op to backprop. grads through network
@@ -295,9 +300,10 @@ class GaugeModel(BaseModel):
         """Calculate the Gaussian loss."""
         return self._gaussian_loss(x_data, z_data, mean=0., sigma=1.)
 
-    def nnehmc_loss(self, x_data, hmc_prob, beta=1.):
+    def nnehmc_loss(self, x_data, hmc_prob):
         """Calculate the NNEHMC loss."""
-        return self._nnehmc_loss(x_data, hmc_prob, beta=beta)
+        nnehmc_beta = getattr(self, 'nnehmc_beta', 1.)
+        return self._nnehmc_loss(x_data, hmc_prob, beta=nnehmc_beta)
 
     def _parse_dynamics_output(self, dynamics_output):
         """Parse output dictionary from `self.dynamics.apply_transition`."""
