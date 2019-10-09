@@ -450,7 +450,7 @@ class GaugeModelPlotter:
         bins = np.unique(charges_flat)
 
         _, ax = plt.subplots()
-        _ = ax.histogram(charges_flat, bins=bins)
+        _ = ax.hist(charges_flat, bins=bins)
         _ = ax.set_ylabel(r"""Topological charge, $Q$""")
         out_file = get_out_file(self.out_dir, 'top_charge_histogram')
         io.check_else_make_dir(os.path.sidrname(out_file))
