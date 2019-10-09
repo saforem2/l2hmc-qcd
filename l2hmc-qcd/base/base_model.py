@@ -141,21 +141,22 @@ class BaseModel:
     def _create_dynamics(self, potential_fn, **params):
         """Create Dynamics Object."""
         with tf.name_scope('create_dynamics'):
-            dynamics_keys = ['eps', 'hmc', 'num_steps', 'use_bn',
-                             'dropout_prob', 'network_arch',
-                             'num_hidden1', 'num_hidden2']
-            dynamics_params = {
-                k: getattr(self, k, None) for k in dynamics_keys
+            keys = ['eps', 'hmc', 'num_steps', 'use_bn',
+                    'dropout_prob', 'network_arch',
+                    'num_hidden1', 'num_hidden2']
+
+            kwargs = {
+                k: getattr(self, k, None) for k in keys
             }
-            dynamics_params.update({
+            kwargs.update({
                 'eps_trainable': not self.eps_fixed,
                 'x_dim': self.x_dim,
                 'batch_size': self.batch_size,
                 '_input_shape': self.x.shape
             })
-            dynamics_params.update(params)
+            kwargs.update(params)
 
-            dynamics = Dynamics(potential_fn=potential_fn, **dynamics_params)
+            dynamics = Dynamics(potential_fn=potential_fn, **kwargs)
 
         return dynamics
 
@@ -204,10 +205,6 @@ class BaseModel:
                 optimizer = hvd.DistributedOptimizer(optimizer)
 
         return optimizer
-
-    def _create_dynamics(self, **kwargs):
-        """Create dynamics object used to perform augmented leapfrog update."""
-        raise NotImplementedError
 
     def _create_inputs(self):
         """Create input paceholders (if not executing eagerly).
