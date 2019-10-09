@@ -18,6 +18,7 @@ from __future__ import absolute_import, division, print_function
 
 from config import GLOBAL_SEED, HAS_HOROVOD, TF_FLOAT
 from collections import namedtuple
+from dynamics.dynamics import Dynamics
 
 import numpy as np
 import tensorflow as tf
@@ -33,6 +34,7 @@ if HAS_HOROVOD:
     import horovod.tensorflow as hvd
 
 LFdata = namedtuple('LFdata', ['init', 'proposed', 'prob'])
+SamplerData = namedtuple('SamplerData', ['data', 'dynamics_output'])
 
 PARAMS = {
     'hmc': False,
@@ -82,6 +84,11 @@ class BaseModel:
         """Build `tf.Graph` object containing operations for running model."""
         raise NotImplementedError
 
+    def _build_eps_setter(self):
+        eps_setter = tf.assign(self.dynamics.eps,
+                               self.eps_ph, name='eps_setter')
+        return eps_setter
+
     def _build_sampler(self):
         """Build operations used for 'sampling' from the dynamics engine."""
         with tf.name_scope('l2hmc'):
@@ -120,12 +127,37 @@ class BaseModel:
                                     z_dynamics['x_proposed'],
                                     z_dynamics['accept_prob'])
                 else:
+                    z_dynamics = {}
                     z_data = LFdata(0., 0., 0.)
 
             with tf.name_scope('check_reversibility'):
                 self.x_diff, self.v_diff = self._check_reversibility()
 
-        return x_data, z_data
+        x_output = SamplerData(x_data, x_dynamics)
+        z_output = SamplerData(z_data, z_dynamics)
+
+        return x_output, z_output
+
+    def _create_dynamics(self, potential_fn, **params):
+        """Create Dynamics Object."""
+        with tf.name_scope('create_dynamics'):
+            dynamics_keys = ['eps', 'hmc', 'num_steps', 'use_bn',
+                             'dropout_prob', 'network_arch',
+                             'num_hidden1', 'num_hidden2']
+            dynamics_params = {
+                k: getattr(self, k, None) for k in dynamics_keys
+            }
+            dynamics_params.update({
+                'eps_trainable': not self.eps_fixed,
+                'x_dim': self.x_dim,
+                'batch_size': self.batch_size,
+                '_input_shape': self.x.shape
+            })
+            dynamics_params.update(params)
+
+            dynamics = Dynamics(potential_fn=potential_fn, **dynamics_params)
+
+        return dynamics
 
     def _create_global_step(self):
         """Create global_step tensor."""
@@ -378,11 +410,6 @@ class BaseModel:
         vdiff = (v_in - vb)
         x_diff = tf.reduce_sum(tf.matmul(tf.transpose(xdiff), xdiff))
         v_diff = tf.reduce_sum(tf.matmul(tf.transpose(vdiff), vdiff))
-        #  x_diff = np.sum((x_in - xb).T.dot(x_in - xb))
-        #  v_diff = np.sum((v_in - vb).T.dot(v_in - vb))
-
-        #  x_allclose = allclose(x_in, xb)  # xb = backward(forward(x_in))
-        #  v_allclose = allclose(v_in, vb)
 
         return x_diff, v_diff
 
@@ -398,7 +425,8 @@ class BaseModel:
 
     def _apply_grads(self, loss_op, grads):
         grads_and_vars = zip(grads, self.dynamics.trainable_variables)
-        with tf.control_dependencies([loss_op, *self.dynamics.updates]):
+        ctrl_deps = [loss_op, *self.dynamics.updates]
+        with tf.control_dependencies(ctrl_deps):
             train_op = self.optimizer.apply_gradients(grads_and_vars,
                                                       self.global_step,
                                                       'train_op')
