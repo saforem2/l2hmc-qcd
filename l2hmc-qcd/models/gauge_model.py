@@ -81,7 +81,9 @@ class GaugeModel(BaseModel):
             inputs = self._create_inputs()
             self.x = inputs['x']
             self.beta = inputs['beta']
-            nw_keys = ['scale_weight', 'transl_weight', 'transf_weight']
+            nw_keys = [
+                'scale_weight', 'transl_weight', 'transf_weight'
+            ]
             self.net_weights = [inputs[k] for k in nw_keys]
             self.train_phase = inputs['train_phase']
             self.eps_ph = inputs['eps_ph']
@@ -91,16 +93,14 @@ class GaugeModel(BaseModel):
             # Create dynamics for running L2HMC leapfrog
             # -----------------------------------------------
             io.log(f'INFO: Creating `Dynamics`...')
-            self.dynamics = self._create_dynamics()
+            self.dynamics = self.create_dynamics()
             # Create operation for assigning to `dynamics.eps` 
             # the value fed into the placeholder `eps_ph`.
-            self.eps_setter = tf.assign(self.dynamics.eps,
-                                        self.eps_ph,
-                                        name='eps_setter')
+            self.eps_setter = self._build_eps_setter()
 
-            # ***************************************************************
-            # Create metric function for measuring 'distance' between configs
-            # ---------------------------------------------------------------
+            # ***********************************************
+            # Create metric for measuring 'distance`
+            # ***********************************************
             metric = getattr(self, 'metric', 'cos_diff')
             self.metric_fn = self._create_metric_fn(metric)
 
@@ -173,7 +173,24 @@ class GaugeModel(BaseModel):
 
         return lattice
 
-    def _create_dynamics(self, **params):
+    def create_dynamics(self, **params):
+        """Create dynamics object."""
+        samples = self.lattice.samples_tensor
+        potential_fn = self.lattice.get_potential_fn(samples)
+
+        kwargs = {
+            'eps_trainable': not self.eps_fixed,
+            'num_filters': self.lattice.space_size,
+            'x_dim': self.lattice.num_links,
+            'batch_size': self.batch_size,
+            '_input_shape': (self.batch_size, *self.lattice.links.shape),
+        }
+
+        dynamics = self._create_dynamics(potential_fn, **kwargs)
+
+        return dynamics
+
+    def _create_dynamics1(self, potential_fn, **params):
         """Create `Dynamics` object."""
         with tf.name_scope('create_dynamics'):
             dynamics_keys = [
