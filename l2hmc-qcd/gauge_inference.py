@@ -60,6 +60,24 @@ if float(tf.__version__.split('.')[0]) <= 2:
     tf.logging.set_verbosity(tf.logging.INFO)
 
 
+
+def set_eps(sess, eps, run_ops, inputs, graph=None):
+    if graph is None:
+        graph = tf.get_default_graph()
+
+    eps_setter = graph.get_operation_by_name('init/eps_setter')
+    eps_tensor = [i for i in run_ops if 'eps' in i.name][0]
+    eps_ph = [i for i in inputs if 'eps_ph' in i.name][0]
+
+    eps_np = sess.run(eps_tensor)
+    io.log(f'INFO: Original value of `eps`: {eps_np}')
+    io.log(f'INFO: Setting `eps` to: {eps}.')
+    sess.run(eps_setter, feed_dict={eps_ph: eps})
+    eps_np = sess.run(eps_tensor)
+
+    io.log(f'INFO: New value of `eps`: {eps_np}')
+
+
 def run_hmc(FLAGS, log_file=None):
     """Run inference using generic HMC."""
     condition1 = not FLAGS.horovod
@@ -264,7 +282,11 @@ def main(kwargs):
     if inference_dict['beta'] is None:
         inference_dict['beta'] = params['beta_final']
 
-    params['eps'] = inference_dict.get('eps', None)
+    #  params['eps'] = inference_dict.get('eps', None)
+    eps = kwargs.get('eps', None)
+    if eps is not None:
+        graph = tf.get_default_graph()
+        set_eps(sess, eps, run_ops, inputs, graph)
 
     runner = GaugeModelRunner(sess, params, inputs, run_ops, run_logger)
 
