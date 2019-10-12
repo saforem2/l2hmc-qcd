@@ -37,6 +37,8 @@ GAUGE_PARAMS = {                    # default parameters for `GaugeModel`
     'eps_fixed': False,
     'hmc': False,
     #  ------------------- LOSS PARAMS -------------------
+    'use_nnehmc_loss': False,
+    'use_gaussian_loss': False,
     'loss_scale': 0.1,
     'std_weight': 1.0,
     'aux_weight': 1.0,
