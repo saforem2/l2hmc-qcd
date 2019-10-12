@@ -93,6 +93,7 @@ class GaugeLattice(object):
 
         # create samples using @property method: `@samples.setter`
         self.samples = (batch_size, rand)
+        self._samples_shape = self._samples.shape
 
         self.links = self.samples[0]
         self.batch_size = self.samples.shape[0]
@@ -212,11 +213,17 @@ class GaugeLattice(object):
                                          name='top_charges')) / (2 * np.pi)
         return top_charges
 
-    def calc_top_charges_diff(self, x1, x2, plaq_sums1=None, plaq_sums2=None):
+    def calc_top_charges_diff(self, x1, x2):
         """Calculate the difference in topological charge between x1 and x2."""
         with tf.name_scope('top_charges_diff'):
-            charge_diff = tf.abs(self.calc_top_charges(x1, plaq_sums1)
-                                 - self.calc_top_charges(x2, plaq_sums2))
+            with tf.name_scope('charge1'):
+                ps1 = self.calc_plaq_sums(samples=x1)
+                q1 = self.calc_top_charges(plaq_sums=ps1)
+            with tf.name_scope('charge2'):
+                ps2 = self.calc_plaq_sums(samples=x2)
+                q2 = self.calc_top_charges(plaq_sums=ps2)
+
+            charge_diff = tf.abs(q1 - q2)
 
         return charge_diff
 

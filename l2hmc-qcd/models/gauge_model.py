@@ -198,7 +198,7 @@ class GaugeModel(BaseModel):
     def _create_observables(self):
         """Create operations for calculating lattice observables."""
         with tf.name_scope('observables'):
-            plaq_sums = self.lattice.calc_plaq_sums(self.x)
+            plaq_sums = self.lattice.calc_plaq_sums(samples=self.x)
             actions = self.lattice.calc_actions(plaq_sums=plaq_sums)
             plaqs = self.lattice.calc_plaqs(plaq_sums=plaq_sums)
             avg_plaqs = tf.reduce_mean(plaqs, name='avg_plaqs')

@@ -58,12 +58,13 @@ def log_and_write(s, f):
 def copy(src, dest):
     try:
         shutil.copytree(src, dest)
-    except OSError as e:
+    except OSError:
         # If the error was caused because the source wasn't a directory
-        if e.errno == errno.ENOTDIR:
+        #  if e.errno == errno.ENOTDIR:
+        try:
             shutil.copy(src, dest)
-        else:
-            log(f'Directory not copied. Error: {e}')
+        except OSError as ee:
+            log(f'Directory not copied. Error: {ee}')
 
 
 def check_else_make_dir(d):
@@ -93,18 +94,18 @@ def _parse_gauge_flags(FLAGS):
         except (NameError, AttributeError):
             pass
     try:
-        LX = flags_dict['space_size']
-        BS = flags_dict['batch_size']
-        LF = flags_dict['num_steps']
-        SS = flags_dict['eps']
-        QW = flags_dict['charge_weight']
-        NA = flags_dict['network_arch']
-        BN = flags_dict['use_bn']
-        DP = flags_dict['dropout_prob']
-        AW = flags_dict['aux_weight']
-        GL = flags_dict['use_gaussian_loss']
-        NL = flags_dict['use_nnehmc_loss']
-        hmc = flags_dict['hmc']
+        LX = flags_dict.get('space_size', None)
+        BS = flags_dict.get('batch_size', None)
+        LF = flags_dict.get('num_steps', None)
+        SS = flags_dict.get('eps', None)
+        QW = flags_dict.get('charge_weight', None)
+        NA = flags_dict.get('network_arch', None)
+        BN = flags_dict.get('use_bn', None)
+        DP = flags_dict.get('dropout_prob', None)
+        AW = flags_dict.get('aux_weight', None)
+        GL = flags_dict.get('use_gaussian_loss', None)
+        NL = flags_dict.get('use_nnehmc_loss', None)
+        hmc = flags_dict.get('hmc', None)
         try:
             _log_dir = flags_dict['log_dir']
         except KeyError:
@@ -182,6 +183,7 @@ def _parse_gmm_flags(FLAGS):
         S2 = flags_dict.get('sigma2', None)
         GL = flags_dict.get('use_gaussian_loss', False)
         NL = flags_dict.get('use_nnehmc_loss', False)
+        AW = flags_dict.get('aux_weight', 1.)
         AR = flags_dict.get('arrangement', 'xaxis')
     except (NameError, AttributeError):
         X0 = FLAGS.center
@@ -192,6 +194,7 @@ def _parse_gmm_flags(FLAGS):
         S2 = FLAGS.sigma2
         GL = FLAGS.use_gaussian_loss
         NL = FLAGS.use_nnehmc_loss
+        AW = FLAGS.aux_weight
         AR = FLAGS.arrangement
 
     out_dict = {
@@ -203,13 +206,15 @@ def _parse_gmm_flags(FLAGS):
         'S2': S2,
         'GL': GL,
         'NL': NL,
+        'AW': AW,
         'AR': AR,
     }
 
     #  x0 = str(X0).replace('.', '')
+    aw = str(AW).replace('.', '')
     s1 = str(S1).replace('.', '')
     s2 = str(S2).replace('.', '')
-    run_str = f'GMM_{AR}_lf{LF}_s1_{s1}_s2_{s2}'
+    run_str = f'GMM_{AR}_lf{LF}_aw{aw}_s1_{s1}_s2_{s2}'
 
     if GL and NL:
         run_str += '_gaussian_nnehmc_loss'
@@ -256,7 +261,7 @@ def create_log_dir(FLAGS, root_dir=None, log_file=None,
     now = datetime.datetime.now()
     #  print(now.strftime("%b %d %Y %H:%M:%S"))
     day_str = now.strftime('%Y_%m_%d')
-    time_str = now.strftime("%Y_%m_%d_%H%M")
+    #  time_str = now.strftime("%Y_%m_%d_%H%M")
     hour_str = now.strftime('%H%M')
 
     project_dir = os.path.abspath(os.path.dirname(FILE_PATH))

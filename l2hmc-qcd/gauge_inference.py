@@ -32,7 +32,7 @@ import time
 from config import HAS_HOROVOD
 
 #  from update import set_precision
-from runners.runner import GaugeModelRunner
+from runners.gauge_model_runner import GaugeModelRunner
 from models.gauge_model import GaugeModel
 from loggers.run_logger import RunLogger
 from loggers.summary_utils import create_summaries
@@ -40,7 +40,7 @@ from plotters.plot_utils import plot_plaq_diffs_vs_net_weights
 from plotters.leapfrog_plotters import LeapfrogPlotter
 from plotters.gauge_model_plotter import GaugeModelPlotter
 
-#  import numpy as np
+import numpy as np
 import tensorflow as tf
 
 #  from tensorflow.core.protobuf import rewriter_config_pb2
@@ -58,7 +58,6 @@ if HAS_HOROVOD:
 
 if float(tf.__version__.split('.')[0]) <= 2:
     tf.logging.set_verbosity(tf.logging.INFO)
-
 
 
 def set_eps(sess, eps, run_ops, inputs, graph=None):
@@ -188,6 +187,8 @@ def inference(runner, run_logger, plotter, **kwargs):
             lf_plotter.make_plots(run_logger.run_dir,
                                   batch_size=batch_size)
 
+    return runner, run_logger
+
 
 def run_inference(runner, run_logger=None, plotter=None, **kwargs):
     """Run inference.
@@ -209,33 +210,33 @@ def run_inference(runner, run_logger=None, plotter=None, **kwargs):
         dst = os.path.join(run_logger.log_dir, 'plaq_diffs_data_orig.txt')
         os.rename(src, dst)
 
-    if not kwargs['loop_net_weights']:
-        inference(*args, **kwargs)
+    #  if not kwargs['loop_net_weights']:
+    #      inference(runner, run_logger, plotter, **kwargs)
 
-    else:  # looping over different values of net_weights
-        nw_arr = kwargs.get('net_weights', None)
-        zero_weights, q_weights, t_weights, s_weights, stq_weights = nw_arr
-
-        kwargs.update({'net_weights': zero_weights})
-        inference(*args, **kwargs)
-
-        for net_weights in q_weights:
-            kwargs.update({'net_weights': net_weights})
-            inference(*args, **kwargs)
-
-        for net_weights in t_weights:
-            kwargs.update({'net_weights': net_weights})
-            inference(*args, **kwargs)
-
-        for net_weights in s_weights:
-            kwargs.update({'net_weights': net_weights})
-            inference(*args, **kwargs)
-
-        kwargs.update({'net_weights': stq_weights})
-        inference(*args, **kwargs)
-
-        #  log_mem_usage(run_logger, m_arr)
-        plot_plaq_diffs_vs_net_weights(run_logger.log_dir)
+    #  else:  # looping over different values of net_weights
+    #      nw_arr = kwargs.get('net_weights', None)
+    #      zero_weights, q_weights, t_weights, s_weights, stq_weights = nw_arr
+    #
+    #      kwargs.update({'net_weights': zero_weights})
+    #      inference(*args, **kwargs)
+    #
+    #      for net_weights in q_weights:
+    #          kwargs.update({'net_weights': net_weights})
+    #          inference(*args, **kwargs)
+    #
+    #      for net_weights in t_weights:
+    #          kwargs.update({'net_weights': net_weights})
+    #          inference(*args, **kwargs)
+    #
+    #      for net_weights in s_weights:
+    #          kwargs.update({'net_weights': net_weights})
+    #          inference(*args, **kwargs)
+    #
+    #      kwargs.update({'net_weights': stq_weights})
+    #      inference(*args, **kwargs)
+    #
+    #      #  log_mem_usage(run_logger, m_arr)
+    #      plot_plaq_diffs_vs_net_weights(run_logger.log_dir)
 
 
 def main(kwargs):
@@ -270,27 +271,80 @@ def main(kwargs):
     saver = tf.train.import_meta_graph(f'{checkpoint_file}.meta')
     saver.restore(sess, checkpoint_file)
 
-    _ = initialize_uninitialized(sess)
+    #  _ = initialize_uninitialized(sess)
     run_ops = tf.get_collection('run_ops')
     inputs = tf.get_collection('inputs')
 
-    run_logger = RunLogger(params, inputs, run_ops, save_lf_data=False)
-    plotter = GaugeModelPlotter(params, run_logger.figs_dir)
-
-    # NOTE: [2.]
-    inference_dict = inference_setup(kwargs)
-    if inference_dict['beta'] is None:
-        inference_dict['beta'] = params['beta_final']
-
-    #  params['eps'] = inference_dict.get('eps', None)
     eps = kwargs.get('eps', None)
     if eps is not None:
+        io.log(f'`eps` is not None: {eps:.4g}')
         graph = tf.get_default_graph()
         set_eps(sess, eps, run_ops, inputs, graph)
 
-    runner = GaugeModelRunner(sess, params, inputs, run_ops, run_logger)
+    scale_weight = kwargs.get('scale_weight', 1.)
+    translation_weight = kwargs.get('translation_weight', 1.)
+    transformation_weight = kwargs.get('transformation_weight', 1.)
+    net_weights = [scale_weight, translation_weight, transformation_weight]
 
-    run_inference(runner, run_logger, plotter, **inference_dict)
+    beta_inference = kwargs.get('beta_inference', None)
+    beta_final = params.get('beta_final', None)
+    beta = beta_final if beta_inference is None else beta_inference
+
+    x_dim = params['space_size'] * params['time_size'] * params['dim']
+    samples_shape = (params['batch_size'], x_dim)
+    init_method = kwargs.get('samples_init', 'random')
+    if init_method == 'random':
+        io.log(80 * '-' + '\n\n')
+        io.log(f'Hit `random init`...')
+        io.log(80 * '-' + '\n\n')
+        tmp = samples_shape[0] * samples_shape[1]
+        samples_init = np.random.uniform(-1, 1, tmp).reshape(*samples_shape)
+    elif 'zero' in init_method:
+        io.log(80 * '-' + '\n\n')
+        io.log(f'Hit `zeros init`...')
+        io.log(80 * '-' + '\n\n')
+        samples_init = np.zeros(samples_init)
+    elif 'ones' in init_method:
+        io.log(80 * '-' + '\n\n')
+        io.log(f'Hit `ones init`...')
+        io.log(80 * '-' + '\n\n')
+        samples_init = np.ones(samples_shape)
+
+    run_logger = RunLogger(params, inputs, run_ops,
+                           model_type='GaugeModel',
+                           save_lf_data=False)
+
+    runner = GaugeModelRunner(sess, params, inputs, run_ops, run_logger)
+    plotter = GaugeModelPlotter(params, run_logger.figs_dir)
+
+    inference_kwargs = {
+        'run_steps': kwargs.get('run_steps', 5000),
+        'net_weights': net_weights,
+        'beta': beta,
+        'eps': eps,
+        'samples': samples_init
+    }
+
+    runner, run_logger = inference(runner,
+                                   run_logger,
+                                   plotter,
+                                   **inference_kwargs)
+
+    # NOTE: [2.]
+    #  inference_dict = inference_setup(kwargs)
+    #  if inference_dict['beta'] is None:
+    #      inference_dict['beta'] = params['beta_final']
+
+    #  params['eps'] = inference_dict.get('eps', None)
+    #  eps = kwargs.get('eps', None)
+    #  if eps is not None:
+    #      graph = tf.get_default_graph()
+    #      set_eps(sess, eps, run_ops, inputs, graph)
+    #
+    #  runner = GaugeModelRunner(sess, params, inputs, run_ops, run_logger)
+
+    
+    #  run_inference(runner, run_logger, plotter, **inference_kwargs)
 
 
 if __name__ == '__main__':

@@ -54,6 +54,16 @@ def parse_args():
                               is passed, `eps = None` and the optimal step size
                               (determined during training) will be used."""))
 
+    parser.add_argument('--samples_init',
+                        dest='samples_init',
+                        type=str,
+                        default='random',
+                        required=False,
+                        help=("""String specifying how to initialize samples
+                              when running inference. Possible values are:
+                              'zeros', 'ones', or 'random'.
+                              (Default: 'random')"""))
+
     parser.add_argument('--bootstrap_iters',
                         dest='bootstrap_iters',
                         type=int,
