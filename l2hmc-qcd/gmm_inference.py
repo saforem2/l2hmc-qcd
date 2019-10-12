@@ -35,9 +35,9 @@ if HAS_HOROVOD:
 #  from utils.data_utils import block_resampling
 #  from utils.distributions import GMM
 #  if HAS_MATPLOTLIB:
-#      import matplotlib.pyplot as plt
+#          import matplotlib.pyplot as plt
 #  if HAS_MEMORY_PROFILER:
-#      import memory_profiler
+#          import memory_profiler
 
 if float(tf.__version__.split('.')[0]) <= 2:
     tf.logging.set_verbosity(tf.logging.INFO)
@@ -54,7 +54,7 @@ def set_num_steps(sess, num_steps, run_ops, inputs, graph=None):
 
     num_steps_setter = graph.get_operation_by_name('init/num_steps_setter')
     num_steps_tensor = [i for i in run_
-'''
+    '''
 
 
 def set_eps(sess, eps, run_ops, inputs, graph=None):
@@ -82,6 +82,7 @@ def inference(runner, run_logger, **kwargs):
     eps = kwargs.get('eps', None)  # custom value to use for the step size
     skip_acl = kwargs.get('skip_acl', False)  # calc autocorrelation or not
     ignore_first = kwargs.get('ignore_first', 0.1)  # % to ignore for therm.
+    calc_true = kwargs.get('calc_true', False)
     if eps is None:
         eps = runner.eps
         kwargs['eps'] = eps
@@ -121,6 +122,7 @@ def inference(runner, run_logger, **kwargs):
             'skip_acl': skip_acl,
             'bs_iters': bs_iters,
             'ignore_first': ignore_first,
+            'calc_true': calc_true,
         }
         save_inference_data(*args, **kwargs)
 
@@ -200,15 +202,21 @@ def main(kwargs):
     beta = beta_final if beta_inference is None else beta_inference
 
     # XXX XXX Try changing how samples are initialized below. XXX XXX
-    samples_size = (params['batch_size'], params['x_dim'])
-    tmp = samples_size[0] * samples_size[1]
-    samples_init = np.random.uniform(-1, 1, tmp).reshape(*samples_size)
-    #  samples_init = 2 * np.random.rand(*(params['batch_size'],
-    #                                      params['x_dim']))
+    samples_shape = (params['batch_size'], params['x_dim'])
+    init_method = kwargs.get('samples_init', 'random')
+    if init_method == 'random':
+        tmp = samples_shape[0] * samples_shape[1]
+        samples_init = np.random.uniform(-1, 1, tmp).reshape(*samples_shape)
+    elif 'zero' in init_method:
+        samples_init = np.zeros(samples_shape)
+    elif 'ones' in init_method:
+        samples_init = np.ones(samples_shape)
+        #  samples_init = 2 * np.random.rand(*(params['batch_size'],
+        #                                      params['x_dim']))
     kwargs['samples'] = samples_init
 
     run_logger = RunLogger(params, inputs, run_ops,
-                           model_type='gmm_model',
+                           model_type='GaussianMixtureModel',
                            save_lf_data=False)
 
     runner = GaussianMixtureModelRunner(sess, params,
@@ -227,6 +235,7 @@ def main(kwargs):
         'eps': eps,
         'bs_iters': bs_iters,
         'skip_acl': skip_acl,
+        'calc_true': True,
     }
 
     runner, run_logger = inference(runner, run_logger, **inference_kwargs)
@@ -245,6 +254,8 @@ def main(kwargs):
             'beta': beta,
             'eps': eps,
             'bs_iters': bs_iters,
+            'calc_true': False,
+            'skip_acl': skip_acl
         }
         runner, run_logger = inference(runner,
                                        run_logger,

@@ -128,6 +128,26 @@ def parse_args():
                         help=("""If passed, set `use_nnehmc_loss=True` and
                               use alternative NNEHMC loss function."""))
 
+    parser.add_argument('--nnehmc_beta',
+                        dest='nnehmc_beta',
+                        default=1.,
+                        required=False,
+                        help=("""Value of `beta` to use when calculating the
+                              NNEHMC loss. Note that beta multiplies the HMC
+                              acceptance probability in Eq. 14. of
+                              https://link.springer.com/chapter/10.1007/978-3-030-20351-1_64
+                              (Default: 1., but only applies when
+                              `--use_nnehmc_loss` is True."""))  # noqa: E501
+
+    parser.add_argument("--aux_weight",
+                        dest="aux_weight",
+                        type=float,
+                        default=1.,
+                        required=False,
+                        help=("""Multiplicative factor used to weigh relative
+                              strength of auxiliary term in loss function.
+                              (Default: 1.)"""))
+
     parser.add_argument('--loss_scale',
                         dest='loss_scale',
                         type=float,
