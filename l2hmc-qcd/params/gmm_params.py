@@ -21,6 +21,7 @@ GMM_PARAMS = {                # Default parameters for `GaussianMixtureModel`
     'num_hidden2': 10,
     'save_lf': True,
     'loss_scale': 0.1,
+    'aux_weight': 1.,
     'clip_value': 0.,
     'lr_init': 1e-3,
     'warmup_lr': False,
