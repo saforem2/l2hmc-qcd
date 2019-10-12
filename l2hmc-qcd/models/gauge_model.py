@@ -309,9 +309,10 @@ class GaugeModel(BaseModel):
         """Parse output dictionary from `self.dynamics.apply_transition`."""
         with tf.name_scope('top_charge_diff'):
             x_in = dynamics_output['x_in']
-            x_out = dynamics_output['x_out']
+            #  x_out = dynamics_output['x_out']
+            x_proposed = dynamics_output['x_proposed']
             x_dq = tf.cast(
-                self.lattice.calc_top_charges_diff(x_in, x_out),
+                self.lattice.calc_top_charges_diff(x_in, x_proposed),
                 dtype=TF_INT
             )
             self.charge_diffs_op = tf.reduce_sum(x_dq) / self.batch_size

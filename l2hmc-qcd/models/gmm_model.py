@@ -163,12 +163,14 @@ class GaussianMixtureModel(BaseModel):
             # Create dynamics for running augmented L2HMC leapfrog
             # ---------------------------------------------------------------
             io.log(f'INFO: Creating `Dynamics`...')
-            self.dynamics = self._create_dynamics()
+            self.dynamics = self.create_dynamics()
+            #  self.dynamics = self._create_dynamics()
             # Create operation for assigning to `dynamics.eps` 
             # the value fed into the placeholder `eps_ph`.
-            self.eps_setter = tf.assign(self.dynamics.eps,
-                                        self.eps_ph,
-                                        name='eps_setter')
+            self.eps_setter = self._build_eps_setter()
+            #  self.eps_setter = tf.assign(self.dynamics.eps,
+            #                              self.eps_ph,
+            #                              name='eps_setter')
 
             # ---------------------------------------------------------------
             # Create metric function for measuring 'distance' between configs
@@ -318,36 +320,9 @@ class GaussianMixtureModel(BaseModel):
             '_input_shape': (self.batch_size, self.x_dim)
         }
 
-        dynamics_params.upadte(params)
+        dynamics_params.update(params)
         potential_fn = self.distribution.get_energy_function()
-        dynamics = self._create_dynamics(potential_fn, **params)
-
-        return dynamics
-
-    def _create_dynamics1(self, potential_fn, **params):
-        """Create `Dynamics` object."""
-        with tf.name_scope('create_dynamics'):
-            dynamics_keys = [
-                'eps', 'hmc', 'num_steps', 'use_bn',
-                'dropout_prob', 'network_arch',
-                'num_hidden1', 'num_hidden2'
-            ]
-
-            dynamics_params = {
-                k: getattr(self, k, None) for k in dynamics_keys
-            }
-
-            dynamics_params.update({
-                'eps_trainable': not self.eps_fixed,
-                'num_filters': 2,
-                'x_dim': self.x_dim,
-                'batch_size': self.batch_size,
-                '_input_shape': (self.batch_size, self.x_dim),
-            })
-
-            dynamics_params.update(params)
-            potential_fn = self.distribution.get_energy_function()
-            dynamics = Dynamics(potential_fn=potential_fn, **dynamics_params)
+        dynamics = self._create_dynamics(potential_fn, **dynamics_params)
 
         return dynamics
 
