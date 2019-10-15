@@ -475,4 +475,3 @@ def save_inference_data(samples, px, run_dir, fig_dir,
     #              sems_naive, means_file,
     #              tag=('sem[i] = scipy.stats.sem('
     #                   'samples_therm[:, :, i].mean(axis=0))'))
-
