@@ -220,97 +220,6 @@ def error_analysis(samples, n=None, bs_iters=500):
     return means, errs, means_arr, samples_rs
 
 
-def alt_error_analysis(samples, num_blocks=None):
-    """Calc the mean and std error using blocked jackknife resampling. 
-
-    Args:
-        samples (array-like): Array of samples on which the error analysis will
-            be performed. 
-
-                `samples.shape = (chain_length, batch_size, dim)`,
-
-            where `dim` is the dimensionality of the target distribution.
-        num_blocks (int): Number of blocks to use in blocked jackknife
-            resampling.
-
-    Returns:
-        means (list): List containing the average value of each `component`
-            in samples. For example, if the target distribution is
-            two-dimensional, means would be `[x_avg, y_avg]`. 
-        errs (list): List containing the standard error of each `component`
-            in samples.
-
-    NOTE:
-        As an example, if `samples.shape = (1e4, 128, 2)` and 
-        `num_blocks = None`, then `chain_length = 1e4`, `batch_size = 128` and
-        `dim = 2`.
-
-        We want to calculate the average and error for each component in `dim`,
-        in this case we want `x_avg, x_err` and `y_avg, y_err`.
-
-        This is done by first calculating the values `x_avg`, and `x_err` and
-        then repeating the same calculation for `y_avg`, and `y_err`.
-
-        For simplicity, we describe the calculation of `x_avg` and `x_err`.
-
-        Let `samplesT = samples.transpose((-1, 1, 0))` with 
-        `samplesT.shape = (2, 128, 1e4)`.
-
-        Define `X, Y = samplesT` so that `X.shape = Y.shape = (128, 1e4)`.
-
-        Then
-
-        ```
-        num_blocks = X.shape[1] // 50   # 1e4 // 50 = 200
-        for x in X:
-            x_rs = block_resampling(x, num_blocks)  # x_rs.shape = (200, 9950)
-            x_rs_mean = x_rs.mean()
-            means, errs = [], []
-            for block in x_rs:
-                block_mean = block.mean()
-                denom = (num_blocks - 1) * num_blocks
-                err = np.sqrt(np.sum((block_mean - x_rs_mean)**2) / denom)
-                means.append(block_mean)
-                errs.append(err)
-        ```
-    """
-    if not isinstance(samples, np.ndarray):
-        samples = np.array(samples)
-
-    if num_blocks is None:
-        num_blocks = samples.shape[0] // 50
-
-    denom = (num_blocks - 1) * num_blocks
-
-    def mean_(x):
-        return np.mean(x, dtype=np.float64)
-
-    def err_(x, xm):
-        return np.sqrt(np.sum((mean_(x) - xm) ** 2) / denom)
-
-    samplesT = samples.transpose((-1, 1, 0))
-    # samplesT.shape = (dim, batch_size, chain_length)
-
-    means_arr = []
-    errs_arr = []
-    for component in samplesT:  # loop over dimensionality (e.g. x, y, z)
-        m_arr = []
-        e_arr = []
-        for x in component:  # loop over samples in batch
-            x_rs = block_resampling(x, num_blocks)
-            m_arr.extend([mean_(xb) for xb in x_rs])
-            e_arr.extend([sem(xb) for xb in x_rs])
-            #  m_rs = [mean_(xb) for xb in x_rs]
-            #  e_rs = [err_(xb, x_rs_mean) for xb in x_rs]
-        means_arr.append(m_arr)
-        errs_arr.append(e_arr)
-
-    means = np.array(means_arr).mean(axis=1, dtype=np.float64)
-    errs = np.array(errs_arr).mean(axis=1, dtype=np.float64)
-
-    return means, errs
-
-
 def bootstrap(data, n_boot=10000, ci=68):
     boot_dist = []
     for i in range(int(n_boot)):
@@ -318,11 +227,13 @@ def bootstrap(data, n_boot=10000, ci=68):
         sample = data.take(resampler, axis=0)
         boot_dist.append(np.mean(sample, axis=0))
     b = np.array(boot_dist)
-    s1 = np.apply_along_axis(stats.scoreatpercentile, 0, b, 50. - ci / 2.)
-    s2 = np.apply_along_axis(stats.scoreatpercentile, 0, b, 50. + ci / 2.)
+    err = np.sqrt(float(n_boot) / float(n_boot - 1)) * np.std(b)
+    mean = np.mean(b)
+    #  s1 = np.apply_along_axis(stats.scoreatpercentile, 0, b, 50. - ci / 2.)
+    #  s2 = np.apply_along_axis(stats.scoreatpercentile, 0, b, 50. + ci / 2.)
 
     mean = np.mean(b)
-    err = max(mean - s1.mean(), s2.mean() - mean)
+    #  err = max(mean - s1.mean(), s2.mean() - mean)
 
     return mean, err, b
 
@@ -350,8 +261,67 @@ def _pickle_dump(data, out_file, name=None):
         pickle.dump(data, f)
 
 
+def get_true_samples(log_dir, num_samples):
+    distribution = recreate_distribution(log_dir)
+
+    return distribution.get_samples(num_samples)
+
+
+def mean_bootstrap(samples, bs_iters, ci=68, out_file=None):
+    if not isinstance(samples, np.ndarray):
+        samples = np.array(samples)
+
+    means = []
+    errs = []
+    means_arr = []
+    axes = [i for i in range(len(samples.shape) - 1)]
+    samplesT = samples.transpose((-1, *axes))
+    for component in samplesT:
+        mean, err, arr_ = bootstrap(component, bs_iters, ci=ci)
+        means.append(mean)
+        errs.append(err)
+        means_arr.append(arr_)
+
+    if out_file is not None:
+        write_means(samples, means, errs, out_file)
+
+    return means, errs, means_arr
+
+
+def calc_autocorrelation(samples, out_dir=None):
+    spectrum = acl_spectrum(samples)
+    ess = ESS(spectrum)
+
+    if out_dir is not None:
+        spectrum_file = os.path.join(out_dir, 'acl_spectrum.pkl')
+        ess_file = os.path.join(out_dir, 'ess.txt')
+        with open(spectrum_file, 'wb') as f:
+            pickle.dump(spectrum, f)
+
+        with open(ess_file, 'w') as f:
+            _ = f.write(f'ESS: {ess}')
+
+    return spectrum, ess
+
+
+def _hist_plot(data, labels, out_file, ax=None, bins=30):
+    if ax is None:
+        _, ax = plt.subplots()
+
+    _ = ax.hist(data[0], bins=bins, label=labels[0],
+                density=True, stacked=True, alpha=1.0)
+    _ = ax.hist(data[1], bins=bins, label=labels[1],
+                density=True, stacked=True, alpha=0.6)
+    _ = ax.legend(loc='best')
+    io.log(f'Saving figure to: {out_file}.')
+    _ = plt.savefig(out_file, bbox_inches='tight')
+
+    return ax
+
+
 def save_inference_data(samples, px, run_dir, fig_dir,
-                        skip_acl=False, bs_iters=100, ignore_first=0.1):
+                        skip_acl=False, bs_iters=100,
+                        ignore_first=0.1, calc_true=True):
     """Save inference data and estimate the 'average' for each coordinate.
 
     By comparing, for example, the average `x` location (`x_mean_obs`) across
@@ -395,96 +365,113 @@ def save_inference_data(samples, px, run_dir, fig_dir,
     #  warmup_steps = samples.shape[0] // 20
     warmup_steps = int(ignore_first * samples.shape[0])
     samples_therm = samples[warmup_steps:]
-
-    samples_x = samples_therm[:, :, 0]
-    samples_y = samples_therm[:, :, 1]
-
-    x_mean_bs, x_err_bs, x_means_arr = bootstrap(samples_x, bs_iters, ci=68)
-    y_mean_bs, y_err_bs, y_means_arr = bootstrap(samples_y, bs_iters, ci=68)
-
-    means = (x_mean_bs, y_mean_bs)
-    errs = (x_err_bs, y_err_bs)
-    means_arr = (x_means_arr, y_means_arr)
+    x_dim = samples_therm.shape[-1]
+    samples_flat = samples_therm.reshape(-1, x_dim)
+    num_samples = samples_flat.shape[0]
 
     io.log(f'INFO: Ignoring first {warmup_steps} steps for thermalization...')
-    #  io.log(f'INFO: Using (naive) `np.mean` and `np.std`:')
-    x_means = samples_therm[:, :, 0].mean(axis=0)
-    x_mean = np.mean(x_means)
-    x_std = np.std(x_means)
-    x_sem = sem(x_means)
+    out_file = os.path.join(run_dir, 'means.txt')
+    means, errs, means_arr = mean_bootstrap(samples_therm, bs_iters,
+                                            ci=68, out_file=out_file)
 
-    y_means = samples_therm[:, :, 1].mean(axis=0)
-    y_mean = np.mean(y_means)
-    y_std = np.std(y_means)
-    y_sem = sem(y_means)
+    data = [i.flatten() for i in means_arr]
+    labels = [f'mean: {i:.4g} +/- {j:.4g}' for i, j in zip(means, errs)]
+    out_file = os.path.join(fig_dir, 'means_hist_observed.pdf')
 
-    means_naive = (x_mean, y_mean)
-    stds_naive = (x_std, y_std)
-    sems_naive = (x_sem, y_sem)
-    std_str_naive = f'({x_std:.5g}, {y_std:.5g})'
-    sem_str_naive = f'({x_sem:.5g}, {y_sem:.5g})'
-    mean_str_naive = f'({x_mean:.5g}, {y_mean:.5g})'
-    err_str_naive = f'{std_str_naive} (std),  {sem_str_naive} (sem)'
+    fig, ax = plt.subplots()
+    ax = _hist_plot(data, labels, out_file, ax=ax, bins=32)
+    #  fig, ax = _hist_plot(data, labels, out_file, bins=32)
 
+    if calc_true:
+        runs_dir = os.path.dirname(run_dir)
+        log_dir = os.path.abspath(os.path.dirname(runs_dir))
+        samples_true = get_true_samples(log_dir, num_samples)
+        samples_true = samples_true.reshape(samples_therm.shape)
+        out_file = os.path.join(run_dir, 'means_true.txt')
+        means, errs, means_arr = mean_bootstrap(
+            samples_true, bs_iters, ci=68, out_file=out_file
+        )
 
-    # labels to be used in histogram plot
-    label_strs = [f'mean: {i:.4g} +/- {j:.4g}' for i, j in zip(means, errs)]
+        data = [i.flatten() for i in means_arr]
+        labels = [f'mean: {i:.4g} +/- {j:.4g}' for i, j in zip(means, errs)]
+        out_file = os.path.join(fig_dir, 'means_hist_true.pdf')
 
-    err_str = f'({errs[0]:.5g}, {errs[1]:.5g})'
-    mean_str = f'({means[0]:.5g}, {means[1]:.5g})'
+        fig, ax = plt.subplots()
+        ax = _hist_plot(data, labels, out_file, ax=ax, bins=32)
+        #  fig, ax = _hist_plot(data, labels, out_file, bins=32)
 
-    means_strs = f'(x, y): {mean_str} +/- {err_str}'
-    means_strs_naive = f'(x, y): {mean_str_naive} +/- {err_str_naive}'
+    #  plt_files = []
+    #  plt_files_true = []
+    #  for d in range(x_dim):
+    #      plt_files.append(os.path.join(fig_dir,
+    #                                    f'means_hist_observed.pdf'))
+    #      plt_files_true.append(os.path.join(fig_dir,
+    #                                         f'component{d}_mean_hist_true.pdf'))
+    #
+    #  out_files = plt_files + plt_files_true
 
-    io.log(f'Using {bs_iters} bootstrap replications:\n  {means_strs}\n')
-    io.log(f'Using np.mean and std/sem:\n  {means_strs_naive}\n')
-
-    means_file = os.path.join(run_dir, 'means.txt')
-    write_means(samples, means, errs, means_file)
-    write_means(samples, means_naive,
-                stds_naive, means_file,
-                tag='std[i] = np.std(samples_therm[:, :, i].mean(axis=0))')
-    write_means(samples, means_naive,
-                sems_naive, means_file,
-                tag=('sem[i] = scipy.stats.sem('
-                     'samples_therm[:, :, i].mean(axis=0))'))
+    #  try:
+    #      data = [means_arr[0], means_arr[1]]
+    #      labels_ = [labels[0], labels[1]]
+    #      f1, ax1 = _hist_plot(data, labels_, plt_file)
+    #      if calc_true:
+    #          data
+    #          f2, ax2 = _hist_plot(, plt_file_true)
+    #  except:
+    #      import pudb; pudb.set_trace()
 
     if not skip_acl:
-        spectrum = acl_spectrum(samples)
-        ess = ESS(spectrum)
-
-        spectrum_file = os.path.join(run_dir, 'acl_spectrum.pkl')
-        ess_file = os.path.join(run_dir, 'ess.txt')
-        with open(spectrum_file, 'wb') as f:
-            pickle.dump(spectrum, f)
-
-        with open(ess_file, 'w') as f:
-            _ = f.write(f'ESS: {ess}')
-
-    out_files = [os.path.join(fig_dir, 'x_mean_histogram.pdf'),
-                 os.path.join(fig_dir, 'y_mean_histogram.pdf')]
-    xlabels = ['mean, x', 'mean, y']
-    hist_kwargs = {
-        'bins': 32,
-        'density': True,
-        'stacked': True,
-        'label': None,
-        'out_file': None,
-        'xlabel': None
-    }
-    if HAS_MATPLOTLIB:
-        for idx, x in enumerate(means_arr):
-            hist_kwargs.update({
-                'label': label_strs[idx],
-                'out_file': out_files[idx],
-                'xlabel': xlabels[idx]
-            })
-            fig, ax = plt.subplots()
-            _ = plot_histogram(x.flatten(), ax=ax, **hist_kwargs)
-
-        if not skip_acl:
+        spectrum, ess = calc_autocorrelation(samples, run_dir)
+        if HAS_MATPLOTLIB:
             acl_kwargs = {
                 'out_file': os.path.join(fig_dir,
                                          'autocorrelation_spectrum.pdf')
             }
             fig, ax = plot_acl_spectrum(spectrum, **acl_kwargs)
+
+    #  out_files = [os.path.join(fig_dir, 'x_mean_histogram.pdf'),
+    #               os.path.join(fig_dir, 'y_mean_histogram.pdf')]
+    #  xlabels = ['mean, x', 'mean, y']
+    #  samples_x = samples_therm[:, :, 0]
+    #  samples_y = samples_therm[:, :, 1]
+    #  samples_xt = samples_true[:, :, 0]
+    #  samples_yt = samples_true[:, :, 1]
+    #
+    #  x_mean_bs, x_err_bs, x_means_arr = bootstrap(samples_x, bs_iters, ci=68)
+    #  y_mean_bs, y_err_bs, y_means_arr = bootstrap(samples_y, bs_iters, ci=68)
+    #
+    #  means = (x_mean_bs, y_mean_bs)
+    #  errs = (x_err_bs, y_err_bs)
+    #  means_arr = (x_means_arr, y_means_arr)
+    #  x_means = samples_therm[:, :, 0].mean(axis=0)
+    #  x_mean = np.mean(x_means)
+    #  x_std = np.std(x_means)
+    #  x_sem = sem(x_means)
+    #
+    #  y_means = samples_therm[:, :, 1].mean(axis=0)
+    #  y_mean = np.mean(y_means)
+    #  y_std = np.std(y_means)
+    #  y_sem = sem(y_means)
+    #
+    #  means_naive = (x_mean, y_mean)
+    #  stds_naive = (x_std, y_std)
+    #  sems_naive = (x_sem, y_sem)
+    #  std_str_naive = f'({x_std:.5g}, {y_std:.5g})'
+    #  sem_str_naive = f'({x_sem:.5g}, {y_sem:.5g})'
+    #  mean_str_naive = f'({x_mean:.5g}, {y_mean:.5g})'
+    #  err_str_naive = f'{std_str_naive} (std),  {sem_str_naive} (sem)'
+
+    # labels to be used in histogram plot
+    #  means_strs = f'(x, y): {mean_str} +/- {err_str}'
+    #  means_strs_naive = f'(x, y): {mean_str_naive} +/- {err_str_naive}'
+
+    #  io.log(f'Using {bs_iters} bootstrap replications:\n  {means_strs}\n')
+    #  io.log(f'Using np.mean and std/sem:\n  {means_strs_naive}\n')
+
+    #  write_means(samples, means_naive,
+    #              stds_naive, means_file,
+    #              tag='std[i] = np.std(samples_therm[:, :, i].mean(axis=0))')
+    #  write_means(samples, means_naive,
+    #              sems_naive, means_file,
+    #              tag=('sem[i] = scipy.stats.sem('
+    #                   'samples_therm[:, :, i].mean(axis=0))'))

@@ -13,9 +13,10 @@ import os
 import time
 import pickle
 
+import config as cfg
+#  from config import GLOBAL_SEED, HAS_HOROVOD, HAS_MATPLOTLIB
+from update import set_seed, set_precision
 from main import count_trainable_params, create_config, train_setup
-from config import GLOBAL_SEED, HAS_HOROVOD, HAS_MATPLOTLIB
-from update import set_seed  # , set_precision
 from models.gmm_model import GaussianMixtureModel
 from plotters.plot_utils import _gmm_plot
 from loggers.train_logger import TrainLogger
@@ -31,10 +32,10 @@ from utils.parse_gmm_args import parse_args as parse_gmm_args
 
 #  from utils.distributions import gen_ring, GMM
 
-if HAS_MATPLOTLIB:
+if cfg.HAS_MATPLOTLIB:
     import matplotlib.pyplot as plt
 
-if HAS_HOROVOD:
+if cfg.HAS_HOROVOD:
     import horovod.tensorflow as hvd
 
 if float(tf.__version__.split('.')[0]) <= 2:
@@ -42,7 +43,7 @@ if float(tf.__version__.split('.')[0]) <= 2:
 
 SEP_STR = 80 * '-'
 
-tf.set_random_seed(GLOBAL_SEED)
+tf.set_random_seed(cfg.GLOBAL_SEED)
 
 
 def create_session(config, checkpoint_dir, monitored=False):
@@ -198,13 +199,10 @@ def main(FLAGS):
     log_file = 'output_dirs.txt'
 
     USING_HVD = FLAGS.get('horovod', False)
-    if HAS_HOROVOD and USING_HVD:
+    if cfg.HAS_HOROVOD and USING_HVD:
         io.log('INFO: USING HOROVOD FOR DISTRIBUTED TRAINING')
         hvd.init()
 
-    #  if FLAGS.hmc:
-    #      inference.run_hmc(FLAGS, log_file=log_file)
-    #  else:
     model, train_logger = train_l2hmc(FLAGS, log_file)
 
 
@@ -212,6 +210,15 @@ if __name__ == '__main__':
     FLAGS = GMM_PARAMS
     args = parse_gmm_args()
     set_seed(args.global_seed)
+
+    io.log('\n' + 80 * '=' + '\n')
+    io.log(f'config.TF_FLOAT: {cfg.TF_FLOAT}')
+    if args.float64:
+        set_precision('float64')
+
+    io.log(f'config.TF_FLOAT: {cfg.TF_FLOAT}')
+    io.log('\n' + 80 * '=' + '\n')
+
     FLAGS.update(args.__dict__)
     t0 = time.time()
     main(FLAGS)

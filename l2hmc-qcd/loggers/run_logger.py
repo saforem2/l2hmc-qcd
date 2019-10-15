@@ -62,13 +62,13 @@ class RunLogger:
         self.summaries = params['summaries']
         assert os.path.isdir(params['log_dir'])
         self.log_dir = params['log_dir']
-        if model_type is not None:
+        if model_type == 'GaussianMixtureModel':
             self.model_type = model_type
             h_strf = ("{:^12s}" + 4 * "{:^10s}").format(
                 "STEP", "t/STEP", "% ACC", "EPS", "BETA"
             )
-        else:
-            self.model_type = 'GaugeModel'
+        elif model_type == 'GaugeModel':
+            self.model_type = model_type
             h_strf = ("{:^12s}" + 8 * "{:^10s}").format(
                 "STEP", "t/STEP", "% ACC", "EPS", "BETA",
                 "ACTIONS", "PLAQS", "(EXACT)", "dQ"
@@ -491,7 +491,8 @@ class RunLogger:
             run_stats = self.calc_observables_stats(self.run_data, therm_frac)
             charges = self.run_data['charges']
             charges_arr = np.array(list(charges.values()))
-            charges_autocorrs = [autocorr(x) for x in charges_arr.T]
+            charges_arrT = charges_arr.T
+            charges_autocorrs = [autocorr(x) for x in charges_arrT]
             charges_autocorrs = [x / np.max(x) for x in charges_autocorrs]
             self.run_data['charges_autocorrs'] = charges_autocorrs
 

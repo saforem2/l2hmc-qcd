@@ -94,7 +94,7 @@ class GaugeModelRunner:
 
         out_data = {
             'step': step,
-            'beta_np': beta_np,
+            'beta': beta_np,
             'eps': self.eps,
             'samples': np.mod(outputs[0], 2 * np.pi),
             'samples_orig': outputs[0],
@@ -149,14 +149,19 @@ class GaugeModelRunner:
 
         has_logger = self.logger is not None
 
-        x_dim = self.params['x_dim']
-        samples_np = np.random.randn(*(self.params['batch_size'], x_dim))
+        #  x_dim = self.params['x_dim']
+        samples_np = kwargs.get('samples', None)
+        if samples_np is None:
+            x_dim = (self.params['space_size']
+                     * self.params['time_size']
+                     * self.params['dim'])
+            samples_np = np.random.randn(*(self.params['batch_size'], x_dim))
 
         io.log(self._run_header)
         for step in range(run_steps):
             inputs = (samples_np, beta, self.eps, plaq_exact)
-            out_data, data_str = self.run_step(step, run_steps, inputs,
-                                               net_weights)
+            out_data, data_str = self.run_step(step, run_steps,
+                                               inputs, net_weights)
             samples_np = out_data['samples']
 
             if has_logger:

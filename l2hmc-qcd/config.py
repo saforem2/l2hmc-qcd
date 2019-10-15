@@ -33,7 +33,7 @@ except ImportError:
     HAS_PSUTIL = False
 
 try:
-    from comet_ml import Experi  # noqa: F401ment
+    from comet_ml import Experiment  # noqa: F401
     HAS_COMET = True
 except ImportError:
     HAS_COMET = False
@@ -47,6 +47,7 @@ except ImportError:
 TF_FLOAT = tf.float32
 TF_INT = tf.int32
 NP_FLOAT = np.float32
+NP_INT = np.int32
 
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 FILE_PATH = os.path.abspath(os.path.dirname(__file__))

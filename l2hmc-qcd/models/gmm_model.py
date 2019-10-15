@@ -163,12 +163,14 @@ class GaussianMixtureModel(BaseModel):
             # Create dynamics for running augmented L2HMC leapfrog
             # ---------------------------------------------------------------
             io.log(f'INFO: Creating `Dynamics`...')
-            self.dynamics = self._create_dynamics()
+            self.dynamics = self.create_dynamics()
+            #  self.dynamics = self._create_dynamics()
             # Create operation for assigning to `dynamics.eps` 
             # the value fed into the placeholder `eps_ph`.
-            self.eps_setter = tf.assign(self.dynamics.eps,
-                                        self.eps_ph,
-                                        name='eps_setter')
+            self.eps_setter = self._build_eps_setter()
+            #  self.eps_setter = tf.assign(self.dynamics.eps,
+            #                              self.eps_ph,
+            #                              name='eps_setter')
 
             # ---------------------------------------------------------------
             # Create metric function for measuring 'distance' between configs
@@ -181,7 +183,12 @@ class GaussianMixtureModel(BaseModel):
         # NOTE: We use the `dynamics.apply_transition` method to run the
         # augmented l2hmc leapfrog integrator and obtain new samples.
         # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        x_data, z_data = self._build_sampler()
+        def split_sampler_data(sampler_data):
+            return sampler_data.data, sampler_data.dynamics_output
+
+        x_sampler_data, z_sampler_data = self._build_sampler()
+        x_data, self._x_dynamics = split_sampler_data(x_sampler_data)
+        z_data, self._z_dynamics = split_sampler_data(z_sampler_data)
 
         # *******************************************************************
         # Calculate loss_op and train_op to backprop. grads through network
@@ -303,30 +310,19 @@ class GaussianMixtureModel(BaseModel):
 
         return covs
 
-    def _create_dynamics(self, **params):
+    def create_dynamics(self, **params):
         """Create `Dynamics` object."""
-        with tf.name_scope('create_dynamics'):
-            dynamics_keys = [
-                'eps', 'hmc', 'num_steps', 'use_bn',
-                'dropout_prob', 'network_arch',
-                'num_hidden1', 'num_hidden2'
-            ]
+        dynamics_params = {
+            'eps_trainable': not self.eps_fixed,
+            'num_filters': 2,
+            'x_dim': self.x_dim,
+            'batch_size': self.batch_size,
+            '_input_shape': (self.batch_size, self.x_dim)
+        }
 
-            dynamics_params = {
-                k: getattr(self, k, None) for k in dynamics_keys
-            }
-
-            dynamics_params.update({
-                'eps_trainable': not self.eps_fixed,
-                'num_filters': 2,
-                'x_dim': self.x_dim,
-                'batch_size': self.batch_size,
-                '_input_shape': (self.batch_size, self.x_dim),
-            })
-
-            dynamics_params.update(params)
-            potential_fn = self.distribution.get_energy_function()
-            dynamics = Dynamics(potential_fn=potential_fn, **dynamics_params)
+        dynamics_params.update(params)
+        potential_fn = self.distribution.get_energy_function()
+        dynamics = self._create_dynamics(potential_fn, **dynamics_params)
 
         return dynamics
 
@@ -340,8 +336,8 @@ class GaussianMixtureModel(BaseModel):
 
     def calc_loss(self, x_data, z_data):
         """Calculate the total loss from all terms."""
-        total_loss = 0.
         ld = {}
+        total_loss = 0.
 
         if self.use_gaussian_loss:
             gaussian_loss = self.gaussian_loss(x_data, z_data)
@@ -349,9 +345,16 @@ class GaussianMixtureModel(BaseModel):
             total_loss += gaussian_loss
 
         if self.use_nnehmc_loss:
-            nnehmc_loss = self.nnehmc_loss(x_data, self.px_hmc)
-            ld['nnehmc'] = nnehmc_loss
-            total_loss += nnehmc_loss
+            nnehmc_loss_x = self.nnehmc_loss(x_data, self.px_hmc)
+            ld['nnehmc_x'] = nnehmc_loss_x
+            total_loss += nnehmc_loss_x
+
+            #  aux_weight = getattr(self, 'aux_weight', 1.)
+            #  if aux_weight > 0:
+            #      pz_hmc = self._z_dynamics['accept_prob_hmc']
+            #      nnehmc_loss_z = self.nnehmc_loss(z_data, pz_hmc)
+            #      ld['nnehmc_z'] = nnehmc_loss_z
+            #      total_loss += nnehmc_loss_z
 
         # If not using either Gaussian loss or NNEHMC loss, use standard loss
         if (not self.use_gaussian_loss) and (not self.use_nnehmc_loss):
@@ -380,9 +383,10 @@ class GaussianMixtureModel(BaseModel):
         sigma = 1.
         return self._gaussian_loss(x_data, z_data, mean=mean, sigma=sigma)
 
-    def nnehmc_loss(self, x_data, hmc_prob, beta=1.):
+    def nnehmc_loss(self, x_data, hmc_prob):
         """Calculate the NNEHMC loss via `self._nnehmc_loss` in `BaseModel`."""
-        return self._nnehmc_loss(x_data, hmc_prob, beta=beta)
+        nnehmc_beta = getattr(self, 'nnehmc_beta', 1.)
+        return self._nnehmc_loss(x_data, hmc_prob, beta=nnehmc_beta)
 
     def _parse_dynamics_output(self, dynamics_output):
         """Parse output dictionary from `self.dynamics.apply_transition."""

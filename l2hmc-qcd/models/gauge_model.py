@@ -40,6 +40,9 @@ SEP_STRN = 80 * '-' + '\n'
 def allclose(x, y, rtol=1e-3, atol=1e-5):
     return tf.reduce_all(tf.abs(x - y) <= tf.abs(y) * rtol + atol)
 
+def split_sampler_data(sampler_data):
+    return sampler_data.data, sampler_data.dynamics_output
+
 
 class GaugeModel(BaseModel):
     def __init__(self, params=None):
@@ -81,7 +84,9 @@ class GaugeModel(BaseModel):
             inputs = self._create_inputs()
             self.x = inputs['x']
             self.beta = inputs['beta']
-            nw_keys = ['scale_weight', 'transl_weight', 'transf_weight']
+            nw_keys = [
+                'scale_weight', 'transl_weight', 'transf_weight'
+            ]
             self.net_weights = [inputs[k] for k in nw_keys]
             self.train_phase = inputs['train_phase']
             self.eps_ph = inputs['eps_ph']
@@ -91,16 +96,14 @@ class GaugeModel(BaseModel):
             # Create dynamics for running L2HMC leapfrog
             # -----------------------------------------------
             io.log(f'INFO: Creating `Dynamics`...')
-            self.dynamics = self._create_dynamics()
+            self.dynamics = self.create_dynamics()
             # Create operation for assigning to `dynamics.eps` 
             # the value fed into the placeholder `eps_ph`.
-            self.eps_setter = tf.assign(self.dynamics.eps,
-                                        self.eps_ph,
-                                        name='eps_setter')
+            self.eps_setter = self._build_eps_setter()
 
-            # ***************************************************************
-            # Create metric function for measuring 'distance' between configs
-            # ---------------------------------------------------------------
+            # ***********************************************
+            # Create metric for measuring 'distance`
+            # ***********************************************
             metric = getattr(self, 'metric', 'cos_diff')
             self.metric_fn = self._create_metric_fn(metric)
 
@@ -122,7 +125,9 @@ class GaugeModel(BaseModel):
         # NOTE: We use the `dynamics.apply_transition` method to run the
         # augmented l2hmc leapfrog integrator and obtain new samples.
         # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        x_data, z_data = self._build_sampler()
+        x_sampler_data, z_sampler_data = self._build_sampler()
+        x_data, self._x_dynamics = split_sampler_data(x_sampler_data)
+        z_data, self._z_dynamics = split_sampler_data(z_sampler_data)
 
         # *******************************************************************
         # Calculate loss_op and train_op to backprop. grads through network
@@ -173,38 +178,27 @@ class GaugeModel(BaseModel):
 
         return lattice
 
-    def _create_dynamics(self, **params):
-        """Create `Dynamics` object."""
-        with tf.name_scope('create_dynamics'):
-            dynamics_keys = [
-                'eps', 'hmc', 'num_steps', 'use_bn',
-                'dropout_prob', 'network_arch',
-                'num_hidden1', 'num_hidden2'
-            ]
+    def create_dynamics(self, **params):
+        """Create dynamics object."""
+        samples = self.lattice.samples_tensor
+        potential_fn = self.lattice.get_potential_fn(samples)
 
-            dynamics_params = {
-                k: getattr(self, k, None) for k in dynamics_keys
-            }
+        kwargs = {
+            'eps_trainable': not self.eps_fixed,
+            'num_filters': self.lattice.space_size,
+            'x_dim': self.lattice.num_links,
+            'batch_size': self.batch_size,
+            '_input_shape': (self.batch_size, *self.lattice.links.shape),
+        }
 
-            dynamics_params.update({
-                'eps_trainable': not self.eps_fixed,
-                'num_filters': self.lattice.space_size,
-                'x_dim': self.lattice.num_links,
-                'batch_size': self.batch_size,
-                '_input_shape': (self.batch_size, *self.lattice.links.shape),
-            })
-
-            dynamics_params.update(params)
-            samples = self.lattice.samples_tensor
-            potential_fn = self.lattice.get_potential_fn(samples)
-            dynamics = Dynamics(potential_fn=potential_fn, **dynamics_params)
+        dynamics = self._create_dynamics(potential_fn, **kwargs)
 
         return dynamics
 
     def _create_observables(self):
         """Create operations for calculating lattice observables."""
         with tf.name_scope('observables'):
-            plaq_sums = self.lattice.calc_plaq_sums(self.x)
+            plaq_sums = self.lattice.calc_plaq_sums(samples=self.x)
             actions = self.lattice.calc_actions(plaq_sums=plaq_sums)
             plaqs = self.lattice.calc_plaqs(plaq_sums=plaq_sums)
             avg_plaqs = tf.reduce_mean(plaqs, name='avg_plaqs')
@@ -306,17 +300,19 @@ class GaugeModel(BaseModel):
         """Calculate the Gaussian loss."""
         return self._gaussian_loss(x_data, z_data, mean=0., sigma=1.)
 
-    def nnehmc_loss(self, x_data, hmc_prob, beta=1.):
+    def nnehmc_loss(self, x_data, hmc_prob):
         """Calculate the NNEHMC loss."""
-        return self._nnehmc_loss(x_data, hmc_prob, beta=beta)
+        nnehmc_beta = getattr(self, 'nnehmc_beta', 1.)
+        return self._nnehmc_loss(x_data, hmc_prob, beta=nnehmc_beta)
 
     def _parse_dynamics_output(self, dynamics_output):
         """Parse output dictionary from `self.dynamics.apply_transition`."""
         with tf.name_scope('top_charge_diff'):
             x_in = dynamics_output['x_in']
-            x_out = dynamics_output['x_out']
+            #  x_out = dynamics_output['x_out']
+            x_proposed = dynamics_output['x_proposed']
             x_dq = tf.cast(
-                self.lattice.calc_top_charges_diff(x_in, x_out),
+                self.lattice.calc_top_charges_diff(x_in, x_proposed),
                 dtype=TF_INT
             )
             self.charge_diffs_op = tf.reduce_sum(x_dq) / self.batch_size
