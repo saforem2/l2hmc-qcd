@@ -19,7 +19,12 @@ import tensorflow as tf
 import numpy.random as npr
 
 from network.network import FullNet
-from config import GLOBAL_SEED, TF_FLOAT, TF_INT
+import config as cfg
+
+TF_FLOAT = cfg.TF_FLOAT
+TF_INT = cfg.TF_INT
+GLOBAL_SEED = cfg.GLOBAL_SEED
+#  from config import GLOBAL_SEED, TF_FLOAT, TF_INT
 
 
 def exp(x, name=None):
