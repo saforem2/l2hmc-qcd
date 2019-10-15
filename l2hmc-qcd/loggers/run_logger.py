@@ -491,7 +491,8 @@ class RunLogger:
             run_stats = self.calc_observables_stats(self.run_data, therm_frac)
             charges = self.run_data['charges']
             charges_arr = np.array(list(charges.values()))
-            charges_autocorrs = [autocorr(x) for x in charges_arr.T]
+            charges_arrT = charges_arr.T
+            charges_autocorrs = [autocorr(x) for x in charges_arrT]
             charges_autocorrs = [x / np.max(x) for x in charges_autocorrs]
             self.run_data['charges_autocorrs'] = charges_autocorrs
 
