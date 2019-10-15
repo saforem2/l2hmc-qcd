@@ -104,7 +104,9 @@ class GaugeModelPlotter:
         autocorrs_avg = np.mean(charge_autocorrs.T, axis=1)
         autocorrs_err = sem(charge_autocorrs.T, axis=1)
 
-        num_steps, batch_size = actions.shape
+        #  num_steps, batch_size = actions.shape
+        num_steps = actions.shape[0]
+        batch_size = actions.shape[1]
         steps_arr = np.arange(num_steps)
 
         # skip 5% of total number of steps between successive points when
