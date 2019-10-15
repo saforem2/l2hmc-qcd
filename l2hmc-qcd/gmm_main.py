@@ -203,9 +203,6 @@ def main(FLAGS):
         io.log('INFO: USING HOROVOD FOR DISTRIBUTED TRAINING')
         hvd.init()
 
-    #  if FLAGS.hmc:
-    #      inference.run_hmc(FLAGS, log_file=log_file)
-    #  else:
     model, train_logger = train_l2hmc(FLAGS, log_file)
 
 
