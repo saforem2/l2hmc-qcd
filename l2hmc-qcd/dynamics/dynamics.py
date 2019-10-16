@@ -212,14 +212,14 @@ class Dynamics(tf.keras.Model):
         args = (x_in, beta, weights, train_phase, save_lf, hmc)
 
         # Forward transition:
-        outputs_f = self._transition_forward(*args)
+        outputs_f, v_init_f = self._transition_forward(*args)
         xf = outputs_f['x_proposed']
         vf = outputs_f['v_proposed']
         pxf = outputs_f['accept_prob']
         pxf_hmc = outputs_f['accept_prob_hmc']
 
         # Backward transition:
-        outputs_b = self._transition_backward(*args)
+        outputs_b, v_init_b = self._transition_backward(*args)
         xb = outputs_b['x_proposed']
         vb = outputs_b['v_proposed']
         pxb = outputs_b['accept_prob']
@@ -252,11 +252,23 @@ class Dynamics(tf.keras.Model):
 
         outputs = {
             'x_in': x_in,
+            'x_out': x_out,
+            'x_proposed_f': xf,
+            'v_proposed_f': vf,
+            'x_proposed_b': xb,
+            'v_proposed_b': vb,
+            'v_init_f': v_init_f,
+            'v_init_b': v_init_b,
             'x_proposed': x_proposed,
             'v_proposed': v_proposed,
             'accept_prob': accept_prob,
-            'x_out': x_out,
+            'pxf_hmc': pxf_hmc,
+            'pxb_hmc': pxb_hmc,
             'accept_prob_hmc': accept_prob_hmc,
+            'mask_forward': forward_mask,
+            'mask_backward': backward_mask,
+            'sumlogdet_f': outputs_f['sumlogdet'],
+            'sumlogdet_b': outputs_b['sumlogdet'],
         }
 
         if save_lf:
@@ -295,7 +307,7 @@ class Dynamics(tf.keras.Model):
                                                forward=True,
                                                save_lf=save_lf,
                                                hmc=hmc)
-        return outputs_f
+        return outputs_f, v_rf
 
     def _transition_backward(self, x, beta, weights,
                              train_phase, save_lf, hmc=False):
@@ -312,7 +324,7 @@ class Dynamics(tf.keras.Model):
                                                forward=False,
                                                save_lf=save_lf,
                                                hmc=hmc)
-        return outputs_b
+        return outputs_b, v_rb
 
     def _get_transition_masks(self):
         with tf.name_scope('transition_masks'):

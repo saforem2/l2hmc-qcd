@@ -91,6 +91,7 @@ def make_summaries_from_collection(collection, names):
     except AttributeError:
         pass
 
+
 def _create_training_summaries(model):
     """Create summary objects for training operations in TensorBoard."""
     with tf.name_scope('loss'):
@@ -110,6 +111,35 @@ def _create_training_summaries(model):
 
     with tf.name_scope('x_out'):
         variable_summaries(model.x_out, 'x_out')
+
+
+def _create_energy_summaries(model):
+    """Create summary objects for initial and proposed KE and PE."""
+    for key, val in model._energy_outputs_dict.items():
+        with tf.name_scope(key):
+            variable_summaries(val, key)
+    '''
+    with tf.name_scope('potential_init'):
+        variable_summaries(model.potential_init, 'potential_init')
+    with tf.name_scope('potential_proposed'):
+        variable_summaries(model.potential_proposed, 'potential_proposed')
+    with tf.name_scope('potential_diff'):
+        variable_summaries(model.potential_diff, 'potential_diff')
+
+    with tf.name_scope('kinetic_init'):
+        variable_summaries(model.kinetic_init, 'kinetic_init')
+    with tf.name_scope('kinetic_proposed'):
+        variable_summaries(model.kinetic_proposed, 'kinetic_proposed')
+    with tf.name_scope('kinetic_diff'):
+        variable_summaries(model.kinetic_diff, 'kinetic_diff')
+
+    with tf.name_scope('hamiltonian_init'):
+        variable_summaries(model.hamiltonian_init, 'hamiltonian_init')
+    with tf.name_scope('hamiltonian_proposed'):
+        variable_summaries(model.hamiltonian_proposed, 'hamiltonian_proposed')
+    with tf.name_scope('hamiltonian_diff'):
+        variable_summaries(model.hamiltonian_diff, 'hamiltonian_diff')
+    '''
 
 
 def _create_grad_norm_summaries(grad, var):
@@ -235,6 +265,7 @@ def create_summaries(model, summary_dir, training=True):
 
     # log S, T, Q functions (forward/backward)
     _create_l2hmc_summaries(model)
+    _create_energy_summaries(model)
 
     if model.use_gaussian_loss and model.use_nnehmc_loss:
         _loss_summaries(model)
