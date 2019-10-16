@@ -94,12 +94,14 @@ class BaseModel:
         with tf.name_scope('l2hmc'):
             slf = self.save_lf
             nnehmc = self.use_nnehmc_loss
+            mt = getattr(self, 'model_type', None)
             args = (self.beta, self.net_weights, self.train_phase)
 
             with tf.name_scope('main_dynamics'):
                 x_dynamics = self.dynamics.apply_transition(self.x, *args,
                                                             save_lf=slf,
-                                                            hmc=nnehmc)
+                                                            hmc=nnehmc,
+                                                            model_type=mt)
                 x_data = LFdata(x_dynamics['x_in'],
                                 x_dynamics['x_proposed'],
                                 x_dynamics['accept_prob'])
@@ -113,20 +115,6 @@ class BaseModel:
 
             energy_outputs = self._check_energy(x_dynamics)
             self._energy_outputs_dict = energy_outputs
-
-            #  self.kinetic_init = energy_outputs['kinetic_init']
-            #  self.kinetic_proposed = energy_outputs['kinetic_proposed']
-            #  self.kinetic_diff = energy_outputs['kinetic_diff']
-
-            '''
-            self.potential_init = energy_outputs['potential_init']
-            self.potential_proposed = energy_outputs['potential_proposed']
-            self.potential_diff = energy_outputs['potential_diff']
-
-            self.hamiltonian_init = energy_outputs['hamiltonian_init']
-            self.hamiltonian_proposed = energy_outputs['hamiltonian_proposed']
-            self.hamiltonian_diff = energy_outputs['hamiltonian_diff']
-            '''
 
             if self.hmc:
                 return
@@ -437,12 +425,6 @@ class BaseModel:
         v_proposed_f = dynamics_output['v_proposed_f']
         v_proposed_b = dynamics_output['v_proposed_b']
 
-        #  v_proposed = dynamics_output['v_proposed']
-
-        #  v_init_f = dynamics_output['v_init_f']
-        #  v_init_b = dynamics_output['v_init_b']
-        #  v_init = (mask_f * v_init_f + mask_b * v_init_b)
-
         with tf.name_scope('check_energy'):
             potential_init = self.dynamics.potential_energy(
                 x_init, self.beta
@@ -459,8 +441,6 @@ class BaseModel:
             potential_diff_f = potential_proposed_f - potential_init
             potential_diff_b = potential_proposed_b - potential_init
 
-            #  potential_proposed = self.dynamics.potential_energy(x_proposed,
-            #                                                      self.beta)
             kinetic_init_f = self.dynamics.kinetic_energy(v_init_f)
             kinetic_init_b = self.dynamics.kinetic_energy(v_init_b)
 
@@ -470,8 +450,6 @@ class BaseModel:
             kinetic_diff_f = kinetic_proposed_f - kinetic_init_f
             kinetic_diff_b = kinetic_proposed_b - kinetic_init_b
 
-            #  kinetic_init = self.dynamics.kinetic_energy(v_init)
-            #  kinetic_proposed = self.dynamics.kinetic_energy(v_proposed)
             hamiltonian_init_f = potential_init + kinetic_init_f
             hamiltonian_init_b = potential_init + kinetic_init_b
 
@@ -481,22 +459,7 @@ class BaseModel:
             hamiltonian_diff_f = hamiltonian_proposed_f - hamiltonian_init_f
             hamiltonian_diff_b = hamiltonian_proposed_b - hamiltonian_init_b
 
-            #  hamiltonian_init = kinetic_init + potential_init
-            #  hamiltonian_proposed = kinetic_proposed + potential_proposed
-            #
-            #  kinetic_diff = kinetic_proposed - kinetic_init
-            #  potential_diff = potential_proposed - potential_init
-            #  hamiltonian_diff = hamiltonian_proposed - hamiltonian_init
-
         output = {
-            #  'kinetic_init': kinetic_init,
-            #  'kinetic_proposed': kinetic_proposed,
-            #  'kinetic_diff': kinetic_diff,
-            #  'potential_proposed': potential_proposed,
-            #  'potential_diff': potential_diff,
-            #  'hamiltonian_init': hamiltonian_init,
-            #  'hamiltonian_proposed': hamiltonian_proposed,
-            #  'hamiltonian_diff': hamiltonian_diff
             'potential_init': potential_init,
             'potential_proposed_f': potential_proposed_f,
             'potential_proposed_b': potential_proposed_b,
@@ -517,7 +480,6 @@ class BaseModel:
         }
 
         return output
-
 
     def _check_reversibility(self):
         x_in = tf.random_normal(self.x.shape,
