@@ -184,6 +184,7 @@ class Dynamics(tf.keras.Model):
                          beta,
                          weights,
                          train_phase,
+                         model_type=None,
                          save_lf=False,
                          hmc=True):
         """Propose a new state and perform the accept/reject step.
@@ -207,19 +208,24 @@ class Dynamics(tf.keras.Model):
             accept_prob: Probability of accepting the proposed states.
             x_out: Samples after accept/reject step.
         """
+        if model_type == 'GaugeModel':
+            x_in = tf.mod(x_in, 2 * np.pi, name='x_in_mod_2_pi')
+
         results_dict = {}  # holds additional data if `save_lf=True`
 
         args = (x_in, beta, weights, train_phase, save_lf, hmc)
 
         # Forward transition:
-        outputs_f, v_init_f = self._transition_forward(*args)
+        outputs_f, v_init_f = self._transition_forward(*args,
+                                                       model_type=model_type)
         xf = outputs_f['x_proposed']
         vf = outputs_f['v_proposed']
         pxf = outputs_f['accept_prob']
         pxf_hmc = outputs_f['accept_prob_hmc']
 
         # Backward transition:
-        outputs_b, v_init_b = self._transition_backward(*args)
+        outputs_b, v_init_b = self._transition_backward(*args,
+                                                        model_type=model_type)
         xb = outputs_b['x_proposed']
         vb = outputs_b['v_proposed']
         pxb = outputs_b['accept_prob']
@@ -239,8 +245,11 @@ class Dynamics(tf.keras.Model):
 
         # Probability of accepting the proposed states
         with tf.name_scope('accept_prob'):
-            accept_prob = pxf * forward_mask + pxb * backward_mask
-            accept_prob_hmc = pxf_hmc * forward_mask + pxb_hmc * backward_mask
+            accept_prob = (pxf * forward_mask
+                           + pxb * backward_mask)
+
+            accept_prob_hmc = (pxf_hmc * forward_mask
+                               + pxb_hmc * backward_mask)
 
         # Accept or reject step
         accept_mask, reject_mask = self._get_accept_masks(accept_prob)
@@ -267,20 +276,37 @@ class Dynamics(tf.keras.Model):
             'accept_prob_hmc': accept_prob_hmc,
             'mask_forward': forward_mask,
             'mask_backward': backward_mask,
-            'sumlogdet_f': outputs_f['sumlogdet'],
-            'sumlogdet_b': outputs_b['sumlogdet'],
+            #  'sumlogdet_f': outputs_f['sumlogdet'],
+            #  'sumlogdet_b': outputs_b['sumlogdet'],
         }
 
         if save_lf:
-            results_dict['pxs_out_f'] = outputs_f['accept_prob']
-            results_dict['pxs_out_b'] = outputs_b['accept_prob']
             results_dict['masks_f'] = forward_mask
             results_dict['masks_b'] = backward_mask
 
-            def get_lf_keys(direction):
-                base_keys = ['lf_out', 'logdets', 'sumlogdet', 'fns_out']
-                new_keys = [k + f'_{direction}' for k in base_keys]
-                return list(zip(new_keys, base_keys))
+
+    def _parse_directional_outputs(outputs_f, outputs_b, outputs):
+        """Parse output dictionaries `outputs_f` and `outputs_b`.
+
+        Extract relevant key, value pairs from each forward/backward
+        dictionary and use these to create new unified dictionary.
+
+        Args:
+            outputs_f (dict): Dictionary of outputs from calling
+                `_transition_forward` method.
+            outputs_b (dict): Dictionary of outputs from calling
+                `_transition_backward` method.
+            outputs (dict): Dictionary to store (new) unified outputs.
+        """
+        def get_lf_keys(direction):
+            base_keys = ['lf_out', 'logdets', 'sumlogdet', 'fns_out',
+                         'v_init', 'x_proposed', 'v_proposed', 'sumlogdet']
+            new_keys = [k + f'_{direction}' for k in base_keys]
+            return list(zip(new_keys, base_keys))
+
+        outputs['pxs_out_f'] = outputs_f['accept_prob']
+        outputs['pxs_out_b'] = outputs_b['accept_prob']
+
 
             keys_f = get_lf_keys('f')
             keys_b = get_lf_keys('b')
@@ -292,14 +318,17 @@ class Dynamics(tf.keras.Model):
 
         return outputs
 
-    def _transition_forward(self, x, beta, weights, 
-                            train_phase, save_lf, hmc=False):
+    def _transition_forward(self, x, beta, weights, train_phase,
+                            save_lf, hmc=False, model_type=None):
         with tf.name_scope('transition_forward'):
             with tf.name_scope('refresh_momentum'):
                 v_rf = tf.random_normal(tf.shape(x),
                                         dtype=TF_FLOAT,
                                         seed=GLOBAL_SEED,
                                         name='refresh_momentum_forward')
+
+                if model_type == 'GaugeModel':
+                    v_rf = tf.mod(v_rf, 2 * np.pi, name='v_rf_mod_2pi')
 
             outputs_f = self.transition_kernel(x, v_rf, beta,
                                                weights,
@@ -309,14 +338,17 @@ class Dynamics(tf.keras.Model):
                                                hmc=hmc)
         return outputs_f, v_rf
 
-    def _transition_backward(self, x, beta, weights,
-                             train_phase, save_lf, hmc=False):
+    def _transition_backward(self, x, beta, weights, train_phase,
+                             save_lf, hmc=False, model_type=None):
         with tf.name_scope('transition_backward'):
             with tf.name_scope('refresh_momentum'):
                 v_rb = tf.random_normal(tf.shape(x),
                                         dtype=TF_FLOAT,
                                         seed=GLOBAL_SEED,
                                         name='refresh_momentum_backward')
+
+                if model_type == 'GaugeModel':
+                    v_rb = tf.mod(v_rb, 2 * np.pi, name='v_rb_mod_2pi')
 
             outputs_b = self.transition_kernel(x, v_rb, beta,
                                                weights,
