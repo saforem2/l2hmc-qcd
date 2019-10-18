@@ -344,6 +344,26 @@ def train_l2hmc(FLAGS, log_file=None, experiment=None):
     sess.run([global_var_init, local_var_init])
     uninited_out = sess.run(uninited)
     io.log(f'tf.report_uninitialized_variables() len = {uninited_out}')
+
+    # Check reversibility and write results out to `.txt` file.
+    samples_init = np.random.randn(*model.x.shape)
+    feed_dict = {
+        model.x: samples_init,
+        model.beta: 1.,
+        model.net_weights[0]: 1.,
+        model.net_weights[1]: 1.,
+        model.net_weights[2]: 1.,
+        model.train_phase: False
+    }
+
+    # Check reversibility
+    reverse_file = os.path.join(model.log_dir, 'reversibility_test.txt')
+    x_diff, v_diff = sess.run([model.x_diff,
+                               model.v_diff], feed_dict=feed_dict)
+    reverse_str = (f'Reversibility results:\n '
+                   f'\t x_diff: {x_diff:.10g}, v_diff: {v_diff:.10g}')
+    io.log_and_write(reverse_str, reverse_file)
+
     #  is_initialized = sess.run(is_var_init)
     #  not_initialized_vars = [
     #      var for (var, init) in zip(global_vars, is_initialized) if not init

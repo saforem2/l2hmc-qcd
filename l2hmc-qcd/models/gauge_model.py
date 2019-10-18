@@ -40,6 +40,7 @@ SEP_STRN = 80 * '-' + '\n'
 def allclose(x, y, rtol=1e-3, atol=1e-5):
     return tf.reduce_all(tf.abs(x - y) <= tf.abs(y) * rtol + atol)
 
+
 def split_sampler_data(sampler_data):
     return sampler_data.data, sampler_data.dynamics_output
 
@@ -126,8 +127,10 @@ class GaugeModel(BaseModel):
         # augmented l2hmc leapfrog integrator and obtain new samples.
         # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
         x_sampler_data, z_sampler_data = self._build_sampler()
-        x_data, self._x_dynamics = split_sampler_data(x_sampler_data)
-        z_data, self._z_dynamics = split_sampler_data(z_sampler_data)
+        x_data = x_sampler_data.data
+        z_data = z_sampler_data.data
+        self._x_dynamics = x_sampler_data.dynamics_output
+        self._z_dynamics = z_sampler_data.dynamics_output
 
         # *******************************************************************
         # Calculate loss_op and train_op to backprop. grads through network

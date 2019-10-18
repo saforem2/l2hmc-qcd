@@ -294,21 +294,14 @@ def main(kwargs):
     samples_shape = (params['batch_size'], x_dim)
     init_method = kwargs.get('samples_init', 'random')
     if init_method == 'random':
-        io.log(80 * '-' + '\n\n')
-        io.log(f'Hit `random init`...')
-        io.log(80 * '-' + '\n\n')
         tmp = samples_shape[0] * samples_shape[1]
         samples_init = np.random.uniform(-1, 1, tmp).reshape(*samples_shape)
     elif 'zero' in init_method:
-        io.log(80 * '-' + '\n\n')
-        io.log(f'Hit `zeros init`...')
-        io.log(80 * '-' + '\n\n')
-        samples_init = np.zeros(samples_init)
+        samples_init = (np.zeros(samples_shape)
+                        + 1e-2 * np.random.randn(*samples_shape))
     elif 'ones' in init_method:
-        io.log(80 * '-' + '\n\n')
-        io.log(f'Hit `ones init`...')
-        io.log(80 * '-' + '\n\n')
-        samples_init = np.ones(samples_shape)
+        samples_init = (np.ones(samples_shape)
+                        + 1e-2 * np.random.randn(*samples_shape))
 
     run_logger = RunLogger(params, inputs, run_ops,
                            model_type='GaugeModel',
