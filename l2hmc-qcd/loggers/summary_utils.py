@@ -115,31 +115,16 @@ def _create_training_summaries(model):
 
 def _create_energy_summaries(model):
     """Create summary objects for initial and proposed KE and PE."""
-    for key, val in model._energy_outputs_dict.items():
-        with tf.name_scope(key):
+    energies_f = model._energy_outputs_dict['forward']
+    energies_b = model._energy_outputs_dict['backward']
+
+    for key, val in energies_f.items():
+        with tf.name_scope(key + '/forward'):
             variable_summaries(val, key)
-    '''
-    with tf.name_scope('potential_init'):
-        variable_summaries(model.potential_init, 'potential_init')
-    with tf.name_scope('potential_proposed'):
-        variable_summaries(model.potential_proposed, 'potential_proposed')
-    with tf.name_scope('potential_diff'):
-        variable_summaries(model.potential_diff, 'potential_diff')
 
-    with tf.name_scope('kinetic_init'):
-        variable_summaries(model.kinetic_init, 'kinetic_init')
-    with tf.name_scope('kinetic_proposed'):
-        variable_summaries(model.kinetic_proposed, 'kinetic_proposed')
-    with tf.name_scope('kinetic_diff'):
-        variable_summaries(model.kinetic_diff, 'kinetic_diff')
-
-    with tf.name_scope('hamiltonian_init'):
-        variable_summaries(model.hamiltonian_init, 'hamiltonian_init')
-    with tf.name_scope('hamiltonian_proposed'):
-        variable_summaries(model.hamiltonian_proposed, 'hamiltonian_proposed')
-    with tf.name_scope('hamiltonian_diff'):
-        variable_summaries(model.hamiltonian_diff, 'hamiltonian_diff')
-    '''
+    for key, val in energies_b.items():
+        with tf.name_scope(key + '/backward'):
+            variable_summaries(val, key)
 
 
 def _create_grad_norm_summaries(grad, var):

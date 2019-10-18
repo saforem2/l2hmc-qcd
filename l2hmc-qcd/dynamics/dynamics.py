@@ -256,57 +256,52 @@ class Dynamics(tf.keras.Model):
 
         # Samples after accept / reject step
         with tf.name_scope('x_out'):
-            x_out = (accept_mask[:, None] * x_proposed
-                     + reject_mask[:, None] * x_in)
+            x_out = (x_proposed * accept_mask[:, None]
+                     + x_in * reject_mask[:, None])
 
-        outputs = {
+        with tf.name_scope('v_out'):
+            with tf.name_scope('forward'):
+                v_out_f = (vf * accept_mask[:, None]
+                           + v_init_f * reject_mask[:, None])
+            with tf.name_scope('backward'):
+                v_out_b = (vb * accept_mask[:, None]
+                           + v_init_b * reject_mask[:, None])
+
+        outputs_f.update({
             'x_in': x_in,
             'x_out': x_out,
-            'x_proposed_f': xf,
-            'v_proposed_f': vf,
-            'x_proposed_b': xb,
-            'v_proposed_b': vb,
-            'v_init_f': v_init_f,
-            'v_init_b': v_init_b,
+            'v_out': v_out_f,
+            'v_init': v_init_f,
+            'mask': forward_mask,
+        })
+
+        outputs_b.update({
+            'x_in': x_in,
+            'x_out': x_out,
+            'v_out': v_out_b,
+            'v_init': v_init_b,
+            'mask': backward_mask,
+        })
+
+        md_outputs = {
+            'x_in': x_in,
+            'x_out': x_out,
             'x_proposed': x_proposed,
             'v_proposed': v_proposed,
             'accept_prob': accept_prob,
-            'pxf_hmc': pxf_hmc,
-            'pxb_hmc': pxb_hmc,
             'accept_prob_hmc': accept_prob_hmc,
-            'mask_forward': forward_mask,
-            'mask_backward': backward_mask,
-            #  'sumlogdet_f': outputs_f['sumlogdet'],
-            #  'sumlogdet_b': outputs_b['sumlogdet'],
         }
 
         if save_lf:
+            results_dict['pxs_out_f'] = outputs_f['accept_prob']
+            results_dict['pxs_out_b'] = outputs_b['accept_prob']
             results_dict['masks_f'] = forward_mask
             results_dict['masks_b'] = backward_mask
 
-
-    def _parse_directional_outputs(outputs_f, outputs_b, outputs):
-        """Parse output dictionaries `outputs_f` and `outputs_b`.
-
-        Extract relevant key, value pairs from each forward/backward
-        dictionary and use these to create new unified dictionary.
-
-        Args:
-            outputs_f (dict): Dictionary of outputs from calling
-                `_transition_forward` method.
-            outputs_b (dict): Dictionary of outputs from calling
-                `_transition_backward` method.
-            outputs (dict): Dictionary to store (new) unified outputs.
-        """
-        def get_lf_keys(direction):
-            base_keys = ['lf_out', 'logdets', 'sumlogdet', 'fns_out',
-                         'v_init', 'x_proposed', 'v_proposed', 'sumlogdet']
-            new_keys = [k + f'_{direction}' for k in base_keys]
-            return list(zip(new_keys, base_keys))
-
-        outputs['pxs_out_f'] = outputs_f['accept_prob']
-        outputs['pxs_out_b'] = outputs_b['accept_prob']
-
+            def get_lf_keys(direction):
+                base_keys = ['lf_out', 'logdets', 'sumlogdet', 'fns_out']
+                new_keys = [k + f'_{direction}' for k in base_keys]
+                return list(zip(new_keys, base_keys))
 
             keys_f = get_lf_keys('f')
             keys_b = get_lf_keys('b')
@@ -314,7 +309,13 @@ class Dynamics(tf.keras.Model):
             results_dict.update({k[0]: outputs_f[k[1]] for k in keys_f})
             results_dict.update({k[0]: outputs_b[k[1]] for k in keys_b})
 
-            outputs.update(results_dict)
+            md_outputs.update(results_dict)
+
+        outputs = {
+            'md_outputs': md_outputs,
+            'outputs_f': outputs_f,
+            'outputs_b': outputs_b,
+        }
 
         return outputs
 
