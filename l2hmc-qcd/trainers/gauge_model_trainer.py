@@ -172,10 +172,10 @@ class GaugeModelTrainer:
             beta_np = self.model.beta_init
 
         if samples_np is None:
-            samples_np = np.array(
+            samples_np = np.mod(np.array(
                 np.random.randn(self.model.batch_size, self.model.x_dim),
                 dtype=NP_FLOAT
-            )
+            ), 2 * np.pi)
 
         assert samples_np.shape == self.model.x.shape
 
@@ -186,7 +186,6 @@ class GaugeModelTrainer:
                                                  net_weights=net_weights,
                                                  train_steps=train_steps)
                 samples_np = data.samples
-                #  samples_np = out_data['samples']
 
                 if self.logger is not None:
                     self.logger.update(self.sess, data, data_str, net_weights)
