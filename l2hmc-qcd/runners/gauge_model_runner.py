@@ -155,7 +155,9 @@ class GaugeModelRunner:
             x_dim = (self.params['space_size']
                      * self.params['time_size']
                      * self.params['dim'])
-            samples_np = np.random.randn(*(self.params['batch_size'], x_dim))
+            samples_np = np.random.randn(
+                *(self.params['batch_size'], x_dim)
+            )
 
         io.log(self._run_header)
         for step in range(run_steps):
