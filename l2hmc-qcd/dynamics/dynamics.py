@@ -180,7 +180,7 @@ class Dynamics(tf.keras.Model):
         return self.apply_transition(*args, **kwargs)
 
     def apply_transition(self,
-                         x_in,
+                         x_init,
                          beta,
                          weights,
                          train_phase,
@@ -209,94 +209,82 @@ class Dynamics(tf.keras.Model):
             x_out: Samples after accept/reject step.
         """
         if model_type == 'GaugeModel':
-            x_in = tf.mod(x_in, 2 * np.pi, name='x_in_mod_2_pi')
+            x_init = tf.mod(x_init, 2 * np.pi, name='x_in_mod_2_pi')
 
-        results_dict = {}  # holds additional data if `save_lf=True`
+        with tf.name_scope('transition_forward'):
+            vf_init = tf.random_normal(tf.shape(x_init),
+                                       dtype=TF_FLOAT,
+                                       seed=GLOBAL_SEED,
+                                       name='vf_init')
 
-        args = (x_in, beta, weights, train_phase, save_lf, hmc)
+            args = (x_init, vf_init, beta, weights, train_phase)
+            kwargs = {'forward': True, 'save_lf': save_lf, 'hmc': hmc}
+            outputs_f = self.transition_kernel(*args, **kwargs)
+            xf = outputs_f['x_proposed']
+            vf = outputs_f['v_proposed']
+            pxf = outputs_f['accept_prob']
+            pxf_hmc = outputs_f['accept_prob_hmc']
+            sumlogdetf = outputs_f['sumlogdet']
 
-        # Forward transition:
-        outputs_f, v_init_f = self._transition_forward(*args,
-                                                       model_type=model_type)
-        xf = outputs_f['x_proposed']
-        vf = outputs_f['v_proposed']
-        pxf = outputs_f['accept_prob']
-        pxf_hmc = outputs_f['accept_prob_hmc']
+        with tf.name_scope('transition_backward'):
+            vb_init = tf.random_normal(tf.shape(x_init),
+                                       dtype=TF_FLOAT,
+                                       seed=GLOBAL_SEED,
+                                       name='vb_init')
 
-        # Backward transition:
-        outputs_b, v_init_b = self._transition_backward(*args,
-                                                        model_type=model_type)
-        xb = outputs_b['x_proposed']
-        vb = outputs_b['v_proposed']
-        pxb = outputs_b['accept_prob']
-        pxb_hmc = outputs_b['accept_prob_hmc']
+            args = (x_init, vb_init, beta, weights, train_phase)
+            kwargs = {'forward': False, 'save_lf': save_lf, 'hmc': hmc}
+            outputs_b = self.transition_kernel(*args, **kwargs)
+            xb = outputs_b['x_proposed']
+            vb = outputs_b['v_proposed']
+            pxb = outputs_b['accept_prob']
+            pxb_hmc = outputs_b['accept_prob_hmc']
+            sumlogdetb = outputs_b['sumlogdet']
 
-        # Decide direction uniformly
-        forward_mask, backward_mask = self._get_transition_masks()
+        with tf.name_scope('simulate_forward_backward'):
+            # Decide direction uniformly
+            mask_f, mask_b = self._get_transition_masks()
 
-        # Obtain proposed states
-        with tf.name_scope('x_proposed'):
-            x_proposed = (xf * forward_mask[:, None]
-                          + xb * backward_mask[:, None])
+            # Obtain proposed states
+            v_init = vf_init * mask_f[:, None] + vb_init * mask_b[:, None]
+            v_proposed = vf * mask_f[:, None] + vb * mask_b[:, None]
+            x_proposed = xf * mask_f[:, None] + xb * mask_b[:, None]
 
-        with tf.name_scope('v_proposed'):
-            v_proposed = (vf * forward_mask[:, None]
-                          + vb * backward_mask[:, None])
-
-        # Probability of accepting the proposed states
-        with tf.name_scope('accept_prob'):
-            accept_prob = (pxf * forward_mask
-                           + pxb * backward_mask)
-
-            accept_prob_hmc = (pxf_hmc * forward_mask
-                               + pxb_hmc * backward_mask)
+            # Probability of accepting proposed states; (!) is w/o sumlogdet
+            accept_prob = pxf * mask_f + pxb * mask_b
+            accept_prob_hmc = pxf_hmc * mask_f + pxb_hmc * mask_b  # (!)
+            sumlogdet_proposed = sumlogdetf * mask_f + sumlogdetb * mask_b
 
         # Accept or reject step
-        accept_mask, reject_mask = self._get_accept_masks(accept_prob)
+        with tf.name_scope('accept_reject_step'):
+            # accept_mask, reject_mask
+            mask_a, mask_r = self._get_accept_masks(accept_prob)
 
-        # Samples after accept / reject step
-        with tf.name_scope('x_out'):
-            x_out = (x_proposed * accept_mask[:, None]
-                     + x_in * reject_mask[:, None])
-
-        with tf.name_scope('v_out'):
-            with tf.name_scope('forward'):
-                v_out_f = (vf * accept_mask[:, None]
-                           + v_init_f * reject_mask[:, None])
-            with tf.name_scope('backward'):
-                v_out_b = (vb * accept_mask[:, None]
-                           + v_init_b * reject_mask[:, None])
-
-        outputs_f.update({
-            'x_in': x_in,
-            'x_out': x_out,
-            'v_out': v_out_f,
-            'v_init': v_init_f,
-            'mask': forward_mask,
-        })
-
-        outputs_b.update({
-            'x_in': x_in,
-            'x_out': x_out,
-            'v_out': v_out_b,
-            'v_init': v_init_b,
-            'mask': backward_mask,
-        })
+            # State (x, v)  after accept / reject step
+            x_out = (x_proposed * mask_a[:, None] + x_init * mask_r[:, None])
+            v_out = (v_proposed * mask_a[:, None] + v_init * mask_r[:, None])
+            sumlogdet_out = sumlogdet_proposed * mask_a
 
         md_outputs = {
-            'x_in': x_in,
-            'x_out': x_out,
+            'x_init': x_init,
+            'v_init': v_init,
             'x_proposed': x_proposed,
             'v_proposed': v_proposed,
+            'x_out': x_out,
+            'v_out': v_out,
             'accept_prob': accept_prob,
             'accept_prob_hmc': accept_prob_hmc,
+            'sumlogdet_proposed': sumlogdet_proposed,
+            'sumlogdet_out': sumlogdet_out,
+            #  'sumlogdet': sumlogdet,
         }
 
         if save_lf:
-            results_dict['pxs_out_f'] = outputs_f['accept_prob']
-            results_dict['pxs_out_b'] = outputs_b['accept_prob']
-            results_dict['masks_f'] = forward_mask
-            results_dict['masks_b'] = backward_mask
+            lf_dict = {}  # holds additional data if `save_lf=True`
+            lf_dict['pxs_out_f'] = pxf
+            lf_dict['pxs_out_b'] = pxb
+            lf_dict['masks_f'] = mask_f
+            lf_dict['masks_b'] = mask_b
 
             def get_lf_keys(direction):
                 base_keys = ['lf_out', 'logdets', 'sumlogdet', 'fns_out']
@@ -306,10 +294,10 @@ class Dynamics(tf.keras.Model):
             keys_f = get_lf_keys('f')
             keys_b = get_lf_keys('b')
 
-            results_dict.update({k[0]: outputs_f[k[1]] for k in keys_f})
-            results_dict.update({k[0]: outputs_b[k[1]] for k in keys_b})
+            lf_dict.update({k[0]: outputs_f[k[1]] for k in keys_f})
+            lf_dict.update({k[0]: outputs_b[k[1]] for k in keys_b})
 
-            md_outputs.update(results_dict)
+            md_outputs.update(lf_dict)
 
         outputs = {
             'md_outputs': md_outputs,
@@ -328,9 +316,6 @@ class Dynamics(tf.keras.Model):
                                         seed=GLOBAL_SEED,
                                         name='refresh_momentum_forward')
 
-                if model_type == 'GaugeModel':
-                    v_rf = tf.mod(v_rf, 2 * np.pi, name='v_rf_mod_2pi')
-
             outputs_f = self.transition_kernel(x, v_rf, beta,
                                                weights,
                                                train_phase,
@@ -347,9 +332,6 @@ class Dynamics(tf.keras.Model):
                                         dtype=TF_FLOAT,
                                         seed=GLOBAL_SEED,
                                         name='refresh_momentum_backward')
-
-                if model_type == 'GaugeModel':
-                    v_rb = tf.mod(v_rb, 2 * np.pi, name='v_rb_mod_2pi')
 
             outputs_b = self.transition_kernel(x, v_rb, beta,
                                                weights,
