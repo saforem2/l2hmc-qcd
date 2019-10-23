@@ -23,7 +23,7 @@ def directionalize(key):
 class GaugeModelRunner:
     """GaugeModelRunner object, responsible for running inference."""
 
-    def __init__(self, sess, params, inputs, run_ops, logger=None):
+    def __init__(self, sess, params, inputs, run_ops, energy_ops, logger=None):
         """Initialization method.
 
         Args:
@@ -46,15 +46,27 @@ class GaugeModelRunner:
         if logger is not None:
             self.inputs_dict = self.logger.inputs_dict
             self.run_ops_dict = self.logger.run_ops_dict
+            self.energy_ops_dict = self.logger.energy_ops_dict
             self._has_logger = True
             self._run_header = self.logger.run_header
         else:
             self.inputs_dict = RunLogger.build_inputs_dict(inputs)
             self.run_ops_dict = RunLogger.build_run_ops_dict(params, run_ops)
+            self.energy_ops_dict = RunLogger.build_energy_ops_dict(energy_ops)
             self._has_logger = False
             self._run_header = ''
 
         self.eps = self.sess.run(self.run_ops_dict['dynamics_eps'])
+
+    def run_energy_ops(self, feed_dict):
+        """Run all energy ops."""
+        keys = list(self.energy_ops_dict.keys())
+        ops = list(self.energy_ops_dict.values())
+        outputs = self.sess.run(ops, feed_dict=feed_dict)
+
+        energy_outputs = dict(zip(keys, outputs))
+
+        return energy_outputs
 
     def run_step(self, step, run_steps, inputs, net_weights):
         """Perform a single run step.
@@ -74,6 +86,9 @@ class GaugeModelRunner:
         """
         samples_in, beta_np, eps, plaq_exact = inputs
 
+        #  if step < 100:
+        #      net_weights = [0., 0., 0.]
+
         keys = ['x_out', 'px', 'actions_op',
                 'plaqs_op', 'charges_op', 'charge_diffs_op']
 
@@ -90,6 +105,7 @@ class GaugeModelRunner:
 
         t0 = time.time()
         outputs = self.sess.run(ops, feed_dict=feed_dict)
+        energy_outputs = self.run_energy_ops(feed_dict)
         dt = time.time() - t0
 
         out_data = {
@@ -103,6 +119,7 @@ class GaugeModelRunner:
             'plaqs': outputs[3],
             'charges': outputs[4],
             'charge_diffs': outputs[5],
+            'energy_outputs': energy_outputs,
         }
 
         if self.params['save_lf']:

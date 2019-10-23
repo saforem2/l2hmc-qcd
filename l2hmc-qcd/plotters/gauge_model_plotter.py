@@ -33,6 +33,150 @@ def get_out_file(out_dir, out_str):
     return os.path.join(out_dir, out_str + '.pdf')
 
 
+def _get_title(lf_steps, eps, batch_size, beta, nw):
+    """Parse vaious parameters to make figure title when creating plots."""
+    title_str = (r"$N_{\mathrm{LF}} = $" + f"{lf_steps}, "
+                 r"$\varepsilon = $" + f"{eps:.3g}, "
+                 r"$N_{\mathrm{B}} = $" + f"{batch_size}, "
+                 r"$\beta =$" + f"{beta:.2g}, "
+                 r"$\mathrm{nw} = $" + (f"{nw[0]:.3g}, "
+                                        f"{nw[1]:.3g}, "
+                                        f"{nw[2]:.3g}"))
+    return title_str
+
+
+class EnergyPlotter:
+    def __init__(self, params, figs_dir=None):
+        self.params = params
+        self.figs_dir = figs_dir
+
+    def bootstrap(self, data, n_boot=10000):
+        boot_dist = []
+        for i in range(int(n_boot)):
+            resampler = np.random.randint(0, data.shape[0], data.shape[0])
+            sample = data.take(resampler, axis=0)
+            boot_dist.append(np.mean(sample, axis=0))
+
+        data_rs = np.array(boot_dist)
+        err = np.sqrt(float(n_boot) / float(n_boot - 1)) * np.std(data_rs)
+        mean = np.mean(data_rs)
+
+        return mean, err, data_rs
+
+    def _plot_setup(self, **kwargs):
+        """Prepare for making plots."""
+        beta = kwargs.get('beta', 5.)
+        run_str = kwargs.get('run_str', None)
+        net_weights = kwargs.get('net_weights', [1., 1., 1.])
+        eps = kwargs.get('eps', None)
+
+        out_dir = os.path.join(self.figs_dir, run_str, 'energy_plots')
+        io.check_else_make_dir(out_dir)
+
+        lf_steps = self.params['num_steps']
+        bs = self.params['batch_size']
+        nw = net_weights
+        title_str = _get_title(lf_steps, eps, bs, beta, nw)
+
+        return title_str, out_dir
+
+    def _plot(self, labels, data_arr, title=None, out_file=None):
+        colors = ['C0', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6']
+        fig, ax = plt.subplots()
+        for idx, (label, data) in enumerate(zip(labels, data_arr)):
+            num_steps = data.shape[0]
+            therm_steps = int(0.1 * num_steps)
+            x = np.arange(therm_steps, num_steps)
+            y = data[therm_steps:].mean(axis=1)
+            hline = y.mean()
+            label += f'  avg: {hline:.4g}'
+            ax.plot(x, y, color=colors[idx])
+            ax.axhline(xmin=x[0]-10, xmax=x[-1]+10, y=hline,
+                       label=label, color=colors[idx])
+
+        ax.legend(loc='best')
+        if title is not None:
+            ax.set_title(title)
+
+        fig.tight_layout()
+        if out_file is not None:
+            io.log(f'Saving figure to: {out_file}.')
+            fig.savefig(out_file, bbox_inches='tight')
+
+        return fig, ax
+
+    def _hist(self, labels, data_arr, title=None, out_file=None, **kwargs):
+        n_bins = kwargs.get('n_bins', 50)
+        n_boot = kwargs.get('n_boot', 1000)
+        alphas = [1., 0.8]
+
+        fig, ax = plt.subplots()
+        for idx, (label, data) in enumerate(zip(labels, data_arr)):
+            num_steps = data.shape[0]
+            therm_steps = int(0.1 * num_steps)
+            data = data[therm_steps:]
+            mean, err, mean_arr = self.bootstrap(data, n_boot=n_boot)
+            label = labels[idx] + f'  avg: {mean:.4g}'
+            ax.hist(mean_arr.flatten(), bins=n_bins, density=True,
+                    alpha=alphas[idx], label=label)
+
+        ax.legend(loc='best')
+        if title is not None:
+            ax.set_title(title)
+
+        fig.tight_layout()
+        if out_file is not None:
+            print(f'Saving figure to: {out_file}.')
+            fig.savefig(out_file, bbox_inches='tight')
+
+        return fig, ax
+
+    def _potential_plots(self, energy_data, title, out_dir):
+        pe_labels = [r"""$\delta U_{\mathrm{out}}$,""",
+                     r"""$\delta U_{\mathrm{proposed}}$,"""]
+
+        pe_data = [np.array(energy_data['pe_out_diff']),
+                   np.array(energy_data['pe_proposed_diff'])]
+
+        pe_f = os.path.join(out_dir, 'potential_diffs.pdf')
+        peh_f = os.path.join(out_dir, 'potential_diffs_hist.pdf')
+
+        _, _ = self._plot(pe_labels, pe_data, title=title, out_file=pe_f)
+        _, _ = self._hist(pe_labels, pe_data, title=title, out_file=peh_f)
+
+    def _kinetic_plots(self, energy_data, title, out_dir):
+        ke_labels = [r"""$\delta KE_{\mathrm{out}}$,""",
+                     r"""$\delta KE_{\mathrm{proposed}}$,"""]
+
+        ke_data = [np.array(energy_data['ke_out_diff']),
+                   np.array(energy_data['ke_proposed_diff'])]
+
+        ke_f = os.path.join(out_dir, 'kinetic_diffs.pdf')
+        keh_f = os.path.join(out_dir, 'kinetic_diffs_hist.pdf')
+
+        _, _ = self._plot(ke_labels, ke_data, title=title, out_file=ke_f)
+        _, _ = self._hist(ke_labels, ke_data, title=title, out_file=keh_f)
+
+    def _hamiltonian_plots(self, energy_data, title, out_dir):
+        h_labels = [r"""$\delta H_{\mathrm{out}}$,""",
+                    r"""$\delta H_{\mathrm{proposed}}$,"""]
+
+        h_data = [np.array(energy_data['h_out_diff']),
+                  np.array(energy_data['h_proposed_diff'])]
+
+        h_f = os.path.join(out_dir, 'hamiltonian_diffs.pdf')
+        hh_f = os.path.join(out_dir, 'hamiltonian_diffs_hist.pdf')
+
+        _, _ = self._plot(h_labels, h_data, title=title, out_file=h_f)
+        _, _ = self._hist(h_labels, h_data, title=title, out_file=hh_f)
+
+    def plot_energies(self, energy_data, **kwargs):
+        title, out_dir = self._plot_setup(**kwargs)
+        self._potential_plots(energy_data, title, out_dir)
+        self._kinetic_plots(energy_data, title, out_dir)
+        self._hamiltonian_plots(energy_data, title, out_dir)
+
+
 class GaugeModelPlotter:
     def __init__(self, params, figs_dir=None, experiment=None):
         self.figs_dir = figs_dir
