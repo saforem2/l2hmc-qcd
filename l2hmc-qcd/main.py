@@ -246,7 +246,7 @@ def train_setup(FLAGS, log_file=None, root_dir=None,
     return params, hooks
 
 
-def train_l2hmc(FLAGS, log_file=None, experiment=None):
+def train_l2hmc(FLAGS, log_file=None):
     """Create, train, and run L2HMC sampler on 2D U(1) gauge model."""
     tf.keras.backend.set_learning_phase(True)
     params, hooks = train_setup(FLAGS, log_file)
@@ -391,11 +391,6 @@ def train_l2hmc(FLAGS, log_file=None, experiment=None):
     io.log(f'Training completed in: {time.time() - t0:.3g}s')
     io.log(SEP_STR)
 
-    if HAS_COMET and experiment is not None:
-        experiment.log_parameters(params)
-        g = sess.graph
-        experiment.set_model_graph(g)
-
     params_file = os.path.join(os.getcwd(), 'params.pkl')
     with open(params_file, 'wb') as f:
         pickle.dump(model.params, f)
@@ -419,36 +414,20 @@ def main(FLAGS):
     if HAS_HOROVOD and USING_HVD:
         io.log("INFO: USING HOROVOD")
         hvd.init()
-
-    condition1 = not USING_HVD
-    condition2 = USING_HVD and hvd.rank() == 0
-    is_chief = condition1 or condition2
-
-    if FLAGS.comet and is_chief:
-        experiment = Experiment(api_key="r7rKFO35BJuaY3KT1Tpj4adco",
-                                project_name="l2hmc-qcd",
-                                workspace="saforem2")
-        name = (f'{FLAGS.network_arch}_'
-                f'lf{FLAGS.num_steps}_'
-                f'batch{FLAGS.batch_size}_'
-                f'qw{FLAGS.charge_weight}_'
-                f'aux{FLAGS.aux_weight}')
-        experiment.set_name(name)
-
-    else:
-        experiment = None
+        set_seed(hvd.rank() * FLAGS.global_seed)
+        tf.set_random_seed(hvd.rank() * FLAGS.global_seed)
 
     if FLAGS.hmc:   # run generic HMC sampler
         inference.run_hmc(FLAGS, log_file=log_file)
     else:           # train l2hmc sampler
-        model, train_logger = train_l2hmc(FLAGS, log_file, experiment)
-        if experiment is not None:
-            experiment.log_parameters(model.params)
+        model, train_logger = train_l2hmc(FLAGS, log_file)
 
 
 if __name__ == '__main__':
     FLAGS = parse_args()
-    set_seed(FLAGS.global_seed)
+    using_hvd = getattr(FLAGS, 'horovod', False)
+    if not using_hvd:
+        set_seed(FLAGS.global_seed)
     t0 = time.time()
     main(FLAGS)
     io.log('\n\n' + SEP_STR)
