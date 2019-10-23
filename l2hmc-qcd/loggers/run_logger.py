@@ -50,7 +50,7 @@ def _rename(src, dst):
 
 
 class RunLogger:
-    def __init__(self, params, inputs, run_ops,
+    def __init__(self, params, inputs, run_ops, energy_ops,
                  model_type=None, save_lf_data=True):
         """Initialization method.
         Args:
@@ -110,6 +110,10 @@ class RunLogger:
         self.run_ops_dict = self.build_run_ops_dict(params, run_ops,
                                                     self.model_type)
         self.inputs_dict = self.build_inputs_dict(inputs)
+        self.energy_ops_dict = self.build_energy_ops_dict(energy_ops)
+        self.energy_dict = {}
+        for key in self.energy_ops_dict.keys():
+            self.energy_dict[key] = []
 
         if self.summaries:
             #  self.run_summaries_dir = os.path.join(self.log_dir,
@@ -160,6 +164,17 @@ class RunLogger:
 
         return inputs_dict
 
+    @staticmethod
+    def build_energy_ops_dict(energy_ops):
+        """Build dictionary of energy operations to calculate."""
+        type_strs = ['pe', 'ke', 'h']
+        attr_strs = ['init', 'proposed', 'out', 'proposed_diff', 'out_diff']
+        energy_strings = [f'{t}_{a}' for t in type_strs for a in attr_strs]
+
+        energy_ops_dict = dict(zip(energy_strings, energy_ops))
+
+        return energy_ops_dict
+
     def create_summaries(self):
         """Create summary objects for logging in TensorBoard."""
         summary_list = tf.get_collection(tf.GraphKeys.SUMMARIES)
@@ -207,6 +222,7 @@ class RunLogger:
             cls.writer = None
 
     def clear(self):
+        self.energy_dict = None
         self.run_data = None
         self.run_strings = None
         if self.params['save_lf']:
@@ -287,7 +303,13 @@ class RunLogger:
 
         self.run_data = {
             'px': {},
+            #  'energy_outputs': {}
         }
+        self.energy_dict = {}
+        for key in self.energy_ops_dict.keys():
+            self.energy_dict[key] = []
+        #  for key in self.energy_ops_dict.keys():
+        #      self.energy_dict[key] = []
 
         self.run_stats = {}
         self.run_strings = []
@@ -362,6 +384,9 @@ class RunLogger:
             for k in obs_keys:
                 self.run_data[k][key] = data[k]
 
+        for key, val in data['energy_outputs'].items():
+            self.energy_dict[key].append(val)
+
         if self.params['save_lf']:
             px_np = data['px']
             self.px_arr.append(px_np)
@@ -373,10 +398,6 @@ class RunLogger:
             self.logdets['backward'].extend(np.array(data['logdets_b']))
             self.sumlogdet['forward'].append(np.array(data['sumlogdet_f']))
             self.sumlogdet['backward'].append(np.array(data['sumlogdet_b']))
-            #  self.pxs_out['forward'].extend(np.array(data['pxs_out_f']))
-            #  self.pxs_out['backward'].extend(np.array(data['pxs_out_b']))
-            #  self.masks['forward'].extend(np.array(data['masks_f']))
-            #  self.masks['backward'].extend(np.array(data['masks_b']))
 
         self.run_strings.append(data_str)
 
@@ -482,6 +503,10 @@ class RunLogger:
         with open(data_file, 'wb') as f:
             pickle.dump(self.run_data, f)
 
+        energy_data_file = os.path.join(self.run_dir, 'energy_data.pkl')
+        with open(energy_data_file, 'wb') as f:
+            pickle.dump(self.energy_dict, f)
+
         for key, val in self.run_data.items():
             out_file = key + '.pkl'
             out_file = os.path.join(observables_dir, out_file)
@@ -516,12 +541,6 @@ class RunLogger:
 
     def write_run_stats(self, stats, therm_frac=10):
         """Write statistics in human readable format to .txt file."""
-        #  run_steps = kwargs['run_steps']
-        #  beta = kwargs['beta']
-        #  current_step = kwargs['current_step']
-        #  therm_steps = kwargs['therm_steps']
-        #  training = kwargs['training']
-        #  run_dir = kwargs['run_dir']
         therm_steps = self.run_steps // therm_frac
 
         out_file = os.path.join(self.run_dir, 'run_stats.txt')
