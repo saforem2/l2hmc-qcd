@@ -1,13 +1,14 @@
---num_steps 1
+--num_steps 5
 --eps 0.25
 --use_nnehmc_loss
 #--use_gaussian_loss
---arrangement 'ring'
---size 1.
---sigma1 0.03
+--arrangement 'lattice'
+--size 2.
+--sigma1 0.005
+--sigma2 0.005
 --num_distributions 4 
 # --------------------
---center 1.5
+--center 1.
 #--sigma1 0.10
 #--sigma2 0.02
 --aux_weight 1.
@@ -19,7 +20,7 @@
 --beta_init 0.05
 --beta_final 1.
 --loss_scale 0.02
---train_steps 20000
+--train_steps 10000
 --lr_init 0.001
 --lr_decay_steps 1000
 --lr_decay_rate 0.96
