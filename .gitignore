@@ -18,6 +18,8 @@ l2hmc-qcd/args/old
 
 l2hmc-qcd/notebooks/*Untitled*
 l2hmc-qcd/notebooks/*Copy*
+l2hmc-qcd/notebooks/gmm_autocorrelation_analysis.ipynb
+l2hmc-qcd/notebooks/gmm_mean_error_analysis.ipynb
 
 l2hmc-qcd/args/checkpoint_dir.txt
 l2hmc-qcd/args/extras/
