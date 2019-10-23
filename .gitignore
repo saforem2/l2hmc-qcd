@@ -11,7 +11,13 @@ gmm_logs/
 animations/
 *.mp4
 figures/
-l2hmc/qcd/args/*
+gmm_figures/*
+
+l2hmc-qcd/args/*.sh
+l2hmc-qcd/args/old
+
+l2hmc-qcd/notebooks/*Untitled*
+l2hmc-qcd/notebooks/*Copy*
 
 l2hmc-qcd/args/checkpoint_dir.txt
 l2hmc-qcd/args/extras/
