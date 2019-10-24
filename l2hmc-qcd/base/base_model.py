@@ -56,6 +56,7 @@ def _gaussian(x, mu, sigma):
 
     return norm * exp_
 
+
 class BaseModel:
 
     def __init__(self, params=None):
@@ -418,8 +419,8 @@ class BaseModel:
         h_proposed = pe_data.proposed + ke_data.proposed
         h_out = pe_data.out + ke_data.out
 
-        h_proposed_diff = h_proposed - h_init - sumlogdet_proposed
-        h_out_diff = h_out - h_init - sumlogdet_out
+        h_proposed_diff = h_proposed - h_init + sumlogdet_proposed
+        h_out_diff = h_out - h_init + sumlogdet_out
 
         h_data = EnergyData(h_init, h_proposed, h_out,
                             h_proposed_diff, h_out_diff)
