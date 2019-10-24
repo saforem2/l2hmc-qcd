@@ -11,7 +11,7 @@ import os
 import numpy as np
 import utils.file_io as io
 
-from collections import Counter, OrderedDict
+from collections import Counter, OrderedDict, namedtuple
 from scipy.stats import sem
 
 from lattice.lattice import u1_plaq_exact
@@ -24,6 +24,7 @@ if HAS_MATPLOTLIB:
     import matplotlib.pyplot as plt
     mpl.rcParams.update(MPL_PARAMS)
 
+BootstrapData = namedtuple('BootstrapData', ['mean', 'err', 'means_bs'])
 
 def arr_from_dict(d, key):
     return np.array(list(d[key].values()))
@@ -57,11 +58,13 @@ class EnergyPlotter:
             sample = data.take(resampler, axis=0)
             boot_dist.append(np.mean(sample, axis=0))
 
-        data_rs = np.array(boot_dist)
-        err = np.sqrt(float(n_boot) / float(n_boot - 1)) * np.std(data_rs)
-        mean = np.mean(data_rs)
+        means_bs = np.array(boot_dist)
+        err = np.sqrt(float(n_boot) / float(n_boot - 1)) * np.std(means_bs)
+        mean = np.mean(means_bs)
 
-        return mean, err, data_rs
+        bs_data = BootstrapData(mean=mean, err=err, means_bs=means_bs)
+
+        return bs_data
 
     def _plot_setup(self, **kwargs):
         """Prepare for making plots."""
@@ -132,17 +135,26 @@ class EnergyPlotter:
         return fig, ax
 
     def _potential_plots(self, energy_data, title, out_dir):
-        pe_labels = [r"""$\delta U_{\mathrm{out}}$,""",
-                     r"""$\delta U_{\mathrm{proposed}}$,"""]
+        labels = [r"""$\delta U_{\mathrm{out}}$,""",
+                  r"""$\delta U_{\mathrm{proposed}}$,"""]
 
-        pe_data = [np.array(energy_data['pe_out_diff']),
-                   np.array(energy_data['pe_proposed_diff'])]
+        plt_file = os.path.join(out_dir, 'potential_diffs.pdf')
+        hist_file = os.path.join(out_dir, 'potential_diffs_hist.pdf')
 
-        pe_f = os.path.join(out_dir, 'potential_diffs.pdf')
-        peh_f = os.path.join(out_dir, 'potential_diffs_hist.pdf')
+        #  out_diff = np.array(energy_data['pe_out_diff'])
+        #  prop_diff = np.array(energy_data['pe_proposed_diff'])
 
-        _, _ = self._plot(pe_labels, pe_data, title=title, out_file=pe_f)
-        _, _ = self._hist(pe_labels, pe_data, title=title, out_file=peh_f)
+        #  skip = int(0.1 * out_diff[0].shape[0])
+        #  out_diff = out_diff[skip:]
+        #  prop_diff = prop_diff[skip:]
+        #
+        #  bs_data_out = self.bootstrap(out_diff, n_boot=1000)
+        #  bs_data_prop = self.bootstrap(prop_diff, n_boot=1000)
+        data = [np.array(energy_data['pe_out_diff']),
+                np.array(energy_data['pe_proposed_diff'])]
+
+        _, _ = self._plot(labels, data, title=title, out_file=plt_file)
+        _, _ = self._hist(labels, data, title=title, out_file=hist_file)
 
     def _kinetic_plots(self, energy_data, title, out_dir):
         ke_labels = [r"""$\delta KE_{\mathrm{out}}$,""",
@@ -250,20 +262,21 @@ class GaugeModelPlotter:
 
         #  num_steps, batch_size = actions.shape
         num_steps = actions.shape[0]
-        batch_size = actions.shape[1]
+        #  batch_size = actions.shape[1]
         steps_arr = np.arange(num_steps)
 
         # skip 5% of total number of steps between successive points when
         # plotting to help smooth out graph
-        skip_steps = max((1, int(0.005 * num_steps)))
+        #  skip_steps = max((1, int(0.005 * num_steps)))
         # ignore first 10% of pts (warmup)
         warmup_steps = max((1, int(0.01 * num_steps)))
+        x_therm = np.arange(warmup_steps, num_steps)
 
-        _charge_diffs = charge_diffs[warmup_steps:][::skip_steps]
-        _plaq_diffs = plaqs_diffs[warmup_steps:][::skip_steps]
-        _steps_diffs = (
-            skip_steps * np.arange(_plaq_diffs.shape[0]) + skip_steps
-        )
+        _charge_diffs = charge_diffs[warmup_steps:]  # [::skip_steps]
+        _plaq_diffs = plaqs_diffs[warmup_steps:]  # [::skip_steps]
+        #  _steps_diffs = (
+        #      skip_steps * np.arange(_plaq_diffs.shape[0])  # + skip_steps
+        #  )
         _plaq_diffs_avg = np.mean(_plaq_diffs, axis=1)
         _plaq_diffs_err = sem(_plaq_diffs, axis=1)
 
@@ -271,9 +284,9 @@ class GaugeModelPlotter:
             'actions': (steps_arr, actions_avg, actions_err),
             'plaqs': (steps_arr, plaqs_avg, plaqs_err),
             'charges': (steps_arr, charges.T),
-            'charge_diffs': (_steps_diffs, _charge_diffs.T),
+            'charge_diffs': (x_therm, _charge_diffs.T),
             'autocorrs': (steps_arr, autocorrs_avg, autocorrs_err),
-            'plaqs_diffs': (_steps_diffs, _plaq_diffs_avg, _plaq_diffs_err)
+            'plaqs_diffs': (x_therm, _plaq_diffs_avg, _plaq_diffs_err)
         }
 
         return xy_data
