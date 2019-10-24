@@ -86,6 +86,7 @@ class EnergyPlotter:
     def _plot(self, labels, data_arr, title=None, out_file=None):
         colors = ['C0', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6']
         fig, ax = plt.subplots()
+        alphas = [1. - 0.15 * i for i in range(len(labels))]
         for idx, (label, data) in enumerate(zip(labels, data_arr)):
             num_steps = data.shape[0]
             therm_steps = int(0.1 * num_steps)
@@ -93,7 +94,7 @@ class EnergyPlotter:
             y = data[therm_steps:].mean(axis=1)
             hline = y.mean()
             label += f'  avg: {hline:.4g}'
-            ax.plot(x, y, color=colors[idx])
+            ax.plot(x, y, color=colors[idx], alpha=alphas[idx])
             ax.axhline(xmin=x[0]-10, xmax=x[-1]+10, y=hline,
                        label=label, color=colors[idx])
 
@@ -111,7 +112,7 @@ class EnergyPlotter:
     def _hist(self, labels, data_arr, title=None, out_file=None, **kwargs):
         n_bins = kwargs.get('n_bins', 50)
         n_boot = kwargs.get('n_boot', 1000)
-        alphas = [1., 0.8]
+        alphas = [1. - 0.15 * i for i in range(len(labels))]
 
         fig, ax = plt.subplots()
         for idx, (label, data) in enumerate(zip(labels, data_arr)):
