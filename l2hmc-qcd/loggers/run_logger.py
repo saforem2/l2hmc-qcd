@@ -388,7 +388,7 @@ class RunLogger:
             for key, val in data['energy_outputs'].items():
                 self.energy_dict[key].append(val)
         except KeyError:
-            continue
+            pass
 
         if self.params['save_lf']:
             px_np = data['px']
