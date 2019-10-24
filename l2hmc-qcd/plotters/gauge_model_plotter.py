@@ -138,20 +138,25 @@ class EnergyPlotter:
         labels = [r"""$\delta U_{\mathrm{out}}$,""",
                   r"""$\delta U_{\mathrm{proposed}}$,"""]
 
+        data = [np.array(energy_data['pe_out_diff']),
+                np.array(energy_data['pe_proposed_diff'])]
+
         plt_file = os.path.join(out_dir, 'potential_diffs.pdf')
         hist_file = os.path.join(out_dir, 'potential_diffs_hist.pdf')
 
-        #  out_diff = np.array(energy_data['pe_out_diff'])
-        #  prop_diff = np.array(energy_data['pe_proposed_diff'])
+        _, _ = self._plot(labels, data, title=title, out_file=plt_file)
+        _, _ = self._hist(labels, data, title=title, out_file=hist_file)
 
-        #  skip = int(0.1 * out_diff[0].shape[0])
-        #  out_diff = out_diff[skip:]
-        #  prop_diff = prop_diff[skip:]
-        #
-        #  bs_data_out = self.bootstrap(out_diff, n_boot=1000)
-        #  bs_data_prop = self.bootstrap(prop_diff, n_boot=1000)
-        data = [np.array(energy_data['pe_out_diff']),
-                np.array(energy_data['pe_proposed_diff'])]
+        labels = [r"""$U_{\mathrm{init}}$, """,
+                  r"""$U_{\mathrm{proposed}}$, """,
+                  r"""$U_{\mathrm{out}}$, """]
+
+        data = [np.array(energy_data['pe_init']),
+                np.array(energy_data['pe_proposed']),
+                np.array(energy_data['pe_out'])]
+
+        plt_file = os.path.join(out_dir, 'potentials.pdf')
+        hist_file = os.path.join(out_dir, 'potential_hist.pdf')
 
         _, _ = self._plot(labels, data, title=title, out_file=plt_file)
         _, _ = self._hist(labels, data, title=title, out_file=hist_file)
@@ -169,6 +174,20 @@ class EnergyPlotter:
         _, _ = self._plot(ke_labels, ke_data, title=title, out_file=ke_f)
         _, _ = self._hist(ke_labels, ke_data, title=title, out_file=keh_f)
 
+        labels = [r"""$KE_{\mathrm{init}}$, """,
+                  r"""$KE_{\mathrm{proposed}}$, """,
+                  r"""$KE_{\mathrm{out}}$, """]
+
+        data = [np.array(energy_data['ke_init']),
+                np.array(energy_data['ke_proposed']),
+                np.array(energy_data['ke_out'])]
+
+        plt_file = os.path.join(out_dir, 'kinetics.pdf')
+        hist_file = os.path.join(out_dir, 'kinetic_hist.pdf')
+
+        _, _ = self._plot(labels, data, title=title, out_file=plt_file)
+        _, _ = self._hist(labels, data, title=title, out_file=hist_file)
+
     def _hamiltonian_plots(self, energy_data, title, out_dir):
         h_labels = [r"""$\delta H_{\mathrm{out}}$,""",
                     r"""$\delta H_{\mathrm{proposed}}$,"""]
@@ -181,6 +200,20 @@ class EnergyPlotter:
 
         _, _ = self._plot(h_labels, h_data, title=title, out_file=h_f)
         _, _ = self._hist(h_labels, h_data, title=title, out_file=hh_f)
+
+        labels = [r"""$H_{\mathrm{init}}$, """,
+                  r"""$H_{\mathrm{proposed}}$, """,
+                  r"""$H_{\mathrm{out}}$, """]
+
+        data = [np.array(energy_data['h_init']),
+                np.array(energy_data['h_proposed']),
+                np.array(energy_data['h_out'])]
+
+        plt_file = os.path.join(out_dir, 'hamiltonians.pdf')
+        hist_file = os.path.join(out_dir, 'hamiltonian_hist.pdf')
+
+        _, _ = self._plot(labels, data, title=title, out_file=plt_file)
+        _, _ = self._hist(labels, data, title=title, out_file=hist_file)
 
     def plot_energies(self, energy_data, **kwargs):
         title, out_dir = self._plot_setup(**kwargs)
