@@ -384,8 +384,11 @@ class RunLogger:
             for k in obs_keys:
                 self.run_data[k][key] = data[k]
 
-        for key, val in data['energy_outputs'].items():
-            self.energy_dict[key].append(val)
+        try:
+            for key, val in data['energy_outputs'].items():
+                self.energy_dict[key].append(val)
+        except KeyError:
+            continue
 
         if self.params['save_lf']:
             px_np = data['px']
