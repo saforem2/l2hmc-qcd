@@ -117,17 +117,12 @@ class BaseModel:
         # Calculate kinetic energy, potential energy, 
         # and the Hamiltonian at beginning and end of 
         # trajectory (both before and after accept/reject)
-        pe_data, ke_data, h_data = self._check_energy(x_md_out)
+        pe_data, ke_data, h_data = self._calc_energies(x_md_out)
         self._energy_data = {
             'pe': pe_data,
             'ke': ke_data,
             'h': h_data
         }
-
-        #  pe_data, ke_data, = self._check_energy(x_dynamics_out['outputs_f'],
-        #                                      x_dynamics_out['outputs_b'])
-
-        #  self._energy_outputs_dict = energy_outputs
 
         x_output = SamplerData(x_data, x_md_out)
 
@@ -306,135 +301,72 @@ class BaseModel:
         """Create metric function used to measure distatnce between configs."""
         raise NotImplementedError
 
-    def _calc_energies(self, dynamics_output, direction):
-        """Compute Hamiltonian, KE, and PE by parsing `dynamics_output` dict.
-
-        Args:
-            dynamics_output (dict): Dictionary containing either the forward or
-                backward outputs from either the `dynamics._transition_forward`
-                or `dynamics._transition_backward` methods.
-
-        Returns:
-            energy_dict (dict): Dictionary containing initial values, final
-                values and difference (final - initial) values of the
-                Hamiltonian, Kinetic energy, and Potential Energy.
-        """
-        x_init = dynamics_output['x_init']
-        v_init = dynamics_output['v_init']
-        x_proposed = dynamics_output['x_proposed']
-        v_proposed = dynamics_output['v_proposed']
-        x_out = dynamics_output['x_out']
-        v_out = dynamics_output['v_out']
-
-        sumlogdet = dynamics_output['sumlogdet']
-
-        with tf.name_scope(f'check_energy_{direction}'):
-            with tf.name_scope('potential_energy'):
-                pe_init = self.dynamics.potential_energy(x_init, self.beta)
-                pe_out = self.dynamics.potential_energy(x_out, self.beta)
-                pe_prop = self.dynamics.potential_energy(x_proposed, self.beta)
-
-                pe_diff_out = pe_out - pe_init
-                pe_diff_prop = pe_prop - pe_init
-
-            with tf.name_scope('kinetic_energy'):
-                ke_init = self.dynamics.kinetic_energy(v_init)
-                ke_out = self.dynamics.kinetic_energy(v_out)
-                ke_prop = self.dynamics.kinetic_energy(v_proposed)
-
-                ke_diff_out = ke_out - ke_init
-                ke_diff_prop = ke_prop - ke_init
-
-            with tf.name_scope('hamiltonian'):
-                h_init = ke_init + pe_init
-                h_out = ke_out + pe_out
-                h_prop = ke_prop + pe_prop
-
-                h_diff_out = (h_out - h_init - sumlogdet)
-                h_diff_prop = (h_prop - h_init - sumlogdet)
-
-        outputs = {
-            'potential_init': pe_init,
-            'potential_out': pe_out,
-            'potential_proposed': pe_prop,
-            'potential_diff_out': pe_diff_out,
-            'potential_diff_proposed': pe_diff_prop,
-            'kinetic_init': ke_init,
-            'kinetic_out': ke_out,
-            'kinetic_proposed': ke_prop,
-            'kinetic_diff_out': ke_diff_out,
-            'kinetic_diff_proposed': ke_diff_prop,
-            'hamiltonian_init': h_init,
-            'hamiltonian_proposed': h_prop,
-            'hamiltonian_out': h_out,
-            'hamiltonian_diff_out': h_diff_out,
-            'hamiltonian_diff_proposed': h_diff_prop,
-        }
-
-        for val in list(outputs.values()):
-            tf.add_to_collection(f'energies', val)
-            #  tf.add_to_collection(f'energies_{direction}', val)
-
-        return outputs
-
     def _calc_potential_energies(self, md_outputs):
-        pe_init = self.dynamics.potential_energy(
-            md_outputs['x_init'], self.beta
-        )
-        pe_proposed = self.dynamics.potential_energy(
-            md_outputs['x_proposed'], self.beta
-        )
-        pe_out = self.dynamics.potential_energy(
-            md_outputs['x_out'], self.beta
-        )
+        with tf.name_scope('potential_energy'):
+            pe_init = self.dynamics.potential_energy(
+                md_outputs['x_init'], self.beta
+            )
+            pe_proposed = self.dynamics.potential_energy(
+                md_outputs['x_proposed'], self.beta
+            )
+            pe_out = self.dynamics.potential_energy(
+                md_outputs['x_out'], self.beta
+            )
 
-        pe_proposed_diff = pe_proposed - pe_init
-        pe_out_diff = pe_out - pe_init
+            pe_proposed_diff = pe_proposed - pe_init
+            pe_out_diff = pe_out - pe_init
 
-        pe_data = EnergyData(pe_init, pe_proposed, pe_out,
-                             pe_proposed_diff, pe_out_diff)
+            pe_data = EnergyData(pe_init, pe_proposed, pe_out,
+                                 pe_proposed_diff, pe_out_diff)
 
-        _ = [tf.add_to_collection('energies', e) for e in pe_data]
+            _ = [tf.add_to_collection('energies', e) for e in pe_data]
 
         return pe_data
 
     def _calc_kinetic_energies(self, md_outputs):
-        ke_init = self.dynamics.kinetic_energy(md_outputs['v_init'])
-        ke_proposed = self.dynamics.kinetic_energy(md_outputs['v_proposed'])
-        ke_out = self.dynamics.kinetic_energy(md_outputs['v_out'])
+        v_init = md_outputs['v_init']
+        v_out = md_outputs['v_out']
+        v_proposed = md_outputs['v_proposed']
 
-        ke_proposed_diff = ke_proposed - ke_init
-        ke_out_diff = ke_out - ke_init
+        with tf.name_scope('kinetic_energy'):
+            ke_init = self.dynamics.kinetic_energy(v_init)
+            ke_proposed = self.dynamics.kinetic_energy(v_proposed)
+            ke_out = self.dynamics.kinetic_energy(v_out)
 
-        ke_data = EnergyData(ke_init, ke_proposed, ke_out,
-                             ke_proposed_diff, ke_out_diff)
+            ke_proposed_diff = ke_proposed - ke_init
+            ke_out_diff = ke_out - ke_init
 
-        _ = [tf.add_to_collection('energies', e) for e in ke_data]
+            ke_data = EnergyData(ke_init, ke_proposed, ke_out,
+                                 ke_proposed_diff, ke_out_diff)
+
+            _ = [tf.add_to_collection('energies', e) for e in ke_data]
 
         return ke_data
 
     def _calc_hamiltonians(self, pe_data, ke_data,
                            sumlogdet_proposed, sumlogdet_out):
-        h_init = pe_data.init + ke_data.init
-        h_proposed = pe_data.proposed + ke_data.proposed
-        h_out = pe_data.out + ke_data.out
+        with tf.name_scope('hamiltonian'):
+            h_init = pe_data.init + ke_data.init
+            h_proposed = pe_data.proposed + ke_data.proposed
+            h_out = pe_data.out + ke_data.out
 
-        h_proposed_diff = h_proposed - h_init + sumlogdet_proposed
-        h_out_diff = h_out - h_init + sumlogdet_out
+            h_proposed_diff = h_proposed - h_init + sumlogdet_proposed
+            h_out_diff = h_out - h_init + sumlogdet_out
 
-        h_data = EnergyData(h_init, h_proposed, h_out,
-                            h_proposed_diff, h_out_diff)
+            h_data = EnergyData(h_init, h_proposed, h_out,
+                                h_proposed_diff, h_out_diff)
 
-        _ = [tf.add_to_collection('energies', e) for e in h_data]
+            _ = [tf.add_to_collection('energies', e) for e in h_data]
 
         return h_data
 
-    def _check_energy(self, md_outputs):
-        pe_data = self._calc_potential_energies(md_outputs)
-        ke_data = self._calc_kinetic_energies(md_outputs)
-        h_data = self._calc_hamiltonians(pe_data, ke_data,
-                                         md_outputs['sumlogdet_proposed'],
-                                         md_outputs['sumlogdet_out'])
+    def _calc_energies(self, md_outputs):
+        with tf.name_scope('calc_energies'):
+            pe_data = self._calc_potential_energies(md_outputs)
+            ke_data = self._calc_kinetic_energies(md_outputs)
+            h_data = self._calc_hamiltonians(pe_data, ke_data,
+                                             md_outputs['sumlogdet_proposed'],
+                                             md_outputs['sumlogdet_out'])
 
         return pe_data, ke_data, h_data
 
