@@ -278,6 +278,7 @@ class GaugeModelPlotter:
 
     def _parse_data(self, data, beta):
         """Helper method for extracting relevant data from `data`.'"""
+        accept_prob = arr_from_dict(data, 'px')
         actions = arr_from_dict(data, 'actions')
         plaqs = arr_from_dict(data, 'plaqs')
         charges = np.array(arr_from_dict(data, 'charges'), dtype=int)
@@ -285,14 +286,22 @@ class GaugeModelPlotter:
         charge_autocorrs = np.array(data['charges_autocorrs'])
         plaqs_diffs = plaqs - u1_plaq_exact(beta)
 
-        actions_avg = np.mean(actions, axis=1)
-        actions_err = sem(actions, axis=1)
+        def _stats(data, axis=1):
+            return np.mean(data, axis=axis), sem(data, axis=axis)
 
-        plaqs_avg = np.mean(plaqs, axis=1)
-        plaqs_err = sem(plaqs, axis=1)
+        actions_stats = _stats(actions)
+        plaqs_stats = _stats(plaqs)
+        accept_prob_stats = _stats(accept_prob)
+        autocorrs_stats = _stats(charge_autocorrs.T)
 
-        autocorrs_avg = np.mean(charge_autocorrs.T, axis=1)
-        autocorrs_err = sem(charge_autocorrs.T, axis=1)
+        #  actions_avg = np.mean(actions, axis=1)
+        #  actions_err = sem(actions, axis=1)
+        #
+        #  plaqs_avg = np.mean(plaqs, axis=1)
+        #  plaqs_err = sem(plaqs, axis=1)
+
+        #  autocorrs_avg = np.mean(charge_autocorrs.T, axis=1)
+        #  autocorrs_err = sem(charge_autocorrs.T, axis=1)
 
         #  num_steps, batch_size = actions.shape
         num_steps = actions.shape[0]
@@ -311,16 +320,18 @@ class GaugeModelPlotter:
         #  _steps_diffs = (
         #      skip_steps * np.arange(_plaq_diffs.shape[0])  # + skip_steps
         #  )
-        _plaq_diffs_avg = np.mean(_plaq_diffs, axis=1)
-        _plaq_diffs_err = sem(_plaq_diffs, axis=1)
+        #  _plaq_diffs_avg = np.mean(_plaq_diffs, axis=1)
+        #  _plaq_diffs_err = sem(_plaq_diffs, axis=1)
+        _plaq_diffs_stats = _stats(_plaq_diffs)
 
         xy_data = {
-            'actions': (steps_arr, actions_avg, actions_err),
-            'plaqs': (steps_arr, plaqs_avg, plaqs_err),
+            'actions': (steps_arr, *actions_stats),
+            'plaqs': (steps_arr, *plaqs_stats),
+            'accept_prob': (steps_arr, *accept_prob_stats),
             'charges': (steps_arr, charges.T),
             'charge_diffs': (x_therm, _charge_diffs.T),
-            'autocorrs': (steps_arr, autocorrs_avg, autocorrs_err),
-            'plaqs_diffs': (x_therm, _plaq_diffs_avg, _plaq_diffs_err)
+            'autocorrs': (steps_arr, *autocorrs_stats),
+            'plaqs_diffs': (x_therm, *_plaq_diffs_stats)
         }
 
         return xy_data
@@ -339,19 +350,11 @@ class GaugeModelPlotter:
         self.out_dir = os.path.join(self.figs_dir, run_str)
         io.check_else_make_dir(self.out_dir)
 
-        #  L = self.params['space_size']
         lf_steps = self.params['num_steps']
-        bs = self.params['batch_size']  # batch size
-        #  qw = weights['charge_weight']
+        bs = self.params['batch_size']
         nw = net_weights
-        sw, translw, transfw = nw
-        title_str = (r"$N_{\mathrm{LF}} = $" + f"{lf_steps}, "
-                     r"$\varepsilon = $" + f"{eps:.3g}, "
-                     r"$N_{\mathrm{B}} = $" + f"{bs}, "
-                     r"$\beta =$" + f"{beta:.2g}, "
-                     r"$\mathrm{nw} = $" + (f"{nw[0]:.3g}, "
-                                            f"{nw[1]:.3g}, "
-                                            f"{nw[2]:.3g}"))
+        title_str = _get_title(lf_steps, eps, bs, beta, nw)
+
         kwargs.update({
             'markers': False,
             'lines': True,
@@ -372,6 +375,7 @@ class GaugeModelPlotter:
 
         self._plot_plaqs(xy_data['plaqs'], **kwargs)
         self._plot_actions(xy_data['actions'], **kwargs)
+        self._plot_accept_probs(xy_data['accept_prob'], **kwargs)
         self._plot_charges(xy_data['charges'], **kwargs)
         self._plot_autocorrs(xy_data['autocorrs'], **kwargs)
         # take xy_data['charges'][1] since we're only concerned with 'y' data
@@ -416,7 +420,6 @@ class GaugeModelPlotter:
             'alpha': 0.8,
             'marker': ',',
         }
-        #  err_kwargs = plt_kwargs.update({'lw': 1.5, 'alpha': 0.7})
 
         ax0.plot(x, y, **plt_kwargs)
         ax0.errorbar(x, y, yerr=yerr,
@@ -466,11 +469,6 @@ class GaugeModelPlotter:
             'two_rows': True,
         })
         self._plot(xy_data, **kwargs)
-        #  kwargs['bounds'] = [0.2, 0.6, 0.7, 0.3]
-
-        #  xy_labels = ('Step', 'Action')
-        #  plot_multiple_lines(xy_data, xy_labels, **kwargs)
-        #  plot_with_inset(xy_data, labels, **kwargs)
 
     def _plot_plaqs(self, xy_data, beta, **kwargs):
         """PLot average plaquette."""
@@ -497,6 +495,21 @@ class GaugeModelPlotter:
         out_file = get_out_file(self.out_dir, 'plaqs_vs_step')
         io.log(f'Saving figure to: {out_file}')
         plt.savefig(out_file, bbox_inches='tight')
+
+    def _plot_accept_probs(self, xy_data, **kwargs):
+        """Plot actions."""
+        labels = {
+            'x_label': 'Step',
+            'y_label': r"""$A(\xi^{\prime}|\xi)$""",
+            'plt_label': 'accept_prob'
+        }
+
+        kwargs.update({
+            'fname': 'accept_probs_vs_step',
+            'labels': labels,
+            'two_rows': True,
+        })
+        self._plot(xy_data, **kwargs)
 
     def _plot_plaqs_diffs(self, xy_data, **kwargs):
         kwargs['out_file'] = None
