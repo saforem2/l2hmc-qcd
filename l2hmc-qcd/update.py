@@ -2,6 +2,8 @@ import tensorflow as tf
 import numpy as np
 import config
 
+import utils.file_io as io
+
 
 def set_precision(precision):
     """Set floating point precision project-wide."""
@@ -17,5 +19,6 @@ def set_precision(precision):
         config.NP_INT = np.int32
 
 
-def set_seed(seed):
+def set_seed(seed=None):
+    print(f'Setting `config.GLOBAL_SEED` to {seed}.')
     config.GLOBAL_SEED = seed

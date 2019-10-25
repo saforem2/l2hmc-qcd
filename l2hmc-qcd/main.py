@@ -414,8 +414,10 @@ def main(FLAGS):
     if HAS_HOROVOD and USING_HVD:
         io.log("INFO: USING HOROVOD")
         hvd.init()
-        set_seed(hvd.rank() * FLAGS.global_seed)
-        tf.set_random_seed(hvd.rank() * FLAGS.global_seed)
+        rank = hvd.rank()
+        print(f'Setting seed from rank: {rank}')
+        set_seed(rank * FLAGS.global_seed)
+        tf.set_random_seed(rank * FLAGS.global_seed)
 
     if FLAGS.hmc:   # run generic HMC sampler
         inference.run_hmc(FLAGS, log_file=log_file)
