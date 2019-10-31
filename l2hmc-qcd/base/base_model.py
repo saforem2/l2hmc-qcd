@@ -25,7 +25,7 @@ import tensorflow as tf
 
 from utils.horovod_utils import warmup_lr
 
-#  import utils.file_io as io
+import utils.file_io as io
 #  from utils.distributions import quadratic_gaussian
 #  from params.gmm_params import GMM_PARAMS
 #  from params.gauge_params import GAUGE_PARAMS
@@ -91,25 +91,50 @@ class BaseModel:
                                self.eps_ph, name='eps_setter')
         return eps_setter
 
-    def _build_sampler(self, aux_weight=1.):
+    def _build_sampler(self):
+        """Build operations used for sampling from the dynamics engine."""
+        x_dynamics, x_data = self._build_main_sampler()
+        self.x_out = x_dynamics['outputs_fb']['x_out']
+        self.px = x_dynamics['outputs_fb']['accept_prob']
+        self.px_hmc = x_dynamics['outputs_fb']['accept_prob_hmc']
+
+        self._dynamics_fb = x_dynamics['outputs_fb']
+        self._dynamics_f = x_dynamics['outputs_f']
+        self._dynamics_b = x_dynamics['outputs_b']
+        self._energy_data = x_dynamics['energies']
+
+        self.x_diff, self.v_diff = self._check_reversibility()
+        #  energy_data = self._calc_energies()
+        #  self._energy_data = energy_data
+
+        _, z_data = self._build_aux_sampler()
+
+        return x_data, z_data
+
+    def _build_sampler_old(self):
         """Build operations used for 'sampling' from the dynamics engine."""
         args = (self.beta, self.net_weights, self.train_phase)
         kwargs = {
-            'save_lf': getattr(self, 'save_lf', None),
+            #  'save_lf': getattr(self, 'save_lf', None),
             'hmc': getattr(self, 'use_nnehmc_loss', None),
             'model_type': getattr(self, 'model_type', None)
         }
 
         # NOTE if not `self.use_nnehmc_loss`:
         #   `self.px_hmc = tf.zeros_like(self.px)`
-        x_dynamics_out, x_data = self._build_main_sampler(*args, **kwargs)
-        self._dynamics_out = x_dynamics_out
+        x_dynamics, x_data = self._build_main_sampler(*args, **kwargs)
+        self.x_out = x_dynamics['outputs_fb']['x_out']
+        self.px = x_dynamics['outputs_fb']['accept_prob']
+        self.px_hmc = x_dynamics['outputs_fb']['accept_prob_hmc']
 
-        x_md_out = x_dynamics_out['md_outputs']
-        self.x_out = x_md_out['x_out']
-        self.px = x_md_out['accept_prob']
-        self.px_hmc = x_md_out['accept_prob_hmc']
-        self._parse_dynamics_output(x_md_out)
+        self._dynamics_fb = x_dynamics['outputs_fb']
+        self._dynamics_f = x_dynamics['outputs_f']
+        self._dynamics_b = x_dynamics['outputs_b']
+
+        #  self.x_out = x_fb['x_out']
+        #  self.px = x_fb['accept_prob']
+        #  self.px_hmc = x_fb['accept_prob_hmc']
+        #  self._parse_dynamics_output(x_dynamics)
 
         # Check reversibility by testing that `backward(forward(x)) == x`
         self.x_diff, self.v_diff = self._check_reversibility()
@@ -117,41 +142,47 @@ class BaseModel:
         # Calculate kinetic energy, potential energy, 
         # and the Hamiltonian at beginning and end of 
         # trajectory (both before and after accept/reject)
-        pe_data, ke_data, h_data = self._calc_energies(x_md_out)
+        energies = self._calc_energies(x_dynamics)
         self._energy_data = {
-            'pe': pe_data,
-            'ke': ke_data,
-            'h': h_data
+            'potential': energies['potential'],
+            'kinetic': energies['kinetic'],
+            'hamiltonian': energies['hamiltonian']
         }
 
-        x_output = SamplerData(x_data, x_md_out)
+        _, z_data = self._build_aux_sampler(*args, **kwargs)
+
+        #  x_output = SamplerData(x_data, x_fb)
 
         # If not running generic HMC, build (aux) sampler 
         # that draws from initialization distribution. 
-        hmc = getattr(self, 'hmc', False)
-        if aux_weight > 0. and not hmc:
-            kwargs['save_lf'] = False
-            z_dynamics, z_data = self._build_aux_sampler(*args, **kwargs)
-            z_output = SamplerData(z_data, z_dynamics)
+        #  hmc = getattr(self, 'hmc', False)
+        #  if aux_weight > 0. and not hmc:
+        #      kwargs['save_lf'] = False
+        #      _, z_data = self._build_aux_sampler(*args, **kwargs)
+        #      z_output = SamplerData(z_data, z_dynamics)
+        #
+        #      return x_data, z_data
 
-            return x_output, z_output
+        return x_data, z_data
 
-        return x_output
-
-    def _build_main_sampler(self, *args, **kwargs):
+    def _build_main_sampler(self):
         """Build operations used for 'sampling' from the dynamics engine."""
         with tf.name_scope('x_dynamics'):
-            x_dynamics_out = self.dynamics.apply_transition(self.x,
-                                                            *args, **kwargs)
-            x_md = x_dynamics_out['md_outputs']
+            args = (self.x, self.beta, self.net_weights, self.train_phase)
+            kwargs = {
+                'hmc': getattr(self, 'use_nnehmc_loss', None),
+                'model_type': getattr(self, 'model_type', None),
+            }
 
-            x_data = LFdata(x_md['x_init'],
-                            x_md['x_proposed'],
-                            x_md['accept_prob'])
+            x_dynamics = self.dynamics.apply_transition(*args, **kwargs)
 
-        return x_dynamics_out, x_data
+            x_data = LFdata(x_dynamics['outputs_fb']['x_init'],
+                            x_dynamics['outputs_fb']['x_proposed'],
+                            x_dynamics['outputs_fb']['accept_prob'])
 
-    def _build_aux_sampler(self, *args, **kwargs):
+        return x_dynamics, x_data
+
+    def _build_aux_sampler(self):
         """Run dynamics using initialization distribution (random normal)."""
         aux_weight = getattr(self, 'aux_weight', 1.)
         with tf.name_scope('aux_dynamics'):
@@ -161,14 +192,17 @@ class BaseModel:
                                           seed=GLOBAL_SEED,
                                           name='z')
 
-                z_dynamics_out = self.dynamics.apply_transition(self.z,
-                                                                *args,
-                                                                **kwargs)
-                z_dynamics = z_dynamics_out['md_outputs']
+                args = (self.z, self.beta, self.net_weights, self.train_phase)
+                kwargs = {
+                    'hmc': getattr(self, 'use_nnehmc_loss', None),
+                    'model_type': getattr(self, 'model_type', None),
+                }
 
-                z_data = LFdata(z_dynamics['x_init'],
-                                z_dynamics['x_proposed'],
-                                z_dynamics['accept_prob'])
+                z_dynamics = self.dynamics.apply_transition(*args, **kwargs)
+
+                z_data = LFdata(z_dynamics['outputs_fb']['x_init'],
+                                z_dynamics['outputs_fb']['x_proposed'],
+                                z_dynamics['outputs_fb']['accept_prob'])
             else:
                 z_dynamics = {}
                 z_data = LFdata(0., 0., 0.)
@@ -196,9 +230,6 @@ class BaseModel:
             dynamics = Dynamics(potential_fn=potential_fn, **kwargs)
 
         return dynamics
-
-    def _parse_dynamics_output(self, dynamics_output):
-        raise NotImplementedError
 
     def _create_global_step(self):
         """Create global_step tensor."""
@@ -301,17 +332,20 @@ class BaseModel:
         """Create metric function used to measure distatnce between configs."""
         raise NotImplementedError
 
-    def _calc_potential_energies(self, md_outputs):
+    def _calc_potential_energies(self):
         with tf.name_scope('potential_energy'):
-            pe_init = self.dynamics.potential_energy(
-                md_outputs['x_init'], self.beta
-            )
-            pe_proposed = self.dynamics.potential_energy(
-                md_outputs['x_proposed'], self.beta
-            )
-            pe_out = self.dynamics.potential_energy(
-                md_outputs['x_out'], self.beta
-            )
+            with tf.name_scope('init'):
+                pe_init = self.dynamics.potential_energy(
+                    self._dynamics_fb['x_init'], self.beta
+                )
+            with tf.name_scope('proposed'):
+                pe_proposed = self.dynamics.potential_energy(
+                    self._dynamics_fb['x_proposed'], self.beta
+                )
+            with tf.name_scope('out'):
+                pe_out = self.dynamics.potential_energy(
+                    self._dynamics_fb['x_out'], self.beta
+                )
 
             pe_proposed_diff = pe_proposed - pe_init
             pe_out_diff = pe_out - pe_init
@@ -323,15 +357,18 @@ class BaseModel:
 
         return pe_data
 
-    def _calc_kinetic_energies(self, md_outputs):
-        v_init = md_outputs['v_init']
-        v_out = md_outputs['v_out']
-        v_proposed = md_outputs['v_proposed']
+    def _calc_kinetic_energies(self):
+        v_init = self._dynamics_fb['v_init']
+        v_out = self._dynamics_fb['v_out']
+        v_proposed = self._dynamics_fb['v_proposed']
 
         with tf.name_scope('kinetic_energy'):
-            ke_init = self.dynamics.kinetic_energy(v_init)
-            ke_proposed = self.dynamics.kinetic_energy(v_proposed)
-            ke_out = self.dynamics.kinetic_energy(v_out)
+            with tf.name_scope('init'):
+                ke_init = self.dynamics.kinetic_energy(v_init)
+            with tf.name_scope('proposed'):
+                ke_proposed = self.dynamics.kinetic_energy(v_proposed)
+            with tf.name_scope('out'):
+                ke_out = self.dynamics.kinetic_energy(v_out)
 
             ke_proposed_diff = ke_proposed - ke_init
             ke_out_diff = ke_out - ke_init
@@ -343,32 +380,44 @@ class BaseModel:
 
         return ke_data
 
-    def _calc_hamiltonians(self, pe_data, ke_data,
-                           sumlogdet_proposed, sumlogdet_out):
-        with tf.name_scope('hamiltonian'):
-            h_init = pe_data.init + ke_data.init
-            h_proposed = pe_data.proposed + ke_data.proposed
-            h_out = pe_data.out + ke_data.out
+    def _calc_hamiltonians(self, pe_data, ke_data):
+        with tf.name_scope('hamiltonians'):
+            with tf.name_scope('init'):
+                h_init = pe_data.init + ke_data.init
+            with tf.name_scope('proposed'):
+                h_proposed = pe_data.proposed + ke_data.proposed
+            with tf.name_scope('out'):
+                mask_a = self._dynamics_fb['mask_a']
+                mask_r = self._dynamics_fb['mask_r']
+                sumlogdet_out = self._dynamics_fb['sumlogdet_out']
+                h_out = h_proposed * mask_a + h_init * mask_r + sumlogdet_out
+                #  h_out = pe_data.out + ke_data.out
 
-            h_proposed_diff = h_proposed - h_init + sumlogdet_proposed
-            h_out_diff = h_out - h_init + sumlogdet_out
+            h_proposed_diff = h_proposed - h_init
+            h_out_diff = h_out - h_init
 
             h_data = EnergyData(h_init, h_proposed, h_out,
                                 h_proposed_diff, h_out_diff)
-
             _ = [tf.add_to_collection('energies', e) for e in h_data]
 
         return h_data
 
-    def _calc_energies(self, md_outputs):
-        with tf.name_scope('calc_energies'):
-            pe_data = self._calc_potential_energies(md_outputs)
-            ke_data = self._calc_kinetic_energies(md_outputs)
-            h_data = self._calc_hamiltonians(pe_data, ke_data,
-                                             md_outputs['sumlogdet_proposed'],
-                                             md_outputs['sumlogdet_out'])
+    def _calc_energies(self):
+        pass
+        #  with tf.name_scope('calc_energies'):
+        #      energy_data = self.dynamics.calc_energies(self._dynamics_fb)
+        #      pe_data = self._calc_potential_energies()
+        #      ke_data = self._calc_kinetic_energies()
+        #
+        #      h_data = self._calc_hamiltonians(pe_data, ke_data)
+        #
+        #  output = {
+        #      'potential': pe_data,
+        #      'kinetic': ke_data,
+        #      'hamiltonian': h_data
+        #  }
 
-        return pe_data, ke_data, h_data
+        #  return energy_data
 
     def _check_reversibility(self):
         x_in = tf.random_normal(self.x.shape,
