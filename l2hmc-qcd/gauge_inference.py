@@ -277,7 +277,7 @@ def main(kwargs):
     #  _ = initialize_uninitialized(sess)
     run_ops = tf.get_collection('run_ops')
     inputs = tf.get_collection('inputs')
-    energy_ops = tf.get_collection('energies')
+    #  energy_ops = tf.get_collection('energies')
 
     eps = kwargs.get('eps', None)
     if eps is not None:
@@ -307,11 +307,11 @@ def main(kwargs):
         samples_init = (np.ones(samples_shape)
                         + 1e-2 * np.random.randn(*samples_shape))
 
-    run_logger = RunLogger(params, inputs, run_ops, energy_ops,
-                           model_type='GaugeModel', save_lf_data=False)
+    run_logger = RunLogger(params, inputs, run_ops,  # energy_ops,
+                           model_type='GaugeModel', save_lf_data=True)
 
     runner = GaugeModelRunner(sess, params, inputs,
-                              run_ops, energy_ops, run_logger)
+                              run_ops, run_logger)
     plotter = GaugeModelPlotter(params, run_logger.figs_dir)
     energy_plotter = EnergyPlotter(params, run_logger.figs_dir)
 

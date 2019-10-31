@@ -117,7 +117,7 @@ def batch_norm(x,
     return output
 
 
-def custom_dense(units, factor=1., name=None):
+def custom_dense(units, factor=1., name=None, **kwargs):
     """Custom dense layer with specified weight intialization."""
     if '2.' not in tf.__version__:
         kernel_initializer = tf.keras.initializers.VarianceScaling(
@@ -142,7 +142,8 @@ def custom_dense(units, factor=1., name=None):
         use_bias=True,
         kernel_initializer=kernel_initializer,
         bias_initializer=tf.constant_initializer(0., dtype=TF_FLOAT),
-        name=name
+        name=name,
+        **kwargs
     )
 
 

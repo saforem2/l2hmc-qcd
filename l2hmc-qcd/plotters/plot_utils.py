@@ -554,7 +554,7 @@ def plot_plaq_diffs_vs_net_weights(log_dir, **kwargs):
     figs_dir = os.path.join(log_dir, 'figures')
     io.check_else_make_dir(figs_dir)
 
-    ext = kwargs.get('ext', 'pdf')
+    ext = kwargs.get('ext', 'png')
     out_file = os.path.join(figs_dir, f'plaq_diff_vs_net_weights.{ext}')
     io.log(f'Saving figure to: {out_file}.')
     plt.savefig(out_file, bbox_inches='tight')
