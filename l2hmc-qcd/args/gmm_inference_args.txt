@@ -1,0 +1,14 @@
+--run_steps 2000
+--bootstrap_iters 100
+#--run_hmc
+--beta_inference 1.
+--scale_weight 1.
+--translation_weight 1.
+--transformation_weight 1.
+--skip_acl
+--eps 0.01
+#--eps 0.2
+# --------------------------
+#--eps 0.35
+#--eps 0.1
+#--params_file=../../gmm_logs/2019_09_25/2019_09_25_2326

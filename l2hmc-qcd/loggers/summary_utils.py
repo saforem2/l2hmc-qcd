@@ -91,6 +91,7 @@ def make_summaries_from_collection(collection, names):
     except AttributeError:
         pass
 
+
 def _create_training_summaries(model):
     """Create summary objects for training operations in TensorBoard."""
     with tf.name_scope('loss'):
@@ -110,6 +111,28 @@ def _create_training_summaries(model):
 
     with tf.name_scope('x_out'):
         variable_summaries(model.x_out, 'x_out')
+
+
+def _create_energy_summaries(model):
+    """Create summary objects for initial and proposed KE and PE."""
+    #  keys = ['init', 'proposed', 'out', 'proposed_diff', 'out_diff']
+    #  energy_data = model._energy_data
+    for e_type, e_data in model._energy_data.items():
+        e_dict = e_data._asdict()  # convert namedtuple --> dict
+        with tf.name_scope(e_type):
+            for k, v in e_dict.items():
+                variable_summaries(v, k)
+
+    #  energies_f = model._energy_outputs_dict['forward']
+    #  energies_b = model._energy_outputs_dict['backward']
+    #
+    #  for key, val in energies_f.items():
+    #      with tf.name_scope(key + '/forward'):
+    #          variable_summaries(val, key)
+    #
+    #  for key, val in energies_b.items():
+    #      with tf.name_scope(key + '/backward'):
+    #          variable_summaries(val, key)
 
 
 def _create_grad_norm_summaries(grad, var):
@@ -157,18 +180,17 @@ def _create_obs_summaries(model):
     """Create summary objects for physical observables."""
     with tf.name_scope('avg_charge_diffs'):
         tf.summary.scalar('avg_charge_diffs',
-                          tf.reduce_mean(model.charge_diffs_op))
+                          tf.reduce_mean(model.charge_diffs))
 
     with tf.name_scope('avg_plaq'):
-        tf.summary.scalar('avg_plaq', model.avg_plaqs_op)
+        tf.summary.scalar('avg_plaq', model.avg_plaqs)
 
     with tf.name_scope('avg_plaq_diff'):
         tf.summary.scalar('avg_plaq_diff',
-                          (u1_plaq_exact_tf(model.beta)
-                           - model.avg_plaqs_op))
+                          (u1_plaq_exact_tf(model.beta) - model.avg_plaqs))
 
     with tf.name_scope('top_charge'):
-        tf.summary.histogram('top_charge', model.charges_op)
+        tf.summary.histogram('top_charge', model.charges)
 
 
 def _create_l2hmc_summaries(model):
@@ -234,7 +256,8 @@ def create_summaries(model, summary_dir, training=True):
         _create_obs_summaries(model)    # lattice observables
 
     # log S, T, Q functions (forward/backward)
-    _create_l2hmc_summaries(model)
+    #  _create_l2hmc_summaries(model)
+    _create_energy_summaries(model)
 
     if model.use_gaussian_loss and model.use_nnehmc_loss:
         _loss_summaries(model)

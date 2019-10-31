@@ -17,14 +17,23 @@ from __future__ import absolute_import
 import numpy as np
 import tensorflow as tf
 import numpy.random as npr
+from collections import namedtuple
 
 from network.network import FullNet
 import config as cfg
 
+__all__ = ['Dynamics']
+
 TF_FLOAT = cfg.TF_FLOAT
 TF_INT = cfg.TF_INT
 GLOBAL_SEED = cfg.GLOBAL_SEED
-#  from config import GLOBAL_SEED, TF_FLOAT, TF_INT
+
+# -----------------------
+#   module-wide objects
+# -----------------------
+State = namedtuple('State', ['x', 'v', 'beta'])
+EnergyData = namedtuple('EnergyData', ['init', 'proposed', 'out',
+                                       'proposed_diff', 'out_diff'])
 
 
 def exp(x, name=None):
@@ -32,14 +41,14 @@ def exp(x, name=None):
     return tf.check_numerics(tf.exp(x), f'{name} is NaN')
 
 
-def flatten_tensor(tensor):
-    """Flattens tensor along axes 1:, since axis=0 indexes sample in batch.
-
-    Example: for a tensor of shape [b, x, y, t] -->
-        returns a tensor of shape [b, x * y * t]
-    """
-    batch_size = tensor.shape[0]
-    return tf.reshape(tensor, shape=(batch_size, -1))
+#  def flatten_tensor(tensor):
+#      """Flattens tensor along axes 1:, since axis=0 indexes sample in batch.
+#
+#      Example: for a tensor of shape [b, x, y, t] -->
+#          returns a tensor of shape [b, x * y * t]
+#      """
+#      batch_size = tensor.shape[0]
+#      return tf.reshape(tensor, shape=(batch_size, -1))
 
 
 def _add_to_collection(collection, ops):
@@ -180,11 +189,11 @@ class Dynamics(tf.keras.Model):
         return self.apply_transition(*args, **kwargs)
 
     def apply_transition(self,
-                         x_in,
+                         x_init,
                          beta,
                          weights,
                          train_phase,
-                         save_lf=False,
+                         model_type=None,
                          hmc=True):
         """Propose a new state and perform the accept/reject step.
 
@@ -198,8 +207,6 @@ class Dynamics(tf.keras.Model):
                 output functions (scale, translation, transformation).
             train_phase: Boolean tf.placeholder used to indicate if currently
                 training model or running inference on trained model.
-            save_lf: Flag specifying whether or not to save output leapfrog
-                configs.
 
         Returns:
             x_proposed: Proposed x before accept/reject step.
@@ -207,150 +214,255 @@ class Dynamics(tf.keras.Model):
             accept_prob: Probability of accepting the proposed states.
             x_out: Samples after accept/reject step.
         """
-        results_dict = {}  # holds additional data if `save_lf=True`
+        if model_type == 'GaugeModel':
+            x_init = tf.mod(x_init, 2 * np.pi, name='x_in_mod_2_pi')
 
-        args = (x_in, beta, weights, train_phase, save_lf, hmc)
+        # Call `self.transition_kernel` in the forward direction, 
+        # starting from the initial `State`: `(x_init`, `v_init_f, beta)`
+        # to get the proposed `State`
+        with tf.name_scope('transition_forward'):
+            v_init_f = tf.random_normal(tf.shape(x_init),
+                                        dtype=TF_FLOAT,
+                                        seed=GLOBAL_SEED,
+                                        name='v_init_f')
 
-        # Forward transition:
-        outputs_f = self._transition_forward(*args)
-        xf = outputs_f['x_proposed']
-        vf = outputs_f['v_proposed']
-        pxf = outputs_f['accept_prob']
-        pxf_hmc = outputs_f['accept_prob_hmc']
+            state_init_f = State(x_init, v_init_f, beta)
+            args = (*state_init_f, weights, train_phase)
+            kwargs = {'forward': True, 'hmc': hmc}
+            outputs_f = self.transition_kernel(*args, **kwargs)
+            xf = outputs_f['x_proposed']
+            vf = outputs_f['v_proposed']
+            pxf = outputs_f['accept_prob']
+            pxf_hmc = outputs_f['accept_prob_hmc']
+            sumlogdetf = outputs_f['sumlogdet']
 
-        # Backward transition:
-        outputs_b = self._transition_backward(*args)
-        xb = outputs_b['x_proposed']
-        vb = outputs_b['v_proposed']
-        pxb = outputs_b['accept_prob']
-        pxb_hmc = outputs_b['accept_prob_hmc']
+        with tf.name_scope('transition_backward'):
+            v_init_b = tf.random_normal(tf.shape(x_init),
+                                        dtype=TF_FLOAT,
+                                        seed=GLOBAL_SEED,
+                                        name='v_init_b')
 
-        # Decide direction uniformly
-        forward_mask, backward_mask = self._get_transition_masks()
+            state_init_b = State(x_init, v_init_b, beta)
+            outputs_b = self.transition_kernel(*state_init_b,
+                                               weights, train_phase,
+                                               forward=False, hmc=hmc)
+            #  args = (*state_init_b, weights, train_phase)
+            #  kwargs = {'forward': False, 'hmc': hmc}
+            #  outputs_b = self.transition_kernel(*args, **kwargs)
+            xb = outputs_b['x_proposed']
+            vb = outputs_b['v_proposed']
+            pxb = outputs_b['accept_prob']
+            pxb_hmc = outputs_b['accept_prob_hmc']
+            sumlogdetb = outputs_b['sumlogdet']
 
-        # Obtain proposed states
-        with tf.name_scope('x_proposed'):
-            x_proposed = (xf * forward_mask[:, None]
-                          + xb * backward_mask[:, None])
+        with tf.name_scope('simulate_forward_backward'):
+            # Decide direction uniformly
+            mask_f, mask_b = self._get_transition_masks()
 
-        with tf.name_scope('v_proposed'):
-            v_proposed = (vf * forward_mask[:, None]
-                          + vb * backward_mask[:, None])
+            # Obtain proposed states
+            v_init = v_init_f * mask_f[:, None] + v_init_b * mask_b[:, None]
+            v_proposed = vf * mask_f[:, None] + vb * mask_b[:, None]
+            x_proposed = xf * mask_f[:, None] + xb * mask_b[:, None]
 
-        # Probability of accepting the proposed states
-        with tf.name_scope('accept_prob'):
-            accept_prob = pxf * forward_mask + pxb * backward_mask
-            accept_prob_hmc = pxf_hmc * forward_mask + pxb_hmc * backward_mask
+            # Probability of accepting proposed states; (!) is w/o sumlogdet
+            accept_prob = pxf * mask_f + pxb * mask_b
+            accept_prob_hmc = pxf_hmc * mask_f + pxb_hmc * mask_b  # (!)
+            sumlogdet_proposed = sumlogdetf * mask_f + sumlogdetb * mask_b
 
         # Accept or reject step
-        accept_mask, reject_mask = self._get_accept_masks(accept_prob)
+        with tf.name_scope('accept_reject_step'):
+            # accept_mask, reject_mask
+            mask_a, mask_r = self._get_accept_masks(accept_prob)
 
-        # Samples after accept / reject step
-        with tf.name_scope('x_out'):
-            x_out = (accept_mask[:, None] * x_proposed
-                     + reject_mask[:, None] * x_in)
+            # State (x, v)  after accept / reject step
+            x_accept = x_proposed * mask_a[:, None]
+            v_accept = v_proposed * mask_a[:, None]
+            #  sumlogdet_accept = sumlogdet
+            x_reject = x_init * mask_r[:, None]
+            v_reject = v_init * mask_r[:, None]
 
-        outputs = {
-            'x_in': x_in,
+            x_out = x_accept + x_reject
+            v_out = v_accept + v_reject
+
+            sumlogdet_out = sumlogdet_proposed * mask_a
+
+            outputs_f.update({
+                'x_out': xf * mask_a[:, None] + x_reject,
+                'v_out': vf * mask_a[:, None] + v_init_f * mask_r[:, None],
+                'sumlogdet_out': sumlogdetf * mask_a
+            })
+            outputs_b.update({
+                'x_out': xb * mask_a[:, None] + x_reject,
+                'v_out': vb * mask_a[:, None] + v_init_b * mask_r[:, None],
+                'sumlogdet_out': sumlogdetf * mask_a
+            })
+
+        with tf.name_scope('calc_energies'):
+            with tf.name_scope('potential'):
+                with tf.name_scope('init'):
+                    pe_init = self.potential_energy(x_init, beta)
+                with tf.name_scope('proposed'):
+                    #  pe_proposed = self.potential_energy(x_proposed, beta)
+                    pe_proposed = self.potential_energy(x_proposed, beta)
+                with tf.name_scope('out'):
+                    #  pe_out = self.potential_energy(x_out, beta)
+                    pe_out = self.potential_energy(x_out, beta)
+                with tf.name_scope('proposed_diff'):
+                    pe_proposed_diff = pe_proposed - pe_init
+                with tf.name_scope('out_diff'):
+                    pe_out_diff = pe_out - pe_init
+
+            pe_data = EnergyData(pe_init, pe_proposed, pe_out,
+                                 pe_proposed_diff, pe_out_diff)
+            _add_to_collection('potential_energy', pe_data)
+
+            with tf.name_scope('kinetic'):
+                with tf.name_scope('init'):
+                    ke_init = self.kinetic_energy(v_init)
+                with tf.name_scope('proposed'):
+                    ke_proposed = self.kinetic_energy(v_proposed)
+                with tf.name_scope('out'):
+                    ke_out = self.kinetic_energy(v_out)
+                with tf.name_scope('proposed_diff'):
+                    ke_proposed_diff = ke_proposed - ke_init
+                with tf.name_scope('out_diff'):
+                    ke_out_diff = ke_out - ke_init
+
+            ke_data = EnergyData(ke_init, ke_proposed, ke_out,
+                                 ke_proposed_diff, ke_out_diff)
+            _add_to_collection('kinetic_energy', ke_data)
+            #  _ = [tf.add_to_collection('kinetic_energy', e) for e in ke_data]
+
+            with tf.name_scope('hamiltonian'):
+                with tf.name_scope('init'):
+                    h_init = pe_init + ke_init
+                with tf.name_scope('proposed'):
+                    h_proposed = pe_proposed + ke_proposed
+                with tf.name_scope('out'):
+                    h_out = pe_out + ke_out
+                with tf.name_scope('proposed_diff'):
+                    h_proposed_diff = h_proposed - h_init - sumlogdet_proposed
+                with tf.name_scope('out_diff'):
+                    h_out_diff = h_out - h_init - sumlogdet_out
+
+            h_data = EnergyData(h_init, h_proposed, h_out,
+                                h_proposed_diff, h_out_diff)
+            _ = [tf.add_to_collection('hamiltonian', e) for e in h_data]
+
+            energies = {
+                'potential': pe_data,
+                'kinetic': ke_data,
+                'hamiltonian': h_data
+            }
+
+        outputs_fb = {
+            'x_init': x_init,
+            'v_init': v_init,
             'x_proposed': x_proposed,
             'v_proposed': v_proposed,
-            'accept_prob': accept_prob,
             'x_out': x_out,
+            'v_out': v_out,
+            'accept_prob': accept_prob,
             'accept_prob_hmc': accept_prob_hmc,
+            'sumlogdet_proposed': sumlogdet_proposed,
+            'sumlogdet_out': sumlogdet_out,
+            'mask_f': mask_f,  # forward mask
+            'mask_b': mask_b,  # backward mask
+            'mask_a': mask_a,  # accept mask
+            'mask_r': mask_r,  # reject mask
+            #  'sumlogdet': sumlogdet,
         }
 
-        if save_lf:
-            results_dict['pxs_out_f'] = outputs_f['accept_prob']
-            results_dict['pxs_out_b'] = outputs_b['accept_prob']
-            results_dict['masks_f'] = forward_mask
-            results_dict['masks_b'] = backward_mask
+        #  if save_lf:
+        #      lf_dict = {}  # holds additional data if `save_lf=True`
+        #      lf_dict['pxs_out_f'] = pxf
+        #      lf_dict['pxs_out_b'] = pxb
+        #      lf_dict['masks_f'] = mask_f
+        #      lf_dict['masks_b'] = mask_b
+        #
+        #      def get_lf_keys(direction):
+        #          base_keys = ['lf_out', 'logdets', 'sumlogdet', 'fns_out']
+        #          new_keys = [k + f'_{direction}' for k in base_keys]
+        #          return list(zip(new_keys, base_keys))
+        #
+        #      keys_f = get_lf_keys('f')
+        #      keys_b = get_lf_keys('b')
+        #
+        #      lf_dict.update({k[0]: outputs_f[k[1]] for k in keys_f})
+        #      lf_dict.update({k[0]: outputs_b[k[1]] for k in keys_b})
+        #
+        #      md_outputs.update(lf_dict)
 
-            def get_lf_keys(direction):
-                base_keys = ['lf_out', 'logdets', 'sumlogdet', 'fns_out']
-                new_keys = [k + f'_{direction}' for k in base_keys]
-                return list(zip(new_keys, base_keys))
-
-            keys_f = get_lf_keys('f')
-            keys_b = get_lf_keys('b')
-
-            results_dict.update({k[0]: outputs_f[k[1]] for k in keys_f})
-            results_dict.update({k[0]: outputs_b[k[1]] for k in keys_b})
-
-            outputs.update(results_dict)
+        outputs = {
+            'outputs_fb': outputs_fb,
+            'outputs_f': outputs_f,
+            'outputs_b': outputs_b,
+            'energies': energies,
+        }
 
         return outputs
 
-    def _transition_forward(self, x, beta, weights, 
-                            train_phase, save_lf, hmc=False):
-        with tf.name_scope('transition_forward'):
-            with tf.name_scope('refresh_momentum'):
-                v_rf = tf.random_normal(tf.shape(x),
-                                        dtype=TF_FLOAT,
-                                        seed=GLOBAL_SEED,
-                                        name='refresh_momentum_forward')
+    def calc_energies(self, outputs_fb, beta):
+        """Calculate energies at beginning/end of trajectory and differences.
 
-            outputs_f = self.transition_kernel(x, v_rf, beta,
-                                               weights,
-                                               train_phase,
-                                               forward=True,
-                                               save_lf=save_lf,
-                                               hmc=hmc)
-        return outputs_f
+        Args:
+            outputs_fb: Dictionary of forward/backward outputs from
+                `self.apply_transition` method.
+        """
+        x_init = outputs_fb['x_init']
+        v_init = outputs_fb['v_init']
+        x_proposed = outputs_fb['x_proposed']
+        v_proposed = outputs_fb['v_proposed']
+        x_out = outputs_fb['x_out']
+        v_out = outputs_fb['v_out']
 
-    def _transition_backward(self, x, beta, weights,
-                             train_phase, save_lf, hmc=False):
-        with tf.name_scope('transition_backward'):
-            with tf.name_scope('refresh_momentum'):
-                v_rb = tf.random_normal(tf.shape(x),
-                                        dtype=TF_FLOAT,
-                                        seed=GLOBAL_SEED,
-                                        name='refresh_momentum_backward')
+        sumlogdet_proposed = outputs_fb['sumlogdet_proposed']
+        sumlogdet_out = outputs_fb['sumlogdet_out']
 
-            outputs_b = self.transition_kernel(x, v_rb, beta,
-                                               weights,
-                                               train_phase,
-                                               forward=False,
-                                               save_lf=save_lf,
-                                               hmc=hmc)
-        return outputs_b
+        pe_init = self.potential_energy(x_init, beta)
+        ke_init = self.kinetic_energy(v_init)
+        h_init = pe_init + ke_init
 
-    def _get_transition_masks(self):
-        with tf.name_scope('transition_masks'):
-            with tf.name_scope('forward_mask'):
-                forward_mask = tf.cast(
-                    tf.random_uniform((self.batch_size,),
-                                      dtype=TF_FLOAT,
-                                      seed=GLOBAL_SEED) > 0.5,
-                    TF_FLOAT,
-                    name='forward_mask'
-                )
-            with tf.name_scope('backward_mask'):
-                backward_mask = 1. - forward_mask
+        pe_proposed = self.potential_energy(x_proposed, beta)
+        ke_proposed = self.kinetic_energy(v_proposed)
+        h_proposed = pe_proposed + ke_proposed + sumlogdet_proposed
 
-        return forward_mask, backward_mask
+        pe_out = self.potential_energy(x_out, beta)
+        ke_out = self.kinetic_energy(v_out)
+        h_out = pe_out + ke_out + sumlogdet_out
 
-    def _get_accept_masks(self, accept_prob):
-        with tf.name_scope('accept_mask'):
-            accept_mask = tf.cast(
-                accept_prob > tf.random_uniform(tf.shape(accept_prob),
-                                                dtype=TF_FLOAT,
-                                                seed=GLOBAL_SEED),
-                TF_FLOAT,
-                name='acccept_mask'
-            )
-            reject_mask = 1. - accept_mask
+        pe_proposed_diff = pe_proposed - pe_init
+        ke_proposed_diff = ke_proposed - ke_init
+        h_proposed_diff = h_proposed - h_init
 
-        return accept_mask, reject_mask
+        pe_out_diff = pe_out - pe_init
+        ke_out_diff = ke_out - ke_init
+        h_out_diff = h_out - h_init
 
-    def transition_kernel(self,
-                          x_in,
-                          v_in,
-                          beta,
-                          weights,
-                          train_phase,
-                          forward=True,
-                          save_lf=False,
-                          hmc=True):
+        pe_data = EnergyData(pe_init, pe_proposed, pe_out,
+                             pe_proposed_diff, pe_out_diff)
+
+        _ = [tf.add_to_collection('energies', e) for e in pe_data]
+
+        ke_data = EnergyData(ke_init, ke_proposed, ke_out,
+                             ke_proposed_diff, ke_out_diff)
+        _ = [tf.add_to_collection('energies', e) for e in ke_data]
+
+        h_data = EnergyData(h_init, h_proposed, h_out,
+                            h_proposed_diff, h_out_diff)
+        _ = [tf.add_to_collection('energies', e) for e in h_data]
+
+        outputs = {
+            'potential': pe_data,
+            'kinetic': ke_data,
+            'hamiltonian': h_data
+        }
+
+        return outputs
+
+    def transition_kernel(self, x_in, v_in, beta,
+                          weights, train_phase,
+                          forward=True, hmc=True):
         """Transition kernel of augmented leapfrog integrator."""
         lf_fn = self._forward_lf if forward else self._backward_lf
 
@@ -360,35 +472,17 @@ class Dynamics(tf.keras.Model):
             step = tf.constant(0., name='md_step', dtype=TF_FLOAT)
             batch_size = tf.shape(x_in)[0]
             logdet = tf.zeros((batch_size,), dtype=TF_FLOAT)
-            lf_out = tf.TensorArray(dtype=TF_FLOAT,
-                                    size=self.num_steps+1,
-                                    dynamic_size=True,
-                                    name='lf_out',
-                                    clear_after_read=False)
-            logdets_out = tf.TensorArray(dtype=TF_FLOAT,
-                                         size=self.num_steps+1,
-                                         dynamic_size=True,
-                                         name='logdets_out',
-                                         clear_after_read=False)
-            fns_out = tf.TensorArray(dtype=TF_FLOAT,
-                                     size=self.num_steps,
-                                     dynamic_size=True,
-                                     name='l2hmc_fns',
-                                     clear_after_read=False)
 
-            lf_out = lf_out.write(0, x_in)
-            logdets_out = logdets_out.write(0, logdet)
-
-        def body(step, x, v, logdet, lf_samples, logdets, fns):
+        def body(step, x, v, logdet):
             # cast leapfrog step to integer
-            i = tf.cast(step, dtype=tf.int32)
+            #  i = tf.cast(step, dtype=tf.int32)
             new_x, new_v, j, _fns = lf_fn(x, v, beta, step,
                                           weights, train_phase)
-            lf_samples = lf_samples.write(i+1, new_x)
-            logdets = logdets.write(i+1, logdet+j)
-            fns = fns.write(i, _fns)
+            #  lf_samples = lf_samples.write(i+1, new_x)
+            #  logdets = logdets.write(i+1, logdet+j)
+            #  fns = fns.write(i, _fns)
 
-            return (step+1, new_x, new_v, logdet+j, lf_samples, logdets, fns)
+            return (step+1, new_x, new_v, logdet+j)
 
         def cond(step, *args):
             return tf.less(step, self.num_steps)
@@ -396,27 +490,28 @@ class Dynamics(tf.keras.Model):
         outputs = tf.while_loop(
             cond=cond,
             body=body,
-            loop_vars=[step, x_proposed, v_proposed,
-                       logdet, lf_out, logdets_out, fns_out]
+            loop_vars=[step, x_proposed, v_proposed, logdet]
         )
 
         step = outputs[0]
         x_proposed = outputs[1]
         v_proposed = outputs[2]
         sumlogdet = outputs[3]
-        with tf.name_scope('MD_outputs'):
-            with tf.name_scope('lf_out'):
-                lf_out = outputs[4].stack()
-            with tf.name_scope('logdets_out'):
-                logdets_out = outputs[5].stack()
-            with tf.name_scope('l2hmc_fns_out'):
-                fns_out = outputs[6].stack()
+        #  with tf.name_scope('MD_outputs'):
+        #      with tf.name_scope('lf_out'):
+        #          lf_out = outputs[4].stack()
+        #      with tf.name_scope('logdets_out'):
+        #          logdets_out = outputs[5].stack()
+        #      with tf.name_scope('l2hmc_fns_out'):
+        #          fns_out = outputs[6].stack()
 
         accept_prob, accept_prob_hmc = self._compute_accept_prob(
             x_in, v_in, x_proposed, v_proposed, sumlogdet, beta, hmc=hmc
         )
 
         outputs = {
+            'x_init': x_in,
+            'v_init': v_in,
             'x_proposed': x_proposed,
             'v_proposed': v_proposed,
             'sumlogdet': sumlogdet,
@@ -424,37 +519,10 @@ class Dynamics(tf.keras.Model):
             'accept_prob_hmc': accept_prob_hmc,
         }
 
-        if save_lf:
-            outputs['lf_out'] = lf_out
-            outputs['logdets'] = logdets_out
-            outputs['fns_out'] = fns_out
-
-        return outputs
-
-    def _check_reversibility(self, x_in, v_in, beta, weights, training):
-        outputs_f = self.transition_kernel(x_in, v_in, beta,
-                                           weights,
-                                           training,
-                                           forward=True,
-                                           save_lf=False)
-        xf = outputs_f['x_proposed']
-        vf = outputs_f['v_proposed']
-
-        #  backward(forward(x, v)) --> x, v
-        outputs_b = self.transition_kernel(xf, vf, beta,
-                                           weights,
-                                           training,
-                                           forward=False,
-                                           save_lf=False)
-        xb = outputs_b['x_proposed']
-        vb = outputs_b['v_proposed']
-
-        outputs = {
-            'xf': xf,
-            'vf': vf,
-            'xb': xb,
-            'vb': vb
-        }
+        #  if save_lf:
+        #      outputs['lf_out'] = lf_out
+        #      outputs['logdets'] = logdets_out
+        #      outputs['fns_out'] = fns_out
 
         return outputs
 
@@ -501,14 +569,14 @@ class Dynamics(tf.keras.Model):
         """One backward augmented leapfrog step."""
         backward_fns = []
         with tf.name_scope('backward_lf'):
+            step_r = self.num_steps - step - 1
+
+            # Reversed index/sinusoidal time
             with tf.name_scope('get_time'):
-                # Reversed index/sinusoidal time
-                t = self._get_time(self.num_steps - step - 1,
-                                   tile=tf.shape(x)[0])
+                t = self._get_time(step_r, tile=tf.shape(x)[0])
+
             with tf.name_scope('get_mask'):
-                mask, mask_inv = self._get_mask(
-                    self.num_steps - step - 1
-                )
+                mask, mask_inv = self._get_mask(step_r)
 
             sumlogdet = 0.
 
@@ -557,7 +625,6 @@ class Dynamics(tf.keras.Model):
         """
         with tf.name_scope('update_vf'):
             grad = self.grad_potential(x, beta)
-
             scale, transl, transf = self.v_fn([x, grad, t], training)
 
             with tf.name_scope('vf_mul'):
@@ -567,9 +634,8 @@ class Dynamics(tf.keras.Model):
                 fns = [scale, transl, transf]
 
             with tf.name_scope('vf_exp'):
-                scale_exp = tf.cast(exp(scale, 'scale_exp'), dtype=TF_FLOAT)
-                transf_exp = tf.cast(exp(transf, 'transf_exp'),
-                                     dtype=TF_FLOAT)
+                scale_exp = tf.cast(exp(scale, 'scale_exp'), TF_FLOAT)
+                transf_exp = tf.cast(exp(transf, 'transf_exp'), TF_FLOAT)
 
             with tf.name_scope('proposed'):
                 v = (v * scale_exp
@@ -648,8 +714,7 @@ class Dynamics(tf.keras.Model):
                 x = (mask * x + mask_inv * scale_exp
                      * (x - self.eps * (v * transf_exp + transl)))
 
-            logdet = tf.reduce_sum(mask_inv * scale, axis=1,
-                                   name='logdet_xb')
+            logdet = tf.reduce_sum(mask_inv * scale, axis=1, name='logdet_xb')
 
         return x, logdet, fns
 
@@ -666,34 +731,34 @@ class Dynamics(tf.keras.Model):
         """
         with tf.name_scope('accept_prob'):
             with tf.name_scope('old_hamiltonian'):
-                old_hamil = self.hamiltonian(xi, vi, beta)
+                h_init = self.hamiltonian(xi, vi, beta)  # initial H
             with tf.name_scope('new_hamiltonian'):
-                new_hamil = self.hamiltonian(xf, vf, beta)
+                h_proposed = self.hamiltonian(xf, vf, beta)
 
             with tf.name_scope('calc_prob'):
-                prob = exp(tf.minimum(
-                    (old_hamil - new_hamil + sumlogdet), 0.
-                ), 'accept_prob')
+                #  dh = beta * (h_init - h_proposed) + sumlogdet
+                dh = h_init - h_proposed + sumlogdet
+                prob = tf.exp(tf.minimum(dh, 0.))
 
             # Ensure numerical stability as well as correct gradients
-            accept_prob = tf.where(tf.is_finite(prob), prob,
-                                   tf.zeros_like(prob))
+            accept_prob = tf.where(tf.is_finite(prob),
+                                   prob, tf.zeros_like(prob))
         if hmc:
-            prob_hmc = self._compute_accept_prob_hmc(old_hamil, new_hamil)
+            prob_hmc = self._compute_accept_prob_hmc(h_init, h_proposed, beta)
         else:
             prob_hmc = tf.zeros_like(accept_prob)
 
         return accept_prob, prob_hmc
 
-    def _compute_accept_prob_hmc(self, old_hamil, new_hamil):
+    def _compute_accept_prob_hmc(self, h_init, h_proposed, beta):
         """Compute the prob. of accepting the proposed state given old state.
 
         NOTE: This computes the accept prob. for generic HMC.
         """
         with tf.name_scope('accept_prob_hmc'):
-            prob = exp(tf.minimum((old_hamil - new_hamil), 0.), 'accept_prob')
-            accept_prob = tf.where(tf.is_finite(prob), prob,
-                                   tf.zeros_like(prob))
+            prob = tf.exp(tf.minimum(beta * (h_init - h_proposed), 0.))
+            accept_prob = tf.where(tf.is_finite(prob),
+                                   prob, tf.zeros_like(prob))
 
         return accept_prob
 
@@ -708,6 +773,59 @@ class Dynamics(tf.keras.Model):
             t = tf.tile(tf.expand_dims(trig_t, 0), (tile, 1))
 
         return t
+
+    def _get_transition_masks(self):
+        with tf.name_scope('transition_masks'):
+            with tf.name_scope('forward_mask'):
+                forward_mask = tf.cast(
+                    tf.random_uniform((self.batch_size,),
+                                      dtype=TF_FLOAT,
+                                      seed=GLOBAL_SEED) > 0.5,
+                    TF_FLOAT,
+                    name='forward_mask'
+                )
+            with tf.name_scope('backward_mask'):
+                backward_mask = 1. - forward_mask
+
+        return forward_mask, backward_mask
+
+    def _get_accept_masks(self, accept_prob):
+        with tf.name_scope('accept_mask'):
+            accept_mask = tf.cast(
+                accept_prob >= tf.random_uniform(tf.shape(accept_prob),
+                                                 dtype=TF_FLOAT,
+                                                 seed=GLOBAL_SEED),
+                TF_FLOAT,
+                name='acccept_mask'
+            )
+            reject_mask = 1. - accept_mask
+
+        return accept_mask, reject_mask
+
+    def _check_reversibility(self, x_in, v_in, beta, weights, training):
+        outputs_f = self.transition_kernel(x_in, v_in, beta,
+                                           weights,
+                                           training,
+                                           forward=True)
+        xf = outputs_f['x_proposed']
+        vf = outputs_f['v_proposed']
+
+        #  backward(forward(x, v)) --> x, v
+        outputs_b = self.transition_kernel(xf, vf, beta,
+                                           weights,
+                                           training,
+                                           forward=False)
+        xb = outputs_b['x_proposed']
+        vb = outputs_b['v_proposed']
+
+        outputs = {
+            'xf': xf,
+            'vf': vf,
+            'xb': xb,
+            'vb': vb
+        }
+
+        return outputs
 
     def _build_masks(self):
         """Construct different binary masks for different time steps."""
@@ -725,26 +843,34 @@ class Dynamics(tf.keras.Model):
 
     def _get_mask(self, step):
         with tf.name_scope('get_mask'):
-            m = tf.gather(self.masks, tf.cast(step, dtype=TF_INT))
-            _m = 1. - m  # complementary mask
-        return m, _m
+            if tf.executing_eagerly():
+                m = self.masks[step]
+            else:
+                m = tf.gather(self.masks, tf.cast(step, dtype=TF_INT))
+
+        return m, 1. - m
 
     def grad_potential(self, x, beta):
         """Get gradient of potential function at current location."""
         with tf.name_scope('grad_potential'):
             if tf.executing_eagerly():
                 tfe = tf.contrib.eager
-                grad_fn = tfe.gradients_function(self.potential_energy,
-                                                 params=["x"])
-                grad = grad_fn(x, beta)[0]
+                grad = tfe.gradients_function(self.potential_energy,
+                                              params=[0])(x, beta)[0]
+                #  grad_fn = tfe.gradients_function(self.potential_energy,
+                #                                   params=["x"])
             else:
                 grad = tf.gradients(self.potential_energy(x, beta), x)[0]
+                #  grad = tf.gradients(self.potential(x), x)[0]
+
         return grad
 
     def potential_energy(self, x, beta):
         """Compute potential energy using `self.potential` and beta."""
         with tf.name_scope('potential_energy'):
-            potential_energy = tf.multiply(beta, self.potential(x))
+            #  potential_energy = self.potential(x)
+            #  potential_energy = tf.multiply(beta, self.potential(x))
+            potential_energy = beta * self.potential(x)
 
         return potential_energy
 
@@ -759,6 +885,7 @@ class Dynamics(tf.keras.Model):
         """Compute the overall Hamiltonian."""
         with tf.name_scope('hamiltonian'):
             potential = self.potential_energy(x, beta)
+            #  potential = self.potential(x)
             kinetic = self.kinetic_energy(v)
             hamiltonian = potential + kinetic
 

@@ -40,6 +40,7 @@ SEP_STRN = 80 * '-' + '\n'
 def allclose(x, y, rtol=1e-3, atol=1e-5):
     return tf.reduce_all(tf.abs(x - y) <= tf.abs(y) * rtol + atol)
 
+
 def split_sampler_data(sampler_data):
     return sampler_data.data, sampler_data.dynamics_output
 
@@ -97,6 +98,7 @@ class GaugeModel(BaseModel):
             # -----------------------------------------------
             io.log(f'INFO: Creating `Dynamics`...')
             self.dynamics = self.create_dynamics()
+            self.dynamics_eps = self.dynamics.eps
             # Create operation for assigning to `dynamics.eps` 
             # the value fed into the placeholder `eps_ph`.
             self.eps_setter = self._build_eps_setter()
@@ -112,11 +114,11 @@ class GaugeModel(BaseModel):
         # -------------------------------------------------------------------
         io.log(f'INFO: Creating operations for calculating observables...')
         observables = self._create_observables()
-        self.plaq_sums_op = observables['plaq_sums_op']
-        self.actions_op = observables['actions_op']
-        self.plaqs_op = observables['plaqs_op']
-        self.avg_plaqs_op = observables['avg_plaqs_op']
-        self.charges_op = observables['charges_op']
+        self.plaq_sums = observables['plaq_sums']
+        self.actions = observables['actions']
+        self.plaqs = observables['plaqs']
+        self.avg_plaqs = observables['avg_plaqs']
+        self.charges = observables['charges']
         self._observables = observables
 
         # *******************************************************************
@@ -125,9 +127,9 @@ class GaugeModel(BaseModel):
         # NOTE: We use the `dynamics.apply_transition` method to run the
         # augmented l2hmc leapfrog integrator and obtain new samples.
         # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        x_sampler_data, z_sampler_data = self._build_sampler()
-        x_data, self._x_dynamics = split_sampler_data(x_sampler_data)
-        z_data, self._z_dynamics = split_sampler_data(z_sampler_data)
+        x_data, z_data = self._build_sampler()
+        self.charge_diffs = self._calc_charge_diff(x_data.init,
+                                                   x_data.proposed)
 
         # *******************************************************************
         # Calculate loss_op and train_op to backprop. grads through network
@@ -178,7 +180,7 @@ class GaugeModel(BaseModel):
 
         return lattice
 
-    def create_dynamics(self, **params):
+    def create_dynamics(self):
         """Create dynamics object."""
         samples = self.lattice.samples_tensor
         potential_fn = self.lattice.get_potential_fn(samples)
@@ -205,11 +207,11 @@ class GaugeModel(BaseModel):
             charges = self.lattice.calc_top_charges(plaq_sums=plaq_sums)
 
         observables = {
-            'plaq_sums_op': plaq_sums,
-            'actions_op': actions,
-            'plaqs_op': plaqs,
-            'avg_plaqs_op': avg_plaqs,
-            'charges_op': charges,
+            'plaq_sums': plaq_sums,
+            'actions': actions,
+            'plaqs': plaqs,
+            'avg_plaqs': avg_plaqs,
+            'charges': charges,
         }
 
         return observables
@@ -305,31 +307,43 @@ class GaugeModel(BaseModel):
         nnehmc_beta = getattr(self, 'nnehmc_beta', 1.)
         return self._nnehmc_loss(x_data, hmc_prob, beta=nnehmc_beta)
 
-    def _parse_dynamics_output(self, dynamics_output):
-        """Parse output dictionary from `self.dynamics.apply_transition`."""
+    def _calc_charge_diff(self, x_init, x_proposed):
+        """Calculate difference in topological charge b/t x_init, x_proposed.
+
+        Args:
+            x_init: Configurations at the beginning of the trajectory.
+            x_proposed: Configurations at the end of the trajectory (before MH
+                accept/reject).
+
+        Returns:
+            x_dq: TensorFlow operation for calculating the difference in
+                topological charge.
+        """
         with tf.name_scope('top_charge_diff'):
-            x_in = dynamics_output['x_in']
-            #  x_out = dynamics_output['x_out']
-            x_proposed = dynamics_output['x_proposed']
             x_dq = tf.cast(
-                self.lattice.calc_top_charges_diff(x_in, x_proposed),
+                self.lattice.calc_top_charges_diff(x_init, x_proposed),
                 dtype=TF_INT
             )
-            self.charge_diffs_op = tf.reduce_sum(x_dq) / self.batch_size
+            charge_diffs_op = tf.reduce_sum(x_dq) / self.batch_size
 
-        if self.save_lf:
-            op_keys = ['masks_f', 'masks_b',
-                       'lf_out_f', 'lf_out_b',
-                       'pxs_out_f', 'pxs_out_b',
-                       'logdets_f', 'logdets_b',
-                       'fns_out_f', 'fns_out_b',
-                       'sumlogdet_f', 'sumlogdet_b']
-            for key in op_keys:
-                try:
-                    op = dynamics_output[key]
-                    setattr(self, key, op)
-                except KeyError:
-                    continue
+        return charge_diffs_op
+
+    def _parse_dynamics_output(self, dynamics_output):
+        """Parse output dictionary from `self.dynamics.apply_transition`."""
+        dynamics_md = dynamics_output['md_outputs']
+        x_init = dynamics_md['x_init']
+        x_proposed = dynamics_md['x_proposed']
+        self.charge_diffs_op = self._calc_charge_diff(x_init, x_proposed)
+
+        with tf.name_scope('dynamics_forward'):
+            for key, val in dynamics_output['outputs_f'].items():
+                name = key + '_f'
+                setattr(self, name, val)
+                tf.add_to_collection('dynamics_forward', val)
+            with tf.name_scope('dynamics_backward'):
+                for key, val in dynamics_output['outputs_b'].items():
+                    name = key + '_b'
+                    setattr(self, name, val)
 
         with tf.name_scope('l2hmc_fns'):
             self.l2hmc_fns = {
@@ -342,23 +356,31 @@ class GaugeModel(BaseModel):
         run_ops = {
             'x_out': self.x_out,
             'px': self.px,
-            'dynamics_eps': self.dynamics.eps,
-            'actions_op': self.actions_op,
-            'plaqs_op': self.plaqs_op,
-            'avg_plaqs_op': self.avg_plaqs_op,
-            'charges_op': self.charges_op,
-            'charge_diffs_op': self.charge_diffs_op
+            'dynamics_eps': self.dynamics_eps,
+            'actions': self.actions,
+            'plaqs': self.plaqs,
+            'avg_plaqs': self.avg_plaqs,
+            'charges': self.charges,
+            'charge_diffs': self.charge_diffs
         }
 
-        if self.save_lf:
-            keys = ['lf_out', 'pxs_out', 'masks',
-                    'logdets', 'sumlogdet', 'fns_out']
-
-            fkeys = [k + '_f' for k in keys]
-            bkeys = [k + '_b' for k in keys]
-
-            run_ops.update({k: getattr(self, k) for k in fkeys})
-            run_ops.update({k: getattr(self, k) for k in bkeys})
+        #  if self.save_lf:
+        #      keys = ['lf_out', 'pxs_out', 'masks',
+        #              'logdets', 'sumlogdet', 'fns_out']
+        #
+        #      fkeys = [k + '_f' for k in keys]
+        #      bkeys = [k + '_b' for k in keys]
+        #
+        #      try:
+        #          run_ops.update({k: getattr(self, k) for k in fkeys})
+        #      except AttributeError:
+        #          pass
+        #          #  io.log(f'`GaugeModel` has no attribute `{k}`')
+        #      try:
+        #          run_ops.update({k: getattr(self, k) for k in bkeys})
+        #      except AttributeError:
+        #          pass
+        #          #  io.log(f'`GaugeModel` has no attribute `{k}`')
 
         return run_ops
 
@@ -373,11 +395,11 @@ class GaugeModel(BaseModel):
                 'loss_op': self.loss_op,
                 'x_out': self.x_out,
                 'px': self.px,
-                'dynamics_eps': self.dynamics.eps,
-                'actions_op': self.actions_op,
-                'plaqs_op': self.plaqs_op,
-                'charges_op': self.charges_op,
-                'charge_diffs_op': self.charge_diffs_op,
+                'dynamics_eps': self.dynamics_eps,
+                'actions': self.actions,
+                'plaqs': self.plaqs,
+                'charges': self.charges,
+                'charge_diffs': self.charge_diffs,
                 'lr': self.lr
             }
 
