@@ -6,11 +6,18 @@ Contains implementation of GaugeLattice class.
 Author: Sam Foreman (github: @saforem2)
 Date: 01/15/2019
 """
+from __future__ import absolute_import, division, print_function
+
+from config import NP_FLOAT, TF_FLOAT
 
 import numpy as np
 import tensorflow as tf
+
 from scipy.special import i0, i1
-from config import TF_FLOAT, NP_FLOAT
+
+__all__ = ['u1_plaq_exact', 'u1_plaq_exact_tf',
+           'project_angle', 'project_angle_fft',
+           'GaugeLattice']
 
 
 def u1_plaq_exact(beta):
@@ -154,6 +161,9 @@ class GaugeLattice(object):
         if samples is None:
             samples = self.samples
 
+        if isinstance(samples, np.ndarray):
+            return self.calc_plaq_sums_np(samples)
+
         with tf.name_scope('plaq_sums'):
             if samples.shape != self.samples.shape:
                 samples = tf.reshape(samples, shape=self.samples.shape)
@@ -166,6 +176,23 @@ class GaugeLattice(object):
 
         return plaq_sums
 
+    def calc_plaq_sums_np(self, samples):
+        """Calculate plaquette sums.
+
+        Same as `self.calc_plaq_sums` defined above, but to be used with
+        `numpy.ndarray` objects.
+        """
+        assert isinstance(samples, (np.ndarray, list))
+        if samples.shape != self.samples.shape:
+            samples = np.reshape(samples, self.samples.shape)
+
+        plaq_sums = (samples[:, :, :, 0]
+                     - samples[:, :, :, 1]
+                     - np.roll(samples[:, :, :, 0], shift=-1, axis=2)
+                     + np.roll(samples[:, :, :, 0], shift=-1, axis=1))
+
+        return plaq_sums
+
     def calc_actions(self, samples=None, plaq_sums=None):
         """Calculate the total action for each sample in samples."""
         if plaq_sums is None:
@@ -173,9 +200,18 @@ class GaugeLattice(object):
                 samples = self.samples
             plaq_sums = self.calc_plaq_sums(samples)
 
+        if isinstance(plaq_sums, np.ndarray):
+            return self.calc_actions_np(plaq_sums)
+
         with tf.name_scope('actions'):
             total_actions = tf.reduce_sum(1. - tf.cos(plaq_sums),
                                           axis=(1, 2), name='actions')
+
+        return total_actions
+
+    def calc_actions_np(self, plaq_sums):
+        """Calculate actions for `np.ndarray` objcts."""
+        total_actions = np.sum(1. - np.cos(plaq_sums), axis=(1, 2))
 
         return total_actions
 
@@ -191,6 +227,11 @@ class GaugeLattice(object):
             #                         axis=(1, 2), name='plaqs')
             plaqs = tf.reduce_sum(tf.cos(plaq_sums),
                                   axis=(1, 2), name='plaqs') / self.num_plaqs
+        return plaqs
+
+    def calc_plaqs_np(self, plaq_sums):
+        plaqs = np.sum(np.cos(plaq_sums), axis=(1, 2)) / self.num_plaqs
+
         return plaqs
 
     def calc_top_charges(self, samples=None, plaq_sums=None):
