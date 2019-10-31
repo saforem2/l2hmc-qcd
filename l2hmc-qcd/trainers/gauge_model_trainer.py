@@ -19,11 +19,29 @@ from config import NP_FLOAT
 from loggers.summary_utils import create_summaries
 from loggers.train_logger import TRAIN_HEADER
 
+__all__ = ['GaugeModelTrainer']
+
 
 TrainStepData = namedtuple('TrainStepData', [
     'step', 'beta', 'loss', 'samples', 'samples_orig', 'prob',
     'lr', 'eps', 'actions', 'plaqs', 'charges', 'charge_diffs'
 ])
+
+
+def linear_add_cooling(step, temp_init, temp_final, num_steps):
+    remaining_frac = (num_steps - step) / num_steps
+    temp = temp_final + (temp_init - temp_final) * remaining_frac
+
+    return temp
+
+
+def exp_mult_cooling(step, temp_init, temp_final, num_steps, alpha=None):
+    if alpha is None:
+        alpha = np.exp((np.log(temp_final) - np.log(temp_init)) / num_steps)
+
+    temp = temp_init * (alpha ** step)
+
+    return temp
 
 
 class GaugeModelTrainer:
@@ -39,7 +57,7 @@ class GaugeModelTrainer:
         self.model = model
         self.logger = logger
 
-    def update_beta(self, step, **kwargs):
+    def update_beta_old(self, step, **kwargs):
         """Returns new beta to follow annealing schedule."""
         beta_init = kwargs.get('beta_init', self.model.beta_init)
         beta_final = kwargs.get('beta_final', self.model.beta_final)
@@ -48,6 +66,20 @@ class GaugeModelTrainer:
         temp = ((1. / beta_init - 1. / beta_final)
                 * (1. - step / float(train_steps))
                 + 1. / beta_final)
+        new_beta = 1. / temp
+
+        return new_beta
+
+    def update_beta(self, step, **kwargs):
+        beta_init = kwargs.get('beta_init', self.model.beta_init)
+        beta_final = kwargs.get('beta_final', self.model.beta_final)
+        train_steps = kwargs.get('train_steps', self.model.train_steps)
+
+        temp_init = 1. / beta_init
+        temp_final = 1. / beta_final
+        temp = linear_add_cooling(step, temp_init, temp_final, train_steps)
+
+        #  temp = exp_mult_cooling(step, temp_init, temp_final, train_steps)
         new_beta = 1. / temp
 
         return new_beta
@@ -108,10 +140,10 @@ class GaugeModelTrainer:
             self.model.x_out,            # get new samples
             self.model.px,               # calculate accept prob.
             self.model.dynamics.eps,     # calculate current step size
-            self.model.actions_op,       # calculate avg. actions
-            self.model.plaqs_op,         # calculate avg. plaqs
-            self.model.charges_op,       # calculate top. charges
-            self.model.charge_diffs_op,  # change in top. charge/batch_size
+            self.model.actions,          # calculate avg. actions
+            self.model.plaqs,            # calculate avg. plaqs
+            self.model.charges,          # calculate top. charges
+            self.model.charge_diffs,     # change in top. charge/batch_size
             self.model.lr,               # evaluate learning rate
         ]
 
@@ -172,10 +204,10 @@ class GaugeModelTrainer:
             beta_np = self.model.beta_init
 
         if samples_np is None:
-            samples_np = np.array(
+            samples_np = np.mod(np.array(
                 np.random.randn(self.model.batch_size, self.model.x_dim),
                 dtype=NP_FLOAT
-            )
+            ), 2 * np.pi)
 
         assert samples_np.shape == self.model.x.shape
 
@@ -186,7 +218,6 @@ class GaugeModelTrainer:
                                                  net_weights=net_weights,
                                                  train_steps=train_steps)
                 samples_np = data.samples
-                #  samples_np = out_data['samples']
 
                 if self.logger is not None:
                     self.logger.update(self.sess, data, data_str, net_weights)

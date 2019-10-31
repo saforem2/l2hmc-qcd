@@ -28,6 +28,9 @@ from lattice.lattice import u1_plaq_exact
 from .train_logger import save_params
 
 
+__all__ = ['RunLogger', 'arr_from_dict', 'autocorr']
+
+
 FB_DICT = {
     'forward': [],
     'backward': [],
@@ -97,19 +100,24 @@ class RunLogger:
         self.run_stats = {}
         self.run_strings = [self.run_header]
 
+        if self.save_lf_data:
+            self.samples_arr = []
+
         if params['save_lf']:
             self.samples_arr = []
             self.px_arr = []
             self.lf_out = FB_DICT.copy()
             self.pxs_out = FB_DICT.copy()
             self.masks = FB_DICT.copy()
-            self.logdets = FB_DICT.copy()
+            #  self.logdets = FB_DICT.copy()
             self.sumlogdet = FB_DICT.copy()
-            self.l2hmc_fns = FB_DICT.copy()
+            #  self.l2hmc_fns = FB_DICT.copy()
 
         self.run_ops_dict = self.build_run_ops_dict(params, run_ops,
                                                     self.model_type)
         self.inputs_dict = self.build_inputs_dict(inputs)
+        self.energy_ops_dict = self.build_energy_ops_dict()
+        self.energy_dict = {k: [] for k in self.energy_ops_dict.keys()}
 
         if self.summaries:
             #  self.run_summaries_dir = os.path.join(self.log_dir,
@@ -160,6 +168,36 @@ class RunLogger:
 
         return inputs_dict
 
+    @staticmethod
+    def build_energy_ops_dict():
+        """Build dictionary of energy operations to calculate."""
+        strs = ['init', 'proposed', 'out', 'proposed_diff', 'out_diff']
+        energy_ops_dict = {}
+
+        pe_collection = tf.get_collection('potential_energy')
+        pe_strs = [f'potential_{s}' for s in strs]
+        pe_dict = dict(zip(pe_strs, pe_collection))
+
+        ke_collection = tf.get_collection('kinetic_energy')
+        ke_strs = [f'kinetic_{s}' for s in strs]
+        ke_dict = dict(zip(ke_strs, ke_collection))
+
+        h_collection = tf.get_collection('hamiltonian')
+        h_strs = [f'hamiltonian_{s}' for s in strs]
+        h_dict = dict(zip(h_strs, h_collection))
+
+        energy_ops_dict.update(pe_dict)
+        energy_ops_dict.update(ke_dict)
+        energy_ops_dict.update(h_dict)
+
+        #  type_strs = ['potential', 'kinetic', 'hamiltonian']
+        #  attr_strs = ['init', 'proposed', 'out', 'proposed_diff', 'out_diff']
+        #  energy_strings = [f'{t}_{a}' for t in type_strs for a in attr_strs]
+        #
+        #  energy_ops_dict = dict(zip(energy_strings, energy_ops))
+
+        return energy_ops_dict
+
     def create_summaries(self):
         """Create summary objects for logging in TensorBoard."""
         summary_list = tf.get_collection(tf.GraphKeys.SUMMARIES)
@@ -207,6 +245,7 @@ class RunLogger:
             cls.writer = None
 
     def clear(self):
+        self.energy_dict = None
         self.run_data = None
         self.run_strings = None
         if self.params['save_lf']:
@@ -287,7 +326,16 @@ class RunLogger:
 
         self.run_data = {
             'px': {},
+            #  'energy_outputs': {}
         }
+        self.energy_dict = {}
+        for key in self.energy_ops_dict.keys():
+            self.energy_dict[key] = []
+
+        if self.save_lf_data:
+            self.samples_arr = []
+        #  for key in self.energy_ops_dict.keys():
+        #      self.energy_dict[key] = []
 
         self.run_stats = {}
         self.run_strings = []
@@ -356,27 +404,34 @@ class RunLogger:
         step = data['step']
         beta = data['beta']
         key = (step, beta)
+        if step == 0:
+            if self.save_lf_data:
+                self.samples_arr.append(data['samples_in'])
 
         if self.model_type == 'GaugeModel':
             obs_keys = ['px', 'actions', 'plaqs', 'charges', 'charge_diffs']
             for k in obs_keys:
                 self.run_data[k][key] = data[k]
 
-        if self.params['save_lf']:
-            px_np = data['px']
-            self.px_arr.append(px_np)
-            samples_np = data['samples']
-            self.samples_arr.append(samples_np)
-            self.lf_out['forward'].extend(np.array(data['lf_out_f']))
-            self.lf_out['backward'].extend(np.array(data['lf_out_b']))
-            self.logdets['forward'].extend(np.array(data['logdets_f']))
-            self.logdets['backward'].extend(np.array(data['logdets_b']))
-            self.sumlogdet['forward'].append(np.array(data['sumlogdet_f']))
-            self.sumlogdet['backward'].append(np.array(data['sumlogdet_b']))
-            #  self.pxs_out['forward'].extend(np.array(data['pxs_out_f']))
-            #  self.pxs_out['backward'].extend(np.array(data['pxs_out_b']))
-            #  self.masks['forward'].extend(np.array(data['masks_f']))
-            #  self.masks['backward'].extend(np.array(data['masks_b']))
+        for key, val in data['energy_outputs'].items():
+            #  e_dict = val._asdict()
+            #  for k, v in e_dict.items():
+            self.energy_dict[key].append(val)
+
+        if self.save_lf_data:
+            self.samples_arr.append(data['samples'])
+
+        #  if self.params['save_lf']:
+            #  px_np = data['px']
+            #  self.px_arr.append(px_np)
+            #  samples_np = data['samples']
+            #  self.samples_arr.append(samples_np)
+            #  self.lf_out['forward'].extend(np.array(data['lf_out_f']))
+            #  self.lf_out['backward'].extend(np.array(data['lf_out_b']))
+            #  self.logdets['forward'].extend(np.array(data['logdets_f']))
+            #  self.logdets['backward'].extend(np.array(data['logdets_b']))
+            #  self.sumlogdet['forward'].append(np.array(data['sumlogdet_f']))
+            #  self.sumlogdet['backward'].append(np.array(data['sumlogdet_b']))
 
         self.run_strings.append(data_str)
 
@@ -470,17 +525,22 @@ class RunLogger:
         io.check_else_make_dir(observables_dir)
 
         if self.save_lf_data:
-            keys = ['lf_out', 'masks', 'logdets', 'sumlogdet', 'pxs_out']
-            for key in keys:
-                f = 'forward'
-                b = 'backward'
-                self.save_attr(key + f'_{f}', getattr(self, key)[f])
-                self.save_attr(key + f'_{b}', getattr(self, key)[b])
+            self.save_attr('samples_out', self.samples_arr)
+            #  keys = ['lf_out', 'masks', 'logdets', 'sumlogdet', 'pxs_out']
+            #  for key in keys:
+            #      f = 'forward'
+            #      b = 'backward'
+            #      self.save_attr(key + f'_{f}', getattr(self, key)[f])
+            #      self.save_attr(key + f'_{b}', getattr(self, key)[b])
 
         data_file = os.path.join(self.run_dir, 'run_data.pkl')
         io.log(f"Saving run_data to: {data_file}.")
         with open(data_file, 'wb') as f:
             pickle.dump(self.run_data, f)
+
+        energy_data_file = os.path.join(self.run_dir, 'energy_data.pkl')
+        with open(energy_data_file, 'wb') as f:
+            pickle.dump(self.energy_dict, f)
 
         for key, val in self.run_data.items():
             out_file = key + '.pkl'
@@ -516,12 +576,6 @@ class RunLogger:
 
     def write_run_stats(self, stats, therm_frac=10):
         """Write statistics in human readable format to .txt file."""
-        #  run_steps = kwargs['run_steps']
-        #  beta = kwargs['beta']
-        #  current_step = kwargs['current_step']
-        #  therm_steps = kwargs['therm_steps']
-        #  training = kwargs['training']
-        #  run_dir = kwargs['run_dir']
         therm_steps = self.run_steps // therm_frac
 
         out_file = os.path.join(self.run_dir, 'run_stats.txt')

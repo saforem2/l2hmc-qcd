@@ -46,17 +46,52 @@ class GaugeModelRunner:
         if logger is not None:
             self.inputs_dict = self.logger.inputs_dict
             self.run_ops_dict = self.logger.run_ops_dict
+            self.energy_ops_dict = self.logger.energy_ops_dict
             self._has_logger = True
             self._run_header = self.logger.run_header
         else:
             self.inputs_dict = RunLogger.build_inputs_dict(inputs)
             self.run_ops_dict = RunLogger.build_run_ops_dict(params, run_ops)
+            self.energy_ops_dict = RunLogger.build_energy_ops_dict()
             self._has_logger = False
             self._run_header = ''
 
         self.eps = self.sess.run(self.run_ops_dict['dynamics_eps'])
 
-    def run_step(self, step, run_steps, inputs, net_weights):
+    def run_energy_ops(self, feed_dict):
+        """Run all energy ops."""
+        keys = []
+        ops = []
+        #  keys = list(self.energy_ops_dict.keys())
+        #  ops = list(self.energy_ops_dict.values())
+        for key, val in self.energy_ops_dict.items():
+            keys.append(key)
+            ops.append(val)
+
+        outputs = self.sess.run(ops, feed_dict=feed_dict)
+        energy_outputs = dict(zip(keys, outputs))
+
+        return energy_outputs
+
+    def lf_step(self, feed_dict):
+        """Run auxiliary operations if `self.params['save_lf']` is True."""
+        lf_keys = [*directionalize('lf_out'),
+                   *directionalize('pxs_out'),
+                   *directionalize('masks'),
+                   *directionalize('logdets'),
+                   *directionalize('sumlogdet')]
+        lf_ops = [self.run_ops_dict[k] for k in lf_keys]
+
+        lf_outputs_ = self.sess.run(lf_ops, feed_dict=feed_dict)
+
+        lf_outputs = {
+            k: v for k, v in zip(lf_keys, lf_outputs_)
+        }
+
+        return lf_outputs
+
+    def run_step(self, step, run_steps, inputs, net_weights,
+                 hmc_warmup=False, energy_steps=1):
         """Perform a single run step.
 
         Args:
@@ -73,6 +108,10 @@ class GaugeModelRunner:
             tensorflow operations in `ops` defined below.
         """
         samples_in, beta_np, eps, plaq_exact = inputs
+
+        if hmc_warmup:
+            if step < int(0.1 * run_steps):
+                net_weights = [0., 0., 0.]
 
         keys = ['x_out', 'px', 'actions_op',
                 'plaqs_op', 'charges_op', 'charge_diffs_op']
@@ -96,6 +135,7 @@ class GaugeModelRunner:
             'step': step,
             'beta': beta_np,
             'eps': self.eps,
+            'samples_in': samples_in,
             'samples': np.mod(outputs[0], 2 * np.pi),
             'samples_orig': outputs[0],
             'px': outputs[1],
@@ -103,12 +143,16 @@ class GaugeModelRunner:
             'plaqs': outputs[3],
             'charges': outputs[4],
             'charge_diffs': outputs[5],
+            #  'energy_outputs': energy_outputs,
         }
 
-        if self.params['save_lf']:
-            lf_outputs = self.lf_step(feed_dict)
+        if (step % energy_steps) == 0:
+            energy_outputs = self.run_energy_ops(feed_dict)
+            out_data.update({'energy_outputs': energy_outputs})
 
-        out_data.update(lf_outputs)
+        #  if self.params['save_lf']:
+        #      lf_outputs = self.lf_step(feed_dict)
+        #      out_data.update(lf_outputs)
 
         data_str = (f'{step:>5g}/{run_steps:<6g} '
                     f'{dt:^9.4g} '                      # time / step
@@ -122,26 +166,11 @@ class GaugeModelRunner:
 
         return out_data, data_str
 
-    def lf_step(self, feed_dict):
-        """Run auxiliary operations if `self.params['save_lf']` is True."""
-        lf_keys = [*directionalize('lf_out'),
-                   *directionalize('pxs_out'),
-                   *directionalize('masks'),
-                   *directionalize('logdets'),
-                   *directionalize('sumlogdet')]
-        lf_ops = [self.run_ops_dict[k] for k in lf_keys]
-
-        lf_outputs_ = self.sess.run(lf_ops, feed_dict=feed_dict)
-
-        lf_outputs = {
-            k: v for k, v in zip(lf_keys, lf_outputs_)
-        }
-
-        return lf_outputs
-
     def run(self, **kwargs):
         """Run inference ot generate samples and calculate observables."""
         run_steps = int(kwargs.get('run_steps', 5000))
+        # how often to run energy ops
+        energy_steps = int(kwargs.get('energy_steps', 1))
         net_weights = kwargs.get('net_weights', [1., 1., 1.])
         therm_frac = kwargs.get('therm_frac', 10)
         beta = kwargs.get('beta', self.params.get('beta_final', 5.))
@@ -149,26 +178,29 @@ class GaugeModelRunner:
 
         has_logger = self.logger is not None
 
-        #  x_dim = self.params['x_dim']
         samples_np = kwargs.get('samples', None)
         if samples_np is None:
             x_dim = (self.params['space_size']
                      * self.params['time_size']
                      * self.params['dim'])
-            samples_np = np.random.randn(*(self.params['batch_size'], x_dim))
+            samples_np = np.random.randn(
+                *(self.params['batch_size'], x_dim)
+            )
+        hmc_warmup = kwargs.get('hmc_warmup', False)
 
         io.log(self._run_header)
         for step in range(run_steps):
             inputs = (samples_np, beta, self.eps, plaq_exact)
             out_data, data_str = self.run_step(step, run_steps,
-                                               inputs, net_weights)
+                                               inputs, net_weights,
+                                               hmc_warmup=hmc_warmup,
+                                               energy_steps=energy_steps)
             samples_np = out_data['samples']
 
             if has_logger:
                 self.logger.update(self.sess, out_data,
                                    net_weights, data_str)
 
-        #  if self._has_logger:
         if has_logger:
             self.logger._write_run_history()  # XXX
             self.logger.save_run_data(therm_frac=therm_frac)

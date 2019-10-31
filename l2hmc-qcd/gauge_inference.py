@@ -38,7 +38,7 @@ from loggers.run_logger import RunLogger
 from loggers.summary_utils import create_summaries
 from plotters.plot_utils import plot_plaq_diffs_vs_net_weights
 from plotters.leapfrog_plotters import LeapfrogPlotter
-from plotters.gauge_model_plotter import GaugeModelPlotter
+from plotters.gauge_model_plotter import GaugeModelPlotter, EnergyPlotter
 
 import numpy as np
 import tensorflow as tf
@@ -130,7 +130,7 @@ def run_hmc(FLAGS, log_file=None):
     run_inference(inference_dict, runner, run_logger, plotter)
 
 
-def inference(runner, run_logger, plotter, **kwargs):
+def inference(runner, run_logger, plotter, energy_plotter, **kwargs):
     """Perform an inference run, if it hasn't been ran previously.
 
     Args:
@@ -180,6 +180,9 @@ def inference(runner, run_logger, plotter, **kwargs):
         log_plaq_diffs(run_logger,
                        kwargs['net_weights'],
                        avg_plaq_diff)
+
+        # Plot dU, dT, and dH
+        energy_plotter.plot_energies(run_logger.energy_dict, **kwargs)
 
         if kwargs.get('plot_lf', False):
             lf_plotter = LeapfrogPlotter(plotter.out_dir, run_logger)
@@ -274,6 +277,7 @@ def main(kwargs):
     #  _ = initialize_uninitialized(sess)
     run_ops = tf.get_collection('run_ops')
     inputs = tf.get_collection('inputs')
+    #  energy_ops = tf.get_collection('energies')
 
     eps = kwargs.get('eps', None)
     if eps is not None:
@@ -294,28 +298,22 @@ def main(kwargs):
     samples_shape = (params['batch_size'], x_dim)
     init_method = kwargs.get('samples_init', 'random')
     if init_method == 'random':
-        io.log(80 * '-' + '\n\n')
-        io.log(f'Hit `random init`...')
-        io.log(80 * '-' + '\n\n')
         tmp = samples_shape[0] * samples_shape[1]
         samples_init = np.random.uniform(-1, 1, tmp).reshape(*samples_shape)
     elif 'zero' in init_method:
-        io.log(80 * '-' + '\n\n')
-        io.log(f'Hit `zeros init`...')
-        io.log(80 * '-' + '\n\n')
-        samples_init = np.zeros(samples_init)
+        samples_init = (np.zeros(samples_shape)
+                        + 1e-2 * np.random.randn(*samples_shape))
     elif 'ones' in init_method:
-        io.log(80 * '-' + '\n\n')
-        io.log(f'Hit `ones init`...')
-        io.log(80 * '-' + '\n\n')
-        samples_init = np.ones(samples_shape)
+        samples_init = (np.ones(samples_shape)
+                        + 1e-2 * np.random.randn(*samples_shape))
 
-    run_logger = RunLogger(params, inputs, run_ops,
-                           model_type='GaugeModel',
-                           save_lf_data=False)
+    run_logger = RunLogger(params, inputs, run_ops,  # energy_ops,
+                           model_type='GaugeModel', save_lf_data=True)
 
-    runner = GaugeModelRunner(sess, params, inputs, run_ops, run_logger)
+    runner = GaugeModelRunner(sess, params, inputs,
+                              run_ops, run_logger)
     plotter = GaugeModelPlotter(params, run_logger.figs_dir)
+    energy_plotter = EnergyPlotter(params, run_logger.figs_dir)
 
     inference_kwargs = {
         'run_steps': kwargs.get('run_steps', 5000),
@@ -328,6 +326,7 @@ def main(kwargs):
     runner, run_logger = inference(runner,
                                    run_logger,
                                    plotter,
+                                   energy_plotter,
                                    **inference_kwargs)
 
     # NOTE: [2.]
@@ -342,8 +341,6 @@ def main(kwargs):
     #      set_eps(sess, eps, run_ops, inputs, graph)
     #
     #  runner = GaugeModelRunner(sess, params, inputs, run_ops, run_logger)
-
-    
     #  run_inference(runner, run_logger, plotter, **inference_kwargs)
 
 
