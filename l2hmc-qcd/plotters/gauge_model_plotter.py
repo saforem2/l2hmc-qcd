@@ -49,7 +49,7 @@ def _get_title(lf_steps, eps, batch_size, beta, nw):
                      r"$\mathrm{nw} = $" + (f"{nw[0]:.3g}, "
                                             f"{nw[1]:.3g}, "
                                             f"{nw[2]:.3g}"))
-    except:
+    except ValueError:
         title_str = ''
     return title_str
 
