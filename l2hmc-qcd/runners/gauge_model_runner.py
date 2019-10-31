@@ -23,7 +23,7 @@ def directionalize(key):
 class GaugeModelRunner:
     """GaugeModelRunner object, responsible for running inference."""
 
-    def __init__(self, sess, params, inputs, run_ops, energy_ops, logger=None):
+    def __init__(self, sess, params, inputs, run_ops, logger=None):
         """Initialization method.
 
         Args:
@@ -52,7 +52,7 @@ class GaugeModelRunner:
         else:
             self.inputs_dict = RunLogger.build_inputs_dict(inputs)
             self.run_ops_dict = RunLogger.build_run_ops_dict(params, run_ops)
-            self.energy_ops_dict = RunLogger.build_energy_ops_dict(energy_ops)
+            self.energy_ops_dict = RunLogger.build_energy_ops_dict()
             self._has_logger = False
             self._run_header = ''
 
@@ -60,13 +60,35 @@ class GaugeModelRunner:
 
     def run_energy_ops(self, feed_dict):
         """Run all energy ops."""
-        keys = list(self.energy_ops_dict.keys())
-        ops = list(self.energy_ops_dict.values())
-        outputs = self.sess.run(ops, feed_dict=feed_dict)
+        keys = []
+        ops = []
+        #  keys = list(self.energy_ops_dict.keys())
+        #  ops = list(self.energy_ops_dict.values())
+        for key, val in self.energy_ops_dict.items():
+            keys.append(key)
+            ops.append(val)
 
+        outputs = self.sess.run(ops, feed_dict=feed_dict)
         energy_outputs = dict(zip(keys, outputs))
 
         return energy_outputs
+
+    def lf_step(self, feed_dict):
+        """Run auxiliary operations if `self.params['save_lf']` is True."""
+        lf_keys = [*directionalize('lf_out'),
+                   *directionalize('pxs_out'),
+                   *directionalize('masks'),
+                   *directionalize('logdets'),
+                   *directionalize('sumlogdet')]
+        lf_ops = [self.run_ops_dict[k] for k in lf_keys]
+
+        lf_outputs_ = self.sess.run(lf_ops, feed_dict=feed_dict)
+
+        lf_outputs = {
+            k: v for k, v in zip(lf_keys, lf_outputs_)
+        }
+
+        return lf_outputs
 
     def run_step(self, step, run_steps, inputs, net_weights,
                  hmc_warmup=False, energy_steps=1):
@@ -113,6 +135,7 @@ class GaugeModelRunner:
             'step': step,
             'beta': beta_np,
             'eps': self.eps,
+            'samples_in': samples_in,
             'samples': np.mod(outputs[0], 2 * np.pi),
             'samples_orig': outputs[0],
             'px': outputs[1],
@@ -127,9 +150,9 @@ class GaugeModelRunner:
             energy_outputs = self.run_energy_ops(feed_dict)
             out_data.update({'energy_outputs': energy_outputs})
 
-        if self.params['save_lf']:
-            lf_outputs = self.lf_step(feed_dict)
-            out_data.update(lf_outputs)
+        #  if self.params['save_lf']:
+        #      lf_outputs = self.lf_step(feed_dict)
+        #      out_data.update(lf_outputs)
 
         data_str = (f'{step:>5g}/{run_steps:<6g} '
                     f'{dt:^9.4g} '                      # time / step
@@ -142,23 +165,6 @@ class GaugeModelRunner:
                     f'{outputs[5]:^9.4g} ')             # top. charge diff
 
         return out_data, data_str
-
-    def lf_step(self, feed_dict):
-        """Run auxiliary operations if `self.params['save_lf']` is True."""
-        lf_keys = [*directionalize('lf_out'),
-                   *directionalize('pxs_out'),
-                   *directionalize('masks'),
-                   *directionalize('logdets'),
-                   *directionalize('sumlogdet')]
-        lf_ops = [self.run_ops_dict[k] for k in lf_keys]
-
-        lf_outputs_ = self.sess.run(lf_ops, feed_dict=feed_dict)
-
-        lf_outputs = {
-            k: v for k, v in zip(lf_keys, lf_outputs_)
-        }
-
-        return lf_outputs
 
     def run(self, **kwargs):
         """Run inference ot generate samples and calculate observables."""

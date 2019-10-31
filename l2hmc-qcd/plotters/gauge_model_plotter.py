@@ -24,6 +24,11 @@ if HAS_MATPLOTLIB:
     import matplotlib.pyplot as plt
     mpl.rcParams.update(MPL_PARAMS)
 
+
+__all__ = ['EnergyPlotter', 'GaugeModelPlotter',
+           'arr_from_dict', 'get_out_file']
+
+
 BootstrapData = namedtuple('BootstrapData', ['mean', 'err', 'means_bs'])
 
 def arr_from_dict(d, key):
@@ -31,18 +36,21 @@ def arr_from_dict(d, key):
 
 
 def get_out_file(out_dir, out_str):
-    return os.path.join(out_dir, out_str + '.pdf')
+    return os.path.join(out_dir, out_str + '.png')
 
 
 def _get_title(lf_steps, eps, batch_size, beta, nw):
     """Parse vaious parameters to make figure title when creating plots."""
-    title_str = (r"$N_{\mathrm{LF}} = $" + f"{lf_steps}, "
-                 r"$\varepsilon = $" + f"{eps:.3g}, "
-                 r"$N_{\mathrm{B}} = $" + f"{batch_size}, "
-                 r"$\beta =$" + f"{beta:.2g}, "
-                 r"$\mathrm{nw} = $" + (f"{nw[0]:.3g}, "
-                                        f"{nw[1]:.3g}, "
-                                        f"{nw[2]:.3g}"))
+    try:
+        title_str = (r"$N_{\mathrm{LF}} = $" + f"{lf_steps}, "
+                     r"$\varepsilon = $" + f"{eps:.3g}, "
+                     r"$N_{\mathrm{B}} = $" + f"{batch_size}, "
+                     r"$\beta =$" + f"{beta:.2g}, "
+                     r"$\mathrm{nw} = $" + (f"{nw[0]:.3g}, "
+                                            f"{nw[1]:.3g}, "
+                                            f"{nw[2]:.3g}"))
+    except:
+        title_str = ''
     return title_str
 
 
@@ -69,7 +77,7 @@ class EnergyPlotter:
     def _plot_setup(self, **kwargs):
         """Prepare for making plots."""
         beta = kwargs.get('beta', 5.)
-        run_str = kwargs.get('run_str', None)
+        run_str = kwargs.get('run_str', '')
         net_weights = kwargs.get('net_weights', [1., 1., 1.])
         eps = kwargs.get('eps', None)
 
@@ -139,11 +147,22 @@ class EnergyPlotter:
         labels = [r"""$\delta U_{\mathrm{out}}$,""",
                   r"""$\delta U_{\mathrm{proposed}}$,"""]
 
-        data = [np.array(energy_data['pe_out_diff']),
-                np.array(energy_data['pe_proposed_diff'])]
+        try:
+            pe_out_diff = energy_data['potential_out_diff']
+            pe_proposed_diff = energy_data['potential_proposed_diff']
+        except KeyError:
+            pe_out_diff = energy_data['potential']['out_diff']
+            pe_proposed_diff = energy_data['potential']['proposed_diff']
 
-        plt_file = os.path.join(out_dir, 'potential_diffs.pdf')
-        hist_file = os.path.join(out_dir, 'potential_diffs_hist.pdf')
+        if not isinstance(pe_out_diff, np.ndarray):
+            pe_out_diff = np.array(pe_out_diff)
+        if not isinstance(pe_proposed_diff, np.ndarray):
+            pe_proposed_diff = np.array(pe_proposed_diff)
+
+        data = [pe_out_diff, pe_proposed_diff]
+
+        plt_file = os.path.join(out_dir, 'potential_diffs.png')
+        hist_file = os.path.join(out_dir, 'potential_diffs_hist.png')
 
         _, _ = self._plot(labels, data, title=title, out_file=plt_file)
         _, _ = self._hist(labels, data, title=title, out_file=hist_file)
@@ -152,12 +171,12 @@ class EnergyPlotter:
                   r"""$U_{\mathrm{proposed}}$, """,
                   r"""$U_{\mathrm{out}}$, """]
 
-        data = [np.array(energy_data['pe_init']),
-                np.array(energy_data['pe_proposed']),
-                np.array(energy_data['pe_out'])]
+        data = [np.array(energy_data['potential_init']),
+                np.array(energy_data['potential_proposed']),
+                np.array(energy_data['potential_out'])]
 
-        plt_file = os.path.join(out_dir, 'potentials.pdf')
-        hist_file = os.path.join(out_dir, 'potential_hist.pdf')
+        plt_file = os.path.join(out_dir, 'potentials.png')
+        hist_file = os.path.join(out_dir, 'potential_hist.png')
 
         _, _ = self._plot(labels, data, title=title, out_file=plt_file)
         _, _ = self._hist(labels, data, title=title, out_file=hist_file)
@@ -166,11 +185,11 @@ class EnergyPlotter:
         ke_labels = [r"""$\delta KE_{\mathrm{out}}$,""",
                      r"""$\delta KE_{\mathrm{proposed}}$,"""]
 
-        ke_data = [np.array(energy_data['ke_out_diff']),
-                   np.array(energy_data['ke_proposed_diff'])]
+        ke_data = [np.array(energy_data['kinetic_out_diff']),
+                   np.array(energy_data['kinetic_proposed_diff'])]
 
-        ke_f = os.path.join(out_dir, 'kinetic_diffs.pdf')
-        keh_f = os.path.join(out_dir, 'kinetic_diffs_hist.pdf')
+        ke_f = os.path.join(out_dir, 'kinetic_diffs.png')
+        keh_f = os.path.join(out_dir, 'kinetic_diffs_hist.png')
 
         _, _ = self._plot(ke_labels, ke_data, title=title, out_file=ke_f)
         _, _ = self._hist(ke_labels, ke_data, title=title, out_file=keh_f)
@@ -179,12 +198,12 @@ class EnergyPlotter:
                   r"""$KE_{\mathrm{proposed}}$, """,
                   r"""$KE_{\mathrm{out}}$, """]
 
-        data = [np.array(energy_data['ke_init']),
-                np.array(energy_data['ke_proposed']),
-                np.array(energy_data['ke_out'])]
+        data = [np.array(energy_data['kinetic_init']),
+                np.array(energy_data['kinetic_proposed']),
+                np.array(energy_data['kinetic_out'])]
 
-        plt_file = os.path.join(out_dir, 'kinetics.pdf')
-        hist_file = os.path.join(out_dir, 'kinetic_hist.pdf')
+        plt_file = os.path.join(out_dir, 'kinetics.png')
+        hist_file = os.path.join(out_dir, 'kinetic_hist.png')
 
         _, _ = self._plot(labels, data, title=title, out_file=plt_file)
         _, _ = self._hist(labels, data, title=title, out_file=hist_file)
@@ -193,11 +212,11 @@ class EnergyPlotter:
         h_labels = [r"""$\delta H_{\mathrm{out}}$,""",
                     r"""$\delta H_{\mathrm{proposed}}$,"""]
 
-        h_data = [np.array(energy_data['h_out_diff']),
-                  np.array(energy_data['h_proposed_diff'])]
+        h_data = [np.array(energy_data['hamiltonian_out_diff']),
+                  np.array(energy_data['hamiltonian_proposed_diff'])]
 
-        h_f = os.path.join(out_dir, 'hamiltonian_diffs.pdf')
-        hh_f = os.path.join(out_dir, 'hamiltonian_diffs_hist.pdf')
+        h_f = os.path.join(out_dir, 'hamiltonian_diffs.png')
+        hh_f = os.path.join(out_dir, 'hamiltonian_diffs_hist.png')
 
         _, _ = self._plot(h_labels, h_data, title=title, out_file=h_f)
         _, _ = self._hist(h_labels, h_data, title=title, out_file=hh_f)
@@ -206,12 +225,12 @@ class EnergyPlotter:
                   r"""$H_{\mathrm{proposed}}$, """,
                   r"""$H_{\mathrm{out}}$, """]
 
-        data = [np.array(energy_data['h_init']),
-                np.array(energy_data['h_proposed']),
-                np.array(energy_data['h_out'])]
+        data = [np.array(energy_data['hamiltonian_init']),
+                np.array(energy_data['hamiltonian_proposed']),
+                np.array(energy_data['hamiltonian_out'])]
 
-        plt_file = os.path.join(out_dir, 'hamiltonians.pdf')
-        hist_file = os.path.join(out_dir, 'hamiltonian_hist.pdf')
+        plt_file = os.path.join(out_dir, 'hamiltonians.png')
+        hist_file = os.path.join(out_dir, 'hamiltonian_hist.png')
 
         _, _ = self._plot(labels, data, title=title, out_file=plt_file)
         _, _ = self._hist(labels, data, title=title, out_file=hist_file)
@@ -422,19 +441,12 @@ class GaugeModelPlotter:
         }
 
         ax0.plot(x, y, **plt_kwargs)
-        ax0.errorbar(x, y, yerr=yerr,
-                     #  ls='-', lw=1.,
-                     alpha=0.7,
-                     color='k',
-                     ecolor='gray')
+        ax0.errorbar(x, y, yerr=yerr, alpha=0.7, color='k', ecolor='gray')
 
         if ax1 is not None:
-            ax1.plot(x[x0:x1:10], y[x0:x1:10], **plt_kwargs)
-            ax1.errorbar(x[x0:x1:10], y[x0:x1:10], yerr=yerr[x0:x1:10],
-                         #  ls='-', lw=1.,
-                         alpha=0.7,
-                         color='k',
-                         ecolor='gray')
+            ax1.plot(x[x0:x1], y[x0:x1], **plt_kwargs)
+            ax1.errorbar(x[x0:x1], y[x0:x1], yerr=yerr[x0:x1],
+                         alpha=0.7, color='k', ecolor='gray')
 
         ax1.set_xlabel(xlabel, fontsize=14)
         ax0.set_ylabel(ylabel, fontsize=14)

@@ -60,13 +60,16 @@ class GenericNet(tf.keras.Model):
 
             self.x_layer = custom_dense(self.num_hidden1,
                                         self.factor/3.,
-                                        name='x_layer')
+                                        name='x_layer',
+                                        input_shape=(self.x_dim,))
             self.v_layer = custom_dense(self.num_hidden1,
                                         1./3.,
-                                        name='v_layer')
+                                        name='v_layer',
+                                        input_shape=(self.x_dim,))
             self.t_layer = custom_dense(self.num_hidden1,
                                         1./3.,
-                                        name='t_layer')
+                                        name='t_layer',
+                                        input_shape=(self.x_dim,))
 
             self.h_layer = custom_dense(self.num_hidden2,
                                         name='hidden_layer')

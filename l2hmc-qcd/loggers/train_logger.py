@@ -43,35 +43,6 @@ ObsData = namedtuple('ObsData', [
 l2hmcFn = namedtuple('l2hmcFn', ['v1', 'x1', 'x2', 'v2'])
 l2hmcFns = namedtuple('l2hmcFns', ['scale', 'translation', 'transformation'])
 
-'''
-#  self._current_state = {
-#      'step': 0,
-#      'beta': self.model.beta_init,
-#      'eps': self.model.eps,
-#      'lr': self.model.lr_init,
-#      'samples': self.model.samples_init,
-#  }
-#  self.train_data = {
-#      'loss': {},
-#      'actions': {},
-#      'plaqs': {},
-#      'charges': {},
-#      'charge_diffs': {},
-#      'px': {}
-#  }
-
-if self.model.save_lf:
-    self.l2hmc_fns = {
-        'forward': {},
-        'backward': {},
-    }
-
-    #  self.train_data['l2hmc_fns'] = {
-    #      'forward': [],
-    #      'backward': [],
-    #  }
-'''
-
 
 class TrainLogger:
     def __init__(self, model, log_dir, logging_steps=10, summaries=False):
