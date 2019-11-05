@@ -66,7 +66,6 @@ class BaseModel:
             params (dict): Dictionary of key, value pairs used for specifying
                 model parameters.
         """
-
         if 'charge_weight' in params:
             self.charge_weight_np = params.pop('charge_weight', None)
 
@@ -114,60 +113,6 @@ class BaseModel:
         #  self._energy_data = energy_data
 
         _, z_data = self._build_aux_sampler()
-
-        return x_data, z_data
-
-    def _build_sampler_old(self):
-        """Build operations used for 'sampling' from the dynamics engine."""
-        args = (self.beta, self.net_weights, self.train_phase)
-        kwargs = {
-            #  'save_lf': getattr(self, 'save_lf', None),
-            'hmc': getattr(self, 'use_nnehmc_loss', None),
-            'model_type': getattr(self, 'model_type', None)
-        }
-
-        # NOTE if not `self.use_nnehmc_loss`:
-        #   `self.px_hmc = tf.zeros_like(self.px)`
-        x_dynamics, x_data = self._build_main_sampler(*args, **kwargs)
-        self.x_out = x_dynamics['outputs_fb']['x_out']
-        self.px = x_dynamics['outputs_fb']['accept_prob']
-        self.px_hmc = x_dynamics['outputs_fb']['accept_prob_hmc']
-
-        self._dynamics_fb = x_dynamics['outputs_fb']
-        #  self._dynamics_f = x_dynamics['outputs_f']
-        #  self._dynamics_b = x_dynamics['outputs_b']
-
-        #  self.x_out = x_fb['x_out']
-        #  self.px = x_fb['accept_prob']
-        #  self.px_hmc = x_fb['accept_prob_hmc']
-        #  self._parse_dynamics_output(x_dynamics)
-
-        # Check reversibility by testing that `backward(forward(x)) == x`
-        self.x_diff, self.v_diff = self._check_reversibility()
-
-        # Calculate kinetic energy, potential energy, 
-        # and the Hamiltonian at beginning and end of 
-        # trajectory (both before and after accept/reject)
-        energies = self._calc_energies(x_dynamics)
-        self._energy_data = {
-            'potential': energies['potential'],
-            'kinetic': energies['kinetic'],
-            'hamiltonian': energies['hamiltonian']
-        }
-
-        _, z_data = self._build_aux_sampler(*args, **kwargs)
-
-        #  x_output = SamplerData(x_data, x_fb)
-
-        # If not running generic HMC, build (aux) sampler 
-        # that draws from initialization distribution. 
-        #  hmc = getattr(self, 'hmc', False)
-        #  if aux_weight > 0. and not hmc:
-        #      kwargs['save_lf'] = False
-        #      _, z_data = self._build_aux_sampler(*args, **kwargs)
-        #      z_output = SamplerData(z_data, z_dynamics)
-        #
-        #      return x_data, z_data
 
         return x_data, z_data
 
@@ -234,6 +179,7 @@ class BaseModel:
             kwargs.update(params)
 
             dynamics = Dynamics(potential_fn=potential_fn, **kwargs)
+
         tf.add_to_collection('dynamics_eps', dynamics.eps)
 
         return dynamics
