@@ -178,9 +178,9 @@ def _create_pair_summaries(grad, var):
 
 def _create_obs_summaries(model):
     """Create summary objects for physical observables."""
-    with tf.name_scope('avg_charge_diffs'):
-        tf.summary.scalar('avg_charge_diffs',
-                          tf.reduce_mean(model.charge_diffs))
+    #  with tf.name_scope('avg_charge_diffs'):
+    #      tf.summary.scalar('avg_charge_diffs',
+    #                        tf.reduce_mean(model.charge_diffs))
 
     with tf.name_scope('avg_plaq'):
         tf.summary.scalar('avg_plaq', model.avg_plaqs)

@@ -52,9 +52,15 @@ def _rename(src, dst):
     os.rename(src, dst)
 
 
+def _get_eps():
+    run_ops = tf.get_collection('run_ops')
+    eps = [i for i in run_ops if 'eps' in i.name][0]
+    return eps
+
+
+
 class RunLogger:
-    def __init__(self, params, inputs, run_ops,
-                 model_type=None, save_lf_data=True):
+    def __init__(self, params, model_type=None, save_lf_data=True):
         """Initialization method.
         Args:
             model: GaugeModel object.
@@ -72,9 +78,9 @@ class RunLogger:
             )
         elif model_type == 'GaugeModel':
             self.model_type = model_type
-            h_strf = ("{:^12s}" + 8 * "{:^10s}").format(
+            h_strf = ("{:^12s}" + 7 * "{:^10s}").format(
                 "STEP", "t/STEP", "% ACC", "EPS", "BETA",
-                "ACTIONS", "PLAQS", "(EXACT)", "dQ"
+                "ACTIONS", "PLAQS", "(EXACT)",  # "dQ"
             )
 
         dash = (len(h_strf) + 1) * '-'
@@ -103,32 +109,47 @@ class RunLogger:
         if self.save_lf_data:
             self.samples_arr = []
 
-        if params['save_lf']:
-            self.samples_arr = []
-            self.px_arr = []
-            self.lf_out = FB_DICT.copy()
-            self.pxs_out = FB_DICT.copy()
-            self.masks = FB_DICT.copy()
-            #  self.logdets = FB_DICT.copy()
-            self.sumlogdet = FB_DICT.copy()
-            #  self.l2hmc_fns = FB_DICT.copy()
-
-        self.run_ops_dict = self.build_run_ops_dict(params, run_ops,
-                                                    self.model_type)
-        self.inputs_dict = self.build_inputs_dict(inputs)
+        self.run_ops_dict = self.build_run_ops_dict()
+        self.inputs_dict = self.build_inputs_dict()
         self.energy_ops_dict = self.build_energy_ops_dict()
         self.energy_dict = {k: [] for k in self.energy_ops_dict.keys()}
+        if self.model_type == 'GaugeModel':
+            self.obs_ops_dict = self.build_obs_ops_dict()
+            self.obs_dict = {k: [] for k in self.obs_ops_dict.keys()}
 
         if self.summaries:
-            #  self.run_summaries_dir = os.path.join(self.log_dir,
-            #                                        'summaries', 'run')
-            #  io.check_else_make_dir(self.run_summaries_dir)
             self.writer = tf.summary.FileWriter(self.run_summaries_dir,
                                                 tf.get_default_graph())
             self.create_summaries()
 
     @staticmethod
-    def build_run_ops_dict(params, run_ops, model_type):
+    def build_run_ops_dict():
+        """Build dictionary of tensorflow operations used for inference."""
+        keys = ['x_out', 'accept_prob']
+        ops = tf.get_collection('dynamics_out')
+
+        run_ops_dict = dict(zip(keys, ops))
+
+        eps = _get_eps()
+        run_ops_dict.update({'dynamics_eps': eps})
+        #  dynamics_eps = tf.get_collection('dynamics_eps')
+        #  run_ops_dict.update({'dynamics_eps': dynamics_eps})
+
+        return run_ops_dict
+
+    @staticmethod
+    def build_obs_ops_dict():
+        """Build dictionary of tensorflow ops for calculating observables."""
+        keys = ['plaq_sums', 'actions', 'plaqs',
+                'charges', 'avg_plaqs', 'avg_actions']
+        ops = tf.get_collection('observables')
+
+        obs_ops_dict = dict(zip(keys, ops))
+
+        return obs_ops_dict
+
+    @staticmethod
+    def build_run_ops_dict_old(params, run_ops, model_type):
         """Build dictionary of tensorflow operations used for inference."""
         def get_lf_keys(direction):
             base_keys = ['lf_out', 'pxs_out', 'masks',
@@ -156,16 +177,20 @@ class RunLogger:
         return run_ops_dict
 
     @staticmethod
-    def build_inputs_dict(inputs):
+    def build_inputs_dict():
         """Build dictionary of tensorflow placeholders used as inputs."""
-        inputs_dict = {
-            'x': inputs[0],
-            'beta': inputs[1],
-            'net_weights': [inputs[2], inputs[3], inputs[4]],
-            'train_phase': inputs[5],
-            'eps_ph': inputs[6]
-        }
-
+        keys = ['x', 'beta', 'scale_weight',
+                'transl_weight', 'transf_weight',
+                'train_phase', 'eps_ph']
+        inputs = tf.get_collection('inputs')
+        inputs_dict = dict(zip(keys, inputs))
+        #  inputs_dict = {
+        #      'x': inputs[0],
+        #      'beta': inputs[1],
+        #      'net_weights': [inputs[2], inputs[3], inputs[4]],
+        #      'train_phase': inputs[5],
+        #      'eps_ph': inputs[6]
+        #  }
         return inputs_dict
 
     @staticmethod
@@ -190,12 +215,6 @@ class RunLogger:
         energy_ops_dict.update(ke_dict)
         energy_ops_dict.update(h_dict)
 
-        #  type_strs = ['potential', 'kinetic', 'hamiltonian']
-        #  attr_strs = ['init', 'proposed', 'out', 'proposed_diff', 'out_diff']
-        #  energy_strings = [f'{t}_{a}' for t in type_strs for a in attr_strs]
-        #
-        #  energy_ops_dict = dict(zip(energy_strings, energy_ops))
-
         return energy_ops_dict
 
     def create_summaries(self):
@@ -210,14 +229,14 @@ class RunLogger:
         ]
         self.summary_op = tf.summary.merge(run_summaries)
 
-    def log_step(self, sess, step, samples_np, beta_np, net_weights):
+    def log_step(self, sess, step, samples, beta, net_weights):
         """Update self.logger.summaries."""
         feed_dict = {
-            self.inputs_dict['x']: samples_np,
-            self.inputs_dict['beta']: beta_np,
-            self.inputs_dict['net_weights'][0]: net_weights[0],
-            self.inputs_dict['net_weights'][1]: net_weights[1],
-            self.inputs_dict['net_weights'][2]: net_weights[2],
+            self.inputs_dict['x']: samples,
+            self.inputs_dict['beta']: beta,
+            self.inputs_dict['scale_weight']: net_weights[0],
+            self.inputs_dict['transl_weight']: net_weights[1],
+            self.inputs_dict['transf_weight']: net_weights[2],
             self.inputs_dict['train_phase']: False
         }
         summary_str = sess.run(self.summary_op, feed_dict=feed_dict)
@@ -325,7 +344,6 @@ class RunLogger:
         self.beta = beta
 
         self.run_data = {
-            'px': {},
             #  'energy_outputs': {}
         }
         self.energy_dict = {}
@@ -334,31 +352,29 @@ class RunLogger:
 
         if self.save_lf_data:
             self.samples_arr = []
-        #  for key in self.energy_ops_dict.keys():
-        #      self.energy_dict[key] = []
 
         self.run_stats = {}
         self.run_strings = []
 
-        if self.model_type == 'GaugeModel':
-            obs_data = {
-                'actions': {},
-                'plaqs': {},
-                'charges': {},
-                'charge_diffs': {},
-            }
-            self.run_data.update(obs_data.items())
+        #  if self.model_type == 'GaugeModel':
+        #      obs_data = {
+        #          'actions': {},
+        #          'plaqs': {},
+        #          'charges': {},
+        #          'charge_diffs': {},
+        #      }
+        #      self.run_data.update(obs_data.items())
 
         #  if self.model.save_lf:
-        if self.params['save_lf']:
-            self.px_arr = []
-            self.samples_arr = []
-            self.lf_out = FB_DICT.copy()
-            self.pxs_out = FB_DICT.copy()
-            self.masks = FB_DICT.copy()
-            self.logdets = FB_DICT.copy()
-            self.sumlogdet = FB_DICT.copy()
-            self.l2hmc_fns = FB_DICT.copy()
+        #  if self.params['save_lf']:
+        #      self.px_arr = []
+        #      self.samples_arr = []
+        #      self.lf_out = FB_DICT.copy()
+        #      self.pxs_out = FB_DICT.copy()
+        #      self.masks = FB_DICT.copy()
+        #      self.logdets = FB_DICT.copy()
+        #      self.sumlogdet = FB_DICT.copy()
+        #      self.l2hmc_fns = FB_DICT.copy()
 
         #  params = self.model.params
         self.params['net_weights'] = net_weights
@@ -398,7 +414,7 @@ class RunLogger:
                                                 run_str)
             io.check_else_make_dir(self.run_summary_dir)
 
-    def update(self, sess, data, net_weights, data_str):
+    def update(self, sess, data, data_str, net_weights):
         """Update run_data and append data_str to data_strings."""
         # projection of samples onto [0, 2pi) done in run_step above
         step = data['step']
@@ -408,30 +424,18 @@ class RunLogger:
             if self.save_lf_data:
                 self.samples_arr.append(data['samples_in'])
 
-        if self.model_type == 'GaugeModel':
-            obs_keys = ['px', 'actions', 'plaqs', 'charges', 'charge_diffs']
-            for k in obs_keys:
-                self.run_data[k][key] = data[k]
-
-        for key, val in data['energy_outputs'].items():
-            #  e_dict = val._asdict()
-            #  for k, v in e_dict.items():
+        energies = data.pop('energies')
+        for key, val in energies.items():
             self.energy_dict[key].append(val)
+
+        for key, val in data.items():
+            try:
+                self.run_data[key].append(val)
+            except KeyError:
+                self.run_data[key] = [val]
 
         if self.save_lf_data:
             self.samples_arr.append(data['samples'])
-
-        #  if self.params['save_lf']:
-            #  px_np = data['px']
-            #  self.px_arr.append(px_np)
-            #  samples_np = data['samples']
-            #  self.samples_arr.append(samples_np)
-            #  self.lf_out['forward'].extend(np.array(data['lf_out_f']))
-            #  self.lf_out['backward'].extend(np.array(data['lf_out_b']))
-            #  self.logdets['forward'].extend(np.array(data['logdets_f']))
-            #  self.logdets['backward'].extend(np.array(data['logdets_b']))
-            #  self.sumlogdet['forward'].append(np.array(data['sumlogdet_f']))
-            #  self.sumlogdet['backward'].append(np.array(data['sumlogdet_b']))
 
         self.run_strings.append(data_str)
 
@@ -445,6 +449,33 @@ class RunLogger:
 
         if step % 100 == 0:
             io.log(self.run_header)
+
+        #  if self.model_type == 'GaugeModel':
+        #      obs_keys = ['px', 'actions', 'plaqs', 'charges', 'charge_diffs']
+        #      for k in obs_keys:
+        #          self.run_data[k][key] = data[k]
+
+        #  for key, val in data['energies'].items():
+        #      for k, v in val._asdict().items():
+        #          try:
+        #              self.energy_data[key][k].append(v)
+        #          except KeyError:
+        #              self.energy_data[key][k] = [v]
+        #
+        #      self.energy_dict[key].append(val)
+
+        #  if self.params['save_lf']:
+            #  px_np = data['px']
+            #  self.px_arr.append(px_np)
+            #  samples_np = data['samples']
+            #  self.samples_arr.append(samples_np)
+            #  self.lf_out['forward'].extend(np.array(data['lf_out_f']))
+            #  self.lf_out['backward'].extend(np.array(data['lf_out_b']))
+            #  self.logdets['forward'].extend(np.array(data['logdets_f']))
+            #  self.logdets['backward'].extend(np.array(data['logdets_b']))
+            #  self.sumlogdet['forward'].append(np.array(data['sumlogdet_f']))
+            #  self.sumlogdet['backward'].append(np.array(data['sumlogdet_b']))
+
 
     def calc_observables_stats(self, run_data, therm_frac=10):
         """Calculate statistics for lattice observables.
@@ -476,7 +507,8 @@ class RunLogger:
         actions_stats = get_stats(run_data['actions'], therm_frac)
         plaqs_stats = get_stats(run_data['plaqs'], therm_frac)
 
-        charges_arr = np.array(list(run_data['charges'].values()), dtype=int)
+        charges_arr = np.array(run_data['charges'], dtype=int)
+        #  charges_arr = np.array(list(run_data['charges'].values()), dtype=int)
         charges_stats = get_stats(charges_arr, therm_frac)
 
         suscept_arr = charges_arr ** 2
@@ -548,9 +580,11 @@ class RunLogger:
             io.save_data(val, out_file, name=key)
 
         if self.model_type == 'GaugeModel':
-            run_stats = self.calc_observables_stats(self.run_data, therm_frac)
+            run_stats = self.calc_observables_stats(self.run_data,
+                                                    therm_frac)
             charges = self.run_data['charges']
-            charges_arr = np.array(list(charges.values()))
+            charges_arr = np.array(charges)
+            #  charges_arr = np.array(list(charges.values()))
             charges_arrT = charges_arr.T
             charges_autocorrs = [autocorr(x) for x in charges_arrT]
             charges_autocorrs = [x / np.max(x) for x in charges_autocorrs]

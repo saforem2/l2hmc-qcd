@@ -32,8 +32,8 @@ GLOBAL_SEED = cfg.GLOBAL_SEED
 #   module-wide objects
 # -----------------------
 State = namedtuple('State', ['x', 'v', 'beta'])
-EnergyData = namedtuple('EnergyData', ['init', 'proposed', 'out',
-                                       'proposed_diff', 'out_diff'])
+EnergyData = namedtuple('EnergyData', ['init', 'proposed', 'out'])
+                                       #  'proposed_diff', 'out_diff'])
 
 
 def exp(x, name=None):
@@ -286,34 +286,16 @@ class Dynamics(tf.keras.Model):
 
             sumlogdet_out = sumlogdet_proposed * mask_a
 
-            outputs_f.update({
-                'x_out': xf * mask_a[:, None] + x_reject,
-                'v_out': vf * mask_a[:, None] + v_init_f * mask_r[:, None],
-                'sumlogdet_out': sumlogdetf * mask_a
-            })
-            outputs_b.update({
-                'x_out': xb * mask_a[:, None] + x_reject,
-                'v_out': vb * mask_a[:, None] + v_init_b * mask_r[:, None],
-                'sumlogdet_out': sumlogdetf * mask_a
-            })
-
         with tf.name_scope('calc_energies'):
             with tf.name_scope('potential'):
                 with tf.name_scope('init'):
                     pe_init = self.potential_energy(x_init, beta)
                 with tf.name_scope('proposed'):
-                    #  pe_proposed = self.potential_energy(x_proposed, beta)
                     pe_proposed = self.potential_energy(x_proposed, beta)
                 with tf.name_scope('out'):
-                    #  pe_out = self.potential_energy(x_out, beta)
                     pe_out = self.potential_energy(x_out, beta)
-                with tf.name_scope('proposed_diff'):
-                    pe_proposed_diff = pe_proposed - pe_init
-                with tf.name_scope('out_diff'):
-                    pe_out_diff = pe_out - pe_init
 
-            pe_data = EnergyData(pe_init, pe_proposed, pe_out,
-                                 pe_proposed_diff, pe_out_diff)
+            pe_data = EnergyData(pe_init, pe_proposed, pe_out)
             _add_to_collection('potential_energy', pe_data)
 
             with tf.name_scope('kinetic'):
@@ -323,31 +305,20 @@ class Dynamics(tf.keras.Model):
                     ke_proposed = self.kinetic_energy(v_proposed)
                 with tf.name_scope('out'):
                     ke_out = self.kinetic_energy(v_out)
-                with tf.name_scope('proposed_diff'):
-                    ke_proposed_diff = ke_proposed - ke_init
-                with tf.name_scope('out_diff'):
-                    ke_out_diff = ke_out - ke_init
 
-            ke_data = EnergyData(ke_init, ke_proposed, ke_out,
-                                 ke_proposed_diff, ke_out_diff)
+            ke_data = EnergyData(ke_init, ke_proposed, ke_out)
             _add_to_collection('kinetic_energy', ke_data)
-            #  _ = [tf.add_to_collection('kinetic_energy', e) for e in ke_data]
 
             with tf.name_scope('hamiltonian'):
                 with tf.name_scope('init'):
                     h_init = pe_init + ke_init
                 with tf.name_scope('proposed'):
-                    h_proposed = pe_proposed + ke_proposed
+                    h_proposed = pe_proposed + ke_proposed + sumlogdet_proposed
                 with tf.name_scope('out'):
-                    h_out = pe_out + ke_out
-                with tf.name_scope('proposed_diff'):
-                    h_proposed_diff = h_proposed - h_init - sumlogdet_proposed
-                with tf.name_scope('out_diff'):
-                    h_out_diff = h_out - h_init - sumlogdet_out
+                    h_out = pe_out + ke_out + sumlogdet_out
 
-            h_data = EnergyData(h_init, h_proposed, h_out,
-                                h_proposed_diff, h_out_diff)
-            _ = [tf.add_to_collection('hamiltonian', e) for e in h_data]
+            h_data = EnergyData(h_init, h_proposed, h_out)
+            _add_to_collection('hamiltonian', h_data)
 
             energies = {
                 'potential': pe_data,
@@ -372,31 +343,13 @@ class Dynamics(tf.keras.Model):
             'mask_r': mask_r,  # reject mask
             #  'sumlogdet': sumlogdet,
         }
-
-        #  if save_lf:
-        #      lf_dict = {}  # holds additional data if `save_lf=True`
-        #      lf_dict['pxs_out_f'] = pxf
-        #      lf_dict['pxs_out_b'] = pxb
-        #      lf_dict['masks_f'] = mask_f
-        #      lf_dict['masks_b'] = mask_b
-        #
-        #      def get_lf_keys(direction):
-        #          base_keys = ['lf_out', 'logdets', 'sumlogdet', 'fns_out']
-        #          new_keys = [k + f'_{direction}' for k in base_keys]
-        #          return list(zip(new_keys, base_keys))
-        #
-        #      keys_f = get_lf_keys('f')
-        #      keys_b = get_lf_keys('b')
-        #
-        #      lf_dict.update({k[0]: outputs_f[k[1]] for k in keys_f})
-        #      lf_dict.update({k[0]: outputs_b[k[1]] for k in keys_b})
-        #
-        #      md_outputs.update(lf_dict)
+        _outputs = [x_out, accept_prob, mask_a]
+        _ = [tf.add_to_collection('dynamics_out', i) for i in _outputs]
 
         outputs = {
             'outputs_fb': outputs_fb,
-            'outputs_f': outputs_f,
-            'outputs_b': outputs_b,
+            #  'outputs_f': outputs_f,
+            #  'outputs_b': outputs_b,
             'energies': energies,
         }
 
@@ -439,17 +392,14 @@ class Dynamics(tf.keras.Model):
         ke_out_diff = ke_out - ke_init
         h_out_diff = h_out - h_init
 
-        pe_data = EnergyData(pe_init, pe_proposed, pe_out,
-                             pe_proposed_diff, pe_out_diff)
+        pe_data = EnergyData(pe_init, pe_proposed, pe_out)
 
         _ = [tf.add_to_collection('energies', e) for e in pe_data]
 
-        ke_data = EnergyData(ke_init, ke_proposed, ke_out,
-                             ke_proposed_diff, ke_out_diff)
+        ke_data = EnergyData(ke_init, ke_proposed, ke_out)
         _ = [tf.add_to_collection('energies', e) for e in ke_data]
 
-        h_data = EnergyData(h_init, h_proposed, h_out,
-                            h_proposed_diff, h_out_diff)
+        h_data = EnergyData(h_init, h_proposed, h_out)
         _ = [tf.add_to_collection('energies', e) for e in h_data]
 
         outputs = {
