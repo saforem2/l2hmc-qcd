@@ -125,11 +125,16 @@ class RunLogger:
     @staticmethod
     def build_run_ops_dict():
         """Build dictionary of tensorflow operations used for inference."""
-        keys = ['x_out', 'accept_prob']
+        keys = ['x_init', 'v_init',
+                'x_proposed', 'v_proposed',
+                'x_out', 'v_out',
+                'accept_prob', 'accept_prob_hmc',
+                'sumlogdet_proposed', 'sumlogdet_out',
+                'mask_f', 'mask_b', 'mask_a', 'mask_r']
+        #  keys = ['x_out', 'accept_prob', 'mask_a']
         ops = tf.get_collection('dynamics_out')
 
         run_ops_dict = dict(zip(keys, ops))
-
         eps = _get_eps()
         run_ops_dict.update({'dynamics_eps': eps})
         #  dynamics_eps = tf.get_collection('dynamics_eps')
@@ -196,7 +201,7 @@ class RunLogger:
     @staticmethod
     def build_energy_ops_dict():
         """Build dictionary of energy operations to calculate."""
-        strs = ['init', 'proposed', 'out', 'proposed_diff', 'out_diff']
+        strs = ['init', 'proposed', 'out']
         energy_ops_dict = {}
 
         pe_collection = tf.get_collection('potential_energy')
@@ -475,7 +480,6 @@ class RunLogger:
             #  self.logdets['backward'].extend(np.array(data['logdets_b']))
             #  self.sumlogdet['forward'].append(np.array(data['sumlogdet_f']))
             #  self.sumlogdet['backward'].append(np.array(data['sumlogdet_b']))
-
 
     def calc_observables_stats(self, run_data, therm_frac=10):
         """Calculate statistics for lattice observables.
