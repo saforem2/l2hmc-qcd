@@ -44,16 +44,6 @@ def exp(x, name=None):
     return tf.check_numerics(tf.exp(x), f'{name} is NaN')
 
 
-#  def flatten_tensor(tensor):
-#      """Flattens tensor along axes 1:, since axis=0 indexes sample in batch.
-#
-#      Example: for a tensor of shape [b, x, y, t] -->
-#          returns a tensor of shape [b, x * y * t]
-#      """
-#      batch_size = tensor.shape[0]
-#      return tf.reshape(tensor, shape=(batch_size, -1))
-
-
 def _add_to_collection(collection, ops):
     if len(ops) > 1:
         _ = [tf.add_to_collection(collection, op) for op in ops]
@@ -355,9 +345,7 @@ class Dynamics(tf.keras.Model):
             'mask_b': mask_b,  # backward mask
             'mask_a': mask_a,  # accept mask
             'mask_r': mask_r,  # reject mask
-            #  'sumlogdet': sumlogdet,
         }
-        #  outputs_fb = OrderedDict(outputs_fb.items())
         for val in outputs_fb.values():
             tf.add_to_collection('dynamics_out', val)
 
@@ -644,7 +632,6 @@ class Dynamics(tf.keras.Model):
                 h_proposed = self.hamiltonian(xf, vf, beta)
 
             with tf.name_scope('calc_prob'):
-                #  dh = beta * (h_init - h_proposed) + sumlogdet
                 dh = h_init - h_proposed + sumlogdet
                 prob = tf.exp(tf.minimum(dh, 0.))
 
@@ -700,9 +687,9 @@ class Dynamics(tf.keras.Model):
     def _get_accept_masks(self, accept_prob):
         with tf.name_scope('accept_mask'):
             accept_mask = tf.cast(
-                accept_prob >= tf.random_uniform(tf.shape(accept_prob),
-                                                 dtype=TF_FLOAT,
-                                                 seed=GLOBAL_SEED),
+                accept_prob > tf.random_uniform(tf.shape(accept_prob),
+                                                dtype=TF_FLOAT,
+                                                seed=GLOBAL_SEED),
                 TF_FLOAT,
                 name='acccept_mask'
             )
@@ -765,19 +752,14 @@ class Dynamics(tf.keras.Model):
                 tfe = tf.contrib.eager
                 grad = tfe.gradients_function(self.potential_energy,
                                               params=[0])(x, beta)[0]
-                #  grad_fn = tfe.gradients_function(self.potential_energy,
-                #                                   params=["x"])
             else:
                 grad = tf.gradients(self.potential_energy(x, beta), x)[0]
-                #  grad = tf.gradients(self.potential(x), x)[0]
 
         return grad
 
     def potential_energy(self, x, beta):
         """Compute potential energy using `self.potential` and beta."""
         with tf.name_scope('potential_energy'):
-            #  potential_energy = self.potential(x)
-            #  potential_energy = tf.multiply(beta, self.potential(x))
             potential_energy = beta * self.potential(x)
 
         return potential_energy
@@ -793,7 +775,6 @@ class Dynamics(tf.keras.Model):
         """Compute the overall Hamiltonian."""
         with tf.name_scope('hamiltonian'):
             potential = self.potential_energy(x, beta)
-            #  potential = self.potential(x)
             kinetic = self.kinetic_energy(v)
             hamiltonian = potential + kinetic
 
