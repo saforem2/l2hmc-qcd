@@ -17,7 +17,7 @@ from scipy.stats import sem
 from lattice.lattice import u1_plaq_exact
 from config import COLORS, MARKERS, HAS_MATPLOTLIB
 
-from .plot_utils import MPL_PARAMS, plot_multiple_lines, tsplotboot
+from .plot_utils import MPL_PARAMS, plot_multiple_lines  # , tsplotboot
 
 if HAS_MATPLOTLIB:
     import matplotlib as mpl
@@ -31,8 +31,11 @@ __all__ = ['EnergyPlotter', 'GaugeModelPlotter',
 
 BootstrapData = namedtuple('BootstrapData', ['mean', 'err', 'means_bs'])
 
+
 def arr_from_dict(d, key):
-    return np.array(list(d[key].values()))
+    if isinstance(d[key], dict):
+        return np.array(list(d[key].values()))
+    return np.array(d[key])
 
 
 def get_out_file(out_dir, out_str):
@@ -59,7 +62,26 @@ class EnergyPlotter:
         self.params = params
         self.figs_dir = figs_dir
 
-    def bootstrap(self, data, n_boot=10000):
+    def double_bootstrap(self, data, n_boot=1000):
+        num_steps = data.shape[0]
+        skip = int(0.1 * num_steps)
+        data = data[skip:, :]
+        mean_ = []
+        err_ = []
+        means = []
+        for idx, chain in enumerate(data.T):
+            m, e, m_arr = self.bootstrap(chain, n_boot)
+            mean_.append(m)
+            err_.append(e)
+            means.append(m_arr)
+
+        mean_ = np.array(mean_)
+        err_ = np.array(err_)
+        means = np.array(means)
+
+        return mean_, err_, means
+
+    def bootstrap(self, data, n_boot=1000):
         boot_dist = []
         for i in range(int(n_boot)):
             resampler = np.random.randint(0, data.shape[0], data.shape[0])
@@ -87,14 +109,17 @@ class EnergyPlotter:
         lf_steps = self.params['num_steps']
         bs = self.params['batch_size']
         nw = net_weights
-        title_str = _get_title(lf_steps, eps, bs, beta, nw)
+        try:
+            title_str = _get_title(lf_steps, eps, bs, beta, nw)
+        except ValueError:
+            title_str = ''
 
         return title_str, out_dir
 
     def _plot(self, labels, data_arr, title=None, out_file=None):
         colors = ['C0', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6']
         fig, ax = plt.subplots()
-        alphas = [1. - 0.15 * i for i in range(len(labels))]
+        alphas = [1. - 0.25 * i for i in range(len(labels))]
         for idx, (label, data) in enumerate(zip(labels, data_arr)):
             num_steps = data.shape[0]
             therm_steps = int(0.1 * num_steps)
@@ -120,16 +145,40 @@ class EnergyPlotter:
     def _hist(self, labels, data_arr, title=None, out_file=None, **kwargs):
         n_bins = kwargs.get('n_bins', 50)
         n_boot = kwargs.get('n_boot', 1000)
-        alphas = [1. - 0.15 * i for i in range(len(labels))]
+        single_chain = kwargs.get('single_chain', False)
+        alphas = [1. - 0.25 * i for i in range(len(labels))]
 
         fig, ax = plt.subplots()
         for idx, (label, data) in enumerate(zip(labels, data_arr)):
             num_steps = data.shape[0]
             therm_steps = int(0.1 * num_steps)
-            data = data[therm_steps:]
-            mean, err, mean_arr = self.bootstrap(data, n_boot=n_boot)
-            label = labels[idx] + f'  avg: {mean:.4g}'
-            ax.hist(mean_arr.flatten(), bins=n_bins, density=True,
+            if single_chain:
+                data = data[therm_steps:, -1]
+                mean, err, mean_arr = self.bootstrap(data, n_boot=n_boot)
+                #  mean_arr = mean_arr.mean(axis=1).flatten()
+                mean_arr = mean_arr.flatten()
+            else:
+                data = data[therm_steps:, :]
+                #  chain_mean = data.mean(axis=0)
+                mean, err, mean_arr = self.bootstrap(data, n_boot=n_boot)
+                mean_arr = mean_arr.flatten()
+                #  mean, err, mean_arr = self.bootstrap(mean_arr.T,
+                #                                       n_boot=n_boot)
+                #  mean, err, mean_arr = self.bootstrap(data, n_boot=5000)
+                #  mean_arr = np.mean(mean_arr, axis=1)
+                #  m, e, m_arr = self.double_bootstrap(data, n_boot)
+                #  mean = np.mean(m)
+                #  err = np.mean(e)
+                #  mean_arr = np.mean(m_arr, axis=0)
+                #  mean_arr = np.mean(data, axis=1)
+                #  mean, err, mean_arr = self.bootstrap(mean_arr,
+                #                                       n_boot=n_boot)
+                #  mean = np.mean(mean_arr)
+                #  err = np.std(mean_arr)
+                #  mean_arr = mean_arr.flatten()
+            #  mean, err, mean_arr = self.bootstrap(data, n_boot=n_boot)
+            label = labels[idx] + f'  avg: {mean:.4g} +/- {err:.4g}'
+            ax.hist(mean_arr, bins=n_bins, density=True,
                     alpha=alphas[idx], label=label)
 
         ax.legend(loc='best')
@@ -147,12 +196,19 @@ class EnergyPlotter:
         labels = [r"""$\delta U_{\mathrm{out}}$,""",
                   r"""$\delta U_{\mathrm{proposed}}$,"""]
 
-        try:
-            pe_out_diff = energy_data['potential_out_diff']
-            pe_proposed_diff = energy_data['potential_proposed_diff']
-        except KeyError:
-            pe_out_diff = energy_data['potential']['out_diff']
-            pe_proposed_diff = energy_data['potential']['proposed_diff']
+        #  try:
+        pe_init = np.array(energy_data['potential_init'])
+        pe_prop = np.array(energy_data['potential_proposed'])
+        pe_out = np.array(energy_data['potential_out'])
+
+        pe_out_diff = pe_out - pe_init
+        pe_proposed_diff = pe_prop - pe_init
+
+        #  pe_out_diff = energy_data['potential_out_diff']
+        #  pe_proposed_diff = energy_data['potential_proposed_diff']
+        #  except KeyError:
+        #  pe_out_diff = energy_data['potential']['out_diff']
+        #  pe_proposed_diff = energy_data['potential']['proposed_diff']
 
         if not isinstance(pe_out_diff, np.ndarray):
             pe_out_diff = np.array(pe_out_diff)
@@ -163,9 +219,13 @@ class EnergyPlotter:
 
         plt_file = os.path.join(out_dir, 'potential_diffs.png')
         hist_file = os.path.join(out_dir, 'potential_diffs_hist.png')
+        hist_file1 = os.path.join(out_dir,
+                                  'potential_diffs_hist_single_chain.png')
 
         _, _ = self._plot(labels, data, title=title, out_file=plt_file)
         _, _ = self._hist(labels, data, title=title, out_file=hist_file)
+        _, _ = self._hist(labels, data, title=title, out_file=hist_file1,
+                          single_chain=True)
 
         labels = [r"""$U_{\mathrm{init}}$, """,
                   r"""$U_{\mathrm{proposed}}$, """,
@@ -177,22 +237,34 @@ class EnergyPlotter:
 
         plt_file = os.path.join(out_dir, 'potentials.png')
         hist_file = os.path.join(out_dir, 'potential_hist.png')
+        hist_file1 = os.path.join(out_dir, 'potential_hist_single_chain.png')
 
         _, _ = self._plot(labels, data, title=title, out_file=plt_file)
         _, _ = self._hist(labels, data, title=title, out_file=hist_file)
+        _, _ = self._hist(labels, data, title=title, out_file=hist_file1,
+                          single_chain=True)
 
     def _kinetic_plots(self, energy_data, title, out_dir):
         ke_labels = [r"""$\delta KE_{\mathrm{out}}$,""",
                      r"""$\delta KE_{\mathrm{proposed}}$,"""]
 
-        ke_data = [np.array(energy_data['kinetic_out_diff']),
-                   np.array(energy_data['kinetic_proposed_diff'])]
+        ke_init = np.array(energy_data['kinetic_init'])
+        ke_prop = np.array(energy_data['kinetic_proposed'])
+        ke_out = np.array(energy_data['kinetic_out'])
+
+        ke_out_diff = ke_out - ke_init
+        ke_proposed_diff = ke_prop - ke_init
+
+        ke_data = [ke_out_diff, ke_proposed_diff]
 
         ke_f = os.path.join(out_dir, 'kinetic_diffs.png')
         keh_f = os.path.join(out_dir, 'kinetic_diffs_hist.png')
+        keh_f1 = os.path.join(out_dir, 'kinetic_diffs_hist_single_chain.png')
 
         _, _ = self._plot(ke_labels, ke_data, title=title, out_file=ke_f)
         _, _ = self._hist(ke_labels, ke_data, title=title, out_file=keh_f)
+        _, _ = self._hist(ke_labels, ke_data, title=title, out_file=keh_f1,
+                          single_chain=True)
 
         labels = [r"""$KE_{\mathrm{init}}$, """,
                   r"""$KE_{\mathrm{proposed}}$, """,
@@ -204,36 +276,48 @@ class EnergyPlotter:
 
         plt_file = os.path.join(out_dir, 'kinetics.png')
         hist_file = os.path.join(out_dir, 'kinetic_hist.png')
+        hist_file1 = os.path.join(out_dir, 'kinetic_hist_single_chain.png')
 
         _, _ = self._plot(labels, data, title=title, out_file=plt_file)
         _, _ = self._hist(labels, data, title=title, out_file=hist_file)
+        _, _ = self._hist(labels, data, title=title, out_file=hist_file1,
+                          single_chain=True)
 
     def _hamiltonian_plots(self, energy_data, title, out_dir):
         h_labels = [r"""$\delta H_{\mathrm{out}}$,""",
                     r"""$\delta H_{\mathrm{proposed}}$,"""]
 
-        h_data = [np.array(energy_data['hamiltonian_out_diff']),
-                  np.array(energy_data['hamiltonian_proposed_diff'])]
+        h_init = np.array(energy_data['hamiltonian_init'])
+        h_prop = np.array(energy_data['hamiltonian_proposed'])
+        h_out = np.array(energy_data['hamiltonian_out'])
+        h_data = [h_out - h_init, h_prop - h_init]
+        #  h_data = [np.array(energy_data['hamiltonian_out_diff']),
+        #            np.array(energy_data['hamiltonian_proposed_diff'])]
 
         h_f = os.path.join(out_dir, 'hamiltonian_diffs.png')
         hh_f = os.path.join(out_dir, 'hamiltonian_diffs_hist.png')
+        hh_f1 = os.path.join(out_dir,
+                             'hamiltonian_diffs_hist_single_chain.png')
 
         _, _ = self._plot(h_labels, h_data, title=title, out_file=h_f)
         _, _ = self._hist(h_labels, h_data, title=title, out_file=hh_f)
+        _, _ = self._hist(h_labels, h_data, title=title, out_file=hh_f1,
+                          single_chain=True)
 
         labels = [r"""$H_{\mathrm{init}}$, """,
                   r"""$H_{\mathrm{proposed}}$, """,
                   r"""$H_{\mathrm{out}}$, """]
 
-        data = [np.array(energy_data['hamiltonian_init']),
-                np.array(energy_data['hamiltonian_proposed']),
-                np.array(energy_data['hamiltonian_out'])]
+        data = [h_init, h_prop, h_out]
 
         plt_file = os.path.join(out_dir, 'hamiltonians.png')
         hist_file = os.path.join(out_dir, 'hamiltonian_hist.png')
+        hist_file1 = os.path.join(out_dir, 'hamiltonian_hist_single_chain.png')
 
         _, _ = self._plot(labels, data, title=title, out_file=plt_file)
         _, _ = self._hist(labels, data, title=title, out_file=hist_file)
+        _, _ = self._hist(labels, data, title=title, out_file=hist_file1,
+                          single_chain=True)
 
     def plot_energies(self, energy_data, **kwargs):
         title, out_dir = self._plot_setup(**kwargs)
@@ -264,9 +348,12 @@ class GaugeModelPlotter:
             charge_probabilities is a dictionary of the form:
                 {charge_val: charge_val_probability}
         """
-        actions = arr_from_dict(data, 'actions')
-        plaqs = arr_from_dict(data, 'plaqs')
-        charges = arr_from_dict(data, 'charges')
+        actions = np.array(data['actions'])
+        plaqs = np.array(data['plaqs'])
+        charges = np.array(data['charges'])
+        #  actions = arr_from_dict(data, 'actions')
+        #  plaqs = arr_from_dict(data, 'plaqs')
+        #  charges = arr_from_dict(data, 'charges')
 
         charge_probs = {}
         counts = Counter(list(charges.flatten()))
@@ -297,13 +384,20 @@ class GaugeModelPlotter:
 
     def _parse_data(self, data, beta):
         """Helper method for extracting relevant data from `data`.'"""
-        accept_prob = arr_from_dict(data, 'px')
-        actions = arr_from_dict(data, 'actions')
-        plaqs = arr_from_dict(data, 'plaqs')
-        charges = np.array(arr_from_dict(data, 'charges'), dtype=int)
-        charge_diffs = arr_from_dict(data, 'charge_diffs')
+        accept_prob = np.array(data['px'])
+        actions = np.array(data['actions'])
+        plaqs = np.array(data['plaqs'])
+        charges = np.array(data['charges'], dtype=int)
         charge_autocorrs = np.array(data['charges_autocorrs'])
         plaqs_diffs = plaqs - u1_plaq_exact(beta)
+
+        #  accept_prob = arr_from_dict(data, 'px')
+        #  actions = arr_from_dict(data, 'actions')
+        #  plaqs = arr_from_dict(data, 'plaqs')
+        #  charges = np.array(arr_from_dict(data, 'charges'), dtype=int)
+        #  #  charge_diffs = arr_from_dict(data, 'charge_diffs')
+        #  charge_autocorrs = np.array(data['charges_autocorrs'])
+        #  plaqs_diffs = plaqs - u1_plaq_exact(beta)
 
         def _stats(data, axis=1):
             return np.mean(data, axis=axis), sem(data, axis=axis)
@@ -334,7 +428,7 @@ class GaugeModelPlotter:
         warmup_steps = max((1, int(0.01 * num_steps)))
         x_therm = np.arange(warmup_steps, num_steps)
 
-        _charge_diffs = charge_diffs[warmup_steps:]  # [::skip_steps]
+        #  _charge_diffs = charge_diffs[warmup_steps:]  # [::skip_steps]
         _plaq_diffs = plaqs_diffs[warmup_steps:]  # [::skip_steps]
         #  _steps_diffs = (
         #      skip_steps * np.arange(_plaq_diffs.shape[0])  # + skip_steps
@@ -348,7 +442,7 @@ class GaugeModelPlotter:
             'plaqs': (steps_arr, *plaqs_stats),
             'accept_prob': (steps_arr, *accept_prob_stats),
             'charges': (steps_arr, charges.T),
-            'charge_diffs': (x_therm, _charge_diffs.T),
+            #  'charge_diffs': (x_therm, _charge_diffs.T),
             'autocorrs': (steps_arr, *autocorrs_stats),
             'plaqs_diffs': (x_therm, *_plaq_diffs_stats)
         }
@@ -400,7 +494,7 @@ class GaugeModelPlotter:
         # take xy_data['charges'][1] since we're only concerned with 'y' data
         self._plot_charge_probs(xy_data['charges'][1], **kwargs)
         self._plot_charges_hist(xy_data['charges'][1], **kwargs)
-        self._plot_charge_diffs(xy_data['charge_diffs'], **kwargs)
+        #  self._plot_charge_diffs(xy_data['charge_diffs'], **kwargs)
         mean_diff = self._plot_plaqs_diffs(xy_data['plaqs_diffs'], **kwargs)
 
         return mean_diff

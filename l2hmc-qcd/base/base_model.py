@@ -60,6 +60,12 @@ def _gaussian(x, mu, sigma):
 class BaseModel:
 
     def __init__(self, params=None):
+        """Initialization method.
+
+        Args:
+            params (dict): Dictionary of key, value pairs used for specifying
+                model parameters.
+        """
 
         if 'charge_weight' in params:
             self.charge_weight_np = params.pop('charge_weight', None)
@@ -99,8 +105,8 @@ class BaseModel:
         self.px_hmc = x_dynamics['outputs_fb']['accept_prob_hmc']
 
         self._dynamics_fb = x_dynamics['outputs_fb']
-        self._dynamics_f = x_dynamics['outputs_f']
-        self._dynamics_b = x_dynamics['outputs_b']
+        #  self._dynamics_f = x_dynamics['outputs_f']
+        #  self._dynamics_b = x_dynamics['outputs_b']
         self._energy_data = x_dynamics['energies']
 
         self.x_diff, self.v_diff = self._check_reversibility()
@@ -128,8 +134,8 @@ class BaseModel:
         self.px_hmc = x_dynamics['outputs_fb']['accept_prob_hmc']
 
         self._dynamics_fb = x_dynamics['outputs_fb']
-        self._dynamics_f = x_dynamics['outputs_f']
-        self._dynamics_b = x_dynamics['outputs_b']
+        #  self._dynamics_f = x_dynamics['outputs_f']
+        #  self._dynamics_b = x_dynamics['outputs_b']
 
         #  self.x_out = x_fb['x_out']
         #  self.px = x_fb['accept_prob']
@@ -228,6 +234,7 @@ class BaseModel:
             kwargs.update(params)
 
             dynamics = Dynamics(potential_fn=potential_fn, **kwargs)
+        tf.add_to_collection('dynamics_eps', dynamics.eps)
 
         return dynamics
 
@@ -331,93 +338,6 @@ class BaseModel:
     def _create_metric_fn(self, metric):
         """Create metric function used to measure distatnce between configs."""
         raise NotImplementedError
-
-    def _calc_potential_energies(self):
-        with tf.name_scope('potential_energy'):
-            with tf.name_scope('init'):
-                pe_init = self.dynamics.potential_energy(
-                    self._dynamics_fb['x_init'], self.beta
-                )
-            with tf.name_scope('proposed'):
-                pe_proposed = self.dynamics.potential_energy(
-                    self._dynamics_fb['x_proposed'], self.beta
-                )
-            with tf.name_scope('out'):
-                pe_out = self.dynamics.potential_energy(
-                    self._dynamics_fb['x_out'], self.beta
-                )
-
-            pe_proposed_diff = pe_proposed - pe_init
-            pe_out_diff = pe_out - pe_init
-
-            pe_data = EnergyData(pe_init, pe_proposed, pe_out,
-                                 pe_proposed_diff, pe_out_diff)
-
-            _ = [tf.add_to_collection('energies', e) for e in pe_data]
-
-        return pe_data
-
-    def _calc_kinetic_energies(self):
-        v_init = self._dynamics_fb['v_init']
-        v_out = self._dynamics_fb['v_out']
-        v_proposed = self._dynamics_fb['v_proposed']
-
-        with tf.name_scope('kinetic_energy'):
-            with tf.name_scope('init'):
-                ke_init = self.dynamics.kinetic_energy(v_init)
-            with tf.name_scope('proposed'):
-                ke_proposed = self.dynamics.kinetic_energy(v_proposed)
-            with tf.name_scope('out'):
-                ke_out = self.dynamics.kinetic_energy(v_out)
-
-            ke_proposed_diff = ke_proposed - ke_init
-            ke_out_diff = ke_out - ke_init
-
-            ke_data = EnergyData(ke_init, ke_proposed, ke_out,
-                                 ke_proposed_diff, ke_out_diff)
-
-            _ = [tf.add_to_collection('energies', e) for e in ke_data]
-
-        return ke_data
-
-    def _calc_hamiltonians(self, pe_data, ke_data):
-        with tf.name_scope('hamiltonians'):
-            with tf.name_scope('init'):
-                h_init = pe_data.init + ke_data.init
-            with tf.name_scope('proposed'):
-                h_proposed = pe_data.proposed + ke_data.proposed
-            with tf.name_scope('out'):
-                mask_a = self._dynamics_fb['mask_a']
-                mask_r = self._dynamics_fb['mask_r']
-                sumlogdet_out = self._dynamics_fb['sumlogdet_out']
-                h_out = h_proposed * mask_a + h_init * mask_r + sumlogdet_out
-                #  h_out = pe_data.out + ke_data.out
-
-            h_proposed_diff = h_proposed - h_init
-            h_out_diff = h_out - h_init
-
-            h_data = EnergyData(h_init, h_proposed, h_out,
-                                h_proposed_diff, h_out_diff)
-            _ = [tf.add_to_collection('energies', e) for e in h_data]
-
-        return h_data
-
-    def _calc_energies(self):
-        pass
-        #  with tf.name_scope('calc_energies'):
-        #      energy_data = self.dynamics.calc_energies(self._dynamics_fb)
-        #      pe_data = self._calc_potential_energies()
-        #      ke_data = self._calc_kinetic_energies()
-        #
-        #      h_data = self._calc_hamiltonians(pe_data, ke_data)
-        #
-        #  output = {
-        #      'potential': pe_data,
-        #      'kinetic': ke_data,
-        #      'hamiltonian': h_data
-        #  }
-
-        #  return energy_data
 
     def _check_reversibility(self):
         x_in = tf.random_normal(self.x.shape,
@@ -547,17 +467,20 @@ class BaseModel:
         """Calculate the gradients to be used in backpropagation."""
         clip_value = getattr(self, 'clip_value', 0.)
         with tf.name_scope('grads'):
-            grads = tf.gradients(loss, self.dynamics.trainable_variables)
+            #  grads = tf.gradients(loss, self.dynamics.trainable_variables)
+            grads = tf.gradients(loss, tf.trainable_variables())
             if clip_value > 0.:
                 grads, _ = tf.clip_by_global_norm(grads, clip_value)
 
         return grads
 
     def _apply_grads(self, loss_op, grads):
-        grads_and_vars = zip(grads, self.dynamics.trainable_variables)
-        ctrl_deps = [loss_op, *self.dynamics.updates]
-        with tf.control_dependencies(ctrl_deps):
-            train_op = self.optimizer.apply_gradients(grads_and_vars,
-                                                      self.global_step,
-                                                      'train_op')
+        trainable_vars = tf.trainable_variables()
+        #  grads_and_vars = zip(grads, self.dynamics.trainable_variables)
+        grads_and_vars = zip(grads, trainable_vars)
+        #  ctrl_deps = [loss_op, *self.dynamics.updates]
+        #  with tf.control_dependencies(ctrl_deps):
+        train_op = self.optimizer.apply_gradients(grads_and_vars,
+                                                  self.global_step,
+                                                  'train_op')
         return train_op
