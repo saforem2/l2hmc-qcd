@@ -57,29 +57,40 @@ def _get_title(lf_steps, eps, batch_size, beta, nw):
     return title_str
 
 
+def calc_plaq_sums(x):
+    plaq_sums = (x[:, :, :, 0]
+                 - x[:, :, :, 1]
+                 - np.roll(x[:, :, :, 0], shift=-1, axis=2)
+                 + np.roll(x[:, :, :, 1], shift=-1, axis=1))
+
+    return plaq_sums
+
+
+def calc_actions(x):
+    plaq_sums = calc_plaq_sums(x)
+    actions = np.sum(1. - np.cos(plaq_sums), axis=(1, 2))
+
+    return actions
+
+
+def calc_potential_energy(x, beta):
+    return beta * calc_actions(x)
+
+
+def calc_kinetic_energy(v):
+    ke = 0.5 * sum(v ** 2, axis=1)
+
+    return ke
+
+
+def calc_hamiltonian(x, v, beta):
+    return calc_potential_energy(x, beta) + calc_kinetic_energy(v)
+
+
 class EnergyPlotter:
     def __init__(self, params, figs_dir=None):
         self.params = params
         self.figs_dir = figs_dir
-
-    def double_bootstrap(self, data, n_boot=1000):
-        num_steps = data.shape[0]
-        skip = int(0.1 * num_steps)
-        data = data[skip:, :]
-        mean_ = []
-        err_ = []
-        means = []
-        for idx, chain in enumerate(data.T):
-            m, e, m_arr = self.bootstrap(chain, n_boot)
-            mean_.append(m)
-            err_.append(e)
-            means.append(m_arr)
-
-        mean_ = np.array(mean_)
-        err_ = np.array(err_)
-        means = np.array(means)
-
-        return mean_, err_, means
 
     def bootstrap(self, data, n_boot=1000):
         boot_dist = []
@@ -155,28 +166,11 @@ class EnergyPlotter:
             if single_chain:
                 data = data[therm_steps:, -1]
                 mean, err, mean_arr = self.bootstrap(data, n_boot=n_boot)
-                #  mean_arr = mean_arr.mean(axis=1).flatten()
                 mean_arr = mean_arr.flatten()
             else:
                 data = data[therm_steps:, :]
-                #  chain_mean = data.mean(axis=0)
                 mean, err, mean_arr = self.bootstrap(data, n_boot=n_boot)
                 mean_arr = mean_arr.flatten()
-                #  mean, err, mean_arr = self.bootstrap(mean_arr.T,
-                #                                       n_boot=n_boot)
-                #  mean, err, mean_arr = self.bootstrap(data, n_boot=5000)
-                #  mean_arr = np.mean(mean_arr, axis=1)
-                #  m, e, m_arr = self.double_bootstrap(data, n_boot)
-                #  mean = np.mean(m)
-                #  err = np.mean(e)
-                #  mean_arr = np.mean(m_arr, axis=0)
-                #  mean_arr = np.mean(data, axis=1)
-                #  mean, err, mean_arr = self.bootstrap(mean_arr,
-                #                                       n_boot=n_boot)
-                #  mean = np.mean(mean_arr)
-                #  err = np.std(mean_arr)
-                #  mean_arr = mean_arr.flatten()
-            #  mean, err, mean_arr = self.bootstrap(data, n_boot=n_boot)
             label = labels[idx] + f'  avg: {mean:.4g} +/- {err:.4g}'
             ax.hist(mean_arr, bins=n_bins, density=True,
                     alpha=alphas[idx], label=label)
@@ -203,12 +197,6 @@ class EnergyPlotter:
 
         pe_out_diff = pe_out - pe_init
         pe_proposed_diff = pe_prop - pe_init
-
-        #  pe_out_diff = energy_data['potential_out_diff']
-        #  pe_proposed_diff = energy_data['potential_proposed_diff']
-        #  except KeyError:
-        #  pe_out_diff = energy_data['potential']['out_diff']
-        #  pe_proposed_diff = energy_data['potential']['proposed_diff']
 
         if not isinstance(pe_out_diff, np.ndarray):
             pe_out_diff = np.array(pe_out_diff)
@@ -291,8 +279,6 @@ class EnergyPlotter:
         h_prop = np.array(energy_data['hamiltonian_proposed'])
         h_out = np.array(energy_data['hamiltonian_out'])
         h_data = [h_out - h_init, h_prop - h_init]
-        #  h_data = [np.array(energy_data['hamiltonian_out_diff']),
-        #            np.array(energy_data['hamiltonian_proposed_diff'])]
 
         h_f = os.path.join(out_dir, 'hamiltonian_diffs.png')
         hh_f = os.path.join(out_dir, 'hamiltonian_diffs_hist.png')

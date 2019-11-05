@@ -97,6 +97,8 @@ class Runner:
             'px': outputs['accept_prob']
         }
 
+        out_dict.update(outputs)
+
         data_str = (f"{step:>5g}/{self.run_steps:<6g} "
                     f"{dt:^9.4g} "
                     f"{np.mean(out_dict['px']):^9.4g} "

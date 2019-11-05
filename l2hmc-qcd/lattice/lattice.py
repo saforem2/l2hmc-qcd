@@ -189,7 +189,7 @@ class GaugeLattice(object):
         plaq_sums = (samples[:, :, :, 0]
                      - samples[:, :, :, 1]
                      - np.roll(samples[:, :, :, 0], shift=-1, axis=2)
-                     + np.roll(samples[:, :, :, 0], shift=-1, axis=1))
+                     + np.roll(samples[:, :, :, 1], shift=-1, axis=1))
 
         return plaq_sums
 
@@ -252,6 +252,12 @@ class GaugeLattice(object):
 
             top_charges = (tf.reduce_sum(ps_proj, axis=(1, 2),
                                          name='top_charges')) / (2 * np.pi)
+        return top_charges
+
+    def calc_top_charges_np(self, plaq_sums):
+        ps_proj = np.sin(plaq_sums)
+        top_charges = np.sum(ps_proj, axis=(1, 2)) / (2 * np.pi)
+
         return top_charges
 
     def calc_top_charges_diff(self, x1, x2):
