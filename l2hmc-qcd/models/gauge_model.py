@@ -117,8 +117,9 @@ class GaugeModel(BaseModel):
         self.plaq_sums = observables['plaq_sums']
         self.actions = observables['actions']
         self.plaqs = observables['plaqs']
-        self.avg_plaqs = observables['avg_plaqs']
         self.charges = observables['charges']
+        self.avg_plaqs = observables['avg_plaqs']
+        self.avg_actions = observables['avg_actions']
         self._observables = observables
 
         # *******************************************************************
@@ -127,9 +128,11 @@ class GaugeModel(BaseModel):
         # NOTE: We use the `dynamics.apply_transition` method to run the
         # augmented l2hmc leapfrog integrator and obtain new samples.
         # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        x_data, z_data = self._build_sampler()
-        self.charge_diffs = self._calc_charge_diff(x_data.init,
-                                                   x_data.proposed)
+        with tf.name_scope('sampler'):
+            x_data, z_data = self._build_sampler()
+
+        #  self.charge_diffs = self._calc_charge_diff(x_data.init,
+        #                                             x_data.proposed)
 
         # *******************************************************************
         # Calculate loss_op and train_op to backprop. grads through network
@@ -203,16 +206,20 @@ class GaugeModel(BaseModel):
             plaq_sums = self.lattice.calc_plaq_sums(samples=self.x)
             actions = self.lattice.calc_actions(plaq_sums=plaq_sums)
             plaqs = self.lattice.calc_plaqs(plaq_sums=plaq_sums)
-            avg_plaqs = tf.reduce_mean(plaqs, name='avg_plaqs')
             charges = self.lattice.calc_top_charges(plaq_sums=plaq_sums)
+            avg_plaqs = tf.reduce_mean(plaqs, name='avg_plaqs')
+            avg_actions = tf.reduce_mean(actions, name='avg_actions')
 
         observables = {
             'plaq_sums': plaq_sums,
             'actions': actions,
             'plaqs': plaqs,
-            'avg_plaqs': avg_plaqs,
             'charges': charges,
+            'avg_plaqs': avg_plaqs,
+            'avg_actions': avg_actions,
         }
+        for obs in observables.values():
+            tf.add_to_collection('observables', obs)
 
         return observables
 
@@ -361,7 +368,7 @@ class GaugeModel(BaseModel):
             'plaqs': self.plaqs,
             'avg_plaqs': self.avg_plaqs,
             'charges': self.charges,
-            'charge_diffs': self.charge_diffs
+            #  'charge_diffs': self.charge_diffs
         }
 
         #  if self.save_lf:
@@ -399,7 +406,7 @@ class GaugeModel(BaseModel):
                 'actions': self.actions,
                 'plaqs': self.plaqs,
                 'charges': self.charges,
-                'charge_diffs': self.charge_diffs,
+                #  'charge_diffs': self.charge_diffs,
                 'lr': self.lr
             }
 

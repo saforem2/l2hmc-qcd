@@ -24,7 +24,7 @@ __all__ = ['GaugeModelTrainer']
 
 TrainStepData = namedtuple('TrainStepData', [
     'step', 'beta', 'loss', 'samples', 'samples_orig', 'prob',
-    'lr', 'eps', 'actions', 'plaqs', 'charges', 'charge_diffs'
+    'lr', 'eps', 'actions', 'plaqs', 'charges',  # 'charge_diffs'
 ])
 
 
@@ -56,19 +56,6 @@ class GaugeModelTrainer:
         self.sess = sess
         self.model = model
         self.logger = logger
-
-    def update_beta_old(self, step, **kwargs):
-        """Returns new beta to follow annealing schedule."""
-        beta_init = kwargs.get('beta_init', self.model.beta_init)
-        beta_final = kwargs.get('beta_final', self.model.beta_final)
-        train_steps = kwargs.get('train_steps', self.model.train_steps)
-
-        temp = ((1. / beta_init - 1. / beta_final)
-                * (1. - step / float(train_steps))
-                + 1. / beta_final)
-        new_beta = 1. / temp
-
-        return new_beta
 
     def update_beta(self, step, **kwargs):
         beta_init = kwargs.get('beta_init', self.model.beta_init)
@@ -143,7 +130,7 @@ class GaugeModelTrainer:
             self.model.actions,          # calculate avg. actions
             self.model.plaqs,            # calculate avg. plaqs
             self.model.charges,          # calculate top. charges
-            self.model.charge_diffs,     # change in top. charge/batch_size
+            #  self.model.charge_diffs,     # change in top. charge/batch_size
             self.model.lr,               # evaluate learning rate
         ]
 
@@ -162,8 +149,8 @@ class GaugeModelTrainer:
             actions=outputs[5],
             plaqs=outputs[6],
             charges=outputs[7],
-            charge_diffs=outputs[8],
-            lr=outputs[9],
+            #  charge_diffs=outputs[8],
+            lr=outputs[8],
         )
 
         data_str = (
@@ -176,8 +163,8 @@ class GaugeModelTrainer:
             f"{np.mean(outputs[5]):^9.4g} "     # avg. actions
             f"{np.mean(outputs[6]):^9.4g} "     # avg. plaqs.
             f"{u1_plaq_exact(beta_np):^9.4g} "  # exact plaq.
-            f"{outputs[8]:^9.4g} "              # charge diff
-            f"{outputs[9]:^9.4g} "              # learning rate
+            #  f"{outputs[8]:^9.4g} "              # charge diff
+            f"{outputs[8]:^9.4g} "              # learning rate
         )
 
         return train_step_data, data_str
