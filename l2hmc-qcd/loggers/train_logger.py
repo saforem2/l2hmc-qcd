@@ -12,17 +12,18 @@ from __future__ import division
 from __future__ import print_function
 
 import os
-import pickle
 
 import tensorflow as tf
 
 import utils.file_io as io
 
 from collections import namedtuple
-from models.gauge_model import GaugeModel
-from models.gmm_model import GaussianMixtureModel
 from .summary_utils import create_summaries
 from utils.file_io import save_params
+
+#  import pickle
+#  from models.gauge_model import GaugeModel
+#  from models.gmm_model import GaussianMixtureModel
 
 
 h_str = ("{:^12s}" + 10 * "{:^10s}").format(
@@ -37,7 +38,7 @@ TRAIN_HEADER = dash + '\n' + h_str + '\n' + dash
 TrainData = namedtuple('TrainData', ['loss', 'prob', 'eps'])
 
 ObsData = namedtuple('ObsData', [
-    'actions', 'plaqs', 'charges', 'charge_diffs'
+    'actions', 'plaqs', 'charges',  # 'charge_diffs'
 ])
 
 l2hmcFn = namedtuple('l2hmcFn', ['v1', 'x1', 'x2', 'v2'])
@@ -52,6 +53,11 @@ class TrainLogger:
         self.logging_steps = logging_steps
 
         self.train_data = {}
+        self.train_energy_data = {
+            'potential': {},
+            'kinetic': {},
+            'hamiltonian': {},
+        }
         if model._model_type == 'GaugeModel':
             self._model_type = model._model_type
             self.obs_data = {}
@@ -68,7 +74,6 @@ class TrainLogger:
 
         self.dash = (len(self.h_strf) + 1) * '-'
         self.train_header = self.dash + '\n' + self.h_strf + '\n' + self.dash
-
         self.train_data_strings = [self.train_header]
 
         # log_dir will be None if using_hvd and hvd.rank() != 0
@@ -128,9 +133,7 @@ class TrainLogger:
 
     def update(self, sess, data, data_str, net_weights):
         """Update _current state and train_data."""
-        #  key = (step, beta)
         print_steps = getattr(self, 'print_steps', 1)
-
         step = data.step
 
         if (step + 1) % print_steps == 0:
@@ -143,7 +146,7 @@ class TrainLogger:
 
         if self._model_type == 'GaugeModel':
             self.obs_data[step] = ObsData(data.actions, data.plaqs,
-                                          data.charges, data.charge_diffs)
+                                          data.charges)  #, data.charge_diffs)
 
         self.train_data_strings.append(data_str)
         if self.summaries and (step + 1) % self.logging_steps == 0:

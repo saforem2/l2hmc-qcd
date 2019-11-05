@@ -69,9 +69,9 @@ class GaugeModelRunner:
             ops.append(val)
 
         outputs = self.sess.run(ops, feed_dict=feed_dict)
-        energy_outputs = dict(zip(keys, outputs))
+        energies = dict(zip(keys, outputs))
 
-        return energy_outputs
+        return energies
 
     def lf_step(self, feed_dict):
         """Run auxiliary operations if `self.params['save_lf']` is True."""
@@ -147,8 +147,8 @@ class GaugeModelRunner:
         }
 
         if (step % energy_steps) == 0:
-            energy_outputs = self.run_energy_ops(feed_dict)
-            out_data.update({'energy_outputs': energy_outputs})
+            energies = self.run_energy_ops(feed_dict)
+            out_data.update({'energies': energies})
 
         #  if self.params['save_lf']:
         #      lf_outputs = self.lf_step(feed_dict)

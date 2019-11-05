@@ -364,15 +364,6 @@ def train_l2hmc(FLAGS, log_file=None):
                    f'\t x_diff: {x_diff:.10g}, v_diff: {v_diff:.10g}')
     io.log_and_write(reverse_str, reverse_file)
 
-    #  is_initialized = sess.run(is_var_init)
-    #  not_initialized_vars = [
-    #      var for (var, init) in zip(global_vars, is_initialized) if not init
-    #  ]'
-    #  if len(not_initialized_vars):
-    #      sess.run(tf.variables_initializer(not_initialized_vars))
-    #  #  uninit_vars = inference.initialize_uninitialized(sess)
-    #  io.log([f'{i.name}' for i in not_initialized_vars])
-
     #  sess.run(init_op)
     # ----------------------------------------------------------
     #                       TRAINING

@@ -32,7 +32,8 @@ import time
 from config import HAS_HOROVOD
 
 #  from update import set_precision
-from runners.gauge_model_runner import GaugeModelRunner
+from runners.runner import Runner
+#  from runners.gauge_model_runner import GaugeModelRunner
 from models.gauge_model import GaugeModel
 from loggers.run_logger import RunLogger
 from loggers.summary_utils import create_summaries
@@ -60,11 +61,13 @@ if float(tf.__version__.split('.')[0]) <= 2:
     tf.logging.set_verbosity(tf.logging.INFO)
 
 
-def set_eps(sess, eps, run_ops, inputs, graph=None):
+def set_eps(sess, eps, graph=None):
     if graph is None:
         graph = tf.get_default_graph()
 
     eps_setter = graph.get_operation_by_name('init/eps_setter')
+    run_ops = tf.get_collection('run_ops')
+    inputs = tf.get_collection('inputs')
     eps_tensor = [i for i in run_ops if 'eps' in i.name][0]
     eps_ph = [i for i in inputs if 'eps_ph' in i.name][0]
 
@@ -118,7 +121,7 @@ def run_hmc(FLAGS, log_file=None):
     run_summaries_dir = os.path.join(model.log_dir, 'summaries', 'run')
     io.check_else_make_dir(run_summaries_dir)
     _, _ = create_summaries(model, run_summaries_dir, training=False)
-    run_logger = RunLogger(params, inputs, run_ops, save_lf_data=False)
+    run_logger = RunLogger(params, model_type='GaugeModel', save_lf_data=False)
     plotter = GaugeModelPlotter(params, run_logger.figs_dir)
 
     inference_dict = inference_setup(params)
@@ -126,7 +129,7 @@ def run_hmc(FLAGS, log_file=None):
     # --------------------------------------
     # Create GaugeModelRunner for inference
     # --------------------------------------
-    runner = GaugeModelRunner(sess, params, inputs, run_ops, run_logger)
+    runner = Runner(sess, params, run_logger, model_type='GaugdeModel')
     run_inference(inference_dict, runner, run_logger, plotter)
 
 
@@ -134,7 +137,7 @@ def inference(runner, run_logger, plotter, energy_plotter, **kwargs):
     """Perform an inference run, if it hasn't been ran previously.
 
     Args:
-        runner: GaugeModelRunner object, responsible for performing inference.
+        runner: `Runner` object, responsible for performing inference.
         run_logger: RunLogger object, responsible for running `tf.summary`
             operations and accumulating/saving run statistics.
         plotter: GaugeModelPlotter object responsible for plotting lattice
@@ -198,7 +201,7 @@ def run_inference(runner, run_logger=None, plotter=None, **kwargs):
 
     Args:
         inference_dict: Dictionary containing parameters to use for inference.
-        runner: GaugeModelRunner object that actually performs the inference.
+        runner: `Runner` object that actually performs the inference.
         run_logger: RunLogger object that logs observables and other data
             generated during inference.
         plotter: GaugeModelPlotter object responsible for plotting observables
@@ -265,35 +268,53 @@ def main(kwargs):
     if not is_chief:
         return
 
+    # --------------------------------------------------------
+    # locate `checkpoint_dir` containing `checkpoint_file`
+    # --------------------------------------------------------
     checkpoint_dir = os.path.join(params['log_dir'], 'checkpoints/')
     assert os.path.isdir(checkpoint_dir)
     checkpoint_file = tf.train.latest_checkpoint(checkpoint_dir)
 
+    # --------------------------------------------------------------
+    # load meta graph containing saved model from `checkpoint_file`
+    # --------------------------------------------------------------
     config, params = create_config(params)
     sess = tf.Session(config=config)
     saver = tf.train.import_meta_graph(f'{checkpoint_file}.meta')
     saver.restore(sess, checkpoint_file)
 
     #  _ = initialize_uninitialized(sess)
-    run_ops = tf.get_collection('run_ops')
-    inputs = tf.get_collection('inputs')
+    #  run_ops = tf.get_collection('run_ops')
+    #  inputs = tf.get_collection('inputs')
     #  energy_ops = tf.get_collection('energies')
 
+    # ---------------------------------------------------
+    # setup the step size `eps` (if using custom value)
+    # ---------------------------------------------------
     eps = kwargs.get('eps', None)
     if eps is not None:
         io.log(f'`eps` is not None: {eps:.4g}')
         graph = tf.get_default_graph()
-        set_eps(sess, eps, run_ops, inputs, graph)
+        set_eps(sess, eps, graph)
 
+    # -------------------
+    # setup net_weights
+    # -------------------
     scale_weight = kwargs.get('scale_weight', 1.)
     translation_weight = kwargs.get('translation_weight', 1.)
     transformation_weight = kwargs.get('transformation_weight', 1.)
     net_weights = [scale_weight, translation_weight, transformation_weight]
 
+    # -------------
+    # setup beta
+    # -------------
     beta_inference = kwargs.get('beta_inference', None)
     beta_final = params.get('beta_final', None)
     beta = beta_final if beta_inference is None else beta_inference
 
+    # -------------------------------------------------
+    # setup initial samples to be used for inference
+    # -------------------------------------------------
     x_dim = params['space_size'] * params['time_size'] * params['dim']
     samples_shape = (params['batch_size'], x_dim)
     init_method = kwargs.get('samples_init', 'random')
@@ -307,11 +328,9 @@ def main(kwargs):
         samples_init = (np.ones(samples_shape)
                         + 1e-2 * np.random.randn(*samples_shape))
 
-    run_logger = RunLogger(params, inputs, run_ops,  # energy_ops,
-                           model_type='GaugeModel', save_lf_data=True)
+    run_logger = RunLogger(params, model_type='GaugeModel', save_lf_data=False)
 
-    runner = GaugeModelRunner(sess, params, inputs,
-                              run_ops, run_logger)
+    runner = Runner(sess, params, logger=run_logger, model_type='GaugeModel')
     plotter = GaugeModelPlotter(params, run_logger.figs_dir)
     energy_plotter = EnergyPlotter(params, run_logger.figs_dir)
 
