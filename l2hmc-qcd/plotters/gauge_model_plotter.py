@@ -17,7 +17,7 @@ from scipy.stats import sem
 from lattice.lattice import u1_plaq_exact
 from config import COLORS, MARKERS, HAS_MATPLOTLIB
 
-from .plot_utils import MPL_PARAMS, plot_multiple_lines, tsplotboot
+from .plot_utils import MPL_PARAMS, plot_multiple_lines  # , tsplotboot
 
 if HAS_MATPLOTLIB:
     import matplotlib as mpl
@@ -35,8 +35,7 @@ BootstrapData = namedtuple('BootstrapData', ['mean', 'err', 'means_bs'])
 def arr_from_dict(d, key):
     if isinstance(d[key], dict):
         return np.array(list(d[key].values()))
-    else:
-        return np.array(d[key])
+    return np.array(d[key])
 
 
 def get_out_file(out_dir, out_str):
@@ -112,7 +111,7 @@ class EnergyPlotter:
         nw = net_weights
         try:
             title_str = _get_title(lf_steps, eps, bs, beta, nw)
-        except:
+        except ValueError:
             title_str = ''
 
         return title_str, out_dir
@@ -325,6 +324,7 @@ class EnergyPlotter:
         self._potential_plots(energy_data, title, out_dir)
         self._kinetic_plots(energy_data, title, out_dir)
         self._hamiltonian_plots(energy_data, title, out_dir)
+
 
 class GaugeModelPlotter:
     def __init__(self, params, figs_dir=None, experiment=None):
