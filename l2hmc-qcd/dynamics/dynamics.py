@@ -194,24 +194,36 @@ class Dynamics(tf.keras.Model):
         and use sampled masks to compute the actual solutions.
 
         Args:
-            x_in (placeholder): Batch of (x) samples (GaugeLattice.samples).
-            beta (float): Inverse coupling constant.
+            x_init (tf.placeholder): Batch of (x) samples 
+                (GaugeLattice.samples).
+            beta (tf.placeholder): Inverse coupling constant.
             net_weights: Array of scaling weights to multiply each of the
                 output functions (scale, translation, transformation).
-            train_phase: Boolean tf.placeholder used to indicate if currently
-                training model or running inference on trained model.
+            train_phase (tf.placeholder): Boolean tf.placeholder used to
+                indicate if the model is currently being trained. 
 
         Returns:
-            x_proposed: Proposed x before accept/reject step.
-            v_proposed: Proposed v before accept/reject step.
-            accept_prob: Probability of accepting the proposed states.
-            x_out: Samples after accept/reject step.
+            outputs (dict): Containing 
+
+             - `outputs_fb`: The outputs from running the dynamics both
+               forward and backward and performing the subsequent
+               accept/reject step.
+
+             - `energies`: Dictionary of each of the energies computed at the
+               beginning and end of the trajectory 
+
+        NOTE: 
+
+            - `proposed` corresponds to the configuration prior to
+              accept/reject and 
+
+            - `out` corresponds to the configurations after accept/reject.
         """
         if model_type == 'GaugeModel':
             x_init = tf.mod(x_init, 2 * np.pi, name='x_in_mod_2_pi')
 
         # Call `self.transition_kernel` in the forward direction, 
-        # starting from the initial `State`: `(x_init`, `v_init_f, beta)`
+        # starting from the initial `State`: `(x_init, v_init_f, beta)`
         # to get the proposed `State`
         with tf.name_scope('transition_forward'):
             v_init_f = tf.random_normal(tf.shape(x_init),
