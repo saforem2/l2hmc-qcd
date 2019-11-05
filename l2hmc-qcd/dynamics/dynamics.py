@@ -7,6 +7,10 @@ Networks](https://arxiv.org/pdf/1711.09268.pdf)
 Code adapted from the released TensorFlow graph implementation by original
 authors https://github.com/brain-research/l2hmc.
 
+NOTE: Robust parameter estimation paper can be found at:
+    https://infoscience.epfl.ch/record/264887/files/robust_parameter_estimation.pdf
+
+
 Author: Sam Foreman (github: @saforem2)
 Date: 1/14/2019
 """
@@ -17,7 +21,7 @@ from __future__ import absolute_import
 import numpy as np
 import tensorflow as tf
 import numpy.random as npr
-from collections import namedtuple
+from collections import namedtuple, OrderedDict
 
 from network.network import FullNet
 import config as cfg
@@ -33,7 +37,6 @@ GLOBAL_SEED = cfg.GLOBAL_SEED
 # -----------------------
 State = namedtuple('State', ['x', 'v', 'beta'])
 EnergyData = namedtuple('EnergyData', ['init', 'proposed', 'out'])
-                                       #  'proposed_diff', 'out_diff'])
 
 
 def exp(x, name=None):
@@ -246,9 +249,6 @@ class Dynamics(tf.keras.Model):
             outputs_b = self.transition_kernel(*state_init_b,
                                                weights, train_phase,
                                                forward=False, hmc=hmc)
-            #  args = (*state_init_b, weights, train_phase)
-            #  kwargs = {'forward': False, 'hmc': hmc}
-            #  outputs_b = self.transition_kernel(*args, **kwargs)
             xb = outputs_b['x_proposed']
             vb = outputs_b['v_proposed']
             pxb = outputs_b['accept_prob']
@@ -259,15 +259,24 @@ class Dynamics(tf.keras.Model):
             # Decide direction uniformly
             mask_f, mask_b = self._get_transition_masks()
 
-            # Obtain proposed states
-            v_init = v_init_f * mask_f[:, None] + v_init_b * mask_b[:, None]
-            v_proposed = vf * mask_f[:, None] + vb * mask_b[:, None]
-            x_proposed = xf * mask_f[:, None] + xb * mask_b[:, None]
+            # Use forward/backward mask to reconstruct `v_init`
+            v_init = (v_init_f * mask_f[:, None] + v_init_b * mask_b[:, None])
 
-            # Probability of accepting proposed states; (!) is w/o sumlogdet
-            accept_prob = pxf * mask_f + pxb * mask_b
-            accept_prob_hmc = pxf_hmc * mask_f + pxb_hmc * mask_b  # (!)
+            # Obtain proposed states
+            x_proposed = xf * mask_f[:, None] + xb * mask_b[:, None]
+            v_proposed = vf * mask_f[:, None] + vb * mask_b[:, None]
+
             sumlogdet_proposed = sumlogdetf * mask_f + sumlogdetb * mask_b
+
+            # Probability of accepting proposed states
+            accept_prob = pxf * mask_f + pxb * mask_b
+            # ---------------------------------------------------------------
+            # NOTE: `accept_prob_hmc` can be ignored unless we are using the
+            # NNEHMC loss function from the 'Robust Parameter Estimation...'
+            # paper (see line 10 for a link)
+            # ---------------------------------------------------------------
+            # Probability of accepting proposed states (if `sumlogdet == 0`)
+            accept_prob_hmc = pxf_hmc * mask_f + pxb_hmc * mask_b  # (!)
 
         # Accept or reject step
         with tf.name_scope('accept_reject_step'):
@@ -275,50 +284,55 @@ class Dynamics(tf.keras.Model):
             mask_a, mask_r = self._get_accept_masks(accept_prob)
 
             # State (x, v)  after accept / reject step
-            x_accept = x_proposed * mask_a[:, None]
-            v_accept = v_proposed * mask_a[:, None]
-            #  sumlogdet_accept = sumlogdet
-            x_reject = x_init * mask_r[:, None]
-            v_reject = v_init * mask_r[:, None]
-
-            x_out = x_accept + x_reject
-            v_out = v_accept + v_reject
-
+            x_out = x_proposed * mask_a[:, None] + x_init * mask_r[:, None]
+            v_out = v_proposed * mask_a[:, None] + v_init * mask_r[:, None]
             sumlogdet_out = sumlogdet_proposed * mask_a
+
+        if model_type == 'GaugeModel':
+            # Take `mod` operations here for calculating the energies
+            x_proposed = tf.mod(x_proposed, 2 * np.pi,
+                                name='x_proposed_mod_2pi')
+            x_out = tf.mod(x_out, 2 * np.pi, name='x_out_mod_2_pi')
 
         with tf.name_scope('calc_energies'):
             with tf.name_scope('potential'):
-                with tf.name_scope('init'):
+                with tf.name_scope('init'):  # initial potential energy
                     pe_init = self.potential_energy(x_init, beta)
-                with tf.name_scope('proposed'):
+                with tf.name_scope('proposed'):  # proposed potential energy
                     pe_proposed = self.potential_energy(x_proposed, beta)
-                with tf.name_scope('out'):
+                with tf.name_scope('out'):  # output potential energy
                     pe_out = self.potential_energy(x_out, beta)
 
-            pe_data = EnergyData(pe_init, pe_proposed, pe_out)
-            _add_to_collection('potential_energy', pe_data)
+                # Create an `EnergyData` object for storing the energies and
+                # add it to the `potential_energy` collection for easy-access
+                # later
+                pe_data = EnergyData(pe_init, pe_proposed, pe_out)
+                _add_to_collection('potential_energy', pe_data)
 
             with tf.name_scope('kinetic'):
-                with tf.name_scope('init'):
+                with tf.name_scope('init'):  # initial kinetic energy
                     ke_init = self.kinetic_energy(v_init)
-                with tf.name_scope('proposed'):
+                with tf.name_scope('proposed'):  # proposed kinetic energy
                     ke_proposed = self.kinetic_energy(v_proposed)
-                with tf.name_scope('out'):
+                with tf.name_scope('out'):  # output kinetic energy
                     ke_out = self.kinetic_energy(v_out)
 
-            ke_data = EnergyData(ke_init, ke_proposed, ke_out)
-            _add_to_collection('kinetic_energy', ke_data)
+                ke_data = EnergyData(ke_init, ke_proposed, ke_out)
+                _add_to_collection('kinetic_energy', ke_data)
 
             with tf.name_scope('hamiltonian'):
-                with tf.name_scope('init'):
-                    h_init = pe_init + ke_init
-                with tf.name_scope('proposed'):
-                    h_proposed = pe_proposed + ke_proposed + sumlogdet_proposed
-                with tf.name_scope('out'):
-                    h_out = pe_out + ke_out + sumlogdet_out
+                with tf.name_scope('init'):  # initial hamiltonian
+                    h_init = self.hamiltonian(x_init, v_init, beta)
+                with tf.name_scope('proposed'):  # proposed hamiltonian
+                    h_proposed = (self.hamiltonian(x_proposed,
+                                                   v_proposed, beta)
+                                  + sumlogdet_proposed)
+                with tf.name_scope('out'):  # output hamiltonian
+                    h_out = (self.hamiltonian(x_out, v_out, beta)
+                             + sumlogdet_out)
 
-            h_data = EnergyData(h_init, h_proposed, h_out)
-            _add_to_collection('hamiltonian', h_data)
+                    h_data = EnergyData(h_init, h_proposed, h_out)
+                    _add_to_collection('hamiltonian', h_data)
 
             energies = {
                 'potential': pe_data,
@@ -343,69 +357,13 @@ class Dynamics(tf.keras.Model):
             'mask_r': mask_r,  # reject mask
             #  'sumlogdet': sumlogdet,
         }
-        _outputs = [x_out, accept_prob, mask_a]
-        _ = [tf.add_to_collection('dynamics_out', i) for i in _outputs]
+        #  outputs_fb = OrderedDict(outputs_fb.items())
+        for val in outputs_fb.values():
+            tf.add_to_collection('dynamics_out', val)
 
         outputs = {
             'outputs_fb': outputs_fb,
-            #  'outputs_f': outputs_f,
-            #  'outputs_b': outputs_b,
             'energies': energies,
-        }
-
-        return outputs
-
-    def calc_energies(self, outputs_fb, beta):
-        """Calculate energies at beginning/end of trajectory and differences.
-
-        Args:
-            outputs_fb: Dictionary of forward/backward outputs from
-                `self.apply_transition` method.
-        """
-        x_init = outputs_fb['x_init']
-        v_init = outputs_fb['v_init']
-        x_proposed = outputs_fb['x_proposed']
-        v_proposed = outputs_fb['v_proposed']
-        x_out = outputs_fb['x_out']
-        v_out = outputs_fb['v_out']
-
-        sumlogdet_proposed = outputs_fb['sumlogdet_proposed']
-        sumlogdet_out = outputs_fb['sumlogdet_out']
-
-        pe_init = self.potential_energy(x_init, beta)
-        ke_init = self.kinetic_energy(v_init)
-        h_init = pe_init + ke_init
-
-        pe_proposed = self.potential_energy(x_proposed, beta)
-        ke_proposed = self.kinetic_energy(v_proposed)
-        h_proposed = pe_proposed + ke_proposed + sumlogdet_proposed
-
-        pe_out = self.potential_energy(x_out, beta)
-        ke_out = self.kinetic_energy(v_out)
-        h_out = pe_out + ke_out + sumlogdet_out
-
-        pe_proposed_diff = pe_proposed - pe_init
-        ke_proposed_diff = ke_proposed - ke_init
-        h_proposed_diff = h_proposed - h_init
-
-        pe_out_diff = pe_out - pe_init
-        ke_out_diff = ke_out - ke_init
-        h_out_diff = h_out - h_init
-
-        pe_data = EnergyData(pe_init, pe_proposed, pe_out)
-
-        _ = [tf.add_to_collection('energies', e) for e in pe_data]
-
-        ke_data = EnergyData(ke_init, ke_proposed, ke_out)
-        _ = [tf.add_to_collection('energies', e) for e in ke_data]
-
-        h_data = EnergyData(h_init, h_proposed, h_out)
-        _ = [tf.add_to_collection('energies', e) for e in h_data]
-
-        outputs = {
-            'potential': pe_data,
-            'kinetic': ke_data,
-            'hamiltonian': h_data
         }
 
         return outputs
