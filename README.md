@@ -2,6 +2,8 @@
 
 [![CodeFactor](https://www.codefactor.io/repository/github/saforem2/l2hmc-qcd/badge)](https://www.codefactor.io/repository/github/saforem2/l2hmc-qcd)
 
+[![HitCount](http://hits.dwyl.io/saforem2/l2hmc-qcd.svg)](http://hits.dwyl.io/saforem2/l2hmc-qcd)
+
 Application of the L2HMC algorithm to simulations in lattice QCD. A description
 of the L2HMC algorithm can be found in the paper:
 
