@@ -26,16 +26,16 @@ from utils.file_io import save_params
 #  from models.gmm_model import GaussianMixtureModel
 
 
-h_str = ("{:^12s}" + 10 * "{:^10s}").format(
-    "STEP", "LOSS", "t/STEP", "% ACC", "EPS",
-    "BETA", "ACTION", "PLAQ", "(EXACT)", "dQ", "LR"
+h_str = ("{:^12s}" + 9 * "{:^10s}").format(
+    "STEP", "t/STEP", "LOSS", "% ACC", "EPS",
+    "BETA", "ACTION", "PLAQ", "(EXACT)", "LR"
 )
 
 dash = (len(h_str) + 1) * '-'
 TRAIN_HEADER = dash + '\n' + h_str + '\n' + dash
 
 
-TrainData = namedtuple('TrainData', ['loss', 'prob', 'eps'])
+TrainData = namedtuple('TrainData', ['loss', 'px', 'eps'])
 
 ObsData = namedtuple('ObsData', [
     'actions', 'plaqs', 'charges',  # 'charge_diffs'
@@ -53,23 +53,26 @@ class TrainLogger:
         self.logging_steps = logging_steps
 
         self.train_data = {}
-        self.train_energy_data = {
-            'potential': {},
-            'kinetic': {},
-            'hamiltonian': {},
-        }
         if model._model_type == 'GaugeModel':
             self._model_type = model._model_type
             self.obs_data = {}
-            self.h_strf = ("{:^12s}" + 10 * "{:^10s}").format(
-                "STEP", "LOSS", "t/STEP", "% ACC", "EPS",
-                "BETA", "ACTION", "PLAQ", "(EXACT)", "dQ", "LR"
-            )
+
+            h_keys = ["t/STEP", "LOSS", "% ACC", "EPS",
+                      "BETA", "LR" "ACTION", "PLAQ", "(EXACT)"]
+            num_keys = len(h_keys)
+
+            self.h_strf = ("{:^12s}".format("STEP")
+                           + num_keys * "{:^10s}".format(*h_keys))
+
+            #  self.h_strf = ("{:^12s}" + 9 * "{:^10s}").format(
+            #      "STEP", "t/STEP", "LOSS", "% ACC", "EPS", "BETA", "LR"
+            #      "ACTION", "PLAQ", "(EXACT)"
+            #  )
 
         if model._model_type == 'GaussianMixtureModel':
             self._model_type = 'GaussianMixtureModel'
             self.h_strf = ("{:^12s}" + 6 * "{:^10s}").format(
-                "STEP", "LOSS", "t/STEP", "% ACC", "EPS", "BETA", "LR"
+                "STEP", "t/STEP", "LOSS", "% ACC", "EPS", "BETA", "LR"
             )
 
         self.dash = (len(self.h_strf) + 1) * '-'
@@ -83,7 +86,6 @@ class TrainLogger:
         save_params(self.model.params, self.log_dir)
 
         if self.summaries:
-            #  with tf.variable_scope('train_summaries'):
             self.writer = tf.summary.FileWriter(self.train_summary_dir,
                                                 tf.get_default_graph())
             self.summary_writer, self.summary_op = create_summaries(
@@ -119,8 +121,8 @@ class TrainLogger:
     def log_step(self, sess, data, net_weights):
         """Update self.logger.summaries."""
         feed_dict = {
-            self.model.x: data.samples,
-            self.model.beta: data.beta,
+            self.model.x: data['x_in'],
+            self.model.beta: data['beta'],
             self.model.net_weights[0]: net_weights[0],
             self.model.net_weights[1]: net_weights[1],
             self.model.net_weights[2]: net_weights[2],
@@ -128,13 +130,13 @@ class TrainLogger:
         }
         summary_str = sess.run(self.summary_op, feed_dict=feed_dict)
 
-        self.writer.add_summary(summary_str, global_step=data.step)
+        self.writer.add_summary(summary_str, global_step=data['step'])
         self.writer.flush()
 
     def update(self, sess, data, data_str, net_weights):
         """Update _current state and train_data."""
         print_steps = getattr(self, 'print_steps', 1)
-        step = data.step
+        step = data['step']
 
         if (step + 1) % print_steps == 0:
             io.log(data_str)
@@ -142,11 +144,11 @@ class TrainLogger:
         if (step + 1) % 100 == 0:
             io.log(self.train_header)
 
-        self.train_data[step] = TrainData(data.loss, data.prob, data.eps)
-
-        if self._model_type == 'GaugeModel':
-            self.obs_data[step] = ObsData(data.actions, data.plaqs,
-                                          data.charges)  #, data.charge_diffs)
+        for key, val in data.items():
+            try:
+                self.train_data[key].append(val)
+            except KeyError:
+                self.train_data[key] = [val]
 
         self.train_data_strings.append(data_str)
         if self.summaries and (step + 1) % self.logging_steps == 0:

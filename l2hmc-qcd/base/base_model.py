@@ -8,7 +8,7 @@ Implements BaseModel class.
 
 References:
 -----------
-[1] https://infoscience.epfl.ch/record/264887/files/robust_parameter_estimation.pdf 
+[1] https://infoscience.epfl.ch/record/264887/files/robust_parameter_estimation.pdf
 
 
 Author: Sam Foreman (github: @saforem2)

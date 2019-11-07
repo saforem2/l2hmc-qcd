@@ -53,10 +53,13 @@ def _rename(src, dst):
 
 
 def _get_eps():
-    run_ops = tf.get_collection('run_ops')
-    eps = [i for i in run_ops if 'eps' in i.name][0]
+    eps = [i for i in tf.global_variables() if 'eps' in i.name][0]
     return eps
 
+
+H_STRF = ("{:^12s}" + 4 * "{:^10s}").format(
+    "STEP", "t/STEP", "% ACC", "EPS", "BETA"
+)
 
 
 class RunLogger:
@@ -71,20 +74,15 @@ class RunLogger:
         self.summaries = params['summaries']
         assert os.path.isdir(params['log_dir'])
         self.log_dir = params['log_dir']
-        if model_type == 'GaussianMixtureModel':
-            self.model_type = model_type
-            h_strf = ("{:^12s}" + 4 * "{:^10s}").format(
-                "STEP", "t/STEP", "% ACC", "EPS", "BETA"
-            )
-        elif model_type == 'GaugeModel':
-            self.model_type = model_type
-            h_strf = ("{:^12s}" + 7 * "{:^10s}").format(
-                "STEP", "t/STEP", "% ACC", "EPS", "BETA",
-                "ACTIONS", "PLAQS", "(EXACT)",  # "dQ"
-            )
+        self.model_type = model_type
+        self.h_strf = ("{:^12s}" + 4 * "{:^10s}").format(
+            "STEP", "t/STEP", "% ACC", "EPS", "BETA"
+        )
+        if self.model_type == 'GaugeModel':
+            self.h_strf += 3 * "{:^10s}".format("ACTIONS", "PLAQS", "(EXACT)")
 
-        dash = (len(h_strf) + 1) * '-'
-        self.run_header = dash + '\n' + h_strf + '\n' + dash
+        dash = (len(self.h_strf) + 1) * '-'
+        self.run_header = dash + '\n' + self.h_strf + '\n' + dash
 
         runs_dir = os.path.join(self.log_dir, 'runs')
         figs_dir = os.path.join(self.log_dir, 'figures')
