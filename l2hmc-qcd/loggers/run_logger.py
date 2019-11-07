@@ -53,11 +53,7 @@ def _rename(src, dst):
 
 
 def _get_eps():
-    try:
-        eps = [i for i in tf.global_variables() if 'eps' in i.name][0]
-    except:
-        import pudb; pudb.set_trace()
-
+    eps = [i for i in tf.global_variables() if 'eps' in i.name][0]
     return eps
 
 

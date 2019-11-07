@@ -150,14 +150,6 @@ class TrainLogger:
             except KeyError:
                 self.train_data[key] = [val]
 
-        #  self.train_data[step] = TrainData(data['loss_op'], data['px'], data)
-
-        '''
-        if self._model_type == 'GaugeModel':
-            self.obs_data[step] = ObsData(data.actions, data.plaqs,
-                                          data.charges)  #, data.charge_diffs)
-        '''
-
         self.train_data_strings.append(data_str)
         if self.summaries and (step + 1) % self.logging_steps == 0:
             self.log_step(sess, data, net_weights)
