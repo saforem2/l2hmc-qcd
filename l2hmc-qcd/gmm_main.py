@@ -20,7 +20,8 @@ from main import count_trainable_params, create_config, train_setup
 from models.gmm_model import GaussianMixtureModel
 from plotters.plot_utils import _gmm_plot
 from loggers.train_logger import TrainLogger
-from trainers.gmm_trainer import GaussianMixtureModelTrainer
+#  from trainers.gmm_trainer import GaussianMixtureModelTrainer
+from trainers.trainer import Trainer
 
 import numpy as np
 import tensorflow as tf
@@ -143,13 +144,16 @@ def train_l2hmc(FLAGS, log_file=None):
         sess = create_session(config, checkpoint_dir, monitored=True)
         tf.keras.backend.set_session(sess)
 
+    nw_init = [1., 1., 1.]
+    beta_init = model.beta_init
     samples_init = np.random.randn(*model.x.shape)
+
     feed_dict = {
         model.x: samples_init,
-        model.beta: 1.,
-        model.net_weights[0]: 1.,
-        model.net_weights[1]: 1.,
-        model.net_weights[2]: 1.,
+        model.beta: beta_init,
+        model.net_weights[0]: nw_init[0],
+        model.net_weights[1]: nw_init[1],
+        model.net_weights[2]: nw_init[2],
         model.train_phase: False
     }
 
@@ -162,13 +166,14 @@ def train_l2hmc(FLAGS, log_file=None):
     io.log_and_write(reverse_str, reverse_file)
 
     # TRAINING
-    trainer = GaussianMixtureModelTrainer(sess, model, logger=train_logger)
+    trainer = Trainer(sess, model, train_logger, **params)
+
+    #  trainer = GaussianMixtureModelTrainer(sess, model, logger=train_logger)
 
     train_kwargs = {
-        'samples_np': np.random.randn(*model.x.shape),
-        'beta_np': model.beta_init,
-        'net_weights': [1., 1., 1.],
-        'print_steps': 1.,
+        'samples': samples_init,
+        'beta': beta_init,
+        'net_weights':  nw_init,
     }
 
     train_steps = FLAGS.get('train_steps', 5000)

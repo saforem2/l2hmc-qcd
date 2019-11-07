@@ -13,11 +13,12 @@ import time
 
 from config import HAS_HOROVOD, HAS_MATPLOTLIB
 from loggers.run_logger import RunLogger
-from runners.gmm_runner import GaussianMixtureModelRunner
+from runners.runner import Runner
 from plotters.plot_utils import _gmm_plot, gmm_plot
 
 import numpy as np
 import tensorflow as tf
+import inference.utils as utils
 
 import utils.file_io as io
 
@@ -26,6 +27,8 @@ from gauge_inference import _log_inference_header
 from inference.gmm_inference_utils import (create_config, load_params,
                                            recreate_distribution,
                                            save_inference_data)
+
+from plotters.gauge_model_plotter import EnergyPlotter
 
 if HAS_HOROVOD:
     import horovod.tensorflow as hvd
@@ -46,35 +49,7 @@ if float(tf.__version__.split('.')[0]) <= 2:
 SEP_STR = 80 * '-'
 
 
-'''
-def set_num_steps(sess, num_steps, run_ops, inputs, graph=None):
-    """Seet the number of leapfrog steps to `num_steps`. """
-    if graph is None:
-        graph = tf.get_default_graph()
-
-    num_steps_setter = graph.get_operation_by_name('init/num_steps_setter')
-    num_steps_tensor = [i for i in run_
-    '''
-
-
-def set_eps(sess, eps, run_ops, inputs, graph=None):
-    if graph is None:
-        graph = tf.get_default_graph()
-
-    eps_setter = graph.get_operation_by_name('init/eps_setter')
-    eps_tensor = [i for i in run_ops if 'eps' in i.name][0]
-    eps_ph = [i for i in inputs if 'eps_ph' in i.name][0]
-
-    eps_np = sess.run(eps_tensor)
-    io.log(f'INFO: Original value of `eps`: {eps_np}')
-    io.log(f'INFO: Setting `eps` to: {eps}.')
-    sess.run(eps_setter, feed_dict={eps_ph: eps})
-    eps_np = sess.run(eps_tensor)
-
-    io.log(f'INFO: New value of `eps`: {eps_np}')
-
-
-def inference(runner, run_logger, **kwargs):
+def inference(runner, run_logger, energy_plotter=None, **kwargs):
     run_steps = kwargs.get('run_steps', 5000)     # num. of accept/reject steps
     nw = kwargs.get('net_weights', [1., 1., 1.])  # custom net_weights
     bs_iters = kwargs.get('bs_iters', 200)  # num. bootstrap replicates
@@ -83,6 +58,7 @@ def inference(runner, run_logger, **kwargs):
     skip_acl = kwargs.get('skip_acl', False)  # calc autocorrelation or not
     ignore_first = kwargs.get('ignore_first', 0.1)  # % to ignore for therm.
     calc_true = kwargs.get('calc_true', False)
+
     if eps is None:
         eps = runner.eps
         kwargs['eps'] = eps
@@ -94,6 +70,7 @@ def inference(runner, run_logger, **kwargs):
 
     if run_logger.existing_run(run_str):
         _log_inference_header(*args, existing=True)
+
     else:
         _log_inference_header(*args, existing=False)
         run_logger.reset(**kwargs)  # reset run_logger to prepare for new run
@@ -102,13 +79,14 @@ def inference(runner, run_logger, **kwargs):
 
         runner.run(**kwargs)        # run inference and log time spent
 
-        run_time = time.time() - t0
-        io.log(SEP_STR
-               + f'\nTook: {run_time:.4g}s to complete run.\n'
-               + SEP_STR)
+        dt = time.time() - t0
+        io.log(SEP_STR + f'\nTook: {dt:.4g}s to complete run.\n' + SEP_STR)
 
-        samples_out = np.array(run_logger.samples_arr)
-        px_out = np.array(run_logger.px_arr)
+        if energy_plotter is not None:
+            energy_plotter.plot_energies(run_logger.energy_dict, **kwargs)
+
+        samples_arr = np.array(run_logger.run_data['x_out'])
+        px_arr = np.array(run_logger.run_data['px'])
 
         log_dir = os.path.dirname(run_logger.runs_dir)
         run_dir = run_logger.run_dir
@@ -117,7 +95,7 @@ def inference(runner, run_logger, **kwargs):
         fig_dir = os.path.join(figs_dir, basename)
         _ = [io.check_else_make_dir(d) for d in [figs_dir, fig_dir]]
 
-        args = (samples_out, px_out, run_dir, fig_dir)
+        args = (samples_arr, px_arr, run_dir, fig_dir)
         kwargs = {
             'skip_acl': skip_acl,
             'bs_iters': bs_iters,
@@ -132,7 +110,7 @@ def inference(runner, run_logger, **kwargs):
 
             title = (r"""$\varepsilon = $""" + f'{eps:.3g} '
                      + r"""$\langle p_{x} \rangle= $"""
-                     + f'{np.mean(px_out[:, -1]):.3g}')
+                     + f'{np.mean(px_arr[:, -1]):.3g}')
 
             plot_kwargs = {
                 'out_file': os.path.join(fig_dir, 'single_chain.pdf'),
@@ -144,7 +122,7 @@ def inference(runner, run_logger, **kwargs):
                 'num_contours': 4
             }
 
-            _ = _gmm_plot(distribution, samples_out[:, -1], **plot_kwargs)
+            _ = _gmm_plot(distribution, samples_arr[:, -1], **plot_kwargs)
 
             plot_kwargs = {
                 'nrows': 2,
@@ -153,7 +131,7 @@ def inference(runner, run_logger, **kwargs):
                 'out_file': os.path.join(fig_dir, 'inference_plot.pdf'),
                 'axis_scale': 'equal',
             }
-            _, _ = gmm_plot(distribution, samples_out, **plot_kwargs)
+            _, _ = gmm_plot(distribution, samples_arr, **plot_kwargs)
 
     return runner, run_logger
 
@@ -184,13 +162,9 @@ def main(kwargs):
     saver = tf.train.import_meta_graph(f'{checkpoint_file}.meta')
     saver.restore(sess, checkpoint_file)
 
-    run_ops = tf.get_collection('run_ops')
-    inputs = tf.get_collection('inputs')
-
     eps = kwargs.get('eps', None)
     if eps is not None:
-        graph = tf.get_default_graph()
-        set_eps(sess, eps, run_ops, inputs, graph)
+        utils.set_eps(sess, eps)
 
     scale_weight = kwargs.get('scale_weight', 1.)
     translation_weight = kwargs.get('translation_weight', 1.)
@@ -201,44 +175,35 @@ def main(kwargs):
     beta_final = params.get('beta_final', None)
     beta = beta_final if beta_inference is None else beta_inference
 
-    # XXX XXX Try changing how samples are initialized below. XXX XXX
-    samples_shape = (params['batch_size'], params['x_dim'])
     init_method = kwargs.get('samples_init', 'random')
-    if init_method == 'random':
-        tmp = samples_shape[0] * samples_shape[1]
-        samples_init = np.random.uniform(-1, 1, tmp).reshape(*samples_shape)
-    elif 'zero' in init_method:
-        samples_init = np.zeros(samples_shape)
-    elif 'ones' in init_method:
-        samples_init = np.ones(samples_shape)
-        #  samples_init = 2 * np.random.rand(*(params['batch_size'],
-        #                                      params['x_dim']))
+    samples_init = utils.init_gmm_samples(params, init_method)
     kwargs['samples'] = samples_init
 
-    run_logger = RunLogger(params, inputs, run_ops,
-                           model_type='GaussianMixtureModel',
-                           save_lf_data=False)
+    run_logger = RunLogger(params, save_lf_data=False,
+                           model_type='GaussanMixtureModel')
+    runner = Runner(sess, params, logger=run_logger,
+                    model_type='GaussianMixtureModel')
+    energy_plotter = EnergyPlotter(params, run_logger.figs_dir)
 
-    runner = GaussianMixtureModelRunner(sess, params,
-                                        inputs, run_ops,
-                                        run_logger)
-
-    # NUMBER OF BOOTSTRAP REPLICATIONS TO USE IN ERROR ANALYSIS
-    bs_iters = kwargs.get('bootstrap_iters', 100)
     skip_acl = kwargs.get('skip_acl', False)
-    #
+    run_steps = kwargs.get('run_steps', 5000)
+    bs_iters = kwargs.get('bootstrap_iters', 500)
 
     inference_kwargs = {
-        'run_steps': kwargs.get('run_steps', 5000),
-        'net_weights': net_weights,
-        'beta': beta,
         'eps': eps,
+        'beta': beta,
+        'calc_true': True,
         'bs_iters': bs_iters,
         'skip_acl': skip_acl,
-        'calc_true': True,
+        'run_steps': run_steps,
+        'samples': samples_init,
+        'net_weights': net_weights,
     }
 
-    runner, run_logger = inference(runner, run_logger, **inference_kwargs)
+    runner, run_logger = inference(runner,
+                                   run_logger,
+                                   energy_plotter=energy_plotter,
+                                   **inference_kwargs)
 
     run_hmc = kwargs.get('run_hmc', False)
     if run_hmc:
@@ -248,18 +213,12 @@ def main(kwargs):
                f" `beta = {inference_kwargs['beta']}` with a "
                f" step size `eps = {inference_kwargs['eps']}`.\n")
 
-        hmc_inference_kwargs = {
-            'run_steps': kwargs.get('run_steps', 5000),
+        inference_kwargs.update({
             'net_weights': [0., 0., 0.],
-            'beta': beta,
-            'eps': eps,
-            'bs_iters': bs_iters,
             'calc_true': False,
-            'skip_acl': skip_acl
-        }
-        runner, run_logger = inference(runner,
-                                       run_logger,
-                                       **hmc_inference_kwargs)
+        })
+
+        runner, run_logger = inference(runner, run_logger, **inference_kwargs)
 
 
 if __name__ == '__main__':

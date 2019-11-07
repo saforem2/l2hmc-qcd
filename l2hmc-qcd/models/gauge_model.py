@@ -85,9 +85,7 @@ class GaugeModel(BaseModel):
             inputs = self._create_inputs()
             self.x = inputs['x']
             self.beta = inputs['beta']
-            nw_keys = [
-                'scale_weight', 'transl_weight', 'transf_weight'
-            ]
+            nw_keys = ['scale_weight', 'transl_weight', 'transf_weight']
             self.net_weights = [inputs[k] for k in nw_keys]
             self.train_phase = inputs['train_phase']
             self.eps_ph = inputs['eps_ph']
@@ -147,26 +145,13 @@ class GaugeModel(BaseModel):
             io.log(f'INFO: Calculating gradients for backpropagation...')
             self.grads = self._calc_grads(self.loss_op)
             self.train_op = self._apply_grads(self.loss_op, self.grads)
-            train_ops = self._build_train_ops()
+            self.train_ops = self._build_train_ops()
 
         # *******************************************************************
-        # Gather all operations needed to run inference on trained model
+        # FINISH UP: Make `train_ops` collections, print time to build.
         # -------------------------------------------------------------------
-        with tf.name_scope('run_ops'):
-            io.log(f'INFO: Building `run_ops`...')
-            run_ops = self._build_run_ops()
-
-        # *******************************************************************
-        # FINISH UP: Make `run_ops` and `train_ops` collections, print time.
-        # -------------------------------------------------------------------
-        self.ops_dict = {
-            'run_ops': run_ops,
-            'train_ops': train_ops
-        }
-
-        for key, val in self.ops_dict.items():
-            for op in list(val.values()):
-                tf.add_to_collection(key, op)
+        for val in self.train_ops.values():
+            tf.add_to_collection('train_ops', val)
 
         io.log(f'INFO: Done building graph. '
                f'Took: {time.time() - t0}s\n' + SEP_STRN)
@@ -358,39 +343,6 @@ class GaugeModel(BaseModel):
                 'l2hmc_fns_b': self._extract_l2hmc_fns(self.fns_out_b),
             }
 
-    def _build_run_ops(self):
-        """Build run_ops dict containing grouped operations for inference."""
-        run_ops = {
-            'x_out': self.x_out,
-            'px': self.px,
-            'dynamics_eps': self.dynamics_eps,
-            'actions': self.actions,
-            'plaqs': self.plaqs,
-            'avg_plaqs': self.avg_plaqs,
-            'charges': self.charges,
-            #  'charge_diffs': self.charge_diffs
-        }
-
-        #  if self.save_lf:
-        #      keys = ['lf_out', 'pxs_out', 'masks',
-        #              'logdets', 'sumlogdet', 'fns_out']
-        #
-        #      fkeys = [k + '_f' for k in keys]
-        #      bkeys = [k + '_b' for k in keys]
-        #
-        #      try:
-        #          run_ops.update({k: getattr(self, k) for k in fkeys})
-        #      except AttributeError:
-        #          pass
-        #          #  io.log(f'`GaugeModel` has no attribute `{k}`')
-        #      try:
-        #          run_ops.update({k: getattr(self, k) for k in bkeys})
-        #      except AttributeError:
-        #          pass
-        #          #  io.log(f'`GaugeModel` has no attribute `{k}`')
-
-        return run_ops
-
     def _build_train_ops(self):
         """Build train_ops dict containing grouped operations for training."""
         if self.hmc:
@@ -398,15 +350,14 @@ class GaugeModel(BaseModel):
 
         else:
             train_ops = {
-                'train_op': self.train_op,
                 'loss_op': self.loss_op,
+                'train_op': self.train_op,
                 'x_out': self.x_out,
                 'px': self.px,
                 'dynamics_eps': self.dynamics_eps,
                 'actions': self.actions,
                 'plaqs': self.plaqs,
                 'charges': self.charges,
-                #  'charge_diffs': self.charge_diffs,
                 'lr': self.lr
             }
 
