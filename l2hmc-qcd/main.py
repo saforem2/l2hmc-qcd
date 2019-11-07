@@ -41,7 +41,8 @@ from config import (GLOBAL_SEED, HAS_COMET, HAS_HOROVOD, HAS_MATPLOTLIB,
 from update import set_precision, set_seed
 from models.gauge_model import GaugeModel
 from loggers.train_logger import TrainLogger
-from trainers.gauge_model_trainer import GaugeModelTrainer
+from trainers.trainer import Trainer
+#  from trainers.gauge_model_trainer import GaugeModelTrainer
 
 import numpy as np
 import tensorflow as tf
@@ -301,23 +302,6 @@ def train_l2hmc(FLAGS, log_file=None):
                               (model.batch_size, model.x_dim))
     beta_init = model.beta_init
 
-    # ensure all variables are initialized
-    #  target_collection = []
-    #  if is_chief:
-    #      collection = tf.local_variables() + target_collection
-    #  else:
-    #      collection = tf.local_variables()
-    #
-    #  local_init_op = tf.variables_initializer(collection)
-    #  ready_for_local_init_op = tf.report_uninitialized_variables(collection)
-    #  init_op = tf.global_variables_initializer()
-    #
-    #  scaffold = tf.train.Scaffold(
-    #      init_feed_dict=init_feed_dict,
-    #      local_init_op=local_init_op,
-    #      ready_for_local_init_op=ready_for_local_init_op
-    #  )
-
     # ----------------------------------------------------------------
     #  Create MonitoredTrainingSession
     #
@@ -368,10 +352,11 @@ def train_l2hmc(FLAGS, log_file=None):
     # ----------------------------------------------------------
     #                       TRAINING
     # ----------------------------------------------------------
-    trainer = GaugeModelTrainer(sess, model, train_logger)
+    trainer = Trainer(sess, model, train_logger, **params)
+
     train_kwargs = {
-        'samples_np': samples_init,
-        'beta_np': beta_init,
+        'samples': samples_init,
+        'beta': beta_init,
         'net_weights': net_weights_init
     }
 

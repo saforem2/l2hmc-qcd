@@ -33,67 +33,32 @@ from config import HAS_HOROVOD
 
 #  from update import set_precision
 from runners.runner import Runner
-#  from runners.gauge_model_runner import GaugeModelRunner
+from plotters.leapfrog_plotters import LeapfrogPlotter
+from plotters.gauge_model_plotter import EnergyPlotter, GaugeModelPlotter
+
+import tensorflow as tf
+
+import utils.file_io as io
+import inference.utils as utils
+
 from models.gauge_model import GaugeModel
 from loggers.run_logger import RunLogger
 from loggers.summary_utils import create_summaries
-from plotters.leapfrog_plotters import LeapfrogPlotter
-from plotters.gauge_model_plotter import GaugeModelPlotter, EnergyPlotter
-
-import numpy as np
-import tensorflow as tf
-
-#  from plotters.plot_utils import plot_plaq_diffs_vs_net_weights
-#  from tensorflow.core.protobuf import rewriter_config_pb2
-import utils.file_io as io
-
-from utils.parse_inference_args import parse_args as parse_inference_args
 from inference.gauge_inference_utils import (_log_inference_header,
                                              create_config, inference_setup,
                                              load_params, log_plaq_diffs,
                                              parse_flags, SEP_STR)
+
+from utils.parse_inference_args import parse_args as parse_inference_args
+
+#  from plotters.plot_utils import plot_plaq_diffs_vs_net_weights
+#  from tensorflow.core.protobuf import rewriter_config_pb2
 
 if HAS_HOROVOD:
     import horovod.tensorflow as hvd
 
 if float(tf.__version__.split('.')[0]) <= 2:
     tf.logging.set_verbosity(tf.logging.INFO)
-
-
-def set_eps(sess, eps, graph=None):
-    if graph is None:
-        graph = tf.get_default_graph()
-
-    eps_setter = graph.get_operation_by_name('init/eps_setter')
-    run_ops = tf.get_collection('run_ops')
-    inputs = tf.get_collection('inputs')
-    eps_tensor = [i for i in run_ops if 'eps' in i.name][0]
-    eps_ph = [i for i in inputs if 'eps_ph' in i.name][0]
-
-    eps_np = sess.run(eps_tensor)
-    io.log(f'INFO: Original value of `eps`: {eps_np}')
-    io.log(f'INFO: Setting `eps` to: {eps}.')
-    sess.run(eps_setter, feed_dict={eps_ph: eps})
-    eps_np = sess.run(eps_tensor)
-
-    io.log(f'INFO: New value of `eps`: {eps_np}')
-
-
-def _init_samples(params, init_method):
-    """Create initial samples to be used at beginning of inference run."""
-    x_dim = params['space_size'] * params['time_size'] * params['dim']
-    samples_shape = (params['batch_size'], x_dim)
-    if init_method == 'random':
-        tmp = samples_shape[0] * samples_shape[1]
-        samples_init = np.random.uniform(-1, 1, tmp).reshape(*samples_shape)
-    elif 'zero' in init_method:
-        samples_init = (np.zeros(samples_shape)
-                        + 1e-2 * np.random.randn(*samples_shape))
-    elif 'ones' in init_method:
-        samples_init = (np.ones(samples_shape)
-                        + 1e-2 * np.random.randn(*samples_shape))
-
-    return samples_init
 
 
 def run_hmc(FLAGS, log_file=None):
@@ -148,8 +113,8 @@ def run_hmc(FLAGS, log_file=None):
     # Create initial samples to be used at start of inference
     # ----------------------------------------------------------
     init_method = getattr(FLAGS, 'samples_init', 'random')
-    samples_init = _init_samples(params, init_method)
-    inference_kwargs.update({'samples': samples_init})
+    samples_init = utils.init_gauge_samples(params, init_method)
+    inference_kwargs['samples'] = samples_init
 
     # --------------------------------------
     # Create GaugeModelRunner for inference
@@ -273,8 +238,7 @@ def main(kwargs):
     eps = kwargs.get('eps', None)
     if eps is not None:
         io.log(f'`eps` is not None: {eps:.4g}')
-        graph = tf.get_default_graph()
-        set_eps(sess, eps, graph)
+        utils.set_eps(sess, eps)
 
     # -------------------
     # setup net_weights
@@ -295,7 +259,7 @@ def main(kwargs):
     # setup initial samples to be used for inference
     # -------------------------------------------------
     init_method = kwargs.get('samples_init', 'random')
-    samples_init = _init_samples(params, init_method)
+    samples_init = utils.init_gauge_samples(params, init_method)
 
     # -----------------------------------------------------------------------
     # Create `RunLogger`, `Runner`, `GaugeModelPlotter` and `EnergyPlotter`

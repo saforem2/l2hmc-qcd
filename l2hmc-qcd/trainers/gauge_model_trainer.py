@@ -18,6 +18,7 @@ from lattice.lattice import u1_plaq_exact
 from config import NP_FLOAT
 from loggers.summary_utils import create_summaries
 from loggers.train_logger import TRAIN_HEADER
+from .trainer import linear_add_cooling, exp_mult_cooling
 
 __all__ = ['GaugeModelTrainer']
 
@@ -26,22 +27,6 @@ TrainStepData = namedtuple('TrainStepData', [
     'step', 'beta', 'loss', 'samples', 'samples_orig', 'prob',
     'lr', 'eps', 'actions', 'plaqs', 'charges',  # 'charge_diffs'
 ])
-
-
-def linear_add_cooling(step, temp_init, temp_final, num_steps):
-    remaining_frac = (num_steps - step) / num_steps
-    temp = temp_final + (temp_init - temp_final) * remaining_frac
-
-    return temp
-
-
-def exp_mult_cooling(step, temp_init, temp_final, num_steps, alpha=None):
-    if alpha is None:
-        alpha = np.exp((np.log(temp_final) - np.log(temp_init)) / num_steps)
-
-    temp = temp_init * (alpha ** step)
-
-    return temp
 
 
 class GaugeModelTrainer:
