@@ -253,7 +253,6 @@ def gen_ring(r=1.0, var=1.0, nb_mixtures=2):
         s = np.sin(2 * np.pi * t / nb_mixtures)
         base_points.append(np.array([r * c, r * s]))
 
-
     v = np.array(base_points)
     sigmas = [var * np.eye(2) for t in range(nb_mixtures)]
 

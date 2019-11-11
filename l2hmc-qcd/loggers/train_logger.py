@@ -35,45 +35,24 @@ dash = (len(h_str) + 1) * '-'
 TRAIN_HEADER = dash + '\n' + h_str + '\n' + dash
 
 
-TrainData = namedtuple('TrainData', ['loss', 'px', 'eps'])
-
-ObsData = namedtuple('ObsData', [
-    'actions', 'plaqs', 'charges',  # 'charge_diffs'
-])
-
-l2hmcFn = namedtuple('l2hmcFn', ['v1', 'x1', 'x2', 'v2'])
-l2hmcFns = namedtuple('l2hmcFns', ['scale', 'translation', 'transformation'])
-
-
 class TrainLogger:
     def __init__(self, model, log_dir, logging_steps=10, summaries=False):
         #  self.sess = sess
         self.model = model
+        self._model_type = model._model_type
         self.summaries = summaries
         self.logging_steps = logging_steps
 
         self.train_data = {}
+        self.h_strf = ("{:^12s}" + 6 * "{:^10s}").format(
+           "STEP", "t/STEP", "LOSS", "% ACC", "EPS", "BETA", "LR"
+        )
+
         if model._model_type == 'GaugeModel':
-            self._model_type = model._model_type
             self.obs_data = {}
-
-            h_keys = ["t/STEP", "LOSS", "% ACC", "EPS",
-                      "BETA", "LR" "ACTION", "PLAQ", "(EXACT)"]
-            num_keys = len(h_keys)
-
-            self.h_strf = ("{:^12s}".format("STEP")
-                           + num_keys * "{:^10s}".format(*h_keys))
-
-            #  self.h_strf = ("{:^12s}" + 9 * "{:^10s}").format(
-            #      "STEP", "t/STEP", "LOSS", "% ACC", "EPS", "BETA", "LR"
-            #      "ACTION", "PLAQ", "(EXACT)"
-            #  )
-
-        if model._model_type == 'GaussianMixtureModel':
-            self._model_type = 'GaussianMixtureModel'
-            self.h_strf = ("{:^12s}" + 6 * "{:^10s}").format(
-                "STEP", "t/STEP", "LOSS", "% ACC", "EPS", "BETA", "LR"
-            )
+            self.h_strf += 3 * "{:^10s}".format("ACTION",
+                                                "PLAQ",
+                                                "(EXACT)")
 
         self.dash = (len(self.h_strf) + 1) * '-'
         self.train_header = self.dash + '\n' + self.h_strf + '\n' + self.dash

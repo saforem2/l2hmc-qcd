@@ -1,16 +1,16 @@
---time_size 8 
---space_size 8 
-#--rand
---batch_size 64
---num_steps 5 
---eps 0.2
+--time_size 4
+--space_size 4 
+--rand
+--batch_size 128
+--num_steps 3 
+--eps 0.4
 --beta_init 2.
---beta_final 5.
+--beta_final 4.
 --lr_init 0.001
 --lr_decay_steps 1000
 --lr_decay_rate 0.96
 --train_steps 5000
---logging_steps 10
+--logging_steps 25 
 --save_steps 1000
 --print_steps 1
 --network_arch 'generic'

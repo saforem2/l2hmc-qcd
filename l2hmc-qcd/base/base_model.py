@@ -26,6 +26,7 @@ import tensorflow as tf
 from utils.horovod_utils import warmup_lr
 
 import utils.file_io as io
+import config as cfg
 #  from utils.distributions import quadratic_gaussian
 #  from params.gmm_params import GMM_PARAMS
 #  from params.gauge_params import GAUGE_PARAMS
@@ -96,17 +97,68 @@ class BaseModel:
                                self.eps_ph, name='eps_setter')
         return eps_setter
 
+    def _calc_energies(self, state, sumlogdet=0.):
+        pe = self.dynamics.potential_energy(state.x, state.beta)
+        ke = self.dynamics.kinetic_energy(state.v)
+
+        return cfg.Energy(pe, ke, pe + ke - sumlogdet)
+
+    def _build_energy_ops(self):
+        """Build operations for calculating the energies."""
+        state_init = cfg.State(self.dynamics_dict['x_init'],
+                               self.dynamics_dict['v_init'], self.beta)
+        state_prop = cfg.State(self.dynamics_dict['x_proposed'],
+                               self.dynamics_dict['v_proposed'], self.beta)
+        state_out = cfg.State(self.dynamics_dict['x_out'],
+                              self.dynamics_dict['v_out'], self.beta)
+
+        sld_prop = self.dynamics_dict['sumlogdet_proposed']
+        sld_out = self.dynamics_dict['sumlogdet_out']
+
+        einit = self._calc_energies(state_init)
+        eprop = self._calc_energies(state_prop, sld_prop)
+        eout = self._calc_energies(state_out, sld_out)
+
+        pe_ops = [einit.potential, eprop.potential, eout.potential]
+        ke_ops = [einit.kinetic, eprop.kinetic, eout.kinetic]
+        h_ops = [einit.hamiltonian, eprop.hamiltonian, eout.hamiltonian]
+
+        _ = [tf.add_to_collection('potential_energy', e) for e in pe_ops]
+        _ = [tf.add_to_collection('kinetic_energy', e) for e in ke_ops]
+        _ = [tf.add_to_collection('hamiltonian', e) for e in h_ops]
+
+        energy_data = {
+            'potential': {
+                'init': einit.potential,
+                'proposed': eprop.potential,
+                'out': eout.potential,
+            },
+            'kinetic': {
+                'init': einit.kinetic,
+                'proposed': eprop.kinetic,
+                'out': eout.kinetic,
+            },
+            'hamiltonian': {
+                'init': einit.hamiltonian,
+                'proposed': eprop.hamiltonian,
+                'out': eout.hamiltonian,
+            },
+        }
+
+        #  return cfg.EnergyData(einit, eprop, eout)
+        return energy_data
+
     def _build_sampler(self):
         """Build operations used for sampling from the dynamics engine."""
         x_dynamics, x_data = self._build_main_sampler()
-        self.x_out = x_dynamics['outputs_fb']['x_out']
-        self.px = x_dynamics['outputs_fb']['accept_prob']
-        self.px_hmc = x_dynamics['outputs_fb']['accept_prob_hmc']
+        self.x_out = x_dynamics['x_out']
+        self.px = x_dynamics['accept_prob']
+        self.px_hmc = x_dynamics['accept_prob_hmc']
 
-        self._dynamics_fb = x_dynamics['outputs_fb']
+        self.dynamics_dict = x_dynamics
         #  self._dynamics_f = x_dynamics['outputs_f']
         #  self._dynamics_b = x_dynamics['outputs_b']
-        self._energy_data = x_dynamics['energies']
+        #  self._energy_data = x_dynamics['energies']
 
         self.x_diff, self.v_diff = self._check_reversibility()
         #  energy_data = self._calc_energies()
@@ -127,9 +179,9 @@ class BaseModel:
 
             x_dynamics = self.dynamics.apply_transition(*args, **kwargs)
 
-            x_data = LFdata(x_dynamics['outputs_fb']['x_init'],
-                            x_dynamics['outputs_fb']['x_proposed'],
-                            x_dynamics['outputs_fb']['accept_prob'])
+            x_data = LFdata(x_dynamics['x_init'],
+                            x_dynamics['x_proposed'],
+                            x_dynamics['accept_prob'])
 
         return x_dynamics, x_data
 
@@ -151,9 +203,9 @@ class BaseModel:
 
                 z_dynamics = self.dynamics.apply_transition(*args, **kwargs)
 
-                z_data = LFdata(z_dynamics['outputs_fb']['x_init'],
-                                z_dynamics['outputs_fb']['x_proposed'],
-                                z_dynamics['outputs_fb']['accept_prob'])
+                z_data = LFdata(z_dynamics['x_init'],
+                                z_dynamics['x_proposed'],
+                                z_dynamics['accept_prob'])
             else:
                 z_dynamics = {}
                 z_data = LFdata(0., 0., 0.)
