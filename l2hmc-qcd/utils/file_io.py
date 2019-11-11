@@ -27,6 +27,13 @@ except ImportError:
 from config import FILE_PATH
 
 
+def load_params(log_dir):
+    params_file = os.path.join(log_dir, 'parameters.pkl')
+    with open(params_file, 'rb') as f:
+        params = pickle.load(f)
+
+    return params
+
 def log(s, nl=True):
     """Print string `s` to stdout if and only if hvd.rank() == 0."""
     try:
@@ -338,10 +345,12 @@ def save_data(data, out_file, name=None):
         log("Extension not recognized! out_file must end in .pkl or .npy")
 
 
-def save_params(params, out_dir):
+def save_params(params, out_dir, name=None):
     check_else_make_dir(out_dir)
-    params_txt_file = os.path.join(out_dir, 'parameters.txt')
-    params_pkl_file = os.path.join(out_dir, 'parameters.pkl')
+    if name is None:
+        name = 'parameters'
+    params_txt_file = os.path.join(out_dir, f'{name}.txt')
+    params_pkl_file = os.path.join(out_dir, f'{name}.pkl')
     with open(params_txt_file, 'w') as f:
         for key, val in params.items():
             f.write(f"{key}: {val}\n")

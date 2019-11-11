@@ -254,12 +254,6 @@ class GaugeLattice(object):
                                          name='top_charges')) / (2 * np.pi)
         return top_charges
 
-    def calc_top_charges_np(self, plaq_sums):
-        ps_proj = np.sin(plaq_sums)
-        top_charges = np.sum(ps_proj, axis=(1, 2)) / (2 * np.pi)
-
-        return top_charges
-
     def calc_top_charges_diff(self, x1, x2):
         """Calculate the difference in topological charge between x1 and x2."""
         with tf.name_scope('top_charges_diff'):

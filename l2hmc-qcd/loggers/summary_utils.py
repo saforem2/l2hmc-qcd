@@ -115,24 +115,10 @@ def _create_training_summaries(model):
 
 def _create_energy_summaries(model):
     """Create summary objects for initial and proposed KE and PE."""
-    #  keys = ['init', 'proposed', 'out', 'proposed_diff', 'out_diff']
-    #  energy_data = model._energy_data
-    for e_type, e_data in model._energy_data.items():
-        e_dict = e_data._asdict()  # convert namedtuple --> dict
-        with tf.name_scope(e_type):
-            for k, v in e_dict.items():
+    for key, val in model.energy_ops.items():
+        with tf.name_scope('key'):
+            for k, v in val.items():
                 variable_summaries(v, k)
-
-    #  energies_f = model._energy_outputs_dict['forward']
-    #  energies_b = model._energy_outputs_dict['backward']
-    #
-    #  for key, val in energies_f.items():
-    #      with tf.name_scope(key + '/forward'):
-    #          variable_summaries(val, key)
-    #
-    #  for key, val in energies_b.items():
-    #      with tf.name_scope(key + '/backward'):
-    #          variable_summaries(val, key)
 
 
 def _create_grad_norm_summaries(grad, var):

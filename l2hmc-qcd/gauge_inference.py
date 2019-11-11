@@ -183,13 +183,31 @@ def inference(runner, run_logger, plotter, energy_plotter, **kwargs):
                        avg_plaq_diff)
 
         # Plot dU, dT, and dH
-        energy_plotter.plot_energies(run_logger.energy_dict, **kwargs)
+        kwargs['out_dir'] = '_tf'
+        e_tf = run_logger.energy_dict
+        tf_data = energy_plotter.plot_energies(e_tf, **kwargs)
+
+        e_np = run_logger.energy_dict_np
+        kwargs['out_dir'] = '_np'
+        np_data = energy_plotter.plot_energies(e_np, **kwargs)
+
+        de = run_logger.energies_diffs_dict
+        kwargs['out_dir'] = '_tf_np_diff'
+        diff_data = energy_plotter.plot_energies(de, **kwargs)
 
         if kwargs.get('plot_lf', False):
             lf_plotter = LeapfrogPlotter(plotter.out_dir, run_logger)
             batch_size = runner.params.get('batch_size', 20)
             lf_plotter.make_plots(run_logger.run_dir,
                                   batch_size=batch_size)
+
+        energy_data = {
+            'tf_data': tf_data,
+            'np_data': np_data,
+            'diff_data': diff_data
+        }
+
+        run_logger.save_data(energy_data, 'energy_plots_data.pkl')
 
     return runner, run_logger
 

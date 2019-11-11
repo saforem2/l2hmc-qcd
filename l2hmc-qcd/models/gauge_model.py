@@ -129,6 +129,12 @@ class GaugeModel(BaseModel):
         with tf.name_scope('sampler'):
             x_data, z_data = self._build_sampler()
 
+        # *******************************************************************
+        # Build energy_ops to calculate energies.
+        # -------------------------------------------------------------------
+        with tf.name_scope('energy_ops'):
+            self.energy_ops = self._build_energy_ops()
+
         #  self.charge_diffs = self._calc_charge_diff(x_data.init,
         #                                             x_data.proposed)
 

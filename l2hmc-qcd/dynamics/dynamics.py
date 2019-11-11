@@ -32,11 +32,6 @@ TF_FLOAT = cfg.TF_FLOAT
 TF_INT = cfg.TF_INT
 GLOBAL_SEED = cfg.GLOBAL_SEED
 
-# -----------------------
-#   module-wide objects
-# -----------------------
-State = namedtuple('State', ['x', 'v', 'beta'])
-EnergyData = namedtuple('EnergyData', ['init', 'proposed', 'out'])
 
 
 def exp(x, name=None):
@@ -231,7 +226,7 @@ class Dynamics(tf.keras.Model):
                                         seed=GLOBAL_SEED,
                                         name='v_init_f')
 
-            state_init_f = State(x_init, v_init_f, beta)
+            state_init_f = cfg.State(x_init, v_init_f, beta)
             args = (*state_init_f, weights, train_phase)
             kwargs = {'forward': True, 'hmc': hmc}
             outputs_f = self.transition_kernel(*args, **kwargs)
@@ -247,7 +242,7 @@ class Dynamics(tf.keras.Model):
                                         seed=GLOBAL_SEED,
                                         name='v_init_b')
 
-            state_init_b = State(x_init, v_init_b, beta)
+            state_init_b = cfg.State(x_init, v_init_b, beta)
             outputs_b = self.transition_kernel(*state_init_b,
                                                weights, train_phase,
                                                forward=False, hmc=hmc)
@@ -296,53 +291,42 @@ class Dynamics(tf.keras.Model):
                                 name='x_proposed_mod_2pi')
             x_out = tf.mod(x_out, 2 * np.pi, name='x_out_mod_2_pi')
 
-        with tf.name_scope('calc_energies'):
-            with tf.name_scope('potential'):
-                with tf.name_scope('init'):  # initial potential energy
-                    pe_init = self.potential_energy(x_init, beta)
-                with tf.name_scope('proposed'):  # proposed potential energy
-                    pe_proposed = self.potential_energy(x_proposed, beta)
-                with tf.name_scope('out'):  # output potential energy
-                    pe_out = self.potential_energy(x_out, beta)
+        #  def _calc_energies(state, sld=0.):
+        #      pe = self.potential_energy(state.x, state.beta)
+        #      ke = self.kinetic_energy(state.v)
+        #      return cfg.Energy(pe, ke, pe + ke + sld)  # sld: 'sumlogdet'
 
-                # Create an `EnergyData` object for storing the energies and
-                # add it to the `potential_energy` collection for easy-access
-                # later
-                pe_data = EnergyData(pe_init, pe_proposed, pe_out)
-                _add_to_collection('potential_energy', pe_data)
+        #  with tf.name_scope('calc_energies'):
+        #      state_init = cfg.State(x_init, v_init, beta)
+        #      state_prop = cfg.State(x_proposed, v_proposed, beta)
+        #      state_out = cfg.State(x_out, v_out, beta)
+        #      with tf.name_scope('init'):
+        #          einit = _calc_energies(state_init)
+        #      with tf.name_scope('proposed'):
+        #          eprop = _calc_energies(state_prop, sumlogdet_proposed)
+        #      with tf.name_scope('out'):
+        #          eout = _calc_energies(state_out, sumlogdet_out)
+        #
+        #      pe_data = cfg.EnergyData(einit.potential,
+        #                               eprop.potential,
+        #                               eout.potential)
+        #      ke_data = cfg.EnergyData(einit.kinetic,
+        #                               eprop.kinetic,
+        #                               eout.kinetic)
+        #      h_data = cfg.EnergyData(einit.hamiltonian,
+        #                              eprop.hamiltonian,
+        #                              eout.hamiltonian)
+        #      _add_to_collection('potential_energy', pe_data)
+        #      _add_to_collection('kinetic_energy', ke_data)
+        #      _add_to_collection('hamiltonian', h_data)
+        #
+        #      energies = {
+        #          'potential': pe_data,
+        #          'kinetic': ke_data,
+        #          'hamiltonian': h_data
+        #      }
 
-            with tf.name_scope('kinetic'):
-                with tf.name_scope('init'):  # initial kinetic energy
-                    ke_init = self.kinetic_energy(v_init)
-                with tf.name_scope('proposed'):  # proposed kinetic energy
-                    ke_proposed = self.kinetic_energy(v_proposed)
-                with tf.name_scope('out'):  # output kinetic energy
-                    ke_out = self.kinetic_energy(v_out)
-
-                ke_data = EnergyData(ke_init, ke_proposed, ke_out)
-                _add_to_collection('kinetic_energy', ke_data)
-
-            with tf.name_scope('hamiltonian'):
-                with tf.name_scope('init'):  # initial hamiltonian
-                    h_init = self.hamiltonian(x_init, v_init, beta)
-                with tf.name_scope('proposed'):  # proposed hamiltonian
-                    h_proposed = (self.hamiltonian(x_proposed,
-                                                   v_proposed, beta)
-                                  + sumlogdet_proposed)
-                with tf.name_scope('out'):  # output hamiltonian
-                    h_out = (self.hamiltonian(x_out, v_out, beta)
-                             + sumlogdet_out)
-
-                    h_data = EnergyData(h_init, h_proposed, h_out)
-                    _add_to_collection('hamiltonian', h_data)
-
-            energies = {
-                'potential': pe_data,
-                'kinetic': ke_data,
-                'hamiltonian': h_data
-            }
-
-        outputs_fb = {
+        outputs = {
             'x_init': x_init,
             'v_init': v_init,
             'x_proposed': x_proposed,
@@ -358,13 +342,13 @@ class Dynamics(tf.keras.Model):
             'mask_a': mask_a,  # accept mask
             'mask_r': mask_r,  # reject mask
         }
-        for val in outputs_fb.values():
+        for val in outputs.values():
             tf.add_to_collection('dynamics_out', val)
 
-        outputs = {
-            'outputs_fb': outputs_fb,
-            'energies': energies,
-        }
+        #  outputs = {
+        #      'outputs_fb': outputs_fb,
+        #      #  'energies': energies,
+        #  }
 
         return outputs
 
