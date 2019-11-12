@@ -407,12 +407,12 @@ class EnergyPlotter:
 
         return outputs
 
-    def plot_energies(self, energy_data, **kwargs):
+    def plot_energies(self, energy_data, sumlogdets=None, **kwargs):
         title, out_dir = self._plot_setup(**kwargs)
         args = (energy_data, title, out_dir)
-        ke_data = self._kinetic_plots(*args, **kwargs)
-        pe_data = self._potential_plots(*args, **kwargs)
-        h_data = self._hamiltonian_plots(*args, **kwargs)
+        ke_data = self._kinetic_plots(*args)
+        pe_data = self._potential_plots(*args)
+        h_data = self._hamiltonian_plots(*args, sld=sumlogdets)
 
         outputs = {
             'pe_data': pe_data,
