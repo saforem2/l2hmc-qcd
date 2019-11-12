@@ -1,4 +1,4 @@
---run_steps 2005
+--run_steps 2009
 --bootstrap_iters 500
 #--run_hmc
 --beta_inference 1.

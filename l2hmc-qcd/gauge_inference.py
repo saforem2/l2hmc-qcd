@@ -183,22 +183,19 @@ def inference(runner, run_logger, plotter, energy_plotter, **kwargs):
                        avg_plaq_diff)
 
         # Plot dU, dT, and dH
-        kwargs['out_dir'] = '_tf'
-        e_tf = run_logger.energy_dict
+        #  kwargs['out_dir'] = '_tf'
+        #  kwargs['out_dir'] = '_np'
+        #  kwargs['out_dir'] = '_tf_np_diff'
         #  sumlogdets = {
         #      'out': run_logger.run_data['sumlogdet_out'],
         #      'proposed': run_logger.run_data['sumlogdet_proposed']
         #  }
-        tf_data = energy_plotter.plot_energies(e_tf, **kwargs)
-
-        e_np = run_logger.energy_dict_np
-        kwargs['out_dir'] = '_np'
-        np_data = energy_plotter.plot_energies(e_np, **kwargs)
-
         de = run_logger.energies_diffs_dict
-        kwargs['out_dir'] = '_tf_np_diff'
-        diff_data = energy_plotter.plot_energies(de, **kwargs)
-
+        e_tf = run_logger.energy_dict
+        e_np = run_logger.energy_dict_np
+        tf_data = energy_plotter.plot_energies(e_tf, out_dir='tf', **kwargs)
+        np_data = energy_plotter.plot_energies(e_np, out_dir='np', **kwargs)
+        diff_data = energy_plotter.plot_energies(de, out_dir='tf-np', **kwargs)
         if kwargs.get('plot_lf', False):
             lf_plotter = LeapfrogPlotter(plotter.out_dir, run_logger)
             batch_size = runner.params.get('batch_size', 20)
