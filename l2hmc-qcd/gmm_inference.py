@@ -84,22 +84,22 @@ def inference(runner, run_logger, energy_plotter=None, **kwargs):
         io.log(SEP_STR + f'\nTook: {dt:.4g}s to complete run.\n' + SEP_STR)
 
         # Plot dU, dT, and dH
-        kwargs['out_dir'] = '_tf'
         e_tf = run_logger.energy_dict
-        sumlogdets = {
-            'out': run_logger.run_data['sumlogdet_out'],
-            'proposed': run_logger.run_data['sumlogdet_proposed']
-        }
-        tf_data = energy_plotter.plot_energies(e_tf, sumlogdets, **kwargs)
-
         e_np = run_logger.energy_dict_np
-        kwargs['out_dir'] = '_np'
-        np_data = energy_plotter.plot_energies(e_np, sumlogdets, **kwargs)
-
         de = run_logger.energies_diffs_dict
-        kwargs['out_dir'] = '_tf_np_diff'
-        diff_data = energy_plotter.plot_energies(de, sumlogdets, **kwargs)
 
+        #  sumlogdets = {
+        #      'out': run_logger.run_data['sumlogdet_out'],
+        #      'proposed': run_logger.run_data['sumlogdet_proposed']
+        #  }
+        #  kwargs['sumlogdets'] = sumlogdets
+        #  kwargs['out_dir'] = 'tf'
+        #  kwargs['out_dir'] = 'np'
+        #  kwargs['out_dir'] = 'tf_np_diff'
+
+        tf_data = energy_plotter.plot_energies(e_tf, out_dir='tf', **kwargs)
+        np_data = energy_plotter.plot_energies(e_np, out_dir='np', **kwargs)
+        diff_data = energy_plotter.plot_energies(de, out_dir='tf-np', **kwargs)
         energy_data = {
             'tf_data': tf_data,
             'np_data': np_data,

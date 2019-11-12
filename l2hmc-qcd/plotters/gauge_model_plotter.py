@@ -9,6 +9,7 @@ Date: 04/10/2019
 """
 import os
 
+import config as cfg
 from config import BootstrapData, COLORS, HAS_MATPLOTLIB, MARKERS
 from collections import Counter, namedtuple, OrderedDict
 
@@ -33,6 +34,8 @@ __all__ = ['EnergyPlotter', 'GaugeModelPlotter',
 
 FigAx = namedtuple('FigAx', ['fig', 'ax'])
 DataErr = namedtuple('DataErr', ['data', 'err'])
+
+np.random.seed(cfg.GLOBAL_SEED)
 
 
 def reset_plots():
@@ -100,10 +103,11 @@ class EnergyPlotter:
         self.params = params
         self.figs_dir = figs_dir
 
-    def bootstrap(self, data, n_boot=1000):
+    def bootstrap(self, data, n_boot=2000):
         boot_dist = []
         for i in range(int(n_boot)):
-            resampler = np.random.randint(0, data.shape[0], data.shape[0])
+            resampler = np.random.randint(0, data.shape[0], 
+                                          data.shape[0], )
             sample = data.take(resampler, axis=0)
             boot_dist.append(np.mean(sample, axis=0))
 
@@ -254,6 +258,7 @@ class EnergyPlotter:
                                              title=title,
                                              out_file=hist_file1,
                                              single_chain=True)
+        reset_plots()
 
         labels = [r"""$U_{\mathrm{init}}$, """,
                   r"""$U_{\mathrm{proposed}}$, """,
@@ -277,6 +282,7 @@ class EnergyPlotter:
                                         title=title,
                                         out_file=hist_file1,
                                         single_chain=True)
+        reset_plots()
         outputs = {
             'diff_plot_data': pe_diff_plot_data,
             'diff_hist_data': pe_diff_hist_data,
@@ -313,6 +319,7 @@ class EnergyPlotter:
                                        out_file=keh_f)
         _, diff_hist_data_sc = self._hist(ke_labels, ke_data, title=title,
                                           out_file=keh_f1, single_chain=True)
+        reset_plots()
 
         labels = [r"""$KE_{\mathrm{init}}$, """,
                   r"""$KE_{\mathrm{proposed}}$, """,
@@ -332,6 +339,7 @@ class EnergyPlotter:
                                   title=title, out_file=hist_file)
         _, hist_data_sc = self._hist(labels, data, title=title,
                                      out_file=hist_file1, single_chain=True)
+        reset_plots()
 
         outputs = {
             'diff_plot_data': diff_plot_data,
@@ -344,15 +352,18 @@ class EnergyPlotter:
 
         return outputs
 
-    def _hamiltonian_plots(self, energy_data, sumlogdets, title, out_dir):
+    def _hamiltonian_plots(self, energy_data, title, out_dir, sld=None):
         h_labels = [r"""$\delta H_{\mathrm{out}}$,""",
                     r"""$\delta H_{\mathrm{proposed}}$,"""]
 
         h_init = np.array(energy_data['hamiltonian_init'])
         h_prop = np.array(energy_data['hamiltonian_proposed'])
         h_out = np.array(energy_data['hamiltonian_out'])
-        sld_out = sumlogdets['out']
-        sld_prop = sumlogdets['proposed']
+        if sld is not None:  # sumlogdets; expects dict. 
+            sld_out = sld['out']
+            sld_prop = sld['proposed']
+        else:
+            sld_out = sld_prop = 0
         h_data = [h_out - h_init + sld_out, h_prop - h_init + sld_prop]
 
         h_f = os.path.join(out_dir, 'hamiltonian_diffs.png')
@@ -366,6 +377,7 @@ class EnergyPlotter:
                                        title=title, out_file=hh_f)
         _, diff_hist_data_sc = self._hist(h_labels, h_data, title=title,
                                           out_file=hh_f1, single_chain=True)
+        reset_plots()
 
         labels = [r"""$H_{\mathrm{init}}$, """,
                   r"""$H_{\mathrm{proposed}}$, """,
@@ -383,6 +395,7 @@ class EnergyPlotter:
                                   title=title, out_file=hist_file)
         _, hist_data_sc = self._hist(labels, data, title=title,
                                      out_file=hist_file1, single_chain=True)
+        reset_plots()
         outputs = {
             'diff_plot_data': diff_plot_data,
             'diff_hist_data': diff_hist_data,
@@ -394,12 +407,12 @@ class EnergyPlotter:
 
         return outputs
 
-    def plot_energies(self, energy_data, sumlogdets, **kwargs):
+    def plot_energies(self, energy_data, **kwargs):
         title, out_dir = self._plot_setup(**kwargs)
-        pe_data = self._potential_plots(energy_data, title, out_dir)
-        ke_data = self._kinetic_plots(energy_data, title, out_dir)
-        h_data = self._hamiltonian_plots(energy_data, sumlogdets,
-                                         title, out_dir)
+        args = (energy_data, title, out_dir)
+        ke_data = self._kinetic_plots(*args, **kwargs)
+        pe_data = self._potential_plots(*args, **kwargs)
+        h_data = self._hamiltonian_plots(*args, **kwargs)
 
         outputs = {
             'pe_data': pe_data,
