@@ -27,10 +27,10 @@ BootstrapData = namedtuple('BootstrapData', ['mean', 'err', 'means_bs'])
 l2hmcFn = namedtuple('l2hmcFn', ['v1', 'x1', 'x2', 'v2'])
 l2hmcFns = namedtuple('l2hmcFns', ['scale', 'translation', 'transformation'])
 
-TF_FLOAT = tf.float32
-TF_INT = tf.int32
-NP_FLOAT = np.float32
-NP_INT = np.int32
+TF_FLOAT = tf.float64
+TF_INT = tf.int64
+NP_FLOAT = np.float64
+NP_INT = np.int64
 
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 FILE_PATH = os.path.abspath(os.path.dirname(__file__))

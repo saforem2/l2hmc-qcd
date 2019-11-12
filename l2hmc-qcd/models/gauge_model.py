@@ -12,7 +12,7 @@ import time
 
 from collections import namedtuple
 from lattice.lattice import GaugeLattice
-from dynamics.dynamics import Dynamics
+#  from dynamics.dynamics import Dynamics
 
 import tensorflow as tf
 
@@ -20,7 +20,8 @@ import utils.file_io as io
 
 from base.base_model import BaseModel
 
-from config import HAS_HOROVOD, TF_INT
+import config as cfg
+#  from config import HAS_HOROVOD, TF_INT
 
 from params.gauge_params import GAUGE_PARAMS
 
@@ -29,8 +30,11 @@ from params.gauge_params import GAUGE_PARAMS
 #  from utils.horovod_utils import warmup_lr
 #  from tensorflow.python.ops import control_flow_ops as control_flow_ops
 
-if HAS_HOROVOD:
+if cfg.HAS_HOROVOD:
     import horovod.tensorflow as hvd  # noqa: 401
+
+TF_FLOAT = cfg.TF_FLOAT
+NP_FLOAT = cfg.NP_FLOAT
 
 LFdata = namedtuple('LFdata', ['init', 'proposed', 'prob'])
 SEP_STR = 80 * '-'
@@ -320,7 +324,7 @@ class GaugeModel(BaseModel):
         with tf.name_scope('top_charge_diff'):
             x_dq = tf.cast(
                 self.lattice.calc_top_charges_diff(x_init, x_proposed),
-                dtype=TF_INT
+                dtype=cfg.TF_INT
             )
             charge_diffs_op = tf.reduce_sum(x_dq) / self.batch_size
 

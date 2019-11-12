@@ -19,6 +19,7 @@ from scipy.stats import sem
 import utils.file_io as io
 
 from config import NP_FLOAT, EnergyData
+from utils.distributions import GMM
 from lattice.lattice import u1_plaq_exact
 
 __all__ = ['RunLogger', 'arr_from_dict', 'autocorr']
@@ -47,6 +48,8 @@ def _rename(src, dst):
 def _get_eps():
     eps = [i for i in tf.global_variables() if 'eps' in i.name][0]
     return eps
+
+
 
 
 class EnergyLogger:
@@ -352,8 +355,6 @@ class RunLogger:
         energies = data.pop('energies')
         energies_np = data.pop('energies_np')
         energies_diffs = data.pop('energies_diffs')
-        if not energies.keys() == energies_np.keys() == energies_diffs.keys():
-            import pudb; pudb.set_trace()
         assert energies.keys() == energies_np.keys() == energies_diffs.keys()
         for k in self.energy_ops_dict.keys():
             self.energy_dict[k].append(energies[k])
@@ -428,20 +429,36 @@ class RunLogger:
         if self.model_type == 'GaugeModel':
             self._save_observables_data(observables_dir, therm_frac)
 
+    def _save_energy(self, data, etype, header=None):
+        """Save energy data to `.pkl` file and write stats to `.txt` file."""
+        fname = etype + '.pkl'
+        out_file = os.path.join(self.run_dir, fname)
+        io.log(f'Saving {etype} to {out_file}...')
+        with open(out_file, 'wb') as f:
+            pickle.dump(data, f)
+
+        fname_txt = etype + '.txt'
+        txt_file = os.path.join(self.run_dir, fname_txt)
+        with open(txt_file, 'w') as f:
+            if header is not None:
+                f.write(header)
+                f.write('\n')
+            for key, val in data.items():
+                v = np.array(val)
+                f.write(f'{key} (avg): {v.mean():5g} +/- {v.std():.5g}\n')
+                for e in v[0][:10]:
+                    f.write(f' {e:.5g} ')
+                f.write('\n\n')
+
     def _save_energy_data(self):
         """Save energy data to `.pkl` files."""
-        energy_data_file = os.path.join(self.run_dir, 'energy_data_tf.pkl')
-        with open(energy_data_file, 'wb') as f:
-            pickle.dump(self.energy_dict, f)
-
-        energy_data_file = os.path.join(self.run_dir, 'energy_data_np.pkl')
-        with open(energy_data_file, 'wb') as f:
-            pickle.dump(self.energy_dict_np, f)
-
-        energy_data_file = os.path.join(self.run_dir,
-                                        'energy_data_tf_np_diff.pkl')
-        with open(energy_data_file, 'wb') as f:
-            pickle.dump(self.energies_diffs_dict, f)
+        self._save_energy(self.energy_dict, 'energy_data_tf')
+        self._save_energy(self.energy_dict_np, 'energy_data_np')
+        header = (f'We compute the difference between the '
+                  'energies as alculated in tensorflow vs '
+                  'numpy as:\n   dE = E_tf - E_np\n')
+        self._save_energy(self.energies_diffs_dict,
+                          'energy_data_tf_np_diff', header=header)
 
     def _save_observables_data(self, observables_dir, therm_frac):
         """For `GaugeModel` instance, save observables data."""

@@ -170,7 +170,7 @@ class GMM(object):
         return fn
 
     def minus_log_likelihood_np(self, x):
-        V = np.concat([np.expand_dims(
+        V = np.concatenate([np.expand_dims(
             -quadratic_gaussian_np(x, self.mus[i], self.i_sigmas[i])
             + np.log(self.constants[i]), axis=1
         ) for i in range(self.nb_mixtures)], axis=1)

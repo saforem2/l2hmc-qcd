@@ -35,6 +35,11 @@ FigAx = namedtuple('FigAx', ['fig', 'ax'])
 DataErr = namedtuple('DataErr', ['data', 'err'])
 
 
+def reset_plots():
+    plt.close('all')
+    plt.clf()
+
+
 def arr_from_dict(d, key):
     if isinstance(d[key], dict):
         return np.array(list(d[key].values()))
@@ -339,14 +344,16 @@ class EnergyPlotter:
 
         return outputs
 
-    def _hamiltonian_plots(self, energy_data, title, out_dir):
+    def _hamiltonian_plots(self, energy_data, sumlogdets, title, out_dir):
         h_labels = [r"""$\delta H_{\mathrm{out}}$,""",
                     r"""$\delta H_{\mathrm{proposed}}$,"""]
 
         h_init = np.array(energy_data['hamiltonian_init'])
         h_prop = np.array(energy_data['hamiltonian_proposed'])
         h_out = np.array(energy_data['hamiltonian_out'])
-        h_data = [h_out - h_init, h_prop - h_init]
+        sld_out = sumlogdets['out']
+        sld_prop = sumlogdets['proposed']
+        h_data = [h_out - h_init + sld_out, h_prop - h_init + sld_prop]
 
         h_f = os.path.join(out_dir, 'hamiltonian_diffs.png')
         hh_f = os.path.join(out_dir, 'hamiltonian_diffs_hist.png')
@@ -387,11 +394,12 @@ class EnergyPlotter:
 
         return outputs
 
-    def plot_energies(self, energy_data, **kwargs):
+    def plot_energies(self, energy_data, sumlogdets, **kwargs):
         title, out_dir = self._plot_setup(**kwargs)
         pe_data = self._potential_plots(energy_data, title, out_dir)
         ke_data = self._kinetic_plots(energy_data, title, out_dir)
-        h_data = self._hamiltonian_plots(energy_data, title, out_dir)
+        h_data = self._hamiltonian_plots(energy_data, sumlogdets,
+                                         title, out_dir)
 
         outputs = {
             'pe_data': pe_data,
@@ -401,11 +409,28 @@ class EnergyPlotter:
 
         return outputs
 
+
 class GaugeModelPlotter:
     def __init__(self, params, figs_dir=None, experiment=None):
         self.figs_dir = figs_dir
         self.params = params
-        #  self.model = model
+
+    def plot_observables(self, data, **kwargs):
+        """Plot observables."""
+        xy_data, kwargs = self._plot_setup(data, **kwargs)
+
+        self._plot_plaqs(xy_data['plaqs'], **kwargs)
+        self._plot_actions(xy_data['actions'], **kwargs)
+        self._plot_accept_probs(xy_data['accept_prob'], **kwargs)
+        self._plot_charges(xy_data['charges'], **kwargs)
+        self._plot_autocorrs(xy_data['autocorrs'], **kwargs)
+        # xy_data['charges'][1] since we're only concerned with 'y' data
+        self._plot_charge_probs(xy_data['charges'][1], **kwargs)
+        self._plot_charges_hist(xy_data['charges'][1], **kwargs)
+        #  self._plot_charge_diffs(xy_data['charge_diffs'], **kwargs)
+        mean_diff = self._plot_plaqs_diffs(xy_data['plaqs_diffs'], **kwargs)
+
+        return mean_diff
 
     def calc_stats(self, data, therm_frac=10):
         """Calculate observables statistics.
@@ -426,9 +451,6 @@ class GaugeModelPlotter:
         actions = np.array(data['actions'])
         plaqs = np.array(data['plaqs'])
         charges = np.array(data['charges'])
-        #  actions = arr_from_dict(data, 'actions')
-        #  plaqs = arr_from_dict(data, 'plaqs')
-        #  charges = arr_from_dict(data, 'charges')
 
         charge_probs = {}
         counts = Counter(list(charges.flatten()))
@@ -469,31 +491,15 @@ class GaugeModelPlotter:
         def _stats(data, axis=1):
             return np.mean(data, axis=axis), sem(data, axis=axis)
 
-        #  warmup_steps = max((1, int(0.01 * num_steps)))
         num_steps = actions.shape[0]
         warmup_steps = int(0.1 * num_steps)
         steps_arr = np.arange(warmup_steps, num_steps)
-        #  x_therm = np.arange(warmup_steps, num_steps)
 
         actions_stats = _stats(actions[warmup_steps:, :])
         plaqs_stats = _stats(plaqs[warmup_steps:, :])
         accept_prob_stats = _stats(accept_prob[warmup_steps:, :])
-        charges_stats = _stats(charges[warmup_steps:, :])
-        autocorrs_stats = _stats(charge_autocorrs.T[warmup_steps:, :])
-
-        #  actions_avg = np.mean(actions, axis=1)
-        #  actions_err = sem(actions, axis=1)
-        #
-        #  plaqs_avg = np.mean(plaqs, axis=1)
-        #  plaqs_err = sem(plaqs, axis=1)
-
-        #  autocorrs_avg = np.mean(charge_autocorrs.T, axis=1)
-        #  autocorrs_err = sem(charge_autocorrs.T, axis=1)
-
-        #  num_steps, batch_size = actions.shape
-        #  num_steps = actions.shape[0]
-        #  steps_arr = np.arange(num_steps)
-        #  batch_size = actions.shape[1]
+        full_steps_arr = np.arange(num_steps)
+        autocorrs_stats = _stats(charge_autocorrs.T)
 
         # skip 5% of total number of steps between successive points when
         # plotting to help smooth out graph
@@ -513,10 +519,10 @@ class GaugeModelPlotter:
             'actions': (steps_arr, *actions_stats),
             'plaqs': (steps_arr, *plaqs_stats),
             'accept_prob': (steps_arr, *accept_prob_stats),
-            'charges': (steps_arr, charges.T),
-            'charges_stats': (steps_arr, charges.T),
+            'charges': (full_steps_arr, charges.T),
+            #  'charges_stats': (steps_arr, charges_stats),
             #  'charge_diffs': (x_therm, _charge_diffs.T),
-            'autocorrs': (steps_arr, *autocorrs_stats),
+            'autocorrs': (full_steps_arr, *autocorrs_stats),
             'plaqs_diffs': (steps_arr, *_plaq_diffs_stats)
         }
 
@@ -554,32 +560,6 @@ class GaugeModelPlotter:
         xy_data = self._parse_data(data, beta)
 
         return xy_data, kwargs
-
-    def plot_observables(self, data, **kwargs):
-        """Plot observables."""
-        xy_data, kwargs = self._plot_setup(data, **kwargs)
-
-        self._plot_plaqs(xy_data['plaqs'], **kwargs)
-        self._plot_actions(xy_data['actions'], **kwargs)
-        self._plot_accept_probs(xy_data['accept_prob'], **kwargs)
-        try:
-            self._plot_charges(xy_data['charges'], **kwargs)
-        except:
-            pass
-        try:
-            self._plot_autocorrs(xy_data['autocorrs'], **kwargs)
-        except:
-            pass
-        try:
-            # xy_data['charges'][1] since we're only concerned with 'y' data
-            self._plot_charge_probs(xy_data['charges'][1], **kwargs)
-            self._plot_charges_hist(xy_data['charges'][1], **kwargs)
-        except:
-            pass
-        #  self._plot_charge_diffs(xy_data['charge_diffs'], **kwargs)
-        mean_diff = self._plot_plaqs_diffs(xy_data['plaqs_diffs'], **kwargs)
-
-        return mean_diff
 
     def _plot(self, xy_data, **kwargs):
         """Basic plotting wrapper."""
