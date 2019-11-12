@@ -2,8 +2,12 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.contrib.framework import add_arg_scope, arg_scope
 
-from config import GLOBAL_SEED, TF_FLOAT, NP_FLOAT
+#  from config import GLOBAL_SEED, TF_FLOAT, NP_FLOAT
+import config as cfg
 
+GLOBAL_SEED = cfg.GLOBAL_SEED
+TF_FLOAT = cfg.TF_FLOAT
+NP_FLOAT = cfg.NP_FLOAT
 
 np.random.seed(GLOBAL_SEED)
 

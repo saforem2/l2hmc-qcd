@@ -15,6 +15,7 @@ from config import HAS_HOROVOD, HAS_MATPLOTLIB
 from loggers.run_logger import RunLogger
 from runners.runner import Runner
 from plotters.plot_utils import _gmm_plot, gmm_plot
+from plotters.gauge_model_plotter import EnergyPlotter
 
 import numpy as np
 import tensorflow as tf
@@ -82,8 +83,30 @@ def inference(runner, run_logger, energy_plotter=None, **kwargs):
         dt = time.time() - t0
         io.log(SEP_STR + f'\nTook: {dt:.4g}s to complete run.\n' + SEP_STR)
 
-        if energy_plotter is not None:
-            energy_plotter.plot_energies(run_logger.energy_dict, **kwargs)
+        # Plot dU, dT, and dH
+        kwargs['out_dir'] = '_tf'
+        e_tf = run_logger.energy_dict
+        sumlogdets = {
+            'out': run_logger.run_data['sumlogdet_out'],
+            'proposed': run_logger.run_data['sumlogdet_proposed']
+        }
+        tf_data = energy_plotter.plot_energies(e_tf, sumlogdets, **kwargs)
+
+        e_np = run_logger.energy_dict_np
+        kwargs['out_dir'] = '_np'
+        np_data = energy_plotter.plot_energies(e_np, sumlogdets, **kwargs)
+
+        de = run_logger.energies_diffs_dict
+        kwargs['out_dir'] = '_tf_np_diff'
+        diff_data = energy_plotter.plot_energies(de, sumlogdets, **kwargs)
+
+        energy_data = {
+            'tf_data': tf_data,
+            'np_data': np_data,
+            'diff_data': diff_data
+        }
+
+        run_logger.save_data(energy_data, 'energy_plots_data.pkl')
 
         samples_arr = np.array(run_logger.run_data['x_out'])
         px_arr = np.array(run_logger.run_data['px'])
@@ -179,10 +202,9 @@ def main(kwargs):
     samples_init = utils.init_gmm_samples(params, init_method)
     kwargs['samples'] = samples_init
 
-    run_logger = RunLogger(params, save_lf_data=False,
-                           model_type='GaussanMixtureModel')
-    runner = Runner(sess, params, logger=run_logger,
-                    model_type='GaussianMixtureModel')
+    model_type = 'GaussianMixtureModel'
+    run_logger = RunLogger(params, save_lf_data=False, model_type=model_type)
+    runner = Runner(sess, params, logger=run_logger, model_type=model_type)
     energy_plotter = EnergyPlotter(params, run_logger.figs_dir)
 
     skip_acl = kwargs.get('skip_acl', False)

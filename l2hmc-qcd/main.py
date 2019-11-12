@@ -36,8 +36,9 @@ import os
 import time
 import pickle
 
-from config import (GLOBAL_SEED, HAS_COMET, HAS_HOROVOD, HAS_MATPLOTLIB,
-                    NP_FLOAT)
+import config as cfg
+#  from config import (GLOBAL_SEED, HAS_COMET, HAS_HOROVOD, HAS_MATPLOTLIB,
+#                      NP_FLOAT)
 from update import set_precision, set_seed
 from models.gauge_model import GaugeModel
 from loggers.train_logger import TrainLogger
@@ -56,10 +57,10 @@ import utils.file_io as io
 
 from utils.parse_args import parse_args
 
-if HAS_COMET:
+if cfg.HAS_COMET:
     from comet_ml import Experiment
 
-if HAS_HOROVOD:
+if cfg.HAS_HOROVOD:
     import horovod.tensorflow as hvd
 
 if float(tf.__version__.split('.')[0]) <= 2:
@@ -67,7 +68,8 @@ if float(tf.__version__.split('.')[0]) <= 2:
 
 SEP_STR = 80 * '-'  # + '\n'
 
-tf.set_random_seed(GLOBAL_SEED)
+tf.set_random_seed(cfg.GLOBAL_SEED)
+NP_FLOAT = cfg.NP_FLOAT
 
 
 def create_config(params):
@@ -85,10 +87,10 @@ def create_config(params):
         # (one GPU per process)
         config.gpu_options.allow_growth = True
         #  config.allow_soft_placement = True
-        if HAS_HOROVOD and params['horovod']:
+        if cfg.HAS_HOROVOD and params['horovod']:
             config.gpu_options.visible_device_list = str(hvd.local_rank())
 
-    if HAS_MATPLOTLIB:
+    if cfg.HAS_MATPLOTLIB:
         params['_plot'] = True
 
     theta = params.get('theta', False)
@@ -282,6 +284,7 @@ def train_l2hmc(FLAGS, log_file=None):
     # Create model and train_logger
     # --------------------------------------------------------
     model = GaugeModel(params)
+    io.log(f'model.x: {model.x}')
 
     if is_chief:
         train_logger = TrainLogger(model, log_dir,
@@ -298,7 +301,8 @@ def train_l2hmc(FLAGS, log_file=None):
     # set initial value of charge weight using value from FLAGS
     #  charge_weight_init = params['charge_weight']
     net_weights_init = [1., 1., 1.]
-    samples_init = np.reshape(np.array(model.lattice.samples, dtype=NP_FLOAT),
+    samples_init = np.reshape(np.array(model.lattice.samples,
+                                       dtype=NP_FLOAT),
                               (model.batch_size, model.x_dim))
     beta_init = model.beta_init
 
@@ -386,8 +390,17 @@ def main(FLAGS):
     """Main method for creating/training/running L2HMC for U(1) gauge model."""
     log_file = 'output_dirs.txt'
 
+    #  if getattr(FLAGS, 'float64', False):
+    if FLAGS.float64:
+        io.log(f'INFO: Setting floating point precision to `float64`.')
+        cfg.TF_FLOAT = tf.float64
+        cfg.NP_FLOAT = np.float64
+        cfg.TF_INT = tf.int64
+        cfg.NP_INT = np.int64
+        #  set_precision('float64')
+
     USING_HVD = getattr(FLAGS, 'horovod', False)
-    if HAS_HOROVOD and USING_HVD:
+    if cfg.HAS_HOROVOD and USING_HVD:
         io.log("INFO: USING HOROVOD")
         hvd.init()
         rank = hvd.rank()

@@ -16,7 +16,8 @@ Date: 08/28/2019
 '''
 from __future__ import absolute_import, division, print_function
 
-from config import GLOBAL_SEED, HAS_HOROVOD, TF_FLOAT
+import config as cfg
+#  from config import GLOBAL_SEED, HAS_HOROVOD, TF_FLOAT
 from collections import namedtuple
 from dynamics.dynamics import Dynamics
 
@@ -26,13 +27,17 @@ import tensorflow as tf
 from utils.horovod_utils import warmup_lr
 
 import utils.file_io as io
-import config as cfg
+#  import config as cfg
 #  from utils.distributions import quadratic_gaussian
 #  from params.gmm_params import GMM_PARAMS
 #  from params.gauge_params import GAUGE_PARAMS
 
-if HAS_HOROVOD:
+if cfg.HAS_HOROVOD:
     import horovod.tensorflow as hvd
+
+
+TF_FLOAT = cfg.TF_FLOAT
+GLOBAL_SEED = cfg.GLOBAL_SEED
 
 LFdata = namedtuple('LFdata', ['init', 'proposed', 'prob'])
 EnergyData = namedtuple('EnergyData', ['init', 'proposed', 'out',
@@ -93,15 +98,19 @@ class BaseModel:
         raise NotImplementedError
 
     def _build_eps_setter(self):
-        eps_setter = tf.assign(self.dynamics.eps,
-                               self.eps_ph, name='eps_setter')
+        try:
+            eps_setter = tf.assign(self.dynamics.eps,
+                                   self.eps_ph, name='eps_setter')
+        except:
+            import pudb; pudb.set_trace()
+
         return eps_setter
 
     def _calc_energies(self, state, sumlogdet=0.):
         pe = self.dynamics.potential_energy(state.x, state.beta)
         ke = self.dynamics.kinetic_energy(state.v)
 
-        return cfg.Energy(pe, ke, pe + ke - sumlogdet)
+        return cfg.Energy(pe, ke, pe + ke + sumlogdet)
 
     def _build_energy_ops(self):
         """Build operations for calculating the energies."""
@@ -305,6 +314,10 @@ class BaseModel:
                     curerntly being trained. 
         """
 
+        import config as cfg
+        TF_FLOAT = cfg.TF_FLOAT
+        print(f'TF_FLOAT: {TF_FLOAT}')
+
         def make_ph(name, shape=(), dtype=TF_FLOAT):
             return tf.placeholder(dtype=dtype, shape=shape, name=name)
 
@@ -328,6 +341,8 @@ class BaseModel:
                 'train_phase': train_phase,
                 'eps_ph': eps_ph,
             }
+            for key, val in inputs.items():
+                print(f'{key}: {val}\n')
 
         _ = [tf.add_to_collection('inputs', i) for i in inputs.values()]
 

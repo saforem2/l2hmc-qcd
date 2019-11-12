@@ -7,7 +7,9 @@ on a U(1) gauge model.
 Author: Sam Foreman (github: @saforem2)
 Date: 04/09/2019
 """
+import os
 import time
+import pickle
 
 import numpy as np
 import utils.file_io as io
@@ -18,6 +20,28 @@ from config import Energy, EnergyData, State
 from lattice.lattice import u1_plaq_exact
 from lattice.utils import actions
 from loggers.run_logger import RunLogger
+from utils.distributions import GMM
+
+
+def _load(pkl_file):
+    with open(pkl_file, 'rb') as f:
+        tmp = pickle.load(f)
+
+    return tmp
+
+
+def recreate_distribution(log_dir):
+    mus_file = os.path.join(log_dir, 'mus.pkl')
+    sigmas_file = os.path.join(log_dir, 'sigmas.pkl')
+    pis_file = os.path.join(log_dir, 'pis.pkl')
+
+    mus = _load(mus_file)
+    sigmas = _load(sigmas_file)
+    pis = _load(pis_file)
+
+    distribution = GMM(mus, sigmas, pis)
+
+    return distribution
 
 
 class EnergyRunner:
@@ -37,7 +61,7 @@ class EnergyRunner:
     def calc_energies(self, state, sumlogdet=0.):
         pe = self.potential_energy(state)
         ke = self.kinetic_energy(state)
-        h = pe + ke - sumlogdet
+        h = pe + ke + sumlogdet
 
         energy = Energy(potential=pe, kinetic=ke, hamiltonian=h)
 
@@ -77,6 +101,7 @@ class Runner:
             if model_type == 'GaugeModel':
                 self.obs_ops_dict = RunLogger.build_obs_ops_dict()
 
+        self.eps = self.sess.run(self.run_ops_dict['dynamics_eps'])
         self._inference_keys = list(self.run_ops_dict.keys())
         self._inference_ops = list(self.run_ops_dict.values())
         self._energy_keys = list(self.energy_ops_dict.keys())
@@ -85,8 +110,14 @@ class Runner:
             self._obs_keys = list(self.obs_ops_dict.keys())
             self._obs_ops = list(self.obs_ops_dict.values())
             self.energy_runner = EnergyRunner(potential_fn=actions)
-
-        self.eps = self.sess.run(self.run_ops_dict['dynamics_eps'])
+        elif model_type == 'GaussianMixtureModel':
+            if self.logger is not None:
+                distribution = recreate_distribution(self.logger.log_dir)
+                potential_fn = distribution.minus_log_likelihood_np
+                #  potential_fn = distribution.get_energy_function()
+                self.energy_runner = EnergyRunner(potential_fn)
+            else:
+                raise AttributeError('Unable to recreate distribution.')
 
     def _calc_energies_np(self, state, sumlogdet=0.):
         """Calculate energies imperatively during inference run to compare.
@@ -141,11 +172,6 @@ class Runner:
         running tensorflow operations, whereas `energies_np` are calculated
         imperatively in numpy.
         """
-        #  np_dict = {}
-        #  for key, val in energies_np._asdict().items():
-        #      for k, v in val._asdict().items():
-        #          name = f'{key}_{k}'
-        #          np_dict[name] = v
         ediffs = {}
         for key in energies.keys():
             e = energies[key]
@@ -227,7 +253,10 @@ class Runner:
 
             energy_str = f'{step:>5g}/{self.run_steps:<6g} \n'
             for key, val in energies_diffs.items():
-                mean = np.mean(val)
+                try:
+                    mean = np.mean(val)
+                except:
+                    import pudb; pudb.set_trace()
                 std = np.std(val)
                 energy_str += f'  {key}: {mean:.5g} +/- {std:.5g}\n'
             #  energy_str += (f' {k}: {v:.5g}\n' for k, v in

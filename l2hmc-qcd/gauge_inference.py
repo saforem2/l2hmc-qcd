@@ -185,15 +185,19 @@ def inference(runner, run_logger, plotter, energy_plotter, **kwargs):
         # Plot dU, dT, and dH
         kwargs['out_dir'] = '_tf'
         e_tf = run_logger.energy_dict
-        tf_data = energy_plotter.plot_energies(e_tf, **kwargs)
+        sumlogdets = {
+            'out': run_logger.run_data['sumlogdet_out'],
+            'proposed': run_logger.run_data['sumlogdet_proposed']
+        }
+        tf_data = energy_plotter.plot_energies(e_tf, sumlogdets, **kwargs)
 
         e_np = run_logger.energy_dict_np
         kwargs['out_dir'] = '_np'
-        np_data = energy_plotter.plot_energies(e_np, **kwargs)
+        np_data = energy_plotter.plot_energies(e_np, sumlogdets, **kwargs)
 
         de = run_logger.energies_diffs_dict
         kwargs['out_dir'] = '_tf_np_diff'
-        diff_data = energy_plotter.plot_energies(de, **kwargs)
+        diff_data = energy_plotter.plot_energies(de, sumlogdets, **kwargs)
 
         if kwargs.get('plot_lf', False):
             lf_plotter = LeapfrogPlotter(plotter.out_dir, run_logger)
