@@ -88,7 +88,7 @@ def gauge_potential_energy(state, lattice):
     Args:
         lattice (GaugeLattice object): Input lattice.
     """
-    return beta * _gauge_potential(lattice)
+    return state.beta * _gauge_potential(lattice)
 
 
 def potential_energy(x, beta, potential_fn):

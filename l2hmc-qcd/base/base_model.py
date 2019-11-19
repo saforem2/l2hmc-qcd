@@ -103,14 +103,18 @@ class BaseModel:
                                    self.eps_ph, name='eps_setter')
         except:
             import pudb; pudb.set_trace()
-
         return eps_setter
 
     def _calc_energies(self, state, sumlogdet=0.):
         pe = self.dynamics.potential_energy(state.x, state.beta)
         ke = self.dynamics.kinetic_energy(state.v)
+        h = pe + ke + sumlogdet
 
-        return cfg.Energy(pe, ke, pe + ke + sumlogdet)
+        tf.add_to_collection('energy_ops', pe)
+        tf.add_to_collection('energy_ops', ke)
+        tf.add_to_collection('energy_ops', h)
+
+        return cfg.Energy(pe, ke, h)
 
     def _build_energy_ops(self):
         """Build operations for calculating the energies."""

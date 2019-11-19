@@ -137,7 +137,22 @@ class GaugeModel(BaseModel):
         # Build energy_ops to calculate energies.
         # -------------------------------------------------------------------
         with tf.name_scope('energy_ops'):
-            self.energy_ops = self._build_energy_ops()
+            self.v_ph = tf.placeholder(dtype=TF_FLOAT, shape=self.x.shape,
+                                       name='v_placeholder')
+            self.sumlogdet_ph = tf.placeholder(dtype=TF_FLOAT,
+                                               shape=self.x.shape[0],
+                                               name='sumlogdet_placeholder')
+
+            self.state = cfg.State(x=self.x, v=self.v_ph, beta=self.beta)
+
+            ph_str = 'energy_placeholders'
+            _ = [tf.add_to_collection(ph_str, i) for i in self.state]
+            #  tf.add_to_collection('energy_placeholders', self.v_ph)
+            tf.add_to_collection(ph_str, self.sumlogdet_ph)
+
+            self.energy_ops = self._calc_energies(self.state,
+                                                  self.sumlogdet_ph)
+        #      self.energy_ops = self._build_energy_ops()
 
         #  self.charge_diffs = self._calc_charge_diff(x_data.init,
         #                                             x_data.proposed)

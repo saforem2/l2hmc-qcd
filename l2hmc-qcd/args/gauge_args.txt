@@ -1,8 +1,7 @@
 --time_size 8
---space_size 8 
-#--rand
+--space_size 8
 --batch_size 64
---num_steps 3 
+--num_steps 3
 --eps 0.4
 --beta_init 2.
 --beta_final 6.
@@ -10,7 +9,7 @@
 --lr_decay_steps 1000
 --lr_decay_rate 0.96
 --train_steps 5000
---logging_steps 50 
+--logging_steps 50
 --save_steps 1000
 --print_steps 1
 --network_arch 'generic'
@@ -22,7 +21,8 @@
 --charge_weight 0.
 --loss_scale 1.
 --save_lf
---float64
+--global_seed 829
+#--float64
 #--use_nnehmc_loss
 #--use_gaussian_loss
 ######################

@@ -1,12 +1,12 @@
---num_steps 3
+--num_steps 4
 --eps 0.25
-#--use_nnehmc_loss
+--use_nnehmc_loss
 #--use_gaussian_loss
 --arrangement 'diag'
 --num_distributions 2 
 # --------------------
 --center 1.5
---sigma1 0.10
+--sigma1 0.08
 --sigma2 0.02
 --aux_weight 1.
 # --------------------

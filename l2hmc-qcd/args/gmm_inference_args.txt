@@ -1,5 +1,5 @@
---run_steps 2009
---bootstrap_iters 500
+--run_steps 2001
+--bootstrap_iters 1000
 #--run_hmc
 --beta_inference 1.
 --scale_weight 1.

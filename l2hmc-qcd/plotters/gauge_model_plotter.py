@@ -103,10 +103,10 @@ class EnergyPlotter:
         self.params = params
         self.figs_dir = figs_dir
 
-    def bootstrap(self, data, n_boot=2000):
+    def bootstrap(self, data, n_boot=5000):
         boot_dist = []
         for i in range(int(n_boot)):
-            resampler = np.random.randint(0, data.shape[0], 
+            resampler = np.random.randint(0, data.shape[0],
                                           data.shape[0], )
             sample = data.take(resampler, axis=0)
             boot_dist.append(np.mean(sample, axis=0))
@@ -148,14 +148,8 @@ class EnergyPlotter:
     def _plot(self, labels, data_arr, title=None, out_file=None):
         colors = ['C0', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6']
         num_plots = len(labels)
-        #  if num_plots % 2 == 0:
-        #      fig, axes = plt.subplots(nrows=num_plots//2, ncols=num_plots//2)
-        #  else:
         fig, axes = plt.subplots(nrows=num_plots, ncols=1)
 
-        #  axes = list(np.array(axes.flatten))
-        #  axes = [i for i in axes]
-        #  alphas = [1. - 0.25 * i for i in range(len(labels))]
         for idx, (label, data) in enumerate(zip(labels, data_arr)):
             num_steps = data.shape[0]
             therm_steps = int(0.1 * num_steps)
@@ -186,22 +180,33 @@ class EnergyPlotter:
 
     def _hist(self, labels, data_arr, title=None, out_file=None, **kwargs):
         n_bins = kwargs.get('n_bins', 50)
-        n_boot = kwargs.get('n_boot', 1000)
+        #  n_boot = kwargs.get('n_boot', 1000)
+        is_mixed = kwargs.get('is_mixed', False)
         single_chain = kwargs.get('single_chain', False)
         alphas = [1. - 0.25 * i for i in range(len(labels))]
+        if not is_mixed:
+            num_steps = data_arr[0].shape[0]
+            therm_steps = int(0.1 * num_steps)
+        else:
+            therm_steps = 0
 
         fig, ax = plt.subplots()
         for idx, (label, data) in enumerate(zip(labels, data_arr)):
-            num_steps = data.shape[0]
-            therm_steps = int(0.1 * num_steps)
             if single_chain:
                 data = data[therm_steps:, -1]
-                mean, err, mean_arr = self.bootstrap(data, n_boot=n_boot)
+                mean = data.mean()
+                err = data.std()
+                mean_arr = data.flatten()
+                #  mean, err, mean_arr = self.bootsrap(data, n_boot=n_boot)
                 mean_arr = mean_arr.flatten()
             else:
+                therm_steps = int(therm_steps)
                 data = data[therm_steps:, :]
-                mean, err, mean_arr = self.bootstrap(data, n_boot=n_boot)
-                mean_arr = mean_arr.flatten()
+                mean = data.mean()
+                err = data.std()
+                mean_arr = data.flatten()
+                #  mean, err, mean_arr = self.bootstrap(data, n_boot=n_boot)
+                #  mean_arr = mean_arr.flatten()
             label = labels[idx] + f'  avg: {mean:.4g} +/- {err:.4g}'
             ax.hist(mean_arr, bins=n_bins, density=True,
                     alpha=alphas[idx], label=label)

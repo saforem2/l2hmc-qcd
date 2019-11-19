@@ -28,9 +28,10 @@ import config as cfg
 
 __all__ = ['Dynamics']
 
-#  TF_FLOAT = cfg.TF_FLOAT
-#  TF_INT = cfg.TF_INT
-#  GLOBAL_SEED = cfg.GLOBAL_SEED
+TF_FLOAT = cfg.TF_FLOAT
+TF_INT = cfg.TF_INT
+GLOBAL_SEED = cfg.GLOBAL_SEED
+State = cfg.State
 #
 
 
@@ -48,7 +49,6 @@ def _add_to_collection(collection, ops):
 
 class Dynamics(tf.keras.Model):
     """Dynamics engine of naive L2HMC sampler."""
-
     def __init__(self, potential_fn, **params):
         """Initialization.
 
@@ -71,7 +71,9 @@ class Dynamics(tf.keras.Model):
             np_seed: Seed to use for numpy.random.
         """
         super(Dynamics, self).__init__(name='Dynamics')
-        npr.seed(cfg.GLOBAL_SEED)
+        npr.seed(GLOBAL_SEED)
+
+        self.seed_dict = {}
 
         self.potential = potential_fn
         self.l2hmc_fns = {}
@@ -104,7 +106,7 @@ class Dynamics(tf.keras.Model):
             log_eps = tf.Variable(
                 initial_value=tf.log(tf.constant(self._eps_np)),
                 name='log_eps',
-                dtype=cfg.TF_FLOAT,
+                dtype=TF_FLOAT,
                 trainable=self.eps_trainable
             )
 
@@ -114,7 +116,7 @@ class Dynamics(tf.keras.Model):
             eps = tf.Variable(
                 initial_value=self._eps_np,
                 name='eps',
-                dtype=cfg.TF_FLOAT,
+                dtype=TF_FLOAT,
                 trainable=self.eps_trainable
             )
 
@@ -217,13 +219,20 @@ class Dynamics(tf.keras.Model):
         if model_type == 'GaugeModel':
             x_init = tf.mod(x_init, 2 * np.pi, name='x_in_mod_2_pi')
 
+        # create operational level seeds
+        seeds = np.random.randint(1e4, size=2)
+        self.seed_dict.update({
+            'v_init_f': seeds[0],
+            'v_init_b': seeds[1],
+        })
+
         # Call `self.transition_kernel` in the forward direction, 
         # starting from the initial `State`: `(x_init, v_init_f, beta)`
         # to get the proposed `State`
         with tf.name_scope('transition_forward'):
             v_init_f = tf.random_normal(tf.shape(x_init),
-                                        dtype=cfg.TF_FLOAT,
-                                        seed=cfg.GLOBAL_SEED,
+                                        dtype=TF_FLOAT,
+                                        seed=seeds[0],
                                         name='v_init_f')
 
             state_init_f = cfg.State(x_init, v_init_f, beta)
@@ -238,8 +247,8 @@ class Dynamics(tf.keras.Model):
 
         with tf.name_scope('transition_backward'):
             v_init_b = tf.random_normal(tf.shape(x_init),
-                                        dtype=cfg.TF_FLOAT,
-                                        seed=cfg.GLOBAL_SEED,
+                                        dtype=TF_FLOAT,
+                                        seed=seeds[1],
                                         name='v_init_b')
 
             state_init_b = cfg.State(x_init, v_init_b, beta)
@@ -285,47 +294,6 @@ class Dynamics(tf.keras.Model):
             v_out = v_proposed * mask_a[:, None] + v_init * mask_r[:, None]
             sumlogdet_out = sumlogdet_proposed * mask_a
 
-        #  if model_type == 'GaugeModel':
-        #      # Take `mod` operations here for calculating the energies
-        #      x_proposed = tf.mod(x_proposed, 2 * np.pi,
-        #                          name='x_proposed_mod_2pi')
-        #      x_out = tf.mod(x_out, 2 * np.pi, name='x_out_mod_2_pi')
-
-        #  def _calc_energies(state, sld=0.):
-        #      pe = self.potential_energy(state.x, state.beta)
-        #      ke = self.kinetic_energy(state.v)
-        #      return cfg.Energy(pe, ke, pe + ke + sld)  # sld: 'sumlogdet'
-
-        #  with tf.name_scope('calc_energies'):
-        #      state_init = cfg.State(x_init, v_init, beta)
-        #      state_prop = cfg.State(x_proposed, v_proposed, beta)
-        #      state_out = cfg.State(x_out, v_out, beta)
-        #      with tf.name_scope('init'):
-        #          einit = _calc_energies(state_init)
-        #      with tf.name_scope('proposed'):
-        #          eprop = _calc_energies(state_prop, sumlogdet_proposed)
-        #      with tf.name_scope('out'):
-        #          eout = _calc_energies(state_out, sumlogdet_out)
-        #
-        #      pe_data = cfg.EnergyData(einit.potential,
-        #                               eprop.potential,
-        #                               eout.potential)
-        #      ke_data = cfg.EnergyData(einit.kinetic,
-        #                               eprop.kinetic,
-        #                               eout.kinetic)
-        #      h_data = cfg.EnergyData(einit.hamiltonian,
-        #                              eprop.hamiltonian,
-        #                              eout.hamiltonian)
-        #      _add_to_collection('potential_energy', pe_data)
-        #      _add_to_collection('kinetic_energy', ke_data)
-        #      _add_to_collection('hamiltonian', h_data)
-        #
-        #      energies = {
-        #          'potential': pe_data,
-        #          'kinetic': ke_data,
-        #          'hamiltonian': h_data
-        #      }
-
         outputs = {
             'x_init': x_init,
             'v_init': v_init,
@@ -345,11 +313,6 @@ class Dynamics(tf.keras.Model):
         for val in outputs.values():
             tf.add_to_collection('dynamics_out', val)
 
-        #  outputs = {
-        #      'outputs_fb': outputs_fb,
-        #      #  'energies': energies,
-        #  }
-
         return outputs
 
     def transition_kernel(self, x_in, v_in, beta,
@@ -361,9 +324,9 @@ class Dynamics(tf.keras.Model):
         with tf.name_scope('init'):
             x_proposed, v_proposed = x_in, v_in
 
-            step = tf.constant(0., name='md_step', dtype=cfg.TF_FLOAT)
+            step = tf.constant(0., name='md_step', dtype=TF_FLOAT)
             batch_size = tf.shape(x_in)[0]
-            logdet = tf.zeros((batch_size,), dtype=cfg.TF_FLOAT)
+            logdet = tf.zeros((batch_size,), dtype=TF_FLOAT)
 
         def body(step, x, v, logdet):
             new_x, new_v, j, _fns = lf_fn(x, v, beta, step,
@@ -518,8 +481,8 @@ class Dynamics(tf.keras.Model):
                 fns = [scale, transl, transf]
 
             with tf.name_scope('vf_exp'):
-                scale_exp = tf.cast(exp(scale, 'scale_exp'), cfg.TF_FLOAT)
-                transf_exp = tf.cast(exp(transf, 'transf_exp'), cfg.TF_FLOAT)
+                scale_exp = tf.cast(exp(scale, 'scale_exp'), TF_FLOAT)
+                transf_exp = tf.cast(exp(transf, 'transf_exp'), TF_FLOAT)
 
             with tf.name_scope('proposed'):
                 v = (v * scale_exp
@@ -657,13 +620,16 @@ class Dynamics(tf.keras.Model):
         return t
 
     def _get_transition_masks(self):
+        seed = np.random.randint(1e4)
+        self.seed_dict['forward_mask'] = seed
+
         with tf.name_scope('transition_masks'):
             with tf.name_scope('forward_mask'):
                 forward_mask = tf.cast(
                     tf.random_uniform((self.batch_size,),
-                                      dtype=cfg.TF_FLOAT,
-                                      seed=cfg.GLOBAL_SEED) > 0.5,
-                    cfg.TF_FLOAT,
+                                      dtype=TF_FLOAT,
+                                      seed=seed) > 0.5,
+                    TF_FLOAT,
                     name='forward_mask'
                 )
             with tf.name_scope('backward_mask'):
@@ -672,12 +638,15 @@ class Dynamics(tf.keras.Model):
         return forward_mask, backward_mask
 
     def _get_accept_masks(self, accept_prob):
+        seed = np.random.randint(1e4)
+        self.seed_dict['accept_mask'] = seed
+
         with tf.name_scope('accept_mask'):
             accept_mask = tf.cast(
                 accept_prob > tf.random_uniform(tf.shape(accept_prob),
-                                                dtype=cfg.TF_FLOAT,
-                                                seed=cfg.GLOBAL_SEED),
-                cfg.TF_FLOAT,
+                                                dtype=TF_FLOAT,
+                                                seed=seed),
+                TF_FLOAT,
                 name='acccept_mask'
             )
             reject_mask = 1. - accept_mask
@@ -718,7 +687,7 @@ class Dynamics(tf.keras.Model):
             idx = npr.permutation(np.arange(self.x_dim))[:self.x_dim // 2]
             mask = np.zeros((self.x_dim,))
             mask[idx] = 1.
-            mask = tf.constant(mask, dtype=cfg.TF_FLOAT)
+            mask = tf.constant(mask, dtype=TF_FLOAT)
             masks.append(mask[None, :])
 
         return masks
@@ -728,7 +697,7 @@ class Dynamics(tf.keras.Model):
             if tf.executing_eagerly():
                 m = self.masks[step]
             else:
-                m = tf.gather(self.masks, tf.cast(step, dtype=cfg.TF_INT))
+                m = tf.gather(self.masks, tf.cast(step, dtype=TF_INT))
 
         return m, 1. - m
 

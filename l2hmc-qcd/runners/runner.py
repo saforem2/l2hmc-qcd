@@ -1,8 +1,14 @@
 """
 runner.py
 
-Implements GaugeModelRunner class responsible for running the L2HMC algorithm
-on a U(1) gauge model.
+Includes the following:
+
+    - Implementation of the `EnergyRunner` class responsible for running the
+    tensorflow operations associated with calculating various energies at
+    different points in the trajectory.
+
+    - Implementation of the `Runner` class which is responsible for running the
+    operations needed for inference.
 
 Author: Sam Foreman (github: @saforem2)
 Date: 04/09/2019
@@ -14,9 +20,7 @@ import pickle
 import numpy as np
 import utils.file_io as io
 
-from collections import namedtuple
-
-from config import Energy, EnergyData, State
+from config import Energy, State
 from lattice.lattice import u1_plaq_exact
 from lattice.utils import actions
 from loggers.run_logger import RunLogger
@@ -89,6 +93,9 @@ class Runner:
             self._run_header = self.logger.run_header
             self.inputs_dict = self.logger.inputs_dict
             self.run_ops_dict = self.logger.run_ops_dict
+            self.state_ph = self.logger.state_ph
+            self.sumlogdet_ph = self.logger.sumlogdet_ph
+
             self.energy_ops_dict = self.logger.energy_ops_dict
             if model_type == 'GaugeModel':
                 self.obs_ops_dict = self.logger.obs_ops_dict
@@ -97,7 +104,10 @@ class Runner:
             self._run_header = ''
             self.inputs_dict = RunLogger.build_inputs_dict()
             self.run_ops_dict = RunLogger.build_run_ops_dict()
-            self.energy_ops_dict = RunLogger.build_energy_ops_dict()
+            energy_outputs = RunLogger.build_energy_ops_dict()
+            self.state_ph = energy_outputs['state']
+            self.sumlogdet_ph = energy_outputs['sumlogdet_ph']
+            self.energy_ops_dict = energy_outputs['ops_dict']
             if model_type == 'GaugeModel':
                 self.obs_ops_dict = RunLogger.build_obs_ops_dict()
 
@@ -139,11 +149,12 @@ class Runner:
         return energies
 
     def calc_energies_np(self, outputs):
-        state_init = State(outputs['x_init'], outputs['v_init'], self.beta)
+        state_init = State(outputs['x_init'],
+                           outputs['v_init'], self.beta)
         state_prop = State(outputs['x_proposed'],
-                           outputs['v_proposed'],
-                           self.beta)
-        state_out = State(outputs['x_out'], outputs['v_out'], self.beta)
+                           outputs['v_proposed'], self.beta)
+        state_out = State(outputs['x_out'],
+                          outputs['v_out'], self.beta)
 
         sld_prop = outputs['sumlogdet_proposed']
         sld_out = outputs['sumlogdet_out']
@@ -180,10 +191,52 @@ class Runner:
 
         return ediffs
 
-    def run_energy_ops(self, feed_dict):
+    def _run_energy_ops(self, state_np, sumlogdet_np=0.):
         """Run all energy ops."""
+        feed_dict = {
+            self.state_ph.x: state_np.x,
+            self.state_ph.v: state_np.v,
+            self.state_ph.beta: self.beta,
+            self.sumlogdet_ph: sumlogdet_np
+        }
         outputs = self.sess.run(self._energy_ops, feed_dict=feed_dict)
         return dict(zip(self._energy_keys, outputs))
+
+    def run_energy_ops(self, x_init, outputs):
+        """Run all energy ops."""
+        state_init = State(x=x_init,
+                           v=outputs['v_init'],
+                           beta=self.beta)
+        state_prop = State(x=outputs['x_proposed'],
+                           v=outputs['v_proposed'],
+                           beta=self.beta)
+        state_out = State(x=outputs['x_out'],
+                          v=outputs['v_out'],
+                          beta=self.beta)
+
+        sumlogdet_init = np.zeros(outputs['sumlogdet_proposed'].shape)
+        sumlogdet_prop = outputs['sumlogdet_proposed']
+        sumlogdet_out = outputs['sumlogdet_out']
+
+        energies_init = self._run_energy_ops(state_np=state_init,
+                                             sumlogdet_np=sumlogdet_init)
+        energies_prop = self._run_energy_ops(state_np=state_prop,
+                                             sumlogdet_np=sumlogdet_prop)
+        energies_out = self._run_energy_ops(state_np=state_out,
+                                            sumlogdet_np=sumlogdet_out)
+        energies = {
+            'potential_init': energies_init['potential_energy'],
+            'kinetic_init': energies_init['kinetic_energy'],
+            'hamiltonian_init': energies_init['hamiltonian'],
+            'potential_proposed': energies_prop['potential_energy'],
+            'kinetic_proposed': energies_prop['kinetic_energy'],
+            'hamiltonian_proposed': energies_prop['hamiltonian'],
+            'potential_out': energies_out['potential_energy'],
+            'kinetic_out': energies_out['kinetic_energy'],
+            'hamiltonian_out': energies_out['hamiltonian'],
+        }
+
+        return energies
 
     def run_inference_ops(self, feed_dict):
         outputs = self.sess.run(self._inference_ops, feed_dict=feed_dict)
@@ -235,17 +288,15 @@ class Runner:
                          f"{self.plaq_exact:^9.4g} ")
 
         if (step % self.energy_steps) == 0:
-            energies = self.run_energy_ops(feed_dict)
+            # Calculate energies by running tensorflow graph operations
+            energies = self.run_energy_ops(samples, outputs)
 
             # Calculate energies independently using imperative numpy functions
             energies_np = self.calc_energies_np(outputs)
 
             energies_diffs = {}
             for key in energies.keys():
-                enp = energies_np[key]
-                e = energies[key]
-                energies_diffs[key] = e - enp
-            #  energies_diffs = self.calc_energy_diffs(energies, energies_np)
+                energies_diffs[key] = energies[key] - energies_np[key]
 
             out_dict['energies'] = energies
             out_dict['energies_np'] = energies_np
@@ -253,14 +304,9 @@ class Runner:
 
             energy_str = f'{step:>5g}/{self.run_steps:<6g} \n'
             for key, val in energies_diffs.items():
-                try:
-                    mean = np.mean(val)
-                except:
-                    import pudb; pudb.set_trace()
+                mean = np.mean(val)
                 std = np.std(val)
                 energy_str += f'  {key}: {mean:.5g} +/- {std:.5g}\n'
-            #  energy_str += (f' {k}: {v:.5g}\n' for k, v in
-            #                 energies_diffs.items())
 
         return out_dict, data_str, energy_str
 
