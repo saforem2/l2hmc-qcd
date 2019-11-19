@@ -36,8 +36,9 @@ import os
 import time
 import pickle
 
-from config import (GLOBAL_SEED, HAS_COMET, HAS_HOROVOD, HAS_MATPLOTLIB,
-                    NP_FLOAT)
+import config as cfg
+#  from config import (GLOBAL_SEED, HAS_COMET, HAS_HOROVOD, HAS_MATPLOTLIB,
+#                      NP_FLOAT)
 from update import set_precision, set_seed
 from models.gauge_model import GaugeModel
 from loggers.train_logger import TrainLogger
@@ -56,10 +57,10 @@ import utils.file_io as io
 
 from utils.parse_args import parse_args
 
-if HAS_COMET:
+if cfg.HAS_COMET:
     from comet_ml import Experiment
 
-if HAS_HOROVOD:
+if cfg.HAS_HOROVOD:
     import horovod.tensorflow as hvd
 
 if float(tf.__version__.split('.')[0]) <= 2:
@@ -67,7 +68,8 @@ if float(tf.__version__.split('.')[0]) <= 2:
 
 SEP_STR = 80 * '-'  # + '\n'
 
-tf.set_random_seed(GLOBAL_SEED)
+#  tf.set_random_seed(cfg.GLOBAL_SEED)
+NP_FLOAT = cfg.NP_FLOAT
 
 
 def create_config(params):
@@ -85,10 +87,10 @@ def create_config(params):
         # (one GPU per process)
         config.gpu_options.allow_growth = True
         #  config.allow_soft_placement = True
-        if HAS_HOROVOD and params['horovod']:
+        if cfg.HAS_HOROVOD and params['horovod']:
             config.gpu_options.visible_device_list = str(hvd.local_rank())
 
-    if HAS_MATPLOTLIB:
+    if cfg.HAS_MATPLOTLIB:
         params['_plot'] = True
 
     theta = params.get('theta', False)
@@ -203,11 +205,13 @@ def train_setup(FLAGS, log_file=None, root_dir=None,
     #      io.log("Using CPU for training.")
     #      params['data_format'] = 'channels_last'
 
-    if getattr(FLAGS, 'float64', False):
+    #  if getattr(FLAGS, 'float64', False):
+    if params.get('float64', False):
         io.log(f'INFO: Setting floating point precision to `float64`.')
         set_precision('float64')
 
-    if getattr(FLAGS, 'horovod', False):
+    #  if getattr(FLAGS, 'horovod', False):
+    if params.get('horovod', False):
         params['using_hvd'] = True
         num_workers = hvd.size()
         params['num_workers'] = num_workers
@@ -282,10 +286,10 @@ def train_l2hmc(FLAGS, log_file=None):
     # Create model and train_logger
     # --------------------------------------------------------
     model = GaugeModel(params)
-
     if is_chief:
+        logging_steps = params.get('logging_steps', 10)
         train_logger = TrainLogger(model, log_dir,
-                                   logging_steps=10,
+                                   logging_steps=logging_steps,
                                    summaries=params['summaries'])
     else:
         train_logger = None
@@ -298,7 +302,8 @@ def train_l2hmc(FLAGS, log_file=None):
     # set initial value of charge weight using value from FLAGS
     #  charge_weight_init = params['charge_weight']
     net_weights_init = [1., 1., 1.]
-    samples_init = np.reshape(np.array(model.lattice.samples, dtype=NP_FLOAT),
+    samples_init = np.reshape(np.array(model.lattice.samples,
+                                       dtype=NP_FLOAT),
                               (model.batch_size, model.x_dim))
     beta_init = model.beta_init
 
@@ -330,9 +335,9 @@ def train_l2hmc(FLAGS, log_file=None):
     io.log(f'tf.report_uninitialized_variables() len = {uninited_out}')
 
     # Check reversibility and write results out to `.txt` file.
-    samples_init = np.random.randn(*model.x.shape)
+    rand_samples = np.random.randn(*model.x.shape)
     feed_dict = {
-        model.x: samples_init,
+        model.x: rand_samples,
         model.beta: 1.,
         model.net_weights[0]: 1.,
         model.net_weights[1]: 1.,
@@ -371,6 +376,15 @@ def train_l2hmc(FLAGS, log_file=None):
     with open(params_file, 'wb') as f:
         pickle.dump(model.params, f)
 
+    dynamics_seeds_file = os.path.join(os.getcwd(), 'dynamics_seeds.pkl')
+    with open(dynamics_seeds_file, 'wb') as f:
+        pickle.dump(model.dynamics.seed_dict, f)
+
+    dynamics_seeds_file = os.path.join(os.getcwd(), 'dynamics_seeds.txt')
+    with open(dynamics_seeds_file, 'w') as f:
+        for key, val in model.dynamics.seed_dict.items():
+            f.write(f'{key}: {val}\n')
+
     # Count all trainable paramters and write them out (w/ shapes) to txt file
     count_trainable_params(os.path.join(params['log_dir'],
                                         'trainable_params.txt'))
@@ -386,8 +400,17 @@ def main(FLAGS):
     """Main method for creating/training/running L2HMC for U(1) gauge model."""
     log_file = 'output_dirs.txt'
 
+    #  if getattr(FLAGS, 'float64', False):
+    if FLAGS.float64:
+        io.log(f'INFO: Setting floating point precision to `float64`.')
+        cfg.TF_FLOAT = tf.float64
+        cfg.NP_FLOAT = np.float64
+        cfg.TF_INT = tf.int64
+        cfg.NP_INT = np.int64
+        #  set_precision('float64')
+
     USING_HVD = getattr(FLAGS, 'horovod', False)
-    if HAS_HOROVOD and USING_HVD:
+    if cfg.HAS_HOROVOD and USING_HVD:
         io.log("INFO: USING HOROVOD")
         hvd.init()
         rank = hvd.rank()
@@ -405,7 +428,9 @@ if __name__ == '__main__':
     FLAGS = parse_args()
     using_hvd = getattr(FLAGS, 'horovod', False)
     if not using_hvd:
-        set_seed(FLAGS.global_seed)
+        #  set_seed(FLAGS.global_seed)
+        io.log(f'GLOBAL SEED: {FLAGS.global_seed}')
+        tf.set_random_seed(FLAGS.global_seed)
     t0 = time.time()
     main(FLAGS)
     io.log('\n\n' + SEP_STR)

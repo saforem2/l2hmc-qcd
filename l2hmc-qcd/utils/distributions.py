@@ -170,7 +170,7 @@ class GMM(object):
         return fn
 
     def minus_log_likelihood_np(self, x):
-        V = np.concat([np.expand_dims(
+        V = np.concatenate([np.expand_dims(
             -quadratic_gaussian_np(x, self.mus[i], self.i_sigmas[i])
             + np.log(self.constants[i]), axis=1
         ) for i in range(self.nb_mixtures)], axis=1)
@@ -252,7 +252,6 @@ def gen_ring(r=1.0, var=1.0, nb_mixtures=2):
         c = np.cos(2 * np.pi * t / nb_mixtures)
         s = np.sin(2 * np.pi * t / nb_mixtures)
         base_points.append(np.array([r * c, r * s]))
-
 
     v = np.array(base_points)
     sigmas = [var * np.eye(2) for t in range(nb_mixtures)]

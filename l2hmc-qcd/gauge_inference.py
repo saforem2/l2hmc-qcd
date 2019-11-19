@@ -28,6 +28,7 @@ from __future__ import absolute_import, division, print_function
 
 import os
 import time
+import datetime
 
 from config import HAS_HOROVOD
 
@@ -37,6 +38,7 @@ from plotters.leapfrog_plotters import LeapfrogPlotter
 from plotters.gauge_model_plotter import EnergyPlotter, GaugeModelPlotter
 
 import tensorflow as tf
+import numpy as np
 
 import utils.file_io as io
 import inference.utils as utils
@@ -113,6 +115,9 @@ def run_hmc(FLAGS, log_file=None):
     # Create initial samples to be used at start of inference
     # ----------------------------------------------------------
     init_method = getattr(FLAGS, 'samples_init', 'random')
+    seed = getattr(FLAGS, 'global_seed', 0)
+    tf.random.set_random_seed(seed)
+    np.random.seed(seed)
     samples_init = utils.init_gauge_samples(params, init_method)
     inference_kwargs['samples'] = samples_init
 
@@ -156,40 +161,60 @@ def inference(runner, run_logger, plotter, energy_plotter, **kwargs):
         eps = runner.eps
         kwargs['eps'] = eps
 
-    run_str = run_logger._get_run_str(**kwargs)
-    kwargs['run_str'] = run_str
+    #  run_str = run_logger._get_run_str(**kwargs)
+    #  kwargs['run_str'] = run_str
 
     args = (nw, run_steps, eps, beta)
 
-    if run_logger.existing_run(run_str):
-        _log_inference_header(*args, existing=True)
+    #  if run_logger.existing_run(run_str):
+    #      _log_inference_header(*args, existing=True)
+    #      now = datetime.datetime.now()
+    #      hour_str = now.strftime('%H%M')
+    #      run_str += f'_{hour_str}'
+    #      kwargs['run_str'] = run_str
 
-    else:
-        _log_inference_header(*args, existing=False)
-        run_logger.reset(**kwargs)
-        t0 = time.time()
+    #  else:
+    _log_inference_header(*args, existing=False)
+    run_logger.reset(**kwargs)
+    t0 = time.time()
 
-        runner.run(**kwargs)
+    # -------------------
+    #   RUN INFERENCE
+    # -------------------
+    runner.run(**kwargs)
 
-        run_time = time.time() - t0
-        io.log(SEP_STR + f'\nTook: {run_time}s to complete run.\n' + SEP_STR)
+    run_time = time.time() - t0
+    io.log(SEP_STR + f'\nTook: {run_time}s to complete run.\n' + SEP_STR)
 
-        # -----------------------------------------------------------
-        # PLOT ALL LATTICE OBSERVABLES AND RETURN THE AVG. PLAQ DIFF
-        # -----------------------------------------------------------
-        avg_plaq_diff = plotter.plot_observables(run_logger.run_data, **kwargs)
-        log_plaq_diffs(run_logger,
-                       kwargs['net_weights'],
-                       avg_plaq_diff)
+    # -----------------------------------------------------------
+    # PLOT ALL LATTICE OBSERVABLES AND RETURN THE AVG. PLAQ DIFF
+    # -----------------------------------------------------------
+    kwargs['run_str'] = run_logger._run_str
+    avg_plaq_diff = plotter.plot_observables(run_logger.run_data, **kwargs)
+    log_plaq_diffs(run_logger,
+                   kwargs['net_weights'],
+                   avg_plaq_diff)
 
-        # Plot dU, dT, and dH
-        energy_plotter.plot_energies(run_logger.energy_dict, **kwargs)
+    tf_data = energy_plotter.plot_energies(run_logger.energy_dict,
+                                           out_dir='tf', **kwargs)
+    np_data = energy_plotter.plot_energies(run_logger.energy_dict_np,
+                                           out_dir='np', **kwargs)
+    diff_data = energy_plotter.plot_energies(run_logger.energies_diffs_dict,
+                                             out_dir='tf-np', **kwargs)
 
-        if kwargs.get('plot_lf', False):
-            lf_plotter = LeapfrogPlotter(plotter.out_dir, run_logger)
-            batch_size = runner.params.get('batch_size', 20)
-            lf_plotter.make_plots(run_logger.run_dir,
-                                  batch_size=batch_size)
+    if kwargs.get('plot_lf', False):
+        lf_plotter = LeapfrogPlotter(plotter.out_dir, run_logger)
+        batch_size = runner.params.get('batch_size', 20)
+        lf_plotter.make_plots(run_logger.run_dir,
+                              batch_size=batch_size)
+
+    energy_data = {
+        'tf_data': tf_data,
+        'np_data': np_data,
+        'diff_data': diff_data
+    }
+
+    run_logger.save_data(energy_data, 'energy_plots_data.pkl')
 
     return runner, run_logger
 
@@ -259,6 +284,9 @@ def main(kwargs):
     # setup initial samples to be used for inference
     # -------------------------------------------------
     init_method = kwargs.get('samples_init', 'random')
+    global_seed = kwargs.get('global_seed', 0)
+    tf.random.set_random_seed(global_seed)
+    np.random.seed(global_seed)
     samples_init = utils.init_gauge_samples(params, init_method)
 
     # -----------------------------------------------------------------------
@@ -270,11 +298,12 @@ def main(kwargs):
     energy_plotter = EnergyPlotter(params, run_logger.figs_dir)
 
     inference_kwargs = {
-        'run_steps': kwargs.get('run_steps', 5000),
-        'net_weights': net_weights,
-        'beta': beta,
         'eps': eps,
-        'samples': samples_init
+        'beta': beta,
+        'samples': samples_init,
+        'net_weights': net_weights,
+        'global_seed': global_seed,
+        'run_steps': kwargs.get('run_steps', 5000),
     }
 
     runner, run_logger = inference(runner,
@@ -290,7 +319,6 @@ if __name__ == '__main__':
     t0 = time.time()
     log_file = 'output_dirs.txt'
     FLAGS = args.__dict__
-    #  kwargs = FLAGS.__dict__
 
     main(FLAGS)
 

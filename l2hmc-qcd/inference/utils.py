@@ -8,7 +8,10 @@ Date: 11/06/2019
 """
 import tensorflow as tf
 import numpy as np
+
 import utils.file_io as io
+
+from lattice.lattice import GaugeLattice
 
 
 def set_eps(sess, eps):
@@ -63,3 +66,63 @@ def init_gmm_samples(params, init_method):
         #                                      params['x_dim']))
 
     return samples_init
+
+
+def _create_lattice(params):
+    """Creates and returns a `GaugeLattice` object from `params`."""
+    return GaugeLattice(dim=params['dim'],
+                        rand=params['rand'],
+                        link_type=params['link_type'],
+                        time_size=params['time_size'],
+                        space_size=params['space_size'],
+                        batch_size=params['batch_size'])
+
+
+def _gauge_potential(lattice):
+    return lattice.get_potential_fn(lattice.samples)
+
+
+def gauge_potential_energy(state, lattice):
+    """Create gauge action (potential, minus-log-likelihood) from GaugeLattice.
+
+    Args:
+        lattice (GaugeLattice object): Input lattice.
+    """
+    return state.beta * _gauge_potential(lattice)
+
+
+def potential_energy(x, beta, potential_fn):
+    return beta * potential_fn(x)
+
+
+def kinetic_energy(v):
+    return 0.5 * np.sum(v ** 2, axis=1)
+
+
+def hamiltonian(x, beta, v, potential_fn):
+    return potential_energy(x, beta, potential_fn) + kinetic_energy(v)
+
+
+def calc_energies(state_init, state_proposed, state_out):
+    """calculate the Hamiltonian and PE/KE for each state above.
+
+    NOTE: 
+        - `State` is a namedtuple of the form (x, v, beta).
+
+        - `EnergyData` is a namedtuple of the form ('init', 'proposed', out')
+
+    Args:
+        state_init (State object): Initial state at the beginning of the
+            trajectory.
+        state_proposed (State object): Proposed state at the end of the MD
+            trajectory (prior to accept/reject).
+        state_out (State object): Output state following accept/reject at the
+            end of the trajectory.
+
+    Returns:
+        pe_data (EnergyData object): Potential energy data.
+        ke_data (EnergyData object): Kinetic energy data.
+        h_data (EnergyData object): Hamiltonian data.
+    """
+    for si, sp, so in zip(state_init, state_proposed, state_out):
+        pei = potential_energy(x, beta, potential_fn)

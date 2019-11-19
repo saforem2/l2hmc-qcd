@@ -12,7 +12,7 @@ import time
 
 from collections import namedtuple
 from lattice.lattice import GaugeLattice
-from dynamics.dynamics import Dynamics
+#  from dynamics.dynamics import Dynamics
 
 import tensorflow as tf
 
@@ -20,7 +20,8 @@ import utils.file_io as io
 
 from base.base_model import BaseModel
 
-from config import HAS_HOROVOD, TF_INT
+import config as cfg
+#  from config import HAS_HOROVOD, TF_INT
 
 from params.gauge_params import GAUGE_PARAMS
 
@@ -29,8 +30,11 @@ from params.gauge_params import GAUGE_PARAMS
 #  from utils.horovod_utils import warmup_lr
 #  from tensorflow.python.ops import control_flow_ops as control_flow_ops
 
-if HAS_HOROVOD:
+if cfg.HAS_HOROVOD:
     import horovod.tensorflow as hvd  # noqa: 401
+
+TF_FLOAT = cfg.TF_FLOAT
+NP_FLOAT = cfg.NP_FLOAT
 
 LFdata = namedtuple('LFdata', ['init', 'proposed', 'prob'])
 SEP_STR = 80 * '-'
@@ -128,6 +132,27 @@ class GaugeModel(BaseModel):
         # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
         with tf.name_scope('sampler'):
             x_data, z_data = self._build_sampler()
+
+        # *******************************************************************
+        # Build energy_ops to calculate energies.
+        # -------------------------------------------------------------------
+        with tf.name_scope('energy_ops'):
+            self.v_ph = tf.placeholder(dtype=TF_FLOAT, shape=self.x.shape,
+                                       name='v_placeholder')
+            self.sumlogdet_ph = tf.placeholder(dtype=TF_FLOAT,
+                                               shape=self.x.shape[0],
+                                               name='sumlogdet_placeholder')
+
+            self.state = cfg.State(x=self.x, v=self.v_ph, beta=self.beta)
+
+            ph_str = 'energy_placeholders'
+            _ = [tf.add_to_collection(ph_str, i) for i in self.state]
+            #  tf.add_to_collection('energy_placeholders', self.v_ph)
+            tf.add_to_collection(ph_str, self.sumlogdet_ph)
+
+            self.energy_ops = self._calc_energies(self.state,
+                                                  self.sumlogdet_ph)
+        #      self.energy_ops = self._build_energy_ops()
 
         #  self.charge_diffs = self._calc_charge_diff(x_data.init,
         #                                             x_data.proposed)
@@ -314,7 +339,7 @@ class GaugeModel(BaseModel):
         with tf.name_scope('top_charge_diff'):
             x_dq = tf.cast(
                 self.lattice.calc_top_charges_diff(x_init, x_proposed),
-                dtype=TF_INT
+                dtype=cfg.TF_INT
             )
             charge_diffs_op = tf.reduce_sum(x_dq) / self.batch_size
 

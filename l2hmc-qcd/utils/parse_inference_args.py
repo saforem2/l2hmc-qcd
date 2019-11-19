@@ -193,6 +193,15 @@ def parse_args():
                               when performing the augmented L2HMC molecular
                               dynamics update."""))
 
+    parser.add_argument("--global_seed",
+                        dest='global_seed',
+                        type=int,
+                        default=42,
+                        required=False,
+                        help=("""Sets global seed to ensure
+                              reproducibility."""))
+
+
     parser.add_argument('--save_samples',
                         dest='save_samples',
                         action='store_true',

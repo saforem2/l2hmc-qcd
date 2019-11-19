@@ -13,6 +13,7 @@ import pickle
 import shutil
 import numpy as np
 
+import config as cfg
 # pylint:disable=invalid-name
 
 try:
@@ -24,8 +25,15 @@ try:
 except ImportError:
     HAS_HOROVOD = False
 
-from config import FILE_PATH
+#  from config import FILE_PATH
 
+
+def load_params(log_dir):
+    params_file = os.path.join(log_dir, 'parameters.pkl')
+    with open(params_file, 'rb') as f:
+        params = pickle.load(f)
+
+    return params
 
 def log(s, nl=True):
     """Print string `s` to stdout if and only if hvd.rank() == 0."""
@@ -233,11 +241,15 @@ def _parse_flags(FLAGS, model_type='GaugeModel'):
     elif model_type == 'GaussianMixtureModel':
         run_str, out_dict = _parse_gmm_flags(FLAGS)
 
+    if cfg.NP_FLOAT == np.float64:
+        run_str += '_f64'
+    elif cfg.NP_FLOAT == np.float32:
+        run_str += '_f32'
+
     return run_str, out_dict
 
 
-def create_log_dir(FLAGS, root_dir=None, log_file=None,
-                   run_str=True, model_type='GaugeModel'):
+def create_log_dir(FLAGS, **kwargs):
     """Automatically create and name `log_dir` to save model data to.
 
     The created directory will be located in `logs/YYYY_M_D/`, and will have
@@ -250,7 +262,10 @@ def create_log_dir(FLAGS, root_dir=None, log_file=None,
 
     NOTE: If log_dir does not already exist, it is created.
     """
-
+    run_str = kwargs.get('run_str', True)
+    model_type = kwargs.get('model_type', 'GaugeModel')
+    log_file = kwargs.get('log_file', None)
+    root_dir = kwargs.get('root_dir', None)
     if run_str:
         run_str, flags_dict = _parse_flags(FLAGS, model_type)
         _log_dir = getattr(flags_dict, '_log_dir', None)
@@ -259,18 +274,17 @@ def create_log_dir(FLAGS, root_dir=None, log_file=None,
         _log_dir = None
 
     now = datetime.datetime.now()
-    #  print(now.strftime("%b %d %Y %H:%M:%S"))
     day_str = now.strftime('%Y_%m_%d')
-    #  time_str = now.strftime("%Y_%m_%d_%H%M")
     hour_str = now.strftime('%H%M')
 
-    project_dir = os.path.abspath(os.path.dirname(FILE_PATH))
+    project_dir = os.path.abspath(os.path.dirname(cfg.FILE_PATH))
     #  if FLAGS.log_dir is None:
     if _log_dir is None:
-        if root_dir is None:
-            _dir = 'gauge_logs'
-        else:
-            _dir = root_dir
+        _dir = 'gauge_logs' if root_dir is None else root_dir
+        #  if root_dir is None:
+        #      _dir = 'gauge_logs'
+        #  else:
+        #      _dir = root_dir
 
     else:
         if root_dir is None:
@@ -282,8 +296,6 @@ def create_log_dir(FLAGS, root_dir=None, log_file=None,
     if os.path.isdir(root_log_dir):
         root_log_dir = os.path.join(project_dir, _dir, day_str,  # append hr...
                                     run_str + f'_{hour_str}')    # ...str @ end
-        #  root_log_dir = os.path.join(project_dir, _dir,
-        #                              day_str, time_str, run_str)
     check_else_make_dir(root_log_dir)
     if any('run_' in i for i in os.listdir(root_log_dir)):
         run_num = get_run_num(root_log_dir)
@@ -338,10 +350,12 @@ def save_data(data, out_file, name=None):
         log("Extension not recognized! out_file must end in .pkl or .npy")
 
 
-def save_params(params, out_dir):
+def save_params(params, out_dir, name=None):
     check_else_make_dir(out_dir)
-    params_txt_file = os.path.join(out_dir, 'parameters.txt')
-    params_pkl_file = os.path.join(out_dir, 'parameters.pkl')
+    if name is None:
+        name = 'parameters'
+    params_txt_file = os.path.join(out_dir, f'{name}.txt')
+    params_pkl_file = os.path.join(out_dir, f'{name}.pkl')
     with open(params_txt_file, 'w') as f:
         for key, val in params.items():
             f.write(f"{key}: {val}\n")

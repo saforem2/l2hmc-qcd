@@ -128,12 +128,6 @@ def load_params(params_pkl_file=None, log_file=None):
     if os.path.isfile(params_pkl_file):
         with open(params_pkl_file, 'rb') as f:
             params = pickle.load(f)
-    #  else:
-    #      io.log(f'INFO: Unable to locate: {params_pkl_file}.\n'
-    #             f'INFO: Using default parameters...\n')
-    #
-    #      params = GMM_PARAMS.copy()
-    #      params['log_dir'] = io.create_log_dir(params, log_file=log_file)
 
     return params
 
