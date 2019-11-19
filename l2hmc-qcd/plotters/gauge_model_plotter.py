@@ -225,10 +225,6 @@ class EnergyPlotter:
 
         return fig_ax, bs_data
 
-    def _traceplot(energy_data, title, out_dir, name):
-        """Make traceplot using `arviz.traceplot`."""
-        pass
-
     def _potential_plots(self, energy_data, title, out_dir):
         labels = [r"""$\delta U_{\mathrm{out}}$,""",
                   r"""$\delta U_{\mathrm{proposed}}$,"""]
