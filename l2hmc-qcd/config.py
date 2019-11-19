@@ -27,10 +27,15 @@ BootstrapData = namedtuple('BootstrapData', ['mean', 'err', 'means_bs'])
 l2hmcFn = namedtuple('l2hmcFn', ['v1', 'x1', 'x2', 'v2'])
 l2hmcFns = namedtuple('l2hmcFns', ['scale', 'translation', 'transformation'])
 
-TF_FLOAT = tf.float64
-TF_INT = tf.int64
-NP_FLOAT = np.float64
-NP_INT = np.int64
+TF_FLOAT = tf.float32
+TF_INT = tf.int32
+NP_FLOAT = np.float32
+NP_INT = np.int32
+
+#  TF_FLOAT = tf.float64
+#  TF_INT = tf.int64
+#  NP_FLOAT = np.float64
+#  NP_INT = np.int64
 
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 FILE_PATH = os.path.abspath(os.path.dirname(__file__))
@@ -40,7 +45,7 @@ COLORS = 5000 * ['C0', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9']
 MARKERS = 5000 * ['o', 's', 'x', 'v', 'h', '^', 'p', '<', 'd', '>', 'o']
 LINESTYLES = 5000 * ['-', '--', ':', '-.', '-', '--', ':', '-.', '-', '--']
 
-GLOBAL_SEED = 9
+GLOBAL_SEED = 18
 
 header = ("{:^12s}" + 8 * "{:^10s}").format(
     "STEP", "t/STEP", "% ACC", "EPS", "BETA",

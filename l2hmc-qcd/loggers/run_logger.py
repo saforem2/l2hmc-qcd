@@ -9,6 +9,7 @@ Date: 04/24/2019
 """
 import os
 import pickle
+import datetime
 
 import tensorflow as tf
 import numpy as np
@@ -18,7 +19,7 @@ from scipy.stats import sem
 
 import utils.file_io as io
 
-from config import NP_FLOAT, EnergyData
+from config import NP_FLOAT, EnergyData, State
 from utils.distributions import GMM
 from lattice.lattice import u1_plaq_exact
 
@@ -48,8 +49,6 @@ def _rename(src, dst):
 def _get_eps():
     eps = [i for i in tf.global_variables() if 'eps' in i.name][0]
     return eps
-
-
 
 
 class EnergyLogger:
@@ -123,11 +122,15 @@ class RunLogger:
         """Build dicts w/  key, val pairs for running tensorflow ops."""
         self.run_ops_dict = self.build_run_ops_dict()
         self.inputs_dict = self.build_inputs_dict()
-        self.energy_ops_dict = self.build_energy_ops_dict()
 
-        self.energy_dict = {k: [] for k in self.energy_ops_dict.keys()}
-        self.energy_dict_np = {k: [] for k in self.energy_ops_dict.keys()}
-        self.energies_diffs_dict = {k: [] for k in self.energy_ops_dict.keys()}
+        energy_outputs = self.build_energy_ops_dict()
+        self.state_ph = energy_outputs['state']
+        self.sumlogdet_ph = energy_outputs['sumlogdet_ph']
+        #  self.energy_ph_dict = energy_outputs['ph_dict']
+        self.energy_ops_dict = energy_outputs['ops_dict']
+        self.energy_dict = {}
+        self.energy_dict_np = {}
+        self.energies_diffs_dict = {}
 
         if self.model_type == 'GaugeModel':
             self.obs_ops_dict = self.build_obs_ops_dict()
@@ -176,26 +179,21 @@ class RunLogger:
     @staticmethod
     def build_energy_ops_dict():
         """Build dictionary of energy operations to calculate."""
-        strs = ['init', 'proposed', 'out']
-        energy_ops_dict = {}
+        keys = ['potential_energy', 'kinetic_energy', 'hamiltonian']
+        energy_ops = tf.get_collection('energy_ops')
+        energy_ops_dict = dict(zip(keys, energy_ops))
 
-        pe_collection = tf.get_collection('potential_energy')
-        pe_strs = [f'potential_{s}' for s in strs]
-        pe_dict = dict(zip(pe_strs, pe_collection))
+        energy_ph = tf.get_collection('energy_placeholders')
+        x_ph, v_ph, beta_ph, sumlogdet_ph = energy_ph
+        state = State(x=x_ph, v=v_ph, beta=beta_ph)
 
-        ke_collection = tf.get_collection('kinetic_energy')
-        ke_strs = [f'kinetic_{s}' for s in strs]
-        ke_dict = dict(zip(ke_strs, ke_collection))
+        outputs = {
+            'state': state,
+            'sumlogdet_ph': sumlogdet_ph,
+            'ops_dict': energy_ops_dict,
+        }
 
-        h_collection = tf.get_collection('hamiltonian')
-        h_strs = [f'hamiltonian_{s}' for s in strs]
-        h_dict = dict(zip(h_strs, h_collection))
-
-        energy_ops_dict.update(pe_dict)
-        energy_ops_dict.update(ke_dict)
-        energy_ops_dict.update(h_dict)
-
-        return energy_ops_dict
+        return outputs
 
     def create_summaries(self):
         """Create summary objects for logging in TensorBoard."""
@@ -228,14 +226,14 @@ class RunLogger:
         self.energy_dict = None
         self.run_data = None
         self.run_strings = None
-        if self.params['save_lf']:
-            self.samples_arr = None
-            self.lf_out = None
-            self.pxs_out = None
-            self.masks = None
-            self.logdets = None
-            self.sumlogdet = None
-            self.l2hmc_fns = None
+        #  if self.params['save_lf']:
+        #      self.samples_arr = None
+        #      self.lf_out = None
+        #      self.pxs_out = None
+        #      self.masks = None
+        #      self.logdets = None
+        #      self.sumlogdet = None
+        #      self.l2hmc_fns = None
         self.params['net_weights'] = None
         self.run_dir = None
         if self.summaries:
@@ -297,15 +295,24 @@ class RunLogger:
         eps_np = kwargs.get('eps', None)
         run_steps = kwargs.get('run_steps', 5000)
         net_weights = kwargs.get('net_weights', [1., 1., 1.])
+        global_seed = kwargs.get('global_seed', None)
+
+        run_str = self._get_run_str(**kwargs)
+        if self.existing_run(run_str):  # append current time to run_str
+            now = datetime.datetime.now()
+            time_str = now.strftime('%H%M')
+            run_str += f'_{time_str}'
+
+        self._set_run_dir(run_str)
+        self._run_str = run_str
 
         self.beta = beta
         self.run_steps = int(run_steps)
 
-        self.run_data = {
-        }
-
-        self.energy_dict = {k: [] for k in self.energy_ops_dict.keys()}
-        self.energy_dict_np = {k: [] for k in self.energy_ops_dict.keys()}
+        self.run_data = {}
+        self.energy_dict = {}
+        self.energy_dict_np = {}
+        self.energies_diffs_dict = {}
 
         if self.save_lf_data:
             self.samples_arr = []
@@ -316,9 +323,6 @@ class RunLogger:
         #  params = self.model.params
         self.params['net_weights'] = net_weights
 
-        run_str = self._get_run_str(**kwargs)
-        self._set_run_dir(run_str)
-
         if self.summaries:
             self.writer = tf.summary.FileWriter(self.run_summary_dir,
                                                 tf.get_default_graph())
@@ -327,7 +331,8 @@ class RunLogger:
             'beta': self.beta,
             'net_weights': net_weights,
             'eps': eps_np,
-            'run_str': run_str
+            'run_str': run_str,
+            'global_seed': global_seed,
         }
 
         io.save_params(self.params, self.run_dir)
@@ -356,10 +361,16 @@ class RunLogger:
         energies_np = data.pop('energies_np')
         energies_diffs = data.pop('energies_diffs')
         assert energies.keys() == energies_np.keys() == energies_diffs.keys()
-        for k in self.energy_ops_dict.keys():
-            self.energy_dict[k].append(energies[k])
-            self.energy_dict_np[k].append(energies_np[k])
-            self.energies_diffs_dict[k].append(energies_diffs[k])
+        #  for k in self.energy_ops_dict.keys():
+        for k in energies_np.keys():
+            try:
+                self.energy_dict[k].append(energies[k])
+                self.energy_dict_np[k].append(energies_np[k])
+                self.energies_diffs_dict[k].append(energies_diffs[k])
+            except KeyError:
+                self.energy_dict[k] = [energies[k]]
+                self.energy_dict_np[k] = [energies_np[k]]
+                self.energies_diffs_dict[k] = [energies_diffs[k]]
 
         for key, val in data.items():
             try:

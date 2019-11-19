@@ -68,7 +68,7 @@ if float(tf.__version__.split('.')[0]) <= 2:
 
 SEP_STR = 80 * '-'  # + '\n'
 
-tf.set_random_seed(cfg.GLOBAL_SEED)
+#  tf.set_random_seed(cfg.GLOBAL_SEED)
 NP_FLOAT = cfg.NP_FLOAT
 
 
@@ -205,11 +205,13 @@ def train_setup(FLAGS, log_file=None, root_dir=None,
     #      io.log("Using CPU for training.")
     #      params['data_format'] = 'channels_last'
 
-    if getattr(FLAGS, 'float64', False):
+    #  if getattr(FLAGS, 'float64', False):
+    if params.get('float64', False):
         io.log(f'INFO: Setting floating point precision to `float64`.')
         set_precision('float64')
 
-    if getattr(FLAGS, 'horovod', False):
+    #  if getattr(FLAGS, 'horovod', False):
+    if params.get('horovod', False):
         params['using_hvd'] = True
         num_workers = hvd.size()
         params['num_workers'] = num_workers
@@ -284,11 +286,10 @@ def train_l2hmc(FLAGS, log_file=None):
     # Create model and train_logger
     # --------------------------------------------------------
     model = GaugeModel(params)
-    io.log(f'model.x: {model.x}')
-
     if is_chief:
+        logging_steps = params.get('logging_steps', 10)
         train_logger = TrainLogger(model, log_dir,
-                                   logging_steps=10,
+                                   logging_steps=logging_steps,
                                    summaries=params['summaries'])
     else:
         train_logger = None
@@ -334,9 +335,9 @@ def train_l2hmc(FLAGS, log_file=None):
     io.log(f'tf.report_uninitialized_variables() len = {uninited_out}')
 
     # Check reversibility and write results out to `.txt` file.
-    samples_init = np.random.randn(*model.x.shape)
+    rand_samples = np.random.randn(*model.x.shape)
     feed_dict = {
-        model.x: samples_init,
+        model.x: rand_samples,
         model.beta: 1.,
         model.net_weights[0]: 1.,
         model.net_weights[1]: 1.,
@@ -374,6 +375,10 @@ def train_l2hmc(FLAGS, log_file=None):
     params_file = os.path.join(os.getcwd(), 'params.pkl')
     with open(params_file, 'wb') as f:
         pickle.dump(model.params, f)
+
+    dynamics_seeds_file = os.path.join(os.getcwd(), 'dynamics_seeds.pkl')
+    with open(dynamics_seeds_file, 'wb') as f:
+        pickle.dump(model.dynamics.seed_dict, f)
 
     # Count all trainable paramters and write them out (w/ shapes) to txt file
     count_trainable_params(os.path.join(params['log_dir'],
@@ -418,7 +423,9 @@ if __name__ == '__main__':
     FLAGS = parse_args()
     using_hvd = getattr(FLAGS, 'horovod', False)
     if not using_hvd:
-        set_seed(FLAGS.global_seed)
+        #  set_seed(FLAGS.global_seed)
+        io.log(f'GLOBAL SEED: {FLAGS.global_seed}')
+        tf.set_random_seed(FLAGS.global_seed)
     t0 = time.time()
     main(FLAGS)
     io.log('\n\n' + SEP_STR)

@@ -97,9 +97,12 @@ def inference(runner, run_logger, energy_plotter=None, **kwargs):
         #  kwargs['out_dir'] = 'np'
         #  kwargs['out_dir'] = 'tf_np_diff'
 
-        tf_data = energy_plotter.plot_energies(e_tf, out_dir='tf', **kwargs)
-        np_data = energy_plotter.plot_energies(e_np, out_dir='np', **kwargs)
-        diff_data = energy_plotter.plot_energies(de, out_dir='tf-np', **kwargs)
+        tf_data = energy_plotter.plot_energies(e_tf, out_dir='tf',
+                                               is_mixed=False, **kwargs)
+        np_data = energy_plotter.plot_energies(e_np, out_dir='np',
+                                               is_mixed=False, **kwargs)
+        diff_data = energy_plotter.plot_energies(de, out_dir='tf-np',
+                                                 is_mixed=False, **kwargs)
         energy_data = {
             'tf_data': tf_data,
             'np_data': np_data,

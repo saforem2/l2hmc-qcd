@@ -50,9 +50,12 @@ class TrainLogger:
 
         if model._model_type == 'GaugeModel':
             self.obs_data = {}
-            self.h_strf += 3 * "{:^10s}".format("ACTION",
-                                                "PLAQ",
-                                                "(EXACT)")
+            self.h_strf += ("{:^10s}".format("ACTION")
+                            + "{:^10s}".format("PLAQ")
+                            + "{:^10s}".format("(EXACT)"))
+            #  self.h_strf += 3 * "{:^10s}".format("ACTION",
+            #                                      "PLAQ",
+            #                                      "(EXACT)")
 
         self.dash = (len(self.h_strf) + 1) * '-'
         self.train_header = self.dash + '\n' + self.h_strf + '\n' + self.dash

@@ -120,7 +120,6 @@ def _create_energy_summaries(model):
             for k, v in val.items():
                 variable_summaries(v, k)
 
-
 def _create_grad_norm_summaries(grad, var):
     """Create grad_norm summaries."""
     with tf.name_scope('grad_norm'):
@@ -243,7 +242,7 @@ def create_summaries(model, summary_dir, training=True):
 
     # log S, T, Q functions (forward/backward)
     #  _create_l2hmc_summaries(model)
-    _create_energy_summaries(model)
+    #  _create_energy_summaries(model)
 
     if model.use_gaussian_loss and model.use_nnehmc_loss:
         _loss_summaries(model)
