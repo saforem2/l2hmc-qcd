@@ -98,11 +98,8 @@ class BaseModel:
         raise NotImplementedError
 
     def _build_eps_setter(self):
-        try:
-            eps_setter = tf.assign(self.dynamics.eps,
-                                   self.eps_ph, name='eps_setter')
-        except:
-            import pudb; pudb.set_trace()
+        eps_setter = tf.assign(self.dynamics.eps,
+                               self.eps_ph, name='eps_setter')
         return eps_setter
 
     def _calc_energies(self, state, sumlogdet=0.):
@@ -317,11 +314,6 @@ class BaseModel:
                 train_phase: Boolean placeholder indicating if the model is
                     curerntly being trained. 
         """
-
-        import config as cfg
-        TF_FLOAT = cfg.TF_FLOAT
-        print(f'TF_FLOAT: {TF_FLOAT}')
-
         def make_ph(name, shape=(), dtype=TF_FLOAT):
             return tf.placeholder(dtype=dtype, shape=shape, name=name)
 

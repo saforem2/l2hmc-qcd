@@ -29,8 +29,6 @@ from inference.gmm_inference_utils import (create_config, load_params,
                                            recreate_distribution,
                                            save_inference_data)
 
-from plotters.gauge_model_plotter import EnergyPlotter
-
 if HAS_HOROVOD:
     import horovod.tensorflow as hvd
 

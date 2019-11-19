@@ -380,6 +380,11 @@ def train_l2hmc(FLAGS, log_file=None):
     with open(dynamics_seeds_file, 'wb') as f:
         pickle.dump(model.dynamics.seed_dict, f)
 
+    dynamics_seeds_file = os.path.join(os.getcwd(), 'dynamics_seeds.txt')
+    with open(dynamics_seeds_file, 'w') as f:
+        for key, val in model.dynamics.seed_dict.items():
+            f.write(f'{key}: {val}\n')
+
     # Count all trainable paramters and write them out (w/ shapes) to txt file
     count_trainable_params(os.path.join(params['log_dir'],
                                         'trainable_params.txt'))
