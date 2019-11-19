@@ -8,7 +8,8 @@ Date: 01/15/2019
 """
 from __future__ import absolute_import, division, print_function
 
-from config import NP_FLOAT, TF_FLOAT
+import config as cfg
+#  from config import NP_FLOAT, TF_FLOAT
 
 import numpy as np
 import tensorflow as tf
@@ -18,6 +19,10 @@ from scipy.special import i0, i1
 __all__ = ['u1_plaq_exact', 'u1_plaq_exact_tf',
            'project_angle', 'project_angle_fft',
            'GaugeLattice']
+
+
+NP_FLOAT = cfg.NP_FLOAT
+TF_FLOAT = cfg.TF_FLOAT
 
 
 def u1_plaq_exact(beta):
@@ -252,12 +257,6 @@ class GaugeLattice(object):
 
             top_charges = (tf.reduce_sum(ps_proj, axis=(1, 2),
                                          name='top_charges')) / (2 * np.pi)
-        return top_charges
-
-    def calc_top_charges_np(self, plaq_sums):
-        ps_proj = np.sin(plaq_sums)
-        top_charges = np.sum(ps_proj, axis=(1, 2)) / (2 * np.pi)
-
         return top_charges
 
     def calc_top_charges_diff(self, x1, x2):

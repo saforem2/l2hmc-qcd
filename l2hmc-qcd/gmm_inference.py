@@ -15,6 +15,7 @@ from config import HAS_HOROVOD, HAS_MATPLOTLIB
 from loggers.run_logger import RunLogger
 from runners.runner import Runner
 from plotters.plot_utils import _gmm_plot, gmm_plot
+from plotters.gauge_model_plotter import EnergyPlotter
 
 import numpy as np
 import tensorflow as tf
@@ -27,8 +28,6 @@ from gauge_inference import _log_inference_header
 from inference.gmm_inference_utils import (create_config, load_params,
                                            recreate_distribution,
                                            save_inference_data)
-
-from plotters.gauge_model_plotter import EnergyPlotter
 
 if HAS_HOROVOD:
     import horovod.tensorflow as hvd
@@ -82,8 +81,33 @@ def inference(runner, run_logger, energy_plotter=None, **kwargs):
         dt = time.time() - t0
         io.log(SEP_STR + f'\nTook: {dt:.4g}s to complete run.\n' + SEP_STR)
 
-        if energy_plotter is not None:
-            energy_plotter.plot_energies(run_logger.energy_dict, **kwargs)
+        # Plot dU, dT, and dH
+        e_tf = run_logger.energy_dict
+        e_np = run_logger.energy_dict_np
+        de = run_logger.energies_diffs_dict
+
+        #  sumlogdets = {
+        #      'out': run_logger.run_data['sumlogdet_out'],
+        #      'proposed': run_logger.run_data['sumlogdet_proposed']
+        #  }
+        #  kwargs['sumlogdets'] = sumlogdets
+        #  kwargs['out_dir'] = 'tf'
+        #  kwargs['out_dir'] = 'np'
+        #  kwargs['out_dir'] = 'tf_np_diff'
+
+        tf_data = energy_plotter.plot_energies(e_tf, out_dir='tf',
+                                               is_mixed=False, **kwargs)
+        np_data = energy_plotter.plot_energies(e_np, out_dir='np',
+                                               is_mixed=False, **kwargs)
+        diff_data = energy_plotter.plot_energies(de, out_dir='tf-np',
+                                                 is_mixed=False, **kwargs)
+        energy_data = {
+            'tf_data': tf_data,
+            'np_data': np_data,
+            'diff_data': diff_data
+        }
+
+        run_logger.save_data(energy_data, 'energy_plots_data.pkl')
 
         samples_arr = np.array(run_logger.run_data['x_out'])
         px_arr = np.array(run_logger.run_data['px'])
@@ -179,10 +203,9 @@ def main(kwargs):
     samples_init = utils.init_gmm_samples(params, init_method)
     kwargs['samples'] = samples_init
 
-    run_logger = RunLogger(params, save_lf_data=False,
-                           model_type='GaussanMixtureModel')
-    runner = Runner(sess, params, logger=run_logger,
-                    model_type='GaussianMixtureModel')
+    model_type = 'GaussianMixtureModel'
+    run_logger = RunLogger(params, save_lf_data=False, model_type=model_type)
+    runner = Runner(sess, params, logger=run_logger, model_type=model_type)
     energy_plotter = EnergyPlotter(params, run_logger.figs_dir)
 
     skip_acl = kwargs.get('skip_acl', False)

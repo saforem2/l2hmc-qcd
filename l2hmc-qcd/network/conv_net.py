@@ -10,8 +10,12 @@ Date: 06/14/2019
 import numpy as np
 import tensorflow as tf
 
-from config import GLOBAL_SEED, TF_FLOAT
+#  from config import GLOBAL_SEED, TF_FLOAT
+import config as cfg
 from .network_utils import batch_norm
+
+TF_FLOAT = cfg.TF_FLOAT
+GLOBAL_SEED = cfg.GLOBAL_SEED
 
 np.random.seed(GLOBAL_SEED)
 

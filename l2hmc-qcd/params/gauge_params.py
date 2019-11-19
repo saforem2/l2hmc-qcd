@@ -27,7 +27,7 @@ GAUGE_PARAMS = {                    # default parameters for `GaugeModel`
     'dropout_prob': 0.0,
     'clip_value': 0.0,
     'summaries': True,
-    'save_samples': False,
+    #  'save_samples': False,
     'eps_fixed': False,
     'hmc': False,
     #  ------------------- LOSS PARAMS -------------------

@@ -160,33 +160,23 @@ class GaussianMixtureModel(BaseModel):
             io.log(f'INFO: Creating `Dynamics`...')
             self.dynamics = self.create_dynamics()
             self.dynamics_eps = self.dynamics.eps
-            #  self.dynamics = self._create_dynamics()
             # Create operation for assigning to `dynamics.eps` 
             # the value fed into the placeholder `eps_ph`.
             self.eps_setter = self._build_eps_setter()
-            #  self.eps_setter = tf.assign(self.dynamics.eps,
-            #                              self.eps_ph,
-            #                              name='eps_setter')
 
             # ---------------------------------------------------------------
             # Create metric function for measuring 'distance' between configs
             # ---------------------------------------------------------------
             self.metric_fn = self._create_metric_fn()
 
-        # *******************************************************************
-        # Build sampler to generate new configs.
-        # -------------------------------------------------------------------
-        # NOTE: We use the `dynamics.apply_transition` method to run the
-        # augmented l2hmc leapfrog integrator and obtain new samples.
-        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        #  def split_sampler_data(sampler_data):
-        #      return sampler_data.data, sampler_data.dynamics_output
-
         with tf.name_scope('sampler'):
             x_data, z_data = self._build_sampler()
-        #  x_sampler_data, z_sampler_data = self._build_sampler()
-        #  x_data, self._x_dynamics = split_sampler_data(x_sampler_data)
-        #  z_data, self._z_dynamics = split_sampler_data(z_sampler_data)
+
+        # *******************************************************************
+        # Build energy_ops to calculate energies.
+        # -------------------------------------------------------------------
+        with tf.name_scope('energy_ops'):
+            self.energy_ops = self._build_energy_ops()
 
         # *******************************************************************
         # Calculate loss_op and train_op to backprop. grads through network
@@ -205,25 +195,6 @@ class GaussianMixtureModel(BaseModel):
             self.train_ops = self._build_train_ops()
             t_ops = list(self.train_ops.values())
             _ = [tf.add_to_collection('train_ops', v) for v in t_ops]
-
-        # *******************************************************************
-        # Gather all operations needed to run inference on trained model
-        # -------------------------------------------------------------------
-        #  with tf.name_scope('run_ops'):
-        #      io.log(f'INFO: Building `run_ops`...')
-        #      run_ops = self._build_run_ops()
-
-        # *******************************************************************
-        # FINISH UP: Make `run_ops` and `train_ops` collections, print time.
-        # -------------------------------------------------------------------
-        #  self.ops_dict = {
-        #      'run_ops': run_ops,
-        #      'train_ops': train_ops
-        #  }
-        #
-        #  for key, val in self.ops_dict.items():
-        #      for op in list(val.values()):
-        #          tf.add_to_collection(key, op)
 
         io.log(f'INFO: Done building graph. '
                f'Took: {time.time() - t0}s\n' + 80 * '-')

@@ -15,9 +15,14 @@ Date: 01/16/2019
 """
 import tensorflow as tf
 
-from config import TF_FLOAT, GLOBAL_SEED
+#  from config import TF_FLOAT, GLOBAL_SEED
 
 from .network_utils import custom_dense
+
+import config as cfg
+
+
+TF_FLOAT = cfg.TF_FLOAT
 
 
 class GenericNet(tf.keras.Model):
@@ -56,7 +61,7 @@ class GenericNet(tf.keras.Model):
 
             if self.dropout_prob > 0:
                 self.dropout = tf.keras.layers.Dropout(self.dropout_prob,
-                                                       seed=GLOBAL_SEED,)
+                                                       seed=cfg.GLOBAL_SEED,)
 
             self.x_layer = custom_dense(self.num_hidden1,
                                         self.factor/3.,
