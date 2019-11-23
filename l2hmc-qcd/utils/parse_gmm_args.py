@@ -232,14 +232,6 @@ def parse_args():
                         help=("""FLag that when passed will prevent tensorflow
                               from creating tensorboard summary objects."""))
 
-    parser.add_argument("--global_seed",
-                        dest='global_seed',
-                        type=int,
-                        default=42,
-                        required=False,
-                        help=("""Sets global seed to ensure
-                              reproducibility."""))
-
     parser.add_argument('--save_lf',
                         dest='save_lf',
                         action='store_true',
