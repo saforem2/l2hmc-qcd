@@ -42,7 +42,6 @@ import config as cfg
 from seed_dict import seeds, xnet_seeds, vnet_seeds
 #  from config import (GLOBAL_SEED, HAS_COMET, HAS_HOROVOD, HAS_MATPLOTLIB,
 #                      NP_FLOAT)
-from update import set_precision
 from models.gauge_model import GaugeModel
 from loggers.train_logger import TrainLogger
 from trainers.trainer import Trainer

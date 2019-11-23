@@ -1,6 +1,7 @@
 --time_size 8
 --space_size 8
 --batch_size 64
+--rand
 --num_steps 3
 --eps 0.4
 --beta_init 2.
@@ -21,12 +22,9 @@
 --charge_weight 0.
 --loss_scale 1.
 --save_lf
---global_seed 829
-#--float64
 #--use_nnehmc_loss
 #--use_gaussian_loss
 ######################
-#--float64
 #--zero_translation
 #--warmup_lr
 #--use_bn
