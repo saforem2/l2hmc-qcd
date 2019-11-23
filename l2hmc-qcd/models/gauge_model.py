@@ -282,12 +282,15 @@ class GaugeModel(BaseModel):
         ld = {}
 
         if self.use_gaussian_loss:
-            gaussian_loss = self.gaussian_loss(x_data, z_data)
+            gaussian_loss = self._gaussian_loss(x_data, z_data,
+                                                mean=0., sigma=1.)
             ld['gaussian'] = gaussian_loss
             total_loss += gaussian_loss
 
         if self.use_nnehmc_loss:
-            nnehmc_loss = self.nnehmc_loss(x_data, self.px_hmc)
+            nnehmc_beta = getattr(self, 'nnehmc_beta', 1.)
+            nnehmc_loss = self._nnehmc_loss(x_data, self.px_hmc,
+                                            beta=nnehmc_beta)
             ld['nnehmc'] = nnehmc_loss
             total_loss += nnehmc_loss
 
@@ -315,15 +318,6 @@ class GaugeModel(BaseModel):
 
         return total_loss, losses_dict
 
-    def gaussian_loss(self, x_data, z_data):
-        """Calculate the Gaussian loss."""
-        return self._gaussian_loss(x_data, z_data, mean=0., sigma=1.)
-
-    def nnehmc_loss(self, x_data, hmc_prob):
-        """Calculate the NNEHMC loss."""
-        nnehmc_beta = getattr(self, 'nnehmc_beta', 1.)
-        return self._nnehmc_loss(x_data, hmc_prob, beta=nnehmc_beta)
-
     def _calc_charge_diff(self, x_init, x_proposed):
         """Calculate difference in topological charge b/t x_init, x_proposed.
 
@@ -347,26 +341,27 @@ class GaugeModel(BaseModel):
 
     def _parse_dynamics_output(self, dynamics_output):
         """Parse output dictionary from `self.dynamics.apply_transition`."""
-        dynamics_md = dynamics_output['md_outputs']
-        x_init = dynamics_md['x_init']
-        x_proposed = dynamics_md['x_proposed']
-        self.charge_diffs_op = self._calc_charge_diff(x_init, x_proposed)
-
-        with tf.name_scope('dynamics_forward'):
-            for key, val in dynamics_output['outputs_f'].items():
-                name = key + '_f'
-                setattr(self, name, val)
-                tf.add_to_collection('dynamics_forward', val)
-            with tf.name_scope('dynamics_backward'):
-                for key, val in dynamics_output['outputs_b'].items():
-                    name = key + '_b'
-                    setattr(self, name, val)
-
-        with tf.name_scope('l2hmc_fns'):
-            self.l2hmc_fns = {
-                'l2hmc_fns_f': self._extract_l2hmc_fns(self.fns_out_f),
-                'l2hmc_fns_b': self._extract_l2hmc_fns(self.fns_out_b),
-            }
+        #  dynamics_md = dynamics_output['md_outputs']
+        #  x_init = dynamics_md['x_init']
+        #  x_proposed = dynamics_md['x_proposed']
+        #  self.charge_diffs_op = self._calc_charge_diff(x_init, x_proposed)
+        #
+        #  with tf.name_scope('dynamics_forward'):
+        #      for key, val in dynamics_output['outputs_f'].items():
+        #          name = key + '_f'
+        #          setattr(self, name, val)
+        #          tf.add_to_collection('dynamics_forward', val)
+        #      with tf.name_scope('dynamics_backward'):
+        #          for key, val in dynamics_output['outputs_b'].items():
+        #              name = key + '_b'
+        #              setattr(self, name, val)
+        #
+        #  with tf.name_scope('l2hmc_fns'):
+        #      self.l2hmc_fns = {
+        #          'l2hmc_fns_f': self._extract_l2hmc_fns(self.fns_out_f),
+        #          'l2hmc_fns_b': self._extract_l2hmc_fns(self.fns_out_b),
+        #      }
+        pass
 
     def _build_train_ops(self):
         """Build train_ops dict containing grouped operations for training."""
