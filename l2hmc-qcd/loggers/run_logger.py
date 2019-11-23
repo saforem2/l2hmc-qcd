@@ -266,6 +266,7 @@ class RunLogger:
         run_steps = kwargs.get('run_steps', 5000)
         dir_append = kwargs.get('dir_append', None)
         net_weights = kwargs.get('net_weights', [1., 1., 1.])
+        init = kwargs.get('init', None)
 
         beta_str = f'{beta:.3}'.replace('.', '')
         eps_str = f'{eps_np:.3}'.replace('.', '')
@@ -279,7 +280,8 @@ class RunLogger:
                    f'_eps{eps_str}'
                    f'_S{scale_wstr}'
                    f'_T{transl_wstr}'
-                   f'_Q{transf_wstr}')
+                   f'_Q{transf_wstr}'
+                   f'_{init}')
 
         if dir_append is not None:
             run_str += dir_append
@@ -295,13 +297,12 @@ class RunLogger:
         eps_np = kwargs.get('eps', None)
         run_steps = kwargs.get('run_steps', 5000)
         net_weights = kwargs.get('net_weights', [1., 1., 1.])
-        global_seed = kwargs.get('global_seed', None)
 
         run_str = self._get_run_str(**kwargs)
         if self.existing_run(run_str):  # append current time to run_str
             now = datetime.datetime.now()
             time_str = now.strftime('%H%M')
-            run_str += f'_{time_str}'
+            run_str += f'__{time_str}'
 
         self._set_run_dir(run_str)
         self._run_str = run_str
@@ -332,7 +333,6 @@ class RunLogger:
             'net_weights': net_weights,
             'eps': eps_np,
             'run_str': run_str,
-            'global_seed': global_seed,
         }
 
         io.save_params(self.params, self.run_dir)
@@ -424,11 +424,14 @@ class RunLogger:
         self._save_energy_data()
         self._write_run_history()
 
-        data_file = os.path.join(self.run_dir, 'run_data.pkl')
         io.check_else_make_dir(self.run_dir)
+        data_file = os.path.join(self.run_dir, 'run_data.pkl')
         io.log(f"Saving run_data to: {data_file}.")
-        with open(data_file, 'wb') as f:
-            pickle.dump(self.run_data, f)
+        try:
+            with open(data_file, 'wb') as f:
+                pickle.dump(self.run_data, f, pickle.HIGHEST_PROTOCOL)
+        except:
+            pass
 
         observables_dir = os.path.join(self.run_dir, 'observables')
         io.check_else_make_dir(observables_dir)

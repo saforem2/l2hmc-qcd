@@ -3,23 +3,8 @@ gauge_model_inference.py
 
 Runs inference using the trained L2HMC sampler contained in a saved model.
 
-This is done by reading in the location of the saved model from a .txt file
-containing the location of the checkpoint directory.
-
- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-  NOTE:
- ------------------------------------------------------------
-   If `--plot_lf` CLI argument passed, create the
-   following plots:
-
-     * The metric distance observed between individual
-       leapfrog steps and complete molecular dynamics
-       updates.
-
-     * The determinant of the Jacobian for each leapfrog
-       step and the sum of the determinant of the Jacobian
-       (sumlogdet) for each MD update.
- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+This is done by specifying a `checkpoint_dir` containing the saved `tf.Graph`,
+which is then restored and used for running inference.
 
 Author: Sam Foreman (github: @saforem2)
 Date: 07/08/2019
@@ -28,33 +13,27 @@ from __future__ import absolute_import, division, print_function
 
 import os
 import time
-import datetime
 
 from config import HAS_HOROVOD
-
-#  from update import set_precision
+from seed_dict import seeds
 from runners.runner import Runner
 from plotters.leapfrog_plotters import LeapfrogPlotter
 from plotters.gauge_model_plotter import EnergyPlotter, GaugeModelPlotter
 
-import tensorflow as tf
 import numpy as np
+import tensorflow as tf
 
 import utils.file_io as io
 import inference.utils as utils
 
 from models.gauge_model import GaugeModel
-from loggers.run_logger import RunLogger
-from loggers.summary_utils import create_summaries
+from utils.parse_inference_args import parse_args as parse_inference_args
 from inference.gauge_inference_utils import (_log_inference_header,
                                              create_config, inference_setup,
                                              load_params, log_plaq_diffs,
                                              parse_flags, SEP_STR)
-
-from utils.parse_inference_args import parse_args as parse_inference_args
-
-#  from plotters.plot_utils import plot_plaq_diffs_vs_net_weights
-#  from tensorflow.core.protobuf import rewriter_config_pb2
+from loggers.run_logger import RunLogger
+from loggers.summary_utils import create_summaries
 
 if HAS_HOROVOD:
     import horovod.tensorflow as hvd
@@ -77,49 +56,59 @@ def run_hmc(FLAGS, log_file=None):
     params = parse_flags(FLAGS)
     params['hmc'] = True
     params['use_bn'] = False
-    params['log_dir'] = FLAGS.log_dir
-    params['loop_net_weights'] = False
-    params['loop_transl_weights'] = False
     params['plot_lf'] = False
+    params['log_dir'] = FLAGS.log_dir
 
     figs_dir = os.path.join(params['log_dir'], 'figures')
     io.check_else_make_dir(figs_dir)
 
-    io.log(SEP_STR)
-    io.log('HMC PARAMETERS:')
+    io.log('\n\nHMC PARAMETERS:\n')
     for key, val in params.items():
         io.log(f'  {key}: {val}')
-    io.log(SEP_STR)
 
     config, params = create_config(params)
     tf.reset_default_graph()
 
     model = GaugeModel(params=params)
-
     sess = tf.Session(config=config)
     sess.run(tf.global_variables_initializer())
 
     run_summaries_dir = os.path.join(model.log_dir, 'summaries', 'run')
     io.check_else_make_dir(run_summaries_dir)
     _, _ = create_summaries(model, run_summaries_dir, training=False)
-    run_logger = RunLogger(params, model_type='GaugeModel', save_lf_data=False)
-    plotter = GaugeModelPlotter(params, run_logger.figs_dir)
-    energy_plotter = EnergyPlotter(params, run_logger.figs_dir)
+
+    run_logger = RunLogger(params=params,
+                           save_lf_data=False,
+                           model_type='GaugeModel')
+
+    args = (params, run_logger.figs_dir)
+    plotter = GaugeModelPlotter(*args)
+    energy_plotter = EnergyPlotter(*args)
 
     # ----------------------------------------------------------
     # Get keyword arguments to be passed to `inference` method
     # ----------------------------------------------------------
-    inference_kwargs = inference_setup(params)
+    beta = params.get('beta_inference', None)
+    if beta is None:
+        beta = model.beta_final
+
+    sw = params.get('scale_weight', 1.)
+    tlw = params.get('translation_weight', 1.)
+    tfw = params.get('transformation_weight', 1.)
+    params['net_weights'] = [sw, tlw, tfw]
 
     # ----------------------------------------------------------
     # Create initial samples to be used at start of inference
     # ----------------------------------------------------------
     init_method = getattr(FLAGS, 'samples_init', 'random')
-    seed = getattr(FLAGS, 'global_seed', 0)
-    tf.random.set_random_seed(seed)
-    np.random.seed(seed)
+    #  seed = getattr(FLAGS, 'global_seed', 0)
+    tf.random.set_random_seed(seeds['inference_tf'])
+    np.random.seed(seeds['inference_np'])
     samples_init = utils.init_gauge_samples(params, init_method)
-    inference_kwargs['samples'] = samples_init
+    inference_kwargs = {
+        'samples': samples_init,
+    }
+    #  inference_kwargs['samples'] = samples_init
 
     # --------------------------------------
     # Create GaugeModelRunner for inference
@@ -153,34 +142,22 @@ def inference(runner, run_logger, plotter, energy_plotter, **kwargs):
     Returns:
         avg_plaq_diff: If run hasn't been completed previously, else None
     """
+    eps = kwargs.get('eps', None)
+    beta = kwargs.get('beta', 5.)
     run_steps = kwargs.get('run_steps', 5000)
     nw = kwargs.get('net_weights', [1., 1., 1.])
-    beta = kwargs.get('beta', 5.)
-    eps = kwargs.get('eps', None)
+
     if eps is None:
         eps = runner.eps
         kwargs['eps'] = eps
 
-    #  run_str = run_logger._get_run_str(**kwargs)
-    #  kwargs['run_str'] = run_str
+    _log_inference_header(nw, run_steps, eps, beta, existing=False)
 
-    args = (nw, run_steps, eps, beta)
-
-    #  if run_logger.existing_run(run_str):
-    #      _log_inference_header(*args, existing=True)
-    #      now = datetime.datetime.now()
-    #      hour_str = now.strftime('%H%M')
-    #      run_str += f'_{hour_str}'
-    #      kwargs['run_str'] = run_str
-
-    #  else:
-    _log_inference_header(*args, existing=False)
+    # ------------------------
+    #      RUN INFERENCE
+    # ------------------------
     run_logger.reset(**kwargs)
     t0 = time.time()
-
-    # -------------------
-    #   RUN INFERENCE
-    # -------------------
     runner.run(**kwargs)
 
     run_time = time.time() - t0
@@ -194,27 +171,28 @@ def inference(runner, run_logger, plotter, energy_plotter, **kwargs):
     log_plaq_diffs(run_logger,
                    kwargs['net_weights'],
                    avg_plaq_diff)
+    io.save_dict(seeds, run_logger.run_dir, 'seeds')
 
     tf_data = energy_plotter.plot_energies(run_logger.energy_dict,
                                            out_dir='tf', **kwargs)
-    np_data = energy_plotter.plot_energies(run_logger.energy_dict_np,
-                                           out_dir='np', **kwargs)
-    diff_data = energy_plotter.plot_energies(run_logger.energies_diffs_dict,
-                                             out_dir='tf-np', **kwargs)
+    #  np_data = energy_plotter.plot_energies(run_logger.energy_dict_np,
+    #                                         out_dir='np', **kwargs)
+    #  diff_data = energy_plotter.plot_energies(
+    #      run_logger.energies_diffs_dict, out_dir='tf-np', **kwargs
+    #  )
+    energy_data = {
+        'tf_data': tf_data,
+        #  'np_data': np_data,
+        #  'diff_data': diff_data
+    }
+
+    run_logger.save_data(energy_data, 'energy_plots_data.pkl')
 
     if kwargs.get('plot_lf', False):
         lf_plotter = LeapfrogPlotter(plotter.out_dir, run_logger)
         batch_size = runner.params.get('batch_size', 20)
         lf_plotter.make_plots(run_logger.run_dir,
                               batch_size=batch_size)
-
-    energy_data = {
-        'tf_data': tf_data,
-        'np_data': np_data,
-        'diff_data': diff_data
-    }
-
-    run_logger.save_data(energy_data, 'energy_plots_data.pkl')
 
     return runner, run_logger
 
@@ -284,9 +262,8 @@ def main(kwargs):
     # setup initial samples to be used for inference
     # -------------------------------------------------
     init_method = kwargs.get('samples_init', 'random')
-    global_seed = kwargs.get('global_seed', 0)
-    tf.random.set_random_seed(global_seed)
-    np.random.seed(global_seed)
+    tf.random.set_random_seed(seeds['inference_tf'])
+    np.random.seed(seeds['inference_np'])
     samples_init = utils.init_gauge_samples(params, init_method)
 
     # -----------------------------------------------------------------------
@@ -300,9 +277,9 @@ def main(kwargs):
     inference_kwargs = {
         'eps': eps,
         'beta': beta,
+        'init': init_method,
         'samples': samples_init,
         'net_weights': net_weights,
-        'global_seed': global_seed,
         'run_steps': kwargs.get('run_steps', 5000),
     }
 

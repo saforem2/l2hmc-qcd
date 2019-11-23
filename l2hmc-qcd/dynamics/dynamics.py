@@ -21,16 +21,16 @@ from __future__ import absolute_import
 import numpy as np
 import tensorflow as tf
 import numpy.random as npr
-from collections import namedtuple, OrderedDict
+from collections import namedtuple
 
 from network.network import FullNet
+from seed_dict import seeds
 import config as cfg
 
 __all__ = ['Dynamics']
 
 TF_FLOAT = cfg.TF_FLOAT
 TF_INT = cfg.TF_INT
-GLOBAL_SEED = cfg.GLOBAL_SEED
 State = cfg.State
 #
 
@@ -53,9 +53,27 @@ class Dynamics(tf.keras.Model):
         """Initialization.
 
         Args:
-            lattice: Lattice object containing multiple sample lattices.
-            potential_fn: Function specifying minus log-likelihood objective
-            to minimize.
+            potential_fn (callable): Function specifying minus log-likelihood
+                objective (that describes the target distribution) to be
+                minimized.
+            **params: Keyword arguments specifying parameters to use.
+
+                Required entries:
+
+                    num_steps (int): Number of leapfrog steps (trajectory
+                        length) to use in the molecular dynamics (MD)
+                        integration.
+                    eps (float): Initial (trainable) step size to use in the MD
+                        integrator.
+                    network_arch (str): Network architecture to use. Must be
+                        one of `conv2D`, `conv3D`, `generic`.
+
+                Optional:
+                    hmc (bool): Flag indicating whether generic HMC should be
+                        performed instead of the L2HMC algorithm.
+                    eps_trainable (bool): Flag indicating whether the step size
+                        `eps` should be a trainable parameter. Defaults to
+                        True.
 
         NOTE: kwargs (expected)
             num_steps: Number of leapfrog steps to use in integrator.
@@ -71,12 +89,9 @@ class Dynamics(tf.keras.Model):
             np_seed: Seed to use for numpy.random.
         """
         super(Dynamics, self).__init__(name='Dynamics')
-        npr.seed(GLOBAL_SEED)
-
-        self.seed_dict = {}
+        np.random.seed(seeds['global_np'])
 
         self.potential = potential_fn
-        self.l2hmc_fns = {}
 
         # create attributes from kwargs.items()
         for key, val in params.items():
@@ -84,14 +99,12 @@ class Dynamics(tf.keras.Model):
                 setattr(self, key, val)
 
         self._eps_np = params.get('eps', 0.4)
-        self.eps = self._get_eps(use_log=False)
-
+        self.eps = self._build_eps(use_log=False)
         self.masks = self._build_masks()
-
         net_params = self._network_setup()
         self.x_fn, self.v_fn = self.build_network(net_params)
 
-    def _get_eps(self, use_log=False):
+    def _build_eps(self, use_log=False):
         """Create `self.eps` (i.e. the step size) as a `tf.Variable`.
 
         Args:
@@ -135,8 +148,6 @@ class Dynamics(tf.keras.Model):
             'num_hidden1': self.num_hidden1,    # num. nodes in hidden layer 1
             'num_hidden2': self.num_hidden2,    # num. nodes in hidden layer 2
             'generic_activation': tf.nn.relu,   # activation fn in generic net
-            'name_scope': 'x',                  # name scope in which to create
-            'factor': 2.,                       # x: factor = 2.; v: factor = 1
             '_input_shape': self._input_shape,  # input shape (b4 reshaping)
         }
 
@@ -166,10 +177,12 @@ class Dynamics(tf.keras.Model):
             ]
 
         else:
+            net_params['factor'] = 2.
+            net_params['name_scope'] = 'x'
             x_fn = FullNet(model_name='XNet', **net_params)
 
-            net_params['name_scope'] = 'v'  # update name scope
             net_params['factor'] = 1.       # factor used in orig. paper
+            net_params['name_scope'] = 'v'  # update name scope
             v_fn = FullNet(model_name='VNet', **net_params)
 
         return x_fn, v_fn
@@ -219,23 +232,16 @@ class Dynamics(tf.keras.Model):
         if model_type == 'GaugeModel':
             x_init = tf.mod(x_init, 2 * np.pi, name='x_in_mod_2_pi')
 
-        # create operational level seeds
-        seeds = np.random.randint(1e4, size=2)
-        self.seed_dict.update({
-            'v_init_f': seeds[0],
-            'v_init_b': seeds[1],
-        })
-
         # Call `self.transition_kernel` in the forward direction, 
         # starting from the initial `State`: `(x_init, v_init_f, beta)`
         # to get the proposed `State`
         with tf.name_scope('transition_forward'):
-            v_init_f = tf.random_normal(tf.shape(x_init),
-                                        dtype=TF_FLOAT,
-                                        seed=seeds[0],
-                                        name='v_init_f')
+            vf_init = tf.random_normal(tf.shape(x_init),
+                                       dtype=TF_FLOAT,
+                                       seed=seeds['vf_init'],
+                                       name='vf_init')
 
-            state_init_f = cfg.State(x_init, v_init_f, beta)
+            state_init_f = cfg.State(x_init, vf_init, beta)
             args = (*state_init_f, weights, train_phase)
             kwargs = {'forward': True, 'hmc': hmc}
             outputs_f = self.transition_kernel(*args, **kwargs)
@@ -246,12 +252,12 @@ class Dynamics(tf.keras.Model):
             sumlogdetf = outputs_f['sumlogdet']
 
         with tf.name_scope('transition_backward'):
-            v_init_b = tf.random_normal(tf.shape(x_init),
-                                        dtype=TF_FLOAT,
-                                        seed=seeds[1],
-                                        name='v_init_b')
+            vb_init = tf.random_normal(tf.shape(x_init),
+                                       dtype=TF_FLOAT,
+                                       seed=seeds['vb_init'],
+                                       name='vb_init')
 
-            state_init_b = cfg.State(x_init, v_init_b, beta)
+            state_init_b = cfg.State(x_init, vb_init, beta)
             outputs_b = self.transition_kernel(*state_init_b,
                                                weights, train_phase,
                                                forward=False, hmc=hmc)
@@ -266,7 +272,7 @@ class Dynamics(tf.keras.Model):
             mask_f, mask_b = self._get_transition_masks()
 
             # Use forward/backward mask to reconstruct `v_init`
-            v_init = (v_init_f * mask_f[:, None] + v_init_b * mask_b[:, None])
+            v_init = (vf_init * mask_f[:, None] + vb_init * mask_b[:, None])
 
             # Obtain proposed states
             x_proposed = xf * mask_f[:, None] + xb * mask_b[:, None]
@@ -620,15 +626,12 @@ class Dynamics(tf.keras.Model):
         return t
 
     def _get_transition_masks(self):
-        seed = np.random.randint(1e4)
-        self.seed_dict['forward_mask'] = seed
-
         with tf.name_scope('transition_masks'):
             with tf.name_scope('forward_mask'):
                 forward_mask = tf.cast(
                     tf.random_uniform((self.batch_size,),
                                       dtype=TF_FLOAT,
-                                      seed=seed) > 0.5,
+                                      seed=seeds['mask_f']) > 0.5,
                     TF_FLOAT,
                     name='forward_mask'
                 )
@@ -638,14 +641,11 @@ class Dynamics(tf.keras.Model):
         return forward_mask, backward_mask
 
     def _get_accept_masks(self, accept_prob):
-        seed = np.random.randint(1e4)
-        self.seed_dict['accept_mask'] = seed
-
         with tf.name_scope('accept_mask'):
             accept_mask = tf.cast(
                 accept_prob > tf.random_uniform(tf.shape(accept_prob),
                                                 dtype=TF_FLOAT,
-                                                seed=seed),
+                                                seed=seeds['mask_a']),
                 TF_FLOAT,
                 name='acccept_mask'
             )

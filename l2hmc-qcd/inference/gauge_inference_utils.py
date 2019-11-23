@@ -212,15 +212,8 @@ def log_plaq_diffs(run_logger, net_weights, avg_plaq_diff):
 
     output_arr = np.array(pd_tup)
 
-    #  pd_pkl_file = os.path.join(out_dir, 'plaq_diffs_data.pkl')
-    #  with open(pd_pkl_file, 'wb') as f:
-    #      pickle.dump(pd_tup, f)
     pd_txt_file = os.path.join(out_dir, 'plaq_diffs_data.txt')
     np.savetxt(pd_txt_file, output_arr, delimiter=',', fmt='%.4g')
-    #
-    #  with open(pd_txt_file, 'a') as f:
-    #      for row in pd_tup:
-    #          f.write(f'{row[0][0]}, {row[0][1]}, {row[0][2]}, {row[1]}\n')
 
 
 def inference_setup(kwargs):
