@@ -2,17 +2,16 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.contrib.framework import add_arg_scope, arg_scope
 
-#  from config import GLOBAL_SEED, TF_FLOAT, NP_FLOAT
 import config as cfg
+from seed_dict import seeds
 
-GLOBAL_SEED = cfg.GLOBAL_SEED
 TF_FLOAT = cfg.TF_FLOAT
 NP_FLOAT = cfg.NP_FLOAT
 
-np.random.seed(GLOBAL_SEED)
+np.random.seed(seeds['global_np'])
 
 if '2.' not in tf.__version__:
-    tf.set_random_seed(GLOBAL_SEED)
+    tf.set_random_seed(seeds['global_tf'])
 
 
 def activation_model(model):
@@ -121,7 +120,7 @@ def batch_norm(x,
     return output
 
 
-def custom_dense(units, factor=1., name=None, **kwargs):
+def custom_dense(units, seed, factor=1., name=None, **kwargs):
     """Custom dense layer with specified weight intialization."""
     if '2.' not in tf.__version__:
         kernel_initializer = tf.keras.initializers.VarianceScaling(
@@ -130,13 +129,13 @@ def custom_dense(units, factor=1., name=None, **kwargs):
             distribution='truncated_normal',
             #  distribution='uniform',
             dtype=TF_FLOAT,
-            seed=GLOBAL_SEED,
+            seed=seed,
         )
     else:
         kernel_initializer = tf.contrib.layers.variance_scaling_initializer(
             factor=factor,
             mode='FAN_IN',
-            seed=GLOBAL_SEED,
+            seed=seed,
             dtype=TF_FLOAT,
             uniform=False,
         )

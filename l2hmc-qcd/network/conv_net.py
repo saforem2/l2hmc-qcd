@@ -10,32 +10,16 @@ Date: 06/14/2019
 import numpy as np
 import tensorflow as tf
 
-#  from config import GLOBAL_SEED, TF_FLOAT
 import config as cfg
+from seed_dict import seeds
 from .network_utils import batch_norm
 
 TF_FLOAT = cfg.TF_FLOAT
-GLOBAL_SEED = cfg.GLOBAL_SEED
 
-np.random.seed(GLOBAL_SEED)
+np.random.seed(seeds['global_np'])
 
 if '2.' not in tf.__version__:
-    tf.set_random_seed(GLOBAL_SEED)
-
-#######################################################################
-# NOTE: Removed from `ConvNet2D.__init__` due to bugs when specifying
-#       `data_format`
-# ------------------------------------------------------------------
-#  if self.use_bn:
-#      if self.data_format == 'channels_first':
-#          self.bn_axis = 1
-#      elif self.data_format == 'channels_last':
-#          self.bn_axis = -1
-#      else:
-#          raise AttributeError("Expected 'data_format' "
-#                               "to be 'channels_first' "
-#                               "or 'channels_last'.")
-#######################################################################
+    tf.set_random_seed(seeds['global_tf'])
 
 
 class ConvNet2D(tf.keras.Model):
@@ -286,10 +270,10 @@ class ConvNet3D(tf.keras.Model):
         inputs = self.conv2(inputs)
         if self.use_bn:
             inputs = self.activation(batch_norm(inputs, train_phase,
-                                               axis=self.bn_axis,
-                                               internal_update=True,
-                                               scope=self.bn_name,
-                                               reuse=tf.AUTO_REUSE))
+                                                axis=self.bn_axis,
+                                                internal_update=True,
+                                                scope=self.bn_name,
+                                                reuse=tf.AUTO_REUSE))
         inputs = self.max_pool2(inputs)
         inputs = self.flatten(inputs)
 
