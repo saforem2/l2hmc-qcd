@@ -15,7 +15,6 @@ import pickle
 
 import config as cfg
 #  from config import GLOBAL_SEED, HAS_HOROVOD, HAS_MATPLOTLIB
-from update import set_seed, set_precision
 from main import count_trainable_params, create_config, train_setup
 from models.gmm_model import GaussianMixtureModel
 from plotters.plot_utils import _gmm_plot
