@@ -158,6 +158,47 @@ def plot_acl_spectrum(acl_spectrum, **kwargs):
     return fig, ax
 
 
+def plot_histograms(data, labels, is_mixed=False, **kwargs):
+    """Plot multiple histograms in a single figure."""
+    n_bins = kwargs.get('num_bins', 50)
+    title = kwargs.get('title', None)
+    out_file = kwargs.get('out_file', None)
+    histtype = kwargs.get('histtype', 'step')
+
+    fig, ax = plt.subplots()
+    means = []
+    errs = []
+    for idx, (label, data) in enumerate(zip(labels, data)):
+        if not isinstance(data, np.ndarray):
+            data = np.array(data)
+
+        if not is_mixed:
+            steps = data.shape[1]
+            therm_steps = int(0.1 * steps)
+            data = data[therm_steps:, :]
+        mean = data.mean()
+        err = data.std()
+        data_flat = data.flatten()
+        label += f' avg: {mean:.4g} +/- {err:.3g}'
+        kwargs = dict(ec='gray',
+                      bins=n_bins,
+                      density=True,
+                      histtype=histtype)
+        ax.hist(data_flat, **kwargs)
+        means.append(mean)
+        errs.append(err)
+
+    if title is not None:
+        ax.set_title(title)
+
+    fig.tight_layout()
+    if out_file is not None:
+        io.log(f'Saving figure to: {out_file}.')
+        fig.savefig(out_file, bbox_inches='tight')
+
+    return fig, ax, np.array(means), np.array(errs)
+
+
 def plot_histogram(data, ax=None, **kwargs):
     if ax is None:
         fig, ax = plt.subplots()

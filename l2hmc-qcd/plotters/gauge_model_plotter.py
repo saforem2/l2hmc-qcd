@@ -9,7 +9,6 @@ Date: 04/10/2019
 """
 import os
 
-import config as cfg
 from config import BootstrapData, COLORS, HAS_MATPLOTLIB, MARKERS
 from collections import Counter, namedtuple, OrderedDict
 
@@ -18,8 +17,9 @@ import numpy as np
 from scipy.stats import sem
 
 import utils.file_io as io
+from seed_dict import seeds
 
-from .plot_utils import MPL_PARAMS, plot_multiple_lines  # , tsplotboot
+from .plot_utils import MPL_PARAMS, plot_multiple_lines
 from lattice.lattice import u1_plaq_exact
 
 if HAS_MATPLOTLIB:
@@ -35,7 +35,7 @@ __all__ = ['EnergyPlotter', 'GaugeModelPlotter',
 FigAx = namedtuple('FigAx', ['fig', 'ax'])
 DataErr = namedtuple('DataErr', ['data', 'err'])
 
-np.random.seed(cfg.GLOBAL_SEED)
+np.random.seed(seeds['global_np'])
 
 
 def reset_plots():
@@ -183,7 +183,7 @@ class EnergyPlotter:
         #  n_boot = kwargs.get('n_boot', 1000)
         is_mixed = kwargs.get('is_mixed', False)
         single_chain = kwargs.get('single_chain', False)
-        alphas = [1. - 0.25 * i for i in range(len(labels))]
+        #  alphas = [1. - 0.25 * i for i in range(len(labels))]
         if not is_mixed:
             num_steps = data_arr[0].shape[0]
             therm_steps = int(0.1 * num_steps)
@@ -208,8 +208,19 @@ class EnergyPlotter:
                 #  mean, err, mean_arr = self.bootstrap(data, n_boot=n_boot)
                 #  mean_arr = mean_arr.flatten()
             label = labels[idx] + f'  avg: {mean:.4g} +/- {err:.4g}'
-            ax.hist(mean_arr, bins=n_bins, density=True,
-                    alpha=alphas[idx], label=label)
+            kwargs = dict(ec='k',
+                          alpha=0.4,
+                          label=label,
+                          bins=n_bins,
+                          density=True,
+                          histtype='stepfilled')
+            ax.hist(mean_arr, **kwargs)
+            #  if idx > 1:
+            #      ax.hist(mean_arr, bins=n_bins, density=True,
+            #              alpha=alphas[idx], label=label, histtype='step')
+            #  else:
+            #      ax.hist(mean_arr, bins=n_bins, density=True,
+            #              alpha=alphas[idx], label=label)
 
         ax.legend(loc='best')
         if title is not None:
