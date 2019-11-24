@@ -1,11 +1,11 @@
---run_steps 2000
+--run_steps 5000
 --beta_inference 5.
 --scale_weight 1.
 --translation_weight 1.
 --transformation_weight 1.
 --samples_init 'random'
---params_file=../../gauge_logs/2019_11_21/L8_b64_lf3_f64_1845/parameters.pkl
-#--eps 0.1
 #####################################
+#--params_file=../../gauge_logs/2019_11_21/L8_b64_lf3_f64_1845/parameters.pkl
+#--eps 0.1
 #--params_file=../../gauge_logs/2019_10_22/lattice8_batch128_lf5_qw00_aw10_generic_dp00/parameters.pkl
 
