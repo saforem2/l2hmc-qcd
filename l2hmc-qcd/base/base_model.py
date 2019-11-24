@@ -26,12 +26,6 @@ import tensorflow as tf
 
 from utils.horovod_utils import warmup_lr
 
-#  import utils.file_io as io
-#  import config as cfg
-#  from utils.distributions import quadratic_gaussian
-#  from params.gmm_params import GMM_PARAMS
-#  from params.gauge_params import GAUGE_PARAMS
-
 if cfg.HAS_HOROVOD:
     import horovod.tensorflow as hvd
 
@@ -117,9 +111,6 @@ class BaseModel(object):
         ops = (pe, ke, h)
         for op in ops:
             tf.add_to_collection('energy_ops', op)
-        #  tf.add_to_collection('energy_ops', pe)
-        #  tf.add_to_collection('energy_ops', ke)
-        #  tf.add_to_collection('energy_ops', h)
 
         return cfg.Energy(pe, ke, h)
 

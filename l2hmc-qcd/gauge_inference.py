@@ -16,9 +16,6 @@ import time
 
 from config import HAS_HOROVOD
 from seed_dict import seeds
-from runners.runner import Runner
-from plotters.leapfrog_plotters import LeapfrogPlotter
-from plotters.gauge_model_plotter import EnergyPlotter, GaugeModelPlotter
 
 import numpy as np
 import tensorflow as tf
@@ -26,14 +23,17 @@ import tensorflow as tf
 import utils.file_io as io
 import inference.utils as utils
 
+from runners.runner import Runner
 from models.gauge_model import GaugeModel
 from utils.parse_inference_args import parse_args as parse_inference_args
 from inference.gauge_inference_utils import (_log_inference_header,
                                              create_config, inference_setup,
                                              load_params, log_plaq_diffs,
-                                             parse_flags, SEP_STR)
+                                             parse_flags)
 from loggers.run_logger import RunLogger
 from loggers.summary_utils import create_summaries
+from plotters.leapfrog_plotters import LeapfrogPlotter
+from plotters.gauge_model_plotter import EnergyPlotter, GaugeModelPlotter
 
 if HAS_HOROVOD:
     import horovod.tensorflow as hvd
@@ -161,16 +161,14 @@ def inference(runner, run_logger, plotter, energy_plotter, **kwargs):
     runner.run(**kwargs)
 
     run_time = time.time() - t0
-    io.log(SEP_STR + f'\nTook: {run_time}s to complete run.\n' + SEP_STR)
+    io.log(80 * '-' + f'\nTook: {run_time}s to complete run.\n' + 80 * '-')
 
     # -----------------------------------------------------------
     # PLOT ALL LATTICE OBSERVABLES AND RETURN THE AVG. PLAQ DIFF
     # -----------------------------------------------------------
     kwargs['run_str'] = run_logger._run_str
     avg_plaq_diff = plotter.plot_observables(run_logger.run_data, **kwargs)
-    log_plaq_diffs(run_logger,
-                   kwargs['net_weights'],
-                   avg_plaq_diff)
+    log_plaq_diffs(run_logger, kwargs['net_weights'], avg_plaq_diff)
     io.save_dict(seeds, run_logger.run_dir, 'seeds')
 
     tf_data = energy_plotter.plot_energies(run_logger.energy_dict,
@@ -299,5 +297,5 @@ if __name__ == '__main__':
 
     main(FLAGS)
 
-    io.log('\n\n' + SEP_STR)
-    io.log(f'Time to complete: {time.time() - t0:.4g}')
+    io.log('\n\n' + 80 * '-' + '\n'
+           f'Time to complete: {time.time() - t0:.4g}')

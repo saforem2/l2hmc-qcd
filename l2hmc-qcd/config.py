@@ -9,9 +9,8 @@ import numpy as np
 
 from collections import namedtuple
 
-# -----------------------
-#   module-wide objects
-# -----------------------
+# Included below is a `catch-all` for various structures 
+# (namedtuples) that are used project wide in various locations.
 State = namedtuple('State', ['x', 'v', 'beta'])
 EnergyData = namedtuple('EnergyData', ['init', 'proposed', 'out'])
 Energy = namedtuple('Energy', ['potential', 'kinetic', 'hamiltonian'])
@@ -27,15 +26,15 @@ BootstrapData = namedtuple('BootstrapData', ['mean', 'err', 'means_bs'])
 l2hmcFn = namedtuple('l2hmcFn', ['v1', 'x1', 'x2', 'v2'])
 l2hmcFns = namedtuple('l2hmcFns', ['scale', 'translation', 'transformation'])
 
-#  TF_FLOAT = tf.float32
-#  TF_INT = tf.int32
-#  NP_FLOAT = np.float32
-#  NP_INT = np.int32
+TF_FLOAT = tf.float32
+TF_INT = tf.int32
+NP_FLOAT = np.float32
+NP_INT = np.int32
 
-TF_FLOAT = tf.float64
-TF_INT = tf.int64
-NP_FLOAT = np.float64
-NP_INT = np.int64
+#  TF_FLOAT = tf.float64
+#  TF_INT = tf.int64
+#  NP_FLOAT = np.float64
+#  NP_INT = np.int64
 
 #  GLOBAL_SEED = np.random.randint(1e6)
 #
