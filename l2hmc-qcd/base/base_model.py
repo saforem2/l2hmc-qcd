@@ -437,9 +437,9 @@ class BaseModel(object):
         trainable_vars = tf.trainable_variables()
         #  grads_and_vars = zip(grads, self.dynamics.trainable_variables)
         grads_and_vars = zip(grads, trainable_vars)
-        #  ctrl_deps = [loss_op, *self.dynamics.updates]
-        #  with tf.control_dependencies(ctrl_deps):
-        train_op = self.optimizer.apply_gradients(grads_and_vars,
-                                                  self.global_step,
-                                                  'train_op')
+        ctrl_deps = [loss_op, *self.dynamics.updates]
+        with tf.control_dependencies(ctrl_deps):
+            train_op = self.optimizer.apply_gradients(grads_and_vars,
+                                                      self.global_step,
+                                                      'train_op')
         return train_op
