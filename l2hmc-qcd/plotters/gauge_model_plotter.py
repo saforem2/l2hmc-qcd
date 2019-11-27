@@ -9,7 +9,8 @@ Date: 04/10/2019
 """
 import os
 
-from config import BootstrapData, COLORS, HAS_MATPLOTLIB, MARKERS
+#  from config import BootstrapData, HAS_MATPLOTLIB, MARKERS
+import config as cfg
 from collections import Counter, namedtuple, OrderedDict
 
 import numpy as np
@@ -22,11 +23,23 @@ from seed_dict import seeds
 from .plot_utils import MPL_PARAMS, plot_multiple_lines
 from lattice.lattice import u1_plaq_exact
 
-if HAS_MATPLOTLIB:
+if cfg.HAS_MATPLOTLIB:
     import matplotlib as mpl
     import matplotlib.pyplot as plt
+    MARKERS = cfg.MARKERS
 
     mpl.rcParams.update(MPL_PARAMS)
+
+try:
+    import seaborn as sns
+    sns.set_palette('bright')
+    sns.set_style('ticks', {'xtick.major.size': 8,
+                            'ytick.major.size': 8})
+    COLORS = sns.color_palette()
+    HAS_SEABORN = True
+except ImportError:
+    COLORS = cfg.COLORS
+    HAS_SEABORN = False
 
 
 __all__ = ['EnergyPlotter', 'GaugeModelPlotter',
@@ -34,6 +47,7 @@ __all__ = ['EnergyPlotter', 'GaugeModelPlotter',
 
 FigAx = namedtuple('FigAx', ['fig', 'ax'])
 DataErr = namedtuple('DataErr', ['data', 'err'])
+BootstrapData = cfg.BootstrapData
 
 np.random.seed(seeds['global_np'])
 
@@ -56,13 +70,12 @@ def get_out_file(out_dir, out_str):
 def _get_title(lf_steps, eps, batch_size, beta, nw):
     """Parse vaious parameters to make figure title when creating plots."""
     try:
+        nw_str = '[' + ', '.join([f'{i:.3g}' for i in nw]) + ']'
         title_str = (r"$N_{\mathrm{LF}} = $" + f"{lf_steps}, "
                      r"$\varepsilon = $" + f"{eps:.3g}, "
                      r"$N_{\mathrm{B}} = $" + f"{batch_size}, "
                      r"$\beta =$" + f"{beta:.2g}, "
-                     r"$\mathrm{nw} = $" + (f"{nw[0]:.3g}, "
-                                            f"{nw[1]:.3g}, "
-                                            f"{nw[2]:.3g}"))
+                     r"$\mathrm{nw} = $" + nw_str)
     except ValueError:
         title_str = ''
     return title_str
@@ -166,7 +179,7 @@ class EnergyPlotter:
 
             axes[idx].legend(loc='best')
             if title is not None:
-                axes[idx].set_title(title)
+                axes[idx].set_title(title, fontsize='x-large')
 
         fig.tight_layout()
         if out_file is not None:
@@ -178,11 +191,11 @@ class EnergyPlotter:
 
         return fig_ax, data_err
 
-    def _hist(self, labels, data_arr, title=None, out_file=None, **kwargs):
-        n_bins = kwargs.get('n_bins', 50)
+    def _hist(self, labels, data_arr, title=None, out_file=None, **hist_kws):
+        n_bins = hist_kws.get('n_bins', 50)
         #  n_boot = kwargs.get('n_boot', 1000)
-        is_mixed = kwargs.get('is_mixed', False)
-        single_chain = kwargs.get('single_chain', False)
+        is_mixed = hist_kws.get('is_mixed', False)
+        single_chain = hist_kws.get('single_chain', False)
         #  alphas = [1. - 0.25 * i for i in range(len(labels))]
         if not is_mixed:
             num_steps = data_arr[0].shape[0]
@@ -208,13 +221,15 @@ class EnergyPlotter:
                 #  mean, err, mean_arr = self.bootstrap(data, n_boot=n_boot)
                 #  mean_arr = mean_arr.flatten()
             label = labels[idx] + f'  avg: {mean:.4g} +/- {err:.4g}'
-            kwargs = dict(ec='k',
-                          alpha=0.4,
-                          label=label,
-                          bins=n_bins,
-                          density=True,
-                          histtype='stepfilled')
-            ax.hist(mean_arr, **kwargs)
+            hist_kws = dict(alpha=0.3,
+                            label=label,
+                            bins=n_bins,
+                            density=True,
+                            histtype='stepfilled')
+            try:
+                ax = sns.distplot(mean_arr, ax=ax, **hist_kws)
+            except ValueError:
+                ax.hist(mean_arr, **hist_kws)
             #  if idx > 1:
             #      ax.hist(mean_arr, bins=n_bins, density=True,
             #              alpha=alphas[idx], label=label, histtype='step')
@@ -526,18 +541,7 @@ class GaugeModelPlotter:
         full_steps_arr = np.arange(num_steps)
         autocorrs_stats = _stats(charge_autocorrs.T)
 
-        # skip 5% of total number of steps between successive points when
-        # plotting to help smooth out graph
-        #  skip_steps = max((1, int(0.005 * num_steps)))
-        # ignore first 10% of pts (warmup)
-
-        #  _charge_diffs = charge_diffs[warmup_steps:]  # [::skip_steps]
         _plaq_diffs = plaqs_diffs[warmup_steps:]  # [::skip_steps]
-        #  _steps_diffs = (
-        #      skip_steps * np.arange(_plaq_diffs.shape[0])  # + skip_steps
-        #  )
-        #  _plaq_diffs_avg = np.mean(_plaq_diffs, axis=1)
-        #  _plaq_diffs_err = sem(_plaq_diffs, axis=1)
         _plaq_diffs_stats = _stats(_plaq_diffs)
 
         xy_data = {
@@ -545,8 +549,6 @@ class GaugeModelPlotter:
             'plaqs': (steps_arr, *plaqs_stats),
             'accept_prob': (steps_arr, *accept_prob_stats),
             'charges': (full_steps_arr, charges.T),
-            #  'charges_stats': (steps_arr, charges_stats),
-            #  'charge_diffs': (x_therm, _charge_diffs.T),
             'autocorrs': (full_steps_arr, *autocorrs_stats),
             'plaqs_diffs': (steps_arr, *_plaq_diffs_stats)
         }
@@ -629,15 +631,15 @@ class GaugeModelPlotter:
             ax1.errorbar(x[x0:x1], y[x0:x1], yerr=yerr[x0:x1],
                          alpha=0.7, color='k', ecolor='gray')
 
-        ax1.set_xlabel(xlabel, fontsize=14)
-        ax0.set_ylabel(ylabel, fontsize=14)
-        ax1.set_ylabel('', fontsize=14)
+        ax1.set_xlabel(xlabel, fontsize='large')
+        ax0.set_ylabel(ylabel, fontsize='large')
+        ax1.set_ylabel('', fontsize='large')
         if _leg:
             ax0.legend(loc='best')
 
         title = kwargs.get('title', None)
         if title is not None:
-            _ = ax0.set_title(title)
+            _ = ax0.set_title(title, fontsize='x-large')
 
         plt.tight_layout()
         if kwargs.get('save', True):
@@ -648,6 +650,48 @@ class GaugeModelPlotter:
 
         return fig, (ax0, ax1)
 
+    def _hist(self, x, ax=None, labels=None, leg=True, **kwargs):
+        if labels is not None:
+            ylabel = labels.get('y_label', '')
+        else:
+            ylabel = ''
+
+        if not isinstance(x, np.ndarray):
+            x = np.array(x)
+
+        if ax is None:
+            fig, ax = plt.subplots()
+
+        x = x.flatten()
+        mean = x.mean()
+        err = x.std()
+        label = f'{mean:<6.3g} +/- {err:^6.2g}'
+
+        try:
+            ax = sns.distplot(x, ax=ax, label=label)
+        except:  # noqa: F821 
+            _ = ax.hist(x, density=True, bins=50, histtype='stepfilled')
+            _ = ax.plot(mean, 0., marker='|', linewidth=1,
+                        markersize=10, markeredgewidth=1, label=label)
+
+        _ = ax.set_ylabel(ylabel)
+        if leg:
+            ax.legend(loc='best')
+
+        title = kwargs.get('title', None)
+        if title is not None:
+            _ = ax.set_title(title, fontsize='x-large')
+
+        plt.tight_layout()
+        if kwargs.get('save', True):
+            fname = kwargs.get('fname', f'plot_{np.random.randint(10)}')
+            fname += '_hist'
+            out_file = get_out_file(self.out_dir, fname)
+            io.log(f'Saving figure to: {out_file}.')
+            plt.savefig(out_file, bbox_inches='tight')
+
+        return ax, mean, err
+
     def _plot_actions(self, xy_data, **kwargs):
         """Plot actions."""
         labels = {
@@ -656,12 +700,14 @@ class GaugeModelPlotter:
             'plt_label': 'Action'
         }
 
-        kwargs.update({
-            'fname': 'actions_vs_step',
+        fig_kwargs = {
             'labels': labels,
             'two_rows': True,
-        })
-        self._plot(xy_data, **kwargs)
+            'fname': 'actions',
+            'save': True,
+        }
+        _ = self._hist(xy_data[1], leg=True, **fig_kwargs, **kwargs)
+        self._plot(xy_data, **fig_kwargs, **kwargs)
 
     def _plot_plaqs(self, xy_data, beta, **kwargs):
         """PLot average plaquette."""
@@ -670,13 +716,13 @@ class GaugeModelPlotter:
             'y_label': r"""$\langle \phi_{P} \rangle$""",
             'plt_label': r"""$\langle \phi_{P} \rangle$"""
         }
-        kwargs.update({
+        fig_kwargs = {
             'labels': labels,
-            'fname': 'plaqs_vs_step',
+            'fname': 'plaqs',
             'two_rows': True,
             'save': False,
-        })
-        fig, (ax0, ax1) = self._plot(xy_data, **kwargs)
+        }
+        fig, (ax0, ax1) = self._plot(xy_data, **fig_kwargs, **kwargs)
 
         ax0.axhline(y=u1_plaq_exact(beta),
                     color='#CC0033', ls='-', lw=1.5, label='exact')
@@ -689,6 +735,10 @@ class GaugeModelPlotter:
         io.log(f'Saving figure to: {out_file}')
         plt.savefig(out_file, bbox_inches='tight')
 
+        fig_kwargs['save'] = True
+        fig_kwargs['leg'] = True
+        _ = self._hist(xy_data[1], **fig_kwargs, **kwargs)
+
     def _plot_accept_probs(self, xy_data, **kwargs):
         """Plot actions."""
         labels = {
@@ -697,12 +747,16 @@ class GaugeModelPlotter:
             'plt_label': 'accept_prob'
         }
 
-        kwargs.update({
+        fig_kwargs = {
             'fname': 'accept_probs_vs_step',
             'labels': labels,
             'two_rows': True,
-        })
-        self._plot(xy_data, **kwargs)
+        }
+        self._plot(xy_data, **fig_kwargs, **kwargs)
+
+        fig_kwargs['save'] = True
+        fig_kwargs['leg'] = True
+        _ = self._hist(xy_data[1], **fig_kwargs, **kwargs)
 
     def _plot_plaqs_diffs(self, xy_data, **kwargs):
         kwargs['out_file'] = None
@@ -722,11 +776,11 @@ class GaugeModelPlotter:
         _ = ax.axhline(y=y_mean, label=f'avg {y_mean:.5f}',
                        color='C2', ls='-', lw=2.)
 
-        _ = ax.set_xlabel(labels['x_label'], fontsize=14)
-        _ = ax.set_ylabel(labels['y_label'], fontsize=14)
+        _ = ax.set_xlabel(labels['x_label'], fontsize='large')
+        _ = ax.set_ylabel(labels['y_label'], fontsize='large')
         title = kwargs.get('title', None)
         if title is not None:
-            _ = ax.set_title(title)
+            _ = ax.set_title(title, fontsize='x-large')
 
         ax.legend(loc='best')
 
@@ -734,6 +788,14 @@ class GaugeModelPlotter:
         out_file = get_out_file(self.out_dir, 'plaqs_diffs_vs_step')
         io.log(f'Saving figure to: {out_file}.')
         plt.savefig(out_file, bbox_inches='tight')
+
+        fig_kwargs = {
+            'fname': 'plaqs',
+            'labels': labels,
+            'leg': True,
+            'save': True,
+        }
+        self._hist(xy_data[1], **fig_kwargs, **kwargs)
 
         return y_mean
 
@@ -748,30 +810,37 @@ class GaugeModelPlotter:
         plot_multiple_lines(xy_data, xy_labels, **kwargs)
 
         charges = np.array(xy_data[1], dtype=int)
-        num_steps, batch_size = charges.shape
+        batch_size, num_steps = charges.shape
 
         out_dir = os.path.join(self.out_dir, 'top_charge_plots')
         io.check_else_make_dir(out_dir)
         # if we have more than 10 chains in charges, only plot first 10
-        for idx in range(min(batch_size, 5)):
+        for idx in range(min(batch_size, 8)):
             _, ax = plt.subplots()
-            _ = ax.plot(charges[:, idx],
+            _ = ax.plot(charges[idx, :],
                         marker=MARKERS[idx],
                         color=COLORS[idx],
                         ls='',
                         alpha=0.5,
                         label=f'sample {idx}')
             _ = ax.legend(loc='best')
-            _ = ax.set_xlabel(xy_labels[0], fontsize=14)
-            _ = ax.set_ylabel(xy_labels[1], fontsize=14)
-            _ = ax.set_title(kwargs['title'], fontsize=16)
+            _ = ax.set_xlabel(xy_labels[0], fontsize='large')
+            _ = ax.set_ylabel(xy_labels[1], fontsize='large')
+            _ = ax.set_title(kwargs['title'], fontsize='x-large')
             _ = plt.tight_layout()
             out_file = get_out_file(out_dir, f'top_charge_vs_step_{idx}')
             io.check_else_make_dir(os.path.dirname(out_file))
             io.log(f'Saving figure to: {out_file}')
             plt.savefig(out_file, bbox_inches='tight')
-
         plt.close('all')
+
+        fig_kwargs = {
+            'fname': 'charges',
+            'labels': {'y_label': r"""$Q$"""},
+            'leg': True,
+            'save': True,
+        }
+        self._hist(xy_data[1], **fig_kwargs, **kwargs)
 
     def _plot_charge_diffs(self, xy_data, **kwargs):
         """Plot tunneling events (change in top. charge)."""
@@ -784,9 +853,9 @@ class GaugeModelPlotter:
         _, ax = plt.subplots()
         _ = ax.plot(xy_data[0][2:], xy_data[1][2:],
                     marker=',', ls='', fillstyle='none', color='C0')
-        _ = ax.set_xlabel('Steps', fontsize=14)
-        _ = ax.set_ylabel(r'$\delta_{Q}$', fontsize=14)
-        _ = ax.set_title(kwargs['title'], fontsize=16)
+        _ = ax.set_xlabel('Steps', fontsize='large')
+        _ = ax.set_ylabel(r'$\delta_{Q}$', fontsize='large')
+        _ = ax.set_title(kwargs['title'], fontsize='x-large')
         _ = plt.tight_layout()
         io.log(f"Saving figure to: {out_file}")
         plt.savefig(out_file, bbox_inches='tight')
@@ -811,9 +880,9 @@ class GaugeModelPlotter:
                     ls='',
                     label=f'sample {idx}')
             _ = ax.legend(loc='best')
-            _ = ax.set_xlabel(r"$Q$")  # , fontsize=14)
-            _ = ax.set_ylabel('Probability')  # , fontsize=14)
-            _ = ax.set_title(title)  # , fontsize=16)
+            _ = ax.set_xlabel(r"$Q$", fontsize='large')
+            _ = ax.set_ylabel('Probability', fontsize='large')
+            _ = ax.set_title(title, fontsize='x-large')
             _ = plt.tight_layout()
             out_file = get_out_file(out_dir, f'top_charge_vs_step_{idx}')
             io.check_else_make_dir(os.path.dirname(out_file))
@@ -833,9 +902,9 @@ class GaugeModelPlotter:
                 alpha=0.6,
                 label=f'total across {batch_size} samples')
         _ = ax.legend(loc='best')
-        _ = ax.set_xlabel(r"$Q$")  # , fontsize=14)
-        _ = ax.set_ylabel('Probability')  # , fontsize=14)
-        _ = ax.set_title(title)  # , fontsize=16)
+        _ = ax.set_xlabel(r"$Q$", fontsize='large')
+        _ = ax.set_ylabel('Probability', fontsize='large')
+        _ = ax.set_title(title, fontsize='x-large')
         _ = plt.tight_layout()
         out_file = get_out_file(self.out_dir, f'TOP_CHARGE_PROBS_ALL')
         io.check_else_make_dir(os.path.dirname(out_file))

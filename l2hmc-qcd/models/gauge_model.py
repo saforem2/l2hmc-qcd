@@ -89,8 +89,12 @@ class GaugeModel(BaseModel):
             inputs = self._create_inputs()
             self.x = inputs['x']
             self.beta = inputs['beta']
-            nw_keys = ['scale_weight', 'transl_weight', 'transf_weight']
-            self.net_weights = [inputs[k] for k in nw_keys]
+            #  nw_keys = [
+            #      'x_scale_weight', 'x_transl_weight', 'x_transf_weight',
+            #      'v_scale_weight', 'v_transl_weight', 'v_transf_weight'
+            #  ]
+            #  self.net_weights = [inputs[k] for k in nw_keys]
+            self.net_weights = inputs['net_weights']
             self.train_phase = inputs['train_phase']
             self.eps_ph = inputs['eps_ph']
             self._inputs = inputs
@@ -338,30 +342,6 @@ class GaugeModel(BaseModel):
             charge_diffs_op = tf.reduce_sum(x_dq) / self.batch_size
 
         return charge_diffs_op
-
-    def _parse_dynamics_output(self, dynamics_output):
-        """Parse output dictionary from `self.dynamics.apply_transition`."""
-        #  dynamics_md = dynamics_output['md_outputs']
-        #  x_init = dynamics_md['x_init']
-        #  x_proposed = dynamics_md['x_proposed']
-        #  self.charge_diffs_op = self._calc_charge_diff(x_init, x_proposed)
-        #
-        #  with tf.name_scope('dynamics_forward'):
-        #      for key, val in dynamics_output['outputs_f'].items():
-        #          name = key + '_f'
-        #          setattr(self, name, val)
-        #          tf.add_to_collection('dynamics_forward', val)
-        #      with tf.name_scope('dynamics_backward'):
-        #          for key, val in dynamics_output['outputs_b'].items():
-        #              name = key + '_b'
-        #              setattr(self, name, val)
-        #
-        #  with tf.name_scope('l2hmc_fns'):
-        #      self.l2hmc_fns = {
-        #          'l2hmc_fns_f': self._extract_l2hmc_fns(self.fns_out_f),
-        #          'l2hmc_fns_b': self._extract_l2hmc_fns(self.fns_out_b),
-        #      }
-        pass
 
     def _build_train_ops(self):
         """Build train_ops dict containing grouped operations for training."""

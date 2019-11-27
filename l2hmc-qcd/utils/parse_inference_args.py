@@ -159,8 +159,8 @@ def parse_args():
                               value of the average plaquette when running
                               inference."""))
 
-    parser.add_argument('--scale_weight',
-                        dest='scale_weight',
+    parser.add_argument('--v_scale_weight',
+                        dest='v_scale_weight',
                         type=float,
                         default=None,
                         required=False,
@@ -170,8 +170,8 @@ def parse_args():
                               performing the augmented L2HMC molecular dynamics
                               update."""))
 
-    parser.add_argument('--translation_weight',
-                        dest='translation_weight',
+    parser.add_argument('--v_translation_weight',
+                        dest='v_translation_weight',
                         type=float,
                         default=None,
                         required=False,
@@ -181,8 +181,42 @@ def parse_args():
                               function when performing the augmented L2HMC
                               molecular dynamics update."""))
 
-    parser.add_argument('--transformation_weight',
-                        dest='transformation_weight',
+    parser.add_argument('--v_transformation_weight',
+                        dest='v_transformation_weight',
+                        type=float,
+                        default=None,
+                        required=False,
+                        help=("""Specify the value of the
+                              `transformation_weight` parameter, a
+                              multiplicative weight that scales the
+                              contribution of the `transformation` (Q) function
+                              when performing the augmented L2HMC molecular
+                              dynamics update."""))
+
+    parser.add_argument('--x_scale_weight',
+                        dest='x_scale_weight',
+                        type=float,
+                        default=None,
+                        required=False,
+                        help=("""Specify the value of the `scale_weight`
+                              parameter, a multiplicative weight that scales
+                              the contribution of the `scale` (S) function when
+                              performing the augmented L2HMC molecular dynamics
+                              update."""))
+
+    parser.add_argument('--x_translation_weight',
+                        dest='x_translation_weight',
+                        type=float,
+                        default=None,
+                        required=False,
+                        help=("""Specify the value of the `translation_weight`
+                              parameter, a multiplicative weight that scales
+                              the contribution of the `translation` (T)
+                              function when performing the augmented L2HMC
+                              molecular dynamics update."""))
+
+    parser.add_argument('--x_transformation_weight',
+                        dest='x_transformation_weight',
                         type=float,
                         default=None,
                         required=False,

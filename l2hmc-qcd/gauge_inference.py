@@ -14,7 +14,7 @@ from __future__ import absolute_import, division, print_function
 import os
 import time
 
-from config import HAS_HOROVOD
+from config import HAS_HOROVOD, NetWeights
 from seed_dict import seeds
 
 import numpy as np
@@ -92,10 +92,18 @@ def run_hmc(FLAGS, log_file=None):
     if beta is None:
         beta = model.beta_final
 
-    sw = params.get('scale_weight', 1.)
-    tlw = params.get('translation_weight', 1.)
-    tfw = params.get('transformation_weight', 1.)
-    params['net_weights'] = [sw, tlw, tfw]
+    xsw = params.get('x_scale_weight', 1.)
+    xtlw = params.get('x_translation_weight', 1.)
+    xtfw = params.get('x_transformation_weight', 1.)
+    vsw = params.get('v_scale_weight', 1.)
+    vtlw = params.get('v_translation_weight', 1.)
+    vtfw = params.get('v_transformation_weight', 1.)
+    params['net_weights'] = NetWeights(x_scale=xsw,
+                                       x_translation=xtlw,
+                                       x_transformation=xtfw,
+                                       v_scale=vsw,
+                                       v_translation=vtlw,
+                                       v_transformation=vtfw)
 
     # ----------------------------------------------------------
     # Create initial samples to be used at start of inference
@@ -145,7 +153,8 @@ def inference(runner, run_logger, plotter, energy_plotter, **kwargs):
     eps = kwargs.get('eps', None)
     beta = kwargs.get('beta', 5.)
     run_steps = kwargs.get('run_steps', 5000)
-    nw = kwargs.get('net_weights', [1., 1., 1.])
+    #  nw = kwargs.get('net_weights', [1., 1., 1.])
+    nw = kwargs.get('net_weights', NetWeights(1., 1., 1., 1., 1., 1.))
 
     if eps is None:
         eps = runner.eps
@@ -168,7 +177,7 @@ def inference(runner, run_logger, plotter, energy_plotter, **kwargs):
     # -----------------------------------------------------------
     kwargs['run_str'] = run_logger._run_str
     avg_plaq_diff = plotter.plot_observables(run_logger.run_data, **kwargs)
-    log_plaq_diffs(run_logger, kwargs['net_weights'], avg_plaq_diff)
+    log_plaq_diffs(run_logger, nw, avg_plaq_diff)
     io.save_dict(seeds, run_logger.run_dir, 'seeds')
 
     tf_data = energy_plotter.plot_energies(run_logger.energy_dict,
@@ -244,10 +253,22 @@ def main(kwargs):
     # -------------------
     # setup net_weights
     # -------------------
-    scale_weight = kwargs.get('scale_weight', 1.)
-    translation_weight = kwargs.get('translation_weight', 1.)
-    transformation_weight = kwargs.get('transformation_weight', 1.)
-    net_weights = [scale_weight, translation_weight, transformation_weight]
+    #  scale_weight = kwargs.get('scale_weight', 1.)
+    #  translation_weight = kwargs.get('translation_weight', 1.)
+    #  transformation_weight = kwargs.get('transformation_weight', 1.)
+    #  net_weights = [scale_weight, translation_weight, transformation_weight]
+    xsw = kwargs.get('x_scale_weight', 1.)
+    xtlw = kwargs.get('x_translation_weight', 1.)
+    xtfw = kwargs.get('x_transformation_weight', 1.)
+    vsw = kwargs.get('v_scale_weight', 1.)
+    vtlw = kwargs.get('v_translation_weight', 1.)
+    vtfw = kwargs.get('v_transformation_weight', 1.)
+    net_weights = NetWeights(x_scale=xsw,
+                             x_translation=xtlw,
+                             x_transformation=xtfw,
+                             v_scale=vsw,
+                             v_translation=vtlw,
+                             v_transformation=vtfw)
 
     # -------------
     # setup beta

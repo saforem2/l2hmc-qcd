@@ -391,28 +391,24 @@ class Dynamics(tf.keras.Model):
             sumlogdet = 0.
 
             v, logdet, vf_fns = self._update_v_forward(x, v, beta, t,
-                                                       weights,
-                                                       training)
+                                                       weights, training)
             sumlogdet += logdet
             forward_fns.append(vf_fns)
 
             x, logdet, xf_fns = self._update_x_forward(x, v, t,
-                                                       weights,
-                                                       training,
+                                                       weights, training,
                                                        (mask, mask_inv))
             sumlogdet += logdet
             forward_fns.append(xf_fns)
 
             x, logdet, xf_fns = self._update_x_forward(x, v, t,
-                                                       weights,
-                                                       training,
+                                                       weights, training,
                                                        (mask_inv, mask))
             sumlogdet += logdet
             forward_fns.append(xf_fns)
 
             v, logdet, vf_fns = self._update_v_forward(x, v, beta, t,
-                                                       weights,
-                                                       training)
+                                                       weights, training)
             sumlogdet += logdet
             forward_fns.append(vf_fns)
 
@@ -434,28 +430,24 @@ class Dynamics(tf.keras.Model):
             sumlogdet = 0.
 
             v, logdet, vb_fns = self._update_v_backward(x, v, beta, t,
-                                                        weights,
-                                                        training)
+                                                        weights, training)
             sumlogdet += logdet
             backward_fns.append(vb_fns)
 
             x, logdet, xb_fns = self._update_x_backward(x, v, t,
-                                                        weights,
-                                                        training,
+                                                        weights, training,
                                                         (mask_inv, mask))
             sumlogdet += logdet
             backward_fns.append(xb_fns)
 
             x, logdet, xb_fns = self._update_x_backward(x, v, t,
-                                                        weights,
-                                                        training,
+                                                        weights, training,
                                                         (mask, mask_inv))
             sumlogdet += logdet
             backward_fns.append(xb_fns)
 
             v, logdet, vb_fns = self._update_v_backward(x, v, beta, t,
-                                                        weights,
-                                                        training)
+                                                        weights, training)
             sumlogdet += logdet
             backward_fns.append(vb_fns)
 
@@ -481,9 +473,12 @@ class Dynamics(tf.keras.Model):
             scale, transl, transf = self.v_fn([x, grad, t], training)
 
             with tf.name_scope('vf_mul'):
-                scale *= 0.5 * self.eps * weights[0]
-                transl *= weights[1]
-                transf *= self.eps * weights[2]
+                scale *= 0.5 * self.eps * weights.v_scale
+                transl *= weights.v_translation
+                transf *= self.eps * weights.v_transformation
+                #  scale *= 0.5 * self.eps * weights[0]
+                #  transl *= weights[1]
+                #  transf *= self.eps * weights[2]
                 fns = [scale, transl, transf]
 
             with tf.name_scope('vf_exp'):
@@ -505,9 +500,12 @@ class Dynamics(tf.keras.Model):
             scale, transl, transf = self.x_fn([v, mask * x, t], training)
 
             with tf.name_scope('xf_mul'):
-                scale *= self.eps * weights[0]
-                transl *= weights[1]
-                transf *= self.eps * weights[2]
+                scale *= self.eps * weights.x_scale
+                transl *= weights.x_translation
+                transf *= self.eps * weights.x_transformation
+                #  scale *= self.eps * weights[3]
+                #  transl *= weights[4]
+                #  transf *= self.eps * weights[5]
                 fns = [scale, transl, transf]
 
             with tf.name_scope('xf_exp'):
@@ -529,9 +527,12 @@ class Dynamics(tf.keras.Model):
             scale, transl, transf = self.v_fn([x, grad, t], training)
 
             with tf.name_scope('vb_mul'):
-                scale *= -0.5 * self.eps * weights[0]
-                transl *= weights[1]
-                transf *= self.eps * weights[2]
+                scale *= -0.5 * self.eps * weights.v_scale
+                transl *= weights.v_translation
+                transf *= self.eps * weights.v_transformation
+                #  scale *= -0.5 * self.eps * weights[0]
+                #  transl *= weights[1]
+                #  transf *= self.eps * weights[2]
                 fns = [scale, transl, transf]
 
             with tf.name_scope('vb_exp'):
@@ -553,9 +554,12 @@ class Dynamics(tf.keras.Model):
             scale, transl, transf = self.x_fn([v, mask * x, t], training)
 
             with tf.name_scope('xb_mul'):
-                scale *= -self.eps * weights[0]
-                transl *= weights[1]
-                transf *= self.eps * weights[2]
+                scale *= -self.eps * weights.x_scale
+                transl *= weights.x_translation
+                transf *= self.eps * weights.x_transformation
+                #  scale *= -self.eps * weights[3]
+                #  transl *= weights[4]
+                #  transf *= self.eps * weights[5]
                 fns = [scale, transl, transf]
 
             with tf.name_scope('xb_exp'):

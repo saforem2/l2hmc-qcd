@@ -19,7 +19,7 @@ from scipy.stats import sem
 
 import utils.file_io as io
 
-from config import NP_FLOAT, EnergyData, State
+from config import NP_FLOAT, EnergyData, State, NetWeights
 from utils.distributions import GMM
 from lattice.lattice import u1_plaq_exact
 
@@ -168,11 +168,22 @@ class RunLogger:
     @staticmethod
     def build_inputs_dict():
         """Build dictionary of tensorflow placeholders used as inputs."""
-        keys = ['x', 'beta', 'scale_weight',
-                'transl_weight', 'transf_weight',
-                'train_phase', 'eps_ph']
+        #  keys = ['x', 'beta',
+        #          #  'net_weights',
+        #          #  'scale_weight', 'transl_weight', 'transf_weight',
+        #          'train_phase', 'eps_ph']
+        #  keys = ['x', 'beta', 'eps_ph', 'train_phase', 'net_weights']
         inputs = tf.get_collection('inputs')
-        inputs_dict = dict(zip(keys, inputs))
+        x, beta, eps_ph, train_phase, *nw = inputs
+        net_weights = NetWeights(*nw)
+        #  inputs_dict = dict(zip(keys, inputs))
+        inputs_dict = {
+            'x': x,
+            'beta': beta,
+            'eps_ph': eps_ph,
+            'train_phase': train_phase,
+            'net_weights': net_weights,
+        }
 
         return inputs_dict
 
@@ -212,9 +223,10 @@ class RunLogger:
         feed_dict = {
             self.inputs_dict['x']: samples,
             self.inputs_dict['beta']: beta,
-            self.inputs_dict['scale_weight']: net_weights[0],
-            self.inputs_dict['transl_weight']: net_weights[1],
-            self.inputs_dict['transf_weight']: net_weights[2],
+            self.inputs_dict['net_weights']: net_weights,
+            #  self.inputs_dict['scale_weight']: net_weights[0],
+            #  self.inputs_dict['transl_weight']: net_weights[1],
+            #  self.inputs_dict['transf_weight']: net_weights[2],
             self.inputs_dict['train_phase']: False
         }
         summary_str = sess.run(self.summary_op, feed_dict=feed_dict)
@@ -265,22 +277,32 @@ class RunLogger:
         eps_np = kwargs.get('eps', None)
         run_steps = kwargs.get('run_steps', 5000)
         dir_append = kwargs.get('dir_append', None)
-        net_weights = kwargs.get('net_weights', [1., 1., 1.])
+        #  net_weights = kwargs.get('net_weights', [1., 1., 1.])
+        net_weights = kwargs.get('net_weights',
+                                 NetWeights(1., 1., 1., 1., 1., 1.))
         init = kwargs.get('init', None)
 
         beta_str = f'{beta:.3}'.replace('.', '')
         eps_str = f'{eps_np:.3}'.replace('.', '')
 
-        scale_wstr = f'{net_weights[0]:3.2f}'.replace('.', '')
-        transl_wstr = f'{net_weights[1]:3.2f}'.replace('.', '')
-        transf_wstr = f'{net_weights[2]:3.2f}'.replace('.', '')
+        xsw = f'{net_weights.x_scale:1g}'.replace('.', '')
+        xtlw = f'{net_weights.x_translation:1g}'.replace('.', '')
+        xtfw = f'{net_weights.x_transformation:1g}'.replace('.', '')
+        vsw = f'{net_weights.v_scale:1g}'.replace('.', '')
+        vtlw = f'{net_weights.v_translation:1g}'.replace('.', '')
+        vtfw = f'{net_weights.v_transformation:1g}'.replace('.', '')
+        #  scale_wstr = f'{net_weights[0]:3.2f}'.replace('.', '')
+        #  transl_wstr = f'{net_weights[1]:3.2f}'.replace('.', '')
+        #  transf_wstr = f'{net_weights[2]:3.2f}'.replace('.', '')
 
         run_str = (f'steps{run_steps}'
                    f'_beta{beta_str}'
                    f'_eps{eps_str}'
-                   f'_S{scale_wstr}'
-                   f'_T{transl_wstr}'
-                   f'_Q{transf_wstr}'
+                   f'_xSTQ{xsw}{xtlw}{xtfw}'
+                   f'_vSTQ{vsw}{vtlw}{vtfw}'
+                   #  f'_S{scale_wstr}'
+                   #  f'_T{transl_wstr}'
+                   #  f'_Q{transf_wstr}'
                    f'_{init}')
 
         if dir_append is not None:
@@ -296,7 +318,9 @@ class RunLogger:
         beta = kwargs.get('beta', 5.)
         eps_np = kwargs.get('eps', None)
         run_steps = kwargs.get('run_steps', 5000)
-        net_weights = kwargs.get('net_weights', [1., 1., 1.])
+        #  net_weights = kwargs.get('net_weights', [1., 1., 1.])
+        net_weights = kwargs.get('net_weights',
+                                 NetWeights(1., 1., 1., 1., 1., 1.))
 
         run_str = self._get_run_str(**kwargs)
         if self.existing_run(run_str):  # append current time to run_str

@@ -7,17 +7,19 @@ Author: Sam Foreman (github: @saforem2)
 Date: 08/21/2019
 """
 import os
+import pickle
 
-from config import HAS_MATPLOTLIB, MARKERS
+from config import HAS_MATPLOTLIB, MARKERS, COLORS
 from collections import namedtuple
 
 import numpy as np
 import pandas as pd
-import scipy.stats as st
+import scipy.stats as stats
 
 from scipy.stats import multivariate_normal
 
 import utils.file_io as io
+from lattice.lattice import u1_plaq_exact
 
 
 MPL_PARAMS = {
@@ -38,8 +40,193 @@ if HAS_MATPLOTLIB:
     import matplotlib.pyplot as plt
 
     from matplotlib.patches import Ellipse
-
     mpl.rcParams.update(MPL_PARAMS)
+
+try:
+    import seaborn as sns
+    sns.set_palette('bright')
+    sns.set_style('ticks', {'xtick.major.size': 8,
+                            'ytick.major.size': 8})
+    HAS_SEABORN = True
+except ImportError:
+    HAS_SEABORN = False
+
+
+def get_run_dirs(log_dir):
+    runs_dir = os.path.join(log_dir, 'runs')
+    run_dirs = [
+        os.path.join(runs_dir, i) for i in os.listdir(runs_dir)
+        if os.path.isdir(os.path.join(runs_dir, i))
+    ]
+    return run_dirs
+
+
+def load_pkl(pkl_file, arr=False):
+    io.log(f'Loading from: {pkl_file}...')
+    with open(pkl_file, 'rb') as f:
+        tmp = pickle.load(f)
+    if arr:
+        return np.array(tmp)
+    return tmp
+
+
+def get_params(dirname, fname=None):
+    if fname is None:
+        params_file = os.path.join(dirname, 'parameters.pkl')
+    else:
+        params_file = os.path.join(dirname, fname)
+
+    return load_pkl(params_file)
+
+
+def load_plaqs(run_dir):
+    plaqs_file = os.path.join(run_dir, 'observables', 'plaqs.pkl')
+    return load_pkl(plaqs_file, arr=True)
+
+
+def get_title_str(params, beta):
+    ss = params['space_size']
+    ts = params['time_size']
+    lf_steps = params['num_steps']
+    batch_size = params['batch_size']
+    nw_desc = (r'nw: ($\alpha_{\mathrm{S_{x}}}$, '
+               r'$\alpha_{\mathrm{T_{x}}}$, '
+               r'$\alpha_{\mathrm{Q_{x}}}$, '
+               r'$\alpha_{\mathrm{S_{v}}}$, '
+               r'$\alpha_{\mathrm{T_{v}}}$, '
+               r'$\alpha_{\mathrm{Q_{v}}}$)')
+
+    title_str = (f"{ss} x {ts}, "
+                 r"$N_{\mathrm{LF}} = $" + f"{lf_steps}, "
+                 r"$N_{\mathrm{B}} = $" + f"{batch_size}, "
+                 r"$\beta =$" + f"{beta:.2g}, " + f"{nw_desc}")
+
+    return title_str
+
+
+def get_plaqs_dict(log_dir, run_dirs=None):
+    """Construct plaqs_dict by averaging over all samples in batch.
+
+    Args:
+        log_dir (str): Path to log_dir containing multiple runs.
+
+    Returns:
+        plaqs_dict (dict): Dictionary containing the `plaqs_diffs` for
+            each run in `log_dir`, with values computed by averaging over all
+            samples in the batch for each inference step.
+    """
+    if run_dirs is None:
+        run_dirs = get_run_dirs(log_dir)
+
+    plaqs_dict = {}
+    for rd in sorted(run_dirs):
+        rp_file = os.path.join(rd, 'run_params.pkl')
+        run_params = load_pkl(rp_file)
+        nw = run_params['net_weights']
+        exact = u1_plaq_exact(run_params['beta'])
+        try:
+            plaqs = load_plaqs(rd)
+        except FileNotFoundError:
+            continue
+
+        plaqs = exact - load_plaqs(rd)
+        try:
+            nw = np.array(list(nw._asdict().values()), dtype=int)
+        except AttributeError:
+            nw = np.array(nw, dtype=int)
+
+        key = tuple(list(nw))
+        #  num_steps = plaqs.shape[0]
+        #  therm_steps = int(0.1 * num_steps)
+        #  batch_avg = np.mean(plaqs[therm_steps:, :], axis=1)
+        try:
+            plaqs_dict[key].append(plaqs)
+        except KeyError:
+            plaqs_dict[key] = [plaqs]
+
+    return plaqs_dict
+
+
+def plot_plaqs_diffs(log_dir, plaqs_dict=None):
+    """Plot `plaqs_diffs` w/ hists for all run dirs in `log_dir`."""
+    run_dirs = get_run_dirs(log_dir)
+    if plaqs_dict is None:
+        plaqs_dict = get_plaqs_dict(log_dir, run_dirs)
+
+    try:
+        sns.set_style('ticks', {'xtick.major.size': 8, 'ytick.major.size': 8})
+        sns.set_palette('bright', len(run_dirs))
+        colors = sns.color_palette()
+    except ValueError:
+        colors = COLORS
+
+    nrows = len(plaqs_dict.keys())
+    ncols = 2
+    fig, axes = plt.subplots(nrows=nrows, ncols=ncols,
+                             figsize=(12.8, 9.6),
+                             sharex='col',
+                             gridspec_kw={'wspace': 0, 'hspace': 0})
+    #  for idx, k in enumerate(sorted_keys):
+    for idx, (k, v) in enumerate(plaqs_dict.items()):
+        v = np.array(v)
+        num_steps = v.shape[1]
+        therm_steps = int(0.1 * num_steps)
+        plaqs = v[:, therm_steps:, :]
+        #  batch_avg = np.mean(plaqs, axis=-1)
+        runs_avg = np.mean(plaqs, axis=(0, -1))
+        #  runs_avg = np.mean(batch_avg, axis=0)
+        avg = np.mean(plaqs)
+        err = np.std(plaqs)
+        _ = axes[idx, 0].plot(runs_avg, color=colors[idx])
+
+        #  _ = axes[idx, 0].axhline(y=0, color='gray',
+        #                           ls='-', lw=0.8, zorder=-1)
+        _ = axes[idx, 0].axhline(y=avg, color=colors[idx])
+        _ = axes[idx, 1].axvline(x=0, color='gray', ls='-', lw=0.8, zorder=-1)
+        _ = axes[idx, 1].axvline(x=avg, color=colors[idx],
+                                 label=f'avg: {avg:.3g} +/- {err:.3g}')
+
+        if idx == int(nrows // 2):
+            ylabel = (r"$\langle\phi_{\mathrm{P}}\rangle "
+                      r"- \phi_{\mathrm{P}}^{*}$")
+            _ = axes[idx, 0].set_ylabel(ylabel, fontsize='x-large')
+
+        try:
+            _ = sns.kdeplot(plaqs.flatten(), ax=axes[idx, 1],
+                            color=colors[idx], label=str(k))
+        except ValueError:
+            pass
+        hist_kws = dict(color=colors[idx],
+                        #  ec=colors[idx],
+                        #  label=str(k),
+                        alpha=0.3,
+                        bins=50,
+                        density=True,
+                        histtype='stepfilled')
+        _ = axes[idx, 1].hist(plaqs.flatten(), **hist_kws)
+        _ = axes[idx, 1].legend(loc='best', fontsize='small')
+        _ = axes[idx, 1].legend(loc='best', fontsize='small')
+        _ = axes[idx, 1].set_ylabel('')
+        _ = axes[idx, 1].set_yticklabels([])
+        _ = axes[idx, 1].set_yticks([])
+        _ = axes[idx, 0].label_outer()
+        _ = axes[idx, 1].label_outer()
+        _ = axes[idx, 0].set_yticks([avg])
+        _ = axes[idx, 0].set_yticklabels([f'{avg:.2g}'])
+        #  yticklabels = axes[idx, 0].get_yticklabels()
+        #  _ = axes[idx, 0].set_yticklabels(yticklabels, fontsize='small')
+
+    params_file = os.path.join(log_dir, 'parameters.pkl')
+    params = load_pkl(params_file)
+    title_str = get_title_str(params, beta=5.)
+    _ = plt.suptitle(title_str, fontsize='x-large', y=1.01)
+    plt.tight_layout()
+    fig.subplots_adjust(hspace=0)
+    out_file = os.path.join(log_dir, 'figures', 'plaqs_diffs.png')
+    print(f'saving figure to: {out_file}...')
+    plt.savefig(out_file, dpi=200, bbox_inches='tight')
+
+    return fig, axes
 
 
 def bootstrap(data, n_boot=10000, ci=68):
@@ -337,7 +524,7 @@ def _gaussian_kde(distribution, samples):
 
     positions = np.vstack([xx.ravel(), yy.ravel()])
     values = np.vstack([x, y])
-    kernel = st.gaussian_kde(values)
+    kernel = stats.gaussian_kde(values)
     z = np.reshape(kernel(positions).T, xx.shape)
 
     return z, (xx, yy), (xlims, ylims)
