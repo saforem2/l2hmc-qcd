@@ -20,7 +20,7 @@ import pickle
 import numpy as np
 import utils.file_io as io
 
-from config import Energy, State
+from config import Energy, State, NetWeights
 from lattice.lattice import u1_plaq_exact
 from lattice.utils import actions
 from loggers.run_logger import RunLogger
@@ -252,9 +252,7 @@ class Runner:
         feed_dict = {
             self.inputs_dict['x']: samples,
             self.inputs_dict['beta']: self.beta,
-            self.inputs_dict['scale_weight']: self.scale_weight,
-            self.inputs_dict['transl_weight']: self.transl_weight,
-            self.inputs_dict['transf_weight']: self.transf_weight,
+            self.inputs_dict['net_weights']: self.net_weights,
             self.inputs_dict['train_phase']: False
         }
 
@@ -320,10 +318,12 @@ class Runner:
         # how often to run energy calculations
         self.energy_steps = int(kwargs.get('energy_steps', 1.))
         self.therm_frac = int(kwargs.get('therm_frac', 10))
-        self.net_weights = kwargs.get('net_weights', [1., 1., 1.])
-        self.scale_weight = self.net_weights[0]
-        self.transl_weight = self.net_weights[1]
-        self.transf_weight = self.net_weights[2]
+        #  self.net_weights = kwargs.get('net_weights', [1., 1., 1.])
+        self.net_weights = kwargs.get('net_weights',
+                                      NetWeights(1., 1., 1., 1., 1., 1.))
+        #  self.scale_weight = self.net_weights[0]
+        #  self.transl_weight = self.net_weights[1]
+        #  self.transf_weight = self.net_weights[2]
 
         self.beta = kwargs.get('beta', self.params.get('beta_final', 5.))
         if self.model_type == 'GaugeModel':

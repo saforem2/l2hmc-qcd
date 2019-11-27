@@ -105,9 +105,10 @@ class TrainLogger:
         feed_dict = {
             self.model.x: data['x_in'],
             self.model.beta: data['beta'],
-            self.model.net_weights[0]: net_weights[0],
-            self.model.net_weights[1]: net_weights[1],
-            self.model.net_weights[2]: net_weights[2],
+            self.model.net_weights: net_weights,
+            #  self.model.net_weights[0]: net_weights[0],
+            #  self.model.net_weights[1]: net_weights[1],
+            #  self.model.net_weights[2]: net_weights[2],
             self.model.train_phase: True
         }
         summary_str = sess.run(self.summary_op, feed_dict=feed_dict)

@@ -74,6 +74,12 @@ NP_FLOAT = cfg.NP_FLOAT
 
 
 Weights = namedtuple('Weights', ['w', 'b'])
+#  NetWeights = cfg.NetWeights
+
+#  NetWeights = namedtuple('NetWeights', [
+#      'x_scale', 'x_translation', 'x_transformation',
+#      'v_scale', 'v_translation', 'v_transformation']
+#  )
 
 
 def _get_net_weights(net, weights):
@@ -291,12 +297,20 @@ def train_setup(FLAGS, log_file=None, root_dir=None,
 
 def check_reversibility(model, sess):
     rand_samples = np.random.randn(*model.x.shape)
+    net_weights = cfg.NetWeights(1., 1., 1., 1., 1., 1.)
     feed_dict = {
         model.x: rand_samples,
         model.beta: 1.,
-        model.net_weights[0]: 1.,
-        model.net_weights[1]: 1.,
-        model.net_weights[2]: 1.,
+        model.net_weights: net_weights,
+        #  model.net_weights.x_scale: 1.,
+        #  model.net_weights.x_translation: 1.,
+        #  model.net_weights.x_transformation: 1.,
+        #  model.net_weights.v_scale: 1.,
+        #  model.net_weights.v_translation: 1.,
+        #  model.net_weights.v_transformation: 1.,
+        #  model.net_weights[0]: 1.,
+        #  model.net_weights[1]: 1.,
+        #  model.net_weights[2]: 1.,
         model.train_phase: False
     }
 
@@ -371,7 +385,13 @@ def train_l2hmc(FLAGS, log_file=None):
 
     # set initial value of charge weight using value from FLAGS
     #  charge_weight_init = params['charge_weight']
-    net_weights_init = [1., 1., 1.]
+    #  net_weights_init = [1., 1., 1.]
+    net_weights_init = cfg.NetWeights(x_scale=1.,
+                                      x_translation=1.,
+                                      x_transformation=1.,
+                                      v_scale=1.,
+                                      v_translation=1.,
+                                      v_transformation=1.)
     samples_init = np.reshape(np.array(model.lattice.samples,
                                        dtype=NP_FLOAT),
                               (model.batch_size, model.x_dim))

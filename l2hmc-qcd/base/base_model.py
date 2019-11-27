@@ -36,6 +36,10 @@ LFdata = namedtuple('LFdata', ['init', 'proposed', 'prob'])
 EnergyData = namedtuple('EnergyData', ['init', 'proposed', 'out',
                                        'proposed_diff', 'out_diff'])
 SamplerData = namedtuple('SamplerData', ['data', 'dynamics_output'])
+#  NetWeights = namedtuple('NetWeights', [
+#      'x_scale', 'x_translation', 'x_transformation',
+#      'v_scale', 'v_translation', 'v_transformation']
+#  )
 
 
 def _gaussian(x, mu, sigma):
@@ -272,25 +276,43 @@ class BaseModel(object):
                 x_shape = (self.batch_size, self.x_dim)
                 x = make_ph(dtype=TF_FLOAT, shape=x_shape, name='x')
                 beta = make_ph('beta')
-                scale_weight = make_ph('scale_weight')
-                transl_weight = make_ph('translation_weight')
-                transf_weight = make_ph('transformation_weight')
+                x_scale_weight = make_ph('x_scale_weight')
+                x_transl_weight = make_ph('x_translation_weight')
+                x_transf_weight = make_ph('x_transformation_weight')
+                v_scale_weight = make_ph('v_scale_weight')
+                v_transl_weight = make_ph('v_translation_weight')
+                v_transf_weight = make_ph('v_transformation_weight')
+                net_weights = cfg.NetWeights(v_scale=v_scale_weight,
+                                             v_translation=v_transl_weight,
+                                             v_transformation=v_transf_weight,
+                                             x_scale=x_scale_weight,
+                                             x_translation=x_transl_weight,
+                                             x_transformation=x_transf_weight)
                 train_phase = make_ph('is_training', dtype=tf.bool)
                 eps_ph = make_ph('eps_ph')
 
             inputs = {
                 'x': x,
                 'beta': beta,
-                'scale_weight': scale_weight,
-                'transl_weight': transl_weight,
-                'transf_weight': transf_weight,
-                'train_phase': train_phase,
                 'eps_ph': eps_ph,
+                'train_phase': train_phase,
+                'net_weights': net_weights,
+                #  'x_scale_weight': x_scale_weight,
+                #  'x_transl_weight': x_transl_weight,
+                #  'x_transf_weight': x_transf_weight,
+                #  'v_scale_weight': v_scale_weight,
+                #  'v_transl_weight': v_transl_weight,
+                #  'v_transf_weight': v_transf_weight,
             }
             for key, val in inputs.items():
                 print(f'{key}: {val}\n')
 
-        _ = [tf.add_to_collection('inputs', i) for i in inputs.values()]
+        for key, val in inputs.items():
+            if key == 'net_weights':
+                _ = [tf.add_to_collection('inputs', v) for v in val]
+            else:
+                tf.add_to_collection('inputs', val)
+        #  _ = [tf.add_to_collection('inputs', i) for i in inputs.values()]
 
         return inputs
 
