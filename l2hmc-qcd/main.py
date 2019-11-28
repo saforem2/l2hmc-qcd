@@ -357,19 +357,19 @@ def train_l2hmc(FLAGS, log_file=None):
     # Create model and train_logger
     # --------------------------------------------------------
     model = GaugeModel(params)
-    weights = get_net_weights(model)
-    xnet = model.dynamics.x_fn.generic_net
-    vnet = model.dynamics.v_fn.generic_net
-    coeffs = {
-        'xnet': {
-            'coeff_scale': xnet.coeff_scale,
-            'coeff_transformation': xnet.coeff_transformation,
-        },
-        'vnet': {
-            'coeff_scale': vnet.coeff_scale,
-            'coeff_transformation': vnet.coeff_transformation,
-        },
-    }
+    #  weights = get_net_weights(model)
+    #  xnet = model.dynamics.x_fn.generic_net
+    #  vnet = model.dynamics.v_fn.generic_net
+    #  coeffs = {
+    #      'xnet': {
+    #          'coeff_scale': xnet.coeff_scale,
+    #          'coeff_transformation': xnet.coeff_transformation,
+    #      },
+    #      'vnet': {
+    #          'coeff_scale': vnet.coeff_scale,
+    #          'coeff_transformation': vnet.coeff_transformation,
+    #      },
+    #  }
     if is_chief:
         logging_steps = params.get('logging_steps', 10)
         train_logger = TrainLogger(model, log_dir,
@@ -429,9 +429,10 @@ def train_l2hmc(FLAGS, log_file=None):
     reverse_file = os.path.join(model.log_dir, 'reversibility_test.txt')
     io.log_and_write(reverse_str, reverse_file)
 
-    io.save_dict(seeds, out_dir=model.log_dir, name='seeds')
-    io.save_dict(xnet_seeds, out_dir=model.log_dir, name='xnet_seeds')
-    io.save_dict(vnet_seeds, out_dir=model.log_dir, name='vnet_seeds')
+    if is_chief:
+        io.save_dict(seeds, out_dir=model.log_dir, name='seeds')
+        io.save_dict(xnet_seeds, out_dir=model.log_dir, name='xnet_seeds')
+        io.save_dict(vnet_seeds, out_dir=model.log_dir, name='vnet_seeds')
 
     # ----------------------------------------------------------
     #                       TRAINING
