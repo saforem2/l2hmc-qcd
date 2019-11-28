@@ -357,20 +357,21 @@ def train_l2hmc(FLAGS, log_file=None):
     # Create model and train_logger
     # --------------------------------------------------------
     model = GaugeModel(params)
-    #  weights = get_net_weights(model)
-    #  xnet = model.dynamics.x_fn.generic_net
-    #  vnet = model.dynamics.v_fn.generic_net
-    #  coeffs = {
-    #      'xnet': {
-    #          'coeff_scale': xnet.coeff_scale,
-    #          'coeff_transformation': xnet.coeff_transformation,
-    #      },
-    #      'vnet': {
-    #          'coeff_scale': vnet.coeff_scale,
-    #          'coeff_transformation': vnet.coeff_transformation,
-    #      },
-    #  }
+
     if is_chief:
+        weights = get_net_weights(model)
+        xnet = model.dynamics.x_fn.generic_net
+        vnet = model.dynamics.v_fn.generic_net
+        coeffs = {
+            'xnet': {
+                'coeff_scale': xnet.coeff_scale,
+                'coeff_transformation': xnet.coeff_transformation,
+            },
+            'vnet': {
+                'coeff_scale': vnet.coeff_scale,
+                'coeff_transformation': vnet.coeff_transformation,
+            },
+        }
         logging_steps = params.get('logging_steps', 10)
         train_logger = TrainLogger(model, log_dir,
                                    logging_steps=logging_steps,
@@ -385,7 +386,6 @@ def train_l2hmc(FLAGS, log_file=None):
 
     # set initial value of charge weight using value from FLAGS
     #  charge_weight_init = params['charge_weight']
-    #  net_weights_init = [1., 1., 1.]
     net_weights_init = cfg.NetWeights(x_scale=1.,
                                       x_translation=1.,
                                       x_transformation=1.,
@@ -455,29 +455,30 @@ def train_l2hmc(FLAGS, log_file=None):
     io.log(f'Training completed in: {time.time() - t0:.3g}s')
     io.log(SEP_STR)
 
-    weights = get_net_weights(model)
-    xcoeffs = sess.run(list(coeffs['xnet'].values()))
-    vcoeffs = sess.run(list(coeffs['vnet'].values()))
-    weights['xnet']['GenericNet'].update({
-        'coeff_scale': xcoeffs[0],
-        'coeff_transformation': xcoeffs[1]
-    })
-    weights['vnet']['GenericNet'].update({
-        'coeff_scale': vcoeffs[0],
-        'coeff_transformation': vcoeffs[1]
-    })
+    if is_chief:
+        weights = get_net_weights(model)
+        xcoeffs = sess.run(list(coeffs['xnet'].values()))
+        vcoeffs = sess.run(list(coeffs['vnet'].values()))
+        weights['xnet']['GenericNet'].update({
+            'coeff_scale': xcoeffs[0],
+            'coeff_transformation': xcoeffs[1]
+        })
+        weights['vnet']['GenericNet'].update({
+            'coeff_scale': vcoeffs[0],
+            'coeff_transformation': vcoeffs[1]
+        })
 
-    weights_file = os.path.join(model.log_dir, 'weights.pkl')
-    with open(weights_file, 'wb') as f:
-        pickle.dump(weights, f)
+        weights_file = os.path.join(model.log_dir, 'weights.pkl')
+        with open(weights_file, 'wb') as f:
+            pickle.dump(weights, f)
 
-    params_file = os.path.join(os.getcwd(), 'params.pkl')
-    with open(params_file, 'wb') as f:
-        pickle.dump(model.params, f)
+        params_file = os.path.join(os.getcwd(), 'params.pkl')
+        with open(params_file, 'wb') as f:
+            pickle.dump(model.params, f)
 
-    # Count all trainable paramters and write them out (w/ shapes) to txt file
-    count_trainable_params(os.path.join(params['log_dir'],
-                                        'trainable_params.txt'))
+        # Count all trainable paramters and write them (w/ shapes) to txt file
+        count_trainable_params(os.path.join(params['log_dir'],
+                                            'trainable_params.txt'))
 
     # close MonitoredTrainingSession and reset the default graph
     sess.close()
