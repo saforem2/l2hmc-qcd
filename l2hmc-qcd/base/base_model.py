@@ -17,7 +17,7 @@ Date: 08/28/2019
 from __future__ import absolute_import, division, print_function
 
 import config as cfg
-#  from config import GLOBAL_SEED, HAS_HOROVOD, TF_FLOAT
+from seed_dict import seeds
 from collections import namedtuple
 from dynamics.dynamics import Dynamics
 
@@ -26,32 +26,20 @@ import tensorflow as tf
 
 from utils.horovod_utils import warmup_lr
 
-import utils.file_io as io
-#  import config as cfg
-#  from utils.distributions import quadratic_gaussian
-#  from params.gmm_params import GMM_PARAMS
-#  from params.gauge_params import GAUGE_PARAMS
-
 if cfg.HAS_HOROVOD:
     import horovod.tensorflow as hvd
 
 
 TF_FLOAT = cfg.TF_FLOAT
-GLOBAL_SEED = cfg.GLOBAL_SEED
 
 LFdata = namedtuple('LFdata', ['init', 'proposed', 'prob'])
 EnergyData = namedtuple('EnergyData', ['init', 'proposed', 'out',
                                        'proposed_diff', 'out_diff'])
 SamplerData = namedtuple('SamplerData', ['data', 'dynamics_output'])
-
-PARAMS = {
-    'hmc': False,
-    'lr_init': 1e-3,
-    'lr_decay_steps': 1000,
-    'lr_decay_rate': 0.96,
-    'train_steps': 5000,
-    'using_hvd': False,
-}
+#  NetWeights = namedtuple('NetWeights', [
+#      'x_scale', 'x_translation', 'x_transformation',
+#      'v_scale', 'v_translation', 'v_transformation']
+#  )
 
 
 def _gaussian(x, mu, sigma):
@@ -62,20 +50,34 @@ def _gaussian(x, mu, sigma):
 
     return norm * exp_
 
+def add_to_collection(collection, tensors):
+    """Helper method for adding a list of `tensors` to `collection`."""
+    _ = [tf.add_to_collection(collection, tensor) for tensor in tensors]
 
-class BaseModel:
 
+class BaseModel(object):
+    """BaseModel provides the necessary tools for training the L2HMC sampler.
+
+    Explicitly, it serves as an abstract base class that should be
+    extended through inheritance (see, for example, the `GaugeModel` and
+    `GaussianMixtureModel` objects defined in the `models/` directory.
+
+    This class is responsible for building both the loss function to be
+    minimized, as well as the tensorflow operations for backpropagating the
+    gradients for each training step.
+
+    Additionally, it provides an external interface for generating new
+    samples through it's `x_out` attribute. 
+    """
     def __init__(self, params=None):
         """Initialization method.
 
         Args:
-            params (dict): Dictionary of key, value pairs used for specifying
-                model parameters.
+            params (dict, optional): Dictionary of key, value pairs used for
+                specifying model parameters.
         """
         if 'charge_weight' in params:
             self.charge_weight_np = params.pop('charge_weight', None)
-
-        self._eps_np = params.get('eps', None)
 
         self.params = params
         self.loss_weights = {}
@@ -98,65 +100,23 @@ class BaseModel:
         raise NotImplementedError
 
     def _build_eps_setter(self):
-        eps_setter = tf.assign(self.dynamics.eps,
-                               self.eps_ph, name='eps_setter')
-        return eps_setter
+        """Create op that sets `eps` to be equal to the value in `eps-ph`."""
+        return tf.assign(self.dynamics.eps, self.eps_ph, name='eps_setter')
 
     def _calc_energies(self, state, sumlogdet=0.):
+        """Create operations for calculating the PE, KE and H of a `state`."""
         pe = self.dynamics.potential_energy(state.x, state.beta)
         ke = self.dynamics.kinetic_energy(state.v)
         h = pe + ke + sumlogdet
 
-        tf.add_to_collection('energy_ops', pe)
-        tf.add_to_collection('energy_ops', ke)
-        tf.add_to_collection('energy_ops', h)
+        # Add these operations to the `energy_ops` collection
+        # for easy-access when loading the saved graph when
+        # running inference w/ the trained sampler
+        ops = (pe, ke, h)
+        for op in ops:
+            tf.add_to_collection('energy_ops', op)
 
         return cfg.Energy(pe, ke, h)
-
-    def _build_energy_ops(self):
-        """Build operations for calculating the energies."""
-        state_init = cfg.State(self.dynamics_dict['x_init'],
-                               self.dynamics_dict['v_init'], self.beta)
-        state_prop = cfg.State(self.dynamics_dict['x_proposed'],
-                               self.dynamics_dict['v_proposed'], self.beta)
-        state_out = cfg.State(self.dynamics_dict['x_out'],
-                              self.dynamics_dict['v_out'], self.beta)
-
-        sld_prop = self.dynamics_dict['sumlogdet_proposed']
-        sld_out = self.dynamics_dict['sumlogdet_out']
-
-        einit = self._calc_energies(state_init)
-        eprop = self._calc_energies(state_prop, sld_prop)
-        eout = self._calc_energies(state_out, sld_out)
-
-        pe_ops = [einit.potential, eprop.potential, eout.potential]
-        ke_ops = [einit.kinetic, eprop.kinetic, eout.kinetic]
-        h_ops = [einit.hamiltonian, eprop.hamiltonian, eout.hamiltonian]
-
-        _ = [tf.add_to_collection('potential_energy', e) for e in pe_ops]
-        _ = [tf.add_to_collection('kinetic_energy', e) for e in ke_ops]
-        _ = [tf.add_to_collection('hamiltonian', e) for e in h_ops]
-
-        energy_data = {
-            'potential': {
-                'init': einit.potential,
-                'proposed': eprop.potential,
-                'out': eout.potential,
-            },
-            'kinetic': {
-                'init': einit.kinetic,
-                'proposed': eprop.kinetic,
-                'out': eout.kinetic,
-            },
-            'hamiltonian': {
-                'init': einit.hamiltonian,
-                'proposed': eprop.hamiltonian,
-                'out': eout.hamiltonian,
-            },
-        }
-
-        #  return cfg.EnergyData(einit, eprop, eout)
-        return energy_data
 
     def _build_sampler(self):
         """Build operations used for sampling from the dynamics engine."""
@@ -166,13 +126,7 @@ class BaseModel:
         self.px_hmc = x_dynamics['accept_prob_hmc']
 
         self.dynamics_dict = x_dynamics
-        #  self._dynamics_f = x_dynamics['outputs_f']
-        #  self._dynamics_b = x_dynamics['outputs_b']
-        #  self._energy_data = x_dynamics['energies']
-
         self.x_diff, self.v_diff = self._check_reversibility()
-        #  energy_data = self._calc_energies()
-        #  self._energy_data = energy_data
 
         _, z_data = self._build_aux_sampler()
 
@@ -202,7 +156,7 @@ class BaseModel:
             if aux_weight > 0.:
                 self.z = tf.random_normal(tf.shape(self.x),
                                           dtype=TF_FLOAT,
-                                          seed=GLOBAL_SEED,
+                                          seed=seeds['z'],
                                           name='z')
 
                 args = (self.z, self.beta, self.net_weights, self.train_phase)
@@ -322,25 +276,43 @@ class BaseModel:
                 x_shape = (self.batch_size, self.x_dim)
                 x = make_ph(dtype=TF_FLOAT, shape=x_shape, name='x')
                 beta = make_ph('beta')
-                scale_weight = make_ph('scale_weight')
-                transl_weight = make_ph('translation_weight')
-                transf_weight = make_ph('transformation_weight')
+                x_scale_weight = make_ph('x_scale_weight')
+                x_transl_weight = make_ph('x_translation_weight')
+                x_transf_weight = make_ph('x_transformation_weight')
+                v_scale_weight = make_ph('v_scale_weight')
+                v_transl_weight = make_ph('v_translation_weight')
+                v_transf_weight = make_ph('v_transformation_weight')
+                net_weights = cfg.NetWeights(v_scale=v_scale_weight,
+                                             v_translation=v_transl_weight,
+                                             v_transformation=v_transf_weight,
+                                             x_scale=x_scale_weight,
+                                             x_translation=x_transl_weight,
+                                             x_transformation=x_transf_weight)
                 train_phase = make_ph('is_training', dtype=tf.bool)
                 eps_ph = make_ph('eps_ph')
 
             inputs = {
                 'x': x,
                 'beta': beta,
-                'scale_weight': scale_weight,
-                'transl_weight': transl_weight,
-                'transf_weight': transf_weight,
-                'train_phase': train_phase,
                 'eps_ph': eps_ph,
+                'train_phase': train_phase,
+                'net_weights': net_weights,
+                #  'x_scale_weight': x_scale_weight,
+                #  'x_transl_weight': x_transl_weight,
+                #  'x_transf_weight': x_transf_weight,
+                #  'v_scale_weight': v_scale_weight,
+                #  'v_transl_weight': v_transl_weight,
+                #  'v_transf_weight': v_transf_weight,
             }
             for key, val in inputs.items():
                 print(f'{key}: {val}\n')
 
-        _ = [tf.add_to_collection('inputs', i) for i in inputs.values()]
+        for key, val in inputs.items():
+            if key == 'net_weights':
+                _ = [tf.add_to_collection('inputs', v) for v in val]
+            else:
+                tf.add_to_collection('inputs', val)
+        #  _ = [tf.add_to_collection('inputs', i) for i in inputs.values()]
 
         return inputs
 
@@ -351,11 +323,11 @@ class BaseModel:
     def _check_reversibility(self):
         x_in = tf.random_normal(self.x.shape,
                                 dtype=TF_FLOAT,
-                                seed=GLOBAL_SEED,
+                                seed=seeds['x_reverse_check'],
                                 name='x_reverse_check')
         v_in = tf.random_normal(self.x.shape,
                                 dtype=TF_FLOAT,
-                                seed=GLOBAL_SEED,
+                                seed=seeds['v_reverse_check'],
                                 name='v_reverse_check')
 
         dynamics_check = self.dynamics._check_reversibility(x_in, v_in,
@@ -487,9 +459,9 @@ class BaseModel:
         trainable_vars = tf.trainable_variables()
         #  grads_and_vars = zip(grads, self.dynamics.trainable_variables)
         grads_and_vars = zip(grads, trainable_vars)
-        #  ctrl_deps = [loss_op, *self.dynamics.updates]
-        #  with tf.control_dependencies(ctrl_deps):
-        train_op = self.optimizer.apply_gradients(grads_and_vars,
-                                                  self.global_step,
-                                                  'train_op')
+        ctrl_deps = [loss_op, *self.dynamics.updates]
+        with tf.control_dependencies(ctrl_deps):
+            train_op = self.optimizer.apply_gradients(grads_and_vars,
+                                                      self.global_step,
+                                                      'train_op')
         return train_op

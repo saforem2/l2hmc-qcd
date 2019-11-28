@@ -28,7 +28,8 @@ import tensorflow as tf
 from scipy.stats import multivariate_normal, ortho_group
 from scipy.misc import logsumexp
 
-from config import GLOBAL_SEED, TF_FLOAT, NP_FLOAT, TF_INT, HAS_HOROVOD
+from config import TF_FLOAT, NP_FLOAT
+
 
 
 def quadratic_gaussian_np(x, mu, S):

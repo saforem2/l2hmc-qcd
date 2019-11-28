@@ -13,7 +13,6 @@ import os
 import pickle
 
 from config import HAS_HOROVOD, HAS_MATPLOTLIB, HAS_MEMORY_PROFILER, NP_FLOAT
-from update import set_precision
 
 import numpy as np
 import tensorflow as tf
@@ -21,16 +20,6 @@ import tensorflow as tf
 from tensorflow.core.protobuf import rewriter_config_pb2
 
 import utils.file_io as io
-
-#  from runners.runner import GaugeModelRunner
-#  from models.gauge_model import GaugeModel
-#  from loggers.run_logger import RunLogger
-#  from loggers.summary_utils import create_summaries
-#  from plotters.gauge_model_plotter import GaugeModelPlotter
-
-#  from utils.parse_inference_args import parse_args as parse_inference_args
-#  from plotters.plot_utils import plot_plaq_diffs_vs_net_weights
-#  from plotters.leapfrog_plotters import LeapfrogPlotter
 
 if HAS_HOROVOD:
     import horovod.tensorflow as hvd
@@ -41,7 +30,6 @@ if HAS_MEMORY_PROFILER:
 if float(tf.__version__.split('.')[0]) <= 2:
     tf.logging.set_verbosity(tf.logging.INFO)
 
-SEP_STR = 80 * '-'  # + '\n'
 
 
 def initialize_uninitialized(sess):
@@ -212,15 +200,8 @@ def log_plaq_diffs(run_logger, net_weights, avg_plaq_diff):
 
     output_arr = np.array(pd_tup)
 
-    #  pd_pkl_file = os.path.join(out_dir, 'plaq_diffs_data.pkl')
-    #  with open(pd_pkl_file, 'wb') as f:
-    #      pickle.dump(pd_tup, f)
     pd_txt_file = os.path.join(out_dir, 'plaq_diffs_data.txt')
     np.savetxt(pd_txt_file, output_arr, delimiter=',', fmt='%.4g')
-    #
-    #  with open(pd_txt_file, 'a') as f:
-    #      for row in pd_tup:
-    #          f.write(f'{row[0][0]}, {row[0][1]}, {row[0][2]}, {row[1]}\n')
 
 
 def inference_setup(kwargs):
@@ -307,10 +288,11 @@ def _log_inference_header(nw, run_steps, eps, beta, existing=False):
         str0 = f'\n Inference has already been completed for:'
     else:
         str0 = f'\n Running inference with:'
-    io.log(SEP_STR)
-    io.log(f'\n {str0}\n'
-           f'\t net_weights: [{nw[0]}, {nw[1]}, {nw[2]}]\n'
-           f'\t run_steps: {run_steps}\n'
+
+    io.log(80 * '-' + '\n'
+           f'\n {str0}\n'
+           f'\t steps: {run_steps}\n'
+           f'\t beta: {beta}\n'
            f'\t eps: {eps}\n'
-           f'\t beta: {beta}\n')
-    io.log(SEP_STR)
+           f'\t net_weights: [{nw[0]}, {nw[1]}, {nw[2]}]\n'
+           + 80 * '-' + '\n')

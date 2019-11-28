@@ -35,6 +35,7 @@ def load_params(log_dir):
 
     return params
 
+
 def log(s, nl=True):
     """Print string `s` to stdout if and only if hvd.rank() == 0."""
     try:
@@ -160,15 +161,31 @@ def _parse_gauge_flags(FLAGS):
     if flags_dict['hmc']:
         run_str = f'HMC_lattice{LX}_batch{BS}_lf{LF}_eps{SS:.3g}'
     else:
-        run_str = f'lattice{LX}_batch{BS}_lf{LF}_qw{qw}_aw{aw}_{NA}_dp{dp}'
+        run_str = f'L{LX}_b{BS}_lf{LF}'
+
+        if qw != '00':
+            run_str += f'_qw{qw}'
+
+        if aw != '10':
+            run_str += f'_aw{aw}'
+
+        if NA != 'generic':
+            run_str += f'_{NA}'
+
+        if dp != '00':
+            run_str += f'_dp{dp}'
+
         if BN:
             run_str += '_bn'
+
         if GL and NL:
-            run_str += '_gaussian_nnehmc_loss'
+            run_str += '_gnl'  # Gaussian + NNEHMC loss
+
         elif GL and not NL:
-            run_str += '_gaussian_loss'
+            run_str += '_gl'
+
         elif NL and not GL:
-            run_str += '_nnehmc_loss'
+            run_str += '_nl'
 
     return run_str, out_dict
 
@@ -223,13 +240,24 @@ def _parse_gmm_flags(FLAGS):
     s1 = str(S1).replace('.', '')
     s2 = str(S2).replace('.', '')
     run_str = f'GMM_{AR}_lf{LF}_aw{aw}_s1_{s1}_s2_{s2}'
-
+    if BN:
+        run_str += '_bn'
     if GL and NL:
-        run_str += '_gaussian_nnehmc_loss'
+        #  run_str += '_gaussian_nnehmc_loss'
+        run_str += '_gnl'  # Gaussian + NNEHMC loss
     elif GL and not NL:
-        run_str += '_gaussian_loss'
+        #  run_str += '_gaussian_loss'
+        run_str += '_gl'
+
     elif NL and not GL:
-        run_str += '_nnehmc_loss'
+        run_str += '_nl'
+
+    #  if GL and NL:
+    #      run_str += '_gaussian_nnehmc_loss'
+    #  elif GL and not NL:
+    #      run_str += '_gaussian_loss'
+    #  elif NL and not GL:
+    #      run_str += '_nnehmc_loss'
 
     return run_str, out_dict
 
@@ -341,7 +369,7 @@ def save_data(data, out_file, name=None):
     log(f"Saving {name} to {out_file}...")
     if out_file.endswith('.pkl'):
         with open(out_file, 'wb') as f:
-            pickle.dump(data, f)
+            pickle.dump(data, f, pickle.HIGHEST_PROTOCOL)
 
     elif out_file.endswith('.npy'):
         np.save(out_file, np.array(data))
@@ -361,6 +389,17 @@ def save_params(params, out_dir, name=None):
             f.write(f"{key}: {val}\n")
     with open(params_pkl_file, 'wb') as f:
         pickle.dump(params, f)
+
+
+def save_dict(d, out_dir, name):
+    check_else_make_dir(out_dir)
+    txt_file = os.path.join(out_dir, f'{name}.txt')
+    pkl_file = os.path.join(out_dir, f'{name}.pkl')
+    with open(txt_file, 'w') as f:
+        for key, val in d.items():
+            f.write(f"{key}: {val}\n")
+    with open(pkl_file, 'wb') as f:
+        pickle.dump(d, f, pickle.HIGHEST_PROTOCOL)
 
 
 def save_params_to_pkl_file(params, out_dir):
