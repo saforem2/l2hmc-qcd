@@ -13,7 +13,6 @@ animations/
 figures/
 gmm_figures/*
 
-l2hmc-qcd/args/*.sh
 l2hmc-qcd/args/old
 
 l2hmc-qcd/notebooks/*Untitled*
