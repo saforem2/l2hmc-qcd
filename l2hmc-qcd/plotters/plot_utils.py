@@ -174,17 +174,17 @@ def plot_plaqs_diffs(log_dir, plaqs_dict=None):
         plaqs = v[:, therm_steps:, :]
         #  batch_avg = np.mean(plaqs, axis=-1)
         runs_avg = np.mean(plaqs, axis=(0, -1))
+        runs_err = np.std(plaqs, axis=(0, -1))
+        x = np.arange(therm_steps, num_steps)
         #  runs_avg = np.mean(batch_avg, axis=0)
         avg = np.mean(plaqs)
         err = np.std(plaqs)
-        _ = axes[idx, 0].plot(runs_avg, color=colors[idx])
-
-        #  _ = axes[idx, 0].axhline(y=0, color='gray',
-        #                           ls='-', lw=0.8, zorder=-1)
-        _ = axes[idx, 0].axhline(y=avg, color=colors[idx])
-        _ = axes[idx, 1].axvline(x=0, color='gray', ls='-', lw=0.8, zorder=-1)
-        _ = axes[idx, 1].axvline(x=avg, color=colors[idx],
-                                 label=f'avg: {avg:.3g} +/- {err:.3g}')
+        _ = axes[idx, 0].plot(x, runs_avg, color=colors[idx])
+        _ = axes[idx, 0].fill_between(x,
+                                      y1=runs_avg + runs_err,
+                                      y2=runs_avg - runs_err,
+                                      color=colors[idx],
+                                      alpha=0.3, ls='-', lw=0.2)
 
         if idx == int(nrows // 2):
             ylabel = (r"$\langle\phi_{\mathrm{P}}\rangle "
@@ -204,6 +204,14 @@ def plot_plaqs_diffs(log_dir, plaqs_dict=None):
                         density=True,
                         histtype='stepfilled')
         _ = axes[idx, 1].hist(plaqs.flatten(), **hist_kws)
+
+        _ = axes[idx, 0].axhline(y=0, color='gray',
+                                 ls='--', zorder=-1)
+        _ = axes[idx, 0].axhline(y=avg, color=colors[idx])
+        _ = axes[idx, 1].axvline(x=0, color='gray', ls='--', zorder=-1)
+        _ = axes[idx, 1].axvline(x=avg, color=colors[idx],
+                                 label=f'avg: {avg:.3g} +/- {err:.3g}')
+
         _ = axes[idx, 1].legend(loc='best', fontsize='small')
         _ = axes[idx, 1].legend(loc='best', fontsize='small')
         _ = axes[idx, 1].set_ylabel('')
