@@ -287,28 +287,25 @@ class Runner:
 
         if (step % self.energy_steps) == 0:
             # Calculate energies by running tensorflow graph operations
-            try:
-                energies = self.run_energy_ops(samples, outputs)
+            energies = self.run_energy_ops(samples, outputs)
 
-                # Calculate energies independently using imperative numpy
-                # functions
-                energies_np = self.calc_energies_np(outputs)
+            # Calculate energies independently using imperative numpy
+            # functions
+            energies_np = self.calc_energies_np(outputs)
 
-                energies_diffs = {}
-                for key in energies.keys():
-                    energies_diffs[key] = energies[key] - energies_np[key]
+            energies_diffs = {}
+            for key in energies.keys():
+                energies_diffs[key] = energies[key] - energies_np[key]
 
-                out_dict['energies'] = energies
-                out_dict['energies_np'] = energies_np
-                out_dict['energies_diffs'] = energies_diffs
+            out_dict['energies'] = energies
+            out_dict['energies_np'] = energies_np
+            out_dict['energies_diffs'] = energies_diffs
 
-                energy_str = f'{step:>5g}/{self.run_steps:<6g} \n'
-                for key, val in energies_diffs.items():
-                    mean = np.mean(val)
-                    std = np.std(val)
-                    energy_str += f'  {key}: {mean:.5g} +/- {std:.5g}\n'
-            except:
-                energy_str = ''
+            energy_str = f'{step:>5g}/{self.run_steps:<6g} \n'
+            for key, val in energies_diffs.items():
+                mean = np.mean(val)
+                std = np.std(val)
+                energy_str += f'  {key}: {mean:.5g} +/- {std:.5g}\n'
 
         return out_dict, data_str, energy_str
 
