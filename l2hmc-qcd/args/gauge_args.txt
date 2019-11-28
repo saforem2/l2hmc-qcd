@@ -1,6 +1,6 @@
---time_size 4
---space_size 4
---batch_size 100
+--time_size 8
+--space_size 8
+--batch_size 64
 --rand
 --num_steps 1
 --eps 0.4
@@ -18,7 +18,7 @@
 --num_hidden2 50
 --metric 'cos_diff'
 --std_weight 1.
---aux_weight 1.
+--aux_weight 0.
 --charge_weight 0.
 --loss_scale 1.
 --save_lf

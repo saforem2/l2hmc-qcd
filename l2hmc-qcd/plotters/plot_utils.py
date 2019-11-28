@@ -153,11 +153,11 @@ def plot_plaqs_diffs(log_dir, plaqs_dict=None):
     if plaqs_dict is None:
         plaqs_dict = get_plaqs_dict(log_dir, run_dirs)
 
-    try:
+    if HAS_SEABORN:
         sns.set_style('ticks', {'xtick.major.size': 8, 'ytick.major.size': 8})
         sns.set_palette('bright', len(run_dirs))
         colors = sns.color_palette()
-    except ValueError:
+    else:
         colors = COLORS
 
     nrows = len(plaqs_dict.keys())
@@ -191,11 +191,9 @@ def plot_plaqs_diffs(log_dir, plaqs_dict=None):
                       r"- \phi_{\mathrm{P}}^{*}$")
             _ = axes[idx, 0].set_ylabel(ylabel, fontsize='x-large')
 
-        try:
+        if HAS_SEABORN:
             _ = sns.kdeplot(plaqs.flatten(), ax=axes[idx, 1],
                             color=colors[idx], label=str(k))
-        except ValueError:
-            pass
         hist_kws = dict(color=colors[idx],
                         #  ec=colors[idx],
                         #  label=str(k),
@@ -363,17 +361,17 @@ def plot_histograms(data, labels, is_mixed=False, **kwargs):
     fig, ax = plt.subplots()
     means = []
     errs = []
-    for idx, (label, data) in enumerate(zip(labels, data)):
-        if not isinstance(data, np.ndarray):
-            data = np.array(data)
+    for idx, (label, x) in enumerate(zip(labels, data)):
+        if not isinstance(x, np.ndarray):
+            x = np.array(x)
 
         if not is_mixed:
-            steps = data.shape[1]
+            steps = x.shape[1]
             therm_steps = int(0.1 * steps)
-            data = data[therm_steps:, :]
-        mean = data.mean()
-        err = data.std()
-        data_flat = data.flatten()
+            x = x[therm_steps:, :]
+        mean = x.mean()
+        err = x.std()
+        data_flat = x.flatten()
         label += f' avg: {mean:.4g} +/- {err:.3g}'
         kwargs = dict(ec='gray',
                       bins=n_bins,

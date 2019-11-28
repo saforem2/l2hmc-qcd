@@ -451,11 +451,8 @@ class RunLogger:
         io.check_else_make_dir(self.run_dir)
         data_file = os.path.join(self.run_dir, 'run_data.pkl')
         io.log(f"Saving run_data to: {data_file}.")
-        try:
-            with open(data_file, 'wb') as f:
-                pickle.dump(self.run_data, f, pickle.HIGHEST_PROTOCOL)
-        except:
-            pass
+        with open(data_file, 'wb') as f:
+            pickle.dump(self.run_data, f, pickle.HIGHEST_PROTOCOL)
 
         observables_dir = os.path.join(self.run_dir, 'observables')
         io.check_else_make_dir(observables_dir)

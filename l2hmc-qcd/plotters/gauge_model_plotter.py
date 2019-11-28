@@ -663,12 +663,13 @@ class GaugeModelPlotter:
         err = x.std()
         label = f'{mean:<6.3g} +/- {err:^6.2g}'
 
-        try:
-            ax = sns.distplot(x, ax=ax, label=label)
-        except:  # noqa: F821 
-            _ = ax.hist(x, density=True, bins=50, histtype='stepfilled')
-            _ = ax.plot(mean, 0., marker='|', linewidth=1,
-                        markersize=10, markeredgewidth=1, label=label)
+        if HAS_SEABORN:
+            _ = sns.kdeplot(x, ax=ax, color='k', label=label)
+            #  ax = sns.distplot(x, ax=ax, label=label)
+        _ = ax.hist(x, density=True, bins=50, alpha=0.3, histtype='stepfilled')
+        _ = ax.axvline(x=mean, label=f'avg: {mean:.3g} +/- {err:.3g}')
+        #  _ = ax.plot(mean, 0., marker='|', linewidth=1,
+        #              markersize=10, markeredgewidth=1, label=label)
 
         _ = ax.set_ylabel(ylabel)
         if leg:
@@ -806,7 +807,8 @@ class GaugeModelPlotter:
         plot_multiple_lines(xy_data, xy_labels, **kwargs)
 
         charges = np.array(xy_data[1], dtype=int)
-        batch_size, num_steps = charges.shape
+        batch_size = charges.shape[0]
+        num_steps = charges.shape[1]
 
         out_dir = os.path.join(self.out_dir, 'top_charge_plots')
         io.check_else_make_dir(out_dir)
