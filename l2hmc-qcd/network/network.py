@@ -11,15 +11,16 @@ import numpy as np
 import tensorflow as tf
 from .conv_net import ConvNet2D, ConvNet3D
 from .generic_net import GenericNet
-import utils.file_io as io
+#  import utils.file_io as io
 
-from config import GLOBAL_SEED
+from seed_dict import seeds, xnet_seeds, vnet_seeds
+#  from config import GLOBAL_SEED
 
 
-np.random.seed(GLOBAL_SEED)
+np.random.seed(seeds['global_np'])
 
 if '2.' not in tf.__version__:
-    tf.set_random_seed(GLOBAL_SEED)
+    tf.set_random_seed(seeds['global_tf'])
 
 
 class FullNet(tf.keras.Model):
@@ -37,8 +38,11 @@ class FullNet(tf.keras.Model):
 
         if model_name == 'XNet':
             generic_name_scope = 'GenericNetX'
+            kwargs['net_seeds'] = xnet_seeds
+
         elif model_name == 'VNet':
             generic_name_scope = 'GenericNetV'
+            kwargs['net_seeds'] = vnet_seeds
 
         with tf.name_scope(model_name):
             kwargs['name_scope'] = 'ConvNetX'

@@ -36,10 +36,12 @@ import os
 import time
 import pickle
 
+from collections import namedtuple
+
 import config as cfg
+from seed_dict import seeds, xnet_seeds, vnet_seeds
 #  from config import (GLOBAL_SEED, HAS_COMET, HAS_HOROVOD, HAS_MATPLOTLIB,
 #                      NP_FLOAT)
-from update import set_precision, set_seed
 from models.gauge_model import GaugeModel
 from loggers.train_logger import TrainLogger
 from trainers.trainer import Trainer
@@ -68,8 +70,48 @@ if float(tf.__version__.split('.')[0]) <= 2:
 
 SEP_STR = 80 * '-'  # + '\n'
 
-#  tf.set_random_seed(cfg.GLOBAL_SEED)
 NP_FLOAT = cfg.NP_FLOAT
+
+
+Weights = namedtuple('Weights', ['w', 'b'])
+#  NetWeights = cfg.NetWeights
+
+#  NetWeights = namedtuple('NetWeights', [
+#      'x_scale', 'x_translation', 'x_transformation',
+#      'v_scale', 'v_translation', 'v_transformation']
+#  )
+
+
+def _get_net_weights(net, weights):
+    for layer in net.layers:
+        if hasattr(layer, 'layers'):
+            weights = _get_net_weights(layer, weights)
+        else:
+            try:
+                weights[net.name].update({
+                    layer.name: Weights(*layer.get_weights())
+                })
+            except KeyError:
+                weights.update({
+                    net.name: {
+                        layer.name: Weights(*layer.get_weights())
+                    }
+                })
+
+    return weights
+
+
+def get_coeffs(generic_net):
+    return (generic_net.coeff_scale, generic_net.coeff_transformation)
+
+
+def get_net_weights(model):
+    weights = {
+        'xnet': _get_net_weights(model.dynamics.x_fn, {}),
+        'vnet': _get_net_weights(model.dynamics.v_fn, {}),
+    }
+
+    return weights
 
 
 def create_config(params):
@@ -170,9 +212,11 @@ def train_setup(FLAGS, log_file=None, root_dir=None,
     tf.keras.backend.clear_session()
     tf.reset_default_graph()
 
-    # ------------------------------------------------------------------------
-    # Parse command line arguments; copy key, val pairs from FLAGS to params.
-    # ------------------------------------------------------------------------
+    # ---------------------------------
+    # Parse command line arguments;
+    # copy key, val pairs from FLAGS
+    # to params.
+    # ---------------------------------
     try:
         FLAGS_DICT = FLAGS.__dict__
     except AttributeError:
@@ -206,9 +250,9 @@ def train_setup(FLAGS, log_file=None, root_dir=None,
     #      params['data_format'] = 'channels_last'
 
     #  if getattr(FLAGS, 'float64', False):
-    if params.get('float64', False):
-        io.log(f'INFO: Setting floating point precision to `float64`.')
-        set_precision('float64')
+    #  if params.get('float64', False):
+    #      io.log(f'INFO: Setting floating point precision to `float64`.')
+    #      set_precision('float64')
 
     #  if getattr(FLAGS, 'horovod', False):
     if params.get('horovod', False):
@@ -251,6 +295,34 @@ def train_setup(FLAGS, log_file=None, root_dir=None,
     return params, hooks
 
 
+def check_reversibility(model, sess):
+    rand_samples = np.random.randn(*model.x.shape)
+    net_weights = cfg.NetWeights(1., 1., 1., 1., 1., 1.)
+    feed_dict = {
+        model.x: rand_samples,
+        model.beta: 1.,
+        model.net_weights: net_weights,
+        #  model.net_weights.x_scale: 1.,
+        #  model.net_weights.x_translation: 1.,
+        #  model.net_weights.x_transformation: 1.,
+        #  model.net_weights.v_scale: 1.,
+        #  model.net_weights.v_translation: 1.,
+        #  model.net_weights.v_transformation: 1.,
+        #  model.net_weights[0]: 1.,
+        #  model.net_weights[1]: 1.,
+        #  model.net_weights[2]: 1.,
+        model.train_phase: False
+    }
+
+    # Check reversibility
+    x_diff, v_diff = sess.run([model.x_diff,
+                               model.v_diff], feed_dict=feed_dict)
+    reverse_str = (f'Reversibility results:\n '
+                   f'\t x_diff: {x_diff:.10g}, v_diff: {v_diff:.10g}')
+
+    return reverse_str, x_diff, v_diff
+
+
 def train_l2hmc(FLAGS, log_file=None):
     """Create, train, and run L2HMC sampler on 2D U(1) gauge model."""
     tf.keras.backend.set_learning_phase(True)
@@ -267,7 +339,6 @@ def train_l2hmc(FLAGS, log_file=None):
     is_chief = condition1 or condition2
 
     if is_chief:
-        #  assert FLAGS.log_dir == params['log_dir']
         log_dir = params['log_dir']
         checkpoint_dir = os.path.join(log_dir, 'checkpoints/')
         io.check_else_make_dir(checkpoint_dir)
@@ -286,7 +357,21 @@ def train_l2hmc(FLAGS, log_file=None):
     # Create model and train_logger
     # --------------------------------------------------------
     model = GaugeModel(params)
+
     if is_chief:
+        weights = get_net_weights(model)
+        xnet = model.dynamics.x_fn.generic_net
+        vnet = model.dynamics.v_fn.generic_net
+        coeffs = {
+            'xnet': {
+                'coeff_scale': xnet.coeff_scale,
+                'coeff_transformation': xnet.coeff_transformation,
+            },
+            'vnet': {
+                'coeff_scale': vnet.coeff_scale,
+                'coeff_transformation': vnet.coeff_transformation,
+            },
+        }
         logging_steps = params.get('logging_steps', 10)
         train_logger = TrainLogger(model, log_dir,
                                    logging_steps=logging_steps,
@@ -301,7 +386,12 @@ def train_l2hmc(FLAGS, log_file=None):
 
     # set initial value of charge weight using value from FLAGS
     #  charge_weight_init = params['charge_weight']
-    net_weights_init = [1., 1., 1.]
+    net_weights_init = cfg.NetWeights(x_scale=1.,
+                                      x_translation=1.,
+                                      x_transformation=1.,
+                                      v_scale=1.,
+                                      v_translation=1.,
+                                      v_transformation=1.)
     samples_init = np.reshape(np.array(model.lattice.samples,
                                        dtype=NP_FLOAT),
                               (model.batch_size, model.x_dim))
@@ -335,25 +425,15 @@ def train_l2hmc(FLAGS, log_file=None):
     io.log(f'tf.report_uninitialized_variables() len = {uninited_out}')
 
     # Check reversibility and write results out to `.txt` file.
-    rand_samples = np.random.randn(*model.x.shape)
-    feed_dict = {
-        model.x: rand_samples,
-        model.beta: 1.,
-        model.net_weights[0]: 1.,
-        model.net_weights[1]: 1.,
-        model.net_weights[2]: 1.,
-        model.train_phase: False
-    }
-
-    # Check reversibility
+    reverse_str, x_diff, v_diff = check_reversibility(model, sess)
     reverse_file = os.path.join(model.log_dir, 'reversibility_test.txt')
-    x_diff, v_diff = sess.run([model.x_diff,
-                               model.v_diff], feed_dict=feed_dict)
-    reverse_str = (f'Reversibility results:\n '
-                   f'\t x_diff: {x_diff:.10g}, v_diff: {v_diff:.10g}')
     io.log_and_write(reverse_str, reverse_file)
 
-    #  sess.run(init_op)
+    if is_chief:
+        io.save_dict(seeds, out_dir=model.log_dir, name='seeds')
+        io.save_dict(xnet_seeds, out_dir=model.log_dir, name='xnet_seeds')
+        io.save_dict(vnet_seeds, out_dir=model.log_dir, name='vnet_seeds')
+
     # ----------------------------------------------------------
     #                       TRAINING
     # ----------------------------------------------------------
@@ -368,26 +448,37 @@ def train_l2hmc(FLAGS, log_file=None):
     t0 = time.time()
     trainer.train(model.train_steps, **train_kwargs)
 
+    reverse_str, x_diff, v_diff = check_reversibility(model, sess)
+    io.log_and_write(reverse_str, reverse_file)
+
     io.log(SEP_STR)
     io.log(f'Training completed in: {time.time() - t0:.3g}s')
     io.log(SEP_STR)
 
-    params_file = os.path.join(os.getcwd(), 'params.pkl')
-    with open(params_file, 'wb') as f:
-        pickle.dump(model.params, f)
+    if is_chief:
+        weights = get_net_weights(model)
+        xcoeffs = sess.run(list(coeffs['xnet'].values()))
+        vcoeffs = sess.run(list(coeffs['vnet'].values()))
+        weights['xnet']['GenericNet'].update({
+            'coeff_scale': xcoeffs[0],
+            'coeff_transformation': xcoeffs[1]
+        })
+        weights['vnet']['GenericNet'].update({
+            'coeff_scale': vcoeffs[0],
+            'coeff_transformation': vcoeffs[1]
+        })
 
-    dynamics_seeds_file = os.path.join(os.getcwd(), 'dynamics_seeds.pkl')
-    with open(dynamics_seeds_file, 'wb') as f:
-        pickle.dump(model.dynamics.seed_dict, f)
+        weights_file = os.path.join(model.log_dir, 'weights.pkl')
+        with open(weights_file, 'wb') as f:
+            pickle.dump(weights, f)
 
-    dynamics_seeds_file = os.path.join(os.getcwd(), 'dynamics_seeds.txt')
-    with open(dynamics_seeds_file, 'w') as f:
-        for key, val in model.dynamics.seed_dict.items():
-            f.write(f'{key}: {val}\n')
+        params_file = os.path.join(os.getcwd(), 'params.pkl')
+        with open(params_file, 'wb') as f:
+            pickle.dump(model.params, f)
 
-    # Count all trainable paramters and write them out (w/ shapes) to txt file
-    count_trainable_params(os.path.join(params['log_dir'],
-                                        'trainable_params.txt'))
+        # Count all trainable paramters and write them (w/ shapes) to txt file
+        count_trainable_params(os.path.join(params['log_dir'],
+                                            'trainable_params.txt'))
 
     # close MonitoredTrainingSession and reset the default graph
     sess.close()
@@ -401,22 +492,13 @@ def main(FLAGS):
     log_file = 'output_dirs.txt'
 
     #  if getattr(FLAGS, 'float64', False):
-    if FLAGS.float64:
-        io.log(f'INFO: Setting floating point precision to `float64`.')
-        cfg.TF_FLOAT = tf.float64
-        cfg.NP_FLOAT = np.float64
-        cfg.TF_INT = tf.int64
-        cfg.NP_INT = np.int64
-        #  set_precision('float64')
-
     USING_HVD = getattr(FLAGS, 'horovod', False)
     if cfg.HAS_HOROVOD and USING_HVD:
         io.log("INFO: USING HOROVOD")
         hvd.init()
         rank = hvd.rank()
         print(f'Setting seed from rank: {rank}')
-        set_seed(rank * FLAGS.global_seed)
-        tf.set_random_seed(rank * FLAGS.global_seed)
+        tf.set_random_seed(rank * seeds['global_tf'])
 
     if FLAGS.hmc:   # run generic HMC sampler
         inference.run_hmc(FLAGS, log_file=log_file)
@@ -428,9 +510,8 @@ if __name__ == '__main__':
     FLAGS = parse_args()
     using_hvd = getattr(FLAGS, 'horovod', False)
     if not using_hvd:
-        #  set_seed(FLAGS.global_seed)
-        io.log(f'GLOBAL SEED: {FLAGS.global_seed}')
-        tf.set_random_seed(FLAGS.global_seed)
+        tf.set_random_seed(seeds['global_tf'])
+
     t0 = time.time()
     main(FLAGS)
     io.log('\n\n' + SEP_STR)

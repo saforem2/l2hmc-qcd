@@ -15,7 +15,7 @@ Date: 01/16/2019
 """
 import tensorflow as tf
 
-#  from config import TF_FLOAT, GLOBAL_SEED
+from seed_dict import seeds, xnet_seeds, vnet_seeds
 
 from .network_utils import custom_dense
 
@@ -42,6 +42,11 @@ class GenericNet(tf.keras.Model):
             setattr(self, key, val)
 
         self.activation = kwargs.get('generic_activation', tf.nn.relu)
+        net_seeds = kwargs.get('net_seeds', None)
+        #  if self.name_scope == 'x':
+        #      net_seeds = xnet_seeds
+        #  elif self.name_scope == 'v':
+        #      net_seeds = vnet_seeds
 
         with tf.name_scope(self.name_scope):
             self.coeff_scale = tf.Variable(
@@ -60,36 +65,48 @@ class GenericNet(tf.keras.Model):
             )
 
             if self.dropout_prob > 0:
-                self.dropout = tf.keras.layers.Dropout(self.dropout_prob,
-                                                       seed=cfg.GLOBAL_SEED,)
+                self.dropout = tf.keras.layers.Dropout(
+                    self.dropout_prob, seed=net_seeds['dropout'],
+                )
 
-            self.x_layer = custom_dense(self.num_hidden1,
-                                        self.factor/3.,
+            self.x_layer = custom_dense(units=self.num_hidden1,
+                                        seed=net_seeds['x_layer'],
+                                        factor=self.factor/3.,
                                         name='x_layer',
                                         input_shape=(self.x_dim,))
-            self.v_layer = custom_dense(self.num_hidden1,
-                                        1./3.,
+            self.v_layer = custom_dense(units=self.num_hidden1,
+                                        seed=net_seeds['v_layer'],
+                                        factor=1./3.,
                                         name='v_layer',
                                         input_shape=(self.x_dim,))
-            self.t_layer = custom_dense(self.num_hidden1,
-                                        1./3.,
+            self.t_layer = custom_dense(units=self.num_hidden1,
+                                        seed=net_seeds['t_layer'],
+                                        factor=1./3.,
                                         name='t_layer',
                                         input_shape=(self.x_dim,))
 
-            self.h_layer = custom_dense(self.num_hidden2,
+            self.h_layer = custom_dense(units=self.num_hidden2,
+                                        seed=net_seeds['h_layer'],
+                                        factor=1.,
                                         name='hidden_layer')
 
-            self.scale_layer = custom_dense(self.x_dim,
-                                            0.001,
+            self.scale_layer = custom_dense(units=self.x_dim,
+                                            seed=net_seeds['scale_layer'],
+                                            factor=0.001,
                                             name='scale_layer')
 
-            self.translation_layer = custom_dense(self.x_dim,
-                                                  0.001,
-                                                  'translation_layer')
+            transl_seed = net_seeds['translation_layer']
+            self.translation_layer = custom_dense(units=self.x_dim,
+                                                  seed=transl_seed,
+                                                  factor=0.001,
+                                                  name='translation_layer')
 
-            self.transformation_layer = custom_dense(self.x_dim,
-                                                     0.001,
-                                                     'transformation_layer')
+            transf_name = 'transformation_layer'
+            transf_seed = net_seeds['transformation_layer']
+            self.transformation_layer = custom_dense(units=self.x_dim,
+                                                     seed=transf_seed,
+                                                     factor=0.001,
+                                                     name=transf_name)
 
     def call(self, inputs, train_phase):
         v, x, t = inputs

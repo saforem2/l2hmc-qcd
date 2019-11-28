@@ -4,7 +4,7 @@ import numpy as np
 from collections import namedtuple
 
 import utils.file_io as io
-from config import NP_FLOAT
+from config import NP_FLOAT, NetWeights
 from lattice.lattice import u1_plaq_exact
 from loggers.train_logger import TRAIN_HEADER
 
@@ -84,15 +84,17 @@ class Trainer:
             out_data (dict): Dictionary containing outputs from the respective
                 tensorflow operations.
         """
-        net_weights = kwargs.get('net_weights', [1., 1., 1.])
+        net_weights = kwargs.get('net_weights', NetWeights(1., 1., 1.,
+                                                           1., 1., 1.))
         beta = self.beta_arr[step]
 
         feed_dict = {
             self.model.x: samples,
             self.model.beta: beta,
-            self.model.net_weights[0]: net_weights[0],
-            self.model.net_weights[1]: net_weights[1],
-            self.model.net_weights[2]: net_weights[2],
+            self.model.net_weights: net_weights,
+            #  self.model.net_weights[0]: net_weights[0],
+            #  self.model.net_weights[1]: net_weights[1],
+            #  self.model.net_weights[2]: net_weights[2],
             self.model.train_phase: True,
         }
 
@@ -145,7 +147,9 @@ class Trainer:
         beta = kwargs.pop('beta', None)
         samples = kwargs.pop('samples', None)
         initial_step = kwargs.pop('initial_step', 0)
-        net_weights = kwargs.get('net_weights', [1., 1., 1.])
+        net_weights = kwargs.get('net_weights', NetWeights(1., 1., 1.,
+                                                           1., 1., 1.))
+        #  net_weights = kwargs.get('net_weights', [1., 1., 1.])
 
         if beta is None:
             beta = self.beta_arr[0]
