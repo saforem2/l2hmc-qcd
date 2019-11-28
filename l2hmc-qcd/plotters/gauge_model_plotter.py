@@ -221,21 +221,17 @@ class EnergyPlotter:
                 #  mean, err, mean_arr = self.bootstrap(data, n_boot=n_boot)
                 #  mean_arr = mean_arr.flatten()
             label = labels[idx] + f'  avg: {mean:.4g} +/- {err:.4g}'
-            hist_kws = dict(alpha=0.3,
-                            label=label,
+            hist_kws = dict(label=label,
+                            alpha=0.3,
                             bins=n_bins,
                             density=True,
                             histtype='stepfilled')
             try:
-                ax = sns.distplot(mean_arr, ax=ax, **hist_kws)
+                ax = sns.kdeplot(mean_arr, ax=ax)
+                #  ax = sns.distplot(mean_arr, ax=ax, **hist_kws)
             except ValueError:
-                ax.hist(mean_arr, **hist_kws)
-            #  if idx > 1:
-            #      ax.hist(mean_arr, bins=n_bins, density=True,
-            #              alpha=alphas[idx], label=label, histtype='step')
-            #  else:
-            #      ax.hist(mean_arr, bins=n_bins, density=True,
-            #              alpha=alphas[idx], label=label)
+                continue
+            ax.hist(mean_arr, **hist_kws)
 
         ax.legend(loc='best')
         if title is not None:
