@@ -443,7 +443,7 @@ class RunLogger:
         with open(out_file, 'wb') as f:
             pickle.dump(data, f)
 
-    def save_run_data(self, therm_frac=10):
+    def save_run_data(self, therm_frac=10, save_samples=False):
         """Save run information."""
         self._save_energy_data()
         self._write_run_history()
@@ -454,12 +454,19 @@ class RunLogger:
         with open(data_file, 'wb') as f:
             pickle.dump(self.run_data, f, pickle.HIGHEST_PROTOCOL)
 
+        bad_keys = ['samples_in', 'samples',
+                    'v_init', 'v_proposed', 'v_out',
+                    'x_init', 'x_proposed', 'x_out']
+
         observables_dir = os.path.join(self.run_dir, 'observables')
         io.check_else_make_dir(observables_dir)
         for key, val in self.run_data.items():
-            out_file = key + '.pkl'
-            out_file = os.path.join(observables_dir, out_file)
-            io.save_data(val, out_file, name=key)
+            if key in bad_keys and not save_samples:
+                continue
+            else:
+                out_file = key + '.pkl'
+                out_file = os.path.join(observables_dir, out_file)
+                io.save_data(val, out_file, name=key)
 
         if self.model_type == 'GaugeModel':
             self._save_observables_data(observables_dir, therm_frac)
