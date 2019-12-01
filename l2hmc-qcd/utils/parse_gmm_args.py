@@ -254,6 +254,13 @@ def parse_args():
                         help=("""Flag that when passed indicates we're training
                               using an NVIDIA GPU."""))
 
+    parser.add_argument("--use_bn",
+                        dest='use_bn',
+                        action="store_true",
+                        required=False,
+                        help=("""Flag that when passed causes batch
+                              normalization layer to be used in ConvNet."""))
+
     parser.add_argument("--horovod",
                         dest="horovod",
                         action="store_true",

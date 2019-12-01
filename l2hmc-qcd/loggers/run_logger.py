@@ -450,9 +450,10 @@ class RunLogger:
 
         io.check_else_make_dir(self.run_dir)
         data_file = os.path.join(self.run_dir, 'run_data.pkl')
-        io.log(f"Saving run_data to: {data_file}.")
-        with open(data_file, 'wb') as f:
-            pickle.dump(self.run_data, f, pickle.HIGHEST_PROTOCOL)
+
+        #  io.log(f"Saving run_data to: {data_file}.")
+        #  with open(data_file, 'wb') as f:
+        #      pickle.dump(self.run_data, f, pickle.HIGHEST_PROTOCOL)
 
         bad_keys = ['samples_in', 'samples',
                     'v_init', 'v_proposed', 'v_out',

@@ -208,6 +208,7 @@ def _parse_gmm_flags(FLAGS):
         S2 = flags_dict.get('sigma2', None)
         GL = flags_dict.get('use_gaussian_loss', False)
         NL = flags_dict.get('use_nnehmc_loss', False)
+        BN = flags_dict.get('use_bn', False)
         AW = flags_dict.get('aux_weight', 1.)
         AR = flags_dict.get('arrangement', 'xaxis')
     except (NameError, AttributeError):
@@ -218,6 +219,7 @@ def _parse_gmm_flags(FLAGS):
         S1 = FLAGS.sigma1
         S2 = FLAGS.sigma2
         GL = FLAGS.use_gaussian_loss
+        BN = FLAGS.use_bn
         NL = FLAGS.use_nnehmc_loss
         AW = FLAGS.aux_weight
         AR = FLAGS.arrangement
@@ -233,6 +235,7 @@ def _parse_gmm_flags(FLAGS):
         'NL': NL,
         'AW': AW,
         'AR': AR,
+        'BN': BN,
     }
 
     #  x0 = str(X0).replace('.', '')

@@ -14,8 +14,9 @@ import time
 import pickle
 
 import config as cfg
-#  from config import GLOBAL_SEED, HAS_HOROVOD, HAS_MATPLOTLIB
-from main import count_trainable_params, create_config, train_setup
+from seed_dict import seeds, xnet_seeds, vnet_seeds
+from main import (count_trainable_params, create_config, train_setup,
+                  check_reversibility, get_net_weights)
 from models.gmm_model import GaussianMixtureModel
 from plotters.plot_utils import _gmm_plot
 from loggers.train_logger import TrainLogger
@@ -43,7 +44,7 @@ if float(tf.__version__.split('.')[0]) <= 2:
 
 SEP_STR = 80 * '-'
 
-tf.set_random_seed(cfg.GLOBAL_SEED)
+#  tf.set_random_seed(cfg.GLOBAL_SEED)
 
 
 def create_session(config, checkpoint_dir, monitored=False):
@@ -133,6 +134,21 @@ def train_l2hmc(FLAGS, log_file=None):
         _, _ = plot_target_distribution(model.distribution,
                                         target_samples, **kwargs)
 
+        weights = get_net_weights(model)
+        xnet = model.dynamics.x_fn.generic_net
+        vnet = model.dynamics.v_fn.generic_net
+        coeffs = {
+            'xnet': {
+                'coeff_scale': xnet.coeff_scale,
+                'coeff_transformation': xnet.coeff_transformation,
+            },
+            'vnet': {
+                'coeff_scale': vnet.coeff_scale,
+                'coeff_transformation': vnet.coeff_transformation,
+            },
+        }
+        logging_steps = params.get('logging_steps', 10)
+
         train_logger = TrainLogger(model, params['log_dir'],
                                    logging_steps=10,
                                    summaries=params['summaries'])
@@ -143,55 +159,71 @@ def train_l2hmc(FLAGS, log_file=None):
         sess = create_session(config, checkpoint_dir, monitored=True)
         tf.keras.backend.set_session(sess)
 
-    nw_init = [1., 1., 1.]
+    net_weights_init = cfg.NetWeights(x_scale=1.,
+                                      x_translation=1.,
+                                      x_transformation=1.,
+                                      v_scale=1.,
+                                      v_translation=1.,
+                                      v_transformation=1.)
     beta_init = model.beta_init
     samples_init = np.random.randn(*model.x.shape)
 
-    feed_dict = {
-        model.x: samples_init,
-        model.beta: beta_init,
-        model.net_weights[0]: nw_init[0],
-        model.net_weights[1]: nw_init[1],
-        model.net_weights[2]: nw_init[2],
-        model.train_phase: False
-    }
-
     # Check reversibility
+    reverse_str, x_diff, v_diff = check_reversibility(model, sess)
     reverse_file = os.path.join(model.log_dir, 'reversibility_test.txt')
-    x_diff, v_diff = sess.run([model.x_diff,
-                               model.v_diff], feed_dict=feed_dict)
-    reverse_str = (f'Reversibility results:\n '
-                   f'\t x_diff: {x_diff:.10g}, v_diff: {v_diff:.10g}')
     io.log_and_write(reverse_str, reverse_file)
+
+    if is_chief:
+        io.save_dict(seeds, out_dir=model.log_dir, name='seeds')
+        io.save_dict(xnet_seeds, out_dir=model.log_dir, name='xnet_seeds')
+        io.save_dict(vnet_seeds, out_dir=model.log_dir, name='xnet_seeds')
 
     # TRAINING
     trainer = Trainer(sess, model, train_logger, **params)
 
-    #  trainer = GaussianMixtureModelTrainer(sess, model, logger=train_logger)
-
     train_kwargs = {
         'samples': samples_init,
         'beta': beta_init,
-        'net_weights':  nw_init,
+        'net_weights':  net_weights_init,
     }
 
     train_steps = FLAGS.get('train_steps', 5000)
     t0 = time.time()
     trainer.train(train_steps, **train_kwargs)
 
+    reverse_str, x_diff, v_diff = check_reversibility(model, sess)
+    io.log_and_write(reverse_str, reverse_file)
+
     io.log(SEP_STR)
     io.log(f'Training completed in: {time.time() - t0:.4g}s')
     io.log(SEP_STR)
 
-    if train_logger is not None:
-        save_distribution_params(model.distribution, train_logger.log_dir)
+    if is_chief:
+        weights = get_net_weights(model)
+        xcoeffs = sess.run(list(coeffs['xnet'].values()))
+        vcoeffs = sess.run(list(coeffs['vnet'].values()))
+        weights['xnet']['GenericNet'].update({
+            'coeff_scale': xcoeffs[0],
+            'coeff_transformation': xcoeffs[1]
+        })
+        weights['vnet']['GenericNet'].update({
+            'coeff_scale': vcoeffs[0],
+            'coeff_transformation': vcoeffs[1]
+        })
 
-    params_file = os.path.join(os.getcwd(), 'params.pkl')
-    with open(params_file, 'wb') as f:
-        pickle.dump(model.params, f)
+        weights_file = os.path.join(model.log_dir, 'weights.pkl')
+        with open(weights_file, 'wb') as f:
+            pickle.dump(weights, f)
 
-    count_trainable_params(os.path.join(params['log_dir'],
-                                        'trainable_params.txt'))
+        if train_logger is not None:
+            save_distribution_params(model.distribution, train_logger.log_dir)
+
+        params_file = os.path.join(os.getcwd(), 'params.pkl')
+        with open(params_file, 'wb') as f:
+            pickle.dump(model.params, f)
+
+        count_trainable_params(os.path.join(params['log_dir'],
+                                            'trainable_params.txt'))
 
     sess.close()
     tf.reset_default_graph()
@@ -213,15 +245,15 @@ def main(FLAGS):
 if __name__ == '__main__':
     FLAGS = GMM_PARAMS
     args = parse_gmm_args()
-    set_seed(args.global_seed)
+    #  set_seed(args.global_seed)
 
-    io.log('\n' + 80 * '=' + '\n')
-    io.log(f'config.TF_FLOAT: {cfg.TF_FLOAT}')
-    if args.float64:
-        set_precision('float64')
+    #  io.log('\n' + 80 * '=' + '\n')
+    #  io.log(f'config.TF_FLOAT: {cfg.TF_FLOAT}')
+    #  if args.float64:
+    #      set_precision('float64')
 
-    io.log(f'config.TF_FLOAT: {cfg.TF_FLOAT}')
-    io.log('\n' + 80 * '=' + '\n')
+    #  io.log(f'config.TF_FLOAT: {cfg.TF_FLOAT}')
+    #  io.log('\n' + 80 * '=' + '\n')
 
     FLAGS.update(args.__dict__)
     t0 = time.time()

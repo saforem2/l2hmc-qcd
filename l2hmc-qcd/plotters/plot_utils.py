@@ -52,6 +52,11 @@ except ImportError:
     HAS_SEABORN = False
 
 
+def reset_plots():
+    plt.close('all')
+    plt.clf()
+
+
 def get_run_dirs(log_dir):
     runs_dir = os.path.join(log_dir, 'runs')
     run_dirs = [
@@ -104,6 +109,20 @@ def get_title_str(params, beta):
     return title_str
 
 
+def _get_title(lf_steps, eps, batch_size, beta, nw):
+    """Parse vaious parameters to make figure title when creating plots."""
+    try:
+        nw_str = '[' + ', '.join([f'{i:.3g}' for i in nw]) + ']'
+        title_str = (r"$N_{\mathrm{LF}} = $" + f"{lf_steps}, "
+                     r"$\varepsilon = $" + f"{eps:.3g}, "
+                     r"$N_{\mathrm{B}} = $" + f"{batch_size}, "
+                     r"$\beta =$" + f"{beta:.2g}, "
+                     r"$\mathrm{nw} = $" + nw_str)
+    except ValueError:
+        title_str = ''
+    return title_str
+
+
 def get_plaqs_dict(log_dir, run_dirs=None):
     """Construct plaqs_dict by averaging over all samples in batch.
 
@@ -153,15 +172,16 @@ def plot_plaqs_diffs(log_dir, plaqs_dict=None):
     if plaqs_dict is None:
         plaqs_dict = get_plaqs_dict(log_dir, run_dirs)
 
+    nrows = len(plaqs_dict.keys())
+    ncols = 2
+
     if HAS_SEABORN:
         sns.set_style('ticks', {'xtick.major.size': 8, 'ytick.major.size': 8})
-        sns.set_palette('bright', len(run_dirs))
+        sns.set_palette('bright', len(plaqs_dict.keys()))
         colors = sns.color_palette()
     else:
         colors = COLORS
 
-    nrows = len(plaqs_dict.keys())
-    ncols = 2
     fig, axes = plt.subplots(nrows=nrows, ncols=ncols,
                              figsize=(12.8, 9.6),
                              sharex='col',
@@ -179,7 +199,8 @@ def plot_plaqs_diffs(log_dir, plaqs_dict=None):
         #  runs_avg = np.mean(batch_avg, axis=0)
         avg = np.mean(plaqs)
         err = np.std(plaqs)
-        _ = axes[idx, 0].plot(x, runs_avg, color=colors[idx])
+        _ = axes[idx, 0].plot(x, runs_avg, color=colors[idx],
+                              label=f'avg: {avg:.3g} +/- {err:.3g}')
         _ = axes[idx, 0].fill_between(x,
                                       y1=runs_avg + runs_err,
                                       y2=runs_avg - runs_err,
@@ -207,10 +228,8 @@ def plot_plaqs_diffs(log_dir, plaqs_dict=None):
                                  ls='--', zorder=-1)
         _ = axes[idx, 0].axhline(y=avg, color=colors[idx])
         _ = axes[idx, 1].axvline(x=0, color='gray', ls='--', zorder=-1)
-        _ = axes[idx, 1].axvline(x=avg, color=colors[idx],
-                                 label=f'avg: {avg:.3g} +/- {err:.3g}')
-
-        _ = axes[idx, 1].legend(loc='best', fontsize='small')
+        _ = axes[idx, 1].axvline(x=avg, color=colors[idx])
+        _ = axes[idx, 0].legend(loc='best', fontsize='small')
         _ = axes[idx, 1].legend(loc='best', fontsize='small')
         _ = axes[idx, 1].set_ylabel('')
         _ = axes[idx, 1].set_yticklabels([])

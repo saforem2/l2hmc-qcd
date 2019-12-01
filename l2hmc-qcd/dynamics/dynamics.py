@@ -31,8 +31,7 @@ __all__ = ['Dynamics']
 
 TF_FLOAT = cfg.TF_FLOAT
 TF_INT = cfg.TF_INT
-State = cfg.State
-#
+State = cfg.State  # namedtuple object containing `(x, v, beta)`
 
 
 def exp(x, name=None):
@@ -59,7 +58,6 @@ class Dynamics(tf.keras.Model):
             **params: Keyword arguments specifying parameters to use.
 
                 Required entries:
-
                     num_steps (int): Number of leapfrog steps (trajectory
                         length) to use in the molecular dynamics (MD)
                         integration.
@@ -68,25 +66,12 @@ class Dynamics(tf.keras.Model):
                     network_arch (str): Network architecture to use. Must be
                         one of `conv2D`, `conv3D`, `generic`.
 
-                Optional:
+                Optional entries:
                     hmc (bool): Flag indicating whether generic HMC should be
                         performed instead of the L2HMC algorithm.
                     eps_trainable (bool): Flag indicating whether the step size
                         `eps` should be a trainable parameter. Defaults to
                         True.
-
-        NOTE: kwargs (expected)
-            num_steps: Number of leapfrog steps to use in integrator.
-            eps: Initial step size to use in leapfrog integrator.
-            network_arch: String specifying network architecture to use.
-                Must be one of `'conv2D', 'conv3D', 'generic'`. Networks
-                are defined in `../network/`
-            hmc: Flag indicating whether generic HMC (no augmented
-                leapfrog) should be used instead of L2HMC. Defaults to
-                False.
-            eps_trainable: Flag indiciating whether the step size (eps)
-                should be trainable. Defaults to True.
-            np_seed: Seed to use for numpy.random.
         """
         super(Dynamics, self).__init__(name='Dynamics')
         np.random.seed(seeds['global_np'])
@@ -98,11 +83,20 @@ class Dynamics(tf.keras.Model):
             if key != 'eps':  # want to use self.eps as tf.Variable
                 setattr(self, key, val)
 
+        self.num_steps = params.get('num_steps', 5)
+        self.hmc = params.get('hmc', False)
+        self.network_arch = params.get('network_arch', 'generic')
+        self.use_bn = params.get('use_bn', False)
+        self.dropout_prob = params.get('dropout_prob', 0.)
+        self.num_hidden1 = params.get('num_hidden1', 10)
+        self.num_hidden2 = params.get('num_hidden2', 10)
+
+
         self._eps_np = params.get('eps', 0.4)
         self.eps = self._build_eps(use_log=False)
         self.masks = self._build_masks()
         net_params = self._network_setup()
-        self.x_fn, self.v_fn = self.build_network(net_params)
+        self.xnet, self.vnet = self.build_network(net_params)
 
     def _build_eps(self, use_log=False):
         """Create `self.eps` (i.e. the step size) as a `tf.Variable`.
@@ -127,7 +121,7 @@ class Dynamics(tf.keras.Model):
 
         else:
             eps = tf.Variable(
-                initial_value=self._eps_np,
+                initial_value=tf.constant(self._eps_np),
                 name='eps',
                 dtype=TF_FLOAT,
                 trainable=self.eps_trainable
@@ -214,20 +208,16 @@ class Dynamics(tf.keras.Model):
 
         Returns:
             outputs (dict): Containing 
-
              - `outputs_fb`: The outputs from running the dynamics both
                forward and backward and performing the subsequent
                accept/reject step.
-
              - `energies`: Dictionary of each of the energies computed at the
                beginning and end of the trajectory 
 
-        NOTE: 
-
-            - `proposed` corresponds to the configuration prior to
-              accept/reject and 
-
-            - `out` corresponds to the configurations after accept/reject.
+        NOTE: In the code below, `proposed` refers to a variable at the end of
+        a particular MD trajectory, prior to performing the Metropolis/Hastings
+        accept reject step. Consequently, `out` refers to the result after the
+        accept/reject.
         """
         if model_type == 'GaugeModel':
             x_init = tf.mod(x_init, 2 * np.pi, name='x_in_mod_2_pi')
@@ -242,14 +232,14 @@ class Dynamics(tf.keras.Model):
                                        name='vf_init')
 
             state_init_f = cfg.State(x_init, vf_init, beta)
-            args = (*state_init_f, weights, train_phase)
-            kwargs = {'forward': True, 'hmc': hmc}
-            outputs_f = self.transition_kernel(*args, **kwargs)
-            xf = outputs_f['x_proposed']
-            vf = outputs_f['v_proposed']
-            pxf = outputs_f['accept_prob']
-            pxf_hmc = outputs_f['accept_prob_hmc']
-            sumlogdetf = outputs_f['sumlogdet']
+            outf = self.transition_kernel(*state_init_f,
+                                          weights, train_phase,
+                                          forward=True, hmc=hmc)
+            xf = outf['x_proposed']
+            vf = outf['v_proposed']
+            pxf = outf['accept_prob']
+            pxf_hmc = outf['accept_prob_hmc']
+            sumlogdetf = outf['sumlogdet']
 
         with tf.name_scope('transition_backward'):
             vb_init = tf.random_normal(tf.shape(x_init),
@@ -258,17 +248,17 @@ class Dynamics(tf.keras.Model):
                                        name='vb_init')
 
             state_init_b = cfg.State(x_init, vb_init, beta)
-            outputs_b = self.transition_kernel(*state_init_b,
-                                               weights, train_phase,
-                                               forward=False, hmc=hmc)
-            xb = outputs_b['x_proposed']
-            vb = outputs_b['v_proposed']
-            pxb = outputs_b['accept_prob']
-            pxb_hmc = outputs_b['accept_prob_hmc']
-            sumlogdetb = outputs_b['sumlogdet']
+            outb = self.transition_kernel(*state_init_b,
+                                          weights, train_phase,
+                                          forward=False, hmc=hmc)
+            xb = outb['x_proposed']
+            vb = outb['v_proposed']
+            pxb = outb['accept_prob']
+            pxb_hmc = outb['accept_prob_hmc']
+            sumlogdetb = outb['sumlogdet']
 
+        # Decide direction uniformly
         with tf.name_scope('simulate_forward_backward'):
-            # Decide direction uniformly
             mask_f, mask_b = self._get_transition_masks()
 
             # Use forward/backward mask to reconstruct `v_init`
@@ -277,17 +267,17 @@ class Dynamics(tf.keras.Model):
             # Obtain proposed states
             x_proposed = xf * mask_f[:, None] + xb * mask_b[:, None]
             v_proposed = vf * mask_f[:, None] + vb * mask_b[:, None]
-
             sumlogdet_proposed = sumlogdetf * mask_f + sumlogdetb * mask_b
 
             # Probability of accepting proposed states
             accept_prob = pxf * mask_f + pxb * mask_b
+
             # ---------------------------------------------------------------
-            # NOTE: `accept_prob_hmc` can be ignored unless we are using the
-            # NNEHMC loss function from the 'Robust Parameter Estimation...'
-            # paper (see line 10 for a link)
+            # NOTE: `accept_prob_hmc` is the probability of accepting the
+            # proposed states if `sumlogdet = 0`, and can be ignored unless
+            # using the NNEHMC loss function from the 'Robust Parameter
+            # Estimation...' paper (see line 10 for a link)
             # ---------------------------------------------------------------
-            # Probability of accepting proposed states (if `sumlogdet == 0`)
             accept_prob_hmc = pxf_hmc * mask_f + pxb_hmc * mask_b  # (!)
 
         # Accept or reject step
@@ -470,7 +460,7 @@ class Dynamics(tf.keras.Model):
         """
         with tf.name_scope('update_vf'):
             grad = self.grad_potential(x, beta)
-            scale, transl, transf = self.v_fn([x, grad, t], training)
+            scale, transl, transf = self.vnet([x, grad, t], training)
 
             with tf.name_scope('vf_mul'):
                 scale *= 0.5 * self.eps * weights.v_scale
@@ -497,7 +487,7 @@ class Dynamics(tf.keras.Model):
         """Update x in the forward leapfrog step."""
         mask, mask_inv = masks
         with tf.name_scope('update_xf'):
-            scale, transl, transf = self.x_fn([v, mask * x, t], training)
+            scale, transl, transf = self.xnet([v, mask * x, t], training)
 
             with tf.name_scope('xf_mul'):
                 scale *= self.eps * weights.x_scale
@@ -524,7 +514,7 @@ class Dynamics(tf.keras.Model):
         """Update v in the backward leapfrog step. Invert the forward update"""
         with tf.name_scope('update_vb'):
             grad = self.grad_potential(x, beta)
-            scale, transl, transf = self.v_fn([x, grad, t], training)
+            scale, transl, transf = self.vnet([x, grad, t], training)
 
             with tf.name_scope('vb_mul'):
                 scale *= -0.5 * self.eps * weights.v_scale
@@ -551,7 +541,7 @@ class Dynamics(tf.keras.Model):
         """Update x in the backward lf step. Inverting the forward update."""
         mask, mask_inv = masks
         with tf.name_scope('update_xb'):
-            scale, transl, transf = self.x_fn([v, mask * x, t], training)
+            scale, transl, transf = self.xnet([v, mask * x, t], training)
 
             with tf.name_scope('xb_mul'):
                 scale *= -self.eps * weights.x_scale

@@ -356,7 +356,7 @@ def parse_args():
                         required=False,
                         help=("""Flag that when passed will profile the graph
                               execution using `TFProf`."""))
-    #
+
     #  parser.add_argument("--global_seed",
     #                      dest='global_seed',
     #                      type=int,

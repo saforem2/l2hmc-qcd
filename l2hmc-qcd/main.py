@@ -74,12 +74,6 @@ NP_FLOAT = cfg.NP_FLOAT
 
 
 Weights = namedtuple('Weights', ['w', 'b'])
-#  NetWeights = cfg.NetWeights
-
-#  NetWeights = namedtuple('NetWeights', [
-#      'x_scale', 'x_translation', 'x_transformation',
-#      'v_scale', 'v_translation', 'v_transformation']
-#  )
 
 
 def _get_net_weights(net, weights):
@@ -107,8 +101,8 @@ def get_coeffs(generic_net):
 
 def get_net_weights(model):
     weights = {
-        'xnet': _get_net_weights(model.dynamics.x_fn, {}),
-        'vnet': _get_net_weights(model.dynamics.v_fn, {}),
+        'xnet': _get_net_weights(model.dynamics.xnet, {}),
+        'vnet': _get_net_weights(model.dynamics.vnet, {}),
     }
 
     return weights
@@ -360,8 +354,8 @@ def train_l2hmc(FLAGS, log_file=None):
 
     if is_chief:
         weights = get_net_weights(model)
-        xnet = model.dynamics.x_fn.generic_net
-        vnet = model.dynamics.v_fn.generic_net
+        xnet = model.dynamics.xnet.generic_net
+        vnet = model.dynamics.vnet.generic_net
         coeffs = {
             'xnet': {
                 'coeff_scale': xnet.coeff_scale,
@@ -423,6 +417,10 @@ def train_l2hmc(FLAGS, log_file=None):
     sess.run([global_var_init, local_var_init])
     uninited_out = sess.run(uninited)
     io.log(f'tf.report_uninitialized_variables() len = {uninited_out}')
+    sess.run(model.dynamics.xnet.generic_net.coeff_scale.initializer)
+    sess.run(model.dynamics.xnet.generic_net.coeff_transformation.initializer)
+    sess.run(model.dynamics.vnet.generic_net.coeff_scale.initializer)
+    sess.run(model.dynamics.vnet.generic_net.coeff_transformation.initializer)
 
     # Check reversibility and write results out to `.txt` file.
     reverse_str, x_diff, v_diff = check_reversibility(model, sess)
@@ -456,6 +454,9 @@ def train_l2hmc(FLAGS, log_file=None):
     io.log(SEP_STR)
 
     if is_chief:
+        wfile = os.path.join(model.log_dir, 'dynamics_weights.h5')
+        model.dynamics.save_weights(wfile)
+
         weights = get_net_weights(model)
         xcoeffs = sess.run(list(coeffs['xnet'].values()))
         vcoeffs = sess.run(list(coeffs['vnet'].values()))

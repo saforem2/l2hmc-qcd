@@ -33,7 +33,8 @@ from inference.gauge_inference_utils import (_log_inference_header,
 from loggers.run_logger import RunLogger
 from loggers.summary_utils import create_summaries
 from plotters.leapfrog_plotters import LeapfrogPlotter
-from plotters.gauge_model_plotter import EnergyPlotter, GaugeModelPlotter
+from plotters.gauge_model_plotter import GaugeModelPlotter
+from plotters.energy_plotter import EnergyPlotter
 
 if HAS_HOROVOD:
     import horovod.tensorflow as hvd
