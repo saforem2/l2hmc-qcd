@@ -9,11 +9,20 @@ import numpy as np
 
 from collections import namedtuple
 
-# Included below is a `catch-all` for various structures 
+# ----------------------------------------------------------------
+# Included below is a catch-all for various structures 
 # (namedtuples) that are used project wide in various locations.
+# ----------------------------------------------------------------
+
+# State is an object for grouping the position/momentum 
+# configurations together with the value of `beta`.
 State = namedtuple('State', ['x', 'v', 'beta'])
 EnergyData = namedtuple('EnergyData', ['init', 'proposed', 'out'])
 Energy = namedtuple('Energy', ['potential', 'kinetic', 'hamiltonian'])
+
+# generic object for representing a `weight` matrix in the neural net
+# contains both the weight matrix and the bias term 
+Weights = namedtuple('Weights', ['w', 'b'])
 
 NetWeights = namedtuple('NetWeights', [
     'x_scale', 'x_translation', 'x_transformation',

@@ -4,7 +4,6 @@ import os
 import pickle
 
 from config import HAS_HOROVOD, HAS_MATPLOTLIB
-from update import set_precision
 from plotters.plot_utils import plot_histogram, plot_acl_spectrum
 
 import numpy as np

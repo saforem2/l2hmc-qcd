@@ -11,11 +11,11 @@ from __future__ import absolute_import, division, print_function
 import os
 import time
 
-from config import HAS_HOROVOD, HAS_MATPLOTLIB
+from config import HAS_HOROVOD, HAS_MATPLOTLIB, NetWeights
 from loggers.run_logger import RunLogger
 from runners.runner import Runner
 from plotters.plot_utils import _gmm_plot, gmm_plot
-from plotters.gauge_model_plotter import EnergyPlotter
+from plotters.energy_plotter import EnergyPlotter
 
 import numpy as np
 import tensorflow as tf
@@ -33,6 +33,7 @@ if HAS_HOROVOD:
     import horovod.tensorflow as hvd
 
 #  from loggers.summary_utils import create_summaries
+#  from plotters.gauge_model_plotter import EnergyPlotter
 #  from scipy.stats import sem
 #  from utils.data_utils import block_resampling
 #  from utils.distributions import GMM
@@ -50,7 +51,8 @@ SEP_STR = 80 * '-'
 
 def inference(runner, run_logger, energy_plotter=None, **kwargs):
     run_steps = kwargs.get('run_steps', 5000)     # num. of accept/reject steps
-    nw = kwargs.get('net_weights', [1., 1., 1.])  # custom net_weights
+    #  nw = kwargs.get('net_weights', [1., 1., 1.])  # custom net_weights
+    nw = kwargs.get('net_weights', NetWeights(1., 1., 1., 1., 1., 1.))
     bs_iters = kwargs.get('bs_iters', 200)  # num. bootstrap replicates
     beta = kwargs.get('beta', 1.)  # custom value to use for `beta`
     eps = kwargs.get('eps', None)  # custom value to use for the step size
@@ -190,10 +192,30 @@ def main(kwargs):
     if eps is not None:
         utils.set_eps(sess, eps)
 
-    scale_weight = kwargs.get('scale_weight', 1.)
-    translation_weight = kwargs.get('translation_weight', 1.)
-    transformation_weight = kwargs.get('transformation_weight', 1.)
-    net_weights = [scale_weight, translation_weight, transformation_weight]
+    # -------------------
+    # setup net_weights
+    # -------------------
+    #  scale_weight = kwargs.get('scale_weight', 1.)
+    #  translation_weight = kwargs.get('translation_weight', 1.)
+    #  transformation_weight = kwargs.get('transformation_weight', 1.)
+    #  net_weights = [scale_weight, translation_weight, transformation_weight]
+    xsw = kwargs.get('x_scale_weight', 1.)
+    xtlw = kwargs.get('x_translation_weight', 1.)
+    xtfw = kwargs.get('x_transformation_weight', 1.)
+    vsw = kwargs.get('v_scale_weight', 1.)
+    vtlw = kwargs.get('v_translation_weight', 1.)
+    vtfw = kwargs.get('v_transformation_weight', 1.)
+    net_weights = NetWeights(x_scale=xsw,
+                             x_translation=xtlw,
+                             x_transformation=xtfw,
+                             v_scale=vsw,
+                             v_translation=vtlw,
+                             v_transformation=vtfw)
+
+    #  scale_weight = kwargs.get('scale_weight', 1.)
+    #  translation_weight = kwargs.get('translation_weight', 1.)
+    #  transformation_weight = kwargs.get('transformation_weight', 1.)
+    #  net_weights = [scale_weight, translation_weight, transformation_weight]
 
     beta_inference = kwargs.get('beta_inference', None)
     beta_final = params.get('beta_final', None)

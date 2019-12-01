@@ -1,11 +1,11 @@
---run_steps 5000
+--run_steps 100
 --beta_inference 5.
 --x_scale_weight 1.
 --x_translation_weight 1.
 --x_transformation_weight 1.
---v_scale_weight 0.
---v_translation_weight 0.
---v_transformation_weight 0.
+--v_scale_weight 1.
+--v_translation_weight 1.
+--v_transformation_weight 1.
 --samples_init 'random'
 #####################################
 #--scale_weight 0.

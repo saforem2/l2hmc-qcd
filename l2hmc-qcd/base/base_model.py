@@ -141,7 +141,8 @@ class BaseModel(object):
                 'model_type': getattr(self, 'model_type', None),
             }
 
-            x_dynamics = self.dynamics.apply_transition(*args, **kwargs)
+            #  x_dynamics = self.dynamics.apply_transition(*args, **kwargs)
+            x_dynamics = self.dynamics(*args, **kwargs)
 
             x_data = LFdata(x_dynamics['x_init'],
                             x_dynamics['x_proposed'],
@@ -165,7 +166,8 @@ class BaseModel(object):
                     'model_type': getattr(self, 'model_type', None),
                 }
 
-                z_dynamics = self.dynamics.apply_transition(*args, **kwargs)
+                #  z_dynamics = self.dynamics.apply_transition(*args, **kwargs)
+                z_dynamics = self.dynamics(*args, **kwargs)
 
                 z_data = LFdata(z_dynamics['x_init'],
                                 z_dynamics['x_proposed'],
@@ -261,10 +263,6 @@ class BaseModel(object):
                 net_weights: Array of placeholders, each of which is a
                     multiplicative constant used to scale the effects of the
                     various S, Q, and T functions from the original paper.
-                    net_weights[0] = 'scale_weight', multiplies the S fn.
-                    net_weights[1] = 'transformation_weight', multiplies the Q
-                    fn.  net_weights[2] = 'translation_weight', multiplies the
-                    T fn.
                 train_phase: Boolean placeholder indicating if the model is
                     curerntly being trained. 
         """
@@ -297,12 +295,6 @@ class BaseModel(object):
                 'eps_ph': eps_ph,
                 'train_phase': train_phase,
                 'net_weights': net_weights,
-                #  'x_scale_weight': x_scale_weight,
-                #  'x_transl_weight': x_transl_weight,
-                #  'x_transf_weight': x_transf_weight,
-                #  'v_scale_weight': v_scale_weight,
-                #  'v_transl_weight': v_transl_weight,
-                #  'v_transf_weight': v_transf_weight,
             }
             for key, val in inputs.items():
                 print(f'{key}: {val}\n')

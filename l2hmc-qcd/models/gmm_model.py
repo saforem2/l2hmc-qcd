@@ -25,7 +25,7 @@ from base.base_model import BaseModel
 #  from .gauge_model import allclose
 from dynamics.dynamics import Dynamics
 from params.gmm_params import GMM_PARAMS
-from config import NP_FLOAT, HAS_HOROVOD
+from config import NP_FLOAT, TF_FLOAT, HAS_HOROVOD, State
 
 if HAS_HOROVOD:
     import horovod.tensorflow as hvd  # noqa: 401
@@ -148,8 +148,9 @@ class GaussianMixtureModel(BaseModel):
             inputs = self._create_inputs()
             self.x = inputs['x']
             self.beta = inputs['beta']
-            nw_keys = ['scale_weight', 'transl_weight', 'transf_weight']
-            self.net_weights = [inputs[k] for k in nw_keys]
+            #  nw_keys = ['scale_weight', 'transl_weight', 'transf_weight']
+            #  self.net_weights = [inputs[k] for k in nw_keys]
+            self.net_weights = inputs['net_weights']
             self.train_phase = inputs['train_phase']
             self.eps_ph = inputs['eps_ph']
             self._inputs = inputs
@@ -176,7 +177,21 @@ class GaussianMixtureModel(BaseModel):
         # Build energy_ops to calculate energies.
         # -------------------------------------------------------------------
         with tf.name_scope('energy_ops'):
-            self.energy_ops = self._build_energy_ops()
+            self.v_ph = tf.placeholder(dtype=TF_FLOAT, shape=self.x.shape,
+                                       name='v_placeholder')
+            self.sumlogdet_ph = tf.placeholder(dtype=TF_FLOAT,
+                                               shape=self.x.shape[0],
+                                               name='sumlogdet_placeholder')
+
+            self.state = State(x=self.x, v=self.v_ph, beta=self.beta)
+
+            ph_str = 'energy_placeholders'
+            _ = [tf.add_to_collection(ph_str, i) for i in self.state]
+            tf.add_to_collection(ph_str, self.sumlogdet_ph)
+
+            self.energy_ops = self._calc_energies(self.state,
+                                                  self.sumlogdet_ph)
+            #  self.energy_ops = self._build_energy_ops()
 
         # *******************************************************************
         # Calculate loss_op and train_op to backprop. grads through network
