@@ -33,7 +33,7 @@ try:
     sns.set_palette('bright')
     sns.set_style('ticks', {'xtick.major.size': 8,
                             'ytick.major.size': 8})
-    COLORS = sns.color_palette()
+    #  COLORS = sns.color_palette()
     HAS_SEABORN = True
 except ImportError:
     COLORS = cfg.COLORS
@@ -45,6 +45,7 @@ __all__ = ['EnergyPlotter']
 FigAx = namedtuple('FigAx', ['fig', 'ax'])
 DataErr = namedtuple('DataErr', ['data', 'err'])
 BootstrapData = cfg.BootstrapData
+COLORS = cfg.COLORS
 
 np.random.seed(seeds['global_np'])
 
@@ -134,10 +135,20 @@ class EnergyPlotter:
         #  n_boot = kwargs.get('n_boot', 1000)
         is_mixed = hist_kws.get('is_mixed', False)
         single_chain = hist_kws.get('single_chain', False)
+        if HAS_SEABORN:
+            sns.set_style('ticks', {
+                'xtick.major.size': 8,
+                'ytick.major.size': 8
+            })
+            sns.set_palette('bright', len(labels))
+            colors = sns.color_palette()
+        else:
+            colors = COLORS
+
         #  alphas = [1. - 0.25 * i for i in range(len(labels))]
         if not is_mixed:
             num_steps = data_arr[0].shape[0]
-            therm_steps = int(0.1 * num_steps)
+            therm_steps = int(0.25 * num_steps)
         else:
             therm_steps = 0
 
@@ -147,32 +158,32 @@ class EnergyPlotter:
                 data = data[therm_steps:, -1]
                 mean = data.mean()
                 err = data.std()
-                mean_arr = data.flatten()
+                #  mean_arr = data.flatten()
                 #  mean, err, mean_arr = self.bootsrap(data, n_boot=n_boot)
-                mean_arr = mean_arr.flatten()
+                #  mean_arr = mean_arr.flatten()
             else:
                 therm_steps = int(therm_steps)
                 data = data[therm_steps:, :]
                 mean = data.mean()
                 err = data.std()
-                mean_arr = data.flatten()
+                #  mean_arr = data.flatten()
                 #  mean, err, mean_arr = self.bootstrap(data, n_boot=n_boot)
                 #  mean_arr = mean_arr.flatten()
+            if HAS_SEABORN:
+                ax = sns.kdeplot(data.flatten(), ax=ax, color=colors[idx])
+                #  ax = sns.distplot(mean_arr, ax=ax, **hist_kws)
             label = labels[idx] + f'  avg: {mean:.4g} +/- {err:.4g}'
             hist_kws = dict(label=label,
                             alpha=0.3,
                             bins=n_bins,
                             color=COLORS[idx],
                             density=True,
-                            histtype='stepfilled')
-            try:
-                ax = sns.kdeplot(mean_arr, ax=ax, color=COLORS[idx])
-                #  ax = sns.distplot(mean_arr, ax=ax, **hist_kws)
-            except ValueError:
-                continue
-            ax.hist(mean_arr, **hist_kws)
+                            histtype='step')
+            _ = ax.hist(data.flatten(), **hist_kws)
+            _ = ax.axvline(data.mean(), color=colors[idx])
 
         ax.legend(loc='best')
+
         if title is not None:
             ax.set_title(title)
 
@@ -182,8 +193,8 @@ class EnergyPlotter:
             fig.savefig(out_file, bbox_inches='tight')
 
         fig_ax = FigAx(fig=fig, ax=ax)
-        bs_data = BootstrapData(mean=mean, err=err, means_bs=mean_arr)
-
+        bs_data = BootstrapData(mean=mean, err=err,
+                                means_bs=np.array(data_arr).flatten())
         return fig_ax, bs_data
 
     def _potential_plots(self, energy_data, title, out_dir):
@@ -383,5 +394,3 @@ class EnergyPlotter:
         }
 
         return outputs
-
-

@@ -112,6 +112,12 @@ def _parse_gauge_flags(FLAGS):
         BN = flags_dict.get('use_bn', None)
         DP = flags_dict.get('dropout_prob', None)
         AW = flags_dict.get('aux_weight', None)
+        XS = flags_dict.get('x_scale_weight', None)
+        XT = flags_dict.get('x_translation_weight', None)
+        XQ = flags_dict.get('x_transformation_weight', None)
+        VS = flags_dict.get('v_scale_weight', None)
+        VT = flags_dict.get('v_translation_weight', None)
+        VQ = flags_dict.get('v_transformation_weight', None)
         GL = flags_dict.get('use_gaussian_loss', None)
         NL = flags_dict.get('use_nnehmc_loss', None)
         hmc = flags_dict.get('hmc', None)
@@ -130,6 +136,12 @@ def _parse_gauge_flags(FLAGS):
         BN = FLAGS.use_bn
         DP = FLAGS.dropout_prob
         AW = FLAGS.aux_weight
+        XS = FLAGS.x_scale_weight
+        XT = FLAGS.x_translation_weight
+        XQ = FLAGS.x_transformation_weight
+        VS = FLAGS.v_scale_weight
+        VT = FLAGS.v_translation_weight
+        VQ = FLAGS.v_transformation_weight
         GL = FLAGS.use_gaussian_loss
         NL = FLAGS.use_nnehmc_loss
         hmc = FLAGS.hmc
@@ -149,6 +161,12 @@ def _parse_gauge_flags(FLAGS):
         'DP': DP,
         'AW': AW,
         'GL': GL,
+        'XS': XS,
+        'XT': XT,
+        'XQ': XQ,
+        'VS': VS,
+        'VT': VT,
+        'VQ': VQ,
         'NL': NL,
         'hmc': hmc,
         '_log_dir': _log_dir
@@ -175,6 +193,12 @@ def _parse_gauge_flags(FLAGS):
         if dp != '00':
             run_str += f'_dp{dp}'
 
+        if XS != 1. or XT != 1. or XQ != 1.:
+            run_str += f'_x{XS}{XT}{XQ}'
+
+        if VS != 1. or VT != 1. or VQ != 1.:
+            run_str += f'_v{VS}{VT}{VQ}'
+
         if BN:
             run_str += '_bn'
 
@@ -186,6 +210,7 @@ def _parse_gauge_flags(FLAGS):
 
         elif NL and not GL:
             run_str += '_nl'
+
 
     return run_str, out_dict
 
