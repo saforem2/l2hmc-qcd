@@ -63,11 +63,8 @@ def plot_charges(charges, out_file=None, title=None, nrows=2, **kwargs):
     if not isinstance(charges, np.ndarray):
         charges = np.array(charges)[0]
 
-    try:
-        if charges.shape[0] > charges.shape[1]:
-            charges = charges.T
-    except:
-        import pudb; pudb.set_trace()
+    if charges.shape[0] > charges.shape[1]:
+        charges = charges.T
 
     batch_size, steps = charges.shape
     #  N = int(np.sqrt(batch_size))
