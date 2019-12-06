@@ -43,10 +43,6 @@ class GenericNet(tf.keras.Model):
 
         self.activation = kwargs.get('generic_activation', tf.nn.relu)
         net_seeds = kwargs.get('net_seeds', None)
-        #  if self.name_scope == 'x':
-        #      net_seeds = xnet_seeds
-        #  elif self.name_scope == 'v':
-        #      net_seeds = vnet_seeds
 
         with tf.name_scope(self.name_scope):
             self.coeff_scale = tf.Variable(
@@ -57,7 +53,6 @@ class GenericNet(tf.keras.Model):
                 use_resource=True,
             )
 
-            #  with tf.name_scope('coeff_transformation'):
             self.coeff_transformation = tf.Variable(
                 initial_value=tf.zeros([1, self.x_dim], dtype=TF_FLOAT),
                 name='coeff_transformation',
@@ -71,48 +66,50 @@ class GenericNet(tf.keras.Model):
                     self.dropout_prob, seed=net_seeds['dropout'],
                 )
 
-            self.x_layer = custom_dense(units=self.num_hidden1,
-                                        seed=net_seeds['x_layer'],
+            xname = 'x_layer'
+            self.x_layer = custom_dense(name=xname,
                                         factor=self.factor/3.,
-                                        name='x_layer',
+                                        seed=net_seeds[xname],
+                                        units=self.num_hidden1,
                                         input_shape=(self.x_dim,))
-            self.v_layer = custom_dense(units=self.num_hidden1,
-                                        seed=net_seeds['v_layer'],
+            vname = 'v_layer'
+            self.v_layer = custom_dense(name=vname,
                                         factor=1./3.,
-                                        name='v_layer',
+                                        seed=net_seeds[vname],
+                                        units=self.num_hidden1,
                                         input_shape=(self.x_dim,))
-            self.t_layer = custom_dense(units=self.num_hidden1,
-                                        seed=net_seeds['t_layer'],
+            tname = 't_layer'
+            self.t_layer = custom_dense(name=tname,
                                         factor=1./3.,
-                                        name='t_layer',
+                                        seed=net_seeds[tname],
+                                        units=self.num_hidden1,
                                         input_shape=(self.x_dim,))
-
-            self.h_layer = custom_dense(units=self.num_hidden2,
-                                        seed=net_seeds['h_layer'],
+            hname = 'h_layer'
+            self.h_layer = custom_dense(name=hname,
                                         factor=1.,
-                                        name='hidden_layer')
-
-            self.scale_layer = custom_dense(units=self.x_dim,
-                                            seed=net_seeds['scale_layer'],
+                                        seed=net_seeds[hname],
+                                        units=self.num_hidden2)
+            scname = 'scale_layer'
+            scseed = net_seeds[scname]
+            self.scale_layer = custom_dense(name=scname,
                                             factor=0.001,
-                                            name='scale_layer')
-
-            transl_seed = net_seeds['translation_layer']
-            self.translation_layer = custom_dense(units=self.x_dim,
-                                                  seed=transl_seed,
+                                            seed=scseed,
+                                            units=self.x_dim)
+            tlname = 'translation_layer'
+            tlseed = net_seeds[tlname]
+            self.translation_layer = custom_dense(name=tlname,
                                                   factor=0.001,
-                                                  name='translation_layer')
-
-            transf_name = 'transformation_layer'
-            transf_seed = net_seeds['transformation_layer']
-            self.transformation_layer = custom_dense(units=self.x_dim,
-                                                     seed=transf_seed,
+                                                  seed=tlseed,
+                                                  units=self.x_dim)
+            tfname = 'transformation_layer'
+            tfseed = net_seeds[tfname]
+            self.transformation_layer = custom_dense(name=tfname,
                                                      factor=0.001,
-                                                     name=transf_name)
+                                                     seed=tfseed,
+                                                     units=self.x_dim)
 
     def call(self, inputs, train_phase):
         v, x, t = inputs
-
         with tf.name_scope('v'):
             v = self.v_layer(v)
         with tf.name_scope('x'):

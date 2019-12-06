@@ -1,4 +1,4 @@
---run_steps 100
+--run_steps 1000
 --beta_inference 5.
 --x_scale_weight 1.
 --x_translation_weight 1.

@@ -32,6 +32,7 @@ from inference.gauge_inference_utils import (_log_inference_header,
                                              parse_flags)
 from loggers.run_logger import RunLogger
 from loggers.summary_utils import create_summaries
+from plotters.plot_utils import plot_charges, plot_autocorrs
 from plotters.leapfrog_plotters import LeapfrogPlotter
 from plotters.gauge_model_plotter import GaugeModelPlotter
 from plotters.energy_plotter import EnergyPlotter
@@ -163,12 +164,13 @@ def inference(runner, run_logger, plotter, energy_plotter, **kwargs):
 
     _log_inference_header(nw, run_steps, eps, beta, existing=False)
 
-    # ------------------------
-    #      RUN INFERENCE
-    # ------------------------
+    # -----------------------
+    #   RUN INFERENCE
+    # -----------------------
     run_logger.reset(**kwargs)
     t0 = time.time()
     runner.run(**kwargs)
+    # ------------------------
 
     run_time = time.time() - t0
     io.log(80 * '-' + f'\nTook: {run_time}s to complete run.\n' + 80 * '-')
@@ -177,21 +179,26 @@ def inference(runner, run_logger, plotter, energy_plotter, **kwargs):
     # PLOT ALL LATTICE OBSERVABLES AND RETURN THE AVG. PLAQ DIFF
     # -----------------------------------------------------------
     kwargs['run_str'] = run_logger._run_str
-    avg_plaq_diff = plotter.plot_observables(run_logger.run_data, **kwargs)
+    avg_plaq_diff, pkwds = plotter.plot_observables(run_logger.run_data,
+                                                    **kwargs)
     log_plaq_diffs(run_logger, nw, avg_plaq_diff)
+
+    title = pkwds['title']
+    qarr = np.array(run_logger.run_data['charges']).T
+    qarr_int = np.around(qarr)
+
+    out_file = os.path.join(plotter.out_dir, 'charges_grid.png')
+    fig, ax = plot_charges(qarr, out_file, title=title)
+
+    out_file = os.path.join(plotter.out_dir, 'charges_autocorr_grid.png')
+    fig, ax = plot_autocorrs(qarr_int, out_file=out_file, title=title)
+
     io.save_dict(seeds, run_logger.run_dir, 'seeds')
 
     tf_data = energy_plotter.plot_energies(run_logger.energy_dict,
                                            out_dir='tf', **kwargs)
-    #  np_data = energy_plotter.plot_energies(run_logger.energy_dict_np,
-    #                                         out_dir='np', **kwargs)
-    #  diff_data = energy_plotter.plot_energies(
-    #      run_logger.energies_diffs_dict, out_dir='tf-np', **kwargs
-    #  )
     energy_data = {
         'tf_data': tf_data,
-        #  'np_data': np_data,
-        #  'diff_data': diff_data
     }
 
     run_logger.save_data(energy_data, 'energy_plots_data.pkl')

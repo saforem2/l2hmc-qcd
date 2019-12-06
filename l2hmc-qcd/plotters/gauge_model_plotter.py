@@ -113,7 +113,7 @@ class GaugeModelPlotter:
         #  self._plot_charge_diffs(xy_data['charge_diffs'], **kwargs)
         mean_diff = self._plot_plaqs_diffs(xy_data['plaqs_diffs'], **kwargs)
 
-        return mean_diff
+        return mean_diff, kwargs
 
     def calc_stats(self, data, therm_frac=10):
         """Calculate observables statistics.

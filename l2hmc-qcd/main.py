@@ -42,6 +42,7 @@ import config as cfg
 from seed_dict import seeds, xnet_seeds, vnet_seeds
 #  from config import (GLOBAL_SEED, HAS_COMET, HAS_HOROVOD, HAS_MATPLOTLIB,
 #                      NP_FLOAT)
+from plotters.plot_utils import weights_hist
 from models.gauge_model import GaugeModel
 from loggers.train_logger import TrainLogger
 from trainers.trainer import Trainer
@@ -64,6 +65,13 @@ if cfg.HAS_COMET:
 
 if cfg.HAS_HOROVOD:
     import horovod.tensorflow as hvd
+
+try:
+    import statsmodels as sm
+    HAS_STATSMODELS = True
+except ImportError:
+    import pandas as pd
+    HAS_STATSMODELS = False
 
 if float(tf.__version__.split('.')[0]) <= 2:
     tf.logging.set_verbosity(tf.logging.INFO)
@@ -289,9 +297,13 @@ def train_setup(FLAGS, log_file=None, root_dir=None,
     return params, hooks
 
 
-def check_reversibility(model, sess):
+def check_reversibility(model, sess, net_weights=None):
     rand_samples = np.random.randn(*model.x.shape)
-    net_weights = cfg.NetWeights(1., 1., 1., 1., 1., 1.)
+    if net_weights is None:
+        net_weights = cfg.NetWeights(1., 1., 1., 1., 1., 1.)
+
+    io.log(f'Net weights used in reversibility test:\n\t {net_weights}.\n')
+
     feed_dict = {
         model.x: rand_samples,
         model.beta: 1.,
@@ -380,12 +392,15 @@ def train_l2hmc(FLAGS, log_file=None):
 
     # set initial value of charge weight using value from FLAGS
     #  charge_weight_init = params['charge_weight']
-    net_weights_init = cfg.NetWeights(x_scale=1.,
-                                      x_translation=1.,
-                                      x_transformation=1.,
-                                      v_scale=1.,
-                                      v_translation=1.,
-                                      v_transformation=1.)
+
+    net_weights_init = cfg.NetWeights(
+        x_scale=FLAGS.x_scale_weight,
+        x_translation=FLAGS.x_translation_weight,
+        x_transformation=FLAGS.x_transformation_weight,
+        v_scale=FLAGS.v_scale_weight,
+        v_translation=FLAGS.v_translation_weight,
+        v_transformation=FLAGS.v_transformation_weight,
+    )
     samples_init = np.reshape(np.array(model.lattice.samples,
                                        dtype=NP_FLOAT),
                               (model.batch_size, model.x_dim))
@@ -423,7 +438,8 @@ def train_l2hmc(FLAGS, log_file=None):
     sess.run(model.dynamics.vnet.generic_net.coeff_transformation.initializer)
 
     # Check reversibility and write results out to `.txt` file.
-    reverse_str, x_diff, v_diff = check_reversibility(model, sess)
+    reverse_str, x_diff, v_diff = check_reversibility(model, sess,
+                                                      net_weights_init)
     reverse_file = os.path.join(model.log_dir, 'reversibility_test.txt')
     io.log_and_write(reverse_str, reverse_file)
 
@@ -468,6 +484,9 @@ def train_l2hmc(FLAGS, log_file=None):
             'coeff_scale': vcoeffs[0],
             'coeff_transformation': vcoeffs[1]
         })
+
+        _ = weights_hist(model.log_dir, weights=weights)
+        #  _ = weights_hist(weights, model.log_dir)
 
         weights_file = os.path.join(model.log_dir, 'weights.pkl')
         with open(weights_file, 'wb') as f:
