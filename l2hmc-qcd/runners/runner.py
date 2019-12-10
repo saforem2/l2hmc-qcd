@@ -266,15 +266,16 @@ class Runner:
             'eps': self.eps,
             'samples_in': samples,
             'samples': outputs['x_out'],
-            'px': outputs['accept_prob']
+            'px': outputs['accept_prob'],
+            'dx': np.mean(outputs['x_out'] - samples, axis=-1),
         }
 
         out_dict.update(outputs)
-
         data_str = (f"{step:>5g}/{self.run_steps:<6g} "
                     f"{dt:^9.4g} "
                     f"{np.mean(out_dict['px']):^9.4g} "
                     f"{self.eps:^9.4g} "
+                    f"{np.mean(out_dict['dx']):^9.4g} "
                     f"{self.beta:^9.4g} ")
 
         if self.model_type == 'GaugeModel':
@@ -288,26 +289,9 @@ class Runner:
         if (step % self.energy_steps) == 0:
             # Calculate energies by running tensorflow graph operations
             energies = self.run_energy_ops(samples, outputs)
-
-            # Calculate energies independently using imperative numpy
-            # functions
-            energies_np = self.calc_energies_np(outputs)
-
-            energies_diffs = {}
-            for key in energies.keys():
-                energies_diffs[key] = energies[key] - energies_np[key]
-
             out_dict['energies'] = energies
-            out_dict['energies_np'] = energies_np
-            out_dict['energies_diffs'] = energies_diffs
 
-            energy_str = f'{step:>5g}/{self.run_steps:<6g} \n'
-            for key, val in energies_diffs.items():
-                mean = np.mean(val)
-                std = np.std(val)
-                energy_str += f'  {key}: {mean:.5g} +/- {std:.5g}\n'
-
-        return out_dict, data_str, energy_str
+        return out_dict, data_str
 
     def _run_setup(self, **kwargs):
         """Prepare for running inference."""
@@ -333,7 +317,6 @@ class Runner:
         self._run_setup(**kwargs)
 
         has_logger = self.logger is not None
-
         samples = kwargs.get('samples', None)
         if samples is None:
             batch_size = self.params['batch_size']
@@ -342,12 +325,14 @@ class Runner:
 
         io.log(self._run_header)
         for step in range(self.run_steps):
-            out_data, data_str, energy_str = self.run_step(step, samples)
+            out_data, data_str = self.run_step(step, samples)
             samples = out_data['samples']
 
             if has_logger:
                 self.logger.update(self.sess,
-                                   out_data, data_str, energy_str,
+                                   out_data, data_str,
                                    self.net_weights)
         if has_logger:
-            self.logger.save_run_data(therm_frac=self.therm_frac)
+            save_samples = kwargs.get('save_samples', False)
+            self.logger.save_run_data(therm_frac=self.therm_frac,
+                                      save_samples=save_samples)

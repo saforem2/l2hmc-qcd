@@ -112,12 +112,14 @@ class Trainer:
             f"{outputs['loss_op']:^9.4g} "
             f"{np.mean(outputs['px']):^9.4g} "
             f"{outputs['dynamics_eps']:^9.4g} "
+            f"{np.mean(outputs['x_out'] - samples):^9.4g} "
             f"{outputs['beta']:^9.4g} "
             f"{outputs['lr']:^9.4g} "
         )
 
         if self.model._model_type == 'GaugeModel':
             outputs['x_out'] = np.mod(outputs['x_out'], 2 * np.pi)
+            outputs['dx'] = np.mean(outputs['x_out'] - samples, axis=-1)
             outputs['plaq_exact'] = u1_plaq_exact(beta)
             data_str += (
                 f"{np.mean(outputs['actions']):^9.4g} "
@@ -160,7 +162,8 @@ class Trainer:
         assert samples.shape == self.model.x.shape
 
         try:
-            io.log(TRAIN_HEADER)
+            if self.logger is not None:
+                io.log(self.logger.train_header)
             for step in range(initial_step, train_steps):
                 data, data_str = self.train_step(step, samples, **kwargs)
                 samples = data['x_out']

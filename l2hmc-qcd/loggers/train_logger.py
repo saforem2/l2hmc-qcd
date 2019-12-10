@@ -44,8 +44,8 @@ class TrainLogger:
         self.logging_steps = logging_steps
 
         self.train_data = {}
-        self.h_strf = ("{:^12s}" + 6 * "{:^10s}").format(
-           "STEP", "t/STEP", "LOSS", "% ACC", "EPS", "BETA", "LR"
+        self.h_strf = ("{:^12s}" + 7 * "{:^10s}").format(
+           "STEP", "t/STEP", "LOSS", "% ACC", "EPS", "dX", "BETA", "LR"
         )
 
         if model._model_type == 'GaugeModel':
