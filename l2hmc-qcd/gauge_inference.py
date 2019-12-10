@@ -27,12 +27,11 @@ from runners.runner import Runner
 from models.gauge_model import GaugeModel
 from utils.parse_inference_args import parse_args as parse_inference_args
 from inference.gauge_inference_utils import (_log_inference_header,
-                                             create_config, inference_setup,
-                                             load_params, log_plaq_diffs,
-                                             parse_flags)
+                                             create_config, load_params,
+                                             log_plaq_diffs, parse_flags)
 from loggers.run_logger import RunLogger
 from loggers.summary_utils import create_summaries
-from plotters.plot_utils import plot_charges, plot_autocorrs
+from plotters.plot_observables import plot_charges, plot_autocorrs
 from plotters.leapfrog_plotters import LeapfrogPlotter
 from plotters.gauge_model_plotter import GaugeModelPlotter
 from plotters.energy_plotter import EnergyPlotter
@@ -175,6 +174,9 @@ def inference(runner, run_logger, plotter, energy_plotter, **kwargs):
     run_time = time.time() - t0
     io.log(80 * '-' + f'\nTook: {run_time}s to complete run.\n' + 80 * '-')
 
+    io.log(80 * '-' + '\n')
+    for key, val in kwargs.items():
+        io.log(f'{key}: {val}')
     # -----------------------------------------------------------
     # PLOT ALL LATTICE OBSERVABLES AND RETURN THE AVG. PLAQ DIFF
     # -----------------------------------------------------------
@@ -188,10 +190,10 @@ def inference(runner, run_logger, plotter, energy_plotter, **kwargs):
     qarr_int = np.around(qarr)
 
     out_file = os.path.join(plotter.out_dir, 'charges_grid.png')
-    fig, ax = plot_charges(qarr, out_file, title=title)
+    fig, ax = plot_charges(qarr, out_file, title=title, nrows=4)
 
     out_file = os.path.join(plotter.out_dir, 'charges_autocorr_grid.png')
-    fig, ax = plot_autocorrs(qarr_int, out_file=out_file, title=title)
+    fig, ax = plot_autocorrs(qarr_int, out_file=out_file, title=title, nrows=4)
 
     io.save_dict(seeds, run_logger.run_dir, 'seeds')
 
@@ -308,6 +310,7 @@ def main(kwargs):
         'samples': samples_init,
         'net_weights': net_weights,
         'run_steps': kwargs.get('run_steps', 5000),
+        'save_samples': kwargs.get('save_samples', False),
     }
 
     runner, run_logger = inference(runner,
@@ -323,6 +326,9 @@ if __name__ == '__main__':
     t0 = time.time()
     log_file = 'output_dirs.txt'
     FLAGS = args.__dict__
+    io.log(80 * '-' + '\n' + 'INFERENCE FLAGS:\n')
+    for key, val in FLAGS.items():
+        io.log(f'{key}: {val}\n')
 
     main(FLAGS)
 
