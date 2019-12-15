@@ -227,6 +227,13 @@ def parse_args():
                               when performing the augmented L2HMC molecular
                               dynamics update."""))
 
+    parser.add_argument('--loop_net_weights',
+                        dest='loop_net_weights',
+                        action='store_true',
+                        required=False,
+                        help=("""Flag that when passed will loop over all 64
+                              possible values of `net_weights`."""))
+
     parser.add_argument('--save_samples',
                         dest='save_samples',
                         action='store_true',

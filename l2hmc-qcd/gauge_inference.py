@@ -134,56 +134,13 @@ def run_hmc(FLAGS, log_file=None):
                                    **inference_kwargs)
 
 
-def inference(runner, run_logger, plotter, energy_plotter, **kwargs):
-    """Perform an inference run, if it hasn't been ran previously.
-
-    Args:
-        runner: `Runner` object, responsible for performing inference.
-        run_logger: RunLogger object, responsible for running `tf.summary`
-            operations and accumulating/saving run statistics.
-        plotter: GaugeModelPlotter object responsible for plotting lattice
-            observables from inference run.
-
-    NOTE: If inference hasn't been run previously with the param values passed,
-        return `avg_plaq_diff`, i.e. the average value of the difference
-        between the expected and observed value of the average plaquette.
-
-    Returns:
-        avg_plaq_diff: If run hasn't been completed previously, else None
-    """
-    eps = kwargs.get('eps', None)
-    beta = kwargs.get('beta', 5.)
-    run_steps = kwargs.get('run_steps', 5000)
-    #  nw = kwargs.get('net_weights', [1., 1., 1.])
+def inference_plots(runner, run_logger, plotter, energy_plotter, **kwargs):
+    """Make all inference plots from inference run."""
+    kwargs['run_str'] = run_logger._run_str
+    apd, pkwds = plotter.plot_observables(run_logger.run_data, **kwargs)
     nw = kwargs.get('net_weights', NetWeights(1., 1., 1., 1., 1., 1.))
 
-    if eps is None:
-        eps = runner.eps
-        kwargs['eps'] = eps
-
-    _log_inference_header(nw, run_steps, eps, beta, existing=False)
-
-    # -----------------------
-    #   RUN INFERENCE
-    # -----------------------
-    run_logger.reset(**kwargs)
-    t0 = time.time()
-    runner.run(**kwargs)
-    # ------------------------
-
-    run_time = time.time() - t0
-    io.log(80 * '-' + f'\nTook: {run_time}s to complete run.\n' + 80 * '-')
-
-    io.log(80 * '-' + '\n')
-    for key, val in kwargs.items():
-        io.log(f'{key}: {val}')
-    # -----------------------------------------------------------
-    # PLOT ALL LATTICE OBSERVABLES AND RETURN THE AVG. PLAQ DIFF
-    # -----------------------------------------------------------
-    kwargs['run_str'] = run_logger._run_str
-    avg_plaq_diff, pkwds = plotter.plot_observables(run_logger.run_data,
-                                                    **kwargs)
-    log_plaq_diffs(run_logger, nw, avg_plaq_diff)
+    log_plaq_diffs(run_logger, nw, apd)
 
     title = pkwds['title']
     qarr = np.array(run_logger.run_data['charges']).T
@@ -210,6 +167,84 @@ def inference(runner, run_logger, plotter, energy_plotter, **kwargs):
         batch_size = runner.params.get('batch_size', 20)
         lf_plotter.make_plots(run_logger.run_dir,
                               batch_size=batch_size)
+
+    return runner, run_logger
+
+
+def run_inference(runner, run_logger, **kwargs):
+    """Run inference."""
+    eps = kwargs.get('eps', None)
+    beta = kwargs.get('beta', 5.)
+    run_steps = kwargs.get('run_steps', 5000)
+    net_weights = kwargs.get('net_weights', NetWeights(1., 1., 1., 1., 1., 1.))
+    if eps is None:
+        eps = runner.eps
+        kwargs['eps'] = eps
+
+    _log_inference_header(net_weights, run_steps, eps, beta, existing=False)
+    for key, val in kwargs.items():
+        io.log(f'{key}: {val}')
+
+    run_logger.reset(**kwargs)
+    t0 = time.time()
+    runner.run(**kwargs)
+    run_time = time.time() - t0
+
+    io.log(80 * '-' + f'\nTook: {run_time}s to complete run.\n' + 80 * '-')
+    io.log(80 * '-' + '\n')
+
+    return runner, run_logger, kwargs
+
+
+def _loop_net_weights(runner, run_logger, plotter, energy_plotter, **kwargs):
+    """Perform inference for all 64 possible values of `net_weights`."""
+    eps = kwargs.get('eps', None)
+    net_weights_arr = [
+        tuple(np.array(list(np.binary_repr(i, width=6)), dtype=int))
+        for i in range(65)
+    ]
+    if eps is None:
+        eps = runner.eps
+        kwargs['eps'] = eps
+
+    for net_weights in net_weights_arr:
+        kwargs['net_weights'] = net_weights
+        runner, run_logger, kwargs = run_inference(runner,
+                                                   run_logger,
+                                                   **kwargs)
+        runner, run_logger = inference_plots(runner, run_logger, plotter,
+                                             energy_plotter, **kwargs)
+
+    return runner, run_logger
+
+
+def inference(runner, run_logger, plotter, energy_plotter, **kwargs):
+    """Perform an inference run, if it hasn't been ran previously.
+
+    Args:
+        runner: `Runner` object, responsible for performing inference.
+        run_logger: RunLogger object, responsible for running `tf.summary`
+            operations and accumulating/saving run statistics.
+        plotter: GaugeModelPlotter object responsible for plotting lattice
+            observables from inference run.
+
+    NOTE: If inference hasn't been run previously with the param values passed,
+        return `avg_plaq_diff`, i.e. the average value of the difference
+        between the expected and observed value of the average plaquette.
+
+    Returns:
+        avg_plaq_diff: If run hasn't been completed previously, else None
+    """
+    nw_loop = kwargs.get('loop_net_weights', False)
+    if nw_loop:
+        _loop_net_weights(runner, run_logger,
+                          plotter, energy_plotter, **kwargs)
+    else:
+        runner, run_logger, kwargs = run_inference(runner,
+                                                   run_logger,
+                                                   **kwargs)
+        runner, run_logger = inference_plots(runner, run_logger, plotter,
+                                             energy_plotter, **kwargs)
 
     return runner, run_logger
 
@@ -263,10 +298,6 @@ def main(kwargs):
     # -------------------
     # setup net_weights
     # -------------------
-    #  scale_weight = kwargs.get('scale_weight', 1.)
-    #  translation_weight = kwargs.get('translation_weight', 1.)
-    #  transformation_weight = kwargs.get('transformation_weight', 1.)
-    #  net_weights = [scale_weight, translation_weight, transformation_weight]
     xsw = kwargs.get('x_scale_weight', 1.)
     xtlw = kwargs.get('x_translation_weight', 1.)
     xtfw = kwargs.get('x_transformation_weight', 1.)
@@ -311,6 +342,7 @@ def main(kwargs):
         'net_weights': net_weights,
         'run_steps': kwargs.get('run_steps', 5000),
         'save_samples': kwargs.get('save_samples', False),
+        'loop_net_weights': kwargs.get('loop_net_weights', False),
     }
 
     runner, run_logger = inference(runner,
