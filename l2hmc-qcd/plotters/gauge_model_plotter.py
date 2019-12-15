@@ -311,7 +311,10 @@ class GaugeModelPlotter:
         label = f'{mean:<6.3g} +/- {err:^6.2g}'
 
         if HAS_SEABORN:
-            _ = sns.kdeplot(x, ax=ax, color='k', label=label)
+            try:
+                _ = sns.kdeplot(x, ax=ax, color='k', label=label)
+            except:
+                pass
         _ = ax.hist(x, density=True, bins=50, alpha=0.3, histtype='stepfilled')
         _ = ax.axvline(x=mean, label=f'avg: {mean:.3g} +/- {err:.3g}')
         #  _ = ax.plot(mean, 0., marker='|', linewidth=1,
