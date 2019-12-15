@@ -85,32 +85,13 @@ def inference(runner, run_logger, energy_plotter=None, **kwargs):
 
         # Plot dU, dT, and dH
         e_tf = run_logger.energy_dict
-        e_np = run_logger.energy_dict_np
-        de = run_logger.energies_diffs_dict
-
-        #  sumlogdets = {
-        #      'out': run_logger.run_data['sumlogdet_out'],
-        #      'proposed': run_logger.run_data['sumlogdet_proposed']
-        #  }
-        #  kwargs['sumlogdets'] = sumlogdets
-        #  kwargs['out_dir'] = 'tf'
-        #  kwargs['out_dir'] = 'np'
-        #  kwargs['out_dir'] = 'tf_np_diff'
-
         tf_data = energy_plotter.plot_energies(e_tf, out_dir='tf',
                                                is_mixed=False, **kwargs)
-        np_data = energy_plotter.plot_energies(e_np, out_dir='np',
-                                               is_mixed=False, **kwargs)
-        diff_data = energy_plotter.plot_energies(de, out_dir='tf-np',
-                                                 is_mixed=False, **kwargs)
         energy_data = {
             'tf_data': tf_data,
-            'np_data': np_data,
-            'diff_data': diff_data
         }
 
         run_logger.save_data(energy_data, 'energy_plots_data.pkl')
-
         samples_arr = np.array(run_logger.run_data['x_out'])
         px_arr = np.array(run_logger.run_data['px'])
 
@@ -195,10 +176,6 @@ def main(kwargs):
     # -------------------
     # setup net_weights
     # -------------------
-    #  scale_weight = kwargs.get('scale_weight', 1.)
-    #  translation_weight = kwargs.get('translation_weight', 1.)
-    #  transformation_weight = kwargs.get('transformation_weight', 1.)
-    #  net_weights = [scale_weight, translation_weight, transformation_weight]
     xsw = kwargs.get('x_scale_weight', 1.)
     xtlw = kwargs.get('x_translation_weight', 1.)
     xtfw = kwargs.get('x_transformation_weight', 1.)
@@ -211,11 +188,6 @@ def main(kwargs):
                              v_scale=vsw,
                              v_translation=vtlw,
                              v_transformation=vtfw)
-
-    #  scale_weight = kwargs.get('scale_weight', 1.)
-    #  translation_weight = kwargs.get('translation_weight', 1.)
-    #  transformation_weight = kwargs.get('transformation_weight', 1.)
-    #  net_weights = [scale_weight, translation_weight, transformation_weight]
 
     beta_inference = kwargs.get('beta_inference', None)
     beta_final = params.get('beta_final', None)
