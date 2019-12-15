@@ -76,7 +76,7 @@ class EnergyPlotter:
         """Prepare for making plots."""
         beta = kwargs.get('beta', 5.)
         run_str = kwargs.get('run_str', '')
-        net_weights = kwargs.get('net_weights', [1., 1., 1.])
+        net_weights = kwargs.get('net_weights', None)
         eps = kwargs.get('eps', None)
         out_dir = kwargs.get('out_dir', None)
         base_dir = os.path.join(self.figs_dir, run_str, 'energy_plots')
@@ -176,7 +176,7 @@ class EnergyPlotter:
             hist_kws = dict(label=label,
                             alpha=0.3,
                             bins=n_bins,
-                            color=COLORS[idx],
+                            color=colors[idx],
                             density=True,
                             histtype='step')
             _ = ax.hist(data.flatten(), **hist_kws)

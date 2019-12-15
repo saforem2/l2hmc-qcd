@@ -105,10 +105,10 @@ class GaugeModelPlotter:
         self._plot_plaqs(xy_data['plaqs'], **kwargs)
         self._plot_actions(xy_data['actions'], **kwargs)
         self._plot_accept_probs(xy_data['accept_prob'], **kwargs)
-        self._plot_charges(xy_data['charges'], **kwargs)
-        self._plot_autocorrs(xy_data['autocorrs'], **kwargs)
+        #  self._plot_charges(xy_data['charges'], **kwargs)
+        #  self._plot_autocorrs(xy_data['autocorrs'], **kwargs)
         # xy_data['charges'][1] since we're only concerned with 'y' data
-        self._plot_charge_probs(xy_data['charges'][1], **kwargs)
+        #  self._plot_charge_probs(xy_data['charges'][1], **kwargs)
         self._plot_charges_hist(xy_data['charges'][1], **kwargs)
         #  self._plot_charge_diffs(xy_data['charge_diffs'], **kwargs)
         mean_diff = self._plot_plaqs_diffs(xy_data['plaqs_diffs'], **kwargs)
