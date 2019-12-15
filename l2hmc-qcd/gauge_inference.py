@@ -208,7 +208,7 @@ def _loop_net_weights(runner, run_logger, plotter, energy_plotter, **kwargs):
         kwargs['eps'] = eps
 
     for net_weights in net_weights_arr:
-        kwargs['net_weights'] = net_weights
+        kwargs['net_weights'] = NetWeights(*net_weights)
         runner, run_logger, kwargs = run_inference(runner,
                                                    run_logger,
                                                    **kwargs)
