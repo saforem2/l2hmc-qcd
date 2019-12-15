@@ -35,43 +35,33 @@ from __future__ import absolute_import, division, print_function
 import os
 import time
 import pickle
-
-from collections import namedtuple
-
 import config as cfg
-from seed_dict import seeds, xnet_seeds, vnet_seeds
-#  from config import (GLOBAL_SEED, HAS_COMET, HAS_HOROVOD, HAS_MATPLOTLIB,
-#                      NP_FLOAT)
-from plotters.plot_utils import weights_hist
-from models.gauge_model import GaugeModel
-from loggers.train_logger import TrainLogger
-from trainers.trainer import Trainer
-#  from trainers.gauge_model_trainer import GaugeModelTrainer
+
+from seed_dict import seeds, vnet_seeds, xnet_seeds
+from collections import namedtuple
+from trainers.train_setup import (check_reversibility, count_trainable_params,
+                                  create_config, get_net_weights, train_setup)
 
 import numpy as np
 import tensorflow as tf
 
 from tensorflow.python import debug as tf_debug  # noqa: F401
 from tensorflow.python.client import timeline  # noqa: F401
-from tensorflow.core.protobuf import rewriter_config_pb2
 
 import inference
 import utils.file_io as io
 
+from trainers.trainer import Trainer
 from utils.parse_args import parse_args
+from models.gauge_model import GaugeModel
+from plotters.plot_utils import weights_hist
+from loggers.train_logger import TrainLogger
 
 if cfg.HAS_COMET:
     from comet_ml import Experiment
 
 if cfg.HAS_HOROVOD:
     import horovod.tensorflow as hvd
-
-try:
-    import statsmodels as sm
-    HAS_STATSMODELS = True
-except ImportError:
-    import pandas as pd
-    HAS_STATSMODELS = False
 
 if float(tf.__version__.split('.')[0]) <= 2:
     tf.logging.set_verbosity(tf.logging.INFO)
@@ -82,251 +72,6 @@ NP_FLOAT = cfg.NP_FLOAT
 
 
 Weights = namedtuple('Weights', ['w', 'b'])
-
-
-def _get_net_weights(net, weights):
-    for layer in net.layers:
-        if hasattr(layer, 'layers'):
-            weights = _get_net_weights(layer, weights)
-        else:
-            try:
-                weights[net.name].update({
-                    layer.name: Weights(*layer.get_weights())
-                })
-            except KeyError:
-                weights.update({
-                    net.name: {
-                        layer.name: Weights(*layer.get_weights())
-                    }
-                })
-
-    return weights
-
-
-def get_coeffs(generic_net):
-    return (generic_net.coeff_scale, generic_net.coeff_transformation)
-
-
-def get_net_weights(model):
-    weights = {
-        'xnet': _get_net_weights(model.dynamics.xnet, {}),
-        'vnet': _get_net_weights(model.dynamics.vnet, {}),
-    }
-
-    return weights
-
-
-def create_config(params):
-    """Helper method for creating a tf.ConfigProto object."""
-    config = tf.ConfigProto(allow_soft_placement=True)
-    time_size = params.get('time_size', None)
-    if time_size is not None and time_size > 8:
-        off = rewriter_config_pb2.RewriterConfig.OFF
-        config_attrs = config.graph_options.rewrite_options
-        config_attrs.arithmetic_optimization = off
-
-    gpu = params.get('gpu', False)
-    if gpu:
-        # Horovod: pin GPU to be used to process local rank 
-        # (one GPU per process)
-        config.gpu_options.allow_growth = True
-        #  config.allow_soft_placement = True
-        if cfg.HAS_HOROVOD and params['horovod']:
-            config.gpu_options.visible_device_list = str(hvd.local_rank())
-
-    if cfg.HAS_MATPLOTLIB:
-        params['_plot'] = True
-
-    theta = params.get('theta', False)
-    if theta:
-        params['_plot'] = False
-        io.log("Training on Theta @ ALCF...")
-        params['data_format'] = 'channels_last'
-        os.environ["KMP_BLOCKTIME"] = str(0)
-        os.environ["KMP_AFFINITY"] = (
-            "granularity=fine,verbose,compact,1,0"
-        )
-        # NOTE: KMP affinity taken care of by passing -cc depth to aprun call
-        OMP_NUM_THREADS = 62
-        config.allow_soft_placement = True
-        config.intra_op_parallelism_threads = OMP_NUM_THREADS
-        config.inter_op_parallelism_threads = 0
-
-    return config, params
-
-
-def latest_meta_file(checkpoint_dir=None):
-    """Returns the most recent meta-graph (`.meta`) file in checkpoint_dir."""
-    if not os.path.isdir(checkpoint_dir) or checkpoint_dir is None:
-        return
-
-    meta_files = [i for i in os.listdir(checkpoint_dir) if i.endswith('.meta')]
-    step_nums = [int(i.split('-')[-1].rstrip('.meta')) for i in meta_files]
-    step_num = sorted(step_nums)[-1]
-    meta_file = os.path.join(checkpoint_dir, f'model.ckpt-{step_num}.meta')
-
-    return meta_file
-
-
-def count_trainable_params(out_file, log=False):
-    """Count the total number of trainable parameters in a tf.Graph object.
-
-    Args:
-        out_file (str): Path to file where all trainable parameters will be
-            written.
-        log (bool): Whether or not to print trainable parameters to console
-            (std-out).
-    Returns:
-        None
-    """
-    if log:
-        writer = io.log_and_write
-    else:
-        writer = io.write
-
-    io.log(f'Writing parameter counts to: {out_file}.')
-    writer(80 * '-', out_file)
-    total_params = 0
-    for var in tf.trainable_variables():
-        # shape is an array of tf.Dimension
-        shape = var.get_shape()
-        writer(f'var: {var}', out_file)
-        #  var_shape_str = f'  var.shape: {shape}'
-        writer(f'  var.shape: {shape}', out_file)
-        writer(f'  len(var.shape): {len(shape)}', out_file)
-        var_params = 1  # variable parameters
-        for dim in shape:
-            writer(f'    dim: {dim}', out_file)
-            #  dim_strs += f'    dim: {dim}\'
-            var_params *= dim.value
-        writer(f'variable_parameters: {var_params}', out_file)
-        writer(80 * '-', out_file)
-        total_params += var_params
-
-    writer(80 * '-', out_file)
-    writer(f'Total parameters: {total_params}', out_file)
-
-
-def train_setup(FLAGS, log_file=None, root_dir=None,
-                run_str=True, model_type='GaugeModel'):
-    io.log(SEP_STR)
-    io.log("Starting training using L2HMC algorithm...")
-    tf.keras.backend.clear_session()
-    tf.reset_default_graph()
-
-    # ---------------------------------
-    # Parse command line arguments;
-    # copy key, val pairs from FLAGS
-    # to params.
-    # ---------------------------------
-    try:
-        FLAGS_DICT = FLAGS.__dict__
-    except AttributeError:
-        FLAGS_DICT = FLAGS
-
-    params = {k: v for k, v in FLAGS_DICT.items()}
-
-    params['log_dir'] = io.create_log_dir(FLAGS,
-                                          log_file=log_file,
-                                          root_dir=root_dir,
-                                          run_str=run_str,
-                                          model_type=model_type)
-    params['summaries'] = not getattr(FLAGS, 'no_summaries', False)
-    save_steps = getattr(FLAGS, 'save_steps', None)
-    train_steps = getattr(FLAGS, 'train_steps', None)
-
-    if 'no_summaries' in params:
-        del params['no_summaries']
-
-    if save_steps is None and train_steps is not None:
-        params['save_steps'] = params['train_steps'] // 4
-
-    else:
-        params['save_steps'] = 1000
-
-    #  if FLAGS.gpu:
-    #      params['data_format'] = 'channels_last'
-    #      #  params['data_format'] = 'channels_first'
-    #  else:
-    #      io.log("Using CPU for training.")
-    #      params['data_format'] = 'channels_last'
-
-    #  if getattr(FLAGS, 'float64', False):
-    #  if params.get('float64', False):
-    #      io.log(f'INFO: Setting floating point precision to `float64`.')
-    #      set_precision('float64')
-
-    #  if getattr(FLAGS, 'horovod', False):
-    if params.get('horovod', False):
-        params['using_hvd'] = True
-        num_workers = hvd.size()
-        params['num_workers'] = num_workers
-
-        # ---------------------------------------------------------
-        # Horovod: Scale initial lr by of num GPUs.
-        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        # NOTE: Even with a linear `warmup` of the learning rate,
-        #       the training remains unstable as evidenced by
-        #       exploding gradients and NaN tensors.
-        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        #  params['lr_init'] *= num_workers
-        # ---------------------------------------------------------
-
-        # Horovod: adjust number of training steps based on number of GPUs.
-        #  params['train_steps'] //= num_workers
-
-        # Horovod: adjust save_steps and lr_decay_steps accordingly.
-        #  params['save_steps'] //= num_workers
-        #  params['lr_decay_steps'] //= num_workers
-
-        #  if params['summaries']:
-        #      params['logging_steps'] //= num_workers
-
-        # ---------------------------------------------------------
-        # Horovod: BroadcastGlobalVariablesHook broadcasts initial
-        # variable states from rank 0 to all other processes. This
-        # is necessary to ensure consistent initialization of all
-        # workers when training is started with random weights or
-        # restored from a checkpoint.
-        # ---------------------------------------------------------
-        hooks = [hvd.BroadcastGlobalVariablesHook(0)]
-    else:
-        params['using_hvd'] = False
-        hooks = []
-
-    return params, hooks
-
-
-def check_reversibility(model, sess, net_weights=None):
-    rand_samples = np.random.randn(*model.x.shape)
-    if net_weights is None:
-        net_weights = cfg.NetWeights(1., 1., 1., 1., 1., 1.)
-
-    io.log(f'Net weights used in reversibility test:\n\t {net_weights}.\n')
-
-    feed_dict = {
-        model.x: rand_samples,
-        model.beta: 1.,
-        model.net_weights: net_weights,
-        #  model.net_weights.x_scale: 1.,
-        #  model.net_weights.x_translation: 1.,
-        #  model.net_weights.x_transformation: 1.,
-        #  model.net_weights.v_scale: 1.,
-        #  model.net_weights.v_translation: 1.,
-        #  model.net_weights.v_transformation: 1.,
-        #  model.net_weights[0]: 1.,
-        #  model.net_weights[1]: 1.,
-        #  model.net_weights[2]: 1.,
-        model.train_phase: False
-    }
-
-    # Check reversibility
-    x_diff, v_diff = sess.run([model.x_diff,
-                               model.v_diff], feed_dict=feed_dict)
-    reverse_str = (f'Reversibility results:\n '
-                   f'\t x_diff: {x_diff:.10g}, v_diff: {v_diff:.10g}')
-
-    return reverse_str, x_diff, v_diff
 
 
 def train_l2hmc(FLAGS, log_file=None):
@@ -425,8 +170,6 @@ def train_l2hmc(FLAGS, log_file=None):
     global_var_init = tf.global_variables_initializer()
     local_var_init = tf.local_variables_initializer()
     uninited = tf.report_uninitialized_variables()
-    #  global_vars = tf.global_variables()
-    #  is_var_init = [tf.is_variable_initialized(var) for var in global_vars]
     sess = tf.train.MonitoredTrainingSession(**sess_kwargs)
     tf.keras.backend.set_session(sess)
     sess.run([global_var_init, local_var_init])
