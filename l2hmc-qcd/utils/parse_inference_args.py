@@ -135,19 +135,6 @@ def parse_args():
                               extremely large (many LF steps during inference)
                               and take a while to actually generate.)"""))
 
-    parser.add_argument('--loop_net_weights',
-                        dest='loop_net_weights',
-                        action='store_true',
-                        required=False,
-                        help=("""Flag that when passed sets
-                              `--loop_net_weights=True`, and will iterate over
-                              multiple values of `net_weights`, which are
-                              multiplicative scaling factors applied to each of
-                              the Q, S, T functions when running the trained
-                              sampler.
-                              (Default: `--loop_net_weights=False, i.e.
-                              `--loop_net_weights is not passed)"""))
-
     parser.add_argument('--loop_transl_weights',
                         dest='loop_transl_weights',
                         action='store_true',
