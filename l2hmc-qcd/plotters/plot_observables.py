@@ -130,17 +130,20 @@ def weights_hist(log_dir, weights=None):
                     try:
                         sns.kdeplot(w, ax=ax, shade=True,
                                     color='C6', label=label)
-                    except np.linalg.LinAlgError:
+                    except:
                         io.log(f'LinAlgError raised. Returning.')
-                        return
+                        continue
 
                 _ = ax.hist(w, **hist_kws)
                 if b is not None:
                     label = (r"""$\langle b\rangle$"""
                              + f' {avg:.3g} +/- {err:.3g}')
                     if HAS_SEABORN:
-                        sns.kdeplot(b, ax=ax, shade=True,
-                                    color='C7', label=blabel)
+                        try:
+                            sns.kdeplot(b, ax=ax, shade=True,
+                                        color='C7', label=blabel)
+                        except:
+                            continue
                     _ = ax.hist(b, density=True, color='C7', histtype='step')
                 _ = ax.set_title(f'{key}/{k1}/{k2}', fontsize='x-large')
                 _ = ax.legend(loc='best')
@@ -376,8 +379,11 @@ def kde_hist(data, stats=True, **kwargs):
         err = data.std()
 
     if HAS_SEABORN and kdehist:
-        _ = sns.kdeplot(y.flatten(), ax=ax, color=color,
-                        label=f'{avg:.3g} +/- {err:.3g}')
+        try:
+            _ = sns.kdeplot(y.flatten(), ax=ax, color=color,
+                            label=f'{avg:.3g} +/- {err:.3g}')
+        except:
+            pass
 
     hist_kws = dict(color=color,
                     alpha=0.3,
