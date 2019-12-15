@@ -31,9 +31,6 @@ if float(tf.__version__.split('.')[0]) <= 2:
     tf.logging.set_verbosity(tf.logging.INFO)
 
 
-def log_net_weight(net_weight):
-    io.log('(' + ', '.join((str(i)) for i in net_weight) + ')'
-
 def initialize_uninitialized(sess):
     global_vars = tf.global_variables()
     is_not_initialized = sess.run(
