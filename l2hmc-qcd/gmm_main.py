@@ -12,26 +12,23 @@ from __future__ import absolute_import, division, print_function
 import os
 import time
 import pickle
-
 import config as cfg
-from seed_dict import seeds, xnet_seeds, vnet_seeds
-from main import (count_trainable_params, create_config, train_setup,
-                  check_reversibility, get_net_weights)
-from models.gmm_model import GaussianMixtureModel
-from plotters.plot_utils import _gmm_plot
-from loggers.train_logger import TrainLogger
-#  from trainers.gmm_trainer import GaussianMixtureModelTrainer
-from trainers.trainer import Trainer
+
+from main import (check_reversibility, count_trainable_params, create_config,
+                  get_net_weights, train_setup)
+from seed_dict import seeds, vnet_seeds, xnet_seeds
 
 import numpy as np
 import tensorflow as tf
 
 import utils.file_io as io
 
+from models.gmm_model import GaussianMixtureModel
+from trainers.trainer import Trainer
 from params.gmm_params import GMM_PARAMS
+from plotters.plot_utils import _gmm_plot
+from loggers.train_logger import TrainLogger
 from utils.parse_gmm_args import parse_args as parse_gmm_args
-
-#  from utils.distributions import gen_ring, GMM
 
 if cfg.HAS_MATPLOTLIB:
     import matplotlib.pyplot as plt
@@ -45,21 +42,7 @@ if float(tf.__version__.split('.')[0]) <= 2:
 SEP_STR = 80 * '-'
 
 #  tf.set_random_seed(cfg.GLOBAL_SEED)
-
-
-def create_session(config, checkpoint_dir, monitored=False):
-    if monitored:
-        sess_kwargs = {
-            'checkpoint_dir': checkpoint_dir,
-            'hooks': [],
-            'config': config,
-            'save_summaries_secs': None,
-            'save_summaries_steps': None,
-        }
-
-        return tf.train.MonitoredTrainingSession(**sess_kwargs)
-
-    return tf.Session(config=config)
+from .train_setup import create_session
 
 
 def plot_target_distribution(distribution, target_samples=None, **kwargs):
@@ -135,8 +118,8 @@ def train_l2hmc(FLAGS, log_file=None):
                                         target_samples, **kwargs)
 
         weights = get_net_weights(model)
-        xnet = model.dynamics.x_fn.generic_net
-        vnet = model.dynamics.v_fn.generic_net
+        xnet = model.dynamics.xnet.generic_net
+        vnet = model.dynamics.vnet.generic_net
         coeffs = {
             'xnet': {
                 'coeff_scale': xnet.coeff_scale,
@@ -150,7 +133,7 @@ def train_l2hmc(FLAGS, log_file=None):
         logging_steps = params.get('logging_steps', 10)
 
         train_logger = TrainLogger(model, params['log_dir'],
-                                   logging_steps=10,
+                                   logging_steps=logging_steps,
                                    summaries=params['summaries'])
 
         config, params = create_config(params)
@@ -158,6 +141,9 @@ def train_l2hmc(FLAGS, log_file=None):
         io.check_else_make_dir(checkpoint_dir)
         sess = create_session(config, checkpoint_dir, monitored=True)
         tf.keras.backend.set_session(sess)
+
+    else:
+        train_logger = None
 
     net_weights_init = cfg.NetWeights(x_scale=1.,
                                       x_translation=1.,
@@ -245,16 +231,6 @@ def main(FLAGS):
 if __name__ == '__main__':
     FLAGS = GMM_PARAMS
     args = parse_gmm_args()
-    #  set_seed(args.global_seed)
-
-    #  io.log('\n' + 80 * '=' + '\n')
-    #  io.log(f'config.TF_FLOAT: {cfg.TF_FLOAT}')
-    #  if args.float64:
-    #      set_precision('float64')
-
-    #  io.log(f'config.TF_FLOAT: {cfg.TF_FLOAT}')
-    #  io.log('\n' + 80 * '=' + '\n')
-
     FLAGS.update(args.__dict__)
     t0 = time.time()
     main(FLAGS)
