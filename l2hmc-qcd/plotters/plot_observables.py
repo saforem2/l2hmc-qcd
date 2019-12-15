@@ -1,3 +1,4 @@
+import scipy
 import os
 import pickle
 
@@ -299,9 +300,9 @@ def trace_plot(data, ax, color=None, stats=True, **kwargs):
         errs = data.get('errs', np.std(y, axis=-1))
     else:
         x = np.arange(data.shape[0])
-        y = data.reshape((data.shape[0], -1))
-        avgs = data.mean(axis=-1)
-        errs = data.std(axis=-1)
+        y = np.squeeze(data.reshape((data.shape[0], -1)))
+        avgs = np.squeeze(data.mean(axis=-1))
+        errs = np.squeeze(data.std(axis=-1))
         avg = data.mean()
         err = data.std()
 
@@ -321,8 +322,9 @@ def trace_plot(data, ax, color=None, stats=True, **kwargs):
     _ = ax.axhline(y=avg, color=color, label=avg_label_)
 
     # represent errors using semi-transparent `fill_between`
-    _ = ax.plot(x, avgs, color=color, label=label)
-    _ = ax.fill_between(x, y1=yps, y2=yms, color=color, alpha=0.3)
+    _ = ax.plot(x, np.squeeze(avgs), color=color, label=label)
+    _ = ax.fill_between(x, y1=np.squeeze(yps),
+                        y2=np.squeeze(yms), color=color, alpha=0.3)
 
     # plot horizontal lines to show avg errors
     _ = ax.axhline(y=yp_, color=color, ls=':', alpha=0.5)
@@ -353,6 +355,7 @@ def kde_hist(data, stats=True, **kwargs):
     color = kwargs.get('color', 'k')
     ax = kwargs.get('ax', None)
     kdehist = kwargs.get('kdehist', True)
+    use_avg = kwargs.get('use_avg', False)
 
     if ax is None:
         ax = plt.gca()
@@ -361,8 +364,10 @@ def kde_hist(data, stats=True, **kwargs):
         data = calc_stats(data, **kwargs)
 
     if isinstance(data, dict):
-        #  y = data.get('data', None)
-        y = data.get('avgs', None)
+        if use_avg:
+            y = data.get('avgs', None)
+        else:
+            y = data.get('data', None)
         avg = data.get('avg', np.mean(y))
         err = data.get('err', np.std(y))
     else:
@@ -405,6 +410,7 @@ def plot_obs(log_dir, obs_dict=None, **kwargs):
     kdehist = kwargs.get('kdehist', True)
     axis = kwargs.get('axis', None)
     stats = kwargs.get('stats', True)
+    use_avg = kwargs.get('use_avg', False)
 
     if run_dirs is None:
         run_dirs = get_run_dirs(log_dir, filter_str)
@@ -454,7 +460,8 @@ def plot_obs(log_dir, obs_dict=None, **kwargs):
                                 ax=axes[idx, 1],
                                 color=colors[idx],
                                 zeroline=zeroline,
-                                kdehist=kdehist)
+                                kdehist=kdehist,
+                                use_avg=use_avg)
 
         if idx == int(nrows // 2):
             if obs_name == 'plaqs':
