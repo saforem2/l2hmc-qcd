@@ -170,7 +170,10 @@ class EnergyPlotter:
                 #  mean, err, mean_arr = self.bootstrap(data, n_boot=n_boot)
                 #  mean_arr = mean_arr.flatten()
             if HAS_SEABORN:
-                ax = sns.kdeplot(data.flatten(), ax=ax, color=colors[idx])
+                try:
+                    ax = sns.kdeplot(data.flatten(), ax=ax, color=colors[idx])
+                except:
+                    continue
                 #  ax = sns.distplot(mean_arr, ax=ax, **hist_kws)
             label = labels[idx] + f'  avg: {mean:.4g} +/- {err:.4g}'
             hist_kws = dict(label=label,
