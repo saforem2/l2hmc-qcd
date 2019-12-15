@@ -9,7 +9,7 @@ Date: 08/21/2019
 import os
 import pickle
 
-from config import HAS_MATPLOTLIB, MARKERS, COLORS
+from config import HAS_MATPLOTLIB, MARKERS, COLORS, Weights
 from collections import namedtuple
 
 import numpy as np
@@ -72,7 +72,6 @@ def weights_hist(log_dir, weights=None):
                 fig, ax = plt.subplots()
                 hist_kws = {
                     'density': True,
-                    #  'label': f'{key}/{k1}/{k2}',
                     'histtype': 'step',
                     'color': 'C6',
                 }
@@ -100,15 +99,17 @@ def weights_hist(log_dir, weights=None):
                     except np.linalg.LinAlgError:
                         io.log(f'LinAlgError raised. Returning.')
                         return
-
-                _ = ax.hist(w, **hist_kws)
+                else:
+                    _ = ax.hist(w, **hist_kws)
                 if b is not None:
                     label = (r"""$\langle b\rangle$"""
                              + f' {avg:.3g} +/- {err:.3g}')
                     if HAS_SEABORN:
                         sns.kdeplot(b, ax=ax, shade=True,
                                     color='C7', label=blabel)
-                    _ = ax.hist(b, density=True, color='C7', histtype='step')
+                    else:
+                        _ = ax.hist(b, density=True,
+                                    color='C7', histtype='step')
                 _ = ax.set_title(f'{key}/{k1}/{k2}', fontsize='x-large')
                 _ = ax.legend(loc='best')
                 fname = f'{key}_{k1}_{k2}_weights_hist.png'
