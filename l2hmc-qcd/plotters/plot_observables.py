@@ -1,6 +1,4 @@
-import scipy
 import os
-import pickle
 
 from config import HAS_MATPLOTLIB, COLORS
 
@@ -9,19 +7,23 @@ import pandas as pd
 
 import utils.file_io as io
 from lattice.lattice import u1_plaq_exact
-from .plot_utils import get_run_dirs, load_pkl, get_params
+from .plot_utils import get_run_dirs, load_pkl
 
 
 if HAS_MATPLOTLIB:
     import matplotlib.pyplot as plt
-
+    import matplotlib.style as mplstyle
+    mplstyle.use('fast')
 try:
     import seaborn as sns
-    sns.set_palette('bright')
-    HAS_SEABORN = True
+    sns.set_palette('bright', 100)
+    colors = sns.color_palette()
+    sns.set_style('ticks', {'xtick.major.size': 8,
+                            'ytick.major.size': 8})
 
 except ImportError:
     HAS_SEABORN = False
+    colors = COLORS
 
 
 def plot_charges(charges, out_file=None, title=None, nrows=2, **kwargs):
@@ -405,18 +407,19 @@ def kde_hist(data, stats=True, **kwargs):
     return ax
 
 
-def plot_obs(log_dir, obs_dict=None, **kwargs):
-    """Plot `plaqs_diffs` w/ hists for all run dirs in `log_dir`."""
+def grid_plot(log_dir, obs_dict=None, **kwargs):
+    """Plot grid of histograms."""
     run_dirs = kwargs.get('run_dirs', None)
-    filter_str = kwargs.get('filter_str', '')
+    filter_str = kwargs.get('filter_str', None)
     therm_frac = kwargs.get('therm_frac', 0.1)
     obs_name = kwargs.get('obs_name', 'plaqs')
-    strip_yticks = kwargs.get('strip_yticks', True)
+    strip_yticks = kwargs.get('strip_yticks', False)
     zeroline = True if obs_name == 'plaqs' else False
     kdehist = kwargs.get('kdehist', True)
     axis = kwargs.get('axis', None)
     stats = kwargs.get('stats', True)
     use_avg = kwargs.get('use_avg', False)
+    plot_type = kwargs.get('plot_type', 'hist')
 
     if run_dirs is None:
         run_dirs = get_run_dirs(log_dir, filter_str)
@@ -424,21 +427,16 @@ def plot_obs(log_dir, obs_dict=None, **kwargs):
     if obs_dict is None:
         obs_dict = get_obs_dict(log_dir, obs_name, run_dirs=run_dirs)
 
-    nrows = len(obs_dict.keys())
-    ncols = 2
-
-    if HAS_SEABORN:
-        sns.set_style('ticks', {'xtick.major.size': 8, 'ytick.major.size': 8})
-        sns.set_palette('bright', len(obs_dict.keys()))
-        colors = sns.color_palette()
-    else:
-        colors = COLORS
+    num_plots = int(len(obs_dict.keys()))
+    nrows = int(np.sqrt(num_plots))
+    ncols = nrows
 
     fig, axes = plt.subplots(nrows=nrows,
                              ncols=ncols,
-                             figsize=(12.8, 9.6), sharex='col',
-                             gridspec_kw={'wspace': 0.,
-                                          'hspace': 0.})
+                             sharex='col',
+                             figsize=(1.5 * 12.8, 1.5 * 12.8))
+                             #  gridspec_kw={'wspace': 0., 'hspace': 0.})
+    axes = axes.flatten()
 
     beta_arr = []
     eps_arr = []
@@ -449,7 +447,132 @@ def plot_obs(log_dir, obs_dict=None, **kwargs):
         else:
             data = v
 
-        run_params = load_pkl(os.path.join(run_dirs[idx], 'run_params.pkl'))
+        run_params = load_pkl(os.path.join(run_dirs[idx],
+                                           'run_params.pkl'))
+        beta_arr.append(run_params['beta'])
+        eps_arr.append(run_params['eps'])
+
+        if plot_type == 'hist':
+            axes[idx] = kde_hist(data,
+                                 key=k,
+                                 stats=stats,
+                                 ax=axes[idx],
+                                 color=colors[idx],
+                                 zeroline=zeroline,
+                                 kdehist=kdehist,
+                                 use_avg=use_avg)
+
+        elif plot_type in ['trace', 'trace_plot']:
+            axes[idx] = trace_plot(data,
+                                   axes[idx],
+                                   colors[idx],
+                                   stats=stats,
+                                   zeroline=zeroline,
+                                   strip_yticks=strip_yticks)
+
+        if idx == int(num_plots // 2):
+            if obs_name == 'plaqs':
+                ylabel = (r"$\langle\phi_{\mathrm{P}}\rangle "
+                          r"- \phi_{\mathrm{P}}^{*}$")
+            else:
+                ylabel = obs_name
+
+            _ = axes[idx].set_ylabel(ylabel, fontsize='x-large')
+
+    title_kwargs = {}
+    if np.allclose(eps_arr, eps_arr[0]):
+        title_kwargs['eps'] = eps_arr[0]
+
+    if np.allclose(beta_arr, beta_arr[0]):
+        title_kwargs['beta'] = beta_arr[0]
+
+    fig.subplots_adjust(hspace=0.)
+    if plot_type in ['trace', 'trace_plot']:
+        fig.subplots_adjust(wspace=0.2)
+
+    params_file = os.path.join(log_dir, 'parameters.pkl')
+    params = load_pkl(params_file)
+    title_str = get_title_str(params, **title_kwargs)
+    _ = plt.suptitle(title_str, fontsize='xx-large', y=1.02)
+
+    out_dir = os.path.join(log_dir, 'figures')
+    if obs_name == 'plaqs':
+        fname = f'plaqs_diffs'
+    else:
+        fname = obs_name
+
+    out_dir = os.path.join(out_dir, fname)
+
+    if filter_str != '':
+        fname += f'_{filter_str}'
+        out_dir = os.path.join(out_dir, filter_str)
+
+    plt.tight_layout()
+    io.check_else_make_dir(out_dir)
+    out_file = os.path.join(out_dir, f'{fname}_{therm_frac}_{plot_type}.png')
+    io.log(f'saving figure to: {out_file}...')
+    plt.savefig(out_file, dpi=200, bbox_inches='tight')
+
+    return fig, axes
+
+
+def plot_obs(log_dir, obs_dict=None, **kwargs):
+    """Plot `plaqs_diffs` w/ hists for all run dirs in `log_dir`."""
+    run_dirs = kwargs.get('run_dirs', None)
+    filter_str = kwargs.get('filter_str', '')
+    therm_frac = kwargs.get('therm_frac', 0.1)
+    obs_name = kwargs.get('obs_name', 'plaqs')
+    strip_yticks = kwargs.get('strip_yticks', False)
+    zeroline = True if obs_name == 'plaqs' else False
+    kdehist = kwargs.get('kdehist', True)
+    axis = kwargs.get('axis', None)
+    stats = kwargs.get('stats', True)
+    use_avg = kwargs.get('use_avg', False)
+    ncols = kwargs.get('ncols', 1)
+
+    if run_dirs is None:
+        run_dirs = get_run_dirs(log_dir, filter_str)
+
+    if obs_dict is None:
+        obs_dict = get_obs_dict(log_dir, obs_name, run_dirs=run_dirs)
+
+    nrows = int(len(obs_dict.keys()))
+    ncols = 2
+    #  nrows = int(len(obs_dict.keys()) / ncols)
+    #  ncols = int(2 * ncols)
+
+    if HAS_SEABORN:
+        sns.set_style('ticks', {'xtick.major.size': 8, 'ytick.major.size': 8})
+        sns.set_palette('bright', len(obs_dict.keys()))
+        colors = sns.color_palette()
+    else:
+        colors = COLORS
+
+    fig, axes = plt.subplots(nrows=nrows,
+                             ncols=ncols,
+                             sharex='col',
+                             figsize=(12.8, 9.6),
+                             gridspec_kw={'wspace': 0.,
+                                          'hspace': 0.})
+    #  axes = axes.reshape(axes.shape[0], -1, 2)
+    #  axes = axes.reshape(-1, 2)
+    #  keys = np.array(list(obs_dict.keys()))
+    #  vals = np.array(list(obs_dict.values()))
+    #  axes = axes.flatten()
+
+    beta_arr = []
+    eps_arr = []
+
+    #  for idx, ax in enumerate(axes)
+    #  for idx, (k, v) in enumerate(zip(keys, vals)):
+    for idx, (k, v) in enumerate(obs_dict.items()):
+        if stats:
+            data = calc_stats(v, therm_frac=therm_frac, axis=axis)
+        else:
+            data = v
+
+        run_params = load_pkl(os.path.join(run_dirs[idx],
+                                           'run_params.pkl'))
         beta_arr.append(run_params['beta'])
         eps_arr.append(run_params['eps'])
 
@@ -491,7 +614,7 @@ def plot_obs(log_dir, obs_dict=None, **kwargs):
     _ = plt.suptitle(title_str, fontsize='xx-large', y=1.04)
 
     plt.tight_layout()
-    fig.subplots_adjust(hspace=0.)
+    #  fig.subplots_adjust(hspace=0.)
 
     out_dir = os.path.join(log_dir, 'figures')
     if obs_name == 'plaqs':
