@@ -188,7 +188,9 @@ def run_inference(runner, run_logger, **kwargs):
     for key, val in kwargs.items():
         io.log(f'{key}: {val}')
 
-    if not skip_existing:
+    if existing and skip_existing:
+        return runner, run_logger, kwargs
+    else:
         t0 = time.time()
         runner.run(**kwargs)
         run_time = time.time() - t0
