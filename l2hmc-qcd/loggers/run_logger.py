@@ -247,16 +247,23 @@ class RunLogger:
         run_dir = os.path.join(self.runs_dir, run_str)
         run_summary_dir = os.path.join(self.run_summaries_dir, run_str)
         fig_dir = os.path.join(self.figs_dir, run_str)
+        observables_dir = os.path.join(run_dir, 'observables')
 
         flag = False
-        if os.path.isdir(run_dir):
-            io.log(f'Found existing run at: {run_dir}. Skipping.')
-            flag = True
+        run_flag = False
+        summary_flag = False
+        fig_flag = False
+        if os.path.isdir(run_dir) and os.path.isdir(observables_dir):
+            io.log(f'Found existing run at: {run_dir}')
+            run_flag = True
         if os.path.isdir(run_summary_dir):
-            io.log(f'Found existing run at: {run_summary_dir}. Skipping.')
-            flag = True
+            io.log(f'Found existing run at: {run_summary_dir}')
+            summary_flag = True
         if os.path.isdir(fig_dir):
-            io.log(f'Found existing run at: {fig_dir}. Skipping.')
+            io.log(f'Found existing run at: {fig_dir}')
+            fig_flag = True
+
+        if run_flag and summary_flag and fig_flag:
             flag = True
 
         self._existing_run = flag
