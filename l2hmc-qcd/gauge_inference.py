@@ -176,22 +176,24 @@ def run_inference(runner, run_logger, **kwargs):
     eps = kwargs.get('eps', None)
     beta = kwargs.get('beta', 5.)
     run_steps = kwargs.get('run_steps', 5000)
+    skip_existing = kwargs.get('skip_existing', False)
     net_weights = kwargs.get('net_weights', NetWeights(1., 1., 1., 1., 1., 1.))
     if eps is None:
         eps = runner.eps
         kwargs['eps'] = eps
 
-    _log_inference_header(net_weights, run_steps, eps, beta, existing=False)
+    existing = run_logger.reset(**kwargs)
+
+    _log_inference_header(net_weights, run_steps, eps, beta, existing=existing)
     for key, val in kwargs.items():
         io.log(f'{key}: {val}')
 
-    run_logger.reset(**kwargs)
-    t0 = time.time()
-    runner.run(**kwargs)
-    run_time = time.time() - t0
-
-    io.log(80 * '-' + f'\nTook: {run_time}s to complete run.\n' + 80 * '-')
-    io.log(80 * '-' + '\n')
+    if not skip_existing:
+        t0 = time.time()
+        runner.run(**kwargs)
+        run_time = time.time() - t0
+        io.log(80 * '-' + f'\nTook: {run_time}s to complete run.\n' + 80 * '-')
+        io.log(80 * '-' + '\n')
 
     return runner, run_logger, kwargs
 
@@ -201,7 +203,7 @@ def _loop_net_weights(runner, run_logger, plotter, energy_plotter, **kwargs):
     eps = kwargs.get('eps', None)
     net_weights_arr = [
         tuple(np.array(list(np.binary_repr(i, width=6)), dtype=int))
-        for i in range(65)
+        for i in range(64)
     ]
     if eps is None:
         eps = runner.eps
@@ -212,8 +214,11 @@ def _loop_net_weights(runner, run_logger, plotter, energy_plotter, **kwargs):
         runner, run_logger, kwargs = run_inference(runner,
                                                    run_logger,
                                                    **kwargs)
-        runner, run_logger = inference_plots(runner, run_logger, plotter,
-                                             energy_plotter, **kwargs)
+        try:
+            runner, run_logger = inference_plots(runner, run_logger, plotter,
+                                                 energy_plotter, **kwargs)
+        except (AttributeError, KeyError):  # inference_plots fails if no data
+            continue
 
     return runner, run_logger
 
@@ -343,6 +348,7 @@ def main(kwargs):
         'run_steps': kwargs.get('run_steps', 5000),
         'save_samples': kwargs.get('save_samples', False),
         'loop_net_weights': kwargs.get('loop_net_weights', False),
+        'skip_existing': kwargs.get('skip_existing', False),
     }
 
     runner, run_logger = inference(runner,
