@@ -259,6 +259,8 @@ class RunLogger:
             io.log(f'Found existing run at: {fig_dir}. Skipping.')
             flag = True
 
+        self._existing_run = flag
+
         return flag
 
     def _get_run_str(self, **kwargs):
@@ -309,11 +311,16 @@ class RunLogger:
         eps_np = kwargs.get('eps', None)
         run_steps = kwargs.get('run_steps', 5000)
         #  net_weights = kwargs.get('net_weights', [1., 1., 1.])
+        skip_existing = kwargs.get('skip_existing', False)
         net_weights = kwargs.get('net_weights',
                                  NetWeights(1., 1., 1., 1., 1., 1.))
 
+        existing = False
         run_str = self._get_run_str(**kwargs)
         if self.existing_run(run_str):  # append current time to run_str
+            existing = True
+            if skip_existing:
+                return existing
             now = datetime.datetime.now()
             time_str = now.strftime('%H%M')
             run_str += f'__{time_str}'
@@ -351,6 +358,8 @@ class RunLogger:
 
         io.save_params(self.params, self.run_dir)
         io.save_params(run_params, self.run_dir, name='run_params')
+
+        return existing
 
     def _set_run_dir(self, run_str):
         """Sets dirs containing data about inference run using run_str."""

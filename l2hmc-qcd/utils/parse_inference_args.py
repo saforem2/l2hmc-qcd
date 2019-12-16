@@ -232,6 +232,14 @@ def parse_args():
                               `--save_samples` is not passed).\n
                               WARNING!! This is very data intensive."""))
 
+    parser.add_argument('--skip_existing',
+                        dest='skip_existing',
+                        action='store_true',
+                        required=False,
+                        help=("""Flag that when passed will skip inference run
+                              if it has already been completed with the same
+                              parameters."""))
+
     if sys.argv[1].startswith('@'):
         args = parser.parse_args(shlex.split(open(sys.argv[1][1:]).read(),
                                              comments=True))
