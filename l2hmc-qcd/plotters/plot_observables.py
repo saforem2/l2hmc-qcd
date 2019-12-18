@@ -1,4 +1,5 @@
 import os
+import pickle
 
 from config import HAS_MATPLOTLIB, COLORS
 
@@ -20,6 +21,7 @@ try:
     colors = sns.color_palette()
     sns.set_style('ticks', {'xtick.major.size': 8,
                             'ytick.major.size': 8})
+    HAS_SEABORN = True
 
 except ImportError:
     HAS_SEABORN = False
@@ -48,7 +50,7 @@ def plot_charges(charges, out_file=None, title=None, nrows=2, **kwargs):
         _ = ax.plot(arr_int, marker='.', ls='', color='r', zorder=10)
 
     if title is not None:
-        _ = plt.suptitle(title, fontsize='xx-large', y=1.04)
+        _ = plt.suptitle(title, fontsize=20, y=1.04)
 
     if out_file is not None:
         fig.tight_layout()
@@ -80,7 +82,7 @@ def plot_autocorrs(charges, out_file=None, title=None, nrows=4, **kwargs):
         #  except ImportError:
 
     if title is not None:
-        _ = plt.suptitle(title, fontsize='xx-large', y=1.02)
+        _ = plt.suptitle(title, fontsize=20, y=1.02)
 
     if out_file is not None:
         fig.tight_layout()
@@ -147,7 +149,7 @@ def weights_hist(log_dir, weights=None):
                         except:
                             continue
                     _ = ax.hist(b, density=True, color='C7', histtype='step')
-                _ = ax.set_title(f'{key}/{k1}/{k2}', fontsize='x-large')
+                _ = ax.set_title(f'{key}/{k1}/{k2}', fontsize=20)
                 _ = ax.legend(loc='best')
                 fname = f'{key}_{k1}_{k2}_weights_hist.png'
                 out_file = os.path.join(figs_dir, fname)
@@ -169,12 +171,13 @@ def load_plaqs(run_dir):
     return load_pkl(plaqs_file, arr=True)
 
 
-def get_title_str(params, beta=None, eps=None):
+def get_title_str(params, beta=None, eps=None, nw_legend=True):
     ss = params['space_size']
     ts = params['time_size']
     lf_steps = params['num_steps']
     batch_size = params['batch_size']
-    nw_desc = (r'nw: ($\alpha_{\mathrm{S_{x}}}$, '
+    clip_value = params.get('clip_value', 0)
+    nw_desc = (r'($\alpha_{\mathrm{S_{x}}}$, '
                r'$\alpha_{\mathrm{T_{x}}}$, '
                r'$\alpha_{\mathrm{Q_{x}}}$, '
                r'$\alpha_{\mathrm{S_{v}}}$, '
@@ -184,6 +187,8 @@ def get_title_str(params, beta=None, eps=None):
     title_str = (f"{ss} x {ts}, "
                  r"$N_{\mathrm{LF}} = $" + f"{lf_steps}, "
                  r"$N_{\mathrm{B}} = $" + f"{batch_size}, ")
+    if clip_value > 0:
+        title_str += f'clip: {clip_value}, '
 
     if beta is not None:
         title_str += r"$\beta = $" + f'{beta}, '
@@ -191,7 +196,8 @@ def get_title_str(params, beta=None, eps=None):
     if eps is not None:
         title_str += r"$\varepsilon = $" + f'{eps:.3g}, '
 
-    title_str += f"nw: {nw_desc}"
+    if nw_legend:
+        title_str += f"nw: {nw_desc}"
 
     return title_str
 
@@ -324,22 +330,23 @@ def trace_plot(data, ax, color=None, stats=True, **kwargs):
     avg_label = kwargs.get('avg_label', False)
 
     avg_label_ = f'{avg:.3g} +/- {err:.3g}' if avg_label else ''
-    _ = ax.axhline(y=avg, color=color, label=avg_label_)
+    _ = ax.axhline(y=avg, color=color, label=avg_label_, rasterized=True)
 
     # represent errors using semi-transparent `fill_between`
-    _ = ax.plot(x, np.squeeze(avgs), color=color, label=label)
+    _ = ax.plot(x, np.squeeze(avgs), color=color, label=label, rasterized=True)
     _ = ax.fill_between(x, y1=np.squeeze(yps),
-                        y2=np.squeeze(yms), color=color, alpha=0.3)
+                        y2=np.squeeze(yms), color=color, alpha=0.3,
+                        rasterized=True)
 
     # plot horizontal lines to show avg errors
-    _ = ax.axhline(y=yp_, color=color, ls=':', alpha=0.5)
-    _ = ax.axhline(y=ym_, color=color, ls=':', alpha=0.5)
+    _ = ax.axhline(y=yp_, color=color, ls=':', alpha=0.5, rasterized=True)
+    _ = ax.axhline(y=ym_, color=color, ls=':', alpha=0.5, rasterized=True)
 
     if kwargs.get('zeroline', False):  # draw horizontal line at y = 0
-        _ = ax.axhline(y=0, color='gray', ls='--', zorder=-1)
+        _ = ax.axhline(y=0, color='gray', ls='--', zorder=-1, rasterized=True)
 
     if label != '' and avg_label:
-        _ = ax.legend(loc='best', fontsize='small')
+        _ = ax.legend(loc='best')  #, fontsize='small')
 
     strip_yticks = kwargs.get('strip_yticks', False)
     if strip_yticks:
@@ -380,16 +387,15 @@ def kde_hist(data, stats=True, **kwargs):
         avg = data.mean()
         err = data.std()
 
-    if HAS_SEABORN and kdehist:
-        try:
-            _ = sns.kdeplot(y.flatten(), ax=ax, color=color,
-                            label=f'{avg:.3g} +/- {err:.3g}')
-        except:
-            pass
+    try:
+        _ = sns.kdeplot(y.flatten(), ax=ax, color=color,
+                        label=f'{avg:.3g} +/- {err:.3g}')
+    except:
+        pass
 
     hist_kws = dict(color=color,
                     alpha=0.3,
-                    bins=50,
+                    #  bins=50,
                     density=True,
                     label=str(key),
                     histtype=histtype)
@@ -397,8 +403,8 @@ def kde_hist(data, stats=True, **kwargs):
     if kwargs.get('zeroline', False):
         _ = ax.axvline(x=0, color='gray', ls='--', zorder=-1)
 
-    _ = ax.axvline(x=avg, color=color, ls='-')
-    _ = ax.legend(loc='best', fontsize='small')
+    _ = ax.axvline(x=avg, color=color, ls='--')
+    _ = ax.legend(loc='best') #, fontsize='small')
     _ = ax.set_ylabel('')
     _ = ax.set_yticklabels([])
     _ = ax.set_yticks([])
@@ -412,7 +418,7 @@ def grid_plot(log_dir, obs_dict=None, **kwargs):
     run_dirs = kwargs.get('run_dirs', None)
     filter_str = kwargs.get('filter_str', None)
     therm_frac = kwargs.get('therm_frac', 0.1)
-    obs_name = kwargs.get('obs_name', 'plaqs')
+    obs_name = kwargs.get('obs_name', None)
     strip_yticks = kwargs.get('strip_yticks', False)
     zeroline = True if obs_name == 'plaqs' else False
     kdehist = kwargs.get('kdehist', True)
@@ -420,12 +426,24 @@ def grid_plot(log_dir, obs_dict=None, **kwargs):
     stats = kwargs.get('stats', True)
     use_avg = kwargs.get('use_avg', False)
     plot_type = kwargs.get('plot_type', 'hist')
+    out_dir = kwargs.get('out_dir', None)
 
     if run_dirs is None:
         run_dirs = get_run_dirs(log_dir, filter_str)
 
     if obs_dict is None:
         obs_dict = get_obs_dict(log_dir, obs_name, run_dirs=run_dirs)
+
+    #  files = os.listdir(out_dir)
+    #  existing = [f'{obs_name}' in f for f in files]
+    #  if any(existing):
+    #      io.log(f'Plot already exists. Skipping.')
+    #if os.path.isfile(os.path.join(out_dir, ''))
+    #if os.path.isdir(os.path.join(out_dir, ))
+
+    #out_file = os.path.join(out_dir, f'{fname}_{plot_type}.png')
+    #if os.path.isfile(out_file):
+    #    io.log(f'Plot already exists. Skipping.')
 
     num_plots = int(len(obs_dict.keys()))
     nrows = int(np.sqrt(num_plots))
@@ -434,7 +452,7 @@ def grid_plot(log_dir, obs_dict=None, **kwargs):
     fig, axes = plt.subplots(nrows=nrows,
                              ncols=ncols,
                              sharex='col',
-                             figsize=(1.5 * 12.8, 1.5 * 12.8))
+                             figsize=(1.95 * 12.8, 1.85 * 12.8))
                              #  gridspec_kw={'wspace': 0., 'hspace': 0.})
     axes = axes.flatten()
 
@@ -467,7 +485,9 @@ def grid_plot(log_dir, obs_dict=None, **kwargs):
                                    axes[idx],
                                    colors[idx],
                                    stats=stats,
+                                   label=k,
                                    zeroline=zeroline,
+                                   avg_label=True,
                                    strip_yticks=strip_yticks)
 
         if idx == int(num_plots // 2):
@@ -477,7 +497,7 @@ def grid_plot(log_dir, obs_dict=None, **kwargs):
             else:
                 ylabel = obs_name
 
-            _ = axes[idx].set_ylabel(ylabel, fontsize='x-large')
+            _ = axes[idx].set_ylabel(ylabel, fontsize=20)
 
     title_kwargs = {}
     if np.allclose(eps_arr, eps_arr[0]):
@@ -492,24 +512,47 @@ def grid_plot(log_dir, obs_dict=None, **kwargs):
 
     params_file = os.path.join(log_dir, 'parameters.pkl')
     params = load_pkl(params_file)
+    clip_value = params.get('clip_value', 0)
+
     title_str = get_title_str(params, **title_kwargs)
-    _ = plt.suptitle(title_str, fontsize='xx-large', y=1.02)
+    _ = plt.suptitle(title_str, fontsize=22, y=1.02)
 
-    out_dir = os.path.join(log_dir, 'figures')
-    if obs_name == 'plaqs':
-        fname = f'plaqs_diffs'
+    if out_dir is None:
+        out_dir = os.path.join(log_dir, 'figures')
     else:
-        fname = obs_name
+        log_dir_str = log_dir.split('/')[-1]
+        ld_arr = log_dir_str.split('_')
+        head = ld_arr[:-1]
+        tail = ld_arr[-1]
+        if clip_value > 0:
+            head.append(f'_clip{int(clip_value)}')
 
-    out_dir = os.path.join(out_dir, fname)
+        ld_str = '_'.join((i for i in head + [tail]))
+        out_dir = os.path.join(out_dir, ld_str)
+        io.save_dict(params, out_dir, name='parameters')
 
-    if filter_str != '':
-        fname += f'_{filter_str}'
-        out_dir = os.path.join(out_dir, filter_str)
-
-    plt.tight_layout()
     io.check_else_make_dir(out_dir)
-    out_file = os.path.join(out_dir, f'{fname}_{therm_frac}_{plot_type}.png')
+
+    if obs_name is not None:
+        if obs_name == 'plaqs':
+            fname = f'plaqs_diffs'
+        else:
+            fname = f'{obs_name}'
+    else:
+        fname = plot_type
+
+    #  out_dir = os.path.join(out_dir, fname)
+
+    if filter_str is not None:
+        fname += f'_{filter_str}'
+
+    if clip_value > 0:
+        fname += f'_clip{int(clip_value)}'
+        #  out_dir = os.path.join(out_dir, filter_str)
+
+    out_file = os.path.join(out_dir,
+                            f'{fname}_{plot_type}.png')
+    plt.tight_layout()
     io.log(f'saving figure to: {out_file}...')
     plt.savefig(out_file, dpi=200, bbox_inches='tight')
 
@@ -573,6 +616,7 @@ def plot_obs(log_dir, obs_dict=None, **kwargs):
 
         run_params = load_pkl(os.path.join(run_dirs[idx],
                                            'run_params.pkl'))
+        assert tuple(run_params['net_weight']) == k
         beta_arr.append(run_params['beta'])
         eps_arr.append(run_params['eps'])
 
@@ -599,7 +643,7 @@ def plot_obs(log_dir, obs_dict=None, **kwargs):
             else:
                 ylabel = obs_name
 
-            _ = axes[idx, 0].set_ylabel(ylabel, fontsize='x-large')
+            _ = axes[idx, 0].set_ylabel(ylabel, fontsize=18)
 
     title_kwargs = {}
     if np.allclose(eps_arr, eps_arr[0]):
@@ -611,7 +655,7 @@ def plot_obs(log_dir, obs_dict=None, **kwargs):
     params_file = os.path.join(log_dir, 'parameters.pkl')
     params = load_pkl(params_file)
     title_str = get_title_str(params, **title_kwargs)
-    _ = plt.suptitle(title_str, fontsize='xx-large', y=1.04)
+    _ = plt.suptitle(title_str, fontsize=20, y=1.04)
 
     plt.tight_layout()
     #  fig.subplots_adjust(hspace=0.)
