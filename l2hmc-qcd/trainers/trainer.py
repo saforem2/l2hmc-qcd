@@ -6,7 +6,6 @@ from collections import namedtuple
 import utils.file_io as io
 from config import NP_FLOAT, NetWeights
 from lattice.lattice import u1_plaq_exact
-from loggers.train_logger import TRAIN_HEADER
 
 
 TrainStepData = namedtuple('TrainStepData', [
@@ -146,8 +145,8 @@ class Trainer:
         beta = kwargs.pop('beta', None)
         samples = kwargs.pop('samples', None)
         initial_step = kwargs.pop('initial_step', 0)
-        net_weights = kwargs.get('net_weights', NetWeights(1., 1., 1.,
-                                                           1., 1., 1.))
+        net_weights = kwargs.get('net_weights', NetWeights(1, 1, 1,
+                                                           1, 1, 1))
         #  net_weights = kwargs.get('net_weights', [1., 1., 1.])
 
         if beta is None:

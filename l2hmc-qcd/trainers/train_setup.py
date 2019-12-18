@@ -229,7 +229,7 @@ def train_setup(FLAGS, log_file=None, root_dir=None,
     return params, hooks
 
 
-def check_reversibility(model, sess, net_weights=None):
+def check_reversibility(model, sess, net_weights=None, out_file=None):
     rand_samples = np.random.randn(*model.x.shape)
     if net_weights is None:
         net_weights = cfg.NetWeights(1., 1., 1., 1., 1., 1.)
@@ -248,5 +248,8 @@ def check_reversibility(model, sess, net_weights=None):
                                model.v_diff], feed_dict=feed_dict)
     reverse_str = (f'Reversibility results:\n '
                    f'\t x_diff: {x_diff:.10g}, v_diff: {v_diff:.10g}')
+
+    if out_file is not None:
+        io.log_and_write(reverse_str, out_file)
 
     return reverse_str, x_diff, v_diff
