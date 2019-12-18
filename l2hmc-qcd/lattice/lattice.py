@@ -116,6 +116,8 @@ class GaugeLattice(object):
             self.samples.reshape((self.batch_size, self.x_dim)),
             dtype=TF_FLOAT
         )
+        self.samples_array = self.samples.reshape((self.batch_size,
+                                                   self.x_dim))
 
     @property
     def samples(self):
