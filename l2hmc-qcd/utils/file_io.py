@@ -102,84 +102,96 @@ def _parse_gauge_flags(FLAGS):
             flags_dict = FLAGS.__dict__
         except (NameError, AttributeError):
             pass
-    try:
-        LX = flags_dict.get('space_size', None)
-        BS = flags_dict.get('batch_size', None)
-        LF = flags_dict.get('num_steps', None)
-        SS = flags_dict.get('eps', None)
-        QW = flags_dict.get('charge_weight', None)
-        NA = flags_dict.get('network_arch', None)
-        BN = flags_dict.get('use_bn', None)
-        DP = flags_dict.get('dropout_prob', None)
-        AW = flags_dict.get('aux_weight', None)
-        XS = flags_dict.get('x_scale_weight', None)
-        XT = flags_dict.get('x_translation_weight', None)
-        XQ = flags_dict.get('x_transformation_weight', None)
-        VS = flags_dict.get('v_scale_weight', None)
-        VT = flags_dict.get('v_translation_weight', None)
-        VQ = flags_dict.get('v_transformation_weight', None)
-        GL = flags_dict.get('use_gaussian_loss', None)
-        NL = flags_dict.get('use_nnehmc_loss', None)
-        hmc = flags_dict.get('hmc', None)
-        try:
-            _log_dir = flags_dict['log_dir']
-        except KeyError:
-            _log_dir = ''
-
-    except (NameError, AttributeError):
-        LX = FLAGS.space_size
-        BS = FLAGS.batch_size
-        LF = FLAGS.num_steps
-        SS = FLAGS.eps
-        QW = FLAGS.charge_weight
-        NA = FLAGS.network_arch
-        BN = FLAGS.use_bn
-        DP = FLAGS.dropout_prob
-        AW = FLAGS.aux_weight
-        XS = FLAGS.x_scale_weight
-        XT = FLAGS.x_translation_weight
-        XQ = FLAGS.x_transformation_weight
-        VS = FLAGS.v_scale_weight
-        VT = FLAGS.v_translation_weight
-        VQ = FLAGS.v_transformation_weight
-        GL = FLAGS.use_gaussian_loss
-        NL = FLAGS.use_nnehmc_loss
-        hmc = FLAGS.hmc
-        try:
-            _log_dir = FLAGS.log_dir
-        except AttributeError:
-            _log_dir = ''
-
-    out_dict = {
-        'LX': LX,
-        'NS': BS,
-        'LF': LF,
-        'SS': SS,
-        'QW': QW,
-        'NA': NA,
-        'BN': BN,
-        'DP': DP,
-        'AW': AW,
-        'GL': GL,
-        'XS': XS,
-        'XT': XT,
-        'XQ': XQ,
-        'VS': VS,
-        'VT': VT,
-        'VQ': VQ,
-        'NL': NL,
-        'hmc': hmc,
-        '_log_dir': _log_dir
+    #  try:
+    d = {
+        'LX': flags_dict.get('space_size', None),
+        'BS': flags_dict.get('batch_size', None),
+        'LF': flags_dict.get('num_steps', None),
+        'SS': flags_dict.get('eps', None),
+        'QW': flags_dict.get('charge_weight', None),
+        'NA': flags_dict.get('network_arch', None),
+        'BN': flags_dict.get('use_bn', None),
+        'DP': flags_dict.get('dropout_prob', None),
+        'AW': flags_dict.get('aux_weight', None),
+        'XS': flags_dict.get('x_scale_weight', None),
+        'XT': flags_dict.get('x_translation_weight', None),
+        'XQ': flags_dict.get('x_transformation_weight', None),
+        'VS': flags_dict.get('v_scale_weight', None),
+        'VT': flags_dict.get('v_translation_weight', None),
+        'VQ': flags_dict.get('v_transformation_weight', None),
+        'GL': flags_dict.get('use_gaussian_loss', None),
+        'NL': flags_dict.get('use_nnehmc_loss', None),
+        'CV': flags_dict.get('clip_value', None),
+        'hmc': flags_dict.get('hmc', None),
     }
+    try:
+        _log_dir = flags_dict['log_dir']
+    except KeyError:
+        _log_dir = ''
 
-    aw = str(AW).replace('.', '')
-    qw = str(QW).replace('.', '')
-    dp = str(DP).replace('.', '')
+    #  except (NameError, AttributeError):
+    #      LX = FLAGS.space_size
+    #      BS = FLAGS.batch_size
+    #      LF = FLAGS.num_steps
+    #      SS = FLAGS.eps
+    #      QW = FLAGS.charge_weight
+    #      NA = FLAGS.network_arch
+    #      BN = FLAGS.use_bn
+    #      DP = FLAGS.dropout_prob
+    #      AW = FLAGS.aux_weight
+    #      XS = FLAGS.x_scale_weight
+    #      XT = FLAGS.x_translation_weight
+    #      XQ = FLAGS.x_transformation_weight
+    #      VS = FLAGS.v_scale_weight
+    #      VT = FLAGS.v_translation_weight
+    #      VQ = FLAGS.v_transformation_weight
+    #      GL = FLAGS.use_gaussian_loss
+    #      NL = FLAGS.use_nnehmc_loss
+    #      hmc = FLAGS.hmc
+    #      try:
+    #          _log_dir = FLAGS.log_dir
+    #      except AttributeError:
+    #          _log_dir = ''
+
+    #  out_dict = {
+    #      'LX': LX,
+    #      'NS': BS,
+    #      'LF': LF,
+    #      'SS': SS,
+    #      'QW': QW,
+    #      'NA': NA,
+    #      'BN': BN,
+    #      'DP': DP,
+    #      'AW': AW,
+    #      'GL': GL,
+    #      'XS': XS,
+    #      'XT': XT,
+    #      'XQ': XQ,
+    #      'VS': VS,
+    #      'VT': VT,
+    #      'VQ': VQ,
+    #      'NL': NL,
+    #      'hmc': hmc,
+    #      '_log_dir': _log_dir
+    #  }
+    #
+    d['_log_dir'] = _log_dir
+    aw = str(d['AW']).replace('.', '')
+    qw = str(d['QW']).replace('.', '')
+    dp = str(d['DP']).replace('.', '')
+
+    d['XS'] = str(int(d['XS'])).replace('.', '')
+    d['XT'] = str(int(d['XT'])).replace('.', '')
+    d['XQ'] = str(int(d['XQ'])).replace('.', '')
+    d['VS'] = str(int(d['VS'])).replace('.', '')
+    d['VT'] = str(int(d['VT'])).replace('.', '')
+    d['VQ'] = str(int(d['VQ'])).replace('.', '')
 
     if flags_dict['hmc']:
-        run_str = f'HMC_lattice{LX}_batch{BS}_lf{LF}_eps{SS:.3g}'
+        run_str = (f"HMC_lattice{d['LX']}_batch{d['BS']}"
+                   "_lf{d['LF']}_eps{d['SS']:.3g}")
     else:
-        run_str = f'L{LX}_b{BS}_lf{LF}'
+        run_str = f"L{d['LX']}_b{d['BS']}_lf{d['LF']}"
 
         if qw != '00':
             run_str += f'_qw{qw}'
@@ -187,32 +199,31 @@ def _parse_gauge_flags(FLAGS):
         if aw != '10':
             run_str += f'_aw{aw}'
 
-        if NA != 'generic':
-            run_str += f'_{NA}'
+        if d['NA'] != 'generic':
+            run_str += f"_{d['NA']}"
 
         if dp != '00':
             run_str += f'_dp{dp}'
 
-        if XS != 1. or XT != 1. or XQ != 1.:
-            run_str += f'_x{XS}{XT}{XQ}'
+        if d['XS'] != 1. or d['XT'] != 1. or d['XQ'] != 1.:
+            run_str += f"_x{d['XS']}{d['XT']}{d['XQ']}"
 
-        if VS != 1. or VT != 1. or VQ != 1.:
-            run_str += f'_v{VS}{VT}{VQ}'
+        if d['VS'] != 1. or d['VT'] != 1. or d['VQ'] != 1.:
+            run_str += f"_v{d['VS']}{d['VT']}{d['VQ']}"
 
-        if BN:
+        if d['BN']:
             run_str += '_bn'
 
-        if GL and NL:
+        if d['GL'] and d['NL']:
             run_str += '_gnl'  # Gaussian + NNEHMC loss
 
-        elif GL and not NL:
+        elif d['GL'] and not d['NL']:
             run_str += '_gl'
 
-        elif NL and not GL:
+        elif d['NL'] and not d['GL']:
             run_str += '_nl'
 
-
-    return run_str, out_dict
+    return run_str, d
 
 
 def _parse_gmm_flags(FLAGS):
