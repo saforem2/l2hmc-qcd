@@ -139,7 +139,7 @@ def get_run_dirs(log_dir, filter_str=None):
     if filter_str is not None:
         run_dirs = [i for i in run_dirs if filter_str in i]
 
-    return run_dirs
+    return sorted(run_dirs)
 
 
 def load_pkl(pkl_file, arr=False):
