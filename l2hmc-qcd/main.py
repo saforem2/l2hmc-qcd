@@ -39,8 +39,6 @@ import config as cfg
 
 from seed_dict import seeds, vnet_seeds, xnet_seeds
 from collections import namedtuple
-from trainers.train_setup import (check_reversibility, count_trainable_params,
-                                  create_config, get_net_weights, train_setup)
 
 import numpy as np
 import tensorflow as tf
@@ -51,14 +49,13 @@ from tensorflow.python.client import timeline  # noqa: F401
 import inference
 import utils.file_io as io
 
-from trainers.trainer import Trainer
 from utils.parse_args import parse_args
 from models.gauge_model import GaugeModel
 from plotters.plot_utils import weights_hist
 from loggers.train_logger import TrainLogger
-
-if cfg.HAS_COMET:
-    from comet_ml import Experiment
+from trainers.trainer import Trainer
+from trainers.train_setup import (check_reversibility, count_trainable_params,
+                                  create_config, get_net_weights, train_setup)
 
 if cfg.HAS_HOROVOD:
     import horovod.tensorflow as hvd
@@ -74,10 +71,42 @@ NP_FLOAT = cfg.NP_FLOAT
 Weights = namedtuple('Weights', ['w', 'b'])
 
 
+def log_params(params):
+    io.log(SEP_STR + '\nL2HMC PARAMETERS:\n')
+    for key, val in params.items():
+        io.log(f' - {key} : {val}\n')
+    io.log(SEP_STR)
+
+
+def create_monitored_training_session(**sess_kwargs):
+    global_var_init = tf.global_variables_initializer()
+    local_var_init = tf.local_variables_initializer()
+    uninited = tf.report_uninitialized_variables()
+    sess = tf.train.MonitoredTrainingSession(**sess_kwargs)
+    tf.keras.backend.set_session(sess)
+    sess.run([global_var_init, local_var_init])
+    uninited_out = sess.run(uninited)
+    io.log(f'tf.report_uninitialized_variables() len = {uninited_out}')
+
+    return sess
+
+
 def train_l2hmc(FLAGS, log_file=None):
     """Create, train, and run L2HMC sampler on 2D U(1) gauge model."""
+    t0 = time.time()
     tf.keras.backend.set_learning_phase(True)
-    params, hooks = train_setup(FLAGS, log_file)
+
+    if FLAGS.restore and FLAGS.log_dir is not None:
+        params = io.load_params(FLAGS.log_dir)
+        if FLAGS.horovod and params['using_hvd']:  # should be the same
+            num_workers = hvd.size()
+            assert num_workers == params['num_workers']
+            hooks = [hvd.BroadcastGlobalVariablesHook(0)]
+        else:
+            hooks = []
+
+    else:
+        params, hooks = train_setup(FLAGS, log_file)
 
     # ---------------------------------------------------------------
     # NOTE: Conditionals required for file I/O if we're not using
@@ -98,12 +127,7 @@ def train_l2hmc(FLAGS, log_file=None):
         log_dir = None
         checkpoint_dir = None
 
-    io.log(SEP_STR)
-    io.log('L2HMC PARAMETERS:')
-    for key, val in params.items():
-        io.log(f'  {key}: {val}')
-    io.log(SEP_STR)
-
+    log_params(params)
     # --------------------------------------------------------
     # Create model and train_logger
     # --------------------------------------------------------
@@ -146,10 +170,9 @@ def train_l2hmc(FLAGS, log_file=None):
         v_translation=FLAGS.v_translation_weight,
         v_transformation=FLAGS.v_transformation_weight,
     )
-    samples_init = np.reshape(np.array(model.lattice.samples,
-                                       dtype=NP_FLOAT),
-                              (model.batch_size, model.x_dim))
+    samples_init = np.array(model.lattice.samples_array, dtype=NP_FLOAT)
     beta_init = model.beta_init
+    global_step = tf.train.get_or_create_global_step()
 
     # ----------------------------------------------------------------
     #  Create MonitoredTrainingSession
@@ -158,35 +181,24 @@ def train_l2hmc(FLAGS, log_file=None):
     #        initialization, restoring from a checkpoint, saving to a
     #        checkpoint, and closing when done or an error occurs.
     # ----------------------------------------------------------------
-    sess_kwargs = {
-        'checkpoint_dir': checkpoint_dir,
-        #  'scaffold': scaffold,
-        'hooks': hooks,
-        'config': config,
-        'save_summaries_secs': None,
-        'save_summaries_steps': None
-    }
-
-    global_var_init = tf.global_variables_initializer()
-    local_var_init = tf.local_variables_initializer()
-    uninited = tf.report_uninitialized_variables()
-    sess = tf.train.MonitoredTrainingSession(**sess_kwargs)
-    tf.keras.backend.set_session(sess)
-    sess.run([global_var_init, local_var_init])
-    uninited_out = sess.run(uninited)
-    io.log(f'tf.report_uninitialized_variables() len = {uninited_out}')
-    sess.run(model.dynamics.xnet.generic_net.coeff_scale.initializer)
-    sess.run(model.dynamics.xnet.generic_net.coeff_transformation.initializer)
-    sess.run(model.dynamics.vnet.generic_net.coeff_scale.initializer)
-    sess.run(model.dynamics.vnet.generic_net.coeff_transformation.initializer)
+    sess = create_monitored_training_session(hooks=hooks,
+                                             config=config,
+                                             #  scaffold=scaffold,
+                                             save_summaries_secs=None,
+                                             save_summaries_steps=None,
+                                             checkpoint_dir=checkpoint_dir)
+    sess.run([
+        model.dynamics.xnet.generic_net.coeff_scale.initializer,
+        model.dynamics.vnet.generic_net.coeff_scale.initializer,
+        model.dynamics.xnet.generic_net.coeff_transformation.initializer,
+        model.dynamics.vnet.generic_net.coeff_transformation.initializer,
+    ])
 
     # Check reversibility and write results out to `.txt` file.
-    reverse_str, x_diff, v_diff = check_reversibility(model, sess,
-                                                      net_weights_init)
     reverse_file = os.path.join(model.log_dir, 'reversibility_test.txt')
-    io.log_and_write(reverse_str, reverse_file)
+    check_reversibility(model, sess, net_weights_init, out_file=reverse_file)
 
-    if is_chief:
+    if is_chief:  # save copy of seeds dictionaries for reproducibility
         io.save_dict(seeds, out_dir=model.log_dir, name='seeds')
         io.save_dict(xnet_seeds, out_dir=model.log_dir, name='xnet_seeds')
         io.save_dict(vnet_seeds, out_dir=model.log_dir, name='vnet_seeds')
@@ -196,21 +208,14 @@ def train_l2hmc(FLAGS, log_file=None):
     # ----------------------------------------------------------
     trainer = Trainer(sess, model, train_logger, **params)
 
-    train_kwargs = {
-        'samples': samples_init,
-        'beta': beta_init,
-        'net_weights': net_weights_init
-    }
+    initial_step = sess.run(global_step)
+    trainer.train(model.train_steps,
+                  beta=beta_init,
+                  samples=samples_init,
+                  initial_step=initial_step,
+                  net_weights=net_weights_init)
 
-    t0 = time.time()
-    trainer.train(model.train_steps, **train_kwargs)
-
-    reverse_str, x_diff, v_diff = check_reversibility(model, sess)
-    io.log_and_write(reverse_str, reverse_file)
-
-    io.log(SEP_STR)
-    io.log(f'Training completed in: {time.time() - t0:.3g}s')
-    io.log(SEP_STR)
+    check_reversibility(model, sess, out_file=reverse_file)
 
     if is_chief:
         wfile = os.path.join(model.log_dir, 'dynamics_weights.h5')
@@ -229,15 +234,13 @@ def train_l2hmc(FLAGS, log_file=None):
         })
 
         _ = weights_hist(model.log_dir, weights=weights)
-        #  _ = weights_hist(weights, model.log_dir)
 
-        weights_file = os.path.join(model.log_dir, 'weights.pkl')
-        with open(weights_file, 'wb') as f:
-            pickle.dump(weights, f)
+        def pkl_dump(d, pkl_file):
+            with open(pkl_file, 'wb') as f:
+                pickle.dump(d, f)
 
-        params_file = os.path.join(os.getcwd(), 'params.pkl')
-        with open(params_file, 'wb') as f:
-            pickle.dump(model.params, f)
+        pkl_dump(weights, os.path.join(model.log_dir, 'weights.pkl'))
+        pkl_dump(model.params, os.path.join(os.getcwd(), 'params.pkl'))
 
         # Count all trainable paramters and write them (w/ shapes) to txt file
         count_trainable_params(os.path.join(params['log_dir'],
@@ -246,6 +249,7 @@ def train_l2hmc(FLAGS, log_file=None):
     # close MonitoredTrainingSession and reset the default graph
     sess.close()
     tf.reset_default_graph()
+    io.log(f'{SEP_STR}\nTraining took: {time.time()-t0:.3g}s\n{SEP_STR}')
 
     return model, train_logger
 
