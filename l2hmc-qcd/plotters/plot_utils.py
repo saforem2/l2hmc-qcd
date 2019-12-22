@@ -22,25 +22,25 @@ import utils.file_io as io
 from lattice.lattice import u1_plaq_exact
 
 
-MPL_PARAMS = {
-    #  'backend': 'ps',
-    #  'text.latex.preamble': [r'\usepackage{gensymb}'],
-    'axes.labelsize': 14,   # fontsize for x and y labels (was 10)
-    'axes.titlesize': 10,
-    'legend.fontsize': 10,  # was 10
-    'xtick.labelsize': 12,
-    'ytick.labelsize': 12,
-    #  'text.usetex': True,
-    #  'figure.figsize': [fig_width, fig_height],
-    #  'font.family': 'serif',
-}
+#  MPL_PARAMS = {
+#      #  'backend': 'ps',
+#      #  'text.latex.preamble': [r'\usepackage{gensymb}'],
+#      'axes.labelsize': 14,   # fontsize for x and y labels (was 10)
+#      'axes.titlesize': 10,
+#      'legend.fontsize': 10,  # was 10
+#      #'xtick.labelsize': 10,
+#      #'ytick.labelsize': 12,
+#      #  'text.usetex': True,
+#      #  'figure.figsize': [fig_width, fig_height],
+#      #  'font.family': 'serif',
+#  }
 
 if HAS_MATPLOTLIB:
     import matplotlib as mpl
     import matplotlib.pyplot as plt
 
     from matplotlib.patches import Ellipse
-    mpl.rcParams.update(MPL_PARAMS)
+    #  mpl.rcParams.update(MPL_PARAMS)
 
     import matplotlib.style as mplstyle
     mplstyle.use('fast')
@@ -142,8 +142,9 @@ def get_run_dirs(log_dir, filter_str=None):
     return sorted(run_dirs)
 
 
-def load_pkl(pkl_file, arr=False):
-    io.log(f'Loading from: {pkl_file}...')
+def load_pkl(pkl_file, arr=False, verbose=False):
+    if verbose:
+        io.log(f'Loading from: {pkl_file}...')
     with open(pkl_file, 'rb') as f:
         tmp = pickle.load(f)
     if arr:
