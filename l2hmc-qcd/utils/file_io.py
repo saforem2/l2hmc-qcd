@@ -14,7 +14,6 @@ import shutil
 import numpy as np
 
 import config as cfg
-# pylint:disable=invalid-name
 
 try:
     import horovod.tensorflow as hvd
@@ -25,7 +24,6 @@ try:
 except ImportError:
     HAS_HOROVOD = False
 
-#  from config import FILE_PATH
 
 
 def load_params(log_dir):
@@ -108,6 +106,7 @@ def _parse_gauge_flags(FLAGS):
         'BS': flags_dict.get('batch_size', None),
         'LF': flags_dict.get('num_steps', None),
         'SS': flags_dict.get('eps', None),
+        'EF': flags_dict.get('eps_fixed', False),
         'QW': flags_dict.get('charge_weight', None),
         'NA': flags_dict.get('network_arch', None),
         'BN': flags_dict.get('use_bn', None),
@@ -129,52 +128,8 @@ def _parse_gauge_flags(FLAGS):
     except KeyError:
         _log_dir = ''
 
-    #  except (NameError, AttributeError):
-    #      LX = FLAGS.space_size
-    #      BS = FLAGS.batch_size
-    #      LF = FLAGS.num_steps
-    #      SS = FLAGS.eps
-    #      QW = FLAGS.charge_weight
-    #      NA = FLAGS.network_arch
-    #      BN = FLAGS.use_bn
-    #      DP = FLAGS.dropout_prob
-    #      AW = FLAGS.aux_weight
-    #      XS = FLAGS.x_scale_weight
-    #      XT = FLAGS.x_translation_weight
-    #      XQ = FLAGS.x_transformation_weight
-    #      VS = FLAGS.v_scale_weight
-    #      VT = FLAGS.v_translation_weight
-    #      VQ = FLAGS.v_transformation_weight
-    #      GL = FLAGS.use_gaussian_loss
-    #      NL = FLAGS.use_nnehmc_loss
-    #      hmc = FLAGS.hmc
-    #      try:
-    #          _log_dir = FLAGS.log_dir
-    #      except AttributeError:
-    #          _log_dir = ''
+    train_weights = (d['XS'], d['XT'], d['XQ'], d['VS'], d['VT'], d['VQ'])
 
-    #  out_dict = {
-    #      'LX': LX,
-    #      'NS': BS,
-    #      'LF': LF,
-    #      'SS': SS,
-    #      'QW': QW,
-    #      'NA': NA,
-    #      'BN': BN,
-    #      'DP': DP,
-    #      'AW': AW,
-    #      'GL': GL,
-    #      'XS': XS,
-    #      'XT': XT,
-    #      'XQ': XQ,
-    #      'VS': VS,
-    #      'VT': VT,
-    #      'VQ': VQ,
-    #      'NL': NL,
-    #      'hmc': hmc,
-    #      '_log_dir': _log_dir
-    #  }
-    #
     d['_log_dir'] = _log_dir
     aw = str(d['AW']).replace('.', '')
     qw = str(d['QW']).replace('.', '')
@@ -193,33 +148,43 @@ def _parse_gauge_flags(FLAGS):
     else:
         run_str = f"L{d['LX']}_b{d['BS']}_lf{d['LF']}"
 
-        if qw != '00':
+        if qw != '00':  # if charge weight != 0
             run_str += f'_qw{qw}'
 
-        if aw != '10':
+        if aw != '10':  # if aux_weight != 1
             run_str += f'_aw{aw}'
 
-        if d['NA'] != 'generic':
+        if d['NA'] != 'generic':  # if network_arch != generic
             run_str += f"_{d['NA']}"
 
-        if dp != '00':
+        if dp != '00':  # if dropout_prob > 0
             run_str += f'_dp{dp}'
 
-        if d['XS'] != 1. or d['XT'] != 1. or d['XQ'] != 1.:
+        # if x_scale_weight or x_transl_weight or x_transf_weight != 1.
+        if d['XS'] != '1' or d['XT'] != '1' or d['XQ'] != '1':
             run_str += f"_x{d['XS']}{d['XT']}{d['XQ']}"
 
-        if d['VS'] != 1. or d['VT'] != 1. or d['VQ'] != 1.:
+        # if v_scale_weight or v_transl_weight or v_transf_weight != 1.
+        #  if d['VS'] != 1. or d['VT'] != 1. or d['VQ'] != 1.:
+        if d['VS'] != '1' or d['VT'] != '1' or d['VQ'] != '1':
             run_str += f"_v{d['VS']}{d['VT']}{d['VQ']}"
 
+        # if using a fixed (non-trainable) step size:
+        if d['EF']:
+            run_str += f'_eps_fixed'
+
+        # if using batch normalization
         if d['BN']:
             run_str += '_bn'
 
-        if d['GL'] and d['NL']:
+        if d['GL'] and d['NL']:  # if using gaussian_loss and nnehmc_loss
             run_str += '_gnl'  # Gaussian + NNEHMC loss
 
+        # if using gaussian_loss but not nnehmc_loss
         elif d['GL'] and not d['NL']:
             run_str += '_gl'
 
+        # if using nnehmc_loss but not gaussian_loss
         elif d['NL'] and not d['GL']:
             run_str += '_nl'
 
