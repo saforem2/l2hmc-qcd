@@ -326,10 +326,6 @@ class Dynamics(tf.keras.Model):
         def body(step, x, v, logdet):
             new_x, new_v, j, _fns = lf_fn(x, v, beta, step,
                                           weights, train_phase)
-            # cast leapfrog step to integer
-            #  i = tf.cast(step, dtype=tf.int32)
-            #  lf_samples = lf_samples.write(i+1, new_x)
-
             return (step+1, new_x, new_v, logdet+j)
 
         def cond(step, *args):

@@ -8,25 +8,23 @@ import os
 
 #  from config import BootstrapData, HAS_MATPLOTLIB, MARKERS
 import config as cfg
-from collections import Counter, namedtuple, OrderedDict
+from collections import namedtuple
 
 import numpy as np
 
-from scipy.stats import sem
+#  from scipy.stats import sem
 
 import utils.file_io as io
 from seed_dict import seeds
 
-from .plot_utils import (MPL_PARAMS, plot_multiple_lines,
-                         _get_title, reset_plots)
-from lattice.lattice import u1_plaq_exact
+from .plot_utils import _get_title, reset_plots
+#  from lattice.lattice import u1_plaq_exact
 
 if cfg.HAS_MATPLOTLIB:
-    import matplotlib as mpl
+    #  import matplotlib as mpl
     import matplotlib.pyplot as plt
     MARKERS = cfg.MARKERS
-
-    mpl.rcParams.update(MPL_PARAMS)
+    #  mpl.rcParams.update(MPL_PARAMS)
 
 try:
     import seaborn as sns

@@ -17,6 +17,27 @@ if cfg.HAS_HOROVOD:
 Weights = cfg.Weights
 
 
+def set_global_step(sess, global_step):
+    """Explicitly sets the global step when restoring a training session.
+
+    Args:
+        sess (tf.Session): Session in which to set the global step.
+        global_step (int): Desired global step.
+    """
+    graph = tf.get_default_graph()
+    global_step_setter = graph.get_operation_by_name('global_step_setter')
+    inputs = tf.get_collection('inputs')
+    global_step_tensor = [
+        i for i in tf.global_variables() if 'global_step' in i.name
+    ][0]
+    global_step_ph = [i for i in inputs if 'global_step' in i.name][0]
+    global_step_np = sess.run(global_step_tensor)
+    io.log(f'INFO: Original value of `global_step`: {global_step_np}')
+    io.log(f'INFO: Setting `global_step` to: {global_step}')
+    sess.run(global_step_setter, feed_dict={global_step_ph: global_step})
+    global_step_np = sess.run(global_step_tensor)
+    io.log(f'INFO: New value of `global_step`: {global_step_np}')
+
 def _get_net_weights(net, weights):
     for layer in net.layers:
         if hasattr(layer, 'layers'):
@@ -101,6 +122,7 @@ def create_session(config, checkpoint_dir, monitored=False):
         return tf.train.MonitoredTrainingSession(**sess_kwargs)
 
     return tf.Session(config=config)
+
 
 def latest_meta_file(checkpoint_dir=None):
     """Returns the most recent meta-graph (`.meta`) file in checkpoint_dir."""

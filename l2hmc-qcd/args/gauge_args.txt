@@ -2,10 +2,9 @@
 --space_size 8
 --batch_size 32
 --rand
---num_steps 3
---x_translation_weight 1.
---v_translation_weight 1.
+--num_steps 1
 --eps 0.2
+--eps_fixed
 --beta_init 2.
 --beta_final 6.
 --lr_init 0.001
@@ -13,7 +12,7 @@
 --lr_decay_rate 0.96
 --train_steps 50000
 --logging_steps 50
---save_steps 10000
+--save_steps 100
 --print_steps 1
 --network_arch 'generic'
 --num_hidden1 100
@@ -24,7 +23,7 @@
 --charge_weight 0.
 --loss_scale 1.
 --save_lf
---clip_value 10
+#--clip_value 10
 #--use_nnehmc_loss
 #--use_gaussian_loss
 #--dropout_prob 0.5

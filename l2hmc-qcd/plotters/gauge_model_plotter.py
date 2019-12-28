@@ -20,8 +20,8 @@ from scipy.stats import sem
 import utils.file_io as io
 from seed_dict import seeds
 
-from .plot_utils import (MPL_PARAMS, plot_multiple_lines,
-                         _get_title, reset_plots)
+from .plot_utils import (plot_multiple_lines,
+                         _get_title, reset_plots, bootstrap)
 from lattice.lattice import u1_plaq_exact
 
 if cfg.HAS_MATPLOTLIB:
@@ -29,7 +29,7 @@ if cfg.HAS_MATPLOTLIB:
     import matplotlib.pyplot as plt
     MARKERS = cfg.MARKERS
 
-    mpl.rcParams.update(MPL_PARAMS)
+    #  mpl.rcParams.update(MPL_PARAMS)
 
 try:
     import seaborn as sns
@@ -131,6 +131,7 @@ class GaugeModelPlotter:
             charge_probabilities is a dictionary of the form:
                 {charge_val: charge_val_probability}
         """
+
         actions = np.array(data['actions'])
         plaqs = np.array(data['plaqs'])
         charges = np.array(data['charges'])
@@ -317,8 +318,6 @@ class GaugeModelPlotter:
                 pass
         _ = ax.hist(x, density=True, bins=50, alpha=0.3, histtype='stepfilled')
         _ = ax.axvline(x=mean, label=f'avg: {mean:.3g} +/- {err:.3g}')
-        #  _ = ax.plot(mean, 0., marker='|', linewidth=1,
-        #              markersize=10, markeredgewidth=1, label=label)
 
         _ = ax.set_ylabel(ylabel)
         if leg:

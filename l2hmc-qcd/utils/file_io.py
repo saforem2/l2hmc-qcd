@@ -128,7 +128,7 @@ def _parse_gauge_flags(FLAGS):
     except KeyError:
         _log_dir = ''
 
-    train_weights = (d['XS'], d['XT'], d['XQ'], d['VS'], d['VT'], d['VQ'])
+    #  train_weights = (d['XS'], d['XT'], d['XQ'], d['VS'], d['VT'], d['VQ'])
 
     d['_log_dir'] = _log_dir
     aw = str(d['AW']).replace('.', '')
@@ -200,70 +200,59 @@ def _parse_gmm_flags(FLAGS):
             flags_dict = FLAGS.__dict__
         except (NameError, AttributeError):
             pass
-    try:
-        X0 = flags_dict.get('center', None)
-        ND = flags_dict.get('num_distributions', None)
-        LF = flags_dict.get('num_steps', None)
-        DG = flags_dict.get('diag', None)
-        S1 = flags_dict.get('sigma1', None)
-        S2 = flags_dict.get('sigma2', None)
-        GL = flags_dict.get('use_gaussian_loss', False)
-        NL = flags_dict.get('use_nnehmc_loss', False)
-        BN = flags_dict.get('use_bn', False)
-        AW = flags_dict.get('aux_weight', 1.)
-        AR = flags_dict.get('arrangement', 'xaxis')
-    except (NameError, AttributeError):
-        X0 = FLAGS.center
-        ND = FLAGS.num_distributions
-        LF = FLAGS.num_steps
-        DG = FLAGS.diag
-        S1 = FLAGS.sigma1
-        S2 = FLAGS.sigma2
-        GL = FLAGS.use_gaussian_loss
-        BN = FLAGS.use_bn
-        NL = FLAGS.use_nnehmc_loss
-        AW = FLAGS.aux_weight
-        AR = FLAGS.arrangement
 
-    out_dict = {
-        'X0': X0,
-        'ND': ND,
-        'LF': LF,
-        'DG': DG,
-        'S1': S1,
-        'S2': S2,
-        'GL': GL,
-        'NL': NL,
-        'AW': AW,
-        'AR': AR,
-        'BN': BN,
-    }
+    d = {'X0': flags_dict.get('center', None),
+         'ND': flags_dict.get('num_distributions', None),
+         'LF': flags_dict.get('num_steps', None),
+         'DG': flags_dict.get('diag', None),
+         'S1': flags_dict.get('sigma1', None),
+         'S2': flags_dict.get('sigma2', None),
+         'P1': flags_dict.get('pi1', None),
+         'P2': flags_dict.get('pi2', None),
+         'GL': flags_dict.get('use_gaussian_loss', False),
+         'NL': flags_dict.get('use_nnehmc_loss', False),
+         'BN': flags_dict.get('use_bn', False),
+         'AW': flags_dict.get('aux_weight', 1.),
+         'AR': flags_dict.get('arrangement', 'xaxis'),
+         'XS': flags_dict.get('x_scale_weight', None),
+         'XT': flags_dict.get('x_translation_weight', None),
+         'XQ': flags_dict.get('x_transformation_weight', None),
+         'VS': flags_dict.get('v_scale_weight', None),
+         'VT': flags_dict.get('v_translation_weight', None),
+         'VQ': flags_dict.get('v_transformation_weight', None)}
 
-    #  x0 = str(X0).replace('.', '')
-    aw = str(AW).replace('.', '')
-    s1 = str(S1).replace('.', '')
-    s2 = str(S2).replace('.', '')
-    run_str = f'GMM_{AR}_lf{LF}_aw{aw}_s1_{s1}_s2_{s2}'
-    if BN:
+    aw = str(d['AW']).replace('.', '')
+    s1 = str(d['S1']).replace('.', '')
+    s2 = str(d['S2']).replace('.', '')
+
+    d['XS'] = str(int(d['XS'])).replace('.', '')
+    d['XT'] = str(int(d['XT'])).replace('.', '')
+    d['XQ'] = str(int(d['XQ'])).replace('.', '')
+    d['VS'] = str(int(d['VS'])).replace('.', '')
+    d['VT'] = str(int(d['VT'])).replace('.', '')
+    d['VQ'] = str(int(d['VQ'])).replace('.', '')
+
+    #  run_str = f'GMM_{AR}_lf{LF}_aw{aw}_s1_{s1}_s2_{s2}'
+    run_str = f"GMM_{d['AR']}_lf{d['LF']}_s1{s1}_s2{s2}"
+
+    if aw != '10':
+        run_str += f'_aw{aw}'
+
+    if d['BN']:
         run_str += '_bn'
-    if GL and NL:
-        #  run_str += '_gaussian_nnehmc_loss'
+
+
+
+    if ['GL'] and d['NL']:
         run_str += '_gnl'  # Gaussian + NNEHMC loss
-    elif GL and not NL:
-        #  run_str += '_gaussian_loss'
+
+    elif d['GL'] and not d['NL']:
         run_str += '_gl'
 
-    elif NL and not GL:
+    elif d['NL'] and not d['GL']:
         run_str += '_nl'
 
-    #  if GL and NL:
-    #      run_str += '_gaussian_nnehmc_loss'
-    #  elif GL and not NL:
-    #      run_str += '_gaussian_loss'
-    #  elif NL and not GL:
-    #      run_str += '_nnehmc_loss'
-
-    return run_str, out_dict
+    return run_str, d
 
 
 def _parse_flags(FLAGS, model_type='GaugeModel'):
