@@ -151,10 +151,6 @@ def get_previous_dir(root_dir):
     return previous_dir
 
 
-#  <<<<<<< Updated upstream
-#  def plotter(log_dirs, therm_frac=0.2, n_boot=1000,
-#              nw_include=None, skip_existing=False):
-#  =======
 def infer_cmap(color):
     #hues = sns.color_palette('Set1')
     hues = sns.color_palette('bright')
@@ -222,7 +218,7 @@ def combined_pair_plotter(log_dirs, therm_frac=0.2,
 
         if nw_include is None:
             nw_include = [
-                (0, 0, 0, 0, 0, 0),
+                #  (0, 0, 0, 0, 0, 0),
                 (1, 0, 1, 1, 0, 1),
                 (1, 0, 1, 1, 1, 1),
                 (1, 1, 1, 1, 0, 1),
@@ -250,8 +246,8 @@ def combined_pair_plotter(log_dirs, therm_frac=0.2,
                          vars=['plaqs_diffs', 'accept_prob', 'tunneling_rate'])
         g = g.map_diag(sns.kdeplot, shade=True)
         g = g.map_lower(plt.plot, ls='', marker='+',
-                        rasterized=True, markeredgewidth=0.1)
-        g = g.map_upper(kde_color_plot, shade=False, gridsize=50)
+                        rasterized=True, markeredgewidth=0.1, alpha=0.8)
+        g = g.map_upper(kde_color_plot, shade=False, gridsize=100)
 
         g.add_legend()
         # Create title for plot
@@ -287,7 +283,7 @@ def combined_pair_plotter(log_dirs, therm_frac=0.2,
 
         id_str = log_dir.split('/')[-1].split('_')[-1]
         out_file = os.path.join(out_dir, f'{fname}_{id_str}.png')
-        if os.path.isfile(out_file): 
+        if os.path.isfile(out_file):
             out_file = os.path.join(out_dir, f'{fname}_{id_str}_1.png')
             #out_file = os.path.join(out_dir, fname + '_1.png')
         io.log(f'INFO:Saving figure to: {out_file}')
@@ -301,7 +297,6 @@ def combined_pair_plotter(log_dirs, therm_frac=0.2,
 
 def pair_plotter(log_dirs, therm_frac=0.2, n_boot=1000,
                  nw_include=None, skip_existing=False):
-#  >>>>>>> Stashed changes
     now = datetime.datetime.now()
     day_str = now.strftime('%Y_%m_%d')
     hour_str = now.strftime('%H%M')
@@ -339,8 +334,10 @@ def pair_plotter(log_dirs, therm_frac=0.2, n_boot=1000,
                                       f'cooley_figures/pairplots_{time_str}')
             io.check_else_make_dir(out_dir)
 
+		fname = f'lf{lf}_'
         if any([tw == 0 for tw in train_weights]):
             out_dir = os.path.join(out_dir, f'train_{train_weights_str}')
+			fname += f'_train{train_weights_str}_'
 
         for run_dir in run_dirs:
             t1 = time.time()
@@ -354,7 +351,7 @@ def pair_plotter(log_dirs, therm_frac=0.2, n_boot=1000,
                 continue
 
             nw_str = ''.join((str(int(i)) for i in key))
-            fname = f'lf{lf}_'
+            #  fname = f'lf{lf}_'
             if clip_value > 0:
                 fname += f'clip{int(clip_value)}_'
             fname += f'_{nw_str}'
@@ -411,35 +408,38 @@ def main():
     nw_include = [
         (0, 0, 0, 0, 0, 0),
         # --------------------
-        (0, 0, 0, 0, 0, 1),
-        (0, 0, 0, 0, 1, 0),
-        (0, 0, 0, 1, 0, 0),
-        (0, 0, 1, 0, 0, 0),
+        #  (0, 0, 0, 0, 0, 1),
+		(0, 0, 0, 0, 1, 0),
+        #  (0, 0, 0, 1, 0, 0),
+        #  (0, 0, 1, 0, 0, 0),
         (0, 1, 0, 0, 0, 0),
-        (1, 0, 0, 0, 0, 0),
+        #  (1, 0, 0, 0, 0, 0),
         # --------------------
-        (0, 1, 1, 1, 1, 1),
-        (1, 0, 1, 1, 1, 1),
-        (1, 1, 0, 1, 1, 1),
-        (1, 1, 1, 0, 1, 1),
+        #  (0, 1, 1, 1, 1, 1),
+		(1, 0, 1, 1, 1, 1),
+        #  (1, 1, 0, 1, 1, 1),
+        #  (1, 1, 1, 0, 1, 1),
         (1, 1, 1, 1, 0, 1),
-        (1, 1, 1, 1, 1, 0),
+        #  (1, 1, 1, 1, 1, 0),
         # --------------------
-        (0, 0, 1, 1, 1, 1),
-        (0, 1, 0, 1, 1, 1),
-        (1, 0, 0, 1, 1, 1),
-        (1, 1, 1, 0, 0, 1),
-        (1, 1, 1, 0, 1, 0),
-        (1, 1, 1, 1, 0, 0),
+        #  (0, 0, 1, 1, 1, 1),
+        #  (0, 1, 0, 1, 1, 1),
+		#  (1, 0, 0, 1, 1, 1),
+        #  (1, 1, 1, 0, 0, 1),
+        #  (1, 1, 1, 0, 1, 0),
+        #  (1, 1, 1, 1, 0, 0),
         # --------------------
-        (0, 0, 0, 1, 1, 1),
-        (0, 0, 1, 1, 1, 0),
-        (0, 1, 1, 1, 0, 0),
-        (1, 1, 1, 0, 0, 0),
+		(0, 1, 0, 0, 1, 0),
+		(1, 0, 1, 1, 0, 1),
+        # --------------------
+        #  (0, 0, 0, 1, 1, 1),
+        #  (0, 0, 1, 1, 1, 0),
+        #  (0, 1, 1, 1, 0, 0),
+        #  (1, 1, 1, 0, 0, 0),
         # --------------------
         (1, 1, 1, 1, 1, 1),
     ]
-    root_dir = os.path.abspath('../gauge_logs')
+    root_dir = os.path.abspath('/home/foremans/DLHMC/l2hmc-qcd/gauge_logs')
 
     ld1 = get_matching_log_dirs('2019_12_15', root_dir=root_dir)
     ld2 = get_matching_log_dirs('2019_12_16', root_dir=root_dir)
