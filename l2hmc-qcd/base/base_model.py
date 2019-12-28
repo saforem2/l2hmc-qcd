@@ -31,6 +31,7 @@ if cfg.HAS_HOROVOD:
 
 
 TF_FLOAT = cfg.TF_FLOAT
+TF_INT = cfg.TF_INT
 
 LFdata = namedtuple('LFdata', ['init', 'proposed', 'prob'])
 EnergyData = namedtuple('EnergyData', ['init', 'proposed', 'out',
@@ -291,7 +292,7 @@ class BaseModel(object):
                                              x_transformation=x_transf_weight)
                 train_phase = make_ph('is_training', dtype=tf.bool)
                 eps_ph = make_ph('eps_ph')
-                global_step_ph = make_ph('global_step_ph')
+                global_step_ph = make_ph('global_step_ph', dtype=TF_INT)
 
             inputs = {
                 'x': x,
