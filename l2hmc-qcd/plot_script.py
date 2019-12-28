@@ -113,6 +113,10 @@ def get_observables(run_dir, n_boot=1000, therm_frac=0.2, nw_include=None):
     return data, run_params
 
 
+def get_log_dirs_by_date(root_dir):
+	contents = os.listdir(root_dir)
+	pass
+
 def get_previous_dir(root_dir):
     dirs = sorted(filter(os.path.isdir,
                           os.listdir(root_dir)),
@@ -124,8 +128,157 @@ def get_previous_dir(root_dir):
     return previous_dir
 
 
-def plotter(log_dirs, therm_frac=0.2, n_boot=1000,
-            nw_include=None, skip_existing=False):
+#  <<<<<<< Updated upstream
+#  def plotter(log_dirs, therm_frac=0.2, n_boot=1000,
+#              nw_include=None, skip_existing=False):
+#  =======
+def infer_cmap(color):
+    #hues = sns.color_palette('Set1')
+    hues = sns.color_palette('bright')
+    if color == hues[0]:
+        return sns.light_palette('C0', as_cmap=True)
+    elif color == hues[1]:
+        return sns.light_palette('C1', as_cmap=True)
+    elif color == hues[2]:
+        return sns.light_palette('C2', as_cmap=True)
+    elif color == hues[3]:
+        return sns.light_palette('C3', as_cmap=True)
+    elif color == hues[4]:
+        return sns.light_palette('C4', as_cmap=True)
+    elif color == hues[5]:
+        return sns.light_palette('C5', as_cmap=True)
+    elif color == hues[6]:
+        return sns.light_palette('C6', as_cmap=True)
+    elif color == hues[7]:
+        return sns.light_palette('C7', as_cmap=True)
+    elif color == hues[8]:
+        return sns.light_palette('C8', as_cmap=True)
+    elif color == hues[9]:
+        return sns.light_palette('C9', as_cmap=True)
+
+
+def kde_color_plot(x, y, **kwargs):
+    cmap = infer_cmap(kwargs['color'])
+    ax = sns.kdeplot(x, y, cmap=cmap, **kwargs)
+    return ax
+
+
+def combined_pair_plotter(log_dirs, therm_frac=0.2,
+                          n_boot=1000, nw_include=None):
+    now = datetime.datetime.now()
+    day_str = now.strftime('%Y_%m_%d')
+    hour_str = now.strftime('%H%M')
+    time_str = f'{day_str}_{hour_str}'
+
+    m1 = ['x', 'v']
+    m2 = ['scale', 'translation', 'transformation']
+    matches = [f'{i}_{j}' for i in m1 for j in m2]
+
+    t0 = time.time()
+    for log_dir in log_dirs:
+        #log_dir = log_dirs[0]
+        io.log(f'log_dir: {log_dir}')
+        params = load_pkl(os.path.join(log_dir, 'parameters.pkl'))
+        lf = params['num_steps']
+        clip_value = params.get('clip_value', 0)
+        train_weights = tuple([
+            int(params[key]) for key in params
+            if any([m in key for m in matches])
+        ])
+        train_weights_str = ''.join((str(i) for i in train_weights))
+        eps_fixed = params.get('eps_fixed', False)
+
+        data = None
+        n_boot = 1000
+        therm_frac = 0.1
+
+        try:
+            run_dirs = sorted(get_run_dirs(log_dir))[::-1]
+        except FileNotFoundError:
+            continue
+
+        if nw_include is None:
+            nw_include = [
+                (0, 0, 0, 0, 0, 0),
+                (1, 0, 1, 1, 0, 1),
+                (1, 0, 1, 1, 1, 1),
+                (1, 1, 1, 1, 0, 1),
+                (1, 1, 1, 1, 1, 1),
+            ]
+
+        for run_dir in run_dirs:
+            try:
+                new_df, run_params = get_observables(run_dir,
+                                                     n_boot=n_boot,
+                                                     therm_frac=therm_frac,
+                                                     nw_include=nw_include)
+                eps = run_params['eps']
+                if data is None:
+                    data = new_df
+                else:
+                    data = pd.concat([data, new_df], axis=0)
+                    data = data.reset_index(drop=True)
+            except FileNotFoundError:
+                continue
+
+        g = sns.PairGrid(data, hue='net_weights',
+                         palette='bright', diag_sharey=False,
+                         #  hue_kws={"cmap": list_of_cmaps},
+                         vars=['plaqs_diffs', 'accept_prob', 'tunneling_rate'])
+        g = g.map_diag(sns.kdeplot, shade=True)
+        g = g.map_lower(plt.plot, ls='', marker='+',
+                        rasterized=True, markeredgewidth=0.1)
+        g = g.map_upper(kde_color_plot, shade=False, gridsize=50)
+
+        g.add_legend()
+        # Create title for plot
+        title_str = (r"$N_{\mathrm{LF}} = $" + f'{lf}, '
+                     r"$\varepsilon = $"  + f'{eps:.3g}')
+        if eps_fixed:
+            title_str += ' (fixed) '
+        if any([tw == 0 for tw in train_weights]):
+            tws = '(' + ', '.join((str(i) for i in train_weights_str)) + ')'
+            title_str += (
+                ', ' + r"$\vec{\alpha}_{\mathrm{train}}=$" + f' {tws}'
+            )
+
+        if params['clip_value'] > 0:
+            title_str += f', clip: {clip_value}'
+
+        g.fig.suptitle(title_str, y=1.02, fontsize='x-large')
+
+        out_dir = os.path.abspath(f'/home/foremans/cooley_figures'
+                                  f'/combined_pairplots_{time_str}')
+        io.check_else_make_dir(out_dir)
+
+        fname = f'lf{lf}'
+        if clip_value > 0:
+            fname += f'_clip{int(clip_value)}'
+
+        if eps_fixed:
+            fname += f'_eps_fixed_'
+
+        if any([tw == 0 for tw in train_weights]):
+            #out_dir = os.path.join(out_dir, f'train_{train_weights_str}')
+            fname += f'_train{train_weights_str}'
+
+        id_str = log_dir.split('/')[-1].split('_')[-1]
+        out_file = os.path.join(out_dir, f'{fname}_{id_str}.png')
+        if os.path.isfile(out_file): 
+            out_file = os.path.join(out_dir, f'{fname}_{id_str}_1.png')
+            #out_file = os.path.join(out_dir, fname + '_1.png')
+        io.log(f'INFO:Saving figure to: {out_file}')
+        g.savefig(out_file, dpi=150, bbox_inches='tight')
+
+        if not os.path.isfile(out_file):
+            plt.savefig(out_file, dpi=150, bbox_inches='tight')
+        print(f'Time spent plotting: {time.time() - t0:.3g}')
+        io.log(80 * '-' + '\n')
+
+
+def pair_plotter(log_dirs, therm_frac=0.2, n_boot=1000,
+                 nw_include=None, skip_existing=False):
+#  >>>>>>> Stashed changes
     now = datetime.datetime.now()
     day_str = now.strftime('%Y_%m_%d')
     hour_str = now.strftime('%H%M')
@@ -263,26 +416,40 @@ def main():
     (1, 1, 1, 1, 1, 1),
     ]
 
-    log_dirs = [
-        os.path.abspath('../gauge_logs/2019_12_15/L8_b64_lf1_f32/'),
-        os.path.abspath('../gauge_logs/2019_12_15/L8_b64_lf1_f32_0929/'),
-        # lf2
-        os.path.abspath('../gauge_logs/2019_12_15/L8_b64_lf2_f32_0408/'),
-        os.path.abspath('../gauge_logs/2019_12_15/L8_b64_lf2_f32_2157/'),
-        # lf3
-        os.path.abspath('../gauge_logs/2019_12_15/L8_b64_lf3_f32_0413/'),
-        os.path.abspath('../gauge_logs/2019_12_15/L8_b64_lf3_f32_2206/'),
-        # lf4
-        os.path.abspath('../gauge_logs/2019_12_15/L8_b64_lf4_f32_0431/'),
-        os.path.abspath('../gauge_logs/2019_12_15/L8_b64_lf4_f32_2224/'),
-        # lf5
-        os.path.abspath('../gauge_logs/2019_12_15/L8_b64_lf5_f32_0843/'),
-        os.path.abspath('../gauge_logs/2019_12_16/L8_b64_lf5_f32_0328/'),
-    ]
+#  <<<<<<< Updated upstream
+#      log_dirs = [
+#          os.path.abspath('../gauge_logs/2019_12_15/L8_b64_lf1_f32/'),
+#          os.path.abspath('../gauge_logs/2019_12_15/L8_b64_lf1_f32_0929/'),
+#          # lf2
+#          os.path.abspath('../gauge_logs/2019_12_15/L8_b64_lf2_f32_0408/'),
+#          os.path.abspath('../gauge_logs/2019_12_15/L8_b64_lf2_f32_2157/'),
+#          # lf3
+#          os.path.abspath('../gauge_logs/2019_12_15/L8_b64_lf3_f32_0413/'),
+#          os.path.abspath('../gauge_logs/2019_12_15/L8_b64_lf3_f32_2206/'),
+#          # lf4
+#          os.path.abspath('../gauge_logs/2019_12_15/L8_b64_lf4_f32_0431/'),
+#          os.path.abspath('../gauge_logs/2019_12_15/L8_b64_lf4_f32_2224/'),
+#          # lf5
+#          os.path.abspath('../gauge_logs/2019_12_15/L8_b64_lf5_f32_0843/'),
+#          os.path.abspath('../gauge_logs/2019_12_16/L8_b64_lf5_f32_0328/'),
+#      ]
 
 
-    plotter(log_dirs=log_dirs, n_boot=n_boot,
-            therm_frac=therm_frac, nw_include=nw_include)
+    #  plotter(log_dirs=log_dirs, n_boot=n_boot,
+    #          therm_frac=therm_frac, nw_include=nw_include)
+    ld1 = get_log_dirs_by_date('2019_12_15')
+    ld2 = get_log_dirs_by_date('2019_12_16')
+    ld3 = get_log_dirs_by_date('2019_12_22')
+    ld4 = get_log_dirs_by_date('2019_12_24')
+    ld5 = get_log_dirs_by_date('2019_12_25')
+    ld6 = get_log_dirs_by_date('2019_12_26')
+    log_dirs = [*ld1, *ld2, *ld3, *ld4, *ld5, *ld6]
+    #  log_dirs = [*ld1, *ld2, *ld3]
+
+    pair_plotter(log_dirs=log_dirs, n_boot=n_boot,
+                 therm_frac=therm_frac, nw_include=nw_include)
+    combined_pair_plotter(log_dirs=log_dirs, n_boot=n_boot,
+                          therm_frac=therm_frac, nw_include=None)
 
 if __name__ == '__main__':
     main()

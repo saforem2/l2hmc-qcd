@@ -17,13 +17,22 @@ import numpy as np
 import utils.file_io as io
 from seed_dict import seeds
 
+#  <<<<<<< Updated upstream
 from .plot_utils import _get_title, reset_plots
 #  from lattice.lattice import u1_plaq_exact
+#  =======
+from .plot_utils import plot_multiple_lines, _get_title, reset_plots
+from lattice.lattice import u1_plaq_exact
+#  >>>>>>> Stashed changes
 
 if cfg.HAS_MATPLOTLIB:
     #  import matplotlib as mpl
     import matplotlib.pyplot as plt
     MARKERS = cfg.MARKERS
+#  <<<<<<< Updated upstream
+#  =======
+
+#  >>>>>>> Stashed changes
     #  mpl.rcParams.update(MPL_PARAMS)
 
 try:
@@ -333,7 +342,7 @@ class EnergyPlotter:
         h_init = np.array(energy_data['hamiltonian_init'])
         h_prop = np.array(energy_data['hamiltonian_proposed'])
         h_out = np.array(energy_data['hamiltonian_out'])
-        if sld is not None:  # sumlogdets; expects dict. 
+        if sld is not None:  # sumlogdets; expects dict.
             sld_out = sld['out']
             sld_prop = sld['proposed']
         else:
