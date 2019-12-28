@@ -292,7 +292,7 @@ class BaseModel(object):
                                              x_transformation=x_transf_weight)
                 train_phase = make_ph('is_training', dtype=tf.bool)
                 eps_ph = make_ph('eps_ph')
-                global_step_ph = make_ph('global_step_ph', dtype=TF_INT)
+                global_step_ph = make_ph('global_step_ph', dtype=tf.int64)
 
             inputs = {
                 'x': x,
