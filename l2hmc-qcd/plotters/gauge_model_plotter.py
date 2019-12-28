@@ -20,8 +20,12 @@ from scipy.stats import sem
 import utils.file_io as io
 from seed_dict import seeds
 
+#  <<<<<<< Updated upstream
 from .plot_utils import (plot_multiple_lines,
                          _get_title, reset_plots, bootstrap)
+#  =======
+from .plot_utils import plot_multiple_lines, _get_title, reset_plots
+#  >>>>>>> Stashed changes
 from lattice.lattice import u1_plaq_exact
 
 if cfg.HAS_MATPLOTLIB:
@@ -57,6 +61,7 @@ def arr_from_dict(d, key):
     if isinstance(d[key], dict):
         return np.array(list(d[key].values()))
     return np.array(d[key])
+
 
 
 def get_out_file(out_dir, out_str):
