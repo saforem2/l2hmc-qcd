@@ -17,23 +17,14 @@ import numpy as np
 import utils.file_io as io
 from seed_dict import seeds
 
-#  <<<<<<< Updated upstream
 from .plot_utils import _get_title, reset_plots
 #  from lattice.lattice import u1_plaq_exact
-#  =======
-from .plot_utils import plot_multiple_lines, _get_title, reset_plots
-from lattice.lattice import u1_plaq_exact
-#  >>>>>>> Stashed changes
+#  from lattice.lattice import u1_plaq_exact
 
 if cfg.HAS_MATPLOTLIB:
     #  import matplotlib as mpl
     import matplotlib.pyplot as plt
     MARKERS = cfg.MARKERS
-#  <<<<<<< Updated upstream
-#  =======
-
-#  >>>>>>> Stashed changes
-    #  mpl.rcParams.update(MPL_PARAMS)
 
 try:
     import seaborn as sns
@@ -165,23 +156,16 @@ class EnergyPlotter:
                 data = data[therm_steps:, -1]
                 mean = data.mean()
                 err = data.std()
-                #  mean_arr = data.flatten()
-                #  mean, err, mean_arr = self.bootsrap(data, n_boot=n_boot)
-                #  mean_arr = mean_arr.flatten()
             else:
                 therm_steps = int(therm_steps)
                 data = data[therm_steps:, :]
                 mean = data.mean()
                 err = data.std()
-                #  mean_arr = data.flatten()
-                #  mean, err, mean_arr = self.bootstrap(data, n_boot=n_boot)
-                #  mean_arr = mean_arr.flatten()
             if HAS_SEABORN:
                 try:
                     ax = sns.kdeplot(data.flatten(), ax=ax, color=colors[idx])
-                except:
+                except np.linalg.LinAlgError:
                     continue
-                #  ax = sns.distplot(mean_arr, ax=ax, **hist_kws)
             label = labels[idx] + f'  avg: {mean:.4g} +/- {err:.4g}'
             hist_kws = dict(label=label,
                             alpha=0.3,

@@ -11,6 +11,8 @@ import os
 
 #  from config import BootstrapData, HAS_MATPLOTLIB, MARKERS
 import config as cfg
+
+from seed_dict import seeds
 from collections import Counter, namedtuple, OrderedDict
 
 import numpy as np
@@ -18,25 +20,21 @@ import numpy as np
 from scipy.stats import sem
 
 import utils.file_io as io
-from seed_dict import seeds
 
-#  <<<<<<< Updated upstream
-from .plot_utils import (plot_multiple_lines,
-                         _get_title, reset_plots, bootstrap)
-#  =======
-from .plot_utils import plot_multiple_lines, _get_title, reset_plots
-#  >>>>>>> Stashed changes
+from .plot_utils import _get_title, plot_multiple_lines
 from lattice.lattice import u1_plaq_exact
 
 if cfg.HAS_MATPLOTLIB:
-    import matplotlib as mpl
+    #  import matplotlib as mpl
     import matplotlib.pyplot as plt
+
     MARKERS = cfg.MARKERS
 
     #  mpl.rcParams.update(MPL_PARAMS)
 
 try:
     import seaborn as sns
+
     sns.set_palette('bright')
     sns.set_style('ticks', {'xtick.major.size': 8,
                             'ytick.major.size': 8})
@@ -56,12 +54,10 @@ BootstrapData = cfg.BootstrapData
 np.random.seed(seeds['global_np'])
 
 
-
 def arr_from_dict(d, key):
     if isinstance(d[key], dict):
         return np.array(list(d[key].values()))
     return np.array(d[key])
-
 
 
 def get_out_file(out_dir, out_str):
@@ -319,7 +315,7 @@ class GaugeModelPlotter:
         if HAS_SEABORN:
             try:
                 _ = sns.kdeplot(x, ax=ax, color='k', label=label)
-            except:
+            except np.linalg.LinAlgError:
                 pass
         _ = ax.hist(x, density=True, bins=50, alpha=0.3, histtype='stepfilled')
         _ = ax.axvline(x=mean, label=f'avg: {mean:.3g} +/- {err:.3g}')
@@ -461,7 +457,7 @@ class GaugeModelPlotter:
 
         charges = np.array(xy_data[1], dtype=int)
         batch_size = charges.shape[0]
-        num_steps = charges.shape[1]
+        #  num_steps = charges.shape[1]
 
         out_dir = os.path.join(self.out_dir, 'top_charge_plots')
         io.check_else_make_dir(out_dir)

@@ -1,16 +1,24 @@
 import os
 import sys
 import time
-import datetime
-import shutil
 import pickle
+import shutil
 import argparse
+import datetime
+
+from plotters.plot_utils import bootstrap, load_pkl
+from plotters.plot_observables import get_run_dirs, get_title_str
 
 import numpy as np
 import pandas as pd
-import tensorflow as tf
 import seaborn as sns
+import tensorflow as tf
 import matplotlib.pyplot as plt
+import matplotlib.style as mplstyle
+
+import utils.file_io as io
+
+from lattice.lattice import u1_plaq_exact
 
 sns.set_palette('bright')
 
@@ -19,13 +27,7 @@ sns.set_palette('bright')
 #  mpl.rcParams['xtick.labelsize'] = label_size
 #  mpl.rcParams['xtick.labelsize'] = label_size
 
-import matplotlib.style as mplstyle
 mplstyle.use('fast')
-
-import utils.file_io as io
-from lattice.lattice import u1_plaq_exact
-from plotters.plot_observables import get_run_dirs, get_title_str
-from plotters.plot_utils import bootstrap, load_pkl
 
 
 def parse_args():
@@ -113,9 +115,30 @@ def get_observables(run_dir, n_boot=1000, therm_frac=0.2, nw_include=None):
     return data, run_params
 
 
-def get_log_dirs_by_date(root_dir):
-	contents = os.listdir(root_dir)
-	pass
+def get_matching_log_dirs(string, root_dir):
+    contents = os.listdir(root_dir)
+    matches = [os.path.join(root_dir, i) for i in contents if string in i]
+    log_dirs = []
+
+    def check(log_dir):
+        if not os.path.isdir(log_dir):
+            return False
+        figs_dir = os.path.join(log_dir, 'figures')
+        runs_dir = os.path.join(log_dir, 'runs')
+        if os.path.isdir(figs_dir) and os.path.isdir(runs_dir):
+            return True
+        return False
+
+    for match in matches:
+        contents = os.listdir(match)
+        log_dirs.extend([os.path.join(match, i) for i in contents
+                         if check(os.path.join(match, i))])
+
+    return log_dirs
+
+
+
+
 
 def get_previous_dir(root_dir):
     dirs = sorted(filter(os.path.isdir,
@@ -283,6 +306,7 @@ def pair_plotter(log_dirs, therm_frac=0.2, n_boot=1000,
     day_str = now.strftime('%Y_%m_%d')
     hour_str = now.strftime('%H%M')
     time_str = f'{day_str}_{hour_str}'
+
     from config import COLORS
 
     colors = 100 * [*COLORS]
@@ -385,71 +409,51 @@ def main():
     n_boot = 1000     # number of bootstrap iterations to run for statistics
 
     nw_include = [
-    (0, 0, 0, 0, 0, 0),
-    # --------------------
-    (0, 0, 0, 0, 0, 1),
-    (0, 0, 0, 0, 1, 0),
-    (0, 0, 0, 1, 0, 0),
-    (0, 0, 1, 0, 0, 0),
-    (0, 1, 0, 0, 0, 0),
-    (1, 0, 0, 0, 0, 0),
-    # --------------------
-    (0, 1, 1, 1, 1, 1),
-    (1, 0, 1, 1, 1, 1),
-    (1, 1, 0, 1, 1, 1),
-    (1, 1, 1, 0, 1, 1),
-    (1, 1, 1, 1, 0, 1),
-    (1, 1, 1, 1, 1, 0),
-    # --------------------
-    (0, 0, 1, 1, 1, 1),
-    (0, 1, 0, 1, 1, 1),
-    (1, 0, 0, 1, 1, 1),
-    (1, 1, 1, 0, 0, 1),
-    (1, 1, 1, 0, 1, 0),
-    (1, 1, 1, 1, 0, 0),
-    # --------------------
-    (0, 0, 0, 1, 1, 1),
-    (0, 0, 1, 1, 1, 0),
-    (0, 1, 1, 1, 0, 0),
-    (1, 1, 1, 0, 0, 0),
-    # --------------------
-    (1, 1, 1, 1, 1, 1),
+        (0, 0, 0, 0, 0, 0),
+        # --------------------
+        (0, 0, 0, 0, 0, 1),
+        (0, 0, 0, 0, 1, 0),
+        (0, 0, 0, 1, 0, 0),
+        (0, 0, 1, 0, 0, 0),
+        (0, 1, 0, 0, 0, 0),
+        (1, 0, 0, 0, 0, 0),
+        # --------------------
+        (0, 1, 1, 1, 1, 1),
+        (1, 0, 1, 1, 1, 1),
+        (1, 1, 0, 1, 1, 1),
+        (1, 1, 1, 0, 1, 1),
+        (1, 1, 1, 1, 0, 1),
+        (1, 1, 1, 1, 1, 0),
+        # --------------------
+        (0, 0, 1, 1, 1, 1),
+        (0, 1, 0, 1, 1, 1),
+        (1, 0, 0, 1, 1, 1),
+        (1, 1, 1, 0, 0, 1),
+        (1, 1, 1, 0, 1, 0),
+        (1, 1, 1, 1, 0, 0),
+        # --------------------
+        (0, 0, 0, 1, 1, 1),
+        (0, 0, 1, 1, 1, 0),
+        (0, 1, 1, 1, 0, 0),
+        (1, 1, 1, 0, 0, 0),
+        # --------------------
+        (1, 1, 1, 1, 1, 1),
     ]
+    root_dir = os.path.abspath('../gauge_logs')
 
-#  <<<<<<< Updated upstream
-#      log_dirs = [
-#          os.path.abspath('../gauge_logs/2019_12_15/L8_b64_lf1_f32/'),
-#          os.path.abspath('../gauge_logs/2019_12_15/L8_b64_lf1_f32_0929/'),
-#          # lf2
-#          os.path.abspath('../gauge_logs/2019_12_15/L8_b64_lf2_f32_0408/'),
-#          os.path.abspath('../gauge_logs/2019_12_15/L8_b64_lf2_f32_2157/'),
-#          # lf3
-#          os.path.abspath('../gauge_logs/2019_12_15/L8_b64_lf3_f32_0413/'),
-#          os.path.abspath('../gauge_logs/2019_12_15/L8_b64_lf3_f32_2206/'),
-#          # lf4
-#          os.path.abspath('../gauge_logs/2019_12_15/L8_b64_lf4_f32_0431/'),
-#          os.path.abspath('../gauge_logs/2019_12_15/L8_b64_lf4_f32_2224/'),
-#          # lf5
-#          os.path.abspath('../gauge_logs/2019_12_15/L8_b64_lf5_f32_0843/'),
-#          os.path.abspath('../gauge_logs/2019_12_16/L8_b64_lf5_f32_0328/'),
-#      ]
-
-
-    #  plotter(log_dirs=log_dirs, n_boot=n_boot,
-    #          therm_frac=therm_frac, nw_include=nw_include)
-    ld1 = get_log_dirs_by_date('2019_12_15')
-    ld2 = get_log_dirs_by_date('2019_12_16')
-    ld3 = get_log_dirs_by_date('2019_12_22')
-    ld4 = get_log_dirs_by_date('2019_12_24')
-    ld5 = get_log_dirs_by_date('2019_12_25')
-    ld6 = get_log_dirs_by_date('2019_12_26')
+    ld1 = get_matching_log_dirs('2019_12_15', root_dir=root_dir)
+    ld2 = get_matching_log_dirs('2019_12_16', root_dir=root_dir)
+    ld3 = get_matching_log_dirs('2019_12_22', root_dir=root_dir)
+    ld4 = get_matching_log_dirs('2019_12_24', root_dir=root_dir)
+    ld5 = get_matching_log_dirs('2019_12_25', root_dir=root_dir)
+    ld6 = get_matching_log_dirs('2019_12_26', root_dir=root_dir)
     log_dirs = [*ld1, *ld2, *ld3, *ld4, *ld5, *ld6]
-    #  log_dirs = [*ld1, *ld2, *ld3]
 
     pair_plotter(log_dirs=log_dirs, n_boot=n_boot,
                  therm_frac=therm_frac, nw_include=nw_include)
     combined_pair_plotter(log_dirs=log_dirs, n_boot=n_boot,
                           therm_frac=therm_frac, nw_include=None)
+
 
 if __name__ == '__main__':
     main()
