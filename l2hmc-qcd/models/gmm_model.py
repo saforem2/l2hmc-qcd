@@ -142,12 +142,16 @@ class GaussianMixtureModel(BaseModel):
             # ---------------------------------------------------------------
             io.log(f'INFO: Creating input placeholders...')
             inputs = self._create_inputs()
+            self._inputs = inputs
             self.x = inputs['x']
             self.beta = inputs['beta']
+            self.eps_ph = inputs['eps_ph']
             self.net_weights = inputs['net_weights']
             self.train_phase = inputs['train_phase']
-            self.eps_ph = inputs['eps_ph']
-            self._inputs = inputs
+            self.global_step_ph = inputs['global_step_ph']
+
+            # create global_step_setter
+            self.global_step_setter = self._build_global_step_setter()
 
             # ---------------------------------------------------------------
             # Create dynamics for running augmented L2HMC leapfrog

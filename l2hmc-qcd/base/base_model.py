@@ -86,7 +86,6 @@ class BaseModel(object):
 
         self.eps_trainable = not self.eps_fixed
         self.global_step = self._create_global_step()
-        self.global_step_setter = self._build_global_step_setter()
 
         warmup = self.params.get('warmup_lr', False)
         self.lr = self._create_lr(warmup)
@@ -300,6 +299,7 @@ class BaseModel(object):
                 'eps_ph': eps_ph,
                 'train_phase': train_phase,
                 'net_weights': net_weights,
+                'global_step_ph': global_step_ph,
             }
             for key, val in inputs.items():
                 print(f'{key}: {val}\n')

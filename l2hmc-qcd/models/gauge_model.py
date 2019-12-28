@@ -87,17 +87,16 @@ class GaugeModel(BaseModel):
             # -----------------------------------------------
             io.log(f'INFO: Creating input placeholders...')
             inputs = self._create_inputs()
+            self._inputs = inputs
             self.x = inputs['x']
             self.beta = inputs['beta']
-            #  nw_keys = [
-            #      'x_scale_weight', 'x_transl_weight', 'x_transf_weight',
-            #      'v_scale_weight', 'v_transl_weight', 'v_transf_weight'
-            #  ]
-            #  self.net_weights = [inputs[k] for k in nw_keys]
+            self.eps_ph = inputs['eps_ph']
             self.net_weights = inputs['net_weights']
             self.train_phase = inputs['train_phase']
-            self.eps_ph = inputs['eps_ph']
-            self._inputs = inputs
+            self.global_step_ph = inputs['global_step_ph']
+
+            # create global_step_setter
+            self.global_step_setter = self._build_global_step_setter()
 
             # ***********************************************
             # Create dynamics for running L2HMC leapfrog
