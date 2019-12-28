@@ -1,3 +1,9 @@
+"""
+plot_observables.py
+
+Collection of helper functions for plotting lattice observables for gauge
+model.
+"""
 import os
 import pickle
 
@@ -260,19 +266,19 @@ def get_obs_dict(log_dir, obs_name, run_dirs=None):
 
 
 def calc_stats(data, therm_frac=0.2, axis=None):
+    """Calculate statistics for data.
+    
+    Args:
+        data (np.array): If `len(data.shape) == 2`:, calculate 
+    """
+
     if not isinstance(data, np.ndarray):
         data = np.array(data)
 
-    if len(data.shape) == 2:  # (num_steps, batch_size) = (ns, bs)
-        num_steps = data.shape[0]
-        therm_steps = int(therm_frac * num_steps)
-        data = data[therm_steps:]
-
-    else:
-        step_axis = np.argmax(data.shape)
-        num_steps = data.shape[step_axis]
-        therm_steps = int(therm_frac * num_steps)
-        data = np.delete(data, np.s_[:therm_steps], axis=step_axis)
+    step_axis = np.argmax(data.shape)
+    num_steps = data.shape[step_axis]
+    therm_steps = int(therm_frac * num_steps)
+    data = np.delete(data, np.s_[:therm_steps], axis=step_axis)
 
     if axis is None:
         avgs = np.mean(data, axis=-1)
@@ -366,7 +372,7 @@ def kde_hist(data, stats=True, **kwargs):
     key = kwargs.get('key', '')
     color = kwargs.get('color', 'k')
     ax = kwargs.get('ax', None)
-    kdehist = kwargs.get('kdehist', True)
+    #  kdehist = kwargs.get('kdehist', True)
     use_avg = kwargs.get('use_avg', False)
 
     if ax is None:
@@ -390,7 +396,7 @@ def kde_hist(data, stats=True, **kwargs):
     try:
         _ = sns.kdeplot(y.flatten(), ax=ax, color=color,
                         label=f'{avg:.3g} +/- {err:.3g}')
-    except:
+    except:  # noqa: E722
         pass
 
     hist_kws = dict(color=color,
@@ -404,7 +410,7 @@ def kde_hist(data, stats=True, **kwargs):
         _ = ax.axvline(x=0, color='gray', ls='--', zorder=-1)
 
     _ = ax.axvline(x=avg, color=color, ls='--')
-    _ = ax.legend(loc='best') #, fontsize='small')
+    _ = ax.legend(loc='best')  # , fontsize='small')
     _ = ax.set_ylabel('')
     _ = ax.set_yticklabels([])
     _ = ax.set_yticks([])

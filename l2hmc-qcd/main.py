@@ -181,11 +181,13 @@ def train_l2hmc(FLAGS, log_file=None):
     #        initialization, restoring from a checkpoint, saving to a
     #        checkpoint, and closing when done or an error occurs.
     # ----------------------------------------------------------------
+    save_steps = FLAGS.save_steps
     sess = create_monitored_training_session(hooks=hooks,
                                              config=config,
                                              #  scaffold=scaffold,
                                              save_summaries_secs=None,
                                              save_summaries_steps=None,
+                                             save_checkpoint_steps=save_steps,
                                              checkpoint_dir=checkpoint_dir)
     sess.run([
         model.dynamics.xnet.generic_net.coeff_scale.initializer,

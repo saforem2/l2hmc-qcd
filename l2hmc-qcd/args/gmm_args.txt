@@ -6,6 +6,8 @@
 --center 1.5
 --sigma1 0.08
 --sigma2 0.02
+--pi1 0.2
+--pi2 0.8
 --aux_weight 1.
 # --------------------
 #--float64

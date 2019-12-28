@@ -36,10 +36,6 @@ LFdata = namedtuple('LFdata', ['init', 'proposed', 'prob'])
 EnergyData = namedtuple('EnergyData', ['init', 'proposed', 'out',
                                        'proposed_diff', 'out_diff'])
 SamplerData = namedtuple('SamplerData', ['data', 'dynamics_output'])
-#  NetWeights = namedtuple('NetWeights', [
-#      'x_scale', 'x_translation', 'x_transformation',
-#      'v_scale', 'v_translation', 'v_transformation']
-#  )
 
 
 def _gaussian(x, mu, sigma):
@@ -49,6 +45,7 @@ def _gaussian(x, mu, sigma):
     exp_ = tf.exp(-0.5 * ((x - mu) / sigma) ** 2)
 
     return norm * exp_
+
 
 def add_to_collection(collection, tensors):
     """Helper method for adding a list of `tensors` to `collection`."""
@@ -89,6 +86,7 @@ class BaseModel(object):
 
         self.eps_trainable = not self.eps_fixed
         self.global_step = self._create_global_step()
+        self.global_step_setter = self._build_global_step_setter()
 
         warmup = self.params.get('warmup_lr', False)
         self.lr = self._create_lr(warmup)
@@ -102,6 +100,12 @@ class BaseModel(object):
     def _build_eps_setter(self):
         """Create op that sets `eps` to be equal to the value in `eps-ph`."""
         return tf.assign(self.dynamics.eps, self.eps_ph, name='eps_setter')
+
+    def _build_global_step_setter(self):
+        """Create op that sets the tensorflow `global_step`."""
+        return tf.assign(self.global_step,
+                         self.global_step_ph,
+                         name='global_step_setter')
 
     def _calc_energies(self, state, sumlogdet=0.):
         """Create operations for calculating the PE, KE and H of a `state`."""
@@ -264,7 +268,7 @@ class BaseModel(object):
                     multiplicative constant used to scale the effects of the
                     various S, Q, and T functions from the original paper.
                 train_phase: Boolean placeholder indicating if the model is
-                    curerntly being trained. 
+                    curerntly being trained.
         """
         def make_ph(name, shape=(), dtype=TF_FLOAT):
             return tf.placeholder(dtype=dtype, shape=shape, name=name)
@@ -288,6 +292,7 @@ class BaseModel(object):
                                              x_transformation=x_transf_weight)
                 train_phase = make_ph('is_training', dtype=tf.bool)
                 eps_ph = make_ph('eps_ph')
+                global_step_ph = make_ph('global_step_ph')
 
             inputs = {
                 'x': x,

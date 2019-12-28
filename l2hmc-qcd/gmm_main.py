@@ -17,6 +17,7 @@ import config as cfg
 from main import (check_reversibility, count_trainable_params, create_config,
                   get_net_weights, train_setup)
 from seed_dict import seeds, vnet_seeds, xnet_seeds
+from plotters.plot_utils import _gmm_plot
 
 import numpy as np
 import tensorflow as tf
@@ -24,11 +25,11 @@ import tensorflow as tf
 import utils.file_io as io
 
 from models.gmm_model import GaussianMixtureModel
-from trainers.trainer import Trainer
 from params.gmm_params import GMM_PARAMS
-from plotters.plot_utils import _gmm_plot
 from loggers.train_logger import TrainLogger
 from utils.parse_gmm_args import parse_args as parse_gmm_args
+from trainers.trainer import Trainer
+from trainers.train_setup import create_session
 
 if cfg.HAS_MATPLOTLIB:
     import matplotlib.pyplot as plt
@@ -41,8 +42,6 @@ if float(tf.__version__.split('.')[0]) <= 2:
 
 SEP_STR = 80 * '-'
 
-#  tf.set_random_seed(cfg.GLOBAL_SEED)
-from .train_setup import create_session
 
 
 def plot_target_distribution(distribution, target_samples=None, **kwargs):

@@ -12,35 +12,25 @@ import os
 import time
 
 from config import HAS_HOROVOD, HAS_MATPLOTLIB, NetWeights
-from loggers.run_logger import RunLogger
-from runners.runner import Runner
 from plotters.plot_utils import _gmm_plot, gmm_plot
 from plotters.energy_plotter import EnergyPlotter
 
 import numpy as np
 import tensorflow as tf
-import inference.utils as utils
 
 import utils.file_io as io
+import inference.utils as utils
 
+from runners.runner import Runner
+from loggers.run_logger import RunLogger
 from utils.parse_inference_args import parse_args as parse_inference_args
-from gauge_inference import _log_inference_header
+from inference.gauge_inference_utils import _log_inference_header
 from inference.gmm_inference_utils import (create_config, load_params,
                                            recreate_distribution,
                                            save_inference_data)
 
 if HAS_HOROVOD:
     import horovod.tensorflow as hvd
-
-#  from loggers.summary_utils import create_summaries
-#  from plotters.gauge_model_plotter import EnergyPlotter
-#  from scipy.stats import sem
-#  from utils.data_utils import block_resampling
-#  from utils.distributions import GMM
-#  if HAS_MATPLOTLIB:
-#          import matplotlib.pyplot as plt
-#  if HAS_MEMORY_PROFILER:
-#          import memory_profiler
 
 if float(tf.__version__.split('.')[0]) <= 2:
     tf.logging.set_verbosity(tf.logging.INFO)

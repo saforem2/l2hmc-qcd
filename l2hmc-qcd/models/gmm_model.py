@@ -136,10 +136,6 @@ class GaussianMixtureModel(BaseModel):
             self.covs = covs
             self.pis = pis
             self.distribution = distribution
-            #  self.means = self._create_means(params)
-            #  self.sigmas, self.covs = self._create_covs(params)
-            #  self.pis = distribution_arr(self.x_dim, self.num_distributions)
-            #  self.distribution = GMM(self.means, self.covs, self.pis)
 
             # ---------------------------------------------------------------
             # Create inputs as to be fed values using `tf.placeholders`
@@ -148,8 +144,6 @@ class GaussianMixtureModel(BaseModel):
             inputs = self._create_inputs()
             self.x = inputs['x']
             self.beta = inputs['beta']
-            #  nw_keys = ['scale_weight', 'transl_weight', 'transf_weight']
-            #  self.net_weights = [inputs[k] for k in nw_keys]
             self.net_weights = inputs['net_weights']
             self.train_phase = inputs['train_phase']
             self.eps_ph = inputs['eps_ph']
@@ -224,7 +218,6 @@ class GaussianMixtureModel(BaseModel):
 
         if self.arrangement == 'lattice':
             sigma = np.max(self.sigmas)
-            #  L = int(np.sqrt(self.num_distributions))
             distribution, means, covs, pis = lattice_of_gaussians(
                 self.num_distributions, sigma, x_dim=self.x_dim
             )
@@ -239,15 +232,14 @@ class GaussianMixtureModel(BaseModel):
         else:
             means = self._create_means()
             covs = self._create_covs()
-            pis = distribution_arr(self.x_dim, self.num_distributions)
+            pis = self._get_pis()
+            #  pis = distribution_arr(self.x_dim, self.num_distributions)
             distribution = GMM(means, covs, pis)
 
         return means, covs, pis, distribution
 
     def _create_means(self):
         """Create means of target distribution."""
-        #  params = self.params if params is None else params
-        #  diag = self._double_check('diag', params, False)
         means = np.zeros((self.x_dim, self.x_dim))
 
         if self.arrangement == 'diag':
@@ -271,6 +263,16 @@ class GaussianMixtureModel(BaseModel):
 
         return means.astype(NP_FLOAT)
 
+    def _get_pis(self):
+        pi1 = getattr(self, 'pi1', None)
+        pi2 = getattr(self, 'pi2', None)
+        if pi1 is None or pi2 is None:
+            pis = distribution_arr(self.x_dim, self.num_distributions)
+        else:
+            pis = np.array([pi1, pi2])
+
+        return pis
+
     def _get_sigmas(self):
         """Get sigmas."""
         sigmas = getattr(self, 'sigmas', None)
@@ -289,8 +291,6 @@ class GaussianMixtureModel(BaseModel):
 
     def _create_covs(self):
         """Create covariance matrix from of individual covariance matrices."""
-        #  params = self.params if params is None else params
-        #  sigmas = self._double_check('sigmas', params, None)
         covs = np.array(
             [s * np.eye(self.x_dim) for s in self.sigmas], dtype=NP_FLOAT
         )
