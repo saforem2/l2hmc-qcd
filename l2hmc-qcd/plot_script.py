@@ -248,7 +248,7 @@ def combined_pair_plotter(log_dirs, therm_frac=0.2,
         g.add_legend()
         # Create title for plot
         title_str = (r"$N_{\mathrm{LF}} = $" + f'{lf}, '
-                     r"$\varepsilon = $"  + f'{eps:.3g}')
+                     r"$\varepsilon = $" + f'{eps:.3g}')
         if eps_fixed:
             title_str += ' (fixed) '
         if any([tw == 0 for tw in train_weights]):
@@ -274,14 +274,12 @@ def combined_pair_plotter(log_dirs, therm_frac=0.2,
             fname += f'_eps_fixed_'
 
         if any([tw == 0 for tw in train_weights]):
-            #out_dir = os.path.join(out_dir, f'train_{train_weights_str}')
             fname += f'_train{train_weights_str}'
 
         id_str = log_dir.split('/')[-1].split('_')[-1]
         out_file = os.path.join(out_dir, f'{fname}_{id_str}.png')
         if os.path.isfile(out_file):
             out_file = os.path.join(out_dir, f'{fname}_{id_str}_1.png')
-            #out_file = os.path.join(out_dir, fname + '_1.png')
         io.log(f'INFO:Saving figure to: {out_file}')
         g.savefig(out_file, dpi=150, bbox_inches='tight')
 
@@ -408,14 +406,14 @@ def main():
         (0, 0, 0, 0, 0, 0),
         # --------------------
         #  (0, 0, 0, 0, 0, 1),
-		(0, 0, 0, 0, 1, 0),
+        (0, 0, 0, 0, 1, 0),
         #  (0, 0, 0, 1, 0, 0),
         #  (0, 0, 1, 0, 0, 0),
         (0, 1, 0, 0, 0, 0),
         #  (1, 0, 0, 0, 0, 0),
         # --------------------
         #  (0, 1, 1, 1, 1, 1),
-		(1, 0, 1, 1, 1, 1),
+        (1, 0, 1, 1, 1, 1),
         #  (1, 1, 0, 1, 1, 1),
         #  (1, 1, 1, 0, 1, 1),
         (1, 1, 1, 1, 0, 1),
@@ -423,13 +421,13 @@ def main():
         # --------------------
         #  (0, 0, 1, 1, 1, 1),
         #  (0, 1, 0, 1, 1, 1),
-		#  (1, 0, 0, 1, 1, 1),
+        #  (1, 0, 0, 1, 1, 1),
         #  (1, 1, 1, 0, 0, 1),
         #  (1, 1, 1, 0, 1, 0),
         #  (1, 1, 1, 1, 0, 0),
         # --------------------
-		(0, 1, 0, 0, 1, 0),
-		(1, 0, 1, 1, 0, 1),
+        (0, 1, 0, 0, 1, 0),
+        (1, 0, 1, 1, 0, 1),
         # --------------------
         #  (0, 0, 0, 1, 1, 1),
         #  (0, 0, 1, 1, 1, 0),
