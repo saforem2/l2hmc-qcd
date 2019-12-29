@@ -128,6 +128,7 @@ class BaseModel(object):
         self.x_out = x_dynamics['x_out']
         self.px = x_dynamics['accept_prob']
         self.px_hmc = x_dynamics['accept_prob_hmc']
+        self.dx = x_dynamics['dx']
 
         self.dynamics_dict = x_dynamics
         self.x_diff, self.v_diff = self._check_reversibility()
@@ -298,9 +299,9 @@ class BaseModel(object):
                 'x': x,
                 'beta': beta,
                 'eps_ph': eps_ph,
+                'global_step_ph': global_step_ph,
                 'train_phase': train_phase,
                 'net_weights': net_weights,
-                'global_step_ph': global_step_ph,
             }
             for key, val in inputs.items():
                 print(f'{key}: {val}\n')
