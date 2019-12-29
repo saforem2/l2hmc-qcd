@@ -330,11 +330,6 @@ def pair_plotter(log_dirs, therm_frac=0.2, n_boot=1000,
                                       f'cooley_figures/pairplots_{time_str}')
             io.check_else_make_dir(out_dir)
 
-        fname = f'lf{lf}_'
-        if any([tw == 0 for tw in train_weights]):
-            out_dir = os.path.join(out_dir, f'train_{train_weights_str}')
-            fname += f'_train{train_weights_str}_'
-
         for run_dir in run_dirs:
             t1 = time.time()
             data, run_params = get_observables(run_dir,
@@ -346,10 +341,17 @@ def pair_plotter(log_dirs, therm_frac=0.2, n_boot=1000,
             if data is None:
                 continue
 
-            nw_str = ''.join((str(int(i)) for i in key))
-            #  fname = f'lf{lf}_'
+            fname = f'lf{lf}_'
+            if any([tw == 0 for tw in train_weights]):
+                fname += f'_train{train_weights_str}_'
+
+            if params['eps_fixed']:
+                fname += f'_eps_fixed_'
+
             if clip_value > 0:
                 fname += f'clip{int(clip_value)}_'
+
+            nw_str = ''.join((str(int(i)) for i in key))
             fname += f'_{nw_str}'
 
             out_file = os.path.join(out_dir, fname + '.png')
@@ -368,7 +370,7 @@ def pair_plotter(log_dirs, therm_frac=0.2, n_boot=1000,
                                color=colors[idx], gridsize=100)
                 g = g.map_upper(sns.kdeplot, shade=False,
                                 cmap=cmap, gridsize=50)
-            except:
+            except np.linalg.LinAlgError:
                 g = g.map_upper(plt.hist, histtype='step',
                                 color=colors[idx], alpha=0.6,
                                 ec=colors[idx], density=True)
@@ -378,11 +380,12 @@ def pair_plotter(log_dirs, therm_frac=0.2, n_boot=1000,
 
             # Create title for plot
             title_str = (r"$N_{\mathrm{LF}} = $" + f'{lf}, '
-                         r"$\varepsilon = $"  + f'{eps:.3g}')
+                         r"$\varepsilon = $" + f'{eps:.3g}')
             if params['clip_value'] > 0:
                 title_str += f', clip: {clip_value}'
             title_str += f', nw: {key}'
             g.fig.suptitle(title_str, y=1.02, fontsize='x-large')
+
             io.log(f'  Saving figure to: {out_file}')
             g.savefig(out_file, dpi=150, bbox_inches='tight')
 
