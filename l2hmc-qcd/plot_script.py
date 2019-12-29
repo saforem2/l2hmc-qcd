@@ -330,10 +330,14 @@ def pair_plotter(log_dirs, therm_frac=0.2, n_boot=1000,
 
         for run_dir in run_dirs:
             t1 = time.time()
-            data, run_params = get_observables(run_dir,
-                                               n_boot=n_boot,
-                                               therm_frac=therm_frac,
-                                               nw_include=nw_include)
+            px_file = os.path.join(run_dir, 'observables', 'px.pkl')
+            if os.path.isfile(px_file):
+                data, run_params = get_observables(run_dir,
+                                                   n_boot=n_boot,
+                                                   therm_frac=therm_frac,
+                                                   nw_include=nw_include)
+            else:
+                continue
             key = tuple([int(i) for i in run_params['net_weights']])
             eps = run_params['eps']
             if data is None:
