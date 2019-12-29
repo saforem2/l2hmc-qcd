@@ -1,18 +1,14 @@
 import os
-import sys
 import time
-import pickle
-import shutil
 import argparse
 import datetime
 
 from plotters.plot_utils import bootstrap, load_pkl
-from plotters.plot_observables import get_run_dirs, get_title_str
+from plotters.plot_observables import get_run_dirs
 
 import numpy as np
 import pandas as pd
 import seaborn as sns
-import tensorflow as tf
 import matplotlib.pyplot as plt
 import matplotlib.style as mplstyle
 
@@ -21,6 +17,11 @@ import utils.file_io as io
 from lattice.lattice import u1_plaq_exact
 
 sns.set_palette('bright')
+
+#  import sys
+#  import tensorflow as tf
+#  import pickle
+#  import shutil
 
 #  label_size = 10
 #  import matplotlib as mpl
@@ -63,7 +64,7 @@ def calc_tunneling_rate(charges):
 def get_observables(run_dir, n_boot=1000, therm_frac=0.2, nw_include=None):
     run_params = load_pkl(os.path.join(run_dir, 'run_params.pkl'))
     net_weights = tuple([int(i) for i in run_params['net_weights']])
-    eps = run_params['eps']
+    #  eps = run_params['eps']
     observables_dir = os.path.join(run_dir, 'observables')
     px = load_pkl(os.path.join(observables_dir, 'px.pkl'))
     px = np.squeeze(np.array(px))
@@ -137,13 +138,10 @@ def get_matching_log_dirs(string, root_dir):
     return log_dirs
 
 
-
-
-
 def get_previous_dir(root_dir):
     dirs = sorted(filter(os.path.isdir,
-                          os.listdir(root_dir)),
-                          key=os.path.getmtime)
+                         os.listdir(root_dir)),
+                  key=os.path.getmtime)
     dirs = [i for i in dirs if 'pairplots' in i
             and 'combined' not in i]
     previous_dir = dirs[0]
@@ -152,7 +150,6 @@ def get_previous_dir(root_dir):
 
 
 def infer_cmap(color):
-    #hues = sns.color_palette('Set1')
     hues = sns.color_palette('bright')
     if color == hues[0]:
         return sns.light_palette('C0', as_cmap=True)
@@ -195,7 +192,6 @@ def combined_pair_plotter(log_dirs, therm_frac=0.2,
 
     t0 = time.time()
     for log_dir in log_dirs:
-        #log_dir = log_dirs[0]
         io.log(f'log_dir: {log_dir}')
         params = load_pkl(os.path.join(log_dir, 'parameters.pkl'))
         lf = params['num_steps']
@@ -334,10 +330,10 @@ def pair_plotter(log_dirs, therm_frac=0.2, n_boot=1000,
                                       f'cooley_figures/pairplots_{time_str}')
             io.check_else_make_dir(out_dir)
 
-		fname = f'lf{lf}_'
+        fname = f'lf{lf}_'
         if any([tw == 0 for tw in train_weights]):
             out_dir = os.path.join(out_dir, f'train_{train_weights_str}')
-			fname += f'_train{train_weights_str}_'
+            fname += f'_train{train_weights_str}_'
 
         for run_dir in run_dirs:
             t1 = time.time()
