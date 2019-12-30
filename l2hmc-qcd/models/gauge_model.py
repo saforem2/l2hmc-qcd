@@ -352,12 +352,15 @@ class GaugeModel(BaseModel):
                 'loss_op': self.loss_op,
                 'train_op': self.train_op,
                 'x_out': self.x_out,
+                'dxf': self.dxf,
+                'dxb': self.dxb,
+                #  'dx': self.dx,
                 'px': self.px,
                 'dynamics_eps': self.dynamics_eps,
                 'actions': self.actions,
                 'plaqs': self.plaqs,
                 'charges': self.charges,
-                'lr': self.lr
+                'lr': self.lr,
             }
 
         return train_ops

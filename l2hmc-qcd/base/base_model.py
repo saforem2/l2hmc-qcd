@@ -128,7 +128,9 @@ class BaseModel(object):
         self.x_out = x_dynamics['x_out']
         self.px = x_dynamics['accept_prob']
         self.px_hmc = x_dynamics['accept_prob_hmc']
-        self.dx = x_dynamics['dx']
+        self.dxf = x_dynamics['dxf']
+        self.dxb = x_dynamics['dxb']
+        self.dx = (self.dxf + self.dxb) / 2
 
         self.dynamics_dict = x_dynamics
         self.x_diff, self.v_diff = self._check_reversibility()

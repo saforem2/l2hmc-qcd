@@ -239,6 +239,9 @@ class Dynamics(tf.keras.Model):
             pxf = outf['accept_prob']
             pxf_hmc = outf['accept_prob_hmc']
             sumlogdetf = outf['sumlogdet']
+            dxf = tf.sqrt((xf - x_init) ** 2)
+
+            #  dxf = tf.abs(tf.reduce_mean(xf - x_init))
 
         with tf.name_scope('transition_backward'):
             vb_init = tf.random_normal(tf.shape(x_init),
@@ -255,10 +258,12 @@ class Dynamics(tf.keras.Model):
             pxb = outb['accept_prob']
             pxb_hmc = outb['accept_prob_hmc']
             sumlogdetb = outb['sumlogdet']
+            dxb = tf.sqrt((xb - x_init) ** 2)
+            #  dxb = tf.abs(tf.reduce_mean(xb - x_init))
 
         # Decide direction uniformly
         with tf.name_scope('simulate_forward_backward'):
-            mask_f, mask_b = self._get_transition_masks()
+            mask_f, mask_b = self._get_direction_masks()
 
             # Use forward/backward mask to reconstruct `v_init`
             v_init = (vf_init * mask_f[:, None] + vb_init * mask_b[:, None])
@@ -296,6 +301,8 @@ class Dynamics(tf.keras.Model):
             'v_proposed': v_proposed,
             'x_out': x_out,
             'v_out': v_out,
+            'dxf': dxf,
+            'dxb': dxb,
             'accept_prob': accept_prob,
             'accept_prob_hmc': accept_prob_hmc,
             'sumlogdet_proposed': sumlogdet_proposed,
@@ -653,7 +660,7 @@ class Dynamics(tf.keras.Model):
 
         return t
 
-    def _get_transition_masks(self):
+    def _get_direction_masks(self):
         with tf.name_scope('transition_masks'):
             with tf.name_scope('forward_mask'):
                 forward_mask = tf.cast(

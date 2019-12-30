@@ -104,6 +104,7 @@ class Trainer:
         outputs['x_in'] = samples
         outputs['step'] = global_step
         outputs['beta'] = beta
+        dx_avg = np.mean((outputs['dxf'] + outputs['dxb']) / 2)
 
         data_str = (
             f"{global_step:>5g}/{self._train_steps:<6g} "
@@ -111,7 +112,9 @@ class Trainer:
             f"{outputs['loss_op']:^9.4g} "
             f"{np.mean(outputs['px']):^9.4g} "
             f"{outputs['dynamics_eps']:^9.4g} "
-            f"{np.mean(outputs['x_out'] - samples):^9.4g} "
+            f"{dx_avg:^9.4g} "
+            #  f"{outputs['dx']:^9.4g} "
+            #  f"{np.mean(outputs['x_out'] - samples):^9.4g} "
             f"{outputs['beta']:^9.4g} "
             f"{outputs['lr']:^9.4g} "
         )
