@@ -9,7 +9,7 @@ Date: 08/21/2019
 import os
 import pickle
 
-from config import HAS_MATPLOTLIB, MARKERS, COLORS
+from config import HAS_MATPLOTLIB, MARKERS, COLORS, Weights
 from collections import namedtuple
 
 import numpy as np
@@ -22,25 +22,28 @@ import utils.file_io as io
 from lattice.lattice import u1_plaq_exact
 
 
-MPL_PARAMS = {
-    #  'backend': 'ps',
-    #  'text.latex.preamble': [r'\usepackage{gensymb}'],
-    'axes.labelsize': 14,   # fontsize for x and y labels (was 10)
-    'axes.titlesize': 10,
-    'legend.fontsize': 10,  # was 10
-    'xtick.labelsize': 12,
-    'ytick.labelsize': 12,
-    #  'text.usetex': True,
-    #  'figure.figsize': [fig_width, fig_height],
-    #  'font.family': 'serif',
-}
+#  MPL_PARAMS = {
+#      #  'backend': 'ps',
+#      #  'text.latex.preamble': [r'\usepackage{gensymb}'],
+#      'axes.labelsize': 14,   # fontsize for x and y labels (was 10)
+#      'axes.titlesize': 10,
+#      'legend.fontsize': 10,  # was 10
+#      #'xtick.labelsize': 10,
+#      #'ytick.labelsize': 12,
+#      #  'text.usetex': True,
+#      #  'figure.figsize': [fig_width, fig_height],
+#      #  'font.family': 'serif',
+#  }
 
 if HAS_MATPLOTLIB:
     import matplotlib as mpl
     import matplotlib.pyplot as plt
 
     from matplotlib.patches import Ellipse
-    mpl.rcParams.update(MPL_PARAMS)
+    #  mpl.rcParams.update(MPL_PARAMS)
+
+    import matplotlib.style as mplstyle
+    mplstyle.use('fast')
 
 try:
     import seaborn as sns
@@ -52,17 +55,96 @@ except ImportError:
     HAS_SEABORN = False
 
 
-def get_run_dirs(log_dir):
+def weights_hist(log_dir, weights=None):
+    if HAS_SEABORN:
+        sns.set_palette('bright', 100)
+
+    if weights is None:
+        weights = load_pkl(os.path.join(log_dir, 'weights.pkl'))
+
+    figs_dir = os.path.join(log_dir, 'figures', 'weights')
+    io.check_else_make_dir(figs_dir)
+
+    idx = 0
+    for key, val in weights.items():
+        for k1, v1 in val.items():
+            for k2, v2 in v1.items():
+                fig, ax = plt.subplots()
+                hist_kws = {
+                    'density': True,
+                    'histtype': 'step',
+                    'color': 'C6',
+                }
+                try:
+                    w = v2.w.flatten()
+                    b = v2.b.flatten()
+                    inc = 2
+                    bavg = np.mean(b)
+                    berr = np.std(b)
+                    blabel = (r"""$\langle b\rangle = $"""
+                              + f' {bavg:.3g} +/- {berr:.3g}')
+                    #  b = v2.b.flatten()
+                except AttributeError:
+                    w = v2.flatten()
+                    b = None
+                    inc = 1
+                avg = np.mean(w)
+                err = np.std(w)
+                label = (r"""$\langle W\rangle = $"""
+                         + f' {avg:.3g} +/- {err:.3g}')
+                if HAS_SEABORN:
+                    try:
+                        sns.kdeplot(w, ax=ax, shade=True,
+                                    color='C6', label=label)
+                    except np.linalg.LinAlgError:
+                        io.log(f'LinAlgError raised. Returning.')
+                        continue
+                else:
+                    _ = ax.hist(w, **hist_kws)
+                if b is not None:
+                    label = (r"""$\langle b\rangle$"""
+                             + f' {avg:.3g} +/- {err:.3g}')
+                    if HAS_SEABORN:
+                        try:
+                            sns.kdeplot(b, ax=ax, shade=True,
+                                        color='C7', label=blabel)
+                        except np.linalg.LinAlgError:
+                            continue
+                    else:
+                        _ = ax.hist(b, density=True,
+                                    color='C7', histtype='step')
+                _ = ax.set_title(f'{key}/{k1}/{k2}', fontsize='x-large')
+                _ = ax.legend(loc='best')
+                fname = f'{key}_{k1}_{k2}_weights_hist.png'
+                out_file = os.path.join(figs_dir, fname)
+                fig.tight_layout()
+                io.log(f'Saving figure to: {out_file}.')
+                fig.savefig(out_file, dpi=200, bbox_inches='tight')
+                idx += inc
+            plt.close('all')
+            plt.clf()
+
+
+def reset_plots():
+    plt.close('all')
+    plt.clf()
+
+
+def get_run_dirs(log_dir, filter_str=None):
     runs_dir = os.path.join(log_dir, 'runs')
     run_dirs = [
         os.path.join(runs_dir, i) for i in os.listdir(runs_dir)
         if os.path.isdir(os.path.join(runs_dir, i))
     ]
-    return run_dirs
+    if filter_str is not None:
+        run_dirs = [i for i in run_dirs if filter_str in i]
+
+    return sorted(run_dirs)
 
 
-def load_pkl(pkl_file, arr=False):
-    io.log(f'Loading from: {pkl_file}...')
+def load_pkl(pkl_file, arr=False, verbose=False):
+    if verbose:
+        io.log(f'Loading from: {pkl_file}...')
     with open(pkl_file, 'rb') as f:
         tmp = pickle.load(f)
     if arr:
@@ -79,12 +161,7 @@ def get_params(dirname, fname=None):
     return load_pkl(params_file)
 
 
-def load_plaqs(run_dir):
-    plaqs_file = os.path.join(run_dir, 'observables', 'plaqs.pkl')
-    return load_pkl(plaqs_file, arr=True)
-
-
-def get_title_str(params, beta):
+def get_title_str(params, run_params=None):
     ss = params['space_size']
     ts = params['time_size']
     lf_steps = params['num_steps']
@@ -98,137 +175,281 @@ def get_title_str(params, beta):
 
     title_str = (f"{ss} x {ts}, "
                  r"$N_{\mathrm{LF}} = $" + f"{lf_steps}, "
-                 r"$N_{\mathrm{B}} = $" + f"{batch_size}, "
-                 r"$\beta =$" + f"{beta:.2g}, " + f"{nw_desc}")
+                 r"$N_{\mathrm{B}} = $" + f"{batch_size}, ")
+
+    if run_params is not None:
+        beta = run_params['beta']
+        eps = run_params['eps']
+        title_str += (r"$\beta =$" + f"{beta:.2g}, "
+                      r"$\varepsilon=$" + f"{eps:.3g}, ")
+
+    title_str += f'{nw_desc}'
 
     return title_str
 
 
-def get_plaqs_dict(log_dir, run_dirs=None):
-    """Construct plaqs_dict by averaging over all samples in batch.
+def _get_title(lf_steps, eps, batch_size, beta, nw):
+    """Parse vaious parameters to make figure title when creating plots."""
+    try:
+        nw_str = '[' + ', '.join([f'{i:.3g}' for i in nw]) + ']'
+        title_str = (r"$N_{\mathrm{LF}} = $" + f"{lf_steps}, "
+                     r"$\varepsilon = $" + f"{eps:.3g}, "
+                     r"$N_{\mathrm{B}} = $" + f"{batch_size}, "
+                     r"$\beta =$" + f"{beta:.2g}, "
+                     r"$\mathrm{nw} = $" + nw_str)
+    except ValueError:
+        title_str = ''
+    return title_str
 
-    Args:
-        log_dir (str): Path to log_dir containing multiple runs.
 
-    Returns:
-        plaqs_dict (dict): Dictionary containing the `plaqs_diffs` for
-            each run in `log_dir`, with values computed by averaging over all
-            samples in the batch for each inference step.
-    """
-    if run_dirs is None:
-        run_dirs = get_run_dirs(log_dir)
-
-    plaqs_dict = {}
-    for rd in sorted(run_dirs):
-        rp_file = os.path.join(rd, 'run_params.pkl')
-        run_params = load_pkl(rp_file)
-        nw = run_params['net_weights']
+def _load_obs(run_dir, obs_name):
+    run_params = load_pkl(os.path.join(run_dir, 'run_params.pkl'))
+    if 'plaq' in obs_name:
         exact = u1_plaq_exact(run_params['beta'])
         try:
-            plaqs = load_plaqs(rd)
+            plaqs = load_plaqs(run_dir)
+            obs = exact - plaqs
         except FileNotFoundError:
-            continue
-
-        plaqs = exact - load_plaqs(rd)
+            io.log(f'Unable to load plaquettes from {run_dir}. Returning.')
+            return
+    else:
+        pkl_file = os.path.join(run_dir, 'observables', f'{obs_name}.pkl')
         try:
-            nw = np.array(list(nw._asdict().values()), dtype=int)
-        except AttributeError:
-            nw = np.array(nw, dtype=int)
+            obs = np.array(load_pkl(pkl_file))
+        except FileNotFoundError:
+            io.log(f'Unable to load observable from {run_dir}. Returning.')
+            return
 
-        key = tuple(list(nw))
-        #  num_steps = plaqs.shape[0]
-        #  therm_steps = int(0.1 * num_steps)
-        #  batch_avg = np.mean(plaqs[therm_steps:, :], axis=1)
-        try:
-            plaqs_dict[key].append(plaqs)
-        except KeyError:
-            plaqs_dict[key] = [plaqs]
-
-    return plaqs_dict
+    return obs
 
 
-def plot_plaqs_diffs(log_dir, plaqs_dict=None):
+def trace_plot(data, ax, color, **kwargs):
+    if not isinstance(data, dict):
+        data = calc_stats(data, **kwargs)
+
+    x = data.get('x', None)
+    y = data.get('data', None)
+    avg = data.get('avg', np.mean(y))
+    err = data.get('err', np.std(y))
+    avgs = data.get('avgs', np.mean(y, axis=-1))
+    errs = data.get('errs', np.std(y, axis=-1))
+
+    yp_ = avg + err
+    ym_ = avg - err
+    #  yp = avgs + err
+    yps = avgs + errs
+    #  ym = avgs - err
+    yms = avgs - errs
+
+    label = kwargs.get('label', '')
+    avg_label = kwargs.get('avg_label', False)
+
+    avg_label_ = f'{avg:.3g} +/- {err:.3g}' if avg_label else ''
+    _ = ax.axhline(y=avg, color=color, label=avg_label_)
+
+    # represent errors using semi-transparent `fill_between`
+    _ = ax.plot(x, avgs, color=color, label=label)
+    _ = ax.fill_between(x, y1=yps, y2=yms, color=color, alpha=0.3)
+
+    # plot horizontal lines to show avg errors
+    _ = ax.axhline(y=yp_, color=color, ls=':', alpha=0.5)
+    _ = ax.axhline(y=ym_, color=color, ls=':', alpha=0.5)
+
+    if kwargs.get('zeroline', False):  # draw horizontal line at y = 0
+        _ = ax.axhline(y=0, color='gray', ls='--', zorder=-1)
+
+    if label != '' and avg_label:
+        _ = ax.legend(loc='best', fontsize='small')
+
+    strip_yticks = kwargs.get('strip_yticks', False)
+    if strip_yticks:
+        #  yticks = list(ax.get_yticks())
+        #  yticks.append(avg)
+        #  _ = ax.set_yticks(sorted(yticks))
+
+        _ = ax.label_outer()
+        _ = ax.set_yticks([avg])
+        _ = ax.set_yticklabels([f'{avg:3.2g}'])
+
+    return ax
+
+
+def kde_hist(x, **kwargs):
+    """Make histogram of x using `seaborn.kdeplot` if available.
+
+    Args:
+        x (array-like): Data to be plotted
+
+    Kwargs (optional):
+        histtype (str): Histogram type. Defaults to `'stepfilled'`
+        label (str): Label to use for plot in legend. Defaults to ''.
+        color (str): Color to use, Defaults to gray.
+        ax (matplotlib.pyplot.Axes object): Axes to use for plot. If not
+            specified, uses `matplotlib.pyplot.gca()`.
+        therm_frac (float): Fraction of chain length to drop to account for
+            thermalization. Defaults to `0.2`.  NOTE: If `therm_percent = 0.`,
+            the chain is assumed to already be thermalized.
+    """
+    histtype = kwargs.get('histtype', 'stepfilled')
+    label = kwargs.get('key', '')
+    color = kwargs.get('color', 'k')
+    ax = kwargs.get('ax', None)
+    therm_frac = kwargs.get('therm_frac', 0.2)
+
+    if ax is None:
+        ax = plt.gca()
+
+    #  if not isinstance(x, dict):
+    if isinstance(x, dict):
+        #  xkeys = sorted(list(x.keys()))
+        #  keys = sorted(['x', 'avg' 'err', 'avgs', 'errs' 'data'])
+        #  if xkeys != keys:
+        x = calc_stats(x, therm_frac=therm_frac)
+
+        data = x['data']
+        avg = x.get('avg', np.mean(data))
+        err = x.get('err', np.std(data))
+
+    else:
+        data = np.array(x)
+        avg = np.mean(data)
+        #  avgs = np.mean(data.reshape((data.shape[0] -1)), axis=-1)
+
+    if HAS_SEABORN:
+        _ = sns.kdeplot(x['data'].flatten(), ax=ax, color=color,
+                        label=f'{avg:.3g} +/- {err:.3g}')
+
+    hist_kws = dict(color=color,
+                    alpha=0.3,
+                    bins=50,
+                    density=True,
+                    label=str(label),
+                    histtype=histtype)
+    _ = ax.hist(data.flatten(), **hist_kws)
+    if kwargs.get('zeroline', False):
+        _ = ax.axvline(x=0, color='gray', ls='--', zorder=-1)
+
+    _ = ax.axvline(x=avg, color=color, ls='-')
+    _ = ax.legend(loc='best', fontsize='small')
+    _ = ax.set_ylabel('')
+    _ = ax.set_yticklabels([])
+    _ = ax.set_yticks([])
+    _ = ax.label_outer()
+
+    return ax
+
+
+def _plot_obs(run_dir, obs=None, obs_name=None, **kwargs):
+    """Create a traceplot + histogram for an observable."""
+    filter_str = kwargs.get('filter_str', '')
+    therm_frac = kwargs.get('therm_frac', 0.2)
+    #  make_vline = kwargs.get('make_vline', False)
+    if obs is None and obs_name is None:
+        raise ValueError(f'One of `obs` or `obs_name` must be provided.')
+
+    if obs is None:
+        obs = get_obs_dict(run_dir, obs_name)
+
+    params = load_pkl(os.path.join(run_dir, 'params.pkl'))
+    run_params = load_pkl(os.path.join(run_dir, 'run_params.pkl'))
+    title_str = get_title_str(params, run_params)
+
+    fig, axes = plt.subplots(ncols=2, figsize=(12.8, 4.8))
+    ps = calc_stats(obs, therm_frac=therm_frac)
+    axes[0] = trace_plot(ps, axes[0])
+    axes[1] = kde_hist(ps, axes[1], key=params['net_weights'])
+    _ = plt.suptitle(title_str, fontsize='xx-large', y=1.04)
+    plt.tight_layout()
+    if obs_name == 'plaqs':
+        fname = f'plaqs_diffs'
+    else:
+        fname = obs_name
+
+    if filter_str != '':
+        fname += f'_{filter_str}'
+
+    log_dir = os.path.dirname(os.path.dirname(run_dir))
+    run_str = params.get('run_str', None)
+    fig_dir = os.path.join(log_dir, 'figures', run_str)
+    io.check_else_make_dir(fig_dir)
+    out_file = os.path.join(fig_dir, f'{fname}_{therm_frac}.png')
+    print(f'saving figure to: {out_file}...')
+    plt.savefig(out_file, dpi=200, bbox_inches='tight')
+
+    return fig, axes
+
+
+def plot_obs(log_dir, obs_dict, run_params=None,
+             obs_name=None, filter_str=None, therm_frac=0.2):
     """Plot `plaqs_diffs` w/ hists for all run dirs in `log_dir`."""
-    run_dirs = get_run_dirs(log_dir)
-    if plaqs_dict is None:
-        plaqs_dict = get_plaqs_dict(log_dir, run_dirs)
+    #  strip_yticks = kwargs.get('strip_yticks', True)
+    zeroline = True if obs_name == 'plaqs' else False
+
+    #  run_dirs = get_run_dirs(log_dir, filter_str)
+    #  run_params = [
+    #      load_pkl(os.path.join(i, 'run_params.pkl')) for i in run_dirs
+    #  ]
+    #  betas = [params['beta']
+    #  if obs_dict is None:
+    #      obs_dict = get_obs_dict(log_dir, obs_name, run_dirs=run_dirs)
+
+    nrows = len(obs_dict.keys())
+    ncols = 2
 
     if HAS_SEABORN:
         sns.set_style('ticks', {'xtick.major.size': 8, 'ytick.major.size': 8})
-        sns.set_palette('bright', len(run_dirs))
+        sns.set_palette('bright', len(obs_dict.keys()))
         colors = sns.color_palette()
     else:
         colors = COLORS
 
-    nrows = len(plaqs_dict.keys())
-    ncols = 2
-    fig, axes = plt.subplots(nrows=nrows, ncols=ncols,
-                             figsize=(12.8, 9.6),
+    fig, axes = plt.subplots(nrows=nrows,
+                             ncols=ncols,
                              sharex='col',
-                             gridspec_kw={'wspace': 0, 'hspace': 0})
-    #  for idx, k in enumerate(sorted_keys):
-    for idx, (k, v) in enumerate(plaqs_dict.items()):
-        v = np.array(v)
-        num_steps = v.shape[1]
-        therm_steps = int(0.1 * num_steps)
-        plaqs = v[:, therm_steps:, :]
-        #  batch_avg = np.mean(plaqs, axis=-1)
-        runs_avg = np.mean(plaqs, axis=(0, -1))
-        runs_err = np.std(plaqs, axis=(0, -1))
-        x = np.arange(therm_steps, num_steps)
-        #  runs_avg = np.mean(batch_avg, axis=0)
-        avg = np.mean(plaqs)
-        err = np.std(plaqs)
-        _ = axes[idx, 0].plot(x, runs_avg, color=colors[idx])
-        _ = axes[idx, 0].fill_between(x,
-                                      y1=runs_avg + runs_err,
-                                      y2=runs_avg - runs_err,
-                                      color=colors[idx],
-                                      alpha=0.3, ls='-', lw=0.2)
+                             figsize=(12.8, 9.6),
+                             gridspec_kw={'wspace': 0.,
+                                          'hspace': 0.})
+
+    for idx, (k, v) in enumerate(obs_dict.items()):
+        ps = calc_stats(v, therm_frac=therm_frac)
+        axes[idx, 0] = trace_plot(ps, axes[idx, 0],
+                                  colors[idx],
+                                  zeroline=zeroline,
+                                  strip_yticks=True)
+        axes[idx, 1] = kde_hist(ps, ax=axes[idx, 1],
+                                color=colors[idx],
+                                key=k, zeroline=zeroline)
 
         if idx == int(nrows // 2):
-            ylabel = (r"$\langle\phi_{\mathrm{P}}\rangle "
-                      r"- \phi_{\mathrm{P}}^{*}$")
+            if obs_name == 'plaqs':
+                ylabel = (r"$\langle\phi_{\mathrm{P}}\rangle "
+                          r"- \phi_{\mathrm{P}}^{*}$")
+            else:
+                ylabel = obs_name
+
             _ = axes[idx, 0].set_ylabel(ylabel, fontsize='x-large')
-
-        if HAS_SEABORN:
-            _ = sns.kdeplot(plaqs.flatten(), ax=axes[idx, 1],
-                            color=colors[idx], label=str(k))
-        hist_kws = dict(color=colors[idx],
-                        #  ec=colors[idx],
-                        #  label=str(k),
-                        alpha=0.3,
-                        bins=50,
-                        density=True,
-                        histtype='stepfilled')
-        _ = axes[idx, 1].hist(plaqs.flatten(), **hist_kws)
-
-        _ = axes[idx, 0].axhline(y=0, color='gray',
-                                 ls='--', zorder=-1)
-        _ = axes[idx, 0].axhline(y=avg, color=colors[idx])
-        _ = axes[idx, 1].axvline(x=0, color='gray', ls='--', zorder=-1)
-        _ = axes[idx, 1].axvline(x=avg, color=colors[idx],
-                                 label=f'avg: {avg:.3g} +/- {err:.3g}')
-
-        _ = axes[idx, 1].legend(loc='best', fontsize='small')
-        _ = axes[idx, 1].legend(loc='best', fontsize='small')
-        _ = axes[idx, 1].set_ylabel('')
-        _ = axes[idx, 1].set_yticklabels([])
-        _ = axes[idx, 1].set_yticks([])
-        _ = axes[idx, 0].label_outer()
-        _ = axes[idx, 1].label_outer()
-        _ = axes[idx, 0].set_yticks([avg])
-        _ = axes[idx, 0].set_yticklabels([f'{avg:.2g}'])
-        #  yticklabels = axes[idx, 0].get_yticklabels()
-        #  _ = axes[idx, 0].set_yticklabels(yticklabels, fontsize='small')
 
     params_file = os.path.join(log_dir, 'parameters.pkl')
     params = load_pkl(params_file)
-    title_str = get_title_str(params, beta=5.)
-    _ = plt.suptitle(title_str, fontsize='x-large', y=1.01)
+    title_str = get_title_str(params, run_params=run_params)
+    _ = plt.suptitle(title_str, fontsize='xx-large', y=1.04)
     plt.tight_layout()
-    fig.subplots_adjust(hspace=0)
-    out_file = os.path.join(log_dir, 'figures', 'plaqs_diffs.png')
+    fig.subplots_adjust(hspace=0.)
+
+    out_dir = os.path.join(log_dir, 'figures')
+    if obs_name == 'plaqs':
+        fname = f'plaqs_diffs'
+    else:
+        fname = obs_name
+
+    out_dir = os.path.join(out_dir, fname)
+    io.check_else_make_dir(out_dir)
+
+    if filter_str != '':
+        fname += f'_{filter_str}'
+        out_dir = os.path.join(out_dir, filter_str)
+
+    out_file = os.path.join(out_dir, f'{fname}_{therm_frac}.png')
     print(f'saving figure to: {out_file}...')
     plt.savefig(out_file, dpi=200, bbox_inches='tight')
 
@@ -236,19 +457,21 @@ def plot_plaqs_diffs(log_dir, plaqs_dict=None):
 
 
 def bootstrap(data, n_boot=10000, ci=68):
-    boot_dist = []
+    samples = []
     for i in range(int(n_boot)):
         resampler = np.random.randint(0, data.shape[0], data.shape[0])
         sample = data.take(resampler, axis=0)
-        boot_dist.append(np.mean(sample, axis=0))
-    b = np.array(boot_dist)
-    s1 = np.apply_along_axis(stats.scoreatpercentile, 0, b, 50. - ci / 2.)
-    s2 = np.apply_along_axis(stats.scoreatpercentile, 0, b, 50. + ci / 2.)
+        samples.append(np.mean(sample, axis=0))
+    data_rs = np.array(samples)
+    s1 = np.apply_along_axis(stats.scoreatpercentile,
+                             0, data_rs, 50. - ci / 2.)
+    s2 = np.apply_along_axis(stats.scoreatpercentile,
+                             0, data_rs, 50. + ci / 2.)
 
-    mean = np.mean(b)
+    mean = np.mean(data_rs)
     err = max(mean - s1.mean(), s2.mean() - mean)
 
-    return mean, err, b
+    return mean, err, data_rs
 
 
 def tsplotboot(ax, data, **kwargs):

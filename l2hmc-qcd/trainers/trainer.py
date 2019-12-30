@@ -6,7 +6,6 @@ from collections import namedtuple
 import utils.file_io as io
 from config import NP_FLOAT, NetWeights
 from lattice.lattice import u1_plaq_exact
-from loggers.train_logger import TRAIN_HEADER
 
 
 TrainStepData = namedtuple('TrainStepData', [
@@ -92,9 +91,6 @@ class Trainer:
             self.model.x: samples,
             self.model.beta: beta,
             self.model.net_weights: net_weights,
-            #  self.model.net_weights[0]: net_weights[0],
-            #  self.model.net_weights[1]: net_weights[1],
-            #  self.model.net_weights[2]: net_weights[2],
             self.model.train_phase: True,
         }
 
@@ -108,6 +104,7 @@ class Trainer:
         outputs['x_in'] = samples
         outputs['step'] = global_step
         outputs['beta'] = beta
+        dx_avg = np.mean((outputs['dxf'] + outputs['dxb']) / 2)
 
         data_str = (
             f"{global_step:>5g}/{self._train_steps:<6g} "
@@ -115,12 +112,16 @@ class Trainer:
             f"{outputs['loss_op']:^9.4g} "
             f"{np.mean(outputs['px']):^9.4g} "
             f"{outputs['dynamics_eps']:^9.4g} "
+            f"{dx_avg:^9.4g} "
+            #  f"{outputs['dx']:^9.4g} "
+            #  f"{np.mean(outputs['x_out'] - samples):^9.4g} "
             f"{outputs['beta']:^9.4g} "
             f"{outputs['lr']:^9.4g} "
         )
 
         if self.model._model_type == 'GaugeModel':
             outputs['x_out'] = np.mod(outputs['x_out'], 2 * np.pi)
+            outputs['dx'] = np.mean(outputs['x_out'] - samples, axis=-1)
             outputs['plaq_exact'] = u1_plaq_exact(beta)
             data_str += (
                 f"{np.mean(outputs['actions']):^9.4g} "
@@ -147,9 +148,13 @@ class Trainer:
         beta = kwargs.pop('beta', None)
         samples = kwargs.pop('samples', None)
         initial_step = kwargs.pop('initial_step', 0)
-        net_weights = kwargs.get('net_weights', NetWeights(1., 1., 1.,
-                                                           1., 1., 1.))
+        io.log(f'Initial_step: {initial_step}\n')
+
+        net_weights = kwargs.get('net_weights', NetWeights(1, 1, 1,
+                                                           1, 1, 1))
         #  net_weights = kwargs.get('net_weights', [1., 1., 1.])
+        initial_step = self.sess.run(self.model.global_step)
+        io.log(f'Global step: {initial_step}\n')
 
         if beta is None:
             beta = self.beta_arr[0]
@@ -163,7 +168,8 @@ class Trainer:
         assert samples.shape == self.model.x.shape
 
         try:
-            io.log(TRAIN_HEADER)
+            if self.logger is not None:
+                io.log(self.logger.train_header)
             for step in range(initial_step, train_steps):
                 data, data_str = self.train_step(step, samples, **kwargs)
                 samples = data['x_out']

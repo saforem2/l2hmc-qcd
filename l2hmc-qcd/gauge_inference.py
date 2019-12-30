@@ -27,13 +27,14 @@ from runners.runner import Runner
 from models.gauge_model import GaugeModel
 from utils.parse_inference_args import parse_args as parse_inference_args
 from inference.gauge_inference_utils import (_log_inference_header,
-                                             create_config, inference_setup,
-                                             load_params, log_plaq_diffs,
-                                             parse_flags)
+                                             create_config, load_params,
+                                             log_plaq_diffs, parse_flags)
 from loggers.run_logger import RunLogger
 from loggers.summary_utils import create_summaries
+from plotters.plot_observables import plot_charges, plot_autocorrs
 from plotters.leapfrog_plotters import LeapfrogPlotter
-from plotters.gauge_model_plotter import EnergyPlotter, GaugeModelPlotter
+from plotters.gauge_model_plotter import GaugeModelPlotter
+from plotters.energy_plotter import EnergyPlotter
 
 if HAS_HOROVOD:
     import horovod.tensorflow as hvd
@@ -133,6 +134,97 @@ def run_hmc(FLAGS, log_file=None):
                                    **inference_kwargs)
 
 
+def inference_plots(runner, run_logger, plotter, energy_plotter, **kwargs):
+    """Make all inference plots from inference run."""
+    kwargs['run_str'] = run_logger._run_str
+    apd, pkwds = plotter.plot_observables(run_logger.run_data, **kwargs)
+    nw = kwargs.get('net_weights', NetWeights(1., 1., 1., 1., 1., 1.))
+
+    log_plaq_diffs(run_logger, nw, apd)
+
+    title = pkwds['title']
+    qarr = np.array(run_logger.run_data['charges']).T
+    qarr_int = np.around(qarr)
+
+    out_file = os.path.join(plotter.out_dir, 'charges_grid.png')
+    fig, ax = plot_charges(qarr, out_file, title=title, nrows=4)
+
+    out_file = os.path.join(plotter.out_dir, 'charges_autocorr_grid.png')
+    fig, ax = plot_autocorrs(qarr_int, out_file=out_file, title=title, nrows=4)
+
+    io.save_dict(seeds, run_logger.run_dir, 'seeds')
+
+    tf_data = energy_plotter.plot_energies(run_logger.energy_dict,
+                                           out_dir='tf', **kwargs)
+    energy_data = {
+        'tf_data': tf_data,
+    }
+
+    run_logger.save_data(energy_data, 'energy_plots_data.pkl')
+
+    if kwargs.get('plot_lf', False):
+        lf_plotter = LeapfrogPlotter(plotter.out_dir, run_logger)
+        batch_size = runner.params.get('batch_size', 20)
+        lf_plotter.make_plots(run_logger.run_dir,
+                              batch_size=batch_size)
+
+    return runner, run_logger
+
+
+def run_inference(runner, run_logger, **kwargs):
+    """Run inference."""
+    eps = kwargs.get('eps', None)
+    beta = kwargs.get('beta', 5.)
+    run_steps = kwargs.get('run_steps', 5000)
+    skip_existing = kwargs.get('skip_existing', False)
+    net_weights = kwargs.get('net_weights', NetWeights(1., 1., 1., 1., 1., 1.))
+    if eps is None:
+        eps = runner.eps
+        kwargs['eps'] = eps
+
+    existing = run_logger.reset(**kwargs)
+
+    _log_inference_header(net_weights, run_steps, eps, beta, existing=existing)
+    for key, val in kwargs.items():
+        io.log(f'{key}: {val}')
+
+    if existing and skip_existing:
+        return runner, run_logger, kwargs
+
+    t0 = time.time()
+    runner.run(**kwargs)
+    run_time = time.time() - t0
+    io.log(80 * '-' + f'\nTook: {run_time}s to complete run.\n' + 80 * '-')
+    io.log(80 * '-' + '\n')
+
+    return runner, run_logger, kwargs
+
+
+def _loop_net_weights(runner, run_logger, plotter, energy_plotter, **kwargs):
+    """Perform inference for all 64 possible values of `net_weights`."""
+    eps = kwargs.get('eps', None)
+    net_weights_arr = [
+        tuple(np.array(list(np.binary_repr(i, width=6)), dtype=int))
+        for i in range(64)
+    ]
+    if eps is None:
+        eps = runner.eps
+        kwargs['eps'] = eps
+
+    for net_weights in net_weights_arr:
+        kwargs['net_weights'] = NetWeights(*net_weights)
+        runner, run_logger, kwargs = run_inference(runner,
+                                                   run_logger,
+                                                   **kwargs)
+        try:
+            runner, run_logger = inference_plots(runner, run_logger, plotter,
+                                                 energy_plotter, **kwargs)
+        except (AttributeError, KeyError):  # inference_plots fails if no data
+            continue
+
+    return runner, run_logger
+
+
 def inference(runner, run_logger, plotter, energy_plotter, **kwargs):
     """Perform an inference run, if it hasn't been ran previously.
 
@@ -150,56 +242,16 @@ def inference(runner, run_logger, plotter, energy_plotter, **kwargs):
     Returns:
         avg_plaq_diff: If run hasn't been completed previously, else None
     """
-    eps = kwargs.get('eps', None)
-    beta = kwargs.get('beta', 5.)
-    run_steps = kwargs.get('run_steps', 5000)
-    #  nw = kwargs.get('net_weights', [1., 1., 1.])
-    nw = kwargs.get('net_weights', NetWeights(1., 1., 1., 1., 1., 1.))
-
-    if eps is None:
-        eps = runner.eps
-        kwargs['eps'] = eps
-
-    _log_inference_header(nw, run_steps, eps, beta, existing=False)
-
-    # ------------------------
-    #      RUN INFERENCE
-    # ------------------------
-    run_logger.reset(**kwargs)
-    t0 = time.time()
-    runner.run(**kwargs)
-
-    run_time = time.time() - t0
-    io.log(80 * '-' + f'\nTook: {run_time}s to complete run.\n' + 80 * '-')
-
-    # -----------------------------------------------------------
-    # PLOT ALL LATTICE OBSERVABLES AND RETURN THE AVG. PLAQ DIFF
-    # -----------------------------------------------------------
-    kwargs['run_str'] = run_logger._run_str
-    avg_plaq_diff = plotter.plot_observables(run_logger.run_data, **kwargs)
-    log_plaq_diffs(run_logger, nw, avg_plaq_diff)
-    io.save_dict(seeds, run_logger.run_dir, 'seeds')
-
-    tf_data = energy_plotter.plot_energies(run_logger.energy_dict,
-                                           out_dir='tf', **kwargs)
-    #  np_data = energy_plotter.plot_energies(run_logger.energy_dict_np,
-    #                                         out_dir='np', **kwargs)
-    #  diff_data = energy_plotter.plot_energies(
-    #      run_logger.energies_diffs_dict, out_dir='tf-np', **kwargs
-    #  )
-    energy_data = {
-        'tf_data': tf_data,
-        #  'np_data': np_data,
-        #  'diff_data': diff_data
-    }
-
-    run_logger.save_data(energy_data, 'energy_plots_data.pkl')
-
-    if kwargs.get('plot_lf', False):
-        lf_plotter = LeapfrogPlotter(plotter.out_dir, run_logger)
-        batch_size = runner.params.get('batch_size', 20)
-        lf_plotter.make_plots(run_logger.run_dir,
-                              batch_size=batch_size)
+    nw_loop = kwargs.get('loop_net_weights', False)
+    if nw_loop:
+        _loop_net_weights(runner, run_logger,
+                          plotter, energy_plotter, **kwargs)
+    else:
+        runner, run_logger, kwargs = run_inference(runner,
+                                                   run_logger,
+                                                   **kwargs)
+        runner, run_logger = inference_plots(runner, run_logger, plotter,
+                                             energy_plotter, **kwargs)
 
     return runner, run_logger
 
@@ -253,10 +305,6 @@ def main(kwargs):
     # -------------------
     # setup net_weights
     # -------------------
-    #  scale_weight = kwargs.get('scale_weight', 1.)
-    #  translation_weight = kwargs.get('translation_weight', 1.)
-    #  transformation_weight = kwargs.get('transformation_weight', 1.)
-    #  net_weights = [scale_weight, translation_weight, transformation_weight]
     xsw = kwargs.get('x_scale_weight', 1.)
     xtlw = kwargs.get('x_translation_weight', 1.)
     xtfw = kwargs.get('x_transformation_weight', 1.)
@@ -300,6 +348,9 @@ def main(kwargs):
         'samples': samples_init,
         'net_weights': net_weights,
         'run_steps': kwargs.get('run_steps', 5000),
+        'save_samples': kwargs.get('save_samples', False),
+        'loop_net_weights': kwargs.get('loop_net_weights', False),
+        'skip_existing': kwargs.get('skip_existing', False),
     }
 
     runner, run_logger = inference(runner,
@@ -315,6 +366,9 @@ if __name__ == '__main__':
     t0 = time.time()
     log_file = 'output_dirs.txt'
     FLAGS = args.__dict__
+    io.log(80 * '-' + '\n' + 'INFERENCE FLAGS:\n')
+    for key, val in FLAGS.items():
+        io.log(f'{key}: {val}\n')
 
     main(FLAGS)
 

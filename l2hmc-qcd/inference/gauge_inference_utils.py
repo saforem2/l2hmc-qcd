@@ -31,7 +31,6 @@ if float(tf.__version__.split('.')[0]) <= 2:
     tf.logging.set_verbosity(tf.logging.INFO)
 
 
-
 def initialize_uninitialized(sess):
     global_vars = tf.global_variables()
     is_not_initialized = sess.run(
@@ -289,10 +288,13 @@ def _log_inference_header(nw, run_steps, eps, beta, existing=False):
     else:
         str0 = f'\n Running inference with:'
 
+    nw_str = '(' + ', '.join((str(i)) for i in nw) + ')'
+
     io.log(80 * '-' + '\n'
            f'\n {str0}\n'
            f'\t steps: {run_steps}\n'
            f'\t beta: {beta}\n'
            f'\t eps: {eps}\n'
-           f'\t net_weights: [{nw[0]}, {nw[1]}, {nw[2]}]\n'
+           f'\t {nw_str}\n'
+           #  f'\t net_weights: [{nw[0]}, {nw[1]}, {nw[2]}]\n'
            + 80 * '-' + '\n')

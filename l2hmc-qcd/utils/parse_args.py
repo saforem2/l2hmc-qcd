@@ -309,7 +309,7 @@ def parse_args():
     parser.add_argument("--std_weight",
                         dest="std_weight",
                         type=float,
-                        default=1.,
+                        default=1,
                         required=False,
                         help=("""Multiplicative factor used to weigh relative
                               strength of stdiliary term in loss function.
@@ -318,7 +318,7 @@ def parse_args():
     parser.add_argument("--aux_weight",
                         dest="aux_weight",
                         type=float,
-                        default=1.,
+                        default=1,
                         required=False,
                         help=("""Multiplicative factor used to weigh relative
                               strength of auxiliary term in loss function.
@@ -327,11 +327,79 @@ def parse_args():
     parser.add_argument("--charge_weight",
                         dest="charge_weight",
                         type=float,
-                        default=1.,
+                        default=1,
                         required=False,
                         help=("""Multiplicative factor used to weigh relative
                               strength of top. charge term in loss
                               function. (Default: 1.)"""))
+
+    parser.add_argument('--v_scale_weight',
+                        dest='v_scale_weight',
+                        type=float,
+                        default=1,
+                        required=False,
+                        help=("""Specify the value of the `scale_weight`
+                              parameter, a multiplicative weight that scales
+                              the contribution of the `scale` (S) function when
+                              performing the augmented L2HMC molecular dynamics
+                              update."""))
+
+    parser.add_argument('--v_translation_weight',
+                        dest='v_translation_weight',
+                        type=float,
+                        default=1,
+                        required=False,
+                        help=("""Specify the value of the `translation_weight`
+                              parameter, a multiplicative weight that scales
+                              the contribution of the `translation` (T)
+                              function when performing the augmented L2HMC
+                              molecular dynamics update."""))
+
+    parser.add_argument('--v_transformation_weight',
+                        dest='v_transformation_weight',
+                        type=float,
+                        default=1,
+                        required=False,
+                        help=("""Specify the value of the
+                              `transformation_weight` parameter, a
+                              multiplicative weight that scales the
+                              contribution of the `transformation` (Q) function
+                              when performing the augmented L2HMC molecular
+                              dynamics update."""))
+
+    parser.add_argument('--x_scale_weight',
+                        dest='x_scale_weight',
+                        type=float,
+                        default=1,
+                        required=False,
+                        help=("""Specify the value of the `scale_weight`
+                              parameter, a multiplicative weight that scales
+                              the contribution of the `scale` (S) function when
+                              performing the augmented L2HMC molecular dynamics
+                              update."""))
+
+    parser.add_argument('--x_translation_weight',
+                        dest='x_translation_weight',
+                        type=float,
+                        default=1,
+                        required=False,
+                        help=("""Specify the value of the `translation_weight`
+                              parameter, a multiplicative weight that scales
+                              the contribution of the `translation` (T)
+                              function when performing the augmented L2HMC
+                              molecular dynamics update."""))
+
+    parser.add_argument('--x_transformation_weight',
+                        dest='x_transformation_weight',
+                        type=float,
+                        default=1,
+                        required=False,
+                        help=("""Specify the value of the
+                              `transformation_weight` parameter, a
+                              multiplicative weight that scales the
+                              contribution of the `transformation` (Q) function
+                              when performing the augmented L2HMC molecular
+                              dynamics update."""))
 
     parser.add_argument('--use_gaussian_loss',
                         dest='use_gaussian_loss',
@@ -356,7 +424,7 @@ def parse_args():
                         required=False,
                         help=("""Flag that when passed will profile the graph
                               execution using `TFProf`."""))
-    #
+
     #  parser.add_argument("--global_seed",
     #                      dest='global_seed',
     #                      type=int,

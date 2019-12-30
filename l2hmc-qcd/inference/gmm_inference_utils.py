@@ -3,8 +3,7 @@ from __future__ import absolute_import, division, print_function
 import os
 import pickle
 
-from config import HAS_HOROVOD, HAS_MATPLOTLIB
-from update import set_precision
+from config import HAS_HOROVOD, HAS_MATPLOTLIB, COLORS
 from plotters.plot_utils import plot_histogram, plot_acl_spectrum
 
 import numpy as np
@@ -23,6 +22,17 @@ if HAS_MATPLOTLIB:
 
 if HAS_HOROVOD:
     import horovod.tensorflow as hvd
+
+try:
+    import seaborn as sns
+    sns.set_palette('bright', 100)
+    colors = sns.color_palette()
+    sns.set_style('ticks', {'xtick.major.size': 8,
+                            'ytick.major.size': 8})
+    HAS_SEABORN = True
+except ImportError:
+    HAS_SEABORN = False
+    colors = COLORS
 
 if float(tf.__version__.split('.')[0]) <= 2:
     tf.logging.set_verbosity(tf.logging.INFO)
@@ -308,10 +318,16 @@ def _hist_plot(data, labels, out_file, ax=None, bins=30):
     if ax is None:
         _, ax = plt.subplots()
 
-    _ = ax.hist(data[0], bins=bins, label=labels[0],
-                density=True, stacked=True, alpha=1.0)
-    _ = ax.hist(data[1], bins=bins, label=labels[1],
-                density=True, stacked=True, alpha=0.6)
+    try:
+        _ = sns.kdeplot(data[0], ax=ax, color='C0',
+                        label=labels[0], shade=True)
+        _ = sns.kdeplot(data[1], ax=ax, color='C1',
+                        label=labels[1], shade=True)
+    except np.linalg.LinAlgError:  # noqa: E722
+        _ = ax.hist(data[0], bins=bins, label=labels[0],
+                    density=True, stacked=True, alpha=1.0)
+        _ = ax.hist(data[1], bins=bins, label=labels[1],
+                    density=True, stacked=True, alpha=0.6)
     _ = ax.legend(loc='best')
     io.log(f'Saving figure to: {out_file}.')
     _ = plt.savefig(out_file, bbox_inches='tight')
