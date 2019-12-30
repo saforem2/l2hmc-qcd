@@ -323,7 +323,7 @@ def pair_plotter(log_dirs, therm_frac=0.2, n_boot=1000,
             if any([m in key for m in matches])
         ])
         train_weights_str = ''.join((str(i) for i in train_weights))
-        cmap = sns.light_palette(colors[idx], as_cmap=True)
+        cmap = sns.darkpalette(colors[idx], as_cmap=True)
 
         if skip_existing:
             root_dir = os.path.abspath(f'/home/foremans/cooley_figures/')
@@ -453,7 +453,9 @@ def main():
              '2019_12_24',
              '2019_12_25',
              '2019_12_26',
-             '2019_12_28']
+             '2019_12_28',
+             '2019_12_29',
+             '2019_12_30']
     log_dirs = []
     for date in dates:
         ld = get_matching_log_dirs(date, root_dir=root_dir)
@@ -469,6 +471,8 @@ def main():
     #  log_dirs = [*ld1, *ld2, *ld3, *ld4, *ld5, *ld6]
 
     with sns.axes_style('darkgrid'):
+        mpl.rcParams['xtick.labelsize'] = 9
+        mpl.rcParams['ytick.labelsize'] = 9
         pair_plotter(log_dirs=log_dirs, n_boot=n_boot,
                      therm_frac=therm_frac, nw_include=nw_include)
         combined_pair_plotter(log_dirs=log_dirs, n_boot=n_boot,
