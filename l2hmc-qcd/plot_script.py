@@ -182,8 +182,8 @@ def kde_diag_plot(x, **kwargs):
 
 def plot_pts(x, y, **kwargs):
     ax = plt.gca()
-    _ = ax.plot(x, y, **kwargs)
     ax.xaxis.set_major_locator(ticker.MaxNLocator(3))
+    _ = ax.plot(x, y, **kwargs)
     return ax
 
 
@@ -364,7 +364,14 @@ def pair_plotter(log_dirs, therm_frac=0.2, n_boot=1000,
             nw_str = ''.join((str(int(i)) for i in key))
             fname += f'_{nw_str}'
 
-            out_file = os.path.join(out_dir, fname + '.png')
+            id_str = log_dir.split('/')[-1].split('_')[-1]
+            out_file = os.path.join(out_dir, f'{fname}_{id_str}.png')
+            if os.path.isfile(out_file):
+                if skip_existing:
+                    continue
+                else:
+                    out_file = os.path.join(out_dir, f'{fname}_{id_str}_1.png')
+
             if os.path.isfile(out_file):
                 if skip_existing:
                     continue
@@ -381,7 +388,7 @@ def pair_plotter(log_dirs, therm_frac=0.2, n_boot=1000,
                                 cmap=cmap,
                                 shade=True,
                                 gridsize=50,
-                                shade_lower=False)
+                                shade_lowest=False)
                 #  g = g.map_upper(kde_color_plot, shade=False, gridsize=50)
             except np.linalg.LinAlgError:
                 g = g.map_upper(plt.hist, histtype='step',
