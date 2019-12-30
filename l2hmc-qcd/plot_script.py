@@ -376,8 +376,7 @@ def pair_plotter(log_dirs, therm_frac=0.2, n_boot=1000,
             try:
                 g = g.map_diag(sns.kdeplot, shade=True,
                                color=colors[idx], gridsize=100)
-                g = g.map_upper(kde_color_plot, shade=False,
-                                cmap=cmap, gridsize=50)
+                g = g.map_upper(kde_color_plot, shade=False, gridsize=50)
             except np.linalg.LinAlgError:
                 g = g.map_upper(plt.hist, histtype='step',
                                 color=colors[idx], alpha=0.6,
