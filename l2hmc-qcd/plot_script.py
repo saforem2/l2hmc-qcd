@@ -170,6 +170,7 @@ def kde_color_plot(x, y, **kwargs):
     cmap = infer_cmap(kwargs['color'], palette=palette)
     ax = sns.kdeplot(x, y, cmap=cmap, **kwargs)
     ax.xaxis.set_major_locator(ticker.MaxNLocator(3))
+    sns.despine(ax=ax, bottom=True, left=True)
     return ax
 
 
@@ -323,7 +324,7 @@ def pair_plotter(log_dirs, therm_frac=0.2, n_boot=1000,
             if any([m in key for m in matches])
         ])
         train_weights_str = ''.join((str(i) for i in train_weights))
-        cmap = sns.dark_palette(colors[idx], as_cmap=True)
+        cmap = sns.light_palette(colors[idx], as_cmap=True)
 
         if skip_existing:
             root_dir = os.path.abspath(f'/home/foremans/cooley_figures/')
@@ -376,8 +377,11 @@ def pair_plotter(log_dirs, therm_frac=0.2, n_boot=1000,
             try:
                 g = g.map_diag(sns.kdeplot, shade=True,
                                color=colors[idx], gridsize=100)
-                g = g.map_upper(sns.kdeplot, shade=False,
-                                cmap=cmap, gridsize=50)
+                g = g.map_upper(sns.kdeplot,
+                                cmap=cmap,
+                                shade=True,
+                                gridsize=50,
+                                shade_lower=False)
                 #  g = g.map_upper(kde_color_plot, shade=False, gridsize=50)
             except np.linalg.LinAlgError:
                 g = g.map_upper(plt.hist, histtype='step',
@@ -460,15 +464,6 @@ def main():
     for date in dates:
         ld = get_matching_log_dirs(date, root_dir=root_dir)
         log_dirs += [*ld]
-
-    #  ld1 = get_matching_log_dirs('2019_12_15', root_dir=root_dir)
-    #  ld2 = get_matching_log_dirs('2019_12_16', root_dir=root_dir)
-    #  ld3 = get_matching_log_dirs('2019_12_22', root_dir=root_dir)
-    #  ld4 = get_matching_log_dirs('2019_12_24', root_dir=root_dir)
-    #  ld5 = get_matching_log_dirs('2019_12_25', root_dir=root_dir)
-    #  ld6 = get_matching_log_dirs('2019_12_26', root_dir=root_dir)
-    #  ld7 = get_matching_log_dirs('2019_12_28', root_dir=root_dir)
-    #  log_dirs = [*ld1, *ld2, *ld3, *ld4, *ld5, *ld6]
 
     with sns.axes_style('darkgrid'):
         mpl.rcParams['xtick.labelsize'] = 9
