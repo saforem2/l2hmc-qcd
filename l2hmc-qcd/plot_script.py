@@ -153,15 +153,15 @@ def infer_cmap(color, palette='bright'):
     hues = sns.color_palette(palette)
     if color == hues[0]:
         return sns.light_palette(hues[0], 12, as_cmap=True)
-    elif color == hues[1]:
+    if color == hues[1]:
         return sns.light_palette(hues[1], 12, as_cmap=True)
-    elif color == hues[2]:
+    if color == hues[2]:
         return sns.light_palette(hues[2], 12, as_cmap=True)
-    elif color == hues[3]:
+    if color == hues[3]:
         return sns.light_palette(hues[3], 12, as_cmap=True)
-    elif color == hues[4]:
+    if color == hues[4]:
         return sns.light_palette(hues[4], 12, as_cmap=True)
-    elif color == hues[5]:
+    if color == hues[5]:
         return sns.light_palette(hues[5], 12, as_cmap=True)
 
 

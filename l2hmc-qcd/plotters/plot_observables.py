@@ -140,7 +140,7 @@ def weights_hist(log_dir, weights=None):
                     try:
                         sns.kdeplot(w, ax=ax, shade=True,
                                     color='C6', label=label)
-                    except:
+                    except np.linalg.LinAlgError:
                         io.log(f'LinAlgError raised. Returning.')
                         continue
 
@@ -152,7 +152,7 @@ def weights_hist(log_dir, weights=None):
                         try:
                             sns.kdeplot(b, ax=ax, shade=True,
                                         color='C7', label=blabel)
-                        except:
+                        except np.linalg.LinAlgError:
                             continue
                     _ = ax.hist(b, density=True, color='C7', histtype='step')
                 _ = ax.set_title(f'{key}/{k1}/{k2}', fontsize=20)
@@ -396,7 +396,7 @@ def kde_hist(data, stats=True, **kwargs):
     try:
         _ = sns.kdeplot(y.flatten(), ax=ax, color=color,
                         label=f'{avg:.3g} +/- {err:.3g}')
-    except:  # noqa: E722
+    except np.linalg.LinAlgError:
         pass
 
     hist_kws = dict(color=color,

@@ -108,7 +108,7 @@ def weights_hist(log_dir, weights=None):
                         try:
                             sns.kdeplot(b, ax=ax, shade=True,
                                         color='C7', label=blabel)
-                        except:
+                        except np.linalg.LinAlgError:
                             continue
                     else:
                         _ = ax.hist(b, density=True,
