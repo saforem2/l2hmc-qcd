@@ -247,7 +247,7 @@ def combined_pair_plotter(log_dirs, therm_frac=0.2,
                          palette='bright', diag_sharey=False,
                          #  hue_kws={"cmap": list_of_cmaps},
                          vars=['plaqs_diffs', 'accept_prob', 'tunneling_rate'])
-        g = g.map_diag(kde_diag_plot, shade=True)
+        g = g.map_diag(sns.kdeplot, shade=True)
         g = g.map_lower(plot_pts, ls='', marker='o',
                         rasterized=True, alpha=0.4)
         g = g.map_upper(kde_color_plot, shade=False, gridsize=100)
@@ -374,7 +374,7 @@ def pair_plotter(log_dirs, therm_frac=0.2, n_boot=1000,
             g = g.map_lower(plot_pts, color=colors[idx],
                             ls='', marker='o', rasterized=True, alpha=0.4)
             try:
-                g = g.map_diag(kde_diag_plot, shade=True,
+                g = g.map_diag(sns.kdeplot, shade=True,
                                color=colors[idx], gridsize=100)
                 g = g.map_upper(kde_color_plot, shade=False,
                                 cmap=cmap, gridsize=50)
