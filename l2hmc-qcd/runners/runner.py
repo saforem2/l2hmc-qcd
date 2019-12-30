@@ -259,6 +259,7 @@ class Runner:
         t0 = time.time()
         outputs = self.run_inference_ops(feed_dict)
         dt = time.time() - t0
+        dx = np.mean((outputs['dxf'] + outputs['dxb']) / 2, axis=1)
 
         out_dict = {
             'step': step,
@@ -267,7 +268,11 @@ class Runner:
             'samples_in': samples,
             'samples': outputs['x_out'],
             'px': outputs['accept_prob'],
-            'dx': np.mean(outputs['x_out'] - samples, axis=-1),
+            'dxf': outputs['dxf'],
+            'dxb': outputs['dxb'],
+            'dx': dx,
+            #  'dx': outputs['dx'],
+            #  'dx': np.mean(outputs['x_out'] - samples, axis=-1),
         }
 
         out_dict.update(outputs)

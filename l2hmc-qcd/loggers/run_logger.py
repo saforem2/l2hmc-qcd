@@ -129,9 +129,11 @@ class RunLogger:
     @staticmethod
     def build_run_ops_dict():
         """Build dictionary of tensorflow operations used for inference."""
+        # NOTE: The following keys must be in the same order as the `outputs`
+        # of the `Dynamics.apply_transition` method:
         keys = ['x_init', 'v_init',
                 'x_proposed', 'v_proposed',
-                'x_out', 'v_out',
+                'x_out', 'v_out', 'dxf', 'dxb',
                 'accept_prob', 'accept_prob_hmc',
                 'sumlogdet_proposed', 'sumlogdet_out',
                 'mask_f', 'mask_b', 'mask_a', 'mask_r']
@@ -158,19 +160,15 @@ class RunLogger:
     @staticmethod
     def build_inputs_dict():
         """Build dictionary of tensorflow placeholders used as inputs."""
-        #  keys = ['x', 'beta',
-        #          #  'net_weights',
-        #          #  'scale_weight', 'transl_weight', 'transf_weight',
-        #          'train_phase', 'eps_ph']
-        #  keys = ['x', 'beta', 'eps_ph', 'train_phase', 'net_weights']
         inputs = tf.get_collection('inputs')
-        x, beta, eps_ph, train_phase, *nw = inputs
+        x, beta, eps_ph, global_step_ph, train_phase, *nw = inputs
         net_weights = NetWeights(*nw)
         #  inputs_dict = dict(zip(keys, inputs))
         inputs_dict = {
             'x': x,
             'beta': beta,
             'eps_ph': eps_ph,
+            'global_step_ph': global_step_ph,
             'train_phase': train_phase,
             'net_weights': net_weights,
         }
@@ -228,14 +226,6 @@ class RunLogger:
         self.energy_dict = None
         self.run_data = None
         self.run_strings = None
-        #  if self.params['save_lf']:
-        #      self.samples_arr = None
-        #      self.lf_out = None
-        #      self.pxs_out = None
-        #      self.masks = None
-        #      self.logdets = None
-        #      self.sumlogdet = None
-        #      self.l2hmc_fns = None
         self.params['net_weights'] = None
         self.run_dir = None
         if self.summaries:
@@ -317,7 +307,6 @@ class RunLogger:
         beta = kwargs.get('beta', 5.)
         eps_np = kwargs.get('eps', None)
         run_steps = kwargs.get('run_steps', 5000)
-        #  net_weights = kwargs.get('net_weights', [1., 1., 1.])
         skip_existing = kwargs.get('skip_existing', False)
         net_weights = kwargs.get('net_weights',
                                  NetWeights(1., 1., 1., 1., 1., 1.))
@@ -340,8 +329,6 @@ class RunLogger:
 
         self.run_data = {}
         self.energy_dict = {}
-        #  self.energy_dict_np = {}
-        #  self.energies_diffs_dict = {}
 
         if self.save_lf_data:
             self.samples_arr = []
@@ -379,7 +366,6 @@ class RunLogger:
 
     def update(self, sess, data, data_str, net_weights):
         """Update run_data and append data_str to data_strings."""
-        # projection of samples onto [0, 2pi) done in run_step above
         step = data['step']
         beta = data['beta']
         key = (step, beta)
@@ -388,9 +374,6 @@ class RunLogger:
                 self.samples_arr.append(data['samples_in'])
 
         energies = data.pop('energies')
-        #  energies_np = data.pop('energies_np')
-        #  energies_diffs = data.pop('energies_diffs')
-        #  for k in self.energy_ops_dict.keys():
         for k in energies.keys():
             try:
                 self.energy_dict[k].append(energies[k])
@@ -412,11 +395,6 @@ class RunLogger:
         print_steps = self.params.get('print_steps', 1)
         if step % (10 * print_steps) == 0:
             io.log(data_str)
-
-        #  if step % (50 * print_steps) == 0:
-
-        #      io.log('\n' + energy_str)
-        #      io.log(self.run_header)
 
         if step % 100 == 0:
             io.log(self.run_header)
@@ -457,8 +435,7 @@ class RunLogger:
 
         if save_samples:
             self._save_samples()
-        #  keys = ['x_init', 'x_proposed', 'x_out',
-        #          'v_init', 'v_proposed', 'v_out']
+
         io.check_else_make_dir(self.run_dir)
         bad_keys = ['samples_in', 'samples',
                     'v_init', 'v_proposed',
@@ -478,12 +455,9 @@ class RunLogger:
             self._save_observables_data(observables_dir, therm_frac)
 
     def _save_samples(self):
-        for key, val in self.run_data.items():
-            self.run_data[key] = np.array(val)
-
-        keys = ['x_out', 'v_out'
-                'v_init', 'v_proposed']
-        samples_dict = {k: np.array(self.run_data[k]) for k in keys}
+        keys = ['x_out', 'v_out' 'x_proposed', 'v_proposed']
+        samples_dict = {k: np.array(self.run_data.pop(k)) for k in keys}
+        #  samples_dict = {k: np.array(self.run_data[k]) for k in keys}
 
         out_file = os.path.join(self.run_dir, 'run_data')
         np.savez_compressed(out_file, **samples_dict)
