@@ -21,11 +21,6 @@ from collections import namedtuple
 from .summary_utils import create_summaries
 from utils.file_io import save_params
 
-#  import pickle
-#  from models.gauge_model import GaugeModel
-#  from models.gmm_model import GaussianMixtureModel
-
-
 h_str = ("{:^12s}" + 9 * "{:^10s}").format(
     "STEP", "t/STEP", "LOSS", "% ACC", "EPS",
     "BETA", "ACTION", "PLAQ", "(EXACT)", "LR"
@@ -53,9 +48,6 @@ class TrainLogger:
             self.h_strf += ("{:^10s}".format("ACTION")
                             + "{:^10s}".format("PLAQ")
                             + "{:^10s}".format("(EXACT)"))
-            #  self.h_strf += 3 * "{:^10s}".format("ACTION",
-            #                                      "PLAQ",
-            #                                      "(EXACT)")
 
         self.dash = (len(self.h_strf) + 1) * '-'
         self.train_header = self.dash + '\n' + self.h_strf + '\n' + self.dash
@@ -106,9 +98,6 @@ class TrainLogger:
             self.model.x: data['x_in'],
             self.model.beta: data['beta'],
             self.model.net_weights: net_weights,
-            #  self.model.net_weights[0]: net_weights[0],
-            #  self.model.net_weights[1]: net_weights[1],
-            #  self.model.net_weights[2]: net_weights[2],
             self.model.train_phase: True
         }
         summary_str = sess.run(self.summary_op, feed_dict=feed_dict)

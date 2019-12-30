@@ -116,11 +116,8 @@ class RunLogger:
         energy_outputs = self.build_energy_ops_dict()
         self.state_ph = energy_outputs['state']
         self.sumlogdet_ph = energy_outputs['sumlogdet_ph']
-        #  self.energy_ph_dict = energy_outputs['ph_dict']
         self.energy_ops_dict = energy_outputs['ops_dict']
         self.energy_dict = {}
-        #  self.energy_dict_np = {}
-        #  self.energies_diffs_dict = {}
 
         if self.model_type == 'GaugeModel':
             self.obs_ops_dict = self.build_obs_ops_dict()
