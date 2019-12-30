@@ -9,8 +9,10 @@ from plotters.plot_observables import get_run_dirs
 import numpy as np
 import pandas as pd
 import seaborn as sns
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import matplotlib.style as mplstyle
+import matplotlib.ticker as ticker
 
 import utils.file_io as io
 
@@ -18,13 +20,7 @@ from lattice.lattice import u1_plaq_exact
 
 sns.set_palette('bright')
 
-#  import sys
-#  import tensorflow as tf
-#  import pickle
-#  import shutil
-
 label_size = 9
-import matplotlib as mpl
 mpl.rcParams['xtick.labelsize'] = label_size
 mpl.rcParams['ytick.labelsize'] = label_size
 
@@ -153,39 +149,40 @@ def get_previous_dir(root_dir):
     return previous_dir
 
 
-def infer_cmap(color):
-    hues = sns.color_palette('bright')
+def infer_cmap(color, palette='bright'):
+    hues = sns.color_palette(palette)
     if color == hues[0]:
-        return sns.light_palette('C0', as_cmap=True)
+        return sns.light_palette(hues[0], 12, as_cmap=True)
     elif color == hues[1]:
-        return sns.light_palette('C1', as_cmap=True)
+        return sns.light_palette(hues[1], 12, as_cmap=True)
     elif color == hues[2]:
-        return sns.light_palette('C2', as_cmap=True)
+        return sns.light_palette(hues[2], 12, as_cmap=True)
     elif color == hues[3]:
-        return sns.light_palette('C3', as_cmap=True)
+        return sns.light_palette(hues[3], 12, as_cmap=True)
     elif color == hues[4]:
-        return sns.light_palette('C4', as_cmap=True)
+        return sns.light_palette(hues[4], 12, as_cmap=True)
     elif color == hues[5]:
-        return sns.light_palette('C5', as_cmap=True)
-    elif color == hues[6]:
-        return sns.light_palette('C6', as_cmap=True)
-    elif color == hues[7]:
-        return sns.light_palette('C7', as_cmap=True)
-    elif color == hues[8]:
-        return sns.light_palette('C8', as_cmap=True)
-    elif color == hues[9]:
-        return sns.light_palette('C9', as_cmap=True)
+        return sns.light_palette(hues[5], 12, as_cmap=True)
 
 
 def kde_color_plot(x, y, **kwargs):
-    cmap = infer_cmap(kwargs['color'])
+    palette = kwargs.pop('palette', 'bright')
+    cmap = infer_cmap(kwargs['color'], palette=palette)
     ax = sns.kdeplot(x, y, cmap=cmap, **kwargs)
+    ax.xaxis.set_major_locator(ticker.MaxNLocator(3))
     return ax
 
+
+def kde_diag_plot(x, y, **kwargs):
+    ax = sns.kdeplot(x, y, **kwargs)
+    ax.xaxis.set_major_locator(ticker.MaxNLocator(3))
+    return ax
+
+
 def plot_pts(x, y, **kwargs):
-    axes = plt.gca()
-    ax = ax.plot(x, y, **kwargs)
-    ax.xaxis.set_major_locator(plt.MaxNLocator(3))
+    ax = plt.gca()
+    _ = ax.plot(x, y, **kwargs)
+    ax.xaxis.set_major_locator(ticker.MaxNLocator(3))
     return ax
 
 
@@ -250,7 +247,7 @@ def combined_pair_plotter(log_dirs, therm_frac=0.2,
                          palette='bright', diag_sharey=False,
                          #  hue_kws={"cmap": list_of_cmaps},
                          vars=['plaqs_diffs', 'accept_prob', 'tunneling_rate'])
-        g = g.map_diag(sns.kdeplot, shade=True)
+        g = g.map_diag(kde_diag_plot, shade=True)
         g = g.map_lower(plot_pts, ls='', marker='o',
                         rasterized=True, alpha=0.4)
         g = g.map_upper(kde_color_plot, shade=False, gridsize=100)
@@ -376,11 +373,10 @@ def pair_plotter(log_dirs, therm_frac=0.2, n_boot=1000,
             g = sns.PairGrid(data, diag_sharey=False)
             g = g.map_lower(plot_pts, color=colors[idx],
                             ls='', marker='o', rasterized=True, alpha=0.4)
-                            #markeredgewidth=0.1)
             try:
-                g = g.map_diag(sns.kdeplot, shade=True,
+                g = g.map_diag(kde_diag_plot, shade=True,
                                color=colors[idx], gridsize=100)
-                g = g.map_upper(sns.kdeplot, shade=False,
+                g = g.map_upper(kde_color_plot, shade=False,
                                 cmap=cmap, gridsize=50)
             except np.linalg.LinAlgError:
                 g = g.map_upper(plt.hist, histtype='step',
@@ -409,7 +405,6 @@ def pair_plotter(log_dirs, therm_frac=0.2, n_boot=1000,
 
     print(80 * '-' + '\n\n')
     print(f'Time to complete: {time.time() - t0:.4g}s.')
-
 
 
 def main():
