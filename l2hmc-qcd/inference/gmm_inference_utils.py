@@ -323,7 +323,7 @@ def _hist_plot(data, labels, out_file, ax=None, bins=30):
                         label=labels[0], shade=True)
         _ = sns.kdeplot(data[1], ax=ax, color='C1',
                         label=labels[1], shade=True)
-    except:  # noqa: E722
+    except np.linalg.LinAlgError:  # noqa: E722
         _ = ax.hist(data[0], bins=bins, label=labels[0],
                     density=True, stacked=True, alpha=1.0)
         _ = ax.hist(data[1], bins=bins, label=labels[1],
