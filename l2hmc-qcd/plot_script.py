@@ -23,10 +23,10 @@ sns.set_palette('bright')
 #  import pickle
 #  import shutil
 
-#  label_size = 10
-#  import matplotlib as mpl
-#  mpl.rcParams['xtick.labelsize'] = label_size
-#  mpl.rcParams['xtick.labelsize'] = label_size
+label_size = 9
+import matplotlib as mpl
+mpl.rcParams['xtick.labelsize'] = label_size
+mpl.rcParams['ytick.labelsize'] = label_size
 
 mplstyle.use('fast')
 
@@ -106,6 +106,10 @@ def get_observables(run_dir, n_boot=1000, therm_frac=0.2, nw_include=None):
     dplq_avg, dplq_err, dplq = bootstrap(dplq, n_boot=n_boot)
     dq_avg, dq_err, dq = bootstrap(dq, n_boot=n_boot)
 
+    px = px.mean(axis=0)
+    dplq = dplq.mean(axis=0)
+    dq = dq.mean(axis=0)
+
     data = pd.DataFrame({
         'plaqs_diffs': dplq.flatten(),
         'accept_prob': px.flatten(),
@@ -178,6 +182,12 @@ def kde_color_plot(x, y, **kwargs):
     ax = sns.kdeplot(x, y, cmap=cmap, **kwargs)
     return ax
 
+def plot_pts(x, y, **kwargs):
+    axes = plt.gca()
+    ax = ax.plot(x, y, **kwargs)
+    ax.xaxis.set_major_locator(plt.MaxNLocator(3))
+    return ax
+
 
 def combined_pair_plotter(log_dirs, therm_frac=0.2,
                           n_boot=1000, nw_include=None):
@@ -204,8 +214,8 @@ def combined_pair_plotter(log_dirs, therm_frac=0.2,
         eps_fixed = params.get('eps_fixed', False)
 
         data = None
-        n_boot = 1000
-        therm_frac = 0.1
+        n_boot = 5000
+        therm_frac = 0.25
 
         try:
             run_dirs = sorted(get_run_dirs(log_dir))[::-1]
@@ -241,8 +251,8 @@ def combined_pair_plotter(log_dirs, therm_frac=0.2,
                          #  hue_kws={"cmap": list_of_cmaps},
                          vars=['plaqs_diffs', 'accept_prob', 'tunneling_rate'])
         g = g.map_diag(sns.kdeplot, shade=True)
-        g = g.map_lower(plt.plot, ls='', marker='+',
-                        rasterized=True, markeredgewidth=0.1, alpha=0.8)
+        g = g.map_lower(plot_pts, ls='', marker='o',
+                        rasterized=True, alpha=0.4)
         g = g.map_upper(kde_color_plot, shade=False, gridsize=100)
 
         g.add_legend()
@@ -364,9 +374,9 @@ def pair_plotter(log_dirs, therm_frac=0.2, n_boot=1000,
                     out_file = os.path.join(out_dir, fname + '_1.png')
 
             g = sns.PairGrid(data, diag_sharey=False)
-            g = g.map_lower(plt.plot, color=colors[idx],
-                            ls='', marker='+', rasterized=True,
-                            markeredgewidth=0.1)
+            g = g.map_lower(plot_pts, color=colors[idx],
+                            ls='', marker='o', rasterized=True, alpha=0.4)
+                            #markeredgewidth=0.1)
             try:
                 g = g.map_diag(sns.kdeplot, shade=True,
                                color=colors[idx], gridsize=100)
@@ -404,16 +414,16 @@ def pair_plotter(log_dirs, therm_frac=0.2, n_boot=1000,
 
 def main():
     therm_frac = 0.2  # percent of steps to skip for thermalization
-    n_boot = 1000     # number of bootstrap iterations to run for statistics
+    n_boot = 5000     # number of bootstrap iterations to run for statistics
 
     nw_include = [
         (0, 0, 0, 0, 0, 0),
         # --------------------
         #  (0, 0, 0, 0, 0, 1),
-        (0, 0, 0, 0, 1, 0),
+        #  (0, 0, 0, 0, 1, 0),
         #  (0, 0, 0, 1, 0, 0),
         #  (0, 0, 1, 0, 0, 0),
-        (0, 1, 0, 0, 0, 0),
+        #  (0, 1, 0, 0, 0, 0),
         #  (1, 0, 0, 0, 0, 0),
         # --------------------
         #  (0, 1, 1, 1, 1, 1),
@@ -430,7 +440,7 @@ def main():
         #  (1, 1, 1, 0, 1, 0),
         #  (1, 1, 1, 1, 0, 0),
         # --------------------
-        (0, 1, 0, 0, 1, 0),
+        #  (0, 1, 0, 0, 1, 0),
         (1, 0, 1, 1, 0, 1),
         # --------------------
         #  (0, 0, 0, 1, 1, 1),
@@ -441,19 +451,32 @@ def main():
         (1, 1, 1, 1, 1, 1),
     ]
     root_dir = os.path.abspath('/home/foremans/DLHMC/l2hmc-qcd/gauge_logs')
+    dates = ['2019_12_15',
+             '2019_12_16',
+             '2019_12_22',
+             '2019_12_24',
+             '2019_12_25',
+             '2019_12_26',
+             '2019_12_28']
+    log_dirs = []
+    for date in dates:
+        ld = get_matching_log_dirs(date, root_dir=root_dir)
+        log_dirs += [*ld]
 
-    ld1 = get_matching_log_dirs('2019_12_15', root_dir=root_dir)
-    ld2 = get_matching_log_dirs('2019_12_16', root_dir=root_dir)
-    ld3 = get_matching_log_dirs('2019_12_22', root_dir=root_dir)
-    ld4 = get_matching_log_dirs('2019_12_24', root_dir=root_dir)
-    ld5 = get_matching_log_dirs('2019_12_25', root_dir=root_dir)
-    ld6 = get_matching_log_dirs('2019_12_26', root_dir=root_dir)
-    log_dirs = [*ld1, *ld2, *ld3, *ld4, *ld5, *ld6]
+    #  ld1 = get_matching_log_dirs('2019_12_15', root_dir=root_dir)
+    #  ld2 = get_matching_log_dirs('2019_12_16', root_dir=root_dir)
+    #  ld3 = get_matching_log_dirs('2019_12_22', root_dir=root_dir)
+    #  ld4 = get_matching_log_dirs('2019_12_24', root_dir=root_dir)
+    #  ld5 = get_matching_log_dirs('2019_12_25', root_dir=root_dir)
+    #  ld6 = get_matching_log_dirs('2019_12_26', root_dir=root_dir)
+    #  ld7 = get_matching_log_dirs('2019_12_28', root_dir=root_dir)
+    #  log_dirs = [*ld1, *ld2, *ld3, *ld4, *ld5, *ld6]
 
-    pair_plotter(log_dirs=log_dirs, n_boot=n_boot,
-                 therm_frac=therm_frac, nw_include=nw_include)
-    combined_pair_plotter(log_dirs=log_dirs, n_boot=n_boot,
-                          therm_frac=therm_frac, nw_include=None)
+    with sns.axes_style('darkgrid'):
+        pair_plotter(log_dirs=log_dirs, n_boot=n_boot,
+                     therm_frac=therm_frac, nw_include=nw_include)
+        combined_pair_plotter(log_dirs=log_dirs, n_boot=n_boot,
+                              therm_frac=therm_frac, nw_include=None)
 
 
 if __name__ == '__main__':
