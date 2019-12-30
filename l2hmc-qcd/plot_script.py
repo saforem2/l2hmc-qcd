@@ -323,7 +323,7 @@ def pair_plotter(log_dirs, therm_frac=0.2, n_boot=1000,
             if any([m in key for m in matches])
         ])
         train_weights_str = ''.join((str(i) for i in train_weights))
-        cmap = sns.darkpalette(colors[idx], as_cmap=True)
+        cmap = sns.dark_palette(colors[idx], as_cmap=True)
 
         if skip_existing:
             root_dir = os.path.abspath(f'/home/foremans/cooley_figures/')
