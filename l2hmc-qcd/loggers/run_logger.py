@@ -19,16 +19,15 @@ from scipy.stats import sem
 
 import utils.file_io as io
 
-from config import NP_FLOAT, EnergyData, State, NetWeights
-from utils.distributions import GMM
+from config import NP_FLOAT, State, NetWeights
 from lattice.lattice import u1_plaq_exact
 
 __all__ = ['RunLogger', 'arr_from_dict', 'autocorr']
 
 
-H_STRF = ("{:^12s}" + 4 * "{:^10s}").format(
-    "STEP", "t/STEP", "% ACC", "EPS", "BETA"
-)
+#  H_STRF = ("{:^12s}" + 4 * "{:^10s}").format(
+#      "STEP", "t/STEP", "% ACC", "EPS", "BETA"
+#  )
 
 
 def arr_from_dict(d, key):
@@ -51,19 +50,12 @@ def _get_eps():
     return eps
 
 
-class EnergyLogger:
-    def __init__(self, params, model_type=None):
-        """EnergyLogger for logging energies calculated during inference."""
-        self.params = params
-        self.model_type = model_type
-        self.energy_data = {
-            'potential': [],
-            'kinetic': [],
-            'hamiltonian': []
-        }
+def save_dict_npz(d, out_file):
+    for key, val in d.items():
+        d[key] = np.array(val)
 
-    def update(self, energy_data):
-        pass
+    io.log(f'Saving  dictionary to: {out_file}.')
+    np.savez_compressed(out_file, **d)
 
 
 class RunLogger:
@@ -78,8 +70,8 @@ class RunLogger:
         self.summaries = params['summaries']
         self.model_type = model_type
 
-        self.h_strf = ("{:^12s}" + 4 * "{:^10s}").format(
-            "STEP", "t/STEP", "% ACC", "EPS", "BETA"
+        self.h_strf = ("{:^12s}" + 5 * "{:^10s}").format(
+            "STEP", "t/STEP", "% ACC", "EPS", "deltaX", "BETA",
         )
 
         if self.model_type == 'GaugeModel':
@@ -95,8 +87,6 @@ class RunLogger:
         self.run_data = {}
         self.run_stats = {}
         self.run_strings = [self.run_header]
-        self.energy_strings = []
-
         self._build_ops_dicts()
         self._build_dir_structure(params['log_dir'])
 
@@ -126,11 +116,8 @@ class RunLogger:
         energy_outputs = self.build_energy_ops_dict()
         self.state_ph = energy_outputs['state']
         self.sumlogdet_ph = energy_outputs['sumlogdet_ph']
-        #  self.energy_ph_dict = energy_outputs['ph_dict']
         self.energy_ops_dict = energy_outputs['ops_dict']
         self.energy_dict = {}
-        self.energy_dict_np = {}
-        self.energies_diffs_dict = {}
 
         if self.model_type == 'GaugeModel':
             self.obs_ops_dict = self.build_obs_ops_dict()
@@ -139,9 +126,11 @@ class RunLogger:
     @staticmethod
     def build_run_ops_dict():
         """Build dictionary of tensorflow operations used for inference."""
+        # NOTE: The following keys must be in the same order as the `outputs`
+        # of the `Dynamics.apply_transition` method:
         keys = ['x_init', 'v_init',
                 'x_proposed', 'v_proposed',
-                'x_out', 'v_out',
+                'x_out', 'v_out', 'dxf', 'dxb',
                 'accept_prob', 'accept_prob_hmc',
                 'sumlogdet_proposed', 'sumlogdet_out',
                 'mask_f', 'mask_b', 'mask_a', 'mask_r']
@@ -168,19 +157,15 @@ class RunLogger:
     @staticmethod
     def build_inputs_dict():
         """Build dictionary of tensorflow placeholders used as inputs."""
-        #  keys = ['x', 'beta',
-        #          #  'net_weights',
-        #          #  'scale_weight', 'transl_weight', 'transf_weight',
-        #          'train_phase', 'eps_ph']
-        #  keys = ['x', 'beta', 'eps_ph', 'train_phase', 'net_weights']
         inputs = tf.get_collection('inputs')
-        x, beta, eps_ph, train_phase, *nw = inputs
+        x, beta, eps_ph, global_step_ph, train_phase, *nw = inputs
         net_weights = NetWeights(*nw)
         #  inputs_dict = dict(zip(keys, inputs))
         inputs_dict = {
             'x': x,
             'beta': beta,
             'eps_ph': eps_ph,
+            'global_step_ph': global_step_ph,
             'train_phase': train_phase,
             'net_weights': net_weights,
         }
@@ -238,14 +223,6 @@ class RunLogger:
         self.energy_dict = None
         self.run_data = None
         self.run_strings = None
-        #  if self.params['save_lf']:
-        #      self.samples_arr = None
-        #      self.lf_out = None
-        #      self.pxs_out = None
-        #      self.masks = None
-        #      self.logdets = None
-        #      self.sumlogdet = None
-        #      self.l2hmc_fns = None
         self.params['net_weights'] = None
         self.run_dir = None
         if self.summaries:
@@ -257,17 +234,26 @@ class RunLogger:
         run_dir = os.path.join(self.runs_dir, run_str)
         run_summary_dir = os.path.join(self.run_summaries_dir, run_str)
         fig_dir = os.path.join(self.figs_dir, run_str)
+        observables_dir = os.path.join(run_dir, 'observables')
 
         flag = False
-        if os.path.isdir(run_dir):
-            io.log(f'Found existing run at: {run_dir}. Skipping.')
-            flag = True
+        run_flag = False
+        summary_flag = False
+        fig_flag = False
+        if os.path.isdir(run_dir) and os.path.isdir(observables_dir):
+            io.log(f'Found existing run at: {run_dir}')
+            run_flag = True
         if os.path.isdir(run_summary_dir):
-            io.log(f'Found existing run at: {run_summary_dir}. Skipping.')
-            flag = True
+            io.log(f'Found existing run at: {run_summary_dir}')
+            summary_flag = True
         if os.path.isdir(fig_dir):
-            io.log(f'Found existing run at: {fig_dir}. Skipping.')
+            io.log(f'Found existing run at: {fig_dir}')
+            fig_flag = True
+
+        if run_flag and summary_flag and fig_flag:
             flag = True
+
+        self._existing_run = flag
 
         return flag
 
@@ -318,12 +304,16 @@ class RunLogger:
         beta = kwargs.get('beta', 5.)
         eps_np = kwargs.get('eps', None)
         run_steps = kwargs.get('run_steps', 5000)
-        #  net_weights = kwargs.get('net_weights', [1., 1., 1.])
+        skip_existing = kwargs.get('skip_existing', False)
         net_weights = kwargs.get('net_weights',
                                  NetWeights(1., 1., 1., 1., 1., 1.))
 
+        existing = False
         run_str = self._get_run_str(**kwargs)
         if self.existing_run(run_str):  # append current time to run_str
+            existing = True
+            if skip_existing:
+                return existing
             now = datetime.datetime.now()
             time_str = now.strftime('%H%M')
             run_str += f'__{time_str}'
@@ -336,8 +326,6 @@ class RunLogger:
 
         self.run_data = {}
         self.energy_dict = {}
-        self.energy_dict_np = {}
-        self.energies_diffs_dict = {}
 
         if self.save_lf_data:
             self.samples_arr = []
@@ -362,6 +350,8 @@ class RunLogger:
         io.save_params(self.params, self.run_dir)
         io.save_params(run_params, self.run_dir, name='run_params')
 
+        return existing
+
     def _set_run_dir(self, run_str):
         """Sets dirs containing data about inference run using run_str."""
         self.run_dir = os.path.join(self.runs_dir, run_str)
@@ -371,9 +361,8 @@ class RunLogger:
                                                 run_str)
             io.check_else_make_dir(self.run_summary_dir)
 
-    def update(self, sess, data, data_str, energy_str, net_weights):
+    def update(self, sess, data, data_str, net_weights):
         """Update run_data and append data_str to data_strings."""
-        # projection of samples onto [0, 2pi) done in run_step above
         step = data['step']
         beta = data['beta']
         key = (step, beta)
@@ -382,19 +371,11 @@ class RunLogger:
                 self.samples_arr.append(data['samples_in'])
 
         energies = data.pop('energies')
-        energies_np = data.pop('energies_np')
-        energies_diffs = data.pop('energies_diffs')
-        assert energies.keys() == energies_np.keys() == energies_diffs.keys()
-        #  for k in self.energy_ops_dict.keys():
-        for k in energies_np.keys():
+        for k in energies.keys():
             try:
                 self.energy_dict[k].append(energies[k])
-                self.energy_dict_np[k].append(energies_np[k])
-                self.energies_diffs_dict[k].append(energies_diffs[k])
             except KeyError:
                 self.energy_dict[k] = [energies[k]]
-                self.energy_dict_np[k] = [energies_np[k]]
-                self.energies_diffs_dict[k] = [energies_diffs[k]]
 
         for key, val in data.items():
             try:
@@ -403,7 +384,6 @@ class RunLogger:
                 self.run_data[key] = [val]
 
         self.run_strings.append(data_str)
-        self.energy_strings.append(energy_str)
 
         log_steps = self.params.get('logging_steps', 10)
         if self.summaries and (step + 1) % log_steps == 0:
@@ -412,10 +392,6 @@ class RunLogger:
         print_steps = self.params.get('print_steps', 1)
         if step % (10 * print_steps) == 0:
             io.log(data_str)
-
-        if step % (50 * print_steps) == 0:
-            io.log('\n' + energy_str)
-            io.log(self.run_header)
 
         if step % 100 == 0:
             io.log(self.run_header)
@@ -443,26 +419,45 @@ class RunLogger:
         with open(out_file, 'wb') as f:
             pickle.dump(data, f)
 
-    def save_run_data(self, therm_frac=10):
+    def _calc_diffs(self, chain):
+        """Calculate the difference between suscessive states in `chain`."""
+        if not isinstance(chain, np.ndarray):
+            chain = np.array(chain)
+        return chain[1:] - chain[:1]
+
+    def save_run_data(self, therm_frac=10, save_samples=False):
         """Save run information."""
         self._save_energy_data()
         self._write_run_history()
 
+        if save_samples:
+            self._save_samples()
+
         io.check_else_make_dir(self.run_dir)
-        data_file = os.path.join(self.run_dir, 'run_data.pkl')
-        io.log(f"Saving run_data to: {data_file}.")
-        with open(data_file, 'wb') as f:
-            pickle.dump(self.run_data, f, pickle.HIGHEST_PROTOCOL)
+        bad_keys = ['samples_in', 'samples',
+                    'v_init', 'v_proposed',
+                    'x_init', 'x_proposed']
 
         observables_dir = os.path.join(self.run_dir, 'observables')
         io.check_else_make_dir(observables_dir)
         for key, val in self.run_data.items():
-            out_file = key + '.pkl'
-            out_file = os.path.join(observables_dir, out_file)
-            io.save_data(val, out_file, name=key)
+            if key in bad_keys and not save_samples:
+                continue
+            else:
+                out_file = key + '.pkl'
+                out_file = os.path.join(observables_dir, out_file)
+                io.save_data(val, out_file, name=key)
 
         if self.model_type == 'GaugeModel':
             self._save_observables_data(observables_dir, therm_frac)
+
+    def _save_samples(self):
+        keys = ['x_out', 'v_out' 'x_proposed', 'v_proposed']
+        samples_dict = {k: np.array(self.run_data.pop(k)) for k in keys}
+        #  samples_dict = {k: np.array(self.run_data[k]) for k in keys}
+
+        out_file = os.path.join(self.run_dir, 'run_data')
+        np.savez_compressed(out_file, **samples_dict)
 
     def _save_energy(self, data, etype, header=None):
         """Save energy data to `.pkl` file and write stats to `.txt` file."""
@@ -488,12 +483,12 @@ class RunLogger:
     def _save_energy_data(self):
         """Save energy data to `.pkl` files."""
         self._save_energy(self.energy_dict, 'energy_data_tf')
-        self._save_energy(self.energy_dict_np, 'energy_data_np')
-        header = (f'We compute the difference between the '
-                  'energies as alculated in tensorflow vs '
-                  'numpy as:\n   dE = E_tf - E_np\n')
-        self._save_energy(self.energies_diffs_dict,
-                          'energy_data_tf_np_diff', header=header)
+        #  self._save_energy(self.energy_dict_np, 'energy_data_np')
+        #  header = (f'We compute the difference between the '
+        #            'energies as alculated in tensorflow vs '
+        #            'numpy as:\n   dE = E_tf - E_np\n')
+        #  self._save_energy(self.energies_diffs_dict,
+        #                    'energy_data_tf_np_diff', header=header)
 
     def _save_observables_data(self, observables_dir, therm_frac):
         """For `GaugeModel` instance, save observables data."""

@@ -135,19 +135,6 @@ def parse_args():
                               extremely large (many LF steps during inference)
                               and take a while to actually generate.)"""))
 
-    parser.add_argument('--loop_net_weights',
-                        dest='loop_net_weights',
-                        action='store_true',
-                        required=False,
-                        help=("""Flag that when passed sets
-                              `--loop_net_weights=True`, and will iterate over
-                              multiple values of `net_weights`, which are
-                              multiplicative scaling factors applied to each of
-                              the Q, S, T functions when running the trained
-                              sampler.
-                              (Default: `--loop_net_weights=False, i.e.
-                              `--loop_net_weights is not passed)"""))
-
     parser.add_argument('--loop_transl_weights',
                         dest='loop_transl_weights',
                         action='store_true',
@@ -162,7 +149,7 @@ def parse_args():
     parser.add_argument('--v_scale_weight',
                         dest='v_scale_weight',
                         type=float,
-                        default=None,
+                        default=1.,
                         required=False,
                         help=("""Specify the value of the `scale_weight`
                               parameter, a multiplicative weight that scales
@@ -173,7 +160,7 @@ def parse_args():
     parser.add_argument('--v_translation_weight',
                         dest='v_translation_weight',
                         type=float,
-                        default=None,
+                        default=1.,
                         required=False,
                         help=("""Specify the value of the `translation_weight`
                               parameter, a multiplicative weight that scales
@@ -184,7 +171,7 @@ def parse_args():
     parser.add_argument('--v_transformation_weight',
                         dest='v_transformation_weight',
                         type=float,
-                        default=None,
+                        default=1.,
                         required=False,
                         help=("""Specify the value of the
                               `transformation_weight` parameter, a
@@ -196,7 +183,7 @@ def parse_args():
     parser.add_argument('--x_scale_weight',
                         dest='x_scale_weight',
                         type=float,
-                        default=None,
+                        default=1.,
                         required=False,
                         help=("""Specify the value of the `scale_weight`
                               parameter, a multiplicative weight that scales
@@ -207,7 +194,7 @@ def parse_args():
     parser.add_argument('--x_translation_weight',
                         dest='x_translation_weight',
                         type=float,
-                        default=None,
+                        default=1.,
                         required=False,
                         help=("""Specify the value of the `translation_weight`
                               parameter, a multiplicative weight that scales
@@ -218,7 +205,7 @@ def parse_args():
     parser.add_argument('--x_transformation_weight',
                         dest='x_transformation_weight',
                         type=float,
-                        default=None,
+                        default=1.,
                         required=False,
                         help=("""Specify the value of the
                               `transformation_weight` parameter, a
@@ -226,6 +213,13 @@ def parse_args():
                               contribution of the `transformation` (Q) function
                               when performing the augmented L2HMC molecular
                               dynamics update."""))
+
+    parser.add_argument('--loop_net_weights',
+                        dest='loop_net_weights',
+                        action='store_true',
+                        required=False,
+                        help=("""Flag that when passed will loop over all 64
+                              possible values of `net_weights`."""))
 
     parser.add_argument('--save_samples',
                         dest='save_samples',
@@ -237,6 +231,14 @@ def parse_args():
                               (Default: `--save_samples=False, i.e.
                               `--save_samples` is not passed).\n
                               WARNING!! This is very data intensive."""))
+
+    parser.add_argument('--skip_existing',
+                        dest='skip_existing',
+                        action='store_true',
+                        required=False,
+                        help=("""Flag that when passed will skip inference run
+                              if it has already been completed with the same
+                              parameters."""))
 
     if sys.argv[1].startswith('@'):
         args = parser.parse_args(shlex.split(open(sys.argv[1][1:]).read(),

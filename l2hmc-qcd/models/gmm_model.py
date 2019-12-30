@@ -25,7 +25,7 @@ from base.base_model import BaseModel
 #  from .gauge_model import allclose
 from dynamics.dynamics import Dynamics
 from params.gmm_params import GMM_PARAMS
-from config import NP_FLOAT, HAS_HOROVOD
+from config import NP_FLOAT, TF_FLOAT, HAS_HOROVOD, State
 
 if HAS_HOROVOD:
     import horovod.tensorflow as hvd  # noqa: 401
@@ -136,23 +136,22 @@ class GaussianMixtureModel(BaseModel):
             self.covs = covs
             self.pis = pis
             self.distribution = distribution
-            #  self.means = self._create_means(params)
-            #  self.sigmas, self.covs = self._create_covs(params)
-            #  self.pis = distribution_arr(self.x_dim, self.num_distributions)
-            #  self.distribution = GMM(self.means, self.covs, self.pis)
 
             # ---------------------------------------------------------------
             # Create inputs as to be fed values using `tf.placeholders`
             # ---------------------------------------------------------------
             io.log(f'INFO: Creating input placeholders...')
             inputs = self._create_inputs()
+            self._inputs = inputs
             self.x = inputs['x']
             self.beta = inputs['beta']
-            nw_keys = ['scale_weight', 'transl_weight', 'transf_weight']
-            self.net_weights = [inputs[k] for k in nw_keys]
-            self.train_phase = inputs['train_phase']
             self.eps_ph = inputs['eps_ph']
-            self._inputs = inputs
+            self.net_weights = inputs['net_weights']
+            self.train_phase = inputs['train_phase']
+            self.global_step_ph = inputs['global_step_ph']
+
+            # create global_step_setter
+            self.global_step_setter = self._build_global_step_setter()
 
             # ---------------------------------------------------------------
             # Create dynamics for running augmented L2HMC leapfrog
@@ -176,7 +175,21 @@ class GaussianMixtureModel(BaseModel):
         # Build energy_ops to calculate energies.
         # -------------------------------------------------------------------
         with tf.name_scope('energy_ops'):
-            self.energy_ops = self._build_energy_ops()
+            self.v_ph = tf.placeholder(dtype=TF_FLOAT, shape=self.x.shape,
+                                       name='v_placeholder')
+            self.sumlogdet_ph = tf.placeholder(dtype=TF_FLOAT,
+                                               shape=self.x.shape[0],
+                                               name='sumlogdet_placeholder')
+
+            self.state = State(x=self.x, v=self.v_ph, beta=self.beta)
+
+            ph_str = 'energy_placeholders'
+            _ = [tf.add_to_collection(ph_str, i) for i in self.state]
+            tf.add_to_collection(ph_str, self.sumlogdet_ph)
+
+            self.energy_ops = self._calc_energies(self.state,
+                                                  self.sumlogdet_ph)
+            #  self.energy_ops = self._build_energy_ops()
 
         # *******************************************************************
         # Calculate loss_op and train_op to backprop. grads through network
@@ -209,7 +222,6 @@ class GaussianMixtureModel(BaseModel):
 
         if self.arrangement == 'lattice':
             sigma = np.max(self.sigmas)
-            #  L = int(np.sqrt(self.num_distributions))
             distribution, means, covs, pis = lattice_of_gaussians(
                 self.num_distributions, sigma, x_dim=self.x_dim
             )
@@ -224,15 +236,14 @@ class GaussianMixtureModel(BaseModel):
         else:
             means = self._create_means()
             covs = self._create_covs()
-            pis = distribution_arr(self.x_dim, self.num_distributions)
+            pis = self._get_pis()
+            #  pis = distribution_arr(self.x_dim, self.num_distributions)
             distribution = GMM(means, covs, pis)
 
         return means, covs, pis, distribution
 
     def _create_means(self):
         """Create means of target distribution."""
-        #  params = self.params if params is None else params
-        #  diag = self._double_check('diag', params, False)
         means = np.zeros((self.x_dim, self.x_dim))
 
         if self.arrangement == 'diag':
@@ -256,6 +267,16 @@ class GaussianMixtureModel(BaseModel):
 
         return means.astype(NP_FLOAT)
 
+    def _get_pis(self):
+        pi1 = getattr(self, 'pi1', None)
+        pi2 = getattr(self, 'pi2', None)
+        if pi1 is None or pi2 is None:
+            pis = distribution_arr(self.x_dim, self.num_distributions)
+        else:
+            pis = np.array([pi1, pi2])
+
+        return pis
+
     def _get_sigmas(self):
         """Get sigmas."""
         sigmas = getattr(self, 'sigmas', None)
@@ -274,8 +295,6 @@ class GaussianMixtureModel(BaseModel):
 
     def _create_covs(self):
         """Create covariance matrix from of individual covariance matrices."""
-        #  params = self.params if params is None else params
-        #  sigmas = self._double_check('sigmas', params, None)
         covs = np.array(
             [s * np.eye(self.x_dim) for s in self.sigmas], dtype=NP_FLOAT
         )
@@ -410,9 +429,11 @@ class GaussianMixtureModel(BaseModel):
                 'loss_op': self.loss_op,
                 'train_op': self.train_op,
                 'x_out': self.x_out,
+                'dxf': self.dxf,
+                'dxb': self.dxb,
                 'px': self.px,
                 'dynamics_eps': self.dynamics.eps,
-                'lr': self.lr
+                'lr': self.lr,
             }
 
         return train_ops

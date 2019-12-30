@@ -31,15 +31,12 @@ if cfg.HAS_HOROVOD:
 
 
 TF_FLOAT = cfg.TF_FLOAT
+TF_INT = cfg.TF_INT
 
 LFdata = namedtuple('LFdata', ['init', 'proposed', 'prob'])
 EnergyData = namedtuple('EnergyData', ['init', 'proposed', 'out',
                                        'proposed_diff', 'out_diff'])
 SamplerData = namedtuple('SamplerData', ['data', 'dynamics_output'])
-#  NetWeights = namedtuple('NetWeights', [
-#      'x_scale', 'x_translation', 'x_transformation',
-#      'v_scale', 'v_translation', 'v_transformation']
-#  )
 
 
 def _gaussian(x, mu, sigma):
@@ -49,6 +46,7 @@ def _gaussian(x, mu, sigma):
     exp_ = tf.exp(-0.5 * ((x - mu) / sigma) ** 2)
 
     return norm * exp_
+
 
 def add_to_collection(collection, tensors):
     """Helper method for adding a list of `tensors` to `collection`."""
@@ -103,6 +101,12 @@ class BaseModel(object):
         """Create op that sets `eps` to be equal to the value in `eps-ph`."""
         return tf.assign(self.dynamics.eps, self.eps_ph, name='eps_setter')
 
+    def _build_global_step_setter(self):
+        """Create op that sets the tensorflow `global_step`."""
+        return tf.assign(self.global_step,
+                         self.global_step_ph,
+                         name='global_step_setter')
+
     def _calc_energies(self, state, sumlogdet=0.):
         """Create operations for calculating the PE, KE and H of a `state`."""
         pe = self.dynamics.potential_energy(state.x, state.beta)
@@ -124,6 +128,9 @@ class BaseModel(object):
         self.x_out = x_dynamics['x_out']
         self.px = x_dynamics['accept_prob']
         self.px_hmc = x_dynamics['accept_prob_hmc']
+        self.dxf = x_dynamics['dxf']
+        self.dxb = x_dynamics['dxb']
+        self.dx = (self.dxf + self.dxb) / 2
 
         self.dynamics_dict = x_dynamics
         self.x_diff, self.v_diff = self._check_reversibility()
@@ -141,7 +148,8 @@ class BaseModel(object):
                 'model_type': getattr(self, 'model_type', None),
             }
 
-            x_dynamics = self.dynamics.apply_transition(*args, **kwargs)
+            #  x_dynamics = self.dynamics.apply_transition(*args, **kwargs)
+            x_dynamics = self.dynamics(*args, **kwargs)
 
             x_data = LFdata(x_dynamics['x_init'],
                             x_dynamics['x_proposed'],
@@ -165,7 +173,8 @@ class BaseModel(object):
                     'model_type': getattr(self, 'model_type', None),
                 }
 
-                z_dynamics = self.dynamics.apply_transition(*args, **kwargs)
+                #  z_dynamics = self.dynamics.apply_transition(*args, **kwargs)
+                z_dynamics = self.dynamics(*args, **kwargs)
 
                 z_data = LFdata(z_dynamics['x_init'],
                                 z_dynamics['x_proposed'],
@@ -261,12 +270,8 @@ class BaseModel(object):
                 net_weights: Array of placeholders, each of which is a
                     multiplicative constant used to scale the effects of the
                     various S, Q, and T functions from the original paper.
-                    net_weights[0] = 'scale_weight', multiplies the S fn.
-                    net_weights[1] = 'transformation_weight', multiplies the Q
-                    fn.  net_weights[2] = 'translation_weight', multiplies the
-                    T fn.
                 train_phase: Boolean placeholder indicating if the model is
-                    curerntly being trained. 
+                    curerntly being trained.
         """
         def make_ph(name, shape=(), dtype=TF_FLOAT):
             return tf.placeholder(dtype=dtype, shape=shape, name=name)
@@ -290,19 +295,15 @@ class BaseModel(object):
                                              x_transformation=x_transf_weight)
                 train_phase = make_ph('is_training', dtype=tf.bool)
                 eps_ph = make_ph('eps_ph')
+                global_step_ph = make_ph('global_step_ph', dtype=tf.int64)
 
             inputs = {
                 'x': x,
                 'beta': beta,
                 'eps_ph': eps_ph,
+                'global_step_ph': global_step_ph,
                 'train_phase': train_phase,
                 'net_weights': net_weights,
-                #  'x_scale_weight': x_scale_weight,
-                #  'x_transl_weight': x_transl_weight,
-                #  'x_transf_weight': x_transf_weight,
-                #  'v_scale_weight': v_scale_weight,
-                #  'v_transl_weight': v_transl_weight,
-                #  'v_transf_weight': v_transf_weight,
             }
             for key, val in inputs.items():
                 print(f'{key}: {val}\n')
