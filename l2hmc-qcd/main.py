@@ -102,6 +102,7 @@ def train_l2hmc(FLAGS, log_file=None):
             num_workers = hvd.size()
             assert num_workers == params['num_workers']
             hooks = [hvd.BroadcastGlobalVariablesHook(0)]
+            params['logging_steps'] *= num_workers
         else:
             hooks = []
 
@@ -260,7 +261,6 @@ def main(FLAGS):
     """Main method for creating/training/running L2HMC for U(1) gauge model."""
     log_file = 'output_dirs.txt'
 
-    #  if getattr(FLAGS, 'float64', False):
     USING_HVD = getattr(FLAGS, 'horovod', False)
     if cfg.HAS_HOROVOD and USING_HVD:
         io.log("INFO: USING HOROVOD")

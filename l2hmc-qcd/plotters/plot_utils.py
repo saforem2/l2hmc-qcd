@@ -457,19 +457,21 @@ def plot_obs(log_dir, obs_dict, run_params=None,
 
 
 def bootstrap(data, n_boot=10000, ci=68):
-    boot_dist = []
+    samples = []
     for i in range(int(n_boot)):
         resampler = np.random.randint(0, data.shape[0], data.shape[0])
         sample = data.take(resampler, axis=0)
-        boot_dist.append(np.mean(sample, axis=0))
-    b = np.array(boot_dist)
-    s1 = np.apply_along_axis(stats.scoreatpercentile, 0, b, 50. - ci / 2.)
-    s2 = np.apply_along_axis(stats.scoreatpercentile, 0, b, 50. + ci / 2.)
+        samples.append(np.mean(sample, axis=0))
+    data_rs = np.array(samples)
+    s1 = np.apply_along_axis(stats.scoreatpercentile,
+                             0, data_rs, 50. - ci / 2.)
+    s2 = np.apply_along_axis(stats.scoreatpercentile,
+                             0, data_rs, 50. + ci / 2.)
 
-    mean = np.mean(b)
+    mean = np.mean(data_rs)
     err = max(mean - s1.mean(), s2.mean() - mean)
 
-    return mean, err, b
+    return mean, err, data_rs
 
 
 def tsplotboot(ax, data, **kwargs):
