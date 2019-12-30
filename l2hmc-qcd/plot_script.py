@@ -173,8 +173,8 @@ def kde_color_plot(x, y, **kwargs):
     return ax
 
 
-def kde_diag_plot(x, y, **kwargs):
-    ax = sns.kdeplot(x, y, **kwargs)
+def kde_diag_plot(x, **kwargs):
+    ax = sns.kdeplot(x, **kwargs)
     ax.xaxis.set_major_locator(ticker.MaxNLocator(3))
     return ax
 
