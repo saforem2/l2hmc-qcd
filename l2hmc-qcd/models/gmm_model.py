@@ -429,9 +429,11 @@ class GaussianMixtureModel(BaseModel):
                 'loss_op': self.loss_op,
                 'train_op': self.train_op,
                 'x_out': self.x_out,
+                'dxf': self.dxf,
+                'dxb': self.dxb,
                 'px': self.px,
                 'dynamics_eps': self.dynamics.eps,
-                'lr': self.lr
+                'lr': self.lr,
             }
 
         return train_ops
