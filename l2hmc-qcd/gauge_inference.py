@@ -190,12 +190,12 @@ def run_inference(runner, run_logger, **kwargs):
 
     if existing and skip_existing:
         return runner, run_logger, kwargs
-    else:
-        t0 = time.time()
-        runner.run(**kwargs)
-        run_time = time.time() - t0
-        io.log(80 * '-' + f'\nTook: {run_time}s to complete run.\n' + 80 * '-')
-        io.log(80 * '-' + '\n')
+
+    t0 = time.time()
+    runner.run(**kwargs)
+    run_time = time.time() - t0
+    io.log(80 * '-' + f'\nTook: {run_time}s to complete run.\n' + 80 * '-')
+    io.log(80 * '-' + '\n')
 
     return runner, run_logger, kwargs
 
