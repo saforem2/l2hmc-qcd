@@ -491,24 +491,6 @@ class Dynamics(tf.keras.Model):
             logdet_xf = tf.reduce_sum(mask_inv * scale,
                                       axis=1, name='logdet_xf')
 
-            '''
-            scale, transl, transf = self.xnet([v, mask * x, t], training)
-
-            with tf.name_scope('xf_mul'):
-                scale *= self.eps * weights.x_scale
-                transl *= weights.x_translation
-                transf *= self.eps * weights.x_transformation
-                fns = [scale, transl, transf]
-
-            with tf.name_scope('xf_exp'):
-                scale_exp = exp(scale, 'scale_exp')
-                transf_exp = exp(transf, 'transformation_exp')
-
-            with tf.name_scope('proposed'):
-                x = (mask * x + mask_inv
-                     * (x * scale_exp + self.eps * (v * transf_exp + transl)))
-            '''
-
         return xf, logdet_xf, fns
 
     def _update_v_backward(self, x, v, beta, t, weights, training):
