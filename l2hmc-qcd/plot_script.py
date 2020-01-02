@@ -46,6 +46,20 @@ def parse_args():
     return args
 
 
+def build_dataframes(run_dirs, data=None, **kwargs):
+    """Build dataframes containing inference data from `run_dirs`."""
+    for run_dir in run_dirs:
+        try:
+            new_df, run_params = get_observables(run_dir, **kwargs)
+            if data is None:
+                data = new_df
+            else:
+                data = pd.concat([data, new_df], axis=0).reset_index(drop=True)
+        except FileNotFoundError:
+            continue
+    return data, run_params
+
+
 def calc_tunneling_rate(charges):
     if charges.shape[0] > charges.shape[1]:
         charges = charges.T
@@ -57,7 +71,98 @@ def calc_tunneling_rate(charges):
     return dq, tunneling_rate
 
 
-def get_observables(run_dir, n_boot=1000, therm_frac=0.2, nw_include=None):
+def get_observables(run_dir, log_dir=None, n_boot=500,
+                    therm_frac=0.25, nw_include=None, calc_stats=True):
+    run_params_file = os.path.join(run_dir, 'run_params.pkl')
+    if os.path.isfile(run_params_file):
+        run_params = load_pkl(run_params_file)
+    else:
+        raise FileNotFoundError("Unable to locate `run_params.pkl`, returning.")
+    net_weights = tuple([int(i) for i in run_params['net_weights']])
+    eps = run_params['eps']
+    beta = run_params['beta']
+    observables_dir = os.path.join(run_dir, 'observables')
+    px = load_pkl(os.path.join(observables_dir, 'px.pkl'))
+    px = np.squeeze(np.array(px))
+    avg_px = np.mean(px)
+    if nw_include is not None:
+        keep_data = net_weights in nw_include
+    else:
+        keep_data = True
+    if avg_px < 0.1 or not keep_data:
+        io.log(f'INFO: Skipping nw: {net_weights}, avg_px: {avg_px:.3g}')
+        return None, run_params
+
+    io.log(f'Loading data for net_weights: {net_weights}')
+
+    def load_sqz(fname):
+        data = load_pkl(os.path.join(observables_dir, fname))
+        return np.squeeze(np.array(data))
+
+    charges = load_sqz('charges.pkl')
+    plaqs = load_sqz('plaqs.pkl')
+    dplq = u1_plaq_exact(beta) - plaqs
+    num_steps = px.shape[0]
+    therm_steps = int(therm_frac * num_steps)
+    steps = np.arange(therm_steps, num_steps)
+
+    def therm_arr(arr):
+        arr = arr[1:]
+        return arr[therm_steps:]
+
+    px = therm_arr(px)
+    dplq = therm_arr(dplq)
+    charges = therm_arr(charges)
+    dq, _ = calc_tunneling_rate(charges)
+    dq = dq.T
+    dxf_file = os.path.join(observables_dir, 'dxf.pkl')
+    dxb_file = os.path.join(observables_dir, 'dxb.pkl')
+    if os.path.isfile(dxf_file) and os.path.isfile(dxb_file):
+        dxf = load_sqz('dxf.pkl')
+        dxb = load_sqz('dxb.pkl')
+        dx = (dxf + dxb) / 2
+        dx = dx.mean(axis=-1)
+        dx = therm_arr(dx)
+    else:
+        dx = None
+
+    if calc_stats:
+        px_avg, px_err, px = bootstrap(px, n_boot=n_boot)
+        dplq_avg, dplq_err, dplq = bootstrap(dplq, n_boot=n_boot)
+        dq_avg, dq_err, dq = bootstrap(dq, n_boot=n_boot)
+        px = px.mean(axis=0)
+        dplq = dplq.mean(axis=0)
+        dq = dq.mean(axis=0)
+        if dx is not None:
+            dx_avg, dx_err, dx = bootstrap(dx, n_boot=n_boot)
+            dx = dx.mean(axis=0)
+
+    num_entries = len(dq.flatten())
+    if dx is not None:
+        data = pd.DataFrame({
+            'plaqs_diffs': dplq.flatten(),
+            'accept_prob': px.flatten(),
+            'tunneling_rate': dq.flatten(),
+            'dx': dx.flatten(),
+            'net_weights': tuple([net_weights for _ in range(num_entries)]),
+            'log_dir': np.array([log_dir for _ in range(num_entries)]),
+        })
+    else:
+        data = pd.DataFrame({
+            'plaqs_diffs': dplq.flatten(),
+            'accept_prob': px.flatten(),
+            'tunneling_rate': dq.flatten(),
+            'dx': dx.flatten(),
+            'net_weights': tuple([
+                net_weights for _ in range(len(dq.flatten()))
+            ]),
+            'log_dir': np.array([log_dir for _ in range(dq.flatten())])
+        })
+
+    return data, run_params
+
+
+def get_observables1(run_dir, n_boot=1000, therm_frac=0.2, nw_include=None):
     run_params = load_pkl(os.path.join(run_dir, 'run_params.pkl'))
     net_weights = tuple([int(i) for i in run_params['net_weights']])
     #  eps = run_params['eps']
@@ -466,7 +571,8 @@ def main():
              '2019_12_26',
              '2019_12_28',
              '2019_12_29',
-             '2019_12_30']
+             '2019_12_30',
+             '2019_12_31']
     log_dirs = []
     for date in dates:
         ld = get_matching_log_dirs(date, root_dir=root_dir)
