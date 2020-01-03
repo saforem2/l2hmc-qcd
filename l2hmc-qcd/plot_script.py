@@ -236,9 +236,10 @@ def get_matching_log_dirs(string, root_dir):
         return False
 
     for match in matches:
-        contents = os.listdir(match)
-        log_dirs.extend([os.path.join(match, i) for i in contents
-                         if check(os.path.join(match, i))])
+        if os.path.isdir(match):
+            contents = os.listdir(match)
+            log_dirs.extend([os.path.join(match, i) for i in contents
+                             if check(os.path.join(match, i))])
 
     return log_dirs
 
