@@ -12,7 +12,6 @@ import time
 
 from collections import namedtuple
 from lattice.lattice import GaugeLattice
-#  from dynamics.dynamics import Dynamics
 
 import tensorflow as tf
 
@@ -21,14 +20,8 @@ import utils.file_io as io
 from base.base_model import BaseModel
 
 import config as cfg
-#  from config import HAS_HOROVOD, TF_INT
 
 from params.gauge_params import GAUGE_PARAMS
-
-#  import os
-#  import numpy as np
-#  from utils.horovod_utils import warmup_lr
-#  from tensorflow.python.ops import control_flow_ops as control_flow_ops
 
 if cfg.HAS_HOROVOD:
     import horovod.tensorflow as hvd  # noqa: 401
@@ -62,12 +55,7 @@ class GaugeModel(BaseModel):
     def build(self, params=None):
         """Build TensorFlow graph."""
         params = self.params if params is None else params
-        use_gaussian_loss = getattr(self, 'use_gaussian_loss', False)
-        use_nnehmc_loss = getattr(self, 'use_nnehmc_loss', False)
-        self.use_gaussian_loss = use_gaussian_loss
-        self.use_nnehmc_loss = use_nnehmc_loss
 
-        #  aux_weight = getattr(self, 'aux_weight', 1.)
         charge_weight = getattr(self, 'charge_weight_np', 0.)
         self.use_charge_loss = True if charge_weight > 0. else False
 
@@ -82,37 +70,10 @@ class GaugeModel(BaseModel):
             self.batch_size = self.lattice.samples.shape[0]
             self.x_dim = self.lattice.num_links
 
-            # ***********************************************
-            # Create inputs as `tf.placeholders`
-            # -----------------------------------------------
-            io.log(f'INFO: Creating input placeholders...')
-            inputs = self._create_inputs()
-            self._inputs = inputs
-            self.x = inputs['x']
-            self.beta = inputs['beta']
-            self.eps_ph = inputs['eps_ph']
-            self.net_weights = inputs['net_weights']
-            self.train_phase = inputs['train_phase']
-            self.global_step_ph = inputs['global_step_ph']
-
-            # create global_step_setter
-            self.global_step_setter = self._build_global_step_setter()
-
-            # ***********************************************
-            # Create dynamics for running L2HMC leapfrog
-            # -----------------------------------------------
-            io.log(f'INFO: Creating `Dynamics`...')
-            self.dynamics = self.create_dynamics()
-            self.dynamics_eps = self.dynamics.eps
-            # Create operation for assigning to `dynamics.eps` 
-            # the value fed into the placeholder `eps_ph`.
-            self.eps_setter = self._build_eps_setter()
-
-            # ***********************************************
-            # Create metric for measuring 'distance`
-            # ***********************************************
-            metric = getattr(self, 'metric', 'cos_diff')
-            self.metric_fn = self._create_metric_fn(metric)
+        # ************************************************
+        # Build inputs and their respective placeholders
+        # ------------------------------------------------
+        self._build_inputs()
 
         # *******************************************************************
         # Create operations for calculating lattice observables
@@ -127,58 +88,18 @@ class GaugeModel(BaseModel):
         self.avg_actions = observables['avg_actions']
         self._observables = observables
 
-        # *******************************************************************
-        # Build sampler to generate new configs.
-        # -------------------------------------------------------------------
-        # NOTE: We use the `dynamics.apply_transition` method to run the
-        # augmented l2hmc leapfrog integrator and obtain new samples.
-        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        with tf.name_scope('sampler'):
-            x_data, z_data = self._build_sampler()
+        # ***************************************************************
+        # Build operations common to all models (defined in `BaseModel`)
+        # ---------------------------------------------------------------
+        self._build()
 
-        # *******************************************************************
-        # Build energy_ops to calculate energies.
-        # -------------------------------------------------------------------
-        with tf.name_scope('energy_ops'):
-            self.v_ph = tf.placeholder(dtype=TF_FLOAT, shape=self.x.shape,
-                                       name='v_placeholder')
-            self.sumlogdet_ph = tf.placeholder(dtype=TF_FLOAT,
-                                               shape=self.x.shape[0],
-                                               name='sumlogdet_placeholder')
-
-            self.state = cfg.State(x=self.x, v=self.v_ph, beta=self.beta)
-
-            ph_str = 'energy_placeholders'
-            _ = [tf.add_to_collection(ph_str, i) for i in self.state]
-            #  tf.add_to_collection('energy_placeholders', self.v_ph)
-            tf.add_to_collection(ph_str, self.sumlogdet_ph)
-
-            self.energy_ops = self._calc_energies(self.state,
-                                                  self.sumlogdet_ph)
-        #      self.energy_ops = self._build_energy_ops()
-
-        #  self.charge_diffs = self._calc_charge_diff(x_data.init,
-        #                                             x_data.proposed)
-
-        # *******************************************************************
-        # Calculate loss_op and train_op to backprop. grads through network
-        # -------------------------------------------------------------------
-        with tf.name_scope('calc_loss'):
-            self.loss_op, self._losses_dict = self.calc_loss(x_data, z_data)
-
-        # *******************************************************************
-        # Calculate gradients and build training operation
-        # -------------------------------------------------------------------
-        with tf.name_scope('train'):
-            io.log(f'INFO: Calculating gradients for backpropagation...')
-            self.grads = self._calc_grads(self.loss_op)
-            self.train_op = self._apply_grads(self.loss_op, self.grads)
-            self.train_ops = self._build_train_ops()
-
-        # *******************************************************************
-        # FINISH UP: Make `train_ops` collections, print time to build.
-        # -------------------------------------------------------------------
-        for val in self.train_ops.values():
+        extra_train_ops = {
+            'actions': self.actions,
+            'plaqs': self.plaqs,
+            'charges': self.charges,
+        }
+        self.train_ops.update(extra_train_ops)
+        for val in extra_train_ops.values():
             tf.add_to_collection('train_ops', val)
 
         io.log(f'INFO: Done building graph. '
@@ -236,7 +157,7 @@ class GaugeModel(BaseModel):
 
         return observables
 
-    def _create_metric_fn(self, metric):
+    def _create_metric_fn_old(self, metric):
         """Create `metric_fn` for measuring the `distance` between configs."""
         if metric == 'l1':
             def metric_fn(x1, x2):
@@ -341,29 +262,6 @@ class GaugeModel(BaseModel):
             charge_diffs_op = tf.reduce_sum(x_dq) / self.batch_size
 
         return charge_diffs_op
-
-    def _build_train_ops(self):
-        """Build train_ops dict containing grouped operations for training."""
-        if self.hmc:
-            train_ops = {}
-
-        else:
-            train_ops = {
-                'loss_op': self.loss_op,
-                'train_op': self.train_op,
-                'x_out': self.x_out,
-                'dxf': self.dxf,
-                'dxb': self.dxb,
-                #  'dx': self.dx,
-                'px': self.px,
-                'dynamics_eps': self.dynamics_eps,
-                'actions': self.actions,
-                'plaqs': self.plaqs,
-                'charges': self.charges,
-                'lr': self.lr,
-            }
-
-        return train_ops
 
     def _extract_l2hmc_fns(self, fns):
         """Method for extracting each of the Q, S, T functions as tensors."""

@@ -239,9 +239,6 @@ class Dynamics(tf.keras.Model):
             pxf = outf['accept_prob']
             pxf_hmc = outf['accept_prob_hmc']
             sumlogdetf = outf['sumlogdet']
-            dxf = tf.sqrt((xf - x_init) ** 2)
-
-            #  dxf = tf.abs(tf.reduce_mean(xf - x_init))
 
         with tf.name_scope('transition_backward'):
             vb_init = tf.random_normal(tf.shape(x_init),
@@ -258,8 +255,6 @@ class Dynamics(tf.keras.Model):
             pxb = outb['accept_prob']
             pxb_hmc = outb['accept_prob_hmc']
             sumlogdetb = outb['sumlogdet']
-            dxb = tf.sqrt((xb - x_init) ** 2)
-            #  dxb = tf.abs(tf.reduce_mean(xb - x_init))
 
         # Decide direction uniformly
         with tf.name_scope('simulate_forward_backward'):
@@ -301,16 +296,12 @@ class Dynamics(tf.keras.Model):
             'v_proposed': v_proposed,
             'x_out': x_out,
             'v_out': v_out,
-            'dxf': dxf,
-            'dxb': dxb,
+            'xf': xf,
+            'xb': xb,
             'accept_prob': accept_prob,
             'accept_prob_hmc': accept_prob_hmc,
             'sumlogdet_proposed': sumlogdet_proposed,
             'sumlogdet_out': sumlogdet_out,
-            'mask_f': mask_f,  # forward mask
-            'mask_b': mask_b,  # backward mask
-            'mask_a': mask_a,  # accept mask
-            'mask_r': mask_r,  # reject mask
         }
         for val in outputs.values():
             tf.add_to_collection('dynamics_out', val)
@@ -480,9 +471,6 @@ class Dynamics(tf.keras.Model):
             transf = weights.x_transformation * (self.eps * Qx)
             transl = weights.x_translation * Tx
 
-            #  scale = self.eps * Sx * weights.x_scale
-            #  transf = self.eps * Qx * weights.x_transformation
-            #  transl = Tx * weights.x_translation
             fns = [scale, transl, transf]
 
             y = x * tf.exp(scale) + self.eps * (v * tf.exp(transf) + transl)
@@ -509,32 +497,6 @@ class Dynamics(tf.keras.Model):
             half_eps = 0.5 * self.eps
             vb = exp_scale * (v + half_eps * (grad * exp_transf + transl))
 
-            #  half_eps = 0.5 * self.eps
-            #  scale = -half_eps * Sv * weights.v_scale
-            #  transf = self.eps * Qv * weights.v_transformation
-            #  transl = Tv * weights.v_translation
-            #
-            #  scale_term = tf.exp(scale)
-            #  transf_term = grad * tf.exp(transf)
-            #
-            #  vb = scale_term * (v + half_eps * (transf_term + transl))
-            #  with tf.name_scope('vb_mul'):
-            #      scale *= -0.5 * self.eps * weights.v_scale
-            #      transl *= weights.v_translation
-            #      transf *= self.eps * weights.v_transformation
-            #      #  scale *= -0.5 * self.eps * weights[0]
-            #      #  transl *= weights[1]
-            #      #  transf *= self.eps * weights[2]
-            #      fns = [scale, transl, transf]
-            #
-            #  with tf.name_scope('vb_exp'):
-            #      scale_exp = exp(scale, 'scale_exp')
-            #      transf_exp = exp(transf, 'transformation_exp')
-            #
-            #  with tf.name_scope('proposed'):
-            #      v = scale_exp * (v + 0.5 * self.eps
-            #                       * (grad * transf_exp - transl))
-
             logdet = tf.reduce_sum(scale, axis=1, name='logdet_vb')
 
         fns = [scale, transl, transf]
@@ -550,39 +512,11 @@ class Dynamics(tf.keras.Model):
             transl = weights.x_translation * Tx
             transf = weights.x_transformation * (self.eps * Qx)
 
-            #  scale = -self.eps * Sx * weights.x_scale
-            #  transf = self.eps * Qx * weights.x_transformation
-            #  transl = Tx * weights.x_translation
-            #
-            #  tmp = self.eps * (v * tf.exp(transf) + transl)
-            #  xb = mask * x + mask_inv * (x - tmp) * tf.exp(scale)
-
             exp_scale = tf.exp(scale, name='exp_scale_xb')
             exp_transf = tf.exp(transf, name='exp_transf_xb')
             y = exp_scale * (x - self.eps * (v * exp_transf + transl))
             xb = mask * x + mask_inv * y
             logdet = tf.reduce_sum(mask_inv * scale, axis=1, name='logdet_xb')
-
-            #  scale, transl, transf = self.xnet([v, mask * x, t], training)
-            #
-            #  with tf.name_scope('xb_mul'):
-            #      scale *= -self.eps * weights.x_scale
-            #      transl *= weights.x_translation
-            #      transf *= self.eps * weights.x_transformation
-            #      #  scale *= -self.eps * weights[3]
-            #      #  transl *= weights[4]
-            #      #  transf *= self.eps * weights[5]
-            #      fns = [scale, transl, transf]
-            #
-            #  with tf.name_scope('xb_exp'):
-            #      scale_exp = exp(scale, 'xb_scale')
-            #      transf_exp = exp(transf, 'xb_transformation')
-            #
-            #  with tf.name_scope('proposed'):
-            #      x = (mask * x + mask_inv * scale_exp
-            #           * (x - self.eps * (v * transf_exp + transl)))
-            #  logdet = tf.reduce_sum(mask_inv * scale, axis=1,
-            #                         name='logdet_xb')
 
         fns = [scale, transl, transf]
         return xb, logdet, fns

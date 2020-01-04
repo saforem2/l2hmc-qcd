@@ -156,7 +156,7 @@ def train_l2hmc(FLAGS, log_file=None):
         train_logger = None
 
     # -------------------------------------------------------
-    # Setup config and init_feed_dict for tf.train.Scaffold
+    # Setup `tf.ConfigProto` object for `tf.Session`
     # -------------------------------------------------------
     config, params = create_config(params)
 
@@ -206,7 +206,7 @@ def train_l2hmc(FLAGS, log_file=None):
         io.save_dict(xnet_seeds, out_dir=model.log_dir, name='xnet_seeds')
         io.save_dict(vnet_seeds, out_dir=model.log_dir, name='vnet_seeds')
 
-    # ----------------------------------------------------------
+    # **********************************************************
     #                       TRAINING
     # ----------------------------------------------------------
     trainer = Trainer(sess, model, train_logger, **params)

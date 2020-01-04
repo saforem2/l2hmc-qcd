@@ -21,13 +21,13 @@
 --aux_weight 1.
 --charge_weight 0.
 --loss_scale 1.
---save_lf
+######################
+#--save_lf
 #--eps_fixed
 #--clip_value 10
 #--use_nnehmc_loss
 #--use_gaussian_loss
 #--dropout_prob 0.5
-######################
 #--zero_translation
 #--warmup_lr
 #--use_bn

@@ -22,15 +22,18 @@ from collections import namedtuple
 from utils.horovod_utils import warmup_lr  # noqa: 401
 from utils.distributions import GMM, gen_ring
 from base.base_model import BaseModel
-#  from .gauge_model import allclose
-from dynamics.dynamics import Dynamics
 from params.gmm_params import GMM_PARAMS
-from config import NP_FLOAT, TF_FLOAT, HAS_HOROVOD, State
+import config as cfg
 
-if HAS_HOROVOD:
+if cfg.HAS_HOROVOD:
     import horovod.tensorflow as hvd  # noqa: 401
 
+TF_FLOAT = cfg.TF_FLOAT
+NP_FLOAT = cfg.NP_FLOAT
+
 LFdata = namedtuple('LFdata', ['init', 'proposed', 'prob'])
+SEP_STR = 80 * '-'
+SEP_STRN = 80 * '-' + '\n'
 
 
 def distribution_arr(x_dim, num_distributions):
@@ -117,18 +120,20 @@ class GaussianMixtureModel(BaseModel):
     def build(self, params=None):
         """Build TensorFlow graph."""
         params = self.params if params is None else params
+
+        self.x_dim = params.get('x_dim', 2)
         self.num_distributions = params.get('num_distributions', 2)
-        #  aux_weight = getattr(self, 'aux_weight', 1.)
-        use_gaussian_loss = getattr(self, 'use_gaussian_loss', False)
-        use_nnehmc_loss = getattr(self, 'use_nnehmc_loss', False)
-        self.use_gaussian_loss = use_gaussian_loss
-        self.use_nnehmc_loss = use_nnehmc_loss
 
         t0 = time.time()
-        io.log(80 * '-')
-        io.log(f'INFO: Building graph for `GaussianMixtureModel`...')
+        io.log(SEP_STRN + 'INFO: Building graph for `GaussianMixtureModel`...')
+
+        # ************************************************
+        # Build inputs and their respective placeholders
+        # ------------------------------------------------
+        self._build_inputs()
+
         with tf.name_scope('init'):
-            # ---------------------------------------------------------------
+            # ***************************************************************
             # Create target distribution for Gaussian Mixture Model
             # ---------------------------------------------------------------
             means, covs, pis, distribution = self.create_distribution()
@@ -137,84 +142,13 @@ class GaussianMixtureModel(BaseModel):
             self.pis = pis
             self.distribution = distribution
 
-            # ---------------------------------------------------------------
-            # Create inputs as to be fed values using `tf.placeholders`
-            # ---------------------------------------------------------------
-            io.log(f'INFO: Creating input placeholders...')
-            inputs = self._create_inputs()
-            self._inputs = inputs
-            self.x = inputs['x']
-            self.beta = inputs['beta']
-            self.eps_ph = inputs['eps_ph']
-            self.net_weights = inputs['net_weights']
-            self.train_phase = inputs['train_phase']
-            self.global_step_ph = inputs['global_step_ph']
-
-            # create global_step_setter
-            self.global_step_setter = self._build_global_step_setter()
-
-            # ---------------------------------------------------------------
-            # Create dynamics for running augmented L2HMC leapfrog
-            # ---------------------------------------------------------------
-            io.log(f'INFO: Creating `Dynamics`...')
-            self.dynamics = self.create_dynamics()
-            self.dynamics_eps = self.dynamics.eps
-            # Create operation for assigning to `dynamics.eps` 
-            # the value fed into the placeholder `eps_ph`.
-            self.eps_setter = self._build_eps_setter()
-
-            # ---------------------------------------------------------------
-            # Create metric function for measuring 'distance' between configs
-            # ---------------------------------------------------------------
-            self.metric_fn = self._create_metric_fn()
-
-        with tf.name_scope('sampler'):
-            x_data, z_data = self._build_sampler()
-
-        # *******************************************************************
-        # Build energy_ops to calculate energies.
-        # -------------------------------------------------------------------
-        with tf.name_scope('energy_ops'):
-            self.v_ph = tf.placeholder(dtype=TF_FLOAT, shape=self.x.shape,
-                                       name='v_placeholder')
-            self.sumlogdet_ph = tf.placeholder(dtype=TF_FLOAT,
-                                               shape=self.x.shape[0],
-                                               name='sumlogdet_placeholder')
-
-            self.state = State(x=self.x, v=self.v_ph, beta=self.beta)
-
-            ph_str = 'energy_placeholders'
-            _ = [tf.add_to_collection(ph_str, i) for i in self.state]
-            tf.add_to_collection(ph_str, self.sumlogdet_ph)
-
-            self.energy_ops = self._calc_energies(self.state,
-                                                  self.sumlogdet_ph)
-            #  self.energy_ops = self._build_energy_ops()
-
-        # *******************************************************************
-        # Calculate loss_op and train_op to backprop. grads through network
-        # -------------------------------------------------------------------
-        with tf.name_scope('calc_loss'):
-            self.loss_op, self._losses_dict = self.calc_loss(x_data, z_data)
-            #  self.loss_op, self.losses_dict = self.calc_loss(x_data, z_data)
-
-        # *******************************************************************
-        # Calculate gradients and build training operation
-        # -------------------------------------------------------------------
-        with tf.name_scope('train'):
-            io.log(f'INFO: Calculating gradients for backpropagation...')
-            self.grads = self._calc_grads(self.loss_op)
-            self.train_op = self._apply_grads(self.loss_op, self.grads)
-            self.train_ops = self._build_train_ops()
-            t_ops = list(self.train_ops.values())
-            _ = [tf.add_to_collection('train_ops', v) for v in t_ops]
+        # ***************************************************************
+        # Build operations common to all models (defined in `BaseModel`)
+        # ---------------------------------------------------------------
+        self._build()
 
         io.log(f'INFO: Done building graph. '
                f'Took: {time.time() - t0}s\n' + 80 * '-')
-
-    def _double_check(self, key, params, default_val=None):
-        """Check if key is in params, else, check if `self.key` is defined."""
-        return params.get(key, getattr(self, key, default_val))
 
     def create_distribution(self):
         """Create distribution."""
@@ -317,7 +251,7 @@ class GaussianMixtureModel(BaseModel):
 
         return dynamics
 
-    def _create_metric_fn(self):
+    def _create_metric_fn_old(self):
         """Create metric fn for measuring the distance between two samples."""
         with tf.name_scope('metric_fn'):
             def metric_fn(x1, x2):
@@ -401,7 +335,7 @@ class GaussianMixtureModel(BaseModel):
                 'l2hmc_fns_b': self._extract_l2hmc_fns(self.fns_out_b),
             }
 
-    def _build_run_ops(self):
+    def _build_run_ops_old(self):
         """Build `run_ops` used for running inference w/ trained model."""
         keys = ['x_out', 'px', 'dynamics_eps']
         run_ops = {
@@ -420,7 +354,7 @@ class GaussianMixtureModel(BaseModel):
 
         return run_ops
 
-    def _build_train_ops(self):
+    def _build_train_ops_old(self):
         """Build `train_ops` used for training our model."""
         if self.hmc:
             train_ops = {}
