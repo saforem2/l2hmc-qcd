@@ -426,7 +426,10 @@ class RunLogger:
         io.check_else_make_dir(self.run_dir)
         bad_keys = ['samples_in', 'samples',
                     'v_init', 'v_proposed',
-                    'x_init', 'x_proposed']
+                    'x_init', 'x_proposed',
+                    'x_out', 'v_out', 'plaq_sums',
+                    'sumlogdet_proposed', 'sumlogdet_out',
+                    'dxf', 'dxb', 'eps', 'dynamics_eps', 'step', 'beta']
 
         observables_dir = os.path.join(self.run_dir, 'observables')
         io.check_else_make_dir(observables_dir)

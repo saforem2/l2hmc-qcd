@@ -61,7 +61,7 @@ class GaugeModel(BaseModel):
 
         t0 = time.time()
         io.log(SEP_STRN + f'INFO: Building graph for `GaugeModel`...')
-        with tf.name_scope('init'):
+        with tf.name_scope(self._model_type):
             # ***********************************************
             # Create `Lattice` object
             # -----------------------------------------------
@@ -70,40 +70,40 @@ class GaugeModel(BaseModel):
             self.batch_size = self.lattice.samples.shape[0]
             self.x_dim = self.lattice.num_links
 
-        # ************************************************
-        # Build inputs and their respective placeholders
-        # ------------------------------------------------
-        self._build_inputs()
+            # ************************************************
+            # Build inputs and their respective placeholders
+            # ------------------------------------------------
+            self._build_inputs()
 
-        # *******************************************************************
-        # Create operations for calculating lattice observables
-        # -------------------------------------------------------------------
-        io.log(f'INFO: Creating operations for calculating observables...')
-        observables = self._create_observables()
-        self.plaq_sums = observables['plaq_sums']
-        self.actions = observables['actions']
-        self.plaqs = observables['plaqs']
-        self.charges = observables['charges']
-        self.avg_plaqs = observables['avg_plaqs']
-        self.avg_actions = observables['avg_actions']
-        self._observables = observables
+            # ********************************************************
+            # Create operations for calculating lattice observables
+            # --------------------------------------------------------
+            io.log(f'INFO: Creating operations for calculating observables...')
+            observables = self._create_observables()
+            self.plaq_sums = observables['plaq_sums']
+            self.actions = observables['actions']
+            self.plaqs = observables['plaqs']
+            self.charges = observables['charges']
+            self.avg_plaqs = observables['avg_plaqs']
+            self.avg_actions = observables['avg_actions']
+            self._observables = observables
 
-        # ***************************************************************
-        # Build operations common to all models (defined in `BaseModel`)
-        # ---------------------------------------------------------------
-        self._build()
+            # ***************************************************************
+            # Build operations common to all models (defined in `BaseModel`)
+            # ---------------------------------------------------------------
+            self._build()
 
-        extra_train_ops = {
-            'actions': self.actions,
-            'plaqs': self.plaqs,
-            'charges': self.charges,
-        }
-        self.train_ops.update(extra_train_ops)
-        for val in extra_train_ops.values():
-            tf.add_to_collection('train_ops', val)
+            extra_train_ops = {
+                'actions': self.actions,
+                'plaqs': self.plaqs,
+                'charges': self.charges,
+            }
+            self.train_ops.update(extra_train_ops)
+            for val in extra_train_ops.values():
+                tf.add_to_collection('train_ops', val)
 
-        io.log(f'INFO: Done building graph. '
-               f'Took: {time.time() - t0}s\n' + SEP_STRN)
+            io.log(f'INFO: Done building graph. '
+                   f'Took: {time.time() - t0}s\n' + SEP_STRN)
 
     def _create_lattice(self):
         """Create GaugeLattice object."""
