@@ -218,12 +218,16 @@ class Runner:
         sumlogdet_prop = outputs['sumlogdet_proposed']
         sumlogdet_out = outputs['sumlogdet_out']
 
-        energies_init = self._run_energy_ops(state_np=state_init,
-                                             sumlogdet_np=sumlogdet_init)
-        energies_prop = self._run_energy_ops(state_np=state_prop,
-                                             sumlogdet_np=sumlogdet_prop)
-        energies_out = self._run_energy_ops(state_np=state_out,
-                                            sumlogdet_np=sumlogdet_out)
+        try:
+            energies_init = self._run_energy_ops(state_np=state_init,
+                                                 sumlogdet_np=sumlogdet_init)
+            energies_prop = self._run_energy_ops(state_np=state_prop,
+                                                 sumlogdet_np=sumlogdet_prop)
+            energies_out = self._run_energy_ops(state_np=state_out,
+                                                sumlogdet_np=sumlogdet_out)
+        except ValueError:
+            import pudb; pudb.set_trace()
+
         energies = {
             'potential_init': energies_init['potential_energy'],
             'kinetic_init': energies_init['kinetic_energy'],
@@ -259,7 +263,6 @@ class Runner:
         t0 = time.time()
         outputs = self.run_inference_ops(feed_dict)
         dt = time.time() - t0
-        dx = np.mean((outputs['dxf'] + outputs['dxb']) / 2, axis=1)
 
         out_dict = {
             'step': step,
@@ -268,9 +271,9 @@ class Runner:
             'samples_in': samples,
             'samples': outputs['x_out'],
             'px': outputs['accept_prob'],
+            'dx': outputs['dx'],
             'dxf': outputs['dxf'],
             'dxb': outputs['dxb'],
-            'dx': dx,
             #  'dx': outputs['dx'],
             #  'dx': np.mean(outputs['x_out'] - samples, axis=-1),
         }

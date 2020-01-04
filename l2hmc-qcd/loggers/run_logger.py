@@ -126,16 +126,12 @@ class RunLogger:
     @staticmethod
     def build_run_ops_dict():
         """Build dictionary of tensorflow operations used for inference."""
-        # NOTE: The following keys must be in the same order as the `outputs`
-        # of the `Dynamics.apply_transition` method:
-        keys = ['x_init', 'v_init',
-                'x_proposed', 'v_proposed',
-                'x_out', 'v_out', 'dxf', 'dxb',
-                'accept_prob', 'accept_prob_hmc',
-                'sumlogdet_proposed', 'sumlogdet_out',
-                'mask_f', 'mask_b', 'mask_a', 'mask_r']
+        # NOTE: Keys from `run_ops` dict defined in the model implementation
+        keys = ['x_init', 'v_init', 'x_proposed', 'v_proposed',
+                'x_out', 'v_out', 'dx', 'dxf', 'dxb', 'accept_prob',
+                'accept_prob_hmc', 'sumlogdet_proposed', 'sumlogdet_out']
 
-        ops = tf.get_collection('dynamics_out')
+        ops = tf.get_collection('run_ops')
 
         run_ops_dict = dict(zip(keys, ops))
         eps = _get_eps()
@@ -260,13 +256,11 @@ class RunLogger:
     def _get_run_str(self, **kwargs):
         """Parse parameter values and create unique string to name the dir."""
         beta = kwargs.get('beta', 5.)
+        init = kwargs.get('init', None)
         eps_np = kwargs.get('eps', None)
         run_steps = kwargs.get('run_steps', 5000)
         dir_append = kwargs.get('dir_append', None)
-        #  net_weights = kwargs.get('net_weights', [1., 1., 1.])
-        net_weights = kwargs.get('net_weights',
-                                 NetWeights(1., 1., 1., 1., 1., 1.))
-        init = kwargs.get('init', None)
+        net_weights = kwargs.get('net_weights', NetWeights(1, 1, 1, 1, 1, 1))
 
         beta_str = f'{beta:.3}'.replace('.', '')
         eps_str = f'{eps_np:.3}'.replace('.', '')
@@ -277,19 +271,15 @@ class RunLogger:
         vsw = f'{net_weights.v_scale:1g}'.replace('.', '')
         vtlw = f'{net_weights.v_translation:1g}'.replace('.', '')
         vtfw = f'{net_weights.v_transformation:1g}'.replace('.', '')
-        #  scale_wstr = f'{net_weights[0]:3.2f}'.replace('.', '')
-        #  transl_wstr = f'{net_weights[1]:3.2f}'.replace('.', '')
-        #  transf_wstr = f'{net_weights[2]:3.2f}'.replace('.', '')
 
         run_str = (f'steps{run_steps}'
                    f'_beta{beta_str}'
                    f'_eps{eps_str}'
-                   f'_xSTQ{xsw}{xtlw}{xtfw}'
-                   f'_vSTQ{vsw}{vtlw}{vtfw}'
-                   #  f'_S{scale_wstr}'
-                   #  f'_T{transl_wstr}'
-                   #  f'_Q{transf_wstr}'
-                   f'_{init}')
+                   f'_x{xsw}{xtlw}{xtfw}'
+                   f'_v{vsw}{vtlw}{vtfw}')
+
+        if init is not None:
+            run_str += f'_{init}'
 
         if dir_append is not None:
             run_str += dir_append

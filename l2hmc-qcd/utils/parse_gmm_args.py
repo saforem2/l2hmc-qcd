@@ -22,6 +22,14 @@ def parse_args():
         fromfile_prefix_chars='@',
     )
 
+    parser.add_argument('--x_dim',
+                        dest='x_dim',
+                        type=int,
+                        default=2,
+                        required=False,
+                        help=("""Dimensionality of target distribution.
+                              (Default: 2)."""))
+
     parser.add_argument('--center',
                         dest='center',
                         type=float,
@@ -287,6 +295,32 @@ def parse_args():
                         help=("""Number of training steps to perform.
                               (Default: 5000)"""))
 
+    parser.add_argument("--save_steps",
+                        dest="save_steps",
+                        type=int,
+                        default=50,
+                        required=False,
+                        help=("""Number of steps after which to save the model
+                              and current values of all parameters.
+                              (Default: 50)"""))
+
+    parser.add_argument("--print_steps",
+                        dest="print_steps",
+                        type=int,
+                        default=1,
+                        required=False,
+                        help=("""Number of steps after which to display
+                              information about the loss and various
+                              other quantities. (Default: 1)"""))
+
+    parser.add_argument("--logging_steps",
+                        dest="logging_steps",
+                        type=int,
+                        default=10,
+                        required=False,
+                        help=("""Number of steps after which to write logs for
+                              tensorboard. (default: 50)"""))
+
     parser.add_argument('--lr_init',
                         dest='lr_init',
                         type=float,
@@ -304,10 +338,19 @@ def parse_args():
 
     parser.add_argument("--lr_decay_rate",
                         dest="lr_decay_rate",
-                        type=float, default=0.96,
+                        type=float,
+                        default=0.96,
                         required=False,
                         help=("""Learning rate decay rate to be used during
                               training. (Default: 0.96)"""))
+
+    parser.add_argument("--dropout_prob",
+                        dest="dropout_prob",
+                        type=float,
+                        required=False,
+                        default=0.,
+                        help=("""Dropout probability in network. If > 0,
+                              dropout will be used. (Default: 0.)"""))
 
     parser.add_argument('--no_summaries',
                         dest="no_summaries",
@@ -315,6 +358,30 @@ def parse_args():
                         required=False,
                         help=("""FLag that when passed will prevent tensorflow
                               from creating tensorboard summary objects."""))
+
+    parser.add_argument("--hmc",
+                        dest="hmc",
+                        action="store_true",
+                        required=False,
+                        help=("""Use generic HMC (without augmented leapfrog
+                              integrator described in paper). Used for
+                              comparing against L2HMC algorithm."""))
+
+    parser.add_argument("--eps_fixed",
+                        dest="eps_fixed",
+                        action="store_true",
+                        required=False,
+                        help=("""Flag that when passed will cause the step size
+                              `eps` to be a fixed (non-trainable)
+                              parameter."""))
+
+    parser.add_argument("--metric",
+                        dest="metric",
+                        type=str,
+                        default="l2",
+                        required=False,
+                        help=("""Metric to use in loss function. Must be one
+                              of: `l1`, `l2`, `cos`, `cos2`, `cos_diff`."""))
 
     parser.add_argument('--save_lf',
                         dest='save_lf',

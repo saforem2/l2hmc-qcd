@@ -25,6 +25,7 @@ import numpy as np
 import tensorflow as tf
 
 from utils.horovod_utils import warmup_lr
+import utils.file_io as io
 
 if cfg.HAS_HOROVOD:
     import horovod.tensorflow as hvd
@@ -32,6 +33,8 @@ if cfg.HAS_HOROVOD:
 
 TF_FLOAT = cfg.TF_FLOAT
 TF_INT = cfg.TF_INT
+
+State = cfg.State
 
 LFdata = namedtuple('LFdata', ['init', 'proposed', 'prob'])
 EnergyData = namedtuple('EnergyData', ['init', 'proposed', 'out',
@@ -85,6 +88,9 @@ class BaseModel(object):
             else:
                 setattr(self, key, val)
 
+        self.use_gaussian_loss = getattr(self, 'use_gaussian_loss', False)
+        self.use_nnehmc_loss = getattr(self, 'use_nnehmc_loss', False)
+
         self.eps_trainable = not self.eps_fixed
         self.global_step = self._create_global_step()
 
@@ -97,8 +103,93 @@ class BaseModel(object):
         """Build `tf.Graph` object containing operations for running model."""
         raise NotImplementedError
 
+    def _build_inputs(self):
+        """Build inputs and their respective placeholders."""
+        io.log(f'INFO: Creating input placeholders...')
+        inputs = self._create_inputs()
+        self._inputs = inputs
+        self.x = inputs['x']
+        self.beta = inputs['beta']
+        self.eps_ph = inputs['eps_ph']
+        self.net_weights = inputs['net_weights']
+        self.train_phase = inputs['train_phase']
+        self.global_step_ph = inputs['global_step_ph']
+
+        # create global step setter
+        self.global_step_setter = self._build_global_step_setter()
+
+    def _build(self):
+        """Helper method for building model.
+
+        NOTE: This method builds those operations which are common to all
+        models.
+        """
+        # ********************************************************
+        # Create dynamics for running the augmented L2HMC sampler
+        # --------------------------------------------------------
+        io.log('INFO: Creating `Dynamics`...')
+        self.dynamics = self.create_dynamics()
+        self.dynamics_eps = self.dynamics.eps
+        # Create operation for assigning to `dynamics.eps`
+        # the value fed into the placeholder `eps_ph`.
+        self.eps_setter = self._build_eps_setter()
+
+        # **********************************************************
+        # Create metric function for measuring distance b/t configs
+        # ----------------------------------------------------------
+        if self._model_type == 'GaugeModel':
+            metric = getattr(self, 'metric', 'cos_diff')
+        else:
+            metric = getattr(self, 'metric', 'l2')
+
+        self.metric_fn = self._create_metric_fn(metric)
+
+        # *****************************************
+        # Build sampler for obtaining new configs
+        # -----------------------------------------
+        x_data, z_data = self._build_sampler()
+
+        # *******************************************************************
+        # Build energy_ops to calculate energies.
+        # -------------------------------------------------------------------
+        with tf.name_scope('energy_ops'):
+            self.v_ph = tf.placeholder(dtype=TF_FLOAT,
+                                       shape=self.x.shape,
+                                       name='v_placeholder')
+            self.sumlogdet_ph = tf.placeholder(dtype=TF_FLOAT,
+                                               shape=self.x.shape[0],
+                                               name='sumlogdet_placeholder')
+            self.state = State(x=self.x, v=self.v_ph, beta=self.beta)
+
+            ph_str = 'energy_placeholders'
+            _ = [tf.add_to_collection(ph_str, i) for i in self.state]
+            tf.add_to_collection(ph_str, self.sumlogdet_ph)
+            self.energy_ops = self._calc_energies(self.state,
+                                                  self.sumlogdet_ph)
+
+        # *******************************************************************
+        # Calculate loss_op and train_op to backprop. grads through network
+        # -------------------------------------------------------------------
+        with tf.name_scope('calc_loss'):
+            self.loss_op, self._losses_dict = self.calc_loss(x_data, z_data)
+
+        # *******************************************************************
+        # Calculate gradients and build training operation
+        # -------------------------------------------------------------------
+        with tf.name_scope('train'):
+            io.log(f'INFO: Calculating gradients for backpropagation...')
+            self.grads = self._calc_grads(self.loss_op)
+            self.train_op = self._apply_grads(self.loss_op, self.grads)
+            self.train_ops = self._build_train_ops()
+
+        # *******************************************************************
+        # Build `run_ops` containing ops used when running inference.
+        # -------------------------------------------------------------------
+        io.log(f'Collecting inference operations...')
+        self.run_ops = self._build_run_ops()
+
     def _build_eps_setter(self):
-        """Create op that sets `eps` to be equal to the value in `eps-ph`."""
+        """Create op that sets `eps` to be equal to the value in `eps_ph`."""
         return tf.assign(self.dynamics.eps, self.eps_ph, name='eps_setter')
 
     def _build_global_step_setter(self):
@@ -122,15 +213,65 @@ class BaseModel(object):
 
         return cfg.Energy(pe, ke, h)
 
+    def _build_train_ops(self):
+        """Build `train_ops` used for training the model."""
+        if self.hmc:
+            train_ops = {}
+        else:
+            train_ops = {
+                'loss_op': self.loss_op,
+                'train_op': self.train_op,
+                'x_out': self.x_out,
+                'dx': self.dx,
+                'dxf': self.dxf,
+                'dxb': self.dxb,
+                'px': self.px,
+                'lr': self.lr,
+                'dynamics_eps': self.dynamics.eps,
+            }
+
+        for val in train_ops.values():
+            tf.add_to_collection('train_ops', val)
+
+        return train_ops
+
+    def _build_run_ops(self):
+        run_ops = {
+            'x_init': self.x_init,
+            'v_init': self.v_init,
+            'x_proposed': self.x_proposed,
+            'v_proposed': self.v_proposed,
+            'x_out': self.x_out,
+            'v_out': self.v_out,
+            'dx': self.dx,
+            'dxf': self.dxf,
+            'dxb': self.dxb,
+            'accept_prob': self.px,
+            'accept_prob_hmc': self.px_hmc,
+            'sumlogdet_proposed': self.sumlogdet_proposed,
+            'sumlogdet_out': self.sumlogdet_out,
+        }
+        for val in run_ops.values():
+            tf.add_to_collection('run_ops', val)
+
+        return run_ops
+
     def _build_sampler(self):
         """Build operations used for sampling from the dynamics engine."""
         x_dynamics, x_data = self._build_main_sampler()
+        self.x_init = x_dynamics['x_init']
+        self.v_init = x_dynamics['v_init']
         self.x_out = x_dynamics['x_out']
+        self.v_out = x_dynamics['v_out']
+        self.x_proposed = x_dynamics['x_proposed']
+        self.v_proposed = x_dynamics['v_proposed']
         self.px = x_dynamics['accept_prob']
         self.px_hmc = x_dynamics['accept_prob_hmc']
-        self.dxf = x_dynamics['dxf']
-        self.dxb = x_dynamics['dxb']
-        self.dx = (self.dxf + self.dxb) / 2
+        self.sumlogdet_proposed = x_dynamics['sumlogdet_proposed']
+        self.sumlogdet_out = x_dynamics['sumlogdet_out']
+        self.xf = x_dynamics['xf']
+        self.xb = x_dynamics['xb']
+        self.dx, self.dxf, self.dxb = self.calc_dx()
 
         self.dynamics_dict = x_dynamics
         self.x_diff, self.v_diff = self._check_reversibility()
@@ -141,7 +282,7 @@ class BaseModel(object):
 
     def _build_main_sampler(self):
         """Build operations used for 'sampling' from the dynamics engine."""
-        with tf.name_scope('x_dynamics'):
+        with tf.name_scope('main_sampler'):
             args = (self.x, self.beta, self.net_weights, self.train_phase)
             kwargs = {
                 'hmc': getattr(self, 'use_nnehmc_loss', None),
@@ -160,7 +301,7 @@ class BaseModel(object):
     def _build_aux_sampler(self):
         """Run dynamics using initialization distribution (random normal)."""
         aux_weight = getattr(self, 'aux_weight', 1.)
-        with tf.name_scope('aux_dynamics'):
+        with tf.name_scope('aux_sampler'):
             if aux_weight > 0.:
                 self.z = tf.random_normal(tf.shape(self.x),
                                           dtype=TF_FLOAT,
@@ -287,12 +428,12 @@ class BaseModel(object):
                 v_scale_weight = make_ph('v_scale_weight')
                 v_transl_weight = make_ph('v_translation_weight')
                 v_transf_weight = make_ph('v_transformation_weight')
-                net_weights = cfg.NetWeights(v_scale=v_scale_weight,
-                                             v_translation=v_transl_weight,
-                                             v_transformation=v_transf_weight,
-                                             x_scale=x_scale_weight,
+                net_weights = cfg.NetWeights(x_scale=x_scale_weight,
                                              x_translation=x_transl_weight,
-                                             x_transformation=x_transf_weight)
+                                             x_transformation=x_transf_weight,
+                                             v_scale=v_scale_weight,
+                                             v_translation=v_transl_weight,
+                                             v_transformation=v_transf_weight)
                 train_phase = make_ph('is_training', dtype=tf.bool)
                 eps_ph = make_ph('eps_ph')
                 global_step_ph = make_ph('global_step_ph', dtype=tf.int64)
@@ -319,7 +460,20 @@ class BaseModel(object):
 
     def _create_metric_fn(self, metric):
         """Create metric function used to measure distatnce between configs."""
-        raise NotImplementedError
+        if metric == 'l1':
+            def metric_fn(x1, x2):
+                return tf.abs(x1 - x2)
+        elif metric == 'l2':
+            def metric_fn(x1, x2):
+                return tf.square(x1 - x2)
+        elif metric == 'cos_diff':
+            def metric_fn(x1, x2):
+                return 1. - tf.cos(x1 - x2)
+        else:
+            raise ValueError(f'metric={metric}. Expected one of:\n'
+                             '`\tl1`, `l2`, or `cos_diff`.')
+
+        return metric_fn
 
     def _check_reversibility(self):
         x_in = tf.random_normal(self.x.shape,
@@ -351,6 +505,13 @@ class BaseModel(object):
             esjd = prob * tf.reduce_sum(self.metric_fn(x1, x2), axis=1)
 
         return esjd
+
+    def calc_dx(self):
+        dxf = self.metric_fn(self.xf, self.x_init)
+        dxb = self.metric_fn(self.xb, self.x_init)
+        dx = tf.reduce_mean((dxf + dxb) / 2, axis=1)
+
+        return dx, dxf, dxb
 
     def _loss(self, init, proposed, prob):
         """Calculate the (standard) contribution to the loss from the ESJD."""
