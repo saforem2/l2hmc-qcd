@@ -157,23 +157,6 @@ class GaugeModel(BaseModel):
 
         return observables
 
-    def _create_metric_fn_old(self, metric):
-        """Create `metric_fn` for measuring the `distance` between configs."""
-        if metric == 'l1':
-            def metric_fn(x1, x2):
-                return tf.abs(x1 - x2)
-        elif metric == 'l2':
-            def metric_fn(x1, x2):
-                return tf.square(x1 - x2)
-        elif metric == 'cos_diff':
-            def metric_fn(x1, x2):
-                return 1. - tf.cos(x1 - x2)
-        else:
-            raise ValueError(f'metric={metric}. Expected one of:\n'
-                             '`\tl1`, `l2`, or `cos_diff`.')
-
-        return metric_fn
-
     def _charge_loss(self, x_init, x_proposed, prob):
         dq = self.lattice.calc_top_charges_diff(x_init, x_proposed)
         charge_loss = prob * dq
@@ -200,48 +183,6 @@ class GaugeModel(BaseModel):
 
         return charge_loss
 
-    def calc_loss(self, x_data, z_data):
-        """Calculate the total loss from all terms."""
-        total_loss = 0.
-        ld = {}
-
-        if self.use_gaussian_loss:
-            gaussian_loss = self._gaussian_loss(x_data, z_data,
-                                                mean=0., sigma=1.)
-            ld['gaussian'] = gaussian_loss
-            total_loss += gaussian_loss
-
-        if self.use_nnehmc_loss:
-            nnehmc_beta = getattr(self, 'nnehmc_beta', 1.)
-            nnehmc_loss = self._nnehmc_loss(x_data, self.px_hmc,
-                                            beta=nnehmc_beta)
-            ld['nnehmc'] = nnehmc_loss
-            total_loss += nnehmc_loss
-
-        if self.use_charge_loss:
-            charge_loss = self._calc_charge_loss(x_data, z_data)
-            ld['charge'] = charge_loss
-            total_loss += charge_loss
-
-        # If not using either Gaussian loss or NNEHMC loss, use standard loss
-        if (not self.use_gaussian_loss) and (not self.use_nnehmc_loss):
-            std_loss = self._calc_loss(x_data, z_data)
-            ld['std'] = std_loss
-            total_loss += std_loss
-
-        tf.add_to_collection('losses', total_loss)
-
-        fd = {k: v / total_loss for k, v in ld.items()}
-
-        losses_dict = {}
-        for key in ld.keys():
-            losses_dict[key + '_loss'] = ld[key]
-            losses_dict[key + '_frac'] = fd[key]
-
-            tf.add_to_collection('losses', ld[key])
-
-        return total_loss, losses_dict
-
     def _calc_charge_diff(self, x_init, x_proposed):
         """Calculate difference in topological charge b/t x_init, x_proposed.
 
@@ -262,21 +203,3 @@ class GaugeModel(BaseModel):
             charge_diffs_op = tf.reduce_sum(x_dq) / self.batch_size
 
         return charge_diffs_op
-
-    def _extract_l2hmc_fns(self, fns):
-        """Method for extracting each of the Q, S, T functions as tensors."""
-        if not getattr(self, 'save_lf', True):
-            return
-
-        fnsT = tf.transpose(fns, perm=[2, 1, 0, 3, 4], name='fns_transposed')
-
-        fn_names = ['scale', 'translation', 'transformation']
-        update_names = ['v1', 'x1', 'x2', 'v2']
-
-        l2hmc_fns = {}
-        for idx, name in enumerate(fn_names):
-            l2hmc_fns[name] = {}
-            for subidx, subname in enumerate(update_names):
-                l2hmc_fns[name][subname] = fnsT[idx][subidx]
-
-        return l2hmc_fns
