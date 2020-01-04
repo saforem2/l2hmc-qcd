@@ -147,8 +147,8 @@ class Trainer:
         """
         beta = kwargs.pop('beta', None)
         samples = kwargs.pop('samples', None)
-        initial_step = kwargs.pop('initial_step', 0)
-        io.log(f'Initial_step: {initial_step}\n')
+        #  initial_step = kwargs.pop('initial_step', 0)
+        #  io.log(f'Initial_step: {initial_step}\n')
 
         net_weights = kwargs.get('net_weights', NetWeights(1, 1, 1,
                                                            1, 1, 1))

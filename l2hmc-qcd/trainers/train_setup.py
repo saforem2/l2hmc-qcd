@@ -38,6 +38,7 @@ def set_global_step(sess, global_step):
     global_step_np = sess.run(global_step_tensor)
     io.log(f'INFO: New value of `global_step`: {global_step_np}')
 
+
 def _get_net_weights(net, weights):
     for layer in net.layers:
         if hasattr(layer, 'layers'):
@@ -62,10 +63,11 @@ def get_coeffs(generic_net):
 
 
 def get_net_weights(model):
-    weights = {
-        'xnet': _get_net_weights(model.dynamics.xnet, {}),
-        'vnet': _get_net_weights(model.dynamics.vnet, {}),
-    }
+    with tf.name_scope('model_weights'):
+        weights = {
+            'xnet': _get_net_weights(model.dynamics.xnet, {}),
+            'vnet': _get_net_weights(model.dynamics.vnet, {}),
+        }
 
     return weights
 

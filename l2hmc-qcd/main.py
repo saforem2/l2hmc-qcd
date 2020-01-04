@@ -173,7 +173,7 @@ def train_l2hmc(FLAGS, log_file=None):
     )
     samples_init = np.array(model.lattice.samples_array, dtype=NP_FLOAT)
     beta_init = model.beta_init
-    global_step = tf.train.get_or_create_global_step()
+    #  global_step = tf.train.get_or_create_global_step()
 
     # ----------------------------------------------------------------
     #  Create MonitoredTrainingSession
@@ -211,11 +211,10 @@ def train_l2hmc(FLAGS, log_file=None):
     # ----------------------------------------------------------
     trainer = Trainer(sess, model, train_logger, **params)
 
-    initial_step = sess.run(global_step)
+    #  initial_step = sess.run(global_step)
     trainer.train(model.train_steps,
                   beta=beta_init,
                   samples=samples_init,
-                  initial_step=initial_step,
                   net_weights=net_weights_init)
 
     check_reversibility(model, sess, out_file=reverse_file)
