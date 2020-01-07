@@ -48,6 +48,7 @@ from tensorflow.python.client import timeline  # noqa: F401
 
 import inference
 import utils.file_io as io
+from utils.file_io import timeit
 
 from utils.parse_args import parse_args
 from models.gauge_model import GaugeModel
@@ -91,6 +92,7 @@ def create_monitored_training_session(**sess_kwargs):
     return sess
 
 
+@timeit
 def train_l2hmc(FLAGS, log_file=None):
     """Create, train, and run L2HMC sampler on 2D U(1) gauge model."""
     t0 = time.time()
@@ -256,6 +258,7 @@ def train_l2hmc(FLAGS, log_file=None):
     return model, train_logger
 
 
+@timeit
 def main(FLAGS):
     """Main method for creating/training/running L2HMC for U(1) gauge model."""
     log_file = 'output_dirs.txt'

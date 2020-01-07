@@ -4,16 +4,16 @@ Helper methods for performing file IO.
 Author: Sam Foreman (github: @saforem2)
 Created: 2/27/2019
 """
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
+from __future__ import absolute_import, division, print_function
+
 import os
-import datetime
+import time
 import pickle
 import shutil
-import numpy as np
-
+import datetime
 import config as cfg
+
+import numpy as np
 
 try:
     import horovod.tensorflow as hvd
@@ -24,6 +24,22 @@ try:
 except ImportError:
     HAS_HOROVOD = False
 
+
+def timeit(method):
+    def timed(*args, **kwargs):
+        t0 = time.time()
+        result = method(*args, **kwargs)
+        t1 = time.time()
+
+        if 'log_time' in kwargs:
+            name = kwargs.get('log_name', method.__name__.upper())
+            kwargs['log_time'][name] = int((t1 - t0) * 1000)
+        else:
+            log(80 * '-')
+            log(f'`{method.__name__}` took: {(t1 - t0):.4g}s')
+            log(80 * '-')
+        return result
+    return timed
 
 
 def load_params(log_dir):
