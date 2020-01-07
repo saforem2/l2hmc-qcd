@@ -488,4 +488,14 @@ def violinplots(log_dirs, df_dict=None, df_bs_dict=None, rp_dict=None):
         )
         io.check_else_make_dir(out_dir)
 
+        plt.tight_layout()
+        out_file = os.path.join(out_dir, f'{fname}.pdf')
+        if os.path.isfile(out_file):
+            id_str = f'{idx}'
+            out_file = os.path.join(out_dir, f'{fname}_{id_str}.pdf')
+        io.log(f'INFO: Saving figure to: {out_file}')
+        plt.savefig(out_file, bbox_inches='tight')
+        if not os.path.isfile(out_file):
+            plt.savefig(out_file, bbox_inches='tight')
+
     return fig, axes0, axes1
