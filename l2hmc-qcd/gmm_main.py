@@ -22,8 +22,10 @@ import tensorflow as tf
 
 import utils.file_io as io
 
+from utils.file_io import timeit
 from models.gmm_model import GaussianMixtureModel
-from params.gmm_params import GMM_PARAMS
+
+#  from params.gmm_params import GMM_PARAMS
 from loggers.train_logger import TrainLogger
 from utils.parse_gmm_args import parse_args as parse_gmm_args
 from trainers.trainer import Trainer
@@ -50,6 +52,7 @@ def log_params(params):
     io.log(SEP_STR)
 
 
+@timeit
 def plot_target_distribution(distribution, target_samples=None, **kwargs):
     fig, ax = plt.subplots()
     ax = _gmm_plot(distribution, target_samples, **kwargs)
@@ -76,6 +79,7 @@ def save_distribution_params(distribution, out_dir):
     _save(pis, 'pis', pis_file)
 
 
+@timeit
 def train_l2hmc(FLAGS, log_file=None):
     """Create, and train `GaussianMixtureModel` via the L2HMC algorithm."""
     tf.keras.backend.set_learning_phase(True)
@@ -236,6 +240,7 @@ def train_l2hmc(FLAGS, log_file=None):
     return model, train_logger
 
 
+@timeit
 def main(FLAGS):
     log_file = 'output_dirs.txt'
 
