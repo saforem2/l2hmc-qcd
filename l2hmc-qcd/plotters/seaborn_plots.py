@@ -12,8 +12,7 @@ import time
 import pickle
 import datetime
 
-from plot_script import get_matching_log_dirs
-from plotters.plot_utils import bootstrap, load_pkl
+from plotters.plot_utils import bootstrap, load_pkl, get_matching_log_dirs
 from plotters.plot_observables import (get_obs_dict, get_run_dirs,
                                        get_title_str, grid_plot)
 
@@ -172,6 +171,7 @@ def get_observables(run_dir,
             'accept_prob': px_.flatten(),
             'tunneling_rate': dq_.flatten(),
             'net_weights': tuple([net_weights for _ in range(entries)]),
+            'run_dir': np.array([run_dir for _ in range(entries)]),
             'log_dir': np.array([log_dir for _ in range(entries)]),
         })
 
@@ -196,13 +196,14 @@ def get_observables(run_dir,
         'accept_prob': px.flatten(),
         'tunneling_rate': dq.flatten(),
         'net_weights': tuple([net_weights for _ in range(entries)]),
+        'run_dir': np.array([run_dir for _ in range(entries)]),
         'log_dir': np.array([log_dir for _ in range(entries)]),
     })
 
     if dx is not None:
-        data['dx'] = dx.flatten(),
+        data['dx'] = dx.flatten()
     if dxf is not None:
-        data['dxf'] = dxf.flatten(),
+        data['dxf'] = dxf.flatten()
     if dxb is not None:
         data['dxb'] = dxb.flatten()
 
@@ -340,47 +341,51 @@ def _violinplots(data, axes, has_dx, has_dxf, has_dxb, old_dx, bs=False):
         ax.set_yticks([])
         ax.set_yticklabels([])
 
-    labels = [r"""$\delta \phi_{P}$""",
-              r"""$\gamma$""",
-              r"""$A(\xi^{\prime}|\xi)$"""]
 
     if bs:
+        labels = [r"""$\langle\delta \phi_{P}\rangle$""",
+                  r"""$\langle\gamma\rangle$""",
+                  r"""$\langle A(\xi^{\prime}|\xi)\rangle$"""]
         l2_str = r"""$\langle\|x^{(i+1)} - x^{(i)}\|^{2}_{2}\rangle$"""
         cos_str = r"""$\langle 1 - \cos(x^{(i+1)} - x^{(i)})\rangle$"""
-        l2_strf = (r"""$\langle\|x_{f}^{(i+1)}
-                   - x_{f}^{(i)}\|^{2}_{2}\rangle$""")
-        cos_strf = (r"""$\langle 1 - \cos(x_{f}^{(i+1)}
-                    - x_{f}^{(i)})\rangle$""")
-        l2_strb = (r"""$\langle \|x_{b}^{(i+1)}
-                   - x_{b}^{(i)}\|^{2}_{2}\rangle$""")
-        cos_strb = (r"""$\langle 1 - \cos(x_{b}^{(i+1)}
-                    - x_{b}^{(i)})\rangle$""")
+        l2_strf = (
+            r"""$\langle\|x_{f}^{(i+1)} - x_{f}^{(i)}\|^{2}_{2}\rangle$"""
+        )
+        cos_strf = (
+            r"""$\langle 1 - \cos(x_{f}^{(i+1)} - x_{f}^{(i)})\rangle$"""
+        )
+        l2_strb = (
+            r"""$\langle \|x_{b}^{(i+1)} - x_{b}^{(i)}\|^{2}_{2}\rangle$"""
+        )
+        cos_strb = (
+            r"""$\langle 1 - \cos(x_{b}^{(i+1)} - x_{b}^{(i)})\rangle$"""
+        )
     else:
+        labels = [r"""$\delta \phi_{P}$""",
+                  r"""$\gamma$""",
+                  r"""$A(\xi^{\prime}|\xi)$"""]
         l2_str = r"""$\|x^{(i+1)} - x^{(i)}\|^{2}_{2}$"""
         cos_str = r"""$1 - \cos(x^{(i+1)} - x^{(i)})$"""
-
         l2_strf = r"""$\|x_{f}^{(i+1)} - x_{f}^{(i)}\|^{2}_{2}$"""
         cos_strf = r"""$1 - \cos(x_{f}^{(i+1)} - x_{f}^{(i)})$"""
-
         l2_strb = r"""$\|x_{b}^{(i+1)} - x_{b}^{(i)}\|^{2}_{2}$"""
         cos_strb = r"""$1 - \cos(x_{b}^{(i+1)} - x_{b}^{(i)})$"""
 
     if has_dx:
         if old_dx:
-            labels += l2_str
+            labels.append(l2_str)
         else:
-            labels += cos_str
-
+            labels.append(cos_str)
     if has_dxf:
         if old_dx:
-            labels += l2_strf
+            labels.append(l2_strf)
         else:
-            labels += cos_strf
+            labels.append(cos_strf)
     if has_dxb:
         if old_dx:
-            labels += l2_strb
+            labels.append(l2_strb)
         else:
-            labels += cos_strb
+            labels.append(cos_strb)
 
     labelsize = 16
     for ax, label in zip(axes, labels):

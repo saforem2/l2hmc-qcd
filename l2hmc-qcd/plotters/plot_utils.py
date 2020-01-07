@@ -55,6 +55,30 @@ except ImportError:
     HAS_SEABORN = False
 
 
+def get_matching_log_dirs(string, root_dir):
+    contents = os.listdir(root_dir)
+    matches = [os.path.join(root_dir, i) for i in contents if string in i]
+    log_dirs = []
+
+    def check(log_dir):
+        if not os.path.isdir(log_dir):
+            return False
+        figs_dir = os.path.join(log_dir, 'figures')
+        runs_dir = os.path.join(log_dir, 'runs')
+        if os.path.isdir(figs_dir) and os.path.isdir(runs_dir):
+            return True
+        return False
+
+    for match in matches:
+        if os.path.isdir(match):
+            contents = os.listdir(match)
+            log_dirs.extend([os.path.join(match, i) for i in contents
+                             if check(os.path.join(match, i))])
+
+    return log_dirs
+
+
+
 def weights_hist(log_dir, weights=None):
     if HAS_SEABORN:
         sns.set_palette('bright', 100)
