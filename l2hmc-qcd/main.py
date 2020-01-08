@@ -177,6 +177,13 @@ def train_l2hmc(FLAGS, log_file=None):
     beta_init = model.beta_init
     #  global_step = tf.train.get_or_create_global_step()
 
+    dynamics_masks = []
+    dynamics_masks_inv = []
+    for step in range(model.num_steps):
+        mask, mask_inv = model.dynamics._get_mask(step)
+        dynamics_masks.append(mask)
+        dynamics_masks_inv.append(mask_inv)
+
     # ----------------------------------------------------------------
     #  Create MonitoredTrainingSession
     #
@@ -198,6 +205,15 @@ def train_l2hmc(FLAGS, log_file=None):
         model.dynamics.xnet.generic_net.coeff_transformation.initializer,
         model.dynamics.vnet.generic_net.coeff_transformation.initializer,
     ])
+
+    masks_file = os.path.join(model.log_dir, 'dynamics_mask.pkl')
+    masks_np, masks_inv_np = sess.run([dynamics_masks, dynamics_masks_inv])
+    masks_dict = {
+        'masks': masks_np,
+        'masks_inv': masks_inv_np,
+    }
+    with open(masks_file, 'wb') as f:
+        pickle.dump(masks_dict, f)
 
     # Check reversibility and write results out to `.txt` file.
     reverse_file = os.path.join(model.log_dir, 'reversibility_test.txt')

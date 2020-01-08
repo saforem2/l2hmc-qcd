@@ -76,7 +76,6 @@ class Dynamics(tf.keras.Model):
         """
         super(Dynamics, self).__init__(name='Dynamics')
         np.random.seed(seeds['global_np'])
-
         self.potential = potential_fn
 
         # create attributes from `kwargs.items()`
@@ -84,16 +83,20 @@ class Dynamics(tf.keras.Model):
             if key != 'eps':  # want to use self.eps as tf.Variable
                 setattr(self, key, val)
 
-        self.num_steps = params.get('num_steps', 5)
-        self.hmc = params.get('hmc', False)
-        self.network_arch = params.get('network_arch', 'generic')
-        self.use_bn = params.get('use_bn', False)
-        self.dropout_prob = params.get('dropout_prob', 0.)
-        self.num_hidden1 = params.get('num_hidden1', 10)
-        self.num_hidden2 = params.get('num_hidden2', 10)
-        self._eps_np = params.get('eps', 0.4)
+        self.hmc = params.get('hmc', False)           # use HMC sampler
+        self._eps_np = params.get('eps', 0.4)         # initial step size
+        self.use_bn = params.get('use_bn', False)     # use batch normalization
+        self.num_steps = params.get('num_steps', 5)   # number of lf steps
+        self.zero_masks = params.get('zero_masks', True)    # all 0 binary mask
+        self.num_hidden1 = params.get('num_hidden1', 10)    # nodes in h1
+        self.num_hidden2 = params.get('num_hidden2', 10)    # nodes in h2
+        self.dropout_prob = params.get('dropout_prob', 0.)  # dropout prob
+        self.network_arch = params.get('network_arch', 'generic')  # net arch
+
         self.eps = self._build_eps(use_log=False)
-        self.masks = self._build_masks()
+        # build binary masks for updating x
+        self.masks = self._build_masks(zero_masks=self.zero_masks)
+
         net_params = self._network_setup()
         self.xnet, self.vnet = self.build_network(net_params)
 
@@ -306,14 +309,17 @@ class Dynamics(tf.keras.Model):
             'sumlogdet_proposed': sumlogdet_proposed,
             'sumlogdet_out': sumlogdet_out,
         }
-        #  for val in outputs.values():
-        #      tf.add_to_collection('dynamics_out', val)
 
         return outputs
 
-    def transition_kernel(self, x_in, v_in, beta,
-                          weights, train_phase,
-                          forward=True, hmc=True):
+    def transition_kernel(self,
+                          x_in,
+                          v_in,
+                          beta,
+                          weights,
+                          train_phase,
+                          forward=True,
+                          hmc=True):
         """Transition kernel of augmented leapfrog integrator."""
         lf_fn = self._forward_lf if forward else self._backward_lf
 
@@ -608,8 +614,13 @@ class Dynamics(tf.keras.Model):
 
         return accept_mask, reject_mask
 
-    def _build_masks(self):
-        """Construct different binary masks for different time steps."""
+    def _build_masks(self, zero_masks=False):
+        """Construct different binary masks for different time steps.
+
+        Args:
+            all_zeros (bool): If set to True, create a mask with all entries
+                equal to zero instead of half zeros, half ones.
+        """
         with tf.name_scope('x_masks'):
             masks = []
             for _ in range(self.num_steps):
@@ -617,13 +628,16 @@ class Dynamics(tf.keras.Model):
                 # random values across different `sess.run`
                 idx = npr.permutation(np.arange(self.x_dim))[:self.x_dim // 2]
                 mask = np.zeros((self.x_dim,))
-                mask[idx] = 1.
+                if not zero_masks:  # set half of the entries equal to 1
+                    mask[idx] = 1.
+
                 mask = tf.constant(mask, dtype=TF_FLOAT)
                 masks.append(mask[None, :])
 
         return masks
 
     def _get_mask(self, step):
+        """Retrieve the binary mask associated with the time step `step`."""
         with tf.name_scope('get_mask'):
             if tf.executing_eagerly():
                 m = self.masks[step]

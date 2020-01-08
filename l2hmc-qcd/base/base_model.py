@@ -294,7 +294,6 @@ class BaseModel(object):
                 'model_type': getattr(self, 'model_type', None),
             }
 
-            #  x_dynamics = self.dynamics.apply_transition(*args, **kwargs)
             x_dynamics = self.dynamics(*args, **kwargs)
 
             x_data = LFdata(x_dynamics['x_init'],
