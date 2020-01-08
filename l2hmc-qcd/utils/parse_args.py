@@ -325,6 +325,16 @@ def parse_args():
                               strength of top. charge term in loss
                               function. (Default: 1.)"""))
 
+    parser.add_argument('--zero_masks',
+                        dest='zero_masks',
+                        action='store_true',
+                        required=False,
+                        help=("""Flag that when passed will set the random
+                              binary masks to be all zeros (and its complement
+                              to be all ones), instead of both having half of
+                              their entries equal to zero and half equal to
+                              one."""))
+
     parser.add_argument('--x_scale_weight',
                         dest='x_scale_weight',
                         type=float,
