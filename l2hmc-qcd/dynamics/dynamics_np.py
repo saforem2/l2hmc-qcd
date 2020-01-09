@@ -18,11 +18,19 @@ from collections import namedtuple
 from utils.file_io import timeit  # noqa: F401
 from network.activation_functions import ReLU
 
+HAS_JAX = False
+HAS_AUTOGRAD = False
 try:
-    from jax import grad
     import jax.numpy as np
+    from jax import grad
+    HAS_JAX = True
 except ImportError:
-    import numpy as np
+    try:
+        import autograd.numpy as np
+        from autograd import grad
+        HAS_AUTOGRAD = True
+    except ImportError:
+        import numpy as np
 
 
 State = cfg.State
@@ -220,7 +228,7 @@ class DynamicsRunner:
 
         exp_scale = np.exp(scale)
         exp_transf = np.exp(transf)
-        
+
         vf = v * exp_scale - 0.5 * self.eps * (dU_dx * exp_transf + transl)
         logdet = np.sum(scale, axis=1)
 
@@ -341,7 +349,14 @@ class DynamicsRunner:
         return m, 1. - m
 
     def grad_potential(self, x, beta):
-        grad_fn = grad(self.potential_energy, argnums=0)
+        if HAS_JAX:
+            grad_fn = grad(self.potential_energy, argnums=0)
+        elif HAS_AUTOGRAD:
+            grad_fn = grad(self.potential_energy, 0)
+        else:
+            raise ModuleNotFoundError('Unable to load autodiff library. '
+                                      'Exiting.')
+
         return grad_fn(x, beta)
 
     def potential_energy(self, x, beta):
