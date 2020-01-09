@@ -315,13 +315,9 @@ def create_log_dir(FLAGS, **kwargs):
     hour_str = now.strftime('%H%M')
 
     project_dir = os.path.abspath(os.path.dirname(cfg.FILE_PATH))
-    #  if FLAGS.log_dir is None:
+
     if _log_dir is None:
         _dir = 'gauge_logs' if root_dir is None else root_dir
-        #  if root_dir is None:
-        #      _dir = 'gauge_logs'
-        #  else:
-        #      _dir = root_dir
 
     else:
         if root_dir is None:
@@ -330,9 +326,12 @@ def create_log_dir(FLAGS, **kwargs):
             _dir = os.path.join(_log_dir, root_dir)
     root_log_dir = os.path.join(project_dir, _dir, day_str, run_str)
     # if `root_log_dir` already exists, append '_%H%M' (hour, minute) at end
-    if os.path.isdir(root_log_dir):
-        root_log_dir = os.path.join(project_dir, _dir, day_str,  # append hr...
-                                    run_str + f'_{hour_str}')    # ...str @ end
+    #  if os.path.isdir(root_log_dir):
+    dirname = run_str + f'_{hour_str}'
+    if os.apth.isdir(os.path.join(project_dir, _dir, day_str, dirname)):
+        dirname += '_1'
+
+    root_log_dir = os.path.join(project_dir, _dir, day_str, dirname)
     check_else_make_dir(root_log_dir)
     if any('run_' in i for i in os.listdir(root_log_dir)):
         run_num = get_run_num(root_log_dir)
