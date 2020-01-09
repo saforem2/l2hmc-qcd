@@ -11,7 +11,20 @@ from __future__ import absolute_import, division, print_function
 import config as cfg
 #  from config import NP_FLOAT, TF_FLOAT
 
-import numpy as np
+HAS_JAX = False
+HAS_AUTOGRAD = False
+try:
+    import jax.numpy as np
+    HAS_JAX = True
+except ImportError:
+    try:
+        import autograd.numpy as np
+        HAS_AUTOGRAD = True
+    except ImportError:
+        import numpy as np
+
+
+#  import numpy as np
 import tensorflow as tf
 
 from scipy.special import i0, i1
@@ -189,7 +202,7 @@ class GaugeLattice(object):
         Same as `self.calc_plaq_sums` defined above, but to be used with
         `numpy.ndarray` objects.
         """
-        assert isinstance(samples, (np.ndarray, list))
+        #  assert isinstance(samples, (np.ndarray, list))
         if samples.shape != self.samples.shape:
             samples = np.reshape(samples, self.samples.shape)
 
@@ -216,8 +229,13 @@ class GaugeLattice(object):
 
         return total_actions
 
-    def calc_actions_np(self, plaq_sums):
+    def calc_actions_np(self, samples=None, plaq_sums=None):
         """Calculate actions for `np.ndarray` objcts."""
+        if plaq_sums is None:
+            if samples is None:
+                samples = self.samples_array
+            plaq_sums = self.calc_plaq_sums_np(samples)
+
         total_actions = np.sum(1. - np.cos(plaq_sums), axis=(1, 2))
 
         return total_actions
