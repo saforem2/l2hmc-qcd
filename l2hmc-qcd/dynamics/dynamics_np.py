@@ -27,7 +27,7 @@ try:
 except ImportError:
     try:
         import autograd.numpy as np
-        from autograd import grad
+        from autograd import elementwise_grad
         HAS_AUTOGRAD = True
     except ImportError:
         import numpy as np
@@ -36,6 +36,10 @@ except ImportError:
 State = cfg.State
 Weights = namedtuple('Weights', ['w', 'b'])
 NP_FLOAT = cfg.NP_FLOAT
+
+def relu(x):
+    return np.where(x >= 0, x, 0)
+
 
 
 def linear(x):
@@ -54,7 +58,7 @@ class DenseLayerNP:
 
 
 class GenericNetNP:
-    def __init__(self, weights, name=None, activation=ReLU):
+    def __init__(self, weights, name=None, activation=relu):
         self.name = name
         self.activation = activation
         self.x_layer = DenseLayerNP(weights['x_layer'])
@@ -261,7 +265,7 @@ class DynamicsRunner:
         exp_transf = np.exp(transf)
 
         half_eps = 0.5 * self.eps
-        vb = exp_scale * (v + half_eps * (grad * exp_transf + transl))
+        vb = exp_scale * (v + half_eps * (dU_dx * exp_transf + transl))
         logdet = np.sum(scale, axis=1)
 
         return vb, logdet
@@ -306,14 +310,14 @@ class DynamicsRunner:
 
     def _get_accept_masks(self, accept_prob):
         rand_unif = np.random.uniform(size=accept_prob.shape)
-        accept_mask = np.cast(accept_prob > rand_unif, NP_FLOAT)
+        accept_mask = np.array(accept_prob > rand_unif, dtype=NP_FLOAT)
         reject_mask = 1. - accept_mask
 
         return accept_mask, reject_mask
 
     def _get_direction_masks(self):
         rand_unif = np.random.uniform(size=(self.batch_size,))
-        forward_mask = np.cast(rand_unif > 0.5, NP_FLOAT)
+        forward_mask = np.array(rand_unif > 0.5, dtype=NP_FLOAT)
         backward_mask = 1. - forward_mask
 
         return forward_mask, backward_mask
@@ -352,7 +356,8 @@ class DynamicsRunner:
         if HAS_JAX:
             grad_fn = grad(self.potential_energy, argnums=0)
         elif HAS_AUTOGRAD:
-            grad_fn = grad(self.potential_energy, 0)
+            grad_fn = elementwise_grad(self.potential_energy, 0)
+            #  grad_fn = grad(self.potential_energy, 0)
         else:
             raise ModuleNotFoundError('Unable to load autodiff library. '
                                       'Exiting.')
