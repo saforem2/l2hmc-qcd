@@ -328,7 +328,7 @@ def create_log_dir(FLAGS, **kwargs):
     # if `root_log_dir` already exists, append '_%H%M' (hour, minute) at end
     #  if os.path.isdir(root_log_dir):
     dirname = run_str + f'_{hour_str}'
-    if os.apth.isdir(os.path.join(project_dir, _dir, day_str, dirname)):
+    if os.path.isdir(os.path.join(project_dir, _dir, day_str, dirname)):
         dirname += '_1'
 
     root_log_dir = os.path.join(project_dir, _dir, day_str, dirname)
