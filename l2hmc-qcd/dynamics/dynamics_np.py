@@ -336,7 +336,7 @@ class DynamicsRunner:
 
         return masks
 
-    def get_mask(self, step):
+    def _get_mask(self, step):
         m = self.masks[step]
         return m, 1. - m
 
