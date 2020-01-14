@@ -12,7 +12,7 @@ import time
 import pickle
 import datetime
 
-from config import COLORS
+from config import COLORS, PROJECT_DIR
 
 import numpy as np
 import pandas as pd
@@ -480,7 +480,6 @@ def _gridplots(log_dir, data, title_str, fname,
 
 
 def gridplots(log_dirs,
-
               df_dict=None,
               df_bs_dict=None,
               rp_dict=None,
@@ -491,7 +490,9 @@ def gridplots(log_dirs,
     hour_str = now.strftime('%H%M')
     time_str = f'{day_str}_{hour_str}'
     if rootdir is None:
-        rootdir = os.path.abspath(f'/home/foremans/cooley_figures/')
+        proj_dir = os.path.dirname(PROJECT_DIR)
+        rootdir = os.path.join(proj_dir, 'cooley_figures')
+        #  rootdir = os.path.abspath(f'/home/foremans/cooley_figures/')
 
     io.check_else_make_dir(rootdir)
 
@@ -544,7 +545,13 @@ def gridplots(log_dirs,
                 continue
 
 
-        run_dirs = sorted(get_run_dirs(log_dir))[::-1]
+        #  run_dirs = sorted(get_run_dirs(log_dir))[::-1]
+        run_dirs = []
+        if data is not None:
+            run_dirs += list(np.unique(data['run_dir']))
+        if data_bs is not None:
+            run_dirs += list(np.unique(data_bs['run_dir']))
+        run_dirs = np.unique(run_dirs)
         for run_dir in run_dirs:
             run_params = load_pkl(os.path.join(run_dir, 'run_params.pkl'))
             fname, title_str, old_dx = plot_setup(log_dir, run_params)
