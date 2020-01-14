@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 import utils.file_io as io
 
 from config import NetWeights
-from runners.runner_np import create_dynamics, run_inference_np
+from runners.runner_np import create_dynamics, load_pkl, run_inference_np
 from utils.file_io import timeit
 from utils.parse_inference_args_np import parse_args as parse_inference_args
 from plotters.energy_plotter import EnergyPlotter
@@ -26,6 +26,7 @@ from lattice.lattice import u1_plaq_exact
 from plotters.seaborn_plots import plot_setup
 
 HEADER = 80 * '-'
+
 
 def inference_plots_old(run_data, energy_data, params, run_params, **kwargs):
     """Make all inference plots from inference run."""
@@ -69,7 +70,6 @@ def _get_title(params, run_params):
     title_str = (r"$N_{\mathrm{LF}} = $" + f'{lf}, '
                  r"$\beta = $" + f'{beta:.1g}, '
                  r"$\varepsilon = $" + f'{eps:.3g}')
-    eps_str = f'{eps:.4g}'.replace('.', '')
 
     if params['eps_fixed']:
         title_str += ' (fixed)'
@@ -80,12 +80,26 @@ def _get_title(params, run_params):
 
     return title_str
 
+
 def therm_arr(arr, therm_frac=0.25):
     num_steps = arr.shape[0]
     therm_steps = int(therm_frac * num_steps)
     arr = arr[therm_steps:, :]
     steps = np.arange(therm_steps, num_steps)
     return arr, steps
+
+
+def build_energy_dataset(energy_data):
+    """Build `xarray.Datset` containing `energy_data` for plotting."""
+    ed_dict = {}
+    for key, val in energy_data.items():
+        arr, steps = therm_arr(np.array(val))
+        arr = arr.T
+        ed_dict[key] = xr.DataArray(arr, dims=['chain', 'draw'],
+                                    coords=[np.arange(arr.shape[0]), steps])
+    dataset = xr.Dataset(ed_dict)
+
+    return dataset
 
 
 def build_dataset(run_data, run_params):
@@ -121,62 +135,58 @@ def _check_existing(out_dir, fname):
     return fname
 
 
-def inference_plots(run_data, params, run_params):
+def inference_plots(run_data, energy_data, params, run_params):
+    """Create trace plots of lattice observables and energy data."""
     run_str = run_params['run_str']
     log_dir = params['log_dir']
     figs_dir = os.path.join(log_dir, 'figures_np')
     fig_dir = os.path.join(figs_dir, run_str)
     io.check_else_make_dir(fig_dir)
 
-    base_dir = os.path.abspath('/home/foremans/inference_numpy_figs')
-    io.check_else_make_dir(base_dir)
-    log_str = log_dir.split('/')[-1]
-
-    out_dir = os.path.join(base_dir, log_str)
-    io.check_else_make_dir(out_dir)
-
-    #  title_str = _get_title(params, run_params)
     fname, title_str, _ = plot_setup(log_dir, run_params)
     tp_fname = f'{fname}_traceplot'
+    etp_fname = f'{fname}_energy_traceplot'
     rp_fname = f'{fname}_ridgeplot'
 
     dataset = build_dataset(run_data, run_params)
+    energy_dataset = build_energy_dataset(energy_data)
 
-    #################################
-    # Create traceplot of plaq diffs
-    #################################
-    _ = az.plot_trace(dataset, compact=True, combined=True,
-                      var_names=['plaqs_diffs', 'actions',
-                                 'charges', 'dx', 'accept_prob'])
-    fig = plt.gcf()
-    fig.suptitle(title_str, fontsize=24, y=1.05)
+    def _plot_trace(data, out_file, var_names=None):
+        _ = az.plot_trace(data, compact=True, combined=True,
+                          var_names=var_names)
+        fig = plt.gcf()
+        fig.suptitle(title_str, fontsize=24, y=1.05)
+        io.log(HEADER)
+        io.log(f'Saving figure to: {out_file}.')
+        fig.savefig(out_file, dpi=200, bbox_inches='tight')
+        io.log(HEADER)
 
-    # Save figure in `log_dir`
+    ####################################
+    # Create traceplot of observables
+    ####################################
     tp_fname = _check_existing(fig_dir, tp_fname)
     tp_out_file = os.path.join(fig_dir, f'{tp_fname}.pdf')
-    io.log(80 * '-')
-    io.log(f'Saving figure to: {tp_out_file}.')
-    fig.savefig(tp_out_file, dpi=200, bbox_inches='tight')
-    io.log(80 * '-')
+    var_names = ['plaqs_diffs', 'actions', 'charges', 'dx', 'accept_prob']
+    _plot_trace(dataset, tp_out_file, var_names=var_names)
 
-    # Save figure in `~/inference_numpy_figs/`
-    tp_fname = _check_existing(out_dir, tp_fname)
-    tp_out_file = os.path.join(out_dir, f'{tp_fname}.pdf')
-    io.log(80 * '-')
-    io.log(f'Saving figure to: {tp_out_file}.')
-    fig.savefig(tp_out_file, dpi=200, bbox_inches='tight')
-    io.log(80 * '-')
+    ####################################
+    # Create traceplot of energy data
+    ####################################
+    etp_fname = _check_existing(fig_dir, etp_fname)
+    etp_out_file = os.path.join(fig_dir, f'{etp_fname}.pdf')
+    _plot_trace(energy_dataset, etp_out_file)
 
     #################################
     # Create ridgeplot of plaq diffs
     #################################
-    axes = az.plot_forest(dataset,
-                          kind='ridgeplot',
-                          var_names=['plaqs_diffs'],
-                          ridgeplot_alpha=0.4,
-                          ridgeplot_overlap=0.1,
-                          combined=False)
-    #  axes[0].set_title(title_str, fontsize='large')
+    _ = az.plot_forest(dataset,
+                       kind='ridgeplot',
+                       var_names=['plaqs_diffs'],
+                       ridgeplot_alpha=0.4,
+                       ridgeplot_overlap=0.1,
+                       combined=False)
+    fig = plt.gcf()
+    fig.suptitle(title_str, fontsize='x-large', y=1.025)
 
     # Save figure in `log_dir` 
     rp_fname = _check_existing(fig_dir, rp_fname)
@@ -186,15 +196,7 @@ def inference_plots(run_data, params, run_params):
     plt.savefig(rp_out_file, dpi=200, bbox_inches='tight')
     io.log(80 * '-')
 
-    # Save figure in `~/inference_numpy_figs/`
-    rp_fname = _check_existing(out_dir, rp_fname)
-    rp_out_file = os.path.join(out_dir, f'{rp_fname}.pdf')
-    io.log(80 * '-')
-    io.log(f'Saving figure to: {rp_out_file}.')
-    plt.savefig(rp_out_file, dpi=200, bbox_inches='tight')
-    io.log(80 * '-')
-
-    return dataset
+    return dataset, energy_dataset
 
 
 @timeit
@@ -220,7 +222,8 @@ def main(args):
                                                          lattice, run_params,
                                                          init=args.init)
     params = load_pkl(os.path.join(log_dir, 'parameters.pkl'))
-    datset = inference_plots(run_data, params, run_params)
+    dataset, energy_dataset = inference_plots(run_data, energy_data,
+                                              params, run_params)
 
     return run_params, run_data, energy_data, dataset
 
