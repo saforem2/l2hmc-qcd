@@ -18,21 +18,17 @@ from collections import namedtuple
 from utils.file_io import timeit  # noqa: F401
 from network.activation_functions import ReLU
 
-HAS_JAX = False
 HAS_AUTOGRAD = False
 try:
-    import jax.numpy as np
-    from jax import grad
-    HAS_JAX = True
+    import autograd.numpy as np
+
+    from autograd import elementwise_grad
+
+    HAS_AUTOGRAD = True
 except ImportError:
-    try:
-        import autograd.numpy as np
-        from autograd import elementwise_grad
-        HAS_AUTOGRAD = True
-    except ImportError:
-        import numpy as np
+    import numpy as np
 
-
+# pylint: disable=invalid-name
 State = cfg.State
 Weights = namedtuple('Weights', ['w', 'b'])
 NP_FLOAT = cfg.NP_FLOAT
@@ -47,6 +43,7 @@ def linear(x):
 
 
 class DenseLayerNP:
+    """Implements fully-connected Dense layer using numpy."""
     def __init__(self, weights, activation=linear):
         self.activation = activation
         self.weights = weights
@@ -94,6 +91,7 @@ class GenericNetNP:
 
 
 class DynamicsRunner:
+    """Implements tools for running tensorflow-independent inference."""
     def __init__(self, potential_fn, weights, **params):
         self.potential = potential_fn
         self.xnet, self.vnet = self.build_networks(weights)
@@ -126,6 +124,8 @@ class DynamicsRunner:
                                                          net_weights,
                                                          forward=False)
 
+        # TODO: Instead of running forward and backward simultaneously, 
+        # use np.choose([-1, 1]) to determine which direction gets ran
         mask_f, mask_b = self._get_direction_masks()
         v_init = (vf_init * mask_f[:, None] + vb_init * mask_b[:, None])
         x_prop = xf * mask_f[:, None] + xb * mask_b[:, None]
@@ -151,6 +151,8 @@ class DynamicsRunner:
             'accept_prob': accept_prob,
             'sumlogdet_proposed': sumlogdet_prop,
             'sumlogdet_out': sumlogdet_out,
+            'mask_f': mask_f,
+            'mask_b': mask_b
         }
 
         return outputs
@@ -353,9 +355,7 @@ class DynamicsRunner:
         return m, 1. - m
 
     def grad_potential(self, x, beta):
-        if HAS_JAX:
-            grad_fn = grad(self.potential_energy, argnums=0)
-        elif HAS_AUTOGRAD:
+        if HAS_AUTOGRAD:
             grad_fn = elementwise_grad(self.potential_energy, 0)
             #  grad_fn = grad(self.potential_energy, 0)
         else:
