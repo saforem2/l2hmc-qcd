@@ -154,8 +154,12 @@ def reset_plots():
     plt.clf()
 
 
-def get_run_dirs(log_dir, filter_str=None):
-    runs_dir = os.path.join(log_dir, 'runs')
+def get_run_dirs(log_dir, filter_str=None, runs_np=False):
+    """Get all run_dirs from `log_dir`."""
+    if runs_np:
+        runs_dir = os.path.join(log_dir, 'runs_np')
+    else:
+        runs_dir = os.path.join(log_dir, 'runs')
     run_dirs = [
         os.path.join(runs_dir, i) for i in os.listdir(runs_dir)
         if os.path.isdir(os.path.join(runs_dir, i))
