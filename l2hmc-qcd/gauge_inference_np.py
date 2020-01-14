@@ -102,6 +102,14 @@ def build_energy_dataset(energy_data):
     return dataset
 
 
+def calc_tunneling_rate(charges):
+    """Calculate the tunneling rate as the difference in charge b/t steps."""
+    charges = np.around(charges)
+    charges = np.insert(charges, 0, 0, axis=0)
+    dq = np.abs(charges[1:] - charges[-1])
+    return dq
+
+
 def build_dataset(run_data, run_params):
     rd_dict = {}
     for key, val in run_data.items():
@@ -121,6 +129,15 @@ def build_dataset(run_data, run_params):
         rd_dict[key] = xr.DataArray(arr,
                                     dims=['chain', 'draw'],
                                     coords=[np.arange(arr.shape[0]), steps])
+
+    rd_dict['charges_squared'] = rd_dict['charges'] ** 2
+
+    charges = rd_dict['charges'].values.T
+    tunneling_rate = calc_tunneling_rate(charges).T
+    tmp = tunneling_rate.shape[0]
+    rd_dict['tunneling_rate'] = xr.DataArray(tunneling_rate,
+                                             dims=['chain', 'draw'],
+                                             coords=[np.arange(tmp), steps])
     dataset = xr.Dataset(rd_dict)
 
     return dataset
@@ -146,39 +163,60 @@ def inference_plots(run_data, energy_data, params, run_params):
     fname, title_str, _ = plot_setup(log_dir, run_params)
     tp_fname = f'{fname}_traceplot'
     etp_fname = f'{fname}_energy_traceplot'
+    pp_fname = f'{fname}_posterior'
+    epp_fname = f'{fname}_posterior'
     rp_fname = f'{fname}_ridgeplot'
 
     dataset = build_dataset(run_data, run_params)
     energy_dataset = build_energy_dataset(energy_data)
 
-    def _plot_trace(data, out_file, var_names=None):
-        _ = az.plot_trace(data, compact=True, combined=True,
-                          var_names=var_names)
-        fig = plt.gcf()
-        fig.suptitle(title_str, fontsize=24, y=1.05)
+    def _savefig(fig, out_file):
         io.log(HEADER)
         io.log(f'Saving figure to: {out_file}.')
         fig.savefig(out_file, dpi=200, bbox_inches='tight')
         io.log(HEADER)
 
-    ####################################
-    # Create traceplot of observables
-    ####################################
-    tp_fname = _check_existing(fig_dir, tp_fname)
-    tp_out_file = os.path.join(fig_dir, f'{tp_fname}.pdf')
-    var_names = ['plaqs_diffs', 'actions', 'charges', 'dx', 'accept_prob']
-    _plot_trace(dataset, tp_out_file, var_names=var_names)
+    def _plot_posterior(data, out_file, var_names=None):
+        _ = az.plot_posterior(data, var_names=var_names)
+        fig = plt.gcf()
+        fig.suptitle(title_str, fontsize=24, y=1.05)
+        _savefig(fig, out_file)
 
-    ####################################
-    # Create traceplot of energy data
-    ####################################
+    def _plot_trace(data, out_file, var_names=None):
+        _ = az.plot_trace(data, compact=True,
+                          combined=True,
+                          var_names=var_names)
+        fig = plt.gcf()
+        fig.suptitle(title_str, fontsize=24, y=1.05)
+        _savefig(fig, out_file)
+
+    ####################################################
+    # Create traceplot + posterior plot of observables 
+    ####################################################
+    tp_fname = _check_existing(fig_dir, tp_fname)
+    pp_fname = _check_existing(fig_dir, pp_fname)
+    tp_out_file = os.path.join(fig_dir, f'{tp_fname}.pdf')
+    pp_out_file = os.path.join(fig_dir, f'{pp_fname}.pdf')
+    var_names = ['plaqs_diffs', 'dx', 'accept_prob',
+                 'tunneling_rate', 'charges', 'charges_squared']
+    _plot_trace(dataset, tp_out_file, var_names=var_names)
+    _plot_posterior(dataset, pp_out_file, var_names=var_names)
+
+    ####################################################
+    # Create traceplot + possterior plot of energy data
+    ####################################################
     etp_fname = _check_existing(fig_dir, etp_fname)
+    epp_fname = _check_existing(fig_dir, epp_fname)
     etp_out_file = os.path.join(fig_dir, f'{etp_fname}.pdf')
+    epp_out_file = os.path.join(fig_dir, f'{epp_fname}.pdf')
     _plot_trace(energy_dataset, etp_out_file)
+    _plot_posterior(energy_dataset, epp_out_file)
 
     #################################
     # Create ridgeplot of plaq diffs
     #################################
+    rp_fname = _check_existing(fig_dir, rp_fname)
+    rp_out_file = os.path.join(fig_dir, f'{rp_fname}.pdf')
     _ = az.plot_forest(dataset,
                        kind='ridgeplot',
                        var_names=['plaqs_diffs'],
@@ -187,14 +225,7 @@ def inference_plots(run_data, energy_data, params, run_params):
                        combined=False)
     fig = plt.gcf()
     fig.suptitle(title_str, fontsize='x-large', y=1.025)
-
-    # Save figure in `log_dir` 
-    rp_fname = _check_existing(fig_dir, rp_fname)
-    rp_out_file = os.path.join(fig_dir, f'{rp_fname}.pdf')
-    io.log(80 * '-')
-    io.log(f'Saving figure to: {rp_out_file}.')
-    plt.savefig(rp_out_file, dpi=200, bbox_inches='tight')
-    io.log(80 * '-')
+    _savefig(fig, rp_out_file)
 
     return dataset, energy_dataset
 
