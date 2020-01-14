@@ -256,9 +256,7 @@ def run_inference_np(log_dir, dynamics, lattice, run_params, init=None):
         'hamiltonian_out': [],
     }
 
-
     data_strs = []
-
     plaq_exact = u1_plaq_exact(beta)
 
     start_time = time.time()
