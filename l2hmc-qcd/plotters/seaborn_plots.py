@@ -453,23 +453,11 @@ def _gridplots(log_dir, data, title_str, fname,
                         rasterized=True, alpha=alpha)
     else:
         cmap = sns.light_palette(color, as_cmap=True)
-        try:
-            g = g.map_diag(sns.kdeplot, shade=True, color=color)
-        except UnboundLocalError:
-            g = g.map_diag(plt.hist, histtype='step_filled',
-                           color=color, ec=color, alpha=0.7, density=True)
-        try:
-            g = g.map_upper(sns.kdeplot, cmap=cmap, shade=True,
-                            gridsize=100, shade_lowest=False)
-        except UnboundLocalError:
-            g = g.map_diag(sns.scatterplot, color=color)
-
-        try:
-            g = g.map_lower(plot_pts, color=color, ls='',
-                            marker=marker, rasterized=True, alpha=alpha)
-        except UnboundLocalError:
-            g = g.map_lower(plt.plot, color=color, ls='',
-                            marker=marker, rasterized=True, alpha=alpha)
+        g = g.map_diag(sns.kdeplot, shade=True, color=color)
+        g = g.map_upper(sns.kdeplot, cmap=cmap, shade=True,
+                        gridsize=100, shade_lowest=False)
+        g = g.map_lower(plot_pts, color=color, ls='', marker=marker,
+                        rasterized=True, alpha=alpha)
 
     g.add_legend()
     g.fig.suptitle(title_str, y=1.02, fontsize='x-large')
@@ -492,6 +480,7 @@ def _gridplots(log_dir, data, title_str, fname,
 
 
 def gridplots(log_dirs,
+
               df_dict=None,
               df_bs_dict=None,
               rp_dict=None,
@@ -531,19 +520,29 @@ def gridplots(log_dirs,
         if data is not None:
             out_dir = os.path.join(rootdir, f'combined_pairplots_{time_str}')
             io.check_else_make_dir(out_dir)
-            fname
-            g_combined = _gridplots(log_dir, data,
-                                    title_str, fname,
-                                    color=None, combined=True,
-                                    marker='x', markeredgewidth=0.4,
-                                    gridsize=50, out_dir=out_dir)
+            try:
+                g_combined = _gridplots(log_dir, data,
+                                        title_str, fname,
+                                        color=None, combined=True,
+                                        marker='x', markeredgewidth=0.4,
+                                        gridsize=50, out_dir=out_dir)
+            except UnboundLocalError:
+                io.log(f'Unable to create _gridplots for {log_dir}.')
+                continue
         if data_bs is not None:
             out_dir = os.path.join(rootdir,
                                    f'combined_pairplots_boostrap_{time_str}')
             io.check_else_make_dir(out_dir)
-            g_combined = _gridplots(log_dir, data_bs,
-                                    title_str, fname,
-                                    color=None, combined=True, out_dir=out_dir)
+            try:
+                g_combined = _gridplots(log_dir, data_bs,
+                                        title_str, fname,
+                                        color=None,
+                                        combined=True,
+                                        out_dir=out_dir)
+            except UnboundLocalError:
+                io.log(f'Unable to create _gridplots for {log_dir}.')
+                continue
+
 
         run_dirs = sorted(get_run_dirs(log_dir))[::-1]
         for run_dir in run_dirs:
@@ -554,17 +553,26 @@ def gridplots(log_dirs,
                 data_ = data[data.run_dir == run_dir]
                 out_dir = os.path.join(rootdir, f'pairplots_{time_str}')
                 io.check_else_make_dir(out_dir)
-                g = _gridplots(log_dir, data_, title_str, fname, color=color,
-                               marker='x', markeredgewidth=0.4, gridsize=50,
-                               out_dir=out_dir)
+                try:
+                    g = _gridplots(log_dir, data_, title_str, fname,
+                                   color=color, marker='x',
+                                   markeredgewidth=0.4, gridsize=50,
+                                   out_dir=out_dir)
+                except UnboundLocalError:
+                    io.log(f'Unable to create _gridplots for {run_dir}.')
+                    continue
 
             if data_bs is not None:
                 out_dir = os.path.join(rootdir,
                                        f'pairplots_bootstrap_{time_str}')
                 io.check_else_make_dir(out_dir)
                 data_bs_ = data_bs[data_bs.run_dir == run_dir]
-                g_bs = _gridplots(log_dir, data_bs_, title_str, fname,
-                                  color=color, out_dir=out_dir)
+                try:
+                    g_bs = _gridplots(log_dir, data_bs_, title_str, fname,
+                                      color=color, out_dir=out_dir)
+                except UnboundLocalError:
+                    io.log(f'Unable to create _gridplots for {run_dir}.')
+                    continue
             plt.close('all')
         plt.close('all')
 
