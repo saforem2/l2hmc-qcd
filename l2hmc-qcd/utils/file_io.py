@@ -7,8 +7,8 @@ Created: 2/27/2019
 from __future__ import absolute_import, division, print_function
 
 import os
-import datetime
 import time
+import errno
 import pickle
 import shutil
 import datetime
@@ -26,18 +26,44 @@ except ImportError:
     HAS_HOROVOD = False
 
 
+def copy(src, dst):
+    """Copy from src --> dst using `shutil.copytree`."""
+    try:
+        shutil.copytree(src, dst)
+    except OSError as exc:  # python > 2.5
+        if exc.errno == errno.ENOTDIR:
+            shutil.copy(src, dst)
+        else:
+            raise
+
+def copy_gauge_figures(root_dst_dir=None):
+    """Copy `figures` and `figures_np` from all `log_dirs` to `~`."""
+    root_src_dir = os.path.abspath('/home/foremans/DLHMC/l2hmc-qcd/gauge_logs')
+    if root_dst_dir is None:
+        root_dst_dir = os.path.abspath('/home/foremans/gauge_logs_figures')
+    for src_dir, _, _ in os.walk(root_src_dir):
+        if src_dir.endswith('figures') or src_dir.endswith('figures_np'):
+            date_str = src_dir.split('/')[-3]
+            log_str = src_dir.split('/')[-2]
+            fig_str = src_dir.split('/')[-1]
+            dst_dir = os.path.join(root_dst_dir, date_str, log_str, fig_str)
+            log(f'Copying {src_dir} --> {dst_dir}')
+            copy(src_dir, dst_dir)
+
 def timeit(method):
+    """Timing decorator."""
     def timed(*args, **kwargs):
-        t0 = time.time()
+        """Function to be timed."""
+        start_time = time.time()
         result = method(*args, **kwargs)
-        t1 = time.time()
+        end_time = time.time()
 
         if 'log_time' in kwargs:
             name = kwargs.get('log_name', method.__name__.upper())
-            kwargs['log_time'][name] = int((t1 - t0) * 1000)
+            kwargs['log_time'][name] = int((end_time - start_time) * 1000)
         else:
             log(80 * '-')
-            log(f'`{method.__name__}` took: {(t1 - t0):.4g}s')
+            log(f'`{method.__name__}` took: {(end_time - start_time):.4g}s')
             log(80 * '-')
         return result
     return timed
@@ -60,6 +86,7 @@ def get_timestr():
 
 
 def load_params(log_dir):
+    """Load params from log_dir."""
     params_file = os.path.join(log_dir, 'parameters.pkl')
     with open(params_file, 'rb') as f:
         params = pickle.load(f)
@@ -67,6 +94,7 @@ def load_params(log_dir):
     return params
 
 
+# pylint: disable=invalid-name
 def log(s, nl=True):
     """Print string `s` to stdout if and only if hvd.rank() == 0."""
     try:
@@ -95,7 +123,8 @@ def log_and_write(s, f):
     write(s, f)
 
 
-def copy(src, dest):
+def copy_old(src, dest):
+    """Copy from src to dst."""
     try:
         shutil.copytree(src, dest)
     except OSError:
@@ -124,6 +153,7 @@ def make_dirs(dirs):
     _ = [check_else_make_dir(d) for d in dirs]
 
 
+# pylint: disable=too-many-branches
 def _parse_gauge_flags(FLAGS):
     """Parse flags for `GaugeModel` instance."""
     if isinstance(FLAGS, dict):
@@ -133,7 +163,6 @@ def _parse_gauge_flags(FLAGS):
             flags_dict = FLAGS.__dict__
         except (NameError, AttributeError):
             pass
-    #  try:
     d = {
         'LX': flags_dict.get('space_size', None),
         'BS': flags_dict.get('batch_size', None),
@@ -160,8 +189,6 @@ def _parse_gauge_flags(FLAGS):
         _log_dir = flags_dict['log_dir']
     except KeyError:
         _log_dir = ''
-
-    #  train_weights = (d['XS'], d['XT'], d['XQ'], d['VS'], d['VT'], d['VQ'])
 
     d['_log_dir'] = _log_dir
     aw = str(d['AW']).replace('.', '')
@@ -303,6 +330,7 @@ def _parse_flags(FLAGS, model_type='GaugeModel'):
     return run_str, out_dict
 
 
+# pylint: disable=too-many-locals
 def create_log_dir(FLAGS, **kwargs):
     """Automatically create and name `log_dir` to save model data to.
 
@@ -404,6 +432,7 @@ def save_data(data, out_file, name=None):
 
 
 def save_params(params, out_dir, name=None):
+    """save params (dict) to `out_dir`, as both `.pkl` and `.txt` files."""
     check_else_make_dir(out_dir)
     if name is None:
         name = 'parameters'
@@ -417,6 +446,7 @@ def save_params(params, out_dir, name=None):
 
 
 def save_dict(d, out_dir, name):
+    """Save generic dict `d` to `out_dir` as both `.pkl` and `.txt` files."""
     check_else_make_dir(out_dir)
     txt_file = os.path.join(out_dir, f'{name}.txt')
     pkl_file = os.path.join(out_dir, f'{name}.pkl')
