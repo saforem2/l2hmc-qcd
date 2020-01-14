@@ -122,7 +122,7 @@ def plot_setup(log_dir, run_params, idx=None):
     train_weights_str = ''.join((str(int(i)) for i in train_weights))
     net_weights = run_params['net_weights']
     net_weights_str = ''.join((str(int(i)) for i in net_weights))
-    nws = '(' + ', '.join((str(i) for i in net_weights)) + ')'
+    nws = '(' + ', '.join((str(int(i)) for i in net_weights)) + ')'
 
     date_str = log_dir.split('/')[-2]
     y, m, d = date_str.split('_')
