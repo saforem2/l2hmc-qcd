@@ -12,22 +12,22 @@ import time
 import pickle
 import datetime
 
-from plotters.plot_utils import bootstrap, load_pkl, get_matching_log_dirs
-from plotters.plot_observables import (get_obs_dict, get_run_dirs,
-                                       get_title_str, grid_plot)
+from config import COLORS
 
 import numpy as np
 import pandas as pd
-import seaborn as sns
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 import matplotlib.style as mplstyle
 
+import seaborn as sns
 import utils.file_io as io
-from config import COLORS
 
 from lattice.lattice import u1_plaq_exact
+from plotters.plot_utils import bootstrap, get_matching_log_dirs, load_pkl
+from plotters.plot_observables import (get_obs_dict, get_run_dirs,
+                                       get_title_str, grid_plot)
 
 sns.set_palette('bright')
 mplstyle.use('fast')
@@ -342,8 +342,10 @@ def _build_dataframes(run_dirs, data=None, data_bs=None, **kwargs):
         run_params (dict): Dictionary of parameters used to generate inference
             data.
     """
+    run_params = None
     for run_dir in run_dirs:
-        try:
+        run_params_file = os.path.join(run_dir, 'run_params.pkl')
+        if os.path.isfile(run_params_file):
             new_df, new_df_bs, run_params = get_observables(run_dir, **kwargs)
             if data is None:
                 data = new_df
@@ -358,13 +360,19 @@ def _build_dataframes(run_dirs, data=None, data_bs=None, **kwargs):
                 data_bs = pd.concat(
                     [data_bs, new_df_bs], axis=0
                 ).reset_index(drop=True)
-        except FileNotFoundError:
+        else:
+            run_params = None
             continue
 
     return data, data_bs, run_params
 
 
-def build_dataframes(log_dirs, df_dict=None, df_bs_dict=None, rp_dict=None):
+def build_dataframes(log_dirs,
+                     df_dict=None,
+                     df_bs_dict=None,
+                     rp_dict=None,
+                     filter_str=None,
+                     runs_np=False):
     if df_dict is None:
         df_dict = {}
     if df_bs_dict is None:
@@ -387,7 +395,10 @@ def build_dataframes(log_dirs, df_dict=None, df_bs_dict=None, rp_dict=None):
             frac = 0.25
 
             try:
-                run_dirs = sorted(get_run_dirs(log_dir))[::-1]
+                run_dirs = get_run_dirs(log_dir,
+                                        filter_str=filter_str,
+                                        runs_np=runs_np)
+                run_dirs = sorted(run_dirs)[::-1]
             except FileNotFoundError:
                 continue
 
@@ -480,13 +491,20 @@ def _gridplots(log_dir, data, title_str, fname,
     return g
 
 
-def gridplots(log_dirs, df_dict=None, df_bs_dict=None, rp_dict=None):
+def gridplots(log_dirs,
+              df_dict=None,
+              df_bs_dict=None,
+              rp_dict=None,
+              rootdir=None):
     """Make gridplots for each run_dir in log_dirs."""
     now = datetime.datetime.now()
     day_str = now.strftime('%Y_%m_%d')
     hour_str = now.strftime('%H%M')
     time_str = f'{day_str}_{hour_str}'
-    rootdir = os.path.abspath(f'/home/foremans/cooley_figures/')
+    if rootdir is None:
+        rootdir = os.path.abspath(f'/home/foremans/cooley_figures/')
+
+    io.check_else_make_dir(rootdir)
 
     ticklabelsize = DEFAULT_TICKLABELSIZE
     mpl.rcParams['xtick.labelsize'] = ticklabelsize
@@ -500,11 +518,14 @@ def gridplots(log_dirs, df_dict=None, df_bs_dict=None, rp_dict=None):
     for idx, log_dir in enumerate(keys):
         io.log(f'log_dir: {log_dir}')
         run_params = rp_dict[log_dir]
+        if run_params is None:
+            continue
 
         data = df_dict[log_dir] if df_dict is not None else None
         data_bs = df_bs_dict[log_dir] if df_bs_dict is not None else None
 
         color = colors[idx]
+
         fname, title_str, old_dx = plot_setup(log_dir, run_params, idx=idx)
 
         if data is not None:
