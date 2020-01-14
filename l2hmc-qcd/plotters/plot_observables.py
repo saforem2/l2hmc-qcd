@@ -46,14 +46,18 @@ def plot_charges(charges, out_file=None, title=None, nrows=2, **kwargs):
         charges = charges.T
 
     batch_size, steps = charges.shape
+    nrows = min(nrows, int(np.sqrt(batch_size)))
     N = int(nrows)
 
     figsize = (6.4 * N, 4.8 * N)
     fig, axes = plt.subplots(nrows=N, ncols=N, figsize=figsize)
     for idx, ax in enumerate(axes.flatten()):
-        arr_int = np.around(charges[idx])
-        _ = ax.plot(charges[idx], ls=ls, color=color, lw=lw)
-        _ = ax.plot(arr_int, marker='.', ls='', color='r', zorder=10)
+        try:
+            arr_int = np.around(charges[idx])
+            _ = ax.plot(charges[idx], ls=ls, color=color, lw=lw)
+            _ = ax.plot(arr_int, marker='.', ls='', color='r', zorder=10)
+        except IndexError:
+            import pudb; pudb.set_trace()
 
     if title is not None:
         _ = plt.suptitle(title, fontsize=20, y=1.04)
@@ -74,6 +78,7 @@ def plot_autocorrs(charges, out_file=None, title=None, nrows=4, **kwargs):
         charges = charges.T
 
     batch_size, steps = charges.shape
+    nrows = min(nrows, int(np.sqrt(batch_size)))
     N = int(nrows)
 
     figsize = (6.4 * N, 4.8 * N)
