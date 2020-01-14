@@ -122,7 +122,7 @@ def plot_setup(log_dir, run_params, idx=None):
     train_weights_str = ''.join((str(int(i)) for i in train_weights))
     net_weights = run_params['net_weights']
     net_weights_str = ''.join((str(int(i)) for i in net_weights))
-    nws = '(' + ', '.join((str(i) for i in train_weights_str)) + ')'
+    nws = '(' + ', '.join((str(i) for i in net_weights)) + ')'
 
     date_str = log_dir.split('/')[-2]
     y, m, d = date_str.split('_')
@@ -136,6 +136,8 @@ def plot_setup(log_dir, run_params, idx=None):
     beta = run_params['beta']
     eps = run_params['eps']
     fname = f'lf{lf}'
+    run_steps = run_params['run_steps']
+    fname += f'_steps{run_steps}'
     title_str = (r"$N_{\mathrm{LF}} = $" + f'{lf}, '
                  r"$\beta = $" + f'{beta:.1g}, '
                  r"$\varepsilon = $" + f'{eps:.3g}')
@@ -468,8 +470,10 @@ def _gridplots(log_dir, data, title_str, fname,
     out_file = os.path.join(out_dir, f'{fname}.pdf')
     logdir_id = log_dir.split('/')[-1].split('_')[-1]
     if os.path.isfile(out_file):
+        timestr = io.get_timestr()
+        hour_str = timestr['hour_str']
         id_str = f'{logdir_id}'
-        out_file = os.path.join(out_dir, f'{fname}_{id_str}.pdf')
+        out_file = os.path.join(out_dir, f'{fname}_{id_str}_{hour_str}.pdf')
 
     io.log(f'INFO: Saving figure to: {out_file}')
     plt.savefig(out_file, bbox_inches='tight')
