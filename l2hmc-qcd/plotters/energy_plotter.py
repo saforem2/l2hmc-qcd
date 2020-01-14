@@ -225,7 +225,7 @@ class EnergyPlotter:
                                              title=title,
                                              out_file=hist_file1,
                                              single_chain=True)
-        reset_plots()
+        #  reset_plots()
 
         labels = [r"""$U_{\mathrm{init}}$, """,
                   r"""$U_{\mathrm{proposed}}$, """,
@@ -249,7 +249,7 @@ class EnergyPlotter:
                                         title=title,
                                         out_file=hist_file1,
                                         single_chain=True)
-        reset_plots()
+        #  reset_plots()
         outputs = {
             'diff_plot_data': pe_diff_plot_data,
             'diff_hist_data': pe_diff_hist_data,
@@ -286,7 +286,7 @@ class EnergyPlotter:
                                        out_file=keh_f)
         _, diff_hist_data_sc = self._hist(ke_labels, ke_data, title=title,
                                           out_file=keh_f1, single_chain=True)
-        reset_plots()
+        #  reset_plots()
 
         labels = [r"""$KE_{\mathrm{init}}$, """,
                   r"""$KE_{\mathrm{proposed}}$, """,
@@ -306,7 +306,7 @@ class EnergyPlotter:
                                   title=title, out_file=hist_file)
         _, hist_data_sc = self._hist(labels, data, title=title,
                                      out_file=hist_file1, single_chain=True)
-        reset_plots()
+        #  reset_plots()
 
         outputs = {
             'diff_plot_data': diff_plot_data,
@@ -344,7 +344,7 @@ class EnergyPlotter:
                                        title=title, out_file=hh_f)
         _, diff_hist_data_sc = self._hist(h_labels, h_data, title=title,
                                           out_file=hh_f1, single_chain=True)
-        reset_plots()
+        #  reset_plots()
 
         labels = [r"""$H_{\mathrm{init}}$, """,
                   r"""$H_{\mathrm{proposed}}$, """,
@@ -362,7 +362,7 @@ class EnergyPlotter:
                                   out_file=hist_file)
         _, hist_data_sc = self._hist(labels, data, title=title,
                                      out_file=hist_file1, single_chain=True)
-        reset_plots()
+        #  reset_plots()
         outputs = {
             'diff_plot_data': diff_plot_data,
             'diff_hist_data': diff_hist_data,

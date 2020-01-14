@@ -332,6 +332,7 @@ class Runner:
             samples = np.random.randn(*(batch_size, x_dim))
 
         io.log(self._run_header)
+
         for step in range(self.run_steps):
             out_data, data_str = self.run_step(step, samples)
             samples = out_data['samples']

@@ -267,8 +267,8 @@ def kde_diag_plot(x, **kwargs):
 
 def plot_pts(x, y, **kwargs):
     ax = plt.gca()
-    ax.xaxis.set_major_locator(ticker.MaxNLocator(3))
     _ = ax.plot(x, y, **kwargs)
+    ax.xaxis.set_major_locator(ticker.MaxNLocator(3))
     return ax
 
 

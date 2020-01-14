@@ -6,12 +6,9 @@ Implements method for parsing command line arguments for `gauge_model.py`
 Author: Sam Foreman (github: @saforem2)
 Date: 04/09/2019
 """
-import os
 import sys
 import argparse
 import shlex
-
-import utils.file_io as io
 
 #  from config import process_config
 #  from attr_dict import AttrDict

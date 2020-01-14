@@ -7,6 +7,7 @@ Created: 2/27/2019
 from __future__ import absolute_import, division, print_function
 
 import os
+import datetime
 import time
 import pickle
 import shutil
@@ -40,6 +41,22 @@ def timeit(method):
             log(80 * '-')
         return result
     return timed
+
+
+def get_timestr():
+    """Get formatted time string."""
+    now = datetime.datetime.now()
+    day_str = now.strftime('%Y_%m_%d')
+    hour_str = now.strftime('%H%M')
+    timestr = f'{day_str}_{hour_str}'
+
+    timestrs = {
+        'day_str': day_str,
+        'hour_str': hour_str,
+        'timestr': timestr,
+    }
+
+    return timestrs
 
 
 def load_params(log_dir):

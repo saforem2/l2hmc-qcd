@@ -95,7 +95,7 @@ def calc_hamiltonian(x, v, beta):
 
 
 class GaugeModelPlotter:
-    def __init__(self, params, figs_dir=None, experiment=None):
+    def __init__(self, params, figs_dir=None):
         self.figs_dir = figs_dir
         self.params = params
 
@@ -106,10 +106,6 @@ class GaugeModelPlotter:
         self._plot_plaqs(xy_data['plaqs'], **kwargs)
         self._plot_actions(xy_data['actions'], **kwargs)
         self._plot_accept_probs(xy_data['accept_prob'], **kwargs)
-        #  self._plot_charges(xy_data['charges'], **kwargs)
-        #  self._plot_autocorrs(xy_data['autocorrs'], **kwargs)
-        # xy_data['charges'][1] since we're only concerned with 'y' data
-        #  self._plot_charge_probs(xy_data['charges'][1], **kwargs)
         self._plot_charges_hist(xy_data['charges'][1], **kwargs)
         #  self._plot_charge_diffs(xy_data['charge_diffs'], **kwargs)
         mean_diff = self._plot_plaqs_diffs(xy_data['plaqs_diffs'], **kwargs)
@@ -170,7 +166,7 @@ class GaugeModelPlotter:
         actions = np.array(data['actions'])
         plaqs = np.array(data['plaqs'])
         charges = np.array(data['charges'], dtype=int)
-        charge_autocorrs = np.array(data['charges_autocorrs'])
+        charges_autocorrs = data.get('charges_autocorrs', None)
         plaqs_diffs = plaqs - u1_plaq_exact(beta)
 
         def _stats(data, axis=1):
@@ -184,7 +180,10 @@ class GaugeModelPlotter:
         plaqs_stats = _stats(plaqs[warmup_steps:, :])
         accept_prob_stats = _stats(accept_prob[warmup_steps:, :])
         full_steps_arr = np.arange(num_steps)
-        autocorrs_stats = _stats(charge_autocorrs.T)
+        if charges_autocorrs is not None:
+            autocorrs_stats = _stats(np.array(charge_autocorrs).T)
+        else:
+            autocorrs_stats = None
 
         _plaq_diffs = plaqs_diffs[warmup_steps:]  # [::skip_steps]
         _plaq_diffs_stats = _stats(_plaq_diffs)
@@ -194,9 +193,11 @@ class GaugeModelPlotter:
             'plaqs': (steps_arr, *plaqs_stats),
             'accept_prob': (steps_arr, *accept_prob_stats),
             'charges': (full_steps_arr, charges.T),
-            'autocorrs': (full_steps_arr, *autocorrs_stats),
             'plaqs_diffs': (steps_arr, *_plaq_diffs_stats)
         }
+
+        if autocorrs_stats is not None:
+            xy_data['autocorrs'] = (full_steps_arr, *autocorrs_stats)
 
         return xy_data
 
@@ -204,7 +205,7 @@ class GaugeModelPlotter:
         """Prepare for plotting observables."""
         beta = kwargs.get('beta', 5.)
         run_str = kwargs.get('run_str', None)
-        net_weights = kwargs.get('net_weights', [1., 1., 1.])
+        net_weights = kwargs.get('net_weights', (1, 1, 1, 1, 1, 1))
         dir_append = kwargs.get('dir_append', None)
         eps = kwargs.get('eps', None)
 
