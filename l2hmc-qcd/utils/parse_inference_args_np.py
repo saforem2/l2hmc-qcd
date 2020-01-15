@@ -18,6 +18,28 @@ def parse_args():
                         help=("""log_dir containing `weights.pkl` file of
                               trained models' network weights."""))
 
+    parser.add_argument('--hmc',
+                        dest='hmc',
+                        action='store_true',
+                        required=False,
+                        help=("""Flag that when passed sets all `net_weights`
+                              to 0."""))
+
+    parser.add_argument('--num_steps',
+                        dest='num_steps',
+                        required=False,
+                        default=None,
+                        help=("""Number of leapfrog steps
+                              (i.e. trajectory length)."""))
+
+    parser.add_argument("--batch_size",
+                        dest="batch_size",
+                        type=int,
+                        default=None,
+                        required=False,
+                        help=("""Number of samples (batch size) to use for
+                              training.\n (Default: 20)"""))
+
     parser.add_argument('--eps',
                         dest='eps',
                         type=float,
