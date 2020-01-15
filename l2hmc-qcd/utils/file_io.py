@@ -36,11 +36,18 @@ def copy(src, dst):
         else:
             raise
 
-def copy_gauge_figures(root_dst_dir=None):
+def copy_gauge_figures(root_src_dir=None, root_dst_dir=None):
     """Copy `figures` and `figures_np` from all `log_dirs` to `~`."""
-    root_src_dir = os.path.abspath('/home/foremans/DLHMC/l2hmc-qcd/gauge_logs')
+    if root_src_dir is None:
+        root_src_dir = os.path.abspath('/home/foremans/DLHMC/'
+                                       'l2hmc-qcd/gauge_logs')
     if root_dst_dir is None:
-        root_dst_dir = os.path.abspath('/home/foremans/gauge_logs_figures')
+        dirstr = '/home/foremans/gauge_logs_figures'
+        if os.path.isdir(os.path.abspath(dirstr)):
+            timestr = get_timestr()
+            tstr = timestr['timestr']
+            dirstr += f'_{tstr}'
+            root_dst_dir = os.path.abspath(dirstr)
     for src_dir, _, _ in os.walk(root_src_dir):
         if src_dir.endswith('figures') or src_dir.endswith('figures_np'):
             date_str = src_dir.split('/')[-3]
