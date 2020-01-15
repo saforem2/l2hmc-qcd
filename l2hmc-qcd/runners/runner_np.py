@@ -80,11 +80,18 @@ def _create_lattice(params):
 
 def _get_eps(log_dir):
     """Get the step size `eps` by looking for it in `log_dir` ."""
-    run_dirs = get_run_dirs(log_dir)
-    run_dir = run_dirs[0]
-    rp_file = os.path.join(run_dir, 'run_params.pkl')
-    run_params = load_pkl(rp_file)
-    eps = run_params['eps']
+    try:
+        run_dirs = get_run_dirs(log_dir)
+        run_dir = run_dirs[0]
+        rp_file = os.path.join(run_dir, 'run_params.pkl')
+        run_params = load_pkl(rp_file)
+        eps = run_params['eps']
+    except:
+        try:
+            eps_dict = load_pkl(os.path.join(log_dir, 'eps_np.pkl'))
+            eps = eps_dict['eps']
+        except FileNotFoundError:
+            raise
 
     return eps
 
@@ -92,23 +99,23 @@ def _get_eps(log_dir):
 def _update_params(params, eps=None, num_steps=None, batch_size=None):
     """Update params with new values for `eps`, `num_steps`, `batch_size`."""
     if num_steps is not None:
-        params['num_steps'] = num_steps
+        params['num_steps'] = int(num_steps)
     if batch_size is not None:
-        params['batch_size'] = batch_size
+        params['batch_size'] = int(batch_size)
 
     if eps is None:
         eps = _get_eps(params['log_dir'])
 
-    params['eps'] = eps
+    params['eps'] = float(eps)
 
     return params
 
 
-def create_dynamics(log_dir, eps=None, num_steps=None, batch_size=None):
+def create_dynamics(log_dir, hmc=False, eps=None,
+                    num_steps=None, batch_size=None):
     """Create `DynamicsNP` object for running dynamics imperatively."""
     params_file = os.path.join(log_dir, 'parameters.pkl')
     params = load_pkl(params_file)
-
     params = _update_params(params, eps, num_steps, batch_size)
 
     weights_file = os.path.join(log_dir, 'weights.pkl')
@@ -121,6 +128,7 @@ def create_dynamics(log_dir, eps=None, num_steps=None, batch_size=None):
 
     dynamics = DynamicsRunner(lattice.calc_actions_np,
                               weights=weights,
+                              hmc=hmc,
                               x_dim=lattice.x_dim,
                               eps=params['eps'],
                               num_steps=params['num_steps'],
@@ -128,6 +136,7 @@ def create_dynamics(log_dir, eps=None, num_steps=None, batch_size=None):
                               zero_masks=zero_masks)
 
     return dynamics, lattice
+
 
 # pylint:disable=invalid-name
 def calc_dx(x1, x2):
@@ -172,6 +181,18 @@ def calc_energies(dynamics, x_init, outputs, beta):
 
     return outputs
 
+
+def _check_param(dynamics, param=None):
+    """Check param against it's value as an attribute of `dynamics`."""
+    attr = getattr(dynamics, str(param), None)
+    if param is None:
+        param = attr
+    if param != attr:
+        setattr(dynamics, str(param), param)
+
+    return dynamics, param
+
+
 # pylint: disable=too-many-locals
 def _inference_setup(log_dir, dynamics, run_params, init=None):
     """Setup for inference run."""
@@ -179,23 +200,41 @@ def _inference_setup(log_dir, dynamics, run_params, init=None):
     beta = run_params['beta']
     net_weights = run_params['net_weights']
     eps = run_params.get('eps', None)
+    num_steps = run_params.get('num_steps', None)
     batch_size = dynamics.batch_size
 
-    if eps is None:
-        eps = dynamics.eps
-    if eps != dynamics.eps:
-        dynamics.eps = eps
+    dynamics, batch_size = _check_param(dynamics, batch_size)
+    dynamics, num_steps = _check_param(dynamics, num_steps)
+    dynamics, eps = _check_param(dynamics, eps)
+    run_params.update({
+        'eps': eps,
+        'num_steps': num_steps,
+        'batch_size': batch_size,
+    })
 
-    run_params['eps'] = eps
+    #  if num_steps is None:
+    #      num_steps = dynamics.num_steps
+    #  if num_steps != dynamics.num_steps:
+    #      dynamics.num_steps = num_steps
+    #
+    #  if eps is None:
+    #      eps = dynamics.eps
+    #  if eps != dynamics.eps:
+    #      dynamics.eps = eps
+    #
+    #  run_params['eps'] = eps
+    #  run_params['num_steps'] = num_steps
 
     init = str(init).lower()
     if init == 'rand' or init is None:
+        init = 'rand'
         samples = np.random.randn(batch_size, dynamics.x_dim)
     if init == 'zeros':
         samples = np.zeros(batch_size, dynamics.x_dim)
     if init == 'ones':
         samples = np.ones(batch_size, dynamics.x_dim)
     else:
+        init = 'rand'
         io.log(f'init: {init}\n')
         samples = np.random.randn(batch_size, dynamics.x_dim)
         #  raise ValueError("InvalidArgument: `init` must be one of "
@@ -204,8 +243,12 @@ def _inference_setup(log_dir, dynamics, run_params, init=None):
     nw_str = ''.join((str(int(i)) for i in net_weights))
     beta_str = f'{beta}'.replace('.', '')
     eps_str = f'{eps:.3g}'.replace('.', '')
-    run_str = (f'steps{run_steps}_beta{beta_str}'
-               f'_eps{eps_str}_nw{nw_str}_{init}')
+    run_str = (f'lf{num_steps}_'
+               f'steps{run_steps}_'
+               f'beta{beta_str}_'
+               f'eps{eps_str}_'
+               f'nw{nw_str}_'
+               f'{init}')
 
     runs_dir = os.path.join(log_dir, 'runs_np')
     io.check_else_make_dir(runs_dir)

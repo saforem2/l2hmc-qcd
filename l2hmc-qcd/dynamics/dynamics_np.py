@@ -92,9 +92,12 @@ class GenericNetNP:
 
 class DynamicsRunner:
     """Implements tools for running tensorflow-independent inference."""
-    def __init__(self, potential_fn, weights, **params):
+    def __init__(self, potential_fn, weights, hmc=False, **params):
         self.potential = potential_fn
-        self.xnet, self.vnet = self.build_networks(weights)
+        if hmc:
+            self.xnet, self.vnet = self.hmc_networks()
+        else:
+            self.xnet, self.vnet = self.build_networks(weights)
 
         for key, val in params.items():
             setattr(self, key, val)
@@ -323,6 +326,17 @@ class DynamicsRunner:
         backward_mask = 1. - forward_mask
 
         return forward_mask, backward_mask
+
+    def hmc_networks(self):
+        """Build hmc networks that output all zeros from the S, T, Q fns."""
+        xnet = lambda inputs: [
+            np.zeros_like(inputs[0]) for _ in range(3)
+        ]
+        vnet = lambda inputs: [
+            np.zeros_like(inputs[0]) for _ in range(3)
+        ]
+
+        return xnet, vnet
 
     def build_networks(self, weights):
         if 'xnet' in weights:

@@ -234,24 +234,33 @@ def inference_plots(run_data, energy_data, params, run_params):
 def main(args):
     """Perform tensorflow-independent inference on a trained model."""
     log_dir = os.path.abspath(args.log_dir)
-    dynamics, lattice = create_dynamics(log_dir, args.eps)
-
-    net_weights = NetWeights(x_scale=args.x_scale_weight,
-                             x_translation=args.x_translation_weight,
-                             x_transformation=args.x_transformation_weight,
-                             v_scale=args.v_scale_weight,
-                             v_translation=args.v_translation_weight,
-                             v_transformation=args.v_transformation_weight)
+    dynamics, lattice = create_dynamics(log_dir,
+                                        hmc=args.hmc,
+                                        eps=args.eps,
+                                        num_steps=args.num_steps,
+                                        batch_size=args.batch_size)
+    if args.hmc:
+        net_weights = NetWeights(0, 0, 0, 0, 0, 0)
+    else:
+        net_weights = NetWeights(x_scale=args.x_scale_weight,
+                                 x_translation=args.x_translation_weight,
+                                 x_transformation=args.x_transformation_weight,
+                                 v_scale=args.v_scale_weight,
+                                 v_translation=args.v_translation_weight,
+                                 v_transformation=args.v_transformation_weight)
     run_params = {
         'beta': args.beta,
         'eps': dynamics.eps,
         'net_weights': net_weights,
         'run_steps': args.run_steps,
+        'num_steps': dynamics.num_steps,
+        'batch_size': dynamics.batch_size,
     }
 
     run_params, run_data, energy_data = run_inference_np(log_dir, dynamics,
                                                          lattice, run_params,
                                                          init=args.init)
+
     params = load_pkl(os.path.join(log_dir, 'parameters.pkl'))
     dataset, energy_dataset = inference_plots(run_data, energy_data,
                                               params, run_params)

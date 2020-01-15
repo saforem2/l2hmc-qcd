@@ -177,7 +177,7 @@ def get_lf(log_dir):
 
 def get_observables(run_dir,
                     log_dir=None,
-                    n_boot=500,
+                    n_boot=5000,
                     therm_frac=0.25,
                     nw_include=None,
                     calc_stats=True):
@@ -393,7 +393,7 @@ def build_dataframes(log_dirs,
         else:
             data = None
             data_bs = None
-            n_boot = 1000
+            n_boot = 5000
             frac = 0.25
 
             try:
@@ -565,7 +565,7 @@ def gridplots(log_dirs,
                 out_dir = os.path.join(rootdir, f'pairplots_{time_str}')
                 io.check_else_make_dir(out_dir)
                 try:
-                    g = _gridplots(log_dir, data_, title_str, fname,
+                    _ = _gridplots(log_dir, data_, title_str, fname,
                                    color=color, marker='x',
                                    markeredgewidth=0.4, gridsize=50,
                                    out_dir=out_dir)
@@ -579,8 +579,8 @@ def gridplots(log_dirs,
                 io.check_else_make_dir(out_dir)
                 data_bs_ = data_bs[data_bs.run_dir == run_dir]
                 try:
-                    g_bs = _gridplots(log_dir, data_bs_, title_str, fname,
-                                      color=color, out_dir=out_dir)
+                    _ = _gridplots(log_dir, data_bs_, title_str, fname,
+                                   color=color, out_dir=out_dir)
                 except UnboundLocalError:
                     io.log(f'Unable to create _gridplots for {run_dir}.')
                     continue
