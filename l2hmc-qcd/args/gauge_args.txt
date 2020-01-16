@@ -1,8 +1,8 @@
---time_size 8
---space_size 8
+--time_size 4
+--space_size 4
 --batch_size 64
 --rand
---num_steps 1
+--num_steps 2
 --eps 0.2
 --beta_init 2.
 --beta_final 6.

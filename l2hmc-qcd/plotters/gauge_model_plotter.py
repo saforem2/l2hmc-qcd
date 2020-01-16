@@ -181,7 +181,7 @@ class GaugeModelPlotter:
         accept_prob_stats = _stats(accept_prob[warmup_steps:, :])
         full_steps_arr = np.arange(num_steps)
         if charges_autocorrs is not None:
-            autocorrs_stats = _stats(np.array(charge_autocorrs).T)
+            autocorrs_stats = _stats(np.array(charges_autocorrs).T)
         else:
             autocorrs_stats = None
 
