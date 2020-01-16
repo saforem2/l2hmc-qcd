@@ -11,7 +11,8 @@ import os
 import time
 import pickle
 
-from config import NetWeights
+import config
+from config import NetWeights, Weights
 
 import utils.file_io as io
 
@@ -78,13 +79,32 @@ def _create_lattice(params):
                         batch_size=params['batch_size'])
 
 
+def _load_rp(run_dirs, idx=0):
+    rp_file = os.path.join(run_dirs[idx], 'run_params.pkl')
+    if os.path.isfile(rp_file):
+        run_params = load_pkl(rp_file)
+        return run_params
+    else:
+        idx += 1
+        _load_rp(run_dirs, idx)
+
+
 def _get_eps(log_dir):
     """Get the step size `eps` by looking for it in `log_dir` ."""
     try:
         run_dirs = get_run_dirs(log_dir)
-        run_dir = run_dirs[0]
-        rp_file = os.path.join(run_dir, 'run_params.pkl')
-        run_params = load_pkl(rp_file)
+        rp_file = os.path.join(run_dirs[0], 'run_params.pkl')
+        if os.path.isfile(rp_file):
+            run_params = load_pkl(rp_file)
+        else:
+            rp_file = os.path.join(run_dirs[-1], 'run_params.pkl')
+            if os.path.isfile(rp_file):
+                run_params = load_pkl(rp_file)
+            else:
+                raise FileNotFoundError('Unable to load run_params.')
+        #  run_dir = run_dirs[0]
+        #  rp_file = os.path.join(run_dir, 'run_params.pkl')
+        #  run_params = load_pkl(rp_file)
         eps = run_params['eps']
     except:
         try:
