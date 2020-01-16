@@ -49,3 +49,8 @@ l2hmc-qcd/models/model_testing.py
 *Untitled*
 *.un~*
 *__pycache__*
+*.bak
+*figures*
+*.pkl
+*backup*
+*old*
