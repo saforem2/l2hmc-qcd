@@ -78,8 +78,7 @@ def get_matching_log_dirs(string, root_dir):
     return log_dirs
 
 
-
-def weights_hist(log_dir, weights=None):
+def weights_hist(log_dir, weights=None, init=False):
     if HAS_SEABORN:
         sns.set_palette('bright', 100)
 
@@ -139,7 +138,10 @@ def weights_hist(log_dir, weights=None):
                                     color='C7', histtype='step')
                 _ = ax.set_title(f'{key}/{k1}/{k2}', fontsize='x-large')
                 _ = ax.legend(loc='best')
-                fname = f'{key}_{k1}_{k2}_weights_hist.png'
+                fname = f'{key}_{k1}_{k2}_weights_hist'
+                if init:
+                    fname += f'_init'
+                fname += '.png'
                 out_file = os.path.join(figs_dir, fname)
                 fig.tight_layout()
                 io.log(f'Saving figure to: {out_file}.')
