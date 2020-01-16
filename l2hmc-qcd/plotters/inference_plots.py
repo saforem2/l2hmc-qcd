@@ -18,6 +18,8 @@ import utils.file_io as io
 from .seaborn_plots import plot_setup
 from lattice.lattice import u1_plaq_exact
 
+HEADER = 80 * '-'
+
 
 def therm_arr(arr, therm_frac=0.25):
     num_steps = arr.shape[0]
