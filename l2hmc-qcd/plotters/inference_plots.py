@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 
 import utils.file_io as io
 
-from seaborn_plots import plot_setup
+from .seaborn_plots import plot_setup
 from lattice.lattice import u1_plaq_exact
 
 
