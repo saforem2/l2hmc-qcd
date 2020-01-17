@@ -38,7 +38,17 @@ GAUGE_PARAMS = {                    # default parameters for `GaugeModel`
     'aux_weight': 1.0,
     'charge_weight': 0.0,
     'metric': 'cos_diff',
+    # --------------------- NET WEIGHTS -------------------
+    'x_scale_weight': 1,
+    'x_translation_weight': 1,
+    'x_transformation_weight': 1,
+    'v_scale_weight': 1,
+    'v_translation_weight': 1,
+    'v_transformation_weight': 1,
     #  ------------------- MISC. PARAMS -------------------
+    'log_dir': None,
+    'no_summaries': False,
+    'eps_fixed': False,
     'trace': False,
     'profiler': False,
     'gpu': False,
@@ -52,7 +62,9 @@ GAUGE_PARAMS = {                    # default parameters for `GaugeModel`
     #####################################
     #  'plot': True
     #  'charge_weight_inference': None,
-    #  'save_steps': 2500,
+    'save_steps': 2500,
+    'logging_steps': 2500,
+    'print_steps': 1,
     #  'print_steps': 1,
     #  'logging_steps': 10,
     #  'plot_lf': False,
