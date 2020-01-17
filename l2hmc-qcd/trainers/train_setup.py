@@ -68,8 +68,20 @@ def get_net_weights(model):
             'xnet': _get_net_weights(model.dynamics.xnet, {}),
             'vnet': _get_net_weights(model.dynamics.vnet, {}),
         }
+    xnet = model.dynamics.xnet.generic_net
+    vnet = model.dynamics.vnet.generic_net
+    coeffs = {
+        'xnet': {
+            'coeff_scale': xnet.coeff_scale,
+            'coeff_transformation': xnet.coeff_transformation,
+        },
+        'vnet': {
+            'coeff_scale': vnet.coeff_scale,
+            'coeff_transformation': vnet.coeff_transformation,
+        },
+    }
 
-    return weights
+    return weights, coeffs
 
 
 def create_config(params):

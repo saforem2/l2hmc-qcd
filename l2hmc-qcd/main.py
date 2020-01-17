@@ -39,6 +39,7 @@ import config as cfg
 
 from seed_dict import seeds, vnet_seeds, xnet_seeds
 from collections import namedtuple
+from plotters.plot_utils import weights_hist
 
 import numpy as np
 import tensorflow as tf
@@ -48,12 +49,11 @@ from tensorflow.python.client import timeline  # noqa: F401
 
 import inference
 import utils.file_io as io
-from utils.file_io import timeit
 
-from utils.parse_args import parse_args
 from models.gauge_model import GaugeModel
-from plotters.plot_utils import weights_hist
 from loggers.train_logger import TrainLogger
+from utils.file_io import timeit
+from utils.parse_args import parse_args
 from trainers.trainer import Trainer
 from trainers.train_setup import (check_reversibility, count_trainable_params,
                                   create_config, get_net_weights, train_setup)
@@ -90,6 +90,11 @@ def create_monitored_training_session(**sess_kwargs):
     io.log(f'tf.report_uninitialized_variables() len = {uninited_out}')
 
     return sess
+
+
+def pkl_dump(d, pkl_file):
+    with open(pkl_file, 'wb') as f:
+        pickle.dump(d, f)
 
 
 @timeit
@@ -137,19 +142,20 @@ def train_l2hmc(FLAGS, log_file=None):
     model = GaugeModel(params)
 
     if is_chief:
-        weights = get_net_weights(model)
-        xnet = model.dynamics.xnet.generic_net
-        vnet = model.dynamics.vnet.generic_net
-        coeffs = {
-            'xnet': {
-                'coeff_scale': xnet.coeff_scale,
-                'coeff_transformation': xnet.coeff_transformation,
-            },
-            'vnet': {
-                'coeff_scale': vnet.coeff_scale,
-                'coeff_transformation': vnet.coeff_transformation,
-            },
-        }
+        weights_init, coeffs_init = get_net_weights(model)
+        #  weights = get_net_weights(model)
+        #  xnet = model.dynamics.xnet.generic_net
+        #  vnet = model.dynamics.vnet.generic_net
+        #  coeffs = {
+        #      'xnet': {
+        #          'coeff_scale': xnet.coeff_scale,
+        #          'coeff_transformation': xnet.coeff_transformation,
+        #      },
+        #      'vnet': {
+        #          'coeff_scale': vnet.coeff_scale,
+        #          'coeff_transformation': vnet.coeff_transformation,
+        #      },
+        #  }
         logging_steps = params.get('logging_steps', 10)
         train_logger = TrainLogger(model, log_dir,
                                    logging_steps=logging_steps,
@@ -206,14 +212,26 @@ def train_l2hmc(FLAGS, log_file=None):
         model.dynamics.vnet.generic_net.coeff_transformation.initializer,
     ])
 
+    xcoeffs = sess.run(list(coeffs_init['xnet'].values()))
+    vcoeffs = sess.run(list(coeffs_init['vnet'].values()))
+    weights_init['xnet']['GenericNet'].update({
+        'coeff_scale': xcoeffs[0],
+        'coeff_transformation': xcoeffs[1]
+    })
+    weights_init['vnet']['GenericNet'].update({
+        'coeff_scale': vcoeffs[0],
+        'coeff_transformation': vcoeffs[1]
+    })
+    pkl_dump(weights_init, os.path.join(model.log_dir, 'weights_init.pkl'))
+    weights_hist(log_dir, weights=weights_init, init=True)
+
     masks_file = os.path.join(model.log_dir, 'dynamics_mask.pkl')
     masks_np, masks_inv_np = sess.run([dynamics_masks, dynamics_masks_inv])
     masks_dict = {
         'masks': masks_np,
         'masks_inv': masks_inv_np,
     }
-    with open(masks_file, 'wb') as f:
-        pickle.dump(masks_dict, f)
+    pkl_dump(masks_dict, masks_file)
 
     # Check reversibility and write results out to `.txt` file.
     reverse_file = os.path.join(model.log_dir, 'reversibility_test.txt')
@@ -241,30 +259,30 @@ def train_l2hmc(FLAGS, log_file=None):
         wfile = os.path.join(model.log_dir, 'dynamics_weights.h5')
         model.dynamics.save_weights(wfile)
 
-        weights = get_net_weights(model)
-        xcoeffs = sess.run(list(coeffs['xnet'].values()))
-        vcoeffs = sess.run(list(coeffs['vnet'].values()))
-        weights['xnet']['GenericNet'].update({
+        weights_final, coeffs_final = get_net_weights(model)
+        xcoeffs = sess.run(list(coeffs_final['xnet'].values()))
+        vcoeffs = sess.run(list(coeffs_final['vnet'].values()))
+        weights_final['xnet']['GenericNet'].update({
             'coeff_scale': xcoeffs[0],
             'coeff_transformation': xcoeffs[1]
         })
-        weights['vnet']['GenericNet'].update({
+        weights_final['vnet']['GenericNet'].update({
             'coeff_scale': vcoeffs[0],
             'coeff_transformation': vcoeffs[1]
         })
 
-        _ = weights_hist(model.log_dir, weights=weights)
+        _ = weights_hist(model.log_dir, weights=weights_final, init=False)
 
-        def pkl_dump(d, pkl_file):
-            with open(pkl_file, 'wb') as f:
-                pickle.dump(d, f)
-
-        pkl_dump(weights, os.path.join(model.log_dir, 'weights.pkl'))
+        pkl_dump(weights_final, os.path.join(model.log_dir, 'weights.pkl'))
         pkl_dump(model.params, os.path.join(os.getcwd(), 'params.pkl'))
+        io.save_dict(model.params, os.path.join(os.getcwd()), 'params.pkl')
 
         # Count all trainable paramters and write them (w/ shapes) to txt file
         count_trainable_params(os.path.join(params['log_dir'],
                                             'trainable_params.txt'))
+        eps_np = sess.run(model.dynamics.eps)
+        eps_dict = {'eps': eps_np}
+        pkl_dump(eps_dict, os.path.join(model.log_dir, 'eps_np.pkl'))
 
     # close MonitoredTrainingSession and reset the default graph
     sess.close()
