@@ -319,7 +319,7 @@ def parse_args():
     parser.add_argument("--charge_weight",
                         dest="charge_weight",
                         type=float,
-                        default=1,
+                        default=0,
                         required=False,
                         help=("""Multiplicative factor used to weigh relative
                               strength of top. charge term in loss
