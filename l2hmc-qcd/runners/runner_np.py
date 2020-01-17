@@ -212,9 +212,8 @@ def _check_param(dynamics, param=None):
 
     return dynamics, param
 
-
 # pylint: disable=too-many-locals
-def _inference_setup(log_dir, dynamics, run_params, init=None):
+def _inference_setup(log_dir, dynamics, run_params, init='rand', skip=True):
     """Setup for inference run."""
     run_steps = run_params['run_steps']
     beta = run_params['beta']
@@ -232,19 +231,6 @@ def _inference_setup(log_dir, dynamics, run_params, init=None):
         'batch_size': batch_size,
     })
 
-    #  if num_steps is None:
-    #      num_steps = dynamics.num_steps
-    #  if num_steps != dynamics.num_steps:
-    #      dynamics.num_steps = num_steps
-    #
-    #  if eps is None:
-    #      eps = dynamics.eps
-    #  if eps != dynamics.eps:
-    #      dynamics.eps = eps
-    #
-    #  run_params['eps'] = eps
-    #  run_params['num_steps'] = num_steps
-
     init = str(init).lower()
     if init == 'rand' or init is None:
         init = 'rand'
@@ -257,8 +243,6 @@ def _inference_setup(log_dir, dynamics, run_params, init=None):
         init = 'rand'
         io.log(f'init: {init}\n')
         samples = np.random.randn(batch_size, dynamics.x_dim)
-        #  raise ValueError("InvalidArgument: `init` must be one of "
-        #                   "'rand', 'zeros', or 'ones'.")
 
     nw_str = ''.join((str(int(i)) for i in net_weights))
     beta_str = f'{beta}'.replace('.', '')
@@ -272,120 +256,151 @@ def _inference_setup(log_dir, dynamics, run_params, init=None):
 
     runs_dir = os.path.join(log_dir, 'runs_np')
     io.check_else_make_dir(runs_dir)
+    existing_flag = False
     if os.path.isdir(os.path.join(runs_dir, run_str)):
-        io.log(f'Existing run found! Creating new run_dir...')
-        timestrs = io.get_timestr()
-        run_str += f"_{timestrs['hour_str']}"
+        rd = os.path.join(runs_dir, run_str)
+        rp_file = os.path.join(rd, 'run_params.pkl')
+        rd_file = os.path.join(rd, 'run_data.pkl')
+        ed_file = os.path.join(rd, 'energy_data.pkl')
+        rp_exists = os.path.isfile(rp_file)
+        rd_exists = os.path.isfile(rd_file)
+        ed_exists = os.path.isfile(ed_file)
+        if rp_exists and rd_exists and ed_exists:
+            existing_flag = True
+
+        if not skip:
+            io.log(f'Existing run found! Creating new run_dir...')
+            timestrs = io.get_timestr()
+            run_str += f"_{timestrs['hour_str']}"
 
     run_params['run_str'] = run_str
     run_dir = os.path.join(runs_dir, run_str)
     io.check_else_make_dir(run_dir)
 
-    return samples, run_params, run_dir
+    return samples, run_params, run_dir, existing_flag
 
 
 @timeit
-def run_inference_np(log_dir, dynamics, lattice, run_params, init=None):
+def run_inference_np(log_dir, dynamics, lattice, run_params, **kwargs):
     """Run inference using `dynamics` object."""
-    samples, run_params, run_dir = _inference_setup(log_dir, dynamics,
-                                                    run_params, init=init)
-    samples = np.mod(samples, 2 * np.pi)
-    run_steps = run_params['run_steps']
-    beta = run_params['beta']
-    net_weights = run_params['net_weights']
+    init = kwargs.get('init', 'rand')
+    skip = kwargs.get('skip', True)
+    samples, run_params, run_dir, existing_flag = _inference_setup(log_dir,
+                                                                   dynamics,
+                                                                   run_params,
+                                                                   init=init,
+                                                                   skip=skip)
+    if skip and existing_flag:
+        io.log(f'Existing run found! Loading data...')
+        run_params = load_pkl(os.path.join(run_dir, 'run_params.pkl'))
+        run_data = load_pkl(os.path.join(run_dir, 'run_data.pkl'))
+        energy_data = load_pkl(os.path.join(run_dir, 'energy_data.pkl'))
 
-    run_data = {
-        'plaqs': [],
-        'actions': [],
-        'charges': [],
-        'dxf': [],
-        'dxb': [],
-        'dx': [],
-        'accept_prob': [],
-        'px': [],
-        'mask_f': [],
-        'mask_b': [],
+    else:
+        samples = np.mod(samples, 2 * np.pi)
+        run_steps = run_params['run_steps']
+        beta = run_params['beta']
+        net_weights = run_params['net_weights']
+
+        run_data = {
+            'plaqs': [],
+            'actions': [],
+            'charges': [],
+            'dxf': [],
+            'dxb': [],
+            'dx': [],
+            'accept_prob': [],
+            'px': [],
+            'mask_f': [],
+            'mask_b': [],
+        }
+
+        energy_data = {
+            'potential_init': [],
+            'kinetic_init': [],
+            'hamiltonian_init': [],
+            'potential_proposed': [],
+            'kinetic_proposed': [],
+            'hamiltonian_proposed': [],
+            'potential_out': [],
+            'kinetic_out': [],
+            'hamiltonian_out': [],
+        }
+
+        data_strs = []
+        plaq_exact = u1_plaq_exact(beta)
+
+        start_time = time.time()
+        for step in range(run_steps):
+            if step % 100 == 0:
+                io.log(SEPERATOR)
+                io.log(HEADER)
+                io.log(SEPERATOR)
+
+            t0 = time.time()
+            samples_init = np.mod(samples, 2 * np.pi)
+            output = dynamics.apply_transition(samples, beta, net_weights,
+                                               model_type='GaugeModel')
+            dt = time.time() - t0
+            samples = np.mod(output['x_out'], 2 * np.pi)
+            obs = lattice.calc_observables_np(samples=samples)
+            for k, v in obs.items():
+                try:
+                    run_data[k].append(v)
+                except KeyError:
+                    run_data[k] = [v]
+
+            xf = np.mod(output['xf'], 2*np.pi) * output['mask_f'][:, None]
+            xb = np.mod(output['xb'], 2*np.pi) * output['mask_b'][:, None]
+
+            xf0 = samples_init * output['mask_f'][:, None]
+            xb0 = samples_init * output['mask_b'][:, None]
+
+            dxf = calc_dx(xf0, xf)
+            dxb = calc_dx(xb0, xb)
+            dx = calc_dx(samples_init, samples)
+
+            run_data['dx'].append(dx)
+            run_data['dxf'].append(dxf)
+            run_data['dxb'].append(dxb)
+            run_data['accept_prob'].append(output['accept_prob'])
+
+            plaq_diff = plaq_exact - obs['plaqs']
+
+            edata = calc_energies(dynamics, samples_init, output, beta)
+            for k, v in edata.items():
+                energy_data[k].append(v)
+
+            exp_dH = np.exp(edata['hamiltonian_init'] - edata['hamiltonian_out'])
+            px = output['accept_prob']
+            run_data['px'].append(px)
+
+            data_str = (f"{step:>6g}/{run_steps:<6g} "
+                        f"{dt:^11.4g} "
+                        f"{px.mean():^11.4g} "
+                        f"{dx.mean():^11.4g} "
+                        f"{dxf.mean():^11.4g} "
+                        f"{dxb.mean():^11.4g} "
+                        f"{exp_dH.mean():^11.4g} "
+                        f"{plaq_diff.mean():^11.4g}")
+
+            io.log(data_str)
+            data_strs.append(data_str)
+
+        io.log(HEADER)
+        io.log(f'Time to complete: {time.time() - start_time:.4g}s')
+        io.log(HEADER)
+
+        save_inference_data(run_dir, run_params,
+                            run_data, energy_data, data_strs)
+    outputs = {
+        'run_params': run_params,
+        'run_data': run_data,
+        'energy_data': energy_data,
+        'existing_flag': existing_flag,
     }
 
-    energy_data = {
-        'potential_init': [],
-        'kinetic_init': [],
-        'hamiltonian_init': [],
-        'potential_proposed': [],
-        'kinetic_proposed': [],
-        'hamiltonian_proposed': [],
-        'potential_out': [],
-        'kinetic_out': [],
-        'hamiltonian_out': [],
-    }
-
-    data_strs = []
-    plaq_exact = u1_plaq_exact(beta)
-
-    start_time = time.time()
-    for step in range(run_steps):
-        if step % 100 == 0:
-            io.log(SEPERATOR)
-            io.log(HEADER)
-            io.log(SEPERATOR)
-
-        t0 = time.time()
-        samples_init = np.mod(samples, 2 * np.pi)
-        output = dynamics.apply_transition(samples, beta, net_weights,
-                                           model_type='GaugeModel')
-        dt = time.time() - t0
-        samples = np.mod(output['x_out'], 2 * np.pi)
-        obs = lattice.calc_observables_np(samples=samples)
-        for k, v in obs.items():
-            try:
-                run_data[k].append(v)
-            except KeyError:
-                run_data[k] = [v]
-
-        xf = np.mod(output['xf'], 2*np.pi) * output['mask_f'][:, None]
-        xb = np.mod(output['xb'], 2*np.pi) * output['mask_b'][:, None]
-
-        xf0 = samples_init * output['mask_f'][:, None]
-        xb0 = samples_init * output['mask_b'][:, None]
-
-        dxf = calc_dx(xf0, xf)
-        dxb = calc_dx(xb0, xb)
-        dx = calc_dx(samples_init, samples)
-
-        run_data['dx'].append(dx)
-        run_data['dxf'].append(dxf)
-        run_data['dxb'].append(dxb)
-        run_data['accept_prob'].append(output['accept_prob'])
-
-        plaq_diff = plaq_exact - obs['plaqs']
-
-        edata = calc_energies(dynamics, samples_init, output, beta)
-        for k, v in edata.items():
-            energy_data[k].append(v)
-
-        exp_dH = np.exp(edata['hamiltonian_init'] - edata['hamiltonian_out'])
-        px = output['accept_prob']
-        run_data['px'].append(px)
-
-        data_str = (f"{step:>6g}/{run_steps:<6g} "
-                    f"{dt:^11.4g} "
-                    f"{px.mean():^11.4g} "
-                    f"{dx.mean():^11.4g} "
-                    f"{dxf.mean():^11.4g} "
-                    f"{dxb.mean():^11.4g} "
-                    f"{exp_dH.mean():^11.4g} "
-                    f"{plaq_diff.mean():^11.4g}")
-
-        io.log(data_str)
-        data_strs.append(data_str)
-
-    io.log(HEADER)
-    io.log(f'Time to complete: {time.time() - start_time:.4g}s')
-    io.log(HEADER)
-
-    save_inference_data(run_dir, run_params, run_data, energy_data, data_strs)
-
-    return run_params, run_data, energy_data
+    return outputs
 
 
 def save_inference_data(run_dir, run_params, run_data, energy_data, data_strs):

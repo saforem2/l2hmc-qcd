@@ -160,11 +160,17 @@ def inference_plots(run_data, energy_data, params, run_params):
     fig_dir = os.path.join(figs_dir, run_str)
     io.check_else_make_dir(fig_dir)
 
-    fname, title_str, _ = plot_setup(log_dir, run_params)
+    dataset = None
+    energy_dataset = None
+    try:
+        fname, title_str, _ = plot_setup(log_dir, run_params)
+    except FileNotFoundError:
+        return dataset, energy_dataset
+
     tp_fname = f'{fname}_traceplot'
     etp_fname = f'{fname}_energy_traceplot'
     pp_fname = f'{fname}_posterior'
-    epp_fname = f'{fname}_posterior'
+    epp_fname = f'{fname}_energy_posterior'
     rp_fname = f'{fname}_ridgeplot'
 
     dataset = build_dataset(run_data, run_params)
@@ -254,12 +260,14 @@ def main(args):
         'net_weights': net_weights,
         'run_steps': args.run_steps,
         'num_steps': dynamics.num_steps,
-        'batch_size': dynamics.batch_size,
+        'batch_size': lattice.batch_size,
     }
 
-    run_params, run_data, energy_data = run_inference_np(log_dir, dynamics,
-                                                         lattice, run_params,
-                                                         init=args.init)
+    outputs = run_inference_np(log_dir, dynamics, lattice,
+                               run_params, init=args.init)
+    run_data = outputs['run_data']
+    energy_data = outputs['energy_data']
+    run_params = outputs['run_params']
 
     params = load_pkl(os.path.join(log_dir, 'parameters.pkl'))
     dataset, energy_dataset = inference_plots(run_data, energy_data,
