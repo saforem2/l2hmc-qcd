@@ -25,6 +25,22 @@ try:
 except ImportError:
     HAS_HOROVOD = False
 
+def make_pngs_from_pdfs(rootdir=None):
+    """Use `os.walk` from `rootdir`, creating pngs from all pdfs encountered."""
+    if rootdir is None:
+        rootdir = os.path.abspath('/home/foremans/DLHMC/l2hmc-qcd/gauge_logs')
+    for root, _, files in os.walk(rootdir):
+        fnames = [i.rstrip('.pdf') for i in files if i.endswith('.pdf')]
+        in_files = [os.path.join(root, i) for i in files if i.endswith('.pdf')]
+        if len(in_files) > 1:
+            png_dir = os.path.join(root, 'pngs')
+            check_else_make_dir(png_dir)
+            out_files = [os.path.join(png_dir, f'{i}') for i in fnames]
+            for inf, outf in zip(in_files, out_files):
+                if not os.path.isfile(outf):
+                    log(f'in: {inf} --> out: {outf}\n')
+                    os.system(f'~/bin/pdftopng {inf} {outf}')
+
 
 def copy(src, dst):
     """Copy from src --> dst using `shutil.copytree`."""
