@@ -123,10 +123,11 @@ class Trainer:
             outputs['x_out'] = np.mod(outputs['x_out'], 2 * np.pi)
             outputs['dx'] = np.mean(outputs['x_out'] - samples, axis=-1)
             outputs['plaq_exact'] = u1_plaq_exact(beta)
+            plaq_diff = u1_plaq_exact(beta) - outputs['plaqs']
             data_str += (
                 f"{np.mean(outputs['actions']):^9.4g} "
-                f"{np.mean(outputs['plaqs']):^9.4g} "
-                f"{outputs['plaq_exact']:^9.4g}"
+                f"{np.mean(plaq_diff):^9.4g} "
+                #  f"{outputs['plaq_exact']:^9.4g}"
             )
 
         return outputs, data_str

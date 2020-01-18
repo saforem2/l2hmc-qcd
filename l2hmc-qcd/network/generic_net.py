@@ -44,7 +44,7 @@ class GenericNet(tf.keras.Model):
         self.activation = kwargs.get('generic_activation', tf.nn.relu)
         net_seeds = kwargs.get('net_seeds', None)
 
-        with tf.name_scope(self.name_scope):
+        with tf.name_scope(self.net_name):
             self.coeff_scale = tf.Variable(
                 initial_value=tf.zeros([1, self.x_dim], dtype=TF_FLOAT),
                 name='coeff_scale',

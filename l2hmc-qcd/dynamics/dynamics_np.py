@@ -33,12 +33,14 @@ State = cfg.State
 Weights = namedtuple('Weights', ['w', 'b'])
 NP_FLOAT = cfg.NP_FLOAT
 
+
 def relu(x):
+    """Rectified Linear Unit Activation Function."""
     return np.where(x >= 0, x, 0)
 
 
-
 def linear(x):
+    """Linear activation function. Simply returns `x`."""
     return x
 
 

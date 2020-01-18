@@ -175,11 +175,11 @@ class Dynamics(tf.keras.Model):
 
         else:
             net_params['factor'] = 2.
-            net_params['name_scope'] = 'x'
+            net_params['net_name'] = 'x'
             x_fn = FullNet(model_name='XNet', **net_params)
 
             net_params['factor'] = 1.       # factor used in orig. paper
-            net_params['name_scope'] = 'v'  # update name scope
+            net_params['net_name'] = 'v'  # update name scope
             v_fn = FullNet(model_name='VNet', **net_params)
 
         return x_fn, v_fn

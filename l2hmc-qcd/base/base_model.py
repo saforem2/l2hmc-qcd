@@ -91,7 +91,10 @@ class BaseModel(object):
         self.use_gaussian_loss = getattr(self, 'use_gaussian_loss', False)
         self.use_nnehmc_loss = getattr(self, 'use_nnehmc_loss', False)
 
-        self.eps_trainable = not self.eps_fixed
+        self.hmc = getattr(self, 'hmc', False)
+
+        eps_fixed = getattr(self, 'eps_fixed', False)
+        self.eps_trainable = not eps_fixed
         self.global_step = self._create_global_step()
 
         warmup = self.params.get('warmup_lr', False)
@@ -294,7 +297,7 @@ class BaseModel(object):
                 'model_type': getattr(self, 'model_type', None),
             }
 
-            x_dynamics = self.dynamics(*args, **kwargs)
+            x_dynamics = self.dynamics.apply_transition(*args, **kwargs)
 
             x_data = LFdata(x_dynamics['x_init'],
                             x_dynamics['x_proposed'],
@@ -319,7 +322,7 @@ class BaseModel(object):
                 }
 
                 #  z_dynamics = self.dynamics.apply_transition(*args, **kwargs)
-                z_dynamics = self.dynamics(*args, **kwargs)
+                z_dynamics = self.dynamics.apply_transition(*args, **kwargs)
 
                 z_data = LFdata(z_dynamics['x_init'],
                                 z_dynamics['x_proposed'],
@@ -341,7 +344,7 @@ class BaseModel(object):
                 k: getattr(self, k, None) for k in keys
             }
             kwargs.update({
-                'eps_trainable': not self.eps_fixed,
+                'eps_trainable': not getattr(self, 'eps_fixed', False),
                 'x_dim': self.x_dim,
                 'batch_size': self.batch_size,
                 '_input_shape': self.x.shape
