@@ -18,6 +18,9 @@ GAUGE_PARAMS = {                    # default parameters for `GaugeModel`
     'lr_decay_rate': 0.96,
     'warmup_lr': False,
     'train_steps': 5000,
+    'save_steps': 2500,
+    'logging_steps': 2500,
+    'print_steps': 1,
     #  ------------------- NETWORK PARAMS -------------------
     'network_arch': 'generic',
     #  'data_format': 'channels_last',
@@ -62,9 +65,6 @@ GAUGE_PARAMS = {                    # default parameters for `GaugeModel`
     #####################################
     #  'plot': True
     #  'charge_weight_inference': None,
-    'save_steps': 2500,
-    'logging_steps': 2500,
-    'print_steps': 1,
     #  'print_steps': 1,
     #  'logging_steps': 10,
     #  'plot_lf': False,

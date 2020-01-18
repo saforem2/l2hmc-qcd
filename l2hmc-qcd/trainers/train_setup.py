@@ -205,6 +205,7 @@ def train_setup(FLAGS, log_file=None, root_dir=None,
     except AttributeError:
         FLAGS_DICT = FLAGS
 
+    #  params = FLAGS_DICT.copy()
     params = {k: v for k, v in FLAGS_DICT.items()}
 
     params['log_dir'] = io.create_log_dir(FLAGS,
@@ -213,8 +214,8 @@ def train_setup(FLAGS, log_file=None, root_dir=None,
                                           run_str=run_str,
                                           model_type=model_type)
     params['summaries'] = not getattr(FLAGS, 'no_summaries', False)
-    save_steps = getattr(FLAGS, 'save_steps', None)
-    train_steps = getattr(FLAGS, 'train_steps', None)
+    save_steps = getattr(FLAGS, 'save_steps', 1000)
+    train_steps = getattr(FLAGS, 'train_steps', 5000)
 
     if 'no_summaries' in params:
         del params['no_summaries']

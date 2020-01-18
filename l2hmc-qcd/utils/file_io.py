@@ -187,26 +187,26 @@ def _parse_gauge_flags(FLAGS):
         except (NameError, AttributeError):
             pass
     d = {
-        'LX': flags_dict.get('space_size', None),
-        'BS': flags_dict.get('batch_size', None),
-        'LF': flags_dict.get('num_steps', None),
-        'SS': flags_dict.get('eps', None),
+        'LX': flags_dict.get('space_size', 8),
+        'BS': flags_dict.get('batch_size', 64),
+        'LF': flags_dict.get('num_steps', 1),
+        'SS': flags_dict.get('eps', 0.1),
         'EF': flags_dict.get('eps_fixed', False),
-        'QW': flags_dict.get('charge_weight', None),
-        'NA': flags_dict.get('network_arch', None),
-        'BN': flags_dict.get('use_bn', None),
-        'DP': flags_dict.get('dropout_prob', None),
-        'AW': flags_dict.get('aux_weight', None),
-        'XS': flags_dict.get('x_scale_weight', None),
-        'XT': flags_dict.get('x_translation_weight', None),
-        'XQ': flags_dict.get('x_transformation_weight', None),
-        'VS': flags_dict.get('v_scale_weight', None),
-        'VT': flags_dict.get('v_translation_weight', None),
-        'VQ': flags_dict.get('v_transformation_weight', None),
-        'GL': flags_dict.get('use_gaussian_loss', None),
-        'NL': flags_dict.get('use_nnehmc_loss', None),
-        'CV': flags_dict.get('clip_value', None),
-        'hmc': flags_dict.get('hmc', None),
+        'QW': flags_dict.get('charge_weight', 0),
+        'NA': flags_dict.get('network_arch', 'generic'),
+        'BN': flags_dict.get('use_bn', False),
+        'DP': flags_dict.get('dropout_prob', 0),
+        'AW': flags_dict.get('aux_weight', 1),
+        'XS': flags_dict.get('x_scale_weight', 1),
+        'XT': flags_dict.get('x_translation_weight', 1),
+        'XQ': flags_dict.get('x_transformation_weight', 1),
+        'VS': flags_dict.get('v_scale_weight', 1),
+        'VT': flags_dict.get('v_translation_weight', 1),
+        'VQ': flags_dict.get('v_transformation_weight', 1),
+        'GL': flags_dict.get('use_gaussian_loss', False),
+        'NL': flags_dict.get('use_nnehmc_loss', False),
+        'CV': flags_dict.get('clip_value', 0),
+        'hmc': flags_dict.get('hmc', False),
     }
     try:
         _log_dir = flags_dict['log_dir']
@@ -225,7 +225,7 @@ def _parse_gauge_flags(FLAGS):
     d['VT'] = str(int(d['VT'])).replace('.', '')
     d['VQ'] = str(int(d['VQ'])).replace('.', '')
 
-    if flags_dict['hmc']:
+    if flags_dict.get('hmc', False):
         run_str = (f"HMC_lattice{d['LX']}_batch{d['BS']}"
                    "_lf{d['LF']}_eps{d['SS']:.3g}")
     else:

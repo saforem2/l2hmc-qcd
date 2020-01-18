@@ -123,7 +123,7 @@ class GaugeModel(BaseModel):
         potential_fn = self.lattice.get_potential_fn(samples)
 
         kwargs = {
-            'eps_trainable': not self.eps_fixed,
+            'eps_trainable': not getattr(self, 'eps_fixed', False),
             'num_filters': self.lattice.space_size,
             'x_dim': self.lattice.num_links,
             'batch_size': self.batch_size,

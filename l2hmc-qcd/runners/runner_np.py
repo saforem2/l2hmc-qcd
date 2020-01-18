@@ -371,7 +371,8 @@ def run_inference_np(log_dir, dynamics, lattice, run_params, **kwargs):
             for k, v in edata.items():
                 energy_data[k].append(v)
 
-            exp_dH = np.exp(edata['hamiltonian_init'] - edata['hamiltonian_out'])
+            exp_dH = np.exp(edata['hamiltonian_init']
+                            - edata['hamiltonian_out'])
             px = output['accept_prob']
             run_data['px'].append(px)
 

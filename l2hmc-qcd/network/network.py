@@ -45,25 +45,25 @@ class FullNet(tf.keras.Model):
             kwargs['net_seeds'] = vnet_seeds
 
         with tf.name_scope(model_name):
-            kwargs['name_scope'] = 'ConvNetX'
+            kwargs['net_name'] = 'ConvNetX'
             network_arch = kwargs.get('network_arch', 'conv3D')
 
             if network_arch == 'conv2D':
                 self.x_conv_net = ConvNet2D('ConvNet2Dx', **kwargs)
 
-                kwargs['name_scope'] = 'ConvNetV'
+                kwargs['net_name'] = 'ConvNetV'
                 self.v_conv_net = ConvNet2D('ConvNet2Dv', **kwargs)
 
             elif network_arch == 'conv3D':
                 self.x_conv_net = ConvNet3D('ConvNet3Dx', **kwargs)
 
-                kwargs['name_scope'] = 'ConvNetV'
+                kwargs['net_name'] = 'ConvNetV'
                 self.v_conv_net = ConvNet3D('ConvNet3Dv', **kwargs)
 
             else:
                 self.x_conv_net = self.v_conv_net = None
 
-            kwargs['name_scope'] = generic_name_scope
+            kwargs['net_name'] = generic_name_scope
             self.generic_net = GenericNet("GenericNet", **kwargs)
 
     def call(self, inputs, train_phase):
