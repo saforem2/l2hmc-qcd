@@ -33,9 +33,6 @@ sns.set_palette('bright')
 mplstyle.use('fast')
 #  ticklabelsize = 14
 DEFAULT_TICKLABELSIZE = mpl.rcParams['xtick.labelsize']
-#  mpl.rcParams['xtick.labelsize'] = ticklabelsize
-#  mpl.rcParams['ytick.labelsize'] = ticklabelsize
-colors = COLORS
 
 def infer_cmap(color, palette='bright'):
     hues = sns.color_palette(palette)
@@ -69,12 +66,14 @@ def _kdeplot(x, y, **kwargs):
 
 
 def kde_diag_plot(x, **kwargs):
+    """Create KDE histogram along diagonal for `sns.GridPlot`."""
     ax = sns.kdeplot(x, **kwargs)
     ax.xaxis.set_major_locator(ticker.MaxNLocator(3))
     return ax
 
 
 def plot_pts(x, y, **kwargs):
+    """Make scatter plot of points."""
     ax = plt.gca()
     ax.xaxis.set_major_locator(ticker.MaxNLocator(3))
     if len(x) > 5000:
@@ -82,6 +81,7 @@ def plot_pts(x, y, **kwargs):
     if len(y) > 5000:
         y = y[:5000]
     _ = ax.plot(x, y, **kwargs)
+    plt.xticks(ticks=ax.get_xticks(), rotation=30, ha='center', va='top')
     return ax
 
 
@@ -112,8 +112,7 @@ def get_train_weights(params):
 
 
 def plot_setup(log_dir, run_params, idx=None):
-    #  now = datetime.datetime.now()
-    #  hourstr = now.strftime('%H%M')
+    """Setup for plotting. Creates `filename` and `title_str`."""
     params = load_pkl(os.path.join(log_dir, 'parameters.pkl'))
     lf = params['num_steps']
     clip_value = params.get('clip_value', 0)
@@ -224,7 +223,8 @@ def get_observables(run_dir,
         print(f'INFO:Skipping! nw: {net_weights}, avg_px: {avg_px:.3g}')
         return None, None, run_params
 
-    io.log(f'Loading data for net_weights: {net_weights}')
+    io.log(f'Loading data for net_weights: {net_weights}...')
+    io.log(f'  run_dir: {run_dir}')
 
     def load_sqz(fname):
         data = load_pkl(os.path.join(observables_dir, fname))
@@ -436,6 +436,8 @@ def _gridplots(log_dir, data, title_str, fname,
     if hasattr(data, 'dxf'):
         _vars += ['dxf']
 
+    upper_map = kwargs.get('upper_map', None)
+
     g = sns.PairGrid(data,
                      hue='net_weights',
                      palette='bright',
@@ -449,15 +451,25 @@ def _gridplots(log_dir, data, title_str, fname,
 
     if combined:
         g = g.map_diag(sns.kdeplot, shade=True)
-        g = g.map_upper(kde_color_plot, shade=False, gridsize=gridsize)
+        if upper_map == 'scatter':
+            g = g.map_upper(plot_pts, ls='', marker='+',
+                            markeredgewidth=0.4, rasterized=True)
+            marker = 'o'
+        else:
+            g = g.map_upper(kde_color_plot, shade=False, gridsize=gridsize)
         g = g.map_lower(plot_pts, ls='', marker=marker,
                         markeredgewidth=markeredgewidth,
                         rasterized=True, alpha=alpha)
     else:
         cmap = sns.light_palette(color, as_cmap=True)
         g = g.map_diag(sns.kdeplot, shade=True, color=color)
-        g = g.map_upper(sns.kdeplot, cmap=cmap, shade=True,
-                        gridsize=100, shade_lowest=False)
+        if upper_map == 'scatter':
+            g = g.map_upper(plot_pts, ls='', marker='+',
+                            markeredgewidth=0.4, rasterized=True)
+            marker = 'o'
+        else:
+            g = g.map_upper(sns.kdeplot, cmap=cmap, shade=True,
+                            gridsize=100, shade_lowest=False)
         g = g.map_lower(plot_pts, color=color, ls='', marker=marker,
                         rasterized=True, alpha=alpha)
 
@@ -503,6 +515,8 @@ def gridplots(log_dirs,
     ticklabelsize = DEFAULT_TICKLABELSIZE
     mpl.rcParams['xtick.labelsize'] = ticklabelsize
     mpl.rcParams['ytick.labelsize'] = ticklabelsize
+    mpl.rcParams['axes.labelsize'] = 'large'
+    mpl.rcParams['axes.formatter.min_exponent'] = 2
 
     if df_dict is None and df_bs_dict is None and rp_dict is None:
         df_dict, df_bs_dict, rp_dict = build_dataframes(log_dirs)
@@ -530,7 +544,8 @@ def gridplots(log_dirs,
                                         title_str, fname,
                                         color=None, combined=True,
                                         marker='x', markeredgewidth=0.4,
-                                        gridsize=50, out_dir=out_dir)
+                                        upper_map='scatter', gridsize=50,
+                                        out_dir=out_dir)
             except UnboundLocalError:
                 io.log(f'Unable to create _gridplots for {log_dir}.')
                 continue
@@ -683,13 +698,20 @@ def _violinplots(data, axes, has_dx, has_dxf,
     return axes
 
 
-def violinplots(log_dirs, df_dict=None, df_bs_dict=None, rp_dict=None):
+def violinplots(log_dirs,
+                df_dict=None,
+                df_bs_dict=None,
+                rp_dict=None,
+                rootdir=None):
     """Make violinplots for each log_dir in log_dirs."""
     now = datetime.datetime.now()
     day_str = now.strftime('%Y_%m_%d')
     hour_str = now.strftime('%H%M')
     time_str = f'{day_str}_{hour_str}'
-    rootdir = os.path.abspath('f/home/foremans/cooley_figures/')
+    if rootdir is None:
+        proj_dir = os.path.dirname(PROJECT_DIR)
+        rootdir = os.path.join(proj_dir, 'cooley_figures')
+
     out_dir = os.path.join(rootdir, f'violinplots_{time_str}')
     io.check_else_make_dir(out_dir)
     #  fontsize=14
