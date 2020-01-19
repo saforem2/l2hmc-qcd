@@ -16,7 +16,8 @@ import config as cfg
 from collections import namedtuple
 
 from utils.file_io import timeit  # noqa: F401
-from network.activation_functions import ReLU
+from network.generic_net_np import GenericNetNP
+
 
 HAS_AUTOGRAD = False
 try:
@@ -32,64 +33,6 @@ except ImportError:
 State = cfg.State
 Weights = namedtuple('Weights', ['w', 'b'])
 NP_FLOAT = cfg.NP_FLOAT
-
-
-def relu(x):
-    """Rectified Linear Unit Activation Function."""
-    return np.where(x >= 0, x, 0)
-
-
-def linear(x):
-    """Linear activation function. Simply returns `x`."""
-    return x
-
-
-class DenseLayerNP:
-    """Implements fully-connected Dense layer using numpy."""
-    def __init__(self, weights, activation=linear):
-        self.activation = activation
-        self.weights = weights
-        self.w = weights.w
-        self.b = weights.b
-
-    def __call__(self, x):
-        return self.activation(np.dot(x, self.w) + self.b)
-
-
-class GenericNetNP:
-    def __init__(self, weights, name=None, activation=relu):
-        self.name = name
-        self.activation = activation
-        self.x_layer = DenseLayerNP(weights['x_layer'])
-        self.v_layer = DenseLayerNP(weights['v_layer'])
-        self.t_layer = DenseLayerNP(weights['t_layer'])
-        self.h_layer = DenseLayerNP(weights['h_layer'])
-        self.scale_layer = DenseLayerNP(weights['scale_layer'])
-
-        transl_weight = weights['translation_layer']
-        transf_weight = weights['transformation_layer']
-        self.translation_layer = DenseLayerNP(transl_weight)
-        self.transformation_layer = DenseLayerNP(transf_weight)
-
-        self.coeff_scale = weights['coeff_scale']
-        self.coeff_transformation = weights['coeff_transformation']
-
-    def __call__(self, inputs):
-        v, x, t = inputs
-        v = self.v_layer(v)
-        x = self.x_layer(x)
-        t = self.t_layer(t)
-        h = self.activation(v + x + t)
-        h = self.activation(self.h_layer(h))
-
-        S = np.tanh(self.scale_layer(h))
-        Q = np.tanh(self.transformation_layer(h))
-
-        scale = S * np.exp(self.coeff_scale)
-        translation = self.translation_layer(h)
-        transformation = Q * np.exp(self.coeff_transformation)
-
-        return scale, translation, transformation
 
 
 class DynamicsRunner:
@@ -113,18 +56,87 @@ class DynamicsRunner:
     def __call__(self, *args, **kwargs):
         return self.apply_transition(*args, **kwargs)
 
-    def apply_transition(self, x_init, beta, net_weights, model_type=None):
+    def transition_forward(self, x, beta, net_weights,
+                           v=None, model_type=None):
+        """Propose a new state by running the transition kernel forward.
+
+        Args:
+            x (array-like): Input samples.
+            beta (float): Inverse temperature (gauge coupling constant).
+            net_weights (NetWeights): Tuple of net weights for scaling the
+                network functions.
+            model_type (str): String specifying the type of model.
+
+        Returns:
+            outputs (dict): Dictionary containing the outputs.
+        """
+        if model_type == 'GaugeModel':
+            x = np.mod(x, 2 * np.pi)
+
+        if v is None:
+            v = np.random.normal(size=x.shape)
+        state_init = cfg.State(x, v, beta)
+        xf, vf, pxf, sumlogdetf = self.transition_kernel(*state_init,
+                                                         net_weights,
+                                                         forward=True)
+        mask_a, mask_r = self._get_accept_masks(pxf)
+        x_out = xf * mask_a[:, None] + x * mask_r[:, None]
+        v_out = vf * mask_a[:, None] + v * mask_r[:, None]
+        sumlogdet_out = sumlogdetf * mask_a
+
+        outputs = {
+            'x_init': x,
+            'v_init': v,
+            'x_proposed': xf,
+            'v_proposed': vf,
+            'x_out': x_out,
+            'v_out': v_out,
+            'sumlogdet_out': sumlogdet_out,
+        }
+
+        return outputs
+
+    def transition_backward(self, x, beta, net_weights,
+                            v=None, model_type=None):
+        """Propose a new state by running the transition kernel backward."""
+        if model_type == 'GaugeModel':
+            x = np.mod(x, 2 * np.pi)
+        if v is None:
+            v = np.random.normal(size=x.shape)
+        state_init = cfg.State(x, v, beta)
+        xb, vb, pxb, sumlogdetb = self.transition_kernel(*state_init,
+                                                         net_weights,
+                                                         forward=False)
+        mask_a, mask_r = self._get_accept_masks(pxb)
+        x_out = xb * mask_a[:, None] + x * mask_r[:, None]
+        v_out = vb * mask_a[:, None] + v * mask_r[:, None]
+        sumlogdet_out = sumlogdetb * mask_a
+
+        outputs = {
+            'x_init': x,
+            'v_init': v,
+            'x_proposed': xb,
+            'v_proposed': vb,
+            'x_out': x_out,
+            'v_out': v_out,
+            'sumlogdet_out': sumlogdet_out
+        }
+
+        return outputs
+
+
+    def apply_transition(self, x, beta, net_weights, model_type=None):
         """Propose a new state and perform the accept/reject step."""
         if model_type == 'GaugeModel':
-            x_init = np.mod(x_init, 2 * np.pi)
+            x = np.mod(x, 2 * np.pi)
 
-        vf_init = np.random.normal(size=x_init.shape)
-        state_init_f = cfg.State(x_init, vf_init, beta)
+        vf_init = np.random.normal(size=x.shape)
+        state_init_f = cfg.State(x, vf_init, beta)
         xf, vf, pxf, sumlogdetf = self.transition_kernel(*state_init_f,
                                                          net_weights,
                                                          forward=True)
-        vb_init = np.random.normal(size=x_init.shape)
-        state_init_b = cfg.State(x_init, vb_init, beta)
+        vb_init = np.random.normal(size=x.shape)
+        state_init_b = cfg.State(x, vb_init, beta)
         xb, vb, pxb, sumlogdetb = self.transition_kernel(*state_init_b,
                                                          net_weights,
                                                          forward=False)
@@ -140,12 +152,12 @@ class DynamicsRunner:
         sumlogdet_prop = sumlogdetf * mask_f + sumlogdetb * mask_b
 
         mask_a, mask_r = self._get_accept_masks(accept_prob)
-        x_out = x_prop * mask_a[:, None] + x_init * mask_r[:, None]
+        x_out = x_prop * mask_a[:, None] + x * mask_r[:, None]
         v_out = v_prop * mask_a[:, None] + v_init * mask_r[:, None]
         sumlogdet_out = sumlogdet_prop * mask_a
 
         outputs = {
-            'x_init': x_init,
+            'x_init': x,
             'v_init': v_init,
             'x_proposed': x_prop,
             'v_proposed': v_prop,
@@ -255,7 +267,7 @@ class DynamicsRunner:
 
         y = x * np.exp(scale) + self.eps * (v * np.exp(transf) + transl)
         xf = mask * x + mask_inv * y
-        logdet = np.sum(mask_inv * scale)
+        logdet = np.sum(mask_inv * scale, axis=1)
 
         return xf, logdet
 
@@ -315,9 +327,10 @@ class DynamicsRunner:
 
         return t
 
-    def _get_accept_masks(self, accept_prob):
-        rand_unif = np.random.uniform(size=accept_prob.shape)
-        accept_mask = np.array(accept_prob > rand_unif, dtype=NP_FLOAT)
+    def _get_accept_masks(self, accept_prob, accept_mask=None):
+        if accept_mask is None:
+            rand_unif = np.random.uniform(size=accept_prob.shape)
+            accept_mask = np.array(accept_prob > rand_unif, dtype=NP_FLOAT)
         reject_mask = 1. - accept_mask
 
         return accept_mask, reject_mask
@@ -329,6 +342,10 @@ class DynamicsRunner:
 
         return forward_mask, backward_mask
 
+    def _set_direction_masks(self, forward_mask):
+        """Set direction masks using `forward_mask`."""
+        self.forward_mask = forward_mask
+        self.backward_mask = 1. - forward_mask
     def hmc_networks(self):
         """Build hmc networks that output all zeros from the S, T, Q fns."""
         xnet = lambda inputs: [
@@ -365,6 +382,10 @@ class DynamicsRunner:
             masks.append(mask[None, :])
 
         return masks
+
+    def _set_masks(self, masks):
+        """Set `self.masks` to `masks`."""
+        self.masks = masks
 
     def _get_mask(self, step):
         m = self.masks[step]
