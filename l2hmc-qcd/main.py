@@ -142,7 +142,7 @@ def train_l2hmc(FLAGS, log_file=None):
     model = GaugeModel(params)
 
     if is_chief:
-        weights_init, coeffs_init = get_net_weights(model)
+        #  weights_init, coeffs_init = get_net_weights(model, sess)
         #  weights = get_net_weights(model)
         #  xnet = model.dynamics.xnet.generic_net
         #  vnet = model.dynamics.vnet.generic_net
@@ -212,18 +212,18 @@ def train_l2hmc(FLAGS, log_file=None):
         model.dynamics.vnet.generic_net.coeff_transformation.initializer,
     ])
 
-    xcoeffs = sess.run(list(coeffs_init['xnet'].values()))
-    vcoeffs = sess.run(list(coeffs_init['vnet'].values()))
-    weights_init['xnet']['GenericNet'].update({
-        'coeff_scale': xcoeffs[0],
-        'coeff_transformation': xcoeffs[1]
-    })
-    weights_init['vnet']['GenericNet'].update({
-        'coeff_scale': vcoeffs[0],
-        'coeff_transformation': vcoeffs[1]
-    })
-    pkl_dump(weights_init, os.path.join(model.log_dir, 'weights_init.pkl'))
-    weights_hist(log_dir, weights=weights_init, init=True)
+    #  xcoeffs = sess.run(list(coeffs_init['xnet'].values()))
+    #  vcoeffs = sess.run(list(coeffs_init['vnet'].values()))
+    #  weights_init['xnet']['GenericNet'].update({
+    #      'coeff_scale': xcoeffs[0],
+    #      'coeff_transformation': xcoeffs[1]
+    #  })
+    #  weights_init['vnet']['GenericNet'].update({
+    #      'coeff_scale': vcoeffs[0],
+    #      'coeff_transformation': vcoeffs[1]
+    #  })
+    #  pkl_dump(weights_init, os.path.join(model.log_dir, 'weights_init.pkl'))
+    #  weights_hist(log_dir, weights=weights_init, init=True)
 
     masks_file = os.path.join(model.log_dir, 'dynamics_mask.pkl')
     masks_np, masks_inv_np = sess.run([dynamics_masks, dynamics_masks_inv])
@@ -256,10 +256,10 @@ def train_l2hmc(FLAGS, log_file=None):
     check_reversibility(model, sess, out_file=reverse_file)
 
     if is_chief:
-        wfile = os.path.join(model.log_dir, 'dynamics_weights.h5')
-        model.dynamics.save_weights(wfile)
+        #wfile = os.path.join(model.log_dir, 'dynamics_weights.h5')
+        #model.dynamics.save_weights(wfile)
 
-        weights_final, coeffs_final = get_net_weights(model)
+        weights_final, coeffs_final = get_net_weights(model, sess)
         xcoeffs = sess.run(list(coeffs_final['xnet'].values()))
         vcoeffs = sess.run(list(coeffs_final['vnet'].values()))
         weights_final['xnet']['GenericNet'].update({

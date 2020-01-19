@@ -39,34 +39,40 @@ def set_global_step(sess, global_step):
     io.log(f'INFO: New value of `global_step`: {global_step_np}')
 
 
-def _get_net_weights(net, weights):
+def _get_net_weights(net, weights, sess):
     for layer in net.layers:
         if hasattr(layer, 'layers'):
-            weights = _get_net_weights(layer, weights)
+            weights = _get_net_weights(layer, weights, sess)
         else:
             try:
+                w, b = sess.run(layer.weights)
                 weights[net.name].update({
-                    layer.name: Weights(*layer.get_weights())
+                    layer.name: Weights(w=w, b=b)
                 })
+                #  weights[net.name].update({
+                #      layer.name: Weights(*layer.get_weights())
+                #  })
             except KeyError:
+                w, b = sess.run(layer.weights)
                 weights.update({
                     net.name: {
-                        layer.name: Weights(*layer.get_weights())
+                        layer.name: Weights(w=w, b=b)
                     }
                 })
+                #  weights.update({
+                #      net.name: {
+                #          layer.name: Weights(*layer.get_weights())
+                #      }
+                #  })
 
     return weights
 
 
-def get_coeffs(generic_net):
-    return (generic_net.coeff_scale, generic_net.coeff_transformation)
-
-
-def get_net_weights(model):
+def get_net_weights(model, sess):
     with tf.name_scope('model_weights'):
         weights = {
-            'xnet': _get_net_weights(model.dynamics.xnet, {}),
-            'vnet': _get_net_weights(model.dynamics.vnet, {}),
+            'xnet': _get_net_weights(model.dynamics.xnet, {}, sess),
+            'vnet': _get_net_weights(model.dynamics.vnet, {}, sess),
         }
     xnet = model.dynamics.xnet.generic_net
     vnet = model.dynamics.vnet.generic_net

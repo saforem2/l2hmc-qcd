@@ -29,11 +29,10 @@ sns.set_palette('bright')
 
 
 def therm_arr(arr, therm_frac=0.25):
-    """Drop first `therm_frac` of `arr` to account for thermalization."""
-    arr = np.array(arr)
-    num_steps = arr.shape[0]
+    step_axis = np.argmax(arr.shape)
+    num_steps = arr.shape[step_axis]
     therm_steps = int(therm_frac * num_steps)
-    arr = arr[therm_steps:, :]
+    arr = np.delete(arr, np.s_[:therm_steps], axis=step_axis)
 
     return arr
 
