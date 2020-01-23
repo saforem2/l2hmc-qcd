@@ -30,6 +30,8 @@ def make_pngs_from_pdfs(rootdir=None):
     if rootdir is None:
         rootdir = os.path.abspath('/home/foremans/DLHMC/l2hmc-qcd/gauge_logs')
     for root, _, files in os.walk(rootdir):
+        if 'old' in root:
+            continue
         fnames = [i.rstrip('.pdf') for i in files if i.endswith('.pdf')]
         in_files = [os.path.join(root, i) for i in files if i.endswith('.pdf')]
         if len(in_files) > 1:
@@ -65,7 +67,8 @@ def copy_gauge_figures(root_src_dir=None, root_dst_dir=None):
             dirstr += f'_{tstr}'
             root_dst_dir = os.path.abspath(dirstr)
     for src_dir, _, _ in os.walk(root_src_dir):
-        if src_dir.endswith('figures') or src_dir.endswith('figures_np'):
+        #  if src_dir.endswith('figures') or src_dir.endswith('figures_np'):
+        if src_dir == 'figures_np':
             date_str = src_dir.split('/')[-3]
             log_str = src_dir.split('/')[-2]
             fig_str = src_dir.split('/')[-1]
@@ -115,7 +118,6 @@ def load_params(log_dir):
         params = pickle.load(f)
 
     return params
-
 
 # pylint: disable=invalid-name
 def log(s, nl=True):

@@ -77,13 +77,19 @@ def build_log_dirs():
 
     return log_dirs
 
-def plot_plaqs_diffs(run_data_dict, log_dir, params, run_params):
+
+def plot_plaqs_diffs(run_data_dict, log_dir, params, run_params, **kwargs):
     """Plot plaqs_diffs for all key, val pairs in `run_data_dict`."""
-    out_dir = os.path.join(log_dir, 'figures_np', 'plaqs_diffs')
-    io.check_else_make_dir(out_dir)
-    out_file = os.path.join(out_dir, 'plaqs_diffs_plots.pdf')
+    fig_dir = os.path.join(log_dir, 'figures_np', 'plaqs_diffs')
+    io.check_else_make_dir(fig_dir)
+    out_file = os.path.join(fig_dir, 'plaqs_diffs_plots.pdf')
     title_str = (r"$N_{\mathrm{LF}} = $" + f"{params['num_steps']}, "
                  + r"$\varepsilon = $" + f"{run_params['eps']:.3g}")
+
+    out_dir = kwargs.get('out_dir', None)
+    if out_dir is not None:
+        io.check_else_make_dir(out_dir)
+        out_file_ = os.path.join(out_dir, 'plaqs_diffs_plots.pdf')
 
     if params['eps_fixed']:
         title_str += ' (fixed), '
@@ -97,7 +103,8 @@ def plot_plaqs_diffs(run_data_dict, log_dir, params, run_params):
 
     fig, ax = plt.subplots()
     for net_weights, run_data in run_data_dict.items():
-        y = plaq_exact - therm_arr(run_data['plaqs']).flatten()
+        plaqs = np.array(run_data['plaqs'])
+        y = plaq_exact - therm_arr(plaqs).flatten()
         px_label = (r"""$\langle A(\xi^{\prime}|\xi) = $"""
                     + f"{np.mean(run_data['accept_prob']):.3g}")
         label = f'nw: {tuple(net_weights)}, ' + px_label
@@ -111,6 +118,8 @@ def plot_plaqs_diffs(run_data_dict, log_dir, params, run_params):
     io.log(f'Saving plaqs_diffs figure to: {out_file}.')
     io.log(80 * '-')
     fig.savefig(out_file, dpi=200, bbox_inches='tight')
+    if out_dir is not None:
+        fig.savefig(out_file_, dpi=200, bbox_inches='tight')
 
     return fig, ax
 

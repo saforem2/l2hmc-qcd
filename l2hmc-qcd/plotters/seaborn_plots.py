@@ -23,6 +23,7 @@ import matplotlib.style as mplstyle
 
 import seaborn as sns
 import utils.file_io as io
+from utils.file_io import timeit
 
 from lattice.lattice import u1_plaq_exact
 from plotters.plot_utils import bootstrap, get_matching_log_dirs, load_pkl
@@ -58,6 +59,7 @@ def kde_color_plot(x, y, **kwargs):
     #  sns.despine(ax=ax, bottom=True, left=True)
     return ax
 
+
 def _kdeplot(x, y, **kwargs):
     ax = sns.kdeplot(x, y, **kwargs)
     ax.xaxis.set_major_locator(ticker.MaxNLocator(3))
@@ -67,8 +69,10 @@ def _kdeplot(x, y, **kwargs):
 
 def kde_diag_plot(x, **kwargs):
     """Create KDE histogram along diagonal for `sns.GridPlot`."""
-    ax = sns.kdeplot(x, **kwargs)
+    ax = plt.gca()
     ax.xaxis.set_major_locator(ticker.MaxNLocator(3))
+    _ = sns.kdeplot(x, **kwargs)
+    plt.xticks(ticks=ax.get_xticks(), rotation=30, ha='center', va='top')
     return ax
 
 
@@ -76,10 +80,10 @@ def plot_pts(x, y, **kwargs):
     """Make scatter plot of points."""
     ax = plt.gca()
     ax.xaxis.set_major_locator(ticker.MaxNLocator(3))
-    if len(x) > 5000:
-        x = x[:5000]
-    if len(y) > 5000:
-        y = y[:5000]
+    #  if len(x) > 5000:
+    #      x = x[:5000]
+    #  if len(y) > 5000:
+    #      y = y[:5000]
     _ = ax.plot(x, y, **kwargs)
     plt.xticks(ticks=ax.get_xticks(), rotation=30, ha='center', va='top')
     return ax
@@ -111,7 +115,7 @@ def get_train_weights(params):
     return (xsw, xtw, xqw, vsw, vtw, vqw)
 
 
-def plot_setup(log_dir, run_params, idx=None):
+def plot_setup(log_dir, run_params, idx=None, nw_run=True):
     """Setup for plotting. Creates `filename` and `title_str`."""
     params = load_pkl(os.path.join(log_dir, 'parameters.pkl'))
     lf = params['num_steps']
@@ -158,9 +162,9 @@ def plot_setup(log_dir, run_params, idx=None):
         title_str += f', clip: {clip_value}'
         fname += f'_clip{clip_value}'.replace('.', '')
 
-    title_str += ', ' + r"$\mathrm{nw}_{\mathrm{run}}=$" + f' {nws}'
-
-    fname += f'_{net_weights_str}'
+    if nw_run:
+        title_str += ', ' + r"$\mathrm{nw}_{\mathrm{run}}=$" + f' {nws}'
+        fname += f'_{net_weights_str}'
 
     if idx is not None:
         fname += f'_{idx}'
@@ -346,6 +350,9 @@ def _build_dataframes(run_dirs, data=None, data_bs=None, **kwargs):
     """
     run_params = None
     for run_dir in run_dirs:
+        if data is not None and hasattr(data, 'run_dir'):
+            if not data[data.run_dir == run_dir].empty:
+                continue
         run_params_file = os.path.join(run_dir, 'run_params.pkl')
         if os.path.isfile(run_params_file):
             new_df, new_df_bs, run_params = get_observables(run_dir, **kwargs)
@@ -395,46 +402,95 @@ def build_dataframes(log_dirs,
             data_bs = None
             n_boot = 5000
             frac = 0.25
+            run_dirs = get_run_dirs(log_dir,
+                                    filter_str=filter_str,
+                                    runs_np=runs_np)
 
-            try:
-                run_dirs = get_run_dirs(log_dir,
-                                        filter_str=filter_str,
-                                        runs_np=runs_np)
+            if run_dirs is not None:
                 run_dirs = sorted(run_dirs)[::-1]
-            except FileNotFoundError:
-                continue
 
-            nw_inc = [
-                (0, 0, 0, 0, 0, 0),
-                (1, 0, 1, 1, 0, 1),
-                (1, 0, 1, 1, 1, 1),
-                (1, 1, 1, 1, 0, 1),
-                (1, 1, 1, 1, 1, 1),
-            ]
+                nw_inc = [
+                    (0, 0, 0, 0, 0, 0),
+                    (1, 0, 1, 1, 0, 1),
+                    (1, 0, 1, 1, 1, 1),
+                    (1, 1, 1, 1, 0, 1),
+                    (1, 1, 1, 1, 1, 1),
+                ]
 
-            data, data_bs, run_params = _build_dataframes(run_dirs,
-                                                          data=data,
-                                                          log_dir=log_dir,
-                                                          data_bs=data_bs,
-                                                          n_boot=n_boot,
-                                                          calc_stats=True,
-                                                          therm_frac=frac,
-                                                          nw_include=nw_inc)
-            df_dict[log_dir] = data
-            df_bs_dict[log_dir] = data_bs
-            rp_dict[log_dir] = run_params
+                outputs = _build_dataframes(run_dirs,
+                                            data=data,
+                                            log_dir=log_dir,
+                                            data_bs=data_bs,
+                                            n_boot=n_boot,
+                                            calc_stats=True,
+                                            therm_frac=frac,
+                                            nw_include=nw_inc)
+                data, data_bs, run_params = outputs
+
+                df_dict[log_dir] = data
+                df_bs_dict[log_dir] = data_bs
+                rp_dict[log_dir] = run_params
 
     return df_dict, df_bs_dict, rp_dict
 
 
+@timeit
+def _gridplots_combined(g, **kwargs):
+    """Makde combined gridplots."""
+    g = g.map_diag(kde_diag_plot, shade=True)
+    upper_map = kwargs.get('upper_map', None)
+    if upper_map == 'scatter':
+        g = g.map_upper(plot_pts, ls='', marker='+',
+                        markeredgewidth=0.4, rasterized=True)
+        marker = 'o'
+    else:
+        gridsize = kwargs.get('gridsize', 50)
+        g = g.map_upper(kde_color_plot, shade=False, gridsize=gridsize)
+
+    marker = kwargs.get('marker', 'o')
+    alpha = kwargs.get('alpha', 0.4)
+    markeredgewidth = kwargs.get('markeredgewidth', 1.)
+    g = g.map_lower(plot_pts, ls='', marker=marker,
+                    markeredgewidth=markeredgewidth,
+                    alpha=alpha, rasterized=True)
+
+    return g
+
+@timeit
+def _gridplots_separated(g, **kwargs):
+    """Create separated gridplots."""
+    color = kwargs.get('color', 'C0')
+    cmap = sns.light_palette(color, as_cmap=True)
+    g = g.map_diag(kde_diag_plot, shade=True, color=color)
+    upper_map = kwargs.get('upper_map', None)
+    if upper_map == 'scatter':
+        g = g.map_upper(plot_pts, ls='', marker='+',
+                        markeredgewidth=0.4, rasterized=True)
+        marker = 'o'
+    else:
+        gridsize = kwargs.get('gridsize', 100)
+        g = g.map_upper(sns.kdeplot, cmap=cmap, shade=True,
+                        gridsize=gridsize, shade_lowest=False)
+
+    alpha = kwargs.get('alpha', 0.4)
+    marker = kwargs.get('marker', 'o')
+    g = g.map_lower(plot_pts, color=color, ls='',
+                    marker=marker, rasterized=True, alpha=alpha)
+
+    return g
+
+
+@timeit
 def _gridplots(log_dir, data, title_str, fname,
-               color='C0', combined=False, out_dir=None, **kwargs):
+               combined=False, out_dir=None, **kwargs):
     """Make gridplot using `sns.PairGrid`."""
     _vars = ['plaqs_diffs', 'accept_prob', 'tunneling_rate']
     if hasattr(data, 'dx'):
         _vars += ['dx']
-    if hasattr(data, 'dxf'):
-        _vars += ['dxf']
+    #  if hasattr(data, 'dxf'):
+    #      _vars += ['dxf']
+    #  if hasattr(data, 'dxb'):
+    #      _vars += ['dxb']
 
     upper_map = kwargs.get('upper_map', None)
 
@@ -444,34 +500,16 @@ def _gridplots(log_dir, data, title_str, fname,
                      diag_sharey=False,
                      vars=_vars)
 
-    marker = kwargs.get('marker', 'o')
-    alpha = kwargs.get('alpha', 0.4)
-    gridsize = kwargs.get('gridsize', 100)
-    markeredgewidth = kwargs.get('markeredgewidth', 1.)
+    #  color = kwargs.get('color', 'C0')
+    #  marker = kwargs.get('marker', 'o')
+    #  alpha = kwargs.get('alpha', 0.4)
+    #  gridsize = kwargs.get('gridsize', 100)
+    #  markeredgewidth = kwargs.get('markeredgewidth', 1.)
 
     if combined:
-        g = g.map_diag(sns.kdeplot, shade=True)
-        if upper_map == 'scatter':
-            g = g.map_upper(plot_pts, ls='', marker='+',
-                            markeredgewidth=0.4, rasterized=True)
-            marker = 'o'
-        else:
-            g = g.map_upper(kde_color_plot, shade=False, gridsize=gridsize)
-        g = g.map_lower(plot_pts, ls='', marker=marker,
-                        markeredgewidth=markeredgewidth,
-                        rasterized=True, alpha=alpha)
+        g = _gridplots_combined(g, **kwargs)
     else:
-        cmap = sns.light_palette(color, as_cmap=True)
-        g = g.map_diag(sns.kdeplot, shade=True, color=color)
-        if upper_map == 'scatter':
-            g = g.map_upper(plot_pts, ls='', marker='+',
-                            markeredgewidth=0.4, rasterized=True)
-            marker = 'o'
-        else:
-            g = g.map_upper(sns.kdeplot, cmap=cmap, shade=True,
-                            gridsize=100, shade_lowest=False)
-        g = g.map_lower(plot_pts, color=color, ls='', marker=marker,
-                        rasterized=True, alpha=alpha)
+        g = _gridplots_separated(g, **kwargs)
 
     g.add_legend()
     g.fig.suptitle(title_str, y=1.02, fontsize='x-large')
@@ -481,11 +519,12 @@ def _gridplots(log_dir, data, title_str, fname,
 
     out_file = os.path.join(out_dir, f'{fname}.pdf')
     logdir_id = log_dir.split('/')[-1].split('_')[-1]
-    if os.path.isfile(out_file):
-        timestr = io.get_timestr()
-        hour_str = timestr['hour_str']
-        id_str = f'{logdir_id}'
-        out_file = os.path.join(out_dir, f'{fname}_{id_str}_{hour_str}.pdf')
+    #  if os.path.isfile(out_file):
+
+        #  timestr = io.get_timestr()
+        #  hour_str = timestr['hour_str']
+        #  id_str = f'{logdir_id}'
+        #  out_file = os.path.join(out_dir, f'{fname}_{id_str}_{hour_str}.pdf')
 
     io.log(f'INFO: Saving figure to: {out_file}')
     plt.savefig(out_file, bbox_inches='tight')
@@ -495,6 +534,7 @@ def _gridplots(log_dir, data, title_str, fname,
     return g
 
 
+@timeit
 def gridplots(log_dirs,
               df_dict=None,
               df_bs_dict=None,
@@ -513,9 +553,9 @@ def gridplots(log_dirs,
     io.check_else_make_dir(rootdir)
 
     ticklabelsize = DEFAULT_TICKLABELSIZE
-    mpl.rcParams['xtick.labelsize'] = ticklabelsize
-    mpl.rcParams['ytick.labelsize'] = ticklabelsize
-    mpl.rcParams['axes.labelsize'] = 'large'
+    mpl.rcParams['xtick.labelsize'] = 14
+    mpl.rcParams['ytick.labelsize'] = 14
+    mpl.rcParams['axes.labelsize'] = 16
     mpl.rcParams['axes.formatter.min_exponent'] = 2
 
     if df_dict is None and df_bs_dict is None and rp_dict is None:
@@ -537,34 +577,33 @@ def gridplots(log_dirs,
         fname, title_str, old_dx = plot_setup(log_dir, run_params, idx=idx)
 
         if data is not None:
-            out_dir = os.path.join(rootdir, f'combined_pairplots_{time_str}')
+            out_dir = os.path.join(rootdir,
+                                   f'combined_pairplots')
             io.check_else_make_dir(out_dir)
-            try:
-                g_combined = _gridplots(log_dir, data,
-                                        title_str, fname,
-                                        color=None, combined=True,
-                                        marker='x', markeredgewidth=0.4,
-                                        upper_map='scatter', gridsize=50,
-                                        out_dir=out_dir)
-            except UnboundLocalError:
-                io.log(f'Unable to create _gridplots for {log_dir}.')
-                continue
+            #  try:
+            g_combined = _gridplots(log_dir, data,
+                                    title_str, fname,
+                                    color=None, combined=True,
+                                    marker='x', markeredgewidth=0.4,
+                                    upper_map='scatter', gridsize=50,
+                                    out_dir=out_dir)
+            #  except UnboundLocalError:
+            #      io.log(f'Unable to create _gridplots for {log_dir}.')
+            #      continue
         if data_bs is not None:
             out_dir = os.path.join(rootdir,
-                                   f'combined_pairplots_boostrap_{time_str}')
+                                   f'combined_pairplots_boostrap')
             io.check_else_make_dir(out_dir)
-            try:
-                g_combined = _gridplots(log_dir, data_bs,
-                                        title_str, fname,
-                                        color=None,
-                                        combined=True,
-                                        out_dir=out_dir)
-            except UnboundLocalError:
-                io.log(f'Unable to create _gridplots for {log_dir}.')
-                continue
+            #  try:
+            g_combined = _gridplots(log_dir, data_bs,
+                                    title_str, fname,
+                                    color=None,
+                                    combined=True,
+                                    out_dir=out_dir)
+            #  except UnboundLocalError:
+            #      io.log(f'Unable to create _gridplots for {log_dir}.')
+            #      continue
 
-
-        #  run_dirs = sorted(get_run_dirs(log_dir))[::-1]
         run_dirs = []
         if data is not None:
             run_dirs += list(np.unique(data['run_dir']))
@@ -577,28 +616,28 @@ def gridplots(log_dirs,
 
             if data is not None:
                 data_ = data[data.run_dir == run_dir]
-                out_dir = os.path.join(rootdir, f'pairplots_{time_str}')
+                out_dir = os.path.join(rootdir, f'pairplots')
                 io.check_else_make_dir(out_dir)
-                try:
-                    _ = _gridplots(log_dir, data_, title_str, fname,
-                                   color=color, marker='x',
-                                   markeredgewidth=0.4, gridsize=50,
-                                   out_dir=out_dir)
-                except UnboundLocalError:
-                    io.log(f'Unable to create _gridplots for {run_dir}.')
-                    continue
+                #  try:
+                _ = _gridplots(log_dir, data_, title_str, fname,
+                               color=color, marker='x',
+                               upper_map='scatter', markeredgewidth=0.4,
+                               gridsize=50, out_dir=out_dir)
+                #  except UnboundLocalError:
+                #      io.log(f'Unable to create _gridplots for {run_dir}.')
+                #      continue
 
             if data_bs is not None:
                 out_dir = os.path.join(rootdir,
-                                       f'pairplots_bootstrap_{time_str}')
+                                       f'pairplots_bootstrap')
                 io.check_else_make_dir(out_dir)
                 data_bs_ = data_bs[data_bs.run_dir == run_dir]
-                try:
-                    _ = _gridplots(log_dir, data_bs_, title_str, fname,
-                                   color=color, out_dir=out_dir)
-                except UnboundLocalError:
-                    io.log(f'Unable to create _gridplots for {run_dir}.')
-                    continue
+                #  try:
+                _ = _gridplots(log_dir, data_bs_, title_str, fname,
+                               color=color, out_dir=out_dir)
+                #  except UnboundLocalError:
+                #      io.log(f'Unable to create _gridplots for {run_dir}.')
+                #      continue
             plt.close('all')
         plt.close('all')
 
