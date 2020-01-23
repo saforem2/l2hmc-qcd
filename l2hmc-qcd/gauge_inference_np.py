@@ -152,13 +152,14 @@ def _check_existing(out_dir, fname):
     return fname
 
 
-def inference_plots(run_data, energy_data, params, run_params):
+def inference_plots(run_data, energy_data, params, run_params, **kwargs):
     """Create trace plots of lattice observables and energy data."""
     run_str = run_params['run_str']
     log_dir = params['log_dir']
     figs_dir = os.path.join(log_dir, 'figures_np')
     fig_dir = os.path.join(figs_dir, run_str)
     io.check_else_make_dir(fig_dir)
+    out_dir = kwargs.get('out_dir', None)
 
     dataset = None
     energy_dataset = None
@@ -203,10 +204,17 @@ def inference_plots(run_data, energy_data, params, run_params):
     pp_fname = _check_existing(fig_dir, pp_fname)
     tp_out_file = os.path.join(fig_dir, f'{tp_fname}.pdf')
     pp_out_file = os.path.join(fig_dir, f'{pp_fname}.pdf')
+
     var_names = ['plaqs_diffs', 'dx', 'accept_prob',
                  'tunneling_rate', 'charges', 'charges_squared']
     _plot_trace(dataset, tp_out_file, var_names=var_names)
     _plot_posterior(dataset, pp_out_file, var_names=var_names)
+    if out_dir is not None:
+        io.check_else_make_dir(out_dir)
+        tp_out_file_ = os.path.join(out_dir, f'{tp_fname}.pdf')
+        pp_out_file_ = os.path.join(out_dir, f'{pp_fname}.pdf')
+        _plot_trace(dataset, tp_out_file_, var_names=var_names)
+        _plot_posterior(dataset, pp_out_file_, var_names=var_names)
 
     ####################################################
     # Create traceplot + possterior plot of energy data
@@ -232,6 +240,9 @@ def inference_plots(run_data, energy_data, params, run_params):
     fig = plt.gcf()
     fig.suptitle(title_str, fontsize='x-large', y=1.025)
     _savefig(fig, rp_out_file)
+    if out_dir is not None:
+        rp_out_file_ = os.path.join(out_dir, f'{rp_fname}.pdf')
+        _savefig(fig, rp_out_file_)
 
     return dataset, energy_dataset
 
