@@ -142,6 +142,7 @@ def create_dynamics(log_dir, hmc=False, eps=None,
     with open(weights_file, 'rb') as f:
         weights = pickle.load(f)
 
+
     lattice = _create_lattice(params)
 
     zero_masks = params.get('zero_masks', False)
@@ -154,6 +155,13 @@ def create_dynamics(log_dir, hmc=False, eps=None,
                               num_steps=params['num_steps'],
                               batch_size=params['batch_size'],
                               zero_masks=zero_masks)
+
+    mask_file = os.path.join(log_dir, 'dynamcis_mask.pkl')
+    if os.path.isfile(mask_file):
+        with open(mask_file, 'rb') as f:
+            masks_dict = pickle.load(f)
+        masks = masks_dict['masks']
+        dynamics.masks = masks
 
     return dynamics, lattice
 
