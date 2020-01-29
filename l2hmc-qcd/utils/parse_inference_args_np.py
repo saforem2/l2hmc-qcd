@@ -13,7 +13,7 @@ def parse_args():
 
     parser.add_argument('--log_dir',
                         dest='log_dir',
-                        required=True,
+                        required=False,
                         default=None,
                         help=("""log_dir containing `weights.pkl` file of
                               trained models' network weights."""))
@@ -78,7 +78,8 @@ def parse_args():
                               which to run inference using the trained
                               L2HMC sampler. (Default: None"""))
 
-    parser.add_argument('--x_scale_weight',
+    parser.add_argument('-xsw',
+                        '--x_scale_weight',
                         dest='x_scale_weight',
                         type=float,
                         default=1.,
@@ -89,7 +90,8 @@ def parse_args():
                               performing the augmented L2HMC molecular dynamics
                               update."""))
 
-    parser.add_argument('--x_translation_weight',
+    parser.add_argument('-xtw',
+                        '--x_translation_weight',
                         dest='x_translation_weight',
                         type=float,
                         default=1.,
@@ -100,7 +102,8 @@ def parse_args():
                               function when performing the augmented L2HMC
                               molecular dynamics update."""))
 
-    parser.add_argument('--x_transformation_weight',
+    parser.add_argument('-xqw',
+                        '--x_transformation_weight',
                         dest='x_transformation_weight',
                         type=float,
                         default=1.,
@@ -112,7 +115,7 @@ def parse_args():
                               when performing the augmented L2HMC molecular
                               dynamics update."""))
 
-    parser.add_argument('--v_scale_weight',
+    parser.add_argument('-vsw', '--v_scale_weight',
                         dest='v_scale_weight',
                         type=float,
                         default=1.,
@@ -123,7 +126,7 @@ def parse_args():
                               performing the augmented L2HMC molecular dynamics
                               update."""))
 
-    parser.add_argument('--v_translation_weight',
+    parser.add_argument('-vtw', '--v_translation_weight',
                         dest='v_translation_weight',
                         type=float,
                         default=1.,
@@ -134,7 +137,7 @@ def parse_args():
                               function when performing the augmented L2HMC
                               molecular dynamics update."""))
 
-    parser.add_argument('--v_transformation_weight',
+    parser.add_argument('-vqw', '--v_transformation_weight',
                         dest='v_transformation_weight',
                         type=float,
                         default=1.,
