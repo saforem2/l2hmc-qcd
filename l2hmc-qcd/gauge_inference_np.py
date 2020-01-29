@@ -24,6 +24,7 @@ from plotters.plot_observables import plot_autocorrs, plot_charges
 from plotters.gauge_model_plotter import GaugeModelPlotter
 from lattice.lattice import u1_plaq_exact
 from plotters.seaborn_plots import plot_setup
+from plotters.data_utils import InferenceData
 
 HEADER = 80 * '-'
 
@@ -111,13 +112,15 @@ def calc_tunneling_rate(charges):
 
 
 def build_dataset(run_data, run_params):
+    """Build dataset."""
     rd_dict = {}
     for key, val in run_data.items():
         if 'mask' in key:
             continue
 
-        arr, steps = therm_arr(np.array(val))
+        arr, draws = therm_arr(np.array(val))
         arr = arr.T
+        chains = np.arange(arr.shape[0])
 
         if 'plaqs' in key:
             key = 'plaqs_diffs'
@@ -128,16 +131,15 @@ def build_dataset(run_data, run_params):
 
         rd_dict[key] = xr.DataArray(arr,
                                     dims=['chain', 'draw'],
-                                    coords=[np.arange(arr.shape[0]), steps])
+                                    coords=[chains, draws])
 
     rd_dict['charges_squared'] = rd_dict['charges'] ** 2
 
     charges = rd_dict['charges'].values.T
     tunneling_rate = calc_tunneling_rate(charges).T
-    tmp = tunneling_rate.shape[0]
     rd_dict['tunneling_rate'] = xr.DataArray(tunneling_rate,
                                              dims=['chain', 'draw'],
-                                             coords=[np.arange(tmp), steps])
+                                             coords=[chains, draws])
     dataset = xr.Dataset(rd_dict)
 
     return dataset
@@ -151,7 +153,7 @@ def _check_existing(out_dir, fname):
 
     return fname
 
-
+# pylint: disable=too-many-locals
 def inference_plots(run_data, energy_data, params, run_params, **kwargs):
     """Create trace plots of lattice observables and energy data."""
     run_str = run_params['run_str']
@@ -206,20 +208,23 @@ def inference_plots(run_data, energy_data, params, run_params, **kwargs):
         if out_file1 is not None:
             _savefig(fig, out_file1)
 
-
     ####################################################
-    # Create traceplot + posterior plot of observables 
+    # Create traceplot + posterior plot of observables
     ####################################################
     tp_fname = _check_existing(fig_dir, tp_fname)
     pp_fname = _check_existing(fig_dir, pp_fname)
     tp_out_file = os.path.join(fig_dir, f'{tp_fname}.pdf')
     pp_out_file = os.path.join(fig_dir, f'{pp_fname}.pdf')
 
-    var_names = ['plaqs_diffs', 'accept_prob',
-                 'tunneling_rate', 'charges', 'charges_squared']
+    #  var_names = ['plaqs_diffs', 'accept_prob',
+    #               'tunneling_rate', 'charges', 'charges_squared']
+    var_names = ['tunneling_rate', 'plaqs_diffs']
     if hasattr(dataset, 'dx'):
         var_names.append('dx')
+    var_names.extend(['accept_prob', 'charges_squared', 'charges'])
 
+    tp_out_file_ = None
+    pp_out_file_ = None
     if out_dir is not None:
         io.check_else_make_dir(out_dir)
         tp_out_file_ = os.path.join(out_dir, f'{tp_fname}.pdf')
@@ -229,7 +234,6 @@ def inference_plots(run_data, energy_data, params, run_params, **kwargs):
                 var_names=var_names,
                 out_file1=tp_out_file_)
     _plot_posterior(dataset, pp_out_file,
-                    var_names=var_names,
                     out_file1=pp_out_file_)
 
     #################################
@@ -250,7 +254,6 @@ def inference_plots(run_data, energy_data, params, run_params, **kwargs):
         rp_out_file_ = os.path.join(out_dir, f'{rp_fname}.pdf')
         _savefig(fig, rp_out_file_)
 
-
     ####################################################
     # Create traceplot + possterior plot of energy data
     ####################################################
@@ -269,7 +272,17 @@ def inference_plots(run_data, energy_data, params, run_params, **kwargs):
 @timeit
 def main(args):
     """Perform tensorflow-independent inference on a trained model."""
-    log_dir = os.path.abspath(args.log_dir)
+    log_dir = getattr(args, 'log_dir', None)
+    if log_dir is None:
+        params_file = os.path.join(os.getcwd(), 'params.pkl')
+        if os.path.isfile(params_file):
+            params = load_pkl(params_file)
+            log_dir = params['log_dir']
+        else:
+            raise FileNotFoundError('`log_dir` not specified. Exiting.')
+
+    log_dir = os.path.abspath(log_dir)
+    #  log_dir = os.path.abspath(args.log_dir)
     dynamics, lattice = create_dynamics(log_dir,
                                         hmc=args.hmc,
                                         eps=args.eps,
@@ -295,15 +308,24 @@ def main(args):
 
     outputs = run_inference_np(log_dir, dynamics, lattice,
                                run_params, init=args.init)
-    run_data = outputs['run_data']
-    energy_data = outputs['energy_data']
+    rdata = outputs['run_data']
+    edata = outputs['energy_data']
     run_params = outputs['run_params']
-
     params = load_pkl(os.path.join(log_dir, 'parameters.pkl'))
-    dataset, energy_dataset = inference_plots(run_data, energy_data,
+    #  inference_data = InferenceData(params, run_params, rdata, edata)
+    #  run_dataset, energy_dataset = inference_data.make_plots(run_params,
+    #                                                          run_data=rdata,
+    #                                                          energy_data=edata,
+    #                                                          runs_np=True)
+    # keys grouped by energy type, for plotting
+    ekeys = ['potential_init', 'potential_proposed', 'potential_out',
+             'kinetic_init', 'kinetic_proposed', 'kinetic_out',
+             'hamiltonian_init', 'hamiltonian_proposed', 'hamiltonian_out']
+    edata = {k: edata[k] for k in ekeys}
+    dataset, energy_dataset = inference_plots(rdata, edata,
                                               params, run_params)
 
-    return run_params, run_data, energy_data, dataset
+    return run_params, rdata, edata, dataset
 
 
 if __name__ == '__main__':
