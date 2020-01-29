@@ -163,15 +163,15 @@ def get_run_dirs(log_dir, filter_str=None, runs_np=False):
         runs_dir = os.path.join(log_dir, 'runs_np')
     else:
         runs_dir = os.path.join(log_dir, 'runs')
-    if os.path.isdir(runs_dir):
-        run_dirs = [
-            os.path.join(runs_dir, i) for i in os.listdir(runs_dir)
-            if os.path.isdir(os.path.join(runs_dir, i))
-        ]
-        if filter_str is not None:
-            run_dirs = [i for i in run_dirs if filter_str in i]
+    #  if os.path.isdir(runs_dir):
+    run_dirs = [
+        os.path.join(runs_dir, i) for i in os.listdir(runs_dir)
+        if os.path.isdir(os.path.join(runs_dir, i))
+    ]
+    if filter_str is not None:
+        run_dirs = [i for i in run_dirs if filter_str in i]
 
-        run_dirs = sorted(run_dirs)
+    run_dirs = sorted(run_dirs)
 
     io.log(f'No `runs_dir` in {log_dir}.')
     return run_dirs
