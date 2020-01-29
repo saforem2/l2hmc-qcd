@@ -87,7 +87,7 @@ class Dynamics(tf.keras.Model):
         self._eps_np = params.get('eps', 0.4)         # initial step size
         self.use_bn = params.get('use_bn', False)     # use batch normalization
         self.num_steps = params.get('num_steps', 5)   # number of lf steps
-        self.zero_masks = params.get('zero_masks', True)    # all 0 binary mask
+        self.zero_masks = params.get('zero_masks', False)    # all 0 binary mask
         self.num_hidden1 = params.get('num_hidden1', 10)    # nodes in h1
         self.num_hidden2 = params.get('num_hidden2', 10)    # nodes in h2
         self.dropout_prob = params.get('dropout_prob', 0.)  # dropout prob
@@ -613,6 +613,15 @@ class Dynamics(tf.keras.Model):
             reject_mask = 1. - accept_mask
 
         return accept_mask, reject_mask
+
+    def _build_zero_masks(self):
+        with tf.name_scoep('x_masks'):
+            masks = []
+            for _ in range(self.num_steps):
+                mask = tf.constant(np.zeros((self.x_dim,)), dtype=TF_FLOAT)
+                masks.append(mask[None, :])
+
+            return masks
 
     def _build_masks(self, zero_masks=False):
         """Construct different binary masks for different time steps.

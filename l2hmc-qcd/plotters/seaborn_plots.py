@@ -24,6 +24,7 @@ import matplotlib.style as mplstyle
 import seaborn as sns
 import utils.file_io as io
 from utils.file_io import timeit
+from runners.runner_np import _strf
 
 from lattice.lattice import u1_plaq_exact
 from plotters.plot_utils import bootstrap, get_matching_log_dirs, load_pkl
@@ -34,6 +35,8 @@ sns.set_palette('bright')
 mplstyle.use('fast')
 #  ticklabelsize = 14
 DEFAULT_TICKLABELSIZE = mpl.rcParams['xtick.labelsize']
+
+
 
 def infer_cmap(color, palette='bright'):
     hues = sns.color_palette(palette)
@@ -122,10 +125,10 @@ def plot_setup(log_dir, run_params, idx=None, nw_run=True):
     clip_value = params.get('clip_value', 0)
     eps_fixed = params.get('eps_fixed', False)
     train_weights = get_train_weights(params)
-    train_weights_str = ''.join((str(int(i)) for i in train_weights))
+    train_weights_str = ''.join((_strf(i) for i in train_weights))
     net_weights = run_params['net_weights']
-    net_weights_str = ''.join((str(int(i)) for i in net_weights))
-    nws = '(' + ', '.join((str(int(i)) for i in net_weights)) + ')'
+    net_weights_str = ''.join((_strf(i).replace('.', '') for i in net_weights))
+    nws = '(' + ', '.join((str(i) for i in net_weights)) + ')'
 
     date_str = log_dir.split('/')[-2]
     y, m, d = date_str.split('_')
@@ -210,7 +213,7 @@ def get_observables(run_dir,
             inference run.
     """
     run_params = load_pkl(os.path.join(run_dir, 'run_params.pkl'))
-    net_weights = tuple([int(i) for i in run_params['net_weights']])
+    net_weights = tuple([_strf(i) for i in run_params['net_weights']])
     #  eps = run_params['eps']
     beta = run_params['beta']
     observables_dir = os.path.join(run_dir, 'observables')

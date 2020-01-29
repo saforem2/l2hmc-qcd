@@ -274,8 +274,6 @@ class Runner:
             'dx': outputs['dx'],
             'dxf': outputs['dxf'],
             'dxb': outputs['dxb'],
-            #  'dx': outputs['dx'],
-            #  'dx': np.mean(outputs['x_out'] - samples, axis=-1),
         }
 
         out_dict.update(outputs)
@@ -290,9 +288,11 @@ class Runner:
             out_dict['samples'] = np.mod(outputs['x_out'], 2 * np.pi)
             observables = self.run_obs_ops(feed_dict)
             out_dict.update(observables)
+            plaq_diff = self.plaq_exact - observables['avg_plaqs']
             data_str += (f"{observables['avg_actions']:^9.4g} "
-                         f"{observables['avg_plaqs']:^9.4g} "
-                         f"{self.plaq_exact:^9.4g} ")
+                         f"{plaq_diff:^9.4g} ")
+                         #  f"{observables['avg_plaqs']:^9.4g} "
+                         #  f"{self.plaq_exact:^9.4g} ")
 
         if (step % self.energy_steps) == 0:
             # Calculate energies by running tensorflow graph operations
