@@ -1,12 +1,16 @@
+"""
+trainer.py
+"""
 import time
-import numpy as np
 
 from collections import namedtuple
 
-import utils.file_io as io
-from config import NP_FLOAT, NetWeights
-from lattice.lattice import u1_plaq_exact
+import numpy as np
 
+import utils.file_io as io
+
+from config import NetWeights, NP_FLOAT
+from lattice.lattice import u1_plaq_exact
 
 TrainStepData = namedtuple('TrainStepData', [
     'step', 'beta', 'loss', 'samples', 'prob', 'lr', 'eps'
@@ -14,6 +18,7 @@ TrainStepData = namedtuple('TrainStepData', [
 
 
 def linear_add_cooling(step, temp_init, temp_final, num_steps):
+    """Linear add cooling annealing schedule."""
     remaining_frac = (num_steps - step) / num_steps
     temp = temp_final + (temp_init - temp_final) * remaining_frac
 
@@ -21,6 +26,7 @@ def linear_add_cooling(step, temp_init, temp_final, num_steps):
 
 
 def exp_mult_cooling(step, temp_init, temp_final, num_steps, alpha=None):
+    """Exponential multiplication cooling schedule."""
     if alpha is None:
         alpha = np.exp((np.log(temp_final) - np.log(temp_init)) / num_steps)
 

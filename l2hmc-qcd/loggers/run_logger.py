@@ -11,23 +11,19 @@ import os
 import pickle
 import datetime
 
-import tensorflow as tf
-import numpy as np
-
 from collections import Counter, OrderedDict
+
+import numpy as np
+import tensorflow as tf
+
 from scipy.stats import sem
 
 import utils.file_io as io
 
-from config import NP_FLOAT, State, NetWeights
+from config import NetWeights, NP_FLOAT, State
 from lattice.lattice import u1_plaq_exact
 
 __all__ = ['RunLogger', 'arr_from_dict', 'autocorr']
-
-
-#  H_STRF = ("{:^12s}" + 4 * "{:^10s}").format(
-#      "STEP", "t/STEP", "% ACC", "EPS", "BETA"
-#  )
 
 
 def arr_from_dict(d, key):
@@ -75,9 +71,7 @@ class RunLogger:
         )
 
         if self.model_type == 'GaugeModel':
-            self.h_strf += (3 * "{:^10s}").format(
-                "ACTIONS", "PLAQS", "(EXACT)"
-            )
+            self.h_strf += (2 * "{:^10s}").format("ACTIONS", "𝞭𝜙")
 
         dash = (len(self.h_strf) + 1) * '-'
         self.run_header = dash + '\n' + self.h_strf + '\n' + dash
@@ -156,7 +150,6 @@ class RunLogger:
         inputs = tf.get_collection('inputs')
         x, beta, eps_ph, global_step_ph, train_phase, *nw = inputs
         net_weights = NetWeights(*nw)
-        #  inputs_dict = dict(zip(keys, inputs))
         inputs_dict = {
             'x': x,
             'beta': beta,
@@ -216,6 +209,7 @@ class RunLogger:
         self.writer.flush()
 
     def clear(self):
+        """Reset all data items."""
         self.energy_dict = None
         self.run_data = None
         self.run_strings = None
@@ -436,10 +430,9 @@ class RunLogger:
         for key, val in self.run_data.items():
             if key in bad_keys and not save_samples:
                 continue
-            else:
-                out_file = key + '.pkl'
-                out_file = os.path.join(observables_dir, out_file)
-                io.save_data(val, out_file, name=key)
+            out_file = key + '.pkl'
+            out_file = os.path.join(observables_dir, out_file)
+            io.save_data(val, out_file, name=key)
 
         if self.model_type == 'GaugeModel':
             self._save_observables_data(observables_dir, therm_frac)
@@ -476,12 +469,6 @@ class RunLogger:
     def _save_energy_data(self):
         """Save energy data to `.pkl` files."""
         self._save_energy(self.energy_dict, 'energy_data_tf')
-        #  self._save_energy(self.energy_dict_np, 'energy_data_np')
-        #  header = (f'We compute the difference between the '
-        #            'energies as alculated in tensorflow vs '
-        #            'numpy as:\n   dE = E_tf - E_np\n')
-        #  self._save_energy(self.energies_diffs_dict,
-        #                    'energy_data_tf_np_diff', header=header)
 
     def _save_observables_data(self, observables_dir, therm_frac):
         """For `GaugeModel` instance, save observables data."""

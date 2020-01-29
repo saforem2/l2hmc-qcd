@@ -34,6 +34,13 @@ def parse_args():
     ###########################################################################
     #                          Lattice parameters                             #
     ###########################################################################
+    parser.add_argument('--log_dir',
+                        dest='log_dir',
+                        required=False,
+                        default=None,
+                        help=("""Path to `log_dir` containing trained model on
+                              which to run inference."""))
+
     parser.add_argument('--params_file',
                         dest='params_file',
                         required=False,

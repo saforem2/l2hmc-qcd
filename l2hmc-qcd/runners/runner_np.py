@@ -64,6 +64,15 @@ ENERGY_DATA = {
 }
 
 
+def _strf(x):
+    """Format the number x as a string."""
+    if np.allclose(x - np.around(x), 0):
+        xstr = f'{int(x)}'
+    else:
+        xstr = f'{x:.1}'.replace('.', '')
+    return xstr
+
+
 def load_pkl(pkl_file):
     """Load from `pkl_file`."""
     with open(pkl_file, 'rb') as f:
@@ -102,9 +111,6 @@ def _get_eps(log_dir):
                 run_params = load_pkl(rp_file)
             else:
                 raise FileNotFoundError('Unable to load run_params.')
-        #  run_dir = run_dirs[0]
-        #  rp_file = os.path.join(run_dir, 'run_params.pkl')
-        #  run_params = load_pkl(rp_file)
         eps = run_params['eps']
     except:
         try:
@@ -142,7 +148,6 @@ def create_dynamics(log_dir, hmc=False, eps=None,
     with open(weights_file, 'rb') as f:
         weights = pickle.load(f)
 
-
     lattice = _create_lattice(params)
 
     zero_masks = params.get('zero_masks', False)
@@ -156,12 +161,12 @@ def create_dynamics(log_dir, hmc=False, eps=None,
                               batch_size=params['batch_size'],
                               zero_masks=zero_masks)
 
-    mask_file = os.path.join(log_dir, 'dynamcis_mask.pkl')
+    mask_file = os.path.join(log_dir, 'dynamics_mask.pkl')
     if os.path.isfile(mask_file):
         with open(mask_file, 'rb') as f:
-            masks_dict = pickle.load(f)
-        masks = masks_dict['masks']
-        dynamics.masks = masks
+            masks = pickle.load(f)
+
+        dynamics.set_masks(masks)
 
     return dynamics, lattice
 
@@ -220,6 +225,7 @@ def _check_param(dynamics, param=None):
 
     return dynamics, param
 
+
 # pylint: disable=too-many-locals
 def _inference_setup(log_dir, dynamics, run_params, init='rand', skip=True):
     """Setup for inference run."""
@@ -244,18 +250,19 @@ def _inference_setup(log_dir, dynamics, run_params, init='rand', skip=True):
         init = 'rand'
         samples = np.random.randn(batch_size, dynamics.x_dim)
     if init == 'zeros':
-        samples = np.zeros(batch_size, dynamics.x_dim)
+        samples = np.zeros((batch_size, dynamics.x_dim))
     if init == 'ones':
-        samples = np.ones(batch_size, dynamics.x_dim)
+        samples = np.ones((batch_size, dynamics.x_dim))
     else:
         init = 'rand'
         io.log(f'init: {init}\n')
         samples = np.random.randn(batch_size, dynamics.x_dim)
 
-    nw_str = ''.join((str(int(i)) for i in net_weights))
+    nw_str = ''.join((_strf(i).replace('.', '') for i in net_weights))
     beta_str = f'{beta}'.replace('.', '')
     eps_str = f'{eps:.3g}'.replace('.', '')
     run_str = (f'lf{num_steps}_'
+               f'bs{batch_size}_'
                f'steps{run_steps}_'
                f'beta{beta_str}_'
                f'eps{eps_str}_'
@@ -349,6 +356,7 @@ def run_inference_np(log_dir, dynamics, lattice, run_params, **kwargs):
             samples_init = np.mod(samples, 2 * np.pi)
             output = dynamics.apply_transition(samples, beta, net_weights,
                                                model_type='GaugeModel')
+            sld = output['sumlogdet_out']
             dt = time.time() - t0
             samples = np.mod(output['x_out'], 2 * np.pi)
             obs = lattice.calc_observables_np(samples=samples)
@@ -391,7 +399,9 @@ def run_inference_np(log_dir, dynamics, lattice, run_params, **kwargs):
                         f"{dxf.mean():^11.4g} "
                         f"{dxb.mean():^11.4g} "
                         f"{exp_dH.mean():^11.4g} "
-                        f"{plaq_diff.mean():^11.4g}")
+                        f"{plaq_diff.mean():^11.4g}"
+                        f"{sld.mean():^11.4g}")
+
 
             io.log(data_str)
             data_strs.append(data_str)

@@ -124,7 +124,6 @@ class DynamicsRunner:
 
         return outputs
 
-
     def apply_transition(self, x, beta, net_weights, model_type=None):
         """Propose a new state and perform the accept/reject step."""
         if model_type == 'GaugeModel':
@@ -141,7 +140,7 @@ class DynamicsRunner:
                                                          net_weights,
                                                          forward=False)
 
-        # TODO: Instead of running forward and backward simultaneously, 
+        # TODO: Instead of running forward and backward simultaneously,
         # use np.choose([-1, 1]) to determine which direction gets ran
         mask_f, mask_b = self._get_direction_masks()
         v_init = (vf_init * mask_f[:, None] + vb_init * mask_b[:, None])
@@ -165,6 +164,8 @@ class DynamicsRunner:
             'v_out': v_out,
             'xf': xf,
             'xb': xb,
+            'pxf': pxf,
+            'pxb': pxb,
             'accept_prob': accept_prob,
             'sumlogdet_proposed': sumlogdet_prop,
             'sumlogdet_out': sumlogdet_out,
@@ -373,6 +374,7 @@ class DynamicsRunner:
         return xnet, vnet
 
     def build_masks(self, zero_masks=False):
+        """Build `x` masks used for selecting which idxs of `x` get updated."""
         masks = []
         for _ in range(self.num_steps):
             idx = np.random.permutation(np.arange(self.x_dim))[:self.x_dim//2]
@@ -383,9 +385,12 @@ class DynamicsRunner:
 
         return masks
 
-    def _set_masks(self, masks):
+    def set_masks(self, masks):
         """Set `self.masks` to `masks`."""
-        self.masks = masks
+        for idx, mask in enumerate(masks):
+            print(f'Setting mask for {idx}...')
+            self.masks[idx] = mask
+        #  self.masks = masks
 
     def _get_mask(self, step):
         m = self.masks[step]

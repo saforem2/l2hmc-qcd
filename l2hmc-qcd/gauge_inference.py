@@ -13,9 +13,7 @@ from __future__ import absolute_import, division, print_function
 
 import os
 import time
-
-from config import HAS_HOROVOD, NetWeights
-from seed_dict import seeds
+import pickle
 
 import numpy as np
 import tensorflow as tf
@@ -23,6 +21,8 @@ import tensorflow as tf
 import utils.file_io as io
 import inference.utils as utils
 
+from config import HAS_HOROVOD, NetWeights
+from seed_dict import seeds
 from runners.runner import Runner
 from models.gauge_model import GaugeModel
 from utils.parse_inference_args import parse_args as parse_inference_args
@@ -31,16 +31,29 @@ from inference.gauge_inference_utils import (_log_inference_header,
                                              log_plaq_diffs, parse_flags)
 from loggers.run_logger import RunLogger
 from loggers.summary_utils import create_summaries
-from plotters.plot_observables import plot_charges, plot_autocorrs
+from plotters.energy_plotter import EnergyPlotter
+from plotters.plot_observables import plot_autocorrs, plot_charges
 from plotters.leapfrog_plotters import LeapfrogPlotter
 from plotters.gauge_model_plotter import GaugeModelPlotter
-from plotters.energy_plotter import EnergyPlotter
+from gauge_inference_np import inference_plots
+
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 
 if HAS_HOROVOD:
-    import horovod.tensorflow as hvd
+    import horovod.tensorflow as hvd  # pylint: disable=import-error
 
 if float(tf.__version__.split('.')[0]) <= 2:
     tf.logging.set_verbosity(tf.logging.INFO)
+
+
+def load_pkl(pkl_file):
+    """Load from `.pkl` file."""
+    try:
+        with open(pkl_file, 'rb') as f:  # pylint: disable=invalid-name
+            obj = pickle.load(f)
+        return obj
+    except FileNotFoundError:
+        io.log(f'Unable to load from {pkl_file}.')
 
 
 def run_hmc(FLAGS, log_file=None):
@@ -133,8 +146,18 @@ def run_hmc(FLAGS, log_file=None):
                                    energy_plotter,
                                    **inference_kwargs)
 
+    return -1
 
-def inference_plots(runner, run_logger, plotter, energy_plotter, **kwargs):
+
+def build_run_data(data):
+    """Build `run_data` dictionary from `data`."""
+    keys = ['actions', 'charges', 'plaqs', 'dx', 'px', 'accept_prob']
+    run_data = {k: np.array(data.get(k, None)) for k in keys}
+
+    return run_data
+
+
+def make_plots(runner, run_logger, plotter, energy_plotter, **kwargs):
     """Make all inference plots from inference run."""
     kwargs['run_str'] = run_logger._run_str
     apd, pkwds = plotter.plot_observables(run_logger.run_data, **kwargs)
@@ -185,7 +208,7 @@ def run_inference(runner, run_logger, **kwargs):
     existing = run_logger.reset(**kwargs)
 
     _log_inference_header(net_weights, run_steps, eps, beta, existing=existing)
-    for key, val in kwargs.items():
+    for key, val in kwargs.items():  # pylint: disable=redefined-outer-name
         io.log(f'{key}: {val}')
 
     if existing and skip_existing:
@@ -217,8 +240,8 @@ def _loop_net_weights(runner, run_logger, plotter, energy_plotter, **kwargs):
                                                    run_logger,
                                                    **kwargs)
         try:
-            runner, run_logger = inference_plots(runner, run_logger, plotter,
-                                                 energy_plotter, **kwargs)
+            runner, run_logger = make_plots(runner, run_logger, plotter,
+                                            energy_plotter, **kwargs)
         except (AttributeError, KeyError):  # inference_plots fails if no data
             continue
 
@@ -250,12 +273,21 @@ def inference(runner, run_logger, plotter, energy_plotter, **kwargs):
         runner, run_logger, kwargs = run_inference(runner,
                                                    run_logger,
                                                    **kwargs)
-        runner, run_logger = inference_plots(runner, run_logger, plotter,
-                                             energy_plotter, **kwargs)
+        runner, run_logger = make_plots(runner, run_logger, plotter,
+                                        energy_plotter, **kwargs)
+
+    with open(os.path.join(run_logger.log_dir, 'parameters.pkl'), 'rb') as f:
+        params = pickle.load(f)
+    with open(os.path.join(run_logger.run_dir, 'run_params.pkl'), 'rb') as f:
+        run_params = pickle.load(f)
+    run_data = build_run_data(run_logger.run_data)
+    energy_data = {k: np.array(v) for k, v in run_logger.energy_dict.items()}
+    _, _ = inference_plots(run_data, energy_data,
+                           params, run_params, runs_np=False)
 
     return runner, run_logger
 
-
+# pylint: disable=too-many-locals
 def main(kwargs):
     """Perform inference using saved model.
 
@@ -269,8 +301,11 @@ def main(kwargs):
         [2.] We are only interested in the command line arguments that were
              passed to `inference.py` (i.e. those contained in kwargs).
     """
-    params_file = kwargs.get('params_file', None)
-    params = load_params(params_file)  # load params used during training
+    log_dir = kwargs.get('log_dir', None)
+    if log_dir is not None:
+        params = load_pkl(os.path.join(log_dir, 'parameters.pkl'))
+    #  params_file = kwargs.get('params_file', None)
+    #  params = load_params(params_file)  # load params used during training
 
     # NOTE: [1.]
     condition1 = not params['using_hvd']
@@ -361,16 +396,11 @@ def main(kwargs):
 
 
 if __name__ == '__main__':
-    args = parse_inference_args()
-
-    t0 = time.time()
-    log_file = 'output_dirs.txt'
-    FLAGS = args.__dict__
+    ARGS = parse_inference_args()
+    LOG_FILE = 'output_dirs.txt'
+    FLAGS = ARGS.__dict__
     io.log(80 * '-' + '\n' + 'INFERENCE FLAGS:\n')
     for key, val in FLAGS.items():
         io.log(f'{key}: {val}\n')
 
     main(FLAGS)
-
-    io.log('\n\n' + 80 * '-' + '\n'
-           f'Time to complete: {time.time() - t0:.4g}')
