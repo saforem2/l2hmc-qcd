@@ -11,13 +11,12 @@ Date: 01/07/2020
 """
 from __future__ import absolute_import, division, print_function
 
-import config as cfg
-
 from collections import namedtuple
+
+import config as cfg
 
 from utils.file_io import timeit  # noqa: F401
 from network.generic_net_np import GenericNetNP
-
 
 HAS_AUTOGRAD = False
 try:
@@ -35,7 +34,7 @@ Weights = namedtuple('Weights', ['w', 'b'])
 NP_FLOAT = cfg.NP_FLOAT
 
 
-class DynamicsRunner:
+class DynamicsNP:
     """Implements tools for running tensorflow-independent inference."""
     def __init__(self, potential_fn, weights, hmc=False, **params):
         self.potential = potential_fn

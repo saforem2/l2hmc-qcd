@@ -10,6 +10,7 @@ import os
 
 import xarray as xr
 import arviz as az
+import seaborn as sns
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -27,41 +28,6 @@ from plotters.seaborn_plots import plot_setup
 from plotters.data_utils import InferenceData
 
 HEADER = 80 * '-'
-
-
-def inference_plots_old(run_data, energy_data, params, run_params, **kwargs):
-    """Make all inference plots from inference run."""
-    run_str = run_params['run_str']
-    log_dir = params['log_dir']
-    figs_dir = os.path.join(log_dir, 'figures_np')
-    fig_dir = os.path.join(figs_dir, run_str)
-    plotter = GaugeModelPlotter(params, figs_dir)
-    energy_plotter = EnergyPlotter(params, fig_dir)
-
-    apd, pkwds = plotter.plot_observables(run_data, **run_params)
-    title = pkwds['title']
-    qarr = np.array(run_data['charges']).T
-    qarr_int = np.around(qarr)
-
-    out_file = os.path.join(fig_dir, 'charges_grid.png')
-    fig, ax = plot_charges(qarr, out_file, title=title, nrows=4)
-
-    out_file = os.path.join(fig_dir, 'chargs_autocorr_grid.png')
-    fig, ax = plot_autocorrs(qarr_int, out_file=out_file, title=title, nrows=4)
-
-    fig, ax = plt.subplots()
-    ax.hist(qarr_int.flatten(), density=True, label=r"""$\mathcal{Q}$""")
-    ax.legend(loc='best')
-    ax.set_title(title, fontsize='x-large')
-    plt.tight_layout()
-    out_file = os.path.join(fig_dir, 'charges_histogram.pdf')
-    plt.savefig(out_file, dpi=200, bbox_inches='tight')
-
-    np_data = energy_plotter.plot_energies(energy_data,
-                                           out_dir='np',
-                                           **run_params)
-
-    io.save_dict(np_data, log_dir, 'energy_data')
 
 
 def _get_title(params, run_params):
@@ -118,7 +84,10 @@ def build_dataset(run_data, run_params):
         if 'mask' in key:
             continue
 
-        arr, draws = therm_arr(np.array(val))
+        try:
+            arr, draws = therm_arr(np.array(val))
+        except:
+            import pudb; pudb.set_trace()
         arr = arr.T
         chains = np.arange(arr.shape[0])
 
@@ -153,13 +122,50 @@ def _check_existing(out_dir, fname):
 
     return fname
 
-# pylint: disable=too-many-locals
-def inference_plots(run_data, energy_data, params, run_params, **kwargs):
-    """Create trace plots of lattice observables and energy data."""
+def plot_reverse_data(reverse_data, params, run_params, **kwargs):
+    """Plot reversibility results."""
     run_str = run_params['run_str']
     log_dir = params['log_dir']
     runs_np = kwargs.get('runs_np', True)
-    io.log(f'runs_np: {runs_np}')
+    if runs_np:
+        figs_dir = os.path.join(log_dir, 'figures_np')
+    else:
+        figs_dir = os.path.join(log_dir, 'figures_tf')
+
+    fig_dir = os.path.join(figs_dir, run_str)
+    io.check_else_make_dir(fig_dir)
+    out_dir = kwargs.get('out_dir', None)
+    try:
+        fname, title_str, _ = plot_setup(log_dir, run_params)
+    except FileNotFoundError:
+        return None, None
+
+    fname = f'{fname}_reversibility_hist'
+    out_file = os.path.join(fig_dir, f'{fname}.pdf')
+    fig, ax = plt.subplots()
+    for key, val in reverse_data.items():
+        sns.kdeplot(np.array(val), shade=True, label=key, ax=ax)
+    ax.legend(loc='best')
+    plt.tight_layout()
+    io.log(f'Saving figure to: {out_file}...')
+    fig.savefig(out_file, dpi=200, bbox_inches='tight')
+    if out_dir is not None:
+        fout = os.path.join(out_dir, f'{fname}.pdf')
+        io.log(f'Saving figure to: {fout}...')
+        fig.savefig(fout, dpi=200, bbox_inches='tight')
+
+    return fig, ax
+
+
+# pylint: disable=too-many-locals
+def inference_plots(data_dict, params, run_params, **kwargs):
+    """Create trace plots of lattice observables and energy data."""
+    run_data = data_dict.get('run_data', None)
+    energy_data = data_dict.get('energy_data', None)
+    reverse_data = data_dict.get('reverse_data', None)
+    run_str = run_params['run_str']
+    log_dir = params['log_dir']
+    runs_np = kwargs.get('runs_np', True)
     if runs_np:
         figs_dir = os.path.join(log_dir, 'figures_np')
     else:
@@ -266,6 +272,13 @@ def inference_plots(run_data, energy_data, params, run_params, **kwargs):
         _plot_trace(energy_dataset, etp_out_file)
         _plot_posterior(energy_dataset, epp_out_file)
 
+    ####################################################
+    # Create histogram plots of the reversibility data.
+    ####################################################
+    if reverse_data is not None:
+        _, _ = plot_reverse_data(reverse_data, params, run_params,
+                                 runs_np=runs_np)
+
     return dataset, energy_dataset
 
 
@@ -308,24 +321,24 @@ def main(args):
 
     outputs = run_inference_np(log_dir, dynamics, lattice,
                                run_params, init=args.init)
-    rdata = outputs['run_data']
-    edata = outputs['energy_data']
+    #  run_data = outputs['data']['run_data']
+    #  energy_data = outputs['data']['energy_data']
+    #  reverse_data = outputs['data']['reverse_data']
+
     run_params = outputs['run_params']
     params = load_pkl(os.path.join(log_dir, 'parameters.pkl'))
-    #  inference_data = InferenceData(params, run_params, rdata, edata)
-    #  run_dataset, energy_dataset = inference_data.make_plots(run_params,
-    #                                                          run_data=rdata,
-    #                                                          energy_data=edata,
-    #                                                          runs_np=True)
-    # keys grouped by energy type, for plotting
-    ekeys = ['potential_init', 'potential_proposed', 'potential_out',
-             'kinetic_init', 'kinetic_proposed', 'kinetic_out',
-             'hamiltonian_init', 'hamiltonian_proposed', 'hamiltonian_out']
-    edata = {k: edata[k] for k in ekeys}
-    dataset, energy_dataset = inference_plots(rdata, edata,
-                                              params, run_params)
+    #  keys grouped by energy type, for plotting
+    #  ekeys = ['potential_init', 'potential_proposed', 'potential_out',
+    #           'kinetic_init', 'kinetic_proposed', 'kinetic_out',
+    #           'hamiltonian_init', 'hamiltonian_proposed', 'hamiltonian_out',
+    #           'exp_energy_diff']
+    #  energy_data = {k: energy_data[k] for k in ekeys}
+    #  data_dict = outputs['data']
+    dataset, energy_dataset = inference_plots(outputs['data'], params,
+                                              outputs['run_params'],
+                                              runs_np=True)
 
-    return run_params, rdata, edata, dataset
+    return run_params, outputs['data'], dataset
 
 
 if __name__ == '__main__':

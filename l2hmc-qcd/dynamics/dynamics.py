@@ -29,6 +29,7 @@ import config as cfg
 
 __all__ = ['Dynamics']
 
+NP_FLOAT = cfg.NP_FLOAT
 TF_FLOAT = cfg.TF_FLOAT
 TF_INT = cfg.TF_INT
 State = cfg.State  # namedtuple object containing `(x, v, beta)`
@@ -44,6 +45,12 @@ def _add_to_collection(collection, ops):
         _ = [tf.add_to_collection(collection, op) for op in ops]
     else:
         tf.add_to_collection(collection, ops)
+
+def cast_float(x, dtype=NP_FLOAT):
+    if dtype == np.float64:
+        return np.float64(x)
+    elif dtype == np.float32:
+        return np.float32(x)
 
 
 class Dynamics(tf.keras.Model):
@@ -85,9 +92,11 @@ class Dynamics(tf.keras.Model):
 
         self.hmc = params.get('hmc', False)           # use HMC sampler
         self._eps_np = params.get('eps', 0.4)         # initial step size
+        eps_np = params.get('eps', 0.4)
+        self._eps_np = cast_float(eps_np, NP_FLOAT)
         self.use_bn = params.get('use_bn', False)     # use batch normalization
         self.num_steps = params.get('num_steps', 5)   # number of lf steps
-        self.zero_masks = params.get('zero_masks', False)    # all 0 binary mask
+        self.zero_masks = params.get('zero_masks', False)   # all 0 binary mask
         self.num_hidden1 = params.get('num_hidden1', 10)    # nodes in h1
         self.num_hidden2 = params.get('num_hidden2', 10)    # nodes in h2
         self.dropout_prob = params.get('dropout_prob', 0.)  # dropout prob

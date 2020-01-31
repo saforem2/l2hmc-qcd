@@ -282,12 +282,16 @@ def inference(runner, run_logger, plotter, energy_plotter, **kwargs):
         run_params = pickle.load(f)
     run_data = build_run_data(run_logger.run_data)
     energy_data = {k: np.array(v) for k, v in run_logger.energy_dict.items()}
-    _, _ = inference_plots(run_data, energy_data,
-                           params, run_params, runs_np=False)
+    data_dict = {
+        'run_data': run_data,
+        'energy_data': energy_data,
+    }
+    _, _ = inference_plots(data_dict, params, run_params, runs_np=False)
 
     return runner, run_logger
 
 # pylint: disable=too-many-locals
+
 def main(kwargs):
     """Perform inference using saved model.
 
@@ -301,9 +305,19 @@ def main(kwargs):
         [2.] We are only interested in the command line arguments that were
              passed to `inference.py` (i.e. those contained in kwargs).
     """
+    #  log_dir = getattr(args, 'log_dir', None)
     log_dir = kwargs.get('log_dir', None)
-    if log_dir is not None:
-        params = load_pkl(os.path.join(log_dir, 'parameters.pkl'))
+    if log_dir is None:
+        params_file = os.path.join(os.getcwd(), 'params.pkl')
+        if os.path.isfile(params_file):
+            params = load_pkl(params_file)
+            log_dir = params['log_dir']
+        else:
+            raise FileNotFoundError('`log_dir` not specified. Exiting.')
+
+    #  log_dir = kwargs.get('log_dir', None)
+    #  if log_dir is not None:
+    #      params = load_pkl(os.path.join(log_dir, 'parameters.pkl'))
     #  params_file = kwargs.get('params_file', None)
     #  params = load_params(params_file)  # load params used during training
 
