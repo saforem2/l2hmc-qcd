@@ -119,6 +119,7 @@ def load_params(log_dir):
 
     return params
 
+
 # pylint: disable=invalid-name
 def log(s, nl=True):
     """Print string `s` to stdout if and only if hvd.rank() == 0."""
