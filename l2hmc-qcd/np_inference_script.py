@@ -41,32 +41,32 @@ def build_log_dirs():
     """Build array of log_dirs."""
     root_dir = os.path.abspath('/home/foremans/DLHMC/l2hmc-qcd/gauge_logs')
     dates = [
-        '2019_12_15',
-        '2019_12_16',
-        '2019_12_17',
-        '2019_12_18',
-        '2019_12_19',
-        '2019_12_20',
-        '2019_12_21',
-        '2019_12_22',
-        '2019_12_23',
-        '2019_12_24',
-        '2019_12_25',
-        '2019_12_26',
-        '2019_12_27',
-        '2019_12_28',
-        '2019_12_29',
-        '2019_12_30',
-        '2019_12_31',
-        '2020_01_02',
-        '2020_01_03',
-        '2020_01_04',
-        '2020_01_05',
-        '2020_01_06',
-        '2020_01_07',
+        #  '2019_12_15',
+        #  '2019_12_16',
+        #  '2019_12_17',
+        #  '2019_12_18',
+        #  '2019_12_19',
+        #  '2019_12_20',
+        #  '2019_12_21',
+        #  '2019_12_22',
+        #  '2019_12_23',
+        #  '2019_12_24',
+        #  '2019_12_25',
+        #  '2019_12_26',
+        #  '2019_12_27',
+        #  '2019_12_28',
+        #  '2019_12_29',
+        #  '2019_12_30',
+        #  '2019_12_31',
+        #  '2020_01_02',
+        #  '2020_01_03',
+        #  '2020_01_04',
+        #  '2020_01_05',
+        #  '2020_01_06',
+        #  '2020_01_07',
         '2020_01_08',
         '2020_01_14',
-        '2020_01_15',
+        #  '2020_01_15',
     ]
 
     log_dirs = []
@@ -80,7 +80,12 @@ def build_log_dirs():
 
 def plot_plaqs_diffs(run_data_dict, log_dir, params, run_params, **kwargs):
     """Plot plaqs_diffs for all key, val pairs in `run_data_dict`."""
-    fig_dir = os.path.join(log_dir, 'figures_np', 'plaqs_diffs')
+    runs_np = kwargs.get('runs_np', True)
+    if runs_np:
+        fig_dir = os.path.join(log_dir, 'figures_np', 'plaqs_diffs')
+    else:
+        fig_dir = os.path.join(log_dir, 'figures_tf', 'plaqs_diffs')
+
     io.check_else_make_dir(fig_dir)
     out_file = os.path.join(fig_dir, 'plaqs_diffs_plots.pdf')
     title_str = (r"$N_{\mathrm{LF}} = $" + f"{params['num_steps']}, "
@@ -105,12 +110,16 @@ def plot_plaqs_diffs(run_data_dict, log_dir, params, run_params, **kwargs):
     for net_weights, run_data in run_data_dict.items():
         plaqs = np.array(run_data['plaqs'])
         y = plaq_exact - therm_arr(plaqs).flatten()
-        px_label = (r"""$\langle A(\xi^{\prime}|\xi) = $"""
-                    + f"{np.mean(run_data['accept_prob']):.3g}")
-        label = f'nw: {tuple(net_weights)}, ' + px_label
+        avg_label = f'avg: {np.mean(y):.4g}'
+        #  px_label = (r"""$\langle A(\xi^{\prime}|\xi)\rangle = $"""
+        #              + f"{np.mean(run_data['accept_prob']):.3g}")
+        nws = '(' + ', '.join((str(int(i)) for i in net_weights)) + ')'
+        label = f'{nws}, ' + avg_label
+        #  label = f'nw: {nws}, ' + px_label
+        #  label = f'nw: {tuple(net_weights)}, ' + px_label
         sns.kdeplot(y, shade=True, label=label, ax=ax)
 
-    ax.legend(loc='best')
+    ax.legend(loc='best', fontsize='small')
     ax.set_xlabel(r"""$\delta \phi_{P}$""", fontsize='large')
     ax.set_title(title_str, fontsize='x-large')
 
