@@ -4,16 +4,17 @@ Helper methods for performing file IO.
 Author: Sam Foreman (github: @saforem2)
 Created: 2/27/2019
 """
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
+from __future__ import absolute_import, division, print_function
+
 import os
-import datetime
+import time
+import errno
 import pickle
 import shutil
-import numpy as np
-
+import datetime
 import config as cfg
+
+import numpy as np
 
 try:
     import horovod.tensorflow as hvd
@@ -25,8 +26,97 @@ except ImportError:
     HAS_HOROVOD = False
 
 
+def make_pngs_from_pdfs(rootdir=None):
+    """Use os.walk from `rootdir`, creating pngs from all pdfs encountered."""
+    if rootdir is None:
+        rootdir = os.path.abspath('/home/foremans/DLHMC/l2hmc-qcd/gauge_logs')
+    for root, _, files in os.walk(rootdir):
+        if 'old' in root:
+            continue
+        fnames = [i.rstrip('.pdf') for i in files if i.endswith('.pdf')]
+        in_files = [os.path.join(root, i) for i in files if i.endswith('.pdf')]
+        if len(in_files) > 1:
+            png_dir = os.path.join(root, 'pngs')
+            check_else_make_dir(png_dir)
+            out_files = [os.path.join(png_dir, f'{i}') for i in fnames]
+            for inf, outf in zip(in_files, out_files):
+                if not os.path.isfile(outf):
+                    log(f'in: {inf} --> out: {outf}\n')
+                    try:
+                        os.system(f'~/bin/pdftopng {inf} {outf}')
+                    except:  # pylint: disable=bare-except
+                        return
+
+
+def copy(src, dst):
+    """Copy from src --> dst using `shutil.copytree`."""
+    try:
+        shutil.copytree(src, dst)
+    except OSError as exc:  # python > 2.5
+        if exc.errno == errno.ENOTDIR:
+            shutil.copy(src, dst)
+        else:
+            raise
+
+def copy_gauge_figures(root_src_dir=None, root_dst_dir=None):
+    """Copy `figures` and `figures_np` from all `log_dirs` to `~`."""
+    if root_src_dir is None:
+        root_src_dir = os.path.abspath('/home/foremans/DLHMC/'
+                                       'l2hmc-qcd/gauge_logs')
+    if root_dst_dir is None:
+        dirstr = '/home/foremans/gauge_logs_figures'
+        if os.path.isdir(os.path.abspath(dirstr)):
+            timestr = get_timestr()
+            tstr = timestr['timestr']
+            dirstr += f'_{tstr}'
+            root_dst_dir = os.path.abspath(dirstr)
+    for src_dir, _, _ in os.walk(root_src_dir):
+        #  if src_dir.endswith('figures') or src_dir.endswith('figures_np'):
+        if src_dir == 'figures_np':
+            date_str = src_dir.split('/')[-3]
+            log_str = src_dir.split('/')[-2]
+            fig_str = src_dir.split('/')[-1]
+            dst_dir = os.path.join(root_dst_dir, date_str, log_str, fig_str)
+            log(f'Copying {src_dir} --> {dst_dir}')
+            copy(src_dir, dst_dir)
+
+def timeit(method):
+    """Timing decorator."""
+    def timed(*args, **kwargs):
+        """Function to be timed."""
+        start_time = time.time()
+        result = method(*args, **kwargs)
+        end_time = time.time()
+
+        if 'log_time' in kwargs:
+            name = kwargs.get('log_name', method.__name__.upper())
+            kwargs['log_time'][name] = int((end_time - start_time) * 1000)
+        else:
+            log(80 * '-')
+            log(f'`{method.__name__}` took: {(end_time - start_time):.4g}s')
+            log(80 * '-')
+        return result
+    return timed
+
+
+def get_timestr():
+    """Get formatted time string."""
+    now = datetime.datetime.now()
+    day_str = now.strftime('%Y_%m_%d')
+    hour_str = now.strftime('%H%M')
+    timestr = f'{day_str}_{hour_str}'
+
+    timestrs = {
+        'day_str': day_str,
+        'hour_str': hour_str,
+        'timestr': timestr,
+    }
+
+    return timestrs
+
 
 def load_params(log_dir):
+    """Load params from log_dir."""
     params_file = os.path.join(log_dir, 'parameters.pkl')
     with open(params_file, 'rb') as f:
         params = pickle.load(f)
@@ -34,6 +124,7 @@ def load_params(log_dir):
     return params
 
 
+# pylint: disable=invalid-name
 def log(s, nl=True):
     """Print string `s` to stdout if and only if hvd.rank() == 0."""
     try:
@@ -62,7 +153,8 @@ def log_and_write(s, f):
     write(s, f)
 
 
-def copy(src, dest):
+def copy_old(src, dest):
+    """Copy from src to dst."""
     try:
         shutil.copytree(src, dest)
     except OSError:
@@ -91,6 +183,7 @@ def make_dirs(dirs):
     _ = [check_else_make_dir(d) for d in dirs]
 
 
+# pylint: disable=too-many-branches
 def _parse_gauge_flags(FLAGS):
     """Parse flags for `GaugeModel` instance."""
     if isinstance(FLAGS, dict):
@@ -100,35 +193,32 @@ def _parse_gauge_flags(FLAGS):
             flags_dict = FLAGS.__dict__
         except (NameError, AttributeError):
             pass
-    #  try:
     d = {
-        'LX': flags_dict.get('space_size', None),
-        'BS': flags_dict.get('batch_size', None),
-        'LF': flags_dict.get('num_steps', None),
-        'SS': flags_dict.get('eps', None),
+        'LX': flags_dict.get('space_size', 8),
+        'BS': flags_dict.get('batch_size', 64),
+        'LF': flags_dict.get('num_steps', 1),
+        'SS': flags_dict.get('eps', 0.1),
         'EF': flags_dict.get('eps_fixed', False),
-        'QW': flags_dict.get('charge_weight', None),
-        'NA': flags_dict.get('network_arch', None),
-        'BN': flags_dict.get('use_bn', None),
-        'DP': flags_dict.get('dropout_prob', None),
-        'AW': flags_dict.get('aux_weight', None),
-        'XS': flags_dict.get('x_scale_weight', None),
-        'XT': flags_dict.get('x_translation_weight', None),
-        'XQ': flags_dict.get('x_transformation_weight', None),
-        'VS': flags_dict.get('v_scale_weight', None),
-        'VT': flags_dict.get('v_translation_weight', None),
-        'VQ': flags_dict.get('v_transformation_weight', None),
-        'GL': flags_dict.get('use_gaussian_loss', None),
-        'NL': flags_dict.get('use_nnehmc_loss', None),
-        'CV': flags_dict.get('clip_value', None),
-        'hmc': flags_dict.get('hmc', None),
+        'QW': flags_dict.get('charge_weight', 0),
+        'NA': flags_dict.get('network_arch', 'generic'),
+        'BN': flags_dict.get('use_bn', False),
+        'DP': flags_dict.get('dropout_prob', 0),
+        'AW': flags_dict.get('aux_weight', 1),
+        'XS': flags_dict.get('x_scale_weight', 1),
+        'XT': flags_dict.get('x_translation_weight', 1),
+        'XQ': flags_dict.get('x_transformation_weight', 1),
+        'VS': flags_dict.get('v_scale_weight', 1),
+        'VT': flags_dict.get('v_translation_weight', 1),
+        'VQ': flags_dict.get('v_transformation_weight', 1),
+        'GL': flags_dict.get('use_gaussian_loss', False),
+        'NL': flags_dict.get('use_nnehmc_loss', False),
+        'CV': flags_dict.get('clip_value', 0),
+        'hmc': flags_dict.get('hmc', False),
     }
     try:
         _log_dir = flags_dict['log_dir']
     except KeyError:
         _log_dir = ''
-
-    #  train_weights = (d['XS'], d['XT'], d['XQ'], d['VS'], d['VT'], d['VQ'])
 
     d['_log_dir'] = _log_dir
     aw = str(d['AW']).replace('.', '')
@@ -142,7 +232,7 @@ def _parse_gauge_flags(FLAGS):
     d['VT'] = str(int(d['VT'])).replace('.', '')
     d['VQ'] = str(int(d['VQ'])).replace('.', '')
 
-    if flags_dict['hmc']:
+    if flags_dict.get('hmc', False):
         run_str = (f"HMC_lattice{d['LX']}_batch{d['BS']}"
                    "_lf{d['LF']}_eps{d['SS']:.3g}")
     else:
@@ -270,6 +360,7 @@ def _parse_flags(FLAGS, model_type='GaugeModel'):
     return run_str, out_dict
 
 
+# pylint: disable=too-many-locals
 def create_log_dir(FLAGS, **kwargs):
     """Automatically create and name `log_dir` to save model data to.
 
@@ -299,13 +390,9 @@ def create_log_dir(FLAGS, **kwargs):
     hour_str = now.strftime('%H%M')
 
     project_dir = os.path.abspath(os.path.dirname(cfg.FILE_PATH))
-    #  if FLAGS.log_dir is None:
+
     if _log_dir is None:
         _dir = 'gauge_logs' if root_dir is None else root_dir
-        #  if root_dir is None:
-        #      _dir = 'gauge_logs'
-        #  else:
-        #      _dir = root_dir
 
     else:
         if root_dir is None:
@@ -314,9 +401,12 @@ def create_log_dir(FLAGS, **kwargs):
             _dir = os.path.join(_log_dir, root_dir)
     root_log_dir = os.path.join(project_dir, _dir, day_str, run_str)
     # if `root_log_dir` already exists, append '_%H%M' (hour, minute) at end
-    if os.path.isdir(root_log_dir):
-        root_log_dir = os.path.join(project_dir, _dir, day_str,  # append hr...
-                                    run_str + f'_{hour_str}')    # ...str @ end
+    #  if os.path.isdir(root_log_dir):
+    dirname = run_str + f'_{hour_str}'
+    if os.path.isdir(os.path.join(project_dir, _dir, day_str, dirname)):
+        dirname += '_1'
+
+    root_log_dir = os.path.join(project_dir, _dir, day_str, dirname)
     check_else_make_dir(root_log_dir)
     if any('run_' in i for i in os.listdir(root_log_dir)):
         run_num = get_run_num(root_log_dir)
@@ -372,6 +462,7 @@ def save_data(data, out_file, name=None):
 
 
 def save_params(params, out_dir, name=None):
+    """save params (dict) to `out_dir`, as both `.pkl` and `.txt` files."""
     check_else_make_dir(out_dir)
     if name is None:
         name = 'parameters'
@@ -385,6 +476,7 @@ def save_params(params, out_dir, name=None):
 
 
 def save_dict(d, out_dir, name):
+    """Save generic dict `d` to `out_dir` as both `.pkl` and `.txt` files."""
     check_else_make_dir(out_dir)
     txt_file = os.path.join(out_dir, f'{name}.txt')
     pkl_file = os.path.join(out_dir, f'{name}.pkl')

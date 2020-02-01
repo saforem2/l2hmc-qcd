@@ -40,15 +40,16 @@ def init_gauge_samples(params, init_method):
     """Create initial samples to be used at beginning of inference run."""
     x_dim = params['space_size'] * params['time_size'] * params['dim']
     samples_shape = (params['batch_size'], x_dim)
-    if init_method == 'random':
-        tmp = samples_shape[0] * samples_shape[1]
-        samples_init = np.random.uniform(-1, 1, tmp).reshape(*samples_shape)
-    elif 'zero' in init_method:
+    if 'zero' in init_method:
         samples_init = (np.zeros(samples_shape)
                         + 1e-2 * np.random.randn(*samples_shape))
-    elif 'ones' in init_method:
+    if 'ones' in init_method:
         samples_init = (np.ones(samples_shape)
                         + 1e-2 * np.random.randn(*samples_shape))
+    else:
+        #  tmp = samples_shape[0] * samples_shape[1]
+        #  samples_init = np.random.randn(-1, 1, tmp).reshape(*samples_shape)
+        samples_init = np.random.randn(*samples_shape)
 
     return samples_init
 

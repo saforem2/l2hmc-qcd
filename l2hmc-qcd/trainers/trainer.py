@@ -1,12 +1,16 @@
+"""
+trainer.py
+"""
 import time
-import numpy as np
 
 from collections import namedtuple
 
-import utils.file_io as io
-from config import NP_FLOAT, NetWeights
-from lattice.lattice import u1_plaq_exact
+import numpy as np
 
+import utils.file_io as io
+
+from config import NetWeights, NP_FLOAT
+from lattice.lattice import u1_plaq_exact
 
 TrainStepData = namedtuple('TrainStepData', [
     'step', 'beta', 'loss', 'samples', 'prob', 'lr', 'eps'
@@ -14,6 +18,7 @@ TrainStepData = namedtuple('TrainStepData', [
 
 
 def linear_add_cooling(step, temp_init, temp_final, num_steps):
+    """Linear add cooling annealing schedule."""
     remaining_frac = (num_steps - step) / num_steps
     temp = temp_final + (temp_init - temp_final) * remaining_frac
 
@@ -21,6 +26,7 @@ def linear_add_cooling(step, temp_init, temp_final, num_steps):
 
 
 def exp_mult_cooling(step, temp_init, temp_final, num_steps, alpha=None):
+    """Exponential multiplication cooling schedule."""
     if alpha is None:
         alpha = np.exp((np.log(temp_final) - np.log(temp_init)) / num_steps)
 
@@ -123,10 +129,11 @@ class Trainer:
             outputs['x_out'] = np.mod(outputs['x_out'], 2 * np.pi)
             outputs['dx'] = np.mean(outputs['x_out'] - samples, axis=-1)
             outputs['plaq_exact'] = u1_plaq_exact(beta)
+            plaq_diff = u1_plaq_exact(beta) - outputs['plaqs']
             data_str += (
                 f"{np.mean(outputs['actions']):^9.4g} "
-                f"{np.mean(outputs['plaqs']):^9.4g} "
-                f"{outputs['plaq_exact']:^9.4g}"
+                f"{np.mean(plaq_diff):^9.4g} "
+                #  f"{outputs['plaq_exact']:^9.4g}"
             )
 
         return outputs, data_str
@@ -147,8 +154,8 @@ class Trainer:
         """
         beta = kwargs.pop('beta', None)
         samples = kwargs.pop('samples', None)
-        initial_step = kwargs.pop('initial_step', 0)
-        io.log(f'Initial_step: {initial_step}\n')
+        #  initial_step = kwargs.pop('initial_step', 0)
+        #  io.log(f'Initial_step: {initial_step}\n')
 
         net_weights = kwargs.get('net_weights', NetWeights(1, 1, 1,
                                                            1, 1, 1))

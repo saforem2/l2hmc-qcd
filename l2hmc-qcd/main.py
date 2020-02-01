@@ -35,33 +35,36 @@ from __future__ import absolute_import, division, print_function
 import os
 import time
 import pickle
-import config as cfg
 
-from seed_dict import seeds, vnet_seeds, xnet_seeds
 from collections import namedtuple
 
 import numpy as np
 import tensorflow as tf
 
-from tensorflow.python import debug as tf_debug  # noqa: F401
-from tensorflow.python.client import timeline  # noqa: F401
+# pylint: disable=import-error, unused-import
+from tensorflow.python import debug as tf_debug
+from tensorflow.python.client import timeline
 
 import inference
+import config as cfg
 import utils.file_io as io
 
-from utils.parse_args import parse_args
+from seed_dict import seeds, vnet_seeds, xnet_seeds
 from models.gauge_model import GaugeModel
 from plotters.plot_utils import weights_hist
 from loggers.train_logger import TrainLogger
+from utils.file_io import timeit
+from utils.parse_args import parse_args
 from trainers.trainer import Trainer
 from trainers.train_setup import (check_reversibility, count_trainable_params,
                                   create_config, get_net_weights, train_setup)
-
 if cfg.HAS_HOROVOD:
     import horovod.tensorflow as hvd
 
 if float(tf.__version__.split('.')[0]) <= 2:
     tf.logging.set_verbosity(tf.logging.INFO)
+
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 
 SEP_STR = 80 * '-'  # + '\n'
 
@@ -91,6 +94,12 @@ def create_monitored_training_session(**sess_kwargs):
     return sess
 
 
+def pkl_dump(d, pkl_file):
+    with open(pkl_file, 'wb') as f:
+        pickle.dump(d, f)
+
+
+@timeit
 def train_l2hmc(FLAGS, log_file=None):
     """Create, train, and run L2HMC sampler on 2D U(1) gauge model."""
     t0 = time.time()
@@ -135,19 +144,6 @@ def train_l2hmc(FLAGS, log_file=None):
     model = GaugeModel(params)
 
     if is_chief:
-        weights = get_net_weights(model)
-        xnet = model.dynamics.xnet.generic_net
-        vnet = model.dynamics.vnet.generic_net
-        coeffs = {
-            'xnet': {
-                'coeff_scale': xnet.coeff_scale,
-                'coeff_transformation': xnet.coeff_transformation,
-            },
-            'vnet': {
-                'coeff_scale': vnet.coeff_scale,
-                'coeff_transformation': vnet.coeff_transformation,
-            },
-        }
         logging_steps = params.get('logging_steps', 10)
         train_logger = TrainLogger(model, log_dir,
                                    logging_steps=logging_steps,
@@ -156,7 +152,7 @@ def train_l2hmc(FLAGS, log_file=None):
         train_logger = None
 
     # -------------------------------------------------------
-    # Setup config and init_feed_dict for tf.train.Scaffold
+    # Setup `tf.ConfigProto` object for `tf.Session`
     # -------------------------------------------------------
     config, params = create_config(params)
 
@@ -173,7 +169,14 @@ def train_l2hmc(FLAGS, log_file=None):
     )
     samples_init = np.array(model.lattice.samples_array, dtype=NP_FLOAT)
     beta_init = model.beta_init
-    global_step = tf.train.get_or_create_global_step()
+    #  global_step = tf.train.get_or_create_global_step()
+
+    #  dynamics_masks = []
+    #  dynamics_masks_inv = []
+    #  for step in range(model.num_steps):
+    #      mask, mask_inv = model.dynamics._get_mask(step)
+    #      dynamics_masks.append(mask)
+    #      dynamics_masks_inv.append(mask_inv)
 
     # ----------------------------------------------------------------
     #  Create MonitoredTrainingSession
@@ -197,6 +200,16 @@ def train_l2hmc(FLAGS, log_file=None):
         model.dynamics.vnet.generic_net.coeff_transformation.initializer,
     ])
 
+    masks_file = os.path.join(model.log_dir, 'dynamics_mask.pkl')
+    masks = sess.run(model.dynamics.masks)
+    pkl_dump(masks, masks_file)
+    #  masks_np, masks_inv_np = sess.run([dynamics_masks, dynamics_masks_inv])
+    #  masks_dict = {
+    #      'masks': masks_np,
+    #      'masks_inv': masks_inv_np,
+    #  }
+    #  pkl_dump(masks_dict, masks_file)
+
     # Check reversibility and write results out to `.txt` file.
     reverse_file = os.path.join(model.log_dir, 'reversibility_test.txt')
     check_reversibility(model, sess, net_weights_init, out_file=reverse_file)
@@ -206,48 +219,47 @@ def train_l2hmc(FLAGS, log_file=None):
         io.save_dict(xnet_seeds, out_dir=model.log_dir, name='xnet_seeds')
         io.save_dict(vnet_seeds, out_dir=model.log_dir, name='vnet_seeds')
 
-    # ----------------------------------------------------------
+    # **********************************************************
     #                       TRAINING
     # ----------------------------------------------------------
     trainer = Trainer(sess, model, train_logger, **params)
 
-    initial_step = sess.run(global_step)
+    #  initial_step = sess.run(global_step)
     trainer.train(model.train_steps,
                   beta=beta_init,
                   samples=samples_init,
-                  initial_step=initial_step,
                   net_weights=net_weights_init)
 
     check_reversibility(model, sess, out_file=reverse_file)
 
     if is_chief:
-        wfile = os.path.join(model.log_dir, 'dynamics_weights.h5')
-        model.dynamics.save_weights(wfile)
+        # wfile = os.path.join(model.log_dir, 'dynamics_weights.h5')
+        # model.dynamics.save_weights(wfile)
 
-        weights = get_net_weights(model)
-        xcoeffs = sess.run(list(coeffs['xnet'].values()))
-        vcoeffs = sess.run(list(coeffs['vnet'].values()))
-        weights['xnet']['GenericNet'].update({
+        weights_final, coeffs_final = get_net_weights(model, sess)
+        xcoeffs = sess.run(list(coeffs_final['xnet'].values()))
+        vcoeffs = sess.run(list(coeffs_final['vnet'].values()))
+        weights_final['xnet']['GenericNet'].update({
             'coeff_scale': xcoeffs[0],
             'coeff_transformation': xcoeffs[1]
         })
-        weights['vnet']['GenericNet'].update({
+        weights_final['vnet']['GenericNet'].update({
             'coeff_scale': vcoeffs[0],
             'coeff_transformation': vcoeffs[1]
         })
 
-        _ = weights_hist(model.log_dir, weights=weights)
+        _ = weights_hist(model.log_dir, weights=weights_final, init=False)
 
-        def pkl_dump(d, pkl_file):
-            with open(pkl_file, 'wb') as f:
-                pickle.dump(d, f)
-
-        pkl_dump(weights, os.path.join(model.log_dir, 'weights.pkl'))
+        pkl_dump(weights_final, os.path.join(model.log_dir, 'weights.pkl'))
         pkl_dump(model.params, os.path.join(os.getcwd(), 'params.pkl'))
+        io.save_dict(model.params, os.path.join(os.getcwd()), 'params.pkl')
 
         # Count all trainable paramters and write them (w/ shapes) to txt file
         count_trainable_params(os.path.join(params['log_dir'],
                                             'trainable_params.txt'))
+        eps_np = sess.run(model.dynamics.eps)
+        eps_dict = {'eps': eps_np}
+        pkl_dump(eps_dict, os.path.join(model.log_dir, 'eps_np.pkl'))
 
     # close MonitoredTrainingSession and reset the default graph
     sess.close()
@@ -257,6 +269,7 @@ def train_l2hmc(FLAGS, log_file=None):
     return model, train_logger
 
 
+@timeit
 def main(FLAGS):
     """Main method for creating/training/running L2HMC for U(1) gauge model."""
     log_file = 'output_dirs.txt'

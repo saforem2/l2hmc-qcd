@@ -38,36 +38,56 @@ def set_global_step(sess, global_step):
     global_step_np = sess.run(global_step_tensor)
     io.log(f'INFO: New value of `global_step`: {global_step_np}')
 
-def _get_net_weights(net, weights):
+
+def _get_net_weights(net, weights, sess):
     for layer in net.layers:
         if hasattr(layer, 'layers'):
-            weights = _get_net_weights(layer, weights)
+            weights = _get_net_weights(layer, weights, sess)
         else:
             try:
+                w, b = sess.run(layer.weights)
                 weights[net.name].update({
-                    layer.name: Weights(*layer.get_weights())
+                    layer.name: Weights(w=w, b=b)
                 })
+                #  weights[net.name].update({
+                #      layer.name: Weights(*layer.get_weights())
+                #  })
             except KeyError:
+                w, b = sess.run(layer.weights)
                 weights.update({
                     net.name: {
-                        layer.name: Weights(*layer.get_weights())
+                        layer.name: Weights(w=w, b=b)
                     }
                 })
+                #  weights.update({
+                #      net.name: {
+                #          layer.name: Weights(*layer.get_weights())
+                #      }
+                #  })
 
     return weights
 
 
-def get_coeffs(generic_net):
-    return (generic_net.coeff_scale, generic_net.coeff_transformation)
-
-
-def get_net_weights(model):
-    weights = {
-        'xnet': _get_net_weights(model.dynamics.xnet, {}),
-        'vnet': _get_net_weights(model.dynamics.vnet, {}),
+def get_net_weights(model, sess):
+    with tf.name_scope('model_weights'):
+        weights = {
+            'xnet': _get_net_weights(model.dynamics.xnet, {}, sess),
+            'vnet': _get_net_weights(model.dynamics.vnet, {}, sess),
+        }
+    xnet = model.dynamics.xnet.generic_net
+    vnet = model.dynamics.vnet.generic_net
+    coeffs = {
+        'xnet': {
+            'coeff_scale': xnet.coeff_scale,
+            'coeff_transformation': xnet.coeff_transformation,
+        },
+        'vnet': {
+            'coeff_scale': vnet.coeff_scale,
+            'coeff_transformation': vnet.coeff_transformation,
+        },
     }
 
-    return weights
+    return weights, coeffs
 
 
 def create_config(params):
@@ -191,6 +211,7 @@ def train_setup(FLAGS, log_file=None, root_dir=None,
     except AttributeError:
         FLAGS_DICT = FLAGS
 
+    #  params = FLAGS_DICT.copy()
     params = {k: v for k, v in FLAGS_DICT.items()}
 
     params['log_dir'] = io.create_log_dir(FLAGS,
@@ -199,8 +220,8 @@ def train_setup(FLAGS, log_file=None, root_dir=None,
                                           run_str=run_str,
                                           model_type=model_type)
     params['summaries'] = not getattr(FLAGS, 'no_summaries', False)
-    save_steps = getattr(FLAGS, 'save_steps', None)
-    train_steps = getattr(FLAGS, 'train_steps', None)
+    save_steps = getattr(FLAGS, 'save_steps', 1000)
+    train_steps = getattr(FLAGS, 'train_steps', 5000)
 
     if 'no_summaries' in params:
         del params['no_summaries']

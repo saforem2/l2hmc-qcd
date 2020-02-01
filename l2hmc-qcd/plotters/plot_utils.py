@@ -55,7 +55,30 @@ except ImportError:
     HAS_SEABORN = False
 
 
-def weights_hist(log_dir, weights=None):
+def get_matching_log_dirs(string, root_dir):
+    contents = os.listdir(root_dir)
+    matches = [os.path.join(root_dir, i) for i in contents if string in i]
+    log_dirs = []
+
+    def check(log_dir):
+        if not os.path.isdir(log_dir):
+            return False
+        figs_dir = os.path.join(log_dir, 'figures')
+        runs_dir = os.path.join(log_dir, 'runs')
+        if os.path.isdir(figs_dir) and os.path.isdir(runs_dir):
+            return True
+        return False
+
+    for match in matches:
+        if os.path.isdir(match):
+            contents = os.listdir(match)
+            log_dirs.extend([os.path.join(match, i) for i in contents
+                             if check(os.path.join(match, i))])
+
+    return log_dirs
+
+
+def weights_hist(log_dir, weights=None, init=False):
     if HAS_SEABORN:
         sns.set_palette('bright', 100)
 
@@ -115,7 +138,10 @@ def weights_hist(log_dir, weights=None):
                                     color='C7', histtype='step')
                 _ = ax.set_title(f'{key}/{k1}/{k2}', fontsize='x-large')
                 _ = ax.legend(loc='best')
-                fname = f'{key}_{k1}_{k2}_weights_hist.png'
+                fname = f'{key}_{k1}_{k2}_weights_hist'
+                if init:
+                    fname += f'_init'
+                fname += '.png'
                 out_file = os.path.join(figs_dir, fname)
                 fig.tight_layout()
                 io.log(f'Saving figure to: {out_file}.')
@@ -130,8 +156,14 @@ def reset_plots():
     plt.clf()
 
 
-def get_run_dirs(log_dir, filter_str=None):
-    runs_dir = os.path.join(log_dir, 'runs')
+def get_run_dirs(log_dir, filter_str=None, runs_np=False):
+    """Get all run_dirs from `log_dir`."""
+    run_dirs = None
+    if runs_np:
+        runs_dir = os.path.join(log_dir, 'runs_np')
+    else:
+        runs_dir = os.path.join(log_dir, 'runs')
+    #  if os.path.isdir(runs_dir):
     run_dirs = [
         os.path.join(runs_dir, i) for i in os.listdir(runs_dir)
         if os.path.isdir(os.path.join(runs_dir, i))
@@ -139,7 +171,11 @@ def get_run_dirs(log_dir, filter_str=None):
     if filter_str is not None:
         run_dirs = [i for i in run_dirs if filter_str in i]
 
-    return sorted(run_dirs)
+    run_dirs = sorted(run_dirs)
+
+    io.log(f'No `runs_dir` in {log_dir}.')
+    return run_dirs
+
 
 
 def load_pkl(pkl_file, arr=False, verbose=False):
