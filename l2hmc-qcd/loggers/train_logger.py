@@ -46,8 +46,8 @@ class TrainLogger:
         if model._model_type == 'GaugeModel':
             self.obs_data = {}
             self.h_strf += ("{:^10s}".format("ACTION")
-                            + "{:^10s}".format("PLAQ")
-                            + "{:^10s}".format("(EXACT)"))
+                            + "{:^10s}".format("dPLAQ"))
+                            #  + "{:^10s}".format("(EXACT)"))
 
         self.dash = (len(self.h_strf) + 1) * '-'
         self.train_header = self.dash + '\n' + self.h_strf + '\n' + self.dash
@@ -107,8 +107,8 @@ class TrainLogger:
 
     def update(self, sess, data, data_str, net_weights):
         """Update _current state and train_data."""
-        print_steps = getattr(self, 'print_steps', 1)
         step = data['step']
+        print_steps = getattr(self, 'print_steps', 1)
 
         if (step + 1) % print_steps == 0:
             io.log(data_str)

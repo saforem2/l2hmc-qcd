@@ -224,6 +224,7 @@ class Runner:
                                              sumlogdet_np=sumlogdet_prop)
         energies_out = self._run_energy_ops(state_np=state_out,
                                             sumlogdet_np=sumlogdet_out)
+
         energies = {
             'potential_init': energies_init['potential_energy'],
             'kinetic_init': energies_init['kinetic_energy'],
@@ -259,7 +260,6 @@ class Runner:
         t0 = time.time()
         outputs = self.run_inference_ops(feed_dict)
         dt = time.time() - t0
-        dx = np.mean((outputs['dxf'] + outputs['dxb']) / 2, axis=1)
 
         out_dict = {
             'step': step,
@@ -268,11 +268,9 @@ class Runner:
             'samples_in': samples,
             'samples': outputs['x_out'],
             'px': outputs['accept_prob'],
+            'dx': outputs['dx'],
             'dxf': outputs['dxf'],
             'dxb': outputs['dxb'],
-            'dx': dx,
-            #  'dx': outputs['dx'],
-            #  'dx': np.mean(outputs['x_out'] - samples, axis=-1),
         }
 
         out_dict.update(outputs)
@@ -287,9 +285,11 @@ class Runner:
             out_dict['samples'] = np.mod(outputs['x_out'], 2 * np.pi)
             observables = self.run_obs_ops(feed_dict)
             out_dict.update(observables)
+            plaq_diff = self.plaq_exact - observables['avg_plaqs']
             data_str += (f"{observables['avg_actions']:^9.4g} "
-                         f"{observables['avg_plaqs']:^9.4g} "
-                         f"{self.plaq_exact:^9.4g} ")
+                         f"{plaq_diff:^9.4g} ")
+                         #  f"{observables['avg_plaqs']:^9.4g} "
+                         #  f"{self.plaq_exact:^9.4g} ")
 
         if (step % self.energy_steps) == 0:
             # Calculate energies by running tensorflow graph operations
@@ -329,6 +329,7 @@ class Runner:
             samples = np.random.randn(*(batch_size, x_dim))
 
         io.log(self._run_header)
+
         for step in range(self.run_steps):
             out_data, data_str = self.run_step(step, samples)
             samples = out_data['samples']

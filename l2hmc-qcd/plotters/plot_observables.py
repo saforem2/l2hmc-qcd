@@ -46,6 +46,7 @@ def plot_charges(charges, out_file=None, title=None, nrows=2, **kwargs):
         charges = charges.T
 
     batch_size, steps = charges.shape
+    nrows = min(nrows, int(np.sqrt(batch_size)))
     N = int(nrows)
 
     figsize = (6.4 * N, 4.8 * N)
@@ -74,6 +75,7 @@ def plot_autocorrs(charges, out_file=None, title=None, nrows=4, **kwargs):
         charges = charges.T
 
     batch_size, steps = charges.shape
+    nrows = min(nrows, int(np.sqrt(batch_size)))
     N = int(nrows)
 
     figsize = (6.4 * N, 4.8 * N)

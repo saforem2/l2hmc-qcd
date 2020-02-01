@@ -46,14 +46,13 @@ def create_config(params):
         # Horovod: pin GPU to be used to process local rank 
         # (one GPU per process)
         config.gpu_options.allow_growth = True
-        #  config.allow_soft_placement = True
         if HAS_HOROVOD and params['horovod']:
             config.gpu_options.visible_device_list = str(hvd.local_rank())
 
     if HAS_MATPLOTLIB:
         params['_plot'] = True
 
-    if params['theta']:
+    if params.get('theta', False):
         params['_plot'] = False
         io.log("Training on Theta @ ALCF...")
         params['data_format'] = 'channels_last'

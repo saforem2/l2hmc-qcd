@@ -47,3 +47,10 @@ l2hmc-qcd/args/output_dirs.txt
 l2hmc-qcd/models/model_backup.py
 l2hmc-qcd/models/model_testing.py
 *Untitled*
+*.un~*
+*__pycache__*
+*.bak
+*figures*
+*.pkl
+*backup*
+*old*

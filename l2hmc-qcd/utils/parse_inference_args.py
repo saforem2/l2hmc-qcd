@@ -6,12 +6,9 @@ Implements method for parsing command line arguments for `gauge_model.py`
 Author: Sam Foreman (github: @saforem2)
 Date: 04/09/2019
 """
-import os
 import sys
 import argparse
 import shlex
-
-import utils.file_io as io
 
 #  from config import process_config
 #  from attr_dict import AttrDict
@@ -37,6 +34,13 @@ def parse_args():
     ###########################################################################
     #                          Lattice parameters                             #
     ###########################################################################
+    parser.add_argument('--log_dir',
+                        dest='log_dir',
+                        required=False,
+                        default=None,
+                        help=("""Path to `log_dir` containing trained model on
+                              which to run inference."""))
+
     parser.add_argument('--params_file',
                         dest='params_file',
                         required=False,

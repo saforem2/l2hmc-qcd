@@ -29,6 +29,7 @@ import config as cfg
 
 __all__ = ['Dynamics']
 
+NP_FLOAT = cfg.NP_FLOAT
 TF_FLOAT = cfg.TF_FLOAT
 TF_INT = cfg.TF_INT
 State = cfg.State  # namedtuple object containing `(x, v, beta)`
@@ -44,6 +45,12 @@ def _add_to_collection(collection, ops):
         _ = [tf.add_to_collection(collection, op) for op in ops]
     else:
         tf.add_to_collection(collection, ops)
+
+def cast_float(x, dtype=NP_FLOAT):
+    if dtype == np.float64:
+        return np.float64(x)
+    if dtype == np.float32:
+        return np.float32(x)
 
 
 class Dynamics(tf.keras.Model):
@@ -76,7 +83,6 @@ class Dynamics(tf.keras.Model):
         """
         super(Dynamics, self).__init__(name='Dynamics')
         np.random.seed(seeds['global_np'])
-
         self.potential = potential_fn
 
         # create attributes from `kwargs.items()`
@@ -84,16 +90,22 @@ class Dynamics(tf.keras.Model):
             if key != 'eps':  # want to use self.eps as tf.Variable
                 setattr(self, key, val)
 
-        self.num_steps = params.get('num_steps', 5)
-        self.hmc = params.get('hmc', False)
-        self.network_arch = params.get('network_arch', 'generic')
-        self.use_bn = params.get('use_bn', False)
-        self.dropout_prob = params.get('dropout_prob', 0.)
-        self.num_hidden1 = params.get('num_hidden1', 10)
-        self.num_hidden2 = params.get('num_hidden2', 10)
-        self._eps_np = params.get('eps', 0.4)
+        self.hmc = params.get('hmc', False)           # use HMC sampler
+        self._eps_np = params.get('eps', 0.4)         # initial step size
+        eps_np = params.get('eps', 0.4)
+        self._eps_np = cast_float(eps_np, NP_FLOAT)
+        self.use_bn = params.get('use_bn', False)     # use batch normalization
+        self.num_steps = params.get('num_steps', 5)   # number of lf steps
+        self.zero_masks = params.get('zero_masks', False)   # all 0 binary mask
+        self.num_hidden1 = params.get('num_hidden1', 10)    # nodes in h1
+        self.num_hidden2 = params.get('num_hidden2', 10)    # nodes in h2
+        self.dropout_prob = params.get('dropout_prob', 0.)  # dropout prob
+        self.network_arch = params.get('network_arch', 'generic')  # net arch
+
         self.eps = self._build_eps(use_log=False)
-        self.masks = self._build_masks()
+        # build binary masks for updating x
+        self.masks = self._build_masks(zero_masks=self.zero_masks)
+
         net_params = self._network_setup()
         self.xnet, self.vnet = self.build_network(net_params)
 
@@ -108,23 +120,24 @@ class Dynamics(tf.keras.Model):
         Returns:
             eps: The (trainable) step size to be used in the L2HMC algorithm.
         """
-        if use_log:
-            log_eps = tf.Variable(
-                initial_value=tf.log(tf.constant(self._eps_np)),
-                name='log_eps',
-                dtype=TF_FLOAT,
-                trainable=self.eps_trainable
-            )
+        with tf.name_scope('build_eps'):
+            if use_log:
+                log_eps = tf.Variable(
+                    initial_value=tf.log(tf.constant(self._eps_np)),
+                    name='log_eps',
+                    dtype=TF_FLOAT,
+                    trainable=self.eps_trainable
+                )
 
-            eps = tf.exp(log_eps, name='eps')
+                eps = tf.exp(log_eps, name='eps')
 
-        else:
-            eps = tf.Variable(
-                initial_value=tf.constant(self._eps_np),
-                name='eps',
-                dtype=TF_FLOAT,
-                trainable=self.eps_trainable
-            )
+            else:
+                eps = tf.Variable(
+                    initial_value=tf.constant(self._eps_np),
+                    name='eps',
+                    dtype=TF_FLOAT,
+                    trainable=self.eps_trainable
+                )
 
         return eps
 
@@ -171,11 +184,11 @@ class Dynamics(tf.keras.Model):
 
         else:
             net_params['factor'] = 2.
-            net_params['name_scope'] = 'x'
+            net_params['net_name'] = 'x'
             x_fn = FullNet(model_name='XNet', **net_params)
 
             net_params['factor'] = 1.       # factor used in orig. paper
-            net_params['name_scope'] = 'v'  # update name scope
+            net_params['net_name'] = 'v'  # update name scope
             v_fn = FullNet(model_name='VNet', **net_params)
 
         return x_fn, v_fn
@@ -224,75 +237,72 @@ class Dynamics(tf.keras.Model):
         # Call `self.transition_kernel` in the forward direction, 
         # starting from the initial `State`: `(x_init, v_init_f, beta)`
         # to get the proposed `State`
-        with tf.name_scope('transition_forward'):
-            vf_init = tf.random_normal(tf.shape(x_init),
-                                       dtype=TF_FLOAT,
-                                       seed=seeds['vf_init'],
-                                       name='vf_init')
+        with tf.name_scope('apply_transition'):
+            with tf.name_scope('forward'):
+                vf_init = tf.random_normal(tf.shape(x_init),
+                                           dtype=TF_FLOAT,
+                                           seed=seeds['vf_init'],
+                                           name='vf_init')
 
-            state_init_f = cfg.State(x_init, vf_init, beta)
-            outf = self.transition_kernel(*state_init_f,
-                                          weights, train_phase,
-                                          forward=True, hmc=hmc)
-            xf = outf['x_proposed']
-            vf = outf['v_proposed']
-            pxf = outf['accept_prob']
-            pxf_hmc = outf['accept_prob_hmc']
-            sumlogdetf = outf['sumlogdet']
-            dxf = tf.sqrt((xf - x_init) ** 2)
+                state_init_f = cfg.State(x_init, vf_init, beta)
+                outf = self.transition_kernel(*state_init_f,
+                                              weights, train_phase,
+                                              forward=True, hmc=hmc)
+                xf = outf['x_proposed']
+                vf = outf['v_proposed']
+                pxf = outf['accept_prob']
+                pxf_hmc = outf['accept_prob_hmc']
+                sumlogdetf = outf['sumlogdet']
 
-            #  dxf = tf.abs(tf.reduce_mean(xf - x_init))
+            with tf.name_scope('backward'):
+                vb_init = tf.random_normal(tf.shape(x_init),
+                                           dtype=TF_FLOAT,
+                                           seed=seeds['vb_init'],
+                                           name='vb_init')
 
-        with tf.name_scope('transition_backward'):
-            vb_init = tf.random_normal(tf.shape(x_init),
-                                       dtype=TF_FLOAT,
-                                       seed=seeds['vb_init'],
-                                       name='vb_init')
+                state_init_b = cfg.State(x_init, vb_init, beta)
+                outb = self.transition_kernel(*state_init_b,
+                                              weights, train_phase,
+                                              forward=False, hmc=hmc)
+                xb = outb['x_proposed']
+                vb = outb['v_proposed']
+                pxb = outb['accept_prob']
+                pxb_hmc = outb['accept_prob_hmc']
+                sumlogdetb = outb['sumlogdet']
 
-            state_init_b = cfg.State(x_init, vb_init, beta)
-            outb = self.transition_kernel(*state_init_b,
-                                          weights, train_phase,
-                                          forward=False, hmc=hmc)
-            xb = outb['x_proposed']
-            vb = outb['v_proposed']
-            pxb = outb['accept_prob']
-            pxb_hmc = outb['accept_prob_hmc']
-            sumlogdetb = outb['sumlogdet']
-            dxb = tf.sqrt((xb - x_init) ** 2)
-            #  dxb = tf.abs(tf.reduce_mean(xb - x_init))
+            # Decide direction uniformly
+            with tf.name_scope('combined'):
+                mask_f, mask_b = self._get_direction_masks()
 
-        # Decide direction uniformly
-        with tf.name_scope('simulate_forward_backward'):
-            mask_f, mask_b = self._get_direction_masks()
+                # Use forward/backward mask to reconstruct `v_init`
+                v_init = (vf_init * mask_f[:, None]
+                          + vb_init * mask_b[:, None])
 
-            # Use forward/backward mask to reconstruct `v_init`
-            v_init = (vf_init * mask_f[:, None] + vb_init * mask_b[:, None])
+                # Obtain proposed states
+                x_proposed = xf * mask_f[:, None] + xb * mask_b[:, None]
+                v_proposed = vf * mask_f[:, None] + vb * mask_b[:, None]
+                sumlogdet_proposed = sumlogdetf * mask_f + sumlogdetb * mask_b
 
-            # Obtain proposed states
-            x_proposed = xf * mask_f[:, None] + xb * mask_b[:, None]
-            v_proposed = vf * mask_f[:, None] + vb * mask_b[:, None]
-            sumlogdet_proposed = sumlogdetf * mask_f + sumlogdetb * mask_b
+                # Probability of accepting proposed states
+                accept_prob = pxf * mask_f + pxb * mask_b
 
-            # Probability of accepting proposed states
-            accept_prob = pxf * mask_f + pxb * mask_b
+                # -------------------------------------------------------------
+                # NOTE: `accept_prob_hmc` is the probability of accepting the
+                # proposed states if `sumlogdet = 0`, and can be ignored unless
+                # using the NNEHMC loss function from the 'Robust Parameter
+                # Estimation...' paper (see line 10 for a link)
+                # -------------------------------------------------------------
+                accept_prob_hmc = pxf_hmc * mask_f + pxb_hmc * mask_b  # (!)
 
-            # ---------------------------------------------------------------
-            # NOTE: `accept_prob_hmc` is the probability of accepting the
-            # proposed states if `sumlogdet = 0`, and can be ignored unless
-            # using the NNEHMC loss function from the 'Robust Parameter
-            # Estimation...' paper (see line 10 for a link)
-            # ---------------------------------------------------------------
-            accept_prob_hmc = pxf_hmc * mask_f + pxb_hmc * mask_b  # (!)
+            # Accept or reject step
+            with tf.name_scope('accept_reject_step'):
+                # accept_mask, reject_mask
+                mask_a, mask_r = self._get_accept_masks(accept_prob)
 
-        # Accept or reject step
-        with tf.name_scope('accept_reject_step'):
-            # accept_mask, reject_mask
-            mask_a, mask_r = self._get_accept_masks(accept_prob)
-
-            # State (x, v)  after accept / reject step
-            x_out = x_proposed * mask_a[:, None] + x_init * mask_r[:, None]
-            v_out = v_proposed * mask_a[:, None] + v_init * mask_r[:, None]
-            sumlogdet_out = sumlogdet_proposed * mask_a
+                # State (x, v)  after accept / reject step
+                x_out = x_proposed * mask_a[:, None] + x_init * mask_r[:, None]
+                v_out = v_proposed * mask_a[:, None] + v_init * mask_r[:, None]
+                sumlogdet_out = sumlogdet_proposed * mask_a
 
         outputs = {
             'x_init': x_init,
@@ -301,57 +311,56 @@ class Dynamics(tf.keras.Model):
             'v_proposed': v_proposed,
             'x_out': x_out,
             'v_out': v_out,
-            'dxf': dxf,
-            'dxb': dxb,
+            'xf': xf,
+            'xb': xb,
             'accept_prob': accept_prob,
             'accept_prob_hmc': accept_prob_hmc,
             'sumlogdet_proposed': sumlogdet_proposed,
             'sumlogdet_out': sumlogdet_out,
-            'mask_f': mask_f,  # forward mask
-            'mask_b': mask_b,  # backward mask
-            'mask_a': mask_a,  # accept mask
-            'mask_r': mask_r,  # reject mask
         }
-        for val in outputs.values():
-            tf.add_to_collection('dynamics_out', val)
 
         return outputs
 
-    def transition_kernel(self, x_in, v_in, beta,
-                          weights, train_phase,
-                          forward=True, hmc=True):
+    def transition_kernel(self,
+                          x_in,
+                          v_in,
+                          beta,
+                          weights,
+                          train_phase,
+                          forward=True,
+                          hmc=True):
         """Transition kernel of augmented leapfrog integrator."""
         lf_fn = self._forward_lf if forward else self._backward_lf
 
-        with tf.name_scope('init'):
+        with tf.name_scope('transition_kernel'):
             x_proposed, v_proposed = x_in, v_in
 
             step = tf.constant(0., name='md_step', dtype=TF_FLOAT)
             batch_size = tf.shape(x_in)[0]
             logdet = tf.zeros((batch_size,), dtype=TF_FLOAT)
 
-        def body(step, x, v, logdet):
-            new_x, new_v, j, _fns = lf_fn(x, v, beta, step,
-                                          weights, train_phase)
-            return (step+1, new_x, new_v, logdet+j)
+            def body(step, x, v, logdet):
+                new_x, new_v, j, _fns = lf_fn(x, v, beta, step,
+                                              weights, train_phase)
+                return (step+1, new_x, new_v, logdet+j)
 
-        def cond(step, *args):
-            return tf.less(step, self.num_steps)
+            def cond(step, *args):
+                return tf.less(step, self.num_steps)
 
-        outputs = tf.while_loop(
-            cond=cond,
-            body=body,
-            loop_vars=[step, x_proposed, v_proposed, logdet]
-        )
+            outputs = tf.while_loop(
+                cond=cond,
+                body=body,
+                loop_vars=[step, x_proposed, v_proposed, logdet]
+            )
 
-        step = outputs[0]
-        x_proposed = outputs[1]
-        v_proposed = outputs[2]
-        sumlogdet = outputs[3]
+            step = outputs[0]
+            x_proposed = outputs[1]
+            v_proposed = outputs[2]
+            sumlogdet = outputs[3]
 
-        accept_prob, accept_prob_hmc = self._compute_accept_prob(
-            x_in, v_in, x_proposed, v_proposed, sumlogdet, beta, hmc=hmc
-        )
+            accept_prob, accept_prob_hmc = self._compute_accept_prob(
+                x_in, v_in, x_proposed, v_proposed, sumlogdet, beta, hmc=hmc
+            )
 
         outputs = {
             'x_init': x_in,
@@ -480,9 +489,6 @@ class Dynamics(tf.keras.Model):
             transf = weights.x_transformation * (self.eps * Qx)
             transl = weights.x_translation * Tx
 
-            #  scale = self.eps * Sx * weights.x_scale
-            #  transf = self.eps * Qx * weights.x_transformation
-            #  transl = Tx * weights.x_translation
             fns = [scale, transl, transf]
 
             y = x * tf.exp(scale) + self.eps * (v * tf.exp(transf) + transl)
@@ -509,32 +515,6 @@ class Dynamics(tf.keras.Model):
             half_eps = 0.5 * self.eps
             vb = exp_scale * (v + half_eps * (grad * exp_transf + transl))
 
-            #  half_eps = 0.5 * self.eps
-            #  scale = -half_eps * Sv * weights.v_scale
-            #  transf = self.eps * Qv * weights.v_transformation
-            #  transl = Tv * weights.v_translation
-            #
-            #  scale_term = tf.exp(scale)
-            #  transf_term = grad * tf.exp(transf)
-            #
-            #  vb = scale_term * (v + half_eps * (transf_term + transl))
-            #  with tf.name_scope('vb_mul'):
-            #      scale *= -0.5 * self.eps * weights.v_scale
-            #      transl *= weights.v_translation
-            #      transf *= self.eps * weights.v_transformation
-            #      #  scale *= -0.5 * self.eps * weights[0]
-            #      #  transl *= weights[1]
-            #      #  transf *= self.eps * weights[2]
-            #      fns = [scale, transl, transf]
-            #
-            #  with tf.name_scope('vb_exp'):
-            #      scale_exp = exp(scale, 'scale_exp')
-            #      transf_exp = exp(transf, 'transformation_exp')
-            #
-            #  with tf.name_scope('proposed'):
-            #      v = scale_exp * (v + 0.5 * self.eps
-            #                       * (grad * transf_exp - transl))
-
             logdet = tf.reduce_sum(scale, axis=1, name='logdet_vb')
 
         fns = [scale, transl, transf]
@@ -550,39 +530,11 @@ class Dynamics(tf.keras.Model):
             transl = weights.x_translation * Tx
             transf = weights.x_transformation * (self.eps * Qx)
 
-            #  scale = -self.eps * Sx * weights.x_scale
-            #  transf = self.eps * Qx * weights.x_transformation
-            #  transl = Tx * weights.x_translation
-            #
-            #  tmp = self.eps * (v * tf.exp(transf) + transl)
-            #  xb = mask * x + mask_inv * (x - tmp) * tf.exp(scale)
-
             exp_scale = tf.exp(scale, name='exp_scale_xb')
             exp_transf = tf.exp(transf, name='exp_transf_xb')
             y = exp_scale * (x - self.eps * (v * exp_transf + transl))
             xb = mask * x + mask_inv * y
             logdet = tf.reduce_sum(mask_inv * scale, axis=1, name='logdet_xb')
-
-            #  scale, transl, transf = self.xnet([v, mask * x, t], training)
-            #
-            #  with tf.name_scope('xb_mul'):
-            #      scale *= -self.eps * weights.x_scale
-            #      transl *= weights.x_translation
-            #      transf *= self.eps * weights.x_transformation
-            #      #  scale *= -self.eps * weights[3]
-            #      #  transl *= weights[4]
-            #      #  transf *= self.eps * weights[5]
-            #      fns = [scale, transl, transf]
-            #
-            #  with tf.name_scope('xb_exp'):
-            #      scale_exp = exp(scale, 'xb_scale')
-            #      transf_exp = exp(transf, 'xb_transformation')
-            #
-            #  with tf.name_scope('proposed'):
-            #      x = (mask * x + mask_inv * scale_exp
-            #           * (x - self.eps * (v * transf_exp + transl)))
-            #  logdet = tf.reduce_sum(mask_inv * scale, axis=1,
-            #                         name='logdet_xb')
 
         fns = [scale, transl, transf]
         return xb, logdet, fns
@@ -608,13 +560,14 @@ class Dynamics(tf.keras.Model):
                 dh = h_init - h_proposed + sumlogdet
                 prob = tf.exp(tf.minimum(dh, 0.))
 
-            # Ensure numerical stability as well as correct gradients
-            accept_prob = tf.where(tf.is_finite(prob),
-                                   prob, tf.zeros_like(prob))
-        if hmc:
-            prob_hmc = self._compute_accept_prob_hmc(h_init, h_proposed, beta)
-        else:
-            prob_hmc = tf.zeros_like(accept_prob)
+                # Ensure numerical stability as well as correct gradients
+                accept_prob = tf.where(tf.is_finite(prob),
+                                       prob, tf.zeros_like(prob))
+            if hmc:
+                prob_hmc = self._compute_accept_prob_hmc(h_init,
+                                                         h_proposed, beta)
+            else:
+                prob_hmc = tf.zeros_like(accept_prob)
 
         return accept_prob, prob_hmc
 
@@ -623,7 +576,7 @@ class Dynamics(tf.keras.Model):
 
         NOTE: This computes the accept prob. for generic HMC.
         """
-        with tf.name_scope('accept_prob_hmc'):
+        with tf.name_scope('accept_prob_nnehmc'):
             prob = tf.exp(tf.minimum(beta * (h_init - h_proposed), 0.))
             accept_prob = tf.where(tf.is_finite(prob),
                                    prob, tf.zeros_like(prob))
@@ -643,7 +596,7 @@ class Dynamics(tf.keras.Model):
         return t
 
     def _get_direction_masks(self):
-        with tf.name_scope('transition_masks'):
+        with tf.name_scope('direction_masks'):
             with tf.name_scope('forward_mask'):
                 forward_mask = tf.cast(
                     tf.random_uniform((self.batch_size,),
@@ -658,7 +611,7 @@ class Dynamics(tf.keras.Model):
         return forward_mask, backward_mask
 
     def _get_accept_masks(self, accept_prob):
-        with tf.name_scope('accept_mask'):
+        with tf.name_scope('accept_masks'):
             accept_mask = tf.cast(
                 accept_prob > tf.random_uniform(tf.shape(accept_prob),
                                                 dtype=TF_FLOAT,
@@ -670,46 +623,39 @@ class Dynamics(tf.keras.Model):
 
         return accept_mask, reject_mask
 
-    def _check_reversibility(self, x_in, v_in, beta, weights, training):
-        outputs_f = self.transition_kernel(x_in, v_in, beta,
-                                           weights,
-                                           training,
-                                           forward=True)
-        xf = outputs_f['x_proposed']
-        vf = outputs_f['v_proposed']
+    def _build_zero_masks(self):
+        with tf.name_scoep('x_masks'):
+            masks = []
+            for _ in range(self.num_steps):
+                mask = tf.constant(np.zeros((self.x_dim,)), dtype=TF_FLOAT)
+                masks.append(mask[None, :])
 
-        #  backward(forward(x, v)) --> x, v
-        outputs_b = self.transition_kernel(xf, vf, beta,
-                                           weights,
-                                           training,
-                                           forward=False)
-        xb = outputs_b['x_proposed']
-        vb = outputs_b['v_proposed']
+            return masks
 
-        outputs = {
-            'xf': xf,
-            'vf': vf,
-            'xb': xb,
-            'vb': vb
-        }
+    def _build_masks(self, zero_masks=False):
+        """Construct different binary masks for different time steps.
 
-        return outputs
+        Args:
+            all_zeros (bool): If set to True, create a mask with all entries
+                equal to zero instead of half zeros, half ones.
+        """
+        with tf.name_scope('x_masks'):
+            masks = []
+            for _ in range(self.num_steps):
+                # Need to use npr here because tf would generate different
+                # random values across different `sess.run`
+                idx = npr.permutation(np.arange(self.x_dim))[:self.x_dim // 2]
+                mask = np.zeros((self.x_dim,))
+                if not zero_masks:  # set half of the entries equal to 1
+                    mask[idx] = 1.
 
-    def _build_masks(self):
-        """Construct different binary masks for different time steps."""
-        masks = []
-        for _ in range(self.num_steps):
-            # Need to use npr here because tf would generate different random
-            # values across different `sess.run`
-            idx = npr.permutation(np.arange(self.x_dim))[:self.x_dim // 2]
-            mask = np.zeros((self.x_dim,))
-            mask[idx] = 1.
-            mask = tf.constant(mask, dtype=TF_FLOAT)
-            masks.append(mask[None, :])
+                mask = tf.constant(mask, dtype=TF_FLOAT)
+                masks.append(mask[None, :])
 
         return masks
 
     def _get_mask(self, step):
+        """Retrieve the binary mask associated with the time step `step`."""
         with tf.name_scope('get_mask'):
             if tf.executing_eagerly():
                 m = self.masks[step]

@@ -26,7 +26,11 @@ import collections
 import numpy as np
 import tensorflow as tf
 from scipy.stats import multivariate_normal, ortho_group
-from scipy.misc import logsumexp
+try:
+    from scipy.misc import logsumexp
+except ImportError:
+    from scipy.special import logsumexp
+
 
 from config import TF_FLOAT, NP_FLOAT
 

@@ -1,5 +1,5 @@
-train_script=/Users/saforem2/ANL/l2hmc-qcd/l2hmc-qcd/gmm_main.py
-inference_script=/Users/saforem2/ANL/l2hmc-qcd/l2hmc-qcd/gmm_inference.py
+TRAIN_SCRIPT='../gmm_main.py'
+INFERENCE_SCRIPT='../gmm_inference.py'
 
 which python3
 

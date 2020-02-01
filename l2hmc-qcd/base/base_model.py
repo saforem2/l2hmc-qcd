@@ -25,6 +25,7 @@ import numpy as np
 import tensorflow as tf
 
 from utils.horovod_utils import warmup_lr
+import utils.file_io as io
 
 if cfg.HAS_HOROVOD:
     import horovod.tensorflow as hvd
@@ -32,6 +33,8 @@ if cfg.HAS_HOROVOD:
 
 TF_FLOAT = cfg.TF_FLOAT
 TF_INT = cfg.TF_INT
+
+State = cfg.State
 
 LFdata = namedtuple('LFdata', ['init', 'proposed', 'prob'])
 EnergyData = namedtuple('EnergyData', ['init', 'proposed', 'out',
@@ -85,7 +88,13 @@ class BaseModel(object):
             else:
                 setattr(self, key, val)
 
-        self.eps_trainable = not self.eps_fixed
+        self.use_gaussian_loss = getattr(self, 'use_gaussian_loss', False)
+        self.use_nnehmc_loss = getattr(self, 'use_nnehmc_loss', False)
+
+        self.hmc = getattr(self, 'hmc', False)
+
+        eps_fixed = getattr(self, 'eps_fixed', False)
+        self.eps_trainable = not eps_fixed
         self.global_step = self._create_global_step()
 
         warmup = self.params.get('warmup_lr', False)
@@ -97,59 +106,198 @@ class BaseModel(object):
         """Build `tf.Graph` object containing operations for running model."""
         raise NotImplementedError
 
+    def _build_inputs(self):
+        """Build inputs and their respective placeholders."""
+        io.log(f'INFO: Creating input placeholders...')
+        inputs = self._create_inputs()
+        self._inputs = inputs
+        self.x = inputs['x']
+        self.beta = inputs['beta']
+        self.eps_ph = inputs['eps_ph']
+        self.net_weights = inputs['net_weights']
+        self.train_phase = inputs['train_phase']
+        self.global_step_ph = inputs['global_step_ph']
+
+        # create global step setter
+        self.global_step_setter = self._build_global_step_setter()
+
+    def _build(self):
+        """Helper method for building model.
+
+        NOTE: This method builds those operations which are common to all
+        models.
+        """
+        # ********************************************************
+        # Create dynamics for running the augmented L2HMC sampler
+        # --------------------------------------------------------
+        io.log('INFO: Creating `Dynamics`...')
+        self.dynamics = self.create_dynamics()
+        self.dynamics_eps = self.dynamics.eps
+        # Create operation for assigning to `dynamics.eps`
+        # the value fed into the placeholder `eps_ph`.
+        self.eps_setter = self._build_eps_setter()
+
+        # **********************************************************
+        # Create metric function for measuring distance b/t configs
+        # ----------------------------------------------------------
+        if self._model_type == 'GaugeModel':
+            metric = getattr(self, 'metric', 'cos_diff')
+        else:
+            metric = getattr(self, 'metric', 'l2')
+
+        with tf.name_scope('metric_fn'):
+            self.metric_fn = self._create_metric_fn(metric)
+
+        # *****************************************
+        # Build sampler for obtaining new configs
+        # -----------------------------------------
+        x_data, z_data = self._build_sampler()
+
+        # *******************************************************************
+        # Build energy_ops to calculate energies.
+        # -------------------------------------------------------------------
+        with tf.name_scope('energy_ops'):
+            self.v_ph = tf.placeholder(dtype=TF_FLOAT,
+                                       shape=self.x.shape,
+                                       name='v_placeholder')
+            self.sumlogdet_ph = tf.placeholder(dtype=TF_FLOAT,
+                                               shape=self.x.shape[0],
+                                               name='sumlogdet_placeholder')
+            self.state = State(x=self.x, v=self.v_ph, beta=self.beta)
+
+            ph_str = 'energy_placeholders'
+            _ = [tf.add_to_collection(ph_str, i) for i in self.state]
+            tf.add_to_collection(ph_str, self.sumlogdet_ph)
+            self.energy_ops = self._calc_energies(self.state,
+                                                  self.sumlogdet_ph)
+
+        # *******************************************************************
+        # Calculate loss_op and train_op to backprop. grads through network
+        # -------------------------------------------------------------------
+        with tf.name_scope('calc_loss'):
+            self.loss_op, self._losses_dict = self.calc_loss(x_data, z_data)
+
+        # *******************************************************************
+        # Calculate gradients and build training operation
+        # -------------------------------------------------------------------
+        with tf.name_scope('train'):
+            io.log(f'INFO: Calculating gradients for backpropagation...')
+            self.grads = self._calc_grads(self.loss_op)
+            self.train_op = self._apply_grads(self.loss_op, self.grads)
+            self.train_ops = self._build_train_ops()
+
+        # *******************************************************************
+        # Build `run_ops` containing ops used when running inference.
+        # -------------------------------------------------------------------
+        io.log(f'Collecting inference operations...')
+        self.run_ops = self._build_run_ops()
+
     def _build_eps_setter(self):
-        """Create op that sets `eps` to be equal to the value in `eps-ph`."""
-        return tf.assign(self.dynamics.eps, self.eps_ph, name='eps_setter')
+        """Create op that sets `eps` to be equal to the value in `eps_ph`."""
+        with tf.name_scope('build_eps_setter'):
+            return tf.assign(self.dynamics.eps, self.eps_ph, name='eps_setter')
 
     def _build_global_step_setter(self):
         """Create op that sets the tensorflow `global_step`."""
-        return tf.assign(self.global_step,
-                         self.global_step_ph,
-                         name='global_step_setter')
+        with tf.name_scope('build_global_step_setter'):
+            return tf.assign(self.global_step,
+                             self.global_step_ph,
+                             name='global_step_setter')
 
     def _calc_energies(self, state, sumlogdet=0.):
         """Create operations for calculating the PE, KE and H of a `state`."""
-        pe = self.dynamics.potential_energy(state.x, state.beta)
-        ke = self.dynamics.kinetic_energy(state.v)
-        h = pe + ke + sumlogdet
+        with tf.name_scope('calc_energies'):
+            pe = self.dynamics.potential_energy(state.x, state.beta)
+            ke = self.dynamics.kinetic_energy(state.v)
+            h = pe + ke + sumlogdet
 
-        # Add these operations to the `energy_ops` collection
-        # for easy-access when loading the saved graph when
-        # running inference w/ the trained sampler
-        ops = (pe, ke, h)
-        for op in ops:
-            tf.add_to_collection('energy_ops', op)
+            # Add these operations to the `energy_ops` collection
+            # for easy-access when loading the saved graph when
+            # running inference w/ the trained sampler
+            ops = (pe, ke, h)
+            for op in ops:
+                tf.add_to_collection('energy_ops', op)
 
         return cfg.Energy(pe, ke, h)
 
+    def _build_train_ops(self):
+        """Build `train_ops` used for training the model."""
+        if self.hmc:
+            train_ops = {}
+        else:
+            train_ops = {
+                'loss_op': self.loss_op,
+                'train_op': self.train_op,
+                'x_out': self.x_out,
+                'dx': self.dx,
+                'dxf': self.dxf,
+                'dxb': self.dxb,
+                'px': self.px,
+                'lr': self.lr,
+                'dynamics_eps': self.dynamics.eps,
+            }
+
+        for val in train_ops.values():
+            tf.add_to_collection('train_ops', val)
+
+        return train_ops
+
+    def _build_run_ops(self):
+        run_ops = {
+            'x_init': self.x_init,
+            'v_init': self.v_init,
+            'x_proposed': self.x_proposed,
+            'v_proposed': self.v_proposed,
+            'x_out': self.x_out,
+            'v_out': self.v_out,
+            'dx': self.dx,
+            'dxf': self.dxf,
+            'dxb': self.dxb,
+            'accept_prob': self.px,
+            'accept_prob_hmc': self.px_hmc,
+            'sumlogdet_proposed': self.sumlogdet_proposed,
+            'sumlogdet_out': self.sumlogdet_out,
+        }
+        for val in run_ops.values():
+            tf.add_to_collection('run_ops', val)
+
+        return run_ops
+
     def _build_sampler(self):
         """Build operations used for sampling from the dynamics engine."""
-        x_dynamics, x_data = self._build_main_sampler()
-        self.x_out = x_dynamics['x_out']
-        self.px = x_dynamics['accept_prob']
-        self.px_hmc = x_dynamics['accept_prob_hmc']
-        self.dxf = x_dynamics['dxf']
-        self.dxb = x_dynamics['dxb']
-        self.dx = (self.dxf + self.dxb) / 2
+        with tf.name_scope('l2hmc_sampler'):
+            x_dynamics, x_data = self._build_main_sampler()
+            self.x_init = x_dynamics['x_init']
+            self.v_init = x_dynamics['v_init']
+            self.x_out = x_dynamics['x_out']
+            self.v_out = x_dynamics['v_out']
+            self.x_proposed = x_dynamics['x_proposed']
+            self.v_proposed = x_dynamics['v_proposed']
+            self.px = x_dynamics['accept_prob']
+            self.px_hmc = x_dynamics['accept_prob_hmc']
+            self.sumlogdet_proposed = x_dynamics['sumlogdet_proposed']
+            self.sumlogdet_out = x_dynamics['sumlogdet_out']
+            self.xf = x_dynamics['xf']
+            self.xb = x_dynamics['xb']
+            self.dx, self.dxf, self.dxb = self.calc_dx()
 
-        self.dynamics_dict = x_dynamics
-        self.x_diff, self.v_diff = self._check_reversibility()
+            self.dynamics_dict = x_dynamics
+            self.x_diff, self.v_diff = self._check_reversibility()
 
-        _, z_data = self._build_aux_sampler()
+            _, z_data = self._build_aux_sampler()
 
         return x_data, z_data
 
     def _build_main_sampler(self):
         """Build operations used for 'sampling' from the dynamics engine."""
-        with tf.name_scope('x_dynamics'):
+        with tf.name_scope('main_sampler'):
             args = (self.x, self.beta, self.net_weights, self.train_phase)
             kwargs = {
                 'hmc': getattr(self, 'use_nnehmc_loss', None),
                 'model_type': getattr(self, 'model_type', None),
             }
 
-            #  x_dynamics = self.dynamics.apply_transition(*args, **kwargs)
-            x_dynamics = self.dynamics(*args, **kwargs)
+            x_dynamics = self.dynamics.apply_transition(*args, **kwargs)
 
             x_data = LFdata(x_dynamics['x_init'],
                             x_dynamics['x_proposed'],
@@ -160,7 +308,7 @@ class BaseModel(object):
     def _build_aux_sampler(self):
         """Run dynamics using initialization distribution (random normal)."""
         aux_weight = getattr(self, 'aux_weight', 1.)
-        with tf.name_scope('aux_dynamics'):
+        with tf.name_scope('aux_sampler'):
             if aux_weight > 0.:
                 self.z = tf.random_normal(tf.shape(self.x),
                                           dtype=TF_FLOAT,
@@ -174,7 +322,7 @@ class BaseModel(object):
                 }
 
                 #  z_dynamics = self.dynamics.apply_transition(*args, **kwargs)
-                z_dynamics = self.dynamics(*args, **kwargs)
+                z_dynamics = self.dynamics.apply_transition(*args, **kwargs)
 
                 z_data = LFdata(z_dynamics['x_init'],
                                 z_dynamics['x_proposed'],
@@ -196,7 +344,7 @@ class BaseModel(object):
                 k: getattr(self, k, None) for k in keys
             }
             kwargs.update({
-                'eps_trainable': not self.eps_fixed,
+                'eps_trainable': not getattr(self, 'eps_fixed', False),
                 'x_dim': self.x_dim,
                 'batch_size': self.batch_size,
                 '_input_shape': self.x.shape
@@ -287,12 +435,12 @@ class BaseModel(object):
                 v_scale_weight = make_ph('v_scale_weight')
                 v_transl_weight = make_ph('v_translation_weight')
                 v_transf_weight = make_ph('v_transformation_weight')
-                net_weights = cfg.NetWeights(v_scale=v_scale_weight,
-                                             v_translation=v_transl_weight,
-                                             v_transformation=v_transf_weight,
-                                             x_scale=x_scale_weight,
+                net_weights = cfg.NetWeights(x_scale=x_scale_weight,
                                              x_translation=x_transl_weight,
-                                             x_transformation=x_transf_weight)
+                                             x_transformation=x_transf_weight,
+                                             v_scale=v_scale_weight,
+                                             v_translation=v_transl_weight,
+                                             v_transformation=v_transf_weight)
                 train_phase = make_ph('is_training', dtype=tf.bool)
                 eps_ph = make_ph('eps_ph')
                 global_step_ph = make_ph('global_step_ph', dtype=tf.int64)
@@ -319,29 +467,55 @@ class BaseModel(object):
 
     def _create_metric_fn(self, metric):
         """Create metric function used to measure distatnce between configs."""
-        raise NotImplementedError
+        if metric == 'l1':
+            def metric_fn(x1, x2):
+                return tf.abs(x1 - x2)
+        elif metric == 'l2':
+            def metric_fn(x1, x2):
+                return tf.square(x1 - x2)
+        elif metric == 'cos_diff':
+            def metric_fn(x1, x2):
+                return 1. - tf.cos(x1 - x2)
+        else:
+            raise ValueError(f'metric={metric}. Expected one of:\n'
+                             '`\tl1`, `l2`, or `cos_diff`.')
+
+        return metric_fn
 
     def _check_reversibility(self):
-        x_in = tf.random_normal(self.x.shape,
-                                dtype=TF_FLOAT,
-                                seed=seeds['x_reverse_check'],
-                                name='x_reverse_check')
-        v_in = tf.random_normal(self.x.shape,
-                                dtype=TF_FLOAT,
-                                seed=seeds['v_reverse_check'],
-                                name='v_reverse_check')
+        with tf.name_scope('reversibility_check'):
+            x_in = tf.random_normal(self.x.shape,
+                                    dtype=TF_FLOAT,
+                                    seed=seeds['x_reverse_check'],
+                                    name='x_reverse_check')
+            v_in = tf.random_normal(self.x.shape,
+                                    dtype=TF_FLOAT,
+                                    seed=seeds['v_reverse_check'],
+                                    name='v_reverse_check')
 
-        dynamics_check = self.dynamics._check_reversibility(x_in, v_in,
+            with tf.name_scope('forward'):
+                outputs_f = self.dynamics.transition_kernel(x_in, v_in,
                                                             self.beta,
                                                             self.net_weights,
-                                                            self.train_phase)
-        xb = dynamics_check['xb']
-        vb = dynamics_check['vb']
+                                                            self.train_phase,
+                                                            forward=True)
+                xf = outputs_f['x_proposed']
+                vf = outputs_f['v_proposed']
 
-        xdiff = (x_in - xb)
-        vdiff = (v_in - vb)
-        x_diff = tf.reduce_sum(tf.matmul(tf.transpose(xdiff), xdiff))
-        v_diff = tf.reduce_sum(tf.matmul(tf.transpose(vdiff), vdiff))
+            with tf.name_scope('backward'):
+                outputs_b = self.dynamics.transition_kernel(xf, vf,
+                                                            self.beta,
+                                                            self.net_weights,
+                                                            self.train_phase,
+                                                            forward=False)
+                xb = outputs_b['x_proposed']
+                vb = outputs_b['v_proposed']
+
+            with tf.name_scope('calc_diffs'):
+                xdiff = (x_in - xb)
+                vdiff = (v_in - vb)
+                x_diff = tf.reduce_sum(tf.matmul(tf.transpose(xdiff), xdiff))
+                v_diff = tf.reduce_sum(tf.matmul(tf.transpose(vdiff), vdiff))
 
         return x_diff, v_diff
 
@@ -352,13 +526,23 @@ class BaseModel(object):
 
         return esjd
 
+    def calc_dx(self):
+        with tf.name_scope('calc_dx'):
+            with tf.name_scope('dxf'):
+                dxf = self.metric_fn(self.xf, self.x_init)
+            with tf.name_scope('dxb'):
+                dxb = self.metric_fn(self.xb, self.x_init)
+
+            dx = tf.reduce_mean((dxf + dxb) / 2, axis=1)
+
+        return dx, dxf, dxb
+
     def _loss(self, init, proposed, prob):
         """Calculate the (standard) contribution to the loss from the ESJD."""
         ls = getattr(self, 'loss_scale', 1.)
         with tf.name_scope('calc_esjd'):
             esjd = self._calc_esjd(init, proposed, prob) + 1e-4  # no div. by 0
-
-        loss = tf.reduce_mean((ls / esjd) - (esjd / ls))
+            loss = tf.reduce_mean((ls / esjd) - (esjd / ls))
 
         return loss
 
@@ -445,6 +629,51 @@ class BaseModel(object):
 
         return tf.reduce_mean(- x_esjd - beta * hmc_prob, name='nnehmc_loss')
 
+    def calc_loss(self, x_data, z_data):
+        """Calculate the total loss from all terms."""
+        total_loss = 0.
+        ld = {}
+
+        with tf.name_scope('loss'):
+            if self.use_gaussian_loss:
+                gaussian_loss = self._gaussian_loss(x_data, z_data,
+                                                    mean=0., sigma=1.)
+                ld['gaussian'] = gaussian_loss
+                total_loss += gaussian_loss
+
+            if self.use_nnehmc_loss:
+                nnehmc_beta = getattr(self, 'nnehmc_beta', 1.)
+                nnehmc_loss = self._nnehmc_loss(x_data, self.px_hmc,
+                                                beta=nnehmc_beta)
+                ld['nnehmc'] = nnehmc_loss
+                total_loss += nnehmc_loss
+
+            if self._model_type == 'GaugeModel':
+                if self.use_charge_loss:
+                    charge_loss = self._calc_charge_loss(x_data, z_data)
+                    ld['charge'] = charge_loss
+                    total_loss += charge_loss
+
+            # If not using either Gaussian loss or NNEHMC loss,
+            # use standard loss
+            if (not self.use_gaussian_loss) and (not self.use_nnehmc_loss):
+                std_loss = self._calc_loss(x_data, z_data)
+                ld['std'] = std_loss
+                total_loss += std_loss
+
+            tf.add_to_collection('losses', total_loss)
+
+            fd = {k: v / total_loss for k, v in ld.items()}
+
+            losses_dict = {}
+            for key in ld.keys():
+                losses_dict[key + '_loss'] = ld[key]
+                losses_dict[key + '_frac'] = fd[key]
+
+                tf.add_to_collection('losses', ld[key])
+
+        return total_loss, losses_dict
+
     def _calc_grads(self, loss):
         """Calculate the gradients to be used in backpropagation."""
         clip_value = getattr(self, 'clip_value', 0.)
@@ -457,12 +686,31 @@ class BaseModel(object):
         return grads
 
     def _apply_grads(self, loss_op, grads):
-        trainable_vars = tf.trainable_variables()
-        #  grads_and_vars = zip(grads, self.dynamics.trainable_variables)
-        grads_and_vars = zip(grads, trainable_vars)
-        ctrl_deps = [loss_op, *self.dynamics.updates]
-        with tf.control_dependencies(ctrl_deps):
-            train_op = self.optimizer.apply_gradients(grads_and_vars,
-                                                      self.global_step,
-                                                      'train_op')
+        with tf.name_scope('apply_grads'):
+            trainable_vars = tf.trainable_variables()
+            #  grads_and_vars = zip(grads, self.dynamics.trainable_variables)
+            grads_and_vars = zip(grads, trainable_vars)
+            ctrl_deps = [loss_op, *self.dynamics.updates]
+            with tf.control_dependencies(ctrl_deps):
+                train_op = self.optimizer.apply_gradients(grads_and_vars,
+                                                          self.global_step,
+                                                          'train_op')
         return train_op
+
+    def _extract_l2hmc_fns(self, fns):
+        """Method for extracting each of the Q, S, T functions as tensors."""
+        if not getattr(self, 'save_lf', True):
+            return
+
+        fnsT = tf.transpose(fns, perm=[2, 1, 0, 3, 4], name='fns_transposed')
+
+        fn_names = ['scale', 'translation', 'transformation']
+        update_names = ['v1', 'x1', 'x2', 'v2']
+
+        l2hmc_fns = {}
+        for idx, name in enumerate(fn_names):
+            l2hmc_fns[name] = {}
+            for subidx, subname in enumerate(update_names):
+                l2hmc_fns[name][subname] = fnsT[idx][subidx]
+
+        return l2hmc_fns
