@@ -84,10 +84,7 @@ def build_dataset(run_data, run_params):
         if 'mask' in key:
             continue
 
-        try:
-            arr, draws = therm_arr(np.array(val))
-        except:
-            import pudb; pudb.set_trace()
+        arr, draws = therm_arr(np.array(val))
         arr = arr.T
         chains = np.arange(arr.shape[0])
 

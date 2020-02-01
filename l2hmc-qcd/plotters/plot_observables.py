@@ -52,12 +52,9 @@ def plot_charges(charges, out_file=None, title=None, nrows=2, **kwargs):
     figsize = (6.4 * N, 4.8 * N)
     fig, axes = plt.subplots(nrows=N, ncols=N, figsize=figsize)
     for idx, ax in enumerate(axes.flatten()):
-        try:
-            arr_int = np.around(charges[idx])
-            _ = ax.plot(charges[idx], ls=ls, color=color, lw=lw)
-            _ = ax.plot(arr_int, marker='.', ls='', color='r', zorder=10)
-        except IndexError:
-            import pudb; pudb.set_trace()
+        arr_int = np.around(charges[idx])
+        _ = ax.plot(charges[idx], ls=ls, color=color, lw=lw)
+        _ = ax.plot(arr_int, marker='.', ls='', color='r', zorder=10)
 
     if title is not None:
         _ = plt.suptitle(title, fontsize=20, y=1.04)

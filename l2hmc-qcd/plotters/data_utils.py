@@ -57,10 +57,6 @@ def calc_tunneling_rate(charges):
 
 def therm_arr(arr, therm_frac=0.2):
     """Drop first `therm_frac` steps of `arr` to account for thermalization."""
-    #  num_steps = arr.shape[0]
-    #  therm_steps = int(therm_frac * num_steps)
-    #  arr = arr[therm_steps:, :]
-    #  steps = np.arange(therm_steps, num_steps)
     step_axis = np.argmax(arr.shape)
     num_steps = arr.shape[step_axis]
     therm_steps = int(therm_frac * num_steps)
@@ -135,12 +131,10 @@ class InferenceData:
             if 'charges' in key:
                 x = np.around(x)
 
-            try:
-                rd_dict[key] = xr.DataArray(x,
-                                            dims=['chain', 'draw'],
-                                            coords=[chains, draws])
-            except:
-                import pudb; pudb.set_trace()
+            chains = x.shape[0]
+            rd_dict[key] = xr.DataArray(x,
+                                        dims=['chain', 'draw'],
+                                        coords=[chains, draws])
 
         rd_dict['charges_squared'] = rd_dict['charges'] ** 2
 

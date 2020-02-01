@@ -49,7 +49,7 @@ def _add_to_collection(collection, ops):
 def cast_float(x, dtype=NP_FLOAT):
     if dtype == np.float64:
         return np.float64(x)
-    elif dtype == np.float32:
+    if dtype == np.float32:
         return np.float32(x)
 
 

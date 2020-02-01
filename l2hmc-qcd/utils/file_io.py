@@ -25,8 +25,9 @@ try:
 except ImportError:
     HAS_HOROVOD = False
 
+
 def make_pngs_from_pdfs(rootdir=None):
-    """Use `os.walk` from `rootdir`, creating pngs from all pdfs encountered."""
+    """Use os.walk from `rootdir`, creating pngs from all pdfs encountered."""
     if rootdir is None:
         rootdir = os.path.abspath('/home/foremans/DLHMC/l2hmc-qcd/gauge_logs')
     for root, _, files in os.walk(rootdir):
@@ -41,7 +42,10 @@ def make_pngs_from_pdfs(rootdir=None):
             for inf, outf in zip(in_files, out_files):
                 if not os.path.isfile(outf):
                     log(f'in: {inf} --> out: {outf}\n')
-                    os.system(f'~/bin/pdftopng {inf} {outf}')
+                    try:
+                        os.system(f'~/bin/pdftopng {inf} {outf}')
+                    except:  # pylint: disable=bare-except
+                        return
 
 
 def copy(src, dst):

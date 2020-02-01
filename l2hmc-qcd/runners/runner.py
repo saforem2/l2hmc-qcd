@@ -218,15 +218,12 @@ class Runner:
         sumlogdet_prop = outputs['sumlogdet_proposed']
         sumlogdet_out = outputs['sumlogdet_out']
 
-        try:
-            energies_init = self._run_energy_ops(state_np=state_init,
-                                                 sumlogdet_np=sumlogdet_init)
-            energies_prop = self._run_energy_ops(state_np=state_prop,
-                                                 sumlogdet_np=sumlogdet_prop)
-            energies_out = self._run_energy_ops(state_np=state_out,
-                                                sumlogdet_np=sumlogdet_out)
-        except ValueError:
-            import pudb; pudb.set_trace()
+        energies_init = self._run_energy_ops(state_np=state_init,
+                                             sumlogdet_np=sumlogdet_init)
+        energies_prop = self._run_energy_ops(state_np=state_prop,
+                                             sumlogdet_np=sumlogdet_prop)
+        energies_out = self._run_energy_ops(state_np=state_out,
+                                            sumlogdet_np=sumlogdet_out)
 
         energies = {
             'potential_init': energies_init['potential_energy'],
