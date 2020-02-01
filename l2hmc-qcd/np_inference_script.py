@@ -205,7 +205,7 @@ def outer_loop(log_dirs, run_steps=10000, beta=5., skip=True):
                                        run_steps=run_steps,
                                        beta=beta, init='rand', skip=skip)
                 run_data_dict[tuple(net_weights)] = outputs['run_data']
-            except:
+            except:  # pylint: dsiable=bare-except
                 continue
         plt.close('all')
 
@@ -213,7 +213,7 @@ def outer_loop(log_dirs, run_steps=10000, beta=5., skip=True):
             params = outputs['params']
             run_params = outputs['run_params']
             _, _ = plot_plaqs_diffs(run_data_dict, log_dir, params, run_params)
-        except:
+        except:  # pylint: disable=bare-except
             continue
 
 
