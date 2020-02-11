@@ -38,7 +38,9 @@ def set_eps(sess, eps):
 
 def init_gauge_samples(params, init_method):
     """Create initial samples to be used at beginning of inference run."""
-    x_dim = params['space_size'] * params['time_size'] * params['dim']
+    x_dim = params.get('x_dim', None)
+    if x_dim is None:
+        x_dim = params['space_size'] * params['time_size'] * params['dim']
     samples_shape = (params['batch_size'], x_dim)
     if 'zero' in init_method:
         samples_init = (np.zeros(samples_shape)

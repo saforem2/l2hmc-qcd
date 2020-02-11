@@ -71,7 +71,7 @@ def parse_args():
     parser.add_argument("--batch_size",
                         dest="batch_size",
                         type=int,
-                        default=128,
+                        default=64,
                         required=False,
                         help=("""Number of samples (batch size) to use for
                               training.\n (Default: 20)"""))
@@ -91,7 +91,7 @@ def parse_args():
     parser.add_argument("-n", "--num_steps",
                         dest="num_steps",
                         type=int,
-                        default=5,
+                        default=1,
                         required=False,
                         help=("""Number of leapfrog steps to use in (augmented)
                               HMC sampler. (Default: 5)"""))
@@ -99,7 +99,7 @@ def parse_args():
     parser.add_argument("--eps",
                         dest="eps",
                         type=float,
-                        default=0.1,
+                        default=0.2,
                         required=False,
                         help=("""Step size to use in leapfrog integrator.
                               (Default: 0.1)"""))
@@ -127,7 +127,7 @@ def parse_args():
     parser.add_argument("--lr_decay_steps",
                         dest="lr_decay_steps",
                         type=int,
-                        default=500,
+                        default=2500,
                         required=False,
                         help=("""Number of steps after which to decay learning
                               rate. (Default: 500)"""))
@@ -185,7 +185,7 @@ def parse_args():
     parser.add_argument("--train_steps",
                         dest="train_steps",
                         type=int,
-                        default=5000,
+                        default=10000,
                         required=False,
                         help=("""Number of training steps to perform.
                               (Default: 5000)"""))
@@ -231,7 +231,7 @@ def parse_args():
     parser.add_argument('--network_arch',
                         dest='network_arch',
                         type=str,
-                        default='conv3D',
+                        default='generic',
                         required=False,
                         help=("""String specifying the architecture to use for
                               the neural network. Must be one of:
@@ -271,16 +271,6 @@ def parse_args():
                         help=("""Use generic HMC (without augmented leapfrog
                               integrator described in paper). Used for
                               comparing against L2HMC algorithm."""))
-
-    parser.add_argument("--run_steps",
-                        dest="run_steps",
-                        type=int,
-                        default=10000,
-                        required=False,
-                        help=("""Number of evaluation 'run' steps to perform
-                              after training (i.e. length of desired chain
-                              generate using trained L2HMC sample).
-                              (Default: 10000)"""))
 
     parser.add_argument("--eps_fixed",
                         dest="eps_fixed",
@@ -323,7 +313,7 @@ def parse_args():
                         required=False,
                         help=("""Multiplicative factor used to weigh relative
                               strength of top. charge term in loss
-                              function. (Default: 1.)"""))
+                              function. (Default: 0.)"""))
 
     parser.add_argument('--zero_masks',
                         dest='zero_masks',

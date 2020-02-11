@@ -49,7 +49,7 @@ def initialize_uninitialized(sess):
 def create_config(params):
     """Helper method for creating a tf.ConfigProto object."""
     config = tf.ConfigProto(allow_soft_placement=True)
-    if params['time_size'] > 8:
+    if params.get('time_size', -1) > 8:
         off = rewriter_config_pb2.RewriterConfig.OFF
         config_attrs = config.graph_options.rewrite_options
         config_attrs.arithmetic_optimization = off
