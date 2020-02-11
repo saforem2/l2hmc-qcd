@@ -1,11 +1,13 @@
 RUNNER_TF='../gauge_inference.py'
 RUNNER_NP='../gauge_inference_np.py'
 
+# LOG_DIR='../../gauge_logs/2020_01_28/L8_b64_lf1_qw0_f32_1759'
+
 ###################
 #      NUMPY
 ##################@
 python3 ${RUNNER_NP} \
-    --run_steps 50000 \
+    --run_steps 25000 \
     --batch_size 1 \
     -xsw 1 \
     -xtw 1 \
@@ -15,7 +17,7 @@ python3 ${RUNNER_NP} \
     -vqw 1
 
 python3 ${RUNNER_NP} \
-    --run_steps 50000 \
+    --run_steps 25000 \
     --batch_size 1 \
     -xsw 0 \
     -xtw 0 \

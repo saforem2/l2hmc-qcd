@@ -1,0 +1,19 @@
+--run_steps 10000 
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+--x_scale_weight 1
+--x_translation_weight 1
+--x_transformation_weight 1
+# ============================
+--v_scale_weight 1
+--v_translation_weight 1
+--v_transformation_weight 1
+--samples_init 'random'
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+#####################################
+#--beta_inference 5.
+#--samples_init 'random'
+#--eps 0.1
+#--loop_net_weights
+#--params_file=../../gauge_logs/2019_11_21/L8_b64_lf3_f64_1845/parameters.pkl
+
