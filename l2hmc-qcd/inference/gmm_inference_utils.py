@@ -34,8 +34,8 @@ except ImportError:
     HAS_SEABORN = False
     colors = COLORS
 
-if float(tf.__version__.split('.')[0]) <= 2:
-    tf.logging.set_verbosity(tf.logging.INFO)
+#  if float(tf.__version__.split('.')[0]) <= 2:
+#      tf.logging.set_verbosity(tf.logging.INFO)
 
 
 def create_config(params):
@@ -43,7 +43,7 @@ def create_config(params):
     config = tf.ConfigProto(allow_soft_placement=True)
 
     if params.get('gpu', False):
-        # Horovod: pin GPU to be used to process local rank 
+        # Horovod: pin GPU to be used to process local rank
         # (one GPU per process)
         config.gpu_options.allow_growth = True
         if HAS_HOROVOD and params['horovod']:
