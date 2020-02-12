@@ -305,25 +305,24 @@ def main(kwargs):
         [2.] We are only interested in the command line arguments that were
              passed to `inference.py` (i.e. those contained in kwargs).
     """
-    #  log_dir = getattr(args, 'log_dir', None)
     log_dir = kwargs.get('log_dir', None)
     if log_dir is None:
-        params_file = os.path.join(os.getcwd(), 'params.pkl')
-        if os.path.isfile(params_file):
-            params = load_pkl(params_file)
-            log_dir = params['log_dir']
-        else:
-            raise FileNotFoundError('`log_dir` not specified. Exiting.')
-
-    #  log_dir = kwargs.get('log_dir', None)
-    #  if log_dir is not None:
-    #      params = load_pkl(os.path.join(log_dir, 'parameters.pkl'))
-    #  params_file = kwargs.get('params_file', None)
-    #  params = load_params(params_file)  # load params used during training
+        params_file1 = os.path.join(os.getcwd(), 'params.pkl')
+        params_file2 = os.path.join(os.getcwd(), 'parameters.pkl')
+        params_files = [params_file1, params_file2]
+        for params_file in params_files:
+            if os.path.isfile(params_file):
+                params = load_pkl(params_file)
+                log_dir = params['log_dir']
+            else:
+                continue
+    else:
+        params = load_pkl(os.path.join(log_dir, 'parameters.pkl'))
 
     # NOTE: [1.]
-    condition1 = not params['using_hvd']
-    condition2 = params['using_hvd'] and hvd.rank() == 0
+    using_hvd = params.get('using_hvd', False)
+    condition1 = not using_hvd
+    condition2 = using_hvd and hvd.rank() == 0
     is_chief = condition1 or condition2
     if not is_chief:
         return

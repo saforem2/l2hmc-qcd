@@ -31,7 +31,8 @@ from plotters.plot_utils import bootstrap, get_matching_log_dirs, load_pkl
 from plotters.plot_observables import (get_obs_dict, get_run_dirs,
                                        get_title_str, grid_plot)
 
-sns.set_palette('bright')
+#  sns.set_palette('bright')
+plt.style.use('seaborn-bright')
 mplstyle.use('fast')
 #  ticklabelsize = 14
 DEFAULT_TICKLABELSIZE = mpl.rcParams['xtick.labelsize']

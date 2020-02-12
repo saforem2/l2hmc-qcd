@@ -86,7 +86,12 @@ class Runner:
         self.sess = sess
         self.params = params
         self.logger = logger
-        self.model_type = model_type
+        if model_type is None:
+            self.model_type = 'unknown'
+            model_type = 'unkown'
+        else:
+            self.model_type = model_type
+
 
         if logger is not None:
             self._has_logger = True
@@ -268,28 +273,31 @@ class Runner:
             'samples_in': samples,
             'samples': outputs['x_out'],
             'px': outputs['accept_prob'],
-            'dx': outputs['dx'],
-            'dxf': outputs['dxf'],
-            'dxb': outputs['dxb'],
+            'dx_out': outputs['dx_out'],
+            'dx_proposed': outputs['dx_proposed'],
+            'exp_energy_diff': outputs['exp_energy_diff'],
+            'sumlogdet_proposed': outputs['sumlogdet_proposed'],
+            'sumlogdet_out': outputs['sumlogdet_out'],
+            #  'dxf': outputs['dxf'],
+            #  'dxb': outputs['dxb'],
         }
 
         out_dict.update(outputs)
-        data_str = (f"{step:>5g}/{self.run_steps:<6g} "
-                    f"{dt:^9.4g} "
-                    f"{np.mean(out_dict['px']):^9.4g} "
-                    f"{self.eps:^9.4g} "
-                    f"{np.mean(out_dict['dx']):^9.4g} "
-                    f"{self.beta:^9.4g} ")
+        data_str = (f"{step:>6g}/{self.run_steps:<6g} "
+                    f"{dt:^11.4g} "
+                    f"{np.mean(out_dict['px']):^11.4g} "
+                    f"{self.eps:^11.4g} "
+                    f"{np.mean(out_dict['dx_out']):^11.4g} "
+                    f"{self.beta:^11.4g} "
+                    f"{np.mean(out_dict['exp_energy_diff']):^11.4g} "
+                    f"{np.mean(out_dict['sumlogdet_out']):^11.4g}")
 
         if self.model_type == 'GaugeModel':
             out_dict['samples'] = np.mod(outputs['x_out'], 2 * np.pi)
             observables = self.run_obs_ops(feed_dict)
             out_dict.update(observables)
             plaq_diff = self.plaq_exact - observables['avg_plaqs']
-            data_str += (f"{observables['avg_actions']:^9.4g} "
-                         f"{plaq_diff:^9.4g} ")
-                         #  f"{observables['avg_plaqs']:^9.4g} "
-                         #  f"{self.plaq_exact:^9.4g} ")
+            data_str += (f"{plaq_diff:>11.4g} ")
 
         if (step % self.energy_steps) == 0:
             # Calculate energies by running tensorflow graph operations
