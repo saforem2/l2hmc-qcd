@@ -39,14 +39,17 @@ class TrainLogger:
         self.logging_steps = logging_steps
 
         self.train_data = {}
-        self.h_strf = ("{:^12s}" + 7 * "{:^10s}").format(
-           "STEP", "t/STEP", "LOSS", "% ACC", "EPS", "dX", "BETA", "LR"
+        self.h_strf = ("{:^13s}" + 9 * "{:^12s}").format(
+            "STEP", "t/STEP", "LOSS", "% ACC", "EPS", "𝞭x",
+            "BETA", "LR", "exp(𝞭H)", "sumlogdet",
         )
 
         if model._model_type == 'GaugeModel':
             self.obs_data = {}
-            self.h_strf += ("{:^10s}".format("ACTION")
-                            + "{:^10s}".format("dPLAQ"))
+            self.h_strf += ("{:^12s}").format("𝞭𝜙")
+            #  self.h_strf += ("{:^10s}".format("ACTION")
+                            #  + "{:^10s}".format("exp(dH)")
+                            #  + "{:^10s}".format("dPLAQ"))
                             #  + "{:^10s}".format("(EXACT)"))
 
         self.dash = (len(self.h_strf) + 1) * '-'

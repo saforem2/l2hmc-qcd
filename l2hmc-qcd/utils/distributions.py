@@ -35,7 +35,6 @@ except ImportError:
 from config import TF_FLOAT, NP_FLOAT
 
 
-
 def quadratic_gaussian_np(x, mu, S):
     return np.diag(0.5 * np.matmul(
         np.matmul(x - mu, S),
@@ -128,6 +127,7 @@ class RoughWell(object):
 
 class GMM(object):
     """Implements the distribution for a GaussianMixtureModel."""
+
     def __init__(self, mus, sigmas, pis):
         """Initialization method.
 
@@ -164,14 +164,24 @@ class GMM(object):
 
             self.constants.append((pis[i] / det).astype(NP_FLOAT))
 
-    def get_energy_function(self):
-        def fn(x):
-            V = tf.concat([tf.expand_dims(
-                - quadratic_gaussian(x, self.mus[i], self.i_sigmas[i])
-                + tf.log(self.constants[i]), axis=1
-            ) for i in range(self.nb_mixtures)], axis=1)
+    def get_energy_function(self, use_np=False):
+        if use_np:
+            def fn(x):
+                V = np.concatenate([np.expand_dims(
+                    - quadratic_gaussian(x, self.mus[i], self.i_sigmas[i])
+                    + np.log(self.constants[i]), axis=1
+                ) for i in range(self.nb_mixtures)], axis=1)
 
-            return -tf.reduce_logsumexp(V, axis=1)
+                return -1 * logsumexp(V, axis=1)
+
+        else:
+            def fn(x):
+                V = tf.concat([tf.expand_dims(
+                    - quadratic_gaussian(x, self.mus[i], self.i_sigmas[i])
+                    + tf.log(self.constants[i]), axis=1
+                ) for i in range(self.nb_mixtures)], axis=1)
+
+                return -tf.reduce_logsumexp(V, axis=1)
         return fn
 
     def minus_log_likelihood_np(self, x):

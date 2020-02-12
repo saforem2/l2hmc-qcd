@@ -66,12 +66,14 @@ class RunLogger:
         self.summaries = params['summaries']
         self.model_type = model_type
 
-        self.h_strf = ("{:^12s}" + 5 * "{:^10s}").format(
-            "STEP", "t/STEP", "% ACC", "EPS", "deltaX", "BETA",
+        self.h_strf = ("{:^13s}" + 7 * "{:^12s}").format(
+            "STEP", "t/STEP", "% ACC", "EPS", "𝞭X", "BETA",
+            "exp(𝞭H)", "sumlogdet"
         )
 
         if self.model_type == 'GaugeModel':
-            self.h_strf += (2 * "{:^10s}").format("ACTIONS", "𝞭𝜙")
+            self.h_strf += ("{:^12s}").format("𝞭𝜙")
+            #  self.h_strf += (2 * "{:^10s}").format("ACTIONS", "𝞭𝜙")
 
         dash = (len(self.h_strf) + 1) * '-'
         self.run_header = dash + '\n' + self.h_strf + '\n' + dash
@@ -122,8 +124,9 @@ class RunLogger:
         """Build dictionary of tensorflow operations used for inference."""
         # NOTE: Keys from `run_ops` dict defined in the model implementation
         keys = ['x_init', 'v_init', 'x_proposed', 'v_proposed',
-                'x_out', 'v_out', 'dx', 'dxf', 'dxb', 'accept_prob',
-                'accept_prob_hmc', 'sumlogdet_proposed', 'sumlogdet_out']
+                'x_out', 'v_out', 'dx_out', 'dx_proposed', 'exp_energy_diff',
+                'accept_prob', 'accept_prob_hmc', 'sumlogdet_proposed',
+                'sumlogdet_out']
 
         ops = tf.get_collection('run_ops')
 

@@ -1,4 +1,4 @@
-'''
+"""
 base_model.py
 
 Implements BaseModel class.
@@ -8,28 +8,29 @@ Implements BaseModel class.
 
 References:
 -----------
+# pylint:disable=line-too-long
 [1] https://infoscience.epfl.ch/record/264887/files/robust_parameter_estimation.pdf
 
 
 Author: Sam Foreman (github: @saforem2)
 Date: 08/28/2019
-'''
+"""
 from __future__ import absolute_import, division, print_function
 
-import config as cfg
-from seed_dict import seeds
 from collections import namedtuple
-from dynamics.dynamics import Dynamics
 
 import numpy as np
 import tensorflow as tf
 
-from utils.horovod_utils import warmup_lr
+import config as cfg
 import utils.file_io as io
 
-if cfg.HAS_HOROVOD:
-    import horovod.tensorflow as hvd
+from seed_dict import seeds
+from dynamics.dynamics import Dynamics
+from utils.horovod_utils import warmup_lr
 
+if cfg.HAS_HOROVOD:
+    import horovod.tensorflow as hvd  # pylint: disable=import-error
 
 TF_FLOAT = cfg.TF_FLOAT
 TF_INT = cfg.TF_INT
@@ -42,6 +43,7 @@ EnergyData = namedtuple('EnergyData', ['init', 'proposed', 'out',
 SamplerData = namedtuple('SamplerData', ['data', 'dynamics_output'])
 
 
+# pylint:disable=invalid-name
 def _gaussian(x, mu, sigma):
     norm = tf.cast(
         1. / tf.sqrt(2 * np.pi * sigma ** 2), dtype=TF_FLOAT
@@ -56,7 +58,8 @@ def add_to_collection(collection, tensors):
     _ = [tf.add_to_collection(collection, tensor) for tensor in tensors]
 
 
-class BaseModel(object):
+# pylint:disable=too-many-instance-attributes
+class BaseModel:
     """BaseModel provides the necessary tools for training the L2HMC sampler.
 
     Explicitly, it serves as an abstract base class that should be
@@ -81,6 +84,7 @@ class BaseModel(object):
             self.charge_weight_np = params.pop('charge_weight', None)
 
         self.params = params
+
         self.loss_weights = {}
         for key, val in self.params.items():
             if 'weight' in key:
@@ -88,15 +92,20 @@ class BaseModel(object):
             else:
                 setattr(self, key, val)
 
-        self.use_gaussian_loss = getattr(self, 'use_gaussian_loss', False)
-        self.use_nnehmc_loss = getattr(self, 'use_nnehmc_loss', False)
+        # Use alternative loss functions?
+        self._use_gaussian = getattr(self, 'use_gaussian_loss', False)
+        self._use_nnehmc = getattr(self, 'use_nnehmc_loss', False)
+        self._model_type = getattr(self, 'model_type', None)
 
+        # Run generic HMC instead of training the L2HMC sampler?
         self.hmc = getattr(self, 'hmc', False)
 
+        # Train the sampler with a fixed step size (eps)?
         eps_fixed = getattr(self, 'eps_fixed', False)
         self.eps_trainable = not eps_fixed
         self.global_step = self._create_global_step()
 
+        # Warmup learning rate? (slowly ramp it up at the start of training)
         warmup = self.params.get('warmup_lr', False)
         self.lr = self._create_lr(warmup)
 
@@ -229,9 +238,10 @@ class BaseModel(object):
                 'loss_op': self.loss_op,
                 'train_op': self.train_op,
                 'x_out': self.x_out,
-                'dx': self.dx,
-                'dxf': self.dxf,
-                'dxb': self.dxb,
+                'dx_proposed': self.dx_proposed,
+                'dx_out': self.dx_out,
+                'sumlogdet': self.sumlogdet_out,
+                'exp_energy_diff': self.exp_energy_diff,
                 'px': self.px,
                 'lr': self.lr,
                 'dynamics_eps': self.dynamics.eps,
@@ -250,9 +260,9 @@ class BaseModel(object):
             'v_proposed': self.v_proposed,
             'x_out': self.x_out,
             'v_out': self.v_out,
-            'dx': self.dx,
-            'dxf': self.dxf,
-            'dxb': self.dxb,
+            'dx_out': self.dx_out,
+            'dx_proposed': self.dx_proposed,
+            'exp_energy_diff': self.exp_energy_diff,
             'accept_prob': self.px,
             'accept_prob_hmc': self.px_hmc,
             'sumlogdet_proposed': self.sumlogdet_proposed,
@@ -277,9 +287,15 @@ class BaseModel(object):
             self.px_hmc = x_dynamics['accept_prob_hmc']
             self.sumlogdet_proposed = x_dynamics['sumlogdet_proposed']
             self.sumlogdet_out = x_dynamics['sumlogdet_out']
-            self.xf = x_dynamics['xf']
-            self.xb = x_dynamics['xb']
-            self.dx, self.dxf, self.dxb = self.calc_dx()
+            self.dx_proposed = self.metric_fn(self.x_proposed, self.x_init)
+            self.dx_out = self.metric_fn(self.x_out, self.x_init)
+            h_init = self.dynamics.hamiltonian(self.x_init,
+                                               self.v_init,
+                                               self.beta)
+            h_out = self.dynamics.hamiltonian(self.x_out,
+                                              self.v_out,
+                                              self.beta)
+            self.exp_energy_diff = tf.exp(h_init - h_out)
 
             self.dynamics_dict = x_dynamics
             self.x_diff, self.v_diff = self._check_reversibility()
@@ -291,13 +307,14 @@ class BaseModel(object):
     def _build_main_sampler(self):
         """Build operations used for 'sampling' from the dynamics engine."""
         with tf.name_scope('main_sampler'):
-            args = (self.x, self.beta, self.net_weights, self.train_phase)
             kwargs = {
-                'hmc': getattr(self, 'use_nnehmc_loss', None),
-                'model_type': getattr(self, 'model_type', None),
+                'model_type': self._model_type,
+                'hmc': self._use_nnehmc,
             }
-
-            x_dynamics = self.dynamics.apply_transition(*args, **kwargs)
+            x_dynamics = self.dynamics.apply_transition(self.x, self.beta,
+                                                        self.net_weights,
+                                                        self.train_phase,
+                                                        **kwargs)
 
             x_data = LFdata(x_dynamics['x_init'],
                             x_dynamics['x_proposed'],
@@ -315,14 +332,15 @@ class BaseModel(object):
                                           seed=seeds['z'],
                                           name='z')
 
-                args = (self.z, self.beta, self.net_weights, self.train_phase)
                 kwargs = {
-                    'hmc': getattr(self, 'use_nnehmc_loss', None),
-                    'model_type': getattr(self, 'model_type', None),
+                    'model_type': self._model_type,
+                    'hmc': self._use_nnehmc,
                 }
 
-                #  z_dynamics = self.dynamics.apply_transition(*args, **kwargs)
-                z_dynamics = self.dynamics.apply_transition(*args, **kwargs)
+                z_dynamics = self.dynamics.apply_transition(self.z, self.beta,
+                                                            self.net_weights,
+                                                            self.train_phase,
+                                                            **kwargs)
 
                 z_data = LFdata(z_dynamics['x_init'],
                                 z_dynamics['x_proposed'],
@@ -461,7 +479,6 @@ class BaseModel(object):
                 _ = [tf.add_to_collection('inputs', v) for v in val]
             else:
                 tf.add_to_collection('inputs', val)
-        #  _ = [tf.add_to_collection('inputs', i) for i in inputs.values()]
 
         return inputs
 
@@ -528,10 +545,12 @@ class BaseModel(object):
 
     def calc_dx(self):
         with tf.name_scope('calc_dx'):
-            with tf.name_scope('dxf'):
-                dxf = self.metric_fn(self.xf, self.x_init)
-            with tf.name_scope('dxb'):
-                dxb = self.metric_fn(self.xb, self.x_init)
+            if hasattr(self, 'xf'):
+                with tf.name_scope('dxf'):
+                    dxf = self.metric_fn(self.xf, self.x_init)
+            if hasattr(self, 'xb'):
+                with tf.name_scope('dxb'):
+                    dxb = self.metric_fn(self.xb, self.x_init)
 
             dx = tf.reduce_mean((dxf + dxb) / 2, axis=1)
 
@@ -635,13 +654,13 @@ class BaseModel(object):
         ld = {}
 
         with tf.name_scope('loss'):
-            if self.use_gaussian_loss:
+            if self._use_gaussian:
                 gaussian_loss = self._gaussian_loss(x_data, z_data,
                                                     mean=0., sigma=1.)
                 ld['gaussian'] = gaussian_loss
                 total_loss += gaussian_loss
 
-            if self.use_nnehmc_loss:
+            if self._use_nnehmc:
                 nnehmc_beta = getattr(self, 'nnehmc_beta', 1.)
                 nnehmc_loss = self._nnehmc_loss(x_data, self.px_hmc,
                                                 beta=nnehmc_beta)
@@ -656,7 +675,7 @@ class BaseModel(object):
 
             # If not using either Gaussian loss or NNEHMC loss,
             # use standard loss
-            if (not self.use_gaussian_loss) and (not self.use_nnehmc_loss):
+            if (not self._use_gaussian) and (not self._use_nnehmc):
                 std_loss = self._calc_loss(x_data, z_data)
                 ld['std'] = std_loss
                 total_loss += std_loss

@@ -704,7 +704,7 @@ def plot_gaussian_contours(mus, covs, ax=None, **kwargs):
     ylims = kwargs.get('ylims', None)
     res = kwargs.get('res', 100)
     cmap = kwargs.get('cmap', 'vidiris')
-    spacing = kwargs.get('spacing', 5)
+    #  spacing = kwargs.get('spacing', 5)
     fill = kwargs.get('fill', False)
     #  ax = kwargs.get('ax', None)
 
@@ -720,9 +720,9 @@ def plot_gaussian_contours(mus, covs, ax=None, **kwargs):
         Z = F.pdf(pos)
         #  plt.contour(X, Y, Z, spacing, colors=colors[0])
         if fill:
-            _ = ax.contourf(X, Y, Z, spacing, cmap=cmap)
+            _ = ax.contourf(X, Y, Z, cmap=cmap)
         else:
-            _ = ax.contour(X, Y, Z, spacing, cmap=cmap)
+            _ = ax.contour(X, Y, Z, cmap=cmap)
 
     return ax
 
