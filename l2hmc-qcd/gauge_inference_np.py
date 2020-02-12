@@ -8,26 +8,31 @@ Date: 01/09/2020
 """
 import os
 
-import xarray as xr
-import arviz as az
-import seaborn as sns
 import numpy as np
+import pandas as pd
+import seaborn as sns
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 
+import arviz as az
+import xarray as xr
 import utils.file_io as io
 
 from config import NetWeights
-from runners.runner_np import create_dynamics, load_pkl, run_inference_np
+from lattice.lattice import u1_plaq_exact
+from runners.runner_np import (create_dynamics, load_pkl, run_inference_np,
+                               create_lattice, _update_params)
 from utils.file_io import timeit
 from utils.parse_inference_args_np import parse_args as parse_inference_args
+from plotters.data_utils import InferenceData
+from plotters.seaborn_plots import plot_setup
 from plotters.energy_plotter import EnergyPlotter
 from plotters.plot_observables import plot_autocorrs, plot_charges
 from plotters.gauge_model_plotter import GaugeModelPlotter
-from lattice.lattice import u1_plaq_exact
-from plotters.seaborn_plots import plot_setup
-from plotters.data_utils import InferenceData
 
 HEADER = 80 * '-'
+
+mpl.rcParams['axes.formatter.limits'] = -4, 4
 
 
 def _get_title(params, run_params):
@@ -51,7 +56,11 @@ def _get_title(params, run_params):
 def therm_arr(arr, therm_frac=0.25):
     num_steps = arr.shape[0]
     therm_steps = int(therm_frac * num_steps)
-    arr = arr[therm_steps:, :]
+    try:
+        arr = arr[therm_steps:, :]
+    except:
+        import pudb
+        pudb.set_trace()
     steps = np.arange(therm_steps, num_steps)
     return arr, steps
 
@@ -82,6 +91,11 @@ def build_dataset(run_data, run_params):
     rd_dict = {}
     for key, val in run_data.items():
         if 'mask' in key:
+            continue
+        if 'forward' in key:
+            continue
+
+        if len(np.array(val).shape) < 2:
             continue
 
         arr, draws = therm_arr(np.array(val))
@@ -118,6 +132,7 @@ def _check_existing(out_dir, fname):
         fname += f'_{hour_str}'
 
     return fname
+
 
 def plot_reverse_data(reverse_data, params, run_params, **kwargs):
     """Plot reversibility results."""
@@ -219,12 +234,10 @@ def inference_plots(data_dict, params, run_params, **kwargs):
     tp_out_file = os.path.join(fig_dir, f'{tp_fname}.pdf')
     pp_out_file = os.path.join(fig_dir, f'{pp_fname}.pdf')
 
-    #  var_names = ['plaqs_diffs', 'accept_prob',
-    #               'tunneling_rate', 'charges', 'charges_squared']
-    var_names = ['tunneling_rate', 'plaqs_diffs']
+    var_names = ['tunneling_rate', 'plaqs_diffs',
+                 'accept_prob', 'charges_squared', 'charges']
     if hasattr(dataset, 'dx'):
         var_names.append('dx')
-    var_names.extend(['accept_prob', 'charges_squared', 'charges'])
 
     tp_out_file_ = None
     pp_out_file_ = None
@@ -285,19 +298,24 @@ def main(args):
     log_dir = getattr(args, 'log_dir', None)
     if log_dir is None:
         params_file = os.path.join(os.getcwd(), 'params.pkl')
-        if os.path.isfile(params_file):
-            params = load_pkl(params_file)
-            log_dir = params['log_dir']
-        else:
-            raise FileNotFoundError('`log_dir` not specified. Exiting.')
+    else:
+        log_dir = os.path.abspath(log_dir)
+        params_file = os.path.join(log_dir, 'parameters.pkl')
 
-    log_dir = os.path.abspath(log_dir)
-    #  log_dir = os.path.abspath(args.log_dir)
-    dynamics, lattice = create_dynamics(log_dir,
-                                        hmc=args.hmc,
-                                        eps=args.eps,
-                                        num_steps=args.num_steps,
-                                        batch_size=args.batch_size)
+    params = load_pkl(params_file)
+    params = _update_params(params, args.eps, args.num_steps, args.batch_size)
+    lattice = create_lattice(params)
+    _fn = lattice.calc_actions_np
+
+    log_dir = params['log_dir']
+    dynamics = create_dynamics(log_dir,
+                               potential_fn=_fn,
+                               x_dim=lattice.x_dim,
+                               hmc=args.hmc,
+                               eps=args.eps,
+                               num_steps=args.num_steps,
+                               batch_size=args.batch_size,
+                               model_type='GaugeModel')
     if args.hmc:
         net_weights = NetWeights(0, 0, 0, 0, 0, 0)
     else:
@@ -317,20 +335,37 @@ def main(args):
     }
 
     outputs = run_inference_np(log_dir, dynamics, lattice,
-                               run_params, init=args.init)
-    #  run_data = outputs['data']['run_data']
-    #  energy_data = outputs['data']['energy_data']
-    #  reverse_data = outputs['data']['reverse_data']
+                               run_params, init=args.init, skip=False)
+    run_data = outputs['data']['run_data']
+    energy_data = outputs['data']['energy_data']
+    reverse_data = outputs['data']['reverse_data']
+    run_params = outputs['run_params']
+    beta = run_params['beta']
+    plaq_exact = u1_plaq_exact(beta)
+
+    csv_dict = {}
+    for key, val in energy_data.items():
+        csv_dict[key] = np.squeeze(np.array(val))
+
+    csv_dict['accept_prob'] = np.squeeze(np.array(run_data['accept_prob']))
+    csv_dict['rand_num'] = np.squeeze(np.array(run_data['rand_num']))
+    csv_dict['accept'] = np.squeeze(np.array(run_data['mask_a']))
+    csv_dict['forward'] = np.squeeze(np.array(run_data['forward']))
+    csv_dict['plaqs_diffs'] = (plaq_exact
+                               - np.squeeze(np.array(run_data['plaqs'])))
+    csv_df = pd.DataFrame(csv_dict)
+
+    csv_file = os.path.join(run_params['run_dir'], 'inference_data.csv')
+    io.log(f'Saving inference data to `.csv` file: {csv_file}.')
+    csv_df.to_csv(csv_file)
+
+    reverse_csv_file = os.path.join(run_params['run_dir'], 'reverse_data.csv')
+    reverse_df = pd.DataFrame(reverse_data)
+    io.log(f'Saving reverse data to `.csv` file: {reverse_csv_file}.')
+    reverse_df.to_csv(reverse_csv_file)
 
     run_params = outputs['run_params']
     params = load_pkl(os.path.join(log_dir, 'parameters.pkl'))
-    #  keys grouped by energy type, for plotting
-    #  ekeys = ['potential_init', 'potential_proposed', 'potential_out',
-    #           'kinetic_init', 'kinetic_proposed', 'kinetic_out',
-    #           'hamiltonian_init', 'hamiltonian_proposed', 'hamiltonian_out',
-    #           'exp_energy_diff']
-    #  energy_data = {k: energy_data[k] for k in ekeys}
-    #  data_dict = outputs['data']
     dataset, energy_dataset = inference_plots(outputs['data'], params,
                                               outputs['run_params'],
                                               runs_np=True)
