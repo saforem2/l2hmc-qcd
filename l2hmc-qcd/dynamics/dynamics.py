@@ -97,8 +97,8 @@ class Dynamics(tf.keras.Model):
         self.use_bn = params.get('use_bn', False)     # use batch normalization
         self.num_steps = params.get('num_steps', 5)   # number of lf steps
         self.zero_masks = params.get('zero_masks', False)   # all 0 binary mask
-        self.num_hidden1 = params.get('num_hidden1', 10)    # nodes in h1
-        self.num_hidden2 = params.get('num_hidden2', 10)    # nodes in h2
+        self.num_hidden1 = params.get('num_hidden1', 100)    # nodes in h1
+        self.num_hidden2 = params.get('num_hidden2', 100)    # nodes in h2
         self.dropout_prob = params.get('dropout_prob', 0.)  # dropout prob
         self.network_arch = params.get('network_arch', 'generic')  # net arch
 
@@ -210,21 +210,21 @@ class Dynamics(tf.keras.Model):
         and use sampled masks to compute the actual solutions.
 
         Args:
-            x_init (tf.placeholder): Batch of (x) samples 
+            x_init (tf.placeholder): Batch of (x) samples
                 (GaugeLattice.samples).
             beta (tf.placeholder): Inverse coupling constant.
             net_weights: Array of scaling weights to multiply each of the
                 output functions (scale, translation, transformation).
             train_phase (tf.placeholder): Boolean tf.placeholder used to
-                indicate if the model is currently being trained. 
+                indicate if the model is currently being trained.
 
         Returns:
-            outputs (dict): Containing 
+            outputs (dict): Containing
              - `outputs_fb`: The outputs from running the dynamics both
                forward and backward and performing the subsequent
                accept/reject step.
              - `energies`: Dictionary of each of the energies computed at the
-               beginning and end of the trajectory 
+               beginning and end of the trajectory
 
         NOTE: In the code below, `proposed` refers to a variable at the end of
         a particular MD trajectory, prior to performing the Metropolis/Hastings
@@ -234,7 +234,7 @@ class Dynamics(tf.keras.Model):
         if model_type == 'GaugeModel':
             x_init = tf.mod(x_init, 2 * np.pi, name='x_in_mod_2_pi')
 
-        # Call `self.transition_kernel` in the forward direction, 
+        # Call `self.transition_kernel` in the forward direction,
         # starting from the initial `State`: `(x_init, v_init_f, beta)`
         # to get the proposed `State`
         with tf.name_scope('apply_transition'):

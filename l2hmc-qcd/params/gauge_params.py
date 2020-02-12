@@ -24,8 +24,8 @@ GAUGE_PARAMS = {                    # default parameters for `GaugeModel`
     #  ------------------- NETWORK PARAMS -------------------
     'network_arch': 'generic',
     #  'data_format': 'channels_last',
-    'num_hidden1': 50,
-    'num_hidden2': 50,
+    'num_hidden1': 100,
+    'num_hidden2': 100,
     'use_bn': False,
     'dropout_prob': 0.0,
     'clip_value': 0.0,

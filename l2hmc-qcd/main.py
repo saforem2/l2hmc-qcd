@@ -169,14 +169,6 @@ def train_l2hmc(FLAGS, log_file=None):
     )
     samples_init = np.array(model.lattice.samples_array, dtype=NP_FLOAT)
     beta_init = model.beta_init
-    #  global_step = tf.train.get_or_create_global_step()
-
-    #  dynamics_masks = []
-    #  dynamics_masks_inv = []
-    #  for step in range(model.num_steps):
-    #      mask, mask_inv = model.dynamics._get_mask(step)
-    #      dynamics_masks.append(mask)
-    #      dynamics_masks_inv.append(mask_inv)
 
     # ----------------------------------------------------------------
     #  Create MonitoredTrainingSession
@@ -203,12 +195,6 @@ def train_l2hmc(FLAGS, log_file=None):
     masks_file = os.path.join(model.log_dir, 'dynamics_mask.pkl')
     masks = sess.run(model.dynamics.masks)
     pkl_dump(masks, masks_file)
-    #  masks_np, masks_inv_np = sess.run([dynamics_masks, dynamics_masks_inv])
-    #  masks_dict = {
-    #      'masks': masks_np,
-    #      'masks_inv': masks_inv_np,
-    #  }
-    #  pkl_dump(masks_dict, masks_file)
 
     # Check reversibility and write results out to `.txt` file.
     reverse_file = os.path.join(model.log_dir, 'reversibility_test.txt')
