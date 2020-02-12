@@ -62,7 +62,7 @@ class Trainer:
 
         temp_init = 1. / self._beta_init
         temp_final = 1. / self._beta_final
-        ts = self._train_steps
+        ts = self._train_steps  # pylint: disable=invalid-name
 
         fixed_beta = getattr(model, 'fixed_beta', False)
         if fixed_beta:
@@ -110,19 +110,22 @@ class Trainer:
         outputs['x_in'] = samples
         outputs['step'] = global_step
         outputs['beta'] = beta
-        dx_avg = np.mean((outputs['dxf'] + outputs['dxb']) / 2)
+        #  dx_avg = np.mean((outputs['dxf'] + outputs['dxb']) / 2)
 
         data_str = (
-            f"{global_step:>5g}/{self._train_steps:<6g} "
-            f"{dt:^9.4g} "
-            f"{outputs['loss_op']:^9.4g} "
-            f"{np.mean(outputs['px']):^9.4g} "
-            f"{outputs['dynamics_eps']:^9.4g} "
-            f"{dx_avg:^9.4g} "
-            #  f"{outputs['dx']:^9.4g} "
-            #  f"{np.mean(outputs['x_out'] - samples):^9.4g} "
-            f"{outputs['beta']:^9.4g} "
-            f"{outputs['lr']:^9.4g} "
+            f"{global_step:>6g}/{self._train_steps:<6g} "
+            f"{dt:^11.4g} "
+            f"{outputs['loss_op']:^11.4g} "
+            f"{np.mean(outputs['px']):^11.4g} "
+            f"{outputs['dynamics_eps']:^11.4g} "
+            f"{np.mean(outputs['dx_out']):^11.4g} "
+            #  f"{dx_avg:^11.4g} "
+            #  f"{outputs['dx']:^11.4g} "
+            #  f"{np.mean(outputs['x_out'] - samples):^11.4g} "
+            f"{outputs['beta']:^11.4g} "
+            f"{outputs['lr']:^11.4g} "
+            f"{np.mean(outputs['exp_energy_diff']):^11.4g} "
+            f"{np.mean(outputs['sumlogdet']):^11.4g} "
         )
 
         if self.model._model_type == 'GaugeModel':
@@ -131,8 +134,8 @@ class Trainer:
             outputs['plaq_exact'] = u1_plaq_exact(beta)
             plaq_diff = u1_plaq_exact(beta) - outputs['plaqs']
             data_str += (
-                f"{np.mean(outputs['actions']):^9.4g} "
-                f"{np.mean(plaq_diff):^9.4g} "
+                #  f"{np.mean(outputs['actions']):^9.4g} "
+                f"{np.mean(plaq_diff):>11.4g} "
                 #  f"{outputs['plaq_exact']:^9.4g}"
             )
 

@@ -28,15 +28,17 @@ try:
 except ImportError:
     import numpy as np
 
-# pylint: disable=invalid-name
+# pylint: disable=invalid-name, too-many-arguments
 State = cfg.State
 Weights = namedtuple('Weights', ['w', 'b'])
 NP_FLOAT = cfg.NP_FLOAT
 
 
+# pylint: disable=too-many-instance-attributes
 class DynamicsNP:
     """Implements tools for running tensorflow-independent inference."""
     def __init__(self, potential_fn, weights, hmc=False, **params):
+        self._model_type = params.get('model_type', None)
         self.potential = potential_fn
         if hmc:
             self.xnet, self.vnet = self.hmc_networks()
@@ -46,6 +48,16 @@ class DynamicsNP:
         for key, val in params.items():
             setattr(self, key, val)
 
+        self.use_bn = params.get('use_bn', False)
+        self.dropout_prob = params.get('dropout_prob', 0)
+        self.network_arch = params.get('network_arch', 'generic')
+        self.num_hidden1 = params.get('num_hidden1', 100)
+        self.num_hidden2 = params.get('num_hidden2', 100)
+        self.eps_trainable = params.get('eps_trainable', True)
+        self.x_dim = params.get('x_dim', None)
+        self.hmc = params.get('hmc', False)
+        self._input_shape = params.get('_input_shape', None)
+        self.batch_size = params.get('batch_size', None)
         self.eps = params.get('eps', None)
         self.x_dim = params.get('x_dim', None)
         self.num_steps = params.get('num_steps', None)
@@ -78,7 +90,7 @@ class DynamicsNP:
         xf, vf, pxf, sumlogdetf = self.transition_kernel(*state_init,
                                                          net_weights,
                                                          forward=True)
-        mask_a, mask_r = self._get_accept_masks(pxf)
+        mask_a, mask_r, rand_num = self._get_accept_masks(pxf)
         x_out = xf * mask_a[:, None] + x * mask_r[:, None]
         v_out = vf * mask_a[:, None] + v * mask_r[:, None]
         sumlogdet_out = sumlogdetf * mask_a
@@ -106,7 +118,7 @@ class DynamicsNP:
         xb, vb, pxb, sumlogdetb = self.transition_kernel(*state_init,
                                                          net_weights,
                                                          forward=False)
-        mask_a, mask_r = self._get_accept_masks(pxb)
+        mask_a, mask_r, rand_num = self._get_accept_masks(pxb)
         x_out = xb * mask_a[:, None] + x * mask_r[:, None]
         v_out = vb * mask_a[:, None] + v * mask_r[:, None]
         sumlogdet_out = sumlogdetb * mask_a
@@ -124,6 +136,40 @@ class DynamicsNP:
         return outputs
 
     def apply_transition(self, x, beta, net_weights, model_type=None):
+        """Propose a new state and perform the accept/reject step."""
+        if model_type == 'GaugeModel':
+            x = np.mod(x, 2 * np.pi)
+
+        forward = (np.random.uniform() < 0.5)
+        v_init = np.random.normal(size=x.shape)
+        state_init = cfg.State(x, v_init, beta)
+        x_, v_, px, sumlogdet = self.transition_kernel(*state_init,
+                                                       net_weights,
+                                                       forward=forward)
+        mask_a, mask_r, rand_num = self._get_accept_masks(px)
+        x_out = x_ * mask_a[:, None] + x * mask_r[:, None]
+        v_out = v_ * mask_a[:, None] + v_init * mask_r[:, None]
+        sumlogdet_out = sumlogdet * mask_a
+
+        outputs = {
+            'x_init': x,
+            'v_init': v_init,
+            'x_proposed': x_,
+            'v_proposed': v_,
+            'x_out': x_out,
+            'v_out': v_out,
+            'accept_prob': px,
+            'sumlogdet_proposed': sumlogdet,
+            'sumlogdet_out': sumlogdet_out,
+            'forward': forward,
+            'mask_a': mask_a,
+            'mask_r': mask_r,
+            'rand_num': rand_num,
+        }
+
+        return outputs
+
+    def apply_transition_both(self, x, beta, net_weights, model_type=None):
         """Propose a new state and perform the accept/reject step."""
         if model_type == 'GaugeModel':
             x = np.mod(x, 2 * np.pi)
@@ -149,7 +195,7 @@ class DynamicsNP:
         accept_prob = pxf * mask_f + pxb * mask_b
         sumlogdet_prop = sumlogdetf * mask_f + sumlogdetb * mask_b
 
-        mask_a, mask_r = self._get_accept_masks(accept_prob)
+        mask_a, mask_r, rand_num = self._get_accept_masks(accept_prob)
         x_out = x_prop * mask_a[:, None] + x * mask_r[:, None]
         v_out = v_prop * mask_a[:, None] + v_init * mask_r[:, None]
         sumlogdet_out = sumlogdet_prop * mask_a
@@ -169,7 +215,10 @@ class DynamicsNP:
             'sumlogdet_proposed': sumlogdet_prop,
             'sumlogdet_out': sumlogdet_out,
             'mask_f': mask_f,
-            'mask_b': mask_b
+            'mask_b': mask_b,
+            'mask_a': mask_a,
+            'mask_r': mask_r,
+            'rand_num': rand_num,
         }
 
         return outputs
@@ -330,10 +379,11 @@ class DynamicsNP:
     def _get_accept_masks(self, accept_prob, accept_mask=None):
         if accept_mask is None:
             rand_unif = np.random.uniform(size=accept_prob.shape)
+
             accept_mask = np.array(accept_prob > rand_unif, dtype=NP_FLOAT)
         reject_mask = 1. - accept_mask
 
-        return accept_mask, reject_mask
+        return accept_mask, reject_mask, rand_unif
 
     def _get_direction_masks(self):
         rand_unif = np.random.uniform(size=(self.batch_size,))

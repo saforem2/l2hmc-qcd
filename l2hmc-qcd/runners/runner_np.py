@@ -33,8 +33,9 @@ except ImportError:
 # pylint: disable=no-member
 
 
-HEADER = ("{:^13s}" + 8 * "{:^12s}").format(
-    "STEP", "t/STEP", "% ACC", "∆x", "∆xf", "∆xb", "exp(∆H)", "sumlogdet", "∆ø"
+HEADER = ("{:^13s}" + 7 * "{:^12s}").format(
+    "STEP", "t/STEP", "% ACC", "𝞭x_out", "𝞭x_prop",
+    "exp(𝞭H)", "sumlogdet", "𝞭𝜙"
 )
 SEPERATOR = len(HEADER) * '-'
 
@@ -90,7 +91,7 @@ def cos_metric(x1, x2):
     return np.mean(1. - np.cos(x1 - x2), axis=-1)
 
 
-def _create_lattice(params):
+def create_lattice(params):
     """Create `GaugeLattice` object from `params`."""
     return GaugeLattice(time_size=params['time_size'],
                         space_size=params['space_size'],
@@ -147,8 +148,8 @@ def _update_params(params, eps=None, num_steps=None, batch_size=None):
     return params
 
 
-def create_dynamics(log_dir, hmc=False, eps=None,
-                    num_steps=None, batch_size=None):
+def create_dynamics(log_dir, potential_fn, x_dim, hmc=False, eps=None,
+                    num_steps=None, batch_size=None, model_type=None):
     """Create `DynamicsNP` object for running dynamics imperatively."""
     params_file = os.path.join(log_dir, 'parameters.pkl')
     params = load_pkl(params_file)
@@ -158,18 +159,19 @@ def create_dynamics(log_dir, hmc=False, eps=None,
     with open(weights_file, 'rb') as f:
         weights = pickle.load(f)
 
-    lattice = _create_lattice(params)
+    #  lattice = _create_lattice(params)
 
     zero_masks = params.get('zero_masks', False)
 
-    dynamics = DynamicsNP(lattice.calc_actions_np,
-                              weights=weights,
-                              hmc=hmc,
-                              x_dim=lattice.x_dim,
-                              eps=params['eps'],
-                              num_steps=params['num_steps'],
-                              batch_size=params['batch_size'],
-                              zero_masks=zero_masks)
+    dynamics = DynamicsNP(potential_fn,
+                          weights=weights,
+                          hmc=hmc,
+                          x_dim=x_dim,
+                          eps=params['eps'],
+                          num_steps=params['num_steps'],
+                          batch_size=params['batch_size'],
+                          zero_masks=zero_masks,
+                          model_type=model_type)
 
     mask_file = os.path.join(log_dir, 'dynamics_mask.pkl')
     if os.path.isfile(mask_file):
@@ -178,7 +180,7 @@ def create_dynamics(log_dir, hmc=False, eps=None,
 
         dynamics.set_masks(masks)
 
-    return dynamics, lattice
+    return dynamics
 
 
 def _calc_energies(dynamics, x, v, beta):
@@ -229,6 +231,23 @@ def _check_param(dynamics, param=None):
         setattr(dynamics, str(param), param)
 
     return dynamics, param
+
+
+def _init_dicts():
+    """Initialize dictionaries to store inference data."""
+    data_keys = ['plaqs', 'actions', 'charges', 'dx_proposed', 'dx_out',
+                 'accept_prob', 'forward', 'mask_a', 'mask_r', 'rand_num',
+                 'sumlogdet']
+    reverse_keys = ['xdiff_fb', 'xdiff_bf', 'vdiff_fb', 'vdiff_bf']
+    energy_keys = ['potential_init', 'potential_proposed', 'potential_out',
+                   'kinetic_init', 'kinetic_proposed', 'kinetic_out',
+                   'hamiltonian_init', 'hamiltonian_proposed',
+                   'hamiltonian_out', 'exp_energy_diff']
+    run_data = {key: [] for key in data_keys}
+    energy_data = {key: [] for key in energy_keys}
+    reverse_data = {key: [] for key in reverse_keys}
+
+    return run_data, energy_data, reverse_data
 
 
 # pylint: disable=too-many-locals
@@ -296,55 +315,10 @@ def _inference_setup(log_dir, dynamics, run_params, init='rand', skip=True):
     run_params['run_str'] = run_str
     run_dir = os.path.join(runs_dir, run_str)
     io.check_else_make_dir(run_dir)
+    run_params['run_dir'] = run_dir
 
     return samples, run_params, run_dir, existing_flag
 
-
-def _run_fb_np(dynamics, state, net_weights):
-    """Check reversibility of dynamics by running backward(forward(state).
-    
-    Args:
-        dynamics (`DynamicsNP` object): Dynamics on which to run.
-        state (`State`, namedtuple): Initial state (x, v, beta).
-        net_weights (`NetWeights`, namedtuple): NetWeights multiplicative
-            scaling factor.
-
-    Returns:
-        state_fb (`State` object): Resultant state (xfb, vfb, beta).
-    """
-    xb, vb, _, _ = dynamics.transition_kernel(*state,
-                                              net_weights,
-                                              forward=False)
-    state_b = State(x=xb, v=vb, beta=state.beta)
-    xfb, vfb, _, _ = dynamics.transition_kernel(*state_b,
-                                                net_weights,
-                                                forward=True)
-    state_fb = State(x=xfb, v=vfb, beta=state.beta)
-
-    return state_fb
-
-
-def _run_bf_np(dynamics, state, net_weights):
-    """Check reversibility of dynamics by running forward(backward(state)).
-    Args:
-        dynamics (`DynamicsNP` object): Dynamics on which to run.
-        state (`State`, namedtuple): Initial state (x, v, beta).
-        net_weights (`NetWeights`, namedtuple): NetWeights multiplicative
-            scaling factor.
-
-    Returns:
-        state_bf (`State` object): Resultant state (xbf, vbf, beta).
-    """
-    xf, vf, _, _ = dynamics.transition_kernel(*state,
-                                              net_weights,
-                                              forward=True)
-    state_f = State(x=xf, v=vf, beta=state.beta)
-    xbf, vbf, _, _ = dynamics.transition_kernel(*state_f,
-                                                net_weights,
-                                                forward=False)
-    state_bf = State(x=xbf, v=vbf, beta=state.beta)
-
-    return state_bf
 
 def reverse_dynamics(dynamics, state, net_weights, forward_first=True):
     """Check reversibility of dynamics by running either:
@@ -402,8 +376,6 @@ def check_reversibility_np(dynamics,
                                 forward_first=True)
     state_fb = reverse_dynamics(dynamics, state, net_weights,
                                 forward_first=False)
-    #  state_fb = _run_fb_np(dynamics, state, net_weights)
-    #  state_bf = _run_bf_np(dynamics, state, net_weights)
 
     xdiff_fb = sum_squared_diff(state.x, state_fb.x)
     vdiff_fb = sum_squared_diff(state.v, state_fb.v)
@@ -482,9 +454,127 @@ def check_reversibility_np(dynamics,
     return diff_fb, diff_bf
 
 
+def inference_step(step, x_init, dynamics, lattice, **run_params):
+    """Run a single inference step."""
+    x_init = np.mod(x_init, 2 * np.pi)
+    beta = run_params.get('beta', None)
+    run_steps = run_params.get('run_steps', None)
+    net_weights = run_params.get('net_weights', None)
+    plaq_exact = u1_plaq_exact(beta)
+
+    #  run_steps = run_params['run_steps']
+    #  net_weights = run_params['net_weights']
+    #  plaq_exact = u1_plaq_exact(run_params['beta'])
+
+    start_time = time.time()
+    output = dynamics.apply_transition(x_init, beta, net_weights,
+                                       model_type='GaugeModel')
+    time_diff = time.time() - start_time
+
+    x_out = np.mod(output['x_out'], 2 * np.pi)
+    output['x_out'] = x_out
+
+    observables = lattice.calc_observables_np(samples=x_out)
+    plaq_diff = plaq_exact - observables['plaqs']
+
+    dx_prop = cos_metric(output['x_proposed'], x_init)
+    dx_out = cos_metric(x_out, x_init)
+    observables['dx_out'] = dx_out
+    observables['dx_proposed'] = dx_prop
+    observables['accept_prob'] = output['accept_prob']
+    #  output['dx_out'] = dx_out
+    #  output['dx_proposed'] = dx_prop
+
+    edata = calc_energies(dynamics, x_init, output, beta)
+
+    data_str = (f"{step:>6g}/{run_steps:<6g} "
+                f"{time_diff:^11.4g} "
+                f"{output['accept_prob'].mean():^11.4g} "
+                f"{dx_out.mean():^11.4g} "
+                f"{dx_prop.mean():^11.4g} "
+                #  f"{output['forward']:^11.4g} "
+                f"{edata['exp_energy_diff'].mean():^11.4g} "
+                f"{output['sumlogdet_out'].mean():^11.4g} "
+                f"{plaq_diff.mean():^11.4g}")
+
+    outputs = {
+        'data_str': data_str,
+        'energy_data': edata,
+        'dynamics_output': output,
+        'observables': observables,
+    }
+
+    return outputs
+
+
+def update_data(run_data, energy_data, outputs):
+    """Update data using `outputs`."""
+    for key, val in outputs['observables'].items():
+        try:
+            run_data[key].append(val)
+        except KeyError:
+            run_data[key] = [val]
+
+    run_data['forward'].append(outputs['dynamics_output']['forward'])
+    run_data['mask_a'].append(outputs['dynamics_output']['mask_a'])
+    run_data['rand_num'].append(outputs['dynamics_output']['rand_num'])
+    run_data['sumlogdet'].append(outputs['dynamics_output']['sumlogdet_out'])
+
+    for key, val in outputs['energy_data'].items():
+        try:
+            energy_data[key].append(val)
+        except KeyError:
+            energy_data[key] = [val]
+
+    return run_data, energy_data
+
+
+def _run_hmc_np(steps, dynamics, lattice, samples, run_params, **data):
+    """Run HMC for a few steps intermittently during L2HMC inference run."""
+    run_data = data.get('run_data', None)
+    energy_data = data.get('energy_data', None)
+    data_strs = data.get('data_strs', None)
+    io.log('\n\n' + SEPERATOR + '\n'
+           + f'RUNNING GENERIC HMC FOR {steps} steps...')
+
+    # Create copy of `run_params` with `net_weights` set to all zeros
+    hmc_params = run_params.copy()
+    hmc_params['net_weights'] = NetWeights(0, 0, 0, 0, 0, 0)
+    hmc_params['run_steps'] = steps
+
+    for step in range(steps):
+        if step % 100 == 0:
+            io.log(SEPERATOR + '\n' + HEADER + '\n' + SEPERATOR)
+
+        samples_init = np.mod(samples, 2 * np.pi)
+        outputs = inference_step(step, samples_init, dynamics,
+                                 lattice, **hmc_params)
+        samples = outputs['dynamics_output']['x_out']
+        if energy_data is not None and run_data is not None:
+            run_data, energy_data = update_data(run_data,
+                                                energy_data,
+                                                outputs)
+            if data_strs is not None:
+                data_strs.append(outputs['data_str'])
+        #  run_data, energy_data = update_data(run_data, energy_data, outputs)
+
+        io.log(outputs['data_str'])
+
+    data = {
+        'energy_data': energy_data,
+        'run_data': run_data,
+        'data_strs': data_strs,
+    }
+
+    io.log(SEPERATOR + '\n\n' + 'Back to running L2HMC...\n')
+    io.log(SEPERATOR + '\n' + HEADER + '\n' + SEPERATOR)
+
+    return samples, data
+
+
 @timeit
 def run_inference_np(log_dir, dynamics, lattice, run_params, **kwargs):
-    """Run inference using `dynamics` object."""
+    """Run inference imperatively w/ numpy using `dynamics` object."""
     init = kwargs.get('init', 'rand')
     skip = kwargs.get('skip', True)
     reverse_steps = kwargs.get('reverse_steps', 1000)
@@ -494,40 +584,37 @@ def run_inference_np(log_dir, dynamics, lattice, run_params, **kwargs):
                                                                    init=init,
                                                                    skip=skip)
     reverse_file = os.path.join(run_dir, 'reversibility_results.txt')
-
     if skip and existing_flag:
         io.log(f'Existing run found! Loading data...')
         run_params = load_pkl(os.path.join(run_dir, 'run_params.pkl'))
         run_data = load_pkl(os.path.join(run_dir, 'run_data.pkl'))
         energy_data = load_pkl(os.path.join(run_dir, 'energy_data.pkl'))
-
     else:
+        run_data, energy_data, reverse_data = _init_dicts()
         samples = np.mod(samples, 2 * np.pi)
         beta = run_params['beta']
         run_steps = run_params['run_steps']
         net_weights = run_params['net_weights']
 
-        data_keys = ['plaqs', 'actions', 'charges', 'dxf', 'dxb',
-                     'dx', 'accept_prob', 'mask_f', 'mask_b']
-
-        reverse_keys = ['xdiff_fb', 'xdiff_bf', 'vdiff_fb', 'vdiff_bf']
-
-        energy_keys = ['potential_init', 'potential_proposed', 'potential_out',
-                       'kinetic_init', 'kinetic_proposed', 'kinetic_out',
-                       'hamiltonian_init', 'hamiltonian_proposed',
-                       'hamiltonian_out', 'exp_energy_diff']
-
-        run_data = {key: [] for key in data_keys}
-        energy_data = {key: [] for key in energy_keys}
-        reverse_data = {key: [] for key in reverse_keys}
-
         data_strs = []
-        plaq_exact = u1_plaq_exact(beta)
-
-        start_time = time.time()
         for step in range(run_steps):
             if step % 100 == 0:
                 io.log(SEPERATOR + '\n' + HEADER + '\n' + SEPERATOR)
+
+            # --------------------------------------------------
+            # Every 5000 steps, run generic HMC for 1000 steps
+            # --------------------------------------------------
+            #  if (step + 1) % 5000 == 0:
+            #      samples, data = _run_hmc_np(1000, dynamics, lattice,
+            #                                  samples, run_params,
+            #                                  run_data=run_data,
+            #                                  energy_data=energy_data,
+            #                                  data_strs=data_strs)
+            #
+            #      run_data = data['run_data']
+            #      energy_data = data['energy_data']
+            #      data_strs = data['data_strs']
+
             if step % reverse_steps == 0:
                 v_rand = np.random.randn(*samples.shape)
                 state = State(x=samples, v=v_rand, beta=beta)
@@ -539,53 +626,13 @@ def run_inference_np(log_dir, dynamics, lattice, run_params, **kwargs):
                 reverse_data['vdiff_fb'].append(diff_fb[1])
                 reverse_data['vdiff_bf'].append(diff_bf[1])
 
-            start_time = time.time()
             samples_init = np.mod(samples, 2 * np.pi)
-            output = dynamics.apply_transition(samples_init,
-                                               beta, net_weights,
-                                               model_type='GaugeModel')
-            sld = output['sumlogdet_out']
-            time_diff = time.time() - start_time
-            samples = np.mod(output['x_out'], 2 * np.pi)
-            obs = lattice.calc_observables_np(samples=samples)
-            for k, v in obs.items():
-                try:
-                    run_data[k].append(v)
-                except KeyError:
-                    run_data[k] = [v]
-
-            xf0 = samples_init * output['mask_f'][:, None]
-            xb0 = samples_init * output['mask_b'][:, None]
-
-            xf1 = np.mod(output['xf'], 2*np.pi) * output['mask_f'][:, None]
-            xb1 = np.mod(output['xb'], 2*np.pi) * output['mask_b'][:, None]
-
-            dxf = cos_metric(xf0, xf1)
-            dxb = cos_metric(xb0, xb1)
-            dx_out = cos_metric(samples_init, samples)
-
-            run_data['dx'].append(dx_out)
-            run_data['dxf'].append(dxf)
-            run_data['dxb'].append(dxb)
-            run_data['accept_prob'].append(output['accept_prob'])
-            plaq_diff = plaq_exact - obs['plaqs']
-
-            edata = calc_energies(dynamics, samples_init, output, beta)
-            for k, v in edata.items():
-                energy_data[k].append(v)
-
-            data_str = (f"{step:>6g}/{run_steps:<6g} "
-                        f"{time_diff:^11.4g} "
-                        f"{output['accept_prob'].mean():^11.4g} "
-                        f"{dx_out.mean():^11.4g} "
-                        f"{dxf.mean():^11.4g} "
-                        f"{dxb.mean():^11.4g} "
-                        f"{edata['exp_energy_diff'].mean():^11.4g} "
-                        f"{sld.mean():^11.4g} "
-                        f"{plaq_diff.mean():^11.4g}")
-
-            io.log(data_str)
-            data_strs.append(data_str)
+            outputs = inference_step(step, samples_init,
+                                     dynamics, lattice, **run_params)
+            samples = outputs['dynamics_output']['x_out']
+            run_data, energy_data = update_data(run_data, energy_data, outputs)
+            io.log(outputs['data_str'])
+            data_strs.append(outputs['data_str'])
 
         data_dict = {
             'run_data': run_data,
@@ -593,11 +640,10 @@ def run_inference_np(log_dir, dynamics, lattice, run_params, **kwargs):
             'reverse_data': reverse_data,
         }
         save_inference_data(run_dir, run_params, data_dict, data_strs)
+
     outputs = {
         'run_params': run_params,
         'data': data_dict,
-        #  'run_data': run_data,
-        #  'energy_data': energy_data,
         'reverse_data': reverse_data,
         'existing_flag': existing_flag,
     }
@@ -605,11 +651,34 @@ def run_inference_np(log_dir, dynamics, lattice, run_params, **kwargs):
     return outputs
 
 
+def save_direction_data(run_dir, run_data):
+    """Save directionality data to `.txt` file in `run_dir`."""
+    forward_arr = run_data.get('forward', None)
+    if forward_arr is None:
+        io.log(f'`run_data` has no `forward` item. Returning.')
+        return
+
+    forward_arr = np.array(forward_arr)
+    num_steps = len(forward_arr)
+    steps_f = forward_arr.sum()
+    steps_b = num_steps - steps_f
+    percent_f = steps_f / num_steps
+    percent_b = steps_b / num_steps
+
+    direction_file = os.path.join(run_dir, 'direction_results.txt')
+    with open(direction_file, 'w') as f:
+        f.write(f'forward steps: {steps_f}/{num_steps}, {percent_f}\n')
+        f.write(f'backward steps: {steps_b}/{num_steps}, {percent_b}\n')
+
+
 def save_inference_data(run_dir, run_params, data_dict, data_strs):
     """Save all inference data to `run_dir`."""
     run_data = data_dict.get('run_data', None)
     energy_data = data_dict.get('energy_data', None)
     reverse_data = data_dict.get('reverse_data', None)
+
+    if 'forward' in run_data:
+        save_direction_data(run_dir, run_data)
 
     io.save_dict(run_params, run_dir, name='run_params')
     run_history_file = os.path.join(run_dir, 'run_history.txt')
@@ -631,18 +700,6 @@ def save_inference_data(run_dir, run_params, data_dict, data_strs):
     _pkl_dump(run_data, run_data_file)
     _pkl_dump(energy_data, energy_data_file)
     _pkl_dump(reverse_data, reverse_data_file)
-
-    #  io.log(f'Saving run_data to {run_data_file}...')
-    #  with open(run_data_file, 'wb') as f:
-    #      pickle.dump(run_data, f)
-    #
-    #  energy_data_file = os.path.join(run_dir, 'energy_data.pkl')
-    #  io.log(f'Saving energy_data to {energy_data_file}...')
-    #  with open(energy_data_file, 'wb') as f:
-    #      pickle.dump(energy_data, f)
-    #
-    #  reverse_data_file = os.path.join(run_dir, 'reverse_data.pkl')
-    #  io.log(f'Saving reversibility data to {reverse_data_file}...')
 
     observables_dir = os.path.join(run_dir, 'observables')
     io.check_else_make_dir(observables_dir)
