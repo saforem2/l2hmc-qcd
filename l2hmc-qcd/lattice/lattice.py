@@ -272,8 +272,6 @@ class GaugeLattice:
             plaq_sums = self.calc_plaq_sums(samples)
 
         with tf.name_scope('plaqs'):
-            #  plaqs = tf.reduce_mean(tf.cos(self.calc_plaq_sums(samples)),
-            #                         axis=(1, 2), name='plaqs')
             plaqs = tf.reduce_sum(tf.cos(plaq_sums),
                                   axis=(1, 2), name='plaqs') / self.num_plaqs
         return plaqs

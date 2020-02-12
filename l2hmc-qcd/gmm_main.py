@@ -42,6 +42,8 @@ if cfg.HAS_HOROVOD:
 if float(tf.__version__.split('.')[0]) <= 2:
     tf.logging.set_verbosity(tf.logging.INFO)
 
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
+
 SEP_STR = 80 * '-'
 
 
@@ -50,6 +52,11 @@ def log_params(params):
     for key, val in params.items():
         io.log(f' - {key} : {val}\n')
     io.log(SEP_STR)
+
+
+def pkl_dump(d, pkl_file):
+    with open(pkl_file, 'wb') as f:
+        pickle.dump(d, f)
 
 
 @timeit
@@ -133,23 +140,6 @@ def train_l2hmc(FLAGS, log_file=None):
         _, _ = plot_target_distribution(model.distribution,
                                         target_samples, **kwargs)
 
-        # *************************************************************
-        # Build operations for collecting all weights used in tf.Graph
-        # -------------------------------------------------------------
-        weights = get_net_weights(model)
-        xnet = model.dynamics.xnet.generic_net
-        vnet = model.dynamics.vnet.generic_net
-        coeffs = {
-            'xnet': {
-                'coeff_scale': xnet.coeff_scale,
-                'coeff_transformation': xnet.coeff_transformation,
-            },
-            'vnet': {
-                'coeff_scale': vnet.coeff_scale,
-                'coeff_transformation': vnet.coeff_transformation,
-            },
-        }
-
         logging_steps = params.get('logging_steps', 10)
         train_logger = TrainLogger(model, params['log_dir'],
                                    logging_steps=logging_steps,
@@ -173,7 +163,7 @@ def train_l2hmc(FLAGS, log_file=None):
     )
     samples_init = np.random.randn(*model.x.shape)
     beta_init = model.beta_init
-    global_step = tf.train.get_or_create_global_step()
+    #  global_step = tf.train.get_or_create_global_step()
 
     # Check reversibility
     reverse_file = os.path.join(model.log_dir, 'reversibility_test.txt')
@@ -187,52 +177,42 @@ def train_l2hmc(FLAGS, log_file=None):
     # **********************************************************
     #                       TRAINING
     # ----------------------------------------------------------
-    t0 = time.time()
     trainer = Trainer(sess, model, train_logger, **params)
-    initial_step = sess.run(global_step)
+
     trainer.train(model.train_steps,
                   beta=beta_init,
                   samples=samples_init,
-                  initial_step=initial_step,
                   net_weights=net_weights_init)
 
     check_reversibility(model, sess, out_file=reverse_file)
-
-    io.log(SEP_STR)
-    io.log(f'Training completed in: {time.time() - t0:.4g}s')
-    io.log(SEP_STR)
-
     if is_chief:
-        wfile = os.path.join(model.log_dir, 'dynamics_weights.h5')
-        model.dynamics.save_weights(wfile)
-
-        weights = get_net_weights(model)
-        xcoeffs = sess.run(list(coeffs['xnet'].values()))
-        vcoeffs = sess.run(list(coeffs['vnet'].values()))
-        weights['xnet']['GenericNet'].update({
+        weights_final, coeffs_final = get_net_weights(model, sess)
+        xcoeffs = sess.run(list(coeffs_final['xnet'].values()))
+        vcoeffs = sess.run(list(coeffs_final['vnet'].values()))
+        weights_final['xnet']['GenericNet'].update({
             'coeff_scale': xcoeffs[0],
             'coeff_transformation': xcoeffs[1]
         })
-        weights['vnet']['GenericNet'].update({
+        weights_final['vnet']['GenericNet'].update({
             'coeff_scale': vcoeffs[0],
             'coeff_transformation': vcoeffs[1]
         })
 
-        _ = weights_hist(model.log_dir, weights=weights)
+        weights_hist(model.log_dir, weights=weights_final, init=False)
 
-        weights_file = os.path.join(model.log_dir, 'weights.pkl')
-        with open(weights_file, 'wb') as f:
-            pickle.dump(weights, f)
+        pkl_dump(weights_final, os.path.join(model.log_dir, 'weights.pkl'))
+        pkl_dump(model.params, os.path.join(os.getcwd(), 'params.pkl'))
+        io.save_dict(model.params, os.path.join(os.getcwd()), 'params.pkl')
 
-        params_file = os.path.join(os.getcwd(), 'params.pkl')
-        with open(params_file, 'wb') as f:
-            pickle.dump(model.params, f)
+        # Count all trainable paramters and write them (w/ shapes) to txt file
+        count_trainable_params(os.path.join(params['log_dir'],
+                                            'trainable_params.txt'))
+        eps_np = sess.run(model.dynamics.eps)
+        eps_dict = {'eps': eps_np}
+        pkl_dump(eps_dict, os.path.join(model.log_dir, 'eps_np.pkl'))
 
         if train_logger is not None:
             save_distribution_params(model.distribution, train_logger.log_dir)
-
-        count_trainable_params(os.path.join(params['log_dir'],
-                                            'trainable_params.txt'))
 
     sess.close()
     tf.reset_default_graph()
