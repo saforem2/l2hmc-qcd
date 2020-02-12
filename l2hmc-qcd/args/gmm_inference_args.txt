@@ -1,6 +1,5 @@
---run_steps 5001
---bootstrap_iters 1000
---beta_inference 1.
+--run_steps 5000
+--beta_inference 5.
 --x_scale_weight 1.
 --x_translation_weight 1.
 --x_transformation_weight 1.
