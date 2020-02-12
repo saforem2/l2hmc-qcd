@@ -56,11 +56,7 @@ def _get_title(params, run_params):
 def therm_arr(arr, therm_frac=0.25):
     num_steps = arr.shape[0]
     therm_steps = int(therm_frac * num_steps)
-    try:
-        arr = arr[therm_steps:, :]
-    except:
-        import pudb
-        pudb.set_trace()
+    arr = arr[therm_steps:, :]
     steps = np.arange(therm_steps, num_steps)
     return arr, steps
 
