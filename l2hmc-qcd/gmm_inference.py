@@ -65,13 +65,7 @@ def inference(runner, run_logger, energy_plotter=None, **kwargs):
     else:
         _log_inference_header(*args, existing=False)
         run_logger.reset(**kwargs)  # reset run_logger to prepare for new run
-
-        t0 = time.time()
-
-        runner.run(**kwargs)        # run inference and log time spent
-
-        dt = time.time() - t0
-        io.log(SEP_STR + f'\nTook: {dt:.4g}s to complete run.\n' + SEP_STR)
+        runner.run(**kwargs)        # run inference
 
         # Plot dU, dT, and dH
         e_tf = run_logger.energy_dict
