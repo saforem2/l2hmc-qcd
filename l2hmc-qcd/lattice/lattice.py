@@ -62,6 +62,11 @@ def project_angle(x):
     return x - 2 * np.pi * tf.math.floor((x + np.pi) / (2 * np.pi))
 
 
+def project_angle_np(x):
+    """Returns the projection of an angle `x` from [-4pi, 4pi] to [-pi, pi]."""
+    return x - 2 * np.pi * np.floor((x + np.pi) / (2 * np.pi))
+
+
 def project_angle_fft(x, N=10):
     """Use the fourier series representation `x` to approx `project_angle`.
     NOTE: Because `project_angle` suffers a discontinuity, we approximate `x`
@@ -301,7 +306,8 @@ class GaugeLattice:
                 samples = self.samples
             plaq_sums = self.calc_plaq_sums_np(samples)
 
-        ps_proj = np.sin(plaq_sums)
+        #  ps_proj = np.sin(plaq_sums)
+        ps_proj = project_angle_np(plaq_sums)
         top_charges = np.sum(ps_proj, axis=(1, 2)) / (2 * np.pi)
 
         return top_charges

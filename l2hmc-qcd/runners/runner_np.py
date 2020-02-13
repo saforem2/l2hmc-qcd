@@ -13,6 +13,7 @@ import pickle
 
 import config  # pylint: disable=unused-import
 from config import NetWeights, Weights, State
+import pandas as pd
 
 import utils.file_io as io
 
@@ -235,9 +236,13 @@ def _check_param(dynamics, param=None):
 
 def _init_dicts():
     """Initialize dictionaries to store inference data."""
-    data_keys = ['plaqs', 'actions', 'charges', 'dx_proposed', 'dx_out',
-                 'accept_prob', 'forward', 'mask_a', 'mask_r', 'rand_num',
-                 'sumlogdet']
+    data_keys = [
+        'plaqs', 'actions', 'charges',
+        'dx_proposed', 'dx_out',
+        'sumlogdet_prop', 'sumlogdet_out',
+        'accept_prob', 'rand_num', 'mask_a',
+        'forward'
+    ]
     reverse_keys = ['xdiff_fb', 'xdiff_bf', 'vdiff_fb', 'vdiff_bf']
     energy_keys = ['potential_init', 'potential_proposed', 'potential_out',
                    'kinetic_init', 'kinetic_proposed', 'kinetic_out',
@@ -376,82 +381,100 @@ def check_reversibility_np(dynamics,
                                 forward_first=True)
     state_fb = reverse_dynamics(dynamics, state, net_weights,
                                 forward_first=False)
+    dx_bf = state.x - state_bf.x
+    dv_bf = state.v - state_bf.v
 
-    xdiff_fb = sum_squared_diff(state.x, state_fb.x)
-    vdiff_fb = sum_squared_diff(state.v, state_fb.v)
-    diff_fb = (xdiff_fb, vdiff_fb)
+    dx_fb = state.x - state_fb.x
+    dv_fb = state.v - state_fb.v
 
-    xdiff_bf = sum_squared_diff(state.x, state_bf.x)
-    vdiff_bf = sum_squared_diff(state.v, state_bf.v)
-    diff_bf = (xdiff_bf, vdiff_bf)
-
-    batch_size = state.x.shape[0]
+    dx_dict = {
+        'dx_bf': np.squeeze(dx_bf),
+        'dx_fb': np.squeeze(dx_fb),
+        'dv_bf': np.squeeze(dv_bf),
+        'dv_fb': np.squeeze(dv_fb),
+    }
+    dx_df = pd.DataFrame(dx_dict)
     if out_file is not None:
-        if step is not None:
-            io.log_and_write(f'step: {step}', out_file)
-        avg_str_fb = f' < dxfb, dvfb > : ({xdiff_fb:.5g}, {vdiff_fb:.5g})'
-        avg_str_bf = f' < dxbf, dvbf > : ({xdiff_bf:.5g}, {vdiff_bf:.5g})'
-        io.log_and_write(avg_str_fb, out_file)
-        io.log_and_write(avg_str_bf, out_file)
-        out_str = ''
-        formatter = {'float_kind': lambda x: f'{x:.3g}'}
+        header = (step == 0)
+        dx_df.to_csv(out_file, mode='a', header=header, index=False)
 
-        if batch_size <= 1:
-            dxfb = state_fb.x - state.x
-            dxfb_str = np.array2string(dxfb, max_line_width=80,
-                                       precision=4, separator=', ',
-                                       prefix='      ', formatter=formatter)
-            dvfb = state_fb.v - state.v
-            dvfb_str = np.array2string(dvfb, max_line_width=80,
-                                       precision=4, separator=', ',
-                                       prefix='      ', formatter=formatter)
+    #  xdiff_fb = sum_squared_diff(state.x, state_fb.x)
+    #  vdiff_fb = sum_squared_diff(state.v, state_fb.v)
+    #  diff_fb = (xdiff_fb, vdiff_fb)
 
-            dxbf = state_bf.x - state.x
-            dxbf_str = np.array2string(dxbf, max_line_width=80,
-                                       precision=4, separator=', ',
-                                       prefix='      ')
-            dvbf = state_bf.v - state.v
-            dvbf_str = np.array2string(dvbf, max_line_width=80,
-                                       precision=4, separator=', ',
-                                       prefix='      ', formatter=formatter)
+    #  xdiff_bf = sum_squared_diff(state.x, state_bf.x)
+    #  vdiff_bf = sum_squared_diff(state.v, state_bf.v)
+    #  diff_bf = (xdiff_bf, vdiff_bf)
 
-            out_str += (f' * dxfb:\n  {dxfb_str}\n'
-                        f' * dvfb:\n  {dvfb_str}\n'
-                        f' * dxbf:\n  {dxbf_str}\n'
-                        f' * dvbf:\n  {dvbf_str}\n')
-            io.log_and_write(out_str, out_file)
-            io.log_and_write(80 * '-', out_file)
-            return diff_fb, diff_bf
+    #  batch_size = state.x.shape[0]
+    #  if out_file is not None:
+    #      if step is not None:
+    #          io.log_and_write(f'step: {step}', out_file)
+    #      avg_str_fb = f' < dxfb, dvfb > : ({xdiff_fb:.5g}, {vdiff_fb:.5g})'
+    #      avg_str_bf = f' < dxbf, dvbf > : ({xdiff_bf:.5g}, {vdiff_bf:.5g})'
+    #      io.log_and_write(avg_str_fb, out_file)
+    #      io.log_and_write(avg_str_bf, out_file)
+    #      out_str = ''
+    #      formatter = {'float_kind': lambda x: f'{x:.3g}'}
+    #
+    #      if batch_size <= 1:
+    #          dxfb = state_fb.x - state.x
+    #          dxfb_str = np.array2string(dxfb, max_line_width=80,
+    #                                     precision=4, separator=', ',
+    #                                     prefix='      ', formatter=formatter)
+    #          dvfb = state_fb.v - state.v
+    #          dvfb_str = np.array2string(dvfb, max_line_width=80,
+    #                                     precision=4, separator=', ',
+    #                                     prefix='      ', formatter=formatter)
+    #
+    #          dxbf = state_bf.x - state.x
+    #          dxbf_str = np.array2string(dxbf, max_line_width=80,
+    #                                     precision=4, separator=', ',
+    #                                     prefix='      ')
+    #          dvbf = state_bf.v - state.v
+    #          dvbf_str = np.array2string(dvbf, max_line_width=80,
+    #                                     precision=4, separator=', ',
+    #                                     prefix='      ', formatter=formatter)
+    #
+    #          out_str += (f' * dxfb:\n  {dxfb_str}\n'
+    #                      f' * dvfb:\n  {dvfb_str}\n'
+    #                      f' * dxbf:\n  {dxbf_str}\n'
+    #                      f' * dvbf:\n  {dvbf_str}\n')
+    #          io.log_and_write(out_str, out_file)
+    #          io.log_and_write(80 * '-', out_file)
+    #          return diff_fb, diff_bf
+    #
+    #      for i in range(batch_size):
+    #          dxfb = state_fb.x[i] - state.x[i]
+    #          formatter = {'float_kind': lambda x: f'{x:.3g}'}
+    #          dxfb_str = np.array2string(dxfb, max_line_width=80,
+    #                                     precision=4, separator=', ',
+    #                                     prefix='      ', formatter=formatter)
+    #          dvfb = state_fb.v[i] - state.v[i]
+    #          dvfb_str = np.array2string(dvfb, max_line_width=80,
+    #                                     precision=4, separator=', ',
+    #                                     prefix='      ', formatter=formatter)
+    #
+    #          dxbf = state_bf.x[i] - state.x[i]
+    #          dxbf_str = np.array2string(dxbf, max_line_width=80,
+    #                                     precision=4, separator=', ',
+    #                                     prefix='      ')
+    #          dvbf = state_bf.v[i] - state.v[i]
+    #          dvbf_str = np.array2string(dvbf, max_line_width=80,
+    #                                     precision=4, separator=', ',
+    #                                     prefix='      ', formatter=formatter)
+    #
+    #          out_str += (f' - chain idx: {i}:\n'
+    #                      f'   * dxfb:\n {dxfb_str}\n'
+    #                      f'   * dvfb:\n {dvfb_str}\n'
+    #                      f'   * dxbf:\n {dxbf_str}\n'
+    #                      f'   * dvfb:\n {dvbf_str}\n')
+    #      io.log_and_write(out_str, out_file)
+    #      io.log_and_write(80 * '-', out_file)
+    #  return diff_fb, diff_bf
 
-        for i in range(batch_size):
-            dxfb = state_fb.x[i] - state.x[i]
-            formatter = {'float_kind': lambda x: f'{x:.3g}'}
-            dxfb_str = np.array2string(dxfb, max_line_width=80,
-                                       precision=4, separator=', ',
-                                       prefix='      ', formatter=formatter)
-            dvfb = state_fb.v[i] - state.v[i]
-            dvfb_str = np.array2string(dvfb, max_line_width=80,
-                                       precision=4, separator=', ',
-                                       prefix='      ', formatter=formatter)
+    return (dx_fb, dv_fb), (dx_bf, dv_bf),
 
-            dxbf = state_bf.x[i] - state.x[i]
-            dxbf_str = np.array2string(dxbf, max_line_width=80,
-                                       precision=4, separator=', ',
-                                       prefix='      ')
-            dvbf = state_bf.v[i] - state.v[i]
-            dvbf_str = np.array2string(dvbf, max_line_width=80,
-                                       precision=4, separator=', ',
-                                       prefix='      ', formatter=formatter)
-
-            out_str += (f' - chain idx: {i}:\n'
-                        f'   * dxfb:\n {dxfb_str}\n'
-                        f'   * dvfb:\n {dvfb_str}\n'
-                        f'   * dxbf:\n {dxbf_str}\n'
-                        f'   * dvfb:\n {dvbf_str}\n')
-        io.log_and_write(out_str, out_file)
-        io.log_and_write(80 * '-', out_file)
-
-    return diff_fb, diff_bf
 
 
 def inference_step(step, x_init, dynamics, lattice, **run_params):
@@ -515,10 +538,15 @@ def update_data(run_data, energy_data, outputs):
         except KeyError:
             run_data[key] = [val]
 
+    run_data['sumlogdet_out'].append(
+        outputs['dynamics_output']['sumlogdet_out']
+    )
+    run_data['sumlogdet_prop'].append(
+        outputs['dynamics_output']['sumlogdet_proposed']
+    )
+    run_data['rand_num'].append(outputs['dynamics_output']['rand_num'])
     run_data['forward'].append(outputs['dynamics_output']['forward'])
     run_data['mask_a'].append(outputs['dynamics_output']['mask_a'])
-    run_data['rand_num'].append(outputs['dynamics_output']['rand_num'])
-    run_data['sumlogdet'].append(outputs['dynamics_output']['sumlogdet_out'])
 
     for key, val in outputs['energy_data'].items():
         try:
@@ -572,6 +600,15 @@ def _run_hmc_np(steps, dynamics, lattice, samples, run_params, **data):
     return samples, data
 
 
+def _get_reverse_data(run_dir):
+    """Load reverse data from `reversibility_results.csv` in `run_dir`."""
+    rdata_file = os.path.join(run_dir, 'reversibility_results.csv')
+    if os.path.isfile(rdata_file):
+        return pd.read_csv(rdata_file)
+
+    return None
+
+
 @timeit
 def run_inference_np(log_dir, dynamics, lattice, run_params, **kwargs):
     """Run inference imperatively w/ numpy using `dynamics` object."""
@@ -583,7 +620,7 @@ def run_inference_np(log_dir, dynamics, lattice, run_params, **kwargs):
                                                                    run_params,
                                                                    init=init,
                                                                    skip=skip)
-    reverse_file = os.path.join(run_dir, 'reversibility_results.txt')
+    reverse_file = os.path.join(run_dir, 'reversibility_results.csv')
     if skip and existing_flag:
         io.log(f'Existing run found! Loading data...')
         run_params = load_pkl(os.path.join(run_dir, 'run_params.pkl'))
@@ -614,17 +651,16 @@ def run_inference_np(log_dir, dynamics, lattice, run_params, **kwargs):
             #      run_data = data['run_data']
             #      energy_data = data['energy_data']
             #      data_strs = data['data_strs']
-
             if step % reverse_steps == 0:
                 v_rand = np.random.randn(*samples.shape)
                 state = State(x=samples, v=v_rand, beta=beta)
                 diff_fb, diff_bf = check_reversibility_np(dynamics, state,
                                                           net_weights, step,
                                                           reverse_file)
-                reverse_data['xdiff_fb'].append(diff_fb[0])
-                reverse_data['xdiff_bf'].append(diff_bf[0])
-                reverse_data['vdiff_fb'].append(diff_fb[1])
-                reverse_data['vdiff_bf'].append(diff_bf[1])
+                reverse_data['xdiff_fb'].extend(diff_fb[0])
+                reverse_data['xdiff_bf'].extend(diff_bf[0])
+                reverse_data['vdiff_fb'].extend(diff_fb[1])
+                reverse_data['vdiff_bf'].extend(diff_bf[1])
 
             samples_init = np.mod(samples, 2 * np.pi)
             outputs = inference_step(step, samples_init,
@@ -640,6 +676,7 @@ def run_inference_np(log_dir, dynamics, lattice, run_params, **kwargs):
             'reverse_data': reverse_data,
         }
         save_inference_data(run_dir, run_params, data_dict, data_strs)
+
 
     outputs = {
         'run_params': run_params,
@@ -676,6 +713,12 @@ def save_inference_data(run_dir, run_params, data_dict, data_strs):
     run_data = data_dict.get('run_data', None)
     energy_data = data_dict.get('energy_data', None)
     reverse_data = data_dict.get('reverse_data', None)
+
+    rdata_df = pd.DataFrame(reverse_data)
+    max_rdata = np.max(np.abs(rdata_df), axis=0)
+    out_file = os.path.join(run_dir, 'max_reversibility_results.csv')
+    io.log(f'Saving `max` reversibility data to {out_file}.')
+    max_rdata.to_csv(out_file)
 
     if 'forward' in run_data:
         save_direction_data(run_dir, run_data)

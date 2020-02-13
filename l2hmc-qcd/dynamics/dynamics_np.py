@@ -15,7 +15,7 @@ from collections import namedtuple
 
 import config as cfg
 
-from utils.file_io import timeit  # noqa: F401
+from config import State
 from network.generic_net_np import GenericNetNP
 
 HAS_AUTOGRAD = False
@@ -29,7 +29,6 @@ except ImportError:
     import numpy as np
 
 # pylint: disable=invalid-name, too-many-arguments
-State = cfg.State
 Weights = namedtuple('Weights', ['w', 'b'])
 NP_FLOAT = cfg.NP_FLOAT
 
@@ -86,23 +85,25 @@ class DynamicsNP:
 
         if v is None:
             v = np.random.normal(size=x.shape)
+
         state_init = cfg.State(x, v, beta)
         xf, vf, pxf, sumlogdetf = self.transition_kernel(*state_init,
                                                          net_weights,
                                                          forward=True)
         mask_a, mask_r, rand_num = self._get_accept_masks(pxf)
-        x_out = xf * mask_a[:, None] + x * mask_r[:, None]
-        v_out = vf * mask_a[:, None] + v * mask_r[:, None]
-        sumlogdet_out = sumlogdetf * mask_a
+        #  x_out = xf * mask_a[:, None] + x * mask_r[:, None]
+        #  v_out = vf * mask_a[:, None] + v * mask_r[:, None]
+        #  sumlogdet_out = sumlogdetf * mask_a
 
         outputs = {
             'x_init': x,
             'v_init': v,
             'x_proposed': xf,
             'v_proposed': vf,
-            'x_out': x_out,
-            'v_out': v_out,
-            'sumlogdet_out': sumlogdet_out,
+            'rand_num': rand_num,
+            'sumlogdet_out': sumlogdetf * mask_a,
+            'x_out': xf * mask_a[:, None] + x * mask_r[:, None],
+            'v_out': vf * mask_a[:, None] + v * mask_r[:, None],
         }
 
         return outputs
@@ -119,18 +120,19 @@ class DynamicsNP:
                                                          net_weights,
                                                          forward=False)
         mask_a, mask_r, rand_num = self._get_accept_masks(pxb)
-        x_out = xb * mask_a[:, None] + x * mask_r[:, None]
-        v_out = vb * mask_a[:, None] + v * mask_r[:, None]
-        sumlogdet_out = sumlogdetb * mask_a
+        #  x_out = xb * mask_a[:, None] + x * mask_r[:, None]
+        #  v_out = vb * mask_a[:, None] + v * mask_r[:, None]
+        #  sumlogdet_out = sumlogdetb * mask_a
 
         outputs = {
             'x_init': x,
             'v_init': v,
             'x_proposed': xb,
             'v_proposed': vb,
-            'x_out': x_out,
-            'v_out': v_out,
-            'sumlogdet_out': sumlogdet_out
+            'rand_num': rand_num,
+            'sumlogdet_out': sumlogdetb * mask_a,
+            'x_out': xb * mask_a[:, None] + x * mask_r[:, None],
+            'v_out': vb * mask_a[:, None] + v[:, None],
         }
 
         return outputs
@@ -147,20 +149,20 @@ class DynamicsNP:
                                                        net_weights,
                                                        forward=forward)
         mask_a, mask_r, rand_num = self._get_accept_masks(px)
-        x_out = x_ * mask_a[:, None] + x * mask_r[:, None]
-        v_out = v_ * mask_a[:, None] + v_init * mask_r[:, None]
-        sumlogdet_out = sumlogdet * mask_a
+        #  x_out = x_ * mask_a[:, None] + x * mask_r[:, None]
+        #  v_out = v_ * mask_a[:, None] + v_init * mask_r[:, None]
+        #  sumlogdet_out = sumlogdet * mask_a
 
         outputs = {
             'x_init': x,
             'v_init': v_init,
             'x_proposed': x_,
             'v_proposed': v_,
-            'x_out': x_out,
-            'v_out': v_out,
+            'x_out': x_ * mask_a[:, None] + x * mask_r[:, None],
+            'v_out': v_ * mask_a[:, None] + x * mask_r[:, None],
             'accept_prob': px,
             'sumlogdet_proposed': sumlogdet,
-            'sumlogdet_out': sumlogdet_out,
+            'sumlogdet_out': sumlogdet * mask_a,
             'forward': forward,
             'mask_a': mask_a,
             'mask_r': mask_r,
@@ -376,11 +378,11 @@ class DynamicsNP:
 
         return t
 
-    def _get_accept_masks(self, accept_prob, accept_mask=None):
+    @staticmethod
+    def _get_accept_masks(accept_prob, accept_mask=None):
         if accept_mask is None:
             rand_unif = np.random.uniform(size=accept_prob.shape)
-
-            accept_mask = np.array(accept_prob > rand_unif, dtype=NP_FLOAT)
+            accept_mask = np.array(accept_prob >= rand_unif, dtype=NP_FLOAT)
         reject_mask = 1. - accept_mask
 
         return accept_mask, reject_mask, rand_unif
