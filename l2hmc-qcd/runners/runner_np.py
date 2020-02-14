@@ -45,32 +45,6 @@ HEADER = ("{:^13s}" + 7 * "{:^12s}").format(
 SEPERATOR = len(HEADER) * '-'
 
 
-RUN_DATA = {
-    'plaqs': [],
-    'actions': [],
-    'charges': [],
-    'dxf': [],
-    'dxb': [],
-    'dx': [],
-    'accept_prob': [],
-    #  'px': [],
-    'mask_f': [],
-    'mask_b': [],
-}
-
-ENERGY_DATA = {
-    'potential_init': [],
-    'kinetic_init': [],
-    'hamiltonian_init': [],
-    'potential_proposed': [],
-    'kinetic_proposed': [],
-    'hamiltonian_proposed': [],
-    'potential_out': [],
-    'kinetic_out': [],
-    'hamiltonian_out': [],
-}
-
-
 def _strf(x):
     """Format the number x as a string."""
     if np.allclose(x - np.around(x), 0):
@@ -87,14 +61,14 @@ def load_pkl(pkl_file):
     return tmp
 
 
-def sum_squared_diff(x1, x2):
+def sum_squared_diff(x, y):
     """Calculate the Euclidean distance between `x1` and `x2`."""
-    return np.sqrt(np.sum((x1 - x2) ** 2))
+    return np.sqrt(np.sum((x - y) ** 2))
 
 
-def cos_metric(x1, x2):
+def cos_metric(x, y):
     """Calculate the difference between x1, x2 using gauge metric."""
-    return np.mean(1. - np.cos(x1 - x2), axis=-1)
+    return np.mean(1. - np.cos(x - y), axis=-1)
 
 
 def create_lattice(params):
@@ -103,6 +77,7 @@ def create_lattice(params):
                         space_size=params['space_size'],
                         dim=params['dim'], link_type='U1',
                         batch_size=params['batch_size'])
+
 
 # pylint: disable=inconsistent-return-statements, no-else-return
 def _load_rp(run_dirs, idx=0):
@@ -129,12 +104,9 @@ def _get_eps(log_dir):
             else:
                 raise FileNotFoundError('Unable to load run_params.')
         eps = run_params['eps']
-    except:
-        try:
-            eps_dict = load_pkl(os.path.join(log_dir, 'eps_np.pkl'))
-            eps = eps_dict['eps']
-        except FileNotFoundError:
-            raise
+    except:  # noqa: E722 pylint:disable=bare-except
+        eps_dict = load_pkl(os.path.join(log_dir, 'eps_np.pkl'))
+        eps = eps_dict['eps']
 
     return eps
 
@@ -154,20 +126,21 @@ def _update_params(params, eps=None, num_steps=None, batch_size=None):
     return params
 
 
-def create_dynamics(log_dir, potential_fn, x_dim, hmc=False, eps=None,
-                    num_steps=None, batch_size=None, model_type=None):
+def create_dynamics(log_dir,
+                    potential_fn,
+                    x_dim,
+                    hmc=False,
+                    eps=None,
+                    num_steps=None,
+                    batch_size=None,
+                    model_type=None,
+                    direction='rand'):
     """Create `DynamicsNP` object for running dynamics imperatively."""
-    params_file = os.path.join(log_dir, 'parameters.pkl')
-    params = load_pkl(params_file)
+    params = load_pkl(os.path.join(log_dir, 'parameters.pkl'))
     params = _update_params(params, eps, num_steps, batch_size)
 
-    weights_file = os.path.join(log_dir, 'weights.pkl')
-    with open(weights_file, 'rb') as f:
+    with open(os.path.join(log_dir, 'weights.pkl'), 'rb') as f:
         weights = pickle.load(f)
-
-    #  lattice = _create_lattice(params)
-
-    zero_masks = params.get('zero_masks', False)
 
     dynamics = DynamicsNP(potential_fn,
                           weights=weights,
@@ -176,8 +149,9 @@ def create_dynamics(log_dir, potential_fn, x_dim, hmc=False, eps=None,
                           eps=params['eps'],
                           num_steps=params['num_steps'],
                           batch_size=params['batch_size'],
-                          zero_masks=zero_masks,
-                          model_type=model_type)
+                          zero_masks=params.get('zero_masks', False),
+                          model_type=model_type,
+                          direction=direction)
 
     mask_file = os.path.join(log_dir, 'dynamics_mask.pkl')
     if os.path.isfile(mask_file):
@@ -191,17 +165,16 @@ def create_dynamics(log_dir, potential_fn, x_dim, hmc=False, eps=None,
 
 def _calc_energies(dynamics, x, v, beta):
     """Calculate the potential/kinetic energies and the Hamiltonian."""
-    pe = dynamics.potential_energy(x, beta)
-    ke = dynamics.kinetic_energy(v)
-    h = dynamics.hamiltonian(x, v, beta)
+    potential_energy = dynamics.potential_energy(x, beta)
+    kinetic_energy = dynamics.kinetic_energy(v)
+    hamiltonian = dynamics.hamiltonian(x, v, beta)
 
-    return pe, ke, h
+    return potential_energy, kinetic_energy, hamiltonian
 
 
 def calc_energies(dynamics, x_init, outputs, beta):
     """Calculate initial, proposed, and output energies."""
-    pe_init, ke_init, h_init = _calc_energies(dynamics,
-                                              x_init,
+    pe_init, ke_init, h_init = _calc_energies(dynamics, x_init,
                                               outputs['v_init'], beta)
 
     pe_prop, ke_prop, h_prop = _calc_energies(dynamics,
@@ -307,10 +280,10 @@ def _inference_setup(log_dir, dynamics, run_params, init='rand', skip=True):
     io.check_else_make_dir(runs_dir)
     existing_flag = False
     if os.path.isdir(os.path.join(runs_dir, run_str)):
-        rd = os.path.join(runs_dir, run_str)
-        rp_file = os.path.join(rd, 'run_params.pkl')
-        rd_file = os.path.join(rd, 'run_data.pkl')
-        ed_file = os.path.join(rd, 'energy_data.pkl')
+        run_dir = os.path.join(runs_dir, run_str)
+        rp_file = os.path.join(run_dir, 'run_params.pkl')
+        rd_file = os.path.join(run_dir, 'run_data.pkl')
+        ed_file = os.path.join(run_dir, 'energy_data.pkl')
         rp_exists = os.path.isfile(rp_file)
         rd_exists = os.path.isfile(rd_file)
         ed_exists = os.path.isfile(ed_file)
@@ -480,6 +453,7 @@ def update_data(run_data, energy_data, outputs):
     return run_data, energy_data
 
 
+# pylint:disable=too-many-arguments
 def _run_np(steps, nws, dynamics, lattice, samples, run_params, data):
     """Run inference with different net_weights."""
     run_data = data.get('run_data', None)
@@ -598,6 +572,7 @@ def run_inference_np(log_dir, dynamics, lattice, run_params, **kwargs):
     run_params['print_steps'] = print_steps
     run_params['mix_samplers'] = mix_samplers
     run_params['reverse_steps'] = reverse_steps
+    run_params['direction'] = dynamics.direction
 
     beta = run_params['beta']
     run_steps = run_params['run_steps']
@@ -606,6 +581,8 @@ def run_inference_np(log_dir, dynamics, lattice, run_params, **kwargs):
     if mix_samplers:
         switch_steps = 2000
         run_steps_alt = 500
+        run_params['switch_steps'] = switch_steps
+        run_params['run_steps_alt'] = run_steps_alt
 
         # if running HMC, mix in L2HMC
         if net_weights == NetWeights(0, 0, 0, 0, 0, 0):
@@ -622,12 +599,6 @@ def run_inference_np(log_dir, dynamics, lattice, run_params, **kwargs):
         io.save_dict(run_params_alt, run_params['run_dir'], 'run_params_alt')
 
     reverse_file = os.path.join(run_dir, 'reversibility_results.csv')
-    #  if skip and existing_flag:
-    #      io.log(f'Existing run found! Loading data...')
-    #      run_params = load_pkl(os.path.join(run_dir, 'run_params.pkl'))
-    #      run_data = load_pkl(os.path.join(run_dir, 'run_data.pkl'))
-    #      energy_data = load_pkl(os.path.join(run_dir, 'energy_data.pkl'))
-    #  else:
     run_data, energy_data, reverse_data = _init_dicts()
     samples = np.mod(samples, 2 * np.pi)
 
@@ -636,7 +607,7 @@ def run_inference_np(log_dir, dynamics, lattice, run_params, **kwargs):
         if step % 100 == 0:
             io.log(SEPERATOR + '\n' + HEADER + '\n' + SEPERATOR)
 
-        if mix_samplers and step % 500 == 0:
+        if mix_samplers and step % switch_steps == 0:
             _data = {
                 'run_data': run_data,
                 'energy_data': energy_data,
