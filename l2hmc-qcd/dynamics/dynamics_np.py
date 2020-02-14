@@ -13,7 +13,7 @@ from __future__ import absolute_import, division, print_function
 
 from collections import namedtuple
 
-import config as cfg
+from config import State, NP_FLOAT
 
 from utils.file_io import timeit  # noqa: F401
 from network.generic_net_np import GenericNetNP
@@ -29,9 +29,7 @@ except ImportError:
     import numpy as np
 
 # pylint: disable=invalid-name, too-many-arguments
-State = cfg.State
 Weights = namedtuple('Weights', ['w', 'b'])
-NP_FLOAT = cfg.NP_FLOAT
 
 
 # pylint: disable=too-many-instance-attributes
@@ -86,8 +84,7 @@ class DynamicsNP:
 
         if v is None:
             v = np.random.normal(size=x.shape)
-        state_init = cfg.State(x, v, beta)
-        xf, vf, pxf, sumlogdetf = self.transition_kernel(*state_init,
+        xf, vf, pxf, sumlogdetf = self.transition_kernel(*State(x, v, beta),
                                                          net_weights,
                                                          forward=True)
         mask_a, mask_r, rand_num = self._get_accept_masks(pxf)
@@ -114,8 +111,7 @@ class DynamicsNP:
             x = np.mod(x, 2 * np.pi)
         if v is None:
             v = np.random.normal(size=x.shape)
-        state_init = cfg.State(x, v, beta)
-        xb, vb, pxb, sumlogdetb = self.transition_kernel(*state_init,
+        xb, vb, pxb, sumlogdetb = self.transition_kernel(*State(x, v, beta),
                                                          net_weights,
                                                          forward=False)
         mask_a, mask_r, rand_num = self._get_accept_masks(pxb)
@@ -142,7 +138,7 @@ class DynamicsNP:
 
         forward = (np.random.uniform() < 0.5)
         v_init = np.random.normal(size=x.shape)
-        state_init = cfg.State(x, v_init, beta)
+        state_init = State(x, v_init, beta)
         x_, v_, px, sumlogdet = self.transition_kernel(*state_init,
                                                        net_weights,
                                                        forward=forward)
@@ -175,12 +171,12 @@ class DynamicsNP:
             x = np.mod(x, 2 * np.pi)
 
         vf_init = np.random.normal(size=x.shape)
-        state_init_f = cfg.State(x, vf_init, beta)
+        state_init_f = State(x, vf_init, beta)
         xf, vf, pxf, sumlogdetf = self.transition_kernel(*state_init_f,
                                                          net_weights,
                                                          forward=True)
         vb_init = np.random.normal(size=x.shape)
-        state_init_b = cfg.State(x, vb_init, beta)
+        state_init_b = State(x, vb_init, beta)
         xb, vb, pxb, sumlogdetb = self.transition_kernel(*state_init_b,
                                                          net_weights,
                                                          forward=False)
@@ -376,11 +372,12 @@ class DynamicsNP:
 
         return t
 
-    def _get_accept_masks(self, accept_prob, accept_mask=None):
+    @staticmethod
+    def _get_accept_masks(accept_prob, accept_mask=None):
+        rand_unif = np.random.uniform(size=accept_prob.shape)
         if accept_mask is None:
-            rand_unif = np.random.uniform(size=accept_prob.shape)
-
-            accept_mask = np.array(accept_prob > rand_unif, dtype=NP_FLOAT)
+            #  rand_unif = np.random.uniform(size=accept_prob.shape)
+            accept_mask = np.array(accept_prob >= rand_unif, dtype=NP_FLOAT)
         reject_mask = 1. - accept_mask
 
         return accept_mask, reject_mask, rand_unif

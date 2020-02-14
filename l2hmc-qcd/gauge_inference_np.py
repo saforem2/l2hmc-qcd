@@ -152,7 +152,7 @@ def plot_reverse_data(reverse_data, params, run_params, **kwargs):
     out_file = os.path.join(fig_dir, f'{fname}.pdf')
     fig, ax = plt.subplots()
     for key, val in reverse_data.items():
-        sns.kdeplot(np.array(val), shade=True, label=key, ax=ax)
+        sns.kdeplot(np.array(val).flatten(), shade=True, label=key, ax=ax)
     ax.legend(loc='best')
     plt.tight_layout()
     io.log(f'Saving figure to: {out_file}...')
@@ -288,6 +288,30 @@ def inference_plots(data_dict, params, run_params, **kwargs):
     return dataset, energy_dataset
 
 
+def make_csv(run_data, energy_data, run_params):
+    """Make .csv file containing relevant inference data."""
+    plaq_exact = u1_plaq_exact(run_params['beta'])
+    csv_dict = {}
+    for e_key, e_val in energy_data.items():
+        arr = np.squeeze(np.array(e_val)).flatten()
+        csv_dict[e_key] = arr
+        _shape = arr.shape
+
+    for r_key, r_val in run_data.items():
+        arr = np.squeeze(np.array(r_val)).flatten()
+        if len(arr.shape) == 1:
+            arr = np.squeeze(np.array([arr for _ in _shape]))
+        if r_key == 'plaqs':
+            csv_dict['plaqs_diffs'] = plaq_exact - np.squeeze(np.array(r_val))
+        else:
+            csv_dict[r_key] = np.squeeze(np.array(r_val))
+    csv_df = pd.DataFrame(csv_dict)
+    csv_file = os.path.join(run_params['run_dir'], 'inference_data.csv')
+    io.log(f'Saving inference data to {csv_file}.')
+    csv_df.to_csv(csv_file, mode='a')
+    return csv_dict
+
+
 @timeit
 def main(args):
     """Perform tensorflow-independent inference on a trained model."""
@@ -334,31 +358,17 @@ def main(args):
                                run_params, init=args.init, skip=False)
     run_data = outputs['data']['run_data']
     energy_data = outputs['data']['energy_data']
-    reverse_data = outputs['data']['reverse_data']
+    #  reverse_data = outputs['data']['reverse_data']
     run_params = outputs['run_params']
-    beta = run_params['beta']
-    plaq_exact = u1_plaq_exact(beta)
+    #  beta = run_params['beta']
+    #  plaq_exact = u1_plaq_exact(beta)
 
-    csv_dict = {}
-    for key, val in energy_data.items():
-        csv_dict[key] = np.squeeze(np.array(val))
+    make_csv(run_data, energy_data, run_params)
 
-    csv_dict['accept_prob'] = np.squeeze(np.array(run_data['accept_prob']))
-    csv_dict['rand_num'] = np.squeeze(np.array(run_data['rand_num']))
-    csv_dict['accept'] = np.squeeze(np.array(run_data['mask_a']))
-    csv_dict['forward'] = np.squeeze(np.array(run_data['forward']))
-    csv_dict['plaqs_diffs'] = (plaq_exact
-                               - np.squeeze(np.array(run_data['plaqs'])))
-    csv_df = pd.DataFrame(csv_dict)
-
-    csv_file = os.path.join(run_params['run_dir'], 'inference_data.csv')
-    io.log(f'Saving inference data to `.csv` file: {csv_file}.')
-    csv_df.to_csv(csv_file)
-
-    reverse_csv_file = os.path.join(run_params['run_dir'], 'reverse_data.csv')
-    reverse_df = pd.DataFrame(reverse_data)
-    io.log(f'Saving reverse data to `.csv` file: {reverse_csv_file}.')
-    reverse_df.to_csv(reverse_csv_file)
+    #  reverse_csv_file = os.path.join(run_params['run_dir'], 'reverse_data.csv')
+    #  reverse_df = pd.DataFrame(reverse_data)
+    #  io.log(f'Saving reverse data to `.csv` file: {reverse_csv_file}.')
+    #  reverse_df.to_csv(reverse_csv_file)
 
     run_params = outputs['run_params']
     params = load_pkl(os.path.join(log_dir, 'parameters.pkl'))
