@@ -9,7 +9,8 @@ authors https://github.com/brain-research/l2hmc.
 
 Reference [Robust Parameter Estimation with a Neural Network Enhanced
 Hamiltonian Markov Chain Monte Carlo
-Sampler](https://infoscience.epfl.ch/record/264887/files/robust_parameter_estimation.pdf)
+Sampler]
+https://infoscience.epfl.ch/record/264887/files/robust_parameter_estimation.pdf
 
 Author: Sam Foreman (github: @saforem2)
 Date: 1/14/2019
@@ -62,30 +63,25 @@ class Dynamics(tf.keras.Model):
             potential_fn (callable): Function specifying minus log-likelihood
                 objective (that describes the target distribution) to be
                 minimized.
-            **params: Keyword arguments specifying parameters to use.
-
-                Required entries:
-                    x_dim (int): Dimensionality of target distribution.
-                    num_steps (int): Number of leapfrog steps (trajectory
-                        length) to use in the molecular dynamics (MD)
-                        integration.
-                    eps (float): Initial (trainable) step size to use in the MD
-                        integrator.
-                    network_arch (str): Network architecture to use. Must be
-                        one of `conv2D`, `conv3D`, `generic`.
-
-                Optional entries:
-                    hmc (bool): Flag indicating whether generic HMC should be
-                        performed instead of the L2HMC algorithm.
-                    eps_trainable (bool): Flag indicating whether the step size
-                        `eps` should be a trainable parameter. Defaults to
-                        True.
+        Params:
+            x_dim (int): Dimensionality of target distribution.
+            num_steps (int): Number of leapfrog steps (trajectory
+                length) to use in the molecular dynamics (MD)
+                integration.
+            eps (float): Initial (trainable) step size to use in the MD
+                integrator.
+            network_arch (str): Network architecture to use. Must be
+                one of `conv2D`, `conv3D`, `generic`.
+            hmc (bool, optional): Flag indicating whether generic HMC should be
+                performed instead of the L2HMC algorithm.
+            eps_trainable (bool, optional): Flag indicating whether the step
+                size `eps` should be a trainable parameter. Defaults to True.
         """
         super(Dynamics, self).__init__(name='Dynamics')
         np.random.seed(seeds['global_np'])
         self.potential = potential_fn
 
-        # create attributes from `kwargs.items()`
+        # create attributes from `params.items()`
         for key, val in params.items():
             if key != 'eps':  # want to use self.eps as tf.Variable
                 setattr(self, key, val)
@@ -97,8 +93,8 @@ class Dynamics(tf.keras.Model):
         self.use_bn = params.get('use_bn', False)     # use batch normalization
         self.num_steps = params.get('num_steps', 5)   # number of lf steps
         self.zero_masks = params.get('zero_masks', False)   # all 0 binary mask
-        self.num_hidden1 = params.get('num_hidden1', 100)    # nodes in h1
-        self.num_hidden2 = params.get('num_hidden2', 100)    # nodes in h2
+        self.num_hidden1 = params.get('num_hidden1', 100)   # nodes in h1
+        self.num_hidden2 = params.get('num_hidden2', 100)   # nodes in h2
         self.dropout_prob = params.get('dropout_prob', 0.)  # dropout prob
         self.network_arch = params.get('network_arch', 'generic')  # net arch
 
