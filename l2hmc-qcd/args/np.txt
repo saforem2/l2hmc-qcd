@@ -1,11 +1,12 @@
-#--log_dir='/Users/saforem2/ANL/l2hmc-qcd/gauge_logs/2020_02_04/L8_b64_lf1_qw0_aw1_f64_1347'
---log_dir='/Users/saforem2/ANL/l2hmc-qcd/gauge_logs/2020_02_06/L8_b64_lf1_qw0_aw00_f64_0215/'
---run_steps 25000
+--log_dir='../../gauge_logs/2020_02_04/L8_b64_lf1_qw0_aw1_f64_1347'
+--mix_samplers
+--run_steps 20000
 --init 'rand'
---batch_size 1
+--batch_size 5
+--print_steps 10
 #----net weights-----
 -xsw 0
--xtw 1
+-xtw 0
 -xqw 0
 -vsw 0
 -vtw 0
