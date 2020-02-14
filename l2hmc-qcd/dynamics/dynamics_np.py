@@ -13,9 +13,9 @@ from __future__ import absolute_import, division, print_function
 
 from collections import namedtuple
 
-import config as cfg
+from config import State, NP_FLOAT
 
-from config import State
+from utils.file_io import timeit  # noqa: F401
 from network.generic_net_np import GenericNetNP
 
 HAS_AUTOGRAD = False
@@ -30,7 +30,6 @@ except ImportError:
 
 # pylint: disable=invalid-name, too-many-arguments
 Weights = namedtuple('Weights', ['w', 'b'])
-NP_FLOAT = cfg.NP_FLOAT
 
 
 # pylint: disable=too-many-instance-attributes
@@ -85,25 +84,22 @@ class DynamicsNP:
 
         if v is None:
             v = np.random.normal(size=x.shape)
-
-        state_init = cfg.State(x, v, beta)
-        xf, vf, pxf, sumlogdetf = self.transition_kernel(*state_init,
+        xf, vf, pxf, sumlogdetf = self.transition_kernel(*State(x, v, beta),
                                                          net_weights,
                                                          forward=True)
         mask_a, mask_r, rand_num = self._get_accept_masks(pxf)
-        #  x_out = xf * mask_a[:, None] + x * mask_r[:, None]
-        #  v_out = vf * mask_a[:, None] + v * mask_r[:, None]
-        #  sumlogdet_out = sumlogdetf * mask_a
+        x_out = xf * mask_a[:, None] + x * mask_r[:, None]
+        v_out = vf * mask_a[:, None] + v * mask_r[:, None]
+        sumlogdet_out = sumlogdetf * mask_a
 
         outputs = {
             'x_init': x,
             'v_init': v,
             'x_proposed': xf,
             'v_proposed': vf,
-            'rand_num': rand_num,
-            'sumlogdet_out': sumlogdetf * mask_a,
-            'x_out': xf * mask_a[:, None] + x * mask_r[:, None],
-            'v_out': vf * mask_a[:, None] + v * mask_r[:, None],
+            'x_out': x_out,
+            'v_out': v_out,
+            'sumlogdet_out': sumlogdet_out,
         }
 
         return outputs
@@ -115,24 +111,22 @@ class DynamicsNP:
             x = np.mod(x, 2 * np.pi)
         if v is None:
             v = np.random.normal(size=x.shape)
-        state_init = cfg.State(x, v, beta)
-        xb, vb, pxb, sumlogdetb = self.transition_kernel(*state_init,
+        xb, vb, pxb, sumlogdetb = self.transition_kernel(*State(x, v, beta),
                                                          net_weights,
                                                          forward=False)
         mask_a, mask_r, rand_num = self._get_accept_masks(pxb)
-        #  x_out = xb * mask_a[:, None] + x * mask_r[:, None]
-        #  v_out = vb * mask_a[:, None] + v * mask_r[:, None]
-        #  sumlogdet_out = sumlogdetb * mask_a
+        x_out = xb * mask_a[:, None] + x * mask_r[:, None]
+        v_out = vb * mask_a[:, None] + v * mask_r[:, None]
+        sumlogdet_out = sumlogdetb * mask_a
 
         outputs = {
             'x_init': x,
             'v_init': v,
             'x_proposed': xb,
             'v_proposed': vb,
-            'rand_num': rand_num,
-            'sumlogdet_out': sumlogdetb * mask_a,
-            'x_out': xb * mask_a[:, None] + x * mask_r[:, None],
-            'v_out': vb * mask_a[:, None] + v[:, None],
+            'x_out': x_out,
+            'v_out': v_out,
+            'sumlogdet_out': sumlogdet_out
         }
 
         return outputs
@@ -144,25 +138,25 @@ class DynamicsNP:
 
         forward = (np.random.uniform() < 0.5)
         v_init = np.random.normal(size=x.shape)
-        state_init = cfg.State(x, v_init, beta)
+        state_init = State(x, v_init, beta)
         x_, v_, px, sumlogdet = self.transition_kernel(*state_init,
                                                        net_weights,
                                                        forward=forward)
         mask_a, mask_r, rand_num = self._get_accept_masks(px)
-        #  x_out = x_ * mask_a[:, None] + x * mask_r[:, None]
-        #  v_out = v_ * mask_a[:, None] + v_init * mask_r[:, None]
-        #  sumlogdet_out = sumlogdet * mask_a
+        x_out = x_ * mask_a[:, None] + x * mask_r[:, None]
+        v_out = v_ * mask_a[:, None] + v_init * mask_r[:, None]
+        sumlogdet_out = sumlogdet * mask_a
 
         outputs = {
             'x_init': x,
             'v_init': v_init,
             'x_proposed': x_,
             'v_proposed': v_,
-            'x_out': x_ * mask_a[:, None] + x * mask_r[:, None],
-            'v_out': v_ * mask_a[:, None] + x * mask_r[:, None],
+            'x_out': x_out,
+            'v_out': v_out,
             'accept_prob': px,
             'sumlogdet_proposed': sumlogdet,
-            'sumlogdet_out': sumlogdet * mask_a,
+            'sumlogdet_out': sumlogdet_out,
             'forward': forward,
             'mask_a': mask_a,
             'mask_r': mask_r,
@@ -177,12 +171,12 @@ class DynamicsNP:
             x = np.mod(x, 2 * np.pi)
 
         vf_init = np.random.normal(size=x.shape)
-        state_init_f = cfg.State(x, vf_init, beta)
+        state_init_f = State(x, vf_init, beta)
         xf, vf, pxf, sumlogdetf = self.transition_kernel(*state_init_f,
                                                          net_weights,
                                                          forward=True)
         vb_init = np.random.normal(size=x.shape)
-        state_init_b = cfg.State(x, vb_init, beta)
+        state_init_b = State(x, vb_init, beta)
         xb, vb, pxb, sumlogdetb = self.transition_kernel(*state_init_b,
                                                          net_weights,
                                                          forward=False)
@@ -380,8 +374,9 @@ class DynamicsNP:
 
     @staticmethod
     def _get_accept_masks(accept_prob, accept_mask=None):
+        rand_unif = np.random.uniform(size=accept_prob.shape)
         if accept_mask is None:
-            rand_unif = np.random.uniform(size=accept_prob.shape)
+            #  rand_unif = np.random.uniform(size=accept_prob.shape)
             accept_mask = np.array(accept_prob >= rand_unif, dtype=NP_FLOAT)
         reject_mask = 1. - accept_mask
 
