@@ -305,10 +305,7 @@ def make_csv(run_data, energy_data, run_params):
             csv_dict['plaqs_diffs'] = plaq_exact - np.squeeze(np.array(r_val))
         else:
             csv_dict[r_key] = np.squeeze(np.array(r_val))
-    try:
-        csv_df = pd.DataFrame(csv_dict)
-    except:
-        import pudb; pudb.set_trace()
+    csv_df = pd.DataFrame(csv_dict)
     csv_file = os.path.join(run_params['run_dir'], 'inference_data.csv')
     io.log(f'Saving inference data to {csv_file}.')
     csv_df.to_csv(csv_file, mode='a')
