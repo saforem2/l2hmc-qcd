@@ -69,6 +69,21 @@ def parse_args():
                               generate using trained L2HMC sample).
                               (Default: 5000)"""))
 
+    parser.add_argument("--mix_samplers",
+                        dest="mix_samplers",
+                        action='store_true',
+                        required=False,
+                        help=("""Flag that when passed will intermittently
+                              mix between L2HMC and HMC."""))
+
+    parser.add_argument("--print_steps",
+                        dest="print_steps",
+                        type=int,
+                        default=1,
+                        required=False,
+                        help=("""Number of steps after which to print new data
+                              when running inference using numpy."""))
+
     parser.add_argument("--beta",
                         dest="beta",
                         type=float,
