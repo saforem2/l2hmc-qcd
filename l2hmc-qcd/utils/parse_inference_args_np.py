@@ -76,6 +76,15 @@ def parse_args():
                         help=("""Flag that when passed will intermittently
                               mix between L2HMC and HMC."""))
 
+    parser.add_argument('--direction',
+                        dest='direction',
+                        type=str,
+                        default='random',
+                        required=False,
+                        help=("""Specify direction to run dynamics. Must be one
+                              of `'random', 'forward', 'backward'`. (DEFAULT:
+                              'rand')"""))
+
     parser.add_argument("--print_steps",
                         dest="print_steps",
                         type=int,
