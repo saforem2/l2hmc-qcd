@@ -61,6 +61,13 @@ class DynamicsNP:
         self.num_steps = params.get('num_steps', None)
         self.zero_masks = params.get('zero_masks', False)
         self.masks = self.build_masks(self.zero_masks)
+        self.direction = params.get('direction', 'rand')
+        if self.direction == 'forward':
+            self._forward = True
+        elif self.direction == 'backward':
+            self._forward = False
+        else:
+            self._forward = None
 
     def __call__(self, *args, **kwargs):
         return self.apply_transition(*args, **kwargs)
@@ -133,10 +140,13 @@ class DynamicsNP:
 
     def apply_transition(self, x, beta, net_weights, model_type=None):
         """Propose a new state and perform the accept/reject step."""
+        forward = self._forward
+        if forward is None:
+            forward = (np.random.uniform() < 0.5)
+
         if model_type == 'GaugeModel':
             x = np.mod(x, 2 * np.pi)
 
-        forward = (np.random.uniform() < 0.5)
         v_init = np.random.normal(size=x.shape)
         state_init = State(x, v_init, beta)
         x_, v_, px, sumlogdet = self.transition_kernel(*state_init,
