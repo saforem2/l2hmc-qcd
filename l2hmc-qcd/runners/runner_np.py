@@ -214,6 +214,12 @@ def _check_param(dynamics, param=None):
 
 def _init_dicts():
     """Initialize dictionaries to store inference data."""
+    energy_keys = [
+        'potential_init', 'potential_proposed', 'potential_out',
+        'kinetic_init', 'kinetic_proposed', 'kinetic_out',
+        'hamiltonian_init', 'hamiltonian_proposed', 'hamiltonian_out',
+        'exp_energy_diff'
+    ]
     data_keys = [
         'plaqs', 'actions', 'charges',
         'dx_proposed', 'dx_out',
@@ -222,10 +228,6 @@ def _init_dicts():
         'forward'
     ]
     reverse_keys = ['xdiff_fb', 'xdiff_bf', 'vdiff_fb', 'vdiff_bf']
-    energy_keys = ['potential_init', 'potential_proposed', 'potential_out',
-                   'kinetic_init', 'kinetic_proposed', 'kinetic_out',
-                   'hamiltonian_init', 'hamiltonian_proposed',
-                   'hamiltonian_out', 'exp_energy_diff']
     run_data = {key: [] for key in data_keys}
     energy_data = {key: [] for key in energy_keys}
     reverse_data = {key: [] for key in reverse_keys}
@@ -590,6 +592,11 @@ def run_inference_np(log_dir, dynamics, lattice, run_params, **kwargs):
         # if running L2HMC, mix in HMC
         if net_weights == NetWeights(1, 1, 1, 1, 1, 1):
             nws = NetWeights(0, 0, 0, 0, 0, 0)
+        else:
+            # Switch each value of `net_weights`
+            nws = NetWeights(
+                *tuple(np.array([not i for i in net_weights], dtype=float))
+            )
 
         run_params_alt = {
             'switch_steps': switch_steps,
