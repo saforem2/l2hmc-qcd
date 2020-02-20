@@ -37,11 +37,9 @@ Simple examples of target distributions (Gaussian, GaussianMixtureModel, lattice
 
 - ##### Use L2HMC to generate *gauge configurations* for LatticeQCD.
 
-
-
 <div align="center">
-    <div align="center" class="sl-block" data-block-type="image" style="width: 550.371px; height: 570.661px; left: 204.815px; top: 116px; min-width: 1px; min-height: 1px;" data-block-id="37fe52b1f00e6993ac24abcb8bd227bb">
-        <div class="sl-block-content" style="z-index: 10;"><img data-natural-width="1302" data-natural-height="1350" title="" style="" data-lazy-loaded="" src="https://s3.amazonaws.com/media-p.slid.es/uploads/1218719/images/7044556/lattice.png">
+    <div align="center" class="sl-block" data-block-type="image" style="" data-block-id="37fe52b1f00e6993ac24abcb8bd227bb">
+        <div class="sl-block-content"><img data-natural-width="1302" data-natural-height="1350" title="" style="zoom:35%;" data-lazy-loaded="" src="https://s3.amazonaws.com/media-p.slid.es/uploads/1218719/images/7044556/lattice.png">
         </div>
     </div>
 </div>
@@ -59,17 +57,15 @@ $$
 S = \sum_{P}\, 1 - \cos(\phi_{P})
 $$
 where $\phi_{P}$ is the sum of the link variables around an elementary plaquette:
-
-
-
-<div align="center">
- <img src="https://tva1.sinaimg.cn/large/0082zybpgy1gc349f49alj30r40ik0ub.jpg" alt="plaquette" style="zoom:35%;"/>
-</div>
-
-
 $$
 \phi_{P} \equiv \phi_{\mu\nu}(i) = \phi_{\mu}(i) + \phi_{\nu}(i+\hat{\mu}) - \phi_{\mu}(i+\hat\nu) - \phi_{\nu}(i)
 $$
+
+
+<div align="center">
+    <img src="https://tva1.sinaimg.cn/large/0082zybpgy1gc355s5kbaj30r00hk3zd.jpg" alt="plaquette" style="zoom:35%;"/>   
+</div>
+
 
 
 Lattice code can be found in `l2hmc-qcd/lattice/` and the particular code for the $2D$ $U{(1)}$ lattice gauge model can be found in `l2hmc-qcd/lattice/lattice.py`.
