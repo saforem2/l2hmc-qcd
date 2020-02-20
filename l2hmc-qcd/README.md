@@ -63,7 +63,10 @@ $$
 
 
 <div align="center">
-    <img src="https://tva1.sinaimg.cn/large/0082zybpgy1gc355s5kbaj30r00hk3zd.jpg" alt="plaquette" style="zoom:35%;"/>   
+    <div align="center" class="sl-block" data-block-type="image" style="" data-block-id="37fe52b1f00e6993ac24abcb8bd227bb">
+        <div class="sl-block-content"><img data-natural-width="1302" data-natural-height="1350" title="" style="zoom:35%;" data-lazy-loaded="" src="https://tva1.sinaimg.cn/large/0082zybpgy1gc355s5kbaj30r00hk3zd.jpg">
+        </div>
+    </div>
 </div>
 
 
