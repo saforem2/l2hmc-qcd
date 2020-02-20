@@ -1,4 +1,4 @@
-l2hmc-qcd  [![CodeFactor](https://www.codefactor.io/repository/github/saforem2/l2hmc-qcd/badge)](https://www.codefactor.io/repository/github/saforem2/l2hmc-qcd) ![HitCount](http://hits.dwyl.io/saforem2/l2hmc-qcd.svg)
+# l2hmc-qcd  [![CodeFactor](https://www.codefactor.io/repository/github/saforem2/l2hmc-qcd/badge)](https://www.codefactor.io/repository/github/saforem2/l2hmc-qcd) ![HitCount](http://hits.dwyl.io/saforem2/l2hmc-qcd.svg)
 
 A description of the L2HMC algorithm can be found in the paper:
 
@@ -6,11 +6,6 @@ A description of the L2HMC algorithm can be found in the paper:
 
 by [Daniel Levy](http://ai.stanford.edu/~danilevy), [Matt D. Hoffman](http://matthewdhoffman.com/) and [Jascha Sohl-Dickstein](sohldickstein.com)
 
-<!DOCTYPE html>
-<head>
-<script src="dist/katex-element.umd.js" type="module"></script>    
-</head>
-</!doctype>
 
 # Overview
 
@@ -39,7 +34,7 @@ Simple examples of target distributions (Gaussian, GaussianMixtureModel, lattice
 
 <div align="center">
     <div align="center" class="sl-block" data-block-type="image" style="" data-block-id="37fe52b1f00e6993ac24abcb8bd227bb">
-        <div class="sl-block-content"><img data-natural-width="455.7px" data-natural-height="472.5px" title="" style="zoom:35%;" data-lazy-loaded="" src="https://s3.amazonaws.com/media-p.slid.es/uploads/1218719/images/7044556/lattice.png">
+        <div class="sl-block-content"><img title="" style="zoom:35%;" data-lazy-loaded="" src="https://s3.amazonaws.com/media-p.slid.es/uploads/1218719/images/7044556/lattice.png">
         </div>
     </div>
 </div>
