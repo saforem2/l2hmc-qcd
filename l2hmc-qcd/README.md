@@ -62,14 +62,10 @@ $$
 $$
 
 <div align="center">
-    <div align="center" class="sl-block" data-block-type="image" style="" data-block-id="37fe52b1f00e6993ac24abcb8bd227bb">
-        <div class="sl-block-content"><img data-natural-width="455.7px" data-natural-height="472.5px" title="" style="zoom:95%;" data-lazy-loaded="" src="https://tva1.sinaimg.cn/large/0082zybpgy1gc3czk8a27j30be08674e.jpg">
-        </div>
-    </div>
+    <img src="https://tva1.sinaimg.cn/large/0082zybpgy1gc3eogzszpj30qz0gwmy2.jpg" alt="image-20200220120110456" style="zoom:50%;" />
 </div>
 
 
-​    
 
 #### Target distribution:
 
