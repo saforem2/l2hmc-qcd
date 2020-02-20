@@ -1,4 +1,4 @@
-# l2hmc-qcd  [![CodeFactor](https://www.codefactor.io/repository/github/saforem2/l2hmc-qcd/badge)](https://www.codefactor.io/repository/github/saforem2/l2hmc-qcd) ![HitCount](http://hits.dwyl.io/saforem2/l2hmc-qcd.svg)
+l2hmc-qcd  [![CodeFactor](https://www.codefactor.io/repository/github/saforem2/l2hmc-qcd/badge)](https://www.codefactor.io/repository/github/saforem2/l2hmc-qcd) ![HitCount](http://hits.dwyl.io/saforem2/l2hmc-qcd.svg)
 
 A description of the L2HMC algorithm can be found in the paper:
 
@@ -39,7 +39,7 @@ Simple examples of target distributions (Gaussian, GaussianMixtureModel, lattice
 
 <div align="center">
     <div align="center" class="sl-block" data-block-type="image" style="" data-block-id="37fe52b1f00e6993ac24abcb8bd227bb">
-        <div class="sl-block-content"><img data-natural-width="1302" data-natural-height="1350" title="" style="zoom:35%;" data-lazy-loaded="" src="https://s3.amazonaws.com/media-p.slid.es/uploads/1218719/images/7044556/lattice.png">
+        <div class="sl-block-content"><img data-natural-width="455.7px" data-natural-height="472.5px" title="" style="zoom:35%;" data-lazy-loaded="" src="https://s3.amazonaws.com/media-p.slid.es/uploads/1218719/images/7044556/lattice.png">
         </div>
     </div>
 </div>
@@ -61,13 +61,20 @@ $$
 \phi_{P} \equiv \phi_{\mu\nu}(i) = \phi_{\mu}(i) + \phi_{\nu}(i+\hat{\mu}) - \phi_{\mu}(i+\hat\nu) - \phi_{\nu}(i)
 $$
 
-
 <div align="center">
     <div align="center" class="sl-block" data-block-type="image" style="" data-block-id="37fe52b1f00e6993ac24abcb8bd227bb">
-        <div class="sl-block-content"><img data-natural-width="1302" data-natural-height="1350" title="" style="zoom:35%;" data-lazy-loaded="" src="https://tva1.sinaimg.cn/large/0082zybpgy1gc355s5kbaj30r00hk3zd.jpg">
+        <div class="sl-block-content"><img data-natural-width="1302" data-natural-height="1350" title="Elementary plaquette" style="zoom:90%;" data-lazy-loaded="" src="https://tva1.sinaimg.cn/large/0082zybpgy1gc3czk8a27j30be08674e.jpg">
         </div>
     </div>
 </div>
+
+#### Target distribution:
+
+- Our target distribution is then given by:
+  $$
+  \pi(\phi) = \frac{e^{-\beta S[\phi]}}{\mathcal{Z}}
+  $$
+  where $\mathcal{Z}$ is the partition function (normalizing factor).
 
 
 
