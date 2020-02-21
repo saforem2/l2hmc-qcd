@@ -32,12 +32,16 @@ Simple examples of target distributions (Gaussian, GaussianMixtureModel, lattice
 
 - ##### Use L2HMC to generate *gauge configurations* for LatticeQCD.
 
-<div align="center">
-    <div align="center" class="sl-block" data-block-type="image" style="" data-block-id="37fe52b1f00e6993ac24abcb8bd227bb">
-        <div class="sl-block-content"><img title="" style="zoom:35%;" data-lazy-loaded="" src="https://s3.amazonaws.com/media-p.slid.es/uploads/1218719/images/7044556/lattice.png">
-        </div>
-    </div>
+
+
+<figure class="half" style="display:flex">
+    <div align="center">
+    <img src="https://tva1.sinaimg.cn/large/0082zybpgy1gc4mj4lbldj30dk0e2ab5.jpg" alt="lattice" style="width:300px;height:300px" />
+     <img src="https://tva1.sinaimg.cn/large/0082zybpgy1gc4m571p0sj30qz0gwgms.jpg"
+  alt="image-20200220120110456" style="width:450px;height:300px"/>
+    <figcaption></figcaption>
 </div>
+</figure>
 
 ## $U(1)$ Lattice Gauge Theory
 
@@ -57,11 +61,9 @@ $$
 $$
 
 <div align="center">
-    <img src="https://tva1.sinaimg.cn/large/0082zybpgy1gc3h40b8j0j30qz0gwgms.jpg"  alt="image-20200220120110456" style="zoom:50%;" />
+    <img src="https://tva1.sinaimg.cn/large/0082zybpgy1gc4m571p0sj30qz0gwgms.jpg"
+  alt="image-20200220120110456" style="zoom:50%;" />
 </div>
-
-
-
 
 #### Target distribution:
 
@@ -205,3 +207,12 @@ If you use this code, please cite the original paper:
   year={2017}
 }
 ```
+
+
+
+
+
+![lattice](https://tva1.sinaimg.cn/large/0082zybpgy1gc4meu5njvj30i30irgn5.jpg)
+
+![nerds](https://tva1.sinaimg.cn/large/0082zybpgy1gc4mfi0g6kj30qz0gwgms.jpg)
+
