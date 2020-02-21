@@ -36,8 +36,8 @@ Simple examples of target distributions (Gaussian, GaussianMixtureModel, lattice
 
 <figure class="half" style="display:flex">
     <div align="center">
-    <img src="../assets/lattice.png" alt="lattice" style="width:300px;height:300px" />
-     <img src="../assets/nerds.png" alt="image-20200220120110456" style="width:450px;height:300px"/>
+    <img src="../assets/lattice.png" alt="lattice" style="width:200px;height:200px" />
+     <img src="../assets/nerds.png" alt="image-20200220120110456" style="width:350px;height:200px"/>
     <figcaption></figcaption>
 </div>
 </figure>
@@ -58,11 +58,6 @@ where $\phi_{P}$ is the sum of the link variables around an elementary plaquette
 $$
 \phi_{P} \equiv \phi_{\mu\nu}(i) = \phi_{\mu}(i) + \phi_{\nu}(i+\hat{\mu}) - \phi_{\mu}(i+\hat\nu) - \phi_{\nu}(i)
 $$
-
-<div align="center">
-    <img src="https://tva1.sinaimg.cn/large/0082zybpgy1gc4m571p0sj30qz0gwgms.jpg"
-  alt="image-20200220120110456" style="zoom:50%;" />
-</div>
 
 #### Target distribution:
 
@@ -181,13 +176,9 @@ where
 `l2hmc-qcd/notebooks/` contains a random collection of jupyter notebooks that
 each serve different purposes and should be somewhat self explanatory.
 
-
-
 # Features
 
 - **Distributed training**  (via[`horovod`](https://github.com/horovod/horovod)): The ability to train the sampler across multiple nodes (using data-parallelism) can be enabled simply by passing the `--horovod` command line argument to the training script `main.py`.
-
-
 
 # Contact
 
@@ -206,12 +197,3 @@ If you use this code, please cite the original paper:
   year={2017}
 }
 ```
-
-
-
-
-
-![lattice](https://tva1.sinaimg.cn/large/0082zybpgy1gc4meu5njvj30i30irgn5.jpg)
-
-![nerds](https://tva1.sinaimg.cn/large/0082zybpgy1gc4mfi0g6kj30qz0gwgms.jpg)
-
