@@ -36,9 +36,8 @@ Simple examples of target distributions (Gaussian, GaussianMixtureModel, lattice
 
 <figure class="half" style="display:flex">
     <div align="center">
-    <img src="https://tva1.sinaimg.cn/large/0082zybpgy1gc4mj4lbldj30dk0e2ab5.jpg" alt="lattice" style="width:300px;height:300px" />
-     <img src="https://tva1.sinaimg.cn/large/0082zybpgy1gc4m571p0sj30qz0gwgms.jpg"
-  alt="image-20200220120110456" style="width:450px;height:300px"/>
+    <img src="../assets/lattice.png" alt="lattice" style="width:300px;height:300px" />
+     <img src="../assets/nerds.png" alt="image-20200220120110456" style="width:450px;height:300px"/>
     <figcaption></figcaption>
 </div>
 </figure>
