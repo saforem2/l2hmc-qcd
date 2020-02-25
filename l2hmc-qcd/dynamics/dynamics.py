@@ -542,7 +542,7 @@ class Dynamics(tf.keras.Model):
             vi: Initial v.
             xf: Proposed state.
             vf: Proposed v.
-            sumlogdet: Sum of the terms of the log of the determinant. 
+            sumlogdet: Sum of the terms of the log of the determinant.
                 (Eq. 14 of original paper).
             beta: Inverse coupling constant of gauge model.
         """

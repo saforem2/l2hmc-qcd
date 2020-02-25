@@ -26,6 +26,20 @@ except ImportError:
     HAS_HOROVOD = False
 
 
+# pylint: disable=invalid-name
+# pylint: disable=too-many-branches
+# pylint: disable=too-many-locals
+
+
+def get_subdirs(root_dir):
+    subdirs = [
+        os.path.join(root_dir, i)
+        for i in os.listdir(root_dir)
+        if os.path.isdir(os.path.join(root_dir, i))
+    ]
+    return subdirs
+
+
 def make_pngs_from_pdfs(rootdir=None):
     """Use os.walk from `rootdir`, creating pngs from all pdfs encountered."""
     if rootdir is None:
@@ -58,6 +72,7 @@ def copy(src, dst):
         else:
             raise
 
+
 def copy_gauge_figures(root_src_dir=None, root_dst_dir=None):
     """Copy `figures` and `figures_np` from all `log_dirs` to `~`."""
     if root_src_dir is None:
@@ -79,6 +94,7 @@ def copy_gauge_figures(root_src_dir=None, root_dst_dir=None):
             dst_dir = os.path.join(root_dst_dir, date_str, log_str, fig_str)
             log(f'Copying {src_dir} --> {dst_dir}')
             copy(src_dir, dst_dir)
+
 
 def timeit(method):
     """Timing decorator."""
@@ -124,7 +140,6 @@ def load_params(log_dir):
     return params
 
 
-# pylint: disable=invalid-name
 def log(s, nl=True):
     """Print string `s` to stdout if and only if hvd.rank() == 0."""
     try:
@@ -183,7 +198,6 @@ def make_dirs(dirs):
     _ = [check_else_make_dir(d) for d in dirs]
 
 
-# pylint: disable=too-many-branches
 def _parse_gauge_flags(FLAGS):
     """Parse flags for `GaugeModel` instance."""
     if isinstance(FLAGS, dict):
@@ -360,7 +374,6 @@ def _parse_flags(FLAGS, model_type='GaugeModel'):
     return run_str, out_dict
 
 
-# pylint: disable=too-many-locals
 def create_log_dir(FLAGS, **kwargs):
     """Automatically create and name `log_dir` to save model data to.
 

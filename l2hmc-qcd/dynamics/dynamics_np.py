@@ -91,6 +91,7 @@ class DynamicsNP:
 
         if v is None:
             v = np.random.normal(size=x.shape)
+
         xf, vf, pxf, sumlogdetf = self.transition_kernel(*State(x, v, beta),
                                                          net_weights,
                                                          forward=True)
