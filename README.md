@@ -1,60 +1,123 @@
-# l2hmc-qcd
+# l2hmc-qcd  [![CodeFactor](https://www.codefactor.io/repository/github/saforem2/l2hmc-qcd/badge)](https://www.codefactor.io/repository/github/saforem2/l2hmc-qcd) ![HitCount](http://hits.dwyl.io/saforem2/l2hmc-qcd.svg)
 
-[![CodeFactor](https://www.codefactor.io/repository/github/saforem2/l2hmc-qcd/badge)](https://www.codefactor.io/repository/github/saforem2/l2hmc-qcd)
-
-<!-- [![HitCount](http://hits.dwyl.io/saforem2/l2hmc-qcd.svg)](http://hits.dwyl.io/saforem2/l2hmc-qcd) -->
-![Hits](https://hitcounter.pythonanywhere.com/count/tag.svg?url=https%3A%2F%2Fgithub.com%2Fsaforem2%2Fl2hmc-qcd)
-
-
-
-Application of the L2HMC algorithm to simulations in lattice QCD. A description
-of the L2HMC algorithm can be found in the paper:
+A description of the L2HMC algorithm can be found in the paper:
 
 [*Generalizing Hamiltonian Monte Carlo with Neural Network*](https://arxiv.org/abs/1711.09268)
 
 by [Daniel Levy](http://ai.stanford.edu/~danilevy), [Matt D. Hoffman](http://matthewdhoffman.com/) and [Jascha Sohl-Dickstein](sohldickstein.com)
 
----
 
-## Overview
+# Overview
 
-**NOTE**: There are compatibility issues with `tensorflow.__version__ > 1.12`
-To be sure everything runs correctly, make sure `tensorflow==1.12.x` is
-installed.
+We are interested in applying the L2HMC algorithm to generate *gauge configurations* for LatticeQCD.    
 
-Given an analytically described distributions (simple examples can be found in
-`l2hmc-qcd/utils/distributions.py`), L2HMC enables training of fast-mixing
-samplers.
-
-## Modified implementation for Lattice Gauge Theory / Lattice QCD models. 
-
-This work is based on the original implementation which can be found at
-[brain-research/l2hmc/](https://github.com/brain-research/l2hmc). 
-
-My current focus is on applying this algorithm to simulations in lattice gauge
-theory and lattice QCD, in hopes of obtaining greater efficiency compared to
-generic HMC.
-
-This new implementation includes the algorithm as applied to the $2D$ $U{(1)}$
-lattice gauge theory model (i.e. compact QED).
-
-Additionally, this implementation includes a convolutional neural network
-architecture that is prepended to the network described in the original paper.
-The purpose of this additional structure is to better incorporate information
-about the geometry of the lattice.
-
-Lattice code can be found in `l2hmc-qcd/lattice/` and the particular code for
-the $2D$ $U{(1)}$ lattice gauge model can be found in
-`l2hmc-qcd/lattice/lattice.py`.
-
-## Features
-
-This model can be trained in a distributed manner using
-[`horovod`](https://github.com/horovod/horovod), by passing the `--horovod`
-flag as a command line argument.
+This work is based on the original implementation which can be found at [brain-research/l2hmc/](https://github.com/brain-research/l2hmc). 
 
 
-## Organization
+
+Given an *analytically* described target distribution, $\pi(x)$, L2HMC provides a *statistically exact* sampler that:
+
+- Quickly converges to the target distribution (fast ***burn-in***).
+- Quickly produces uncorrelated samples (fast ***mixing***).
+- Is able to efficiently mix between energy levels.
+- Is capable of traversing low-density zones to mix between modes (often difficult for generic HMC).
+
+Simple examples of target distributions (Gaussian, GaussianMixtureModel, lattice/ring of Gaussians, etc) can be found in `utils/distributions.py`.
+
+
+
+# L2HMC for LatticeQCD
+
+#### **Goal:**
+
+- ##### Use L2HMC to generate *gauge configurations* for LatticeQCD.
+
+
+
+<figure class="half" style="display:flex">
+    <div align="center">
+    <img src="../assets/lattice.png" alt="lattice" style="width:200px;height:200px" />
+     <img src="../assets/nerds.png" alt="image-20200220120110456" style="width:350px;height:200px"/>
+    <figcaption></figcaption>
+</div>
+</figure>
+
+## $U(1)$ Lattice Gauge Theory
+
+We start by considering the simpler $(1+1)$-dimensional $U(1)$ lattice gauge theory, defined on an $N_{x} \times N_{t}$ lattice with periodic boundary conditions.
+
+The action of this gauge theory is defined in terms of the *link variables*
+$$
+U_{\mu}(i) = e^{i\phi_{\mu}(i)}, \quad \phi_{\mu}(i) \in [0, 2\pi)
+$$
+and can be written as
+$$
+S = \sum_{P}\, 1 - \cos(\phi_{P})
+$$
+where $\phi_{P}$ is the sum of the link variables around an elementary plaquette:
+$$
+\phi_{P} \equiv \phi_{\mu\nu}(i) = \phi_{\mu}(i) + \phi_{\nu}(i+\hat{\mu}) - \phi_{\mu}(i+\hat\nu) - \phi_{\nu}(i)
+$$
+
+#### Target distribution:
+
+- Our target distribution is then given by:
+  $$
+  \pi(\phi) = \frac{e^{-\beta S[\phi]}}{\mathcal{Z}}
+  $$
+  where $\mathcal{Z}$ is the partition function (normalizing factor).
+
+
+
+Lattice code can be found in `l2hmc-qcd/lattice/` and the particular code for the $2D$ $U{(1)}$ lattice gauge model can be found in `l2hmc-qcd/lattice/lattice.py`.
+
+
+
+# Organization
+
+### Lattice
+
+Lattice code can be found in `lattice/lattice.py`, specifically the `GaugeLattice` object that provides the base structure on which our target distribution exists.
+
+​	Additionally, the `GaugeLattice` object implements a variety of methods for calculating physical observables such as the average plaquette, $\phi_{P}$, and the topological charge $\mathcal{Q}$,
+
+### Model
+
+An abstract base model `BaseModel` can be found in `l2hmc-qcd/base/base_model.py`.
+
+This `BaseModel` is responsible for creating and organizing all of the various tensorflow operations, tensors and placeholders necessary for training and evaluating the L2HMC sampler.
+
+In particular, the `BaseModel` object is responsible for both defining the loss function to be minimized, as well as building and grouping the backpropagation operations that apply the gradients accumulated during the loss function calculation.
+
+Building on this `BaseClass`, there are two additional models:
+
+1. `GaugeModel` (defined in `l2hmc-qcd/models/gauge_model.py`) that extends the `BaseModel` to exist on a two-dimensional lattice with periodic boundary conditions and a target distribution defined by the Wilson gauge action $\beta S$, i.e. $\pi(x) = e^{\beta S(x)}$.
+
+Model information (including the implementation of the loss function) can be
+found in `l2hmc-qcd/base/base_model.py`. 
+
+This module implements an abstract
+base class from which additional models can be built.
+
+For example, both the `GaugeModel` and `GaussianMixtureModel` (defined in
+`l2hmc-qcd/models/`) inherit from the `BaseModel` object and extend it in
+different ways.
+
+### Dynamics / Network
+
+The augmented L2HMC leapfrog integrator is implemented using the `Dynamics`
+object which is located in the `l2hmc-qcd/dynamics/dynamics.py` module.
+
+The `Dynamics` object has a `build_network` method that builds the neural
+network. The network architecture is specified via the `--network_arch` command
+line flag, with possible values being: `generic`, `conv2D`, or `conv3D`.
+
+Specific details about the network can be found in
+`l2hcm-qcd/network/network.py`.
+
+Due to the unconventional architecture and
+data-flow of the L2HMC algorithm, the network is implemented by subclassing the
+`tf.keras.Model`, which is a sufficiently flexible approach.
 
 ### Training
 
@@ -109,39 +172,15 @@ where
      the inference run should be performed
  - `samples_init` specifies how the samples should be initialized
 
-
-### Model
-
-Model information (including the implementation of the loss function) can be
-found in `l2hmc-qcd/base/base_model.py`. This module implements an abstract
-base class from which additional models can be built.
-
-For example, both the `GaugeModel` and `GaussianMixtureModel` (defined in
-`l2hmc-qcd/models/`) inherit from the `BaseModel` object and extend it in
-different ways.
-
-
-### Dynamics / Network
-
-The augmented L2HMC leapfrog integrator is implemented using the `Dynamics`
-object which is located in the `l2hmc-qcd/dynamics/dynamics.py` module.
-
-The `Dynamics` object has a `build_network` method that builds the neural
-network. The network architecture is specified via the `--network_arch` command
-line flag, with possible values being: `generic`, `conv2D`, or `conv3D`.
-
-Specific details about the network can be found in
-`l2hcm-qcd/network/network.py`. Due to the unconventional architecture and
-data-flow of the L2HMC algorithm, the network is implemented by subclassing the
-`tf.keras.Model`, which is a sufficiently flexible approach.
-
 ### Notebooks
 `l2hmc-qcd/notebooks/` contains a random collection of jupyter notebooks that
 each serve different purposes and should be somewhat self explanatory.
 
----
+# Features
 
-## Contact
+- **Distributed training**  (via[`horovod`](https://github.com/horovod/horovod)): The ability to train the sampler across multiple nodes (using data-parallelism) can be enabled simply by passing the `--horovod` command line argument to the training script `main.py`.
+
+# Contact
 
 ***Code author:*** Sam Foreman
 
