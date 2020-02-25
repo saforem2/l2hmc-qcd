@@ -36,6 +36,10 @@ except ImportError:
     import numpy as np
 
 # pylint: disable=no-member
+# pylint: disable=inconsistent-return-statements
+# pylint: disable=no-else-return
+# pylint: disable=too-many-locals
+# pylint:disable=too-many-arguments
 
 
 HEADER = ("{:^13s}" + 7 * "{:^12s}").format(
@@ -79,7 +83,6 @@ def create_lattice(params):
                         batch_size=params['batch_size'])
 
 
-# pylint: disable=inconsistent-return-statements, no-else-return
 def _load_rp(run_dirs, idx=0):
     rp_file = os.path.join(run_dirs[idx], 'run_params.pkl')
     if os.path.isfile(rp_file):
@@ -235,7 +238,6 @@ def _init_dicts():
     return run_data, energy_data, reverse_data
 
 
-# pylint: disable=too-many-locals
 def _inference_setup(log_dir, dynamics, run_params, init='rand', skip=True):
     """Setup for inference run."""
     run_steps = run_params['run_steps']
@@ -455,7 +457,6 @@ def update_data(run_data, energy_data, outputs):
     return run_data, energy_data
 
 
-# pylint:disable=too-many-arguments
 def _run_np(steps, nws, dynamics, lattice, samples, run_params, data):
     """Run inference with different net_weights."""
     run_data = data.get('run_data', None)

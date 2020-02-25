@@ -85,7 +85,7 @@ def project_angle_fft(x, N=10):
 class GaugeLattice:
     """Lattice with Gauge field existing on links."""
 
-    def __init__(self, 
+    def __init__(self,
                  time_size=8,
                  space_size=8,
                  dim=2,
@@ -187,7 +187,7 @@ class GaugeLattice:
         return observables
 
     def calc_plaq_sums(self, samples=None):
-        """Calculate plaquette sums. 
+        """Calculate plaquette sums.
 
         Explicitly, calculate the sum of the link variables around each
         plaquette in the lattice for each sample in samples.
@@ -231,7 +231,6 @@ class GaugeLattice:
         Same as `self.calc_plaq_sums` defined above, but to be used with
         `numpy.ndarray` objects.
         """
-        #  assert isinstance(samples, (np.ndarray, list))
         if samples.shape != self.samples.shape:
             samples = np.reshape(samples, self.samples.shape)
 
