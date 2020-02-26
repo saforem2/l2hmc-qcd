@@ -49,6 +49,68 @@ HEADER = ("{:^13s}" + 7 * "{:^12s}").format(
 SEPERATOR = len(HEADER) * '-'
 
 
+class RunnerNP:
+    def __init__(self, dynamics, params, run_params, init='rand'):
+        self.dynamics = dynamics
+        self.run_steps = run_params['run_steps']
+        self.beta = run_params['beta']
+        self.net_weights = run_params['net_weights']
+        self._init = init
+        eps = run_params.get('eps', None)
+        num_steps = run_params.get('num_steps', None)
+        batch_size = dynamics.batch_size
+        self.params = params
+        self.log_dir = params.get('log_dir', None)
+
+        dynamics, batch_size = _check_param(dynamics, batch_size)
+        dynamics, num_steps = _check_param(dynamics, num_steps)
+        dynamics, eps = _check_param(dynamics, eps)
+        run_params.update({
+            'eps': eps,
+            'num_steps': num_steps,
+            'batch_size': batch_size,
+        })
+        self.run_params = run_params
+        self.batch_size = batch_size
+        self.num_steps = num_steps
+        self.eps = eps
+
+    def _setup_directories(self):
+        nw_str = ''.join((_strf(i).replace('.', '') for i in self.net_weights))
+        beta_str = f'{self.beta}'.replace('.', '')
+        eps_str = f'{self.eps:.3g}'.replace('.', '')
+        run_str = (f'lf{self.num_steps}_'
+                   f'bs{self.batch_size}_'
+                   f'steps{self.run_steps}_'
+                   f'beta{beta_str}_'
+                   f'eps{eps_str}_'
+                   f'nw{nw_str}_'
+                   f'{self._init}')
+        runs_dir = os.path.join(self.log_dir, 'runs_np')
+        io.check_else_make_dir(runs_dir)
+        self.run_params['run_str'] = run_str
+        self.run_dir = os.path.join(runs_dir, run_str)
+        io.check_else_make_dir(self.run_dir)
+        self.run_params['run_dir'] = self.run_dir
+
+
+    def _init_samples(self, init='rand'):
+        init = str(init).lower()
+        if init == 'rand' or init is None:
+            init = 'rand'
+            samples = np.random.randn(self.batch_size, self.dynamics.x_dim)
+        if init == 'zeros':
+            samples = np.zeros((self.batch_size, self.dynamics.x_dim))
+        if init == 'ones':
+            samples = np.ones((self.batch_size, self.dynamics.x_dim))
+        else:
+            init = 'rand'
+            io.log(f'init: {init}\n')
+            samples = np.random.randn(self.batch_size, self.dynamics.x_dim)
+
+        samples = np.mod(samples, 2 * np.pi)
+
+
 def _strf(x):
     """Format the number x as a string."""
     if np.allclose(x - np.around(x), 0):
@@ -612,6 +674,13 @@ def run_inference_np(log_dir, dynamics, lattice, run_params, **kwargs):
 
     data_strs = []
     for step in range(run_steps):
+
+        samples_init = np.mod(samples, 2 * np.pi)
+        outputs = inference_step(step, samples_init,
+                                 dynamics, lattice, **run_params)
+        samples = outputs['dynamics_output']['x_out']
+        run_data, energy_data = update_data(run_data, energy_data, outputs)
+
         if step % 100 == 0:
             io.log(SEPERATOR + '\n' + HEADER + '\n' + SEPERATOR)
 
@@ -625,22 +694,9 @@ def run_inference_np(log_dir, dynamics, lattice, run_params, **kwargs):
                                     dynamics, lattice,
                                     samples, run_params, _data)
 
-        # --------------------------------------------------
-        # Every 5000 steps, run generic HMC for 1000 steps
-        # --------------------------------------------------
-        #  if (step + 1) % 5000 == 0:
-        #      samples, data = _run_hmc_np(1000, dynamics, lattice,
-        #                                  samples, run_params,
-        #                                  run_data=run_data,
-        #                                  energy_data=energy_data,
-        #                                  data_strs=data_strs)
-        #
-        #      run_data = data['run_data']
-        #      energy_data = data['energy_data']
-        #      data_strs = data['data_strs']
         if step % reverse_steps == 0:
-            v_rand = np.random.randn(*samples.shape)
-            state = State(x=samples, v=v_rand, beta=beta)
+            v_out = outputs['dynamics_output']['v_out']
+            state = State(x=samples, v=v_out, beta=beta)
             diff_fb, diff_bf = check_reversibility_np(dynamics, state,
                                                       net_weights, step,
                                                       reverse_file)
@@ -648,12 +704,6 @@ def run_inference_np(log_dir, dynamics, lattice, run_params, **kwargs):
             reverse_data['xdiff_bf'].extend(diff_bf[0])
             reverse_data['vdiff_fb'].extend(diff_fb[1])
             reverse_data['vdiff_bf'].extend(diff_bf[1])
-
-        samples_init = np.mod(samples, 2 * np.pi)
-        outputs = inference_step(step, samples_init,
-                                 dynamics, lattice, **run_params)
-        samples = outputs['dynamics_output']['x_out']
-        run_data, energy_data = update_data(run_data, energy_data, outputs)
 
         if step % print_steps == 0:
             io.log(outputs['data_str'])
@@ -704,11 +754,13 @@ def save_inference_data(run_dir, run_params, data_dict, data_strs):
     energy_data = data_dict.get('energy_data', None)
     reverse_data = data_dict.get('reverse_data', None)
 
-    rdata_df = pd.DataFrame(reverse_data)
-    max_rdata = np.max(np.abs(rdata_df), axis=0)
+    max_rdata = {}
+    for key, val in reverse_data.items():
+        max_rdata[key] = np.max(val, axis=1)
+    max_rdata_df = pd.DataFrame(max_rdata)
     out_file = os.path.join(run_dir, 'max_reversibility_results.csv')
     io.log(f'Saving `max` reversibility data to {out_file}.')
-    max_rdata.to_csv(out_file)
+    max_rdata_df.to_csv(out_file)
 
     if 'forward' in run_data:
         save_direction_data(run_dir, run_data)
