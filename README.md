@@ -91,7 +91,7 @@ In particular, the `BaseModel` object is responsible for both defining the loss 
 
 Building on this `BaseClass`, there are two additional models:
 
-1. `GaugeModel` (defined in `l2hmc-qcd/models/gauge_model.py`) that extends the `BaseModel` to exist on a two-dimensional lattice with periodic boundary conditions and a target distribution defined by the Wilson gauge action $\beta S$, i.e. $\pi(x) = e^{\beta S(x)}$.
+1. `GaugeModel` (defined in `l2hmc-qcd/models/gauge_model.py`) that extends the `BaseModel` to exist on a two-dimensional lattice with periodic boundary conditions and a target distribution defined by the Wilson gauge action $\beta S$, i.e. $\pi(x) = e^{-\beta S(x)}$.
 
 Model information (including the implementation of the loss function) can be
 found in `l2hmc-qcd/base/base_model.py`. 
