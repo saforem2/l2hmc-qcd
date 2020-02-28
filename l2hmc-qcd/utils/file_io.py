@@ -126,6 +126,9 @@ def get_timestr():
         'day_str': day_str,
         'hour_str': hour_str,
         'timestr': timestr,
+        'year_str': now.strftime('%Y'),
+        'month_str': now.strftime('%m'),
+        'date_str': now.strftime('%d'),
     }
 
     return timestrs

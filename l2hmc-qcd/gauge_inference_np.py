@@ -20,8 +20,8 @@ import utils.file_io as io
 
 from config import NetWeights
 from lattice.lattice import u1_plaq_exact
-from runners.runner_np import (_update_params, create_dynamics, create_lattice,
-                               load_pkl, run_inference_np)
+from runners.runner_np import (_update_params, _get_eps, create_dynamics,
+                               create_lattice, load_pkl, run_inference_np)
 from plotters.seaborn_plots import plot_setup
 from plotters.inference_plots import inference_plots, build_dataset
 from utils.file_io import timeit
@@ -128,7 +128,13 @@ def main(args):
         params_file = os.path.join(log_dir, 'parameters.pkl')
 
     params = load_pkl(params_file)
-    params = _update_params(params, args.eps, args.num_steps, args.batch_size)
+
+    eps = _get_eps(log_dir) if args.eps is None else args.eps
+
+    params = _update_params(params,
+                            eps=eps,
+                            num_steps=args.num_steps,
+                            batch_size=args.batch_size)
     lattice = create_lattice(params)
     _fn = lattice.calc_actions_np
 
@@ -137,11 +143,12 @@ def main(args):
                                potential_fn=_fn,
                                x_dim=lattice.x_dim,
                                hmc=args.hmc,
-                               eps=args.eps,
+                               eps=eps,
                                num_steps=args.num_steps,
                                batch_size=args.batch_size,
                                model_type='GaugeModel',
-                               direction=args.direction)
+                               direction=args.direction,
+                               zero_masks=args.zero_masks)
     if args.hmc:
         net_weights = NetWeights(0, 0, 0, 0, 0, 0)
     else:
@@ -153,15 +160,21 @@ def main(args):
                                  v_transformation=args.v_transformation_weight)
     run_params = {
         'beta': args.beta,
-        'eps': dynamics.eps,
+        'trained_eps': dynamics.eps,
+        'args_eps': args.eps,
+        'eps': eps,
         'net_weights': net_weights,
         'run_steps': args.run_steps,
         'num_steps': dynamics.num_steps,
         'batch_size': lattice.batch_size,
         'direction': args.direction,
         'mix_samplers': args.mix_samplers,
+        'zero_masks': args.zero_masks,
     }
 
+    for key, val in args.__dict__.items():
+        if key not in run_params:
+            run_params[key] = val
     outputs = run_inference_np(log_dir, dynamics, lattice,
                                run_params, init=args.init, skip=False,
                                print_steps=args.print_steps,
