@@ -85,10 +85,14 @@ def therm_arr(arr, therm_frac=0.25):
 
 def calc_tunneling_rate(charges):
     """Calculate the tunneling rate as the difference in charge b/t steps."""
+    step_axis = np.argmax(charges.shape)
+    num_steps = charges.shape[step_axis]
+
     charges = np.around(charges)
     charges = np.insert(charges, 0, 0, axis=0)
     dq = np.abs(charges[1:] - charges[-1])
-    return dq
+    tunneling_rate = dq / num_steps
+    return tunneling_rate
 
 
 def build_energy_dataset(energy_data):
@@ -100,6 +104,53 @@ def build_energy_dataset(energy_data):
         ed_dict[key] = xr.DataArray(arr, dims=['chain', 'draw'],
                                     coords=[np.arange(arr.shape[0]), steps])
     dataset = xr.Dataset(ed_dict)
+
+    return dataset
+
+
+def build_energy_diffs_dataset(energy_data):
+    """Build xarray.Dataset containing energy difference data for plotting."""
+    def _ediff(key1, key2):
+        return np.array(energy_data[key1]) - np.array(energy_data[key2])
+
+    denergy_data = {
+        'dpotential_prop_init': _ediff('potential_proposed', 'potential_init'),
+        'dpotential_out_init': _ediff('potential_out', 'potential_init'),
+        'dpotential_out_prop': _ediff('potential_out', 'potential_proposed'),
+        'dkinetic_prop_init': _ediff('kinetic_proposed', 'kinetic_init'),
+        'dkinetic_out_init': _ediff('kinetic_out', 'kinetic_init'),
+        'dkinetic_out_prop': _ediff('kinetic_out', 'kinetic_proposed'),
+        'dhamiltonian_prop_init': _ediff('hamiltonian_proposed',
+                                         'hamiltonian_init'),
+        'dhamiltonian_out_init': _ediff('hamiltonian_out', 'hamiltonian_init'),
+        'dhamiltonian_out_prop': _ediff('hamiltonian_out',
+                                        'hamiltonian_proposed')
+    }
+
+    de_dict = {}
+    for key, val in denergy_data.items():
+        arr, steps = therm_arr(np.array(val))
+        arr = arr.T
+        de_dict[key] = xr.DataArray(arr, dims=['chain', 'draw'],
+                                    coords=[np.arange(arr.shape[0]), steps])
+
+    dataset = xr.Dataset(de_dict)
+
+    return dataset
+
+
+def build_energy_transition_dataset(energy_data):
+    """Build xarray.Dataset containing `Ei - <Ei>` for plotting."""
+    data_dict = {}
+    for key, val in energy_data.items():
+        arr, steps = therm_arr(np.array(val))
+        arr -= np.mean(arr, axis=0)
+        arr = arr.T
+        key_ = f'{key}_minus_avg'
+        data_dict[key_] = xr.DataArray(arr, dims=['chain', 'draw'],
+                                       coords=[np.arange(arr.shape[0]), steps])
+
+    dataset = xr.Dataset(data_dict)
 
     return dataset
 
@@ -131,7 +182,7 @@ def build_dataset(run_data, run_params):
                                     dims=['chain', 'draw'],
                                     coords=[chains, draws])
 
-    rd_dict['charges_squared'] = rd_dict['charges'] ** 2
+    #  rd_dict['charges_squared'] = rd_dict['charges'] ** 2
 
     charges = rd_dict['charges'].values.T
     tunneling_rate = calc_tunneling_rate(charges).T
@@ -209,68 +260,116 @@ def inference_plots(data_dict, params, run_params, **kwargs):
     except FileNotFoundError:
         return dataset, energy_dataset
 
-    tp_fname = f'{fname}_traceplot'
-    etp_fname = f'{fname}_energy_traceplot'
-    pp_fname = f'{fname}_posterior'
-    epp_fname = f'{fname}_energy_posterior'
-    rp_fname = f'{fname}_ridgeplot'
-
-    dataset = build_dataset(run_data, run_params)
-
     def _savefig(fig, out_file):
         io.log(SEPERATOR)
         io.log(f'Saving figure to: {out_file}.')
         fig.savefig(out_file, dpi=200, bbox_inches='tight')
         io.log(SEPERATOR)
 
-    def _plot_posterior(data, out_file, var_names=None, out_file1=None):
+    def _plot_posterior(data, out_file, filter_str=None):
+        var_names = None
+        if filter_str is not None:
+            var_names = []
+            if isinstance(filter_str, list):
+                var_names = []
+                for s in filter_str:
+                    var_names.extend(
+                        [var for var in data.data_vars if s in var]
+                    )
+            else:
+                var_names = [
+                    var for var in data.data_vars if filter_str in var
+                ]
+            var_names = list(set(var_names))
+
         _ = az.plot_posterior(data, var_names=var_names)
         fig = plt.gcf()
         fig.suptitle(title_str, fontsize=24, y=1.05)
         _savefig(fig, out_file)
-        if out_file1 is not None:
-            _savefig(fig, out_file1)
 
-    def _plot_trace(data, out_file, var_names=None, out_file1=None):
-        _ = az.plot_trace(data, compact=True,
-                          combined=True,
-                          var_names=var_names)
+    def _plot_trace(data, out_file, filter_str=None):
+        var_names = None
+        if filter_str is not None:
+            if isinstance(filter_str, list):
+                var_names = []
+                for s in filter_str:
+                    var_names.extend(
+                        [var for var in data.data_vars if s in var]
+                    )
+            else:
+                var_names = [
+                    var for var in data.data_vars if filter_str in var
+                ]
+
+        _ = az.plot_trace(data, var_names=var_names,
+                          compact=True, combined=True)
         fig = plt.gcf()
         fig.suptitle(title_str, fontsize=24, y=1.05)
         _savefig(fig, out_file)
-        if out_file1 is not None:
-            _savefig(fig, out_file1)
+
+    def _traceplot_posterior(dataset, name, filter_str=None):
+        tp_fname = _check_existing(fig_dir, f'{fname}_{name}_traceplot')
+        pp_fname = _check_existing(fig_dir, f'{fname}_{name}_posterior')
+        tp_fout = os.path.join(fig_dir, f'{tp_fname}.pdf')
+        pp_fout = os.path.join(fig_dir, f'{pp_fname}.pdf')
+        _plot_trace(dataset, tp_fout, filter_str=filter_str)
+        _plot_posterior(dataset, pp_fout, filter_str=filter_str)
 
     ####################################################
     # Create traceplot + posterior plot of observables
     ####################################################
-    tp_fname = _check_existing(fig_dir, tp_fname)
-    pp_fname = _check_existing(fig_dir, pp_fname)
-    tp_out_file = os.path.join(fig_dir, f'{tp_fname}.pdf')
-    pp_out_file = os.path.join(fig_dir, f'{pp_fname}.pdf')
-
+    dataset = build_dataset(run_data, run_params)
     var_names = ['tunneling_rate', 'plaqs_diffs',
-                 'accept_prob', 'charges_squared', 'charges']
+                 'accept_prob', 'charges']
     if hasattr(dataset, 'dx'):
         var_names.append('dx')
 
-    tp_out_file_ = None
-    pp_out_file_ = None
-    if out_dir is not None:
-        io.check_else_make_dir(out_dir)
-        tp_out_file_ = os.path.join(out_dir, f'{tp_fname}.pdf')
-        pp_out_file_ = os.path.join(out_dir, f'{pp_fname}.pdf')
+    _traceplot_posterior(dataset, '', filter_str=var_names)
 
-    _plot_trace(dataset, tp_out_file,
-                var_names=var_names,
-                out_file1=tp_out_file_)
-    _plot_posterior(dataset, pp_out_file,
-                    out_file1=pp_out_file_)
+    ####################################################
+    # Create traceplot + possterior plot of energy data
+    ####################################################
+    if energy_data is not None:
+        energy_dataset = build_energy_dataset(energy_data)
+        #  _traceplot_posterior(energy_dataset, 'energy')
+        _traceplot_posterior(energy_dataset,
+                             name='potential',
+                             filter_str='potential')
+        _traceplot_posterior(energy_dataset,
+                             name='kinetic',
+                             filter_str='kinetic')
+        _traceplot_posterior(energy_dataset,
+                             name='hamiltonian',
+                             filter_str='hamiltonian')
+
+        denergy_dataset = build_energy_diffs_dataset(energy_data)
+        #  _traceplot_posterior(denergy_dataset, 'energy_diffs')
+        _traceplot_posterior(denergy_dataset,
+                             name='potential_diffs',
+                             filter_str='potential')
+        _traceplot_posterior(denergy_dataset,
+                             name='kinetic_diffs',
+                             filter_str='kinetic')
+        _traceplot_posterior(denergy_dataset,
+                             name='hamiltonian_diffs',
+                             filter_str='hamiltonian')
+
+        energy_transitions = build_energy_transition_dataset(energy_data)
+        #  _traceplot_posterior(energy_transitions, 'energy_transitions')
+        _traceplot_posterior(energy_transitions,
+                             name='potential_transitions',
+                             filter_str='potential')
+        _traceplot_posterior(energy_transitions,
+                             name='kinetic_transitions',
+                             filter_str='kinetic')
+        _traceplot_posterior(energy_transitions,
+                             name='hamiltonian_transitions',
+                             filter_str='hamiltonian')
 
     #################################
     # Create ridgeplot of plaq diffs
     #################################
-    rp_fname = _check_existing(fig_dir, rp_fname)
+    rp_fname = _check_existing(fig_dir, f'{fname}_ridgeplot')
     rp_out_file = os.path.join(fig_dir, f'{rp_fname}.pdf')
     _ = az.plot_forest(dataset,
                        kind='ridgeplot',
@@ -284,18 +383,6 @@ def inference_plots(data_dict, params, run_params, **kwargs):
     if out_dir is not None:
         rp_out_file_ = os.path.join(out_dir, f'{rp_fname}.pdf')
         _savefig(fig, rp_out_file_)
-
-    ####################################################
-    # Create traceplot + possterior plot of energy data
-    ####################################################
-    if energy_data is not None:
-        energy_dataset = build_energy_dataset(energy_data)
-        etp_fname = _check_existing(fig_dir, etp_fname)
-        epp_fname = _check_existing(fig_dir, epp_fname)
-        etp_out_file = os.path.join(fig_dir, f'{etp_fname}.pdf')
-        epp_out_file = os.path.join(fig_dir, f'{epp_fname}.pdf')
-        _plot_trace(energy_dataset, etp_out_file)
-        _plot_posterior(energy_dataset, epp_out_file)
 
     ####################################################
     # Create histogram plots of the reversibility data.

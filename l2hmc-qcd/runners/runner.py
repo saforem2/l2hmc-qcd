@@ -92,7 +92,6 @@ class Runner:
         else:
             self.model_type = model_type
 
-
         if logger is not None:
             self._has_logger = True
             self._run_header = self.logger.run_header
@@ -245,6 +244,7 @@ class Runner:
         return energies
 
     def run_inference_ops(self, feed_dict):
+        """Run `inference` ops."""
         outputs = self.sess.run(self._inference_ops, feed_dict=feed_dict)
         return dict(zip(self._inference_keys, outputs))
 
@@ -262,9 +262,9 @@ class Runner:
             self.inputs_dict['train_phase']: False
         }
 
-        t0 = time.time()
+        start_time = time.time()
         outputs = self.run_inference_ops(feed_dict)
-        dt = time.time() - t0
+        dt = time.time() - start_time
 
         out_dict = {
             'step': step,
@@ -278,8 +278,6 @@ class Runner:
             'exp_energy_diff': outputs['exp_energy_diff'],
             'sumlogdet_proposed': outputs['sumlogdet_proposed'],
             'sumlogdet_out': outputs['sumlogdet_out'],
-            #  'dxf': outputs['dxf'],
-            #  'dxb': outputs['dxb'],
         }
 
         out_dict.update(outputs)
@@ -312,12 +310,8 @@ class Runner:
         # how often to run energy calculations
         self.energy_steps = int(kwargs.get('energy_steps', 1.))
         self.therm_frac = int(kwargs.get('therm_frac', 10))
-        #  self.net_weights = kwargs.get('net_weights', [1., 1., 1.])
         self.net_weights = kwargs.get('net_weights',
                                       NetWeights(1., 1., 1., 1., 1., 1.))
-        #  self.scale_weight = self.net_weights[0]
-        #  self.transl_weight = self.net_weights[1]
-        #  self.transf_weight = self.net_weights[2]
 
         self.beta = kwargs.get('beta', self.params.get('beta_final', 5.))
         if self.model_type == 'GaugeModel':

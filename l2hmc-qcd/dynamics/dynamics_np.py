@@ -43,8 +43,8 @@ class DynamicsNP:
         else:
             self.xnet, self.vnet = self.build_networks(weights)
 
-        for key, val in params.items():
-            setattr(self, key, val)
+        #  for key, val in params.items():
+        #      setattr(self, key, val)
 
         self.use_bn = params.get('use_bn', False)
         self.dropout_prob = params.get('dropout_prob', 0)
@@ -250,25 +250,36 @@ class DynamicsNP:
         """One forward augmented leapfrog step."""
         t = self._get_time(step, tile=x.shape[0])
         mask, mask_inv = self._get_mask(step)
+
+        #################################################
+        # XXX: `mask_ones`, `mask_zeros` NOT PERMANENT!
+        # XXX: NOT TO BE COMMITTED!
+        #################################################
+        mask_ones = np.ones(mask.shape)
+        mask_zeros = 1. - mask_ones
+        if self.zero_masks:
+            mask = mask_zeros
+            mask_inv = mask_ones
+
         sumlogdet = 0.
 
-        vf1, logdet = self._update_v_forward(x, v, beta, t, net_weights)
+        v, logdet = self._update_v_forward(x, v, beta, t, net_weights)
         sumlogdet += logdet
 
-        xf1, logdet = self._update_x_forward(x, vf1, t,
-                                             net_weights,
-                                             (mask, mask_inv))
+        x, logdet = self._update_x_forward(x, v, t, net_weights,
+                                           #  (mask, mask_inv))
+                                           (mask_zeros, mask_ones))
         sumlogdet += logdet
 
-        xf2, logdet = self._update_x_forward(xf1, vf1, t,
-                                             net_weights,
-                                             (mask_inv, mask))
+        x, logdet = self._update_x_forward(x, v, t, net_weights,
+                                           #  (mask_inv, mask))
+                                           (mask_ones, mask_zeros))
         sumlogdet += logdet
 
-        vf2, logdet = self._update_v_forward(xf2, vf1, beta, t, net_weights)
+        v, logdet = self._update_v_forward(x, v, beta, t, net_weights)
         sumlogdet += logdet
 
-        return xf2, vf2, sumlogdet
+        return x, v, sumlogdet
 
     def _backward_lf(self, x, v, beta, step, net_weights):
         """One backward augmented leapfrog step."""
@@ -276,74 +287,77 @@ class DynamicsNP:
         t = self._get_time(step_r, tile=x.shape[0])
         mask, mask_inv = self._get_mask(step_r)
 
+        mask_ones = np.ones(mask.shape)
+        mask_zeros = 1. - mask_ones
+        if self.zero_masks:
+            mask = mask_zeros
+            mask_inv = mask_ones
+
         sumlogdet = 0.
 
-        vb1, logdet = self._update_v_backward(x, v, beta, t, net_weights)
+        v, logdet = self._update_v_backward(x, v, beta, t, net_weights)
         sumlogdet += logdet
 
-        xb1, logdet = self._update_x_backward(x, vb1, t,
-                                              net_weights,
-                                              (mask_inv, mask))
+        x, logdet = self._update_x_backward(x, v, t, net_weights,
+                                            (mask_inv, mask))
+                                            #  (mask_ones, mask_zeros))
         sumlogdet += logdet
 
-        xb2, logdet = self._update_x_backward(xb1, vb1, t,
-                                              net_weights,
-                                              (mask, mask_inv))
+        x, logdet = self._update_x_backward(x, v, t, net_weights,
+                                            (mask, mask_inv))
+                                            #  (mask_zeros, mask_ones))
         sumlogdet += logdet
 
-        vb2, logdet = self._update_v_backward(xb2, vb1, beta, t, net_weights)
+        v, logdet = self._update_v_backward(x, v, beta, t, net_weights)
         sumlogdet += logdet
 
-        return xb2, vb2, sumlogdet
+        return x, v, sumlogdet
 
     def _update_v_forward(self, x, v, beta, t, net_weights):
         """Update v in the forward leapfrog step."""
-        dU_dx = self.grad_potential(x, beta)
-        Sv, Tv, Qv = self.vnet([x, dU_dx, t])
+        grad = self.grad_potential(x, beta)
+        Sv, Tv, Qv = self.vnet([x, grad, t])
 
-        transl = net_weights.v_translation * Tv
         scale = net_weights.v_scale * (0.5 * self.eps * Sv)
         transf = net_weights.v_transformation * (self.eps * Qv)
+        transl = net_weights.v_translation * Tv
 
-        exp_scale = np.exp(scale)
-        exp_transf = np.exp(transf)
-
-        vf = v * exp_scale - 0.5 * self.eps * (dU_dx * exp_transf + transl)
+        v = (v * np.exp(scale)
+             - 0.5 * self.eps * (grad * np.exp(transf) + transl))
         logdet = np.sum(scale, axis=1)
 
-        return vf, logdet
+        return v, logdet
 
     def _update_x_forward(self, x, v, t, net_weights, masks):
         """Update x in the forward leapfrog step."""
         mask, mask_inv = masks
         Sx, Tx, Qx = self.xnet([v, mask * x, t])
+
         scale = net_weights.x_scale * (self.eps * Sx)
-        transl = net_weights.x_translation * Tx
         transf = net_weights.x_transformation * (self.eps * Qx)
+        transl = net_weights.x_translation * Tx
 
         y = x * np.exp(scale) + self.eps * (v * np.exp(transf) + transl)
-        xf = mask * x + mask_inv * y
+        x = mask * x + mask_inv * y
         logdet = np.sum(mask_inv * scale, axis=1)
 
-        return xf, logdet
+        return x, logdet
 
     def _update_v_backward(self, x, v, beta, t, net_weights):
         """Update v in the backward lf step. Inverting the forward update."""
-        dU_dx = self.grad_potential(x, beta)
-        Sv, Tv, Qv = self.vnet([x, dU_dx, t])
+        grad = self.grad_potential(x, beta)
+        Sv, Tv, Qv = self.vnet([x, grad, t])
 
         scale = net_weights.v_scale * (-0.5 * self.eps * Sv)
-        transl = net_weights.v_translation * Tv
         transf = net_weights.v_transformation * (self.eps * Qv)
+        transl = net_weights.v_translation * Tv
 
-        exp_scale = np.exp(scale)
-        exp_transf = np.exp(transf)
-
-        half_eps = 0.5 * self.eps
-        vb = exp_scale * (v + half_eps * (dU_dx * exp_transf + transl))
+        v = np.exp(scale) * (
+            v + 0.5 * self.eps * (grad * np.exp(transf) + transl)
+        )
         logdet = np.sum(scale, axis=1)
 
-        return vb, logdet
+        return v, logdet
 
     def _update_x_backward(self, x, v, t, net_weights, masks):
         """Update x in the backward lf step. Inverting the forward update."""
@@ -434,6 +448,7 @@ class DynamicsNP:
         """Build `x` masks used for selecting which idxs of `x` get updated."""
         masks = []
         for _ in range(self.num_steps):
+            # XXX: Replaced with masks of alternating [1, 0, 1, 0, ... ]
             idx = np.random.permutation(np.arange(self.x_dim))[:self.x_dim//2]
             mask = np.zeros((self.x_dim,))
             if not zero_masks:

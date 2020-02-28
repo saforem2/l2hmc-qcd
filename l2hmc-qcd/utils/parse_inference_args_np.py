@@ -79,11 +79,19 @@ def parse_args():
     parser.add_argument('--direction',
                         dest='direction',
                         type=str,
-                        default='random',
+                        default='rand',
                         required=False,
                         help=("""Specify direction to run dynamics. Must be one
                               of `'random', 'forward', 'backward'`. (DEFAULT:
                               'rand')"""))
+
+    parser.add_argument('--zero_masks',
+                        dest='zero_masks',
+                        action='store_true',
+                        required=False,
+                        help=("""Flag that when passed will use `zero_masks`
+                              (i.e. m = [1, 1, ..., 1] mb = [0, 0, ..., 0]) for
+                              `x` sub-updates in L2HMC update."""))
 
     parser.add_argument("--print_steps",
                         dest="print_steps",
