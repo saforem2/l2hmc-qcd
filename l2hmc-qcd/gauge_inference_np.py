@@ -128,6 +128,7 @@ def main(args):
         params_file = os.path.join(log_dir, 'parameters.pkl')
 
     params = load_pkl(params_file)
+    log_dir = params['log_dir']
 
     eps = _get_eps(log_dir) if args.eps is None else args.eps
 
