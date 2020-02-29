@@ -578,7 +578,8 @@ def _load_rp(run_dirs, idx=0):
 def _get_eps(log_dir):
     """Get the step size `eps` by looking for it in `log_dir` ."""
     try:
-        eps_dict = load_pkl(os.path.join(log_dir, 'eps_np.pkl'))
+        in_file = os.path.join(log_dir, 'eps_np.pkl')
+        eps_dict = load_pkl(in_file)
         eps = eps_dict['eps']
     except FileNotFoundError:
         run_dirs = get_run_dirs(log_dir)
@@ -1211,6 +1212,12 @@ def run_inference_np(log_dir, dynamics, lattice, run_params, **kwargs):
     }
 
     return outputs
+
+
+def summarize_run(run_data):
+    charges = np.array(run_data['charges'])
+    accept_prob = np.array(run_data['accept_prob'])
+    dx_out = np.array(run_data['dx_out'])
 
 
 def save_direction_data(run_dir, run_data):
