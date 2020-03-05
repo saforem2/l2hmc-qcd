@@ -128,8 +128,11 @@ class BaseModel:
         # pylint: disable=attribute-defined-outside-init
         self._inputs = inputs
         self.x = inputs['x']
-        self.batch_size = self.x.shape[0]
-        self.x_dim = self.x.shape[1:]
+        x_shape = self.x.get_shape().as_list()
+        self.batch_size = x_shape[0]
+        self.x_dim = x_shape[1:]
+        #  self.batch_size = self.x.shape[0]
+        #  self.x_dim = self.x.shape[1:]
         self.beta = inputs['beta']
         self.eps_ph = inputs['eps_ph']
         self.net_weights = inputs['net_weights']
@@ -379,7 +382,7 @@ class BaseModel:
 
             dynamics = Dynamics(potential_fn=potential_fn, **kwargs)
 
-        tf.add_to_collection('dynamics_eps', dynamics.eps)
+        tf.compat.v1.add_to_collection('dynamics_eps', dynamics.eps)
 
         return dynamics
 
@@ -448,7 +451,9 @@ class BaseModel:
                     curerntly being trained.
         """
         def make_ph(name, shape=(), dtype=TF_FLOAT):
-            return tf.placeholder(dtype=dtype, shape=shape, name=name)
+            return tf.compat.v1.placeholder(dtype=dtype,
+                                            shape=shape,
+                                            name=name)
 
         with tf.name_scope('inputs'):
             if not tf.executing_eagerly():
