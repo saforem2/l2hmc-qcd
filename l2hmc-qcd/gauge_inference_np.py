@@ -26,6 +26,7 @@ from plotters.seaborn_plots import plot_setup
 from plotters.inference_plots import inference_plots, build_dataset
 from utils.file_io import timeit
 from utils.parse_inference_args_np import parse_args as parse_inference_args
+from loggers.inference_summarizer import InferenceSummarizer
 
 SEPERATOR = 80 * '-'
 
@@ -48,23 +49,6 @@ def _get_title(params, run_params):
         title_str += f', clip: {clip_value}'
 
     return title_str
-
-
-#  def therm_arr(arr, therm_frac=0.25):
-#      """Returns thermalized array, obtained by dropping first 25% of data."""
-#      num_steps = arr.shape[0]
-#      therm_steps = int(therm_frac * num_steps)
-#      arr = arr[therm_steps:, :]
-#      steps = np.arange(therm_steps, num_steps)
-#      return arr, steps
-#
-#
-#  def calc_tunneling_rate(charges):
-#      """Calculate the tunneling rate as the difference in charge b/t steps."""
-#      charges = np.around(charges)
-#      charges = np.insert(charges, 0, 0, axis=0)
-#      dq = np.abs(charges[1:] - charges[-1])
-#      return dq
 
 
 def _check_existing(out_dir, fname):
@@ -135,7 +119,9 @@ def main(args):
     params = _update_params(params,
                             eps=eps,
                             num_steps=args.num_steps,
-                            batch_size=args.batch_size)
+                            batch_size=args.batch_size,
+                            num_singular_values=args.num_singular_values)
+
     lattice = create_lattice(params)
     _fn = lattice.calc_actions_np
 
@@ -149,7 +135,8 @@ def main(args):
                                batch_size=args.batch_size,
                                model_type='GaugeModel',
                                direction=args.direction,
-                               zero_masks=args.zero_masks)
+                               zero_masks=args.zero_masks,
+                               num_singular_values=args.num_singular_values)
     if args.hmc:
         net_weights = NetWeights(0, 0, 0, 0, 0, 0)
     else:
@@ -171,6 +158,7 @@ def main(args):
         'direction': args.direction,
         'mix_samplers': args.mix_samplers,
         'zero_masks': args.zero_masks,
+        'num_singular_values': args.num_singular_values,
     }
 
     for key, val in args.__dict__.items():
@@ -190,6 +178,9 @@ def main(args):
     dataset, energy_dataset = inference_plots(outputs['data'], params,
                                               outputs['run_params'],
                                               runs_np=True)
+
+    summarizer = InferenceSummarizer(run_params['run_dir'])
+    therm_data, tunn_stats = summarizer.log_summary(n_boot=10000)
 
     return run_params, outputs['data'], dataset
 

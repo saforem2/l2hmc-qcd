@@ -54,7 +54,9 @@ def save_dict_npz(d, out_file):
     np.savez_compressed(out_file, **d)
 
 
-class RunLogger:
+# pylint:disable=too-many-instance-attributes,useless-object-inheritance
+class RunLogger(object):
+    """RunLogger object. Responsible for logging inference data."""
     def __init__(self, params, model_type=None, save_lf_data=True):
         """Initialization method.
         Args:

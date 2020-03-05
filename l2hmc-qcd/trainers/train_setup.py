@@ -16,6 +16,7 @@ if cfg.HAS_HOROVOD:
 
 Weights = cfg.Weights
 
+# pylint:disable=invalid-name
 
 def set_global_step(sess, global_step):
     """Explicitly sets the global step when restoring a training session.
@@ -39,31 +40,25 @@ def set_global_step(sess, global_step):
     io.log(f'INFO: New value of `global_step`: {global_step_np}')
 
 
-def _get_net_weights(net, weights, sess):
+def _get_net_weights(model, net, weights, sess):
     for layer in net.layers:
         if hasattr(layer, 'layers'):
-            weights = _get_net_weights(layer, weights, sess)
+            weights = _get_net_weights(model, layer, weights, sess)
         else:
             try:
-                w, b = sess.run(layer.weights)
+                w, b = sess.run(layer.weights,
+                                feed_dict={model.train_phase:False})
                 weights[net.name].update({
                     layer.name: Weights(w=w, b=b)
                 })
-                #  weights[net.name].update({
-                #      layer.name: Weights(*layer.get_weights())
-                #  })
             except KeyError:
-                w, b = sess.run(layer.weights)
+                w, b = sess.run(layer.weights,
+                                feed_dict={model.train_phase:False})
                 weights.update({
                     net.name: {
                         layer.name: Weights(w=w, b=b)
                     }
                 })
-                #  weights.update({
-                #      net.name: {
-                #          layer.name: Weights(*layer.get_weights())
-                #      }
-                #  })
 
     return weights
 
@@ -71,8 +66,8 @@ def _get_net_weights(net, weights, sess):
 def get_net_weights(model, sess):
     with tf.name_scope('model_weights'):
         weights = {
-            'xnet': _get_net_weights(model.dynamics.xnet, {}, sess),
-            'vnet': _get_net_weights(model.dynamics.vnet, {}, sess),
+            'xnet': _get_net_weights(model, model.dynamics.xnet, {}, sess),
+            'vnet': _get_net_weights(model, model.dynamics.vnet, {}, sess),
         }
     xnet = model.dynamics.xnet.generic_net
     vnet = model.dynamics.vnet.generic_net
@@ -101,7 +96,7 @@ def create_config(params):
 
     gpu = params.get('gpu', False)
     if gpu:
-        # Horovod: pin GPU to be used to process local rank 
+        # Horovod: pin GPU to be used to process local rank
         # (one GPU per process)
         config.gpu_options.allow_growth = True
         #  config.allow_soft_placement = True

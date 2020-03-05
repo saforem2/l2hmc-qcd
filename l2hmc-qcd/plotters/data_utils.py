@@ -9,22 +9,13 @@ Date: 01/27/2020
 from __future__ import absolute_import, division, print_function
 
 import os
-import time
-import pickle
-import datetime
-
-import numpy as np
-import pandas as pd
-import seaborn as sns
-import matplotlib as mpl
-import matplotlib.style as mplstyle
-
-from config import COLORS, PROJECT_DIR
-
-mplstyle.use('fast')
 
 import arviz as az
+import numpy as np
+import pandas as pd
 import xarray as xr
+import seaborn as sns
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 
@@ -32,13 +23,61 @@ import utils.file_io as io
 
 from utils.file_io import timeit
 from lattice.lattice import u1_plaq_exact
-from runners.runner_np import _strf
-from plotters.plot_utils import bootstrap, get_matching_log_dirs, load_pkl
-from plotters.plot_observables import (get_obs_dict, get_run_dirs,
-                                       get_title_str, grid_plot)
+#  from plotters.plot_utils import get_matching_log_dirs
+from plotters.plot_observables import get_obs_dict, grid_plot
 
+mpl.style.use('fast')
 sns.set_palette('bright')
 TLS_DEFAULT = mpl.rcParams['xtick.labelsize']
+
+
+# pylint:disable=invalid-name
+
+def _calc_var_explained(x):
+    """Calculate the % variance explained by the singular values of `x`."""
+    u, s, vh = np.linalg.svd(x, full_matrices=True)
+    return s ** 2 / np.sum(s ** 2)
+
+def calc_var_explained(weights_dict):
+    """Calculate the % variance explained by the sv's for each weight mtx."""
+    xweights = weights_dict['xnet']
+    vweights = weights_dict['vnet']
+    var_explained = {}
+    for ((xk, xv), (vk, vv)) in zip(xweights.items(),vweights.items()):
+        xk_ = f'xnet_{xk}'
+        vk_ = f'vnet_{vk}'
+        var_explained[xk_] = _calc_var_explained(xv)
+        var_explained[vk_] = _calc_var_explained(vv)
+
+    return var_explained
+
+
+def bootstrap(data, n_boot=10000, ci=68):
+    """Bootstrap resampling.
+
+    Returns:
+        mean (float): Mean of the (bootstrap) resampled data.
+        err (float): Standard deviation of the (bootstrap) resampled data.
+        data_rs (np.ndarray): Boostrap resampled data.
+    """
+    if not isinstance(data, np.ndarray):
+        data = np.array(data)
+
+    step_axis = np.argmax(data.shape)
+
+    samples = []
+    for _ in range(int(n_boot)):
+        resampler = np.random.randint(0,
+                                      data.shape[step_axis],
+                                      data.shape[step_axis])
+        sample = data.take(resampler, axis=step_axis)
+        samples.append(np.mean(sample, axis=step_axis))
+
+    data_rs = np.array(samples)
+    mean = np.mean(data_rs)
+    err = np.std(data_rs)
+
+    return mean, err, data_rs
 
 
 def calc_tunneling_rate(charges):
@@ -55,7 +94,7 @@ def calc_tunneling_rate(charges):
     return dq, tunneling_rate
 
 
-def therm_arr(arr, therm_frac=0.2):
+def therm_arr(arr, therm_frac=0.2, ret_steps=True):
     """Drop first `therm_frac` steps of `arr` to account for thermalization."""
     step_axis = np.argmax(arr.shape)
     num_steps = arr.shape[step_axis]
@@ -63,7 +102,10 @@ def therm_arr(arr, therm_frac=0.2):
     arr = np.delete(arr, np.s_[:therm_steps], axis=step_axis)
     steps = np.arange(therm_steps, num_steps)
 
-    return arr, steps
+    if ret_steps:
+        return arr, steps
+
+    return arr
 
 
 # pylint:disable = invalid-name
@@ -77,7 +119,8 @@ class InferenceData:
         self._energy_data = self._sort_energy_data(energy_data)
 
         self._log_dir = params.get('log_dir', None)
-        self._params = load_pkl(os.path.join(self._log_dir, 'parameters.pkl'))
+        self._params = io.load_pkl(os.path.join(self._log_dir,
+                                                'parameters.pkl'))
         self._train_weights = (
             self._params['x_scale_weight'],
             self._params['x_translation_weight'],
@@ -88,7 +131,7 @@ class InferenceData:
         )
         _tws_title = ', '.join((str(i) for i in self._train_weights))
         self._tws_title = f'({_tws_title})'
-        self._tws_fname = ''.join((_strf(i) for i in self._train_weights))
+        self._tws_fname = ''.join((io._strf(i) for i in self._train_weights))
 
     @staticmethod
     def _sort_energy_data(energy_data):
@@ -163,7 +206,7 @@ class InferenceData:
         beta = run_params['beta']
         net_weights = run_params['net_weights']
 
-        nw_str = ''.join((_strf(i).replace('.', '') for i in net_weights))
+        nw_str = ''.join((io.strf(i).replace('.', '') for i in net_weights))
         nws = '(' + ', '.join((str(i) for i in net_weights)) + ')'
 
         lf = self._params['num_steps']
@@ -348,8 +391,9 @@ class DataLoader:
         self._therm_frac = therm_frac
         self._nw_include = nw_include
         self._calc_stats = calc_stats
-        self.run_dirs = get_run_dirs(log_dir, filter_str, runs_np)
-        self._params = load_pkl(os.path.join(self._log_dir, 'parameters.pkl'))
+        self.run_dirs = io.get_run_dirs(log_dir, filter_str, runs_np)
+        self._params = io.load_pkl(os.path.join(self._log_dir,
+                                                'parameters.pkl'))
         self._train_weights = (
             self._params['x_scale_weight'],
             self._params['x_translation_weight'],
@@ -360,10 +404,10 @@ class DataLoader:
         )
         _tws_title = ', '.join((str(i) for i in self._train_weights))
         self._tws_title = f'({_tws_title})'
-        self._tws_fname = ''.join((_strf(i) for i in self._train_weights))
+        self._tws_fname = ''.join((io.strf(i) for i in self._train_weights))
 
     def _load_sqz(self, fname):
-        data = load_pkl(os.path.join(self._obs_dir, fname))
+        data = io.load_pkl(os.path.join(self._obs_dir, fname))
         return np.squeeze(np.array(data))
 
     def _get_dx(self, fname):
@@ -396,7 +440,7 @@ class DataLoader:
 
     def get_observables(self, run_dir=None):
         """Get all observables from inference_data in `run_dir`."""
-        run_params = load_pkl(os.path.join(run_dir, 'run_params.pkl'))
+        run_params = io.load_pkl(os.path.join(run_dir, 'run_params.pkl'))
         beta = run_params['beta']
         net_weights = tuple([int(i) for i in run_params['net_weights']])
 
@@ -531,7 +575,7 @@ class DataLoader:
         beta = run_params['beta']
         net_weights = run_params['net_weights']
 
-        nw_str = ''.join((_strf(i).replace('.', '') for i in net_weights))
+        nw_str = ''.join((io.strf(i).replace('.', '') for i in net_weights))
         nws = '(' + ', '.join((str(i) for i in net_weights)) + ')'
 
 

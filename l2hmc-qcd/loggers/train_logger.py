@@ -12,13 +12,15 @@ from __future__ import division
 from __future__ import print_function
 
 import os
+import pickle
 
 import tensorflow as tf
 
 import utils.file_io as io
 
 from collections import namedtuple
-from .summary_utils import create_summaries
+from loggers.summary_utils import create_summaries
+#  from .summary_utils import create_summaries
 from utils.file_io import save_params
 
 h_str = ("{:^12s}" + 9 * "{:^10s}").format(
@@ -30,7 +32,7 @@ dash = (len(h_str) + 1) * '-'
 TRAIN_HEADER = dash + '\n' + h_str + '\n' + dash
 
 
-class TrainLogger:
+class TrainLogger(object):
     def __init__(self, model, log_dir, logging_steps=10, summaries=False):
         #  self.sess = sess
         self.model = model
@@ -41,16 +43,12 @@ class TrainLogger:
         self.train_data = {}
         self.h_strf = ("{:^13s}" + 9 * "{:^12s}").format(
             "STEP", "t/STEP", "LOSS", "% ACC", "EPS", "𝞭x",
-            "BETA", "LR", "exp(𝞭H)", "sumlogdet",
+            "BETA", "LR", "exp(𝞭H)", "sumlogdet",# "direction",
         )
 
         if model._model_type == 'GaugeModel':
             self.obs_data = {}
             self.h_strf += ("{:^12s}").format("𝞭𝜙")
-            #  self.h_strf += ("{:^10s}".format("ACTION")
-                            #  + "{:^10s}".format("exp(dH)")
-                            #  + "{:^10s}".format("dPLAQ"))
-                            #  + "{:^10s}".format("(EXACT)"))
 
         self.dash = (len(self.h_strf) + 1) * '-'
         self.train_header = self.dash + '\n' + self.h_strf + '\n' + self.dash
@@ -59,7 +57,14 @@ class TrainLogger:
         # log_dir will be None if using_hvd and hvd.rank() != 0
         # this prevents workers on different ranks from corrupting checkpoints
         #  if log_dir is not None and self.is_chief:
-        self._create_dir_structure(log_dir)
+        dirs, files = self._create_dir_structure(log_dir)
+        self.log_dir = dirs['log_dir']
+        self.checkpoint_dir = dirs['checkpoint_dir']
+        self.train_dir = dirs['train_dir']
+        self.train_summary_dir = dirs['train_summary_dir']
+        self.train_log_file = files['train_log_file']
+        self.current_state_file = files['current_state_file']
+
         save_params(self.model.params, self.log_dir)
 
         if self.summaries:
@@ -69,7 +74,8 @@ class TrainLogger:
                 model, self.train_summary_dir, training=True
             )
 
-    def _create_dir_structure(self, log_dir):
+    @staticmethod
+    def _create_dir_structure(log_dir):
         """Create relevant directories for storing data.
 
         Args:
@@ -88,12 +94,10 @@ class TrainLogger:
                                                'current_state.pkl')
         }
 
-        for key, val in dirs.items():
+        for _, val in dirs.items():
             io.check_else_make_dir(val)
-            setattr(self, key, val)
 
-        for key, val in files.items():
-            setattr(self, key, val)
+        return dirs, files
 
     def log_step(self, sess, data, net_weights):
         """Update self.logger.summaries."""
@@ -131,5 +135,12 @@ class TrainLogger:
 
     def write_train_strings(self):
         """Write training strings out to file."""
+
         tlf = self.train_log_file
         _ = [io.write(s, tlf, 'a') for s in self.train_data_strings]
+
+    def save_train_data(self):
+        """Save train data to `.pkl` file."""
+        tdf = os.path.join(self.train_dir, 'train_data.pkl')
+        with open(tdf, 'wb') as f:
+            pickle.dump(self.train_data, f)

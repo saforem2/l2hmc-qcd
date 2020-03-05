@@ -315,23 +315,12 @@ def inference_plots(data_dict, params, run_params, **kwargs):
         _plot_trace(dataset, tp_fout, filter_str=filter_str)
         _plot_posterior(dataset, pp_fout, filter_str=filter_str)
 
-    ####################################################
-    # Create traceplot + posterior plot of observables
-    ####################################################
-    dataset = build_dataset(run_data, run_params)
-    var_names = ['tunneling_rate', 'plaqs_diffs',
-                 'accept_prob', 'charges']
-    if hasattr(dataset, 'dx'):
-        var_names.append('dx')
-
-    _traceplot_posterior(dataset, '', filter_str=var_names)
 
     ####################################################
     # Create traceplot + possterior plot of energy data
     ####################################################
     if energy_data is not None:
         energy_dataset = build_energy_dataset(energy_data)
-        #  _traceplot_posterior(energy_dataset, 'energy')
         _traceplot_posterior(energy_dataset,
                              name='potential',
                              filter_str='potential')
@@ -343,7 +332,6 @@ def inference_plots(data_dict, params, run_params, **kwargs):
                              filter_str='hamiltonian')
 
         denergy_dataset = build_energy_diffs_dataset(energy_data)
-        #  _traceplot_posterior(denergy_dataset, 'energy_diffs')
         _traceplot_posterior(denergy_dataset,
                              name='potential_diffs',
                              filter_str='potential')
@@ -355,7 +343,6 @@ def inference_plots(data_dict, params, run_params, **kwargs):
                              filter_str='hamiltonian')
 
         energy_transitions = build_energy_transition_dataset(energy_data)
-        #  _traceplot_posterior(energy_transitions, 'energy_transitions')
         _traceplot_posterior(energy_transitions,
                              name='potential_transitions',
                              filter_str='potential')
@@ -366,6 +353,7 @@ def inference_plots(data_dict, params, run_params, **kwargs):
                              name='hamiltonian_transitions',
                              filter_str='hamiltonian')
 
+    dataset = build_dataset(run_data, run_params)
     #################################
     # Create ridgeplot of plaq diffs
     #################################
@@ -398,5 +386,18 @@ def inference_plots(data_dict, params, run_params, **kwargs):
     #  plaqs_therm, steps = therm_arr(np.array(plaqs))
     plaqs_therm = plaqs.T
     fig, ax = plot_autocorr(plaqs_therm, params, run_params, name='plaqs')
+
+    ####################################################
+    # Create traceplot + posterior plot of observables
+    ####################################################
+    var_names = ['plaqs_diffs', 'accept_prob',
+                 'charges', 'tunneling_rate',
+                 'dx_out', 'dx_proposed']
+    if hasattr(dataset, 'dx'):
+        var_names.append('dx')
+
+    _traceplot_posterior(dataset, 'dx', filter_str='dx')
+    _traceplot_posterior(dataset, 'sumlogdet', filter_str='sumlogdet')
+    _traceplot_posterior(dataset, '', filter_str=var_names)
 
     return dataset, energy_dataset

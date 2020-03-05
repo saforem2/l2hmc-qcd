@@ -7,29 +7,22 @@ Author: Sam Foreman
 Date: 01/04/2020
 """
 import os
-import sys
-import time
-import pickle
 import datetime
-
-from config import COLORS, PROJECT_DIR
 
 import numpy as np
 import pandas as pd
+import seaborn as sns
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 import matplotlib.style as mplstyle
 
-import seaborn as sns
 import utils.file_io as io
-from utils.file_io import timeit
-from runners.runner_np import _strf
 
+from config import COLORS, PROJECT_DIR
+from utils.file_io import timeit
 from lattice.lattice import u1_plaq_exact
-from plotters.plot_utils import bootstrap, get_matching_log_dirs, load_pkl
-from plotters.plot_observables import (get_obs_dict, get_run_dirs,
-                                       get_title_str, grid_plot)
+from plotters.data_utils import bootstrap
 
 #  sns.set_palette('bright')
 plt.style.use('seaborn-bright')
@@ -37,6 +30,7 @@ mplstyle.use('fast')
 #  ticklabelsize = 14
 DEFAULT_TICKLABELSIZE = mpl.rcParams['xtick.labelsize']
 
+# pylint:disable=invalid-name
 
 
 def infer_cmap(color, palette='bright'):
@@ -56,6 +50,7 @@ def infer_cmap(color, palette='bright'):
 
 
 def kde_color_plot(x, y, **kwargs):
+    """Create `kde_color_plot`. Returns `plt.Axes` object."""
     palette = kwargs.pop('palette', 'bright')
     cmap = infer_cmap(kwargs['color'], palette=palette)
     ax = sns.kdeplot(x, y, cmap=cmap, **kwargs)
@@ -103,7 +98,6 @@ def calc_tunneling_rate(charges):
 
     charges = np.around(charges)
     dq = np.abs(charges[:, 1:] - charges[:, :-1])
-    tunneling_rate = np.mean(dq, axis=1)
 
     return dq, tunneling_rate
 
@@ -121,14 +115,14 @@ def get_train_weights(params):
 
 def plot_setup(log_dir, run_params, idx=None, nw_run=True):
     """Setup for plotting. Creates `filename` and `title_str`."""
-    params = load_pkl(os.path.join(log_dir, 'parameters.pkl'))
+    params = io.load_pkl(os.path.join(log_dir, 'parameters.pkl'))
     lf = params['num_steps']
     clip_value = params.get('clip_value', 0)
     eps_fixed = params.get('eps_fixed', False)
     train_weights = get_train_weights(params)
-    train_weights_str = ''.join((_strf(i) for i in train_weights))
+    train_weights_str = ''.join((io.strf(i) for i in train_weights))
     net_weights = run_params['net_weights']
-    net_weights_str = ''.join((_strf(i).replace('.', '') for i in net_weights))
+    net_weights_str = ''.join((io.strf(i).replace('.', '') for i in net_weights))
     nws = '(' + ', '.join((str(i) for i in net_weights)) + ')'
 
     date_str = log_dir.split('/')[-2]
@@ -177,7 +171,7 @@ def plot_setup(log_dir, run_params, idx=None, nw_run=True):
 
 
 def get_lf(log_dir):
-    params = load_pkl(os.path.join(log_dir, 'parameters.pkl'))
+    params = io.load_pkl(os.path.join(log_dir, 'parameters.pkl'))
     lf = params['num_steps']
     return lf
 
@@ -213,12 +207,12 @@ def get_observables(run_dir,
         run_params (dict): Dictionary containing the parameters used for
             inference run.
     """
-    run_params = load_pkl(os.path.join(run_dir, 'run_params.pkl'))
-    net_weights = tuple([_strf(i) for i in run_params['net_weights']])
+    run_params = io.load_pkl(os.path.join(run_dir, 'run_params.pkl'))
+    net_weights = tuple([io.strf(i) for i in run_params['net_weights']])
     #  eps = run_params['eps']
     beta = run_params['beta']
     observables_dir = os.path.join(run_dir, 'observables')
-    px = load_pkl(os.path.join(observables_dir, 'px.pkl'))
+    px = io.load_pkl(os.path.join(observables_dir, 'accept_prob.pkl'))
     px = np.squeeze(np.array(px))
     avg_px = np.mean(px)
 
@@ -227,7 +221,7 @@ def get_observables(run_dir,
     else:
         keep_data = True
 
-    if avg_px < 0.1 or not keep_data:
+    if avg_px < 0.1: #or not keep_data:
         print(f'INFO:Skipping! nw: {net_weights}, avg_px: {avg_px:.3g}')
         return None, None, run_params
 
@@ -235,21 +229,23 @@ def get_observables(run_dir,
     io.log(f'  run_dir: {run_dir}')
 
     def load_sqz(fname):
-        data = load_pkl(os.path.join(observables_dir, fname))
+        data = io.load_pkl(os.path.join(observables_dir, fname))
         return np.squeeze(np.array(data))
 
     charges = load_sqz('charges.pkl')
+    dx_out = load_sqz('dx_out.pkl')
+    dx_prop = load_sqz('dx_proposed.pkl')
     plaqs = load_sqz('plaqs.pkl')
     dplq = u1_plaq_exact(beta) - plaqs
 
     num_steps = px.shape[0]
     therm_steps = int(therm_frac * num_steps)
     #  steps = np.arange(therm_steps, num_steps)
-    # NOTE: Since the number of tunneling events is computed as 
+    # NOTE: Since the number of tunneling events is computed as
     # `dq = charges[1:] - charges[:-1]`,
     # we have that
     # `dq.shape[0] = num_steps - 1`.
-    # Because of this, we drop the first step of `px` and `dplq` 
+    # Because of this, we drop the first step of `px` and `dplq`
     # to enforce that they all have the same shape.
     px = px[therm_steps:]
     dplq = dplq[therm_steps:]
@@ -270,9 +266,8 @@ def get_observables(run_dir,
 
         return dx
 
-    dx = get_dx('dx.pkl')
-    dxf = get_dx('dxf.pkl')
-    dxb = get_dx('dxb.pkl')
+    #  dxf = get_dx('dxf.pkl')
+    #  dxb = get_dx('dxb.pkl')
 
     def get_stats(arr, axis=0):
         avg, err, arr_ = bootstrap(arr, n_boot=n_boot)
@@ -282,6 +277,8 @@ def get_observables(run_dir,
         px_, px_err_ = get_stats(px, axis=0)
         dplq_, dplq_err_ = get_stats(dplq, axis=0)
         dq_, dq_err_ = get_stats(dq, axis=0)
+        dx_out_, dx_out_err_ = get_stats(dx_out, axis=0)
+        dx_prop_, dx_prop_err_ = get_stats(dx_prop, axis=0)
 
         entries = len(dq_.flatten())
         data_bs = pd.DataFrame({
@@ -289,6 +286,10 @@ def get_observables(run_dir,
             'plaqs_diffs_err': dplq_err_,
             'accept_prob': px_,
             'accept_prob_err': px_err_,
+            'dx_out': dx_out_,
+            'dx_out_err': dx_out_err_,
+            'dx_prop': dx_prop_,
+            'dx_prop_err': dx_prop_err_,
             'tunneling_rate': dq_,
             'tunneling_rate_err': dq_err_,
             'net_weights': tuple([net_weights for _ in range(entries)]),
@@ -296,18 +297,6 @@ def get_observables(run_dir,
             'log_dir': np.array([log_dir for _ in range(entries)]),
         })
 
-        if dx is not None:
-            dx_, dx_err_ = get_stats(dx, axis=0)
-            data_bs['dx'] = dx_
-            data_bs['dx_err'] = dx_err_
-        if dxf is not None:
-            dxf_, dxf_err_ = get_stats(dxf, axis=0)
-            data_bs['dxf'] = dxf_.flatten()
-            data_bs['dxf_err'] = dxf_err_.flatten()
-        if dxb is not None:
-            dxb_, dxb_err_ = get_stats(dxb, axis=0)
-            data_bs['dxb'] = dxb_.flatten()
-            data_bs['dxb_err'] = dxb_err_.flatten()
     else:
         data_bs = None
 
@@ -316,17 +305,12 @@ def get_observables(run_dir,
         'plaqs_diffs': dplq.flatten(),
         'accept_prob': px.flatten(),
         'tunneling_rate': dq.flatten(),
+        'dx_out': dx_out.flatten(),
+        'dx_proposed': dx_prop.flatten(),
         'net_weights': tuple([net_weights for _ in range(entries)]),
         'run_dir': np.array([run_dir for _ in range(entries)]),
         'log_dir': np.array([log_dir for _ in range(entries)]),
     })
-
-    if dx is not None:
-        data['dx'] = dx.flatten()
-    if dxf is not None:
-        data['dxf'] = dxf.flatten()
-    if dxb is not None:
-        data['dxb'] = dxb.flatten()
 
     return data, data_bs, run_params
 
@@ -338,7 +322,7 @@ def _build_dataframes(run_dirs, data=None, data_bs=None, **kwargs):
         run_dirs (array-like): List of run_dirs in which to look for inference
             data.
         data (pd.DataFrame): DataFrame containing inference data. If `data is
-            not None`, the new `pd.DataFrame` will be appended to `data`. 
+            not None`, the new `pd.DataFrame` will be appended to `data`.
         data_bs (pd.DataFrame): DataFrame containing bootstrapped inference
             data. If `data_bs is not None`, the new `pd.DataFrame` will be
             appended to `data_bs`.
@@ -359,7 +343,11 @@ def _build_dataframes(run_dirs, data=None, data_bs=None, **kwargs):
                 continue
         run_params_file = os.path.join(run_dir, 'run_params.pkl')
         if os.path.isfile(run_params_file):
-            new_df, new_df_bs, run_params = get_observables(run_dir, **kwargs)
+            try:
+                new_df, new_df_bs, run_params = get_observables(run_dir,
+                                                                **kwargs)
+            except:
+                continue
             if data is None:
                 data = new_df
             else:
@@ -380,12 +368,13 @@ def _build_dataframes(run_dirs, data=None, data_bs=None, **kwargs):
     return data, data_bs, run_params
 
 
+# pylint: disable=too-many-locals
 def build_dataframes(log_dirs,
                      df_dict=None,
                      df_bs_dict=None,
                      rp_dict=None,
                      filter_str=None,
-                     runs_np=False):
+                     runs_np=True):
     if df_dict is None:
         df_dict = {}
     if df_bs_dict is None:
@@ -393,7 +382,9 @@ def build_dataframes(log_dirs,
     if rp_dict is None:
         rp_dict = {}
 
-    log_dirs = sorted(log_dirs, key=get_lf, reverse=True)
+    runs_str = 'runs_np' if runs_np else 'runs'
+
+    #  log_dirs = sorted(log_dirs, key=get_lf, reverse=True)
     for idx, log_dir in enumerate(log_dirs):
         if log_dir in df_dict.keys():
             continue
@@ -406,9 +397,13 @@ def build_dataframes(log_dirs,
             data_bs = None
             n_boot = 5000
             frac = 0.25
-            run_dirs = get_run_dirs(log_dir,
-                                    filter_str=filter_str,
-                                    runs_np=runs_np)
+            try:
+                run_dirs = io.get_run_dirs(log_dir,
+                                           filter_str=filter_str,
+                                           runs_str=runs_str)
+            except FileNotFoundError:
+                continue
+
 
             if run_dirs is not None:
                 run_dirs = sorted(run_dirs)[::-1]
@@ -491,10 +486,6 @@ def _gridplots(log_dir, data, title_str, fname,
     _vars = ['plaqs_diffs', 'accept_prob', 'tunneling_rate']
     if hasattr(data, 'dx'):
         _vars += ['dx']
-    #  if hasattr(data, 'dxf'):
-    #      _vars += ['dxf']
-    #  if hasattr(data, 'dxb'):
-    #      _vars += ['dxb']
 
     upper_map = kwargs.get('upper_map', None)
 
@@ -504,12 +495,6 @@ def _gridplots(log_dir, data, title_str, fname,
                      diag_sharey=False,
                      vars=_vars)
 
-    #  color = kwargs.get('color', 'C0')
-    #  marker = kwargs.get('marker', 'o')
-    #  alpha = kwargs.get('alpha', 0.4)
-    #  gridsize = kwargs.get('gridsize', 100)
-    #  markeredgewidth = kwargs.get('markeredgewidth', 1.)
-
     if combined:
         g = _gridplots_combined(g, **kwargs)
     else:
@@ -518,7 +503,7 @@ def _gridplots(log_dir, data, title_str, fname,
     g.add_legend()
     g.fig.suptitle(title_str, y=1.02, fontsize='x-large')
     if out_dir is None:
-        out_dir = os.path.abspath('/home/foremans/cooley_figures/gridplots')
+        out_dir = os.path.abspath('../../gridplots')
         io.check_else_make_dir(out_dir)
 
     out_file = os.path.join(out_dir, f'{fname}.pdf')
@@ -545,18 +530,21 @@ def gridplots(log_dirs,
               rp_dict=None,
               rootdir=None):
     """Make gridplots for each run_dir in log_dirs."""
-    now = datetime.datetime.now()
-    day_str = now.strftime('%Y_%m_%d')
-    hour_str = now.strftime('%H%M')
-    time_str = f'{day_str}_{hour_str}'
+    #  now = datetime.datetime.now()
+    #  day_str = now.strftime('%Y_%m_%d')
+    #  hour_str = now.strftime('%H%M')
+    #  time_str = f'{day_str}_{hour_str}'
     if rootdir is None:
-        proj_dir = os.path.dirname(PROJECT_DIR)
-        rootdir = os.path.join(proj_dir, 'cooley_figures')
+        #  proj_dir = os.path.dirname(PROJECT_DIR)
+        rootdir = os.path.abspath(
+            '/Users/saforem2/ANL/l2hmc-qcd/gauge_logs/gridplots'
+        )
+        #  rootdir = os.path.join(proj_dir, 'cooley_figures')
         #  rootdir = os.path.abspath(f'/home/foremans/cooley_figures/')
 
     io.check_else_make_dir(rootdir)
 
-    ticklabelsize = DEFAULT_TICKLABELSIZE
+    #  ticklabelsize = DEFAULT_TICKLABELSIZE
     mpl.rcParams['xtick.labelsize'] = 14
     mpl.rcParams['ytick.labelsize'] = 14
     mpl.rcParams['axes.labelsize'] = 16
@@ -575,6 +563,7 @@ def gridplots(log_dirs,
 
         data = df_dict[log_dir] if df_dict is not None else None
         data_bs = df_bs_dict[log_dir] if df_bs_dict is not None else None
+        io.check_else_make_dir(rootdir)
 
         color = colors[idx]
 
@@ -615,7 +604,7 @@ def gridplots(log_dirs,
             run_dirs += list(np.unique(data_bs['run_dir']))
         run_dirs = np.unique(run_dirs)
         for run_dir in run_dirs:
-            run_params = load_pkl(os.path.join(run_dir, 'run_params.pkl'))
+            run_params = io.load_pkl(os.path.join(run_dir, 'run_params.pkl'))
             fname, title_str, old_dx = plot_setup(log_dir, run_params)
 
             if data is not None:
