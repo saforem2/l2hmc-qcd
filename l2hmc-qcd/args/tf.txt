@@ -1,4 +1,4 @@
---run_steps 10000 
+--run_steps 20000 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 --x_scale_weight 1
 --x_translation_weight 1

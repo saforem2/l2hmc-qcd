@@ -128,6 +128,8 @@ def train_l2hmc(FLAGS, log_file=None):
     condition2 = params['using_hvd'] and hvd.rank() == 0
     is_chief = condition1 or condition2
 
+    params['zero_masks'] = FLAGS.zero_masks
+
     if is_chief:
         log_dir = params['log_dir']
         checkpoint_dir = os.path.join(log_dir, 'checkpoints/')
@@ -193,7 +195,10 @@ def train_l2hmc(FLAGS, log_file=None):
     ])
 
     masks_file = os.path.join(model.log_dir, 'dynamics_mask.pkl')
+    masks_file_ = os.path.join(model.log_dir, 'dynamics_mask.np')
     masks = sess.run(model.dynamics.masks)
+    np.array(masks).tofile(masks_file_)
+    io.log(f'dynamics.masks:\n\t {masks}')
     pkl_dump(masks, masks_file)
 
     # Check reversibility and write results out to `.txt` file.
@@ -234,7 +239,7 @@ def train_l2hmc(FLAGS, log_file=None):
             'coeff_transformation': vcoeffs[1]
         })
 
-        _ = weights_hist(model.log_dir, weights=weights_final, init=False)
+        weights_hist(model.log_dir, weights=weights_final, init=False)
 
         pkl_dump(weights_final, os.path.join(model.log_dir, 'weights.pkl'))
         pkl_dump(model.params, os.path.join(os.getcwd(), 'params.pkl'))

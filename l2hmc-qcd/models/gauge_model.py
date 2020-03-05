@@ -44,7 +44,7 @@ def split_sampler_data(sampler_data):
 
 class GaugeModel(BaseModel):
     def __init__(self, params=None):
-        super(GaugeModel, self).__init__(params)
+        super(GaugeModel, self).__init__(params, model_type='GaugeModel')
         self._model_type = 'GaugeModel'
 
         if params is None:
@@ -57,7 +57,7 @@ class GaugeModel(BaseModel):
         params = self.params if params is None else params
 
         charge_weight = getattr(self, 'charge_weight_np', 0.)
-        self.use_charge_loss = True if charge_weight > 0. else False
+        self.use_charge_loss = (charge_weight > 0)
 
         t0 = time.time()
         io.log(SEP_STRN + f'INFO: Building graph for `GaugeModel`...')
@@ -127,6 +127,7 @@ class GaugeModel(BaseModel):
             'num_filters': self.lattice.space_size,
             'x_dim': self.lattice.num_links,
             'batch_size': self.batch_size,
+            'zero_masks': self.zero_masks,
             '_input_shape': (self.batch_size, *self.lattice.links.shape),
         }
 

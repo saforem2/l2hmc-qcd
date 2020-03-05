@@ -31,9 +31,20 @@ except ImportError:
 # pylint: disable=invalid-name, too-many-arguments
 Weights = namedtuple('Weights', ['w', 'b'])
 
+def reduced_weight_matrix(W, n=10):
+    """Use the first n singular vals to reconstruct the original matrix W."""
+    U, S, V = np.linalg.svd(W)
+    W_ = np.matrix(U[:, :n]) * np.diag(S[:n]) * np.matrix(V[:n, :])
 
-# pylint: disable=too-many-instance-attributes
-class DynamicsNP:
+    return W_
+
+
+def get_reduced_weights(weights, n=10):
+    """Keep only the first `n` singular values for the weight matrices."""
+
+# pylint: disable=too-many-instance-attributes,too-many-locals
+# pylint: disable=useless-object-inheritance
+class DynamicsNP(object):
     """Implements tools for running tensorflow-independent inference."""
     def __init__(self, potential_fn, weights, hmc=False, **params):
         self._model_type = params.get('model_type', None)
@@ -43,24 +54,16 @@ class DynamicsNP:
         else:
             self.xnet, self.vnet = self.build_networks(weights)
 
-        #  for key, val in params.items():
-        #      setattr(self, key, val)
+        self.hmc = hmc
 
-        self.use_bn = params.get('use_bn', False)
-        self.dropout_prob = params.get('dropout_prob', 0)
-        self.network_arch = params.get('network_arch', 'generic')
-        self.num_hidden1 = params.get('num_hidden1', 100)
-        self.num_hidden2 = params.get('num_hidden2', 100)
-        self.eps_trainable = params.get('eps_trainable', True)
         self.x_dim = params.get('x_dim', None)
-        self.hmc = params.get('hmc', False)
         self._input_shape = params.get('_input_shape', None)
         self.batch_size = params.get('batch_size', None)
         self.eps = params.get('eps', None)
         self.x_dim = params.get('x_dim', None)
         self.num_steps = params.get('num_steps', None)
         self.zero_masks = params.get('zero_masks', False)
-        self.masks = self.build_masks(self.zero_masks)
+        self.masks = self.build_masks()
         self.direction = params.get('direction', 'rand')
         if self.direction == 'forward':
             self._forward = True
@@ -117,8 +120,10 @@ class DynamicsNP:
         """Propose a new state by running the transition kernel backward."""
         if model_type == 'GaugeModel':
             x = np.mod(x, 2 * np.pi)
+
         if v is None:
             v = np.random.normal(size=x.shape)
+
         xb, vb, pxb, sumlogdetb = self.transition_kernel(*State(x, v, beta),
                                                          net_weights,
                                                          forward=False)
@@ -251,29 +256,17 @@ class DynamicsNP:
         t = self._get_time(step, tile=x.shape[0])
         mask, mask_inv = self._get_mask(step)
 
-        #################################################
-        # XXX: `mask_ones`, `mask_zeros` NOT PERMANENT!
-        # XXX: NOT TO BE COMMITTED!
-        #################################################
-        mask_ones = np.ones(mask.shape)
-        mask_zeros = 1. - mask_ones
-        if self.zero_masks:
-            mask = mask_zeros
-            mask_inv = mask_ones
-
         sumlogdet = 0.
 
         v, logdet = self._update_v_forward(x, v, beta, t, net_weights)
         sumlogdet += logdet
 
         x, logdet = self._update_x_forward(x, v, t, net_weights,
-                                           #  (mask, mask_inv))
-                                           (mask_zeros, mask_ones))
+                                           (mask, mask_inv))
         sumlogdet += logdet
 
         x, logdet = self._update_x_forward(x, v, t, net_weights,
-                                           #  (mask_inv, mask))
-                                           (mask_ones, mask_zeros))
+                                           (mask_inv, mask))
         sumlogdet += logdet
 
         v, logdet = self._update_v_forward(x, v, beta, t, net_weights)
@@ -287,12 +280,6 @@ class DynamicsNP:
         t = self._get_time(step_r, tile=x.shape[0])
         mask, mask_inv = self._get_mask(step_r)
 
-        mask_ones = np.ones(mask.shape)
-        mask_zeros = 1. - mask_ones
-        if self.zero_masks:
-            mask = mask_zeros
-            mask_inv = mask_ones
-
         sumlogdet = 0.
 
         v, logdet = self._update_v_backward(x, v, beta, t, net_weights)
@@ -300,12 +287,10 @@ class DynamicsNP:
 
         x, logdet = self._update_x_backward(x, v, t, net_weights,
                                             (mask_inv, mask))
-                                            #  (mask_ones, mask_zeros))
         sumlogdet += logdet
 
         x, logdet = self._update_x_backward(x, v, t, net_weights,
                                             (mask, mask_inv))
-                                            #  (mask_zeros, mask_ones))
         sumlogdet += logdet
 
         v, logdet = self._update_v_backward(x, v, beta, t, net_weights)
@@ -444,16 +429,28 @@ class DynamicsNP:
 
         return xnet, vnet
 
-    def build_masks(self, zero_masks=False):
-        """Build `x` masks used for selecting which idxs of `x` get updated."""
+    def _build_zero_masks(self):
         masks = []
-        for _ in range(self.num_steps):
-            # XXX: Replaced with masks of alternating [1, 0, 1, 0, ... ]
-            idx = np.random.permutation(np.arange(self.x_dim))[:self.x_dim//2]
-            mask = np.zeros((self.x_dim,))
-            if not zero_masks:
-                mask[idx] = 1.
+        for  _ in range(self.num_steps):
+            #  mask = np.zeros((self.x_dim,))
+            mask = np.ones((self.x_dim,))
             masks.append(mask[None, :])
+
+        return masks
+
+    def build_masks(self):
+        """Build `x` masks used for selecting which idxs of `x` get updated."""
+        if self.zero_masks:
+            masks = self._build_zero_masks()
+
+        else:
+            masks = []
+            for _ in range(self.num_steps):
+                _idx = np.arange(self.x_dim)
+                idx = np.random.permutation(_idx)[:self.x_dim//2]
+                mask = np.zeros((self.x_dim,))
+                mask[idx] = 1.
+                masks.append(mask[None, :])
 
         return masks
 

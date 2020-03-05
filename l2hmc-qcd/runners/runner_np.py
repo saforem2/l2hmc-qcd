@@ -17,17 +17,10 @@ import utils.file_io as io
 
 from config import NetWeights, State, Weights, Energy
 from lattice.lattice import GaugeLattice, u1_plaq_exact
-from plotters.plot_utils import get_run_dirs
+from plotters.data_utils import therm_arr, bootstrap
 from dynamics.dynamics_np import DynamicsNP
 from utils.file_io import timeit
 from utils.parse_inference_args_np import parse_args as parse_inference_args
-
-try:
-    import deepdish as dd
-    HAS_DEEPDISH = True
-except ImportError:
-    HAS_DEEPDISH = False
-
 
 try:
     import autograd.numpy as np
@@ -45,7 +38,7 @@ except ImportError:
 NET_WEIGHTS_HMC = NetWeights(0, 0, 0, 0, 0, 0)
 NET_WEIGHTS_L2HMC = NetWeights(1, 1, 1, 1, 1, 1)
 
-HEADER = ("{:^13s}" + 6 * "{:^12s}").format(
+HEADER = ("{:^13s}" + 7 * "{:^12s}").format(
     "STEP", "t/STEP", "% ACC", "𝞭x_out", "𝞭x_prop",
     "exp(𝞭H)", "sumlogdet", "𝞭𝜙"
 )
@@ -521,16 +514,6 @@ class RunnerNP:
                 pickle.dump(np.array(v), f)
 
 
-
-
-
-
-
-
-
-
-
-
 def _strf(x):
     """Format the number x as a string."""
     if np.allclose(x - np.around(x), 0):
@@ -582,7 +565,7 @@ def _get_eps(log_dir):
         eps_dict = load_pkl(in_file)
         eps = eps_dict['eps']
     except FileNotFoundError:
-        run_dirs = get_run_dirs(log_dir)
+        run_dirs = io.get_run_dirs(log_dir)
         rp_file = os.path.join(run_dirs[0], 'run_params.pkl')
         if os.path.isfile(rp_file):
             run_params = load_pkl(rp_file)
@@ -593,10 +576,6 @@ def _get_eps(log_dir):
             else:
                 raise FileNotFoundError('Unable to load run_params.')
         eps = run_params['eps']
-    #  except:  # noqa: E722 pylint:disable=bare-except
-    #      eps_dict = load_pkl(os.path.join(log_dir, 'eps_np.pkl'))
-    #      eps = eps_dict['eps']
-
     return eps
 
 
@@ -609,10 +588,6 @@ def _update_params(params, **kwargs):
                 params[key] = int(val)
             else:
                 params[key] = val
-    #  if num_steps is not None:
-    #      params['num_steps'] = int(num_steps)
-    #  if batch_size is not None:
-    #      params['batch_size'] = int(batch_size)
 
     eps = kwargs.get('eps', None)
     if eps is None:
@@ -623,33 +598,49 @@ def _update_params(params, **kwargs):
     return params
 
 
+def reduced_weight_matrix(W, n=10):
+    """Use the first `n` singular vals to reconstruct `W`."""
+    U, S, V = np.linalg.svd(W, full_matrices=True)
+    S_ = np.zeros((W.shape[0], W.shape[1]))
+    S_[:W.shape[0], :W.shape[0]] = np.diag(S)
+    S_ = S_[:, :n]
+    V = V[:n, :]
+    W_ = U @ S_ @ V
+
+    return W_
+
+
+def get_reduced_weights(weights, n=10):
+    """Keep the first n singular vals of each weight matrix in weights."""
+    for key, val in weights['xnet']['GenericNet'].items():
+        if 'layer' in key:
+            W, b = val
+            W_ = reduced_weight_matrix(W, n=n)
+            weights['xnet']['GenericNet'][key] = Weights(W_, b)
+    for key, val in weights['vnet']['GenericNet'].items():
+        if 'layer' in key:
+            W, b = val
+            W_ = reduced_weight_matrix(W, n=n)
+            weights['vnet']['GenericNet'][key] = Weights(W_, b)
+
+    return weights
+
+
 def create_dynamics(log_dir,
                     potential_fn,
                     x_dim,
                     **kwargs):
-                    #  hmc=False,
-                    #  eps=None,
-                    #  num_steps=None,
-                    #  batch_size=None,
-                    #  model_type=None,
-                    #  direction='rand'):
     """Create `DynamicsNP` object for running dynamics imperatively."""
     params = load_pkl(os.path.join(log_dir, 'parameters.pkl'))
     #  params = _update_params(params, eps, num_steps, batch_size)
-    for key, val in kwargs.items():
-        if val is not None:
-            if key in ['num_steps', 'batch_size']:
-                params[key] = int(val)
-            else:
-                params[key] = val
-
-    eps_ = kwargs.get('eps', None)
-    eps = _get_eps(log_dir) if eps_ is None else eps_
-
-    #  params = _update_params(params, kwargs)
-
+    params = _update_params(params, **kwargs)
     with open(os.path.join(log_dir, 'weights.pkl'), 'rb') as f:
         weights = pickle.load(f)
+
+    num_singular_values = kwargs.get('num_singular_values', -1)
+    if num_singular_values > 0:
+        io.log(f'Keeping the first {num_singular_values} singular values!')
+        weights = get_reduced_weights(weights, n=num_singular_values)
 
     dynamics = DynamicsNP(potential_fn,
                           x_dim=x_dim,
@@ -756,6 +747,7 @@ def _get_run_str(run_params, init='rand'):
     mix_samplers = run_params.get('mix_samplers', False)
     direction = run_params.get('direction', 'rand')
     zero_masks = run_params.get('zero_masks', False)
+    num_singular_values = run_params.get('num_singular_values', -1)
 
     nw_str = ''.join(
         (_strf(i).replace('.', '') for i in net_weights)
@@ -779,6 +771,9 @@ def _get_run_str(run_params, init='rand'):
     if direction != 'rand':
         run_str += f'_{direction}'
 
+    if num_singular_values > 0:
+        run_str += f'_nsv{num_singular_values}'
+
     time_strs = io.get_timestr()
     timestr = time_strs['timestr']
     run_str += f'__{timestr}'
@@ -788,9 +783,10 @@ def _get_run_str(run_params, init='rand'):
 
 def _inference_setup(log_dir, dynamics, run_params, init='rand', skip=True):
     """Setup for inference run."""
-    run_steps = run_params['run_steps']
-    beta = run_params['beta']
-    net_weights = run_params['net_weights']
+    #  run_steps = run_params['run_steps']
+    #  beta = run_params['beta']
+    #  net_weights = run_params['net_weights']
+    #  num_singular_values = run_params.get('num_singular_values', -1)
     eps = run_params.get('eps', None)
     print(f'\n\n eps: {eps}\n dynamics.eps: {dynamics.eps}\n\n')
     num_steps = run_params.get('num_steps', None)
@@ -817,6 +813,7 @@ def _inference_setup(log_dir, dynamics, run_params, init='rand', skip=True):
         init = 'rand'
         io.log(f'init: {init}\n')
         samples = np.random.randn(batch_size, dynamics.x_dim)
+
 
     run_str = _get_run_str(run_params)
     #  nw_str = ''.join((_strf(i).replace('.', '') for i in net_weights))
@@ -1020,7 +1017,7 @@ def _run_np(steps, nws, dynamics, lattice, samples, run_params, data):
 
     _run_params = run_params.copy()
     _run_params['net_weights'] = nws
-    _run_params['run_stteps'] = steps
+    _run_params['run_steps'] = steps
     samples = np.mod(samples, 2 * np.pi)
     for step in range(steps):
         if step % 100 == 0:
@@ -1162,12 +1159,14 @@ def run_inference_np(log_dir, dynamics, lattice, run_params, **kwargs):
     samples = np.mod(samples, 2 * np.pi)
 
     data_strs = []
+    samples_arr = []
     for step in range(run_steps):
         samples_init = np.mod(samples, 2 * np.pi)
         outputs = inference_step(step, samples_init,
                                  dynamics, lattice, **run_params)
         samples = outputs['dynamics_output']['x_out']
         run_data, energy_data = update_data(run_data, energy_data, outputs)
+        samples_arr.append(samples)
 
         if step % 100 == 0:
             io.log(SEPERATOR + '\n' + HEADER + '\n' + SEPERATOR)
@@ -1201,6 +1200,7 @@ def run_inference_np(log_dir, dynamics, lattice, run_params, **kwargs):
         'run_data': run_data,
         'energy_data': energy_data,
         'reverse_data': reverse_data,
+        'samples_arr': samples_arr,
     }
     save_inference_data(run_dir, run_params, data_dict, data_strs)
 
@@ -1214,10 +1214,23 @@ def run_inference_np(log_dir, dynamics, lattice, run_params, **kwargs):
     return outputs
 
 
-def summarize_run(run_data):
-    charges = np.array(run_data['charges'])
-    accept_prob = np.array(run_data['accept_prob'])
-    dx_out = np.array(run_data['dx_out'])
+def summarize_run(run_data, run_params):
+    """Summarize the `quality` of a given inference run and save results."""
+    beta = run_params['beta']
+    run_dir = run_params['run_dir']
+
+    run_steps = run_params['run_steps']
+    batch_size = run_params['batch_size']
+
+    def therm_(key):
+        return therm_arr(np.array(run_data[key]), ret_steps=False)
+
+    obs_keys = ['charges', 'accept_prob', 'dx_out']
+    data = {
+        key: therm_(key) for key in obs_keys
+    }
+    data['plaqs_diffs'] = u1_plaq_exact(beta) - therm_('plaqs')
+    data['tunneling_events'] = data['charges'][1:] - data['charges'][:-1]
 
 
 def save_direction_data(run_dir, run_data):
@@ -1244,9 +1257,15 @@ def save_direction_data(run_dir, run_data):
 
 def save_inference_data(run_dir, run_params, data_dict, data_strs):
     """Save all inference data to `run_dir`."""
+    samples_arr = data_dict.get('samples_arr', None)
     run_data = data_dict.get('run_data', None)
     energy_data = data_dict.get('energy_data', None)
     reverse_data = data_dict.get('reverse_data', None)
+
+    if samples_arr is not None:
+        samples_arr_file = os.path.join(run_dir, 'samples.pkl')
+        io.save_pkl(samples_arr, samples_arr_file)
+        #  np.savez_compressed(samples_arr_file, samples_arr)
 
     max_rdata = {}
     for key, val in reverse_data.items():

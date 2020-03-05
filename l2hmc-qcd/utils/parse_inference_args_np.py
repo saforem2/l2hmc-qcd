@@ -181,6 +181,15 @@ def parse_args():
                               when performing the augmented L2HMC molecular
                               dynamics update."""))
 
+    parser.add_argument('--nsv', '--num_singular_values',
+                        dest='num_singular_values',
+                        type=int,
+                        default=-1,
+                        required=False,
+                        help=("""Specify the number of singular values to keep
+                              when reconstructing the weight matrix. (Default:
+                              -1, keep all singular values). """))
+
     if sys.argv[1].startswith('@'):
         args = parser.parse_args(shlex.split(open(sys.argv[1][1:]).read(),
                                              comments=True))

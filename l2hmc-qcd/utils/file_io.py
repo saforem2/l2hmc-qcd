@@ -31,6 +31,16 @@ except ImportError:
 # pylint: disable=too-many-locals
 
 
+def strf(x):
+    """Format the number x as a string."""
+    if np.allclose(x - np.around(x), 0):
+        xstr = f'{int(x)}'
+    else:
+        xstr = f'{x:.1}'.replace('.', '')
+    return xstr
+
+
+
 def get_subdirs(root_dir):
     subdirs = [
         os.path.join(root_dir, i)
@@ -38,6 +48,33 @@ def get_subdirs(root_dir):
         if os.path.isdir(os.path.join(root_dir, i))
     ]
     return subdirs
+
+
+def get_run_dirs(log_dir, filter_str=None, runs_str='runs_np'):
+    """Get all `run_dirs` in `log_dir/runs_dir/`."""
+    run_dirs = None
+    runs_dir = os.path.join(log_dir, runs_str)
+    run_dirs = get_subdirs(runs_dir)
+    if filter_str is not None:
+        run_dirs = [i for i in run_dirs if filter_str in i]
+
+    run_dirs = sorted(run_dirs)
+    return run_dirs
+
+
+def save_pkl(obj, fpath, name=None):
+    """Save `obj` to `fpath`."""
+    log(f'Saving {name} to {fpath}.')
+    with open(fpath, 'wb') as f:
+        pickle.dump(obj, f)
+
+
+def load_pkl(fpath):
+    """Load from `fpath` using `pickle.load`."""
+    with open(fpath, 'rb') as f:
+        data = pickle.load(f)
+
+    return data
 
 
 def make_pngs_from_pdfs(rootdir=None):
@@ -165,10 +202,10 @@ def write(s, f, mode='a', nl=True):
             ff.write(s + '\n' if nl else '')
 
 
-def log_and_write(s, f):
+def log_and_write(s, f, mode='a', nl=True):
     """Print string `s` to std out and also write to file `f`."""
     log(s)
-    write(s, f)
+    write(s, f, mode=mode, nl=nl)
 
 
 def copy_old(src, dest):
