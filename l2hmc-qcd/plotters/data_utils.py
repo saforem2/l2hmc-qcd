@@ -35,15 +35,16 @@ TLS_DEFAULT = mpl.rcParams['xtick.labelsize']
 
 def _calc_var_explained(x):
     """Calculate the % variance explained by the singular values of `x`."""
-    u, s, vh = np.linalg.svd(x, full_matrices=True)
+    _, s, _ = np.linalg.svd(x, full_matrices=True)
     return s ** 2 / np.sum(s ** 2)
+
 
 def calc_var_explained(weights_dict):
     """Calculate the % variance explained by the sv's for each weight mtx."""
     xweights = weights_dict['xnet']
     vweights = weights_dict['vnet']
     var_explained = {}
-    for ((xk, xv), (vk, vv)) in zip(xweights.items(),vweights.items()):
+    for ((xk, xv), (vk, vv)) in zip(xweights.items(), vweights.items()):
         xk_ = f'xnet_{xk}'
         vk_ = f'vnet_{vk}'
         var_explained[xk_] = _calc_var_explained(xv)

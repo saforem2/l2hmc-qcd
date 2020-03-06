@@ -49,12 +49,33 @@ except ImportError:
 # pylint: disable=invalid-name, too-many-nested-blocks, too-many-locals
 
 
-def plot_singular_values(weights_dict, log_dir):
+def load_weights(log_dir):
+    """Load weights dict from `log_dir`."""
+    weights = io.load_pkl(os.path.join(log_dir, 'weights.pkl'))
+    xweights = weights['xnet']['GenericNet']
+    vweights = weights['vnet']['GenericNet']
+    weights_dict = {
+        'xnet': {},
+        'vnet': {},
+    }
+    for (xk, xv), (vk, vv) in zip(xweights.items(), vweights.items()):
+        if 'layer' in xk:
+            W, _ = xv
+            weights_dict['xnet'][xk] = W
+        if 'layer' in vk:
+            W, _ = vv
+            weights_dict['vnet'][vk] = W
+
+    return weights_dict
+
+
+def plot_singular_values(log_dir):
     """Plot the % var explained by the singular values of `weights_dict`."""
+    weights_dict = load_weights(log_dir)
     var_explained = calc_var_explained(weights_dict)
-    for key, val in var_epxlained.items():
+    for key, val in var_explained.items():
         x = np.arange(1, len(val)+1)
-        fig, ax = plt.subplots()
+        _, ax = plt.subplots()
         ax.plot(x, val, marker='+', ls='')
         ax.set_xlabel('Singular values', fontsize=14)
         ax.set_ylabel('% Variance Explained', fontsize=14)

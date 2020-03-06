@@ -71,6 +71,7 @@ def get_title_str(params, run_params=None):
 
 
 def plot_charges(charges, out_file=None, title=None, nrows=2, **kwargs):
+    """Create a traceplot of the  topological charges."""
     """Plot charges."""
     ls = kwargs.get('ls', '-')
     color = kwargs.get('color', 'k')
@@ -105,6 +106,7 @@ def plot_charges(charges, out_file=None, title=None, nrows=2, **kwargs):
 
 
 def plot_autocorrs(charges, out_file=None, title=None, nrows=4, **kwargs):
+    """Plot autocorrelations of the topological charges."""
     if not isinstance(charges, np.ndarray):
         charges = np.array(charges)[0]
 
@@ -138,6 +140,7 @@ def plot_autocorrs(charges, out_file=None, title=None, nrows=4, **kwargs):
 
 
 def weights_hist(log_dir, weights=None):
+    """Create distribution plots of weight matrices."""
     if HAS_SEABORN:
         sns.set_palette('bright', 100)
 
