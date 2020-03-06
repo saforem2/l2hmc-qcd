@@ -11,14 +11,14 @@ import os
 import arviz as az
 import numpy as np
 import xarray as xr
+import seaborn as sns
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 
 import utils.file_io as io
 
-from .seaborn_plots import plot_setup
 from lattice.lattice import u1_plaq_exact
-import seaborn as sns
+from plotters.seaborn_plots import plot_setup
 
 sns.set_palette('bright')
 
@@ -27,9 +27,11 @@ SEPERATOR = 80 * '-'
 
 mpl.rcParams['axes.formatter.limits'] = -4, 4
 
+# pylint:disable=too-many-locals,too-many-arguments,invalid-name,
+# pylint:disable=too-many-arguments,too-many-statements
 
 
-def _savefig(fig, out_file):
+def savefig(fig, out_file):
     io.log(HEADER)
     io.log(f'Saving figure to: {out_file}.')
     fig.savefig(out_file, dpi=200, bbox_inches='tight')
@@ -43,6 +45,7 @@ def autocorr(x):
 
 
 def plot_autocorr(x, params, run_params, **kwargs):
+    """Plot autocorrelation of `x`."""
     name = kwargs.get('name', '')
     run_str = run_params['run_str']
     log_dir = params['log_dir']
@@ -52,7 +55,6 @@ def plot_autocorr(x, params, run_params, **kwargs):
 
     fname, title_str, _ = plot_setup(log_dir, run_params)
     fig, ax = plt.subplots()
-
     if len(x.shape) > 1:
         for idx, sample in enumerate(x):
             x_acl = autocorr(sample)
@@ -69,7 +71,7 @@ def plot_autocorr(x, params, run_params, **kwargs):
     ax.set_ylabel('Autocorrelation')
     ax.set_xlabel('Step')
     out_file = os.path.join(fig_dir, f'{name}_autocorrelation.pdf')
-    _savefig(fig, out_file)
+    savefig(fig, out_file)
 
     return fig, ax
 
@@ -193,13 +195,16 @@ def build_dataset(run_data, run_params):
 
     return dataset
 
+
 def _check_existing(out_dir, fname):
+    """Check if `fname` exists in `out_dir`. If so, append time to `fname`."""
     if os.path.isfile(os.path.join(out_dir, f'{fname}.pdf')):
         timestr = io.get_timestr()
         hour_str = timestr['hour_str']
         fname += f'_{hour_str}'
 
     return fname
+
 
 def plot_reverse_data(reverse_data, params, run_params, **kwargs):
     """Plot reversibility results."""
@@ -225,6 +230,7 @@ def plot_reverse_data(reverse_data, params, run_params, **kwargs):
     for key, val in reverse_data.items():
         sns.kdeplot(np.array(val).flatten(), shade=True, label=key, ax=ax)
     ax.legend(loc='best')
+    ax.set_title(title_str)
     plt.tight_layout()
     io.log(f'Saving figure to: {out_file}...')
     fig.savefig(out_file, dpi=200, bbox_inches='tight')
@@ -234,6 +240,97 @@ def plot_reverse_data(reverse_data, params, run_params, **kwargs):
         fig.savefig(fout, dpi=200, bbox_inches='tight')
 
     return fig, ax
+
+
+def plot_trace(data, fname, title_str=None, filter_str=None):
+    """Create traceplot of `data`.
+
+    Args:
+        data (xr.Dataset): Dataset object containing data to be plotted.
+        fname (str): Where to save plot.
+        filter_str (list): List of strings to filter variable names. Only those
+            variables contained in this list will be included in the plot.
+
+    Returns:
+        None
+    """
+    var_names = None
+    if filter_str is not None:
+        if isinstance(filter_str, list):
+            var_names = []
+            for s in filter_str:
+                var_names.extend(
+                    [var for var in data.data_vars if s in var]
+                )
+        else:
+            var_names = [
+                var for var in data.data_vars if filter_str in var
+            ]
+
+    _ = az.plot_trace(data, var_names=var_names,
+                      compact=True, combined=True)
+    fig = plt.gcf()
+    if title_str is not None:
+        fig.suptitle(title_str, fontsize=24, y=1.05)
+    savefig(fig, fname)
+
+
+def plot_posterior(data, fname, title_str=None, filter_str=None):
+    """Create distribution plot of posterior distribution. Includes stats.
+
+    Args:
+        data (xr.Dataset): Dataset object containing data to be plotted.
+        fname (str): Where to save plot.
+        filter_str (list): List of strings to filter variable names. Only those
+            variables contained in this list will be included in the plot.
+
+    Returns:
+        None
+    """
+    var_names = None
+    if filter_str is not None:
+        var_names = []
+        if isinstance(filter_str, list):
+            var_names = []
+            for s in filter_str:
+                var_names.extend(
+                    [var for var in data.data_vars if s in var]
+                )
+        else:
+            var_names = [
+                var for var in data.data_vars if filter_str in var
+            ]
+        var_names = list(set(var_names))
+    _ = az.plot_posterior(data, var_names=var_names)
+    fig = plt.gcf()
+    if title_str is not None:
+        fig.suptitle(title_str, fontsize=24, y=1.05)
+    savefig(fig, fname)
+
+
+def traceplot_posterior(dataset, name, fname, fig_dir,
+                        title_str=None, filter_str=None):
+    """Create traceplot of the posterior distribution.
+
+    Args:
+        data (xr.Dataset): Dataset object containing data to be plotted.
+        fname (str): Where to save plot.
+        filter_str (list): List of strings to filter variable names. Only those
+            variables contained in this list will be included in the plot.
+
+    Returns:
+        None
+    """
+    tp_fname = _check_existing(fig_dir, f'{fname}_{name}_traceplot')
+    pp_fname = _check_existing(fig_dir, f'{fname}_{name}_posterior')
+    tp_fout = os.path.join(fig_dir, f'{tp_fname}.pdf')
+    pp_fout = os.path.join(fig_dir, f'{pp_fname}.pdf')
+    plot_trace(dataset, tp_fout,
+               title_str=title_str,
+               filter_str=filter_str)
+    plot_posterior(dataset, pp_fout,
+                   title_str=title_str,
+                   filter_str=filter_str)
 
 
 def inference_plots(data_dict, params, run_params, **kwargs):
@@ -260,98 +357,50 @@ def inference_plots(data_dict, params, run_params, **kwargs):
     except FileNotFoundError:
         return dataset, energy_dataset
 
-    def _savefig(fig, out_file):
-        io.log(SEPERATOR)
-        io.log(f'Saving figure to: {out_file}.')
-        fig.savefig(out_file, dpi=200, bbox_inches='tight')
-        io.log(SEPERATOR)
-
-    def _plot_posterior(data, out_file, filter_str=None):
-        var_names = None
-        if filter_str is not None:
-            var_names = []
-            if isinstance(filter_str, list):
-                var_names = []
-                for s in filter_str:
-                    var_names.extend(
-                        [var for var in data.data_vars if s in var]
-                    )
-            else:
-                var_names = [
-                    var for var in data.data_vars if filter_str in var
-                ]
-            var_names = list(set(var_names))
-
-        _ = az.plot_posterior(data, var_names=var_names)
-        fig = plt.gcf()
-        fig.suptitle(title_str, fontsize=24, y=1.05)
-        _savefig(fig, out_file)
-
-    def _plot_trace(data, out_file, filter_str=None):
-        var_names = None
-        if filter_str is not None:
-            if isinstance(filter_str, list):
-                var_names = []
-                for s in filter_str:
-                    var_names.extend(
-                        [var for var in data.data_vars if s in var]
-                    )
-            else:
-                var_names = [
-                    var for var in data.data_vars if filter_str in var
-                ]
-
-        _ = az.plot_trace(data, var_names=var_names,
-                          compact=True, combined=True)
-        fig = plt.gcf()
-        fig.suptitle(title_str, fontsize=24, y=1.05)
-        _savefig(fig, out_file)
-
-    def _traceplot_posterior(dataset, name, filter_str=None):
-        tp_fname = _check_existing(fig_dir, f'{fname}_{name}_traceplot')
-        pp_fname = _check_existing(fig_dir, f'{fname}_{name}_posterior')
-        tp_fout = os.path.join(fig_dir, f'{tp_fname}.pdf')
-        pp_fout = os.path.join(fig_dir, f'{pp_fname}.pdf')
-        _plot_trace(dataset, tp_fout, filter_str=filter_str)
-        _plot_posterior(dataset, pp_fout, filter_str=filter_str)
-
-
     ####################################################
     # Create traceplot + possterior plot of energy data
     ####################################################
     if energy_data is not None:
         energy_dataset = build_energy_dataset(energy_data)
-        _traceplot_posterior(energy_dataset,
-                             name='potential',
-                             filter_str='potential')
-        _traceplot_posterior(energy_dataset,
-                             name='kinetic',
-                             filter_str='kinetic')
-        _traceplot_posterior(energy_dataset,
-                             name='hamiltonian',
-                             filter_str='hamiltonian')
+        pe_dir = os.path.join(fig_dir, 'potential_plots')
+        io.check_else_make_dir(pe_dir)
+        traceplot_posterior(energy_dataset, name='potential',
+                            fname=fname, fig_dir=pe_dir,
+                            title_str=title_str,
+                            filter_str='potential')
+        ke_dir = os.path.join(fig_dir, 'kinetic_plots')
+        io.check_else_make_dir(ke_dir)
+        traceplot_posterior(energy_dataset, name='kinetic',
+                            fname=fname, fig_dir=ke_dir,
+                            filter_str='kinetic')
+        h_dir = os.path.join(fig_dir, 'hamiltonian_plots')
+        io.check_else_make_dir(h_dir)
+        traceplot_posterior(energy_dataset, name='hamiltonian',
+                            fname=fname, fig_dir=h_dir,
+                            title_str=title_str,
+                            filter_str='hamiltonian')
 
         denergy_dataset = build_energy_diffs_dataset(energy_data)
-        _traceplot_posterior(denergy_dataset,
-                             name='potential_diffs',
-                             filter_str='potential')
-        _traceplot_posterior(denergy_dataset,
-                             name='kinetic_diffs',
-                             filter_str='kinetic')
-        _traceplot_posterior(denergy_dataset,
-                             name='hamiltonian_diffs',
-                             filter_str='hamiltonian')
+        traceplot_posterior(denergy_dataset, name='potential_diffs',
+                            fname=fname, fig_dir=pe_dir, title_str=title_str,
+                            filter_str='potential')
+        traceplot_posterior(denergy_dataset, name='kinetic_diffs',
+                            fname=fname, fig_dir=ke_dir, title_str=title_str,
+                            filter_str='kinetic')
+        traceplot_posterior(denergy_dataset, name='hamiltonian_diffs',
+                            fname=fname, fig_dir=h_dir, title_str=title_str,
+                            filter_str='hamiltonian')
 
         energy_transitions = build_energy_transition_dataset(energy_data)
-        _traceplot_posterior(energy_transitions,
-                             name='potential_transitions',
-                             filter_str='potential')
-        _traceplot_posterior(energy_transitions,
-                             name='kinetic_transitions',
-                             filter_str='kinetic')
-        _traceplot_posterior(energy_transitions,
-                             name='hamiltonian_transitions',
-                             filter_str='hamiltonian')
+        traceplot_posterior(energy_transitions, name='potential_transitions',
+                            fname=fname, fig_dir=pe_dir, title_str=title_str,
+                            filter_str='potential')
+        traceplot_posterior(energy_transitions, name='kinetic_transitions',
+                            fname=fname, fig_dir=ke_dir, title_str=title_str,
+                            filter_str='kinetic')
+        traceplot_posterior(energy_transitions, name='hamiltonian_transitions',
+                            fname=fname, fig_dir=h_dir, title_str=title_str,
+                            filter_str='hamiltonian')
 
     dataset = build_dataset(run_data, run_params)
     #################################
@@ -367,25 +416,25 @@ def inference_plots(data_dict, params, run_params, **kwargs):
                        combined=False)
     fig = plt.gcf()
     fig.suptitle(title_str, fontsize='x-large', y=1.025)
-    _savefig(fig, rp_out_file)
+    savefig(fig, rp_out_file)
     if out_dir is not None:
         rp_out_file_ = os.path.join(out_dir, f'{rp_fname}.pdf')
-        _savefig(fig, rp_out_file_)
+        savefig(fig, rp_out_file_)
 
     ####################################################
     # Create histogram plots of the reversibility data.
     ####################################################
     if reverse_data is not None:
-        _, _ = plot_reverse_data(reverse_data, params, run_params,
+        _, _ = plot_reverse_data(reverse_data,
+                                 params, run_params,
                                  runs_np=runs_np)
 
     ############################################
     # Create autocorrelation plot of plaq_diffs
     ############################################
     plaqs = np.array(run_data['plaqs'])
-    #  plaqs_therm, steps = therm_arr(np.array(plaqs))
     plaqs_therm = plaqs.T
-    fig, ax = plot_autocorr(plaqs_therm, params, run_params, name='plaqs')
+    fig, _ = plot_autocorr(plaqs_therm, params, run_params, name='plaqs')
 
     ####################################################
     # Create traceplot + posterior plot of observables
@@ -396,8 +445,19 @@ def inference_plots(data_dict, params, run_params, **kwargs):
     if hasattr(dataset, 'dx'):
         var_names.append('dx')
 
-    _traceplot_posterior(dataset, 'dx', filter_str='dx')
-    _traceplot_posterior(dataset, 'sumlogdet', filter_str='sumlogdet')
-    _traceplot_posterior(dataset, '', filter_str=var_names)
+    dx_dir = os.path.join(fig_dir, 'dx_plots')
+    io.check_else_make_dir(dx_dir)
+    traceplot_posterior(dataset, name='dx', fname=fname, fig_dir=dx_dir,
+                        title_str=title_str, filter_str='dx')
+
+    sld_dir = os.path.join(fig_dir, 'sumlogdet_plots')
+    io.check_else_make_dir(sld_dir)
+    traceplot_posterior(dataset, name='sumlogdet',
+                        fname=fname, fig_dir=sld_dir,
+                        title_str=title_str,
+                        filter_str='sumlogdet')
+
+    traceplot_posterior(dataset, '', fname=fname, fig_dir=fig_dir,
+                        title_str=title_str, filter_str=var_names)
 
     return dataset, energy_dataset

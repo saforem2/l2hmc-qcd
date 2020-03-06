@@ -51,7 +51,7 @@ import utils.file_io as io
 
 from seed_dict import seeds, vnet_seeds, xnet_seeds
 from models.gauge_model import GaugeModel
-from plotters.plot_utils import weights_hist
+from plotters.plot_utils import weights_hist, plot_singular_values
 from loggers.train_logger import TrainLogger
 from utils.file_io import timeit
 from utils.parse_args import parse_args
@@ -102,7 +102,7 @@ def pkl_dump(d, pkl_file):
 @timeit
 def train_l2hmc(FLAGS, log_file=None):
     """Create, train, and run L2HMC sampler on 2D U(1) gauge model."""
-    t0 = time.time()
+    start_time = time.time()
     tf.keras.backend.set_learning_phase(True)
 
     if FLAGS.restore and FLAGS.log_dir is not None:
@@ -210,7 +210,7 @@ def train_l2hmc(FLAGS, log_file=None):
         io.save_dict(xnet_seeds, out_dir=model.log_dir, name='xnet_seeds')
         io.save_dict(vnet_seeds, out_dir=model.log_dir, name='vnet_seeds')
 
-    # **********************************************************
+    # ----------------------------------------------------------
     #                       TRAINING
     # ----------------------------------------------------------
     trainer = Trainer(sess, model, train_logger, **params)
@@ -254,8 +254,9 @@ def train_l2hmc(FLAGS, log_file=None):
 
     # close MonitoredTrainingSession and reset the default graph
     sess.close()
-    tf.reset_default_graph()
-    io.log(f'{SEP_STR}\nTraining took: {time.time()-t0:.3g}s\n{SEP_STR}')
+    tf.compat.v1.reset_default_graph()
+    io.log(f'{SEP_STR}\n training took:'
+           f'{time.time()-start_time:.3g}s \n{SEP_STR}')
 
     return model, train_logger
 
@@ -265,24 +266,28 @@ def main(FLAGS):
     """Main method for creating/training/running L2HMC for U(1) gauge model."""
     log_file = 'output_dirs.txt'
 
-    USING_HVD = getattr(FLAGS, 'horovod', False)
-    if cfg.HAS_HOROVOD and USING_HVD:
+    using_hvd = getattr(FLAGS, 'horovod', False)
+    if cfg.HAS_HOROVOD and using_hvd:
         io.log("INFO: USING HOROVOD")
         hvd.init()
         rank = hvd.rank()
         print(f'Setting seed from rank: {rank}')
-        tf.set_random_seed(rank * seeds['global_tf'])
+        # multiply the global seed by the rank so each rank gets diff seed
+        tf.compat.v1.set_random_seed(rank * seeds['global_tf'])
 
-    if FLAGS.hmc:   # run generic HMC sampler
-        inference.run_hmc(FLAGS, log_file=log_file)
-    else:           # train l2hmc sampler
-        model, train_logger = train_l2hmc(FLAGS, log_file)
+    #  if FLAGS.hmc:   # run generic HMC sampler
+    #      inference.run_hmc(FLAGS, log_file=log_file)
+    #  else:           # train l2hmc sampler
+    model, _ = train_l2hmc(FLAGS, log_file)
+    plot_singular_values(model.log_dir)
+
+
 
 
 if __name__ == '__main__':
     FLAGS = parse_args()
-    using_hvd = getattr(FLAGS, 'horovod', False)
-    if not using_hvd:
+    USING_HVD = getattr(FLAGS, 'horovod', False)
+    if not USING_HVD:
         tf.set_random_seed(seeds['global_tf'])
 
     t0 = time.time()
