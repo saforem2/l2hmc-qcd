@@ -257,7 +257,7 @@ def train_l2hmc(FLAGS, log_file=None):
 
     # close MonitoredTrainingSession and reset the default graph
     sess.close()
-    tf.compat.v1.reset_default_graph()
+    tf.reset_default_graph()
     io.log(f'{SEP_STR}\n training took:'
            f'{time.time()-start_time:.3g}s \n{SEP_STR}')
 
@@ -276,7 +276,7 @@ def main(FLAGS):
         rank = hvd.rank()
         print(f'Setting seed from rank: {rank}')
         # multiply the global seed by the rank so each rank gets diff seed
-        tf.compat.v1.set_random_seed(rank * seeds['global_tf'])
+        tf.set_random_seed(rank * seeds['global_tf'])
 
     #  if FLAGS.hmc:   # run generic HMC sampler
     #      inference.run_hmc(FLAGS, log_file=log_file)
