@@ -41,38 +41,37 @@ from collections import namedtuple
 import numpy as np
 import tensorflow as tf
 
-# pylint: disable=import-error, unused-import
+# pylint: disable=import-error, unused-import, too-many-statements,
+# pylint:didsable=no-name-in-module, invalid-name
 from tensorflow.python import debug as tf_debug
 from tensorflow.python.client import timeline
 
-import inference
 import config as cfg
 import utils.file_io as io
 
 from seed_dict import seeds, vnet_seeds, xnet_seeds
 from models.gauge_model import GaugeModel
-from plotters.plot_utils import weights_hist, plot_singular_values
+from plotters.plot_utils import plot_singular_values, weights_hist
 from loggers.train_logger import TrainLogger
 from utils.file_io import timeit
 from utils.parse_args import parse_args
 from trainers.trainer import Trainer
 from trainers.train_setup import (check_reversibility, count_trainable_params,
                                   create_config, get_net_weights, train_setup)
+
 if cfg.HAS_HOROVOD:
     import horovod.tensorflow as hvd
 
-if float(tf.__version__.split('.')[0]) <= 2:
-    tf.logging.set_verbosity(tf.logging.INFO)
-
+tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.INFO)
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 
 SEP_STR = 80 * '-'  # + '\n'
 
 NP_FLOAT = cfg.NP_FLOAT
 
-
 Weights = namedtuple('Weights', ['w', 'b'])
 
+# pylint:disable=too-many-statements
 
 def log_params(params):
     io.log(SEP_STR + '\nL2HMC PARAMETERS:\n')

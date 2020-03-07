@@ -12,6 +12,7 @@ import errno
 import pickle
 import shutil
 import datetime
+from collections import OrderedDict
 import config as cfg
 
 import numpy as np
@@ -241,98 +242,92 @@ def make_dirs(dirs):
 def _parse_gauge_flags(FLAGS):
     """Parse flags for `GaugeModel` instance."""
     if isinstance(FLAGS, dict):
-        flags_dict = FLAGS
+        flags = FLAGS
     else:
         try:
-            flags_dict = FLAGS.__dict__
+            flags = FLAGS.__dict__
         except (NameError, AttributeError):
             pass
-    d = {
-        'LX': flags_dict.get('space_size', 8),
-        'BS': flags_dict.get('batch_size', 64),
-        'LF': flags_dict.get('num_steps', 1),
-        'SS': flags_dict.get('eps', 0.1),
-        'EF': flags_dict.get('eps_fixed', False),
-        'QW': flags_dict.get('charge_weight', 0),
-        'NA': flags_dict.get('network_arch', 'generic'),
-        'BN': flags_dict.get('use_bn', False),
-        'DP': flags_dict.get('dropout_prob', 0),
-        'AW': flags_dict.get('aux_weight', 1),
-        'XS': flags_dict.get('x_scale_weight', 1),
-        'XT': flags_dict.get('x_translation_weight', 1),
-        'XQ': flags_dict.get('x_transformation_weight', 1),
-        'VS': flags_dict.get('v_scale_weight', 1),
-        'VT': flags_dict.get('v_translation_weight', 1),
-        'VQ': flags_dict.get('v_transformation_weight', 1),
-        'GL': flags_dict.get('use_gaussian_loss', False),
-        'NL': flags_dict.get('use_nnehmc_loss', False),
-        'CV': flags_dict.get('clip_value', 0),
-        'hmc': flags_dict.get('hmc', False),
+
+    new_flags = {
+        'space_size': flags.get('space_size', 8),
+        'time_size': flags.get('time_size', 8),
+        'batch_size': flags.get('batch_size', 32),
+        'num_steps': flags.get('num_steps', 5),
+        'charge_weight': flags.get('charge_weight', 0),
+        'aux_weight': flags.get('aux_weight', 1.),
+        'network_arch': flags.get('network_arch', 'generic'),
+        'dropout_prob': flags.get('dropout_prob', 0),
+        'eps_fixed': flags.get('eps_fixed', False),
+        'batch_norm': flags.get('use_bn', False),
+        'use_gaussian_loss': flags.get('use_gaussian_loss', False),
+        'use_nnehmc_loss': flags.get('use_nnehmc_loss', False),
+        'clip_value': flags.get('clip_value', 0),
+        'zero_masks': flags.get('zero_masks', False),
     }
-    try:
-        _log_dir = flags_dict['log_dir']
-    except KeyError:
-        _log_dir = ''
 
-    d['_log_dir'] = _log_dir
-    aw = str(d['AW']).replace('.', '')
-    qw = str(d['QW']).replace('.', '')
-    dp = str(d['DP']).replace('.', '')
+    run_str = f'L{new_flags["space_size"]}'
+    if new_flags['time_size'] != new_flags['space_size']:
+        run_str += f'T{new_flags["time_size"]}'
 
-    d['XS'] = str(int(d['XS'])).replace('.', '')
-    d['XT'] = str(int(d['XT'])).replace('.', '')
-    d['XQ'] = str(int(d['XQ'])).replace('.', '')
-    d['VS'] = str(int(d['VS'])).replace('.', '')
-    d['VT'] = str(int(d['VT'])).replace('.', '')
-    d['VQ'] = str(int(d['VQ'])).replace('.', '')
+    run_str += f'_b{new_flags["batch_size"]}_lf{new_flags["num_steps"]}'
 
-    if flags_dict.get('hmc', False):
-        run_str = (f"HMC_lattice{d['LX']}_batch{d['BS']}"
-                   "_lf{d['LF']}_eps{d['SS']:.3g}")
-    else:
-        run_str = f"L{d['LX']}_b{d['BS']}_lf{d['LF']}"
+    if new_flags['network_arch'] != 'generic':
+        run_str += f'_{new_flags["network_arch"]}'
 
-        if qw != '00':  # if charge weight != 0
-            run_str += f'_qw{qw}'
+    weights = OrderedDict({
+        'x_scale_weight': flags.get('x_scale_weight', 1.),
+        'x_translation_weight': flags.get('x_translation_weight', 1.),
+        'x_transformation_weight': flags.get('x_transformation_weight', 1.),
+        'v_scale_weight': flags.get('v_scale_weight', 1.),
+        'v_translation_weight': flags.get('v_translation_weight', 1.),
+        'v_transformation_weight': flags.get('v_transformation_weight', 1.),
+    })
 
-        if aw != '10':  # if aux_weight != 1
-            run_str += f'_aw{aw}'
+    all_ones = True
+    for key, val in weights.items():
+        new_flags[key] = val
+        if val != 1.:
+            all_ones = False
 
-        if d['NA'] != 'generic':  # if network_arch != generic
-            run_str += f"_{d['NA']}"
+    if not all_ones:
+        run_str += f'_nw'
+        for _, val in weights.items():
+            wstr = str(int(val)).replace('.', '')
+            run_str += wstr
+            #  run_str += f"{str(val).replace('.', '').rstrip('0')}"
 
-        if dp != '00':  # if dropout_prob > 0
-            run_str += f'_dp{dp}'
+    if new_flags['aux_weight'] != 1.:
+        aw = str(flags.get('aux_weight', 1.)).replace('.', '')
+        run_str += f'aw{aw}'
 
-        # if x_scale_weight or x_transl_weight or x_transf_weight != 1.
-        if d['XS'] != '1' or d['XT'] != '1' or d['XQ'] != '1':
-            run_str += f"_x{d['XS']}{d['XT']}{d['XQ']}"
+    if new_flags['charge_weight'] > 0:
+        qw = str(flags.get('charge_weight', 1.)).replace('.', '')
+        run_str += f'qw{qw}'
 
-        # if v_scale_weight or v_transl_weight or v_transf_weight != 1.
-        #  if d['VS'] != 1. or d['VT'] != 1. or d['VQ'] != 1.:
-        if d['VS'] != '1' or d['VT'] != '1' or d['VQ'] != '1':
-            run_str += f"_v{d['VS']}{d['VT']}{d['VQ']}"
+    if new_flags['dropout_prob'] > 0:
+        dp = str(flags.get('dropout_prob', 0)).replace('.', '')
+        run_str += f'dp{dp}'
 
-        # if using a fixed (non-trainable) step size:
-        if d['EF']:
-            run_str += f'_eps_fixed'
+    if new_flags['eps_fixed']:
+        run_str += f'_eps_fixed'
 
-        # if using batch normalization
-        if d['BN']:
-            run_str += '_bn'
+    if new_flags['batch_norm']:
+        run_str += '_bn'
 
-        if d['GL'] and d['NL']:  # if using gaussian_loss and nnehmc_loss
-            run_str += '_gnl'  # Gaussian + NNEHMC loss
+    if new_flags['use_gaussian_loss']:
+        run_str += '_gaussian_loss'
 
-        # if using gaussian_loss but not nnehmc_loss
-        elif d['GL'] and not d['NL']:
-            run_str += '_gl'
+    if new_flags['use_nnehmc_loss']:
+        run_str += '_nnehmc_loss'
 
-        # if using nnehmc_loss but not gaussian_loss
-        elif d['NL'] and not d['GL']:
-            run_str += '_nl'
+    if new_flags['clip_value'] > 0:
+        run_str += f'_clip{new_flags["clip_value"]}'
 
-    return run_str, d
+    if new_flags['zero_masks']:
+        run_str += f'_zero_masks'
+
+    return run_str, new_flags
 
 
 def _parse_gmm_flags(FLAGS):
@@ -384,8 +379,6 @@ def _parse_gmm_flags(FLAGS):
 
     if d['BN']:
         run_str += '_bn'
-
-
 
     if ['GL'] and d['NL']:
         run_str += '_gnl'  # Gaussian + NNEHMC loss
@@ -453,8 +446,6 @@ def create_log_dir(FLAGS, **kwargs):
         else:
             _dir = os.path.join(_log_dir, root_dir)
     root_log_dir = os.path.join(project_dir, _dir, day_str, run_str)
-    # if `root_log_dir` already exists, append '_%H%M' (hour, minute) at end
-    #  if os.path.isdir(root_log_dir):
     dirname = run_str + f'_{hour_str}'
     if os.path.isdir(os.path.join(project_dir, _dir, day_str, dirname)):
         dirname += '_1'
