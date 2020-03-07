@@ -86,6 +86,9 @@ class BaseModel:
 
         self.params = params
         self.log_dir = params.get('log_dir', None)
+        self.beta_init = params.get('beta_init', None)
+        self.beta_final = params.get('beta_final', None)
+        self.train_steps = params.get('train_steps', None)
 
         self.loss_weights = {}
         for key, val in self.params.items():
@@ -382,7 +385,7 @@ class BaseModel:
 
             dynamics = Dynamics(potential_fn=potential_fn, **kwargs)
 
-        tf.compat.v1.add_to_collection('dynamics_eps', dynamics.eps)
+        tf.add_to_collection('dynamics_eps', dynamics.eps)
 
         return dynamics
 
@@ -451,9 +454,7 @@ class BaseModel:
                     curerntly being trained.
         """
         def make_ph(name, shape=(), dtype=TF_FLOAT):
-            return tf.compat.v1.placeholder(dtype=dtype,
-                                            shape=shape,
-                                            name=name)
+            return tf.placeholder(dtype=dtype, shape=shape, name=name)
 
         with tf.name_scope('inputs'):
             if not tf.executing_eagerly():
