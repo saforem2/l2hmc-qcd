@@ -171,7 +171,7 @@ def count_trainable_params(out_file, log=False):
     io.log(f'Writing parameter counts to: {out_file}.')
     writer(80 * '-', out_file)
     total_params = 0
-    for var in tf.trainable_variables():
+    for var in tf.compat.v1.trainable_variables():
         # shape is an array of tf.Dimension
         shape = var.get_shape()
         writer(f'var: {var}', out_file)
@@ -191,10 +191,11 @@ def count_trainable_params(out_file, log=False):
 
 def train_setup(FLAGS, log_file=None, root_dir=None,
                 run_str=True, model_type='GaugeModel'):
+    """Setup for training run."""
     io.log(80 * '-')
     io.log("Starting training using L2HMC algorithm...")
-    tf.keras.backend.clear_session()
-    tf.reset_default_graph()
+    tf.compat.v1.keras.backend.clear_session()
+    tf.compat.v1.reset_default_graph()
 
     # ---------------------------------
     # Parse command line arguments;
@@ -207,7 +208,8 @@ def train_setup(FLAGS, log_file=None, root_dir=None,
         FLAGS_DICT = FLAGS
 
     #  params = FLAGS_DICT.copy()
-    params = {k: v for k, v in FLAGS_DICT.items()}
+    params = FLAGS_DICT.copy()
+    #  params = {k: v for k, v in FLAGS_DICT.items()}
 
     params['log_dir'] = io.create_log_dir(FLAGS,
                                           log_file=log_file,
@@ -268,6 +270,7 @@ def train_setup(FLAGS, log_file=None, root_dir=None,
 
 
 def check_reversibility(model, sess, net_weights=None, out_file=None):
+    """Check reversibility."""
     rand_samples = np.random.randn(*model.x.shape)
     if net_weights is None:
         net_weights = cfg.NetWeights(1., 1., 1., 1., 1., 1.)
