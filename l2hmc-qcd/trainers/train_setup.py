@@ -194,8 +194,8 @@ def train_setup(FLAGS, log_file=None, root_dir=None,
     """Setup for training run."""
     io.log(80 * '-')
     io.log("Starting training using L2HMC algorithm...")
-    tf.compat.v1.keras.backend.clear_session()
-    tf.compat.v1.reset_default_graph()
+    tf.keras.backend.clear_session()
+    tf.reset_default_graph()
 
     # ---------------------------------
     # Parse command line arguments;
