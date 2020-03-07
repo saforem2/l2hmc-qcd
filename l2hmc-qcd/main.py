@@ -62,7 +62,11 @@ from trainers.train_setup import (check_reversibility, count_trainable_params,
 if cfg.HAS_HOROVOD:
     import horovod.tensorflow as hvd
 
-tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.INFO)
+try:
+    tf.logging.set_verbosity(tf.logging.INFO)
+except AttributeError:
+    pass
+
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 
 SEP_STR = 80 * '-'  # + '\n'
