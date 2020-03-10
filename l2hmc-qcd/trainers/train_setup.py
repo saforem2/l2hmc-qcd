@@ -171,7 +171,7 @@ def count_trainable_params(out_file, log=False):
     io.log(f'Writing parameter counts to: {out_file}.')
     writer(80 * '-', out_file)
     total_params = 0
-    for var in tf.compat.v1.trainable_variables():
+    for var in tf.trainable_variables():
         # shape is an array of tf.Dimension
         shape = var.get_shape()
         writer(f'var: {var}', out_file)
