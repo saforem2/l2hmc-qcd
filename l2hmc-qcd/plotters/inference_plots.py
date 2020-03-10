@@ -177,8 +177,8 @@ def build_dataset(run_data, run_params):
             key = 'plaqs_diffs'
             arr = u1_plaq_exact(run_params['beta']) - arr
 
-        if 'charges' in key:
-            arr = np.around(arr)
+        #  if 'charges' in key:
+        #      arr = np.around(arr)
 
         rd_dict[key] = xr.DataArray(arr,
                                     dims=['chain', 'draw'],
@@ -268,7 +268,7 @@ def plot_trace(data, fname, title_str=None, filter_str=None):
             ]
 
     _ = az.plot_trace(data, var_names=var_names,
-                      compact=True, combined=True)
+                      compact=False, combined=False)
     fig = plt.gcf()
     if title_str is not None:
         fig.suptitle(title_str, fontsize=24, y=1.05)
