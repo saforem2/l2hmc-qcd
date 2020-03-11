@@ -129,9 +129,11 @@ class GaugeModel(BaseModel):
             'batch_size': self.batch_size,
             'zero_masks': self.zero_masks,
             '_input_shape': (self.batch_size, *self.lattice.links.shape),
+            'model_type': self._model_type,
         }
 
         dynamics = self._create_dynamics(potential_fn, **kwargs)
+        io.log(f'Dynamics._model_type: {dynamics._model_type}\n')
 
         return dynamics
 

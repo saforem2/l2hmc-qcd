@@ -89,6 +89,7 @@ class Dynamics(tf.keras.Model):
             if key != 'eps':  # want to use self.eps as tf.Variable
                 setattr(self, key, val)
 
+        self._model_type = params.get('model_type', None)
         self.x_dim = params.get('x_dim', None)
         self.batch_size = params.get('batch_size', None)
         self._input_shape = (self.batch_size, self.x_dim)
@@ -264,7 +265,6 @@ class Dynamics(tf.keras.Model):
                          beta,
                          weights,
                          is_training,
-                         model_type=None,
                          hmc=True):
         """Propose a new state and perform the accept/reject step.
 
@@ -293,7 +293,7 @@ class Dynamics(tf.keras.Model):
         accept reject step. Consequently, `out` refers to the result after the
         accept/reject.
         """
-        if model_type == 'GaugeModel':
+        if self._model_type == 'GaugeModel':
             x_init = tf.mod(x_init, 2 * np.pi, name='x_in_mod_2_pi')
 
         # Call `self.transition_kernel` in the forward direction,
@@ -534,6 +534,9 @@ class Dynamics(tf.keras.Model):
 
     def _update_x_forward(self, x, v, t, weights, training, masks):
         """Update x in the forward leapfrog step."""
+        if self._model_type == 'GaugeModel':
+            x = tf.mod(x, 2 * np.pi)
+
         mask, mask_inv = masks
 
         with tf.name_scope('update_xf'):
@@ -573,6 +576,9 @@ class Dynamics(tf.keras.Model):
 
     def _update_x_backward(self, x, v, t, weights, training, masks):
         """Update x in the backward lf step. Inverting the forward update."""
+        if self._model_type == 'GaugeModel':
+            x = tf.mod(x, 2 * np.pi)
+
         mask, mask_inv = masks
         with tf.name_scope('update_xb'):
             Sx, Tx, Qx = self.xnet([v, mask * x, t], training)
