@@ -44,6 +44,8 @@ SamplerData = namedtuple('SamplerData', ['data', 'dynamics_output'])
 
 
 # pylint:disable=invalid-name
+# pylint:disable=no-member
+
 def _gaussian(x, mu, sigma):
     norm = tf.cast(
         1. / tf.sqrt(2 * np.pi * sigma ** 2), dtype=TF_FLOAT
@@ -89,6 +91,8 @@ class BaseModel:
         self.beta_init = params.get('beta_init', None)
         self.beta_final = params.get('beta_final', None)
         self.train_steps = params.get('train_steps', None)
+        self.num_hidden1 = params.get('num_hidden1', None)
+        self.num_hidden2 = params.get('num_hidden2', None)
 
         self.loss_weights = {}
         for key, val in self.params.items():
