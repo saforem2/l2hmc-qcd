@@ -120,7 +120,7 @@ class BaseModel:
 
         self.optimizer = self._create_optimizer()
 
-    def build(self):
+    def build(self, params=None):
         """Build `tf.Graph` object containing operations for running model."""
         raise NotImplementedError
 
@@ -327,8 +327,7 @@ class BaseModel:
             xout = self.dynamics.apply_transition(self.x, self.beta,
                                                   self.net_weights,
                                                   self.train_phase,
-                                                  hmc=self._use_nnehmc,
-                                                  model_type=self._model_type)
+                                                  hmc=self._use_nnehmc)
 
             x_data = LFdata(xout['x_init'],
                             xout['x_proposed'],
@@ -351,8 +350,7 @@ class BaseModel:
             zout = self.dynamics.apply_transition(self.z, self.beta,
                                                   self.net_weights,
                                                   self.train_phase,
-                                                  hmc=self._use_nnehmc,
-                                                  model_type=self._model_type)
+                                                  hmc=self._use_nnehmc)
 
             z_data = LFdata(zout['x_init'],
                             zout['x_proposed'],
@@ -379,7 +377,6 @@ class BaseModel:
                 'x_dim': self.x_dim,
                 'batch_size': self.batch_size,
                 'zero_masks': self.zero_masks,
-                #  '_input_shape': self.x.shape
             })
             kwargs.update(params)
 

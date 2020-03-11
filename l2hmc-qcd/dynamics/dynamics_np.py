@@ -315,6 +315,9 @@ class DynamicsNP(object):
 
     def _update_x_forward(self, x, v, t, net_weights, masks):
         """Update x in the forward leapfrog step."""
+        if self._model_type == 'GaugeModel':
+            x = np.mod(x, 2 * np.pi)
+
         mask, mask_inv = masks
         Sx, Tx, Qx = self.xnet([v, mask * x, t])
 
@@ -346,6 +349,9 @@ class DynamicsNP(object):
 
     def _update_x_backward(self, x, v, t, net_weights, masks):
         """Update x in the backward lf step. Inverting the forward update."""
+        if self._model_type == 'GaugeModel':
+            x = np.mod(x, 2 * np.pi)
+
         mask, mask_inv = masks
         Sx, Tx, Qx = self.xnet([v, mask * x, t])
 
