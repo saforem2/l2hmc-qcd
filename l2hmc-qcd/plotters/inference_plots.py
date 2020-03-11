@@ -177,20 +177,18 @@ def build_dataset(run_data, run_params):
             key = 'plaqs_diffs'
             arr = u1_plaq_exact(run_params['beta']) - arr
 
-        #  if 'charges' in key:
-        #      arr = np.around(arr)
-
         rd_dict[key] = xr.DataArray(arr,
                                     dims=['chain', 'draw'],
                                     coords=[chains, draws])
-
-    #  rd_dict['charges_squared'] = rd_dict['charges'] ** 2
 
     charges = rd_dict['charges'].values.T
     tunneling_rate = calc_tunneling_rate(charges).T
     rd_dict['tunneling_rate'] = xr.DataArray(tunneling_rate,
                                              dims=['chain', 'draw'],
                                              coords=[chains, draws])
+    for key, val in rd_dict.items():
+        rd_dict[key] = val.dropna(dim='draw')
+
     dataset = xr.Dataset(rd_dict)
 
     return dataset
@@ -271,7 +269,7 @@ def plot_trace(data, fname, title_str=None, filter_str=None):
                       compact=False, combined=False)
     fig = plt.gcf()
     if title_str is not None:
-        fig.suptitle(title_str, fontsize=24, y=1.05)
+        fig.suptitle(title_str, fontsize='x-large', y=1.1)
     savefig(fig, fname)
 
 
@@ -303,8 +301,8 @@ def plot_posterior(data, fname, title_str=None, filter_str=None):
         var_names = list(set(var_names))
     _ = az.plot_posterior(data, var_names=var_names)
     fig = plt.gcf()
-    if title_str is not None:
-        fig.suptitle(title_str, fontsize=24, y=1.05)
+    #  if title_str is not None:
+    #      fig.suptitle(title_str, fontsize='xx-large', y=1.1)
     savefig(fig, fname)
 
 
@@ -402,7 +400,10 @@ def inference_plots(data_dict, params, run_params, **kwargs):
                             fname=fname, fig_dir=h_dir, title_str=title_str,
                             filter_str='hamiltonian')
 
-    dataset = build_dataset(run_data, run_params)
+    try:
+        dataset = build_dataset(run_data, run_params)
+    except:
+        import pudb; pudb.set_trace()
     #################################
     # Create ridgeplot of plaq diffs
     #################################
@@ -415,7 +416,7 @@ def inference_plots(data_dict, params, run_params, **kwargs):
                        ridgeplot_overlap=0.1,
                        combined=False)
     fig = plt.gcf()
-    fig.suptitle(title_str, fontsize='x-large', y=1.025)
+    fig.suptitle(title_str, fontsize='x-large', y=1.1)
     savefig(fig, rp_out_file)
     if out_dir is not None:
         rp_out_file_ = os.path.join(out_dir, f'{rp_fname}.pdf')
@@ -436,26 +437,42 @@ def inference_plots(data_dict, params, run_params, **kwargs):
     plaqs_therm = plaqs.T
     fig, _ = plot_autocorr(plaqs_therm, params, run_params, name='plaqs')
 
-    ####################################################
-    # Create traceplot + posterior plot of observables
-    ####################################################
-    var_names = ['plaqs_diffs', 'accept_prob',
-                 'charges', 'tunneling_rate',
-                 'dx_out', 'dx_proposed']
-    if hasattr(dataset, 'dx'):
-        var_names.append('dx')
-
+    ###############################################
+    # Create plots for `dx_out` and `dx_proposed`
+    ###############################################
     dx_dir = os.path.join(fig_dir, 'dx_plots')
     io.check_else_make_dir(dx_dir)
     traceplot_posterior(dataset, name='dx', fname=fname, fig_dir=dx_dir,
                         title_str=title_str, filter_str='dx')
 
+    #########################################
+    # Create plots for dynamics reverse data
+    #########################################
+    reverse_dir = os.path.join(fig_dir, 'reverse_plots')
+    io.check_else_make_dir(reverse_dir)
+    traceplot_posterior(dataset, name='reverse_diffs',
+                        fname=fname, fig_dir=reverse_dir,
+                        title_str=title_str,
+                        filter_str=['xdiff_r', 'vdiff_r'])
+                        #  filter_str=['xdiff_r0', 'xdiff_r1',
+                        #              'vdiff_r0', 'vdiff_r1'])
+
+    #############################################################
+    # Create plots for `sumlogdet_out` and `sumlogdet_proposed`
+    #############################################################
     sld_dir = os.path.join(fig_dir, 'sumlogdet_plots')
     io.check_else_make_dir(sld_dir)
     traceplot_posterior(dataset, name='sumlogdet',
                         fname=fname, fig_dir=sld_dir,
                         title_str=title_str,
                         filter_str='sumlogdet')
+
+    ####################################################
+    # Create traceplot + posterior plot of observables
+    ####################################################
+    var_names = ['plaqs_diffs', 'accept_prob',
+                 'charges', 'tunneling_rate',
+                 'dx_out', 'dx_proposed']
 
     traceplot_posterior(dataset, '', fname=fname, fig_dir=fig_dir,
                         title_str=title_str, filter_str=var_names)
