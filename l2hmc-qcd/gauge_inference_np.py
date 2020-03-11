@@ -19,9 +19,10 @@ import numpy as np
 import utils.file_io as io
 
 from config import NetWeights
-from lattice.lattice import u1_plaq_exact
+from lattice.lattice import u1_plaq_exact, GaugeLattice
 from runners.runner_np import (_update_params, _get_eps, create_dynamics,
                                create_lattice, load_pkl, run_inference_np)
+from runners.runner_np_obj import RunnerNP
 from plotters.seaborn_plots import plot_setup
 from plotters.inference_plots import inference_plots, build_dataset
 from utils.file_io import timeit
@@ -31,6 +32,8 @@ from loggers.inference_summarizer import InferenceSummarizer
 SEPERATOR = 80 * '-'
 
 mpl.rcParams['axes.formatter.limits'] = -4, 4
+
+# pylint:disable=invalid-name,redefined-outer-name,too-many-locals
 
 
 def _get_title(params, run_params):
@@ -74,10 +77,8 @@ def make_csv(run_data, energy_data, run_params):
         if arr.shape[0] != _shape[0]:
             factor = int(_shape[0] / arr.shape[0])
             arr = np.array(factor * [arr]).flatten()
-            #  arr = np.squeeze(np.array(
-            #      int((_shape[0]/arr.shape[0])) *[arr]))
-        #  if arr.shape[0] == _shape[0] / 2:
-        #      arr = np.squeeze(np.array([arr for _ in _shape]))
+        if arr.shape[0] == _shape[0] / 2:
+            arr = np.squeeze(np.array([arr for _ in _shape]))
         if r_key == 'plaqs':
             csv_dict['plaqs_diffs'] = plaq_exact - np.squeeze(np.array(r_val))
         else:
@@ -104,39 +105,20 @@ def make_csv(run_data, energy_data, run_params):
 @timeit
 def main(args):
     """Perform tensorflow-independent inference on a trained model."""
-    log_dir = getattr(args, 'log_dir', None)
-    if log_dir is None:
+    #  log_dir = getattr(args, 'log_dir', None)
+    #  if log_dir is None:
+    if args.log_dir is None:
         params_file = os.path.join(os.getcwd(), 'params.pkl')
     else:
-        log_dir = os.path.abspath(log_dir)
-        params_file = os.path.join(log_dir, 'parameters.pkl')
+        log_dir = os.path.abspath(args.log_dir)
+        params_file = os.path.join(args.log_dir, 'parameters.pkl')
 
     params = load_pkl(params_file)
     log_dir = params['log_dir']
 
-    eps = _get_eps(log_dir) if args.eps is None else args.eps
+    if args.num_steps is None:
+        num_steps = params['num_steps']
 
-    params = _update_params(params,
-                            eps=eps,
-                            num_steps=args.num_steps,
-                            batch_size=args.batch_size,
-                            num_singular_values=args.num_singular_values)
-
-    lattice = create_lattice(params)
-    _fn = lattice.calc_actions_np
-
-    log_dir = params['log_dir']
-    dynamics = create_dynamics(log_dir,
-                               potential_fn=_fn,
-                               x_dim=lattice.x_dim,
-                               hmc=args.hmc,
-                               eps=eps,
-                               num_steps=args.num_steps,
-                               batch_size=args.batch_size,
-                               model_type='GaugeModel',
-                               direction=args.direction,
-                               zero_masks=args.zero_masks,
-                               num_singular_values=args.num_singular_values)
     if args.hmc:
         net_weights = NetWeights(0, 0, 0, 0, 0, 0)
     else:
@@ -146,41 +128,82 @@ def main(args):
                                  v_scale=args.v_scale_weight,
                                  v_translation=args.v_translation_weight,
                                  v_transformation=args.v_transformation_weight)
+
+    eps = _get_eps(log_dir) if args.eps is None else args.eps
+
     run_params = {
-        'beta': args.beta,
-        'trained_eps': dynamics.eps,
-        'args_eps': args.eps,
         'eps': eps,
+        'num_steps': num_steps,
         'net_weights': net_weights,
-        'run_steps': args.run_steps,
-        'num_steps': dynamics.num_steps,
-        'batch_size': lattice.batch_size,
-        'direction': args.direction,
-        'mix_samplers': args.mix_samplers,
+        'batch_size': args.batch_size,
+        'init': args.init,
+        'beta': args.beta,
         'zero_masks': args.zero_masks,
+        'direction': args.direction,
+        'run_steps': args.run_steps,
+        'print_steps': args.print_steps,
+        'mix_samplers': args.mix_samplers,
         'num_singular_values': args.num_singular_values,
+        'reverse_steps': 1000,
     }
 
     for key, val in args.__dict__.items():
         if key not in run_params:
             run_params[key] = val
+
+    #  params = _update_params(params,
+    #                          eps=eps,
+    #                          num_steps=args.num_steps,
+    #                          batch_size=args.batch_size,
+    #                          num_singular_values=args.num_singular_values)
+    # `time_size`, `space_size` are fixed from `params`;
+    # `batch_size` controlled through `--batch_size` command-line arg
+    lattice = GaugeLattice(batch_size=args.batch_size,
+                           time_size=params['time_size'],
+                           space_size=params['space_size'],
+                           dim=params['dim'], link_type='U1')
+
+    #  lattice = create_lattice(params)
+    dynamics = create_dynamics(log_dir,
+                               potential_fn=lattice.calc_actions_np,
+                               x_dim=lattice.x_dim,
+                               eps=eps,
+                               hmc=args.hmc,
+                               num_steps=args.num_steps,
+                               batch_size=lattice.batch_size,
+                               model_type='GaugeModel',
+                               direction=args.direction,
+                               zero_masks=args.zero_masks,
+                               num_singular_values=args.num_singular_values)
+
+    # ----------------------------------------------
+    # TODO: Add `reverse_steps` to argument parser
+    # ----------------------------------------------
     outputs = run_inference_np(log_dir, dynamics, lattice,
-                               run_params, init=args.init, skip=False,
-                               print_steps=args.print_steps,
-                               mix_samplers=args.mix_samplers)
-    run_data = outputs['data']['run_data']
-    energy_data = outputs['data']['energy_data']
-    run_params = outputs['run_params']
+                               run_params, save=True)
 
-    make_csv(run_data, energy_data, run_params)
-
-    run_params = outputs['run_params']
+    #  observables = {
+    #      'charges': lambda x: lattice.calc_top_charges_np(samples=x),
+    #      'plaqs_diffs': lambda x, b: (u1_plaq_exact(b)
+    #                                   - lattice.calc_plaqs_np(samples=x)),
+    #  }
+    #  run_data = outputs['data']['run_data']
+    #  energy_data = outputs['data']['energy_data']
+    #  run_params = outputs['run_params']
+    #
+    #  run_params = outputs['run_params']
     dataset, energy_dataset = inference_plots(outputs['data'], params,
                                               outputs['run_params'],
                                               runs_np=True)
 
     summarizer = InferenceSummarizer(run_params['run_dir'])
     therm_data, tunn_stats = summarizer.log_summary(n_boot=10000)
+
+    #  try:
+    #      make_csv(run_data, energy_data, run_params)
+    #  except:
+    #      import pudb; pudb.set_trace()
+
 
     return run_params, outputs['data'], dataset
 

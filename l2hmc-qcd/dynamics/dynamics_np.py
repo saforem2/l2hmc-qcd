@@ -44,11 +44,28 @@ def get_reduced_weights(weights, n=10):
 
 # pylint: disable=too-many-instance-attributes,too-many-locals
 # pylint: disable=useless-object-inheritance
+
+
 class DynamicsNP(object):
     """Implements tools for running tensorflow-independent inference."""
-    def __init__(self, potential_fn, weights, hmc=False, **params):
-        self._model_type = params.get('model_type', None)
+    def __init__(self, potential_fn, weights,
+                 hmc=False, model_type=None, **params):
+        """Init.
+
+        Args:
+            potential_fn (callable): Potential energy function.
+            weights (dict): Dictionary of weights, from `log_dir/weights.pkl`
+                file where `log_dir` contains the trained model.
+            hmc (bool): Run generic HMC (faster)
+            model_type (str): Model type. (if 'GaugeModel', run extra ops)
+            params (dict): Dictionary of parameters used.
+        """
+        if model_type is None:
+            model_type = 'None'
+
         self.potential = potential_fn
+        self._model_type = model_type
+
         if hmc:
             self.xnet, self.vnet = self.hmc_networks()
         else:
@@ -60,7 +77,6 @@ class DynamicsNP(object):
         self._input_shape = params.get('_input_shape', None)
         self.batch_size = params.get('batch_size', None)
         self.eps = params.get('eps', None)
-        self.x_dim = params.get('x_dim', None)
         self.num_steps = params.get('num_steps', None)
         self.zero_masks = params.get('zero_masks', False)
         self.masks = self.build_masks()
@@ -144,13 +160,13 @@ class DynamicsNP(object):
 
         return outputs
 
-    def apply_transition(self, x, beta, net_weights, model_type=None):
+    def apply_transition(self, x, beta, net_weights):
         """Propose a new state and perform the accept/reject step."""
         forward = self._forward
         if forward is None:
             forward = (np.random.uniform() < 0.5)
 
-        if model_type == 'GaugeModel':
+        if self._model_type == 'GaugeModel':
             x = np.mod(x, 2 * np.pi)
 
         v_init = np.random.normal(size=x.shape)
@@ -158,6 +174,16 @@ class DynamicsNP(object):
         x_, v_, px, sumlogdet = self.transition_kernel(*state_init,
                                                        net_weights,
                                                        forward=forward)
+        if self._model_type == 'GaugeModel':
+            x_ = np.mod(x_, 2 * np.pi)
+
+        # Check reversibility using proposed and initial states
+        state_prop = State(x_, v_, beta)
+        xdiff_r, vdiff_r = self.check_reversibility(state_init, state_prop,
+                                                    forward, net_weights)
+        #  print(f'xdiff_r.shape: {xdiff_r.shape}')
+        #  print(f'vdiff_r.shape: {vdiff_r.shape}')
+
         mask_a, mask_r, rand_num = self._get_accept_masks(px)
         x_out = x_ * mask_a[:, None] + x * mask_r[:, None]
         v_out = v_ * mask_a[:, None] + v_init * mask_r[:, None]
@@ -177,10 +203,41 @@ class DynamicsNP(object):
             'mask_a': mask_a,
             'mask_r': mask_r,
             'rand_num': rand_num,
+            'xdiff_r': xdiff_r,
+            'vdiff_r': vdiff_r,
+            #  'xdiff_r0': xdiff_r[..., 0],
+            #  'xdiff_r1': xdiff_r[..., 1],
+            #  'vdiff_r0': vdiff_r[..., 0],
+            #  'vdiff_r1': vdiff_r[..., 1],
         }
 
         return outputs
 
+    def check_reversibility(self, state_init, state_prop,
+                            forward, net_weights):
+        """Check reversibility.
+
+        NOTE: `state_init = (x_init, v_init, beta)`,
+
+        Explicitly:
+            1. Run MD:
+                (state_init, d=forward) --> (state_prop, d=forward)
+            2. Flip the direction and run MD:
+                (state_prop, d=(not forward)) --> (state_r, d=(not forward))
+            3. Check differences:
+                dx = (state_r.x - state_init.x)
+                dv = (state_r.v - state_init.v)
+        """
+        x_r, v_r, _, _ = self.transition_kernel(*state_prop,
+                                                net_weights,
+                                                forward=(not forward))
+        if self._model_type == 'GaugeModel':
+            x_r = np.mod(x_r, 2 * np.pi)
+
+        dx = x_r - state_init.x
+        dv = v_r - state_init.v
+
+        return dx, dv
     def apply_transition_both(self, x, beta, net_weights, model_type=None):
         """Propose a new state and perform the accept/reject step."""
         if model_type == 'GaugeModel':
@@ -197,8 +254,6 @@ class DynamicsNP(object):
                                                          net_weights,
                                                          forward=False)
 
-        # TODO: Instead of running forward and backward simultaneously,
-        # use np.choose([-1, 1]) to determine which direction gets ran
         mask_f, mask_b = self._get_direction_masks()
         v_init = (vf_init * mask_f[:, None] + vb_init * mask_b[:, None])
         x_prop = xf * mask_f[:, None] + xb * mask_b[:, None]
