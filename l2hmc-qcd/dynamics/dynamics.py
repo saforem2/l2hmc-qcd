@@ -517,6 +517,9 @@ class Dynamics(tf.keras.Model):
                 v' = v * exp(0.5*eps*Sv) - 0.5*eps*[grad*exp(eps*Qv) + Tv]
         """
         with tf.name_scope('update_vf'):
+            if self._model_type == 'GaugeModel':
+                x = tf.mod(x, 2 * np.pi)
+
             grad = self.grad_potential(x, beta)
             Sv, Tv, Qv = self.vnet([x, grad, t], training)
 
@@ -557,6 +560,9 @@ class Dynamics(tf.keras.Model):
     def _update_v_backward(self, x, v, beta, t, weights, training):
         """Update v in the backward leapfrog step. Invert the forward update"""
         with tf.name_scope('update_vb'):
+            if self._model_type == 'GaugeModel':
+                x = tf.mod(x, 2 * np.pi)
+
             grad = self.grad_potential(x, beta)
             Sv, Tv, Qv = self.vnet([x, grad, t], training)
 
