@@ -9,27 +9,24 @@ object.
 Author: Sam Foreman (github: @saforem2)
 Date: 01/07/2020
 """
+# pylint: disable=too-many-locals
+# pylint: disable=useless-object-inheritance
+# pylint: disable=too-many-instance-attributes,
+# pylint: disable=invalid-name, too-many-arguments
+# pylint:disable=no-member
 from __future__ import absolute_import, division, print_function
 
 from collections import namedtuple
 
-from config import State, NP_FLOAT
+import autograd.numpy as np
 
-from utils.file_io import timeit  # noqa: F401
+from autograd import elementwise_grad
+
+from config import NP_FLOAT, State
 from network.generic_net_np import GenericNetNP
 
-HAS_AUTOGRAD = False
-try:
-    import autograd.numpy as np
-
-    from autograd import elementwise_grad
-
-    HAS_AUTOGRAD = True
-except ImportError:
-    import numpy as np
-
-# pylint: disable=invalid-name, too-many-arguments
 Weights = namedtuple('Weights', ['w', 'b'])
+
 
 def reduced_weight_matrix(W, n=10):
     """Use the first n singular vals to reconstruct the original matrix W."""
@@ -41,9 +38,6 @@ def reduced_weight_matrix(W, n=10):
 
 def get_reduced_weights(weights, n=10):
     """Keep only the first `n` singular values for the weight matrices."""
-
-# pylint: disable=too-many-instance-attributes,too-many-locals
-# pylint: disable=useless-object-inheritance
 
 
 class DynamicsNP(object):
@@ -181,14 +175,13 @@ class DynamicsNP(object):
         state_prop = State(x_, v_, beta)
         xdiff_r, vdiff_r = self.check_reversibility(state_init, state_prop,
                                                     forward, net_weights)
-        #  print(f'xdiff_r.shape: {xdiff_r.shape}')
-        #  print(f'vdiff_r.shape: {vdiff_r.shape}')
 
         mask_a, mask_r, rand_num = self._get_accept_masks(px)
         x_out = x_ * mask_a[:, None] + x * mask_r[:, None]
         v_out = v_ * mask_a[:, None] + v_init * mask_r[:, None]
         sumlogdet_out = sumlogdet * mask_a
 
+        # TODO: Simplify outputs by grouping (x, v, beta) into State(s)
         outputs = {
             'x_init': x,
             'v_init': v_init,
@@ -205,13 +198,83 @@ class DynamicsNP(object):
             'rand_num': rand_num,
             'xdiff_r': xdiff_r,
             'vdiff_r': vdiff_r,
-            #  'xdiff_r0': xdiff_r[..., 0],
-            #  'xdiff_r1': xdiff_r[..., 1],
-            #  'vdiff_r0': vdiff_r[..., 0],
-            #  'vdiff_r1': vdiff_r[..., 1],
         }
 
         return outputs
+
+    def volume_transformation(self, state1, net_weights):
+        """
+        Check that the sampler is 'symplectic' (volume-preserving).
+
+        MD update starting from from `s1 = state_init = (x1, v1, d)`:
+
+            `s1 --> s2 = (x2, v2, d)`
+
+        Want to see if, when starting from a slightly perturbed initial
+        state, the (augmented) leapfrog sampler produces a slightly
+        perturbed output.
+
+        If the sampler is symplectic, plotting the RMS difference of the
+        outputs vs the RMS diff of the inputs should be correlated with a slope
+        of 1.
+
+        Explicitly, perturb the initial state `s1`:
+
+            `s1 --> s1 + ds1 = (x1 + dx1, v1 + dv1, d)`
+
+        We know that running MD on `s1` gives `s2`, so we need to check that
+        running MD on `s1 + ds1`:
+
+            `s1 + ds1 --> _s2 + _ds2 = (_x2 + dx2, _v2 + dv2, d)`
+
+        if symplectic, we should have `dx2 / dx1 ~ 1` and `dv2 / dv1 ~ 1`.
+
+        Args:
+            state1 (State object): Initial (starting state).
+            net_weights (NetWeights object): Multiplicative scaling factors for
+                network components.
+        Returns:
+            (dx1, dv1): Tuple consisting of the `perturbation` to the initial
+                state.
+            (dx2, dv2): Tuple consisting of the `perturbation` of the output
+                state, after accept/reject. Computed as:
+                    ```
+                    dx2 = x2 - _x2
+                    dv2 = v2 - _v2
+                    ```
+        """
+        forward = self._forward
+        if forward is None:
+            forward = (np.random.uniform() < 0.5)
+
+        x2, v2, _, _ = self.transition_kernel(*state1, net_weights,
+                                              forward=forward)
+
+        # Perturb the initial state
+        eta = 1e-2
+        dx1 = eta * np.random.randn(*state1.x.shape)
+        dv1 = eta * np.random.randn(*state1.v.shape)
+        x1_ = state1.x + dx1
+        v1_ = state1.v + dv1
+
+        if self._model_type == 'GaugeModel':
+            x1_ = np.mod(x1_, 2 * np.pi)
+            x2 = np.mod(x2, 2 * np.pi)
+
+        state1_ = State(x=x1_, v=v1_, beta=state1.beta)
+        x2_, v2_, _, _ = self.transition_kernel(*state1_, net_weights,
+                                                forward=forward)
+        if self._model_type == 'GaugeModel':
+            x2_ = np.mod(x2_, 2 * np.pi)
+
+        diffs = {
+            'dx_in': dx1,
+            'dv_in': dv1,
+            'dx_out': (x2_ - x2),
+            'dv_out': (v2_ - v2),
+        }
+
+        return diffs
 
     def check_reversibility(self, state_init, state_prop,
                             forward, net_weights):
@@ -238,6 +301,7 @@ class DynamicsNP(object):
         dv = v_r - state_init.v
 
         return dx, dv
+
     def apply_transition_both(self, x, beta, net_weights, model_type=None):
         """Propose a new state and perform the accept/reject step."""
         if model_type == 'GaugeModel':
@@ -267,6 +331,7 @@ class DynamicsNP(object):
         v_out = v_prop * mask_a[:, None] + v_init * mask_r[:, None]
         sumlogdet_out = sumlogdet_prop * mask_a
 
+        # TODO: Simplify outputs via `state_init, state_prop, state_out, ...`
         outputs = {
             'x_init': x,
             'v_init': v_init,
@@ -355,6 +420,9 @@ class DynamicsNP(object):
 
     def _update_v_forward(self, x, v, beta, t, net_weights):
         """Update v in the forward leapfrog step."""
+        if self._model_type == 'GaugeModel':
+            x = np.mod(x, 2 * np.pi)
+
         grad = self.grad_potential(x, beta)
         Sv, Tv, Qv = self.vnet([x, grad, t])
 
@@ -388,6 +456,9 @@ class DynamicsNP(object):
 
     def _update_v_backward(self, x, v, beta, t, net_weights):
         """Update v in the backward lf step. Inverting the forward update."""
+        if self._model_type == 'GaugeModel':
+            x = np.mod(x, 2 * np.pi)
+
         grad = self.grad_potential(x, beta)
         Sv, Tv, Qv = self.vnet([x, grad, t])
 
@@ -527,12 +598,11 @@ class DynamicsNP(object):
         return m, 1. - m
 
     def grad_potential(self, x, beta):
-        if HAS_AUTOGRAD:
-            grad_fn = elementwise_grad(self.potential_energy, 0)
-            #  grad_fn = grad(self.potential_energy, 0)
-        else:
-            raise ModuleNotFoundError('Unable to load autodiff library. '
-                                      'Exiting.')
+        """Caclulate the element wise gradient of the potential energy fn."""
+        grad_fn = elementwise_grad(self.potential_energy, 0)
+        #  if HAS_JAX:
+        #      grad_fn = jax.vmap(jax.grad(self.potential_energy, argnums=0))
+        #  grad_fn = grad(self.potential_energy, 0)
 
         return grad_fn(x, beta)
 
