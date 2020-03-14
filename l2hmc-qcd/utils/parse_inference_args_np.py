@@ -93,6 +93,21 @@ def parse_args():
                               (i.e. m = [1, 1, ..., 1] mb = [0, 0, ..., 0]) for
                               `x` sub-updates in L2HMC update."""))
 
+    parser.add_argument('--symplectic_check',
+                        dest='symplectic_check',
+                        action='store_true',
+                        required=False,
+                        help=("""Flag that when passed will run additional
+                              volume scaling analysis to test if the sampler is
+                              symplectic."""))
+
+    parser.add_argument('--dont_save',
+                        dest='dont_save',
+                        action='store_true',
+                        required=False,
+                        help=("""Flag that when passed will prevent inference
+                              data from being saved after completing run."""))
+
     parser.add_argument("--print_steps",
                         dest="print_steps",
                         type=int,
