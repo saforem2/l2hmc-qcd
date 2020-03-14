@@ -6,32 +6,30 @@ Contains helper methods for plotting inference results.
 Author: Sam Foreman (github: @saforem2)
 Date: 01/15/2020
 """
+# pylint:disable=too-many-locals,too-many-arguments,invalid-name,
+# pylint:disable=too-many-arguments,too-many-statements
 import os
 
 import arviz as az
 import numpy as np
-import xarray as xr
 import seaborn as sns
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 
 import utils.file_io as io
 
-from lattice.lattice import u1_plaq_exact
 from plotters.seaborn_plots import plot_setup
 
 sns.set_palette('bright')
 
 HEADER = 80 * '-'
 SEPERATOR = 80 * '-'
+MARKERS = 10 * ['o', 'v', '^', '<', '>', 's', 'd', '*', '+', 'x']
 
 mpl.rcParams['axes.formatter.limits'] = -4, 4
 
-# pylint:disable=too-many-locals,too-many-arguments,invalid-name,
-# pylint:disable=too-many-arguments,too-many-statements
-
-
 def savefig(fig, out_file):
+    """Save `fig` to `out_file`."""
     io.log(HEADER)
     io.log(f'Saving figure to: {out_file}.')
     fig.savefig(out_file, dpi=200, bbox_inches='tight')
@@ -97,103 +95,6 @@ def calc_tunneling_rate(charges):
     return tunneling_rate
 
 
-def build_energy_dataset(energy_data):
-    """Build `xarray.Datset` containing `energy_data` for plotting."""
-    ed_dict = {}
-    for key, val in energy_data.items():
-        arr, steps = therm_arr(np.array(val))
-        arr = arr.T
-        ed_dict[key] = xr.DataArray(arr, dims=['chain', 'draw'],
-                                    coords=[np.arange(arr.shape[0]), steps])
-    dataset = xr.Dataset(ed_dict)
-
-    return dataset
-
-
-def build_energy_diffs_dataset(energy_data):
-    """Build xarray.Dataset containing energy difference data for plotting."""
-    def _ediff(key1, key2):
-        return np.array(energy_data[key1]) - np.array(energy_data[key2])
-
-    denergy_data = {
-        'dpotential_prop_init': _ediff('potential_proposed', 'potential_init'),
-        'dpotential_out_init': _ediff('potential_out', 'potential_init'),
-        'dpotential_out_prop': _ediff('potential_out', 'potential_proposed'),
-        'dkinetic_prop_init': _ediff('kinetic_proposed', 'kinetic_init'),
-        'dkinetic_out_init': _ediff('kinetic_out', 'kinetic_init'),
-        'dkinetic_out_prop': _ediff('kinetic_out', 'kinetic_proposed'),
-        'dhamiltonian_prop_init': _ediff('hamiltonian_proposed',
-                                         'hamiltonian_init'),
-        'dhamiltonian_out_init': _ediff('hamiltonian_out', 'hamiltonian_init'),
-        'dhamiltonian_out_prop': _ediff('hamiltonian_out',
-                                        'hamiltonian_proposed')
-    }
-
-    de_dict = {}
-    for key, val in denergy_data.items():
-        arr, steps = therm_arr(np.array(val))
-        arr = arr.T
-        de_dict[key] = xr.DataArray(arr, dims=['chain', 'draw'],
-                                    coords=[np.arange(arr.shape[0]), steps])
-
-    dataset = xr.Dataset(de_dict)
-
-    return dataset
-
-
-def build_energy_transition_dataset(energy_data):
-    """Build xarray.Dataset containing `Ei - <Ei>` for plotting."""
-    data_dict = {}
-    for key, val in energy_data.items():
-        arr, steps = therm_arr(np.array(val))
-        arr -= np.mean(arr, axis=0)
-        arr = arr.T
-        key_ = f'{key}_minus_avg'
-        data_dict[key_] = xr.DataArray(arr, dims=['chain', 'draw'],
-                                       coords=[np.arange(arr.shape[0]), steps])
-
-    dataset = xr.Dataset(data_dict)
-
-    return dataset
-
-
-def build_dataset(run_data, run_params):
-    """Build dataset."""
-    rd_dict = {}
-    for key, val in run_data.items():
-        if 'mask' in key:
-            continue
-        if 'forward' in key:
-            continue
-
-        if len(np.array(val).shape) < 2:
-            continue
-
-        arr, draws = therm_arr(np.array(val))
-        arr = arr.T
-        chains = np.arange(arr.shape[0])
-
-        if 'plaqs' in key:
-            key = 'plaqs_diffs'
-            arr = u1_plaq_exact(run_params['beta']) - arr
-
-        rd_dict[key] = xr.DataArray(arr,
-                                    dims=['chain', 'draw'],
-                                    coords=[chains, draws])
-
-    charges = rd_dict['charges'].values.T
-    tunneling_rate = calc_tunneling_rate(charges).T
-    rd_dict['tunneling_rate'] = xr.DataArray(tunneling_rate,
-                                             dims=['chain', 'draw'],
-                                             coords=[chains, draws])
-    for key, val in rd_dict.items():
-        rd_dict[key] = val.dropna(dim='draw')
-
-    dataset = xr.Dataset(rd_dict)
-
-    return dataset
-
-
 def _check_existing(out_dir, fname):
     """Check if `fname` exists in `out_dir`. If so, append time to `fname`."""
     if os.path.isfile(os.path.join(out_dir, f'{fname}.pdf')):
@@ -204,9 +105,9 @@ def _check_existing(out_dir, fname):
     return fname
 
 
-def plot_reverse_data(reverse_data, params, run_params, **kwargs):
+def plot_reverse_data(run_data, params, **kwargs):
     """Plot reversibility results."""
-    run_str = run_params['run_str']
+    run_str = run_data.run_params['run_str']
     log_dir = params['log_dir']
     runs_np = kwargs.get('runs_np', True)
     if runs_np:
@@ -218,14 +119,14 @@ def plot_reverse_data(reverse_data, params, run_params, **kwargs):
     io.check_else_make_dir(fig_dir)
     out_dir = kwargs.get('out_dir', None)
     try:
-        fname, title_str, _ = plot_setup(log_dir, run_params)
+        fname, title_str, _ = plot_setup(log_dir, run_data.run_params)
     except FileNotFoundError:
         return None, None
 
     fname = f'{fname}_reversibility_hist'
     out_file = os.path.join(fig_dir, f'{fname}.pdf')
     fig, ax = plt.subplots()
-    for key, val in reverse_data.items():
+    for key, val in run_data.reverse_data.items():
         sns.kdeplot(np.array(val).flatten(), shade=True, label=key, ax=ax)
     ax.legend(loc='best')
     ax.set_title(title_str)
@@ -238,6 +139,60 @@ def plot_reverse_data(reverse_data, params, run_params, **kwargs):
         fig.savefig(fout, dpi=200, bbox_inches='tight')
 
     return fig, ax
+
+
+def _plot_volume_diff(drms_in, drms_out, name, out_file, title_str=None):
+    """Plot `rms_diff_out` vs. `rms_diff_in`."""
+    batch_size = drms_in.shape[0]
+    fig, ax = plt.subplots()
+    if batch_size < 10:
+        dalpha = 0.1
+    if 10 < batch_size < 20:
+        dalpha = 0.05
+    if batch_size > 20:
+        dalpha = 0.01
+    for idx in range(batch_size):
+        ax.plot(drms_in[idx], drms_out[idx],
+                ls='', marker=MARKERS[idx], markersize=4.,
+                alpha=(1. - idx * dalpha),
+                fillstyle='none', label=f'sample {idx}')
+    #  if name == 'x':
+    #      #  ax.axhline(y=3 * np.pi / 4, label=r"$3\pi/4$")
+    #      ax.axhline(y=2*np.pi/3, label=r"$\frac{2\pi}{3}$")
+    #      ax.axhline(y=np.pi, label=r"$\pi$")
+    ax.set_xlabel(f'd{name}_rms_in', fontsize='large')
+    ax.set_ylabel(f'd{name}_rms_out', fontsize='large')
+    ax.legend(loc='best')
+    if title_str is not None:
+        ax.set_title(title_str, fontsize='x-large')
+    io.log(f'Saving {name} volume diffs to: {out_file}.')
+    plt.savefig(out_file, dpi=400, bbox_inches='tight')
+
+    return fig, ax
+
+
+def plot_volume_diffs(volume_diffs, fig_dir, title_str=None):
+    """Plot RMS diff of the output pert. vs. the RMS diff of the input pert."""
+    def rms(x):
+        x = np.array(x).transpose((1, 0, -1))
+        return np.sqrt(np.mean(x ** 2, axis=-1))
+
+    dx_in_rms = rms(volume_diffs['dx_in'])
+    dv_in_rms = rms(volume_diffs['dv_in'])
+    dx_out_rms = rms(volume_diffs['dx_out'])
+    dv_out_rms = rms(volume_diffs['dv_out'])
+
+    out_dir = os.path.join(fig_dir, 'volume_diffs')
+    io.check_else_make_dir(out_dir)
+
+    xfile = os.path.join(out_dir, 'x_volume_diffs.pdf')
+    _, _ = _plot_volume_diff(dx_in_rms, dx_out_rms,
+                             name='x', out_file=xfile,
+                             title_str=title_str)
+    vfile = os.path.join(out_dir, 'v_volume_diffs.pdf')
+    _, _ = _plot_volume_diff(dv_in_rms, dv_out_rms,
+                             name='v', out_file=vfile,
+                             title_str=title_str)
 
 
 def plot_trace(data, fname, title_str=None, filter_str=None):
@@ -331,12 +286,9 @@ def traceplot_posterior(dataset, name, fname, fig_dir,
                    filter_str=filter_str)
 
 
-def inference_plots(data_dict, params, run_params, **kwargs):
+def inference_plots(run_data, params, **kwargs):
     """Create trace plots of lattice observables and energy data."""
-    run_data = data_dict.get('run_data', None)
-    energy_data = data_dict.get('energy_data', None)
-    reverse_data = data_dict.get('reverse_data', None)
-    run_str = run_params['run_str']
+    run_str = run_data.run_params['run_str']
     log_dir = params['log_dir']
     runs_np = kwargs.get('runs_np', True)
     if runs_np:
@@ -351,59 +303,67 @@ def inference_plots(data_dict, params, run_params, **kwargs):
     dataset = None
     energy_dataset = None
     try:
-        fname, title_str, _ = plot_setup(log_dir, run_params)
+        fname, title_str, _ = plot_setup(log_dir, run_data.run_params)
     except FileNotFoundError:
         return dataset, energy_dataset
+
+    ##############################################################
+    # Symplectic check:
+    # -----------------
+    # Look at how the sampler transforms regions of phase space.
+    ##############################################################
+    if run_data.run_params['symplectic_check']:
+        plot_volume_diffs(run_data.volume_diffs, fig_dir, title_str=title_str)
 
     ####################################################
     # Create traceplot + possterior plot of energy data
     ####################################################
-    if energy_data is not None:
-        energy_dataset = build_energy_dataset(energy_data)
-        pe_dir = os.path.join(fig_dir, 'potential_plots')
-        io.check_else_make_dir(pe_dir)
-        traceplot_posterior(energy_dataset, name='potential',
-                            fname=fname, fig_dir=pe_dir,
-                            title_str=title_str,
-                            filter_str='potential')
-        ke_dir = os.path.join(fig_dir, 'kinetic_plots')
-        io.check_else_make_dir(ke_dir)
-        traceplot_posterior(energy_dataset, name='kinetic',
-                            fname=fname, fig_dir=ke_dir,
-                            filter_str='kinetic')
-        h_dir = os.path.join(fig_dir, 'hamiltonian_plots')
-        io.check_else_make_dir(h_dir)
-        traceplot_posterior(energy_dataset, name='hamiltonian',
-                            fname=fname, fig_dir=h_dir,
-                            title_str=title_str,
-                            filter_str='hamiltonian')
+    dataset = run_data.build_dataset()
+    energy_dataset = run_data.build_energy_dataset()
+    denergy_dataset = run_data.build_energy_diffs_dataset()
+    energy_transitions = run_data.build_energy_transition_dataset()
+    #  dataset = build_dataset(run_data)
+    #  energy_dataset = build_energy_dataset(run_data.energy_data)
+    #  denergy_dataset = build_energy_diffs_dataset(run_data.energy_data)
 
-        denergy_dataset = build_energy_diffs_dataset(energy_data)
-        traceplot_posterior(denergy_dataset, name='potential_diffs',
-                            fname=fname, fig_dir=pe_dir, title_str=title_str,
-                            filter_str='potential')
-        traceplot_posterior(denergy_dataset, name='kinetic_diffs',
-                            fname=fname, fig_dir=ke_dir, title_str=title_str,
-                            filter_str='kinetic')
-        traceplot_posterior(denergy_dataset, name='hamiltonian_diffs',
-                            fname=fname, fig_dir=h_dir, title_str=title_str,
-                            filter_str='hamiltonian')
+    pe_dir = os.path.join(fig_dir, 'potential_plots')
+    io.check_else_make_dir(pe_dir)
+    traceplot_posterior(energy_dataset, name='potential',
+                        fname=fname, fig_dir=pe_dir,
+                        title_str=title_str,
+                        filter_str='potential')
+    ke_dir = os.path.join(fig_dir, 'kinetic_plots')
+    io.check_else_make_dir(ke_dir)
+    traceplot_posterior(energy_dataset, name='kinetic',
+                        fname=fname, fig_dir=ke_dir,
+                        filter_str='kinetic')
+    h_dir = os.path.join(fig_dir, 'hamiltonian_plots')
+    io.check_else_make_dir(h_dir)
+    traceplot_posterior(energy_dataset, name='hamiltonian',
+                        fname=fname, fig_dir=h_dir,
+                        title_str=title_str,
+                        filter_str='hamiltonian')
 
-        energy_transitions = build_energy_transition_dataset(energy_data)
-        traceplot_posterior(energy_transitions, name='potential_transitions',
-                            fname=fname, fig_dir=pe_dir, title_str=title_str,
-                            filter_str='potential')
-        traceplot_posterior(energy_transitions, name='kinetic_transitions',
-                            fname=fname, fig_dir=ke_dir, title_str=title_str,
-                            filter_str='kinetic')
-        traceplot_posterior(energy_transitions, name='hamiltonian_transitions',
-                            fname=fname, fig_dir=h_dir, title_str=title_str,
-                            filter_str='hamiltonian')
+    traceplot_posterior(denergy_dataset, name='potential_diffs',
+                        fname=fname, fig_dir=pe_dir, title_str=title_str,
+                        filter_str='potential')
+    traceplot_posterior(denergy_dataset, name='kinetic_diffs',
+                        fname=fname, fig_dir=ke_dir, title_str=title_str,
+                        filter_str='kinetic')
+    traceplot_posterior(denergy_dataset, name='hamiltonian_diffs',
+                        fname=fname, fig_dir=h_dir, title_str=title_str,
+                        filter_str='hamiltonian')
 
-    try:
-        dataset = build_dataset(run_data, run_params)
-    except:
-        import pudb; pudb.set_trace()
+    traceplot_posterior(energy_transitions, name='potential_transitions',
+                        fname=fname, fig_dir=pe_dir, title_str=title_str,
+                        filter_str='potential')
+    traceplot_posterior(energy_transitions, name='kinetic_transitions',
+                        fname=fname, fig_dir=ke_dir, title_str=title_str,
+                        filter_str='kinetic')
+    traceplot_posterior(energy_transitions, name='hamiltonian_transitions',
+                        fname=fname, fig_dir=h_dir, title_str=title_str,
+                        filter_str='hamiltonian')
+
     #################################
     # Create ridgeplot of plaq diffs
     #################################
@@ -425,17 +385,14 @@ def inference_plots(data_dict, params, run_params, **kwargs):
     ####################################################
     # Create histogram plots of the reversibility data.
     ####################################################
-    if reverse_data is not None:
-        _, _ = plot_reverse_data(reverse_data,
-                                 params, run_params,
-                                 runs_np=runs_np)
+    _, _ = plot_reverse_data(run_data, params, runs_np=runs_np)
 
     ############################################
     # Create autocorrelation plot of plaq_diffs
     ############################################
-    plaqs = np.array(run_data['plaqs'])
-    plaqs_therm = plaqs.T
-    fig, _ = plot_autocorr(plaqs_therm, params, run_params, name='plaqs')
+    plaqs = np.array(run_data.run_data['plaqs_diffs']).T
+    fig, _ = plot_autocorr(plaqs, params,
+                           run_data.run_params, name='plaqs')
 
     ###############################################
     # Create plots for `dx_out` and `dx_proposed`
@@ -454,8 +411,6 @@ def inference_plots(data_dict, params, run_params, **kwargs):
                         fname=fname, fig_dir=reverse_dir,
                         title_str=title_str,
                         filter_str=['xdiff_r', 'vdiff_r'])
-                        #  filter_str=['xdiff_r0', 'xdiff_r1',
-                        #              'vdiff_r0', 'vdiff_r1'])
 
     #############################################################
     # Create plots for `sumlogdet_out` and `sumlogdet_proposed`
