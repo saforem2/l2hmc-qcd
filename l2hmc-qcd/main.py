@@ -41,8 +41,10 @@ from collections import namedtuple
 import numpy as np
 import tensorflow as tf
 
-# pylint: disable=import-error, unused-import, too-many-statements,
-# pylint:didsable=no-name-in-module, invalid-name
+# pylint:disable=import-error
+# pylint:disable=unused-import
+# pylint:disable=too-many-statements
+# pylint:disable=no-name-in-module, invalid-name
 from tensorflow.python import debug as tf_debug
 from tensorflow.python.client import timeline
 
@@ -283,8 +285,6 @@ def main(FLAGS):
     #  else:           # train l2hmc sampler
     model, _ = train_l2hmc(FLAGS, log_file)
     plot_singular_values(model.log_dir)
-
-
 
 
 if __name__ == '__main__':

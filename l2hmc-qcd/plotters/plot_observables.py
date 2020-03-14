@@ -60,10 +60,8 @@ def get_title_str(params, run_params=None):
     if params.get('clip_value', 0) > 0:
         title_str += f'clip: {clip_value}'
 
-    if run_params is not None:
-        title_str += get_run_title_str(run_params)
-
-
+    #  if run_params is not None:
+    #      title_str += get_run_title_str(run_params)
     #  if nw_legend:
         #  title_str += f"nw: {nw_desc}"
 
@@ -72,7 +70,6 @@ def get_title_str(params, run_params=None):
 
 def plot_charges(charges, out_file=None, title=None, nrows=2, **kwargs):
     """Create a traceplot of the  topological charges."""
-    """Plot charges."""
     ls = kwargs.get('ls', '-')
     color = kwargs.get('color', 'k')
     lw = kwargs.get('lw', 0.6)
