@@ -31,9 +31,11 @@ mplstyle.use('fast')
 DEFAULT_TICKLABELSIZE = mpl.rcParams['xtick.labelsize']
 
 # pylint:disable=invalid-name
+# pylint: disable=too-many-locals
 
 
 def infer_cmap(color, palette='bright'):
+    """Infer cmap from `color`."""
     hues = sns.color_palette(palette)
     if color == hues[0]:
         return sns.light_palette(hues[0], 12, as_cmap=True)
@@ -99,7 +101,7 @@ def calc_tunneling_rate(charges):
     charges = np.around(charges)
     dq = np.abs(charges[:, 1:] - charges[:, :-1])
 
-    return dq, tunneling_rate
+    return dq
 
 
 def get_train_weights(params):
@@ -122,8 +124,10 @@ def plot_setup(log_dir, run_params, idx=None, nw_run=True):
     train_weights = get_train_weights(params)
     train_weights_str = ''.join((io.strf(i) for i in train_weights))
     net_weights = run_params['net_weights']
-    net_weights_str = ''.join((io.strf(i).replace('.', '') for i in net_weights))
-    nws = '(' + ', '.join((str(i) for i in net_weights)) + ')'
+    net_weights_str = ''.join((io.strf(i) for i in net_weights))
+    #  net_weights_str = ''.join(
+    #      (io.strf(i).replace('.', '') for i in net_weights)
+    #  )
 
     date_str = log_dir.split('/')[-2]
     y, m, d = date_str.split('_')
@@ -149,6 +153,10 @@ def plot_setup(log_dir, run_params, idx=None, nw_run=True):
         title_str += ' (fixed)'
         fname += '_fixed'
 
+    if params['clip_value'] > 0:
+        title_str += f', clip: {clip_value}'
+        fname += f'_clip{clip_value}'.replace('.', '')
+
     if any([tw == 0 for tw in train_weights]):
         tws = '(' + ', '.join((str(i) for i in train_weights_str)) + ')'
         title_str += (', '
@@ -156,12 +164,11 @@ def plot_setup(log_dir, run_params, idx=None, nw_run=True):
                       + f' {tws}')
         fname += f'_train{train_weights_str}'
 
-    if params['clip_value'] > 0:
-        title_str += f', clip: {clip_value}'
-        fname += f'_clip{clip_value}'.replace('.', '')
-
     if nw_run:
-        title_str += ', ' + r"$\mathrm{nw}_{\mathrm{run}}=$" + f' {nws}'
+        nws = '(' + ', '.join((str(i) for i in net_weights_str)) + ')'
+        title_str += (', '
+                      + r"$\mathrm{nw}_{\mathrm{run}}=$"
+                      + f' {nws}')
         fname += f'_{net_weights_str}'
 
     if idx is not None:
@@ -251,23 +258,8 @@ def get_observables(run_dir,
     dplq = dplq[therm_steps:]
     charges = np.insert(charges, 0, 0, axis=0)
     charges = charges[therm_steps:]
-    dq, _ = calc_tunneling_rate(charges)
+    dq = calc_tunneling_rate(charges)
     dq = dq.T
-
-    def get_dx(fname):
-        dx_file = os.path.join(observables_dir, fname)
-        if os.path.isfile(dx_file):
-            dx = load_sqz(fname)
-            dx = dx[therm_steps:]
-            if dx.shape != px.shape:
-                dx = None
-        else:
-            dx = None
-
-        return dx
-
-    #  dxf = get_dx('dxf.pkl')
-    #  dxb = get_dx('dxb.pkl')
 
     def get_stats(arr, axis=0):
         avg, err, arr_ = bootstrap(arr, n_boot=n_boot)
@@ -343,11 +335,7 @@ def _build_dataframes(run_dirs, data=None, data_bs=None, **kwargs):
                 continue
         run_params_file = os.path.join(run_dir, 'run_params.pkl')
         if os.path.isfile(run_params_file):
-            try:
-                new_df, new_df_bs, run_params = get_observables(run_dir,
-                                                                **kwargs)
-            except:
-                continue
+            new_df, new_df_bs, run_params = get_observables(run_dir, **kwargs)
             if data is None:
                 data = new_df
             else:
@@ -368,7 +356,6 @@ def _build_dataframes(run_dirs, data=None, data_bs=None, **kwargs):
     return data, data_bs, run_params
 
 
-# pylint: disable=too-many-locals
 def build_dataframes(log_dirs,
                      df_dict=None,
                      df_bs_dict=None,
