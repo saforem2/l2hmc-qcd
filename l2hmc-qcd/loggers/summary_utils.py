@@ -14,8 +14,11 @@ from __future__ import print_function
 import tensorflow as tf
 from lattice.lattice import u1_plaq_exact_tf
 
+# pylint: disable=no-member
+
 
 def grad_norm_summary(name_scope, grad):
+    """Create scalar summaries of RMS values of gradients."""
     with tf.name_scope(name_scope + '_gradients'):
         grad_norm = tf.sqrt(tf.reduce_mean(grad ** 2))
         summary_name = name_scope + '_grad_norm'
@@ -23,6 +26,7 @@ def grad_norm_summary(name_scope, grad):
 
 
 def check_var_and_op(name, var):
+    """Check if `name` in `var.name` or `var.op.name`."""
     return (name in var.name or name in var.op.name)
 
 
@@ -40,6 +44,12 @@ def variable_summaries(var, name=''):
         min_name = name + '/' + min_name
         hist_name = name + '/' + hist_name
 
+    #  if 'layer' in name and 'kernel' in name:
+    #      tf.summary.scalar(name + '/sparsity', tf.nn.zero_fraction(var))
+    # activation summaries
+    #  tf.summary.histogram(tensor_name + '/activations', x)
+    #  tf.summary.scalar(tensor_name + '/sparsity', tf.nn.zero_fraction(x))
+
     mean = tf.reduce_mean(var)
     tf.summary.scalar(mean_name, mean)
     with tf.name_scope('stddev'):
@@ -48,11 +58,6 @@ def variable_summaries(var, name=''):
     tf.summary.scalar(max_name, tf.reduce_max(var))
     tf.summary.scalar(min_name, tf.reduce_min(var))
     tf.summary.histogram(hist_name, var)
-    #  if 'layer' in name and 'kernel' in name:
-    #      tf.summary.scalar(name + '/sparsity', tf.nn.zero_fraction(var))
-    # activation summaries
-    #  tf.summary.histogram(tensor_name + '/activations', x)
-    #  tf.summary.scalar(tensor_name + '/sparsity', tf.nn.zero_fraction(x))
 
 
 def add_loss_summaries(total_loss):
@@ -75,16 +80,18 @@ def add_loss_summaries(total_loss):
 
     # Attach a scalar summary to all individual losses and the total loss;
     # do the same for the averaged version of the losses.
-    for l in losses + [total_loss]:
+    for loss in losses + [total_loss]:
         # Name each loss as '(raw)' and name the moving average version of
         # the loss as the original loss name.
-        tf.summary.scalar(l.op.name, l)
-        tf.summary.scalar(l.op.name + 'moving_avg', loss_averages.average(l))
+        tf.summary.scalar(loss.op.name, loss)
+        tf.summary.scalar(loss.op.name + 'moving_avg',
+                          loss_averages.average(loss))
 
     return loss_averages_op
 
 
 def make_summaries_from_collection(collection, names):
+    """Make summaries from `tf.collection` of variables."""
     try:
         for op, name in zip(tf.get_collection(collection), names):
             variable_summaries(op, name)
@@ -119,6 +126,7 @@ def _create_energy_summaries(model):
         with tf.name_scope('key'):
             for k, v in val.items():
                 variable_summaries(v, k)
+
 
 def _create_grad_norm_summaries(grad, var):
     """Create grad_norm summaries."""
@@ -233,7 +241,7 @@ def create_summaries(model, summary_dir, training=True):
 
     if training:
         name = 'train_summary_op'
-        _create_training_summaries(model)  # loss, lr, eps, accept prob 
+        _create_training_summaries(model)  # loss, lr, eps, accept prob
     else:
         name = 'inference_summary_op'
 
@@ -244,8 +252,13 @@ def create_summaries(model, summary_dir, training=True):
     #  _create_l2hmc_summaries(model)
     #  _create_energy_summaries(model)
 
-    if model.use_gaussian_loss and model.use_nnehmc_loss:
+    #  if model.use_gaussian_loss and model.use_nnehmc_loss:
+    cond1 = model.use_gaussian_loss
+    cond2 = model.use_nnehmc_loss
+    cond3 = model.use_charge_loss
+    if cond1 or cond2 or cond3:
         _loss_summaries(model)
+        add_loss_summaries(model.loss_op)
 
     #  _ = _create_loss_summaries(model.loss_op)
 

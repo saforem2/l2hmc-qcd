@@ -41,28 +41,33 @@ from collections import namedtuple
 import numpy as np
 import tensorflow as tf
 
-# pylint: disable=import-error, unused-import
+# pylint:disable=import-error
+# pylint:disable=unused-import
+# pylint:disable=too-many-statements
+# pylint:disable=no-name-in-module, invalid-name
 from tensorflow.python import debug as tf_debug
 from tensorflow.python.client import timeline
 
-import inference
 import config as cfg
 import utils.file_io as io
 
 from seed_dict import seeds, vnet_seeds, xnet_seeds
 from models.gauge_model import GaugeModel
-from plotters.plot_utils import weights_hist
+from plotters.plot_utils import plot_singular_values, weights_hist
 from loggers.train_logger import TrainLogger
 from utils.file_io import timeit
 from utils.parse_args import parse_args
 from trainers.trainer import Trainer
 from trainers.train_setup import (check_reversibility, count_trainable_params,
                                   create_config, get_net_weights, train_setup)
+
 if cfg.HAS_HOROVOD:
     import horovod.tensorflow as hvd
 
-if float(tf.__version__.split('.')[0]) <= 2:
+try:
     tf.logging.set_verbosity(tf.logging.INFO)
+except AttributeError:
+    pass
 
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 
@@ -70,9 +75,9 @@ SEP_STR = 80 * '-'  # + '\n'
 
 NP_FLOAT = cfg.NP_FLOAT
 
-
 Weights = namedtuple('Weights', ['w', 'b'])
 
+# pylint:disable=too-many-statements
 
 def log_params(params):
     io.log(SEP_STR + '\nL2HMC PARAMETERS:\n')
@@ -102,7 +107,7 @@ def pkl_dump(d, pkl_file):
 @timeit
 def train_l2hmc(FLAGS, log_file=None):
     """Create, train, and run L2HMC sampler on 2D U(1) gauge model."""
-    t0 = time.time()
+    start_time = time.time()
     tf.keras.backend.set_learning_phase(True)
 
     if FLAGS.restore and FLAGS.log_dir is not None:
@@ -127,6 +132,8 @@ def train_l2hmc(FLAGS, log_file=None):
     condition1 = not params['using_hvd']
     condition2 = params['using_hvd'] and hvd.rank() == 0
     is_chief = condition1 or condition2
+
+    params['zero_masks'] = FLAGS.zero_masks
 
     if is_chief:
         log_dir = params['log_dir']
@@ -193,7 +200,10 @@ def train_l2hmc(FLAGS, log_file=None):
     ])
 
     masks_file = os.path.join(model.log_dir, 'dynamics_mask.pkl')
+    masks_file_ = os.path.join(model.log_dir, 'dynamics_mask.np')
     masks = sess.run(model.dynamics.masks)
+    np.array(masks).tofile(masks_file_)
+    io.log(f'dynamics.masks:\n\t {masks}')
     pkl_dump(masks, masks_file)
 
     # Check reversibility and write results out to `.txt` file.
@@ -205,7 +215,7 @@ def train_l2hmc(FLAGS, log_file=None):
         io.save_dict(xnet_seeds, out_dir=model.log_dir, name='xnet_seeds')
         io.save_dict(vnet_seeds, out_dir=model.log_dir, name='vnet_seeds')
 
-    # **********************************************************
+    # ----------------------------------------------------------
     #                       TRAINING
     # ----------------------------------------------------------
     trainer = Trainer(sess, model, train_logger, **params)
@@ -234,7 +244,7 @@ def train_l2hmc(FLAGS, log_file=None):
             'coeff_transformation': vcoeffs[1]
         })
 
-        _ = weights_hist(model.log_dir, weights=weights_final, init=False)
+        weights_hist(model.log_dir, weights=weights_final, init=False)
 
         pkl_dump(weights_final, os.path.join(model.log_dir, 'weights.pkl'))
         pkl_dump(model.params, os.path.join(os.getcwd(), 'params.pkl'))
@@ -250,7 +260,8 @@ def train_l2hmc(FLAGS, log_file=None):
     # close MonitoredTrainingSession and reset the default graph
     sess.close()
     tf.reset_default_graph()
-    io.log(f'{SEP_STR}\nTraining took: {time.time()-t0:.3g}s\n{SEP_STR}')
+    io.log(f'{SEP_STR}\n training took:'
+           f'{time.time()-start_time:.3g}s \n{SEP_STR}')
 
     return model, train_logger
 
@@ -260,24 +271,26 @@ def main(FLAGS):
     """Main method for creating/training/running L2HMC for U(1) gauge model."""
     log_file = 'output_dirs.txt'
 
-    USING_HVD = getattr(FLAGS, 'horovod', False)
-    if cfg.HAS_HOROVOD and USING_HVD:
+    using_hvd = getattr(FLAGS, 'horovod', False)
+    if cfg.HAS_HOROVOD and using_hvd:
         io.log("INFO: USING HOROVOD")
         hvd.init()
         rank = hvd.rank()
         print(f'Setting seed from rank: {rank}')
+        # multiply the global seed by the rank so each rank gets diff seed
         tf.set_random_seed(rank * seeds['global_tf'])
 
-    if FLAGS.hmc:   # run generic HMC sampler
-        inference.run_hmc(FLAGS, log_file=log_file)
-    else:           # train l2hmc sampler
-        model, train_logger = train_l2hmc(FLAGS, log_file)
+    #  if FLAGS.hmc:   # run generic HMC sampler
+    #      inference.run_hmc(FLAGS, log_file=log_file)
+    #  else:           # train l2hmc sampler
+    model, _ = train_l2hmc(FLAGS, log_file)
+    plot_singular_values(model.log_dir)
 
 
 if __name__ == '__main__':
     FLAGS = parse_args()
-    using_hvd = getattr(FLAGS, 'horovod', False)
-    if not using_hvd:
+    USING_HVD = getattr(FLAGS, 'horovod', False)
+    if not USING_HVD:
         tf.set_random_seed(seeds['global_tf'])
 
     t0 = time.time()

@@ -14,6 +14,9 @@ if '2.' not in tf.__version__:
     tf.set_random_seed(seeds['global_tf'])
 
 
+# pylint: disable=no-member
+
+
 def activation_model(model):
     """Create Keras Model that outputs activations of all conv./pool layers.
 
@@ -33,10 +36,12 @@ def activation_model(model):
 
 
 def flatten(_list):
+    """Flatten nested list."""
     return [item for sublist in _list for item in sublist]
 
 
 def add_elements_to_collection(elements, collection_list):
+    """Add list of `elements` to `collection_list`."""
     elements = flatten(elements)
     collection_list = flatten(collection_list)
     #  collection_list = tf.nest.flatten(collection_list)
@@ -49,6 +54,7 @@ def add_elements_to_collection(elements, collection_list):
 
 
 def _assign_moving_average(orig_val, new_val, momentum, name):
+    """Assign moving average."""
     with tf.name_scope(name):
         scaled_diff = (1 - momentum) * (new_val - orig_val)
         return tf.assign_add(orig_val, scaled_diff)
@@ -65,7 +71,7 @@ def batch_norm(x,
                internal_update=False,
                scope=None,
                reuse=None):
-
+    """Implements a `BatchNormalization` layer."""
     C = x._shape_as_list()[axis]
     ndim = len(x.shape)
     var_shape = [1] * (ndim - 1) + [C]
@@ -120,33 +126,35 @@ def batch_norm(x,
     return output
 
 
-def custom_dense(units, seed, factor=1., name=None, **kwargs):
+def custom_dense(units=100, seed=None, factor=1., name=None):
     """Custom dense layer with specified weight intialization."""
-    if '2.' not in tf.__version__:
+    try:
         kernel_initializer = tf.keras.initializers.VarianceScaling(
-            scale=factor,
+            scale=2.*factor,
             mode='fan_in',
             distribution='truncated_normal',
-            #  distribution='uniform',
             dtype=TF_FLOAT,
             seed=seed,
         )
-    else:
+
+    except AttributeError:
         kernel_initializer = tf.contrib.layers.variance_scaling_initializer(
-            factor=factor,
-            mode='FAN_IN',
             seed=seed,
-            dtype=TF_FLOAT,
+            mode='FAN_IN',
             uniform=False,
+            dtype=TF_FLOAT,
+            factor=2.*factor,
         )
+
+    bias_initializer = tf.constant_initializer(0., dtype=TF_FLOAT)
 
     return tf.keras.layers.Dense(
         units=units,
+        name=name,
         use_bias=True,
         kernel_initializer=kernel_initializer,
-        bias_initializer=tf.constant_initializer(0., dtype=TF_FLOAT),
-        name=name,
-        **kwargs
+        bias_initializer=bias_initializer,
+        #  **kwargs
     )
 
 

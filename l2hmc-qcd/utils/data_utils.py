@@ -164,7 +164,7 @@ def load_data(data_dir):
     Returns:
         arrays_dict (dict):
             Dictionary containing data loaded from `.npy` files.
-            keys (str): String containing the filename without extension. 
+            keys (str): String containing the filename without extension.
             values (np.ndarray): Array containing data contained in file.
         pkl_dict (dict):
             Dictionary containing data load from `.pkl` files.
@@ -188,7 +188,7 @@ def load_data(data_dir):
             pkl_files.append(data_dir + file)
 
     #  np_load = lambda file: np.load(data_dir + file)
-    def get_name(file): 
+    def get_name(file):
         return file.split('/')[-1][:-4]
 
     arrays_dict = {}

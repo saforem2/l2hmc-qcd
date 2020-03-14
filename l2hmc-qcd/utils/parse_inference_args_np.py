@@ -79,11 +79,34 @@ def parse_args():
     parser.add_argument('--direction',
                         dest='direction',
                         type=str,
-                        default='random',
+                        default='rand',
                         required=False,
                         help=("""Specify direction to run dynamics. Must be one
                               of `'random', 'forward', 'backward'`. (DEFAULT:
                               'rand')"""))
+
+    parser.add_argument('--zero_masks',
+                        dest='zero_masks',
+                        action='store_true',
+                        required=False,
+                        help=("""Flag that when passed will use `zero_masks`
+                              (i.e. m = [1, 1, ..., 1] mb = [0, 0, ..., 0]) for
+                              `x` sub-updates in L2HMC update."""))
+
+    parser.add_argument('--symplectic_check',
+                        dest='symplectic_check',
+                        action='store_true',
+                        required=False,
+                        help=("""Flag that when passed will run additional
+                              volume scaling analysis to test if the sampler is
+                              symplectic."""))
+
+    parser.add_argument('--dont_save',
+                        dest='dont_save',
+                        action='store_true',
+                        required=False,
+                        help=("""Flag that when passed will prevent inference
+                              data from being saved after completing run."""))
 
     parser.add_argument("--print_steps",
                         dest="print_steps",
@@ -172,6 +195,15 @@ def parse_args():
                               contribution of the `transformation` (Q) function
                               when performing the augmented L2HMC molecular
                               dynamics update."""))
+
+    parser.add_argument('--nsv', '--num_singular_values',
+                        dest='num_singular_values',
+                        type=int,
+                        default=-1,
+                        required=False,
+                        help=("""Specify the number of singular values to keep
+                              when reconstructing the weight matrix. (Default:
+                              -1, keep all singular values). """))
 
     if sys.argv[1].startswith('@'):
         args = parser.parse_args(shlex.split(open(sys.argv[1][1:]).read(),

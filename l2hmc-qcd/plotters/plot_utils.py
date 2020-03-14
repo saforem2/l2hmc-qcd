@@ -7,9 +7,7 @@ Author: Sam Foreman (github: @saforem2)
 Date: 08/21/2019
 """
 import os
-import pickle
 
-from config import HAS_MATPLOTLIB, MARKERS, COLORS, Weights
 from collections import namedtuple
 
 import numpy as np
@@ -19,34 +17,26 @@ import scipy.stats as stats
 from scipy.stats import multivariate_normal
 
 import utils.file_io as io
+
+from config import COLORS, HAS_MATPLOTLIB, MARKERS
 from lattice.lattice import u1_plaq_exact
-
-
-#  MPL_PARAMS = {
-#      #  'backend': 'ps',
-#      #  'text.latex.preamble': [r'\usepackage{gensymb}'],
-#      'axes.labelsize': 14,   # fontsize for x and y labels (was 10)
-#      'axes.titlesize': 10,
-#      'legend.fontsize': 10,  # was 10
-#      #'xtick.labelsize': 10,
-#      #'ytick.labelsize': 12,
-#      #  'text.usetex': True,
-#      #  'figure.figsize': [fig_width, fig_height],
-#      #  'font.family': 'serif',
-#  }
+from plotters.plot_observables import calc_stats, get_obs_dict
+from plotters.data_utils import calc_var_explained
 
 if HAS_MATPLOTLIB:
     import matplotlib as mpl
     import matplotlib.pyplot as plt
 
     from matplotlib.patches import Ellipse
-    #  mpl.rcParams.update(MPL_PARAMS)
 
+    #  mpl.rcParams.update(MPL_PARAMS)
     import matplotlib.style as mplstyle
+
     mplstyle.use('fast')
 
 try:
     import seaborn as sns
+
     sns.set_palette('bright')
     sns.set_style('ticks', {'xtick.major.size': 8,
                             'ytick.major.size': 8})
@@ -55,7 +45,50 @@ except ImportError:
     HAS_SEABORN = False
 
 
+# pylint: disable=too-many-statements, too-many-branches, too-many-arguments
+# pylint: disable=invalid-name, too-many-nested-blocks, too-many-locals
+
+
+def load_weights(log_dir):
+    """Load weights dict from `log_dir`."""
+    weights = io.load_pkl(os.path.join(log_dir, 'weights.pkl'))
+    xweights = weights['xnet']['GenericNet']
+    vweights = weights['vnet']['GenericNet']
+    weights_dict = {
+        'xnet': {},
+        'vnet': {},
+    }
+    for (xk, xv), (vk, vv) in zip(xweights.items(), vweights.items()):
+        if 'layer' in xk:
+            W, _ = xv
+            weights_dict['xnet'][xk] = W
+        if 'layer' in vk:
+            W, _ = vv
+            weights_dict['vnet'][vk] = W
+
+    return weights_dict
+
+
+def plot_singular_values(log_dir):
+    """Plot the % var explained by the singular values of `weights_dict`."""
+    weights_dict = load_weights(log_dir)
+    var_explained = calc_var_explained(weights_dict)
+    for key, val in var_explained.items():
+        x = np.arange(1, len(val)+1)
+        _, ax = plt.subplots()
+        ax.plot(x, val, marker='+', ls='')
+        ax.set_xlabel('Singular values', fontsize=14)
+        ax.set_ylabel('% Variance Explained', fontsize=14)
+        ax.set_title(f'{key}', fontsize=16)
+        out_dir = os.path.join(log_dir, 'svd_plots')
+        io.check_else_make_dir(out_dir)
+        out_file = os.path.join(out_dir, f'{key}_svd.pdf')
+        io.log(f'Saving figure to: {out_file}.')
+        plt.savefig(out_file, dpi=200, bbox_inches='tight')
+
+
 def get_matching_log_dirs(string, root_dir):
+    """Get `log_dirs` whose name contains `string` from `rot_dir`."""
     contents = os.listdir(root_dir)
     matches = [os.path.join(root_dir, i) for i in contents if string in i]
     log_dirs = []
@@ -79,11 +112,12 @@ def get_matching_log_dirs(string, root_dir):
 
 
 def weights_hist(log_dir, weights=None, init=False):
+    """Create histogram of entries of weight matrices."""
     if HAS_SEABORN:
         sns.set_palette('bright', 100)
 
     if weights is None:
-        weights = load_pkl(os.path.join(log_dir, 'weights.pkl'))
+        weights = io.load_pkl(os.path.join(log_dir, 'weights.pkl'))
 
     figs_dir = os.path.join(log_dir, 'figures', 'weights')
     io.check_else_make_dir(figs_dir)
@@ -152,57 +186,29 @@ def weights_hist(log_dir, weights=None, init=False):
 
 
 def reset_plots():
+    """Reset (close and clear) all plots."""
     plt.close('all')
     plt.clf()
 
 
-def get_run_dirs(log_dir, filter_str=None, runs_np=False):
-    """Get all run_dirs from `log_dir`."""
-    run_dirs = None
-    if runs_np:
-        runs_dir = os.path.join(log_dir, 'runs_np')
-    else:
-        runs_dir = os.path.join(log_dir, 'runs')
-    #  if os.path.isdir(runs_dir):
-    run_dirs = [
-        os.path.join(runs_dir, i) for i in os.listdir(runs_dir)
-        if os.path.isdir(os.path.join(runs_dir, i))
-    ]
-    if filter_str is not None:
-        run_dirs = [i for i in run_dirs if filter_str in i]
-
-    run_dirs = sorted(run_dirs)
-
-    io.log(f'No `runs_dir` in {log_dir}.')
-    return run_dirs
-
-
-
-def load_pkl(pkl_file, arr=False, verbose=False):
-    if verbose:
-        io.log(f'Loading from: {pkl_file}...')
-    with open(pkl_file, 'rb') as f:
-        tmp = pickle.load(f)
-    if arr:
-        return np.array(tmp)
-    return tmp
-
-
 def get_params(dirname, fname=None):
+    """Get `params` from `dirname`."""
     if fname is None:
         params_file = os.path.join(dirname, 'parameters.pkl')
     else:
         params_file = os.path.join(dirname, fname)
 
-    return load_pkl(params_file)
+    return io.load_pkl(params_file)
 
 
 def get_title_str(params, run_params=None):
+    """Get descriptive title string for plot."""
     ss = params['space_size']
     ts = params['time_size']
     lf_steps = params['num_steps']
     batch_size = params['batch_size']
-    nw_desc = (r'nw: ($\alpha_{\mathrm{S_{x}}}$, '
+    clip_value = params.get('clip_value', 0)
+    nw_desc = (r'($\alpha_{\mathrm{S_{x}}}$, '
                r'$\alpha_{\mathrm{T_{x}}}$, '
                r'$\alpha_{\mathrm{Q_{x}}}$, '
                r'$\alpha_{\mathrm{S_{v}}}$, '
@@ -213,19 +219,49 @@ def get_title_str(params, run_params=None):
                  r"$N_{\mathrm{LF}} = $" + f"{lf_steps}, "
                  r"$N_{\mathrm{B}} = $" + f"{batch_size}, ")
 
-    if run_params is not None:
-        beta = run_params['beta']
-        eps = run_params['eps']
-        title_str += (r"$\beta =$" + f"{beta:.2g}, "
-                      r"$\varepsilon=$" + f"{eps:.3g}, ")
+    if params.get('clip_value', 0) > 0:
+        title_str += f'clip: {clip_value}'
 
-    title_str += f'{nw_desc}'
+    if run_params is not None:
+        title_str += get_run_title_str(run_params)
+
+
+    #  if nw_legend:
+        #  title_str += f"nw: {nw_desc}"
+
+    return title_str
+
+
+def get_run_title_str(run_params):
+    """Parses `run_params` and returns string detailing parameters."""
+    beta = run_params['beta']
+    eps = run_params['eps']
+    nw = tuple(run_params['net_weights'])  # pylint:disable=invalid-name
+    #  run_str = run_params['run_str']
+
+    title_str = (r"""$\beta = $""" + f'{beta}'
+                 + r"""$\varepsilon = $""" + f'{eps:.3g}'
+                 + f'nw: {nw}')
+
+    zero_masks = run_params.get('zero_masks', False)
+    if zero_masks:
+        mask_str = r'$m^{t} = \vec{1}$'
+        maskb_str = r'$\bar{m}^{t} = \vec{0}$'
+        title_str += mask_str
+        title_str += ', ' + maskb_str
+
+    direction = run_params.get('direction', 'rand')
+    if direction == 'forward':
+        title_str += ', (forward)'
+    elif direction == 'backward':
+        title_str += ', (backward)'
+
 
     return title_str
 
 
 def _get_title(lf_steps, eps, batch_size, beta, nw):
-    """Parse vaious parameters to make figure title when creating plots."""
+    """Parse various parameters to make figure title when creating plots."""
     try:
         nw_str = '[' + ', '.join([f'{i:.3g}' for i in nw]) + ']'
         title_str = (r"$N_{\mathrm{LF}} = $" + f"{lf_steps}, "
@@ -239,27 +275,29 @@ def _get_title(lf_steps, eps, batch_size, beta, nw):
 
 
 def _load_obs(run_dir, obs_name):
-    run_params = load_pkl(os.path.join(run_dir, 'run_params.pkl'))
+    """Load observable."""
+    run_params = io.load_pkl(os.path.join(run_dir, 'run_params.pkl'))
+    obs = None
     if 'plaq' in obs_name:
         exact = u1_plaq_exact(run_params['beta'])
         try:
-            plaqs = load_plaqs(run_dir)
-            obs = exact - plaqs
+            pf = os.path.join(run_dir, 'observables', 'plaqs.pkl')
+            plaqs = io.load_pkl(pf)
+            obs = exact - np.array(plaqs)
         except FileNotFoundError:
             io.log(f'Unable to load plaquettes from {run_dir}. Returning.')
-            return
     else:
         pkl_file = os.path.join(run_dir, 'observables', f'{obs_name}.pkl')
         try:
-            obs = np.array(load_pkl(pkl_file))
+            obs = np.array(io.load_pkl(pkl_file))
         except FileNotFoundError:
             io.log(f'Unable to load observable from {run_dir}. Returning.')
-            return
 
     return obs
 
 
 def trace_plot(data, ax, color, **kwargs):
+    """Create tracplot from data."""
     if not isinstance(data, dict):
         data = calc_stats(data, **kwargs)
 
@@ -386,14 +424,14 @@ def _plot_obs(run_dir, obs=None, obs_name=None, **kwargs):
     if obs is None:
         obs = get_obs_dict(run_dir, obs_name)
 
-    params = load_pkl(os.path.join(run_dir, 'params.pkl'))
-    run_params = load_pkl(os.path.join(run_dir, 'run_params.pkl'))
+    params = io.load_pkl(os.path.join(run_dir, 'params.pkl'))
+    run_params = io.load_pkl(os.path.join(run_dir, 'run_params.pkl'))
     title_str = get_title_str(params, run_params)
 
     fig, axes = plt.subplots(ncols=2, figsize=(12.8, 4.8))
     ps = calc_stats(obs, therm_frac=therm_frac)
-    axes[0] = trace_plot(ps, axes[0])
-    axes[1] = kde_hist(ps, axes[1], key=params['net_weights'])
+    axes[0] = trace_plot(ps, axes[0], color='k')
+    axes[1] = kde_hist(ps, ax=axes[1], key=params['net_weights'], color='gray')
     _ = plt.suptitle(title_str, fontsize='xx-large', y=1.04)
     plt.tight_layout()
     if obs_name == 'plaqs':
@@ -418,17 +456,7 @@ def _plot_obs(run_dir, obs=None, obs_name=None, **kwargs):
 def plot_obs(log_dir, obs_dict, run_params=None,
              obs_name=None, filter_str=None, therm_frac=0.2):
     """Plot `plaqs_diffs` w/ hists for all run dirs in `log_dir`."""
-    #  strip_yticks = kwargs.get('strip_yticks', True)
-    zeroline = True if obs_name == 'plaqs' else False
-
-    #  run_dirs = get_run_dirs(log_dir, filter_str)
-    #  run_params = [
-    #      load_pkl(os.path.join(i, 'run_params.pkl')) for i in run_dirs
-    #  ]
-    #  betas = [params['beta']
-    #  if obs_dict is None:
-    #      obs_dict = get_obs_dict(log_dir, obs_name, run_dirs=run_dirs)
-
+    zeroline = (obs_name == 'plaqs')
     nrows = len(obs_dict.keys())
     ncols = 2
 
@@ -466,7 +494,7 @@ def plot_obs(log_dir, obs_dict, run_params=None,
             _ = axes[idx, 0].set_ylabel(ylabel, fontsize='x-large')
 
     params_file = os.path.join(log_dir, 'parameters.pkl')
-    params = load_pkl(params_file)
+    params = io.load_pkl(params_file)
     title_str = get_title_str(params, run_params=run_params)
     _ = plt.suptitle(title_str, fontsize='xx-large', y=1.04)
     plt.tight_layout()
@@ -492,25 +520,8 @@ def plot_obs(log_dir, obs_dict, run_params=None,
     return fig, axes
 
 
-def bootstrap(data, n_boot=10000, ci=68):
-    samples = []
-    for i in range(int(n_boot)):
-        resampler = np.random.randint(0, data.shape[0], data.shape[0])
-        sample = data.take(resampler, axis=0)
-        samples.append(np.mean(sample, axis=0))
-    data_rs = np.array(samples)
-    s1 = np.apply_along_axis(stats.scoreatpercentile,
-                             0, data_rs, 50. - ci / 2.)
-    s2 = np.apply_along_axis(stats.scoreatpercentile,
-                             0, data_rs, 50. + ci / 2.)
-
-    mean = np.mean(data_rs)
-    err = max(mean - s1.mean(), s2.mean() - mean)
-
-    return mean, err, data_rs
-
-
 def tsplotboot(ax, data, **kwargs):
+    """Create timeseries plot of bootstrapped data."""
     x = np.arange(data.shape[1])
     est = np.mean(data, axis=0)
     cis = bootstrap(data)
@@ -519,6 +530,7 @@ def tsplotboot(ax, data, **kwargs):
 
 
 def get_colors(batch_size=10, cmaps=None):
+    """Get colors from `cmaps`."""
     if cmaps is None:
         cmap0 = mpl.cm.get_cmap('Greys', batch_size + 1)
         cmap1 = mpl.cm.get_cmap('Reds', batch_size + 1)
@@ -535,6 +547,7 @@ def get_colors(batch_size=10, cmaps=None):
 
 
 def get_cmap(N=10, cmap=None):
+    """Get `N` colors from `cmap`."""
     cmap_name = 'viridis' if cmap is None else cmap
     cmap_ = mpl.cm.get_cmap(cmap_name, N)
     idxs = np.linspace(0., 1., N)

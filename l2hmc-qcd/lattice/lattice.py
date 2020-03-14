@@ -22,11 +22,6 @@ import tensorflow as tf
 
 from scipy.special import i0, i1
 
-__all__ = ['u1_plaq_exact', 'u1_plaq_exact_tf',
-           'project_angle', 'project_angle_fft',
-           'GaugeLattice']
-
-
 NP_FLOAT = cfg.NP_FLOAT
 TF_FLOAT = cfg.TF_FLOAT
 
@@ -41,6 +36,10 @@ def u1_plaq_exact_tf(beta):
     """Computes the expected value of the avg. plaquette for 2D U(1)."""
     return tf.math.bessel_i1(beta) / tf.math.bessel_i0(beta)
 
+
+def calc_plaqs_diffs(plaqs, beta):
+    """Calculate the difference between expected and observed plaquettes."""
+    return u1_plaq_exact(beta) - plaqs
 
 def pbc(tup, shape):
     """Returns tup % shape for implementing periodic boundary conditions."""
@@ -84,8 +83,7 @@ def project_angle_fft(x, N=10):
 
 class GaugeLattice:
     """Lattice with Gauge field existing on links."""
-
-    def __init__(self, 
+    def __init__(self,
                  time_size=8,
                  space_size=8,
                  dim=2,
@@ -172,22 +170,27 @@ class GaugeLattice:
 
         return observables
 
-    def calc_observables_np(self, samples):
+    def calc_observables_np(self, samples, beta=None):
+        """Calculate observables using numpy."""
         plaq_sums = self.calc_plaq_sums_np(samples)
-        actions = self.calc_actions_np(plaq_sums=plaq_sums)
+        #  actions = self.calc_actions_np(plaq_sums=plaq_sums)
         plaqs = self.calc_plaqs_np(plaq_sums=plaq_sums)
         charges = self.calc_top_charges_np(plaq_sums=plaq_sums)
 
         observables = {
-            'plaqs': plaqs,
-            'actions': actions,
             'charges': charges,
         }
+
+        if beta is not None:
+            plaqs_diffs = u1_plaq_exact(beta) - plaqs
+            observables['plaqs_diffs'] = plaqs_diffs
+        else:
+            observables['plaqs'] = plaqs
 
         return observables
 
     def calc_plaq_sums(self, samples=None):
-        """Calculate plaquette sums. 
+        """Calculate plaquette sums.
 
         Explicitly, calculate the sum of the link variables around each
         plaquette in the lattice for each sample in samples.
@@ -231,7 +234,6 @@ class GaugeLattice:
         Same as `self.calc_plaq_sums` defined above, but to be used with
         `numpy.ndarray` objects.
         """
-        #  assert isinstance(samples, (np.ndarray, list))
         if samples.shape != self.samples.shape:
             samples = np.reshape(samples, self.samples.shape)
 
@@ -281,11 +283,16 @@ class GaugeLattice:
                                   axis=(1, 2), name='plaqs') / self.num_plaqs
         return plaqs
 
-    def calc_plaqs_np(self, plaq_sums):
+    def calc_plaqs_np(self, samples=None, plaq_sums=None):
+        if samples is None:
+            samples = self.samples
+
+        if plaq_sums is None:
+            plaq_sums = self.calc_plaq_sums_np(samples)
+
         plaqs = np.sum(np.cos(plaq_sums), axis=(1, 2)) / self.num_plaqs
 
         return plaqs
-
     def calc_top_charges(self, samples=None, plaq_sums=None):
         """Calculate topological charges for each sample in samples."""
         if plaq_sums is None:

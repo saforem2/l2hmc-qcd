@@ -16,6 +16,7 @@ if cfg.HAS_HOROVOD:
 
 Weights = cfg.Weights
 
+# pylint:disable=invalid-name
 
 def set_global_step(sess, global_step):
     """Explicitly sets the global step when restoring a training session.
@@ -39,31 +40,25 @@ def set_global_step(sess, global_step):
     io.log(f'INFO: New value of `global_step`: {global_step_np}')
 
 
-def _get_net_weights(net, weights, sess):
+def _get_net_weights(model, net, weights, sess):
     for layer in net.layers:
         if hasattr(layer, 'layers'):
-            weights = _get_net_weights(layer, weights, sess)
+            weights = _get_net_weights(model, layer, weights, sess)
         else:
             try:
-                w, b = sess.run(layer.weights)
+                w, b = sess.run(layer.weights,
+                                feed_dict={model.train_phase:False})
                 weights[net.name].update({
                     layer.name: Weights(w=w, b=b)
                 })
-                #  weights[net.name].update({
-                #      layer.name: Weights(*layer.get_weights())
-                #  })
             except KeyError:
-                w, b = sess.run(layer.weights)
+                w, b = sess.run(layer.weights,
+                                feed_dict={model.train_phase:False})
                 weights.update({
                     net.name: {
                         layer.name: Weights(w=w, b=b)
                     }
                 })
-                #  weights.update({
-                #      net.name: {
-                #          layer.name: Weights(*layer.get_weights())
-                #      }
-                #  })
 
     return weights
 
@@ -71,8 +66,8 @@ def _get_net_weights(net, weights, sess):
 def get_net_weights(model, sess):
     with tf.name_scope('model_weights'):
         weights = {
-            'xnet': _get_net_weights(model.dynamics.xnet, {}, sess),
-            'vnet': _get_net_weights(model.dynamics.vnet, {}, sess),
+            'xnet': _get_net_weights(model, model.dynamics.xnet, {}, sess),
+            'vnet': _get_net_weights(model, model.dynamics.vnet, {}, sess),
         }
     xnet = model.dynamics.xnet.generic_net
     vnet = model.dynamics.vnet.generic_net
@@ -101,7 +96,7 @@ def create_config(params):
 
     gpu = params.get('gpu', False)
     if gpu:
-        # Horovod: pin GPU to be used to process local rank 
+        # Horovod: pin GPU to be used to process local rank
         # (one GPU per process)
         config.gpu_options.allow_growth = True
         #  config.allow_soft_placement = True
@@ -196,6 +191,7 @@ def count_trainable_params(out_file, log=False):
 
 def train_setup(FLAGS, log_file=None, root_dir=None,
                 run_str=True, model_type='GaugeModel'):
+    """Setup for training run."""
     io.log(80 * '-')
     io.log("Starting training using L2HMC algorithm...")
     tf.keras.backend.clear_session()
@@ -212,7 +208,8 @@ def train_setup(FLAGS, log_file=None, root_dir=None,
         FLAGS_DICT = FLAGS
 
     #  params = FLAGS_DICT.copy()
-    params = {k: v for k, v in FLAGS_DICT.items()}
+    params = FLAGS_DICT.copy()
+    #  params = {k: v for k, v in FLAGS_DICT.items()}
 
     params['log_dir'] = io.create_log_dir(FLAGS,
                                           log_file=log_file,
@@ -273,6 +270,7 @@ def train_setup(FLAGS, log_file=None, root_dir=None,
 
 
 def check_reversibility(model, sess, net_weights=None, out_file=None):
+    """Check reversibility."""
     rand_samples = np.random.randn(*model.x.shape)
     if net_weights is None:
         net_weights = cfg.NetWeights(1., 1., 1., 1., 1., 1.)

@@ -67,6 +67,7 @@ class FullNet(tf.keras.Model):
             self.generic_net = GenericNet("GenericNet", **kwargs)
 
     def call(self, inputs, train_phase):
+        """Call the network (forward pass)."""
         v, x, t = inputs
 
         if self.x_conv_net is not None:
