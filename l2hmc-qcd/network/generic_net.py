@@ -24,6 +24,8 @@ import config as cfg
 
 TF_FLOAT = cfg.TF_FLOAT
 
+# pylint: disable=invalid-name
+
 
 class GenericNet(tf.keras.Model):
     """Generic (fully-connected) network used in training L2HMC."""
@@ -45,80 +47,79 @@ class GenericNet(tf.keras.Model):
         net_seeds = kwargs.get('net_seeds', None)
 
         with tf.name_scope(self.net_name):
+            self.x_layer = custom_dense(name='x_layer',
+                                        factor=self.factor/3.,
+                                        units=self.num_hidden1,
+                                        seed=net_seeds['x_layer'])
+            #  input_shape=(self.x_dim,))
+            self.v_layer = custom_dense(name='v_layer',
+                                        factor=1./3,
+                                        units=self.num_hidden1,
+                                        seed=net_seeds['v_layer'])
+
+            self.t_layer = custom_dense(name='t_layer',
+                                        factor=1./3.,
+                                        units=self.num_hidden1,
+                                        seed=net_seeds['t_layer'])
+
+            self.h_layer = custom_dense(name='h_layer',
+                                        factor=1.,
+                                        units=self.num_hidden2,
+                                        seed=net_seeds['h_layer'])
+
+            # Scale layer
+            sname = 'scale_layer'
+            self.scale_layer = custom_dense(name=sname,
+                                            factor=0.001,
+                                            units=self.x_dim,
+                                            seed=net_seeds[sname])
+            #  Translation layer
+            qname = 'transformation_layer'
+            self.transformation_layer = custom_dense(name=qname,
+                                                     factor=0.001,
+                                                     units=self.x_dim,
+                                                     seed=net_seeds[qname])
+            # Translation layer
+            tname = 'translation_layer'
+            self.translation_layer = custom_dense(name=tname,
+                                                  factor=0.001,
+                                                  units=self.x_dim,
+                                                  seed=net_seeds[tname])
+            # Scale layer coefficient
             self.coeff_scale = tf.Variable(
-                initial_value=tf.zeros([1, self.x_dim], dtype=TF_FLOAT),
                 name='coeff_scale',
                 trainable=True,
                 dtype=TF_FLOAT,
-                use_resource=True,
+                initial_value=tf.zeros([1, self.x_dim], dtype=TF_FLOAT),
+                #  use_resource=True,
             )
 
+            # Transformation layer coefficient
             self.coeff_transformation = tf.Variable(
-                initial_value=tf.zeros([1, self.x_dim], dtype=TF_FLOAT),
                 name='coeff_transformation',
                 trainable=True,
                 dtype=TF_FLOAT,
-                use_resource=True,
+                initial_value=tf.zeros([1, self.x_dim], dtype=TF_FLOAT),
+                #  use_resource=True,
             )
 
+            # Dropout layer (only defined if `dropout_prob > 0`
             if self.dropout_prob > 0:
                 self.dropout = tf.keras.layers.Dropout(
                     self.dropout_prob, seed=net_seeds['dropout'],
                 )
 
-            xname = 'x_layer'
-            self.x_layer = custom_dense(name=xname,
-                                        factor=self.factor/3.,
-                                        seed=net_seeds[xname],
-                                        units=self.num_hidden1,
-                                        input_shape=(self.x_dim,))
-            vname = 'v_layer'
-            self.v_layer = custom_dense(name=vname,
-                                        factor=1./3.,
-                                        seed=net_seeds[vname],
-                                        units=self.num_hidden1,
-                                        input_shape=(self.x_dim,))
-            tname = 't_layer'
-            self.t_layer = custom_dense(name=tname,
-                                        factor=1./3.,
-                                        seed=net_seeds[tname],
-                                        units=self.num_hidden1,
-                                        input_shape=(self.x_dim,))
-            hname = 'h_layer'
-            self.h_layer = custom_dense(name=hname,
-                                        factor=1.,
-                                        seed=net_seeds[hname],
-                                        units=self.num_hidden2)
-            scname = 'scale_layer'
-            scseed = net_seeds[scname]
-            self.scale_layer = custom_dense(name=scname,
-                                            factor=0.001,
-                                            seed=scseed,
-                                            units=self.x_dim)
-            tlname = 'translation_layer'
-            tlseed = net_seeds[tlname]
-            self.translation_layer = custom_dense(name=tlname,
-                                                  factor=0.001,
-                                                  seed=tlseed,
-                                                  units=self.x_dim)
-            tfname = 'transformation_layer'
-            tfseed = net_seeds[tfname]
-            self.transformation_layer = custom_dense(name=tfname,
-                                                     factor=0.001,
-                                                     seed=tfseed,
-                                                     units=self.x_dim)
-
     def call(self, inputs, train_phase):
+        """Call network."""
         v, x, t = inputs
-        with tf.name_scope('v'):
-            v = self.v_layer(v)
-        with tf.name_scope('x'):
-            x = self.x_layer(x)
-        with tf.name_scope('t'):
-            t = self.t_layer(t)
+        #  with tf.name_scope('v'):
+        #  with tf.name_scope('x'):
+        #  with tf.name_scope('t'):
 
         with tf.name_scope('hidden_layer'):
-            h = self.activation(v + x + t)
+            h = self.activation(
+                self.v_layer(v) + self.x_layer(x) + self.t_layer(t)
+            )
             h = self.activation(self.h_layer(h))
 
             # dropout gets applied to the output of the previous layer
@@ -126,13 +127,12 @@ class GenericNet(tf.keras.Model):
                 h = self.dropout(h, training=train_phase)
 
         with tf.name_scope('scale'):
-            scale = (tf.nn.tanh(self.scale_layer(h))
-                     * tf.exp(self.coeff_scale, name='exp_coeff_scale'))
+            scale = tf.nn.tanh(self.scale_layer(h))
+            scale *= tf.exp(self.coeff_scale)
 
         with tf.name_scope('transformation'):
-            transformation = (tf.nn.tanh(self.transformation_layer(h))
-                              * tf.exp(self.coeff_transformation,
-                                       name='exp_coeff_transformation'))
+            transformation = tf.nn.tanh(self.transformation_layer(h))
+            transformation *= tf.exp(self.coeff_transformation)
 
         with tf.name_scope('translation'):
             translation = self.translation_layer(h)

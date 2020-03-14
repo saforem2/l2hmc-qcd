@@ -190,7 +190,7 @@ class Trainer:
 
             if self.logger is not None:
                 self.logger.write_train_strings()
-                self.logger.save_train_data()
+                #  self.logger.save_train_data()
 
         except (KeyboardInterrupt, SystemExit):
             io.log("\nERROR: KeyboardInterrupt detected!")
