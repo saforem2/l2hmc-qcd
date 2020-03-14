@@ -57,6 +57,7 @@ class GaugeModel(BaseModel):
         params = self.params if params is None else params
 
         charge_weight = getattr(self, 'charge_weight_np', 0.)
+        self._charge_weight = charge_weight
         self.use_charge_loss = (charge_weight > 0)
 
         t0 = time.time()
@@ -161,7 +162,7 @@ class GaugeModel(BaseModel):
         return observables
 
     def _charge_loss(self, x_init, x_proposed, prob):
-        dq = self.lattice.calc_top_charges_diff(x_init, x_proposed)
+        dq = - self.lattice.calc_top_charges_diff(x_init, x_proposed)
         charge_loss = prob * dq
 
         return charge_loss
@@ -183,6 +184,7 @@ class GaugeModel(BaseModel):
             charge_loss = 0.
             charge_loss += tf.reduce_mean((xq_loss + zq_loss) / ls,
                                           axis=0, name='charge_loss')
+            charge_loss *= self._charge_weight
 
         return charge_loss
 

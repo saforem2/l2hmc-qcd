@@ -1,10 +1,8 @@
-#--log_dir='/Users/saforem2/ANL/l2hmc-qcd/gauge_logs/2020_02_04/L8_b64_lf1_qw0_aw1_f64_1347'
-#--log_dir='/Users/saforem2/ANL/l2hmc-qcd/gauge_logs/2020_02_06/L8_b64_lf1_qw0_aw00_f64_0215'
---num_singular_values 1
---run_steps 10000
+--run_steps 100
+--symplectic_check
 --init 'rand'
 --beta 5.
---batch_size 4 
+--batch_size 4
 --print_steps 10
 # ---- net weights -----
 -xsw 1.
