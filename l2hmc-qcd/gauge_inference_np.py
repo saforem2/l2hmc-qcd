@@ -172,11 +172,8 @@ def main(args):
     # TODO: Modify `InferenceSummarizer` to deal with `RunData` directly
     # instead of trying to load data from `run_dir`.
     # TODO: Move InferenceSummarizer functionality into `RunData` directly?
-    try:
-        summarizer = InferenceSummarizer(run_params['run_dir'])
-        _, _ = summarizer.log_summary(n_boot=10000)
-    except:  # pylint:disable=bare-except
-        pass
+    summarizer = InferenceSummarizer(run_params['run_dir'])
+    _, _ = summarizer.log_summary(n_boot=10000)
 
 
 if __name__ == '__main__':
