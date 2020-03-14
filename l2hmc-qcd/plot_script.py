@@ -1,32 +1,42 @@
+"""
+plot_script.py
+
+Recreates all necessary plots.
+
+Author: Sam Foreman
+Date: 02/29/2020
+"""
 import os
 import time
 import argparse
 import datetime
-
-from plotters.plot_utils import bootstrap, load_pkl, get_matching_log_dirs
-from plotters.plot_observables import get_run_dirs
-from plotters.seaborn_plots import get_observables, get_train_weights, get_lf
 
 import numpy as np
 import pandas as pd
 import seaborn as sns
 import matplotlib as mpl
 import matplotlib.pyplot as plt
-import matplotlib.style as mplstyle
 import matplotlib.ticker as ticker
+import matplotlib.style as mplstyle
 
 import utils.file_io as io
 
 from lattice.lattice import u1_plaq_exact
+from plotters.data_utils import bootstrap
+from plotters.plot_utils import get_matching_log_dirs, load_pkl
+from plotters.seaborn_plots import get_lf, get_observables, get_train_weights
+from plotters.plot_observables import get_run_dirs
 
 sns.set_palette('bright')
 
-label_size = 9
-mpl.rcParams['xtick.labelsize'] = label_size
-mpl.rcParams['ytick.labelsize'] = label_size
+LABEL_SIZE = 9
+mpl.rcParams['xtick.labelsize'] = LABEL_SIZE
+mpl.rcParams['ytick.labelsize'] = LABEL_SIZE
 
 mplstyle.use('fast')
 
+
+# pylint:disable=invalid-name
 
 def parse_args():
     """Parse command line arguments."""
@@ -62,6 +72,7 @@ def build_dataframes1(run_dirs, data=None, **kwargs):
 
 
 def calc_tunneling_rate(charges):
+    """Calculate the tunneling rate from `charges`."""
     if charges.shape[0] > charges.shape[1]:
         charges = charges.T
 
@@ -222,8 +233,8 @@ def get_observables1(run_dir, n_boot=1000, therm_frac=0.2, nw_include=None):
     return data, run_params
 
 
-
 def get_previous_dir(root_dir):
+    """Get previous dir."""
     dirs = sorted(filter(os.path.isdir,
                          os.listdir(root_dir)),
                   key=os.path.getmtime)

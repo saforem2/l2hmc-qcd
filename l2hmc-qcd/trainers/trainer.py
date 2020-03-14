@@ -102,9 +102,9 @@ class Trainer:
 
         global_step = self.sess.run(self.model.global_step)
 
-        t0 = time.time()
+        start_time = time.time()
         ops_out = self.sess.run(self._train_ops, feed_dict=feed_dict)
-        dt = time.time() - t0
+        dt = time.time() - start_time
 
         outputs = dict(zip(self._train_keys, ops_out))
         outputs['x_in'] = samples
@@ -126,12 +126,13 @@ class Trainer:
             f"{outputs['lr']:^11.4g} "
             f"{np.mean(outputs['exp_energy_diff']):^11.4g} "
             f"{np.mean(outputs['sumlogdet']):^11.4g} "
+            #  f"{outputs['direction']:^11.4g} "
         )
 
         if self.model._model_type == 'GaugeModel':
             outputs['x_out'] = np.mod(outputs['x_out'], 2 * np.pi)
-            outputs['dx'] = np.mean(outputs['x_out'] - samples, axis=-1)
-            outputs['plaq_exact'] = u1_plaq_exact(beta)
+            dx = np.mean(np.abs(outputs['x_out'] - samples), axis=-1)
+            outputs['dx'] = dx
             plaq_diff = u1_plaq_exact(beta) - outputs['plaqs']
             data_str += (
                 #  f"{np.mean(outputs['actions']):^9.4g} "
@@ -189,6 +190,7 @@ class Trainer:
 
             if self.logger is not None:
                 self.logger.write_train_strings()
+                #  self.logger.save_train_data()
 
         except (KeyboardInterrupt, SystemExit):
             io.log("\nERROR: KeyboardInterrupt detected!")

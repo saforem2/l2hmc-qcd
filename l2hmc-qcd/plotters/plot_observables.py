@@ -5,26 +5,30 @@ Collection of helper functions for plotting lattice observables for gauge
 model.
 """
 import os
-import pickle
-
-from config import HAS_MATPLOTLIB, COLORS
 
 import numpy as np
 import pandas as pd
 
 import utils.file_io as io
-from lattice.lattice import u1_plaq_exact
-from .plot_utils import get_run_dirs, load_pkl
 
+from config import COLORS, HAS_MATPLOTLIB
+from lattice.lattice import u1_plaq_exact
+#  from plotters.plot_utils import get_title_str
+#  import plotters.plot_utils as utils
+#  import plotters.plot_utils as utils
+#  from plotters.plot_utils import get_title_str
+#  from plotters.data_utils import bootstrap
 
 if HAS_MATPLOTLIB:
     import matplotlib.pyplot as plt
     import matplotlib.style as mplstyle
+
     mplstyle.use('fast')
 try:
     import seaborn as sns
+
     sns.set_palette('bright', 100)
-    colors = sns.color_palette()
+    COLORS = sns.color_palette()
     sns.set_style('ticks', {'xtick.major.size': 8,
                             'ytick.major.size': 8})
     HAS_SEABORN = True
@@ -34,7 +38,38 @@ except ImportError:
     colors = COLORS
 
 
+# pylint: disable=invalid-name
+def get_title_str(params, run_params=None):
+    """Get descriptive title string for plot."""
+    ss = params['space_size']
+    ts = params['time_size']
+    lf_steps = params['num_steps']
+    batch_size = params['batch_size']
+    clip_value = params.get('clip_value', 0)
+    nw_desc = (r'($\alpha_{\mathrm{S_{x}}}$, '
+               r'$\alpha_{\mathrm{T_{x}}}$, '
+               r'$\alpha_{\mathrm{Q_{x}}}$, '
+               r'$\alpha_{\mathrm{S_{v}}}$, '
+               r'$\alpha_{\mathrm{T_{v}}}$, '
+               r'$\alpha_{\mathrm{Q_{v}}}$)')
+
+    title_str = (f"{ss} x {ts}, "
+                 r"$N_{\mathrm{LF}} = $" + f"{lf_steps}, "
+                 r"$N_{\mathrm{B}} = $" + f"{batch_size}, ")
+
+    if params.get('clip_value', 0) > 0:
+        title_str += f'clip: {clip_value}'
+
+    #  if run_params is not None:
+    #      title_str += get_run_title_str(run_params)
+    #  if nw_legend:
+        #  title_str += f"nw: {nw_desc}"
+
+    return title_str
+
+
 def plot_charges(charges, out_file=None, title=None, nrows=2, **kwargs):
+    """Create a traceplot of the  topological charges."""
     ls = kwargs.get('ls', '-')
     color = kwargs.get('color', 'k')
     lw = kwargs.get('lw', 0.6)
@@ -68,6 +103,7 @@ def plot_charges(charges, out_file=None, title=None, nrows=2, **kwargs):
 
 
 def plot_autocorrs(charges, out_file=None, title=None, nrows=4, **kwargs):
+    """Plot autocorrelations of the topological charges."""
     if not isinstance(charges, np.ndarray):
         charges = np.array(charges)[0]
 
@@ -101,11 +137,12 @@ def plot_autocorrs(charges, out_file=None, title=None, nrows=4, **kwargs):
 
 
 def weights_hist(log_dir, weights=None):
+    """Create distribution plots of weight matrices."""
     if HAS_SEABORN:
         sns.set_palette('bright', 100)
 
     if weights is None:
-        weights = load_pkl(os.path.join(log_dir, 'weights.pkl'))
+        weights = io.load_pkl(os.path.join(log_dir, 'weights.pkl'))
 
     figs_dir = os.path.join(log_dir, 'figures', 'weights')
     io.check_else_make_dir(figs_dir)
@@ -170,57 +207,9 @@ def weights_hist(log_dir, weights=None):
 
 
 def reset_plots():
+    """Reset and close all plots."""
     plt.close('all')
     plt.clf()
-
-
-def load_plaqs(run_dir):
-    plaqs_file = os.path.join(run_dir, 'observables', 'plaqs.pkl')
-    return load_pkl(plaqs_file, arr=True)
-
-
-def get_title_str(params, beta=None, eps=None, nw_legend=True):
-    ss = params['space_size']
-    ts = params['time_size']
-    lf_steps = params['num_steps']
-    batch_size = params['batch_size']
-    clip_value = params.get('clip_value', 0)
-    nw_desc = (r'($\alpha_{\mathrm{S_{x}}}$, '
-               r'$\alpha_{\mathrm{T_{x}}}$, '
-               r'$\alpha_{\mathrm{Q_{x}}}$, '
-               r'$\alpha_{\mathrm{S_{v}}}$, '
-               r'$\alpha_{\mathrm{T_{v}}}$, '
-               r'$\alpha_{\mathrm{Q_{v}}}$)')
-
-    title_str = (f"{ss} x {ts}, "
-                 r"$N_{\mathrm{LF}} = $" + f"{lf_steps}, "
-                 r"$N_{\mathrm{B}} = $" + f"{batch_size}, ")
-    if clip_value > 0:
-        title_str += f'clip: {clip_value}, '
-
-    if beta is not None:
-        title_str += r"$\beta = $" + f'{beta}, '
-
-    if eps is not None:
-        title_str += r"$\varepsilon = $" + f'{eps:.3g}, '
-
-    if nw_legend:
-        title_str += f"nw: {nw_desc}"
-
-    return title_str
-
-
-def get_run_title_str(run_params):
-    """Parses `run_params` and returns string detailing parameters."""
-    beta = run_params['beta']
-    eps = run_params['eps']
-    nw = tuple(run_params['net_weights'])
-    #  run_str = run_params['run_str']
-    title_str = (r"""$\beta = $""" + f'{beta}'
-                 + r"""$\varepsilon = $""" + f'{eps:.3g}'
-                 + f'nw: {nw}')
-
-    return title_str
 
 
 def get_obs_dict(log_dir, obs_name, run_dirs=None):
@@ -237,24 +226,25 @@ def get_obs_dict(log_dir, obs_name, run_dirs=None):
     Returns:
     """
     if run_dirs is None:
-        run_dirs = get_run_dirs(log_dir)
+        run_dirs = io.get_run_dirs(log_dir)
 
     obs_dict = {}
 
     for rd in sorted(run_dirs):
-        run_params = load_pkl(os.path.join(rd, 'run_params.pkl'))
+        run_params = io.load_pkl(os.path.join(rd, 'run_params.pkl'))
         nw = tuple(run_params['net_weights'])
         if obs_name == 'plaqs':
             exact = u1_plaq_exact(run_params['beta'])
             try:
-                plaqs = load_plaqs(rd)
-                obs = exact - plaqs
+                pf = os.path.join(rd, 'observables', 'plaqs.pkl')
+                plaqs = io.load_pkl(pf)
+                obs = exact - np.array(plaqs)
             except FileNotFoundError:
                 continue
         else:
             pkl_file = os.path.join(rd, 'observables', f'{obs_name}.pkl')
             try:
-                obs = load_pkl(pkl_file)
+                obs = io.load_pkl(pkl_file)
             except FileNotFoundError:
                 continue
 
@@ -269,22 +259,23 @@ def get_obs_dict(log_dir, obs_name, run_dirs=None):
 
 def calc_stats(data, therm_frac=0.2, axis=None):
     """Calculate statistics for data.
-    
+
     Args:
-        data (np.array): If `len(data.shape) == 2`:, calculate 
+        data (np.array): If `len(data.shape) == 2`:, calculate
     """
 
     if not isinstance(data, np.ndarray):
         data = np.array(data)
 
     step_axis = np.argmax(data.shape)
+    sample_axis = np.argmin(data.shape)
     num_steps = data.shape[step_axis]
     therm_steps = int(therm_frac * num_steps)
     data = np.delete(data, np.s_[:therm_steps], axis=step_axis)
 
     if axis is None:
-        avgs = np.mean(data, axis=-1)
-        errs = np.std(data, axis=-1)
+        avgs = np.mean(data, axis=sample_axis)
+        errs = np.std(data, axis=sample_axis)
     else:
         avgs = np.mean(data, axis=axis)
         errs = np.std(data, axis=axis)
@@ -308,7 +299,7 @@ def calc_stats(data, therm_frac=0.2, axis=None):
 def trace_plot(data, ax, color=None, stats=True, **kwargs):
     """Create trace plot of data."""
     if not isinstance(data, dict) and stats:
-        data = calc_stats(data, **kwargs)
+        data = calc_stats(data, therm_frac=0.25, axis=None)
 
     if isinstance(data, dict):
         x = data.get('x', None)
@@ -369,19 +360,21 @@ def trace_plot(data, ax, color=None, stats=True, **kwargs):
     return ax
 
 
-def kde_hist(data, stats=True, **kwargs):
-    histtype = kwargs.get('histtype', 'stepfilled')
-    key = kwargs.get('key', '')
-    color = kwargs.get('color', 'k')
-    ax = kwargs.get('ax', None)
-    #  kdehist = kwargs.get('kdehist', True)
-    use_avg = kwargs.get('use_avg', False)
-
+def kde_hist(data,
+             stats=True,
+             color='k',
+             histtype='stepfilled',
+             key='',
+             ax=None,
+             use_avg=False,
+             therm_frac=0.25,
+             zeroline=False):
+    """Create kernel-density-estimation histogram."""
     if ax is None:
         ax = plt.gca()
 
     if not isinstance(data, dict) and stats:
-        data = calc_stats(data, **kwargs)
+        data = calc_stats(data, therm_frac)
 
     if isinstance(data, dict):
         if use_avg:
@@ -437,21 +430,10 @@ def grid_plot(log_dir, obs_dict=None, **kwargs):
     out_dir = kwargs.get('out_dir', None)
 
     if run_dirs is None:
-        run_dirs = get_run_dirs(log_dir, filter_str)
+        run_dirs = io.get_run_dirs(log_dir, filter_str)
 
     if obs_dict is None:
         obs_dict = get_obs_dict(log_dir, obs_name, run_dirs=run_dirs)
-
-    #  files = os.listdir(out_dir)
-    #  existing = [f'{obs_name}' in f for f in files]
-    #  if any(existing):
-    #      io.log(f'Plot already exists. Skipping.')
-    #if os.path.isfile(os.path.join(out_dir, ''))
-    #if os.path.isdir(os.path.join(out_dir, ))
-
-    #out_file = os.path.join(out_dir, f'{fname}_{plot_type}.png')
-    #if os.path.isfile(out_file):
-    #    io.log(f'Plot already exists. Skipping.')
 
     num_plots = int(len(obs_dict.keys()))
     nrows = int(np.sqrt(num_plots))
@@ -473,25 +455,23 @@ def grid_plot(log_dir, obs_dict=None, **kwargs):
         else:
             data = v
 
-        run_params = load_pkl(os.path.join(run_dirs[idx],
-                                           'run_params.pkl'))
-        beta_arr.append(run_params['beta'])
-        eps_arr.append(run_params['eps'])
+        rp_file = os.path.join(run_dirs[idx], 'run_params.pkl')
+        run_params = io.load_pkl(rp_file)
 
         if plot_type == 'hist':
             axes[idx] = kde_hist(data,
                                  key=k,
                                  stats=stats,
                                  ax=axes[idx],
-                                 color=colors[idx],
+                                 color=COLORS[idx],
                                  zeroline=zeroline,
-                                 kdehist=kdehist,
+                                 histtype='stepfiled',
                                  use_avg=use_avg)
 
         elif plot_type in ['trace', 'trace_plot']:
             axes[idx] = trace_plot(data,
-                                   axes[idx],
-                                   colors[idx],
+                                   ax=axes[idx],
+                                   color=COLORS[idx],
                                    stats=stats,
                                    label=k,
                                    zeroline=zeroline,
@@ -519,10 +499,10 @@ def grid_plot(log_dir, obs_dict=None, **kwargs):
         fig.subplots_adjust(wspace=0.2)
 
     params_file = os.path.join(log_dir, 'parameters.pkl')
-    params = load_pkl(params_file)
+    params = io.load_pkl(params_file)
     clip_value = params.get('clip_value', 0)
 
-    title_str = get_title_str(params, **title_kwargs)
+    title_str = utils.get_title_str(params, run_params)
     _ = plt.suptitle(title_str, fontsize=22, y=1.02)
 
     if out_dir is None:
@@ -582,7 +562,7 @@ def plot_obs(log_dir, obs_dict=None, **kwargs):
     ncols = kwargs.get('ncols', 1)
 
     if run_dirs is None:
-        run_dirs = get_run_dirs(log_dir, filter_str)
+        run_dirs = io.get_run_dirs(log_dir, filter_str)
 
     if obs_dict is None:
         obs_dict = get_obs_dict(log_dir, obs_name, run_dirs=run_dirs)
@@ -596,8 +576,6 @@ def plot_obs(log_dir, obs_dict=None, **kwargs):
         sns.set_style('ticks', {'xtick.major.size': 8, 'ytick.major.size': 8})
         sns.set_palette('bright', len(obs_dict.keys()))
         colors = sns.color_palette()
-    else:
-        colors = COLORS
 
     fig, axes = plt.subplots(nrows=nrows,
                              ncols=ncols,
@@ -605,12 +583,6 @@ def plot_obs(log_dir, obs_dict=None, **kwargs):
                              figsize=(12.8, 9.6),
                              gridspec_kw={'wspace': 0.,
                                           'hspace': 0.})
-    #  axes = axes.reshape(axes.shape[0], -1, 2)
-    #  axes = axes.reshape(-1, 2)
-    #  keys = np.array(list(obs_dict.keys()))
-    #  vals = np.array(list(obs_dict.values()))
-    #  axes = axes.flatten()
-
     beta_arr = []
     eps_arr = []
 
@@ -622,8 +594,8 @@ def plot_obs(log_dir, obs_dict=None, **kwargs):
         else:
             data = v
 
-        run_params = load_pkl(os.path.join(run_dirs[idx],
-                                           'run_params.pkl'))
+        rp_file = os.path.join(run_dirs[idx], 'run_params.pkl')
+        run_params = io.load_pkl(rp_file)
         assert tuple(run_params['net_weight']) == k
         beta_arr.append(run_params['beta'])
         eps_arr.append(run_params['eps'])
@@ -641,7 +613,6 @@ def plot_obs(log_dir, obs_dict=None, **kwargs):
                                 ax=axes[idx, 1],
                                 color=colors[idx],
                                 zeroline=zeroline,
-                                kdehist=kdehist,
                                 use_avg=use_avg)
 
         if idx == int(nrows // 2):
@@ -653,16 +624,9 @@ def plot_obs(log_dir, obs_dict=None, **kwargs):
 
             _ = axes[idx, 0].set_ylabel(ylabel, fontsize=18)
 
-    title_kwargs = {}
-    if np.allclose(eps_arr, eps_arr[0]):
-        title_kwargs['eps'] = eps_arr[0]
-
-    if np.allclose(beta_arr, beta_arr[0]):
-        title_kwargs['beta'] = beta_arr[0]
-
     params_file = os.path.join(log_dir, 'parameters.pkl')
-    params = load_pkl(params_file)
-    title_str = get_title_str(params, **title_kwargs)
+    params = io.load_pkl(params_file)
+    title_str = utils.get_title_str(params, run_params)
     _ = plt.suptitle(title_str, fontsize=20, y=1.04)
 
     plt.tight_layout()

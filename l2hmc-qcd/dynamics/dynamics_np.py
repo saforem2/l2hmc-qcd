@@ -9,58 +9,71 @@ object.
 Author: Sam Foreman (github: @saforem2)
 Date: 01/07/2020
 """
+# pylint: disable=too-many-locals
+# pylint: disable=useless-object-inheritance
+# pylint: disable=too-many-instance-attributes,
+# pylint: disable=invalid-name, too-many-arguments
+# pylint:disable=no-member
 from __future__ import absolute_import, division, print_function
 
 from collections import namedtuple
 
-from config import State, NP_FLOAT
+import autograd.numpy as np
 
-from utils.file_io import timeit  # noqa: F401
+from autograd import elementwise_grad
+
+from config import NP_FLOAT, State
 from network.generic_net_np import GenericNetNP
 
-HAS_AUTOGRAD = False
-try:
-    import autograd.numpy as np
-
-    from autograd import elementwise_grad
-
-    HAS_AUTOGRAD = True
-except ImportError:
-    import numpy as np
-
-# pylint: disable=invalid-name, too-many-arguments
 Weights = namedtuple('Weights', ['w', 'b'])
 
 
-# pylint: disable=too-many-instance-attributes
-class DynamicsNP:
+def reduced_weight_matrix(W, n=10):
+    """Use the first n singular vals to reconstruct the original matrix W."""
+    U, S, V = np.linalg.svd(W)
+    W_ = np.matrix(U[:, :n]) * np.diag(S[:n]) * np.matrix(V[:n, :])
+
+    return W_
+
+
+def get_reduced_weights(weights, n=10):
+    """Keep only the first `n` singular values for the weight matrices."""
+
+
+class DynamicsNP(object):
     """Implements tools for running tensorflow-independent inference."""
-    def __init__(self, potential_fn, weights, hmc=False, **params):
-        self._model_type = params.get('model_type', None)
+    def __init__(self, potential_fn, weights,
+                 hmc=False, model_type=None, **params):
+        """Init.
+
+        Args:
+            potential_fn (callable): Potential energy function.
+            weights (dict): Dictionary of weights, from `log_dir/weights.pkl`
+                file where `log_dir` contains the trained model.
+            hmc (bool): Run generic HMC (faster)
+            model_type (str): Model type. (if 'GaugeModel', run extra ops)
+            params (dict): Dictionary of parameters used.
+        """
+        if model_type is None:
+            model_type = 'None'
+
         self.potential = potential_fn
+        self._model_type = model_type
+
         if hmc:
             self.xnet, self.vnet = self.hmc_networks()
         else:
             self.xnet, self.vnet = self.build_networks(weights)
 
-        for key, val in params.items():
-            setattr(self, key, val)
+        self.hmc = hmc
 
-        self.use_bn = params.get('use_bn', False)
-        self.dropout_prob = params.get('dropout_prob', 0)
-        self.network_arch = params.get('network_arch', 'generic')
-        self.num_hidden1 = params.get('num_hidden1', 100)
-        self.num_hidden2 = params.get('num_hidden2', 100)
-        self.eps_trainable = params.get('eps_trainable', True)
         self.x_dim = params.get('x_dim', None)
-        self.hmc = params.get('hmc', False)
         self._input_shape = params.get('_input_shape', None)
         self.batch_size = params.get('batch_size', None)
         self.eps = params.get('eps', None)
-        self.x_dim = params.get('x_dim', None)
         self.num_steps = params.get('num_steps', None)
         self.zero_masks = params.get('zero_masks', False)
-        self.masks = self.build_masks(self.zero_masks)
+        self.masks = self.build_masks()
         self.direction = params.get('direction', 'rand')
         if self.direction == 'forward':
             self._forward = True
@@ -91,6 +104,7 @@ class DynamicsNP:
 
         if v is None:
             v = np.random.normal(size=x.shape)
+
         xf, vf, pxf, sumlogdetf = self.transition_kernel(*State(x, v, beta),
                                                          net_weights,
                                                          forward=True)
@@ -116,8 +130,10 @@ class DynamicsNP:
         """Propose a new state by running the transition kernel backward."""
         if model_type == 'GaugeModel':
             x = np.mod(x, 2 * np.pi)
+
         if v is None:
             v = np.random.normal(size=x.shape)
+
         xb, vb, pxb, sumlogdetb = self.transition_kernel(*State(x, v, beta),
                                                          net_weights,
                                                          forward=False)
@@ -138,13 +154,13 @@ class DynamicsNP:
 
         return outputs
 
-    def apply_transition(self, x, beta, net_weights, model_type=None):
+    def apply_transition(self, x, beta, net_weights):
         """Propose a new state and perform the accept/reject step."""
         forward = self._forward
         if forward is None:
             forward = (np.random.uniform() < 0.5)
 
-        if model_type == 'GaugeModel':
+        if self._model_type == 'GaugeModel':
             x = np.mod(x, 2 * np.pi)
 
         v_init = np.random.normal(size=x.shape)
@@ -152,11 +168,20 @@ class DynamicsNP:
         x_, v_, px, sumlogdet = self.transition_kernel(*state_init,
                                                        net_weights,
                                                        forward=forward)
+        if self._model_type == 'GaugeModel':
+            x_ = np.mod(x_, 2 * np.pi)
+
+        # Check reversibility using proposed and initial states
+        state_prop = State(x_, v_, beta)
+        xdiff_r, vdiff_r = self.check_reversibility(state_init, state_prop,
+                                                    forward, net_weights)
+
         mask_a, mask_r, rand_num = self._get_accept_masks(px)
         x_out = x_ * mask_a[:, None] + x * mask_r[:, None]
         v_out = v_ * mask_a[:, None] + v_init * mask_r[:, None]
         sumlogdet_out = sumlogdet * mask_a
 
+        # TODO: Simplify outputs by grouping (x, v, beta) into State(s)
         outputs = {
             'x_init': x,
             'v_init': v_init,
@@ -171,9 +196,111 @@ class DynamicsNP:
             'mask_a': mask_a,
             'mask_r': mask_r,
             'rand_num': rand_num,
+            'xdiff_r': xdiff_r,
+            'vdiff_r': vdiff_r,
         }
 
         return outputs
+
+    def volume_transformation(self, state1, net_weights):
+        """
+        Check that the sampler is 'symplectic' (volume-preserving).
+
+        MD update starting from from `s1 = state_init = (x1, v1, d)`:
+
+            `s1 --> s2 = (x2, v2, d)`
+
+        Want to see if, when starting from a slightly perturbed initial
+        state, the (augmented) leapfrog sampler produces a slightly
+        perturbed output.
+
+        If the sampler is symplectic, plotting the RMS difference of the
+        outputs vs the RMS diff of the inputs should be correlated with a slope
+        of 1.
+
+        Explicitly, perturb the initial state `s1`:
+
+            `s1 --> s1 + ds1 = (x1 + dx1, v1 + dv1, d)`
+
+        We know that running MD on `s1` gives `s2`, so we need to check that
+        running MD on `s1 + ds1`:
+
+            `s1 + ds1 --> _s2 + _ds2 = (_x2 + dx2, _v2 + dv2, d)`
+
+        if symplectic, we should have `dx2 / dx1 ~ 1` and `dv2 / dv1 ~ 1`.
+
+        Args:
+            state1 (State object): Initial (starting state).
+            net_weights (NetWeights object): Multiplicative scaling factors for
+                network components.
+        Returns:
+            (dx1, dv1): Tuple consisting of the `perturbation` to the initial
+                state.
+            (dx2, dv2): Tuple consisting of the `perturbation` of the output
+                state, after accept/reject. Computed as:
+                    ```
+                    dx2 = x2 - _x2
+                    dv2 = v2 - _v2
+                    ```
+        """
+        forward = self._forward
+        if forward is None:
+            forward = (np.random.uniform() < 0.5)
+
+        x2, v2, _, _ = self.transition_kernel(*state1, net_weights,
+                                              forward=forward)
+
+        # Perturb the initial state
+        eta = 1e-2
+        dx1 = eta * np.random.randn(*state1.x.shape)
+        dv1 = eta * np.random.randn(*state1.v.shape)
+        x1_ = state1.x + dx1
+        v1_ = state1.v + dv1
+
+        if self._model_type == 'GaugeModel':
+            x1_ = np.mod(x1_, 2 * np.pi)
+            x2 = np.mod(x2, 2 * np.pi)
+
+        state1_ = State(x=x1_, v=v1_, beta=state1.beta)
+        x2_, v2_, _, _ = self.transition_kernel(*state1_, net_weights,
+                                                forward=forward)
+        if self._model_type == 'GaugeModel':
+            x2_ = np.mod(x2_, 2 * np.pi)
+
+        diffs = {
+            'dx_in': dx1,
+            'dv_in': dv1,
+            'dx_out': (x2_ - x2),
+            'dv_out': (v2_ - v2),
+        }
+
+        return diffs
+
+    def check_reversibility(self, state_init, state_prop,
+                            forward, net_weights):
+        """Check reversibility.
+
+        NOTE: `state_init = (x_init, v_init, beta)`,
+
+        Explicitly:
+            1. Run MD:
+                (state_init, d=forward) --> (state_prop, d=forward)
+            2. Flip the direction and run MD:
+                (state_prop, d=(not forward)) --> (state_r, d=(not forward))
+            3. Check differences:
+                dx = (state_r.x - state_init.x)
+                dv = (state_r.v - state_init.v)
+        """
+        x_r, v_r, _, _ = self.transition_kernel(*state_prop,
+                                                net_weights,
+                                                forward=(not forward))
+        if self._model_type == 'GaugeModel':
+            x_r = np.mod(x_r, 2 * np.pi)
+
+        dx = x_r - state_init.x
+        dv = v_r - state_init.v
+
+        return dx, dv
 
     def apply_transition_both(self, x, beta, net_weights, model_type=None):
         """Propose a new state and perform the accept/reject step."""
@@ -191,8 +318,6 @@ class DynamicsNP:
                                                          net_weights,
                                                          forward=False)
 
-        # TODO: Instead of running forward and backward simultaneously,
-        # use np.choose([-1, 1]) to determine which direction gets ran
         mask_f, mask_b = self._get_direction_masks()
         v_init = (vf_init * mask_f[:, None] + vb_init * mask_b[:, None])
         x_prop = xf * mask_f[:, None] + xb * mask_b[:, None]
@@ -206,6 +331,7 @@ class DynamicsNP:
         v_out = v_prop * mask_a[:, None] + v_init * mask_r[:, None]
         sumlogdet_out = sumlogdet_prop * mask_a
 
+        # TODO: Simplify outputs via `state_init, state_prop, state_out, ...`
         outputs = {
             'x_init': x,
             'v_init': v_init,
@@ -249,25 +375,24 @@ class DynamicsNP:
         """One forward augmented leapfrog step."""
         t = self._get_time(step, tile=x.shape[0])
         mask, mask_inv = self._get_mask(step)
+
         sumlogdet = 0.
 
-        vf1, logdet = self._update_v_forward(x, v, beta, t, net_weights)
+        v, logdet = self._update_v_forward(x, v, beta, t, net_weights)
         sumlogdet += logdet
 
-        xf1, logdet = self._update_x_forward(x, vf1, t,
-                                             net_weights,
-                                             (mask, mask_inv))
+        x, logdet = self._update_x_forward(x, v, t, net_weights,
+                                           (mask, mask_inv))
         sumlogdet += logdet
 
-        xf2, logdet = self._update_x_forward(xf1, vf1, t,
-                                             net_weights,
-                                             (mask_inv, mask))
+        x, logdet = self._update_x_forward(x, v, t, net_weights,
+                                           (mask_inv, mask))
         sumlogdet += logdet
 
-        vf2, logdet = self._update_v_forward(xf2, vf1, beta, t, net_weights)
+        v, logdet = self._update_v_forward(x, v, beta, t, net_weights)
         sumlogdet += logdet
 
-        return xf2, vf2, sumlogdet
+        return x, v, sumlogdet
 
     def _backward_lf(self, x, v, beta, step, net_weights):
         """One backward augmented leapfrog step."""
@@ -277,75 +402,82 @@ class DynamicsNP:
 
         sumlogdet = 0.
 
-        vb1, logdet = self._update_v_backward(x, v, beta, t, net_weights)
+        v, logdet = self._update_v_backward(x, v, beta, t, net_weights)
         sumlogdet += logdet
 
-        xb1, logdet = self._update_x_backward(x, vb1, t,
-                                              net_weights,
-                                              (mask_inv, mask))
+        x, logdet = self._update_x_backward(x, v, t, net_weights,
+                                            (mask_inv, mask))
         sumlogdet += logdet
 
-        xb2, logdet = self._update_x_backward(xb1, vb1, t,
-                                              net_weights,
-                                              (mask, mask_inv))
+        x, logdet = self._update_x_backward(x, v, t, net_weights,
+                                            (mask, mask_inv))
         sumlogdet += logdet
 
-        vb2, logdet = self._update_v_backward(xb2, vb1, beta, t, net_weights)
+        v, logdet = self._update_v_backward(x, v, beta, t, net_weights)
         sumlogdet += logdet
 
-        return xb2, vb2, sumlogdet
+        return x, v, sumlogdet
 
     def _update_v_forward(self, x, v, beta, t, net_weights):
         """Update v in the forward leapfrog step."""
-        dU_dx = self.grad_potential(x, beta)
-        Sv, Tv, Qv = self.vnet([x, dU_dx, t])
+        if self._model_type == 'GaugeModel':
+            x = np.mod(x, 2 * np.pi)
 
-        transl = net_weights.v_translation * Tv
+        grad = self.grad_potential(x, beta)
+        Sv, Tv, Qv = self.vnet([x, grad, t])
+
         scale = net_weights.v_scale * (0.5 * self.eps * Sv)
         transf = net_weights.v_transformation * (self.eps * Qv)
+        transl = net_weights.v_translation * Tv
 
-        exp_scale = np.exp(scale)
-        exp_transf = np.exp(transf)
-
-        vf = v * exp_scale - 0.5 * self.eps * (dU_dx * exp_transf + transl)
+        v = (v * np.exp(scale)
+             - 0.5 * self.eps * (grad * np.exp(transf) + transl))
         logdet = np.sum(scale, axis=1)
 
-        return vf, logdet
+        return v, logdet
 
     def _update_x_forward(self, x, v, t, net_weights, masks):
         """Update x in the forward leapfrog step."""
+        if self._model_type == 'GaugeModel':
+            x = np.mod(x, 2 * np.pi)
+
         mask, mask_inv = masks
         Sx, Tx, Qx = self.xnet([v, mask * x, t])
+
         scale = net_weights.x_scale * (self.eps * Sx)
-        transl = net_weights.x_translation * Tx
         transf = net_weights.x_transformation * (self.eps * Qx)
+        transl = net_weights.x_translation * Tx
 
         y = x * np.exp(scale) + self.eps * (v * np.exp(transf) + transl)
-        xf = mask * x + mask_inv * y
+        x = mask * x + mask_inv * y
         logdet = np.sum(mask_inv * scale, axis=1)
 
-        return xf, logdet
+        return x, logdet
 
     def _update_v_backward(self, x, v, beta, t, net_weights):
         """Update v in the backward lf step. Inverting the forward update."""
-        dU_dx = self.grad_potential(x, beta)
-        Sv, Tv, Qv = self.vnet([x, dU_dx, t])
+        if self._model_type == 'GaugeModel':
+            x = np.mod(x, 2 * np.pi)
+
+        grad = self.grad_potential(x, beta)
+        Sv, Tv, Qv = self.vnet([x, grad, t])
 
         scale = net_weights.v_scale * (-0.5 * self.eps * Sv)
-        transl = net_weights.v_translation * Tv
         transf = net_weights.v_transformation * (self.eps * Qv)
+        transl = net_weights.v_translation * Tv
 
-        exp_scale = np.exp(scale)
-        exp_transf = np.exp(transf)
-
-        half_eps = 0.5 * self.eps
-        vb = exp_scale * (v + half_eps * (dU_dx * exp_transf + transl))
+        v = np.exp(scale) * (
+            v + 0.5 * self.eps * (grad * np.exp(transf) + transl)
+        )
         logdet = np.sum(scale, axis=1)
 
-        return vb, logdet
+        return v, logdet
 
     def _update_x_backward(self, x, v, t, net_weights, masks):
         """Update x in the backward lf step. Inverting the forward update."""
+        if self._model_type == 'GaugeModel':
+            x = np.mod(x, 2 * np.pi)
+
         mask, mask_inv = masks
         Sx, Tx, Qx = self.xnet([v, mask * x, t])
 
@@ -429,15 +561,28 @@ class DynamicsNP:
 
         return xnet, vnet
 
-    def build_masks(self, zero_masks=False):
-        """Build `x` masks used for selecting which idxs of `x` get updated."""
+    def _build_zero_masks(self):
         masks = []
-        for _ in range(self.num_steps):
-            idx = np.random.permutation(np.arange(self.x_dim))[:self.x_dim//2]
-            mask = np.zeros((self.x_dim,))
-            if not zero_masks:
-                mask[idx] = 1.
+        for  _ in range(self.num_steps):
+            #  mask = np.zeros((self.x_dim,))
+            mask = np.ones((self.x_dim,))
             masks.append(mask[None, :])
+
+        return masks
+
+    def build_masks(self):
+        """Build `x` masks used for selecting which idxs of `x` get updated."""
+        if self.zero_masks:
+            masks = self._build_zero_masks()
+
+        else:
+            masks = []
+            for _ in range(self.num_steps):
+                _idx = np.arange(self.x_dim)
+                idx = np.random.permutation(_idx)[:self.x_dim//2]
+                mask = np.zeros((self.x_dim,))
+                mask[idx] = 1.
+                masks.append(mask[None, :])
 
         return masks
 
@@ -453,12 +598,11 @@ class DynamicsNP:
         return m, 1. - m
 
     def grad_potential(self, x, beta):
-        if HAS_AUTOGRAD:
-            grad_fn = elementwise_grad(self.potential_energy, 0)
-            #  grad_fn = grad(self.potential_energy, 0)
-        else:
-            raise ModuleNotFoundError('Unable to load autodiff library. '
-                                      'Exiting.')
+        """Caclulate the element wise gradient of the potential energy fn."""
+        grad_fn = elementwise_grad(self.potential_energy, 0)
+        #  if HAS_JAX:
+        #      grad_fn = jax.vmap(jax.grad(self.potential_energy, argnums=0))
+        #  grad_fn = grad(self.potential_energy, 0)
 
         return grad_fn(x, beta)
 

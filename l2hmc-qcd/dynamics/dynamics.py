@@ -15,23 +15,22 @@ https://infoscience.epfl.ch/record/264887/files/robust_parameter_estimation.pdf
 Author: Sam Foreman (github: @saforem2)
 Date: 1/14/2019
 """
-from __future__ import division
-from __future__ import print_function
-from __future__ import absolute_import
+from __future__ import absolute_import, division, print_function
+
+# pylint:disable=invalid-name,too-many-locals,too-many-arguments
 
 import numpy as np
 import tensorflow as tf
-import numpy.random as npr
-from collections import namedtuple
 
-from network.network import FullNet
-from seed_dict import seeds
 import config as cfg
+
+from seed_dict import seeds
+from network.network import FullNet
 
 __all__ = ['Dynamics']
 
-NP_FLOAT = cfg.NP_FLOAT
 TF_FLOAT = cfg.TF_FLOAT
+NP_FLOAT = cfg.NP_FLOAT
 TF_INT = cfg.TF_INT
 State = cfg.State  # namedtuple object containing `(x, v, beta)`
 
@@ -47,13 +46,17 @@ def _add_to_collection(collection, ops):
     else:
         tf.add_to_collection(collection, ops)
 
+
 def cast_float(x, dtype=NP_FLOAT):
+    """Cast `x` to `dtype`."""
     if dtype == np.float64:
         return np.float64(x)
     if dtype == np.float32:
         return np.float32(x)
+    return np.float(x)
 
 
+# pylint:disable=too-many-instance-attributes
 class Dynamics(tf.keras.Model):
     """Dynamics engine of naive L2HMC sampler."""
     def __init__(self, potential_fn, **params):
@@ -86,10 +89,15 @@ class Dynamics(tf.keras.Model):
             if key != 'eps':  # want to use self.eps as tf.Variable
                 setattr(self, key, val)
 
+        self._model_type = params.get('model_type', None)
+        self.x_dim = params.get('x_dim', None)
+        self.batch_size = params.get('batch_size', None)
+        self._input_shape = (self.batch_size, self.x_dim)
+        self.num_filters = params.get('num_filters', None)  # n conv. filters
         self.hmc = params.get('hmc', False)           # use HMC sampler
-        self._eps_np = params.get('eps', 0.4)         # initial step size
         eps_np = params.get('eps', 0.4)
-        self._eps_np = cast_float(eps_np, NP_FLOAT)
+        self._eps_np = cast_float(eps_np, NP_FLOAT)   # initial step size
+        self._eps_trainable = params.get('eps_trainable', True)
         self.use_bn = params.get('use_bn', False)     # use batch normalization
         self.num_steps = params.get('num_steps', 5)   # number of lf steps
         self.zero_masks = params.get('zero_masks', False)   # all 0 binary mask
@@ -100,7 +108,10 @@ class Dynamics(tf.keras.Model):
 
         self.eps = self._build_eps(use_log=False)
         # build binary masks for updating x
-        self.masks = self._build_masks(zero_masks=self.zero_masks)
+        if self.zero_masks:
+            self.masks = self._build_zero_masks()
+        else:
+            self.masks = self._build_masks()
 
         net_params = self._network_setup()
         self.xnet, self.vnet = self.build_network(net_params)
@@ -122,7 +133,7 @@ class Dynamics(tf.keras.Model):
                     initial_value=tf.log(tf.constant(self._eps_np)),
                     name='log_eps',
                     dtype=TF_FLOAT,
-                    trainable=self.eps_trainable
+                    trainable=self._eps_trainable
                 )
 
                 eps = tf.exp(log_eps, name='eps')
@@ -132,7 +143,7 @@ class Dynamics(tf.keras.Model):
                     initial_value=tf.constant(self._eps_np),
                     name='eps',
                     dtype=TF_FLOAT,
-                    trainable=self.eps_trainable
+                    trainable=self._eps_trainable
                 )
 
         return eps
@@ -171,10 +182,10 @@ class Dynamics(tf.keras.Model):
     def build_network(self, net_params):
         """Build neural network used to train model."""
         if self.hmc:
-            x_fn = lambda inputs, train_phase: [  # noqa: E731
+            x_fn = lambda inputs, is_training: [  # noqa: E731
                 tf.zeros_like(inputs[0]) for _ in range(3)
             ]
-            v_fn = lambda inputs, train_phase: [  # noqa: E731
+            v_fn = lambda inputs, is_training: [  # noqa: E731
                 tf.zeros_like(inputs[0]) for _ in range(3)
             ]
 
@@ -189,16 +200,71 @@ class Dynamics(tf.keras.Model):
 
         return x_fn, v_fn
 
-    def call(self, *args, **kwargs):
+    def __call__(self, *args, **kwargs):
         """Call method."""
         return self.apply_transition(*args, **kwargs)
+
+    def apply_transition_direction(self,
+                                   x_init,
+                                   beta,
+                                   weights,
+                                   is_training,
+                                   model_type=None,
+                                   hmc=False):
+        """Propose a new state and perform the accept/reject step."""
+        with tf.name_scope('apply_transition'):
+            #  forward = (tf.random_uniform(shape=(), dtype=TF_FLOAT) > 0.5)
+            if model_type == 'GaugeModel':
+                x_init = tf.mod(x_init, 2 * np.pi)
+
+            v_init = tf.random_normal(tf.shape(x_init),
+                                      dtype=TF_FLOAT,
+                                      name='v_init')
+            state_init = cfg.State(x_init, v_init, beta)
+            out = self.transition_kernel(*state_init,
+                                         weights, is_training, hmc=hmc)
+            x_prop = out['x_proposed']
+            v_prop = out['v_proposed']
+            px = out['accept_prob']
+            px_hmc = out['accept_prob_hmc']
+            sumlogdet_prop = out['sumlogdet']
+
+            if model_type == 'GaugeModel':
+                x_prop = tf.mod(x_prop, 2 * np.pi)
+
+            # Accept or reject step
+            with tf.name_scope('accept_reject_step'):
+                # accept_mask, reject_mask
+                mask_a, mask_r = self._get_accept_masks(px)
+
+                # State (x, v)  after accept / reject step
+                x_out = x_prop * mask_a[:, None] + x_init * mask_r[:, None]
+                v_out = v_prop * mask_a[:, None] + v_init * mask_r[:, None]
+                sumlogdet_out = sumlogdet_prop * mask_a
+
+        outputs = {
+            'x_init': x_init,
+            'v_init': v_init,
+            'x_proposed': x_prop,
+            'v_proposed': v_prop,
+            'x_out': x_out,
+            'v_out': v_out,
+            #  'direction': forward,
+            #  'xf': xf,
+            #  'xb': xb,
+            'accept_prob': px,
+            'accept_prob_hmc': px_hmc,
+            'sumlogdet_proposed': sumlogdet_prop,
+            'sumlogdet_out': sumlogdet_out,
+        }
+
+        return outputs
 
     def apply_transition(self,
                          x_init,
                          beta,
                          weights,
-                         train_phase,
-                         model_type=None,
+                         is_training,
                          hmc=True):
         """Propose a new state and perform the accept/reject step.
 
@@ -211,7 +277,7 @@ class Dynamics(tf.keras.Model):
             beta (tf.placeholder): Inverse coupling constant.
             net_weights: Array of scaling weights to multiply each of the
                 output functions (scale, translation, transformation).
-            train_phase (tf.placeholder): Boolean tf.placeholder used to
+            is_training (tf.placeholder): Boolean tf.placeholder used to
                 indicate if the model is currently being trained.
 
         Returns:
@@ -227,7 +293,7 @@ class Dynamics(tf.keras.Model):
         accept reject step. Consequently, `out` refers to the result after the
         accept/reject.
         """
-        if model_type == 'GaugeModel':
+        if self._model_type == 'GaugeModel':
             x_init = tf.mod(x_init, 2 * np.pi, name='x_in_mod_2_pi')
 
         # Call `self.transition_kernel` in the forward direction,
@@ -242,7 +308,7 @@ class Dynamics(tf.keras.Model):
 
                 state_init_f = cfg.State(x_init, vf_init, beta)
                 outf = self.transition_kernel(*state_init_f,
-                                              weights, train_phase,
+                                              weights, is_training,
                                               forward=True, hmc=hmc)
                 xf = outf['x_proposed']
                 vf = outf['v_proposed']
@@ -258,7 +324,7 @@ class Dynamics(tf.keras.Model):
 
                 state_init_b = cfg.State(x_init, vb_init, beta)
                 outb = self.transition_kernel(*state_init_b,
-                                              weights, train_phase,
+                                              weights, is_training,
                                               forward=False, hmc=hmc)
                 xb = outb['x_proposed']
                 vb = outb['v_proposed']
@@ -322,24 +388,28 @@ class Dynamics(tf.keras.Model):
                           v_in,
                           beta,
                           weights,
-                          train_phase,
+                          is_training,
                           forward=True,
                           hmc=True):
         """Transition kernel of augmented leapfrog integrator."""
+        #  forward = tf.cast(forward, tf.bool)
         lf_fn = self._forward_lf if forward else self._backward_lf
+        #  rn = tf.random_uniform(shape=(), dtype=TF_FLOAT)
+        #  lf_fn = tf.cond(rn < 0.5, self._forward_lf, self._backward_lf)
 
         with tf.name_scope('transition_kernel'):
             x_proposed, v_proposed = x_in, v_in
 
             step = tf.constant(0., name='md_step', dtype=TF_FLOAT)
-            batch_size = tf.shape(x_in)[0]
-            logdet = tf.zeros((batch_size,), dtype=TF_FLOAT)
+            #  batch_size = tf.shape(x_in)[0]
+            logdet = tf.zeros((self.batch_size,), dtype=TF_FLOAT)
 
             def body(step, x, v, logdet):
-                new_x, new_v, j, _fns = lf_fn(x, v, beta, step,
-                                              weights, train_phase)
+                new_x, new_v, j, = lf_fn(x, v, beta, step,
+                                         weights, is_training)
                 return (step+1, new_x, new_v, logdet+j)
 
+            # pylint: disable=unused-argument
             def cond(step, *args):
                 return tf.less(step, self.num_steps)
 
@@ -370,9 +440,8 @@ class Dynamics(tf.keras.Model):
 
         return outputs
 
-    def _forward_lf(self, x, v, beta, step, weights, training):
+    def _forward_lf(self, x, v, beta, step, weights, is_training):
         """One forward augmented leapfrog step."""
-        forward_fns = []
         with tf.name_scope('forward_lf'):
             with tf.name_scope('get_time'):
                 t = self._get_time(step, tile=tf.shape(x)[0])
@@ -380,33 +449,28 @@ class Dynamics(tf.keras.Model):
                 mask, mask_inv = self._get_mask(step)
 
             sumlogdet = 0.
-            vf1, logdet, vf_fns = self._update_v_forward(x, v, beta, t,
-                                                         weights, training)
+            v, logdet = self._update_v_forward(x, v, beta, t,
+                                               weights, is_training)
             sumlogdet += logdet
-            forward_fns.append(vf_fns)
 
-            xf1, logdet, xf_fns = self._update_x_forward(x, vf1, t,
-                                                         weights, training,
-                                                         (mask, mask_inv))
+            x, logdet = self._update_x_forward(x, v, t,
+                                               weights, is_training,
+                                               (mask, mask_inv))
             sumlogdet += logdet
-            forward_fns.append(xf_fns)
 
-            xf2, logdet, xf_fns = self._update_x_forward(xf1, vf1, t,
-                                                         weights, training,
-                                                         (mask_inv, mask))
+            x, logdet = self._update_x_forward(x, v, t,
+                                               weights, is_training,
+                                               (mask_inv, mask))
             sumlogdet += logdet
-            forward_fns.append(xf_fns)
 
-            vf2, logdet, vf_fns = self._update_v_forward(xf2, vf1, beta, t,
-                                                         weights, training)
+            v, logdet = self._update_v_forward(x, v, beta, t,
+                                               weights, is_training)
             sumlogdet += logdet
-            forward_fns.append(vf_fns)
 
-        return xf2, vf2, sumlogdet, forward_fns
+        return x, v, sumlogdet
 
     def _backward_lf(self, x, v, beta, step, weights, training):
         """One backward augmented leapfrog step."""
-        backward_fns = []
         with tf.name_scope('backward_lf'):
             step_r = self.num_steps - step - 1
             t = self._get_time(step_r, tile=tf.shape(x)[0])
@@ -414,29 +478,25 @@ class Dynamics(tf.keras.Model):
 
             sumlogdet = 0.
 
-            vb1, logdet, vb_fns = self._update_v_backward(x, v, beta, t,
-                                                          weights, training)
+            v, logdet = self._update_v_backward(x, v, beta, t,
+                                                weights, training)
             sumlogdet += logdet
-            backward_fns.append(vb_fns)
 
-            xb1, logdet, xb_fns = self._update_x_backward(x, vb1, t,
-                                                          weights, training,
-                                                          (mask_inv, mask))
+            x, logdet = self._update_x_backward(x, v, t,
+                                                weights, training,
+                                                (mask_inv, mask))
             sumlogdet += logdet
-            backward_fns.append(xb_fns)
 
-            xb2, logdet, xb_fns = self._update_x_backward(xb1, vb1, t,
-                                                          weights, training,
-                                                          (mask, mask_inv))
+            x, logdet = self._update_x_backward(x, v, t,
+                                                weights, training,
+                                                (mask, mask_inv))
             sumlogdet += logdet
-            backward_fns.append(xb_fns)
 
-            vb2, logdet, vb_fns = self._update_v_backward(xb2, vb1, beta, t,
-                                                          weights, training)
+            v, logdet = self._update_v_backward(x, v, beta, t,
+                                                weights, training)
             sumlogdet += logdet
-            backward_fns.append(vb_fns)
 
-        return xb2, vb2, sumlogdet, backward_fns
+        return x, v, sumlogdet
 
     def _update_v_forward(self, x, v, beta, t, weights, training):
         """Update v in the forward leapfrog step.
@@ -457,25 +517,29 @@ class Dynamics(tf.keras.Model):
                 v' = v * exp(0.5*eps*Sv) - 0.5*eps*[grad*exp(eps*Qv) + Tv]
         """
         with tf.name_scope('update_vf'):
+            if self._model_type == 'GaugeModel':
+                x = tf.mod(x, 2 * np.pi)
+
             grad = self.grad_potential(x, beta)
-            #  scale, transl, transf = self.vnet([x, grad, t], training)
             Sv, Tv, Qv = self.vnet([x, grad, t], training)
 
             transl = weights.v_translation * Tv
             scale = weights.v_scale * (0.5 * self.eps * Sv)
             transf = weights.v_transformation * (self.eps * Qv)
 
-            fns = [scale, transl, transf]
             exp_scale = tf.exp(scale)
             exp_transf = tf.exp(transf)
 
             vf = v * exp_scale - 0.5 * self.eps * (grad * exp_transf + transl)
             logdet_vf = tf.reduce_sum(scale, axis=1, name='logdet_vf')
 
-        return vf, logdet_vf, fns
+        return vf, logdet_vf
 
     def _update_x_forward(self, x, v, t, weights, training, masks):
         """Update x in the forward leapfrog step."""
+        if self._model_type == 'GaugeModel':
+            x = tf.mod(x, 2 * np.pi)
+
         mask, mask_inv = masks
 
         with tf.name_scope('update_xf'):
@@ -485,19 +549,20 @@ class Dynamics(tf.keras.Model):
             transf = weights.x_transformation * (self.eps * Qx)
             transl = weights.x_translation * Tx
 
-            fns = [scale, transl, transf]
-
             y = x * tf.exp(scale) + self.eps * (v * tf.exp(transf) + transl)
 
             xf = mask * x + mask_inv * y
             logdet_xf = tf.reduce_sum(mask_inv * scale,
                                       axis=1, name='logdet_xf')
 
-        return xf, logdet_xf, fns
+        return xf, logdet_xf
 
     def _update_v_backward(self, x, v, beta, t, weights, training):
         """Update v in the backward leapfrog step. Invert the forward update"""
         with tf.name_scope('update_vb'):
+            if self._model_type == 'GaugeModel':
+                x = tf.mod(x, 2 * np.pi)
+
             grad = self.grad_potential(x, beta)
             Sv, Tv, Qv = self.vnet([x, grad, t], training)
 
@@ -513,11 +578,13 @@ class Dynamics(tf.keras.Model):
 
             logdet = tf.reduce_sum(scale, axis=1, name='logdet_vb')
 
-        fns = [scale, transl, transf]
-        return vb, logdet, fns
+        return vb, logdet
 
     def _update_x_backward(self, x, v, t, weights, training, masks):
         """Update x in the backward lf step. Inverting the forward update."""
+        if self._model_type == 'GaugeModel':
+            x = tf.mod(x, 2 * np.pi)
+
         mask, mask_inv = masks
         with tf.name_scope('update_xb'):
             Sx, Tx, Qx = self.xnet([v, mask * x, t], training)
@@ -532,8 +599,7 @@ class Dynamics(tf.keras.Model):
             xb = mask * x + mask_inv * y
             logdet = tf.reduce_sum(mask_inv * scale, axis=1, name='logdet_xb')
 
-        fns = [scale, transl, transf]
-        return xb, logdet, fns
+        return xb, logdet
 
     def _compute_accept_prob(self, xi, vi, xf, vf, sumlogdet, beta, hmc=True):
         """Compute the prob of accepting the proposed state given old state.
@@ -542,7 +608,7 @@ class Dynamics(tf.keras.Model):
             vi: Initial v.
             xf: Proposed state.
             vf: Proposed v.
-            sumlogdet: Sum of the terms of the log of the determinant. 
+            sumlogdet: Sum of the terms of the log of the determinant.
                 (Eq. 14 of original paper).
             beta: Inverse coupling constant of gauge model.
         """
@@ -567,7 +633,8 @@ class Dynamics(tf.keras.Model):
 
         return accept_prob, prob_hmc
 
-    def _compute_accept_prob_hmc(self, h_init, h_proposed, beta):
+    @staticmethod
+    def _compute_accept_prob_hmc(h_init, h_proposed, beta):
         """Compute the prob. of accepting the proposed state given old state.
 
         NOTE: This computes the accept prob. for generic HMC.
@@ -606,7 +673,8 @@ class Dynamics(tf.keras.Model):
 
         return forward_mask, backward_mask
 
-    def _get_accept_masks(self, accept_prob):
+    @staticmethod
+    def _get_accept_masks(accept_prob):
         with tf.name_scope('accept_masks'):
             accept_mask = tf.cast(
                 accept_prob > tf.random_uniform(tf.shape(accept_prob),
@@ -620,15 +688,14 @@ class Dynamics(tf.keras.Model):
         return accept_mask, reject_mask
 
     def _build_zero_masks(self):
-        with tf.name_scoep('x_masks'):
-            masks = []
-            for _ in range(self.num_steps):
-                mask = tf.constant(np.zeros((self.x_dim,)), dtype=TF_FLOAT)
-                masks.append(mask[None, :])
+        masks = []
+        for _ in range(self.num_steps):
+            mask = tf.constant(np.zeros((self.x_dim,)), dtype=TF_FLOAT)
+            masks.append(mask[None, :])
 
-            return masks
+        return masks
 
-    def _build_masks(self, zero_masks=False):
+    def _build_masks(self):
         """Construct different binary masks for different time steps.
 
         Args:
@@ -636,15 +703,17 @@ class Dynamics(tf.keras.Model):
                 equal to zero instead of half zeros, half ones.
         """
         with tf.name_scope('x_masks'):
+            #  if self.zero_masks:
+            #      masks = self._build_zero_masks()
+            #  else:
             masks = []
             for _ in range(self.num_steps):
                 # Need to use npr here because tf would generate different
                 # random values across different `sess.run`
-                idx = npr.permutation(np.arange(self.x_dim))[:self.x_dim // 2]
+                _idx = np.arange(self.x_dim)
+                idx = np.random.permutation(_idx)[:self.x_dim // 2]
                 mask = np.zeros((self.x_dim,))
-                if not zero_masks:  # set half of the entries equal to 1
-                    mask[idx] = 1.
-
+                mask[idx] = 1.
                 mask = tf.constant(mask, dtype=TF_FLOAT)
                 masks.append(mask[None, :])
 
@@ -679,7 +748,8 @@ class Dynamics(tf.keras.Model):
 
         return potential_energy
 
-    def kinetic_energy(self, v):
+    @staticmethod
+    def kinetic_energy(v):
         """Compute the kinetic energy."""
         with tf.name_scope('kinetic_energy'):
             kinetic_energy = 0.5 * tf.reduce_sum(v**2, axis=1)
