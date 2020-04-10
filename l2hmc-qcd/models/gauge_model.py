@@ -50,6 +50,13 @@ class GaugeModel(BaseModel):
         if params is None:
             params = GAUGE_PARAMS
 
+        self.params = params
+        self.dim = int(params.get('dim', 2))
+        self.link_type = params.get('link_type', 'U1')
+        self.time_size = int(params.get('time_size', 8))
+        self.space_size = int(params.get('space_size', 8))
+        self._charge_weight = float(params.get('charge_weight', 0.))
+        self._plaq_weight = float(params.get('plaq_weight', 0.))
         self.build(params)
 
     def build(self, params=None):
@@ -70,6 +77,9 @@ class GaugeModel(BaseModel):
             self.lattice = self._create_lattice()
             self.batch_size = self.lattice.samples.shape[0]
             self.x_dim = self.lattice.num_links
+            self._lattice_shape = (self.batch_size,
+                                   self.lattice.time_size,
+                                   self.lattice.space_size, 2)
 
             # ************************************************
             # Build inputs and their respective placeholders
@@ -208,3 +218,127 @@ class GaugeModel(BaseModel):
             charge_diffs_op = tf.reduce_sum(x_dq) / self.batch_size
 
         return charge_diffs_op
+
+    def _plaq_sums(self, x):
+        """Calculate the sum around all elementary plaquettes in `x`.
+        Example:
+                              = - roll(x[..., 0], -1, 2)
+                          ┌───<───┐
+                          │       │
+             -x[..., 1] = ⋁       ⋀ = roll(x[..., 1], -1, 1)
+                          │       │
+                          └───>───┘
+                              = x[..., 0]
+        """
+        x = tf.reshape(x, self._lattice_shape)  # (Nb, Lt, Lx, 2)
+        plaq_sums = (x[..., 0]
+                     - x[..., 1]
+                     - tf.roll(x[..., 0], shift=-1, axis=2)   # along `x` axis
+                     + tf.roll(x[..., 1], shift=-1, axis=1))  # along `t` axis
+
+        return plaq_sums
+
+    @staticmethod
+    def _top_charge(plaq_sums):
+        """Calculate the topological charge over all samples in x."""
+        charges = tf.reduce_sum(tf.sin(plaq_sums), axis=(1, 2)) / (2 * np.pi)
+
+        return charges
+
+    @staticmethod
+    def _plaq_loss(plaqs_init, plaqs_proposed, accept_prob, eps=1e-4):
+        """Calculate the expected plaquette differences b/t `x1` and `x2`."""
+        #  dx = (tf.cos(plaqs_proposed) - tf.cos(plaqs_init))
+        #  dy = (tf.sin(plaqs_proposed) - tf.sin(plaqs_init))
+        #  tot_diff = dx ** 2 + dy ** 2
+        tot_diff = 2. * (1. - tf.cos(plaqs_proposed - plaqs_init))
+        plaq_loss = accept_prob * tf.reduce_sum(tot_diff, axis=(1, 2)) + eps
+
+        return plaq_loss
+
+    def plaq_loss(self, xdata, zdata, eps=1e-4):
+        xp0 = self._plaq_sums(xdata.init)
+        xp1 = self._plaq_sums(xdata.proposed)
+        zp0 = self._plaq_sums(zdata.init)
+        zp1 = self._plaq_sums(zdata.proposed)
+
+        plaq_loss = tf.cast(0., TF_FLOAT)
+        if self._plaq_weight > 0:
+            dxp = 2. * (1. - tf.cos(xp1 - xp0))
+            dzp = 2. * (1. - tf.cos(zp1 - zp0))
+            xp_loss = xdata.prob * tf.reduce_sum(dxp, axis=(1, 2)) + eps
+            zp_loss = zdata.prob * tf.reduce_sum(dzp, axis=(1, 2)) + eps
+
+            term1p = self._plaq_weight * (1. / xp_loss + 1. / zp_loss)
+            term2p = (xp_loss + zp_loss) / self._plaq_weight
+            plaq_loss = tf.reduce_mean(term1p - term2p, axis=0,
+                                       name='plaq_loss')
+
+        charge_loss = tf.cast(0., TF_FLOAT)
+        if self._charge_weight > 0:
+            xq0 = self._top_charge(xp0)
+            xq1 = self._top_charge(xp1)
+            zq0 = self._top_charge(zp0)
+            zq1 = self._top_charge(zp1)
+
+            xq_loss = xdata.prob * (xq1 - xq0) ** 2 + eps
+            zq_loss = zdata.prob * (zq1 - zq0) ** 2 + eps
+            term1q = self._charge_weight * (1. / xq_loss + 1. / zq_loss)
+            term2q = (xq_loss + zq_loss) / self._charge_weight
+            charge_loss = tf.reduce_mean(term1q - term2q, axis=0,
+                                         name='charge_loss')
+
+        return plaq_loss, charge_loss
+
+    @staticmethod
+    def _charge_loss(q_init, q_proposed, accept_prob, eps=1e-4):
+        return accept_prob * (q_proposed - q_init) ** 2 + eps
+
+    @staticmethod
+    def _gauge_esjd(x1, x2, prob, eps=1e-4):
+        """Calculate the esjd."""
+        esjd = prob * tf.reduce_sum(2. * (1. - tf.cos(x1 - x2)), axis=1) + eps
+
+        return esjd
+
+    def _calc_esjd_loss(self, xdata, zdata, eps=1e-4):
+        x_esjd = self._gauge_esjd(xdata.init, xdata.proposed, xdata.prob, eps)
+        z_esjd = self._gauge_esjd(zdata.init, zdata.proposed, zdata.prob, eps)
+        term1 = self.loss_scale * (1. / x_esjd + 1. / z_esjd)
+        term2 = (x_esjd + z_esjd) / self.loss_scale
+        esjd_loss = tf.reduce_mean(term1 - term2, axis=0)
+
+        return esjd_loss
+
+    @staticmethod
+    def _mixed_loss(x, weight):
+        """Return the mixed loss."""
+        return tf.reduce_mean((weight / x) - (x / weight))
+
+        # pylint:disable=too-many-locals
+    def calc_loss(self, xdata, zdata, eps=1e-4):
+        """Calculate the total loss."""
+        total_loss = 0.
+        ld = {}
+
+        std_loss = self._calc_esjd_loss(xdata, zdata, eps)
+        plaq_loss, charge_loss = self.plaq_loss(xdata, zdata, eps)
+
+        std_loss *= self.std_weight
+        plaq_loss *= self._plaq_weight
+        charge_loss *= self._charge_weight
+        ld['std'] = std_loss
+        ld['plaq'] = plaq_loss
+        ld['charge'] = charge_loss
+
+        total_loss = std_loss + charge_loss + plaq_loss
+        tf.add_to_collection('losses', total_loss)
+
+        losses_dict = {}
+        fd = {k: v / total_loss for k, v in ld.items()}
+
+        for (lk, lv), (fk, fv) in zip(ld.items(), fd.items()):
+            losses_dict[f'{lk}_loss'] = lv
+            losses_dict[f'{fk}_frac'] = fv
+            tf.add_to_collection('losses', lv)
+        return total_loss, losses_dict

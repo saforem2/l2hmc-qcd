@@ -18,7 +18,7 @@ from scipy.stats import multivariate_normal
 
 import utils.file_io as io
 
-from config import COLORS, HAS_MATPLOTLIB, MARKERS
+from config import COLORS, HAS_MATPLOTLIB, MARKERS, Weights
 from lattice.lattice import u1_plaq_exact
 from plotters.plot_observables import calc_stats, get_obs_dict
 from plotters.data_utils import calc_var_explained
@@ -52,8 +52,10 @@ except ImportError:
 def load_weights(log_dir):
     """Load weights dict from `log_dir`."""
     weights = io.load_pkl(os.path.join(log_dir, 'weights.pkl'))
-    xweights = weights['xnet']['GenericNet']
-    vweights = weights['vnet']['GenericNet']
+    xweights = weights['xnet']
+    vweights = weights['vnet']
+    #  xweights = weights['xnet']['GenericNet']
+    #  vweights = weights['vnet']['GenericNet']
     weights_dict = {
         'xnet': {},
         'vnet': {},

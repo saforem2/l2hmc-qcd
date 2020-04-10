@@ -7,6 +7,7 @@ Implements both 2D and 3D convolutional neural networks.
 Author: Sam Foreman (github: @saforem2)
 Date: 06/14/2019
 """
+import pickle
 import numpy as np
 import tensorflow as tf
 
@@ -15,6 +16,7 @@ from seed_dict import seeds
 from .network_utils import batch_norm
 
 TF_FLOAT = cfg.TF_FLOAT
+Weights = cfg.Weights
 
 np.random.seed(seeds['global_np'])
 
@@ -99,6 +101,11 @@ class ConvNet2D(tf.keras.Model):
 
             self.flatten = tf.keras.layers.Flatten(name='flatten')
 
+        self.layers_dict = {
+            'conv1': self.conv1,
+            'conv2': self.conv2,
+        }
+
     def reshape_4D(self, tensor):
         """
         Reshape tensor to be compatible with tf.keras.layers.Conv3D.
@@ -128,6 +135,27 @@ class ConvNet2D(tf.keras.Model):
         raise AttributeError("`self.data_format` should be one of "
                              "'channels_first' or 'channels_last'")
 
+    def get_weights(self, sess):
+        """Extract numerical values of all layer weights."""
+        weights_dict = {}
+        for name, layer in self.layers_dict.items():
+            weights_dict[name] = {}
+            if isinstance(layer, dict):
+                for subname, sublayer in layer.items():
+                    w, b = sess.run(sublayer.weights)
+                    weights_dict[name][subname] = Weights(w=w, b=b)
+            else:
+                w, b = sess.run(layer.weights)
+                weights_dict[name] = Weights(w=w, b=b)
+
+        return weights_dict
+
+    def save_weights(self, sess, out_file):
+        """Save all layer weights to `out_file`."""
+        weights_dict = self.get_weights(sess)
+        with open(out_file, 'wb') as f:
+            pickle.dump(weights_dict, f)
+
     def call(self, inputs, train_phase):
         """Forward pass through the network."""
         inputs = self.reshape_4D(inputs)
@@ -136,10 +164,10 @@ class ConvNet2D(tf.keras.Model):
         inputs = self.conv2(inputs)
         if self.use_bn:
             inputs = self.activation(batch_norm(inputs, train_phase,
-                                               axis=self.bn_axis,
-                                               internal_update=True,
-                                               scope=self.bn_name,
-                                               reuse=tf.AUTO_REUSE))
+                                                axis=self.bn_axis,
+                                                internal_update=True,
+                                                scope=self.bn_name,
+                                                reuse=tf.AUTO_REUSE))
         inputs = self.max_pool2(inputs)
         inputs = self.flatten(inputs)
 
@@ -233,6 +261,11 @@ class ConvNet3D(tf.keras.Model):
 
             self.flatten = tf.keras.layers.Flatten(name='flatten')
 
+        self.layers_dict = {
+            'conv1': self.conv1,
+            'conv2': self.conv2,
+        }
+
     def reshape_5D(self, tensor):
         """
         Reshape tensor to be compatible with tf.keras.layers.Conv3D.
@@ -261,6 +294,27 @@ class ConvNet3D(tf.keras.Model):
 
         raise AttributeError("`self.data_format` should be one of "
                              "'channels_first' or 'channels_last'")
+
+    def get_weights(self, sess):
+        """Extract numerical values of all layer weights."""
+        weights_dict = {}
+        for name, layer in self.layers_dict.items():
+            weights_dict[name] = {}
+            if isinstance(layer, dict):
+                for subname, sublayer in layer.items():
+                    w, b = sess.run(sublayer.weights)
+                    weights_dict[name][subname] = Weights(w=w, b=b)
+            else:
+                w, b = sess.run(layer.weights)
+                weights_dict[name] = Weights(w=w, b=b)
+
+        return weights_dict
+
+    def save_weights(self, sess, out_file):
+        """Save all layer weights to `out_file`."""
+        weights_dict = self.get_weights(sess)
+        with open(out_file, 'wb') as f:
+            pickle.dump(weights_dict, f)
 
     def call(self, inputs, train_phase):
         """Forward pass through the network."""

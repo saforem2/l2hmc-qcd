@@ -1,8 +1,6 @@
 """
 parse_args.py
-
 Implements method for parsing command line arguments for `gauge_model.py`
-
 Author: Sam Foreman (github: @saforem2)
 Date: 04/09/2019
 """
@@ -94,14 +92,14 @@ def parse_args():
                         default=1,
                         required=False,
                         help=("""Number of leapfrog steps to use in (augmented)
-                              HMC sampler. (Default: 5)"""))
+                              HMC sampler.\n(Default: 5)"""))
 
     parser.add_argument("--eps",
                         dest="eps",
                         type=float,
                         default=0.2,
                         required=False,
-                        help=("""Step size to use in leapfrog integrator.
+                        help=("""Step size to use in leapfrog integrator.\n
                               (Default: 0.1)"""))
 
     parser.add_argument("--loss_scale",
@@ -110,7 +108,7 @@ def parse_args():
                         default=1.,
                         required=False,
                         help=("""Scaling factor to be used in loss function.
-                              (lambda in Eq. 7 of paper). (Default: 1.)"""))
+                              (lambda in Eq. 7 of paper).\n (Default: 1.)"""))
 
     ###########################################################################
     #                       Learning rate parameters                          #
@@ -121,7 +119,7 @@ def parse_args():
                         type=float,
                         default=1e-3,
                         required=False,
-                        help=("""Initial value of learning rate.
+                        help=("""Initial value of learning rate.\n
                               (Default: 1e-3"""))
 
     parser.add_argument("--lr_decay_steps",
@@ -130,14 +128,14 @@ def parse_args():
                         default=2500,
                         required=False,
                         help=("""Number of steps after which to decay learning
-                              rate. (Default: 500)"""))
+                              rate.\n (Default: 500)"""))
 
     parser.add_argument("--lr_decay_rate",
                         dest="lr_decay_rate",
                         type=float, default=0.96,
                         required=False,
                         help=("""Learning rate decay rate to be used during
-                              training. (Default: 0.96)"""))
+                              training.\n (Default: 0.96)"""))
 
     ###########################################################################
     #                      Annealing rate parameters                          #
@@ -148,7 +146,7 @@ def parse_args():
                         action="store_true",
                         required=False,
                         help=("""Flag that when passed runs the training loop
-                              at fixed beta (i.e. no annealing is done).
+                              at fixed beta (i.e. no annealing is done).\n
                               (Default: `fixed_beta=False`)"""))
 
     parser.add_argument("--beta_init",
@@ -158,7 +156,7 @@ def parse_args():
                         required=False,
                         help=("""Initial value of beta (inverse coupling
                               constant) used in gauge model when
-                              annealing. (Default: 2.)"""))
+                              annealing.\n (Default: 2.)"""))
 
     parser.add_argument("--beta_final",
                         dest="beta_final",
@@ -167,7 +165,7 @@ def parse_args():
                         required=False,
                         help=("""Final value of beta (inverse coupling
                               constant) used in gauge model when
-                              annealing. (Default: 5."""))
+                              annealing.\n (Default: 5."""))
 
     parser.add_argument("--warmup_lr",
                         dest="warmup_lr",
@@ -187,15 +185,24 @@ def parse_args():
                         type=int,
                         default=10000,
                         required=False,
-                        help=("""Number of training steps to perform.
+                        help=("""Number of training steps to perform.\n
                               (Default: 5000)"""))
+
+    parser.add_argument("--extra_steps",
+                        dest="extra_steps",
+                        type=int,
+                        default=5000,
+                        required=False,
+                        help=("""Number of additional steps to append at the
+                              end of the training instance at the final value
+                              of beta."""))
 
     parser.add_argument("--trace",
                         dest="trace",
                         action="store_true",
                         required=False,
                         help=("""Flag that when passed will set `--trace=True`,
-                              and create a trace during training loop.
+                              and create a trace during training loop.\n
                               (Default: `--trace=False`, i.e.  not passed)"""))
 
     parser.add_argument("--save_steps",
@@ -204,7 +211,7 @@ def parse_args():
                         default=50,
                         required=False,
                         help=("""Number of steps after which to save the model
-                              and current values of all parameters.
+                              and current values of all parameters.\n
                               (Default: 50)"""))
 
     parser.add_argument("--print_steps",
@@ -214,7 +221,7 @@ def parse_args():
                         required=False,
                         help=("""Number of steps after which to display
                               information about the loss and various
-                              other quantities. (Default: 1)"""))
+                              other quantities.\n (Default: 1)"""))
 
     parser.add_argument("--logging_steps",
                         dest="logging_steps",
@@ -222,7 +229,7 @@ def parse_args():
                         default=10,
                         required=False,
                         help=("""Number of steps after which to write logs for
-                              tensorboard. (default: 50)"""))
+                              tensorboard.\n (Default: 50)"""))
 
     # ------------------------------------------------------------------------
     # Model parameters
@@ -235,8 +242,17 @@ def parse_args():
                         required=False,
                         help=("""String specifying the architecture to use for
                               the neural network. Must be one of:
-                              `'conv3D', 'conv2D', 'generic'`.
+                              `'conv3D', 'conv2D', 'generic'`.\n
                               (Default: 'conv3D')"""))
+
+    parser.add_argument('--network_type',
+                        dest='network_type',
+                        type=str,
+                        default='CartesianNet',
+                        required=False,
+                        help=("""String specifying the type of network to
+                              use. Possible values: `'CartesianNet'`. If not
+                              specified, will use generic `'FullNet'`."""))
 
     parser.add_argument('--num_hidden1',
                         dest='num_hidden1',
@@ -244,7 +260,7 @@ def parse_args():
                         default=100,
                         required=False,
                         help=("""Number of nodes to include in each of the
-                              fully-connected hidden layers for x, v, and t.
+                              fully-connected hidden layers for x, v, and t.\n
                               (Default: 100)"""))
 
     parser.add_argument('--num_hidden2',
@@ -254,7 +270,7 @@ def parse_args():
                         required=False,
                         help=("""Number of nodes to include in fully-connected
                               hidden layer `h`. If not explicitly passed, will
-                              default to 2 * lattice.num_links.
+                              default to 2 * lattice.num_links.\n
                               (Default: None)"""))
 
     parser.add_argument('--no_summaries',
@@ -294,7 +310,7 @@ def parse_args():
                         default=1,
                         required=False,
                         help=("""Multiplicative factor used to weigh relative
-                              strength of stdiliary term in loss function.
+                              strength of stdiliary term in loss function.\n
                               (Default: 1.)"""))
 
     parser.add_argument("--aux_weight",
@@ -303,17 +319,26 @@ def parse_args():
                         default=1,
                         required=False,
                         help=("""Multiplicative factor used to weigh relative
-                              strength of auxiliary term in loss function.
+                              strength of auxiliary term in loss function.\n
                               (Default: 1.)"""))
 
     parser.add_argument("--charge_weight",
                         dest="charge_weight",
                         type=float,
-                        default=0,
+                        default=0.,
                         required=False,
                         help=("""Multiplicative factor used to weigh relative
                               strength of top. charge term in loss
-                              function. (Default: 0.)"""))
+                              function.\n (Default: 0.)"""))
+
+    parser.add_argument("--plaq_weight",
+                        dest="plaq_weight",
+                        type=float,
+                        default=0.,
+                        required=False,
+                        help=("""Multiplicative factor used to weigh relative
+                              strength of plaquette difference term in loss
+                              function.\n (Default: 0.)"""))
 
     parser.add_argument('--zero_masks',
                         dest='zero_masks',
@@ -438,6 +463,14 @@ def parse_args():
                         required=False,
                         help=("""Flag that when passed causes batch
                               normalization layer to be used in ConvNet."""))
+
+    parser.add_argument("--activation",
+                        dest='activation',
+                        type=str,
+                        default='relu',
+                        required=False,
+                        help=("""Flag used to specify the activation function
+                              to be used in the network."""))
 
     parser.add_argument("--horovod",
                         dest="horovod",

@@ -14,7 +14,13 @@ import arviz as az
 import numpy as np
 import seaborn as sns
 import matplotlib as mpl
+import matplotlib.cm
 import matplotlib.pyplot as plt
+from matplotlib.collections import LineCollection
+from matplotlib.colors import (ListedColormap, BoundaryNorm,
+                               LinearSegmentedColormap)
+
+from matplotlib.pyplot import cycler
 
 import utils.file_io as io
 
@@ -24,16 +30,126 @@ sns.set_palette('bright')
 
 HEADER = 80 * '-'
 SEPERATOR = 80 * '-'
-MARKERS = 10 * ['o', 'v', '^', '<', '>', 's', 'd', '*', '+', 'x']
+#  MARKERS = 10 * ['o', 'v', '^', '<', '>', 's', 'd', '*', '+', 'x']
+MARKERS = 10 * ['o', 's', 'x', 'v', 'h', '^', 'p', '<', 'd', '>', 'o']
 
 mpl.rcParams['axes.formatter.limits'] = -4, 4
+
 
 def savefig(fig, out_file):
     """Save `fig` to `out_file`."""
     io.log(HEADER)
     io.log(f'Saving figure to: {out_file}.')
-    fig.savefig(out_file, dpi=200, bbox_inches='tight')
+    #  plt.tight_layout()
+    try:
+        fig.savefig(out_file, dpi=200, bbox_inches='tight')
+    except:
+        fig.savefig(out_file, bbox_inches='tight')
     io.log(HEADER)
+
+
+def _plaq_sums(x):
+    """Calculate the sum of the link variables around each plaquette."""
+    return (x[..., 0]
+            - x[..., 1]
+            - np.roll(x[..., 0], shift=-1, axis=-2)
+            + np.roll(x[..., 1], shift=-1, axis=-3))
+
+
+def _plot_angle_timeseries(chain, num_steps=500,
+                           out_file=None, title_str=None):
+    """Plot an angular repr. of the phase's timeseries."""
+    fig = plt.figure(figsize=(12, 8))
+    ax = fig.add_subplot(211, polar=True)
+    chain, steps = therm_arr(chain)
+    num_steps = min([num_steps, chain.shape[0]])
+    r = np.linspace(0, 1, num_steps)
+    theta = chain[:num_steps]
+    points = np.array([theta, r]).T.reshape(-1, 1, 2)
+    segments = np.concatenate([points[:-1], points[1:]], axis=1)
+    #  norm = plt.Normalize(theta.min(), theta.max())
+    norm = plt.Normalize(theta.min(), theta.max())
+    lc = LineCollection(segments, cmap='hsv', norm=norm, zorder=1, alpha=0.6)
+
+    # Set the values used for colormapping
+    lc.set_array(theta)
+    lc.set_linewidth(0.9)
+    _ = ax.add_collection(lc)
+    ax.set_yticklabels([])
+
+    _ = ax.scatter(theta, r, marker='o', c=theta, s=5.,
+                   cmap='hsv', alpha=0.85, zorder=2)
+
+    ax = fig.add_subplot(212)
+
+    points = np.array([steps[:num_steps], theta]).T.reshape(-1, 1, 2)
+    segments = np.concatenate([points[:-1], points[1:]], axis=1)
+    norm = plt.Normalize(theta.min(), theta.max())
+    lc = LineCollection(segments, cmap='hsv', norm=norm, zorder=1, alpha=0.6)
+    #
+    #   # Set the values used for colormapping
+    lc.set_array(theta)
+    lc.set_linewidth(1.)
+    _ = ax.add_collection(lc)
+    _ = ax.scatter(steps[:num_steps], theta, c=theta,
+                   cmap='hsv', alpha=1., zorder=2)
+    ylabels = [r'$0$', r'$\pi / 2$', r'$\pi$', r'$3\pi/2$', r'$2\pi$']
+    yticks = [0, np.pi/2, np.pi, 3 * np.pi / 2, 2 * np.pi]
+    ax.set_yticks(yticks)
+    ax.set_yticklabels(ylabels)
+    ax.grid(True)
+    ax.set_ylabel(r'$\phi_{\mu}(x)$', fontsize='large')
+    ax.set_xlabel(r'Step', fontsize='large')
+
+    if title_str is not None:
+        fig.suptitle(title_str, fontsize='x-large')
+    if out_file is not None:
+        savefig(fig, out_file)
+
+    return fig, ax
+
+
+def plot_angle_timeseries(chains, num_plots=20, num_steps=500,
+                          out_dir=None, title_str=None):
+    """Create `num_plots` angular timeseries from `chains`."""
+    chains = np.array(chains)
+    out_file = None
+    # chains.shape = (num_steps, batch_size, num_links)
+    chain = chains[:, 0, :]  # look at first sample in batch
+    for idx in range(num_plots):
+        if out_dir is not None:
+            out_file = os.path.join(out_dir, f'phase_timeseries{idx}.png')
+
+        _, _ = _plot_angle_timeseries(chain[:, idx],
+                                      num_steps=num_steps,
+                                      out_file=out_file,
+                                      title_str=title_str)
+        plt.close('all')
+
+
+def plot_plaq_timeseries(chains, num_plots, lattice_shape,
+                         num_steps=500, out_dir=None, title_str=None):
+    """Create `num_plots` angular timeseries of plaquettes."""
+    chains = np.array(chains)
+    out_file = None
+    num_plots = min([num_plots, chains.shape[1]])
+    #  num_plots = min([num_plots, chain_ps.shape[-1]])
+    for idx in range(num_plots):
+        if out_dir is not None:
+            out_file = os.path.join(out_dir, f'plaqs_timeseries{idx}.png')
+
+        chain = chains[:, idx, :]
+        chain = np.reshape(chain, (-1, *lattice_shape))
+        plaqs = (chain[..., 0]
+                 - chain[..., 1]
+                 - np.roll(chain[..., 0], shift=-1, axis=2)
+                 + np.roll(chain[..., 1], shift=-1, axis=1))
+
+        _, _ = _plot_angle_timeseries(plaqs[:, 0, 0],
+                                      num_steps=num_steps,
+                                      out_file=out_file,
+                                      title_str=title_str)
+        plt.close('all')
 
 
 def autocorr(x):
@@ -68,7 +184,7 @@ def plot_autocorr(x, params, run_params, **kwargs):
     ax.set_title(title_str)
     ax.set_ylabel('Autocorrelation')
     ax.set_xlabel('Step')
-    out_file = os.path.join(fig_dir, f'{name}_autocorrelation.pdf')
+    out_file = os.path.join(fig_dir, f'{name}_autocorrelation.png')
     savefig(fig, out_file)
 
     return fig, ax
@@ -97,7 +213,7 @@ def calc_tunneling_rate(charges):
 
 def _check_existing(out_dir, fname):
     """Check if `fname` exists in `out_dir`. If so, append time to `fname`."""
-    if os.path.isfile(os.path.join(out_dir, f'{fname}.pdf')):
+    if os.path.isfile(os.path.join(out_dir, f'{fname}.png')):
         timestr = io.get_timestr()
         hour_str = timestr['hour_str']
         fname += f'_{hour_str}'
@@ -106,7 +222,12 @@ def _check_existing(out_dir, fname):
 
 
 def plot_reverse_data(run_data, params, **kwargs):
-    """Plot reversibility results."""
+    """Plot reversibility results.
+
+    Args:
+        run_data (RunData object): Container of data from inference run.
+        params (dict): Dictionary of parameters.
+    """
     run_str = run_data.run_params['run_str']
     log_dir = params['log_dir']
     runs_np = kwargs.get('runs_np', True)
@@ -117,82 +238,146 @@ def plot_reverse_data(run_data, params, **kwargs):
 
     fig_dir = os.path.join(figs_dir, run_str)
     io.check_else_make_dir(fig_dir)
-    out_dir = kwargs.get('out_dir', None)
+    #  out_dir = kwargs.get('out_dir', None)
     try:
         fname, title_str, _ = plot_setup(log_dir, run_data.run_params)
     except FileNotFoundError:
         return None, None
 
-    fname = f'{fname}_reversibility_hist'
-    out_file = os.path.join(fig_dir, f'{fname}.pdf')
-    fig, ax = plt.subplots()
+    #  fname = f'{fname}_reversibility_hist'
+    #  out_file = os.path.join(fig_dir, f'{fname}.png')
+    #  fig, ax = plt.subplots()
     for key, val in run_data.reverse_data.items():
+        fname = f'{key}_reversibility.png'
+        out_file = os.path.join(fig_dir, f'{fname}.png')
+        fig, ax = plt.subplots()
         sns.kdeplot(np.array(val).flatten(), shade=True, label=key, ax=ax)
-    ax.legend(loc='best')
-    ax.set_title(title_str)
-    plt.tight_layout()
-    io.log(f'Saving figure to: {out_file}...')
-    fig.savefig(out_file, dpi=200, bbox_inches='tight')
-    if out_dir is not None:
-        fout = os.path.join(out_dir, f'{fname}.pdf')
-        io.log(f'Saving figure to: {fout}...')
-        fig.savefig(fout, dpi=200, bbox_inches='tight')
+        ax.legend(loc='best')
+        ax.set_title(title_str)
+        plt.tight_layout()
+        io.log(f'Saving figure to: {out_file}...')
+        fig.savefig(out_file, dpi=200, bbox_inches='tight')
+        #  if out_dir is not None:
+        #      fout = os.path.join(out_dir, f'{fname}.png')
+        #      io.log(f'Saving figure to: {fout}...')
+        #      fig.savefig(fout, dpi=200, bbox_inches='tight')
 
     return fig, ax
 
 
-def _plot_volume_diff(drms_in, drms_out, name, out_file, title_str=None):
+def _plot_volume_diff(drms_data, fit_data, out_dir, title_str=None):
     """Plot `rms_diff_out` vs. `rms_diff_in`."""
-    batch_size = drms_in.shape[0]
-    fig, ax = plt.subplots()
-    if batch_size < 10:
-        dalpha = 0.1
-    if 10 < batch_size < 20:
-        dalpha = 0.05
-    if batch_size > 20:
-        dalpha = 0.01
-    for idx in range(batch_size):
-        ax.plot(drms_in[idx], drms_out[idx],
-                ls='', marker=MARKERS[idx], markersize=4.,
-                alpha=(1. - idx * dalpha),
-                fillstyle='none', label=f'sample {idx}')
-    #  if name == 'x':
-    #      #  ax.axhline(y=3 * np.pi / 4, label=r"$3\pi/4$")
-    #      ax.axhline(y=2*np.pi/3, label=r"$\frac{2\pi}{3}$")
-    #      ax.axhline(y=np.pi, label=r"$\pi$")
-    ax.set_xlabel(f'd{name}_rms_in', fontsize='large')
-    ax.set_ylabel(f'd{name}_rms_out', fontsize='large')
-    ax.legend(loc='best')
+    xfit, yfit, polyfits = fit_data
+
+    fig, axes = plt.subplots(nrows=2, ncols=1)
+    lines = []
+    labels = []
+    for idx, key in enumerate(polyfits.keys()):
+        ax = axes[idx]
+
+        k = (f'd{key}_in', f'd{key}_out')
+        batch_size = drms_data[k[0]].shape[0]
+        for jdx in range(batch_size):
+            if idx == 0:
+                label = f'sample {jdx}'
+            else:
+                label = None
+
+            line, = ax.plot(drms_data[k[0]][jdx],
+                            drms_data[k[1]][jdx],
+                            markersize=4., alpha=0.75,
+                            ls='', marker=MARKERS[jdx],
+                            fillstyle='none', label=label)
+            if idx == 0:
+                lines.append(line)
+                labels.append(label)
+
+        fitstr = (r"$y = $" + f' {polyfits[key][0]:.5g} '
+                  + r"$x + $" + f'{polyfits[key][1]:.5g}')
+        fit_line, = ax.plot(xfit[key], yfit[key], 'k-', label=fitstr)
+        ax.legend([fit_line], [fitstr], loc='upper left')
+
+
+        ax.set_xlabel(f'd{key}_rms_in', fontsize='large')
+        ax.set_ylabel(f'd{key}_rms_out', fontsize='large')
+
+    fig.legend(lines, labels, loc='center left', bbox_to_anchor=(1, 0.5))
+
     if title_str is not None:
-        ax.set_title(title_str, fontsize='x-large')
-    io.log(f'Saving {name} volume diffs to: {out_file}.')
-    plt.savefig(out_file, dpi=400, bbox_inches='tight')
+        axes[0].set_title(title_str, fontsize='x-large')
+        #  fig.suptitle(title_str, fontsize='x-large')
+
+    plt.tight_layout()
+    out_file = os.path.join(out_dir, f'volume_diffs.png')
+    savefig(fig, out_file)
+    #  io.log(f'Saving volume diffs plot to: {out_file}.')
+    #  plt.savefig(out_file, dpi=200, bbox_inches='tight')
 
     return fig, ax
+
+
+def fit_volume_diffs(drms):
+    """Create callable fit functions for the volume diffs."""
+    drms = {key: val.flatten() for key, val in drms.items()}
+    polyfits = {
+        'x': np.polyfit(drms['dx_in'], drms['dx_out'], 1),
+        'v': np.polyfit(drms['dv_in'], drms['dv_out'], 1),
+    }
+    x_arrs = {
+        'x': np.arange(np.min(drms['dx_in']), np.max(drms['dx_in']), 0.05),
+        'v': np.arange(np.min(drms['dv_in']), np.max(drms['dv_in']), 0.05),
+    }
+    fit_fns = {
+        key: np.poly1d(val) for key, val in polyfits.items()
+    }
+    y_arrs = {
+        key: fit_fn(x_arrs[key]) for key, fit_fn in fit_fns.items()
+    }
+    return x_arrs, y_arrs, polyfits
 
 
 def plot_volume_diffs(volume_diffs, fig_dir, title_str=None):
     """Plot RMS diff of the output pert. vs. the RMS diff of the input pert."""
+    out_dir = os.path.join(fig_dir, 'volume_diffs')
+    io.check_else_make_dir(out_dir)
+
     def rms(x):
         x = np.array(x).transpose((1, 0, -1))
         return np.sqrt(np.mean(x ** 2, axis=-1))
 
-    dx_in_rms = rms(volume_diffs['dx_in'])
-    dv_in_rms = rms(volume_diffs['dv_in'])
-    dx_out_rms = rms(volume_diffs['dx_out'])
-    dv_out_rms = rms(volume_diffs['dv_out'])
+    drms = {
+        key: rms(val) for key, val in volume_diffs.items()
+    }
+    #  for key, val in volume_diffs.items():
+    #      drms[key] = rms(val)
 
-    out_dir = os.path.join(fig_dir, 'volume_diffs')
-    io.check_else_make_dir(out_dir)
+    fit_data = fit_volume_diffs(drms)
 
-    xfile = os.path.join(out_dir, 'x_volume_diffs.pdf')
-    _, _ = _plot_volume_diff(dx_in_rms, dx_out_rms,
-                             name='x', out_file=xfile,
-                             title_str=title_str)
-    vfile = os.path.join(out_dir, 'v_volume_diffs.pdf')
-    _, _ = _plot_volume_diff(dv_in_rms, dv_out_rms,
-                             name='v', out_file=vfile,
-                             title_str=title_str)
+
+    _plot_volume_diff(drms, fit_data, out_dir, title_str=title_str)
+
+    #  for key in polyfits.keys():
+    #      k = (f'd{key}_in', f'd{key}_out')
+    #      drms_data = (drms[k[0]], drms[k[1]])
+    #      fit_data = (x_arrs[key], y_arrs[key], polyfits[key])
+    #      out_file = os.path.join(out_dir, f'{key}_volume_diffs.png')
+    #      #  fig, ax = _plot_volume_diff(drms_data, fit_data,
+    #      #                           name=key, out_file=out_file,
+    #      #                           title_str=title_str)
+    #
+    #  xfile = os.path.join(out_dir, 'x_volume_diffs.png')
+    #  drms_data = (drms['dx_in'], drms['dx_out'])
+    #  fit_data = (x_arrs['x'], y_arrs['x'], polyfits['x'])
+    #  _, _ = _plot_volume_diff(drms_data, fit_data,
+    #                           name='x', out_file=xfile,
+    #                           title_str=title_str)
+    #
+    #  vfile = os.path.join(out_dir, 'v_volume_diffs.png')
+    #  drms_data = (drms['dv_in'], drms['dv_out'])
+    #  fit_data = (x_arrs['v'], y_arrs['v'], polyfits['v'])
+    #  _, _ = _plot_volume_diff(drms_data, fit_data,
+    #                           name='v', out_file=vfile,
+    #                           title_str=title_str)
 
 
 def plot_trace(data, fname, title_str=None, filter_str=None):
@@ -224,7 +409,7 @@ def plot_trace(data, fname, title_str=None, filter_str=None):
                       compact=False, combined=False)
     fig = plt.gcf()
     if title_str is not None:
-        fig.suptitle(title_str, fontsize='x-large', y=1.1)
+        fig.suptitle(title_str, fontsize='x-large')
     savefig(fig, fname)
 
 
@@ -276,8 +461,8 @@ def traceplot_posterior(dataset, name, fname, fig_dir,
     """
     tp_fname = _check_existing(fig_dir, f'{fname}_{name}_traceplot')
     pp_fname = _check_existing(fig_dir, f'{fname}_{name}_posterior')
-    tp_fout = os.path.join(fig_dir, f'{tp_fname}.pdf')
-    pp_fout = os.path.join(fig_dir, f'{pp_fname}.pdf')
+    tp_fout = os.path.join(fig_dir, f'{tp_fname}.png')
+    pp_fout = os.path.join(fig_dir, f'{pp_fname}.png')
     plot_trace(dataset, tp_fout,
                title_str=title_str,
                filter_str=filter_str)
@@ -287,7 +472,12 @@ def traceplot_posterior(dataset, name, fname, fig_dir,
 
 
 def inference_plots(run_data, params, **kwargs):
-    """Create trace plots of lattice observables and energy data."""
+    """Create trace plots of lattice observables and energy data.
+
+    Args:
+        run_data (RunData object): Container of inference data.
+        params (dict): Dictionary of parameters.
+    """
     run_str = run_data.run_params['run_str']
     log_dir = params['log_dir']
     runs_np = kwargs.get('runs_np', True)
@@ -307,13 +497,6 @@ def inference_plots(run_data, params, **kwargs):
     except FileNotFoundError:
         return dataset, energy_dataset
 
-    ##############################################################
-    # Symplectic check:
-    # -----------------
-    # Look at how the sampler transforms regions of phase space.
-    ##############################################################
-    if run_data.run_params['symplectic_check']:
-        plot_volume_diffs(run_data.volume_diffs, fig_dir, title_str=title_str)
 
     ####################################################
     # Create traceplot + possterior plot of energy data
@@ -325,6 +508,16 @@ def inference_plots(run_data, params, **kwargs):
     #  dataset = build_dataset(run_data)
     #  energy_dataset = build_energy_dataset(run_data.energy_data)
     #  denergy_dataset = build_energy_diffs_dataset(run_data.energy_data)
+
+    ##############################################################
+    # Symplectic check:
+    # -----------------
+    # Look at how the sampler transforms regions of phase space.
+    ##############################################################
+    if run_data.run_params['symplectic_check']:
+        plot_volume_diffs(run_data.volume_diffs,
+                          fig_dir, title_str=title_str)
+
 
     pe_dir = os.path.join(fig_dir, 'potential_plots')
     io.check_else_make_dir(pe_dir)
@@ -368,7 +561,7 @@ def inference_plots(run_data, params, **kwargs):
     # Create ridgeplot of plaq diffs
     #################################
     rp_fname = _check_existing(fig_dir, f'{fname}_ridgeplot')
-    rp_out_file = os.path.join(fig_dir, f'{rp_fname}.pdf')
+    rp_out_file = os.path.join(fig_dir, f'{rp_fname}.png')
     _ = az.plot_forest(dataset,
                        kind='ridgeplot',
                        var_names=['plaqs_diffs'],
@@ -379,7 +572,7 @@ def inference_plots(run_data, params, **kwargs):
     fig.suptitle(title_str, fontsize='x-large', y=1.1)
     savefig(fig, rp_out_file)
     if out_dir is not None:
-        rp_out_file_ = os.path.join(out_dir, f'{rp_fname}.pdf')
+        rp_out_file_ = os.path.join(out_dir, f'{rp_fname}.png')
         savefig(fig, rp_out_file_)
 
     ####################################################
@@ -401,6 +594,15 @@ def inference_plots(run_data, params, **kwargs):
     io.check_else_make_dir(dx_dir)
     traceplot_posterior(dataset, name='dx', fname=fname, fig_dir=dx_dir,
                         title_str=title_str, filter_str='dx')
+
+    ##################################
+    # Create plots for `plaqs_diffs`
+    ##################################
+    pd_dir = os.path.join(fig_dir, 'plaqs_diffs_plots')
+    io.check_else_make_dir(pd_dir)
+    traceplot_posterior(dataset, name='plaqs_diffs', fname=fname,
+                        fig_dir=pd_dir, title_str=title_str,
+                        filter_str='plaqs_diffs')
 
     #########################################
     # Create plots for dynamics reverse data
@@ -431,5 +633,32 @@ def inference_plots(run_data, params, **kwargs):
 
     traceplot_posterior(dataset, '', fname=fname, fig_dir=fig_dir,
                         title_str=title_str, filter_str=var_names)
+
+    run_data.samples_arr
+
+    out_dir = os.path.join(fig_dir, 'angular_timeseries')
+    io.check_else_make_dir(out_dir)
+    plot_angle_timeseries(run_data.samples_arr,
+                          out_dir=out_dir,
+                          num_plots=10,
+                          num_steps=1000,
+                          title_str=title_str)
+
+    out_dir = os.path.join(fig_dir, 'plaq_sums_timeseries')
+    io.check_else_make_dir(out_dir)
+    try:
+        lattice_shape = (params['time_size'],
+                         params['space_size'], params['dim'])
+    except:
+        import pudb; pudb.set_trace()
+    plot_plaq_timeseries(run_data.samples_arr,
+                         out_dir=out_dir,
+                         num_plots=10,
+                         num_steps=1000,
+                         title_str=title_str,
+                         lattice_shape=lattice_shape)
+
+    out_file = os.path.join(fig_dir, 'run_summary.txt')
+    run_data.log_summary(n_boot=10000,  out_file=out_file)
 
     return dataset, energy_dataset

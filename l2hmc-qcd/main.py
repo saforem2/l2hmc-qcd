@@ -192,25 +192,26 @@ def train_l2hmc(FLAGS, log_file=None):
                                              save_summaries_steps=None,
                                              save_checkpoint_steps=save_steps,
                                              checkpoint_dir=checkpoint_dir)
-    sess.run([
-        model.dynamics.xnet.generic_net.coeff_scale.initializer,
-        model.dynamics.vnet.generic_net.coeff_scale.initializer,
-        model.dynamics.xnet.generic_net.coeff_transformation.initializer,
-        model.dynamics.vnet.generic_net.coeff_transformation.initializer,
-    ])
-
-    masks_file = os.path.join(model.log_dir, 'dynamics_mask.pkl')
-    masks_file_ = os.path.join(model.log_dir, 'dynamics_mask.np')
-    masks = sess.run(model.dynamics.masks)
-    np.array(masks).tofile(masks_file_)
-    io.log(f'dynamics.masks:\n\t {masks}')
-    pkl_dump(masks, masks_file)
-
-    # Check reversibility and write results out to `.txt` file.
-    reverse_file = os.path.join(model.log_dir, 'reversibility_test.txt')
-    check_reversibility(model, sess, net_weights_init, out_file=reverse_file)
+    #  sess.run([
+    #      model.dynamics.xnet.generic_net.coeff_scale.initializer,
+    #      model.dynamics.vnet.generic_net.coeff_scale.initializer,
+    #      model.dynamics.xnet.generic_net.coeff_transformation.initializer,
+    #      model.dynamics.vnet.generic_net.coeff_transformation.initializer,
+    #  ])
 
     if is_chief:  # save copy of seeds dictionaries for reproducibility
+        masks_file = os.path.join(model.log_dir, 'dynamics_mask.pkl')
+        masks_file_ = os.path.join(model.log_dir, 'dynamics_mask.np')
+        masks = sess.run(model.dynamics.masks)
+        np.array(masks).tofile(masks_file_)
+        io.log(f'dynamics.masks:\n\t {masks}')
+        pkl_dump(masks, masks_file)
+
+        # Check reversibility and write results out to `.txt` file.
+        #  reverse_file = os.path.join(model.log_dir, 'reversibility_test.txt')
+        #  check_reversibility(model, sess, net_weights_init,
+        #                      out_file=reverse_file)
+
         io.save_dict(seeds, out_dir=model.log_dir, name='seeds')
         io.save_dict(xnet_seeds, out_dir=model.log_dir, name='xnet_seeds')
         io.save_dict(vnet_seeds, out_dir=model.log_dir, name='vnet_seeds')
@@ -218,7 +219,7 @@ def train_l2hmc(FLAGS, log_file=None):
     # ----------------------------------------------------------
     #                       TRAINING
     # ----------------------------------------------------------
-    trainer = Trainer(sess, model, train_logger, **params)
+    trainer = Trainer(sess, model, train_logger, params)
 
     #  initial_step = sess.run(global_step)
     trainer.train(model.train_steps,
@@ -226,36 +227,29 @@ def train_l2hmc(FLAGS, log_file=None):
                   samples=samples_init,
                   net_weights=net_weights_init)
 
-    check_reversibility(model, sess, out_file=reverse_file)
 
     if is_chief:
         # wfile = os.path.join(model.log_dir, 'dynamics_weights.h5')
         # model.dynamics.save_weights(wfile)
+        xw_file = os.path.join(model.log_dir, 'xnet_weights.pkl')
+        xnet_weights = model.dynamics.xnet.save_weights(sess, xw_file)
 
-        weights_final, coeffs_final = get_net_weights(model, sess)
-        xcoeffs = sess.run(list(coeffs_final['xnet'].values()))
-        vcoeffs = sess.run(list(coeffs_final['vnet'].values()))
-        weights_final['xnet']['GenericNet'].update({
-            'coeff_scale': xcoeffs[0],
-            'coeff_transformation': xcoeffs[1]
-        })
-        weights_final['vnet']['GenericNet'].update({
-            'coeff_scale': vcoeffs[0],
-            'coeff_transformation': vcoeffs[1]
-        })
-
-        weights_hist(model.log_dir, weights=weights_final, init=False)
-
-        pkl_dump(weights_final, os.path.join(model.log_dir, 'weights.pkl'))
-        pkl_dump(model.params, os.path.join(os.getcwd(), 'params.pkl'))
-        io.save_dict(model.params, os.path.join(os.getcwd()), 'params.pkl')
+        vw_file = os.path.join(model.log_dir, 'vnet_weights.pkl')
+        vnet_weights = model.dynamics.vnet.save_weights(sess, vw_file)
+        model_weights = {
+            'xnet': xnet_weights,
+            'vnet': vnet_weights,
+        }
+        io.save_pkl(model_weights, os.path.join(model.log_dir, 'weights.pkl'))
+        io.save_pkl(model.params, os.path.join(os.getcwd(), 'params.pkl'))
+        #  io.save_dict(model.params, os.path.join(os.getcwd()), 'params.pkl')
 
         # Count all trainable paramters and write them (w/ shapes) to txt file
         count_trainable_params(os.path.join(params['log_dir'],
                                             'trainable_params.txt'))
         eps_np = sess.run(model.dynamics.eps)
         eps_dict = {'eps': eps_np}
-        pkl_dump(eps_dict, os.path.join(model.log_dir, 'eps_np.pkl'))
+        io.save_pkl(eps_dict, os.path.join(model.log_dir, 'eps_np.pkl'))
 
     # close MonitoredTrainingSession and reset the default graph
     sess.close()
@@ -283,8 +277,8 @@ def main(FLAGS):
     #  if FLAGS.hmc:   # run generic HMC sampler
     #      inference.run_hmc(FLAGS, log_file=log_file)
     #  else:           # train l2hmc sampler
+    #  plot_singular_values(model.log_dir)
     model, _ = train_l2hmc(FLAGS, log_file)
-    plot_singular_values(model.log_dir)
 
 
 if __name__ == '__main__':

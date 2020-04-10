@@ -16,6 +16,60 @@ if '2.' not in tf.__version__:
 
 # pylint: disable=no-member
 
+def tf_zeros(shape):
+    """Return tensor of all zeros."""
+    return tf.zeros(shape, dtype=TF_FLOAT)
+
+def encode_angle(angle, method='cos_sin'):
+    """Returns encoded angle using specified method.
+
+    Args:
+        angle (array-like): Input angles to encode.
+        method (str): Encoding method used. Must be one of:
+            `('binned', 'scaled', 'cos_sin', 'gaussian')`.
+    Returns:
+        x (array-like): Encoded angle. Same shape as `angle`.
+    """
+    if method == 'binned':  # 1-of-500 encoding
+        x = np.zeros(500)
+        x[int(round(250 * (angle / np.pi + 1))) % 500] = 1
+    elif method == 'gaussian':  # Leaky binned encoding
+        x = np.arange(500)
+        idx = 250 * (angle / np.pi + 1)
+        x = np.exp(-np.pi * (x - idx) ** 2)
+    elif method == 'scaled':  # scaled to [-1, 1] encoding
+        x = np.array([angle / np.pi])
+    elif method == 'cos_sin':  # (cos(angle), sin(angle)) encoding
+        x = np.array([np.cos(angle), np.sin(angle)])
+    else:
+        x = np.mod(angle, 2 * np.pi)
+
+    return x
+
+
+def decode_angle(arr, method='cos_sin'):
+    """Returns decoded angle using specified method."""
+    if method in ['binned', 'gaussian']:  # 1-of-500 or gaussian encoding
+        M = np.max(arr)
+        for idx, x in enumerate(arr):
+            if abs(arr[i] - M) < 1e-5:
+                angle = np.pi * x / 250 - np.pi
+                break
+            angle = np.pi * np.dot(np.arange(500), arr) / 500  # averaging
+
+    elif method == 'scaled':  # Scaled to [-1, 1] encoding
+        angle = np.pi * arr[0]
+
+    elif method == 'cos_sin':
+        if tf.is_tensor(arr):
+            angle = tf.atan2(arr[1], arr[0])
+        else:
+            angle = np.atan2(arr[1], arr[0])
+    else:
+        angle = arr
+
+    return angle
+
 
 def activation_model(model):
     """Create Keras Model that outputs activations of all conv./pool layers.
@@ -126,7 +180,7 @@ def batch_norm(x,
     return output
 
 
-def custom_dense(units=100, seed=None, factor=1., name=None):
+def custom_dense(units, seed=None, factor=1., name=None, **kwargs):
     """Custom dense layer with specified weight intialization."""
     try:
         kernel_initializer = tf.keras.initializers.VarianceScaling(
@@ -154,7 +208,7 @@ def custom_dense(units=100, seed=None, factor=1., name=None):
         use_bias=True,
         kernel_initializer=kernel_initializer,
         bias_initializer=bias_initializer,
-        #  **kwargs
+        **kwargs
     )
 
 

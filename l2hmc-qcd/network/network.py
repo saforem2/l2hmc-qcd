@@ -7,13 +7,19 @@ lattice gauge model.
 Author: Sam Foreman (github: @saforem2)
 Date: 07/22/2019
 """
+from __future__ import print_function, division, absolute_import
+import pickle
+
 import numpy as np
 import tensorflow as tf
+
 from .conv_net import ConvNet2D, ConvNet3D
 from .generic_net import GenericNet
-#  import utils.file_io as io
+from config import Weights
 
-from seed_dict import seeds, xnet_seeds, vnet_seeds
+#  import utils.file_io as io
+from seed_dict import seeds, vnet_seeds, xnet_seeds
+
 #  from config import GLOBAL_SEED
 
 
@@ -21,6 +27,43 @@ np.random.seed(seeds['global_np'])
 
 if '2.' not in tf.__version__:
     tf.set_random_seed(seeds['global_tf'])
+
+
+class BaseNet(tf.keras.Model):
+    """Base class for building networks."""
+    def __init__(self, model_name=None, **kwargs):
+        super(BaseNet, self).__init__(name=model_name)
+
+    def get_weights(self, sess):
+        """Extract numerical values of all layer weights."""
+        weights_dict = {}
+        for name, layer in self.layers_dict.items():
+            weights_dict[name] = {}
+            if isinstance(layer, dict):
+                for subname, sublayer in layer.items():
+                    w, b = sess.run(sublayer.weights)
+                    weights_dict[name][subname] = Weights(w=w, b=b)
+            else:
+                w, b = sess.run(layer.weights)
+                weights_dict[name] = Weights(w=w, b=b)
+
+        return weights_dict
+
+    def save_weights(self, sess, out_file):
+        weights_dict = self.get_weights(sess)
+        with open(out_file, 'wb') as f:
+            pickle.dump(weights_dict, f)
+
+        fpath, ext = out_file.split('.')
+        types_file = f'{fpath}_types.{ext}'
+        with open(types_file, 'wb') as f:
+            pickle.dump(self.layers_types, types_file)
+
+        return weights_dict
+
+    def call(self, inputs, train_phase):
+        raise NotImplementedError
+
 
 
 class FullNet(tf.keras.Model):
@@ -44,6 +87,7 @@ class FullNet(tf.keras.Model):
             generic_name_scope = 'GenericNetV'
             kwargs['net_seeds'] = vnet_seeds
 
+        self.layers_dict = {}
         with tf.name_scope(model_name):
             kwargs['net_name'] = 'ConvNetX'
             network_arch = kwargs.get('network_arch', 'conv3D')
@@ -61,10 +105,36 @@ class FullNet(tf.keras.Model):
                 self.v_conv_net = ConvNet3D('ConvNet3Dv', **kwargs)
 
             else:
-                self.x_conv_net = self.v_conv_net = None
+                self.x_conv_net = None
+                self.v_conv_net = None
 
             kwargs['net_name'] = generic_name_scope
             self.generic_net = GenericNet("GenericNet", **kwargs)
+
+        self.layers_dict.update(**self.generic_net.layers_dict)
+
+        if self.x_conv_net is not None:
+            self.layers_dict.update(**self.x_conv_net.layers_dict)
+            #  self.layers_dict.update(**self.x_conv_net.layers_dict)
+            self.layers_dict.update(**self.v_conv_net.layers_dict)
+
+    def get_weights(self, sess):
+        """Extract numerical values of all layer weights."""
+        weights_dict = self.generic_net.get_weights(sess)
+
+        if self.x_conv_net is not None:
+            weights_dict.update(**self.x_conv_net.get_weights(sess))
+            weights_dict.update(**self.v_conv_net.get_weights(sess))
+
+        return weights_dict
+
+    def save_weights(self, sess, out_file):
+        """Save all layer weights to `out_file`."""
+        weights_dict = self.get_weights(sess)
+        with open(out_file, 'wb') as f:
+            pickle.dump(weights_dict, f)
+
+        return weights_dict
 
     def call(self, inputs, train_phase):
         """Call the network (forward pass)."""

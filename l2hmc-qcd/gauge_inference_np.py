@@ -1,8 +1,6 @@
 """
 gauge_inference_np.py
-
 Runs tensorflow independent inference on a trained model.
-
 Author: Sam Foreman (github: @saforem2)
 Date: 01/09/2020
 """
@@ -39,9 +37,9 @@ def _get_title(params, run_params):
     lf = params['num_steps']
     beta = run_params['beta']
     eps = run_params['eps']
-    title_str = (r"$N_{\mathrm{LF}} = $" + f'{lf}, '
-                 r"$\beta = $" + f'{beta:.1g}, '
-                 r"$\varepsilon = $" + f'{eps:.3g}')
+    title_str = (r"NLF=" + f'{lf}, '
+                 r"β=" + f'{beta:.1g}, '
+                 r"ε=" + f'{eps:.3g}')
 
     if params['eps_fixed']:
         title_str += ' (fixed)'
@@ -131,16 +129,17 @@ def main(args):
         'eps': eps,
         'num_steps': num_steps,
         'net_weights': net_weights,
-        'batch_size': args.batch_size,
+        #  ------ Parse args ------
         'init': args.init,
         'beta': args.beta,
-        'zero_masks': args.zero_masks,
         'direction': args.direction,
         'run_steps': args.run_steps,
+        'batch_size': args.batch_size,
+        'zero_masks': args.zero_masks,
         'print_steps': args.print_steps,
         'mix_samplers': args.mix_samplers,
-        'num_singular_values': args.num_singular_values,
         'symplectic_check': args.symplectic_check,
+        'num_singular_values': args.num_singular_values,
     }
 
     for key, val in args.__dict__.items():
@@ -172,8 +171,9 @@ def main(args):
     # TODO: Modify `InferenceSummarizer` to deal with `RunData` directly
     # instead of trying to load data from `run_dir`.
     # TODO: Move InferenceSummarizer functionality into `RunData` directly?
-    summarizer = InferenceSummarizer(run_params['run_dir'])
-    _, _ = summarizer.log_summary(n_boot=10000)
+    #  summarizer = InferenceSummarizer(run_params['run_dir'],
+    #                                   run_params=run_params)
+    #  _, _ = summarizer.log_summary(n_boot=10000)
 
 
 if __name__ == '__main__':

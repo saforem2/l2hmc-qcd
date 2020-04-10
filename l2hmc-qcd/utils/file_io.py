@@ -63,6 +63,14 @@ def get_run_dirs(log_dir, filter_str=None, runs_str='runs_np'):
     return run_dirs
 
 
+def write_dict(d, out_file):
+    """Recursively write key, val pairs to `out_file`."""
+    for key, val in d.items():
+        #  if isinstance(val, dict):
+        #      write_dict(d, out_file)
+        write(f'{key}: {val}\n', out_file)
+
+
 def save_pkl(obj, fpath, name=None):
     """Save `obj` to `fpath`."""
     log(f'Saving {name} to {fpath}.')
@@ -240,6 +248,101 @@ def make_dirs(dirs):
 
 
 def _parse_gauge_flags(FLAGS):
+    """Parse flags for `GaugeModel` instance."""
+    if isinstance(FLAGS, dict):
+        flags = FLAGS
+    else:
+        flags = FLAGS.__dict__
+
+    flags_dict = {
+        'space_size': flags.get('space_size', 8),
+        'time_size': flags.get('time_size', 8),
+        'batch_size': flags.get('batch_size', 32),
+        'num_steps': flags.get('num_steps', 5),
+        'charge_weight': flags.get('charge_weight', 0),
+        'aux_weight': flags.get('aux_weight', 1.),
+        'network_arch': flags.get('network_arch', 'generic'),
+        'dropout_prob': flags.get('dropout_prob', 0),
+        'eps_fixed': flags.get('eps_fixed', False),
+        'batch_norm': flags.get('use_bn', False),
+        'use_gaussian_loss': flags.get('use_gaussian_loss', False),
+        'use_nnehmc_loss': flags.get('use_nnehmc_loss', False),
+        'clip_value': flags.get('clip_value', 0),
+        'zero_masks': flags.get('zero_masks', False),
+    }
+
+    run_str = f'L{flags_dict["space_size"]}'
+    if flags_dict['time_size'] != flags_dict['space_size']:
+        run_str += f'T{flags_dict["time_size"]}'
+
+    run_str += f'_b{flags_dict["batch_size"]}_lf{flags_dict["num_steps"]}'
+
+    if flags_dict['network_arch'] != 'generic':
+        run_str += f'_{flags_dict["network_arch"]}'
+
+    weights = OrderedDict({
+        'x_scale_weight': flags.get('x_scale_weight', 1.),
+        'x_translation_weight': flags.get('x_translation_weight', 1.),
+        'x_transformation_weight': flags.get('x_transformation_weight', 1.),
+        'v_scale_weight': flags.get('v_scale_weight', 1.),
+        'v_translation_weight': flags.get('v_translation_weight', 1.),
+        'v_transformation_weight': flags.get('v_transformation_weight', 1.),
+    })
+
+    all_ones = True
+    for key, val in weights.items():
+        flags_dict[key] = val
+        if val != 1.:
+            all_ones = False
+
+    if not all_ones:
+        run_str += f'_nw'
+        for _, val in weights.items():
+            wstr = str(int(val)).replace('.', '')
+            run_str += wstr
+            #  run_str += f"{str(val).replace('.', '').rstrip('0')}"
+
+    def _no_dots(key):
+        return str(flags_dict[key]).replace('.', '')
+
+    if flags_dict['aux_weight'] != 1.:
+        aw = _no_dots('aux_weight')
+        run_str += f'_aw{aw}'
+
+    if flags_dict['charge_weight'] > 0:
+        qw = _no_dots('charge_weight')
+        run_str += f'_qw{qw}'
+
+    if flags_dict.get('plaqs_weight', 0.) > 0.:
+        pw = _no_dots('plaqs_weight')
+        run_str += f'_pw{pw}'
+
+    if flags_dict['dropout_prob'] > 0:
+        dp = _no_dots('dropout_prob')
+        run_str += f'_dp{dp}'
+
+    if flags_dict['eps_fixed']:
+        run_str += f'_eps_fixed'
+
+    if flags_dict['batch_norm']:
+        run_str += '_bn'
+
+    if flags_dict['use_gaussian_loss']:
+        run_str += '_gaussian_loss'
+
+    if flags_dict['use_nnehmc_loss']:
+        run_str += '_nnehmc_loss'
+
+    if flags_dict['clip_value'] > 0:
+        run_str += f'_clip{flags_dict["clip_value"]}'
+
+    if flags_dict['zero_masks']:
+        run_str += f'_zero_masks'
+
+    return run_str, flags_dict
+
+
+def _parse_gauge_flags1(FLAGS):
     """Parse flags for `GaugeModel` instance."""
     if isinstance(FLAGS, dict):
         flags = FLAGS
