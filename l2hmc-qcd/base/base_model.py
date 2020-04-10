@@ -83,46 +83,86 @@ class BaseModel:
             params (dict, optional): Dictionary of key, value pairs used for
                 specifying model parameters.
         """
-        if 'charge_weight' in params:
-            self.charge_weight_np = params.pop('charge_weight', None)
+        self._model_type = model_type
+        self._parse_params(params)
+        self.global_step = self._create_global_step()
+        self.lr = self._create_lr(self._warmup)
+        self.optimizer = self._create_optimizer()
 
+    def _parse_params(self, params):
+        """Parse input parameters."""
         self.params = params
+        # Directory to store model information
         self.log_dir = params.get('log_dir', None)
+        # Number of leapfrog steps to use in MD updates
+        self.num_steps = int(params.get('num_steps', 5))
+        # Start from random initial samples?
+        self.rand = params.get('rand', True)
+        # Initial value of beta to use in annealing schedule
         self.beta_init = params.get('beta_init', None)
+        # Final value of beta to use in annealing schedule
         self.beta_final = params.get('beta_final', None)
-        self.train_steps = params.get('train_steps', None)
-        self.num_hidden1 = params.get('num_hidden1', None)
-        self.num_hidden2 = params.get('num_hidden2', None)
+        # number of training steps
+        self.train_steps = int(params.get('train_steps', None))
+        # batch size to use for training
+        self.batch_size = int(params.get('batch_size', None))
+        # Activation function to be used in the network
+        self._activation = params.get('activation', 'relu')
+        # Num nodes in first and second hidden layers, respectively
+        self.num_hidden1 = int(params.get('num_hidden1', None))
+        self.num_hidden2 = int(params.get('num_hidden2', None))
+        # Using `horovod` for distributed training?
+        self.using_hvd = params.get('using_hvd', False)
+        # Use alternative loss functions?
+        self._use_gaussian = params.get('use_gaussian_loss', False)
+        self._use_nnehmc = params.get('use_nnhehmc_loss', False)
+        # Run generic HMC instead of training the L2HMC sampler?
+        self.hmc = params.get('hmc', False)
+        # Train the sampler with a fixed step size (eps)?
+        self.eps_trainable = (not params.get('eps_fixed', False))
+        # Warmup learning rate? (slowly ramp it up at the start of training)
+        self._warmup = params.get('warmup_lr', False)
+        # How to decay learning rate during training
+        self.lr_decay_steps = int(params.get('lr_decay_steps', 10000))
+        self.lr_decay_rate = params.get('lr_decay_rate', 0.96)
+        # Scaling factor for generic esjd loss
+        self.std_weight = float(params.get('std_weight', 1.))
+        # Overall scaling factor for loss function
+        self.loss_scale = float(params.get('loss_scale', 1.))
+        # weight of auxiliary sampler that draws from initialization dist
+        self.aux_weight = float(params.get('aux_weight', 1.))
+        # whether or not to use `zero_masks` in x-updates
+        self.zero_masks = params.get('zero_masks', False)
+        # whether or not to use batch normalization in network
+        self.use_bn = params.get('use_bn', False)
+        # whether or not to use dropout in network
+        self.dropout_prob = params.get('dropout_prob', 0.)
+        # gradient clipping value (by global norm)
+        self.clip_value = params.get('clip_value', 0.)
+        # initial value of learning rate
+        self.lr_init = params.get('lr_init', 1e-3)
+        # number of steps after which to save model
+        self.print_steps = params.get('print_steps', 1)
+        # number of steps after which to print output
+        self.save_steps = params.get('save_steps', 10000)
+        # network architecture
+        self.network_arch = params.get('network_arch', 'generic')
+        # network_type: 'CartesianNet' or if None, use `FullNet`
+        self._network_type = params.get('network_type', None)
 
+        # save values taken on by leapfrog functions in summaries?
+        #  self.save_lf = params.get('save_lf', False)
+
+        if 'charge_weight' in params:
+            self._charge_weight = params.get('charge_weight', 0.)
+
+        # All reqd. params should have already been processed, but to be sure
         self.loss_weights = {}
         for key, val in self.params.items():
             if 'weight' in key:
                 self.loss_weights[key] = val
             else:
                 setattr(self, key, val)
-
-        self.using_hvd = params.get('using_hvd', False)
-        # Use alternative loss functions?
-        self._use_gaussian = getattr(self, 'use_gaussian_loss', False)
-        self._use_nnehmc = getattr(self, 'use_nnehmc_loss', False)
-        #  self._model_type = getattr(self, 'model_type', None)
-        self._model_type = model_type
-
-        # Run generic HMC instead of training the L2HMC sampler?
-        self.hmc = getattr(self, 'hmc', False)
-
-        # Train the sampler with a fixed step size (eps)?
-        eps_fixed = getattr(self, 'eps_fixed', False)
-        self.eps_trainable = not eps_fixed
-        self.global_step = self._create_global_step()
-
-        # Warmup learning rate? (slowly ramp it up at the start of training)
-        warmup = self.params.get('warmup_lr', False)
-        self.lr_decay_steps = params.get('lr_decay_steps', 10000)
-        self.lr_decay_rate = params.get('lr_decay_rate', 0.96)
-        self.lr = self._create_lr(warmup)
-
-        self.optimizer = self._create_optimizer()
 
     def build(self, params=None):
         """Build `tf.Graph` object containing operations for running model."""
@@ -179,7 +219,7 @@ class BaseModel:
         # *****************************************
         # Build sampler for obtaining new configs
         # -----------------------------------------
-        x_data, z_data = self._build_sampler()
+        xdata, zdata = self._build_sampler()
 
         # *******************************************************************
         # Build energy_ops to calculate energies.
@@ -203,7 +243,7 @@ class BaseModel:
         # Calculate loss_op and train_op to backprop. grads through network
         # -------------------------------------------------------------------
         with tf.name_scope('calc_loss'):
-            self.loss_op, self._losses_dict = self.calc_loss(x_data, z_data)
+            self.loss_op, self._losses_dict = self.calc_loss(xdata, zdata)
 
         # *******************************************************************
         # Calculate gradients and build training operation
@@ -296,7 +336,7 @@ class BaseModel:
     def _build_sampler(self):
         """Build operations used for sampling from the dynamics engine."""
         with tf.name_scope('l2hmc_sampler'):
-            x_dynamics, x_data = self._build_main_sampler()
+            x_dynamics, xdata = self._build_main_sampler()
             self.x_init = x_dynamics['x_init']
             self.v_init = x_dynamics['v_init']
             self.x_out = x_dynamics['x_out']
@@ -321,9 +361,9 @@ class BaseModel:
 
             self.x_diff, self.v_diff = self._check_reversibility()
 
-            _, z_data = self._build_aux_sampler()
+            _, zdata = self._build_aux_sampler()
 
-        return x_data, z_data
+        return xdata, zdata
 
     def _build_main_sampler(self):
         """Build operations used for 'sampling' from the dynamics engine."""
@@ -333,11 +373,11 @@ class BaseModel:
                                                   self.train_phase,
                                                   hmc=self._use_nnehmc)
 
-            x_data = LFdata(xout['x_init'],
+            xdata = LFdata(xout['x_init'],
                             xout['x_proposed'],
                             xout['accept_prob'])
 
-        return xout, x_data
+        return xout, xdata
 
     def _build_aux_sampler(self):
         """Run dynamics using initialization distribution (random normal)."""
@@ -356,11 +396,11 @@ class BaseModel:
                                                   self.train_phase,
                                                   hmc=self._use_nnehmc)
 
-            z_data = LFdata(zout['x_init'],
+            zdata = LFdata(zout['x_init'],
                             zout['x_proposed'],
                             zout['accept_prob'])
 
-        return zout, z_data
+        return zout, zdata
 
     def create_dynamics(self):
         """Wrapper method around `self._create_dynamics`."""
@@ -591,12 +631,12 @@ class BaseModel:
 
         return loss
 
-    def _calc_loss(self, x_data, z_data):
+    def _calc_loss(self, xdata, zdata):
         """Build operation responsible for calculating the total loss.
 
         Args:
-            x_data (namedtuple): Contains `x_in`, `x_proposed`, and `px`.
-            z_data (namedtuple): Contains `z_in`, `z_propsed`, and `pz`.'
+            xdata (namedtuple): Contains `x_in`, `x_proposed`, and `px`.
+            zdata (namedtuple): Contains `z_in`, `z_propsed`, and `pz`.'
             weights (namedtuple): Contains multiplicative factors that
                 determine the contribution from different terms to the total
                 loss function.
@@ -609,14 +649,14 @@ class BaseModel:
 
         with tf.name_scope('calc_loss'):
             with tf.name_scope('x_loss'):
-                x_loss = self._loss(x_data.init,
-                                    x_data.proposed,
-                                    x_data.prob)
+                x_loss = self._loss(xdata.init,
+                                    xdata.proposed,
+                                    xdata.prob)
             with tf.name_scope('z_loss'):
                 if aux_weight > 0.:
-                    z_loss = self._loss(z_data.init,
-                                        z_data.proposed,
-                                        z_data.prob)
+                    z_loss = self._loss(zdata.init,
+                                        zdata.proposed,
+                                        zdata.prob)
                 else:
                     z_loss = 0.
 
@@ -624,15 +664,15 @@ class BaseModel:
 
         return loss
 
-    def _gaussian_loss(self, x_data, z_data, mean, sigma):
+    def _gaussian_loss(self, xdata, zdata, mean, sigma):
         """Alternative Gaussian loss implemntation."""
         ls = getattr(self, 'loss_scale', 1.)
         aux_weight = getattr(self, 'aux_weight', 1.)
         with tf.name_scope('gaussian_loss'):
             with tf.name_scope('x_loss'):
-                x_esjd = self._calc_esjd(x_data.init,
-                                         x_data.proposed,
-                                         x_data.prob)
+                x_esjd = self._calc_esjd(xdata.init,
+                                         xdata.proposed,
+                                         xdata.prob)
                 x_gauss = _gaussian(x_esjd, mean, sigma)
                 #  x_loss = - ls * tf.reduce_mean(x_gauss, name='x_gauss_mean')
                 x_loss = ls * tf.reduce_mean(x_gauss, name='x_gauss_mean')
@@ -640,9 +680,9 @@ class BaseModel:
 
             with tf.name_scope('z_loss'):
                 if aux_weight > 0.:
-                    z_esjd = self._calc_esjd(z_data.init,
-                                             z_data.proposed,
-                                             z_data.prob)
+                    z_esjd = self._calc_esjd(zdata.init,
+                                             zdata.proposed,
+                                             zdata.prob)
                     z_gauss = _gaussian(z_esjd, mean, sigma)
                     #  aux_factor = - ls * aux_weight
                     aux_factor = ls * aux_weight
@@ -656,43 +696,53 @@ class BaseModel:
 
         return gaussian_loss
 
-    def _nnehmc_loss(self, x_data, hmc_prob, beta=1., x_esjd=None):
+    def _nnehmc_loss(self, xdata, hmc_prob, beta=1., x_esjd=None):
         """Calculate the NNEHMC loss from [1] (line 10)."""
         if x_esjd is None:
-            x_in, x_proposed, accept_prob = x_data
+            x_in, x_proposed, accept_prob = xdata
             x_esjd = self._calc_esjd(x_in, x_proposed, accept_prob)
 
         return tf.reduce_mean(- x_esjd - beta * hmc_prob, name='nnehmc_loss')
 
-    def calc_loss(self, x_data, z_data):
+    def calc_loss(self, xdata, zdata, eps=1e-4):
+        """Calculate the total loss."""
+        raise NotImplementedError
+
+    def calc_loss1(self, xdata, zdata):
         """Calculate the total loss from all terms."""
         total_loss = 0.
         ld = {}
 
+        eps = 1e-4
         with tf.name_scope('loss'):
             if self._use_gaussian:
-                gaussian_loss = self._gaussian_loss(x_data, z_data,
+                gaussian_loss = self._gaussian_loss(xdata, zdata,
                                                     mean=0., sigma=1.)
                 ld['gaussian'] = gaussian_loss
                 total_loss += gaussian_loss
 
             if self._use_nnehmc:
                 nnehmc_beta = getattr(self, 'nnehmc_beta', 1.)
-                nnehmc_loss = self._nnehmc_loss(x_data, self.px_hmc,
+                nnehmc_loss = self._nnehmc_loss(xdata, self.px_hmc,
                                                 beta=nnehmc_beta)
                 ld['nnehmc'] = nnehmc_loss
                 total_loss += nnehmc_loss
 
             if self._model_type == 'GaugeModel':
-                if self.use_charge_loss:
-                    charge_loss = self._calc_charge_loss(x_data, z_data)
-                    ld['charge'] = charge_loss
-                    total_loss += charge_loss
+                plaq_loss, charge_loss = self.plaq_loss(xdata, zdata, eps)
+                total_loss += plaq_loss
+                total_loss += charge_loss
+                ld['charge'] = charge_loss
+                ld['plaq'] = plaq_loss
+                #  if self.use_charge_loss:
+                #      charge_loss = self._calc_charge_loss(xdata, zdata)
+                #      ld['charge'] = charge_loss
+                #      total_loss += charge_loss
 
             # If not using either Gaussian loss or NNEHMC loss,
             # use standard loss
             if (not self._use_gaussian) and (not self._use_nnehmc):
-                std_loss = self._calc_loss(x_data, z_data)
+                std_loss = self._calc_loss(xdata, zdata)
                 ld['std'] = std_loss
                 total_loss += std_loss
 

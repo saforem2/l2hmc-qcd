@@ -37,15 +37,13 @@ def exp_mult_cooling(step, temp_init, temp_final, num_steps, alpha=None):
 
 class Trainer:
     """Model-independent `Trainer` object for training the L2HMC sampler."""
-    def __init__(self, sess, model, logger=None, annealing_fn=None, **params):
+    def __init__(self, sess, model, logger=None, params=None):
         """Initialization method.
-
         Args:
             sess (`tf.Session`): Tensorflow session object.
             model: Model specifying how to train the L2HMC sampler.
             logger (`TrainLogger` object): TrainLogger object used for
                 logging/keeping track of the training data.
-
         NOTE: If running distributed training across multiple ranks with
             `horovod`, `logger == None` for all but the `chief` (rank 0) rank
             since the chief rank is responsible for performing all file I/O.
@@ -53,12 +51,18 @@ class Trainer:
         self.sess = sess
         self.model = model
         self.logger = logger
+
+        if params is None:
+            params = model.params
+        self._params = params
+
         self._train_keys = list(self.model.train_ops.keys())
         self._train_ops = list(self.model.train_ops.values())
 
         self._beta_init = params.get('beta_init', self.model.beta_init)
         self._beta_final = params.get('beta_final', self.model.beta_final)
         self._train_steps = params.get('train_steps', self.model.train_steps)
+        self._extra_steps = params.get('extra_steps', 0)
 
         temp_init = 1. / self._beta_init
         temp_final = 1. / self._beta_final
@@ -69,17 +73,18 @@ class Trainer:
             self.beta_arr = np.array([self.model.beta_init for _ in range(ts)])
             return
 
-        if annealing_fn is None:
-            self.annealing_fn = linear_add_cooling
+        annealing_fn = params.get('annealing_fn', linear_add_cooling)
 
         # pre-fetch array of all beta values used during annealing schedule
         args = (temp_init, temp_final, ts)
-        temp_arr = np.array([self.annealing_fn(i, *args) for i in range(ts)])
+        temp_arr = [annealing_fn(i, *args) for i in range(ts)]
+        temp_arr.extend([temp_final for _ in range(self._extra_steps)])
+        temp_arr = np.array(temp_arr)
         self.beta_arr = 1. / temp_arr
+        self._train_steps += self._extra_steps
 
-    def train_step(self, step, samples, **kwargs):
+    def train_step(self, step, samples, net_weights=None):
         """Perform a single training step.
-
         Args:
             step (int): Current training step.
             samples_np (np.ndarray): Array of input configurations.
@@ -89,8 +94,9 @@ class Trainer:
             out_data (dict): Dictionary containing outputs from the respective
                 tensorflow operations.
         """
-        net_weights = kwargs.get('net_weights', NetWeights(1., 1., 1.,
-                                                           1., 1., 1.))
+        if net_weights is None:
+            net_weights = NetWeights(1., 1., 1., 1., 1., 1.)
+
         beta = self.beta_arr[step]
 
         feed_dict = {
@@ -131,7 +137,8 @@ class Trainer:
 
         if self.model._model_type == 'GaugeModel':
             outputs['x_out'] = np.mod(outputs['x_out'], 2 * np.pi)
-            dx = np.mean(np.abs(outputs['x_out'] - samples), axis=-1)
+            dx = 1. - np.mean(np.cos(outputs['x_out'] - samples), axis=-1)
+            #  dx = np.mean(np.abs(outputs['x_out'] - samples), axis=-1)
             outputs['dx'] = dx
             plaq_diff = u1_plaq_exact(beta) - outputs['plaqs']
             data_str += (
@@ -142,12 +149,11 @@ class Trainer:
 
         return outputs, data_str
 
-    def train(self, train_steps, **kwargs):
+    def train(self, train_steps=None, beta=None,
+              samples=None, net_weights=None):
         """Train the L2HMC sampler for `train_steps` steps.
-
         Args:
             train_steps (int): Number of training steps to perform.
-
         Kwargs:
             samples (np.ndarray, optional): Initial samples to use as input
                 for the first training step.
@@ -156,14 +162,12 @@ class Trainer:
             trace (bool, optional): Flag specifying that the training loop
                 should be wrapped in a profiler.
         """
-        beta = kwargs.pop('beta', None)
-        samples = kwargs.pop('samples', None)
-        #  initial_step = kwargs.pop('initial_step', 0)
-        #  io.log(f'Initial_step: {initial_step}\n')
+        if train_steps is None:
+            train_steps = self._train_steps
 
-        net_weights = kwargs.get('net_weights', NetWeights(1, 1, 1,
-                                                           1, 1, 1))
-        #  net_weights = kwargs.get('net_weights', [1., 1., 1.])
+        if net_weights is None:
+            net_weights = NetWeights(1, 1, 1, 1, 1, 1)
+
         initial_step = self.sess.run(self.model.global_step)
         io.log(f'Global step: {initial_step}\n')
 
@@ -171,7 +175,7 @@ class Trainer:
             beta = self.beta_arr[0]
 
         if samples is None:
-            samples = np.random.randn(self.model.x.shape, dtype=NP_FLOAT)
+            samples = np.random.randn(self.model.x.shape)
 
         if self.model._model_type == 'GaugeModel':
             samples = np.mod(samples, 2 * np.pi)
@@ -181,16 +185,20 @@ class Trainer:
         try:
             if self.logger is not None:
                 io.log(self.logger.train_header)
-            for step in range(initial_step, train_steps):
-                data, data_str = self.train_step(step, samples, **kwargs)
-                samples = data['x_out']
 
+            for step in range(initial_step, train_steps):
+                data, data_str = self.train_step(step, samples, net_weights)
                 if self.logger is not None:
                     self.logger.update(self.sess, data, data_str, net_weights)
 
+                samples = data['x_out']
+                if self.model._model_type == 'GaugeModel':
+                    samples = np.mod(samples, 2 * np.pi)
+
+
             if self.logger is not None:
                 self.logger.write_train_strings()
-                #  self.logger.save_train_data()
+            #  self.logger.save_train_data()
 
         except (KeyboardInterrupt, SystemExit):
             io.log("\nERROR: KeyboardInterrupt detected!")
