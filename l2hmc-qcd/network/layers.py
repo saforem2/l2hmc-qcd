@@ -42,7 +42,6 @@ class DenseLayerNP:
         return self.activation(np.dot(x, self.w) + self.b)
 
 
-
 class ScaledTanhLayer:
     """Wrapper class for dense layer + exp scaled tanh output."""
     def __init__(self, name, factor, units, seed):
@@ -59,6 +58,32 @@ class ScaledTanhLayer:
 
     def __call__(self, x):
         return tf.exp(self.coeff) * tf.nn.tanh(self.layer(x))
+
+
+class StackedLayer:
+    """Wrapper class that stacks [cos(x), sin(x)] inputs."""
+    def __init__(self, name, factor, units, seed, **kwargs):
+        """Initialization method."""
+        self.layer = custom_dense(name=name,
+                                  factor=factor,
+                                  units=units,
+                                  seed=seed,
+                                  **kwargs)
+
+    def __call__(self, phi):
+        phi = tf.concat([tf.cos(phi), tf.sin(phi)], axis=-1)
+        return self.layer(phi)
+
+
+class StackedLayerNP:
+    """Numpy version of `StackedLayer`."""
+    def __init__(self, weights):
+        self.layer = DenseLayerNP(weights)
+
+    def __call__(self, phi):
+        phi = np.concatenate([np.cos(phi), np.sin(phi)], axis=-1)
+        return self.layer(phi)
+
 
 
 class ScaledTanhLayerNP:
@@ -86,6 +111,7 @@ class CartesianLayer:
                                     units=units,
                                     seed=yseed,
                                     **kwargs)
+
     def __call__(self, x, y):
         xout = self.x_layer(x)
         yout = self.y_layer(y)
@@ -161,5 +187,3 @@ class EncodingLayerNP:
         yout = self.y_layer(phi_enc[1])
 
         return self.decode(xout, yout)
-
-

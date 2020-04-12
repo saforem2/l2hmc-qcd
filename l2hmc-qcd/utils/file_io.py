@@ -305,6 +305,10 @@ def _parse_gauge_flags(FLAGS):
     def _no_dots(key):
         return str(flags_dict[key]).replace('.', '')
 
+    net_type = flags_dict.get('network_type', None)
+    if net_type is not None:
+        run_str += f'_{net_type}'
+
     if flags_dict['aux_weight'] != 1.:
         aw = _no_dots('aux_weight')
         run_str += f'_aw{aw}'

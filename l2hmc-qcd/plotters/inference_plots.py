@@ -238,6 +238,8 @@ def plot_reverse_data(run_data, params, **kwargs):
 
     fig_dir = os.path.join(figs_dir, run_str)
     io.check_else_make_dir(fig_dir)
+    out_dir = os.path.join(fig_dir, 'reverse_plots')
+    io.check_else_make_dir(out_dir)
     #  out_dir = kwargs.get('out_dir', None)
     try:
         fname, title_str, _ = plot_setup(log_dir, run_data.run_params)
@@ -247,16 +249,19 @@ def plot_reverse_data(run_data, params, **kwargs):
     #  fname = f'{fname}_reversibility_hist'
     #  out_file = os.path.join(fig_dir, f'{fname}.png')
     #  fig, ax = plt.subplots()
-    for key, val in run_data.reverse_data.items():
-        fname = f'{key}_reversibility.png'
-        out_file = os.path.join(fig_dir, f'{fname}.png')
+    reverse_data = {
+        'xdiff_r': run_data.run_data['xdiff_r'],
+        'vdiff_r': run_data.run_data['vdiff_r'],
+    }
+    for key, val in reverse_data.items():
+        #  fname = f'{key}_reversibility.png'
+        out_file = os.path.join(out_dir, f'{key}.png')
         fig, ax = plt.subplots()
         sns.kdeplot(np.array(val).flatten(), shade=True, label=key, ax=ax)
         ax.legend(loc='best')
         ax.set_title(title_str)
         plt.tight_layout()
-        io.log(f'Saving figure to: {out_file}...')
-        fig.savefig(out_file, dpi=200, bbox_inches='tight')
+        savefig(fig, out_file)
         #  if out_dir is not None:
         #      fout = os.path.join(out_dir, f'{fname}.png')
         #      io.log(f'Saving figure to: {fout}...')
@@ -296,7 +301,6 @@ def _plot_volume_diff(drms_data, fit_data, out_dir, title_str=None):
                   + r"$x + $" + f'{polyfits[key][1]:.5g}')
         fit_line, = ax.plot(xfit[key], yfit[key], 'k-', label=fitstr)
         ax.legend([fit_line], [fitstr], loc='upper left')
-
 
         ax.set_xlabel(f'd{key}_rms_in', fontsize='large')
         ax.set_ylabel(f'd{key}_rms_out', fontsize='large')
@@ -515,8 +519,11 @@ def inference_plots(run_data, params, **kwargs):
     # Look at how the sampler transforms regions of phase space.
     ##############################################################
     if run_data.run_params['symplectic_check']:
-        plot_volume_diffs(run_data.volume_diffs,
-                          fig_dir, title_str=title_str)
+        try:
+            plot_volume_diffs(run_data.volume_diffs,
+                              fig_dir, title_str=title_str)
+        except:
+            import pudb; pudb.set_trace()
 
 
     pe_dir = os.path.join(fig_dir, 'potential_plots')
@@ -583,17 +590,18 @@ def inference_plots(run_data, params, **kwargs):
     ############################################
     # Create autocorrelation plot of plaq_diffs
     ############################################
-    plaqs = np.array(run_data.run_data['plaqs_diffs']).T
+    plaqs = np.array(run_data.observables['plaqs_diffs']).T
     fig, _ = plot_autocorr(plaqs, params,
                            run_data.run_params, name='plaqs')
+    plt.close('all')
 
     ###############################################
     # Create plots for `dx_out` and `dx_proposed`
     ###############################################
-    dx_dir = os.path.join(fig_dir, 'dx_plots')
-    io.check_else_make_dir(dx_dir)
-    traceplot_posterior(dataset, name='dx', fname=fname, fig_dir=dx_dir,
-                        title_str=title_str, filter_str='dx')
+    #  dx_dir = os.path.join(fig_dir, 'dx_plots')
+    #  io.check_else_make_dir(dx_dir)
+    #  traceplot_posterior(dataset, name='dx', fname=fname, fig_dir=dx_dir,
+    #                      title_str=title_str, filter_str='dx')
 
     ##################################
     # Create plots for `plaqs_diffs`
@@ -603,6 +611,7 @@ def inference_plots(run_data, params, **kwargs):
     traceplot_posterior(dataset, name='plaqs_diffs', fname=fname,
                         fig_dir=pd_dir, title_str=title_str,
                         filter_str='plaqs_diffs')
+    plt.close('all')
 
     #########################################
     # Create plots for dynamics reverse data
@@ -613,6 +622,7 @@ def inference_plots(run_data, params, **kwargs):
                         fname=fname, fig_dir=reverse_dir,
                         title_str=title_str,
                         filter_str=['xdiff_r', 'vdiff_r'])
+    plt.close('all')
 
     #############################################################
     # Create plots for `sumlogdet_out` and `sumlogdet_proposed`
@@ -623,6 +633,7 @@ def inference_plots(run_data, params, **kwargs):
                         fname=fname, fig_dir=sld_dir,
                         title_str=title_str,
                         filter_str='sumlogdet')
+    plt.close('all')
 
     ####################################################
     # Create traceplot + posterior plot of observables
@@ -633,8 +644,9 @@ def inference_plots(run_data, params, **kwargs):
 
     traceplot_posterior(dataset, '', fname=fname, fig_dir=fig_dir,
                         title_str=title_str, filter_str=var_names)
+    plt.close('all')
 
-    run_data.samples_arr
+    #  run_data.samples_arr
 
     out_dir = os.path.join(fig_dir, 'angular_timeseries')
     io.check_else_make_dir(out_dir)
@@ -643,20 +655,19 @@ def inference_plots(run_data, params, **kwargs):
                           num_plots=10,
                           num_steps=1000,
                           title_str=title_str)
+    plt.close('all')
 
     out_dir = os.path.join(fig_dir, 'plaq_sums_timeseries')
     io.check_else_make_dir(out_dir)
-    try:
-        lattice_shape = (params['time_size'],
-                         params['space_size'], params['dim'])
-    except:
-        import pudb; pudb.set_trace()
+    lattice_shape = (params['time_size'],
+                     params['space_size'], params['dim'])
     plot_plaq_timeseries(run_data.samples_arr,
                          out_dir=out_dir,
                          num_plots=10,
                          num_steps=1000,
                          title_str=title_str,
                          lattice_shape=lattice_shape)
+    plt.close('all')
 
     out_file = os.path.join(fig_dir, 'run_summary.txt')
     run_data.log_summary(n_boot=10000,  out_file=out_file)

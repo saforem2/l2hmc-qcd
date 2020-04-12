@@ -153,9 +153,6 @@ class BaseModel:
         # save values taken on by leapfrog functions in summaries?
         #  self.save_lf = params.get('save_lf', False)
 
-        if 'charge_weight' in params:
-            self._charge_weight = params.get('charge_weight', 0.)
-
         # All reqd. params should have already been processed, but to be sure
         self.loss_weights = {}
         for key, val in self.params.items():

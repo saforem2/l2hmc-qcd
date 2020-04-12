@@ -14,6 +14,16 @@ ENERGY_DATA = {
     'exp_energy_diff': [],
 }
 
+OBSERVABLES = {
+    'plaq_loss': [],
+    'charge_loss': [],
+    'charges': [],
+    'plaqs_diffs': [],
+    'dplaqs': [],
+    'dcharges': [],
+}
+
+
 RUN_DATA = {
     'plaqs': [],
     'plaqs_diffs': [],

@@ -100,8 +100,66 @@ def create_monitored_training_session(**sess_kwargs):
 
 
 def pkl_dump(d, pkl_file):
+    """Dump `d` to `pkl_file`."""
     with open(pkl_file, 'wb') as f:
         pickle.dump(d, f)
+
+
+def save_params(model):
+    """Save model parameters to `.pkl` files.
+
+    Additionally, write out all trainable parameters (w/ sizes) to `.txt` file.
+    """
+    out_file = os.path.join(model.log_dir, 'trainable_params.txt')
+    count_trainable_params(out_file)
+
+    io.save_pkl(model.params, os.path.join(os.getcwd(), 'params.pkl'))
+
+    dynamics_dir = os.path.join(model.log_dir, 'dynamics')
+    io.check_else_make_dir(dynamics_dir)
+    io.save_dict(model.dynamics._params,  # pylint:disable=protected-access
+                 out_dir=dynamics_dir,
+                 name='dynamics_params')
+
+
+def save_masks(model, sess):
+    """Save `model.dynamics.masks` for inference."""
+    masks_file = os.path.join(model.log_dir, 'dynamics_mask.pkl')
+    masks_file_ = os.path.join(model.log_dir, 'dynamics_mask.np')
+    masks = sess.run(model.dynamics.masks)
+    np.array(masks).tofile(masks_file_)
+    io.log(f'dynamics.masks:\n\t {masks}')
+    pkl_dump(masks, masks_file)
+
+
+def save_seeds(model):
+    """Save network seeds for reproducibility."""
+    io.save_dict(seeds, out_dir=model.log_dir, name='seeds')
+    io.save_dict(xnet_seeds, out_dir=model.log_dir, name='xnet_seeds')
+    io.save_dict(vnet_seeds, out_dir=model.log_dir, name='vnet_seeds')
+
+
+def save_weights(model, sess):
+    """Save network weights to `.pkl` file."""
+    xw_file = os.path.join(model.log_dir, 'xnet_weights.pkl')
+    xnet_weights = model.dynamics.xnet.save_weights(sess, xw_file)
+
+    vw_file = os.path.join(model.log_dir, 'vnet_weights.pkl')
+    vnet_weights = model.dynamics.vnet.save_weights(sess, vw_file)
+    model_weights = {
+        'xnet': xnet_weights,
+        'vnet': vnet_weights,
+    }
+    io.save_pkl(model_weights, os.path.join(model.log_dir,
+                                            'weights.pkl'))
+
+
+def save_eps(model, sess):
+    """Save final value of `eps` (step size) at the end of training."""
+    eps_np = sess.run(model.dynamics.eps)
+    eps_dict = {'eps': eps_np}
+    io.save_pkl(eps_dict, os.path.join(model.log_dir, 'eps_np.pkl'))
+
 
 
 @timeit
@@ -145,11 +203,13 @@ def train_l2hmc(FLAGS, log_file=None):
         checkpoint_dir = None
 
     log_params(params)
+    params.update(FLAGS.__dict__)
     # --------------------------------------------------------
     # Create model and train_logger
     # --------------------------------------------------------
     model = GaugeModel(params)
 
+    # Only create `TrainLogger` if `hvd.rank == 0`
     if is_chief:
         logging_steps = params.get('logging_steps', 10)
         train_logger = TrainLogger(model, log_dir,
@@ -162,9 +222,6 @@ def train_l2hmc(FLAGS, log_file=None):
     # Setup `tf.ConfigProto` object for `tf.Session`
     # -------------------------------------------------------
     config, params = create_config(params)
-
-    # set initial value of charge weight using value from FLAGS
-    #  charge_weight_init = params['charge_weight']
 
     net_weights_init = cfg.NetWeights(
         x_scale=FLAGS.x_scale_weight,
@@ -199,57 +256,25 @@ def train_l2hmc(FLAGS, log_file=None):
     #      model.dynamics.vnet.generic_net.coeff_transformation.initializer,
     #  ])
 
-    if is_chief:  # save copy of seeds dictionaries for reproducibility
-        masks_file = os.path.join(model.log_dir, 'dynamics_mask.pkl')
-        masks_file_ = os.path.join(model.log_dir, 'dynamics_mask.np')
-        masks = sess.run(model.dynamics.masks)
-        np.array(masks).tofile(masks_file_)
-        io.log(f'dynamics.masks:\n\t {masks}')
-        pkl_dump(masks, masks_file)
-
-        # Check reversibility and write results out to `.txt` file.
-        #  reverse_file = os.path.join(model.log_dir, 'reversibility_test.txt')
-        #  check_reversibility(model, sess, net_weights_init,
-        #                      out_file=reverse_file)
-
-        io.save_dict(seeds, out_dir=model.log_dir, name='seeds')
-        io.save_dict(xnet_seeds, out_dir=model.log_dir, name='xnet_seeds')
-        io.save_dict(vnet_seeds, out_dir=model.log_dir, name='vnet_seeds')
-
     # ----------------------------------------------------------
     #                       TRAINING
     # ----------------------------------------------------------
     trainer = Trainer(sess, model, train_logger, params)
 
-    #  initial_step = sess.run(global_step)
     trainer.train(model.train_steps,
                   beta=beta_init,
                   samples=samples_init,
                   net_weights=net_weights_init)
 
-
     if is_chief:
+        save_masks(model, sess)
+        save_params(model)
+        save_seeds(model)
+        save_weights(model, sess)
+        save_eps(model, sess)
         # wfile = os.path.join(model.log_dir, 'dynamics_weights.h5')
         # model.dynamics.save_weights(wfile)
-        xw_file = os.path.join(model.log_dir, 'xnet_weights.pkl')
-        xnet_weights = model.dynamics.xnet.save_weights(sess, xw_file)
-
-        vw_file = os.path.join(model.log_dir, 'vnet_weights.pkl')
-        vnet_weights = model.dynamics.vnet.save_weights(sess, vw_file)
-        model_weights = {
-            'xnet': xnet_weights,
-            'vnet': vnet_weights,
-        }
-        io.save_pkl(model_weights, os.path.join(model.log_dir, 'weights.pkl'))
-        io.save_pkl(model.params, os.path.join(os.getcwd(), 'params.pkl'))
         #  io.save_dict(model.params, os.path.join(os.getcwd()), 'params.pkl')
-
-        # Count all trainable paramters and write them (w/ shapes) to txt file
-        count_trainable_params(os.path.join(params['log_dir'],
-                                            'trainable_params.txt'))
-        eps_np = sess.run(model.dynamics.eps)
-        eps_dict = {'eps': eps_np}
-        io.save_pkl(eps_dict, os.path.join(model.log_dir, 'eps_np.pkl'))
 
     # close MonitoredTrainingSession and reset the default graph
     sess.close()

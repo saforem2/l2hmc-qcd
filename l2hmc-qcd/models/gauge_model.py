@@ -6,21 +6,21 @@ Implements `GaugeModel` class, inheriting from `BaseModel`.
 Author: Sam Foreman (github: @saforem2)
 Date: 09/04/2019
 """
+# pylint: disable=invalid-name, no-member
 from __future__ import absolute_import, division, print_function
 
 import time
 
 from collections import namedtuple
-from lattice.lattice import GaugeLattice
 
+import numpy as np
 import tensorflow as tf
 
+import config as cfg
 import utils.file_io as io
 
 from base.base_model import BaseModel
-
-import config as cfg
-
+from lattice.lattice import GaugeLattice
 from params.gauge_params import GAUGE_PARAMS
 
 if cfg.HAS_HOROVOD:
@@ -57,15 +57,19 @@ class GaugeModel(BaseModel):
         self.space_size = int(params.get('space_size', 8))
         self._charge_weight = float(params.get('charge_weight', 0.))
         self._plaq_weight = float(params.get('plaq_weight', 0.))
+        io.log(SEP_STR)
+        io.log(f'self._charge_weight: {self._charge_weight}')
+        io.log(f'self._plaq_weight: {self._plaq_weight}')
+        io.log(SEP_STR)
         self.build(params)
 
     def build(self, params=None):
         """Build TensorFlow graph."""
         params = self.params if params is None else params
 
-        charge_weight = getattr(self, 'charge_weight_np', 0.)
-        self._charge_weight = charge_weight
-        self.use_charge_loss = (charge_weight > 0)
+        #  charge_weight = getattr(self, 'charge_weight_np', 0.)
+        #  self._charge_weight = charge_weight
+        self.use_charge_loss = (self._charge_weight > 0)
 
         t0 = time.time()
         io.log(SEP_STRN + f'INFO: Building graph for `GaugeModel`...')
@@ -132,21 +136,40 @@ class GaugeModel(BaseModel):
         """Create dynamics object."""
         samples = self.lattice.samples_tensor
         potential_fn = self.lattice.get_potential_fn(samples)
-
         kwargs = {
-            'eps_trainable': not getattr(self, 'eps_fixed', False),
-            'num_filters': self.lattice.space_size,
-            'x_dim': self.lattice.num_links,
+            'hmc': self.hmc,
+            'use_bn': self.use_bn,
+            'num_steps': self.num_steps,
             'batch_size': self.batch_size,
             'zero_masks': self.zero_masks,
-            '_input_shape': (self.batch_size, *self.lattice.links.shape),
             'model_type': self._model_type,
+            'activation': self._activation,
+            'num_hidden1': self.num_hidden1,
+            'num_hidden2': self.num_hidden2,
+            'x_dim': self.lattice.num_links,
+            'eps': getattr(self, 'eps', None),
+            'network_arch': self.network_arch,
+            'dropout_prob': self.dropout_prob,
+            'network_type': self._network_type,
+            'eps_trainable': self.eps_trainable,
+            '_input_shape': (self.batch_size, *self.lattice.links.shape),
         }
+        if self.network_arch != 'generic':
+            kwargs['num_filters'] = self.lattice.space_size
 
-        dynamics = self._create_dynamics(potential_fn, **kwargs)
-        io.log(f'Dynamics._model_type: {dynamics._model_type}\n')
-
-        return dynamics
+        #  kwargs = {
+        #      'eps_trainable': not getattr(self, 'eps_fixed', False),
+        #      'num_filters': self.lattice.space_size,
+        #      'x_dim': self.lattice.num_links,
+        #      'batch_size': self.batch_size,
+        #      'zero_masks': self.zero_masks,
+        #      '_input_shape': (self.batch_size, *self.lattice.links.shape),
+        #      'model_type': self._model_type,
+        #  }
+        #
+        #  dynamics = self._create_dynamics(potential_fn, **kwargs)
+        #  io.log(f'Dynamics._model_type: {dynamics._model_type}\n')
+        return self._create_dynamics(potential_fn, **kwargs)
 
     def _create_observables(self):
         """Create operations for calculating lattice observables."""
@@ -257,6 +280,7 @@ class GaugeModel(BaseModel):
         return plaq_loss
 
     def plaq_loss(self, xdata, zdata, eps=1e-4):
+        """Calculate the loss due to the plaquette and charge differences."""
         xp0 = self._plaq_sums(xdata.init)
         xp1 = self._plaq_sums(xdata.proposed)
         zp0 = self._plaq_sums(zdata.init)
@@ -321,12 +345,9 @@ class GaugeModel(BaseModel):
         total_loss = 0.
         ld = {}
 
-        std_loss = self._calc_esjd_loss(xdata, zdata, eps)
+        std_loss = self.std_weight * self._calc_esjd_loss(xdata, zdata, eps)
         plaq_loss, charge_loss = self.plaq_loss(xdata, zdata, eps)
 
-        std_loss *= self.std_weight
-        plaq_loss *= self._plaq_weight
-        charge_loss *= self._charge_weight
         ld['std'] = std_loss
         ld['plaq'] = plaq_loss
         ld['charge'] = charge_loss
