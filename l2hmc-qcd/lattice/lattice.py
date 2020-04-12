@@ -142,6 +142,7 @@ class GaugeLattice:
             samples = np.zeros(samples_shape, dtype=NP_FLOAT)
 
         return samples
+
     def calc_observables(self, samples):
         """Method for calculating all lattice observables simultaneously."""
         plaq_sums = self.calc_plaq_sums(samples)

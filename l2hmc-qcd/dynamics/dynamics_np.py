@@ -24,6 +24,7 @@ from network.generic_net import GenericNetNP
 from network.encoder_net import EncoderNetNP
 from network.layers import relu, linear
 from network.cartesian_net import CartesianNetNP
+from network.gauge_network import GaugeNetworkNP
 
 def reduced_weight_matrix(W, n=10):
     """Use the first n singular vals to reconstruct the original matrix W."""
@@ -577,15 +578,21 @@ class DynamicsNP(object):
         #      io.log(80 * '-')
         #      io.log('\n\n\n')
         #      io.log(80 * '-')
-        if self._network_type == 'CartesianNet':
-            xnet = CartesianNetNP(weights['xnet'],
-                                  activation=self._activation_fn)
-            vnet = CartesianNetNP(weights['vnet'],
-                                  activation=self._activation_fn)
-        # TODO: Update GenericNetNP to use `self._activation_fn`.
-        else:
-            xnet = GenericNetNP(weights['xnet'])
-            vnet = GenericNetNP(weights['vnet'])
+        #  if self._network_type == 'GaugeNetwork':
+        xnet = GaugeNetworkNP(weights['xnet'],
+                              activation=self._activation_fn)
+        vnet = GaugeNetworkNP(weights['vnet'],
+                              activation=self._activation_fn)
+        #
+        #  if self._network_type == 'CartesianNet':
+        #      xnet = CartesianNetNP(weights['xnet'],
+        #                            activation=self._activation_fn)
+        #      vnet = CartesianNetNP(weights['vnet'],
+        #                            activation=self._activation_fn)
+        #  # TODO: Update GenericNetNP to use `self._activation_fn`.
+        #  else:
+        #      xnet = GenericNetNP(weights['xnet'])
+        #      vnet = GenericNetNP(weights['vnet'])
         #      xnet = EncoderNetNP(weights['xnet'], activation=np.tanh)
         #      vnet = EncoderNetNP(weights['vnet'], activation=np.tanh)
         #  #  elif isinstance(weights['xnet']['x_layer'], Weights):

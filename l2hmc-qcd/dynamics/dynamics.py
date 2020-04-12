@@ -1,29 +1,34 @@
 """
+dynamics.py
+
 Dynamics engine for L2HMC sampler on Lattice Gauge Models.
+
 Reference [Generalizing Hamiltonian Monte Carlo with Neural
 Networks](https://arxiv.org/pdf/1711.09268.pdf)
+
 Code adapted from the released TensorFlow graph implementation by original
 authors https://github.com/brain-research/l2hmc.
+
 Reference [Robust Parameter Estimation with a Neural Network Enhanced
-Hamiltonian Markov Chain Monte Carlo
-Sampler]
+Hamiltonian Markov Chain Monte Carlo Sampler]
 https://infoscience.epfl.ch/record/264887/files/robust_parameter_estimation.pdf
+
 Author: Sam Foreman (github: @saforem2)
 Date: 1/14/2019
 """
 from __future__ import absolute_import, division, print_function
 
 # pylint:disable=invalid-name,too-many-locals,too-many-arguments
-
 import numpy as np
 import tensorflow as tf
 
 import config as cfg
 
-from seed_dict import seeds, xnet_seeds, vnet_seeds
+from seed_dict import seeds, vnet_seeds, xnet_seeds
 from network.network import FullNet
 from network.encoder_net import EncoderNet
 from network.cartesian_net import CartesianNet
+from network.gauge_network import GaugeNetwork
 
 __all__ = ['Dynamics']
 
@@ -88,6 +93,7 @@ class Dynamics(tf.keras.Model):
         super(Dynamics, self).__init__(name='Dynamics')
         np.random.seed(seeds['global_np'])
         self.potential = potential_fn
+        self._params = params
 
         # create attributes from `params.items()`
         for key, val in params.items():
@@ -206,8 +212,8 @@ class Dynamics(tf.keras.Model):
             ]
 
         else:
-            #  if self._network_type == 'CartesianNet':
-            xnet = CartesianNet(name='XNet',
+            #  if 'gauge' in self._network_type.lower():
+            xnet = GaugeNetwork(name='XNet',
                                 factor=2.,
                                 x_dim=self.x_dim,
                                 net_seeds=xnet_seeds,
@@ -215,13 +221,30 @@ class Dynamics(tf.keras.Model):
                                 num_hidden2=self.num_hidden2,
                                 activation=self._activation_fn)
 
-            vnet = CartesianNet(name='VNet',
+            vnet = GaugeNetwork(name='VNet',
                                 factor=1.,
                                 x_dim=self.x_dim,
                                 net_seeds=vnet_seeds,
                                 num_hidden1=self.num_hidden1,
                                 num_hidden2=self.num_hidden2,
                                 activation=self._activation_fn)
+
+            #  if 'cartesian' in self._network_type.lower():
+            #      xnet = CartesianNet(name='XNet',
+            #                          factor=2.,
+            #                          x_dim=self.x_dim,
+            #                          net_seeds=xnet_seeds,
+            #                          num_hidden1=self.num_hidden1,
+            #                          num_hidden2=self.num_hidden2,
+            #                          activation=self._activation_fn)
+            #
+            #      vnet = CartesianNet(name='VNet',
+            #                          factor=1.,
+            #                          x_dim=self.x_dim,
+            #                          net_seeds=vnet_seeds,
+            #                          num_hidden1=self.num_hidden1,
+            #                          num_hidden2=self.num_hidden2,
+            #                          activation=self._activation_fn)
             #  else:
             #      net_params['factor'] = 2.
             #      net_params['net_name'] = 'x'

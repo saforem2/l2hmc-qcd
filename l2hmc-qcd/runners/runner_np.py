@@ -49,12 +49,18 @@ NET_WEIGHTS_L2HMC = NetWeights(1, 1, 1, 1, 1, 1)
 #  names = ["STEP", "𝛅𝐭", "𝐀(𝛏'|𝛏)",
 #           "𝛅𝛟_𝛍𝛎", "exp(𝛅𝐇)", "log⎮𝐉⎮",
 #           "𝛅𝐱𝐫", "𝛅𝐯𝐫", "𝛅𝐐", "𝛅𝛟_𝐩"]
-
-names = ["STEP", "𝞭t", "A(ξ'|ξ)",
+names = ["step",
+         "𝞭t",
+         "A(ξ'|ξ)",
+         "𝞭xr",
+         "𝞭vr",
+         "log|J|",
+         "exp(𝞭H)",
+         "plaq_loss",
+         "charge_loss",
          "𝞭𝛟_µυ",
-         #  "𝞭x_out", "𝞭x_prop",
-         "exp(𝞭H)", "log|J|",
-         "𝞭xr", "𝞭vr", "𝞭Q", "𝞭𝛟_p"]
+         "𝞭Q",
+         "𝞭𝛟_p"]
 
 
 #  H0 = ["{:^13s}".format("STEP")]
@@ -403,48 +409,55 @@ def check_reversibility_np(dynamics,
     return diff_dict
 
 
-def _calc_lattice_observables(output, lattice, beta):
+def plaq_loss(output, lattice, beta, eps=1e-4,
+              plaq_weight=0.1, charge_weight=0.1):
+    """Calculate the plaquette and charge losses."""
+    def mixed_loss(weight, val):
+        return weight / val - val / weight
+
+    ps_init = lattice.calc_plaq_sums_np(output['x_init'])
+    ps_out = lattice.calc_plaq_sums_np(output['x_out'])
+
+    plaqs_init = np.sum(np.cos(ps_init), axis=(1, 2)) / lattice.num_plaqs
+    plaqs_out = np.sum(np.cos(ps_out), axis=(1, 2)) / lattice.num_plaqs
+
+    dplaqs = 2. * (1. - np.cos(ps_out - ps_init))
+    ploss_ = output['accept_prob'] * np.sum(dplaqs, axis=(1, 2)) + eps
+    ploss = mixed_loss(plaq_weight, ploss_)
+
+    charges_init = np.sum(np.sin(ps_init), axis=(1, 2)) / (2 * np.pi)
+    charges_out = np.sum(np.sin(ps_out), axis=(1, 2)) / (2 * np.pi)
+    qloss_ = output['accept_prob'] * (charges_out - charges_init) ** 2 + eps
+    qloss = mixed_loss(charge_weight, qloss_)
+
+    outputs = {
+        'plaq_loss': ploss,
+        'charge_loss': qloss,
+        'charges': charges_out,
+        'dplaqs': ps_out - ps_init,
+        'dcharges': charges_out - charges_init,
+        'plaqs_diffs': calc_plaqs_diffs(plaqs_out, beta),
+    }
+
+    return outputs
+
+
+def _calc_lattice_observables(output, lattice, beta, eps=1e-4, pw=0.1, qw=0.1):
     """Calculate lattice observables."""
-    x_init = output['x_init']
-    x_out = output['x_out']
-    x_prop = output['x_proposed']
+    observables = plaq_loss(output, lattice, beta, eps, pw, qw)
 
-    obs_init = lattice.calc_observables_np(samples=x_init)
-    obs_out = lattice.calc_observables_np(samples=x_out)
-    #  obs_prop = lattice.calc_observables_np(samples=x_prop)
-
-    #  x_prop = output['x_proposed']
-    #  obs_prop = lattice.calc_observables_np(samples=x_prop)
-
-    # TODO: look at 𝞭[cos(𝜙_p)] vs. cos(𝞭[𝜙_p])
-    def ssd_cart(x1, x2):
-        return (np.cos(x2) - np.cos(x1)) ** 2 + (np.sin(x2) - np.sin(x1)) ** 2
-
-    obs_diffs = {}
-    for key, val in obs_out.items():
-        obs_diffs[key] = np.array(val) - np.array(obs_init[key])
-
-    obs_out.update({
+    output = {
         'accept_prob': output['accept_prob'],
         'xdiff_r': output['xdiff_r'].mean(axis=-1),
         'vdiff_r': output['vdiff_r'].mean(axis=-1),
-        'dx_out': ssd_cart(obs_out['plaqs'], obs_init['plaqs']),
-        'dx_prop': cos_metric(output['x_proposed'], x_init),
-        #  'dplaq': ssd_cart(obs_out['plaqs'], obs_init['plaqs']),
-        #  'dx_proposed': ssd_cart(obs_prop['plaqs'], obs_init['plaqs']),
-        #  'dx_out': obs_out['plaqs'] - obs_init['plaqs'],
-        #  'dx_proposed': obs_prop['plaqs'] - obs_init['plaqs'],
-        #  'dx_out': cos_metric(x_out, x_init),
-        #  'dx_proposed': cos_metric(output['x_proposed'], x_init),
-        'plaqs_diffs': calc_plaqs_diffs(obs_out['plaqs'], beta),
-        'charges_diffs': (obs_out['charges'] - obs_init['charges']) ** 2,
-    })
-    #  obs_prop.update({
-    #      'plaqs_diffs': calc_plaqs_diffs(obs_prop['plaqs'], beta),
-    #      'charges_diffs': (obs_prop['charges'] - obs_init['charges']),
-    #  })
+        'dplaqs': observables['plaqs_diffs'].mean(),
+        'dcharges': observables['charges_diffs'].mean(),
+        'plaq_loss': observables['plaq_loss'],
+        'charge_loss': observables['charge_loss'],
+        'plaqs_diffs': observables['plaqs_diffs_out'].mean()
+    }
 
-    return obs_out, obs_diffs
+    return output, observables
 
 
 def inference_step(step, x_init, dynamics, lattice, **run_params):
@@ -463,10 +476,64 @@ def inference_step(step, x_init, dynamics, lattice, **run_params):
 
     if dynamics._model_type == 'GaugeModel':
         x_out = np.mod(output['x_out'], 2 * np.pi)
+        output['x_init'] = np.mod(output['x_init'], 2 * np.pi)
         output['x_out'] = x_out
 
-    obs_out, obs_diffs = _calc_lattice_observables(output, lattice, beta)
+    observables = plaq_loss(output, lattice, beta, eps=1e-4,
+                            plaq_weight=0.1, charge_weight=0.1)
+    edata = calc_energies(dynamics, x_init, output, beta)
 
+    data_str = (f"{step:>4g}/{run_steps:<5g} "
+                f"{time_diff:^10.4g} "
+                f"{output['accept_prob'].mean():^10.4g} "
+                f"{output['xdiff_r'].mean():^10.4g} "
+                f"{output['vdiff_r'].mean():^10.4g} "
+                f"{output['sumlogdet_out'].mean():^10.4g} "
+                f"{edata['exp_energy_diff'].mean():^10.4g} "
+                f"{observables['plaq_loss'].mean():^10.4g} "
+                f"{observables['charge_loss'].mean():^10.4g} "
+                f"{observables['dplaqs'].mean():^10.4g} "
+                f"{observables['dcharges'].mean():^10.4g} "
+                f"{observables['plaqs_diffs'].mean():^10.4g} ")
+
+    outputs = {
+        'data_str': data_str,
+        'dynamics_output': output,
+        'observables': observables,
+        'energy_data': edata,
+    }
+
+    if symplectic_check:
+        state1 = State(x=x_init, v=output['v_init'], beta=beta)
+        volume_diffs = dynamics.volume_transformation(state1,
+                                                      net_weights,
+                                                      output['forward'])
+        outputs['volume_diffs'] = volume_diffs
+
+    return outputs
+
+
+def inference_step_old(step, x_init, dynamics, lattice, **run_params):
+    """Run a single inference step."""
+    if dynamics._model_type == 'GaugeModel':
+        x_init = np.mod(x_init, 2 * np.pi)
+
+    beta = run_params.get('beta', None)
+    run_steps = run_params.get('run_steps', None)
+    net_weights = run_params.get('net_weights', None)
+    symplectic_check = run_params.get('symplectic_check', False)
+
+    start_time = time.time()
+    output = dynamics.apply_transition(x_init, beta, net_weights)
+    time_diff = time.time() - start_time
+
+    if dynamics._model_type == 'GaugeModel':
+        x_out = np.mod(output['x_out'], 2 * np.pi)
+        output['x_out'] = x_out
+
+    #  obs_out, obs_diffs = _calc_lattice_observables(output, lattice, beta)
+    obs_out, observables = _calc_lattice_observables(output, lattice, beta,
+                                                     eps=1e-4, pq=0.1, qw=0.1)
     reverse_data = {
         'xdiff_r': output['xdiff_r'],
         'vdiff_r': output['vdiff_r'],

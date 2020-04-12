@@ -15,7 +15,8 @@ import autograd.numpy as np
 
 import utils.file_io as io
 
-from runners import ENERGY_DATA, REVERSE_DATA, RUN_DATA, SAMPLES, VOLUME_DIFFS
+from runners import (ENERGY_DATA, REVERSE_DATA, RUN_DATA,
+                     SAMPLES, VOLUME_DIFFS, OBSERVABLES)
 from lattice.lattice import calc_plaqs_diffs
 from plotters.data_utils import bootstrap, therm_arr
 from plotters.inference_plots import calc_tunneling_rate
@@ -61,6 +62,7 @@ class RunData:
 
         self.samples_arr = []
         self.data_strs = [HSTR]
+        self.observables = OBSERVABLES
         self.run_data = RUN_DATA
         self.samples_dict = SAMPLES
         self.energy_data = ENERGY_DATA
@@ -91,6 +93,39 @@ class RunData:
                 val.append(outputs[key])
 
     def update(self, step, samples, outputs):
+        """"Update all data."""
+        if step % self.run_params['print_steps'] == 0:
+            io.log(outputs['data_str'])
+            self.data_strs.append(outputs['data_str'])
+
+        self.samples_arr.append(samples)
+
+        for key, val in outputs['observables'].items():
+            try:
+                self.observables[key].append(val)
+            except KeyError:
+                self.observables[key] = [val]
+
+        for key, val in outputs['energy_data'].items():
+            try:
+                self.energy_data[key].append(val)
+            except KeyError:
+                self.energy_data[key] = [val]
+
+        for key, val in outputs['dynamics_output'].items():
+            try:
+                self.run_data[key].append(val)
+            except KeyError:
+                self.run_data[key] = [val]
+
+        if 'volume_diffs' in outputs:
+            for key, val in outputs['volume_diffs'].items():
+                try:
+                    self.volume_diffs[key].append(val)
+                except KeyError:
+                    self.volume_diffs[key] = [val]
+
+    def update1(self, step, samples, outputs):
         """Update all data."""
         if step % self.run_params['print_steps'] == 0:
             io.log(outputs['data_str'])
@@ -106,7 +141,6 @@ class RunData:
         if 'volume_diffs' in outputs:
             tups.append((self.volume_diffs, outputs['volume_diffs'], False))
 
-
         tups = self._multiple_updates(tups)
 
         self._update_samples(outputs['dynamics_output'])
@@ -118,15 +152,33 @@ class RunData:
             outputs['dynamics_output']['sumlogdet_proposed']
         )
 
+
     def build_dataset(self):
         """Build `xarray.Dataset` from `self.run_data`."""
-        charges = np.array(self.run_data['charges']).T
+        charges = np.array(self.observables['charges']).T
         self.run_data['tunneling_rate'] = calc_tunneling_rate(charges).T
 
-        plaqs = np.array(self.run_data.pop('plaqs'))
-        beta = self.run_params['beta']
-        self.run_data['plaqs_diffs'] = calc_plaqs_diffs(plaqs, beta)
-        dataset = self._build_dataset(self.run_data, filter_str='forward')
+        #  plaqs = np.array(self.observables.pop('plaqs'))
+        #  beta = self.run_params['beta']
+        #  self.run_data['plaqs_diffs'] = calc_plaqs_diffs(plaqs, beta)
+        plot_data = {
+            'plaqs_diffs': self.observables['plaqs_diffs'],
+            'charges': self.observables['charges'],
+            'accept_prob': self.run_data['accept_prob'],
+            'xdiff_r': np.array(self.run_data['xdiff_r']).mean(axis=-1),
+            'vdiff_r': np.array(self.run_data['vdiff_r']).mean(axis=-1),
+            'sumlogdet_out': self.run_data['sumlogdet_out'],
+            'sumlogdet_prop': self.run_data['sumlogdet_proposed'],
+            'tunneling_rate': self.run_data['tunneling_rate'],
+            #  'dplaqs': self.observables['dplaqs'],
+            'dcharges': self.observables['dcharges'],
+        }
+
+        try:
+            dataset = self._build_dataset(plot_data, filter_str='forward')
+        except:
+            import pudb; pudb.set_trace()
+        #  dataset = self._build_dataset(self.run_data, filter_str='forward')
 
         return dataset
 
@@ -233,57 +285,68 @@ class RunData:
             out_file = os.path.join(out_dir, f'{key}.pkl')
             io.save_pkl(np.array(val), out_file, name=key)
 
-    def save(self, run_dir=None):
-        """Save all inference data to `run_dir`."""
-        if run_dir is None:
-            run_dir = self.run_params['run_dir']
-
-        self.save_samples_data(run_dir)
-
-        rd_f = os.path.join(run_dir, 'reverse_data.pkl')
-        io.save_pkl(self.reverse_data, rd_f)
-
-        volume_diffs_file = os.path.join(run_dir, 'volume_diffs.pkl')
-        io.save_pkl(self.volume_diffs, volume_diffs_file)
-
         samples_arr_file = os.path.join(run_dir, 'samples.pkl')
         io.save_pkl(self.samples_arr, samples_arr_file)
 
+    def save_reverse_data(self, run_dir):
+        """Save reversibility data."""
+        reverse_data = {
+            'xdiff_r': self.run_data['xdiff_r'],
+            'vdiff_r': self.run_data['vdiff_r'],
+        }
         max_rdata = {}
-        for key, val in self.reverse_data.items():
+        for key, val in reverse_data.items():
             max_rdata[key] = [np.max(val)]
         max_rdata_df = pd.DataFrame(max_rdata)
         out_file = os.path.join(run_dir, 'max_reversibility_results.csv')
         io.log(f'Saving `max` reversibility data to {out_file}.')
         max_rdata_df.to_csv(out_file)
 
-        if 'forward' in self.run_data:
-            self.save_direction_data()
-
-        io.save_dict(self.run_params, run_dir, name='run_params')
+    def save_run_history(self, run_dir):
+        """Save run_history to `.txt` file."""
         run_history_file = os.path.join(run_dir, 'run_history.txt')
         io.log(f'Writing run history to: {run_history_file}...')
         with open(run_history_file, 'w') as f:
             for s in self.data_strs:
                 f.write(f'{s}\n')
 
+    def save_data(self, run_dir):
+        """Save all `data` objects to `run_dir`."""
         run_data_file = os.path.join(run_dir, 'run_data.pkl')
         energy_data_file = os.path.join(run_dir, 'energy_data.pkl')
-        reverse_data_file = os.path.join(run_dir, 'reverse_data.pkl')
-        volume_diffs_file = os.path.join(run_dir, 'reverse_data.pkl')
+        volume_diffs_file = os.path.join(run_dir, 'volume_diffs.pkl')
+        observables_file = os.path.join(run_dir, 'observables.pkl')
 
         io.save_pkl(self.run_data, run_data_file, name='run_data')
         io.save_pkl(self.energy_data, energy_data_file, name='energy_data')
-        io.save_pkl(self.reverse_data, reverse_data_file, name='reverse_data')
         io.save_pkl(self.volume_diffs, volume_diffs_file, name='volume_diffs')
+        io.save_pkl(self.observables, observables_file, 'observables')
 
         observables_dir = os.path.join(run_dir, 'observables')
         io.check_else_make_dir(observables_dir)
-        for k, v in self.run_data.items():
-            out_file = os.path.join(observables_dir, f'{k}.pkl')
-            io.log(f'Saving {k} to {out_file}...')
-            with open(out_file, 'wb') as f:
-                pickle.dump(np.array(v), f)
+        iters = zip(self.run_data.items(), self.observables.items())
+        for (kr, vr), (ko, vo) in iters:
+            fr = os.path.join(observables_dir, f'{kr}.pkl')
+            fo = os.path.join(observables_dir, f'{ko}.pkl')
+            io.save_pkl(np.array(vr), fr, name=kr)
+            io.save_pkl(np.array(vo), fo, name=ko)
+
+    def save(self, run_dir=None):
+        """Save all inference data to `run_dir`."""
+        if run_dir is None:
+            run_dir = self.run_params['run_dir']
+
+        io.save_dict(self.run_params, run_dir, name='run_params')
+        volume_diffs_file = os.path.join(run_dir, 'volume_diffs.pkl')
+        io.save_pkl(self.volume_diffs, volume_diffs_file)
+
+        if 'forward' in self.run_data:
+            self.save_direction_data()
+
+        self.save_samples_data(run_dir)
+        self.save_reverse_data(run_dir)
+        self.save_data(run_dir)
+        self.save_run_history(run_dir)
 
     @staticmethod
     def _calc_stats(arr, n_boot=10000):
@@ -404,8 +467,10 @@ class RunData:
         io.log_and_write(nw_uline, out_file)
         data = {
             'accept_prob': self.run_data['accept_prob'],
-            'charges': self.run_data['charges'],
-            'dx_out': self.run_data['dx_out'],
+            'charges': self.observables['charges'],
+            'plaqs_diffs': self.observables['plaqs_diffs'],
+            'dplaqs': self.observables['dplaqs'],
+            #  'dx_out': self.run_data['dx_out'],
         }
         therm_data = self.thermalize_data(data)
         tunn_stats = self.calc_tunneling_stats(therm_data['charges'])

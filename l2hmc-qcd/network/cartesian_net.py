@@ -7,6 +7,7 @@ represenrepresentation of an angular variable phi in U(1).
 Author: Sam Foreman
 Date: 04/02/2020
 """
+# pylint:disable=invalid-name
 from __future__ import absolute_import, division, print_function
 
 import pickle
@@ -151,20 +152,10 @@ class CartesianNet(tf.keras.Model):
             'translation_layer': _weights(self.translation_layer),
             'transformation_layer': _weights(self.transformation_layer.layer),
         }
-        #
-        #  weights_dict = {}
-        #  for name, layer in self.layers_dict.items():
-        #      weights_dict[name] = {}
-        #      if isinstance(layer, dict):
-        #          for subname, sublayer in layer.items():
-        #              w, b = sess.run(sublayer.weights)
-        #              weights_dict[name][subname] = Weights(w=w, b=b)
-        #      else:
-        #          w, b = sess.run(layer.weights)
-        #          weights_dict[name] = Weights(w=w, b=b)
 
         coeffs = sess.run([self.scale_layer.coeff,
                            self.transformation_layer.coeff])
+
         weights_dict[SCOEFF] = coeffs[0]
         weights_dict[QCOEFF] = coeffs[1]
 
