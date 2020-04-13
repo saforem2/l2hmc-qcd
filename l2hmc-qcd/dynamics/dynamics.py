@@ -70,7 +70,7 @@ def decode(x):
 # pylint:disable=too-many-instance-attributes
 class Dynamics(tf.keras.Model):
     """Dynamics engine of naive L2HMC sampler."""
-    def __init__(self, potential_fn, **params):
+    def __init__(self, potential_fn, params):
         """Initialization.
         Args:
             potential_fn (callable): Function specifying minus log-likelihood
@@ -93,12 +93,12 @@ class Dynamics(tf.keras.Model):
         super(Dynamics, self).__init__(name='Dynamics')
         np.random.seed(seeds['global_np'])
         self.potential = potential_fn
-        self._params = params
+        self.params = params
 
         # create attributes from `params.items()`
-        for key, val in params.items():
-            if key != 'eps':  # want to use self.eps as tf.Variable
-                setattr(self, key, val)
+        #  for key, val in params.items():
+        #      if key != 'eps':  # want to use self.eps as tf.Variable
+        #          setattr(self, key, val)
 
         self._model_type = params.get('model_type', None)
         self.x_dim = params.get('x_dim', None)
@@ -175,6 +175,7 @@ class Dynamics(tf.keras.Model):
 
         net_params = {
             'network_arch': self.network_arch,  # network architecture
+            'network_type': self._network_type,
             'use_bn': self.use_bn,              # use batch normalization
             'dropout_prob': self.dropout_prob,  # dropout only used if > 0
             'x_dim': self.x_dim,                # dim of target distribution
@@ -211,10 +212,9 @@ class Dynamics(tf.keras.Model):
             ]
 
         else:
-            if self._network_type == 'GaugeNetwork':
-                print(80 * '-')
-                print(f'Network type: GaugeNetwork')
-                print(80 * '-')
+            #  if self._network_type == 'GaugeNetwork':
+            network_type = net_params.get('network_type', None)
+            if network_type == 'GaugeNetwork':
                 xnet = GaugeNetwork(name='XNet',
                                     factor=2.,
                                     x_dim=self.x_dim,
@@ -231,10 +231,7 @@ class Dynamics(tf.keras.Model):
                                     num_hidden2=self.num_hidden2,
                                     activation=self._activation_fn)
 
-            if self._network_type == 'CartesianNet':
-                print(80 * '-')
-                print(f'Network type: CartesianNet')
-                print(80 * '-')
+            elif network_type == 'CartesianNet':
                 xnet = CartesianNet(name='XNet',
                                     factor=2.,
                                     x_dim=self.x_dim,
