@@ -248,7 +248,7 @@ def parse_args():
     parser.add_argument('--network_type',
                         dest='network_type',
                         type=str,
-                        default='CartesianNet',
+                        default='GaugeNetwork',
                         required=False,
                         help=("""String specifying the type of network to
                               use. Possible values: `'CartesianNet'`. If not

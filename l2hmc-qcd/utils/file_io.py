@@ -260,6 +260,8 @@ def _parse_gauge_flags(FLAGS):
         'batch_size': flags.get('batch_size', 32),
         'num_steps': flags.get('num_steps', 5),
         'charge_weight': flags.get('charge_weight', 0),
+        'plaq_weight': flags.get('plaq_weight', 0.),
+        'network_type': flags.get('network_type', None),
         'aux_weight': flags.get('aux_weight', 1.),
         'network_arch': flags.get('network_arch', 'generic'),
         'dropout_prob': flags.get('dropout_prob', 0),
@@ -279,6 +281,9 @@ def _parse_gauge_flags(FLAGS):
 
     if flags_dict['network_arch'] != 'generic':
         run_str += f'_{flags_dict["network_arch"]}'
+
+    if flags_dict['network_type'] is not None:
+        run_str += f'_{flags_dict["network_type"]}'
 
     weights = OrderedDict({
         'x_scale_weight': flags.get('x_scale_weight', 1.),
@@ -317,8 +322,8 @@ def _parse_gauge_flags(FLAGS):
         qw = _no_dots('charge_weight')
         run_str += f'_qw{qw}'
 
-    if flags_dict.get('plaqs_weight', 0.) > 0.:
-        pw = _no_dots('plaqs_weight')
+    if flags_dict.get('plaq_weight', 0.) > 0.:
+        pw = _no_dots('plaq_weight')
         run_str += f'_pw{pw}'
 
     if flags_dict['dropout_prob'] > 0:
@@ -344,97 +349,6 @@ def _parse_gauge_flags(FLAGS):
         run_str += f'_zero_masks'
 
     return run_str, flags_dict
-
-
-def _parse_gauge_flags1(FLAGS):
-    """Parse flags for `GaugeModel` instance."""
-    if isinstance(FLAGS, dict):
-        flags = FLAGS
-    else:
-        try:
-            flags = FLAGS.__dict__
-        except (NameError, AttributeError):
-            pass
-
-    new_flags = {
-        'space_size': flags.get('space_size', 8),
-        'time_size': flags.get('time_size', 8),
-        'batch_size': flags.get('batch_size', 32),
-        'num_steps': flags.get('num_steps', 5),
-        'charge_weight': flags.get('charge_weight', 0),
-        'aux_weight': flags.get('aux_weight', 1.),
-        'network_arch': flags.get('network_arch', 'generic'),
-        'dropout_prob': flags.get('dropout_prob', 0),
-        'eps_fixed': flags.get('eps_fixed', False),
-        'batch_norm': flags.get('use_bn', False),
-        'use_gaussian_loss': flags.get('use_gaussian_loss', False),
-        'use_nnehmc_loss': flags.get('use_nnehmc_loss', False),
-        'clip_value': flags.get('clip_value', 0),
-        'zero_masks': flags.get('zero_masks', False),
-    }
-
-    run_str = f'L{new_flags["space_size"]}'
-    if new_flags['time_size'] != new_flags['space_size']:
-        run_str += f'T{new_flags["time_size"]}'
-
-    run_str += f'_b{new_flags["batch_size"]}_lf{new_flags["num_steps"]}'
-
-    if new_flags['network_arch'] != 'generic':
-        run_str += f'_{new_flags["network_arch"]}'
-
-    weights = OrderedDict({
-        'x_scale_weight': flags.get('x_scale_weight', 1.),
-        'x_translation_weight': flags.get('x_translation_weight', 1.),
-        'x_transformation_weight': flags.get('x_transformation_weight', 1.),
-        'v_scale_weight': flags.get('v_scale_weight', 1.),
-        'v_translation_weight': flags.get('v_translation_weight', 1.),
-        'v_transformation_weight': flags.get('v_transformation_weight', 1.),
-    })
-
-    all_ones = True
-    for key, val in weights.items():
-        new_flags[key] = val
-        if val != 1.:
-            all_ones = False
-
-    if not all_ones:
-        run_str += f'_nw'
-        for _, val in weights.items():
-            wstr = str(int(val)).replace('.', '')
-            run_str += wstr
-            #  run_str += f"{str(val).replace('.', '').rstrip('0')}"
-
-    if new_flags['aux_weight'] != 1.:
-        aw = str(flags.get('aux_weight', 1.)).replace('.', '')
-        run_str += f'aw{aw}'
-
-    if new_flags['charge_weight'] > 0:
-        qw = str(flags.get('charge_weight', 1.)).replace('.', '')
-        run_str += f'qw{qw}'
-
-    if new_flags['dropout_prob'] > 0:
-        dp = str(flags.get('dropout_prob', 0)).replace('.', '')
-        run_str += f'dp{dp}'
-
-    if new_flags['eps_fixed']:
-        run_str += f'_eps_fixed'
-
-    if new_flags['batch_norm']:
-        run_str += '_bn'
-
-    if new_flags['use_gaussian_loss']:
-        run_str += '_gaussian_loss'
-
-    if new_flags['use_nnehmc_loss']:
-        run_str += '_nnehmc_loss'
-
-    if new_flags['clip_value'] > 0:
-        run_str += f'_clip{new_flags["clip_value"]}'
-
-    if new_flags['zero_masks']:
-        run_str += f'_zero_masks'
-
-    return run_str, new_flags
 
 
 def _parse_gmm_flags(FLAGS):
