@@ -150,10 +150,10 @@ class GaugeNetwork(tf.keras.Model):
         with open(out_file, 'wb') as f:
             pickle.dump(weights_dict, f)
 
-        fpath, ext = out_file.split('.')
-        types_file = f'{fpath}_types.{ext}'
-        with open(types_file, 'wb') as f:
-            pickle.dump(self.layers_types, f)
+        #  fpath, ext = out_file.split('.')
+        #  types_file = f'{fpath}_types.{ext}'
+        #  with open(types_file, 'wb') as f:
+        #      pickle.dump(self.layers_types, f)
 
     def call(self, inputs, train_phase):
         """Call the network (forward-pass)."""
