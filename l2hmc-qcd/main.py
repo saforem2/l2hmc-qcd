@@ -117,9 +117,8 @@ def save_params(model):
 
     dynamics_dir = os.path.join(model.log_dir, 'dynamics')
     io.check_else_make_dir(dynamics_dir)
-    io.save_dict(model.dynamics._params,  # pylint:disable=protected-access
-                 out_dir=dynamics_dir,
-                 name='dynamics_params')
+    out_file = os.path.join(dynamics_dir, 'dynamics_params.pkl')
+    io.save_pkl(model.dynamics._params, out_file)
 
 
 def save_masks(model, sess):
