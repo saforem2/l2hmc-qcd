@@ -84,8 +84,6 @@ class StackedLayerNP:
         phi = np.concatenate([np.cos(phi), np.sin(phi)], axis=-1)
         return self.layer(phi)
 
-
-
 class ScaledTanhLayerNP:
     """Implements numpy version of `ScaledTanhLayer`."""
     def __init__(self, coeff_weight, layer_weight):
@@ -127,7 +125,6 @@ class CartesianLayerNP:
 
     def __call__(self, x, y):
         return self.x_layer(x), self.y_layer(y)
-
 
 
 class EncodingLayer:
