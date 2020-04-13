@@ -50,14 +50,16 @@ def variable_summaries(var, name=''):
     #  tf.summary.histogram(tensor_name + '/activations', x)
     #  tf.summary.scalar(tensor_name + '/sparsity', tf.nn.zero_fraction(x))
 
-    mean = tf.reduce_mean(var)
-    tf.summary.scalar(mean_name, mean)
-    with tf.name_scope('stddev'):
+    try:
+        mean = tf.reduce_mean(var)
         stddev = tf.sqrt(tf.reduce_mean(tf.square(var - mean)))
-    tf.summary.scalar(stddev_name, stddev)
-    tf.summary.scalar(max_name, tf.reduce_max(var))
-    tf.summary.scalar(min_name, tf.reduce_min(var))
-    tf.summary.histogram(hist_name, var)
+        tf.summary.scalar(mean_name, mean)
+        tf.summary.scalar(stddev_name, stddev)
+        tf.summary.scalar(max_name, tf.reduce_max(var))
+        tf.summary.scalar(min_name, tf.reduce_min(var))
+        tf.summary.histogram(hist_name, var)
+    except:
+        import pudb; pudb.set_trace()
 
 
 def add_loss_summaries(total_loss):
@@ -236,8 +238,6 @@ def create_summaries(model, summary_dir, training=True):
     """Create summary objects for logging in TensorBoard."""
     summary_writer = tf.contrib.summary.create_file_writer(summary_dir)
 
-    grads_and_vars = zip(model.grads,
-                         model.dynamics.trainable_variables)
 
     if training:
         name = 'train_summary_op'
@@ -262,7 +262,7 @@ def create_summaries(model, summary_dir, training=True):
 
     #  _ = _create_loss_summaries(model.loss_op)
 
-    for grad, var in grads_and_vars:
+    for grad, var in model.grads_and_vars:
         _create_pair_summaries(grad, var)
 
         if 'kernel' in var.name:
