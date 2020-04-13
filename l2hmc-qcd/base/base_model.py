@@ -248,7 +248,9 @@ class BaseModel:
         with tf.name_scope('train'):
             io.log(f'INFO: Calculating gradients for backpropagation...')
             self.grads = self._calc_grads(self.loss_op)
-            self.train_op = self._apply_grads(self.loss_op, self.grads)
+            output = self._apply_grads(self.loss_op, self.grads)
+            self.train_op = output[0]
+            self.grads_and_vars = output[1]
             self.train_ops = self._build_train_ops()
 
         # *******************************************************************
@@ -371,8 +373,8 @@ class BaseModel:
                                                   hmc=self._use_nnehmc)
 
             xdata = LFdata(xout['x_init'],
-                            xout['x_proposed'],
-                            xout['accept_prob'])
+                           xout['x_proposed'],
+                           xout['accept_prob'])
 
         return xout, xdata
 
@@ -394,8 +396,8 @@ class BaseModel:
                                                   hmc=self._use_nnehmc)
 
             zdata = LFdata(zout['x_init'],
-                            zout['x_proposed'],
-                            zout['accept_prob'])
+                           zout['x_proposed'],
+                           zout['accept_prob'])
 
         return zout, zdata
 
@@ -406,9 +408,9 @@ class BaseModel:
     def _create_dynamics(self, potential_fn, **params):
         """Create Dynamics Object."""
         with tf.name_scope('create_dynamics'):
-            keys = ['eps', 'hmc', 'num_steps', 'use_bn',
-                    'dropout_prob', 'network_arch',
-                    'num_hidden1', 'num_hidden2']
+            keys = ['eps', 'hmc', 'num_steps', 'use_bn', 'dropout_prob',
+                    'network_arch', 'network_type' 'num_hidden1',
+                    'num_hidden2']
 
             kwargs = {
                 k: getattr(self, k, None) for k in keys
@@ -534,7 +536,8 @@ class BaseModel:
 
         return inputs
 
-    def _create_metric_fn(self, metric):
+    @staticmethod
+    def _create_metric_fn(metric):
         """Create metric function used to measure distatnce between configs."""
         if metric == 'l1':
             def metric_fn(x1, x2):
@@ -697,9 +700,9 @@ class BaseModel:
         """Calculate the NNEHMC loss from [1] (line 10)."""
         if x_esjd is None:
             x_in, x_proposed, accept_prob = xdata
-            x_esjd = self._calc_esjd(x_in, x_proposed, accept_prob)
+            x_esjd = -1. * self._calc_esjd(x_in, x_proposed, accept_prob)
 
-        return tf.reduce_mean(- x_esjd - beta * hmc_prob, name='nnehmc_loss')
+        return tf.reduce_mean(x_esjd - beta * hmc_prob, name='nnehmc_loss')
 
     def calc_loss(self, xdata, zdata, eps=1e-4):
         """Calculate the total loss."""
@@ -748,6 +751,7 @@ class BaseModel:
             fd = {k: v / total_loss for k, v in ld.items()}
 
             losses_dict = {}
+            # pylint:disable=consider-iterating-dictionary
             for key in ld.keys():
                 losses_dict[key + '_loss'] = ld[key]
                 losses_dict[key + '_frac'] = fd[key]
@@ -777,7 +781,7 @@ class BaseModel:
                 train_op = self.optimizer.apply_gradients(grads_and_vars,
                                                           self.global_step,
                                                           'train_op')
-        return train_op
+        return train_op, grads_and_vars
 
     def _extract_l2hmc_fns(self, fns):
         """Method for extracting each of the Q, S, T functions as tensors."""
