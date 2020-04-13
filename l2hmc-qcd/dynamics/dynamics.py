@@ -115,8 +115,7 @@ class Dynamics(tf.keras.Model):
         self.num_hidden2 = params.get('num_hidden2', 100)   # nodes in h2
         self.dropout_prob = params.get('dropout_prob', 0.)  # dropout prob
         self.network_arch = params.get('network_arch', 'generic')  # net arch
-
-        self._network_type = params.get('net_type', 'CartesianNet')
+        self._network_type = params.get('network_type', 'CartesianNet')
 
         activation = params.get('activation', 'relu')
         if activation == 'tanh':
@@ -212,49 +211,55 @@ class Dynamics(tf.keras.Model):
             ]
 
         else:
-            #  if 'gauge' in self._network_type.lower():
-            xnet = GaugeNetwork(name='XNet',
-                                factor=2.,
-                                x_dim=self.x_dim,
-                                net_seeds=xnet_seeds,
-                                num_hidden1=self.num_hidden1,
-                                num_hidden2=self.num_hidden2,
-                                activation=self._activation_fn)
+            if self._network_type == 'GaugeNetwork':
+                print(80 * '-')
+                print(f'Network type: GaugeNetwork')
+                print(80 * '-')
+                xnet = GaugeNetwork(name='XNet',
+                                    factor=2.,
+                                    x_dim=self.x_dim,
+                                    net_seeds=xnet_seeds,
+                                    num_hidden1=self.num_hidden1,
+                                    num_hidden2=self.num_hidden2,
+                                    activation=self._activation_fn)
 
-            vnet = GaugeNetwork(name='VNet',
-                                factor=1.,
-                                x_dim=self.x_dim,
-                                net_seeds=vnet_seeds,
-                                num_hidden1=self.num_hidden1,
-                                num_hidden2=self.num_hidden2,
-                                activation=self._activation_fn)
+                vnet = GaugeNetwork(name='VNet',
+                                    factor=1.,
+                                    x_dim=self.x_dim,
+                                    net_seeds=vnet_seeds,
+                                    num_hidden1=self.num_hidden1,
+                                    num_hidden2=self.num_hidden2,
+                                    activation=self._activation_fn)
 
-            #  if 'cartesian' in self._network_type.lower():
-            #      xnet = CartesianNet(name='XNet',
-            #                          factor=2.,
-            #                          x_dim=self.x_dim,
-            #                          net_seeds=xnet_seeds,
-            #                          num_hidden1=self.num_hidden1,
-            #                          num_hidden2=self.num_hidden2,
-            #                          activation=self._activation_fn)
-            #
-            #      vnet = CartesianNet(name='VNet',
-            #                          factor=1.,
-            #                          x_dim=self.x_dim,
-            #                          net_seeds=vnet_seeds,
-            #                          num_hidden1=self.num_hidden1,
-            #                          num_hidden2=self.num_hidden2,
-            #                          activation=self._activation_fn)
-            #  else:
-            #      net_params['factor'] = 2.
-            #      net_params['net_name'] = 'x'
-            #      net_params['net_seeds'] = xnet_seeds
-            #      xnet = FullNet(model_name='XNet', **net_params)
-            #
-            #      net_params['factor'] = 1.
-            #      net_params['net_name'] = 'v'
-            #      net_params['net_seeds'] = vnet_seeds
-            #      vnet = FullNet(model_name='VNet', **net_params)
+            if self._network_type == 'CartesianNet':
+                print(80 * '-')
+                print(f'Network type: CartesianNet')
+                print(80 * '-')
+                xnet = CartesianNet(name='XNet',
+                                    factor=2.,
+                                    x_dim=self.x_dim,
+                                    net_seeds=xnet_seeds,
+                                    num_hidden1=self.num_hidden1,
+                                    num_hidden2=self.num_hidden2,
+                                    activation=self._activation_fn)
+
+                vnet = CartesianNet(name='VNet',
+                                    factor=1.,
+                                    x_dim=self.x_dim,
+                                    net_seeds=vnet_seeds,
+                                    num_hidden1=self.num_hidden1,
+                                    num_hidden2=self.num_hidden2,
+                                    activation=self._activation_fn)
+            else:
+                net_params['factor'] = 2.
+                net_params['net_name'] = 'x'
+                net_params['net_seeds'] = xnet_seeds
+                xnet = FullNet(model_name='XNet', **net_params)
+
+                net_params['factor'] = 1.
+                net_params['net_name'] = 'v'
+                net_params['net_seeds'] = vnet_seeds
+                vnet = FullNet(model_name='VNet', **net_params)
 
         return xnet, vnet
 
