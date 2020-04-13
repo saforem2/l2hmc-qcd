@@ -21,6 +21,7 @@ import utils.file_io as io
 
 from base.base_model import BaseModel
 from lattice.lattice import GaugeLattice
+from dynamics.dynamics import Dynamics
 from params.gauge_params import GAUGE_PARAMS
 
 if cfg.HAS_HOROVOD:
@@ -57,10 +58,7 @@ class GaugeModel(BaseModel):
         self.space_size = int(params.get('space_size', 8))
         self._charge_weight = float(params.get('charge_weight', 0.))
         self._plaq_weight = float(params.get('plaq_weight', 0.))
-        io.log(SEP_STR)
-        io.log(f'self._charge_weight: {self._charge_weight}')
-        io.log(f'self._plaq_weight: {self._plaq_weight}')
-        io.log(SEP_STR)
+        self._network_type = str(params.get('network_type', None))
         self.build(params)
 
     def build(self, params=None):
@@ -149,8 +147,8 @@ class GaugeModel(BaseModel):
             'x_dim': self.lattice.num_links,
             'eps': getattr(self, 'eps', None),
             'network_arch': self.network_arch,
-            'dropout_prob': self.dropout_prob,
             'network_type': self._network_type,
+            'dropout_prob': self.dropout_prob,
             'eps_trainable': self.eps_trainable,
             '_input_shape': (self.batch_size, *self.lattice.links.shape),
         }
@@ -169,7 +167,7 @@ class GaugeModel(BaseModel):
         #
         #  dynamics = self._create_dynamics(potential_fn, **kwargs)
         #  io.log(f'Dynamics._model_type: {dynamics._model_type}\n')
-        return self._create_dynamics(potential_fn, **kwargs)
+        return Dynamics(potential_fn, **kwargs)
 
     def _create_observables(self):
         """Create operations for calculating lattice observables."""
