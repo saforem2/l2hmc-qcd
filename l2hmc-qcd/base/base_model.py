@@ -423,7 +423,7 @@ class BaseModel:
             })
             kwargs.update(params)
 
-            dynamics = Dynamics(potential_fn=potential_fn, **kwargs)
+            dynamics = Dynamics(potential_fn=potential_fn, params=kwargs)
 
         tf.add_to_collection('dynamics_eps', dynamics.eps)
 

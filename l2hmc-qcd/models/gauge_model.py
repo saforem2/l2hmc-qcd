@@ -155,19 +155,7 @@ class GaugeModel(BaseModel):
         if self.network_arch != 'generic':
             kwargs['num_filters'] = self.lattice.space_size
 
-        #  kwargs = {
-        #      'eps_trainable': not getattr(self, 'eps_fixed', False),
-        #      'num_filters': self.lattice.space_size,
-        #      'x_dim': self.lattice.num_links,
-        #      'batch_size': self.batch_size,
-        #      'zero_masks': self.zero_masks,
-        #      '_input_shape': (self.batch_size, *self.lattice.links.shape),
-        #      'model_type': self._model_type,
-        #  }
-        #
-        #  dynamics = self._create_dynamics(potential_fn, **kwargs)
-        #  io.log(f'Dynamics._model_type: {dynamics._model_type}\n')
-        return Dynamics(potential_fn, **kwargs)
+        return Dynamics(potential_fn, params=kwargs)
 
     def _create_observables(self):
         """Create operations for calculating lattice observables."""

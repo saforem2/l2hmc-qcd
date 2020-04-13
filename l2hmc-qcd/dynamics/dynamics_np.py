@@ -578,21 +578,20 @@ class DynamicsNP(object):
         #      io.log(80 * '-')
         #      io.log('\n\n\n')
         #      io.log(80 * '-')
-        #  if self._network_type == 'GaugeNetwork':
-        xnet = GaugeNetworkNP(weights['xnet'],
-                              activation=self._activation_fn)
-        vnet = GaugeNetworkNP(weights['vnet'],
-                              activation=self._activation_fn)
-        #
-        #  if self._network_type == 'CartesianNet':
-        #      xnet = CartesianNetNP(weights['xnet'],
-        #                            activation=self._activation_fn)
-        #      vnet = CartesianNetNP(weights['vnet'],
-        #                            activation=self._activation_fn)
+        if self._network_type == 'GaugeNetwork':
+            xnet = GaugeNetworkNP(weights['xnet'],
+                                  activation=self._activation_fn)
+            vnet = GaugeNetworkNP(weights['vnet'],
+                                  activation=self._activation_fn)
+        elif self._network_type == 'CartesianNet':
+            xnet = CartesianNetNP(weights['xnet'],
+                                  activation=self._activation_fn)
+            vnet = CartesianNetNP(weights['vnet'],
+                                  activation=self._activation_fn)
         #  # TODO: Update GenericNetNP to use `self._activation_fn`.
-        #  else:
-        #      xnet = GenericNetNP(weights['xnet'])
-        #      vnet = GenericNetNP(weights['vnet'])
+        else:
+            xnet = GenericNetNP(weights['xnet'])
+            vnet = GenericNetNP(weights['vnet'])
         #      xnet = EncoderNetNP(weights['xnet'], activation=np.tanh)
         #      vnet = EncoderNetNP(weights['vnet'], activation=np.tanh)
         #  #  elif isinstance(weights['xnet']['x_layer'], Weights):
