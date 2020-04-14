@@ -80,10 +80,28 @@ class GaugeNetwork(tf.keras.Model):
                                         seed=net_seeds['t_layer'],
                                         input_shape=(2 * x_dim,))
 
-            self.h_layer = custom_dense(name='h_layer',
-                                        factor=1.,
-                                        units=num_hidden2,
-                                        seed=net_seeds['h_layer'])
+            def _dense_layer(n):
+                return custom_dense(name=f'h_layer{n}',
+                                    factor=1.,
+                                    units=num_hidden2,
+                                    seed=int(n * net_seeds['h_layer']))
+
+            self.hidden_layers = [_dense_layer(n) for n in range(5)]
+
+            #  self.h_layer1 = custom_dense(name='h_layer1',
+            #                               factor=1.,
+            #                               units=num_hidden2,
+            #                               seed=net_seeds['h_layer'])
+            #
+            #  self.h_layer2 = custom_dense(name='h_layer2',
+            #                               factor=1.,
+            #                               units=num_hidden2,
+            #                               seed=int(2 * net_seeds['h_layer']))
+            #
+            #  self.h_layer = custom_dense(name='h_layer',
+            #                              factor=1.,
+            #                              units=num_hidden2,
+            #                              seed=int(3 * net_seeds['h_layer']))
 
             self.translation_layer = custom_dense(name=TNAME,
                                                   factor=0.001,
@@ -100,25 +118,20 @@ class GaugeNetwork(tf.keras.Model):
                                                         units=x_dim,
                                                         seed=net_seeds[QNAME])
 
-        self.layers_types = {
-            'x_layer': 'StackedLayer',
-            'v_layer': 'StackedLayer',
-            't_layer': 'custom_dense',
-            'h_layer': 'custom_dense',
-            'translation_layer': 'custom_dense',
-            'scale_layer': 'ScaledTanhLayer',
-            'transformation_layer': 'ScaledTanhLayer',
-        }
-
         self.layers_dict = {
             'x_layer': self.x_layer.layer,
             'v_layer': self.v_layer.layer,
             't_layer': self.t_layer,
-            'h_layer': self.h_layer,
+            #  'h_layer1': self.h_layer1,
+            #  'h_layer2': self.h_layer2,
+            #  'h_layer': self.h_layer,
             'scale_layer': self.scale_layer.layer,
             'translation_layer': self.translation_layer,
             'transformation_layer': self.transformation_layer.layer,
         }
+
+        for idx, hidden_layer in enumerate(self.hidden_layers):
+            self.layers_dict[f'h_layer{idx}'] = hidden_layer
 
     def get_weights(self, sess):
         """Get dictionary of layer weights."""
@@ -130,11 +143,16 @@ class GaugeNetwork(tf.keras.Model):
             'x_layer': _weights(self.x_layer.layer),
             'v_layer': _weights(self.v_layer.layer),
             't_layer': _weights(self.t_layer),
-            'h_layer': _weights(self.h_layer),
+            #  'h_layer1': _weights(self.h_layer1),
+            #  'h_layer2': _weights(self.h_layer2),
+            #  'h_layer': _weights(self.h_layer),
             'scale_layer': _weights(self.scale_layer.layer),
             'translation_layer': _weights(self.translation_layer),
             'transformation_layer': _weights(self.transformation_layer.layer),
         }
+
+        for idx, layer in enumerate(self.hidden_layers):
+            weights_dict[f'h_layer{idx}'] = _weights(layer)
 
         coeffs = sess.run([self.scale_layer.coeff,
                            self.transformation_layer.coeff])
@@ -164,7 +182,13 @@ class GaugeNetwork(tf.keras.Model):
         t = self.t_layer(t)
 
         h = self.activation(x + v + t)
-        h = self.activation(self.h_layer(h))
+        for layer in self.hidden_layers:
+            h = self.activation(layer(h))
+
+        #  h = self.activation(x + v + t)
+        #  h = self.activation(self.h_layer(h))
+        #  h = self.activation(self.h_layer1(h))
+        #  h = self.activation(self.h_layer2(h))
 
         if self.dropout_prob > 0:
             h = self.dropout(h, training=train_phase)
@@ -183,7 +207,15 @@ class GaugeNetworkNP:
         self.x_layer = StackedLayerNP(weights['x_layer'])
         self.v_layer = StackedLayerNP(weights['v_layer'])
         self.t_layer = DenseLayerNP(weights['t_layer'])
-        self.h_layer = DenseLayerNP(weights['h_layer'])
+
+        def _dense_layer(n):
+            return DenseLayerNP(weights[f'h_layer{n}'])
+        #
+        self.hidden_layers = [_dense_layer(i) for i in range(5)]
+        #  self.h_layer = DenseLayerNP(weights['h_layer'])
+        #  self.h_layer1 = DenseLayerNP(weights['h_layer1'])
+        #  self.h_layer2 = DenseLayerNP(weights['h_layer2'])
+
         self.translation_layer = DenseLayerNP(weights[TNAME])
 
         self.scale_layer = ScaledTanhLayerNP(weights[SCOEFF],
@@ -198,7 +230,13 @@ class GaugeNetworkNP:
         x = self.x_layer(x)
         t = self.t_layer(t)
         h = self.activation(v + x + t)
-        h = self.activation(self.h_layer(h))
+
+        for layer in self.hidden_layers:
+            h = self.activation(layer(h))
+        #  h = self.activation(self.h_layer(h))
+        #  h = self.activation(self.h_layer1(h))
+        #  h = self.activation(self.h_layer2(h))
+
         scale = self.scale_layer(h)
         translation = self.translation_layer(h)
         transformation = self.transformation_layer(h)
