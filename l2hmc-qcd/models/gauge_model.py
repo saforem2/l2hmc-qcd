@@ -180,12 +180,6 @@ class GaugeModel(BaseModel):
 
         return observables
 
-    def _charge_loss(self, x_init, x_proposed, prob):
-        dq = - self.lattice.calc_top_charges_diff(x_init, x_proposed)
-        charge_loss = prob * dq
-
-        return charge_loss
-
     def _calc_charge_loss(self, x_data, z_data):
         """Calculate the total charge loss."""
         aux_weight = getattr(self, 'aux_weight', 1.)
@@ -254,55 +248,80 @@ class GaugeModel(BaseModel):
 
         return charges
 
-    @staticmethod
-    def _plaq_loss(plaqs_init, plaqs_proposed, accept_prob, eps=1e-4):
+    def _plaq_loss(self, plaqs_init, plaqs_prop, prob, eps=1e-4):
         """Calculate the expected plaquette differences b/t `x1` and `x2`."""
-        #  dx = (tf.cos(plaqs_proposed) - tf.cos(plaqs_init))
-        #  dy = (tf.sin(plaqs_proposed) - tf.sin(plaqs_init))
-        #  tot_diff = dx ** 2 + dy ** 2
-        tot_diff = 2. * (1. - tf.cos(plaqs_proposed - plaqs_init))
-        plaq_loss = accept_prob * tf.reduce_sum(tot_diff, axis=(1, 2)) + eps
+        plaqs_diff = 2. * (1. - tf.cos(plaqs_prop - plaqs_init))
+        dplaq = prob * tf.reduce_sum(plaqs_diff, axis=(1, 2)) + eps
+        plaq_loss = self._plaq_weight / dplaq - dplaq / self._plaq_weight
 
-        return plaq_loss
+        return tf.reduce_mean(plaq_loss, axis=0)
+
+    def _charge_loss(self, plaqs_init, plaqs_prop, prob, eps=1e-4):
+        """Calculate the contribution to the loss from the charge diffs."""
+        q_init = self._top_charge(plaqs_init)
+        q_prop = self._top_charge(plaqs_prop)
+        dq = prob * (q_prop - q_init) ** 2 + eps
+        charge_loss = self._charge_weight / dq - dq / self._charge_weight
+
+        return tf.reduce_mean(charge_loss, axis=0)
 
     def plaq_loss(self, xdata, zdata, eps=1e-4):
         """Calculate the loss due to the plaquette and charge differences."""
         xp0 = self._plaq_sums(xdata.init)
         xp1 = self._plaq_sums(xdata.proposed)
-        zp0 = self._plaq_sums(zdata.init)
-        zp1 = self._plaq_sums(zdata.proposed)
+
+        if self.aux_weight > 0:
+            zp0 = self._plaq_sums(zdata.init)
+            zp1 = self._plaq_sums(zdata.proposed)
 
         plaq_loss = tf.cast(0., TF_FLOAT)
-        if self._plaq_weight > 0:
-            dxp = 2. * (1. - tf.cos(xp1 - xp0))
-            dzp = 2. * (1. - tf.cos(zp1 - zp0))
-            xp_loss = xdata.prob * tf.reduce_sum(dxp, axis=(1, 2)) + eps
-            zp_loss = zdata.prob * tf.reduce_sum(dzp, axis=(1, 2)) + eps
-
-            term1p = self._plaq_weight * (1. / xp_loss + 1. / zp_loss)
-            term2p = (xp_loss + zp_loss) / self._plaq_weight
-            plaq_loss = tf.reduce_mean(term1p - term2p, axis=0,
-                                       name='plaq_loss')
+        if self._plaq_weight > 0.:
+            plaq_loss += self._plaq_loss(xp0, xp1, xdata.prob, eps)
+            if self.aux_weight > 0:
+                plaq_loss += self._plaq_loss(zp0, zp1, zdata.prob, eps)
 
         charge_loss = tf.cast(0., TF_FLOAT)
         if self._charge_weight > 0:
-            xq0 = self._top_charge(xp0)
-            xq1 = self._top_charge(xp1)
-            zq0 = self._top_charge(zp0)
-            zq1 = self._top_charge(zp1)
+            charge_loss += self._charge_loss(xp0, xp1, xdata.prob, eps)
+            if self.aux_weight > 0:
+                charge_loss += self._charge_loss(zp0, zp1, zdata.prob, eps)
 
-            xq_loss = xdata.prob * (xq1 - xq0) ** 2 + eps
-            zq_loss = zdata.prob * (zq1 - zq0) ** 2 + eps
-            term1q = self._charge_weight * (1. / xq_loss + 1. / zq_loss)
-            term2q = (xq_loss + zq_loss) / self._charge_weight
-            charge_loss = tf.reduce_mean(term1q - term2q, axis=0,
-                                         name='charge_loss')
+        #  plaq_loss = tf.cast(0., TF_FLOAT)
+        #  if self._plaq_weight > 0:
+        #      dxp = 2. * (1. - tf.cos(xp1 - xp0))
+        #      dzp = 2. * (1. - tf.cos(zp1 - zp0))
+        #      xp_loss = xdata.prob * tf.reduce_sum(dxp, axis=(1, 2)) + eps
+        #      zp_loss = zdata.prob * tf.reduce_sum(dzp, axis=(1, 2)) + eps
+        #
+        #      term1p = self._plaq_weight * (1. / xp_loss + 1. / zp_loss)
+        #      term2p = (xp_loss + zp_loss) / self._plaq_weight
+        #      plaq_loss = tf.reduce_mean(term1p - term2p, axis=0,
+        #                                 name='plaq_loss')
+        #  charge_loss = tf.cast(0., TF_FLOAT)
+        #  if self._charge_weight > 0:
+        #      xq0 = self._top_charge(xp0)
+        #      xq1 = self._top_charge(xp1)
+        #      zq0 = self._top_charge(zp0)
+        #      zq1 = self._top_charge(zp1)
+        #
+        #      xq_loss = xdata.prob * (xq1 - xq0) ** 2 + eps
+        #      zq_loss = zdata.prob * (zq1 - zq0) ** 2 + eps
+        #      term1q = self._charge_weight * (1. / xq_loss + 1. / zq_loss)
+        #      term2q = (xq_loss + zq_loss) / self._charge_weight
+        #      charge_loss = tf.reduce_mean(term1q - term2q, axis=0,
+        #                                   name='charge_loss')
 
         return plaq_loss, charge_loss
 
     @staticmethod
-    def _charge_loss(q_init, q_proposed, accept_prob, eps=1e-4):
+    def _charge_loss1(q_init, q_proposed, accept_prob, eps=1e-4):
         return accept_prob * (q_proposed - q_init) ** 2 + eps
+
+    def _charge_loss2(self, x_init, x_proposed, prob):
+        dq = - self.lattice.calc_top_charges_diff(x_init, x_proposed)
+        charge_loss = prob * dq
+
+        return charge_loss
 
     @staticmethod
     def _gauge_esjd(x1, x2, prob, eps=1e-4):
