@@ -103,18 +103,6 @@ def calc_tunneling_rate(charges):
 
     return dq
 
-
-def get_train_weights(params):
-    """Extract the `net_weights` used for training from `params`."""
-    xsw = int(params['x_scale_weight'])
-    xtw = int(params['x_translation_weight'])
-    xqw = int(params['x_transformation_weight'])
-    vsw = int(params['v_scale_weight'])
-    vtw = int(params['v_translation_weight'])
-    vqw = int(params['v_transformation_weight'])
-    return (xsw, xtw, xqw, vsw, vtw, vqw)
-
-
 def plot_setup(log_dir, run_params, idx=None, nw_run=True):
     """Setup for plotting. Creates `filename` and `title_str`."""
     params = io.load_pkl(os.path.join(log_dir, 'parameters.pkl'))
