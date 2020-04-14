@@ -166,14 +166,12 @@ def main(args):
     run_data = run_inference_np(log_dir, dynamics, lattice,
                                 run_params, save=(not args.dont_save))
 
-    _, _ = inference_plots(run_data, params, runs_np=True)
+    _, _, fig_dir = inference_plots(run_data, params, runs_np=True)
 
-    # TODO: Modify `InferenceSummarizer` to deal with `RunData` directly
-    # instead of trying to load data from `run_dir`.
-    # TODO: Move InferenceSummarizer functionality into `RunData` directly?
-    #  summarizer = InferenceSummarizer(run_params['run_dir'],
-    #                                   run_params=run_params)
-    #  _, _ = summarizer.log_summary(n_boot=10000)
+    out_file = os.path.join(fig_dir, 'run_summary.txt')
+    run_data.log_summary(n_boot=1000,  out_file=out_file)
+
+    return run_data
 
 
 if __name__ == '__main__':
@@ -185,4 +183,4 @@ if __name__ == '__main__':
 
     io.log(SEPERATOR)
 
-    _ = main(FLAGS)
+    run_data = main(FLAGS)
