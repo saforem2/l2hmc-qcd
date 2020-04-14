@@ -6,25 +6,29 @@ Contains helper methods for plotting inference results.
 Author: Sam Foreman (github: @saforem2)
 Date: 01/15/2020
 """
-# pylint:disable=too-many-locals,too-many-arguments,invalid-name,
-# pylint:disable=too-many-arguments,too-many-statements
 import os
 
 import arviz as az
 import numpy as np
 import seaborn as sns
 import matplotlib as mpl
-import matplotlib.cm
-import matplotlib.pyplot as plt
-from matplotlib.collections import LineCollection
-from matplotlib.colors import (ListedColormap, BoundaryNorm,
-                               LinearSegmentedColormap)
 
+import matplotlib.pyplot as plt
+
+from matplotlib.colors import (BoundaryNorm, LinearSegmentedColormap,
+                               ListedColormap)
 from matplotlib.pyplot import cycler
+from matplotlib.collections import LineCollection
 
 import utils.file_io as io
 
-from plotters.seaborn_plots import plot_setup
+from plotters.plot_utils import plot_setup
+
+#  from plotters.seaborn_plots import plot_setup
+#  import matplotlib.cm
+
+# pylint:disable=too-many-locals,too-many-arguments,invalid-name,
+# pylint:disable=too-many-arguments,too-many-statements
 
 sns.set_palette('bright')
 
@@ -652,7 +656,7 @@ def inference_plots(run_data, params, **kwargs):
     io.check_else_make_dir(out_dir)
     plot_angle_timeseries(run_data.samples_arr,
                           out_dir=out_dir,
-                          num_plots=10,
+                          num_plots=5,
                           num_steps=1000,
                           title_str=title_str)
     plt.close('all')
@@ -663,13 +667,13 @@ def inference_plots(run_data, params, **kwargs):
                      params['space_size'], params['dim'])
     plot_plaq_timeseries(run_data.samples_arr,
                          out_dir=out_dir,
-                         num_plots=10,
+                         num_plots=5,
                          num_steps=1000,
                          title_str=title_str,
                          lattice_shape=lattice_shape)
     plt.close('all')
 
-    out_file = os.path.join(fig_dir, 'run_summary.txt')
-    run_data.log_summary(n_boot=10000,  out_file=out_file)
+    #  out_file = os.path.join(fig_dir, 'run_summary.txt')
+    #  run_data.log_summary(n_boot=10000,  out_file=out_file)
 
-    return dataset, energy_dataset
+    return dataset, energy_dataset, fig_dir
