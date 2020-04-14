@@ -295,10 +295,7 @@ class InferenceData:
         pp_fname = f'{fname}_posterior'
         rp_fname = f'{fname}_ridgeplot'
 
-        #  try:
         dataset = self.build_dataset(run_data, run_params)
-        #  except:
-            #  import pudb; pudb.set_trace()
 
         tp_out_file = os.path.join(fig_dir, f'{tp_fname}.pdf')
         pp_out_file = os.path.join(fig_dir, f'{pp_fname}.pdf')

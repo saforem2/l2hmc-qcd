@@ -571,13 +571,6 @@ class DynamicsNP(object):
 
     def build_networks(self, weights):
         """Build neural networks."""
-        #  if isinstance(weights['xnet']['x_layer'], dict):
-        #      io.log('\n\n\n')
-        #      io.log(80 * '-')
-        #      io.log(f'NETWORK: EncoderNetNP')
-        #      io.log(80 * '-')
-        #      io.log('\n\n\n')
-        #      io.log(80 * '-')
         if self._network_type == 'GaugeNetwork':
             xnet = GaugeNetworkNP(weights['xnet'],
                                   activation=self._activation_fn)
@@ -592,30 +585,6 @@ class DynamicsNP(object):
         else:
             xnet = GenericNetNP(weights['xnet'])
             vnet = GenericNetNP(weights['vnet'])
-        #      xnet = EncoderNetNP(weights['xnet'], activation=np.tanh)
-        #      vnet = EncoderNetNP(weights['vnet'], activation=np.tanh)
-        #  #  elif isinstance(weights['xnet']['x_layer'], Weights):
-        #      io.log('\n\n\n')
-        #      io.log(80 * '-')
-        #      io.log(f'NETWORK: GenericNetNP')
-        #      io.log(80 * '-')
-        #      io.log('\n\n\n')
-        #      io.log(80 * '-')
-        #      xnet = GenericNetNP(weights['xnet'])
-        #      vnet = GenericNetNP(weights['vnet'])
-        #  else:
-        #      import pudb; pudb.set_trace()
-        #  if 'xnet' in weights:
-        #      xnet_weights = weights['xnet']
-        #      if 'GenericNet' in xnet_weights:
-        #          xnet_weights = xnet_weights['GenericNet']
-        #  if 'vnet' in weights:
-        #      vnet_weights = weights['vnet']
-        #      if 'GenericNet' in vnet_weights:
-        #          vnet_weights = vnet_weights['GenericNet']
-        #
-        #  xnet = GenericNetNP(xnet_weights, name='xnet')
-        #  vnet = GenericNetNP(vnet_weights, name='vnet')
 
         return xnet, vnet
 
@@ -657,12 +626,6 @@ class DynamicsNP(object):
     def set_masks(self, masks):
         """Set `self.masks` to `masks`."""
         self.masks = masks[:self.num_steps]
-        #  try:
-        #      for idx, mask in enumerate(masks):
-        #          print(f'Setting mask for {idx}...')
-        #          self.masks[idx] = mask
-        #  except:
-        #      import pudb; pudb.set_trace()
 
     def _get_mask(self, step):
         m = self.masks[step]

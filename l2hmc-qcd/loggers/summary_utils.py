@@ -50,16 +50,13 @@ def variable_summaries(var, name=''):
     #  tf.summary.histogram(tensor_name + '/activations', x)
     #  tf.summary.scalar(tensor_name + '/sparsity', tf.nn.zero_fraction(x))
 
-    try:
-        mean = tf.reduce_mean(var)
-        stddev = tf.sqrt(tf.reduce_mean(tf.square(var - mean)))
-        tf.summary.scalar(mean_name, mean)
-        tf.summary.scalar(stddev_name, stddev)
-        tf.summary.scalar(max_name, tf.reduce_max(var))
-        tf.summary.scalar(min_name, tf.reduce_min(var))
-        tf.summary.histogram(hist_name, var)
-    except:
-        import pudb; pudb.set_trace()
+    mean = tf.reduce_mean(var)
+    stddev = tf.sqrt(tf.reduce_mean(tf.square(var - mean)))
+    tf.summary.scalar(mean_name, mean)
+    tf.summary.scalar(stddev_name, stddev)
+    tf.summary.scalar(max_name, tf.reduce_max(var))
+    tf.summary.scalar(min_name, tf.reduce_min(var))
+    tf.summary.histogram(hist_name, var)
 
 
 def add_loss_summaries(total_loss):

@@ -6,33 +6,21 @@ Author: Sam Foreman
 Date: 03/30/2020
 """
 import os
-import pickle
 
 import xarray as xr
 import pandas as pd
-import numpy as onp
 import autograd.numpy as np
 
 import utils.file_io as io
 
 from runners import (ENERGY_DATA, REVERSE_DATA, RUN_DATA,
-                     SAMPLES, VOLUME_DIFFS, OBSERVABLES)
-from lattice.lattice import calc_plaqs_diffs
+                     SAMPLES, VOLUME_DIFFS, OBSERVABLES, HSTR)
 from plotters.data_utils import bootstrap, therm_arr
 from plotters.inference_plots import calc_tunneling_rate
 
-__date__ = '03/30/2020'
-__author__ = 'Sam Foreman'
-__email__ = 'saforem2@gmail.com'
+#  from lattice.lattice import calc_plaqs_diffs
 
 # pylint:disable=no-member,invalid-name
-
-HEADER = ("{:^13s}" + 9 * "{:^12s}").format(
-    "STEP", "t/STEP", "% ACC", "𝞭x_out", "𝞭x_prop",
-    "exp(𝞭H)", "sumlogdet", "𝞭x_r", "𝞭v_r", "𝞭𝜙"
-)
-SEPERATOR = len(HEADER) * '-'
-HSTR = SEPERATOR + '\n' + HEADER + '\n' + SEPERATOR
 
 
 def uline(s, c='-'):
@@ -349,7 +337,7 @@ class RunData:
         self.save_run_history(run_dir)
 
     @staticmethod
-    def _calc_stats(arr, n_boot=5000):
+    def _calc_stats(arr, n_boot=100):
         step_ax = np.argmax(arr.shape)
         chain_ax = np.argmin(arr.shape)
         arr = np.swapaxes(arr, step_ax, chain_ax)

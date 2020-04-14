@@ -5,15 +5,6 @@ inference on a trained model.
 Author: Sam Foreman (github: @saforem2)
 Date: 01/09/2020
 """
-# pylint: disable=no-member
-# pylint: disable=protected-access
-# pylint: disable=inconsistent-return-statements
-# pylint: disable=no-else-return
-# pylint: disable=too-many-locals
-# pylint: disable=too-many-statements
-# pylint: disable=too-many-arguments
-# pylint: disable=invalid-name
-# pylint: disable=too-many-instance-attributes
 import os
 import time
 import pickle
@@ -24,6 +15,7 @@ import utils.file_io as io
 import autograd.numpy as np
 
 from config import NetWeights, State, Weights
+from runners import HSTR
 from .run_data import RunData, strf
 from utils.file_io import timeit
 from lattice.lattice import calc_plaqs_diffs, GaugeLattice
@@ -31,44 +23,15 @@ from dynamics.dynamics_np import DynamicsNP
 
 #  from plotters.data_utils import therm_arr, bootstrap
 #  from plotters.inference_plots import calc_tunneling_rate
-
-__date___ = '03/19/2020'
-__author__ = 'Sam Foreman'
-__email__ = 'saforem2@gmail.com'
-
-NET_WEIGHTS_HMC = NetWeights(0, 0, 0, 0, 0, 0)
-NET_WEIGHTS_L2HMC = NetWeights(1, 1, 1, 1, 1, 1)
-
-#  𝐀﹙𝜉'∣𝜉﹚"
-#  "𝞭x_out", "𝞭x_prop",
-#  𝛅 𝛍 𝛎 𝛟 𝐭 𝐀 𝛏 𝝽 𝑨
-#  𝐥 𝐨 𝐠 ⎮ ㏒ 𝐉 𝐐
-#  𝐯 𝐩 𝐇 𝐫 ℐ 𝒥 𝓙
-#  log⎮𝐉⎮, l𝐥𝗼𝗴⎮𝐉⎮,
-#  𝐀 𝜙
-#  names = ["STEP", "𝛅𝐭", "𝐀(𝛏'|𝛏)",
-#           "𝛅𝛟_𝛍𝛎", "exp(𝛅𝐇)", "log⎮𝐉⎮",
-#           "𝛅𝐱𝐫", "𝛅𝐯𝐫", "𝛅𝐐", "𝛅𝛟_𝐩"]
-names = ["step",
-         "𝞭t",
-         "A(ξ'|ξ)",
-         "𝞭xr",
-         "𝞭vr",
-         "log|J|",
-         "exp(𝞭H)",
-         "plaq_loss",
-         "charge_loss",
-         "𝞭𝛟_µυ",
-         "𝞭Q",
-         "𝞭𝛟_p"]
-
-
-#  H0 = ["{:^13s}".format("STEP")]
-HEADER = ''.join(["{:^11s}".format(name) for name in names])
-#  HEADER = H0 + H1
-
-SEPERATOR = len(HEADER) * '-'
-HSTR = SEPERATOR + '\n' + HEADER + '\n' + SEPERATOR
+# pylint: disable=no-member
+# pylint: disable=protected-access
+# pylint: disable=inconsistent-return-statements
+# pylint: disable=no-else-return
+# pylint: disable=too-many-locals
+# pylint: disable=too-many-statements
+# pylint: disable=too-many-arguments
+# pylint: disable=invalid-name
+# pylint: disable=too-many-instance-attributes
 
 
 def cos_metric(x, y):
