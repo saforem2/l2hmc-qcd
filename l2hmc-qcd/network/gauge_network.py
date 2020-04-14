@@ -108,12 +108,12 @@ class GaugeNetwork(tf.keras.Model):
                                                   units=x_dim,
                                                   seed=net_seeds[TNAME])
 
-            self.scale_layer = ScaledTanhLayer(name=SNAME,
+            self.scale_layer = ScaledTanhLayer(name='scale',
                                                factor=0.001,
                                                units=x_dim,
                                                seed=net_seeds[SNAME])
 
-            self.transformation_layer = ScaledTanhLayer(name=QNAME,
+            self.transformation_layer = ScaledTanhLayer(name='transformation',
                                                         factor=0.001,
                                                         units=x_dim,
                                                         seed=net_seeds[QNAME])
@@ -213,8 +213,6 @@ class GaugeNetworkNP:
         #
         self.hidden_layers = [_dense_layer(i) for i in range(5)]
         #  self.h_layer = DenseLayerNP(weights['h_layer'])
-        #  self.h_layer1 = DenseLayerNP(weights['h_layer1'])
-        #  self.h_layer2 = DenseLayerNP(weights['h_layer2'])
 
         self.translation_layer = DenseLayerNP(weights[TNAME])
 
@@ -234,8 +232,6 @@ class GaugeNetworkNP:
         for layer in self.hidden_layers:
             h = self.activation(layer(h))
         #  h = self.activation(self.h_layer(h))
-        #  h = self.activation(self.h_layer1(h))
-        #  h = self.activation(self.h_layer2(h))
 
         scale = self.scale_layer(h)
         translation = self.translation_layer(h)

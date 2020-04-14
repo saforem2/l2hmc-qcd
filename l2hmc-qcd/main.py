@@ -123,15 +123,12 @@ def save_params(model):
 
 def save_masks(model, sess):
     """Save `model.dynamics.masks` for inference."""
-    try:
-        masks_file = os.path.join(model.log_dir, 'dynamics_mask.pkl')
-        masks_file_ = os.path.join(model.log_dir, 'dynamics_mask.np')
-        masks = sess.run(model.dynamics.masks)
-        np.array(masks).tofile(masks_file_)
-        io.log(f'dynamics.masks:\n\t {masks}')
-        pkl_dump(masks, masks_file)
-    except:
-        import pudb; pudb.set_trace()
+    masks_file = os.path.join(model.log_dir, 'dynamics_mask.pkl')
+    masks_file_ = os.path.join(model.log_dir, 'dynamics_mask.np')
+    masks = sess.run(model.dynamics.masks)
+    np.array(masks).tofile(masks_file_)
+    io.log(f'dynamics.masks:\n\t {masks}')
+    pkl_dump(masks, masks_file)
 
 
 def save_seeds(model):
@@ -161,7 +158,6 @@ def save_eps(model, sess):
     eps_np = sess.run(model.dynamics.eps)
     eps_dict = {'eps': eps_np}
     io.save_pkl(eps_dict, os.path.join(model.log_dir, 'eps_np.pkl'))
-
 
 
 @timeit
