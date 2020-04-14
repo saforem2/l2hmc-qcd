@@ -349,7 +349,7 @@ class RunData:
         self.save_run_history(run_dir)
 
     @staticmethod
-    def _calc_stats(arr, n_boot=10000):
+    def _calc_stats(arr, n_boot=5000):
         step_ax = np.argmax(arr.shape)
         chain_ax = np.argmin(arr.shape)
         arr = np.swapaxes(arr, step_ax, chain_ax)

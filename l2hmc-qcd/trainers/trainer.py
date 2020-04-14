@@ -85,6 +85,7 @@ class Trainer:
 
     def train_step(self, step, samples, net_weights=None):
         """Perform a single training step.
+
         Args:
             step (int): Current training step.
             samples_np (np.ndarray): Array of input configurations.
@@ -194,7 +195,6 @@ class Trainer:
                 samples = data['x_out']
                 if self.model._model_type == 'GaugeModel':
                     samples = np.mod(samples, 2 * np.pi)
-
 
             if self.logger is not None:
                 self.logger.write_train_strings()
