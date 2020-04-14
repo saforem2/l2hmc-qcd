@@ -454,6 +454,26 @@ def plot_posterior(data, fname, title_str=None, filter_str=None):
     savefig(fig, fname)
 
 
+def plot_losses(plaq_loss, charge_loss, title_str=None, out_dir=None):
+    """Plot losses from inference run."""
+    plaq_loss = np.array(plaq_loss)
+    charge_loss = np.array(charge_loss)
+    steps = np.arange(plaq_loss.shape[0])
+    fig, axes = plt.subplots(nrows=2, sharex=True)
+    axes[0].plot(steps, plaq_loss.mean(axis=1),
+                 marker=',', ls='', label='plaq_loss')
+    axes[0].legend(loc='best')
+    axes[1].plot(steps, charge_loss.mean(axis=1),
+                 marker=',', ls='', label='charge_loss')
+    axes[1].legend(loc='best')
+    axes[1].set_xlabel(f'Step', fontsize='large')
+    if title_str is not None:
+        fig.suptitle(title_str, fontsize='x-large')
+    if out_dir is not None:
+        out_file = os.path.join(out_dir, 'charge_loss.png')
+        savefig(fig, out_file)
+
+
 def traceplot_posterior(dataset, name, fname, fig_dir,
                         title_str=None, filter_str=None):
     """Create traceplot of the posterior distribution.
@@ -505,7 +525,6 @@ def inference_plots(run_data, params, **kwargs):
     except FileNotFoundError:
         return dataset, energy_dataset
 
-
     ####################################################
     # Create traceplot + possterior plot of energy data
     ####################################################
@@ -529,6 +548,9 @@ def inference_plots(run_data, params, **kwargs):
         except:
             import pudb; pudb.set_trace()
 
+    plot_losses(run_data.observables['plaq_loss'],
+                run_data.observables['charge_loss'],
+                title_str=title_str, out_dir=fig_dir)
 
     pe_dir = os.path.join(fig_dir, 'potential_plots')
     io.check_else_make_dir(pe_dir)
