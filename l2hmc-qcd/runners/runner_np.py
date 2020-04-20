@@ -398,7 +398,8 @@ def plaq_loss(output, lattice, beta, eps=1e-4,
         'charge_loss': qloss,
         'charges': charges_out,
         'dplaqs': ps_out - ps_init,
-        'dcharges': charges_out - charges_init,
+        #  'dcharges': charges_out - charges_init,
+        'dcharges': np.around(charges_out) - np.around(charges_init),
         'plaqs_diffs': calc_plaqs_diffs(plaqs_out, beta),
     }
 
@@ -456,7 +457,7 @@ def inference_step(step, x_init, dynamics, lattice, **run_params):
                 f"{observables['plaq_loss'].mean():^10.4g} "
                 f"{observables['charge_loss'].mean():^10.4g} "
                 f"{observables['dplaqs'].mean():^10.4g} "
-                f"{observables['dcharges'].mean():^10.4g} "
+                f"{np.sum(observables['dcharges'] ** 2):^10.4g} "
                 f"{observables['plaqs_diffs'].mean():^10.4g} ")
 
     outputs = {
