@@ -95,32 +95,32 @@ In particular, the `BaseModel` object is responsible for both defining the loss 
 
 Building on this `BaseModel`, there are two additional models:
 
-1. [`GaugeModel`](l2hmc-qcd/models/gauge_model.py) that extends the
+1. [`GaugeModel`](models/gauge_model.py) that extends the
    `BaseModel` to exist on a two-dimensional lattice with periodic boundary
 conditions and a target distribution defined by the Wilson gauge action $\beta
 S$, i.e. $\pi(x) = e^{-\beta S(x)}$.
 
 Model information (including the implementation of the loss function) can be
-found in [`base_model.py`](l2hmc-qcd/base/base_model.py). 
+found in [`base_model.py`](base/base_model.py). 
 
 This module implements an abstract
 base class from which additional models can be built.
 
 For example, both the `GaugeModel` and `GaussianMixtureModel` (defined in
-[`l2hmc-qcd/models/`](l2hmc-qcd/models/) inherit from the `BaseModel` object and extend it in
+[`l2hmc-qcd/models/`](models/) inherit from the `BaseModel` object and extend it in
 different ways.
 
 ### Dynamics / Network
 
 The augmented L2HMC leapfrog integrator is implemented using the
-[`Dynamics`](l2hmc-qcd/dynamics/dynamics.py) object.
+[`Dynamics`](dynamics/dynamics.py) object.
 
 The `Dynamics` object has a `build_network` method that builds the neural
 network. The network architecture is specified via the `--network_arch` command
 line flag, with possible values being: `generic`, `conv2D`, or `conv3D`.
 
 Specific details about the network can be found in
-[`l2hmc-qcd/network`](l2hmc-qcd/network).
+[`l2hmc-qcd/network`](network).
 
 Due to the unconventional architecture and
 data-flow of the L2HMC algorithm, the network is implemented by subclassing the
@@ -129,22 +129,22 @@ data-flow of the L2HMC algorithm, the network is implemented by subclassing the
 ### Training
 
 Example command line arguments can be found in `l2hmc-qcd/args`. The module
-[`l2hmc-qcd/main.py`](l2hmc-qcd/main.py) implements wrapper functions that are
+[`l2hmc-qcd/main.py`](main.py) implements wrapper functions that are
 used to train the model and save the resulting trained graph which can then be
 loaded and used for inference.
 
 The code responsible for actually training the model can be found in the
-[`Trainer`](l2hmc-qcd/trainers/trainer.py) object.
+[`Trainer`](trainers/trainer.py) object.
 
 Summary objects for monitoring model performance in TensorBoard are created in
 the various methods found in
-[`l2hmc-qcd/loggers/summary_utils.py`](l2hmc-qcd/loggers/summary_utils.py).
+[`l2hmc-qcd/loggers/summary_utils.py`](loggers/summary_utils.py).
 These objects are then created inside the `create_summaries(...)` method of the
-[`TrainLogger`](l2hmc-qcd/loggers/train_logger.py) class.
+[`TrainLogger`](loggers/train_logger.py) class.
 
 To train the model, you can either specify command line arguments manually
 (descriptions can be found in
-[`utils/parse_args.py`](l2hmc-qcd/utils/parse_args.py), or use the
+[`utils/parse_args.py`](utils/parse_args.py), or use the
 `args/args.txt` file, which can be passed directly to `main.py` by prepending
 the `.txt` file with `@`.
 
@@ -154,7 +154,7 @@ python3 ../main.py @args.txt
 ```
 
 All of the relevant command line options are well documented and can be found
-in [`l2hmc-qcd/utils/parse_args.py`](l2hmc-qcd/utils/parse_args.py). Almost all
+in [`l2hmc-qcd/utils/parse_args.py`](utils/parse_args.py). Almost all
 relevant information about different parameters and run options can be found in
 this file.
 
@@ -162,7 +162,7 @@ this file.
 
 Once the training is complete, we can use the trained model to run inference to
 gather statistics about relevant lattice observables. This can be done using
-the [`gauge_inference.py`](l2hmc-qcd/gauge_inference.py) module which
+the [`gauge_inference.py`](gauge_inference.py) module which
 implements helper functions for loading and running the saved model.
 
 Explicitly, assuming we trained the model by running the `main.py` module from
