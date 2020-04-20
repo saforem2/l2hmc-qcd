@@ -54,6 +54,7 @@ import utils.file_io as io
 from seed_dict import seeds, vnet_seeds, xnet_seeds
 from models.gauge_model import GaugeModel
 from plotters.plot_utils import plot_singular_values, weights_hist
+from plotters.train_plots import plot_train_data
 from loggers.train_logger import TrainLogger
 from utils.file_io import timeit
 from utils.parse_args import parse_args
@@ -269,6 +270,10 @@ def train_l2hmc(FLAGS, log_file=None):
         save_seeds(model)
         save_weights(model, sess)
         save_eps(model, sess)
+        plot_train_data(train_logger.train_data, params)
+        if FLAGS.save_train_data:
+            io.log(f'Saving train data!')
+            train_logger.save_train_data()
         # wfile = os.path.join(model.log_dir, 'dynamics_weights.h5')
         # model.dynamics.save_weights(wfile)
         #  io.save_dict(model.params, os.path.join(os.getcwd()), 'params.pkl')
