@@ -111,15 +111,15 @@ def save_params(model):
 
     Additionally, write out all trainable parameters (w/ sizes) to `.txt` file.
     """
+
+    #  dynamics_dir = os.path.join(model.log_dir, 'dynamics')
+    #  io.check_else_make_dir(dynamics_dir)
+    #  out_file = os.path.join(dynamics_dir, 'dynamics_params.pkl')
+    #  io.save_pkl(model.dynamics.params, out_file)
+
     out_file = os.path.join(model.log_dir, 'trainable_params.txt')
     count_trainable_params(out_file)
-
     io.save_pkl(model.params, os.path.join(os.getcwd(), 'params.pkl'))
-
-    dynamics_dir = os.path.join(model.log_dir, 'dynamics')
-    io.check_else_make_dir(dynamics_dir)
-    out_file = os.path.join(dynamics_dir, 'dynamics_params.pkl')
-    io.save_pkl(model.dynamics.params, out_file)
 
 
 def save_masks(model, sess):
