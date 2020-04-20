@@ -510,6 +510,13 @@ def parse_args():
                               `--save_samples` is not passed).\n
                               WARNING!! This is very data intensive."""))
 
+    parser.add_argument('--save_train_data',
+                        dest='save_train_data',
+                        action='store_true',
+                        required=False,
+                        help=("""Flag that when passed will save training
+                              data."""))
+
     parser.add_argument('--save_lf',
                         dest='save_lf',
                         action='store_true',

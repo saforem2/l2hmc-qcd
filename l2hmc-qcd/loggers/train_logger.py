@@ -48,6 +48,7 @@ class TrainLogger(object):
 
         if model._model_type == 'GaugeModel':
             self.obs_data = {}
+            self.h_strf += ("{:^12s}").format("𝞭Q (tot)")
             self.h_strf += ("{:^12s}").format("𝞭𝜙")
 
         self.dash = (len(self.h_strf) + 1) * '-'
