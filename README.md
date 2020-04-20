@@ -33,7 +33,6 @@ Simple examples of target distributions (Gaussian, GaussianMixtureModel, lattice
 - ##### Use L2HMC to generate *gauge configurations* for LatticeQCD.
 
 
-
 <figure class="half" style="display:flex">
     <div align="center">
     <img src="assets/lattice.png" alt="lattice" style="width:200px;height:200px" />
@@ -44,7 +43,9 @@ Simple examples of target distributions (Gaussian, GaussianMixtureModel, lattice
 
 ## $U(1)$ Lattice Gauge Theory
 
-We start by considering the simpler $(1+1)$-dimensional $U(1)$ lattice gauge theory, defined on an $N_{x} \times N_{t}$ lattice with periodic boundary conditions.
+We start by considering the simpler $(1+1)$-dimensional $U(1)$ lattice gauge
+theory, defined on an $N_{x} \times N_{t}$ lattice with periodic boundary
+conditions.
 
 The action of this gauge theory is defined in terms of the *link variables*
 $$
@@ -69,7 +70,9 @@ $$
 
 
 
-Lattice code can be found in `l2hmc-qcd/lattice/` and the particular code for the $2D$ $U{(1)}$ lattice gauge model can be found in `l2hmc-qcd/lattice/lattice.py`.
+Lattice code can be found in `l2hmc-qcd/lattice/` and the particular code for
+the $2D$ $U{(1)}$ lattice gauge model can be found in
+[`lattice.py`](l2hmc-qcd/l2hmc-qcd/lattice/lattice.py).
 
 
 
@@ -77,21 +80,24 @@ Lattice code can be found in `l2hmc-qcd/lattice/` and the particular code for th
 
 ### Lattice
 
-Lattice code can be found in `lattice/lattice.py`, specifically the `GaugeLattice` object that provides the base structure on which our target distribution exists.
+Lattice code can be found in [`lattice.py`](l2hmc-qcd/l2hmc-qcd/lattice/lattice.py), specifically the `GaugeLattice` object that provides the base structure on which our target distribution exists.
 
 ​	Additionally, the `GaugeLattice` object implements a variety of methods for calculating physical observables such as the average plaquette, $\phi_{P}$, and the topological charge $\mathcal{Q}$,
 
 ### Model
 
-An abstract base model `BaseModel` can be found in `l2hmc-qcd/base/base_model.py`.
+An abstract base model `BaseModel` can be found in [`base_model.py`](l2hmc-qcd/l2hmc-qcd/base_model.py).
 
 This `BaseModel` is responsible for creating and organizing all of the various tensorflow operations, tensors and placeholders necessary for training and evaluating the L2HMC sampler.
 
 In particular, the `BaseModel` object is responsible for both defining the loss function to be minimized, as well as building and grouping the backpropagation operations that apply the gradients accumulated during the loss function calculation.
 
-Building on this `BaseClass`, there are two additional models:
+Building on this `BaseModel`, there are two additional models:
 
-1. `GaugeModel` (defined in `l2hmc-qcd/models/gauge_model.py`) that extends the `BaseModel` to exist on a two-dimensional lattice with periodic boundary conditions and a target distribution defined by the Wilson gauge action $\beta S$, i.e. $\pi(x) = e^{-\beta S(x)}$.
+1. `GaugeModel` (defined in `l2hmc-qcd/models/gauge_model.py`) that extends the
+   `BaseModel` to exist on a two-dimensional lattice with periodic boundary
+conditions and a target distribution defined by the Wilson gauge action $\beta
+S$, i.e. $\pi(x) = e^{-\beta S(x)}$.
 
 Model information (including the implementation of the loss function) can be
 found in `l2hmc-qcd/base/base_model.py`. 
