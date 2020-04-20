@@ -611,7 +611,10 @@ def inference_plots(run_data, params, **kwargs):
     ####################################################
     # Create histogram plots of the reversibility data.
     ####################################################
-    _, _ = plot_reverse_data(run_data, params, runs_np=runs_np)
+    try:
+        _, _ = plot_reverse_data(run_data, params, runs_np=runs_np)
+    except:
+        pass
 
     ############################################
     # Create autocorrelation plot of plaq_diffs
