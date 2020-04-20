@@ -72,7 +72,8 @@ $$
 
 Lattice code can be found in `l2hmc-qcd/lattice/` and the particular code for
 the $2D$ $U{(1)}$ lattice gauge model can be found in
-[`lattice.py`](l2hmc-qcd/l2hmc-qcd/lattice/lattice.py).
+[`lattice.py`](l2hmc-qcd/lattice/lattice.py).
+
 
 
 
@@ -80,13 +81,13 @@ the $2D$ $U{(1)}$ lattice gauge model can be found in
 
 ### Lattice
 
-Lattice code can be found in [`lattice.py`](l2hmc-qcd/l2hmc-qcd/lattice/lattice.py), specifically the `GaugeLattice` object that provides the base structure on which our target distribution exists.
+Lattice code can be found in [`lattice.py`](l2hmc-qcd/lattice/lattice.py), specifically the `GaugeLattice` object that provides the base structure on which our target distribution exists.
 
-​	Additionally, the `GaugeLattice` object implements a variety of methods for calculating physical observables such as the average plaquette, $\phi_{P}$, and the topological charge $\mathcal{Q}$,
+Additionally, the `GaugeLattice` object implements a variety of methods for calculating physical observables such as the average plaquette, $\phi_{P}$, and the topological charge $\mathcal{Q}$,
 
 ### Model
 
-An abstract base model `BaseModel` can be found in [`base_model.py`](l2hmc-qcd/l2hmc-qcd/base_model.py).
+An abstract base model `BaseModel` can be found in [`base_model.py`](l2hmc-qcd/base_model.py).
 
 This `BaseModel` is responsible for creating and organizing all of the various tensorflow operations, tensors and placeholders necessary for training and evaluating the L2HMC sampler.
 
@@ -94,32 +95,32 @@ In particular, the `BaseModel` object is responsible for both defining the loss 
 
 Building on this `BaseModel`, there are two additional models:
 
-1. `GaugeModel` (defined in `l2hmc-qcd/models/gauge_model.py`) that extends the
+1. [`GaugeModel`](l2hmc-qcd/models/gauge_model.py) that extends the
    `BaseModel` to exist on a two-dimensional lattice with periodic boundary
 conditions and a target distribution defined by the Wilson gauge action $\beta
 S$, i.e. $\pi(x) = e^{-\beta S(x)}$.
 
 Model information (including the implementation of the loss function) can be
-found in `l2hmc-qcd/base/base_model.py`. 
+found in [`base_model.py`](l2hmc-qcd/base/base_model.py). 
 
 This module implements an abstract
 base class from which additional models can be built.
 
 For example, both the `GaugeModel` and `GaussianMixtureModel` (defined in
-`l2hmc-qcd/models/`) inherit from the `BaseModel` object and extend it in
+[`l2hmc-qcd/models/`](l2hmc-qcd/models/) inherit from the `BaseModel` object and extend it in
 different ways.
 
 ### Dynamics / Network
 
-The augmented L2HMC leapfrog integrator is implemented using the `Dynamics`
-object which is located in the `l2hmc-qcd/dynamics/dynamics.py` module.
+The augmented L2HMC leapfrog integrator is implemented using the
+[`Dynamics`](l2hmc-qcd/dynamics/dynamics.py) object.
 
 The `Dynamics` object has a `build_network` method that builds the neural
 network. The network architecture is specified via the `--network_arch` command
 line flag, with possible values being: `generic`, `conv2D`, or `conv3D`.
 
 Specific details about the network can be found in
-`l2hcm-qcd/network/network.py`.
+[`l2hmc-qcd/network`](l2hmc-qcd/network).
 
 Due to the unconventional architecture and
 data-flow of the L2HMC algorithm, the network is implemented by subclassing the
@@ -128,20 +129,22 @@ data-flow of the L2HMC algorithm, the network is implemented by subclassing the
 ### Training
 
 Example command line arguments can be found in `l2hmc-qcd/args`. The module
-`l2hmc-qcd/main.py` implements wrapper functions that are used to train the
-model and save the resulting trained graph which can then be loaded and used
-for inference.
+[`l2hmc-qcd/main.py`](l2hmc-qcd/main.py) implements wrapper functions that are
+used to train the model and save the resulting trained graph which can then be
+loaded and used for inference.
 
 The code responsible for actually training the model can be found in the
-`Trainer` object inside the `l2hmc-qcd/trainers/trainer.py` module.
+[`Trainer`](l2hmc-qcd/trainers/trainer.py) object.
 
 Summary objects for monitoring model performance in TensorBoard are created in
-the various methods found in `l2hmc-qcd/loggers/summary_utils.py`. These
-objects are then created inside the `create_summaries(...)` method of the
-`TrainLogger` class (defined in `l2hmc-qcd/loggers/train_logger.py`).
+the various methods found in
+[`l2hmc-qcd/loggers/summary_utils.py`](l2hmc-qcd/loggers/summary_utils.py).
+These objects are then created inside the `create_summaries(...)` method of the
+[`TrainLogger`](l2hmc-qcd/loggers/train_logger.py) class.
 
 To train the model, you can either specify command line arguments manually
-(descriptions can be found in `utils/parse_args.py`), or use the
+(descriptions can be found in
+[`utils/parse_args.py`](l2hmc-qcd/utils/parse_args.py), or use the
 `args/args.txt` file, which can be passed directly to `main.py` by prepending
 the `.txt` file with `@`.
 
@@ -151,15 +154,16 @@ python3 ../main.py @args.txt
 ```
 
 All of the relevant command line options are well documented and can be found
-in `l2hmc-qcd/utils/parse_args.py`. Almost all relevant information about
-different parameters and run options can be found in this file.
+in [`l2hmc-qcd/utils/parse_args.py`](l2hmc-qcd/utils/parse_args.py). Almost all
+relevant information about different parameters and run options can be found in
+this file.
 
 ### Inference
 
 Once the training is complete, we can use the trained model to run inference to
 gather statistics about relevant lattice observables. This can be done using
-the `gauge_inference.py` module which implements helper functions for loading
-and running the saved model.
+the [`gauge_inference.py`](l2hmc-qcd/gauge_inference.py) module which
+implements helper functions for loading and running the saved model.
 
 Explicitly, assuming we trained the model by running the `main.py` module from
 within the `l2hmc-qcd/args` directory using the command given above, we can
@@ -184,7 +188,10 @@ each serve different purposes and should be somewhat self explanatory.
 
 # Features
 
-- **Distributed training**  (via[`horovod`](https://github.com/horovod/horovod)): The ability to train the sampler across multiple nodes (using data-parallelism) can be enabled simply by passing the `--horovod` command line argument to the training script `main.py`.
+- **Distributed training**
+(via [`horovod`](https://github.com/horovod/horovod)): The ability to train the
+sampler across multiple nodes (using data-parallelism) can be enabled simply by
+passing the `--horovod` command line argument to the training script `main.py`.
 
 # Contact
 
