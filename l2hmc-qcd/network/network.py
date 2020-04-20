@@ -65,7 +65,6 @@ class BaseNet(tf.keras.Model):
         raise NotImplementedError
 
 
-
 class FullNet(tf.keras.Model):
     """Complete network used for training L2HMC model."""
     def __init__(self, model_name, **kwargs):

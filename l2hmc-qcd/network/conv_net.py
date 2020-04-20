@@ -13,7 +13,7 @@ import tensorflow as tf
 
 import config as cfg
 from seed_dict import seeds
-from .network_utils import batch_norm
+from .layers import batch_norm
 
 TF_FLOAT = cfg.TF_FLOAT
 Weights = cfg.Weights

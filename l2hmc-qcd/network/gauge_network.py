@@ -21,6 +21,8 @@ from .network_utils import custom_dense
 from config import Weights
 from network import QCOEFF, QNAME, SCOEFF, SNAME, TNAME
 
+NUM_HIDDEN_LAYERS = 5
+
 
 class GaugeNetwork(tf.keras.Model):
     """GaugeNetwork. Implements stacked Cartesian repr. of `GenericNet`."""
@@ -86,7 +88,9 @@ class GaugeNetwork(tf.keras.Model):
                                     units=num_hidden2,
                                     seed=int(n * net_seeds['h_layer']))
 
-            self.hidden_layers = [_dense_layer(n) for n in range(5)]
+            self.hidden_layers = [
+                _dense_layer(n) for n in range(NUM_HIDDEN_LAYERS)
+            ]
 
             #  self.h_layer1 = custom_dense(name='h_layer1',
             #                               factor=1.,
@@ -210,8 +214,10 @@ class GaugeNetworkNP:
 
         def _dense_layer(n):
             return DenseLayerNP(weights[f'h_layer{n}'])
-        #
-        self.hidden_layers = [_dense_layer(i) for i in range(5)]
+
+        self.hidden_layers = [
+            _dense_layer(i) for i in range(NUM_HIDDEN_LAYERS)
+        ]
         #  self.h_layer = DenseLayerNP(weights['h_layer'])
 
         self.translation_layer = DenseLayerNP(weights[TNAME])
