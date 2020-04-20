@@ -56,6 +56,7 @@ class Trainer:
             params = model.params
         self._params = params
 
+        self._save_train_data = params.get('save_train_data', False)
         self._train_keys = list(self.model.train_ops.keys())
         self._train_ops = list(self.model.train_ops.values())
 
@@ -140,13 +141,22 @@ class Trainer:
             outputs['x_out'] = np.mod(outputs['x_out'], 2 * np.pi)
             dx = 1. - np.mean(np.cos(outputs['x_out'] - samples), axis=-1)
             #  dx = np.mean(np.abs(outputs['x_out'] - samples), axis=-1)
+            #  if global_step > 1 and self.logger is not None:
+            try:
+                q_old = self.logger.train_data['charges'][-1]
+                charge_diff = np.abs((outputs['charges'] - q_old))
+            except (AttributeError, IndexError, KeyError):
+                charge_diff = np.zeros(outputs['charges'].shape)
+
+            outputs['dq'] = charge_diff
+            data_str += f"{np.sum(np.around(charge_diff)):^11.4g}"
+
             outputs['dx'] = dx
             plaq_diff = u1_plaq_exact(beta) - outputs['plaqs']
-            data_str += (
-                #  f"{np.mean(outputs['actions']):^9.4g} "
-                f"{np.mean(plaq_diff):>11.4g} "
-                #  f"{outputs['plaq_exact']:^9.4g}"
-            )
+            data_str += f"{np.mean(plaq_diff):>11.4g} "
+            #  f"{np.mean(outputs['actions']):^9.4g} "
+            #  f"{np.mean(plaq_diff):>11.4g} "
+            #  f"{outputs['plaq_exact']:^9.4g}"
 
         return outputs, data_str
 
@@ -198,7 +208,9 @@ class Trainer:
 
             if self.logger is not None:
                 self.logger.write_train_strings()
-            #  self.logger.save_train_data()
+                if self._save_train_data:
+                    io.log(f'Saving train data!')
+                    self.logger.save_train_data()
 
         except (KeyboardInterrupt, SystemExit):
             io.log("\nERROR: KeyboardInterrupt detected!")
