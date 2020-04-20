@@ -250,12 +250,16 @@ def create_summaries(model, summary_dir, training=True):
     #  _create_energy_summaries(model)
 
     #  if model.use_gaussian_loss and model.use_nnehmc_loss:
-    cond1 = model.use_gaussian_loss
-    cond2 = model.use_nnehmc_loss
-    cond3 = model.use_charge_loss
-    if cond1 or cond2 or cond3:
+    #  cond1 = getattr(model, 'use_gaussian_loss', False)
+    #  cond2 = getattr(model, 'use_nnehmc_loss', False)
+    #  cond3 = getattr(model, 'use_charge_loss', False)
+    #  if cond1 or cond2 or cond3:
+    try:
         _loss_summaries(model)
         add_loss_summaries(model.loss_op)
+    except:
+        print('Unable to create loss summaries.')
+
 
     #  _ = _create_loss_summaries(model.loss_op)
 
