@@ -182,8 +182,7 @@ class RunData:
             arr, steps = therm_arr(np.array(val))
             arr = arr.T
             _dict[key] = xr.DataArray(arr, dims=['chain', 'draw'],
-                                      coords=[np.arange(arr.shape[0]),
-                                              steps])
+                                      coords=[np.arange(arr.shape[0]), steps])
 
         dataset = xr.Dataset(_dict)
 

@@ -346,8 +346,6 @@ class BaseModel:
             self.px_hmc = x_dynamics['accept_prob_hmc']
             self.sumlogdet_proposed = x_dynamics['sumlogdet_proposed']
             self.sumlogdet_out = x_dynamics['sumlogdet_out']
-            #  self._direction = tf.cast(x_dynamics['direction'],
-            #                            dtype=TF_FLOAT)
             self.dx_proposed = self.metric_fn(self.x_proposed, self.x_init)
             self.dx_out = self.metric_fn(self.x_out, self.x_init)
             h_init = self.dynamics.hamiltonian(self.x_init,

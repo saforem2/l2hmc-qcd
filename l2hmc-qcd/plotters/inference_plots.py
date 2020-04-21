@@ -22,10 +22,7 @@ from matplotlib.collections import LineCollection
 
 import utils.file_io as io
 
-from plotters.plot_utils import plot_setup
-
-#  from plotters.seaborn_plots import plot_setup
-#  import matplotlib.cm
+from .plot_utils import plot_setup
 
 # pylint:disable=too-many-locals,too-many-arguments,invalid-name,
 # pylint:disable=too-many-arguments,too-many-statements
@@ -34,7 +31,6 @@ sns.set_palette('bright')
 
 HEADER = 80 * '-'
 SEPERATOR = 80 * '-'
-#  MARKERS = 10 * ['o', 'v', '^', '<', '>', 's', 'd', '*', '+', 'x']
 MARKERS = 10 * ['o', 's', 'x', 'v', 'h', '^', 'p', '<', 'd', '>', 'o']
 
 mpl.rcParams['axes.formatter.limits'] = -4, 4
@@ -44,7 +40,6 @@ def savefig(fig, out_file):
     """Save `fig` to `out_file`."""
     io.log(HEADER)
     io.log(f'Saving figure to: {out_file}.')
-    #  plt.tight_layout()
     try:
         fig.savefig(out_file, dpi=200, bbox_inches='tight')
     except:
@@ -364,30 +359,6 @@ def plot_volume_diffs(volume_diffs, fig_dir, title_str=None):
 
     _plot_volume_diff(drms, fit_data, out_dir, title_str=title_str)
 
-    #  for key in polyfits.keys():
-    #      k = (f'd{key}_in', f'd{key}_out')
-    #      drms_data = (drms[k[0]], drms[k[1]])
-    #      fit_data = (x_arrs[key], y_arrs[key], polyfits[key])
-    #      out_file = os.path.join(out_dir, f'{key}_volume_diffs.png')
-    #      #  fig, ax = _plot_volume_diff(drms_data, fit_data,
-    #      #                           name=key, out_file=out_file,
-    #      #                           title_str=title_str)
-    #
-    #  xfile = os.path.join(out_dir, 'x_volume_diffs.png')
-    #  drms_data = (drms['dx_in'], drms['dx_out'])
-    #  fit_data = (x_arrs['x'], y_arrs['x'], polyfits['x'])
-    #  _, _ = _plot_volume_diff(drms_data, fit_data,
-    #                           name='x', out_file=xfile,
-    #                           title_str=title_str)
-    #
-    #  vfile = os.path.join(out_dir, 'v_volume_diffs.png')
-    #  drms_data = (drms['dv_in'], drms['dv_out'])
-    #  fit_data = (x_arrs['v'], y_arrs['v'], polyfits['v'])
-    #  _, _ = _plot_volume_diff(drms_data, fit_data,
-    #                           name='v', out_file=vfile,
-    #                           title_str=title_str)
-
-
 def plot_trace(data, fname, title_str=None, filter_str=None):
     """Create traceplot of `data`.
 
@@ -542,15 +513,14 @@ def inference_plots(run_data, params, **kwargs):
     # Look at how the sampler transforms regions of phase space.
     ##############################################################
     if run_data.run_params['symplectic_check']:
-        try:
-            plot_volume_diffs(run_data.volume_diffs,
-                              fig_dir, title_str=title_str)
-        except:
-            import pudb; pudb.set_trace()
+        plot_volume_diffs(run_data.volume_diffs,
+                          fig_dir, title_str=title_str)
+        plt.close('all')
 
     plot_losses(run_data.observables['plaq_loss'],
                 run_data.observables['charge_loss'],
                 title_str=title_str, out_dir=fig_dir)
+    plt.close('all')
 
     pe_dir = os.path.join(fig_dir, 'potential_plots')
     io.check_else_make_dir(pe_dir)
@@ -558,37 +528,46 @@ def inference_plots(run_data, params, **kwargs):
                         fname=fname, fig_dir=pe_dir,
                         title_str=title_str,
                         filter_str='potential')
+    plt.close('all')
     ke_dir = os.path.join(fig_dir, 'kinetic_plots')
     io.check_else_make_dir(ke_dir)
     traceplot_posterior(energy_dataset, name='kinetic',
                         fname=fname, fig_dir=ke_dir,
                         filter_str='kinetic')
+    plt.close('all')
     h_dir = os.path.join(fig_dir, 'hamiltonian_plots')
     io.check_else_make_dir(h_dir)
     traceplot_posterior(energy_dataset, name='hamiltonian',
                         fname=fname, fig_dir=h_dir,
                         title_str=title_str,
                         filter_str='hamiltonian')
+    plt.close('all')
 
     traceplot_posterior(denergy_dataset, name='potential_diffs',
                         fname=fname, fig_dir=pe_dir, title_str=title_str,
                         filter_str='potential')
+    plt.close('all')
     traceplot_posterior(denergy_dataset, name='kinetic_diffs',
                         fname=fname, fig_dir=ke_dir, title_str=title_str,
                         filter_str='kinetic')
+    plt.close('all')
     traceplot_posterior(denergy_dataset, name='hamiltonian_diffs',
                         fname=fname, fig_dir=h_dir, title_str=title_str,
                         filter_str='hamiltonian')
+    plt.close('all')
 
     traceplot_posterior(energy_transitions, name='potential_transitions',
                         fname=fname, fig_dir=pe_dir, title_str=title_str,
                         filter_str='potential')
+    plt.close('all')
     traceplot_posterior(energy_transitions, name='kinetic_transitions',
                         fname=fname, fig_dir=ke_dir, title_str=title_str,
                         filter_str='kinetic')
+    plt.close('all')
     traceplot_posterior(energy_transitions, name='hamiltonian_transitions',
                         fname=fname, fig_dir=h_dir, title_str=title_str,
                         filter_str='hamiltonian')
+    plt.close('all')
 
     #################################
     # Create ridgeplot of plaq diffs
@@ -607,13 +586,15 @@ def inference_plots(run_data, params, **kwargs):
     if out_dir is not None:
         rp_out_file_ = os.path.join(out_dir, f'{rp_fname}.png')
         savefig(fig, rp_out_file_)
+    plt.close('all')
 
     ####################################################
     # Create histogram plots of the reversibility data.
     ####################################################
     try:
         _, _ = plot_reverse_data(run_data, params, runs_np=runs_np)
-    except:
+        plt.close('all')
+    except np.linalg.LinAlgError:
         pass
 
     ############################################
