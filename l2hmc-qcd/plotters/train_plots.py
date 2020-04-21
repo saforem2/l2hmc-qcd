@@ -7,10 +7,19 @@ Author: Sam Foreman
 Date: 04/20/2020
 """
 import os
-import utils.file_io as io
-import matplotlib.pyplot as plt
-import seaborn as sns
+
 import numpy as np
+import xarray as xr
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+import utils.file_io as io
+
+from .data_utils import therm_arr
+from .inference_plots import traceplot_posterior
+from lattice.lattice import u1_plaq_exact
+
+sns.set_palette('bright')
 
 MARKERS = 10 * ['.', 'x', '+', '^', 'v', '<', '>', 'D']
 COLORS = 10 * ['C0', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9']
@@ -43,6 +52,34 @@ def get_title_str(params):
     return title_str
 
 
+def build_dataset(data, filter_str=None, steps=None):
+    """Build `xarray.Dataset` from `data`."""
+    _dict = {}
+    for key, val in data.items():
+        cond1 = (filter_str is not None and filter_str in key)
+        cond2 = (val == [])
+        if cond1 or cond2:
+            continue
+
+        if steps is None:
+            arr, steps = therm_arr(np.array(val))
+        else:
+            arr = np.array(val)
+
+        arr = arr.T
+        try:
+            _dict[key] = xr.DataArray(arr, dims=['chain', 'draw'],
+                                      coords=[np.arange(arr.shape[0]),
+                                              steps])
+        except:
+            import pudb; pudb.set_trace()
+
+    dataset = xr.Dataset(_dict)
+
+    return dataset
+
+
+
 def plot_train_data(train_data, params):
     """Plot all training data and save figures to `log_dir/train_plots`.
 
@@ -55,23 +92,57 @@ def plot_train_data(train_data, params):
     out_dir = os.path.join(log_dir, 'train_plots')
     io.check_else_make_dir(out_dir)
 
+    data = {}
     for idx, (key, val) in enumerate(train_data.items()):
         if key == 'train_op':
             continue
 
-        val = np.array(val)
-        beta = np.array(train_data['beta'])
+        label = key
 
+        y, t = therm_arr(np.array(val), therm_frac=0.1)
+        x = np.array(train_data['beta'])[int(t[0]):]
+
+        if len(np.unique(x)) == 1:
+            x = t
+            #  x = np.arange(len(x))
+
+        kwargs = {
+            'ls': '',
+            'color': COLORS[idx],
+            'marker': MARKERS[idx],
+        }
         fig, ax = plt.subplots()
-        if len(val.shape) == 1:
-            ax.plot(beta, val, label=key, ls='',
-                    marker=MARKERS[idx], color=COLORS[idx])
-        if len(val.shape) == 2:
-            ax.plot(beta, val.mean(axis=1), label=key, ls='',
-                    marker=MARKERS[idx], color=COLORS[idx])
-        if len(val.shape) == 3:
-            ax.plot(beta, val.mean(axis=(1, 2)), label=key, ls='',
-                    marker=MARKERS[idx], color=COLORS[idx])
+
+        if len(y.shape) == 1:
+            ax.plot(x, y, label=label, **kwargs)
+
+        if len(y.shape) == 2:
+            label = r'$\langle$' + f'{key}' + r'$\rangle$'
+
+            data[key] = y
+
+            ax.plot(x, y.mean(axis=-1),
+                    label=label, **kwargs)
+
+        if len(y.shape) == 3:
+            label = r'$\langle$' + f'{key}' + r'$\rangle$'
+
+            try:
+                z = y.mean(axis=(-1))
+                data[key] = z
+
+                ax.plot(x, z.mean(axis=-1),
+                        label=label, **kwargs)
+            except:
+                import pudb; pudb.set_trace()
+
+        if key == 'plaqs':
+            try:
+                beta_arr = np.array(train_data['beta'])[int(t[0]):]
+                ax.plot(beta_arr, u1_plaq_exact(beta_arr),
+                        color='k', marker='', ls='-', label='exact')
+            except:
+                import pudb; pudb.set_trace()
 
         ax.legend(loc='best')
         ax.set_xlabel(r"$\beta$", fontsize='large')
@@ -82,3 +153,17 @@ def plot_train_data(train_data, params):
         fig.savefig(out_file, dpi=200, bbox_inches='tight')
         plt.close('all')
 
+    try:
+        dataset = build_dataset(data, steps=t)
+    except:
+        import pudb; pudb.set_trace()
+
+    traceplot_posterior(dataset=dataset,
+                        name='data',
+                        fname='train',
+                        fig_dir=out_dir,
+                        filter_str=None,
+                        title_str=title_str)
+    plt.close('all')
+
+    return dataset
