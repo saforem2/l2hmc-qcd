@@ -17,14 +17,13 @@ import autograd.numpy as np
 
 from autograd import elementwise_grad
 
-from config import NP_FLOAT, State, Weights
-import utils.file_io as io
-#  from network.generic_net_np import GenericNetNP, EncoderNetNP
-from network.generic_net import GenericNetNP
+from config import NP_FLOAT, State
+from network.layers import linear, relu
 from network.encoder_net import EncoderNetNP
-from network.layers import relu, linear
+from network.generic_net import GenericNetNP
 from network.cartesian_net import CartesianNetNP
 from network.gauge_network import GaugeNetworkNP
+
 
 def reduced_weight_matrix(W, n=10):
     """Use the first n singular vals to reconstruct the original matrix W."""
@@ -32,6 +31,14 @@ def reduced_weight_matrix(W, n=10):
     W_ = np.matrix(U[:, :n]) * np.diag(S[:n]) * np.matrix(V[:n, :])
 
     return W_
+
+
+def convert_to_angle(x):
+    """Restrict `x` to be in the range -pi <= x < pi."""
+    #  x = np.mod(x, 2 * np.pi)
+    #  x -= np.floor(x / (2 * np.pi) + 0.5) * 2 * np.pi
+    x = np.mod(x + np.pi, 2 * np.pi) - np.pi
+    return x
 
 
 class DynamicsNP(object):
@@ -109,7 +116,7 @@ class DynamicsNP(object):
             outputs (dict): Dictionary containing the outputs.
         """
         if model_type == 'GaugeModel':
-            x = np.mod(x, 2 * np.pi)
+            x = convert_to_angle(x)
 
         if v is None:
             v = np.random.normal(size=x.shape)
@@ -138,7 +145,7 @@ class DynamicsNP(object):
                             v=None, model_type=None):
         """Propose a new state by running the transition kernel backward."""
         if model_type == 'GaugeModel':
-            x = np.mod(x, 2 * np.pi)
+            x = convert_to_angle(x)
 
         if v is None:
             v = np.random.normal(size=x.shape)
@@ -146,7 +153,7 @@ class DynamicsNP(object):
         xb, vb, pxb, sumlogdetb = self.transition_kernel(*State(x, v, beta),
                                                          net_weights,
                                                          forward=False)
-        mask_a, mask_r, rand_num = self._get_accept_masks(pxb)
+        mask_a, mask_r, _ = self._get_accept_masks(pxb)
         x_out = xb * mask_a[:, None] + x * mask_r[:, None]
         v_out = vb * mask_a[:, None] + v * mask_r[:, None]
         sumlogdet_out = sumlogdetb * mask_a
@@ -170,7 +177,7 @@ class DynamicsNP(object):
             forward = (np.random.uniform() < 0.5)
 
         if self._model_type == 'GaugeModel':
-            x = np.mod(x, 2 * np.pi)
+            x = convert_to_angle(x)
 
         v_init = np.random.normal(size=x.shape)
         state_init = State(x, v_init, beta)
@@ -178,7 +185,7 @@ class DynamicsNP(object):
                                                        net_weights,
                                                        forward=forward)
         if self._model_type == 'GaugeModel':
-            x_ = np.mod(x_, 2 * np.pi)
+            x_ = convert_to_angle(x_)
 
         # Check reversibility using proposed and initial states
         state_prop = State(x_, v_, beta)
@@ -240,7 +247,7 @@ class DynamicsNP(object):
                                                 forward=(not forward))
         dv = v_r - s_init.v
         if self._model_type == 'GaugeModel':
-            x_r = np.mod(x_r, 2 * np.pi)
+            x_r = convert_to_angle(x_r)
             dx = 1. - np.cos(x_r - s_init.x)
         else:
             dx = x_r - s_init
@@ -279,7 +286,7 @@ class DynamicsNP(object):
                     ```
         """
         if self._model_type == 'GaugeModel':
-            x_mod = np.mod(state.x, 2 * np.pi)
+            x_mod = convert_to_angle(state.x)
             state = State(x=x_mod, v=state.v, beta=state.beta)
 
         # Perturb the initial state
@@ -289,7 +296,7 @@ class DynamicsNP(object):
         v_pert = state.v + dv_in
 
         if self._model_type == 'GaugeModel':
-            x_pert = np.mod(x_pert, 2 * np.pi)
+            x_pert = convert_to_angle(x_pert)
             dx_in = 1. - np.cos(state.x - x_pert)
         else:
             dx_in = state.x - x_pert
@@ -306,8 +313,8 @@ class DynamicsNP(object):
                                                         forward=forward)
         dv_out = vp_pert - vp
         if self._model_type == 'GaugeModel':
-            xp = np.mod(xp, 2 * np.pi)
-            xp_pert = np.mod(xp_pert, 2 * np.pi)
+            xp = convert_to_angle(xp)
+            xp_pert = convert_to_angle(xp_pert)
             dx_out = 1. - np.cos(xp - xp_pert)
 
         else:
@@ -325,7 +332,7 @@ class DynamicsNP(object):
     def apply_transition_both(self, x, beta, net_weights, model_type=None):
         """Propose a new state and perform the accept/reject step."""
         if model_type == 'GaugeModel':
-            x = np.mod(x, 2 * np.pi)
+            x = convert_to_angle(x)
 
         vf_init = np.random.normal(size=x.shape)
         state_init_f = State(x, vf_init, beta)
@@ -443,7 +450,7 @@ class DynamicsNP(object):
     def _update_v_forward(self, x, v, beta, t, net_weights):
         """Update v in the forward leapfrog step."""
         if self._model_type == 'GaugeModel':
-            x = np.mod(x, 2 * np.pi)
+            x = convert_to_angle(x)
 
         grad = self.grad_potential(x, beta)
         Sv, Tv, Qv = self.vnet([x, grad, t])
@@ -461,7 +468,7 @@ class DynamicsNP(object):
     def _update_x_forward(self, x, v, t, net_weights, masks):
         """Update x in the forward leapfrog step."""
         if self._model_type == 'GaugeModel':
-            x = np.mod(x, 2 * np.pi)
+            x = convert_to_angle(x)
 
         mask, mask_inv = masks
         Sx, Tx, Qx = self.xnet([v, mask * x, t])
@@ -479,7 +486,7 @@ class DynamicsNP(object):
     def _update_v_backward(self, x, v, beta, t, net_weights):
         """Update v in the backward lf step. Inverting the forward update."""
         if self._model_type == 'GaugeModel':
-            x = np.mod(x, 2 * np.pi)
+            x = convert_to_angle(x)
 
         grad = self.grad_potential(x, beta)
         Sv, Tv, Qv = self.vnet([x, grad, t])
@@ -498,7 +505,7 @@ class DynamicsNP(object):
     def _update_x_backward(self, x, v, t, net_weights, masks):
         """Update x in the backward lf step. Inverting the forward update."""
         if self._model_type == 'GaugeModel':
-            x = np.mod(x, 2 * np.pi)
+            x = convert_to_angle(x)
 
         mask, mask_inv = masks
         Sx, Tx, Qx = self.xnet([v, mask * x, t])
@@ -555,6 +562,7 @@ class DynamicsNP(object):
 
     def _set_direction_masks(self, forward_mask):
         """Set direction masks using `forward_mask`."""
+        # pylint:disable=attribute-defined-outside-init
         self.forward_mask = forward_mask
         self.backward_mask = 1. - forward_mask
 
@@ -651,4 +659,4 @@ class DynamicsNP(object):
 
     def hamiltonian(self, x, v, beta):
         """Hamiltonian function, H = PE + KE."""
-        return (self.kinetic_energy(v) + self.potential_energy(x, beta))
+        return self.kinetic_energy(v) + self.potential_energy(x, beta)

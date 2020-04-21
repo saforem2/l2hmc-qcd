@@ -35,6 +35,10 @@ __all__ = ['Dynamics']
 TF_FLOAT = cfg.TF_FLOAT
 NP_FLOAT = cfg.NP_FLOAT
 TF_INT = cfg.TF_INT
+
+PI = np.pi
+TWO_PI = 2 * PI
+
 State = cfg.State  # namedtuple object containing `(x, v, beta)`
 
 
@@ -60,11 +64,36 @@ def cast_float(x, dtype=NP_FLOAT):
 
 
 def encode(x):
+    """Convert from angular to Cartesian representation.
+
+    Args:
+        x (array-like): Angular representation, `0 <= x < 2π`
+
+    Returns:
+        _ (array-like): Cartesian representation, `[cos(x), sin(x)]`.
+    """
     return tf.convert_to_tensor([tf.cos(x), tf.sin(x)])
 
 
 def decode(x):
+    """Convert from Cartesian to angular representation.
+
+    Args:
+        x (array-like): Cartesian representation, `x = [x, y]`.
+
+    Returns:
+        phi (array-like): Angular representation, `φ = atan2(y, x)`.
+    """
+
     return tf.atan2(x[1], x[0])
+
+
+def convert_to_angle(x):
+    """Returns x in [-pi, pi), i.e. -pi <= x < pi."""
+    #  x = tf.mod(x, TWO_PI)
+    #  x -= tf.floor(x / TWO_PI + 0.5) * TWO_PI
+    x = tf.math.floormod(x + PI, TWO_PI) - PI
+    return x
 
 
 # pylint:disable=too-many-instance-attributes
@@ -260,63 +289,6 @@ class Dynamics(tf.keras.Model):
 
         return xnet, vnet
 
-    def apply_transition_direction(self,
-                                   x_init,
-                                   beta,
-                                   weights,
-                                   is_training,
-                                   model_type=None,
-                                   hmc=False):
-        """Propose a new state and perform the accept/reject step."""
-        with tf.name_scope('apply_transition'):
-            #  forward = (tf.random_uniform(shape=(), dtype=TF_FLOAT) > 0.5)
-            if model_type == 'GaugeModel':
-                x_init = tf.mod(x_init, 2 * np.pi)
-
-            v_init = tf.random_normal(tf.shape(x_init),
-                                      dtype=TF_FLOAT,
-                                      name='v_init')
-
-            state_init = cfg.State(x_init, v_init, beta)
-            out = self.transition_kernel(*state_init, weights,
-                                         is_training, hmc=hmc)
-            x_prop = out['x_proposed']
-            v_prop = out['v_proposed']
-            px = out['accept_prob']
-            px_hmc = out['accept_prob_hmc']
-            sumlogdet_prop = out['sumlogdet']
-
-            if model_type == 'GaugeModel':
-                x_prop = tf.mod(x_prop, 2 * np.pi)
-
-            # Accept or reject step
-            with tf.name_scope('accept_reject_step'):
-                # accept_mask, reject_mask
-                mask_a, mask_r = self._get_accept_masks(px)
-
-                # State (x, v)  after accept / reject step
-                x_out = x_prop * mask_a[:, None] + x_init * mask_r[:, None]
-                v_out = v_prop * mask_a[:, None] + v_init * mask_r[:, None]
-                sumlogdet_out = sumlogdet_prop * mask_a
-
-        outputs = {
-            'x_init': x_init,
-            'v_init': v_init,
-            'x_proposed': x_prop,
-            'v_proposed': v_prop,
-            'x_out': x_out,
-            'v_out': v_out,
-            #  'direction': forward,
-            #  'xf': xf,
-            #  'xb': xb,
-            'accept_prob': px,
-            'accept_prob_hmc': px_hmc,
-            'sumlogdet_proposed': sumlogdet_prop,
-            'sumlogdet_out': sumlogdet_out,
-        }
-
-        return outputs
-
     def apply_transition(self,
                          x_init,
                          beta,
@@ -347,7 +319,7 @@ class Dynamics(tf.keras.Model):
         accept/reject.
         """
         if self._model_type == 'GaugeModel':
-            x_init = tf.mod(x_init, 2 * np.pi, name='x_in_mod_2_pi')
+            x_init = convert_to_angle(x_init)
 
         # Call `self.transition_kernel` in the forward direction,
         # starting from the initial `State`: `(x_init, v_init_f, beta)`
@@ -388,6 +360,10 @@ class Dynamics(tf.keras.Model):
 
             # Decide direction uniformly
             with tf.name_scope('combined'):
+                if self._model_type == 'GaugeModel':
+                    xf = convert_to_angle(xf)
+                    xb = convert_to_angle(xb)
+
                 mask_f, mask_b = self._get_direction_masks()
 
                 # Use forward/backward mask to reconstruct `v_init`
@@ -419,6 +395,9 @@ class Dynamics(tf.keras.Model):
                 x_out = x_proposed * mask_a[:, None] + x_init * mask_r[:, None]
                 v_out = v_proposed * mask_a[:, None] + v_init * mask_r[:, None]
                 sumlogdet_out = sumlogdet_proposed * mask_a
+
+            if self._model_type == 'GaugeModel':
+                x_out = convert_to_angle(x_out)
 
         outputs = {
             'x_init': x_init,
@@ -581,7 +560,7 @@ class Dynamics(tf.keras.Model):
         """
         with tf.name_scope('update_vf'):
             if self._model_type == 'GaugeModel':
-                x = tf.mod(x, 2 * np.pi)
+                x = convert_to_angle(x)
 
             grad = self.grad_potential(x, beta)
 
@@ -604,7 +583,7 @@ class Dynamics(tf.keras.Model):
         with tf.name_scope('update_xf'):
             mask, mask_inv = masks
             if self._model_type == 'GaugeModel':
-                x = tf.mod(x, 2 * np.pi)
+                x = convert_to_angle(x)
 
             Sx, Tx, Qx = self.xnet([v, mask * x, t], is_training)
 
@@ -615,6 +594,9 @@ class Dynamics(tf.keras.Model):
             y = x * tf.exp(scale) + self.eps * (v * tf.exp(transf) + transl)
             xf = mask * x + mask_inv * y
 
+            if self._model_type == 'GaugeModel':
+                xf = convert_to_angle(xf)
+
             logdet_xf = tf.reduce_sum(mask_inv * scale,
                                       axis=-1, name='logdet_xf')
 
@@ -624,7 +606,7 @@ class Dynamics(tf.keras.Model):
         """Update v in the backward leapfrog step. Invert the forward update"""
         with tf.name_scope('update_vb'):
             if self._model_type == 'GaugeModel':
-                x = tf.mod(x, 2 * np.pi)
+                x = convert_to_angle(x)
 
             grad = self.grad_potential(x, beta)
 
@@ -649,7 +631,7 @@ class Dynamics(tf.keras.Model):
         mask, mask_inv = masks
         with tf.name_scope('update_xb'):
             if self._model_type == 'GaugeModel':
-                x = tf.mod(x, 2 * np.pi)
+                x = convert_to_angle(x)
 
             Sx, Tx, Qx = self.xnet([v, mask * x, t], is_training)
 
@@ -661,6 +643,9 @@ class Dynamics(tf.keras.Model):
             exp_transf = tf.exp(transf, name='exp_transf_xb')
             y = exp_scale * (x - self.eps * (v * exp_transf + transl))
             xb = mask * x + mask_inv * y
+
+            if self._model_type == 'GaugeModel':
+                xb = convert_to_angle(xb)
 
             logdet = tf.reduce_sum(mask_inv * scale, axis=-1, name='logdet_xb')
 
@@ -714,8 +699,8 @@ class Dynamics(tf.keras.Model):
         """Format time as [cos(..), sin(...)]."""
         with tf.name_scope('get_time'):
             trig_t = tf.squeeze([
-                tf.cos(2 * np.pi * i / self.num_steps),
-                tf.sin(2 * np.pi * i / self.num_steps),
+                tf.cos(TWO_PI * i / self.num_steps),
+                tf.sin(TWO_PI * i / self.num_steps),
             ])
 
             t = tf.tile(tf.expand_dims(trig_t, 0), (tile, 1))
@@ -795,6 +780,9 @@ class Dynamics(tf.keras.Model):
     def grad_potential(self, x, beta):
         """Get gradient of potential function at current location."""
         with tf.name_scope('grad_potential'):
+            if self._model_type == 'GaugeModel':
+                x = convert_to_angle(x)
+
             if tf.executing_eagerly():
                 tfe = tf.contrib.eager
                 grad = tfe.gradients_function(self.potential_energy,
@@ -807,6 +795,9 @@ class Dynamics(tf.keras.Model):
     def potential_energy(self, x, beta):
         """Compute potential energy using `self.potential` and beta."""
         with tf.name_scope('potential_energy'):
+            if self._model_type == 'GaugeModel':
+                x = convert_to_angle(x)
+
             potential_energy = beta * self.potential(x)
 
         return potential_energy

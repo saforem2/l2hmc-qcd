@@ -229,7 +229,11 @@ def train_l2hmc(FLAGS, log_file=None):
         v_translation=FLAGS.v_translation_weight,
         v_transformation=FLAGS.v_transformation_weight,
     )
-    samples_init = np.array(model.lattice.samples_array, dtype=NP_FLOAT)
+
+    rand_unif = np.random.uniform(
+        size=(model.lattice.samples_array.shape)
+    )
+    samples_init = 2 * np.pi * rand_unif - np.pi
     beta_init = model.beta_init
 
     # ----------------------------------------------------------------
@@ -259,8 +263,7 @@ def train_l2hmc(FLAGS, log_file=None):
     # ----------------------------------------------------------
     trainer = Trainer(sess, model, train_logger, params)
 
-    trainer.train(model.train_steps,
-                  beta=beta_init,
+    trainer.train(beta=beta_init,
                   samples=samples_init,
                   net_weights=net_weights_init)
 
@@ -270,7 +273,8 @@ def train_l2hmc(FLAGS, log_file=None):
         save_seeds(model)
         save_weights(model, sess)
         save_eps(model, sess)
-        plot_train_data(train_logger.train_data, params)
+        plot_singular_values(model.log_dir)
+        dataset = plot_train_data(train_logger.train_data, params)
         if FLAGS.save_train_data:
             io.log(f'Saving train data!')
             train_logger.save_train_data()
@@ -284,7 +288,7 @@ def train_l2hmc(FLAGS, log_file=None):
     io.log(f'{SEP_STR}\n training took:'
            f'{time.time()-start_time:.3g}s \n{SEP_STR}')
 
-    return model, train_logger
+    return model, train_logger, dataset
 
 
 @timeit
@@ -301,11 +305,7 @@ def main(FLAGS):
         # multiply the global seed by the rank so each rank gets diff seed
         tf.set_random_seed(rank * seeds['global_tf'])
 
-    #  if FLAGS.hmc:   # run generic HMC sampler
-    #      inference.run_hmc(FLAGS, log_file=log_file)
-    #  else:           # train l2hmc sampler
-    #  plot_singular_values(model.log_dir)
-    model, _ = train_l2hmc(FLAGS, log_file)
+    model, _, _ = train_l2hmc(FLAGS, log_file)
 
 
 if __name__ == '__main__':

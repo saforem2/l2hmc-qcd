@@ -11,6 +11,7 @@ import utils.file_io as io
 
 from config import NetWeights, NP_FLOAT
 from lattice.lattice import u1_plaq_exact
+from dynamics.dynamics_np import convert_to_angle
 
 TrainStepData = namedtuple('TrainStepData', [
     'step', 'beta', 'loss', 'samples', 'prob', 'lr', 'eps'
@@ -180,7 +181,7 @@ class Trainer:
             net_weights = NetWeights(1, 1, 1, 1, 1, 1)
 
         initial_step = self.sess.run(self.model.global_step)
-        io.log(f'Global step: {initial_step}\n')
+        #  io.log(f'Global step: {initial_step}\n')
 
         if beta is None:
             beta = self.beta_arr[0]
@@ -189,7 +190,8 @@ class Trainer:
             samples = np.random.randn(self.model.x.shape)
 
         if self.model._model_type == 'GaugeModel':
-            samples = np.mod(samples, 2 * np.pi)
+            #  samples = np.mod(samples, 2 * np.pi)
+            samples = convert_to_angle(samples)
 
         assert samples.shape == self.model.x.shape
 
@@ -198,13 +200,17 @@ class Trainer:
                 io.log(self.logger.train_header)
 
             for step in range(initial_step, train_steps):
-                data, data_str = self.train_step(step, samples, net_weights)
+                data, data_str = self.train_step(step,
+                                                 samples,
+                                                 net_weights)
                 if self.logger is not None:
-                    self.logger.update(self.sess, data, data_str, net_weights)
+                    self.logger.update(self.sess, data,
+                                       data_str, net_weights)
 
                 samples = data['x_out']
                 if self.model._model_type == 'GaugeModel':
-                    samples = np.mod(samples, 2 * np.pi)
+                    samples = convert_to_angle(samples)
+                    #  samples = np.mod(samples, 2 * np.pi)
 
             if self.logger is not None:
                 self.logger.write_train_strings()
