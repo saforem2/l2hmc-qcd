@@ -123,6 +123,9 @@ def main(args):
                                  v_translation=args.v_translation_weight,
                                  v_transformation=args.v_transformation_weight)
 
+    if net_weights == NetWeights(0., 0., 0., 0., 0., 0.):
+        args.hmc = True
+
     eps = _get_eps(log_dir) if args.eps is None else args.eps
 
     run_params = {

@@ -87,7 +87,7 @@ def plot_setup(log_dir, run_params, idx=None, nw_run=True):
     run_steps = run_params['run_steps']
     fname += f'_steps{run_steps}'
     title_str = (r"$N_{\mathrm{LF}} = $" + f'{lf}, '
-                 r"$\beta = $" + f'{beta:.1g}, '
+                 r"$\beta = $" + f'{beta:.2g}, '
                  r"$\varepsilon = $" + f'{eps:.3g}')
     eps_str = f'{eps:.4g}'.replace('.', '')
     fname += f'_e{eps_str}'
@@ -122,9 +122,11 @@ def plot_setup(log_dir, run_params, idx=None, nw_run=True):
 
 def load_weights(log_dir):
     """Load weights dict from `log_dir`."""
-    weights = io.load_pkl(os.path.join(log_dir, 'weights.pkl'))
-    xweights = weights['xnet']
-    vweights = weights['vnet']
+    #  weights = io.load_pkl(os.path.join(log_dir, 'weights.pkl'))
+    xweights = io.load_pkl(os.path.join(log_dir, 'xnet_weights.pkl'))
+    vweights = io.load_pkl(os.path.join(log_dir, 'vnet_weights.pkl'))
+    #  xweights = weights['xnet']
+    #  vweights = weights['vnet']
     #  xweights = weights['xnet']['GenericNet']
     #  vweights = weights['vnet']['GenericNet']
     weights_dict = {
