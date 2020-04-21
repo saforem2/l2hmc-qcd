@@ -196,12 +196,12 @@ def train_l2hmc(FLAGS, log_file=None):
         log_dir = params['log_dir']
         checkpoint_dir = os.path.join(log_dir, 'checkpoints/')
         io.check_else_make_dir(checkpoint_dir)
+        log_params(params)
 
     else:
         log_dir = None
         checkpoint_dir = None
 
-    log_params(params)
     # --------------------------------------------------------
     # Create model and train_logger
     # --------------------------------------------------------
@@ -267,6 +267,7 @@ def train_l2hmc(FLAGS, log_file=None):
                   samples=samples_init,
                   net_weights=net_weights_init)
 
+    dataset = None
     if is_chief:
         save_masks(model, sess)
         save_params(model)
