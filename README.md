@@ -70,8 +70,8 @@ $$
 
 
 
-Lattice code can be found in `l2hmc-qcd/lattice/` and the particular code for
-the $2D$ $U{(1)}$ lattice gauge model can be found in
+Lattice code can be found in [`l2hmc-qcd/lattice/`](l2hmc-qcd/lattice/) and the
+particular code for the $2D$ $U{(1)}$ lattice gauge model can be found in
 [`lattice.py`](l2hmc-qcd/lattice/lattice.py).
 
 
@@ -81,17 +81,27 @@ the $2D$ $U{(1)}$ lattice gauge model can be found in
 
 ### Lattice
 
-Lattice code can be found in [`lattice.py`](lattice/lattice.py), specifically the `GaugeLattice` object that provides the base structure on which our target distribution exists.
+Lattice code can be found in [`lattice.py`](l2hmc-qcd/lattice/lattice.py),
+specifically the `GaugeLattice` object that provides the base structure on
+which our target distribution exists.
 
-Additionally, the `GaugeLattice` object implements a variety of methods for calculating physical observables such as the average plaquette, $\phi_{P}$, and the topological charge $\mathcal{Q}$,
+Additionally, the `GaugeLattice` object implements a variety of methods for
+calculating physical observables such as the average plaquette, $\phi_{P}$, and
+the topological charge $\mathcal{Q}$,
 
 ### Model
 
-An abstract base model `BaseModel` can be found in [`base_model.py`](l2hmc-qcd/base_model.py).
+An abstract base model `BaseModel` can be found in
+[`base_model.py`](l2hmc-qcd/base/base_model.py).
 
-This `BaseModel` is responsible for creating and organizing all of the various tensorflow operations, tensors and placeholders necessary for training and evaluating the L2HMC sampler.
+This `BaseModel` is responsible for creating and organizing all of the various
+tensorflow operations, tensors and placeholders necessary for training and
+evaluating the L2HMC sampler.
 
-In particular, the `BaseModel` object is responsible for both defining the loss function to be minimized, as well as building and grouping the backpropagation operations that apply the gradients accumulated during the loss function calculation.
+In particular, the `BaseModel` object is responsible for both defining the loss
+function to be minimized, as well as building and grouping the backpropagation
+operations that apply the gradients accumulated during the loss function
+calculation.
 
 Building on this `BaseModel`, there are two additional models:
 
