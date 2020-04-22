@@ -188,7 +188,8 @@ def train_l2hmc(FLAGS, log_file=None):
         params = io.load_params(FLAGS.log_dir)
         if FLAGS.horovod and params['using_hvd']:  # should be the same
             num_workers = hvd.size()
-            assert num_workers == params['num_workers']
+            # XXX: is this necessary???
+            #  assert num_workers == params['num_workers']
             hooks = [hvd.BroadcastGlobalVariablesHook(0)]
             params['logging_steps'] *= num_workers
         else:
