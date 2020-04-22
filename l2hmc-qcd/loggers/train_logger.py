@@ -39,6 +39,8 @@ class TrainLogger(object):
         self._model_type = model._model_type
         self.summaries = summaries
         self.logging_steps = logging_steps
+        self._print_steps = getattr(model, 'print_steps', 10)
+        self._save_steps = getattr(model, 'save_steps', int(1e4))
 
         self.train_data = {}
         self.h_strf = ("{:^13s}" + 9 * "{:^12s}").format(
@@ -113,17 +115,7 @@ class TrainLogger(object):
         self.writer.add_summary(summary_str, global_step=data['step'])
         self.writer.flush()
 
-    def update(self, sess, data, data_str, net_weights):
-        """Update _current state and train_data."""
-        step = data['step']
-        print_steps = getattr(self, 'print_steps', 1)
-
-        if (step + 1) % print_steps == 0:
-            io.log(data_str)
-
-        if (step + 1) % 100 == 0:
-            io.log(self.train_header)
-
+    def _update(self, data, data_str):
         for key, val in data.items():
             try:
                 self.train_data[key].append(val)
@@ -131,6 +123,23 @@ class TrainLogger(object):
                 self.train_data[key] = [val]
 
         self.train_data_strings.append(data_str)
+
+    def update(self, sess, data, data_str, net_weights):
+        """Update _current state and train_data."""
+        step = data['step']
+        self._update(data, data_str)
+
+        if (step + 1) % self._print_steps == 0:
+            io.log(data_str)
+
+        if (step + 1) % 100 == 0:
+            io.log(self.train_header)
+            self.save_current_state(data)
+
+        if (step + 1) % self._save_steps == 0:
+            self.save_current_state(data)
+            self.save_train_data()
+
         if self.summaries and (step + 1) % self.logging_steps == 0:
             self.log_step(sess, data, net_weights)
 
@@ -140,8 +149,13 @@ class TrainLogger(object):
         tlf = self.train_log_file
         _ = [io.write(s, tlf, 'a') for s in self.train_data_strings]
 
+    def save_current_state(self, data):
+        """Save curent state incase training needs to be restarted."""
+        out_file = os.path.join(self.train_dir, 'current_state.pkl')
+        io.save_pkl(data, out_file, name='current_state')
+
     def save_train_data(self):
         """Save train data to `.pkl` file."""
-        tdf = os.path.join(self.train_dir, 'train_data.pkl')
-        with open(tdf, 'wb') as f:
-            pickle.dump(self.train_data, f)
+        out_file = os.path.join(self.train_dir, 'train_data.pkl')
+        io.log(f'Saving train data to: {out_file}.')
+        io.save_pkl(self.train_data, out_file, name='train_data')

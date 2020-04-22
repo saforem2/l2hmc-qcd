@@ -76,7 +76,7 @@ class Trainer:
             self.beta_arr = np.array([self.model.beta_init for _ in range(ts)])
             return
 
-        annealing_fn = params.get('annealing_fn', linear_add_cooling)
+        annealing_fn = params.get('annealing_fn', exp_mult_cooling)
 
         # pre-fetch array of all beta values used during annealing schedule
         args = (temp_init, temp_final, ts)
@@ -215,17 +215,7 @@ class Trainer:
 
                 if step % 100 == 0:
                     if self.logger is not None:
-                        current_state = {
-                            'beta': beta,
-                            'samples': samples,
-                            'eps': data['dynamics_eps'],
-                            'lr': data['lr'],
-                            'global_step': step,
-                        }
-                        out_file = os.path.join(self.model.log_dir,
-                                                'current_state.pkl')
-                        io.save_pkl(current_state, out_file,
-                                    name='current_state')
+                        self.logger.save_current_state(data)
 
             if self.logger is not None:
                 self.logger.write_train_strings()
