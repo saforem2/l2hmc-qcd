@@ -45,6 +45,7 @@ import tensorflow as tf
 # pylint:disable=unused-import
 # pylint:disable=too-many-statements
 # pylint:disable=no-name-in-module, invalid-name
+# pylint:disable=redefined-outer-name
 from tensorflow.python import debug as tf_debug
 from tensorflow.python.client import timeline
 
@@ -218,6 +219,13 @@ def train_l2hmc(FLAGS, log_file=None):
         log_dir = None
         checkpoint_dir = None
 
+    if FLAGS.restore:
+        params['lr_init'] = FLAGS.lr_init
+        params['beta_init'] = FLAGS.beta_init
+        params['beta_final'] = FLAGS.beta_final
+        params['eps'] = FLAGS.eps
+        params['train_steps'] = FLAGS.train_steps
+
     # --------------------------------------------------------
     # Create model and train_logger
     # --------------------------------------------------------
@@ -269,8 +277,12 @@ def train_l2hmc(FLAGS, log_file=None):
         model.dynamics.eps = current_state['eps']
         model.beta_init = current_state['beta']
         samples_init = current_state['samples']
-        model.global_step = current_state['global_step']
+        sess.run(model.global_step_setter, feed_dict={
+            model.global_step_ph: current_state['global_step']
+        })
+        #  model.global_step = current_state['global_step']
         beta_init = current_state['beta']
+
         #  model.global_step = tf.compat.v1.train.get_or_create_global_step()
         #  else:
         #      #  try:
