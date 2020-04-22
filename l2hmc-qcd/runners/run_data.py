@@ -15,8 +15,7 @@ import utils.file_io as io
 
 from runners import (ENERGY_DATA, REVERSE_DATA, RUN_DATA,
                      SAMPLES, VOLUME_DIFFS, OBSERVABLES, HSTR)
-from plotters.data_utils import bootstrap, therm_arr
-from plotters.inference_plots import calc_tunneling_rate
+from plotters.data_utils import bootstrap
 
 #  from lattice.lattice import calc_plaqs_diffs
 
@@ -113,38 +112,41 @@ class RunData:
                 except KeyError:
                     self.volume_diffs[key] = [val]
 
-    def update1(self, step, samples, outputs):
-        """Update all data."""
-        if step % self.run_params['print_steps'] == 0:
-            io.log(outputs['data_str'])
-            self.data_strs.append(outputs['data_str'])
+    @staticmethod
+    def therm_arr(arr, therm_frac=0.25):
+        """Drop the first `therm_frac` percent of `arr` to account for mixing.
 
-        self.samples_arr.append(samples)
+        Args:
+            arr (array-like): Input array.
+            therm_frac (float): Percent of total data to drop for
+                thermalization. For example, if `therm_frac = 0.25`, the first
+                25% of `arr` will be excluded from the returned array.
 
-        tups = [(self.run_data, outputs['observables'], False),
-                (self.energy_data, outputs['energy_data'], False),
-                (self.reverse_data, outputs['reverse_data'], False)]
-                #  (self.samples_dict, outputs['dynamics_output'], True)]
+        Returns:
+            arr_therm (array-like): Thermalized array.
+            steps_arr (array-like): The accompanying `steps_arr` containing the
+                updated steps index.
 
-        if 'volume_diffs' in outputs:
-            tups.append((self.volume_diffs, outputs['volume_diffs'], False))
 
-        tups = self._multiple_updates(tups)
+        Example:
+            >>> arr = np.array([1, 2, 3, 4, 5, 6, 7, 8])
+            >>> t_arr, steps = therm_arr(arr, therm_frac=0.25)
+            >>> t_arr
+            array([3, 4, 5, 6, 7, 8])
+            >>> steps
+            array([2, 3, 4, 5, 6, 7])
+        """
+        num_steps = arr.shape[0]
+        therm_steps = int(therm_frac * num_steps)
+        arr = arr[therm_steps:]
+        steps = np.arange(therm_steps, num_steps)
 
-        self._update_samples(outputs['dynamics_output'])
-
-        self.run_data['sumlogdet_out'].append(
-            outputs['dynamics_output']['sumlogdet_out']
-        )
-        self.run_data['sumlogdet_proposed'].append(
-            outputs['dynamics_output']['sumlogdet_proposed']
-        )
-
+        return arr, steps
 
     def build_dataset(self):
         """Build `xarray.Dataset` from `self.run_data`."""
         charges = np.array(self.observables['charges']).T
-        self.run_data['tunneling_rate'] = calc_tunneling_rate(charges).T
+        self.run_data['tunneling_rate'] = self.calc_tunneling_rate(charges).T
 
         #  plaqs = np.array(self.observables.pop('plaqs'))
         #  beta = self.run_params['beta']
@@ -162,24 +164,33 @@ class RunData:
             'dcharges': self.observables['dcharges'],
         }
 
-        try:
-            dataset = self._build_dataset(plot_data, filter_str='forward')
-        except:
-            import pudb; pudb.set_trace()
-        #  dataset = self._build_dataset(self.run_data, filter_str='forward')
+        # ignore plot_data['forward'] data
+        dataset = self._build_dataset(plot_data, filter_str='forward')
 
         return dataset
 
-    @staticmethod
-    def _build_dataset(data, filter_str=None):
-        """Build `xarray.Dataset` from `data`."""
+    def _build_dataset(self, data, filter_str=None, therm_frac=0.25):
+        """Build (thermalized) `xarray.Dataset` from `data`.
+
+        Args:
+            filter_str (str): String that is used to exclude (key, value) pair
+                from data e.g. if `data = {'x': 1, 'y': 2}`, and
+                `filter_str='x'`, the resulting `dataset` will NOT contain
+                `data['x']`.
+            therm_frac (float): Percent of data to throw out to account for
+                thermalization effects. For example, if `therm_frac = 0.25`,
+                the first 25% of `data` will be excluded from `dataset`.
+
+        Returns:
+            dataset (xr.Dataset): Dataset composed of thermalized `data`.
+        """
         _dict = {}
         for key, val in data.items():
             cond1 = (filter_str is not None and filter_str in key)
             cond2 = (val == [])
             if cond1 or cond2:
                 continue
-            arr, steps = therm_arr(np.array(val))
+            arr, steps = self.therm_arr(np.array(val), therm_frac=therm_frac)
             arr = arr.T
             _dict[key] = xr.DataArray(arr, dims=['chain', 'draw'],
                                       coords=[np.arange(arr.shape[0]), steps])
@@ -215,23 +226,13 @@ class RunData:
 
         dataset = self._build_dataset(data)
 
-        #  key = [('potential_proposed', 'potential_init'),
-        #          ('potential_out', 'potential_init'),
-        #          ('potential_out', 'potential_proposed'),
-        #          ('kinetic_proposed', 'kinetic_init'),
-        #          ('kinetic_out', 'kinetic_init'),
-        #          ('kinetic_out', 'kinetic_proposed'),
-        #          ('hamiltonian_proposed', 'hamiltonian_init'),
-        #          ('hamiltonian_out', 'hamiltonian_init'),
-        #          ('hamiltonian_out', 'hamiltonian_proposed')]
-
         return dataset
 
     def build_energy_transition_dataset(self):
         """Build `energy_transition_dataset` from `self.energy_data`."""
         _dict = {}
         for key, val in self.energy_data.items():
-            arr, steps = therm_arr(np.array(val))
+            arr, steps = self.therm_arr(np.array(val))
             arr -= np.mean(arr, axis=0)
             arr = arr.T
             key_ = f'{key}_minus_avg'
@@ -350,6 +351,17 @@ class RunData:
         return np.array(means), np.array(stds)
 
     @staticmethod
+    def calc_tunneling_rate(charges):
+        """Calc. the tunneling rate as the charge difference per step."""
+        charges = np.around(charges)
+        # insert copy of first row at beginning of charges
+        charges = np.insert(charges, 0, charges[0], axis=0)
+        dq = np.abs(charges[1:] - charges[:-1])
+        tunneling_rate = dq / charges.shape[0]  # divide by num steps
+
+        return tunneling_rate
+
+    @staticmethod
     def calc_tunneling_stats(charges):
         """Calculate tunneling statistics from `charges`.
         Explicitly, calculate the `tunneling events` as the number of accepted
@@ -366,26 +378,31 @@ class RunData:
         The `tunneling_rate` is then calculated as the total number of
         `tunneling_events` / num_steps`.
         """
-        step_ax = np.argmax(charges.shape)
+        step_ax = 0  # data is appended for each step along axis 0
         num_steps = charges.shape[step_ax]
+        charges = np.around(charges)  # integer valued
+        # insert copy of first row at beginning of array
+        charges = np.insert(charges, 0, charges[0], axis=step_ax)
         charges_diff = np.abs(charges[1:] - charges[:-1])
+
+        # sum the step-wise charge differences over the step axis
+        # and divide by the number of steps to get the `tunneling_rate`
         tunneling_events = np.sum(np.around(charges_diff), axis=step_ax)
-        tunneling_rate = tunneling_events / num_steps
         tunn_stats = {
             'tunneling_events': tunneling_events,
-            'tunneling_rate': tunneling_rate,
+            'tunneling_rate': tunneling_events / num_steps,
         }
-        #  return tunneling_events, tunneling_rate
         return tunn_stats
 
-    def thermalize_data(self, data=None):
+    def thermalize_data(self, data=None, therm_frac=0.25):
         """Returns thermalized versions of entries in data."""
         if data is None:
             data = self.run_data
 
         therm_data = {}
         for key, val in data.items():
-            therm_data[key] = therm_arr(np.array(val), ret_steps=False)
+            arr, _ = self.therm_arr(np.array(val), therm_frac=therm_frac)
+            therm_data[key] = arr
 
         return therm_data
 

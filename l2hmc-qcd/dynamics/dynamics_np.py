@@ -35,9 +35,9 @@ def reduced_weight_matrix(W, n=10):
 
 def convert_to_angle(x):
     """Restrict `x` to be in the range -pi <= x < pi."""
-    #  x = np.mod(x, 2 * np.pi)
-    #  x -= np.floor(x / (2 * np.pi) + 0.5) * 2 * np.pi
-    x = np.mod(x + np.pi, 2 * np.pi) - np.pi
+    x = np.mod(x, 2 * np.pi)
+    x -= np.floor(x / (2 * np.pi) + 0.5) * 2 * np.pi
+    #  x = np.mod(x + np.pi, 2 * np.pi) - np.pi
     return x
 
 

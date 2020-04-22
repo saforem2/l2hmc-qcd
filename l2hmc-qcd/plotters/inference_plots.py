@@ -92,8 +92,10 @@ def _plot_angle_timeseries(chain, num_steps=500,
     _ = ax.add_collection(lc)
     _ = ax.scatter(steps[:num_steps], theta, c=theta,
                    cmap='hsv', alpha=1., zorder=2)
-    ylabels = [r'$0$', r'$\pi / 2$', r'$\pi$', r'$3\pi/2$', r'$2\pi$']
-    yticks = [0, np.pi/2, np.pi, 3 * np.pi / 2, 2 * np.pi]
+    #  ylabels = [r'$0$', r'$\pi / 2$', r'$\pi$', r'$3\pi/2$', r'$2\pi$']
+    #  yticks = [0, np.pi/2, np.pi, 3 * np.pi / 2, 2 * np.pi]
+    ylabels = [r'$-\pi$', r'$-\pi / 2$', r'$0$', r'$\pi/2$', r'$\pi/2$']
+    yticks = [-np.pi, -np.pi / 2, 0, np.pi / 2, np.pi]
     ax.set_yticks(yticks)
     ax.set_yticklabels(ylabels)
     ax.grid(True)
@@ -199,13 +201,13 @@ def therm_arr(arr, therm_frac=0.25):
 
 
 def calc_tunneling_rate(charges):
-    """Calculate the tunneling rate as the difference in charge b/t steps."""
+    """Calc the (moving) tunneling rate as the charge difference per step."""
     step_axis = np.argmax(charges.shape)
     num_steps = charges.shape[step_axis]
 
     charges = np.around(charges)
     charges = np.insert(charges, 0, 0, axis=0)
-    dq = np.abs(charges[1:] - charges[-1])
+    dq = np.abs(charges[1:] - charges[:-1])
     tunneling_rate = dq / num_steps
     return tunneling_rate
 
