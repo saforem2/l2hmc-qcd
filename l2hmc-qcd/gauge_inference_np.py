@@ -171,7 +171,7 @@ def main(FLAGS):
     _, _, fig_dir = inference_plots(run_data, params, runs_np=True)
 
     out_file = os.path.join(fig_dir, 'run_summary.txt')
-    run_data.log_summary(n_boot=1000, out_file=out_file)
+    run_data.log_summary(n_boot=100, out_file=out_file)
 
     if not FLAGS.dont_save:  # i.e. SAVE data by default
         run_data.save(run_dir=run_params['run_dir'])
