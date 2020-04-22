@@ -185,12 +185,14 @@ class RunData:
             dataset (xr.Dataset): Dataset composed of thermalized `data`.
         """
         _dict = {}
+        therm_data = {}
         for key, val in data.items():
             cond1 = (filter_str is not None and filter_str in key)
             cond2 = (val == [])
             if cond1 or cond2:
                 continue
             arr, steps = self.therm_arr(np.array(val), therm_frac=therm_frac)
+            therm_data[key] = arr
             arr = arr.T
             _dict[key] = xr.DataArray(arr, dims=['chain', 'draw'],
                                       coords=[np.arange(arr.shape[0]), steps])
@@ -465,10 +467,10 @@ class RunData:
             out_file = os.path.join(out_dir, 'run_summary.txt')
 
         io.log(f'Writing run summary statistics to {out_file}.\n')
-        nw_str = f"NET_WEIGHTS: {self.run_params['net_weights']}"
-        nw_uline = uline(nw_str, c='=')
-        io.log_and_write(nw_str, out_file)
-        io.log_and_write(nw_uline, out_file)
+        #  nw_str = f"NET_WEIGHTS: {self.run_params['net_weights']}"
+        #  nw_uline = uline(nw_str, c='-')
+        #  io.log_and_write(nw_str, out_file)
+        #  io.log_and_write(nw_uline, out_file)
         data = {
             'accept_prob': self.run_data['accept_prob'],
             'charges': self.observables['charges'],
@@ -480,8 +482,9 @@ class RunData:
         tunn_stats = self.calc_tunneling_stats(therm_data['charges'])
         #  fnames = ['accept_prob', 'charges', 'dx_out']
         #  therm_data, tunn_stats = self._load_format_data(fnames)
-        self._log_stats(therm_data, tunn_stats, out_file, n_boot=n_boot)
         self._log_run_params(out_file)
+        io.log_and_write(80*'-' + '\n\n', out_file)
+        self._log_stats(therm_data, tunn_stats, out_file, n_boot=n_boot)
 
         io.log_and_write(120 * '=' + '\n', out_file)
 
