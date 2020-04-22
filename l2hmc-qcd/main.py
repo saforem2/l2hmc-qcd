@@ -53,6 +53,7 @@ import utils.file_io as io
 
 from seed_dict import seeds, vnet_seeds, xnet_seeds
 from models.gauge_model import GaugeModel
+from runners.runner_np import _get_eps
 from plotters.plot_utils import plot_singular_values, weights_hist
 from plotters.train_plots import plot_train_data
 from loggers.train_logger import TrainLogger
@@ -98,6 +99,21 @@ def create_monitored_training_session(**sess_kwargs):
     io.log(f'tf.report_uninitialized_variables() len = {uninited_out}')
 
     return sess
+
+
+def _get_global_var(name):
+    try:
+        var = [i for i in tf.global_variables() if name in i.name][0]
+    except IndexError:
+        var = None
+    return var
+
+def get_global_vars(names):
+    vars = {name: _get_global_var(name) for name in names}
+    for k, v in vars:
+        if v is None:
+            _ = vars.pop(k)
+    return vars
 
 
 def pkl_dump(d, pkl_file):
@@ -230,12 +246,6 @@ def train_l2hmc(FLAGS, log_file=None):
         v_transformation=FLAGS.v_transformation_weight,
     )
 
-    rand_unif = np.random.uniform(
-        size=(model.lattice.samples_array.shape)
-    )
-    samples_init = 2 * np.pi * rand_unif - np.pi
-    beta_init = model.beta_init
-
     # ----------------------------------------------------------------
     #  Create MonitoredTrainingSession
     #
@@ -251,6 +261,37 @@ def train_l2hmc(FLAGS, log_file=None):
                                              save_summaries_steps=None,
                                              save_checkpoint_steps=save_steps,
                                              checkpoint_dir=checkpoint_dir)
+
+    current_state_file = os.path.join(model.log_dir, 'current_state.pkl')
+    if os.path.isfile(current_state_file):
+        current_state = io.load_pkl(current_state_file)
+        model.lr = current_state['lr']
+        model.dynamics.eps = current_state['eps']
+        model.beta_init = current_state['beta']
+        samples_init = current_state['samples']
+        model.global_step = current_state['global_step']
+        beta_init = current_state['beta']
+        #  model.global_step = tf.compat.v1.train.get_or_create_global_step()
+        #  else:
+        #      #  try:
+        #      #      names = ['eps', 'learning_rate', 'beta', 'x_out']
+        #      #      global_vars = get_global_vars(names)
+        #      #      for v in global_vars:
+        #      #      model.dynamics.eps = global_vars['eps']
+        #      #      model.lr = get_global_var('learning_rate')
+        #      #      model.beta_init = get_global_var('beta')
+        #      #      beta_init = sess.run(model.beta_init)
+        #      #      x_out = get_global_var('x_out')
+        #      #      samples_init = sess.run(x_out)
+        #      #  except:
+        #      #      import pudb; pudb.set_trace()
+    else:
+        rand_unif = np.random.uniform(
+            size=(model.lattice.samples_array.shape)
+        )
+        samples_init = 2 * np.pi * rand_unif - np.pi
+        beta_init = model.beta_init
+
     #  sess.run([
     #      model.dynamics.xnet.generic_net.coeff_scale.initializer,
     #      model.dynamics.vnet.generic_net.coeff_scale.initializer,
@@ -262,7 +303,6 @@ def train_l2hmc(FLAGS, log_file=None):
     #                       TRAINING
     # ----------------------------------------------------------
     trainer = Trainer(sess, model, train_logger, params)
-
     trainer.train(beta=beta_init,
                   samples=samples_init,
                   net_weights=net_weights_init)
