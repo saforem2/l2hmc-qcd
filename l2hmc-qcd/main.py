@@ -275,9 +275,9 @@ def train_l2hmc(FLAGS, log_file=None):
     if os.path.isfile(current_state_file):
         current_state = io.load_pkl(current_state_file)
         model.lr = current_state['lr']
-        model.dynamics.eps = current_state['eps']
+        samples_init = current_state['x_in']
         model.beta_init = current_state['beta']
-        samples_init = current_state['samples']
+        model.dynamics.eps = current_state['dynamics_eps']
         sess.run(model.global_step_setter, feed_dict={
             model.global_step_ph: current_state['global_step']
         })
