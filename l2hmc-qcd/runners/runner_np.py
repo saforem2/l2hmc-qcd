@@ -21,6 +21,7 @@ from utils.file_io import timeit
 from lattice.lattice import calc_plaqs_diffs, GaugeLattice
 from dynamics.dynamics_np import DynamicsNP, convert_to_angle
 
+
 #  from plotters.data_utils import therm_arr, bootstrap
 #  from plotters.inference_plots import calc_tunneling_rate
 # pylint: disable=no-member
@@ -577,7 +578,7 @@ def map_points(dynamics, run_params):
 
 
 @timeit
-def run_inference_np(log_dir, dynamics, lattice, run_params, save=True):
+def run_inference_np(log_dir, dynamics, lattice, run_params):
     """Run inference imperatively w/ numpy using `dynamics` object.
     Args:
         log_dir (str): Path to `log_dir` containing trained model on which to
@@ -634,9 +635,4 @@ def run_inference_np(log_dir, dynamics, lattice, run_params, save=True):
         if step % 100 == 0:
             io.log(HSTR)
 
-    run_data.log_summary()
-    if save:
-        run_data.save(run_dir=run_dir)
-
     return run_data
-
