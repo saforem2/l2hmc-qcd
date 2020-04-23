@@ -101,6 +101,9 @@ class Trainer:
         if net_weights is None:
             net_weights = NetWeights(1., 1., 1., 1., 1., 1.)
 
+        if self.model._model_type == 'GaugeModel':
+            samples = convert_to_angle(samples)
+
         beta = self.beta_arr[step]
 
         feed_dict = {
@@ -117,6 +120,7 @@ class Trainer:
         dt = time.time() - start_time
 
         outputs = dict(zip(self._train_keys, ops_out))
+
         outputs['x_in'] = samples
         outputs['step'] = global_step
         outputs['beta'] = beta
@@ -140,7 +144,10 @@ class Trainer:
         )
 
         if self.model._model_type == 'GaugeModel':
-            outputs['x_out'] = np.mod(outputs['x_out'], 2 * np.pi)
+            outputs['x_out'] = convert_to_angle(outputs['x_out'])
+            #  outputs['x_proposed'] = convert_to_angle(outputs['x_proposed'])
+
+            #  outputs['x_out'] = np.mod(outputs['x_out'], 2 * np.pi)
             dx = 1. - np.mean(np.cos(outputs['x_out'] - samples), axis=-1)
             #  dx = np.mean(np.abs(outputs['x_out'] - samples), axis=-1)
             #  if global_step > 1 and self.logger is not None:
@@ -191,7 +198,6 @@ class Trainer:
             samples = np.random.randn(self.model.x.shape)
 
         if self.model._model_type == 'GaugeModel':
-            #  samples = np.mod(samples, 2 * np.pi)
             samples = convert_to_angle(samples)
 
         assert samples.shape == self.model.x.shape
@@ -211,11 +217,6 @@ class Trainer:
                 samples = data['x_out']
                 if self.model._model_type == 'GaugeModel':
                     samples = convert_to_angle(samples)
-                    #  samples = np.mod(samples, 2 * np.pi)
-
-                if step % 100 == 0:
-                    if self.logger is not None:
-                        self.logger.save_current_state(data)
 
             if self.logger is not None:
                 self.logger.write_train_strings()
