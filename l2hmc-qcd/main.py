@@ -264,7 +264,7 @@ def train_l2hmc(FLAGS, log_file=None):
     #        checkpoint, and closing when done or an error occurs.
     # ----------------------------------------------------------------
     #  save_steps = FLAGS.save_steps
-    save_steps = FLAGS.train_steps // 4
+    save_steps = max((FLAGS.train_steps, params['train_steps'])) // 4
     sess = create_monitored_training_session(hooks=hooks,
                                              config=config,
                                              #  scaffold=scaffold,
