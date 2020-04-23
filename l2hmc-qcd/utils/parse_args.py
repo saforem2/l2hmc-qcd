@@ -442,14 +442,6 @@ def parse_args():
                         help=("""Flag that when passed will profile the graph
                               execution using `TFProf`."""))
 
-    #  parser.add_argument("--global_seed",
-    #                      dest='global_seed',
-    #                      type=int,
-    #                      default=42,
-    #                      required=False,
-    #                      help=("""Sets global seed to ensure
-    #                            reproducibility."""))
-
     parser.add_argument("--gpu",
                         dest="gpu",
                         action="store_true",
@@ -581,6 +573,15 @@ def parse_args():
                         help=("""When passed, using 64 point floating precision
                               by settings globals.TF_FLOAT = tf.float64. False
                               by default (use tf.float32)."""))
+
+    parser.add_argument("--restart_beta",
+                        dest="restart_beta",
+                        type=float,
+                        default=-1.,
+                        required=False,
+                        help=("""When restarting training, this will be the new
+                               starting value of beta if `--restart_beta >
+                              0` (Default: -1)."""))
 
     if sys.argv[1].startswith('@'):
         args = parser.parse_args(shlex.split(open(sys.argv[1][1:]).read(),

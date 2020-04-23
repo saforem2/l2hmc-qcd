@@ -75,7 +75,7 @@ def save_pkl(obj, fpath, name=None):
     """Save `obj` to `fpath`."""
     log(f'Saving {name} to {fpath}.')
     with open(fpath, 'wb') as f:
-        pickle.dump(obj, f)
+        pickle.dump(obj, f, pickle.HIGHEST_PROTOCOL)
 
 
 def load_pkl(fpath):
