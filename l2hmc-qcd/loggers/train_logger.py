@@ -33,12 +33,19 @@ TRAIN_HEADER = dash + '\n' + h_str + '\n' + dash
 
 
 class TrainLogger(object):
-    def __init__(self, model, log_dir, logging_steps=10, summaries=False):
+    def __init__(self,
+                 model,
+                 log_dir,
+                 summaries=False,
+                 logging_steps=None):
         #  self.sess = sess
+        if logging_steps is None:
+            logging_steps = getattr(model, 'logging_steps', 500)
+
         self.model = model
-        self._model_type = model._model_type
         self.summaries = summaries
-        self.logging_steps = logging_steps
+        self._logging_steps = logging_steps
+        self._model_type = model._model_type
         self._print_steps = getattr(model, 'print_steps', 10)
         self._save_steps = getattr(model, 'save_steps', int(1e4))
 
@@ -137,9 +144,9 @@ class TrainLogger(object):
             self.save_current_state(data)
 
         if step % self._save_steps == 0:
-            self.save_train_data(step)
+            self.save_train_data()
 
-        if self.summaries and (step + 1) % self.logging_steps == 0:
+        if self.summaries and (step + 1) % self._logging_steps == 0:
             self.log_step(sess, data, net_weights)
 
     def write_train_strings(self):

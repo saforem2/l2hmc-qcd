@@ -226,7 +226,7 @@ def train_l2hmc(FLAGS, log_file=None):
         params['beta_init'] = FLAGS.beta_init
         params['beta_final'] = FLAGS.beta_final
         params['eps'] = FLAGS.eps
-        params['train_steps'] += FLAGS.train_steps
+        #  params['train_steps'] += FLAGS.train_steps
 
     # --------------------------------------------------------
     # Create model and train_logger
@@ -279,15 +279,20 @@ def train_l2hmc(FLAGS, log_file=None):
         current_state = io.load_pkl(current_state_file)
         model.lr = current_state['lr']
         samples_init = current_state['x_in']
+
         if FLAGS.restart_beta > 0:
             beta_init = FLAGS.restart_beta
         else:
             beta_init = current_state['beta']
 
         model.beta_init = beta_init
-        train_steps = params['train_steps'] + FLAGS.train_steps
-        model.train_steps = train_steps
-        #  model.dynamics.eps = current_state['dynamics_eps']
+
+        is_finished = getattr(current_state, 'is_finished', False)
+        almost_finished = (params['train_steps'] - current_state['step'] < 20)
+        if is_finished or almost_finished:
+            train_steps = params['train_steps'] + FLAGS.train_steps
+            model.train_steps = train_steps
+            params['train_steps'] = train_steps
 
         ops = [model.global_step_setter, model.eps_setter]
         feed_dict = {
@@ -296,22 +301,6 @@ def train_l2hmc(FLAGS, log_file=None):
         }
         sess.run(ops, feed_dict=feed_dict)
 
-        #  model.global_step = current_state['global_step']
-
-        #  model.global_step = tf.compat.v1.train.get_or_create_global_step()
-        #  else:
-        #      #  try:
-        #      #      names = ['eps', 'learning_rate', 'beta', 'x_out']
-        #      #      global_vars = get_global_vars(names)
-        #      #      for v in global_vars:
-        #      #      model.dynamics.eps = global_vars['eps']
-        #      #      model.lr = get_global_var('learning_rate')
-        #      #      model.beta_init = get_global_var('beta')
-        #      #      beta_init = sess.run(model.beta_init)
-        #      #      x_out = get_global_var('x_out')
-        #      #      samples_init = sess.run(x_out)
-        #      #  except:
-        #      #      import pudb; pudb.set_trace()
     else:
         rand_unif = np.random.uniform(
             size=(FLAGS.batch_size, model.lattice.num_links)
@@ -320,6 +309,7 @@ def train_l2hmc(FLAGS, log_file=None):
         samples_init = 2 * np.pi * rand_unif - np.pi
         beta_init = model.beta_init
 
+    # TODO: Can these be safely deleted???
     #  sess.run([
     #      model.dynamics.xnet.generic_net.coeff_scale.initializer,
     #      model.dynamics.vnet.generic_net.coeff_scale.initializer,
@@ -346,6 +336,8 @@ def train_l2hmc(FLAGS, log_file=None):
         save_eps(model, sess)
         plot_singular_values(model.log_dir)
         dataset = plot_train_data(train_logger.train_data, params)
+
+        train_logger.write_train_strings()
         if FLAGS.save_train_data:
             io.log(f'Saving train data!')
             train_logger.save_train_data()

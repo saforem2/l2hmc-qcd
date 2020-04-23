@@ -185,14 +185,11 @@ class Trainer:
         if train_steps is None:
             train_steps = self._train_steps
 
-        if net_weights is None:
-            net_weights = NetWeights(1, 1, 1, 1, 1, 1)
-
-        initial_step = self.sess.run(self.model.global_step)
-        #  io.log(f'Global step: {initial_step}\n')
-
         if beta is None:
             beta = self.beta_arr[0]
+
+        if net_weights is None:
+            net_weights = NetWeights(1, 1, 1, 1, 1, 1)
 
         if samples is None:
             samples = np.random.randn(self.model.x.shape)
@@ -200,12 +197,11 @@ class Trainer:
         if self.model._model_type == 'GaugeModel':
             samples = convert_to_angle(samples)
 
-        assert samples.shape == self.model.x.shape
+        if self.logger is not None:
+            io.log(self.logger.train_header)
 
         try:
-            if self.logger is not None:
-                io.log(self.logger.train_header)
-
+            initial_step = self.sess.run(self.model.global_step)
             for step in range(initial_step, train_steps):
                 data, data_str = self.train_step(step,
                                                  samples,
@@ -217,12 +213,6 @@ class Trainer:
                 samples = data['x_out']
                 if self.model._model_type == 'GaugeModel':
                     samples = convert_to_angle(samples)
-
-            if self.logger is not None:
-                self.logger.write_train_strings()
-                if self._save_train_data:
-                    io.log(f'Saving train data!')
-                    self.logger.save_train_data()
 
         except (KeyboardInterrupt, SystemExit):
             io.log("\nERROR: KeyboardInterrupt detected!")
