@@ -22,7 +22,7 @@ import utils.file_io as io
 from base.base_model import BaseModel
 from lattice.lattice import GaugeLattice
 from dynamics.dynamics import Dynamics
-from params.gauge_params import GAUGE_PARAMS
+from params import GAUGE_PARAMS
 
 if cfg.HAS_HOROVOD:
     import horovod.tensorflow as hvd  # noqa: 401
