@@ -209,6 +209,7 @@ def train_l2hmc(FLAGS, log_file=None):
     is_chief = condition1 or condition2
 
     params['zero_masks'] = FLAGS.zero_masks
+    params['beta_fixed'] = (FLAGS.beta_final == FLAGS.beta_init)
 
     if is_chief:
         log_dir = params['log_dir']
@@ -225,7 +226,7 @@ def train_l2hmc(FLAGS, log_file=None):
         params['beta_init'] = FLAGS.beta_init
         params['beta_final'] = FLAGS.beta_final
         params['eps'] = FLAGS.eps
-        params['train_steps'] = FLAGS.train_steps
+        params['train_steps'] += FLAGS.train_steps
 
     # --------------------------------------------------------
     # Create model and train_logger
@@ -262,7 +263,8 @@ def train_l2hmc(FLAGS, log_file=None):
     #        initialization, restoring from a checkpoint, saving to a
     #        checkpoint, and closing when done or an error occurs.
     # ----------------------------------------------------------------
-    save_steps = FLAGS.save_steps
+    #  save_steps = FLAGS.save_steps
+    save_steps = FLAGS.train_steps // 4
     sess = create_monitored_training_session(hooks=hooks,
                                              config=config,
                                              #  scaffold=scaffold,
@@ -271,18 +273,30 @@ def train_l2hmc(FLAGS, log_file=None):
                                              save_checkpoint_steps=save_steps,
                                              checkpoint_dir=checkpoint_dir)
 
-    current_state_file = os.path.join(model.log_dir, 'current_state.pkl')
+    current_state_file = os.path.join(model.log_dir, 'training',
+                                      'current_state.pkl')
     if os.path.isfile(current_state_file):
         current_state = io.load_pkl(current_state_file)
         model.lr = current_state['lr']
         samples_init = current_state['x_in']
-        model.beta_init = current_state['beta']
-        model.dynamics.eps = current_state['dynamics_eps']
-        sess.run(model.global_step_setter, feed_dict={
-            model.global_step_ph: current_state['global_step']
-        })
+        if FLAGS.restart_beta > 0:
+            beta_init = FLAGS.restart_beta
+        else:
+            beta_init = current_state['beta']
+
+        model.beta_init = beta_init
+        train_steps = params['train_steps'] + FLAGS.train_steps
+        model.train_steps = train_steps
+        #  model.dynamics.eps = current_state['dynamics_eps']
+
+        ops = [model.global_step_setter, model.eps_setter]
+        feed_dict = {
+            model.global_step_ph: current_state['step'],
+            model.eps_ph: current_state['dynamics_eps'],
+        }
+        sess.run(ops, feed_dict=feed_dict)
+
         #  model.global_step = current_state['global_step']
-        beta_init = current_state['beta']
 
         #  model.global_step = tf.compat.v1.train.get_or_create_global_step()
         #  else:
@@ -300,7 +314,8 @@ def train_l2hmc(FLAGS, log_file=None):
         #      #      import pudb; pudb.set_trace()
     else:
         rand_unif = np.random.uniform(
-            size=(model.lattice.samples_array.shape)
+            size=(FLAGS.batch_size, model.lattice.num_links)
+            #  size=(model.lattice.samples_array.shape)
         )
         samples_init = 2 * np.pi * rand_unif - np.pi
         beta_init = model.beta_init
@@ -311,6 +326,8 @@ def train_l2hmc(FLAGS, log_file=None):
     #      model.dynamics.xnet.generic_net.coeff_transformation.initializer,
     #      model.dynamics.vnet.generic_net.coeff_transformation.initializer,
     #  ])
+    if FLAGS.restore and is_chief:
+        train_logger.restore_train_data()
 
     # ----------------------------------------------------------
     #                       TRAINING

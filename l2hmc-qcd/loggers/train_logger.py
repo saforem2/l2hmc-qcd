@@ -136,16 +136,14 @@ class TrainLogger(object):
             io.log(self.train_header)
             self.save_current_state(data)
 
-        if (step + 1) % self._save_steps == 0:
-            self.save_current_state(data)
-            self.save_train_data()
+        if step % self._save_steps == 0:
+            self.save_train_data(step)
 
         if self.summaries and (step + 1) % self.logging_steps == 0:
             self.log_step(sess, data, net_weights)
 
     def write_train_strings(self):
         """Write training strings out to file."""
-
         tlf = self.train_log_file
         _ = [io.write(s, tlf, 'a') for s in self.train_data_strings]
 
@@ -154,8 +152,25 @@ class TrainLogger(object):
         out_file = os.path.join(self.train_dir, 'current_state.pkl')
         io.save_pkl(data, out_file, name='current_state')
 
-    def save_train_data(self):
+    def load_train_data(self):
+        """Load existing training data from `self.train_dir`."""
+        data_file = os.path.join(self.train_dir, 'train_data.pkl')
+        try:
+            train_data = io.load_pkl(data_file)
+        except FileNotFoundError:
+            io.log(f'Unable to load training data from: {data_file}.')
+            train_data = {}
+
+        return train_data
+
+    def restore_train_data(self):
+        """If restarting training, load in previous training data."""
+        self.train_data = self.load_train_data()
+
+    def save_train_data(self, out_file=None):
         """Save train data to `.pkl` file."""
-        out_file = os.path.join(self.train_dir, 'train_data.pkl')
+        if out_file is None:
+            out_file = os.path.join(self.train_dir, 'train_data.pkl')
+
         io.log(f'Saving train data to: {out_file}.')
         io.save_pkl(self.train_data, out_file, name='train_data')
