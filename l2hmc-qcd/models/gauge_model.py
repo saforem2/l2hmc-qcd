@@ -107,7 +107,6 @@ class GaugeModel(BaseModel):
             self._build()
 
             extra_train_ops = {
-                'actions': self.actions,
                 'plaqs': self.plaqs,
                 'charges': self.charges,
             }
@@ -286,31 +285,6 @@ class GaugeModel(BaseModel):
             charge_loss += self._charge_loss(xp0, xp1, xdata.prob, eps)
             if self.aux_weight > 0:
                 charge_loss += self._charge_loss(zp0, zp1, zdata.prob, eps)
-
-        #  plaq_loss = tf.cast(0., TF_FLOAT)
-        #  if self._plaq_weight > 0:
-        #      dxp = 2. * (1. - tf.cos(xp1 - xp0))
-        #      dzp = 2. * (1. - tf.cos(zp1 - zp0))
-        #      xp_loss = xdata.prob * tf.reduce_sum(dxp, axis=(1, 2)) + eps
-        #      zp_loss = zdata.prob * tf.reduce_sum(dzp, axis=(1, 2)) + eps
-        #
-        #      term1p = self._plaq_weight * (1. / xp_loss + 1. / zp_loss)
-        #      term2p = (xp_loss + zp_loss) / self._plaq_weight
-        #      plaq_loss = tf.reduce_mean(term1p - term2p, axis=0,
-        #                                 name='plaq_loss')
-        #  charge_loss = tf.cast(0., TF_FLOAT)
-        #  if self._charge_weight > 0:
-        #      xq0 = self._top_charge(xp0)
-        #      xq1 = self._top_charge(xp1)
-        #      zq0 = self._top_charge(zp0)
-        #      zq1 = self._top_charge(zp1)
-        #
-        #      xq_loss = xdata.prob * (xq1 - xq0) ** 2 + eps
-        #      zq_loss = zdata.prob * (zq1 - zq0) ** 2 + eps
-        #      term1q = self._charge_weight * (1. / xq_loss + 1. / zq_loss)
-        #      term2q = (xq_loss + zq_loss) / self._charge_weight
-        #      charge_loss = tf.reduce_mean(term1q - term2q, axis=0,
-        #                                   name='charge_loss')
 
         return plaq_loss, charge_loss
 

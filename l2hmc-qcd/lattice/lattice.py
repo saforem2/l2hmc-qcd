@@ -75,6 +75,29 @@ def project_angle_fft(x, N=10):
     return y
 
 
+def gauge_potential_np(x):
+    """Defines the potential energy function using the Wilson action."""
+    potential = (x[..., 0]
+                 - x[..., 1]
+                 - np.roll(x[..., 0], shift=-1, axis=2)
+                 + np.roll(x[..., 1], shift=-1, axis=1))
+    return potential
+
+
+def get_potential_fn(lattice_shape):
+    """Wrapper method that reshapes `x` to `lattice_shape`."""
+    def gauge_potential(x):
+        """Defines the potential energy function using the Wilson action."""
+        x = tf.reshape(x, lattice_shape)
+        potential = (x[..., 0]
+                     - x[..., 1]
+                     - tf.roll(x[..., 0], shift=-1, axis=2)
+                     + tf.roll(x[..., 1], shift=-1, axis=1))
+        return potential
+
+    return gauge_potential
+
+
 class GaugeLattice:
     """Lattice with Gauge field existing on links."""
     def __init__(self,

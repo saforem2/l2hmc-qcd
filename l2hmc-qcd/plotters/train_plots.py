@@ -12,6 +12,7 @@ import numpy as np
 import xarray as xr
 import seaborn as sns
 import matplotlib.pyplot as plt
+import arviz as az
 
 import utils.file_io as io
 
@@ -67,17 +68,29 @@ def build_dataset(data, filter_str=None, steps=None):
             arr = np.array(val)
 
         arr = arr.T
-        try:
-            _dict[key] = xr.DataArray(arr, dims=['chain', 'draw'],
-                                      coords=[np.arange(arr.shape[0]),
-                                              steps])
-        except:
-            import pudb; pudb.set_trace()
-
+        _dict[key] = xr.DataArray(arr, dims=['chain', 'draw'],
+                                  coords=[np.arange(arr.shape[0]), steps])
     dataset = xr.Dataset(_dict)
 
     return dataset
 
+
+def charges_trace_plot(charges, out_dir, title_str, therm_frac=0.2):
+    """Create separate trace plot of topological charges."""
+    arr, steps = therm_arr(np.array(charges), therm_frac=therm_frac)
+    arr = arr.T
+    _dict = {
+        'charges': xr.DataArray(arr, dims=['chain', 'draw'],
+                                coords=[np.arange(arr.shape[0]), steps]),
+    }
+    dataset = xr.Dataset(_dict)
+    traceplot_posterior(dataset,
+                        name='charges',
+                        fname='train',
+                        fig_dir=out_dir,
+                        filter_str=None,
+                        title_str=title_str)
+    return dataset
 
 
 def plot_train_data(train_data, params):
@@ -127,22 +140,16 @@ def plot_train_data(train_data, params):
         if len(y.shape) == 3:
             label = r'$\langle$' + f'{key}' + r'$\rangle$'
 
-            try:
-                z = y.mean(axis=(-1))
-                data[key] = z
+            z = y.mean(axis=(-1))
+            data[key] = z
 
-                ax.plot(x, z.mean(axis=-1),
-                        label=label, **kwargs)
-            except:
-                import pudb; pudb.set_trace()
+            ax.plot(x, z.mean(axis=-1),
+                    label=label, **kwargs)
 
         if key == 'plaqs':
-            try:
-                beta_arr = np.array(train_data['beta'])[int(t[0]):]
-                ax.plot(beta_arr, u1_plaq_exact(beta_arr),
-                        color='k', marker='', ls='-', label='exact')
-            except:
-                import pudb; pudb.set_trace()
+            beta_arr = np.array(train_data['beta'])[int(t[0]):]
+            ax.plot(beta_arr, u1_plaq_exact(beta_arr),
+                    color='k', marker='', ls='-', label='exact')
 
         ax.legend(loc='best')
         ax.set_xlabel(r"$\beta$", fontsize='large')
@@ -153,11 +160,12 @@ def plot_train_data(train_data, params):
         fig.savefig(out_file, dpi=200, bbox_inches='tight')
         plt.close('all')
 
-    try:
-        dataset = build_dataset(data, steps=t)
-    except:
-        import pudb; pudb.set_trace()
+    obs_strs = ['actions', 'plaqs', 'charges', 'dq']
+    x_strs = ['x_in', 'x_out', 'dx', 'dx_proposed']
 
+    #  observables = {
+    #      'data['
+    dataset = build_dataset(data, steps=t)
     traceplot_posterior(dataset=dataset,
                         name='data',
                         fname='train',
@@ -165,5 +173,9 @@ def plot_train_data(train_data, params):
                         filter_str=None,
                         title_str=title_str)
     plt.close('all')
+
+    charges_trace_plot(np.array(data['charges']),
+                       out_dir=out_dir,
+                       title_str=title_str)
 
     return dataset
