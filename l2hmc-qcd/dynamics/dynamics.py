@@ -18,7 +18,6 @@ Date: 1/14/2019
 """
 from __future__ import absolute_import, division, print_function
 
-# pylint:disable=invalid-name,too-many-locals,too-many-arguments
 import numpy as np
 import tensorflow as tf
 
@@ -30,7 +29,7 @@ from network.encoder_net import EncoderNet
 from network.cartesian_net import CartesianNet
 from network.gauge_network import GaugeNetwork
 
-__all__ = ['Dynamics']
+# pylint:disable=invalid-name,too-many-locals,too-many-arguments
 
 TF_FLOAT = cfg.TF_FLOAT
 NP_FLOAT = cfg.NP_FLOAT
@@ -89,7 +88,7 @@ def decode(x):
 
 
 def convert_to_angle(x):
-    """Returns x in [-pi, pi), i.e. -pi <= x < pi."""
+    """Returns x in -pi <= x < pi."""
     #  x = tf.mod(x, TWO_PI)
     #  x -= tf.floor(x / TWO_PI + 0.5) * TWO_PI
     x = tf.math.floormod(x + PI, TWO_PI) - PI
@@ -159,6 +158,110 @@ class Dynamics(tf.keras.Model):
             self.masks = self._build_zero_masks()
         else:
             self.masks = self._build_masks()
+
+        net_params = self._network_setup()
+        self.xnet, self.vnet = self.build_network(net_params)
+
+    def __init__1(self, potential_fn, params):
+        """Initialization.
+        Args:
+            potential_fn (callable): Function specifying minus log-likelihood
+                objective (that describes the target distribution) to be
+                minimized.
+        Params:
+            x_dim (int): Dimensionality of target distribution.
+            num_steps (int): Number of leapfrog steps (trajectory
+                length) to use in the molecular dynamics (MD)
+                integration.
+            eps (float): Initial (trainable) step size to use in the MD
+                integrator.
+            network_arch (str): Network architecture to use. Must be
+                one of `conv2D`, `conv3D`, `generic`.
+            hmc (bool, optional): Flag indicating whether generic HMC should be
+                performed instead of the L2HMC algorithm.
+            eps_trainable (bool, optional): Flag indicating whether the step
+                size `eps` should be a trainable parameter. Defaults to True.
+
+                 num_steps=5,
+                 eps=0.1,
+                 x_dim=None,
+                 batch_size=None,
+                 num_hidden1=100,
+                 num_hidden2=100,
+                 network_type='FullNet',
+                 network_arch='generic',
+                 activation='relu',
+                 eps_trainable=True,
+                 num_filters=None,
+                 dropout_prob=0.,
+                 use_bn=False,
+                 hmc=False,
+                 model_type=None,
+        """
+        super(Dynamics, self).__init__(name='Dynamics')
+        np.random.seed(seeds['global_np'])
+        self._model_type = params.get('model_type', None)
+
+        self.potential = potential_fn
+
+        self.params = params
+
+        """
+        #  self._model_type = model_type
+        self.num_steps = num_steps
+        self.x_dim = x_dim
+        self.batch_size = batch_size
+        self._input_shape = (self.batch_size, self.x_dim)
+
+        self._eps_np = eps
+        self._eps_trainable = eps_trainable
+        self.eps = self._build_eps(use_log=False)
+
+        self.hmc = hmc
+        self.use_bn = use_bn
+        self.num_hidden1 = num_hidden1
+        self.num_hidden2 = num_hidden2
+        self.num_filters = num_filters
+        self.dropout_prob = dropout_prob
+        self.network_arch = network_arch
+        self._network_type = network_type
+        """
+
+        # build binary masks for updating x
+        self.zero_masks = params.get('zero_masks', False)   # all 0 binary mask
+        if self.zero_masks:
+            self.masks = self._build_zero_masks()
+        else:
+            self.masks = self._build_masks()
+        # create attributes from `params.items()`
+        #  for key, val in params.items():
+        #      if key != 'eps':  # want to use self.eps as tf.Variable
+        #          setattr(self, key, val)
+
+        self._model_type = params.get('model_type', None)
+        self.x_dim = params.get('x_dim', None)
+        self.batch_size = params.get('batch_size', None)
+        self._input_shape = (self.batch_size, self.x_dim)
+        self.num_filters = params.get('num_filters', None)  # n conv. filters
+        self.hmc = params.get('hmc', False)           # use HMC sampler
+        self.use_bn = params.get('use_bn', False)     # use batch normalization
+        self.num_steps = params.get('num_steps', 5)   # number of lf steps
+        self.num_hidden1 = params.get('num_hidden1', 100)   # nodes in h1
+        self.num_hidden2 = params.get('num_hidden2', 100)   # nodes in h2
+        self.dropout_prob = params.get('dropout_prob', 0.)  # dropout prob
+        self.network_arch = params.get('network_arch', 'generic')  # net arch
+        self._network_type = params.get('network_type', 'CartesianNet')
+
+        eps_np = params.get('eps', 0.4)
+        self._eps_np = cast_float(eps_np, NP_FLOAT)   # initial step size
+        self._eps_trainable = params.get('eps_trainable', True)
+        self.eps = self._build_eps(use_log=False)
+
+        activation = params.get('activation', 'relu')
+        if activation == 'tanh':
+            self._activation_fn = tf.nn.tanh
+        else:
+            self._activation_fn = tf.nn.relu
 
         net_params = self._network_setup()
         self.xnet, self.vnet = self.build_network(net_params)

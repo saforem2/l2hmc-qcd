@@ -17,6 +17,8 @@ import config as cfg
 
 import numpy as np
 
+import joblib
+
 try:
     import horovod.tensorflow as hvd
 
@@ -71,11 +73,24 @@ def write_dict(d, out_file):
         write(f'{key}: {val}\n', out_file)
 
 
-def save_pkl(obj, fpath, name=None):
+def save_pkl(obj, fpath, name=None, compressed=True):
     """Save `obj` to `fpath`."""
-    log(f'Saving {name} to {fpath}.')
-    with open(fpath, 'wb') as f:
-        pickle.dump(obj, f, pickle.HIGHEST_PROTOCOL)
+    if compressed:  # force extension type to be '.z' (auto compress)
+        tmp = fpath.split('/')
+        out_file = tmp[-1]
+        fname, _ = out_file.split('.')
+        zfpath = os.path.join('/'.join(tmp[:-1]), f'{fname}.z')
+
+        if name is not None:
+            log(f'Saving {name} to {zfpath}.')
+
+        joblib.dump(obj, zfpath)
+
+    else:
+        if name is not None:
+            log(f'Saving {name} to {fpath}.')
+        with open(fpath, 'wb') as f:
+            pickle.dump(obj, f, pickle.HIGHEST_PROTOCOL)
 
 
 def load_pkl(fpath):
@@ -84,6 +99,11 @@ def load_pkl(fpath):
         data = pickle.load(f)
 
     return data
+
+
+def load_compressed(in_file):
+    """Load from `in_file`, and return contents."""
+    return joblib.load(in_file)
 
 
 def make_pngs_from_pdfs(rootdir=None):
@@ -536,16 +556,23 @@ def save_params(params, out_dir, name=None):
         pickle.dump(params, f)
 
 
-def save_dict(d, out_dir, name):
+def save_dict(d, out_dir, name, compressed=True):
     """Save generic dict `d` to `out_dir` as both `.pkl` and `.txt` files."""
     check_else_make_dir(out_dir)
     txt_file = os.path.join(out_dir, f'{name}.txt')
-    pkl_file = os.path.join(out_dir, f'{name}.pkl')
     with open(txt_file, 'w') as f:
         for key, val in d.items():
             f.write(f"{key}: {val}\n")
-    with open(pkl_file, 'wb') as f:
-        pickle.dump(d, f, pickle.HIGHEST_PROTOCOL)
+
+    if compressed:
+        zfile = os.path.join(out_dir, f'{name}.z')
+        joblib.dump(d, zfile)
+
+    else:
+        pkl_file = os.path.join(out_dir, f'{name}.pkl')
+        with open(pkl_file, 'wb') as f:
+            pickle.dump(d, f, pickle.HIGHEST_PROTOCOL)
+
 
 
 def save_params_to_pkl_file(params, out_dir):

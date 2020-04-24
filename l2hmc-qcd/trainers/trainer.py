@@ -18,6 +18,8 @@ TrainStepData = namedtuple('TrainStepData', [
     'step', 'beta', 'loss', 'samples', 'prob', 'lr', 'eps'
 ])
 
+# pylint:disable=protected-access
+
 
 def linear_add_cooling(step, temp_init, temp_final, num_steps):
     """Linear add cooling annealing schedule."""
@@ -124,50 +126,42 @@ class Trainer:
         outputs['x_in'] = samples
         outputs['step'] = global_step
         outputs['beta'] = beta
-        #  dx_avg = np.mean((outputs['dxf'] + outputs['dxb']) / 2)
 
         data_str = (
-            f"{global_step:>6g}/{self._train_steps:<6g} "
-            f"{dt:^11.4g} "
-            f"{outputs['loss_op']:^11.4g} "
-            f"{np.mean(outputs['px']):^11.4g} "
-            f"{outputs['dynamics_eps']:^11.4g} "
-            f"{np.mean(outputs['dx_out']):^11.4g} "
-            #  f"{dx_avg:^11.4g} "
-            #  f"{outputs['dx']:^11.4g} "
-            #  f"{np.mean(outputs['x_out'] - samples):^11.4g} "
-            f"{outputs['beta']:^11.4g} "
-            f"{outputs['lr']:^11.4g} "
-            f"{np.mean(outputs['exp_energy_diff']):^11.4g} "
-            f"{np.mean(outputs['sumlogdet']):^11.4g} "
-            #  f"{outputs['direction']:^11.4g} "
+            f"{global_step:>6g}/{self._train_steps:<6g} "  # STEP / TOT_STEPS
+            f"{dt:^11.4g} "                                # TIME / STEP
+            f"{outputs['loss_op']:^11.4g} "                # LOSS VALUE
+            f"{np.mean(outputs['px']):^11.4g} "            # ACCEPT_PROB
+            f"{outputs['dynamics_eps']:^11.4g} "           # STEP_SIZE
+            f"{np.mean(outputs['dx_out']):^11.4g} "        # CHANGE IN X
+            f"{outputs['beta']:^11.4g} "                   # CURRENT BETA
+            f"{outputs['lr']:^11.4g} "                     # CURRENT_LR
+            f"{np.mean(outputs['exp_energy_diff']):^11.4g} "  # exp(H' - H)
+            f"{np.mean(outputs['sumlogdet']):^11.4g} "     # SUM log(det)
         )
 
         if self.model._model_type == 'GaugeModel':
             outputs['x_out'] = convert_to_angle(outputs['x_out'])
-            #  outputs['x_proposed'] = convert_to_angle(outputs['x_proposed'])
-
-            #  outputs['x_out'] = np.mod(outputs['x_out'], 2 * np.pi)
-            dx = 1. - np.mean(np.cos(outputs['x_out'] - samples), axis=-1)
-            #  dx = np.mean(np.abs(outputs['x_out'] - samples), axis=-1)
-            #  if global_step > 1 and self.logger is not None:
-            try:
-                q_old = self.logger.train_data['charges'][-1]
-                charge_diff = np.abs((outputs['charges'] - q_old))
-            except (AttributeError, IndexError, KeyError):
-                charge_diff = np.zeros(outputs['charges'].shape)
-
+            charge_diff, qstr = self._calc_charge_diff(outputs)
             outputs['dq'] = charge_diff
-            data_str += f"{np.sum(np.around(charge_diff)):^11.4g}"
+            data_str += qstr
 
-            outputs['dx'] = dx
             plaq_diff = u1_plaq_exact(beta) - outputs['plaqs']
             data_str += f"{np.mean(plaq_diff):>11.4g} "
-            #  f"{np.mean(outputs['actions']):^9.4g} "
-            #  f"{np.mean(plaq_diff):>11.4g} "
-            #  f"{outputs['plaq_exact']:^9.4g}"
 
         return outputs, data_str
+
+    def _calc_charge_diff(self, outputs):
+        """Calculate the difference in top. charges from prev. step."""
+        try:
+            q_old = self.logger.train_data['charges'][-1]
+            charge_diff = np.abs((outputs['charges'] - q_old))
+        except (AttributeError, IndexError, KeyError):
+            charge_diff = np.zeros(outputs['charges'].shape)
+
+        qstr = f'{np.sum(np.around(charge_diff)):^11.4g}'
+
+        return charge_diff, qstr
 
     def train(self, train_steps=None, beta=None,
               samples=None, net_weights=None):
