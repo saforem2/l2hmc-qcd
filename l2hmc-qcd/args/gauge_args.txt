@@ -1,14 +1,14 @@
 # - - - - - - - - - - - - - - - - - - - - 
---batch_size 64 
---time_size 4
---space_size 4
---num_steps 3
+--batch_size 128 
+--time_size 16 
+--space_size 16 
+--num_steps 2
 --eps 0.2
 --beta_init 1.
---beta_final 4.
+--beta_final 5.5
 --extra_steps 0
 --print_steps 10
---train_steps 100000
+--train_steps 250
 # - - - - - - - - - - - - - - - - - - - - 
 --lr_init 0.001
 --lr_decay_steps 50000
