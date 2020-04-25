@@ -143,8 +143,12 @@ def plot_train_data(train_data, params):
             z = y.mean(axis=(-1))
             data[key] = z
 
-            ax.plot(x, z.mean(axis=-1),
-                    label=label, **kwargs)
+            try:
+                ax.plot(x, z.mean(axis=-1),
+                        label=label, **kwargs)
+            except:
+                import pudb; pudb.set_trace()
+
 
         if key == 'plaqs':
             beta_arr = np.array(train_data['beta'])[int(t[0]):]
