@@ -358,7 +358,12 @@ class BaseModel:
 
             self.x_diff, self.v_diff = self._check_reversibility()
 
-            _, zdata = self._build_aux_sampler()
+            if self.aux_weight > 0:
+                _, zdata = self._build_aux_sampler()
+            else:
+                zdata = LFdata(tf.zeros_like(self.x_init),
+                               tf.zeros_like(self.x_init),
+                               tf.zeros_like(self.px))
 
         return xdata, zdata
 
