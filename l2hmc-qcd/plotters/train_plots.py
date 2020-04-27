@@ -170,14 +170,14 @@ def plot_train_data(train_data, params):
     x_dataset = build_dataset(x_data, steps=t)
     obs_dataset = build_dataset(obs_data, steps=t)
 
-    traceplot_posterior(data=obs_dataset,
+    traceplot_posterior(obs_dataset,
                         name='observables',
                         fname='train',
                         fig_dir=out_dir,
                         filter_str=None,
                         title_str=title_str)
     plt.close('all')
-    traceplot_posterior(data=x_dataset,
+    traceplot_posterior(x_dataset,
                         name='observables',
                         fname='train',
                         fig_dir=out_dir,
