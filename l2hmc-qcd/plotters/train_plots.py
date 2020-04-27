@@ -160,7 +160,7 @@ def plot_train_data(train_data, params):
         fig.savefig(out_file, dpi=200, bbox_inches='tight')
         plt.close('all')
 
-    x_strs = ['x_in', 'x_out', 'dx', 'dx_proposed']
+    x_strs = ['x_in', 'x_out', 'dx_out', 'dx_proposed']
     obs_strs = ['plaqs', 'charges', 'dq', 'px', 'sumlogdet', 'exp_energy_diff']
 
     obs_data = {key: data[key] for key in obs_strs}
