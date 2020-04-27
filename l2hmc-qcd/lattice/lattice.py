@@ -1,31 +1,24 @@
 """
 lattice.py
-
 Contains implementation of GaugeLattice class.
-
 Author: Sam Foreman (github: @saforem2)
 Date: 01/15/2019
 """
 from __future__ import absolute_import, division, print_function
 
-import config as cfg
-
-HAS_AUTOGRAD = False
-try:
-    import autograd.numpy as np
-    HAS_AUTOGRAD = True
-except ImportError:
-    import numpy as np
-
-
 import tensorflow as tf
 
 from scipy.special import i0, i1
 
+import config as cfg
+
+import autograd.numpy as np
+
 NP_FLOAT = cfg.NP_FLOAT
 TF_FLOAT = cfg.TF_FLOAT
 
-# pylint: disable=invalid-name
+# pylint: disable=invalid-name,no-member
+
 
 def u1_plaq_exact(beta):
     """Computes the expected value of the `average` plaquette for U(1)."""
@@ -40,6 +33,7 @@ def u1_plaq_exact_tf(beta):
 def calc_plaqs_diffs(plaqs, beta):
     """Calculate the difference between expected and observed plaquettes."""
     return u1_plaq_exact(beta) - plaqs
+
 
 def pbc(tup, shape):
     """Returns tup % shape for implementing periodic boundary conditions."""
@@ -81,6 +75,29 @@ def project_angle_fft(x, N=10):
     return y
 
 
+def gauge_potential_np(x):
+    """Defines the potential energy function using the Wilson action."""
+    potential = (x[..., 0]
+                 - x[..., 1]
+                 - np.roll(x[..., 0], shift=-1, axis=2)
+                 + np.roll(x[..., 1], shift=-1, axis=1))
+    return potential
+
+
+def get_potential_fn(lattice_shape):
+    """Wrapper method that reshapes `x` to `lattice_shape`."""
+    def gauge_potential(x):
+        """Defines the potential energy function using the Wilson action."""
+        x = tf.reshape(x, lattice_shape)
+        potential = (x[..., 0]
+                     - x[..., 1]
+                     - tf.roll(x[..., 0], shift=-1, axis=2)
+                     + tf.roll(x[..., 1], shift=-1, axis=1))
+        return potential
+
+    return gauge_potential
+
+
 class GaugeLattice:
     """Lattice with Gauge field existing on links."""
     def __init__(self,
@@ -89,9 +106,8 @@ class GaugeLattice:
                  dim=2,
                  link_type='U1',
                  batch_size=None,
-                 rand=False):
+                 rand=True):
         """Initialization for GaugeLattice object.
-
         Args:
             time_size (int): Temporal extent of lattice.
             space_size (int): Spatial extent of lattice.
@@ -112,11 +128,12 @@ class GaugeLattice:
 
         self.num_links = self.time_size * self.space_size * self.dim
         self.num_plaqs = self.time_size * self.space_size
-        self.bases = np.eye(self.dim, dtype=np.int) # pylint: disable=no-member
+        self.bases = np.eye(self.dim, dtype=np.int)
 
         # create samples using @property method: `@samples.setter`
-        self.samples = (batch_size, rand)
-        self._samples_shape = self._samples.shape
+        self.samples = self._build_samples(batch_size, rand)
+        #  self.samples = (batch_size, rand)
+        #  self._samples_shape = self._samples.shape
 
         self.links = self.samples[0]
         self.batch_size = self.samples.shape[0]
@@ -130,32 +147,26 @@ class GaugeLattice:
         self.samples_array = self.samples.reshape((self.batch_size,
                                                    self.x_dim))
 
-    @property
-    def samples(self):
-        return self._samples
-
-    @samples.setter
-    def samples(self, args):
+    def _build_samples(self, batch_size, rand=True):
         """Create samples."""
-        batch_size, rand = args
         links_shape = tuple(
             [self.time_size]
-            + [self.space_size for _ in range(self.dim-1)]
+            + [self.space_size for _ in range(self.dim - 1)]
             + [self.dim]
             + list(self.link_shape)
         )
         samples_shape = (batch_size, *links_shape)
         if rand:
             samples = np.array(
-                np.random.uniform(0, 2*np.pi, samples_shape),
+                np.random.uniform(0, 2 * np.pi, samples_shape),
                 dtype=NP_FLOAT
             )
         else:
             samples = np.zeros(samples_shape, dtype=NP_FLOAT)
 
-        self._samples = samples
+        return samples
 
-    def calc_observables(self, samples=None):
+    def calc_observables(self, samples):
         """Method for calculating all lattice observables simultaneously."""
         plaq_sums = self.calc_plaq_sums(samples)
         actions = self.calc_actions(plaq_sums=plaq_sums)
@@ -189,30 +200,23 @@ class GaugeLattice:
 
         return observables
 
-    def calc_plaq_sums(self, samples=None):
+    def calc_plaq_sums(self, samples):
         """Calculate plaquette sums.
-
         Explicitly, calculate the sum of the link variables around each
         plaquette in the lattice for each sample in samples.
-
         Args:
             samples (tf.Tensor): Tensor of shape (N, D) where N is the batch
                 size and D is the number of links on the lattice. If samples is
                 None, self.samples will be used.
-
         Returns:
             plaq_sums (tf operation): Tensorflow operation capable of
                 calculating the plaquette sums.
-
         NOTE: self.samples.shape = (N, L, T, D), where:
             N = batch_size
             L = space_size
             T = time_size
             D = dimensionality
         """
-        if samples is None:
-            samples = self.samples
-
         if isinstance(samples, np.ndarray):
             return self.calc_plaq_sums_np(samples)
 
@@ -221,34 +225,31 @@ class GaugeLattice:
                 samples = tf.reshape(samples, shape=self.samples.shape)
 
             # assuming D = 2, plaq_sums will have shape: (N, L, T)
-            plaq_sums = (samples[:, :, :, 0]
-                         - samples[:, :, :, 1]
-                         - tf.roll(samples[:, :, :, 0], shift=-1, axis=2)
-                         + tf.roll(samples[:, :, :, 1], shift=-1, axis=1))
+            plaq_sums = (samples[..., 0]
+                         - samples[..., 1]
+                         - tf.roll(samples[..., 0], shift=-1, axis=2)
+                         + tf.roll(samples[..., 1], shift=-1, axis=1))
 
         return plaq_sums
 
     def calc_plaq_sums_np(self, samples):
         """Calculate plaquette sums.
-
         Same as `self.calc_plaq_sums` defined above, but to be used with
         `numpy.ndarray` objects.
         """
         if samples.shape != self.samples.shape:
             samples = np.reshape(samples, self.samples.shape)
 
-        plaq_sums = (samples[:, :, :, 0]
-                     - samples[:, :, :, 1]
-                     - np.roll(samples[:, :, :, 0], shift=-1, axis=2)
-                     + np.roll(samples[:, :, :, 1], shift=-1, axis=1))
+        plaq_sums = (samples[..., 0]
+                     - samples[..., 1]
+                     - np.roll(samples[..., 0], shift=-1, axis=2)
+                     + np.roll(samples[..., 1], shift=-1, axis=1))
 
         return plaq_sums
 
     def calc_actions(self, samples=None, plaq_sums=None):
         """Calculate the total action for each sample in samples."""
         if plaq_sums is None:
-            if samples is None:
-                samples = self.samples
             plaq_sums = self.calc_plaq_sums(samples)
 
         if isinstance(plaq_sums, np.ndarray):
@@ -263,8 +264,6 @@ class GaugeLattice:
     def calc_actions_np(self, samples=None, plaq_sums=None):
         """Calculate actions for `np.ndarray` objcts."""
         if plaq_sums is None:
-            if samples is None:
-                samples = self.samples_array
             plaq_sums = self.calc_plaq_sums_np(samples)
 
         total_actions = np.sum(1. - np.cos(plaq_sums), axis=(1, 2))
@@ -274,8 +273,6 @@ class GaugeLattice:
     def calc_plaqs(self, samples=None, plaq_sums=None):
         """Calculate the average plaq. values for each sample in samples."""
         if plaq_sums is None:
-            if samples is None:
-                samples = self.samples
             plaq_sums = self.calc_plaq_sums(samples)
 
         with tf.name_scope('plaqs'):
@@ -284,20 +281,17 @@ class GaugeLattice:
         return plaqs
 
     def calc_plaqs_np(self, samples=None, plaq_sums=None):
-        if samples is None:
-            samples = self.samples
-
+        """Calculate plaq sums using numpy."""
         if plaq_sums is None:
             plaq_sums = self.calc_plaq_sums_np(samples)
 
         plaqs = np.sum(np.cos(plaq_sums), axis=(1, 2)) / self.num_plaqs
 
         return plaqs
+
     def calc_top_charges(self, samples=None, plaq_sums=None):
         """Calculate topological charges for each sample in samples."""
         if plaq_sums is None:
-            if samples is None:
-                samples = self.samples
             plaq_sums = self.calc_plaq_sums(samples)
 
         with tf.name_scope('top_charges'):
@@ -309,8 +303,6 @@ class GaugeLattice:
     def calc_top_charges_np(self, samples=None, plaq_sums=None):
         """Calculate topological charges for each sample in samples."""
         if plaq_sums is None:
-            if samples is None:
-                samples = self.samples
             plaq_sums = self.calc_plaq_sums_np(samples)
 
         #  ps_proj = np.sin(plaq_sums)

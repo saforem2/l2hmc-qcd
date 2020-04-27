@@ -45,6 +45,7 @@ import tensorflow as tf
 # pylint:disable=unused-import
 # pylint:disable=too-many-statements
 # pylint:disable=no-name-in-module, invalid-name
+# pylint:disable=redefined-outer-name
 from tensorflow.python import debug as tf_debug
 from tensorflow.python.client import timeline
 
@@ -53,7 +54,9 @@ import utils.file_io as io
 
 from seed_dict import seeds, vnet_seeds, xnet_seeds
 from models.gauge_model import GaugeModel
+from runners.runner_np import _get_eps
 from plotters.plot_utils import plot_singular_values, weights_hist
+from plotters.train_plots import plot_train_data
 from loggers.train_logger import TrainLogger
 from utils.file_io import timeit
 from utils.parse_args import parse_args
@@ -99,9 +102,81 @@ def create_monitored_training_session(**sess_kwargs):
     return sess
 
 
+def _get_global_var(name):
+    try:
+        var = [i for i in tf.global_variables() if name in i.name][0]
+    except IndexError:
+        var = None
+    return var
+
+
+def get_global_vars(names):
+    global_vars = {name: _get_global_var(name) for name in names}
+    for k, v in global_vars:
+        if v is None:
+            _ = global_vars.pop(k)
+    return global_vars
+
+
 def pkl_dump(d, pkl_file):
+    """Dump `d` to `pkl_file`."""
     with open(pkl_file, 'wb') as f:
         pickle.dump(d, f)
+
+
+def save_params(model):
+    """Save model parameters to `.pkl` files.
+
+    Additionally, write out all trainable parameters (w/ sizes) to `.txt` file.
+    """
+
+    #  dynamics_dir = os.path.join(model.log_dir, 'dynamics')
+    #  io.check_else_make_dir(dynamics_dir)
+    #  out_file = os.path.join(dynamics_dir, 'dynamics_params.pkl')
+    #  io.save_pkl(model.dynamics.params, out_file)
+
+    out_file = os.path.join(model.log_dir, 'trainable_params.txt')
+    count_trainable_params(out_file)
+    io.save_pkl(model.params, os.path.join(os.getcwd(), 'params.pkl'))
+
+
+def save_masks(model, sess):
+    """Save `model.dynamics.masks` for inference."""
+    masks_file = os.path.join(model.log_dir, 'dynamics_mask.pkl')
+    masks_file_ = os.path.join(model.log_dir, 'dynamics_mask.np')
+    masks = sess.run(model.dynamics.masks)
+    np.array(masks).tofile(masks_file_)
+    io.log(f'dynamics.masks:\n\t {masks}')
+    pkl_dump(masks, masks_file)
+
+
+def save_seeds(model):
+    """Save network seeds for reproducibility."""
+    io.save_dict(seeds, out_dir=model.log_dir, name='seeds')
+    io.save_dict(xnet_seeds, out_dir=model.log_dir, name='xnet_seeds')
+    io.save_dict(vnet_seeds, out_dir=model.log_dir, name='vnet_seeds')
+
+
+def save_weights(model, sess):
+    """Save network weights to `.pkl` file."""
+    xw_file = os.path.join(model.log_dir, 'xnet_weights.pkl')
+    xnet_weights = model.dynamics.xnet.save_weights(sess, xw_file)
+
+    vw_file = os.path.join(model.log_dir, 'vnet_weights.pkl')
+    vnet_weights = model.dynamics.vnet.save_weights(sess, vw_file)
+    model_weights = {
+        'xnet': xnet_weights,
+        'vnet': vnet_weights,
+    }
+    io.save_pkl(model_weights, os.path.join(model.log_dir,
+                                            'weights.pkl'))
+
+
+def save_eps(model, sess):
+    """Save final value of `eps` (step size) at the end of training."""
+    eps_np = sess.run(model.dynamics.eps)
+    eps_dict = {'eps': eps_np}
+    io.save_pkl(eps_dict, os.path.join(model.log_dir, 'eps_np.pkl'))
 
 
 @timeit
@@ -114,7 +189,8 @@ def train_l2hmc(FLAGS, log_file=None):
         params = io.load_params(FLAGS.log_dir)
         if FLAGS.horovod and params['using_hvd']:  # should be the same
             num_workers = hvd.size()
-            assert num_workers == params['num_workers']
+            # XXX: is this necessary???
+            #  assert num_workers == params['num_workers']
             hooks = [hvd.BroadcastGlobalVariablesHook(0)]
             params['logging_steps'] *= num_workers
         else:
@@ -133,27 +209,41 @@ def train_l2hmc(FLAGS, log_file=None):
     condition2 = params['using_hvd'] and hvd.rank() == 0
     is_chief = condition1 or condition2
 
+    save_steps = max((FLAGS.train_steps, params['train_steps'])) // 4
+    params['save_steps'] = save_steps
     params['zero_masks'] = FLAGS.zero_masks
+    params['print_steps'] = FLAGS.print_steps
+    params['beta_fixed'] = (FLAGS.beta_final == FLAGS.beta_init)
 
     if is_chief:
         log_dir = params['log_dir']
         checkpoint_dir = os.path.join(log_dir, 'checkpoints/')
         io.check_else_make_dir(checkpoint_dir)
+        log_params(params)
 
     else:
         log_dir = None
         checkpoint_dir = None
 
-    log_params(params)
+    if FLAGS.restore:
+        params['lr_init'] = FLAGS.lr_init
+        params['beta_init'] = FLAGS.beta_init
+        params['beta_final'] = FLAGS.beta_final
+        params['eps'] = FLAGS.eps
+        #  params['train_steps'] += FLAGS.train_steps
+
     # --------------------------------------------------------
     # Create model and train_logger
     # --------------------------------------------------------
     model = GaugeModel(params)
 
+    # Only create `TrainLogger` if `hvd.rank == 0`
     if is_chief:
         logging_steps = params.get('logging_steps', 10)
         train_logger = TrainLogger(model, log_dir,
+                                   save_steps=save_steps,
                                    logging_steps=logging_steps,
+                                   print_steps=FLAGS.print_steps,
                                    summaries=params['summaries'])
     else:
         train_logger = None
@@ -163,9 +253,6 @@ def train_l2hmc(FLAGS, log_file=None):
     # -------------------------------------------------------
     config, params = create_config(params)
 
-    # set initial value of charge weight using value from FLAGS
-    #  charge_weight_init = params['charge_weight']
-
     net_weights_init = cfg.NetWeights(
         x_scale=FLAGS.x_scale_weight,
         x_translation=FLAGS.x_translation_weight,
@@ -174,8 +261,6 @@ def train_l2hmc(FLAGS, log_file=None):
         v_translation=FLAGS.v_translation_weight,
         v_transformation=FLAGS.v_transformation_weight,
     )
-    samples_init = np.array(model.lattice.samples_array, dtype=NP_FLOAT)
-    beta_init = model.beta_init
 
     # ----------------------------------------------------------------
     #  Create MonitoredTrainingSession
@@ -184,7 +269,7 @@ def train_l2hmc(FLAGS, log_file=None):
     #        initialization, restoring from a checkpoint, saving to a
     #        checkpoint, and closing when done or an error occurs.
     # ----------------------------------------------------------------
-    save_steps = FLAGS.save_steps
+    #  save_steps = FLAGS.save_steps
     sess = create_monitored_training_session(hooks=hooks,
                                              config=config,
                                              #  scaffold=scaffold,
@@ -192,70 +277,78 @@ def train_l2hmc(FLAGS, log_file=None):
                                              save_summaries_steps=None,
                                              save_checkpoint_steps=save_steps,
                                              checkpoint_dir=checkpoint_dir)
-    sess.run([
-        model.dynamics.xnet.generic_net.coeff_scale.initializer,
-        model.dynamics.vnet.generic_net.coeff_scale.initializer,
-        model.dynamics.xnet.generic_net.coeff_transformation.initializer,
-        model.dynamics.vnet.generic_net.coeff_transformation.initializer,
-    ])
 
-    masks_file = os.path.join(model.log_dir, 'dynamics_mask.pkl')
-    masks_file_ = os.path.join(model.log_dir, 'dynamics_mask.np')
-    masks = sess.run(model.dynamics.masks)
-    np.array(masks).tofile(masks_file_)
-    io.log(f'dynamics.masks:\n\t {masks}')
-    pkl_dump(masks, masks_file)
+    current_state_file = os.path.join(model.log_dir, 'training',
+                                      'current_state.pkl')
+    if os.path.isfile(current_state_file):
+        current_state = io.load_pkl(current_state_file)
+        model.lr = current_state['lr']
+        samples_init = current_state['x_in']
 
-    # Check reversibility and write results out to `.txt` file.
-    reverse_file = os.path.join(model.log_dir, 'reversibility_test.txt')
-    check_reversibility(model, sess, net_weights_init, out_file=reverse_file)
+        if FLAGS.restart_beta > 0:
+            beta_init = FLAGS.restart_beta
+        else:
+            beta_init = current_state['beta']
 
-    if is_chief:  # save copy of seeds dictionaries for reproducibility
-        io.save_dict(seeds, out_dir=model.log_dir, name='seeds')
-        io.save_dict(xnet_seeds, out_dir=model.log_dir, name='xnet_seeds')
-        io.save_dict(vnet_seeds, out_dir=model.log_dir, name='vnet_seeds')
+        model.beta_init = beta_init
+
+        is_finished = getattr(current_state, 'is_finished', False)
+        almost_finished = (params['train_steps'] - current_state['step'] < 20)
+        if is_finished or almost_finished:
+            train_steps = params['train_steps'] + FLAGS.train_steps
+            model.train_steps = train_steps
+            params['train_steps'] = train_steps
+
+        ops = [model.global_step_setter, model.eps_setter]
+        feed_dict = {
+            model.global_step_ph: current_state['step'],
+            model.eps_ph: current_state['dynamics_eps'],
+        }
+        sess.run(ops, feed_dict=feed_dict)
+
+    else:
+        rand_unif = np.random.uniform(
+            size=(FLAGS.batch_size, model.lattice.num_links)
+            #  size=(model.lattice.samples_array.shape)
+        )
+        samples_init = 2 * np.pi * rand_unif - np.pi
+        beta_init = model.beta_init
+
+    # TODO: Can these be safely deleted???
+    #  sess.run([
+    #      model.dynamics.xnet.generic_net.coeff_scale.initializer,
+    #      model.dynamics.vnet.generic_net.coeff_scale.initializer,
+    #      model.dynamics.xnet.generic_net.coeff_transformation.initializer,
+    #      model.dynamics.vnet.generic_net.coeff_transformation.initializer,
+    #  ])
+    if FLAGS.restore and is_chief:
+        train_logger.restore_train_data()
 
     # ----------------------------------------------------------
     #                       TRAINING
     # ----------------------------------------------------------
-    trainer = Trainer(sess, model, train_logger, **params)
-
-    #  initial_step = sess.run(global_step)
-    trainer.train(model.train_steps,
-                  beta=beta_init,
+    trainer = Trainer(sess, model, train_logger, params)
+    trainer.train(beta=beta_init,
                   samples=samples_init,
                   net_weights=net_weights_init)
 
-    check_reversibility(model, sess, out_file=reverse_file)
-
+    dataset = None
     if is_chief:
+        save_masks(model, sess)
+        save_params(model)
+        save_seeds(model)
+        save_weights(model, sess)
+        save_eps(model, sess)
+        plot_singular_values(model.log_dir)
+        dataset = plot_train_data(train_logger.train_data, params)
+
+        train_logger.write_train_strings()
+        if FLAGS.save_train_data:
+            io.log(f'Saving train data!')
+            train_logger.save_train_data()
         # wfile = os.path.join(model.log_dir, 'dynamics_weights.h5')
         # model.dynamics.save_weights(wfile)
-
-        weights_final, coeffs_final = get_net_weights(model, sess)
-        xcoeffs = sess.run(list(coeffs_final['xnet'].values()))
-        vcoeffs = sess.run(list(coeffs_final['vnet'].values()))
-        weights_final['xnet']['GenericNet'].update({
-            'coeff_scale': xcoeffs[0],
-            'coeff_transformation': xcoeffs[1]
-        })
-        weights_final['vnet']['GenericNet'].update({
-            'coeff_scale': vcoeffs[0],
-            'coeff_transformation': vcoeffs[1]
-        })
-
-        weights_hist(model.log_dir, weights=weights_final, init=False)
-
-        pkl_dump(weights_final, os.path.join(model.log_dir, 'weights.pkl'))
-        pkl_dump(model.params, os.path.join(os.getcwd(), 'params.pkl'))
-        io.save_dict(model.params, os.path.join(os.getcwd()), 'params.pkl')
-
-        # Count all trainable paramters and write them (w/ shapes) to txt file
-        count_trainable_params(os.path.join(params['log_dir'],
-                                            'trainable_params.txt'))
-        eps_np = sess.run(model.dynamics.eps)
-        eps_dict = {'eps': eps_np}
-        pkl_dump(eps_dict, os.path.join(model.log_dir, 'eps_np.pkl'))
+        #  io.save_dict(model.params, os.path.join(os.getcwd()), 'params.pkl')
 
     # close MonitoredTrainingSession and reset the default graph
     sess.close()
@@ -263,7 +356,7 @@ def train_l2hmc(FLAGS, log_file=None):
     io.log(f'{SEP_STR}\n training took:'
            f'{time.time()-start_time:.3g}s \n{SEP_STR}')
 
-    return model, train_logger
+    return model, train_logger, dataset
 
 
 @timeit
@@ -280,11 +373,7 @@ def main(FLAGS):
         # multiply the global seed by the rank so each rank gets diff seed
         tf.set_random_seed(rank * seeds['global_tf'])
 
-    #  if FLAGS.hmc:   # run generic HMC sampler
-    #      inference.run_hmc(FLAGS, log_file=log_file)
-    #  else:           # train l2hmc sampler
-    model, _ = train_l2hmc(FLAGS, log_file)
-    plot_singular_values(model.log_dir)
+    model, _, _ = train_l2hmc(FLAGS, log_file)
 
 
 if __name__ == '__main__':

@@ -33,21 +33,41 @@ TRAIN_HEADER = dash + '\n' + h_str + '\n' + dash
 
 
 class TrainLogger(object):
-    def __init__(self, model, log_dir, logging_steps=10, summaries=False):
+    def __init__(self,
+                 model,
+                 log_dir,
+                 summaries=False,
+                 save_steps=None,
+                 print_steps=None,
+                 logging_steps=None):
         #  self.sess = sess
+        if logging_steps is None:
+            logging_steps = getattr(model, 'logging_steps', 500)
+
+        if save_steps is None:
+            save_steps = getattr(model, 'save_steps', int(2.5e4))
+
+        if print_steps is None:
+            print_steps = getattr(model, 'print_steps', 10)
+
+        model_type = getattr(model, '_model_type', None)
+        self._model_type = model_type
+
         self.model = model
-        self._model_type = model._model_type
         self.summaries = summaries
-        self.logging_steps = logging_steps
+        self._save_steps = save_steps
+        self._print_steps = print_steps
+        self._logging_steps = logging_steps
 
         self.train_data = {}
         self.h_strf = ("{:^13s}" + 9 * "{:^12s}").format(
             "STEP", "t/STEP", "LOSS", "% ACC", "EPS", "𝞭x",
-            "BETA", "LR", "exp(𝞭H)", "sumlogdet",# "direction",
+            "BETA", "LR", "exp(𝞭H)", "sumlogdet",
         )
 
         if model._model_type == 'GaugeModel':
             self.obs_data = {}
+            self.h_strf += ("{:^12s}").format("𝞭Q (tot)")
             self.h_strf += ("{:^12s}").format("𝞭𝜙")
 
         self.dash = (len(self.h_strf) + 1) * '-'
@@ -112,17 +132,7 @@ class TrainLogger(object):
         self.writer.add_summary(summary_str, global_step=data['step'])
         self.writer.flush()
 
-    def update(self, sess, data, data_str, net_weights):
-        """Update _current state and train_data."""
-        step = data['step']
-        print_steps = getattr(self, 'print_steps', 1)
-
-        if (step + 1) % print_steps == 0:
-            io.log(data_str)
-
-        if (step + 1) % 100 == 0:
-            io.log(self.train_header)
-
+    def _update(self, data, data_str):
         for key, val in data.items():
             try:
                 self.train_data[key].append(val)
@@ -130,17 +140,54 @@ class TrainLogger(object):
                 self.train_data[key] = [val]
 
         self.train_data_strings.append(data_str)
-        if self.summaries and (step + 1) % self.logging_steps == 0:
+
+    def update(self, sess, data, data_str, net_weights):
+        """Update _current state and train_data."""
+        step = data['step']
+        self._update(data, data_str)
+
+        if step % self._print_steps == 0:
+            io.log(data_str)
+
+        if (step + 1) % 100 == 0:
+            io.log(self.train_header)
+            self.save_current_state(data)
+
+        if step % self._save_steps == 0:
+            self.save_train_data()
+
+        if self.summaries and (step + 1) % self._logging_steps == 0:
             self.log_step(sess, data, net_weights)
 
     def write_train_strings(self):
         """Write training strings out to file."""
-
         tlf = self.train_log_file
         _ = [io.write(s, tlf, 'a') for s in self.train_data_strings]
 
-    def save_train_data(self):
+    def save_current_state(self, data):
+        """Save curent state incase training needs to be restarted."""
+        out_file = os.path.join(self.train_dir, 'current_state.pkl')
+        io.save_pkl(data, out_file, name='current_state')
+
+    def load_train_data(self):
+        """Load existing training data from `self.train_dir`."""
+        data_file = os.path.join(self.train_dir, 'train_data.pkl')
+        try:
+            train_data = io.load_pkl(data_file)
+        except FileNotFoundError:
+            io.log(f'Unable to load training data from: {data_file}.')
+            train_data = {}
+
+        return train_data
+
+    def restore_train_data(self):
+        """If restarting training, load in previous training data."""
+        self.train_data = self.load_train_data()
+
+    def save_train_data(self, out_file=None):
         """Save train data to `.pkl` file."""
-        tdf = os.path.join(self.train_dir, 'train_data.pkl')
-        with open(tdf, 'wb') as f:
-            pickle.dump(self.train_data, f)
+        if out_file is None:
+            out_file = os.path.join(self.train_dir, 'train_data.pkl')
+
+        io.log(f'Saving train data to: {out_file}.')
+        io.save_pkl(self.train_data, out_file, name='train_data')

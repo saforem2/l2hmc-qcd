@@ -1,8 +1,6 @@
 """
 gauge_inference_np.py
-
 Runs tensorflow independent inference on a trained model.
-
 Author: Sam Foreman (github: @saforem2)
 Date: 01/09/2020
 """
@@ -13,6 +11,7 @@ import pandas as pd
 #  import xarray as xr
 #  import seaborn as sns
 import matplotlib as mpl
+import shutil
 #  import matplotlib.pyplot as plt
 
 import numpy as np
@@ -39,9 +38,9 @@ def _get_title(params, run_params):
     lf = params['num_steps']
     beta = run_params['beta']
     eps = run_params['eps']
-    title_str = (r"$N_{\mathrm{LF}} = $" + f'{lf}, '
-                 r"$\beta = $" + f'{beta:.1g}, '
-                 r"$\varepsilon = $" + f'{eps:.3g}')
+    title_str = (r"NLF=" + f'{lf}, '
+                 r"β=" + f'{beta:.1g}, '
+                 r"ε=" + f'{eps:.3g}')
 
     if params['eps_fixed']:
         title_str += ' (fixed)'
@@ -101,53 +100,57 @@ def make_csv(run_data, energy_data, run_params):
 
 
 @timeit
-def main(args):
+def main(FLAGS):
     """Perform tensorflow-independent inference on a trained model."""
-    if args.log_dir is None:
+    if FLAGS.log_dir is None:
         params_file = os.path.join(os.getcwd(), 'params.pkl')
     else:
-        log_dir = os.path.abspath(args.log_dir)
-        params_file = os.path.join(args.log_dir, 'parameters.pkl')
+        log_dir = os.path.abspath(FLAGS.log_dir)
+        params_file = os.path.join(FLAGS.log_dir, 'parameters.pkl')
 
     params = io.load_pkl(params_file)
     log_dir = params['log_dir']
 
-    ns = args.num_steps
+    ns = FLAGS.num_steps
     num_steps = params['num_steps'] if ns is None else ns
 
-    if args.hmc:
+    if FLAGS.hmc:
         net_weights = NetWeights(0, 0, 0, 0, 0, 0)
     else:
-        net_weights = NetWeights(x_scale=args.x_scale_weight,
-                                 x_translation=args.x_translation_weight,
-                                 x_transformation=args.x_transformation_weight,
-                                 v_scale=args.v_scale_weight,
-                                 v_translation=args.v_translation_weight,
-                                 v_transformation=args.v_transformation_weight)
+        net_weights = NetWeights(x_scale=FLAGS.x_scale_weight,
+                                 x_translation=FLAGS.x_translation_weight,
+                                 x_transformation=FLAGS.x_transformation_weight,
+                                 v_scale=FLAGS.v_scale_weight,
+                                 v_translation=FLAGS.v_translation_weight,
+                                 v_transformation=FLAGS.v_transformation_weight)
 
-    eps = _get_eps(log_dir) if args.eps is None else args.eps
+    if net_weights == NetWeights(0., 0., 0., 0., 0., 0.):
+        FLAGS.hmc = True
+
+    eps = _get_eps(log_dir) if FLAGS.eps is None else FLAGS.eps
 
     run_params = {
         'eps': eps,
         'num_steps': num_steps,
         'net_weights': net_weights,
-        'batch_size': args.batch_size,
-        'init': args.init,
-        'beta': args.beta,
-        'zero_masks': args.zero_masks,
-        'direction': args.direction,
-        'run_steps': args.run_steps,
-        'print_steps': args.print_steps,
-        'mix_samplers': args.mix_samplers,
-        'num_singular_values': args.num_singular_values,
-        'symplectic_check': args.symplectic_check,
+        #  ------ Parse args ------
+        'init': FLAGS.init,
+        'beta': FLAGS.beta,
+        'direction': FLAGS.direction,
+        'run_steps': FLAGS.run_steps,
+        'batch_size': FLAGS.batch_size,
+        'zero_masks': FLAGS.zero_masks,
+        'print_steps': FLAGS.print_steps,
+        'mix_samplers': FLAGS.mix_samplers,
+        'symplectic_check': FLAGS.symplectic_check,
+        'num_singular_values': FLAGS.num_singular_values,
     }
 
-    for key, val in args.__dict__.items():
+    for key, val in FLAGS.__dict__.items():
         if key not in run_params:
             run_params[key] = val
 
-    lattice = GaugeLattice(batch_size=args.batch_size,
+    lattice = GaugeLattice(batch_size=FLAGS.batch_size,
                            time_size=params['time_size'],
                            space_size=params['space_size'],
                            dim=params['dim'], link_type='U1')
@@ -156,24 +159,27 @@ def main(args):
                                potential_fn=lattice.calc_actions_np,
                                x_dim=lattice.x_dim,
                                eps=eps,
-                               hmc=args.hmc,
+                               hmc=FLAGS.hmc,
                                num_steps=num_steps,
                                batch_size=lattice.batch_size,
                                model_type='GaugeModel',
-                               direction=args.direction,
-                               zero_masks=args.zero_masks,
-                               num_singular_values=args.num_singular_values)
+                               direction=FLAGS.direction,
+                               zero_masks=FLAGS.zero_masks,
+                               num_singular_values=FLAGS.num_singular_values)
 
-    run_data = run_inference_np(log_dir, dynamics, lattice,
-                                run_params, save=(not args.dont_save))
+    run_data = run_inference_np(log_dir, dynamics, lattice, run_params)
+    _, _, fig_dir = inference_plots(run_data, params, runs_np=True)
 
-    _, _ = inference_plots(run_data, params, runs_np=True)
+    out_file = os.path.join(fig_dir, 'run_summary.txt')
+    run_data.log_summary(n_boot=100, out_file=out_file)
 
-    # TODO: Modify `InferenceSummarizer` to deal with `RunData` directly
-    # instead of trying to load data from `run_dir`.
-    # TODO: Move InferenceSummarizer functionality into `RunData` directly?
-    summarizer = InferenceSummarizer(run_params['run_dir'])
-    _, _ = summarizer.log_summary(n_boot=10000)
+    if not FLAGS.dont_save:  # i.e. SAVE data by default
+        run_data.save(run_dir=run_params['run_dir'])
+
+    # Copy summary file to `run_dir`
+    _ = shutil.copy2(out_file, run_params['run_dir'])
+
+    return run_data
 
 
 if __name__ == '__main__':
@@ -185,4 +191,4 @@ if __name__ == '__main__':
 
     io.log(SEPERATOR)
 
-    _ = main(FLAGS)
+    run_data = main(FLAGS)

@@ -17,6 +17,8 @@ import config as cfg
 
 import numpy as np
 
+import joblib
+
 try:
     import horovod.tensorflow as hvd
 
@@ -63,11 +65,32 @@ def get_run_dirs(log_dir, filter_str=None, runs_str='runs_np'):
     return run_dirs
 
 
-def save_pkl(obj, fpath, name=None):
+def write_dict(d, out_file):
+    """Recursively write key, val pairs to `out_file`."""
+    for key, val in d.items():
+        #  if isinstance(val, dict):
+        #      write_dict(d, out_file)
+        write(f'{key}: {val}\n', out_file)
+
+
+def save_pkl(obj, fpath, name=None, compressed=True):
     """Save `obj` to `fpath`."""
-    log(f'Saving {name} to {fpath}.')
-    with open(fpath, 'wb') as f:
-        pickle.dump(obj, f)
+    if compressed:  # force extension type to be '.z' (auto compress)
+        tmp = fpath.split('/')
+        out_file = tmp[-1]
+        fname, _ = out_file.split('.')
+        zfpath = os.path.join('/'.join(tmp[:-1]), f'{fname}.z')
+
+        if name is not None:
+            log(f'Saving {name} to {zfpath}.')
+
+        joblib.dump(obj, zfpath)
+
+    else:
+        if name is not None:
+            log(f'Saving {name} to {fpath}.')
+        with open(fpath, 'wb') as f:
+            pickle.dump(obj, f, pickle.HIGHEST_PROTOCOL)
 
 
 def load_pkl(fpath):
@@ -76,6 +99,11 @@ def load_pkl(fpath):
         data = pickle.load(f)
 
     return data
+
+
+def load_compressed(in_file):
+    """Load from `in_file`, and return contents."""
+    return joblib.load(in_file)
 
 
 def make_pngs_from_pdfs(rootdir=None):
@@ -244,17 +272,16 @@ def _parse_gauge_flags(FLAGS):
     if isinstance(FLAGS, dict):
         flags = FLAGS
     else:
-        try:
-            flags = FLAGS.__dict__
-        except (NameError, AttributeError):
-            pass
+        flags = FLAGS.__dict__
 
-    new_flags = {
+    flags_dict = {
         'space_size': flags.get('space_size', 8),
         'time_size': flags.get('time_size', 8),
         'batch_size': flags.get('batch_size', 32),
         'num_steps': flags.get('num_steps', 5),
         'charge_weight': flags.get('charge_weight', 0),
+        'plaq_weight': flags.get('plaq_weight', 0.),
+        'network_type': flags.get('network_type', None),
         'aux_weight': flags.get('aux_weight', 1.),
         'network_arch': flags.get('network_arch', 'generic'),
         'dropout_prob': flags.get('dropout_prob', 0),
@@ -266,14 +293,17 @@ def _parse_gauge_flags(FLAGS):
         'zero_masks': flags.get('zero_masks', False),
     }
 
-    run_str = f'L{new_flags["space_size"]}'
-    if new_flags['time_size'] != new_flags['space_size']:
-        run_str += f'T{new_flags["time_size"]}'
+    run_str = f'L{flags_dict["space_size"]}'
+    if flags_dict['time_size'] != flags_dict['space_size']:
+        run_str += f'T{flags_dict["time_size"]}'
 
-    run_str += f'_b{new_flags["batch_size"]}_lf{new_flags["num_steps"]}'
+    run_str += f'_b{flags_dict["batch_size"]}_lf{flags_dict["num_steps"]}'
 
-    if new_flags['network_arch'] != 'generic':
-        run_str += f'_{new_flags["network_arch"]}'
+    if flags_dict['network_arch'] != 'generic':
+        run_str += f'_{flags_dict["network_arch"]}'
+
+    if flags_dict['network_type'] is not None:
+        run_str += f'_{flags_dict["network_type"]}'
 
     weights = OrderedDict({
         'x_scale_weight': flags.get('x_scale_weight', 1.),
@@ -286,7 +316,7 @@ def _parse_gauge_flags(FLAGS):
 
     all_ones = True
     for key, val in weights.items():
-        new_flags[key] = val
+        flags_dict[key] = val
         if val != 1.:
             all_ones = False
 
@@ -297,37 +327,44 @@ def _parse_gauge_flags(FLAGS):
             run_str += wstr
             #  run_str += f"{str(val).replace('.', '').rstrip('0')}"
 
-    if new_flags['aux_weight'] != 1.:
-        aw = str(flags.get('aux_weight', 1.)).replace('.', '')
-        run_str += f'aw{aw}'
+    def _no_dots(key):
+        return str(flags_dict[key]).replace('.', '')
 
-    if new_flags['charge_weight'] > 0:
-        qw = str(flags.get('charge_weight', 1.)).replace('.', '')
-        run_str += f'qw{qw}'
+    if flags_dict['aux_weight'] != 1.:
+        aw = _no_dots('aux_weight')
+        run_str += f'_aw{aw}'
 
-    if new_flags['dropout_prob'] > 0:
-        dp = str(flags.get('dropout_prob', 0)).replace('.', '')
-        run_str += f'dp{dp}'
+    if flags_dict['charge_weight'] > 0:
+        qw = _no_dots('charge_weight')
+        run_str += f'_qw{qw}'
 
-    if new_flags['eps_fixed']:
+    if flags_dict.get('plaq_weight', 0.) > 0.:
+        pw = _no_dots('plaq_weight')
+        run_str += f'_pw{pw}'
+
+    if flags_dict['dropout_prob'] > 0:
+        dp = _no_dots('dropout_prob')
+        run_str += f'_dp{dp}'
+
+    if flags_dict['eps_fixed']:
         run_str += f'_eps_fixed'
 
-    if new_flags['batch_norm']:
+    if flags_dict['batch_norm']:
         run_str += '_bn'
 
-    if new_flags['use_gaussian_loss']:
+    if flags_dict['use_gaussian_loss']:
         run_str += '_gaussian_loss'
 
-    if new_flags['use_nnehmc_loss']:
+    if flags_dict['use_nnehmc_loss']:
         run_str += '_nnehmc_loss'
 
-    if new_flags['clip_value'] > 0:
-        run_str += f'_clip{new_flags["clip_value"]}'
+    if flags_dict['clip_value'] > 0:
+        run_str += f'_clip{flags_dict["clip_value"]}'
 
-    if new_flags['zero_masks']:
+    if flags_dict['zero_masks']:
         run_str += f'_zero_masks'
 
-    return run_str, new_flags
+    return run_str, flags_dict
 
 
 def _parse_gmm_flags(FLAGS):
@@ -519,16 +556,23 @@ def save_params(params, out_dir, name=None):
         pickle.dump(params, f)
 
 
-def save_dict(d, out_dir, name):
+def save_dict(d, out_dir, name, compressed=True):
     """Save generic dict `d` to `out_dir` as both `.pkl` and `.txt` files."""
     check_else_make_dir(out_dir)
     txt_file = os.path.join(out_dir, f'{name}.txt')
-    pkl_file = os.path.join(out_dir, f'{name}.pkl')
     with open(txt_file, 'w') as f:
         for key, val in d.items():
             f.write(f"{key}: {val}\n")
-    with open(pkl_file, 'wb') as f:
-        pickle.dump(d, f, pickle.HIGHEST_PROTOCOL)
+
+    if compressed:
+        zfile = os.path.join(out_dir, f'{name}.z')
+        joblib.dump(d, zfile)
+
+    else:
+        pkl_file = os.path.join(out_dir, f'{name}.pkl')
+        with open(pkl_file, 'wb') as f:
+            pickle.dump(d, f, pickle.HIGHEST_PROTOCOL)
+
 
 
 def save_params_to_pkl_file(params, out_dir):
