@@ -212,6 +212,7 @@ def train_l2hmc(FLAGS, log_file=None):
     save_steps = max((FLAGS.train_steps, params['train_steps'])) // 4
     params['save_steps'] = save_steps
     params['zero_masks'] = FLAGS.zero_masks
+    params['print_steps'] = FLAGS.print_steps
     params['beta_fixed'] = (FLAGS.beta_final == FLAGS.beta_init)
 
     if is_chief:
