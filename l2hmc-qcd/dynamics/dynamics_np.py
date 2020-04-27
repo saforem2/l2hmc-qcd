@@ -1,11 +1,8 @@
 """
 dynamics_np.py
-
 Numpy implementation of the dynamics engine for the L2HMC sampler, allowing for
 inference to be run on a trained model without the need for the `tf.Graph`
 object.
-
-
 Author: Sam Foreman (github: @saforem2)
 Date: 01/07/2020
 """
@@ -16,16 +13,16 @@ Date: 01/07/2020
 # pylint:disable=no-member
 from __future__ import absolute_import, division, print_function
 
-from collections import namedtuple
-
 import autograd.numpy as np
 
 from autograd import elementwise_grad
 
 from config import NP_FLOAT, State
-from network.generic_net_np import GenericNetNP
-
-Weights = namedtuple('Weights', ['w', 'b'])
+from network.layers import linear, relu
+from network.encoder_net import EncoderNetNP
+from network.generic_net import GenericNetNP
+from network.cartesian_net import CartesianNetNP
+from network.gauge_network import GaugeNetworkNP
 
 
 def reduced_weight_matrix(W, n=10):
@@ -36,16 +33,23 @@ def reduced_weight_matrix(W, n=10):
     return W_
 
 
-def get_reduced_weights(weights, n=10):
-    """Keep only the first `n` singular values for the weight matrices."""
+def convert_to_angle(x):
+    """Restrict `x` to be in the range -pi <= x < pi."""
+    x = np.mod(x, 2 * np.pi)
+    x -= np.floor(x / (2 * np.pi) + 0.5) * 2 * np.pi
+    #  x = np.mod(x + np.pi, 2 * np.pi) - np.pi
+    return x
 
 
 class DynamicsNP(object):
     """Implements tools for running tensorflow-independent inference."""
-    def __init__(self, potential_fn, weights,
-                 hmc=False, model_type=None, **params):
+    def __init__(self,
+                 x_dim,
+                 params,
+                 weights,
+                 potential_fn,
+                 model_type=None):
         """Init.
-
         Args:
             potential_fn (callable): Potential energy function.
             weights (dict): Dictionary of weights, from `log_dir/weights.pkl`
@@ -57,30 +61,44 @@ class DynamicsNP(object):
         if model_type is None:
             model_type = 'None'
 
+        self.x_dim = x_dim
         self.potential = potential_fn
         self._model_type = model_type
 
-        if hmc:
+        self.eps = float(params.get('eps', None))
+        self.num_steps = int(params.get('num_steps', None))
+        self.batch_size = int(params.get('batch_size', None))
+        self.direction = params.get('direction', 'rand')
+        self.zero_masks = params.get('zero_masks', False)
+        self._input_shape = params.get('_input_shape', None)
+        self._network_type = params.get('network_type', None)
+
+        activation = params.get('activation', 'relu')
+        if activation == 'relu':
+            self._activation_fn = relu
+        elif activation == 'tanh':
+            self._activation_fn = np.tanh
+        else:
+            self._activation_fn = linear
+
+        if params.get('hmc', False):
             self.xnet, self.vnet = self.hmc_networks()
         else:
             self.xnet, self.vnet = self.build_networks(weights)
 
-        self.hmc = hmc
-
-        self.x_dim = params.get('x_dim', None)
-        self._input_shape = params.get('_input_shape', None)
-        self.batch_size = params.get('batch_size', None)
-        self.eps = params.get('eps', None)
-        self.num_steps = params.get('num_steps', None)
-        self.zero_masks = params.get('zero_masks', False)
+        self._forward = self._setup_direction()
         self.masks = self.build_masks()
-        self.direction = params.get('direction', 'rand')
+        #  self.tau = self.build_time()
+
+    def _setup_direction(self):
         if self.direction == 'forward':
-            self._forward = True
+            forward = True
         elif self.direction == 'backward':
-            self._forward = False
+            forward = False
         else:
-            self._forward = None
+            forward = None
+
+        return forward
 
     def __call__(self, *args, **kwargs):
         return self.apply_transition(*args, **kwargs)
@@ -88,19 +106,17 @@ class DynamicsNP(object):
     def transition_forward(self, x, beta, net_weights,
                            v=None, model_type=None):
         """Propose a new state by running the transition kernel forward.
-
         Args:
             x (array-like): Input samples.
             beta (float): Inverse temperature (gauge coupling constant).
             net_weights (NetWeights): Tuple of net weights for scaling the
                 network functions.
             model_type (str): String specifying the type of model.
-
         Returns:
             outputs (dict): Dictionary containing the outputs.
         """
         if model_type == 'GaugeModel':
-            x = np.mod(x, 2 * np.pi)
+            x = convert_to_angle(x)
 
         if v is None:
             v = np.random.normal(size=x.shape)
@@ -108,7 +124,7 @@ class DynamicsNP(object):
         xf, vf, pxf, sumlogdetf = self.transition_kernel(*State(x, v, beta),
                                                          net_weights,
                                                          forward=True)
-        mask_a, mask_r, rand_num = self._get_accept_masks(pxf)
+        mask_a, mask_r, _ = self._get_accept_masks(pxf)
         x_out = xf * mask_a[:, None] + x * mask_r[:, None]
         v_out = vf * mask_a[:, None] + v * mask_r[:, None]
         sumlogdet_out = sumlogdetf * mask_a
@@ -129,7 +145,7 @@ class DynamicsNP(object):
                             v=None, model_type=None):
         """Propose a new state by running the transition kernel backward."""
         if model_type == 'GaugeModel':
-            x = np.mod(x, 2 * np.pi)
+            x = convert_to_angle(x)
 
         if v is None:
             v = np.random.normal(size=x.shape)
@@ -137,7 +153,7 @@ class DynamicsNP(object):
         xb, vb, pxb, sumlogdetb = self.transition_kernel(*State(x, v, beta),
                                                          net_weights,
                                                          forward=False)
-        mask_a, mask_r, rand_num = self._get_accept_masks(pxb)
+        mask_a, mask_r, _ = self._get_accept_masks(pxb)
         x_out = xb * mask_a[:, None] + x * mask_r[:, None]
         v_out = vb * mask_a[:, None] + v * mask_r[:, None]
         sumlogdet_out = sumlogdetb * mask_a
@@ -161,7 +177,7 @@ class DynamicsNP(object):
             forward = (np.random.uniform() < 0.5)
 
         if self._model_type == 'GaugeModel':
-            x = np.mod(x, 2 * np.pi)
+            x = convert_to_angle(x)
 
         v_init = np.random.normal(size=x.shape)
         state_init = State(x, v_init, beta)
@@ -169,7 +185,7 @@ class DynamicsNP(object):
                                                        net_weights,
                                                        forward=forward)
         if self._model_type == 'GaugeModel':
-            x_ = np.mod(x_, 2 * np.pi)
+            x_ = convert_to_angle(x_)
 
         # Check reversibility using proposed and initial states
         state_prop = State(x_, v_, beta)
@@ -202,33 +218,59 @@ class DynamicsNP(object):
 
         return outputs
 
-    def volume_transformation(self, state1, net_weights):
+    def l2_metric(self, x1, x2):
+        """"Calculate np.sqrt((x1 - x2) ** 2)."""
+        if self._model_type == 'GaugeModel':
+            x1 = np.array([np.cos(x1), np.sin(x1)])
+            x2 = np.array([np.cos(x2), np.sin(x2)])
+            dx = np.sqrt(np.sum((x1 - x2) ** 2, axis=0))
+        else:
+            dx = np.sqrt((x1 - x2) ** 2)
+
+        #  dx = np.sqrt(np.sum((x1 - x2) ** 2, axis=0))
+        return dx
+
+    def check_reversibility(self, s_init, s_prop, forward, net_weights):
+        """Check reversibility.
+        NOTE: `s_init = State(x_init, v_init, beta)`,
+        Explicitly:
+            1. Run MD:
+                (state_init, d=forward) --> (state_prop, d=forward)
+            2. Flip the direction and run MD:
+                (state_prop, d=(not forward)) --> (state_r, d=(not forward))
+            3. Check differences:
+                dx = (state_r.x - state_init.x)
+                dv = (state_r.v - state_init.v)
+        """
+        x_r, v_r, _, _ = self.transition_kernel(*s_prop,
+                                                net_weights,
+                                                forward=(not forward))
+        dv = v_r - s_init.v
+        if self._model_type == 'GaugeModel':
+            x_r = convert_to_angle(x_r)
+            dx = 1. - np.cos(x_r - s_init.x)
+        else:
+            dx = x_r - s_init
+
+        return dx, dv
+
+    def volume_transformation(self, state, net_weights, eta=1e-3):
         """
         Check that the sampler is 'symplectic' (volume-preserving).
-
         MD update starting from from `s1 = state_init = (x1, v1, d)`:
-
             `s1 --> s2 = (x2, v2, d)`
-
         Want to see if, when starting from a slightly perturbed initial
         state, the (augmented) leapfrog sampler produces a slightly
         perturbed output.
-
         If the sampler is symplectic, plotting the RMS difference of the
         outputs vs the RMS diff of the inputs should be correlated with a slope
         of 1.
-
         Explicitly, perturb the initial state `s1`:
-
             `s1 --> s1 + ds1 = (x1 + dx1, v1 + dv1, d)`
-
         We know that running MD on `s1` gives `s2`, so we need to check that
         running MD on `s1 + ds1`:
-
             `s1 + ds1 --> _s2 + _ds2 = (_x2 + dx2, _v2 + dv2, d)`
-
         if symplectic, we should have `dx2 / dx1 ~ 1` and `dv2 / dv1 ~ 1`.
-
         Args:
             state1 (State object): Initial (starting state).
             net_weights (NetWeights object): Multiplicative scaling factors for
@@ -243,69 +285,54 @@ class DynamicsNP(object):
                     dv2 = v2 - _v2
                     ```
         """
-        forward = self._forward
-        if forward is None:
-            forward = (np.random.uniform() < 0.5)
-
-        x2, v2, _, _ = self.transition_kernel(*state1, net_weights,
-                                              forward=forward)
+        if self._model_type == 'GaugeModel':
+            x_mod = convert_to_angle(state.x)
+            state = State(x=x_mod, v=state.v, beta=state.beta)
 
         # Perturb the initial state
-        eta = 1e-2
-        dx1 = eta * np.random.randn(*state1.x.shape)
-        dv1 = eta * np.random.randn(*state1.v.shape)
-        x1_ = state1.x + dx1
-        v1_ = state1.v + dv1
+        dx_in = eta * np.random.randn(*state.x.shape)
+        dv_in = eta * np.random.randn(*state.v.shape)
+        x_pert = state.x + dx_in
+        v_pert = state.v + dv_in
 
         if self._model_type == 'GaugeModel':
-            x1_ = np.mod(x1_, 2 * np.pi)
-            x2 = np.mod(x2, 2 * np.pi)
+            x_pert = convert_to_angle(x_pert)
+            dx_in = 1. - np.cos(state.x - x_pert)
+        else:
+            dx_in = state.x - x_pert
 
-        state1_ = State(x=x1_, v=v1_, beta=state1.beta)
-        x2_, v2_, _, _ = self.transition_kernel(*state1_, net_weights,
-                                                forward=forward)
+        # Randomly choose direction
+        forward = (np.random.uniform() < 0.5)
+
+        xp, vp, _, _ = self.transition_kernel(*state, net_weights,
+                                              forward=forward)
+
+        state_pert = State(x=x_pert, v=v_pert, beta=state.beta)
+        xp_pert, vp_pert, _, _ = self.transition_kernel(*state_pert,
+                                                        net_weights,
+                                                        forward=forward)
+        dv_out = vp_pert - vp
         if self._model_type == 'GaugeModel':
-            x2_ = np.mod(x2_, 2 * np.pi)
+            xp = convert_to_angle(xp)
+            xp_pert = convert_to_angle(xp_pert)
+            dx_out = 1. - np.cos(xp - xp_pert)
+
+        else:
+            dx_out = (xp_pert - xp)
 
         diffs = {
-            'dx_in': dx1,
-            'dv_in': dv1,
-            'dx_out': (x2_ - x2),
-            'dv_out': (v2_ - v2),
+            'dx_in': dx_in,
+            'dv_in': dv_in,
+            'dx_out': dx_out,
+            'dv_out': dv_out,
         }
 
         return diffs
 
-    def check_reversibility(self, state_init, state_prop,
-                            forward, net_weights):
-        """Check reversibility.
-
-        NOTE: `state_init = (x_init, v_init, beta)`,
-
-        Explicitly:
-            1. Run MD:
-                (state_init, d=forward) --> (state_prop, d=forward)
-            2. Flip the direction and run MD:
-                (state_prop, d=(not forward)) --> (state_r, d=(not forward))
-            3. Check differences:
-                dx = (state_r.x - state_init.x)
-                dv = (state_r.v - state_init.v)
-        """
-        x_r, v_r, _, _ = self.transition_kernel(*state_prop,
-                                                net_weights,
-                                                forward=(not forward))
-        if self._model_type == 'GaugeModel':
-            x_r = np.mod(x_r, 2 * np.pi)
-
-        dx = x_r - state_init.x
-        dv = v_r - state_init.v
-
-        return dx, dv
-
     def apply_transition_both(self, x, beta, net_weights, model_type=None):
         """Propose a new state and perform the accept/reject step."""
         if model_type == 'GaugeModel':
-            x = np.mod(x, 2 * np.pi)
+            x = convert_to_angle(x)
 
         vf_init = np.random.normal(size=x.shape)
         state_init_f = State(x, vf_init, beta)
@@ -374,6 +401,7 @@ class DynamicsNP(object):
     def _forward_lf(self, x, v, beta, step, net_weights):
         """One forward augmented leapfrog step."""
         t = self._get_time(step, tile=x.shape[0])
+        #  t = self._get_time(step)
         mask, mask_inv = self._get_mask(step)
 
         sumlogdet = 0.
@@ -398,6 +426,7 @@ class DynamicsNP(object):
         """One backward augmented leapfrog step."""
         step_r = self.num_steps - step - 1
         t = self._get_time(step_r, tile=x.shape[0])
+        #  t = self._get_time(step_r)
         mask, mask_inv = self._get_mask(step_r)
 
         sumlogdet = 0.
@@ -421,7 +450,7 @@ class DynamicsNP(object):
     def _update_v_forward(self, x, v, beta, t, net_weights):
         """Update v in the forward leapfrog step."""
         if self._model_type == 'GaugeModel':
-            x = np.mod(x, 2 * np.pi)
+            x = convert_to_angle(x)
 
         grad = self.grad_potential(x, beta)
         Sv, Tv, Qv = self.vnet([x, grad, t])
@@ -439,7 +468,7 @@ class DynamicsNP(object):
     def _update_x_forward(self, x, v, t, net_weights, masks):
         """Update x in the forward leapfrog step."""
         if self._model_type == 'GaugeModel':
-            x = np.mod(x, 2 * np.pi)
+            x = convert_to_angle(x)
 
         mask, mask_inv = masks
         Sx, Tx, Qx = self.xnet([v, mask * x, t])
@@ -457,7 +486,7 @@ class DynamicsNP(object):
     def _update_v_backward(self, x, v, beta, t, net_weights):
         """Update v in the backward lf step. Inverting the forward update."""
         if self._model_type == 'GaugeModel':
-            x = np.mod(x, 2 * np.pi)
+            x = convert_to_angle(x)
 
         grad = self.grad_potential(x, beta)
         Sv, Tv, Qv = self.vnet([x, grad, t])
@@ -476,7 +505,7 @@ class DynamicsNP(object):
     def _update_x_backward(self, x, v, t, net_weights, masks):
         """Update x in the backward lf step. Inverting the forward update."""
         if self._model_type == 'GaugeModel':
-            x = np.mod(x, 2 * np.pi)
+            x = convert_to_angle(x)
 
         mask, mask_inv = masks
         Sx, Tx, Qx = self.xnet([v, mask * x, t])
@@ -533,37 +562,43 @@ class DynamicsNP(object):
 
     def _set_direction_masks(self, forward_mask):
         """Set direction masks using `forward_mask`."""
+        # pylint:disable=attribute-defined-outside-init
         self.forward_mask = forward_mask
         self.backward_mask = 1. - forward_mask
+
     def hmc_networks(self):
         """Build hmc networks that output all zeros from the S, T, Q fns."""
-        xnet = lambda inputs: [
+        xnet = lambda inputs: [  # noqa: E731
             np.zeros_like(inputs[0]) for _ in range(3)
         ]
-        vnet = lambda inputs: [
+        vnet = lambda inputs: [  # noqa: E731
             np.zeros_like(inputs[0]) for _ in range(3)
         ]
 
         return xnet, vnet
 
     def build_networks(self, weights):
-        if 'xnet' in weights:
-            xnet_weights = weights['xnet']
-            if 'GenericNet' in xnet_weights:
-                xnet_weights = xnet_weights['GenericNet']
-        if 'vnet' in weights:
-            vnet_weights = weights['vnet']
-            if 'GenericNet' in vnet_weights:
-                vnet_weights = vnet_weights['GenericNet']
-
-        xnet = GenericNetNP(xnet_weights, name='xnet')
-        vnet = GenericNetNP(vnet_weights, name='vnet')
+        """Build neural networks."""
+        if self._network_type == 'GaugeNetwork':
+            xnet = GaugeNetworkNP(weights['xnet'],
+                                  activation=self._activation_fn)
+            vnet = GaugeNetworkNP(weights['vnet'],
+                                  activation=self._activation_fn)
+        elif self._network_type == 'CartesianNet':
+            xnet = CartesianNetNP(weights['xnet'],
+                                  activation=self._activation_fn)
+            vnet = CartesianNetNP(weights['vnet'],
+                                  activation=self._activation_fn)
+        #  # TODO: Update GenericNetNP to use `self._activation_fn`.
+        else:
+            xnet = GenericNetNP(weights['xnet'])
+            vnet = GenericNetNP(weights['vnet'])
 
         return xnet, vnet
 
     def _build_zero_masks(self):
         masks = []
-        for  _ in range(self.num_steps):
+        for _ in range(self.num_steps):
             #  mask = np.zeros((self.x_dim,))
             mask = np.ones((self.x_dim,))
             masks.append(mask[None, :])
@@ -573,25 +608,21 @@ class DynamicsNP(object):
     def build_masks(self):
         """Build `x` masks used for selecting which idxs of `x` get updated."""
         if self.zero_masks:
-            masks = self._build_zero_masks()
+            return self._build_zero_masks()
 
-        else:
-            masks = []
-            for _ in range(self.num_steps):
-                _idx = np.arange(self.x_dim)
-                idx = np.random.permutation(_idx)[:self.x_dim//2]
-                mask = np.zeros((self.x_dim,))
-                mask[idx] = 1.
-                masks.append(mask[None, :])
+        masks = []
+        for _ in range(self.num_steps):
+            _idx = np.arange(self.x_dim)
+            idx = np.random.permutation(_idx)[:self.x_dim//2]
+            mask = np.zeros((self.x_dim,))
+            mask[idx] = 1.
+            masks.append(mask[None, :])
 
         return masks
 
     def set_masks(self, masks):
         """Set `self.masks` to `masks`."""
-        for idx, mask in enumerate(masks):
-            print(f'Setting mask for {idx}...')
-            self.masks[idx] = mask
-        #  self.masks = masks
+        self.masks = masks[:self.num_steps]
 
     def _get_mask(self, step):
         m = self.masks[step]
@@ -607,10 +638,14 @@ class DynamicsNP(object):
         return grad_fn(x, beta)
 
     def potential_energy(self, x, beta):
+        """Potential energy function."""
         return beta * self.potential(x)
 
-    def kinetic_energy(self, v):
-        return 0.5 * np.sum(v ** 2, axis=1)
+    @staticmethod
+    def kinetic_energy(v):
+        """Kinetic energy function."""
+        return 0.5 * np.sum(v ** 2, axis=-1)
 
     def hamiltonian(self, x, v, beta):
-        return (self.kinetic_energy(v) + self.potential_energy(x, beta))
+        """Hamiltonian function, H = PE + KE."""
+        return self.kinetic_energy(v) + self.potential_energy(x, beta)

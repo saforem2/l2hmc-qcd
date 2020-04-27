@@ -1,4 +1,6 @@
 """
+dynamics.py
+
 Dynamics engine for L2HMC sampler on Lattice Gauge Models.
 
 Reference [Generalizing Hamiltonian Monte Carlo with Neural
@@ -8,8 +10,7 @@ Code adapted from the released TensorFlow graph implementation by original
 authors https://github.com/brain-research/l2hmc.
 
 Reference [Robust Parameter Estimation with a Neural Network Enhanced
-Hamiltonian Markov Chain Monte Carlo
-Sampler]
+Hamiltonian Markov Chain Monte Carlo Sampler]
 https://infoscience.epfl.ch/record/264887/files/robust_parameter_estimation.pdf
 
 Author: Sam Foreman (github: @saforem2)
@@ -17,21 +18,26 @@ Date: 1/14/2019
 """
 from __future__ import absolute_import, division, print_function
 
-# pylint:disable=invalid-name,too-many-locals,too-many-arguments
-
 import numpy as np
 import tensorflow as tf
 
 import config as cfg
 
-from seed_dict import seeds
+from seed_dict import seeds, vnet_seeds, xnet_seeds
 from network.network import FullNet
+from network.encoder_net import EncoderNet
+from network.cartesian_net import CartesianNet
+from network.gauge_network import GaugeNetwork
 
-__all__ = ['Dynamics']
+# pylint:disable=invalid-name,too-many-locals,too-many-arguments
 
 TF_FLOAT = cfg.TF_FLOAT
 NP_FLOAT = cfg.NP_FLOAT
 TF_INT = cfg.TF_INT
+
+PI = np.pi
+TWO_PI = 2 * PI
+
 State = cfg.State  # namedtuple object containing `(x, v, beta)`
 
 
@@ -56,12 +62,44 @@ def cast_float(x, dtype=NP_FLOAT):
     return np.float(x)
 
 
+def encode(x):
+    """Convert from angular to Cartesian representation.
+
+    Args:
+        x (array-like): Angular representation, `0 <= x < 2π`
+
+    Returns:
+        _ (array-like): Cartesian representation, `[cos(x), sin(x)]`.
+    """
+    return tf.convert_to_tensor([tf.cos(x), tf.sin(x)])
+
+
+def decode(x):
+    """Convert from Cartesian to angular representation.
+
+    Args:
+        x (array-like): Cartesian representation, `x = [x, y]`.
+
+    Returns:
+        phi (array-like): Angular representation, `φ = atan2(y, x)`.
+    """
+
+    return tf.atan2(x[1], x[0])
+
+
+def convert_to_angle(x):
+    """Returns x in -pi <= x < pi."""
+    #  x = tf.mod(x, TWO_PI)
+    #  x -= tf.floor(x / TWO_PI + 0.5) * TWO_PI
+    x = tf.math.floormod(x + PI, TWO_PI) - PI
+    return x
+
+
 # pylint:disable=too-many-instance-attributes
 class Dynamics(tf.keras.Model):
     """Dynamics engine of naive L2HMC sampler."""
-    def __init__(self, potential_fn, **params):
+    def __init__(self, potential_fn, params):
         """Initialization.
-
         Args:
             potential_fn (callable): Function specifying minus log-likelihood
                 objective (that describes the target distribution) to be
@@ -83,11 +121,12 @@ class Dynamics(tf.keras.Model):
         super(Dynamics, self).__init__(name='Dynamics')
         np.random.seed(seeds['global_np'])
         self.potential = potential_fn
+        self.params = params
 
         # create attributes from `params.items()`
-        for key, val in params.items():
-            if key != 'eps':  # want to use self.eps as tf.Variable
-                setattr(self, key, val)
+        #  for key, val in params.items():
+        #      if key != 'eps':  # want to use self.eps as tf.Variable
+        #          setattr(self, key, val)
 
         self._model_type = params.get('model_type', None)
         self.x_dim = params.get('x_dim', None)
@@ -100,14 +139,21 @@ class Dynamics(tf.keras.Model):
         self._eps_trainable = params.get('eps_trainable', True)
         self.use_bn = params.get('use_bn', False)     # use batch normalization
         self.num_steps = params.get('num_steps', 5)   # number of lf steps
-        self.zero_masks = params.get('zero_masks', False)   # all 0 binary mask
         self.num_hidden1 = params.get('num_hidden1', 100)   # nodes in h1
         self.num_hidden2 = params.get('num_hidden2', 100)   # nodes in h2
         self.dropout_prob = params.get('dropout_prob', 0.)  # dropout prob
         self.network_arch = params.get('network_arch', 'generic')  # net arch
+        self._network_type = params.get('network_type', 'CartesianNet')
+
+        activation = params.get('activation', 'relu')
+        if activation == 'tanh':
+            self._activation_fn = tf.nn.tanh
+        else:
+            self._activation_fn = tf.nn.relu
 
         self.eps = self._build_eps(use_log=False)
         # build binary masks for updating x
+        self.zero_masks = params.get('zero_masks', False)   # all 0 binary mask
         if self.zero_masks:
             self.masks = self._build_zero_masks()
         else:
@@ -116,14 +162,99 @@ class Dynamics(tf.keras.Model):
         net_params = self._network_setup()
         self.xnet, self.vnet = self.build_network(net_params)
 
+    def __init__1(self, potential_fn, params):
+        """Initialization.
+        Args:
+            potential_fn (callable): Function specifying minus log-likelihood
+                objective (that describes the target distribution) to be
+                minimized.
+        Params:
+            x_dim (int): Dimensionality of target distribution.
+            num_steps (int): Number of leapfrog steps (trajectory
+                length) to use in the molecular dynamics (MD)
+                integration.
+            eps (float): Initial (trainable) step size to use in the MD
+                integrator.
+            network_arch (str): Network architecture to use. Must be
+                one of `conv2D`, `conv3D`, `generic`.
+            hmc (bool, optional): Flag indicating whether generic HMC should be
+                performed instead of the L2HMC algorithm.
+            eps_trainable (bool, optional): Flag indicating whether the step
+                size `eps` should be a trainable parameter. Defaults to True.
+
+                 num_steps=5,
+                 eps=0.1,
+                 x_dim=None,
+                 batch_size=None,
+                 num_hidden1=100,
+                 num_hidden2=100,
+                 network_type='FullNet',
+                 network_arch='generic',
+                 activation='relu',
+                 eps_trainable=True,
+                 num_filters=None,
+                 dropout_prob=0.,
+                 use_bn=False,
+                 hmc=False,
+                 model_type=None,
+        """
+        super(Dynamics, self).__init__(name='Dynamics')
+        np.random.seed(seeds['global_np'])
+        self._model_type = params.get('model_type', None)
+
+        self.potential = potential_fn
+
+        self.params = params
+
+        # build binary masks for updating x
+        self.zero_masks = params.get('zero_masks', False)   # all 0 binary mask
+        if self.zero_masks:
+            self.masks = self._build_zero_masks()
+        else:
+            self.masks = self._build_masks()
+        # create attributes from `params.items()`
+        #  for key, val in params.items():
+        #      if key != 'eps':  # want to use self.eps as tf.Variable
+        #          setattr(self, key, val)
+
+        self._model_type = params.get('model_type', None)
+        self.x_dim = params.get('x_dim', None)
+        self.batch_size = params.get('batch_size', None)
+        self._input_shape = (self.batch_size, self.x_dim)
+        self.num_filters = params.get('num_filters', None)  # n conv. filters
+        self.hmc = params.get('hmc', False)           # use HMC sampler
+        self.use_bn = params.get('use_bn', False)     # use batch normalization
+        self.num_steps = params.get('num_steps', 5)   # number of lf steps
+        self.num_hidden1 = params.get('num_hidden1', 100)   # nodes in h1
+        self.num_hidden2 = params.get('num_hidden2', 100)   # nodes in h2
+        self.dropout_prob = params.get('dropout_prob', 0.)  # dropout prob
+        self.network_arch = params.get('network_arch', 'generic')  # net arch
+        self._network_type = params.get('network_type', 'CartesianNet')
+
+        eps_np = params.get('eps', 0.4)
+        self._eps_np = cast_float(eps_np, NP_FLOAT)   # initial step size
+        self._eps_trainable = params.get('eps_trainable', True)
+        self.eps = self._build_eps(use_log=False)
+
+        activation = params.get('activation', 'relu')
+        if activation == 'tanh':
+            self._activation_fn = tf.nn.tanh
+        else:
+            self._activation_fn = tf.nn.relu
+
+        net_params = self._network_setup()
+        self.xnet, self.vnet = self.build_network(net_params)
+
+    def __call__(self, *args, **kwargs):
+        """Call method."""
+        return self.apply_transition(*args, **kwargs)
+
     def _build_eps(self, use_log=False):
         """Create `self.eps` (i.e. the step size) as a `tf.Variable`.
-
         Args:
             use_log (bool): If True, initialize `log_eps` as the actual
                 `tf.Variable` and set `self.eps = tf.exp(log_eps)`; otherwise,
                 set `self.eps` as a `tf.Variable directly.
-
         Returns:
             eps: The (trainable) step size to be used in the L2HMC algorithm.
         """
@@ -155,12 +286,14 @@ class Dynamics(tf.keras.Model):
 
         net_params = {
             'network_arch': self.network_arch,  # network architecture
+            'network_type': self._network_type,
             'use_bn': self.use_bn,              # use batch normalization
             'dropout_prob': self.dropout_prob,  # dropout only used if > 0
             'x_dim': self.x_dim,                # dim of target distribution
             'num_hidden1': self.num_hidden1,    # num. nodes in hidden layer 1
             'num_hidden2': self.num_hidden2,    # num. nodes in hidden layer 2
-            'generic_activation': tf.nn.relu,   # activation fn
+            #  'generic_activation': tf.nn.relu,   # activation fn
+            'generic_activation': tf.nn.tanh,   # activation fn
             '_input_shape': self._input_shape,  # input shape (b4 reshaping)
         }
 
@@ -182,83 +315,61 @@ class Dynamics(tf.keras.Model):
     def build_network(self, net_params):
         """Build neural network used to train model."""
         if self.hmc:
-            x_fn = lambda inputs, is_training: [  # noqa: E731
+            xnet = lambda inputs, is_training: [  # noqa: E731
                 tf.zeros_like(inputs[0]) for _ in range(3)
             ]
-            v_fn = lambda inputs, is_training: [  # noqa: E731
+            vnet = lambda inputs, is_training: [  # noqa: E731
                 tf.zeros_like(inputs[0]) for _ in range(3)
             ]
 
         else:
-            net_params['factor'] = 2.
-            net_params['net_name'] = 'x'
-            x_fn = FullNet(model_name='XNet', **net_params)
+            #  if self._network_type == 'GaugeNetwork':
+            network_type = net_params.get('network_type', None)
+            if network_type == 'GaugeNetwork':
+                xnet = GaugeNetwork(name='XNet',
+                                    factor=2.,
+                                    x_dim=self.x_dim,
+                                    net_seeds=xnet_seeds,
+                                    num_hidden1=self.num_hidden1,
+                                    num_hidden2=self.num_hidden2,
+                                    activation=self._activation_fn)
 
-            net_params['factor'] = 1.       # factor used in orig. paper
-            net_params['net_name'] = 'v'  # update name scope
-            v_fn = FullNet(model_name='VNet', **net_params)
+                vnet = GaugeNetwork(name='VNet',
+                                    factor=1.,
+                                    x_dim=self.x_dim,
+                                    net_seeds=vnet_seeds,
+                                    num_hidden1=self.num_hidden1,
+                                    num_hidden2=self.num_hidden2,
+                                    activation=self._activation_fn)
 
-        return x_fn, v_fn
+            elif network_type == 'CartesianNet':
+                xnet = CartesianNet(name='XNet',
+                                    factor=2.,
+                                    x_dim=self.x_dim,
+                                    net_seeds=xnet_seeds,
+                                    num_hidden1=self.num_hidden1,
+                                    num_hidden2=self.num_hidden2,
+                                    activation=self._activation_fn)
 
-    def __call__(self, *args, **kwargs):
-        """Call method."""
-        return self.apply_transition(*args, **kwargs)
+                vnet = CartesianNet(name='VNet',
+                                    factor=1.,
+                                    x_dim=self.x_dim,
+                                    net_seeds=vnet_seeds,
+                                    num_hidden1=self.num_hidden1,
+                                    num_hidden2=self.num_hidden2,
+                                    activation=self._activation_fn)
+            else:
+                net_params['factor'] = 2.
+                net_params['net_name'] = 'x'
+                net_params['net_seeds'] = xnet_seeds
+                xnet = FullNet(model_name='XNet', **net_params)
 
-    def apply_transition_direction(self,
-                                   x_init,
-                                   beta,
-                                   weights,
-                                   is_training,
-                                   model_type=None,
-                                   hmc=False):
-        """Propose a new state and perform the accept/reject step."""
-        with tf.name_scope('apply_transition'):
-            #  forward = (tf.random_uniform(shape=(), dtype=TF_FLOAT) > 0.5)
-            if model_type == 'GaugeModel':
-                x_init = tf.mod(x_init, 2 * np.pi)
+                net_params['factor'] = 1.
+                net_params['net_name'] = 'v'
+                net_params['net_seeds'] = vnet_seeds
+                vnet = FullNet(model_name='VNet', **net_params)
 
-            v_init = tf.random_normal(tf.shape(x_init),
-                                      dtype=TF_FLOAT,
-                                      name='v_init')
-            state_init = cfg.State(x_init, v_init, beta)
-            out = self.transition_kernel(*state_init,
-                                         weights, is_training, hmc=hmc)
-            x_prop = out['x_proposed']
-            v_prop = out['v_proposed']
-            px = out['accept_prob']
-            px_hmc = out['accept_prob_hmc']
-            sumlogdet_prop = out['sumlogdet']
-
-            if model_type == 'GaugeModel':
-                x_prop = tf.mod(x_prop, 2 * np.pi)
-
-            # Accept or reject step
-            with tf.name_scope('accept_reject_step'):
-                # accept_mask, reject_mask
-                mask_a, mask_r = self._get_accept_masks(px)
-
-                # State (x, v)  after accept / reject step
-                x_out = x_prop * mask_a[:, None] + x_init * mask_r[:, None]
-                v_out = v_prop * mask_a[:, None] + v_init * mask_r[:, None]
-                sumlogdet_out = sumlogdet_prop * mask_a
-
-        outputs = {
-            'x_init': x_init,
-            'v_init': v_init,
-            'x_proposed': x_prop,
-            'v_proposed': v_prop,
-            'x_out': x_out,
-            'v_out': v_out,
-            #  'direction': forward,
-            #  'xf': xf,
-            #  'xb': xb,
-            'accept_prob': px,
-            'accept_prob_hmc': px_hmc,
-            'sumlogdet_proposed': sumlogdet_prop,
-            'sumlogdet_out': sumlogdet_out,
-        }
-
-        return outputs
+        return xnet, vnet
 
     def apply_transition(self,
                          x_init,
@@ -267,10 +378,8 @@ class Dynamics(tf.keras.Model):
                          is_training,
                          hmc=True):
         """Propose a new state and perform the accept/reject step.
-
         We simulate the (molecular) dynamics update both forward and backward,
         and use sampled masks to compute the actual solutions.
-
         Args:
             x_init (tf.placeholder): Batch of (x) samples
                 (GaugeLattice.samples).
@@ -279,7 +388,6 @@ class Dynamics(tf.keras.Model):
                 output functions (scale, translation, transformation).
             is_training (tf.placeholder): Boolean tf.placeholder used to
                 indicate if the model is currently being trained.
-
         Returns:
             outputs (dict): Containing
              - `outputs_fb`: The outputs from running the dynamics both
@@ -287,14 +395,13 @@ class Dynamics(tf.keras.Model):
                accept/reject step.
              - `energies`: Dictionary of each of the energies computed at the
                beginning and end of the trajectory
-
         NOTE: In the code below, `proposed` refers to a variable at the end of
         a particular MD trajectory, prior to performing the Metropolis/Hastings
         accept reject step. Consequently, `out` refers to the result after the
         accept/reject.
         """
         if self._model_type == 'GaugeModel':
-            x_init = tf.mod(x_init, 2 * np.pi, name='x_in_mod_2_pi')
+            x_init = convert_to_angle(x_init)
 
         # Call `self.transition_kernel` in the forward direction,
         # starting from the initial `State`: `(x_init, v_init_f, beta)`
@@ -305,6 +412,7 @@ class Dynamics(tf.keras.Model):
                                            dtype=TF_FLOAT,
                                            seed=seeds['vf_init'],
                                            name='vf_init')
+
 
                 state_init_f = cfg.State(x_init, vf_init, beta)
                 outf = self.transition_kernel(*state_init_f,
@@ -334,6 +442,10 @@ class Dynamics(tf.keras.Model):
 
             # Decide direction uniformly
             with tf.name_scope('combined'):
+                if self._model_type == 'GaugeModel':
+                    xf = convert_to_angle(xf)
+                    xb = convert_to_angle(xb)
+
                 mask_f, mask_b = self._get_direction_masks()
 
                 # Use forward/backward mask to reconstruct `v_init`
@@ -366,6 +478,9 @@ class Dynamics(tf.keras.Model):
                 v_out = v_proposed * mask_a[:, None] + v_init * mask_r[:, None]
                 sumlogdet_out = sumlogdet_proposed * mask_a
 
+            if self._model_type == 'GaugeModel':
+                x_out = convert_to_angle(x_out)
+
         outputs = {
             'x_init': x_init,
             'v_init': v_init,
@@ -396,10 +511,13 @@ class Dynamics(tf.keras.Model):
         lf_fn = self._forward_lf if forward else self._backward_lf
         #  rn = tf.random_uniform(shape=(), dtype=TF_FLOAT)
         #  lf_fn = tf.cond(rn < 0.5, self._forward_lf, self._backward_lf)
-
         with tf.name_scope('transition_kernel'):
             x_proposed, v_proposed = x_in, v_in
-
+            #  if x_proposed.shape[0] != 2:
+            #      x_proposed = encode(x_proposed)
+            #  if v_proposed.shape[0] != 2:
+            #      v_proposed = encode(v_proposed)
+            #
             step = tf.constant(0., name='md_step', dtype=TF_FLOAT)
             #  batch_size = tf.shape(x_in)[0]
             logdet = tf.zeros((self.batch_size,), dtype=TF_FLOAT)
@@ -440,67 +558,74 @@ class Dynamics(tf.keras.Model):
 
         return outputs
 
-    def _forward_lf(self, x, v, beta, step, weights, is_training):
+    def _forward_lf(self, x, v, beta, step, net_weights, is_training):
         """One forward augmented leapfrog step."""
         with tf.name_scope('forward_lf'):
-            with tf.name_scope('get_time'):
-                t = self._get_time(step, tile=tf.shape(x)[0])
-            with tf.name_scope('get_mask'):
-                mask, mask_inv = self._get_mask(step)
+            t = self._get_time(step, tile=tf.shape(x)[0])
+            #  t = self._get_time(step, tile=tf.shape(x)[1])
+            mask, mask_inv = self._get_mask(step)
 
             sumlogdet = 0.
             v, logdet = self._update_v_forward(x, v, beta, t,
-                                               weights, is_training)
+                                               net_weights,
+                                               is_training)
             sumlogdet += logdet
 
             x, logdet = self._update_x_forward(x, v, t,
-                                               weights, is_training,
+                                               net_weights,
+                                               is_training,
                                                (mask, mask_inv))
             sumlogdet += logdet
 
             x, logdet = self._update_x_forward(x, v, t,
-                                               weights, is_training,
+                                               net_weights,
+                                               is_training,
                                                (mask_inv, mask))
             sumlogdet += logdet
 
             v, logdet = self._update_v_forward(x, v, beta, t,
-                                               weights, is_training)
+                                               net_weights,
+                                               is_training)
             sumlogdet += logdet
 
         return x, v, sumlogdet
 
-    def _backward_lf(self, x, v, beta, step, weights, training):
+    def _backward_lf(self, x, v, beta, step, net_weights, is_training):
         """One backward augmented leapfrog step."""
         with tf.name_scope('backward_lf'):
             step_r = self.num_steps - step - 1
+            #  t = self._get_time(step_r, tile=tf.shape(x)[0])
             t = self._get_time(step_r, tile=tf.shape(x)[0])
             mask, mask_inv = self._get_mask(step_r)
 
             sumlogdet = 0.
 
             v, logdet = self._update_v_backward(x, v, beta, t,
-                                                weights, training)
+                                                net_weights,
+                                                is_training)
             sumlogdet += logdet
 
             x, logdet = self._update_x_backward(x, v, t,
-                                                weights, training,
+                                                net_weights,
+                                                is_training,
                                                 (mask_inv, mask))
             sumlogdet += logdet
 
             x, logdet = self._update_x_backward(x, v, t,
-                                                weights, training,
+                                                net_weights,
+                                                is_training,
                                                 (mask, mask_inv))
             sumlogdet += logdet
 
             v, logdet = self._update_v_backward(x, v, beta, t,
-                                                weights, training)
+                                                net_weights,
+                                                is_training)
             sumlogdet += logdet
 
         return x, v, sumlogdet
 
-    def _update_v_forward(self, x, v, beta, t, weights, training):
+    def _update_v_forward(self, x, v, beta, t, net_weights, is_training):
         """Update v in the forward leapfrog step.
-
         Args:
             x: input position tensor
             v: input momentum tensor
@@ -512,63 +637,66 @@ class Dynamics(tf.keras.Model):
         Returns:
             v: Updated (output) momentum
             logdet: Jacobian factor
-
         NOTE: The momentum update in the forwared direction takes v to v' via
                 v' = v * exp(0.5*eps*Sv) - 0.5*eps*[grad*exp(eps*Qv) + Tv]
         """
         with tf.name_scope('update_vf'):
             if self._model_type == 'GaugeModel':
-                x = tf.mod(x, 2 * np.pi)
+                x = convert_to_angle(x)
 
             grad = self.grad_potential(x, beta)
-            Sv, Tv, Qv = self.vnet([x, grad, t], training)
 
-            transl = weights.v_translation * Tv
-            scale = weights.v_scale * (0.5 * self.eps * Sv)
-            transf = weights.v_transformation * (self.eps * Qv)
+            Sv, Tv, Qv = self.vnet([x, grad, t], is_training)
 
-            exp_scale = tf.exp(scale)
-            exp_transf = tf.exp(transf)
+            transl = net_weights.v_translation * Tv
+            scale = net_weights.v_scale * (0.5 * self.eps * Sv)
+            transf = net_weights.v_transformation * (self.eps * Qv)
+
+            exp_scale = tf.exp(scale, name='exp_scale_vf')
+            exp_transf = tf.exp(transf, name='exp_transf_vf')
 
             vf = v * exp_scale - 0.5 * self.eps * (grad * exp_transf + transl)
-            logdet_vf = tf.reduce_sum(scale, axis=1, name='logdet_vf')
+            logdet_vf = tf.reduce_sum(scale, axis=-1, name='logdet_vf')
 
         return vf, logdet_vf
 
-    def _update_x_forward(self, x, v, t, weights, training, masks):
+    def _update_x_forward(self, x, v, t, net_weights, is_training, masks):
         """Update x in the forward leapfrog step."""
-        if self._model_type == 'GaugeModel':
-            x = tf.mod(x, 2 * np.pi)
-
-        mask, mask_inv = masks
-
         with tf.name_scope('update_xf'):
-            Sx, Tx, Qx = self.xnet([v, mask * x, t], training)
+            mask, mask_inv = masks
+            if self._model_type == 'GaugeModel':
+                x = convert_to_angle(x)
 
-            scale = weights.x_scale * (self.eps * Sx)
-            transf = weights.x_transformation * (self.eps * Qx)
-            transl = weights.x_translation * Tx
+            Sx, Tx, Qx = self.xnet([v, mask * x, t], is_training)
+
+            transl = net_weights.x_translation * Tx
+            scale = net_weights.x_scale * (self.eps * Sx)
+            transf = net_weights.x_transformation * (self.eps * Qx)
 
             y = x * tf.exp(scale) + self.eps * (v * tf.exp(transf) + transl)
-
             xf = mask * x + mask_inv * y
+
+            if self._model_type == 'GaugeModel':
+                xf = convert_to_angle(xf)
+
             logdet_xf = tf.reduce_sum(mask_inv * scale,
-                                      axis=1, name='logdet_xf')
+                                      axis=-1, name='logdet_xf')
 
         return xf, logdet_xf
 
-    def _update_v_backward(self, x, v, beta, t, weights, training):
+    def _update_v_backward(self, x, v, beta, t, net_weights, is_training):
         """Update v in the backward leapfrog step. Invert the forward update"""
         with tf.name_scope('update_vb'):
             if self._model_type == 'GaugeModel':
-                x = tf.mod(x, 2 * np.pi)
+                x = convert_to_angle(x)
 
             grad = self.grad_potential(x, beta)
-            Sv, Tv, Qv = self.vnet([x, grad, t], training)
 
-            transl = weights.v_translation * Tv
-            scale = weights.v_scale * (-0.5 * self.eps * Sv)
-            transf = weights.v_transformation * (self.eps * Qv)
+            Sv, Tv, Qv = self.vnet([x, grad, t], is_training)
+
+            transl = net_weights.v_translation * Tv
+            scale = net_weights.v_scale * (-0.5 * self.eps * Sv)
+            transf = net_weights.v_transformation * (self.eps * Qv)
 
             exp_scale = tf.exp(scale, name='exp_scale_vb')
             exp_transf = tf.exp(transf, name='exp_transf_vb')
@@ -576,28 +704,32 @@ class Dynamics(tf.keras.Model):
             half_eps = 0.5 * self.eps
             vb = exp_scale * (v + half_eps * (grad * exp_transf + transl))
 
-            logdet = tf.reduce_sum(scale, axis=1, name='logdet_vb')
+            logdet = tf.reduce_sum(scale, axis=-1, name='logdet_vb')
 
         return vb, logdet
 
-    def _update_x_backward(self, x, v, t, weights, training, masks):
+    def _update_x_backward(self, x, v, t, net_weights, is_training, masks):
         """Update x in the backward lf step. Inverting the forward update."""
-        if self._model_type == 'GaugeModel':
-            x = tf.mod(x, 2 * np.pi)
-
         mask, mask_inv = masks
         with tf.name_scope('update_xb'):
-            Sx, Tx, Qx = self.xnet([v, mask * x, t], training)
+            if self._model_type == 'GaugeModel':
+                x = convert_to_angle(x)
 
-            scale = weights.x_scale * (-self.eps * Sx)
-            transl = weights.x_translation * Tx
-            transf = weights.x_transformation * (self.eps * Qx)
+            Sx, Tx, Qx = self.xnet([v, mask * x, t], is_training)
+
+            scale = net_weights.x_scale * (-self.eps * Sx)
+            transl = net_weights.x_translation * Tx
+            transf = net_weights.x_transformation * (self.eps * Qx)
 
             exp_scale = tf.exp(scale, name='exp_scale_xb')
             exp_transf = tf.exp(transf, name='exp_transf_xb')
             y = exp_scale * (x - self.eps * (v * exp_transf + transl))
             xb = mask * x + mask_inv * y
-            logdet = tf.reduce_sum(mask_inv * scale, axis=1, name='logdet_xb')
+
+            if self._model_type == 'GaugeModel':
+                xb = convert_to_angle(xb)
+
+            logdet = tf.reduce_sum(mask_inv * scale, axis=-1, name='logdet_xb')
 
         return xb, logdet
 
@@ -636,7 +768,6 @@ class Dynamics(tf.keras.Model):
     @staticmethod
     def _compute_accept_prob_hmc(h_init, h_proposed, beta):
         """Compute the prob. of accepting the proposed state given old state.
-
         NOTE: This computes the accept prob. for generic HMC.
         """
         with tf.name_scope('accept_prob_nnehmc'):
@@ -650,8 +781,8 @@ class Dynamics(tf.keras.Model):
         """Format time as [cos(..), sin(...)]."""
         with tf.name_scope('get_time'):
             trig_t = tf.squeeze([
-                tf.cos(2 * np.pi * i / self.num_steps),
-                tf.sin(2 * np.pi * i / self.num_steps),
+                tf.cos(TWO_PI * i / self.num_steps),
+                tf.sin(TWO_PI * i / self.num_steps),
             ])
 
             t = tf.tile(tf.expand_dims(trig_t, 0), (tile, 1))
@@ -697,7 +828,6 @@ class Dynamics(tf.keras.Model):
 
     def _build_masks(self):
         """Construct different binary masks for different time steps.
-
         Args:
             all_zeros (bool): If set to True, create a mask with all entries
                 equal to zero instead of half zeros, half ones.
@@ -732,6 +862,9 @@ class Dynamics(tf.keras.Model):
     def grad_potential(self, x, beta):
         """Get gradient of potential function at current location."""
         with tf.name_scope('grad_potential'):
+            if self._model_type == 'GaugeModel':
+                x = convert_to_angle(x)
+
             if tf.executing_eagerly():
                 tfe = tf.contrib.eager
                 grad = tfe.gradients_function(self.potential_energy,
@@ -744,6 +877,9 @@ class Dynamics(tf.keras.Model):
     def potential_energy(self, x, beta):
         """Compute potential energy using `self.potential` and beta."""
         with tf.name_scope('potential_energy'):
+            if self._model_type == 'GaugeModel':
+                x = convert_to_angle(x)
+
             potential_energy = beta * self.potential(x)
 
         return potential_energy
@@ -752,15 +888,16 @@ class Dynamics(tf.keras.Model):
     def kinetic_energy(v):
         """Compute the kinetic energy."""
         with tf.name_scope('kinetic_energy'):
-            kinetic_energy = 0.5 * tf.reduce_sum(v**2, axis=1)
+            kinetic_energy = 0.5 * tf.reduce_sum(v**2, axis=-1)
 
         return kinetic_energy
 
     def hamiltonian(self, x, v, beta):
         """Compute the overall Hamiltonian."""
         with tf.name_scope('hamiltonian'):
-            potential = self.potential_energy(x, beta)
             kinetic = self.kinetic_energy(v)
+            potential = self.potential_energy(x, beta)
+
             hamiltonian = potential + kinetic
 
         return hamiltonian

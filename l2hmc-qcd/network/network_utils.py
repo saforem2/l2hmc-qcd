@@ -16,6 +16,60 @@ if '2.' not in tf.__version__:
 
 # pylint: disable=no-member
 
+def tf_zeros(shape):
+    """Return tensor of all zeros."""
+    return tf.zeros(shape, dtype=TF_FLOAT)
+
+def encode_angle(angle, method='cos_sin'):
+    """Returns encoded angle using specified method.
+
+    Args:
+        angle (array-like): Input angles to encode.
+        method (str): Encoding method used. Must be one of:
+            `('binned', 'scaled', 'cos_sin', 'gaussian')`.
+    Returns:
+        x (array-like): Encoded angle. Same shape as `angle`.
+    """
+    if method == 'binned':  # 1-of-500 encoding
+        x = np.zeros(500)
+        x[int(round(250 * (angle / np.pi + 1))) % 500] = 1
+    elif method == 'gaussian':  # Leaky binned encoding
+        x = np.arange(500)
+        idx = 250 * (angle / np.pi + 1)
+        x = np.exp(-np.pi * (x - idx) ** 2)
+    elif method == 'scaled':  # scaled to [-1, 1] encoding
+        x = np.array([angle / np.pi])
+    elif method == 'cos_sin':  # (cos(angle), sin(angle)) encoding
+        x = np.array([np.cos(angle), np.sin(angle)])
+    else:
+        x = np.mod(angle, 2 * np.pi)
+
+    return x
+
+
+def decode_angle(arr, method='cos_sin'):
+    """Returns decoded angle using specified method."""
+    if method in ['binned', 'gaussian']:  # 1-of-500 or gaussian encoding
+        M = np.max(arr)
+        for idx, x in enumerate(arr):
+            if abs(arr[i] - M) < 1e-5:
+                angle = np.pi * x / 250 - np.pi
+                break
+            angle = np.pi * np.dot(np.arange(500), arr) / 500  # averaging
+
+    elif method == 'scaled':  # Scaled to [-1, 1] encoding
+        angle = np.pi * arr[0]
+
+    elif method == 'cos_sin':
+        if tf.is_tensor(arr):
+            angle = tf.atan2(arr[1], arr[0])
+        else:
+            angle = np.atan2(arr[1], arr[0])
+    else:
+        angle = arr
+
+    return angle
+
 
 def activation_model(model):
     """Create Keras Model that outputs activations of all conv./pool layers.
@@ -60,73 +114,7 @@ def _assign_moving_average(orig_val, new_val, momentum, name):
         return tf.assign_add(orig_val, scaled_diff)
 
 
-@add_arg_scope
-def batch_norm(x,
-               phase,
-               axis=-1,
-               shift=True,
-               scale=True,
-               momentum=0.99,
-               eps=1e-3,
-               internal_update=False,
-               scope=None,
-               reuse=None):
-    """Implements a `BatchNormalization` layer."""
-    C = x._shape_as_list()[axis]
-    ndim = len(x.shape)
-    var_shape = [1] * (ndim - 1) + [C]
-
-    with tf.variable_scope(scope, 'batch_norm', reuse=reuse):
-        def training():
-            m, v = tf.nn.moments(x, list(range(ndim - 1)), keep_dims=True)
-            update_m = _assign_moving_average(moving_m,
-                                              m, momentum,
-                                              'update_mean')
-            update_v = _assign_moving_average(moving_v,
-                                              v, momentum,
-                                              'update_var')
-            #  tf.add_to_collection(tf.GraphKeys.UPDATE_OPS, update_m)
-            #  tf.add_to_collection(tf.GraphKeys.UPDATE_OPS, update_v)
-            tf.add_to_collection('update_ops', update_m)
-            tf.add_to_collection('update_ops', update_v)
-
-            if internal_update:
-                with tf.control_dependencies([update_m, update_v]):
-                    output = (x - m) * tf.rsqrt(v + eps)
-            else:
-                output = (x - m) * tf.rsqrt(v + eps)
-            return output
-
-        def testing():
-            m, v = moving_m, moving_v
-            output = (x - m) * tf.rsqrt(v + eps)
-            return output
-
-        # Get mean and variance, normalize input
-        moving_m = tf.get_variable('mean', var_shape,
-                                   initializer=tf.zeros_initializer,
-                                   trainable=False)
-        moving_v = tf.get_variable('var', var_shape,
-                                   initializer=tf.ones_initializer,
-                                   trainable=False)
-
-        if isinstance(phase, bool):
-            output = training() if phase else testing()
-        else:
-            output = tf.cond(phase, training, testing)
-
-        if scale:
-            output *= tf.get_variable('gamma', var_shape,
-                                      initializer=tf.ones_initializer)
-
-        if shift:
-            output += tf.get_variable('beta', var_shape,
-                                      initializer=tf.zeros_initializer)
-
-    return output
-
-
-def custom_dense(units=100, seed=None, factor=1., name=None):
+def custom_dense(units, seed=None, factor=1., name=None, **kwargs):
     """Custom dense layer with specified weight intialization."""
     try:
         kernel_initializer = tf.keras.initializers.VarianceScaling(
@@ -154,7 +142,7 @@ def custom_dense(units=100, seed=None, factor=1., name=None):
         use_bias=True,
         kernel_initializer=kernel_initializer,
         bias_initializer=bias_initializer,
-        #  **kwargs
+        **kwargs
     )
 
 

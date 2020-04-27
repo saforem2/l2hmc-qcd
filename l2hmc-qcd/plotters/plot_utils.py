@@ -18,7 +18,7 @@ from scipy.stats import multivariate_normal
 
 import utils.file_io as io
 
-from config import COLORS, HAS_MATPLOTLIB, MARKERS
+from config import COLORS, HAS_MATPLOTLIB, MARKERS, Weights
 from lattice.lattice import u1_plaq_exact
 from plotters.plot_observables import calc_stats, get_obs_dict
 from plotters.data_utils import calc_var_explained
@@ -47,13 +47,88 @@ except ImportError:
 
 # pylint: disable=too-many-statements, too-many-branches, too-many-arguments
 # pylint: disable=invalid-name, too-many-nested-blocks, too-many-locals
+def get_train_weights(params):
+    """Extract the `net_weights` used for training from `params`."""
+    xsw = int(params['x_scale_weight'])
+    xtw = int(params['x_translation_weight'])
+    xqw = int(params['x_transformation_weight'])
+    vsw = int(params['v_scale_weight'])
+    vtw = int(params['v_translation_weight'])
+    vqw = int(params['v_transformation_weight'])
+    return (xsw, xtw, xqw, vsw, vtw, vqw)
+
+
+def plot_setup(log_dir, run_params, idx=None, nw_run=True):
+    """Setup for plotting. Creates `filename` and `title_str`."""
+    params = io.load_pkl(os.path.join(log_dir, 'parameters.pkl'))
+    lf = params['num_steps']
+    clip_value = params.get('clip_value', 0)
+    eps_fixed = params.get('eps_fixed', False)
+    train_weights = get_train_weights(params)
+    train_weights_str = ''.join((io.strf(i) for i in train_weights))
+    net_weights = run_params['net_weights']
+    net_weights_str = ''.join((io.strf(i) for i in net_weights))
+    #  net_weights_str = ''.join(
+    #      (io.strf(i).replace('.', '') for i in net_weights)
+    #  )
+
+    date_str = log_dir.split('/')[-2]
+    y, m, d = date_str.split('_')
+    y = int(y)
+    m = int(m)
+    d = int(d)
+    old_dx = True
+    if y == 2020 and m >= 1 and d >= 4:
+        old_dx = False
+
+    beta = run_params['beta']
+    eps = run_params['eps']
+    fname = f'lf{lf}'
+    run_steps = run_params['run_steps']
+    fname += f'_steps{run_steps}'
+    title_str = (r"$N_{\mathrm{LF}} = $" + f'{lf}, '
+                 r"$\beta = $" + f'{beta:.2g}, '
+                 r"$\varepsilon = $" + f'{eps:.3g}')
+    eps_str = f'{eps:.4g}'.replace('.', '')
+    fname += f'_e{eps_str}'
+
+    if eps_fixed:
+        title_str += ' (fixed)'
+        fname += '_fixed'
+
+    if params['clip_value'] > 0:
+        title_str += f', clip: {clip_value}'
+        fname += f'_clip{clip_value}'.replace('.', '')
+
+    if any([tw == 0 for tw in train_weights]):
+        tws = '(' + ', '.join((str(i) for i in train_weights_str)) + ')'
+        title_str += (', '
+                      + r"$\mathrm{nw}_{\mathrm{train}}=$"
+                      + f' {tws}')
+        fname += f'_train{train_weights_str}'
+
+    if nw_run:
+        nws = '(' + ', '.join((str(i) for i in net_weights_str)) + ')'
+        title_str += (', '
+                      + r"$\mathrm{nw}_{\mathrm{run}}=$"
+                      + f' {nws}')
+        fname += f'_{net_weights_str}'
+
+    if idx is not None:
+        fname += f'_{idx}'
+
+    return fname, title_str, old_dx
 
 
 def load_weights(log_dir):
     """Load weights dict from `log_dir`."""
-    weights = io.load_pkl(os.path.join(log_dir, 'weights.pkl'))
-    xweights = weights['xnet']['GenericNet']
-    vweights = weights['vnet']['GenericNet']
+    #  weights = io.load_pkl(os.path.join(log_dir, 'weights.pkl'))
+    xweights = io.load_pkl(os.path.join(log_dir, 'xnet_weights.pkl'))
+    vweights = io.load_pkl(os.path.join(log_dir, 'vnet_weights.pkl'))
+    #  xweights = weights['xnet']
+    #  vweights = weights['vnet']
+    #  xweights = weights['xnet']['GenericNet']
+    #  vweights = weights['vnet']['GenericNet']
     weights_dict = {
         'xnet': {},
         'vnet': {},
@@ -225,7 +300,6 @@ def get_title_str(params, run_params=None):
     if run_params is not None:
         title_str += get_run_title_str(run_params)
 
-
     #  if nw_legend:
         #  title_str += f"nw: {nw_desc}"
 
@@ -255,7 +329,6 @@ def get_run_title_str(run_params):
         title_str += ', (forward)'
     elif direction == 'backward':
         title_str += ', (backward)'
-
 
     return title_str
 
