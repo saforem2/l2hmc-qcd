@@ -208,6 +208,8 @@ def train_l2hmc(FLAGS, log_file=None):
     condition2 = params['using_hvd'] and hvd.rank() == 0
     is_chief = condition1 or condition2
 
+    save_steps = max((FLAGS.train_steps, params['train_steps'])) // 4
+    params['save_steps'] = save_steps
     params['zero_masks'] = FLAGS.zero_masks
     params['beta_fixed'] = (FLAGS.beta_final == FLAGS.beta_init)
 
@@ -237,7 +239,9 @@ def train_l2hmc(FLAGS, log_file=None):
     if is_chief:
         logging_steps = params.get('logging_steps', 10)
         train_logger = TrainLogger(model, log_dir,
+                                   save_steps=save_steps,
                                    logging_steps=logging_steps,
+                                   print_steps=FLAGS.print_steps,
                                    summaries=params['summaries'])
     else:
         train_logger = None
@@ -264,7 +268,6 @@ def train_l2hmc(FLAGS, log_file=None):
     #        checkpoint, and closing when done or an error occurs.
     # ----------------------------------------------------------------
     #  save_steps = FLAGS.save_steps
-    save_steps = max((FLAGS.train_steps, params['train_steps'])) // 4
     sess = create_monitored_training_session(hooks=hooks,
                                              config=config,
                                              #  scaffold=scaffold,

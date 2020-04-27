@@ -166,17 +166,18 @@ def plot_train_data(train_data, params):
     obs_data = {key: data[key] for key in obs_strs}
     x_data = {key: data[key] for key in x_strs}
 
-    obs_dataset = build_dataset(obs_data, steps=t)
+    dataset = build_dataset(data, steps=t)
     x_dataset = build_dataset(x_data, steps=t)
+    obs_dataset = build_dataset(obs_data, steps=t)
 
-    traceplot_posterior(dataset=obs_dataset,
+    traceplot_posterior(data=obs_dataset,
                         name='observables',
                         fname='train',
                         fig_dir=out_dir,
                         filter_str=None,
                         title_str=title_str)
     plt.close('all')
-    traceplot_posterior(dataset=x_dataset,
+    traceplot_posterior(data=x_dataset,
                         name='observables',
                         fname='train',
                         fig_dir=out_dir,
