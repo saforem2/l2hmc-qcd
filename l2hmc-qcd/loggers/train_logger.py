@@ -37,17 +37,27 @@ class TrainLogger(object):
                  model,
                  log_dir,
                  summaries=False,
+                 save_steps=None,
+                 print_steps=None,
                  logging_steps=None):
         #  self.sess = sess
         if logging_steps is None:
             logging_steps = getattr(model, 'logging_steps', 500)
 
+        if save_steps is None:
+            save_steps = getattr(model, 'save_steps', int(2.5e4))
+
+        if print_steps is None:
+            print_steps = getattr(model, 'print_steps', 10)
+
+        model_type = getattr(model, '_model_type', None)
+        self._model_type = model_type
+
         self.model = model
         self.summaries = summaries
+        self._save_steps = save_steps
+        self._print_steps = print_steps
         self._logging_steps = logging_steps
-        self._model_type = model._model_type
-        self._print_steps = getattr(model, 'print_steps', 10)
-        self._save_steps = getattr(model, 'save_steps', int(1e4))
 
         self.train_data = {}
         self.h_strf = ("{:^13s}" + 9 * "{:^12s}").format(
@@ -136,7 +146,7 @@ class TrainLogger(object):
         step = data['step']
         self._update(data, data_str)
 
-        if (step + 1) % self._print_steps == 0:
+        if step % self._print_steps == 0:
             io.log(data_str)
 
         if (step + 1) % 100 == 0:
