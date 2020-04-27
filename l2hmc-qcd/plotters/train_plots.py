@@ -143,12 +143,8 @@ def plot_train_data(train_data, params):
             z = y.mean(axis=(-1))
             data[key] = z
 
-            try:
-                ax.plot(x, z.mean(axis=-1),
-                        label=label, **kwargs)
-            except:
-                import pudb; pudb.set_trace()
-
+            ax.plot(x, z.mean(axis=-1),
+                    label=label, **kwargs)
 
         if key == 'plaqs':
             beta_arr = np.array(train_data['beta'])[int(t[0]):]
@@ -164,14 +160,24 @@ def plot_train_data(train_data, params):
         fig.savefig(out_file, dpi=200, bbox_inches='tight')
         plt.close('all')
 
-    obs_strs = ['actions', 'plaqs', 'charges', 'dq']
     x_strs = ['x_in', 'x_out', 'dx', 'dx_proposed']
+    obs_strs = ['plaqs', 'charges', 'dq', 'px', 'sumlogdet', 'exp_energy_diff']
 
-    #  observables = {
-    #      'data['
-    dataset = build_dataset(data, steps=t)
-    traceplot_posterior(dataset=dataset,
-                        name='data',
+    obs_data = {key: data[key] for key in obs_strs}
+    x_data = {key: data[key] for key in x_strs}
+
+    obs_dataset = build_dataset(obs_data, steps=t)
+    x_dataset = build_dataset(x_data, steps=t)
+
+    traceplot_posterior(dataset=obs_dataset,
+                        name='observables',
+                        fname='train',
+                        fig_dir=out_dir,
+                        filter_str=None,
+                        title_str=title_str)
+    plt.close('all')
+    traceplot_posterior(dataset=x_dataset,
+                        name='observables',
                         fname='train',
                         fig_dir=out_dir,
                         filter_str=None,

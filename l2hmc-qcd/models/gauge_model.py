@@ -181,14 +181,14 @@ class GaugeModel(BaseModel):
 
     def _calc_charge_loss(self, x_data, z_data):
         """Calculate the total charge loss."""
-        aux_weight = getattr(self, 'aux_weight', 1.)
+        #  aux_weight = getattr(self, 'aux_weight', 1.)
         ls = self.loss_scale
         with tf.name_scope('calc_charge_loss'):
             with tf.name_scope('xq_loss'):
                 xq_loss = self._charge_loss(*x_data)
 
             with tf.name_scope('zq_loss'):
-                if aux_weight > 0.:
+                if self.aux_weight > 0.:
                     zq_loss = self._charge_loss(*z_data)
                 else:
                     zq_loss = 0.
@@ -262,7 +262,7 @@ class GaugeModel(BaseModel):
         dq = prob * (q_prop - q_init) ** 2 + eps
         #  charge_loss (= self._charge_weight / dq
         # - 10 * dq / self._charge_weight)
-        charge_loss = - 10 * dq / self._charge_weight
+        charge_loss = - dq / self._charge_weight
         #  charge_loss = - dq / self._charge_weight
 
         return tf.reduce_mean(charge_loss, axis=0)
