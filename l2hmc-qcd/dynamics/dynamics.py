@@ -206,27 +206,6 @@ class Dynamics(tf.keras.Model):
 
         self.params = params
 
-        """
-        #  self._model_type = model_type
-        self.num_steps = num_steps
-        self.x_dim = x_dim
-        self.batch_size = batch_size
-        self._input_shape = (self.batch_size, self.x_dim)
-
-        self._eps_np = eps
-        self._eps_trainable = eps_trainable
-        self.eps = self._build_eps(use_log=False)
-
-        self.hmc = hmc
-        self.use_bn = use_bn
-        self.num_hidden1 = num_hidden1
-        self.num_hidden2 = num_hidden2
-        self.num_filters = num_filters
-        self.dropout_prob = dropout_prob
-        self.network_arch = network_arch
-        self._network_type = network_type
-        """
-
         # build binary masks for updating x
         self.zero_masks = params.get('zero_masks', False)   # all 0 binary mask
         if self.zero_masks:

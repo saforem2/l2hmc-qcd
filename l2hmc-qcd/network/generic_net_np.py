@@ -154,6 +154,3 @@ class PairedGenericNetNP:
         transformation = Q * np.exp(self.coeff_transformation)
 
         return scale, translation, transformation
-
-
-

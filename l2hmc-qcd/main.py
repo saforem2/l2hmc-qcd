@@ -109,12 +109,13 @@ def _get_global_var(name):
         var = None
     return var
 
+
 def get_global_vars(names):
-    vars = {name: _get_global_var(name) for name in names}
-    for k, v in vars:
+    global_vars = {name: _get_global_var(name) for name in names}
+    for k, v in global_vars:
         if v is None:
-            _ = vars.pop(k)
-    return vars
+            _ = global_vars.pop(k)
+    return global_vars
 
 
 def pkl_dump(d, pkl_file):
