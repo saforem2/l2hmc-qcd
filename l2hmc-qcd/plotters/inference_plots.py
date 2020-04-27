@@ -40,10 +40,7 @@ def savefig(fig, out_file):
     """Save `fig` to `out_file`."""
     io.log(HEADER)
     io.log(f'Saving figure to: {out_file}.')
-    try:
-        fig.savefig(out_file, dpi=200, bbox_inches='tight')
-    except:
-        fig.savefig(out_file, bbox_inches='tight')
+    fig.savefig(out_file, dpi=200, bbox_inches='tight')
     io.log(HEADER)
 
 
@@ -360,6 +357,7 @@ def plot_volume_diffs(volume_diffs, fig_dir, title_str=None):
 
 
     _plot_volume_diff(drms, fit_data, out_dir, title_str=title_str)
+
 
 def plot_trace(data, fname, title_str=None, filter_str=None):
     """Create traceplot of `data`.
