@@ -257,7 +257,7 @@ def create_summaries(model, summary_dir, training=True):
     try:
         _loss_summaries(model)
         add_loss_summaries(model.loss_op)
-    except:
+    except (KeyError, AttributeError):
         print('Unable to create loss summaries.')
 
 

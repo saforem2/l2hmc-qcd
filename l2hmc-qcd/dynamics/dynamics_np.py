@@ -620,17 +620,6 @@ class DynamicsNP(object):
 
         return masks
 
-    def build_time(self):
-        """Convert leapfrog step index into sinusoidal time."""
-        #  ts = []
-        #  for i in range(self.num_steps):
-        #      t = np.array([np.cos(2 * np.pi * i / self.num_steps),
-        #                    np.sin(2 * np.pi * i / self.num_steps)])
-        #      ts.append(t[None, :])
-        #
-        #  return ts
-        pass
-
     def set_masks(self, masks):
         """Set `self.masks` to `masks`."""
         self.masks = masks[:self.num_steps]
