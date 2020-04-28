@@ -160,7 +160,6 @@ class RunData:
             'sumlogdet_out': self.run_data['sumlogdet_out'],
             'sumlogdet_prop': self.run_data['sumlogdet_proposed'],
             'tunneling_rate': self.run_data['tunneling_rate'],
-            #  'dplaqs': self.observables['dplaqs'],
             'dcharges': self.observables['dcharges'],
         }
 
@@ -272,11 +271,11 @@ class RunData:
         out_dir = os.path.join(run_dir, 'samples')
         io.check_else_make_dir(out_dir)
         for key, val in self.samples_dict.items():
-            out_file = os.path.join(out_dir, f'{key}.pkl')
-            io.save_pkl(np.array(val), out_file, name=key)
+            out_file = os.path.join(out_dir, f'{key}.z')
+            io.savez(np.array(val), out_file, name=key)
 
-        samples_arr_file = os.path.join(run_dir, 'samples.pkl')
-        io.save_pkl(self.samples_arr, samples_arr_file)
+        samples_arr_file = os.path.join(run_dir, 'samples.z')
+        io.savez(self.samples_arr, samples_arr_file)
 
     def save_reverse_data(self, run_dir):
         """Save reversibility data."""
@@ -302,24 +301,24 @@ class RunData:
 
     def save_data(self, run_dir):
         """Save all `data` objects to `run_dir`."""
-        run_data_file = os.path.join(run_dir, 'run_data.pkl')
-        energy_data_file = os.path.join(run_dir, 'energy_data.pkl')
-        volume_diffs_file = os.path.join(run_dir, 'volume_diffs.pkl')
-        observables_file = os.path.join(run_dir, 'observables.pkl')
+        run_data_file = os.path.join(run_dir, 'run_data.z')
+        energy_data_file = os.path.join(run_dir, 'energy_data.z')
+        volume_diffs_file = os.path.join(run_dir, 'volume_diffs.z')
+        observables_file = os.path.join(run_dir, 'observables.z')
 
-        io.save_pkl(self.run_data, run_data_file, name='run_data')
-        io.save_pkl(self.energy_data, energy_data_file, name='energy_data')
-        io.save_pkl(self.volume_diffs, volume_diffs_file, name='volume_diffs')
-        io.save_pkl(self.observables, observables_file, 'observables')
+        io.savez(self.run_data, run_data_file, name='run_data')
+        io.savez(self.energy_data, energy_data_file, name='energy_data')
+        io.savez(self.volume_diffs, volume_diffs_file, name='volume_diffs')
+        io.savez(self.observables, observables_file, 'observables')
 
         observables_dir = os.path.join(run_dir, 'observables')
         io.check_else_make_dir(observables_dir)
         iters = zip(self.run_data.items(), self.observables.items())
         for (kr, vr), (ko, vo) in iters:
-            fr = os.path.join(observables_dir, f'{kr}.pkl')
-            fo = os.path.join(observables_dir, f'{ko}.pkl')
-            io.save_pkl(np.array(vr), fr, name=kr)
-            io.save_pkl(np.array(vo), fo, name=ko)
+            fr = os.path.join(observables_dir, f'{kr}.z')
+            fo = os.path.join(observables_dir, f'{ko}.z')
+            io.savez(np.array(vr), fr, name=kr)
+            io.savez(np.array(vo), fo, name=ko)
 
     def save(self, run_dir=None):
         """Save all inference data to `run_dir`."""
@@ -327,8 +326,8 @@ class RunData:
             run_dir = self.run_params['run_dir']
 
         io.save_dict(self.run_params, run_dir, name='run_params')
-        volume_diffs_file = os.path.join(run_dir, 'volume_diffs.pkl')
-        io.save_pkl(self.volume_diffs, volume_diffs_file)
+        volume_diffs_file = os.path.join(run_dir, 'volume_diffs.z')
+        io.savez(self.volume_diffs, volume_diffs_file)
 
         if 'forward' in self.run_data:
             self.save_direction_data()

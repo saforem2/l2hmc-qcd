@@ -103,12 +103,14 @@ def make_csv(run_data, energy_data, run_params):
 def main(FLAGS):
     """Perform tensorflow-independent inference on a trained model."""
     if FLAGS.log_dir is None:
-        params_file = os.path.join(os.getcwd(), 'params.pkl')
+        params_file = os.path.join(os.getcwd(), 'params.z')
+        #  params_file = os.path.join(os.getcwd(), 'params.pkl')
     else:
         log_dir = os.path.abspath(FLAGS.log_dir)
         params_file = os.path.join(FLAGS.log_dir, 'parameters.pkl')
 
-    params = io.load_pkl(params_file)
+    #  params = io.loadz(params_file)
+    params = io.loadz(params_file)
     log_dir = params['log_dir']
 
     ns = FLAGS.num_steps
@@ -117,12 +119,14 @@ def main(FLAGS):
     if FLAGS.hmc:
         net_weights = NetWeights(0, 0, 0, 0, 0, 0)
     else:
-        net_weights = NetWeights(x_scale=FLAGS.x_scale_weight,
-                                 x_translation=FLAGS.x_translation_weight,
-                                 x_transformation=FLAGS.x_transformation_weight,
-                                 v_scale=FLAGS.v_scale_weight,
-                                 v_translation=FLAGS.v_translation_weight,
-                                 v_transformation=FLAGS.v_transformation_weight)
+        net_weights = NetWeights(
+            x_scale=FLAGS.x_scale_weight,
+            x_translation=FLAGS.x_translation_weight,
+            x_transformation=FLAGS.x_transformation_weight,
+            v_scale=FLAGS.v_scale_weight,
+            v_translation=FLAGS.v_translation_weight,
+            v_transformation=FLAGS.v_transformation_weight
+        )
 
     if net_weights == NetWeights(0., 0., 0., 0., 0., 0.):
         FLAGS.hmc = True

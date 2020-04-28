@@ -22,8 +22,6 @@ from lattice.lattice import calc_plaqs_diffs, GaugeLattice
 from dynamics.dynamics_np import DynamicsNP, convert_to_angle
 
 
-#  from plotters.data_utils import therm_arr, bootstrap
-#  from plotters.inference_plots import calc_tunneling_rate
 # pylint: disable=no-member
 # pylint: disable=protected-access
 # pylint: disable=inconsistent-return-statements
@@ -51,18 +49,18 @@ def create_lattice(params):
 def _get_eps(log_dir):
     """Get the step size `eps` by looking for it in `log_dir` ."""
     try:
-        in_file = os.path.join(log_dir, 'eps_np.pkl')
-        eps_dict = io.load_pkl(in_file)
+        in_file = os.path.join(log_dir, 'eps_np.z')
+        eps_dict = io.loadz(in_file)
         eps = eps_dict['eps']
     except FileNotFoundError:
         run_dirs = io.get_run_dirs(log_dir)
-        rp_file = os.path.join(run_dirs[0], 'run_params.pkl')
+        rp_file = os.path.join(run_dirs[0], 'run_params.z')
         if os.path.isfile(rp_file):
-            run_params = io.load_pkl(rp_file)
+            run_params = io.loadz(rp_file)
         else:
-            rp_file = os.path.join(run_dirs[-1], 'run_params.pkl')
+            rp_file = os.path.join(run_dirs[-1], 'run_params.z')
             if os.path.isfile(rp_file):
-                run_params = io.load_pkl(rp_file)
+                run_params = io.loadz(rp_file)
             else:
                 raise FileNotFoundError('Unable to load run_params.')
         eps = run_params['eps']
@@ -121,17 +119,18 @@ def create_dynamics(log_dir,
                     model_type='GaugeModel',
                     **kwargs):
     """Create `DynamicsNP` object for running dynamics imperatively."""
-    params = io.load_pkl(os.path.join(log_dir, 'parameters.pkl'))
+    params_file = os.path.join(log_dir, 'parameters.z')
+    params = io.loadz(params_file)
 
     # Update params using command line arguments to override defaults
     params = _update_params(params, **kwargs)
 
-    # load saved weights from `.pkl` file:
-    xw_file = os.path.join(log_dir, 'xnet_weights.pkl')
-    vw_file = os.path.join(log_dir, 'vnet_weights.pkl')
+    # load saved weights from `.z` file:
+    xw_file = os.path.join(log_dir, 'xnet_weights.z')
+    vw_file = os.path.join(log_dir, 'vnet_weights.z')
     weights = {
-        'xnet': io.load_pkl(xw_file),
-        'vnet': io.load_pkl(vw_file),
+        'xnet': io.loadz(xw_file),
+        'vnet': io.loadz(vw_file),
     }
 
     # to run with reduced weight matrix keeping first `num_singular_values`
@@ -147,11 +146,10 @@ def create_dynamics(log_dir,
                           model_type=model_type,
                           potential_fn=potential_fn)
 
-    mask_file = os.path.join(log_dir, 'dynamics_mask.pkl')
-    if os.path.isfile(mask_file):
-        with open(mask_file, 'rb') as f:
-            masks = pickle.load(f)
-        dynamics.set_masks(masks)
+    mask_file = os.path.join(log_dir, 'dynamics_mask.z')
+    masks = io.loadz(mask_file)
+
+    dynamics.set_masks(masks)
 
     #  out_file = os.path.join(log_dir, 'dynamics', 'dynamics_np_dict.txt')
     #  io.write_dict(dynamics.__dict__, out_file)
@@ -570,9 +568,9 @@ def map_points(dynamics, run_params):
     out_dir = os.path.join(run_params['run_dir'], 'mapped_samples')
     io.check_else_make_dir(out_dir)
     for key, val in samples_dict.items():
-        out_file = os.path.join(out_dir, f'{key}.pkl')
+        out_file = os.path.join(out_dir, f'{key}.z')
         io.log(f'Saving {key} to {out_file}.')
-        io.save_pkl(np.array(val), out_file)
+        io.savez(np.array(val), out_file)
 
     return samples_dict
 

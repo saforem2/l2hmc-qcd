@@ -60,7 +60,7 @@ def get_train_weights(params):
 
 def plot_setup(log_dir, run_params, idx=None, nw_run=True):
     """Setup for plotting. Creates `filename` and `title_str`."""
-    params = io.load_pkl(os.path.join(log_dir, 'parameters.pkl'))
+    params = io.loadz(os.path.join(log_dir, 'parameters.pkl'))
     lf = params['num_steps']
     clip_value = params.get('clip_value', 0)
     eps_fixed = params.get('eps_fixed', False)
@@ -122,9 +122,9 @@ def plot_setup(log_dir, run_params, idx=None, nw_run=True):
 
 def load_weights(log_dir):
     """Load weights dict from `log_dir`."""
-    #  weights = io.load_pkl(os.path.join(log_dir, 'weights.pkl'))
-    xweights = io.load_pkl(os.path.join(log_dir, 'xnet_weights.pkl'))
-    vweights = io.load_pkl(os.path.join(log_dir, 'vnet_weights.pkl'))
+    #  weights = io.loadz(os.path.join(log_dir, 'weights.pkl'))
+    xweights = io.loadz(os.path.join(log_dir, 'xnet_weights.pkl'))
+    vweights = io.loadz(os.path.join(log_dir, 'vnet_weights.pkl'))
     #  xweights = weights['xnet']
     #  vweights = weights['vnet']
     #  xweights = weights['xnet']['GenericNet']
@@ -192,7 +192,7 @@ def weights_hist(log_dir, weights=None, init=False):
         sns.set_palette('bright', 100)
 
     if weights is None:
-        weights = io.load_pkl(os.path.join(log_dir, 'weights.pkl'))
+        weights = io.loadz(os.path.join(log_dir, 'weights.pkl'))
 
     figs_dir = os.path.join(log_dir, 'figures', 'weights')
     io.check_else_make_dir(figs_dir)
@@ -273,7 +273,7 @@ def get_params(dirname, fname=None):
     else:
         params_file = os.path.join(dirname, fname)
 
-    return io.load_pkl(params_file)
+    return io.loadz(params_file)
 
 
 def get_title_str(params, run_params=None):
@@ -349,20 +349,20 @@ def _get_title(lf_steps, eps, batch_size, beta, nw):
 
 def _load_obs(run_dir, obs_name):
     """Load observable."""
-    run_params = io.load_pkl(os.path.join(run_dir, 'run_params.pkl'))
+    run_params = io.loadz(os.path.join(run_dir, 'run_params.pkl'))
     obs = None
     if 'plaq' in obs_name:
         exact = u1_plaq_exact(run_params['beta'])
         try:
             pf = os.path.join(run_dir, 'observables', 'plaqs.pkl')
-            plaqs = io.load_pkl(pf)
+            plaqs = io.loadz(pf)
             obs = exact - np.array(plaqs)
         except FileNotFoundError:
             io.log(f'Unable to load plaquettes from {run_dir}. Returning.')
     else:
         pkl_file = os.path.join(run_dir, 'observables', f'{obs_name}.pkl')
         try:
-            obs = np.array(io.load_pkl(pkl_file))
+            obs = np.array(io.loadz(pkl_file))
         except FileNotFoundError:
             io.log(f'Unable to load observable from {run_dir}. Returning.')
 
@@ -497,8 +497,8 @@ def _plot_obs(run_dir, obs=None, obs_name=None, **kwargs):
     if obs is None:
         obs = get_obs_dict(run_dir, obs_name)
 
-    params = io.load_pkl(os.path.join(run_dir, 'params.pkl'))
-    run_params = io.load_pkl(os.path.join(run_dir, 'run_params.pkl'))
+    params = io.loadz(os.path.join(run_dir, 'params.pkl'))
+    run_params = io.loadz(os.path.join(run_dir, 'run_params.pkl'))
     title_str = get_title_str(params, run_params)
 
     fig, axes = plt.subplots(ncols=2, figsize=(12.8, 4.8))
@@ -567,7 +567,7 @@ def plot_obs(log_dir, obs_dict, run_params=None,
             _ = axes[idx, 0].set_ylabel(ylabel, fontsize='x-large')
 
     params_file = os.path.join(log_dir, 'parameters.pkl')
-    params = io.load_pkl(params_file)
+    params = io.loadz(params_file)
     title_str = get_title_str(params, run_params=run_params)
     _ = plt.suptitle(title_str, fontsize='xx-large', y=1.04)
     plt.tight_layout()

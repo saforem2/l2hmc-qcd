@@ -142,7 +142,8 @@ def weights_hist(log_dir, weights=None):
         sns.set_palette('bright', 100)
 
     if weights is None:
-        weights = io.load_pkl(os.path.join(log_dir, 'weights.pkl'))
+        weights = io.loadz(os.path.join(log_dir, 'weights.z'))
+        #  weights = io.loadz(os.path.join(log_dir, 'weights.pkl'))
 
     figs_dir = os.path.join(log_dir, 'figures', 'weights')
     io.check_else_make_dir(figs_dir)
@@ -231,20 +232,20 @@ def get_obs_dict(log_dir, obs_name, run_dirs=None):
     obs_dict = {}
 
     for rd in sorted(run_dirs):
-        run_params = io.load_pkl(os.path.join(rd, 'run_params.pkl'))
+        run_params = io.loadz(os.path.join(rd, 'run_params.pkl'))
         nw = tuple(run_params['net_weights'])
         if obs_name == 'plaqs':
             exact = u1_plaq_exact(run_params['beta'])
             try:
                 pf = os.path.join(rd, 'observables', 'plaqs.pkl')
-                plaqs = io.load_pkl(pf)
+                plaqs = io.loadz(pf)
                 obs = exact - np.array(plaqs)
             except FileNotFoundError:
                 continue
         else:
             pkl_file = os.path.join(rd, 'observables', f'{obs_name}.pkl')
             try:
-                obs = io.load_pkl(pkl_file)
+                obs = io.loadz(pkl_file)
             except FileNotFoundError:
                 continue
 
@@ -456,7 +457,7 @@ def grid_plot(log_dir, obs_dict=None, **kwargs):
             data = v
 
         rp_file = os.path.join(run_dirs[idx], 'run_params.pkl')
-        run_params = io.load_pkl(rp_file)
+        run_params = io.loadz(rp_file)
 
         if plot_type == 'hist':
             axes[idx] = kde_hist(data,
@@ -499,7 +500,7 @@ def grid_plot(log_dir, obs_dict=None, **kwargs):
         fig.subplots_adjust(wspace=0.2)
 
     params_file = os.path.join(log_dir, 'parameters.pkl')
-    params = io.load_pkl(params_file)
+    params = io.loadz(params_file)
     clip_value = params.get('clip_value', 0)
 
     title_str = utils.get_title_str(params, run_params)
@@ -595,7 +596,7 @@ def plot_obs(log_dir, obs_dict=None, **kwargs):
             data = v
 
         rp_file = os.path.join(run_dirs[idx], 'run_params.pkl')
-        run_params = io.load_pkl(rp_file)
+        run_params = io.loadz(rp_file)
         assert tuple(run_params['net_weight']) == k
         beta_arr.append(run_params['beta'])
         eps_arr.append(run_params['eps'])
@@ -625,7 +626,7 @@ def plot_obs(log_dir, obs_dict=None, **kwargs):
             _ = axes[idx, 0].set_ylabel(ylabel, fontsize=18)
 
     params_file = os.path.join(log_dir, 'parameters.pkl')
-    params = io.load_pkl(params_file)
+    params = io.loadz(params_file)
     title_str = utils.get_title_str(params, run_params)
     _ = plt.suptitle(title_str, fontsize=20, y=1.04)
 
