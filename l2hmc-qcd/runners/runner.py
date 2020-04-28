@@ -35,9 +35,9 @@ def _load(pkl_file):
 
 
 def recreate_distribution(log_dir):
-    mus_file = os.path.join(log_dir, 'mus.pkl')
-    sigmas_file = os.path.join(log_dir, 'sigmas.pkl')
-    pis_file = os.path.join(log_dir, 'pis.pkl')
+    mus_file = os.path.join(log_dir, 'mus.z')
+    sigmas_file = os.path.join(log_dir, 'sigmas.z')
+    pis_file = os.path.join(log_dir, 'pis.z')
 
     mus = _load(mus_file)
     sigmas = _load(sigmas_file)

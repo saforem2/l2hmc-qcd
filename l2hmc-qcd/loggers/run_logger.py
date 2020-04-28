@@ -435,7 +435,7 @@ class RunLogger(object):
         for key, val in self.run_data.items():
             if key in bad_keys and not save_samples:
                 continue
-            out_file = key + '.pkl'
+            out_file = key + '.z'
             out_file = os.path.join(observables_dir, out_file)
             io.save_data(val, out_file, name=key)
 
@@ -451,8 +451,8 @@ class RunLogger(object):
         np.savez_compressed(out_file, **samples_dict)
 
     def _save_energy(self, data, etype, header=None):
-        """Save energy data to `.pkl` file and write stats to `.txt` file."""
-        fname = etype + '.pkl'
+        """Save energy data to `.z` file and write stats to `.txt` file."""
+        fname = etype + '.z'
         out_file = os.path.join(self.run_dir, fname)
         io.log(f'Saving {etype} to {out_file}...')
         with open(out_file, 'wb') as f:
@@ -472,7 +472,7 @@ class RunLogger(object):
                 f.write('\n\n')
 
     def _save_energy_data(self):
-        """Save energy data to `.pkl` files."""
+        """Save energy data to `.z` files."""
         self._save_energy(self.energy_dict, 'energy_data_tf')
 
     def _save_observables_data(self, observables_dir, therm_frac):
@@ -486,13 +486,13 @@ class RunLogger(object):
         charges_autocorrs = [x / np.max(x) for x in charges_autocorrs]
         self.run_data['charges_autocorrs'] = charges_autocorrs
 
-        stats_data_file = os.path.join(self.run_dir, 'run_stats.pkl')
+        stats_data_file = os.path.join(self.run_dir, 'run_stats.z')
         io.log(f"Saving run_stats to: {stats_data_file}.")
         with open(stats_data_file, 'wb') as f:
             pickle.dump(run_stats, f)
 
         for key, val in run_stats.items():
-            out_file = key + '_stats.pkl'
+            out_file = key + '_stats.z'
             out_file = os.path.join(observables_dir, out_file)
             io.save_data(val, out_file, name=key)
 

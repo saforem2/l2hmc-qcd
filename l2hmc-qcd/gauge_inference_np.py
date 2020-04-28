@@ -104,12 +104,10 @@ def main(FLAGS):
     """Perform tensorflow-independent inference on a trained model."""
     if FLAGS.log_dir is None:
         params_file = os.path.join(os.getcwd(), 'params.z')
-        #  params_file = os.path.join(os.getcwd(), 'params.pkl')
     else:
         log_dir = os.path.abspath(FLAGS.log_dir)
-        params_file = os.path.join(FLAGS.log_dir, 'parameters.pkl')
+        params_file = os.path.join(FLAGS.log_dir, 'parameters.z')
 
-    #  params = io.loadz(params_file)
     params = io.loadz(params_file)
     log_dir = params['log_dir']
 
@@ -175,7 +173,7 @@ def main(FLAGS):
     _, _, fig_dir = inference_plots(run_data, params, runs_np=True)
 
     out_file = os.path.join(fig_dir, 'run_summary.txt')
-    run_data.log_summary(n_boot=100, out_file=out_file)
+    run_data.log_summary(n_boot=10, out_file=out_file)
 
     if not FLAGS.dont_save:  # i.e. SAVE data by default
         run_data.save(run_dir=run_params['run_dir'])

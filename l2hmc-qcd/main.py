@@ -125,29 +125,29 @@ def pkl_dump(d, pkl_file):
 
 
 def save_params(model):
-    """Save model parameters to `.pkl` files.
+    """Save model parameters to `.z` files.
 
     Additionally, write out all trainable parameters (w/ sizes) to `.txt` file.
     """
 
     #  dynamics_dir = os.path.join(model.log_dir, 'dynamics')
     #  io.check_else_make_dir(dynamics_dir)
-    #  out_file = os.path.join(dynamics_dir, 'dynamics_params.pkl')
+    #  out_file = os.path.join(dynamics_dir, 'dynamics_params.z')
     #  io.savez(model.dynamics.params, out_file)
 
     out_file = os.path.join(model.log_dir, 'trainable_params.txt')
     count_trainable_params(out_file)
-    io.savez(model.params, os.path.join(os.getcwd(), 'params.pkl'))
+    io.savez(model.params, os.path.join(os.getcwd(), 'params.z'))
 
 
 def save_masks(model, sess):
     """Save `model.dynamics.masks` for inference."""
-    masks_file = os.path.join(model.log_dir, 'dynamics_mask.pkl')
+    masks_file = os.path.join(model.log_dir, 'dynamics_mask.z')
     masks_file_ = os.path.join(model.log_dir, 'dynamics_mask.np')
     masks = sess.run(model.dynamics.masks)
     np.array(masks).tofile(masks_file_)
     io.log(f'dynamics.masks:\n\t {masks}')
-    pkl_dump(masks, masks_file)
+    io.savez(masks, masks_file)
 
 
 def save_seeds(model):
@@ -158,25 +158,24 @@ def save_seeds(model):
 
 
 def save_weights(model, sess):
-    """Save network weights to `.pkl` file."""
-    xw_file = os.path.join(model.log_dir, 'xnet_weights.pkl')
+    """Save network weights to `.z` file."""
+    xw_file = os.path.join(model.log_dir, 'xnet_weights.z')
     xnet_weights = model.dynamics.xnet.save_weights(sess, xw_file)
 
-    vw_file = os.path.join(model.log_dir, 'vnet_weights.pkl')
+    vw_file = os.path.join(model.log_dir, 'vnet_weights.z')
     vnet_weights = model.dynamics.vnet.save_weights(sess, vw_file)
     model_weights = {
         'xnet': xnet_weights,
         'vnet': vnet_weights,
     }
-    io.savez(model_weights, os.path.join(model.log_dir,
-                                            'weights.pkl'))
+    io.savez(model_weights, os.path.join(model.log_dir, 'weights.z'))
 
 
 def save_eps(model, sess):
     """Save final value of `eps` (step size) at the end of training."""
     eps_np = sess.run(model.dynamics.eps)
     eps_dict = {'eps': eps_np}
-    io.savez(eps_dict, os.path.join(model.log_dir, 'eps_np.pkl'))
+    io.savez(eps_dict, os.path.join(model.log_dir, 'eps_np.z'))
 
 
 @timeit
@@ -279,7 +278,7 @@ def train_l2hmc(FLAGS, log_file=None):
                                              checkpoint_dir=checkpoint_dir)
 
     current_state_file = os.path.join(model.log_dir, 'training',
-                                      'current_state.pkl')
+                                      'current_state.z')
     if os.path.isfile(current_state_file):
         current_state = io.loadz(current_state_file)
         model.lr = current_state['lr']
@@ -348,7 +347,7 @@ def train_l2hmc(FLAGS, log_file=None):
             train_logger.save_train_data()
         # wfile = os.path.join(model.log_dir, 'dynamics_weights.h5')
         # model.dynamics.save_weights(wfile)
-        #  io.save_dict(model.params, os.path.join(os.getcwd()), 'params.pkl')
+        #  io.save_dict(model.params, os.path.join(os.getcwd()), 'params.z')
 
     # close MonitoredTrainingSession and reset the default graph
     sess.close()

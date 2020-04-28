@@ -23,7 +23,7 @@ import utils.file_io as io
 
 from lattice.lattice import u1_plaq_exact
 from plotters.data_utils import bootstrap
-from plotters.plot_utils import get_matching_log_dirs, load_pkl
+from plotters.plot_utils import get_matching_log_dirs
 from plotters.seaborn_plots import get_lf, get_observables, get_train_weights
 from plotters.plot_observables import get_run_dirs
 
@@ -85,16 +85,16 @@ def calc_tunneling_rate(charges):
 
 def get_observables2(run_dir, log_dir=None, n_boot=500,
                      therm_frac=0.25, nw_include=None, calc_stats=True):
-    run_params_file = os.path.join(run_dir, 'run_params.pkl')
+    run_params_file = os.path.join(run_dir, 'run_params.z')
     if os.path.isfile(run_params_file):
-        run_params = load_pkl(run_params_file)
+        run_params = io.loadz(run_params_file)
     else:
-        raise FileNotFoundError("Unable to locate `run_params.pkl`, returning.")
+        raise FileNotFoundError("Unable to locate `run_params.z`, returning.")
     net_weights = tuple([int(i) for i in run_params['net_weights']])
     eps = run_params['eps']
     beta = run_params['beta']
     observables_dir = os.path.join(run_dir, 'observables')
-    px = load_pkl(os.path.join(observables_dir, 'px.pkl'))
+    px = io.loadz(os.path.join(observables_dir, 'px.z'))
     px = np.squeeze(np.array(px))
     avg_px = np.mean(px)
     if nw_include is not None:
@@ -108,11 +108,11 @@ def get_observables2(run_dir, log_dir=None, n_boot=500,
     io.log(f'Loading data for net_weights: {net_weights}')
 
     def load_sqz(fname):
-        data = load_pkl(os.path.join(observables_dir, fname))
+        data = io.loadz(os.path.join(observables_dir, fname))
         return np.squeeze(np.array(data))
 
-    charges = load_sqz('charges.pkl')
-    plaqs = load_sqz('plaqs.pkl')
+    charges = load_sqz('charges.z')
+    plaqs = load_sqz('plaqs.z')
     dplq = u1_plaq_exact(beta) - plaqs
     num_steps = px.shape[0]
     therm_steps = int(therm_frac * num_steps)
@@ -127,11 +127,11 @@ def get_observables2(run_dir, log_dir=None, n_boot=500,
     charges = therm_arr(charges)
     dq, _ = calc_tunneling_rate(charges)
     dq = dq.T
-    dxf_file = os.path.join(observables_dir, 'dxf.pkl')
-    dxb_file = os.path.join(observables_dir, 'dxb.pkl')
+    dxf_file = os.path.join(observables_dir, 'dxf.z')
+    dxb_file = os.path.join(observables_dir, 'dxb.z')
     if os.path.isfile(dxf_file) and os.path.isfile(dxb_file):
-        dxf = load_sqz('dxf.pkl')
-        dxb = load_sqz('dxb.pkl')
+        dxf = load_sqz('dxf.z')
+        dxb = load_sqz('dxb.z')
         dx = (dxf + dxb) / 2
         dx = dx.mean(axis=-1)
         dx = therm_arr(dx)
@@ -175,11 +175,11 @@ def get_observables2(run_dir, log_dir=None, n_boot=500,
 
 
 def get_observables1(run_dir, n_boot=1000, therm_frac=0.2, nw_include=None):
-    run_params = load_pkl(os.path.join(run_dir, 'run_params.pkl'))
+    run_params = io.loadz(os.path.join(run_dir, 'run_params.z'))
     net_weights = tuple([int(i) for i in run_params['net_weights']])
     #  eps = run_params['eps']
     observables_dir = os.path.join(run_dir, 'observables')
-    px = load_pkl(os.path.join(observables_dir, 'px.pkl'))
+    px = io.loadz(os.path.join(observables_dir, 'px.z'))
     px = np.squeeze(np.array(px))
     avg_px = np.mean(px)
 
@@ -193,9 +193,9 @@ def get_observables1(run_dir, n_boot=1000, therm_frac=0.2, nw_include=None):
         return None, run_params
 
     io.log(f'Loading data for net_weights: {net_weights}')
-    plaqs = load_pkl(os.path.join(observables_dir, 'plaqs.pkl'))
+    plaqs = io.loadz(os.path.join(observables_dir, 'plaqs.z'))
     dplq = u1_plaq_exact(run_params['beta']) - np.squeeze(np.array(plaqs))
-    charges = load_pkl(os.path.join(observables_dir, 'charges.pkl'))
+    charges = io.loadz(os.path.join(observables_dir, 'charges.z'))
     charges = np.squeeze(np.array(charges))
 
     # Since the number of tunneling events is computed as
@@ -297,7 +297,7 @@ def combined_pair_plotter(log_dirs, therm_frac=0.2, calc_stats=True,
     t0 = time.time()
     for log_dir in log_dirs:
         io.log(f'log_dir: {log_dir}')
-        params = load_pkl(os.path.join(log_dir, 'parameters.pkl'))
+        params = io.loadz(os.path.join(log_dir, 'parameters.z'))
         lf = params['num_steps']
         clip_value = params.get('clip_value', 0)
         train_weights = get_train_weights(params)
@@ -443,7 +443,7 @@ def pair_plotter(log_dirs, therm_frac=0.2, n_boot=1000,
     for idx, log_dir in enumerate(log_dirs):
         io.log(f'log_dir: {log_dir}')
         run_dirs = sorted(get_run_dirs(log_dir))
-        params = load_pkl(os.path.join(log_dir, 'parameters.pkl'))
+        params = io.loadz(os.path.join(log_dir, 'parameters.z'))
         lf = params['num_steps']
         clip_value = params.get('clip_value', 0)
         train_weights = get_train_weights(params)
@@ -472,7 +472,7 @@ def pair_plotter(log_dirs, therm_frac=0.2, n_boot=1000,
         io.check_else_make_dir(out_dir)
         for run_dir in run_dirs:
             t1 = time.time()
-            px_file = os.path.join(run_dir, 'observables', 'px.pkl')
+            px_file = os.path.join(run_dir, 'observables', 'px.z')
             if os.path.isfile(px_file):
                 kwargs = {
                     'n_boot': n_boot,

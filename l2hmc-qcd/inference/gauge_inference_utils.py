@@ -55,7 +55,7 @@ def create_config(params):
         config_attrs.arithmetic_optimization = off
 
     if params['gpu']:
-        # Horovod: pin GPU to be used to process local rank 
+        # Horovod: pin GPU to be used to process local rank
         # (one GPU per process)
         config.gpu_options.allow_growth = True
         #  config.allow_soft_placement = True
@@ -108,12 +108,12 @@ def parse_flags(FLAGS, log_file=None):
     return params
 
 
-def load_params(params_pkl_file=None, log_file=None):
-    if params_pkl_file is None:
-        params_pkl_file = os.path.join(os.getcwd(), 'params.pkl')
+def load_params(params_file=None, log_file=None):
+    if params_file is None:
+        params_file = os.path.join(os.getcwd(), 'params.z')
 
-    if os.path.isfile(params_pkl_file):
-        with open(params_pkl_file, 'rb') as f:
+    if os.path.isfile(params_file):
+        with open(params_file, 'rb') as f:
             params = pickle.load(f)
 
     return params
@@ -158,9 +158,9 @@ def set_model_weights(model, dest='rand'):
 
 def log_mem_usage(run_logger, m_arr):
     """Log memory usage."""
-    m_pkl_file = os.path.join(run_logger.log_dir, 'memory_usage.pkl')
+    m_z_file = os.path.join(run_logger.log_dir, 'memory_usage.z')
     m_txt_file = os.path.join(run_logger.log_dir, 'memory_usage.txt')
-    with open(m_pkl_file, 'wb') as f:
+    with open(m_z_file, 'wb') as f:
         pickle.dump(m_arr, f)
     with open(m_txt_file, 'w') as f:
         for i in m_arr:
@@ -181,11 +181,11 @@ def collect_mem_usage(m_arr=None):
 def log_plaq_diffs(run_logger, net_weights, avg_plaq_diff):
     """Log the average values of the plaquette differences.
 
-    NOTE: If inference was performed with either the `--loop_net_weights` 
+    NOTE: If inference was performed with either the `--loop_net_weights`
           or `--loop_transl_weights` flags passed, we want to see how the
           difference between the observed and expected value of the average
           plaquette varies with different values of the net weights, so save
-          this data to `.pkl` file and  plot the results.
+          this data to `.z` file and  plot the results.
     """
     try:
         pd_tup = [
