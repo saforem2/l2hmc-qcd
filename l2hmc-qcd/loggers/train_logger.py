@@ -112,7 +112,7 @@ class TrainLogger(object):
             'train_log_file': os.path.join(dirs['train_dir'],
                                            'training_log.txt'),
             'current_state_file': os.path.join(dirs['train_dir'],
-                                               'current_state.pkl')
+                                               'current_state.z')
         }
 
         for _, val in dirs.items():
@@ -167,12 +167,12 @@ class TrainLogger(object):
 
     def save_current_state(self, data):
         """Save curent state incase training needs to be restarted."""
-        out_file = os.path.join(self.train_dir, 'current_state.pkl')
+        out_file = os.path.join(self.train_dir, 'current_state.z')
         io.savez(data, out_file, name='current_state')
 
     def load_train_data(self):
         """Load existing training data from `self.train_dir`."""
-        data_file = os.path.join(self.train_dir, 'train_data.pkl')
+        data_file = os.path.join(self.train_dir, 'train_data.z')
         try:
             train_data = io.loadz(data_file)
         except FileNotFoundError:
@@ -186,7 +186,7 @@ class TrainLogger(object):
         self.train_data = self.load_train_data()
 
     def save_train_data(self, out_file=None):
-        """Save train data to `.pkl` file."""
+        """Save train data to `.z` file."""
         if out_file is None:
             out_dir = os.path.join(self.train_dir, 'train_data')
             io.check_else_make_dir(out_dir)

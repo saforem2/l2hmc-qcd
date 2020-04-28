@@ -143,7 +143,7 @@ def weights_hist(log_dir, weights=None):
 
     if weights is None:
         weights = io.loadz(os.path.join(log_dir, 'weights.z'))
-        #  weights = io.loadz(os.path.join(log_dir, 'weights.pkl'))
+        #  weights = io.loadz(os.path.join(log_dir, 'weights.z'))
 
     figs_dir = os.path.join(log_dir, 'figures', 'weights')
     io.check_else_make_dir(figs_dir)
@@ -219,7 +219,7 @@ def get_obs_dict(log_dir, obs_name, run_dirs=None):
     Args:
         log_dir (str): Path specifying `log_dir` to look in.
         obs_name (str): Name of observable to load (should match file name e.g.
-            in `observables/obs_name.pkl`)
+            in `observables/obs_name.z`)
         run_dirs (list): List of run_dirs from which observable should be
             loaded. If not included, will look in all `run_dirs` in
                 `log_dir/runs/`.
@@ -232,20 +232,20 @@ def get_obs_dict(log_dir, obs_name, run_dirs=None):
     obs_dict = {}
 
     for rd in sorted(run_dirs):
-        run_params = io.loadz(os.path.join(rd, 'run_params.pkl'))
+        run_params = io.loadz(os.path.join(rd, 'run_params.z'))
         nw = tuple(run_params['net_weights'])
         if obs_name == 'plaqs':
             exact = u1_plaq_exact(run_params['beta'])
             try:
-                pf = os.path.join(rd, 'observables', 'plaqs.pkl')
+                pf = os.path.join(rd, 'observables', 'plaqs.z')
                 plaqs = io.loadz(pf)
                 obs = exact - np.array(plaqs)
             except FileNotFoundError:
                 continue
         else:
-            pkl_file = os.path.join(rd, 'observables', f'{obs_name}.pkl')
+            z_file = os.path.join(rd, 'observables', f'{obs_name}.z')
             try:
-                obs = io.loadz(pkl_file)
+                obs = io.loadz(z_file)
             except FileNotFoundError:
                 continue
 
@@ -456,7 +456,7 @@ def grid_plot(log_dir, obs_dict=None, **kwargs):
         else:
             data = v
 
-        rp_file = os.path.join(run_dirs[idx], 'run_params.pkl')
+        rp_file = os.path.join(run_dirs[idx], 'run_params.z')
         run_params = io.loadz(rp_file)
 
         if plot_type == 'hist':
@@ -499,7 +499,7 @@ def grid_plot(log_dir, obs_dict=None, **kwargs):
     if plot_type in ['trace', 'trace_plot']:
         fig.subplots_adjust(wspace=0.2)
 
-    params_file = os.path.join(log_dir, 'parameters.pkl')
+    params_file = os.path.join(log_dir, 'parameters.z')
     params = io.loadz(params_file)
     clip_value = params.get('clip_value', 0)
 
@@ -595,7 +595,7 @@ def plot_obs(log_dir, obs_dict=None, **kwargs):
         else:
             data = v
 
-        rp_file = os.path.join(run_dirs[idx], 'run_params.pkl')
+        rp_file = os.path.join(run_dirs[idx], 'run_params.z')
         run_params = io.loadz(rp_file)
         assert tuple(run_params['net_weight']) == k
         beta_arr.append(run_params['beta'])
@@ -625,7 +625,7 @@ def plot_obs(log_dir, obs_dict=None, **kwargs):
 
             _ = axes[idx, 0].set_ylabel(ylabel, fontsize=18)
 
-    params_file = os.path.join(log_dir, 'parameters.pkl')
+    params_file = os.path.join(log_dir, 'parameters.z')
     params = io.loadz(params_file)
     title_str = utils.get_title_str(params, run_params)
     _ = plt.suptitle(title_str, fontsize=20, y=1.04)

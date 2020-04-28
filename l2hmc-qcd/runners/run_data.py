@@ -338,7 +338,7 @@ class RunData:
         self.save_run_history(run_dir)
 
     @staticmethod
-    def _calc_stats(arr, n_boot=100):
+    def _calc_stats(arr, n_boot=10):
         step_ax = np.argmax(arr.shape)
         chain_ax = np.argmin(arr.shape)
         arr = np.swapaxes(arr, step_ax, chain_ax)
@@ -449,7 +449,7 @@ class RunData:
                 param_str = f' - {key}: {self.run_params[key]}\n'
                 io.log_and_write(param_str, out_file)
 
-    def _log_stats(self, therm_data, tunn_stats, out_file, n_boot=10000):
+    def _log_stats(self, therm_data, tunn_stats, out_file, n_boot=100):
         """Log/write all stats in `therm_data` and `tunn_stats`."""
         for key, val in tunn_stats.items():
             self._log_write_stat(out_file, key, val)
@@ -459,7 +459,7 @@ class RunData:
             self._log_write_stat(out_file, key, means, std=stds)
             io.log_and_write('\n', out_file)
 
-    def log_summary(self, n_boot=10000, out_file=None):
+    def log_summary(self, n_boot=100, out_file=None):
         """Create human-readable summary of inference run."""
         if out_file is None:
             out_dir = self.run_params.get('run_dir', None)

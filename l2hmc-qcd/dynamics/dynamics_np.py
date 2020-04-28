@@ -52,7 +52,7 @@ class DynamicsNP(object):
         """Init.
         Args:
             potential_fn (callable): Potential energy function.
-            weights (dict): Dictionary of weights, from `log_dir/weights.pkl`
+            weights (dict): Dictionary of weights, from `log_dir/weights.z`
                 file where `log_dir` contains the trained model.
             hmc (bool): Run generic HMC (faster)
             model_type (str): Model type. (if 'GaugeModel', run extra ops)

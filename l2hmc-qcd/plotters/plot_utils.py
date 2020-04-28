@@ -60,7 +60,7 @@ def get_train_weights(params):
 
 def plot_setup(log_dir, run_params, idx=None, nw_run=True):
     """Setup for plotting. Creates `filename` and `title_str`."""
-    params = io.loadz(os.path.join(log_dir, 'parameters.pkl'))
+    params = io.loadz(os.path.join(log_dir, 'parameters.z'))
     lf = params['num_steps']
     clip_value = params.get('clip_value', 0)
     eps_fixed = params.get('eps_fixed', False)
@@ -86,6 +86,9 @@ def plot_setup(log_dir, run_params, idx=None, nw_run=True):
     fname = f'lf{lf}'
     run_steps = run_params['run_steps']
     fname += f'_steps{run_steps}'
+    Lt = params['time_size']
+    Lx = params['space_size']
+    title_str = f'{Lt}' + r'$\times$' + f'{Lx}, '
     title_str = (r"$N_{\mathrm{LF}} = $" + f'{lf}, '
                  r"$\beta = $" + f'{beta:.2g}, '
                  r"$\varepsilon = $" + f'{eps:.3g}')
@@ -122,9 +125,9 @@ def plot_setup(log_dir, run_params, idx=None, nw_run=True):
 
 def load_weights(log_dir):
     """Load weights dict from `log_dir`."""
-    #  weights = io.loadz(os.path.join(log_dir, 'weights.pkl'))
-    xweights = io.loadz(os.path.join(log_dir, 'xnet_weights.pkl'))
-    vweights = io.loadz(os.path.join(log_dir, 'vnet_weights.pkl'))
+    #  weights = io.loadz(os.path.join(log_dir, 'weights.z'))
+    xweights = io.loadz(os.path.join(log_dir, 'xnet_weights.z'))
+    vweights = io.loadz(os.path.join(log_dir, 'vnet_weights.z'))
     #  xweights = weights['xnet']
     #  vweights = weights['vnet']
     #  xweights = weights['xnet']['GenericNet']
@@ -192,7 +195,7 @@ def weights_hist(log_dir, weights=None, init=False):
         sns.set_palette('bright', 100)
 
     if weights is None:
-        weights = io.loadz(os.path.join(log_dir, 'weights.pkl'))
+        weights = io.loadz(os.path.join(log_dir, 'weights.z'))
 
     figs_dir = os.path.join(log_dir, 'figures', 'weights')
     io.check_else_make_dir(figs_dir)
@@ -269,7 +272,7 @@ def reset_plots():
 def get_params(dirname, fname=None):
     """Get `params` from `dirname`."""
     if fname is None:
-        params_file = os.path.join(dirname, 'parameters.pkl')
+        params_file = os.path.join(dirname, 'parameters.z')
     else:
         params_file = os.path.join(dirname, fname)
 
@@ -349,20 +352,20 @@ def _get_title(lf_steps, eps, batch_size, beta, nw):
 
 def _load_obs(run_dir, obs_name):
     """Load observable."""
-    run_params = io.loadz(os.path.join(run_dir, 'run_params.pkl'))
+    run_params = io.loadz(os.path.join(run_dir, 'run_params.z'))
     obs = None
     if 'plaq' in obs_name:
         exact = u1_plaq_exact(run_params['beta'])
         try:
-            pf = os.path.join(run_dir, 'observables', 'plaqs.pkl')
+            pf = os.path.join(run_dir, 'observables', 'plaqs.z')
             plaqs = io.loadz(pf)
             obs = exact - np.array(plaqs)
         except FileNotFoundError:
             io.log(f'Unable to load plaquettes from {run_dir}. Returning.')
     else:
-        pkl_file = os.path.join(run_dir, 'observables', f'{obs_name}.pkl')
+        z_file = os.path.join(run_dir, 'observables', f'{obs_name}.z')
         try:
-            obs = np.array(io.loadz(pkl_file))
+            obs = np.array(io.loadz(z_file))
         except FileNotFoundError:
             io.log(f'Unable to load observable from {run_dir}. Returning.')
 
@@ -497,8 +500,8 @@ def _plot_obs(run_dir, obs=None, obs_name=None, **kwargs):
     if obs is None:
         obs = get_obs_dict(run_dir, obs_name)
 
-    params = io.loadz(os.path.join(run_dir, 'params.pkl'))
-    run_params = io.loadz(os.path.join(run_dir, 'run_params.pkl'))
+    params = io.loadz(os.path.join(run_dir, 'params.z'))
+    run_params = io.loadz(os.path.join(run_dir, 'run_params.z'))
     title_str = get_title_str(params, run_params)
 
     fig, axes = plt.subplots(ncols=2, figsize=(12.8, 4.8))
@@ -566,7 +569,7 @@ def plot_obs(log_dir, obs_dict, run_params=None,
 
             _ = axes[idx, 0].set_ylabel(ylabel, fontsize='x-large')
 
-    params_file = os.path.join(log_dir, 'parameters.pkl')
+    params_file = os.path.join(log_dir, 'parameters.z')
     params = io.loadz(params_file)
     title_str = get_title_str(params, run_params=run_params)
     _ = plt.suptitle(title_str, fontsize='xx-large', y=1.04)
