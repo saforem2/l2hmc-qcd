@@ -105,7 +105,7 @@ def calc_tunneling_rate(charges):
 
 def plot_setup(log_dir, run_params, idx=None, nw_run=True):
     """Setup for plotting. Creates `filename` and `title_str`."""
-    params = io.load_pkl(os.path.join(log_dir, 'parameters.pkl'))
+    params = io.loadz(os.path.join(log_dir, 'parameters.pkl'))
     lf = params['num_steps']
     clip_value = params.get('clip_value', 0)
     eps_fixed = params.get('eps_fixed', False)
@@ -166,7 +166,7 @@ def plot_setup(log_dir, run_params, idx=None, nw_run=True):
 
 
 def get_lf(log_dir):
-    params = io.load_pkl(os.path.join(log_dir, 'parameters.pkl'))
+    params = io.loadz(os.path.join(log_dir, 'parameters.pkl'))
     lf = params['num_steps']
     return lf
 
@@ -202,12 +202,12 @@ def get_observables(run_dir,
         run_params (dict): Dictionary containing the parameters used for
             inference run.
     """
-    run_params = io.load_pkl(os.path.join(run_dir, 'run_params.pkl'))
+    run_params = io.loadz(os.path.join(run_dir, 'run_params.pkl'))
     net_weights = tuple([io.strf(i) for i in run_params['net_weights']])
     #  eps = run_params['eps']
     beta = run_params['beta']
     observables_dir = os.path.join(run_dir, 'observables')
-    px = io.load_pkl(os.path.join(observables_dir, 'accept_prob.pkl'))
+    px = io.loadz(os.path.join(observables_dir, 'accept_prob.pkl'))
     px = np.squeeze(np.array(px))
     avg_px = np.mean(px)
 
@@ -224,7 +224,7 @@ def get_observables(run_dir,
     io.log(f'  run_dir: {run_dir}')
 
     def load_sqz(fname):
-        data = io.load_pkl(os.path.join(observables_dir, fname))
+        data = io.loadz(os.path.join(observables_dir, fname))
         return np.squeeze(np.array(data))
 
     charges = load_sqz('charges.pkl')
@@ -579,7 +579,7 @@ def gridplots(log_dirs,
             run_dirs += list(np.unique(data_bs['run_dir']))
         run_dirs = np.unique(run_dirs)
         for run_dir in run_dirs:
-            run_params = io.load_pkl(os.path.join(run_dir, 'run_params.pkl'))
+            run_params = io.loadz(os.path.join(run_dir, 'run_params.pkl'))
             fname, title_str, old_dx = plot_setup(log_dir, run_params)
 
             if data is not None:

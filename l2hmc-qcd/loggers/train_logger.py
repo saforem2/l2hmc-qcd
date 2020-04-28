@@ -14,6 +14,7 @@ from __future__ import print_function
 import os
 import pickle
 
+import numpy as np
 import tensorflow as tf
 
 import utils.file_io as io
@@ -153,8 +154,8 @@ class TrainLogger(object):
             io.log(self.train_header)
             self.save_current_state(data)
 
-        if step % self._save_steps == 0:
-            self.save_train_data()
+        #  if step % self._save_steps == 0:
+        #      self.save_train_data()
 
         if self.summaries and (step + 1) % self._logging_steps == 0:
             self.log_step(sess, data, net_weights)
@@ -167,13 +168,13 @@ class TrainLogger(object):
     def save_current_state(self, data):
         """Save curent state incase training needs to be restarted."""
         out_file = os.path.join(self.train_dir, 'current_state.pkl')
-        io.save_pkl(data, out_file, name='current_state')
+        io.savez(data, out_file, name='current_state')
 
     def load_train_data(self):
         """Load existing training data from `self.train_dir`."""
         data_file = os.path.join(self.train_dir, 'train_data.pkl')
         try:
-            train_data = io.load_pkl(data_file)
+            train_data = io.loadz(data_file)
         except FileNotFoundError:
             io.log(f'Unable to load training data from: {data_file}.')
             train_data = {}
@@ -187,7 +188,11 @@ class TrainLogger(object):
     def save_train_data(self, out_file=None):
         """Save train data to `.pkl` file."""
         if out_file is None:
-            out_file = os.path.join(self.train_dir, 'train_data.pkl')
-
-        io.log(f'Saving train data to: {out_file}.')
-        io.save_pkl(self.train_data, out_file, name='train_data')
+            out_dir = os.path.join(self.train_dir, 'train_data')
+            io.check_else_make_dir(out_dir)
+            for key, val in self.train_data.items():
+                out_file = os.path.join(out_dir, f'{key}.z')
+                io.savez(np.array(val), out_file, name=key)
+        else:
+            io.log(f'Saving train data to: {out_file}.')
+            io.savez(self.train_data, out_file, name='train_data')

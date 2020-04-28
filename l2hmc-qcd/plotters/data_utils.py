@@ -120,7 +120,7 @@ class InferenceData:
         self._energy_data = self._sort_energy_data(energy_data)
 
         self._log_dir = params.get('log_dir', None)
-        self._params = io.load_pkl(os.path.join(self._log_dir,
+        self._params = io.loadz(os.path.join(self._log_dir,
                                                 'parameters.pkl'))
         self._train_weights = (
             self._params['x_scale_weight'],
@@ -390,7 +390,7 @@ class DataLoader:
         self._nw_include = nw_include
         self._calc_stats = calc_stats
         self.run_dirs = io.get_run_dirs(log_dir, filter_str, runs_np)
-        self._params = io.load_pkl(os.path.join(self._log_dir,
+        self._params = io.loadz(os.path.join(self._log_dir,
                                                 'parameters.pkl'))
         self._train_weights = (
             self._params['x_scale_weight'],
@@ -405,7 +405,7 @@ class DataLoader:
         self._tws_fname = ''.join((io.strf(i) for i in self._train_weights))
 
     def _load_sqz(self, fname):
-        data = io.load_pkl(os.path.join(self._obs_dir, fname))
+        data = io.loadz(os.path.join(self._obs_dir, fname))
         return np.squeeze(np.array(data))
 
     def _get_dx(self, fname):
@@ -438,7 +438,7 @@ class DataLoader:
 
     def get_observables(self, run_dir=None):
         """Get all observables from inference_data in `run_dir`."""
-        run_params = io.load_pkl(os.path.join(run_dir, 'run_params.pkl'))
+        run_params = io.loadz(os.path.join(run_dir, 'run_params.pkl'))
         beta = run_params['beta']
         net_weights = tuple([int(i) for i in run_params['net_weights']])
 

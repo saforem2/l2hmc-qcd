@@ -47,7 +47,7 @@ class InferenceSummarizer:
         self._run_dir = run_dir
         if run_params is None:
             rp_file = os.path.join(run_dir, 'run_params.pkl')
-            self._run_params = io.load_pkl(rp_file)
+            self._run_params = io.loadz(rp_file)
         self._beta = self._run_params.get('beta', None)
         self._run_steps = self._run_params.get('run_steps', None)
         self._batch_size = self._run_params.get('batch_size', None)
@@ -55,7 +55,7 @@ class InferenceSummarizer:
     def _load_observable(self, fname):
         """Load observable data data from `self._run_dir/observables/fname."""
         obs_dir = os.path.join(self._run_dir, 'observables')
-        data = io.load_pkl(os.path.join(obs_dir, f'{fname}.pkl'))
+        data = io.loadz(os.path.join(obs_dir, f'{fname}.pkl'))
 
         return np.array(data)
 

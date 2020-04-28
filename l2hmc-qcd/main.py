@@ -133,11 +133,11 @@ def save_params(model):
     #  dynamics_dir = os.path.join(model.log_dir, 'dynamics')
     #  io.check_else_make_dir(dynamics_dir)
     #  out_file = os.path.join(dynamics_dir, 'dynamics_params.pkl')
-    #  io.save_pkl(model.dynamics.params, out_file)
+    #  io.savez(model.dynamics.params, out_file)
 
     out_file = os.path.join(model.log_dir, 'trainable_params.txt')
     count_trainable_params(out_file)
-    io.save_pkl(model.params, os.path.join(os.getcwd(), 'params.pkl'))
+    io.savez(model.params, os.path.join(os.getcwd(), 'params.pkl'))
 
 
 def save_masks(model, sess):
@@ -168,7 +168,7 @@ def save_weights(model, sess):
         'xnet': xnet_weights,
         'vnet': vnet_weights,
     }
-    io.save_pkl(model_weights, os.path.join(model.log_dir,
+    io.savez(model_weights, os.path.join(model.log_dir,
                                             'weights.pkl'))
 
 
@@ -176,7 +176,7 @@ def save_eps(model, sess):
     """Save final value of `eps` (step size) at the end of training."""
     eps_np = sess.run(model.dynamics.eps)
     eps_dict = {'eps': eps_np}
-    io.save_pkl(eps_dict, os.path.join(model.log_dir, 'eps_np.pkl'))
+    io.savez(eps_dict, os.path.join(model.log_dir, 'eps_np.pkl'))
 
 
 @timeit
@@ -281,7 +281,7 @@ def train_l2hmc(FLAGS, log_file=None):
     current_state_file = os.path.join(model.log_dir, 'training',
                                       'current_state.pkl')
     if os.path.isfile(current_state_file):
-        current_state = io.load_pkl(current_state_file)
+        current_state = io.loadz(current_state_file)
         model.lr = current_state['lr']
         samples_init = current_state['x_in']
 

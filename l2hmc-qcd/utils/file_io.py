@@ -73,13 +73,46 @@ def write_dict(d, out_file):
         write(f'{key}: {val}\n', out_file)
 
 
+def savez(obj, fpath, name=None):
+    """Save `obj` to compressed `.z` file at `fpath`."""
+    if not fpath.endswith('.z'):
+        fpath += '.z'
+
+    if name is not None:
+        log(f'Saving {name} to {fpath}.')
+
+    joblib.dump(obj, fpath)
+
+
+def change_extension(fpath, ext):
+    """Change extension of `fpath` to `.ext`."""
+    tmp = fpath.split('/')
+    out_file = tmp[-1]
+    fname, _ = out_file.split('.')
+    new_fpath = os.path.join('/'.join(tmp[:-1]), f'{fname}.{ext}')
+
+    return new_fpath
+
+
+def loadz(fpath):
+    """Load from `fpath` using `joblib.load`."""
+    try:
+        obj = joblib.load(fpath)
+    except FileNotFoundError:
+        fpath_pkl = change_extension(fpath, 'pkl')
+        obj = load_pkl(fpath_pkl)
+
+    return obj
+
+
 def save_pkl(obj, fpath, name=None, compressed=True):
     """Save `obj` to `fpath`."""
     if compressed:  # force extension type to be '.z' (auto compress)
-        tmp = fpath.split('/')
-        out_file = tmp[-1]
-        fname, _ = out_file.split('.')
-        zfpath = os.path.join('/'.join(tmp[:-1]), f'{fname}.z')
+        zfpath = change_extension(fpath, 'z')
+        #  tmp = fpath.split('/')
+        #  out_file = tmp[-1]
+        #  fname, _ = out_file.split('.')
+        #  zfpath = os.path.join('/'.join(tmp[:-1]), f'{fname}.z')
 
         if name is not None:
             log(f'Saving {name} to {zfpath}.')
