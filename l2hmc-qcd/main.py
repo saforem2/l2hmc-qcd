@@ -219,16 +219,30 @@ def train_l2hmc(FLAGS, log_file=None):
         checkpoint_dir = os.path.join(log_dir, 'checkpoints/')
         io.check_else_make_dir(checkpoint_dir)
         log_params(params)
-
+        current_state_file = os.path.join(log_dir, 'training',
+                                          'current_state.z')
+        if os.path.isfile(current_state_file):
+            current_state = io.loadz(current_state_file)
     else:
         log_dir = None
         checkpoint_dir = None
+        current_state = None
 
     if FLAGS.restore:
-        params['lr_init'] = FLAGS.lr_init
-        params['beta_init'] = FLAGS.beta_init
-        params['beta_final'] = FLAGS.beta_final
-        params['eps'] = FLAGS.eps
+        if current_state is not None:
+            params['lr_init'] = current_state['lr']
+            params['eps'] = current_state['dynamics_eps']
+            if FLAGS.restart_beta > 0:
+                params['beta_init'] = FLAGS.restart_beta
+            else:
+                params['beta_init'] = current_state['beta']
+
+        else:
+            params['lr_init'] = FLAGS.lr_init
+            params['beta_init'] = FLAGS.beta_init
+            params['beta_final'] = FLAGS.beta_final
+            params['eps'] = FLAGS.eps
+
         #  params['train_steps'] += FLAGS.train_steps
 
     # --------------------------------------------------------
@@ -279,20 +293,22 @@ def train_l2hmc(FLAGS, log_file=None):
                                              save_summaries_steps=None,
                                              save_checkpoint_steps=save_steps,
                                              checkpoint_dir=checkpoint_dir)
-
-    current_state_file = os.path.join(model.log_dir, 'training',
-                                      'current_state.z')
-    if os.path.isfile(current_state_file):
-        current_state = io.loadz(current_state_file)
-        model.lr = current_state['lr']
+    #
+    #  current_state_file = os.path.join(model.log_dir, 'training',
+    #                                    'current_state.z')
+    #  if os.path.isfile(current_state_file):
+    #      current_state = io.loadz(current_state_file)
+    #      model.lr = current_state['lr']
+    #      samples_init = current_state['x_in']
+    #
+    #      if FLAGS.restart_beta > 0:
+    #          beta_init = FLAGS.restart_beta
+    #      else:
+    #          beta_init = current_state['beta']
+    #
+    if current_state is not None:
         samples_init = current_state['x_in']
-
-        if FLAGS.restart_beta > 0:
-            beta_init = FLAGS.restart_beta
-        else:
-            beta_init = current_state['beta']
-
-        model.beta_init = beta_init
+        model.beta_init = current_state['beta']
 
         is_finished = getattr(current_state, 'is_finished', False)
         almost_finished = (params['train_steps'] - current_state['step'] < 20)
