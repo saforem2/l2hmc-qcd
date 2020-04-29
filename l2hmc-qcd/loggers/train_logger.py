@@ -40,6 +40,7 @@ class TrainLogger(object):
                  summaries=False,
                  save_steps=None,
                  print_steps=None,
+                 keep_data=True,
                  logging_steps=None):
         #  self.sess = sess
         if logging_steps is None:
@@ -56,6 +57,7 @@ class TrainLogger(object):
 
         self.model = model
         self.summaries = summaries
+        self._keep_data = keep_data
         self._save_steps = save_steps
         self._print_steps = print_steps
         self._logging_steps = logging_steps
@@ -145,7 +147,8 @@ class TrainLogger(object):
     def update(self, sess, data, data_str, net_weights):
         """Update _current state and train_data."""
         step = data['step']
-        self._update(data, data_str)
+        if self._keep_data:
+            self._update(data, data_str)
 
         if step % self._print_steps == 0:
             io.log(data_str)
