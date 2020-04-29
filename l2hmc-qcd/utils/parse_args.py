@@ -502,6 +502,15 @@ def parse_args():
                               `--save_samples` is not passed).\n
                               WARNING!! This is very data intensive."""))
 
+    parser.add_argument('--clear_data',
+                        dest='clear_data',
+                        action='store_true',
+                        required=False,
+                        help=("""Flag that when passed will prevent data from
+                              being aggregated during training. This helps if
+                              memory consumption is a potential problem, but
+                              prevents the tarining plots from being made."""))
+
     parser.add_argument('--save_train_data',
                         dest='save_train_data',
                         action='store_true',

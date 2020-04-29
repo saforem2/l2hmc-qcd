@@ -238,10 +238,13 @@ def train_l2hmc(FLAGS, log_file=None):
 
     # Only create `TrainLogger` if `hvd.rank == 0`
     if is_chief:
+        if FLAGS.clear_data:
+            keep_data = False
         logging_steps = params.get('logging_steps', 10)
         train_logger = TrainLogger(model, log_dir,
                                    save_steps=save_steps,
                                    logging_steps=logging_steps,
+                                   keep_data=keep_data,
                                    print_steps=FLAGS.print_steps,
                                    summaries=params['summaries'])
     else:
@@ -320,7 +323,7 @@ def train_l2hmc(FLAGS, log_file=None):
     #      model.dynamics.xnet.generic_net.coeff_transformation.initializer,
     #      model.dynamics.vnet.generic_net.coeff_transformation.initializer,
     #  ])
-    if FLAGS.restore and is_chief:
+    if FLAGS.restore and is_chief and not FLAGS.clear_data:
         train_logger.restore_train_data()
 
     # ----------------------------------------------------------
@@ -339,10 +342,11 @@ def train_l2hmc(FLAGS, log_file=None):
         save_weights(model, sess)
         save_eps(model, sess)
         plot_singular_values(model.log_dir)
-        dataset = plot_train_data(train_logger.train_data, params)
+        if not FLAGS.clear_data:
+            dataset = plot_train_data(train_logger.train_data, params)
 
         train_logger.write_train_strings()
-        if FLAGS.save_train_data:
+        if FLAGS.save_train_data and not FLAGS.clear_data:
             io.log(f'Saving train data!')
             train_logger.save_train_data()
         # wfile = os.path.join(model.log_dir, 'dynamics_weights.h5')
