@@ -37,30 +37,36 @@ class TrainLogger(object):
     def __init__(self,
                  model,
                  log_dir,
-                 summaries=False,
-                 save_steps=None,
-                 print_steps=None,
-                 keep_data=True,
-                 logging_steps=None):
+                 params=None):
+        """Create `TrainLogger` object."""
+        #  summaries=False,
+        #  save_steps=None,
+        #  print_steps=None,
+        #  keep_data=True,
+        #  logging_steps=None):
         #  self.sess = sess
-        if logging_steps is None:
-            logging_steps = getattr(model, 'logging_steps', 500)
+        if params is None:
+            params = model.params
 
-        if save_steps is None:
-            save_steps = getattr(model, 'save_steps', int(2.5e4))
+        self.model = model
+        self.summaries = params.get('summaries', False)
+        self._keep_data = params.get('keep_data', True)
+        self._print_steps = params.get('print_steps', 10)
+        self._save_steps = params.get('save_steps', 10000)
+        self._logging_steps = params.get('logging_steps', 500)
 
-        if print_steps is None:
-            print_steps = getattr(model, 'print_steps', 10)
+        #  summaries = params['summaries']
+        #  if logging_steps is None:
+        #      logging_steps = getattr(model, 'logging_steps', 500)
+        #
+        #  if save_steps is None:
+        #      save_steps = getattr(model, 'save_steps', int(2.5e4))
+        #
+        #  if print_steps is None:
+        #      print_steps = getattr(model, 'print_steps', 10)
 
         model_type = getattr(model, '_model_type', None)
         self._model_type = model_type
-
-        self.model = model
-        self.summaries = summaries
-        self._keep_data = keep_data
-        self._save_steps = save_steps
-        self._print_steps = print_steps
-        self._logging_steps = logging_steps
 
         self.train_data = {}
         self.h_strf = ("{:^13s}" + 9 * "{:^12s}").format(
