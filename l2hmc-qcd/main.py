@@ -255,8 +255,9 @@ def train(FLAGS, log_file=None):
                        checkpoint_dir=checkpoint_dir,
                        save_checkpoint_steps=params['save_steps'])
 
-    x_shape = (FLAGS.batch_size, model.lattice.num_links)
-    x_init = TWO_PI * np.random.uniform(x_shape) - PI
+    #  x_shape = (FLAGS.batch_size, model.lattice.num_links)
+    x_init = TWO_PI * np.random.uniform(size=(FLAGS.batch_size,
+                                              model.lattice.num_links)) - PI
     if FLAGS.restore:
         x_init = state['x_in']
         restore_ops = [model.global_step_setter, model.eps_setter]
