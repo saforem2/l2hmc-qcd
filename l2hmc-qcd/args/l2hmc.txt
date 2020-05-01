@@ -1,4 +1,3 @@
---log_dir='../../gauge_logs/2020_04_28/L12_b128_lf2_GaugeNetwork_aw00_qw01_dp025_f32_0146'
 -xsw 1.
 -xtw 1.
 -xqw 1.
@@ -6,8 +5,8 @@
 -vtw 1.
 -vqw 1.
 --init 'rand'
---beta 7.
---batch_size 16 
---print_steps 10 
---run_steps 20000
+--beta 5.
+--batch_size 64 
+--print_steps 100
+--run_steps 10000
 #--symplectic_check
