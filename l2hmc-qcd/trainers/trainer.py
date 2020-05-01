@@ -142,8 +142,9 @@ class Trainer:
 
         if self.model._model_type == 'GaugeModel':
             outputs['x_out'] = convert_to_angle(outputs['x_out'])
-            charge_diff, qstr = self._calc_charge_diff(outputs)
-            outputs['dq'] = charge_diff
+            #  dq = outputs['dq']
+            #  charge_diff, qstr = self._calc_charge_diff(outputs)
+            qstr = f"{np.sum(np.around(outputs['dq'])):^11.4g}"
             data_str += qstr
 
             plaq_diff = u1_plaq_exact(beta) - outputs['plaqs']
@@ -155,10 +156,14 @@ class Trainer:
         """Calculate the difference in top. charges from prev. step."""
         try:
             q_old = self.logger.train_data['charges'][-1]
-            charge_diff = np.abs((outputs['charges'] - q_old))
         except (AttributeError, IndexError, KeyError):
-            charge_diff = np.zeros(outputs['charges'].shape)
+            ps_old = self.model.lattice.calc_plaq_sums_np(outputs['x_in'])
+            q_old = np.sum(np.sin(ps_old), axis=(1, 2)) / (2 * np.pi)
+            #  ps_old = self.model._plaq_sums(outputs['x_in'])
+            #  q_old = self.model._top_charge(ps_old)
+            #  charge_diff = np.zeros(outputs['charges'].shape)
 
+        charge_diff = np.abs((outputs['charges'] - q_old))
         qstr = f'{np.sum(np.around(charge_diff)):^11.4g}'
 
         return charge_diff, qstr

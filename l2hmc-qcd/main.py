@@ -529,5 +529,5 @@ if __name__ == '__main__':
     #  USING_HVD = getattr(FLAGS, 'horovod', False)
     if not FLAGS.horovod:
         if not tf.executing_eagerly():
-            tf.commpat.v1.set_random_seed(seeds['global_tf'])
+            tf.compat.v1.set_random_seed(seeds['global_tf'])
     main(FLAGS)

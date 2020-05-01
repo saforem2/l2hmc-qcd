@@ -51,6 +51,7 @@ class TrainLogger(object):
         self.model = model
         self.summaries = params.get('summaries', False)
         self._keep_data = params.get('keep_data', True)
+        self._clear_data = not self._keep_data
         self._print_steps = params.get('print_steps', 10)
         self._save_steps = params.get('save_steps', 10000)
         self._logging_steps = params.get('logging_steps', 500)
@@ -150,6 +151,9 @@ class TrainLogger(object):
 
         self.train_data_strings.append(data_str)
 
+    def _clear(self):
+        self.train_data = {}
+
     def update(self, sess, data, data_str, net_weights):
         """Update _current state and train_data."""
         step = data['step']
@@ -165,6 +169,8 @@ class TrainLogger(object):
 
         #  if step % self._save_steps == 0:
         #      self.save_train_data()
+        #  if self._clear_data:
+        #      self._clear()
 
         if self.summaries and (step + 1) % self._logging_steps == 0:
             self.log_step(sess, data, net_weights)
