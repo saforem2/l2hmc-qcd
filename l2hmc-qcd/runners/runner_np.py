@@ -392,10 +392,12 @@ def plaq_loss(output, lattice, beta, eps=1e-4,
     charges_out = np.sum(np.sin(ps_prop), axis=(1, 2)) / (2 * np.pi)
 
     ploss_ = output['accept_prob'] * np.sum(dplaqs, axis=(1, 2)) + eps
-    qloss_ = output['accept_prob'] * (charges_prop - charges_init) ** 2 + eps
+    qloss_ = output['accept_prob'] * (charges_prop - charges_init) ** 2
 
-    ploss = mixed_loss(plaq_weight, ploss_)
-    qloss = mixed_loss(charge_weight, qloss_)
+    ploss = -ploss_ / plaq_weight
+    qloss = -qloss_ / charge_weight
+    #  ploss = mixed_loss(plaq_weight, ploss_)
+    #  qloss = mixed_loss(charge_weight, qloss_)
 
     outputs = {
         'plaq_loss': ploss,
