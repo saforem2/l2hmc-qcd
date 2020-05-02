@@ -114,22 +114,25 @@ def main(FLAGS):
     ns = FLAGS.num_steps
     num_steps = params['num_steps'] if ns is None else ns
 
+    eps = _get_eps(log_dir) if FLAGS.eps is None else FLAGS.eps
+
+    net_weights = NetWeights(
+        x_scale=FLAGS.x_scale_weight,
+        x_translation=FLAGS.x_translation_weight,
+        x_transformation=FLAGS.x_transformation_weight,
+        v_scale=FLAGS.v_scale_weight,
+        v_translation=FLAGS.v_translation_weight,
+        v_transformation=FLAGS.v_transformation_weight
+    )
+
+    if FLAGS.mix_samplers:
+        FLAGS.hmc = False
+
     if FLAGS.hmc:
         net_weights = NetWeights(0, 0, 0, 0, 0, 0)
-    else:
-        net_weights = NetWeights(
-            x_scale=FLAGS.x_scale_weight,
-            x_translation=FLAGS.x_translation_weight,
-            x_transformation=FLAGS.x_transformation_weight,
-            v_scale=FLAGS.v_scale_weight,
-            v_translation=FLAGS.v_translation_weight,
-            v_transformation=FLAGS.v_transformation_weight
-        )
 
     if net_weights == NetWeights(0., 0., 0., 0., 0., 0.):
         FLAGS.hmc = True
-
-    eps = _get_eps(log_dir) if FLAGS.eps is None else FLAGS.eps
 
     run_params = {
         'eps': eps,

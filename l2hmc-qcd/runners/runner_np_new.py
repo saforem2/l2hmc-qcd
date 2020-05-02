@@ -21,7 +21,8 @@ from utils.file_io import timeit
 from lattice.lattice import calc_plaqs_diffs, GaugeLattice
 from dynamics.dynamics_np import DynamicsNP, convert_to_angle
 
-
+#  from plotters.data_utils import therm_arr, bootstrap
+#  from plotters.inference_plots import calc_tunneling_rate
 # pylint: disable=no-member
 # pylint: disable=protected-access
 # pylint: disable=inconsistent-return-statements
@@ -31,6 +32,10 @@ from dynamics.dynamics_np import DynamicsNP, convert_to_angle
 # pylint: disable=too-many-arguments
 # pylint: disable=invalid-name
 # pylint: disable=too-many-instance-attributes
+
+PI = np.pi
+TWO_PI = 2 * PI
+
 
 
 def cos_metric(x, y):
@@ -49,16 +54,16 @@ def create_lattice(params):
 def _get_eps(log_dir):
     """Get the step size `eps` by looking for it in `log_dir` ."""
     try:
-        in_file = os.path.join(log_dir, 'eps_np.z')
+        in_file = os.path.join(log_dir, 'eps_np.pkl')
         eps_dict = io.loadz(in_file)
         eps = eps_dict['eps']
     except FileNotFoundError:
         run_dirs = io.get_run_dirs(log_dir)
-        rp_file = os.path.join(run_dirs[0], 'run_params.z')
+        rp_file = os.path.join(run_dirs[0], 'run_params.pkl')
         if os.path.isfile(rp_file):
             run_params = io.loadz(rp_file)
         else:
-            rp_file = os.path.join(run_dirs[-1], 'run_params.z')
+            rp_file = os.path.join(run_dirs[-1], 'run_params.pkl')
             if os.path.isfile(rp_file):
                 run_params = io.loadz(rp_file)
             else:
@@ -119,15 +124,14 @@ def create_dynamics(log_dir,
                     model_type='GaugeModel',
                     **kwargs):
     """Create `DynamicsNP` object for running dynamics imperatively."""
-    params_file = os.path.join(log_dir, 'parameters.z')
-    params = io.loadz(params_file)
+    params = io.loadz(os.path.join(log_dir, 'parameters.pkl'))
 
     # Update params using command line arguments to override defaults
     params = _update_params(params, **kwargs)
 
-    # load saved weights from `.z` file:
-    xw_file = os.path.join(log_dir, 'xnet_weights.z')
-    vw_file = os.path.join(log_dir, 'vnet_weights.z')
+    # load saved weights from `.pkl` file:
+    xw_file = os.path.join(log_dir, 'xnet_weights.pkl')
+    vw_file = os.path.join(log_dir, 'vnet_weights.pkl')
     weights = {
         'xnet': io.loadz(xw_file),
         'vnet': io.loadz(vw_file),
@@ -146,10 +150,11 @@ def create_dynamics(log_dir,
                           model_type=model_type,
                           potential_fn=potential_fn)
 
-    mask_file = os.path.join(log_dir, 'dynamics_mask.z')
-    masks = io.loadz(mask_file)
-
-    dynamics.set_masks(masks)
+    mask_file = os.path.join(log_dir, 'dynamics_mask.pkl')
+    if os.path.isfile(mask_file):
+        with open(mask_file, 'rb') as f:
+            masks = pickle.load(f)
+        dynamics.set_masks(masks)
 
     #  out_file = os.path.join(log_dir, 'dynamics', 'dynamics_np_dict.txt')
     #  io.write_dict(dynamics.__dict__, out_file)
@@ -271,9 +276,11 @@ def _inference_setup(log_dir, dynamics, run_params):
     init = str(init).lower()
     if init in ['rand', 'normal'] or init is None:
         init = 'rand'
-        samples = np.random.uniform(-np.pi, np.pi, size=shape)
+        samples = TWO_PI * np.random.uniform(size=shape) - PI
+        #  samples = np.random.randn(*shape)
     if init == 'uniform':
-        samples = np.random.uniform(-np.pi, np.pi, size=shape)
+        #  samples = np.random.uniform(0, TWO_PI, size=shape)
+        samples = TWO_PI * np.random.uniform(size=shape) - PI
     if init == 'zeros':
         samples = np.zeros((shape))
     if init == 'ones':
@@ -311,14 +318,16 @@ def reverse_dynamics(dynamics, state, net_weights, forward_first=True):
     xprop1, vprop1, _, _ = dynamics.transition_kernel(*state,
                                                       net_weights,
                                                       forward=ff)
-
-    state_prop1 = State(x=convert_to_angle(xprop1), v=vprop1, beta=state.beta)
+    #  xprop1 = np.mod(xprop1, TWO_PI)
+    state_prop1 = State(x=convert_to_angle(xprop1),
+                        v=vprop1, beta=state.beta)
 
     xprop2, vprop2, _, _ = dynamics.transition_kernel(*state_prop1,
                                                       net_weights,
                                                       forward=(not ff))
-
-    state_prop2 = State(x=convert_to_angle(xprop2), v=vprop2, beta=state.beta)
+    #  xprop2 = np.mod(xprop2, TWO_PI)
+    state_prop2 = State(x=convert_to_angle(xprop2),
+                        v=vprop2, beta=state.beta)
 
     return state_prop2
 
@@ -371,24 +380,51 @@ def check_reversibility_np(dynamics,
     return diff_dict
 
 
+def calc_plaq_sums(x):
+    return (x[..., 0]
+            - x[..., 1]
+            - np.roll(x[..., 0], -1, 2)
+            + np.roll(x[..., 1], -1, 1))
+
+
+def calc_top_charge(plaqs):
+    try:
+        plaqs_sum = np.sum(convert_to_angle(plaqs), axis=(1, 2))
+    except:
+        import pudb; pudb.set_trace()
+    charge = np.floor_divide(0.1 + plaqs_sum, TWO_PI)
+
+    return charge
+
+
 def plaq_loss(output, lattice, beta, eps=1e-4,
               plaq_weight=0.1, charge_weight=0.1):
     """Calculate the plaquette and charge losses."""
     def mixed_loss(weight, val):
         return weight / val - val / weight
 
-    ps_out = lattice.calc_plaq_sums_np(output['x_out'])
-    ps_init = lattice.calc_plaq_sums_np(output['x_init'])
-    ps_prop = lattice.calc_plaq_sums_np(output['x_proposed'])
+    #  ps_init = lattice.calc_plaq_sums_np(x_init)
+    #  ps_out = lattice.calc_plaq_sums_np(x_out)
+    #  charges_init = np.sum(np.sin(ps_init), axis=(1, 2)) / (TWO_PI)
+    #  charges_out = np.sum(np.sin(ps_out), axis=(1, 2)) / (TWO_PI)
+
+    samples_shape = lattice.samples.shape
+    x_init = convert_to_angle(output['x_init']).reshape(samples_shape)
+    x_prop = convert_to_angle(output['x_proposed']).reshape(samples_shape)
+    x_out = convert_to_angle(output['x_out']).reshape(samples_shape)
+
+    ps_init = calc_plaq_sums(x_init)
+    ps_prop = calc_plaq_sums(x_prop)
+    ps_out = calc_plaq_sums(x_out)
+
+    charges_init = calc_top_charge(ps_init)
+    charges_out = calc_top_charge(ps_out)
+    charges_prop = calc_top_charge(ps_prop)
 
     plaqs_init = np.sum(np.cos(ps_init), axis=(1, 2)) / lattice.num_plaqs
     plaqs_prop = np.sum(np.cos(ps_prop), axis=(1, 2)) / lattice.num_plaqs
     plaqs_out = np.sum(np.cos(ps_out), axis=(1, 2)) / lattice.num_plaqs
     dplaqs = 2. * (1. - np.cos(ps_prop - ps_init))
-
-    charges_init = np.sum(np.sin(ps_init), axis=(1, 2)) / (2 * np.pi)
-    charges_prop = np.sum(np.sin(ps_prop), axis=(1, 2)) / (2 * np.pi)
-    charges_out = np.sum(np.sin(ps_prop), axis=(1, 2)) / (2 * np.pi)
 
     ploss_ = output['accept_prob'] * np.sum(dplaqs, axis=(1, 2)) + eps
     qloss_ = output['accept_prob'] * (charges_prop - charges_init) ** 2 + eps
@@ -399,17 +435,16 @@ def plaq_loss(output, lattice, beta, eps=1e-4,
     outputs = {
         'plaq_loss': ploss,
         'charge_loss': qloss,
-        'charges': charges_out,
         'dplaqs': ps_out - ps_init,
         #  'dcharges': charges_out - charges_init,
         'dcharges': np.around(charges_out) - np.around(charges_init),
-        'plaqs_diffs': calc_plaqs_diffs(plaqs_out, beta),
         'plaqs_init': plaqs_init,
-        'plaqs_proposed': plaqs_prop,
+        'plaqs_prop': plaqs_prop,
         'plaqs_out': plaqs_out,
-        'charges_init': charges_init,
         'charges_out': charges_out,
-        'charges_prop': charges_prop,
+        'charges_init': charges_init,
+        'charges_proposed': charges_prop,
+        'plaqs_diffs': calc_plaqs_diffs(plaqs_out, beta),
     }
 
     return outputs
@@ -433,23 +468,25 @@ def _calc_lattice_observables(output, lattice, beta, eps=1e-4, pw=0.1, qw=0.1):
     return output, observables
 
 
-def inference_step(step, x_init, dynamics, lattice, net_weights, run_params):
+def inference_step(step, x_init, dynamics, lattice, **run_params):
     """Run a single inference step."""
     if dynamics._model_type == 'GaugeModel':
+        #  x_init = np.mod(x_init, TWO_PI)
         x_init = convert_to_angle(x_init)
 
-    run_params['net_weights'] = net_weights
     beta = run_params.get('beta', None)
     run_steps = run_params.get('run_steps', None)
-    #  net_weights = run_params.get('net_weights', None)
+    net_weights = run_params.get('net_weights', None)
     symplectic_check = run_params.get('symplectic_check', False)
-    method_type = check_method(run_params['net_weights'])
 
     start_time = time.time()
     output = dynamics.apply_transition(x_init, beta, net_weights)
     time_diff = time.time() - start_time
 
     if dynamics._model_type == 'GaugeModel':
+        #  x_out = np.mod(output['x_out'], TWO_PI)
+        #  x_out = convert_to_angle(output['x_out'])
+        #  output['x_init'] = np.mod(output['x_init'], TWO_PI)
         output['x_out'] = convert_to_angle(output['x_out'])
         output['x_init'] = convert_to_angle(output['x_init'])
         output['x_proposed'] = convert_to_angle(output['x_proposed'])
@@ -469,14 +506,78 @@ def inference_step(step, x_init, dynamics, lattice, net_weights, run_params):
                 f"{observables['charge_loss'].mean():^10.4g} "
                 f"{observables['dplaqs'].mean():^10.4g} "
                 f"{np.sum(observables['dcharges'] ** 2):^10.4g} "
-                f"{observables['plaqs_diffs'].mean():^10.4g} "
-                f"{method_type:>10s} ")
+                f"{observables['plaqs_diffs'].mean():^10.4g} ")
 
     outputs = {
         'data_str': data_str,
         'dynamics_output': output,
         'observables': observables,
         'energy_data': edata,
+    }
+
+    if symplectic_check:
+        state1 = State(x=x_init, v=output['v_init'], beta=beta)
+        volume_diffs = dynamics.volume_transformation(state1,
+                                                      net_weights,
+                                                      output['forward'])
+        outputs['volume_diffs'] = volume_diffs
+
+    return outputs
+
+
+def inference_step_old(step, x_init, dynamics, lattice, **run_params):
+    """Run a single inference step."""
+    if dynamics._model_type == 'GaugeModel':
+        #  x_init = np.mod(x_init, TWO_PI)
+        x_init = convert_to_angle(x_init)
+
+    beta = run_params.get('beta', None)
+    run_steps = run_params.get('run_steps', None)
+    net_weights = run_params.get('net_weights', None)
+    symplectic_check = run_params.get('symplectic_check', False)
+
+    start_time = time.time()
+    output = dynamics.apply_transition(x_init, beta, net_weights)
+    time_diff = time.time() - start_time
+
+    if dynamics._model_type == 'GaugeModel':
+        #  x_out = np.mod(output['x_out'], TWO_PI)
+        x_out = convert_to_angle(x_out)
+        output['x_out'] = x_out
+
+    #  obs_out, obs_diffs = _calc_lattice_observables(output, lattice, beta)
+    obs_out, observables = _calc_lattice_observables(output, lattice, beta,
+                                                     eps=1e-4, pq=0.1, qw=0.1)
+    reverse_data = {
+        'xdiff_r': output['xdiff_r'],
+        'vdiff_r': output['vdiff_r'],
+    }
+
+    edata = calc_energies(dynamics, x_init, output, beta)
+
+    data_str = (f"{step:>4g}/{run_steps:<5g} "
+                f"{time_diff:^10.4g} "
+                f"{output['accept_prob'].mean():^10.4g} "
+                f"{obs_out['dx_out'].mean():^10.4g} "
+                #  f"{obs_out['dx'].mean():^10.4g} "
+                #  f"{obs_out['dplaq'].mean():^10.4g} "
+                #  f"{obs_out['dx_proposed'].mean():^10.4g} "
+                #  f"{output['forward']:^11.4g} "
+                f"{edata['exp_energy_diff'].mean():^10.4g} "
+                f"{output['sumlogdet_out'].mean():^10.4g} "
+                f"{obs_out['xdiff_r'].mean():^10.4g} "
+                f"{obs_out['vdiff_r'].mean():^10.4g} "
+                #  f"{np.around(obs_prop['charges_diffs'].sum()):^12.4g} "
+                f"{np.around(obs_out['charges_diffs'].sum()):^10.4g} "
+                f"{obs_out['plaqs_diffs'].mean():^10.4g} ")
+
+    outputs = {
+        'data_str': data_str,
+        'dynamics_output': output,
+        'observables': obs_out,
+        'reverse_data': reverse_data,
+        'obs_diffs': obs_diffs,
+        'energy_data': calc_energies(dynamics, x_init, output, beta),
     }
 
     if symplectic_check:
@@ -535,8 +636,8 @@ def _get_reverse_data(run_dir):
 
 def map_points(dynamics, run_params):
     """Map how points are transformed by the dynamics sampler."""
-    x_init = np.arange(0, 2 * np.pi, 0.01)
-    v_init = np.arange(0, 2 * np.pi, 0.01)
+    x_init = np.arange(0, TWO_PI, 0.01)
+    v_init = np.arange(0, TWO_PI, 0.01)
     beta = run_params['beta']
     net_weights = run_params['net_weights']
     samples_dict = {
@@ -556,6 +657,7 @@ def map_points(dynamics, run_params):
         x_prop, v_prop, px, _ = dynamics.transition_kernel(*state0,
                                                            net_weights,
                                                            forward=forward)
+        #  x_prop = np.mod(x_prop, TWO_PI)
         x_prop = convert_to_angle(x_prop)
 
         samples_dict['x_proposed'].append(x_prop)
@@ -571,32 +673,11 @@ def map_points(dynamics, run_params):
     out_dir = os.path.join(run_params['run_dir'], 'mapped_samples')
     io.check_else_make_dir(out_dir)
     for key, val in samples_dict.items():
-        out_file = os.path.join(out_dir, f'{key}.z')
+        out_file = os.path.join(out_dir, f'{key}.pkl')
         io.log(f'Saving {key} to {out_file}.')
         io.savez(np.array(val), out_file)
 
     return samples_dict
-
-
-def inference_loop(num_steps, step, x, dynamics,
-                   lattice, run_data, net_weights, run_params):
-    run_params['net_weights'] = net_weights
-    for t in range(step, step + num_steps):
-        x = convert_to_angle(x)
-        outputs = inference_step(t, x, dynamics, lattice, **run_params)
-        x = convert_to_angle(outputs['dynamics_output']['x_out'])
-        run_data.update(t, x, outputs)
-        if t % 100 == 0:
-            io.log(HSTR)
-
-    return run_data
-
-def check_method(net_weights):
-    if net_weights == NetWeights(0., 0., 0., 0., 0., 0.):
-        return 'HMC'
-    # if running L2HMC, mix in HMC
-    #  if net_weights == NetWeights(1., 1., 1., 1., 1., 1.):
-    return 'L2HMC'
 
 
 @timeit
@@ -617,74 +698,47 @@ def run_inference_np(log_dir, dynamics, lattice, run_params):
 
     # Object for holding data generated during inference run
     run_data = RunData(run_params)
-    nw_l2hmc = run_params['net_weights']
 
     if run_params.get('mix_samplers', False):
-        switch_steps = 10000
-        run_steps_alt = 10000
-        nw_hmc = NetWeights(0., 0., 0., 0., 0., 0.)
+        switch_steps = 2000
+        run_steps_alt = 500
+        net_weights = run_params['net_weights']
         run_params['switch_steps'] = switch_steps
         run_params['run_steps_alt'] = run_steps_alt
 
-        #  net_weights_alt = NetWeights(0., 0., 0., 0., 0., 0.)
-
         # if running HMC, mix in L2HMC
-        #  if net_weights == NetWeights(0., 0., 0., 0., 0., 0.):
-        #      net_weights_alt = NetWeights(1., 1., 1., 1., 1., 1.)
-        #  # if running L2HMC, mix in HMC
-        #  if net_weights == NetWeights(1., 1., 1., 1., 1., 1.):
-        #      net_weights_alt = NetWeights(0., 0., 0., 0., 0., 0.)
-        #  else:
-        #      # Switch each value of `net_weights`
-        #      net_weights_alt = NetWeights(
-        #          *tuple(np.array([not i for i in net_weights], dtype=float))
-        #      )
+        if net_weights == NetWeights(0, 0, 0, 0, 0, 0):
+            nws = NetWeights(1, 1, 1, 1, 1, 1)
+        # if running L2HMC, mix in HMC
+        if net_weights == NetWeights(1, 1, 1, 1, 1, 1):
+            nws = NetWeights(0, 0, 0, 0, 0, 0)
+        else:
+            # Switch each value of `net_weights`
+            nws = NetWeights(
+                *tuple(np.array([not i for i in net_weights], dtype=float))
+            )
 
-        #  run_params_alt = run_params.copy()
-        #  #  run_params_alt['net_weights'] = net_weights_alt
-        #  run_params_alt.update({
-        #      'switch_steps': switch_steps,
-        #      'run_steps_alt': run_steps_alt,
-        #      #  'net_weights_alt': nws,
-        #  })
-        #  io.save_dict(run_params_alt, run_params['run_dir'],
-        #               'run_params_alt')
+        run_params_alt = {
+            'switch_steps': switch_steps,
+            'run_steps_alt': run_steps_alt,
+            'net_weights_alt': nws,
+        }
+        io.save_dict(run_params_alt, run_params['run_dir'], 'run_params_alt')
 
-    io.save_params(run_params, run_dir, name='run_params')
+    io.save_params(run_params, run_dir, name='run_params_')
+    #  samples = np.mod(samples, TWO_PI)
     samples = convert_to_angle(samples)
 
-    #  for step in range(run_params['run_steps']):
-    step = 0
-    while step < run_params['run_steps']:
+    for step in range(run_params['run_steps']):
+        #  samples_init = np.mod(samples, TWO_PI)
         samples_init = convert_to_angle(samples)
-        #  samples = convert_to_angle(samples)
-        outputs = inference_step(step, samples_init, dynamics,
-                                 lattice, nw_l2hmc, run_params)
-        samples = convert_to_angle(outputs['dynamics_output']['x_out'])
+        outputs = inference_step(step, samples_init,
+                                 dynamics, lattice, **run_params)
+        #  samples = np.mod(outputs['dynamics_output']['x_out'], TWO_PI)
+        samples = convert_to_angle(samples)
         run_data.update(step, samples, outputs)
 
-        if step % 1000 == 0:
+        if step % 100 == 0:
             io.log(HSTR)
-
-        if run_params['mix_samplers'] and step % switch_steps == 0:
-            #  io.log(80*'=')
-            #  io.log(f'SWITCHING SAMPLERS')
-            #  io.log(f'NetWeights: {nws}')
-            for _ in range(run_steps_alt):
-                step += 1
-                samples_init = convert_to_angle(samples)
-                outputs = inference_step(step, samples_init, dynamics,
-                                         lattice, nw_hmc, run_params)
-                samples = convert_to_angle(
-                    outputs['dynamics_output']['x_out']
-                )
-                run_data.update(step, samples, outputs)
-                #  run_data = inference_loop(run_steps_alt, step, samples,
-                #                            dynamics, lattice, run_data,
-                #                            net_weights=nws,
-                #                            run_params=run_params)
-                #  io.log(80*'=')
-
-        step += 1
 
     return run_data

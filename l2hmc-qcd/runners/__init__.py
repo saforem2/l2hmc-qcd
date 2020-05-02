@@ -42,7 +42,8 @@ NAMES = ["step",
          "charge_loss",
          "𝞭𝛟_µυ",
          "𝞭Q",
-         "𝞭𝛟_p"]
+         "𝞭𝛟_p",
+         "TYPE"]
 
 
 #  H0 = ["{:^13s}".format("STEP")]

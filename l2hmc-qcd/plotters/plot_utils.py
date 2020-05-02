@@ -89,9 +89,10 @@ def plot_setup(log_dir, run_params, idx=None, nw_run=True):
     Lt = params['time_size']
     Lx = params['space_size']
     title_str = f'{Lt}' + r'$\times$' + f'{Lx}, '
-    title_str = (r"$N_{\mathrm{LF}} = $" + f'{lf}, '
-                 r"$\beta = $" + f'{beta:.2g}, '
-                 r"$\varepsilon = $" + f'{eps:.3g}')
+    title_str += (r"$N_{\mathrm{LF}} = $" + f'{lf}, '
+                  r"$\beta = $" + f'{beta:.2g}, '
+                  r"$\varepsilon = $" + f'{eps:.3g}')
+
     eps_str = f'{eps:.4g}'.replace('.', '')
     fname += f'_e{eps_str}'
 
