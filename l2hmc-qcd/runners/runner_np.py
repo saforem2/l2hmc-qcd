@@ -126,12 +126,16 @@ def create_dynamics(log_dir,
     params = _update_params(params, **kwargs)
 
     # load saved weights from `.z` file:
-    xw_file = os.path.join(log_dir, 'xnet_weights.z')
-    vw_file = os.path.join(log_dir, 'vnet_weights.z')
-    weights = {
-        'xnet': io.loadz(xw_file),
-        'vnet': io.loadz(vw_file),
-    }
+    if kwargs.get('hmc', False):
+        weights = {
+            'xnet': None,
+            'vnet': None,
+        }
+    else:
+        weights = {
+            'xnet': io.loadz(os.path.join(log_dir, 'xnet_weights.z')),
+            'vnet': io.loadz(os.path.join(log_dir, 'vnet_weights.z')),
+        }
 
     # to run with reduced weight matrix keeping first `num_singular_values`
     # singular values from the SVD decomposition: W = U * S * V^{H}
@@ -150,9 +154,6 @@ def create_dynamics(log_dir,
     masks = io.loadz(mask_file)
 
     dynamics.set_masks(masks)
-
-    #  out_file = os.path.join(log_dir, 'dynamics', 'dynamics_np_dict.txt')
-    #  io.write_dict(dynamics.__dict__, out_file)
 
     return dynamics
 
@@ -610,80 +611,48 @@ def run_inference_np(log_dir, dynamics, lattice, run_params):
             defined.
         run_params (dict): Dictionary of parameters to use for inference run.
     """
-    samples, run_params, run_dir = _inference_setup(log_dir,
-                                                    dynamics,
-                                                    run_params)
+    x, run_params, run_dir = _inference_setup(log_dir, dynamics, run_params)
     run_params['direction'] = dynamics.direction
 
     # Object for holding data generated during inference run
     run_data = RunData(run_params)
     nw_l2hmc = run_params['net_weights']
 
-    if run_params.get('mix_samplers', False):
-        switch_steps = 10000
-        run_steps_alt = 10000
+    mix_samplers = run_params.get('mix_samplers', False)
+    if mix_samplers:
+        mix_samplers = True
         nw_hmc = NetWeights(0., 0., 0., 0., 0., 0.)
-        run_params['switch_steps'] = switch_steps
-        run_params['run_steps_alt'] = run_steps_alt
-
-        #  net_weights_alt = NetWeights(0., 0., 0., 0., 0., 0.)
-
-        # if running HMC, mix in L2HMC
-        #  if net_weights == NetWeights(0., 0., 0., 0., 0., 0.):
-        #      net_weights_alt = NetWeights(1., 1., 1., 1., 1., 1.)
-        #  # if running L2HMC, mix in HMC
-        #  if net_weights == NetWeights(1., 1., 1., 1., 1., 1.):
-        #      net_weights_alt = NetWeights(0., 0., 0., 0., 0., 0.)
-        #  else:
-        #      # Switch each value of `net_weights`
-        #      net_weights_alt = NetWeights(
-        #          *tuple(np.array([not i for i in net_weights], dtype=float))
-        #      )
-
-        #  run_params_alt = run_params.copy()
-        #  #  run_params_alt['net_weights'] = net_weights_alt
-        #  run_params_alt.update({
-        #      'switch_steps': switch_steps,
-        #      'run_steps_alt': run_steps_alt,
-        #      #  'net_weights_alt': nws,
-        #  })
-        #  io.save_dict(run_params_alt, run_params['run_dir'],
-        #               'run_params_alt')
+        dynamics_hmc = create_dynamics(log_dir,
+                                       dynamics.potential,
+                                       dynamics.x_dim,
+                                       model_type=dynamics._model_type,
+                                       hmc=True)
 
     io.save_params(run_params, run_dir, name='run_params')
-    samples = convert_to_angle(samples)
+    x = convert_to_angle(x)
 
     #  for step in range(run_params['run_steps']):
     step = 0
     while step < run_params['run_steps']:
-        samples_init = convert_to_angle(samples)
-        #  samples = convert_to_angle(samples)
-        outputs = inference_step(step, samples_init, dynamics,
+        x_init = convert_to_angle(x)
+        outputs = inference_step(step, x_init, dynamics,
                                  lattice, nw_l2hmc, run_params)
-        samples = convert_to_angle(outputs['dynamics_output']['x_out'])
-        run_data.update(step, samples, outputs)
+        x = convert_to_angle(outputs['dynamics_output']['x_out'])
+        run_data.update(step, x, outputs)
 
         if step % 1000 == 0:
             io.log(HSTR)
 
-        if run_params['mix_samplers'] and step % switch_steps == 0:
-            #  io.log(80*'=')
-            #  io.log(f'SWITCHING SAMPLERS')
-            #  io.log(f'NetWeights: {nws}')
-            for _ in range(run_steps_alt):
-                step += 1
-                samples_init = convert_to_angle(samples)
-                outputs = inference_step(step, samples_init, dynamics,
+        if mix_samplers and step % run_params['switch_steps'] == 0:
+            for _ in range(run_params['hmc_steps']):
+                x_init = convert_to_angle(x)
+                outputs = inference_step(step, x_init, dynamics_hmc,
                                          lattice, nw_hmc, run_params)
-                samples = convert_to_angle(
+                x = convert_to_angle(
                     outputs['dynamics_output']['x_out']
                 )
-                run_data.update(step, samples, outputs)
-                #  run_data = inference_loop(run_steps_alt, step, samples,
-                #                            dynamics, lattice, run_data,
-                #                            net_weights=nws,
-                #                            run_params=run_params)
-                #  io.log(80*'=')
+                run_data.update(step, x, outputs)
+                step += 1
 
         step += 1
 

@@ -147,6 +147,8 @@ def main(FLAGS):
         'zero_masks': FLAGS.zero_masks,
         'print_steps': FLAGS.print_steps,
         'mix_samplers': FLAGS.mix_samplers,
+        'switch_steps': FLAGS.switch_steps,
+        'hmc_steps': FLAGS.hmc_steps,
         'symplectic_check': FLAGS.symplectic_check,
         'num_singular_values': FLAGS.num_singular_values,
     }

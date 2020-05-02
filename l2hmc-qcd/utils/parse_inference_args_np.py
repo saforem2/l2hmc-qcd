@@ -205,6 +205,25 @@ def parse_args():
                               when reconstructing the weight matrix. (Default:
                               -1, keep all singular values). """))
 
+    parser.add_argument('--switch_steps',
+                        dest='switch_steps',
+                        type=int,
+                        default=10000,
+                        required=False,
+                        help=("""Flag that when passed (together with
+                              `--mix_samplers`) determines how often to switch
+                              between L2HMC and HMC during inference."""))
+
+    parser.add_argument('--hmc_steps',
+                        dest='hmc_steps',
+                        type=int,
+                        default=10000,
+                        required=False,
+                        help=("""Flag that when passed (together with
+                              `--mix_samplers`) determines the number of HMC
+                              leapfrog steps to run."""))
+
+
     if sys.argv[1].startswith('@'):
         args = parser.parse_args(shlex.split(open(sys.argv[1][1:]).read(),
                                              comments=True))
