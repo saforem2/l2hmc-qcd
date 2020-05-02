@@ -429,17 +429,25 @@ def plot_posterior(data, fname, title_str=None, filter_str=None):
     savefig(fig, fname)
 
 
+# pylint:disable=unsubscriptable-object
 def plot_losses(plaq_loss, charge_loss, title_str=None, out_dir=None):
     """Plot losses from inference run."""
     plaq_loss = np.array(plaq_loss)
     charge_loss = np.array(charge_loss)
     steps = np.arange(plaq_loss.shape[0])
     fig, axes = plt.subplots(nrows=2, sharex=True)
-    axes[0].plot(steps, plaq_loss.flatten(), color='C0',
-                 marker=',', ls='', label='plaq_loss')
+    plaq_label = None
+    charge_label = None
+    for idx in range(plaq_loss.shape[1]):
+        if idx == 0:
+            plaq_label = 'plaq_loss'
+            charge_label = 'charge_loss'
+        axes[0].plot(steps, plaq_loss[:, idx], color='C0',
+                     marker=',', ls='', label=plaq_label)
+        axes[1].plot(steps, charge_loss[:, idx], color='C1',
+                     marker=',', ls='', label=charge_label)
+
     axes[0].legend(loc='best')
-    axes[1].plot(steps, charge_loss.mean(), color='C1',
-                 marker=',', ls='', label='charge_loss')
     axes[1].legend(loc='best')
     axes[1].set_xlabel(f'Step', fontsize='large')
     if title_str is not None:
