@@ -57,7 +57,7 @@ class RunData:
         self.volume_diffs = VOLUME_DIFFS
 
     @staticmethod
-    def _update(main_dict, new_dict, iter_main=False):
+    def _update1(main_dict, new_dict, iter_main=False):
         """Update `main_dict` with new values in `new_dict`."""
         items = main_dict.items() if iter_main else new_dict.items()
         for key, val in items:
@@ -67,6 +67,14 @@ class RunData:
                 main_dict[key] = [val]
 
         return main_dict
+
+    @staticmethod
+    def _update(new, old):
+        for key, val in new.items():
+            try:
+                old[key].append(val)
+            except KeyError:
+                old[key] = [val]
 
     def _multiple_updates(self, dicts_tuple):
         for (dm, dn, iter_main) in dicts_tuple:
@@ -86,31 +94,36 @@ class RunData:
             self.data_strs.append(outputs['data_str'])
 
         self.samples_arr.append(samples)
-
-        for key, val in outputs['observables'].items():
-            try:
-                self.observables[key].append(val)
-            except KeyError:
-                self.observables[key] = [val]
-
-        for key, val in outputs['energy_data'].items():
-            try:
-                self.energy_data[key].append(val)
-            except KeyError:
-                self.energy_data[key] = [val]
-
-        for key, val in outputs['dynamics_output'].items():
-            try:
-                self.run_data[key].append(val)
-            except KeyError:
-                self.run_data[key] = [val]
-
+        self._update(outputs['observables'], self.observables)
+        self._update(outputs['energy_data'], self.energy_data)
+        self._update(outputs['dynamics_output'], self.run_data)
         if 'volume_diffs' in outputs:
-            for key, val in outputs['volume_diffs'].items():
-                try:
-                    self.volume_diffs[key].append(val)
-                except KeyError:
-                    self.volume_diffs[key] = [val]
+            self._update(outputs['volume_diffs'], self.volume_diffs)
+
+        #  for key, val in outputs['observables'].items():
+        #      try:
+        #          self.observables[key].append(val)
+        #      except KeyError:
+        #          self.observables[key] = [val]
+        #
+        #  for key, val in outputs['energy_data'].items():
+        #      try:
+        #          self.energy_data[key].append(val)
+        #      except KeyError:
+        #          self.energy_data[key] = [val]
+        #
+        #  for key, val in outputs['dynamics_output'].items():
+        #      try:
+        #          self.run_data[key].append(val)
+        #      except KeyError:
+        #          self.run_data[key] = [val]
+        #
+        #  if 'volume_diffs' in outputs:
+        #      for key, val in outputs['volume_diffs'].items():
+        #          try:
+        #              self.volume_diffs[key].append(val)
+        #          except KeyError:
+        #              self.volume_diffs[key] = [val]
 
     @staticmethod
     def therm_arr(arr, therm_frac=0.25):
