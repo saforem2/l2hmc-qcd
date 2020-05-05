@@ -19,9 +19,7 @@ from autograd import elementwise_grad
 
 from config import NP_FLOAT, State
 from network.layers import linear, relu
-from network.encoder_net import EncoderNetNP
-from network.generic_net import GenericNetNP
-from network.cartesian_net import CartesianNetNP
+#  from network.generic_net import GenericNetNP
 from network.gauge_network import GaugeNetworkNP
 
 

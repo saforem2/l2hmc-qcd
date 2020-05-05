@@ -21,7 +21,8 @@ import utils.file_io as io
 
 from base.base_model import BaseModel
 from lattice.lattice import GaugeLattice
-from dynamics.dynamics import Dynamics
+from dynamics.dynamics import Dynamics, DynamicsConfig
+from network import NetworkConfig
 from params import GAUGE_PARAMS
 
 if cfg.HAS_HOROVOD:
@@ -134,30 +135,49 @@ class GaugeModel(BaseModel):
 
     def create_dynamics(self):
         """Create dynamics object."""
-        samples = self.lattice.samples_tensor
-        potential_fn = self.lattice.get_potential_fn(samples)
-        kwargs = {
-            'hmc': self.hmc,
-            'use_bn': self.use_bn,
-            'num_steps': self.num_steps,
-            'batch_size': self.batch_size,
-            'zero_masks': self.zero_masks,
-            'model_type': self._model_type,
-            'activation': self._activation,
-            'num_hidden1': self.num_hidden1,
-            'num_hidden2': self.num_hidden2,
-            'x_dim': self.lattice.num_links,
-            'eps': getattr(self, 'eps', None),
-            'network_arch': self.network_arch,
-            'network_type': self._network_type,
-            'dropout_prob': self.dropout_prob,
-            'eps_trainable': self.eps_trainable,
-            '_input_shape': (self.batch_size, *self.lattice.links.shape),
-        }
-        if self.network_arch != 'generic':
-            kwargs['num_filters'] = self.lattice.space_size
+        dynamics_config = DynamicsConfig(
+            num_steps=self.num_steps,
+            eps=self.eps,
+            input_shape=(self.batch_size, self.lattice.num_links),
+            hmc=self.hmc,
+            eps_trainable=self.eps_trainable,
+            net_weights=self.net_weights,
+            model_type='GaugeModel',
+        )
+        net_config = NetworkConfig(
+            type='GaugeNetwork',
+            units=self.units,
+            dropout_prob=self.dropout_prob,
+            activation_fn=tf.nn.relu,
+        )
 
-        return Dynamics(potential_fn, params=kwargs)
+        #  samples = self.lattice.samples_tensor
+        #  potential_fn = self.lattice.get_potential_fn(samples)
+        #  kwargs = {
+        #      'hmc': self.hmc,
+        #      'use_bn': self.use_bn,
+        #      'num_steps': self.num_steps,
+        #      'batch_size': self.batch_size,
+        #      'zero_masks': self.zero_masks,
+        #      'model_type': self._model_type,
+        #      'activation': self._activation,
+        #      'num_hidden1': self.num_hidden1,
+        #      'num_hidden2': self.num_hidden2,
+        #      'x_dim': self.lattice.num_links,
+        #      'eps': getattr(self, 'eps', None),
+        #      'network_arch': self.network_arch,
+        #      'network_type': self._network_type,
+        #      'dropout_prob': self.dropout_prob,
+        #      'eps_trainable': self.eps_trainable,
+        #      '_input_shape': (self.batch_size, *self.lattice.links.shape),
+        #  }
+        #  if self.network_arch != 'generic':
+        #      kwargs['num_filters'] = self.lattice.space_size
+        #
+        #  return Dynamics(potential_fn, params=kwargs)
+        dynamics = Dynamics(self.calc_action, dynamics_config, net_config)
+
+        return dynamics, dynamics_config, net_config
 
     def _create_observables(self):
         """Create operations for calculating lattice observables."""
@@ -204,20 +224,6 @@ class GaugeModel(BaseModel):
 
         return charge_loss
 
-    def _calc_charge_diff(self, x_init, x_proposed):
-        """Calculate difference in topological charge b/t x_init, x_proposed.
-
-        Args:
-            x_init: Configurations at the beginning of the trajectory.
-            x_proposed: Configurations at the end of the trajectory (before MH
-                accept/reject).
-
-        Returns:
-            x_dq: TensorFlow operation for calculating the difference in
-                topological charge.
-        """
-        pass
-
     def _plaq_sums(self, x):
         """Calculate the sum around all elementary plaquettes in `x`.
         Example:
@@ -236,6 +242,12 @@ class GaugeModel(BaseModel):
                      + tf.roll(x[..., 1], shift=-1, axis=1))  # along `t` axis
 
         return plaq_sums
+
+    def calc_action(self, x):
+        """Calculate the Wilson action of a batch of lattice configurations."""
+        plaqs = self._plaq_sums(x)
+
+        return tf.reduce_sum(1. - tf.cos(plaqs), axis=(1, 2), name='action')
 
     @staticmethod
     def _top_charge(plaq_sums):

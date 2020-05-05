@@ -26,7 +26,7 @@ import tensorflow as tf
 
 import config as cfg
 
-from .layers import DenseLayerNP, relu, ScaledTanhLayer, ScaledTanhLayerNP
+from .layers import DenseLayerNP, relu, ScaledTanh, ScaledTanhNP
 from .network_utils import custom_dense, tf_zeros
 from seed_dict import seeds, vnet_seeds, xnet_seeds
 
