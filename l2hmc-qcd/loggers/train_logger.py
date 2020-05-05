@@ -32,6 +32,7 @@ h_str = ("{:^12s}" + 9 * "{:^10s}").format(
 dash = (len(h_str) + 1) * '-'
 TRAIN_HEADER = dash + '\n' + h_str + '\n' + dash
 
+SKIP_KEYS = ['x_out', 'dx_proposed', 'dx_out']
 
 class TrainLogger(object):
     def __init__(self,
@@ -39,12 +40,6 @@ class TrainLogger(object):
                  log_dir,
                  params=None):
         """Create `TrainLogger` object."""
-        #  summaries=False,
-        #  save_steps=None,
-        #  print_steps=None,
-        #  keep_data=True,
-        #  logging_steps=None):
-        #  self.sess = sess
         if params is None:
             params = model.params
 
@@ -55,16 +50,6 @@ class TrainLogger(object):
         self._print_steps = params.get('print_steps', 10)
         self._save_steps = params.get('save_steps', 10000)
         self._logging_steps = params.get('logging_steps', 500)
-
-        #  summaries = params['summaries']
-        #  if logging_steps is None:
-        #      logging_steps = getattr(model, 'logging_steps', 500)
-        #
-        #  if save_steps is None:
-        #      save_steps = getattr(model, 'save_steps', int(2.5e4))
-        #
-        #  if print_steps is None:
-        #      print_steps = getattr(model, 'print_steps', 10)
 
         model_type = getattr(model, '_model_type', None)
         self._model_type = model_type
@@ -144,6 +129,8 @@ class TrainLogger(object):
 
     def _update(self, data, data_str):
         for key, val in data.items():
+            if key in SKIP_KEYS:
+                continue
             try:
                 self.train_data[key].append(val)
             except KeyError:
@@ -163,14 +150,9 @@ class TrainLogger(object):
         if step % self._print_steps == 0:
             io.log(data_str)
 
-        if (step + 1) % 100 == 0:
+        if (step + 1) % 1000 == 0:
             io.log(self.train_header)
             self.save_current_state(data)
-
-        #  if step % self._save_steps == 0:
-        #      self.save_train_data()
-        #  if self._clear_data:
-        #      self._clear()
 
         if self.summaries and (step + 1) % self._logging_steps == 0:
             self.log_step(sess, data, net_weights)
