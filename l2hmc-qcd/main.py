@@ -62,6 +62,8 @@ from utils.parse_args import parse_args
 from plotters.plot_utils import plot_singular_values, weights_hist
 from plotters.train_plots import plot_train_data
 from trainers.trainer import Trainer
+from dynamics.dynamics import DynamicsConfig
+from network import NetworkConfig
 from trainers.train_setup import (check_reversibility, count_trainable_params,
                                   create_config, get_net_weights, train_setup)
 
@@ -165,15 +167,19 @@ def save_seeds(model):
 def save_weights(model, sess):
     """Save network weights to `.z` file."""
     xw_file = os.path.join(model.log_dir, 'xnet_weights.z')
-    xnet_weights = model.dynamics.xnet.save_weights(sess, xw_file)
-
     vw_file = os.path.join(model.log_dir, 'vnet_weights.z')
+    w_file = os.path.join(model.log_dir, 'dynamics_weights.z')
+
+    xnet_weights = model.dynamics.xnet.save_weights(sess, xw_file)
     vnet_weights = model.dynamics.vnet.save_weights(sess, vw_file)
-    model_weights = {
+
+    weights = {
         'xnet': xnet_weights,
         'vnet': vnet_weights,
     }
-    io.savez(model_weights, os.path.join(model.log_dir, 'weights.z'))
+    io.savez(weights, w_file, name='dynamics_weights')
+
+    return weights
 
 
 def save_eps(model, sess):
@@ -182,6 +188,7 @@ def save_eps(model, sess):
     eps_dict = {'eps': eps_np}
     io.savez(eps_dict, os.path.join(model.log_dir, 'eps_np.z'))
 
+    return eps_np
 
 
 @timeit
@@ -199,9 +206,6 @@ def train(FLAGS, log_file=None):
 
     checkpoint_dir = os.path.join(log_dir, 'checkpoints')
     io.check_else_make_dir(checkpoint_dir)
-
-    #  eps = FLAGS.eps
-    #  current_step = 0
 
     params = dict(FLAGS.__dict__)
 
@@ -256,8 +260,8 @@ def train(FLAGS, log_file=None):
                        save_checkpoint_steps=params['save_steps'])
 
     #  x_shape = (FLAGS.batch_size, model.lattice.num_links)
-    x_init = TWO_PI * np.random.uniform(size=(FLAGS.batch_size,
-                                              model.lattice.num_links)) - PI
+    x_init = np.random.uniform(-PI, PI, size=(FLAGS.batch_size,
+                                              model.lattice.num_links))
     if FLAGS.restore:
         x_init = state['x_in']
         restore_ops = [model.global_step_setter, model.eps_setter]
@@ -277,12 +281,14 @@ def train(FLAGS, log_file=None):
 
     dataset = None
     if IS_CHIEF:
+        eps_np = save_eps(model, sess)
+        _ = save_weights(model, sess)
         save_masks(model, sess)
         save_params(model)
         save_seeds(model)
-        save_weights(model, sess)
-        save_eps(model, sess)
-        plot_singular_values(model.log_dir)
+        # TODO: Figure out how to load weights from `.h5` file for numpy
+        # inference and plotting singular values after training
+        #  plot_singular_values(model.log_dir)
         if not FLAGS.clear_data:
             dataset = plot_train_data(train_logger.train_data, params)
 
@@ -290,216 +296,10 @@ def train(FLAGS, log_file=None):
         if FLAGS.save_train_data and not FLAGS.clear_data:
             io.log(f'Saving train data!')
             train_logger.save_train_data()
-        # wfile = os.path.join(model.log_dir, 'dynamics_weights.h5')
-        # model.dynamics.save_weights(wfile)
-        #  io.save_dict(model.params, os.path.join(os.getcwd()), 'params.z')
 
     # close MonitoredTrainingSession and reset the default graph
     sess.close()
     tf.compat.v1.reset_default_graph()
-    io.log(f'{SEP_STR}\n training took:'
-           f'{time.time()-start_time:.3g}s \n{SEP_STR}')
-
-    return model, train_logger, dataset
-
-
-@timeit
-def train_l2hmc(FLAGS, log_file=None):
-    """Create, train, and run L2HMC sampler on 2D U(1) gauge model."""
-    start_time = time.time()
-    tf.keras.backend.set_learning_phase(True)
-
-    current_state = None
-    if FLAGS.restore and FLAGS.log_dir is not None:
-        params = io.load_params(FLAGS.log_dir)
-        if FLAGS.horovod and params['using_hvd']:  # should be the same
-            num_workers = hvd.size()
-            # XXX: is this necessary???
-            #  assert num_workers == params['num_workers']
-            hooks = [hvd.BroadcastGlobalVariablesHook(0)]
-            params['logging_steps'] *= num_workers
-        else:
-            hooks = []
-
-    else:
-        params, hooks = train_setup(FLAGS, log_file)
-
-    # ---------------------------------------------------------------
-    # NOTE: Conditionals required for file I/O if we're not using
-    #       Horovod, `is_chief` should always be True otherwise,
-    #       if using Horovod, we only want to perform file I/O
-    #       on hvd.rank() == 0, so check that first.
-    # ---------------------------------------------------------------
-    condition1 = not params['using_hvd']
-    condition2 = params['using_hvd'] and hvd.rank() == 0
-    is_chief = condition1 or condition2
-
-    save_steps = max((FLAGS.train_steps, params['train_steps'])) // 4
-    params['save_steps'] = save_steps
-    params['zero_masks'] = FLAGS.zero_masks
-    params['print_steps'] = FLAGS.print_steps
-    params['beta_fixed'] = (FLAGS.beta_final == FLAGS.beta_init)
-
-    if is_chief:
-        log_dir = params['log_dir']
-        checkpoint_dir = os.path.join(log_dir, 'checkpoints/')
-        io.check_else_make_dir(checkpoint_dir)
-        log_params(params)
-        current_state_file = os.path.join(log_dir, 'training',
-                                          'current_state.z')
-        if os.path.isfile(current_state_file):
-            current_state = io.loadz(current_state_file)
-    else:
-        log_dir = None
-        checkpoint_dir = None
-        current_state = None
-
-    if FLAGS.restore:
-        if current_state is not None:
-            params['lr_init'] = current_state['lr']
-            params['eps'] = current_state['dynamics_eps']
-            if FLAGS.restart_beta > 0:
-                params['beta_init'] = FLAGS.restart_beta
-            else:
-                params['beta_init'] = current_state['beta']
-
-        else:
-            params['lr_init'] = FLAGS.lr_init
-            params['beta_init'] = FLAGS.beta_init
-            params['beta_final'] = FLAGS.beta_final
-            params['eps'] = FLAGS.eps
-
-        #  params['train_steps'] += FLAGS.train_steps
-
-    # --------------------------------------------------------
-    # Create model and train_logger
-    # --------------------------------------------------------
-    model = GaugeModel(params)
-
-    # Only create `TrainLogger` if `hvd.rank == 0`
-    if is_chief:
-        keep_data = not FLAGS.clear_data
-        logging_steps = params.get('logging_steps', 10)
-        train_logger = TrainLogger(model, log_dir,
-                                   save_steps=save_steps,
-                                   logging_steps=logging_steps,
-                                   keep_data=keep_data,
-                                   print_steps=FLAGS.print_steps,
-                                   summaries=params['summaries'])
-    else:
-        train_logger = None
-
-    # -------------------------------------------------------
-    # Setup `tf.ConfigProto` object for `tf.Session`
-    # -------------------------------------------------------
-    config, params = create_config(params)
-
-    net_weights_init = cfg.NetWeights(
-        x_scale=FLAGS.x_scale_weight,
-        x_translation=FLAGS.x_translation_weight,
-        x_transformation=FLAGS.x_transformation_weight,
-        v_scale=FLAGS.v_scale_weight,
-        v_translation=FLAGS.v_translation_weight,
-        v_transformation=FLAGS.v_transformation_weight,
-    )
-
-    # ----------------------------------------------------------------
-    #  Create MonitoredTrainingSession
-    #
-    #  NOTE: The MonitoredTrainingSession takes care of session
-    #        initialization, restoring from a checkpoint, saving to a
-    #        checkpoint, and closing when done or an error occurs.
-    # ----------------------------------------------------------------
-    #  save_steps = FLAGS.save_steps
-    #  scaffold=scaffold,
-    sess = create_sess(hooks=hooks,
-                       config=config,
-                       save_summaries_secs=None,
-                       save_summaries_steps=None,
-                       save_checkpoint_steps=save_steps,
-                       checkpoint_dir=checkpoint_dir)
-    #
-    #  current_state_file = os.path.join(model.log_dir, 'training',
-    #                                    'current_state.z')
-    #  if os.path.isfile(current_state_file):
-    #      current_state = io.loadz(current_state_file)
-    #      model.lr = current_state['lr']
-    #      samples_init = current_state['x_in']
-    #
-    #      if FLAGS.restart_beta > 0:
-    #          beta_init = FLAGS.restart_beta
-    #      else:
-    #          beta_init = current_state['beta']
-    #
-    if current_state is not None:
-        samples_init = current_state['x_in']
-        model.beta_init = current_state['beta']
-
-        is_finished = getattr(current_state, 'is_finished', False)
-        almost_finished = (params['train_steps'] - current_state['step'] < 20)
-        if is_finished or almost_finished:
-            train_steps = params['train_steps'] + FLAGS.train_steps
-            model.train_steps = train_steps
-            params['train_steps'] = train_steps
-
-        ops = [model.global_step_setter, model.eps_setter]
-        feed_dict = {
-            model.global_step_ph: current_state['step'],
-            model.eps_ph: current_state['dynamics_eps'],
-        }
-        sess.run(ops, feed_dict=feed_dict)
-
-    else:
-        rand_unif = np.random.uniform(
-            size=(FLAGS.batch_size, model.lattice.num_links)
-            #  size=(model.lattice.samples_array.shape)
-        )
-        samples_init = 2 * np.pi * rand_unif - np.pi
-        beta_init = model.beta_init
-
-    # TODO: Can these be safely deleted???
-    #  sess.run([
-    #      model.dynamics.xnet.generic_net.coeff_scale.initializer,
-    #      model.dynamics.vnet.generic_net.coeff_scale.initializer,
-    #      model.dynamics.xnet.generic_net.coeff_transformation.initializer,
-    #      model.dynamics.vnet.generic_net.coeff_transformation.initializer,
-    #  ])
-    if FLAGS.restore and is_chief and not FLAGS.clear_data:
-        try:
-            train_logger.restore_train_data()
-        except FileNotFoundError:
-            io.log(f'No training data found! Continuing...')
-
-    # ----------------------------------------------------------
-    #                       TRAINING
-    # ----------------------------------------------------------
-    trainer = Trainer(sess, model, train_logger, params)
-    trainer.train(beta=beta_init,
-                  samples=samples_init,
-                  net_weights=net_weights_init)
-
-    dataset = None
-    if is_chief:
-        save_masks(model, sess)
-        save_params(model)
-        save_seeds(model)
-        save_weights(model, sess)
-        save_eps(model, sess)
-        plot_singular_values(model.log_dir)
-        if not FLAGS.clear_data:
-            dataset = plot_train_data(train_logger.train_data, params)
-
-        train_logger.write_train_strings()
-        if FLAGS.save_train_data and not FLAGS.clear_data:
-            io.log(f'Saving train data!')
-            train_logger.save_train_data()
-        # wfile = os.path.join(model.log_dir, 'dynamics_weights.h5')
-        # model.dynamics.save_weights(wfile)
-        #  io.save_dict(model.params, os.path.join(os.getcwd()), 'params.z')
-
-    # close MonitoredTrainingSession and reset the default graph
-    sess.close()
-    tf.reset_default_graph()
     io.log(f'{SEP_STR}\n training took:'
            f'{time.time()-start_time:.3g}s \n{SEP_STR}')
 
