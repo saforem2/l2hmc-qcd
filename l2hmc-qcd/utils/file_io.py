@@ -235,9 +235,17 @@ def get_timestr():
 
 def load_params(log_dir):
     """Load params from log_dir."""
-    params_file = os.path.join(log_dir, 'parameters.pkl')
-    with open(params_file, 'rb') as f:
-        params = pickle.load(f)
+    pkl_file = os.path.join(log_dir, 'parameters.pkl')
+    z_file = os.path.join(log_dir, 'parameters.z')
+    if os.path.isfile(pkl_file):
+        with open(pkl_file, 'rb') as f:
+            params = pickle.load(f)
+    elif os.path.isfile(z_file):
+        params = loadz(z_file)
+
+    else:
+        raise FileNotFoundError(f'Unable to locate `parameters`'
+                                f'file in {log_dir}.')
 
     return params
 
@@ -563,59 +571,40 @@ def save_data(data, out_file, name=None):
         tmp = out_file.split('.')
         out_file = tmp[0] + '_1' + f'.{tmp[1]}'
 
-    log(f"Saving {name} to {out_file}...")
     if out_file.endswith('.pkl'):
-        with open(out_file, 'wb') as f:
-            pickle.dump(data, f, pickle.HIGHEST_PROTOCOL)
+        out_file = change_extension(out_file, 'z')
+        savez(data, out_file, name=name)
 
     elif out_file.endswith('.npy'):
         np.save(out_file, np.array(data))
 
     else:
-        log("Extension not recognized! out_file must end in .pkl or .npy")
+        savez(data, out_file, name=name)
 
 
 def save_params(params, out_dir, name=None):
-    """save params (dict) to `out_dir`, as both `.pkl` and `.txt` files."""
+    """save params (dict) to `out_dir`, as both `.z` and `.txt` files."""
     check_else_make_dir(out_dir)
     if name is None:
         name = 'parameters'
     params_txt_file = os.path.join(out_dir, f'{name}.txt')
-    params_pkl_file = os.path.join(out_dir, f'{name}.pkl')
+    zfile = os.path.join(out_dir, f'{name}.z')
     with open(params_txt_file, 'w') as f:
         for key, val in params.items():
             f.write(f"{key}: {val}\n")
-    with open(params_pkl_file, 'wb') as f:
-        pickle.dump(params, f)
+    savez(params, zfile, name=name)
 
 
-def save_dict(d, out_dir, name, compressed=True):
-    """Save generic dict `d` to `out_dir` as both `.pkl` and `.txt` files."""
+def save_dict(d, out_dir, name):
+    """Save generic dict `d` to `out_dir` as both `.z` and `.txt` files."""
     check_else_make_dir(out_dir)
     txt_file = os.path.join(out_dir, f'{name}.txt')
     with open(txt_file, 'w') as f:
         for key, val in d.items():
             f.write(f"{key}: {val}\n")
 
-    if compressed:
-        zfile = os.path.join(out_dir, f'{name}.z')
-        joblib.dump(d, zfile)
-
-    else:
-        pkl_file = os.path.join(out_dir, f'{name}.pkl')
-        with open(pkl_file, 'wb') as f:
-            pickle.dump(d, f, pickle.HIGHEST_PROTOCOL)
-
-
-
-def save_params_to_pkl_file(params, out_dir):
-    """Save `params` dictionary to `parameters.pkl` in `out_dir.`"""
-    check_else_make_dir(out_dir)
-    params_file = os.path.join(out_dir, 'parameters.pkl')
-    #  print(f"Saving params to: {params_file}.")
-    log(f"Saving params to: {params_file}.")
-    with open(params_file, 'wb') as f:
-        pickle.dump(params, f)
+    zfile = os.path.join(out_dir, f'{name}.z')
+    savez(d, zfile, name=name)
 
 
 def get_run_num(log_dir):
