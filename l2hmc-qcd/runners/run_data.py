@@ -126,7 +126,7 @@ class RunData:
         #              self.volume_diffs[key] = [val]
 
     @staticmethod
-    def therm_arr(arr, therm_frac=0.25):
+    def therm_arr(arr, therm_frac=0.33):
         """Drop the first `therm_frac` percent of `arr` to account for mixing.
 
         Args:
@@ -159,7 +159,7 @@ class RunData:
     def build_dataset(self):
         """Build `xarray.Dataset` from `self.run_data`."""
         charges = np.array(self.observables['charges']).T
-        self.run_data['tunneling_rate'] = self.calc_tunneling_rate(charges).T
+        self.run_data['tunneling_rate'] = self.calc_tunneling_rate(charges.T).T
 
         #  plaqs = np.array(self.observables.pop('plaqs'))
         #  beta = self.run_params['beta']
@@ -172,7 +172,7 @@ class RunData:
             'vdiff_r': np.array(self.run_data['vdiff_r']).mean(axis=-1),
             'sumlogdet_out': self.run_data['sumlogdet_out'],
             'sumlogdet_prop': self.run_data['sumlogdet_proposed'],
-            'tunneling_rate': self.run_data['tunneling_rate'],
+            #  'tunneling_rate': self.run_data['tunneling_rate'],
             'dcharges': self.observables['dcharges'],
         }
 
@@ -181,7 +181,7 @@ class RunData:
 
         return dataset
 
-    def _build_dataset(self, data, filter_str=None, therm_frac=0.25):
+    def _build_dataset(self, data, filter_str=None, therm_frac=0.33):
         """Build (thermalized) `xarray.Dataset` from `data`.
 
         Args:
@@ -367,10 +367,13 @@ class RunData:
     @staticmethod
     def calc_tunneling_rate(charges):
         """Calc. the tunneling rate as the charge difference per step."""
-        charges = np.around(charges)
+        #  charges = np.around(charges)
+        #  import pudb; pudb.set_trace()
+        #  charges = np.array(charges, dtype=int)
         # insert copy of first row at beginning of charges
         charges = np.insert(charges, 0, charges[0], axis=0)
-        dq = np.abs(charges[1:] - charges[:-1])
+        dq = np.floor(np.abs(charges[1:] - charges[:-1]) + 0.5)
+        #  dq = np.abs(np.floor(charges[1:] - charges[:-1]))
         tunneling_rate = dq / charges.shape[0]  # divide by num steps
 
         return tunneling_rate
@@ -394,21 +397,28 @@ class RunData:
         """
         step_ax = 0  # data is appended for each step along axis 0
         num_steps = charges.shape[step_ax]
-        charges = np.around(charges)  # integer valued
-        # insert copy of first row at beginning of array
         charges = np.insert(charges, 0, charges[0], axis=step_ax)
-        charges_diff = np.abs(charges[1:] - charges[:-1])
+        dq = np.floor(np.abs(charges[1:] - charges[:-1]) + 0.5)
+        tunneling_events = np.sum(dq, axis=step_ax)
+        #  charges = np.around(charges)  # integer valued
+        #  charges = np.array(charges, dtype=int)
+        #  # insert copy of first row at beginning of array
+        #  charges = np.insert(charges, 0, charges[0], axis=step_ax)
+        #  dq = np.abs(np.floor(charges[1:] - charges[:-1]))
+        #  #  charges_diff = np.abs(
+        #  #      np.around(charges[1:]) - np.around(charges[:-1])
+        #  #  )
 
         # sum the step-wise charge differences over the step axis
         # and divide by the number of steps to get the `tunneling_rate`
-        tunneling_events = np.sum(np.around(charges_diff), axis=step_ax)
+        tunneling_events = np.sum(dq, axis=step_ax)
         tunn_stats = {
             'tunneling_events': tunneling_events,
             'tunneling_rate': tunneling_events / num_steps,
         }
         return tunn_stats
 
-    def thermalize_data(self, data=None, therm_frac=0.25):
+    def thermalize_data(self, data=None, therm_frac=0.33):
         """Returns thermalized versions of entries in data."""
         if data is None:
             data = self.run_data
