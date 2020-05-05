@@ -273,6 +273,18 @@ def parse_args():
                               default to 2 * lattice.num_links.\n
                               (Default: None)"""))
 
+    parser.add_argument('--units',
+                        dest='units',
+                        type=lambda s: [int(i) for i in s.split(',')],
+                        default="64,128",
+                        required=False,
+                        help=("""Number of nodes to use in hidden layers. The
+                              number of hidden layers will be determined by the
+                              number of entries provided. Example: `--units
+                              '100,200,300'` will make 3 hidden layers with
+                              100, 200, and 300 hidden units respectively.
+                              (Default: '64,128')."""))
+
     parser.add_argument('--no_summaries',
                         dest="no_summaries",
                         action="store_true",
