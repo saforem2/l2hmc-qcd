@@ -125,12 +125,6 @@ def get_global_vars(names):
     return global_vars
 
 
-def pkl_dump(d, pkl_file):
-    """Dump `d` to `pkl_file`."""
-    with open(pkl_file, 'wb') as f:
-        pickle.dump(d, f)
-
-
 def save_params(model):
     """Save model parameters to `.z` files.
 
