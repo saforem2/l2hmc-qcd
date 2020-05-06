@@ -198,9 +198,6 @@ def train(FLAGS, log_file=None):
                                     log_file=log_file,
                                     model_type='GaugeModel')
 
-    checkpoint_dir = os.path.join(log_dir, 'checkpoints')
-    io.check_else_make_dir(checkpoint_dir)
-
     params = dict(FLAGS.__dict__)
 
     params['log_dir'] = log_dir
@@ -233,7 +230,11 @@ def train(FLAGS, log_file=None):
     model = GaugeModel(params)
 
     train_logger = None
+    checkpoint_dir = None
     if IS_CHIEF:
+        checkpoint_dir = os.path.join(log_dir, 'checkpoints')
+        io.check_else_make_dir(checkpoint_dir)
+        io.savez(params, os.path.join(log_dir, 'params.z'))
         train_logger = TrainLogger(model, log_dir, params)
 
     # Create `tf.ConfigProto()`
