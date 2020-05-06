@@ -56,14 +56,14 @@ class TrainLogger(object):
 
         self.train_data = {}
         self.h_strf = ("{:^13s}" + 9 * "{:^12s}").format(
-            "STEP", "t/STEP", "LOSS", "% ACC", "EPS", "𝞭x",
-            "BETA", "LR", "exp(𝞭H)", "sumlogdet",
+            "STEP", "t/STEP", "LOSS", "% ACC", "EPS", "dx",
+            "BETA", "LR", "exp(dH)", "sumlogdet",
         )
 
         if model._model_type == 'GaugeModel':
             self.obs_data = {}
-            self.h_strf += ("{:^12s}").format("𝞭Q (tot)")
-            self.h_strf += ("{:^12s}").format("𝞭𝜙")
+            self.h_strf += ("{:^12s}").format("dQ (tot)")
+            self.h_strf += ("{:^12s}").format("dphi")
 
         self.dash = (len(self.h_strf) + 1) * '-'
         self.train_header = self.dash + '\n' + self.h_strf + '\n' + self.dash
