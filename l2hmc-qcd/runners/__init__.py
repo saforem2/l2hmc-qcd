@@ -32,22 +32,25 @@ NET_WEIGHTS_L2HMC = NetWeights(1, 1, 1, 1, 1, 1)
 #           "𝛅𝛟_𝛍𝛎", "exp(𝛅𝐇)", "log⎮𝐉⎮",
 #           "𝛅𝐱𝐫", "𝛅𝐯𝐫", "𝛅𝐐", "𝛅𝛟_𝐩"]
 NAMES = ["step",
-         "𝞭t",
-         "A(ξ'|ξ)",
-         "𝞭xr",
-         "𝞭vr",
-         "log|J|",
-         "exp(𝞭H)",
-         "plaq_loss",
-         "charge_loss",
-         "𝞭𝛟_µυ",
-         "𝞭Q",
-         "𝞭𝛟_p",
-         "TYPE"]
+         "dt",
+         "px",
+         "dx_r",
+         "dv_r",
+         "sumlogdet",
+         "exp(dH)",
+         "ploss",
+         "qloss",
+         "dplaqs",
+         "dQ",
+         "p_err"]
+         #  "𝞭𝛟_µυ",
+         #  "𝞭Q",
+         #  "𝞭𝛟_p",
+         #  "TYPE"]
 
 
 #  H0 = ["{:^13s}".format("STEP")]
-HEADER = ''.join(["{:^11s}".format(name) for name in NAMES])
+HEADER = ''.join(["{:^12s}".format(name) for name in NAMES])
 #  HEADER = H0 + H1
 
 SEPERATOR = len(HEADER) * '-'

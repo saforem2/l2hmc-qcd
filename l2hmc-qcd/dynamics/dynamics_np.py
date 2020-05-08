@@ -12,16 +12,90 @@ Date: 01/07/2020
 # pylint: disable=invalid-name, too-many-arguments
 # pylint:disable=no-member
 from __future__ import absolute_import, division, print_function
+import os
 
 import autograd.numpy as np
 
 from autograd import elementwise_grad
+from collections import namedtuple
 
-from config import NP_FLOAT, State
+from config import NP_FLOAT, State, NetWeights
 from network.layers import linear, relu
+from .dynamics import MonteCarloStates
+import utils.file_io as io
 #  from network.generic_net import GenericNetNP
 from network.gauge_network import GaugeNetworkNP
 
+# TODO: Put all `namedtuple` objects in `dynamics/__init__.py`
+
+NET_WEIGHTS_HMC = NetWeights(0., 0., 0., 0., 0., 0.)
+NET_WEIGHTS_L2HMC = NetWeights(1., 1., 1., 1., 1., 1.)
+
+DynamicsParamsNP = namedtuple('DynamicsConfigNP', [
+    'num_steps', 'eps', 'input_shape',
+    'net_weights', 'network_type',
+    'weights', 'model_type',
+])
+
+
+class DynamicsConfigNP:
+    """DynamicsConfigNP object."""
+    def __init__(self, dynamics_params_np):
+        self._params = dynamics_params_np
+        self.set_attrs(self._params)
+
+    # pylint: disable=attribute-defined-outside-init
+    def set_attrs(self, params=None):
+        if params is None:
+            params = self._params
+
+        self.eps = params.eps
+        self.num_steps = params.num_steps
+        self.model_type = params.model_type
+
+        self.net_weights = params.net_weights
+        self.hmc = bool(self.net_weights == NET_WEIGHTS_HMC)
+
+        self.weights = params.weights
+        self.network_type = params.network_type
+
+        self.batch_size = params.input_shape[0]
+        if len(params.input_shape) == 2:
+            self.lattice_shape = None
+            self.xdim = params.input_shape[1]
+        elif len(params.input_shape) == 4:
+            self.lattice_shape = params.input_shape[1:]
+            self.xdim = np.cumprod(self.lattice_shape)[-1]
+
+    def save(self, out_dir):
+        """Save the config to `out_dir` as both `.txt` and `.z` files."""
+        io.savez(self._params, os.path.join(out_dir, 'dynamics_params_np.z'))
+        io.savez(self.__dict__, os.path.join(out_dir, 'dynamics_config_np.z'))
+
+        txt_file = os.path.join(out_dir, 'dynamics_params_np.txt')
+        with open(txt_file, 'w') as f:
+            for key, val in self.__dict__.items():
+                f.write(f'{key}: {val}\n')
+
+    @staticmethod
+    def load(fpath):
+        """Load `params` from `fpath`."""
+        if os.path.isdir(fpath):
+            params_file = os.path.join(fpath, 'dynamics_params_np.z')
+            if os.path.isfile(params_file):
+                params = io.loadz(params_file)
+        elif os.path.isfile(fpath):
+            params = io.loadz(fpath)
+
+        else:
+            raise FileNotFoundError('Incorrect fpath specified.')
+
+        return params
+
+    def restore(self, fpath):
+        """Restore params from `fpath`."""
+        params = self.load(fpath)
+        self.set_attrs(params)
 
 def reduced_weight_matrix(W, n=10):
     """Use the first n singular vals to reconstruct the original matrix W."""
@@ -41,52 +115,32 @@ def convert_to_angle(x):
 
 class DynamicsNP(object):
     """Implements tools for running tensorflow-independent inference."""
-    def __init__(self,
-                 x_dim,
-                 params,
-                 weights,
-                 potential_fn,
-                 model_type=None):
+    def __init__(self, potential_fn, dynamics_params, model_type=None):
         """Init.
         Args:
             potential_fn (callable): Potential energy function.
-            weights (dict): Dictionary of weights, from `log_dir/weights.z`
-                file where `log_dir` contains the trained model.
-            hmc (bool): Run generic HMC (faster)
+            dynamics_params (DynamicsParamsNP): Configuration object.
             model_type (str): Model type. (if 'GaugeModel', run extra ops)
-            params (dict): Dictionary of parameters used.
         """
-        if model_type is None:
-            model_type = 'None'
+        self.params = dynamics_params
+        self.config = DynamicsConfigNP(dynamics_params)
+        self._potential_fn = potential_fn
+        self._model_type = self.config.model_type
 
-        self.x_dim = x_dim
-        self.potential = potential_fn
-        self._model_type = model_type
+        self._activation_fn = relu
+        self.xdim = int(self.config.xdim)
+        self.eps = float(self.config.eps)
+        self.num_steps = int(self.config.num_steps)
 
-        self.eps = float(params.get('eps', None))
-        self.num_steps = int(params.get('num_steps', None))
-        self.batch_size = int(params.get('batch_size', None))
-        self.direction = params.get('direction', 'rand')
-        self.zero_masks = params.get('zero_masks', False)
-        self._input_shape = params.get('_input_shape', None)
-        self._network_type = params.get('network_type', None)
-
-        activation = params.get('activation', 'relu')
-        if activation == 'relu':
-            self._activation_fn = relu
-        elif activation == 'tanh':
-            self._activation_fn = np.tanh
-        else:
-            self._activation_fn = linear
-
-        if params.get('hmc', False):
-            self.xnet, self.vnet = self.hmc_networks()
-        else:
-            self.xnet, self.vnet = self.build_networks(weights)
-
-        self._forward = self._setup_direction()
         self.masks = self.build_masks()
-        #  self.tau = self.build_time()
+        self.xnet, self.vnet = self.build_networks(self.config.weights)
+
+        self._xsw = self.config.net_weights.x_scale
+        self._xtw = self.config.net_weights.x_translation
+        self._xqw = self.config.net_weights.x_transformation
+        self._vsw = self.config.net_weights.v_scale
+        self._vtw = self.config.net_weights.v_translation
+        self._vqw = self.config.net_weights.v_transformation
 
     def _setup_direction(self):
         if self.direction == 'forward':
@@ -98,123 +152,32 @@ class DynamicsNP(object):
 
         return forward
 
-    def __call__(self, *args, **kwargs):
-        return self.apply_transition(*args, **kwargs)
+    def __call__(self, x, beta):
+        return self.apply_transition(x, beta)
 
-    def transition_forward(self, x, beta, net_weights,
-                           v=None, model_type=None):
-        """Propose a new state by running the transition kernel forward.
-        Args:
-            x (array-like): Input samples.
-            beta (float): Inverse temperature (gauge coupling constant).
-            net_weights (NetWeights): Tuple of net weights for scaling the
-                network functions.
-            model_type (str): String specifying the type of model.
-        Returns:
-            outputs (dict): Dictionary containing the outputs.
-        """
-        if model_type == 'GaugeModel':
-            x = convert_to_angle(x)
+    def fix_state(self, state):
+        if self.config.model_type == 'GaugeModel':
+            state = state._replace(x=convert_to_angle(state.x))
+        return state
 
-        if v is None:
-            v = np.random.normal(size=x.shape)
+    def apply_transition(self, x, beta):
+        forward = (np.random.uniform() < 0.5)
+        v_init = np.random.randn(*x.shape)
+        state_init = self.fix_state(State(x, v_init, beta))
+        state_prop, px, sld_prop = self.transition_kernel(state_init, forward)
 
-        xf, vf, pxf, sumlogdetf = self.transition_kernel(*State(x, v, beta),
-                                                         net_weights,
-                                                         forward=True)
-        mask_a, mask_r, _ = self._get_accept_masks(pxf)
-        x_out = xf * mask_a[:, None] + x * mask_r[:, None]
-        v_out = vf * mask_a[:, None] + v * mask_r[:, None]
-        sumlogdet_out = sumlogdetf * mask_a
+        mask_a, mask_r = self._get_accept_masks(px)
+        x_out = state_prop.x * mask_a[:, None] + state_init.x * mask_r[:, None]
+        v_out = state_prop.v * mask_a[:, None] + state_init.v * mask_r[:, None]
+        sld_out = sld_prop * mask_a
 
-        outputs = {
-            'x_init': x,
-            'v_init': v,
-            'x_proposed': xf,
-            'v_proposed': vf,
-            'x_out': x_out,
-            'v_out': v_out,
-            'sumlogdet_out': sumlogdet_out,
-        }
+        state_out = State(x_out, v_out, state_init.beta)
+        mc_states = MonteCarloStates(state_init, state_prop, state_out)
+        state_diff_r = self.check_reversibility(mc_states, forward)
+        sld_states = MonteCarloStates(np.zeros_like(sld_out),
+                                      sld_prop, sld_out)
 
-        return outputs
-
-    def transition_backward(self, x, beta, net_weights,
-                            v=None, model_type=None):
-        """Propose a new state by running the transition kernel backward."""
-        if model_type == 'GaugeModel':
-            x = convert_to_angle(x)
-
-        if v is None:
-            v = np.random.normal(size=x.shape)
-
-        xb, vb, pxb, sumlogdetb = self.transition_kernel(*State(x, v, beta),
-                                                         net_weights,
-                                                         forward=False)
-        mask_a, mask_r, _ = self._get_accept_masks(pxb)
-        x_out = xb * mask_a[:, None] + x * mask_r[:, None]
-        v_out = vb * mask_a[:, None] + v * mask_r[:, None]
-        sumlogdet_out = sumlogdetb * mask_a
-
-        outputs = {
-            'x_init': x,
-            'v_init': v,
-            'x_proposed': xb,
-            'v_proposed': vb,
-            'x_out': x_out,
-            'v_out': v_out,
-            'sumlogdet_out': sumlogdet_out
-        }
-
-        return outputs
-
-    def apply_transition(self, x, beta, net_weights):
-        """Propose a new state and perform the accept/reject step."""
-        forward = self._forward
-        if forward is None:
-            forward = (np.random.uniform() < 0.5)
-
-        if self._model_type == 'GaugeModel':
-            x = convert_to_angle(x)
-
-        v_init = np.random.normal(size=x.shape)
-        state_init = State(x, v_init, beta)
-        x_, v_, px, sumlogdet = self.transition_kernel(*state_init,
-                                                       net_weights,
-                                                       forward=forward)
-        if self._model_type == 'GaugeModel':
-            x_ = convert_to_angle(x_)
-
-        # Check reversibility using proposed and initial states
-        state_prop = State(x_, v_, beta)
-        xdiff_r, vdiff_r = self.check_reversibility(state_init, state_prop,
-                                                    forward, net_weights)
-
-        mask_a, mask_r, rand_num = self._get_accept_masks(px)
-        x_out = x_ * mask_a[:, None] + x * mask_r[:, None]
-        v_out = v_ * mask_a[:, None] + v_init * mask_r[:, None]
-        sumlogdet_out = sumlogdet * mask_a
-
-        # TODO: Simplify outputs by grouping (x, v, beta) into State(s)
-        outputs = {
-            'x_init': x,
-            'v_init': v_init,
-            'x_proposed': x_,
-            'v_proposed': v_,
-            'x_out': x_out,
-            'v_out': v_out,
-            'accept_prob': px,
-            'sumlogdet_proposed': sumlogdet,
-            'sumlogdet_out': sumlogdet_out,
-            'forward': forward,
-            'mask_a': mask_a,
-            'mask_r': mask_r,
-            'rand_num': rand_num,
-            'xdiff_r': xdiff_r,
-            'vdiff_r': vdiff_r,
-        }
-
-        return outputs
+        return mc_states, px, sld_states, state_diff_r
 
     def l2_metric(self, x1, x2):
         """"Calculate np.sqrt((x1 - x2) ** 2)."""
@@ -228,7 +191,7 @@ class DynamicsNP(object):
         #  dx = np.sqrt(np.sum((x1 - x2) ** 2, axis=0))
         return dx
 
-    def check_reversibility(self, s_init, s_prop, forward, net_weights):
+    def check_reversibility(self, mc_states, forward):
         """Check reversibility.
         NOTE: `s_init = State(x_init, v_init, beta)`,
         Explicitly:
@@ -240,17 +203,24 @@ class DynamicsNP(object):
                 dx = (state_r.x - state_init.x)
                 dv = (state_r.v - state_init.v)
         """
-        x_r, v_r, _, _ = self.transition_kernel(*s_prop,
-                                                net_weights,
-                                                forward=(not forward))
-        dv = v_r - s_init.v
-        if self._model_type == 'GaugeModel':
-            x_r = convert_to_angle(x_r)
-            dx = 1. - np.cos(x_r - s_init.x)
+        state_r, _, _ = self.transition_kernel(mc_states.proposed,
+                                         forward=(not forward))
+        dv = state_r.v - mc_states.init.v
+        if self.config.model_type == 'GaugeModel':
+            dx = 2. * (1. - np.cos(state_r.x - mc_states.init.x))
         else:
-            dx = x_r - s_init
+            dx = state_r.x - mc_states.init.x
 
-        return dx, dv
+        dstate_r = State(dx, dv, state_r.beta)
+
+        #  dv = v_r - mc_states.init.v
+        #  if self._model_type == 'GaugeModel':
+        #      x_r = convert_to_angle(x_r)
+        #      dx = 1. - np.cos(x_r - s_init.x)
+        #  else:
+        #      dx = x_r - s_init
+
+        return dstate_r
 
     def volume_transformation(self, state, net_weights, eta=1e-3):
         """
@@ -327,203 +297,132 @@ class DynamicsNP(object):
 
         return diffs
 
-    def apply_transition_both(self, x, beta, net_weights, model_type=None):
-        """Propose a new state and perform the accept/reject step."""
-        if model_type == 'GaugeModel':
-            x = convert_to_angle(x)
-
-        vf_init = np.random.normal(size=x.shape)
-        state_init_f = State(x, vf_init, beta)
-        xf, vf, pxf, sumlogdetf = self.transition_kernel(*state_init_f,
-                                                         net_weights,
-                                                         forward=True)
-        vb_init = np.random.normal(size=x.shape)
-        state_init_b = State(x, vb_init, beta)
-        xb, vb, pxb, sumlogdetb = self.transition_kernel(*state_init_b,
-                                                         net_weights,
-                                                         forward=False)
-
-        mask_f, mask_b = self._get_direction_masks()
-        v_init = (vf_init * mask_f[:, None] + vb_init * mask_b[:, None])
-        x_prop = xf * mask_f[:, None] + xb * mask_b[:, None]
-        v_prop = vf * mask_f[:, None] + vb * mask_b[:, None]
-
-        accept_prob = pxf * mask_f + pxb * mask_b
-        sumlogdet_prop = sumlogdetf * mask_f + sumlogdetb * mask_b
-
-        mask_a, mask_r, rand_num = self._get_accept_masks(accept_prob)
-        x_out = x_prop * mask_a[:, None] + x * mask_r[:, None]
-        v_out = v_prop * mask_a[:, None] + v_init * mask_r[:, None]
-        sumlogdet_out = sumlogdet_prop * mask_a
-
-        # TODO: Simplify outputs via `state_init, state_prop, state_out, ...`
-        outputs = {
-            'x_init': x,
-            'v_init': v_init,
-            'x_proposed': x_prop,
-            'v_proposed': v_prop,
-            'x_out': x_out,
-            'v_out': v_out,
-            'xf': xf,
-            'xb': xb,
-            'pxf': pxf,
-            'pxb': pxb,
-            'accept_prob': accept_prob,
-            'sumlogdet_proposed': sumlogdet_prop,
-            'sumlogdet_out': sumlogdet_out,
-            'mask_f': mask_f,
-            'mask_b': mask_b,
-            'mask_a': mask_a,
-            'mask_r': mask_r,
-            'rand_num': rand_num,
-        }
-
-        return outputs
-
-    def transition_kernel(self, x_in, v_in, beta, net_weights, forward=True):
+    def transition_kernel(self, state, forward):
         """Transition kernel of augmented leapfrog integrator."""
         lf_fn = self._forward_lf if forward else self._backward_lf
-        x_prop, v_prop = x_in, v_in
         sumlogdet = 0.
-        for step in range(self.num_steps):
-            x_prop, v_prop, logdet = lf_fn(x_prop, v_prop, beta,
-                                           step, net_weights)
+        x_, v_ = state.x, state.v  # copy initial state
+        state_ = State(x_, v_, state.beta)
+        for step in range(self.config.num_steps):
+            state_, logdet = lf_fn(state_, step)
             sumlogdet += logdet
 
-        accept_prob = self._compute_accept_prob(x_in, v_in,
-                                                x_prop, v_prop,
-                                                sumlogdet, beta)
+        state_ = self.fix_state(state_)
+        accept_prob = self._compute_accept_prob(state, state_, sumlogdet)
 
-        return x_prop, v_prop, accept_prob, sumlogdet
+        return state_, accept_prob, sumlogdet
 
-    def _forward_lf(self, x, v, beta, step, net_weights):
+    def _forward_lf(self, state, step):
         """One forward augmented leapfrog step."""
-        t = self._get_time(step, tile=x.shape[0])
-        #  t = self._get_time(step)
-        mask, mask_inv = self._get_mask(step)
-
+        t = self._get_time(step, tile=state.x.shape[0])
+        m, mc = self._get_mask(step)
         sumlogdet = 0.
-
-        v, logdet = self._update_v_forward(x, v, beta, t, net_weights)
+        state, logdet = self._update_v_forward(state, t)
+        sumlogdet += logdet
+        state, logdet = self._update_x_forward(state, t, (m, mc))
+        sumlogdet += logdet
+        state, logdet = self._update_x_forward(state, t, (mc, m))
+        sumlogdet += logdet
+        state, logdet = self._update_v_forward(state, t)
         sumlogdet += logdet
 
-        x, logdet = self._update_x_forward(x, v, t, net_weights,
-                                           (mask, mask_inv))
-        sumlogdet += logdet
+        return state, sumlogdet
 
-        x, logdet = self._update_x_forward(x, v, t, net_weights,
-                                           (mask_inv, mask))
-        sumlogdet += logdet
-
-        v, logdet = self._update_v_forward(x, v, beta, t, net_weights)
-        sumlogdet += logdet
-
-        return x, v, sumlogdet
-
-    def _backward_lf(self, x, v, beta, step, net_weights):
-        """One backward augmented leapfrog step."""
-        step_r = self.num_steps - step - 1
-        t = self._get_time(step_r, tile=x.shape[0])
-        #  t = self._get_time(step_r)
-        mask, mask_inv = self._get_mask(step_r)
-
+    def _backward_lf(self, state, step):
+        """One backward leapfrog step."""
+        step_r = self.config.num_steps - step - 1
+        t = self._get_time(step_r, tile=state.x.shape[0])
+        m, mc = self._get_mask(step_r)
         sumlogdet = 0.
-
-        v, logdet = self._update_v_backward(x, v, beta, t, net_weights)
+        state, logdet = self._update_v_backward(state, t)
+        sumlogdet += logdet
+        state, logdet = self._update_x_backward(state, t, (mc, m))
+        sumlogdet += logdet
+        state, logdet = self._update_x_backward(state, t, (m, mc))
+        sumlogdet += logdet
+        state, logdet = self._update_v_backward(state, t)
         sumlogdet += logdet
 
-        x, logdet = self._update_x_backward(x, v, t, net_weights,
-                                            (mask_inv, mask))
-        sumlogdet += logdet
+        return state, sumlogdet
 
-        x, logdet = self._update_x_backward(x, v, t, net_weights,
-                                            (mask, mask_inv))
-        sumlogdet += logdet
+    def _update_v_forward(self, state, t):
+        """Update the momentum `v` in the forward leapfrog step."""
+        state = self.fix_state(state)
+        grad = self.grad_potential(state)
+        Sv, Tv, Qv = self.vnet((state.x, grad, t))
 
-        v, logdet = self._update_v_backward(x, v, beta, t, net_weights)
-        sumlogdet += logdet
+        scale = self._vsw * (0.5 * self.config.eps * Sv)
+        transf = self._vqw * (self.config.eps * Qv)
+        transl = self._vtw * Tv
 
-        return x, v, sumlogdet
+        exp_s = np.exp(scale)
+        exp_q = np.exp(transf)
 
-    def _update_v_forward(self, x, v, beta, t, net_weights):
-        """Update v in the forward leapfrog step."""
-        if self._model_type == 'GaugeModel':
-            x = convert_to_angle(x)
+        v = state.v * exp_s - 0.5 * self.config.eps * (grad * exp_q + transl)
 
-        grad = self.grad_potential(x, beta)
-        Sv, Tv, Qv = self.vnet([x, grad, t])
-
-        scale = net_weights.v_scale * (0.5 * self.eps * Sv)
-        transf = net_weights.v_transformation * (self.eps * Qv)
-        transl = net_weights.v_translation * Tv
-
-        v = (v * np.exp(scale)
-             - 0.5 * self.eps * (grad * np.exp(transf) + transl))
+        state_ = State(state.x, v, state.beta)
         logdet = np.sum(scale, axis=1)
 
-        return v, logdet
+        return state_, logdet
 
-    def _update_x_forward(self, x, v, t, net_weights, masks):
-        """Update x in the forward leapfrog step."""
-        if self._model_type == 'GaugeModel':
-            x = convert_to_angle(x)
+    def _update_x_forward(self, state, t, masks):
+        """Update the position in the forward leapfrog step."""
+        state = self.fix_state(state)
+        m, mc = masks
+        Sx, Tx, Qx = self.xnet((state.v, m * state.x, t))
 
-        mask, mask_inv = masks
-        Sx, Tx, Qx = self.xnet([v, mask * x, t])
+        scale = self._xsw * (self.config.eps * Sx)
+        transf = self._xqw * (self.config.eps * Qx)
+        transl = self._xtw * Tx
 
-        scale = net_weights.x_scale * (self.eps * Sx)
-        transf = net_weights.x_transformation * (self.eps * Qx)
-        transl = net_weights.x_translation * Tx
+        exp_s = np.exp(scale)
+        exp_q = np.exp(transf)
 
-        y = x * np.exp(scale) + self.eps * (v * np.exp(transf) + transl)
-        x = mask * x + mask_inv * y
-        logdet = np.sum(mask_inv * scale, axis=1)
+        y = state.x * exp_s + self.config.eps * (state.v * exp_q + transl)
+        x = m * state.x + mc * y
 
-        return x, logdet
+        state_ = self.fix_state(State(x, state.v, state.beta))
+        logdet = np.sum(mc * scale, axis=1)
 
-    def _update_v_backward(self, x, v, beta, t, net_weights):
-        """Update v in the backward lf step. Inverting the forward update."""
-        if self._model_type == 'GaugeModel':
-            x = convert_to_angle(x)
+        return state_, logdet
 
-        grad = self.grad_potential(x, beta)
-        Sv, Tv, Qv = self.vnet([x, grad, t])
-
-        scale = net_weights.v_scale * (-0.5 * self.eps * Sv)
-        transf = net_weights.v_transformation * (self.eps * Qv)
-        transl = net_weights.v_translation * Tv
-
-        v = np.exp(scale) * (
-            v + 0.5 * self.eps * (grad * np.exp(transf) + transl)
-        )
+    def _update_v_backward(self, state, t):
+        """Update the momentum `v` in the backward leapfrog step."""
+        state = self.fix_state(state)
+        grad = self.grad_potential(state)
+        Sv, Tv, Qv = self.vnet((state.x, grad, t))
+        scale = self._vsw * (-0.5 * self.config.eps * Sv)
+        transf = self._vqw * (self.config.eps * Qv)
+        transl = self._vtw * Tv
+        exp_s = np.exp(scale)
+        exp_q = np.exp(transf)
+        v = exp_s * (state.v + 0.5 * self.config.eps * (grad * exp_q + transl))
+        state_ = State(state.x, v, state.beta)
         logdet = np.sum(scale, axis=1)
 
-        return v, logdet
+        return state_, logdet
 
-    def _update_x_backward(self, x, v, t, net_weights, masks):
-        """Update x in the backward lf step. Inverting the forward update."""
-        if self._model_type == 'GaugeModel':
-            x = convert_to_angle(x)
+    def _update_x_backward(self, state, t, masks):
+        """Update the position `x` in the backward leapfrog update."""
+        state = self.fix_state(state)
+        m, mc = masks
+        Sx, Tx, Qx = self.xnet((state.v, m * state.x, t))
+        scale = self._xsw * (-self.config.eps * Sx)
+        transf = self._xqw * (self.config.eps * Qx)
+        transl = self._xtw * Tx
+        exp_s = np.exp(scale)
+        exp_q = np.exp(transf)
+        y = exp_s * (state.x - self.eps * (state.v * exp_q + transl))
+        x = m * state.x + mc * y
+        state_ = self.fix_state(State(x, state.v, state.beta))
+        logdet = np.sum(mc * scale, axis=1)
 
-        mask, mask_inv = masks
-        Sx, Tx, Qx = self.xnet([v, mask * x, t])
+        return state_, logdet
 
-        scale = net_weights.x_scale * (-self.eps * Sx)
-        transl = net_weights.x_translation * Tx
-        transf = net_weights.x_transformation * (self.eps * Qx)
-
-        exp_scale = np.exp(scale)
-        exp_transf = np.exp(transf)
-        y = exp_scale * (x - self.eps * (v * exp_transf + transl))
-        xb = mask * x + mask_inv * y
-        logdet = np.sum(mask_inv * scale, axis=1)
-
-        return xb, logdet
-
-    def _compute_accept_prob(self, xi, vi, xf, vf, sumlogdet, beta):
-        """Compute the prob of accepting the proposed state given old state."""
-        h_init = self.hamiltonian(xi, vi, beta)
-        h_prop = self.hamiltonian(xf, vf, beta)
+    def _compute_accept_prob(self, state_init, state_prop, sumlogdet):
+        """Compute the probability of accepting the proposed states."""
+        h_init = self.hamiltonian(state_init)
+        h_prop = self.hamiltonian(state_prop)
         dh = h_init - h_prop + sumlogdet
         prob = np.exp(np.minimum(dh, 0.))
         accept_prob = np.where(np.isfinite(prob), prob, np.zeros_like(prob))
@@ -549,7 +448,7 @@ class DynamicsNP(object):
             accept_mask = np.array(accept_prob >= rand_unif, dtype=NP_FLOAT)
         reject_mask = 1. - accept_mask
 
-        return accept_mask, reject_mask, rand_unif
+        return accept_mask, reject_mask
 
     def _get_direction_masks(self):
         rand_unif = np.random.uniform(size=(self.batch_size,))
@@ -564,7 +463,8 @@ class DynamicsNP(object):
         self.forward_mask = forward_mask
         self.backward_mask = 1. - forward_mask
 
-    def hmc_networks(self):
+    @staticmethod
+    def hmc_networks():
         """Build hmc networks that output all zeros from the S, T, Q fns."""
         xnet = lambda inputs: [  # noqa: E731
             np.zeros_like(inputs[0]) for _ in range(3)
@@ -577,20 +477,25 @@ class DynamicsNP(object):
 
     def build_networks(self, weights):
         """Build neural networks."""
-        if self._network_type == 'GaugeNetwork':
-            xnet = GaugeNetworkNP(weights['xnet'],
-                                  activation=self._activation_fn)
-            vnet = GaugeNetworkNP(weights['vnet'],
-                                  activation=self._activation_fn)
-        elif self._network_type == 'CartesianNet':
-            xnet = CartesianNetNP(weights['xnet'],
-                                  activation=self._activation_fn)
-            vnet = CartesianNetNP(weights['vnet'],
-                                  activation=self._activation_fn)
-        #  # TODO: Update GenericNetNP to use `self._activation_fn`.
+        if self.config.hmc:
+            xnet, vnet = self.hmc_networks()
         else:
-            xnet = GenericNetNP(weights['xnet'])
-            vnet = GenericNetNP(weights['vnet'])
+            if self.config.network_type == 'GaugeNetwork':
+                xnet = GaugeNetworkNP(weights['xnet'],
+                                      activation=self._activation_fn)
+                vnet = GaugeNetworkNP(weights['vnet'],
+                                      activation=self._activation_fn)
+            #  # TODO: Update other networks
+            elif self.config.network_type == 'CartesianNet':
+                pass
+                #  xnet = CartesianNetNP(weights['xnet'],
+                #                        activation=self._activation_fn)
+                #  vnet = CartesianNetNP(weights['vnet'],
+                #                        activation=self._activation_fn)
+            else:
+                pass
+                #  xnet = GenericNetNP(weights['xnet'])
+                #  vnet = GenericNetNP(weights['vnet'])
 
         return xnet, vnet
 
@@ -605,45 +510,49 @@ class DynamicsNP(object):
 
     def build_masks(self):
         """Build `x` masks used for selecting which idxs of `x` get updated."""
-        if self.zero_masks:
-            return self._build_zero_masks()
+        #  if self.zero_masks:
+        #      return self._build_zero_masks()
 
         masks = []
-        for _ in range(self.num_steps):
-            _idx = np.arange(self.x_dim)
-            idx = np.random.permutation(_idx)[:self.x_dim//2]
-            mask = np.zeros((self.x_dim,))
+        for _ in range(self.config.num_steps):
+            _idx = np.arange(self.xdim)
+            idx = np.random.permutation(_idx)[:self.xdim//2]
+            mask = np.zeros((self.xdim,))
             mask[idx] = 1.
             masks.append(mask[None, :])
 
         return masks
 
+    # pylint: disable=attribute-defined-outside-init
     def set_masks(self, masks):
         """Set `self.masks` to `masks`."""
-        self.masks = masks[:self.num_steps]
+        self.masks = masks[:self.config.num_steps]
 
     def _get_mask(self, step):
         m = self.masks[step]
         return m, 1. - m
 
-    def grad_potential(self, x, beta):
+    def grad_potential(self, state):
         """Caclulate the element wise gradient of the potential energy fn."""
         grad_fn = elementwise_grad(self.potential_energy, 0)
         #  if HAS_JAX:
         #      grad_fn = jax.vmap(jax.grad(self.potential_energy, argnums=0))
         #  grad_fn = grad(self.potential_energy, 0)
 
-        return grad_fn(x, beta)
+        return grad_fn(state.x, state.beta)
 
     def potential_energy(self, x, beta):
         """Potential energy function."""
-        return beta * self.potential(x)
+        return beta * self._potential_fn(x)
 
     @staticmethod
     def kinetic_energy(v):
         """Kinetic energy function."""
         return 0.5 * np.sum(v ** 2, axis=-1)
 
-    def hamiltonian(self, x, v, beta):
+    def hamiltonian(self, state):
         """Hamiltonian function, H = PE + KE."""
-        return self.kinetic_energy(v) + self.potential_energy(x, beta)
+        pe = self.potential_energy(state.x, state.beta)
+        ke = self.kinetic_energy(state.v)
+
+        return pe + ke
