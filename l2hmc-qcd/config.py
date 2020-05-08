@@ -29,6 +29,9 @@ NetWeights = namedtuple('NetWeights', [
     'v_scale', 'v_translation', 'v_transformation'
 ])
 
+NET_WEIGHTS_HMC = NetWeights(0., 0., 0., 0., 0., 0.)
+NET_WEIGHTS_L2HMC = NetWeights(1., 1., 1., 1., 1., 1.)
+
 TrainData = namedtuple('TrainData', ['loss', 'px', 'eps'])
 
 ObsData = namedtuple('ObsData', [
