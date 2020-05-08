@@ -1,12 +1,16 @@
+--log_dir='../../gauge_logs/cooley_logs/2020_05_06/L16_b1024_lf2_GaugeNetwork_aw00_qw01_dp025_f32_2305_1'
 -xsw 1.
 -xtw 1.
 -xqw 1.
 -vsw 1.
 -vtw 1.
 -vqw 1.
---init 'rand'
 --beta 5.
---batch_size 64 
---print_steps 100
---run_steps 10000
+--batch_size 4 
+#--mix_samplers
+#--switch_steps 5000
+#--hmc_steps 5000
+--run_steps 1000
+--print_steps 500
+--init 'rand'
 #--symplectic_check

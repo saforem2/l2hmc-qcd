@@ -1,3 +1,4 @@
+--log_dir='../../gauge_logs/cooley_logs/2020_05_06/L16_b1024_lf2_GaugeNetwork_aw00_qw01_dp025_f32_2305_1'
 --hmc
 -xsw 0.
 -xtw 0.
@@ -5,9 +6,9 @@
 -vsw 0.
 -vtw 0.
 -vqw 0.
---beta 6.
+--beta 5.
 --init 'rand'
---batch_size 64 
---print_steps 100
---run_steps 10000
+--batch_size 4
+--print_steps 500
+--run_steps 20000
 #--symplectic_check
