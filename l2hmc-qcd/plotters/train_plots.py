@@ -125,26 +125,29 @@ def plot_train_data(train_data, params):
             'marker': MARKERS[idx],
         }
         fig, ax = plt.subplots()
+        try:
 
-        if len(y.shape) == 1:
-            ax.plot(x, y, label=label, **kwargs)
+            if len(y.shape) == 1:
+                ax.plot(x, y, label=label, **kwargs)
 
-        if len(y.shape) == 2:
-            label = r'$\langle$' + f'{key}' + r'$\rangle$'
+            if len(y.shape) == 2:
+                label = r'$\langle$' + f'{key}' + r'$\rangle$'
 
-            data[key] = y
+                data[key] = y
 
-            ax.plot(x, y.mean(axis=-1),
-                    label=label, **kwargs)
+                ax.plot(x, y.mean(axis=-1),
+                        label=label, **kwargs)
 
-        if len(y.shape) == 3:
-            label = r'$\langle$' + f'{key}' + r'$\rangle$'
+            if len(y.shape) == 3:
+                label = r'$\langle$' + f'{key}' + r'$\rangle$'
 
-            z = y.mean(axis=(-1))
-            data[key] = z
+                z = y.mean(axis=(-1))
+                data[key] = z
 
-            ax.plot(x, z.mean(axis=-1),
-                    label=label, **kwargs)
+                ax.plot(x, z.mean(axis=-1),
+                        label=label, **kwargs)
+        except:
+            import pudb; pudb.set_trace()
 
         if key == 'plaqs':
             beta_arr = np.array(train_data['beta'])[int(t[0]):]
@@ -160,14 +163,14 @@ def plot_train_data(train_data, params):
         fig.savefig(out_file, dpi=200, bbox_inches='tight')
         plt.close('all')
 
-    x_strs = ['x_in', 'x_out', 'dx_out', 'dx_proposed']
+    #  x_strs = ['x_in', 'x_out', 'dx_out', 'dx_proposed']
     obs_strs = ['plaqs', 'charges', 'dq', 'px', 'sumlogdet', 'exp_energy_diff']
 
     obs_data = {key: data[key] for key in obs_strs}
-    x_data = {key: data[key] for key in x_strs}
+    #  x_data = {key: data[key] for key in x_strs}
 
     dataset = build_dataset(data, steps=t)
-    x_dataset = build_dataset(x_data, steps=t)
+    #  x_dataset = build_dataset(x_data, steps=t)
     obs_dataset = build_dataset(obs_data, steps=t)
 
     traceplot_posterior(obs_dataset,
@@ -177,13 +180,13 @@ def plot_train_data(train_data, params):
                         filter_str=None,
                         title_str=title_str)
     plt.close('all')
-    traceplot_posterior(x_dataset,
-                        name='observables',
-                        fname='train',
-                        fig_dir=out_dir,
-                        filter_str=None,
-                        title_str=title_str)
-    plt.close('all')
+    #  traceplot_posterior(x_dataset,
+    #                      name='observables',
+    #                      fname='train',
+    #                      fig_dir=out_dir,
+    #                      filter_str=None,
+    #                      title_str=title_str)
+    #  plt.close('all')
 
     charges_trace_plot(np.array(data['charges']),
                        out_dir=out_dir,

@@ -59,42 +59,33 @@ def get_train_weights(params):
 
 
 def plot_setup(log_dir, run_params, idx=None, nw_run=True):
-    """Setup for plotting. Creates `filename` and `title_str`."""
+    """Setup for plotting. Creates `filename` and `title_str`.
+
+    Args:
+        log_dir (str): Path to `log_dir`.
+        run_params (RunParams): RunParams object.
+        idx (int): Index.
+        nw_run (bool): Whether to include net_weights used for inference in
+            title_str.
+    """
     params = io.loadz(os.path.join(log_dir, 'parameters.z'))
-    lf = params['num_steps']
     clip_value = params.get('clip_value', 0)
     eps_fixed = params.get('eps_fixed', False)
+    time_size = params.get('time_size', 0)
+    space_size = params.get('space_size', 0)
     train_weights = get_train_weights(params)
+
+    estr = f'{run_params.eps:.4g}'.replace('.', '')
     train_weights_str = ''.join((io.strf(i) for i in train_weights))
-    net_weights = run_params['net_weights']
-    net_weights_str = ''.join((io.strf(i) for i in net_weights))
-    #  net_weights_str = ''.join(
-    #      (io.strf(i).replace('.', '') for i in net_weights)
-    #  )
+    net_weights_str = ''.join((io.strf(i) for i in run_params.net_weights))
 
-    date_str = log_dir.split('/')[-2]
-    y, m, d = date_str.split('_')
-    y = int(y)
-    m = int(m)
-    d = int(d)
-    old_dx = True
-    if y == 2020 and m >= 1 and d >= 4:
-        old_dx = False
+    fname = (f'lf{run_params.num_steps}_steps{run_params.run_steps}_e{estr}')
 
-    beta = run_params['beta']
-    eps = run_params['eps']
-    fname = f'lf{lf}'
-    run_steps = run_params['run_steps']
-    fname += f'_steps{run_steps}'
-    Lt = params['time_size']
-    Lx = params['space_size']
-    title_str = f'{Lt}' + r'$\times$' + f'{Lx}, '
-    title_str += (r"$N_{\mathrm{LF}} = $" + f'{lf}, '
-                  r"$\beta = $" + f'{beta:.2g}, '
-                  r"$\varepsilon = $" + f'{eps:.3g}')
-
-    eps_str = f'{eps:.4g}'.replace('.', '')
-    fname += f'_e{eps_str}'
+    title_str = (f'{time_size}' + r"$\times$" + f'{space_size}, '
+                 r"$N_{\mathrm{LF}} = $" + f'{run_params.num_steps}, '
+                 r"$N_{\mathrm{B}} = $" + f'{run_params.batch_size}, '
+                 r"$\beta = $" + f'{run_params.beta:.2g}, '
+                 r"$\varepsilon = $" + f'{run_params.eps:.3g}')
 
     if eps_fixed:
         title_str += ' (fixed)'
@@ -121,7 +112,7 @@ def plot_setup(log_dir, run_params, idx=None, nw_run=True):
     if idx is not None:
         fname += f'_{idx}'
 
-    return fname, title_str, old_dx
+    return fname, title_str
 
 
 def load_weights(log_dir):
