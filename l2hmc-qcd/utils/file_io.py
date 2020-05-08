@@ -6,6 +6,7 @@ Created: 2/27/2019
 """
 from __future__ import absolute_import, division, print_function
 
+import sys
 import os
 import time
 import errno
@@ -33,6 +34,33 @@ except ImportError:
 # pylint: disable=too-many-branches
 # pylint: disable=too-many-locals
 
+def log(s, nl=True):
+    """Print string `s` to stdout if and only if hvd.rank() == 0."""
+    try:
+        if HAS_HOROVOD and hvd.rank() != 0:
+            return
+        print(s, end='\n' if nl else '')
+    except NameError:
+        print(s, end='\n' if nl else '')
+
+
+def write(s, f, mode='a', nl=True):
+    """Write string `s` to file `f` if and only if hvd.rank() == 0."""
+    try:
+        if HAS_HOROVOD and hvd.rank() != 0:
+            return
+        with open(f, mode) as ff:
+            ff.write(s + '\n' if nl else '')
+    except NameError:
+        with open(f, mode) as ff:
+            ff.write(s + '\n' if nl else '')
+
+
+def log_and_write(s, f, mode='a', nl=True):
+    """Print string `s` to std out and also write to file `f`."""
+    log(s)
+    write(s, f, mode=mode, nl=nl)
+
 
 def strf(x):
     """Format the number x as a string."""
@@ -41,7 +69,6 @@ def strf(x):
     else:
         xstr = f'{x:.1}'.replace('.', '')
     return xstr
-
 
 
 def get_subdirs(root_dir):
@@ -214,6 +241,7 @@ def timeit(method):
     return timed
 
 
+
 def get_timestr():
     """Get formatted time string."""
     now = datetime.datetime.now()
@@ -235,47 +263,25 @@ def get_timestr():
 
 def load_params(log_dir):
     """Load params from log_dir."""
-    pkl_file = os.path.join(log_dir, 'parameters.pkl')
-    z_file = os.path.join(log_dir, 'parameters.z')
-    if os.path.isfile(pkl_file):
-        with open(pkl_file, 'rb') as f:
-            params = pickle.load(f)
-    elif os.path.isfile(z_file):
-        params = loadz(z_file)
+    names = ['parameters.pkl', 'parameters.z', 'params.pkl', 'params.z']
+    for name in names:
+        params_file = os.path.join(log_dir, name)
+        if os.path.isfile(params_file):
+            params = loadz(params_file)
+    #  pkl_file = os.path.join(log_dir, 'parameters.pkl')
+    #  pkl_file_ = os.path.join(log_dir, 'params.pkl')
+    #  z_file = os.path.join(log_dir, 'parameters.z')
+    #  if os.path.isfile(pkl_file):
+    #      with open(pkl_file, 'rb') as f:
+    #          params = pickle.load(f)
+    #  elif os.path.isfile(z_file):
+    #      params = loadz(z_file)
 
     else:
         raise FileNotFoundError(f'Unable to locate `parameters`'
                                 f'file in {log_dir}.')
 
     return params
-
-
-def log(s, nl=True):
-    """Print string `s` to stdout if and only if hvd.rank() == 0."""
-    try:
-        if HAS_HOROVOD and hvd.rank() != 0:
-            return
-        print(s, end='\n' if nl else '')
-    except NameError:
-        print(s, end='\n' if nl else '')
-
-
-def write(s, f, mode='a', nl=True):
-    """Write string `s` to file `f` if and only if hvd.rank() == 0."""
-    try:
-        if HAS_HOROVOD and hvd.rank() != 0:
-            return
-        with open(f, mode) as ff:
-            ff.write(s + '\n' if nl else '')
-    except NameError:
-        with open(f, mode) as ff:
-            ff.write(s + '\n' if nl else '')
-
-
-def log_and_write(s, f, mode='a', nl=True):
-    """Print string `s` to std out and also write to file `f`."""
-    log(s)
-    write(s, f, mode=mode, nl=nl)
 
 
 def copy_old(src, dest):
@@ -586,7 +592,7 @@ def save_params(params, out_dir, name=None):
     """save params (dict) to `out_dir`, as both `.z` and `.txt` files."""
     check_else_make_dir(out_dir)
     if name is None:
-        name = 'parameters'
+        name = 'params'
     params_txt_file = os.path.join(out_dir, f'{name}.txt')
     zfile = os.path.join(out_dir, f'{name}.z')
     with open(params_txt_file, 'w') as f:

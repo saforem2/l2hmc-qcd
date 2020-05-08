@@ -138,6 +138,8 @@ def save_params(model):
 
     out_file = os.path.join(model.log_dir, 'trainable_params.txt')
     count_trainable_params(out_file)
+
+    model.params['network_type'] = model.network_type
     io.savez(model.params, os.path.join(os.getcwd(), 'params.z'))
 
 
@@ -236,6 +238,10 @@ def train(FLAGS, log_file=None):
         io.check_else_make_dir(checkpoint_dir)
         io.savez(params, os.path.join(log_dir, 'params.z'))
         train_logger = TrainLogger(model, log_dir, params)
+        #  try:
+        #      save_configs(model, params)
+        #  except:
+        #      import pudb; pudb.set_trace()
 
     # Create `tf.ConfigProto()`
     config, params = create_config(params)
@@ -281,7 +287,6 @@ def train(FLAGS, log_file=None):
         save_masks(model, sess)
         save_params(model)
         save_seeds(model)
-        # TODO: Figure out how to load weights from `.h5` file for numpy
         # inference and plotting singular values after training
         #  plot_singular_values(model.log_dir)
         if not FLAGS.clear_data:

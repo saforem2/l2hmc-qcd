@@ -144,7 +144,7 @@ class BaseModel:
         # network architecture
         self.network_arch = params.get('network_arch', 'generic')
         # network_type: 'CartesianNet' or if None, use `FullNet`
-        self._network_type = params.get('network_type', None)
+        self.network_type = params.get('network_type', None)
 
         # All reqd. params should have already been processed, but to be sure
         self.loss_weights = {}
