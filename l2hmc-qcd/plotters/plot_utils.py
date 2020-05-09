@@ -68,7 +68,8 @@ def plot_setup(log_dir, run_params, idx=None, nw_run=True):
         nw_run (bool): Whether to include net_weights used for inference in
             title_str.
     """
-    params = io.loadz(os.path.join(log_dir, 'parameters.z'))
+    #  params = io.loadz(os.path.join(log_dir, 'parameters.z'))
+    params = io.loadz(os.path.join(log_dir, 'params.z'))
     clip_value = params.get('clip_value', 0)
     eps_fixed = params.get('eps_fixed', False)
     time_size = params.get('time_size', 0)
