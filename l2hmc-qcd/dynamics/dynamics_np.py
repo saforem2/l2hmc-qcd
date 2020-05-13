@@ -50,7 +50,7 @@ class DynamicsConfigNP:
             params = self._params
 
         self.eps = params.eps
-        self.num_steps = params.num_steps
+        self.num_steps = int(params.num_steps)
         self.model_type = params.model_type
 
         self.net_weights = params.net_weights
@@ -526,7 +526,7 @@ class DynamicsNP(object):
     # pylint: disable=attribute-defined-outside-init
     def set_masks(self, masks):
         """Set `self.masks` to `masks`."""
-        self.masks = masks[:self.config.num_steps]
+        self.masks[:self.config.num_steps] = masks[:self.config.num_steps]
 
     def _get_mask(self, step):
         m = self.masks[step]
