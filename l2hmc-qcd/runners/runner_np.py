@@ -114,7 +114,6 @@ def get_reduced_weights(weights, n=10):
 
 
 
-
 class RunConfig:
     """Configuration object for running inference."""
     def __init__(self, run_params, log_dir=None, model_type=None):
@@ -209,7 +208,7 @@ class RunConfig:
         else:
             xdim = self.train_params.get('xdim', None)
 
-        self.eps = eps
+        self.eps = run_params.eps
         self.xdim = xdim
         self.beta = run_params.beta
         self.init = run_params.init
