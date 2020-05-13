@@ -7,10 +7,9 @@ Date: 01/09/2020
 """
 import os
 import time
-import pickle
 from collections import namedtuple
 
-import pandas as pd
+#  import pandas as pd
 
 import utils.file_io as io
 import autograd.numpy as np
@@ -120,12 +119,16 @@ class RunConfig:
     """Configuration object for running inference."""
     def __init__(self, run_params, log_dir=None, model_type=None):
         self.model_type = model_type
-        self.log_dir = log_dir
         self.train_params = self.find_params(log_dir)
+        if log_dir is None:
+            self.log_dir = self.train_params['log_dir']
+        else:
+            self.log_dir = log_dir
+
         self.run_params = self.set_attrs(run_params)
         self.weights = self.load_weights(self.log_dir)
         self.run_str = self.get_run_str()
-        self.run_dir = os.path.join(log_dir, 'runs_np', self.run_str)
+        self.run_dir = os.path.join(self.log_dir, 'runs_np', self.run_str)
         io.check_else_make_dir(self.run_dir)
 
         self.dynamics_params = DynamicsParamsNP(
@@ -147,15 +150,20 @@ class RunConfig:
 
         return log_dir
 
-    def find_params(self, log_dir=None):
+    @staticmethod
+    def find_params(log_dir=None):
         """Try and locate the parameters file to load from."""
         names = ['parameters.pkl', 'parameters.z', 'params.pkl', 'params.z']
-        dirs = [self.log_dir, os.getcwd()] if log_dir is None else [log_dir]
-        for d in dirs:
-            files = [os.path.join(d, name) for name in names]
-            for f in files:
-                if os.path.isfile(f):
-                    return io.loadz(f)
+        if log_dir is None:
+            d = os.getcwd()
+        else:
+            d = log_dir
+        #  dirs = [self.log_dir, os.getcwd()] if log_dir is None else [log_dir]
+        #  for d in dirs:
+        files = [os.path.join(d, name) for name in names]
+        for f in files:
+            if os.path.isfile(f):
+                return io.loadz(f)
 
     def load_weights(self, log_dir=None):
         """Load weights from `log_dir`."""
@@ -332,7 +340,7 @@ class RunnerNP:
         plaqs = self.lattice.calc_plaq_sums_np(x)
         avg_plaqs = np.sum(np.cos(plaqs), axis=(1, 2)) / self.lattice.num_plaqs
         #  charges = np.sum(np.sin(plaqs), axis=(1, 2)) / (2 * np.pi)
-        plaqs_proj = project_angle_fft(plaqs, n=25)
+        plaqs_proj = project_angle_fft(plaqs, n=10)
         charges = np.sum(plaqs_proj, axis=(1, 2)) / (2 * np.pi)
 
         return Observables(plaqs, avg_plaqs, charges)
