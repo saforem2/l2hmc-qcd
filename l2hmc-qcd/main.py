@@ -216,7 +216,7 @@ def train(FLAGS, log_file=None):
     # If resuming training,
     # update params w/ previous state
     if FLAGS.restore:
-        params = io.loadz(os.path.join(log_dir, 'parameters.z'))
+        params = io.loadz(os.path.join(log_dir, 'params.z'))
         state_file = os.path.join(FLAGS.log_dir, 'training', 'current_state.z')
         state = io.loadz(state_file)
         #  current_step = state['step']
