@@ -205,13 +205,8 @@ def train(FLAGS, log_file=None):
     params['log_dir'] = log_dir
     params['summaries'] = not FLAGS.no_summaries
     params['save_steps'] = FLAGS.train_steps // 4
-    params['keep_data'] = not FLAGS.clear_data
-
-    hooks = []
-    if FLAGS.horovod:
-        params['using_hvd'] = True
-        params['num_workers'] = hvd.size()
-        hooks += [hvd.BroadcastGlobalVariablesHook(0)]
+    params['keep_data'] = FLAGS.save_train_data
+    #  params['keep_data'] = not FLAGS.clear_data
 
     IS_CHIEF = (
         not FLAGS.horovod
@@ -220,7 +215,7 @@ def train(FLAGS, log_file=None):
 
     # If resuming training,
     # update params w/ previous state
-    if FLAGS.restore and IS_CHIEF:
+    if FLAGS.restore:
         params = io.loadz(os.path.join(log_dir, 'parameters.z'))
         state_file = os.path.join(FLAGS.log_dir, 'training', 'current_state.z')
         state = io.loadz(state_file)
@@ -228,6 +223,12 @@ def train(FLAGS, log_file=None):
         #  eps = state['dynamics_eps']
         params['lr_init'] = state['lr']
         params['beta_init'] = state['beta']
+
+    hooks = []
+    if FLAGS.horovod:
+        params['using_hvd'] = True
+        params['num_workers'] = hvd.size()
+        hooks += [hvd.BroadcastGlobalVariablesHook(0)]
 
     model = GaugeModel(params)
 
@@ -282,18 +283,20 @@ def train(FLAGS, log_file=None):
 
     dataset = None
     if IS_CHIEF:
-        eps_np = save_eps(model, sess)
+        _ = save_eps(model, sess)
         _ = save_weights(model, sess)
         save_masks(model, sess)
         save_params(model)
         save_seeds(model)
         # inference and plotting singular values after training
         #  plot_singular_values(model.log_dir)
-        if not FLAGS.clear_data:
+        #  if not FLAGS.clear_data:
+        if FLAGS.save_train_data:
             dataset = plot_train_data(train_logger.train_data, params)
 
         train_logger.write_train_strings()
-        if FLAGS.save_train_data and not FLAGS.clear_data:
+        #  if FLAGS.save_train_data and not FLAGS.clear_data:
+        if FLAGS.save_train_data:
             io.log(f'Saving train data!')
             train_logger.save_train_data()
 
