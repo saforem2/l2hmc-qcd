@@ -1,0 +1,33 @@
+\clearpage
+\section{Updates: 03/31/2020}%
+\label{sec:updates_2020_03_31}
+\subsection{Periodicity}%
+\label{subsec:periodicity}
+\begin{itemize}
+  \item When using the angular representation, \(x \equiv \phi_{\mu}(k) \in [0,
+    2\pi)\) of the link variables \(U_{\mu}(k) = e^{i\phi_{\mu}(k)}\in U(1)\),
+    it seems like the main problem (possibly in addition to issues with
+    reversibility) is that the output is discontinuous when the input moves
+    between \(0\), and \(2\pi -\varepsilon\) (\(\varepsilon \ll 1\)).
+    % the network is \emph{not} gauge
+    % periodic, i.e. \(f(x) \neq
+    % f(x + 2\pi)\).
+  % \item Because of this, taking
+  %   \begin{equation}
+  %     x \longrightarrow x \pmod{2\pi}
+  %   \end{equation}
+  %   % violates reversibility since information about \(x\) is lost.
+  \item Additionally, the network itself is not periodic, i.e.\ if \(x
+    \longrightarrow x + n\pi\), the \(x\odot \exp(\varepsilon
+    S_{x}(\zeta_{1}))\) term in the \(x\)-update becomes
+    \begin{equation}
+      x\odot \exp(\varepsilon S_{x}(\zeta_{1})) \longrightarrow (x +
+      n\pi)\odot\exp(\varepsilon S_{x}(\zeta_{1}))
+    \end{equation}
+    and we're left with an additional \(n\pi \odot \exp(\varepsilon
+    S_{x}(\zeta_{1}))\) term.
+  \item We can avoid this issue by using the \(\vec{x} \equiv
+    \left[\cos\phi_{\mu}(k), \sin\phi_{\mu}(k)\right]\) representation as input
+    to the network, which then updates the \(\cos\) and \(\sin\) terms
+    separately.
+\end{itemize}

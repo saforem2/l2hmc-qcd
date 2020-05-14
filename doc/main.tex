@@ -1,0 +1,45 @@
+\documentclass{article}
+\usepackage{l2hmc}
+\usepackage{import}
+
+\begin{document}
+
+% TITLEPAGE {{{
+\title{\textbf{Overview of the L2HMC Algorithm}\footnote{Source code can be
+    found at: \url{https://github.com/saforem2/l2hmc-qcd}}}
+\author{Sam Foreman\thanks{foremans@anl.gov, Argonne National Laboratory}\\
+        James Osborn\thanks{osborn@alcf.anl.gov, Argonne National Laboratory}\\
+      Xiao-Yong Jin\thanks{xjin@anl.gov, Argonne National Laboratory}}
+\date{\today}
+\maketitle
+% }}}
+
+\input{intro/introduction}
+\input{hmc/hmc}
+\input{leapfrog/leapfrog}
+\input{network/network}
+\input{training/training}
+\input{gmm/gmm}
+\input{gauge/gauge}
+\input{debugging/debugging}
+\input{updates/updates_2019_12_10}
+\input{updates/updates_2019_12_16}
+\input{updates/updates_2020_01_01}
+\input{updates/updates_2020_01_21}
+\input{updates/updates_2020_02_25}
+% \input{updates/updates_2020_03_16}
+\input{updates/updates_2020_03_31}
+\input{updates/updates_2020_04_13}
+\input{updates/updates_2020_04_28}
+\input{updates/updates_2020_05_12}
+% \input{updates_2020_03_16}
+%   \label{eq:rel_prob}
+% \end{equation}
+% for winding number $n$
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\clearpage
+\printbibliography[title={References}, heading=bibintoc]
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\input{appendix/apndx}
+\end{document}
