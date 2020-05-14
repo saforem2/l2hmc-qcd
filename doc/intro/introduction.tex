@@ -1,0 +1,47 @@
+\section{Introduction}%
+\label{sec:l2hmc_intro}
+We describe a new technique for performing Hamiltonian Monte-Carlo
+(HMC) simulations called: `Learning to Hamiltonian Monte Carlo'
+(L2HMC)~\cite{2017arXiv171109268L} which expands upon the traditional HMC by
+using a generalized version of the leapfrog integrator that is parameterized by
+weights in a neural network.
+%
+Hamiltonian Monte-Carlo improves upon the random-walk guess and check strategy
+of generic MCMC by integrating Hamilton's equations along approximate
+iso-probability contours of phase space.
+%
+In doing so, we are able to explore
+the phase space more efficiently by taking larger steps between proposed
+configurations while maintaining high acceptance rates.
+%
+In order to demonstrate the usefulness of this new approach, we use various
+metrics for measuring the performance of the trained (L2HMC) sampler vs.\ the
+generic HMC sampler.
+
+First, we will look at applying this algorithm to a two-dimensional Gaussian
+Mixture Model (GMM).
+%
+The GMM is a notoriously difficult distribution for HMC due to the vanishingly
+small likelihood of the leapfrog integrator traversing the space between the
+two modes.
+%
+Conversely, we see that through the use of a carefully chosen training
+procedure, the trained L2HMC sampler is able to successfully discover the
+existence of both modes, and mixes (`tunnels') between the two with ease. 
+%
+Additionally, we will observe that the trained L2HMC sampler mixes much faster
+than the generic HMC sampler, as evidenced through their respective
+autocorrelation spectra.
+
+This ability to reduce autocorrelations is an important metric for measuring
+the efficiency of a general MCMC algorithm, and is of great importance for
+simulations in lattice gauge theory and lattice QCD.\@
+%
+Following this, we introduce the two-dimensional $U(1)$ lattice gauge theory
+and describe important modifications to the algorithm that are of particular
+relevance for lattice models.
+%
+Ongoing issues and potential areas for improvement are also discussed,
+particularly within the context of high-performance computing and long-term
+goals of the lattice QCD community.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

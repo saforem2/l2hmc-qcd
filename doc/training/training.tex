@@ -1,0 +1,123 @@
+\section{Training Procedure}%
+\label{sec:training_procedure}
+
+%
+By augmenting traditional HMC methods with these trainable functions, we hope
+to obtain a sampler that has the following key properties:
+%
+\begin{enumerate}
+    \item Fast mixing (i.e.\ able to quickly produce uncorrelated samples).
+    \item Fast burn-in (i.e.\ rapid convergence to the target distribution).
+    \item Ability to mix across energy levels.
+    \item Ability to mix between modes.
+\end{enumerate}
+%
+Following the results in~\cite{10.2307/24308995}, we design a loss function
+with the goal of maximizing the expected squared jumped distance (or
+analogously, minimizing the lag-one autocorrelation).
+%
+To do this, we first introduce 
+\begin{equation}
+  \delta(\xi, \xip) = \delta((x^{\prime}, v^{\prime}, d^{\prime}), (x, v, d))
+  \equiv \| x - x^{\prime}\|^2_2.  \label{eq:metric_orig}
+\end{equation}
+%
+Then, the expected squared jumped distance is given by $\mathbb{E}_{\xi\sim
+p(\xi)} \left[\delta(\mathbf{FL}_{\theta}\xi, \xi) A(\mathbf{FL}_{\theta}\xi |
+\xi)\right]$.
+%
+By maximizing this objective function, we are encouraging transitions that
+efficiently explore a local region of state-space, but may fail to explore
+regions where very little mixing occurs.
+%
+To help combat this effect, we define a loss function
+%
+\begin{equation}
+    \ell_{\lambda}(\xi, \xi^{\prime}, A(\xi^{\prime}|\xi)) =
+        \frac{\lambda^2}{\delta(\xi,\xi^{\prime}) A(\xi^{\prime}|\xi)} -
+        \frac{\delta(\xi,\xi^{\prime}) A(\xi^{\prime}|\xi)}{\lambda^2}
+    \label{eq:loss_ell}
+\end{equation}
+%
+where $\lambda$ is a scale parameter describing the characteristic length scale
+of the problem.
+%
+Note that the first term helps to prevent the sampler from becoming stuck in a
+state where it cannot move effectively, and the second term helps to maximize
+the distance between subsequent moves in the Markov chain.  
+
+The sampler is then trained by minimizing $\ell_{\lambda}$ over both the target
+and initialization distributions.
+%
+Explicitly, for an initial distribution $\pi_0$ over $\mathcal{X}$, we define
+the initialization distribution as $q(\xi) = \pi_0(x) \mathcal{N}(v; 0, I)
+p(d)$, and minimize
+%
+\begin{equation}
+    \mathcal{L}(\theta)\equiv \mathbb{E}_{p(\xi)}\left[\ell_{\lambda}(\xi,
+    \mathbf{FL}_{\theta}\xi, A(\mathbf{FL}_{\theta}\xi|\xi))\right] + \lambda_b
+    \mathbb{E}_{q(\xi)}\left[\ell_{\lambda}(\xi, \mathbf{FL}_{\theta}\xi,
+    A(\mathbf{FL}_{\theta} \xi| \xi))\right].
+    \label{eq:loss_L}
+\end{equation}
+%
+For completeness, we include the full algorithm~\cite{2017arXiv171109268L} used
+to train L2HMC in Alg.~\ref{alg:l2hmc}.
+%
+\begin{algorithm}[htbp]%
+  % \centering
+    \SetKwProg{Fn}{def}{\string:}{}%
+    \SetKwFunction{Range}{range}%
+    \SetKwFor{For}{for}{\string:}{}%
+    \SetKwIF{If}{ElseIf}{Else}{if}{:}{elif}{else:}{}%
+    \SetKwFor{While}{while}{:}{fintq}%
+    \AlgoDontDisplayBlockMarkers\SetAlgoNoEnd%
+    % \SetAlgoNoLine%
+    \DontPrintSemicolon%
+    \SetKwInOut{Input}{input}\SetKwInOut{Output}{output}%
+    \caption{Training procedure for the L2HMC algorithm.}%
+    \Input{%
+      \vspace{-5pt}
+      \begin{enumerate}
+        \item A (potential) energy function, $U: \mathcal{X} \rightarrow
+          \mathbb{R}$ and its gradient $\nabla_x U: \mathcal{X} \rightarrow
+          \mathcal{X}$\
+          \vspace{-10pt}
+        \item Initial distribution over the augmented state space, $q$
+          \vspace{-10pt}
+        \item Number of iterations, $N_{\mathrm{train}}$
+          \vspace{-10pt}
+        \item Number of leapfrog steps, $N_{\mathrm{LF}}$
+          \vspace{-10pt}
+        \item Learning rate schedule, ${(\alpha_{t})}_{t\leq N_{\text{train}}}$
+          \vspace{-10pt}
+        \item Batch size, $N_{\mathrm{samples}}$
+          \vspace{-10pt}
+        \item Scale parameter, $\lambda$
+          \vspace{-10pt}
+        \item Regularization strength, $\lambda_b$
+      \end{enumerate}
+    }\;
+    \vspace{-15pt}
+    Initialize the parameters of the sampler, $\theta$\;
+    Initialize ${\{\xi_{p^{(i)}}\}}_{i\leq N_{\mathrm{samples}}}$ from
+    $q{(\xi)}$\; \For{$t = 0$ \KwTo\ $N_{\mathrm{train}}$}{%
+      Sample a minibatch, ${\left\{\xi_{q}^{(i)}\right\}}_{i\leq
+      N_{\mathrm{samples}}}$ from $q{(\xi)}$.\; $\mathcal{L}\leftarrow 0$\;
+      \For{$i = 1$ \KwTo$N_{\mathrm{LF}}$} {%
+          $\xi_{p}^{(i)} \leftarrow\ \mathbf{R}\,\xi_p^{(i)}$\;
+          $\mathcal{L} \,\,\,\,\leftarrow\mathcal{L} +
+          \ell_{\lambda}\left(\xi_p^{(i)}, \FLq\xi_p^{(i)}, A
+            (\FLq\xi^{(i)}_p|\xi^{(i)}_p)\right) + \lambda_b
+            \ell_{\lambda}\left(\xi^{(i)}_q, \FLq\xi^{(i)}_q,
+            A (\FLq\xi^{(i)}_q|\xi^{(i)}_q)\right)$\;
+          $\xi_p^{(i)} \leftarrow \FLq\xi^{(i)}_p$ with probability
+        $A(\FLq\xi^{(i)}_p|\xi^{(i)}_p)$\; }%
+      \vspace{2pt}
+      $\theta\ \leftarrow\ \theta-\alpha_t \nabla_{\theta} \mathcal{L}$\;
+    }%
+\label{alg:l2hmc}
+\end{algorithm}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

@@ -1,0 +1,40 @@
+\section{Updates: 01/21/2020}%
+\label{sec:updates_2020_01_16}
+In yet another attempt to identify the source of the bias in the plaquette, it
+was decided that it would be beneficial to develop tensorflow-independent code
+that is capable of running inference on a trained model.
+%
+This was done by exporting the weights from the trained neural network to a
+\texttt{.pkl} file after training.
+%
+From these weights, we are then able to reconstruct each of the functions
+$S_{x}, T_{x}, Q_{x}, S_{v}, T_{v}, Q_{v}$.
+%
+By writing this alternative inference code in pure numpy, we are able to avoid
+some of the inherent complexities in tensorflow while also providing a more
+flexible interface.
+%
+For example, when running inference using the saved tensorflow graph, we are
+forced to use the same number of leapfrog steps $N_{\mathrm{LF}}$, whereas we
+are free to change this when using the numpy code.
+%
+\begin{itemize}
+  \item Once the numpy inference code was finished, it was then ran on all
+    previously saved models.
+  % \item Finalized code for running inference on a trained model using pure
+  %   numpy and have been re-running it on all previously saved models.
+  \item Initial results seemed to have a minor discrepancy when compared to the
+    inference runs generated using tensorflow.
+    \begin{itemize}
+      \item Systematic debugging led to the identification of an internal bug
+        in tensorflow related to exporting the weights from the saved model.
+      \item Explicitly, when calling \texttt{layer.get\_weights ()} on a
+        particular layer in the model (as suggested by the official tensorflow
+        documentation), the ``weight'' matrix was returned correctly, but the
+        associated bias vector returned was always $[0, 0, \ldots, 0]$.
+    \end{itemize}
+  \item Because of this, all of the existing inference data generated from this
+    new numpy code was incorrect and needed to be regenerated.
+\end{itemize}
+%
+\clearpage

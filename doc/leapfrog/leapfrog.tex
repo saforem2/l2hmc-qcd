@@ -1,0 +1,293 @@
+\section{Generalizing the Leapfrog Integrator}%
+\label{sec:generalizing_lf}
+As in the HMC algorithm, we start by augmenting the current state $x \in
+\mathbb{R}^n$ with a continuous momentum variable $v \in \mathbb{R}^{n}$ drawn
+from a standard normal distribution.
+%
+Additionally, we introduce a binary direction variable $d \in \{ -1, 1\}$,
+drawn from a uniform distribution. 
+%
+The complete augmented state is then denoted by $\xi \equiv (x, v, d)$, with
+probability density $p(\xi) = p(x) p(v) p(d)$.
+%
+To improve the overall performance of our model, for each step $t$ of the
+leapfrog operator $\mathbf{L}_{\theta}$, we assign a fixed random binary mask
+$m^{t} \in{\{0, 1\}}^n$ that will determine which variables are affected by
+each sub-update.
+%
+The mask $m^t$ is drawn uniformly from the set of binary vectors satisfying
+$\sum_{i=1}^{n} m_{i}^{t} = \lfloor \frac{n}{2}\rfloor$, i.e.\ half the entries
+of $m^t$ are $0$ and half are $1$.
+%
+Additionally, we write $\bar m^{t} = \mathbbm{1} - m^{t}$ and $x_{m^t} = x
+\odot m^{t}$, where $\odot$ denotes element-wise multiplication, and
+$\mathbbm{1}$ the vector of $1$'s in each entry.
+%
+
+We begin with a subset of the augmented space, $\zeta_1 \equiv (x, \partial_{x}
+U(x), t)$, independent of the momentum $v$.
+%
+We introduce three new functions of $\zeta_1$: $T_v$, $Q_v$, and $S_v$.
+%
+We can then perform a single time-step of our modified leapfrog integrator
+$\mathbf{L}_{\theta}$.
+%
+
+First, we update the momentum $v$, which depends only on the subset $\zeta_1$.
+%
+This update is written
+%
+\begin{equation}
+\label{eq:update_momentum_forward1}
+  \vp = v\, \odot
+      \hspace{-1mm}
+      \underbrace{\exp\left(\frac{\varepsilon}{2}S_{v}(\zeta_1)\right)}_{\text{%
+      \footnotesize{\textbf{Momentum scaling}\normalsize}
+       }}%
+      \hspace{-1mm}
+       - \frac{\varepsilon}{2}\bigg[\partial_{x}U(x)\odot
+      \hspace{-1mm}
+      \underbrace{\exp(\varepsilon Q_{v}(\zeta_1))}_{\text{%
+       \footnotesize{\textbf{Gradient scaling}\normalsize}
+        }}
+       + \underbrace{T_v(\zeta_1)}_{\text{%
+       \footnotesize{\textbf{Translation}\normalsize}
+       }}\bigg]
+\end{equation}
+and the corresponding Jacobian is given by:
+$\exp{\left(\frac{\eps}{2}\mathbbm{1} \cdot S_{v}(\zeta_1)\right)}$.
+%
+Next, we update $x$ by first updating a subset of the coordinates of $x$
+(determined according to the mask $m^t$), followed by the complementary subset
+(determined from $\bar m^{t}$).
+%
+The first update affects only $x_{m^{t}}$ and produces $x^{\prime}$.
+%
+This update depends only on the subset $\zeta_2 \equiv (x_{\bar m^t}, v, t)$.
+%
+Following this, we perform the second update which only affects
+$x_{\bar{m}^t}^{\prime}$ and depends only on $\zeta_3 \equiv (x_{m^t}^{\prime},
+v, t)$, to produce $x^{\prime\prime}$:
+%
+\begin{align}
+  x^{\prime} &= x_{\bar{m}^t} + m^{t}\odot\left[x \odot \exp{(\eps
+      S_x(\zeta_2))} + \eps\left(v^{\prime}\odot%
+    \exp{(\eps Q_x(\zeta_2))} + T_x(\zeta_2)\right)\right]\\
+  x^{\prime\prime} &= x^{\prime}_{m^t} + \bar m^t \odot \left[x^{\prime} \odot
+    \exp{(\eps S_x(\zeta_3))} +%
+    \eps\left(v^{\prime} \odot \exp{(\eps Q_x(\zeta_3))} +
+  T_x(\zeta_3)\right)\right].
+\end{align}
+%
+with Jacobians: $\exp{(\eps m^{t} \cdot S_x(\zeta_2))}$, and
+$\exp{(\eps\bar{m^t}\cdot S_x(\zeta_3))}$, respectively. 
+%
+Finally, we proceed to update $v$ again, using the subset $\zeta_4 \equiv
+(x^{\prime\prime}, \partial_{x} U^{\prime\prime}, t)$: 
+%
+\begin{equation} 
+  \vpp = \vp \odot \exp\left(\frac{\varepsilon}{2} S_v(\zeta_4)\right) -
+    \frac{\varepsilon}{2}\left[\partial_{x} U
+  \odot \exp(\varepsilon Q_v(\zeta_4)) + T_v(\zeta_4)\right].
+    \label{eq:update_momentum_forward2}
+\end{equation}
+%
+In order to build some intuition about each of these terms, we discuss below
+some of the subtleties contained in this approach and how they are (carefully)
+dealt with.
+
+The first thing to notice about these equations is that if $S_{i} = Q_{i} =
+T_{i} = 0$ ($i = x, v$), we recover the previous equations for the generic
+leapfrog integrator (as we would expect since we are attempting to
+\emph{generalize} HMC).
+%
+We can also see a similarity between the equations for updating $v$ and those
+for updating $x$: each update is generalized by \emph{scaling} the previous
+value ($v$ or $x$), and \emph{scaling and translating} the updating value
+(either $\partial_{x}\,U(x)$ or $x$).
+%
+It can be shown~\cite{2017arXiv171109268L}, that the scaling applied to the
+momentum in Eq~\ref{eq:update_momentum_forward1} can enable, among other
+things, acceleration in low-density zones to facilitate mixing between modes,
+and that the scaling term applied to the gradient may allow better conditioning
+of the energy landscape (e.g., by learning a diagonal inertia tensor), or
+partial ignoring of the energy gradient for rapidly oscillating energies.
+
+Second, note that because the determinant of the Jacobian appears in the
+Metropolis-Hastings (MH) acceptance probability, we require the Jacobian of
+each update to be efficiently computable (i.e.\ independent of the variable
+actually being updated).
+%
+For each of the momentum updates, the input is a subset $\zeta = (x,
+\partial_{x}\,U(x), t)$ of the augmented space and the associated Jacobian is
+$\exp{\left(\frac{\eps}{2}\mathbbm{1}\cdot S_{v}(\zeta)\right)}$ which is
+independent of $v$ as desired.
+%
+For the position updates however, things are complicated by the fact that the
+input $\zeta$ is $x$-dependent.
+%
+In order to ensure that the Jacobian of the $x$ update is efficiently
+computable, it is necessary to break the update into two parts following the
+approach outlined in \emph{Real-valued Non-Volume Preserving transformations
+(RealNVP)}~\cite{dinhRealNVP}.
+%
+\subsection{Metropolis-Hastings Accept/Reject}
+Written in terms of these transformations, the augmented leapfrog operator
+$\mathbf{L}_{\theta}$ consists of $M$ sequential applications of the
+single-step leapfrog operator $\mathbf{L}_{\theta} \xi = \mathbf{L}_{\theta}(x,
+v, d) = (x^{\prime\prime\times M}, v^{\prime\prime\times M}, d)$, followed by
+the previously-defined momentum flip operator $\mathbf{F}$ which flips the
+direction variable $d$, i.e.\ $\mathbf{F}\xi = (x, v, -d)$.
+%
+Using these, we can express a complete molecular dynamics update step as
+$\mathbf{FL}_{\theta}\xi = \xip$, where now the Metropolis-Hastings acceptance
+probability for this proposal is given by
+%
+\begin{equation}
+    A(\mathbf{F}\mathbf{L} \xi | \xi) = \min\left(1,
+        \frac{p(\mathbf{F}\mathbf{L}\xi)}{p(\xi)}\left|
+        \frac{\partial\left[\mathbf{F}\mathbf{L}\xi\right]}
+            {\partial\xi^{T}}\right|\right),
+\end{equation}
+%
+Where $\left|\frac{\partial\left[\mathbf{F}\mathbf{L}\xi\right]}
+{\partial\xi^{T}}\right|$ denotes the determinant of the Jacobian describing
+the transformation.
+
+In contrast to generic HMC where
+$\left|\frac{\partial\left[\mathbf{F}\mathbf{L}\xi\right]}
+{\partial\xi^{T}}\right| = 1$, we now have non-symplectic transformations
+(i.e.\ non-volume preserving) and so we must explicitly account for the
+determinant of the Jacobian.
+%
+These non-volume preserving transformations have the effect of deforming the
+energy landscape, which, depending on the nature of the transformation, may
+allow for the exploration of regions of space which were previously
+inaccessible.
+%
+\newcommand{\energyA}{\includegraphics[width=0.4\textwidth]{energy_landscape/original_energy_landscape.pdf}}
+\newcommand{\energyB}{\includegraphics[width=0.4\textwidth]{energy_landscape/modified_energy_landscape.pdf}}
+%
+\begin{figure}
+  \centering 
+  \Huge
+  \parbox{\widthof{\energyA}}{\energyA} $\overset{\mathcal{J}}{\longrightarrow}$
+  \parbox{\widthof{\energyB}}{\energyB} 
+  \normalsize
+  \caption{Example of how the determinant of the Jacobian can deform the energy landscape.}
+\end{figure}
+
+To simplify our notation, introduce an additional operator $\mathbf{R}$ that
+re-samples the momentum and direction, e.g.\ given $\xi = (x, v, d)$,
+$\mathbf{R}\,\xi = (x, v^{\prime}, d^{\prime})$ where $v^{\prime} \sim
+\mathcal{N}(0, I)$, $d^{\prime} \sim \mathcal{U}\left(\{-1, 1\}\right)$.
+%
+A complete sampling step of our algorithm then consists of the following two
+steps:
+%
+\begin{enumerate}
+    \item $\xi^{\prime} = \mathbf{FL}_{\theta} \,\xi$ with probability
+        $A(\mathbf{FL}_{\theta}\,\xi|\xi)$ %(Eq.~\ref{eq:metropolis_hastings}),
+        otherwise $\xi^{\prime} = \xi$.
+    \item $\xi^{\prime} = \mathbf{R}\,\xi$.
+\end{enumerate}
+%
+Note however, that for MH to be well-defined, this deterministic operator must
+be \emph{invertible} and \emph{have a tractable Jacobian} (i.e.\ we can compute
+its determinant).
+%
+In order to make this operator invertible, we augment the state space $(x, v)$
+into $(x, v, d)$, where $d \in \{-1, 1\}$ is drawn with equal probability and
+represent the direction of the update.
+%
+All of the previous expressions for the augmented leapfrog updates represent
+the forward ($d = 1$) direction.
+%
+We can derive the expressions for the backward direction ($d = -1$) by
+reversing the order of the updates (i.e.\ $\vpp \rightarrow \vp$, then $\xpp
+\rightarrow \xp$, followed by $\xp \rightarrow x$ and finally $\vp \rightarrow
+v$).
+%
+For completeness, we include in Sec.~\ref{sec:lf_forward} and
+Sec~\ref{sec:lf_backward} all of the equations (both forward and backward
+directions) relevant for updating the variables of interest in our augmented
+leapfrog sampler.
+\section{Forward Direction \texorpdfstring{$(d = 1)$}{(d = 1)}:}%
+\label{sec:lf_forward}
+% \vspace{-20pt}
+\begin{align}
+  \vp &= v \odot \exp{\left(\frac{\eps}{2}S_{v}(\zeta_{1})\right)}% 
+        - \frac{\eps}{2}\left[\partial_{x}\,U(x)\odot \exp{\left(\eps
+          Q_{v}(\zeta_{1})\right)}%
+        + T_{v}(\zeta_{1})\right] \\
+  \xp &= x_{\bar{m}^{t}} + m^{t}\odot \left[x \odot \exp{\left(\eps
+    S_{x}(\zeta_{2})\right)}%
+        + \eps\left(\vp\odot\exp{\left(\eps Q_{x}(\zeta_{2})\right)} 
+          + T_{x}(\zeta_{2})\right)\right] \\
+  \xpp &= x^{\prime}_{m^{t}} + \bar{m}^{t}\odot \left[\xp \odot \exp{\left(\eps
+    S_{x}(\zeta_{3})\right)}%
+        + \eps\left(\vp\odot\exp{\left(\eps Q_{x}(\zeta_{3})\right)} +
+      T_{x}(\zeta_{3})\right)\right] \\
+  \vpp &= \vp \odot \exp{\left(\frac{\eps}{2}S_{v}(\zeta_{4})\right)}%
+        - \frac{\eps}{2}\left[\partial_{x}\,U(\xpp)\odot \exp{\left(\eps
+          Q_{v}(\zeta_{4})\right)}%
+          + T_{v}(\zeta_{4})\right]
+\label{eq:forward_update}
+\end{align} 
+%
+With $\zeta_{1} = (x, \partial_{x}\, U(x), t)$, $\zeta_{2} = (x_{\bar{m}^{t}},
+v, t)$, $\zeta_{3} = (x^{\prime}_{m^{t}}, v, t)$, $\zeta_{4} = (\xpp,
+\partial_{x}\, U(\xpp), t)$.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+\section{Backward Direction \texorpdfstring{$(d = -1)$}{(d = -1)}:}%
+\label{sec:lf_backward}
+%
+\begin{align}
+  v^{\prime} &= {\left\{v + \frac{\eps}{2}\left[\partial_{x}\,U(x)\odot
+        \exp{\left(\eps Q_{v}(\zeta_{1})\right)}%
+    + T_{v}(\zeta_{1})\right]\right\}} \odot
+    \exp{\left(-\frac{\eps}{2}S_{v}(\zeta_{1})\right)} \\
+  \xp &= x_{m^{t}} + \bar{m}^{t}\odot%
+    {\left[x - \eps{\left(\exp{\left(\eps Q_{x}(\zeta_{2})\right)}\odot \vp%
+    + T_{x}(\zeta_{2})\right)}\right]}\odot \exp{\left(-\eps
+    S_{x}(\zeta_{2})\right)} \\ 
+  \xpp &= x_{\bar{m}^{t}} + m^{t}\odot%
+    {\left[\xp - \eps{\left(\exp{\left(\eps Q_{x}(\zeta_{3})\right)}\odot \vp%
+    + T_{x}(\zeta_{3})\right)}\right]}\odot \exp{\left(-\eps
+    S_{x}(\zeta_{3})\right)} \\
+  v^{\prime\prime} &= {\left\{\vp +
+      \frac{\eps}{2}\left[\partial_{x}\,U(\xpp)\odot%
+        \exp{\left(\eps Q_{v}(\zeta_{1})\right)}
+  + T_{v}(\zeta_{1})\right]\right\}}\odot 
+    \exp{\left(-\frac{\eps}{2}S_{v}(\zeta_{4})\right)}
+\label{eq:backward_update}
+\end{align}
+%
+With $\zeta_{1} = (x, \partial_{x}\, U(x), t)$, $\zeta_{2} = (x_{m^{t}}, v,
+t)$, $\zeta_{3} = (x^{\prime}_{\bar{m}^{t}}, v, t)$, $\zeta_{4} = (\xpp,
+\partial_{x}\, U(\xpp), t)$.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Determinant of the Jacobian}
+In terms of the auxiliary functions $S_{i}, Q_{i}, T_{i}$, we can compute the
+Jacobian:
+%
+\begin{align}
+  \log|\mathcal{J}| 
+  &= \log\bigg|\frac{\partial{\left[\mathbf{FL}_{\theta}\xi\right]}}{\partial
+  \xi^{T}}\bigg|\\
+  &= d \sum_{t\leq N_{\mathrm{LF}}}
+    {\left[\frac{\eps}{2} \mathbbm{1}\cdot S_{v}(\zeta_{1}^{t}) + \eps m^{t}
+        \cdot S_{x}(\zeta_{2}^{t}) 
+      + \eps \bar{m}^{t} \cdot S_{x}(\zeta_{3}^{t}) + \frac{\eps}{2}\mathbbm{1}
+\cdot S_{v}(\zeta_{4}^{t})\right]}.  \end{align}
+%
+where $N_{\mathrm{LF}}$ is the number of leapfrog steps, and $\zeta_{i}^{t}$
+denotes the intermediary variable $\zeta_{i}^{t}$ at time step $t$ and $d$ is
+the direction of $\xi$, i.e.\ $d = 1 \,\, (-1)$ for the forward (backward)
+update.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

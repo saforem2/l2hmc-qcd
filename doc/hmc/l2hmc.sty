@@ -1,0 +1,261 @@
+\ProvidesPackage{l2hmc}
+
+\usepackage[labelfont=bf]{caption}
+\usepackage{subcaption}
+\usepackage{pdfsync}
+\usepackage{enumitem}
+% \usepackage{subfigure}
+% \usepackage{hyperref}
+\usepackage{pifont}
+\usepackage{subfiles}
+\usepackage{geometry}
+\usepackage{courier}
+\usepackage{inputenc}
+\usepackage{fvextra}
+%\usepackage[utf8]{inputenc}
+\usepackage{csquotes}
+\geometry{%
+  letterpaper,
+  left=1in,
+  right=1in,
+  bottom=1in,
+  top=1in,
+}
+% \usepackage{yhmath}
+\usepackage{amsthm}
+\usepackage{amssymb}
+\usepackage{gensymb}
+\usepackage{amsmath}
+\usepackage{anyfontsize}
+
+%% ref related
+\usepackage{varioref}
+% \usepackage[linktocpage=true]{hyperref}
+%% toc
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\usepackage[T1]{fontenc}
+% \usepackage[scaled=.98,sups,osf]{XCharter}% lining figures in math, osf in text
+% \usepackage[sups,osf]{XCharter}% lining figures in math, osf in text
+\usepackage[sups]{XCharter}% lining figures in math, osf in text
+\usepackage[scaled=1.04,varqu,varl]{inconsolata}% inconsolata typewriter
+\usepackage[type1]{cabin}% sans serif
+\usepackage[charter,vvarbb,scaled=1.07]{newtxmath}
+\usepackage[cal=boondoxo]{mathalfa}
+% \newcommand{\gchar}[1]{\mathversion{mathchartertext}$#1$\mathversion{normal}}
+\usepackage[subfigure]{tocloft}
+\usepackage[usenames,dvipsnames]{xcolor}
+\usepackage[ruled, vlined]{algorithm2e}
+\usepackage[normalem]{ulem}
+\usepackage{graphicx}
+\setcounter{secnumdepth}{4}
+\usepackage{minted}
+\usepackage[english]{babel}
+% textcomp fixes undefined control sequence errors with listings
+\usepackage{textcomp}
+% \usepackage{listings}
+% \usepackage{minted}
+% \renewcommand*\familydefault{ttdefault}
+% \usepackage{lineno}
+\usepackage{mathtools}
+\usepackage{siunitx}
+\usepackage{silence}
+\usepackage{bm}
+\usepackage{bbm}
+\usepackage{tikz}
+\usepackage{mathdots}
+\usepackage{cancel}
+\usepackage{color}
+\usepackage{array}
+\usepackage{multirow}
+\usepackage{tabularx}
+\usepackage{booktabs}
+\usetikzlibrary{fadings}
+\usepackage[unicode,linktocpage=true]{hyperref}
+\hypersetup{%
+  colorlinks  = true,
+  urlcolor    = magenta,
+  linkcolor   = red,
+  citecolor   = blue,
+}
+\usepackage[capitalise,noabbrev]{cleveref}
+%%% dots: https://tex.stackexchange.com/questions/53898/how-to-get-lines-with-dots-in-the-table-of-contents-for-sections
+\newcommand{\hbAppendixPrefix}{A}
+\newcommand{\secondappendix}{B}
+% \newcommand{\hbAppendix
+\renewcommand{\cftsecleader}{\cftdotfill{\cftdotsep}}
+\renewcommand{\cftfigleader}{\cftdotfill{\cftdotsep}}
+\renewcommand{\cfttableader}{\cftdotfill{\cftdotsep}}
+
+% \renewcommand{\cftchapfont}{\scshape\large}
+%%% adjust sectional unit title fonts in toc
+\renewcommand{\cftfigpresnum}{Figure }
+\renewcommand{\cftfigaftersnum}{:}
+\renewcommand{\cfttabpresnum}{Table }
+\renewcommand{\cfttabaftersnum}{:}
+\newlength{\mylen}
+\settowidth{\mylen}{\cftfigpresnum\cftfigaftersnum}
+\addtolength{\cftfignumwidth}{\mylen}
+%%% increase spacing between entries in toc
+\setlength{\cftparskip}{2ex}
+%% this package binds all indices to toc
+\usepackage{tocbibind}
+%%% remove toc numbering
+%% set figure path
+\graphicspath{{figures/}{new_figures/}}
+%% captions
+\usepackage{boxhandler}
+%\usepackage{caption}
+%\captionsetup{labelsep=space,justification=justified,singlelinecheck=off}
+%% appendix
+\usepackage[toc,page]{appendix}
+  % \usepackage[toc,page]{appendix}
+%% biblatex
+% \usepackage[backend=biber,style=phys,autocite=plain,citestyle=numeric-comp,sorting=none]{biblatex}
+\usepackage[%
+  style=phys,%
+  articletitle=false,biblabel=brackets,%
+  chaptertitle=false,pageranges=false%
+]{biblatex}
+\addbibresource{centralmacbib1.bib}
+\addbibresource{centralmacbib2.bib}
+\addbibresource{centralmacbib3.bib}
+\addbibresource{centralmacbib4.bib}
+
+% \DeclareLanguageMapping{american}{american-apa}
+% \addbibresource{main.bib}
+% \bibliographystyle{ieeetr}
+% \bibliog
+% % \addbibresource{l2hmc_paper/l2hmc_writeupNotes.bib}
+% \addbibresource{ising_worm_paper/preising.bib}
+% \addbibresource{ising_worm_paper/preisingNotes.bib}
+% \addbibresource{l2hmc.bib}
+% \addbibresource{preising.bib}
+% \addbibresource{machinelearning.bib}
+% \addbibresource{ref.bib}
+%% uses times font
+% \usepackage{mathptmx}
+%% set fontsize
+% \fontsize{12}{1} \selectfont
+%% set line spacing
+\usepackage{setspace}
+\singlespacing%
+% \UseRawInputEncoding%
+%% set par indent
+% \usepackage{indentfirst}
+% \setlength{\parindent}{6.5ex}
+
+% Temporarily use sans-serif font {{{
+% \usepackage{helvet}
+% \usepackage{charter}
+% \usepacka[charter]{mathdesign}
+% \renewcommand{\familydefault}{\sfdefault}
+% }}}
+
+%% customize heading styles
+% {\normalfont\fontsize{20.74}{19}\sffamily\bfseries}
+\definecolor{gray75}{gray}{0.75}
+\newcommand{\hspp}{\hspace{4pt}}
+\newcommand{\hspn}{\hspace{-1pt}}
+% \usepackage[indentafter]{titlesec}
+\usepackage{titlesec}
+% {\normalfont\Huge\sffamily\bfseries}
+\titleformat{\chapter}[hang]
+  {\sffamily\Large\bfseries}
+  {\thechapter\hsp\textcolor{gray75}{$|$}\hsp}
+  {0pt}
+  {}
+  % {\usefont{T1}{qhv}{m}{n}\selectfont\Large\bfseries}
+  % {\MakeUppercase\normalfont\fontsize{20}{19}\sffamily\bfseries}
+
+  % {\normalfont\fontsize{15}{16}\sffamily\bfseries}
+% {\normalfont\Large\sffamily\bfseries}
+% {\thesection}
+% {\thesection\hsp\textcolor{gray75}{$\, |$}\hsp}
+\titleformat{\section}[hang]
+  {\sffamily\Large\bfseries}
+  {\thesection\hspp\hspp\textcolor{gray75}{$|$}\hspn}
+  {1em}
+  {}
+
+  % {\usefont{T1}{qhv}{m}{n}\selectfont\large\bfseries}
+  % {\normalfont\fontsize{14}{16}\sffamily\bfseries\slshape}%
+% {\normalfont\large\sffamily\bfseries\slshape}%
+\titleformat{\subsection}[hang]
+  {\sffamily\large\bfseries\slshape}%
+  {\thesubsection}
+  {1em}
+  {}
+
+  % {\usefont{T1}{qhv}{m}{n}\selectfont\normalsize\bfseries\slshape}%
+  % {\normalfont\large\sffamily\slshape}%
+% {\normalfont\normalsize\bfseries\sffamily}
+  % {\usefont{T1}{qhv}{m}{n}\selectfont\normalsize\slshape}
+\titleformat{\subsubsection}[hang]
+  {\sffamily\normalsize\slshape}%
+  {\thesubsubsection}
+  {1em}
+  {}
+
+
+% \renewcommand{\vec}[1]{\mathbold{#1}}
+% \newcommand{\mat}[1]{\mathbold{#1}}
+
+\newcommand{\xp}{{x^{\prime}}}
+\newcommand{\xpp}{{x^{\prime\prime}}}
+\newcommand{\vp}{{v^{\prime}}}
+\newcommand{\vpp}{{v^{\prime\prime}}}
+\newcommand{\xip}{{\xi^{\prime}}}
+\newcommand{\xipp}{{\xi^{\prime\prime}}}
+\newcommand{\LB}{{\mathbf{L}}}
+\newcommand{\FB}{{\mathbf{F}}}
+% \newcommand{\FL}{{\mathbf{FL}_{\theta}}}
+\newcommand{\FLq}{{\mathbf{FL}_{\theta}}}
+\newcommand{\eps}{{\varepsilon}}
+\newcommand{\q}{{\quad}}
+\newcommand{\qq}{{\quad\quad}}
+\newcommand{\qqq}{{\quad\quad\quad}}
+\newcommand{\qqqq}{{\quad\quad\quad\quad}}
+\newcommand{\Uimu}{{U_{i,\mu}}}
+\newcommand{\Xnet}{{X_{\mathrm{net}}}}
+\newcommand{\Vnet}{{V_{\mathrm{net}}}}
+\newcommand{\plaqdiff}{{\delta_{\phi_{P}}}}
+
+
+\newlist{todolist}{itemize}{2}
+\setlist[todolist]{label=$\square$}
+\newcommand{\cmark}{\ding{51}}%
+\newcommand{\xmark}{\ding{55}}%
+\newcommand{\done}{\rlap{$\square$}{\raisebox{2pt}{\large\hspace{1pt}\cmark}}%
+\hspace{-2.5pt}}
+\newcommand{\wontfix}{\rlap{$\square$}{\large\hspace{1pt}\xmark}}
+% \usepackage{extras}
+
+
+% \usepackage{sectsty}
+% \chapterfont{\usefont{T1}{qhv}{b}{n}\selectfont\Huge\bfseries}
+
+% \titleformat{\section}[hang]
+%   {\normalsize\bf}
+%   {}
+%   {0pt}
+%   {\MakeUppercase\bfseries}
+%%%% heading 1
+% \titleformat{\section}
+%   {\normalsize\center\bf}
+%   {}
+%   {0pt}
+%   {\MakeUppercase}
+% %%%% heading 2
+% \titleformat{\subsection}
+%   {\normalsize\center\bf}
+%   {}
+%   {0pt}
+%   {\capitalize}
+% %%%% heading 3
+% \titleformat{\subsubsection}
+%   {\normalsize\bf}
+%   {}
+%   {0pt}
+%   {\capitalize}
+%\titleformat{⟨command⟩}[⟨shape⟩]{⟨format⟩}{⟨label⟩}{⟨sep⟩}{⟨before-code⟩}[⟨after-code⟩] 
+

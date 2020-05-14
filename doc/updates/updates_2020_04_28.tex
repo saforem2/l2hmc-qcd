@@ -1,0 +1,24 @@
+\section{Updates: 04/28/2020}%
+\label{sec:updates_2020_04_28}
+%
+\subsection{Additional changes to loss function}%
+\label{subsec:additional_changes_to_loss_fn}
+%
+Instead of working with the mixed loss function,
+\(\ell_{\lambda_{\mathcal{Q}}}(\xip, \xi, A(\xip|\xi))\) from
+Eq.\ref{eq:ell_lambda}, we can focus exclusively on the second term, which is
+directly related to the tunneling rate.
+%
+The equation then becomes
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% TODO: Include both ell_p and ell_q functions with separate weights in
+% `master` loss function
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{align}
+  \ell_{\lambda_{\Q}}\left(\xip, \xi, A(\xip|\xi)\right) 
+  &= - \frac{\delta_{\Q}\cdot A(\xi^{\prime}|\xi)}{\lambda_{\Q}^{2}}\\
+  &= - {\left(\frac{{\mathcal{Q}^{\prime} -
+  \mathcal{Q}}}{\lambda_\mathcal{Q}}\right)}^{2}\cdot
+    A(\xi^{\prime}|\xi)
+\end{align}

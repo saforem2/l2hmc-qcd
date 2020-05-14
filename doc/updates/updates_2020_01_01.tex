@@ -1,0 +1,77 @@
+\section{Updates 01/01/2020}%
+\label{sec:updates_2020_01_01}
+\begin{itemize}
+  \item In order to further pin down the cause of the bias in the average
+    plaquette, it is important to verify that for a given $N_{\mathrm{LF}}$,
+    the results are consistent when using different random seeds.  %
+  \item From recent data, it seems that the function $T_{x}$ has the largest
+    contribution to the plaquette difference, as seen in
+    Figures~\ref{fig:trace_hist_lf5},~\ref{fig:trace_hist_lf4}.
+    \begin{itemize}
+      \item Try training the model with different combinations of $T_{x}$,
+        $T_{v}$ set to $0$.
+      \item For those models trained with $T_{x}$, $T_{v} = 1$, try running
+        inference with $T_{x}$, $T_{v} = 0$.
+    \end{itemize}
+  \item To further simplify the model, training runs were carried out at a
+    fixed step size $\varepsilon$.
+  \item In order to effectively interpret the results of a given
+    training/inference run, it is useful to be able to visualize multiple
+    distributions (e.g. the plaquette bias $\delta \phi_{P}$, tunneling rate
+    $\gamma$, acceptance probability $A(\xi^{\prime}|\xi)$, and the average
+    distance traveled between subsequent configurations) simultaneously.
+    Included below are violinplots of each of these distributions.
+\end{itemize}
+%
+For all of the results included below the following parameters were used:
+\begin{itemize}
+  \item $N_{s} = N_{t} = 8$ (i.e. $8\times8$ lattice)
+  \item batch size $N_{B} = 64$
+  \item learning rate $\alpha_{\mathrm{init}} = 1\times10^{-3}$, decayed by $0.96$ after
+    $25,000$ training steps with \texttt{staircase = True}.
+  \item $N_{\mathrm{train}} = 1\times10^{5}$ using $16$ nodes, $2$ workers $/$
+    node via \texttt{horovod} on COOLEY\@.
+  \item $N_{h_1} = N_{h_2} = 100$ nodes in each of the hidden layers.
+  \item $\beta = 5$
+\end{itemize}
+%
+In creating each of the below figures, data was included only if the average
+acceptance probability was greater than $10\%$.
+
+Additionally, it can be seen in some of the figures that the distance traveled,
+(the rightmost column in the violinplots) is centered around $0$.
+%
+This is the result of a somewhat misleading calculation that failed to account
+for the direction of the leapfrog update, causing the forward and backward
+directions to be treated equally.
+%
+Moreover, for some of the plots the average distance traveled was calculated
+using the Euclidean $L2$ metric, $\|x^{(i+1)} - x^{(i)}\|^{2}_{2}$ instead of the
+more appropriate \texttt{cos} metric, $1 - \cos(x^{(i+1)} - x^{(i)})$.
+%
+\subsection{Statistics}
+% Also worth noting is the difference between the first and second rows in each
+% of the figures below. This is most easily explained by considering an example.
+%
+For a given inference run consisting of $M$ accept/reject steps, we obtain an
+array of lattice configurations with shape: $[M, N_{b}, 2V]$, where $N_b$ is
+the batch size (i.e.\ number of chains ran in parallel), and $V = N_{s} \times
+N_{t}$ is the volume of the lattice.
+
+For concreteness, we describe below how statistics are calculated for the plaquette
+difference $\delta \phi_{P}$, although an identical approach applies for each
+of the observables.
+
+\begin{itemize}
+  \item From our array of configurations, we first compute $\delta \phi_{P}$
+    separately for each of the $N_b$ chains, resulting in an array of shape
+    $[M, N_{b}]$.
+  \item In order to account for thermalization, the first $25\%$ of the data is
+    ignored, so we are left with $[3M/4, N_b]$ individual data points.
+  \item For each of the plots in the \emph{first row}, this data was flattened into a
+    single array of shape $[1, 3M/4 \times N_{b}]$.
+  \item For each of the plots in the \emph{second row} however, statistics were
+    calculated using bootstrap resampling as represented by the pair of angled
+    brackets, e.g.\ $\langle \delta \phi_{P}\rangle$.
+\end{itemize}
+
