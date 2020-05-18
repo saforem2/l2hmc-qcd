@@ -1,4 +1,4 @@
-'''
+"""
 base_model.py
 
 Implements BaseModel class.
@@ -14,8 +14,9 @@ References:
 
 Author: Sam Foreman (github: @saforem2)
 Date: 08/28/2019
-'''
+"""
 from __future__ import absolute_import, division, print_function
+import os
 
 from collections import namedtuple
 
@@ -23,6 +24,7 @@ import numpy as np
 import tensorflow as tf
 
 import config as cfg
+from config import NetWeights, MonteCarloStates
 import utils.file_io as io
 
 from seed_dict import seeds
@@ -58,6 +60,72 @@ def _gaussian(x, mu, sigma):
 def add_to_collection(collection, tensors):
     """Helper method for adding a list of `tensors` to `collection`."""
     _ = [tf.add_to_collection(collection, tensor) for tensor in tensors]
+
+
+# pylint: disable=attribute-defined-outside-init
+class BaseModelConfig:
+    """Specifies BaseModel parameters and helper functions."""
+    def __init__(self, FLAGS, model_type=None):
+        self.model_type = model_type
+        if FLAGS.log_dir is None:
+            log_dir = io.create_log_dir(FLAGS,
+                                        run_str=True,
+                                        log_file=None,
+                                        model_type=model_type)
+
+        self.params = dict(FLAGS.__dict__)
+        self._parse_params(self.params)
+        self.log_dir = log_dir
+
+    def restore(self, log_dir):
+        """Restore params from `log_dir`."""
+        params = io.loadz(os.path.join(log_dir, 'params.z'))
+        state_file = os.path.join(log_dir, 'training', 'current_state.z')
+        state = io.loadz(state_file)
+        self._parse_params(params)
+        self.lr_init = state['lr']
+        self.beta_init = state['beta']
+
+        return state
+
+    def _parse_params(self, params):
+        """Parse `params` dictionary and set attributes from params."""
+        self.num_steps = int(params.get('num_steps', 5))
+        self.rand = params.get('rand', True)
+        self.beta_init = params.get('beta_init', 1.)
+        self.beta_final = params.get('beta_final', 5.)
+        self.fixed_beta = (self.beta_init == self.beta_final)
+        self.train_steps = int(params.get('train_steps', int(20e3)))
+        self.batch_size = int(params.get('batch_size', 256))
+        self.activation_fn = params.get('activation', tf.nn.relu)
+        self.units = params.get('units', [64, 128, 256])
+        self.hmc = params.get('hmc', False)
+        self.eps_trainable = not params.get('eps_fixed', False)
+        self.warmup_lr = params.get('warmup_lr', False)
+        self.lr_decay_rate = params.get('lr_decay_rate', 0.96)
+        self.lr_decay_steps = int(params.get('lr_decay_steps', int(10e3)))
+        self.std_weight = float(params.get('std_weight', 1.))
+        self.aux_weight = float(params.get('aux_weight', 1.))
+        self.plaq_weight = float(params.get('plaq_weight', 1.))
+        self.metric = params.get('metric', None)
+        self.charge_weight = float(params.get('charge_weight', 1.))
+        self.loss_scale = float(params.get('loss_scale', 1.))
+        self.dropout_prob = params.get('dropout_prob', 0.)
+        self.clip_value = params.get('clip_value', 0.)
+        self.lr_init = params.get('lr_init', 1e-3)
+        self.network_type = params.get('network_type', None)
+        self.summaries = not params.get('no_summaries', False)
+        self.keep_data = not params.get('clear_data', True)
+
+        save_steps = params.get('save_steps', None)
+        if save_steps is None:
+            save_steps = self.train_steps // 4
+
+        self.save_steps = save_steps
+
+        self.using_hvd = params.get('horovod', False)
+        if self.using_hvd:
+            self.num_workers = hvd.size()
 
 
 # pylint:disable=too-many-instance-attributes, attribute-defined-outside-init
@@ -245,13 +313,17 @@ class BaseModel:
             output = self._apply_grads(self.loss_op, self.grads)
             self.train_op = output[0]
             self.grads_and_vars = output[1]
-            self.train_ops = self._build_train_ops()
+            train_ops = self._build_train_ops()
+            #  self.train_ops = self._build_train_ops()
 
         # *******************************************************************
         # Build `run_ops` containing ops used when running inference.
         # -------------------------------------------------------------------
         io.log(f'Collecting inference operations...')
-        self.run_ops = self._build_run_ops()
+        #  self.run_ops = self._build_run_ops()
+        run_ops = self._build_run_ops()
+
+        return train_ops, run_ops
 
     def _build_eps_setter(self):
         """Create op that sets `eps` to be equal to the value in `eps_ph`."""
@@ -349,7 +421,7 @@ class BaseModel:
                 self.z = tf.random_normal(tf.shape(self.x), name='z',
                                           seed=seeds['z'], dtype=TF_FLOAT)
                 inputs = (self.z, self.beta)
-                mcs_, px_, sld_ = self.dynamics(inputs, self.train_phase)
+                mcs_, px_, _ = self.dynamics(inputs, self.train_phase)
                 zdata = LFdata(mcs_.init.x, mcs_.proposed.x, px_)
             else:
                 zdata = LFdata(tf.zeros_like(self.x_init),

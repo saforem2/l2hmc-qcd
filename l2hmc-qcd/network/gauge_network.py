@@ -100,13 +100,15 @@ class GaugeNetwork(tf.keras.Model):
             #  'h_layer1': self.h_layer1,
             #  'h_layer2': self.h_layer2,
             #  'h_layer': self.h_layer,
-            'scale_layer': self.scale_layer.layer,
+            'hidden_layers': self.hidden_layers,
+            #  'hidden_layers': [h for h in self.hidden_layers],
+            'scale_layer': self.scale_layer,
             'translation_layer': self.translation_layer,
-            'transformation_layer': self.transformation_layer.layer,
+            'transformation_layer': self.transformation_layer,
         }
 
-        for idx, hidden_layer in enumerate(self.hidden_layers):
-            self.layers_dict[f'h_layer{idx}'] = hidden_layer
+        #  for idx, hidden_layer in enumerate(self.hidden_layers):
+        #      self.layers_dict[f'h_layer{idx}'] = hidden_layer
 
     def get_weights(self, sess):
         """Get dictionary of layer weights."""
