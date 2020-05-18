@@ -38,6 +38,22 @@ DynamicsParamsNP = namedtuple('DynamicsConfigNP', [
 ])
 
 
+def reduced_weight_matrix(W, n=10):
+    """Use the first n singular vals to reconstruct the original matrix W."""
+    U, S, V = np.linalg.svd(W)
+    W_ = np.matrix(U[:, :n]) * np.diag(S[:n]) * np.matrix(V[:n, :])
+
+    return W_
+
+
+def convert_to_angle(x):
+    """Restrict `x` to be in the range -pi <= x < pi."""
+    x = np.mod(x, 2 * np.pi)
+    x -= np.floor(x / (2 * np.pi) + 0.5) * 2 * np.pi
+    #  x = np.mod(x + np.pi, 2 * np.pi) - np.pi
+    return x
+
+
 class DynamicsConfigNP:
     """DynamicsConfigNP object."""
     def __init__(self, dynamics_params_np):
@@ -96,21 +112,6 @@ class DynamicsConfigNP:
         """Restore params from `fpath`."""
         params = self.load(fpath)
         self.set_attrs(params)
-
-def reduced_weight_matrix(W, n=10):
-    """Use the first n singular vals to reconstruct the original matrix W."""
-    U, S, V = np.linalg.svd(W)
-    W_ = np.matrix(U[:, :n]) * np.diag(S[:n]) * np.matrix(V[:n, :])
-
-    return W_
-
-
-def convert_to_angle(x):
-    """Restrict `x` to be in the range -pi <= x < pi."""
-    x = np.mod(x, 2 * np.pi)
-    x -= np.floor(x / (2 * np.pi) + 0.5) * 2 * np.pi
-    #  x = np.mod(x + np.pi, 2 * np.pi) - np.pi
-    return x
 
 
 class DynamicsNP(object):
@@ -554,5 +555,6 @@ class DynamicsNP(object):
         """Hamiltonian function, H = PE + KE."""
         pe = self.potential_energy(state.x, state.beta)
         ke = self.kinetic_energy(state.v)
+
 
         return pe + ke
