@@ -13,10 +13,17 @@ from collections import namedtuple
 # Included below is a catch-all for various structures
 # (namedtuples) that are used project wide in various locations.
 # ----------------------------------------------------------------
+DynamicsConfig = namedtuple('DynamicsConfig', [
+    'num_steps', 'eps', 'input_shape', 'hmc',
+    'eps_trainable', 'net_weights',
+    'model_type',
+])
 
 # State is an object for grouping the position/momentum
 # configurations together with the value of `beta`.
 State = namedtuple('State', ['x', 'v', 'beta'])
+MonteCarloStates = namedtuple('MonteCarloStates', ['init', 'proposed', 'out'])
+LFdata = namedtuple('LFdata', ['init', 'proposed', 'prob'])
 EnergyData = namedtuple('EnergyData', ['init', 'proposed', 'out'])
 Energy = namedtuple('Energy', ['potential', 'kinetic', 'hamiltonian'])
 

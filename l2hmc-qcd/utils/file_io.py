@@ -39,9 +39,9 @@ def log(s, nl=True):
     try:
         if HAS_HOROVOD and hvd.rank() != 0:
             return
-        print(s, end='\n' if nl else '')
+        print(s, end='\n' if nl else ' ')
     except NameError:
-        print(s, end='\n' if nl else '')
+        print(s, end='\n' if nl else ' ')
 
 
 def write(s, f, mode='a', nl=True):
@@ -58,7 +58,7 @@ def write(s, f, mode='a', nl=True):
 
 def log_and_write(s, f, mode='a', nl=True):
     """Print string `s` to std out and also write to file `f`."""
-    log(s)
+    log(s, nl)
     write(s, f, mode=mode, nl=nl)
 
 
