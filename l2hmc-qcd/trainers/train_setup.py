@@ -85,14 +85,14 @@ def get_net_weights(model, sess):
     return weights, coeffs
 
 
-def create_config(params):
+def create_config(params, local=False):
     """Helper method for creating a tf.ConfigProto object."""
     config = tf.ConfigProto(allow_soft_placement=True)
     time_size = params.get('time_size', None)
-    if time_size is not None and time_size > 8:
-        off = rewriter_config_pb2.RewriterConfig.OFF
-        config_attrs = config.graph_options.rewrite_options
-        config_attrs.arithmetic_optimization = off
+    #  if time_size is not None and time_size > 8:
+    #      off = rewriter_config_pb2.RewriterConfig.OFF
+    #      config_attrs = config.graph_options.rewrite_options
+    #      config_attrs.arithmetic_optimization = off
 
     gpu = params.get('gpu', False)
     if gpu:
@@ -116,10 +116,17 @@ def create_config(params):
             "granularity=fine,verbose,compact,1,0"
         )
         # NOTE: KMP affinity taken care of by passing -cc depth to aprun call
-        OMP_NUM_THREADS = 62
+        OMP_NUM_THREADS = 0
         config.allow_soft_placement = True
         config.intra_op_parallelism_threads = OMP_NUM_THREADS
         config.inter_op_parallelism_threads = 0
+
+    if local:
+        # NOTE: KMP affinity taken care of by passing -cc depth to aprun call
+        OMP_NUM_THREADS = 8
+        config.allow_soft_placement = True
+        config.intra_op_parallelism_threads = OMP_NUM_THREADS
+        config.inter_op_parallelism_threads = 2
 
     return config, params
 

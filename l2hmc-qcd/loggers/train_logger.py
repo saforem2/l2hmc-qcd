@@ -45,7 +45,7 @@ class TrainLogger(object):
 
         self.model = model
         self.summaries = params.get('summaries', False)
-        self._keep_data = params.get('keep_data', True)
+        self._keep_data = params.get('keep_data', False)
         self._clear_data = not self._keep_data
         self._print_steps = params.get('print_steps', 10)
         self._save_steps = params.get('save_steps', 10000)
@@ -136,8 +136,6 @@ class TrainLogger(object):
             except KeyError:
                 self.train_data[key] = [val]
 
-        self.train_data_strings.append(data_str)
-
     def _clear(self):
         self.train_data = {}
 
@@ -149,6 +147,7 @@ class TrainLogger(object):
 
         if step % self._print_steps == 0:
             io.log(data_str)
+            self.train_data_strings.append(data_str)
 
         if (step + 1) % 1000 == 0:
             io.log(self.train_header)
