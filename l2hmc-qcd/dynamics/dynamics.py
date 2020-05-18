@@ -117,12 +117,12 @@ class Dynamics(tf.keras.Model):
                 #  net_params['factor'] = 2.
                 #  net_params['net_name'] = 'x'
                 #  net_params['net_seeds'] = xnet_seeds
-                xnet = FullNet(model_name='XNet', **net_params)
+                #  xnet = FullNet(model_name='XNet', **net_params)
                 #
                 #  net_params['factor'] = 1.
                 #  net_params['net_name'] = 'v'
                 #  net_params['net_seeds'] = vnet_seeds
-                vnet = FullNet(model_name='VNet', **net_params)
+                #  vnet = FullNet(model_name='VNet', **net_params)
                 pass
 
         return xnet, vnet
