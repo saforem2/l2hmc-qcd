@@ -285,6 +285,15 @@ def parse_args():
                               100, 200, and 300 hidden units respectively.
                               (Default: '64,128')."""))
 
+    parser.add_argument('--largest_wilson_loop',
+                        dest='largest_wilson_loop',
+                        type=int,
+                        required=False,
+                        default=1,
+                        help=("""Size of largest Wilson loop to include when
+                              calculating the plaquette and charge terms in the
+                              gauge loss function."""))
+
     parser.add_argument('--no_summaries',
                         dest="no_summaries",
                         action="store_true",
