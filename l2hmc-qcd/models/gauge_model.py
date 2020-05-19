@@ -90,7 +90,6 @@ def project_angle(x):
     """Returns the projection of an angle `x` from [-4pi, 4pi] to [-pi, pi]."""
     return x - TWO_PI * tf.math.floor((x + PI) / TWO_PI)
 
-
 class GaugeLoss:
     """Compute the loss value for the 2D U(1) lattice gauge model. """
     def __init__(self, plaq_weight, charge_weight, lattice_shape, n_arr=None):
@@ -130,6 +129,7 @@ class GaugeLoss:
         return ploss, qloss, q1
 
 
+# pylint: disable=too-many-instance-attributes
 class GaugeModel(BaseModel):
     """Implements `GaugeModel` class, containing tf ops for training."""
     def __init__(self, params=None):
@@ -161,8 +161,10 @@ class GaugeModel(BaseModel):
         self.metric_fn = lambda x, y: 2. * (1. - tf.math.cos(y - x))
         xdata, zdata = self._build_sampler()
 
+        largest_wilson_loop = self.params.get('largest_wilson_loop', 1)
+        n_arr = np.arange(largest_wilson_loop) + 1
         self.gauge_loss = GaugeLoss(self._plaq_weight, self._charge_weight,
-                                    self._lattice_shape, n_arr=[1, 2, 3])
+                                    self._lattice_shape, n_arr=n_arr)
 
         self.loss_op, self._losses_dict = self.calc_loss(xdata, zdata)
         self.grads = self._calc_grads(self.loss_op)
