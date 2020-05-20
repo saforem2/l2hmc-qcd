@@ -14,333 +14,534 @@ Author: Sam Foreman (github: @saforem2)
 Date: 04/09/2019
 """
 import os
+import sys
 import time
+import shlex
 import pickle
+import shutil
+import argparse
 
 import numpy as np
-import utils.file_io as io
+import xarray as xr
+import seaborn as sns
+import tensorflow as tf
+import matplotlib.style as mplstyle
 
-from config import Energy, State, NetWeights
-from lattice.lattice import u1_plaq_exact
-from lattice.utils import actions
+try:
+    import utils.file_io as io
+except:
+    import pudb; pudb.set_trace()
+
+from config import (Energy, NET_WEIGHTS_HMC, NET_WEIGHTS_L2HMC, NetWeights,
+                    State)
+from inference.utils import set_eps
 from loggers.run_logger import RunLogger
 from utils.distributions import GMM
+from lattice.utils import actions
+from lattice.lattice import calc_plaqs_diffs, u1_plaq_exact
+from plotters.data_utils import bootstrap, therm_arr
+from plotters.inference_plots import traceplot_posterior
+
+mplstyle.use('fast')
+sns.set_palette('bright')
 
 
-def _load(pkl_file):
-    with open(pkl_file, 'rb') as f:
-        tmp = pickle.load(f)
-
-    return tmp
+def _get_eps():
+    eps = [i for i in tf.global_variables() if 'eps' in i.name][0]
+    return eps
 
 
-def recreate_distribution(log_dir):
-    mus_file = os.path.join(log_dir, 'mus.z')
-    sigmas_file = os.path.join(log_dir, 'sigmas.z')
-    pis_file = os.path.join(log_dir, 'pis.z')
-
-    mus = _load(mus_file)
-    sigmas = _load(sigmas_file)
-    pis = _load(pis_file)
-
-    distribution = GMM(mus, sigmas, pis)
-
-    return distribution
+def uline(s, c='-'):
+    """Returns a string of '-' with the same length as `s` (for underline)."""
+    return len(s) * c
 
 
-class EnergyRunner:
-    """EnergyRunner object for imperatively calculating energies."""
-    def __init__(self, potential_fn):
-        self.potential_fn = potential_fn
+def get_run_ops():
+    keys = ['x_init', 'v_init', 'x_proposed', 'v_proposed',
+            'x_out', 'v_out', 'dx_out', 'dx_proposed', 'exp_energy_diff',
+            'accept_prob', 'sumlogdet_proposed', 'sumlogdet_out']
 
-    def potential_energy(self, state):
-        return state.beta * self.potential_fn(state.x)
+    ops = tf.get_collection('run_ops')
 
-    def kinetic_energy(self, state):
-        return 0.5 * np.sum(state.v ** 2, axis=1)
+    run_ops_dict = dict(zip(keys, ops))
+    eps = _get_eps()
+    run_ops_dict.update({'dynamics_eps': eps})
 
-    def hamiltonian(self, state):
-        return self.potential_energy(state) + self.kinetic_energy(state)
-
-    def calc_energies(self, state, sumlogdet=0.):
-        pe = self.potential_energy(state)
-        ke = self.kinetic_energy(state)
-        h = pe + ke + sumlogdet
-
-        energy = Energy(potential=pe, kinetic=ke, hamiltonian=h)
-
-        return energy
+    return run_ops_dict
 
 
-class Runner:
-    """Runner object, responsible for running inference."""
-    def __init__(self, sess, params, logger=None, model_type=None):
+def get_obs_ops():
+    """Build dictionary of tensorflow ops for calculating observables."""
+    keys = ['plaq_sums', 'actions', 'plaqs',
+            'charges', 'avg_plaqs', 'avg_actions']
+    ops = tf.get_collection('observables')
+    obs_ops_dict = dict(zip(keys, ops))
 
-        """Initialization method.
+    return obs_ops_dict
 
-        Args:
-            sess: A `tf.Session` object.
-            params (dict): Dictionary of paramter values.
-            logger: A `RunLogger` object.
+
+def get_inputs():
+    """Build dictionary of tensorflow placeholders used as inputs."""
+    inputs = tf.get_collection('inputs')
+    x, beta, eps_ph, global_step_ph, train_phase, *nw = inputs
+    net_weights = NetWeights(*nw)
+    inputs_dict = {
+        'x': x,
+        'beta': beta,
+        'eps_ph': eps_ph,
+        'global_step_ph': global_step_ph,
+        'train_phase': train_phase,
+        'net_weights': net_weights,
+    }
+
+    return inputs_dict
+
+
+def find_params(log_dir=None):
+    if log_dir is None:
+        params = io.loadz(os.path.join(os.getcwd(), 'params.z'))
+    else:
+        params = io.loadz(os.path.join(log_dir, 'params.z'))
+
+    return params
+
+# pylint:disable=invalid-name
+class RunData:
+    def __init__(self, run_params):
+        self.run_params = run_params
+        self.print_steps = run_params['print_steps']
+
+        self.data = {}
+        self.data_strs = []
+        names = ['step', 'dt', 'px', 'sumlogdet', 'exp(dH)', 'dQ', 'plaq_err']
+        hstr = ''.join(["{:^12s}".format(name) for name in names])
+        sep = '-' * len(hstr)
+        self.header = sep + '\n' + hstr + '\n' + sep
+
+    def update(self, step, new_data, data_str):
+        """Update `self.data` with `new_data` and aggregate `data_str`."""
+        for key, val in new_data.items():
+            try:
+                self.data[key].append(val)
+            except KeyError:
+                self.data[key] = [val]
+
+        self.data_strs.append(data_str)
+        if step % self.print_steps == 0:
+            io.log(data_str)
+
+        if step % 1000 == 0:
+            io.log(self.header)
+
+    @staticmethod
+    def _build_dataset(data, therm_frac=0.3, filter_str=None, num_chains=None):
+        """Build a(n) `xr.Dataset` from `data`."""
+        d = {}
+        therm_data = {}
+        for key, val in data.items():
+            cond1 = (filter_str is not None and filter_str in key)
+            cond2 = (val == [])
+            if cond1 or cond2:
+                continue
+            arr, steps = therm_arr(np.array(val), therm_frac=therm_frac)
+            therm_data[key] = arr
+            arr = arr.T
+            if num_chains is not None:
+                arr = arr[:num_chains]
+            chains = np.arange(arr.shape[0])
+            d[key] = xr.DataArray(arr, dims=['chain', 'draw'],
+                                  coords=[chains, steps])
+
+        dataset = xr.Dataset(d)
+
+        return dataset
+
+    def build_dataset(self, filter_str=None, therm_frac=0.33, num_chains=None):
+        """Build `xr.Dataset` containing data."""
+        plot_data = {
+            'accept_prob': self.data['accept_prob'],
+            'sumlogdet_out': self.data['sumlogdet_out'],
+            'charges': self.data['charges'],
+            'plaqs_err': calc_plaqs_diffs(np.array(self.data['plaqs']),
+                                          self.run_params['beta'])
+        }
+        plot_dataset = self._build_dataset(plot_data,
+                                           filter_str=filter_str,
+                                           therm_frac=therm_frac,
+                                           num_chains=num_chains)
+        return plot_dataset
+
+    def plot(self, fig_dir, title_str, **kwargs):
+        """Make inference plot from `self.data`."""
+        data = self.build_dataset(**kwargs)
+        traceplot_posterior(data, '', fname='run_data',
+                            fig_dir=fig_dir, title_str=title_str)
+
+    @staticmethod
+    def _calc_stats(arr, n_boot=100):
+        step_ax = np.argmax(arr.shape)
+        chain_ax = np.argmin(arr.shape)
+        arr = np.swapaxes(arr, step_ax, chain_ax)
+        stds = []
+        means = []
+        for chain in arr:
+            mean, std, _ = bootstrap(chain, n_boot=n_boot, ci=68)
+            means.append(mean)
+            stds.append(std)
+
+        return np.array(means), np.array(stds)
+
+    @staticmethod
+    def calc_tunneling_rate(charges, therm_frac=0.33):
+        """Calculate the tunneling rate as the charge difference per step."""
+        charges, _ = therm_arr(charges, therm_frac=therm_frac)
+        charges = np.insert(charges, 0, charges[0], axis=0)
+        dq = np.abs(np.around(charges[1:]) - np.around(charges[:-1]))
+        tunn_rate = np.sum(dq, axis=0) / charges.shape[0]
+
+        return tunn_rate
+
+    @staticmethod
+    def calc_tunneling_stats(charges):
+        """Calculate tunneling statistics from `charges`.
+        Explicitly, calculate the `tunneling events` as the number of accepted
+        configurations which produced a configuration with a new topological
+        charge value.
+        This is calculated by looking at how the topological charges changes
+        between successive steps, i.e.
+        ```
+        charges_diff = charges[1:] - charges[:-1]
+        tunneling_events = np.sum(charges_diff, axis=step_ax)
+        ```
+        Since we are running multiple chains in parallel, we are interested in
+        the tunneling statistics for each of the individual chains.
+        The `tunneling_rate` is then calculated as the total number of
+        `tunneling_events` / num_steps`.
         """
-        self.sess = sess
+        if not isinstance(charges, np.ndarray):
+            charges = np.array(charges)
+        step_ax = 0  # data is appended for each step along axis 0
+        num_steps = charges.shape[step_ax]
+        charges = np.insert(charges, 0, charges[0], axis=step_ax)
+        dq = np.abs(np.around(charges[1:]) - np.around(charges[:-1]))
+        #  dq = np.floor(np.abs(charges[1:] - charges[:-1]) + 0.5)
+        tunneling_events = np.sum(dq, axis=step_ax)
+
+        # sum the step-wise charge differences over the step axis
+        # and divide by the number of steps to get the `tunneling_rate`
+        tunn_stats = {
+            'tunneling_events': tunneling_events,
+            'tunneling_rate': tunneling_events / num_steps,
+        }
+        return tunn_stats
+
+    def save(self, run_dir):
+        """Save `self.data` to `run_dir`."""
+        io.check_else_make_dir(run_dir)
+        io.save_dict(self.run_params, run_dir, name='run_params')
+        for key, val in self.data.items():
+            out_file = os.path.join(run_dir, f'{key}.z')
+            io.savez(np.array(val), out_file, name=key)
+
+    def thermalize_data(self, data=None, therm_frac=0.33):
+        """Returns thermalized versions of entries in data."""
+        if data is None:
+            data = self.data
+
+        therm_data = {}
+        for key, val in data.items():
+            arr, _ = therm_arr(np.array(val), therm_frac=therm_frac)
+            therm_data[key] = arr
+
+        return therm_data
+
+    @staticmethod
+    def _log_write_stat(out_file, key, val, std=None):
+        """Log (print) and write stats about (key, val) pair to `out_file`.
+        Args:
+            out_file (str): Path to file where results should be written.
+            key (str): Name of `val`.
+            val (np.ndarray): Array containing an observable..
+            std (np.ndarray): Array of (bootstrap) resampled standard
+                deviations.
+        """
+        def log(s):
+            io.log_and_write(s, out_file)
+
+        key_str = f"< {key} > = {np.mean(val):.6g}"
+        sep = uline(key_str)
+        val_str = f"    {val}"
+        std_str = ''
+        if std is not None:
+            key_std_str = f" +/- {np.mean(std):.6g}"
+            key_str += key_std_str
+            sep += uline(key_std_str)
+            std_str = f" +/- {std}"
+
+        log(key_str)
+        log(sep)
+        log(val_str)
+        log(std_str)
+
+    def _log_stats(self, therm_data, tunn_stats, out_file, n_boot=100):
+        """Log/write all stats in `therm_data` and `tunn_stats`."""
+        for key, val in tunn_stats.items():
+            self._log_write_stat(out_file, key, val)
+
+        for key, val in therm_data.items():
+            means, stds = self._calc_stats(val, n_boot=n_boot)
+            self._log_write_stat(out_file, key, means, std=stds)
+            io.log_and_write('\n', out_file)
+
+    def log_summary(self, out_file, n_boot=10):
+        """Create human-readable summary of inference run."""
+        io.log(f'Writing run summary statistics to {out_file}.\n')
+        data = {
+            'accept_prob': self.data['accept_prob'],
+            'charges': self.data['charges'],
+            'plaqs_diffs': calc_plaqs_diffs(self.data['plaqs'],
+                                            self.run_params['beta'])
+        }
+        therm_data = self.thermalize_data(data)
+        tunn_stats = self.calc_tunneling_stats(therm_data['charges'])
+        io.log_and_write(80*'-' + '\n\n', out_file)
+        self._log_stats(therm_data, tunn_stats, out_file, n_boot=n_boot)
+
+        io.log_and_write(120 * '=' + '\n', out_file)
+
+        return therm_data, tunn_stats
+
+
+class RunnerTF:
+    def __init__(self, FLAGS):
+        params = find_params(FLAGS.log_dir)
         self.params = params
-        self.logger = logger
-        if model_type is None:
-            self.model_type = 'unknown'
-            model_type = 'unkown'
-        else:
-            self.model_type = model_type
+        log_dir = params['log_dir'] if FLAGS.log_dir is None else FLAGS.log_dir
+        self.log_dir = log_dir
 
-        if logger is not None:
-            self._has_logger = True
-            self._run_header = self.logger.run_header
-            self.inputs_dict = self.logger.inputs_dict
-            self.run_ops_dict = self.logger.run_ops_dict
-            self.state_ph = self.logger.state_ph
-            self.sumlogdet_ph = self.logger.sumlogdet_ph
+        self.sess = self.restore()
+        self.run_ops = get_run_ops()
+        self.obs_ops = get_obs_ops()
+        self.inputs = get_inputs()
 
-            self.energy_ops_dict = self.logger.energy_ops_dict
-            if model_type == 'GaugeModel':
-                self.obs_ops_dict = self.logger.obs_ops_dict
-        else:
-            self._has_logger = False
-            self._run_header = ''
-            self.inputs_dict = RunLogger.build_inputs_dict()
-            self.run_ops_dict = RunLogger.build_run_ops_dict()
-            energy_outputs = RunLogger.build_energy_ops_dict()
-            self.state_ph = energy_outputs['state']
-            self.sumlogdet_ph = energy_outputs['sumlogdet_ph']
-            self.energy_ops_dict = energy_outputs['ops_dict']
-            if model_type == 'GaugeModel':
-                self.obs_ops_dict = RunLogger.build_obs_ops_dict()
+        run_params, title_str = self.parse_flags(params, FLAGS)
+        self.run_params = run_params
+        self.title_str = title_str
+        self.eps = run_params['eps']
+        self.xdim = run_params['xdim']
+        self.beta = run_params['beta']
+        self.num_steps = run_params['num_steps']
+        self.batch_size = run_params['batch_size']
+        self.net_weights = run_params['net_weights']
+        self.run_steps = run_params['run_steps']
+        self.print_steps = run_params['print_steps']
 
-        self.eps = self.sess.run(self.run_ops_dict['dynamics_eps'])
-        self._inference_keys = list(self.run_ops_dict.keys())
-        self._inference_ops = list(self.run_ops_dict.values())
-        self._energy_keys = list(self.energy_ops_dict.keys())
-        self._energy_ops = list(self.energy_ops_dict.values())
-        if model_type == 'GaugeModel':
-            self._obs_keys = list(self.obs_ops_dict.keys())
-            self._obs_ops = list(self.obs_ops_dict.values())
-            self.energy_runner = EnergyRunner(potential_fn=actions)
-        elif model_type == 'GaussianMixtureModel':
-            if self.logger is not None:
-                distribution = recreate_distribution(self.logger.log_dir)
-                potential_fn = distribution.minus_log_likelihood_np
-                #  potential_fn = distribution.get_energy_function()
-                self.energy_runner = EnergyRunner(potential_fn)
-            else:
-                raise AttributeError('Unable to recreate distribution.')
+        self.run_str = self.get_run_str(params)
+        self.run_dir = os.path.join(self.log_dir, 'runs_tf', self.run_str)
+        self.fig_dir = os.path.join(self.log_dir, 'figures_tf', self.run_str)
+        io.check_else_make_dir(self.run_dir)
+        io.check_else_make_dir(self.fig_dir)
 
-    def _calc_energies_np(self, state, sumlogdet=0.):
-        """Calculate energies imperatively during inference run to compare.
+        self.ops_dict = {
+            'x_out': self.run_ops['x_out'],
+            'accept_prob': self.run_ops['accept_prob'],
+            'sumlogdet_out': self.run_ops['sumlogdet_out'],
+            'exp_energy_diff': self.run_ops['exp_energy_diff'],
+            'plaq_sums': self.obs_ops['plaq_sums'],
+            'plaqs': self.obs_ops['plaqs'],
+            'charges': self.obs_ops['charges'],
+        }
+        self.keys = list(self.ops_dict.keys())
+        self.ops = list(self.ops_dict.values())
 
-        Args:
-            state (State object): State is a namedtuple (defined in
-                `config.py`) of the form (x, v, beta).
-
-        Returns:
-            pe: Potential energy of the state.
-            ke: Kinetic energy of the state.
-            h: Hamiltonian of the state.
-        """
-        if hasattr(self, 'energy_runner'):
-            energies = self.energy_runner.calc_energies(state, sumlogdet)
-        else:
-            raise AttributeError('No `EnergyRunner` attribute found.')
-
-        return energies
-
-    def calc_energies_np(self, outputs):
-        state_init = State(outputs['x_init'],
-                           outputs['v_init'], self.beta)
-        state_prop = State(outputs['x_proposed'],
-                           outputs['v_proposed'], self.beta)
-        state_out = State(outputs['x_out'],
-                          outputs['v_out'], self.beta)
-
-        sld_prop = outputs['sumlogdet_proposed']
-        sld_out = outputs['sumlogdet_out']
-        einit = self._calc_energies_np(state_init)
-        eprop = self._calc_energies_np(state_prop, sld_prop)
-        eout = self._calc_energies_np(state_out, sld_out)
-
-        edata = {
-            'potential_init': einit.potential,
-            'potential_proposed': eprop.potential,
-            'potential_out': eout.potential,
-            'kinetic_init': einit.kinetic,
-            'kinetic_proposed': eprop.kinetic,
-            'kinetic_out': eout.kinetic,
-            'hamiltonian_init': einit.hamiltonian,
-            'hamiltonian_proposed': eprop.hamiltonian,
-            'hamiltonian_out': eout.hamiltonian
+        self.feed_dict = {
+            self.inputs['beta']: self.beta,
+            self.inputs['net_weights']: self.net_weights,
+            self.inputs['train_phase']: False
         }
 
-        return edata
+    def restore(self):
+        """Restore from checkpoint."""
+        config = tf.ConfigProto(allow_soft_placement=True)
+        sess = tf.Session(config=config)
+        ckpt_dir = os.path.join(self.log_dir, 'checkpoints')
+        ckpt_file = tf.train.latest_checkpoint(ckpt_dir)
+        saver = tf.train.import_meta_graph(f'{ckpt_file}.meta')
+        saver.restore(sess, ckpt_file)
 
-    def calc_energy_diffs(self, energies, energies_np):
-        """Calculate the energy differences between energies and energies_np.
+        return sess
 
-        In theory, they should both be the same. `energies` are calculated by
-        running tensorflow operations, whereas `energies_np` are calculated
-        imperatively in numpy.
-        """
-        ediffs = {}
-        for key in energies.keys():
-            e = energies[key]
-            e_np = energies_np[key]
-            ediffs[key] = e - e_np
+    def parse_flags(self, params, FLAGS):
+        """Parse FLAGS."""
+        net_weights = NET_WEIGHTS_HMC if FLAGS.hmc else NET_WEIGHTS_L2HMC
+        beta = params['beta_final'] if FLAGS.beta is None else FLAGS.beta
+        xdim = params['time_size'] * params['space_size'] * params['dim']
+        batch_size = (
+            params['batch_size'] if FLAGS.batch_size is None
+            else FLAGS.batch_size
+        )
 
-        return ediffs
+        if FLAGS.eps is not None:
+            set_eps(self.sess, FLAGS.eps)
+            eps = FLAGS.eps
+        else:
+            eps = self.sess.run(self.run_ops['dynamics_eps'])
 
-    def _run_energy_ops(self, state_np, sumlogdet_np=0.):
-        """Run all energy ops."""
-        feed_dict = {
-            self.state_ph.x: state_np.x,
-            self.state_ph.v: state_np.v,
-            self.state_ph.beta: self.beta,
-            self.sumlogdet_ph: sumlogdet_np
-        }
-        outputs = self.sess.run(self._energy_ops, feed_dict=feed_dict)
-        return dict(zip(self._energy_keys, outputs))
-
-    def run_energy_ops(self, x_init, outputs):
-        """Run all energy ops."""
-        state_init = State(x=x_init,
-                           v=outputs['v_init'],
-                           beta=self.beta)
-        state_prop = State(x=outputs['x_proposed'],
-                           v=outputs['v_proposed'],
-                           beta=self.beta)
-        state_out = State(x=outputs['x_out'],
-                          v=outputs['v_out'],
-                          beta=self.beta)
-
-        sumlogdet_init = np.zeros(outputs['sumlogdet_proposed'].shape)
-        sumlogdet_prop = outputs['sumlogdet_proposed']
-        sumlogdet_out = outputs['sumlogdet_out']
-
-        energies_init = self._run_energy_ops(state_np=state_init,
-                                             sumlogdet_np=sumlogdet_init)
-        energies_prop = self._run_energy_ops(state_np=state_prop,
-                                             sumlogdet_np=sumlogdet_prop)
-        energies_out = self._run_energy_ops(state_np=state_out,
-                                            sumlogdet_np=sumlogdet_out)
-
-        energies = {
-            'potential_init': energies_init['potential_energy'],
-            'kinetic_init': energies_init['kinetic_energy'],
-            'hamiltonian_init': energies_init['hamiltonian'],
-            'potential_proposed': energies_prop['potential_energy'],
-            'kinetic_proposed': energies_prop['kinetic_energy'],
-            'hamiltonian_proposed': energies_prop['hamiltonian'],
-            'potential_out': energies_out['potential_energy'],
-            'kinetic_out': energies_out['kinetic_energy'],
-            'hamiltonian_out': energies_out['hamiltonian'],
+        run_params = {
+            'eps': eps,
+            'xdim': xdim,
+            'beta': beta,
+            'log_dir': self.log_dir,
+            'num_steps': params['num_steps'],
+            'batch_size': batch_size,
+            'net_weights': net_weights,
+            'run_steps': FLAGS.run_steps,
+            'print_steps': FLAGS.print_steps,
         }
 
-        return energies
+        title_str = (f"{params['time_size']}"
+                     r"$\times$" + f"{params['space_size']}, "
+                     r"$\beta = $" + f'{beta:.3g}, '
+                     r"$N_{\mathrm{LF}} = $" + f"{params['num_steps']}, "
+                     r"$N_{\mathrm{B}} = $" + f'{batch_size}, '
+                     r"$\varepsilon = $" + f'{eps:.4g}')
 
-    def run_inference_ops(self, feed_dict):
-        """Run `inference` ops."""
-        outputs = self.sess.run(self._inference_ops, feed_dict=feed_dict)
-        return dict(zip(self._inference_keys, outputs))
+        return run_params, title_str
 
-    def run_obs_ops(self, feed_dict):
-        """Run all observable ops."""
-        outputs = self.sess.run(self._obs_ops, feed_dict=feed_dict)
-        return dict(zip(self._obs_keys, outputs))
+    def get_run_str(self, params):
+        """Get `run_str`."""
+        lf = params['num_steps']
+        bs = params['batch_size']
+        rs = self.run_steps
+        beta = self.beta
+        eps = self.eps
+        nw = self.net_weights
+        tstr = io.get_timestr()
+        tstr = tstr['timestr']
+        nwstr = ''.join([str(int(i)) for i in self.net_weights])
+        run_str = (f'lf{lf}_bs{bs}_steps{rs}_beta{beta}'
+                   f'_eps{eps:.2g}_nw{nwstr}__{tstr}')
 
-    def run_step(self, step, samples):
+        return run_str
+
+    # pylint:disable=invalid-name
+    def run_step(self, step, x, run_data):
         """Perform a single run step."""
-        feed_dict = {
-            self.inputs_dict['x']: samples,
-            self.inputs_dict['beta']: self.beta,
-            self.inputs_dict['net_weights']: self.net_weights,
-            self.inputs_dict['train_phase']: False
-        }
+        self.feed_dict.update({
+            self.inputs['x']: x,
+        })
 
-        start_time = time.time()
-        outputs = self.run_inference_ops(feed_dict)
-        dt = time.time() - start_time
+        t0 = time.time()
+        outputs = self.sess.run(self.ops, feed_dict=self.feed_dict)
+        dt = time.time() - t0
 
-        out_dict = {
-            'step': step,
-            'beta': self.beta,
-            'eps': self.eps,
-            'samples_in': samples,
-            'samples': outputs['x_out'],
-            'px': outputs['accept_prob'],
-            'dx_out': outputs['dx_out'],
-            'dx_proposed': outputs['dx_proposed'],
-            'exp_energy_diff': outputs['exp_energy_diff'],
-            'sumlogdet_proposed': outputs['sumlogdet_proposed'],
-            'sumlogdet_out': outputs['sumlogdet_out'],
-        }
+        out_dict = dict(zip(self.keys, outputs))
 
-        out_dict.update(outputs)
+        if step > 1:
+            q_old = np.array(run_data.data['charges'][-1])
+            q_new = np.array(out_dict['charges'])
+            dq = np.abs(q_new - q_old)
+        else:
+            dq = np.zeros(self.batch_size)
+
+        out_dict['dq'] = dq
+        plaq_err = calc_plaqs_diffs(out_dict['plaqs'], self.beta)
+
         data_str = (f"{step:>6g}/{self.run_steps:<6g} "
                     f"{dt:^11.4g} "
-                    f"{np.mean(out_dict['px']):^11.4g} "
-                    f"{self.eps:^11.4g} "
-                    f"{np.mean(out_dict['dx_out']):^11.4g} "
-                    f"{self.beta:^11.4g} "
+                    f"{np.mean(out_dict['accept_prob']):^11.4g} "
+                    f"{np.mean(out_dict['sumlogdet_out']):^11.4g} "
                     f"{np.mean(out_dict['exp_energy_diff']):^11.4g} "
-                    f"{np.mean(out_dict['sumlogdet_out']):^11.4g}")
-
-        if self.model_type == 'GaugeModel':
-            out_dict['samples'] = np.mod(outputs['x_out'], 2 * np.pi)
-            observables = self.run_obs_ops(feed_dict)
-            out_dict.update(observables)
-            plaq_diff = self.plaq_exact - observables['avg_plaqs']
-            data_str += (f"{plaq_diff:>11.4g} ")
-
-        if (step % self.energy_steps) == 0:
-            # Calculate energies by running tensorflow graph operations
-            energies = self.run_energy_ops(samples, outputs)
-            out_dict['energies'] = energies
+                    f"{np.sum(dq):^11.4g} "
+                    f"{np.mean(plaq_err):^11.4g} ")
 
         return out_dict, data_str
 
-    def _run_setup(self, **kwargs):
-        """Prepare for running inference."""
-        self.run_steps = int(kwargs.get('run_steps', 5000))
-        # how often to run energy calculations
-        self.energy_steps = int(kwargs.get('energy_steps', 1.))
-        self.therm_frac = int(kwargs.get('therm_frac', 10))
-        self.net_weights = kwargs.get('net_weights',
-                                      NetWeights(1., 1., 1., 1., 1., 1.))
+    def inference(self, run_steps=None):
+        """Run inference."""
+        run_data = RunData(self.run_params)
+        print(run_data.header)
 
-        self.beta = kwargs.get('beta', self.params.get('beta_final', 5.))
-        if self.model_type == 'GaugeModel':
-            self.plaq_exact = u1_plaq_exact(self.beta)
-        else:
-            self.plaq_exact = -1.
+        x = np.random.uniform(low=-np.pi, high=np.pi,
+                              size=(self.batch_size, self.xdim))
 
-    def run(self, **kwargs):
-        """Run inference to generate samples and calculate observables."""
-        self._run_setup(**kwargs)
+        if run_steps is None:
+            run_steps = self.run_steps
 
-        has_logger = self.logger is not None
-        samples = kwargs.get('samples', None)
-        if samples is None:
-            batch_size = self.params['batch_size']
-            x_dim = self.params['x_dim']
-            samples = np.random.randn(*(batch_size, x_dim))
+        for step in range(run_steps):
+            outputs, data_str = self.run_step(step, x, run_data)
+            x = outputs['x_out']
+            run_data.update(step, outputs, data_str)
 
-        io.log(self._run_header)
+        return run_data
 
-        for step in range(self.run_steps):
-            out_data, data_str = self.run_step(step, samples)
-            samples = out_data['samples']
 
-            if has_logger:
-                self.logger.update(self.sess,
-                                   out_data, data_str,
-                                   self.net_weights)
-        if has_logger:
-            save_samples = kwargs.get('save_samples', False)
-            self.logger.save_run_data(therm_frac=self.therm_frac,
-                                      save_samples=save_samples)
+def parse_args():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(
+        description='Run inference on trained model using tensorflow.',
+        fromfile_prefix_chars='@',
+    )
+    parser.add_argument('--beta', dest='beta',
+                        required=False, default=None,
+                        help=("""Value of `beta` at which to run
+                              inference."""))
+    parser.add_argument('--log_dir', dest='log_dir',
+                        required=False, default=None,
+                        help=("""Log dir containing saved model
+                              checkpoints."""))
+    parser.add_argument('--eps', dest='eps',
+                        required=False, default=None,
+                        help=("""Step size (`eps`) to use in leapfrog
+                              integrator."""))
+    parser.add_argument('--batch_size', dest='batch_size',
+                        required=False, default=None,
+                        help=("""Batch size to use (# of chains to run in
+                              parallel."""))
+    parser.add_argument('--hmc', dest='hmc',
+                        required=False, action='store_true',
+                        help=("""Flag that when passed will run generic
+                              HMC."""))
+    parser.add_argument('--run_steps', dest='run_steps',
+                        required=False, default=10000,
+                        help=("""Number of inference steps to run."""))
+    parser.add_argument('--plot_chains', dest='plot_chains',
+                        required=False, default=None,
+                        help=("""Number of chains to include when making
+                              plots."""))
+    parser.add_argument('--print_steps', dest='print_steps',
+                        required=False, default=10,
+                        help=("""Frequency with which to print data."""))
+
+    if sys.argv[1].startswith('@'):
+        args = parser.parse_args(shlex.split(open(sys.argv[1][1:]).read(),
+                                             comments=True))
+    else:
+        args = parser.parse_args()
+
+    return args
+
+
+def main(FLAGS):
+    """Main method."""
+    runner = RunnerTF(FLAGS)
+    run_data = runner.inference(FLAGS.run_steps)
+    run_data.plot(runner.fig_dir, runner.title_str,
+                  num_chains=FLAGS.plot_chains)
+    out_file = os.path.join(runner.fig_dir, 'run_summary.txt')
+    _, _ = run_data.log_summary(out_file=out_file, n_boot=10)
+
+    if not FLAGS.dont_save:
+        run_data.save(run_dir=runner.run_dir)
+
+    _ = shutil.copy2(out_file, runner.run_dir)
+
+    return run_data
+
+
+if __name__ == '__main__':
+    CLI_FLAGS = parse_args()
+    for key, val in CLI_FLAGS.__dict__.items():
+        io.log(f'{key}: {val}\n')
+
+    _ = main(CLI_FLAGS)
