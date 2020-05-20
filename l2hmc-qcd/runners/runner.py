@@ -95,15 +95,22 @@ def get_inputs():
 
 
 def find_params(log_dir=None):
+    """Try and find `params` file."""
     if log_dir is None:
-        params = io.loadz(os.path.join(os.getcwd(), 'params.z'))
-    else:
-        params = io.loadz(os.path.join(log_dir, 'params.z'))
+        log_dir = os.getcwd()
 
-    return params
+    fnames = ['params.z', 'parameters.z', 'params.pkl', 'parameters.pkl']
+    for fname in fnames:
+        params_file = os.path.join(log_dir, fname)
+        if os.path.isfile(params_file):
+            return io.loadz(params_file)
+
+    raise FileNotFoundError('Unable to locate `params` file.')
+
 
 # pylint:disable=invalid-name
 class RunData:
+    """Container object for holding / dealing with data from inference run."""
     def __init__(self, run_params):
         self.run_params = run_params
         self.print_steps = run_params['print_steps']
@@ -360,14 +367,20 @@ class RunnerTF:
             self.inputs['train_phase']: False
         }
 
-    def restore(self):
+    def restore(self, log_dir=None):
         """Restore from checkpoint."""
+        if log_dir is None:
+            log_dir = self.log_dir
+        import pudb; pudb.set_trace()
         config = tf.ConfigProto(allow_soft_placement=True)
         sess = tf.Session(config=config)
-        ckpt_dir = os.path.join(self.log_dir, 'checkpoints')
-        ckpt_file = tf.train.latest_checkpoint(ckpt_dir)
-        saver = tf.train.import_meta_graph(f'{ckpt_file}.meta')
-        saver.restore(sess, ckpt_file)
+        ckpt_dir = os.path.join(log_dir, 'checkpoints')
+        try:
+            ckpt_file = tf.train.latest_checkpoint(ckpt_dir)
+            saver = tf.train.import_meta_graph(f'{ckpt_file}.meta')
+            saver.restore(sess, ckpt_file)
+        except:
+            import pudb; pudb.set_trace()
 
         return sess
 
