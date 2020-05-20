@@ -127,8 +127,7 @@ class RunLogger(object):
         # NOTE: Keys from `run_ops` dict defined in the model implementation
         keys = ['x_init', 'v_init', 'x_proposed', 'v_proposed',
                 'x_out', 'v_out', 'dx_out', 'dx_proposed', 'exp_energy_diff',
-                'accept_prob', 'accept_prob_hmc', 'sumlogdet_proposed',
-                'sumlogdet_out']
+                'accept_prob', 'sumlogdet_proposed', 'sumlogdet_out']
 
         ops = tf.get_collection('run_ops')
 
@@ -203,9 +202,6 @@ class RunLogger(object):
             self.inputs_dict['x']: samples,
             self.inputs_dict['beta']: beta,
             self.inputs_dict['net_weights']: net_weights,
-            #  self.inputs_dict['scale_weight']: net_weights[0],
-            #  self.inputs_dict['transl_weight']: net_weights[1],
-            #  self.inputs_dict['transf_weight']: net_weights[2],
             self.inputs_dict['train_phase']: False
         }
         summary_str = sess.run(self.summary_op, feed_dict=feed_dict)
@@ -379,10 +375,10 @@ class RunLogger(object):
             self.log_step(sess, step, data['samples'], beta, net_weights)
 
         print_steps = self.params.get('print_steps', 1)
-        if step % (10 * print_steps) == 0:
+        if step % print_steps == 0:
             io.log(data_str)
 
-        if step % 100 == 0:
+        if step % 1000 == 0:
             io.log(self.run_header)
 
     def save_attr(self, name, attr, out_dir=None, dtype=NP_FLOAT):
