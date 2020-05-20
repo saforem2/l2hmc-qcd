@@ -117,14 +117,6 @@ class RunData:
                 self.data[key].append(val)
             except KeyError:
                 self.data[key] = [val]
-        #  self.samples_arr.append(x)
-        #
-        #  keys = ['accept_prob', 'plaq_loss', 'charge_loss',
-        #          'plaq_change', 'charge_change', 'plaqs_diffs']
-        #
-        #  self._try_updates(outputs)
-        #  self._update_energies(outputs)
-        #  self._update_from_keys(keys, outputs)
 
     @staticmethod
     def therm_arr(arr, therm_frac=0.33):
@@ -159,7 +151,7 @@ class RunData:
 
     def build_dataset(self):
         """Build `xarray.Dataset` from `self.run_data`."""
-        charges = np.array(self.data['charges'])
+        #  charges = np.array(self.data['charges'])
         #  self.data['tunneling_rate'] = self.calc_tunneling_rate(charges).T
 
         #  plaqs = np.array(self.observables.pop('plaqs'))
@@ -208,8 +200,9 @@ class RunData:
             arr, steps = self.therm_arr(np.array(val), therm_frac=therm_frac)
             therm_data[key] = arr
             arr = arr.T
+            chains = np.arange(arr.shape[0])
             _dict[key] = xr.DataArray(arr, dims=['chain', 'draw'],
-                                      coords=[np.arange(arr.shape[0]), steps])
+                                      coords=[chains, steps])
 
         dataset = xr.Dataset(_dict)
 
@@ -332,37 +325,9 @@ class RunData:
 
             fpath = os.path.join(run_dir, f'{key}.z')
             io.savez(val, fpath, name=key)
-        #  energy_data_file = os.path.join(run_dir, 'energy_data.z')
-        #  volume_diffs_file = os.path.join(run_dir, 'volume_diffs.z')
-        #  observables_file = os.path.join(run_dir, 'observables.z')
-
-        #  io.savez(self.data, data_file, name='run_data')
-        #  io.savez(self.energy_data, energy_data_file, name='energy_data')
-        #  io.savez(self.volume_diffs, volume_diffs_file, name='volume_diffs')
-        #  io.savez(self.observables, observables_file, 'observables')
-
-        #  observables_dir = os.path.join(run_dir, 'observables')
-        #  io.check_else_make_dir(observables_dir)
-
-        #  iters = zip(self.data.items(), self.observables.items())
-        #  for (kr, vr), (ko, vo) in iters:
-        #      fr = os.path.join(observables_dir, f'{kr}.z')
-        #      fo = os.path.join(observables_dir, f'{ko}.z')
-        #      io.savez(np.array(vr), fr, name=kr)
-        #      io.savez(np.array(vo), fo, name=ko)
 
     def save(self, run_dir):
         """Save all inference data to `run_dir`."""
-        #  if run_dir is None:
-        #      run_dir = self.run_params['run_dir']
-
-        #  io.save_dict(self.run_params, run_dir, name='run_params')
-        #  volume_diffs_file = os.path.join(run_dir, 'volume_diffs.z')
-        #  io.savez(self.volume_diffs, volume_diffs_file)
-
-        #  if 'forward' in self.run_data:
-        #      self.save_direction_data()
-
         self.save_samples_data(run_dir)
         self.save_reverse_data(run_dir)
         self.save_data(run_dir)
@@ -421,7 +386,6 @@ class RunData:
 
         # sum the step-wise charge differences over the step axis
         # and divide by the number of steps to get the `tunneling_rate`
-        tunneling_events = np.sum(dq, axis=step_ax)
         tunn_stats = {
             'tunneling_events': tunneling_events,
             'tunneling_rate': tunneling_events / num_steps,

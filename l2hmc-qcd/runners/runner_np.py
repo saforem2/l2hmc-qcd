@@ -35,6 +35,8 @@ from dynamics.dynamics_np import (DynamicsNP, convert_to_angle,
 # pylint: disable=too-many-instance-attributes
 NET_WEIGHTS_HMC = NetWeights(0., 0., 0., 0., 0., 0.)
 NET_WEIGHTS_L2HMC = NetWeights(1., 1., 1., 1., 1., 1.)
+PI = np.pi
+TWO_PI = 2 * PI
 
 RunParams = namedtuple('RunParams', [
     'eps', 'beta', 'run_steps', 'num_steps', 'batch_size',
@@ -46,8 +48,13 @@ Observables = namedtuple('Observables', ['plaqs', 'avg_plaqs', 'charges'])
 Energy = namedtuple('Energy', ['potential', 'kinetic', 'hamiltonian'])
 
 
+def project_angle(x):
+    return x - TWO_PI * np.floor((x + PI) / TWO_PI)
+
+
 def charge_as_int(q):
     return np.floor(q + 0.5)
+
 
 def project_angle_fft(x, n=10):
     """use the fourier series representation `x` to approx `project_angle`.
@@ -111,7 +118,6 @@ def get_reduced_weights(weights, n=10):
             weights['vnet'][key] = Weights(W_, b)
 
     return weights
-
 
 
 class RunConfig:
@@ -308,7 +314,7 @@ class RunnerNP:
         nsv = self.config.num_singular_values
         if nsv > 0:
             io.log(f'Keeping the first {nsv} singular values!')
-            weights = get_reduced_weights(weights, n=nsv)
+            weights = get_reduced_weights(params.weights, n=nsv)
             params._update(weights=weights)
 
         dynamics = DynamicsNP(potential_fn, params)
@@ -335,14 +341,42 @@ class RunnerNP:
                                     params=hmc_params)
 
     def _calc_observables(self, x):
-        """"Calculate quantities of interest from `x`."""
+        """Calculate observables from `x`."""
         plaqs = self.lattice.calc_plaq_sums_np(x)
         avg_plaqs = np.sum(np.cos(plaqs), axis=(1, 2)) / self.lattice.num_plaqs
-        #  charges = np.sum(np.sin(plaqs), axis=(1, 2)) / (2 * np.pi)
-        plaqs_proj = project_angle_fft(plaqs, n=10)
-        charges = np.sum(plaqs_proj, axis=(1, 2)) / (2 * np.pi)
+        plaqs_proj = project_angle(plaqs)
+        charges = np.sum(plaqs_proj, axis=(1, 2)) / TWO_PI
 
         return Observables(plaqs, avg_plaqs, charges)
+
+    def _calc_observables1(self, x, n_fft=0, loop_sizes=None):
+        """"Calculate quantities of interest from `x`."""
+        if loop_sizes is None:
+            loop_sizes = [1]
+
+        p_arr = []
+        pavg_arr = []
+        q_arr = []
+        for loop_size in loop_sizes:
+            p = self.lattice.calc_plaq_sums_np(x, loop_size)
+            pavg = np.mean(p, axis=(1, 2))
+            #  nlp = self.lattice.num_plaqs
+            #  pavg = np.sum(np.cos(plaqs), axis=(1, 2)) / nlp
+            pp = project_angle(p)
+            q = np.sum(pp, axis=(1, 2)) / TWO_PI
+
+            #  if n_fft > 0:  # project angle using FFT
+            #      pp = project_angle_fft(p, n=n_fft)
+            #  else:
+            #      pp = np.sin(p)
+
+            p_arr.append(p)
+            q_arr.append(q)
+            pavg_arr.append(pavg)
+
+        obs = Observables(np.array(p_arr), np.array(pavg_arr), np.array(q_arr))
+
+        return obs
 
     def calc_losses(self, mc_observables, accept_prob):
         """Calc charge and plaquette losses.
@@ -366,6 +400,7 @@ class RunnerNP:
         dp = accept_prob * np.sum(dp_, axis=(1, 2))
         # get expected value of the charge difference squared
         dq = accept_prob * (obs_prop.charges - obs_init.charges) ** 2
+        #  dq = np.sum(dq, axis=0)
 
         # scale by weight values
         ploss = -dp / self._plaq_weight
@@ -456,9 +491,9 @@ class RunnerNP:
 
         outputs = {
             'data_str': data_str,
-            'mc_states': mc_s,   # MonteCarloStates (State; init, prop, out)
-            'accept_prob': px,   # acceptance probabilities
-            'sld_states': sld_s, # MonteCarloStates (sumlogdet)
+            'mc_states': mc_s,    # MonteCarloStates (State; init, prop, out)
+            'accept_prob': px,    # acceptance probabilities
+            'sld_states': sld_s,  # MonteCarloStates (sumlogdet)
             'state_diff_r': state_diff_r,  # State(x=xdiff_r, v=vdiff_r, _)
             'mc_energies': mc_energies,    # MonteCarloStates (Energy)
             'exp_energy_diff': exp_energy_diff,  # exp(H_out - H_init)
@@ -466,7 +501,7 @@ class RunnerNP:
             'charge_loss': qloss,        # charge loss
             'mc_observables': mc_obs,    # MonteCarloStates (Observables)
             'plaq_change': dp,           # 2 * (1 - cos(p_out - p_init))
-            'charge_change': dq,         #  q_out - q_init
+            'charge_change': dq,         # q_out - q_init
             'plaqs_diffs': plaqs_diffs,  # difference b/t actual and expected
         }
 

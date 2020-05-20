@@ -18,13 +18,12 @@ import os
 import shutil
 
 import numpy as np
-import pandas as pd
 import matplotlib as mpl
 
 import utils.file_io as io
 
-from config import NET_WEIGHTS_HMC, NET_WEIGHTS_L2HMC, NetWeights
-from runners.runner_np import RunConfig, RunnerNP, RunParams
+from config import NET_WEIGHTS_HMC, NetWeights
+from runners.runner_np import RunnerNP, RunParams
 from plotters.inference_plots import inference_plots
 from utils.file_io import timeit
 from utils.parse_inference_args_np import parse_args as parse_inference_args
@@ -32,6 +31,9 @@ from utils.parse_inference_args_np import parse_args as parse_inference_args
 mpl.rcParams['axes.formatter.limits'] = -4, 4
 
 SEPERATOR = 80 * '-'
+
+# pylint:disable=invalid-name
+
 
 def _load_configs(src_dir):
     names = ['dynamics_config.z', 'network_config.z', 'master_config.z']
@@ -41,7 +43,9 @@ def _load_configs(src_dir):
     }
     return cfgs
 
+
 def load_configs(log_dir=None):
+    """Load configs from `log_dir`."""
     try:
         cfgs = _load_configs(log_dir)
     except FileNotFoundError:
@@ -53,14 +57,15 @@ def load_configs(log_dir=None):
 
 
 def run_hmc(args, run_steps):
-    net_weights = NetWeights(
-        x_scale=args.x_scale_weight,
-        x_translation=args.x_translation_weight,
-        x_transformation=args.x_transformation_weight,
-        v_scale=args.v_scale_weight,
-        v_translation=args.v_translation_weight,
-        v_transformation=args.v_transformation_weight
-    )
+    """Run generic HMC."""
+    #  net_weights = NetWeights(
+    #      x_scale=args.x_scale_weight,
+    #      x_translation=args.x_translation_weight,
+    #      x_transformation=args.x_transformation_weight,
+    #      v_scale=args.v_scale_weight,
+    #      v_translation=args.v_translation_weight,
+    #      v_transformation=args.v_transformation_weight
+    #  )
 
     run_params = RunParams(
         beta=args.beta,
@@ -111,12 +116,15 @@ def main(FLAGS):
 
     runner = RunnerNP(run_params, FLAGS.log_dir, model_type='GaugeModel')
 
-    if net_weights == NET_WEIGHTS_L2HMC:
-        x = run_hmc(FLAGS, 500)
-    else:
-        x = np.random.uniform(-np.pi, np.pi, size=runner.config.input_shape)
+    #  if net_weights == NET_WEIGHTS_L2HMC:
+    #      x = run_hmc(FLAGS, 500)
+    #  else:
+    #      train_state = io.loadz(os.path.join(runner.config.log_dir,
+    #                                          'training', 'current_state.z'))
+    #      x = train_state['x_in'][:FLAGS.batch_size, :]
 
-    run_data = runner.inference(x=x) # run_data t
+    x = np.random.uniform(-np.pi, np.pi, size=runner.config.input_shape)
+    run_data = runner.inference(x=x)
 
     _, _, fig_dir = inference_plots(run_data,
                                     runner.config.train_params,
