@@ -359,42 +359,24 @@ class GaugeModel(BaseModel):
 
     def _charge_loss(self, plaqs_init, plaqs_prop, prob, eps=1e-4):
         """Calculate the contribution to the loss from the charge diffs."""
-        #  q_init = self._top_charge(plaqs_init)
-        #  q_prop = self._top_charge(plaqs_prop)
-        #  q_init = self._top_charge_fft(plaqs_init, n=10)
-        #  q_prop = self._top_charge_fft(plaqs_prop, n=10)
-        #  q_init = self._top_charge(plaqs_init)
-        #  q_prop = self._top_charge(plaqs_prop)
-        #  dq = tf.math.abs(q_prop - q_init)
         q_init = tf.reduce_sum(tf.math.sin(plaqs_init), axis=(1, 2)) / TWO_PI
         q_prop = tf.reduce_sum(tf.math.sin(plaqs_prop), axis=(1, 2)) / TWO_PI
         dq = prob * (q_prop - q_init) ** 2
-        qloss = self._charge_weight / dq - dq / self._charge_weight
-        #  dq = -prob * (q_prop - q_init) ** 2 / self._charge_weight
+        qloss = -(dq / self._charge_weight)
 
-        #  dq = q_prop - q_init
-        #  charge_loss = - prob * (q_prop - q_init) ** 2 / self._charge_weight
-        #  dq = prob * (q_prop - q_init) ** 2 + eps
-        #  charge_loss (= self._charge_weight / dq
-        # - 10 * dq / self._charge_weight)
-        #  charge_loss = - dq / self._charge_weight
-        #  charge_loss = - dq / self._charge_weight
-
-        #  return tf.reduce_mean(charge_loss, axis=0), dq
-        #  return tf.reduce_sum(charge_loss, axis=0) / self.batch_size, dq
         qloss = tf.reduce_sum(qloss, axis=0) / self.batch_size
 
         return qloss, q_init, q_prop
 
     def _plaq_loss(self, plaqs_init, plaqs_prop, prob, eps=1e-4):
         """Calculate the expected plaquette differences b/t `x1` and `x2`."""
-        plaqs_diff = 1. - tf.cos(plaqs_prop - plaqs_init)
-        dplaq = prob * tf.reduce_sum(plaqs_diff, axis=(1, 2)) + eps
-        plaq_loss = self._plaq_weight / dplaq - dplaq / self._plaq_weight
+        plaqs_diff = 2. * (1. - tf.cos(plaqs_prop - plaqs_init))
+        dplaq = - prob * tf.reduce_sum(plaqs_diff, axis=(1, 2))
+        ploss = - dplaq / self._plaq_weight
 
-        return tf.reduce_mean(plaq_loss, axis=0)
+        return tf.reduce_mean(ploss, axis=0)
 
-    def plaq_loss(self, xdata, zdata, eps=1e-4):
+    def gauge_loss(self, xdata, zdata, eps=1e-4):
         """Calculate the loss due to the plaquette and charge differences."""
         xp0 = self._plaq_sums(xdata.init)
         xp1 = self._plaq_sums(xdata.proposed)
@@ -456,7 +438,7 @@ class GaugeModel(BaseModel):
         bp = self._plaq_weight > 0
         if bq or bp:
             #  ploss, qloss, q_init = self.gauge_loss(*xdata)
-            ploss, qloss, q_init, q_prop = self.plaq_loss(xdata, zdata, eps)
+            ploss, qloss, q_init, q_prop = self.gauge_loss(xdata, zdata, eps)
             #  dq = tf.abs(q_out - q_init)
             #  if self.aux_weight > 0:
             #      ploss_, qloss_, _ = self.gauge_loss(*zdata)
