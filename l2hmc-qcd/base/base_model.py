@@ -504,7 +504,7 @@ class BaseModel:
 
         with tf.name_scope('inputs'):
             if not tf.executing_eagerly():
-                x_shape = (None, self.x_dim)
+                x_shape = (self.batch_size, self.x_dim)
                 x = make_ph(dtype=TF_FLOAT, shape=x_shape, name='x')
                 beta = make_ph('beta')
                 x_scale_weight = make_ph('x_scale_weight')
