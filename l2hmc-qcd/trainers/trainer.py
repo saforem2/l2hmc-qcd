@@ -144,11 +144,14 @@ class Trainer:
             outputs['x_out'] = convert_to_angle(outputs['x_out'])
             #  dq = outputs['dq']
             #  charge_diff, qstr = self._calc_charge_diff(outputs)
-            qstr = f"{np.sum(np.around(outputs['dq'])):^11.4g}"
-            data_str += qstr
+            data_str += f"{np.sum(np.around(outputs['dq_prop'])):^11.4g}"
+            data_str += f"{np.sum(np.around(outputs['dq_out'])):^11.4g}"
+            #  data_str += dqp_str
+            #  data_str
+            #  data_str += qstr
 
             plaq_diff = u1_plaq_exact(beta) - outputs['plaqs']
-            data_str += f"{np.mean(plaq_diff):>11.4g} "
+            data_str += f"{np.mean(plaq_diff):^11.4g} "
 
         return outputs, data_str
 
