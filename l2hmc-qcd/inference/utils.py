@@ -22,10 +22,19 @@ def set_eps(sess, eps):
         eps (float): Desired step size.
     """
     graph = tf.get_default_graph()
-    eps_setter = graph.get_operation_by_name('init/eps_setter')
-    inputs = tf.get_collection('inputs')
-    eps_tensor = [i for i in tf.global_variables() if 'eps' in i.name][0]
-    eps_ph = [i for i in inputs if 'eps_ph' in i.name][0]
+    try:
+        #  eps_setter = graph.get_operation_by_name('eps_setter')
+        ops = graph.get_operations()
+        eps_setter = [i for i in ops if 'eps_setter' in i.name][0]
+        #  inputs = tf.get_collection('inputs')
+        eps_tensor = [i for i in tf.global_variables() if 'eps' in i.name][0]
+        #  eps_ph = [i for i in tf.global_variables() if 'eps_ph' in i.name][0]
+        eps_ph = [
+            i for i in graph.get_collection('inputs') if 'eps_ph' in i.name
+        ][0]
+
+    except:
+        import pudb; pudb.set_trace()
 
     eps_np = sess.run(eps_tensor)
     io.log(f'INFO: Original value of `eps`: {eps_np}')
@@ -109,7 +118,7 @@ def hamiltonian(x, beta, v, potential_fn):
 def calc_energies(state_init, state_proposed, state_out):
     """calculate the Hamiltonian and PE/KE for each state above.
 
-    NOTE: 
+    NOTE:
         - `State` is a namedtuple of the form (x, v, beta).
 
         - `EnergyData` is a namedtuple of the form ('init', 'proposed', out')
