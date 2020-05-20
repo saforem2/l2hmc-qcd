@@ -161,10 +161,10 @@ class GaugeModel(BaseModel):
         self.metric_fn = lambda x, y: 2. * (1. - tf.math.cos(y - x))
         xdata, zdata = self._build_sampler()
 
-        largest_wilson_loop = self.params.get('largest_wilson_loop', 1)
-        n_arr = np.arange(largest_wilson_loop) + 1
-        self.gauge_loss = GaugeLoss(self._plaq_weight, self._charge_weight,
-                                    self._lattice_shape, n_arr=n_arr)
+        #  largest_wilson_loop = self.params.get('largest_wilson_loop', 1)
+        #  n_arr = np.arange(largest_wilson_loop) + 1
+        #  self.gauge_loss = GaugeLoss(self._plaq_weight, self._charge_weight,
+        #                              self._lattice_shape, n_arr=n_arr)
 
         self.loss_op, self._losses_dict = self.calc_loss(xdata, zdata)
         self.grads = self._calc_grads(self.loss_op)
@@ -200,8 +200,8 @@ class GaugeModel(BaseModel):
                                    self.lattice.time_size,
                                    self.lattice.space_size, 2)
 
-            self.loss = GaugeLoss(self._plaq_weight, self._charge_weight,
-                                  self._lattice_shape, n_arr=[1, 2, 3])
+            #  self.loss = GaugeLoss(self._plaq_weight, self._charge_weight,
+            #                        self._lattice_shape, n_arr=[1, 2, 3])
             # ************************************************
             # Build inputs and their respective placeholders
             # ------------------------------------------------
@@ -229,12 +229,18 @@ class GaugeModel(BaseModel):
             self.q_out = self._top_charge(
                 self._plaq_sums(self.train_ops['x_out'])
             )
-            self.dq = tf.abs(self.q_out - self._losses_dict['q_init'])
+            self.q_init = self._losses_dict['q_init']
+            self.q_prop = self._losses_dict['q_prop']
+            self.dq_prop = tf.math.abs(self.q_prop - self.q_init)
+            self.dq_out = tf.math.abs(self.q_out - self.q_init)
+            #  self.dq = tf.abs(self.q_out - self._losses_dict['q_init'])
 
             extra_train_ops = {
                 'plaqs': self.plaqs,
                 'charges': self.charges,
-                'dq': self.dq,
+                'dq_prop': self.dq_prop,
+                'dq_out': self.dq_out,
+                #  'dq': self.dq,
                 #  'dq': self._losses_dict['dq'],
                 #  'dq': self.charges_diff,
             }
@@ -347,44 +353,32 @@ class GaugeModel(BaseModel):
         return tf.reduce_sum(1. - tf.cos(plaqs), axis=(1, 2), name='action')
 
     @staticmethod
-    def _top_charge_fft_np(plaq_sums, n=10):
-        """Calculate the topological charge using the FFT instead of `sin`."""
-        plaq_sums = project_angle_fft(plaq_sums, n)
-        return np.sum(plaq_sums, axis=(1, 2)) / (2 * np.pi)
-
-    @staticmethod
-    def _top_charge_fft(plaq_sums, n=10):
-        """Calculate the topological charge using the FFT instead of `sin`."""
-        plaq_sums = project_angle_fft(plaq_sums, n)
-        return tf.reduce_sum(plaq_sums, axis=(1, 2)) / (2 * np.pi)
-
-    @staticmethod
-    def _top_charge_np(plaq_sums):
-        """Numpy version of `_top_charge`."""
-        return np.sum(np.sin(plaq_sums), axis=(1, 2)) / (2 * np.pi)
-
-    @staticmethod
     def _top_charge(plaq_sums):
         """Numpy version of `_top_charge`."""
-        return tf.reduce_sum(
-            tf.math.sin(plaq_sums), axis=(1, 2)
-        ) / (2 * np.pi)
+        return tf.reduce_sum(project_angle(plaq_sums), axis=(1, 2)) / TWO_PI
 
     def _charge_loss(self, plaqs_init, plaqs_prop, prob, eps=1e-4):
         """Calculate the contribution to the loss from the charge diffs."""
         #  q_init = self._top_charge(plaqs_init)
         #  q_prop = self._top_charge(plaqs_prop)
-        q_init = self._top_charge_fft(plaqs_init, n=10)
-        q_prop = self._top_charge_fft(plaqs_prop, n=10)
-        dq = tf.math.abs(q_prop - q_init)
-        charge_loss = - prob * dq ** 2 / self._charge_weight
+        #  q_init = self._top_charge_fft(plaqs_init, n=10)
+        #  q_prop = self._top_charge_fft(plaqs_prop, n=10)
+        q_init = self._top_charge(plaqs_init)
+        q_prop = self._top_charge(plaqs_prop)
+        #  dq = tf.math.abs(q_prop - q_init)
+        dq = q_prop - q_init
+        charge_loss = - prob * (dq ** 2) / self._charge_weight
         #  dq = prob * (q_prop - q_init) ** 2 + eps
         #  charge_loss (= self._charge_weight / dq
         # - 10 * dq / self._charge_weight)
         #  charge_loss = - dq / self._charge_weight
         #  charge_loss = - dq / self._charge_weight
 
-        return tf.reduce_mean(charge_loss, axis=0), dq
+        #  return tf.reduce_mean(charge_loss, axis=0), dq
+        #  return tf.reduce_sum(charge_loss, axis=0) / self.batch_size, dq
+        qloss = tf.reduce_sum(charge_loss, axis=0) / self.batch_size
+
+        return qloss, q_init, q_prop
 
     def _plaq_loss(self, plaqs_init, plaqs_prop, prob, eps=1e-4):
         """Calculate the expected plaquette differences b/t `x1` and `x2`."""
@@ -409,16 +403,15 @@ class GaugeModel(BaseModel):
             if self.aux_weight > 0:
                 plaq_loss += self._plaq_loss(zp0, zp1, zdata.prob, eps)
 
-        dq = 0.
         charge_loss = tf.cast(0., TF_FLOAT)
         if self._charge_weight > 0:
-            qloss, dq = self._charge_loss(xp0, xp1, xdata.prob, eps)
-            charge_loss += qloss
+            qxl, q_init, q_prop = self._charge_loss(xp0, xp1, xdata.prob, eps)
+            charge_loss += qxl
             if self.aux_weight > 0:
-                qloss, dq = self._charge_loss(zp0, zp1, zdata.prob, eps)
-                charge_loss += qloss
+                qzl, _, _ = self._charge_loss(zp0, zp1, zdata.prob, eps)
+                charge_loss += qzl
 
-        return plaq_loss, charge_loss, dq
+        return plaq_loss, charge_loss, q_init, q_prop
 
     @staticmethod
     def _gauge_esjd(x1, x2, prob, eps=1e-4):
@@ -456,12 +449,13 @@ class GaugeModel(BaseModel):
         bq = self._charge_weight > 0
         bp = self._plaq_weight > 0
         if bq or bp:
-            ploss, qloss, q_init = self.gauge_loss(*xdata)
+            #  ploss, qloss, q_init = self.gauge_loss(*xdata)
+            ploss, qloss, q_init, q_prop = self.plaq_loss(xdata, zdata, eps)
             #  dq = tf.abs(q_out - q_init)
-            if self.aux_weight > 0:
-                ploss_, qloss_, _ = self.gauge_loss(*zdata)
-                ploss += ploss_
-                qloss += qloss_
+            #  if self.aux_weight > 0:
+            #      ploss_, qloss_, _ = self.gauge_loss(*zdata)
+            #      ploss += ploss_
+            #      qloss += qloss_
 
         ld = {
             'std': sloss,
@@ -482,7 +476,9 @@ class GaugeModel(BaseModel):
             losses_dict[f'{fk}_frac'] = fv
             tf.add_to_collection('losses', lv)
 
-        #  losses_dict['dq'] = dq
         losses_dict['q_init'] = q_init
+        losses_dict['q_prop'] = q_prop
+        #  losses_dict['dq'] = dq
+        #  losses_dict['q_init'] = q_init
 
         return total_loss, losses_dict
