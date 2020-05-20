@@ -27,10 +27,7 @@ import seaborn as sns
 import tensorflow as tf
 import matplotlib.style as mplstyle
 
-try:
-    import utils.file_io as io
-except:
-    import pudb; pudb.set_trace()
+import utils.file_io as io
 
 from config import (Energy, NET_WEIGHTS_HMC, NET_WEIGHTS_L2HMC, NetWeights,
                     State)
@@ -235,11 +232,14 @@ class RunData:
         }
         return tunn_stats
 
-    def save(self, run_dir):
+    def save(self, run_dir, save_samples=False):
         """Save `self.data` to `run_dir`."""
         io.check_else_make_dir(run_dir)
         io.save_dict(self.run_params, run_dir, name='run_params')
         for key, val in self.data.items():
+            if key == 'x_out' and not save_samples:
+                continue
+
             out_file = os.path.join(run_dir, f'{key}.z')
             io.savez(np.array(val), out_file, name=key)
 
