@@ -363,11 +363,17 @@ class GaugeModel(BaseModel):
         #  q_prop = self._top_charge(plaqs_prop)
         #  q_init = self._top_charge_fft(plaqs_init, n=10)
         #  q_prop = self._top_charge_fft(plaqs_prop, n=10)
-        q_init = self._top_charge(plaqs_init)
-        q_prop = self._top_charge(plaqs_prop)
+        #  q_init = self._top_charge(plaqs_init)
+        #  q_prop = self._top_charge(plaqs_prop)
         #  dq = tf.math.abs(q_prop - q_init)
-        dq = q_prop - q_init
-        charge_loss = - prob * (dq ** 2) / self._charge_weight
+        q_init = tf.reduce_sum(tf.math.sin(plaqs_init), axis=(1, 2)) / TWO_PI
+        q_prop = tf.reduce_sum(tf.math.sin(plaqs_prop), axis=(1, 2)) / TWO_PI
+        dq = prob * (q_prop - q_init) ** 2
+        qloss = self._charge_weight / dq - dq / self._charge_weight
+        #  dq = -prob * (q_prop - q_init) ** 2 / self._charge_weight
+
+        #  dq = q_prop - q_init
+        #  charge_loss = - prob * (q_prop - q_init) ** 2 / self._charge_weight
         #  dq = prob * (q_prop - q_init) ** 2 + eps
         #  charge_loss (= self._charge_weight / dq
         # - 10 * dq / self._charge_weight)
@@ -376,7 +382,7 @@ class GaugeModel(BaseModel):
 
         #  return tf.reduce_mean(charge_loss, axis=0), dq
         #  return tf.reduce_sum(charge_loss, axis=0) / self.batch_size, dq
-        qloss = tf.reduce_sum(charge_loss, axis=0) / self.batch_size
+        qloss = tf.reduce_sum(qloss, axis=0) / self.batch_size
 
         return qloss, q_init, q_prop
 
