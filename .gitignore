@@ -340,3 +340,27 @@ TSWLatexianTemp*
 # option is specified. Footnotes are the stored in a file with suffix Notes.bib.
 # Uncomment the next line to have this generated file ignored.
 #*Notes.bib
+
+
+*.z
+*.bak*
+*.ipynb_checkpoints
+l2hmc-qcd/notebooks/*.png
+timeline.json
+.env
+.vim
+charge_fft_compare.png
+doc/Makefile
+doc/autocorrelation_plots_vimtex_selected.pdf
+doc/autocorrelation_plots_vimtex_selected.tex
+doc/unused_files.txt
+doc/used_files.txt
+l2hmc-qcd/network/new
+l2hmc-qcd/base/base_model1.py
+l2hmc-qcd/base/base_model_new.py
+l2hmc-qcd/models/gauge_model_new.py
+l2hmc-qcd/runners/run_data_new.py
+l2hmc-qcd/runners/runner_np1.py
+l2hmc-qcd/runners/runner_tf.py
+l2hmc-qcd/args/.env
+args/params.z
