@@ -97,7 +97,8 @@ def calc_tunneling_rate(charges):
 
 def therm_arr(arr, therm_frac=0.2, ret_steps=True):
     """Drop first `therm_frac` steps of `arr` to account for thermalization."""
-    step_axis = np.argmax(arr.shape)
+    #  step_axis = np.argmax(arr.shape)
+    step_axis = 0
     num_steps = arr.shape[step_axis]
     therm_steps = int(therm_frac * num_steps)
     arr = np.delete(arr, np.s_[:therm_steps], axis=step_axis)

@@ -17,6 +17,7 @@ import os
 import sys
 import time
 import shlex
+import pandas as pd
 import pickle
 import shutil
 import argparse
@@ -41,6 +42,9 @@ from plotters.inference_plots import traceplot_posterior
 
 mplstyle.use('fast')
 sns.set_palette('bright')
+np.set_printoptions(precision=3, linewidth=160,
+                    edgeitems=15, suppress=True, threshold=np.inf)
+
 
 
 def _get_eps():
@@ -126,7 +130,7 @@ class RunData:
     def update(self, step, new_data, data_str):
         """Update `self.data` with `new_data` and aggregate `data_str`."""
         for key, val in new_data.items():
-            if key == 'x_out' and not self._save_samples:
+            if key in ['x_out', 'plaq_sums'] and not self._save_samples:
                 continue
             try:
                 self.data[key].append(val)
@@ -251,7 +255,7 @@ class RunData:
         io.check_else_make_dir(run_dir)
         io.save_dict(self.run_params, run_dir, name='run_params')
         for key, val in self.data.items():
-            if key == 'x_out' and not save_samples:
+            if key in ['x_out', 'plaq_sums'] and not save_samples:
                 continue
 
             out_file = os.path.join(run_dir, f'{key}.z')
@@ -282,23 +286,43 @@ class RunData:
         def log(s):
             io.log_and_write(s, out_file)
 
-        key_str = f"< {key} > = {np.mean(val):.6g}"
-        sep = uline(key_str)
-        val_str = f"    {val}"
-        std_str = ''
+        df = pd.DataFrame({})
+        stat_str = f"< {key} > = {np.mean(val):.6g}"
         if std is not None:
-            key_std_str = f" +/- {np.mean(std):.6g}"
-            key_str += key_std_str
-            sep += uline(key_std_str)
-            std_str = f" +/- {std}"
+            stat_str += f" +/- {np.mean(std):.6g}"
+            #  stat_str += stat_err_str
+            #  sep += uline(stat_err_str)
+            df = pd.DataFrame({'avg': val, 'err': std})
+            val_str = df.to_string()
+            #  val_str = f'{np.round(list(zip(val, std)), 3)}'
+        else:
+            val_str = f"{np.round(val, 3)}"
+            #  err_str = ''
+            #  err_str = f" +/- {std}"
 
-        log(key_str)
-        log(sep)
-        log(val_str)
-        log(std_str)
+        #  sep = uline(stat_str)
+        #  log(stat_str)
+        #  log(uline(stat_str))
+        #  log(val_str)
+        #  log('\n')
+        #  log(err_str)
+        log('\n'.join([stat_str, uline(stat_str), val_str, '\n']))
+
+
+    def _log_stat(self, out_file, key, val, calc_stats=False, n_boot=10000):
+        """Log/write all stats to `out_file`."""
+        #  for key, val in data_dict.items():
+        if calc_stats:
+            means, stds = self._calc_stats(val, n_boot=n_boot)
+            self._log_write_stat(out_file, key, means, std=stds)
+        else:
+            self._log_write_stat(out_file, key, val)
+
+        io.log_and_write('\n', out_file)
 
     def _log_stats(self, therm_data, tunn_stats, out_file, n_boot=100):
         """Log/write all stats in `therm_data` and `tunn_stats`."""
+
         for key, val in tunn_stats.items():
             self._log_write_stat(out_file, key, val)
 
@@ -307,9 +331,9 @@ class RunData:
             self._log_write_stat(out_file, key, means, std=stds)
             io.log_and_write('\n', out_file)
 
-    def log_summary(self, out_file, n_boot=10):
+    def log_summary(self, out_dir, n_boot=10):
         """Create human-readable summary of inference run."""
-        io.log(f'Writing run summary statistics to {out_file}.\n')
+        io.log(f'Writing run summary statistics to {out_dir}.\n')
         data = {
             'accept_prob': self.data['accept_prob'],
             'charges': self.data['charges'],
@@ -318,12 +342,24 @@ class RunData:
         }
         therm_data = self.thermalize_data(data)
         tunn_stats = self.calc_tunneling_stats(therm_data['charges'])
-        io.log_and_write(80*'-' + '\n\n', out_file)
-        self._log_stats(therm_data, tunn_stats, out_file, n_boot=n_boot)
 
-        io.log_and_write(120 * '=' + '\n', out_file)
+        tunn_file = os.path.join(out_dir, 'tunneling_stats.txt')
+        io.log_and_write(80*'-' + '\n\n', tunn_file)
+        for key, val in tunn_stats.items():
+            self._log_stat(tunn_file, key, val,
+                           calc_stats=False, n_boot=n_boot)
 
-        return therm_data, tunn_stats
+        out_files = [tunn_file]
+        for key, val in therm_data.items():
+            out_file = os.path.join(out_dir, f'{key}.txt')
+            self._log_stat(out_file, key, val,
+                           calc_stats=True, n_boot=n_boot)
+            out_files.append(out_file)
+
+        #  self._log_stats(therm_data, tunn_stats, tunn_file, n_boot=n_boot)
+        #  io.log_and_write(120 * '=' + '\n', out_file)
+
+        return therm_data, tunn_stats, out_files
 
 
 class RunnerTF:
