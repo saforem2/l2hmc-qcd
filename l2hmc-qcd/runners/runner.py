@@ -14,13 +14,8 @@ Author: Sam Foreman (github: @saforem2)
 Date: 04/09/2019
 """
 import os
-import sys
 import time
-import shlex
 import pandas as pd
-import pickle
-import shutil
-import argparse
 
 import numpy as np
 import xarray as xr
@@ -30,8 +25,8 @@ import matplotlib.style as mplstyle
 
 import utils.file_io as io
 
-from config import (Energy, NET_WEIGHTS_HMC, NET_WEIGHTS_L2HMC, NetWeights,
-                    State)
+from utils.attr_dict import AttrDict
+from config import Energy, NET_WEIGHTS_HMC, NET_WEIGHTS_L2HMC, NetWeights
 from inference.utils import set_eps
 from loggers.run_logger import RunLogger
 from utils.distributions import GMM
@@ -45,6 +40,8 @@ sns.set_palette('bright')
 np.set_printoptions(precision=3, linewidth=160,
                     edgeitems=15, suppress=True, threshold=np.inf)
 
+PI = np.pi
+TWO_PI = 2 * PI
 
 
 def _get_eps():
@@ -112,6 +109,41 @@ def find_params(log_dir=None):
     raise FileNotFoundError('Unable to locate `params` file.')
 
 
+def get_thermalized_config(log_dir, beta):
+    """Get thermalized configuration by running HMC until `plaq_err < 0.1`."""
+    tf.reset_default_graph()
+    args = AttrDict({
+        'hmc': True,
+        'eps': None,
+        'beta': beta,
+        'log_dir': log_dir,
+        'batch_size': None,
+        'run_steps': -1,
+        'plot_chains': -1,
+        'print_steps': 100,
+    })
+
+    runner = RunnerTF(args)
+    run_data = RunData(runner.run_params, save_samples=True)
+    x = np.random.uniform(low=-PI, high=PI,
+                          size=(runner.batch_size, runner.xdim))
+    step = 0
+    plaq_err = 100  # any value > 0 for now
+    print(run_data.header)
+    while plaq_err > 0.1:
+        outputs, data_str = runner.run_step(step, x, run_data)
+        x = outputs['x_out']
+        run_data.update(step, outputs, data_str)
+        plaq_err = np.mean(calc_plaqs_diffs(outputs['plaqs'], beta))
+        step += 1
+        if step > 1000:
+            break
+
+    tf.reset_default_graph()
+
+    return x
+
+
 # pylint:disable=invalid-name
 class RunData:
     """Container object for holding / dealing with data from inference run."""
@@ -175,7 +207,7 @@ class RunData:
         plot_data = {
             'accept_prob': self.data['accept_prob'],
             'sumlogdet_out': self.data['sumlogdet_out'],
-            'charges': self.data['charges'],
+            'charges': np.around(self.data['charges']),
             'plaqs_err': calc_plaqs_diffs(np.array(self.data['plaqs']),
                                           self.run_params['beta'])
         }
@@ -526,74 +558,3 @@ class RunnerTF:
             run_data.update(step, outputs, data_str)
 
         return run_data
-
-
-def parse_args():
-    """Parse command line arguments."""
-    parser = argparse.ArgumentParser(
-        description='Run inference on trained model using tensorflow.',
-        fromfile_prefix_chars='@',
-    )
-    parser.add_argument('--beta', dest='beta',
-                        required=False, default=None,
-                        help=("""Value of `beta` at which to run
-                              inference."""))
-    parser.add_argument('--log_dir', dest='log_dir',
-                        required=False, default=None,
-                        help=("""Log dir containing saved model
-                              checkpoints."""))
-    parser.add_argument('--eps', dest='eps',
-                        required=False, default=None,
-                        help=("""Step size (`eps`) to use in leapfrog
-                              integrator."""))
-    parser.add_argument('--batch_size', dest='batch_size',
-                        required=False, default=None,
-                        help=("""Batch size to use (# of chains to run in
-                              parallel."""))
-    parser.add_argument('--hmc', dest='hmc',
-                        required=False, action='store_true',
-                        help=("""Flag that when passed will run generic
-                              HMC."""))
-    parser.add_argument('--run_steps', dest='run_steps',
-                        required=False, default=10000,
-                        help=("""Number of inference steps to run."""))
-    parser.add_argument('--plot_chains', dest='plot_chains',
-                        required=False, default=None,
-                        help=("""Number of chains to include when making
-                              plots."""))
-    parser.add_argument('--print_steps', dest='print_steps',
-                        required=False, default=10,
-                        help=("""Frequency with which to print data."""))
-
-    if sys.argv[1].startswith('@'):
-        args = parser.parse_args(shlex.split(open(sys.argv[1][1:]).read(),
-                                             comments=True))
-    else:
-        args = parser.parse_args()
-
-    return args
-
-
-def main(FLAGS):
-    """Main method."""
-    runner = RunnerTF(FLAGS)
-    run_data = runner.inference(FLAGS.run_steps)
-    run_data.plot(runner.fig_dir, runner.title_str,
-                  num_chains=FLAGS.plot_chains)
-    out_file = os.path.join(runner.fig_dir, 'run_summary.txt')
-    _, _ = run_data.log_summary(out_file=out_file, n_boot=10)
-
-    if not FLAGS.dont_save:
-        run_data.save(run_dir=runner.run_dir)
-
-    _ = shutil.copy2(out_file, runner.run_dir)
-
-    return run_data
-
-
-if __name__ == '__main__':
-    CLI_FLAGS = parse_args()
-    for key, val in CLI_FLAGS.__dict__.items():
-        io.log(f'{key}: {val}\n')
-
-    _ = main(CLI_FLAGS)
