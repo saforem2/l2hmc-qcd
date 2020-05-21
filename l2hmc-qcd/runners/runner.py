@@ -429,14 +429,14 @@ class RunnerTF:
         lf = params['num_steps']
         bs = params['batch_size']
         rs = self.run_steps
-        beta = self.beta
-        eps = self.eps
+        beta = str(self.beta).replace('.', '')
+        eps = f'{self.eps:.2g}'.replace('.', '')
         nw = self.net_weights
         tstr = io.get_timestr()
         tstr = tstr['timestr']
         nwstr = ''.join([str(int(i)) for i in self.net_weights])
         run_str = (f'lf{lf}_bs{bs}_steps{rs}_beta{beta}'
-                   f'_eps{eps:.2g}_nw{nwstr}__{tstr}')
+                   f'_eps{eps}_nw{nwstr}__{tstr}')
 
         return run_str
 
