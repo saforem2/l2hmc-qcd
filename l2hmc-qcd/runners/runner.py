@@ -395,13 +395,17 @@ class RunData:
 
 
 class RunnerTF:
-    def __init__(self, FLAGS):
+    def __init__(self, FLAGS, restore=True, sess=None):
         params = find_params(FLAGS.log_dir)
         self.params = params
         log_dir = params['log_dir'] if FLAGS.log_dir is None else FLAGS.log_dir
         self.log_dir = log_dir
 
-        self.sess = self.restore()
+        if restore:
+            self.sess = self.restore()
+        else:
+            self.sess = sess
+
         self.run_ops = get_run_ops()
         self.obs_ops = get_obs_ops()
         self.inputs = get_inputs()
