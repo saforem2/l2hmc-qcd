@@ -59,7 +59,6 @@ def parse_args():
                         help=("""Frequency with which to print data."""))
 
     parser.add_argument('--dont_save', dest='dont_save',
-
                         required=False, action='store_true',
                         help=("""Flag that when passed prevents run data from
                               being saved."""))
