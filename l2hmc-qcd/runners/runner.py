@@ -111,7 +111,8 @@ def find_params(log_dir=None):
 # pylint:disable=invalid-name
 class RunData:
     """Container object for holding / dealing with data from inference run."""
-    def __init__(self, run_params):
+    def __init__(self, run_params, save_samples=False):
+        self._save_samples = save_samples
         self.run_params = run_params
         self.print_steps = run_params['print_steps']
 
@@ -125,6 +126,8 @@ class RunData:
     def update(self, step, new_data, data_str):
         """Update `self.data` with `new_data` and aggregate `data_str`."""
         for key, val in new_data.items():
+            if key == 'x_out' and not self._save_samples:
+                continue
             try:
                 self.data[key].append(val)
             except KeyError:
@@ -147,11 +150,14 @@ class RunData:
             cond2 = (val == [])
             if cond1 or cond2:
                 continue
-            arr, steps = therm_arr(np.array(val), therm_frac=therm_frac)
+
+            val = np.array(val)
+            if num_chains is not None:
+                val = val[:, :num_chains]
+
+            arr, steps = therm_arr(val, therm_frac=therm_frac)
             therm_data[key] = arr
             arr = arr.T
-            if num_chains is not None:
-                arr = arr[:num_chains]
             chains = np.arange(arr.shape[0])
             d[key] = xr.DataArray(arr, dims=['chain', 'draw'],
                                   coords=[chains, steps])
@@ -178,6 +184,7 @@ class RunData:
     def plot(self, fig_dir, title_str, **kwargs):
         """Make inference plot from `self.data`."""
         data = self.build_dataset(**kwargs)
+        io.check_else_make_dir(fig_dir)
         traceplot_posterior(data, '', fname='run_data',
                             fig_dir=fig_dir, title_str=title_str)
 
@@ -346,8 +353,8 @@ class RunnerTF:
         self.run_str = self.get_run_str(params)
         self.run_dir = os.path.join(self.log_dir, 'runs_tf', self.run_str)
         self.fig_dir = os.path.join(self.log_dir, 'figures_tf', self.run_str)
-        io.check_else_make_dir(self.run_dir)
-        io.check_else_make_dir(self.fig_dir)
+        #  io.check_else_make_dir(self.run_dir)
+        #  io.check_else_make_dir(self.fig_dir)
 
         self.ops_dict = {
             'x_out': self.run_ops['x_out'],
@@ -371,16 +378,12 @@ class RunnerTF:
         """Restore from checkpoint."""
         if log_dir is None:
             log_dir = self.log_dir
-        import pudb; pudb.set_trace()
         config = tf.ConfigProto(allow_soft_placement=True)
         sess = tf.Session(config=config)
         ckpt_dir = os.path.join(log_dir, 'checkpoints')
-        try:
-            ckpt_file = tf.train.latest_checkpoint(ckpt_dir)
-            saver = tf.train.import_meta_graph(f'{ckpt_file}.meta')
-            saver.restore(sess, ckpt_file)
-        except:
-            import pudb; pudb.set_trace()
+        ckpt_file = tf.train.latest_checkpoint(ckpt_dir)
+        saver = tf.train.import_meta_graph(f'{ckpt_file}.meta')
+        saver.restore(sess, ckpt_file)
 
         return sess
 
@@ -470,16 +473,16 @@ class RunnerTF:
 
         return out_dict, data_str
 
-    def inference(self, run_steps=None):
+    def inference(self, x=None, run_steps=None, save_samples=False):
         """Run inference."""
-        run_data = RunData(self.run_params)
-        print(run_data.header)
-
-        x = np.random.uniform(low=-np.pi, high=np.pi,
-                              size=(self.batch_size, self.xdim))
-
+        if x is None:
+            x = np.random.uniform(low=-np.pi, high=np.pi,
+                                  size=(self.batch_size, self.xdim))
         if run_steps is None:
             run_steps = self.run_steps
+
+        run_data = RunData(self.run_params, save_samples)
+        print(run_data.header)
 
         for step in range(run_steps):
             outputs, data_str = self.run_step(step, x, run_data)
