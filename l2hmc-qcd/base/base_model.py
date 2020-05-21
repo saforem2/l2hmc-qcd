@@ -355,21 +355,18 @@ class BaseModel:
 
     def _build_train_ops(self):
         """Build `train_ops` used for training the model."""
-        if self.hmc:
-            train_ops = {}
-        else:
-            train_ops = {
-                'loss_op': self.loss_op,
-                'train_op': self.train_op,
-                'x_out': self.x_out,
-                'dx_proposed': self.dx_proposed,
-                'dx_out': self.dx_out,
-                'sumlogdet': self.sumlogdet_out,
-                'exp_energy_diff': self.exp_energy_diff,
-                'px': self.px,
-                'lr': self.lr,
-                'dynamics_eps': self.dynamics.eps,
-            }
+        train_ops = {
+            'loss_op': self.loss_op,
+            'train_op': None if self.hmc else self.train_op,
+            'x_out': self.x_out,
+            'dx_proposed': self.dx_proposed,
+            'dx_out': self.dx_out,
+            'sumlogdet': self.sumlogdet_out,
+            'exp_energy_diff': self.exp_energy_diff,
+            'px': self.px,
+            'lr': self.lr,
+            'dynamics_eps': self.dynamics.eps,
+        }
 
         for val in train_ops.values():
             tf.add_to_collection('train_ops', val)
