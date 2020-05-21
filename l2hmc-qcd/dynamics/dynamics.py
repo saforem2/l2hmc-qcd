@@ -456,10 +456,11 @@ class Dynamics(tf.keras.Model):
         for _ in range(self.config.num_steps):
             # Need to use numpy.random here because tensorflow would generate
             # different random values across different calls.
-            _idx = np.arange(self.xdim)
-            idx = np.random.permutation(_idx)[:self.xdim // 2]
-            mask = np.zeros((self.xdim,))
-            mask[idx] = 1.
+            #  _idx = np.arange(self.xdim)
+            #  idx = np.random.permutation(_idx)[:self.xdim // 2]
+            #  mask = np.zeros((self.xdim,))
+            #  mask[idx] = 1.
+            mask = np.arange(self.xdim) % 2
             mask = tf.constant(mask, dtype=TF_FLOAT)
             masks.append(mask[None, :])
 
