@@ -11,7 +11,7 @@ import argparse
 
 import utils.file_io as io
 
-from runners.runner_tf import RunData, RunnerTF
+from runners.runner import RunData, RunnerTF
 
 
 def parse_args():
@@ -67,7 +67,7 @@ def parse_args():
 def main(FLAGS):
     """Main method."""
     runner = RunnerTF(FLAGS)
-    run_data = runner.inference(FLAGS.run_steps)
+    run_data = runner.inference(run_steps=FLAGS.run_steps)
     run_data.plot(runner.fig_dir, runner.title_str,
                   num_chains=FLAGS.plot_chains)
     out_file = os.path.join(runner.fig_dir, 'run_summary.txt')
