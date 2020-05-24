@@ -90,6 +90,7 @@ class BaseModelConfig:
 
     def _parse_params(self, params):
         """Parse `params` dictionary and set attributes from params."""
+        self.eps = float(params.get('eps', 0.2))
         self.num_steps = int(params.get('num_steps', 5))
         self.rand = params.get('rand', True)
         self.beta_init = params.get('beta_init', 1.)
@@ -218,6 +219,8 @@ class BaseModel:
         self.loss_weights = {}
         for key, val in self.params.items():
             if 'weight' in key:
+                if 'v_' in key or 'x_' in key:
+                    continue
                 self.loss_weights[key] = val
             else:
                 setattr(self, key, val)
@@ -357,7 +360,7 @@ class BaseModel:
         """Build `train_ops` used for training the model."""
         train_ops = {
             'loss_op': self.loss_op,
-            'train_op': None if self.hmc else self.train_op,
+            'train_op': self.train_op,
             'x_out': self.x_out,
             'dx_proposed': self.dx_proposed,
             'dx_out': self.dx_out,
@@ -440,9 +443,6 @@ class BaseModel:
 
     def _create_lr(self, warmup=False):
         """Create learning rate."""
-        if self.hmc:
-            return None
-
         lr_init = getattr(self, 'lr_init', 1e-3)
         with tf.name_scope('learning_rate'):
             # HOROVOD: When performing distributed training, it can be useful
