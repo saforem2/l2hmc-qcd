@@ -411,7 +411,7 @@ def _parse_gauge_flags(FLAGS):
     if flags_dict['zero_masks']:
         run_str += f'_zero_masks'
 
-    return run_str, flags_dict
+    return run_str
 
 
 def _parse_gmm_flags(FLAGS):
@@ -473,25 +473,25 @@ def _parse_gmm_flags(FLAGS):
     elif d['NL'] and not d['GL']:
         run_str += '_nl'
 
-    return run_str, d
+    return run_str
 
 
 def _parse_flags(FLAGS, model_type='GaugeModel'):
     """Helper method for parsing flags as both AttrDicts or generic dicts."""
     if model_type == 'GaugeModel':
-        run_str, out_dict = _parse_gauge_flags(FLAGS)
+        run_str = _parse_gauge_flags(FLAGS)
     elif model_type == 'GaussianMixtureModel':
-        run_str, out_dict = _parse_gmm_flags(FLAGS)
+        run_str = _parse_gmm_flags(FLAGS)
 
     if cfg.NP_FLOAT == np.float64:
         run_str += '_f64'
     elif cfg.NP_FLOAT == np.float32:
         run_str += '_f32'
 
-    return run_str, out_dict
+    return run_str
 
 
-def create_log_dir(FLAGS, **kwargs):
+def create_log_dir(FLAGS, model_type=None, log_file=None):
     """Automatically create and name `log_dir` to save model data to.
 
     The created directory will be located in `logs/YYYY_M_D/`, and will have
@@ -504,44 +504,32 @@ def create_log_dir(FLAGS, **kwargs):
 
     NOTE: If log_dir does not already exist, it is created.
     """
-    run_str = kwargs.get('run_str', True)
-    model_type = kwargs.get('model_type', 'GaugeModel')
-    log_file = kwargs.get('log_file', None)
-    root_dir = kwargs.get('root_dir', None)
-    if run_str:
-        run_str, flags_dict = _parse_flags(FLAGS, model_type)
-        _log_dir = getattr(flags_dict, '_log_dir', None)
-    else:
-        run_str = ''
-        _log_dir = None
+    model_type = 'GaugeModel' if model_type is None else model_type
+    run_str = _parse_flags(FLAGS, model_type)
+
+    if FLAGS.train_steps < 10000:
+        run_str = f'DEBUG_{run_str}'
 
     now = datetime.datetime.now()
     day_str = now.strftime('%Y_%m_%d')
     hour_str = now.strftime('%H%M')
+    run_str += f'_{hour_str}'
 
     project_dir = os.path.abspath(os.path.dirname(cfg.FILE_PATH))
+    log_dir = os.path.join(project_dir, FLAGS.root_dir, day_str, run_str)
+    if os.path.isdir(log_dir):
+        log_dir += '_1'
 
-    if _log_dir is None:
-        _dir = 'gauge_logs' if root_dir is None else root_dir
+    #  dirname = '_'.join([run_str, hour_str])
+    #  if os.path.isdir(os.path.join(project_dir, logs_dir, day_str, dirname)):
+    #      dirname += '_1'
 
-    else:
-        if root_dir is None:
-            _dir = _log_dir
-        else:
-            _dir = os.path.join(_log_dir, root_dir)
-    root_log_dir = os.path.join(project_dir, _dir, day_str, run_str)
-    dirname = run_str + f'_{hour_str}'
-    if os.path.isdir(os.path.join(project_dir, _dir, day_str, dirname)):
-        dirname += '_1'
+    #  log_dir = os.path.join(project_dir, logs_dir, day_str, dirname)
+    check_else_make_dir(log_dir)
+    #  if any('run_' in i for i in os.listdir(log_dir)):
+    #      run_num = get_run_num(log_dir)
+    #      log_dir = os.path.abspath(os.path.join(log_dir, f'run_{run_num}'))
 
-    root_log_dir = os.path.join(project_dir, _dir, day_str, dirname)
-    check_else_make_dir(root_log_dir)
-    if any('run_' in i for i in os.listdir(root_log_dir)):
-        run_num = get_run_num(root_log_dir)
-        log_dir = os.path.abspath(os.path.join(root_log_dir,
-                                               f'run_{run_num}'))
-    else:
-        log_dir = root_log_dir
     if log_file is not None:
         write(f'Output saved to: \n\t{log_dir}', log_file, 'a')
         write(80*'-', log_file, 'a')

@@ -55,6 +55,9 @@ TF_INT = tf.int32
 NP_FLOAT = np.float32
 NP_INT = np.int32
 
+PI = np.pi
+TWO_PI = 2 * PI
+
 #  TF_FLOAT = tf.float64
 #  TF_INT = tf.int64
 #  NP_FLOAT = np.float64

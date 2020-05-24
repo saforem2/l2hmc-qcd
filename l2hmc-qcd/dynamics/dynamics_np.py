@@ -205,7 +205,7 @@ class DynamicsNP(object):
                 dv = (state_r.v - state_init.v)
         """
         state_r, _, _ = self.transition_kernel(mc_states.proposed,
-                                         forward=(not forward))
+                                               forward=(not forward))
         dv = state_r.v - mc_states.init.v
         if self.config.model_type == 'GaugeModel':
             dx = 2. * (1. - np.cos(state_r.x - mc_states.init.x))
