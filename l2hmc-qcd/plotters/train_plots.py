@@ -53,7 +53,7 @@ def get_title_str(params):
     return title_str
 
 
-def build_dataset(data, filter_str=None, steps=None):
+def build_dataset(data, filter_str=None, steps=None, num_chains=None):
     """Build `xarray.Dataset` from `data`."""
     _dict = {}
     for key, val in data.items():
@@ -68,6 +68,9 @@ def build_dataset(data, filter_str=None, steps=None):
             arr = np.array(val)
 
         arr = arr.T
+        if num_chains is not None:
+            arr = arr[:num_chains, :]
+
         _dict[key] = xr.DataArray(arr, dims=['chain', 'draw'],
                                   coords=[np.arange(arr.shape[0]), steps])
     dataset = xr.Dataset(_dict)
@@ -75,13 +78,19 @@ def build_dataset(data, filter_str=None, steps=None):
     return dataset
 
 
-def charges_trace_plot(charges, out_dir, title_str, therm_frac=0.2):
+def charges_trace_plot(charges, out_dir, title_str,
+                       therm_frac=0.2, num_chains=None):
     """Create separate trace plot of topological charges."""
+    charges = np.array(charges)
     arr, steps = therm_arr(np.array(charges), therm_frac=therm_frac)
     arr = arr.T
+    if num_chains is not None:
+        arr = arr[:num_chains, :]
+
+    chains = np.arange(arr.shape[0])
     _dict = {
         'charges': xr.DataArray(arr, dims=['chain', 'draw'],
-                                coords=[np.arange(arr.shape[0]), steps]),
+                                coords=[chains, steps]),
     }
     dataset = xr.Dataset(_dict)
     traceplot_posterior(dataset,
@@ -93,7 +102,7 @@ def charges_trace_plot(charges, out_dir, title_str, therm_frac=0.2):
     return dataset
 
 
-def plot_train_data(train_data, params):
+def plot_train_data(train_data, params, num_chains=None):
     """Plot all training data and save figures to `log_dir/train_plots`.
 
     Args:
@@ -112,12 +121,12 @@ def plot_train_data(train_data, params):
 
         label = key
 
-        y, t = therm_arr(np.array(val), therm_frac=0.1)
-        x = np.array(train_data['beta'])[int(t[0]):]
+        #  y, t = therm_arr(np.array(val), therm_frac=0.1)
+        y = np.array(val)
+        x = np.arange(y.shape[0])  # pylint:disable=unsubscriptable-object
 
-        if len(np.unique(x)) == 1:
-            x = t
-            #  x = np.arange(len(x))
+        #  if len(np.unique(x)) == 1:
+        #      x = t
 
         kwargs = {
             'ls': '',
@@ -125,37 +134,26 @@ def plot_train_data(train_data, params):
             'marker': MARKERS[idx],
         }
         fig, ax = plt.subplots()
-        try:
+        if len(y.shape) == 2:
+            label = r'$\langle$' + f'{key}' + r'$\rangle$'
+            data[key] = y
+            y = y.mean(axis=-1)
 
-            if len(y.shape) == 1:
-                ax.plot(x, y, label=label, **kwargs)
+        if len(y.shape) == 3:
+            label = r'$\langle$' + f'{key}' + r'$\rangle$'
+            y = y.mean(axis=(-1))
+            data[key] = y
+            y = y.mean(axis=-1)
 
-            if len(y.shape) == 2:
-                label = r'$\langle$' + f'{key}' + r'$\rangle$'
-
-                data[key] = y
-
-                ax.plot(x, y.mean(axis=-1),
-                        label=label, **kwargs)
-
-            if len(y.shape) == 3:
-                label = r'$\langle$' + f'{key}' + r'$\rangle$'
-
-                z = y.mean(axis=(-1))
-                data[key] = z
-
-                ax.plot(x, z.mean(axis=-1),
-                        label=label, **kwargs)
-        except:
-            import pudb; pudb.set_trace()
+        ax.plot(x, y, label=label, **kwargs)
 
         if key == 'plaqs':
-            beta_arr = np.array(train_data['beta'])[int(t[0]):]
-            ax.plot(beta_arr, u1_plaq_exact(beta_arr),
+            beta_arr = np.array(train_data['beta'])
+            ax.plot(x, u1_plaq_exact(beta_arr),
                     color='k', marker='', ls='-', label='exact')
 
         ax.legend(loc='best')
-        ax.set_xlabel(r"$\beta$", fontsize='large')
+        ax.set_xlabel(r"train step", fontsize='large')
         ax.set_title(title_str, fontsize='x-large')
         plt.tight_layout()
         out_file = os.path.join(out_dir, f'{key}.png')
@@ -163,30 +161,22 @@ def plot_train_data(train_data, params):
         fig.savefig(out_file, dpi=200, bbox_inches='tight')
         plt.close('all')
 
-    #  x_strs = ['x_in', 'x_out', 'dx_out', 'dx_proposed']
-    obs_strs = ['plaqs', 'charges', 'dq', 'px', 'sumlogdet', 'exp_energy_diff']
-
-    obs_data = {key: data[key] for key in obs_strs}
-    #  x_data = {key: data[key] for key in x_strs}
-
-    dataset = build_dataset(data, steps=t)
-    #  x_dataset = build_dataset(x_data, steps=t)
-    obs_dataset = build_dataset(obs_data, steps=t)
+    skip_keys = ['x_in', 'x_out', 'x_proposed']
+    obs_data = {
+        key: val for key, val in data.items() if key not in skip_keys
+    }
+    dataset = build_dataset(data, steps=x,
+                            num_chains=num_chains)
+    obs_dataset = build_dataset(obs_data, steps=x,
+                                num_chains=num_chains)
 
     traceplot_posterior(obs_dataset,
-                        name='observables',
                         fname='train',
                         fig_dir=out_dir,
                         filter_str=None,
+                        name='observables',
                         title_str=title_str)
     plt.close('all')
-    #  traceplot_posterior(x_dataset,
-    #                      name='observables',
-    #                      fname='train',
-    #                      fig_dir=out_dir,
-    #                      filter_str=None,
-    #                      title_str=title_str)
-    #  plt.close('all')
 
     charges_trace_plot(np.array(data['charges']),
                        out_dir=out_dir,

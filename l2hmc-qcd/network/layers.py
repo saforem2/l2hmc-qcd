@@ -33,6 +33,7 @@ def cast_array(x, dtype=NP_FLOAT):
     return np.array(x, dtype=dtype)
 
 
+# pylint: disable=invalid-name
 class DenseLayerNP:
     """Implements fully-connected Dense layer using numpy."""
     def __init__(self, weights, activation=linear):
@@ -45,19 +46,60 @@ class DenseLayerNP:
         return self.activation(np.dot(x, self.w) + self.b)
 
 
+def dense_layer(units, seed=None, factor=1.,
+                zero_init=False, name=None, **kwargs):
+    """Custom dense layer with specified weight initialization."""
+    if zero_init:
+        kern_init = tf.zeros_initializer()
+
+    try:
+        kern_init = tf.keras.initializers.VarianceScaling(
+            seed=seed,
+            mode='fan_in',
+            scale=2.*factor,
+            distribution='truncated_normal',
+        )
+    except AttributeError:
+        kern_init = tf.contrib.layers.variance_scaling_initializer(
+            seed=seed,
+            mode='FAN_IN',
+            uniform=False,
+            dtype=TF_FLOAT,
+            factor=2.*factor,
+        )
+
+    return tf.keras.layers.Dense(
+        units=units,
+        name=name,
+        use_bias=True,
+        kernel_initializer=kern_init,
+        bias_initializer=tf.zeros_initializer(),
+        **kwargs
+    )
+
+
 class ScaledTanhLayer:
     """Wrapper class for dense layer + exp scaled tanh output."""
-    def __init__(self, name, factor, units, seed):
+    def __init__(self, name, factor, units, seed, zero_init=False):
+        self.coeff, self.layer = self._build(name, factor, units, seed)
+
+    @staticmethod
+    def _build(name, factor, units, seed):
         layer_name = f'{name}_layer'
         coeff_name = f'coeff_{name}'
         with tf.name_scope(name):
-            self.coeff = tf.Variable(name=coeff_name,
-                                     trainable=True,
-                                     dtype=TF_FLOAT,
-                                     initial_value=tf_zeros([1, units]))
+            coeff = tf.Variable(name=coeff_name,
+                                trainable=True,
+                                dtype=TF_FLOAT,
+                                initial_value=tf_zeros([1, units]))
 
-            self.layer = custom_dense(name=layer_name, factor=factor,
-                                      units=units, seed=seed)
+            layer = dense_layer(seed=seed,
+                                units=units,
+                                factor=factor,
+                                zero_init=zero_init,
+                                name=layer_name)
+
+        return coeff, layer
 
     def __call__(self, x):
         return tf.exp(self.coeff) * tf.nn.tanh(self.layer(x))
@@ -65,13 +107,11 @@ class ScaledTanhLayer:
 
 class StackedLayer:
     """Wrapper class that stacks [cos(x), sin(x)] inputs."""
-    def __init__(self, name, factor, units, seed, **kwargs):
+    def __init__(self, name, factor, units, seed, zero_init=False, **kwargs):
         """Initialization method."""
-        self.layer = custom_dense(name=name,
-                                  factor=factor,
-                                  units=units,
-                                  seed=seed,
-                                  **kwargs)
+        self.layer = dense_layer(name=name, seed=seed,
+                                 units=units, factor=factor,
+                                 zero_init=zero_init, **kwargs)
 
     def __call__(self, phi):
         phi = tf.concat([tf.cos(phi), tf.sin(phi)], axis=-1)
@@ -99,19 +139,15 @@ class ScaledTanhLayerNP:
 
 class CartesianLayer:
     """Implements `CartesianLayer`."""
-    def __init__(self, name, factor, units, seed, **kwargs):
+    def __init__(self, name, factor, units, seed, zero_init=False, **kwargs):
         xseed = int(2 * seed)
         yseed = int(3 * seed)
-        self.x_layer = custom_dense(name=f'{name}_x',
-                                    factor=factor/2,
-                                    units=units,
-                                    seed=xseed,
-                                    **kwargs)
-        self.y_layer = custom_dense(name=f'{name}_y',
-                                    factor=factor/2,
-                                    units=units,
-                                    seed=yseed,
-                                    **kwargs)
+        self.x_layer = dense_layer(name=f'{name}_x', factor=factor/2,
+                                   units=units, seed=xseed,
+                                   zero_init=zero_init, **kwargs)
+        self.y_layer = dense_layer(name=f'{name}_y', factor=factor/2,
+                                   units=units, seed=yseed,
+                                   zero_init=zero_init, **kwargs)
 
     def __call__(self, x, y):
         xout = self.x_layer(x)
@@ -132,19 +168,15 @@ class CartesianLayerNP:
 
 class EncodingLayer:
     """Implements the EncodingLayer."""
-    def __init__(self, name, factor, units, seed, **kwargs):
+    def __init__(self, name, factor, units, seed, zero_init=False, **kwargs):
         xseed = int(2 * seed)
         yseed = int(3 * seed)
-        self.x_layer = custom_dense(name=f'{name}_x',
-                                    factor=factor/2.,
-                                    units=units,
-                                    seed=xseed,
-                                    **kwargs)
-        self.y_layer = custom_dense(name=f'{name}_y',
-                                    factor=factor/2.,
-                                    units=units,
-                                    seed=yseed,
-                                    **kwargs)
+        self.x_layer = dense_layer(name=f'{name}_x', factor=factor/2.,
+                                   units=units, seed=xseed,
+                                   zero_init=zero_init, **kwargs)
+        self.y_layer = dense_layer(name=f'{name}_y', factor=factor/2.,
+                                   units=units, seed=yseed,
+                                   zero_init=zero_init, **kwargs)
 
     @staticmethod
     def encode(phi):

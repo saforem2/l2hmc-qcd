@@ -58,7 +58,7 @@ def get_train_weights(params):
     return (xsw, xtw, xqw, vsw, vtw, vqw)
 
 
-def plot_setup(log_dir, run_params, idx=None, nw_run=True):
+def plot_setup(log_dir, params, idx=None, nw_run=True):
     """Setup for plotting. Creates `filename` and `title_str`.
 
     Args:
@@ -69,39 +69,49 @@ def plot_setup(log_dir, run_params, idx=None, nw_run=True):
             title_str.
     """
     #  params = io.loadz(os.path.join(log_dir, 'parameters.z'))
-    params = io.loadz(os.path.join(log_dir, 'params.z'))
+    params_file = os.path.join(log_dir, 'params.z')
+    if os.path.isfile(params_file):
+        extra_params = io.loadz(params_file)
+        params.update(**{k: v for k, v in extra_params if k not in params})
+        #  params.update(**io.loadz(os.path.join(log_dir, 'params.z')))
+
     clip_value = params.get('clip_value', 0)
     eps_fixed = params.get('eps_fixed', False)
     time_size = params.get('time_size', 0)
     space_size = params.get('space_size', 0)
-    train_weights = get_train_weights(params)
+    #  train_net_weights = params.get('net_weights', None)
+    #  if net_weights is None:
+    #      try:
+    #          train_weights = get_train_weights(params)
+    #          train_weights_str = ''.join((io.strf(i) for i in train_weights))
+    #      except KeyError:
+    #          train_weights = None
 
-    estr = f'{run_params.eps:.4g}'.replace('.', '')
-    train_weights_str = ''.join((io.strf(i) for i in train_weights))
-    net_weights_str = ''.join((io.strf(i) for i in run_params.net_weights))
+    estr = f'{params.eps:.4g}'.replace('.', '')
+    net_weights_str = ''.join((io.strf(i) for i in params.net_weights))
 
-    fname = (f'lf{run_params.num_steps}_steps{run_params.run_steps}_e{estr}')
+    fname = (f'lf{params.num_steps}_steps{params.run_steps}_e{estr}')
 
     title_str = (f'{time_size}' + r"$\times$" + f'{space_size}, '
-                 r"$N_{\mathrm{LF}} = $" + f'{run_params.num_steps}, '
-                 r"$N_{\mathrm{B}} = $" + f'{run_params.batch_size}, '
-                 r"$\beta = $" + f'{run_params.beta:.2g}, '
-                 r"$\varepsilon = $" + f'{run_params.eps:.3g}')
+                 r"$N_{\mathrm{LF}} = $" + f'{params.num_steps}, '
+                 r"$N_{\mathrm{B}} = $" + f'{params.batch_size}, '
+                 r"$\beta = $" + f'{params.beta:.2g}, '
+                 r"$\varepsilon = $" + f'{params.eps:.3g}')
 
     if eps_fixed:
         title_str += ' (fixed)'
         fname += '_fixed'
 
-    if params['clip_value'] > 0:
+    if clip_value > 0:
         title_str += f', clip: {clip_value}'
         fname += f'_clip{clip_value}'.replace('.', '')
 
-    if any([tw == 0 for tw in train_weights]):
-        tws = '(' + ', '.join((str(i) for i in train_weights_str)) + ')'
-        title_str += (', '
-                      + r"$\mathrm{nw}_{\mathrm{train}}=$"
-                      + f' {tws}')
-        fname += f'_train{train_weights_str}'
+    #  if any([tw == 0 for tw in train_weights]):
+    #      tws = '(' + ', '.join((str(i) for i in train_weights_str)) + ')'
+    #      title_str += (', '
+    #                    + r"$\mathrm{nw}_{\mathrm{train}}=$"
+    #                    + f' {tws}')
+    #      fname += f'_train{train_weights_str}'
 
     if nw_run:
         nws = '(' + ', '.join((str(i) for i in net_weights_str)) + ')'

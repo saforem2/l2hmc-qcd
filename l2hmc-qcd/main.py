@@ -33,45 +33,36 @@ Date: 04/10/2019
 from __future__ import absolute_import, division, print_function
 
 import os
-import time
-import pickle
 
 from collections import namedtuple
 
 import numpy as np
 import tensorflow as tf
 
-# pylint:disable=import-error
-# pylint:disable=unused-import
-# pylint:disable=too-many-statements
-# pylint:disable=no-name-in-module, invalid-name
-# pylint:disable=redefined-outer-name
+# pylint:disable=import-error, unused-import
 from tensorflow.python import debug as tf_debug
 from tensorflow.python.client import timeline
 
 import config as cfg
 import utils.file_io as io
 
-from config import NetWeights
+from config import NetWeights, Weights, PI, TWO_PI
 from seed_dict import seeds, vnet_seeds, xnet_seeds
-from runners.runner_np import _get_eps
 from models.gauge_model import GaugeModel
 from loggers.train_logger import TrainLogger
 from utils.file_io import timeit
+from utils.attr_dict import AttrDict
 from utils.parse_args import parse_args
 from plotters.plot_utils import plot_singular_values, weights_hist
 from plotters.train_plots import plot_train_data
 from trainers.trainer import Trainer
-from dynamics.dynamics import DynamicsConfig
-from network import NetworkConfig
-from trainers.train_setup import (check_reversibility, count_trainable_params,
-                                  create_config, get_net_weights, train_setup)
+from trainers.train_setup import count_trainable_params, create_config
 
 if cfg.HAS_HOROVOD:
-    import horovod.tensorflow as hvd
+    import horovod.tensorflow as hvd  # pylint: disable=import-error
 
 try:
-    tf.logging.set_verbosity(tf.logging.INFO)
+    tf.logging.set_verbosity(tf.logging.DEBUG)
 except AttributeError:
     pass
 
@@ -79,15 +70,12 @@ except AttributeError:
 
 SEP_STR = 80 * '-'  # + '\n'
 
-NP_FLOAT = cfg.NP_FLOAT
-
-Weights = namedtuple('Weights', ['w', 'b'])
-
-PI = np.pi
-TWO_PI = 2 * PI
-
-
 # pylint:disable=too-many-statements
+# pylint:disable=import-error
+# pylint:disable=unused-import
+# pylint:disable=too-many-statements
+# pylint:disable=no-name-in-module, invalid-name
+# pylint:disable=redefined-outer-name
 
 def log_params(params):
     io.log(SEP_STR + '\nL2HMC PARAMETERS:\n')
@@ -96,12 +84,17 @@ def log_params(params):
     io.log(SEP_STR)
 
 
-def create_sess(**sess_kwargs):
-    global_var_init = tf.global_variables_initializer()
-    local_var_init = tf.local_variables_initializer()
-    uninited = tf.report_uninitialized_variables()
-    sess = tf.train.MonitoredTrainingSession(**sess_kwargs)
-    tf.keras.backend.set_session(sess)
+def create_sess(FLAGS, **sess_kwargs):
+    """Create `tf.train.MonitoredTrainingSession`."""
+    sess_kwargs.update({
+        'config': create_config(FLAGS),
+        'save_checkpoint_steps': FLAGS.save_steps,
+    })
+    global_var_init = tf.compat.v1.global_variables_initializer()
+    local_var_init = tf.compat.v1.local_variables_initializer()
+    uninited = tf.compat.v1.report_uninitialized_variables()
+    sess = tf.compat.v1.train.MonitoredTrainingSession(**sess_kwargs)
+    tf.compat.v1.keras.backend.set_session(sess)
     sess.run([global_var_init, local_var_init])
     uninited_out = sess.run(uninited)
     io.log(f'tf.report_uninitialized_variables() len = {uninited_out}')
@@ -118,6 +111,7 @@ def _get_global_var(name):
 
 
 def get_global_vars(names):
+    """Get dictionary of all global variables that are not None."""
     global_vars = {name: _get_global_var(name) for name in names}
     for k, v in global_vars:
         if v is None:
@@ -130,17 +124,12 @@ def save_params(model):
 
     Additionally, write out all trainable parameters (w/ sizes) to `.txt` file.
     """
-
-    #  dynamics_dir = os.path.join(model.log_dir, 'dynamics')
-    #  io.check_else_make_dir(dynamics_dir)
-    #  out_file = os.path.join(dynamics_dir, 'dynamics_params.z')
-    #  io.savez(model.dynamics.params, out_file)
-
     out_file = os.path.join(model.log_dir, 'trainable_params.txt')
     count_trainable_params(out_file)
 
     model.params['network_type'] = model.network_type
-    io.savez(model.params, os.path.join(os.getcwd(), 'params.z'))
+    io.savez(dict(model.params), os.path.join(os.getcwd(), 'params.z'))
+    io.savez(dict(model.params), os.path.join(model.log_dir, 'params.z'))
 
 
 def save_masks(model, sess):
@@ -187,150 +176,144 @@ def save_eps(model, sess):
     return eps_np
 
 
+def restore_state_and_params(log_dir):
+    """Returns previous training state and updated params from `log_dir`."""
+    params = io.loadz(os.path.join(log_dir, 'params.z'))
+    state = io.loadz(os.path.join(log_dir, 'training', 'current_state.z'))
+    params['lr_init'] = state['lr']
+    params['beta_init'] = state['beta']
+
+    return state, AttrDict(params)
+
+
+@timeit
+def build_model(FLAGS, log_file=None):
+    """Build `GaugeModel` object by parsing params from FLAGS."""
+    tf.keras.backend.set_learning_phase(True)
+    log_dir = FLAGS.log_dir
+    if log_dir is None:
+        log_dir = io.create_log_dir(FLAGS, 'GaugeModel', log_file)
+
+    FLAGS.update({
+        'log_dir': log_dir,
+        'summaries': not FLAGS.no_summaries,
+        'save_steps': FLAGS.train_steps // 4,
+        'keep_data': FLAGS.save_train_data,
+    })
+
+    if FLAGS.restore:
+        #  params = io.loadz(os.path.join(params['log_dir'], 'params.z'))
+        FLAGS = AttrDict(io.loadz(os.path.join(log_dir, 'params.z')))
+        state = io.loadz(os.path.join(log_dir, 'training', 'current_state.z'))
+        FLAGS.update({
+            'lr_init': state['lr'],
+            'beta_init': state['beta'],
+        })
+
+    hooks = []
+    if FLAGS.horovod:
+        FLAGS.update({
+            'using_hvd': True,
+            'num_workers': hvd.size()
+        })
+        hooks += [hvd.BroadcastGlobalVariablesHook(0)]
+
+    return GaugeModel(FLAGS), hooks, FLAGS
+
+
+@timeit
+def build_logger_and_ckpt_dir(model):
+    """Build TrainLogger object."""
+    ckpt_dir = os.path.join(model.log_dir, 'checkpoints')
+    io.check_else_make_dir(ckpt_dir)
+    train_logger = TrainLogger(model)
+
+    return train_logger, ckpt_dir
+
+
+def save(FLAGS, model, sess, logger, state=None):
+    """Saves data from training run."""
+    _ = save_eps(model, sess)
+    if not FLAGS.hmc:
+        _ = save_weights(model, sess)
+    save_masks(model, sess)
+    save_params(model)
+    save_seeds(model)
+    logger.write_train_strings()
+    logger.save_train_data()
+    if state is not None:
+        fpath = os.path.join(model.log_dir, 'training', 'final_state.z')
+        io.savez(state, fpath, name='final_state')
+
+
 @timeit
 def train(FLAGS, log_file=None):
     """Train L2HMC sampler and log/plot results."""
-    start_time = time.time()
-    tf.keras.backend.set_learning_phase(True)
-
-    log_dir = FLAGS.log_dir
-    if log_dir is None:
-        log_dir = io.create_log_dir(FLAGS,
-                                    run_str=True,
-                                    log_file=log_file,
-                                    model_type='GaugeModel')
-
-    params = dict(FLAGS.__dict__)
-
-    params['log_dir'] = log_dir
-    params['summaries'] = not FLAGS.no_summaries
-    params['save_steps'] = FLAGS.train_steps // 4
-    params['keep_data'] = FLAGS.save_train_data
-    #  params['keep_data'] = not FLAGS.clear_data
-
     IS_CHIEF = (
         not FLAGS.horovod
         or FLAGS.horovod and hvd.rank() == 0
     )
 
-    # If resuming training,
-    # update params w/ previous state
+    state_final = None
     if FLAGS.restore:
-        params = io.loadz(os.path.join(log_dir, 'params.z'))
-        state_file = os.path.join(FLAGS.log_dir, 'training', 'current_state.z')
-        state = io.loadz(state_file)
-        #  current_step = state['step']
-        #  eps = state['dynamics_eps']
-        params['lr_init'] = state['lr']
-        params['beta_init'] = state['beta']
+        state_final, FLAGS = restore_state_and_params(FLAGS.log_dir)
 
-    hooks = []
-    if FLAGS.horovod:
-        params['using_hvd'] = True
-        params['num_workers'] = hvd.size()
-        hooks += [hvd.BroadcastGlobalVariablesHook(0)]
+    model, hooks, FLAGS = build_model(FLAGS, log_file)
 
-    model = GaugeModel(params)
+    logger, ckpt_dir = None, None
+    if IS_CHIEF:  # Only create logger on chief rank
+        logger, ckpt_dir = build_logger_and_ckpt_dir(model)
 
-    train_logger = None
-    checkpoint_dir = None
-    if IS_CHIEF:
-        checkpoint_dir = os.path.join(log_dir, 'checkpoints')
-        io.check_else_make_dir(checkpoint_dir)
-        io.savez(params, os.path.join(log_dir, 'params.z'))
-        train_logger = TrainLogger(model, log_dir, params)
-        #  try:
-        #      save_configs(model, params)
-        #  except:
-        #      import pudb; pudb.set_trace()
-
-    # Create `tf.ConfigProto()`
-    config, params = create_config(params)
-
-    net_weights_init = NetWeights(FLAGS.x_scale_weight,
-                                  FLAGS.x_translation_weight,
-                                  FLAGS.x_transformation_weight,
-                                  FLAGS.v_scale_weight,
-                                  FLAGS.v_translation_weight,
-                                  FLAGS.v_transformation_weight)
-
-    sess = create_sess(hooks=hooks,
-                       config=config,
+    sess = create_sess(FLAGS,
+                       hooks=hooks,
+                       checkpoint_dir=ckpt_dir,
                        save_summaries_secs=None,
-                       save_summaries_steps=None,
-                       checkpoint_dir=checkpoint_dir,
-                       save_checkpoint_steps=params['save_steps'])
+                       save_summaries_steps=None)
 
-    #  x_shape = (FLAGS.batch_size, model.lattice.num_links)
-    x_init = np.random.uniform(-PI, PI, size=(FLAGS.batch_size,
-                                              model.lattice.num_links))
+    trainer = Trainer(sess, model, logger, FLAGS)
+
+    shape = (FLAGS.batch_size, model.lattice.num_links)
+    x_init = np.random.uniform(-PI, PI, size=shape)
+
+    nw_init = NetWeights(FLAGS.x_scale_weight,
+                         FLAGS.x_translation_weight,
+                         FLAGS.x_transformation_weight,
+                         FLAGS.v_scale_weight,
+                         FLAGS.v_translation_weight,
+                         FLAGS.v_transformation_weight)
+
     if FLAGS.restore:
-        x_init = state['x_in']
+        x_init = state_final['x_in']
         restore_ops = [model.global_step_setter, model.eps_setter]
         sess.run(restore_ops, feed_dict={
-            model.global_step_ph: state['step'],
-            model.eps_ph: state['dynamics_eps'],
+            model.global_step_ph: state_final['step'],
+            model.eps_ph: state_final['dynamics_eps'],
         })
-        try:
-            train_logger.restore_train_data()
-        except (AttributeError, FileNotFoundError):
-            io.log(f'No training data found! Continuing...')
 
-    trainer = Trainer(sess, model, train_logger, params)
-    trainer.train(samples=x_init,
-                  beta=params['beta_init'],
-                  net_weights=net_weights_init)
+    state_final = trainer.train(x=x_init,
+                                net_weights=nw_init,
+                                beta=FLAGS.beta_init)
 
-    dataset = None
-    if IS_CHIEF:
-        _ = save_eps(model, sess)
-        _ = save_weights(model, sess)
-        save_masks(model, sess)
-        save_params(model)
-        save_seeds(model)
-        # inference and plotting singular values after training
-        #  plot_singular_values(model.log_dir)
-        #  if not FLAGS.clear_data:
-        if FLAGS.save_train_data:
-            dataset = plot_train_data(train_logger.train_data, params)
+    if IS_CHIEF and FLAGS.save_train_data:
+        save(FLAGS, model, sess, logger, state_final)
+        _ = plot_train_data(logger.train_data, FLAGS, num_chains=10)
 
-        train_logger.write_train_strings()
-        #  if FLAGS.save_train_data and not FLAGS.clear_data:
-        if FLAGS.save_train_data:
-            io.log(f'Saving train data!')
-            train_logger.save_train_data()
-
-    # close MonitoredTrainingSession and reset the default graph
     sess.close()
     tf.compat.v1.reset_default_graph()
-    io.log(f'{SEP_STR}\n training took:'
-           f'{time.time()-start_time:.3g}s \n{SEP_STR}')
 
-    return model, train_logger, dataset
-
-
-@timeit
-def main(FLAGS):
-    """Main method for creating/training/running L2HMC for U(1) gauge model."""
-    log_file = 'output_dirs.txt'
-
-    using_hvd = getattr(FLAGS, 'horovod', False)
-    if cfg.HAS_HOROVOD and using_hvd:
-        io.log("INFO: USING HOROVOD")
-        hvd.init()
-        rank = hvd.rank()
-        print(f'Setting seed from rank: {rank}')
-        # multiply the global seed by the rank so each rank gets diff seed
-        tf.set_random_seed(rank * seeds['global_tf'])
-
-    #  model, _, _ = train_l2hmc(FLAGS, log_file)
-    model, _, _ = train(FLAGS, log_file)
+    return model
 
 
 if __name__ == '__main__':
-    FLAGS = parse_args()
-    #  USING_HVD = getattr(FLAGS, 'horovod', False)
-    if not FLAGS.horovod:
-        if not tf.executing_eagerly():
+    args = parse_args()
+    FLAGS = AttrDict(args.__dict__)
+    if not tf.executing_eagerly():
+        if FLAGS.horovod:
+            hvd.init()
+            rank = hvd.rank()
+            tf.compat.v1.set_random_seed(rank * seeds['global_tf'])
+        else:
             tf.compat.v1.set_random_seed(seeds['global_tf'])
-    main(FLAGS)
+
+    log_file = os.path.join(os.getcwd(), 'output_dirs.txt')
+    _ = train(FLAGS, log_file)

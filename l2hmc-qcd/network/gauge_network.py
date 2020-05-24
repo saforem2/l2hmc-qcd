@@ -16,7 +16,7 @@ import pickle
 import tensorflow as tf
 
 from .layers import (DenseLayerNP, relu, ScaledTanhLayer, ScaledTanhLayerNP,
-                     StackedLayer, StackedLayerNP)
+                     StackedLayer, StackedLayerNP, dense_layer)
 from .network_utils import custom_dense
 import utils.file_io as io
 from config import Weights
@@ -51,6 +51,7 @@ class GaugeNetwork(tf.keras.Model):
                 self.dropout = tf.keras.layers.Dropout(config.dropout_prob)
 
             self.x_layer = StackedLayer(name='x_layer',
+                                        zero_init=True,
                                         factor=factor/3.,
                                         units=config.units[0],
                                         seed=net_seeds['x_layer'],
@@ -58,37 +59,43 @@ class GaugeNetwork(tf.keras.Model):
 
             self.v_layer = StackedLayer(name='v_layer',
                                         factor=1./3.,
+                                        zero_init=True,
                                         units=config.units[0],
                                         seed=net_seeds['v_layer'],
                                         input_shape=(2 * xdim,))
 
-            self.t_layer = custom_dense(name='t_layer',
-                                        factor=1./3.,
-                                        units=config.units[0],
-                                        seed=net_seeds['t_layer'],
-                                        input_shape=(2 * xdim,))
+            self.t_layer = dense_layer(factor=1./3.,
+                                       name='t_layer',
+                                       zero_init=True,
+                                       units=config.units[0],
+                                       input_shape=(2 * xdim,),
+                                       seed=net_seeds['t_layer'])
 
-            def _dense_layer(i, units):
-                return custom_dense(name=f'h_layer{i}',
-                                    factor=1.,
-                                    seed=int(i * net_seeds['h_layer']),
-                                    units=units)
+            def make_hlayer(i, units):
+                return dense_layer(factor=1.,
+                                   units=units,
+                                   zero_init=True,
+                                   name=f'h_layer{i}',
+                                   seed=int(i * net_seeds['h_layer']))
 
             self.hidden_layers = [
-                _dense_layer(i, n) for i, n in enumerate(config.units[1:])
+                make_hlayer(i, n) for i, n in enumerate(config.units[1:])
             ]
 
-            self.translation_layer = custom_dense(name=TNAME,
-                                                  factor=0.001,
-                                                  seed=net_seeds[TNAME],
-                                                  units=xdim)
+            self.translation_layer = dense_layer(name=TNAME,
+                                                 factor=0.001,
+                                                 units=xdim,
+                                                 zero_init=True,
+                                                 seed=net_seeds[TNAME])
 
             self.scale_layer = ScaledTanhLayer(name='scale',
                                                factor=0.001,
+                                               zero_init=True,
                                                seed=net_seeds[SNAME],
                                                units=xdim)
 
             self.transformation_layer = ScaledTanhLayer(name='transformation',
+                                                        zero_init=True,
                                                         factor=0.001,
                                                         seed=net_seeds[QNAME],
                                                         units=xdim)
@@ -97,18 +104,11 @@ class GaugeNetwork(tf.keras.Model):
             'x_layer': self.x_layer.layer,
             'v_layer': self.v_layer.layer,
             't_layer': self.t_layer,
-            #  'h_layer1': self.h_layer1,
-            #  'h_layer2': self.h_layer2,
-            #  'h_layer': self.h_layer,
             'hidden_layers': self.hidden_layers,
-            #  'hidden_layers': [h for h in self.hidden_layers],
             'scale_layer': self.scale_layer,
             'translation_layer': self.translation_layer,
             'transformation_layer': self.transformation_layer,
         }
-
-        #  for idx, hidden_layer in enumerate(self.hidden_layers):
-        #      self.layers_dict[f'h_layer{idx}'] = hidden_layer
 
     def get_weights(self, sess):
         """Get dictionary of layer weights."""
@@ -175,8 +175,6 @@ class GaugeNetworkNP:
             DenseLayerNP(w) for w in weights['hidden_layers']
         ]
 
-        #  self.h_layer = DenseLayerNP(weights['h_layer'])
-
         self.translation_layer = DenseLayerNP(weights[TNAME])
 
         self.scale_layer = ScaledTanhLayerNP(weights[SCOEFF],
@@ -186,7 +184,6 @@ class GaugeNetworkNP:
 
     def __call__(self, inputs):
         v, x, t = inputs
-
         v = self.v_layer(v)
         x = self.x_layer(x)
         t = self.t_layer(t)
@@ -194,7 +191,6 @@ class GaugeNetworkNP:
 
         for layer in self.hidden_layers:
             h = self.activation(layer(h))
-        #  h = self.activation(self.h_layer(h))
 
         scale = self.scale_layer(h)
         translation = self.translation_layer(h)
