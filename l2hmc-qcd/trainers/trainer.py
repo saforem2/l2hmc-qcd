@@ -9,8 +9,9 @@ from collections import namedtuple
 import numpy as np
 
 import utils.file_io as io
+from utils.attr_dict import AttrDict
 
-from config import NetWeights, NP_FLOAT
+from config import NetWeights, NP_FLOAT, NET_WEIGHTS_L2HMC
 from lattice.lattice import u1_plaq_exact
 from dynamics.dynamics_np import convert_to_angle
 
@@ -38,10 +39,9 @@ def exp_mult_cooling(step, temp_init, temp_final, num_steps, alpha=None):
 
     return temp
 
-
 class Trainer:
     """Model-independent `Trainer` object for training the L2HMC sampler."""
-    def __init__(self, sess, model, logger=None, params=None):
+    def __init__(self, sess, model, logger=None, FLAGS=None):
         """Initialization method.
         Args:
             sess (`tf.Session`): Tensorflow session object.
@@ -55,40 +55,45 @@ class Trainer:
         self.sess = sess
         self.model = model
         self.logger = logger
+        if FLAGS is None:
+            FLAGS = AttrDict(model.params)
 
-        if params is None:
-            params = model.params
-        self._params = params
-
-        self._save_train_data = params.get('save_train_data', False)
         self._train_keys = list(self.model.train_ops.keys())
         self._train_ops = list(self.model.train_ops.values())
 
-        self._beta_init = params.get('beta_init', self.model.beta_init)
-        self._beta_final = params.get('beta_final', self.model.beta_final)
-        self._train_steps = params.get('train_steps', self.model.train_steps)
-        self._extra_steps = params.get('extra_steps', 0)
+        self._params = FLAGS
+        self._extra_steps = FLAGS.get('extra_steps', 0)
+        self._beta_init = FLAGS.get('beta_init', model.beta_init)
+        self._beta_final = FLAGS.get('beta_final', model.beta_final)
+        self._save_train_data = FLAGS.get('save_train_data', False)
+        self._train_steps = FLAGS.get('train_steps', model.train_steps)
+        self._annealing_fn = FLAGS.get('annealing_fn', exp_mult_cooling)
 
-        temp_init = 1. / self._beta_init
-        temp_final = 1. / self._beta_final
-        ts = self._train_steps  # pylint: disable=invalid-name
+        #  fixed_beta = getattr(model, 'fixed_beta', False)
+        if FLAGS.fixed_beta:
+            self.beta_arr = np.array([
+                self.model.beta_init for _ in range(self._train_steps)
+            ])
+        else:  # pre-fetch array of all beta values
+            self.beta_arr = self.get_betas()
+            self._train_steps += self._extra_steps
 
-        fixed_beta = getattr(model, 'fixed_beta', False)
-        if fixed_beta:
-            self.beta_arr = np.array([self.model.beta_init for _ in range(ts)])
-            return
+    def get_betas(self, annealing_fn=None, steps=None, extra_steps=0):
+        """Pre-fetch array of beta values to be used in training."""
+        t_init = 1. / self._beta_init
+        t_final = 1. / self._beta_final
+        steps = self._train_steps if steps is None else steps
+        if annealing_fn is None:
+            annealing_fn = exp_mult_cooling
+        t_arr = [
+            annealing_fn(i, t_init, t_final, steps) for i in range(steps)
+        ]
+        if extra_steps > 0:
+            t_arr += [t_final for _ in range(extra_steps)]
 
-        annealing_fn = params.get('annealing_fn', exp_mult_cooling)
+        return 1. / np.array(t_arr)
 
-        # pre-fetch array of all beta values used during annealing schedule
-        args = (temp_init, temp_final, ts)
-        temp_arr = [annealing_fn(i, *args) for i in range(ts)]
-        temp_arr.extend([temp_final for _ in range(self._extra_steps)])
-        temp_arr = np.array(temp_arr)
-        self.beta_arr = 1. / temp_arr
-        self._train_steps += self._extra_steps
-
-    def train_step(self, step, samples, net_weights=None):
+    def train_step(self, step, x, beta, net_weights):
         """Perform a single training step.
 
         Args:
@@ -100,35 +105,25 @@ class Trainer:
             out_data (dict): Dictionary containing outputs from the respective
                 tensorflow operations.
         """
-        if net_weights is None:
-            net_weights = NetWeights(1., 1., 1., 1., 1., 1.)
-
-        if self.model._model_type == 'GaugeModel':
-            samples = convert_to_angle(samples)
-
-        beta = self.beta_arr[step]
-
-        feed_dict = {
-            self.model.x: samples,
-            self.model.beta: beta,
-            self.model.net_weights: net_weights,
-            self.model.train_phase: True,
-        }
-
-        global_step = self.sess.run(self.model.global_step)
 
         start_time = time.time()
-        ops_out = self.sess.run(self._train_ops, feed_dict=feed_dict)
+        out = self.sess.run(self._train_ops, feed_dict={
+            self.model.x: x,
+            self.model.beta: beta,
+            self.model.train_phase: True,
+            self.model.net_weights: net_weights,
+        })
         dt = time.time() - start_time
 
-        outputs = dict(zip(self._train_keys, ops_out))
-
-        outputs['x_in'] = samples
-        outputs['step'] = global_step
-        outputs['beta'] = beta
+        outputs = dict(zip(self._train_keys, out))
+        outputs.update({
+            'step': step,
+            'beta': beta,
+            'x_in': x,
+        })
 
         data_str = (
-            f"{global_step:>6g}/{self._train_steps:<6g} "  # STEP / TOT_STEPS
+            f"{step:>6g}/{self._train_steps:<6g} "         # STEP / TOT_STEPS
             f"{dt:^11.4g} "                                # TIME / STEP
             f"{outputs['loss_op']:^11.4g} "                # LOSS VALUE
             f"{np.mean(outputs['px']):^11.4g} "            # ACCEPT_PROB
@@ -140,39 +135,18 @@ class Trainer:
             f"{np.mean(outputs['sumlogdet']):^11.4g} "     # SUM log(det)
         )
 
-        if self.model._model_type == 'GaugeModel':
-            outputs['x_out'] = convert_to_angle(outputs['x_out'])
-            #  dq = outputs['dq']
-            #  charge_diff, qstr = self._calc_charge_diff(outputs)
+        #  if self.model._model_type == 'GaugeModel':
+        try:
             data_str += f"{np.sum(np.around(outputs['dq_prop'])):^11.4g}"
             data_str += f"{np.sum(np.around(outputs['dq_out'])):^11.4g}"
-            #  data_str += dqp_str
-            #  data_str
-            #  data_str += qstr
-
-            plaq_diff = u1_plaq_exact(beta) - outputs['plaqs']
+            plaq_diff = u1_plaq_exact(outputs['beta']) - outputs['plaqs']
             data_str += f"{np.mean(plaq_diff):^11.4g} "
+        except KeyError:
+            pass
 
         return outputs, data_str
 
-    def _calc_charge_diff(self, outputs):
-        """Calculate the difference in top. charges from prev. step."""
-        try:
-            q_old = self.logger.train_data['charges'][-1]
-        except (AttributeError, IndexError, KeyError):
-            ps_old = self.model.lattice.calc_plaq_sums_np(outputs['x_in'])
-            q_old = np.sum(np.sin(ps_old), axis=(1, 2)) / (2 * np.pi)
-            #  ps_old = self.model._plaq_sums(outputs['x_in'])
-            #  q_old = self.model._top_charge(ps_old)
-            #  charge_diff = np.zeros(outputs['charges'].shape)
-
-        charge_diff = np.abs((outputs['charges'] - q_old))
-        qstr = f'{np.sum(np.around(charge_diff)):^11.4g}'
-
-        return charge_diff, qstr
-
-    def train(self, train_steps=None, beta=None,
-              samples=None, net_weights=None):
+    def train(self, train_steps=None, beta=None, x=None, net_weights=None):
         """Train the L2HMC sampler for `train_steps` steps.
         Args:
             train_steps (int): Number of training steps to perform.
@@ -183,38 +157,27 @@ class Trainer:
                 annealing schedule. Overrides `self.model.beta_init`.
             trace (bool, optional): Flag specifying that the training loop
                 should be wrapped in a profiler.
+
+        Returns:
+            data (dict): Output dictionary from final `self.train_step` call.
         """
-        if train_steps is None:
-            train_steps = self._train_steps
-
-        if beta is None:
-            beta = self.beta_arr[0]
-
-        if net_weights is None:
-            net_weights = NetWeights(1, 1, 1, 1, 1, 1)
-
-        if samples is None:
-            samples = np.random.randn(self.model.x.shape)
-
-        if self.model._model_type == 'GaugeModel':
-            samples = convert_to_angle(samples)
-
         if self.logger is not None:
             io.log(self.logger.train_header)
+
+        beta = self.beta_arr[0] if beta is None else beta
+        x = np.random.randn(self.model.x.shape) if x is None else x
+        train_steps = self._train_steps if train_steps is None else train_steps
+        net_weights = NET_WEIGHTS_L2HMC if net_weights is None else net_weights
 
         try:
             initial_step = self.sess.run(self.model.global_step)
             for step in range(initial_step, train_steps):
-                data, data_str = self.train_step(step,
-                                                 samples,
-                                                 net_weights)
+                data, data_str = self.train_step(step, x, beta, net_weights)
+                x = data['x_out']
+                beta = self.beta_arr[step]
                 if self.logger is not None:
                     self.logger.update(self.sess, data,
                                        data_str, net_weights)
-
-                samples = data['x_out']
-                if self.model._model_type == 'GaugeModel':
-                    samples = convert_to_angle(samples)
 
         except (KeyboardInterrupt, SystemExit):
             io.log("\nERROR: KeyboardInterrupt detected!")
@@ -222,3 +185,5 @@ class Trainer:
             if self.logger is not None:
                 self.logger.update(data, data_str, net_weights)
                 self.logger.write_train_strings()
+
+        return data

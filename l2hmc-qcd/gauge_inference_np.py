@@ -58,15 +58,6 @@ def load_configs(log_dir=None):
 
 def run_hmc(args, run_steps):
     """Run generic HMC."""
-    #  net_weights = NetWeights(
-    #      x_scale=args.x_scale_weight,
-    #      x_translation=args.x_translation_weight,
-    #      x_transformation=args.x_transformation_weight,
-    #      v_scale=args.v_scale_weight,
-    #      v_translation=args.v_translation_weight,
-    #      v_transformation=args.v_transformation_weight
-    #  )
-
     run_params = RunParams(
         beta=args.beta,
         eps=args.eps,
@@ -83,9 +74,9 @@ def run_hmc(args, run_steps):
 
     runner_hmc = RunnerNP(run_params, args.log_dir, model_type='GaugeModel')
     x = np.random.uniform(-np.pi, np.pi, size=runner_hmc.config.input_shape)
-    rd_hmc = runner_hmc.inference(x=x, run_steps=500)
+    rd_hmc = runner_hmc.inference(x=x, run_steps=run_steps)
 
-    return rd_hmc.samples_arr[-1]
+    return rd_hmc
 
 
 @timeit

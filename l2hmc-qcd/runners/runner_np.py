@@ -18,6 +18,7 @@ from config import NetWeights, State, Weights
 from runners import HSTR
 from .run_data import RunData, strf
 from utils.file_io import timeit
+from utils.attr_dict import AttrDict
 from lattice.lattice import calc_plaqs_diffs, GaugeLattice
 from dynamics.dynamics import MonteCarloStates
 from dynamics.dynamics_np import (DynamicsNP, convert_to_angle,
@@ -122,16 +123,32 @@ def get_reduced_weights(weights, n=10):
 
 class RunConfig:
     """Configuration object for running inference."""
-    def __init__(self, run_params, log_dir=None, model_type=None):
+    def __init__(self,
+                 run_params,
+                 log_dir=None,
+                 extra_params=None,
+                 model_type=None,
+                 from_trained_model=True):
         self.model_type = model_type
-        self.train_params = self.find_params(log_dir)
-        if log_dir is None:
-            self.log_dir = self.train_params['log_dir']
-        else:
-            self.log_dir = log_dir
+        if from_trained_model:
+            if log_dir is None:
+                if extra_params is None:
+                    log_dir = os.getcwd()
+                else:
+                    log_dir = extra_params.get('log_dir', os.getcwd())
 
-        self.run_params = self.set_attrs(run_params)
-        self.weights = self.load_weights(self.log_dir)
+            extra_params = self.find_params(log_dir)
+
+        self.log_dir = log_dir
+        self.run_params = self.set_attrs(run_params, extra_params)
+        if from_trained_model:
+            self.weights = self.load_weights(self.log_dir)
+        else:
+            self.weights = {
+                'xnet': None,
+                'vnet': None,
+            }
+
         self.run_str = self.get_run_str()
         self.run_dir = os.path.join(self.log_dir, 'runs_np', self.run_str)
         io.check_else_make_dir(self.run_dir)
@@ -189,33 +206,26 @@ class RunConfig:
         return weights
 
     # pylint: disable=attribute-defined-outside-init
-    def set_attrs(self, run_params):
-        if run_params.eps is None:
-            eps = _get_eps(self.log_dir)
-            run_params = run_params._replace(eps=eps)
+    def set_attrs(self, run_params, extra_params):
+        run_params = AttrDict(run_params._asdict())
+        run_params.update({
+            k: v for k, v in extra_params.items() if k not in run_params
+        })
 
-        if run_params.num_steps is None:
-            num_steps = self.train_params['num_steps']
-            run_params = run_params._replace(num_steps=num_steps)
+        if run_params.get('eps', None) is None:
+            run_params['eps'] = _get_eps(self.log_dir)
 
-        if run_params.batch_size is None:
-            batch_size = self.train_params['batch_size']
-            run_params = run_params._replace(batch_size=batch_size)
+        dim = run_params.get('dim', None)
+        time_size = run_params.get('time_size', None)
+        space_size = run_params.get('space_size', None)
+        xdim = time_size * space_size * dim
+        input_shape = (run_params.batch_size, xdim)
 
-        if run_params.beta is None:
-            beta = self.train_params['beta_final']
-            run_params = run_params._replace(beta=beta)
-
-        time_size = self.train_params.get('time_size', None)
-        space_size = self.train_params.get('space_size', None)
-        dim = self.train_params.get('dim', None)
-        if time_size is not None:
-            xdim = time_size * space_size * dim
-        else:
-            xdim = self.train_params.get('xdim', None)
+        run_params['xdim'] = xdim
+        run_params['input_shape'] = input_shape
 
         self.eps = run_params.eps
-        self.xdim = xdim
+        self.xdim = run_params.xdim
         self.beta = run_params.beta
         self.init = run_params.init
         self.run_steps = run_params.run_steps
@@ -223,7 +233,8 @@ class RunConfig:
         self.batch_size = run_params.batch_size
         self.net_weights = run_params.net_weights
         self.print_steps = run_params.print_steps
-        self.input_shape = (self.batch_size, self.xdim)
+        self.input_shape = run_params.input_shape
+        #  self.input_shape = (self.batch_size, self.xdim)
         self.network_type = run_params.network_type
         self.mix_samplers = run_params.mix_samplers
         self.num_singular_values = run_params.num_singular_values
@@ -247,8 +258,6 @@ class RunConfig:
             eps = _get_eps(params['log_dir'])
 
         params['eps'] = float(eps)
-
-        #  self.set_attrs(params)
 
         return params
 
@@ -279,17 +288,27 @@ class RunConfig:
 
 class RunnerNP:
     """Responsible for running inference using `numpy` from trained model."""
-    def __init__(self, run_params, log_dir=None, model_type=None):
-        self.config = RunConfig(run_params, log_dir=log_dir,
-                                model_type=model_type)
-        self.train_params = self.config.train_params
-        pw = self.train_params.get('plaq_weight', 0.1)
-        qw = self.train_params.get('charge_weight', 0.1)
+    def __init__(self,
+                 run_params,
+                 log_dir=None,
+                 model_type=None,
+                 extra_params=None,
+                 from_trained_model=True):
+        self.config = RunConfig(run_params,
+                                log_dir=log_dir,
+                                model_type=model_type,
+                                extra_params=extra_params,
+                                from_trained_model=from_trained_model)
+        #  self.config = RunConfig(run_params, log_dir=log_dir,
+        #                          model_type=model_type)
+        #  self.train_params = self.config.extra_params
+        pw = self.config.run_params.get('plaq_weight', 0.1)
+        qw = self.config.run_params.get('charge_weight', 0.1)
         self._plaq_weight = max((pw, 0.1))
         self._charge_weight = max((qw, 0.1))
 
         self.log_dir = self.config.log_dir
-        self.lattice = self.create_lattice(self.train_params)
+        self.lattice = self.create_lattice(self.config.run_params)
         self._potential_fn = self.lattice.calc_actions_np
         self.dynamics = self.create_dynamics(self._potential_fn,
                                              self.config.dynamics_params)
@@ -300,14 +319,12 @@ class RunnerNP:
                             dim=2, link_type='U1', rand=True,
                             batch_size=self.config.batch_size)
 
-    def create_dynamics(self, potential_fn=None, params=None):
+    def create_dynamics(self, potential_fn=None, params=None, masks='rand'):
         """Create `DynamicsNP` object."""
         if potential_fn is None:
             potential_fn = self._potential_fn
         if params is None:
             params = self.config.dynamics_params
-
-        masks = io.loadz(os.path.join(self.log_dir, 'dynamics_mask.z'))
 
         # to run with reduced weight matrix keeping first `num_singular_values`
         # singular values from the SVD decomposition: W = U * S * V^{H}
@@ -318,7 +335,10 @@ class RunnerNP:
             params._update(weights=weights)
 
         dynamics = DynamicsNP(potential_fn, params)
-        dynamics.set_masks(masks)
+
+        masks_file = os.path.join(self.log_dir, 'dynamics_mask.z')
+        if os.path.isfile(masks_file):
+            dynamics.set_masks(io.loadz(masks_file))
 
         return dynamics
 
@@ -489,7 +509,7 @@ class RunnerNP:
                     f"{dq.sum():^12.3g}"
                     f"{plaqs_diffs.mean():^12.3g}")
 
-        outputs = {
+        outputs = AttrDict({
             'data_str': data_str,
             'mc_states': mc_s,    # MonteCarloStates (State; init, prop, out)
             'accept_prob': px,    # acceptance probabilities
@@ -503,35 +523,35 @@ class RunnerNP:
             'plaq_change': dp,           # 2 * (1 - cos(p_out - p_init))
             'charge_change': dq,         # q_out - q_init
             'plaqs_diffs': plaqs_diffs,  # difference b/t actual and expected
-        }
+        })
 
         return mc_s.out.x, self._expand_outputs(outputs)
 
-    def _expand_outputs(self, outputs):
+    def _expand_outputs(self, data):
         return {
-            'data_str': outputs['data_str'],
-            'accept_prob': outputs['accept_prob'],
-            'sumlogdet_proposed': outputs['sld_states'].proposed,
-            'sumlogdet_out': outputs['sld_states'].out,
-            'exp_energy_diff': outputs['exp_energy_diff'],
-            'plaq_loss': outputs['plaq_loss'],
-            'charge_loss': outputs['charge_loss'],
-            'plaqs': outputs['mc_observables'].out.plaqs,
-            'charges': outputs['mc_observables'].out.charges,
-            'plaqs_diffs': outputs['plaqs_diffs'],
-            'plaq_change': outputs['plaq_change'],
-            'charge_change': outputs['charge_change'],
-            'xdiff_r': outputs['state_diff_r'].x,
-            'vdiff_r': outputs['state_diff_r'].v,
-            'potential_init': outputs['mc_energies'].init.potential,
-            'potential_proposed': outputs['mc_energies'].proposed.potential,
-            'potential_out': outputs['mc_energies'].out.potential,
-            'kinetic_init': outputs['mc_energies'].init.kinetic,
-            'kinetic_proposed': outputs['mc_energies'].proposed.kinetic,
-            'kinetic_out': outputs['mc_energies'].out.kinetic,
-            'hamiltonian_init': outputs['mc_energies'].init.hamiltonian,
-            'hamiltonian_proposed': outputs['mc_energies'].proposed.hamiltonian,
-            'hamiltonian_out': outputs['mc_energies'].out.hamiltonian,
+            'data_str': data['data_str'],
+            'accept_prob': data['accept_prob'],
+            'sumlogdet_proposed': data['sld_states'].proposed,
+            'sumlogdet_out': data['sld_states'].out,
+            'exp_energy_diff': data['exp_energy_diff'],
+            'plaq_loss': data['plaq_loss'],
+            'charge_loss': data['charge_loss'],
+            'plaqs': data['mc_observables'].out.plaqs,
+            'charges': data['mc_observables'].out.charges,
+            'plaqs_diffs': data['plaqs_diffs'],
+            'plaq_change': data['plaq_change'],
+            'charge_change': data['charge_change'],
+            'xdiff_r': data['state_diff_r'].x,
+            'vdiff_r': data['state_diff_r'].v,
+            'potential_init': data['mc_energies'].init.potential,
+            'potential_proposed': data['mc_energies'].proposed.potential,
+            'potential_out': data['mc_energies'].out.potential,
+            'kinetic_init': data['mc_energies'].init.kinetic,
+            'kinetic_proposed': data['mc_energies'].proposed.kinetic,
+            'kinetic_out': data['mc_energies'].out.kinetic,
+            'hamiltonian_init': data['mc_energies'].init.hamiltonian,
+            'hamiltonian_proposed': data['mc_energies'].proposed.hamiltonian,
+            'hamiltonian_out': data['mc_energies'].out.hamiltonian,
         }
 
     def _init_x(self) -> np.ndarray:

@@ -12,48 +12,36 @@ from __future__ import division
 from __future__ import print_function
 
 import os
-import pickle
 
 import numpy as np
 import tensorflow as tf
 
 import utils.file_io as io
 
-from collections import namedtuple
 from loggers.summary_utils import create_summaries
 #  from .summary_utils import create_summaries
-from utils.file_io import save_params
 
-h_str = ("{:^12s}" + 9 * "{:^10s}").format(
+HSTR = ("{:^12s}" + 9 * "{:^10s}").format(
     "STEP", "t/STEP", "LOSS", "% ACC", "EPS",
     "BETA", "ACTION", "PLAQ", "(EXACT)", "LR"
 )
 
-dash = (len(h_str) + 1) * '-'
-TRAIN_HEADER = dash + '\n' + h_str + '\n' + dash
+DASH = (len(HSTR) + 1) * '-'
+TRAIN_HEADER = DASH + '\n' + HSTR + '\n' + DASH
 
 SKIP_KEYS = ['x_out', 'dx_proposed', 'dx_out']
 
 class TrainLogger(object):
-    def __init__(self,
-                 model,
-                 log_dir,
-                 params=None):
+    def __init__(self, model):
         """Create `TrainLogger` object."""
-        if params is None:
-            params = model.params
-
         self.model = model
-        self.summaries = params.get('summaries', False)
-        self._keep_data = params.get('keep_data', False)
+        self.summaries = model.summaries
+        self._keep_data = model.save_train_data
         self._clear_data = not self._keep_data
-        self._print_steps = params.get('print_steps', 10)
-        self._save_steps = params.get('save_steps', 10000)
-        self._logging_steps = params.get('logging_steps', 500)
-
-        model_type = getattr(model, '_model_type', None)
-        self._model_type = model_type
-
+        self._print_steps = model.print_steps
+        self._save_steps = model.save_steps
+        self._logging_steps = model.logging_steps
+        self._model_type = model._model_type
         self.train_data = {}
         self.h_strf = ("{:^13s}" + 9 * "{:^12s}").format(
             "STEP", "t/STEP", "LOSS", "% ACC", "EPS", "dx",
@@ -73,15 +61,13 @@ class TrainLogger(object):
         # log_dir will be None if using_hvd and hvd.rank() != 0
         # this prevents workers on different ranks from corrupting checkpoints
         #  if log_dir is not None and self.is_chief:
-        dirs, files = self._create_dir_structure(log_dir)
+        dirs, files = self._create_dir_structure(model.log_dir)
         self.log_dir = dirs['log_dir']
         self.checkpoint_dir = dirs['checkpoint_dir']
         self.train_dir = dirs['train_dir']
         self.train_summary_dir = dirs['train_summary_dir']
         self.train_log_file = files['train_log_file']
         self.current_state_file = files['current_state_file']
-
-        save_params(self.model.params, self.log_dir)
 
         if self.summaries:
             self.writer = tf.summary.FileWriter(self.train_summary_dir,
@@ -188,6 +174,8 @@ class TrainLogger(object):
             out_dir = os.path.join(self.train_dir, 'train_data')
             io.check_else_make_dir(out_dir)
             for key, val in self.train_data.items():
+                if key == 'x_in':
+                    continue
                 out_file = os.path.join(out_dir, f'{key}.z')
                 io.savez(np.array(val), out_file, name=key)
         else:

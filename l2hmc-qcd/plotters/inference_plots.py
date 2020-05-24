@@ -434,24 +434,17 @@ def plot_losses(plaq_loss, charge_loss, title_str=None, out_dir=None):
     """Plot losses from inference run."""
     plaq_loss = np.array(plaq_loss)
     charge_loss = np.array(charge_loss)
-    #  chain, steps = therm_arr(chain)
-    #  steps = np.arange(plaq_loss.shape[0])
     plaq_loss, steps = therm_arr(plaq_loss)
     charge_loss, _ = therm_arr(charge_loss)
     fig, axes = plt.subplots(nrows=2, ncols=2)
     for idx in range(plaq_loss.shape[1]):
-        #  pl = 'plaq_loss' if idx == 0 else None
-        #  cl = 'charge_loss' if idx == 0 else None
-        axes[0, 0].plot(steps, plaq_loss[:, idx],  # , label=pl,
+        axes[0, 0].plot(steps, plaq_loss[:, idx],
                         color='C0', marker='.', markersize=0.8, ls='')
-        axes[1, 0].plot(steps, charge_loss[:, idx],  # , label=cl,
-                        color='C1', marker='.', markersize=0.8,  ls='')
+        axes[1, 0].plot(steps, charge_loss[:, idx],
+                        color='C1', marker='.', markersize=0.8, ls='')
 
     sns.kdeplot(plaq_loss.flatten(), shade=True, ax=axes[0, 1], color='C0')
     sns.kdeplot(charge_loss.flatten(), shade=True, ax=axes[1, 1], color='C1')
-                #  clip=(-1., 0.05))
-    #  axes[0].legend(loc='best')
-    #  axes[1].legend(loc='best')
     axes[0, 0].set_ylabel(f'plaq. loss', fontsize='large')
     axes[0, 1].set_xlabel('plaq. loss', fontsize='large')
     axes[1, 0].set_ylabel(f'charge loss', fontsize='large')
@@ -484,15 +477,16 @@ def traceplot_posterior(dataset, name, fname, fig_dir,
     pp_fname = _check_existing(fig_dir, f'{fname}_{name}_posterior')
     tp_fout = os.path.join(fig_dir, f'{tp_fname}.png')
     pp_fout = os.path.join(fig_dir, f'{pp_fname}.png')
-    plot_trace(dataset, tp_fout,
-               title_str=title_str,
-               filter_str=filter_str)
     plot_posterior(dataset, pp_fout,
                    title_str=title_str,
                    filter_str=filter_str)
+    plot_trace(dataset, tp_fout,
+               title_str=title_str,
+               filter_str=filter_str)
 
 
-def inference_plots(run_data, params, run_config, runs_np=True):
+def inference_plots(run_data, params, run_config,
+                    runs_np=True, num_chains=None):
     """Create trace plots of lattice observables and energy data.
 
     Args:
@@ -501,11 +495,8 @@ def inference_plots(run_data, params, run_config, runs_np=True):
     """
     run_str = run_config.run_str
     log_dir = params['log_dir']
-    if runs_np:
-        figs_dir = os.path.join(log_dir, 'figures_np')
-    else:
-        figs_dir = os.path.join(log_dir, 'figures_tf')
-
+    fstr = 'figures_np' if runs_np else 'figures_tf'
+    figs_dir = os.path.join(log_dir, fstr)
     fig_dir = os.path.join(figs_dir, run_str)
     io.check_else_make_dir(fig_dir)
 
