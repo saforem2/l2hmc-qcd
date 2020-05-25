@@ -81,10 +81,12 @@ def dense_layer(units, seed=None, factor=1.,
 class ScaledTanhLayer:
     """Wrapper class for dense layer + exp scaled tanh output."""
     def __init__(self, name, factor, units, seed, zero_init=False):
-        self.coeff, self.layer = self._build(name, factor, units, seed)
+        self.coeff, self.layer = self._build(name, factor,
+                                             units, seed,
+                                             zero_init)
 
     @staticmethod
-    def _build(name, factor, units, seed):
+    def _build(name, factor, units, seed, zero_init):
         layer_name = f'{name}_layer'
         coeff_name = f'coeff_{name}'
         with tf.name_scope(name):

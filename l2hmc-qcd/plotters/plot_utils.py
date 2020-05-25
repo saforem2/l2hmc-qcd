@@ -58,7 +58,7 @@ def get_train_weights(params):
     return (xsw, xtw, xqw, vsw, vtw, vqw)
 
 
-def plot_setup(log_dir, params, idx=None, nw_run=True):
+def plot_setup(log_dir, params=None, idx=None, nw_run=True):
     """Setup for plotting. Creates `filename` and `title_str`.
 
     Args:
@@ -68,12 +68,18 @@ def plot_setup(log_dir, params, idx=None, nw_run=True):
         nw_run (bool): Whether to include net_weights used for inference in
             title_str.
     """
-    #  params = io.loadz(os.path.join(log_dir, 'parameters.z'))
-    params_file = os.path.join(log_dir, 'params.z')
-    if os.path.isfile(params_file):
-        extra_params = io.loadz(params_file)
-        params.update(**{k: v for k, v in extra_params if k not in params})
-        #  params.update(**io.loadz(os.path.join(log_dir, 'params.z')))
+    if params is None:
+        #  params = io.loadz(os.path.join(log_dir, 'parameters.z'))
+        params_file = os.path.join(log_dir, 'params.z')
+        if os.path.isfile(params_file):
+            train_params = io.loadz(params_file)
+            params.update({
+                k: v for k, v in train_params if k not in params
+            })
+
+            #  params.update(**{
+            #      k: v for k, v in extra_params if k not in params
+            #  })
 
     clip_value = params.get('clip_value', 0)
     eps_fixed = params.get('eps_fixed', False)

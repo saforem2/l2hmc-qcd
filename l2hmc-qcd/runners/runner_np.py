@@ -126,21 +126,24 @@ class RunConfig:
     def __init__(self,
                  run_params,
                  log_dir=None,
-                 extra_params=None,
                  model_type=None,
+                 train_params=None,
                  from_trained_model=True):
         self.model_type = model_type
-        if from_trained_model:
-            if log_dir is None:
-                if extra_params is None:
-                    log_dir = os.getcwd()
-                else:
-                    log_dir = extra_params.get('log_dir', os.getcwd())
+        if log_dir is None and train_params is None and not from_trained_model:
+            raise ValueError('If not restoring `from_trained_model`, either '
+                             '`log_dir`, or `train_params` must be specified.')
 
-            extra_params = self.find_params(log_dir)
-
+        #  if from_trained_model:
+        #      if log_dir is None:
+        #          if extra_params is None:
+        #              log_dir = os.getcwd()
+        #          else:
+        #              log_dir = extra_params.get('log_dir', os.getcwd())
+        #
+        #      extra_params = self.find_params(log_dir)
         self.log_dir = log_dir
-        self.run_params = self.set_attrs(run_params, extra_params)
+        self.run_params = self.set_attrs(run_params, train_params)
         if from_trained_model:
             self.weights = self.load_weights(self.log_dir)
         else:
@@ -206,14 +209,23 @@ class RunConfig:
         return weights
 
     # pylint: disable=attribute-defined-outside-init
-    def set_attrs(self, run_params, extra_params):
+    def set_attrs(self, run_params, train_params=None):
+        """Set instance attributes by parsing from params."""
+        if run_params.eps is None:
+            if train_params is None:
+                fpath = os.path.join(self.log_dir, 'params.z')
+                train_params = io.loadz(fpath)
+
         run_params = AttrDict(run_params._asdict())
         run_params.update({
-            k: v for k, v in extra_params.items() if k not in run_params
+            k: v for k, v in train_params.items() if k not in run_params
         })
 
-        if run_params.get('eps', None) is None:
-            run_params['eps'] = _get_eps(self.log_dir)
+        if run_params.eps is None:
+            run_params.eps = _get_eps(self.log_dir)
+
+        #  if run_params.get('eps', None) is None:
+        #      run_params['eps'] = _get_eps(self.log_dir)
 
         dim = run_params.get('dim', None)
         time_size = run_params.get('time_size', None)
@@ -292,12 +304,12 @@ class RunnerNP:
                  run_params,
                  log_dir=None,
                  model_type=None,
-                 extra_params=None,
+                 train_params=None,
                  from_trained_model=True):
         self.config = RunConfig(run_params,
                                 log_dir=log_dir,
                                 model_type=model_type,
-                                extra_params=extra_params,
+                                train_params=train_params,
                                 from_trained_model=from_trained_model)
         #  self.config = RunConfig(run_params, log_dir=log_dir,
         #                          model_type=model_type)
