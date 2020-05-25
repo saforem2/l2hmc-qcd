@@ -91,6 +91,18 @@ def main(FLAGS):
         v_transformation=FLAGS.v_transformation_weight
     )
 
+    if FLAGS.log_dir is not None:
+        train_params = io.loadz(os.path.join(FLAGS.log_dir, 'params.z'))
+    else:
+        try:
+            train_params = io.loadz(os.path.join(os.getcwd(), 'params.z'))
+            FLAGS.log_dir = train_params['log_dir']
+        except FileNotFoundError as e:
+            raise(e)
+
+    if FLAGS.num_steps is None:
+        FLAGS.num_steps = train_params['num_steps']
+
     run_params = RunParams(
         beta=FLAGS.beta,
         eps=FLAGS.eps,
@@ -105,7 +117,11 @@ def main(FLAGS):
         network_type='GaugeNetwork',
     )
 
-    runner = RunnerNP(run_params, FLAGS.log_dir, model_type='GaugeModel')
+    runner = RunnerNP(run_params,
+                      FLAGS.log_dir,
+                      model_type='GaugeModel',
+                      train_params=train_params,
+                      from_trained_model=True)
 
     #  if net_weights == NET_WEIGHTS_L2HMC:
     #      x = run_hmc(FLAGS, 500)
@@ -118,8 +134,10 @@ def main(FLAGS):
     run_data = runner.inference(x=x)
 
     _, _, fig_dir = inference_plots(run_data,
-                                    runner.config.train_params,
-                                    runner.config)
+                                    train_params,
+                                    runner.config,
+                                    runs_np=True,
+                                    num_chains=10)
 
     out_file = os.path.join(fig_dir, 'run_summary.txt')
     _, _ = run_data.log_summary(out_file=out_file, n_boot=10)

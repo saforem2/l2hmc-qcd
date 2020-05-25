@@ -294,9 +294,10 @@ def train(FLAGS, log_file=None):
                                 net_weights=nw_init,
                                 beta=FLAGS.beta_init)
 
-    if IS_CHIEF and FLAGS.save_train_data:
+    if IS_CHIEF:
         save(FLAGS, model, sess, logger, state_final)
-        _ = plot_train_data(logger.train_data, FLAGS, num_chains=10)
+        if FLAGS.save_train_data:
+            _ = plot_train_data(logger.train_data, FLAGS, num_chains=10)
 
     sess.close()
     tf.compat.v1.reset_default_graph()
