@@ -46,7 +46,8 @@ from tensorflow.python.client import timeline
 import config as cfg
 import utils.file_io as io
 
-from config import NetWeights, Weights, PI, TWO_PI
+from config import (NET_WEIGHTS_HMC, NET_WEIGHTS_L2HMC, NetWeights, PI, TWO_PI,
+                    Weights)
 from seed_dict import seeds, vnet_seeds, xnet_seeds
 from models.gauge_model import GaugeModel
 from loggers.train_logger import TrainLogger
@@ -82,6 +83,22 @@ def log_params(params):
     for key, val in params.items():
         io.log(f' - {key} : {val}\n')
     io.log(SEP_STR)
+
+
+def merge_dicts(main_dict, extra_dict, overwrite=False):
+    """Conditionally update `main_dict` using `extra_dict`.
+
+    Explicitly, this updates `main_dict` with those entries of `extra_dict`
+    that are not already in `main_dict`.
+    """
+    if overwrite:
+        main_dict.update(extra_dict)
+    else:
+        main_dict.update({
+            k: v for k, v in extra_dict.items() if k not in main_dict
+        })
+
+    return main_dict
 
 
 def create_sess(FLAGS, **sess_kwargs):
@@ -176,14 +193,34 @@ def save_eps(model, sess):
     return eps_np
 
 
-def restore_state_and_params(log_dir):
+def restore_state_and_params(FLAGS):
     """Returns previous training state and updated params from `log_dir`."""
-    params = io.loadz(os.path.join(log_dir, 'params.z'))
-    state = io.loadz(os.path.join(log_dir, 'training', 'current_state.z'))
-    params['lr_init'] = state['lr']
-    params['beta_init'] = state['beta']
+    params = io.loadz(os.path.join(FLAGS.log_dir, 'params.z'))
+    train_dir = os.path.join(FLAGS.log_dir, 'training')
+    try:
+        state = io.loadz(os.path.join(train_dir, 'final_state.z'))
+    except FileNotFoundError:
+        state = io.loadz(os.path.join(train_dir, 'current_state.z'))
 
-    return state, AttrDict(params)
+    #  FLAGS = FLAGS.update({
+    #      k: v for k, v in params.items() if k not in FLAGS
+    #  })
+    for key, val in params.items():
+        if key not in FLAGS:
+            FLAGS[key] = val
+
+    #  if 'eps' in FLAGS.to_restore:
+    #      FLAGS.eps = state['dynamics_eps']
+    #  if 'beta' in FLAGS.to_restore:
+    #      FLAGS.beta_init = state['beta']
+    #  if 'lr' in FLAGS.to_restore:
+    #      FLAGS.lr_init = state['lr']
+    #
+    #  x_init = None
+    #  if 'x' in FLAGS.to_restore:
+    #      x_init = state['x_out']
+
+    return state, FLAGS
 
 
 @timeit
@@ -201,14 +238,16 @@ def build_model(FLAGS, log_file=None):
         'keep_data': FLAGS.save_train_data,
     })
 
-    if FLAGS.restore:
-        #  params = io.loadz(os.path.join(params['log_dir'], 'params.z'))
-        FLAGS = AttrDict(io.loadz(os.path.join(log_dir, 'params.z')))
-        state = io.loadz(os.path.join(log_dir, 'training', 'current_state.z'))
-        FLAGS.update({
-            'lr_init': state['lr'],
-            'beta_init': state['beta'],
-        })
+    #  if FLAGS.restore:
+    #      params = io.loadz(os.path.join(params['log_dir'], 'params.z'))
+    #      params = AttrDict(io.loadz(os.path.join(log_dir, 'params.z')))
+    #      FLAGS = merge_dicts(FLAGS, params, overwrite=False)
+    #      state = io.loadz(os.path.join(log_dir, 'training',
+    #                                    'current_state.z'))
+    #      FLAGS.update({
+    #          'lr_init': state['lr'],
+    #          'beta_init': state['beta'],
+    #      })
 
     hooks = []
     if FLAGS.horovod:
@@ -247,6 +286,58 @@ def save(FLAGS, model, sess, logger, state=None):
 
 
 @timeit
+def train_hmc(FLAGS, log_file=None):
+    """Train HMC sampler prior to training L2HMC sampler."""
+    io.log(80 * '=')
+    io.log(f'TRAINING HMC MODEL...')
+    FLAGS_ = AttrDict(dict(FLAGS))
+
+    IS_CHIEF = (
+        not FLAGS_.horovod
+        or FLAGS_.horovod and hvd.rank() == 0
+    )
+
+    FLAGS._warmup_lr = False
+    FLAGS_.dropout_prob = 0.
+    FLAGS_.hmc = True
+    FLAGS_.save_train_data = True
+    FLAGS_.train_steps = FLAGS_.pop('hmc_steps')
+    FLAGS_.lr_decay_steps = FLAGS_.train_steps // 4
+    FLAGS_.beta_init = FLAGS_.beta_final
+    FLAGS_.fixed_beta = True
+    model, hooks, FLAGS_ = build_model(FLAGS_, log_file)
+    logger, ckpt_dir = None, None
+    if IS_CHIEF:
+        logger, ckpt_dir = build_logger_and_ckpt_dir(model)
+
+    sess = create_sess(FLAGS_,
+                       hooks=hooks,
+                       checkpoint_dir=ckpt_dir,
+                       save_summaries_secs=None,
+                       save_summaries_steps=None)
+
+    trainer = Trainer(sess, model, logger, FLAGS_)
+
+    xdim = FLAGS_.time_size * FLAGS_.space_size * 2
+    x_init = np.random.uniform(-PI, PI, size=(FLAGS_.batch_size, xdim))
+
+    state_final = trainer.train(x=x_init,
+                                net_weights=NET_WEIGHTS_HMC,
+                                beta=FLAGS_.beta_init)
+    io.log(80 * '=')
+
+    if IS_CHIEF:
+        save(FLAGS_, model, sess, logger, state_final)
+        if FLAGS_.save_train_data:
+            _ = plot_train_data(logger.train_data, FLAGS_, num_chains=10)
+
+    sess.close()
+    tf.compat.v1.reset_default_graph()
+
+    return state_final
+
+
+@timeit
 def train(FLAGS, log_file=None):
     """Train L2HMC sampler and log/plot results."""
     IS_CHIEF = (
@@ -254,9 +345,20 @@ def train(FLAGS, log_file=None):
         or FLAGS.horovod and hvd.rank() == 0
     )
 
-    state_final = None
-    if FLAGS.restore:
-        state_final, FLAGS = restore_state_and_params(FLAGS.log_dir)
+    state = None
+    xdim = FLAGS.time_size * FLAGS.space_size * 2
+    x_init = np.random.uniform(-PI, PI, size=(FLAGS.batch_size, xdim))
+    if FLAGS.hmc_start:
+        state = train_hmc(FLAGS)
+        x_init = state['x_out']
+        FLAGS.eps = state['dynamics_eps']
+
+    elif FLAGS.restore:
+        state, FLAGS = restore_state_and_params(FLAGS)
+        x_init = state['x_out']
+        FLAGS.beta_init = state['beta']
+        FLAGS.lr_init = state['lr']
+        FLAGS.eps = state['dynamics_eps']
 
     model, hooks, FLAGS = build_model(FLAGS, log_file)
 
@@ -272,22 +374,17 @@ def train(FLAGS, log_file=None):
 
     trainer = Trainer(sess, model, logger, FLAGS)
 
-    shape = (FLAGS.batch_size, model.lattice.num_links)
-    x_init = np.random.uniform(-PI, PI, size=shape)
-
-    nw_init = NetWeights(FLAGS.x_scale_weight,
-                         FLAGS.x_translation_weight,
-                         FLAGS.x_transformation_weight,
-                         FLAGS.v_scale_weight,
-                         FLAGS.v_translation_weight,
-                         FLAGS.v_transformation_weight)
+    if FLAGS.hmc:
+        nw_init = NET_WEIGHTS_HMC
+    else:
+        nw_init = NET_WEIGHTS_L2HMC
 
     if FLAGS.restore:
-        x_init = state_final['x_in']
+        #  x_init = state_final['x_in']
         restore_ops = [model.global_step_setter, model.eps_setter]
         sess.run(restore_ops, feed_dict={
-            model.global_step_ph: state_final['step'],
-            model.eps_ph: state_final['dynamics_eps'],
+            model.global_step_ph: state['step'],
+            model.eps_ph: FLAGS.eps
         })
 
     state_final = trainer.train(x=x_init,

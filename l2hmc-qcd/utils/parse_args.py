@@ -497,6 +497,39 @@ def parse_args():
                               argument is passed, a `log_dir` must be specified
                               and passed to `--log_dir argument."""))
 
+    parser.add_argument('--hmc_start',
+                        dest='hmc_start',
+                        action='store_true',
+                        required=False,
+                        help=("""Find optimal `eps` by training HMC model with
+                              `eps` a trainable parameter, and use this value
+                              along with the resulting thermalized config as
+                              the starting point for training the L2HMC
+                              sampler."""))
+
+    parser.add_argument('--hmc_steps',
+                        dest='hmc_steps',
+                        type=int,
+                        default=10000,
+                        required=False,
+                        help=("""Number of steps to train HMC sampler."""))
+
+    parser.add_argument("--resume_training",
+                        dest="resume_training",
+                        action="store_true",
+                        required=False,
+                        help=("""Resume training."""))
+
+    parser.add_argument('--to_restore',
+                        dest='to_restore',
+                        type=lambda s: [str(i) for i in s.split(',')],
+                        default='',
+                        #  default="x,eps,beta,lr",
+                        required=False,
+                        help=("""List of variable names to restore if restoring
+                              from previous training run.
+                              Possible values: ['x', 'beta', 'eps', 'lr']."""))
+
     parser.add_argument("--theta",
                         dest="theta",
                         action="store_true",
