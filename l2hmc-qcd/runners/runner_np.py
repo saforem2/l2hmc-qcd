@@ -331,8 +331,7 @@ class RunnerNP:
     def save_params(self, out_dir=None):
         if out_dir is None:
             out_dir = self.config.run_dir
-
-        io.save_dict(self.config.run_params._asdict(), out_dir, 'run_params')
+        io.save_dict(dict(self.config.run_params), out_dir, 'run_params')
 
     def create_lattice(self, params):
         """Craete `GaugeLattice` object."""
