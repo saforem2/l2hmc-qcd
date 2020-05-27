@@ -25,6 +25,14 @@ def parse_args():
                         help=("""Flag that when passed sets all `net_weights`
                               to 0."""))
 
+    parser.add_argument('--hmc_start',
+                        dest='hmc_start',
+                        action='store_true',
+                        required=False,
+                        help=("""Flag that when passed will run HMC to get
+                              thermalized configuration as initial state for
+                              running inference on trained model."""))
+
     parser.add_argument('--num_steps',
                         dest='num_steps',
                         required=False,
