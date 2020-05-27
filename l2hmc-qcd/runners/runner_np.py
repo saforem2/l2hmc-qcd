@@ -156,6 +156,9 @@ class RunConfig:
         self.run_dir = os.path.join(self.log_dir, 'runs_np', self.run_str)
         io.check_else_make_dir(self.run_dir)
 
+        rp_fpath = os.path.join(self.run_dir, 'run_params.z')
+        io.savez(dict(self.run_params), rp_fpath, name='run_params')
+
         self.dynamics_params = DynamicsParamsNP(
             eps=self.eps,
             num_steps=self.num_steps,
@@ -324,6 +327,12 @@ class RunnerNP:
         self._potential_fn = self.lattice.calc_actions_np
         self.dynamics = self.create_dynamics(self._potential_fn,
                                              self.config.dynamics_params)
+
+    def save_params(self, out_dir=None):
+        if out_dir is None:
+            out_dir = self.config.run_dir
+
+        io.save_dict(self.config.run_params._asdict(), out_dir, 'run_params')
 
     def create_lattice(self, params):
         """Craete `GaugeLattice` object."""

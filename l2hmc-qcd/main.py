@@ -34,8 +34,6 @@ from __future__ import absolute_import, division, print_function
 
 import os
 
-from collections import namedtuple
-
 import numpy as np
 import tensorflow as tf
 
@@ -46,8 +44,8 @@ from tensorflow.python.client import timeline
 import config as cfg
 import utils.file_io as io
 
-from config import (NET_WEIGHTS_HMC, NET_WEIGHTS_L2HMC, NetWeights, PI, TWO_PI,
-                    Weights)
+from config import NET_WEIGHTS_HMC, NET_WEIGHTS_L2HMC, NetWeights, PI, TWO_PI
+
 from seed_dict import seeds, vnet_seeds, xnet_seeds
 from models.gauge_model import GaugeModel
 from loggers.train_logger import TrainLogger
@@ -77,6 +75,7 @@ SEP_STR = 80 * '-'  # + '\n'
 # pylint:disable=too-many-statements
 # pylint:disable=no-name-in-module, invalid-name
 # pylint:disable=redefined-outer-name
+
 
 def log_params(params):
     io.log(SEP_STR + '\nL2HMC PARAMETERS:\n')
@@ -145,8 +144,8 @@ def save_params(model):
     count_trainable_params(out_file)
 
     model.params['network_type'] = model.network_type
-    io.savez(dict(model.params), os.path.join(os.getcwd(), 'params.z'))
-    io.savez(dict(model.params), os.path.join(model.log_dir, 'params.z'))
+    io.save_dict(dict(model.params), os.path.join(os.getcwd(), 'params.z'))
+    io.save_dict(dict(model.params), os.path.join(model.log_dir, 'params.z'))
 
 
 def save_masks(model, sess):
@@ -188,7 +187,9 @@ def save_eps(model, sess):
     """Save final value of `eps` (step size) at the end of training."""
     eps_np = sess.run(model.dynamics.eps)
     eps_dict = {'eps': eps_np}
-    io.savez(eps_dict, os.path.join(model.log_dir, 'eps_np.z'))
+    fpath = os.path.join(model.log_dir, 'eps_np.z')
+    io.save_dict(eps_dict, fpath, 'eps_np')
+    #  io.save_dict(eps_dict, os.path.join(model.log_dir, 'eps_np.z'),)
 
     return eps_np
 

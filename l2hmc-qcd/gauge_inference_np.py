@@ -22,7 +22,7 @@ import matplotlib as mpl
 
 import utils.file_io as io
 
-from config import NET_WEIGHTS_HMC, NetWeights
+from config import NET_WEIGHTS_HMC, NET_WEIGHTS_L2HMC, NetWeights, PI
 from runners.runner_np import RunnerNP, RunParams
 from plotters.inference_plots import inference_plots
 from utils.file_io import timeit
@@ -75,8 +75,9 @@ def run_hmc(args, run_steps):
     runner_hmc = RunnerNP(run_params, args.log_dir, model_type='GaugeModel')
     x = np.random.uniform(-np.pi, np.pi, size=runner_hmc.config.input_shape)
     rd_hmc = runner_hmc.inference(x=x, run_steps=run_steps)
+    x_out = rd_hmc.samples_arr[-1]
 
-    return rd_hmc
+    return x_out, rd_hmc
 
 
 @timeit
@@ -124,14 +125,25 @@ def main(FLAGS):
                       from_trained_model=True)
 
     #  if net_weights == NET_WEIGHTS_L2HMC:
-    #      x = run_hmc(FLAGS, 500)
+    #      x, _ = run_hmc(FLAGS, 1000)
     #  else:
     #      train_state = io.loadz(os.path.join(runner.config.log_dir,
     #                                          'training', 'current_state.z'))
     #      x = train_state['x_in'][:FLAGS.batch_size, :]
+    if FLAGS.hmc_start:
+        x, _ = run_hmc(FLAGS, 1000)
+    else:
+        try:
+            final_state = io.loadz(os.path.join(runner.config.log_dir,
+                                                'training', 'current_state.z'))
+            # Only use first `FLAGS.batch_size` chains
+            x = final_state['x_out'][:FLAGS.batch_size, :]
+        except FileNotFoundError:
+            shape = (FLAGS.batch_size, runner.config.run_params.xdim)
+            x = np.random.uniform(-PI, PI, size=shape)
 
-    x = np.random.uniform(-np.pi, np.pi, size=runner.config.input_shape)
     run_data = runner.inference(x=x)
+    runner.save_params()
 
     _, _, fig_dir = inference_plots(run_data,
                                     train_params,
