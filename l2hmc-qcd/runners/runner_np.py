@@ -220,15 +220,13 @@ class RunConfig:
                 train_params = io.loadz(fpath)
 
         run_params = AttrDict(run_params._asdict())
-        run_params.update({
-            k: v for k, v in train_params.items() if k not in run_params
-        })
+        if train_params is not None:
+            run_params.update({
+                k: v for k, v in train_params.items() if k not in run_params
+            })
 
         if run_params.eps is None:
             run_params.eps = _get_eps(self.log_dir)
-
-        #  if run_params.get('eps', None) is None:
-        #      run_params['eps'] = _get_eps(self.log_dir)
 
         dim = run_params.get('dim', None)
         time_size = run_params.get('time_size', None)
