@@ -196,7 +196,11 @@ def save_eps(model, sess):
 
 def restore_state_and_params(FLAGS):
     """Returns previous training state and updated params from `log_dir`."""
-    params = io.loadz(os.path.join(FLAGS.log_dir, 'params.z'))
+    try:
+        params = io.loadz(os.path.join(FLAGS.log_dir, 'params.z'))
+    except:
+        params = AttrDict(dict(FLAGS).copy())
+
     train_dir = os.path.join(FLAGS.log_dir, 'training')
     try:
         state = io.loadz(os.path.join(train_dir, 'final_state.z'))
@@ -257,6 +261,8 @@ def build_model(FLAGS, log_file=None):
             'num_workers': hvd.size()
         })
         hooks += [hvd.BroadcastGlobalVariablesHook(0)]
+
+    io.save_dict(dict(FLAGS), log_dir, 'params')
 
     return GaugeModel(FLAGS), hooks, FLAGS
 
@@ -345,6 +351,11 @@ def train(FLAGS, log_file=None):
         not FLAGS.horovod
         or FLAGS.horovod and hvd.rank() == 0
     )
+
+    if FLAGS.log_dir is not None:
+        params_file = os.path.join(FLAGS.log_dir, 'params.z')
+        if not os.path.isfile(params_file):
+            io.save_dict(dict(FLAGS), FLAGS.log_dir, 'params.z')
 
     state = None
     xdim = FLAGS.time_size * FLAGS.space_size * 2
