@@ -72,12 +72,45 @@ def strf(x):
 
 
 def get_subdirs(root_dir):
+    """Returns all subdirectories in `root_dir`."""
     subdirs = [
         os.path.join(root_dir, i)
         for i in os.listdir(root_dir)
         if os.path.isdir(os.path.join(root_dir, i))
     ]
     return subdirs
+
+def change_params_log_dir(log_dir):
+    params_file = os.path.join(log_dir, 'params.z')
+    if os.path.isfile(params_file):
+        log(f'Loading from: {params_file}.')
+        copy_file = os.path.join(log_dir, 'params_original.z')
+        _ = shutil.copy2(params_file, copy_file)
+        params = loadz(os.path.join(log_dir, 'params.z'))
+        orig_log_dir = params['log_dir']
+        params['orig_log_dir'] = orig_log_dir
+        params['log_dir'] = log_dir
+        save_dict(params, log_dir, 'params')
+
+    return params
+
+def change_checkpoint_dir(log_dir, orig_str):
+    checkpoint_file = os.path.join(log_dir, 'checkpoints', 'checkpoint')
+    new_str = '/'.join(log_dir.split('/')[:-2])
+    if os.path.isfile(checkpoint_file):
+        log(f'Loading from checkpoint file: {checkpoint_file}.')
+        log(f'Replacing:\n \t{orig_str}\n with\n \t{new_str}\n')
+
+        copy_file = os.path.join(log_dir, 'checkpoints', 'checkpoint_original')
+        _ = shutil.copy2(checkpoint_file, copy_file)
+
+        lines = []
+        with open(checkpoint_file, 'r') as f:
+            for line in f:
+                lines.append(line.replace(orig_str, new_str))
+
+        with open(checkpoint_file, 'w') as f:
+            f.writelines(lines)
 
 
 def get_run_dirs(log_dir, filter_str=None, runs_str='runs_np'):
