@@ -57,20 +57,6 @@ def parse_args():
     return args
 
 
-def build_dataframes1(run_dirs, data=None, **kwargs):
-    """Build dataframes containing inference data from `run_dirs`."""
-    for run_dir in run_dirs:
-        try:
-            new_df, run_params = get_observables(run_dir, **kwargs)
-            if data is None:
-                data = new_df
-            else:
-                data = pd.concat([data, new_df], axis=0).reset_index(drop=True)
-        except FileNotFoundError:
-            continue
-    return data, run_params
-
-
 def calc_tunneling_rate(charges):
     """Calculate the tunneling rate from `charges`."""
     if charges.shape[0] > charges.shape[1]:

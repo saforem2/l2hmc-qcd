@@ -67,8 +67,8 @@ def project_angle_fft(x, n=10):
         n (int): number of terms to keep in fourier series.
     """
     y = np.zeros(x.shape, dtype=x.dtype)
-    for n in range(1, n):
-        y += (-2 / n) * ((-1) ** n) * np.sin(n * x)
+    for i in range(1, n):
+        y += (-2 / i) * ((-1) ** i) * np.sin(i * x)
     return y
 
 

@@ -131,7 +131,7 @@ def main(FLAGS):
     #                                          'training', 'current_state.z'))
     #      x = train_state['x_in'][:FLAGS.batch_size, :]
     if FLAGS.hmc_start:
-        x, _ = run_hmc(FLAGS, 1000)
+        x, _ = run_hmc(FLAGS, 100)
     else:
         try:
             final_state = io.loadz(os.path.join(runner.config.log_dir,

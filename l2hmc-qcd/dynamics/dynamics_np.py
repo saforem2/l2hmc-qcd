@@ -273,13 +273,17 @@ class DynamicsNP(object):
         # Randomly choose direction
         forward = (np.random.uniform() < 0.5)
 
-        xp, vp, _, _ = self.transition_kernel(*state, net_weights,
-                                              forward=forward)
+        state_p, _, _ = self.transition_kernel(*state, net_weights,
+                                               forward=forward)
+        xp = state_p.x
+        vp = state_p.v
 
         state_pert = State(x=x_pert, v=v_pert, beta=state.beta)
-        xp_pert, vp_pert, _, _ = self.transition_kernel(*state_pert,
-                                                        net_weights,
-                                                        forward=forward)
+        state_pert, _, _ = self.transition_kernel(*state_pert,
+                                                  net_weights,
+                                                  forward=forward)
+        xp_pert = state_pert.x
+        vp_pert = state_pert.v
         dv_out = vp_pert - vp
         if self._model_type == 'GaugeModel':
             xp = convert_to_angle(xp)

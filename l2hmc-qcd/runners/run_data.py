@@ -260,37 +260,25 @@ class RunData:
 
     def save_direction_data(self):
         """Save directionality data."""
-        #  forward_arr = self.run_data.get('forward', None)
-        #  if forward_arr is None:
-        #      io.log(f'`run_data` has no `forward` item. Returning.')
-        #      return
-        #  forward_arr = np.array(forward_arr)
-        #  num_steps = len(forward_arr)
-        #  steps_f = forward_arr.sum()
-        #  steps_b = num_steps - steps_f
-        #  percent_f = steps_f / num_steps
-        #  percent_b = steps_b / num_steps
-        #
-        #  direction_file = os.path.join(self.run_params['run_dir'],
-        #                                'direction_results.txt')
-        #  with open(direction_file, 'w') as f:
-        #      f.write(f'forward steps: {steps_f}/{num_steps}, {percent_f}\n')
-        #      f.write(f'backward steps: {steps_b}/{num_steps}, {percent_b}\n')
-        pass
+        forward_arr = self.run_data.get('forward', None)
+        if forward_arr is None:
+            io.log(f'`run_data` has no `forward` item. Returning.')
+            return
+        forward_arr = np.array(forward_arr)
+        num_steps = len(forward_arr)
+        steps_f = forward_arr.sum()
+        steps_b = num_steps - steps_f
+        percent_f = steps_f / num_steps
+        percent_b = steps_b / num_steps
+
+        direction_file = os.path.join(self.run_params['run_dir'],
+                                      'direction_results.txt')
+        with open(direction_file, 'w') as f:
+            f.write(f'forward steps: {steps_f}/{num_steps}, {percent_f}\n')
+            f.write(f'backward steps: {steps_b}/{num_steps}, {percent_b}\n')
 
     def save_samples_data(self, run_dir):
         """Save all samples to `run_dir/samples`."""
-        #  if run_dir is None:
-        #      run_dir = self.run_params['run_dir']
-
-        #  out_dir = os.path.join(run_dir, 'samples')
-        #  io.check_else_make_dir(out_dir)
-        #  io.savez(self.samples_arr, os.path.join(run_dir, 'x_out.z'),
-        #           name='output_samples')
-        #  for key, val in self.samples_dict.items():
-        #      out_file = os.path.join(out_dir, f'{key}.z')
-        #      io.savez(np.array(val), out_file, name=key)
-
         samples_arr_file = os.path.join(run_dir, 'samples.z')
         io.savez(self.samples_arr, samples_arr_file)
 
