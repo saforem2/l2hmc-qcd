@@ -198,7 +198,7 @@ def restore_state_and_params(FLAGS):
     """Returns previous training state and updated params from `log_dir`."""
     try:
         params = io.loadz(os.path.join(FLAGS.log_dir, 'params.z'))
-    except:
+    except FileNotFoundError:
         params = AttrDict(dict(FLAGS).copy())
 
     train_dir = os.path.join(FLAGS.log_dir, 'training')

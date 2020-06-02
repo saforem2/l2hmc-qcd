@@ -41,6 +41,3 @@ def clean(fig_dir=None, log_file=None):
 
 if __name__ == '__main__':
     clean()
-
-
-
