@@ -75,7 +75,7 @@ def project_angle_fft(x, N=10):
     return y
 
 
-def gauge_potential_np(x):
+def calc_plaqs_np(x):
     """Defines the potential energy function using the Wilson action."""
     potential = (x[..., 0]
                  - x[..., 1]
