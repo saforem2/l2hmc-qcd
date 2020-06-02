@@ -11,9 +11,8 @@ Date: 04/11/2020
 # pylint: disable=too-many-arguments, too-few-public-methods
 from __future__ import absolute_import, division, print_function
 
-import pickle
-
 import tensorflow as tf
+from collections import namedtuple
 
 from .layers import (DenseLayerNP, relu, ScaledTanhLayer, ScaledTanhLayerNP,
                      StackedLayer, StackedLayerNP, dense_layer)
@@ -21,6 +20,11 @@ from .network_utils import custom_dense
 import utils.file_io as io
 from config import Weights
 from network import QCOEFF, QNAME, SCOEFF, SNAME, TNAME
+
+
+NetworkConfig = namedtuple('NetworkConfig', [
+    'type', 'units', 'dropout_prob', 'activation_fn'
+])
 
 
 class GaugeNetwork(tf.keras.Model):
