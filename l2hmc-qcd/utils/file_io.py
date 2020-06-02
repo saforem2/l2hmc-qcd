@@ -6,19 +6,19 @@ Created: 2/27/2019
 """
 from __future__ import absolute_import, division, print_function
 
-import sys
 import os
 import time
 import errno
 import pickle
 import shutil
 import datetime
-from collections import OrderedDict
-import config as cfg
 
-import numpy as np
+from collections import OrderedDict
 
 import joblib
+import numpy as np
+
+import config as cfg
 
 try:
     import horovod.tensorflow as hvd
@@ -80,7 +80,9 @@ def get_subdirs(root_dir):
     ]
     return subdirs
 
+
 def change_params_log_dir(log_dir):
+    """Update params with new log dir when copied to local system."""
     params_file = os.path.join(log_dir, 'params.z')
     if os.path.isfile(params_file):
         log(f'Loading from: {params_file}.')
@@ -94,9 +96,16 @@ def change_params_log_dir(log_dir):
 
     return params
 
+
 def change_checkpoint_dir(log_dir, orig_str):
+    """Change ckpt file in log dir when data copied to local system."""
+    if orig_str.endswith('/'):
+        orig_str.rstrip('/')
     checkpoint_file = os.path.join(log_dir, 'checkpoints', 'checkpoint')
+    new_str = os.path.join(*log_dir.split('/')[:-2])
     new_str = '/'.join(log_dir.split('/')[:-2])
+    if not new_str.endswith('/'):
+        new_str += '/'
     if os.path.isfile(checkpoint_file):
         log(f'Loading from checkpoint file: {checkpoint_file}.')
         log(f'Replacing:\n \t{orig_str}\n with\n \t{new_str}\n')
@@ -217,7 +226,7 @@ def make_pngs_from_pdfs(rootdir=None):
                     log(f'in: {inf} --> out: {outf}\n')
                     try:
                         os.system(f'~/bin/pdftopng {inf} {outf}')
-                    except:  # pylint: disable=bare-except
+                    except OSError:
                         return
 
 
@@ -274,7 +283,6 @@ def timeit(method):
     return timed
 
 
-
 def get_timestr():
     """Get formatted time string."""
     now = datetime.datetime.now()
@@ -297,22 +305,11 @@ def get_timestr():
 def load_params(log_dir):
     """Load params from log_dir."""
     names = ['parameters.pkl', 'parameters.z', 'params.pkl', 'params.z']
+    params = None
     for name in names:
         params_file = os.path.join(log_dir, name)
         if os.path.isfile(params_file):
             params = loadz(params_file)
-    #  pkl_file = os.path.join(log_dir, 'parameters.pkl')
-    #  pkl_file_ = os.path.join(log_dir, 'params.pkl')
-    #  z_file = os.path.join(log_dir, 'parameters.z')
-    #  if os.path.isfile(pkl_file):
-    #      with open(pkl_file, 'rb') as f:
-    #          params = pickle.load(f)
-    #  elif os.path.isfile(z_file):
-    #      params = loadz(z_file)
-
-    else:
-        raise FileNotFoundError(f'Unable to locate `parameters`'
-                                f'file in {log_dir}.')
 
     return params
 
