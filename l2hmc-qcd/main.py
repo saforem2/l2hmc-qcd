@@ -144,8 +144,8 @@ def save_params(model):
     count_trainable_params(out_file)
 
     model.params['network_type'] = model.network_type
-    io.save_dict(dict(model.params), os.path.join(os.getcwd(), 'params.z'))
-    io.save_dict(dict(model.params), os.path.join(model.log_dir, 'params.z'))
+    io.save_dict(dict(model.params), os.getcwd(), 'params')
+    io.save_dict(dict(model.params), model.log_dir, 'params')
 
 
 def save_masks(model, sess):
@@ -187,8 +187,8 @@ def save_eps(model, sess):
     """Save final value of `eps` (step size) at the end of training."""
     eps_np = sess.run(model.dynamics.eps)
     eps_dict = {'eps': eps_np}
-    fpath = os.path.join(model.log_dir, 'eps_np.z')
-    io.save_dict(eps_dict, fpath, 'eps_np')
+    #  fpath = os.path.join(model.log_dir, 'eps_np.z')
+    io.save_dict(eps_dict, model.log_dir, 'eps_np')
     #  io.save_dict(eps_dict, os.path.join(model.log_dir, 'eps_np.z'),)
 
     return eps_np
