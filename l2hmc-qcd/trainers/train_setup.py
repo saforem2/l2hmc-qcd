@@ -85,43 +85,38 @@ def get_net_weights(model, sess):
     return weights, coeffs
 
 
-def create_config(params):
+def create_config(FLAGS, local=False):
     """Helper method for creating a tf.ConfigProto object."""
-    config = tf.ConfigProto(allow_soft_placement=True)
-    time_size = params.get('time_size', None)
-    if time_size is not None and time_size > 8:
-        off = rewriter_config_pb2.RewriterConfig.OFF
-        config_attrs = config.graph_options.rewrite_options
-        config_attrs.arithmetic_optimization = off
-
-    gpu = params.get('gpu', False)
-    if gpu:
+    config = tf.compat.v1.ConfigProto(allow_soft_placement=True)
+    if FLAGS.gpu:
         # Horovod: pin GPU to be used to process local rank
         # (one GPU per process)
         config.gpu_options.allow_growth = True
         #  config.allow_soft_placement = True
-        if cfg.HAS_HOROVOD and params['horovod']:
+        if cfg.HAS_HOROVOD and FLAGS.horovod:
             config.gpu_options.visible_device_list = str(hvd.local_rank())
 
-    if cfg.HAS_MATPLOTLIB:
-        params['_plot'] = True
-
-    theta = params.get('theta', False)
-    if theta:
-        params['_plot'] = False
+    if FLAGS.theta:
         io.log("Training on Theta @ ALCF...")
-        params['data_format'] = 'channels_last'
+        FLAGS.data_format = 'channels_last'
         os.environ["KMP_BLOCKTIME"] = str(0)
         os.environ["KMP_AFFINITY"] = (
             "granularity=fine,verbose,compact,1,0"
         )
         # NOTE: KMP affinity taken care of by passing -cc depth to aprun call
-        OMP_NUM_THREADS = 62
+        OMP_NUM_THREADS = 0
         config.allow_soft_placement = True
         config.intra_op_parallelism_threads = OMP_NUM_THREADS
         config.inter_op_parallelism_threads = 0
 
-    return config, params
+    if local:
+        # NOTE: KMP affinity taken care of by passing -cc depth to aprun call
+        OMP_NUM_THREADS = 8
+        config.allow_soft_placement = True
+        config.intra_op_parallelism_threads = OMP_NUM_THREADS
+        config.inter_op_parallelism_threads = 2
+
+    return config
 
 
 def create_session(config, checkpoint_dir, monitored=False):

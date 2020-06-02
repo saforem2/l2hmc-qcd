@@ -1,0 +1,198 @@
+\section{Updates: 04/13/2020}%
+\label{sec:updates_2020_04_13}
+%
+\subsection{Changes to Network}%
+\label{subsec:changes_to_network}
+%
+\begin{itemize}
+  \item Use Cartesian representation \(\left[{\cos\phi_\mu(x),
+    \sin\phi_\mu(x)}\right]\) instead of angular representation \(\phi_{\mu}(x)
+    \in [{0, 2\pi})\).
+    \begin{itemize}
+      \item While this doubles the size of our inputs, it avoids complications
+        that arise from angles near \(0\) and \(2\pi\).
+    \end{itemize}
+  \item \color{blue}{Under this new representation, the bias in the average
+    plaquette no longer seems to be an issue.}\color{black}
+  \item However, there is no noticeable improvement in the tunneling rate when
+    compared to generic HMC.\@
+  \color{red}{\item \textbf{TODO:}}\color{black}
+  \begin{todolist}
+    \item Continue testing with additional hidden layers.
+    \item Add convolutional/pooling layers at beginning of network to ensure
+      translational invariance.
+  \end{todolist}
+\end{itemize}
+%
+\begin{table}[ht!]
+  \centering
+  \begin{tabular}{@{}rccc@{}}
+  % \cmidrule(l){1-4}
+  \multicolumn{1}{l}{} & \multicolumn{1}{l}{\textbf{tunneling events}} & \multicolumn{1}{l}{\textbf{tunneling rate}} & \multicolumn{1}{l}{\textbf{accept prob}} \\
+  \cmidrule(l){1-4} 
+   \multicolumn{1}{r}{\textit{chain 1}} & 1 & 0.000125 & 0.684 \(\pm\) 0.003 \\
+   \multicolumn{1}{r}{\textit{chain 2}} & 4 & 0.000500 & 0.695 \(\pm\) 0.003 \\
+   \multicolumn{1}{r}{\textit{chain 3}} & 4 & 0.000500 & 0.696 \(\pm\) 0.003 \\
+   \multicolumn{1}{r}{\textit{chain 4}} & 3 & 0.000375 & 0.698 \(\pm\) 0.003 \\
+  \cmidrule(l){1-4}
+   \multicolumn{1}{r}{\textbf{average}} & \textbf{2.4} & \textbf{0.0003} &
+   \textbf{0.696 \(\pm\) 0.003}
+  \end{tabular}
+  \caption{Inference results for trained \textbf{L2HMC} sampler ran for \(N = 1\times
+  10^{4}\) accept/reject steps at \(\beta = 5\).}%
+  \label{tab:l2hmc_inference}
+\end{table}
+%
+\begin{table}[ht!]
+  \centering
+  \begin{tabular}{@{}rccc@{}}
+  % \cmidrule(l){2-4}
+  \multicolumn{1}{l}{} & \multicolumn{1}{l}{\textbf{tunneling events}} & \multicolumn{1}{l}{\textbf{tunneling rate}} & \multicolumn{1}{l}{\textbf{accept prob}} \\
+  \cmidrule(l){1-4}
+  \multicolumn{1}{r}{\textit{chain 1}} & 2 & 0.000250 & 0.279 \(\pm\) 0.004 \\
+  \multicolumn{1}{r}{\textit{chain 2}} & 1 & 0.000125 & 0.271 \(\pm\) 0.004 \\
+  \multicolumn{1}{r}{\textit{chain 3}} & 3 & 0.000375 & 0.281 \(\pm\) 0.004 \\
+  \multicolumn{1}{r}{\textit{chain 4}} & 4 & 0.000500 & 0.286 \(\pm\) 0.004 \\
+  \cmidrule(l){1-4}
+  \multicolumn{1}{r}{\textbf{average}} & \textbf{2} & \textbf{0.00025} &
+  \textbf{0.282 \(\pm\) 0.004}
+  \end{tabular}
+  \caption{Inference results for generic \textbf{HMC} sampler ran for \(N = 1\times
+  10^{4}\) accept/reject steps at \(\beta = 5\).}%
+  \label{tab:hmc_inference}
+\end{table}
+%
+\clearpage
+%
+\begin{figure}[ht!]
+  \centering
+  \includegraphics[width=0.7\linewidth]{figures/updates_2020_04_13/l2hmc.png}
+  \caption{Inference results from trained \textbf{L2HMC} sampler.}%
+  \label{fig:l2hmc_inference}
+\end{figure}
+%
+\begin{figure}[ht!]
+  \centering
+  \includegraphics[width=0.7\linewidth]{figures/updates_2020_04_13/hmc.png}
+  \caption{Inference results from generic \textbf{HMC} sampler.}%
+  \label{fig:hmc_inference}
+\end{figure}
+%
+%
+\subsection{Changes to the loss function}%
+\label{subsec:changes_to_loss_fn}
+%
+Since our main goal is to obtain a sampler that is able to efficiently sample
+from different topological sectors, we can design a loss function around this
+idea.
+%
+Recall that the topological charge \(\Q \in \mathbb{Z}\) is computed as
+%
+\begin{equation}
+  \mathcal{Q} \equiv \frac{1}{2\pi}\sum_{\substack{{x; \mu, \nu}\\{\nu > \mu}}}
+    \sin\left(\phi_{\mu\nu}(x)\right)
+\end{equation}
+%
+for
+%
+\begin{equation}
+  \phi_{\mu\nu}(x) = \phi_{\mu}(x) + \phi_{\nu}(x+\hat{\mu}) -
+  \phi_{\mu}(x+\hat{\nu}) - \phi_{\nu}(x)
+\end{equation}
+%
+Instead of maximizing the expected squared jump distance (ESJD) between
+configurations, it makes more sense to maximize quantities related to the
+plaquette sums, e.g.\ the \emph{plaquette distance}, \(\delta_{P}(\xip, \xi)\)
+%
+\begin{equation}
+  \delta_{P}\left(\xip, \xi\right)
+  = \sum 1 - \cos\left(\phi^{\prime}_{\mu\nu}(x) - \phi_{\mu\nu}(x)\right) \\
+  % \hspace{6em}\text{
+  %   (\emph{plaquette distance})
+  % }\\
+  \label{eq:plaq_diff}
+\end{equation}
+  % \vspace{1em}
+  % -----------------------------------------------
+or the topological charge difference squared, \(\delta_{\Q}(\xip, \xi)\)
+%
+\begin{align}
+  \delta_{\Q}(\xip, \xi)
+  &= \bigg[\overbrace{\frac{1}{2\pi}\sum
+    \sin\left(\phi^{\prime}_{\mu\nu}(x)\right)}^{\Q^{\prime}}
+  - \overbrace{\frac{1}{2\pi}\sum
+    \sin\left(\phi_{\mu\nu}(x)\right)}^{\Q}\bigg]^{2} \\
+  &= {(\Q^{\prime} - \Q)}^2
+  % \hspace{10.6em}\text{
+  %   (\emph{topological charge difference})
+  % }%
+  \label{eq:charge_diff}
+\end{align}
+%
+where \(\phi_{\mu\nu}^{\prime}(x)\) denotes the proposed configuration (before
+applying Metropolis-Hastings accept/reject).
+%
+From these we can then define
+%
+\begin{align}
+  \ell_{\lambda_{P}}\left(\xip, \xi, A(\xip|\xi)\right) 
+  &= \frac{\lambda_{P}^{2}}{\delta_{P}\cdot A(\xi^{\prime}|\xi)}
+    -  \frac{\delta_{P}\cdot A(\xi^{\prime}|\xi)}{\lambda_{P}^{2}} \\
+  \ell_{\lambda_{\Q}}\left(\xip, \xi, A(\xip|\xi)\right) 
+  &= \frac{\lambda_{\Q}^{2}}{\delta_{\Q}\cdot A(\xi^{\prime}|\xi)}
+    -  \frac{\delta_{\Q}\cdot A(\xi^{\prime}|\xi)}{\lambda_{\Q}^{2}}
+\label{eq:ell_lambda}
+\end{align}
+%
+where \(\lambda_{P}, \lambda_{\Q}\) are scaling factors used to control the
+contribution from each of the \(\delta_{P}, \delta_{\Q}\) terms.
+%
+Finally, our loss function becomes
+%
+\begin{equation}
+  \mathcal{L}{(\theta)} = \mathbb{E}_{p(\xi)}\left[
+    \alpha_{P} \cdot \ell_{\lambda_{P}} + \alpha_{\Q} \cdot \ell_{\lambda_{\Q}}
+  \right]
+  + \mathbb{E}_{q(\xi)}\left[
+    \alpha_{P} \cdot \ell_{\lambda_{P}} + \alpha_{\Q} \cdot \ell_{\lambda_{\Q}}
+  \right]
+\end{equation}
+%
+where \(\alpha_{P}, \alpha_{\Q}\) are weights to control the respective terms
+contribution to the overall loss function.
+
+% \begin{figure}[htpb]
+%  \centering
+%  \begin{subfigure}[t]{0.48\textwidth}
+%    \caption{Using gradient clipping.}
+%    \includegraphics[width=\textwidth]{grid_plots/lf1/tunn_rate_vs_bias_lf1_clip10.png}
+%  \end{subfigure}
+%  \begin{subfigure}[t]{0.48\textwidth}
+%    \caption{Without gradient clipping.}
+%    \includegraphics[width=\textwidth]{grid_plots/lf1/tunn_rate_vs_bias_lf1.png}
+%  \end{subfigure}
+%  \caption{Plot of the tunneling rate $\gamma$ vs $\delta \phi_{P}$.}
+% \end{figure}
+% (
+% [
+
+\begin{figure}[htpb!]
+  \centering
+  \begin{subfigure}[t]{0.57\textwidth}
+    \includegraphics[width=\textwidth]{updates_2020_04_28/losses_beta40}%
+    % \caption{\(\beta = 4\).}%
+  \label{fig:losses_beta4}
+  \end{subfigure}
+  \begin{subfigure}[t]{0.57\textwidth}
+    \includegraphics[width=\textwidth]{updates_2020_04_28/losses_beta5}%
+    % \caption{\(\beta = 5\).}%
+    \label{fig:losses_beta5}
+  \end{subfigure}
+  \begin{subfigure}[t]{0.57\textwidth}
+    \includegraphics[width=\textwidth]{updates_2020_04_28/losses_beta55}%
+    % \caption{\(\beta = 5.5\).}%
+    \label{fig:losses_beta55}
+  \end{subfigure}
+  \caption{Loss comparisons between L2HMC and HMC at different values of
+  \(\beta\).}
+\end{figure}

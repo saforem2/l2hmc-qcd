@@ -1,419 +1,137 @@
 """
-gauge_model_inference.py
+gauge_inference.py
 
-Runs inference using the trained L2HMC sampler contained in a saved model.
-
-This is done by specifying a `checkpoint_dir` containing the saved `tf.Graph`,
-which is then restored and used for running inference.
-
-Author: Sam Foreman (github: @saforem2)
-Date: 07/08/2019
+Runs inference on trained model using tensorflow.
 """
-from __future__ import absolute_import, division, print_function
-
 import os
-import time
-import pickle
-
-import numpy as np
-import tensorflow as tf
+import sys
+import shlex
+import shutil
+import argparse
 
 import utils.file_io as io
-import inference.utils as utils
 
-from config import HAS_HOROVOD, NetWeights
-from seed_dict import seeds
-from runners.runner import Runner
-from models.gauge_model import GaugeModel
-from utils.parse_inference_args import parse_args as parse_inference_args
-from inference.gauge_inference_utils import (_log_inference_header,
-                                             create_config, load_params,
-                                             log_plaq_diffs, parse_flags)
-from loggers.run_logger import RunLogger
-from loggers.summary_utils import create_summaries
-from plotters.energy_plotter import EnergyPlotter
-from plotters.plot_observables import plot_autocorrs, plot_charges
-from plotters.leapfrog_plotters import LeapfrogPlotter
-from plotters.gauge_model_plotter import GaugeModelPlotter
-from gauge_inference_np import inference_plots
-
-os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
-
-if HAS_HOROVOD:
-    import horovod.tensorflow as hvd  # pylint: disable=import-error
-
-if float(tf.__version__.split('.')[0]) <= 2:
-    tf.logging.set_verbosity(tf.logging.INFO)
+from runners.runner import RunnerTF, get_thermalized_config
 
 
-def load_pkl(pkl_file):
-    """Load from `.pkl` file."""
-    try:
-        with open(pkl_file, 'rb') as f:  # pylint: disable=invalid-name
-            obj = pickle.load(f)
-        return obj
-    except FileNotFoundError:
-        io.log(f'Unable to load from {pkl_file}.')
+def parse_args():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(
+        description='Run inference on trained model using tensorflow.',
+        fromfile_prefix_chars='@',
+    )
+    parser.add_argument('--beta', dest='beta', type=float,
+                        required=False, default=None,
+                        help=("""Value of `beta` at which to run
+                              inference."""))
+
+    parser.add_argument('--log_dir', dest='log_dir',
+                        required=False, default=None,
+                        help=("""Log dir containing saved model
+                              checkpoints."""))
+
+    parser.add_argument('--eps', dest='eps', type=float,
+                        required=False, default=None,
+                        help=("""Step size (`eps`) to use in leapfrog
+                              integrator."""))
+
+    parser.add_argument('--batch_size', dest='batch_size', type=int,
+                        required=False, default=None,
+                        help=("""Batch size to use (# of chains to run in
+                              parallel."""))
+
+    parser.add_argument('--hmc', dest='hmc',
+                        required=False, action='store_true',
+                        help=("""Flag that when passed will run generic
+                              HMC."""))
+
+    parser.add_argument('--run_steps', dest='run_steps', type=int,
+                        required=False, default=10000,
+                        help=("""Number of inference steps to run."""))
+
+    parser.add_argument('--plot_chains', dest='plot_chains', type=int,
+                        required=False, default=None,
+                        help=("""Number of chains to include when making
+                              plots."""))
+
+    parser.add_argument('--print_steps', dest='print_steps', type=int,
+                        required=False, default=10,
+                        help=("""Frequency with which to print data."""))
+
+    parser.add_argument('--dont_save', dest='dont_save',
+                        required=False, action='store_true',
+                        help=("""Flag that when passed prevents run data from
+                              being saved."""))
+
+    parser.add_argument('--skip_existing', dest='skip_existing',
+                        required=False, action='store_true',
+                        help=("""Flag that when passed will prevent inference
+                              from being run (again) if there exists a
+                              (non-empty) directory containing inference data
+                              for the given parameter values."""))
+
+    parser.add_argument('--therm', dest='therm',
+                        required=False, action='store_true',
+                        help=("""FLag that when pased will initially run
+                              generic HMC to get a thermalized configuration
+                              which will then be used as the initial state for
+                              L2HMC."""))
+
+    if sys.argv[1].startswith('@'):
+        args = parser.parse_args(shlex.split(open(sys.argv[1][1:]).read(),
+                                             comments=True))
+    else:
+        args = parser.parse_args()
+
+    return args
 
 
-def run_hmc(FLAGS, log_file=None):
-    """Run inference using generic HMC."""
-    condition1 = not FLAGS.horovod
-    condition2 = FLAGS.horovod and hvd.rank() == 0
-    is_chief = condition1 or condition2
-    if not is_chief:
-        return -1
+def check_existing(log_dir, run_str):
+    """Check if there is a (non-empty) directory containing inference data."""
+    runs_dir = os.path.join(log_dir, 'runs_tf')
+    run_dirs = [
+        os.path.join(runs_dir, i) for i in os.listdir(runs_dir)
+        if os.path.isdir(os.path.join(runs_dir, i))
+    ]
+    run_str = '_'.join(run_str.split('_')[:6])
+    matched_dirs = [i for i in run_dirs if run_str in i]
+    existing = False
+    if len(matched_dirs) > 0:
+        for matched_dir in matched_dirs:
+            contents = os.listdir(matched_dir)
+            if len(contents) > 0:
+                existing = True
 
-    FLAGS.hmc = True
-    FLAGS.log_dir = io.create_log_dir(FLAGS, log_file=log_file)
-
-    params = parse_flags(FLAGS)
-    params['hmc'] = True
-    params['use_bn'] = False
-    params['plot_lf'] = False
-    params['log_dir'] = FLAGS.log_dir
-
-    figs_dir = os.path.join(params['log_dir'], 'figures')
-    io.check_else_make_dir(figs_dir)
-
-    io.log('\n\nHMC PARAMETERS:\n')
-    for key, val in params.items():
-        io.log(f'  {key}: {val}')
-
-    config, params = create_config(params)
-    tf.reset_default_graph()
-
-    model = GaugeModel(params=params)
-    sess = tf.Session(config=config)
-    sess.run(tf.global_variables_initializer())
-
-    run_summaries_dir = os.path.join(model.log_dir, 'summaries', 'run')
-    io.check_else_make_dir(run_summaries_dir)
-    _, _ = create_summaries(model, run_summaries_dir, training=False)
-
-    run_logger = RunLogger(params=params,
-                           save_lf_data=False,
-                           model_type='GaugeModel')
-
-    args = (params, run_logger.figs_dir)
-    plotter = GaugeModelPlotter(*args)
-    energy_plotter = EnergyPlotter(*args)
-
-    # ----------------------------------------------------------
-    # Get keyword arguments to be passed to `inference` method
-    # ----------------------------------------------------------
-    beta = params.get('beta_inference', None)
-    if beta is None:
-        beta = model.beta_final
-
-    xsw = params.get('x_scale_weight', 1.)
-    xtlw = params.get('x_translation_weight', 1.)
-    xtfw = params.get('x_transformation_weight', 1.)
-    vsw = params.get('v_scale_weight', 1.)
-    vtlw = params.get('v_translation_weight', 1.)
-    vtfw = params.get('v_transformation_weight', 1.)
-    params['net_weights'] = NetWeights(x_scale=xsw,
-                                       x_translation=xtlw,
-                                       x_transformation=xtfw,
-                                       v_scale=vsw,
-                                       v_translation=vtlw,
-                                       v_transformation=vtfw)
-
-    # ----------------------------------------------------------
-    # Create initial samples to be used at start of inference
-    # ----------------------------------------------------------
-    init_method = getattr(FLAGS, 'samples_init', 'random')
-    #  seed = getattr(FLAGS, 'global_seed', 0)
-    tf.random.set_random_seed(seeds['inference_tf'])
-    np.random.seed(seeds['inference_np'])
-    samples_init = utils.init_gauge_samples(params, init_method)
-    inference_kwargs = {
-        'samples': samples_init,
-    }
-    #  inference_kwargs['samples'] = samples_init
-
-    # --------------------------------------
-    # Create GaugeModelRunner for inference
-    # --------------------------------------
-    runner = Runner(sess, params, run_logger, model_type='GaugdeModel')
-
-    # ---------------
-    # run inference
-    # ---------------
-    runner, run_logger = inference(runner,
-                                   run_logger,
-                                   plotter,
-                                   energy_plotter,
-                                   **inference_kwargs)
-
-    return -1
+    return existing
 
 
-def build_run_data(data):
-    """Build `run_data` dictionary from `data`."""
-    keys = ['actions', 'charges', 'plaqs', 'dx', 'px', 'accept_prob']
-    run_data = {k: np.array(data.get(k, None)) for k in keys}
+def main(args):
+    """Main method."""
+    runner = RunnerTF(args)
+    if args.skip_existing:
+        if check_existing(runner.log_dir, runner.run_str):
+            return None
+
+    x = None
+    if args.therm:
+        x = get_thermalized_config(runner.log_dir, runner.beta)
+
+    run_data = runner.inference(x=x, run_steps=args.run_steps)
+    run_data.plot(runner.fig_dir, runner.title_str,
+                  num_chains=args.plot_chains)
+    _, _, fpaths = run_data.log_summary(runner.fig_dir, n_boot=10)
+    if not args.dont_save:
+        run_data.save(run_dir=runner.run_dir, save_samples=False)
+
+    for fpath in fpaths:
+        _ = shutil.copy2(fpath, runner.run_dir)
 
     return run_data
 
 
-def make_plots(runner, run_logger, plotter, energy_plotter, **kwargs):
-    """Make all inference plots from inference run."""
-    kwargs['run_str'] = run_logger._run_str
-    apd, pkwds = plotter.plot_observables(run_logger.run_data, **kwargs)
-    nw = kwargs.get('net_weights', NetWeights(1., 1., 1., 1., 1., 1.))
-
-    log_plaq_diffs(run_logger, nw, apd)
-
-    title = pkwds['title']
-    qarr = np.array(run_logger.run_data['charges']).T
-    qarr_int = np.around(qarr)
-
-    out_file = os.path.join(plotter.out_dir, 'charges_grid.png')
-    fig, ax = plot_charges(qarr, out_file, title=title, nrows=4)
-
-    out_file = os.path.join(plotter.out_dir, 'charges_autocorr_grid.png')
-    fig, ax = plot_autocorrs(qarr_int, out_file=out_file, title=title, nrows=4)
-
-    io.save_dict(seeds, run_logger.run_dir, 'seeds')
-
-    tf_data = energy_plotter.plot_energies(run_logger.energy_dict,
-                                           out_dir='tf', **kwargs)
-    energy_data = {
-        'tf_data': tf_data,
-    }
-
-    run_logger.save_data(energy_data, 'energy_plots_data.pkl')
-
-    if kwargs.get('plot_lf', False):
-        lf_plotter = LeapfrogPlotter(plotter.out_dir, run_logger)
-        batch_size = runner.params.get('batch_size', 20)
-        lf_plotter.make_plots(run_logger.run_dir,
-                              batch_size=batch_size)
-
-    return runner, run_logger
-
-
-def run_inference(runner, run_logger, **kwargs):
-    """Run inference."""
-    eps = kwargs.get('eps', None)
-    beta = kwargs.get('beta', 5.)
-    run_steps = kwargs.get('run_steps', 5000)
-    skip_existing = kwargs.get('skip_existing', False)
-    net_weights = kwargs.get('net_weights', NetWeights(1., 1., 1., 1., 1., 1.))
-    if eps is None:
-        eps = runner.eps
-        kwargs['eps'] = eps
-
-    existing = run_logger.reset(**kwargs)
-
-    _log_inference_header(net_weights, run_steps, eps, beta, existing=existing)
-    for key, val in kwargs.items():  # pylint: disable=redefined-outer-name
-        io.log(f'{key}: {val}')
-
-    if existing and skip_existing:
-        return runner, run_logger, kwargs
-
-    t0 = time.time()
-    runner.run(**kwargs)
-    run_time = time.time() - t0
-    io.log(80 * '-' + f'\nTook: {run_time}s to complete run.\n' + 80 * '-')
-    io.log(80 * '-' + '\n')
-
-    return runner, run_logger, kwargs
-
-
-def _loop_net_weights(runner, run_logger, plotter, energy_plotter, **kwargs):
-    """Perform inference for all 64 possible values of `net_weights`."""
-    eps = kwargs.get('eps', None)
-    net_weights_arr = [
-        tuple(np.array(list(np.binary_repr(i, width=6)), dtype=int))
-        for i in range(64)
-    ]
-    if eps is None:
-        eps = runner.eps
-        kwargs['eps'] = eps
-
-    for net_weights in net_weights_arr:
-        kwargs['net_weights'] = NetWeights(*net_weights)
-        runner, run_logger, kwargs = run_inference(runner,
-                                                   run_logger,
-                                                   **kwargs)
-        try:
-            runner, run_logger = make_plots(runner, run_logger, plotter,
-                                            energy_plotter, **kwargs)
-        except (AttributeError, KeyError):  # inference_plots fails if no data
-            continue
-
-    return runner, run_logger
-
-
-def inference(runner, run_logger, plotter, energy_plotter, **kwargs):
-    """Perform an inference run, if it hasn't been ran previously.
-
-    Args:
-        runner: `Runner` object, responsible for performing inference.
-        run_logger: RunLogger object, responsible for running `tf.summary`
-            operations and accumulating/saving run statistics.
-        plotter: GaugeModelPlotter object responsible for plotting lattice
-            observables from inference run.
-
-    NOTE: If inference hasn't been run previously with the param values passed,
-        return `avg_plaq_diff`, i.e. the average value of the difference
-        between the expected and observed value of the average plaquette.
-
-    Returns:
-        avg_plaq_diff: If run hasn't been completed previously, else None
-    """
-    nw_loop = kwargs.get('loop_net_weights', False)
-    if nw_loop:
-        _loop_net_weights(runner, run_logger,
-                          plotter, energy_plotter, **kwargs)
-    else:
-        runner, run_logger, kwargs = run_inference(runner,
-                                                   run_logger,
-                                                   **kwargs)
-        runner, run_logger = make_plots(runner, run_logger, plotter,
-                                        energy_plotter, **kwargs)
-
-    with open(os.path.join(run_logger.log_dir, 'parameters.pkl'), 'rb') as f:
-        params = pickle.load(f)
-    with open(os.path.join(run_logger.run_dir, 'run_params.pkl'), 'rb') as f:
-        run_params = pickle.load(f)
-    run_data = build_run_data(run_logger.run_data)
-    energy_data = {k: np.array(v) for k, v in run_logger.energy_dict.items()}
-    data_dict = {
-        'run_data': run_data,
-        'energy_data': energy_data,
-    }
-    _, _ = inference_plots(data_dict, params, run_params, runs_np=False)
-
-    return runner, run_logger
-
-# pylint: disable=too-many-locals
-
-def main(kwargs):
-    """Perform inference using saved model.
-
-    NOTE:
-        [1.] We want to restrict all communication (file I/O) to only be
-             performed on rank 0 (i.e. `is_chief`) so there are two cases:
-                1. We're using Horovod, so we have to check hvd.rank()
-                    explicitly.  
-                2. We're not using Horovod, in which case `is_chief` 
-                    is always True.
-        [2.] We are only interested in the command line arguments that were
-             passed to `inference.py` (i.e. those contained in kwargs).
-    """
-    log_dir = kwargs.get('log_dir', None)
-    if log_dir is None:
-        params_file1 = os.path.join(os.getcwd(), 'params.pkl')
-        params_file2 = os.path.join(os.getcwd(), 'parameters.pkl')
-        params_files = [params_file1, params_file2]
-        for params_file in params_files:
-            if os.path.isfile(params_file):
-                params = load_pkl(params_file)
-                log_dir = params['log_dir']
-            else:
-                continue
-    else:
-        params = load_pkl(os.path.join(log_dir, 'parameters.pkl'))
-
-    # NOTE: [1.]
-    using_hvd = params.get('using_hvd', False)
-    condition1 = not using_hvd
-    condition2 = using_hvd and hvd.rank() == 0
-    is_chief = condition1 or condition2
-    if not is_chief:
-        return
-
-    # --------------------------------------------------------
-    # locate `checkpoint_dir` containing `checkpoint_file`
-    # --------------------------------------------------------
-    checkpoint_dir = os.path.join(params['log_dir'], 'checkpoints/')
-    assert os.path.isdir(checkpoint_dir)
-    checkpoint_file = tf.train.latest_checkpoint(checkpoint_dir)
-
-    # --------------------------------------------------------------
-    # load meta graph containing saved model from `checkpoint_file`
-    # --------------------------------------------------------------
-    config, params = create_config(params)
-    sess = tf.Session(config=config)
-    saver = tf.train.import_meta_graph(f'{checkpoint_file}.meta')
-    saver.restore(sess, checkpoint_file)
-
-    # ---------------------------------------------------
-    # setup the step size `eps` (if using custom value)
-    # ---------------------------------------------------
-    eps = kwargs.get('eps', None)
-    if eps is not None:
-        io.log(f'`eps` is not None: {eps:.4g}')
-        utils.set_eps(sess, eps)
-
-    # -------------------
-    # setup net_weights
-    # -------------------
-    xsw = kwargs.get('x_scale_weight', 1.)
-    xtlw = kwargs.get('x_translation_weight', 1.)
-    xtfw = kwargs.get('x_transformation_weight', 1.)
-    vsw = kwargs.get('v_scale_weight', 1.)
-    vtlw = kwargs.get('v_translation_weight', 1.)
-    vtfw = kwargs.get('v_transformation_weight', 1.)
-    net_weights = NetWeights(x_scale=xsw,
-                             x_translation=xtlw,
-                             x_transformation=xtfw,
-                             v_scale=vsw,
-                             v_translation=vtlw,
-                             v_transformation=vtfw)
-
-    # -------------
-    # setup beta
-    # -------------
-    beta_inference = kwargs.get('beta_inference', None)
-    beta_final = params.get('beta_final', None)
-    beta = beta_final if beta_inference is None else beta_inference
-
-    # -------------------------------------------------
-    # setup initial samples to be used for inference
-    # -------------------------------------------------
-    init_method = kwargs.get('samples_init', 'random')
-    tf.random.set_random_seed(seeds['inference_tf'])
-    np.random.seed(seeds['inference_np'])
-    samples_init = utils.init_gauge_samples(params, init_method)
-
-    # -----------------------------------------------------------------------
-    # Create `RunLogger`, `Runner`, `GaugeModelPlotter` and `EnergyPlotter`
-    # -----------------------------------------------------------------------
-    run_logger = RunLogger(params, model_type='GaugeModel', save_lf_data=False)
-    runner = Runner(sess, params, logger=run_logger, model_type='GaugeModel')
-    plotter = GaugeModelPlotter(params, run_logger.figs_dir)
-    energy_plotter = EnergyPlotter(params, run_logger.figs_dir)
-
-    inference_kwargs = {
-        'eps': eps,
-        'beta': beta,
-        'init': init_method,
-        'samples': samples_init,
-        'net_weights': net_weights,
-        'run_steps': kwargs.get('run_steps', 5000),
-        'save_samples': kwargs.get('save_samples', False),
-        'loop_net_weights': kwargs.get('loop_net_weights', False),
-        'skip_existing': kwargs.get('skip_existing', False),
-    }
-
-    runner, run_logger = inference(runner,
-                                   run_logger,
-                                   plotter,
-                                   energy_plotter,
-                                   **inference_kwargs)
-
-
 if __name__ == '__main__':
-    ARGS = parse_inference_args()
-    LOG_FILE = 'output_dirs.txt'
-    FLAGS = ARGS.__dict__
-    io.log(80 * '-' + '\n' + 'INFERENCE FLAGS:\n')
-    for key, val in FLAGS.items():
+    FLAGS = parse_args()
+    for key, val in FLAGS.__dict__.items():
         io.log(f'{key}: {val}\n')
 
-    main(FLAGS)
+    _ = main(FLAGS)

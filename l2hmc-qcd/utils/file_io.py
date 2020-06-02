@@ -12,12 +12,13 @@ import errno
 import pickle
 import shutil
 import datetime
-from collections import OrderedDict
-import config as cfg
 
-import numpy as np
+from collections import OrderedDict
 
 import joblib
+import numpy as np
+
+import config as cfg
 
 try:
     import horovod.tensorflow as hvd
@@ -33,6 +34,33 @@ except ImportError:
 # pylint: disable=too-many-branches
 # pylint: disable=too-many-locals
 
+def log(s, nl=True):
+    """Print string `s` to stdout if and only if hvd.rank() == 0."""
+    try:
+        if HAS_HOROVOD and hvd.rank() != 0:
+            return
+        print(s, end='\n' if nl else ' ')
+    except NameError:
+        print(s, end='\n' if nl else ' ')
+
+
+def write(s, f, mode='a', nl=True):
+    """Write string `s` to file `f` if and only if hvd.rank() == 0."""
+    try:
+        if HAS_HOROVOD and hvd.rank() != 0:
+            return
+        with open(f, mode) as ff:
+            ff.write(s + '\n' if nl else '')
+    except NameError:
+        with open(f, mode) as ff:
+            ff.write(s + '\n' if nl else '')
+
+
+def log_and_write(s, f, mode='a', nl=True):
+    """Print string `s` to std out and also write to file `f`."""
+    log(s, nl)
+    write(s, f, mode=mode, nl=nl)
+
 
 def strf(x):
     """Format the number x as a string."""
@@ -43,14 +71,55 @@ def strf(x):
     return xstr
 
 
-
 def get_subdirs(root_dir):
+    """Returns all subdirectories in `root_dir`."""
     subdirs = [
         os.path.join(root_dir, i)
         for i in os.listdir(root_dir)
         if os.path.isdir(os.path.join(root_dir, i))
     ]
     return subdirs
+
+
+def change_params_log_dir(log_dir):
+    """Update params with new log dir when copied to local system."""
+    params_file = os.path.join(log_dir, 'params.z')
+    if os.path.isfile(params_file):
+        log(f'Loading from: {params_file}.')
+        copy_file = os.path.join(log_dir, 'params_original.z')
+        _ = shutil.copy2(params_file, copy_file)
+        params = loadz(os.path.join(log_dir, 'params.z'))
+        orig_log_dir = params['log_dir']
+        params['orig_log_dir'] = orig_log_dir
+        params['log_dir'] = log_dir
+        save_dict(params, log_dir, 'params')
+
+    return params
+
+
+def change_checkpoint_dir(log_dir, orig_str):
+    """Change ckpt file in log dir when data copied to local system."""
+    if orig_str.endswith('/'):
+        orig_str.rstrip('/')
+    checkpoint_file = os.path.join(log_dir, 'checkpoints', 'checkpoint')
+    new_str = os.path.join(*log_dir.split('/')[:-2])
+    new_str = '/'.join(log_dir.split('/')[:-2])
+    if not new_str.endswith('/'):
+        new_str += '/'
+    if os.path.isfile(checkpoint_file):
+        log(f'Loading from checkpoint file: {checkpoint_file}.')
+        log(f'Replacing:\n \t{orig_str}\n with\n \t{new_str}\n')
+
+        copy_file = os.path.join(log_dir, 'checkpoints', 'checkpoint_original')
+        _ = shutil.copy2(checkpoint_file, copy_file)
+
+        lines = []
+        with open(checkpoint_file, 'r') as f:
+            for line in f:
+                lines.append(line.replace(orig_str, new_str))
+
+        with open(checkpoint_file, 'w') as f:
+            f.writelines(lines)
 
 
 def get_run_dirs(log_dir, filter_str=None, runs_str='runs_np'):
@@ -73,13 +142,46 @@ def write_dict(d, out_file):
         write(f'{key}: {val}\n', out_file)
 
 
+def savez(obj, fpath, name=None):
+    """Save `obj` to compressed `.z` file at `fpath`."""
+    if not fpath.endswith('.z'):
+        fpath += '.z'
+
+    if name is not None:
+        log(f'Saving {name} to {fpath}.')
+
+    joblib.dump(obj, fpath)
+
+
+def change_extension(fpath, ext):
+    """Change extension of `fpath` to `.ext`."""
+    tmp = fpath.split('/')
+    out_file = tmp[-1]
+    fname, _ = out_file.split('.')
+    new_fpath = os.path.join('/'.join(tmp[:-1]), f'{fname}.{ext}')
+
+    return new_fpath
+
+
+def loadz(fpath):
+    """Load from `fpath` using `joblib.load`."""
+    try:
+        obj = joblib.load(fpath)
+    except FileNotFoundError:
+        fpath_pkl = change_extension(fpath, 'pkl')
+        obj = load_pkl(fpath_pkl)
+
+    return obj
+
+
 def save_pkl(obj, fpath, name=None, compressed=True):
     """Save `obj` to `fpath`."""
     if compressed:  # force extension type to be '.z' (auto compress)
-        tmp = fpath.split('/')
-        out_file = tmp[-1]
-        fname, _ = out_file.split('.')
-        zfpath = os.path.join('/'.join(tmp[:-1]), f'{fname}.z')
+        zfpath = change_extension(fpath, 'z')
+        #  tmp = fpath.split('/')
+        #  out_file = tmp[-1]
+        #  fname, _ = out_file.split('.')
+        #  zfpath = os.path.join('/'.join(tmp[:-1]), f'{fname}.z')
 
         if name is not None:
             log(f'Saving {name} to {zfpath}.')
@@ -124,7 +226,7 @@ def make_pngs_from_pdfs(rootdir=None):
                     log(f'in: {inf} --> out: {outf}\n')
                     try:
                         os.system(f'~/bin/pdftopng {inf} {outf}')
-                    except:  # pylint: disable=bare-except
+                    except OSError:
                         return
 
 
@@ -202,39 +304,14 @@ def get_timestr():
 
 def load_params(log_dir):
     """Load params from log_dir."""
-    params_file = os.path.join(log_dir, 'parameters.pkl')
-    with open(params_file, 'rb') as f:
-        params = pickle.load(f)
+    names = ['parameters.pkl', 'parameters.z', 'params.pkl', 'params.z']
+    params = None
+    for name in names:
+        params_file = os.path.join(log_dir, name)
+        if os.path.isfile(params_file):
+            params = loadz(params_file)
 
     return params
-
-
-def log(s, nl=True):
-    """Print string `s` to stdout if and only if hvd.rank() == 0."""
-    try:
-        if HAS_HOROVOD and hvd.rank() != 0:
-            return
-        print(s, end='\n' if nl else '')
-    except NameError:
-        print(s, end='\n' if nl else '')
-
-
-def write(s, f, mode='a', nl=True):
-    """Write string `s` to file `f` if and only if hvd.rank() == 0."""
-    try:
-        if HAS_HOROVOD and hvd.rank() != 0:
-            return
-        with open(f, mode) as ff:
-            ff.write(s + '\n' if nl else '')
-    except NameError:
-        with open(f, mode) as ff:
-            ff.write(s + '\n' if nl else '')
-
-
-def log_and_write(s, f, mode='a', nl=True):
-    """Print string `s` to std out and also write to file `f`."""
-    log(s)
-    write(s, f, mode=mode, nl=nl)
 
 
 def copy_old(src, dest):
@@ -364,7 +441,7 @@ def _parse_gauge_flags(FLAGS):
     if flags_dict['zero_masks']:
         run_str += f'_zero_masks'
 
-    return run_str, flags_dict
+    return run_str
 
 
 def _parse_gmm_flags(FLAGS):
@@ -426,25 +503,25 @@ def _parse_gmm_flags(FLAGS):
     elif d['NL'] and not d['GL']:
         run_str += '_nl'
 
-    return run_str, d
+    return run_str
 
 
 def _parse_flags(FLAGS, model_type='GaugeModel'):
     """Helper method for parsing flags as both AttrDicts or generic dicts."""
     if model_type == 'GaugeModel':
-        run_str, out_dict = _parse_gauge_flags(FLAGS)
+        run_str = _parse_gauge_flags(FLAGS)
     elif model_type == 'GaussianMixtureModel':
-        run_str, out_dict = _parse_gmm_flags(FLAGS)
+        run_str = _parse_gmm_flags(FLAGS)
 
     if cfg.NP_FLOAT == np.float64:
         run_str += '_f64'
     elif cfg.NP_FLOAT == np.float32:
         run_str += '_f32'
 
-    return run_str, out_dict
+    return run_str
 
 
-def create_log_dir(FLAGS, **kwargs):
+def create_log_dir(FLAGS, model_type=None, log_file=None):
     """Automatically create and name `log_dir` to save model data to.
 
     The created directory will be located in `logs/YYYY_M_D/`, and will have
@@ -457,44 +534,32 @@ def create_log_dir(FLAGS, **kwargs):
 
     NOTE: If log_dir does not already exist, it is created.
     """
-    run_str = kwargs.get('run_str', True)
-    model_type = kwargs.get('model_type', 'GaugeModel')
-    log_file = kwargs.get('log_file', None)
-    root_dir = kwargs.get('root_dir', None)
-    if run_str:
-        run_str, flags_dict = _parse_flags(FLAGS, model_type)
-        _log_dir = getattr(flags_dict, '_log_dir', None)
-    else:
-        run_str = ''
-        _log_dir = None
+    model_type = 'GaugeModel' if model_type is None else model_type
+    run_str = _parse_flags(FLAGS, model_type)
+
+    if FLAGS.train_steps < 10000:
+        run_str = f'DEBUG_{run_str}'
 
     now = datetime.datetime.now()
     day_str = now.strftime('%Y_%m_%d')
     hour_str = now.strftime('%H%M')
+    run_str += f'_{hour_str}'
 
     project_dir = os.path.abspath(os.path.dirname(cfg.FILE_PATH))
+    log_dir = os.path.join(project_dir, FLAGS.root_dir, day_str, run_str)
+    if os.path.isdir(log_dir):
+        log_dir += '_1'
 
-    if _log_dir is None:
-        _dir = 'gauge_logs' if root_dir is None else root_dir
+    #  dirname = '_'.join([run_str, hour_str])
+    #  if os.path.isdir(os.path.join(project_dir, logs_dir, day_str, dirname)):
+    #      dirname += '_1'
 
-    else:
-        if root_dir is None:
-            _dir = _log_dir
-        else:
-            _dir = os.path.join(_log_dir, root_dir)
-    root_log_dir = os.path.join(project_dir, _dir, day_str, run_str)
-    dirname = run_str + f'_{hour_str}'
-    if os.path.isdir(os.path.join(project_dir, _dir, day_str, dirname)):
-        dirname += '_1'
+    #  log_dir = os.path.join(project_dir, logs_dir, day_str, dirname)
+    check_else_make_dir(log_dir)
+    #  if any('run_' in i for i in os.listdir(log_dir)):
+    #      run_num = get_run_num(log_dir)
+    #      log_dir = os.path.abspath(os.path.join(log_dir, f'run_{run_num}'))
 
-    root_log_dir = os.path.join(project_dir, _dir, day_str, dirname)
-    check_else_make_dir(root_log_dir)
-    if any('run_' in i for i in os.listdir(root_log_dir)):
-        run_num = get_run_num(root_log_dir)
-        log_dir = os.path.abspath(os.path.join(root_log_dir,
-                                               f'run_{run_num}'))
-    else:
-        log_dir = root_log_dir
     if log_file is not None:
         write(f'Output saved to: \n\t{log_dir}', log_file, 'a')
         write(80*'-', log_file, 'a')
@@ -530,59 +595,40 @@ def save_data(data, out_file, name=None):
         tmp = out_file.split('.')
         out_file = tmp[0] + '_1' + f'.{tmp[1]}'
 
-    log(f"Saving {name} to {out_file}...")
     if out_file.endswith('.pkl'):
-        with open(out_file, 'wb') as f:
-            pickle.dump(data, f, pickle.HIGHEST_PROTOCOL)
+        out_file = change_extension(out_file, 'z')
+        savez(data, out_file, name=name)
 
     elif out_file.endswith('.npy'):
         np.save(out_file, np.array(data))
 
     else:
-        log("Extension not recognized! out_file must end in .pkl or .npy")
+        savez(data, out_file, name=name)
 
 
 def save_params(params, out_dir, name=None):
-    """save params (dict) to `out_dir`, as both `.pkl` and `.txt` files."""
+    """save params (dict) to `out_dir`, as both `.z` and `.txt` files."""
     check_else_make_dir(out_dir)
     if name is None:
-        name = 'parameters'
+        name = 'params'
     params_txt_file = os.path.join(out_dir, f'{name}.txt')
-    params_pkl_file = os.path.join(out_dir, f'{name}.pkl')
+    zfile = os.path.join(out_dir, f'{name}.z')
     with open(params_txt_file, 'w') as f:
         for key, val in params.items():
             f.write(f"{key}: {val}\n")
-    with open(params_pkl_file, 'wb') as f:
-        pickle.dump(params, f)
+    savez(params, zfile, name=name)
 
 
-def save_dict(d, out_dir, name, compressed=True):
-    """Save generic dict `d` to `out_dir` as both `.pkl` and `.txt` files."""
+def save_dict(d, out_dir, name):
+    """Save generic dict `d` to `out_dir` as both `.z` and `.txt` files."""
     check_else_make_dir(out_dir)
     txt_file = os.path.join(out_dir, f'{name}.txt')
     with open(txt_file, 'w') as f:
         for key, val in d.items():
             f.write(f"{key}: {val}\n")
 
-    if compressed:
-        zfile = os.path.join(out_dir, f'{name}.z')
-        joblib.dump(d, zfile)
-
-    else:
-        pkl_file = os.path.join(out_dir, f'{name}.pkl')
-        with open(pkl_file, 'wb') as f:
-            pickle.dump(d, f, pickle.HIGHEST_PROTOCOL)
-
-
-
-def save_params_to_pkl_file(params, out_dir):
-    """Save `params` dictionary to `parameters.pkl` in `out_dir.`"""
-    check_else_make_dir(out_dir)
-    params_file = os.path.join(out_dir, 'parameters.pkl')
-    #  print(f"Saving params to: {params_file}.")
-    log(f"Saving params to: {params_file}.")
-    with open(params_file, 'wb') as f:
-        pickle.dump(params, f)
+    zfile = os.path.join(out_dir, f'{name}.z')
+    savez(d, zfile, name=name)
 
 
 def get_run_num(log_dir):

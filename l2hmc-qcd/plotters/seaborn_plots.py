@@ -105,7 +105,7 @@ def calc_tunneling_rate(charges):
 
 def plot_setup(log_dir, run_params, idx=None, nw_run=True):
     """Setup for plotting. Creates `filename` and `title_str`."""
-    params = io.load_pkl(os.path.join(log_dir, 'parameters.pkl'))
+    params = io.loadz(os.path.join(log_dir, 'parameters.z'))
     lf = params['num_steps']
     clip_value = params.get('clip_value', 0)
     eps_fixed = params.get('eps_fixed', False)
@@ -166,7 +166,7 @@ def plot_setup(log_dir, run_params, idx=None, nw_run=True):
 
 
 def get_lf(log_dir):
-    params = io.load_pkl(os.path.join(log_dir, 'parameters.pkl'))
+    params = io.loadz(os.path.join(log_dir, 'parameters.z'))
     lf = params['num_steps']
     return lf
 
@@ -202,12 +202,12 @@ def get_observables(run_dir,
         run_params (dict): Dictionary containing the parameters used for
             inference run.
     """
-    run_params = io.load_pkl(os.path.join(run_dir, 'run_params.pkl'))
+    run_params = io.loadz(os.path.join(run_dir, 'run_params.z'))
     net_weights = tuple([io.strf(i) for i in run_params['net_weights']])
     #  eps = run_params['eps']
     beta = run_params['beta']
     observables_dir = os.path.join(run_dir, 'observables')
-    px = io.load_pkl(os.path.join(observables_dir, 'accept_prob.pkl'))
+    px = io.loadz(os.path.join(observables_dir, 'accept_prob.z'))
     px = np.squeeze(np.array(px))
     avg_px = np.mean(px)
 
@@ -224,13 +224,13 @@ def get_observables(run_dir,
     io.log(f'  run_dir: {run_dir}')
 
     def load_sqz(fname):
-        data = io.load_pkl(os.path.join(observables_dir, fname))
+        data = io.loadz(os.path.join(observables_dir, fname))
         return np.squeeze(np.array(data))
 
-    charges = load_sqz('charges.pkl')
-    dx_out = load_sqz('dx_out.pkl')
-    dx_prop = load_sqz('dx_proposed.pkl')
-    plaqs = load_sqz('plaqs.pkl')
+    charges = load_sqz('charges.z')
+    dx_out = load_sqz('dx_out.z')
+    dx_prop = load_sqz('dx_proposed.z')
+    plaqs = load_sqz('plaqs.z')
     dplq = u1_plaq_exact(beta) - plaqs
 
     num_steps = px.shape[0]
@@ -321,7 +321,7 @@ def _build_dataframes(run_dirs, data=None, data_bs=None, **kwargs):
         if data is not None and hasattr(data, 'run_dir'):
             if not data[data.run_dir == run_dir].empty:
                 continue
-        run_params_file = os.path.join(run_dir, 'run_params.pkl')
+        run_params_file = os.path.join(run_dir, 'run_params.z')
         if os.path.isfile(run_params_file):
             new_df, new_df_bs, run_params = get_observables(run_dir, **kwargs)
             if data is None:
@@ -579,7 +579,7 @@ def gridplots(log_dirs,
             run_dirs += list(np.unique(data_bs['run_dir']))
         run_dirs = np.unique(run_dirs)
         for run_dir in run_dirs:
-            run_params = io.load_pkl(os.path.join(run_dir, 'run_params.pkl'))
+            run_params = io.loadz(os.path.join(run_dir, 'run_params.z'))
             fname, title_str, old_dx = plot_setup(log_dir, run_params)
 
             if data is not None:

@@ -58,54 +58,66 @@ def get_train_weights(params):
     return (xsw, xtw, xqw, vsw, vtw, vqw)
 
 
-def plot_setup(log_dir, run_params, idx=None, nw_run=True):
-    """Setup for plotting. Creates `filename` and `title_str`."""
-    params = io.load_pkl(os.path.join(log_dir, 'parameters.pkl'))
-    lf = params['num_steps']
+def plot_setup(log_dir, params=None, idx=None, nw_run=True):
+    """Setup for plotting. Creates `filename` and `title_str`.
+
+    Args:
+        log_dir (str): Path to `log_dir`.
+        run_params (RunParams): RunParams object.
+        idx (int): Index.
+        nw_run (bool): Whether to include net_weights used for inference in
+            title_str.
+    """
+    if params is None:
+        #  params = io.loadz(os.path.join(log_dir, 'parameters.z'))
+        params_file = os.path.join(log_dir, 'params.z')
+        if os.path.isfile(params_file):
+            train_params = io.loadz(params_file)
+            params.update({
+                k: v for k, v in train_params if k not in params
+            })
+
+            #  params.update(**{
+            #      k: v for k, v in extra_params if k not in params
+            #  })
+
     clip_value = params.get('clip_value', 0)
     eps_fixed = params.get('eps_fixed', False)
-    train_weights = get_train_weights(params)
-    train_weights_str = ''.join((io.strf(i) for i in train_weights))
-    net_weights = run_params['net_weights']
-    net_weights_str = ''.join((io.strf(i) for i in net_weights))
-    #  net_weights_str = ''.join(
-    #      (io.strf(i).replace('.', '') for i in net_weights)
-    #  )
+    time_size = params.get('time_size', 0)
+    space_size = params.get('space_size', 0)
+    #  train_net_weights = params.get('net_weights', None)
+    #  if net_weights is None:
+    #      try:
+    #          train_weights = get_train_weights(params)
+    #          train_weights_str = ''.join((io.strf(i) for i in train_weights))
+    #      except KeyError:
+    #          train_weights = None
 
-    date_str = log_dir.split('/')[-2]
-    y, m, d = date_str.split('_')
-    y = int(y)
-    m = int(m)
-    d = int(d)
-    old_dx = True
-    if y == 2020 and m >= 1 and d >= 4:
-        old_dx = False
+    estr = f'{params.eps:.4g}'.replace('.', '')
+    net_weights_str = ''.join((io.strf(i) for i in params.net_weights))
 
-    beta = run_params['beta']
-    eps = run_params['eps']
-    fname = f'lf{lf}'
-    run_steps = run_params['run_steps']
-    fname += f'_steps{run_steps}'
-    title_str = (r"$N_{\mathrm{LF}} = $" + f'{lf}, '
-                 r"$\beta = $" + f'{beta:.2g}, '
-                 r"$\varepsilon = $" + f'{eps:.3g}')
-    eps_str = f'{eps:.4g}'.replace('.', '')
-    fname += f'_e{eps_str}'
+    fname = (f'lf{params.num_steps}_steps{params.run_steps}_e{estr}')
+
+    title_str = (f'{time_size}' + r"$\times$" + f'{space_size}, '
+                 r"$N_{\mathrm{LF}} = $" + f'{params.num_steps}, '
+                 r"$N_{\mathrm{B}} = $" + f'{params.batch_size}, '
+                 r"$\beta = $" + f'{params.beta:.2g}, '
+                 r"$\varepsilon = $" + f'{params.eps:.3g}')
 
     if eps_fixed:
         title_str += ' (fixed)'
         fname += '_fixed'
 
-    if params['clip_value'] > 0:
+    if clip_value > 0:
         title_str += f', clip: {clip_value}'
         fname += f'_clip{clip_value}'.replace('.', '')
 
-    if any([tw == 0 for tw in train_weights]):
-        tws = '(' + ', '.join((str(i) for i in train_weights_str)) + ')'
-        title_str += (', '
-                      + r"$\mathrm{nw}_{\mathrm{train}}=$"
-                      + f' {tws}')
-        fname += f'_train{train_weights_str}'
+    #  if any([tw == 0 for tw in train_weights]):
+    #      tws = '(' + ', '.join((str(i) for i in train_weights_str)) + ')'
+    #      title_str += (', '
+    #                    + r"$\mathrm{nw}_{\mathrm{train}}=$"
+    #                    + f' {tws}')
+    #      fname += f'_train{train_weights_str}'
 
     if nw_run:
         nws = '(' + ', '.join((str(i) for i in net_weights_str)) + ')'
@@ -117,14 +129,14 @@ def plot_setup(log_dir, run_params, idx=None, nw_run=True):
     if idx is not None:
         fname += f'_{idx}'
 
-    return fname, title_str, old_dx
+    return fname, title_str
 
 
 def load_weights(log_dir):
     """Load weights dict from `log_dir`."""
-    #  weights = io.load_pkl(os.path.join(log_dir, 'weights.pkl'))
-    xweights = io.load_pkl(os.path.join(log_dir, 'xnet_weights.pkl'))
-    vweights = io.load_pkl(os.path.join(log_dir, 'vnet_weights.pkl'))
+    #  weights = io.loadz(os.path.join(log_dir, 'weights.z'))
+    xweights = io.loadz(os.path.join(log_dir, 'xnet_weights.z'))
+    vweights = io.loadz(os.path.join(log_dir, 'vnet_weights.z'))
     #  xweights = weights['xnet']
     #  vweights = weights['vnet']
     #  xweights = weights['xnet']['GenericNet']
@@ -192,7 +204,7 @@ def weights_hist(log_dir, weights=None, init=False):
         sns.set_palette('bright', 100)
 
     if weights is None:
-        weights = io.load_pkl(os.path.join(log_dir, 'weights.pkl'))
+        weights = io.loadz(os.path.join(log_dir, 'weights.z'))
 
     figs_dir = os.path.join(log_dir, 'figures', 'weights')
     io.check_else_make_dir(figs_dir)
@@ -269,11 +281,11 @@ def reset_plots():
 def get_params(dirname, fname=None):
     """Get `params` from `dirname`."""
     if fname is None:
-        params_file = os.path.join(dirname, 'parameters.pkl')
+        params_file = os.path.join(dirname, 'parameters.z')
     else:
         params_file = os.path.join(dirname, fname)
 
-    return io.load_pkl(params_file)
+    return io.loadz(params_file)
 
 
 def get_title_str(params, run_params=None):
@@ -349,20 +361,20 @@ def _get_title(lf_steps, eps, batch_size, beta, nw):
 
 def _load_obs(run_dir, obs_name):
     """Load observable."""
-    run_params = io.load_pkl(os.path.join(run_dir, 'run_params.pkl'))
+    run_params = io.loadz(os.path.join(run_dir, 'run_params.z'))
     obs = None
     if 'plaq' in obs_name:
         exact = u1_plaq_exact(run_params['beta'])
         try:
-            pf = os.path.join(run_dir, 'observables', 'plaqs.pkl')
-            plaqs = io.load_pkl(pf)
+            pf = os.path.join(run_dir, 'observables', 'plaqs.z')
+            plaqs = io.loadz(pf)
             obs = exact - np.array(plaqs)
         except FileNotFoundError:
             io.log(f'Unable to load plaquettes from {run_dir}. Returning.')
     else:
-        pkl_file = os.path.join(run_dir, 'observables', f'{obs_name}.pkl')
+        z_file = os.path.join(run_dir, 'observables', f'{obs_name}.z')
         try:
-            obs = np.array(io.load_pkl(pkl_file))
+            obs = np.array(io.loadz(z_file))
         except FileNotFoundError:
             io.log(f'Unable to load observable from {run_dir}. Returning.')
 
@@ -497,8 +509,8 @@ def _plot_obs(run_dir, obs=None, obs_name=None, **kwargs):
     if obs is None:
         obs = get_obs_dict(run_dir, obs_name)
 
-    params = io.load_pkl(os.path.join(run_dir, 'params.pkl'))
-    run_params = io.load_pkl(os.path.join(run_dir, 'run_params.pkl'))
+    params = io.loadz(os.path.join(run_dir, 'params.z'))
+    run_params = io.loadz(os.path.join(run_dir, 'run_params.z'))
     title_str = get_title_str(params, run_params)
 
     fig, axes = plt.subplots(ncols=2, figsize=(12.8, 4.8))
@@ -566,8 +578,8 @@ def plot_obs(log_dir, obs_dict, run_params=None,
 
             _ = axes[idx, 0].set_ylabel(ylabel, fontsize='x-large')
 
-    params_file = os.path.join(log_dir, 'parameters.pkl')
-    params = io.load_pkl(params_file)
+    params_file = os.path.join(log_dir, 'parameters.z')
+    params = io.loadz(params_file)
     title_str = get_title_str(params, run_params=run_params)
     _ = plt.suptitle(title_str, fontsize='xx-large', y=1.04)
     plt.tight_layout()

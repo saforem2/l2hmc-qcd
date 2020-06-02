@@ -1,0 +1,269 @@
+\section{Updates: 03/16/2020}%
+\label{sec:updates_2020_03_16}
+% \subsection{Current \& Future Items}
+\begin{itemize}
+  \item \textbf{\uline{Symplectic}}
+    \begin{itemize}
+      \item With $\alpha_{S_{i}} = 0$ for \(i = x, v\), (only \(T_{i}, Q_{i}\)
+        terms), this should be trivial.
+      % \item With only \(T_{i}, Q_{i}\) terms, this should be trivial.
+      \item Even with \(S\) terms, the formulas are pretty simple, and should
+        be easy to verify once we can be sure \(S = 0\) is working properly.
+      \item For now it is probably still enough to only consider \(T_{x}\)
+        since we mainly want to understand the source of the bias.
+      \item Once we understand that we can add more terms and work on tuning it
+        better.
+    \end{itemize}
+  \item \textbf{\uline{Reversibility}}
+    \begin{itemize}
+      \item We can check that the trained sampler is reversible using the
+        following procedure:
+        \begin{enumerate}
+          \item Randomly choose the direction \(d\) to create the initial state
+            \(\xi = (x, v, d)\).
+          \item Run the dynamics and flip the direction:
+            \begin{equation}
+              \mathbf{FL} \xi = \mathbf{F}\xi^{\prime} = (x^{\prime}, v^{\prime}, - d)
+            \end{equation}
+            % \item Flip the direction and run the dynamics in the reverse direction:
+          \item Run the dynamics and flip the direction again:
+            \begin{equation}
+              \mathbf{FL} \xi^{\prime} = \mathbf{F} \xi^{\prime\prime} =
+              (x^{\prime\prime}, v^{\prime\prime}, d)
+              % \mathbf{F}\xi^{\prime} = (x^{\prime}, v^{\prime}, -d) \rightarrow
+              % \xi^{\prime\prime} = (x^{\prime\prime}, v^{\prime\prime}, -d)
+            \end{equation}
+          \item Check the difference:
+            \begin{align}
+              \delta x &= x - x^{\prime\prime} \\
+              \delta v &= v - v^{\prime\prime}
+            \end{align}
+        \end{enumerate}
+%
+      % \item Run the dynamics according to the following two procedures.
+      %   \begin{enumerate}
+      %     \item Run the dynamics backwards then forwards to get
+      %       \(\xi^{\mathrm{fb}}\).
+      %       \begin{equation}
+      %         \xi^{\mathrm{fb}} = \mathbf{FL}^{\mathrm{f}}\mathbf{FL}^{\mathrm{b}}\xi
+      %       \end{equation}
+      %     \item Run the dynamics forwards then backwards to get
+      %       \(\xi^{\mathrm{bf}}\).
+      %       \begin{equation}
+      %         \xi^{\mathrm{bf}} = \mathbf{FL}^{\mathrm{b}}\mathbf{FL}^{\mathrm{f}}\xi
+      %       \end{equation}
+      %   \end{enumerate}
+      % \textbf{\item \color{red}{(AI1):}} Look for outliers in the reversibility
+      %   using the \(\max\) of the differences, \(\xi^{fb} - \xi\) and
+      %   \(\xi^{bf} - \xi\).
+      \item \textbf{\color{red}{(AI2):}} The violations should get worse as the volume
+        increases, so it is probably best to formulate the network in terms of
+        the group variables \((\cos\phi_{\mu}(i),\sin\phi_{\mu}(i)) =
+        e^{i\phi_{\mu}(i)}\) instead of the algebra \(\phi_{\mu}(i)\).
+        This would easily apply to higher groups as well. For \(U(1)\), this
+        doubles the size of the inputs, but should work better overall.
+      \item Having the network treat \(0\) and \(2\pi\) differently is a
+        potential source of reversibility violation, though it may be small in
+        practice.  Continue looking for evidence of this.
+    % \begin{todolist}
+      \color{red}{\item Using the above criterion it was observed that the sampler
+        does indeed violate reversibility, as shown in
+      Fig~\ref{fig:reverse_diffs}.}\color{black}
+    \item In order to identify the root cause of the reversibility violation, I
+      am currently working on stepping through the sub-updates of the dynamics
+      code and checking reversibility at each step.
+      \begin{figure}[htpb!]
+        \centering
+        \includegraphics[width=\textwidth]{updates_2020_03_16/reverse_diffs_traceplot.pdf}
+        \caption{Traceplot of average differences \(\langle \delta x\rangle,
+          \langle \delta v\rangle\) demonstrating the reversibility
+        violation.}%
+        \label{fig:reverse_diffs}
+      \end{figure}
+      % \color{blue}{\item[\done] \textbf{{(AI1, AI2):}}} Having looked through
+      %   existing inference data (specifically, those models for which \(\delta \phi_{P}
+      %   > 0\)), there don't appear to be any violations in reversibility.
+    % \end{todolist}
+  \end{itemize}
+  \item \textbf{\uline{Ergodicity}}
+    \begin{itemize}
+      \item Technically, this may be an autocorrelation problem, but in
+        practice it is difficult to distinguish them.
+        \begin{itemize}
+          \item This may be the main problem. L2HMC seems to only learn certain
+            types of updates, but fails at general mixing.
+        \end{itemize}
+      \item \textbf{\color{red}{(AI3)}} In principle, there should be some initial conditions that
+        give a negative bias, and some positive. Mapping out the bias distribution
+        for different seeds may help confirm this, though the distribution may not
+        be symmetric, and could have a large tail on one side.
+      \item \textbf{\color{red}{(AI4)}} Alternating HMC with L2HMC is an idea to fix this.
+      \item If L2HMC mixes poorly on its own, then we may need to run mostly HMC.\@
+      \item Perhaps, running \(N\) updates of HMC and \(1\) L2HMC, for varying \(N\),
+        will avoid the L2HMC bias and show an improvement over either alone.
+      \item We can periodically switch between L2HMC and generic HMC during
+        inference to see if there is any benefit. An example of this procedure
+        is shown in Fig~\ref{fig:mixed_samplers}.
+    \end{itemize}
+    \begin{figure}
+      \centering
+      \includegraphics[width=0.95\textwidth]{figures/updates_2020_03_16/mix_samplers.pdf}
+      \caption{Results obtained by periodically mixing between L2HMC and HMC
+      during inference.}%
+      \label{fig:mixed_samplers}
+    \end{figure}
+    \begin{todolist}
+      \color{blue}{\item[\done] \textbf{{(AI3, AI4):}}} No evidence in recent
+      data showing a negative bias, although it may be that the distribution is
+      \emph{very} one sided. Continuing to look for counter-examples.
+    \end{todolist}
+  \item \textbf{\uline{Training}}
+    \begin{itemize}
+      \item \textbf{\color{red}{(AI5)}} Run more tests with current code at \(T_{x} = 1\) to
+        further map this distribution and see how the average distance,
+        \(\delta x_{\mathrm{out}}\) and acceptance, \(A(\xi^{\prime}|\xi)\)
+        % (\texttt{accept\(_\)prob})
+        after training correlate with the bias.
+      \item \textbf{\color{red}{(AI6)}} The initial tests of alternate loss functions seemed
+        promising. Continue to explore alternate loss functions.
+        \begin{itemize}
+          \item Maybe \(|\delta x| * A^{2}(\xi^{\prime}|\xi)\)
+          \item Or others that avoid anything we can hopefully determine from
+            \textbf{\color{red}{(AI5)}} (or other tests), that correlate with increased bias.
+        \end{itemize}
+      \item Try running on \(O(2)\) model in 1D compare against Yannicks
+        results.
+    \end{itemize}
+  \item \textbf{\uline{Code/scaling}}
+    \begin{itemize}
+      \item Longer-term, we want to write L2HMC in QEX for Aurora. This would
+        potentially be faster and easier to scale up.
+        \begin{itemize}
+          \item However, the full dense layer won't scale well, and would need
+            to be replaced eventually.
+        \end{itemize}
+      \item \textbf{\color{red}{(AI7)}} One option is to replace the dense
+        weight matrix with a low-rank approximation. This could be investigated
+        by taking the SVD of the weight matrix and looking at how the singular
+        values fall off.
+        \begin{itemize}
+          \item Could also replace the weight matrix after training (on the
+            dense matrix), then run inference on a low-rank approximation to
+            see how it compares.
+        \end{itemize}
+      \item \textbf{\color{red}{(AI8)}} We could experiment with a few other
+        variants that would be easy to implement and scale well, like a local
+        connection (stencil) in combination with a low-rank fully connected
+        layer. This would be relatively easy to implement in QEX.\@
+      \item In the 2D case, the singular value decomposition (SVD) of a weight
+        matrix \(W\) in the network can be written as:
+        \begin{equation}
+          W = USV^{H}
+        \end{equation}
+        where \(S = \mathrm{s}\) contains the singular values of \(W\) and \(U,
+        V^{H}\) are unitary. The rows of \(V^{H}\) are the eigenvectors of
+        \(W^{H}W\) and the columns of \(U\) are the eigenvectors of \(WW^{H}\).
+        In both cases the corresponding (possibly non-zero) eigenvalues are
+        given by \(s^{2}\).
+      \item The amount of overall variance explained by the \(i^{th}\) pair of
+        SVD vectors is given by \(s_{i}^2 / \sum_{j} s_{j}^{2}\), where
+        \(s_{j}\) are the singular values (diagonal of \(S\)).
+    \end{itemize}
+    % \begin{todolist}
+    %   \color{blue}{\item[\done] \textbf{{(AI7, AI8):}}} We can look at the
+    % \end{todolist}
+    \begin{figure}[htpb!]
+      \centering
+      \begin{subfigure}[b]{0.5\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{updates_2020_03_16/xnet_x_layer_svd.pdf}
+      \end{subfigure}%
+      ~
+      \begin{subfigure}[b]{0.5\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{updates_2020_03_16/vnet_v_layer_svd.pdf}
+      \end{subfigure}
+      \caption{Plots showing the percent of the total variance explained by the
+      \(i^{th}\) singular value for two layers in our neural network.}
+    \end{figure}
+\end{itemize}
+
+\subsection{Simplifying the \texorpdfstring{$x$}{x}-update}% {{{
+\label{subsec:simplify_x_update}%
+% To determine which part of the algorithm is responsible for biasing the average
+% plaquette we have been trying to simplify the network/algorithm as much as
+% possible by removing individual items and
+One technique for determining the source of the bias in the plaquette is to
+remove/simplify individual components in the network, and see if any of these
+changes fixes the issue.
+
+One possible simplification that we have begun to explore is to combine the two
+\(x\) sub-updates into a single update by explicitly setting the ``site''
+masks in Eq.~\ref{eq:forward_update}~\ref{eq:backward_update} be
+%
+\begin{align}
+  m^{t} &= [1, 1, \ldots, 1]\\
+  \bar{m}^{t} &= [0, 0, \ldots, 0]
+\end{align}
+%
+for \(t = 1, \ldots, N_{\mathrm{LF}}\).
+
+In this case, the forward update (\(d = 1\)), becomes:
+%
+\begin{align}
+  x^{\prime} &= x\odot\exp{\left(\varepsilon S_{x}(\zeta_2)\right)} 
+    + \varepsilon\left(v^{\prime}\odot\exp{\left(
+      \varepsilon Q_{x}(\zeta_{2})\right)} + T_{x}(\zeta_{2})
+    \right)\\
+  x^{\prime\prime} &= x^{\prime}\\
+                   &= x\odot\exp{\left(\varepsilon S_{x}(\zeta_2)\right)} +
+                   \varepsilon\left(v^{\prime}\odot\exp{\left( \varepsilon
+                   Q_{x}(\zeta_{2})\right)} + T_{x}(\zeta_{2}) \right)\\
+\end{align}
+%
+And similarly for the backwards (d=-1) update:
+%
+\begin{align}
+  x^{\prime} &= x\\
+  x^{\prime\prime} &= {\left[x^{\prime}
+      - v^{\prime}\odot\varepsilon\left(\exp(\varepsilon Q_{x}(\zeta_{3})) 
+      + T_{x}(\zeta_{3})\right)\right]\odot\exp\left({
+          -\varepsilon S_{x}(\zeta_{3})
+      }\right)}
+\end{align}
+% }}}
+
+\begin{figure}[htpb]
+  \centering
+  \includegraphics[width=\textwidth]{zero_masks/original_masks}
+  \caption{Using the original (randomly) assigned site masks, we see the bias
+  is present.}
+\end{figure}
+%
+\begin{figure}[htpb]
+  \centering
+  \includegraphics[width=\textwidth]{zero_masks/zero_masks2}
+  \caption{Using the combined \(x\) sub-updates with \(m^{t} = [1, 1, \ldots,
+    1]\) and \(\bar{m}^{t} = [0, 0, \ldots, 0]\). We see that the bias has
+    slightly improved, although both the acceptance rate and tunneling rate
+  appear to suffer dramatically.}
+\end{figure}
+
+  
+%
+% \clearpage
+% \section{TODO:}
+% \begin{todolist}
+% \item[\done] Export saved weights from tensorflow as arrays to make the inference run
+%   portable and library independent.
+% \item Try with $O(2)$ model in $D = 1$.
+% \item Calculate the relative probabilities for the topological sectors using
+%   Eq.~\ref{eq:rel_prob}.
+% % \item Get a reasonable estimate of the \textbf{integrated autocorrelation}
+% %   time.
+% % \item Write unit tests for dynamics engine.
+% \end{todolist}
+% From Yannick's calculation, the relative probabilities for the topological
+% sectors is given by
+% \begin{equation}
+%   P = \exp\left[-\frac{\beta}{2}{\frac{{(2\pi)}^2 n^2}{N_{s} N_{t}}}\right]

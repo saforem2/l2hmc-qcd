@@ -13,10 +13,17 @@ from collections import namedtuple
 # Included below is a catch-all for various structures
 # (namedtuples) that are used project wide in various locations.
 # ----------------------------------------------------------------
+DynamicsConfig = namedtuple('DynamicsConfig', [
+    'num_steps', 'eps', 'input_shape', 'hmc',
+    'eps_trainable', 'net_weights',
+    'model_type',
+])
 
 # State is an object for grouping the position/momentum
 # configurations together with the value of `beta`.
 State = namedtuple('State', ['x', 'v', 'beta'])
+MonteCarloStates = namedtuple('MonteCarloStates', ['init', 'proposed', 'out'])
+LFdata = namedtuple('LFdata', ['init', 'proposed', 'prob'])
 EnergyData = namedtuple('EnergyData', ['init', 'proposed', 'out'])
 Energy = namedtuple('Energy', ['potential', 'kinetic', 'hamiltonian'])
 
@@ -40,11 +47,16 @@ BootstrapData = namedtuple('BootstrapData', ['mean', 'err', 'means_bs'])
 l2hmcFn = namedtuple('l2hmcFn', ['v1', 'x1', 'x2', 'v2'])
 l2hmcFns = namedtuple('l2hmcFns', ['scale', 'translation', 'transformation'])
 
+PI = np.pi
+TWO_PI = 2 * PI
+
+NET_WEIGHTS_HMC = NetWeights(0., 0., 0., 0., 0., 0.)
+NET_WEIGHTS_L2HMC = NetWeights(1., 1., 1., 1., 1., 1.)
+
 TF_FLOAT = tf.float32
 TF_INT = tf.int32
 NP_FLOAT = np.float32
 NP_INT = np.int32
-
 #  TF_FLOAT = tf.float64
 #  TF_INT = tf.int64
 #  NP_FLOAT = np.float64
@@ -55,6 +67,8 @@ NP_INT = np.int32
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 FILE_PATH = os.path.abspath(os.path.dirname(__file__))
 PROJECT_DIR = os.path.dirname(os.path.abspath(os.getcwd()))
+BASE_DIR = os.path.dirname(PROJECT_DIR)
+GAUGE_LOGS_DIR = os.path.join(BASE_DIR, 'gauge_logs')
 
 #  COLORS = 5000 * ['C0', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9']
 MARKERS = 5000 * ['o', 's', 'x', 'v', 'h', '^', 'p', '<', 'd', '>', 'o']
