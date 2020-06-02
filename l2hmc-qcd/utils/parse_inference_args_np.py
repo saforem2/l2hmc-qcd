@@ -25,6 +25,14 @@ def parse_args():
                         help=("""Flag that when passed sets all `net_weights`
                               to 0."""))
 
+    parser.add_argument('--hmc_start',
+                        dest='hmc_start',
+                        action='store_true',
+                        required=False,
+                        help=("""Flag that when passed will run HMC to get
+                              thermalized configuration as initial state for
+                              running inference on trained model."""))
+
     parser.add_argument('--num_steps',
                         dest='num_steps',
                         required=False,
@@ -204,6 +212,25 @@ def parse_args():
                         help=("""Specify the number of singular values to keep
                               when reconstructing the weight matrix. (Default:
                               -1, keep all singular values). """))
+
+    parser.add_argument('--switch_steps',
+                        dest='switch_steps',
+                        type=int,
+                        default=10000,
+                        required=False,
+                        help=("""Flag that when passed (together with
+                              `--mix_samplers`) determines how often to switch
+                              between L2HMC and HMC during inference."""))
+
+    parser.add_argument('--hmc_steps',
+                        dest='hmc_steps',
+                        type=int,
+                        default=10000,
+                        required=False,
+                        help=("""Flag that when passed (together with
+                              `--mix_samplers`) determines the number of HMC
+                              leapfrog steps to run."""))
+
 
     if sys.argv[1].startswith('@'):
         args = parser.parse_args(shlex.split(open(sys.argv[1][1:]).read(),

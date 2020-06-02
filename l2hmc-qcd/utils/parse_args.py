@@ -254,24 +254,44 @@ def parse_args():
                               use. Possible values: `'CartesianNet'`. If not
                               specified, will use generic `'FullNet'`."""))
 
-    parser.add_argument('--num_hidden1',
-                        dest='num_hidden1',
-                        type=int,
-                        default=100,
+    parser.add_argument('--units',
+                        dest='units',
+                        type=lambda s: [int(i) for i in s.split(',')],
+                        default="64,128",
                         required=False,
-                        help=("""Number of nodes to include in each of the
-                              fully-connected hidden layers for x, v, and t.\n
-                              (Default: 100)"""))
+                        help=("""Number of nodes to use in hidden layers. The
+                              number of hidden layers will be determined by the
+                              number of entries provided. Example: `--units
+                              '100,200,300'` will make 3 hidden layers with
+                              100, 200, and 300 hidden units respectively.
+                              (Default: '64,128')."""))
 
-    parser.add_argument('--num_hidden2',
-                        dest='num_hidden2',
-                        type=int,
-                        default=100,
+    parser.add_argument("--dropout_prob",
+                        dest="dropout_prob",
+                        type=float,
                         required=False,
-                        help=("""Number of nodes to include in fully-connected
-                              hidden layer `h`. If not explicitly passed, will
-                              default to 2 * lattice.num_links.\n
-                              (Default: None)"""))
+                        default=0.,
+                        help=("""Dropout probability in network. If > 0,
+                              dropout will be used. (Default: 0.)"""))
+
+    parser.add_argument("--clip_value",
+                        dest="clip_value",
+                        type=float,
+                        default=0.,
+                        required=False,
+                        help=("""Clip value, used for clipping value of
+                              gradients by global norm. (Default: 0.) If a
+                              value greater than 0. is passed, gradient
+                              clipping will be performed."""))
+
+    parser.add_argument('--largest_wilson_loop',
+                        dest='largest_wilson_loop',
+                        type=int,
+                        required=False,
+                        default=1,
+                        help=("""Size of largest Wilson loop to include when
+                              calculating the plaquette and charge terms in the
+                              gauge loss function."""))
 
     parser.add_argument('--no_summaries',
                         dest="no_summaries",
@@ -418,23 +438,6 @@ def parse_args():
                               when performing the augmented L2HMC molecular
                               dynamics update."""))
 
-    parser.add_argument('--use_gaussian_loss',
-                        dest='use_gaussian_loss',
-                        action='store_true',
-                        required=False,
-                        help=("""Flag that when passed will use a `Gaussian`
-                              function, exp((x - x0) ** 2 / (2 * sigma)), where
-                              `x = metric_fn(x_init, x_proposed) * accept_prob`
-                              (i.e. the expected jump distance) is used in the
-                              exponential."""))
-
-    parser.add_argument('--use_nnehmc_loss',
-                        dest='use_nnehmc_loss',
-                        action='store_true',
-                        required=False,
-                        help=("""If passed, set `use_nnehmc_loss=True` and
-                              use alternative NNEHMC loss function."""))
-
     parser.add_argument("--profiler",
                         dest='profiler',
                         action="store_true",
@@ -479,52 +482,12 @@ def parse_args():
                               parameter logging and additonal metric
                               tracking/displaying."""))
 
-    parser.add_argument("--dropout_prob",
-                        dest="dropout_prob",
-                        type=float,
-                        required=False,
-                        default=0.,
-                        help=("""Dropout probability in network. If > 0,
-                              dropout will be used. (Default: 0.)"""))
-
-    #########################
-    #  (Mostly) Deprecated  #
-    #########################
-
-    parser.add_argument('--save_samples',
-                        dest='save_samples',
-                        action='store_true',
-                        required=False,
-                        help=("""Flag that when passed will set
-                              `--save_samples=True`, and save the samples
-                              generated during the `run` phase.
-                              (Default: `--save_samples=False, i.e.
-                              `--save_samples` is not passed).\n
-                              WARNING!! This is very data intensive."""))
-
     parser.add_argument('--save_train_data',
                         dest='save_train_data',
                         action='store_true',
                         required=False,
                         help=("""Flag that when passed will save training
                               data."""))
-
-    parser.add_argument('--save_lf',
-                        dest='save_lf',
-                        action='store_true',
-                        required=False,
-                        help=("""Flag that when passed will save the
-                              output from each leapfrog step."""))
-
-    parser.add_argument("--clip_value",
-                        dest="clip_value",
-                        type=float,
-                        default=0.,
-                        required=False,
-                        help=("""Clip value, used for clipping value of
-                              gradients by global norm. (Default: 0.) If a
-                              value greater than 0. is passed, gradient
-                              clipping will be performed."""))
 
     parser.add_argument("--restore",
                         dest="restore",
@@ -534,12 +497,51 @@ def parse_args():
                               argument is passed, a `log_dir` must be specified
                               and passed to `--log_dir argument."""))
 
+    parser.add_argument('--hmc_start',
+                        dest='hmc_start',
+                        action='store_true',
+                        required=False,
+                        help=("""Find optimal `eps` by training HMC model with
+                              `eps` a trainable parameter, and use this value
+                              along with the resulting thermalized config as
+                              the starting point for training the L2HMC
+                              sampler."""))
+
+    parser.add_argument('--hmc_steps',
+                        dest='hmc_steps',
+                        type=int,
+                        default=10000,
+                        required=False,
+                        help=("""Number of steps to train HMC sampler."""))
+
+    parser.add_argument("--resume_training",
+                        dest="resume_training",
+                        action="store_true",
+                        required=False,
+                        help=("""Resume training."""))
+
+    parser.add_argument('--to_restore',
+                        dest='to_restore',
+                        type=lambda s: [str(i) for i in s.split(',')],
+                        default='',
+                        #  default="x,eps,beta,lr",
+                        required=False,
+                        help=("""List of variable names to restore if restoring
+                              from previous training run.
+                              Possible values: ['x', 'beta', 'eps', 'lr']."""))
+
     parser.add_argument("--theta",
                         dest="theta",
                         action="store_true",
                         required=False,
                         help=("""Flag that when passed indicates we're training
                               on theta @ ALCf."""))
+
+    parser.add_argument('--root_dir',
+                        dest='root_dir',
+                        default='gauge_logs',
+                        required=False,
+                        help=("""Root directory in which to store data."""))
 
     parser.add_argument("--log_dir",
                         dest="log_dir",

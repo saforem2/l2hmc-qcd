@@ -396,9 +396,11 @@ def train_l2hmc(kwargs, log_file=None):
 
     if is_chief:
         #  params['checkpoint_dir'] = train_logger.checkpoint_dir
-        params_pkl_file = os.path.join(os.getcwd(), 'params.pkl')
-        with open(params_pkl_file, 'wb') as f:
-            pickle.dump(model.params, f)
+        #  params_pkl_file = os.path.join(os.getcwd(), 'params.pkl')
+        params_file = os.path.join(os.getcwd(), 'params.z')
+        io.savez(params_file)
+        #  with open(params_pkl_file, 'wb') as f:
+        #      pickle.dump(model.params, f)
 
     # close MonitoredTrainingSession and prepare for inference
     sess.close()

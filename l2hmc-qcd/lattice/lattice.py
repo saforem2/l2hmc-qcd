@@ -75,7 +75,7 @@ def project_angle_fft(x, N=10):
     return y
 
 
-def gauge_potential_np(x):
+def calc_plaqs_np(x):
     """Defines the potential energy function using the Wilson action."""
     potential = (x[..., 0]
                  - x[..., 1]
@@ -232,7 +232,7 @@ class GaugeLattice:
 
         return plaq_sums
 
-    def calc_plaq_sums_np(self, samples):
+    def calc_plaq_sums_np(self, samples, n=1):
         """Calculate plaquette sums.
         Same as `self.calc_plaq_sums` defined above, but to be used with
         `numpy.ndarray` objects.
@@ -240,12 +240,10 @@ class GaugeLattice:
         if samples.shape != self.samples.shape:
             samples = np.reshape(samples, self.samples.shape)
 
-        plaq_sums = (samples[..., 0]
-                     - samples[..., 1]
-                     - np.roll(samples[..., 0], shift=-1, axis=2)
-                     + np.roll(samples[..., 1], shift=-1, axis=1))
-
-        return plaq_sums
+        return (samples[..., 0]
+                - samples[..., 1]
+                - np.roll(samples[..., 0], shift=-n, axis=2)
+                + np.roll(samples[..., 1], shift=-n, axis=1))
 
     def calc_actions(self, samples=None, plaq_sums=None):
         """Calculate the total action for each sample in samples."""

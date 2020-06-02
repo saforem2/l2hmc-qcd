@@ -1,0 +1,160 @@
+\subsection{Metropolis-Hastings Accept/Reject}
+Written in terms of these transformations, the augmented leapfrog operator
+$\mathbf{L}_{\theta}$ consists of $M$ sequential applications of the
+single-step leapfrog operator $\mathbf{L}_{\theta} \xi = \mathbf{L}_{\theta}(x,
+v, d) = (x^{\prime\prime\times M}, v^{\prime\prime\times M}, d)$, followed by
+the previously-defined momentum flip operator $\mathbf{F}$ which flips the
+direction variable $d$, i.e.\ $\mathbf{F}\xi = (x, v, -d)$.
+%
+Using these, we can express a complete molecular dynamics update step as
+$\mathbf{FL}_{\theta}\xi = \xip$, where now the Metropolis-Hastings acceptance
+probability for this proposal is given by
+%
+\begin{equation}
+    A(\mathbf{F}\mathbf{L} \xi | \xi) = \min\left(1,
+        \frac{p(\mathbf{F}\mathbf{L}\xi)}{p(\xi)}\left|
+        \frac{\partial\left[\mathbf{F}\mathbf{L}\xi\right]}
+            {\partial\xi^{T}}\right|\right),
+\end{equation}
+%
+Where $\left|\frac{\partial\left[\mathbf{F}\mathbf{L}\xi\right]}
+{\partial\xi^{T}}\right|$ denotes the determinant of the Jacobian describing
+the transformation.
+
+In contrast to generic HMC where
+$\left|\frac{\partial\left[\mathbf{F}\mathbf{L}\xi\right]}
+{\partial\xi^{T}}\right| = 1$, we now have non-symplectic transformations
+(i.e.\ non-volume preserving) and so we must explicitly account for the
+determinant of the Jacobian.
+%
+These non-volume preserving transformations have the effect of deforming the
+energy landscape, which, depending on the nature of the transformation, may
+allow for the exploration of regions of space which were previously
+inaccessible.
+%
+\newcommand{\energyA}{\includegraphics[width=0.4\textwidth]{energy_landscape/original_energy_landscape.pdf}}
+\newcommand{\energyB}{\includegraphics[width=0.4\textwidth]{energy_landscape/modified_energy_landscape.pdf}}
+%
+\begin{figure}
+  \centering 
+  \Huge
+  \parbox{\widthof{\energyA}}{\energyA} $\overset{\mathcal{J}}{\longrightarrow}$
+  \parbox{\widthof{\energyB}}{\energyB} 
+  \normalsize
+  \caption{Example of how the determinant of the Jacobian can deform the energy landscape.}
+\end{figure}
+
+To simplify our notation, introduce an additional operator $\mathbf{R}$ that
+re-samples the momentum and direction, e.g.\ given $\xi = (x, v, d)$,
+$\mathbf{R}\,\xi = (x, v^{\prime}, d^{\prime})$ where $v^{\prime} \sim
+\mathcal{N}(0, I)$, $d^{\prime} \sim \mathcal{U}\left(\{-1, 1\}\right)$.
+%
+A complete sampling step of our algorithm then consists of the following two
+steps:
+%
+\begin{enumerate}
+    \item $\xi^{\prime} = \mathbf{FL}_{\theta} \,\xi$ with probability
+        $A(\mathbf{FL}_{\theta}\,\xi|\xi)$ %(Eq.~\ref{eq:metropolis_hastings}),
+        otherwise $\xi^{\prime} = \xi$.
+    \item $\xi^{\prime} = \mathbf{R}\,\xi$.
+\end{enumerate}
+%
+Note however, that for MH to be well-defined, this deterministic operator must
+be \emph{invertible} and \emph{have a tractable Jacobian} (i.e.\ we can compute
+its determinant).
+%
+In order to make this operator invertible, we augment the state space $(x, v)$
+into $(x, v, d)$, where $d \in \{-1, 1\}$ is drawn with equal probability and
+represent the direction of the update.
+%
+All of the previous expressions for the augmented leapfrog updates represent
+the forward ($d = 1$) direction.
+%
+We can derive the expressions for the backward direction ($d = -1$) by
+reversing the order of the updates (i.e.\ $\vpp \rightarrow \vp$, then $\xpp
+\rightarrow \xp$, followed by $\xp \rightarrow x$ and finally $\vp \rightarrow
+v$).
+%
+For completeness, we include in Sec.~\ref{sec:lf_forward} and
+Sec~\ref{sec:lf_backward} all of the equations (both forward and backward
+directions) relevant for updating the variables of interest in our augmented
+leapfrog sampler.
+\section{Forward Direction \texorpdfstring{$(d = 1)$}{(d = 1)}:}%
+\label{sec:lf_forward}
+% \vspace{-20pt}
+\begin{align}
+  \label{eq:forward_update}
+  \vp &= v \odot \exp{\left(\frac{\eps}{2}S_{v}(\zeta_{1})\right)}% 
+        - \frac{\eps}{2}\left[\partial_{x}\,U(x)\odot \exp{\left(\eps
+          Q_{v}(\zeta_{1})\right)}%
+        + T_{v}(\zeta_{1})\right] \\
+  \xp &= x_{\bar{m}^{t}} + m^{t}\odot \left[x \odot \exp{\left(\eps
+    S_{x}(\zeta_{2})\right)}%
+        + \eps\left(\vp\odot\exp{\left(\eps Q_{x}(\zeta_{2})\right)} 
+          + T_{x}(\zeta_{2})\right)\right] \\
+  \xpp &= x^{\prime}_{m^{t}} + \bar{m}^{t}\odot \left[\xp \odot \exp{\left(\eps
+    S_{x}(\zeta_{3})\right)}%
+        + \eps\left(\vp\odot\exp{\left(\eps Q_{x}(\zeta_{3})\right)} +
+      T_{x}(\zeta_{3})\right)\right] \\
+  \vpp &= \vp \odot \exp{\left(\frac{\eps}{2}S_{v}(\zeta_{4})\right)}%
+        - \frac{\eps}{2}\left[\partial_{x}\,U(\xpp)\odot \exp{\left(\eps
+          Q_{v}(\zeta_{4})\right)}%
+          + T_{v}(\zeta_{4})\right]
+\end{align} 
+%
+With $\zeta_{1} = (x, \partial_{x}\, U(x), t)$, $\zeta_{2} = (x_{\bar{m}^{t}},
+v, t)$, $\zeta_{3} = (x^{\prime}_{m^{t}}, v, t)$, $\zeta_{4} = (\xpp,
+\partial_{x}\, U(\xpp), t)$.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+\section{Backward Direction \texorpdfstring{$(d = -1)$}{(d = -1)}:}%
+\label{sec:lf_backward}
+%
+\begin{align}
+  \label{eq:backward_update}
+  v^{\prime} &= {\left\{v + \frac{\eps}{2}\left[\partial_{x}\,U(x)\odot
+        \exp{\left(\eps Q_{v}(\zeta_{1})\right)}%
+    + T_{v}(\zeta_{1})\right]\right\}} \odot
+    \exp{\left(-\frac{\eps}{2}S_{v}(\zeta_{1})\right)} \\
+  \xp &= x_{m^{t}} + \bar{m}^{t}\odot%
+    {\left[x - \eps{\left(\exp{\left(\eps Q_{x}(\zeta_{2})\right)}\odot \vp%
+    + T_{x}(\zeta_{2})\right)}\right]}\odot \exp{\left(-\eps
+    S_{x}(\zeta_{2})\right)} \\ 
+  \xpp &= x_{\bar{m}^{t}} + m^{t}\odot%
+    {\left[\xp - \eps{\left(\exp{\left(\eps Q_{x}(\zeta_{3})\right)}\odot \vp%
+    + T_{x}(\zeta_{3})\right)}\right]}\odot \exp{\left(-\eps
+    S_{x}(\zeta_{3})\right)} \\
+  v^{\prime\prime} &= {\left\{\vp +
+      \frac{\eps}{2}\left[\partial_{x}\,U(\xpp)\odot%
+        \exp{\left(\eps Q_{v}(\zeta_{1})\right)}
+  + T_{v}(\zeta_{1})\right]\right\}}\odot 
+    \exp{\left(-\frac{\eps}{2}S_{v}(\zeta_{4})\right)}
+\end{align}
+%
+With $\zeta_{1} = (x, \partial_{x}\, U(x), t)$, $\zeta_{2} = (x_{m^{t}}, v,
+t)$, $\zeta_{3} = (x^{\prime}_{\bar{m}^{t}}, v, t)$, $\zeta_{4} = (\xpp,
+\partial_{x}\, U(\xpp), t)$.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Determinant of the Jacobian}
+In terms of the auxiliary functions $S_{i}, Q_{i}, T_{i}$, we can compute the
+Jacobian:
+%
+\begin{align}
+  \log|\mathcal{J}| 
+  &= \log\bigg|\frac{\partial{\left[\mathbf{FL}_{\theta}\xi\right]}}{\partial
+  \xi^{T}}\bigg|\\
+  &= d \sum_{t\leq N_{\mathrm{LF}}}
+    {\left[\frac{\eps}{2} \mathbbm{1}\cdot S_{v}(\zeta_{1}^{t}) + \eps m^{t}
+        \cdot S_{x}(\zeta_{2}^{t}) 
+      + \eps \bar{m}^{t} \cdot S_{x}(\zeta_{3}^{t}) + \frac{\eps}{2}\mathbbm{1}
+\cdot S_{v}(\zeta_{4}^{t})\right]}.  \end{align}
+%
+where $N_{\mathrm{LF}}$ is the number of leapfrog steps, and $\zeta_{i}^{t}$
+denotes the intermediary variable $\zeta_{i}^{t}$ at time step $t$ and $d$ is
+the direction of $\xi$, i.e.\ $d = 1 \,\, (-1)$ for the forward (backward)
+update.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

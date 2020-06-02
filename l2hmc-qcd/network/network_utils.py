@@ -1,6 +1,5 @@
 import numpy as np
 import tensorflow as tf
-from tensorflow.contrib.framework import add_arg_scope, arg_scope
 
 import config as cfg
 from seed_dict import seeds
@@ -121,7 +120,7 @@ def custom_dense(units, seed=None, factor=1., name=None, **kwargs):
             scale=2.*factor,
             mode='fan_in',
             distribution='truncated_normal',
-            dtype=TF_FLOAT,
+            #  dtype=TF_FLOAT,
             seed=seed,
         )
 
@@ -134,7 +133,7 @@ def custom_dense(units, seed=None, factor=1., name=None, **kwargs):
             factor=2.*factor,
         )
 
-    bias_initializer = tf.constant_initializer(0., dtype=TF_FLOAT)
+    bias_initializer = tf.constant_initializer(0.)  # , dtype=TF_FLOAT)
 
     return tf.keras.layers.Dense(
         units=units,
