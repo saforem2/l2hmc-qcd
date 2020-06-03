@@ -4,7 +4,7 @@ TRAINER='../main.py'
 ARGS='./gauge_args.txt'
 
 KMP_BLOCKTIME=0
-OMP_NUM_THREADS=8
+OMP_NUM_THREADS=16
 KMP_SETTINGS=TRUE
 KMP_AFFINITY=granularity=fine,compact,1,0
 

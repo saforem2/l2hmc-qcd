@@ -1,38 +1,39 @@
-#--hmc
-#--save_train_data
-# ==============================
 #--restore
-#--log_dir='../../gauge_logs/2020_05_26/L16_b512_lf2_GaugeNetwork_aw00_qw01_dp05_f32_0129'
-#--hmc_start
-#--hmc_steps 10
---batch_size 8
+#--log_dir='../../gauge_logs/2020_06_02/DEBUG_L16_b64_lf2_GaugeNetwork_aw00_qw01_pw10_dp05_f32_1902'
+# ==============================
+--rand
+--eps 0.2
+--num_steps 2
+--batch_size 512
 --time_size 16
 --space_size 16
---num_steps 2
---eps 0.2
 --beta_init 1.
---beta_final 5.
+--beta_final 3.
+--save_steps 100
+--train_steps 10000
+--hmc_start
+--hmc_steps 1000
 --extra_steps 0
---print_steps 50
---train_steps 10
-#--horovod
+--print_steps 1
+#--save_train_data
 # ---------------------
---dropout_prob 0.5
 --warmup_lr
+--dropout_prob 0.5
 --lr_init 0.001
 --lr_decay_steps 2000
 --lr_decay_rate 0.96
---units '256, 256, 512, 512'
---metric 'cos_diff'
---network_type 'GaugeNetwork'
---aux_weight 0.
---std_weight 0.
-#--clip_value 10
 --loss_scale 0.1
+--std_weight 0.
+--aux_weight 0.
 --plaq_weight 0.
 --charge_weight 0.1
+--network_type 'GaugeNetwork'
+--units '256, 256, 512, 512'
+--metric 'cos_diff'
 # - - - - - - - - - - - - - -
---rand
---no_summaries
+#--no_summaries
+#--horovod
+#--hmc
 #--logging_steps 250
+#--clip_value 10
 # -----------------------------------------

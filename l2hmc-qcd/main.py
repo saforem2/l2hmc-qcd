@@ -120,7 +120,7 @@ def create_sess(FLAGS, **sess_kwargs):
 
 def _get_global_var(name):
     try:
-        var = [i for i in tf.global_variables() if name in i.name][0]
+        var = [i for i in tf.compat.v1.global_variables() if name in i.name][0]
     except IndexError:
         var = None
     return var
@@ -132,6 +132,7 @@ def get_global_vars(names):
     for k, v in global_vars:
         if v is None:
             _ = global_vars.pop(k)
+
     return global_vars
 
 
@@ -144,8 +145,11 @@ def save_params(model):
     count_trainable_params(out_file)
 
     model.params['network_type'] = model.network_type
-    io.save_dict(dict(model.params), os.getcwd(), 'params')
-    io.save_dict(dict(model.params), model.log_dir, 'params')
+    params_dict = dict(model.params)
+    io.save_dict(params_dict, model.log_dir, 'params')
+    io.save_dict(params_dict, os.getcwd(), 'params')
+
+    return params_dict
 
 
 def save_masks(model, sess):
@@ -157,12 +161,16 @@ def save_masks(model, sess):
     io.log(f'dynamics.masks:\n\t {masks}')
     io.savez(masks, masks_file)
 
+    return masks
+
 
 def save_seeds(model):
     """Save network seeds for reproducibility."""
     io.save_dict(seeds, out_dir=model.log_dir, name='seeds')
     io.save_dict(xnet_seeds, out_dir=model.log_dir, name='xnet_seeds')
     io.save_dict(vnet_seeds, out_dir=model.log_dir, name='vnet_seeds')
+
+    return {'seeds': seeds, 'xnet_seeds': xnet_seeds, 'vnet_seeds': vnet_seeds}
 
 
 def save_weights(model, sess):
@@ -187,9 +195,8 @@ def save_eps(model, sess):
     """Save final value of `eps` (step size) at the end of training."""
     eps_np = sess.run(model.dynamics.eps)
     eps_dict = {'eps': eps_np}
-    #  fpath = os.path.join(model.log_dir, 'eps_np.z')
     io.save_dict(eps_dict, model.log_dir, 'eps_np')
-    #  io.save_dict(eps_dict, os.path.join(model.log_dir, 'eps_np.z'),)
+    io.save_dict(eps_dict, os.getcwd(), 'eps_np')
 
     return eps_np
 
@@ -207,12 +214,15 @@ def restore_state_and_params(FLAGS):
     except FileNotFoundError:
         state = io.loadz(os.path.join(train_dir, 'current_state.z'))
 
+    FLAGS.update({
+        k: v for k, v in params.items() if k not in FLAGS
+    })
     #  FLAGS = FLAGS.update({
     #      k: v for k, v in params.items() if k not in FLAGS
     #  })
-    for key, val in params.items():
-        if key not in FLAGS:
-            FLAGS[key] = val
+    #  for key, val in params.items():
+    #      if key not in FLAGS:
+    #          FLAGS[key] = val
 
     #  if 'eps' in FLAGS.to_restore:
     #      FLAGS.eps = state['dynamics_eps']
@@ -231,15 +241,15 @@ def restore_state_and_params(FLAGS):
 @timeit
 def build_model(FLAGS, log_file=None):
     """Build `GaugeModel` object by parsing params from FLAGS."""
-    tf.keras.backend.set_learning_phase(True)
-    log_dir = FLAGS.log_dir
-    if log_dir is None:
+    if FLAGS.log_dir is None:
         log_dir = io.create_log_dir(FLAGS, 'GaugeModel', log_file)
+    else:
+        log_dir = FLAGS.log_dir
 
     FLAGS.update({
         'log_dir': log_dir,
         'summaries': not FLAGS.no_summaries,
-        'save_steps': FLAGS.train_steps // 4,
+        'save_steps': FLAGS.train_steps // 10,
         'keep_data': FLAGS.save_train_data,
     })
 
@@ -279,9 +289,9 @@ def build_logger_and_ckpt_dir(model):
 
 def save(FLAGS, model, sess, logger, state=None):
     """Saves data from training run."""
-    _ = save_eps(model, sess)
     if not FLAGS.hmc:
         _ = save_weights(model, sess)
+    _ = save_eps(model, sess)
     save_masks(model, sess)
     save_params(model)
     save_seeds(model)
@@ -297,46 +307,47 @@ def train_hmc(FLAGS, log_file=None):
     """Train HMC sampler prior to training L2HMC sampler."""
     io.log(80 * '=')
     io.log(f'TRAINING HMC MODEL...')
-    FLAGS_ = AttrDict(dict(FLAGS))
+    HMC_FLAGS = AttrDict(dict(FLAGS))
 
     IS_CHIEF = (
-        not FLAGS_.horovod
-        or FLAGS_.horovod and hvd.rank() == 0
+        not HMC_FLAGS.horovod
+        or HMC_FLAGS.horovod and hvd.rank() == 0
     )
 
-    FLAGS._warmup_lr = False
-    FLAGS_.dropout_prob = 0.
-    FLAGS_.hmc = True
-    FLAGS_.save_train_data = True
-    FLAGS_.train_steps = FLAGS_.pop('hmc_steps')
-    FLAGS_.lr_decay_steps = FLAGS_.train_steps // 4
-    FLAGS_.beta_init = FLAGS_.beta_final
-    FLAGS_.fixed_beta = True
-    model, hooks, FLAGS_ = build_model(FLAGS_, log_file)
+    HMC_FLAGS.warmup_lr = False
+    HMC_FLAGS.dropout_prob = 0.
+    HMC_FLAGS.hmc = True
+    HMC_FLAGS.save_train_data = True
+    HMC_FLAGS.train_steps = HMC_FLAGS.pop('hmc_steps')
+    HMC_FLAGS.lr_decay_steps = HMC_FLAGS.train_steps // 4
+    HMC_FLAGS.beta_init = HMC_FLAGS.beta_final
+    HMC_FLAGS.fixed_beta = True
+    HMC_FLAGS.log_dir = os.path.join(HMC_FLAGS.log_dir, 'HMC_start')
+    model, hooks, HMC_FLAGS = build_model(HMC_FLAGS, log_file)
     logger, ckpt_dir = None, None
     if IS_CHIEF:
         logger, ckpt_dir = build_logger_and_ckpt_dir(model)
 
-    sess = create_sess(FLAGS_,
+    sess = create_sess(HMC_FLAGS,
                        hooks=hooks,
                        checkpoint_dir=ckpt_dir,
                        save_summaries_secs=None,
                        save_summaries_steps=None)
 
-    trainer = Trainer(sess, model, logger, FLAGS_)
+    trainer = Trainer(sess, model, logger, HMC_FLAGS)
 
-    xdim = FLAGS_.time_size * FLAGS_.space_size * 2
-    x_init = np.random.uniform(-PI, PI, size=(FLAGS_.batch_size, xdim))
+    xdim = HMC_FLAGS.time_size * HMC_FLAGS.space_size * 2
+    x_init = np.random.uniform(-PI, PI, size=(HMC_FLAGS.batch_size, xdim))
 
     state_final = trainer.train(x=x_init,
                                 net_weights=NET_WEIGHTS_HMC,
-                                beta=FLAGS_.beta_init)
+                                beta=HMC_FLAGS.beta_init)
     io.log(80 * '=')
 
     if IS_CHIEF:
-        save(FLAGS_, model, sess, logger, state_final)
-        if FLAGS_.save_train_data:
-            _ = plot_train_data(logger.train_data, FLAGS_, num_chains=10)
+        save(HMC_FLAGS, model, sess, logger, state_final)
+        if HMC_FLAGS.save_train_data:
+            _ = plot_train_data(logger.train_data, HMC_FLAGS, num_chains=10)
 
     sess.close()
     tf.compat.v1.reset_default_graph()
@@ -347,6 +358,7 @@ def train_hmc(FLAGS, log_file=None):
 @timeit
 def train(FLAGS, log_file=None):
     """Train L2HMC sampler and log/plot results."""
+    tf.compat.v1.keras.backend.set_learning_phase(True)
     IS_CHIEF = (
         not FLAGS.horovod
         or FLAGS.horovod and hvd.rank() == 0
@@ -356,6 +368,8 @@ def train(FLAGS, log_file=None):
         params_file = os.path.join(FLAGS.log_dir, 'params.z')
         if not os.path.isfile(params_file):
             io.save_dict(dict(FLAGS), FLAGS.log_dir, 'params.z')
+    else:
+        FLAGS.log_dir = io.create_log_dir(FLAGS, 'GaugeModel', log_file)
 
     state = None
     xdim = FLAGS.time_size * FLAGS.space_size * 2
