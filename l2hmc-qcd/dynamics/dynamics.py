@@ -27,7 +27,6 @@ import tensorflow as tf
 from config import NP_FLOAT, TF_FLOAT, TF_INT
 from seed_dict import seeds, vnet_seeds, xnet_seeds
 from network import NetworkConfig
-#  from network.network import FullNet
 from network.gauge_network import GaugeNetwork
 
 # pylint:disable=invalid-name,too-many-locals,too-many-arguments
@@ -162,31 +161,36 @@ class Dynamics(tf.keras.Model):
         and use sampled masks to compute the actual solutions.
         """
         x_init, beta = inputs
-        sf_init, sf_prop, pxf, sldf = self._transition(inputs,
-                                                       forward=True,
-                                                       training=training)
-        sb_init, sb_prop, pxb, sldb = self._transition(inputs,
-                                                       forward=False,
-                                                       training=training)
-        mask_f, mask_b = self._get_direction_masks()
-        v_init = sf_init.v * mask_f[:, None] + sb_init.v * mask_b[:, None]
-        x_prop = sf_prop.x * mask_f[:, None] + sb_prop.x * mask_b[:, None]
-        v_prop = sf_prop.v * mask_f[:, None] + sb_prop.v * mask_b[:, None]
-        sld_prop = sldf * mask_f + sldb * mask_b  # sumlogdet proposed
+        with tf.name_scope('transition_forward'):
+            sf_init, sf_prop, pxf, sldf = self._transition(inputs,
+                                                           forward=True,
+                                                           training=training)
+        with tf.name_scope('transition_backward'):
+            sb_init, sb_prop, pxb, sldb = self._transition(inputs,
+                                                           forward=False,
+                                                           training=training)
+        with tf.name_scope('combined_fb'):
+            mask_f, mask_b = self._get_direction_masks()
+            v_init = sf_init.v * mask_f[:, None] + sb_init.v * mask_b[:, None]
+            x_prop = sf_prop.x * mask_f[:, None] + sb_prop.x * mask_b[:, None]
+            v_prop = sf_prop.v * mask_f[:, None] + sb_prop.v * mask_b[:, None]
+            sld_prop = sldf * mask_f + sldb * mask_b  # sumlogdet proposed
 
-        state_init = State(x_init, v_init, beta)
-        state_prop = State(x_prop, v_prop, beta)
+            state_init = State(x_init, v_init, beta)
+            state_prop = State(x_prop, v_prop, beta)
 
-        accept_prob = pxf * mask_f + pxb * mask_b
-        mask_a, mask_r = self._get_accept_masks(accept_prob)
+        with tf.name_scope('outputs'):
+            with tf.name_scope('accept_prob'):
+                accept_prob = pxf * mask_f + pxb * mask_b
+            mask_a, mask_r = self._get_accept_masks(accept_prob)
 
-        x_out = x_prop * mask_a[:, None] + x_init * mask_r[:, None]
-        v_out = v_prop * mask_a[:, None] + v_init * mask_r[:, None]
-        sumlogdet = sld_prop * mask_a
+            x_out = x_prop * mask_a[:, None] + x_init * mask_r[:, None]
+            v_out = v_prop * mask_a[:, None] + v_init * mask_r[:, None]
+            sumlogdet = sld_prop * mask_a
 
-        state_out = State(x_out, v_out, beta)
-        mc_states = MonteCarloStates(state_init, state_prop, state_out)
-        sld_states = MonteCarloStates(0., sld_prop, sumlogdet)
+            state_out = State(x_out, v_out, beta)
+            mc_states = MonteCarloStates(state_init, state_prop, state_out)
+            sld_states = MonteCarloStates(0., sld_prop, sumlogdet)
 
         return mc_states, accept_prob, sld_states
 
@@ -194,7 +198,10 @@ class Dynamics(tf.keras.Model):
         x_init, beta = inputs
         v_init = tf.random.normal(tf.shape(x_init))
         state = State(x_init, v_init, beta)
-        state_prop, px, sld = self.transition_kernel(state, forward, training)
+        with tf.name_scope('transition_kernel'):
+            state_prop, px, sld = self.transition_kernel(state,
+                                                         forward,
+                                                         training)
 
         return state, state_prop, px, sld
 
@@ -224,35 +231,41 @@ class Dynamics(tf.keras.Model):
         return state_prop, accept_prob, sumlogdet
 
     def _forward_lf(self, step, state, training=None):
-        t = self._get_time(step, tile=tf.shape(state.x)[0])
-        m, mc = self._get_mask(step)
+        with tf.name_scope('forward_lf'):
+            t = self._get_time(step, tile=tf.shape(state.x)[0])
+            m, mc = self._get_mask(step)
 
-        sumlogdet = 0.
-        state, logdet = self._update_v_forward(state, t, training)
-        sumlogdet += logdet
-        state, logdet = self._update_x_forward(state, t, (m, mc), training)
-        sumlogdet += logdet
-        state, logdet = self._update_x_forward(state, t, (mc, m), training)
-        sumlogdet += logdet
-        state, logdet = self._update_v_forward(state, t, training)
-        sumlogdet += logdet
+            sumlogdet = 0.
+            state, logdet = self._update_v_forward(state, t, training)
+            sumlogdet += logdet
+            state, logdet = self._update_x_forward(state, t,
+                                                   (m, mc), training)
+            sumlogdet += logdet
+            state, logdet = self._update_x_forward(state, t,
+                                                   (mc, m), training)
+            sumlogdet += logdet
+            state, logdet = self._update_v_forward(state, t, training)
+            sumlogdet += logdet
 
         return state, sumlogdet
 
     def _backward_lf(self, step, state, training=None):
-        step_r = self.config.num_steps - step - 1
-        t = self._get_time(step_r)
-        m, mc = self._get_mask(step_r)
+        with tf.name_scope('backward_lf'):
+            step_r = self.config.num_steps - step - 1
+            t = self._get_time(step_r)
+            m, mc = self._get_mask(step_r)
 
-        sumlogdet = 0.
-        state, logdet = self._update_v_backward(state, t, training)
-        sumlogdet += logdet
-        state, logdet = self._update_x_backward(state, t, (mc, m), training)
-        sumlogdet += logdet
-        state, logdet = self._update_x_backward(state, t, (m, mc), training)
-        sumlogdet += logdet
-        state, logdet = self._update_v_backward(state, t, training)
-        sumlogdet += logdet
+            sumlogdet = 0.
+            state, logdet = self._update_v_backward(state, t, training)
+            sumlogdet += logdet
+            state, logdet = self._update_x_backward(state, t,
+                                                    (mc, m), training)
+            sumlogdet += logdet
+            state, logdet = self._update_x_backward(state, t,
+                                                    (m, mc), training)
+            sumlogdet += logdet
+            state, logdet = self._update_v_backward(state, t, training)
+            sumlogdet += logdet
 
         return state, sumlogdet
 
@@ -272,8 +285,6 @@ class Dynamics(tf.keras.Model):
             x = convert_to_angle(state.x)
 
         grad = self.grad_potential(x, state.beta)
-        #  net_outputs = self.vnet((x, grad, t), training)
-        #  Sv, Tv, Qv = self._scale_momentum_outputs(net_outputs)
         Sv, Tv, Qv = self.vnet((x, grad, t), training)
 
         scale = self._vsw * (0.5 * self.eps * Sv)
@@ -306,8 +317,6 @@ class Dynamics(tf.keras.Model):
             x = convert_to_angle(state.x)
 
         m, mc = masks
-        #  net_outputs = self.xnet((state.v, m * x, t), training)
-        #  Sx, Tx, Qx = self._scale_position_outputs(net_outputs)
         Sx, Tx, Qx = self.xnet((state.v, m * x, t), training)
 
         scale = self._xsw * (self.eps * Sx)
@@ -344,8 +353,6 @@ class Dynamics(tf.keras.Model):
             x = convert_to_angle(state.x)
 
         grad = self.grad_potential(x, state.beta)
-        #  net_outputs = self.vnet((x, grad, t), training)
-        #  Sv, Tv, Qv = self._scale_momentum_outputs(net_outputs)
         Sv, Tv, Qv = self.vnet((x, grad, t), training)
 
         scale = self._vsw * (-0.5 * self.eps * Sv)
@@ -355,8 +362,6 @@ class Dynamics(tf.keras.Model):
         exp_s = tf.exp(scale)
         exp_q = tf.exp(transf)
 
-        #  exp_s = tf.exp(-0.5 * self.eps * Sv)
-        #  exp_q = tf.exp(0.5 * self.eps * Qv)
         vb = exp_s * (state.v + 0.5 * self.eps * (grad * exp_q + transl))
 
         state_out = State(x, vb, state.beta)
@@ -452,17 +457,18 @@ class Dynamics(tf.keras.Model):
 
     def _build_masks(self):
         """Construct different binary masks for different time steps."""
-        masks = []
-        for _ in range(self.config.num_steps):
-            # Need to use numpy.random here because tensorflow would generate
-            # different random values across different calls.
-            #  _idx = np.arange(self.xdim)
-            #  idx = np.random.permutation(_idx)[:self.xdim // 2]
-            #  mask = np.zeros((self.xdim,))
-            #  mask[idx] = 1.
-            mask = np.arange(self.xdim) % 2
-            mask = tf.constant(mask, dtype=TF_FLOAT)
-            masks.append(mask[None, :])
+        with tf.name_scope('build_masks'):
+            masks = []
+            for i in range(self.config.num_steps):
+                # Need to use numpy.random here because tensorflow would
+                # generate different random values across different calls.
+                #  _idx = np.arange(self.xdim)
+                #  idx = np.random.permutation(_idx)[:self.xdim // 2]
+                #  mask = np.zeros((self.xdim,))
+                #  mask[idx] = 1.
+                mask = np.arange(self.xdim) % 2
+                mask = tf.constant(mask, dtype=TF_FLOAT)
+                masks.append(mask[None, :])
 
         return masks
 
@@ -477,35 +483,41 @@ class Dynamics(tf.keras.Model):
 
     def grad_potential(self, x, beta):
         """Get the gradient of the potential function at current `x`."""
-        if self._model_type == 'GaugeModel':
-            x = convert_to_angle(x)
-        if tf.executing_eagerly():
-            with tf.GradientTape() as tape:
-                tape.watch(x)
-                action = self.potential_energy(x, beta)
-            grad = tape.gradient(action, x)
-            grad = tf.reshape(grad, (self.batch_size, -1))
+        with tf.name_scope('grad_potential'):
+            if self._model_type == 'GaugeModel':
+                x = convert_to_angle(x)
+            if tf.executing_eagerly():
+                with tf.GradientTape() as tape:
+                    tape.watch(x)
+                    action = self.potential_energy(x, beta)
+                grad = tape.gradient(action, x)
+                grad = tf.reshape(grad, (self.batch_size, -1))
 
-        else:
-            grad = tf.gradients(self.potential_energy(x, beta), [x])[0]
+            else:
+                grad = tf.gradients(self.potential_energy(x, beta), [x])[0]
 
         return grad
 
     def potential_energy(self, x, beta):
         """Compute the potential energy as beta times the potential fn."""
-        if self._model_type == 'GaugeModel':
-            x = convert_to_angle(x)
+        with tf.name_scope('potential_energy'):
+            if self._model_type == 'GaugeModel':
+                x = convert_to_angle(x)
 
-        return beta * self._potential_fn(x)
+            potential_energy = beta * self._potential_fn(x)
+
+        return potential_energy
 
     @staticmethod
     def kinetic_energy(v):
         """Compute the kinetic energy of the momentum as 0.5 * (v ** 2)."""
-        return 0.5 * tf.reduce_sum(v**2, axis=-1)
+        with tf.name_scope('kinetic_energy'):
+            return 0.5 * tf.reduce_sum(v**2, axis=-1)
 
     def hamiltonian(self, state):
         """Compute the overall hamiltonian."""
-        kinetic = self.kinetic_energy(state.v)
-        potential = self.potential_energy(state.x, state.beta)
+        with tf.name_scope('hamiltonian'):
+            kinetic = self.kinetic_energy(state.v)
+            potential = self.potential_energy(state.x, state.beta)
 
         return potential + kinetic

@@ -13,8 +13,10 @@ from __future__ import print_function
 
 import tensorflow as tf
 from lattice.lattice import u1_plaq_exact_tf
+import utils.file_io as io
 
 # pylint: disable=no-member
+# pylint: disable=invalid-name
 
 
 def grad_norm_summary(name_scope, grad):
@@ -43,12 +45,6 @@ def variable_summaries(var, name=''):
         max_name = name + '/' + max_name
         min_name = name + '/' + min_name
         hist_name = name + '/' + hist_name
-
-    #  if 'layer' in name and 'kernel' in name:
-    #      tf.summary.scalar(name + '/sparsity', tf.nn.zero_fraction(var))
-    # activation summaries
-    #  tf.summary.histogram(tensor_name + '/activations', x)
-    #  tf.summary.scalar(tensor_name + '/sparsity', tf.nn.zero_fraction(x))
 
     mean = tf.reduce_mean(var)
     stddev = tf.sqrt(tf.reduce_mean(tf.square(var - mean)))
@@ -100,29 +96,47 @@ def make_summaries_from_collection(collection, names):
 
 def _create_training_summaries(model):
     """Create summary objects for training operations in TensorBoard."""
-    with tf.name_scope('loss'):
-        tf.summary.scalar('loss', model.loss_op)
+    skip_keys = ['train_op', 'loss_op']
+    for key, val in model.train_ops.items():
+        if key in skip_keys:
+            continue
+        with tf.name_scope(key):
+            variable_summaries(val, key)
 
-    with tf.name_scope('learning_rate'):
-        tf.summary.scalar('learning_rate', model.lr)
 
-    with tf.name_scope('step_size'):
-        tf.summary.scalar('step_size', model.dynamics.eps)
+def _network_summary(net):
+    for key, val in net.layers_dict.items():
+        if key == 'hidden_layers':
+            for idx, layer in enumerate(val):
+                w, b = layer.weights
+                variable_summaries(w, f'{key}{idx}/weights')
+                variable_summaries(b, f'{key}{idx}/biases')
+        elif key in ['scale_layer', 'transformation_layer']:
+            w, b = val.layer.weights
+            variable_summaries(w, f'{key}/weights')
+            variable_summaries(b, f'{key}/biases')
+            variable_summaries(val.coeff, f'{key}/coeff')
+        else:
+            w, b = val.weights
+            variable_summaries(w, f'{key}/weights')
+            variable_summaries(b, f'{key}/biases')
 
-    with tf.name_scope('px'):
-        tf.summary.scalar('px', tf.reduce_mean(model.px))
 
-    #  with tf.name_scope('kinetic_energy'):
-    #      tf.summary.scalar('kinetic_energy', model.ke_proposed)
+def network_summaries(model):
+    """Create summary objects of all network weights/biases."""
+    if not model.hmc:
+        names = ('XNet', 'VNet')
+        nets = (model.dynamics.xnet, model.dynamics.vnet)
 
-    with tf.name_scope('x_out'):
-        variable_summaries(model.x_out, 'x_out')
+        for name, net in zip(names, nets):
+            with tf.name_scope(name):
+                _network_summary(net)
 
 
 def _create_energy_summaries(model):
     """Create summary objects for initial and proposed KE and PE."""
     for key, val in model.energy_ops.items():
-        with tf.name_scope('key'):
+        with tf.name_scope(key):
             for k, v in val.items():
                 variable_summaries(v, k)
 
@@ -170,19 +184,16 @@ def _create_pair_summaries(grad, var):
 
 def _create_obs_summaries(model):
     """Create summary objects for physical observables."""
-    #  with tf.name_scope('avg_charge_diffs'):
-    #      tf.summary.scalar('avg_charge_diffs',
-    #                        tf.reduce_mean(model.charge_diffs))
-
-    with tf.name_scope('avg_plaq'):
-        tf.summary.scalar('avg_plaq', model.avg_plaqs)
-
     with tf.name_scope('avg_plaq_diff'):
         tf.summary.scalar('avg_plaq_diff',
                           (u1_plaq_exact_tf(model.beta) - model.avg_plaqs))
 
     with tf.name_scope('top_charge'):
         tf.summary.histogram('top_charge', model.charges)
+
+    with tf.name_scope('charge_traces'):
+        for idx, charge in enumerate(tf.transpose(model.charges[:5])):
+            tf.summary.scalar(f'q_chain{idx}', charge)
 
 
 def _create_l2hmc_summaries(model):
@@ -222,19 +233,13 @@ def _create_l2hmc_summaries(model):
 
 def _loss_summaries(model):
     with tf.name_scope('losses'):
-        for key, val in model._losses_dict.items():
+        for key, val in model.losses_dict.items():
             tf.summary.scalar(key, val)
-    #  loss_ops = tf.get_collection('losses')[0]
-    #  names = ['gaussian_loss', 'nnehmc_loss', 'total_loss']
-    #  with tf.name_scope('losses'):
-    #      for name, op in zip(names, loss_ops):
-    #          tf.summary.scalar(name, op)
 
 
 def create_summaries(model, summary_dir, training=True):
     """Create summary objects for logging in TensorBoard."""
     summary_writer = tf.contrib.summary.create_file_writer(summary_dir)
-
 
     if training:
         name = 'train_summary_op'
@@ -242,26 +247,17 @@ def create_summaries(model, summary_dir, training=True):
     else:
         name = 'inference_summary_op'
 
-    if model._model_type == 'GaugeModel':
+    try:
         _create_obs_summaries(model)    # lattice observables
+    except AttributeError:
+        pass
 
-    # log S, T, Q functions (forward/backward)
-    #  _create_l2hmc_summaries(model)
-    #  _create_energy_summaries(model)
-
-    #  if model.use_gaussian_loss and model.use_nnehmc_loss:
-    #  cond1 = getattr(model, 'use_gaussian_loss', False)
-    #  cond2 = getattr(model, 'use_nnehmc_loss', False)
-    #  cond3 = getattr(model, 'use_charge_loss', False)
-    #  if cond1 or cond2 or cond3:
+    network_summaries(model)
     try:
         _loss_summaries(model)
         add_loss_summaries(model.loss_op)
     except (KeyError, AttributeError):
-        print('Unable to create loss summaries.')
-
-
-    #  _ = _create_loss_summaries(model.loss_op)
+        io.log('Unable to create loss summaries.')
 
     for grad, var in model.grads_and_vars:
         _create_pair_summaries(grad, var)

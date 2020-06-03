@@ -334,9 +334,13 @@ def check_else_make_dir(d):
         d (str): Location where directory should be created if it doesn't
             already exist.
     """
-    if not os.path.isdir(d):
-        log(f"Creating directory: {d}")
-        os.makedirs(d, exist_ok=True)
+    if isinstance(d, (list, np.ndarray)):
+        for i in d:
+            check_else_make_dir(i)
+    else:
+        if not os.path.isdir(d):
+            log(f"Creating directory: {d}")
+            os.makedirs(d, exist_ok=True)
 
 
 def make_dirs(dirs):

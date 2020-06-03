@@ -26,6 +26,7 @@ import tensorflow as tf
 import config as cfg
 from config import NetWeights, MonteCarloStates
 import utils.file_io as io
+from utils.attr_dict import AttrDict
 
 from seed_dict import seeds
 from dynamics.dynamics import Dynamics
@@ -59,7 +60,8 @@ def _gaussian(x, mu, sigma):
 
 def add_to_collection(collection, tensors):
     """Helper method for adding a list of `tensors` to `collection`."""
-    _ = [tf.add_to_collection(collection, tensor) for tensor in tensors]
+    for tensor in tensors:
+        tf.compat.v1.add_to_collection(collection, tensor)
 
 
 # pylint: disable=attribute-defined-outside-init
@@ -68,10 +70,7 @@ class BaseModelConfig:
     def __init__(self, FLAGS, model_type=None):
         self.model_type = model_type
         if FLAGS.log_dir is None:
-            log_dir = io.create_log_dir(FLAGS,
-                                        run_str=True,
-                                        log_file=None,
-                                        model_type=model_type)
+            log_dir = io.create_log_dir(FLAGS, model_type, log_file=None)
 
         self.params = dict(FLAGS.__dict__)
         self._parse_params(self.params)
@@ -90,19 +89,21 @@ class BaseModelConfig:
 
     def _parse_params(self, params):
         """Parse `params` dictionary and set attributes from params."""
-        self.eps = float(params.get('eps', 0.2))
-        self.num_steps = int(params.get('num_steps', 5))
-        self.rand = params.get('rand', True)
-        self.beta_init = params.get('beta_init', 1.)
-        self.beta_final = params.get('beta_final', 5.)
-        self.fixed_beta = (self.beta_init == self.beta_final)
-        self.train_steps = int(params.get('train_steps', int(20e3)))
-        self.batch_size = int(params.get('batch_size', 256))
-        self.activation_fn = params.get('activation', tf.nn.relu)
-        self.units = params.get('units', [64, 128, 256])
         self.hmc = params.get('hmc', False)
+        self.rand = params.get('rand', True)
+        self.eps = float(params.get('eps', 0.2))  # step size
+        self.num_steps = int(params.get('num_steps', 5))  # num leapfrog steps
+        self.beta_init = params.get('beta_init', 1.)  # starting beta
+        self.beta_final = params.get('beta_final', 5.)  # final beta
+        self.fixed_beta = (self.beta_init == self.beta_final)  # is beta fixed
+        self.train_steps = int(params.get('train_steps', int(20e3)))
+        self.batch_size = int(params.get('batch_size', 256))  # num chains
+        self.network_type = params.get('network_type', None)  # network type
+        self.activation_fn = params.get('activation', tf.nn.relu)
+        self.units = params.get('units', [64, 128, 256])  # layer shapes
         self.eps_trainable = not params.get('eps_fixed', False)
-        self.warmup_lr = params.get('warmup_lr', False)
+        self.lr_init = params.get('lr_init', 1e-3)  # initial value of lr
+        self.warmup_lr = params.get('warmup_lr', False)  # slowly warmup lr
         self.lr_decay_rate = params.get('lr_decay_rate', 0.96)
         self.lr_decay_steps = int(params.get('lr_decay_steps', int(10e3)))
         self.std_weight = float(params.get('std_weight', 1.))
@@ -113,8 +114,6 @@ class BaseModelConfig:
         self.loss_scale = float(params.get('loss_scale', 1.))
         self.dropout_prob = params.get('dropout_prob', 0.)
         self.clip_value = params.get('clip_value', 0.)
-        self.lr_init = params.get('lr_init', 1e-3)
-        self.network_type = params.get('network_type', None)
         self.summaries = not params.get('no_summaries', False)
         self.keep_data = not params.get('clear_data', True)
 
@@ -129,8 +128,9 @@ class BaseModelConfig:
             self.num_workers = hvd.size()
 
 
-# pylint:disable=too-many-instance-attributes, attribute-defined-outside-init
 # pylint:disable=too-many-locals
+# pylint:disable=too-many-instance-attributes
+# pylint:disable=attribute-defined-outside-init
 class BaseModel:
     """BaseModel provides the necessary tools for training the L2HMC sampler.
 
@@ -295,9 +295,10 @@ class BaseModel:
                                                name='sumlogdet_placeholder')
             self.state = State(x=self.x, v=self.v_ph, beta=self.beta)
 
-            ph_str = 'energy_placeholders'
-            _ = [tf.add_to_collection(ph_str, i) for i in self.state]
-            tf.add_to_collection(ph_str, self.sumlogdet_ph)
+            add_to_collection('energy_placeholders',
+                              [*self.state, self.sumlogdet_ph])
+            #  _ = [tf.add_to_collection(ph_str, i) for i in self.state]
+            #  tf.add_to_collection(ph_str, self.sumlogdet_ph)
             self.energy_ops = self._calc_energies(self.state,
                                                   self.sumlogdet_ph)
 
@@ -305,7 +306,7 @@ class BaseModel:
         # Calculate loss_op and train_op to backprop. grads through network
         # -------------------------------------------------------------------
         with tf.name_scope('calc_loss'):
-            self.loss_op, self._losses_dict = self.calc_loss(xdata, zdata)
+            self.loss_op, self.losses_dict = self.calc_loss(xdata, zdata)
 
         # *******************************************************************
         # Calculate gradients and build training operation
@@ -317,13 +318,11 @@ class BaseModel:
             self.train_op = output[0]
             self.grads_and_vars = output[1]
             train_ops = self._build_train_ops()
-            #  self.train_ops = self._build_train_ops()
 
         # *******************************************************************
         # Build `run_ops` containing ops used when running inference.
         # -------------------------------------------------------------------
         io.log(f'Collecting inference operations...')
-        #  self.run_ops = self._build_run_ops()
         run_ops = self._build_run_ops()
 
         return train_ops, run_ops
@@ -331,14 +330,16 @@ class BaseModel:
     def _build_eps_setter(self):
         """Create op that sets `eps` to be equal to the value in `eps_ph`."""
         with tf.name_scope('build_eps_setter'):
-            return tf.assign(self.dynamics.eps, self.eps_ph, name='eps_setter')
+            return tf.compat.v1.assign(self.dynamics.eps,
+                                       self.eps_ph,
+                                       name='eps_setter')
 
     def _build_global_step_setter(self):
         """Create op that sets the tensorflow `global_step`."""
         with tf.name_scope('build_global_step_setter'):
-            return tf.assign(self.global_step,
-                             self.global_step_ph,
-                             name='global_step_setter')
+            return tf.compat.v1.assign(self.global_step,
+                                       self.global_step_ph,
+                                       name='global_step_setter')
 
     def _calc_energies(self, state, sumlogdet=0.):
         """Create operations for calculating the PE, KE and H of a `state`."""
@@ -350,9 +351,7 @@ class BaseModel:
             # Add these operations to the `energy_ops` collection
             # for easy-access when loading the saved graph when
             # running inference w/ the trained sampler
-            ops = (pe, ke, h)
-            for op in ops:
-                tf.add_to_collection('energy_ops', op)
+            add_to_collection('energy_ops', [pe, ke, h])
 
         return cfg.Energy(pe, ke, h)
 
@@ -371,8 +370,7 @@ class BaseModel:
             'dynamics_eps': self.dynamics.eps,
         }
 
-        for val in train_ops.values():
-            tf.add_to_collection('train_ops', val)
+        add_to_collection('train_ops', list(train_ops.values()))
 
         return train_ops
 
@@ -391,16 +389,15 @@ class BaseModel:
             'sumlogdet_proposed': self.sumlogdet_proposed,
             'sumlogdet_out': self.sumlogdet_out,
         }
-        for val in run_ops.values():
-            tf.add_to_collection('run_ops', val)
+        add_to_collection('run_ops', list(run_ops.values()))
 
         return run_ops
 
     def _build_sampler(self):
         """Build operations used for sampling from the dynamics engine."""
-        with tf.name_scope('l2hmc_sampler'):
-            mc_states, accept_prob, sld = self.dynamics((self.x, self.beta),
-                                                        self.train_phase)
+        with tf.name_scope('call_dynamics'):
+            inputs = ((self.x, self.beta), self.train_phase)
+            mc_states, accept_prob, sld = self.dynamics(*inputs)
             self.x_init = mc_states.init.x
             self.v_init = mc_states.init.v
             self.x_out = mc_states.out.x
@@ -412,21 +409,24 @@ class BaseModel:
             self.sumlogdet_proposed = sld.proposed
             self.dx_out = self.metric_fn(self.x_out, self.x_init)
             self.dx_proposed = self.metric_fn(self.x_proposed, self.x_init)
+
+        with tf.name_scope('hamiltonian'):
             h_init = self.dynamics.hamiltonian(mc_states.init)
             h_out = self.dynamics.hamiltonian(mc_states.out)
-            self.exp_energy_diff = tf.exp(h_init - h_out)
+            self.exp_energy_diff = tf.exp(h_init - h_out,
+                                          name='exp_energy_diff')
 
-            xdata = LFdata(self.x_init, self.x_proposed, self.px)
-            if self.aux_weight > 0:
-                self.z = tf.random_normal(tf.shape(self.x), name='z',
-                                          seed=seeds['z'], dtype=TF_FLOAT)
-                inputs = (self.z, self.beta)
-                mcs_, px_, _ = self.dynamics(inputs, self.train_phase)
-                zdata = LFdata(mcs_.init.x, mcs_.proposed.x, px_)
-            else:
-                zdata = LFdata(tf.zeros_like(self.x_init),
-                               tf.zeros_like(self.x_proposed),
-                               tf.zeros_like(self.px))
+        xdata = LFdata(self.x_init, self.x_proposed, self.px)
+        if self.aux_weight > 0:
+            self.z = tf.random_normal(tf.shape(self.x), name='z',
+                                      seed=seeds['z'], dtype=TF_FLOAT)
+            inputs = (self.z, self.beta)
+            mcs_, px_, _ = self.dynamics(inputs, self.train_phase)
+            zdata = LFdata(mcs_.init.x, mcs_.proposed.x, px_)
+        else:
+            zdata = LFdata(tf.zeros_like(self.x_init),
+                           tf.zeros_like(self.x_proposed),
+                           tf.zeros_like(self.px))
 
         return xdata, zdata
 
@@ -472,7 +472,6 @@ class BaseModel:
 
         with tf.name_scope('optimizer'):
             optimizer = tf.train.AdamOptimizer(self.lr)
-            #  optimizer = tf.keras.optimizers.Adam(self.lr)
             if self.using_hvd:
                 optimizer = hvd.DistributedOptimizer(optimizer)
 
@@ -614,8 +613,7 @@ class BaseModel:
         """Calculate the gradients to be used in backpropagation."""
         clip_value = getattr(self, 'clip_value', 0.)
         with tf.name_scope('grads'):
-            #  grads = tf.gradients(loss, self.dynamics.trainable_variables)
-            grads = tf.gradients(loss, tf.trainable_variables())
+            grads = tf.gradients(loss, tf.compat.v1.trainable_variables())
             if clip_value > 0.:
                 grads, _ = tf.clip_by_global_norm(grads, clip_value)
 
@@ -623,8 +621,7 @@ class BaseModel:
 
     def _apply_grads(self, loss_op, grads):
         with tf.name_scope('apply_grads'):
-            trainable_vars = tf.trainable_variables()
-            #  grads_and_vars = zip(grads, self.dynamics.trainable_variables)
+            trainable_vars = tf.compat.v1.trainable_variables()
             grads_and_vars = zip(grads, trainable_vars)
             ctrl_deps = [loss_op, *self.dynamics.updates]
             with tf.control_dependencies(ctrl_deps):

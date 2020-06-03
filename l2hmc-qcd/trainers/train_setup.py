@@ -184,8 +184,7 @@ def count_trainable_params(out_file, log=False):
     writer(f'Total parameters: {total_params}', out_file)
 
 
-def train_setup(FLAGS, log_file=None, root_dir=None,
-                run_str=True, model_type='GaugeModel'):
+def train_setup(FLAGS, log_file=None, model_type='GaugeModel'):
     """Setup for training run."""
     io.log(80 * '-')
     io.log("Starting training using L2HMC algorithm...")
@@ -206,11 +205,13 @@ def train_setup(FLAGS, log_file=None, root_dir=None,
     params = FLAGS_DICT.copy()
     #  params = {k: v for k, v in FLAGS_DICT.items()}
 
-    params['log_dir'] = io.create_log_dir(FLAGS,
-                                          log_file=log_file,
-                                          root_dir=root_dir,
-                                          run_str=run_str,
-                                          model_type=model_type)
+    params['log_dir'] = io.create_log_dir(FLAGS, model_type,
+                                          log_file=log_file)
+    #  params['log_dir'] = io.create_log_dir(FLAGS,
+    #                                        log_file=log_file,
+    #                                        root_dir=root_dir,
+    #                                        run_str=run_str,
+    #                                        model_type=model_type)
     params['summaries'] = not getattr(FLAGS, 'no_summaries', False)
     save_steps = getattr(FLAGS, 'save_steps', 1000)
     train_steps = getattr(FLAGS, 'train_steps', 5000)

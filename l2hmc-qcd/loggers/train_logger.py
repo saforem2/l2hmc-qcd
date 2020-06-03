@@ -31,9 +31,9 @@ TRAIN_HEADER = DASH + '\n' + HSTR + '\n' + DASH
 
 SKIP_KEYS = ['x_out', 'dx_proposed', 'dx_out']
 
-class TrainLogger(object):
+class TrainLogger:
+    """Responsible for file IO during training."""
     def __init__(self, model):
-        """Create `TrainLogger` object."""
         self.model = model
         self.summaries = model.summaries
         self._keep_data = model.save_train_data
@@ -85,19 +85,20 @@ class TrainLogger(object):
         """
         dirs = {
             'log_dir': log_dir,
-            'checkpoint_dir': os.path.join(log_dir, 'checkpoints'),
             'train_dir': os.path.join(log_dir, 'training'),
+            'checkpoint_dir': os.path.join(log_dir, 'checkpoints'),
             'train_summary_dir': os.path.join(log_dir, 'summaries', 'train'),
         }
-        files = {
-            'train_log_file': os.path.join(dirs['train_dir'],
-                                           'training_log.txt'),
-            'current_state_file': os.path.join(dirs['train_dir'],
-                                               'current_state.z')
-        }
 
-        for _, val in dirs.items():
-            io.check_else_make_dir(val)
+        io.check_else_make_dir(list(dirs.values()))
+
+        def _in_train_dir(fname):
+            return os.path.join(dirs['train_dir'], fname)
+
+        files = {
+            'train_log_file': _in_train_dir('training_log.txt'),
+            'current_state_file': _in_train_dir('current_state.z'),
+        }
 
         return dirs, files
 
@@ -114,34 +115,34 @@ class TrainLogger(object):
         self.writer.add_summary(summary_str, global_step=data['step'])
         self.writer.flush()
 
-    def _update(self, data, data_str):
+    def _clear(self):
+        self.train_data = {}
+
+    def _update(self, data):
         for key, val in data.items():
-            if key in SKIP_KEYS:
-                continue
             try:
                 self.train_data[key].append(val)
             except KeyError:
                 self.train_data[key] = [val]
 
-    def _clear(self):
-        self.train_data = {}
-
     def update(self, sess, data, data_str, net_weights):
         """Update _current state and train_data."""
         step = data['step']
         if self._keep_data:
-            self._update(data, data_str)
+            self._update(data)
 
         if step % self._print_steps == 0:
             io.log(data_str)
             self.train_data_strings.append(data_str)
 
-        if (step + 1) % 1000 == 0:
-            io.log(self.train_header)
+        if step % self._save_steps == 0:
             self.save_current_state(data)
 
         if self.summaries and (step + 1) % self._logging_steps == 0:
             self.log_step(sess, data, net_weights)
+
+        if step % 100 == 0:
+            io.log(self.train_header)
 
     def write_train_strings(self):
         """Write training strings out to file."""

@@ -19,7 +19,7 @@ import tensorflow as tf
 import config as cfg
 import utils.file_io as io
 
-from base.base_model import BaseModel
+from base.base_model import BaseModel, add_to_collection
 from lattice.lattice import GaugeLattice
 from dynamics.dynamics import Dynamics, DynamicsConfig, convert_to_angle
 from network import NetworkConfig
@@ -90,6 +90,7 @@ def project_angle(x):
     """Returns the projection of an angle `x` from [-4pi, 4pi] to [-pi, pi]."""
     return x - TWO_PI * tf.math.floor((x + PI) / TWO_PI)
 
+
 class GaugeLoss:
     """Compute the loss value for the 2D U(1) lattice gauge model. """
     def __init__(self, plaq_weight, charge_weight, lattice_shape, n_arr=None):
@@ -152,29 +153,36 @@ class GaugeModel(BaseModel):
     # pylint: disable=attribute-defined-outside-init
     def _build(self):
         """Helper method for building the model."""
-        dynamics, config, net_config = self.create_dynamics()
-        self.dynamics = dynamics
-        self.config = config
-        self.net_config = net_config
-        self.dynamics_eps = self.dynamics.eps  # TODO: Delete this?
-        self.eps_setter = self._build_eps_setter()
-        self.metric_fn = lambda x, y: 2. * (1. - tf.math.cos(y - x))
-        xdata, zdata = self._build_sampler()
+        with tf.name_scope('dynamics'):
+            dynamics, config, net_config = self.create_dynamics()
+            self.dynamics = dynamics
+            self.config = config
+            self.net_config = net_config
+            self.dynamics_eps = self.dynamics.eps  # TODO: Delete this?
+            self.eps_setter = self._build_eps_setter()
+
+        with tf.name_scope('metric_function'):
+            self.metric_fn = lambda x, y: 2. * (1. - tf.math.cos(y - x))
+
+        with tf.name_scope('sampler'):
+            xdata, zdata = self._build_sampler()
 
         #  largest_wilson_loop = self.params.get('largest_wilson_loop', 1)
         #  n_arr = np.arange(largest_wilson_loop) + 1
         #  self.gauge_loss = GaugeLoss(self._plaq_weight, self._charge_weight,
         #                              self._lattice_shape, n_arr=n_arr)
-        self.loss_op, self._losses_dict = self.calc_loss(xdata, zdata)
+        with tf.name_scope('calc_loss'):
+            self.loss_op, self.losses_dict = self.calc_loss(xdata, zdata)
 
-        self.grads = self._calc_grads(self.loss_op)
-        train_op, grads_and_vars = self._apply_grads(self.loss_op,
-                                                     self.grads)
-        self.train_op = train_op
-        self.grads_and_vars = grads_and_vars
+        with tf.name_scope('calc_and_apply_grads'):
+            self.grads = self._calc_grads(self.loss_op)
+            train_op, grads_and_vars = self._apply_grads(self.loss_op,
+                                                         self.grads)
+            self.train_op = train_op
+            self.grads_and_vars = grads_and_vars
 
-        train_ops = self._build_train_ops()
-        run_ops = self._build_run_ops()
+            train_ops = self._build_train_ops()
+            run_ops = self._build_run_ops()
 
         return train_ops, run_ops
 
@@ -199,9 +207,6 @@ class GaugeModel(BaseModel):
             self._lattice_shape = (self.batch_size,
                                    self.lattice.time_size,
                                    self.lattice.space_size, 2)
-
-            #  self.loss = GaugeLoss(self._plaq_weight, self._charge_weight,
-            #                        self._lattice_shape, n_arr=[1, 2, 3])
             # ************************************************
             # Build inputs and their respective placeholders
             # ------------------------------------------------
@@ -218,7 +223,6 @@ class GaugeModel(BaseModel):
             self.charges = observables['charges']
             self.avg_plaqs = observables['avg_plaqs']
             self.avg_actions = observables['avg_actions']
-            #  slef.charges_diff = observables['dq']
             self._observables = observables
 
             # ***************************************************************
@@ -229,20 +233,16 @@ class GaugeModel(BaseModel):
             self.q_out = self._top_charge(
                 self._plaq_sums(self.run_ops['x_out'])
             )
-            self.q_init = self._losses_dict['q_init']
-            self.q_prop = self._losses_dict['q_prop']
+            self.q_init = self.losses_dict.pop('q_init')
+            self.q_prop = self.losses_dict.pop('q_prop')
             self.dq_prop = tf.math.abs(self.q_prop - self.q_init)
             self.dq_out = tf.math.abs(self.q_out - self.q_init)
-            #  self.dq = tf.abs(self.q_out - self._losses_dict['q_init'])
 
             extra_ops = {
                 'plaqs': self.plaqs,
                 'charges': self.charges,
                 'dq_prop': self.dq_prop,
                 'dq_out': self.dq_out,
-                #  'dq': self.dq,
-                #  'dq': self._losses_dict['dq'],
-                #  'dq': self.charges_diff,
             }
 
             self.run_ops.update(extra_ops)
@@ -345,42 +345,57 @@ class GaugeModel(BaseModel):
                           └───>───┘
                               = x[..., 0]
         """
-        x = tf.reshape(x, self._lattice_shape)  # (Nb, Lt, Lx, 2)
-        return (x[..., 0]
-                - x[..., 1]
-                - tf.roll(x[..., 0], shift=-n, axis=2)   # along `x` axis
-                + tf.roll(x[..., 1], shift=-n, axis=1))  # along `t` axis
+        with tf.name_scope('calc_plaquettes'):
+            x = tf.reshape(x, self._lattice_shape)  # (Nb, Lt, Lx, 2)
+            plaqs = (x[..., 0]
+                     - x[..., 1]
+                     - tf.roll(x[..., 0], shift=-n, axis=2)   # along `x` axis
+                     + tf.roll(x[..., 1], shift=-n, axis=1))  # along `t` axis
+        return plaqs
 
     def calc_action(self, x):
         """Calculate the Wilson action of a batch of lattice configurations."""
-        plaqs = self._plaq_sums(x)
-        return tf.reduce_sum(1. - tf.cos(plaqs), axis=(1, 2), name='action')
+        with tf.name_scope('calc_action'):
+            plaqs = self._plaq_sums(x)
+            action = tf.reduce_sum(1. - tf.cos(plaqs),
+                                   axis=(1, 2), name='action')
+
+        return action
 
     @staticmethod
-    def _top_charge(plaq_sums, use_sin=True):
+    def _top_charge(plaqs, use_sin=True):
         """Numpy version of `_top_charge`."""
-        return tf.reduce_sum((
-            tf.math.sin(plaq_sums) if use_sin else project_angle(plaq_sums)
-        ), axis=(1, 2)) / TWO_PI
+        with tf.name_scope('calc_charge'):
+            charge = tf.reduce_sum((
+                tf.math.sin(plaqs) if use_sin else project_angle(plaqs)
+            ), axis=(1, 2)) / TWO_PI
+
+        return charge
 
     def _charge_loss(self, plaqs_init, plaqs_prop, prob, use_sin=True):
         """Calculate the contribution to the loss from the charge diffs."""
-        q_init = self._top_charge(plaqs_init, use_sin=use_sin)
-        q_prop = self._top_charge(plaqs_prop, use_sin=use_sin)
-        dq = prob * (q_prop - q_init) ** 2
-        qloss = -(dq / self._charge_weight)
+        with tf.name_scope('charge_loss'):
+            q_init = self._top_charge(plaqs_init, use_sin=use_sin)
+            q_prop = self._top_charge(plaqs_prop, use_sin=use_sin)
+            dq = prob * (q_prop - q_init) ** 2
+            qloss = tf.reduce_mean(-(dq / self._charge_weight),
+                                   axsi=0, name='charge_loss')
 
-        qloss = tf.reduce_sum(qloss, axis=0) / self.batch_size
+        #  qloss = tf.reduce_sum(qloss, axis=0) / self.batch_size
+        #  qloss = tf.reduce_mean(qloss, axis=0)
 
         return qloss, q_init, q_prop
 
     def _plaq_loss(self, plaqs_init, plaqs_prop, prob):
         """Calculate the expected plaquette differences b/t `x1` and `x2`."""
-        plaqs_diff = 2. * (1. - tf.cos(plaqs_prop - plaqs_init))
-        dplaq = prob * tf.reduce_sum(plaqs_diff, axis=(1, 2))
-        ploss = - dplaq / self._plaq_weight
+        with tf.name_scope('plaq_loss'):
+            plaqs_diff = 2. * (1. - tf.cos(plaqs_prop - plaqs_init))
+            dplaq = prob * tf.reduce_sum(plaqs_diff, axis=(1, 2))
+            ploss = - dplaq / self._plaq_weight
+            ploss = tf.reduce_mean(ploss, axis=0, name='plaq_loss')
 
-        return tf.reduce_mean(ploss, axis=0)
+        #  return tf.reduce_sum(ploss, axis=0) / self.batch_size
+        return ploss
 
     def gauge_loss(self, xdata, zdata, use_sin=True):
         """Calculate the loss due to the plaquette and charge differences."""
@@ -412,9 +427,7 @@ class GaugeModel(BaseModel):
     @staticmethod
     def _gauge_esjd(x1, x2, prob, eps=1e-4):
         """Calculate the esjd."""
-        esjd = prob * tf.reduce_sum(2. * (1. - tf.cos(x1 - x2)), axis=1) + eps
-
-        return esjd
+        return prob * tf.reduce_sum(2. * (1. - tf.cos(x1 - x2)), axis=1) + eps
 
     def _calc_esjd_loss(self, xdata, zdata, eps=1e-4):
         x_esjd = self._gauge_esjd(xdata.init, xdata.proposed, xdata.prob, eps)
@@ -430,25 +443,26 @@ class GaugeModel(BaseModel):
         """Return the mixed loss."""
         return tf.reduce_mean((weight / x) - (x / weight))
 
-        # pylint:disable=too-many-locals
+    # pylint:disable=too-many-locals
     def calc_loss(self, xdata, zdata, eps=1e-4):
         """Calculate the total loss."""
-        total_loss = 0.
-
-        sloss = 0.
-        if self.std_weight > 0:
-            sloss = self.std_weight * self._calc_esjd_loss(xdata, zdata, eps)
-
-        ploss = 0.
-        qloss = 0.
-        #  if self._charge_weight > 0 or self._plaq_weight > 0:
-        bq = self._charge_weight > 0
-        bp = self._plaq_weight > 0
-        if bq or bp:
-            ploss, qloss, q_init, q_prop = self.gauge_loss(xdata, zdata, eps)
+        losses_dict = {}
+        with tf.name_scope('std_loss'):
+            sloss = 0.
+            if self.std_weight > 0:
+                sloss = (
+                    self.std_weight * self._calc_esjd_loss(xdata, zdata, eps)
+                )
+        with tf.name_scope('gauge_loss'):
+            if self._charge_weight > 0 or self._plaq_weight > 0:
+                inputs = (xdata, zdata, eps)
+                ploss, qloss, q_init, q_prop = self.gauge_loss(*inputs)
+                losses_dict.update({
+                    'q_init': q_init,
+                    'q_prop': q_prop,
+                })
 
         total_loss = sloss + qloss + ploss
-        tf.add_to_collection('losses', total_loss)
 
         ld = {
             'std': sloss,
@@ -457,19 +471,14 @@ class GaugeModel(BaseModel):
             'total': total_loss,
         }
 
-        fd = {
-            k: v / total_loss for k, v in ld.items()
-        }
+        losses_dict.update({
+            f'{k}_loss': v for k, v in ld.items()
+        })
 
-        losses_dict = {}
-        for (lk, lv), (fk, fv) in zip(ld.items(), fd.items()):
-            losses_dict[f'{lk}_loss'] = lv
-            losses_dict[f'{fk}_frac'] = fv
-            tf.add_to_collection('losses', lv)
+        losses_dict.update({
+            f'{k}_frac': v / total_loss for k, v in ld.items()
+        })
 
-        losses_dict['q_init'] = q_init
-        losses_dict['q_prop'] = q_prop
-        #  losses_dict['dq'] = dq
-        #  losses_dict['q_init'] = q_init
+        add_to_collection('losses', list(losses_dict.values()))
 
         return total_loss, losses_dict

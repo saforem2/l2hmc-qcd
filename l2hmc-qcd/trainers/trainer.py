@@ -1,7 +1,6 @@
 """
 trainer.py
 """
-import os
 import time
 
 from collections import namedtuple
@@ -11,9 +10,8 @@ import numpy as np
 import utils.file_io as io
 from utils.attr_dict import AttrDict
 
-from config import NetWeights, NP_FLOAT, NET_WEIGHTS_L2HMC
+from config import NET_WEIGHTS_L2HMC
 from lattice.lattice import u1_plaq_exact
-from dynamics.dynamics_np import convert_to_angle
 
 TrainStepData = namedtuple('TrainStepData', [
     'step', 'beta', 'loss', 'samples', 'prob', 'lr', 'eps'
@@ -38,6 +36,7 @@ def exp_mult_cooling(step, temp_init, temp_final, num_steps, alpha=None):
     temp = temp_init * (alpha ** step)
 
     return temp
+
 
 class Trainer:
     """Model-independent `Trainer` object for training the L2HMC sampler."""
@@ -69,8 +68,8 @@ class Trainer:
         self._train_steps = FLAGS.get('train_steps', model.train_steps)
         self._annealing_fn = FLAGS.get('annealing_fn', exp_mult_cooling)
 
-        #  fixed_beta = getattr(model, 'fixed_beta', False)
-        if FLAGS.fixed_beta:
+        fixed_beta = FLAGS.get('fixed_beta', False)
+        if fixed_beta or self._beta_init == self._beta_final:
             self.beta_arr = np.array([
                 self.model.beta_init for _ in range(self._train_steps)
             ])
@@ -105,21 +104,23 @@ class Trainer:
             out_data (dict): Dictionary containing outputs from the respective
                 tensorflow operations.
         """
-
         start_time = time.time()
-        out = self.sess.run(self._train_ops, feed_dict={
+        fd = {  # pylint:disable=invalid-name
             self.model.x: x,
             self.model.beta: beta,
             self.model.train_phase: True,
             self.model.net_weights: net_weights,
-        })
+        }
+        outputs = dict(
+            zip(self._train_keys, self.sess.run(self._train_ops, feed_dict=fd))
+        )
+
         dt = time.time() - start_time
 
-        outputs = dict(zip(self._train_keys, out))
         outputs.update({
-            'step': step,
-            'beta': beta,
             'x_in': x,
+            'beta': beta,
+            'step': step,
         })
 
         data_str = (
@@ -135,7 +136,6 @@ class Trainer:
             f"{np.mean(outputs['sumlogdet']):^11.4g} "     # SUM log(det)
         )
 
-        #  if self.model._model_type == 'GaugeModel':
         try:
             data_str += f"{np.sum(np.around(outputs['dq_prop'])):^11.4g}"
             data_str += f"{np.sum(np.around(outputs['dq_out'])):^11.4g}"
@@ -169,21 +169,13 @@ class Trainer:
         train_steps = self._train_steps if train_steps is None else train_steps
         net_weights = NET_WEIGHTS_L2HMC if net_weights is None else net_weights
 
-        try:
-            initial_step = self.sess.run(self.model.global_step)
-            for step in range(initial_step, train_steps):
-                data, data_str = self.train_step(step, x, beta, net_weights)
-                x = data['x_out']
-                beta = self.beta_arr[step]
-                if self.logger is not None:
-                    self.logger.update(self.sess, data,
-                                       data_str, net_weights)
-
-        except (KeyboardInterrupt, SystemExit):
-            io.log("\nERROR: KeyboardInterrupt detected!")
-            io.log("INFO: Saving current state and exiting.")
+        #  try:
+        initial_step = self.sess.run(self.model.global_step)
+        for step in range(initial_step, train_steps):
+            data, data_str = self.train_step(step, x, beta, net_weights)
+            x = data['x_out']
+            beta = self.beta_arr[step]
             if self.logger is not None:
-                self.logger.update(data, data_str, net_weights)
-                self.logger.write_train_strings()
+                self.logger.update(self.sess, data, data_str, net_weights)
 
         return data
