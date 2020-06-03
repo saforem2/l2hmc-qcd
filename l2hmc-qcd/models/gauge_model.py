@@ -379,7 +379,7 @@ class GaugeModel(BaseModel):
             q_prop = self._top_charge(plaqs_prop, use_sin=use_sin)
             dq = prob * (q_prop - q_init) ** 2
             qloss = tf.reduce_mean(-(dq / self._charge_weight),
-                                   axsi=0, name='charge_loss')
+                                   axis=0, name='charge_loss')
 
         #  qloss = tf.reduce_sum(qloss, axis=0) / self.batch_size
         #  qloss = tf.reduce_mean(qloss, axis=0)
