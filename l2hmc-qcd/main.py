@@ -218,23 +218,6 @@ def restore_state_and_params(FLAGS):
     FLAGS.update({
         k: v for k, v in params.items() if k not in FLAGS
     })
-    #  FLAGS = FLAGS.update({
-    #      k: v for k, v in params.items() if k not in FLAGS
-    #  })
-    #  for key, val in params.items():
-    #      if key not in FLAGS:
-    #          FLAGS[key] = val
-
-    #  if 'eps' in FLAGS.to_restore:
-    #      FLAGS.eps = state['dynamics_eps']
-    #  if 'beta' in FLAGS.to_restore:
-    #      FLAGS.beta_init = state['beta']
-    #  if 'lr' in FLAGS.to_restore:
-    #      FLAGS.lr_init = state['lr']
-    #
-    #  x_init = None
-    #  if 'x' in FLAGS.to_restore:
-    #      x_init = state['x_out']
 
     return state, FLAGS
 
@@ -253,17 +236,6 @@ def build_model(FLAGS, log_file=None):
         'save_steps': FLAGS.train_steps // 10,
         'keep_data': FLAGS.save_train_data,
     })
-
-    #  if FLAGS.restore:
-    #      params = io.loadz(os.path.join(params['log_dir'], 'params.z'))
-    #      params = AttrDict(io.loadz(os.path.join(log_dir, 'params.z')))
-    #      FLAGS = merge_dicts(FLAGS, params, overwrite=False)
-    #      state = io.loadz(os.path.join(log_dir, 'training',
-    #                                    'current_state.z'))
-    #      FLAGS.update({
-    #          'lr_init': state['lr'],
-    #          'beta_init': state['beta'],
-    #      })
 
     hooks = []
     if FLAGS.horovod:
@@ -288,7 +260,7 @@ def build_logger_and_ckpt_dir(model):
     return train_logger, ckpt_dir
 
 
-def save(FLAGS, model, sess, logger, state=None):
+def save(FLAGS, model, sess, logger, state=None, fname=None):
     """Saves data from training run."""
     if not FLAGS.hmc:
         _ = save_weights(model, sess)
@@ -299,15 +271,16 @@ def save(FLAGS, model, sess, logger, state=None):
     logger.write_train_strings()
     logger.save_train_data()
     if state is not None:
-        fname = 'final_state'
-        if FLAGS.hmc:
+        fname = 'final_state' if fname is None else fname
+        if model.hmc:
             fname += '_hmc'
+
         fpath = os.path.join(model.log_dir, 'training', f'{fname}.z')
         io.savez(state, fpath, name=f'{fname}')
 
 
 @timeit
-def train_hmc(FLAGS, x_init=None, log_file=None):
+def train_hmc(FLAGS, log_file=None):
     """Train HMC sampler prior to training L2HMC sampler."""
     io.log(80 * '=')
     io.log(f'TRAINING HMC MODEL...')
@@ -341,15 +314,11 @@ def train_hmc(FLAGS, x_init=None, log_file=None):
     trainer = Trainer(sess, model, logger, HMC_FLAGS)
 
     xdim = HMC_FLAGS.time_size * HMC_FLAGS.space_size * 2
-    if x_init is None:
-        x_init = np.random.uniform(-PI, PI,
-                                   size=(HMC_FLAGS.batch_size, xdim))
-
+    x_init = np.random.uniform(-PI, PI, size=(HMC_FLAGS.batch_size, xdim))
     state_final = trainer.train(x=x_init,
                                 net_weights=NET_WEIGHTS_HMC,
                                 beta=HMC_FLAGS.beta_init)
     io.log(80 * '=')
-
     if IS_CHIEF:
         save(HMC_FLAGS, model, sess, logger, state_final)
         if HMC_FLAGS.save_train_data:
@@ -387,29 +356,10 @@ def train(FLAGS, log_file=None):
         FLAGS.eps = state['dynamics_eps']
         #  FLAGS.hmc_start = Truedd
 
-    if FLAGS.hmc_start:
-        args = FLAGS
-        if FLAGS.restore:
-            args = (FLAGS, x_init)
-
-        state = train_hmc(*args)
+    elif FLAGS.hmc_start:
+        state = train_hmc(FLAGS)
         x_init = state['x_out']
         FLAGS.eps = state['dynamics_eps']
-
-    #  state = None
-    #  xdim = FLAGS.time_size * FLAGS.space_size * 2
-    #  x_init = np.random.uniform(-PI, PI, size=(FLAGS.batch_size, xdim))
-    #  if FLAGS.hmc_start:
-    #      state = train_hmc(FLAGS)
-    #      x_init = state['x_out']
-    #      FLAGS.eps = state['dynamics_eps']
-    #
-    #  elif FLAGS.restore:
-    #      state, FLAGS = restore_state_and_params(FLAGS)
-    #      x_init = state['x_out']
-    #      FLAGS.beta_init = state['beta']
-    #      FLAGS.lr_init = state['lr']
-    #      FLAGS.eps = state['dynamics_eps']
 
     model, hooks, FLAGS = build_model(FLAGS, log_file)
 
@@ -424,24 +374,23 @@ def train(FLAGS, log_file=None):
                        save_summaries_steps=None)
 
     trainer = Trainer(sess, model, logger, FLAGS)
-
-    if FLAGS.hmc:
-        nw_init = NET_WEIGHTS_HMC
-    else:
-        nw_init = NET_WEIGHTS_L2HMC
-
+    nw_init = NET_WEIGHTS_HMC if FLAGS.hmc else NET_WEIGHTS_L2HMC
     if FLAGS.restore:
-        #  x_init = state_final['x_in']
-        #  beta_init = state['beta']
         restore_ops = [model.global_step_setter, model.eps_setter]
         sess.run(restore_ops, feed_dict={
             model.global_step_ph: state['step'],
             model.eps_ph: FLAGS.eps
         })
-    #  else:
-    #      beta_init = FLAGS.beta_init
 
-    state_final = trainer.train(x=x_init, net_weights=nw_init)
+    # -----------
+    #  Training
+    # -----------
+    try:
+        state_final = trainer.train(x=x_init, net_weights=nw_init)
+    except (KeyboardInterrupt, SystemExit):
+        if IS_CHIEF:
+            logger.save_current_state(trainer.state)
+            save(FLAGS, model, sess, logger, trainer.state)
 
     if IS_CHIEF:
         save(FLAGS, model, sess, logger, state_final)
