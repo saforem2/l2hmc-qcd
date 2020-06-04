@@ -364,3 +364,4 @@ l2hmc-qcd/runners/runner_np1.py
 l2hmc-qcd/runners/runner_tf.py
 l2hmc-qcd/args/.env
 args/params.z
+*.DS_store*
