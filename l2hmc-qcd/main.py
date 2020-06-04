@@ -102,6 +102,7 @@ def merge_dicts(main_dict, extra_dict, overwrite=False):
 
 def create_sess(FLAGS, **sess_kwargs):
     """Create `tf.train.MonitoredTrainingSession`."""
+    tf.compat.v1.keras.backend.set_learning_phase(True)
     sess_kwargs.update({
         'config': create_config(FLAGS),
         'save_checkpoint_steps': FLAGS.save_steps,
@@ -306,7 +307,7 @@ def save(FLAGS, model, sess, logger, state=None):
 
 
 @timeit
-def train_hmc(FLAGS, log_file=None):
+def train_hmc(FLAGS, x_init=None, log_file=None):
     """Train HMC sampler prior to training L2HMC sampler."""
     io.log(80 * '=')
     io.log(f'TRAINING HMC MODEL...')
@@ -340,7 +341,9 @@ def train_hmc(FLAGS, log_file=None):
     trainer = Trainer(sess, model, logger, HMC_FLAGS)
 
     xdim = HMC_FLAGS.time_size * HMC_FLAGS.space_size * 2
-    x_init = np.random.uniform(-PI, PI, size=(HMC_FLAGS.batch_size, xdim))
+    if x_init is None:
+        x_init = np.random.uniform(-PI, PI,
+                                   size=(HMC_FLAGS.batch_size, xdim))
 
     state_final = trainer.train(x=x_init,
                                 net_weights=NET_WEIGHTS_HMC,
@@ -361,7 +364,6 @@ def train_hmc(FLAGS, log_file=None):
 @timeit
 def train(FLAGS, log_file=None):
     """Train L2HMC sampler and log/plot results."""
-    tf.compat.v1.keras.backend.set_learning_phase(True)
     IS_CHIEF = (
         not FLAGS.horovod
         or FLAGS.horovod and hvd.rank() == 0
@@ -380,13 +382,17 @@ def train(FLAGS, log_file=None):
     if FLAGS.restore:
         state, FLAGS = restore_state_and_params(FLAGS)
         x_init = state['x_out']
-        FLAGS.beta_init = state['beta']
+        #  FLAGS.beta_init = state['beta']
         FLAGS.lr_init = state['lr']
         FLAGS.eps = state['dynamics_eps']
-        FLAGS.hmc_start = False
+        #  FLAGS.hmc_start = Truedd
 
-    elif FLAGS.hmc_start:
-        state = train_hmc(FLAGS)
+    if FLAGS.hmc_start:
+        args = FLAGS
+        if FLAGS.restore:
+            args = (FLAGS, x_init)
+
+        state = train_hmc(*args)
         x_init = state['x_out']
         FLAGS.eps = state['dynamics_eps']
 
@@ -426,15 +432,16 @@ def train(FLAGS, log_file=None):
 
     if FLAGS.restore:
         #  x_init = state_final['x_in']
+        #  beta_init = state['beta']
         restore_ops = [model.global_step_setter, model.eps_setter]
         sess.run(restore_ops, feed_dict={
             model.global_step_ph: state['step'],
             model.eps_ph: FLAGS.eps
         })
+    #  else:
+    #      beta_init = FLAGS.beta_init
 
-    state_final = trainer.train(x=x_init,
-                                net_weights=nw_init,
-                                beta=FLAGS.beta_init)
+    state_final = trainer.train(x=x_init, net_weights=nw_init)
 
     if IS_CHIEF:
         save(FLAGS, model, sess, logger, state_final)
