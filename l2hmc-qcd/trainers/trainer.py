@@ -146,6 +146,7 @@ class Trainer:
 
         return outputs, data_str
 
+    # pylint: disable=attribute-defined-outside-init
     def train(self, train_steps=None, beta=None, x=None, net_weights=None):
         """Train the L2HMC sampler for `train_steps` steps.
         Args:
@@ -164,18 +165,18 @@ class Trainer:
         if self.logger is not None:
             io.log(self.logger.train_header)
 
-        beta = self.beta_arr[0] if beta is None else beta
         x = np.random.randn(self.model.x.shape) if x is None else x
         train_steps = self._train_steps if train_steps is None else train_steps
         net_weights = NET_WEIGHTS_L2HMC if net_weights is None else net_weights
 
-        #  try:
         initial_step = self.sess.run(self.model.global_step)
+        beta = self.beta_arr[initial_step] if beta is None else beta
         for step in range(initial_step, train_steps):
-            data, data_str = self.train_step(step, x, beta, net_weights)
-            x = data['x_out']
+            self.state, data_str = self.train_step(step, x, beta, net_weights)
+            x = self.state['x_out']
             beta = self.beta_arr[step]
             if self.logger is not None:
-                self.logger.update(self.sess, data, data_str, net_weights)
+                self.logger.update(self.sess, self.state,
+                                   data_str, net_weights)
 
-        return data
+        return self.state
