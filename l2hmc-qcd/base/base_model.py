@@ -413,7 +413,7 @@ class BaseModel:
         with tf.name_scope('hamiltonian'):
             h_init = self.dynamics.hamiltonian(mc_states.init)
             h_out = self.dynamics.hamiltonian(mc_states.out)
-            self.exp_energy_diff = tf.exp(h_init - h_out,
+            self.exp_energy_diff = tf.exp(tf.minimum(h_init - h_out, 0.),
                                           name='exp_energy_diff')
 
         xdata = LFdata(self.x_init, self.x_proposed, self.px)
