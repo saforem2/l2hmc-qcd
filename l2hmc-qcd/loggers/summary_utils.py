@@ -19,12 +19,22 @@ import utils.file_io as io
 # pylint: disable=invalid-name
 
 
-def grad_norm_summary(name_scope, grad):
+def grad_norm_summary(name_scope, grad, name=None):
     """Create scalar summaries of RMS values of gradients."""
-    with tf.name_scope(name_scope + '_gradients'):
+    #  with tf.name_scope(f'{name_scope}/gradients'):
+    name_scope = name_scope + '/gradients'
+    with tf.name_scope(name_scope):
         grad_norm = tf.sqrt(tf.reduce_mean(grad ** 2))
-        summary_name = name_scope + '_grad_norm'
-        tf.summary.scalar(summary_name, grad_norm)
+        #  summary_name = name_scope + '_grad_norm'
+        if name is not None:
+            sname = name + '/gradient'
+            #  name = f'{name}/gradient'
+        else:
+            sname = name_scope + '/gradient'
+            #  name = f'{name_scope}/gradient'
+        variable_summaries(grad, sname)
+        #  variable_summaries(grad_norm, sname + '/RMS')
+        tf.summary.scalar(sname + '/RMS', sgrad_norm)
 
 
 def check_var_and_op(name, var):
@@ -190,7 +200,11 @@ def _create_obs_summaries(model):
 
     with tf.name_scope('top_charge'):
         tf.summary.histogram('top_charge', model.charges)
+        #  charge_trace_summaries(model)
 
+
+@tf.function
+def charge_trace_summaries(model):
     with tf.name_scope('charge_traces'):
         for idx, charge in enumerate(tf.transpose(model.charges[:5])):
             tf.summary.scalar(f'q_chain{idx}', charge)
@@ -259,11 +273,37 @@ def create_summaries(model, summary_dir, training=True):
     except (KeyError, AttributeError):
         io.log('Unable to create loss summaries.')
 
-    for grad, var in model.grads_and_vars:
-        _create_pair_summaries(grad, var)
+    with tf.name_scope('grads_and_vars'):
+        for grad, var in model.grads_and_vars:
+            vname = var.name
+            gname = vname + '/gradient'
+            rmsname = gname + 'RMS'
+            variable_summaries(var, var.name)
+            variable_summaries(grad, var.name + '/gradient')
+            tf.summary.scalar(var.name + '/gradRMS',
+                              tf.sqrt(tf.reduce_mean(grad ** 2)))
 
-        if 'kernel' in var.name:
-            _create_grad_norm_summaries(grad, var)
+    #  name_scope = name_scope + '/gradients'
+    #  with tf.name_scope(name_scope):
+    #      grad_norm = tf.sqrt(tf.reduce_mean(grad ** 2))
+    #      #  summary_name = name_scope + '_grad_norm'
+    #      if name is not None:
+    #          sname = name + '/gradient'
+    #          #  name = f'{name}/gradient'
+    #      else:
+    #          sname = name_scope + '/gradient'
+    #          #  name = f'{name_scope}/gradient'
+    #      variable_summaries(grad, sname)
+    #      #  variable_summaries(grad_norm, sname + '/RMS')
+    #      tf.summary.scalar(sname + '/RMS', sgrad_norm)
+    #
+
+    #  for grad, var in model.grads_and_vars:
+    #      _create_pair_summaries(grad, var)
+    #      _create_grad_norm_summaries(grad, var)
+    #
+    #      if 'kernel' in var.name:
+    #          _create_grad_norm_summaries(grad, var)
 
     summary_op = tf.summary.merge_all(name=name)
 
