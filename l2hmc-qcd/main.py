@@ -44,7 +44,7 @@ from tensorflow.python.client import timeline
 import config as cfg
 import utils.file_io as io
 
-from config import NET_WEIGHTS_HMC, NET_WEIGHTS_L2HMC, NetWeights, PI, TWO_PI
+from config import NET_WEIGHTS_HMC, NET_WEIGHTS_L2HMC, NetWeights, PI
 
 from seed_dict import seeds, vnet_seeds, xnet_seeds
 from models.gauge_model import GaugeModel
@@ -298,8 +298,11 @@ def save(FLAGS, model, sess, logger, state=None):
     logger.write_train_strings()
     logger.save_train_data()
     if state is not None:
-        fpath = os.path.join(model.log_dir, 'training', 'final_state.z')
-        io.savez(state, fpath, name='final_state')
+        fname = 'final_state'
+        if FLAGS.hmc:
+            fname += '_hmc'
+        fpath = os.path.join(model.log_dir, 'training', f'{fname}.z')
+        io.savez(state, fpath, name=f'{fname}')
 
 
 @timeit
@@ -372,19 +375,35 @@ def train(FLAGS, log_file=None):
         FLAGS.log_dir = io.create_log_dir(FLAGS, 'GaugeModel', log_file)
 
     state = None
-    xdim = FLAGS.time_size * FLAGS.space_size * 2
+    xdim = 2 * FLAGS.time_size * FLAGS.space_size
     x_init = np.random.uniform(-PI, PI, size=(FLAGS.batch_size, xdim))
-    if FLAGS.hmc_start:
-        state = train_hmc(FLAGS)
-        x_init = state['x_out']
-        FLAGS.eps = state['dynamics_eps']
-
-    elif FLAGS.restore:
+    if FLAGS.restore:
         state, FLAGS = restore_state_and_params(FLAGS)
         x_init = state['x_out']
         FLAGS.beta_init = state['beta']
         FLAGS.lr_init = state['lr']
         FLAGS.eps = state['dynamics_eps']
+        FLAGS.hmc_start = False
+
+    elif FLAGS.hmc_start:
+        state = train_hmc(FLAGS)
+        x_init = state['x_out']
+        FLAGS.eps = state['dynamics_eps']
+
+    #  state = None
+    #  xdim = FLAGS.time_size * FLAGS.space_size * 2
+    #  x_init = np.random.uniform(-PI, PI, size=(FLAGS.batch_size, xdim))
+    #  if FLAGS.hmc_start:
+    #      state = train_hmc(FLAGS)
+    #      x_init = state['x_out']
+    #      FLAGS.eps = state['dynamics_eps']
+    #
+    #  elif FLAGS.restore:
+    #      state, FLAGS = restore_state_and_params(FLAGS)
+    #      x_init = state['x_out']
+    #      FLAGS.beta_init = state['beta']
+    #      FLAGS.lr_init = state['lr']
+    #      FLAGS.eps = state['dynamics_eps']
 
     model, hooks, FLAGS = build_model(FLAGS, log_file)
 
