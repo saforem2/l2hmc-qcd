@@ -22,7 +22,7 @@ import matplotlib as mpl
 
 import utils.file_io as io
 
-from config import NET_WEIGHTS_HMC, NET_WEIGHTS_L2HMC, NetWeights, PI
+from config import NET_WEIGHTS_HMC, NetWeights, PI
 from runners.runner_np import RunnerNP, RunParams
 from plotters.inference_plots import inference_plots
 from utils.file_io import timeit
@@ -56,13 +56,13 @@ def load_configs(log_dir=None):
     return cfgs
 
 
-def run_hmc(args, run_steps):
+def run_hmc(args, train_params=None):
     """Run generic HMC."""
     run_params = RunParams(
         beta=args.beta,
-        eps=args.eps,
+        eps=args.hmc_eps,
         init='rand',
-        run_steps=run_steps,
+        run_steps=args.hmc_steps,
         num_steps=args.num_steps,
         batch_size=args.batch_size,
         print_steps=args.print_steps,
@@ -72,9 +72,11 @@ def run_hmc(args, run_steps):
         network_type='GaugeNetwork',
     )
 
-    runner_hmc = RunnerNP(run_params, args.log_dir, model_type='GaugeModel')
+    runner_hmc = RunnerNP(run_params, args.log_dir,
+                          model_type='GaugeModel',
+                          train_params=train_params)
     x = np.random.uniform(-np.pi, np.pi, size=runner_hmc.config.input_shape)
-    rd_hmc = runner_hmc.inference(x=x, run_steps=run_steps)
+    rd_hmc = runner_hmc.inference(x=x, run_steps=args.hmc_steps)
     x_out = rd_hmc.samples_arr[-1]
 
     return x_out, rd_hmc
@@ -95,11 +97,12 @@ def main(FLAGS):
     if FLAGS.log_dir is not None:
         train_params = io.loadz(os.path.join(FLAGS.log_dir, 'params.z'))
     else:
-        try:
-            train_params = io.loadz(os.path.join(os.getcwd(), 'params.z'))
+        pfile = os.path.join(os.getcwd(), 'params.z')
+        if os.path.isfile(pfile):
+            train_params = io.loadz(pfile)
             FLAGS.log_dir = train_params['log_dir']
-        except FileNotFoundError as e:
-            raise(e)
+        else:
+            raise FileNotFoundError('Unable to locate `params.z file.')
 
     if FLAGS.num_steps is None:
         FLAGS.num_steps = train_params['num_steps']
@@ -124,14 +127,8 @@ def main(FLAGS):
                       train_params=train_params,
                       from_trained_model=True)
 
-    #  if net_weights == NET_WEIGHTS_L2HMC:
-    #      x, _ = run_hmc(FLAGS, 1000)
-    #  else:
-    #      train_state = io.loadz(os.path.join(runner.config.log_dir,
-    #                                          'training', 'current_state.z'))
-    #      x = train_state['x_in'][:FLAGS.batch_size, :]
     if FLAGS.hmc_start:
-        x, _ = run_hmc(FLAGS, 100)
+        x, _ = run_hmc(FLAGS, train_params)
     else:
         try:
             final_state = io.loadz(os.path.join(runner.config.log_dir,
@@ -145,6 +142,9 @@ def main(FLAGS):
     run_data = runner.inference(x=x)
     runner.save_params()
 
+    if not FLAGS.dont_save:  # dont save is False by default (i.e. save)
+        run_data.save(run_dir=runner.config.run_dir)
+
     _, _, fig_dir = inference_plots(run_data,
                                     train_params,
                                     runner.config,
@@ -154,9 +154,6 @@ def main(FLAGS):
     out_file = os.path.join(fig_dir, 'run_summary.txt')
     _, _ = run_data.log_summary(out_file=out_file, n_boot=10)
 
-    if not FLAGS.dont_save:
-        run_data.save(run_dir=runner.config.run_dir)
-
     #  Copy summary file to `run_dir`
     _ = shutil.copy2(out_file, runner.config.run_dir)
 
@@ -165,6 +162,7 @@ def main(FLAGS):
 
 if __name__ == '__main__':
     CL_FLAGS = parse_inference_args()
+
     io.log(SEPERATOR)
     io.log('FLAGS: ')
     for key, val in CL_FLAGS.__dict__.items():
