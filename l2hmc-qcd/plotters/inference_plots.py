@@ -23,6 +23,7 @@ from matplotlib.collections import LineCollection
 import utils.file_io as io
 
 from .plot_utils import plot_setup
+from .tunneling_rate_plots import make_charge_plots
 
 # pylint:disable=too-many-locals,too-many-arguments,invalid-name,
 # pylint:disable=too-many-arguments,too-many-statements
@@ -528,10 +529,6 @@ def inference_plots(run_data, params, run_config,
                           fig_dir, title_str=title_str)
         plt.close('all')
 
-    plot_losses(run_data.data['plaq_loss'],
-                run_data.data['charge_loss'],
-                title_str=title_str, out_dir=fig_dir)
-    plt.close('all')
 
     pe_dir = os.path.join(fig_dir, 'potential_plots')
     io.check_else_make_dir(pe_dir)
@@ -679,6 +676,11 @@ def inference_plots(run_data, params, run_config,
                          lattice_shape=lattice_shape)
     plt.close('all')
 
+    plot_losses(run_data.data['plaq_loss'],
+                run_data.data['charge_loss'],
+                title_str=title_str, out_dir=fig_dir)
+    plt.close('all')
+
     ####################################################
     # Create traceplot + posterior plot of observables
     ####################################################
@@ -689,5 +691,14 @@ def inference_plots(run_data, params, run_config,
     traceplot_posterior(dataset, '', fname=fname, fig_dir=fig_dir,
                         title_str=title_str, filter_str=var_names)
     plt.close('all')
+
+    _ = az.plot_trace(dataset, var_names=['charges'])
+    fig = plt.gcf()
+    fig.suptitle(title_str, fontsize='x-large')
+    out_file = os.path.join(fig_dir, 'charges_traceplot.png')
+    savefig(fig, out_file)
+    #  plt.show()
+
+    make_charge_plots([log_dir])
 
     return dataset, energy_dataset, fig_dir
