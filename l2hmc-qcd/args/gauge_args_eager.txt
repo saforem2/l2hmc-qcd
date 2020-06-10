@@ -1,23 +1,26 @@
+--log_dir='../../eager_logs/2020_06/L16_b256_lf4_qw01_pw100_dp025-2020-06-10-02-23'
 # ==========================================
+--save_train_data
 --rand
---eps 0.2
+--eps 0.1
 --num_steps 4
---batch_size 128
+--batch_size 256
 --time_size 16
 --space_size 16
---beta_init 4.985
+--beta_init 1.
 --beta_final 5.
---save_steps 2500
---train_steps 50
+--train_steps 10000
+--save_steps 2000
+--logging_steps 50
+--print_steps 5
 --hmc_start
 --hmc_steps 100
 --extra_steps 0
---print_steps 1
 # ------------------------------------
 --warmup_lr
---dropout_prob 0.5
---lr_init 0.0001
---lr_decay_steps 1000
+--dropout_prob 0.25
+--lr_init 0.0005
+--lr_decay_steps 2500
 --lr_decay_rate 0.96
 --loss_scale 0.1
 --std_weight 0.
@@ -25,7 +28,6 @@
 --plaq_weight 10.
 --charge_weight 0.1
 --network_type 'GaugeNetwork'
---logging_steps 1
 --units '1024, 512, 256, 512, 1024'
 --metric 'cos_diff'
 # ------------------------------------
