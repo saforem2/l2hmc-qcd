@@ -141,10 +141,14 @@ class GaugeNetwork(tf.keras.Model):
             'transformation_layer': self.transformation_layer,
         }
 
-    def get_weights(self, sess):
+    def get_weights(self, sess=None):
         """Get dictionary of layer weights."""
         def _weights(layer):
-            w, b = sess.run(layer.weights)
+            if sess is None:
+                w, b = layer.weights.numpy()
+            else:
+                w, b = sess.run(layer.weights)
+
             return Weights(w=w, b=b)
 
         weights_dict = {
@@ -157,17 +161,21 @@ class GaugeNetwork(tf.keras.Model):
             'transformation_layer': _weights(self.transformation_layer.layer),
         }
 
-        coeffs = sess.run([self.scale_layer.coeff,
-                           self.transformation_layer.coeff])
+        if sess is None:
+            coeffs = [self.scale_layer.coeff.numpy(),
+                      self.transformation_layer.coeff.numpy()]
+        else:
+            coeffs = sess.run([self.scale_layer.coeff,
+                               self.transformation_layer.coeff])
 
         weights_dict[SCOEFF] = coeffs[0]
         weights_dict[QCOEFF] = coeffs[1]
 
         return weights_dict
 
-    def save_weights(self, sess, out_file):
+    def save_weights(self, sess=None, out_file=None):
         """Save all layer weights to `out_file`."""
-        weights_dict = self.get_weights(sess)
+        weights_dict = self.get_weights(sess=sess)
         io.savez(weights_dict, out_file, name=self.name)
 
         return weights_dict
