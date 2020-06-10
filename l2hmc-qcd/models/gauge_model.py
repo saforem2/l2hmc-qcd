@@ -167,20 +167,14 @@ class GaugeModel(BaseModel):
         with tf.name_scope('sampler'):
             xdata, zdata = self._build_sampler()
 
-        #  largest_wilson_loop = self.params.get('largest_wilson_loop', 1)
-        #  n_arr = np.arange(largest_wilson_loop) + 1
-        #  self.gauge_loss = GaugeLoss(self._plaq_weight, self._charge_weight,
-        #                              self._lattice_shape, n_arr=n_arr)
         with tf.name_scope('calc_loss'):
             self.loss_op, self.losses_dict = self.calc_loss(xdata, zdata)
 
         with tf.name_scope('calc_and_apply_grads'):
             self.grads = self._calc_grads(self.loss_op)
-            train_op, grads_and_vars = self._apply_grads(self.loss_op,
-                                                         self.grads)
-            self.train_op = train_op
-            self.grads_and_vars = grads_and_vars
-
+            output = self._apply_grads(self.loss_op, self.grads)
+            self.train_op = output[0]
+            self.grads_and_vars = output[1]
             train_ops = self._build_train_ops()
             run_ops = self._build_run_ops()
 
@@ -189,11 +183,6 @@ class GaugeModel(BaseModel):
     def build(self, params=None):
         """Build TensorFlow graph."""
         params = self.params if params is None else params
-
-        #  charge_weight = getattr(self, 'charge_weight_np', 0.)
-        #  self._charge_weight = charge_weight
-        self.use_charge_loss = (self._charge_weight > 0)
-
         t0 = time.time()
         io.log(SEP_STRN + f'INFO: Building graph for `GaugeModel`...')
         with tf.name_scope(self._model_type):
@@ -285,7 +274,8 @@ class GaugeModel(BaseModel):
             activation_fn=tf.nn.relu,
         )
 
-        dynamics = Dynamics(self.calc_action, dynamics_config, net_config)
+        dynamics = Dynamics(self.calc_action, dynamics_config, net_config,
+                            separate_nets=False)
 
         return dynamics, dynamics_config, net_config
 

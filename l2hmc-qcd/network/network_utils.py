@@ -10,7 +10,7 @@ NP_FLOAT = cfg.NP_FLOAT
 np.random.seed(seeds['global_np'])
 
 if '2.' not in tf.__version__:
-    tf.set_random_seed(seeds['global_tf'])
+    tf.compat.v1.set_random_seed(seeds['global_tf'])
 
 
 # pylint: disable=no-member

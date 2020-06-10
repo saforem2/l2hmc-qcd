@@ -61,7 +61,7 @@ if cfg.HAS_HOROVOD:
     import horovod.tensorflow as hvd  # pylint: disable=import-error
 
 try:
-    tf.logging.set_verbosity(tf.logging.DEBUG)
+    tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.DEBUG)
 except AttributeError:
     pass
 
@@ -297,8 +297,9 @@ def train_hmc(FLAGS, log_file=None):
     HMC_FLAGS.save_train_data = True
     HMC_FLAGS.train_steps = HMC_FLAGS.pop('hmc_steps')
     HMC_FLAGS.lr_decay_steps = HMC_FLAGS.train_steps // 4
-    HMC_FLAGS.beta_init = HMC_FLAGS.beta_final
+    HMC_FLAGS.beta_final = HMC_FLAGS.beta_init
     HMC_FLAGS.fixed_beta = True
+    HMC_FLAGS.no_summaries = True
     HMC_FLAGS.log_dir = os.path.join(HMC_FLAGS.log_dir, 'HMC_start')
     model, hooks, HMC_FLAGS = build_model(HMC_FLAGS, log_file)
     logger, ckpt_dir = None, None
@@ -358,6 +359,7 @@ def train(FLAGS, log_file=None):
 
     elif FLAGS.hmc_start:
         state = train_hmc(FLAGS)
+        tf.compat.v1.reset_default_graph()
         x_init = state['x_out']
         FLAGS.eps = state['dynamics_eps']
 

@@ -59,13 +59,48 @@ def convert_to_angle(x):
     return x
 
 
+def build_network(xdim, config, net_config, separate_nets=True):
+    """Build the networks to be used during training."""
+    if separate_nets:
+        xnets = []
+        vnets = []
+        for idx in range(config.num_steps):
+            xseeds = {
+                key: int(idx * val) for key, val in xnet_seeds.items()
+            }
+            vseeds = {
+                key: int(idx * val) for key, val in vnet_seeds.items()
+            }
+            xnets.append(
+                GaugeNetwork(net_config, xdim,
+                             factor=2., net_seeds=xseeds,
+                             name=f'XNet_step{idx}')
+            )
+            vnets.append(
+                GaugeNetwork(net_config, xdim,
+                             factor=1., net_seeds=vseeds,
+                             name=f'VNet_step{idx}')
+            )
+    else:
+        xnets = GaugeNetwork(net_config, xdim, factor=2.,
+                             net_seeds=xnet_seeds, name=f'XNet')
+        vnets = GaugeNetwork(net_config, xdim, factor=1.,
+                             net_seeds=vnet_seeds, name=f'VNet')
+
+    return xnets, vnets
+
+
 # pylint:disable=too-many-instance-attributes,unused-argument
+
+
 class Dynamics(tf.keras.Model):
     """DynamicsObject for training the L2HMC sampler."""
+
     def __init__(self,
                  potential_fn: Callable[[tf.Tensor], tf.Tensor],
                  dynamics_config: DynamicsConfig,
-                 network_config: NetworkConfig) -> NoReturn:
+                 network_config: NetworkConfig,
+                 separate_nets: bool = True) -> NoReturn:
         """Initialization method."""
         super(Dynamics, self).__init__(name='Dynamics')
         np.random.seed(seeds['global_np'])
@@ -89,12 +124,31 @@ class Dynamics(tf.keras.Model):
 
         self.eps = self._build_eps(use_log=False)
         self.masks = self._build_masks()
-
-        self.xnet, self.vnet = self.build_network(network_config)
-
-    def build_network(self, network_config):
-        """Build the networks to be used during training."""
+        self.separate_nets = separate_nets
         if self.config.hmc:
+            self.xnets = lambda inputs, is_training: [
+                tf.zeros_like(inputs[0]) for _ in range(3)
+            ]
+            self.vnets = lambda inputs, is_training: [
+                tf.zeros_like(inputs[0]) for _ in range(3)
+            ]
+
+        else:
+            self.xnets, self.vnets = build_network(
+                self.xdim, self.config, self.net_config,
+                separate_nets=separate_nets
+            )
+
+    def build_network(self, net_config):
+        """Build the networks to be used during training."""
+        if net_config.type == 'GaugeNetwork':
+            # pylint:disable=attribute-defined-outside-init
+            xnet = GaugeNetwork(net_config, self.xdim, factor=2.,
+                                net_seeds=xnet_seeds, name='XNet')
+            vnet = GaugeNetwork(net_config, self.xdim, factor=1.,
+                                net_seeds=vnet_seeds, name='VNet')
+
+        elif self.config.hmc:
             xnet = lambda inputs, is_training: [  # noqa: E731
                 tf.zeros_like(inputs[0]) for _ in range(3)
             ]
@@ -102,27 +156,20 @@ class Dynamics(tf.keras.Model):
                 tf.zeros_like(inputs[0]) for _ in range(3)
             ]
 
+        # TODO: Update `CartesianNet` and remainder of network objects to
+        # use generic `NetworkConfig` instead of explicitly passing
+        # parameters.
         else:
-            if network_config.type == 'GaugeNetwork':
-                xnet = GaugeNetwork(network_config, self.xdim, factor=2.,
-                                    net_seeds=xnet_seeds, name='XNet')
-                vnet = GaugeNetwork(network_config, self.xdim, factor=1.,
-                                    net_seeds=vnet_seeds, name='VNet')
-
-            # TODO: Update `CartesianNet` and remainder of network objects to
-            # use generic `NetworkConfig` instead of explicitly passing
-            # parameters.
-            else:
-                #  net_params['factor'] = 2.
-                #  net_params['net_name'] = 'x'
-                #  net_params['net_seeds'] = xnet_seeds
-                #  xnet = FullNet(model_name='XNet', **net_params)
-                #
-                #  net_params['factor'] = 1.
-                #  net_params['net_name'] = 'v'
-                #  net_params['net_seeds'] = vnet_seeds
-                #  vnet = FullNet(model_name='VNet', **net_params)
-                pass
+            #  net_params['factor'] = 2.
+            #  net_params['net_name'] = 'x'
+            #  net_params['net_seeds'] = xnet_seeds
+            #  xnet = FullNet(model_name='XNet', **net_params)
+            #
+            #  net_params['factor'] = 1.
+            #  net_params['net_name'] = 'v'
+            #  net_params['net_seeds'] = vnet_seeds
+            #  vnet = FullNet(model_name='VNet', **net_params)
+            pass
 
         return xnet, vnet
 
@@ -230,21 +277,35 @@ class Dynamics(tf.keras.Model):
 
         return state_prop, accept_prob, sumlogdet
 
+    def _get_network(self, step):
+        if self.separate_nets:
+            if tf.executing_eagerly():
+                xnet = self.__dict__['xnets'][step]
+                vnet = self.__dict__['vnets'][step]
+            else:
+                xnet = tf.gather(self.xnets, tf.cast(step, dtype=TF_INT))
+                vnet = tf.gather(self.vnets, tf.cast(step, dtype=TF_INT))
+        else:
+            xnet = self.xnets
+            vnet = self.vnets
+
+        return xnet, vnet
+
     def _forward_lf(self, step, state, training=None):
         with tf.name_scope('forward_lf'):
             t = self._get_time(step, tile=tf.shape(state.x)[0])
             m, mc = self._get_mask(step)
-
+            xnet, vnet = self._get_network(step)
             sumlogdet = 0.
-            state, logdet = self._update_v_forward(state, t, training)
+            state, logdet = self._update_v_forward(vnet, state, t, training)
             sumlogdet += logdet
-            state, logdet = self._update_x_forward(state, t,
+            state, logdet = self._update_x_forward(xnet, state, t,
                                                    (m, mc), training)
             sumlogdet += logdet
-            state, logdet = self._update_x_forward(state, t,
+            state, logdet = self._update_x_forward(xnet, state, t,
                                                    (mc, m), training)
             sumlogdet += logdet
-            state, logdet = self._update_v_forward(state, t, training)
+            state, logdet = self._update_v_forward(vnet, state, t, training)
             sumlogdet += logdet
 
         return state, sumlogdet
@@ -254,22 +315,22 @@ class Dynamics(tf.keras.Model):
             step_r = self.config.num_steps - step - 1
             t = self._get_time(step_r)
             m, mc = self._get_mask(step_r)
-
+            xnet, vnet = self._get_network(step_r)
             sumlogdet = 0.
-            state, logdet = self._update_v_backward(state, t, training)
+            state, logdet = self._update_v_backward(vnet, state, t, training)
             sumlogdet += logdet
-            state, logdet = self._update_x_backward(state, t,
+            state, logdet = self._update_x_backward(xnet, state, t,
                                                     (mc, m), training)
             sumlogdet += logdet
-            state, logdet = self._update_x_backward(state, t,
+            state, logdet = self._update_x_backward(xnet, state, t,
                                                     (m, mc), training)
             sumlogdet += logdet
-            state, logdet = self._update_v_backward(state, t, training)
+            state, logdet = self._update_v_backward(vnet, state, t, training)
             sumlogdet += logdet
 
         return state, sumlogdet
 
-    def _update_v_forward(self, state, t, training):
+    def _update_v_forward(self, network, state, t, training):
         """Update the momentum `v` in the forward leapfrog step.
 
         Args:
@@ -285,7 +346,8 @@ class Dynamics(tf.keras.Model):
             x = convert_to_angle(state.x)
 
         grad = self.grad_potential(x, state.beta)
-        Sv, Tv, Qv = self.vnet((x, grad, t), training)
+        #  Sv, Tv, Qv = self.vnet((x, grad, t), training)
+        Sv, Tv, Qv = network((x, grad, t), training)
 
         scale = self._vsw * (0.5 * self.eps * Sv)
         transl = self._vtw * Tv
@@ -301,7 +363,7 @@ class Dynamics(tf.keras.Model):
 
         return state_out, logdet
 
-    def _update_x_forward(self, state, t, masks, training):
+    def _update_x_forward(self, network, state, t, masks, training):
         """Update the position `x` in the forward leapfrog step.
 
         Args:
@@ -317,7 +379,7 @@ class Dynamics(tf.keras.Model):
             x = convert_to_angle(state.x)
 
         m, mc = masks
-        Sx, Tx, Qx = self.xnet((state.v, m * x, t), training)
+        Sx, Tx, Qx = network((state.v, m * x, t), training)
 
         scale = self._xsw * (self.eps * Sx)
         transl = self._xtw * Tx
@@ -337,7 +399,7 @@ class Dynamics(tf.keras.Model):
 
         return state_out, logdet
 
-    def _update_v_backward(self, state, t, training):
+    def _update_v_backward(self, network, state, t, training):
         """Update the momentum `v` in the backward leapfrog step.
 
         Args:
@@ -353,7 +415,8 @@ class Dynamics(tf.keras.Model):
             x = convert_to_angle(state.x)
 
         grad = self.grad_potential(x, state.beta)
-        Sv, Tv, Qv = self.vnet((x, grad, t), training)
+        #  Sv, Tv, Qv = self.vnet((x, grad, t), training)
+        Sv, Tv, Qv = network((x, grad, t), training)
 
         scale = self._vsw * (-0.5 * self.eps * Sv)
         transl = self._vtw * Tv
@@ -369,7 +432,7 @@ class Dynamics(tf.keras.Model):
 
         return state_out, logdet
 
-    def _update_x_backward(self, state, t, masks, training):
+    def _update_x_backward(self, network, state, t, masks, training):
         """Update the position `x` in the forward leapfrog step.
 
         Args:
@@ -386,7 +449,8 @@ class Dynamics(tf.keras.Model):
             x = convert_to_angle(state.x)
 
         m, mc = masks
-        Sx, Tx, Qx = self.xnet((state.v, m * x, t), training)
+        #  Sx, Tx, Qx = self.xnet((state.v, m * x, t), training)
+        Sx, Tx, Qx = network((state.v, m * x, t), training)
         #  Sx, Tx, Qx = self._scale_position_outputs(net_outputs)
 
         scale = self._xsw * (-self.eps * Sx)
@@ -422,7 +486,6 @@ class Dynamics(tf.keras.Model):
         h_prop = self.hamiltonian(state_prop)
         dh = h_init - h_prop + sumlogdet
         prob = tf.exp(tf.minimum(dh, 0.))
-
         return tf.where(tf.math.is_finite(prob), prob, tf.zeros_like(prob))
 
     def _get_time(self, i, tile=1):
@@ -518,6 +581,7 @@ class Dynamics(tf.keras.Model):
         """Compute the overall hamiltonian."""
         with tf.name_scope('hamiltonian'):
             kinetic = self.kinetic_energy(state.v)
+            potential = self.potential_energy(state.x, state.beta)
             potential = self.potential_energy(state.x, state.beta)
 
         return potential + kinetic

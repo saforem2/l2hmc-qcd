@@ -287,12 +287,14 @@ class BaseModel:
         # Build energy_ops to calculate energies.
         # -------------------------------------------------------------------
         with tf.name_scope('energy_ops'):
-            self.v_ph = tf.placeholder(dtype=TF_FLOAT,
-                                       shape=self.x.shape,
-                                       name='v_placeholder')
-            self.sumlogdet_ph = tf.placeholder(dtype=TF_FLOAT,
-                                               shape=self.x.shape[0],
-                                               name='sumlogdet_placeholder')
+            self.v_ph = tf.compat.v1.placeholder(
+                dtype=TF_FLOAT, shape=self.x.shape,
+                name='v_placeholder'
+            )
+            self.sumlogdet_ph = tf.compat.v1placeholder(
+                dtype=TF_FLOAT, shape=self.x.shape[0],
+                name='sumlogdet_placeholder'
+            )
             self.state = State(x=self.x, v=self.v_ph, beta=self.beta)
 
             add_to_collection('energy_placeholders',
@@ -318,6 +320,11 @@ class BaseModel:
             self.train_op = output[0]
             self.grads_and_vars = output[1]
             train_ops = self._build_train_ops()
+            #  self.grads, self.tvars = self._calc_grads(self.loss_op)
+            #  self.train_op = self._apply_grads(self.loss_op,
+            #                                    self.grads, self.tvars)
+            #  self.train_op = output[0]
+            #  self.grads_and_vars = output[1]
 
         # *******************************************************************
         # Build `run_ops` containing ops used when running inference.
@@ -437,8 +444,8 @@ class BaseModel:
     @staticmethod
     def _create_global_step():
         """Create global_step tensor."""
-        with tf.variable_scope('global_step'):
-            global_step = tf.train.get_or_create_global_step()
+        with tf.compat.v1.variable_scope('global_step'):
+            global_step = tf.compat.v1.train.get_or_create_global_step()
         return global_step
 
     def _create_lr(self, warmup=False):
@@ -458,11 +465,12 @@ class BaseModel:
                 }
                 lr = warmup_lr(**kwargs)
             else:
-                lr = tf.train.exponential_decay(lr_init, self.global_step,
-                                                self.lr_decay_steps,
-                                                self.lr_decay_rate,
-                                                staircase=True,
-                                                name='learning_rate')
+                lr = tf.compat.v1.train.exponential_decay(lr_init,
+                                                          self.global_step,
+                                                          self.lr_decay_steps,
+                                                          self.lr_decay_rate,
+                                                          staircase=True,
+                                                          name='learning_rate')
         return lr
 
     def _create_optimizer(self):
@@ -471,7 +479,8 @@ class BaseModel:
             self._create_lr(warmup=self._warmup)
 
         with tf.name_scope('optimizer'):
-            optimizer = tf.train.AdamOptimizer(self.lr)
+            optimizer = tf.compat.v1.train.AdamOptimizer(self.lr)
+            #  optimizer = tf.keras.optimizers.Adam(self.lr)
             if self.using_hvd:
                 optimizer = hvd.DistributedOptimizer(optimizer)
 
@@ -496,7 +505,9 @@ class BaseModel:
                     curerntly being trained.
         """
         def make_ph(name, shape=(), dtype=TF_FLOAT):
-            return tf.placeholder(dtype=dtype, shape=shape, name=name)
+            return tf.compat.v1.placeholder(dtype=dtype,
+                                            shape=shape,
+                                            name=name)
 
         with tf.name_scope('inputs'):
             if not tf.executing_eagerly():
@@ -532,9 +543,9 @@ class BaseModel:
 
         for key, val in inputs.items():
             if key == 'net_weights':
-                _ = [tf.add_to_collection('inputs', v) for v in val]
+                _ = [tf.compat.v1.add_to_collection('inputs', v) for v in val]
             else:
-                tf.add_to_collection('inputs', val)
+                tf.compat.v1.add_to_collection('inputs', val)
 
         return inputs
 
@@ -611,21 +622,50 @@ class BaseModel:
 
     def _calc_grads(self, loss):
         """Calculate the gradients to be used in backpropagation."""
-        clip_value = getattr(self, 'clip_value', 0.)
-        with tf.name_scope('grads'):
+        with tf.name_scope('gradients'):
             grads = tf.gradients(loss, tf.compat.v1.trainable_variables())
-            if clip_value > 0.:
-                grads, _ = tf.clip_by_global_norm(grads, clip_value)
+            if self.clip_value > 0:
+                grads, _ = tf.clip_by_global_norm(grads, self.clip_value)
 
         return grads
 
+    def _calc_grads_new(self, loss):
+        """Calculate the gradients to be used in backpropagation."""
+        clip_value = getattr(self, 'clip_value', 0.)
+        with tf.name_scope('grads'):
+            tvars = tf.compat.v1.trainable_variables()
+            grads_and_vars = self.optimizer.compute_gradients(loss, tvars)
+            grads = [grad for grad, var in grads_and_vars]
+            tvars = [var for grad, var in grads_and_vars]
+            if clip_value > 0.:
+                grads, _ = tf.clip_by_global_norm(grads, clip_value)
+
+            #  grads = tf.gradients(loss, tf.compat.v1.trainable_variables())
+            #  if clip_value > 0.:
+            #      grads, _ = tf.clip_by_global_norm(grads, clip_value)
+
+        return grads, tvars
+
     def _apply_grads(self, loss_op, grads):
-        with tf.name_scope('apply_grads'):
-            trainable_vars = tf.compat.v1.trainable_variables()
-            grads_and_vars = zip(grads, trainable_vars)
+        with tf.name_scope('apply_gradients'):
+            tvars = tf.compat.v1.trainable_variables()
+            grads_and_vars = zip(grads, tvars)
             ctrl_deps = [loss_op, *self.dynamics.updates]
             with tf.control_dependencies(ctrl_deps):
                 train_op = self.optimizer.apply_gradients(grads_and_vars,
                                                           self.global_step,
                                                           'train_op')
         return train_op, grads_and_vars
+
+    def _apply_grads_new(self, loss_op, grads, tvars):
+        with tf.name_scope('apply_grads'):
+            #  trainable_vars = tf.compat.v1.trainable_variables()
+            train_op = self.optimizer.apply_gradients(zip(grads, tvars),
+                                                      self.global_step,
+                                                      'train_op')
+            #  ctrl_deps = [loss_op, *self.dynamics.updates]
+            #  with tf.control_dependencies(ctrl_deps):
+            #      train_op = self.optimizer.apply_gradients(grads_and_vars,
+            #                                                self.global_step,
+            #                                                'train_op')
+        return train_op
