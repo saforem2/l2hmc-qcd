@@ -267,9 +267,11 @@ class GaugeModel:
 
         return loss, states.out.x, px, sld_states.out
 
-    def train_eager(self, save_train_data=False, ckpt_dir=None):
-        x = tf.random.uniform(shape=self.input_shape, minval=-PI, maxval=PI)
-        x = tf.cast(x, dtype=TF_FLOAT)
+    def train_eager(self, x=None, save_train_data=False, ckpt_dir=None):
+        if x is None:
+            x = tf.random.uniform(shape=self.input_shape, minval=-PI, maxval=PI)
+            x = tf.cast(x, dtype=TF_FLOAT)
+
         _, q_new = self.calc_observables(x, self.beta_init)
 
         px_arr = []
@@ -359,6 +361,7 @@ class GaugeModel:
             'dq': dq_arr,
             'loss_arr': loss_arr,
             'charges_arr': charges_arr,
+            'x': tf.reshape(x, self.input_shape),
             #  'data_strs': data_strs,
         }
 
