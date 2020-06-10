@@ -6,6 +6,7 @@ def cast(f):
     return tf.cast(f, TF_FLOAT)
 
 
+
 def warmup_lr(**kwargs):
     """Create a dynamic learning rate schedule that slowly warms up."""
     global_step = kwargs.get('global_step')

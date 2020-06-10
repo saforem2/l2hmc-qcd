@@ -38,6 +38,10 @@ class ConvNet2D(tf.keras.Model):
         super(ConvNet2D, self).__init__(name=model_name)
 
         self.data_format = 'channels_last'
+        self.activation = kwargs.get('conv_activation', tf.nn.relu)
+        self.num_filters = kwargs.get('num_filters', [32, 32])
+        self.filter_sizes = kwargs.get('filter_sizes', [4, 4])
+
 
         for key, val in kwargs.items():
             setattr(self, key, val)
