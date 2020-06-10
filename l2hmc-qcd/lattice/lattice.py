@@ -211,10 +211,10 @@ class GaugeLattice:
         Returns:
             plaq_sums (tf operation): Tensorflow operation capable of
                 calculating the plaquette sums.
-        NOTE: self.samples.shape = (N, L, T, D), where:
+        NOTE: self.samples.shape = (N, T, L, D), where:
             N = batch_size
-            L = space_size
             T = time_size
+            L = space_size
             D = dimensionality
         """
         if isinstance(samples, np.ndarray):
@@ -224,7 +224,7 @@ class GaugeLattice:
             if samples.shape != self.samples.shape:
                 samples = tf.reshape(samples, shape=self.samples.shape)
 
-            # assuming D = 2, plaq_sums will have shape: (N, L, T)
+            # assuming D = 2, plaq_sums will have shape: (N, T, L)
             plaq_sums = (samples[..., 0]
                          - samples[..., 1]
                          - tf.roll(samples[..., 0], shift=-1, axis=2)
@@ -326,5 +326,5 @@ class GaugeLattice:
     def get_potential_fn(self, samples):
         """Returns callable function used for calculating the energy."""
         def fn(samples):
-            return self.calc_actions(samples)
+            return self.calc_actions(samples=samples)
         return fn

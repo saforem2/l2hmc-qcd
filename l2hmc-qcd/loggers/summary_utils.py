@@ -34,7 +34,7 @@ def grad_norm_summary(name_scope, grad, name=None):
             #  name = f'{name_scope}/gradient'
         variable_summaries(grad, sname)
         #  variable_summaries(grad_norm, sname + '/RMS')
-        tf.summary.scalar(sname + '/RMS', sgrad_norm)
+        tf.compat.v1.summary.scalar(sname + '/RMS', sgrad_norm)
 
 
 def check_var_and_op(name, var):
@@ -58,11 +58,11 @@ def variable_summaries(var, name=''):
 
     mean = tf.reduce_mean(var)
     stddev = tf.sqrt(tf.reduce_mean(tf.square(var - mean)))
-    tf.summary.scalar(mean_name, mean)
-    tf.summary.scalar(stddev_name, stddev)
-    tf.summary.scalar(max_name, tf.reduce_max(var))
-    tf.summary.scalar(min_name, tf.reduce_min(var))
-    tf.summary.histogram(hist_name, var)
+    tf.compat.v1.summary.scalar(mean_name, mean)
+    tf.compat.v1.summary.scalar(stddev_name, stddev)
+    tf.compat.v1.summary.scalar(max_name, tf.reduce_max(var))
+    tf.compat.v1.summary.scalar(min_name, tf.reduce_min(var))
+    tf.compat.v1.summary.histogram(hist_name, var)
 
 
 def add_loss_summaries(total_loss):
@@ -136,8 +136,7 @@ def network_summaries(model):
     """Create summary objects of all network weights/biases."""
     if not model.hmc:
         names = ('XNet', 'VNet')
-        nets = (model.dynamics.xnet, model.dynamics.vnet)
-
+        nets = (model.dynamics.xnets, model.dynamics.vnets)
         for name, net in zip(names, nets):
             with tf.name_scope(name):
                 _network_summary(net)
@@ -269,9 +268,12 @@ def create_summaries(model, summary_dir, training=True):
     network_summaries(model)
     try:
         _loss_summaries(model)
-        add_loss_summaries(model.loss_op)
     except (KeyError, AttributeError):
         io.log('Unable to create loss summaries.')
+    try:
+        add_loss_summaries(model.loss_op)
+    except (KeyError, AttributeError):
+        io.log('Unable to add loss summaries.')
 
     with tf.name_scope('grads_and_vars'):
         for grad, var in model.grads_and_vars:
@@ -305,6 +307,6 @@ def create_summaries(model, summary_dir, training=True):
     #      if 'kernel' in var.name:
     #          _create_grad_norm_summaries(grad, var)
 
-    summary_op = tf.summary.merge_all(name=name)
+    summary_op = tf.compat.v1.summary.merge_all(name=name)
 
     return summary_writer, summary_op

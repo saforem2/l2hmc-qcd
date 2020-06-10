@@ -70,8 +70,9 @@ class TrainLogger:
         self.current_state_file = files['current_state_file']
 
         if self.summaries:
-            self.writer = tf.summary.FileWriter(self.train_summary_dir,
-                                                tf.get_default_graph())
+            self.writer = tf.summary.FileWriter(
+                self.train_summary_dir, tf.compat.v1.get_default_graph()
+            )
             self.summary_writer, self.summary_op = create_summaries(
                 model, self.train_summary_dir, training=True
             )

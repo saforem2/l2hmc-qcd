@@ -11,26 +11,53 @@ Date: 04/11/2020
 # pylint: disable=too-many-arguments, too-few-public-methods
 from __future__ import absolute_import, division, print_function
 
-import tensorflow as tf
 from collections import namedtuple
+import tensorflow as tf
 
 from .layers import (DenseLayerNP, relu, ScaledTanhLayer, ScaledTanhLayerNP,
                      StackedLayer, StackedLayerNP, dense_layer)
-from .network_utils import custom_dense
 import utils.file_io as io
 from config import Weights
 from network import QCOEFF, QNAME, SCOEFF, SNAME, TNAME
+from typing import NoReturn, Optional, Union, List, Dict, Callable
 
 
 NetworkConfig = namedtuple('NetworkConfig', [
     'type', 'units', 'dropout_prob', 'activation_fn'
 ])
 
+StepNetworkConfig = namedtuple('StepNetworkConfig', [
+    'num_steps', 'type', 'units', 'dropout_prob', 'activation_fn'
+])
+
+
+class StepGaugeNetwork(tf.keras.Model):
+    """GaugeNetwork object with separate networks for each leapfrog step."""
+
+    def __init__(self,
+                 config: StepNetworkConfig,
+                 xdim: int,
+                 factor: float = 1.,
+                 net_seeds: Optional[Dict] = None,
+                 name: str = 'StepGaugeNetwork',
+                 kwargs: Optional[Dict] = None) -> NoReturn:
+        """Initialization method."""
+        super(StepGaugeNetwork, self).__init__(name=name, **kwargs)
+        self._config = config
+        self.factor = factor
+        self.xdim = xdim
+        self.activation = config.activation
+
 
 class GaugeNetwork(tf.keras.Model):
     """GaugeNetwork. Implements stacked Cartesian repr. of `GenericNet`."""
-    def __init__(self, config, xdim, factor=1., net_seeds=None,
-                 name='GaugeNetwork', **kwargs):
+
+    def __init__(self,
+                 config: StepNetworkConfig,
+                 xdim: int,
+                 factor: float = 1.,
+                 net_seeds: Optional[Dict] = None,
+                 name: str = 'GaugeNetwork') -> NoReturn:
         """Initialization method.
 
         Args:
@@ -44,7 +71,7 @@ class GaugeNetwork(tf.keras.Model):
             name (str): Name of network.
             **kwargs (keyword arguments): Passed to `tf.keras.Model.__init__`.
         """
-        super(GaugeNetwork, self).__init__(name=name, **kwargs)
+        super(GaugeNetwork, self).__init__(name=name)
 
         self._config = config
         self.factor = factor
@@ -169,6 +196,7 @@ class GaugeNetwork(tf.keras.Model):
 
 class GaugeNetworkNP:
     """Implements numpy version of `GaugeNetwork`."""
+
     def __init__(self, weights, activation=relu):
         self.activation = activation
         self.x_layer = StackedLayerNP(weights['x_layer'])

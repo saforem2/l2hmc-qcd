@@ -51,7 +51,7 @@ PI = np.pi
 TWO_PI = 2 * PI
 
 NET_WEIGHTS_HMC = NetWeights(0., 0., 0., 0., 0., 0.)
-NET_WEIGHTS_L2HMC = NetWeights(1., 1., 1., 1., 1., 1.)
+NET_WEIGHTS_L2HMC = NetWeights(0., 1., 1., 1., 1., 1.)
 
 TF_FLOAT = tf.float32
 TF_INT = tf.int32
