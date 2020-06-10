@@ -116,7 +116,8 @@ class DynamicsConfigNP:
 
 class DynamicsNP(object):
     """Implements tools for running tensorflow-independent inference."""
-    def __init__(self, potential_fn, dynamics_params, model_type=None):
+    def __init__(self, potential_fn, dynamics_params,
+                 model_type=None, separate_nets=True):
         """Init.
         Args:
             potential_fn (callable): Potential energy function.
@@ -480,7 +481,7 @@ class DynamicsNP(object):
 
         return xnet, vnet
 
-    def build_networks(self, weights):
+    def build_networks(self, weights, separate_nets=True):
         """Build neural networks."""
         if self.config.hmc:
             xnet, vnet = self.hmc_networks()

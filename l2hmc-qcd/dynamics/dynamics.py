@@ -21,8 +21,8 @@ from __future__ import absolute_import, division, print_function
 from typing import Callable, List, NoReturn, Tuple
 from collections import namedtuple
 
-import numpy as np
 import tensorflow as tf
+import numpy as np
 
 from config import NP_FLOAT, TF_FLOAT, TF_INT
 from seed_dict import seeds, vnet_seeds, xnet_seeds
@@ -278,10 +278,16 @@ class Dynamics(tf.keras.Model):
         return state_prop, accept_prob, sumlogdet
 
     def _get_network(self, step):
+        if self.config.hmc or not self.separate_nets:
+            return self.xnets, self.vnets
+
         if self.separate_nets:
             if tf.executing_eagerly():
-                xnet = self.__dict__['xnets'][step]
-                vnet = self.__dict__['vnets'][step]
+                return self.xnets[step], self.vnets[step]
+                #  xnet = self.xnets[step]
+                #  vnet = self.vnets[step]
+                #  xnet = self.__dict__['xnets'][step]
+                #  vnet = self.__dict__['vnets'][step]
             else:
                 xnet = tf.gather(self.xnets, tf.cast(step, dtype=TF_INT))
                 vnet = tf.gather(self.vnets, tf.cast(step, dtype=TF_INT))

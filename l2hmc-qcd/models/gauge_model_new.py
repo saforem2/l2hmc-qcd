@@ -12,7 +12,7 @@ from collections import namedtuple
 import numpy as np
 import tensorflow as tf
 from config import (
-    HAS_HOROVOD,  TF_FLOAT, NP_FLOAT, PI, TWO_PI, NetWeights,
+    HAS_HOROVOD,  TF_FLOAT, TF_INT, NP_FLOAT, PI, TWO_PI, NetWeights,
 )
 import utils.file_io as io
 from utils.attr_dict import AttrDict
@@ -279,16 +279,27 @@ class GaugeModel:
         loss_arr = []
         data_strs = [HEADER]
         charges_arr = [q_new.numpy()]
+        initial_step = tf.Variable(0, dtype=TF_INT)
         if ckpt_dir is not None:
-            checkpoint = tf.train.Checkpoint(step=tf.Variable(0),
-                                             model=self.dynamics,
-                                             optimizer=self.optimizer)
+            #  checkpoint = tf.train.Checkpoint(model=self.dynamics,
+            kwargs = {}
+            iterator = enumerate(zip(self.dynamics.xnets, self.dynamics.vnets))
+            for idx, (xnet, vnet) in iterator:
+                kwargs[f'xnet{idx}'] = xnet
+                kwargs[f'vnet{idx}'] = vnet
+
+            checkpoint = tf.train.Checkpoint(step=initial_step,
+                                             dynamics=self.dynamics,
+                                             optimizer=self.optimizer,
+                                             **kwargs)
             manager = tf.train.CheckpointManager(
                 checkpoint, directory=ckpt_dir, max_to_keep=3
             )
             if manager.latest_checkpoint:
+                io.log(f'Restored from: {manager.latest_checkpoint}')
                 checkpoint.restore(manager.latest_checkpoint)
-                initial_step = int(checkpoint.step)
+                initial_step = checkpoint.step
+                #  initial_step = int(checkpoint.step)
                 #  training_dir = os.path.dirname(ckpt_dir)
                 #  step_file = os.path.join(training_dir,
                 #                           'current_step.z')
@@ -296,15 +307,15 @@ class GaugeModel:
                 #      step_dict = io.loadz(step_file)
                 #      initial_step = step_dict['step']
                 #      print(f'Restored from: {manager.latest_checkpoint}')
-            else:
-                initial_step = 0
-                print('Initializing from scratch.')
+            #  else:
+            #      io.log('Starting from scratch.')
 
         #  self.observables['plaqs_err'].append(plaqs_err.numpy())
         #  self.observables['charges'].append(charges.numpy())
         train_steps = np.arange(self.train_steps)
-        betas = self.betas[initial_step:]
-        steps = train_steps[initial_step:]
+        step = int(initial_step.numpy())
+        betas = self.betas[step:]
+        steps = train_steps[step:]
 
         io.log(HEADER)
         #  for step, beta in zip(np.arange(self.train_steps), self.betas):

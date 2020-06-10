@@ -19,6 +19,7 @@ except ImportError:
     tf.compat.v1.enable_eager_execution()
 
 import os
+import xarray as xr
 
 import numpy as np
 import seaborn as sns
@@ -103,25 +104,48 @@ def make_log_dir(FLAGS, model_type=None, log_file=None):
     return log_dir
 
 
-def plot_train_data(outputs, training_dir):
+def plot_train_data(outputs, training_dir, FLAGS):
     out_dir = os.path.join(training_dir, 'train_plots')
     io.check_else_make_dir(out_dir)
+
+    dq_arr = np.array(outputs['dq'])
+    steps = FLAGS.logging_steps * np.arange(dq_arr.shape[0])
+    dq_avg = np.mean(dq_arr, axis=1)
+    fig, ax = plt.subplots()
+    ax.plot(steps, dq_avg, marker='x',
+            label=r"$\langle \delta \mathcal{Q}\rangle$")
+    ax.legend(loc='best')
+    ax.set_xlabel('Train step')
+    out_file = os.path.join(out_dir, 'dq_avg.png')
+    io.log(f'Saving figure to: {out_file}.')
+    fig.savefig(out_file, dpi=400, bbox_inches='tight')
+
     for key, val in outputs.items():
         if key == 'x':
             continue
         if key == 'loss_arr':
             fig, ax = plt.subplots()
-            ax.plot(np.array(val), ls='', marker='x', label='loss')
+            steps = FLAGS.logging_steps * np.arange(len(np.array(val)))
+            ax.plot(steps, np.array(val), ls='', marker='x', label='loss')
             ax.legend(loc='best')
             ax.set_xlabel('Train step')
-            fig.savefig(os.path.join(out_dir, 'loss.png'),
-                        dpi=400, bbox_inches='tight')
+            out_file = os.path.join(out_dir, 'loss.png')
+            io.log(f'Saving figure to: {out_file}')
+            fig.savefig(out_file, dpi=400, bbox_inches='tight')
         else:
             fig, ax = plt.subplots()
-            val = np.array(val)
-            az.plot_trace({key: val.T})
-            plt.savefig(os.path.join(out_dir, f'{key}.png'),
-                        dpi=400, bbox_inches='tight')
+            arr = np.array(val)
+            arr = arr.T
+            chains = np.arange(arr.shape[0])
+            steps = FLAGS.logging_steps * np.arange(arr.shape[1])
+            data_arr = xr.DataArray(arr, dims=['chain', 'draw'],
+                                    coords=[chains, steps])
+            data = {key: data_arr}
+            az.plot_trace(data)
+            #  az.plot_trace({key: val.T})
+            out_file = os.path.join(out_dir, f'{key}.png')
+            io.log(f'Saving figure to: {out_file}.')
+            plt.savefig(out_file, dpi=400, bbox_inches='tight')
 
 
 def train_hmc(FLAGS, log_dir):
@@ -138,6 +162,7 @@ def train_hmc(FLAGS, log_dir):
     HFLAGS.save_train_data = True
     HFLAGS.train_steps = HFLAGS.pop('hmc_steps')
     HFLAGS.lr_decay_steps = HFLAGS.train_steps // 4
+    HFLAGS.logging_steps = HFLAGS.train_steps // 20
     HFLAGS.beta_final = HFLAGS.beta_init
     HFLAGS.fixed_beta = True
     HFLAGS.no_summaries = True
@@ -146,8 +171,8 @@ def train_hmc(FLAGS, log_dir):
     training_dir = os.path.join(log_dir, 'training')
     io.check_else_make_dir(training_dir)
     if IS_CHIEF:
-        ckpt_dir = os.path.join(training_dir, 'checkpoints')
-        io.check_else_make_dir(ckpt_dir)
+        #  ckpt_dir = os.path.join(training_dir, 'checkpoints')
+        #  io.check_else_make_dir(ckpt_dir)
         io.save_params(dict(HFLAGS), training_dir, 'HMC_FLAGS')
 
     net_weights = NET_WEIGHTS_HMC
@@ -182,8 +207,10 @@ def train_hmc(FLAGS, log_dir):
 
     model = GaugeModel(HFLAGS, lattice_shape, hmc_config, hmc_net_config)
 
-    outputs, data_strs = model.train_eager(HFLAGS.save_train_data,
-                                           ckpt_dir=ckpt_dir)
+    outputs, data_strs = model.train_eager(
+        save_train_data=HFLAGS.save_train_data,
+        ckpt_dir=None
+    )
     if IS_CHIEF:
         history_file = os.path.join(training_dir, 'training_log.txt')
         with open(history_file, 'w') as f:
@@ -196,7 +223,7 @@ def train_hmc(FLAGS, log_dir):
                 out_file = os.path.join(outputs_dir, f'{key}.z')
                 io.savez(np.array(val), out_file, key)
 
-            plot_train_data(outputs, training_dir)
+            plot_train_data(outputs, training_dir, HFLAGS)
 
     x_out = outputs['x']
     eps_out = model.dynamics.eps.numpy()
@@ -218,10 +245,11 @@ def train(FLAGS, log_file=None):
         log_dir = FLAGS.log_dir
         flags_file = os.path.join(log_dir, 'training', 'FLAGS.z')
         FLAGS = io.loadz(flags_file)
+        FLAGS = AttrDict(dict(FLAGS))
 
-    #  if FLAGS.log_dir is not None:
-    #      flags_file = os.path.join(FLAGS.log_dir, 'training', 'FLAGS.z')
-    #      FLAGS = io.loadz(flags_file)
+    if FLAGS.log_dir is not None:
+        flags_file = os.path.join(FLAGS.log_dir, 'training', 'FLAGS.z')
+        FLAGS = io.loadz(flags_file)
 
     ckpt_dir = None
     training_dir = os.path.join(log_dir, 'training')
@@ -238,6 +266,7 @@ def train(FLAGS, log_file=None):
         #                                  optimizer=model.optimizer)
         #  callbacks.append(tf.keras.callbacks.ModelCheckpoint(ckpt_file))
 
+    x_init = None
     if FLAGS.hmc_start and FLAGS.hmc_steps > 0:
         x_init, eps_init = train_hmc(FLAGS, log_dir)
         FLAGS.eps = eps_init
@@ -294,8 +323,11 @@ def train(FLAGS, log_file=None):
             warmup_epochs=3, initial_lr=FLAGS.lr_init, verbose=1
         ))
 
-    outputs, data_strs = model.train_eager(FLAGS.save_train_data,
-                                           ckpt_dir=ckpt_dir)
+    outputs, data_strs = model.train_eager(
+        x=x_init,
+        save_train_data=FLAGS.save_train_data,
+        ckpt_dir=ckpt_dir
+    )
 
     if IS_CHIEF:
         history_file = os.path.join(training_dir, 'training_log.txt')
@@ -309,7 +341,7 @@ def train(FLAGS, log_file=None):
                 out_file = os.path.join(outputs_dir, f'{key}.z')
                 io.savez(np.array(val), out_file, key)
 
-            plot_train_data(outputs, training_dir)
+            plot_train_data(outputs, training_dir, FLAGS)
 
     return model, outputs
 
