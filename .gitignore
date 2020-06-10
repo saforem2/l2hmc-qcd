@@ -358,7 +358,6 @@ doc/used_files.txt
 l2hmc-qcd/network/new
 l2hmc-qcd/base/base_model1.py
 l2hmc-qcd/base/base_model_new.py
-l2hmc-qcd/models/gauge_model_new.py
 l2hmc-qcd/runners/run_data_new.py
 l2hmc-qcd/runners/runner_np1.py
 l2hmc-qcd/runners/runner_tf.py
