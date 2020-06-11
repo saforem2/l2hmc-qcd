@@ -134,10 +134,37 @@ class Dynamics(tf.keras.Model):
             ]
 
         else:
-            self.xnets, self.vnets = build_network(
-                self.xdim, self.config, self.net_config,
-                separate_nets=separate_nets
-            )
+            if separate_nets:
+                def _separate_nets(name, seeds_):
+                    nets = []
+                    factor = 2. if name == 'XNet' else 1.
+                    for idx in range(self.config.num_steps):
+                        new_seeds = {
+                            key: int(idx * val) for key, val in seeds_.items()
+                        }
+                        nets.append(
+                            GaugeNetwork(self.net_config,
+                                         self.xdim, factor=factor,
+                                         net_seeds=new_seeds,
+                                         name=f'{name}_step{idx}')
+                        )
+                    return nets
+
+                self.xnets = _separate_nets('XNet', xnet_seeds)
+                self.vnets = _separate_nets('VNet', vnet_seeds)
+
+            else:
+                self.xnets = GaugeNetwork(self.net_config,
+                                          xdim=self.xdim, factor=2.,
+                                          net_seeds=xnet_seeds, name='XNet')
+                self.vnets = GaugeNetwork(self.net_config,
+                                          xdim=self.xdim, factor=1.,
+                                          net_seeds=vnet_seeds, name='VNet')
+
+            #  self.xnets, self.vnets = build_network(
+            #      self.xdim, self.config, self.net_config,
+            #      separate_nets=separate_nets
+            #  )
 
     def build_network(self, net_config):
         """Build the networks to be used during training."""
