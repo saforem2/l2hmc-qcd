@@ -105,10 +105,9 @@ def make_log_dir(FLAGS, model_type=None, log_file=None):
     return log_dir
 
 
-def plot_train_data(outputs, base_dir, FLAGS, thermalize=False):
+def plot_data(outputs, base_dir, FLAGS, thermalize=False):
     out_dir = os.path.join(base_dir, 'plots')
     io.check_else_make_dir(out_dir)
-
 
     data = {}
     for key, val in outputs.items():
@@ -146,20 +145,14 @@ def plot_train_data(outputs, base_dir, FLAGS, thermalize=False):
     for idx, (key, val) in enumerate(data.items()):
         steps, arr = val
         avg_val = np.mean(arr, axis=1)
-        #  dq_arr = np.array(outputs['dq'])
-        #  steps = FLAGS.logging_steps * np.arange(dq_arr.shape[0])
-        #  dq_avg = np.mean(dq_arr, axis=1)
         label = r"$\langle$" + f' {key} ' + r"$\rangle$"
         fig, ax = plt.subplots()
         ax.plot(steps, avg_val, color=colors[idx], label=label)
-        #  label=r"$\langle$" + f' {key} ' + r"$\rangle$")
-        #  label=r"$\langle \delta \mathcal{Q}\rangle$")
         ax.legend(loc='best')
         ax.set_xlabel('Train step')
         out_file = os.path.join(out_dir, f'{key}_avg.png')
         io.log(f'Saving figure to: {out_file}.')
         fig.savefig(out_file, dpi=400, bbox_inches='tight')
-
 
 
 def build_model(FLAGS, save_params=True, log_file=None):
@@ -170,11 +163,6 @@ def build_model(FLAGS, save_params=True, log_file=None):
     )
     if FLAGS.log_dir is None:
         FLAGS.log_dir = make_log_dir(FLAGS, 'GaugeModel', log_file)
-    #  else:
-    #      log_dir = FLAGS.log_dir
-    #      flags_file = os.path.join(log_dir, 'training', 'FLAGS.z')
-    #      FLAGS = io.loadz(flags_file)
-    #      FLAGS = AttrDict(dict(FLAGS))
 
     net_weights = NET_WEIGHTS_HMC if FLAGS.hmc else NET_WEIGHTS_L2HMC
     xdim = FLAGS.time_size * FLAGS.space_size * 2
@@ -226,6 +214,14 @@ def build_model(FLAGS, save_params=True, log_file=None):
     return model, FLAGS, ckpt_dir
 
 
+def get_run_num(run_dir):
+    dirnames = [i for i in os.listdir(run_dir) if i.startwsith('run_')]
+    if len(dirnames) == 0:
+        return 1
+
+    return sorted([int(i.split('_')) for i in dirnames])[-1] + 1
+
+
 def run_inference_hmc(FLAGS):
     IS_CHIEF = (  # pylint:disable=invalid-name
         not FLAGS.horovod
@@ -239,39 +235,26 @@ def run_inference_hmc(FLAGS):
     HFLAGS.net_weights = NET_WEIGHTS_HMC
 
     model, HFLAGS, ckpt_dir = build_model(HFLAGS, save_params=False)
-    #
-    #  xdim = HFLAGS.time_size * HFLAGS.space_size * 2
-    #  input_shape = (HFLAGS.batch_size, xdim)
-    #  lattice_shape = (HFLAGS.batch_size, HFLAGS.time_size,
-    #                   HFLAGS.space_size, 2)
-    #  hmc_net_config = NetworkConfig(
-    #      units=HFLAGS.units,
-    #      type='GaugeNetwork',
-    #      activation_fn=tf.nn.relu,
-    #      dropout_prob=HFLAGS.dropout_prob,
-    #  )
-    #  hmc_config = DynamicsConfig(
-    #      eps=HFLAGS.eps,
-    #      hmc=HFLAGS.hmc,
-    #      num_steps=HFLAGS.num_steps,
-    #      model_type='GaugeModel',
-    #      net_weights=HFLAGS.net_weights,
-    #      input_shape=input_shape,
-    #      eps_trainable=not HFLAGS.eps_fixed,
-    #  )
-    #
-    #  model = GaugeModel(HFLAGS, lattice_shape, hmc_config, hmc_net_config)
     outputs, data_strs = model.run_eager(HFLAGS.run_steps,
                                          beta=HFLAGS.beta_final,
                                          save_run_data=True,
                                          ckpt_dir=None)
     if IS_CHIEF:
         log_dir = HFLAGS.log_dir
-        run_dir = os.path.join(log_dir, 'inference_HMC')
+        runs_dir = os.path.join(log_dir, 'inference_HMC')
+        run_dir = os.path.join(runs_dir, f'run_{get_run_num(runs_dir)}')
         io.check_else_make_dir(run_dir)
+
         history_file = os.path.join(run_dir, 'inference_log.txt')
         with open(history_file, 'w') as f:
             f.write('\n'.join(data_strs))
+
+        run_params = {
+            'beta': HFLAGS.beta_final,
+            'dynamics.eps': model.dynamics.eps.numpy(),
+            'net_weights': model.dynamics.config.net_weights
+        }
+        io.save_dict(run_params, run_dir, 'run_params')
 
         outputs_dir = os.path.join(run_dir, 'outputs')
         io.check_else_make_dir(outputs_dir)
@@ -279,9 +262,10 @@ def run_inference_hmc(FLAGS):
             out_file = os.path.join(outputs_dir, f'{key}.z')
             io.savez(np.array(val), out_file, key)
 
-        plot_train_data(outputs, run_dir, HFLAGS, thermalize=True)
+        plot_data(outputs, run_dir, HFLAGS, thermalize=True)
 
     return model, outputs
+
 
 
 def run_inference(FLAGS, model=None):
@@ -291,8 +275,10 @@ def run_inference(FLAGS, model=None):
     )
 
     if model is None:
+        log_dir = FLAGS.log_dir
         fpath = os.path.join(FLAGS.log_dir, 'training', 'FLAGS.z')
         FLAGS = AttrDict(dict(io.loadz(fpath)))
+        FLAGS.log_dir = log_dir
         model, FLAGS, ckpt_dir = build_model(FLAGS, save_params=False)
     else:
         dirname = os.path.join(FLAGS.log_dir, 'training', 'checkpoints')
@@ -305,7 +291,8 @@ def run_inference(FLAGS, model=None):
 
     if IS_CHIEF:
         log_dir = FLAGS.log_dir
-        run_dir = os.path.join(log_dir, 'inference')
+        runs_dir = os.path.join(log_dir, 'inference')
+        run_dir = os.path.join(runs_dir, f'run_{get_run_num(runs_dir)}')
         io.check_else_make_dir(run_dir)
         history_file = os.path.join(run_dir, 'inference_log.txt')
         with open(history_file, 'w') as f:
@@ -317,7 +304,7 @@ def run_inference(FLAGS, model=None):
             out_file = os.path.join(outputs_dir, f'{key}.z')
             io.savez(np.array(val), out_file, key)
 
-        plot_train_data(outputs, run_dir, FLAGS, thermalize=True)
+        plot_data(outputs, run_dir, FLAGS, thermalize=True)
 
     return model, outputs
 
@@ -401,7 +388,7 @@ def train_hmc(FLAGS):
                 out_file = os.path.join(outputs_dir, f'{key}.z')
                 io.savez(np.array(val), out_file, key)
 
-            plot_train_data(outputs, train_dir, HFLAGS)
+            plot_data(outputs, train_dir, HFLAGS)
 
     x_out = outputs['x']
     eps_out = model.dynamics.eps.numpy()
@@ -490,7 +477,7 @@ def train(FLAGS, log_file=None):
                 out_file = os.path.join(outputs_dir, f'{key}.z')
                 io.savez(np.array(val), out_file, key)
 
-            plot_train_data(outputs, train_dir, FLAGS)
+            plot_data(outputs, train_dir, FLAGS)
 
     return model, outputs
 
