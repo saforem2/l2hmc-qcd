@@ -173,11 +173,17 @@ class GaugeModel:
         self.observables['plaqs_err'].append(plaqs_err.numpy())
         self.observables['charges'].append(charges.numpy())
 
+        if not self.separate_networks:
+            train_step_fn = tf.function(self.train_step)
+        else:
+            train_step_fn = self.train_step
+
         io.log(HEADER)
         for step, beta in zip(np.arange(self.train_steps), self.betas):
             t0 = time.time()
             x = tf.reshape(x, self.input_shape)
-            loss, x, px, sld = self.train_step(x, beta)
+            #  loss, x, px, sld = self.train_step(x, beta)
+            loss, x, px, sld = train_step_fn(x, beta)
             x = tf.reshape(x, self.lattice_shape)
             dt = time.time() - t0
 
