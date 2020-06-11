@@ -149,7 +149,7 @@ class GenericNet(tf.keras.Model):
 
         return weights_dict
 
-    def save_weights(self, sess, out_file):
+    def save_layer_weights(self, sess, out_file):
         """Save all layer weights to `out_file`."""
         weights_dict = self.get_layer_weights(sess)
         with open(out_file, 'wb') as f:

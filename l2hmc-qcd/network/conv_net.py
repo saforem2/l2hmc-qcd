@@ -139,7 +139,7 @@ class ConvNet2D(tf.keras.Model):
         raise AttributeError("`self.data_format` should be one of "
                              "'channels_first' or 'channels_last'")
 
-    def get_weights(self, sess):
+    def get_layer_weights(self, sess):
         """Extract numerical values of all layer weights."""
         weights_dict = {}
         for name, layer in self.layers_dict.items():
@@ -154,9 +154,9 @@ class ConvNet2D(tf.keras.Model):
 
         return weights_dict
 
-    def save_weights(self, sess, out_file):
+    def save_layer_weights(self, sess, out_file):
         """Save all layer weights to `out_file`."""
-        weights_dict = self.get_weights(sess)
+        weights_dict = self.get_layer_weights(sess)
         with open(out_file, 'wb') as f:
             pickle.dump(weights_dict, f)
 
@@ -299,7 +299,7 @@ class ConvNet3D(tf.keras.Model):
         raise AttributeError("`self.data_format` should be one of "
                              "'channels_first' or 'channels_last'")
 
-    def get_weights(self, sess):
+    def get_layer_weights(self, sess):
         """Extract numerical values of all layer weights."""
         weights_dict = {}
         for name, layer in self.layers_dict.items():
@@ -314,9 +314,9 @@ class ConvNet3D(tf.keras.Model):
 
         return weights_dict
 
-    def save_weights(self, sess, out_file):
+    def save_layer_weights(self, sess, out_file):
         """Save all layer weights to `out_file`."""
-        weights_dict = self.get_weights(sess)
+        weights_dict = self.get_layer_weights(sess)
         with open(out_file, 'wb') as f:
             pickle.dump(weights_dict, f)
 

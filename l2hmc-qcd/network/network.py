@@ -34,7 +34,7 @@ class BaseNet(tf.keras.Model):
     def __init__(self, model_name=None, **kwargs):
         super(BaseNet, self).__init__(name=model_name)
 
-    def get_weights(self, sess):
+    def get_layer_weights(self, sess):
         """Extract numerical values of all layer weights."""
         weights_dict = {}
         for name, layer in self.layers_dict.items():
@@ -49,8 +49,8 @@ class BaseNet(tf.keras.Model):
 
         return weights_dict
 
-    def save_weights(self, sess, out_file):
-        weights_dict = self.get_weights(sess)
+    def save_layer_weights(self, sess, out_file):
+        weights_dict = self.get_layer_weights(sess)
         with open(out_file, 'wb') as f:
             pickle.dump(weights_dict, f)
 
@@ -117,19 +117,19 @@ class FullNet(tf.keras.Model):
             #  self.layers_dict.update(**self.x_conv_net.layers_dict)
             self.layers_dict.update(**self.v_conv_net.layers_dict)
 
-    def get_weights(self, sess):
+    def get_layer_weights(self, sess):
         """Extract numerical values of all layer weights."""
         weights_dict = self.generic_net.get_weights(sess)
 
         if self.x_conv_net is not None:
-            weights_dict.update(**self.x_conv_net.get_weights(sess))
-            weights_dict.update(**self.v_conv_net.get_weights(sess))
+            weights_dict.update(**self.x_conv_net.get_layer_weights(sess))
+            weights_dict.update(**self.v_conv_net.get_layer_weights(sess))
 
         return weights_dict
 
-    def save_weights(self, sess, out_file):
+    def save_layer_weights(self, sess, out_file):
         """Save all layer weights to `out_file`."""
-        weights_dict = self.get_weights(sess)
+        weights_dict = self.get_layer_weights(sess)
         with open(out_file, 'wb') as f:
             pickle.dump(weights_dict, f)
 

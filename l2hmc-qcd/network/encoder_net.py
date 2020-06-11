@@ -154,7 +154,7 @@ class EncoderNet(tf.keras.Model):
             #      initial_value=tf.zeros([1, self.x_dim], dtype=TF_FLOAT),
             #  )
 
-    def get_weights(self, sess):
+    def get_layer_weights(self, sess):
         """Extract numerical values of all layer weights."""
         w_dict = {}
         for name, layer in self.layers_dict.items():
@@ -175,9 +175,9 @@ class EncoderNet(tf.keras.Model):
 
         return w_dict
 
-    def save_weights(self, sess, out_file):
+    def save_layer_weights(self, sess, out_file):
         """Save all layer weights to `out_file`."""
-        weights_dict = self.get_weights(sess)
+        weights_dict = self.get_layer_weights(sess)
         with open(out_file, 'wb') as f:
             pickle.dump(weights_dict, f)
 

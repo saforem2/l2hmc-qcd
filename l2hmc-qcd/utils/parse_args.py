@@ -186,7 +186,22 @@ def parse_args():
                         default=10000,
                         required=False,
                         help=("""Number of training steps to perform.\n
+                              (Default: 10000)"""))
+
+    parser.add_argument("--run_steps",
+                        dest="run_steps",
+                        type=int,
+                        default=5000,
+                        required=False,
+                        help=("""Number of inference steps to perform.\n
                               (Default: 5000)"""))
+
+    parser.add_argument('--inference',
+                        dest='inference',
+                        action='store_true',
+                        required=False,
+                        help=("""FLag that when passed will run inference on
+                              trained model."""))
 
     parser.add_argument("--extra_steps",
                         dest="extra_steps",

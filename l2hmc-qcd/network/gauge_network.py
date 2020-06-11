@@ -31,6 +31,44 @@ StepNetworkConfig = namedtuple('StepNetworkConfig', [
 ])
 
 
+def _get_layer_weights(layer):
+    w, b = layer.weights
+    return Weights(w=w.numpy(), b=b.numpy())
+
+
+def get_layer_weights(net):
+    wdict = {
+        'x_layer': _get_layer_weights(net.xlayer.layer),
+        'v_layer': _get_layer_weights(net.vlayer.layer),
+        't_layer': _get_layer_weights(net.t_layer),
+        'hidden_layers': [
+            _get_layer_weights(i) for i in net.hidden_layers
+        ],
+        'scale_layer': (
+            _get_layer_weights(net.scale_layer.layer)
+        ),
+        'translation_layer': (
+            _get_layer_weights(net.translation_layer)
+        ),
+        'transformation_layer': (
+            _get_layer_weights(net.transformation_layer.layer)
+        ),
+    }
+    coeffs = [
+        net.scale_layer.coeff.numpy(),
+        net.transformation_layer.coeff.numpy()
+    ]
+    wdict['coeff_scale'] = coeffs[0]
+    wdict['coeff_transformation'] = coeffs[1]
+
+    return wdict
+
+
+def save_layer_weights(net, out_file):
+    weights_dict = get_layer_weights(net)
+    io.savez(weights_dict, out_file, name=net.name)
+
+
 class StepGaugeNetwork(tf.keras.Model):
     """GaugeNetwork object with separate networks for each leapfrog step."""
 
@@ -141,27 +179,44 @@ class GaugeNetwork(tf.keras.Model):
             'transformation_layer': self.transformation_layer,
         }
 
-    def get_weights(self, sess=None):
+    def _get_layer_weights(self, layer, sess=None):
+        if sess is None or tf.executing_eagerly():
+            w, b = layer.weights
+            return Weights(w=w.numpy(), b=b.numpy())
+
+        w, b = sess.run(layer.weights)
+        return Weights(w=w, b=b)
+
+    def get_layer_weights(self, sess=None):
         """Get dictionary of layer weights."""
-        def _weights(layer):
-            if sess is None:
-                w, b = layer.weights.numpy()
-            else:
-                w, b = sess.run(layer.weights)
-
-            return Weights(w=w, b=b)
-
+        #  def _weights(layer):
+        #      if sess is None:
+        #          w, b = layer.weights.numpy()
+        #      else:
+        #          w, b = sess.run(layer.weights)
+        #
+        #      return Weights(w=w, b=b)
         weights_dict = {
-            'x_layer': _weights(self.x_layer.layer),
-            'v_layer': _weights(self.v_layer.layer),
-            't_layer': _weights(self.t_layer),
-            'hidden_layers': [_weights(l) for l in self.hidden_layers],
-            'scale_layer': _weights(self.scale_layer.layer),
-            'translation_layer': _weights(self.translation_layer),
-            'transformation_layer': _weights(self.transformation_layer.layer),
+            'x_layer': self._get_layer_weights(self.x_layer.layer),
+            'v_layer': self._get_layer_weights(self.v_layer.layer),
+            't_layer': self._get_layer_weights(self.t_layer),
+            'hidden_layers': [
+                self._get_layer_weights(l) for l in self.hidden_layers
+            ],
+            'scale_layer': (
+                self._get_layer_weights(self.scale_layer.layer)
+            ),
+            'translation_layer': (
+                self._get_layer_weights(self.translation_layer)
+            ),
+            'transformation_layer': (
+                self._get_layer_weights(
+                    self.transformation_layer.layer
+                )
+            ),
         }
 
-        if sess is None:
+        if sess is None or tf.executing_eagerly:
             coeffs = [self.scale_layer.coeff.numpy(),
                       self.transformation_layer.coeff.numpy()]
         else:
@@ -173,9 +228,9 @@ class GaugeNetwork(tf.keras.Model):
 
         return weights_dict
 
-    def save_weights(self, sess=None, out_file=None):
+    def save_layer_weights(self, sess=None, out_file=None):
         """Save all layer weights to `out_file`."""
-        weights_dict = self.get_weights(sess=sess)
+        weights_dict = self.get_layer_weights(sess=sess)
         io.savez(weights_dict, out_file, name=self.name)
 
         return weights_dict

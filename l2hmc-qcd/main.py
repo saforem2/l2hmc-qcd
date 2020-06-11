@@ -180,8 +180,8 @@ def save_weights(model, sess):
     vw_file = os.path.join(model.log_dir, 'vnet_weights.z')
     w_file = os.path.join(model.log_dir, 'dynamics_weights.z')
 
-    xnet_weights = model.dynamics.xnet.save_weights(sess, xw_file)
-    vnet_weights = model.dynamics.vnet.save_weights(sess, vw_file)
+    xnet_weights = model.dynamics.xnet.save_layer_weights(sess, xw_file)
+    vnet_weights = model.dynamics.vnet.save_layer_weights(sess, vw_file)
 
     weights = {
         'xnet': xnet_weights,
