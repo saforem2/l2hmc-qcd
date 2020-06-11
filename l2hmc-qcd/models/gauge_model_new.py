@@ -330,9 +330,10 @@ class GaugeModel:
             dynamics_call = self.dynamics
 
         io.log(RUN_SEP)
-        io.log(f'Running inference on trained model at with:')
+        io.log(f'Running inference on trained model with:')
         io.log(f'  beta: {beta}')
         io.log(f'  dynamics.eps: {self.dynamics.eps.numpy():.4g}')
+        io.log(f'  net_weights: {self.dynamics.config.net_weights}')
         io.log(RUN_SEP)
         io.log(RUN_HEADER)
         for step in np.arange(run_steps):
