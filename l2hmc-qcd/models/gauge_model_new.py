@@ -74,6 +74,7 @@ def get_betas(steps, beta_init, beta_final):
 class GaugeModel:
     def __init__(self, params, lattice_shape, dynamics_config, net_config):
         self._model_type = 'GaugeModel'
+        self.params = params
         self.parse_params(params, lattice_shape)
         self.dynamics_config = dynamics_config
         self.net_config = net_config

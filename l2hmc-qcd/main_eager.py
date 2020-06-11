@@ -149,7 +149,164 @@ def plot_train_data(outputs, base_dir, FLAGS, thermalize=False):
             plt.savefig(out_file, dpi=400, bbox_inches='tight')
 
 
-def train_hmc(FLAGS, log_dir):
+def build_model(FLAGS, save_params=True, log_file=None):
+    """Build model using parameters from FLAGS."""
+    IS_CHIEF = (  # pylint:disable=invalid-name
+        not FLAGS.horovod
+        or FLAGS.horovod and hvd.rank() == 0
+    )
+    if FLAGS.log_dir is None:
+        log_dir = make_log_dir(FLAGS, 'GaugeModel', log_file)
+        FLAGS.log_dir = log_dir
+    else:
+        log_dir = FLAGS.log_dir
+        flags_file = os.path.join(log_dir, 'training', 'FLAGS.z')
+        FLAGS = io.loadz(flags_file)
+        FLAGS = AttrDict(dict(FLAGS))
+
+    net_weights = NET_WEIGHTS_HMC if FLAGS.hmc else NET_WEIGHTS_L2HMC
+    xdim = FLAGS.time_size * FLAGS.space_size * 2
+    input_shape = (FLAGS.batch_size, xdim)
+    lattice_shape = (FLAGS.batch_size, FLAGS.time_size, FLAGS.space_size, 2)
+
+    FLAGS.net_weights = net_weights
+    FLAGS.xdim = xdim
+    FLAGS.input_shape = input_shape
+    FLAGS.lattice_shape = lattice_shape
+
+    net_config = NetworkConfig(
+        units=FLAGS.units,
+        type='GaugeNetwork',
+        activation_fn=tf.nn.relu,
+        dropout_prob=FLAGS.dropout_prob,
+    )
+    config = DynamicsConfig(
+        eps=FLAGS.eps,
+        hmc=FLAGS.hmc,
+        num_steps=FLAGS.num_steps,
+        model_type='GaugeModel',
+        net_weights=net_weights,
+        input_shape=input_shape,
+        eps_trainable=not FLAGS.eps_fixed,
+    )
+
+    ckpt_dir = None
+    training_dir = os.path.join(log_dir, 'training')
+    io.check_else_make_dir(training_dir)
+    if IS_CHIEF:
+        ckpt_dir = os.path.join(training_dir, 'checkpoints')
+        io.check_else_make_dir(ckpt_dir)
+        if save_params:
+            io.save_params(dict(FLAGS), training_dir, 'FLAGS')
+
+    if FLAGS.horovod:
+        io.log(f'Number of {hvd.size()} GPUs')
+        gpus = tf.config.experimental.list_physical_devices('GPU')
+        for gpu in gpus:
+            tf.config.experimental.set_memory_growth(gpu, True)
+        if gpus:
+            tf.config.experimental.set_visible_devices(
+                gpus[hvd.local_rank()], 'GPU'
+            )
+
+    model = GaugeModel(FLAGS, lattice_shape, config, net_config)
+
+    return model, FLAGS, ckpt_dir
+
+
+def run_inference_hmc(FLAGS, model=None):
+    IS_CHIEF = (  # pylint:disable=invalid-name
+        not FLAGS.horovod
+        or FLAGS.horovod and hvd.rank() == 0
+    )
+
+    HFLAGS = AttrDict(dict(FLAGS))
+    #  HFLAGS.log_dir = os.path.join(FLAGS.log_dir, 'HMC_START')
+    HFLAGS.dropout_prob = 0.
+    HFLAGS.hmc = True
+    HFLAGS.net_weights = NET_WEIGHTS_HMC
+
+    xdim = HFLAGS.time_size * HFLAGS.space_size * 2
+    input_shape = (HFLAGS.batch_size, xdim)
+    lattice_shape = (HFLAGS.batch_size, HFLAGS.time_size,
+                     HFLAGS.space_size, 2)
+    hmc_net_config = NetworkConfig(
+        units=HFLAGS.units,
+        type='GaugeNetwork',
+        activation_fn=tf.nn.relu,
+        dropout_prob=HFLAGS.dropout_prob,
+    )
+    hmc_config = DynamicsConfig(
+        eps=HFLAGS.eps,
+        hmc=HFLAGS.hmc,
+        num_steps=HFLAGS.num_steps,
+        model_type='GaugeModel',
+        net_weights=HFLAGS.net_weights,
+        input_shape=input_shape,
+        eps_trainable=not HFLAGS.eps_fixed,
+    )
+
+    model = GaugeModel(HFLAGS, lattice_shape, hmc_config, hmc_net_config)
+    outputs, data_strs = model.run_eager(5000,
+                                         beta=HFLAGS.beta_final,
+                                         save_run_data=True,
+                                         ckpt_dir=None)
+    if IS_CHIEF:
+        log_dir = HFLAGS.log_dir
+        run_dir = os.path.join(log_dir, 'inference_HMC')
+        io.check_else_make_dir(run_dir)
+        history_file = os.path.join(run_dir, 'inference_log.txt')
+        with open(history_file, 'w') as f:
+            f.write('\n'.join(data_strs))
+
+        outputs_dir = os.path.join(run_dir, 'outputs')
+        io.check_else_make_dir(outputs_dir)
+        for key, val in outputs.items():
+            out_file = os.path.join(outputs_dir, f'{key}.z')
+            io.savez(np.array(val), out_file, key)
+
+        plot_train_data(outputs, run_dir, HFLAGS)
+
+    return model, outputs
+
+
+def run_inference(FLAGS, model=None):
+    IS_CHIEF = (  # pylint:disable=invalid-name
+        not FLAGS.horovod
+        or FLAGS.horovod and hvd.rank() == 0
+    )
+
+    if model is None:
+        model, FLAGS, ckpt_dir = build_model(FLAGS)
+    else:
+        dirname = os.path.join(FLAGS.log_dir, 'training', 'checkpoints')
+        ckpt_dir = dirname if IS_CHIEF else None
+
+    outputs, data_strs = model.run_eager(FLAGS.run_steps,
+                                         beta=FLAGS.beta_final,
+                                         save_run_data=True,
+                                         ckpt_dir=ckpt_dir)
+
+    if IS_CHIEF:
+        log_dir = FLAGS.log_dir
+        run_dir = os.path.join(log_dir, 'inference')
+        io.check_else_make_dir(run_dir)
+        history_file = os.path.join(run_dir, 'inference_log.txt')
+        with open(history_file, 'w') as f:
+            f.write('\n'.join(data_strs))
+
+        outputs_dir = os.path.join(run_dir, 'outputs')
+        io.check_else_make_dir(outputs_dir)
+        for key, val in outputs.items():
+            out_file = os.path.join(outputs_dir, f'{key}.z')
+            io.savez(np.array(val), out_file, key)
+
+        plot_train_data(outputs, run_dir, FLAGS)
+
+    return model, outputs
+
+
+def train_hmc(FLAGS):
     """Main method for training HMC model."""
     HFLAGS = AttrDict(dict(FLAGS))
     IS_CHIEF = (
@@ -157,7 +314,7 @@ def train_hmc(FLAGS, log_dir):
         or HFLAGS.horovod and hvd.rank() == 0
     )
 
-    log_dir = os.path.join(log_dir, 'HMC_START')
+    HFLAGS.log_dir = os.path.join(FLAGS.log_dir, 'HMC_START')
     HFLAGS.dropout_prob = 0.
     HFLAGS.hmc = True
     HFLAGS.save_train_data = True
@@ -169,11 +326,11 @@ def train_hmc(FLAGS, log_dir):
     HFLAGS.no_summaries = True
 
     ckpt_dir = None
-    training_dir = os.path.join(log_dir, 'training')
+    training_dir = os.path.join(HFLAGS.log_dir, 'training')
     io.check_else_make_dir(training_dir)
     if IS_CHIEF:
-        #  ckpt_dir = os.path.join(training_dir, 'checkpoints')
-        #  io.check_else_make_dir(ckpt_dir)
+        ckpt_dir = os.path.join(training_dir, 'checkpoints')
+        io.check_else_make_dir(ckpt_dir)
         io.save_params(dict(HFLAGS), training_dir, 'HMC_FLAGS')
 
     net_weights = NET_WEIGHTS_HMC
@@ -189,7 +346,8 @@ def train_hmc(FLAGS, log_dir):
 
     xdim = HFLAGS.time_size * HFLAGS.space_size * 2
     input_shape = (HFLAGS.batch_size, xdim)
-    lattice_shape = (HFLAGS.batch_size, HFLAGS.time_size, HFLAGS.space_size, 2)
+    lattice_shape = (HFLAGS.batch_size, HFLAGS.time_size,
+                     HFLAGS.space_size, 2)
     hmc_net_config = NetworkConfig(
         units=HFLAGS.units,
         type='GaugeNetwork',
@@ -208,95 +366,31 @@ def train_hmc(FLAGS, log_dir):
 
     model = GaugeModel(HFLAGS, lattice_shape, hmc_config, hmc_net_config)
 
+    model, HFLAGS, ckpt_dir = build_model(HFLAGS)
     outputs, data_strs = model.train_eager(
         save_train_data=HFLAGS.save_train_data,
         ckpt_dir=None
     )
     if IS_CHIEF:
-        history_file = os.path.join(training_dir, 'training_log.txt')
+        train_dir = os.path.join(HFLAGS.log_dir, 'training')
+        io.check_else_make_dir(train_dir)
+        history_file = os.path.join(train_dir, 'training_log.txt')
         with open(history_file, 'w') as f:
             f.write('\n'.join(data_strs))
 
         if HFLAGS.save_train_data:
-            outputs_dir = os.path.join(log_dir, 'training', 'outputs')
+            outputs_dir = os.path.join(HFLAGS.log_dir, 'training', 'outputs')
             io.check_else_make_dir(outputs_dir)
             for key, val in outputs.items():
                 out_file = os.path.join(outputs_dir, f'{key}.z')
                 io.savez(np.array(val), out_file, key)
 
-            plot_train_data(outputs, training_dir, HFLAGS)
+            plot_train_data(outputs, train_dir, HFLAGS)
 
     x_out = outputs['x']
     eps_out = model.dynamics.eps.numpy()
 
     return x_out, eps_out
-
-
-def run_inference(FLAGS, model=None):
-    IS_CHIEF = (  # pylint:disable=invalid-name
-        not FLAGS.horovod
-        or FLAGS.horovod and hvd.rank() == 0
-    )
-
-    if model is None:
-        log_dir = FLAGS.log_dir
-        flags_file = os.path.join(FLAGS.log_dir, 'training', 'FLAGS.z')
-        FLAGS = AttrDict(dict(io.loadz(flags_file)))
-        FLAGS.log_dir = log_dir
-
-        ckpt_dir = None
-        run_dir = os.path.join(log_dir, 'inference')
-        training_dir = os.path.join(log_dir, 'training')
-        io.check_else_make_dir(run_dir)
-        if IS_CHIEF:
-            ckpt_dir = os.path.join(training_dir, 'checkpoints')
-
-        net_weights = NET_WEIGHTS_HMC if FLAGS.hmc else NET_WEIGHTS_L2HMC
-
-        xdim = FLAGS.time_size * FLAGS.space_size * 2
-        input_shape = (FLAGS.batch_size, xdim)
-        lattice_shape = (FLAGS.batch_size,
-                         FLAGS.time_size,
-                         FLAGS.space_size, 2)
-        net_config = NetworkConfig(
-            units=FLAGS.units,
-            type='GaugeNetwork',
-            activation_fn=tf.nn.relu,
-            dropout_prob=FLAGS.dropout_prob,
-        )
-        config = DynamicsConfig(
-            eps=FLAGS.eps,
-            hmc=FLAGS.hmc,
-            num_steps=FLAGS.num_steps,
-            model_type='GaugeModel',
-            net_weights=net_weights,
-            input_shape=input_shape,
-            eps_trainable=not FLAGS.eps_fixed,
-        )
-
-        model = GaugeModel(FLAGS, lattice_shape, config, net_config)
-
-    outputs, data_strs = model.run_eager(FLAGS.run_steps,
-                                         beta=FLAGS.beta_final,
-                                         save_run_data=True,
-                                         ckpt_dir=ckpt_dir)
-
-    if IS_CHIEF:
-        history_file = os.path.join(run_dir, 'inference_log.txt')
-        with open(history_file, 'w') as f:
-            f.write('\n'.join(data_strs))
-
-        outputs_dir = os.path.join(run_dir, 'outputs')
-        io.check_else_make_dir(outputs_dir)
-        for key, val in outputs.items():
-            out_file = os.path.join(outputs_dir, f'{key}.z')
-            io.savez(np.array(val), out_file, key)
-
-
-
-        plot_train_data(outputs, run_dir, FLAGS)
-
-    return model, outputs, data_strs
 
 
 # pylint:disable=redefined-outer-name, invalid-name, too-many-locals
@@ -308,69 +402,13 @@ def train(FLAGS, log_file=None):
     )
 
     if FLAGS.log_dir is None:
-        log_dir = make_log_dir(FLAGS, 'GaugeModel', log_file)
-    else:
-        log_dir = FLAGS.log_dir
-        flags_file = os.path.join(log_dir, 'training', 'FLAGS.z')
-        FLAGS = io.loadz(flags_file)
-        FLAGS = AttrDict(dict(FLAGS))
-
-    if FLAGS.log_dir is not None:
-        flags_file = os.path.join(FLAGS.log_dir, 'training', 'FLAGS.z')
-        FLAGS = io.loadz(flags_file)
-
-    ckpt_dir = None
-    training_dir = os.path.join(log_dir, 'training')
-    io.check_else_make_dir(training_dir)
-    if IS_CHIEF:
-        ckpt_dir = os.path.join(training_dir, 'checkpoints')
-        #  ckpt_prefix = os.path.join(ckpt_dir, 'ckpt')
-        io.check_else_make_dir(ckpt_dir)
-        io.save_params(dict(FLAGS), training_dir, 'FLAGS')
-
-        #  xnet_ckpt = tf.train.Checkpoint(model=model.dynamics.xnets,
-        #                                  optimizer=model.optimizer)
-        #  vnet_ckpt = tf.train.Checkpoint(model=model.dynamics.vnets,
-        #                                  optimizer=model.optimizer)
-        #  callbacks.append(tf.keras.callbacks.ModelCheckpoint(ckpt_file))
+        FLAGS.log_dir = make_log_dir(FLAGS, 'GaugeModel', log_file)
 
     x_init = None
-    #  if FLAGS.hmc_start and FLAGS.hmc_steps > 0:
-    #      x_init, eps_init = train_hmc(FLAGS, log_dir)
-    #      FLAGS.eps = eps_init
+    if FLAGS.hmc_start and FLAGS.hmc_steps > 0:
+        x_init, eps_init = train_hmc(FLAGS)
+        FLAGS.eps = eps_init
 
-    net_weights = NET_WEIGHTS_HMC if FLAGS.hmc else NET_WEIGHTS_L2HMC
-
-    if FLAGS.horovod:
-        io.log(f'Number of {hvd.size()} GPUs')
-        gpus = tf.config.experimental.list_physical_devices('GPU')
-        for gpu in gpus:
-            tf.config.experimental.set_memory_growth(gpu, True)
-        if gpus:
-            tf.config.experimental.set_visible_devices(
-                gpus[hvd.local_rank()], 'GPU'
-            )
-
-    xdim = FLAGS.time_size * FLAGS.space_size * 2
-    input_shape = (FLAGS.batch_size, xdim)
-    lattice_shape = (FLAGS.batch_size, FLAGS.time_size, FLAGS.space_size, 2)
-    net_config = NetworkConfig(
-        units=FLAGS.units,
-        type='GaugeNetwork',
-        activation_fn=tf.nn.relu,
-        dropout_prob=FLAGS.dropout_prob,
-    )
-    config = DynamicsConfig(
-        eps=FLAGS.eps,
-        hmc=FLAGS.hmc,
-        num_steps=FLAGS.num_steps,
-        model_type='GaugeModel',
-        net_weights=net_weights,
-        input_shape=input_shape,
-        eps_trainable=not FLAGS.eps_fixed,
-    )
-
-    model = GaugeModel(FLAGS, lattice_shape, config, net_config)
     callbacks = []
 
     if FLAGS.horovod:
@@ -391,6 +429,7 @@ def train(FLAGS, log_file=None):
             warmup_epochs=3, initial_lr=FLAGS.lr_init, verbose=1
         ))
 
+    model, FLAGS, ckpt_dir = build_model(FLAGS, log_file)
     outputs, data_strs = model.train_eager(
         x=x_init,
         save_train_data=FLAGS.save_train_data,
@@ -398,14 +437,16 @@ def train(FLAGS, log_file=None):
     )
 
     if IS_CHIEF:
-        history_file = os.path.join(training_dir, 'training_log.txt')
+        train_dir = os.path.join(FLAGS.log_dir, 'training')
+        io.check_else_make_dir(train_dir)
+        history_file = os.path.join(train_dir, 'training_log.txt')
         with open(history_file, 'w') as f:
             f.write('\n'.join(data_strs))
 
         xnets = model.dynamics.xnets
         vnets = model.dynamics.vnets
         iterable = enumerate(zip(xnets, vnets))
-        wdir = os.path.join(training_dir, 'dynamics_weights')
+        wdir = os.path.join(train_dir, 'dynamics_weights')
         io.check_else_make_dir(wdir)
         xnet_weights = {}
         vnet_weights = {}
@@ -423,13 +464,13 @@ def train(FLAGS, log_file=None):
         io.savez(vnet_weights, vweights_file, 'vnet_weights')
 
         if FLAGS.save_train_data:
-            outputs_dir = os.path.join(log_dir, 'training', 'outputs')
+            outputs_dir = os.path.join(train_dir, 'outputs')
             io.check_else_make_dir(outputs_dir)
             for key, val in outputs.items():
                 out_file = os.path.join(outputs_dir, f'{key}.z')
                 io.savez(np.array(val), out_file, key)
 
-            plot_train_data(outputs, training_dir, FLAGS)
+            plot_train_data(outputs, train_dir, FLAGS)
 
     return model, outputs
 
@@ -438,8 +479,9 @@ if __name__ == '__main__':
     FLAGS = parse_args()
     FLAGS = AttrDict(FLAGS.__dict__)
     LOG_FILE = os.path.join(os.getcwd(), 'output_dirs.txt')
-    if FLAGS.inference and FLAGS.log_dir is not None:
-        _, _, _ = run_inference(FLAGS)
-
-    else:
-        MODEL, OUTPUTS = train(FLAGS, LOG_FILE)
+    _, _ = run_inference_hmc(FLAGS)
+    #  if FLAGS.inference and FLAGS.log_dir is not None:
+    #      _, _, _ = run_inference(FLAGS)
+    #
+    #  else:
+    #      MODEL, OUTPUTS = train(FLAGS, LOG_FILE)
