@@ -13,10 +13,10 @@ try:
     hvd.init()
     config = tf.ConfigProto()  # pylint: disable=invalid-name
     config.gpu_options.visible_device_list = str(hvd.local_rank())
-    tf.compat.v1.enable_eager_execution(config=config)
+    #  tf.compat.v1.enable_eager_execution(config=config)
 
 except ImportError:
-    tf.compat.v1.enable_eager_execution()
+    #  tf.compat.v1.enable_eager_execution()
 
 import os
 import xarray as xr
@@ -452,23 +452,29 @@ def train(FLAGS, log_file=None):
 
         xnets = model.dynamics.xnets
         vnets = model.dynamics.vnets
-        iterable = enumerate(zip(xnets, vnets))
         wdir = os.path.join(train_dir, 'dynamics_weights')
-        io.check_else_make_dir(wdir)
-        xnet_weights = {}
-        vnet_weights = {}
-        for idx, (xnet, vnet) in iterable:
-            xfpath = os.path.join(wdir, f'xnet{idx}_weights.z')
-            vfpath = os.path.join(wdir, f'vnet{idx}_weights.z')
-            xweights = xnet.save_layer_weights(out_file=xfpath)
-            vweights = vnet.save_layer_weights(out_file=vfpath)
-            xnet_weights[f'xnet{idx}'] = xweights
-            vnet_weights[f'vnet{idx}'] = vweights
+        if FLAGS.separate_networks:
+            iterable = enumerate(zip(xnets, vnets))
+            io.check_else_make_dir(wdir)
+            xnet_weights = {}
+            vnet_weights = {}
+            for idx, (xnet, vnet) in iterable:
+                xfpath = os.path.join(wdir, f'xnet{idx}_weights.z')
+                vfpath = os.path.join(wdir, f'vnet{idx}_weights.z')
+                xweights = xnet.save_layer_weights(out_file=xfpath)
+                vweights = vnet.save_layer_weights(out_file=vfpath)
+                xnet_weights[f'xnet{idx}'] = xweights
+                vnet_weights[f'vnet{idx}'] = vweights
 
-        xweights_file = os.path.join(wdir, 'xnet_weights.z')
-        vweights_file = os.path.join(wdir, 'vnet_weights.z')
-        io.savez(xnet_weights, xweights_file, 'xnet_weights')
-        io.savez(vnet_weights, vweights_file, 'vnet_weights')
+            xweights_file = os.path.join(wdir, 'xnet_weights.z')
+            vweights_file = os.path.join(wdir, 'vnet_weights.z')
+            io.savez(xnet_weights, xweights_file, 'xnet_weights')
+            io.savez(vnet_weights, vweights_file, 'vnet_weights')
+        else:
+            xfpath = os.path.join(wdir, 'xnet_weights.z')
+            vfpath = os.path.join(wdir, 'vnet_weights.z')
+            xnets.save_layer_weights(out_file=xfpath)
+            vnets.save_layer_weights(out_file=vfpath)
 
         if FLAGS.save_train_data:
             outputs_dir = os.path.join(train_dir, 'outputs')
