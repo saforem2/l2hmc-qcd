@@ -87,7 +87,7 @@ class StepGaugeNetwork(tf.keras.Model):
         self.activation = config.activation
 
 
-class GaugeNetwork(tf.keras.Model):
+class GaugeNetwork(tf.keras.layers.Layer):
     """GaugeNetwork. Implements stacked Cartesian repr. of `GenericNet`."""
 
     def __init__(self,
@@ -235,7 +235,7 @@ class GaugeNetwork(tf.keras.Model):
 
         return weights_dict
 
-    def call(self, inputs, train_phase):
+    def call(self, inputs, training=None):
         """Call the network (forward-pass)."""
         v, x, t = inputs
 
@@ -248,7 +248,7 @@ class GaugeNetwork(tf.keras.Model):
             h = self.activation(layer(h))
 
         if self._config.dropout_prob > 0:
-            h = self.dropout(h, training=train_phase)
+            h = self.dropout(h, training=training)
 
         scale = self.scale_layer(h)
         translation = self.translation_layer(h)

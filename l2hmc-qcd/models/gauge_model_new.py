@@ -251,11 +251,6 @@ class GaugeModel:
 
         return optimizer
 
-    def run_step(self, x, beta):
-        """Perform a single inference step."""
-        states, px, sld_states = self.dynamics((x, beta), training=False)
-
-
     def train_step(self, x, beta, first_step):
         """Perform a single training step."""
         with tf.GradientTape() as tape:
@@ -266,9 +261,9 @@ class GaugeModel:
             # Horovod: add Horovod Distributed GradientTape
             tape = hvd.DistributedGradientTape(tape)
 
-        grads = tape.gradient(loss, self.dynamics.trainable_weights)
+        grads = tape.gradient(loss, self.dynamics.trainable_variables)
         self.optimizer.apply_gradients(zip(grads,
-                                           self.dynamics.trainable_weights))
+                                           self.dynamics.trainable_variables))
         # Horovod:
         #   Broadcast initial variable states from rank 0 to all other
         #   processes. This is necessary to ensure consistent initialization of
@@ -287,16 +282,17 @@ class GaugeModel:
         step_init = tf.Variable(0, dtype=TF_INT)
         if ckpt_dir is not None:
             #  checkpoint = tf.train.Checkpoint(model=self.dynamics,
-            kwargs = {}
-            iterator = enumerate(zip(self.dynamics.xnets, self.dynamics.vnets))
-            for idx, (xnet, vnet) in iterator:
-                kwargs[f'xnet{idx}'] = xnet
-                kwargs[f'vnet{idx}'] = vnet
+            #  kwargs = {}
+            #  if not self.dynamics.config.hmc
+            #      iterator = enumerate(zip(self.dynamics.xnets,
+            #                               self.dynamics.vnets))
+            #      for idx, (xnet, vnet) in iterator:
+            #          kwargs[f'xnet{idx}'] = xnet
+            #          kwargs[f'vnet{idx}'] = vnet
 
             checkpoint = tf.train.Checkpoint(step=step_init,
                                              dynamics=self.dynamics,
-                                             optimizer=self.optimizer,
-                                             **kwargs)
+                                             optimizer=self.optimizer)
             manager = tf.train.CheckpointManager(
                 checkpoint, directory=ckpt_dir, max_to_keep=3
             )
