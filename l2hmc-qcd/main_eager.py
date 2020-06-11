@@ -214,7 +214,7 @@ def build_model(FLAGS, save_params=True, log_file=None):
     return model, FLAGS, ckpt_dir
 
 
-def run_inference_hmc(FLAGS, model=None):
+def run_inference_hmc(FLAGS):
     IS_CHIEF = (  # pylint:disable=invalid-name
         not FLAGS.horovod
         or FLAGS.horovod and hvd.rank() == 0
@@ -479,6 +479,8 @@ if __name__ == '__main__':
     FLAGS = parse_args()
     FLAGS = AttrDict(FLAGS.__dict__)
     LOG_FILE = os.path.join(os.getcwd(), 'output_dirs.txt')
+    MODEL, OUTPUTS = train(FLAGS, LOG_FILE)
+    _, _ = run_inference(model=MODEL)
     _, _ = run_inference_hmc(FLAGS)
     #  if FLAGS.inference and FLAGS.log_dir is not None:
     #      _, _, _ = run_inference(FLAGS)

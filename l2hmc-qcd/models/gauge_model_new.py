@@ -85,8 +85,9 @@ class GaugeModel:
                                     batch_size=self.batch_size)
         self.potential_fn = self.lattice.calc_actions
 
-        self.dynamics = Dynamics(self.potential_fn, dynamics_config,
-                                 net_config, separate_nets=True)
+        self.dynamics = Dynamics(self.potential_fn,
+                                 dynamics_config, net_config,
+                                 separate_nets=self.separate_networks)
 
         self.lr = self.create_lr(warmup=self.warmup_lr)
         self.optimizer = self.create_optimizer()
@@ -104,6 +105,7 @@ class GaugeModel:
     def parse_params(self, params, lattice_shape):
         """Set instance attributes from `params`."""
         self.params = AttrDict(params)
+        self.separate_networks = params.separate_networks
         self.lr_init = params.lr_init
         self.warmup_lr = params.warmup_lr
         self.using_hvd = params.horovod
@@ -322,6 +324,11 @@ class GaugeModel:
         if ckpt_dir is not None:
             _, _, _ = self.restore_from_checkpoint(ckpt_dir)
 
+        if not self.separate_networks:
+            dynamics_call = tf.function(self.dynamics)
+        else:
+            dynamics_call = self.dynamics
+
         io.log(RUN_SEP)
         io.log(f'Running inference on trained model at with:')
         io.log(f'  beta: {beta}')
@@ -331,8 +338,9 @@ class GaugeModel:
         for step in np.arange(run_steps):
             t0 = time.time()
             x = tf.reshape(x, self.input_shape)
-            states, px, sld_states = self.dynamics((x, beta),
-                                                   training=False)
+            states, px, sld_states = dynamics_call((x, beta), training=False)
+            #  states, px, sld_states = self.dynamics((x, beta),
+            #                                         training=False)
             x = states.out.x
             sld = sld_states.out
             x = tf.reshape(x, self.lattice_shape)
@@ -391,17 +399,22 @@ class GaugeModel:
         if ckpt_dir is not None:
             ckpt, manager, step_init = self.restore_from_checkpoint(ckpt_dir)
         #  self.observables['charges'].append(charges.numpy())
-        import pudb; pudb.set_trace()
         train_steps = np.arange(self.train_steps)
         step = int(step_init.numpy())
         betas = self.betas[step:]
         steps = train_steps[step:]
 
+        if self.separate_networks:
+            train_step_fn = tf.function(self.train_step)
+        else:
+            train_step_fn = self.train_step
+
         io.log(HEADER)
         for step, beta in zip(steps, betas):
             t0 = time.time()
             x = tf.reshape(x, self.input_shape)
-            loss, x, px, sld = self.train_step(x, beta, step == 0)
+            #  loss, x, px, sld = self.train_step(x, beta, step == 0)
+            loss, x, px, sld = train_step_fn(x, beta, step == 0)
             x = tf.reshape(x, self.lattice_shape)
             dt = time.time() - t0
 

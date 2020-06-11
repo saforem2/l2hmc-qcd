@@ -34,6 +34,14 @@ def parse_args():
         description=DESCRIPTION,
         fromfile_prefix_chars='@',
     )
+
+    parser.add_argument("--separate_networks",
+                        dest='separate_networks',
+                        action='store_true',
+                        required=False,
+                        help=("""Whether or not to use separate networks for
+                              each MC step."""))
+
     ###########################################################################
     #                          Lattice parameters                             #
     ###########################################################################
