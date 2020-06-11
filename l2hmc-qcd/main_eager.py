@@ -25,6 +25,7 @@ import numpy as np
 import seaborn as sns
 import arviz as az
 import matplotlib.pyplot as plt
+from plotters.data_utils import therm_arr
 
 import utils.file_io as io
 
@@ -104,8 +105,8 @@ def make_log_dir(FLAGS, model_type=None, log_file=None):
     return log_dir
 
 
-def plot_train_data(outputs, training_dir, FLAGS):
-    out_dir = os.path.join(training_dir, 'train_plots')
+def plot_train_data(outputs, base_dir, FLAGS, thermalize=False):
+    out_dir = os.path.join(base_dir, 'plots')
     io.check_else_make_dir(out_dir)
 
     dq_arr = np.array(outputs['dq'])
@@ -135,14 +136,14 @@ def plot_train_data(outputs, training_dir, FLAGS):
         else:
             fig, ax = plt.subplots()
             arr = np.array(val)
-            arr = arr.T
-            chains = np.arange(arr.shape[0])
-            steps = FLAGS.logging_steps * np.arange(arr.shape[1])
-            data_arr = xr.DataArray(arr, dims=['chain', 'draw'],
+            chains = np.arange(arr.shape[1])
+            steps = FLAGS.logging_steps * np.arange(arr.shape[0])
+            if thermalize:
+                arr, steps = therm_arr(arr, therm_frac=0.33)
+
+            data_arr = xr.DataArray(arr.T, dims=['chain', 'draw'],
                                     coords=[chains, steps])
-            data = {key: data_arr}
-            az.plot_trace(data)
-            #  az.plot_trace({key: val.T})
+            az.plot_trace({key: data_arr})
             out_file = os.path.join(out_dir, f'{key}.png')
             io.log(f'Saving figure to: {out_file}.')
             plt.savefig(out_file, dpi=400, bbox_inches='tight')
@@ -231,6 +232,73 @@ def train_hmc(FLAGS, log_dir):
     return x_out, eps_out
 
 
+def run_inference(FLAGS, model=None):
+    IS_CHIEF = (  # pylint:disable=invalid-name
+        not FLAGS.horovod
+        or FLAGS.horovod and hvd.rank() == 0
+    )
+
+    if model is None:
+        log_dir = FLAGS.log_dir
+        flags_file = os.path.join(FLAGS.log_dir, 'training', 'FLAGS.z')
+        FLAGS = AttrDict(dict(io.loadz(flags_file)))
+        FLAGS.log_dir = log_dir
+
+        ckpt_dir = None
+        run_dir = os.path.join(log_dir, 'inference')
+        training_dir = os.path.join(log_dir, 'training')
+        io.check_else_make_dir(run_dir)
+        if IS_CHIEF:
+            ckpt_dir = os.path.join(training_dir, 'checkpoints')
+
+        net_weights = NET_WEIGHTS_HMC if FLAGS.hmc else NET_WEIGHTS_L2HMC
+
+        xdim = FLAGS.time_size * FLAGS.space_size * 2
+        input_shape = (FLAGS.batch_size, xdim)
+        lattice_shape = (FLAGS.batch_size,
+                         FLAGS.time_size,
+                         FLAGS.space_size, 2)
+        net_config = NetworkConfig(
+            units=FLAGS.units,
+            type='GaugeNetwork',
+            activation_fn=tf.nn.relu,
+            dropout_prob=FLAGS.dropout_prob,
+        )
+        config = DynamicsConfig(
+            eps=FLAGS.eps,
+            hmc=FLAGS.hmc,
+            num_steps=FLAGS.num_steps,
+            model_type='GaugeModel',
+            net_weights=net_weights,
+            input_shape=input_shape,
+            eps_trainable=not FLAGS.eps_fixed,
+        )
+
+        model = GaugeModel(FLAGS, lattice_shape, config, net_config)
+
+    outputs, data_strs = model.run_eager(FLAGS.run_steps,
+                                         beta=FLAGS.beta_final,
+                                         save_run_data=True,
+                                         ckpt_dir=ckpt_dir)
+
+    if IS_CHIEF:
+        history_file = os.path.join(run_dir, 'inference_log.txt')
+        with open(history_file, 'w') as f:
+            f.write('\n'.join(data_strs))
+
+        outputs_dir = os.path.join(run_dir, 'outputs')
+        io.check_else_make_dir(outputs_dir)
+        for key, val in outputs.items():
+            out_file = os.path.join(outputs_dir, f'{key}.z')
+            io.savez(np.array(val), out_file, key)
+
+
+
+        plot_train_data(outputs, run_dir, FLAGS)
+
+    return model, outputs, data_strs
+
+
 # pylint:disable=redefined-outer-name, invalid-name, too-many-locals
 def train(FLAGS, log_file=None):
     """Main method for training model."""
@@ -267,9 +335,9 @@ def train(FLAGS, log_file=None):
         #  callbacks.append(tf.keras.callbacks.ModelCheckpoint(ckpt_file))
 
     x_init = None
-    if FLAGS.hmc_start and FLAGS.hmc_steps > 0:
-        x_init, eps_init = train_hmc(FLAGS, log_dir)
-        FLAGS.eps = eps_init
+    #  if FLAGS.hmc_start and FLAGS.hmc_steps > 0:
+    #      x_init, eps_init = train_hmc(FLAGS, log_dir)
+    #      FLAGS.eps = eps_init
 
     net_weights = NET_WEIGHTS_HMC if FLAGS.hmc else NET_WEIGHTS_L2HMC
 
@@ -334,6 +402,26 @@ def train(FLAGS, log_file=None):
         with open(history_file, 'w') as f:
             f.write('\n'.join(data_strs))
 
+        xnets = model.dynamics.xnets
+        vnets = model.dynamics.vnets
+        iterable = enumerate(zip(xnets, vnets))
+        wdir = os.path.join(training_dir, 'dynamics_weights')
+        io.check_else_make_dir(wdir)
+        xnet_weights = {}
+        vnet_weights = {}
+        for idx, (xnet, vnet) in iterable:
+            xfpath = os.path.join(wdir, f'xnet{idx}_weights.z')
+            vfpath = os.path.join(wdir, f'vnet{idx}_weights.z')
+            xweights = xnet.save_layer_weights(out_file=xfpath)
+            vweights = vnet.save_layer_weights(out_file=vfpath)
+            xnet_weights[f'xnet{idx}'] = xweights
+            vnet_weights[f'vnet{idx}'] = vweights
+
+        xweights_file = os.path.join(wdir, 'xnet_weights.z')
+        vweights_file = os.path.join(wdir, 'vnet_weights.z')
+        io.savez(xnet_weights, xweights_file, 'xnet_weights')
+        io.savez(vnet_weights, vweights_file, 'vnet_weights')
+
         if FLAGS.save_train_data:
             outputs_dir = os.path.join(log_dir, 'training', 'outputs')
             io.check_else_make_dir(outputs_dir)
@@ -350,4 +438,8 @@ if __name__ == '__main__':
     FLAGS = parse_args()
     FLAGS = AttrDict(FLAGS.__dict__)
     LOG_FILE = os.path.join(os.getcwd(), 'output_dirs.txt')
-    MODEL, OUTPUTS = train(FLAGS, LOG_FILE)
+    if FLAGS.inference and FLAGS.log_dir is not None:
+        _, _, _ = run_inference(FLAGS)
+
+    else:
+        MODEL, OUTPUTS = train(FLAGS, LOG_FILE)

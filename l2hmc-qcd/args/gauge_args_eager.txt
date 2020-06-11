@@ -1,4 +1,6 @@
-#--log_dir='../../eager_logs/2020_06/L16_b256_lf4_qw01_pw100_dp025-2020-06-10-02-23'
+--log_dir='../../gauge_logs_eager/2020_06/L16_b256_lf3_qw01_pw100_dp01-2020-06-10-15-55'
+--inference
+--run_steps 5000
 # ==========================================
 --save_train_data
 --rand
@@ -13,8 +15,8 @@
 --save_steps 2000
 --logging_steps 50
 --print_steps 5
---hmc_start
---hmc_steps 1000
+#--hmc_start
+#--hmc_steps 1000
 --extra_steps 0
 # ------------------------------------
 --warmup_lr

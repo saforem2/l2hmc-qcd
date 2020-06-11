@@ -32,6 +32,14 @@ NAMES = [
 HSTR = ''.join(["{:^12s}".format(name) for name in NAMES])
 SEP = '-' * len(HSTR)
 HEADER = '\n'.join([SEP, HSTR, SEP])
+
+RUN_NAMES = [
+    'STEP', 'dt', 'px', 'sumlogdet', 'dQ', 'plaq_err',
+]
+RUN_HSTR = ''.join(["{:^12s}".format(name) for name in RUN_NAMES])
+RUN_SEP = '-' * len(RUN_HSTR)
+RUN_HEADER = '\n'.join([RUN_SEP, RUN_HSTR, RUN_SEP])
+
 #  HEADER = SEP + '\n' + HSTR + '\n' + SEP
 
 lfData = namedtuple('lfData', ['init', 'proposed', 'prob'])
@@ -240,6 +248,11 @@ class GaugeModel:
 
         return optimizer
 
+    def run_step(self, x, beta):
+        """Perform a single inference step."""
+        states, px, sld_states = self.dynamics((x, beta), training=False)
+
+
     def train_step(self, x, beta, first_step):
         """Perform a single training step."""
         with tf.GradientTape() as tape:
@@ -267,19 +280,8 @@ class GaugeModel:
 
         return loss, states.out.x, px, sld_states.out
 
-    def train_eager(self, x=None, save_train_data=False, ckpt_dir=None):
-        if x is None:
-            x = tf.random.uniform(shape=self.input_shape, minval=-PI, maxval=PI)
-            x = tf.cast(x, dtype=TF_FLOAT)
-
-        _, q_new = self.calc_observables(x, self.beta_init)
-
-        px_arr = []
-        dq_arr = []
-        loss_arr = []
-        data_strs = [HEADER]
-        charges_arr = [q_new.numpy()]
-        initial_step = tf.Variable(0, dtype=TF_INT)
+    def restore_from_checkpoint(self, ckpt_dir=None):
+        step_init = tf.Variable(0, dtype=TF_INT)
         if ckpt_dir is not None:
             #  checkpoint = tf.train.Checkpoint(model=self.dynamics,
             kwargs = {}
@@ -288,7 +290,7 @@ class GaugeModel:
                 kwargs[f'xnet{idx}'] = xnet
                 kwargs[f'vnet{idx}'] = vnet
 
-            checkpoint = tf.train.Checkpoint(step=initial_step,
+            checkpoint = tf.train.Checkpoint(step=step_init,
                                              dynamics=self.dynamics,
                                              optimizer=self.optimizer,
                                              **kwargs)
@@ -298,27 +300,103 @@ class GaugeModel:
             if manager.latest_checkpoint:
                 io.log(f'Restored from: {manager.latest_checkpoint}')
                 checkpoint.restore(manager.latest_checkpoint)
-                initial_step = checkpoint.step
-                #  initial_step = int(checkpoint.step)
-                #  training_dir = os.path.dirname(ckpt_dir)
-                #  step_file = os.path.join(training_dir,
-                #                           'current_step.z')
-                #  if os.path.isfile(step_file):
-                #      step_dict = io.loadz(step_file)
-                #      initial_step = step_dict['step']
-                #      print(f'Restored from: {manager.latest_checkpoint}')
-            #  else:
-            #      io.log('Starting from scratch.')
+                step_init = checkpoint.step
 
-        #  self.observables['plaqs_err'].append(plaqs_err.numpy())
+        return checkpoint, manager, step_init
+
+    def run_eager(self, run_steps, beta, x=None,
+                  save_run_data=False, ckpt_dir=None):
+        """Run inference using eager execution."""
+        if x is None:
+            x = tf.random.uniform(shape=self.input_shape,
+                                  minval=-PI, maxval=PI)
+            x = tf.cast(x, dtype=TF_FLOAT)
+
+        _, q_new = self.calc_observables(x, self.beta_init)
+
+        px_arr = []
+        dq_arr = []
+        data_strs = [RUN_HEADER]
+        charges_arr = [q_new.numpy()]
+        if ckpt_dir is not None:
+            _, _, _ = self.restore_from_checkpoint(ckpt_dir)
+
+        io.log(RUN_SEP)
+        io.log(f'Running inference on trained model at with:')
+        io.log(f'  beta: {beta}')
+        io.log(f'  dynamics.eps: {self.dynamics.eps.numpy():.4g}')
+        io.log(RUN_SEP)
+        io.log(RUN_HEADER)
+        for step in np.arange(run_steps):
+            t0 = time.time()
+            x = tf.reshape(x, self.input_shape)
+            states, px, sld_states = self.dynamics((x, beta),
+                                                   training=False)
+            x = states.out.x
+            sld = sld_states.out
+            x = tf.reshape(x, self.lattice_shape)
+            dt = time.time() - t0
+
+            q_old = q_new
+            plaqs_err, q_new = self.calc_observables(x, beta)
+            dq = tf.math.abs(q_new - q_old)
+
+            data_str = (
+                f"{step:>6g}/{run_steps:<6g} "
+                f"{dt:^11.4g} "
+                f"{np.mean(px.numpy()):^11.4g} "
+                f"{np.mean(sld.numpy()):^11.4g} "
+                f"{np.mean(dq.numpy()):^11.4g} "
+                f"{np.mean(plaqs_err.numpy()):^11.4g} "
+            )
+
+            if step % self.print_steps == 0:
+                io.log(data_str)
+                data_strs.append(data_str)
+
+            if save_run_data:
+                px_arr.append(px.numpy())
+                dq_arr.append(dq.numpy())
+                charges_arr.append(q_new.numpy())
+
+            if step % 100 == 0:
+                io.log(RUN_HEADER)
+
+        outputs = {
+            'px': px_arr,
+            'dq': dq_arr,
+            'charges_arr': charges_arr,
+            'x': tf.reshape(x, self.input_shape),
+        }
+
+        data_strs.append(RUN_HEADER)
+
+        return outputs, data_strs
+
+    def train_eager(self, x=None, save_train_data=False, ckpt_dir=None):
+        if x is None:
+            x = tf.random.uniform(shape=self.input_shape,
+                                  minval=-PI, maxval=PI)
+            x = tf.cast(x, dtype=TF_FLOAT)
+
+        _, q_new = self.calc_observables(x, self.beta_init)
+
+        px_arr = []
+        dq_arr = []
+        loss_arr = []
+        data_strs = [HEADER]
+        charges_arr = [q_new.numpy()]
+        step_init = tf.Variable(0, dtype=TF_INT)
+        if ckpt_dir is not None:
+            ckpt, manager, step_init = self.restore_from_checkpoint(ckpt_dir)
         #  self.observables['charges'].append(charges.numpy())
+        import pudb; pudb.set_trace()
         train_steps = np.arange(self.train_steps)
-        step = int(initial_step.numpy())
+        step = int(step_init.numpy())
         betas = self.betas[step:]
         steps = train_steps[step:]
 
         io.log(HEADER)
-        #  for step, beta in zip(np.arange(self.train_steps), self.betas):
         for step, beta in zip(steps, betas):
             t0 = time.time()
             x = tf.reshape(x, self.input_shape)
@@ -330,9 +408,6 @@ class GaugeModel:
             plaqs_err, q_new = self.calc_observables(x, beta)
             dq = tf.math.abs(q_new - q_old)
 
-            #  plaqs_err, charges = self.calc_observables(x, beta)
-            #  dq = tf.math.abs(charges - charges_arr[-1])
-            #  charges_arr.append(charges)
             data_str = (
                 f"{step:>6g}/{self.train_steps:<6g} "
                 f"{dt:^11.4g} "
@@ -356,7 +431,7 @@ class GaugeModel:
                 charges_arr.append(q_new.numpy())
 
             if step % self.save_steps == 0 and ckpt_dir is not None:
-                checkpoint.step.assign(step)
+                ckpt.step.assign(step)
                 manager.save()
                 #  checkpoint.save(file_prefix=ckpt_prefix)
 
