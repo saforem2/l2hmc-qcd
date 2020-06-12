@@ -481,8 +481,10 @@ if __name__ == '__main__':
         _, _ = run_inference_hmc(FLAGS)
     else:
         MODEL, OUTPUTS = train(FLAGS, LOG_FILE)
-        _, _ = run_inference(FLAGS, model=MODEL)
-        _, _ = run_inference_hmc(FLAGS)
+        #  is_chief = FLAGS.horovod and hvd.rank() == 0 or not FLAGS.horovod
+        #  if is_chief:
+        #      _, _ = run_inference(FLAGS, model=MODEL)
+        #      _, _ = run_inference_hmc(FLAGS)
     #  if FLAGS.inference and FLAGS.log_dir is not None:
     #      _, _, _ = run_inference(FLAGS)
     #
