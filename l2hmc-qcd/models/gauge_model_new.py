@@ -406,7 +406,7 @@ class GaugeModel:
         betas = self.betas[step:]
         steps = train_steps[step:]
 
-        if self.separate_networks:
+        if not self.separate_networks:
             train_step_fn = tf.function(self.train_step)
         else:
             train_step_fn = self.train_step
