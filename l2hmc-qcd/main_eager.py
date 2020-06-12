@@ -16,6 +16,7 @@ try:
     #  tf.compat.v1.enable_eager_execution(config=config)
 
 except ImportError:
+    pass
     #  tf.compat.v1.enable_eager_execution()
 
 import os
@@ -242,6 +243,7 @@ def run_inference_hmc(FLAGS):
     if IS_CHIEF:
         log_dir = HFLAGS.log_dir
         runs_dir = os.path.join(log_dir, 'inference_HMC')
+        io.check_else_make_dir(runs_dir)
         run_dir = os.path.join(runs_dir, f'run_{get_run_num(runs_dir)}')
         io.check_else_make_dir(run_dir)
 
@@ -265,7 +267,6 @@ def run_inference_hmc(FLAGS):
         plot_data(outputs, run_dir, HFLAGS, thermalize=True)
 
     return model, outputs
-
 
 
 def run_inference(FLAGS, model=None):
@@ -292,6 +293,7 @@ def run_inference(FLAGS, model=None):
     if IS_CHIEF:
         log_dir = FLAGS.log_dir
         runs_dir = os.path.join(log_dir, 'inference')
+        io.check_else_make_dir(runs_dir)
         run_dir = os.path.join(runs_dir, f'run_{get_run_num(runs_dir)}')
         io.check_else_make_dir(run_dir)
         history_file = os.path.join(run_dir, 'inference_log.txt')
@@ -309,6 +311,17 @@ def run_inference(FLAGS, model=None):
     return model, outputs
 
 
+def train(FLAGS, hmc=False):
+    """Main method for training model."""
+    IS_CHIEF = (
+        not FLAGS.horovod
+        or FLAGS.horovod and hvd.rank() == 0
+    )
+
+    if hmc or FLAGS.hmc:
+        pass
+
+
 def train_hmc(FLAGS):
     """Main method for training HMC model."""
     HFLAGS = AttrDict(dict(FLAGS))
@@ -317,7 +330,8 @@ def train_hmc(FLAGS):
         or HFLAGS.horovod and hvd.rank() == 0
     )
 
-    HFLAGS.log_dir = os.path.join(FLAGS.log_dir, 'HMC_START')
+    #  HFLAGS.log_dir = os.path.join(FLAGS.log_dir)
+    HFLAGS.log_dir
     HFLAGS.dropout_prob = 0.
     HFLAGS.hmc = True
     HFLAGS.save_train_data = True
@@ -329,45 +343,12 @@ def train_hmc(FLAGS):
     HFLAGS.no_summaries = True
 
     ckpt_dir = None
-    training_dir = os.path.join(HFLAGS.log_dir, 'training')
+    training_dir = os.path.join(HFLAGS.log_dir, 'training_hmc')
     io.check_else_make_dir(training_dir)
     if IS_CHIEF:
         ckpt_dir = os.path.join(training_dir, 'checkpoints')
         io.check_else_make_dir(ckpt_dir)
-        io.save_params(dict(HFLAGS), training_dir, 'HMC_FLAGS')
-
-    net_weights = NET_WEIGHTS_HMC
-    if HFLAGS.horovod:
-        io.log(f'Number of {hvd.size()} GPUs')
-        gpus = tf.config.experimental.list_physical_devices('GPU')
-        for gpu in gpus:
-            tf.config.experimental.set_memory_growth(gpu, True)
-        if gpus:
-            tf.config.experimental.set_visible_devices(
-                gpus[hvd.local_rank()], 'GPU'
-            )
-
-    xdim = HFLAGS.time_size * HFLAGS.space_size * 2
-    input_shape = (HFLAGS.batch_size, xdim)
-    lattice_shape = (HFLAGS.batch_size, HFLAGS.time_size,
-                     HFLAGS.space_size, 2)
-    hmc_net_config = NetworkConfig(
-        units=HFLAGS.units,
-        type='GaugeNetwork',
-        activation_fn=tf.nn.relu,
-        dropout_prob=HFLAGS.dropout_prob,
-    )
-    hmc_config = DynamicsConfig(
-        eps=HFLAGS.eps,
-        hmc=HFLAGS.hmc,
-        num_steps=HFLAGS.num_steps,
-        model_type='GaugeModel',
-        net_weights=net_weights,
-        input_shape=input_shape,
-        eps_trainable=not HFLAGS.eps_fixed,
-    )
-
-    model = GaugeModel(HFLAGS, lattice_shape, hmc_config, hmc_net_config)
+        io.save_params(dict(HFLAGS), training_dir, 'FLAGS')
 
     model, HFLAGS, ckpt_dir = build_model(HFLAGS)
     outputs, data_strs = model.train_eager(
@@ -394,7 +375,6 @@ def train_hmc(FLAGS):
     eps_out = model.dynamics.eps.numpy()
 
     return x_out, eps_out
-
 
 # pylint:disable=redefined-outer-name, invalid-name, too-many-locals
 def train(FLAGS, log_file=None):
@@ -453,9 +433,9 @@ def train(FLAGS, log_file=None):
         xnets = model.dynamics.xnets
         vnets = model.dynamics.vnets
         wdir = os.path.join(train_dir, 'dynamics_weights')
+        io.check_else_make_dir(wdir)
         if FLAGS.separate_networks:
             iterable = enumerate(zip(xnets, vnets))
-            io.check_else_make_dir(wdir)
             xnet_weights = {}
             vnet_weights = {}
             for idx, (xnet, vnet) in iterable:
@@ -497,7 +477,7 @@ if __name__ == '__main__':
         _, _ = run_inference_hmc(FLAGS)
     else:
         MODEL, OUTPUTS = train(FLAGS, LOG_FILE)
-        _, _ = run_inference(model=MODEL)
+        _, _ = run_inference(FLAGS, model=MODEL)
         _, _ = run_inference_hmc(FLAGS)
     #  if FLAGS.inference and FLAGS.log_dir is not None:
     #      _, _, _ = run_inference(FLAGS)

@@ -91,10 +91,11 @@ class GaugeModel:
 
         self.lr = self.create_lr(warmup=self.warmup_lr)
         self.optimizer = self.create_optimizer()
-        self.dynamics.compile(
-            optimizer=self.optimizer,
-            loss_fn=self.calc_loss,
-        )
+        if not self.separate_networks:
+            self.dynamics.compile(
+                optimizer=self.optimizer,
+                loss=self.calc_loss,
+            )
         self.betas = get_betas(self.train_steps,
                                self.beta_init,
                                self.beta_final)
@@ -105,28 +106,28 @@ class GaugeModel:
     def parse_params(self, params, lattice_shape):
         """Set instance attributes from `params`."""
         self.params = AttrDict(params)
-        self.separate_networks = params.separate_networks
         self.lr_init = params.lr_init
         self.warmup_lr = params.warmup_lr
         self.using_hvd = params.horovod
+        self.beta_init = params.beta_init
+        self.beta_final = params.beta_final
+        batch_size, time_size, space_size, dim = lattice_shape
+        self.lattice_shape = lattice_shape
+        self.lattice_dim = dim
+        self.time_size = time_size
+        self.batch_size = batch_size
+        self.space_size = space_size
+        self.xdim = time_size * space_size * dim
+        self.input_shape = (batch_size, self.xdim)
         self.lr_decay_steps = params.lr_decay_steps
         self.lr_decay_rate = params.lr_decay_rate
         self.plaq_weight = params.plaq_weight
         self.charge_weight = params.charge_weight
         self.train_steps = params.train_steps
-        self.logging_steps = params.logging_steps
         self.print_steps = params.print_steps
-        self.beta_init = params.beta_init
-        self.beta_final = params.beta_final
-        batch_size, time_size, space_size, dim = lattice_shape
-        self.batch_size = batch_size
-        self.time_size = time_size
-        self.space_size = space_size
-        self.lattice_dim = dim
-        self.xdim = time_size * space_size * dim
-        self.lattice_shape = lattice_shape
-        self.input_shape = (batch_size, self.xdim)
-        self.save_steps = params.get('save_steps', self.train_steps // 4)
+        self.separate_networks = params.get('separate_networks', False)
+        self.save_steps = params.get('save_steps', self.train_steps // 10)
+        self.log_steps = params.get('logging_steps', self.train_steps // 500)
 
     # pylint:disable=attribute-defined-outside-init
     def _build(self):
@@ -380,10 +381,16 @@ class GaugeModel:
         return outputs, data_strs
 
     def train_eager(self, x=None, save_train_data=False, ckpt_dir=None):
+        """Train the model using eager execution."""
         if x is None:
             x = tf.random.uniform(shape=self.input_shape,
                                   minval=-PI, maxval=PI)
             x = tf.cast(x, dtype=TF_FLOAT)
+
+        is_chief = (
+            self.using_hvd and hvd.rank() == 0
+            or not self.using_hvd
+        )
 
         _, q_new = self.calc_observables(x, self.beta_init)
 
@@ -393,8 +400,6 @@ class GaugeModel:
         data_strs = [HEADER]
         charges_arr = [q_new.numpy()]
         step_init = tf.Variable(0, dtype=TF_INT)
-        if ckpt_dir is not None:
-            ckpt, manager, step_init = self.restore_from_checkpoint(ckpt_dir)
         #  self.observables['charges'].append(charges.numpy())
         train_steps = np.arange(self.train_steps)
         step = int(step_init.numpy())
@@ -405,6 +410,12 @@ class GaugeModel:
             train_step_fn = tf.function(self.train_step)
         else:
             train_step_fn = self.train_step
+
+        if ckpt_dir is not None:
+            ckpt, manager, step_init = self.restore_from_checkpoint(ckpt_dir)
+            beta = self.betas[step_init.numpy()]
+            x = tf.reshape(x, self.input_shape)
+            _, x, _, _ = train_step_fn(x, beta, True)
 
         io.log(HEADER)
         for step, beta in zip(steps, betas):
@@ -435,7 +446,7 @@ class GaugeModel:
                 io.log(data_str)
                 data_strs.append(data_str)
 
-            if save_train_data and step % self.logging_steps == 0:
+            if save_train_data and step % self.log_steps == 0:
                 px_arr.append(px.numpy())
                 dq_arr.append(dq.numpy())
                 loss_arr.append(loss.numpy())
@@ -443,15 +454,17 @@ class GaugeModel:
 
             if step % self.save_steps == 0 and ckpt_dir is not None:
                 ckpt.step.assign(step)
-                manager.save()
+                if is_chief:
+                    manager.save()
                 #  checkpoint.save(file_prefix=ckpt_prefix)
 
             if step % 100 == 0:
                 io.log(HEADER)
 
-        if ckpt_dir is not None:
-            manager.save()
-            #  checkpoint.save(file_prefix=ckpt_prefix)
+        if ckpt_dir is not None and is_chief:
+            ckpt.step.assign(step)
+            if is_chief:
+                manager.save()
 
         outputs = {
             'px': px_arr,
@@ -461,7 +474,5 @@ class GaugeModel:
             'x': tf.reshape(x, self.input_shape),
             #  'data_strs': data_strs,
         }
-
-        data_strs.append(HEADER)
 
         return outputs, data_strs
