@@ -13,11 +13,11 @@ try:
     hvd.init()
     config = tf.ConfigProto()  # pylint: disable=invalid-name
     config.gpu_options.visible_device_list = str(hvd.local_rank())
-    #  tf.compat.v1.enable_eager_execution(config=config)
+    tf.compat.v1.enable_eager_execution(config=config)
 
 except ImportError:
     pass
-    #  tf.compat.v1.enable_eager_execution()
+    tf.compat.v1.enable_eager_execution()
 
 import os
 import xarray as xr
