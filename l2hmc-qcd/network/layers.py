@@ -12,7 +12,7 @@ from __future__ import absolute_import, division, print_function
 import numpy as np
 import tensorflow as tf
 
-from tensorflow.contrib.framework import add_arg_scope, arg_scope
+#  from tensorflow.contrib.framework import add_arg_scope, arg_scope
 
 from config import NP_FLOAT, TF_FLOAT, Weights
 from .network_utils import custom_dense, tf_zeros
@@ -240,7 +240,7 @@ def _assign_moving_average(orig_val, new_val, momentum, name):
         return tf.assign_add(orig_val, scaled_diff)
 
 
-@add_arg_scope
+#  @add_arg_scope
 def batch_norm(x,
                phase,
                axis=-1,
