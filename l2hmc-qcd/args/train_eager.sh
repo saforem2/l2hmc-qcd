@@ -12,4 +12,5 @@ export KMP_AFFINITY=granularity='fine,verbose,compact,1,0'
 
  export TF_XLA_FLAGS="--tf_xla_auto_jit=2 --tf_xla_cpu_global_jit"
 
-ipython3 -m pudb ${TRAINER} @${ARGS}
+# ipython3 -m pudb ${TRAINER} @${ARGS}
+python3 ${TRAINER} @${ARGS}

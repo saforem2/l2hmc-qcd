@@ -387,11 +387,7 @@ class GaugeModel:
                                   minval=-PI, maxval=PI)
             x = tf.cast(x, dtype=TF_FLOAT)
 
-        is_chief = (
-            self.using_hvd and hvd.rank() == 0
-            or not self.using_hvd
-        )
-
+        is_chief = hvd.rank() == 0 if self.using_hvd else not self.using_hvd
         _, q_new = self.calc_observables(x, self.beta_init)
 
         px_arr = []
@@ -452,11 +448,17 @@ class GaugeModel:
                 loss_arr.append(loss.numpy())
                 charges_arr.append(q_new.numpy())
 
-            if step % self.save_steps == 0 and ckpt_dir is not None:
+            if (step % self.save_steps == 0
+                    and ckpt_dir is not None
+                    and is_chief):
                 ckpt.step.assign(step)
-                if is_chief:
-                    manager.save()
-                #  checkpoint.save(file_prefix=ckpt_prefix)
+                manager.save()
+
+            #  if step % self.save_steps == 0 and ckpt_dir is not None:
+            #      ckpt.step.assign(step)
+            #      if is_chief:
+            #          manager.save()
+            #  checkpoint.save(file_prefix=ckpt_prefix)
 
             if step % 100 == 0:
                 io.log(HEADER)
