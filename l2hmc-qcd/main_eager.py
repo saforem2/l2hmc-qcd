@@ -13,11 +13,16 @@ try:
     hvd.init()
     config = tf.ConfigProto()  # pylint: disable=invalid-name
     config.gpu_options.visible_device_list = str(hvd.local_rank())
-    tf.compat.v1.enable_eager_execution(config=config)
+    try:
+        tf.compat.v1.enable_eager_execution(config=config)
+    except AttributeError:
+        pass
 
 except ImportError:
-    pass
-    tf.compat.v1.enable_eager_execution()
+    try:
+        tf.compat.v1.enable_eager_execution()
+    except AttributeError:
+        pass
 
 import os
 import xarray as xr
@@ -318,17 +323,6 @@ def run_inference(FLAGS, model=None):
     return model, outputs
 
 
-def train(FLAGS, hmc=False):
-    """Main method for training model."""
-    IS_CHIEF = (
-        not FLAGS.horovod
-        or FLAGS.horovod and hvd.rank() == 0
-    )
-
-    if hmc or FLAGS.hmc:
-        pass
-
-
 def train_hmc(FLAGS):
     """Main method for training HMC model."""
     HFLAGS = AttrDict(dict(FLAGS))
@@ -383,6 +377,7 @@ def train_hmc(FLAGS):
 
     return x_out, eps_out
 
+
 # pylint:disable=redefined-outer-name, invalid-name, too-many-locals
 def train(FLAGS, log_file=None):
     """Main method for training model."""
@@ -403,6 +398,7 @@ def train(FLAGS, log_file=None):
         x_init, eps_init = train_hmc(FLAGS)
         FLAGS.eps = eps_init
 
+    '''
     callbacks = []
 
     if FLAGS.horovod:
@@ -422,12 +418,13 @@ def train(FLAGS, log_file=None):
         callbacks.append(hvd.callbacks.LearningRateWarmupCallback(
             warmup_epochs=3, initial_lr=FLAGS.lr_init, verbose=1
         ))
+    '''
 
     model, FLAGS, ckpt_dir = build_model(FLAGS, log_file)
     outputs, data_strs = model.train_eager(
         x=x_init,
         save_train_data=FLAGS.save_train_data,
-        ckpt_dir=ckpt_dir
+        ckpt_dir=ckpt_dir,
     )
 
     if IS_CHIEF:

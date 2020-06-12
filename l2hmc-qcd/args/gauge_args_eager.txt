@@ -1,8 +1,9 @@
 #--log_dir='../../gauge_logs_eager/2020_06/L16_b256_lf3_qw01_pw100_dp01-2020-06-10-15-55'
 # ----------------------------------------------------------------------------
+--horovod
 --inference
 --run_steps 500
-#--separate_networks
+--separate_networks
 # ==========================================
 --save_train_data
 --rand
