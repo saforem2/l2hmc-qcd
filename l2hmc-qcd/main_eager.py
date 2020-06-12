@@ -300,6 +300,13 @@ def run_inference(FLAGS, model=None):
         with open(history_file, 'w') as f:
             f.write('\n'.join(data_strs))
 
+        run_params = {
+            'beta': FLAGS.beta_final,
+            'dynamics.eps': model.dynamics.eps.numpy(),
+            'net_weights': model.dynamics.config.net_weights
+        }
+        io.save_dict(run_params, run_dir, 'run_params')
+
         outputs_dir = os.path.join(run_dir, 'outputs')
         io.check_else_make_dir(outputs_dir)
         for key, val in outputs.items():

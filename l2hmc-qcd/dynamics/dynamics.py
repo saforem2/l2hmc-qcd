@@ -308,21 +308,11 @@ class Dynamics(tf.keras.Model):
         if self.config.hmc or not self.separate_nets:
             return self.xnets, self.vnets
 
-        if self.separate_nets:
-            if tf.executing_eagerly():
-                return self.xnets[step], self.vnets[step]
-                #  xnet = self.xnets[step]
-                #  vnet = self.vnets[step]
-                #  xnet = self.__dict__['xnets'][step]
-                #  vnet = self.__dict__['vnets'][step]
-            else:
-                xnet = tf.gather(self.xnets, tf.cast(step, dtype=TF_INT))
-                vnet = tf.gather(self.vnets, tf.cast(step, dtype=TF_INT))
-        else:
-            xnet = self.xnets
-            vnet = self.vnets
+        step = tf.cast(step, dtype=TF_INT)
+        if tf.executing_eagerly():
+            return self.xnets[step], self.vnets[step]
 
-        return xnet, vnet
+        return tf.gather(self.xnets, step), tf.gather(self.vnets, step)
 
     def _forward_lf(self, step, state, training=None):
         with tf.name_scope('forward_lf'):
