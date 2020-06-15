@@ -13,16 +13,10 @@ try:
     hvd.init()
     config = tf.ConfigProto()  # pylint: disable=invalid-name
     config.gpu_options.visible_device_list = str(hvd.local_rank())
-    try:
-        tf.compat.v1.enable_eager_execution(config=config)
-    except AttributeError:
-        pass
+    tf.compat.v1.enable_eager_execution(config=config)
 
 except ImportError:
-    try:
-        tf.compat.v1.enable_eager_execution()
-    except AttributeError:
-        pass
+    tf.compat.v1.enable_eager_execution()
 
 import os
 import xarray as xr
@@ -49,6 +43,7 @@ from models.gauge_model_new import GaugeModel
 
 sns.set_palette('bright')
 
+# pylint:disable=invalid-name, redefined-outer-name
 
 def get_run_str(FLAGS):
     """Parse FLAGS and create unique `run_str` for `log_dir`."""
@@ -196,14 +191,14 @@ def build_model(FLAGS, save_params=True, log_file=None):
         eps_trainable=not FLAGS.eps_fixed,
     )
 
-    ckpt_dir = None
-    training_dir = os.path.join(FLAGS.log_dir, 'training')
-    io.check_else_make_dir(training_dir)
-    if IS_CHIEF:
-        ckpt_dir = os.path.join(training_dir, 'checkpoints')
-        io.check_else_make_dir(ckpt_dir)
-        if save_params:
-            io.save_params(dict(FLAGS), training_dir, 'FLAGS')
+    #  ckpt_dir = None
+    #  training_dir = os.path.join(FLAGS.log_dir, 'training')
+    #  io.check_else_make_dir(training_dir)
+    #  if IS_CHIEF:
+    #      ckpt_dir = os.path.join(training_dir, 'checkpoints')
+    #      io.check_else_make_dir(ckpt_dir)
+    #      if save_params:
+    #          io.save_params(dict(FLAGS), training_dir, 'FLAGS')
 
     if FLAGS.horovod:
         io.log(f'Number of {hvd.size()} GPUs')
@@ -217,7 +212,7 @@ def build_model(FLAGS, save_params=True, log_file=None):
 
     model = GaugeModel(FLAGS, lattice_shape, config, net_config)
 
-    return model, FLAGS, ckpt_dir
+    return model, FLAGS
 
 
 def get_run_num(run_dir):
@@ -240,7 +235,7 @@ def run_inference_hmc(FLAGS):
     HFLAGS.hmc = True
     HFLAGS.net_weights = NET_WEIGHTS_HMC
 
-    model, HFLAGS, ckpt_dir = build_model(HFLAGS, save_params=False)
+    model, HFLAGS = build_model(HFLAGS, save_params=False)
     outputs, data_strs = model.run_eager(HFLAGS.run_steps,
                                          beta=HFLAGS.beta_final,
                                          save_run_data=True,
@@ -305,13 +300,6 @@ def run_inference(FLAGS, model=None):
         with open(history_file, 'w') as f:
             f.write('\n'.join(data_strs))
 
-        run_params = {
-            'beta': FLAGS.beta_final,
-            'dynamics.eps': model.dynamics.eps.numpy(),
-            'net_weights': model.dynamics.config.net_weights
-        }
-        io.save_dict(run_params, run_dir, 'run_params')
-
         outputs_dir = os.path.join(run_dir, 'outputs')
         io.check_else_make_dir(outputs_dir)
         for key, val in outputs.items():
@@ -321,6 +309,24 @@ def run_inference(FLAGS, model=None):
         plot_data(outputs, run_dir, FLAGS, thermalize=True)
 
     return model, outputs
+
+
+def train1(FLAGS, hmc=False, log_file=None):
+    """Main method for training model."""
+    IS_CHIEF = (
+        not FLAGS.horovod
+        or FLAGS.horovod and hvd.rank() == 0
+    )
+
+    if FLAGS.log_dir is None:
+        FLAGS.log_dir = make_log_dir(FLAGS, 'GaugeModel', log_file)
+    else:
+        fpath = os.path.join(FLAGS.log_dir, 'training', 'FLAGS.z')
+        FLAGS = AttrDict(dict(io.loadz(fpath)))
+
+    x_init = None
+    if FLAGS.hmc_start and FLAGS.hmc_steps > 0:
+        x_init, eps_init = train_hmc(FLAGS)
 
 
 def train_hmc(FLAGS):
@@ -344,12 +350,12 @@ def train_hmc(FLAGS):
     HFLAGS.no_summaries = True
 
     ckpt_dir = None
-    training_dir = os.path.join(HFLAGS.log_dir, 'training_hmc')
-    io.check_else_make_dir(training_dir)
+    train_dir = os.path.join(HFLAGS.log_dir, 'training_hmc')
+    io.check_else_make_dir(train_dir)
     if IS_CHIEF:
-        ckpt_dir = os.path.join(training_dir, 'checkpoints')
+        ckpt_dir = os.path.join(train_dir, 'checkpoints')
         io.check_else_make_dir(ckpt_dir)
-        io.save_params(dict(HFLAGS), training_dir, 'FLAGS')
+        io.save_params(dict(HFLAGS), train_dir, 'FLAGS')
 
     model, HFLAGS, ckpt_dir = build_model(HFLAGS)
     outputs, data_strs = model.train_eager(
@@ -357,14 +363,15 @@ def train_hmc(FLAGS):
         ckpt_dir=None
     )
     if IS_CHIEF:
-        train_dir = os.path.join(HFLAGS.log_dir, 'training')
-        io.check_else_make_dir(train_dir)
+        #  train_dir = os.path.join(HFLAGS.log_dir, 'training')
+        #  io.check_else_make_dir(train_dir)
         history_file = os.path.join(train_dir, 'training_log.txt')
         with open(history_file, 'w') as f:
             f.write('\n'.join(data_strs))
 
         if HFLAGS.save_train_data:
-            outputs_dir = os.path.join(HFLAGS.log_dir, 'training', 'outputs')
+            #  outputs_dir = os.path.join(HFLAGS.log_dir, 'training', 'outputs')
+            outputs_dir = os.path.join(train_dir, 'outputs')
             io.check_else_make_dir(outputs_dir)
             for key, val in outputs.items():
                 out_file = os.path.join(outputs_dir, f'{key}.z')
@@ -398,33 +405,11 @@ def train(FLAGS, log_file=None):
         x_init, eps_init = train_hmc(FLAGS)
         FLAGS.eps = eps_init
 
-    '''
-    callbacks = []
-
-    if FLAGS.horovod:
-        # Horovod: broadcast initial variable states from rank 0 to all other
-        # processes. This is necessary to ensure consistent initialization of
-        # all workers when training is started with random weights or restored
-        # from a checkpoint.
-        callbacks.append(hvd.callbacks.BroadcastGlobalVariablesCallback(0))
-        # Horovod: average metric among workers at the end of every epoch.
-        # NOTE: This callback must be in the list before the ReduceLROnPlateau,
-        # TensorBoard or other metrics-based callbacks.
-        callbacks.append(hvd.callbacks.MetricAverageCallback())
-
-        # Horovod: Using `lr= 1.0 * hvd.size()` from the very beginning leads
-        # to worse final accuracy. Scale the learning rate `lr = 1.0` --> `lr =
-        # 1.0 * hvd.size()` during the first three epochs.
-        callbacks.append(hvd.callbacks.LearningRateWarmupCallback(
-            warmup_epochs=3, initial_lr=FLAGS.lr_init, verbose=1
-        ))
-    '''
-
-    model, FLAGS, ckpt_dir = build_model(FLAGS, log_file)
+    model, FLAGS = build_model(FLAGS, log_file)
     outputs, data_strs = model.train_eager(
         x=x_init,
         save_train_data=FLAGS.save_train_data,
-        ckpt_dir=ckpt_dir,
+        ckpt_dir=ckpt_dir
     )
 
     if IS_CHIEF:
@@ -476,15 +461,13 @@ if __name__ == '__main__':
     FLAGS = parse_args()
     FLAGS = AttrDict(FLAGS.__dict__)
     LOG_FILE = os.path.join(os.getcwd(), 'output_dirs.txt')
-    if FLAGS.inference and FLAGS.log_dir is not None:
-        _, _ = run_inference(FLAGS)
-        _, _ = run_inference_hmc(FLAGS)
-    else:
-        MODEL, OUTPUTS = train(FLAGS, LOG_FILE)
-        #  is_chief = FLAGS.horovod and hvd.rank() == 0 or not FLAGS.horovod
-        #  if is_chief:
-        #      _, _ = run_inference(FLAGS, model=MODEL)
-        #      _, _ = run_inference_hmc(FLAGS)
+    MODEL, OUTPUTS = train(FLAGS, LOG_FILE)
+    #  if FLAGS.inference and FLAGS.log_dir is not None:
+    #      _, _ = run_inference(FLAGS)
+    #      _, _ = run_inference_hmc(FLAGS)
+    #  else:
+    #      #  _, _ = run_inference(FLAGS, model=MODEL)
+    #      #  _, _ = run_inference_hmc(FLAGS)
     #  if FLAGS.inference and FLAGS.log_dir is not None:
     #      _, _, _ = run_inference(FLAGS)
     #
