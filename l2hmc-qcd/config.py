@@ -66,7 +66,8 @@ NP_INT = np.int32
 #
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 FILE_PATH = os.path.abspath(os.path.dirname(__file__))
-PROJECT_DIR = os.path.dirname(os.path.abspath(os.getcwd()))
+PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+#  PROJECT_DIR = os.path.dirname(os.path.abspath(os.getcwd()))
 BASE_DIR = os.path.dirname(PROJECT_DIR)
 GAUGE_LOGS_DIR = os.path.join(BASE_DIR, 'gauge_logs')
 
