@@ -128,6 +128,8 @@ class GaugeModel:
         self.separate_networks = params.get('separate_networks', False)
         self.save_steps = params.get('save_steps', self.train_steps // 10)
         self.log_steps = params.get('logging_steps', self.train_steps // 500)
+        self.save_train_data = params.get('save_train_data', True)
+        self.save_run_data = params.get('save_run_data', True)
 
     # pylint:disable=attribute-defined-outside-init
     def _build(self):
@@ -217,18 +219,11 @@ class GaugeModel:
 
     def create_lr(self, warmup=False):
         """Create the learning rate schedule to be used during training."""
-        if tf.executing_eagerly():
-            return tf.keras.optimizers.schedules.ExponentialDecay(
-                self.lr_init,
-                decay_steps=self.lr_decay_steps,
-                decay_rate=self.lr_decay_rate,
-                staircase=True
-            )
-
+        '''
         if warmup:
             return warmup_lr(target_lr=self.lr_init,
                              warmup_steps=int(0.1 * self.train_steps),
-                             global_step=self.global_step,
+                             global_step=tf.train.get_or_create_global_step(),
                              decay_steps=self.lr_decay_steps,
                              decay_rate=self.lr_decay_rate)
 
@@ -239,6 +234,13 @@ class GaugeModel:
             self.lr_decay_rate,
             staircase=True,
             name='learning_rate'
+        )
+        '''
+        return tf.keras.optimizers.schedules.ExponentialDecay(
+            self.lr_init,
+            decay_steps=self.lr_decay_steps,
+            decay_rate=self.lr_decay_rate,
+            staircase=True
         )
 
     def create_optimizer(self):
@@ -380,14 +382,20 @@ class GaugeModel:
 
         return outputs, data_strs
 
-    def train_eager(self, x=None, save_train_data=False, ckpt_dir=None):
+    def train_eager(self, x=None, save_train_data=False):
         """Train the model using eager execution."""
         if x is None:
             x = tf.random.uniform(shape=self.input_shape,
                                   minval=-PI, maxval=PI)
             x = tf.cast(x, dtype=TF_FLOAT)
 
+        #  is_chief = self.using_hvd and hvd.rank() == 0 else not self.using_hvd
         is_chief = hvd.rank() == 0 if self.using_hvd else not self.using_hvd
+        #  is_chief = (
+        #      self.using_hvd and hvd.rank() == 0
+        #      or not self.using_hvd
+        #  )
+
         _, q_new = self.calc_observables(x, self.beta_init)
 
         px_arr = []
@@ -448,17 +456,11 @@ class GaugeModel:
                 loss_arr.append(loss.numpy())
                 charges_arr.append(q_new.numpy())
 
-            if (step % self.save_steps == 0
-                    and ckpt_dir is not None
-                    and is_chief):
+            if step % self.save_steps == 0 and ckpt_dir is not None:
                 ckpt.step.assign(step)
-                manager.save()
-
-            #  if step % self.save_steps == 0 and ckpt_dir is not None:
-            #      ckpt.step.assign(step)
-            #      if is_chief:
-            #          manager.save()
-            #  checkpoint.save(file_prefix=ckpt_prefix)
+                if is_chief:
+                    manager.save()
+                #  checkpoint.save(file_prefix=ckpt_prefix)
 
             if step % 100 == 0:
                 io.log(HEADER)
