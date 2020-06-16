@@ -128,6 +128,7 @@ def train(FLAGS, log_file=None):
         plot_data(outputs, train_dir, FLAGS)
 
     io.log(f'Done training model.')
+    io.log(80 * '=')
 
     return model, outputs, FLAGS
 
@@ -195,6 +196,7 @@ def train_hmc(FLAGS):
     x_out = outputs['x']
     eps_out = model.dynamics.eps.numpy()
     io.log(f'Done with HMC start.')
+    io.log(80 * '=')
 
     return x_out, eps_out
 
@@ -202,13 +204,6 @@ def train_hmc(FLAGS):
 def train_model(model, ckpt, manager, step_init=None, x=None):
     """Train model."""
     is_chief = hvd.rank() == 0 if model.using_hvd else not model.using_hvd
-
-    #  if not model.separate_networks:
-    #  try:
-    train_step_fn = tf.function(model.train_step)
-    #  except:
-    #      train_step_fn = model.train_step
-    #  log_dir = os.path.dirname(manager.directory)
 
     if x is None:
         x = tf.random.uniform(shape=model.input_shape,
@@ -231,7 +226,7 @@ def train_model(model, ckpt, manager, step_init=None, x=None):
     for step, beta in zip(steps, betas):
         t0 = time.time()
         x = tf.reshape(x, model.input_shape)
-        loss, x, px, sld = train_step_fn(x, beta, step == 0)
+        loss, x, px, sld = model.train_step(x, beta, step == 0)
         x = tf.reshape(x, model.lattice_shape)
         dt = time.time() - t0
 
@@ -300,12 +295,6 @@ def run_model(model, beta, run_steps, x=None):
     if not is_chief:
         return None, None
 
-    #  if not model.separate_networks:
-    #  try:
-    run_step_fn = tf.function(model.dynamics)
-    #  except:
-    #  run_step_fn = model.dynamics
-
     if x is None:
         x = tf.random.uniform(shape=model.input_shape,
                               minval=-PI, maxval=PI)
@@ -328,7 +317,7 @@ def run_model(model, beta, run_steps, x=None):
     for step in np.arange(run_steps):
         t0 = time.time()
         x = tf.reshape(x, model.input_shape)
-        states, px, sld_states = run_step_fn((x, beta), training=False)
+        states, px, sld_states = model.run_step(x, beta)
         x = states.out.x
         sld = sld_states.out
         x = tf.reshape(x, model.lattice_shape)

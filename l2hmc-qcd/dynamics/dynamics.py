@@ -238,6 +238,7 @@ class Dynamics(tf.keras.Model):
 
         return tf.Variable(initial_value=init, **kwargs)
 
+    @tf.function
     def call(self, inputs, training=None):
         """Obtain a new state from `inputs`."""
         return self.apply_transition(inputs, training=None)
@@ -297,7 +298,8 @@ class Dynamics(tf.keras.Model):
         """Transition kernel of the augmented leapfrog integrator."""
         lf_fn = self._forward_lf if forward else self._backward_lf
 
-        step = 0
+        step = 0.
+        #  step = tf.constant(0.,
         sld = tf.zeros((self.batch_size,), dtype=TF_FLOAT)
         def body(step, state, logdet):
             new_state, logdet = lf_fn(step, state, training=training)
