@@ -287,13 +287,17 @@ class GaugeLattice:
 
         return plaqs
 
-    def calc_top_charges(self, samples=None, plaq_sums=None):
+    def calc_top_charges(self, samples=None, plaq_sums=None, use_sin=True):
         """Calculate topological charges for each sample in samples."""
         if plaq_sums is None:
             plaq_sums = self.calc_plaq_sums(samples)
 
         with tf.name_scope('top_charges'):
-            ps_proj = tf.sin(plaq_sums)
+            if use_sin:
+                ps_proj = tf.sin(plaq_sums)
+            else:
+                ps_proj = project_angle(plaq_sums)
+
             top_charges = (tf.reduce_sum(ps_proj, axis=(1, 2),
                                          name='top_charges')) / (2 * np.pi)
         return top_charges

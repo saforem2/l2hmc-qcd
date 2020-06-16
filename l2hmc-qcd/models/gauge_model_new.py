@@ -247,11 +247,11 @@ class GaugeModel:
 
         return total_loss
 
-    def calc_observables(self, x, beta):
+    def calc_observables(self, x, beta, use_sin=True):
         """Calculate observables."""
         ps = self.lattice.calc_plaq_sums(x)
         plaqs = self.lattice.calc_plaqs(plaq_sums=ps)
-        charges = self.lattice.calc_top_charges(plaq_sums=ps)
+        charges = self.lattice.calc_top_charges(plaq_sums=ps, use_sin=use_sin)
         plaqs_err = u1_plaq_exact_tf(beta) - plaqs
 
         return plaqs_err, charges
@@ -380,7 +380,7 @@ class GaugeModel:
                                   minval=-PI, maxval=PI)
             x = tf.cast(x, dtype=TF_FLOAT)
 
-        _, q_new = self.calc_observables(x, self.beta_init)
+        _, q_new = self.calc_observables(x, self.beta_init, use_sin=False)
 
         px_arr = []
         dq_arr = []
@@ -416,7 +416,7 @@ class GaugeModel:
             dt = time.time() - t0
 
             q_old = q_new
-            plaqs_err, q_new = self.calc_observables(x, beta)
+            plaqs_err, q_new = self.calc_observables(x, beta, use_sin=True)
             dq = tf.math.abs(q_new - q_old)
 
             data_str = (
