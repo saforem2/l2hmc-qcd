@@ -27,6 +27,7 @@ try:
     import horovod.tensorflow as hvd
 
     hvd.init()
+    io.log(f'Number of devices: {hvd.size()}')
     if TF_VERSION == '2.x':
         gpus = tf.config.experimental.list_physical_devices('GPU')
         for gpu in gpus:
@@ -37,6 +38,7 @@ try:
             )
     elif TF_VERSION == '1.x':
         config = tf.compat.v1.ConfigProto()
+        config.gpu_options.allow_growth = True
         config.gpu_options.visible_device_list = str(hvd.local_rank())
         tf.compat.v1.enable_eager_execution(config=config)
 
@@ -197,14 +199,16 @@ def train_hmc(FLAGS):
     return x_out, eps_out
 
 
-def train_model(model, ckpt=None, manager=None, step_init=None, x=None):
+def train_model(model, ckpt, manager, step_init=None, x=None):
     """Train model."""
     is_chief = hvd.rank() == 0 if model.using_hvd else not model.using_hvd
 
-    if not model.separate_networks:
-        train_step_fn = tf.function(model.train_step)
-    else:
-        train_step_fn = model.train_step
+    #  if not model.separate_networks:
+    #  try:
+    train_step_fn = tf.function(model.train_step)
+    #  except:
+    #      train_step_fn = model.train_step
+    #  log_dir = os.path.dirname(manager.directory)
 
     if x is None:
         x = tf.random.uniform(shape=model.input_shape,
@@ -246,6 +250,17 @@ def train_model(model, ckpt=None, manager=None, step_init=None, x=None):
             f"{np.mean(dq.numpy()):^11.4g} "
             f"{np.mean(plaqs_err.numpy()):^11.4g} "
         )
+        #  if step == 10:
+        #      try:
+        #          tf.profiler.experimental.start(log_dir)
+        #      except AttributeError:
+        #          pass
+
+        #  if step == 20:
+        #      try:
+        #          tf.profiler.experimental.stop(log_dir)
+        #      except AttributeError:
+        #          pass
 
         if step % model.print_steps == 0:
             io.log(data_str)
@@ -285,10 +300,11 @@ def run_model(model, beta, run_steps, x=None):
     if not is_chief:
         return None, None
 
-    if not model.separate_networks:
-        run_step_fn = tf.function(model.dynamics)
-    else:
-        run_step_fn = model.dynamics
+    #  if not model.separate_networks:
+    #  try:
+    run_step_fn = tf.function(model.dynamics)
+    #  except:
+    #  run_step_fn = model.dynamics
 
     if x is None:
         x = tf.random.uniform(shape=model.input_shape,

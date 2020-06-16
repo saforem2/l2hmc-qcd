@@ -91,11 +91,11 @@ class GaugeModel:
 
         self.lr = self.create_lr(warmup=self.warmup_lr)
         self.optimizer = self.create_optimizer()
-        if not self.separate_networks:
-            self.dynamics.compile(
-                optimizer=self.optimizer,
-                loss=self.calc_loss,
-            )
+        #  if not self.separate_networks:
+        self.dynamics.compile(
+            optimizer=self.optimizer,
+            loss=self.calc_loss,
+        )
         self.betas = get_betas(self.train_steps,
                                self.beta_init,
                                self.beta_final)
@@ -254,6 +254,7 @@ class GaugeModel:
 
         return optimizer
 
+    @tf.function(experimental_compile=True)
     def train_step(self, x, beta, first_step):
         """Perform a single training step."""
         with tf.GradientTape() as tape:
@@ -306,6 +307,10 @@ class GaugeModel:
 
         return checkpoint, manager, step_init
 
+    @tf.function(experimental_compile=True)
+    def run_step(self, x, beta):
+        return self.dynamics((x, beta), training=False)
+
     def run_eager(self, run_steps, beta, x=None,
                   save_run_data=False, ckpt_dir=None):
         """Run inference using eager execution."""
@@ -323,10 +328,10 @@ class GaugeModel:
         if ckpt_dir is not None:
             _, _, _ = self.restore_from_checkpoint(ckpt_dir)
 
-        if not self.separate_networks:
-            dynamics_call = tf.function(self.dynamics)
-        else:
-            dynamics_call = self.dynamics
+        #  if not self.separate_networks:
+        #      dynamics_call = tf.function(self.dynamics)
+        #  else:
+        #      dynamics_call = self.dynamics
 
         io.log(RUN_SEP)
         io.log(f'Running inference on trained model with:')
@@ -338,7 +343,10 @@ class GaugeModel:
         for step in np.arange(run_steps):
             t0 = time.time()
             x = tf.reshape(x, self.input_shape)
-            states, px, sld_states = dynamics_call((x, beta), training=False)
+            states, px, sld_states = self.run_step(x, beta)
+            #  states, px, sld_states = dynamics_call(
+            #      (x, beta), training=False
+            #  )
             #  states, px, sld_states = self.dynamics((x, beta),
             #                                         training=False)
             x = states.out.x
