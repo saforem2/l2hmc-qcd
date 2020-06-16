@@ -198,7 +198,7 @@ def train_hmc(FLAGS):
     outputs, data_strs = train_model(model, ckpt, manager,
                                      step_init=step_init, x=None)
     if is_chief:
-        save(model, train_dir, outputs, data_strs)
+        io.save(model, train_dir, outputs, data_strs)
         plot_data(outputs, train_dir, HFLAGS)
 
     x_out = outputs['x']
