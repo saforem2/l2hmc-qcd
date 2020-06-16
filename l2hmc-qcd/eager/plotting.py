@@ -93,6 +93,6 @@ def plot_data(outputs, base_dir, FLAGS, thermalize=False):
         fig.savefig(out_file, dpi=400, bbox_inches='tight')
         plt.close('all')
 
-    steps, charges = data['charges']
+    steps, charges = data['charges_arr']
     plot_charges(steps, charges, out_dir=out_dir)
     plt.close('all')
