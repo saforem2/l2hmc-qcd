@@ -11,16 +11,6 @@ import time
 import numpy as np
 import tensorflow as tf
 
-#  import utils.file_io as io
-import eager.file_io as io
-
-from config import NET_WEIGHTS_HMC, NET_WEIGHTS_L2HMC, PI, TF_FLOAT, TF_INT
-from network import NetworkConfig
-from dynamics import DynamicsConfig
-from eager.plotting import plot_data
-from utils.attr_dict import AttrDict
-from models.gauge_model_new import GaugeModel, HEADER, RUN_HEADER, RUN_SEP
-
 # pylint:disable=no-member
 if tf.__version__.startswith('1.'):
     TF_VERSION = '1.x'
@@ -31,7 +21,8 @@ try:
     import horovod.tensorflow as hvd
 
     hvd.init()
-    io.log(f'Number of devices: {hvd.size()}')
+    if hvd.rank() == 0:
+        print(f'Number of devices: {hvd.size()}')
     if TF_VERSION == '2.x':
         GPUS = tf.config.experimental.list_physical_devices('GPU')
         for gpu in GPUS:
@@ -49,6 +40,18 @@ try:
 except ImportError:
     if TF_VERSION == '1.x':
         tf.compat.v1.enable_eager_execution()
+
+
+
+#  import utils.file_io as io
+import eager.file_io as io
+
+from config import NET_WEIGHTS_HMC, NET_WEIGHTS_L2HMC, PI, TF_FLOAT, TF_INT
+from network import NetworkConfig
+from dynamics import DynamicsConfig
+from eager.plotting import plot_data
+from utils.attr_dict import AttrDict
+from models.gauge_model_new import GaugeModel, HEADER, RUN_HEADER, RUN_SEP
 
 
 
