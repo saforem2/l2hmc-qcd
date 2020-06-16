@@ -42,6 +42,12 @@ def parse_args():
                         help=("""Whether or not to use separate networks for
                               each MC step."""))
 
+    parser.add_argument("--eager_execution",
+                        dest='eager_execution',
+                        action='store_true',
+                        required=False,
+                        help=("""Whether or not to compile model to graph."""))
+
     ###########################################################################
     #                          Lattice parameters                             #
     ###########################################################################
