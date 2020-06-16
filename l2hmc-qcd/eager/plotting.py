@@ -41,6 +41,7 @@ def plot_charges(steps, charges, title_str=None, out_dir=None):
         plt.savefig(out_file, dpi=400, bbox_inches='tight')
 
 
+# pylint:disable=unsubscriptable-object
 def plot_data(outputs, base_dir, FLAGS, thermalize=False):
     out_dir = os.path.join(base_dir, 'plots')
     io.check_else_make_dir(out_dir)
@@ -51,7 +52,10 @@ def plot_data(outputs, base_dir, FLAGS, thermalize=False):
             continue
         if key == 'loss_arr':
             fig, ax = plt.subplots()
-            steps = FLAGS.logging_steps * np.arange(len(np.array(val)))
+            if 'training' in base_dir:
+                steps = FLAGS.logging_steps * np.arange(len(np.array(val)))
+            else:
+                steps = np.arange(len(np.array(val)))
             ax.plot(steps, np.array(val), ls='', marker='x', label='loss')
             ax.legend(loc='best')
             ax.set_xlabel('Train step')
@@ -62,7 +66,10 @@ def plot_data(outputs, base_dir, FLAGS, thermalize=False):
             fig, ax = plt.subplots()
             arr = np.array(val)
             chains = np.arange(arr.shape[1])
-            steps = FLAGS.logging_steps * np.arange(arr.shape[0])
+            if 'training' in base_dir:
+                steps = FLAGS.logging_steps * np.arange(arr.shape[0])
+            else:
+                steps = np.arange(arr.shape[0])
             if thermalize:
                 arr, steps = therm_arr(arr, therm_frac=0.33)
                 data[key] = (steps, arr)

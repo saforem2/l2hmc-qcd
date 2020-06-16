@@ -136,27 +136,43 @@ class Dynamics(tf.keras.Model):
                 def _separate_nets(name, seeds_):
                     #  nets = {}
                     nets = []
+                    self.xnets = []
+                    self.vnets = []
                     factor = 2. if name == 'XNet' else 1.
+                    #  for idx in tf.range(self.config.num_steps):
                     for idx in range(self.config.num_steps):
                         new_seeds = {
                             key: int(idx * val) for key, val in seeds_.items()
                         }
+                        #  key = tf.constant(idx, dtype=TF_INT).ref()
                         #  key = tf.constant(idx, dtype=TF_INT)
                         #  key = idx
                         #  key = key.experimental_ref()
-                        #  nets[key] = GaugeNetwork(self.net_config,
+                        #  nets[idx] = GaugeNetwork(self.net_config,
                         #                           self.xdim, factor=factor,
                         #                           net_seeds=new_seeds,
                         #                           name=f'{name}_step{idx}')
-                        nets.append(GaugeNetwork(self.net_config,
-                                                 self.xdim, factor=factor,
-                                                 net_seeds=new_seeds,
-                                                 name=f'{name}_step{idx}'))
+                        #  nets.append(GaugeNetwork(self.net_config,
+                        #                           self.xdim, factor=factor,
+                        #                           net_seeds=new_seeds,
+                        #                           name=f'{name}_step{idx}'))
+                        net = GaugeNetwork(self.net_config,
+                                           self.xdim, factor=factor,
+                                           net_seeds=new_seeds,
+                                           name=f'{name}_step{idx}')
+                        if name == 'XNet':
+                            setattr(self, f'xnets{idx}', net)
+                            self.xnets.append(net)
+                        elif name == 'VNet':
+                            setattr(self, f'vnets{idx}', net)
+                            self.vnets.append(net)
 
                     return nets
 
-                self.xnets = _separate_nets('XNet', xnet_seeds)
-                self.vnets = _separate_nets('VNet', vnet_seeds)
+                _separate_nets('XNet', xnet_seeds)
+                _separate_nets('VNet', vnet_seeds)
+                #  self.xnets = _separate_nets('XNet', xnet_seeds)
+                #  self.vnets = _separate_nets('VNet', vnet_seeds)
                 #  self.xnets = {}
                 #  self.vnets = {}
                 #  for (xk, xv), (vk, vv) in zip(xnets, vnets):
@@ -238,7 +254,7 @@ class Dynamics(tf.keras.Model):
 
         return tf.Variable(initial_value=init, **kwargs)
 
-    @tf.function
+    #  @tf.function
     def call(self, inputs, training=None):
         """Obtain a new state from `inputs`."""
         return self.apply_transition(inputs, training=None)
@@ -298,18 +314,19 @@ class Dynamics(tf.keras.Model):
         """Transition kernel of the augmented leapfrog integrator."""
         lf_fn = self._forward_lf if forward else self._backward_lf
 
-        step = 0.
-        #  step = tf.constant(0.,
-        sld = tf.zeros((self.batch_size,), dtype=TF_FLOAT)
-        def body(step, state, logdet):
-            new_state, logdet = lf_fn(step, state, training=training)
-            return step+1, new_state, sld+logdet
-
-        def cond(step, *args):
-            return  tf.less(step, self.config.num_steps)
-
-        _, state_prop, sumlogdet = tf.while_loop(cond=cond, body=body,
-                                                 loop_vars=[step, state, sld])
+        #  step = 0.
+        #  step = tf.constant(0., dtype=TF_FLOAT)
+        #  sld = tf.zeros((self.batch_size,), dtype=TF_FLOAT)
+        #  def body(step, state, logdet):
+        #      new_state, logdet = lf_fn(step, state, training=training)
+        #      return step+1, new_state, sld+logdet
+        #  #
+        #  def cond(step, *args):
+        #      return  tf.less(step, self.config.num_steps)
+        #  #
+        #  _, state_prop, sumlogdet = tf.while_loop(
+        #      cond=cond, body=body, loop_vars=[step, state, sld]
+        #  )
 
         #  step = tf.constant(0., name='md_step', dtype=TF_FLOAT)
         #  step = 0.
@@ -329,11 +346,14 @@ class Dynamics(tf.keras.Model):
         #      loop_vars=[step, state, logdet]
         #  )
 
-        #  state_prop = State(*state)
-        #  sld = tf.zeros((self.batch_size,), dtype=TF_FLOAT)
+        state_prop = State(*state)
+        sumlogdet = tf.zeros((self.batch_size,), dtype=TF_FLOAT)
         #  for step in np.arange(self.config.num_steps):
-        #      state_prop, logdet = lf_fn(step, state_prop, training)
-        #      sld += logdet
+        #  for step in tf.range(self.config.num_steps):
+        for step in range(self.config.num_steps):
+            #  t = tf.cast(step, dtype=TF_FLOAT)
+            state_prop, logdet = lf_fn(step, state_prop, training)
+            sumlogdet += logdet
 
         accept_prob = self._compute_accept_prob(state, state_prop, sumlogdet)
 
@@ -342,6 +362,13 @@ class Dynamics(tf.keras.Model):
     def _get_network(self, step):
         if self.config.hmc or not self.separate_nets:
             return self.xnets, self.vnets
+
+        step_int = int(step)
+        xnet = getattr(self, f'xnets{step_int}', None)
+        vnet = getattr(self, f'vnets{step_int}', None)
+
+
+        #  key = tf.cast(step, dtype=TF_INT).ref()
 
         #  if not isinstance(step, int):
         #      step = int(step)
@@ -354,7 +381,10 @@ class Dynamics(tf.keras.Model):
         #
         #  #  return tf.gather(self.xnets, step), tf.gather(self.vnets, step)
         #  return self.xnets[key], self.vnets[key]
-        return self.xnets[int(step)], self.vnets[int(step)]
+        #  step = int(step)
+        #  return tf.gather(self.xnets, step), tf.gather(self.vnets, step)
+        #  return self.xnets[int(step)], self.vnets[int(step)]
+        return xnet, vnet
 
     def _forward_lf(self, step, state, training=None):
         #  with tf.name_scope('forward_lf'):
@@ -555,6 +585,7 @@ class Dynamics(tf.keras.Model):
 
     def _get_time(self, i, tile=1):
         """Format the MCMC step as [cos(...), sin(...)]."""
+        i = tf.cast(i, dtype=TF_FLOAT)
         trig_t = tf.squeeze([
             tf.cos(TWO_PI * i / self.config.num_steps),
             tf.sin(TWO_PI * i / self.config.num_steps),
