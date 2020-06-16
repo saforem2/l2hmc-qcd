@@ -222,11 +222,14 @@ def train_model(model, ckpt, manager, step_init=None, x=None):
     betas = model.betas[step:]
     steps = train_steps[step:]
 
+    train_step = tf.function(model.train_step)
+
     io.log(HEADER)
     for step, beta in zip(steps, betas):
         t0 = time.time()
         x = tf.reshape(x, model.input_shape)
-        loss, x, px, sld = model.train_step(x, beta, step == 0)
+        loss, x, px, sld = train_step(x, beta, step == 0)
+        #  loss, x, px, sld = model.train_step(x, beta, step == 0)
         x = tf.reshape(x, model.lattice_shape)
         dt = time.time() - t0
 
@@ -307,6 +310,8 @@ def run_model(model, beta, run_steps, x=None):
     data_strs = [RUN_HEADER]
     charges_arr = [q_new.numpy()]
 
+    run_step = tf.function(model.run_step)
+
     io.log(RUN_SEP)
     io.log(f'Running inference on trained model with:')
     io.log(f'  beta: {beta}')
@@ -317,7 +322,8 @@ def run_model(model, beta, run_steps, x=None):
     for step in np.arange(run_steps):
         t0 = time.time()
         x = tf.reshape(x, model.input_shape)
-        states, px, sld_states = model.run_step(x, beta)
+        #  states, px, sld_states = model.run_step(x, beta)
+        states, px, sld_states = run_step(x, beta)
         x = states.out.x
         sld = sld_states.out
         x = tf.reshape(x, model.lattice_shape)

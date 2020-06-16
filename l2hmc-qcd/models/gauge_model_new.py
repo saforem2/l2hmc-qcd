@@ -136,6 +136,7 @@ class GaugeModel:
         self.log_steps = params.get('logging_steps', self.train_steps // 500)
         self.save_train_data = params.get('save_train_data', True)
         self.save_run_data = params.get('save_run_data', True)
+
     # pylint:disable=attribute-defined-outside-init
     def _build(self):
         self.global_step = tf.compat.v1.train.get_or_create_global_step()
@@ -259,6 +260,7 @@ class GaugeModel:
 
         return optimizer
 
+    @tf.function(experimental_compile=True)
     def train_step(self, x, beta, first_step):
         """Perform a single training step."""
         with tf.GradientTape() as tape:
@@ -311,6 +313,7 @@ class GaugeModel:
 
         return checkpoint, manager, step_init
 
+    @tf.function(experimental_compile=True)
     def run_step(self, x, beta):
         """Perform a single inference step."""
         return self.dynamics((x, beta), training=False)
