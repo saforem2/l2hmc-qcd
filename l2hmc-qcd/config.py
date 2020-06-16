@@ -108,12 +108,12 @@ try:
 except ImportError:
     HAS_MATPLOTLIB = False
 
-try:
-    import horovod.tensorflow as hvd  # noqa: F401
-    HAS_HOROVOD = True
-except ImportError:
-    HAS_HOROVOD = False
-
+#  try:
+#      import horovod.tensorflow as hvd  # noqa: F401
+#      HAS_HOROVOD = True
+#  except ImportError:
+#      HAS_HOROVOD = False
+#
 try:
     import psutil  # noqa: F401
     HAS_PSUTIL = True

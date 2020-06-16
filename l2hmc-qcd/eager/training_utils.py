@@ -11,13 +11,17 @@ import time
 import numpy as np
 import tensorflow as tf
 
-import utils.file_io as io
+#  import utils.file_io as io
+import eager.file_io as io
 
+from config import NET_WEIGHTS_HMC, NET_WEIGHTS_L2HMC, PI, TF_FLOAT, TF_INT
 from network import NetworkConfig
-from utils.attr_dict import AttrDict
-from eager.file_io import get_run_num, make_log_dir, save, save_inference
+from dynamics import DynamicsConfig
 from eager.plotting import plot_data
+from utils.attr_dict import AttrDict
+from models.gauge_model_new import GaugeModel, HEADER, RUN_HEADER, RUN_SEP
 
+# pylint:disable=no-member
 if tf.__version__.startswith('1.'):
     TF_VERSION = '1.x'
 elif tf.__version__.startswith('2.'):
@@ -29,26 +33,23 @@ try:
     hvd.init()
     io.log(f'Number of devices: {hvd.size()}')
     if TF_VERSION == '2.x':
-        gpus = tf.config.experimental.list_physical_devices('GPU')
-        for gpu in gpus:
+        GPUS = tf.config.experimental.list_physical_devices('GPU')
+        for gpu in GPUS:
             tf.config.experimental.set_memory_growth(gpu, True)
-        if gpus:
+        if GPUS:
             tf.config.experimental.set_visible_devices(
-                gpus[hvd.local_rank()], 'GPU'
+                GPUS[hvd.local_rank()], 'GPU'
             )
     elif TF_VERSION == '1.x':
-        config = tf.compat.v1.ConfigProto()
-        config.gpu_options.allow_growth = True
-        config.gpu_options.visible_device_list = str(hvd.local_rank())
-        tf.compat.v1.enable_eager_execution(config=config)
+        CONFIG = tf.compat.v1.ConfigProto()
+        CONFIG.gpu_options.allow_growth = True
+        CONFIG.gpu_options.visible_device_list = str(hvd.local_rank())
+        tf.compat.v1.enable_eager_execution(config=CONFIG)
 
 except ImportError:
     if TF_VERSION == '1.x':
         tf.compat.v1.enable_eager_execution()
 
-from config import NET_WEIGHTS_HMC, NET_WEIGHTS_L2HMC, PI, TF_FLOAT, TF_INT
-from dynamics.dynamics import DynamicsConfig
-from models.gauge_model_new import GaugeModel, HEADER, RUN_HEADER, RUN_SEP
 
 
 # pylint:disable=invalid-name, redefined-outer-name
@@ -87,9 +88,10 @@ def build_model(FLAGS, save_params=True, log_file=None):
 def train(FLAGS, log_file=None):
     """Train model."""
     is_chief = hvd.rank() == 0 if FLAGS.horovod else not FLAGS.horovod
+    rank = hvd.rank() if FLAGS.horovod else 0
 
     if FLAGS.log_dir is None:
-        FLAGS.log_dir = make_log_dir(FLAGS, 'GaugeModel', log_file)
+        FLAGS.log_dir = io.make_log_dir(FLAGS, 'GaugeModel', log_file)
     else:
         fpath = os.path.join(FLAGS.log_dir, 'training', 'FLAGS.z')
         FLAGS = AttrDict(dict(io.loadz(fpath)))
@@ -97,6 +99,7 @@ def train(FLAGS, log_file=None):
     train_dir = os.path.join(FLAGS.log_dir, 'training')
     ckpt_dir = os.path.join(train_dir, 'checkpoints')
     io.check_else_make_dir([train_dir, ckpt_dir])
+    io.save_params(dict(FLAGS), train_dir, 'FLAGS', rank=rank)
 
     if FLAGS.hmc_start and FLAGS.hmc_steps > 0:
         x, eps_init = train_hmc(FLAGS)
@@ -104,7 +107,7 @@ def train(FLAGS, log_file=None):
     else:
         x = None
 
-    io.log(f'Building model...')
+    io.log(f'Building model...', rank=rank)
     model, FLAGS = build_model(FLAGS, log_file)
     step_init = tf.Variable(0, dtype=TF_INT)
     ckpt = tf.train.Checkpoint(step=step_init,
@@ -114,21 +117,22 @@ def train(FLAGS, log_file=None):
         ckpt, directory=ckpt_dir, max_to_keep=5
     )
     if manager.latest_checkpoint:
-        io.log(f'Restored from: {manager.latest_checkpoint}')
+        io.log(f'Restored from: {manager.latest_checkpoint}', rank=rank)
         ckpt.restore(manager.latest_checkpoint)
         step_init = ckpt.step
     else:
-        io.log(f'No existing checkpoints found. Starting from scratch.')
+        io.log(f'No existing checkpoints found. Starting from scratch.',
+               rank=rank)
 
-    io.log(f'Training model!')
+    io.log(f'Training model!', rank=rank)
     outputs, data_strs = train_model(model, ckpt, manager,
                                      step_init=step_init, x=x)
     if is_chief:
-        save(model, train_dir, outputs, data_strs)
+        io.save(model, train_dir, outputs, data_strs)
         plot_data(outputs, train_dir, FLAGS)
 
-    io.log(f'Done training model.')
-    io.log(80 * '=')
+    io.log(f'Done training model.', rank=rank)
+    io.log(80 * '=', rank=rank)
 
     return model, outputs, FLAGS
 
@@ -148,8 +152,8 @@ def run(FLAGS, model, beta, run_steps, x=None):
 
     outputs, data_strs = run_model(model, beta, run_steps, x)
     if is_chief:
-        run_dir = os.path.join(runs_dir, f'run_{get_run_num(runs_dir)}')
-        save_inference(model, run_dir, outputs, data_strs)
+        run_dir = os.path.join(runs_dir, f'run_{io.get_run_num(runs_dir)}')
+        io.save_inference(run_dir, outputs, data_strs)
         plot_data(outputs, run_dir, FLAGS)
 
     return model, outputs
@@ -157,8 +161,9 @@ def run(FLAGS, model, beta, run_steps, x=None):
 
 def train_hmc(FLAGS):
     """Main method for training HMC model."""
-    HFLAGS = AttrDict(dict(FLAGS))
     is_chief = hvd.rank() == 0 if FLAGS.horovod else not FLAGS.horovod
+    rank = hvd.rank() if FLAGS.horovod else 0
+    HFLAGS = AttrDict(dict(FLAGS))
     HFLAGS.dropout_prob = 0.
     HFLAGS.hmc = True
     HFLAGS.save_train_data = True
@@ -172,7 +177,7 @@ def train_hmc(FLAGS):
     train_dir = os.path.join(HFLAGS.log_dir, 'training_hmc')
     ckpt_dir = os.path.join(train_dir, 'checkpoints')
     io.check_else_make_dir([train_dir, ckpt_dir])
-    io.save_params(dict(HFLAGS), train_dir, 'FLAGS')
+    io.save_params(dict(HFLAGS), train_dir, 'FLAGS', rank=rank)
 
     model, HFLAGS = build_model(HFLAGS)
     step_init = tf.Variable(0, dtype=TF_INT)
@@ -183,7 +188,7 @@ def train_hmc(FLAGS):
         ckpt, directory=ckpt_dir, max_to_keep=3
     )
     if manager.latest_checkpoint:
-        io.log(f'Restored from: {manager.latest_checkpoint}')
+        io.log(f'Restored from: {manager.latest_checkpoint}', rank=rank)
         ckpt.restore(manager.latest_checkpoint)
         step_init = ckpt.step
 
@@ -195,8 +200,8 @@ def train_hmc(FLAGS):
 
     x_out = outputs['x']
     eps_out = model.dynamics.eps.numpy()
-    io.log(f'Done with HMC start.')
-    io.log(80 * '=')
+    io.log(f'Done with HMC start.', rank=rank)
+    io.log(80 * '=', rank=rank)
 
     return x_out, eps_out
 
@@ -204,6 +209,7 @@ def train_hmc(FLAGS):
 def train_model(model, ckpt, manager, step_init=None, x=None):
     """Train model."""
     is_chief = hvd.rank() == 0 if model.using_hvd else not model.using_hvd
+    rank = hvd.rank() if model.using_hvd else 0
 
     if x is None:
         x = tf.random.uniform(shape=model.input_shape,
@@ -222,9 +228,12 @@ def train_model(model, ckpt, manager, step_init=None, x=None):
     betas = model.betas[step:]
     steps = train_steps[step:]
 
-    train_step = tf.function(model.train_step)
+    if model.compile:
+        train_step = tf.function(model.train_step, experimental_compile=True)
+    else:
+        train_step = model.train_step
 
-    io.log(HEADER)
+    io.log(HEADER, rank=rank)
     for step, beta in zip(steps, betas):
         t0 = time.time()
         x = tf.reshape(x, model.input_shape)
@@ -261,7 +270,7 @@ def train_model(model, ckpt, manager, step_init=None, x=None):
         #          pass
 
         if step % model.print_steps == 0:
-            io.log(data_str)
+            io.log(data_str, rank=rank)
             data_strs.append(data_str)
 
         if model.save_train_data and step % model.log_steps == 0:
@@ -275,7 +284,7 @@ def train_model(model, ckpt, manager, step_init=None, x=None):
             manager.save()
 
         if step % 100 == 0:
-            io.log(HEADER)
+            io.log(HEADER, rank=rank)
 
     if is_chief and ckpt is not None and manager is not None:
         ckpt.step.assign(step)
@@ -310,7 +319,10 @@ def run_model(model, beta, run_steps, x=None):
     data_strs = [RUN_HEADER]
     charges_arr = [q_new.numpy()]
 
-    run_step = tf.function(model.run_step)
+    if model.compile:
+        run_step = tf.function(model.run_step, experimental_compile=True)
+    else:
+        run_step = model.run_step
 
     io.log(RUN_SEP)
     io.log(f'Running inference on trained model with:')

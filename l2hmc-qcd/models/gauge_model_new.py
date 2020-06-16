@@ -5,25 +5,28 @@ Implements `GaugeModel` class.
 """
 from __future__ import absolute_import, division, print_function
 
-import os
 import time
+
 from collections import namedtuple
 
 import numpy as np
 import tensorflow as tf
-from config import (
-    HAS_HOROVOD,  TF_FLOAT, TF_INT, NP_FLOAT, PI, TWO_PI, NetWeights,
-)
-import utils.file_io as io
-from utils.attr_dict import AttrDict
-from base.base_model import add_to_collection
-from lattice.lattice import GaugeLattice, u1_plaq_exact_tf
-from dynamics.dynamics import Dynamics, DynamicsConfig
-from network import NetworkConfig
-from utils.horovod_utils import warmup_lr
 
-if HAS_HOROVOD:
+import utils.file_io as io
+
+from config import PI, TF_FLOAT, TF_INT
+from lattice.lattice import GaugeLattice, u1_plaq_exact_tf
+from utils.attr_dict import AttrDict
+from dynamics.dynamics import Dynamics
+
+#  from utils.horovod_utils import warmup_lr
+#  if HAS_HOROVOD:
+try:
     import horovod.tensorflow as hvd
+
+    HAS_HOROVOD = True
+except ImportError:
+    HAS_HOROVOD = False
 
 
 NAMES = [
@@ -136,6 +139,8 @@ class GaugeModel:
         self.log_steps = params.get('logging_steps', self.train_steps // 500)
         self.save_train_data = params.get('save_train_data', True)
         self.save_run_data = params.get('save_run_data', True)
+        eager_execution = params.get('eager_execution', False)
+        self.compile = not eager_execution
 
     # pylint:disable=attribute-defined-outside-init
     def _build(self):
@@ -260,7 +265,6 @@ class GaugeModel:
 
         return optimizer
 
-    @tf.function(experimental_compile=True)
     def train_step(self, x, beta, first_step):
         """Perform a single training step."""
         with tf.GradientTape() as tape:
@@ -313,7 +317,6 @@ class GaugeModel:
 
         return checkpoint, manager, step_init
 
-    @tf.function(experimental_compile=True)
     def run_step(self, x, beta):
         """Perform a single inference step."""
         return self.dynamics((x, beta), training=False)
