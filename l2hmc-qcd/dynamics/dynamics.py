@@ -91,8 +91,6 @@ def build_network(xdim, config, net_config, separate_nets=True):
 
 
 # pylint:disable=too-many-instance-attributes,unused-argument
-
-
 class Dynamics(tf.keras.Model):
     """DynamicsObject for training the L2HMC sampler."""
 
@@ -136,22 +134,38 @@ class Dynamics(tf.keras.Model):
         else:
             if separate_nets:
                 def _separate_nets(name, seeds_):
+                    #  nets = {}
                     nets = []
                     factor = 2. if name == 'XNet' else 1.
                     for idx in range(self.config.num_steps):
                         new_seeds = {
                             key: int(idx * val) for key, val in seeds_.items()
                         }
-                        nets.append(
-                            GaugeNetwork(self.net_config,
-                                         self.xdim, factor=factor,
-                                         net_seeds=new_seeds,
-                                         name=f'{name}_step{idx}')
-                        )
+                        #  key = tf.constant(idx, dtype=TF_INT)
+                        #  key = idx
+                        #  key = key.experimental_ref()
+                        #  nets[key] = GaugeNetwork(self.net_config,
+                        #                           self.xdim, factor=factor,
+                        #                           net_seeds=new_seeds,
+                        #                           name=f'{name}_step{idx}')
+                        nets.append(GaugeNetwork(self.net_config,
+                                                 self.xdim, factor=factor,
+                                                 net_seeds=new_seeds,
+                                                 name=f'{name}_step{idx}'))
+
                     return nets
 
                 self.xnets = _separate_nets('XNet', xnet_seeds)
                 self.vnets = _separate_nets('VNet', vnet_seeds)
+                #  self.xnets = {}
+                #  self.vnets = {}
+                #  for (xk, xv), (vk, vv) in zip(xnets, vnets):
+                #  for xk, xv in xnets.items():
+                #      self.xnets[xk] = xv
+                #  for vk, vv in vnets.items():
+                #      self.vnets[vk] = vv
+                #  self.xnets = _separate_nets('XNet', xnet_seeds)
+                #  self.vnets = _separate_nets('VNet', vnet_seeds)
 
             else:
                 self.xnets = GaugeNetwork(self.net_config,
@@ -235,14 +249,14 @@ class Dynamics(tf.keras.Model):
         and use sampled masks to compute the actual solutions.
         """
         x_init, beta = inputs
-        with tf.name_scope('transition_forward'):
-            sf_init, sf_prop, pxf, sldf = self._transition(inputs,
-                                                           forward=True,
-                                                           training=training)
-        with tf.name_scope('transition_backward'):
-            sb_init, sb_prop, pxb, sldb = self._transition(inputs,
-                                                           forward=False,
-                                                           training=training)
+        #  with tf.name_scope('transition_forward'):
+        sf_init, sf_prop, pxf, sldf = self._transition(inputs,
+                                                       forward=True,
+                                                       training=training)
+        #  with tf.name_scope('transition_backward'):
+        sb_init, sb_prop, pxb, sldb = self._transition(inputs,
+                                                       forward=False,
+                                                       training=training)
         with tf.name_scope('combined_fb'):
             mask_f, mask_b = self._get_direction_masks()
             v_init = sf_init.v * mask_f[:, None] + sb_init.v * mask_b[:, None]
@@ -272,10 +286,10 @@ class Dynamics(tf.keras.Model):
         x_init, beta = inputs
         v_init = tf.random.normal(tf.shape(x_init))
         state = State(x_init, v_init, beta)
-        with tf.name_scope('transition_kernel'):
-            state_prop, px, sld = self.transition_kernel(state,
-                                                         forward,
-                                                         training)
+        #  with tf.name_scope('transition_kernel'):
+        state_prop, px, sld = self.transition_kernel(state,
+                                                     forward,
+                                                     training)
 
         return state, state_prop, px, sld
 
@@ -283,22 +297,41 @@ class Dynamics(tf.keras.Model):
         """Transition kernel of the augmented leapfrog integrator."""
         lf_fn = self._forward_lf if forward else self._backward_lf
 
-        step = tf.constant(0., name='md_step', dtype=TF_FLOAT)
-        logdet = tf.zeros((self.batch_size,), dtype=TF_FLOAT)
-
+        step = 0
+        sld = tf.zeros((self.batch_size,), dtype=TF_FLOAT)
         def body(step, state, logdet):
-            new_state, j = lf_fn(step, state, training)
-
-            return step+1, new_state, logdet+j
+            new_state, logdet = lf_fn(step, state, training=training)
+            return step+1, new_state, sld+logdet
 
         def cond(step, *args):
-            return tf.less(step, self.config.num_steps)
+            return  tf.less(step, self.config.num_steps)
 
-        _, state_prop, sumlogdet = tf.while_loop(
-            cond=cond,
-            body=body,
-            loop_vars=[step, state, logdet]
-        )
+        _, state_prop, sumlogdet = tf.while_loop(cond=cond, body=body,
+                                                 loop_vars=[step, state, sld])
+
+        #  step = tf.constant(0., name='md_step', dtype=TF_FLOAT)
+        #  step = 0.
+        #  logdet = tf.zeros((self.batch_size,), dtype=TF_FLOAT)
+        #
+        #  def body(step, state, logdet):
+        #      new_state, j = lf_fn(step, state, training)
+        #
+        #      return step+1, new_state, logdet+j
+        #
+        #  def cond(step, *args):
+        #      return tf.less(step, self.config.num_steps)
+
+        #  _, state_prop, sumlogdet = tf.while_loop(
+        #      cond=cond,
+        #      body=body,
+        #      loop_vars=[step, state, logdet]
+        #  )
+
+        #  state_prop = State(*state)
+        #  sld = tf.zeros((self.batch_size,), dtype=TF_FLOAT)
+        #  for step in np.arange(self.config.num_steps):
+        #      state_prop, logdet = lf_fn(step, state_prop, training)
+        #      sld += logdet
 
         accept_prob = self._compute_accept_prob(state, state_prop, sumlogdet)
 
@@ -308,48 +341,55 @@ class Dynamics(tf.keras.Model):
         if self.config.hmc or not self.separate_nets:
             return self.xnets, self.vnets
 
-        step = tf.cast(step, dtype=TF_INT)
-        if tf.executing_eagerly():
-            return self.xnets[step], self.vnets[step]
-
-        return tf.gather(self.xnets, step), tf.gather(self.vnets, step)
+        #  if not isinstance(step, int):
+        #      step = int(step)
+        #  key = tf.constant(step, dtype=TF_INT)
+        #  key = key.experimental_ref()
+        #  step = tf.cast(step, dtype=TF_INT)
+        #  key = step.experimental_ref()
+        #  if tf.executing_eagerly():
+        #      return self.xnets[key], self.vnets[key]
+        #
+        #  #  return tf.gather(self.xnets, step), tf.gather(self.vnets, step)
+        #  return self.xnets[key], self.vnets[key]
+        return self.xnets[int(step)], self.vnets[int(step)]
 
     def _forward_lf(self, step, state, training=None):
-        with tf.name_scope('forward_lf'):
-            t = self._get_time(step, tile=tf.shape(state.x)[0])
-            m, mc = self._get_mask(step)
-            xnet, vnet = self._get_network(step)
-            sumlogdet = 0.
-            state, logdet = self._update_v_forward(vnet, state, t, training)
-            sumlogdet += logdet
-            state, logdet = self._update_x_forward(xnet, state, t,
-                                                   (m, mc), training)
-            sumlogdet += logdet
-            state, logdet = self._update_x_forward(xnet, state, t,
-                                                   (mc, m), training)
-            sumlogdet += logdet
-            state, logdet = self._update_v_forward(vnet, state, t, training)
-            sumlogdet += logdet
+        #  with tf.name_scope('forward_lf'):
+        t = self._get_time(step, tile=tf.shape(state.x)[0])
+        m, mc = self._get_mask(step)
+        xnet, vnet = self._get_network(step)
+        sumlogdet = 0.
+        state, logdet = self._update_v_forward(vnet, state, t, training)
+        sumlogdet += logdet
+        state, logdet = self._update_x_forward(xnet, state, t,
+                                               (m, mc), training)
+        sumlogdet += logdet
+        state, logdet = self._update_x_forward(xnet, state, t,
+                                               (mc, m), training)
+        sumlogdet += logdet
+        state, logdet = self._update_v_forward(vnet, state, t, training)
+        sumlogdet += logdet
 
         return state, sumlogdet
 
     def _backward_lf(self, step, state, training=None):
-        with tf.name_scope('backward_lf'):
-            step_r = self.config.num_steps - step - 1
-            t = self._get_time(step_r)
-            m, mc = self._get_mask(step_r)
-            xnet, vnet = self._get_network(step_r)
-            sumlogdet = 0.
-            state, logdet = self._update_v_backward(vnet, state, t, training)
-            sumlogdet += logdet
-            state, logdet = self._update_x_backward(xnet, state, t,
-                                                    (mc, m), training)
-            sumlogdet += logdet
-            state, logdet = self._update_x_backward(xnet, state, t,
-                                                    (m, mc), training)
-            sumlogdet += logdet
-            state, logdet = self._update_v_backward(vnet, state, t, training)
-            sumlogdet += logdet
+        #  with tf.name_scope('backward_lf'):
+        step_r = self.config.num_steps - step - 1
+        t = self._get_time(step_r)
+        m, mc = self._get_mask(step_r)
+        xnet, vnet = self._get_network(step_r)
+        sumlogdet = 0.
+        state, logdet = self._update_v_backward(vnet, state, t, training)
+        sumlogdet += logdet
+        state, logdet = self._update_x_backward(xnet, state, t,
+                                                (mc, m), training)
+        sumlogdet += logdet
+        state, logdet = self._update_x_backward(xnet, state, t,
+                                                (m, mc), training)
+        sumlogdet += logdet
+        state, logdet = self._update_v_backward(vnet, state, t, training)
+        sumlogdet += logdet
 
         return state, sumlogdet
 
