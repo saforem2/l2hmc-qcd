@@ -21,11 +21,12 @@ from __future__ import absolute_import, division, print_function
 from typing import Callable, List, NoReturn, Tuple
 from collections import namedtuple
 
-import tensorflow as tf
 import numpy as np
+import tensorflow as tf
 
 from config import NP_FLOAT, TF_FLOAT, TF_INT
-from seed_dict import seeds, vnet_seeds, xnet_seeds
+from dynamics import DynamicsConfig
+from utils.seed_dict import seeds, vnet_seeds, xnet_seeds
 from network import NetworkConfig
 from network.gauge_network import GaugeNetwork
 
@@ -206,10 +207,11 @@ class Dynamics(tf.keras.Model):
                                 net_seeds=vnet_seeds, name='VNet')
 
         elif self.config.hmc:
-            xnet = lambda inputs, is_training: [  # noqa: E731
+            def xnet(inputs, is_training): return [  # noqa: E731
                 tf.zeros_like(inputs[0]) for _ in range(3)
             ]
-            vnet = lambda inputs, is_training: [  # noqa: E731
+
+            def vnet(inputs, is_training): return [  # noqa: E731
                 tf.zeros_like(inputs[0]) for _ in range(3)
             ]
 
@@ -366,7 +368,6 @@ class Dynamics(tf.keras.Model):
         step_int = int(step)
         xnet = getattr(self, f'xnets{step_int}', None)
         vnet = getattr(self, f'vnets{step_int}', None)
-
 
         #  key = tf.cast(step, dtype=TF_INT).ref()
 

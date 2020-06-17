@@ -9,97 +9,16 @@ from __future__ import absolute_import, division, print_function
 import tensorflow as tf
 
 from scipy.special import i0, i1
-
-import config as cfg
+from config import NP_FLOAT, TF_FLOAT
 
 import autograd.numpy as np
-
-NP_FLOAT = cfg.NP_FLOAT
-TF_FLOAT = cfg.TF_FLOAT
 
 # pylint: disable=invalid-name,no-member
 
 
-def u1_plaq_exact(beta):
-    """Computes the expected value of the `average` plaquette for U(1)."""
-    return i1(beta) / i0(beta)
-
-
-def u1_plaq_exact_tf(beta):
-    """Computes the expected value of the avg. plaquette for 2D U(1)."""
-    return tf.math.bessel_i1(beta) / tf.math.bessel_i0(beta)
-
-
-def calc_plaqs_diffs(plaqs, beta):
-    """Calculate the difference between expected and observed plaquettes."""
-    return u1_plaq_exact(beta) - plaqs
-
-
-def pbc(tup, shape):
-    """Returns tup % shape for implementing periodic boundary conditions."""
-    return list(np.mod(tup, shape))
-
-
-def pbc_tf(tup, shape):
-    """Tensorflow implementation of `pbc` defined above."""
-    return list(tf.mod(tup, shape))
-
-
-def mat_adj(mat):
-    """Returns the adjoint (i.e. conjugate transpose) of a matrix `mat`."""
-    return tf.transpose(tf.conj(mat))  # conjugate transpose
-
-
-def project_angle(x):
-    """Returns the projection of an angle `x` from [-4pi, 4pi] to [-pi, pi]."""
-    return x - 2 * np.pi * tf.math.floor((x + np.pi) / (2 * np.pi))
-
-
-def project_angle_np(x):
-    """Returns the projection of an angle `x` from [-4pi, 4pi] to [-pi, pi]."""
-    return x - 2 * np.pi * np.floor((x + np.pi) / (2 * np.pi))
-
-
-def project_angle_fft(x, N=10):
-    """Use the fourier series representation `x` to approx `project_angle`.
-    NOTE: Because `project_angle` suffers a discontinuity, we approximate `x`
-    with its Fourier series representation in order to have a differentiable
-    function when computing the loss.
-    Args:
-        x (array-like): Array to be projected.
-        N (int): Number of terms to keep in Fourier series.
-    """
-    y = np.zeros(x.shape, dtype=NP_FLOAT)
-    for n in range(1, N):
-        y += (-2 / n) * ((-1) ** n) * tf.sin(n * x)
-    return y
-
-
-def calc_plaqs_np(x):
-    """Defines the potential energy function using the Wilson action."""
-    potential = (x[..., 0]
-                 - x[..., 1]
-                 - np.roll(x[..., 0], shift=-1, axis=2)
-                 + np.roll(x[..., 1], shift=-1, axis=1))
-    return potential
-
-
-def get_potential_fn(lattice_shape):
-    """Wrapper method that reshapes `x` to `lattice_shape`."""
-    def gauge_potential(x):
-        """Defines the potential energy function using the Wilson action."""
-        x = tf.reshape(x, lattice_shape)
-        potential = (x[..., 0]
-                     - x[..., 1]
-                     - tf.roll(x[..., 0], shift=-1, axis=2)
-                     + tf.roll(x[..., 1], shift=-1, axis=1))
-        return potential
-
-    return gauge_potential
-
-
 class GaugeLattice:
     """Lattice with Gauge field existing on links."""
+
     def __init__(self,
                  time_size=8,
                  space_size=8,
