@@ -2,7 +2,7 @@ import numpy as np
 import tensorflow as tf
 
 import config as cfg
-from seed_dict import seeds
+from utils.seed_dict import seeds
 
 TF_FLOAT = cfg.TF_FLOAT
 NP_FLOAT = cfg.NP_FLOAT
@@ -18,6 +18,7 @@ if '2.' not in tf.__version__:
 def tf_zeros(shape):
     """Return tensor of all zeros."""
     return tf.zeros(shape, dtype=TF_FLOAT)
+
 
 def encode_angle(angle, method='cos_sin'):
     """Returns encoded angle using specified method.

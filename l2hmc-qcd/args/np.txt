@@ -1,8 +1,0 @@
---beta 2.
---hmc_start
---hmc_steps 1000
---hmc_eps 0.1
---batch_size 8 
---run_steps 5000
---print_steps 1
-#--symplectic_check
