@@ -13,10 +13,12 @@ import tensorflow as tf
 
 import utils.file_io as io
 
+from utils.attr_dict import AttrDict
 from utils.data_utils import therm_arr
 from utils.plotting_utils import plot_data, get_title_str_from_params
-from config import PI, TF_FLOAT
+from config import PI, TF_FLOAT, TF_INT
 from models.gauge_model import RUN_HEADER, RUN_SEP
+from utils.training_utils import build_model
 
 # pylint:disable=no-member
 if tf.__version__.startswith('1.'):
@@ -51,13 +53,65 @@ except ImportError:
 # pylint:disable=too-many-locals,invalid-name
 
 
+# pylint:disable=invalid-name
+def load_and_run(args):
+    """Load trained model from checkpoint and run inference."""
+    if args.hmc:
+        train_dir = os.path.join(args.log_dir, 'training_hmc')
+    else:
+        train_dir = os.path.join(args.log_dir, 'training')
+
+    ckpt_dir = os.path.join(train_dir, 'checkpoints')
+    FLAGS = AttrDict(dict(io.loadz(os.path.join(train_dir, 'FLAGS.z'))))
+
+    model, FLAGS = build_model(FLAGS)
+
+    step_init = tf.Variable(0, dtype=TF_INT)
+    ckpt = tf.train.Checkpoint(step=step_init,
+                               dynamics=model.dynamics,
+                               optimizer=model.optimizer)
+    manager = tf.train.CheckpointManager(ckpt,
+                                         max_to_keep=5,
+                                         directory=ckpt_dir)
+    if manager.latest_checkpoint:
+        io.log(f'Restored model from: {manager.latest_checkpoint}')
+        ckpt.restore(manager.latest_checkpoint)
+        step_init = ckpt.step
+
+    if args.eps is None:
+        eps_file = os.path.join(args.log_dir, 'eps_final.z')
+        if os.path.isfile(eps_file):
+            edict = io.loadz(eps_file)
+            model.dynamics.eps = edict['eps']
+
+    if args.beta is None:
+        train_dir = os.path.join(args.log_dir, 'training')
+        l2hmc_flags = AttrDict(
+            dict(io.loadz(os.path.join(train_dir, 'FLAGS.z')))
+        )
+        args.beta = l2hmc_flags.beta_final
+
+    model, outputs = run(FLAGS, model, args.beta, args.run_steps)
+
+    return model, outputs
+
+
 def run(FLAGS, model, beta, run_steps, x=None):
-    """Run inference."""
+    """Run inference.
+
+    Returns:
+        model (GaugeModel): Trained model
+        ouptuts (dict): Dictionary of outputs from inference run.
+    """
     is_chief = hvd.rank() == 0 if FLAGS.horovod else not FLAGS.horovod
     if not is_chief:
         return None, None
 
-    runs_dir = os.path.join(FLAGS.log_dir, 'inference')
+    if FLAGS.hmc:
+        runs_dir = os.path.join(FLAGS.log_dir, 'inference_hmc')
+    else:
+        runs_dir = os.path.join(FLAGS.log_dir, 'inference')
+
     io.check_else_make_dir(runs_dir)
     if x is None:
         x = tf.random.uniform(shape=model.input_shape,
@@ -105,8 +159,8 @@ def run_model(model, beta, run_steps, x=None):
                               minval=-PI, maxval=PI)
         x = tf.cast(x, dtype=TF_FLOAT)
 
-    _, q_new = model.calc_observables(x, model.beta_init)
-    plaqs, q_new = model.calc_observables(x, model.beta_init)
+    _, q_new = model.calc_observables(x, beta, use_sin=False)
+    plaqs, q_new = model.calc_observables(x, beta, use_sin=False)
     px_arr = []
     dq_arr = []
     data_strs = [RUN_HEADER]
@@ -136,7 +190,7 @@ def run_model(model, beta, run_steps, x=None):
         dt = time.time() - t0
 
         q_old = q_new
-        plaqs_err, q_new = model.calc_observables(x, beta)
+        plaqs_err, q_new = model.calc_observables(x, beta, use_sin=False)
         dq = tf.math.abs(q_new - q_old)
 
         data_str = (
@@ -156,8 +210,8 @@ def run_model(model, beta, run_steps, x=None):
             px_arr.append(px.numpy())
             dq_arr.append(dq.numpy())
             charges_arr.append(q_new.numpy())
-
             plaqs_arr.append(plaqs_err.numpy())
+
         if step % 100 == 0:
             io.log(RUN_HEADER)
 

@@ -134,6 +134,8 @@ def train(FLAGS, log_file=None):
                           x=x, step_init=step_init,
                           train_dir=train_dir)
     if is_chief:
+        io.save_params({'eps': model.dynamics.eps.numpy()},
+                       FLAGS.log_dir, name='eps_final')
         params = {
             'beta_init': outputs['betas'][0],
             'beta_final': outputs['betas'][-1],

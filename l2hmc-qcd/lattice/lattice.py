@@ -1,19 +1,34 @@
+# Copyright 2020 Sam Foreman
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 """
 lattice.py
 Contains implementation of GaugeLattice class.
 Author: Sam Foreman (github: @saforem2)
 Date: 01/15/2019
 """
+# pylint:disable=relative-beyond-top-level
 from __future__ import absolute_import, division, print_function
 
+import numpy as np
 import tensorflow as tf
 
-from scipy.special import i0, i1
 from config import NP_FLOAT, TF_FLOAT
 
-import autograd.numpy as np
+# pylint: disable=relative-beyond-top-level
+from .utils import project_angle, project_angle_np, u1_plaq_exact
 
-# pylint: disable=invalid-name,no-member
+# pylint: disable=invalid-name,no-member,too-many-instance-attributes
 
 
 class GaugeLattice:

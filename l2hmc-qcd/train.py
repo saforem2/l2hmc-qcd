@@ -1,5 +1,5 @@
 """
-train_eager.py
+train.py
 
 Train 2D U(1) model using eager execution in tensorflow.
 """

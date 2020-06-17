@@ -1,0 +1,2 @@
+--log_dir='../gauge_logs_eager/2020_06/DEBUG_L8_b64_lf3_qw01_dp01-2020-06-17-12-32'
+--run_steps 1000

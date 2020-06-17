@@ -16,6 +16,8 @@ import utils.file_io as io
 from config import (NET_WEIGHTS_HMC, NET_WEIGHTS_L2HMC, NetWeights,
                     NP_FLOAT, PI, PROJECT_DIR, TF_FLOAT)
 
+sns.set_palette('bright')
+
 
 def therm_arr(arr, therm_frac=0.2, ret_steps=True):
     """Drop first `therm_frac` steps of `arr` to account for thermalization."""
@@ -42,7 +44,7 @@ def plot_charges(steps, charges, title_str=None, out_dir=None):
     ax.set_yticks([])
     ax.set_yticklabels([])
     ax.xmargin: 0
-    #ax.yaxis.set_label_coords(-0.01, 1.02)
+    ax.yaxis.set_label_coords(-0.03, 0.5)
     ax.set_ylabel(r"$\mathcal{Q}$", fontsize='x-large',
                   rotation='horizontal')
     ax.set_xlabel('MC Step', fontsize='x-large')
@@ -104,6 +106,7 @@ def plot_data(outputs, base_dir, FLAGS, thermalize=False, params=None):
             fig, ax = plt.subplots()
             ax.plot(steps, np.array(val))
             ax.set_xlabel('MC Step', fontsize='large')
+            ax.yaxis.set_label_coords(-0.02, 0.5)
             ax.set_ylabel(r"$\beta$", fontsize='large', rotation='horizontal')
             if title_str is not None:
                 ax.set_title(title_str, fontsize='x-large')
@@ -149,7 +152,7 @@ def plot_data(outputs, base_dir, FLAGS, thermalize=False, params=None):
             az.plot_trace({key: data_arr})
             if title_str is not None:
                 fig = plt.gcf()
-                fig.suptitle(title_str, fontsize='x-large', y=1.02)
+                fig.suptitle(title_str, fontsize='x-large', y=1.04)
 
             out_file = os.path.join(out_dir, f'{key}.png')
             io.log(f'Saving figure to: {out_file}.')
