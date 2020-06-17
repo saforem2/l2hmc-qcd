@@ -5,28 +5,20 @@ Collection of helper methods to use for running inference on trained model.
 """
 from __future__ import absolute_import, division, print_function
 
-from models.gauge_model_new import GaugeModel, HEADER
-import datetime
-from utils.parse_args import parse_args
-from utils.attr_dict import AttrDict
-from eager.plotting import plot_data
-from eager.file_io import get_run_str, make_log_dir
-from plotters.data_utils import therm_arr
-from dynamics.dynamics import DynamicsConfig
-from network import NetworkConfig
-from config import (NET_WEIGHTS_HMC, NET_WEIGHTS_L2HMC, NetWeights, NP_FLOAT,
-                    PI, PROJECT_DIR, TF_FLOAT, TF_INT)
-import utils.file_io as io
-import matplotlib.pyplot as plt
-import seaborn as sns
-import xarray as xr
-import numpy as np
 import os
 import time
-from .training_utils import build_model
 
+import numpy as np
 import tensorflow as tf
 
+import utils.file_io as io
+
+from utils.data_utils import therm_arr
+from utils.plotting_utils import plot_data, get_title_str_from_params
+from config import PI, TF_FLOAT
+from models.gauge_model import RUN_HEADER, RUN_SEP
+
+# pylint:disable=no-member
 if tf.__version__.startswith('1.'):
     TF_VERSION = '1.x'
 elif tf.__version__.startswith('2.'):
@@ -36,121 +28,145 @@ try:
     import horovod.tensorflow as hvd
 
     hvd.init()
+    if hvd.rank() == 0:
+        print(f'Number of devices: {hvd.size()}')
     if TF_VERSION == '2.x':
-        gpus = tf.config.experimental.list_physical_devices('GPU')
-        for gpu in gpus:
+        GPUS = tf.config.experimental.list_physical_devices('GPU')
+        for gpu in GPUS:
             tf.config.experimental.set_memory_growth(gpu, True)
-        if gpus:
+        if GPUS:
             tf.config.experimental.set_visible_devices(
-                gpus[hvd.local_rank()], 'GPU'
+                GPUS[hvd.local_rank()], 'GPU'
             )
     elif TF_VERSION == '1.x':
-        config = tf.compat.v1.ConfigProto()
-        config.gpu_options.visible_device_list = str(hvd.local_rank())
-        tf.compat.v1.enable_eager_execution(config=config)
+        CONFIG = tf.compat.v1.ConfigProto()
+        CONFIG.gpu_options.allow_growth = True
+        CONFIG.gpu_options.visible_device_list = str(hvd.local_rank())
+        tf.compat.v1.enable_eager_execution(config=CONFIG)
 
 except ImportError:
     if TF_VERSION == '1.x':
         tf.compat.v1.enable_eager_execution()
 
-
-#  from models.gauge_model_eager import GaugeModel
-
-
-sns.set_palette('bright')
+# pylint:disable=too-many-locals,invalid-name
 
 
-def get_run_num(run_dir):
-    dirnames = [i for i in os.listdir(run_dir) if i.startwsith('run_')]
-    if len(dirnames) == 0:
-        return 1
+def run(FLAGS, model, beta, run_steps, x=None):
+    """Run inference."""
+    is_chief = hvd.rank() == 0 if FLAGS.horovod else not FLAGS.horovod
+    if not is_chief:
+        return None, None
 
-    return sorted([int(i.split('_')) for i in dirnames])[-1] + 1
+    runs_dir = os.path.join(FLAGS.log_dir, 'inference')
+    io.check_else_make_dir(runs_dir)
+    if x is None:
+        x = tf.random.uniform(shape=model.input_shape,
+                              minval=-PI, maxval=PI)
+        x = tf.cast(x, dtype=TF_FLOAT)
 
-
-def run_inference_hmc(FLAGS):
-    IS_CHIEF = (  # pylint:disable=invalid-name
-        not FLAGS.horovod
-        or FLAGS.horovod and hvd.rank() == 0
-    )
-
-    HFLAGS = AttrDict(dict(FLAGS))
-    #  HFLAGS.log_dir = os.path.join(FLAGS.log_dir, 'HMC_START')
-    HFLAGS.dropout_prob = 0.
-    HFLAGS.hmc = True
-    HFLAGS.net_weights = NET_WEIGHTS_HMC
-
-    model, HFLAGS = build_model(HFLAGS, save_params=False)
-    outputs, data_strs = model.run_eager(HFLAGS.run_steps,
-                                         beta=HFLAGS.beta_final,
-                                         save_run_data=True,
-                                         ckpt_dir=None)
-    if IS_CHIEF:
-        log_dir = HFLAGS.log_dir
-        runs_dir = os.path.join(log_dir, 'inference_HMC')
-        io.check_else_make_dir(runs_dir)
-        run_dir = os.path.join(runs_dir, f'run_{get_run_num(runs_dir)}')
+    outputs, data_strs = run_model(model, beta, run_steps, x)
+    if is_chief:
+        run_dir = os.path.join(runs_dir, f'run_{io.get_run_num(runs_dir)}')
         io.check_else_make_dir(run_dir)
 
         history_file = os.path.join(run_dir, 'inference_log.txt')
-        with open(history_file, 'w') as f:
-            f.write('\n'.join(data_strs))
+        io.flush_data_strs(data_strs, history_file)
 
         run_params = {
-            'beta': HFLAGS.beta_final,
-            'dynamics.eps': model.dynamics.eps.numpy(),
-            'net_weights': model.dynamics.config.net_weights
+            'beta': beta,
+            'eps': model.dynamics.eps.numpy(),
+            'run_steps': run_steps,
+            'net_weights': model.dynamics_config.net_weights,
+            'num_steps': model.dynamics_config.num_steps,
+            'input_shape': model.dynamics_config.input_shape,
+            'lattice_shape': model.lattice_shape,
         }
-        io.save_dict(run_params, run_dir, 'run_params')
+        io.save_params(run_params, run_dir, name='run_params')
+        io.save_inference(run_dir, outputs, data_strs)
 
-        outputs_dir = os.path.join(run_dir, 'outputs')
-        io.check_else_make_dir(outputs_dir)
-        for key, val in outputs.items():
-            out_file = os.path.join(outputs_dir, f'{key}.z')
-            io.savez(np.array(val), out_file, key)
-
-        plot_data(outputs, run_dir, HFLAGS, thermalize=True)
+        plot_data(outputs, run_dir, FLAGS, thermalize=True, params=run_params)
 
     return model, outputs
 
 
-def run_inference(FLAGS, model=None):
-    IS_CHIEF = (  # pylint:disable=invalid-name
-        not FLAGS.horovod
-        or FLAGS.horovod and hvd.rank() == 0
-    )
+def run_model(model, beta, run_steps, x=None):
+    """Run inference on trained `model`.
 
-    if model is None:
-        log_dir = FLAGS.log_dir
-        fpath = os.path.join(FLAGS.log_dir, 'training', 'FLAGS.z')
-        FLAGS = AttrDict(dict(io.loadz(fpath)))
-        FLAGS.log_dir = log_dir
-        model, FLAGS, ckpt_dir = build_model(FLAGS, save_params=False)
+    Returns:
+        outputs (dict): Dictionary of outputs.
+        data_strs (lsit): List of strings containing inference log.
+    """
+    is_chief = hvd.rank() == 0 if model.using_hvd else not model.using_hvd
+    if not is_chief:
+        return None, None
+
+    if x is None:
+        x = tf.random.uniform(shape=model.input_shape,
+                              minval=-PI, maxval=PI)
+        x = tf.cast(x, dtype=TF_FLOAT)
+
+    _, q_new = model.calc_observables(x, model.beta_init)
+    plaqs, q_new = model.calc_observables(x, model.beta_init)
+    px_arr = []
+    dq_arr = []
+    data_strs = [RUN_HEADER]
+    charges_arr = [q_new.numpy()]
+
+    plaqs_arr = [plaqs.numpy()]
+    if model.compile:
+        run_step = tf.function(model.run_step, experimental_compile=True)
     else:
-        dirname = os.path.join(FLAGS.log_dir, 'training', 'checkpoints')
-        ckpt_dir = dirname if IS_CHIEF else None
+        run_step = model.run_step
 
-    outputs, data_strs = model.run_eager(FLAGS.run_steps,
-                                         beta=FLAGS.beta_final,
-                                         save_run_data=True,
-                                         ckpt_dir=ckpt_dir)
+    io.log(RUN_SEP)
+    io.log(f'Running inference on trained model with:')
+    io.log(f'  beta: {beta}')
+    io.log(f'  dynamics.eps: {model.dynamics.eps.numpy():.4g}')
+    io.log(f'  net_weights: {model.dynamics.config.net_weights}')
+    io.log(RUN_SEP)
+    io.log(RUN_HEADER)
+    for step in np.arange(run_steps):
+        t0 = time.time()
+        x = tf.reshape(x, model.input_shape)
+        #  states, px, sld_states = model.run_step(x, beta)
+        states, px, sld_states = run_step(x, beta)
+        x = states.out.x
+        sld = sld_states.out
+        x = tf.reshape(x, model.lattice_shape)
+        dt = time.time() - t0
 
-    if IS_CHIEF:
-        log_dir = FLAGS.log_dir
-        runs_dir = os.path.join(log_dir, 'inference')
-        io.check_else_make_dir(runs_dir)
-        run_dir = os.path.join(runs_dir, f'run_{get_run_num(runs_dir)}')
-        io.check_else_make_dir(run_dir)
-        history_file = os.path.join(run_dir, 'inference_log.txt')
-        with open(history_file, 'w') as f:
-            f.write('\n'.join(data_strs))
+        q_old = q_new
+        plaqs_err, q_new = model.calc_observables(x, beta)
+        dq = tf.math.abs(q_new - q_old)
 
-        outputs_dir = os.path.join(run_dir, 'outputs')
-        io.check_else_make_dir(outputs_dir)
-        for key, val in outputs.items():
-            out_file = os.path.join(outputs_dir, f'{key}.z')
-            io.savez(np.array(val), out_file, key)
+        data_str = (
+            f"{step:>6g}/{run_steps:<6g} "
+            f"{dt:^11.4g} "
+            f"{np.mean(px.numpy()):^11.4g} "
+            f"{np.mean(sld.numpy()):^11.4g} "
+            f"{np.mean(dq.numpy()):^11.4g} "
+            f"{np.mean(plaqs_err.numpy()):^11.4g} "
+        )
 
-        plot_data(outputs, run_dir, FLAGS, thermalize=True)
+        if step % model.print_steps == 0:
+            io.log(data_str)
+            data_strs.append(data_str)
 
-    return model, outputs
+        if model.save_run_data:
+            px_arr.append(px.numpy())
+            dq_arr.append(dq.numpy())
+            charges_arr.append(q_new.numpy())
+
+            plaqs_arr.append(plaqs_err.numpy())
+        if step % 100 == 0:
+            io.log(RUN_HEADER)
+
+    outputs = {
+        'px': np.array(px_arr),
+        'dq': np.array(dq_arr),
+        'charges_arr': np.array(charges_arr),
+        'x': tf.reshape(x, model.input_shape),
+        'plaqs_err': np.array(plaqs_arr),
+    }
+
+    return outputs, data_strs

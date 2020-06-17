@@ -42,41 +42,94 @@ def plot_charges(steps, charges, title_str=None, out_dir=None):
     ax.set_yticks([])
     ax.set_yticklabels([])
     ax.xmargin: 0
-    ax.yaxis.set_label_coords(-0.01, 1.02)
+    #ax.yaxis.set_label_coords(-0.01, 1.02)
     ax.set_ylabel(r"$\mathcal{Q}$", fontsize='x-large',
                   rotation='horizontal')
     ax.set_xlabel('MC Step', fontsize='x-large')
     if title_str is not None:
         ax.set_title(title_str, fontsize='x-large')
     plt.tight_layout()
+
     if out_dir is not None:
         out_file = os.path.join(out_dir, 'charges_traceplot.png')
         io.log(f'Saving figure to: {out_file}.')
         plt.savefig(out_file, dpi=400, bbox_inches='tight')
 
 
+def get_title_str_from_params(params):
+    """Create a formatted string with relevant params from `params`."""
+    eps = params.get('eps', None)
+    net_weights = params.get('net_weights', None)
+    num_steps = params.get('num_steps', None)
+    lattice_shape = params.get('lattice_shape', None)
+
+    title_str = (r"$N_{\mathrm{LF}} = $" + f'{num_steps}, '
+                 r"$\varepsilon = $" + f'{eps:.4g}, ')
+
+    if 'beta_init' in params and 'beta_final' in params:
+        beta_init = params.get('beta_init', None)
+        beta_final = params.get('beta_final', None)
+        #  title_str = r"$\beta_{mathrm{init}} = $" + f'{beta_init}'
+        title_str += (r"$\beta: $" + f'{beta_init:.3g}'
+                      + r"$\rightarrow$" f'{beta_final:.3g}, ')
+    elif 'beta' in params:
+        beta = params.get('beta', None)
+        title_str += r"$\beta = $" + f'{beta:.3g}, '
+
+    title_str += f'shape: {lattice_shape}'
+
+    if net_weights == NET_WEIGHTS_HMC:
+        title_str += f', (HMC)'
+
+    return title_str
+
+
 # pylint:disable=unsubscriptable-object
-def plot_data(outputs, base_dir, FLAGS, thermalize=False):
+def plot_data(outputs, base_dir, FLAGS, thermalize=False, params=None):
     out_dir = os.path.join(base_dir, 'plots')
     io.check_else_make_dir(out_dir)
+
+    title_str = None if params is None else get_title_str_from_params(params)
 
     data = {}
     for key, val in outputs.items():
         if key == 'x':
             continue
-        if key == 'loss_arr':
-            fig, ax = plt.subplots()
+
+        if key == 'betas':
             if 'training' in base_dir:
                 steps = FLAGS.logging_steps * np.arange(len(np.array(val)))
             else:
                 steps = np.arange(len(np.array(val)))
-            ax.plot(steps, np.array(val), ls='', marker='x', label='loss')
+            fig, ax = plt.subplots()
+            ax.plot(steps, np.array(val))
+            ax.set_xlabel('MC Step', fontsize='large')
+            ax.set_ylabel(r"$\beta$", fontsize='large', rotation='horizontal')
+            if title_str is not None:
+                ax.set_title(title_str, fontsize='x-large')
+            out_file = os.path.join(out_dir, f'betas.png')
+            io.log(f'Saving figure to: {out_file}.')
+            fig.savefig(out_file, dpi=400, bbox_inches='tight')
+
+        if key == 'loss_arr':
+            if 'training' in base_dir:
+                steps = FLAGS.logging_steps * np.arange(len(np.array(val)))
+            else:
+                steps = np.arange(len(np.array(val)))
+            fig, ax = plt.subplots()
+            ax.plot(steps, np.array(val), ls='',
+                    marker='x', label='loss')
             ax.legend(loc='best')
             ax.set_xlabel('Train step')
+            if title_str is not None:
+                ax.set_title(title_str, fontsize='x-large')
             out_file = os.path.join(out_dir, 'loss.png')
             io.log(f'Saving figure to: {out_file}')
             fig.savefig(out_file, dpi=400, bbox_inches='tight')
+
         else:
+            if key in ['beta', 'betas', 'loss_arr']:
+                continue
             fig, ax = plt.subplots()
             arr = np.array(val)
             chains = np.arange(arr.shape[1])
@@ -94,6 +147,10 @@ def plot_data(outputs, base_dir, FLAGS, thermalize=False):
             data_arr = xr.DataArray(arr.T, dims=['chain', 'draw'],
                                     coords=[chains, steps])
             az.plot_trace({key: data_arr})
+            if title_str is not None:
+                fig = plt.gcf()
+                fig.suptitle(title_str, fontsize='x-large', y=1.02)
+
             out_file = os.path.join(out_dir, f'{key}.png')
             io.log(f'Saving figure to: {out_file}.')
             plt.savefig(out_file, dpi=400, bbox_inches='tight')
@@ -108,6 +165,8 @@ def plot_data(outputs, base_dir, FLAGS, thermalize=False):
         ax.plot(steps, avg_val, color=colors[idx], label=label)
         ax.legend(loc='best')
         ax.set_xlabel('Step')
+        if title_str is not None:
+            ax.set_title(title_str, fontsize='x-large')
         #  ax.set_xlabel('Train step')
         out_file = os.path.join(out_dir, f'{key}_avg.png')
         io.log(f'Saving figure to: {out_file}.')
@@ -115,5 +174,5 @@ def plot_data(outputs, base_dir, FLAGS, thermalize=False):
         plt.close('all')
 
     steps, charges = data['charges_arr']
-    plot_charges(steps, charges, out_dir=out_dir)
+    plot_charges(steps, charges, out_dir=out_dir, title_str=title_str)
     plt.close('all')

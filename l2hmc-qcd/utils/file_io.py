@@ -56,8 +56,17 @@ def check_else_make_dir(d, rank=0):
             os.makedirs(d, exist_ok=True)
 
 
+def flush_data_strs(data_strs, out_file, rank=0, mode='a'):
+    """Dump `data_strs` to `out_file` and return new, empty list."""
+    with open(out_file, mode) as f:
+        for s in data_strs:
+            f.write(f'{s}\n')
+
+    return []
+
+
 def save_params(params, out_dir, name=None, rank=0):
-    """save params (dict) to `out_dir`, as both `.z` and `.txt` files."""
+    """save params(dict) to `out_dir`, as both `.z` and `.txt` files."""
     if rank != 0:
         return
 
@@ -136,11 +145,11 @@ def timeit(method):
 
 def get_run_num(run_dir):
     """Get the integer label for naming `run_dir`."""
-    dirnames = [i for i in os.listdir(run_dir) if i.startwsith('run_')]
+    dirnames = [i for i in os.listdir(run_dir) if i.startswith('run_')]
     if len(dirnames) == 0:
         return 1
 
-    return sorted([int(i.split('_')) for i in dirnames])[-1] + 1
+    return sorted([int(i.split('_')[-1]) for i in dirnames])[-1] + 1
 
 
 def get_run_str(FLAGS):
@@ -171,8 +180,8 @@ def get_run_str(FLAGS):
 def make_log_dir(FLAGS, model_type=None, log_file=None, eager=True):
     """Automatically create and name `log_dir` to save model data to.
 
-    The created directory will be located in `logs/YYYY_M_D/`, and will have
-    the format (without `_qw{QW}` if running generic HMC):
+    The created directory will be located in `logs/YYYY_M_D /`, and will have
+    the format(without `_qw{QW}` if running generic HMC):
 
         `lattice{LX}_batch{NS}_lf{LF}_eps{SS}_qw{QW}`
 
@@ -205,38 +214,39 @@ def make_log_dir(FLAGS, model_type=None, log_file=None, eager=True):
     return log_dir
 
 
-def save(model, train_dir, outputs, data_strs, rank=0):
+def save_network_weights(model, train_dir, rank=0):
+    """Save network weights as dictionary to `.z` files."""
+    xnets = model.dynamics.xnets
+    vnets = model.dynamics.vnets
+    wdir = os.path.join(train_dir, 'dynamics_weights')
+    check_else_make_dir(wdir)
+    if model.separate_networks:
+        iterable = enumerate(zip(xnets, vnets))
+        xnet_weights = {}
+        vnet_weights = {}
+        for idx, (xnet, vnet) in iterable:
+            xfpath = os.path.join(wdir, f'xnet{idx}_weights.z')
+            vfpath = os.path.join(wdir, f'vnet{idx}_weights.z')
+            xweights = xnet.save_layer_weights(out_file=xfpath)
+            vweights = vnet.save_layer_weights(out_file=vfpath)
+            xnet_weights[f'xnet{idx}'] = xweights
+            vnet_weights[f'vnet{idx}'] = vweights
+
+        xweights_file = os.path.join(wdir, 'xnet_weights.z')
+        vweights_file = os.path.join(wdir, 'vnet_weights.z')
+        savez(xnet_weights, xweights_file, 'xnet_weights')
+        savez(vnet_weights, vweights_file, 'vnet_weights')
+    else:
+        xfpath = os.path.join(wdir, 'xnet_weights.z')
+        vfpath = os.path.join(wdir, 'vnet_weights.z')
+        xnets.save_layer_weights(out_file=xfpath)
+        vnets.save_layer_weights(out_file=vfpath)
+
+
+def save(model, train_dir, outputs, rank=0):
     """Save training results."""
-    history_file = os.path.join(train_dir, 'training_log.txt')
-    with open(history_file, 'w') as f:
-        f.write('\n'.join(data_strs))
-
     if not model.dynamics_config.hmc:
-        xnets = model.dynamics.xnets
-        vnets = model.dynamics.vnets
-        wdir = os.path.join(train_dir, 'dynamics_weights')
-        check_else_make_dir(wdir)
-        if model.separate_networks:
-            iterable = enumerate(zip(xnets, vnets))
-            xnet_weights = {}
-            vnet_weights = {}
-            for idx, (xnet, vnet) in iterable:
-                xfpath = os.path.join(wdir, f'xnet{idx}_weights.z')
-                vfpath = os.path.join(wdir, f'vnet{idx}_weights.z')
-                xweights = xnet.save_layer_weights(out_file=xfpath)
-                vweights = vnet.save_layer_weights(out_file=vfpath)
-                xnet_weights[f'xnet{idx}'] = xweights
-                vnet_weights[f'vnet{idx}'] = vweights
-
-            xweights_file = os.path.join(wdir, 'xnet_weights.z')
-            vweights_file = os.path.join(wdir, 'vnet_weights.z')
-            savez(xnet_weights, xweights_file, 'xnet_weights')
-            savez(vnet_weights, vweights_file, 'vnet_weights')
-        else:
-            xfpath = os.path.join(wdir, 'xnet_weights.z')
-            vfpath = os.path.join(wdir, 'vnet_weights.z')
-            xnets.save_layer_weights(out_file=xfpath)
-            vnets.save_layer_weights(out_file=vfpath)
+        save_network_weights(model, train_dir, rank=rank)
 
     if model.save_train_data:
         outputs_dir = os.path.join(train_dir, 'outputs')
