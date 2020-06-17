@@ -1,24 +1,24 @@
 """
 training_utils.py
 
-Collection of helper methods to use for training model.
+Implements helper functions for training the model.
 """
 from __future__ import absolute_import, division, print_function
 
-from models.gauge_model import (GaugeModel, HEADER, RUN_HEADER,
-                                RUN_SEP)
-from utils.attr_dict import AttrDict
-from utils.plotting_utils import plot_data
-from dynamics import DynamicsConfig
-from network import NetworkConfig
-from config import (NET_WEIGHTS_HMC, NET_WEIGHTS_L2HMC, PI, TF_FLOAT,
-                    TF_INT)
-import utils.file_io as io
 import os
 import time
 
 import numpy as np
 import tensorflow as tf
+
+import utils.file_io as io
+
+from config import NET_WEIGHTS_HMC, NET_WEIGHTS_L2HMC, PI, TF_FLOAT, TF_INT
+from network import NetworkConfig
+from dynamics import DynamicsConfig
+from models.gauge_model import GaugeModel, HEADER
+from utils.attr_dict import AttrDict
+from utils.plotting_utils import plot_data
 
 # pylint:disable=no-member
 if tf.__version__.startswith('1.'):
@@ -55,7 +55,7 @@ except ImportError:
 
 
 # pylint:disable=invalid-name, redefined-outer-name
-def build_model(FLAGS, save_params=True, log_file=None):
+def build_model(FLAGS):
     """Build model using parameters from FLAGS."""
     net_weights = NET_WEIGHTS_HMC if FLAGS.hmc else NET_WEIGHTS_L2HMC
     xdim = FLAGS.time_size * FLAGS.space_size * FLAGS.dim
@@ -97,20 +97,23 @@ def train(FLAGS, log_file=None):
     else:
         fpath = os.path.join(FLAGS.log_dir, 'training', 'FLAGS.z')
         FLAGS = AttrDict(dict(io.loadz(fpath)))
+        FLAGS.restore = True
 
     train_dir = os.path.join(FLAGS.log_dir, 'training')
     ckpt_dir = os.path.join(train_dir, 'checkpoints')
     io.check_else_make_dir([train_dir, ckpt_dir])
-    io.save_params(dict(FLAGS), train_dir, 'FLAGS', rank=rank)
+    if not FLAGS.restore:
+        io.save_params(dict(FLAGS), train_dir, 'FLAGS', rank=rank)
 
-    if FLAGS.hmc_start and FLAGS.hmc_steps > 0:
-        x, eps_init = train_hmc(FLAGS)
+    if FLAGS.hmc_start and FLAGS.hmc_steps > 0 and not FLAGS.restore:
+        outputs, eps_init = train_hmc(FLAGS)
+        x = outputs['x']
         FLAGS.eps = eps_init
     else:
         x = None
 
     io.log(f'Building model...', rank=rank)
-    model, FLAGS = build_model(FLAGS, log_file)
+    model, FLAGS = build_model(FLAGS)
     step_init = tf.Variable(0, dtype=TF_INT)
     ckpt = tf.train.Checkpoint(step=step_init,
                                dynamics=model.dynamics,
@@ -123,42 +126,27 @@ def train(FLAGS, log_file=None):
         ckpt.restore(manager.latest_checkpoint)
         step_init = ckpt.step
     else:
-        io.log(f'No existing checkpoints found. Starting from scratch.',
-               rank=rank)
+        io.log('\n'.join(['No existing checkpoints found.',
+                          'Starting from scratch.']), rank=rank)
 
     io.log(f'Training model!', rank=rank)
-    outputs, data_strs = train_model(model, ckpt, manager,
-                                     step_init=step_init, x=x)
+    outputs = train_model(model, ckpt, manager,
+                          x=x, step_init=step_init,
+                          train_dir=train_dir)
     if is_chief:
-        io.save(model, train_dir, outputs, data_strs)
-        plot_data(outputs, train_dir, FLAGS)
+        params = {
+            'beta_init': outputs['betas'][0],
+            'beta_final': outputs['betas'][-1],
+            'eps': model.dynamics.eps.numpy(),
+            'lattice_shape': model.lattice_shape,
+            'num_steps': model.dynamics.config.num_steps,
+            'net_weights': model.dynamics_config.net_weights,
+        }
+        plot_data(outputs, train_dir, FLAGS, params=params)
 
-    io.log(f'Done training model.', rank=rank)
-    io.log(80 * '=', rank=rank)
+    io.log('\n'.join(['Done training model', 80 * '=']), rank=rank)
 
     return model, outputs, FLAGS
-
-
-def run(FLAGS, model, beta, run_steps, x=None):
-    """Run inference."""
-    is_chief = hvd.rank() == 0 if FLAGS.horovod else not FLAGS.horovod
-    if not is_chief:
-        return None, None
-
-    runs_dir = os.path.join(FLAGS.log_dir, 'inference')
-    io.check_else_make_dir(runs_dir)
-    if x is None:
-        x = tf.random.uniform(shape=model.input_shape,
-                              minval=-PI, maxval=PI)
-        x = tf.cast(x, dtype=TF_FLOAT)
-
-    outputs, data_strs = run_model(model, beta, run_steps, x)
-    if is_chief:
-        run_dir = os.path.join(runs_dir, f'run_{io.get_run_num(runs_dir)}')
-        io.save_inference(run_dir, outputs, data_strs)
-        plot_data(outputs, run_dir, FLAGS)
-
-    return model, outputs
 
 
 def train_hmc(FLAGS):
@@ -194,37 +182,48 @@ def train_hmc(FLAGS):
         ckpt.restore(manager.latest_checkpoint)
         step_init = ckpt.step
 
-    outputs, data_strs = train_model(model, ckpt, manager,
-                                     step_init=step_init, x=None)
+    outputs = train_model(model, ckpt, manager,
+                          step_init=step_init,
+                          train_dir=train_dir)
     if is_chief:
-        io.save(model, train_dir, outputs, data_strs)
-        plot_data(outputs, train_dir, HFLAGS)
+        io.save(model, train_dir, outputs)
+        params = {
+            'beta_init': outputs['betas'][0],
+            'beta_final': outputs['betas'][-1],
+            'eps': model.dynamics.eps.numpy(),
+            'lattice_shape': model.lattice_shape,
+            'num_steps': model.dynamics.config.num_steps,
+            'net_weights': model.dynamics_config.net_weights,
+        }
+        plot_data(outputs, train_dir, HFLAGS, params=params)
 
-    x_out = outputs['x']
+    #  x_out = outputs['x']
     eps_out = model.dynamics.eps.numpy()
-    io.log(f'Done with HMC start.', rank=rank)
-    io.log(80 * '=', rank=rank)
+    io.log('\n'.join(['Done with HMC start.', 80 * '=']), rank=rank)
 
-    return x_out, eps_out
+    return outputs, eps_out
 
 
-def train_model(model, ckpt, manager, step_init=None, x=None):
+# pylint:disable=too-many-locals
+def train_model(model, ckpt, manager, step_init=None, x=None, train_dir=None):
     """Train model."""
     is_chief = hvd.rank() == 0 if model.using_hvd else not model.using_hvd
     rank = hvd.rank() if model.using_hvd else 0
+    history_file = os.path.join(train_dir, 'train_log.txt')
 
     if x is None:
         x = tf.random.uniform(shape=model.input_shape,
                               minval=-PI, maxval=PI)
         x = tf.cast(x, dtype=TF_FLOAT)
 
-    _, q_new = model.calc_observables(x, model.beta_init)
+    plaqs, q_new = model.calc_observables(x, model.beta_init)
 
     px_arr = []
     dq_arr = []
     loss_arr = []
     data_strs = [HEADER]
     charges_arr = [q_new.numpy()]
+    plaqs_arr = [plaqs.numpy()]
     train_steps = np.arange(model.train_steps)
     step = int(step_init.numpy())
     betas = model.betas[step:]
@@ -280,10 +279,12 @@ def train_model(model, ckpt, manager, step_init=None, x=None):
             dq_arr.append(dq.numpy())
             loss_arr.append(loss.numpy())
             charges_arr.append(q_new.numpy())
+            plaqs_arr.append(plaqs_err.numpy())
 
         if is_chief and step % model.save_steps == 0 and ckpt is not None:
             ckpt.step.assign(step)
             manager.save()
+            data_strs = io.flush_data_strs(data_strs, history_file)
 
         if step % 100 == 0:
             io.log(HEADER, rank=rank)
@@ -291,8 +292,10 @@ def train_model(model, ckpt, manager, step_init=None, x=None):
     if is_chief and ckpt is not None and manager is not None:
         ckpt.step.assign(step)
         manager.save()
+        data_strs = io.flush_data_strs(data_strs, history_file)
 
     outputs = {
+        'betas': betas,
         'px': np.array(px_arr),
         'dq': np.array(dq_arr),
         'loss_arr': np.array(loss_arr),
@@ -300,81 +303,4 @@ def train_model(model, ckpt, manager, step_init=None, x=None):
         'x': tf.reshape(x, model.input_shape),
     }
 
-    return outputs, data_strs
-
-
-def run_model(model, beta, run_steps, x=None):
-    """Run inference on trained model."""
-    is_chief = hvd.rank() == 0 if model.using_hvd else not model.using_hvd
-    if not is_chief:
-        return None, None
-
-    if x is None:
-        x = tf.random.uniform(shape=model.input_shape,
-                              minval=-PI, maxval=PI)
-        x = tf.cast(x, dtype=TF_FLOAT)
-
-    _, q_new = model.calc_observables(x, model.beta_init)
-
-    px_arr = []
-    dq_arr = []
-    data_strs = [RUN_HEADER]
-    charges_arr = [q_new.numpy()]
-
-    if model.compile:
-        run_step = tf.function(model.run_step, experimental_compile=True)
-    else:
-        run_step = model.run_step
-
-    io.log(RUN_SEP)
-    io.log(f'Running inference on trained model with:')
-    io.log(f'  beta: {beta}')
-    io.log(f'  dynamics.eps: {model.dynamics.eps.numpy():.4g}')
-    io.log(f'  net_weights: {model.dynamics.config.net_weights}')
-    io.log(RUN_SEP)
-    io.log(RUN_HEADER)
-    for step in np.arange(run_steps):
-        t0 = time.time()
-        x = tf.reshape(x, model.input_shape)
-        #  states, px, sld_states = model.run_step(x, beta)
-        states, px, sld_states = run_step(x, beta)
-        x = states.out.x
-        sld = sld_states.out
-        x = tf.reshape(x, model.lattice_shape)
-        dt = time.time() - t0
-
-        q_old = q_new
-        plaqs_err, q_new = model.calc_observables(x, beta)
-        dq = tf.math.abs(q_new - q_old)
-
-        data_str = (
-            f"{step:>6g}/{run_steps:<6g} "
-            f"{dt:^11.4g} "
-            f"{np.mean(px.numpy()):^11.4g} "
-            f"{np.mean(sld.numpy()):^11.4g} "
-            f"{np.mean(dq.numpy()):^11.4g} "
-            f"{np.mean(plaqs_err.numpy()):^11.4g} "
-        )
-
-        if step % model.print_steps == 0:
-            io.log(data_str)
-            data_strs.append(data_str)
-
-        if model.save_run_data:
-            px_arr.append(px.numpy())
-            dq_arr.append(dq.numpy())
-            charges_arr.append(q_new.numpy())
-
-        if step % 100 == 0:
-            io.log(RUN_HEADER)
-
-    outputs = {
-        'px': np.array(px_arr),
-        'dq': np.array(dq_arr),
-        'charges_arr': np.array(charges_arr),
-        'x': tf.reshape(x, model.input_shape),
-    }
-
-    data_strs.append(RUN_HEADER)
-
-    return outputs, data_strs
+    return outputs

@@ -19,9 +19,9 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 
-import .file_io as io
-from .file_io import timeit
-from lattice.lattice import u1_plaq_exact
+import utils.file_io as io
+from utils.file_io import timeit
+from lattice.utils import u1_plaq_exact
 
 #  from plotters.plot_utils import get_matching_log_dirs
 #  from plotters.plot_observables import get_obs_dict, grid_plot

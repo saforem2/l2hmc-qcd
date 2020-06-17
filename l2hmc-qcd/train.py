@@ -7,10 +7,10 @@ from __future__ import absolute_import, division, print_function
 
 import os
 
-from utils.training_utils import train, run
 from utils.attr_dict import AttrDict
 from utils.parse_args import parse_args
-
+from utils.training_utils import train
+from utils.inference_utils import run
 
 if __name__ == '__main__':
     FLAGS = parse_args()
