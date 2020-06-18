@@ -25,10 +25,6 @@ Given an *analytically* described target distribution, $\pi(x)$, L2HMC provides 
 - Is able to efficiently mix between energy levels.
 - Is capable of traversing low-density zones to mix between modes (often difficult for generic HMC).
 
-<!---
-Simple examples of target distributions (Gaussian, GaussianMixtureModel, lattice/ring of Gaussians, etc) can be found in `utils/distributions.py`.
---->
-
 
 # L2HMC for LatticeQCD
 
@@ -48,10 +44,6 @@ In doing so, the overall efficiency of the simulation is subsequently improved.
 
 ## $U(1)$ Lattice Gauge Theory
 
-<div align="center">
- <img src="assets/lattice.png" alt="lattice" style="width:200px;height:200px"/>
-</div>
-
 We start by considering the simpler $(1+1)$-dimensional $U(1)$ lattice gauge
 theory, defined on an $N_{x} \times N_{t}$ lattice with periodic boundary
 conditions.
@@ -59,47 +51,42 @@ conditions.
 The action of this gauge theory is defined in terms of the *link variables*
 
 <div align="center">
- <img src="assets/link_var.png" alt="U_{\mu}(i) = e^{i\phi_{\mu}(i)}, \quad \phi_{\mu}(i) \in [0, 2\pi)"/>
+ <img src="assets/link_var.svg" alt="U_{\mu}(i) = e^{i\phi_{\mu}(i)}, \quad \phi_{\mu}(i) \in [0, 2\pi)"/>
 </div>
-
-<!---
-<div align="center">
- <img src="https://quicklatex.com/cache3/a2/ql_4f37c51daac82c9a577cbfd4182d0fa2_l3.png">
-</div>
---->
-
-<!---
-$$
-U_{\mu}(i) = e^{i\phi_{\mu}(i)}, \quad \phi_{\mu}(i) \in [0, 2\pi)
-$$
---->
 
 and can be written as
 
 <div align="center">
- <img src="assets/action1.png" alt="S = \sum_{P}\, 1 - \cos(\phi_{P})"/>
+ <img src="assets/action1.svg" alt="S = \sum_{P}\, 1 - \cos(\phi_{P})"/>
 </div>
+
+&nbsp;
 
 where $\phi_{P}$ is the sum of the link variables around an elementary plaquette:
 
-<div align="center">
-<img src="assets/plaquette_eq.png" alt="\phi_{P} \equiv \phi_{\mu\nu}(i) = \phi_{\mu}(i) + \phi_{\nu}(i+\hat{\mu}) - \phi_{\mu}(i+\hat\nu) - \phi_{\nu}(i)"/>
-</div>
+&nbsp;
 
 <div align="center">
-  <img src="assets/nerds.png" alt="image-20200220120110456" style="width:350px;height:200px"/>
+<img src="assets/plaquette_eq.svg" alt="\phi_{P} \equiv \phi_{\mu\nu}(i) = \phi_{\mu}(i) + \phi_{\nu}(i+\hat{\mu}) - \phi_{\mu}(i+\hat\nu) - \phi_{\nu}(i)"/>
 </div>
-</figure>
 
-#### Target distribution:
+&nbsp;
+ 
+<div align="center">
+  <img src="assets/nerds2.svg" alt="image-20200220120110456" style="width:85vw; min-width:330px; height=auto"/>
+</div>
+
+&nbsp;
+
+### Target distribution:
 
 - Our target distribution is then given by:
 
   <div align="center">
-  <img src="assets/target_distribution.png" alt="\pi(\phi) = \frac{e^{-\beta S[\phi]}}{\mathcal{Z}}"/>
+  <img src="assets/target_distribution.svg" alt="\pi(\phi) = \frac{e^{-\beta S[\phi]}}{\mathcal{Z}}"/>
   </div>
 
-  where $\mathcal{Z}$ is the partition function (normalizing factor), and $S[\phi]$ is the Wilson gauge action for the 2D $U(1)$ theory.
+  where $\mathcal{Z}$ is the partition function (normalizing factor), $\beta$ is the inverse coupling constant, and $S[\phi]$ is the Wilson gauge action for the 2D $U(1)$ theory.
 
 Lattice methods for the 2D $U(1)$ gauge model are implemented using the `GaugeLattice` object, which can be found at [`l2hmc-qcd/lattice/lattice.py`](l2hmc-qcd/lattice/lattice.py)
 
@@ -128,42 +115,6 @@ the topological charge $\mathcal{Q}$,
 
 [`models/gauge_model.py`](l2hmc-qcd/models/gauge_model.py) is a wrapper object around the `Dynamics` model and implements methods for calculating the loss as well as running individual training and inference steps. 
 
-<!--- An abstract base model `BaseModel` can be found in
-[`base_model.py`](l2hmc-qcd/base/base_model.py). --->
-
-<!--- This `BaseModel` is responsible for creating and organizing all of the various
-tensorflow operations, tensors and placeholders necessary for training and
-evaluating the L2HMC sampler. --->
-
-<!--- In particular, the `BaseModel` object is responsible for both defining the loss
-function to be minimized, as well as building and grouping the backpropagation
-operations that apply the gradients accumulated during the loss function
-calculation. --->
-
-<!--- Building on this `BaseModel`, there are two additional models: --->
-
-<!--- 1. [`GaugeModel`](l2hmc-qcd/models/gauge_model.py) that extends the
-   `BaseModel` to exist on a two-dimensional lattice with periodic boundary
-conditions and a target distribution defined by the Wilson gauge action --->
-
-<!---
-$$
-\beta S \propto
-
-$\beta
-S =$, i.e. $\pi(x) = e^{-\beta S(x)}$.
---->
-
-
-<!--- Model information (including the implementation of the loss function) can be
-found in [`base_model.py`](l2hmc-qcd/base/base_model.py). 
-
-This module implements an abstract
-base class from which additional models can be built.
-
-For example, both the `GaugeModel` and `GaussianMixtureModel` (defined in
-[`l2hmc-qcd/models/`](l2hmc-qcd/models/) inherit from the `BaseModel` object and extend it in
-different ways. --->
 
 ## Training / Inference
 
@@ -180,70 +131,12 @@ python3 run.py --run_steps 1000 --log_dir=/path/to/log_dir --beta 5.
 ```
 where `log_dir` is the directory (automatically created during training) containing the `checkpoints` subdirectory, where the training checkpoints can be found.
 
-<!---Scripts for both training the model and running inference on a trained model can be found in [`bin/`](bin/).
-
-
-Example command line arguments can be found in `l2hmc-qcd/args`. The module
-[`l2hmc-qcd/main.py`](l2hmc-qcd/main.py) implements wrapper functions that are
-used to train the model and save the resulting trained graph which can then be
-loaded and used for inference.
-
-The code responsible for actually training the model can be found in the
-[`Trainer`](l2hmc-qcd/trainers/trainer.py) object.
-
-Summary objects for monitoring model performance in TensorBoard are created in
-the various methods found in
-[`l2hmc-qcd/loggers/summary_utils.py`](l2hmc-qcd/loggers/summary_utils.py).
-These objects are then created inside the `create_summaries(...)` method of the
-[`TrainLogger`](l2hmc-qcd/loggers/train_logger.py) class.
-
-To train the model, you can either specify command line arguments manually
-(descriptions can be found in
-[`utils/parse_args.py`](l2hmc-qcd/utils/parse_args.py), or use the
-`args/args.txt` file, which can be passed directly to `main.py` by prepending
-the `.txt` file with `@`.
-
-For example, from within the `l2hmc-qcd/args` directory:
-```
-python3 ../main.py @args.txt
-```
---->
-
 All of the relevant command line options are well documented and can be found
 in [`l2hmc-qcd/utils/parse_args.py`](l2hmc-qcd/utils/parse_args.py) (training) or [`l2hmc-qcd/utils/parse_inference_args.py`](l2hmc-qcd/utils/parse_inference_args.py) (inference).
 
  Almost all relevant information about different parameters and run options
  can be found in this file.
 
-<!---
-### Inference
-
-Once the training is complete, we can use the trained model to run inference to
-gather statistics about relevant lattice observables. This can be done using
-the [`gauge_inference.py`](l2hmc-qcd/gauge_inference.py) module which
-implements helper functions for loading and running the saved model.
-
-Explicitly, assuming we trained the model by running the `main.py` module from
-within the `l2hmc-qcd/args` directory using the command given above, we can
-then run inference via:
-
-```
-python ../gauge_inference.py \
-    --run_steps 5000 \
-    --beta_inference 5. \
-    --samples_init 'random'
-```
-where
-
- - `run_steps` is the number of complete accept/reject steps to perform
- - `beta_inference` is the value of `beta` (inverse gauge coupling) at which
-     the inference run should be performed
- - `samples_init` specifies how the samples should be initialized
-
-### Notebooks
-`l2hmc-qcd/notebooks/` contains a random collection of jupyter notebooks that
-each serve different purposes and should be somewhat self explanatory.
---->
 
 # Features
 
