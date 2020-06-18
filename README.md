@@ -1,5 +1,8 @@
 # l2hmc-qcd  [![CodeFactor](https://www.codefactor.io/repository/github/saforem2/l2hmc-qcd/badge)](https://www.codefactor.io/repository/github/saforem2/l2hmc-qcd) ![HitCount](http://hits.dwyl.io/saforem2/l2hmc-qcd.svg)
 
+**Update (06/17/2020):** Major rewrite of previous code, new implementations are compatible with `tensorflow >= 2.2` and are capable of being run both imperatively ('eager execution', the default in `tensorflow 2.x`), and through graph execution, obtained by compiling the necessary functions with `tf.function`. 
+
+
 A description of the L2HMC algorithm can be found in the paper:
 
 [*Generalizing Hamiltonian Monte Carlo with Neural Network*](https://arxiv.org/abs/1711.09268)
@@ -22,16 +25,28 @@ Given an *analytically* described target distribution, $\pi(x)$, L2HMC provides 
 - Is able to efficiently mix between energy levels.
 - Is capable of traversing low-density zones to mix between modes (often difficult for generic HMC).
 
+<!---
 Simple examples of target distributions (Gaussian, GaussianMixtureModel, lattice/ring of Gaussians, etc) can be found in `utils/distributions.py`.
-
+--->
 
 
 # L2HMC for LatticeQCD
 
-#### **Goal:**
+**Goal:** Use L2HMC to generate _gauge configurations_ for lattice QCD. 
 
-- ##### Use L2HMC to generate *gauge configurations* for LatticeQCD.
+All lattice QCD simulations are performed at finit lattice spacing $a$, and need an extrapolation to the continuum in order to be used for computing values of physical quantities.
+More reliable extrapolations can be done by simulating the theory at increasingly smaller lattice spacings.
 
+The picture that results when the lattice spacing is reduced and the physics kept constant is that all finite physical quantities of negative mass dimension diverge if measured in lattice units.
+
+In statistical mechanics language, this states that the continuum limit is a critical point of the theory since the correlation lengths diverge.
+MCMC algorithms are known to encounter difficulties when used for simulating theories close to a critical point, an issue known as the _critical slowing down_ of the algorithm.
+
+**The L2HMC algorithm aims to improve upon HMC by optimizing a carefully chosen loss function which is designed to minimize autocorrelations within the Markov Chain.**
+
+In doing so, the overall efficiency of the simulation is subsequently improved.
+
+## $U(1)$ Lattice Gauge Theory
 
 <figure class="half" style="display:flex">
     <div align="center">
@@ -41,21 +56,24 @@ Simple examples of target distributions (Gaussian, GaussianMixtureModel, lattice
 </div>
 </figure>
 
-## $U(1)$ Lattice Gauge Theory
-
 We start by considering the simpler $(1+1)$-dimensional $U(1)$ lattice gauge
 theory, defined on an $N_{x} \times N_{t}$ lattice with periodic boundary
 conditions.
 
 The action of this gauge theory is defined in terms of the *link variables*
+
 $$
 U_{\mu}(i) = e^{i\phi_{\mu}(i)}, \quad \phi_{\mu}(i) \in [0, 2\pi)
 $$
+
 and can be written as
+
 $$
 S = \sum_{P}\, 1 - \cos(\phi_{P})
 $$
+
 where $\phi_{P}$ is the sum of the link variables around an elementary plaquette:
+
 $$
 \phi_{P} \equiv \phi_{\mu\nu}(i) = \phi_{\mu}(i) + \phi_{\nu}(i+\hat{\mu}) - \phi_{\mu}(i+\hat\nu) - \phi_{\nu}(i)
 $$
@@ -63,23 +81,27 @@ $$
 #### Target distribution:
 
 - Our target distribution is then given by:
+
   $$
   \pi(\phi) = \frac{e^{-\beta S[\phi]}}{\mathcal{Z}}
   $$
-  where $\mathcal{Z}$ is the partition function (normalizing factor).
 
+  where $\mathcal{Z}$ is the partition function (normalizing factor), and $S[\phi]$ is the Wilson gauge action for the 2D $U(1)$ theory.
 
-
-Lattice code can be found in [`l2hmc-qcd/lattice/`](l2hmc-qcd/lattice/) and the
-particular code for the $2D$ $U{(1)}$ lattice gauge model can be found in
-[`lattice.py`](l2hmc-qcd/lattice/lattice.py).
-
-
+Lattice methods for the 2D $U(1)$ gauge model are implemented using the `GaugeLattice` object, which can be found at [`l2hmc-qcd/lattice/lattice.py`](l2hmc-qcd/lattice/lattice.py)
 
 
 # Organization
 
-### Lattice
+## Dynamics / Network
+The augmented L2HMC leapfrog integrator is implemented in the [`Dynamics`](l2hmc-qcd/dynamics/dynamics.py) object.
+
+The `Dynamics` object is built by subclassing `tf.keras.Model`, and consists of a [`GaugeNetwork`](l2hmc-qcd/network/gauge_network.py) which, in turn, is a collection of `tf.keras.layers`, each of which can be found in [`network/layers.py`](l2hmc-qcd/network/layers.py).
+
+Specific details about the network can be found in
+[`l2hmc-qcd/network/gauge_network.py`](l2hmc-qcd/network/gauge_network.py).
+
+## Lattice
 
 Lattice code can be found in [`lattice.py`](l2hmc-qcd/lattice/lattice.py),
 specifically the `GaugeLattice` object that provides the base structure on
@@ -89,28 +111,38 @@ Additionally, the `GaugeLattice` object implements a variety of methods for
 calculating physical observables such as the average plaquette, $\phi_{P}$, and
 the topological charge $\mathcal{Q}$,
 
-### Model
+## Model
 
-An abstract base model `BaseModel` can be found in
-[`base_model.py`](l2hmc-qcd/base/base_model.py).
+[`models/gauge_model.py`](l2hmc-qcd/models/gauge_model.py) is a wrapper object around the `Dynamics` model and implements methods for calculating the loss as well as running individual training and inference steps. 
 
-This `BaseModel` is responsible for creating and organizing all of the various
+<!--- An abstract base model `BaseModel` can be found in
+[`base_model.py`](l2hmc-qcd/base/base_model.py). --->
+
+<!--- This `BaseModel` is responsible for creating and organizing all of the various
 tensorflow operations, tensors and placeholders necessary for training and
-evaluating the L2HMC sampler.
+evaluating the L2HMC sampler. --->
 
-In particular, the `BaseModel` object is responsible for both defining the loss
+<!--- In particular, the `BaseModel` object is responsible for both defining the loss
 function to be minimized, as well as building and grouping the backpropagation
 operations that apply the gradients accumulated during the loss function
-calculation.
+calculation. --->
 
-Building on this `BaseModel`, there are two additional models:
+<!--- Building on this `BaseModel`, there are two additional models: --->
 
-1. [`GaugeModel`](l2hmc-qcd/models/gauge_model.py) that extends the
+<!--- 1. [`GaugeModel`](l2hmc-qcd/models/gauge_model.py) that extends the
    `BaseModel` to exist on a two-dimensional lattice with periodic boundary
-conditions and a target distribution defined by the Wilson gauge action $\beta
-S$, i.e. $\pi(x) = e^{-\beta S(x)}$.
+conditions and a target distribution defined by the Wilson gauge action --->
 
-Model information (including the implementation of the loss function) can be
+<!---
+$$
+\beta S \propto
+
+$\beta
+S =$, i.e. $\pi(x) = e^{-\beta S(x)}$.
+--->
+
+
+<!--- Model information (including the implementation of the loss function) can be
 found in [`base_model.py`](l2hmc-qcd/base/base_model.py). 
 
 This module implements an abstract
@@ -118,25 +150,25 @@ base class from which additional models can be built.
 
 For example, both the `GaugeModel` and `GaussianMixtureModel` (defined in
 [`l2hmc-qcd/models/`](l2hmc-qcd/models/) inherit from the `BaseModel` object and extend it in
-different ways.
+different ways. --->
 
-### Dynamics / Network
+## Training / Inference
 
-The augmented L2HMC leapfrog integrator is implemented using the
-[`Dynamics`](l2hmc-qcd/dynamics/dynamics.py) object.
+To train the model, either run the training script from [`bin/train.sh`](bin/train.sh), or modify the command line arguments found in [`bin/gauge_args.txt`](bin/gauge_args.txt) and run:
+```
+python3 train.py @/path/to/gauge_args.txt
+```
 
-The `Dynamics` object has a `build_network` method that builds the neural
-network. The network architecture is specified via the `--network_arch` command
-line flag, with possible values being: `generic`, `conv2D`, or `conv3D`.
+Inference is automatically ran after training the model, but can also be ran by loading in a trained model from a checkpoint.
 
-Specific details about the network can be found in
-[`l2hmc-qcd/network`](l2hmc-qcd/network).
+This can be done by running the inference script in [`bin/run.sh`](bin/run.sh), or by simply calling:
+```
+python3 run.py --run_steps 1000 --log_dir=/path/to/log_dir --beta 5.
+```
+where `log_dir` is the directory (automatically created during training) containing the `checkpoints` subdirectory, where the training checkpoints can be found.
 
-Due to the unconventional architecture and
-data-flow of the L2HMC algorithm, the network is implemented by subclassing the
-`tf.keras.Model`, which is a sufficiently flexible approach.
+<!---Scripts for both training the model and running inference on a trained model can be found in [`bin/`](bin/).
 
-### Training
 
 Example command line arguments can be found in `l2hmc-qcd/args`. The module
 [`l2hmc-qcd/main.py`](l2hmc-qcd/main.py) implements wrapper functions that are
@@ -162,12 +194,15 @@ For example, from within the `l2hmc-qcd/args` directory:
 ```
 python3 ../main.py @args.txt
 ```
+--->
 
 All of the relevant command line options are well documented and can be found
-in [`l2hmc-qcd/utils/parse_args.py`](l2hmc-qcd/utils/parse_args.py). Almost all
-relevant information about different parameters and run options can be found in
-this file.
+in [`l2hmc-qcd/utils/parse_args.py`](l2hmc-qcd/utils/parse_args.py) (training) or [`l2hmc-qcd/utils/parse_inference_args.py`](l2hmc-qcd/utils/parse_inference_args.py) (inference).
 
+ Almost all relevant information about different parameters and run options
+ can be found in this file.
+
+<!---
 ### Inference
 
 Once the training is complete, we can use the trained model to run inference to
@@ -195,13 +230,14 @@ where
 ### Notebooks
 `l2hmc-qcd/notebooks/` contains a random collection of jupyter notebooks that
 each serve different purposes and should be somewhat self explanatory.
+--->
 
 # Features
 
 - **Distributed training**
 (via [`horovod`](https://github.com/horovod/horovod)): The ability to train the
 sampler across multiple nodes (using data-parallelism) can be enabled simply by
-passing the `--horovod` command line argument to the training script `main.py`.
+passing the `--horovod` command line argument to the training script `train.py`.
 
 # Contact
 
