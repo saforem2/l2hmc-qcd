@@ -86,6 +86,8 @@ where $\phi_{P}$ is the sum of the link variables around an elementary plaquette
 <img src="assets/plaquette_eq.svg" alt="\phi_{P} \equiv \phi_{\mu\nu}(i) = \phi_{\mu}(i) + \phi_{\nu}(i+\hat{\mu}) - \phi_{\mu}(i+\hat\nu) - \phi_{\nu}(i)"/>
 </div>
 
+&nbsp;
+ 
 <div align="center">
   <img src="assets/nerds.png" alt="image-20200220120110456" style="width:350px;height:200px"/>
 </div>
