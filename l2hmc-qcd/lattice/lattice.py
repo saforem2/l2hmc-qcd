@@ -1,105 +1,39 @@
+# Copyright 2020 Sam Foreman
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 """
 lattice.py
 Contains implementation of GaugeLattice class.
 Author: Sam Foreman (github: @saforem2)
 Date: 01/15/2019
 """
+# pylint:disable=relative-beyond-top-level
 from __future__ import absolute_import, division, print_function
 
+import numpy as np
 import tensorflow as tf
 
-from scipy.special import i0, i1
+from config import NP_FLOAT, TF_FLOAT
 
-import config as cfg
+# pylint: disable=relative-beyond-top-level
+from .utils import project_angle, project_angle_np, u1_plaq_exact
 
-import autograd.numpy as np
-
-NP_FLOAT = cfg.NP_FLOAT
-TF_FLOAT = cfg.TF_FLOAT
-
-# pylint: disable=invalid-name,no-member
-
-
-def u1_plaq_exact(beta):
-    """Computes the expected value of the `average` plaquette for U(1)."""
-    return i1(beta) / i0(beta)
-
-
-def u1_plaq_exact_tf(beta):
-    """Computes the expected value of the avg. plaquette for 2D U(1)."""
-    return tf.math.bessel_i1(beta) / tf.math.bessel_i0(beta)
-
-
-def calc_plaqs_diffs(plaqs, beta):
-    """Calculate the difference between expected and observed plaquettes."""
-    return u1_plaq_exact(beta) - plaqs
-
-
-def pbc(tup, shape):
-    """Returns tup % shape for implementing periodic boundary conditions."""
-    return list(np.mod(tup, shape))
-
-
-def pbc_tf(tup, shape):
-    """Tensorflow implementation of `pbc` defined above."""
-    return list(tf.mod(tup, shape))
-
-
-def mat_adj(mat):
-    """Returns the adjoint (i.e. conjugate transpose) of a matrix `mat`."""
-    return tf.transpose(tf.conj(mat))  # conjugate transpose
-
-
-def project_angle(x):
-    """Returns the projection of an angle `x` from [-4pi, 4pi] to [-pi, pi]."""
-    return x - 2 * np.pi * tf.math.floor((x + np.pi) / (2 * np.pi))
-
-
-def project_angle_np(x):
-    """Returns the projection of an angle `x` from [-4pi, 4pi] to [-pi, pi]."""
-    return x - 2 * np.pi * np.floor((x + np.pi) / (2 * np.pi))
-
-
-def project_angle_fft(x, N=10):
-    """Use the fourier series representation `x` to approx `project_angle`.
-    NOTE: Because `project_angle` suffers a discontinuity, we approximate `x`
-    with its Fourier series representation in order to have a differentiable
-    function when computing the loss.
-    Args:
-        x (array-like): Array to be projected.
-        N (int): Number of terms to keep in Fourier series.
-    """
-    y = np.zeros(x.shape, dtype=NP_FLOAT)
-    for n in range(1, N):
-        y += (-2 / n) * ((-1) ** n) * tf.sin(n * x)
-    return y
-
-
-def calc_plaqs_np(x):
-    """Defines the potential energy function using the Wilson action."""
-    potential = (x[..., 0]
-                 - x[..., 1]
-                 - np.roll(x[..., 0], shift=-1, axis=2)
-                 + np.roll(x[..., 1], shift=-1, axis=1))
-    return potential
-
-
-def get_potential_fn(lattice_shape):
-    """Wrapper method that reshapes `x` to `lattice_shape`."""
-    def gauge_potential(x):
-        """Defines the potential energy function using the Wilson action."""
-        x = tf.reshape(x, lattice_shape)
-        potential = (x[..., 0]
-                     - x[..., 1]
-                     - tf.roll(x[..., 0], shift=-1, axis=2)
-                     + tf.roll(x[..., 1], shift=-1, axis=1))
-        return potential
-
-    return gauge_potential
+# pylint: disable=invalid-name,no-member,too-many-instance-attributes
 
 
 class GaugeLattice:
     """Lattice with Gauge field existing on links."""
+
     def __init__(self,
                  time_size=8,
                  space_size=8,
@@ -211,10 +145,10 @@ class GaugeLattice:
         Returns:
             plaq_sums (tf operation): Tensorflow operation capable of
                 calculating the plaquette sums.
-        NOTE: self.samples.shape = (N, L, T, D), where:
+        NOTE: self.samples.shape = (N, T, L, D), where:
             N = batch_size
-            L = space_size
             T = time_size
+            L = space_size
             D = dimensionality
         """
         if isinstance(samples, np.ndarray):
@@ -224,7 +158,7 @@ class GaugeLattice:
             if samples.shape != self.samples.shape:
                 samples = tf.reshape(samples, shape=self.samples.shape)
 
-            # assuming D = 2, plaq_sums will have shape: (N, L, T)
+            # assuming D = 2, plaq_sums will have shape: (N, T, L)
             plaq_sums = (samples[..., 0]
                          - samples[..., 1]
                          - tf.roll(samples[..., 0], shift=-1, axis=2)
@@ -287,13 +221,17 @@ class GaugeLattice:
 
         return plaqs
 
-    def calc_top_charges(self, samples=None, plaq_sums=None):
+    def calc_top_charges(self, samples=None, plaq_sums=None, use_sin=True):
         """Calculate topological charges for each sample in samples."""
         if plaq_sums is None:
             plaq_sums = self.calc_plaq_sums(samples)
 
         with tf.name_scope('top_charges'):
-            ps_proj = tf.sin(plaq_sums)
+            if use_sin:
+                ps_proj = tf.sin(plaq_sums)
+            else:
+                ps_proj = project_angle(plaq_sums)
+
             top_charges = (tf.reduce_sum(ps_proj, axis=(1, 2),
                                          name='top_charges')) / (2 * np.pi)
         return top_charges
@@ -326,5 +264,5 @@ class GaugeLattice:
     def get_potential_fn(self, samples):
         """Returns callable function used for calculating the energy."""
         def fn(samples):
-            return self.calc_actions(samples)
+            return self.calc_actions(samples=samples)
         return fn

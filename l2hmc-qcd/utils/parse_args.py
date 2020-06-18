@@ -4,6 +4,7 @@ Implements method for parsing command line arguments for `gauge_model.py`
 Author: Sam Foreman (github: @saforem2)
 Date: 04/09/2019
 """
+from __future__ import absolute_import, division, print_function
 import os
 import sys
 import argparse
@@ -34,6 +35,20 @@ def parse_args():
         description=DESCRIPTION,
         fromfile_prefix_chars='@',
     )
+
+    parser.add_argument("--separate_networks",
+                        dest='separate_networks',
+                        action='store_true',
+                        required=False,
+                        help=("""Whether or not to use separate networks for
+                              each MC step."""))
+
+    parser.add_argument("--eager_execution",
+                        dest='eager_execution',
+                        action='store_true',
+                        required=False,
+                        help=("""Whether or not to compile model to graph."""))
+
     ###########################################################################
     #                          Lattice parameters                             #
     ###########################################################################
@@ -186,7 +201,22 @@ def parse_args():
                         default=10000,
                         required=False,
                         help=("""Number of training steps to perform.\n
+                              (Default: 10000)"""))
+
+    parser.add_argument("--run_steps",
+                        dest="run_steps",
+                        type=int,
+                        default=5000,
+                        required=False,
+                        help=("""Number of inference steps to perform.\n
                               (Default: 5000)"""))
+
+    parser.add_argument('--inference',
+                        dest='inference',
+                        action='store_true',
+                        required=False,
+                        help=("""FLag that when passed will run inference on
+                              trained model."""))
 
     parser.add_argument("--extra_steps",
                         dest="extra_steps",
@@ -226,10 +256,10 @@ def parse_args():
     parser.add_argument("--logging_steps",
                         dest="logging_steps",
                         type=int,
-                        default=10,
+                        default=100,
                         required=False,
                         help=("""Number of steps after which to write logs for
-                              tensorboard.\n (Default: 50)"""))
+                              tensorboard.\n (Default: 100)"""))
 
     # ------------------------------------------------------------------------
     # Model parameters

@@ -1,59 +1,177 @@
-conv3D_logs/
-/cooley_logs/
-l2hmc-qcd/lattice/old
-l2hmc-qcd/remake_plots.py
-l2hmc-qcd/sampler.py
-l2hmc_logs
-logs/
+## --------------------------------
+## USER-DEFINED .gitignore below
+## --------------------------------
 gauge_logs/
+gauge_logs_eager/
 gmm_logs/
-2019_04_09
-animations/
-*.mp4
 figures/
-gmm_figures/*
+bin/output_dirs.txt
+untracked/
 
-l2hmc-qcd/args/old
+doc/main_vimtex_selected.pdf
+doc/main_vimtex_selected.tex
+doc/updates/updates_2020_06_01.tex
+requirements.txt
 
-l2hmc-qcd/notebooks/*Untitled*
-l2hmc-qcd/notebooks/*Copy*
-l2hmc-qcd/notebooks/gmm_autocorrelation_analysis.ipynb
-l2hmc-qcd/notebooks/gmm_mean_error_analysis.ipynb
 
-l2hmc-qcd/args/checkpoint_dir.txt
-l2hmc-qcd/args/extras/
-l2hmc-qcd/args/main.sh
-l2hmc-qcd/args/run_l2hmc.sh
-l2hmc-qcd/l2hmc-qcd/dynamics/lattice_dynamics.py
-l2hmc-qcd/models/gauge_model_old.py
-l2hmc-qcd/notebooks/Untitled.ipynb
-l2hmc-qcd/notebooks/load_and_run_from_saved_model.ipynb
-l2hmc-qcd/notebooks/make_plots.ipynb
-l2hmc-qcd/notebooks/save_leapfrogs.ipynb
-l2hmc-qcd/notebooks/tensorboard_in_notebook.ipynb
-l2hmc-qcd/notebooks/testing_reversability_tf_eager.ipynb
-l2hmc-qcd/notebooks/u1_animations.ipynb
-l2hmc-qcd/plotters/formatters.py
-l2hmc-qcd/dynamics/lattice_dynamics.py
-l2hmc-qcd/test.py
-l2hmc-qcd/utils/optimize_for_inference.py
-l2hmc-qcd/main_old.py
-l2hmc-qcd/models/old/
-l2hmc-qcd/notebooks/Untitled1.ipynb
-l2hmc-qcd/hmc/
-l2hmc-qcd/tests/
-l2hmc-qcd/old/
-l2hmc-qcd/args/output_dirs.txt
-l2hmc-qcd/models/model_backup.py
-l2hmc-qcd/models/model_testing.py
 *Untitled*
 *.un~*
 *__pycache__*
 *.bak
 *figures*
 *.pkl
+*.mp4
 *backup*
 *old*
+
+*.z
+*.bak*
+*.ipynb_checkpoints
+.env
+.vim
+doc/Makefile
+doc/autocorrelation_plots_vimtex_selected.pdf
+doc/autocorrelation_plots_vimtex_selected.tex
+doc/unused_files.txt
+doc/used_files.txt
+*.DS_store*
+
+timeline.json
+
+
+## -------------------------
+## PYTHON .gitignore below
+## -------------------------
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+#  Usually these files are written by a python script from a template
+#  before PyInstaller builds the exe, so as to inject date/other infos into it.
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+
+# Translations
+*.mo
+*.pot
+
+# Django stuff:
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# Flask stuff:
+instance/
+.webassets-cache
+
+# Scrapy stuff:
+.scrapy
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+target/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+.python-version
+
+# pipenv
+#   According to pypa/pipenv#598, it is recommended to include Pipfile.lock in version control.
+#   However, in case of collaboration, if having platform-specific dependencies or dependencies
+#   having no cross-platform support, pipenv may install dependencies that don't work, or not
+#   install all needed dependencies.
+#Pipfile.lock
+
+# PEP 582; used by e.g. github.com/David-OConnor/pyflow
+__pypackages__/
+
+# Celery stuff
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
 
 
 ## -------------------------
@@ -340,27 +458,3 @@ TSWLatexianTemp*
 # option is specified. Footnotes are the stored in a file with suffix Notes.bib.
 # Uncomment the next line to have this generated file ignored.
 #*Notes.bib
-
-
-*.z
-*.bak*
-*.ipynb_checkpoints
-l2hmc-qcd/notebooks/*.png
-timeline.json
-.env
-.vim
-charge_fft_compare.png
-doc/Makefile
-doc/autocorrelation_plots_vimtex_selected.pdf
-doc/autocorrelation_plots_vimtex_selected.tex
-doc/unused_files.txt
-doc/used_files.txt
-l2hmc-qcd/network/new
-l2hmc-qcd/base/base_model1.py
-l2hmc-qcd/base/base_model_new.py
-l2hmc-qcd/models/gauge_model_new.py
-l2hmc-qcd/runners/run_data_new.py
-l2hmc-qcd/runners/runner_np1.py
-l2hmc-qcd/runners/runner_tf.py
-l2hmc-qcd/args/.env
-args/params.z

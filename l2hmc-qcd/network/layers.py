@@ -12,7 +12,7 @@ from __future__ import absolute_import, division, print_function
 import numpy as np
 import tensorflow as tf
 
-from tensorflow.contrib.framework import add_arg_scope, arg_scope
+#  from tensorflow.contrib.framework import add_arg_scope, arg_scope
 
 from config import NP_FLOAT, TF_FLOAT, Weights
 from .network_utils import custom_dense, tf_zeros
@@ -36,6 +36,7 @@ def cast_array(x, dtype=NP_FLOAT):
 # pylint: disable=invalid-name
 class DenseLayerNP:
     """Implements fully-connected Dense layer using numpy."""
+
     def __init__(self, weights, activation=linear):
         self.activation = activation
         self.weights = weights
@@ -80,6 +81,7 @@ def dense_layer(units, seed=None, factor=1.,
 
 class ScaledTanhLayer:
     """Wrapper class for dense layer + exp scaled tanh output."""
+
     def __init__(self, name, factor, units, seed, zero_init=False):
         self.coeff, self.layer = self._build(name, factor,
                                              units, seed,
@@ -109,6 +111,7 @@ class ScaledTanhLayer:
 
 class StackedLayer:
     """Wrapper class that stacks [cos(x), sin(x)] inputs."""
+
     def __init__(self, name, factor, units, seed, zero_init=False, **kwargs):
         """Initialization method."""
         self.layer = dense_layer(name=name, seed=seed,
@@ -122,6 +125,7 @@ class StackedLayer:
 
 class StackedLayerNP:
     """Numpy version of `StackedLayer`."""
+
     def __init__(self, weights):
         self.layer = DenseLayerNP(weights)
 
@@ -129,8 +133,10 @@ class StackedLayerNP:
         phi = np.concatenate([np.cos(phi), np.sin(phi)], axis=-1)
         return self.layer(phi)
 
+
 class ScaledTanhLayerNP:
     """Implements numpy version of `ScaledTanhLayer`."""
+
     def __init__(self, coeff_weight, layer_weight):
         self.coeff = coeff_weight
         self.layer = DenseLayerNP(layer_weight)
@@ -141,6 +147,7 @@ class ScaledTanhLayerNP:
 
 class CartesianLayer:
     """Implements `CartesianLayer`."""
+
     def __init__(self, name, factor, units, seed, zero_init=False, **kwargs):
         xseed = int(2 * seed)
         yseed = int(3 * seed)
@@ -160,6 +167,7 @@ class CartesianLayer:
 
 class CartesianLayerNP:
     """Implements numpy version of `CartesianLayer`."""
+
     def __init__(self, weights):
         self.x_layer = DenseLayerNP(weights['x_layer'])
         self.y_layer = DenseLayerNP(weights['y_layer'])
@@ -170,6 +178,7 @@ class CartesianLayerNP:
 
 class EncodingLayer:
     """Implements the EncodingLayer."""
+
     def __init__(self, name, factor, units, seed, zero_init=False, **kwargs):
         xseed = int(2 * seed)
         yseed = int(3 * seed)
@@ -200,6 +209,7 @@ class EncodingLayer:
 
 class EncodingLayerNP:
     """Implements the numpy analog of `EncodingLayer` defined above."""
+
     def __init__(self, weights, activation=linear):
         self.weights = weights
         self.x_layer = DenseLayerNP(weights['x_layer'])
@@ -230,7 +240,7 @@ def _assign_moving_average(orig_val, new_val, momentum, name):
         return tf.assign_add(orig_val, scaled_diff)
 
 
-@add_arg_scope
+#  @add_arg_scope
 def batch_norm(x,
                phase,
                axis=-1,

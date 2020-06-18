@@ -1,12 +1,8 @@
 """
 gauge_model.py
 
-Implements `GaugeModel` class, inheriting from `BaseModel`.
-
-Author: Sam Foreman (github: @saforem2)
-Date: 09/04/2019
+Implements `GaugeModel` class.
 """
-# pylint: disable=invalid-name, no-member
 from __future__ import absolute_import, division, print_function
 
 import time
@@ -15,461 +11,543 @@ from collections import namedtuple
 
 import numpy as np
 import tensorflow as tf
+from tensorflow.python.framework import ops
+from tensorflow.keras.optimizers.schedules import LearningRateSchedule
+from tensorflow.python.ops import math_ops
+from tensorflow.python.ops import random_ops
 
-import config as cfg
+
 import utils.file_io as io
 
-from base.base_model import BaseModel
+from config import PI, TF_FLOAT, TF_INT
+
 from lattice.lattice import GaugeLattice
-from dynamics.dynamics import Dynamics, DynamicsConfig, convert_to_angle
-from network import NetworkConfig
-from params import GAUGE_PARAMS
+from lattice.utils import u1_plaq_exact_tf
+from utils.attr_dict import AttrDict
+from dynamics.dynamics import Dynamics
 
-if cfg.HAS_HOROVOD:
-    import horovod.tensorflow as hvd  # noqa: 401
+#  from utils.horovod_utils import warmup_lr
+#  if HAS_HOROVOD:
+try:
+    import horovod.tensorflow as hvd
 
-TF_FLOAT = cfg.TF_FLOAT
-NP_FLOAT = cfg.NP_FLOAT
-
-PI = np.pi
-TWO_PI = 2 * PI
-
-
-LFdata = namedtuple('LFdata', ['init', 'proposed', 'prob'])
-SEP_STR = 80 * '-'
-SEP_STRN = 80 * '-' + '\n'
+    HAS_HOROVOD = True
+except ImportError:
+    HAS_HOROVOD = False
 
 
-def allclose(x, y, rtol=1e-3, atol=1e-5):
-    return tf.reduce_all(tf.abs(x - y) <= tf.abs(y) * rtol + atol)
+NAMES = [
+    'STEP', 'dt', 'LOSS', 'px', 'eps', 'BETA', 'sumlogdet', 'dQ', 'plaq_err',
+]
+HSTR = ''.join(["{:^12s}".format(name) for name in NAMES])
+SEP = '-' * len(HSTR)
+HEADER = '\n'.join([SEP, HSTR, SEP])
+
+RUN_NAMES = [
+    'STEP', 'dt', 'px', 'sumlogdet', 'dQ', 'plaq_err',
+]
+RUN_HSTR = ''.join(["{:^12s}".format(name) for name in RUN_NAMES])
+RUN_SEP = '-' * len(RUN_HSTR)
+RUN_HEADER = '\n'.join([RUN_SEP, RUN_HSTR, RUN_SEP])
+
+#  HEADER = SEP + '\n' + HSTR + '\n' + SEP
+
+lfData = namedtuple('lfData', ['init', 'proposed', 'prob'])
 
 
-def split_sampler_data(sampler_data):
-    return sampler_data.data, sampler_data.dynamics_output
+def exp_mult_cooling(step, temp_init, temp_final, num_steps, alpha=None):
+    """Annealing function."""
+    if alpha is None:
+        alpha = tf.exp(
+            (tf.math.log(temp_final) - tf.math.log(temp_init)) / num_steps
+        )
+        #  alpha = tf.exp(tf.math.log(temp_final) - tf.math.log(temp_init))
+        #  alpha = np.exp((np.log(temp_final) - np.log(temp_init)) / num_steps)
+
+    temp = temp_init * (alpha ** step)
+
+    return tf.cast(temp, TF_FLOAT)
 
 
-def project_angle_fft_np(x, n=10):
-    """Numpy version of `project_angle_fft`."""
-    y = np.zeros(x.shape, dtype=x.dtype)
-    for _ in range(1, n):
-        y += (-2. / n) * ((-1) ** n) * np.sin(n * x)
+def get_betas(steps, beta_init, beta_final):
+    """Get array of betas to use in annealing schedule."""
+    t_init = 1. / beta_init
+    t_final = 1. / beta_final
+    t_arr = [
+        exp_mult_cooling(i, t_init, t_final, steps) for i in range(steps)
+    ]
 
-    return y
-
-def project_angle_fft(x, n=10):
-    """Use the Fourier series representation of the linear function `x` to
-    approximate the discontinuous projection of the angle to [0, 2pi].
-
-    This gives a continuous function when calculating derivatives of the loss
-    function.
-
-    Args:
-        x (array-like): array to be projected.
-        n (int): Number of temrs to keep in Fourier series.
-
-    Returns:
-        angle (array-like): Projected angle (same shape as `x`).
-    """
-    if isinstance(x, np.ndarray):
-        return project_angle_fft_np(x, n)
-    y = tf.zeros_like(x)
-    for _ in range(1, n):
-        y += (-2. / n) * ((-1) ** n) * tf.math.sin(n * x)
-
-    return y
+    return 1. / tf.convert_to_tensor(np.array(t_arr))
 
 
-def calc_plaqs(x, n=1):
-    return (x[..., 0]
-            - x[..., 1]
-            - tf.roll(x[..., 0], shift=-n, axis=2)
-            + tf.roll(x[..., 1], shift=-n, axis=1))
+class WarmupExponentialDecay(LearningRateSchedule):
+    """A LearningRateSchedule that slowly increases then ExponentialDecay."""
 
+    def __init__(  # pylint:disable=too-many-arguments
+            self,
+            inital_learning_rate: float,
+            decay_steps: int,
+            decay_rate: float,
+            warmup_steps: int,
+            staircase: bool = True,
+            name: str = None
+    ):
+        super(WarmupExponentialDecay, self).__init__()
+        self.initial_learning_rate = inital_learning_rate
+        self.decay_steps = decay_steps
+        self.decay_rate = decay_rate
+        self.warmup_steps = warmup_steps
+        self.staircase = staircase
+        self.name = name
 
-def project_angle(x):
-    """Returns the projection of an angle `x` from [-4pi, 4pi] to [-pi, pi]."""
-    return x - TWO_PI * tf.math.floor((x + PI) / TWO_PI)
-
-class GaugeLoss:
-    """Compute the loss value for the 2D U(1) lattice gauge model. """
-    def __init__(self, plaq_weight, charge_weight, lattice_shape, n_arr=None):
-        if n_arr is None:
-            n_arr = [1]
-        self.n_arr = n_arr
-        self.lattice_shape = lattice_shape
-        self.plaq_weight = plaq_weight
-        self.charge_weight = charge_weight
-
-    def __call__(self, x_init, x_prop, accept_prob):
-        x_init = tf.reshape(x_init, self.lattice_shape)
-        x_prop = tf.reshape(x_prop, self.lattice_shape)
-        p_init = 0.
-        p_prop = 0.
-        for n in self.n_arr:
-            x_init = convert_to_angle(x_init)
-            x_prop = convert_to_angle(x_prop)
-            p_init += calc_plaqs(x_init, n)
-            p_prop += calc_plaqs(x_prop, n)
-
-        ploss = 0.
-        if self.plaq_weight > 0:
-            dplaq = 1. - tf.math.cos(p_prop - p_init)
-            ploss = accept_prob * tf.reduce_sum(dplaq, axis=(1, 2))
-            ploss = tf.reduce_mean(-ploss / self.plaq_weight, axis=0)
-
-        qloss = 0.
-        if self.charge_weight > 0:
-            #  q1 = tf.reduce_sum(tf.math.sin(p_init), axis=(1, 2)) / TWO_PI
-            #  q2 = tf.reduce_sum(tf.math.sin(p_prop), axis=(1, 2)) / TWO_PI
-            q1 = tf.reduce_sum(project_angle(p_init), axis=(1, 2)) / TWO_PI
-            q2 = tf.reduce_sum(project_angle(p_prop), axis=(1, 2)) / TWO_PI
-            qloss = accept_prob * (q2 - q1) ** 2
-            qloss = tf.reduce_mean(-qloss / self.charge_weight, axis=0)
-
-        return ploss, qloss, q1
-
-
-# pylint: disable=too-many-instance-attributes
-class GaugeModel(BaseModel):
-    """Implements `GaugeModel` class, containing tf ops for training."""
-    def __init__(self, params=None):
-        super(GaugeModel, self).__init__(params, model_type='GaugeModel')
-        self._model_type = 'GaugeModel'
-
-        if params is None:
-            params = GAUGE_PARAMS
-
-        self.params = params
-        self.dim = int(params.get('dim', 2))
-        self.link_type = params.get('link_type', 'U1')
-        self.time_size = int(params.get('time_size', 8))
-        self.space_size = int(params.get('space_size', 8))
-        self._charge_weight = float(params.get('charge_weight', 0.))
-        self._plaq_weight = float(params.get('plaq_weight', 0.))
-        self._network_type = str(params.get('network_type', None))
-        self.build(params)
-
-    # pylint: disable=attribute-defined-outside-init
-    def _build(self):
-        """Helper method for building the model."""
-        dynamics, config, net_config = self.create_dynamics()
-        self.dynamics = dynamics
-        self.config = config
-        self.net_config = net_config
-        self.dynamics_eps = self.dynamics.eps  # TODO: Delete this?
-        self.eps_setter = self._build_eps_setter()
-        self.metric_fn = lambda x, y: 2. * (1. - tf.math.cos(y - x))
-        xdata, zdata = self._build_sampler()
-
-        #  largest_wilson_loop = self.params.get('largest_wilson_loop', 1)
-        #  n_arr = np.arange(largest_wilson_loop) + 1
-        #  self.gauge_loss = GaugeLoss(self._plaq_weight, self._charge_weight,
-        #                              self._lattice_shape, n_arr=n_arr)
-        self.loss_op, self._losses_dict = self.calc_loss(xdata, zdata)
-
-        self.grads = self._calc_grads(self.loss_op)
-        train_op, grads_and_vars = self._apply_grads(self.loss_op,
-                                                     self.grads)
-        self.train_op = train_op
-        self.grads_and_vars = grads_and_vars
-
-        train_ops = self._build_train_ops()
-        run_ops = self._build_run_ops()
-
-        return train_ops, run_ops
-
-    def build(self, params=None):
-        """Build TensorFlow graph."""
-        params = self.params if params is None else params
-
-        #  charge_weight = getattr(self, 'charge_weight_np', 0.)
-        #  self._charge_weight = charge_weight
-        self.use_charge_loss = (self._charge_weight > 0)
-
-        t0 = time.time()
-        io.log(SEP_STRN + f'INFO: Building graph for `GaugeModel`...')
-        with tf.name_scope(self._model_type):
-            # ***********************************************
-            # Create `Lattice` object
-            # -----------------------------------------------
-            io.log(f'INFO: Creating lattice...')
-            self.lattice = self._create_lattice()
-            self.batch_size = self.lattice.samples.shape[0]
-            self.x_dim = self.lattice.num_links
-            self._lattice_shape = (self.batch_size,
-                                   self.lattice.time_size,
-                                   self.lattice.space_size, 2)
-
-            #  self.loss = GaugeLoss(self._plaq_weight, self._charge_weight,
-            #                        self._lattice_shape, n_arr=[1, 2, 3])
-            # ************************************************
-            # Build inputs and their respective placeholders
-            # ------------------------------------------------
-            self._build_inputs()
-
-            # ********************************************************
-            # Create operations for calculating lattice observables
-            # --------------------------------------------------------
-            io.log(f'INFO: Creating operations for calculating observables...')
-            observables = self._create_observables()
-            self.plaq_sums = observables['plaq_sums']
-            self.actions = observables['actions']
-            self.plaqs = observables['plaqs']
-            self.charges = observables['charges']
-            self.avg_plaqs = observables['avg_plaqs']
-            self.avg_actions = observables['avg_actions']
-            #  slef.charges_diff = observables['dq']
-            self._observables = observables
-
-            # ***************************************************************
-            # Build operations common to all models (defined in `BaseModel`)
-            # ---------------------------------------------------------------
-            self.train_ops, self.run_ops = self._build()
-
-            self.q_out = self._top_charge(
-                self._plaq_sums(self.run_ops['x_out'])
+    def __call__(self, step):
+        with tf.name_scope(self.name or 'WarmupExponentialDecay') as name:
+            initial_learning_rate = ops.convert_to_tensor_v2(
+                self.initial_learning_rate, name='initial_learning_rate'
             )
-            self.q_init = self._losses_dict['q_init']
-            self.q_prop = self._losses_dict['q_prop']
-            self.dq_prop = tf.math.abs(self.q_prop - self.q_init)
-            self.dq_out = tf.math.abs(self.q_out - self.q_init)
-            #  self.dq = tf.abs(self.q_out - self._losses_dict['q_init'])
+            dtype = initial_learning_rate.dtype
+            decay_steps = tf.cast(self.decay_steps, dtype)
+            decay_rate = tf.cast(self.decay_rate, dtype)
+            warmup_steps = tf.cast(self.warmup_steps, dtype)
 
-            extra_ops = {
-                'plaqs': self.plaqs,
-                'charges': self.charges,
-                'dq_prop': self.dq_prop,
-                'dq_out': self.dq_out,
-                #  'dq': self.dq,
-                #  'dq': self._losses_dict['dq'],
-                #  'dq': self.charges_diff,
+            global_step_recomp = tf.cast(step, dtype)
+            if global_step_recomp < warmup_steps:
+                return tf.math.multiply(
+                    initial_learning_rate,
+                    tf.math.divide(global_step_recomp, warmup_steps),
+                    name=name
+                )
+            p = global_step_recomp / decay_steps
+            if self.staircase:
+                p = tf.math.floor(p)
+            return tf.math.multiply(
+                initial_learning_rate, tf.math.pow(decay_rate, p),
+                name=name
+            )
+
+    def get_config(self):
+        return {
+            'initial_learning_rate': self.initial_learning_rate,
+            'decay_steps': self.decay_steps,
+            'decay_rate': self.decay_rate,
+            'staircase': self.staircase,
+            'warmup_steps': self.warmup_steps,
+            'name': self.name
+        }
+
+
+# pylint:disable=invalid-name
+class GaugeModel:
+    def __init__(self, params, lattice_shape, dynamics_config, net_config):
+        self._model_type = 'GaugeModel'
+        self.params = params
+        self.parse_params(params, lattice_shape)
+        self.dynamics_config = dynamics_config
+        self.net_config = net_config
+
+        self.lattice = GaugeLattice(self.time_size,
+                                    self.space_size,
+                                    self.lattice_dim,
+                                    batch_size=self.batch_size)
+        self.potential_fn = self.lattice.calc_actions
+
+        self.dynamics = Dynamics(self.potential_fn,
+                                 dynamics_config, net_config,
+                                 separate_nets=self.separate_networks)
+
+        self.lr = self.create_lr(warmup=self.warmup_lr)
+        self.optimizer = self.create_optimizer()
+        #  if not self.separate_networks:
+        self.dynamics.compile(
+            optimizer=self.optimizer,
+            loss=self.calc_loss,
+        )
+        if self.beta_init == self.beta_final:
+            self.betas = tf.convert_to_tensor(
+                tf.cast(self.beta_init * np.ones(self.train_steps),
+                        dtype=TF_FLOAT)
+            )
+        else:
+            self.betas = get_betas(self.train_steps,
+                                   self.beta_init,
+                                   self.beta_final)
+
+        if not tf.executing_eagerly():
+            self._build()
+
+    def parse_params(self, params, lattice_shape):
+        """Set instance attributes from `params`."""
+        self.params = AttrDict(params)
+        self.lr_init = params.lr_init
+        self.warmup_lr = params.warmup_lr
+        self.using_hvd = params.horovod
+        self.beta_init = params.beta_init
+        self.beta_final = params.beta_final
+        batch_size, time_size, space_size, dim = lattice_shape
+        self.lattice_shape = lattice_shape
+        self.lattice_dim = dim
+        self.time_size = time_size
+        self.batch_size = batch_size
+        self.space_size = space_size
+        self.xdim = time_size * space_size * dim
+        self.input_shape = (batch_size, self.xdim)
+        self.lr_decay_steps = params.lr_decay_steps
+        self.lr_decay_rate = params.lr_decay_rate
+        self.plaq_weight = params.plaq_weight
+        self.charge_weight = params.charge_weight
+        self.train_steps = params.train_steps
+        self.print_steps = params.print_steps
+        self.separate_networks = params.get('separate_networks', False)
+        self.save_steps = params.get('save_steps', self.train_steps // 10)
+        self.log_steps = params.get('logging_steps', self.train_steps // 500)
+        self.save_train_data = params.get('save_train_data', True)
+        self.save_run_data = params.get('save_run_data', True)
+        eager_execution = params.get('eager_execution', False)
+        self.compile = not eager_execution
+
+    # pylint:disable=attribute-defined-outside-init
+    def _build(self):
+        self.global_step = tf.compat.v1.train.get_or_create_global_step()
+        inputs = self._build_inputs()
+        self.x = inputs['x']
+        self.beta = inputs['beta']
+        self.eps_ph = inputs['eps_ph']
+        #  self.train_phase = inputs['train_phase']
+        #  self.net_weights = inputs['net_weights']
+        self.global_step_ph = inputs['global_step_ph']
+
+        plaqs_err, charges = self.calc_observables(self.x, self.beta)
+        self.plaqs_err = plaqs_err
+        self.charges = charges
+
+        loss, x_out, px, sumlogdet = self.train_step(self.x, self.beta,
+                                                     self.global_step == 0)
+        self.loss = loss
+        self.x_out = x_out
+        self.px = px
+        self.sumlogdet = sumlogdet
+
+    def calc_loss(self, x_init, x_prop, accept_prob):
+        """Calculate the total loss."""
+        ps_init = self.lattice.calc_plaq_sums(samples=x_init)
+        ps_prop = self.lattice.calc_plaq_sums(samples=x_prop)
+
+        plaq_loss = 0.
+        if self.plaq_weight > 0:
+            dplaq = 1. - tf.math.cos(ps_prop - ps_init)
+            ploss = accept_prob * tf.reduce_sum(dplaq, axis=(1, 2))
+            plaq_loss = tf.reduce_mean(-ploss / self.plaq_weight, axis=0)
+
+        charge_loss = 0.
+        if self.charge_weight > 0:
+            q_init = self.lattice.calc_top_charges(plaq_sums=ps_init)
+            q_prop = self.lattice.calc_top_charges(plaq_sums=ps_prop)
+            qloss = accept_prob * (q_prop - q_init) ** 2
+            charge_loss = tf.reduce_mean(-qloss / self.charge_weight, axis=0)
+
+        total_loss = plaq_loss + charge_loss
+
+        return total_loss
+
+    def calc_observables(self, x, beta, use_sin=True):
+        """Calculate observables."""
+        ps = self.lattice.calc_plaq_sums(x)
+        plaqs = self.lattice.calc_plaqs(plaq_sums=ps)
+        charges = self.lattice.calc_top_charges(plaq_sums=ps, use_sin=use_sin)
+        plaqs_err = u1_plaq_exact_tf(beta) - plaqs
+
+        return plaqs_err, charges
+
+    def _build_inputs(self):
+        """Create input placeholders."""
+        def make_ph(name, shape=(), dtype=TF_FLOAT):
+            return tf.compat.v1.placeholder(
+                dtype=dtype, shape=shape, name=name
+            )
+
+        with tf.name_scope('inputs'):
+            if not tf.executing_eagerly():
+                x = make_ph(dtype=TF_FLOAT, shape=self.input_shape, name='x')
+                beta = make_ph('beta')
+                eps_ph = make_ph('eps_ph')
+                global_step_ph = make_ph('global_step_ph', dtype=tf.int64)
+                #  xsw = make_ph('x_scale_weight')
+                #  xtw = make_ph('x_translation_weight')
+                #  xqw = make_ph('x_transformation_weight')
+                #  vsw = make_ph('v_scale_weight')
+                #  vtw = make_ph('v_translation_weight')
+                #  vqw = make_ph('v_transformation_weight')
+                #  net_weights = NetWeights(xsw, xtw, xqw, vsw, vtw, vqw)
+                #  train_phase = make_ph('is_training', dtype=tf.bool)
+
+            inputs = {
+                'x': x,
+                'beta': beta,
+                'eps_ph': eps_ph,
+                'global_step_ph': global_step_ph,
+                #  'train_phase': train_phase,
+                #  'net_weights': net_weights,
             }
 
-            self.run_ops.update(extra_ops)
-            self.train_ops.update(extra_ops)
+        return inputs
 
-            for val in extra_ops.values():
-                tf.add_to_collection('train_ops', val)
-                tf.add_to_collection('run_ops', val)
+    def create_lr(self, warmup=False):
+        """Create the learning rate schedule to be used during training."""
+        if warmup:
+            name = 'WarmupExponentialDecay'
+            warmup_steps = self.train_steps // 20
+            return WarmupExponentialDecay(self.lr_init, self.lr_decay_steps,
+                                          self.lr_decay_rate, warmup_steps,
+                                          staircase=True, name=name)
 
-            io.log(f'INFO: Done building graph. '
-                   f'Took: {time.time() - t0}s\n' + SEP_STRN)
-
-    def _create_lattice(self):
-        """Create GaugeLattice object."""
-        with tf.name_scope('lattice'):
-            lattice = GaugeLattice(time_size=self.time_size,
-                                   space_size=self.space_size,
-                                   dim=self.dim,
-                                   link_type=self.link_type,
-                                   batch_size=self.batch_size,
-                                   rand=self.rand)
-
-        return lattice
-
-    def create_dynamics(self):
-        """Create dynamics object."""
-        dynamics_config = DynamicsConfig(
-            num_steps=self.num_steps,
-            eps=self.eps,
-            input_shape=(self.batch_size, self.lattice.num_links),
-            hmc=self.hmc,
-            eps_trainable=self.eps_trainable,
-            net_weights=self.net_weights,
-            model_type='GaugeModel',
-        )
-        net_config = NetworkConfig(
-            type='GaugeNetwork',
-            units=self.units,
-            dropout_prob=self.dropout_prob,
-            activation_fn=tf.nn.relu,
+        return tf.keras.optimizers.schedules.ExponentialDecay(
+            self.lr_init,
+            decay_steps=self.lr_decay_steps,
+            decay_rate=self.lr_decay_rate,
+            staircase=True
         )
 
-        dynamics = Dynamics(self.calc_action, dynamics_config, net_config)
+    def create_optimizer(self):
+        """Create the optimizer to use for backpropagation."""
+        if tf.executing_eagerly():
+            return tf.keras.optimizers.Adam(self.lr)
 
-        return dynamics, dynamics_config, net_config
+        optimizer = tf.compat.v1.train.AdamOptimizer(self.lr)
+        if self.using_hvd:
+            optimizer = hvd.DistributedOptimizer(optimizer)
 
-    def _create_observables(self):
-        """Create operations for calculating lattice observables."""
-        with tf.name_scope('observables'):
-            plaq_sums = self.lattice.calc_plaq_sums(samples=self.x)
-            actions = self.lattice.calc_actions(plaq_sums=plaq_sums)
-            plaqs = self.lattice.calc_plaqs(plaq_sums=plaq_sums)
-            charges = self.lattice.calc_top_charges(plaq_sums=plaq_sums)
-            avg_plaqs = tf.reduce_mean(plaqs, name='avg_plaqs')
-            avg_actions = tf.reduce_mean(actions, name='avg_actions')
+        return optimizer
 
-        observables = {
-            'plaq_sums': plaq_sums,
-            'actions': actions,
-            'plaqs': plaqs,
-            'charges': charges,
-            'avg_plaqs': avg_plaqs,
-            'avg_actions': avg_actions,
-            #  'dq': charges_out - charges
-        }
-        for obs in observables.values():
-            tf.add_to_collection('observables', obs)
+    def train_step(self, x, beta, first_step):
+        """Perform a single training step."""
+        with tf.GradientTape() as tape:
+            states, px, sld_states = self.dynamics((x, beta), training=True)
+            loss = self.calc_loss(states.init.x, states.proposed.x, px)
 
-        return observables
+        if self.using_hvd:
+            # Horovod: add Horovod Distributed GradientTape
+            tape = hvd.DistributedGradientTape(tape)
 
-    def _calc_charge_loss(self, x_data, z_data):
-        """Calculate the total charge loss."""
-        #  aux_weight = getattr(self, 'aux_weight', 1.)
-        ls = self.loss_scale
-        with tf.name_scope('calc_charge_loss'):
-            with tf.name_scope('xq_loss'):
-                xq_loss = self._charge_loss(*x_data)
+        grads = tape.gradient(loss, self.dynamics.trainable_variables)
+        self.optimizer.apply_gradients(zip(grads,
+                                           self.dynamics.trainable_variables))
+        # Horovod:
+        #   Broadcast initial variable states from rank 0 to all other
+        #   processes. This is necessary to ensure consistent initialization of
+        #   all workers when training is started with random weights or
+        #   restored from a checkpoint.
+        # NOTE:
+        #   Broadcast should be done after the first gradient step to ensure
+        #   optimizer initialization.
+        if first_step and self.using_hvd:
+            hvd.broadcast_variables(self.dynamics.variables, root_rank=0)
+            hvd.broadcast_variables(self.optimizer.variables(), root_rank=0)
 
-            with tf.name_scope('zq_loss'):
-                if self.aux_weight > 0.:
-                    zq_loss = self._charge_loss(*z_data)
-                else:
-                    zq_loss = 0.
+        return loss, states.out.x, px, sld_states.out
 
-            charge_loss = 0.
-            charge_loss += tf.reduce_mean((xq_loss + zq_loss) / ls,
-                                          axis=0, name='charge_loss')
-            charge_loss *= self._charge_weight
+    def restore_from_checkpoint(self, ckpt_dir=None):
+        step_init = tf.Variable(0, dtype=TF_INT)
+        if ckpt_dir is not None:
+            #  checkpoint = tf.train.Checkpoint(model=self.dynamics,
+            #  kwargs = {}
+            #  if not self.dynamics.config.hmc
+            #      iterator = enumerate(zip(self.dynamics.xnets,
+            #                               self.dynamics.vnets))
+            #      for idx, (xnet, vnet) in iterator:
+            #          kwargs[f'xnet{idx}'] = xnet
+            #          kwargs[f'vnet{idx}'] = vnet
 
-        return charge_loss
+            checkpoint = tf.train.Checkpoint(step=step_init,
+                                             dynamics=self.dynamics,
+                                             optimizer=self.optimizer)
+            manager = tf.train.CheckpointManager(
+                checkpoint, directory=ckpt_dir, max_to_keep=3
+            )
+            if manager.latest_checkpoint:
+                io.log(f'Restored from: {manager.latest_checkpoint}')
+                checkpoint.restore(manager.latest_checkpoint)
+                step_init = checkpoint.step
 
-    def _plaq_sums(self, x, n=1):
-        """Calculate the sum around all elementary plaquettes in `x`.
-        Example:
-                              = - roll(x[..., 0], -1, 2)
-                          ┌───<───┐
-                          │       │
-             -x[..., 1] = ⋁       ⋀ = roll(x[..., 1], -1, 1)
-                          │       │
-                          └───>───┘
-                              = x[..., 0]
-        """
-        x = tf.reshape(x, self._lattice_shape)  # (Nb, Lt, Lx, 2)
-        return (x[..., 0]
-                - x[..., 1]
-                - tf.roll(x[..., 0], shift=-n, axis=2)   # along `x` axis
-                + tf.roll(x[..., 1], shift=-n, axis=1))  # along `t` axis
+        return checkpoint, manager, step_init
 
-    def calc_action(self, x):
-        """Calculate the Wilson action of a batch of lattice configurations."""
-        plaqs = self._plaq_sums(x)
-        return tf.reduce_sum(1. - tf.cos(plaqs), axis=(1, 2), name='action')
+    def run_step(self, x, beta):
+        """Perform a single inference step."""
+        return self.dynamics((x, beta), training=False)
 
-    @staticmethod
-    def _top_charge(plaq_sums, use_sin=True):
-        """Numpy version of `_top_charge`."""
-        return tf.reduce_sum((
-            tf.math.sin(plaq_sums) if use_sin else project_angle(plaq_sums)
-        ), axis=(1, 2)) / TWO_PI
+    def run_eager(self, run_steps, beta, x=None,
+                  save_run_data=False, ckpt_dir=None):
+        """Run inference using eager execution."""
+        if x is None:
+            x = tf.random.uniform(shape=self.input_shape,
+                                  minval=-PI, maxval=PI)
+            x = tf.cast(x, dtype=TF_FLOAT)
 
-    def _charge_loss(self, plaqs_init, plaqs_prop, prob, use_sin=True):
-        """Calculate the contribution to the loss from the charge diffs."""
-        q_init = self._top_charge(plaqs_init, use_sin=use_sin)
-        q_prop = self._top_charge(plaqs_prop, use_sin=use_sin)
-        dq = prob * (q_prop - q_init) ** 2
-        qloss = -(dq / self._charge_weight)
+        _, q_new = self.calc_observables(x, self.beta_init, use_sin=False)
 
-        qloss = tf.reduce_sum(qloss, axis=0) / self.batch_size
+        px_arr = []
+        dq_arr = []
+        data_strs = [RUN_HEADER]
+        charges_arr = [q_new.numpy()]
+        if ckpt_dir is not None:
+            _, _, _ = self.restore_from_checkpoint(ckpt_dir)
 
-        return qloss, q_init, q_prop
+        #  if not self.separate_networks:
+        #      dynamics_call = tf.function(self.dynamics)
+        #  else:
+        #      dynamics_call = self.dynamics
 
-    def _plaq_loss(self, plaqs_init, plaqs_prop, prob):
-        """Calculate the expected plaquette differences b/t `x1` and `x2`."""
-        plaqs_diff = 2. * (1. - tf.cos(plaqs_prop - plaqs_init))
-        dplaq = prob * tf.reduce_sum(plaqs_diff, axis=(1, 2))
-        ploss = - dplaq / self._plaq_weight
+        io.log(RUN_SEP)
+        io.log(f'Running inference on trained model with:')
+        io.log(f'  beta: {beta}')
+        io.log(f'  dynamics.eps: {self.dynamics.eps.numpy():.4g}')
+        io.log(f'  net_weights: {self.dynamics.config.net_weights}')
+        io.log(RUN_SEP)
+        io.log(RUN_HEADER)
+        for step in np.arange(run_steps):
+            t0 = time.time()
+            x = tf.reshape(x, self.input_shape)
+            states, px, sld_states = self.run_step(x, beta)
+            #  states, px, sld_states = dynamics_call(
+            #      (x, beta), training=False
+            #  )
+            #  states, px, sld_states = self.dynamics((x, beta),
+            #                                         training=False)
+            x = states.out.x
+            sld = sld_states.out
+            x = tf.reshape(x, self.lattice_shape)
+            dt = time.time() - t0
 
-        return tf.reduce_mean(ploss, axis=0)
+            q_old = q_new
+            plaqs_err, q_new = self.calc_observables(x, beta, use_sin=True)
+            dq = tf.math.abs(q_new - q_old)
 
-    def gauge_loss(self, xdata, zdata, use_sin=True):
-        """Calculate the loss due to the plaquette and charge differences."""
-        xp0 = self._plaq_sums(xdata.init)
-        xp1 = self._plaq_sums(xdata.proposed)
+            data_str = (
+                f"{step:>6g}/{run_steps:<6g} "
+                f"{dt:^11.4g} "
+                f"{np.mean(px.numpy()):^11.4g} "
+                f"{np.mean(sld.numpy()):^11.4g} "
+                f"{np.mean(dq.numpy()):^11.4g} "
+                f"{np.mean(plaqs_err.numpy()):^11.4g} "
+            )
 
-        if self.aux_weight > 0:
-            zp0 = self._plaq_sums(zdata.init)
-            zp1 = self._plaq_sums(zdata.proposed)
+            if step % self.print_steps == 0:
+                io.log(data_str)
+                data_strs.append(data_str)
 
-        plaq_loss = tf.cast(0., TF_FLOAT)
-        if self._plaq_weight > 0.:
-            plaq_loss += self._plaq_loss(xp0, xp1, xdata.prob)
-            if self.aux_weight > 0:
-                plaq_loss += self._plaq_loss(zp0, zp1, zdata.prob)
+            if save_run_data:
+                px_arr.append(px.numpy())
+                dq_arr.append(dq.numpy())
+                charges_arr.append(q_new.numpy())
 
-        charge_loss = tf.cast(0., TF_FLOAT)
-        if self._charge_weight > 0:
-            qxl, q_init, q_prop = self._charge_loss(xp0, xp1, xdata.prob,
-                                                    use_sin=use_sin)
-            charge_loss += qxl
-            if self.aux_weight > 0:
-                qzl, _, _ = self._charge_loss(zp0, zp1, zdata.prob,
-                                              use_sin=use_sin)
-                charge_loss += qzl
+            if step % 100 == 0:
+                io.log(RUN_HEADER)
 
-        return plaq_loss, charge_loss, q_init, q_prop
-
-    @staticmethod
-    def _gauge_esjd(x1, x2, prob, eps=1e-4):
-        """Calculate the esjd."""
-        esjd = prob * tf.reduce_sum(2. * (1. - tf.cos(x1 - x2)), axis=1) + eps
-
-        return esjd
-
-    def _calc_esjd_loss(self, xdata, zdata, eps=1e-4):
-        x_esjd = self._gauge_esjd(xdata.init, xdata.proposed, xdata.prob, eps)
-        z_esjd = self._gauge_esjd(zdata.init, zdata.proposed, zdata.prob, eps)
-        term1 = self.loss_scale * (1. / x_esjd + 1. / z_esjd)
-        term2 = (x_esjd + z_esjd) / self.loss_scale
-        esjd_loss = tf.reduce_mean(term1 - term2, axis=0)
-
-        return esjd_loss
-
-    @staticmethod
-    def _mixed_loss(x, weight):
-        """Return the mixed loss."""
-        return tf.reduce_mean((weight / x) - (x / weight))
-
-        # pylint:disable=too-many-locals
-    def calc_loss(self, xdata, zdata, eps=1e-4):
-        """Calculate the total loss."""
-        total_loss = 0.
-
-        sloss = 0.
-        if self.std_weight > 0:
-            sloss = self.std_weight * self._calc_esjd_loss(xdata, zdata, eps)
-
-        ploss = 0.
-        qloss = 0.
-        #  if self._charge_weight > 0 or self._plaq_weight > 0:
-        bq = self._charge_weight > 0
-        bp = self._plaq_weight > 0
-        if bq or bp:
-            ploss, qloss, q_init, q_prop = self.gauge_loss(xdata, zdata, eps)
-
-        total_loss = sloss + qloss + ploss
-        tf.add_to_collection('losses', total_loss)
-
-        ld = {
-            'std': sloss,
-            'plaq': ploss,
-            'charge': qloss,
-            'total': total_loss,
+        outputs = {
+            'px': px_arr,
+            'dq': dq_arr,
+            'charges_arr': charges_arr,
+            'x': tf.reshape(x, self.input_shape),
         }
 
-        fd = {
-            k: v / total_loss for k, v in ld.items()
+        data_strs.append(RUN_HEADER)
+
+        return outputs, data_strs
+
+    def train_eager(self, x=None, save_train_data=False):
+        """Train the model using eager execution."""
+        if x is None:
+            x = tf.random.uniform(shape=self.input_shape,
+                                  minval=-PI, maxval=PI)
+            x = tf.cast(x, dtype=TF_FLOAT)
+
+        #  is_chief = self.using_hvd and hvd.rank() == 0 else not self.using_hvd
+        is_chief = hvd.rank() == 0 if self.using_hvd else not self.using_hvd
+        #  is_chief = (
+        #      self.using_hvd and hvd.rank() == 0
+        #      or not self.using_hvd
+        #  )
+
+        _, q_new = self.calc_observables(x, self.beta_init)
+
+        px_arr = []
+        dq_arr = []
+        loss_arr = []
+        data_strs = [HEADER]
+        charges_arr = [q_new.numpy()]
+        step_init = tf.Variable(0, dtype=TF_INT)
+        #  self.observables['charges'].append(charges.numpy())
+        train_steps = np.arange(self.train_steps)
+        step = int(step_init.numpy())
+        betas = self.betas[step:]
+        steps = train_steps[step:]
+
+        if not self.separate_networks:
+            train_step_fn = tf.function(self.train_step)
+        else:
+            train_step_fn = self.train_step
+
+        if ckpt_dir is not None:
+            ckpt, manager, step_init = self.restore_from_checkpoint(ckpt_dir)
+            beta = self.betas[step_init.numpy()]
+            x = tf.reshape(x, self.input_shape)
+            _, x, _, _ = train_step_fn(x, beta, True)
+
+        io.log(HEADER)
+        for step, beta in zip(steps, betas):
+            t0 = time.time()
+            x = tf.reshape(x, self.input_shape)
+            #  loss, x, px, sld = self.train_step(x, beta, step == 0)
+            loss, x, px, sld = train_step_fn(x, beta, step == 0)
+            x = tf.reshape(x, self.lattice_shape)
+            dt = time.time() - t0
+
+            q_old = q_new
+            plaqs_err, q_new = self.calc_observables(x, beta)
+            dq = tf.math.abs(q_new - q_old)
+
+            data_str = (
+                f"{step:>6g}/{self.train_steps:<6g} "
+                f"{dt:^11.4g} "
+                f"{loss.numpy():^11.4g} "
+                f"{np.mean(px.numpy()):^11.4g} "
+                f"{self.dynamics.eps.numpy():^11.4g} "
+                f"{beta:^11.4g} "
+                f"{np.mean(sld.numpy()):^11.4g} "
+                f"{np.mean(dq.numpy()):^11.4g} "
+                f"{np.mean(plaqs_err.numpy()):^11.4g} "
+            )
+
+            if step % self.print_steps == 0:
+                io.log(data_str)
+                data_strs.append(data_str)
+
+            if save_train_data and step % self.log_steps == 0:
+                px_arr.append(px.numpy())
+                dq_arr.append(dq.numpy())
+                loss_arr.append(loss.numpy())
+                charges_arr.append(q_new.numpy())
+
+            if step % self.save_steps == 0 and ckpt_dir is not None:
+                ckpt.step.assign(step)
+                if is_chief:
+                    manager.save()
+                #  checkpoint.save(file_prefix=ckpt_prefix)
+
+            if step % 100 == 0:
+                io.log(HEADER)
+
+        if ckpt_dir is not None and is_chief:
+            ckpt.step.assign(step)
+            if is_chief:
+                manager.save()
+
+        outputs = {
+            'px': px_arr,
+            'dq': dq_arr,
+            'loss_arr': loss_arr,
+            'charges_arr': charges_arr,
+            'x': tf.reshape(x, self.input_shape),
+            #  'data_strs': data_strs,
         }
 
-        losses_dict = {}
-        for (lk, lv), (fk, fv) in zip(ld.items(), fd.items()):
-            losses_dict[f'{lk}_loss'] = lv
-            losses_dict[f'{fk}_frac'] = fv
-            tf.add_to_collection('losses', lv)
-
-        losses_dict['q_init'] = q_init
-        losses_dict['q_prop'] = q_prop
-        #  losses_dict['dq'] = dq
-        #  losses_dict['q_init'] = q_init
-
-        return total_loss, losses_dict
+        return outputs, data_strs
