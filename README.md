@@ -101,8 +101,7 @@ where $\phi_{P}$ is the sum of the link variables around an elementary plaquette
   <img src="assets/target_distribution.svg" alt="\pi(\phi) = \frac{e^{-\beta S[\phi]}}{\mathcal{Z}}"/>
   </div>
 
-
-  where $\mathcal{Z}$ is the partition function (normalizing factor), and $S[\phi]$ is the Wilson gauge action for the 2D $U(1)$ theory.
+  where $\mathcal{Z}$ is the partition function (normalizing factor), $\beta$ is the inverse coupling constant, and $S[\phi]$ is the Wilson gauge action for the 2D $U(1)$ theory.
 
 Lattice methods for the 2D $U(1)$ gauge model are implemented using the `GaugeLattice` object, which can be found at [`l2hmc-qcd/lattice/lattice.py`](l2hmc-qcd/lattice/lattice.py)
 
