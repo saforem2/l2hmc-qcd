@@ -59,7 +59,7 @@ conditions.
 The action of this gauge theory is defined in terms of the *link variables*
 
 <div align="center">
- <img src="assets/link_var.png" alt="U_{\mu}(i) = e^{i\phi_{\mu}(i)}, \quad \phi_{\mu}(i) \in [0, 2\pi)"/>
+ <img src="assets/link_var.svg" alt="U_{\mu}(i) = e^{i\phi_{\mu}(i)}, \quad \phi_{\mu}(i) \in [0, 2\pi)"/>
 </div>
 
 <!---
@@ -77,13 +77,13 @@ $$
 and can be written as
 
 <div align="center">
- <img src="assets/action1.png" alt="S = \sum_{P}\, 1 - \cos(\phi_{P})"/>
+ <img src="assets/action1.svg" alt="S = \sum_{P}\, 1 - \cos(\phi_{P})"/>
 </div>
 
 where $\phi_{P}$ is the sum of the link variables around an elementary plaquette:
 
 <div align="center">
-<img src="assets/plaquette_eq.png" alt="\phi_{P} \equiv \phi_{\mu\nu}(i) = \phi_{\mu}(i) + \phi_{\nu}(i+\hat{\mu}) - \phi_{\mu}(i+\hat\nu) - \phi_{\nu}(i)"/>
+<img src="assets/plaquette_eq.svg" alt="\phi_{P} \equiv \phi_{\mu\nu}(i) = \phi_{\mu}(i) + \phi_{\nu}(i+\hat{\mu}) - \phi_{\mu}(i+\hat\nu) - \phi_{\nu}(i)"/>
 </div>
 
 <div align="center">
@@ -96,8 +96,9 @@ where $\phi_{P}$ is the sum of the link variables around an elementary plaquette
 - Our target distribution is then given by:
 
   <div align="center">
-  <img src="assets/target_distribution.png" alt="\pi(\phi) = \frac{e^{-\beta S[\phi]}}{\mathcal{Z}}"/>
+  <img src="assets/target_distribution.svg" alt="\pi(\phi) = \frac{e^{-\beta S[\phi]}}{\mathcal{Z}}"/>
   </div>
+
 
   where $\mathcal{Z}$ is the partition function (normalizing factor), and $S[\phi]$ is the Wilson gauge action for the 2D $U(1)$ theory.
 
