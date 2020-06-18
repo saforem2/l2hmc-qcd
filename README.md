@@ -48,13 +48,9 @@ In doing so, the overall efficiency of the simulation is subsequently improved.
 
 ## $U(1)$ Lattice Gauge Theory
 
-<figure class="half" style="display:flex">
-    <div align="center">
-    <img src="assets/lattice.png" alt="lattice" style="width:200px;height:200px" />
-     <img src="assets/nerds.png" alt="image-20200220120110456" style="width:350px;height:200px"/>
-    <figcaption></figcaption>
+<div align="center">
+ <img src="assets/lattice.png" alt="lattice" style="width:200px;height:200px"/>
 </div>
-</figure>
 
 We start by considering the simpler $(1+1)$-dimensional $U(1)$ lattice gauge
 theory, defined on an $N_{x} \times N_{t}$ lattice with periodic boundary
@@ -62,29 +58,46 @@ conditions.
 
 The action of this gauge theory is defined in terms of the *link variables*
 
+<div align="center">
+ <img src="assets/link_var.png" alt="U_{\mu}(i) = e^{i\phi_{\mu}(i)}, \quad \phi_{\mu}(i) \in [0, 2\pi)"/>
+</div>
+
+<!---
+<div align="center">
+ <img src="https://quicklatex.com/cache3/a2/ql_4f37c51daac82c9a577cbfd4182d0fa2_l3.png">
+</div>
+--->
+
+<!---
 $$
 U_{\mu}(i) = e^{i\phi_{\mu}(i)}, \quad \phi_{\mu}(i) \in [0, 2\pi)
 $$
+--->
 
 and can be written as
 
-$$
-S = \sum_{P}\, 1 - \cos(\phi_{P})
-$$
+<div align="center">
+ <img src="assets/action1.png" alt="S = \sum_{P}\, 1 - \cos(\phi_{P})"/>
+</div>
 
 where $\phi_{P}$ is the sum of the link variables around an elementary plaquette:
 
-$$
-\phi_{P} \equiv \phi_{\mu\nu}(i) = \phi_{\mu}(i) + \phi_{\nu}(i+\hat{\mu}) - \phi_{\mu}(i+\hat\nu) - \phi_{\nu}(i)
-$$
+<div align="center">
+<img src="assets/plaquette_eq.png" alt="\phi_{P} \equiv \phi_{\mu\nu}(i) = \phi_{\mu}(i) + \phi_{\nu}(i+\hat{\mu}) - \phi_{\mu}(i+\hat\nu) - \phi_{\nu}(i)"/>
+</div>
+
+<div align="center">
+  <img src="assets/nerds.png" alt="image-20200220120110456" style="width:350px;height:200px"/>
+</div>
+</figure>
 
 #### Target distribution:
 
 - Our target distribution is then given by:
 
-  $$
-  \pi(\phi) = \frac{e^{-\beta S[\phi]}}{\mathcal{Z}}
-  $$
+  <div align="center">
+  <img src="assets/target_distribution.png" alt="\pi(\phi) = \frac{e^{-\beta S[\phi]}}{\mathcal{Z}}"/>
+  </div>
 
   where $\mathcal{Z}$ is the partition function (normalizing factor), and $S[\phi]$ is the Wilson gauge action for the 2D $U(1)$ theory.
 
