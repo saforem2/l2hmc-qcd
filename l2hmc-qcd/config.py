@@ -51,7 +51,7 @@ PI = np.pi
 TWO_PI = 2 * PI
 
 NET_WEIGHTS_HMC = NetWeights(0., 0., 0., 0., 0., 0.)
-NET_WEIGHTS_L2HMC = NetWeights(1., 1., 1., 1., 1., 1.)
+NET_WEIGHTS_L2HMC = NetWeights(0., 1., 1., 1., 1., 1.)
 
 TF_FLOAT = tf.float32
 TF_INT = tf.int32
@@ -66,7 +66,8 @@ NP_INT = np.int32
 #
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 FILE_PATH = os.path.abspath(os.path.dirname(__file__))
-PROJECT_DIR = os.path.dirname(os.path.abspath(os.getcwd()))
+PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+#  PROJECT_DIR = os.path.dirname(os.path.abspath(os.getcwd()))
 BASE_DIR = os.path.dirname(PROJECT_DIR)
 GAUGE_LOGS_DIR = os.path.join(BASE_DIR, 'gauge_logs')
 
@@ -107,12 +108,12 @@ try:
 except ImportError:
     HAS_MATPLOTLIB = False
 
-try:
-    import horovod.tensorflow as hvd  # noqa: F401
-    HAS_HOROVOD = True
-except ImportError:
-    HAS_HOROVOD = False
-
+#  try:
+#      import horovod.tensorflow as hvd  # noqa: F401
+#      HAS_HOROVOD = True
+#  except ImportError:
+#      HAS_HOROVOD = False
+#
 try:
     import psutil  # noqa: F401
     HAS_PSUTIL = True

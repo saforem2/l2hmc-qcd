@@ -11,26 +11,93 @@ Date: 04/11/2020
 # pylint: disable=too-many-arguments, too-few-public-methods
 from __future__ import absolute_import, division, print_function
 
-import tensorflow as tf
+from typing import Callable, Dict, List, NoReturn, Optional, Union
 from collections import namedtuple
 
-from .layers import (DenseLayerNP, relu, ScaledTanhLayer, ScaledTanhLayerNP,
-                     StackedLayer, StackedLayerNP, dense_layer)
-from .network_utils import custom_dense
+import tensorflow as tf
+
 import utils.file_io as io
+
 from config import Weights
 from network import QCOEFF, QNAME, SCOEFF, SNAME, TNAME
-
+from .layers import (dense_layer, DenseLayerNP, relu,
+                     ScaledTanhLayer, ScaledTanhLayerNP,
+                     StackedLayer, StackedLayerNP)
 
 NetworkConfig = namedtuple('NetworkConfig', [
     'type', 'units', 'dropout_prob', 'activation_fn'
 ])
 
+StepNetworkConfig = namedtuple('StepNetworkConfig', [
+    'num_steps', 'type', 'units', 'dropout_prob', 'activation_fn'
+])
 
-class GaugeNetwork(tf.keras.Model):
+
+def _get_layer_weights(layer):
+    w, b = layer.weights
+    return Weights(w=w.numpy(), b=b.numpy())
+
+
+def get_layer_weights(net):
+    wdict = {
+        'x_layer': _get_layer_weights(net.xlayer.layer),
+        'v_layer': _get_layer_weights(net.vlayer.layer),
+        't_layer': _get_layer_weights(net.t_layer),
+        'hidden_layers': [
+            _get_layer_weights(i) for i in net.hidden_layers
+        ],
+        'scale_layer': (
+            _get_layer_weights(net.scale_layer.layer)
+        ),
+        'translation_layer': (
+            _get_layer_weights(net.translation_layer)
+        ),
+        'transformation_layer': (
+            _get_layer_weights(net.transformation_layer.layer)
+        ),
+    }
+    coeffs = [
+        net.scale_layer.coeff.numpy(),
+        net.transformation_layer.coeff.numpy()
+    ]
+    wdict['coeff_scale'] = coeffs[0]
+    wdict['coeff_transformation'] = coeffs[1]
+
+    return wdict
+
+
+def save_layer_weights(net, out_file):
+    weights_dict = get_layer_weights(net)
+    io.savez(weights_dict, out_file, name=net.name)
+
+
+class StepGaugeNetwork(tf.keras.Model):
+    """GaugeNetwork object with separate networks for each leapfrog step."""
+
+    def __init__(self,
+                 config: StepNetworkConfig,
+                 xdim: int,
+                 factor: float = 1.,
+                 net_seeds: Optional[Dict] = None,
+                 name: str = 'StepGaugeNetwork',
+                 kwargs: Optional[Dict] = None) -> NoReturn:
+        """Initialization method."""
+        super(StepGaugeNetwork, self).__init__(name=name, **kwargs)
+        self._config = config
+        self.factor = factor
+        self.xdim = xdim
+        self.activation = config.activation
+
+
+class GaugeNetwork(tf.keras.layers.Layer):
     """GaugeNetwork. Implements stacked Cartesian repr. of `GenericNet`."""
-    def __init__(self, config, xdim, factor=1., net_seeds=None,
-                 name='GaugeNetwork', **kwargs):
+
+    def __init__(self,
+                 config: StepNetworkConfig,
+                 xdim: int,
+                 factor: float = 1.,
+                 net_seeds: Optional[Dict] = None,
+                 name: str = 'GaugeNetwork') -> NoReturn:
         """Initialization method.
 
         Args:
@@ -44,7 +111,7 @@ class GaugeNetwork(tf.keras.Model):
             name (str): Name of network.
             **kwargs (keyword arguments): Passed to `tf.keras.Model.__init__`.
         """
-        super(GaugeNetwork, self).__init__(name=name, **kwargs)
+        super(GaugeNetwork, self).__init__(name=name)
 
         self._config = config
         self.factor = factor
@@ -114,38 +181,63 @@ class GaugeNetwork(tf.keras.Model):
             'transformation_layer': self.transformation_layer,
         }
 
-    def get_weights(self, sess):
-        """Get dictionary of layer weights."""
-        def _weights(layer):
-            w, b = sess.run(layer.weights)
-            return Weights(w=w, b=b)
+    def _get_layer_weights(self, layer, sess=None):
+        if sess is None or tf.executing_eagerly():
+            w, b = layer.weights
+            return Weights(w=w.numpy(), b=b.numpy())
 
+        w, b = sess.run(layer.weights)
+        return Weights(w=w, b=b)
+
+    def get_layer_weights(self, sess=None):
+        """Get dictionary of layer weights."""
+        #  def _weights(layer):
+        #      if sess is None:
+        #          w, b = layer.weights.numpy()
+        #      else:
+        #          w, b = sess.run(layer.weights)
+        #
+        #      return Weights(w=w, b=b)
         weights_dict = {
-            'x_layer': _weights(self.x_layer.layer),
-            'v_layer': _weights(self.v_layer.layer),
-            't_layer': _weights(self.t_layer),
-            'hidden_layers': [_weights(l) for l in self.hidden_layers],
-            'scale_layer': _weights(self.scale_layer.layer),
-            'translation_layer': _weights(self.translation_layer),
-            'transformation_layer': _weights(self.transformation_layer.layer),
+            'x_layer': self._get_layer_weights(self.x_layer.layer),
+            'v_layer': self._get_layer_weights(self.v_layer.layer),
+            't_layer': self._get_layer_weights(self.t_layer),
+            'hidden_layers': [
+                self._get_layer_weights(l) for l in self.hidden_layers
+            ],
+            'scale_layer': (
+                self._get_layer_weights(self.scale_layer.layer)
+            ),
+            'translation_layer': (
+                self._get_layer_weights(self.translation_layer)
+            ),
+            'transformation_layer': (
+                self._get_layer_weights(
+                    self.transformation_layer.layer
+                )
+            ),
         }
 
-        coeffs = sess.run([self.scale_layer.coeff,
-                           self.transformation_layer.coeff])
+        if sess is None or tf.executing_eagerly:
+            coeffs = [self.scale_layer.coeff.numpy(),
+                      self.transformation_layer.coeff.numpy()]
+        else:
+            coeffs = sess.run([self.scale_layer.coeff,
+                               self.transformation_layer.coeff])
 
         weights_dict[SCOEFF] = coeffs[0]
         weights_dict[QCOEFF] = coeffs[1]
 
         return weights_dict
 
-    def save_weights(self, sess, out_file):
+    def save_layer_weights(self, sess=None, out_file=None):
         """Save all layer weights to `out_file`."""
-        weights_dict = self.get_weights(sess)
+        weights_dict = self.get_layer_weights(sess=sess)
         io.savez(weights_dict, out_file, name=self.name)
 
         return weights_dict
 
-    def call(self, inputs, train_phase):
+    def call(self, inputs, training=None):
         """Call the network (forward-pass)."""
         v, x, t = inputs
 
@@ -158,7 +250,7 @@ class GaugeNetwork(tf.keras.Model):
             h = self.activation(layer(h))
 
         if self._config.dropout_prob > 0:
-            h = self.dropout(h, training=train_phase)
+            h = self.dropout(h, training=training)
 
         scale = self.scale_layer(h)
         translation = self.translation_layer(h)
@@ -169,6 +261,7 @@ class GaugeNetwork(tf.keras.Model):
 
 class GaugeNetworkNP:
     """Implements numpy version of `GaugeNetwork`."""
+
     def __init__(self, weights, activation=relu):
         self.activation = activation
         self.x_layer = StackedLayerNP(weights['x_layer'])
