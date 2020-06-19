@@ -52,6 +52,11 @@ except ImportError:
 # pylint:disable=too-many-locals,invalid-name
 
 
+def check_if_chief(args):
+    using_hvd = args.get('horovod', False)
+    return hvd.rank() == 0 if using_hvd else not using_hvd
+
+
 def print_args(args):
     """Print out parsed arguments."""
     io.log(80 * '=' + '\n' + 'Parsed args:\n')
@@ -76,6 +81,10 @@ def run_hmc(
         - 'run_steps'
         - 'lattice_shape'
     """
+    is_chief = check_if_chief(args)
+    if not is_chief:
+        return
+
     print_args(args)
     args.log_dir = io.make_log_dir(args, 'GaugeModel', log_file)
 
@@ -95,6 +104,10 @@ def run_hmc(
 
 def load_and_run(args):
     """Load trained model from checkpoint and run inference."""
+    is_chief = check_if_chief(args)
+    if not is_chief:
+        return
+
     print_args(args)
     if args.hmc:
         train_dir = os.path.join(args.log_dir, 'training_hmc')
@@ -147,9 +160,12 @@ def run(model, args, x=None):
         model (GaugeModel): Trained model
         ouptuts (dict): Dictionary of outputs from inference run.
     """
-    is_chief = hvd.rank() == 0 if args.horovod else not args.horovod
+    is_chief = check_if_chief(args)
     if not is_chief:
-        return None, None
+        return
+    #  is_chief = hvd.rank() == 0 if args.horovod else not args.horovod
+    #  if not is_chief:
+    #      return None, None
 
     if args.hmc:
         runs_dir = os.path.join(args.log_dir, 'inference_hmc')
@@ -202,10 +218,13 @@ def run_model(model, args, x=None):
         outputs (dict): Dictionary of outputs.
         data_strs (lsit): List of strings containing inference log.
     """
-    using_hvd = getattr(model, 'using_hvd', False)
-    is_chief = hvd.rank() == 0 if using_hvd else not using_hvd
+    is_chief = check_if_chief(args)
     if not is_chief:
-        return None, None
+        return
+    #  using_hvd = getattr(model, 'using_hvd', False)
+    #  is_chief = hvd.rank() == 0 if using_hvd else not using_hvd
+    #  if not is_chief:
+    #      return None, None
 
     run_steps = args.get('run_steps', None)
     beta = args.get('beta', None)
