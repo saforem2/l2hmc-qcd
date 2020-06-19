@@ -273,9 +273,6 @@ def make_log_dir(FLAGS, model_type=None, log_file=None, eager=True, rank=0):
 
     NOTE: If log_dir does not already exist, it is created.
     """
-    if rank != 0:
-        return
-
     model_type = 'GaugeModel' if model_type is None else model_type
     fstr = get_log_dir_fstr(FLAGS)
 
@@ -299,9 +296,10 @@ def make_log_dir(FLAGS, model_type=None, log_file=None, eager=True, rank=0):
         run_str = f'{fstr}-{dstr}'
         log_dir = os.path.join(*dirs, month_str, run_str)
 
-    check_else_make_dir(log_dir)
-    if log_file is not None:
-        write(f'Output saved to: \n\t{log_dir}', log_file, 'a')
+    if rank == 0:
+        check_else_make_dir(log_dir)
+        if log_file is not None:
+            write(f'Output saved to: \n\t{log_dir}', log_file, 'a')
 
     return log_dir
 
