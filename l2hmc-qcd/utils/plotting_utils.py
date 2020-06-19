@@ -78,7 +78,7 @@ def get_title_str_from_params(params):
         beta = params.get('beta', None)
         title_str += r"$\beta = $" + f'{beta:.3g}, '
 
-    title_str += f'shape: {lattice_shape}'
+    title_str += f'shape: {tuple(lattice_shape)}'
 
     if net_weights == NET_WEIGHTS_HMC:
         title_str += f', (HMC)'
