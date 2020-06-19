@@ -9,8 +9,7 @@ import datetime
 import joblib
 import numpy as np
 
-from config import (NET_WEIGHTS_HMC, NET_WEIGHTS_L2HMC, NetWeights,
-                    PI, PROJECT_DIR)
+from config import PROJECT_DIR
 
 # pylint:disable=invalid-name
 
@@ -58,6 +57,9 @@ def check_else_make_dir(d, rank=0):
 
 def flush_data_strs(data_strs, out_file, rank=0, mode='a'):
     """Dump `data_strs` to `out_file` and return new, empty list."""
+    if rank != 0:
+        return []
+
     with open(out_file, mode) as f:
         for s in data_strs:
             f.write(f'{s}\n')
@@ -79,6 +81,14 @@ def save_params(params, out_dir, name=None, rank=0):
         for key, val in params.items():
             f.write(f"{key}: {val}\n")
     savez(params, zfile, name=name, rank=rank)
+
+
+def print_args(args, rank=0):
+    """Print out parsed arguments."""
+    log(80 * '=' + '\n' + 'Parsed args:\n', rank=rank)
+    for key, val in args.items():
+        log(f' {key}: {val}\n', rank=rank)
+    log(80 * '=', rank=rank)
 
 
 def savez(obj, fpath, name=None, rank=0):
@@ -145,36 +155,105 @@ def timeit(method):
 
 def get_run_num(run_dir):
     """Get the integer label for naming `run_dir`."""
-    dirnames = [i for i in os.listdir(run_dir) if i.startswith('run_')]
+    dirnames = [
+        i for i in os.listdir(run_dir)
+        if os.path.isdir(os.path.join(run_dir, i))
+    ]
     if len(dirnames) == 0:
         return 1
 
     return sorted([int(i.split('_')[-1]) for i in dirnames])[-1] + 1
 
 
-def get_run_str(FLAGS):
-    """Parse FLAGS and create unique `run_str` for `log_dir`."""
-    run_str = f'L{FLAGS.space_size}'
-    run_str += f'_b{FLAGS.batch_size}_lf{FLAGS.num_steps}'
-    if FLAGS.network_type != 'GaugeNetwork':
-        run_str += f'_{FLAGS.network_type}'
+def get_run_dir_fstr(FLAGS):
+    """Parse FLAGS and create unique fstr for `run_dir`."""
+    eps = FLAGS.get('eps', None)
+    hmc = FLAGS.get('hmc', False)
+    beta = FLAGS.get('beta', None)
+    num_steps = FLAGS.get('num_steps', None)
+    lattice_shape = FLAGS.get('lattice_shape', None)
 
-    if FLAGS.charge_weight > 0:
-        run_str += f'_qw{FLAGS.charge_weight}'.replace('.', '')
+    if beta is None:
+        beta = FLAGS.get('beta_final', None)
 
-    if FLAGS.plaq_weight > 0:
-        run_str += f'_pw{FLAGS.plaq_weight}'.replace('.', '')
+    fstr = ''
+    if hmc:
+        fstr += f'HMC_'
+    if beta is not None:
+        fstr += f'beta{beta:.3g}'.replace('.', '')
+    if num_steps is not None:
+        fstr += f'_lf{num_steps}'
+    if eps is not None:
+        fstr += f'_eps{eps:.3g}'.replace('.', '')
+    if lattice_shape is not None:
+        fstr += f'_b{lattice_shape[0]}'
 
-    if FLAGS.dropout_prob > 0:
-        run_str += f'_dp{FLAGS.dropout_prob}'.replace('.', '')
+    return fstr
 
-    if FLAGS.eps_fixed:
-        run_str += f'_eps_fixed'
 
-    if FLAGS.clip_value > 0:
-        run_str += f'_clip{FLAGS.clip_value}'.replace('.', '')
+# pylint:disable=too-many-branches, too-many-locals
+def get_log_dir_fstr(FLAGS):
+    """Parse FLAGS and create unique fstr for `log_dir`."""
+    hmc = FLAGS.get('hmc', False)
+    batch_size = FLAGS.get('batch_size', None)
+    num_steps = FLAGS.get('num_steps', None)
+    beta = FLAGS.get('beta', None)
+    eps = FLAGS.get('eps', None)
+    space_size = FLAGS.get('space_size', None)
+    time_size = FLAGS.get('time_size', None)
+    lattice_shape = FLAGS.get('lattice_shape', None)
+    train_steps = FLAGS.get('train_steps', int(1e3))
+    network_type = FLAGS.get('network_type', 'GaugeNetwork')
+    charge_weight = FLAGS.get('charge_weight', 0.)
+    plaq_weight = FLAGS.get('plaq_weight', 0.)
+    eps_fixed = FLAGS.get('eps_fixed', False)
+    dropout_prob = FLAGS.get('dropout_prob', 0.)
+    clip_value = FLAGS.get('clip_value', 0.)
 
-    return run_str
+    fstr = ''
+
+    if hmc:
+        fstr += 'HMC_'
+        eps_fixed = True
+    else:
+        if train_steps is not None and train_steps < 5000:
+            fstr += 'DEBUG_'
+
+    if lattice_shape is not None:
+        fstr += f'L{lattice_shape[1]}_b{lattice_shape[0]}'
+
+    else:
+        if space_size is not None:
+            fstr += f'L{time_size}'
+
+        if batch_size is not None:
+            fstr += f'_b{batch_size}'
+
+    if num_steps is not None:
+        fstr += f'_lf{num_steps}'
+
+    if network_type != 'GaugeNetwork':
+        fstr += f'_{network_type}'
+
+    if charge_weight > 0:
+        fstr += f'_qw{charge_weight}'.replace('.', '')
+
+    if plaq_weight > 0:
+        fstr += f'_pw{plaq_weight}'.replace('.', '')
+
+    if dropout_prob > 0:
+        fstr += f'_dp{dropout_prob}'.replace('.', '')
+
+    if eps_fixed:
+        fstr += f'_eps{eps:.3g}'.replace('.', '')
+
+    if beta is not None:
+        fstr += f'_beta{beta:.3g}'.replace('.', '')
+
+    if clip_value > 0:
+        fstr += f'_clip{clip_value}'.replace('.', '')
+
+    return fstr
 
 
 def make_log_dir(FLAGS, model_type=None, log_file=None, eager=True):
@@ -191,9 +270,7 @@ def make_log_dir(FLAGS, model_type=None, log_file=None, eager=True):
     NOTE: If log_dir does not already exist, it is created.
     """
     model_type = 'GaugeModel' if model_type is None else model_type
-    run_str = get_run_str(FLAGS)
-    if FLAGS.train_steps < 5000:
-        run_str = f'DEBUG_{run_str}'
+    run_str = get_log_dir_fstr(FLAGS)
 
     now = datetime.datetime.now()
     month_str = now.strftime('%Y_%m')
@@ -212,6 +289,23 @@ def make_log_dir(FLAGS, model_type=None, log_file=None, eager=True):
         write(f'Output saved to: \n\t{log_dir}', log_file, 'a')
 
     return log_dir
+
+
+def make_run_dir(FLAGS, base_dir, log_file=None):
+    """Automatically create `run_dir` for storing inference data."""
+    run_fstr = get_run_dir_fstr(FLAGS)
+    run_dir = os.path.join(base_dir, run_fstr)
+    if os.path.isdir(run_dir):
+        now = datetime.datetime.now()
+        dstr = now.strftime('%Y-%m-%d-%H-%M')
+        run_fstr = f'{run_fstr}-{dstr}'
+        run_dir = os.path.join(base_dir, run_fstr)
+
+    check_else_make_dir(run_dir)
+    if log_file is not None:
+        write(f'Output saved to: \n\t{run_dir}', log_file, 'a')
+
+    return run_dir
 
 
 def save_network_weights(model, train_dir, rank=0):
@@ -234,8 +328,8 @@ def save_network_weights(model, train_dir, rank=0):
 
         xweights_file = os.path.join(wdir, 'xnet_weights.z')
         vweights_file = os.path.join(wdir, 'vnet_weights.z')
-        savez(xnet_weights, xweights_file, 'xnet_weights')
-        savez(vnet_weights, vweights_file, 'vnet_weights')
+        savez(xnet_weights, xweights_file, 'xnet_weights', rank=rank)
+        savez(vnet_weights, vweights_file, 'vnet_weights', rank=rank)
     else:
         xfpath = os.path.join(wdir, 'xnet_weights.z')
         vfpath = os.path.join(wdir, 'vnet_weights.z')

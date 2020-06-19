@@ -9,9 +9,11 @@ Date: 04/11/2020
 """
 # pylint: disable=invalid-name, too-many-instance-attributes
 # pylint: disable=too-many-arguments, too-few-public-methods
-from __future__ import absolute_import, division, print_function
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
+from __future__ import annotations
 
-from typing import Callable, Dict, List, NoReturn, Optional, Union
 from collections import namedtuple
 
 import tensorflow as tf
@@ -24,21 +26,20 @@ from .layers import (dense_layer, DenseLayerNP, relu,
                      ScaledTanhLayer, ScaledTanhLayerNP,
                      StackedLayer, StackedLayerNP)
 
+
 NetworkConfig = namedtuple('NetworkConfig', [
     'type', 'units', 'dropout_prob', 'activation_fn'
 ])
 
-StepNetworkConfig = namedtuple('StepNetworkConfig', [
-    'num_steps', 'type', 'units', 'dropout_prob', 'activation_fn'
-])
-
 
 def _get_layer_weights(layer):
+    """Get an individual layers' weights."""
     w, b = layer.weights
     return Weights(w=w.numpy(), b=b.numpy())
 
 
 def get_layer_weights(net):
+    """Helper method for extracting layer weights."""
     wdict = {
         'x_layer': _get_layer_weights(net.xlayer.layer),
         'v_layer': _get_layer_weights(net.vlayer.layer),
@@ -67,37 +68,20 @@ def get_layer_weights(net):
 
 
 def save_layer_weights(net, out_file):
+    """Save all layer weights from `net` to `out_file`."""
     weights_dict = get_layer_weights(net)
     io.savez(weights_dict, out_file, name=net.name)
-
-
-class StepGaugeNetwork(tf.keras.Model):
-    """GaugeNetwork object with separate networks for each leapfrog step."""
-
-    def __init__(self,
-                 config: StepNetworkConfig,
-                 xdim: int,
-                 factor: float = 1.,
-                 net_seeds: Optional[Dict] = None,
-                 name: str = 'StepGaugeNetwork',
-                 kwargs: Optional[Dict] = None) -> NoReturn:
-        """Initialization method."""
-        super(StepGaugeNetwork, self).__init__(name=name, **kwargs)
-        self._config = config
-        self.factor = factor
-        self.xdim = xdim
-        self.activation = config.activation
 
 
 class GaugeNetwork(tf.keras.layers.Layer):
     """GaugeNetwork. Implements stacked Cartesian repr. of `GenericNet`."""
 
     def __init__(self,
-                 config: StepNetworkConfig,
+                 config: NetworkConfig,
                  xdim: int,
                  factor: float = 1.,
-                 net_seeds: Optional[Dict] = None,
-                 name: str = 'GaugeNetwork') -> NoReturn:
+                 net_seeds: dict = None,
+                 name: str = 'GaugeNetwork') -> None:
         """Initialization method.
 
         Args:
@@ -113,9 +97,9 @@ class GaugeNetwork(tf.keras.layers.Layer):
         """
         super(GaugeNetwork, self).__init__(name=name)
 
-        self._config = config
-        self.factor = factor
         self.xdim = xdim
+        self.factor = factor
+        self._config = config
         self.activation = config.activation_fn
         with tf.name_scope(name):
             if config.dropout_prob > 0:
@@ -181,7 +165,8 @@ class GaugeNetwork(tf.keras.layers.Layer):
             'transformation_layer': self.transformation_layer,
         }
 
-    def _get_layer_weights(self, layer, sess=None):
+    @staticmethod
+    def _get_layer_weights(layer, sess=None):
         if sess is None or tf.executing_eagerly():
             w, b = layer.weights
             return Weights(w=w.numpy(), b=b.numpy())

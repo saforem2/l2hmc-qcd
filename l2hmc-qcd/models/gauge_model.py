@@ -26,6 +26,12 @@ from lattice.utils import u1_plaq_exact_tf
 from utils.attr_dict import AttrDict
 from dynamics.dynamics import Dynamics
 
+if tf.__version__.startswith('1.'):
+    TF_VERSION = '1.x'
+elif tf.__version__.startswith('2.'):
+    TF_VERSION = '2.x'
+
+
 #  from utils.horovod_utils import warmup_lr
 #  if HAS_HOROVOD:
 try:
@@ -138,12 +144,30 @@ class WarmupExponentialDecay(LearningRateSchedule):
 
 # pylint:disable=invalid-name
 class GaugeModel:
-    def __init__(self, params, lattice_shape, dynamics_config, net_config):
+    """Implements `GaugeModel`, a convenience wrapper around `Dynamics`."""
+
+    def __init__(self, params, dynamics_config, net_config):
         self._model_type = 'GaugeModel'
         self.params = params
-        self.parse_params(params, lattice_shape)
-        self.dynamics_config = dynamics_config
         self.net_config = net_config
+        self.dynamics_config = dynamics_config
+
+        ######################################################################
+        # NOTE:
+        # -----
+        # If either eps is trainable or we're not running HMC,
+        # there exist parameters to be trained, so we should create the
+        # optimizer and associated training step function.
+        #
+        # This is equivalent to saying that if eps is not trainable, and
+        # dynamics_config.hmc is True, there are no trainable parameters, so
+        # don't bother creating optimizer.
+        ######################################################################
+        self._has_trainable_params = True
+        if self.dynamics_config.hmc and not self.dynamics_config.eps_trainable:
+            self._has_trainable_params = False
+
+        self.parse_params(params)
 
         self.lattice = GaugeLattice(self.time_size,
                                     self.space_size,
@@ -155,35 +179,55 @@ class GaugeModel:
                                  dynamics_config, net_config,
                                  separate_nets=self.separate_networks)
 
-        self.lr = self.create_lr(warmup=self.warmup_lr)
-        self.optimizer = self.create_optimizer()
-        #  if not self.separate_networks:
-        self.dynamics.compile(
-            optimizer=self.optimizer,
-            loss=self.calc_loss,
-        )
-        if self.beta_init == self.beta_final:
-            self.betas = tf.convert_to_tensor(
-                tf.cast(self.beta_init * np.ones(self.train_steps),
-                        dtype=TF_FLOAT)
-            )
-        else:
-            self.betas = get_betas(self.train_steps,
-                                   self.beta_init,
-                                   self.beta_final)
+        #  cond1 = self.dynamics_config.eps_trainable  # eps is trainable
+        #  # if not running HMC, the networks have trainable parameters
+        #  cond2 = not self.dynamics_config.hmc
+        #  # if either of these are true, build the optimizer and training ops
+        #  if cond1 or cond2:
+        #      self._has_trainable_params = True
 
-        if not tf.executing_eagerly():
+        if self._has_trainable_params:
+            self.lr = self.create_lr(warmup=self.warmup_lr)
+            self.optimizer = self.create_optimizer()
+            self.dynamics.compile(
+                optimizer=self.optimizer,
+                loss=self.calc_loss,
+            )
+
+        #  else:
+        #      self._can_train = False
+
+        #  if self.beta_init == self.beta_final:
+        #      self.betas = tf.convert_to_tensor(
+        #          tf.cast(self.beta_init * np.ones(self.train_steps),
+        #                  dtype=TF_FLOAT)
+        #      )
+        #  else:
+        #      self.betas = get_betas(self.train_steps,
+        #                             self.beta_init,
+        #                             self.beta_final)
+
+        if not tf.executing_eagerly or TF_VERSION == '1.x':
             self._build()
 
-    def parse_params(self, params, lattice_shape):
+    def parse_params(self, params):
         """Set instance attributes from `params`."""
         self.params = AttrDict(params)
-        self.lr_init = params.lr_init
-        self.warmup_lr = params.warmup_lr
-        self.using_hvd = params.horovod
-        self.beta_init = params.beta_init
-        self.beta_final = params.beta_final
-        batch_size, time_size, space_size, dim = lattice_shape
+
+        lattice_shape = params.get('lattice_shape', None)
+        if lattice_shape is None:
+            batch_size = params.get('batch_size', None)
+            time_size = params.get('time_size', None)
+            space_size = params.get('space_size', None)
+            dim = params.get('dim', 2)
+            lattice_shape = (batch_size, time_size, space_size, dim)
+        else:
+            batch_size, time_size, space_size, dim = lattice_shape
+            batch_size = lattice_shape[0]
+            time_size = lattice_shape[1]
+            space_size = lattice_shape[2]
+            dim = lattice_shape[3]
+
         self.lattice_shape = lattice_shape
         self.lattice_dim = dim
         self.time_size = time_size
@@ -191,21 +235,45 @@ class GaugeModel:
         self.space_size = space_size
         self.xdim = time_size * space_size * dim
         self.input_shape = (batch_size, self.xdim)
-        self.lr_decay_steps = params.lr_decay_steps
-        self.lr_decay_rate = params.lr_decay_rate
-        self.plaq_weight = params.plaq_weight
-        self.charge_weight = params.charge_weight
-        self.train_steps = params.train_steps
-        self.print_steps = params.print_steps
-        self.separate_networks = params.get('separate_networks', False)
-        self.save_steps = params.get('save_steps', self.train_steps // 10)
-        self.log_steps = params.get('logging_steps', self.train_steps // 500)
-        self.save_train_data = params.get('save_train_data', True)
+
+        self.run_steps = params.get('run_steps', int(1e3))
+        self.print_steps = params.get('print_steps', 10)
+        self.log_steps = params.get('logging_steps', 50)
         self.save_run_data = params.get('save_run_data', True)
+        self.separate_networks = params.get('separate_networks', False)
+
         eager_execution = params.get('eager_execution', False)
         self.compile = not eager_execution
 
+        if self._has_trainable_params:
+            self.lr_init = params.get('lr_init', None)
+            self.warmup_lr = params.get('warmup_lr', False)
+            self.using_hvd = params.get('horovod', False)
+            self.lr_decay_steps = params.get('lr_decay_steps', None)
+            self.lr_decay_rate = params.get('lr_decay_rate', None)
+            self.plaq_weight = params.get('plaq_weight', 0.)
+            self.charge_weight = params.get('charge_weight', 0.)
+            self.train_steps = params.get('train_steps', int(1e4))
+            self.save_train_data = params.get('save_train_data', True)
+            self.save_steps = params.get('save_steps', self.train_steps // 10)
+
+            self.beta_init = params.get('beta_init', None)
+            self.beta_final = params.get('beta_final', None)
+            beta = params.get('beta', None)
+            if self.beta_init == self.beta_final or beta is not None:
+                self.beta = self.beta_init
+                self.betas = tf.convert_to_tensor(
+                    tf.cast(self.beta * np.ones(self.train_steps),
+                            dtype=TF_FLOAT)
+                )
+            else:
+                if self.train_steps is not None:
+                    self.betas = get_betas(self.train_steps,
+                                           self.beta_init,
+                                           self.beta_final)
+
     # pylint:disable=attribute-defined-outside-init
+
     def _build(self):
         self.global_step = tf.compat.v1.train.get_or_create_global_step()
         inputs = self._build_inputs()
@@ -346,6 +414,7 @@ class GaugeModel:
         return loss, states.out.x, px, sld_states.out
 
     def restore_from_checkpoint(self, ckpt_dir=None):
+        """Helper method for restoring from checkpoint."""
         step_init = tf.Variable(0, dtype=TF_INT)
         if ckpt_dir is not None:
             #  checkpoint = tf.train.Checkpoint(model=self.dynamics,
@@ -390,11 +459,6 @@ class GaugeModel:
         charges_arr = [q_new.numpy()]
         if ckpt_dir is not None:
             _, _, _ = self.restore_from_checkpoint(ckpt_dir)
-
-        #  if not self.separate_networks:
-        #      dynamics_call = tf.function(self.dynamics)
-        #  else:
-        #      dynamics_call = self.dynamics
 
         io.log(RUN_SEP)
         io.log(f'Running inference on trained model with:')

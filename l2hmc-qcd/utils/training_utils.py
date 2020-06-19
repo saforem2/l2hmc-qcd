@@ -51,16 +51,25 @@ except ImportError:
         tf.compat.v1.enable_eager_execution()
 
 
-#  import utils.file_io as io
-
-
 # pylint:disable=invalid-name, redefined-outer-name
 def build_model(FLAGS):
     """Build model using parameters from FLAGS."""
     net_weights = NET_WEIGHTS_HMC if FLAGS.hmc else NET_WEIGHTS_L2HMC
-    xdim = FLAGS.time_size * FLAGS.space_size * FLAGS.dim
-    input_shape = (FLAGS.batch_size, xdim)
-    lattice_shape = (FLAGS.batch_size, FLAGS.time_size, FLAGS.space_size, 2)
+    lattice_shape = FLAGS.get('lattice_shape', None)
+    if lattice_shape is None:
+        try:
+            xdim = FLAGS.time_size * FLAGS.space_size * FLAGS.dim
+            input_shape = (FLAGS.batch_size, xdim)
+            lattice_shape = (FLAGS.batch_size,
+                             FLAGS.time_size,
+                             FLAGS.space_size, 2)
+        except AttributeError:
+            raise('Either `lattice_shape` or '
+                  'individual sizes must be specified.')
+    else:
+        xdim = lattice_shape[1] * lattice_shape[2] * lattice_shape[3]
+        input_shape = (lattice_shape[0], xdim)
+
     FLAGS.net_weights = net_weights
     FLAGS.xdim = xdim
     FLAGS.input_shape = input_shape
@@ -82,7 +91,7 @@ def build_model(FLAGS):
         eps_trainable=not FLAGS.eps_fixed,
     )
 
-    model = GaugeModel(FLAGS, lattice_shape, config, net_config)
+    model = GaugeModel(FLAGS, config, net_config)
 
     return model, FLAGS
 

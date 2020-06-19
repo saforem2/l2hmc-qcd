@@ -1,7 +1,8 @@
 #/bin/bash
 
 RUNNER='../l2hmc-qcd/run.py'
-ARGS='./inference_args.txt'
+ARGS="$@"
+# ARGS='./inference_args.txt'
 
 export KMP_BLOCKTIME=1
 export OMP_NUM_THREADS=16
