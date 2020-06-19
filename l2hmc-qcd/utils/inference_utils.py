@@ -181,6 +181,7 @@ def run(model, args, x=None):
         'eps': eps,
         'beta': beta,
         'run_steps': run_steps,
+        'lattice_shape': model.lattice_shape,
         'num_steps': model.dynamics_config.num_steps,
         'net_weights': model.dynamics_config.net_weights,
         'input_shape': model.dynamics_config.input_shape,
