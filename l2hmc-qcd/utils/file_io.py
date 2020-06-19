@@ -209,6 +209,7 @@ def get_log_dir_fstr(FLAGS):
     eps_fixed = FLAGS.get('eps_fixed', False)
     dropout_prob = FLAGS.get('dropout_prob', 0.)
     clip_value = FLAGS.get('clip_value', 0.)
+    separate_networks = FLAGS.get('separate_networks', False)
 
     fstr = ''
 
@@ -234,6 +235,9 @@ def get_log_dir_fstr(FLAGS):
 
     if network_type != 'GaugeNetwork':
         fstr += f'_{network_type}'
+
+    if separate_networks:
+        fstr += f'_sepNets'
 
     if charge_weight > 0:
         fstr += f'_qw{charge_weight}'.replace('.', '')
@@ -270,12 +274,13 @@ def make_log_dir(FLAGS, model_type=None, log_file=None, eager=True):
     NOTE: If log_dir does not already exist, it is created.
     """
     model_type = 'GaugeModel' if model_type is None else model_type
-    run_str = get_log_dir_fstr(FLAGS)
+    fstr = get_log_dir_fstr(FLAGS)
 
     now = datetime.datetime.now()
     month_str = now.strftime('%Y_%m')
-    dstr = now.strftime('%Y-%m-%d-%H-%M')
-    run_str = f'{run_str}-{dstr}'
+    dstr = now.strftime('%Y-%m-%d-%H%M')
+    run_str = f'{fstr}-{dstr}'
+    #  run_str = f'{run_str}-{dstr}'
 
     root_dir = os.path.dirname(PROJECT_DIR)
     dirs = [root_dir]
@@ -284,6 +289,13 @@ def make_log_dir(FLAGS, model_type=None, log_file=None, eager=True):
         dirs.append('gauge_logs_eager')
 
     log_dir = os.path.join(*dirs, month_str, run_str)
+    if os.path.isdir(log_dir):
+        log(f'Existing directory found with the same name!')
+        log(f'Modifying date string to include seconds.')
+        dstr = now.strftime('%Y-%m-%d-%H%M%S')
+        run_str = f'{fstr}-{dstr}'
+        log_dir = os.path.join(*dirs, month_str, run_str)
+
     check_else_make_dir(log_dir)
     if log_file is not None:
         write(f'Output saved to: \n\t{log_dir}', log_file, 'a')
@@ -293,13 +305,17 @@ def make_log_dir(FLAGS, model_type=None, log_file=None, eager=True):
 
 def make_run_dir(FLAGS, base_dir, log_file=None):
     """Automatically create `run_dir` for storing inference data."""
-    run_fstr = get_run_dir_fstr(FLAGS)
-    run_dir = os.path.join(base_dir, run_fstr)
+    fstr = get_run_dir_fstr(FLAGS)
+    now = datetime.datetime.now()
+    dstr = now.strftime('%Y-%m-%d-%H%M')
+    run_str = f'{fstr}-{dstr}'
+    run_dir = os.path.join(base_dir, run_str)
     if os.path.isdir(run_dir):
-        now = datetime.datetime.now()
-        dstr = now.strftime('%Y-%m-%d-%H-%M')
-        run_fstr = f'{run_fstr}-{dstr}'
-        run_dir = os.path.join(base_dir, run_fstr)
+        log(f'Existing directory found with the same name!')
+        log(f'Modifying date string to include seconds.')
+        dstr = now.strftime('%Y-%m-%d-%H%M%S')
+        run_str = f'{fstr}-{dstr}'
+        run_dir = os.path.join(base_dir, run_str)
 
     check_else_make_dir(run_dir)
     if log_file is not None:
