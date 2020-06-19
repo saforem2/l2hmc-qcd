@@ -5,13 +5,16 @@ gauge_logs/
 gauge_logs_eager/
 gmm_logs/
 figures/
-bin/output_dirs.txt
 untracked/
 
 doc/main_vimtex_selected.pdf
 doc/main_vimtex_selected.tex
 doc/updates/updates_2020_06_01.tex
 requirements.txt
+
+bin/hmc_dirs.txt
+bin/log_dirs.txt
+bin/output_dirs.txt
 
 
 *Untitled*
