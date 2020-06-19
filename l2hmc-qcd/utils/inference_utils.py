@@ -3,7 +3,7 @@ inference_utils.py
 
 Collection of helper methods to use for running inference on trained model.
 """
-from __future__ import absolute_import, annotations, division, print_function
+from __future__ import absolute_import, division, print_function
 
 import os
 import time

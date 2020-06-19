@@ -7,7 +7,7 @@ Implements both 2D and 3D convolutional neural networks.
 Author: Sam Foreman (github: @saforem2)
 Date: 06/14/2019
 """
-from __future__ import absolute_import, annotations, division, print_function
+from __future__ import absolute_import, division, print_function
 
 import pickle
 
