@@ -260,7 +260,7 @@ def get_log_dir_fstr(FLAGS):
     return fstr
 
 
-def make_log_dir(FLAGS, model_type=None, log_file=None, eager=True):
+def make_log_dir(FLAGS, model_type=None, log_file=None, eager=True, rank=0):
     """Automatically create and name `log_dir` to save model data to.
 
     The created directory will be located in `logs/YYYY_M_D /`, and will have
@@ -273,6 +273,9 @@ def make_log_dir(FLAGS, model_type=None, log_file=None, eager=True):
 
     NOTE: If log_dir does not already exist, it is created.
     """
+    if rank != 0:
+        return
+
     model_type = 'GaugeModel' if model_type is None else model_type
     fstr = get_log_dir_fstr(FLAGS)
 

@@ -102,7 +102,8 @@ def train(FLAGS, log_file=None):
     rank = hvd.rank() if FLAGS.horovod else 0
 
     if FLAGS.log_dir is None:
-        FLAGS.log_dir = io.make_log_dir(FLAGS, 'GaugeModel', log_file)
+        FLAGS.log_dir = io.make_log_dir(FLAGS, 'GaugeModel',
+                                        log_file, rank=rank)
     else:
         fpath = os.path.join(FLAGS.log_dir, 'training', 'FLAGS.z')
         FLAGS = AttrDict(dict(io.loadz(fpath)))
@@ -110,9 +111,11 @@ def train(FLAGS, log_file=None):
 
     train_dir = os.path.join(FLAGS.log_dir, 'training')
     ckpt_dir = os.path.join(train_dir, 'checkpoints')
-    io.check_else_make_dir([train_dir, ckpt_dir])
+    if is_chief:
+        io.check_else_make_dir([train_dir, ckpt_dir])
     if not FLAGS.restore:
-        io.save_params(dict(FLAGS), train_dir, 'FLAGS', rank=rank)
+        io.save_params(dict(FLAGS), train_dir,
+                       'FLAGS', rank=rank)
 
     if FLAGS.hmc_start and FLAGS.hmc_steps > 0 and not FLAGS.restore:
         outputs, eps_init = train_hmc(FLAGS)
@@ -177,8 +180,9 @@ def train_hmc(FLAGS):
 
     train_dir = os.path.join(HFLAGS.log_dir, 'training_hmc')
     ckpt_dir = os.path.join(train_dir, 'checkpoints')
-    io.check_else_make_dir([train_dir, ckpt_dir])
-    io.save_params(dict(HFLAGS), train_dir, 'FLAGS', rank=rank)
+    if is_chief:
+        io.check_else_make_dir([train_dir, ckpt_dir], rank=rank)
+        io.save_params(dict(HFLAGS), train_dir, 'FLAGS', rank=rank)
 
     model, HFLAGS = build_model(HFLAGS)
     step_init = tf.Variable(0, dtype=TF_INT)
