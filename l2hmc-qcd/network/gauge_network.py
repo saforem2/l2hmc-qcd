@@ -80,6 +80,7 @@ class GaugeNetwork(tf.keras.layers.Layer):
                  xdim: int,
                  factor: float = 1.,
                  net_seeds: dict = None,
+                 zero_init: bool = False,
                  name: str = 'GaugeNetwork') -> None:
         """Initialization method.
 
@@ -105,22 +106,22 @@ class GaugeNetwork(tf.keras.layers.Layer):
                 self.dropout = tf.keras.layers.Dropout(config.dropout_prob)
 
             self.x_layer = StackedLayer(name='x_layer',
-                                        zero_init=True,
                                         factor=factor/3.,
+                                        zero_init=zero_init,
                                         units=config.units[0],
-                                        seed=net_seeds['x_layer'],
-                                        input_shape=(2 * xdim,))
+                                        input_shape=(2 * xdim,),
+                                        seed=net_seeds['x_layer'])
 
             self.v_layer = StackedLayer(name='v_layer',
                                         factor=1./3.,
-                                        zero_init=True,
+                                        zero_init=False,
                                         units=config.units[0],
-                                        seed=net_seeds['v_layer'],
-                                        input_shape=(2 * xdim,))
+                                        input_shape=(2 * xdim,),
+                                        seed=net_seeds['v_layer'])
 
-            self.t_layer = dense_layer(factor=1./3.,
-                                       name='t_layer',
-                                       zero_init=True,
+            self.t_layer = dense_layer(name='t_layer',
+                                       factor=1./3.,
+                                       zero_init=False,
                                        units=config.units[0],
                                        input_shape=(2 * xdim,),
                                        seed=net_seeds['t_layer'])
@@ -175,13 +176,6 @@ class GaugeNetwork(tf.keras.layers.Layer):
 
     def get_layer_weights(self, sess=None):
         """Get dictionary of layer weights."""
-        #  def _weights(layer):
-        #      if sess is None:
-        #          w, b = layer.weights.numpy()
-        #      else:
-        #          w, b = sess.run(layer.weights)
-        #
-        #      return Weights(w=w, b=b)
         weights_dict = {
             'x_layer': self._get_layer_weights(self.x_layer.layer),
             'v_layer': self._get_layer_weights(self.v_layer.layer),

@@ -14,7 +14,6 @@ import tensorflow as tf
 import utils.file_io as io
 
 from config import PI, TF_FLOAT, TF_INT
-from models.gauge_model import RUN_HEADER, RUN_SEP
 from utils.attr_dict import AttrDict
 from utils.plotting_utils import plot_data
 from utils.training_utils import build_model
@@ -51,8 +50,16 @@ except ImportError:
 
 # pylint:disable=too-many-locals,invalid-name
 
+RUN_NAMES = [
+    'STEP', 'dt', 'px', 'sumlogdet', 'dQ', 'plaq_err',
+]
+RUN_HSTR = ''.join(["{:^12s}".format(name) for name in RUN_NAMES])
+RUN_SEP = '-' * len(RUN_HSTR)
+RUN_HEADER = '\n'.join([RUN_SEP, RUN_HSTR, RUN_SEP])
+
 
 def check_if_chief(args):
+    """Helper function to determine if we're on `rank == 0`."""
     using_hvd = args.get('horovod', False)
     return hvd.rank() == 0 if using_hvd else not using_hvd
 
@@ -102,7 +109,7 @@ def run_hmc(
     return model, outputs, data_strs
 
 
-def load_and_run(args):
+def load_and_run(args, runs_dir=None):
     """Load trained model from checkpoint and run inference."""
     is_chief = check_if_chief(args)
     if not is_chief:
@@ -148,17 +155,17 @@ def load_and_run(args):
         args.beta = l2hmc_flags.beta_final
 
     args.update(FLAGS)
-    model, outputs = run(model, args)  # args.beta, args.run_steps)
+    model, outputs = run(model, args, runs_dir=runs_dir)
 
     return model, outputs
 
 
-def run(model, args, x=None):
+def run(model, args, x=None, runs_dir=None):
     """Run inference.
 
     Returns:
-        model (GaugeModel): Trained model
-        ouptuts (dict): Dictionary of outputs from inference run.
+        model(GaugeModel): Trained model
+        ouptuts(dict): Dictionary of outputs from inference run.
     """
     is_chief = check_if_chief(args)
     if not is_chief:
@@ -167,10 +174,12 @@ def run(model, args, x=None):
     #  if not is_chief:
     #      return None, None
 
-    if args.hmc:
-        runs_dir = os.path.join(args.log_dir, 'inference_hmc')
-    else:
-        runs_dir = os.path.join(args.log_dir, 'inference')
+    if runs_dir is None:
+        if args.hmc:
+            runs_dir = os.path.join(args.log_dir, 'inference_hmc')
+        else:
+            runs_dir = os.path.join(args.log_dir, 'inference')
+
     io.check_else_make_dir(runs_dir)
 
     run_steps = args.get('run_steps', None)
@@ -215,8 +224,8 @@ def run_model(model, args, x=None):
     """Run inference on trained `model`.
 
     Returns:
-        outputs (dict): Dictionary of outputs.
-        data_strs (lsit): List of strings containing inference log.
+        outputs(dict): Dictionary of outputs.
+        data_strs(lsit): List of strings containing inference log.
     """
     is_chief = check_if_chief(args)
     if not is_chief:

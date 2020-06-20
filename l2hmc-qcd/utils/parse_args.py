@@ -191,6 +191,14 @@ def parse_args():
                               value passed to `--lr_init` (performs better when
                               using Horovod for distributed training)."""))
 
+    parser.add_argument('--warmup_steps',
+                        dest='warmup_steps',
+                        type=int,
+                        required=False,
+                        default=None,
+                        help=("""Number of steps over which to warmup the
+                              learning rate."""))
+
     ###########################################################################
     #                       Training parameters                               #
     ###########################################################################
@@ -400,6 +408,7 @@ def parse_args():
                               their entries equal to zero and half equal to
                               one."""))
 
+    '''
     parser.add_argument('--x_scale_weight',
                         dest='x_scale_weight',
                         type=float,
@@ -467,6 +476,7 @@ def parse_args():
                               contribution of the `transformation` (Q) function
                               when performing the augmented L2HMC molecular
                               dynamics update."""))
+    '''
 
     parser.add_argument("--profiler",
                         dest='profiler',

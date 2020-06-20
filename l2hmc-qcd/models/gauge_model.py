@@ -11,10 +11,8 @@ from collections import namedtuple
 
 import numpy as np
 import tensorflow as tf
-from tensorflow.python.framework import ops
-from tensorflow.keras.optimizers.schedules import LearningRateSchedule
-from tensorflow.python.ops import math_ops
-from tensorflow.python.ops import random_ops
+
+from utils.learning_rate import WarmupExponentialDecay
 
 
 import utils.file_io as io
@@ -86,62 +84,6 @@ def get_betas(steps, beta_init, beta_final):
     return 1. / tf.convert_to_tensor(np.array(t_arr))
 
 
-class WarmupExponentialDecay(LearningRateSchedule):
-    """A LearningRateSchedule that slowly increases then ExponentialDecay."""
-
-    def __init__(  # pylint:disable=too-many-arguments
-            self,
-            inital_learning_rate: float,
-            decay_steps: int,
-            decay_rate: float,
-            warmup_steps: int,
-            staircase: bool = True,
-            name: str = None
-    ):
-        super(WarmupExponentialDecay, self).__init__()
-        self.initial_learning_rate = inital_learning_rate
-        self.decay_steps = decay_steps
-        self.decay_rate = decay_rate
-        self.warmup_steps = warmup_steps
-        self.staircase = staircase
-        self.name = name
-
-    def __call__(self, step):
-        with tf.name_scope(self.name or 'WarmupExponentialDecay') as name:
-            initial_learning_rate = ops.convert_to_tensor_v2(
-                self.initial_learning_rate, name='initial_learning_rate'
-            )
-            dtype = initial_learning_rate.dtype
-            decay_steps = tf.cast(self.decay_steps, dtype)
-            decay_rate = tf.cast(self.decay_rate, dtype)
-            warmup_steps = tf.cast(self.warmup_steps, dtype)
-
-            global_step_recomp = tf.cast(step, dtype)
-            if global_step_recomp < warmup_steps:
-                return tf.math.multiply(
-                    initial_learning_rate,
-                    tf.math.divide(global_step_recomp, warmup_steps),
-                    name=name
-                )
-            p = global_step_recomp / decay_steps
-            if self.staircase:
-                p = tf.math.floor(p)
-            return tf.math.multiply(
-                initial_learning_rate, tf.math.pow(decay_rate, p),
-                name=name
-            )
-
-    def get_config(self):
-        return {
-            'initial_learning_rate': self.initial_learning_rate,
-            'decay_steps': self.decay_steps,
-            'decay_rate': self.decay_rate,
-            'staircase': self.staircase,
-            'warmup_steps': self.warmup_steps,
-            'name': self.name
-        }
-
-
 # pylint:disable=invalid-name
 class GaugeModel:
     """Implements `GaugeModel`, a convenience wrapper around `Dynamics`."""
@@ -179,13 +121,6 @@ class GaugeModel:
                                  dynamics_config, net_config,
                                  separate_nets=self.separate_networks)
 
-        #  cond1 = self.dynamics_config.eps_trainable  # eps is trainable
-        #  # if not running HMC, the networks have trainable parameters
-        #  cond2 = not self.dynamics_config.hmc
-        #  # if either of these are true, build the optimizer and training ops
-        #  if cond1 or cond2:
-        #      self._has_trainable_params = True
-
         if self._has_trainable_params:
             self.lr = self.create_lr(warmup=self.warmup_lr)
             self.optimizer = self.create_optimizer()
@@ -193,19 +128,6 @@ class GaugeModel:
                 optimizer=self.optimizer,
                 loss=self.calc_loss,
             )
-
-        #  else:
-        #      self._can_train = False
-
-        #  if self.beta_init == self.beta_final:
-        #      self.betas = tf.convert_to_tensor(
-        #          tf.cast(self.beta_init * np.ones(self.train_steps),
-        #                  dtype=TF_FLOAT)
-        #      )
-        #  else:
-        #      self.betas = get_betas(self.train_steps,
-        #                             self.beta_init,
-        #                             self.beta_final)
 
         if not tf.executing_eagerly or TF_VERSION == '1.x':
             self._build()
@@ -248,6 +170,7 @@ class GaugeModel:
         if self._has_trainable_params:
             self.lr_init = params.get('lr_init', None)
             self.warmup_lr = params.get('warmup_lr', False)
+            self.warmup_steps = params.get('warmup_steps', None)
             self.using_hvd = params.get('horovod', False)
             self.lr_decay_steps = params.get('lr_decay_steps', None)
             self.lr_decay_rate = params.get('lr_decay_rate', None)
@@ -339,22 +262,12 @@ class GaugeModel:
                 beta = make_ph('beta')
                 eps_ph = make_ph('eps_ph')
                 global_step_ph = make_ph('global_step_ph', dtype=tf.int64)
-                #  xsw = make_ph('x_scale_weight')
-                #  xtw = make_ph('x_translation_weight')
-                #  xqw = make_ph('x_transformation_weight')
-                #  vsw = make_ph('v_scale_weight')
-                #  vtw = make_ph('v_translation_weight')
-                #  vqw = make_ph('v_transformation_weight')
-                #  net_weights = NetWeights(xsw, xtw, xqw, vsw, vtw, vqw)
-                #  train_phase = make_ph('is_training', dtype=tf.bool)
 
             inputs = {
                 'x': x,
                 'beta': beta,
                 'eps_ph': eps_ph,
                 'global_step_ph': global_step_ph,
-                #  'train_phase': train_phase,
-                #  'net_weights': net_weights,
             }
 
         return inputs
@@ -363,7 +276,10 @@ class GaugeModel:
         """Create the learning rate schedule to be used during training."""
         if warmup:
             name = 'WarmupExponentialDecay'
-            warmup_steps = self.train_steps // 20
+            warmup_steps = self.warmup_steps
+            if warmup_steps is None:
+                warmup_steps = self.train_steps // 20
+
             return WarmupExponentialDecay(self.lr_init, self.lr_decay_steps,
                                           self.lr_decay_rate, warmup_steps,
                                           staircase=True, name=name)

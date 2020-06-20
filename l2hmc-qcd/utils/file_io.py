@@ -299,12 +299,12 @@ def make_log_dir(FLAGS, model_type=None, log_file=None, eager=True, rank=0):
     if rank == 0:
         check_else_make_dir(log_dir)
         if log_file is not None:
-            write(f'Output saved to: \n\t{log_dir}', log_file, 'a')
+            write(f'{log_dir}', log_file, 'a')
 
     return log_dir
 
 
-def make_run_dir(FLAGS, base_dir, log_file=None):
+def make_run_dir(FLAGS, base_dir):
     """Automatically create `run_dir` for storing inference data."""
     fstr = get_run_dir_fstr(FLAGS)
     now = datetime.datetime.now()
@@ -319,8 +319,8 @@ def make_run_dir(FLAGS, base_dir, log_file=None):
         run_dir = os.path.join(base_dir, run_str)
 
     check_else_make_dir(run_dir)
-    if log_file is not None:
-        write(f'Output saved to: \n\t{run_dir}', log_file, 'a')
+    #  if log_file is not None:
+    #      write(f'{run_dir}', log_file, 'a')
 
     return run_dir
 
