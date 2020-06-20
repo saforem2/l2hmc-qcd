@@ -3,39 +3,39 @@
 #--horovod
 --eager_execution
 --inference
---run_steps 50
+--run_steps 1000
 #--separate_networks
 # ==========================================
 --save_train_data
 --rand
 --eps 0.1
 --num_steps 2
---batch_size 128
+--batch_size 512
 --time_size 16 
 --space_size 16 
---beta_init 3.
---beta_final 3.
---train_steps 10
---save_steps 2
---logging_steps 1
---print_steps 1
+--beta_init 4.
+--beta_final 4.
+--train_steps 20000
+--save_steps 5000
+--logging_steps 50
+--print_steps 10
 --hmc_start
---hmc_steps 20
---dropout_prob 0.1
+--hmc_steps 1000
+--dropout_prob 0.5
 # ------------------------------------
 #--extra_steps 0
 --warmup_lr
---lr_init 0.0001
+--warmup_steps 5000
+--lr_init 0.001
 --lr_decay_steps 2500
 --lr_decay_rate 0.96
 --loss_scale 0.1
 --std_weight 0.
 --aux_weight 0.
---plaq_weight 0.
+--plaq_weight 10.
 --charge_weight 0.1
 --network_type 'GaugeNetwork'
---units '2048, 1024, 512, 256, 512, 1024, 2048'
---metric 'cos_diff'
+--units '2048, 1024, 512, 256, 256, 512, 1024, 2048'
 # ------------------------------------
 #
 # ======== deprecated args ========

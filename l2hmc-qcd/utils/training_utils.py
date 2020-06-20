@@ -16,7 +16,7 @@ import utils.file_io as io
 from config import NET_WEIGHTS_HMC, NET_WEIGHTS_L2HMC, PI, TF_FLOAT, TF_INT
 from network import NetworkConfig
 from dynamics import DynamicsConfig
-from models.gauge_model import GaugeModel, HEADER
+from models.gauge_model import GaugeModel
 from utils.attr_dict import AttrDict
 from utils.plotting_utils import plot_data
 
@@ -49,6 +49,14 @@ try:
 except ImportError:
     if TF_VERSION == '1.x':
         tf.compat.v1.enable_eager_execution()
+
+
+NAMES = [
+    'STEP', 'dt', 'LOSS', 'px', 'eps', 'BETA', 'sumlogdet', 'dQ', 'plaq_err',
+]
+HSTR = ''.join(["{:^12s}".format(name) for name in NAMES])
+SEP = '-' * len(HSTR)
+HEADER = '\n'.join([SEP, HSTR, SEP])
 
 
 # pylint:disable=invalid-name, redefined-outer-name
@@ -100,6 +108,7 @@ def train(FLAGS, log_file=None):
     """Train model."""
     is_chief = hvd.rank() == 0 if FLAGS.horovod else not FLAGS.horovod
     rank = hvd.rank() if FLAGS.horovod else 0
+    FLAGS.net_weights = NET_WEIGHTS_HMC if FLAGS.hmc else NET_WEIGHTS_L2HMC
 
     if FLAGS.log_dir is None:
         FLAGS.log_dir = io.make_log_dir(FLAGS, 'GaugeModel',
@@ -126,8 +135,8 @@ def train(FLAGS, log_file=None):
 
     io.log(f'Building model...', rank=rank)
     model, FLAGS = build_model(FLAGS)
-    step_init = tf.Variable(0, dtype=TF_INT)
-    ckpt = tf.train.Checkpoint(step=step_init,
+    step = tf.Variable(0, dtype=TF_INT)
+    ckpt = tf.train.Checkpoint(step=step,
                                dynamics=model.dynamics,
                                optimizer=model.optimizer)
     manager = tf.train.CheckpointManager(
@@ -136,14 +145,14 @@ def train(FLAGS, log_file=None):
     if manager.latest_checkpoint:
         io.log(f'Restored from: {manager.latest_checkpoint}', rank=rank)
         ckpt.restore(manager.latest_checkpoint)
-        step_init = ckpt.step
+        step = ckpt.step
     else:
         io.log('\n'.join(['No existing checkpoints found.',
                           'Starting from scratch.']), rank=rank)
 
     io.log(f'Training model!', rank=rank)
     outputs = train_model(model, ckpt, manager,
-                          x=x, step_init=step_init,
+                          x=x, step=step,
                           train_dir=train_dir)
     if is_chief:
         io.save_params({'eps': model.dynamics.eps.numpy()},
@@ -172,6 +181,7 @@ def train_hmc(FLAGS):
     HFLAGS.hmc = True
     HFLAGS.save_train_data = True
     HFLAGS.train_steps = HFLAGS.pop('hmc_steps')
+    HFLAGS.warmup_lr = False
     HFLAGS.lr_decay_steps = HFLAGS.train_steps // 4
     HFLAGS.logging_steps = HFLAGS.train_steps // 20
     HFLAGS.beta_final = HFLAGS.beta_init
@@ -185,8 +195,8 @@ def train_hmc(FLAGS):
         io.save_params(dict(HFLAGS), train_dir, 'FLAGS', rank=rank)
 
     model, HFLAGS = build_model(HFLAGS)
-    step_init = tf.Variable(0, dtype=TF_INT)
-    ckpt = tf.train.Checkpoint(step=step_init,
+    step = tf.Variable(0, dtype=TF_INT)
+    ckpt = tf.train.Checkpoint(step=step,
                                dynamics=model.dynamics,
                                optimizer=model.optimizer)
     manager = tf.train.CheckpointManager(
@@ -195,11 +205,10 @@ def train_hmc(FLAGS):
     if manager.latest_checkpoint:
         io.log(f'Restored from: {manager.latest_checkpoint}', rank=rank)
         ckpt.restore(manager.latest_checkpoint)
-        step_init = ckpt.step
+        step = ckpt.step
 
     outputs = train_model(model, ckpt, manager,
-                          step_init=step_init,
-                          train_dir=train_dir)
+                          step=step, train_dir=train_dir)
     if is_chief:
         io.save(model, train_dir, outputs)
         params = {
@@ -220,7 +229,7 @@ def train_hmc(FLAGS):
 
 
 # pylint:disable=too-many-locals
-def train_model(model, ckpt, manager, step_init=None, x=None, train_dir=None):
+def train_model(model, ckpt, manager, x=None, step=None, train_dir=None):
     """Train model."""
     is_chief = hvd.rank() == 0 if model.using_hvd else not model.using_hvd
     rank = hvd.rank() if model.using_hvd else 0
@@ -240,7 +249,7 @@ def train_model(model, ckpt, manager, step_init=None, x=None, train_dir=None):
     charges_arr = [q_new.numpy()]
     plaqs_arr = [plaqs.numpy()]
     train_steps = np.arange(model.train_steps)
-    step = int(step_init.numpy())
+    step = int(step.numpy())
     betas = model.betas[step:]
     steps = train_steps[step:]
 
@@ -265,6 +274,7 @@ def train_model(model, ckpt, manager, step_init=None, x=None, train_dir=None):
         data_str = (
             f"{step:>6g}/{model.train_steps:<6g} "
             f"{dt:^11.4g} "
+            #  f"{model.optimizer.learning_rate:^11.4g} "
             f"{loss.numpy():^11.4g} "
             f"{np.mean(px.numpy()):^11.4g} "
             f"{model.dynamics.eps.numpy():^11.4g} "
