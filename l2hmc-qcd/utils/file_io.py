@@ -260,7 +260,8 @@ def get_log_dir_fstr(FLAGS):
     return fstr
 
 
-def make_log_dir(FLAGS, model_type=None, log_file=None, eager=True, rank=0):
+def make_log_dir(FLAGS, model_type=None, log_file=None,
+                 base_dir=None, eager=True, rank=0):
     """Automatically create and name `log_dir` to save model data to.
 
     The created directory will be located in `logs/YYYY_M_D /`, and will have
@@ -278,7 +279,7 @@ def make_log_dir(FLAGS, model_type=None, log_file=None, eager=True, rank=0):
 
     now = datetime.datetime.now()
     month_str = now.strftime('%Y_%m')
-    dstr = now.strftime('%Y-%m-%d-%H%M')
+    dstr = now.strftime('%Y-%m-%d-%H%M%S')
     run_str = f'{fstr}-{dstr}'
     #  run_str = f'{run_str}-{dstr}'
 
@@ -287,6 +288,9 @@ def make_log_dir(FLAGS, model_type=None, log_file=None, eager=True, rank=0):
     #  if tf.executing_eagerly():
     if eager:
         dirs.append('gauge_logs_eager')
+
+    if fstr.startswith('DEBUG'):
+        dirs.append('test')
 
     log_dir = os.path.join(*dirs, month_str, run_str)
     if os.path.isdir(log_dir):
@@ -354,29 +358,32 @@ def save_network_weights(model, train_dir, rank=0):
         vnets.save_layer_weights(out_file=vfpath)
 
 
-def save(model, train_dir, outputs, rank=0):
+def save(model, train_dir, train_data, rank=0):
     """Save training results."""
     if not model.dynamics_config.hmc:
         save_network_weights(model, train_dir, rank=rank)
 
+    #  if model.save_train_data:
+    #      outputs_dir = os.path.join(train_dir, 'outputs')
+    #      check_else_make_dir(outputs_dir)
+    #      for key, val in outputs.items():
+    #          out_file = os.path.join(outputs_dir, f'{key}.z')
+    #          savez(np.array(val), out_file, key)
     if model.save_train_data:
-        outputs_dir = os.path.join(train_dir, 'outputs')
-        check_else_make_dir(outputs_dir)
-        for key, val in outputs.items():
-            out_file = os.path.join(outputs_dir, f'{key}.z')
-            savez(np.array(val), out_file, key)
+        output_dir = os.path.join(train_dir, 'outputs')
+        train_data.save_data(output_dir)
 
 
-def save_inference(run_dir, outputs, data_strs):
+def save_inference(run_dir, run_data):
     """Save inference data."""
     check_else_make_dir(run_dir)
     history_file = os.path.join(run_dir, 'inference_log.txt')
     with open(history_file, 'w') as f:
-        f.write('\n'.join(data_strs))
+        f.write('\n'.join(run_data.data_strs))
 
     outputs_dir = os.path.join(run_dir, 'outputs')
     check_else_make_dir(outputs_dir)
-    for key, val in outputs.items():
+    for key, val in run_data.data.items():
         out_file = os.path.join(outputs_dir, f'{key}.z')
         savez(np.array(val), out_file, key)
 
