@@ -13,10 +13,12 @@ import tensorflow as tf
 
 import utils.file_io as io
 
-from config import PI, TF_FLOAT, TF_INT
+from config import PI, TF_FLOAT, TF_INT, PROJECT_DIR
 from utils.attr_dict import AttrDict
 from utils.plotting_utils import plot_data
 from utils.training_utils import build_model
+from models.gauge_model import GaugeModel
+from utils.data_containers import RunData
 
 # pylint:disable=no-member
 if tf.__version__.startswith('1.'):
@@ -75,7 +77,7 @@ def print_args(args):
 def run_hmc(
         args: AttrDict,
         log_file: str = None
-) -> tuple:
+) -> (GaugeModel, RunData):
     """Run HMC using `inference_args` on a model specified by `params`.
 
     NOTE:
@@ -90,7 +92,7 @@ def run_hmc(
     """
     is_chief = check_if_chief(args)
     if not is_chief:
-        return
+        return None, None
 
     print_args(args)
     args.log_dir = io.make_log_dir(args, 'GaugeModel', log_file)
@@ -104,12 +106,18 @@ def run_hmc(
     })
 
     model, args = build_model(args)
-    outputs, data_strs = run(model, args)
+    root_dir = os.path.dirname(PROJECT_DIR)
+    hmc_dir = os.path.join(root_dir, 'gauge_logs_eager', 'hmc_runs')
+    io.check_else_make_dir(hmc_dir)
+    model, run_data = run(model, args, runs_dir=hmc_dir)
 
-    return model, outputs, data_strs
+    return model, run_data
 
 
-def load_and_run(args, runs_dir=None):
+def load_and_run(
+    args: AttrDict,
+    runs_dir: str = None,
+) -> tuple:
     """Load trained model from checkpoint and run inference."""
     is_chief = check_if_chief(args)
     if not is_chief:
@@ -155,9 +163,9 @@ def load_and_run(args, runs_dir=None):
         args.beta = l2hmc_flags.beta_final
 
     args.update(FLAGS)
-    model, outputs = run(model, args, runs_dir=runs_dir)
+    model, run_data = run(model, args, runs_dir=runs_dir)
 
-    return model, outputs
+    return model, run_data
 
 
 def run(model, args, x=None, runs_dir=None):
@@ -192,11 +200,11 @@ def run(model, args, x=None, runs_dir=None):
                               minval=-PI, maxval=PI,
                               dtype=TF_FLOAT)
 
-    outputs, data_strs = run_model(model, args, x)
+    run_data = run_model(model, args, x)
     run_dir = io.make_run_dir(args, runs_dir)
 
-    history_file = os.path.join(run_dir, 'inference_log.txt')
-    io.flush_data_strs(data_strs, history_file)
+    #  history_file = os.path.join(run_dir, 'inference_log.txt')
+    #  io.flush_data_strs(run_data.data_strs, history_file)
 
     eps = model.dynamics.eps
     if hasattr(eps, 'numpy'):
@@ -212,11 +220,12 @@ def run(model, args, x=None, runs_dir=None):
         'input_shape': model.dynamics_config.input_shape,
     }
     io.save_params(run_params, run_dir, name='run_params')
-    io.save_inference(run_dir, outputs, data_strs)
+    io.save_inference(run_dir, run_data)
 
-    plot_data(outputs, run_dir, args, thermalize=True, params=run_params)
+    plot_data(run_data, run_dir, args,
+              thermalize=True, params=run_params)
 
-    return model, outputs
+    return model, run_data
 
 
 # pylint:disable=too-many-statements
@@ -246,12 +255,13 @@ def run_model(model, args, x=None):
         x = tf.cast(x, dtype=TF_FLOAT)
 
     plaqs, q_new = model.calc_observables(x, beta, use_sin=False)
-    px_arr = []
-    dq_arr = []
-    data_strs = [RUN_HEADER]
-    charges_arr = [q_new.numpy()]
-
-    plaqs_arr = [plaqs.numpy()]
+    data_init = AttrDict({
+        'plaqs': [plaqs.numpy()],
+        'charges': [q_new.numpy()],
+    })
+    run_data = RunData(run_steps,
+                       data=data_init,
+                       header=RUN_HEADER)
     if model.compile:
         run_step = tf.function(model.run_step, experimental_compile=True)
     else:
@@ -282,34 +292,50 @@ def run_model(model, args, x=None):
         plaqs_err, q_new = model.calc_observables(x, beta, use_sin=False)
         dq = tf.math.abs(q_new - q_old)
 
-        data_str = (
-            f"{step:>6g}/{run_steps:<6g} "
-            f"{dt:^11.4g} "
-            f"{np.mean(px.numpy()):^11.4g} "
-            f"{np.mean(sld.numpy()):^11.4g} "
-            f"{np.mean(dq.numpy()):^11.4g} "
-            f"{np.mean(plaqs_err.numpy()):^11.4g} "
-        )
+        outputs = AttrDict({
+            'steps': step,
+            'dt': dt,
+            'px': px.numpy(),
+            'charges': q_new.numpy(),
+            'dq': dq.numpy(),
+            'sumlogdet': sld.numpy(),
+            'plaqs': plaqs_err.numpy(),
+        })
+
+        #
+        #  data_str = (
+        #      f"{step:>6g}/{run_steps:<6g} "
+        #      f"{dt:^11.4g} "
+        #      f"{np.mean(px.numpy()):^11.4g} "
+        #      f"{np.mean(sld.numpy()):^11.4g} "
+        #      f"{np.mean(dq.numpy()):^11.4g} "
+        #      f"{np.mean(plaqs_err.numpy()):^11.4g} "
+        #  )
 
         if step % model.print_steps == 0:
+            data_str = run_data.get_fstr(outputs)
             io.log(data_str)
-            data_strs.append(data_str)
+            #  io.log(data_str)
+            #  data_strs.append(data_str)
 
         if model.save_run_data:
-            px_arr.append(px.numpy())
-            dq_arr.append(dq.numpy())
-            charges_arr.append(q_new.numpy())
-            plaqs_arr.append(plaqs_err.numpy())
+            run_data.update(outputs)
+            #  px_arr.append(px.numpy())
+            #  dq_arr.append(dq.numpy())
+            #  charges_arr.append(q_new.numpy())
+            #  plaqs_arr.append(plaqs_err.numpy())
 
         if step % 100 == 0:
             io.log(RUN_HEADER)
 
-    outputs = {
-        'px': np.array(px_arr),
-        'dq': np.array(dq_arr),
-        'charges_arr': np.array(charges_arr),
-        'x': tf.reshape(x, model.input_shape),
-        'plaqs_err': np.array(plaqs_arr),
-    }
+    #  outputs = {
+    #      'px': np.array(px_arr),
+    #      'dq': np.array(dq_arr),
+    #      'charges_arr': np.array(charges_arr),
+    #      'x': tf.reshape(x, model.input_shape),
+    #      'plaqs_err': np.array(plaqs_arr),
+    #  }
+    #
+    #  return outputs, data_strs
 
-    return outputs, data_strs
+    return run_data

@@ -118,14 +118,14 @@ the topological charge $\mathcal{Q}$,
 
 ## Training / Inference
 
-To train the model, either run the training script from [`bin/train.sh`](bin/train.sh), or modify the command line arguments found in [`bin/gauge_args.txt`](bin/gauge_args.txt) and run:
+To train the model, either run the training script from [`bin/train.sh`](bin/train.sh), or modify the command line arguments found in [`bin/train_args.txt`](bin/train_args.txt) and run:
 ```
-python3 train.py @/path/to/gauge_args.txt
+python3 train.py @/path/to/train_args.txt
 ```
 
 Inference is automatically ran after training the model, but can also be ran by loading in a trained model from a checkpoint.
 
-This can be done by running the inference script in [`bin/run.sh`](bin/run.sh), or by simply calling:
+This can be done by running the inference script in [`bin/run.sh`](bin/run.sh), or by simply calling (with any value of `beta (float)` or `run_steps (int)`:
 ```
 python3 run.py --run_steps 1000 --log_dir=/path/to/log_dir --beta 5.
 ```

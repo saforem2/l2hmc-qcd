@@ -19,6 +19,7 @@ from dynamics import DynamicsConfig
 from models.gauge_model import GaugeModel
 from utils.attr_dict import AttrDict
 from utils.plotting_utils import plot_data
+from utils.data_containers import TrainData
 
 # pylint:disable=no-member
 if tf.__version__.startswith('1.'):
@@ -127,8 +128,8 @@ def train(FLAGS, log_file=None):
                        'FLAGS', rank=rank)
 
     if FLAGS.hmc_start and FLAGS.hmc_steps > 0 and not FLAGS.restore:
-        outputs, eps_init = train_hmc(FLAGS)
-        x = outputs['x']
+        x, train_data, eps_init = train_hmc(FLAGS)
+        #  x = outputs['x']
         FLAGS.eps = eps_init
     else:
         x = None
@@ -151,25 +152,26 @@ def train(FLAGS, log_file=None):
                           'Starting from scratch.']), rank=rank)
 
     io.log(f'Training model!', rank=rank)
-    outputs = train_model(model, ckpt, manager,
-                          x=x, step=step,
-                          train_dir=train_dir)
+    x, train_data = train_model(model, ckpt, manager,
+                                x=x, step=step,
+                                train_dir=train_dir)
     if is_chief:
         io.save_params({'eps': model.dynamics.eps.numpy()},
                        FLAGS.log_dir, name='eps_final')
+        io.save(model, train_dir, train_data, rank=rank)
         params = {
-            'beta_init': outputs['betas'][0],
-            'beta_final': outputs['betas'][-1],
+            'beta_init': train_data.data.betas[0],
+            'beta_final': train_data.data.betas[-1],
             'eps': model.dynamics.eps.numpy(),
             'lattice_shape': model.lattice_shape,
             'num_steps': model.dynamics.config.num_steps,
             'net_weights': model.dynamics_config.net_weights,
         }
-        plot_data(outputs, train_dir, FLAGS, params=params)
+        plot_data(train_data, train_dir, FLAGS, params=params)
 
     io.log('\n'.join(['Done training model', 80 * '=']), rank=rank)
 
-    return model, outputs, FLAGS
+    return x, model, train_data, FLAGS
 
 
 def train_hmc(FLAGS):
@@ -207,25 +209,25 @@ def train_hmc(FLAGS):
         ckpt.restore(manager.latest_checkpoint)
         step = ckpt.step
 
-    outputs = train_model(model, ckpt, manager,
-                          step=step, train_dir=train_dir)
+    x, train_data = train_model(model, ckpt, manager,
+                                step=step, train_dir=train_dir)
     if is_chief:
-        io.save(model, train_dir, outputs)
+        io.save(model, train_dir, train_data)
         params = {
-            'beta_init': outputs['betas'][0],
-            'beta_final': outputs['betas'][-1],
+            'beta_init': train_data.data.betas[0],
+            'beta_final': train_data.data.betas[-1],
             'eps': model.dynamics.eps.numpy(),
             'lattice_shape': model.lattice_shape,
             'num_steps': model.dynamics.config.num_steps,
             'net_weights': model.dynamics_config.net_weights,
         }
-        plot_data(outputs, train_dir, HFLAGS, params=params)
+        plot_data(train_data, train_dir, HFLAGS, params=params)
 
     #  x_out = outputs['x']
     eps_out = model.dynamics.eps.numpy()
     io.log('\n'.join(['Done with HMC start.', 80 * '=']), rank=rank)
 
-    return outputs, eps_out
+    return x, train_data, eps_out
 
 
 # pylint:disable=too-many-locals
@@ -241,13 +243,14 @@ def train_model(model, ckpt, manager, x=None, step=None, train_dir=None):
         x = tf.cast(x, dtype=TF_FLOAT)
 
     plaqs, q_new = model.calc_observables(x, model.beta_init)
+    data_init = AttrDict({
+        'plaqs': [plaqs.numpy()],
+        'charges': [q_new.numpy()],
+    })
 
-    px_arr = []
-    dq_arr = []
-    loss_arr = []
-    data_strs = [HEADER]
-    charges_arr = [q_new.numpy()]
-    plaqs_arr = [plaqs.numpy()]
+    train_data = TrainData(model.train_steps,
+                           data=data_init,
+                           header=HEADER)
     train_steps = np.arange(model.train_steps)
     step = int(step.numpy())
     betas = model.betas[step:]
@@ -263,7 +266,6 @@ def train_model(model, ckpt, manager, x=None, step=None, train_dir=None):
         t0 = time.time()
         x = tf.reshape(x, model.input_shape)
         loss, x, px, sld = train_step(x, beta, step == 0)
-        #  loss, x, px, sld = model.train_step(x, beta, step == 0)
         x = tf.reshape(x, model.lattice_shape)
         dt = time.time() - t0
 
@@ -271,45 +273,31 @@ def train_model(model, ckpt, manager, x=None, step=None, train_dir=None):
         plaqs_err, q_new = model.calc_observables(x, beta)
         dq = tf.math.abs(q_new - q_old)
 
-        data_str = (
-            f"{step:>6g}/{model.train_steps:<6g} "
-            f"{dt:^11.4g} "
-            #  f"{model.optimizer.learning_rate:^11.4g} "
-            f"{loss.numpy():^11.4g} "
-            f"{np.mean(px.numpy()):^11.4g} "
-            f"{model.dynamics.eps.numpy():^11.4g} "
-            f"{beta:^11.4g} "
-            f"{np.mean(sld.numpy()):^11.4g} "
-            f"{np.mean(dq.numpy()):^11.4g} "
-            f"{np.mean(plaqs_err.numpy()):^11.4g} "
-        )
-        #  if step == 10:
-        #      try:
-        #          tf.profiler.experimental.start(log_dir)
-        #      except AttributeError:
-        #          pass
-
-        #  if step == 20:
-        #      try:
-        #          tf.profiler.experimental.stop(log_dir)
-        #      except AttributeError:
-        #          pass
+        outputs = AttrDict({
+            'dt': dt,
+            'px': px.numpy(),
+            'betas': beta.numpy(),
+            'steps': step,
+            'loss': loss.numpy(),
+            'charges': q_new.numpy(),
+            'dq': dq.numpy(),
+            'sumlogdet': sld.numpy(),
+            'plaqs': plaqs_err.numpy(),
+            'eps': model.dynamics.eps.numpy(),
+        })
 
         if step % model.print_steps == 0:
+            data_str = train_data.get_fstr(outputs, rank=rank)
             io.log(data_str, rank=rank)
-            data_strs.append(data_str)
 
-        if model.save_train_data and step % model.log_steps == 0:
-            px_arr.append(px.numpy())
-            dq_arr.append(dq.numpy())
-            loss_arr.append(loss.numpy())
-            charges_arr.append(q_new.numpy())
-            plaqs_arr.append(plaqs_err.numpy())
+        if model.save_train_data and step % model.logging_steps == 0:
+            train_data.update(outputs)
 
         if is_chief and step % model.save_steps == 0 and ckpt is not None:
             ckpt.step.assign(step)
             manager.save()
-            data_strs = io.flush_data_strs(data_strs, history_file)
+            train_data.data_strs = io.flush_data_strs(train_data.data_strs,
+                                                      history_file)
 
         if step % 100 == 0:
             io.log(HEADER, rank=rank)
@@ -317,15 +305,7 @@ def train_model(model, ckpt, manager, x=None, step=None, train_dir=None):
     if is_chief and ckpt is not None and manager is not None:
         ckpt.step.assign(step)
         manager.save()
-        data_strs = io.flush_data_strs(data_strs, history_file)
+        train_data.data_strs = io.flush_data_strs(train_data.data_strs,
+                                                  history_file)
 
-    outputs = {
-        'betas': betas,
-        'px': np.array(px_arr),
-        'dq': np.array(dq_arr),
-        'loss_arr': np.array(loss_arr),
-        'charges_arr': np.array(charges_arr),
-        'x': tf.reshape(x, model.input_shape),
-    }
-
-    return outputs
+    return x, train_data
