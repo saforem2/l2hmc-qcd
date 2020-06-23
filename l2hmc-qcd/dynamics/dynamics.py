@@ -532,7 +532,7 @@ class Dynamics(tf.keras.Model):
         with tf.name_scope('build_masks'):
             masks = []
             if not random:
-                odds = np.arange(32) % 2.
+                odds = np.arange(self.xdim) % 2.
                 evens = 1. - odds
 
             for i in range(self.config.num_steps):
@@ -567,7 +567,7 @@ class Dynamics(tf.keras.Model):
                 x = convert_to_angle(x)
             if tf.executing_eagerly():
                 with tf.GradientTape() as tape:
-                    #  tape.watch(x)
+                    tape.watch(x)
                     action = self.potential_energy(x, beta)
                 grad = tape.gradient(action, x)
                 grad = tf.reshape(grad, (self.batch_size, -1))

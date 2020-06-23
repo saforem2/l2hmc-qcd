@@ -196,15 +196,12 @@ class GaugeModel:
                                            self.beta_final)
 
     # pylint:disable=attribute-defined-outside-init
-
     def _build(self):
         self.global_step = tf.compat.v1.train.get_or_create_global_step()
         inputs = self._build_inputs()
         self.x = inputs['x']
         self.beta = inputs['beta']
         self.eps_ph = inputs['eps_ph']
-        #  self.train_phase = inputs['train_phase']
-        #  self.net_weights = inputs['net_weights']
         self.global_step_ph = inputs['global_step_ph']
 
         plaqs_err, charges = self.calc_observables(self.x, self.beta)
@@ -213,9 +210,9 @@ class GaugeModel:
 
         loss, x_out, px, sumlogdet = self.train_step(self.x, self.beta,
                                                      self.global_step == 0)
+        self.px = px
         self.loss = loss
         self.x_out = x_out
-        self.px = px
         self.sumlogdet = sumlogdet
 
     def calc_loss(self, x_init, x_prop, accept_prob):

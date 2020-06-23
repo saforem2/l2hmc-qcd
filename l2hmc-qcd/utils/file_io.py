@@ -358,8 +358,13 @@ def save_network_weights(model, train_dir, rank=0):
         vnets.save_layer_weights(out_file=vfpath)
 
 
-def save(model, train_dir, train_data, rank=0):
+def save(model, train_data, train_dir, rank=0):
     """Save training results."""
+    if rank != 0:
+        return
+
+    check_else_make_dir(train_dir)
+
     if not model.dynamics_config.hmc:
         save_network_weights(model, train_dir, rank=rank)
 
@@ -376,16 +381,21 @@ def save(model, train_dir, train_data, rank=0):
 
 def save_inference(run_dir, run_data):
     """Save inference data."""
-    check_else_make_dir(run_dir)
-    history_file = os.path.join(run_dir, 'inference_log.txt')
-    with open(history_file, 'w') as f:
-        f.write('\n'.join(run_data.data_strs))
+    data_dir = os.path.join(run_dir, 'run_data')
+    log_file = os.path.join(run_dir, 'run_log.txt')
+    check_else_make_dir([run_dir, data_dir])
+    run_data.save_data(data_dir)
+    run_data.flush_data_strs(log_file, mode='a')
 
-    outputs_dir = os.path.join(run_dir, 'outputs')
-    check_else_make_dir(outputs_dir)
-    for key, val in run_data.data.items():
-        out_file = os.path.join(outputs_dir, f'{key}.z')
-        savez(np.array(val), out_file, key)
+    #  history_file = os.path.join(run_dir, 'inference_log.txt')
+    #  with open(history_file, 'w') as f:
+    #      f.write('\n'.join(run_data.data_strs))
+    #
+    #  outputs_dir = os.path.join(run_dir, 'outputs')
+    #  check_else_make_dir(outputs_dir)
+    #  for key, val in run_data.data.items():
+    #      out_file = os.path.join(outputs_dir, f'{key}.z')
+    #      savez(np.array(val), out_file, key)
 
 
 def get_subdirs(root_dir):

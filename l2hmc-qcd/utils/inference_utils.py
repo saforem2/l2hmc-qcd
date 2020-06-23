@@ -76,6 +76,7 @@ def print_args(args):
 
 def run_hmc(
         args: AttrDict,
+        hmc_dir: str = None,
         log_file: str = None
 ) -> (GaugeModel, RunData):
     """Run HMC using `inference_args` on a model specified by `params`.
@@ -106,8 +107,9 @@ def run_hmc(
     })
 
     model, args = build_model(args)
-    root_dir = os.path.dirname(PROJECT_DIR)
-    hmc_dir = os.path.join(root_dir, 'gauge_logs_eager', 'hmc_runs')
+    if hmc_dir is None:
+        root_dir = os.path.dirname(PROJECT_DIR)
+        hmc_dir = os.path.join(root_dir, 'gauge_logs_eager', 'hmc_runs')
     io.check_else_make_dir(hmc_dir)
     model, run_data = run(model, args, runs_dir=hmc_dir)
 
@@ -178,9 +180,6 @@ def run(model, args, x=None, runs_dir=None):
     is_chief = check_if_chief(args)
     if not is_chief:
         return
-    #  is_chief = hvd.rank() == 0 if args.horovod else not args.horovod
-    #  if not is_chief:
-    #      return None, None
 
     if runs_dir is None:
         if args.hmc:
@@ -202,9 +201,7 @@ def run(model, args, x=None, runs_dir=None):
 
     run_data = run_model(model, args, x)
     run_dir = io.make_run_dir(args, runs_dir)
-
-    #  history_file = os.path.join(run_dir, 'inference_log.txt')
-    #  io.flush_data_strs(run_data.data_strs, history_file)
+    io.save_inference(run_dir, run_data)
 
     eps = model.dynamics.eps
     if hasattr(eps, 'numpy'):
@@ -220,10 +217,8 @@ def run(model, args, x=None, runs_dir=None):
         'input_shape': model.dynamics_config.input_shape,
     }
     io.save_params(run_params, run_dir, name='run_params')
-    io.save_inference(run_dir, run_data)
 
-    plot_data(run_data, run_dir, args,
-              thermalize=True, params=run_params)
+    plot_data(run_data, run_dir, args, thermalize=True, params=run_params)
 
     return model, run_data
 
@@ -238,7 +233,8 @@ def run_model(model, args, x=None):
     """
     is_chief = check_if_chief(args)
     if not is_chief:
-        return
+        return None
+
     #  using_hvd = getattr(model, 'using_hvd', False)
     #  is_chief = hvd.rank() == 0 if using_hvd else not using_hvd
     #  if not is_chief:
@@ -255,17 +251,17 @@ def run_model(model, args, x=None):
         x = tf.cast(x, dtype=TF_FLOAT)
 
     plaqs, q_new = model.calc_observables(x, beta, use_sin=False)
-    data_init = AttrDict({
-        'plaqs': [plaqs.numpy()],
-        'charges': [q_new.numpy()],
+
+    run_data = RunData(run_steps, header=RUN_HEADER)
+    run_data.update({
+        'plaqs': plaqs.numpy(),
+        'charges': q_new.numpy(),
     })
-    run_data = RunData(run_steps,
-                       data=data_init,
-                       header=RUN_HEADER)
-    if model.compile:
-        run_step = tf.function(model.run_step, experimental_compile=True)
-    else:
-        run_step = model.run_step
+
+    run_step = (
+        model.run_step if not model.compile
+        else tf.function(model.run_step, experimental_compile=True)
+    )
 
     eps = model.dynamics.eps
     if hasattr(eps, 'numpy'):
@@ -302,28 +298,12 @@ def run_model(model, args, x=None):
             'plaqs': plaqs_err.numpy(),
         })
 
-        #
-        #  data_str = (
-        #      f"{step:>6g}/{run_steps:<6g} "
-        #      f"{dt:^11.4g} "
-        #      f"{np.mean(px.numpy()):^11.4g} "
-        #      f"{np.mean(sld.numpy()):^11.4g} "
-        #      f"{np.mean(dq.numpy()):^11.4g} "
-        #      f"{np.mean(plaqs_err.numpy()):^11.4g} "
-        #  )
-
         if step % model.print_steps == 0:
             data_str = run_data.get_fstr(outputs)
             io.log(data_str)
-            #  io.log(data_str)
-            #  data_strs.append(data_str)
 
         if model.save_run_data:
             run_data.update(outputs)
-            #  px_arr.append(px.numpy())
-            #  dq_arr.append(dq.numpy())
-            #  charges_arr.append(q_new.numpy())
-            #  plaqs_arr.append(plaqs_err.numpy())
 
         if step % 100 == 0:
             io.log(RUN_HEADER)
