@@ -113,7 +113,7 @@ class Dynamics(tf.keras.Model):
         self.xdim = np.cumprod(self.x_shape[1:])[-1]
 
         self.eps = self._build_eps(use_log=False)
-        self.masks = self._build_masks()
+        self.masks = self._build_masks(random=False)
         self.separate_nets = separate_nets
         self._build_networks()
 
@@ -527,18 +527,25 @@ class Dynamics(tf.keras.Model):
 
         return accept_mask, reject_mask
 
-    def _build_masks(self):
+    def _build_masks(self, random=False):
         """Construct different binary masks for different time steps."""
         with tf.name_scope('build_masks'):
             masks = []
+            if not random:
+                odds = np.arange(32) % 2.
+                evens = 1. - odds
+
             for i in range(self.config.num_steps):
                 # Need to use numpy.random here because tensorflow would
                 # generate different random values across different calls.
-                #  _idx = np.arange(self.xdim)
-                #  idx = np.random.permutation(_idx)[:self.xdim // 2]
-                #  mask = np.zeros((self.xdim,))
-                #  mask[idx] = 1.
-                mask = np.arange(self.xdim) % 2
+                if random:
+                    _idx = np.arange(self.xdim)
+                    idx = np.random.permutation(_idx)[:self.xdim // 2]
+                    mask = np.zeros((self.xdim,))
+                    mask[idx] = 1.
+                else:
+                    mask = evens if (i % 2 == 0) else odds
+
                 mask = tf.constant(mask, dtype=TF_FLOAT)
                 masks.append(mask[None, :])
 
@@ -560,7 +567,7 @@ class Dynamics(tf.keras.Model):
                 x = convert_to_angle(x)
             if tf.executing_eagerly():
                 with tf.GradientTape() as tape:
-                    tape.watch(x)
+                    #  tape.watch(x)
                     action = self.potential_energy(x, beta)
                 grad = tape.gradient(action, x)
                 grad = tf.reshape(grad, (self.batch_size, -1))
