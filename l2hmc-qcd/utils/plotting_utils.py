@@ -61,7 +61,7 @@ def plot_charges(steps, charges, title=None, out_dir=None):
     plt.tight_layout()
 
     if out_dir is not None:
-        fpath = os.path.join(out_dir, 'charges_traceplot.png')
+        fpath = os.path.join(out_dir, 'charge_chains.png')
         io.log(f'Saving figure to: {fpath}.')
         plt.savefig(fpath, dpi=400, bbox_inches='tight')
 
@@ -108,7 +108,7 @@ def mcmc_avg_lineplots(data, title=None, out_dir=None):
             fpath = os.path.join(out_dir, f'{key}_avg.png')
 
         _, _ = mcmc_lineplot(xy_data, labels, title=title,
-                             fpath=fpath, show_avg=False,
+                             fpath=fpath, show_avg=True,
                              color=COLORS[idx])
 
 
@@ -116,11 +116,6 @@ def mcmc_lineplot(data, labels, title=None,
                   fpath=None, show_avg=False, **kwargs):
     """Make a simple lineplot."""
     fig, ax = plt.subplots()
-    ax.plot(*data, **kwargs)
-    ax.set_xlabel(labels[0], fontsize='large')
-    ax.set_ylabel(labels[1], fontsize='large')
-    if title is not None:
-        ax.set_title(title, fontsize='x-large')
 
     if show_avg:
         avg = np.mean(data[1])
@@ -128,6 +123,12 @@ def mcmc_lineplot(data, labels, title=None,
                    label=f'avg: {avg:.3g}',
                    ls='-', marker='')
         ax.legend(loc='best')
+
+    ax.plot(*data, **kwargs)
+    ax.set_xlabel(labels[0], fontsize='large')
+    ax.set_ylabel(labels[1], fontsize='large')
+    if title is not None:
+        ax.set_title(title, fontsize='x-large')
 
     if fpath is not None:
         savefig(fig, fpath)

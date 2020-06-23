@@ -8,6 +8,7 @@ import tensorflow as tf
 import numpy as np
 
 from collections import namedtuple
+from utils.attr_dict import AttrDict
 
 # ----------------------------------------------------------------
 # Included below is a catch-all for various structures
@@ -57,19 +58,51 @@ TF_FLOAT = tf.float32
 TF_INT = tf.int32
 NP_FLOAT = np.float32
 NP_INT = np.int32
-#  TF_FLOAT = tf.float64
-#  TF_INT = tf.int64
-#  NP_FLOAT = np.float64
-#  NP_INT = np.int64
 
-#  GLOBAL_SEED = np.random.randint(1e6)
-#
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 FILE_PATH = os.path.abspath(os.path.dirname(__file__))
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
-#  PROJECT_DIR = os.path.dirname(os.path.abspath(os.getcwd()))
 BASE_DIR = os.path.dirname(PROJECT_DIR)
 GAUGE_LOGS_DIR = os.path.join(BASE_DIR, 'gauge_logs')
+TEST_LOGS_DIR = os.path.join(BASE_DIR, 'test_logs')
+
+DEFAULT_FLAGS = AttrDict({
+    'log_dir': None,
+    'eager_execution': True,
+    'restore': False,
+    'inference': True,
+    'run_steps': 50,
+    'save_train_data': True,
+    'horovod': False,
+    'rand': True,
+    'eps': 0.1,
+    'num_steps': 2,
+    'batch_size': 64,
+    'time_size': 16,
+    'space_size': 16,
+    'dim': 2,
+    'hmc': False,
+    'eps_fixed': False,
+    'beta_init': 3.,
+    'beta_final': 3.,
+    'train_steps': 50,
+    'save_steps': 5,
+    'print_steps': 1,
+    'logging_steps': 1,
+    'hmc_start': True,
+    'hmc_steps': 20,
+    'dropout_prob': 0.1,
+    'warmup_lr': True,
+    'lr_init': 0.0001,
+    'lr_decay_steps': 10,
+    'lr_decay_rate': 0.96,
+    'plaq_weight': 0.1,
+    'charge_weight': 0.1,
+    'network_type': 'GaugeNetwork',
+    'units': [512, 256, 256, 256, 512],
+    'separate_networks': False,
+})
+
 
 #  COLORS = 5000 * ['C0', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9']
 MARKERS = 5000 * ['o', 's', 'x', 'v', 'h', '^', 'p', '<', 'd', '>', 'o']

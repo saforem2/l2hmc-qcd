@@ -20,5 +20,5 @@ if __name__ == '__main__':
         _, _ = load_and_run(ARGS)
     else:
         LOG_FILE = os.path.join(os.getcwd(), 'hmc_dirs.txt')
-        _, _, _ = run_hmc(ARGS, LOG_FILE)
+        _, _ = run_hmc(args=ARGS, hmc_dir=None, log_file=LOG_FILE)
 

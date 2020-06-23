@@ -6,62 +6,70 @@ Test training on 2D U(1) model using eager execution in tensorflow.
 from __future__ import absolute_import, division, print_function
 
 import os
+import sys
+import argparse
 
+from config import DEFAULT_FLAGS, PROJECT_DIR
 from utils.attr_dict import AttrDict
-from utils.parse_args import parse_args
 from utils.training_utils import train
-from utils.inference_utils import run, load_and_run, run_hmc
+from utils.inference_utils import load_and_run, run, run_hmc
 
-DEFAULT_FLAGS = AttrDict({
-    'log_dir': None,
-    'eager_execution': True,
-    'restore': False,
-    'inference': True,
-    'run_steps': 50,
-    'save_train_data': True,
-    'horovod': False,
-    'rand': True,
-    'eps': 0.1,
-    'num_steps': 2,
-    'batch_size': 64,
-    'time_size': 16,
-    'space_size': 16,
-    'dim': 2,
-    'hmc': False,
-    'eps_fixed': False,
-    'beta_init': 3.,
-    'beta_final': 3.,
-    'train_steps': 50,
-    'save_steps': 5,
-    'print_steps': 1,
-    'logging_steps': 1,
-    'hmc_start': True,
-    'hmc_steps': 20,
-    'dropout_prob': 0.1,
-    'warmup_lr': True,
-    'lr_init': 0.0001,
-    'lr_decay_steps': 10,
-    'lr_decay_rate': 0.96,
-    'plaq_weight': 0.1,
-    'charge_weight': 0.1,
-    'network_type': 'GaugeNetwork',
-    'units': [512, 256, 256, 256, 512],
-    'separate_networks': False,
-})
+DESCRIPTION = (
+    "Various test functions to make sure everything runs as expected."
+)
 
 
-def test_hmc_run():
+def parse_args():
+    """Method for parsing CLI flags."""
+    parser = argparse.ArgumentParser(
+        description=DESCRIPTION,
+    )
+    parser.add_argument('--test_separate_networks',
+                        action='store_true',
+                        required=False,
+                        help=("""Test `--separate_networks` specifically."""))
+
+    parser.add_argument('--test_single_network',
+                        action='store_true',
+                        required=False,
+                        help=("""Test `--single_network` specifically."""))
+
+    parser.add_argument('--test_hmc_run',
+                        action='store_true',
+                        required=False,
+                        help=("""Test HMC inference specifically."""))
+
+    parser.add_argument('--test_inference_from_model',
+                        action='store_true',
+                        required=False,
+                        help=("""Test running inference from saved
+                              (trained) model specifically."""))
+
+    parser.add_argument('--log_dir',
+                        default=None,
+                        type=str,
+                        required=False,
+                        help=("""`log_dir` from which to load saved model for
+                              running inference on."""))
+    args = parser.parse_args()
+
+    return args
+
+
+def test_hmc_run(beta=4., eps=0.1, num_steps=2, run_steps=500):
     """Testing generic HMC."""
     hmc_args = AttrDict({
         'hmc': True,
         'log_dir': None,
-        'beta': 1.,
-        'eps': 0.1,
-        'num_steps': 2,
-        'run_steps': 500,
+        'beta': beta,
+        'eps': eps,
+        'num_steps': num_steps,
+        'run_steps': run_steps,
         'lattice_shape': (128, 16, 16, 2),
     })
-    model, run_data = run_hmc(hmc_args)
+    hmc_dir = os.path.join(os.path.dirname(PROJECT_DIR),
+                           'gauge_logs_eager', 'test', 'hmc_runs')
+    model, run_data = run_hmc(hmc_args, hmc_dir=hmc_dir)
 
     return {
         'model': model,
@@ -110,4 +118,24 @@ def test(flags):
 
 
 if __name__ == '__main__':
-    _ = test(DEFAULT_FLAGS)
+    if len(sys.argv) <= 1:
+        _ = test(DEFAULT_FLAGS)
+    else:
+        FLAGS = parse_args()
+        FLAGS = AttrDict(FLAGS.__dict__)
+
+        if FLAGS.test_hmc_run:
+            _ = test_hmc_run()
+
+        if FLAGS.test_separate_networks:
+            _ = test_separate_networks(DEFAULT_FLAGS)
+
+        if FLAGS.test_single_network:
+            _ = test_single_network(FLAGS)
+
+        if FLAGS.test_inference_from_model:
+            if FLAGS.log_dir is None:
+                raise ValueError('`--log_dir` must be specified.')
+
+            DEFAULT_FLAGS.log_dir = FLAGS.log_dir
+            _, _ = load_and_run(DEFAULT_FLAGS)

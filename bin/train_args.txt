@@ -20,7 +20,7 @@
 --logging_steps 50
 --print_steps 10
 --hmc_start
---hmc_steps 1000
+--hmc_steps 100
 --dropout_prob 0.5
 # ------------------------------------
 #--extra_steps 0
@@ -32,10 +32,10 @@
 --loss_scale 0.1
 --std_weight 0.
 --aux_weight 0.
---plaq_weight 10.
+--plaq_weight 0.1
 --charge_weight 0.1
 --network_type 'GaugeNetwork'
---units '2048, 1024, 512, 256, 256, 512, 1024, 2048'
+--units '1024, 512, 256, 256, 512, 1024'
 # ------------------------------------
 #
 # ======== deprecated args ========
