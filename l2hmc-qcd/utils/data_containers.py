@@ -8,6 +8,7 @@ from __future__ import absolute_import, division, print_function
 import os
 import numpy as np
 import utils.file_io as io
+from collections import defaultdict
 
 
 from utils.attr_dict import AttrDict
@@ -19,7 +20,9 @@ class DataContainer:
     def __init__(self, steps, header=None):
         self.steps = steps
         self.data_strs = [header]
-        self.data = AttrDict({})
+        self.data = AttrDict(defaultdict(list))
+        #  self.data = AttrDict({key: [], for key in keys})
+        #  self.data = AttrDict({})
 
     def update(self, data):
         """Update `self.data` with new values from `data`."""
