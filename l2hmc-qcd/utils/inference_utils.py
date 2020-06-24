@@ -16,9 +16,9 @@ import utils.file_io as io
 from config import PI, TF_FLOAT, TF_INT, PROJECT_DIR
 from utils.attr_dict import AttrDict
 from utils.plotting_utils import plot_data
-from utils.training_utils import build_model
-from models.gauge_model import GaugeModel
-from utils.data_containers import RunData
+from dynamics.dynamics import Dynamics
+from utils.training_utils import build_dynamics
+from utils.data_containers import DataContainer
 
 # pylint:disable=no-member
 if tf.__version__.startswith('1.'):
@@ -52,12 +52,12 @@ except ImportError:
 
 # pylint:disable=too-many-locals,invalid-name
 
-RUN_NAMES = [
-    'STEP', 'dt', 'px', 'sumlogdet', 'dQ', 'plaq_err',
+NAMES = [
+    'STEP', 'dt', 'LOSS', 'px', 'eps', 'BETA', 'sumlogdet', 'dQ', 'plaq_err',
 ]
-RUN_HSTR = ''.join(["{:^12s}".format(name) for name in RUN_NAMES])
-RUN_SEP = '-' * len(RUN_HSTR)
-RUN_HEADER = '\n'.join([RUN_SEP, RUN_HSTR, RUN_SEP])
+HSTR = ''.join(["{:^12s}".format(name) for name in NAMES])
+SEP = '-' * len(HSTR)
+HEADER = '\n'.join([SEP, HSTR, SEP])
 
 
 def check_if_chief(args):
@@ -78,7 +78,7 @@ def run_hmc(
         args: AttrDict,
         hmc_dir: str = None,
         log_file: str = None
-) -> (GaugeModel, RunData):
+) -> (Dynamics, DataContainer):
     """Run HMC using `inference_args` on a model specified by `params`.
 
     NOTE:
@@ -106,24 +106,21 @@ def run_hmc(
         'horovod': False,
     })
 
-    model, args = build_model(args)
+    dynamics, args = build_dynamics(args)
     if hmc_dir is None:
         root_dir = os.path.dirname(PROJECT_DIR)
         hmc_dir = os.path.join(root_dir, 'gauge_logs_eager', 'hmc_runs')
     io.check_else_make_dir(hmc_dir)
-    model, run_data = run(model, args, runs_dir=hmc_dir)
+    dynamics, run_data = run(dynamics, args, runs_dir=hmc_dir)
 
-    return model, run_data
+    return dynamics, run_data
 
 
-def load_and_run(
-    args: AttrDict,
-    runs_dir: str = None,
-) -> tuple:
+def load_and_run(args: AttrDict,
+                 runs_dir: str = None) -> (Dynamics, AttrDict):
     """Load trained model from checkpoint and run inference."""
-    is_chief = check_if_chief(args)
-    if not is_chief:
-        return
+    if not check_if_chief(args):
+        return None, None
 
     print_args(args)
     if args.hmc:
@@ -135,27 +132,26 @@ def load_and_run(
     FLAGS = AttrDict(dict(io.loadz(os.path.join(train_dir, 'FLAGS.z'))))
     FLAGS.horovod = False
 
-    model, FLAGS = build_model(FLAGS)
+    dynamics, FLAGS = build_dynamics(FLAGS)
 
-    step_init = tf.Variable(0, dtype=TF_INT)
-    ckpt = tf.train.Checkpoint(step=step_init,
-                               dynamics=model.dynamics,
-                               optimizer=model.optimizer)
+    #  step_init = tf.Variable(0, dtype=TF_INT)
+    ckpt = tf.train.Checkpoint(dynamics=dynamics,
+                               optimizer=dynamics.optimizer)
     manager = tf.train.CheckpointManager(ckpt, max_to_keep=5,
                                          directory=ckpt_dir)
     if manager.latest_checkpoint:
         io.log(f'Restored model from: {manager.latest_checkpoint}')
         ckpt.restore(manager.latest_checkpoint)
-        step_init = ckpt.step
 
     if args.eps is None:
-        eps_file = os.path.join(args.log_dir, 'eps_final.z')
-        if os.path.isfile(eps_file):
-            edict = io.loadz(eps_file)
-            model.dynamics.eps = edict['eps']
-            args.eps = edict['eps']
-        else:
-            args.eps = ckpt.dynamics.eps
+        args.eps = dynamics.eps.numpy()
+        #  eps_file = os.path.join(args.log_dir, 'eps_final.z')
+        #  if os.path.isfile(eps_file):
+        #      edict = io.loadz(eps_file)
+        #      dynamics.dynamics.eps = edict['eps']
+        #      args.eps = edict['eps']
+        #  else:
+        #      args.eps = ckpt.dynamics.eps
 
     if args.beta is None:
         train_dir = os.path.join(args.log_dir, 'training')
@@ -165,12 +161,12 @@ def load_and_run(
         args.beta = l2hmc_flags.beta_final
 
     args.update(FLAGS)
-    model, run_data = run(model, args, runs_dir=runs_dir)
+    dynamics, run_data = run(dynamics, args, runs_dir=runs_dir)
 
-    return model, run_data
+    return dynamics, run_data
 
 
-def run(model, args, x=None, runs_dir=None):
+def run(dynamics, args, x=None, runs_dir=None):
     """Run inference.
 
     Returns:
@@ -179,7 +175,7 @@ def run(model, args, x=None, runs_dir=None):
     """
     is_chief = check_if_chief(args)
     if not is_chief:
-        return
+        return None, None
 
     if runs_dir is None:
         if args.hmc:
@@ -195,15 +191,22 @@ def run(model, args, x=None, runs_dir=None):
         beta = args.get('beta_final', None)
 
     if x is None:
-        x = tf.random.uniform(shape=model.input_shape,
-                              minval=-PI, maxval=PI,
-                              dtype=TF_FLOAT)
+        x = tf.random.uniform(shape=dynamics.config.input_shape,
+                              minval=-PI, maxval=PI, dtype=TF_FLOAT)
 
-    run_data = run_model(model, args, x)
+    run_data = test_dynamics(dynamics, args, x)
+
     run_dir = io.make_run_dir(args, runs_dir)
+    data_dir = os.path.join(run_dir, 'run_data')
+    log_file = os.path.join(run_dir, 'run_log.txt')
+    io.check_else_make_dir(run_dir, data_dir)
+
+    run_data.flush_data_strs(log_file, mode='a')
+    if dynamics.save_run_data:
+        run_data.save_data(data_dir)
     io.save_inference(run_dir, run_data)
 
-    eps = model.dynamics.eps
+    eps = dynamics.eps
     if hasattr(eps, 'numpy'):
         eps = eps.numpy()
 
@@ -211,111 +214,156 @@ def run(model, args, x=None, runs_dir=None):
         'eps': eps,
         'beta': beta,
         'run_steps': run_steps,
-        'lattice_shape': model.lattice_shape,
-        'num_steps': model.dynamics_config.num_steps,
-        'net_weights': model.dynamics_config.net_weights,
-        'input_shape': model.dynamics_config.input_shape,
+        'lattice_shape': dynamics.lattice_shape,
+        'num_steps': dynamics.config.num_steps,
+        'net_weights': dynamics.config.net_weights,
+        'input_shape': dynamics.config.input_shape,
     }
     io.save_params(run_params, run_dir, name='run_params')
 
     plot_data(run_data, run_dir, args, thermalize=True, params=run_params)
 
-    return model, run_data
+    return dynamics, run_data
 
 
-# pylint:disable=too-many-statements
-def run_model(model, args, x=None):
-    """Run inference on trained `model`.
-
-    Returns:
-        outputs(dict): Dictionary of outputs.
-        data_strs(lsit): List of strings containing inference log.
-    """
+def test_dynamics(dynamics, args, x=None):
+    """Run inference on trained dynamics."""
     is_chief = check_if_chief(args)
     if not is_chief:
         return None
 
-    #  using_hvd = getattr(model, 'using_hvd', False)
-    #  is_chief = hvd.rank() == 0 if using_hvd else not using_hvd
-    #  if not is_chief:
-    #      return None, None
-
-    run_steps = args.get('run_steps', None)
     beta = args.get('beta', None)
+    run_steps = args.get('run_steps', None)
     if beta is None:
         beta = args.get('beta_final', None)
 
     if x is None:
-        x = tf.random.uniform(shape=model.input_shape,
+        x = tf.random.uniform(shape=dynamics.config.input_shape,
                               minval=-PI, maxval=PI)
         x = tf.cast(x, dtype=TF_FLOAT)
 
-    plaqs, q_new = model.calc_observables(x, beta, use_sin=False)
+    run_data = DataContainer(run_steps, header=HEADER)
 
-    run_data = RunData(run_steps, header=RUN_HEADER)
-    run_data.update({
-        'plaqs': plaqs.numpy(),
-        'charges': q_new.numpy(),
-    })
+    #  test_step = (
+    #      dynamics.test_step if not dynamics._should_compile
+    #      else tf.function(dynamics.test_step, experimental_compile=True)
+    #  )
 
-    run_step = (
-        model.run_step if not model.compile
-        else tf.function(model.run_step, experimental_compile=True)
-    )
-
-    eps = model.dynamics.eps
+    #  eps = model.dynamics.eps
+    eps = dynamics.eps
     if hasattr(eps, 'numpy'):
         eps = eps.numpy()
 
-    io.log(RUN_SEP)
+    io.log(SEP)
     io.log(f'Running inference with:')
     io.log(f'  beta: {beta}')
     io.log(f'  dynamics.eps: {eps:.4g}')
-    io.log(f'  net_weights: {model.dynamics.config.net_weights}')
-    io.log(RUN_SEP)
-    io.log(RUN_HEADER)
-    for step in np.arange(run_steps):
-        t0 = time.time()
-        x = tf.reshape(x, model.input_shape)
-        #  states, px, sld_states = model.run_step(x, beta)
-        states, px, sld_states = run_step(x, beta)
-        x = states.out.x
-        sld = sld_states.out
-        x = tf.reshape(x, model.lattice_shape)
-        dt = time.time() - t0
+    io.log(f'  net_weights: {dynamics.config.net_weights}')
+    io.log(SEP)
+    io.log(HEADER)
+    for step in tf.range(run_steps):
+        x, metrics = dynamics.test_step(x, beta)
+        run_data.update(step, metrics)
 
-        q_old = q_new
-        plaqs_err, q_new = model.calc_observables(x, beta, use_sin=False)
-        dq = tf.math.abs(q_new - q_old)
-
-        outputs = AttrDict({
-            'steps': step,
-            'dt': dt,
-            'px': px.numpy(),
-            'charges': q_new.numpy(),
-            'dq': dq.numpy(),
-            'sumlogdet': sld.numpy(),
-            'plaqs': plaqs_err.numpy(),
-        })
-
-        if step % model.print_steps == 0:
-            data_str = run_data.get_fstr(outputs)
+        if step % dynamics.print_steps == 0:
+            data_str = run_data.get_fstr(step, metrics)
             io.log(data_str)
 
-        if model.save_run_data:
-            run_data.update(outputs)
-
         if step % 100 == 0:
-            io.log(RUN_HEADER)
-
-    #  outputs = {
-    #      'px': np.array(px_arr),
-    #      'dq': np.array(dq_arr),
-    #      'charges_arr': np.array(charges_arr),
-    #      'x': tf.reshape(x, model.input_shape),
-    #      'plaqs_err': np.array(plaqs_arr),
-    #  }
-    #
-    #  return outputs, data_strs
+            io.log(HEADER)
 
     return run_data
+
+
+# pylint:disable=too-many-statements
+#  def test_dynamics_old(model, args, x=None):
+#      """Run inference on trained `model`.
+#
+#      Returns:
+#          outputs(dict): Dictionary of outputs.
+#          data_strs(lsit): List of strings containing inference log.
+#      """
+#      is_chief = check_if_chief(args)
+#      if not is_chief:
+#          return None
+#
+#      #  using_hvd = getattr(model, 'using_hvd', False)
+#      #  is_chief = hvd.rank() == 0 if using_hvd else not using_hvd
+#      #  if not is_chief:
+#      #      return None, None
+#
+#      run_steps = args.get('run_steps', None)
+#      beta = args.get('beta', None)
+#      if beta is None:
+#          beta = args.get('beta_final', None)
+#
+#      if x is None:
+#          x = tf.random.uniform(shape=model.input_shape,
+#                                minval=-PI, maxval=PI)
+#          x = tf.cast(x, dtype=TF_FLOAT)
+#
+#      #  plaqs, q_new = model.calc_observables(x, beta, use_sin=False)
+#
+#      run_data = RunData(run_steps, header=RUN_HEADER)
+#
+#      test_step = (
+#          model.test_step if not model.compile
+#          else tf.function(model.run_step, experimental_compile=True)
+#      )
+#
+#      eps = model.dynamics.eps
+#      if hasattr(eps, 'numpy'):
+#          eps = eps.numpy()
+#
+#      io.log(RUN_SEP)
+#      io.log(f'Running inference with:')
+#      io.log(f'  beta: {beta}')
+#      io.log(f'  dynamics.eps: {eps:.4g}')
+#      io.log(f'  net_weights: {model.dynamics.config.net_weights}')
+#      io.log(RUN_SEP)
+#      io.log(RUN_HEADER)
+#      for step in np.arange(run_steps):
+#          t0 = time.time()
+#          x = tf.reshape(x, model.input_shape)
+#          #  states, px, sld_states = model.run_step(x, beta)
+#          states, px, sld_states = run_step(x, beta)
+#          x = states.out.x
+#          sld = sld_states.out
+#          x = tf.reshape(x, model.lattice_shape)
+#          dt = time.time() - t0
+#
+#          q_old = q_new
+#          plaqs_err, q_new = model.calc_observables(x, beta, use_sin=False)
+#          dq = tf.math.abs(q_new - q_old)
+#
+#          outputs = AttrDict({
+#              'steps': step,
+#              'dt': dt,
+#              'px': px.numpy(),
+#              'charges': q_new.numpy(),
+#              'dq': dq.numpy(),
+#              'sumlogdet': sld.numpy(),
+#              'plaqs': plaqs_err.numpy(),
+#          })
+#
+#          if step % model.print_steps == 0:
+#              data_str = run_data.get_fstr(step, outputs)
+#              io.log(data_str)
+#
+#          if model.save_run_data:
+#              run_data.update(outputs)
+#
+#          if step % 100 == 0:
+#              io.log(RUN_HEADER)
+#
+#      #  outputs = {
+#      #      'px': np.array(px_arr),
+#      #      'dq': np.array(dq_arr),
+#      #      'charges_arr': np.array(charges_arr),
+#      #      'x': tf.reshape(x, model.input_shape),
+#      #      'plaqs_err': np.array(plaqs_arr),
+#      #  }
+#      #
+#      #  return outputs, data_strs
+#
+#      return run_data

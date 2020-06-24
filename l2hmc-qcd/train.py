@@ -18,8 +18,8 @@ if __name__ == '__main__':
     FLAGS = AttrDict(FLAGS.__dict__)
     LOG_FILE = os.path.join(os.getcwd(), 'log_dirs.txt')
     FLAGS.net_weights = NET_WEIGHTS_HMC if FLAGS.hmc else NET_WEIGHTS_L2HMC
-    MODEL, OUTPUTS, FLAGS = train(FLAGS, LOG_FILE)
+    DYNAMICS, OUTPUTS, FLAGS = train(FLAGS, LOG_FILE)
     if FLAGS.inference and FLAGS.run_steps > 0:
-        _, _ = run(MODEL, FLAGS, x=OUTPUTS['x'])
+        _, _ = run(DYNAMICS, FLAGS, x=OUTPUTS['x'])
         #  _, _ = run(FLAGS, MODEL, FLAGS.beta_final,
         #             FLAGS.run_steps, x=OUTPUTS['x'])

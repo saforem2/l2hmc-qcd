@@ -329,13 +329,13 @@ def make_run_dir(FLAGS, base_dir):
     return run_dir
 
 
-def save_network_weights(model, train_dir, rank=0):
+def save_network_weights(dynamics, train_dir, rank=0):
     """Save network weights as dictionary to `.z` files."""
-    xnets = model.dynamics.xnets
-    vnets = model.dynamics.vnets
+    xnets = dynamics.xnets
+    vnets = dynamics.vnets
     wdir = os.path.join(train_dir, 'dynamics_weights')
     check_else_make_dir(wdir)
-    if model.separate_networks:
+    if dynamics.separate_networks:
         iterable = enumerate(zip(xnets, vnets))
         xnet_weights = {}
         vnet_weights = {}
@@ -358,15 +358,15 @@ def save_network_weights(model, train_dir, rank=0):
         vnets.save_layer_weights(out_file=vfpath)
 
 
-def save(model, train_data, train_dir, rank=0):
+def save(dynamics, train_data, train_dir, rank=0):
     """Save training results."""
     if rank != 0:
         return
 
     check_else_make_dir(train_dir)
 
-    if not model.dynamics_config.hmc:
-        save_network_weights(model, train_dir, rank=rank)
+    if not dynamics.config.hmc:
+        save_network_weights(dynamics, train_dir, rank=rank)
 
     #  if model.save_train_data:
     #      outputs_dir = os.path.join(train_dir, 'outputs')
@@ -374,7 +374,7 @@ def save(model, train_data, train_dir, rank=0):
     #      for key, val in outputs.items():
     #          out_file = os.path.join(outputs_dir, f'{key}.z')
     #          savez(np.array(val), out_file, key)
-    if model.save_train_data:
+    if dynamics.save_train_data:
         output_dir = os.path.join(train_dir, 'outputs')
         train_data.save_data(output_dir)
 

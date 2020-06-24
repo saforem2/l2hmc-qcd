@@ -8,6 +8,7 @@ import os
 import arviz as az
 import numpy as np
 import xarray as xr
+import tensorflow as tf
 import seaborn as sns
 import matplotlib.pyplot as plt
 
@@ -74,7 +75,7 @@ def get_title_str_from_params(params):
     lattice_shape = params.get('lattice_shape', None)
 
     title_str = (r"$N_{\mathrm{LF}} = $" + f'{num_steps}, '
-                 r"$\varepsilon = $" + f'{eps:.4g}, ')
+                 r"$\varepsilon = $" + f'{tf.reduce_mean(eps):.4g}, ')
 
     if 'beta_init' in params and 'beta_final' in params:
         beta_init = params.get('beta_init', None)
