@@ -263,7 +263,7 @@ class Dynamics(tf.keras.Model):
         #   Broadcast should be done after the first gradient step to ensure
         #   optimizer initialization.
         if first_step and self.using_hvd:
-            hvd.broadcast_variables(self.dynamics.variables, root_rank=0)
+            hvd.broadcast_variables(self.variables, root_rank=0)
             hvd.broadcast_variables(self.optimizer.variables(), root_rank=0)
 
         plaqs, q_new = self.calc_observables(
