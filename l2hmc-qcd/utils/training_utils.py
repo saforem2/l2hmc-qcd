@@ -16,10 +16,10 @@ import utils.file_io as io
 from config import NET_WEIGHTS_HMC, NET_WEIGHTS_L2HMC, PI, TF_FLOAT, TF_INT
 from network import NetworkConfig
 from dynamics import DynamicsConfig
-from models.gauge_model import GaugeModel
+from dynamics.dynamics import Dynamics
 from utils.attr_dict import AttrDict
 from utils.plotting_utils import plot_data
-from utils.data_containers import TrainData
+from utils.data_containers import DataContainer
 
 # pylint:disable=no-member
 if tf.__version__.startswith('1.'):
@@ -61,8 +61,8 @@ HEADER = '\n'.join([SEP, HSTR, SEP])
 
 
 # pylint:disable=invalid-name, redefined-outer-name
-def build_model(FLAGS):
-    """Build model using parameters from FLAGS."""
+def build_dynamics(FLAGS):
+    """Build dynamics using parameters from FLAGS."""
     net_weights = NET_WEIGHTS_HMC if FLAGS.hmc else NET_WEIGHTS_L2HMC
     lattice_shape = FLAGS.get('lattice_shape', None)
     if lattice_shape is None:
@@ -100,9 +100,9 @@ def build_model(FLAGS):
         eps_trainable=not FLAGS.eps_fixed,
     )
 
-    model = GaugeModel(FLAGS, config, net_config)
+    dynamics = Dynamics(FLAGS, config, net_config)
 
-    return model, FLAGS
+    return dynamics, FLAGS
 
 
 def train(FLAGS, log_file=None):
@@ -130,55 +130,33 @@ def train(FLAGS, log_file=None):
     else:
         x = None
 
-    '''
-    train_dir = os.path.join(FLAGS.log_dir, 'training')
-    ckpt_dir = os.path.join(train_dir, 'checkpoints')
-    data_dir = os.path.join(ckpt_dir, 'train_data')
-    if is_chief:
-        io.check_else_make_dir([train_dir, ckpt_dir, data_dir])
-    if not FLAGS.restore:
-        io.save_params(dict(FLAGS), train_dir, 'FLAGS', rank=rank)
-
-
-    step = tf.Variable(0, dtype=TF_INT)
-    ckpt = tf.train.Checkpoint(step=step,
-                               dynamics=model.dynamics,
-                               optimizer=model.optimizer)
-    manager = tf.train.CheckpointManager(
-        ckpt, directory=ckpt_dir, max_to_keep=5
-    )
-    if manager.latest_checkpoint:
-        io.log(f'Restored from: {manager.latest_checkpoint}', rank=rank)
-        ckpt.restore(manager.latest_checkpoint)
-        step = ckpt.step
-
-    else:
-        io.log('\n'.join(['No existing checkpoints found.',
-                          'Starting from scratch.']), rank=rank)
-    '''
     io.log(f'Building model...', rank=rank)
-    model, FLAGS = build_model(FLAGS)
+    dynamics, FLAGS = build_dynamics(FLAGS)
 
     io.log(f'Training model!', rank=rank)
-    x, train_data = train_model(model, train_dir=train_dir, x=x)
+    x, train_data = train_dynamics(dynamics, train_dir=train_dir, x=x)
 
     if is_chief:
-        io.save(model, train_data, train_dir, rank=rank)
-        io.save_params({'eps': model.dynamics.eps.numpy()},
-                       FLAGS.log_dir, name='eps_final')
+        if not dynamics.config.hmc:
+            io.save_network_weights(dynamics, train_dir, rank=rank)
+        if dynamics.save_train_data:
+            output_dir = os.path.join(train_dir, 'outputs')
+            train_data.save_data(output_dir)
+
         params = {
-            'beta_init': train_data.data.betas[0],
-            'beta_final': train_data.data.betas[-1],
-            'eps': model.dynamics.eps.numpy(),
-            'lattice_shape': model.lattice_shape,
-            'num_steps': model.dynamics.config.num_steps,
-            'net_weights': model.dynamics_config.net_weights,
+            'beta_init': train_data.data.beta[0],
+            'beta_final': train_data.data.beta[-1],
+            'eps': dynamics.eps.numpy(),
+            'lattice_shape': dynamics.lattice_shape,
+            'num_steps': dynamics.config.num_steps,
+            'net_weights': dynamics.config.net_weights,
         }
-        plot_data(train_data, train_dir, FLAGS, params=params)
+        plot_data(train_data, train_dir, FLAGS,
+                  thermalize=True, params=params)
 
     io.log('\n'.join(['Done training model', 80 * '=']), rank=rank)
 
-    return x, model, train_data, FLAGS
+    return x, dynamics, train_data, FLAGS
 
 
 def train_hmc(FLAGS):
@@ -198,54 +176,38 @@ def train_hmc(FLAGS):
     HFLAGS.no_summaries = True
     train_dir = os.path.join(HFLAGS.log_dir, 'training_hmc')
 
-    #  ckpt_dir = os.path.join(train_dir, 'checkpoints')
-    #  if is_chief:
-    #      io.check_else_make_dir([train_dir, ckpt_dir], rank=rank)
-    #      io.save_params(dict(HFLAGS), train_dir, 'FLAGS', rank=rank)
-    #
-    #  model, HFLAGS = build_model(HFLAGS)
-    #  step = tf.Variable(0, dtype=TF_INT)
-    #  ckpt = tf.train.Checkpoint(step=step,
-    #                             dynamics=model.dynamics,
-    #                             optimizer=model.optimizer)
-    #  manager = tf.train.CheckpointManager(
-    #      ckpt, directory=ckpt_dir, max_to_keep=3
-    #  )
-    #  if manager.latest_checkpoint:
-    #      io.log(f'Restored from: {manager.latest_checkpoint}', rank=rank)
-    #      ckpt.restore(manager.latest_checkpoint)
-    #      step = ckpt.step
-
-    model, HFLAGS = build_model(HFLAGS)
-    x, train_data = train_model(model, train_dir)
-    #  x, train_data = train_model(model, ckpt, manager,
-    #                              step=step, train_dir=train_dir)
+    dynamics, HFLAGS = build_dynamics(HFLAGS)
+    x, train_data = train_dynamics(dynamics, train_dir)
     if is_chief:
-        io.save(model, train_data, train_dir, rank=rank)
-        io.save_params({'eps': model.dynamics.eps.numpy()},
-                       FLAGS.log_dir, name='eps_final')
-        params = {
-            'beta_init': train_data.data.betas[0],
-            'beta_final': train_data.data.betas[-1],
-            'eps': model.dynamics.eps.numpy(),
-            'lattice_shape': model.lattice_shape,
-            'num_steps': model.dynamics.config.num_steps,
-            'net_weights': model.dynamics_config.net_weights,
-        }
-        plot_data(train_data, train_dir, HFLAGS, params=params)
+        if dynamics.save_train_data:
+            output_dir = os.path.join(train_dir, 'outputs')
+            io.check_else_make_dir(output_dir)
+            train_data.save_data(output_dir)
 
-    #  x_out = outputs['x']
-    eps_out = model.dynamics.eps.numpy()
+        params = {
+            'eps': dynamics.eps,
+            'num_steps': dynamics.config.num_steps,
+            'beta_init': train_data.data.beta[0],
+            'beta_final': train_data.data.beta[-1],
+            'lattice_shape': dynamics.lattice_shape,
+            'net_weights': dynamics.config.net_weights,
+        }
+        plot_data(train_data, train_dir, HFLAGS,
+                  thermalize=True, params=params)
+
     io.log('\n'.join(['Done with HMC start.', 80 * '=']), rank=rank)
 
-    return x, train_data, eps_out
+    return x, train_data, dynamics.eps.numpy()
 
 
 # pylint:disable=too-many-locals
-def train_model(model, train_dir=None, x=None):
+def train_dynamics(dynamics, train_dir=None, x=None):
     """Train model."""
-    is_chief = hvd.rank() == 0 if model.using_hvd else not model.using_hvd
-    rank = hvd.rank() if model.using_hvd else 0
+    is_chief = (
+        hvd.rank() == 0 if dynamics.using_hvd
+        else not dynamics.using_hvd
+    )
+    rank = hvd.rank() if dynamics.using_hvd else 0
 
     data_dir = os.path.join(train_dir, 'train_data')
     ckpt_dir = os.path.join(train_dir, 'checkpoints')
@@ -253,17 +215,14 @@ def train_model(model, train_dir=None, x=None):
     if is_chief:
         io.check_else_make_dir([train_dir, ckpt_dir, data_dir])
 
-    gstep = tf.Variable(0, dtype=TF_INT)
-
     if x is None:
-        x = tf.random.uniform(shape=model.input_shape,
+        x = tf.random.uniform(shape=dynamics.config.input_shape,
                               minval=-PI, maxval=PI)
         x = tf.cast(x, dtype=TF_FLOAT)
 
-    train_data = TrainData(model.train_steps, header=HEADER)
-    ckpt = tf.train.Checkpoint(step=gstep,
-                               dynamics=model.dynamics,
-                               optimizer=model.optimizer)
+    train_data = DataContainer(dynamics.train_steps, header=HEADER)
+    ckpt = tf.train.Checkpoint(dynamics=dynamics,
+                               optimizer=dynamics.optimizer)
     manager = tf.train.CheckpointManager(
         ckpt, directory=ckpt_dir, max_to_keep=5
     )
@@ -271,81 +230,44 @@ def train_model(model, train_dir=None, x=None):
         io.log(f'Restored from: {manager.latest_checkpoint}', rank=rank)
         ckpt.restore(manager.latest_checkpoint)
         train_data.restore(data_dir)
-        gstep = ckpt.step
-        q_new = train_data.data['charges'][-1]
-        plaqs = train_data.data['plaqs'][-1]
+        current_step = dynamics.optimizer.iterations.numpy()
     else:
+        current_step = tf.convert_to_tensor(0, dtype=TF_INT)
         io.log('\n'.join(['No existing checkpoints found.',
                           'Starting from scratch.']), rank=rank)
-        plaqs, q_new = model.calc_observables(x, model.betas[0])
-        train_data.update({
-            'plaqs': plaqs.numpy(),
-            'charges': q_new.numpy(),
-        })
 
-    train_steps = np.arange(model.train_steps)
-    betas = model.betas[int(gstep.numpy()):]
-    steps = train_steps[int(gstep.numpy()):]
+    train_steps = tf.range(dynamics.train_steps)
+    betas = tf.convert_to_tensor(dynamics.betas[current_step:])
+    steps = train_steps[current_step:]
 
     train_step = (
-        model.train_step if not model.compile
-        else tf.function(model.train_step, experimental_compile=True)
+        dynamics.train_step if not dynamics._should_compile
+        else tf.function(dynamics.train_step, experimental_compile=True)
     )
-    '''
-    if model.compile:
-        train_step = tf.function(model.train_step, experimental_compile=True)
-    else:
-        train_step = model.train_step
-    '''
 
     io.log(HEADER, rank=rank)
     for step, beta in zip(steps, betas):
-        t0 = time.time()
-        x = tf.reshape(x, model.input_shape)
-        loss, x, px, sld = train_step(x, beta, step == 0)
-        x = tf.reshape(x, model.lattice_shape)
-        dt = time.time() - t0
 
-        q_old = q_new
-        plaqs_err, q_new = model.calc_observables(x, beta)
-        dq = tf.math.abs(q_new - q_old)
+        x, metrics = train_step(x, beta)
 
-        outputs = AttrDict({
-            'dt': dt,
-            'px': px.numpy(),
-            'betas': beta.numpy(),
-            'steps': step,
-            'loss': loss.numpy(),
-            'charges': q_new.numpy(),
-            'dq': dq.numpy(),
-            'sumlogdet': sld.numpy(),
-            'plaqs': plaqs_err.numpy(),
-            'eps': model.dynamics.eps.numpy(),
-        })
-
-        if step % model.print_steps == 0:
-            data_str = train_data.get_fstr(outputs, rank=rank)
+        if step % dynamics.print_steps == 0:
+            data_str = train_data.get_fstr(step, metrics, rank=rank)
             io.log(data_str, rank=rank)
 
-        if model.save_train_data and step % model.logging_steps == 0:
-            train_data.update(outputs)
+        if dynamics.save_train_data and step % dynamics.logging_steps == 0:
+            train_data.update(step, metrics)
 
-        if is_chief and step % model.save_steps == 0 and ckpt is not None:
-            ckpt.step.assign(step)
+        if is_chief and step % dynamics.save_steps == 0 and ckpt is not None:
             manager.save()
             io.log(f'Checkpoint saved to: {manager.latest_checkpoint}')
             train_data.save_data(data_dir)
             train_data.flush_data_strs(history_file, rank=rank, mode='a')
-            #  train_data.data_strs = io.flush_data_strs(train_data.data_strs,
-            #                                            history_file)
 
         if step % 100 == 0:
             io.log(HEADER, rank=rank)
 
     if is_chief and ckpt is not None and manager is not None:
-        ckpt.step.assign(step)
         manager.save()
-        train_data.data_strs = io.flush_data_strs(train_data.data_strs,
-                                                  history_file)
+        train_data.flush_data_strs(history_file, rank=rank, mode='a')
 
     return x, train_data

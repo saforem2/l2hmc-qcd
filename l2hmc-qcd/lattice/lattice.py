@@ -29,35 +29,36 @@ from config import NP_FLOAT, TF_FLOAT
 from .utils import project_angle, project_angle_np, u1_plaq_exact
 
 # pylint: disable=invalid-name,no-member,too-many-instance-attributes
+#  def __init__(self,
+#               time_size=8,
+#               space_size=8,
+#               dim=2,
+#               link_type='U1',
+#               batch_size=None,
+#               rand=True):
 
 
 class GaugeLattice:
     """Lattice with Gauge field existing on links."""
 
-    def __init__(self,
-                 time_size=8,
-                 space_size=8,
-                 dim=2,
-                 link_type='U1',
-                 batch_size=None,
-                 rand=True):
+    def __init__(self, lattice_shape, rand=True):
         """Initialization for GaugeLattice object.
-        Args:
-            time_size (int): Temporal extent of lattice.
-            space_size (int): Spatial extent of lattice.
-            dim (int): Dimensionality
-            link_type (str):
-                String representing the type of gauge group for the link
-                variables. Must be either 'U1', 'SU2', or 'SU3'
+            Args:
+                time_size (int): Temporal extent of lattice.
+                space_size (int): Spatial extent of lattice.
+                dim (int): Dimensionality
+                link_type (str):
+                    String representing the type of gauge group for the link
+                    variables. Must be either 'U1', 'SU2', or 'SU3'
         """
-        assert link_type.upper() in ['U1', 'SU2', 'SU3'], (
-            "Invalid link_type. Possible values: U1', 'SU2', 'SU3'"
-        )
-
+        assert len(lattice_shape) == 4
+        batch_size, time_size, space_size, dim = lattice_shape
+        self.batch_size = batch_size
         self.time_size = time_size
         self.space_size = space_size
         self.dim = dim
-        self.link_type = link_type
+
+        self.link_type = 'U1'
         self.link_shape = ()
 
         self.num_links = self.time_size * self.space_size * self.dim

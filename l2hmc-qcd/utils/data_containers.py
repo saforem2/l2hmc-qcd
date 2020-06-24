@@ -6,10 +6,13 @@ Implements `TrainData` class, for working with training data.
 from __future__ import absolute_import, division, print_function
 
 import os
-import numpy as np
-import utils.file_io as io
+
 from collections import defaultdict
 
+import numpy as np
+import tensorflow as tf
+
+import utils.file_io as io
 
 from utils.attr_dict import AttrDict
 
@@ -20,21 +23,42 @@ class DataContainer:
     def __init__(self, steps, header=None):
         self.steps = steps
         self.data_strs = [header]
+        self.steps_arr = []
         self.data = AttrDict(defaultdict(list))
-        #  self.data = AttrDict({key: [], for key in keys})
-        #  self.data = AttrDict({})
 
-    def update(self, data):
+    def update(self, step, metrics):
         """Update `self.data` with new values from `data`."""
-        for key, val in data.items():
+        self.steps_arr.append(step)
+        for key, val in metrics.items():
+            try:
+                val = val.numpy()
+            except AttributeError:
+                continue
+
             try:
                 self.data[key].append(val)
             except KeyError:
                 self.data[key] = [val]
 
-    def get_fstr(self, data, rank=0):
-        """Get formatted data string."""
-        raise NotImplementedError
+    def get_fstr(self, step, metrics, rank=0):
+        """Get formatted data string from `data`."""
+        if rank != 0:
+            return ''
+
+        fstr = (
+            f"{step:>6g}/{self.steps:<6g} "
+            f"{metrics.dt:^11.4g} "
+            f"{metrics.loss:^11.4g} "
+            f"{np.mean(metrics.accept_prob):^11.4g} "
+            f"{tf.reduce_mean(metrics.eps):^11.4} "
+            f"{tf.reduce_mean(metrics.beta):^11.4g} "
+            f"{tf.reduce_mean(metrics.sumlogdet):^11.4g} "
+            f"{tf.reduce_mean(metrics.dq):^11.4g} "
+            f"{tf.reduce_mean(metrics.plaqs):^11.4g} "
+        )
+
+        self.data_strs.append(fstr)
+        return fstr
 
     def restore(self, data_dir):
         """Restore `self.data` from `data_dir`."""
@@ -78,42 +102,3 @@ class DataContainer:
 class TrainData(DataContainer):
     """Implements a container for dealing with training data."""
 
-    def get_fstr(self, data, rank=0):
-        """Get formatted data string from `data`."""
-        if rank != 0:
-            return ''
-
-        fstr = (
-            f"{data.steps: > 6g}/{self.steps:<6g} "
-            f"{data.dt:^11.4g} "
-            f"{data.loss:^11.4g} "
-            f"{np.mean(data.px):^11.4g} "
-            f"{data.eps:^11.4g} "
-            f"{data.betas:^11.4g} "
-            f"{np.mean(data.sumlogdet):^11.4g} "
-            f"{np.mean(data.dq):^11.4g} "
-            f"{np.mean(data.plaqs):^11.4g} "
-        )
-
-        self.data_strs.append(fstr)
-        return fstr
-
-
-class RunData(DataContainer):
-    """Implements a container for dealing with inference data."""
-
-    def get_fstr(self, data, rank=0):
-        if rank != 0:
-            return ''
-
-        fstr = (
-            f"{data.steps}/{self.steps:<6g} "
-            f"{data.dt:^11.4g} "
-            f"{np.mean(data.px):^11.4g} "
-            f"{np.mean(data.sumlogdet):^11.4g} "
-            f"{np.mean(data.dq):^11.4g} "
-            f"{np.mean(data.plaqs):^11.4g} "
-        )
-
-        self.data_strs.append(fstr)
-        return fstr
