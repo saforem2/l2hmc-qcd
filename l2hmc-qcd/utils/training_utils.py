@@ -10,6 +10,12 @@ import time
 
 import numpy as np
 import tensorflow as tf
+if tf.__version__.startswith('1.'):
+    TF_VERSION = '1.x'
+    tf.enable_eager_execution()
+elif tf.__version__.startswith('2.'):
+    TF_VERSION = '2.x'
+
 
 import utils.file_io as io
 
@@ -22,11 +28,6 @@ from utils.plotting_utils import plot_data
 from utils.data_containers import DataContainer
 
 # pylint:disable=no-member
-if tf.__version__.startswith('1.'):
-    TF_VERSION = '1.x'
-elif tf.__version__.startswith('2.'):
-    TF_VERSION = '2.x'
-
 try:
     import horovod.tensorflow as hvd
 
@@ -187,8 +188,8 @@ def train_hmc(FLAGS):
         params = {
             'eps': dynamics.eps,
             'num_steps': dynamics.config.num_steps,
-            'beta_init': train_data.data.beta[0],
-            'beta_final': train_data.data.beta[-1],
+            'beta_init': HFLAGS.beta_init,
+            'beta_final': HFLAGS.beta_final,
             'lattice_shape': dynamics.lattice_shape,
             'net_weights': dynamics.config.net_weights,
         }
