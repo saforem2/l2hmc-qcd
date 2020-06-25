@@ -31,14 +31,29 @@ class DataContainer:
         self.steps_arr.append(step)
         for key, val in metrics.items():
             try:
-                val = val.numpy()
-            except AttributeError:
-                continue
-
-            try:
-                self.data[key].append(val)
+                self.data[key].append(tf.convert_to_tensor(val).numpy())
             except KeyError:
-                self.data[key] = [val]
+                self.data[key] = [tf.convert_to_tensor(val).numpy()]
+            #  try:
+            #      self.data[key].append(val.numpy())
+            #  except AttributeError:
+            #      self.data[key].append(tf.convert_to_tensor(val).numpy())
+            #  try:
+            #      self.data[key].append(val.numpy())
+            #  except AttributeError:
+            #      self.data[key].append(val)
+            #  except KeyError:
+            #      self.data[key] = [val.numpy()]
+            #  except AttributeError:
+            #      self.data[key].append(val)
+            #  val = val.numpy()
+            #  except AttributeError:
+            #      continue
+            #
+            #  try:
+            #      self.data[key].append(val)
+            #  except KeyError:
+            #      self.data[key] = [val]
 
     def get_fstr(self, step, metrics, rank=0):
         """Get formatted data string from `data`."""
