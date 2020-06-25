@@ -268,7 +268,7 @@ class Dynamics(tf.keras.Model):
 
         plaqs, q_new = self.calc_observables(
             tf.reshape(states.out.x, self.lattice_shape),
-            beta
+            beta, use_sin=True,
         )
 
         metrics = AttrDict({
@@ -294,7 +294,7 @@ class Dynamics(tf.keras.Model):
         dt = time.time() - t0
         plaqs, q_new = self.calc_observables(
             tf.reshape(states.out.x, self.lattice_shape),
-            beta
+            beta, use_sin=False,
         )
 
         metrics = AttrDict({
