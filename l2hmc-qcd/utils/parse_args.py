@@ -49,6 +49,16 @@ def parse_args():
                         required=False,
                         help=("""Whether or not to compile model to graph."""))
 
+    parser.add_argument('--lattice_shape',
+                        dest='lattice_shape',
+                        type=lambda s: [int(i) for i in s.split(',')],
+                        default="128, 16, 16, 2",
+                        required=False,
+                        help=("""Specifies the shape of our data, with:
+                              lattice_shape =
+                              (batch_size, time_size, space_size, dim)
+                              Defaults to: (128, 16, 16, 2)"""))
+
     ###########################################################################
     #                          Lattice parameters                             #
     ###########################################################################
@@ -65,14 +75,6 @@ def parse_args():
                         default=8,
                         required=False,
                         help="""Temporal extent of lattice.\n (Default: 8)""")
-
-    parser.add_argument("--link_type",
-                        dest="link_type",
-                        type=str,
-                        required=False,
-                        default='U1',
-                        help="""Link type for gauge model.\n
-                        (Default: 'U1')""")
 
     parser.add_argument("--dim",
                         dest="dim",
@@ -226,23 +228,6 @@ def parse_args():
                         help=("""FLag that when passed will run inference on
                               trained model."""))
 
-    parser.add_argument("--extra_steps",
-                        dest="extra_steps",
-                        type=int,
-                        default=5000,
-                        required=False,
-                        help=("""Number of additional steps to append at the
-                              end of the training instance at the final value
-                              of beta."""))
-
-    parser.add_argument("--trace",
-                        dest="trace",
-                        action="store_true",
-                        required=False,
-                        help=("""Flag that when passed will set `--trace=True`,
-                              and create a trace during training loop.\n
-                              (Default: `--trace=False`, i.e.  not passed)"""))
-
     parser.add_argument("--save_steps",
                         dest="save_steps",
                         type=int,
@@ -321,15 +306,6 @@ def parse_args():
                               gradients by global norm. (Default: 0.) If a
                               value greater than 0. is passed, gradient
                               clipping will be performed."""))
-
-    parser.add_argument('--largest_wilson_loop',
-                        dest='largest_wilson_loop',
-                        type=int,
-                        required=False,
-                        default=1,
-                        help=("""Size of largest Wilson loop to include when
-                              calculating the plaquette and charge terms in the
-                              gauge loss function."""))
 
     parser.add_argument('--no_summaries',
                         dest="no_summaries",
