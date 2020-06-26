@@ -85,6 +85,92 @@ def get_betas(steps, beta_init, beta_final):
     return 1. / tf.convert_to_tensor(np.array(t_arr))
 
 
+class DynamicsParams:
+
+    def __init__(self, params, dynamics_config, network_config):
+        self.config = dynamics_config
+        self.network_config = network_config
+        self.params = self.parse_params(params)
+
+    # pylint:disable=too-many-statements
+    def parse_params(self, params):
+        """Set instance attributes from `params`."""
+        #  self.params = AttrDict(params)
+        params = AttrDict(params)
+        attrs = AttrDict({})
+
+        attrs.net_weights = self.config.net_weights
+        attrs.xsw = attrs.net_weights.x_scale
+        attrs.xtw = attrs.net_weights.x_translation
+        attrs.xqw = attrs.net_weights.x_transformation
+        attrs.vsw = attrs.net_weights.v_scale
+        attrs.vtw = attrs.net_weights.v_translation
+        attrs.vqw = attrs.net_weights.v_transformation
+
+        attrs.separate_networks = params.get('separate_networks', False)
+
+        lattice_shape = params.get('lattice_shape', None)
+        if lattice_shape is not None:
+            batch_size, time_size, space_size, dim = lattice_shape
+        else:
+            batch_size = params.get('batch_size', None)
+            time_size = params.get('time_size', None)
+            space_size = params.get('space_size', None)
+            dim = params.get('dim', 2)
+            lattice_shape = (batch_size, time_size, space_size, dim)
+
+        attrs.batch_size = batch_size
+        attrs.lattice_shape = lattice_shape
+        attrs.xdim = time_size * space_size * dim
+        attrs.x_shape = (batch_size, attrs.xdim)
+
+        attrs.plaq_weight = params.get('plaq_weight', 0.)
+        attrs.charge_weight = params.get('charge_weight', 0.)
+
+        attrs.print_steps = params.get('print_steps', 10)
+        attrs.run_steps = params.get('run_steps', int(1e3))
+        attrs.logging_steps = params.get('logging_steps', 50)
+        attrs.save_run_data = params.get('save_run_data', True)
+        attrs.save_train_data = True
+        attrs.save_steps = params.get('save_steps', None)
+
+        attrs.should_compile = True
+        eager_execution = params.get('eager_execution', False)
+        if tf.executing_eagerly() or eager_execution:
+            attrs.should_compile = False
+
+            # Determine if there are any parameters to be trained
+        attrs.has_trainable_params = True
+        if attrs.config.hmc and not attrs.config.eps_trainable:
+            attrs.has_trainable_params = False
+
+        # If there exist parameters to be optimized, setup optimizer
+        if attrs.has_trainable_params:
+            attrs.lr_init = params.get('lr_init', None)
+            attrs.warmup_lr = params.get('warmup_lr', False)
+            attrs.warmup_steps = params.get('warmup_steps', None)
+            attrs.using_hvd = params.get('horovod', False)
+            attrs.lr_decay_steps = params.get('lr_decay_steps', None)
+            attrs.lr_decay_rate = params.get('lr_decay_rate', None)
+
+            attrs.train_steps = params.get('train_steps', None)
+            attrs.beta_init = params.get('beta_init', None)
+            attrs.beta_final = params.get('beta_final', None)
+            beta = params.get('beta', None)
+            if attrs.beta_init == attrs.beta_final or beta is None:
+                attrs.beta = attrs.beta_init
+                attrs.betas = tf.convert_to_tensor(
+                    tf.cast(attrs.beta * np.ones(attrs.train_steps),
+                            dtype=TF_FLOAT)
+                )
+            else:
+                if attrs.train_steps is not None:
+                    attrs.betas = get_betas(
+                        attrs.train_steps, attrs.beta_init, attrs.beta_final
+                    )
+
+        return attrs
+
 # pylint:disable=too-many-instance-attributes,unused-argument
 class Dynamics(tf.keras.Model):
     """DynamicsObject for training the L2HMC sampler."""
@@ -107,6 +193,9 @@ class Dynamics(tf.keras.Model):
         self._model_type = self.config.model_type
 
         self.parse_params(params)
+        self.params.update(self.config._asdict())
+        self.params.update(self.net_config._asdict())
+        self.params.lattice_shape = self.lattice_shape
         self.lattice = GaugeLattice(self.lattice_shape)
         if potential_fn is None:
             self.potential_fn = self.lattice.calc_actions
@@ -203,6 +292,8 @@ class Dynamics(tf.keras.Model):
                                            self.beta_init,
                                            self.beta_final)
 
+                    #  HMC_beta35_lf1_eps0075_b128-2020-06-25-1543
+
     def call(self, inputs, training=None):
         """Obtain a new state from `inputs`."""
         return self.apply_transition(inputs, training=None)
@@ -243,7 +334,7 @@ class Dynamics(tf.keras.Model):
         with tf.GradientTape() as tape:
             states, px, sld_states = self((x, beta), training=True)
             inputs = (states.init.x, states.proposed.x, px)
-            loss, q_old = self.calc_loss(inputs)
+            loss, _ = self.calc_loss(inputs)
 
         dt = time.time() - t0
         if self.using_hvd:
@@ -265,6 +356,11 @@ class Dynamics(tf.keras.Model):
         if first_step and self.using_hvd:
             hvd.broadcast_variables(self.variables, root_rank=0)
             hvd.broadcast_variables(self.optimizer.variables(), root_rank=0)
+
+        _, q_old = self.calc_observables(
+            tf.reshape(states.init.x, self.lattice_shape),
+            beta, use_sin=True,
+        )
 
         plaqs, q_new = self.calc_observables(
             tf.reshape(states.out.x, self.lattice_shape),
@@ -290,7 +386,11 @@ class Dynamics(tf.keras.Model):
         t0 = time.time()
         states, px, sld_states = self((x, beta), training=False)
         inputs = (states.init.x, states.proposed.x, px)
-        loss, q_old = self.calc_loss(inputs)
+        loss, _ = self.calc_loss(inputs)
+        _, q_old = self.calc_observables(
+            tf.reshape(states.init.x, self.lattice_shape),
+            beta, use_sin=False,
+        )
         dt = time.time() - t0
         plaqs, q_new = self.calc_observables(
             tf.reshape(states.out.x, self.lattice_shape),

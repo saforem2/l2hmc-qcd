@@ -53,7 +53,7 @@ except ImportError:
 # pylint:disable=too-many-locals,invalid-name
 
 NAMES = [
-    'STEP', 'dt', 'LOSS', 'px', 'eps', 'BETA', 'sumlogdet', 'dQ', 'plaq_err',
+    'step', 'dt', 'loss', 'px', 'eps', 'beta', 'sumlogdet', 'dQ', 'plaq_err',
 ]
 HSTR = ''.join(["{:^12s}".format(name) for name in NAMES])
 SEP = '-' * len(HSTR)
@@ -104,6 +104,8 @@ def run_hmc(
         'eps_fixed': True,
         'dropout_prob': 0.,
         'horovod': False,
+        'plaq_weight': 10.,
+        'charge_weight': 0.1,
     })
 
     dynamics, args = build_dynamics(args)
@@ -134,7 +136,6 @@ def load_and_run(args: AttrDict,
 
     dynamics, FLAGS = build_dynamics(FLAGS)
 
-    #  step_init = tf.Variable(0, dtype=TF_INT)
     ckpt = tf.train.Checkpoint(dynamics=dynamics,
                                optimizer=dynamics.optimizer)
     manager = tf.train.CheckpointManager(ckpt, max_to_keep=5,
@@ -145,13 +146,6 @@ def load_and_run(args: AttrDict,
 
     if args.eps is None:
         args.eps = dynamics.eps.numpy()
-        #  eps_file = os.path.join(args.log_dir, 'eps_final.z')
-        #  if os.path.isfile(eps_file):
-        #      edict = io.loadz(eps_file)
-        #      dynamics.dynamics.eps = edict['eps']
-        #      args.eps = edict['eps']
-        #  else:
-        #      args.eps = ckpt.dynamics.eps
 
     if args.beta is None:
         train_dir = os.path.join(args.log_dir, 'training')
@@ -164,6 +158,7 @@ def load_and_run(args: AttrDict,
     dynamics, run_data = run(dynamics, args, runs_dir=runs_dir)
 
     return dynamics, run_data
+
 
 
 def run(dynamics, args, x=None, runs_dir=None):
@@ -194,7 +189,7 @@ def run(dynamics, args, x=None, runs_dir=None):
         x = tf.random.uniform(shape=dynamics.config.input_shape,
                               minval=-PI, maxval=PI, dtype=TF_FLOAT)
 
-    run_data = test_dynamics(dynamics, args, x)
+    run_data = run_dynamics(dynamics, args, x)
 
     run_dir = io.make_run_dir(args, runs_dir)
     data_dir = os.path.join(run_dir, 'run_data')
@@ -214,11 +209,14 @@ def run(dynamics, args, x=None, runs_dir=None):
         'eps': eps,
         'beta': beta,
         'run_steps': run_steps,
+        'plaq_weight': dynamics.plaq_weight,
+        'charge_weight': dynamics.charge_weight,
         'lattice_shape': dynamics.lattice_shape,
         'num_steps': dynamics.config.num_steps,
         'net_weights': dynamics.config.net_weights,
         'input_shape': dynamics.config.input_shape,
     }
+    run_params.update(dynamics.params)
     io.save_params(run_params, run_dir, name='run_params')
 
     plot_data(run_data, run_dir, args, thermalize=True, params=run_params)
@@ -226,7 +224,7 @@ def run(dynamics, args, x=None, runs_dir=None):
     return dynamics, run_data
 
 
-def test_dynamics(dynamics, args, x=None):
+def run_dynamics(dynamics, args, x=None):
     """Run inference on trained dynamics."""
     is_chief = check_if_chief(args)
     if not is_chief:
@@ -243,11 +241,6 @@ def test_dynamics(dynamics, args, x=None):
         x = tf.cast(x, dtype=TF_FLOAT)
 
     run_data = DataContainer(run_steps, header=HEADER)
-
-    #  test_step = (
-    #      dynamics.test_step if not dynamics._should_compile
-    #      else tf.function(dynamics.test_step, experimental_compile=True)
-    #  )
 
     #  eps = model.dynamics.eps
     eps = dynamics.eps
@@ -273,97 +266,3 @@ def test_dynamics(dynamics, args, x=None):
             io.log(HEADER)
 
     return run_data
-
-
-# pylint:disable=too-many-statements
-#  def test_dynamics_old(model, args, x=None):
-#      """Run inference on trained `model`.
-#
-#      Returns:
-#          outputs(dict): Dictionary of outputs.
-#          data_strs(lsit): List of strings containing inference log.
-#      """
-#      is_chief = check_if_chief(args)
-#      if not is_chief:
-#          return None
-#
-#      #  using_hvd = getattr(model, 'using_hvd', False)
-#      #  is_chief = hvd.rank() == 0 if using_hvd else not using_hvd
-#      #  if not is_chief:
-#      #      return None, None
-#
-#      run_steps = args.get('run_steps', None)
-#      beta = args.get('beta', None)
-#      if beta is None:
-#          beta = args.get('beta_final', None)
-#
-#      if x is None:
-#          x = tf.random.uniform(shape=model.input_shape,
-#                                minval=-PI, maxval=PI)
-#          x = tf.cast(x, dtype=TF_FLOAT)
-#
-#      #  plaqs, q_new = model.calc_observables(x, beta, use_sin=False)
-#
-#      run_data = RunData(run_steps, header=RUN_HEADER)
-#
-#      test_step = (
-#          model.test_step if not model.compile
-#          else tf.function(model.run_step, experimental_compile=True)
-#      )
-#
-#      eps = model.dynamics.eps
-#      if hasattr(eps, 'numpy'):
-#          eps = eps.numpy()
-#
-#      io.log(RUN_SEP)
-#      io.log(f'Running inference with:')
-#      io.log(f'  beta: {beta}')
-#      io.log(f'  dynamics.eps: {eps:.4g}')
-#      io.log(f'  net_weights: {model.dynamics.config.net_weights}')
-#      io.log(RUN_SEP)
-#      io.log(RUN_HEADER)
-#      for step in np.arange(run_steps):
-#          t0 = time.time()
-#          x = tf.reshape(x, model.input_shape)
-#          #  states, px, sld_states = model.run_step(x, beta)
-#          states, px, sld_states = run_step(x, beta)
-#          x = states.out.x
-#          sld = sld_states.out
-#          x = tf.reshape(x, model.lattice_shape)
-#          dt = time.time() - t0
-#
-#          q_old = q_new
-#          plaqs_err, q_new = model.calc_observables(x, beta, use_sin=False)
-#          dq = tf.math.abs(q_new - q_old)
-#
-#          outputs = AttrDict({
-#              'steps': step,
-#              'dt': dt,
-#              'px': px.numpy(),
-#              'charges': q_new.numpy(),
-#              'dq': dq.numpy(),
-#              'sumlogdet': sld.numpy(),
-#              'plaqs': plaqs_err.numpy(),
-#          })
-#
-#          if step % model.print_steps == 0:
-#              data_str = run_data.get_fstr(step, outputs)
-#              io.log(data_str)
-#
-#          if model.save_run_data:
-#              run_data.update(outputs)
-#
-#          if step % 100 == 0:
-#              io.log(RUN_HEADER)
-#
-#      #  outputs = {
-#      #      'px': np.array(px_arr),
-#      #      'dq': np.array(dq_arr),
-#      #      'charges_arr': np.array(charges_arr),
-#      #      'x': tf.reshape(x, model.input_shape),
-#      #      'plaqs_err': np.array(plaqs_arr),
-#      #  }
-#      #
-#      #  return outputs, data_strs
-#
-#      return run_data
