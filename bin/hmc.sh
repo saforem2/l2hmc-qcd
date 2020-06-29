@@ -15,8 +15,9 @@ RUN_STEPS=2000
 LATTICE_SHAPE="128, 16, 16, 2"
 
 NUM_STEPS=( 1 2 3 4 5 8 10 )
-EPS_ARR=( 0.075 0.1 0.15 )
-BETA_ARR=(4. 4.5 5 )
+#EPS_ARR=( 0.075 0.1 0.15 )
+EPS_ARR=( 0.1 )
+BETA_ARR=( 4. 4.5 5 )
 
 for beta in ${BETA_ARR[@]}
 do
