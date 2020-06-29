@@ -77,7 +77,7 @@ def print_args(args):
 def run_hmc(
         args: AttrDict,
         hmc_dir: str = None,
-        log_file: str = None
+        skip_existing: bool = False,
 ) -> (Dynamics, DataContainer):
     """Run HMC using `inference_args` on a model specified by `params`.
 
@@ -96,7 +96,7 @@ def run_hmc(
         return None, None
 
     print_args(args)
-    args.log_dir = io.make_log_dir(args, 'GaugeModel', log_file)
+    #  args.log_dir = io.make_log_dir(args, 'GaugeModel', log_file)
 
     args.update({
         'hmc': True,
@@ -108,18 +108,35 @@ def run_hmc(
         'charge_weight': 0.1,
     })
 
-    dynamics, args = build_dynamics(args)
     if hmc_dir is None:
         root_dir = os.path.dirname(PROJECT_DIR)
         hmc_dir = os.path.join(root_dir, 'gauge_logs_eager', 'hmc_runs')
+
     io.check_else_make_dir(hmc_dir)
+
+    def get_run_fstr(run_dir):
+        _, tail = os.path.split(run_dir)
+        fstr = tail.split('-')[0]
+        return fstr
+
+    if skip_existing:
+        run_dirs = [os.path.join(hmc_dir, i) for i in os.listdir(hmc_dir)]
+        run_fstrs = [get_run_fstr(i) for i in run_dirs]
+        run_fstr = io.get_run_dir_fstr(args)
+        if run_fstr in run_fstrs:
+            io.log(f'Existing run found! Skipping.')
+            return None, None
+
+    dynamics, args = build_dynamics(args)
     dynamics, run_data = run(dynamics, args, runs_dir=hmc_dir)
 
     return dynamics, run_data
 
 
-def load_and_run(args: AttrDict,
-                 runs_dir: str = None) -> (Dynamics, AttrDict):
+def load_and_run(
+        args: AttrDict,
+        runs_dir: str = None
+) -> (Dynamics, AttrDict):
     """Load trained model from checkpoint and run inference."""
     if not check_if_chief(args):
         return None, None
@@ -160,7 +177,6 @@ def load_and_run(args: AttrDict,
     return dynamics, run_data
 
 
-
 def run(dynamics, args, x=None, runs_dir=None):
     """Run inference.
 
@@ -179,6 +195,10 @@ def run(dynamics, args, x=None, runs_dir=None):
             runs_dir = os.path.join(args.log_dir, 'inference')
 
     io.check_else_make_dir(runs_dir)
+    run_dir = io.make_run_dir(args, runs_dir)
+    data_dir = os.path.join(run_dir, 'run_data')
+    log_file = os.path.join(run_dir, 'run_log.txt')
+    io.check_else_make_dir(run_dir, data_dir)
 
     run_steps = args.get('run_steps', None)
     beta = args.get('beta', None)
@@ -190,11 +210,6 @@ def run(dynamics, args, x=None, runs_dir=None):
                               minval=-PI, maxval=PI, dtype=TF_FLOAT)
 
     run_data = run_dynamics(dynamics, args, x)
-
-    run_dir = io.make_run_dir(args, runs_dir)
-    data_dir = os.path.join(run_dir, 'run_data')
-    log_file = os.path.join(run_dir, 'run_log.txt')
-    io.check_else_make_dir(run_dir, data_dir)
 
     run_data.flush_data_strs(log_file, mode='a')
     if dynamics.save_run_data:
