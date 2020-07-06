@@ -51,6 +51,19 @@ except ImportError:
         tf.compat.v1.enable_eager_execution()
 
 
+def _scalar_summary(name, val, step):
+    """Create scalar summary for logging in tensorboard."""
+    tf.summary.scalar(name, tf.reduce_mean(val), step=step)
+
+
+def summarize_metrics(metrics, step, prefix=None):
+    """Create scalar summaries for all items in `metrics`."""
+    if prefix is None:
+        prefix = ''
+    for key, val in metrics.items():
+        _scalar_summary(f'{prefix}/{key}', val, step)
+
+
 # pylint:disable=invalid-name, redefined-outer-name
 def build_dynamics(FLAGS):
     """Build dynamics using parameters from FLAGS."""
@@ -198,9 +211,10 @@ def setup_training(dynamics, flags, train_dir=None, x=None, betas=None):
     rank = hvd.rank() if dynamics.using_hvd else 0
     data_dir = os.path.join(train_dir, 'train_data')
     ckpt_dir = os.path.join(train_dir, 'checkpoints')
+    summary_dir = os.path.join(train_dir, 'summaries')
     history_file = os.path.join(train_dir, 'train_log.txt')
     if is_chief:
-        io.check_else_make_dir([train_dir, ckpt_dir, data_dir])
+        io.check_else_make_dir([train_dir, ckpt_dir, data_dir, summary_dir])
 
     if x is None:
         x = tf.random.uniform(shape=dynamics.x_shape, minval=-PI, maxval=PI)
@@ -210,6 +224,7 @@ def setup_training(dynamics, flags, train_dir=None, x=None, betas=None):
                                header=HEADER,
                                skip_keys=['charges'])
 
+    writer = tf.summary.create_file_writer(summary_dir)
     ckpt = tf.train.Checkpoint(dynamics=dynamics,
                                optimizer=dynamics.optimizer)
     manager = tf.train.CheckpointManager(
@@ -226,7 +241,7 @@ def setup_training(dynamics, flags, train_dir=None, x=None, betas=None):
         io.log('\n'.join(['WARNING:No existing checkpoints found.',
                           'Starting from scratch.']), rank=rank)
 
-    train_steps = tf.range(flags.train_steps)
+    train_steps = tf.cast(tf.range(flags.train_steps), dtype=tf.int64)
     if betas is None:
         if flags.beta_init == flags.beta_final:
             betas = tf.convert_to_tensor(
@@ -244,6 +259,7 @@ def setup_training(dynamics, flags, train_dir=None, x=None, betas=None):
         'x': x,
         'betas': betas,
         'steps': steps,
+        'writer': writer,
         'checkpoint': ckpt,
         'manager': manager,
         'data_dir': data_dir,
@@ -269,6 +285,7 @@ def train_dynamics(dynamics, flags, train_dir=None,
     x = setup['x']
     betas = setup['betas']
     steps = setup['steps']
+    writer = setup['writer']
     ckpt = setup['checkpoint']
     manager = setup['manager']
     data_dir = setup['data_dir']
@@ -280,61 +297,12 @@ def train_dynamics(dynamics, flags, train_dir=None,
     else:
         train_step = dynamics.train_step
 
-    '''
-    data_dir = os.path.join(train_dir, 'train_data')
-    ckpt_dir = os.path.join(train_dir, 'checkpoints')
-    history_file = os.path.join(train_dir, 'train_log.txt')
     if is_chief:
-        io.check_else_make_dir([train_dir, ckpt_dir, data_dir])
+        writer.set_as_default()
 
-
-    train_data = DataContainer(flags.train_steps,
-                               skip_keys=['charges'],
-                               header=HEADER)
-    ckpt = tf.train.Checkpoint(dynamics=dynamics,
-                               optimizer=dynamics.optimizer)
-    manager = tf.train.CheckpointManager(
-        ckpt, directory=ckpt_dir, max_to_keep=5
-    )
-    if manager.latest_checkpoint:
-        io.log(f'INFO:Restored from: {manager.latest_checkpoint}', rank=rank)
-        ckpt.restore(manager.latest_checkpoint)
-        train_data.restore(data_dir)
-        current_step = dynamics.optimizer.iterations.numpy()
-    else:
-        current_step = tf.convert_to_tensor(0, dtype=TF_INT)
-        io.log('\n'.join(['WARNING:No existing checkpoints found.',
-                          'Starting from scratch.']), rank=rank)
-
-    train_steps = tf.range(flags.train_steps)
-    if betas is None:
-        if flags.beta_init == flags.beta_final:
-            betas = tf.convert_to_tensor(
-                flags.beta_init * np.ones(flags.train_steps)
-            )
-        else:
-            b_arr = np.linspace(flags.beta_init,
-                                flags.beta_final,
-                                flags.train_steps)
-            betas = tf.cast(b_arr, dtype=TF_FLOAT)
-
-    betas = betas[current_step:]
-    steps = train_steps[current_step:]
-    '''
-
-    # pylint:disable=protected-access
-    #  train_step = tf.function(dynamics.train_step)
-    # , experimental_compile=True)
-    #  train_step = (
-    #      dynamics.train_step if FLAGS.eager_execution,
-    #      else tf.function(dynamics.train_step, experimental_compile=True)
-    #  )
-    #
     io.log(HEADER, rank=rank)
     for step, beta in zip(steps, betas):
-
         start = time.time()
-        #  x, metrics = dynamics.train_step((x, beta), step == 0)
         x, metrics = train_step((x, beta), step == 0)
         metrics.dt = time.time() - start
 
@@ -344,6 +312,8 @@ def train_dynamics(dynamics, flags, train_dir=None,
 
         if flags.save_train_data and step % flags.logging_steps == 0:
             train_data.update(step, metrics)
+            if is_chief:
+                summarize_metrics(metrics, step, prefix='training')
 
         if is_chief and step % flags.save_steps == 0 and ckpt is not None:
             manager.save()
