@@ -12,11 +12,11 @@ import tensorflow as tf
 
 import utils.file_io as io
 
-from config import PI, PROJECT_DIR, TF_FLOAT, TF_INT, HEADER, SEP
-from dynamics.dynamics import Dynamics
+from config import HEADER, PI, PROJECT_DIR, SEP, TF_FLOAT
+from dynamics.gauge_dynamics import GaugeDynamics
 from utils.attr_dict import AttrDict
 from utils.plotting_utils import plot_data
-from utils.training_utils import build_dynamics
+from utils.training_utils import build_dynamics, summarize_metrics
 from utils.data_containers import DataContainer
 
 # pylint:disable=no-member
@@ -52,6 +52,7 @@ except ImportError:
 # pylint:disable=too-many-locals,invalid-name
 
 
+
 def check_if_chief(args):
     """Helper function to determine if we're on `rank == 0`."""
     using_hvd = args.get('horovod', False)
@@ -70,7 +71,7 @@ def run_hmc(
         args: AttrDict,
         hmc_dir: str = None,
         skip_existing: bool = False,
-) -> (Dynamics, DataContainer):
+) -> (GaugeDynamics, DataContainer):
     """Run HMC using `inference_args` on a model specified by `params`.
 
     NOTE:
@@ -129,7 +130,7 @@ def run_hmc(
 def load_and_run(
         args: AttrDict,
         runs_dir: str = None
-) -> (Dynamics, AttrDict):
+) -> (GaugeDynamics, AttrDict):
     """Load trained model from checkpoint and run inference."""
     if not check_if_chief(args):
         return None, None
@@ -190,8 +191,11 @@ def run(dynamics, args, x=None, runs_dir=None):
     io.check_else_make_dir(runs_dir)
     run_dir = io.make_run_dir(args, runs_dir)
     data_dir = os.path.join(run_dir, 'run_data')
+    summary_dir = os.path.join(run_dir, 'summaries')
     log_file = os.path.join(run_dir, 'run_log.txt')
     io.check_else_make_dir(run_dir, data_dir)
+    writer = tf.summary.create_file_writer(summary_dir)
+    writer.set_as_default()
 
     run_steps = args.get('run_steps', None)
     beta = args.get('beta', None)
@@ -267,7 +271,7 @@ def run_dynamics(dynamics, args, x=None, should_compile=False):
     io.log(f'  net_weights: {dynamics.net_weights}')
     io.log(SEP)
     io.log(HEADER)
-    for step in tf.range(run_steps):
+    for step in tf.cast(tf.range(run_steps), dtype=tf.int64):
         start = time.time()
         x, metrics = test_step((x, beta))
         metrics.dt = time.time() - start
@@ -276,6 +280,7 @@ def run_dynamics(dynamics, args, x=None, should_compile=False):
         if step % print_steps == 0:
             data_str = run_data.get_fstr(step, metrics)
             io.log(data_str)
+            summarize_metrics(metrics, step, prefix='testing')
 
         if step % 100 == 0:
             io.log(HEADER)

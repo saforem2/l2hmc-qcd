@@ -38,14 +38,10 @@ class DataContainer:
             except KeyError:
                 self.data[key] = [tf.convert_to_tensor(val).numpy()]
 
-    def get_fstr(self, step, metrics, rank=0):
+    def get_fstr(self, step, metrics, rank=0, writer=None):
         """Get formatted data string from `data`."""
         if rank != 0:
             return ''
-
-        fstr = (
-            f"{step:>6g}/{self.steps:<6g} "
-        )
 
         fstr = f"{step:>6g}/{self.steps:<6g} "
         if self.skip_keys is not None:
@@ -54,24 +50,6 @@ class DataContainer:
                 if k not in self.skip_keys
             }
         fstr += ' '.join([f'{v:^11.4g}' for _, v in data.items()])
-
-        #  fstr = " ".join(f'{vals:^11.4g}')
-        #
-        #  fstr = " ".join(f'{tf.reduce_mean(x):^11.4g} ')
-        #
-        #  fstr = (
-        #      f"{step:>6g}/{self.steps:<6g} "
-        #      f"{metrics.dt:^11.4g} "
-        #      f"{metrics.loss:^11.4g} "
-        #      f"{metrics.ploss:^11.4g} "
-        #      f"{metrics.qloss:^11.4g} "
-        #      f"{np.mean(metrics.accept_prob):^11.4g} "
-        #      f"{tf.reduce_mean(metrics.eps):^11.4} "
-        #      f"{tf.reduce_mean(metrics.beta):^11.4g} "
-        #      f"{tf.reduce_mean(metrics.sumlogdet):^11.4g} "
-        #      f"{tf.reduce_mean(metrics.dq):^11.4g} "
-        #      f"{tf.reduce_mean(metrics.plaqs):^11.4g} "
-        #  )
 
         self.data_strs.append(fstr)
         return fstr
