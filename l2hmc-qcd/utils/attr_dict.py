@@ -13,5 +13,7 @@ Date: 04/09/2019
 
 
 class AttrDict(dict):
-    __getattr__ = dict.__getitem__
-    __setattr__ = dict.__setitem__
+    """A dict which is accessible via attribute dot notation."""
+    def __init__(self, *args, **kwargs):
+        super(AttrDict, self).__init__(*args, **kwargs)
+        self.__dict__ = self

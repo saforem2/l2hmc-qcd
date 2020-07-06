@@ -5,9 +5,9 @@ Author: Sam Foreman (github: @saforem2)
 Date: 04/09/2019
 """
 from __future__ import absolute_import, division, print_function
-import os
 import sys
 import argparse
+import json
 import shlex
 
 import utils.file_io as io
@@ -384,76 +384,6 @@ def parse_args():
                               their entries equal to zero and half equal to
                               one."""))
 
-    '''
-    parser.add_argument('--x_scale_weight',
-                        dest='x_scale_weight',
-                        type=float,
-                        default=1,
-                        required=False,
-                        help=("""Specify the value of the `scale_weight`
-                              parameter, a multiplicative weight that scales
-                              the contribution of the `scale` (S) function when
-                              performing the augmented L2HMC molecular dynamics
-                              update."""))
-
-    parser.add_argument('--x_translation_weight',
-                        dest='x_translation_weight',
-                        type=float,
-                        default=1,
-                        required=False,
-                        help=("""Specify the value of the `translation_weight`
-                              parameter, a multiplicative weight that scales
-                              the contribution of the `translation` (T)
-                              function when performing the augmented L2HMC
-                              molecular dynamics update."""))
-
-    parser.add_argument('--x_transformation_weight',
-                        dest='x_transformation_weight',
-                        type=float,
-                        default=1,
-                        required=False,
-                        help=("""Specify the value of the
-                              `transformation_weight` parameter, a
-                              multiplicative weight that scales the
-                              contribution of the `transformation` (Q) function
-                              when performing the augmented L2HMC molecular
-                              dynamics update."""))
-
-    parser.add_argument('--v_scale_weight',
-                        dest='v_scale_weight',
-                        type=float,
-                        default=1,
-                        required=False,
-                        help=("""Specify the value of the `scale_weight`
-                              parameter, a multiplicative weight that scales
-                              the contribution of the `scale` (S) function when
-                              performing the augmented L2HMC molecular dynamics
-                              update."""))
-
-    parser.add_argument('--v_translation_weight',
-                        dest='v_translation_weight',
-                        type=float,
-                        default=1,
-                        required=False,
-                        help=("""Specify the value of the `translation_weight`
-                              parameter, a multiplicative weight that scales
-                              the contribution of the `translation` (T)
-                              function when performing the augmented L2HMC
-                              molecular dynamics update."""))
-
-    parser.add_argument('--v_transformation_weight',
-                        dest='v_transformation_weight',
-                        type=float,
-                        default=1,
-                        required=False,
-                        help=("""Specify the value of the
-                              `transformation_weight` parameter, a
-                              multiplicative weight that scales the
-                              contribution of the `transformation` (Q) function
-                              when performing the augmented L2HMC molecular
-                              dynamics update."""))
-    '''
-
     parser.add_argument("--profiler",
                         dest='profiler',
                         action="store_true",
@@ -490,14 +420,6 @@ def parse_args():
                         help=("""Flag that when passed uses Horovod for
                               distributed training on multiple nodes."""))
 
-    parser.add_argument("--comet",
-                        dest="comet",
-                        action="store_true",
-                        required=False,
-                        help=("""Flag that when passed uses comet.ml for
-                              parameter logging and additonal metric
-                              tracking/displaying."""))
-
     parser.add_argument('--save_train_data',
                         dest='save_train_data',
                         action='store_true',
@@ -530,35 +452,6 @@ def parse_args():
                         required=False,
                         help=("""Number of steps to train HMC sampler."""))
 
-    parser.add_argument("--resume_training",
-                        dest="resume_training",
-                        action="store_true",
-                        required=False,
-                        help=("""Resume training."""))
-
-    parser.add_argument('--to_restore',
-                        dest='to_restore',
-                        type=lambda s: [str(i) for i in s.split(',')],
-                        default='',
-                        #  default="x,eps,beta,lr",
-                        required=False,
-                        help=("""List of variable names to restore if restoring
-                              from previous training run.
-                              Possible values: ['x', 'beta', 'eps', 'lr']."""))
-
-    parser.add_argument("--theta",
-                        dest="theta",
-                        action="store_true",
-                        required=False,
-                        help=("""Flag that when passed indicates we're training
-                              on theta @ ALCf."""))
-
-    parser.add_argument('--root_dir',
-                        dest='root_dir',
-                        default='gauge_logs',
-                        required=False,
-                        help=("""Root directory in which to store data."""))
-
     parser.add_argument("--log_dir",
                         dest="log_dir",
                         type=str,
@@ -568,22 +461,6 @@ def parse_args():
                               If this argument is not passed, a new
                               directory will be created."""))
 
-    parser.add_argument("--num_intra_threads",
-                        dest="num_intra_threads",
-                        type=int,
-                        default=0,
-                        required=False,
-                        help=("""Number of intra op threads to use for
-                              tf.ConfigProto.intra_op_parallelism_threads"""))
-
-    parser.add_argument("--num_inter_threads",
-                        dest="num_intra_threads",
-                        type=int,
-                        default=0,
-                        required=False,
-                        help=("""Number of intra op threads to use for
-                              tf.ConfigProto.intra_op_parallelism_threads"""))
-
     parser.add_argument("--float64",
                         dest="float64",
                         action="store_true",
@@ -592,19 +469,25 @@ def parse_args():
                               by settings globals.TF_FLOAT = tf.float64. False
                               by default (use tf.float32)."""))
 
-    parser.add_argument("--restart_beta",
-                        dest="restart_beta",
-                        type=float,
-                        default=-1.,
+    parser.add_argument("--json_file",
+                        dest="json_file",
+                        type=str,
+                        default=None,
                         required=False,
-                        help=("""When restarting training, this will be the new
-                               starting value of beta if `--restart_beta >
-                              0` (Default: -1)."""))
+                        help=("""Path to JSON file containing CLI flags.
+                              Command line options override values in file.
+                              (DEFAULT: None)"""))
 
     if sys.argv[1].startswith('@'):
-        args = parser.parse_args(shlex.split(open(sys.argv[1][1:]).read(),
-                                             comments=True))
+        args = parser.parse_args(
+            shlex.split(open(sys.argv[1][1:]).read(), comments=True)
+        )
     else:
         args = parser.parse_args()
+        if args.json_file is not None:
+            with open(args.json_file, 'rt') as f:
+                t_args = argparse.Namespace()
+                t_args.__dict__.update(json.load(f))
+                args = parser.parse_args(namespace=t_args)
 
     return args

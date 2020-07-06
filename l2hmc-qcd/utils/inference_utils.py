@@ -8,15 +8,14 @@ from __future__ import absolute_import, division, print_function
 import os
 import time
 
-import numpy as np
 import tensorflow as tf
 
 import utils.file_io as io
 
-from config import PI, TF_FLOAT, TF_INT, PROJECT_DIR
+from config import PI, PROJECT_DIR, TF_FLOAT, TF_INT, HEADER, SEP
+from dynamics.dynamics import Dynamics
 from utils.attr_dict import AttrDict
 from utils.plotting_utils import plot_data
-from dynamics.dynamics import Dynamics
 from utils.training_utils import build_dynamics
 from utils.data_containers import DataContainer
 
@@ -51,13 +50,6 @@ except ImportError:
         tf.compat.v1.enable_eager_execution()
 
 # pylint:disable=too-many-locals,invalid-name
-
-NAMES = [
-    'step', 'dt', 'loss', 'px', 'eps', 'beta', 'sumlogdet', 'dQ', 'plaq_err',
-]
-HSTR = ''.join(["{:^12s}".format(name) for name in NAMES])
-SEP = '-' * len(HSTR)
-HEADER = '\n'.join([SEP, HSTR, SEP])
 
 
 def check_if_chief(args):
@@ -106,6 +98,7 @@ def run_hmc(
         'horovod': False,
         'plaq_weight': 10.,
         'charge_weight': 0.1,
+        'separate_networks': False,
     })
 
     if hmc_dir is None:
@@ -124,7 +117,7 @@ def run_hmc(
         run_fstrs = [get_run_fstr(i) for i in run_dirs]
         run_fstr = io.get_run_dir_fstr(args)
         if run_fstr in run_fstrs:
-            io.log(f'Existing run found! Skipping.')
+            io.log(f'WARNING:Existing run found! Skipping.')
             return None, None
 
     dynamics, args = build_dynamics(args)
@@ -158,7 +151,7 @@ def load_and_run(
     manager = tf.train.CheckpointManager(ckpt, max_to_keep=5,
                                          directory=ckpt_dir)
     if manager.latest_checkpoint:
-        io.log(f'Restored model from: {manager.latest_checkpoint}')
+        io.log(f'INFO:Restored model from: {manager.latest_checkpoint}')
         ckpt.restore(manager.latest_checkpoint)
 
     if args.eps is None:
@@ -206,15 +199,15 @@ def run(dynamics, args, x=None, runs_dir=None):
         beta = args.get('beta_final', None)
 
     if x is None:
-        x = tf.random.uniform(shape=dynamics.config.input_shape,
+        x = tf.random.uniform(shape=dynamics.x_shape,
                               minval=-PI, maxval=PI, dtype=TF_FLOAT)
 
     run_data = run_dynamics(dynamics, args, x)
 
     run_data.flush_data_strs(log_file, mode='a')
-    if dynamics.save_run_data:
-        run_data.save_data(data_dir)
     io.save_inference(run_dir, run_data)
+    if args.get('save_run_data', True):
+        run_data.save_data(data_dir)
 
     eps = dynamics.eps
     if hasattr(eps, 'numpy'):
@@ -228,8 +221,8 @@ def run(dynamics, args, x=None, runs_dir=None):
         'charge_weight': dynamics.charge_weight,
         'lattice_shape': dynamics.lattice_shape,
         'num_steps': dynamics.config.num_steps,
-        'net_weights': dynamics.config.net_weights,
-        'input_shape': dynamics.config.input_shape,
+        'net_weights': dynamics.net_weights,
+        'input_shape': dynamics.x_shape,
     }
     run_params.update(dynamics.params)
     io.save_params(run_params, run_dir, name='run_params')
@@ -239,7 +232,7 @@ def run(dynamics, args, x=None, runs_dir=None):
     return dynamics, run_data
 
 
-def run_dynamics(dynamics, args, x=None):
+def run_dynamics(dynamics, args, x=None, should_compile=False):
     """Run inference on trained dynamics."""
     is_chief = check_if_chief(args)
     if not is_chief:
@@ -247,6 +240,7 @@ def run_dynamics(dynamics, args, x=None):
 
     beta = args.get('beta', None)
     run_steps = args.get('run_steps', None)
+    print_steps = args.get('print_steps', 5)
     if beta is None:
         beta = args.get('beta_final', None)
 
@@ -255,25 +249,31 @@ def run_dynamics(dynamics, args, x=None):
                               minval=-PI, maxval=PI)
         x = tf.cast(x, dtype=TF_FLOAT)
 
-    run_data = DataContainer(run_steps, header=HEADER)
+    run_data = DataContainer(run_steps, skip_keys=['charges'], header=HEADER)
 
-    #  eps = model.dynamics.eps
+    if should_compile:
+        test_step = tf.function(dynamics.test_step)
+    else:
+        test_step = dynamics.test_step
+
     eps = dynamics.eps
     if hasattr(eps, 'numpy'):
         eps = eps.numpy()
 
     io.log(SEP)
-    io.log(f'Running inference with:')
+    io.log(f'INFO:Running inference with:')
     io.log(f'  beta: {beta}')
     io.log(f'  dynamics.eps: {eps:.4g}')
-    io.log(f'  net_weights: {dynamics.config.net_weights}')
+    io.log(f'  net_weights: {dynamics.net_weights}')
     io.log(SEP)
     io.log(HEADER)
     for step in tf.range(run_steps):
-        x, metrics = dynamics.test_step(x, beta)
+        start = time.time()
+        x, metrics = test_step((x, beta))
+        metrics.dt = time.time() - start
         run_data.update(step, metrics)
 
-        if step % dynamics.print_steps == 0:
+        if step % print_steps == 0:
             data_str = run_data.get_fstr(step, metrics)
             io.log(data_str)
 

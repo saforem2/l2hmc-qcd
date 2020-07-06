@@ -20,8 +20,11 @@ from utils.attr_dict import AttrDict
 class DataContainer:
     """Base class for dealing with data."""
 
-    def __init__(self, steps, header=None):
+    def __init__(self, steps, header=None, skip_keys=None):
         self.steps = steps
+        if skip_keys is None:
+            skip_keys = ['']
+        self.skip_keys = skip_keys
         self.data_strs = [header]
         self.steps_arr = []
         self.data = AttrDict(defaultdict(list))
@@ -34,26 +37,6 @@ class DataContainer:
                 self.data[key].append(tf.convert_to_tensor(val).numpy())
             except KeyError:
                 self.data[key] = [tf.convert_to_tensor(val).numpy()]
-            #  try:
-            #      self.data[key].append(val.numpy())
-            #  except AttributeError:
-            #      self.data[key].append(tf.convert_to_tensor(val).numpy())
-            #  try:
-            #      self.data[key].append(val.numpy())
-            #  except AttributeError:
-            #      self.data[key].append(val)
-            #  except KeyError:
-            #      self.data[key] = [val.numpy()]
-            #  except AttributeError:
-            #      self.data[key].append(val)
-            #  val = val.numpy()
-            #  except AttributeError:
-            #      continue
-            #
-            #  try:
-            #      self.data[key].append(val)
-            #  except KeyError:
-            #      self.data[key] = [val]
 
     def get_fstr(self, step, metrics, rank=0):
         """Get formatted data string from `data`."""
@@ -62,15 +45,33 @@ class DataContainer:
 
         fstr = (
             f"{step:>6g}/{self.steps:<6g} "
-            f"{metrics.dt:^11.4g} "
-            f"{metrics.loss:^11.4g} "
-            f"{np.mean(metrics.accept_prob):^11.4g} "
-            f"{tf.reduce_mean(metrics.eps):^11.4} "
-            f"{tf.reduce_mean(metrics.beta):^11.4g} "
-            f"{tf.reduce_mean(metrics.sumlogdet):^11.4g} "
-            f"{tf.reduce_mean(metrics.dq):^11.4g} "
-            f"{tf.reduce_mean(metrics.plaqs):^11.4g} "
         )
+
+        fstr = f"{step:>6g}/{self.steps:<6g} "
+        if self.skip_keys is not None:
+            data = {
+                k: tf.reduce_mean(v) for k, v in metrics.items()
+                if k not in self.skip_keys
+            }
+        fstr += ' '.join([f'{v:^11.4g}' for _, v in data.items()])
+
+        #  fstr = " ".join(f'{vals:^11.4g}')
+        #
+        #  fstr = " ".join(f'{tf.reduce_mean(x):^11.4g} ')
+        #
+        #  fstr = (
+        #      f"{step:>6g}/{self.steps:<6g} "
+        #      f"{metrics.dt:^11.4g} "
+        #      f"{metrics.loss:^11.4g} "
+        #      f"{metrics.ploss:^11.4g} "
+        #      f"{metrics.qloss:^11.4g} "
+        #      f"{np.mean(metrics.accept_prob):^11.4g} "
+        #      f"{tf.reduce_mean(metrics.eps):^11.4} "
+        #      f"{tf.reduce_mean(metrics.beta):^11.4g} "
+        #      f"{tf.reduce_mean(metrics.sumlogdet):^11.4g} "
+        #      f"{tf.reduce_mean(metrics.dq):^11.4g} "
+        #      f"{tf.reduce_mean(metrics.plaqs):^11.4g} "
+        #  )
 
         self.data_strs.append(fstr)
         return fstr
@@ -112,8 +113,3 @@ class DataContainer:
                     f.write(f'{s}\n')
 
         self.data_strs = []
-
-
-class TrainData(DataContainer):
-    """Implements a container for dealing with training data."""
-

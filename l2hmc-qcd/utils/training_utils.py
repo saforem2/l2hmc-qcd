@@ -7,24 +7,22 @@ from __future__ import absolute_import, division, print_function
 
 import os
 import time
+import utils.file_io as io
+from utils.attr_dict import AttrDict
+from utils.plotting_utils import plot_data
 
-import numpy as np
 import tensorflow as tf
+import numpy as np
 if tf.__version__.startswith('1.'):
     TF_VERSION = '1.x'
     tf.enable_eager_execution()
 elif tf.__version__.startswith('2.'):
     TF_VERSION = '2.x'
 
-
-import utils.file_io as io
-
-from config import NET_WEIGHTS_HMC, NET_WEIGHTS_L2HMC, PI, TF_FLOAT, TF_INT
-from network import NetworkConfig
-from dynamics import DynamicsConfig
-from dynamics.dynamics import Dynamics
-from utils.attr_dict import AttrDict
-from utils.plotting_utils import plot_data
+from config import (NET_WEIGHTS_HMC, NET_WEIGHTS_L2HMC, PI, TF_FLOAT, TF_INT,
+                    DynamicsConfig, NetworkConfig, HEADER)
+from dynamics.gauge_dynamics import GaugeDynamics
+#  from dynamics.dynamics import Dynamics
 from utils.data_containers import DataContainer
 
 # pylint:disable=no-member
@@ -51,14 +49,6 @@ try:
 except ImportError:
     if TF_VERSION == '1.x':
         tf.compat.v1.enable_eager_execution()
-
-
-NAMES = [
-    'STEP', 'dt', 'LOSS', 'px', 'eps', 'BETA', 'sumlogdet', 'dQ', 'plaq_err',
-]
-HSTR = ''.join(["{:^12s}".format(name) for name in NAMES])
-SEP = '-' * len(HSTR)
-HEADER = '\n'.join([SEP, HSTR, SEP])
 
 
 # pylint:disable=invalid-name, redefined-outer-name
@@ -96,12 +86,11 @@ def build_dynamics(FLAGS):
         hmc=FLAGS.hmc,
         num_steps=FLAGS.num_steps,
         model_type='GaugeModel',
-        net_weights=net_weights,
-        input_shape=input_shape,
         eps_trainable=not FLAGS.eps_fixed,
+        separate_networks=FLAGS.separate_networks,
     )
 
-    dynamics = Dynamics(FLAGS, config, net_config)
+    dynamics = GaugeDynamics(FLAGS, config, net_config)
 
     return dynamics, FLAGS
 
@@ -131,16 +120,16 @@ def train(FLAGS, log_file=None):
     else:
         x = None
 
-    io.log(f'Building model...', rank=rank)
+    io.log(f'INFO:Building model...', rank=rank)
     dynamics, FLAGS = build_dynamics(FLAGS)
 
-    io.log(f'Training model!', rank=rank)
-    x, train_data = train_dynamics(dynamics, train_dir=train_dir, x=x)
+    io.log(f'INFO:Training model!', rank=rank)
+    x, train_data = train_dynamics(dynamics, FLAGS, train_dir=train_dir, x=x)
 
     if is_chief:
         if not dynamics.config.hmc:
             io.save_network_weights(dynamics, train_dir, rank=rank)
-        if dynamics.save_train_data:
+        if FLAGS.save_train_data:
             output_dir = os.path.join(train_dir, 'outputs')
             train_data.save_data(output_dir)
 
@@ -150,12 +139,12 @@ def train(FLAGS, log_file=None):
             'eps': dynamics.eps.numpy(),
             'lattice_shape': dynamics.lattice_shape,
             'num_steps': dynamics.config.num_steps,
-            'net_weights': dynamics.config.net_weights,
+            'net_weights': dynamics.net_weights,
         }
         plot_data(train_data, train_dir, FLAGS,
                   thermalize=True, params=params)
 
-    io.log('\n'.join(['Done training model', 80 * '=']), rank=rank)
+    io.log('\n'.join(['INFO:Done training model', 80 * '=']), rank=rank)
 
     return x, dynamics, train_data, FLAGS
 
@@ -178,9 +167,9 @@ def train_hmc(FLAGS):
     train_dir = os.path.join(HFLAGS.log_dir, 'training_hmc')
 
     dynamics, HFLAGS = build_dynamics(HFLAGS)
-    x, train_data = train_dynamics(dynamics, train_dir)
+    x, train_data = train_dynamics(dynamics, HFLAGS, train_dir)
     if is_chief:
-        if dynamics.save_train_data:
+        if HFLAGS.save_train_data:
             output_dir = os.path.join(train_dir, 'outputs')
             io.check_else_make_dir(output_dir)
             train_data.save_data(output_dir)
@@ -191,7 +180,7 @@ def train_hmc(FLAGS):
             'beta_init': HFLAGS.beta_init,
             'beta_final': HFLAGS.beta_final,
             'lattice_shape': dynamics.lattice_shape,
-            'net_weights': dynamics.config.net_weights,
+            'net_weights': NET_WEIGHTS_HMC,
         }
         plot_data(train_data, train_dir, HFLAGS,
                   thermalize=True, params=params)
@@ -201,15 +190,12 @@ def train_hmc(FLAGS):
     return x, train_data, dynamics.eps.numpy()
 
 
-# pylint:disable=too-many-locals
-def train_dynamics(dynamics, train_dir=None, x=None):
-    """Train model."""
+def setup_training(dynamics, flags, train_dir=None, x=None, betas=None):
     is_chief = (
         hvd.rank() == 0 if dynamics.using_hvd
         else not dynamics.using_hvd
     )
     rank = hvd.rank() if dynamics.using_hvd else 0
-
     data_dir = os.path.join(train_dir, 'train_data')
     ckpt_dir = os.path.join(train_dir, 'checkpoints')
     history_file = os.path.join(train_dir, 'train_log.txt')
@@ -217,50 +203,151 @@ def train_dynamics(dynamics, train_dir=None, x=None):
         io.check_else_make_dir([train_dir, ckpt_dir, data_dir])
 
     if x is None:
-        x = tf.random.uniform(shape=dynamics.config.input_shape,
-                              minval=-PI, maxval=PI)
+        x = tf.random.uniform(shape=dynamics.x_shape, minval=-PI, maxval=PI)
         x = tf.cast(x, dtype=TF_FLOAT)
 
-    train_data = DataContainer(dynamics.train_steps, header=HEADER)
+    train_data = DataContainer(flags.train_steps,
+                               header=HEADER,
+                               skip_keys=['charges'])
+
+    ckpt = tf.train.Checkpoint(dynamics=dynamics,
+                               optimizer=dynamics.optimizer)
+    manager = tf.train.CheckpointManager(
+        ckpt, directory=ckpt_dir, max_to_keep=5
+    )
+
+    if manager.latest_checkpoint:
+        io.log(f'INFO:Restored from: {manager.latest_checkpoint}', rank=rank)
+        ckpt.restore(manager.latest_checkpoint)
+        train_data.restore(data_dir)
+        current_step = dynamics.optimizer.iterations.numpy()
+    else:
+        current_step = tf.convert_to_tensor(0, dtype=TF_INT)
+        io.log('\n'.join(['WARNING:No existing checkpoints found.',
+                          'Starting from scratch.']), rank=rank)
+
+    train_steps = tf.range(flags.train_steps)
+    if betas is None:
+        if flags.beta_init == flags.beta_final:
+            betas = tf.convert_to_tensor(
+                flags.beta_init * np.ones(flags.train_steps)
+            )
+        else:
+            b_arr = np.linspace(flags.beta_init,
+                                flags.beta_final,
+                                flags.train_steps)
+            betas = tf.cast(b_arr, dtype=TF_FLOAT)
+
+    betas = betas[current_step:]
+    steps = train_steps[current_step:]
+    outputs = {
+        'x': x,
+        'betas': betas,
+        'steps': steps,
+        'checkpoint': ckpt,
+        'manager': manager,
+        'data_dir': data_dir,
+        'train_data': train_data,
+        'history_file': history_file,
+    }
+
+    return outputs
+
+
+# pylint:disable=too-many-locals
+def train_dynamics(dynamics, flags, train_dir=None,
+                   x=None, betas=None, should_compile=False):
+    """Train model."""
+    is_chief = (
+        hvd.rank() == 0 if dynamics.using_hvd
+        else not dynamics.using_hvd
+    )
+    rank = hvd.rank() if dynamics.using_hvd else 0
+
+    setup = setup_training(dynamics, flags, train_dir, x, betas)
+
+    x = setup['x']
+    betas = setup['betas']
+    steps = setup['steps']
+    ckpt = setup['checkpoint']
+    manager = setup['manager']
+    data_dir = setup['data_dir']
+    train_data = setup['train_data']
+    history_file = setup['history_file']
+
+    if should_compile:
+        train_step = tf.function(dynamics.train_step)
+    else:
+        train_step = dynamics.train_step
+
+    '''
+    data_dir = os.path.join(train_dir, 'train_data')
+    ckpt_dir = os.path.join(train_dir, 'checkpoints')
+    history_file = os.path.join(train_dir, 'train_log.txt')
+    if is_chief:
+        io.check_else_make_dir([train_dir, ckpt_dir, data_dir])
+
+
+    train_data = DataContainer(flags.train_steps,
+                               skip_keys=['charges'],
+                               header=HEADER)
     ckpt = tf.train.Checkpoint(dynamics=dynamics,
                                optimizer=dynamics.optimizer)
     manager = tf.train.CheckpointManager(
         ckpt, directory=ckpt_dir, max_to_keep=5
     )
     if manager.latest_checkpoint:
-        io.log(f'Restored from: {manager.latest_checkpoint}', rank=rank)
+        io.log(f'INFO:Restored from: {manager.latest_checkpoint}', rank=rank)
         ckpt.restore(manager.latest_checkpoint)
         train_data.restore(data_dir)
         current_step = dynamics.optimizer.iterations.numpy()
     else:
         current_step = tf.convert_to_tensor(0, dtype=TF_INT)
-        io.log('\n'.join(['No existing checkpoints found.',
+        io.log('\n'.join(['WARNING:No existing checkpoints found.',
                           'Starting from scratch.']), rank=rank)
 
-    train_steps = tf.range(dynamics.train_steps)
-    betas = tf.convert_to_tensor(dynamics.betas[current_step:])
+    train_steps = tf.range(flags.train_steps)
+    if betas is None:
+        if flags.beta_init == flags.beta_final:
+            betas = tf.convert_to_tensor(
+                flags.beta_init * np.ones(flags.train_steps)
+            )
+        else:
+            b_arr = np.linspace(flags.beta_init,
+                                flags.beta_final,
+                                flags.train_steps)
+            betas = tf.cast(b_arr, dtype=TF_FLOAT)
+
+    betas = betas[current_step:]
     steps = train_steps[current_step:]
+    '''
 
-    train_step = (
-        dynamics.train_step if not dynamics._should_compile
-        else tf.function(dynamics.train_step, experimental_compile=True)
-    )
-
+    # pylint:disable=protected-access
+    #  train_step = tf.function(dynamics.train_step)
+    # , experimental_compile=True)
+    #  train_step = (
+    #      dynamics.train_step if FLAGS.eager_execution,
+    #      else tf.function(dynamics.train_step, experimental_compile=True)
+    #  )
+    #
     io.log(HEADER, rank=rank)
     for step, beta in zip(steps, betas):
 
-        x, metrics = train_step(x, beta)
+        start = time.time()
+        #  x, metrics = dynamics.train_step((x, beta), step == 0)
+        x, metrics = train_step((x, beta), step == 0)
+        metrics.dt = time.time() - start
 
-        if step % dynamics.print_steps == 0:
+        if step % flags.print_steps == 0:
             data_str = train_data.get_fstr(step, metrics, rank=rank)
             io.log(data_str, rank=rank)
 
-        if dynamics.save_train_data and step % dynamics.logging_steps == 0:
+        if flags.save_train_data and step % flags.logging_steps == 0:
             train_data.update(step, metrics)
 
-        if is_chief and step % dynamics.save_steps == 0 and ckpt is not None:
+        if is_chief and step % flags.save_steps == 0 and ckpt is not None:
             manager.save()
-            io.log(f'Checkpoint saved to: {manager.latest_checkpoint}')
+            io.log(f'INFO:Checkpoint saved to: {manager.latest_checkpoint}')
             train_data.save_data(data_dir)
             train_data.flush_data_strs(history_file, rank=rank, mode='a')
 
