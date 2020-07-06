@@ -16,11 +16,11 @@ from __future__ import print_function
 from collections import namedtuple
 
 import tensorflow as tf
+import numpy as np
 
 import utils.file_io as io
 
-from config import Weights
-from network import QCOEFF, QNAME, SCOEFF, SNAME, TNAME
+from config import Weights, QCOEFF, QNAME, SCOEFF, SNAME, TNAME
 from .layers import (dense_layer, DenseLayerNP, relu,
                      ScaledTanhLayer, ScaledTanhLayerNP,
                      StackedLayer, StackedLayerNP)
@@ -35,6 +35,14 @@ def _get_layer_weights(layer):
     """Get an individual layers' weights."""
     w, b = layer.weights
     return Weights(w=w.numpy(), b=b.numpy())
+
+
+def convert_to_image(x):
+    """Create image from lattice by doubling the size."""
+    y = np.zeros((2 * x.shape[0], 2 * x.shape[1]))
+    y[::2, 1::2] = x[:, :, 0]
+    y[1::2, ::2] = x[:, :, 1]
+    return y
 
 
 def get_layer_weights(net):
