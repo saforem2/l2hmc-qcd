@@ -335,7 +335,7 @@ def save_network_weights(dynamics, train_dir, rank=0):
     vnets = dynamics.vnets
     wdir = os.path.join(train_dir, 'dynamics_weights')
     check_else_make_dir(wdir)
-    if dynamics.separate_networks:
+    if dynamics.config.separate_networks:
         iterable = enumerate(zip(xnets, vnets))
         xnet_weights = {}
         vnet_weights = {}
