@@ -1,32 +1,91 @@
-from __future__ import division
-from __future__ import absolute_import
-from __future__ import print_function
+"""
+config.py
+"""
+from __future__ import absolute_import, division, print_function
 
 import os
 
-import tensorflow as tf
-import numpy as np
-
 from collections import namedtuple
+
+import numpy as np
+import tensorflow as tf
+
 from utils.attr_dict import AttrDict
+
+__author__ = 'Sam Foreman'
+__date__ = '07/03/2020'
+
+# pylint:disable=invalid-name
+
+
+SNAME = 'scale_layer'
+TNAME = 'translation_layer'
+QNAME = 'transformation_layer'
+SCOEFF = 'coeff_scale'
+QCOEFF = 'coeff_transformation'
 
 # ----------------------------------------------------------------
 # Included below is a catch-all for various structures
-# (namedtuples) that are used project wide in various locations.
 # ----------------------------------------------------------------
 DynamicsConfig = namedtuple('DynamicsConfig', [
-    'num_steps', 'eps', 'input_shape', 'hmc',
-    'eps_trainable', 'net_weights',
+    'eps',
+    'hmc',
+    'num_steps',
     'model_type',
+    'eps_trainable',
+    'separate_networks',
 ])
+
+NetworkConfig = namedtuple('NetworkConfig', [
+    'type',
+    'units',
+    'dropout_prob',
+    'activation_fn'
+])
+
+NAMES = [
+    'step', 'dt', 'loss', 'ploss', 'qloss',
+    'px', 'eps', 'beta', 'sumlogdet', '|dq|', 'plaq_err',
+]
+HSTR = ''.join(["{:^12s}".format(name) for name in NAMES])
+SEP = '-' * len(HSTR)
+HEADER = '\n'.join([SEP, HSTR, SEP])
+
+#  DynamicsConfig = {
+#      'eps': None,
+#      'hmc': False,
+#      'num_steps': None,
+#      'model_type': None,
+#      'input_shape': None,
+#      'eps_trainable': True,
+#      'separate_networks': False,
+#  }
+#
+#  NetConfig = AttrDict({
+#      'type': None,
+#      'units': None,
+#      'dropout_prob': 0.,
+#      'activation_fn': tf.nn.relu,
+#  })
+
+#  DynamicsConfig = namedtuple('DynamicsConfig', [
+#      'eps',
+#      'hmc',
+#      'num_steps',
+#      'model_type',
+#      'input_shape',
+#      'net_weights',
+#      'eps_trainable',
+#  ])
+
 
 # State is an object for grouping the position/momentum
 # configurations together with the value of `beta`.
 State = namedtuple('State', ['x', 'v', 'beta'])
-MonteCarloStates = namedtuple('MonteCarloStates', ['init', 'proposed', 'out'])
-LFdata = namedtuple('LFdata', ['init', 'proposed', 'prob'])
+lfData = namedtuple('LFdata', ['init', 'proposed', 'prob'])
 EnergyData = namedtuple('EnergyData', ['init', 'proposed', 'out'])
 Energy = namedtuple('Energy', ['potential', 'kinetic', 'hamiltonian'])
+MonteCarloStates = namedtuple('MonteCarloStates', ['init', 'proposed', 'out'])
 
 # generic object for representing a `weight` matrix in the neural net
 # contains both the weight matrix and the bias term
@@ -93,10 +152,10 @@ DEFAULT_FLAGS = AttrDict({
     'hmc_steps': 20,
     'dropout_prob': 0.1,
     'warmup_lr': True,
-    'lr_init': 0.0001,
-    'lr_decay_steps': 10,
+    'lr_init': 0.001,
+    'lr_decay_steps': 1000,
     'lr_decay_rate': 0.96,
-    'plaq_weight': 0.1,
+    'plaq_weight': 10.,
     'charge_weight': 0.1,
     'network_type': 'GaugeNetwork',
     'units': [512, 256, 256, 256, 512],
@@ -131,30 +190,21 @@ RUN_HEADER = dash0 + '\n' + header + '\n' + dash1
 
 try:
     import memory_profiler  # noqa: F401
+
     HAS_MEMORY_PROFILER = True
 except ImportError:
     HAS_MEMORY_PROFILER = False
 
 try:
     import matplotlib.pyplot as plt  # noqa: F401
+
     HAS_MATPLOTLIB = True
 except ImportError:
     HAS_MATPLOTLIB = False
 
-#  try:
-#      import horovod.tensorflow as hvd  # noqa: F401
-#      HAS_HOROVOD = True
-#  except ImportError:
-#      HAS_HOROVOD = False
-#
 try:
     import psutil  # noqa: F401
+
     HAS_PSUTIL = True
 except ImportError:
     HAS_PSUTIL = False
-
-try:
-    from comet_ml import Experiment  # noqa: F401
-    HAS_COMET = True
-except ImportError:
-    HAS_COMET = False
