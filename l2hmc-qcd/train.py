@@ -31,4 +31,3 @@ if __name__ == '__main__':
     FLAGS = AttrDict(FLAGS.__dict__)
     LOG_FILE = os.path.join(os.getcwd(), 'log_dirs.txt')
     _ = main(FLAGS, LOG_FILE)
-

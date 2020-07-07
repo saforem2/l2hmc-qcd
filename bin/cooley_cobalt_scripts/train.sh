@@ -13,7 +13,7 @@ date
 
 # Here I use the nodefile to determine the number of nodes,
 # and multiply by 2 to put one rank on each GPU
-NODES=`cat $COBALT_NODEFILE | wc -l`
+NODES=$(cat $COBALT_NODEFILE | wc -l)
 let PROCS=$((NODES*2))
 
 

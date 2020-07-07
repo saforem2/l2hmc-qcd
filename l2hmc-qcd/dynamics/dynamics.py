@@ -598,12 +598,9 @@ class BaseDynamics(tf.keras.Model):
             lr_config = self.lr_config
 
         if lr_config.warmup_steps > 0:
-            name = 'WarmupExponentialDecay'
-            return WarmupExponentialDecay(lr_config.init,
-                                          lr_config.decay_steps,
-                                          lr_config.decay_rate,
-                                          lr_config.warmup_steps,
-                                          staircase=True, name=name)
+            return WarmupExponentialDecay(lr_config, staircase=True,
+                                          name='WarmupExponentialDecay')
+
         return tf.keras.optimizers.schedules.ExponentialDecay(
             lr_config.init,
             decay_steps=lr_config.decay_steps,
