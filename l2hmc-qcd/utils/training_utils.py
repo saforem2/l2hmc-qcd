@@ -29,20 +29,19 @@ try:
     hvd.init()
     if hvd.rank() == 0:
         io.log(f'Number of devices: {hvd.size()}')
-    if tf.__version__.startswith('2.'):
-        GPUS = tf.config.experimental.list_physical_devices('GPU')
-        for gpu in GPUS:
-            tf.config.experimental.set_memory_growth(gpu, True)
-        if GPUS:
-            tf.config.experimental.set_visible_devices(
-                GPUS[hvd.local_rank()], 'GPU'
-            )
-    elif tf.__version__.startswith('1.'):
-        tf.enable_eager_execution()
-        CONFIG = tf.compat.v1.ConfigProto()
-        CONFIG.gpu_options.allow_growth = True
-        CONFIG.gpu_options.visible_device_list = str(hvd.local_rank())
-        tf.compat.v1.enable_eager_execution(config=CONFIG)
+    GPUS = tf.config.experimental.list_physical_devices('GPU')
+    for gpu in GPUS:
+        tf.config.experimental.set_memory_growth(gpu, True)
+    if GPUS:
+        tf.config.experimental.set_visible_devices(
+            GPUS[hvd.local_rank()], 'GPU'
+        )
+    #  elif tf.__version__.startswith('1.'):
+    #      tf.enable_eager_execution()
+    #      CONFIG = tf.compat.v1.ConfigProto()
+    #      CONFIG.gpu_options.allow_growth = True
+    #      CONFIG.gpu_options.visible_device_list = str(hvd.local_rank())
+    #      tf.compat.v1.enable_eager_execution(config=CONFIG)
 
 except ImportError:
     pass
@@ -136,7 +135,7 @@ def restore_flags(flags, train_dir):
     return flags
 
 
-def setup_directories(flags, rank, train_dir_name='training'):
+def setup_directories(flags, rank, is_chief, train_dir_name='training'):
     """Setup relevant directories for training."""
     train_dir = os.path.join(flags.log_dir, train_dir_name)
     train_paths = AttrDict({
@@ -148,7 +147,7 @@ def setup_directories(flags, rank, train_dir_name='training'):
         'history_file': os.path.join(train_dir, 'train_log.txt')
     })
 
-    if rank == 0:
+    if is_chief:
         io.check_else_make_dir(
             [d for k, d in train_paths.items() if 'file' not in k],
             rank=rank
@@ -170,7 +169,7 @@ def train(flags, log_file=None):
         flags = restore_flags(flags, os.path.join(flags.log_dir, 'training'))
         flags.restore = True
 
-    train_dirs = setup_directories(flags, rank)
+    train_dirs = setup_directories(flags, rank, is_chief)
 
     x = None
     if flags.hmc_start and flags.hmc_steps > 0 and not flags.restore:
@@ -221,7 +220,7 @@ def train_hmc(flags):
     hmc_flags.fixed_beta = True
     hmc_flags.no_summaries = True
 
-    train_dirs = setup_directories(hmc_flags, rank,
+    train_dirs = setup_directories(hmc_flags, rank, is_chief,
                                    train_dir_name='training_hmc')
 
     dynamics = build_dynamics(hmc_flags)
@@ -361,10 +360,9 @@ def train_dynamics(dynamics, flags, dirs=None,
                 flags.train_steps, flags.beta_init, flags.beta_final
             )
 
-    if not dynamics.config.separate_networks:
+    if flags.compile:
         io.log(f'INFO:Compiling `dynamics.train_step` using `tf.function`.')
-        train_step = tf.function(dynamics.train_step,
-                                 experimental_compile=True)
+        train_step = tf.function(dynamics.train_step)
     else:
         io.log(f'INFO:Running `dynamics.train_step` imperatively.')
         train_step = dynamics.train_step
