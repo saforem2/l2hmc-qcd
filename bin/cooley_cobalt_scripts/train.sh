@@ -13,8 +13,10 @@ date
 
 # Here I use the nodefile to determine the number of nodes,
 # and multiply by 2 to put one rank on each GPU
-NODES=$(cat $COBALT_NODEFILE | wc -l)
-let PROCS=$((NODES*2))
+# NODES=$(cat $COBALT_NODEFILE | wc -l)
+# let PROCS=$((NODES*2))
+NODES=$( < $COBALT_NODEFILE wc -l )
+(( PROCS=$((NODES*2)) ))
 
 
 export AUTOGRAPH_VERBOSITY=10
