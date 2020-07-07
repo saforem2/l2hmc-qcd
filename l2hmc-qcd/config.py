@@ -43,6 +43,13 @@ NetworkConfig = namedtuple('NetworkConfig', [
     'activation_fn'
 ])
 
+lrConfig = namedtuple('lrConfig', [
+    'init',
+    'decay_steps',
+    'decay_rate',
+    'warmup_steps',
+])
+
 NAMES = [
     'step', 'dt', 'loss', 'ploss', 'qloss',
     'px', 'eps', 'beta', 'sumlogdet', '|dq|', 'plaq_err',
@@ -127,39 +134,37 @@ TEST_LOGS_DIR = os.path.join(BASE_DIR, 'test_logs')
 
 DEFAULT_FLAGS = AttrDict({
     'log_dir': None,
-    'eager_execution': True,
+    'eager_execution': False,
     'restore': False,
     'inference': True,
-    'run_steps': 50,
+    'run_steps': 500,
     'save_train_data': True,
     'horovod': False,
     'rand': True,
     'eps': 0.1,
     'num_steps': 2,
-    'batch_size': 64,
-    'time_size': 16,
-    'space_size': 16,
-    'dim': 2,
     'hmc': False,
     'eps_fixed': False,
-    'beta_init': 3.,
+    'beta_init': 1.,
     'beta_final': 3.,
     'train_steps': 50,
     'save_steps': 5,
     'print_steps': 1,
     'logging_steps': 1,
     'hmc_start': True,
-    'hmc_steps': 20,
+    'hmc_steps': 50,
     'dropout_prob': 0.1,
     'warmup_lr': True,
+    'warmup_steps': 10,
     'lr_init': 0.001,
     'lr_decay_steps': 1000,
     'lr_decay_rate': 0.96,
     'plaq_weight': 10.,
     'charge_weight': 0.1,
-    'network_type': 'GaugeNetwork',
-    'units': [512, 256, 256, 256, 512],
     'separate_networks': False,
+    'network_type': 'GaugeNetwork',
+    'lattice_shape': [128, 16, 16, 2],
+    'units': [512, 256, 256, 256, 512],
 })
 
 
