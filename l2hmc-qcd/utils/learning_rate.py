@@ -103,7 +103,7 @@ class WarmupExponentialDecay(LearningRateSchedule):
     def __call__(self, step):
         with tf.name_scope(self.name or 'WarmupExponentialDecay') as name:
             initial_learning_rate = ops.convert_to_tensor_v2(
-                self.lr_init, name='initial_learning_rate'
+                self.lr_config.init, name='initial_learning_rate'
             )
             dtype = initial_learning_rate.dtype
             decay_steps = tf.cast(self.lr_config.decay_steps, dtype)
@@ -130,10 +130,10 @@ class WarmupExponentialDecay(LearningRateSchedule):
     def get_config(self):
         """Return config for serialization."""
         return {
-            'initial_learning_rate': self.lr_init,
-            'decay_steps': self.decay_steps,
-            'decay_rate': self.decay_rate,
+            'name': self.name,
             'staircase': self.staircase,
-            'warmup_steps': self.warmup_steps,
-            'name': self.name
+            'decay_rate': self.lr_config.decay_rate,
+            'decay_steps': self.lr_config.decay_steps,
+            'warmup_steps': self.lr_config.warmup_steps,
+            'initial_learning_rate': self.lr_config.init,
         }
