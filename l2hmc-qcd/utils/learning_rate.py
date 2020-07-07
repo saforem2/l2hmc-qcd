@@ -21,7 +21,7 @@ from config import lrConfig
 
 # pylint:disable=too-many-arguments
 # pylint:disable=too-few-public-methods
-# pylint:too-many-instance-attributes
+# pylint:disable=too-many-instance-attributes
 class ReduceLROnPlateau(LearningRateSchedule):
     """A lr schedule that automatically reduces when loss stagnates."""
     def __init__(
