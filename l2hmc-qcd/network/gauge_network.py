@@ -9,36 +9,44 @@ Date: 04/11/2020
 """
 # pylint: disable=invalid-name, too-many-instance-attributes
 # pylint: disable=too-many-arguments, too-few-public-methods
-from __future__ import absolute_import, division, print_function
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
 
-from typing import Callable, Dict, List, NoReturn, Optional, Union
 from collections import namedtuple
 
 import tensorflow as tf
+import numpy as np
 
 import utils.file_io as io
 
-from config import Weights
-from network import QCOEFF, QNAME, SCOEFF, SNAME, TNAME
+from config import Weights, QCOEFF, QNAME, SCOEFF, SNAME, TNAME
 from .layers import (dense_layer, DenseLayerNP, relu,
                      ScaledTanhLayer, ScaledTanhLayerNP,
                      StackedLayer, StackedLayerNP)
+
 
 NetworkConfig = namedtuple('NetworkConfig', [
     'type', 'units', 'dropout_prob', 'activation_fn'
 ])
 
-StepNetworkConfig = namedtuple('StepNetworkConfig', [
-    'num_steps', 'type', 'units', 'dropout_prob', 'activation_fn'
-])
-
 
 def _get_layer_weights(layer):
+    """Get an individual layers' weights."""
     w, b = layer.weights
     return Weights(w=w.numpy(), b=b.numpy())
 
 
+def convert_to_image(x):
+    """Create image from lattice by doubling the size."""
+    y = np.zeros((2 * x.shape[0], 2 * x.shape[1]))
+    y[::2, 1::2] = x[:, :, 0]
+    y[1::2, ::2] = x[:, :, 1]
+    return y
+
+
 def get_layer_weights(net):
+    """Helper method for extracting layer weights."""
     wdict = {
         'x_layer': _get_layer_weights(net.xlayer.layer),
         'v_layer': _get_layer_weights(net.vlayer.layer),
@@ -67,37 +75,21 @@ def get_layer_weights(net):
 
 
 def save_layer_weights(net, out_file):
+    """Save all layer weights from `net` to `out_file`."""
     weights_dict = get_layer_weights(net)
     io.savez(weights_dict, out_file, name=net.name)
-
-
-class StepGaugeNetwork(tf.keras.Model):
-    """GaugeNetwork object with separate networks for each leapfrog step."""
-
-    def __init__(self,
-                 config: StepNetworkConfig,
-                 xdim: int,
-                 factor: float = 1.,
-                 net_seeds: Optional[Dict] = None,
-                 name: str = 'StepGaugeNetwork',
-                 kwargs: Optional[Dict] = None) -> NoReturn:
-        """Initialization method."""
-        super(StepGaugeNetwork, self).__init__(name=name, **kwargs)
-        self._config = config
-        self.factor = factor
-        self.xdim = xdim
-        self.activation = config.activation
 
 
 class GaugeNetwork(tf.keras.layers.Layer):
     """GaugeNetwork. Implements stacked Cartesian repr. of `GenericNet`."""
 
     def __init__(self,
-                 config: StepNetworkConfig,
+                 config: NetworkConfig,
                  xdim: int,
                  factor: float = 1.,
-                 net_seeds: Optional[Dict] = None,
-                 name: str = 'GaugeNetwork') -> NoReturn:
+                 net_seeds: dict = None,
+                 zero_init: bool = False,
+                 name: str = 'GaugeNetwork') -> None:
         """Initialization method.
 
         Args:
@@ -113,31 +105,31 @@ class GaugeNetwork(tf.keras.layers.Layer):
         """
         super(GaugeNetwork, self).__init__(name=name)
 
-        self._config = config
-        self.factor = factor
         self.xdim = xdim
+        self.factor = factor
+        self._config = config
         self.activation = config.activation_fn
         with tf.name_scope(name):
             if config.dropout_prob > 0:
                 self.dropout = tf.keras.layers.Dropout(config.dropout_prob)
 
             self.x_layer = StackedLayer(name='x_layer',
-                                        zero_init=True,
                                         factor=factor/3.,
+                                        zero_init=zero_init,
                                         units=config.units[0],
-                                        seed=net_seeds['x_layer'],
-                                        input_shape=(2 * xdim,))
+                                        input_shape=(2 * xdim,),
+                                        seed=net_seeds['x_layer'])
 
             self.v_layer = StackedLayer(name='v_layer',
                                         factor=1./3.,
-                                        zero_init=True,
+                                        zero_init=False,
                                         units=config.units[0],
-                                        seed=net_seeds['v_layer'],
-                                        input_shape=(2 * xdim,))
+                                        input_shape=(2 * xdim,),
+                                        seed=net_seeds['v_layer'])
 
-            self.t_layer = dense_layer(factor=1./3.,
-                                       name='t_layer',
-                                       zero_init=True,
+            self.t_layer = dense_layer(name='t_layer',
+                                       factor=1./3.,
+                                       zero_init=False,
                                        units=config.units[0],
                                        input_shape=(2 * xdim,),
                                        seed=net_seeds['t_layer'])
@@ -181,7 +173,8 @@ class GaugeNetwork(tf.keras.layers.Layer):
             'transformation_layer': self.transformation_layer,
         }
 
-    def _get_layer_weights(self, layer, sess=None):
+    @staticmethod
+    def _get_layer_weights(layer, sess=None):
         if sess is None or tf.executing_eagerly():
             w, b = layer.weights
             return Weights(w=w.numpy(), b=b.numpy())
@@ -191,13 +184,6 @@ class GaugeNetwork(tf.keras.layers.Layer):
 
     def get_layer_weights(self, sess=None):
         """Get dictionary of layer weights."""
-        #  def _weights(layer):
-        #      if sess is None:
-        #          w, b = layer.weights.numpy()
-        #      else:
-        #          w, b = sess.run(layer.weights)
-        #
-        #      return Weights(w=w, b=b)
         weights_dict = {
             'x_layer': self._get_layer_weights(self.x_layer.layer),
             'v_layer': self._get_layer_weights(self.v_layer.layer),

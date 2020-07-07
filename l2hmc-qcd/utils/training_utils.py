@@ -13,26 +13,23 @@ import tensorflow as tf
 
 import utils.file_io as io
 
-from config import NET_WEIGHTS_HMC, NET_WEIGHTS_L2HMC, PI, TF_FLOAT, TF_INT
-from network import NetworkConfig
-from dynamics import DynamicsConfig
-from models.gauge_model import GaugeModel, HEADER
+from config import (DynamicsConfig, HEADER, lrConfig, NET_WEIGHTS_HMC,
+                    NetworkConfig, PI, TF_FLOAT, TF_INT)
+from dynamics.gauge_dynamics import GaugeDynamics
 from utils.attr_dict import AttrDict
 from utils.plotting_utils import plot_data
 
-# pylint:disable=no-member
-if tf.__version__.startswith('1.'):
-    TF_VERSION = '1.x'
-elif tf.__version__.startswith('2.'):
-    TF_VERSION = '2.x'
+#  from dynamics.dynamics import Dynamics
+from utils.data_containers import DataContainer
 
+# pylint:disable=no-member
 try:
     import horovod.tensorflow as hvd
 
     hvd.init()
     if hvd.rank() == 0:
-        print(f'Number of devices: {hvd.size()}')
-    if TF_VERSION == '2.x':
+        io.log(f'Number of devices: {hvd.size()}')
+    if tf.__version__.startswith('2.'):
         GPUS = tf.config.experimental.list_physical_devices('GPU')
         for gpu in GPUS:
             tf.config.experimental.set_memory_growth(gpu, True)
@@ -40,269 +37,366 @@ try:
             tf.config.experimental.set_visible_devices(
                 GPUS[hvd.local_rank()], 'GPU'
             )
-    elif TF_VERSION == '1.x':
+    elif tf.__version__.startswith('1.'):
+        tf.enable_eager_execution()
         CONFIG = tf.compat.v1.ConfigProto()
         CONFIG.gpu_options.allow_growth = True
         CONFIG.gpu_options.visible_device_list = str(hvd.local_rank())
         tf.compat.v1.enable_eager_execution(config=CONFIG)
 
 except ImportError:
-    if TF_VERSION == '1.x':
-        tf.compat.v1.enable_eager_execution()
+    pass
 
 
-#  import utils.file_io as io
+def _scalar_summary(name, val, step):
+    """Create scalar summary for logging in tensorboard."""
+    tf.summary.scalar(name, tf.reduce_mean(val), step=step)
 
 
-# pylint:disable=invalid-name, redefined-outer-name
-def build_model(FLAGS):
-    """Build model using parameters from FLAGS."""
-    net_weights = NET_WEIGHTS_HMC if FLAGS.hmc else NET_WEIGHTS_L2HMC
-    xdim = FLAGS.time_size * FLAGS.space_size * FLAGS.dim
-    input_shape = (FLAGS.batch_size, xdim)
-    lattice_shape = (FLAGS.batch_size, FLAGS.time_size, FLAGS.space_size, 2)
-    FLAGS.net_weights = net_weights
-    FLAGS.xdim = xdim
-    FLAGS.input_shape = input_shape
-    FLAGS.lattice_shape = lattice_shape
+def summarize_metrics(metrics, step, prefix=None):
+    """Create scalar summaries for all items in `metrics`."""
+    if prefix is None:
+        prefix = ''
+    for key, val in metrics.items():
+        _scalar_summary(f'{prefix}/{key}', val, step)
 
+
+def exp_mult_cooling(step, temp_init, temp_final, num_steps, alpha=None):
+    """Annealing function."""
+    if alpha is None:
+        alpha = tf.exp(
+            (tf.math.log(temp_final) - tf.math.log(temp_init)) / num_steps
+        )
+
+    temp = temp_init * (alpha ** step)
+
+    return tf.cast(temp, TF_FLOAT)
+
+
+def get_betas(steps, beta_init, beta_final):
+    """Get array of betas to use in annealing schedule."""
+    t_init = 1. / beta_init
+    t_final = 1. / beta_final
+    t_arr = [
+        exp_mult_cooling(i, t_init, t_final, steps) for i in range(steps)
+    ]
+
+    return 1. / tf.convert_to_tensor(np.array(t_arr))
+
+
+def build_dynamics(flags):
+    """Build dynamics using parameters from FLAGS."""
     net_config = NetworkConfig(
-        units=FLAGS.units,
+        units=flags.units,
         type='GaugeNetwork',
         activation_fn=tf.nn.relu,
-        dropout_prob=FLAGS.dropout_prob,
+        dropout_prob=flags.dropout_prob,
     )
+
     config = DynamicsConfig(
-        eps=FLAGS.eps,
-        hmc=FLAGS.hmc,
-        num_steps=FLAGS.num_steps,
+        eps=flags.eps,
+        hmc=flags.hmc,
+        num_steps=flags.num_steps,
         model_type='GaugeModel',
-        net_weights=net_weights,
-        input_shape=input_shape,
-        eps_trainable=not FLAGS.eps_fixed,
+        eps_trainable=not flags.eps_fixed,
+        separate_networks=flags.separate_networks,
     )
 
-    model = GaugeModel(FLAGS, lattice_shape, config, net_config)
+    lr_config = lrConfig(
+        init=flags.lr_init,
+        decay_steps=flags.lr_decay_steps,
+        decay_rate=flags.lr_decay_rate,
+        warmup_steps=flags.warmup_steps,
+    )
 
-    return model, FLAGS
+    flags = AttrDict({
+        'horovod': flags.horovod,
+        'plaq_weight': flags.plaq_weight,
+        'charge_weight': flags.charge_weight,
+        'lattice_shape': flags.lattice_shape,
+    })
+
+    dynamics = GaugeDynamics(flags, config, net_config, lr_config)
+
+    return dynamics
 
 
-def train(FLAGS, log_file=None):
+def restore_flags(flags, train_dir):
+    """Update `FLAGS` using restored flags from `log_dir`."""
+    restored = AttrDict(dict(io.loadz(os.path.join(train_dir, 'FLAGS.z'))))
+    restored_flags = AttrDict({
+        'horovod': restored.horovod,
+        'plaq_weight': restored.plaq_weight,
+        'charge_weight': restored.charge_weight,
+        'lattice_shape': restored.lattice_shape,
+    })
+
+    flags.update(restored_flags)
+
+    return flags
+
+
+def setup_directories(flags, rank, train_dir_name='training'):
+    """Setup relevant directories for training."""
+    train_dir = os.path.join(flags.log_dir, train_dir_name)
+    train_paths = AttrDict({
+        'log_dir': flags.log_dir,
+        'train_dir': train_dir,
+        'data_dir': os.path.join(train_dir, 'train_data'),
+        'ckpt_dir': os.path.join(train_dir, 'checkpoints'),
+        'summary_dir': os.path.join(train_dir, 'summaries'),
+        'history_file': os.path.join(train_dir, 'train_log.txt')
+    })
+
+    if rank == 0:
+        io.check_else_make_dir(
+            [d for k, d in train_paths.items() if 'file' not in k],
+            rank=rank
+        )
+        io.save_params(dict(flags), train_dir, 'FLAGS', rank=rank)
+
+    return train_paths
+
+
+def train(flags, log_file=None):
     """Train model."""
-    is_chief = hvd.rank() == 0 if FLAGS.horovod else not FLAGS.horovod
-    rank = hvd.rank() if FLAGS.horovod else 0
+    is_chief = hvd.rank() == 0 if flags.horovod else not flags.horovod
+    rank = hvd.rank() if flags.horovod else 0
 
-    if FLAGS.log_dir is None:
-        FLAGS.log_dir = io.make_log_dir(FLAGS, 'GaugeModel', log_file)
+    if flags.log_dir is None:
+        flags.log_dir = io.make_log_dir(flags, 'GaugeModel',
+                                        log_file, rank=rank)
     else:
-        fpath = os.path.join(FLAGS.log_dir, 'training', 'FLAGS.z')
-        FLAGS = AttrDict(dict(io.loadz(fpath)))
-        FLAGS.restore = True
+        flags = restore_flags(flags, os.path.join(flags.log_dir, 'training'))
+        flags.restore = True
 
-    train_dir = os.path.join(FLAGS.log_dir, 'training')
+    train_dirs = setup_directories(flags, rank)
+
+    x = None
+    if flags.hmc_start and flags.hmc_steps > 0 and not flags.restore:
+        x, train_data, eps_init = train_hmc(flags)
+        flags.eps = eps_init
+
+    dynamics = build_dynamics(flags)
+    io.log('\n'.join(
+        [80 * '=', 'FLAGS:', *[f' {k}: {v}' for k, v in flags.items()]]
+    ))
+
+    x, train_data = train_dynamics(dynamics, flags,
+                                   x=x, dirs=train_dirs)
+
+    if is_chief and flags.save_train_data:
+        output_dir = os.path.join(train_dirs.train_dir, 'outputs')
+        train_data.save_data(output_dir)
+
+        params = {
+            'beta_init': train_data.data.beta[0],
+            'beta_final': train_data.data.beta[-1],
+            'eps': dynamics.eps.numpy(),
+            'lattice_shape': dynamics.lattice_shape,
+            'num_steps': dynamics.config.num_steps,
+            'net_weights': dynamics.net_weights,
+        }
+        plot_data(train_data, train_dirs.train_dir, flags,
+                  thermalize=True, params=params)
+
+    io.log('\n'.join(['INFO:Done training model', 80 * '=']), rank=rank)
+
+    return x, dynamics, train_data, flags
+
+
+def train_hmc(flags):
+    """Main method for training HMC model."""
+    is_chief = hvd.rank() == 0 if flags.horovod else not flags.horovod
+    rank = hvd.rank() if flags.horovod else 0
+    hmc_flags = AttrDict(dict(flags))
+    hmc_flags.dropout_prob = 0.
+    hmc_flags.hmc = True
+    hmc_flags.save_train_data = True
+    hmc_flags.train_steps = hmc_flags.pop('hmc_steps')
+    hmc_flags.warmup_steps = 0
+    hmc_flags.lr_decay_steps = hmc_flags.train_steps // 4
+    hmc_flags.logging_steps = hmc_flags.train_steps // 20
+    hmc_flags.beta_final = hmc_flags.beta_init
+    hmc_flags.fixed_beta = True
+    hmc_flags.no_summaries = True
+
+    train_dirs = setup_directories(hmc_flags, rank,
+                                   train_dir_name='training_hmc')
+
+    dynamics = build_dynamics(hmc_flags)
+    x, train_data = train_dynamics(dynamics, hmc_flags,
+                                   dirs=train_dirs)
+    if is_chief and hmc_flags.save_train_data:
+        output_dir = os.path.join(train_dirs.train_dir, 'outputs')
+        io.check_else_make_dir(output_dir)
+        train_data.save_data(output_dir)
+
+        params = {
+            'eps': dynamics.eps,
+            'num_steps': dynamics.config.num_steps,
+            'beta_init': hmc_flags.beta_init,
+            'beta_final': hmc_flags.beta_final,
+            'lattice_shape': dynamics.lattice_shape,
+            'net_weights': NET_WEIGHTS_HMC,
+        }
+        plot_data(train_data, train_dirs.train_dir, hmc_flags,
+                  thermalize=True, params=params)
+
+    io.log('\n'.join(['Done with HMC start.', 80 * '=']), rank=rank)
+
+    return x, train_data, dynamics.eps.numpy()
+
+
+def setup_training(dynamics, flags, train_dir=None, x=None, betas=None):
+    """Prepare to train `dynamics`."""
+    is_chief = (
+        hvd.rank() == 0 if dynamics.using_hvd
+        else not dynamics.using_hvd
+    )
+    rank = hvd.rank() if dynamics.using_hvd else 0
+    data_dir = os.path.join(train_dir, 'train_data')
     ckpt_dir = os.path.join(train_dir, 'checkpoints')
-    io.check_else_make_dir([train_dir, ckpt_dir])
-    if not FLAGS.restore:
-        io.save_params(dict(FLAGS), train_dir, 'FLAGS', rank=rank)
+    summary_dir = os.path.join(train_dir, 'summaries')
+    history_file = os.path.join(train_dir, 'train_log.txt')
+    if is_chief:
+        io.check_else_make_dir([train_dir, ckpt_dir, data_dir, summary_dir])
 
-    if FLAGS.hmc_start and FLAGS.hmc_steps > 0 and not FLAGS.restore:
-        outputs, eps_init = train_hmc(FLAGS)
-        x = outputs['x']
-        FLAGS.eps = eps_init
-    else:
-        x = None
+    if x is None:
+        x = tf.random.uniform(shape=dynamics.x_shape, minval=-PI, maxval=PI)
+        x = tf.cast(x, dtype=TF_FLOAT)
 
-    io.log(f'Building model...', rank=rank)
-    model, FLAGS = build_model(FLAGS)
-    step_init = tf.Variable(0, dtype=TF_INT)
-    ckpt = tf.train.Checkpoint(step=step_init,
-                               dynamics=model.dynamics,
-                               optimizer=model.optimizer)
+    train_data = DataContainer(flags.train_steps,
+                               header=HEADER,
+                               skip_keys=['charges'])
+
+    writer = tf.summary.create_file_writer(summary_dir)
+    ckpt = tf.train.Checkpoint(dynamics=dynamics,
+                               optimizer=dynamics.optimizer)
     manager = tf.train.CheckpointManager(
         ckpt, directory=ckpt_dir, max_to_keep=5
     )
+
     if manager.latest_checkpoint:
-        io.log(f'Restored from: {manager.latest_checkpoint}', rank=rank)
+        io.log(f'INFO:Restored from: {manager.latest_checkpoint}', rank=rank)
         ckpt.restore(manager.latest_checkpoint)
-        step_init = ckpt.step
+        train_data.restore(data_dir)
+        current_step = dynamics.optimizer.iterations.numpy()
     else:
-        io.log('\n'.join(['No existing checkpoints found.',
+        current_step = tf.convert_to_tensor(0, dtype=TF_INT)
+        io.log('\n'.join(['WARNING:No existing checkpoints found.',
                           'Starting from scratch.']), rank=rank)
 
-    io.log(f'Training model!', rank=rank)
-    outputs = train_model(model, ckpt, manager,
-                          x=x, step_init=step_init,
-                          train_dir=train_dir)
-    if is_chief:
-        io.save_params({'eps': model.dynamics.eps.numpy()},
-                       FLAGS.log_dir, name='eps_final')
-        params = {
-            'beta_init': outputs['betas'][0],
-            'beta_final': outputs['betas'][-1],
-            'eps': model.dynamics.eps.numpy(),
-            'lattice_shape': model.lattice_shape,
-            'num_steps': model.dynamics.config.num_steps,
-            'net_weights': model.dynamics_config.net_weights,
-        }
-        plot_data(outputs, train_dir, FLAGS, params=params)
-
-    io.log('\n'.join(['Done training model', 80 * '=']), rank=rank)
-
-    return model, outputs, FLAGS
-
-
-def train_hmc(FLAGS):
-    """Main method for training HMC model."""
-    is_chief = hvd.rank() == 0 if FLAGS.horovod else not FLAGS.horovod
-    rank = hvd.rank() if FLAGS.horovod else 0
-    HFLAGS = AttrDict(dict(FLAGS))
-    HFLAGS.dropout_prob = 0.
-    HFLAGS.hmc = True
-    HFLAGS.save_train_data = True
-    HFLAGS.train_steps = HFLAGS.pop('hmc_steps')
-    HFLAGS.lr_decay_steps = HFLAGS.train_steps // 4
-    HFLAGS.logging_steps = HFLAGS.train_steps // 20
-    HFLAGS.beta_final = HFLAGS.beta_init
-    HFLAGS.fixed_beta = True
-    HFLAGS.no_summaries = True
-
-    train_dir = os.path.join(HFLAGS.log_dir, 'training_hmc')
-    ckpt_dir = os.path.join(train_dir, 'checkpoints')
-    io.check_else_make_dir([train_dir, ckpt_dir])
-    io.save_params(dict(HFLAGS), train_dir, 'FLAGS', rank=rank)
-
-    model, HFLAGS = build_model(HFLAGS)
-    step_init = tf.Variable(0, dtype=TF_INT)
-    ckpt = tf.train.Checkpoint(step=step_init,
-                               dynamics=model.dynamics,
-                               optimizer=model.optimizer)
-    manager = tf.train.CheckpointManager(
-        ckpt, directory=ckpt_dir, max_to_keep=3
+    steps = tf.cast(
+        tf.range(current_step, current_step + flags.train_steps),
+        dtype=tf.int64
     )
-    if manager.latest_checkpoint:
-        io.log(f'Restored from: {manager.latest_checkpoint}', rank=rank)
-        ckpt.restore(manager.latest_checkpoint)
-        step_init = ckpt.step
+    if betas is None:
+        if flags.beta_init == flags.beta_final:
+            betas = tf.convert_to_tensor(flags.beta_init * np.ones(len(steps)))
+        else:
+            #  b_arr = np.linspace(flags.beta_init, flags.beta_final, steps)
+            b_arr = get_betas(flags.train_steps,
+                              flags.beta_init, flags.beta_final)
+            betas = tf.cast(b_arr, dtype=TF_FLOAT)
 
-    outputs = train_model(model, ckpt, manager,
-                          step_init=step_init,
-                          train_dir=train_dir)
-    if is_chief:
-        io.save(model, train_dir, outputs)
-        params = {
-            'beta_init': outputs['betas'][0],
-            'beta_final': outputs['betas'][-1],
-            'eps': model.dynamics.eps.numpy(),
-            'lattice_shape': model.lattice_shape,
-            'num_steps': model.dynamics.config.num_steps,
-            'net_weights': model.dynamics_config.net_weights,
-        }
-        plot_data(outputs, train_dir, HFLAGS, params=params)
+    #  betas = betas[current_step:]
+    #  steps = train_steps[current_step:]
+    outputs = {
+        'x': x,
+        'betas': betas,
+        'steps': steps,
+        'writer': writer,
+        'checkpoint': ckpt,
+        'manager': manager,
+        'data_dir': data_dir,
+        'train_data': train_data,
+        'history_file': history_file,
+    }
 
-    #  x_out = outputs['x']
-    eps_out = model.dynamics.eps.numpy()
-    io.log('\n'.join(['Done with HMC start.', 80 * '=']), rank=rank)
-
-    return outputs, eps_out
+    return outputs
 
 
 # pylint:disable=too-many-locals
-def train_model(model, ckpt, manager, step_init=None, x=None, train_dir=None):
+def train_dynamics(dynamics, flags, dirs=None,
+                   x=None, betas=None):
     """Train model."""
-    is_chief = hvd.rank() == 0 if model.using_hvd else not model.using_hvd
-    rank = hvd.rank() if model.using_hvd else 0
-    history_file = os.path.join(train_dir, 'train_log.txt')
+    is_chief = (
+        hvd.rank() == 0 if dynamics.using_hvd
+        else not dynamics.using_hvd
+    )
+    rank = hvd.rank() if dynamics.using_hvd else 0
 
     if x is None:
-        x = tf.random.uniform(shape=model.input_shape,
-                              minval=-PI, maxval=PI)
-        x = tf.cast(x, dtype=TF_FLOAT)
+        x = tf.random.uniform(shape=dynamics.x_shape,
+                              minval=-PI, maxval=PI,
+                              dtype=TF_FLOAT)
 
-    plaqs, q_new = model.calc_observables(x, model.beta_init)
+    writer = tf.summary.create_file_writer(dirs.summary_dir)
+    train_data = DataContainer(flags.train_steps, HEADER, ['charges'])
+    ckpt = tf.train.Checkpoint(dynamics=dynamics, optimizer=dynamics.optimizer)
+    manager = tf.train.CheckpointManager(ckpt, dirs.ckpt_dir, max_to_keep=5)
 
-    px_arr = []
-    dq_arr = []
-    loss_arr = []
-    data_strs = [HEADER]
-    charges_arr = [q_new.numpy()]
-    plaqs_arr = [plaqs.numpy()]
-    train_steps = np.arange(model.train_steps)
-    step = int(step_init.numpy())
-    betas = model.betas[step:]
-    steps = train_steps[step:]
+    if is_chief:
+        writer.set_as_default()
+        if manager.latest_checkpoint:
+            io.log(f'INFO:Restored model from: {manager.latest_checkpoint}')
+            ckpt.restore(manager.latest_checkpoint)
+            #  current_step = dynamics.optimizer.iterations.numpy()
+            #  train_data.restore(dirs.data_dir, current_step)
 
-    if model.compile:
-        train_step = tf.function(model.train_step, experimental_compile=True)
+    #  current_step = dynamics.optimizer.iterations.numpy()
+    #  steps = tf.cast(
+    #      tf.range(current_step, current_step + flags.train_steps),
+    #      dtype=tf.int64
+    #  )
+
+    if betas is None:
+        if flags.beta_init == flags.beta_final:
+            betas = tf.convert_to_tensor(
+                flags.beta_init * np.ones(flags.train_steps)
+            )
+        else:
+            betas = get_betas(
+                flags.train_steps, flags.beta_init, flags.beta_final
+            )
+
+    if not dynamics.config.separate_networks:
+        io.log(f'INFO:Compiling `dynamics.train_step` using `tf.function`.')
+        train_step = tf.function(dynamics.train_step,
+                                 experimental_compile=True)
     else:
-        train_step = model.train_step
+        io.log(f'INFO:Running `dynamics.train_step` imperatively.')
+        train_step = dynamics.train_step
 
     io.log(HEADER, rank=rank)
-    for step, beta in zip(steps, betas):
-        t0 = time.time()
-        x = tf.reshape(x, model.input_shape)
-        loss, x, px, sld = train_step(x, beta, step == 0)
-        #  loss, x, px, sld = model.train_step(x, beta, step == 0)
-        x = tf.reshape(x, model.lattice_shape)
-        dt = time.time() - t0
+    for beta in betas:
+        start = time.time()
+        step = dynamics.optimizer.iterations.numpy()
+        x, metrics = train_step((x, beta), step == 0)
+        metrics.dt = time.time() - start
 
-        q_old = q_new
-        plaqs_err, q_new = model.calc_observables(x, beta)
-        dq = tf.math.abs(q_new - q_old)
-
-        data_str = (
-            f"{step:>6g}/{model.train_steps:<6g} "
-            f"{dt:^11.4g} "
-            f"{loss.numpy():^11.4g} "
-            f"{np.mean(px.numpy()):^11.4g} "
-            f"{model.dynamics.eps.numpy():^11.4g} "
-            f"{beta:^11.4g} "
-            f"{np.mean(sld.numpy()):^11.4g} "
-            f"{np.mean(dq.numpy()):^11.4g} "
-            f"{np.mean(plaqs_err.numpy()):^11.4g} "
-        )
-        #  if step == 10:
-        #      try:
-        #          tf.profiler.experimental.start(log_dir)
-        #      except AttributeError:
-        #          pass
-
-        #  if step == 20:
-        #      try:
-        #          tf.profiler.experimental.stop(log_dir)
-        #      except AttributeError:
-        #          pass
-
-        if step % model.print_steps == 0:
+        if step % flags.print_steps == 0:
+            data_str = train_data.get_fstr(step, metrics, rank=rank)
             io.log(data_str, rank=rank)
-            data_strs.append(data_str)
 
-        if model.save_train_data and step % model.log_steps == 0:
-            px_arr.append(px.numpy())
-            dq_arr.append(dq.numpy())
-            loss_arr.append(loss.numpy())
-            charges_arr.append(q_new.numpy())
-            plaqs_arr.append(plaqs_err.numpy())
+        if flags.save_train_data and step % flags.logging_steps == 0:
+            train_data.update(step, metrics)
+            if is_chief:
+                summarize_metrics(metrics, step, prefix='training')
 
-        if is_chief and step % model.save_steps == 0 and ckpt is not None:
-            ckpt.step.assign(step)
+        if is_chief and step % flags.save_steps == 0 and ckpt is not None:
             manager.save()
-            data_strs = io.flush_data_strs(data_strs, history_file)
+            io.log(f'INFO:Checkpoint saved to: {manager.latest_checkpoint}')
+            train_data.save_data(dirs.data_dir)
+            train_data.flush_data_strs(dirs.history_file, rank=rank, mode='a')
 
         if step % 100 == 0:
             io.log(HEADER, rank=rank)
 
     if is_chief and ckpt is not None and manager is not None:
-        ckpt.step.assign(step)
         manager.save()
-        data_strs = io.flush_data_strs(data_strs, history_file)
+        train_data.save_data(dirs.data_dir)
+        train_data.flush_data_strs(dirs.history_file, rank=rank, mode='a')
 
-    outputs = {
-        'betas': betas,
-        'px': np.array(px_arr),
-        'dq': np.array(dq_arr),
-        'loss_arr': np.array(loss_arr),
-        'charges_arr': np.array(charges_arr),
-        'x': tf.reshape(x, model.input_shape),
-    }
-
-    return outputs
+    return x, train_data

@@ -8,6 +8,7 @@ import os
 import arviz as az
 import numpy as np
 import xarray as xr
+import tensorflow as tf
 import seaborn as sns
 import matplotlib.pyplot as plt
 
@@ -17,6 +18,14 @@ from config import (NET_WEIGHTS_HMC, NET_WEIGHTS_L2HMC, NetWeights,
                     NP_FLOAT, PI, PROJECT_DIR, TF_FLOAT)
 
 sns.set_palette('bright')
+
+COLORS = ['C0', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9']
+
+
+def savefig(fig, fpath):
+    io.check_else_make_dir(os.path.dirname(fpath))
+    io.log(f'Saving figure to: {fpath}.')
+    fig.savefig(fpath, dpi=400, bbox_inches='tight')
 
 
 def therm_arr(arr, therm_frac=0.2, ret_steps=True):
@@ -34,7 +43,7 @@ def therm_arr(arr, therm_frac=0.2, ret_steps=True):
     return arr
 
 
-def plot_charges(steps, charges, title_str=None, out_dir=None):
+def plot_charges(steps, charges, title=None, out_dir=None):
     charges = charges.T
     if charges.shape[0] > 4:
         charges = charges[:4, :]
@@ -48,14 +57,14 @@ def plot_charges(steps, charges, title_str=None, out_dir=None):
     ax.set_ylabel(r"$\mathcal{Q}$", fontsize='x-large',
                   rotation='horizontal')
     ax.set_xlabel('MC Step', fontsize='x-large')
-    if title_str is not None:
-        ax.set_title(title_str, fontsize='x-large')
+    if title is not None:
+        ax.set_title(title, fontsize='x-large')
     plt.tight_layout()
 
     if out_dir is not None:
-        out_file = os.path.join(out_dir, 'charges_traceplot.png')
-        io.log(f'Saving figure to: {out_file}.')
-        plt.savefig(out_file, dpi=400, bbox_inches='tight')
+        fpath = os.path.join(out_dir, 'charge_chains.png')
+        io.log(f'Saving figure to: {fpath}.')
+        plt.savefig(fpath, dpi=400, bbox_inches='tight')
 
 
 def get_title_str_from_params(params):
@@ -66,7 +75,7 @@ def get_title_str_from_params(params):
     lattice_shape = params.get('lattice_shape', None)
 
     title_str = (r"$N_{\mathrm{LF}} = $" + f'{num_steps}, '
-                 r"$\varepsilon = $" + f'{eps:.4g}, ')
+                 r"$\varepsilon = $" + f'{tf.reduce_mean(eps):.4g}, ')
 
     if 'beta_init' in params and 'beta_final' in params:
         beta_init = params.get('beta_init', None)
@@ -78,7 +87,7 @@ def get_title_str_from_params(params):
         beta = params.get('beta', None)
         title_str += r"$\beta = $" + f'{beta:.3g}, '
 
-    title_str += f'shape: {lattice_shape}'
+    title_str += f'shape: {tuple(lattice_shape)}'
 
     if net_weights == NET_WEIGHTS_HMC:
         title_str += f', (HMC)'
@@ -86,96 +95,102 @@ def get_title_str_from_params(params):
     return title_str
 
 
+def mcmc_avg_lineplots(data, title=None, out_dir=None):
+    for idx, (key, val) in enumerate(data.items()):
+        steps, arr = val
+        avg = np.mean(arr, axis=1)
+        xy_data = (steps, avg)
+
+        xlabel = 'MC Step'
+        ylabel = r"$\langle$" + f'{key}' + r"$\rangle$"
+        labels = (xlabel, ylabel)
+
+        if out_dir is not None:
+            fpath = os.path.join(out_dir, f'{key}_avg.png')
+
+        _, _ = mcmc_lineplot(xy_data, labels, title=title,
+                             fpath=fpath, show_avg=True,
+                             color=COLORS[idx])
+
+
+def mcmc_lineplot(data, labels, title=None,
+                  fpath=None, show_avg=False, **kwargs):
+    """Make a simple lineplot."""
+    fig, ax = plt.subplots()
+
+    if show_avg:
+        avg = np.mean(data[1])
+        ax.axhline(y=avg, color='gray',
+                   label=f'avg: {avg:.3g}',
+                   ls='-', marker='')
+        ax.legend(loc='best')
+
+    ax.plot(*data, **kwargs)
+    ax.set_xlabel(labels[0], fontsize='large')
+    ax.set_ylabel(labels[1], fontsize='large')
+    if title is not None:
+        ax.set_title(title, fontsize='x-large')
+
+    if fpath is not None:
+        savefig(fig, fpath)
+
+    return fig, ax
+
+
+def mcmc_traceplot(key, val, title=None, fpath=None):
+    az.plot_trace({key: val})
+    fig = plt.gcf()
+    if title is not None:
+        fig.suptitle(title, fontsize='x-large', y=1.06)
+
+    if fpath is not None:
+        savefig(fig, fpath)
+
+    return fig
+
+
 # pylint:disable=unsubscriptable-object
-def plot_data(outputs, base_dir, FLAGS, thermalize=False, params=None):
+def plot_data(train_data, base_dir, FLAGS, thermalize=False, params=None):
     out_dir = os.path.join(base_dir, 'plots')
     io.check_else_make_dir(out_dir)
 
-    title_str = None if params is None else get_title_str_from_params(params)
+    title = None if params is None else get_title_str_from_params(params)
+    logging_steps = FLAGS.logging_steps if 'training' in base_dir else 1
 
-    data = {}
-    for key, val in outputs.items():
+    data_dict = {}
+    for key, val in train_data.data.items():
         if key == 'x':
             continue
 
-        if key == 'betas':
-            if 'training' in base_dir:
-                steps = FLAGS.logging_steps * np.arange(len(np.array(val)))
-            else:
-                steps = np.arange(len(np.array(val)))
-            fig, ax = plt.subplots()
-            ax.plot(steps, np.array(val))
-            ax.set_xlabel('MC Step', fontsize='large')
-            ax.yaxis.set_label_coords(-0.02, 0.5)
-            ax.set_ylabel(r"$\beta$", fontsize='large', rotation='horizontal')
-            if title_str is not None:
-                ax.set_title(title_str, fontsize='x-large')
-            out_file = os.path.join(out_dir, f'betas.png')
-            io.log(f'Saving figure to: {out_file}.')
-            fig.savefig(out_file, dpi=400, bbox_inches='tight')
+        arr = np.array(val)
+        steps = logging_steps * np.arange(len(np.array(val)))
 
-        if key == 'loss_arr':
-            if 'training' in base_dir:
-                steps = FLAGS.logging_steps * np.arange(len(np.array(val)))
-            else:
-                steps = np.arange(len(np.array(val)))
-            fig, ax = plt.subplots()
-            ax.plot(steps, np.array(val), ls='',
-                    marker='x', label='loss')
-            ax.legend(loc='best')
-            ax.set_xlabel('Train step')
-            if title_str is not None:
-                ax.set_title(title_str, fontsize='x-large')
-            out_file = os.path.join(out_dir, 'loss.png')
-            io.log(f'Saving figure to: {out_file}')
-            fig.savefig(out_file, dpi=400, bbox_inches='tight')
+        if thermalize or key == 'dt':
+            arr, steps = therm_arr(arr, therm_frac=0.33)
 
-        else:
-            if key in ['beta', 'betas', 'loss_arr']:
-                continue
-            fig, ax = plt.subplots()
-            arr = np.array(val)
+        labels = ('MC Step', key)
+        data = (steps, arr)
+
+        if len(arr.shape) == 1:
+            lplot_fname = os.path.join(out_dir, f'{key}.png')
+            _, _ = mcmc_lineplot(data, labels, title,
+                                 lplot_fname, show_avg=True)
+
+        elif len(arr.shape) > 1:
+            data_dict[key] = data
             chains = np.arange(arr.shape[1])
-            if 'training' in base_dir:
-                steps = FLAGS.logging_steps * np.arange(arr.shape[0])
-            else:
-                steps = np.arange(arr.shape[0])
-            if thermalize:
-                arr, steps = therm_arr(arr, therm_frac=0.33)
-                data[key] = (steps, arr)
-
-            else:
-                data[key] = (steps, arr)
-
-            data_arr = xr.DataArray(arr.T, dims=['chain', 'draw'],
+            data_arr = xr.DataArray(arr.T,
+                                    dims=['chain', 'draw'],
                                     coords=[chains, steps])
-            az.plot_trace({key: data_arr})
-            if title_str is not None:
-                fig = plt.gcf()
-                fig.suptitle(title_str, fontsize='x-large', y=1.04)
 
-            out_file = os.path.join(out_dir, f'{key}.png')
-            io.log(f'Saving figure to: {out_file}.')
-            plt.savefig(out_file, dpi=400, bbox_inches='tight')
-            plt.close('all')
+            tplot_fname = os.path.join(out_dir, f'{key}_traceplot.png')
+            _ = mcmc_traceplot(key, data_arr, title, tplot_fname)
 
-    colors = ['C0', 'C1', 'C2', 'C3', 'C4']
-    for idx, (key, val) in enumerate(data.items()):
-        steps, arr = val
-        avg_val = np.mean(arr, axis=1)
-        label = r"$\langle$" + f' {key} ' + r"$\rangle$"
-        fig, ax = plt.subplots()
-        ax.plot(steps, avg_val, color=colors[idx], label=label)
-        ax.legend(loc='best')
-        ax.set_xlabel('Step')
-        if title_str is not None:
-            ax.set_title(title_str, fontsize='x-large')
-        #  ax.set_xlabel('Train step')
-        out_file = os.path.join(out_dir, f'{key}_avg.png')
-        io.log(f'Saving figure to: {out_file}.')
-        fig.savefig(out_file, dpi=400, bbox_inches='tight')
         plt.close('all')
 
-    steps, charges = data['charges_arr']
-    plot_charges(steps, charges, out_dir=out_dir, title_str=title_str)
+    mcmc_avg_lineplots(data_dict, title, out_dir)
+
+    plot_charges(*data_dict['charges'],
+                 out_dir=out_dir,
+                 title=title)
     plt.close('all')

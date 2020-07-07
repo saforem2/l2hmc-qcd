@@ -5,9 +5,9 @@ Author: Sam Foreman (github: @saforem2)
 Date: 04/09/2019
 """
 from __future__ import absolute_import, division, print_function
-import os
 import sys
 import argparse
+import json
 import shlex
 
 import utils.file_io as io
@@ -49,6 +49,16 @@ def parse_args():
                         required=False,
                         help=("""Whether or not to compile model to graph."""))
 
+    parser.add_argument('--lattice_shape',
+                        dest='lattice_shape',
+                        type=lambda s: [int(i) for i in s.split(',')],
+                        default="128, 16, 16, 2",
+                        required=False,
+                        help=("""Specifies the shape of our data, with:
+                              lattice_shape =
+                              (batch_size, time_size, space_size, dim)
+                              Defaults to: (128, 16, 16, 2)"""))
+
     ###########################################################################
     #                          Lattice parameters                             #
     ###########################################################################
@@ -65,14 +75,6 @@ def parse_args():
                         default=8,
                         required=False,
                         help="""Temporal extent of lattice.\n (Default: 8)""")
-
-    parser.add_argument("--link_type",
-                        dest="link_type",
-                        type=str,
-                        required=False,
-                        default='U1',
-                        help="""Link type for gauge model.\n
-                        (Default: 'U1')""")
 
     parser.add_argument("--dim",
                         dest="dim",
@@ -191,6 +193,14 @@ def parse_args():
                               value passed to `--lr_init` (performs better when
                               using Horovod for distributed training)."""))
 
+    parser.add_argument('--warmup_steps',
+                        dest='warmup_steps',
+                        type=int,
+                        required=False,
+                        default=None,
+                        help=("""Number of steps over which to warmup the
+                              learning rate."""))
+
     ###########################################################################
     #                       Training parameters                               #
     ###########################################################################
@@ -217,23 +227,6 @@ def parse_args():
                         required=False,
                         help=("""FLag that when passed will run inference on
                               trained model."""))
-
-    parser.add_argument("--extra_steps",
-                        dest="extra_steps",
-                        type=int,
-                        default=5000,
-                        required=False,
-                        help=("""Number of additional steps to append at the
-                              end of the training instance at the final value
-                              of beta."""))
-
-    parser.add_argument("--trace",
-                        dest="trace",
-                        action="store_true",
-                        required=False,
-                        help=("""Flag that when passed will set `--trace=True`,
-                              and create a trace during training loop.\n
-                              (Default: `--trace=False`, i.e.  not passed)"""))
 
     parser.add_argument("--save_steps",
                         dest="save_steps",
@@ -314,15 +307,6 @@ def parse_args():
                               value greater than 0. is passed, gradient
                               clipping will be performed."""))
 
-    parser.add_argument('--largest_wilson_loop',
-                        dest='largest_wilson_loop',
-                        type=int,
-                        required=False,
-                        default=1,
-                        help=("""Size of largest Wilson loop to include when
-                              calculating the plaquette and charge terms in the
-                              gauge loss function."""))
-
     parser.add_argument('--no_summaries',
                         dest="no_summaries",
                         action="store_true",
@@ -400,74 +384,6 @@ def parse_args():
                               their entries equal to zero and half equal to
                               one."""))
 
-    parser.add_argument('--x_scale_weight',
-                        dest='x_scale_weight',
-                        type=float,
-                        default=1,
-                        required=False,
-                        help=("""Specify the value of the `scale_weight`
-                              parameter, a multiplicative weight that scales
-                              the contribution of the `scale` (S) function when
-                              performing the augmented L2HMC molecular dynamics
-                              update."""))
-
-    parser.add_argument('--x_translation_weight',
-                        dest='x_translation_weight',
-                        type=float,
-                        default=1,
-                        required=False,
-                        help=("""Specify the value of the `translation_weight`
-                              parameter, a multiplicative weight that scales
-                              the contribution of the `translation` (T)
-                              function when performing the augmented L2HMC
-                              molecular dynamics update."""))
-
-    parser.add_argument('--x_transformation_weight',
-                        dest='x_transformation_weight',
-                        type=float,
-                        default=1,
-                        required=False,
-                        help=("""Specify the value of the
-                              `transformation_weight` parameter, a
-                              multiplicative weight that scales the
-                              contribution of the `transformation` (Q) function
-                              when performing the augmented L2HMC molecular
-                              dynamics update."""))
-
-    parser.add_argument('--v_scale_weight',
-                        dest='v_scale_weight',
-                        type=float,
-                        default=1,
-                        required=False,
-                        help=("""Specify the value of the `scale_weight`
-                              parameter, a multiplicative weight that scales
-                              the contribution of the `scale` (S) function when
-                              performing the augmented L2HMC molecular dynamics
-                              update."""))
-
-    parser.add_argument('--v_translation_weight',
-                        dest='v_translation_weight',
-                        type=float,
-                        default=1,
-                        required=False,
-                        help=("""Specify the value of the `translation_weight`
-                              parameter, a multiplicative weight that scales
-                              the contribution of the `translation` (T)
-                              function when performing the augmented L2HMC
-                              molecular dynamics update."""))
-
-    parser.add_argument('--v_transformation_weight',
-                        dest='v_transformation_weight',
-                        type=float,
-                        default=1,
-                        required=False,
-                        help=("""Specify the value of the
-                              `transformation_weight` parameter, a
-                              multiplicative weight that scales the
-                              contribution of the `transformation` (Q) function
-                              when performing the augmented L2HMC molecular
-                              dynamics update."""))
-
     parser.add_argument("--profiler",
                         dest='profiler',
                         action="store_true",
@@ -504,14 +420,6 @@ def parse_args():
                         help=("""Flag that when passed uses Horovod for
                               distributed training on multiple nodes."""))
 
-    parser.add_argument("--comet",
-                        dest="comet",
-                        action="store_true",
-                        required=False,
-                        help=("""Flag that when passed uses comet.ml for
-                              parameter logging and additonal metric
-                              tracking/displaying."""))
-
     parser.add_argument('--save_train_data',
                         dest='save_train_data',
                         action='store_true',
@@ -544,35 +452,6 @@ def parse_args():
                         required=False,
                         help=("""Number of steps to train HMC sampler."""))
 
-    parser.add_argument("--resume_training",
-                        dest="resume_training",
-                        action="store_true",
-                        required=False,
-                        help=("""Resume training."""))
-
-    parser.add_argument('--to_restore',
-                        dest='to_restore',
-                        type=lambda s: [str(i) for i in s.split(',')],
-                        default='',
-                        #  default="x,eps,beta,lr",
-                        required=False,
-                        help=("""List of variable names to restore if restoring
-                              from previous training run.
-                              Possible values: ['x', 'beta', 'eps', 'lr']."""))
-
-    parser.add_argument("--theta",
-                        dest="theta",
-                        action="store_true",
-                        required=False,
-                        help=("""Flag that when passed indicates we're training
-                              on theta @ ALCf."""))
-
-    parser.add_argument('--root_dir',
-                        dest='root_dir',
-                        default='gauge_logs',
-                        required=False,
-                        help=("""Root directory in which to store data."""))
-
     parser.add_argument("--log_dir",
                         dest="log_dir",
                         type=str,
@@ -582,22 +461,6 @@ def parse_args():
                               If this argument is not passed, a new
                               directory will be created."""))
 
-    parser.add_argument("--num_intra_threads",
-                        dest="num_intra_threads",
-                        type=int,
-                        default=0,
-                        required=False,
-                        help=("""Number of intra op threads to use for
-                              tf.ConfigProto.intra_op_parallelism_threads"""))
-
-    parser.add_argument("--num_inter_threads",
-                        dest="num_intra_threads",
-                        type=int,
-                        default=0,
-                        required=False,
-                        help=("""Number of intra op threads to use for
-                              tf.ConfigProto.intra_op_parallelism_threads"""))
-
     parser.add_argument("--float64",
                         dest="float64",
                         action="store_true",
@@ -606,19 +469,26 @@ def parse_args():
                               by settings globals.TF_FLOAT = tf.float64. False
                               by default (use tf.float32)."""))
 
-    parser.add_argument("--restart_beta",
-                        dest="restart_beta",
-                        type=float,
-                        default=-1.,
+    parser.add_argument("--json_file",
+                        dest="json_file",
+                        type=str,
+                        default=None,
                         required=False,
-                        help=("""When restarting training, this will be the new
-                               starting value of beta if `--restart_beta >
-                              0` (Default: -1)."""))
+                        help=("""Path to JSON file containing CLI flags.
+                              Command line options override values in file.
+                              (DEFAULT: None)"""))
 
     if sys.argv[1].startswith('@'):
-        args = parser.parse_args(shlex.split(open(sys.argv[1][1:]).read(),
-                                             comments=True))
+        args = parser.parse_args(
+            shlex.split(open(sys.argv[1][1:]).read(), comments=True)
+        )
     else:
         args = parser.parse_args()
+        if args.json_file is not None:
+            print(f'Loading flags from: {args.json_file}.')
+            with open(args.json_file, 'rt') as f:
+                t_args = argparse.Namespace()
+                t_args.__dict__.update(json.load(f))
+                args = parser.parse_args(namespace=t_args)
 
     return args
