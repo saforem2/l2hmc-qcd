@@ -327,26 +327,6 @@ def train_dynamics(dynamics, flags, dirs=None,
     )
     rank = hvd.rank() if dynamics.using_hvd else 0
 
-    '''
-    setup = setup_training(dynamics, flags, train_dir, x, betas)
-
-    x = setup['x']
-    betas = setup['betas']
-    steps = setup['steps']
-    writer = setup['writer']
-    ckpt = setup['checkpoint']
-    manager = setup['manager']
-    data_dir = setup['data_dir']
-    train_data = setup['train_data']
-    history_file = setup['history_file']
-    '''
-    #  data_dir = os.path.join(train_dir, 'train_data')
-    #  ckpt_dir = os.path.join(train_dir, 'checkpoints')
-    #  summary_dir = os.path.join(train_dir, 'summaries')
-    #  history_file = os.path.join(train_dir, 'train_log.txt')
-    #  if is_chief:
-    #      io.check_else_make_dir([train_dir, ckpt_dir, data_dir, summary_dir])
-
     if x is None:
         x = tf.random.uniform(shape=dynamics.x_shape,
                               minval=-PI, maxval=PI,
@@ -381,7 +361,6 @@ def train_dynamics(dynamics, flags, dirs=None,
                 flags.train_steps, flags.beta_init, flags.beta_final
             )
 
-    '''
     if not dynamics.config.separate_networks:
         io.log(f'INFO:Compiling `dynamics.train_step` using `tf.function`.')
         train_step = tf.function(dynamics.train_step,
@@ -389,8 +368,6 @@ def train_dynamics(dynamics, flags, dirs=None,
     else:
         io.log(f'INFO:Running `dynamics.train_step` imperatively.')
         train_step = dynamics.train_step
-    '''
-    train_step = dynamics.train_step
 
     io.log(HEADER, rank=rank)
     for beta in betas:

@@ -7,31 +7,37 @@ decaying schedule.
 """
 from __future__ import absolute_import, division, print_function
 
-import time
-
-import tensorflow as tf
 import numpy as np
+import tensorflow as tf
+
+# pylint:disable=import-error
 from tensorflow.python.framework import ops
 from tensorflow.keras.optimizers.schedules import LearningRateSchedule
 
 import utils.file_io as io
 
+from config import lrConfig
+
+
+# pylint:disable=too-many-arguments
+# pylint:disable=too-few-public-methods
+# pylint:too-many-instance-attributes
 class ReduceLROnPlateau(LearningRateSchedule):
     """A lr schedule that automatically reduces when loss stagnates."""
     def __init__(
-        self,
-        initial_learning_rate: float,
-        decay_steps: int,
-        decay_rate: float,
-        staircase: bool = True,
-        monitor: str = 'loss',
-        factor: float = 0.1,
-        patience: int = 10,
-        mode: str = 'auto',
-        min_delta: float = 1e-4,
-        cooldown: int = 0,
-        min_lr: float = 0.,
-        name: str = 'ReduceLROnPlateau'
+            self,
+            initial_learning_rate: float,
+            decay_steps: int,
+            decay_rate: float,
+            staircase: bool = True,
+            monitor: str = 'loss',
+            factor: float = 0.1,
+            patience: int = 10,
+            mode: str = 'auto',
+            min_delta: float = 1e-4,
+            cooldown: int = 0,
+            min_lr: float = 0.,
+            name: str = 'ReduceLROnPlateau'
     ):
         super(ReduceLROnPlateau, self).__init__()
         if factor >= 1.0:
@@ -68,12 +74,15 @@ class ReduceLROnPlateau(LearningRateSchedule):
         self.cooldown_counter = 0
         self.wait = 0
 
-    def on_train_begin(self, logs=None):
+    # pylint:disable=unused-argument
+    def _on_train_begin(self, logs=None):
+        # FIXME: Method incomplete
         self._reset()
 
-    def on_epoch_end(self, epoch, logs=None):
+    # pylint:disable=unused-argument,no-self-use
+    def _on_epoch_end(self, epoch, logs=None):
+        # FIXME: Method incomplete
         logs = logs or {}
-        pass
 
 
 class WarmupExponentialDecay(LearningRateSchedule):
@@ -81,18 +90,12 @@ class WarmupExponentialDecay(LearningRateSchedule):
 
     def __init__(
             self,
-            initial_learning_rate: float,
-            decay_steps: int,
-            decay_rate: float,
-            warmup_steps: int,
+            lr_config: lrConfig,
             staircase: bool = True,
             name: str = 'WarmupExponentialDecay',
     ):
         super(WarmupExponentialDecay, self).__init__()
-        self.initial_learning_rate = initial_learning_rate
-        self.decay_steps = decay_steps
-        self.decay_rate = decay_rate
-        self.warmup_steps = warmup_steps
+        self.lr_config = lr_config
         self.staircase = staircase
         self.name = name
 
@@ -100,21 +103,21 @@ class WarmupExponentialDecay(LearningRateSchedule):
     def __call__(self, step):
         with tf.name_scope(self.name or 'WarmupExponentialDecay') as name:
             initial_learning_rate = ops.convert_to_tensor_v2(
-                self.initial_learning_rate, name='initial_learning_rate'
+                self.lr_init, name='initial_learning_rate'
             )
             dtype = initial_learning_rate.dtype
-            decay_steps = tf.cast(self.decay_steps, dtype)
-            decay_rate = tf.cast(self.decay_rate, dtype)
-            warmup_steps = tf.cast(self.warmup_steps, dtype)
+            decay_steps = tf.cast(self.lr_config.decay_steps, dtype)
+            decay_rate = tf.cast(self.lr_config.decay_rate, dtype)
+            warmup_steps = tf.cast(self.lr_config.warmup_steps, dtype)
 
             global_step_recomp = tf.cast(step, dtype)
-            #  if global_step_recomp < warmup_steps:
             if tf.less(global_step_recomp, warmup_steps):
                 return tf.math.multiply(
                     initial_learning_rate,
                     tf.math.divide(global_step_recomp, warmup_steps),
                     name=name
                 )
+
             p = global_step_recomp / decay_steps
             if self.staircase:
                 p = tf.math.floor(p)
@@ -127,11 +130,10 @@ class WarmupExponentialDecay(LearningRateSchedule):
     def get_config(self):
         """Return config for serialization."""
         return {
-            'initial_learning_rate': self.initial_learning_rate,
+            'initial_learning_rate': self.lr_init,
             'decay_steps': self.decay_steps,
             'decay_rate': self.decay_rate,
             'staircase': self.staircase,
             'warmup_steps': self.warmup_steps,
             'name': self.name
         }
-
