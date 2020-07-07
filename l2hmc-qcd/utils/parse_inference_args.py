@@ -35,6 +35,13 @@ def parse_args():
         description=DESCRIPTION,
         fromfile_prefix_chars='@',
     )
+    parser.add_argument('--overwrite',
+                        dest='overwrite',
+                        required=False,
+                        action='store_true',
+                        help=("""Flag that when passed will overwrite existing
+                              run directory with new inference data."""))
+
     parser.add_argument('--log_dir',
                         dest='log_dir',
                         required=False,
