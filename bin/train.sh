@@ -5,7 +5,7 @@ TRAINER='../l2hmc-qcd/train.py'
 ARGS='./train_args.txt'
 
 export KMP_BLOCKTIME=1
-export OMP_NUM_THREADS=16
+export OMP_NUM_THREADS=1
 export KMP_SETTINGS=TRUE
 export KMP_AFFINITY='granularity=fine,verbose,compact,1,0'
 
