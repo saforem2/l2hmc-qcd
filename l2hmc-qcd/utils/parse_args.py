@@ -43,8 +43,8 @@ def parse_args():
                         help=("""Whether or not to use separate networks for
                               each MC step."""))
 
-    parser.add_argument("--eager_execution",
-                        dest='eager_execution',
+    parser.add_argument("--compile",
+                        dest='compile',
                         action='store_true',
                         required=False,
                         help=("""Whether or not to compile model to graph."""))
@@ -62,20 +62,6 @@ def parse_args():
     ###########################################################################
     #                          Lattice parameters                             #
     ###########################################################################
-    parser.add_argument("--space_size",
-                        dest="space_size",
-                        type=int,
-                        default=8,
-                        required=False,
-                        help="""Spatial extent of lattice.\n (Default: 8)""")
-
-    parser.add_argument("--time_size",
-                        dest="time_size",
-                        type=int,
-                        default=8,
-                        required=False,
-                        help="""Temporal extent of lattice.\n (Default: 8)""")
-
     parser.add_argument("--dim",
                         dest="dim",
                         type=int,
@@ -157,15 +143,6 @@ def parse_args():
     ###########################################################################
     #                      Annealing rate parameters                          #
     ###########################################################################
-
-    parser.add_argument("--fixed_beta",
-                        dest="fixed_beta",
-                        action="store_true",
-                        required=False,
-                        help=("""Flag that when passed runs the training loop
-                              at fixed beta (i.e. no annealing is done).\n
-                              (Default: `fixed_beta=False`)"""))
-
     parser.add_argument("--beta_init",
                         dest="beta_init",
                         type=float,
@@ -257,17 +234,6 @@ def parse_args():
     # ------------------------------------------------------------------------
     # Model parameters
     # ------------------------------------------------------------------------
-
-    parser.add_argument('--network_arch',
-                        dest='network_arch',
-                        type=str,
-                        default='generic',
-                        required=False,
-                        help=("""String specifying the architecture to use for
-                              the neural network. Must be one of:
-                              `'conv3D', 'conv2D', 'generic'`.\n
-                              (Default: 'conv3D')"""))
-
     parser.add_argument('--network_type',
                         dest='network_type',
                         type=str,
@@ -329,14 +295,6 @@ def parse_args():
                         help=("""Flag that when passed will cause the step size
                               `eps` to be a fixed (non-trainable)
                               parameter."""))
-
-    parser.add_argument("--metric",
-                        dest="metric",
-                        type=str,
-                        default="cos_diff",
-                        required=False,
-                        help=("""Metric to use in loss function. Must be one
-                              of: `l1`, `l2`, `cos`, `cos2`, `cos_diff`."""))
 
     parser.add_argument("--std_weight",
                         dest="std_weight",
@@ -492,3 +450,4 @@ def parse_args():
                 args = parser.parse_args(namespace=t_args)
 
     return args
+
