@@ -13,7 +13,7 @@ import tensorflow as tf
 import utils.file_io as io
 
 from config import HEADER, PI, PROJECT_DIR, SEP, TF_FLOAT
-from dynamics.gauge_dynamics import GaugeDynamics
+from dynamics.gauge_dynamics import GaugeDynamics, convert_to_angle
 from utils.attr_dict import AttrDict
 from utils.plotting_utils import plot_data
 from utils.training_utils import build_dynamics, summarize_metrics
@@ -50,7 +50,6 @@ except ImportError:
         tf.compat.v1.enable_eager_execution()
 
 # pylint:disable=too-many-locals,invalid-name
-
 
 
 def check_if_chief(args):
@@ -100,6 +99,10 @@ def run_hmc(
         'plaq_weight': 10.,
         'charge_weight': 0.1,
         'separate_networks': False,
+        'lr_init': 0,
+        'lr_decay_steps': None,
+        'lr_decay_rate': None,
+        'warmup_steps': 0,
     })
 
     if hmc_dir is None:
@@ -121,7 +124,7 @@ def run_hmc(
             io.log(f'WARNING:Existing run found! Skipping.')
             return None, None
 
-    dynamics, args = build_dynamics(args)
+    dynamics = build_dynamics(args)
     dynamics, run_data = run(dynamics, args, runs_dir=hmc_dir)
 
     return dynamics, run_data
@@ -145,7 +148,7 @@ def load_and_run(
     FLAGS = AttrDict(dict(io.loadz(os.path.join(train_dir, 'FLAGS.z'))))
     FLAGS.horovod = False
 
-    dynamics, FLAGS = build_dynamics(FLAGS)
+    dynamics = build_dynamics(FLAGS)
 
     ckpt = tf.train.Checkpoint(dynamics=dynamics,
                                optimizer=dynamics.optimizer)
@@ -203,8 +206,9 @@ def run(dynamics, args, x=None, runs_dir=None):
         beta = args.get('beta_final', None)
 
     if x is None:
-        x = tf.random.uniform(shape=dynamics.x_shape,
-                              minval=-PI, maxval=PI, dtype=TF_FLOAT)
+        x = convert_to_angle(tf.random.normal(shape=dynamics.x_shape))
+        #  x = tf.random.uniform(shape=dynamics.x_shape,
+        #                        minval=-PI, maxval=PI, dtype=TF_FLOAT)
 
     run_data = run_dynamics(dynamics, args, x)
 
@@ -236,7 +240,7 @@ def run(dynamics, args, x=None, runs_dir=None):
     return dynamics, run_data
 
 
-def run_dynamics(dynamics, args, x=None, should_compile=False):
+def run_dynamics(dynamics, args, x=None):
     """Run inference on trained dynamics."""
     is_chief = check_if_chief(args)
     if not is_chief:
@@ -255,7 +259,7 @@ def run_dynamics(dynamics, args, x=None, should_compile=False):
 
     run_data = DataContainer(run_steps, skip_keys=['charges'], header=HEADER)
 
-    if should_compile:
+    if not dynamics.config.separate_networks:
         test_step = tf.function(dynamics.test_step)
     else:
         test_step = dynamics.test_step
@@ -273,6 +277,7 @@ def run_dynamics(dynamics, args, x=None, should_compile=False):
     io.log(HEADER)
     for step in tf.cast(tf.range(run_steps), dtype=tf.int64):
         start = time.time()
+        x = convert_to_angle(x)
         x, metrics = test_step((x, beta))
         metrics.dt = time.time() - start
         run_data.update(step, metrics)
