@@ -317,54 +317,47 @@ def setup_training(dynamics, flags, train_dir=None, x=None, betas=None):
 
 
 # pylint:disable=too-many-locals
-def train_dynamics(dynamics, flags, dirs=None,
-                   x=None, betas=None):
+def train_dynamics(dynamics, flags, dirs=None, x=None, betas=None):
     """Train model."""
     is_chief = (
         hvd.rank() == 0 if dynamics.using_hvd
         else not dynamics.using_hvd
     )
     rank = hvd.rank() if dynamics.using_hvd else 0
+    should_save = flags.save_train_data
 
     if x is None:
         x = tf.random.uniform(shape=dynamics.x_shape,
                               minval=-PI, maxval=PI,
                               dtype=TF_FLOAT)
 
-    writer = tf.summary.create_file_writer(dirs.summary_dir)
     train_data = DataContainer(flags.train_steps, HEADER, ['charges'])
-    ckpt = tf.train.Checkpoint(dynamics=dynamics, optimizer=dynamics.optimizer)
+    ckpt = tf.train.Checkpoint(model=dynamics, optimizer=dynamics.optimizer)
     manager = tf.train.CheckpointManager(ckpt, dirs.ckpt_dir, max_to_keep=5)
+    if manager.latest_checkpoint:
+        io.log(f'INFO:Restored model from: {manager.latest_checkpoint}')
+        ckpt.restore(manager.latest_checkpoint)
+        current_step = dynamics.optimizer.iterations.numpy()
+        train_data.restore(dirs.data_dir, current_step)
 
     if is_chief:
+        writer = tf.summary.create_file_writer(dirs.summary_dir)
         writer.set_as_default()
-        if manager.latest_checkpoint:
-            io.log(f'INFO:Restored model from: {manager.latest_checkpoint}')
-            ckpt.restore(manager.latest_checkpoint)
-            #  current_step = dynamics.optimizer.iterations.numpy()
-            #  train_data.restore(dirs.data_dir, current_step)
-
-    #  current_step = dynamics.optimizer.iterations.numpy()
-    #  steps = tf.cast(
-    #      tf.range(current_step, current_step + flags.train_steps),
-    #      dtype=tf.int64
-    #  )
 
     if betas is None:
         if flags.beta_init == flags.beta_final:
-            betas = tf.convert_to_tensor(
-                flags.beta_init * np.ones(flags.train_steps)
-            )
+            betas = tf.convert_to_tensor(flags.beta_init *
+                                         np.ones(flags.train_steps))
         else:
-            betas = get_betas(
-                flags.train_steps, flags.beta_init, flags.beta_final
-            )
+            betas = get_betas(flags.train_steps,
+                              flags.beta_init, flags.beta_final)
 
     if flags.compile:
-        io.log(f'INFO:Compiling `dynamics.train_step` using `tf.function`.')
+        io.log(f'INFO:Compiling dynamics.train_step using tf.function', rank)
+        dynamics.compile(dynamics.optimizer, dynamics.calc_loss)
         train_step = tf.function(dynamics.train_step)
     else:
-        io.log(f'INFO:Running `dynamics.train_step` imperatively.')
+        io.log(f'INFO:Running `dynamics.train_step` imperatively.', rank)
         train_step = dynamics.train_step
 
     io.log(HEADER, rank=rank)
@@ -374,25 +367,25 @@ def train_dynamics(dynamics, flags, dirs=None,
         x, metrics = train_step((x, beta), step == 0)
         metrics.dt = time.time() - start
 
-        if step % flags.print_steps == 0:
-            data_str = train_data.get_fstr(step, metrics, rank=rank)
-            io.log(data_str, rank=rank)
-
-        if flags.save_train_data and step % flags.logging_steps == 0:
-            train_data.update(step, metrics)
-            if is_chief:
+        if is_chief:
+            if step % flags.print_steps == 0:
+                data_str = train_data.get_fstr(step, metrics, rank=rank)
+                io.log(data_str, rank=rank)
+            if step % flags.logging_steps == 0 and should_save:
+                train_data.update(step, metrics)
                 summarize_metrics(metrics, step, prefix='training')
+            if step % flags.save_steps == 0 and ckpt is not None:
+                manager.save()
+                io.log(f'INFO:Checkpoint saved to: '
+                       f'{manager.latest_checkpoint}')
+                train_data.save_data(dirs.data_dir)
+                train_data.flush_data_strs(dirs.history_file,
+                                           rank=rank, mode='a')
+            if step % 100 == 0:
+                io.log(HEADER, rank=rank)
 
-        if is_chief and step % flags.save_steps == 0 and ckpt is not None:
-            manager.save()
-            io.log(f'INFO:Checkpoint saved to: {manager.latest_checkpoint}')
-            train_data.save_data(dirs.data_dir)
-            train_data.flush_data_strs(dirs.history_file, rank=rank, mode='a')
 
-        if step % 100 == 0:
-            io.log(HEADER, rank=rank)
-
-    if is_chief and ckpt is not None and manager is not None:
+    if is_chief:
         manager.save()
         train_data.save_data(dirs.data_dir)
         train_data.flush_data_strs(dirs.history_file, rank=rank, mode='a')

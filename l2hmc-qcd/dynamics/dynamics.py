@@ -20,20 +20,18 @@ Date: 6/30/2020
 from __future__ import absolute_import, division, print_function
 
 
-from typing import Callable, List, NoReturn, Tuple
+from typing import Callable, NoReturn
 
 import numpy as np
 import tensorflow as tf
 
 from config import (DynamicsConfig, MonteCarloStates, NET_WEIGHTS_HMC,
-                    NET_WEIGHTS_L2HMC, NetworkConfig, NP_FLOAT, PI, State,
-                    TF_FLOAT, TF_INT, TWO_PI, lrConfig)
+                    NET_WEIGHTS_L2HMC, NetworkConfig, State, TWO_PI,
+                    TF_FLOAT, TF_INT, lrConfig)
 from network.gauge_network import GaugeNetwork
 from utils.attr_dict import AttrDict
-from utils.seed_dict import seeds, vnet_seeds, xnet_seeds
+from utils.seed_dict import vnet_seeds, xnet_seeds
 from utils.learning_rate import WarmupExponentialDecay
-from lattice.utils import u1_plaq_exact_tf
-from lattice.lattice import GaugeLattice
 
 try:
     import horovod.tensorflow as hvd
@@ -50,6 +48,7 @@ def identity(x):
 
 # pylint:disable=invalid-name, too-many-arguments
 # pylint:disable=attribute-defined-outside-init, too-many-locals
+# pylint:disable=too-many-instance-attributes
 class BaseDynamics(tf.keras.Model):
     """Dynamics object for training the L2HMC sampler."""
     def __init__(
@@ -90,17 +89,14 @@ class BaseDynamics(tf.keras.Model):
             self.lr = self._create_lr(lr_config)
             self.optimizer = self._create_optimizer()
 
-    def compile(self, optimizer, loss=None, metrics=None):
+    def compile(self, optimizer, loss=None):
         """Compile the `tf.keras.models.Model` object."""
-        if loss is None:
-            loss = self.calc_loss
-        super(BaseDynamics, self).compile(loss=loss,
-                                          metrics=metrics,
-                                          optimizer=optimizer)
+        super(BaseDynamics, self).compile()
+        self.optimizer = optimizer
+        self.loss = loss
 
     def _parse_params(self, params):
         """Set instance attributes from `params`."""
-        #  self.params = AttrDict(params)
         self.xdim = params.get('xdim', None)
         self.batch_size = params.get('batch_size', None)
         self.using_hvd = params.get('horovod', False)
@@ -131,7 +127,7 @@ class BaseDynamics(tf.keras.Model):
         """Calculate the total loss."""
         raise NotImplementedError
 
-    def train_step(self, inputs, first_step=False):
+    def train_step(self, inputs):
         """Perform a single training step."""
         raise NotImplementedError
 
@@ -209,6 +205,7 @@ class BaseDynamics(tf.keras.Model):
             new_state, logdet = lf_fn(step, state, training=training)
             return step+1, new_state, sld+logdet
 
+        # pylint:disable=unused-argument
         def cond(step, *args):
             return tf.less(step, self.config.num_steps)
 
