@@ -24,6 +24,7 @@ class DataContainer:
         self.steps = steps
         if skip_keys is None:
             skip_keys = ['']
+
         self.skip_keys = skip_keys
         self.data_strs = [header]
         self.steps_arr = []
@@ -38,7 +39,7 @@ class DataContainer:
             except KeyError:
                 self.data[key] = [tf.convert_to_tensor(val).numpy()]
 
-    def get_fstr(self, step, metrics, rank=0, writer=None):
+    def get_fstr(self, step, metrics, rank=0):
         """Get formatted data string from `data`."""
         if rank != 0:
             return ''
@@ -54,8 +55,10 @@ class DataContainer:
         self.data_strs.append(fstr)
         return fstr
 
-    def restore(self, data_dir):
+    def restore(self, data_dir, current_step=None):
         """Restore `self.data` from `data_dir`."""
+        if current_step is not None:
+            self.steps += current_step
         data = self.load_data(data_dir)
         for key, val in data.items():
             self.data[key] = [val]
