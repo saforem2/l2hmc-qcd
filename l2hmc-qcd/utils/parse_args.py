@@ -485,6 +485,7 @@ def parse_args():
     else:
         args = parser.parse_args()
         if args.json_file is not None:
+            print(f'Loading flags from: {args.json_file}.')
             with open(args.json_file, 'rt') as f:
                 t_args = argparse.Namespace()
                 t_args.__dict__.update(json.load(f))
