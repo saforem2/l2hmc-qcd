@@ -281,11 +281,9 @@ def make_log_dir(FLAGS, model_type=None, log_file=None,
     month_str = now.strftime('%Y_%m')
     dstr = now.strftime('%Y-%m-%d-%H%M%S')
     run_str = f'{fstr}-{dstr}'
-    #  run_str = f'{run_str}-{dstr}'
 
     root_dir = os.path.dirname(PROJECT_DIR)
     dirs = [root_dir]
-    #  if tf.executing_eagerly():
     if eager:
         dirs.append('gauge_logs_eager')
 
@@ -323,8 +321,6 @@ def make_run_dir(FLAGS, base_dir):
         run_dir = os.path.join(base_dir, run_str)
 
     check_else_make_dir(run_dir)
-    #  if log_file is not None:
-    #      write(f'{run_dir}', log_file, 'a')
 
     return run_dir
 
@@ -368,12 +364,6 @@ def save(dynamics, train_data, train_dir, rank=0):
     if not dynamics.config.hmc:
         save_network_weights(dynamics, train_dir, rank=rank)
 
-    #  if model.save_train_data:
-    #      outputs_dir = os.path.join(train_dir, 'outputs')
-    #      check_else_make_dir(outputs_dir)
-    #      for key, val in outputs.items():
-    #          out_file = os.path.join(outputs_dir, f'{key}.z')
-    #          savez(np.array(val), out_file, key)
     if dynamics.save_train_data:
         output_dir = os.path.join(train_dir, 'outputs')
         train_data.save_data(output_dir)
@@ -386,16 +376,6 @@ def save_inference(run_dir, run_data):
     check_else_make_dir([run_dir, data_dir])
     run_data.save_data(data_dir)
     run_data.flush_data_strs(log_file, mode='a')
-
-    #  history_file = os.path.join(run_dir, 'inference_log.txt')
-    #  with open(history_file, 'w') as f:
-    #      f.write('\n'.join(run_data.data_strs))
-    #
-    #  outputs_dir = os.path.join(run_dir, 'outputs')
-    #  check_else_make_dir(outputs_dir)
-    #  for key, val in run_data.data.items():
-    #      out_file = os.path.join(outputs_dir, f'{key}.z')
-    #      savez(np.array(val), out_file, key)
 
 
 def get_subdirs(root_dir):
