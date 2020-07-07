@@ -7,25 +7,91 @@ Implements both 2D and 3D convolutional neural networks.
 Author: Sam Foreman (github: @saforem2)
 Date: 06/14/2019
 """
+from __future__ import absolute_import, division, print_function
+
 import pickle
+
+from collections import namedtuple
+
 import numpy as np
 import tensorflow as tf
 
-import config as cfg
-from seed_dict import seeds
-from .layers import batch_norm
-
-TF_FLOAT = cfg.TF_FLOAT
-Weights = cfg.Weights
+from config import TF_FLOAT, Weights
+from network.layers import batch_norm
+from utils.seed_dict import seeds
 
 np.random.seed(seeds['global_np'])
 
-if '2.' not in tf.__version__:
+if tf.__version__.startswith('1.'):
     tf.set_random_seed(seeds['global_tf'])
 
 
-class ConvNet2D(tf.keras.Model):
+PoolConfig = namedtuple('PoolConfig', ['pool_sizes', 'strides'])
+
+ConvConfig = namedtuple('ConvConfig', [
+    'filters', 'kernel_sizes', 'strides', 'padding', 'activation'
+])
+
+
+class ConvNet2D(tf.keras.layers.Layer):
+    """Block of 2D convolutional layers."""
+
+    def __init__(self,
+                 config: ConvConfig,
+                 pool_config: PoolConfig,
+                 input_shape: tuple,
+                 lattice_shape: tuple,
+                 data_format: str = 'channels_last',
+                 use_batch_norm: bool = False) -> None:
+        """Initialization method."""
+        super(ConvNet2D, self).__init__()
+        self.config = config
+        self.pool_config = pool_config
+        self.data_format = data_format
+        self.input_shape = input_shape
+        self.lattice_shape = lattice_shape
+        self.use_batch_norm = use_batch_norm
+        self.conv1 = tf.keras.layers.Conv2D(
+            name='ConvLayer1',
+            filters=self.config.filters[0],
+            kernel_size=self.config.kernel_sizes[0],
+            strides=self.config.strides[0],
+            activation=self.config.activation,
+            padding=self.config.padding,
+            data_format=self.data_format,
+            input_shape=self.lattice_shape
+        )
+
+        self.conv2 = tf.keras.layers.Conv2D(
+            name='ConvLayer2',
+            filters=self.config.filters[1],
+            kernel_size=self.config.kernel_sizes[1],
+            strides=self.config.strides[1],
+            activation=self.config.activation,
+            padding=self.config.padding,
+            data_format=self.data_format
+        )
+
+        self.pool1 = tf.keras.layers.MaxPooling2D(
+            name='MaxPool1',
+            pool_size=self.pool_config.pool_sizes[0],
+            strides=self.pool_config.pool_sizes[1],
+        )
+
+        self.pool1 = tf.keras.layers.MaxPooling2D(
+            name='MaxPool1',
+            pool_size=self.pool_config.pool_sizes[0],
+            strides=self.pool_config.pool_sizes[1],
+        )
+
+    def call(self, inputs, training=None):
+        """Call the layer (forward-pass)."""
+        pass
+
+
+class ConvNet2D_1(tf.keras.Model):
     """Convolutional block used in ConvNet3D."""
+
     def __init__(self, model_name, **kwargs):
         """
         Initialization method.
@@ -41,7 +107,6 @@ class ConvNet2D(tf.keras.Model):
         self.activation = kwargs.get('conv_activation', tf.nn.relu)
         self.num_filters = kwargs.get('num_filters', [32, 32])
         self.filter_sizes = kwargs.get('filter_sizes', [4, 4])
-
 
         for key, val in kwargs.items():
             setattr(self, key, val)
@@ -180,6 +245,7 @@ class ConvNet2D(tf.keras.Model):
 
 class ConvNet3D(tf.keras.Model):
     """Convolutional block used in ConvNet3D."""
+
     def __init__(self, model_name, **kwargs):
         """
         Initialization method.

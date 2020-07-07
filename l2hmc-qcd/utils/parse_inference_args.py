@@ -13,7 +13,11 @@ import shlex
 #  from config import process_config
 #  from attr_dict import AttrDict
 
-DESCRIPTION = 'Run inference on trained L2HMC model.'
+DESCRIPTION = (
+    """Run inference, either by loading a trained model from a checkpoint
+    (specified by the `--log_dir` flag) or with generic HMC by creating a new
+    `GaugeModel` instance."""
+)
 
 
 # =============================================================================
@@ -31,21 +35,19 @@ def parse_args():
         description=DESCRIPTION,
         fromfile_prefix_chars='@',
     )
-    ###########################################################################
-    #                          Lattice parameters                             #
-    ###########################################################################
+    parser.add_argument('--overwrite',
+                        dest='overwrite',
+                        required=False,
+                        action='store_true',
+                        help=("""Flag that when passed will overwrite existing
+                              run directory with new inference data."""))
+
     parser.add_argument('--log_dir',
                         dest='log_dir',
                         required=False,
                         default=None,
                         help=("""Path to `log_dir` containing trained model on
                               which to run inference."""))
-
-    parser.add_argument('--hmc',
-                        dest='hmc',
-                        action='store_true',
-                        required=False,
-                        help="""Run generic HMC.""")
 
     parser.add_argument("--run_steps",
                         dest="run_steps",
@@ -73,16 +75,33 @@ def parse_args():
                         required=False,
                         help=("""Flag specifying value of `eps` to use."""))
 
-    parser.add_argument('--save_samples',
-                        dest='save_samples',
+    #################################
+    # Flags for running generic HMC
+    #################################
+
+    parser.add_argument('--hmc',
+                        dest='hmc',
                         action='store_true',
                         required=False,
-                        help=("""Flag that when passed will set
-                              `--save_samples=True`, and save the samples
-                              generated during the `run` phase.
-                              (Default: `--save_samples=False, i.e.
-                              `--save_samples` is not passed).\n
-                              WARNING!! This is very data intensive."""))
+                        help="""Run generic HMC.""")
+
+    parser.add_argument('--lattice_shape',
+                        dest='lattice_shape',
+                        type=lambda s: [int(i) for i in s.split(',')],
+                        default="128, 16, 16, 2",
+                        required=False,
+                        help=("""Specifies the shape of our data, with:
+                              lattice_shape =
+                              (batch_size, time_size, space_size, dim)
+                              Defaults to: (128, 16, 16, 2)"""))
+
+    parser.add_argument("-n", "--num_steps",
+                        dest="num_steps",
+                        type=int,
+                        default=1,
+                        required=False,
+                        help=("""Number of leapfrog steps to use in (augmented)
+                              HMC sampler.\n(Default: 5)"""))
 
     if sys.argv[1].startswith('@'):
         args = parser.parse_args(shlex.split(open(sys.argv[1][1:]).read(),
