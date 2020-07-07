@@ -19,17 +19,15 @@ Date: 6/30/2020
 """
 from __future__ import absolute_import, division, print_function
 
-import time
 
 from typing import Callable, List, NoReturn, Tuple
-from collections import namedtuple
 
 import numpy as np
 import tensorflow as tf
 
 from config import (DynamicsConfig, MonteCarloStates, NET_WEIGHTS_HMC,
                     NET_WEIGHTS_L2HMC, NetworkConfig, NP_FLOAT, PI, State,
-                    TF_FLOAT, TF_INT, TWO_PI)
+                    TF_FLOAT, TF_INT, TWO_PI, lrConfig)
 from network.gauge_network import GaugeNetwork
 from utils.attr_dict import AttrDict
 from utils.seed_dict import seeds, vnet_seeds, xnet_seeds
@@ -60,6 +58,7 @@ class BaseDynamics(tf.keras.Model):
             config: DynamicsConfig,
             network_config: NetworkConfig,
             potential_fn: Callable[[tf.Tensor], tf.Tensor],
+            lr_config: lrConfig = None,
             normalizer: Callable[[tf.Tensor], tf.Tensor] = None,
             name: str = 'Dynamics',
     ) -> NoReturn:
@@ -87,7 +86,8 @@ class BaseDynamics(tf.keras.Model):
         self._build_networks()
 
         if self._has_trainable_params:
-            self.lr = self._create_lr(params.get('warmup_lr', False))
+            self.lr_config = lr_config
+            self.lr = self._create_lr(lr_config)
             self.optimizer = self._create_optimizer()
 
     def compile(self, optimizer, loss=None, metrics=None):
@@ -185,14 +185,17 @@ class BaseDynamics(tf.keras.Model):
 
         return mc_states, accept_prob, sld_states
 
-    def _transition(self, inputs, forward=True, training=None):
+    def _transition(self, inputs, forward, training=None):
         """Run the augmented leapfrog integrator."""
         x_init, beta = inputs
         v_init = tf.random.normal(tf.shape(x_init))
         state = State(x_init, v_init, beta)
-        state_prop, px, sld = self.transition_kernel_while(state,
-                                                           forward,
-                                                           training)
+        #  state_prop, px, sld = self.transition_kernel_while(state,
+        #                                                     forward,
+        #                                                     training)
+        state_prop, px, sld = self.transition_kernel_for(state,
+                                                         forward,
+                                                         training)
 
         return state, state_prop, px, sld
 
@@ -225,7 +228,7 @@ class BaseDynamics(tf.keras.Model):
 
         state_prop = State(*state)
         sumlogdet = tf.zeros((self.batch_size,), dtype=TF_FLOAT)
-        for step in tf.range(self.config.num_steps):
+        for step in range(self.config.num_steps):
             state_prop, logdet = lf_fn(step, state_prop, training)
             sumlogdet += logdet
 
@@ -306,8 +309,8 @@ class BaseDynamics(tf.keras.Model):
         grad = self.grad_potential(x, state.beta)
         Sv, Tv, Qv = network((x, grad, t), training)
 
-        scale = self._vsw * (0.5 * self.eps * Sv)
         transl = self._vtw * Tv
+        scale = self._vsw * (0.5 * self.eps * Sv)
         transf = self._vqw * (self.eps * Qv)
 
         exp_s = tf.exp(scale)
@@ -337,8 +340,8 @@ class BaseDynamics(tf.keras.Model):
         m, mc = masks
         Sx, Tx, Qx = network((state.v, m * x, t), training)
 
-        scale = self._xsw * (self.eps * Sx)
         transl = self._xtw * Tx
+        scale = self._xsw * (self.eps * Sx)
         transf = self._xqw * (self.eps * Qx)
 
         exp_s = tf.exp(scale)
@@ -372,8 +375,8 @@ class BaseDynamics(tf.keras.Model):
         Sv, Tv, Qv = network((x, grad, t), training)
 
         scale = self._vsw * (-0.5 * self.eps * Sv)
-        transl = self._vtw * Tv
         transf = self._vqw * (self.eps * Qv)
+        transl = self._vtw * Tv
 
         exp_s = tf.exp(scale)
         exp_q = tf.exp(transf)
@@ -589,22 +592,22 @@ class BaseDynamics(tf.keras.Model):
         return tf.Variable(initial_value=init, dtype=TF_FLOAT,
                            trainable=self.config.eps_trainable)
 
-    def _create_lr(self, warmup=False):
+    def _create_lr(self, lr_config=None):
         """Create the learning rate schedule to be used during training."""
-        lr_init = self.params.get('lr_init', 1e-3)
-        lr_decay_steps = self.params.get('lr_decay_steps', 5000)
-        lr_decay_rate = self.params.get('lr_decay_rate', 0.96)
+        if lr_config is None:
+            lr_config = self.lr_config
 
-        if warmup:
+        if lr_config.warmup_steps > 0:
             name = 'WarmupExponentialDecay'
-            warmup_steps = self.params.get('warmup_steps', 1000)
-            return WarmupExponentialDecay(lr_init, lr_decay_steps,
-                                          lr_decay_rate, warmup_steps,
+            return WarmupExponentialDecay(lr_config.init,
+                                          lr_config.decay_steps,
+                                          lr_config.decay_rate,
+                                          lr_config.warmup_steps,
                                           staircase=True, name=name)
         return tf.keras.optimizers.schedules.ExponentialDecay(
-            lr_init,
-            decay_steps=lr_decay_steps,
-            decay_rate=lr_decay_rate,
+            lr_config.init,
+            decay_steps=lr_config.decay_steps,
+            decay_rate=lr_config.decay_rate,
             staircase=True,
         )
 

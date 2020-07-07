@@ -27,8 +27,8 @@ import numpy as np
 import tensorflow as tf
 
 from config import (DynamicsConfig, NetworkConfig, NP_FLOAT, PI, TF_FLOAT,
-                    TF_INT, TWO_PI)
-from dynamics.dynamics_base import BaseDynamics
+                    TF_INT, TWO_PI, lrConfig)
+from dynamics.dynamics import BaseDynamics
 from utils.attr_dict import AttrDict
 from utils.seed_dict import seeds, vnet_seeds, xnet_seeds
 from utils.learning_rate import WarmupExponentialDecay
@@ -57,10 +57,15 @@ class GaugeDynamics(BaseDynamics):
             params: AttrDict,
             config: DynamicsConfig,
             network_config: NetworkConfig,
+            lr_config: lrConfig,
     ) -> NoReturn:
+
+        self.plaq_weight = params.get('plaq_weight', 10.)
+        self.charge_weight = params.get('charge_weight', 0.1)
 
         self.lattice_shape = params.get('lattice_shape', None)
         self.lattice = GaugeLattice(self.lattice_shape)
+
         params.update({
             'batch_size': self.lattice_shape[0],
             'xdim': np.cumprod(self.lattice_shape[1:])[-1],
@@ -72,26 +77,27 @@ class GaugeDynamics(BaseDynamics):
             name='GaugeDynamics',
             normalizer=convert_to_angle,
             network_config=network_config,
+            lr_config=lr_config,
             potential_fn=self.lattice.calc_actions,
         )
 
-        self.plaq_weight = params.get('plaq_weight', 10.)
-        self.charge_weight = params.get('charge_weight', 0.1)
-
     def calc_losses(self, inputs):
         """Calculate the total loss."""
-        # Unpack the inputs
         states, accept_prob = inputs
+        dtype = states.init.x.dtype
+
         ps_init = self.lattice.calc_plaq_sums(samples=states.init.x)
         ps_prop = self.lattice.calc_plaq_sums(samples=states.proposed.x)
 
-        ploss = tf.constant(0., name='plaq_loss', dtype=states.init.x.dtype)
+        # Calculate the plaquette loss
+        ploss = tf.constant(0., dtype=dtype)
         if self.plaq_weight > 0:
             dplaq = 2 * (1. - tf.math.cos(ps_prop - ps_init))
             ploss = accept_prob * tf.reduce_sum(dplaq, axis=(1, 2))
             ploss = tf.reduce_mean(-ploss / self.plaq_weight, axis=0)
 
-        qloss = tf.constant(0., name='charge_loss', dtype=states.init.x.dtype)
+        # Calculate the charge loss
+        qloss = tf.constant(0., dtype=dtype)
         if self.charge_weight > 0:
             q_init = self.lattice.calc_top_charges(plaq_sums=ps_init,
                                                    use_sin=True)
@@ -175,19 +181,19 @@ class GaugeDynamics(BaseDynamics):
         NOTE: We track the error in the plaquette instead of the actual value.
         """
         x = tf.reshape(state.x, self.lattice_shape)
-
-        ps = self.lattice.calc_plaq_sums(x)
+        ps = self.lattice.calc_plaq_sums(samples=x)
         plaqs = self.lattice.calc_plaqs(plaq_sums=ps)
         plaqs_err = u1_plaq_exact_tf(state.beta) - plaqs
-        charges = self.lattice.calc_top_charges(plaq_sums=ps,
-                                                use_sin=use_sin)
+        charges = self.lattice.calc_top_charges(
+            plaq_sums=ps, use_sin=use_sin
+        )
 
         return plaqs_err, charges
 
     def calc_observables(self, states, use_sin=False):
         """Calculate observables."""
         _, q_init = self._calc_observables(states.init, use_sin=use_sin)
-        plaqs, q_out = self._calc_observables(states.proposed, use_sin=use_sin)
+        plaqs, q_out = self._calc_observables(states.out, use_sin=use_sin)
 
         observables = AttrDict({
             'dq': tf.math.abs(q_out - q_init),
