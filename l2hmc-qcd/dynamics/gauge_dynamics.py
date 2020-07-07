@@ -109,7 +109,7 @@ class GaugeDynamics(BaseDynamics):
 
         return ploss, qloss
 
-    def train_step(self, inputs, first_step=False):
+    def train_step(self, inputs, first_step):
         """Perform a single training step."""
         start = time.time()
         with tf.GradientTape() as tape:
@@ -122,19 +122,8 @@ class GaugeDynamics(BaseDynamics):
 
         grads = tape.gradient(loss, self.trainable_variables)
         self.optimizer.apply_gradients(
-            zip(grads, self.trainable_variables)
+            zip(grads, self.trainable_variables),
         )
-        # Horovod:
-        #   Broadcast initial variable states from rank 0 to all other
-        #   processes. This is necessary to ensure consistent initialization of
-        #   all workers when training is started with random weights or
-        #   restored from a checkpoint.
-        # NOTE:
-        #   Broadcast should be done after the first gradient step to ensure
-        #   optimizer initialization.
-        if first_step and self.using_hvd:
-            hvd.broadcast_variables(self.variables, root_rank=0)
-            hvd.broadcast_variables(self.optimizer.variables(), root_rank=0)
 
         metrics = AttrDict({
             'dt': time.time() - start,
@@ -149,6 +138,19 @@ class GaugeDynamics(BaseDynamics):
 
         observables = self.calc_observables(states, use_sin=True)
         metrics.update(**observables)
+
+        # Horovod:
+        #    Broadcast initial variable states from rank 0 to all other
+        #    processes. This is necessary to ensure consistent initialization
+        #    of all workers when training is started with random weights or
+        #    restored from a checkpoint.
+        # NOTE:
+        #    Broadcast should be done after the first gradient step to ensure
+        #    optimizer intialization.
+        #  if self.optimizer.iterations.numpy() == 0 and self.using_hvd:
+        if first_step:
+            hvd.broadcast_variables(self.variables, root_rank=0)
+            hvd.broadcast_variables(self.optimizer.variables(), root_rank=0)
 
         return states.out.x, metrics
 
