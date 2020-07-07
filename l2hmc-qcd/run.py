@@ -24,5 +24,6 @@ if __name__ == '__main__':
         _, _ = load_and_run(ARGS)
     else:
         LOG_FILE = os.path.join(os.getcwd(), 'hmc_dirs.txt')
-        _, _ = run_hmc(args=ARGS, hmc_dir=None, skip_existing=True)
+        skip_existing = not ARGS.overwrite
+        _, _ = run_hmc(args=ARGS, hmc_dir=None, skip_existing=skip_existing)
     io.log(80 * '-')
