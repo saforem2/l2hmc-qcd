@@ -20,18 +20,14 @@ from __future__ import absolute_import, division, print_function
 
 import time
 
-from typing import Callable, List, NoReturn, Tuple
-from collections import namedtuple
+from typing import NoReturn
 
 import numpy as np
 import tensorflow as tf
 
-from config import (DynamicsConfig, NetworkConfig, NP_FLOAT, PI, TF_FLOAT,
-                    TF_INT, TWO_PI, lrConfig)
+from config import DynamicsConfig, NetworkConfig, PI, TWO_PI, lrConfig
 from dynamics.dynamics import BaseDynamics
 from utils.attr_dict import AttrDict
-from utils.seed_dict import seeds, vnet_seeds, xnet_seeds
-from utils.learning_rate import WarmupExponentialDecay
 from lattice.utils import u1_plaq_exact_tf
 from lattice.lattice import GaugeLattice
 
