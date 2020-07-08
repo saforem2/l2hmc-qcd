@@ -16,7 +16,7 @@ from config import HEADER, PI, PROJECT_DIR, SEP, TF_FLOAT
 from dynamics.gauge_dynamics import GaugeDynamics, convert_to_angle
 from utils.attr_dict import AttrDict
 from utils.plotting_utils import plot_data
-from utils.training_utils import build_dynamics, summarize_metrics
+from utils.training_utils import build_dynamics, summarize_dict
 from utils.data_containers import DataContainer
 
 # pylint:disable=no-member
@@ -121,7 +121,7 @@ def run_hmc(
         run_fstrs = [get_run_fstr(i) for i in run_dirs]
         run_fstr = io.get_run_dir_fstr(args)
         if run_fstr in run_fstrs:
-            io.log(f'WARNING:Existing run found! Skipping.')
+            io.log(f'ERROR:Existing run found! Skipping.')
             return None, None
 
     dynamics = build_dynamics(args)
@@ -168,7 +168,7 @@ def load_and_run(
         )
         args.beta = l2hmc_flags.beta_final
 
-    args.update(FLAGS)
+    #  args.update(FLAGS)
     dynamics, run_data = run(dynamics, args, runs_dir=runs_dir)
 
     return dynamics, run_data
@@ -240,14 +240,13 @@ def run(dynamics, args, x=None, runs_dir=None):
     return dynamics, run_data
 
 
-def run_dynamics(dynamics, args, x=None):
+def run_dynamics(dynamics, args, x=None, autograph=True):
     """Run inference on trained dynamics."""
     is_chief = check_if_chief(args)
     if not is_chief:
         return None
 
     beta = args.get('beta', None)
-    run_steps = args.get('run_steps', None)
     print_steps = args.get('print_steps', 5)
     if beta is None:
         beta = args.get('beta_final', None)
@@ -257,12 +256,12 @@ def run_dynamics(dynamics, args, x=None):
                               minval=-PI, maxval=PI)
         x = tf.cast(x, dtype=TF_FLOAT)
 
-    run_data = DataContainer(run_steps, skip_keys=['charges'], header=HEADER)
+    run_data = DataContainer(args.run_steps, skip_keys=['charges'], header=HEADER)
 
-    if not dynamics.config.separate_networks:
-        test_step = tf.function(dynamics.test_step)
-    else:
-        test_step = dynamics.test_step
+    #  if not dynamics.config.separate_networks:
+    test_step = dynamics.test_step
+    if autograph:
+        test_step = tf.function(test_step)
 
     eps = dynamics.eps
     if hasattr(eps, 'numpy'):
@@ -275,7 +274,7 @@ def run_dynamics(dynamics, args, x=None):
     io.log(f'  net_weights: {dynamics.net_weights}')
     io.log(SEP)
     io.log(HEADER)
-    for step in tf.cast(tf.range(run_steps), dtype=tf.int64):
+    for step in tf.cast(tf.range(args.run_steps), dtype=tf.int64):
         start = time.time()
         x = convert_to_angle(x)
         x, metrics = test_step((x, beta))
@@ -285,7 +284,7 @@ def run_dynamics(dynamics, args, x=None):
         if step % print_steps == 0:
             data_str = run_data.get_fstr(step, metrics)
             io.log(data_str)
-            summarize_metrics(metrics, step, prefix='testing')
+            summarize_dict(metrics, step, prefix='testing')
 
         if step % 100 == 0:
             io.log(HEADER)

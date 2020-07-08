@@ -10,7 +10,9 @@ import time
 
 import numpy as np
 import tensorflow as tf
+import typing
 
+from utils.file_io import timeit
 import utils.file_io as io
 
 from config import (DynamicsConfig, HEADER, lrConfig, NET_WEIGHTS_HMC,
@@ -47,17 +49,45 @@ except ImportError:
     pass
 
 
-def _scalar_summary(name, val, step):
-    """Create scalar summary for logging in tensorboard."""
-    tf.summary.scalar(name, tf.reduce_mean(val), step=step)
-
-
-def summarize_metrics(metrics, step, prefix=None):
-    """Create scalar summaries for all items in `metrics`."""
+def summarize_dict(d, step, prefix=None):
+    """Create summaries for all items in d."""
     if prefix is None:
         prefix = ''
-    for key, val in metrics.items():
-        _scalar_summary(f'{prefix}/{key}', val, step)
+    for key, val in d.items():
+        name = f'{prefix}/{key}'
+        tf.summary.histogram(name, val, step=step)
+        tf.summary.scalar(f'{name}_avg', tf.reduce_mean(val), step=step)
+
+
+def summarize_list(x, step, prefix=None):
+    """Create summary objects for all items in `x`."""
+    if prefix is None:
+        prefix = ''
+    for t in x:
+        name = f'{prefix}/{t.name}'
+        tf.summary.histogram(name, t, step)
+        tf.summary.scalar(f'{name}_avg', tf.reduce_mean(t), step=step)
+
+
+def summarize(step: int, metrics: AttrDict, dynamics: GaugeDynamics):
+    """Create summary objects.
+
+    NOTE: Explicitly, we create summary objects for all entries in
+      - metrics
+      - dynamics.variables
+      - dynamics.optimizer.variables()
+
+    Returns:
+        None
+    """
+    learning_rate = dynamics.lr(step).numpy()
+    opt_vars = dynamics.optimizer.variables()
+    summarize_dict(metrics, step, prefix='training')
+    summarize_list(dynamics.variables, step, prefix='dynamics')
+    summarize_list(opt_vars, step, prefix='dynamics.optimizer')
+    tf.summary.scalar('training/learning_rate', learning_rate, step)
+
+
 
 
 def exp_mult_cooling(step, temp_init, temp_final, num_steps, alpha=None):
@@ -317,6 +347,7 @@ def setup_training(dynamics, flags, train_dir=None, x=None, betas=None):
 
 
 # pylint:disable=too-many-locals
+# pylint:disable=protected-access
 def train_dynamics(dynamics, flags, dirs=None, x=None, betas=None):
     """Train model."""
     is_chief = (
@@ -352,12 +383,12 @@ def train_dynamics(dynamics, flags, dirs=None, x=None, betas=None):
             betas = get_betas(flags.train_steps,
                               flags.beta_init, flags.beta_final)
 
-    if flags.compile:
-        io.log(f'INFO:Compiling dynamics.train_step using tf.function', rank)
+    if flags.get('compile', False):
+        io.log(f'INFO:Compiling dynamics.train_step using tf.function\n', rank)
         dynamics.compile(dynamics.optimizer, dynamics.calc_loss)
         train_step = tf.function(dynamics.train_step)
     else:
-        io.log(f'INFO:Running `dynamics.train_step` imperatively.', rank)
+        io.log(f'INFO:Running `dynamics.train_step` imperatively\n', rank)
         train_step = dynamics.train_step
 
     io.log(HEADER, rank=rank)
@@ -373,7 +404,8 @@ def train_dynamics(dynamics, flags, dirs=None, x=None, betas=None):
                 io.log(data_str, rank=rank)
             if step % flags.logging_steps == 0 and should_save:
                 train_data.update(step, metrics)
-                summarize_metrics(metrics, step, prefix='training')
+                summarize(step, metrics, dynamics)
+
             if step % flags.save_steps == 0 and ckpt is not None:
                 manager.save()
                 io.log(f'INFO:Checkpoint saved to: '
