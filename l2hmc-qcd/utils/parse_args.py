@@ -43,6 +43,13 @@ def parse_args():
                         help=("""Whether or not to use separate networks for
                               each MC step."""))
 
+    parser.add_argument('--use_ncp',
+                        dest='use_ncp',
+                        action='store_true',
+                        required=False,
+                        help=("""Whether or not to use the NonCompact
+                              Projection on the link variables."""))
+
     parser.add_argument("--compile",
                         dest='compile',
                         action='store_true',
@@ -68,14 +75,6 @@ def parse_args():
                         required=False,
                         default=2,
                         help="""Dimensionality of lattice.\n (Default: 2)""")
-
-    parser.add_argument("--batch_size",
-                        dest="batch_size",
-                        type=int,
-                        default=64,
-                        required=False,
-                        help=("""Number of samples (batch size) to use for
-                              training.\n (Default: 20)"""))
 
     parser.add_argument("--rand",
                         dest="rand",

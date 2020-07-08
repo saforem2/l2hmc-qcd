@@ -210,6 +210,7 @@ def get_log_dir_fstr(FLAGS):
     dropout_prob = FLAGS.get('dropout_prob', 0.)
     clip_value = FLAGS.get('clip_value', 0.)
     separate_networks = FLAGS.get('separate_networks', False)
+    using_ncp = FLAGS.get('use_ncp', False)
 
     fstr = ''
 
@@ -233,12 +234,6 @@ def get_log_dir_fstr(FLAGS):
     if num_steps is not None:
         fstr += f'_lf{num_steps}'
 
-    if network_type != 'GaugeNetwork':
-        fstr += f'_{network_type}'
-
-    if separate_networks:
-        fstr += f'_sepNets'
-
     if charge_weight > 0:
         fstr += f'_qw{charge_weight}'.replace('.', '')
 
@@ -256,6 +251,15 @@ def get_log_dir_fstr(FLAGS):
 
     if clip_value > 0:
         fstr += f'_clip{clip_value}'.replace('.', '')
+
+    if network_type != 'GaugeNetwork':
+        fstr += f'_{network_type}'
+
+    if separate_networks:
+        fstr += f'_sepNets'
+
+    if using_ncp:
+        fstr += f'_NCProj'
 
     return fstr
 

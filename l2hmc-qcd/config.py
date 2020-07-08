@@ -34,6 +34,7 @@ DynamicsConfig = namedtuple('DynamicsConfig', [
     'model_type',
     'eps_trainable',
     'separate_networks',
+    'use_ncp',
 ])
 
 NetworkConfig = namedtuple('NetworkConfig', [
