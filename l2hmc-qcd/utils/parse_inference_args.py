@@ -52,7 +52,7 @@ def parse_args():
     parser.add_argument("--run_steps",
                         dest="run_steps",
                         type=int,
-                        default=5000,
+                        default=2000,
                         required=False,
                         help=("""Number of evaluation 'run' steps to perform
                               after training (i.e. length of desired chain
