@@ -25,14 +25,16 @@ from typing import NoReturn
 import numpy as np
 import tensorflow as tf
 
-from config import DynamicsConfig, NetworkConfig, PI, TWO_PI, lrConfig, State
-from dynamics.dynamics import BaseDynamics
+from config import (DynamicsConfig, lrConfig, NetWeights, NetworkConfig, PI,
+                    State, TWO_PI)
 from utils.attr_dict import AttrDict
+from dynamics.dynamics import BaseDynamics
 from lattice.utils import u1_plaq_exact_tf
 from lattice.lattice import GaugeLattice
 
 try:
     import horovod.tensorflow as hvd
+
     HAS_HOROVOD = True
 except ImportError:
     HAS_HOROVOD = False
@@ -78,6 +80,15 @@ class GaugeDynamics(BaseDynamics):
             potential_fn=self.lattice.calc_actions,
         )
 
+        if self.config.use_ncp and not self.config.hmc:
+            self.net_weights = NetWeights(1., 1., 1., 1., 1., 1.)
+            self._xsw = self.net_weights.x_scale
+            self._xtw = self.net_weights.x_translation
+            self._xqw = self.net_weights.x_transformation
+            self._vsw = self.net_weights.v_scale
+            self._vtw = self.net_weights.v_translation
+            self._vqw = self.net_weights.v_transformation
+
     def calc_losses(self, inputs):
         """Calculate the total loss."""
         states, accept_prob = inputs
@@ -106,11 +117,13 @@ class GaugeDynamics(BaseDynamics):
 
         return ploss, qloss
 
-    def train_step(self, inputs, first_step):
+    def train_step(self, x, beta, first_step):
         """Perform a single training step."""
         start = time.time()
         with tf.GradientTape() as tape:
-            states, px, sld = self(inputs, training=True)
+            tape.watch(x)
+            tape.watch(beta)
+            states, px, sld = self((x, beta), training=True)
             ploss, qloss = self.calc_losses((states, px))
             loss = ploss + qloss
 
@@ -204,6 +217,9 @@ class GaugeDynamics(BaseDynamics):
 
     def _update_x_foward(self, network, state, t, masks, training):
         """Update the position `x` in the forward leapfrog step."""
+        if not self.config.use_ncp:
+            return super()._update_x_forward(network, state,
+                                             t, masks, training)
         m, mc = masks
 
         # map x from [-pi, pi] to [-inf, inf]
@@ -230,8 +246,10 @@ class GaugeDynamics(BaseDynamics):
 
     def _update_x_backward(self, network, state, t, masks, training):
         """Update the position `x` in the backward leapfrog step."""
+        if not self.config.use_ncp:
+            return super()._update_x_backward(network, state,
+                                              t, masks, training)
         m, mc = masks
-
         # map x from [-pi, pi] to [-inf, inf]
         x = tf.math.tan(state.x / 2.)
 
