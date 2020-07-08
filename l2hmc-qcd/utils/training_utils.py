@@ -129,6 +129,7 @@ def build_dynamics(flags):
         model_type='GaugeModel',
         eps_trainable=not flags.eps_fixed,
         separate_networks=flags.separate_networks,
+        use_ncp=flags.use_ncp,
     )
 
     lr_config = lrConfig(
@@ -310,6 +311,7 @@ def setup_training(dynamics, flags, train_dir=None, x=None, betas=None):
         io.log(f'INFO:Restored from: {manager.latest_checkpoint}', rank=rank)
         ckpt.restore(manager.latest_checkpoint)
         train_data.restore(data_dir)
+        flags.beta_init = train_data.data.beta[-1]
         current_step = dynamics.optimizer.iterations.numpy()
     else:
         current_step = tf.convert_to_tensor(0, dtype=TF_INT)
@@ -317,7 +319,7 @@ def setup_training(dynamics, flags, train_dir=None, x=None, betas=None):
                           'Starting from scratch.']), rank=rank)
 
     steps = tf.cast(
-        tf.range(current_step, current_step + flags.train_steps),
+        tf.range(current_step, flags.train_steps),
         dtype=tf.int64
     )
     if betas is None:
@@ -325,8 +327,7 @@ def setup_training(dynamics, flags, train_dir=None, x=None, betas=None):
             betas = tf.convert_to_tensor(flags.beta_init * np.ones(len(steps)))
         else:
             #  b_arr = np.linspace(flags.beta_init, flags.beta_final, steps)
-            b_arr = get_betas(flags.train_steps,
-                              flags.beta_init, flags.beta_final)
+            b_arr = get_betas(len(steps), flags.beta_init, flags.beta_final)
             betas = tf.cast(b_arr, dtype=TF_FLOAT)
 
     #  betas = betas[current_step:]
@@ -375,17 +376,22 @@ def train_dynamics(dynamics, flags, dirs=None, x=None, betas=None):
         writer = tf.summary.create_file_writer(dirs.summary_dir)
         writer.set_as_default()
 
+
+    current_step = dynamics.optimizer.iterations.numpy()
+    steps = tf.cast(
+        tf.range(current_step, flags.train_steps),
+        dtype=tf.int64
+    )
     if betas is None:
         if flags.beta_init == flags.beta_final:
-            betas = tf.convert_to_tensor(flags.beta_init *
-                                         np.ones(flags.train_steps))
+            betas = tf.convert_to_tensor(flags.beta_init * np.ones(len(steps)))
         else:
-            betas = get_betas(flags.train_steps,
-                              flags.beta_init, flags.beta_final)
+            b_arr = get_betas(len(steps), flags.beta_init, flags.beta_final)
+            betas = tf.cast(b_arr, dtype=TF_FLOAT)
 
     if flags.get('compile', False):
         io.log(f'INFO:Compiling dynamics.train_step using tf.function\n', rank)
-        dynamics.compile(dynamics.optimizer, dynamics.calc_loss)
+        dynamics.compile(dynamics.optimizer, dynamics.calc_losses)
         train_step = tf.function(dynamics.train_step,
                                  experimental_relax_shapes=True)
     else:
@@ -396,8 +402,10 @@ def train_dynamics(dynamics, flags, dirs=None, x=None, betas=None):
     for beta in betas:
         start = time.time()
         step = dynamics.optimizer.iterations.numpy()
-        x, metrics = train_step((x, beta), step == 0)
+        x, metrics = train_step(x, beta, tf.constant(step == 0))
         metrics.dt = time.time() - start
+        if step == 100 and flags.profiler:
+            tf.profiler.experimental.start(flags.log_dir)
 
         if is_chief:
             if step % flags.print_steps == 0:
@@ -417,6 +425,8 @@ def train_dynamics(dynamics, flags, dirs=None, x=None, betas=None):
             if step % 100 == 0:
                 io.log(HEADER, rank=rank)
 
+        if step == 125 and flags.profiler:
+            tf.profiler.experimental.stop()
 
     if is_chief:
         manager.save()
