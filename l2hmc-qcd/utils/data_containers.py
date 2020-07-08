@@ -61,7 +61,7 @@ class DataContainer:
             self.steps += current_step
         data = self.load_data(data_dir)
         for key, val in data.items():
-            self.data[key] = [val]
+            self.data[key] = np.array(val).tolist()
 
     @staticmethod
     def load_data(data_dir):
