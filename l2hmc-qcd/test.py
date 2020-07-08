@@ -25,6 +25,7 @@ TEST_FLAGS = AttrDict({
     'run_steps': 100,
     'horovod': False,
     'rand': True,
+    'compile': False,
     'eps': 0.1,
     'num_steps': 2,
     'hmc': False,
@@ -160,10 +161,10 @@ def test_resume_training(flags):
 
 def test(flags):
     """Run tests."""
-    hmc_out = test_hmc_run()
     single_net_out = test_single_network(flags)
-    separate_nets_out = test_separate_networks(flags)
     restored_out = test_resume_training(single_net_out['flags'])
+    separate_nets_out = test_separate_networks(flags)
+    hmc_out = test_hmc_run()
 
     return {
         'hmc': hmc_out,
