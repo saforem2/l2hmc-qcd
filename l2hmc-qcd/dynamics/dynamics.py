@@ -123,11 +123,11 @@ class BaseDynamics(tf.keras.Model):
         """Obtain a new state from `inputs`."""
         return self.apply_transition(inputs, training=training)
 
-    def calc_loss(self, inputs):
+    def calc_losses(self, inputs):
         """Calculate the total loss."""
         raise NotImplementedError
 
-    def train_step(self, inputs):
+    def train_step(self, inputs, first_step):
         """Perform a single training step."""
         raise NotImplementedError
 
@@ -304,16 +304,16 @@ class BaseDynamics(tf.keras.Model):
         x = self.normalizer(state.x)
 
         grad = self.grad_potential(x, state.beta)
-        Sv, Tv, Qv = network((x, grad, t), training)
+        S, T, Q = network((x, grad, t), training)
 
-        transl = self._vtw * Tv
-        scale = self._vsw * (0.5 * self.eps * Sv)
-        transf = self._vqw * (self.eps * Qv)
+        transl = self._vtw * T
+        scale = self._vsw * (0.5 * self.eps * S)
+        transf = self._vqw * (self.eps * Q)
 
-        exp_s = tf.exp(scale)
-        exp_q = tf.exp(transf)
+        expS = tf.exp(scale)
+        expQ = tf.exp(transf)
 
-        vf = state.v * exp_s - 0.5 * self.eps * (grad * exp_q + transl)
+        vf = state.v * expS - 0.5 * self.eps * (grad * expQ + transl)
 
         state_out = State(x, vf, state.beta)
         logdet = tf.reduce_sum(scale, axis=-1)
@@ -335,16 +335,16 @@ class BaseDynamics(tf.keras.Model):
         x = self.normalizer(state.x)
 
         m, mc = masks
-        Sx, Tx, Qx = network((state.v, m * x, t), training)
+        S, T, Q = network((state.v, m * x, t), training)
 
-        transl = self._xtw * Tx
-        scale = self._xsw * (self.eps * Sx)
-        transf = self._xqw * (self.eps * Qx)
+        transl = self._xtw * T
+        scale = self._xsw * (self.eps * S)
+        transf = self._xqw * (self.eps * Q)
 
-        exp_s = tf.exp(scale)
-        exp_q = tf.exp(transf)
+        expS = tf.exp(scale)
+        expQ = tf.exp(transf)
 
-        y = x * exp_s + self.eps * (state.v * exp_q + transl)
+        y = x * expS + self.eps * (state.v * expQ + transl)
         xf = m * x + mc * y
 
         xf = self.normalizer(xf)
@@ -369,16 +369,16 @@ class BaseDynamics(tf.keras.Model):
         x = self.normalizer(state.x)
 
         grad = self.grad_potential(x, state.beta)
-        Sv, Tv, Qv = network((x, grad, t), training)
+        S, T, Q = network((x, grad, t), training)
 
-        scale = self._vsw * (-0.5 * self.eps * Sv)
-        transf = self._vqw * (self.eps * Qv)
-        transl = self._vtw * Tv
+        scale = self._vsw * (-0.5 * self.eps * S)
+        transf = self._vqw * (self.eps * Q)
+        transl = self._vtw * T
 
-        exp_s = tf.exp(scale)
-        exp_q = tf.exp(transf)
+        expS = tf.exp(scale)
+        expQ = tf.exp(transf)
 
-        vb = exp_s * (state.v + 0.5 * self.eps * (grad * exp_q + transl))
+        vb = expS * (state.v + 0.5 * self.eps * (grad * expQ + transl))
 
         state_out = State(x, vb, state.beta)
         logdet = tf.reduce_sum(scale, axis=-1)
@@ -400,16 +400,16 @@ class BaseDynamics(tf.keras.Model):
         x = self.normalizer(state.x)
 
         m, mc = masks
-        Sx, Tx, Qx = network((state.v, m * x, t), training)
+        S, T, Q = network((state.v, m * x, t), training)
 
-        scale = self._xsw * (-self.eps * Sx)
-        transl = self._xtw * Tx
-        transf = self._xqw * (self.eps * Qx)
+        scale = self._xsw * (-self.eps * S)
+        transl = self._xtw * T
+        transf = self._xqw * (self.eps * Q)
 
-        exp_s = tf.exp(scale)
-        exp_q = tf.exp(transf)
+        expS = tf.exp(scale)
+        expQ = tf.exp(transf)
 
-        y = exp_s * (x - self.eps * (state.v * exp_q + transl))
+        y = expS * (x - self.eps * (state.v * expQ + transl))
         xb = m * x + mc * y
 
         xb = self.normalizer(xb)

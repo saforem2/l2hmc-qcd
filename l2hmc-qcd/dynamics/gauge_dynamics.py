@@ -25,7 +25,7 @@ from typing import NoReturn
 import numpy as np
 import tensorflow as tf
 
-from config import DynamicsConfig, NetworkConfig, PI, TWO_PI, lrConfig
+from config import DynamicsConfig, NetworkConfig, PI, TWO_PI, lrConfig, State
 from dynamics.dynamics import BaseDynamics
 from utils.attr_dict import AttrDict
 from lattice.utils import u1_plaq_exact_tf
@@ -48,6 +48,7 @@ def convert_to_angle(x):
 # pylint:disable=too-many-instance-attributes,unused-argument
 # pylint:disable=invalid-name,too-many-locals,too-many-arguments
 class GaugeDynamics(BaseDynamics):
+    """Implements the dynamics engine for the L2HMC sampler."""
     def __init__(
             self,
             params: AttrDict,
@@ -200,3 +201,55 @@ class GaugeDynamics(BaseDynamics):
         })
 
         return observables
+
+    def _update_x_foward(self, network, state, t, masks, training):
+        """Update the position `x` in the forward leapfrog step."""
+        m, mc = masks
+
+        # map x from [-pi, pi] to [-inf, inf]
+        x = tf.math.tan(state.x / 2.)
+
+        S, T, Q = network((state.v, m * x, t), training)
+
+        transl = self._xtw * T
+        transf = self._xqw * (self.eps * Q)
+        scale = self._xsw * (self.eps * S)
+
+        expS = tf.exp(scale)
+        expQ = tf.exp(transf)
+
+        y = x * expS + self.eps * (state.v * expQ + transl)
+        xf = (m * x) + (mc * y)
+
+        # map xf from [-inf, inf] back to [-pi, pi]
+        xf = 2. * tf.math.atan(xf)
+        state_out = State(xf, state.v, state.beta)
+        logdet = tf.reduce_sum(mc * scale, axis=-1)
+
+        return state_out, logdet
+
+    def _update_x_backward(self, network, state, t, masks, training):
+        """Update the position `x` in the backward leapfrog step."""
+        m, mc = masks
+
+        # map x from [-pi, pi] to [-inf, inf]
+        x = tf.math.tan(state.x / 2.)
+
+        S, T, Q = network((state.v, m * x, t), training)
+
+        transl = self._xtw * T
+        transf = self._xqw * (self.eps * Q)
+        scale = self._xsw * (-self.eps * S)
+
+        expS = tf.exp(scale)
+        expQ = tf.exp(transf)
+
+        y = expS * (x - self.eps * (state.v * expQ + transl))
+        xb = (m * x) + (mc * y)
+
+        # map xb from [-inf, inf] back to [-pi, pi]
+        xb = 2. * tf.math.atan(xb)
+        state_out = State(xb, state.v, state.beta)
+        logdet = tf.reduce_sum(mc * scale, axis=-1)
+
+        return state_out, logdet

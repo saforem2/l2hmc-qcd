@@ -80,7 +80,7 @@ def summarize(step: int, metrics: AttrDict, dynamics: GaugeDynamics):
     Returns:
         None
     """
-    learning_rate = dynamics.lr(step).numpy()
+    learning_rate = dynamics.lr(tf.constant(step)).numpy()
     opt_vars = dynamics.optimizer.variables()
     summarize_dict(metrics, step, prefix='training')
     summarize_list(dynamics.variables, step, prefix='dynamics')
@@ -386,7 +386,8 @@ def train_dynamics(dynamics, flags, dirs=None, x=None, betas=None):
     if flags.get('compile', False):
         io.log(f'INFO:Compiling dynamics.train_step using tf.function\n', rank)
         dynamics.compile(dynamics.optimizer, dynamics.calc_loss)
-        train_step = tf.function(dynamics.train_step)
+        train_step = tf.function(dynamics.train_step,
+                                 experimental_relax_shapes=True)
     else:
         io.log(f'INFO:Running `dynamics.train_step` imperatively\n', rank)
         train_step = dynamics.train_step
