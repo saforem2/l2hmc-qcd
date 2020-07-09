@@ -158,7 +158,8 @@ def load_and_run(
         args.num_steps = FLAGS.num_steps
 
     if args.eps is None:
-        args.eps = io.loadz(os.path.join(train_dir, 'train_data', 'eps.z'))[-1]
+        eps = io.loadz(os.path.join(train_dir, 'train_data', 'eps.z'))[-1]
+        args.eps = tf.cast(eps, dtype=TF_FLOAT)
 
     FLAGS.update({
         'eps': args.eps,
