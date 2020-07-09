@@ -46,6 +46,44 @@ def convert_to_angle(x):
     return x
 
 
+def build_dynamics(flags):
+    """Build dynamics using parameters from FLAGS."""
+    net_config = NetworkConfig(
+        type='GaugeNetwork',
+        units=flags.units,
+        activation_fn=tf.nn.relu,
+        dropout_prob=flags.dropout_prob,
+    )
+
+    config = DynamicsConfig(
+        model_type='GaugeModel',
+        eps=flags.eps,
+        hmc=flags.hmc,
+        use_ncp=flags.use_ncp,
+        num_steps=flags.num_steps,
+        eps_trainable=not flags.eps_fixed,
+        separate_networks=flags.separate_networks,
+    )
+
+    lr_config = lrConfig(
+        init=flags.lr_init,
+        decay_rate=flags.lr_decay_rate,
+        decay_steps=flags.lr_decay_steps,
+        warmup_steps=flags.warmup_steps,
+    )
+
+    flags = AttrDict({
+        'horovod': flags.horovod,
+        'plaq_weight': flags.plaq_weight,
+        'charge_weight': flags.charge_weight,
+        'lattice_shape': flags.lattice_shape,
+    })
+
+    dynamics = GaugeDynamics(flags, config, net_config, lr_config)
+
+    return dynamics
+
+
 # pylint:disable=attribute-defined-outside-init
 # pylint:disable=too-many-instance-attributes,unused-argument
 # pylint:disable=invalid-name,too-many-locals,too-many-arguments
@@ -121,9 +159,9 @@ class GaugeDynamics(BaseDynamics):
         """Perform a single training step."""
         start = time.time()
         with tf.GradientTape() as tape:
-            tape.watch(x)
-            tape.watch(beta)
-            states, px, sld = self((x, beta), training=True)
+            #  tape.watch(x)
+            #  tape.watch(beta)
+            states, px, sld = self(x, beta, training=True)
             ploss, qloss = self.calc_losses((states, px))
             loss = ploss + qloss
 
@@ -164,10 +202,10 @@ class GaugeDynamics(BaseDynamics):
 
         return states.out.x, metrics
 
-    def test_step(self, inputs):
+    def test_step(self, x, beta):
         """Perform a single inference step."""
         start = time.time()
-        states, px, sld = self(inputs, training=False)
+        states, px, sld = self(x, beta, training=False)
         ploss, qloss = self.calc_losses((states, px))
         loss = ploss + qloss
 
