@@ -98,7 +98,7 @@ def parse_args():
     parser.add_argument("-n", "--num_steps",
                         dest="num_steps",
                         type=int,
-                        default=1,
+                        default=None,
                         required=False,
                         help=("""Number of leapfrog steps to use in (augmented)
                               HMC sampler.\n(Default: 5)"""))
