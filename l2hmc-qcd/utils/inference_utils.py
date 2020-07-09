@@ -13,10 +13,11 @@ import tensorflow as tf
 import utils.file_io as io
 
 from config import HEADER, PI, PROJECT_DIR, SEP, TF_FLOAT
-from dynamics.gauge_dynamics import GaugeDynamics, convert_to_angle
+from dynamics.gauge_dynamics import (build_dynamics, convert_to_angle,
+                                     GaugeDynamics)
 from utils.attr_dict import AttrDict
 from utils.plotting_utils import plot_data
-from utils.training_utils import build_dynamics, summarize_dict
+from utils.training_utils import summarize_dict
 from utils.data_containers import DataContainer
 
 # pylint:disable=no-member
@@ -93,16 +94,17 @@ def run_hmc(
     args.update({
         'hmc': True,
         'units': [],
-        'eps_fixed': True,
-        'dropout_prob': 0.,
+        'lr_init': 0,
+        'use_ncp': False,
         'horovod': False,
+        'eps_fixed': True,
+        'warmup_steps': 0,
+        'dropout_prob': 0.,
         'plaq_weight': 10.,
         'charge_weight': 0.1,
-        'separate_networks': False,
-        'lr_init': 0,
         'lr_decay_steps': None,
         'lr_decay_rate': None,
-        'warmup_steps': 0,
+        'separate_networks': False,
     })
 
     if hmc_dir is None:
@@ -125,14 +127,15 @@ def run_hmc(
             return None, None
 
     dynamics = build_dynamics(args)
-    dynamics, run_data = run(dynamics, args, runs_dir=hmc_dir)
+    dynamics, run_data = run(dynamics, args,
+                             runs_dir=hmc_dir)
 
     return dynamics, run_data
 
 
 def load_and_run(
         args: AttrDict,
-        runs_dir: str = None
+        runs_dir: str = None,
 ) -> (GaugeDynamics, AttrDict):
     """Load trained model from checkpoint and run inference."""
     if not check_if_chief(args):
@@ -148,6 +151,21 @@ def load_and_run(
     FLAGS = AttrDict(dict(io.loadz(os.path.join(train_dir, 'FLAGS.z'))))
     FLAGS.horovod = False
 
+    if args.beta is None:
+        args.beta = FLAGS.beta_final
+
+    if args.num_steps is None:
+        args.num_steps = FLAGS.num_steps
+
+    if args.eps is None:
+        args.eps = io.loadz(os.path.join(train_dir, 'train_data', 'eps.z'))[-1]
+
+    FLAGS.update({
+        'eps': args.eps,
+        'beta': args.beta,
+        'num_steps': args.num_steps,
+    })
+
     dynamics = build_dynamics(FLAGS)
 
     ckpt = tf.train.Checkpoint(dynamics=dynamics,
@@ -156,20 +174,11 @@ def load_and_run(
                                          directory=ckpt_dir)
     if manager.latest_checkpoint:
         io.log(f'INFO:Restored model from: {manager.latest_checkpoint}')
-        ckpt.restore(manager.latest_checkpoint)
-
-    if args.eps is None:
-        args.eps = dynamics.eps.numpy()
-
-    if args.beta is None:
-        train_dir = os.path.join(args.log_dir, 'training')
-        l2hmc_flags = AttrDict(
-            dict(io.loadz(os.path.join(train_dir, 'FLAGS.z')))
-        )
-        args.beta = l2hmc_flags.beta_final
+        ckpt.restore(manager.latest_checkpoint).expect_partial()
 
     #  args.update(FLAGS)
-    dynamics, run_data = run(dynamics, args, runs_dir=runs_dir)
+    dynamics, run_data = run(dynamics, args,
+                             runs_dir=runs_dir)
 
     return dynamics, run_data
 
@@ -207,8 +216,6 @@ def run(dynamics, args, x=None, runs_dir=None):
 
     if x is None:
         x = convert_to_angle(tf.random.normal(shape=dynamics.x_shape))
-        #  x = tf.random.uniform(shape=dynamics.x_shape,
-        #                        minval=-PI, maxval=PI, dtype=TF_FLOAT)
 
     run_data = run_dynamics(dynamics, args, x)
 
@@ -240,7 +247,7 @@ def run(dynamics, args, x=None, runs_dir=None):
     return dynamics, run_data
 
 
-def run_dynamics(dynamics, args, x=None, autograph=True):
+def run_dynamics(dynamics, args, x=None):
     """Run inference on trained dynamics."""
     is_chief = check_if_chief(args)
     if not is_chief:
@@ -253,15 +260,11 @@ def run_dynamics(dynamics, args, x=None, autograph=True):
 
     if x is None:
         x = tf.random.uniform(shape=dynamics.config.input_shape,
-                              minval=-PI, maxval=PI)
-        x = tf.cast(x, dtype=TF_FLOAT)
+                              minval=-PI, maxval=PI, dtype=TF_FLOAT)
 
-    run_data = DataContainer(args.run_steps, skip_keys=['charges'], header=HEADER)
-
-    #  if not dynamics.config.separate_networks:
-    test_step = dynamics.test_step
-    if autograph:
-        test_step = tf.function(test_step)
+    run_data = DataContainer(args.run_steps,
+                             skip_keys=['charges'],
+                             header=HEADER)
 
     eps = dynamics.eps
     if hasattr(eps, 'numpy'):
@@ -277,7 +280,7 @@ def run_dynamics(dynamics, args, x=None, autograph=True):
     for step in tf.cast(tf.range(args.run_steps), dtype=tf.int64):
         start = time.time()
         x = convert_to_angle(x)
-        x, metrics = test_step((x, beta))
+        x, metrics = dynamics.test_step(x, beta)
         metrics.dt = time.time() - start
         run_data.update(step, metrics)
 
