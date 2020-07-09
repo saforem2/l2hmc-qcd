@@ -17,10 +17,8 @@ from utils.inference_utils import run
 
 def main(args, log_file=None):
     """Main method for training."""
-    args.net_weights = NET_WEIGHTS_HMC if args.hmc else NET_WEIGHTS_L2HMC
     x, dynamics, train_data, args = train(args, log_file=log_file)
-
-    if args.inference and args.run_steps > 0:
+    if args.run_steps > 0:
         _, _ = run(dynamics, args, x=x)
 
     return x, dynamics, train_data, args
