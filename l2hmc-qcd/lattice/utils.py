@@ -15,7 +15,6 @@ from __future__ import absolute_import, division, print_function
 import scipy
 import numpy as np
 import tensorflow as tf
-import autograd.numpy as np
 
 from scipy.special import i0, i1
 
