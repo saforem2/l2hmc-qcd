@@ -335,10 +335,9 @@ def train_dynamics(dynamics, flags, dirs=None, x=None, betas=None):
         writer = tf.summary.create_file_writer(dirs.summary_dir)
         writer.set_as_default()
 
-
     current_step = dynamics.optimizer.iterations.numpy()
     steps = tf.cast(
-        tf.range(current_step, flags.train_steps),
+        tf.range(current_step, flags.train_steps - current_step),
         dtype=tf.int64
     )
     if betas is None:
