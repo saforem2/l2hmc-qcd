@@ -101,6 +101,7 @@ class BaseDynamics(tf.keras.Model):
         self.batch_size = params.get('batch_size', None)
         self.using_hvd = params.get('horovod', False)
         self.x_shape = (self.batch_size, self.xdim)
+        #  self.loss_scale = params.get('loss_scale', 0.1)
 
         # Determine if there are any parameters to be trained
         self._has_trainable_params = True
@@ -119,19 +120,21 @@ class BaseDynamics(tf.keras.Model):
         self._vtw = self.net_weights.v_translation
         self._vqw = self.net_weights.v_transformation
 
-    def call(self, inputs, training=None):
+    @tf.function
+    def call(self, x, beta, training=None):
         """Obtain a new state from `inputs`."""
-        return self.apply_transition(inputs, training=training)
+        return self.apply_transition((x, beta), training=training)
 
     def calc_losses(self, inputs):
         """Calculate the total loss."""
         raise NotImplementedError
 
-    def train_step(self, inputs, first_step):
+    def train_step(self, x, beta, first_step):
         """Perform a single training step."""
         raise NotImplementedError
 
-    def test_step(self, inputs):
+    @tf.function
+    def test_step(self, x, beta):
         """Perform a single inference step."""
         raise NotImplementedError
 
@@ -186,12 +189,12 @@ class BaseDynamics(tf.keras.Model):
         x_init, beta = inputs
         v_init = tf.random.normal(tf.shape(x_init))
         state = State(x_init, v_init, beta)
-        #  state_prop, px, sld = self.transition_kernel_while(state,
-        #                                                     forward,
-        #                                                     training)
-        state_prop, px, sld = self.transition_kernel_for(state,
-                                                         forward,
-                                                         training)
+        state_prop, px, sld = self.transition_kernel_while(state,
+                                                           forward,
+                                                           training)
+        #  state_prop, px, sld = self.transition_kernel_for(state,
+        #                                                   forward,
+        #                                                   training)
 
         return state, state_prop, px, sld
 
