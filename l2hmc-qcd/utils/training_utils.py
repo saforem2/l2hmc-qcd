@@ -10,14 +10,11 @@ import time
 
 import numpy as np
 import tensorflow as tf
-import typing
 
-from utils.file_io import timeit
 import utils.file_io as io
 
-from config import (DynamicsConfig, HEADER, lrConfig, NET_WEIGHTS_HMC,
-                    NetworkConfig, PI, TF_FLOAT, TF_INT)
-from dynamics.gauge_dynamics import GaugeDynamics
+from config import HEADER, NET_WEIGHTS_HMC, PI, TF_FLOAT, TF_INT
+from dynamics.gauge_dynamics import build_dynamics, GaugeDynamics
 from utils.attr_dict import AttrDict
 from utils.plotting_utils import plot_data
 
@@ -111,44 +108,6 @@ def get_betas(steps, beta_init, beta_final):
     ]
 
     return 1. / tf.convert_to_tensor(np.array(t_arr))
-
-
-def build_dynamics(flags):
-    """Build dynamics using parameters from FLAGS."""
-    net_config = NetworkConfig(
-        units=flags.units,
-        type='GaugeNetwork',
-        activation_fn=tf.nn.relu,
-        dropout_prob=flags.dropout_prob,
-    )
-
-    config = DynamicsConfig(
-        eps=flags.eps,
-        hmc=flags.hmc,
-        num_steps=flags.num_steps,
-        model_type='GaugeModel',
-        eps_trainable=not flags.eps_fixed,
-        separate_networks=flags.separate_networks,
-        use_ncp=flags.use_ncp,
-    )
-
-    lr_config = lrConfig(
-        init=flags.lr_init,
-        decay_steps=flags.lr_decay_steps,
-        decay_rate=flags.lr_decay_rate,
-        warmup_steps=flags.warmup_steps,
-    )
-
-    flags = AttrDict({
-        'horovod': flags.horovod,
-        'plaq_weight': flags.plaq_weight,
-        'charge_weight': flags.charge_weight,
-        'lattice_shape': flags.lattice_shape,
-    })
-
-    dynamics = GaugeDynamics(flags, config, net_config, lr_config)
-
-    return dynamics
 
 
 def restore_flags(flags, train_dir):
@@ -385,13 +344,14 @@ def train_dynamics(dynamics, flags, dirs=None, x=None, betas=None):
     if betas is None:
         if flags.beta_init == flags.beta_final:
             betas = tf.convert_to_tensor(flags.beta_init * np.ones(len(steps)))
+
         else:
-            b_arr = get_betas(len(steps), flags.beta_init, flags.beta_final)
-            betas = tf.cast(b_arr, dtype=TF_FLOAT)
+            betas = get_betas(len(steps), flags.beta_init, flags.beta_final)
+
 
     if flags.get('compile', False):
         io.log(f'INFO:Compiling dynamics.train_step using tf.function\n', rank)
-        dynamics.compile(dynamics.optimizer, dynamics.calc_losses)
+        #  dynamics.compile(dynamics.optimizer, dynamics.calc_losses)
         train_step = tf.function(dynamics.train_step,
                                  experimental_relax_shapes=True)
     else:
@@ -399,12 +359,13 @@ def train_dynamics(dynamics, flags, dirs=None, x=None, betas=None):
         train_step = dynamics.train_step
 
     io.log(HEADER, rank=rank)
+    betas = tf.cast(betas, dtype=TF_FLOAT)
     for beta in betas:
         start = time.time()
         step = dynamics.optimizer.iterations.numpy()
         x, metrics = train_step(x, beta, tf.constant(step == 0))
         metrics.dt = time.time() - start
-        if step == 100 and flags.profiler:
+        if step == 20 and flags.profiler:
             tf.profiler.experimental.start(flags.log_dir)
 
         if is_chief:
@@ -425,7 +386,7 @@ def train_dynamics(dynamics, flags, dirs=None, x=None, betas=None):
             if step % 100 == 0:
                 io.log(HEADER, rank=rank)
 
-        if step == 125 and flags.profiler:
+        if step == 30 and flags.profiler:
             tf.profiler.experimental.stop()
 
     if is_chief:
