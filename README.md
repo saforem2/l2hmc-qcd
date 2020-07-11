@@ -71,7 +71,7 @@ where $\phi_{P}$ is the sum of the link variables around an elementary plaquette
 </div>
 
 &nbsp;
- 
+
 <div align="center">
   <img src="assets/nerds2.svg" alt="image-20200220120110456" style="width:85vw; min-width:330px; height=auto"/>
 </div>
@@ -162,3 +162,13 @@ If you use this code, please cite the original paper:
   year={2017}
 }
 ```
+
+# Acknowledgement
+
+<div align="center">
+ <img src="assets/anl.png" alt="Argonne National Laboratory Icon"/>
+</div>
+
+This research used resources of the Argonne Leadership Computing Facility, which is a DOE Office of Science User Facility supported under contract DE_AC02-06CH11357.  This work describes objective technical results and analysis. Any subjective views or opinions that might be expressed in the work do not necessarily represent the views of the U.S. DOE or the United States Government. Declaration of Interests - None.
+
+
