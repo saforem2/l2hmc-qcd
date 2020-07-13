@@ -368,9 +368,8 @@ def save(dynamics, train_data, train_dir, rank=0):
     if not dynamics.config.hmc:
         save_network_weights(dynamics, train_dir, rank=rank)
 
-    if dynamics.save_train_data:
-        output_dir = os.path.join(train_dir, 'outputs')
-        train_data.save_data(output_dir)
+    output_dir = os.path.join(train_dir, 'outputs')
+    train_data.save_data(output_dir)
 
 
 def save_inference(run_dir, run_data):
