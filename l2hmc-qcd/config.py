@@ -132,6 +132,7 @@ PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 BASE_DIR = os.path.dirname(PROJECT_DIR)
 GAUGE_LOGS_DIR = os.path.join(BASE_DIR, 'gauge_logs')
 TEST_LOGS_DIR = os.path.join(BASE_DIR, 'test_logs')
+BIN_DIR = os.path.join(BASE_DIR, 'bin')
 
 DEFAULT_FLAGS = AttrDict({
     'log_dir': None,
@@ -139,7 +140,6 @@ DEFAULT_FLAGS = AttrDict({
     'restore': False,
     'inference': True,
     'run_steps': 500,
-    'save_train_data': True,
     'horovod': False,
     'rand': True,
     'eps': 0.1,
