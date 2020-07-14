@@ -26,8 +26,8 @@ def main(args):
 
     hmc_dir = os.path.join(args.log_dir, 'inference_hmc')
 
-    _, _ = load_and_run(args)
-    _, _ = run_hmc(args=args, hmc_dir=hmc_dir, skip_existing=skip)
+    _, _, x_hmc = run_hmc(args=args, hmc_dir=hmc_dir, skip_existing=skip)
+    _, _, _ = load_and_run(args, x=x_hmc)
 
     io.log(80 * '=')
     return
