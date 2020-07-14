@@ -123,18 +123,19 @@ def run_hmc(
         run_fstrs = [get_run_fstr(i) for i in run_dirs]
         run_fstr = io.get_run_dir_fstr(args)
         if run_fstr in run_fstrs:
-            io.log(f'ERROR:Existing run found! Skipping.')
+            io.log('ERROR:Existing run found! Skipping.')
             return None, None
 
     dynamics = build_dynamics(args)
-    dynamics, run_data = run(dynamics, args,
-                             runs_dir=hmc_dir)
+    dynamics, run_data, x = run(dynamics, args,
+                                runs_dir=hmc_dir)
 
-    return dynamics, run_data
+    return dynamics, run_data, x
 
 
 def load_and_run(
         args: AttrDict,
+        x: tf.Tensor = None,
         runs_dir: str = None,
 ) -> (GaugeDynamics, AttrDict):
     """Load trained model from checkpoint and run inference."""
@@ -178,10 +179,10 @@ def load_and_run(
         ckpt.restore(manager.latest_checkpoint).expect_partial()
 
     #  args.update(FLAGS)
-    dynamics, run_data = run(dynamics, args,
-                             runs_dir=runs_dir)
+    dynamics, run_data, x = run(dynamics, args,
+                                runs_dir=runs_dir)
 
-    return dynamics, run_data
+    return dynamics, run_data, x
 
 
 def run(dynamics, args, x=None, runs_dir=None):
@@ -218,7 +219,7 @@ def run(dynamics, args, x=None, runs_dir=None):
     if x is None:
         x = convert_to_angle(tf.random.normal(shape=dynamics.x_shape))
 
-    run_data = run_dynamics(dynamics, args, x)
+    run_data, x = run_dynamics(dynamics, args, x)
 
     run_data.flush_data_strs(log_file, mode='a')
     io.save_inference(run_dir, run_data)
@@ -245,7 +246,7 @@ def run(dynamics, args, x=None, runs_dir=None):
 
     plot_data(run_data, run_dir, args, thermalize=True, params=run_params)
 
-    return dynamics, run_data
+    return dynamics, run_data, x
 
 
 def run_dynamics(dynamics, flags, x=None):
@@ -300,4 +301,4 @@ def run_dynamics(dynamics, flags, x=None):
         if step % 100 == 0:
             io.log(HEADER)
 
-    return run_data
+    return run_data, x
