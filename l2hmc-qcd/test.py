@@ -8,49 +8,32 @@ from __future__ import absolute_import, division, print_function
 import os
 import sys
 import argparse
+import json
+import typing
+import tensorflow as tf
 
-from config import PROJECT_DIR
+from config import PROJECT_DIR, BIN_DIR
+from functools import wraps
 from utils.attr_dict import AttrDict
 from utils.training_utils import train
 from utils.inference_utils import load_and_run, run, run_hmc
+from utils.file_io import timeit
+
+# pylint:disable=import-outside-toplevel, invalid-name, broad-except
+
+LOG_FILE = os.path.join(
+    os.path.dirname(PROJECT_DIR), 'bin', 'log_dirs.txt'
+)
 
 DESCRIPTION = (
     "Various test functions to make sure everything runs as expected."
 )
 
-TEST_FLAGS = AttrDict({
-    'log_dir': None,
-    'restore': False,
-    'inference': True,
-    'run_steps': 100,
-    'horovod': False,
-    'rand': True,
-    'compile': False,
-    'eps': 0.1,
-    'num_steps': 2,
-    'hmc': False,
-    'eps_fixed': False,
-    'beta_init': 1.,
-    'beta_final': 1.,
-    'train_steps': 25,
-    'save_steps': 5,
-    'print_steps': 1,
-    'logging_steps': 1,
-    'hmc_start': True,
-    'hmc_steps': 25,
-    'dropout_prob': 0.1,
-    'warmup_steps': 10,
-    'lr_init': 0.001,
-    'lr_decay_rate': 0.96,
-    'lr_decay_steps': 1000,
-    'plaq_weight': 10.,
-    'charge_weight': 0.1,
-    'save_train_data': True,
-    'separate_networks': False,
-    'network_type': 'GaugeNetwork',
-    'lattice_shape': [128, 16, 16, 2],
-    'units': [512, 256, 256, 256, 512],
-})
+TEST_FLAGS_FILE = os.path.join(BIN_DIR, 'test_args.json')
+with open(TEST_FLAGS_FILE, 'rt') as f:
+    TEST_FLAGS = json.load(f)
+
+TEST_FLAGS = AttrDict(TEST_FLAGS)
 
 
 def parse_args():
@@ -90,7 +73,24 @@ def parse_args():
     return args
 
 
-def test_hmc_run(beta=4., eps=0.1, num_steps=2, run_steps=500):
+def catch_exception(fn):
+    """Decorator function for catching a method with `pudb`."""
+    @wraps(fn)
+    def wrapper(self, *args, **kwargs):
+        try:
+            return fn(self, *args, **kwargs)
+        except Exception as e:
+            print(type(e))
+            print(e)
+            import pudb
+            pudb.set_trace()
+    return wrapper
+
+
+def test_hmc_run(beta: float = 4.,
+                 eps: float = 0.1,
+                 num_steps: int = 2,
+                 run_steps: int = 500):
     """Testing generic HMC."""
     hmc_args = AttrDict({
         'hmc': True,
@@ -112,10 +112,10 @@ def test_hmc_run(beta=4., eps=0.1, num_steps=2, run_steps=500):
     }
 
 
-def test_single_network(flags):
+def test_single_network(flags: AttrDict):
     """Test training on single network."""
-    x, model, train_data, flags = train(flags)
-    model, run_data = run(model, flags, x=x)
+    x, dynamics, train_data, flags = train(flags, log_file=LOG_FILE)
+    model, run_data = run(dynamics, flags, x=x)
 
     return {
         'x': x,
@@ -126,11 +126,11 @@ def test_single_network(flags):
     }
 
 
-def test_separate_networks(flags):
+def test_separate_networks(flags: AttrDict):
     """Test training on separate networks."""
     flags.log_dir = None
     flags.separate_networks = True
-    x, model, train_data, flags = train(flags)
+    x, model, train_data, flags = train(flags, log_file=LOG_FILE)
     model, run_data = run(model, flags, x=x)
 
     return {
@@ -142,12 +142,15 @@ def test_separate_networks(flags):
     }
 
 
-def test_resume_training(flags):
+def test_resume_training(flags: AttrDict):
     """Test restoring a training session from a checkpoint."""
     assert flags.log_dir is not None
-    flags.beta_init, flags.beta_final = flags.beta_final, flags.beta_final + 1
+    flags.profiler = False
+    #  flags.train_steps *= 2
+    #  flags.train_steps += flags.train_steps // 2
+    flags.train_steps *= 2
 
-    x, model, train_data, flags = train(flags)
+    x, model, train_data, flags = train(flags, log_file=LOG_FILE)
     model, run_data = run(model, flags, x=x)
 
     return {
@@ -159,13 +162,20 @@ def test_resume_training(flags):
     }
 
 
-def test(flags):
+def test(flags: AttrDict):
     """Run tests."""
-    single_net_out = test_single_network(flags)
-    restored_out = test_resume_training(single_net_out['flags'])
-    separate_nets_out = test_separate_networks(flags)
-    hmc_out = test_hmc_run()
-
+    with tf.name_scope('single_network'):
+        flags.compile = True
+        single_net_out = test_single_network(flags)
+        restored_out = test_resume_training(single_net_out['flags'])
+    with tf.name_scope('separate_networks'):
+        flags.hmc_start = False
+        flags.hmc_steps = 0
+        flags.separate_networks = True
+        flags.compile = False
+        separate_nets_out = test_separate_networks(flags)
+    with tf.name_scope('hmc_inference'):
+        hmc_out = test_hmc_run()
     return {
         'hmc': hmc_out,
         'single_network': single_net_out,
@@ -174,24 +184,33 @@ def test(flags):
     }
 
 
+def main(args):
+    """Main method."""
+    if args.test_hmc_run:
+        _ = test_hmc_run()
+
+    if args.test_separate_networks:
+        TEST_FLAGS.separate_networks = True
+        TEST_FLAGS.compile = False
+        _ = test_separate_networks(TEST_FLAGS)
+
+    if args.test_single_network:
+        TEST_FLAGS.hmc_steps = 0
+        TEST_FLAGS.hmc_start = False
+        TEST_FLAGS.separate_networks = False
+        _ = test_single_network(TEST_FLAGS)
+
+    if args.test_inference_from_model:
+        if args.log_dir is None:
+            raise ValueError('`--log_dir` must be specified.')
+
+        TEST_FLAGS.log_dir = args.log_dir
+        _, _ = load_and_run(TEST_FLAGS)
+
+
 if __name__ == '__main__':
     if len(sys.argv) <= 1:
         _ = test(TEST_FLAGS)
     else:
         FLAGS = parse_args()
-
-        if FLAGS.test_hmc_run:
-            _ = test_hmc_run()
-
-        if FLAGS.test_separate_networks:
-            _ = test_separate_networks(TEST_FLAGS)
-
-        if FLAGS.test_single_network:
-            _ = test_single_network(TEST_FLAGS)
-
-        if FLAGS.test_inference_from_model:
-            if FLAGS.log_dir is None:
-                raise ValueError('`--log_dir` must be specified.')
-
-            DEFAULT_FLAGS.log_dir = FLAGS.log_dir
-            _, _ = load_and_run(DEFAULT_FLAGS)
+        main(FLAGS)

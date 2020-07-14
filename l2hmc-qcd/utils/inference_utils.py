@@ -151,13 +151,13 @@ def load_and_run(
     FLAGS = AttrDict(dict(io.loadz(os.path.join(train_dir, 'FLAGS.z'))))
     FLAGS.horovod = False
 
-    if args.beta is None:
+    if args.get('beta', None) is None:
         args.beta = FLAGS.beta_final
 
-    if args.num_steps is None:
+    if args.get('num_steps') is None:
         args.num_steps = FLAGS.num_steps
 
-    if args.eps is None:
+    if args.get('eps') is None:
         eps = io.loadz(os.path.join(train_dir, 'train_data', 'eps.z'))[-1]
         args.eps = tf.cast(eps, dtype=TF_FLOAT)
 
@@ -210,7 +210,7 @@ def run(dynamics, args, x=None, runs_dir=None):
     writer = tf.summary.create_file_writer(summary_dir)
     writer.set_as_default()
 
-    run_steps = args.get('run_steps', None)
+    run_steps = args.get('run_steps', 2000)
     beta = args.get('beta', None)
     if beta is None:
         beta = args.get('beta_final', None)
@@ -248,22 +248,22 @@ def run(dynamics, args, x=None, runs_dir=None):
     return dynamics, run_data
 
 
-def run_dynamics(dynamics, args, x=None):
+def run_dynamics(dynamics, flags, x=None):
     """Run inference on trained dynamics."""
-    is_chief = check_if_chief(args)
+    is_chief = check_if_chief(flags)
     if not is_chief:
         return None
 
-    beta = args.get('beta', None)
-    print_steps = args.get('print_steps', 5)
+    beta = flags.get('beta', None)
+    print_steps = flags.get('print_steps', 5)
     if beta is None:
-        beta = args.get('beta_final', None)
+        beta = flags.get('beta_final', None)
 
     if x is None:
         x = tf.random.uniform(shape=dynamics.config.input_shape,
                               minval=-PI, maxval=PI, dtype=TF_FLOAT)
 
-    run_data = DataContainer(args.run_steps,
+    run_data = DataContainer(flags.run_steps,
                              skip_keys=['charges'],
                              header=HEADER)
 
@@ -271,17 +271,24 @@ def run_dynamics(dynamics, args, x=None):
     if hasattr(eps, 'numpy'):
         eps = eps.numpy()
 
+    if dynamics.config.separate_networks:
+        test_step = dynamics.test_step
+    else:
+        test_step = tf.function(dynamics.test_step)
+
     io.log(SEP)
-    io.log(f'INFO:Running inference with:')
-    io.log(f'  beta: {beta}')
-    io.log(f'  dynamics.eps: {eps:.4g}')
-    io.log(f'  net_weights: {dynamics.net_weights}')
+    template = '\n'.join([
+        f'beta: {beta}', f'eps: {eps:.4g}',
+        f'net_weights: {dynamics.net_weights}'
+    ])
+    io.log(f'INFO:Running inference with:\n {template}')
     io.log(SEP)
     io.log(HEADER)
-    for step in tf.cast(tf.range(args.run_steps), dtype=tf.int64):
+    for step in tf.cast(tf.range(flags.run_steps), dtype=tf.int64):
         start = time.time()
-        x = convert_to_angle(x)
-        x, metrics = dynamics.test_step(x, beta)
+        #  x = convert_to_angle(x)
+        #  x, metrics = dynamics.test_step((x, beta))
+        x, metrics = test_step((x, beta))
         metrics.dt = time.time() - start
         run_data.update(step, metrics)
 

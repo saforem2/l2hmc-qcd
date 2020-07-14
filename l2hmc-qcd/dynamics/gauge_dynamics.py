@@ -18,6 +18,7 @@ Date: 7/3/2020
 """
 from __future__ import absolute_import, division, print_function
 
+import os
 import time
 
 from typing import NoReturn
@@ -26,11 +27,12 @@ import numpy as np
 import tensorflow as tf
 
 from config import (DynamicsConfig, lrConfig, NetWeights, NetworkConfig, PI,
-                    State, TWO_PI)
+                    State, TWO_PI, BIN_DIR)
 from utils.attr_dict import AttrDict
 from dynamics.dynamics import BaseDynamics
 from lattice.utils import u1_plaq_exact_tf
 from lattice.lattice import GaugeLattice
+from utils.file_io import timeit  # pylint:disable=unused-import
 
 try:
     import horovod.tensorflow as hvd
@@ -38,6 +40,9 @@ try:
     HAS_HOROVOD = True
 except ImportError:
     HAS_HOROVOD = False
+
+
+TIMING_FILE = os.path.join(BIN_DIR, 'timing_file.log')
 
 
 def convert_to_angle(x):
@@ -127,6 +132,7 @@ class GaugeDynamics(BaseDynamics):
             self._vtw = self.net_weights.v_translation
             self._vqw = self.net_weights.v_transformation
 
+    @timeit(out_file=TIMING_FILE, should_log=False)
     def calc_losses(self, inputs):
         """Calculate the total loss."""
         states, accept_prob = inputs
@@ -155,13 +161,14 @@ class GaugeDynamics(BaseDynamics):
 
         return ploss, qloss
 
-    def train_step(self, x, beta, first_step):
+    #  @timeit(out_file=TIMING_FILE, should_log=False)
+    def train_step(self, inputs, first_step=False):
         """Perform a single training step."""
         start = time.time()
         with tf.GradientTape() as tape:
             #  tape.watch(x)
             #  tape.watch(beta)
-            states, px, sld = self(x, beta, training=True)
+            states, px, sld = self(inputs, training=True)
             ploss, qloss = self.calc_losses((states, px))
             loss = ploss + qloss
 
@@ -202,10 +209,10 @@ class GaugeDynamics(BaseDynamics):
 
         return states.out.x, metrics
 
-    def test_step(self, x, beta):
+    def test_step(self, inputs):
         """Perform a single inference step."""
         start = time.time()
-        states, px, sld = self(x, beta, training=False)
+        states, px, sld = self(inputs, training=False)
         ploss, qloss = self.calc_losses((states, px))
         loss = ploss + qloss
 
@@ -277,7 +284,7 @@ class GaugeDynamics(BaseDynamics):
 
         # map xf from [-inf, inf] back to [-pi, pi]
         xf = 2. * tf.math.atan(xf)
-        state_out = State(xf, state.v, state.beta)
+        state_out = State(x=xf, v=state.v, beta=state.beta)
         logdet = tf.reduce_sum(mc * scale, axis=-1)
 
         return state_out, logdet
@@ -305,7 +312,7 @@ class GaugeDynamics(BaseDynamics):
 
         # map xb from [-inf, inf] back to [-pi, pi]
         xb = 2. * tf.math.atan(xb)
-        state_out = State(xb, state.v, state.beta)
+        state_out = State(x=xb, v=state.v, beta=state.beta)
         logdet = tf.reduce_sum(mc * scale, axis=-1)
 
         return state_out, logdet

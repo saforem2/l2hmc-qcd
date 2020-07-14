@@ -377,13 +377,6 @@ def parse_args():
                         help=("""Flag that when passed uses Horovod for
                               distributed training on multiple nodes."""))
 
-    parser.add_argument('--save_train_data',
-                        dest='save_train_data',
-                        action='store_true',
-                        required=False,
-                        help=("""Flag that when passed will save training
-                              data."""))
-
     parser.add_argument("--restore",
                         dest="restore",
                         action="store_true",
@@ -449,4 +442,3 @@ def parse_args():
                 args = parser.parse_args(namespace=t_args)
 
     return args
-

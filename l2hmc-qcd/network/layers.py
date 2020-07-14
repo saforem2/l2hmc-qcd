@@ -33,6 +33,11 @@ def cast_array(x, dtype=NP_FLOAT):
     return np.array(x, dtype=dtype)
 
 
+def map_angle_to_reals(theta):
+    """Maps theta in [-pi, pi] to the real line [-inf, inf]."""
+    return tf.math.tan(theta / 2.)
+
+
 # pylint: disable=invalid-name
 class DenseLayerNP:
     """Implements fully-connected Dense layer using numpy."""

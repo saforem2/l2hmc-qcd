@@ -189,7 +189,7 @@ class GaugeNetwork(tf.keras.layers.Layer):
             'v_layer': self._get_layer_weights(self.v_layer.layer),
             't_layer': self._get_layer_weights(self.t_layer),
             'hidden_layers': [
-                self._get_layer_weights(l) for l in self.hidden_layers
+                self._get_layer_weights(j) for j in self.hidden_layers
             ],
             'scale_layer': (
                 self._get_layer_weights(self.scale_layer.layer)
@@ -223,19 +223,18 @@ class GaugeNetwork(tf.keras.layers.Layer):
 
         return weights_dict
 
+    # pylint:disable=invalid-name
     def call(self, inputs, training=None):
         """Call the network (forward-pass)."""
         v, x, t = inputs
+        h = self.activation(
+            self.v_layer(v) + self.x_layer(x) + self.t_layer(t)
+        )
 
-        x = self.x_layer(x)
-        v = self.v_layer(v)
-        t = self.t_layer(t)
-
-        h = self.activation(x + v + t)
         for layer in self.hidden_layers:
             h = self.activation(layer(h))
 
-        if self._config.dropout_prob > 0:
+        if self._config.dropout_prob > 0 and training:
             h = self.dropout(h, training=training)
 
         scale = self.scale_layer(h)
