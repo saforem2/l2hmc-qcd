@@ -11,6 +11,7 @@ from collections import defaultdict
 
 import numpy as np
 import tensorflow as tf
+import joblib
 
 import utils.file_io as io
 
@@ -55,16 +56,24 @@ class DataContainer:
         self.data_strs.append(fstr)
         return fstr
 
-    def restore(self, data_dir, current_step=None):
+    def restore(self, data_dir, rank=0, step=None):
         """Restore `self.data` from `data_dir`."""
-        if current_step is not None:
-            self.steps += current_step
-        data = self.load_data(data_dir)
-        for key, val in data.items():
-            self.data[key] = np.array(val).tolist()
+        if step is not None:
+            self.steps += step
+
+        x_file = os.path.join(data_dir, f'x_rank{rank}.z')
+        x = io.loadz(x_file)
+
+        if rank == 0:
+            data = self.load_data(data_dir)
+
+            for key, val in data.items():
+                self.data[key] = np.array(val).tolist()
+
+        return x
 
     @staticmethod
-    def load_data(data_dir):
+    def load_data(data_dir, rank=0):
         """Load data from `data_dir` and populate `self.data`."""
         contents = os.listdir(data_dir)
         fnames = [i for i in contents if i.endswith('.z')]
@@ -72,6 +81,8 @@ class DataContainer:
         data_files = [os.path.join(data_dir, i) for i in fnames]
         data = {}
         for key, val in zip(keys, data_files):
+            if 'x_rank' in key:
+                continue
             data[key] = io.loadz(val)
 
         return AttrDict(data)
@@ -94,3 +105,18 @@ class DataContainer:
                     f.write(f'{s}\n')
 
         self.data_strs = []
+
+    @staticmethod
+    def dump_configs(x, data_dir, rank=0):
+        """Save configs `x` separately for each rank."""
+        xfile = os.path.join(data_dir, f'x_rank{rank}.z')
+        io.log(f'Saving configs from rank {rank} to: {xfile}.')
+        joblib.dump(x, xfile)
+
+    # pylint:disable=too-many-arguments
+    def save_and_flush(self, data_dir, out_file, rank=0, mode='a'):
+        """Call `self.save_data` and `self.flush_data_strs`."""
+        self.save_data(data_dir, rank=rank)
+        self.flush_data_strs(out_file, rank=rank, mode=mode)
+        #  beta_file = os.path.join(data_dir, f'beta.z')
+        #  io.savez(beta.numpy(), beta_file)

@@ -134,23 +134,33 @@ def load_pkl(fpath):
     return data
 
 
-def timeit(method):
+def timeit(out_file=None, should_log=True, rank=0, sep=None):
     """Timing decorator."""
-    def timed(*args, **kwargs):
-        """Function to be timed."""
-        start_time = time.time()
-        result = method(*args, **kwargs)
-        end_time = time.time()
+    def wrap(fn):
+        def timed(*args, **kwargs):
+            """Function to be timed."""
+            start_time = time.time()
+            result = fn(*args, **kwargs)
+            end_time = time.time()
 
-        if 'log_time' in kwargs:
-            name = kwargs.get('log_name', method.__name__.upper())
-            kwargs['log_time'][name] = int((end_time - start_time) * 1000)
-        else:
-            log(80 * '-')
-            log(f'`{method.__name__}` took: {(end_time - start_time):.4g}s')
-            log(80 * '-')
-        return result
-    return timed
+            if 'log_time' in kwargs:
+                name = kwargs.get('log_name', fn.__name__.upper())
+                kwargs['log_time'][name] = int((end_time - start_time) * 1000)
+            else:
+                dt = (end_time - start_time) * 1000
+                tstr = f'`{fn.__name__}` took: {dt:.5g}ms'
+                if sep is not None:
+                    tstr = '\n'.join([sep, tstr, sep])
+                if out_file is not None:
+                    if should_log:
+                        log_and_write(tstr, out_file, rank=rank, mode='a')
+                    else:
+                        write(tstr, out_file, rank=rank, mode='a')
+                if should_log:
+                    log(tstr)
+            return result
+        return timed
+    return wrap
 
 
 def get_run_num(run_dir):
@@ -192,25 +202,27 @@ def get_run_dir_fstr(FLAGS):
 
 
 # pylint:disable=too-many-branches, too-many-locals
-def get_log_dir_fstr(FLAGS):
+def get_log_dir_fstr(flags):
     """Parse FLAGS and create unique fstr for `log_dir`."""
-    hmc = FLAGS.get('hmc', False)
-    batch_size = FLAGS.get('batch_size', None)
-    num_steps = FLAGS.get('num_steps', None)
-    beta = FLAGS.get('beta', None)
-    eps = FLAGS.get('eps', None)
-    space_size = FLAGS.get('space_size', None)
-    time_size = FLAGS.get('time_size', None)
-    lattice_shape = FLAGS.get('lattice_shape', None)
-    train_steps = FLAGS.get('train_steps', int(1e3))
-    network_type = FLAGS.get('network_type', 'GaugeNetwork')
-    charge_weight = FLAGS.get('charge_weight', 0.)
-    plaq_weight = FLAGS.get('plaq_weight', 0.)
-    eps_fixed = FLAGS.get('eps_fixed', False)
-    dropout_prob = FLAGS.get('dropout_prob', 0.)
-    clip_value = FLAGS.get('clip_value', 0.)
-    separate_networks = FLAGS.get('separate_networks', False)
-    using_ncp = FLAGS.get('use_ncp', False)
+    hmc = flags.get('hmc', False)
+    batch_size = flags.get('batch_size', None)
+    num_steps = flags.get('num_steps', None)
+    beta = flags.get('beta', None)
+    beta_init = flags.get('beta_init', None)
+    beta_final = flags.get('beta_final', None)
+    eps = flags.get('eps', None)
+    space_size = flags.get('space_size', None)
+    time_size = flags.get('time_size', None)
+    lattice_shape = flags.get('lattice_shape', None)
+    train_steps = flags.get('train_steps', int(1e3))
+    network_type = flags.get('network_type', 'GaugeNetwork')
+    charge_weight = flags.get('charge_weight', 0.)
+    plaq_weight = flags.get('plaq_weight', 0.)
+    eps_fixed = flags.get('eps_fixed', False)
+    dropout_prob = flags.get('dropout_prob', 0.)
+    clip_value = flags.get('clip_value', 0.)
+    separate_networks = flags.get('separate_networks', False)
+    using_ncp = flags.get('use_ncp', False)
 
     fstr = ''
 
@@ -240,14 +252,15 @@ def get_log_dir_fstr(FLAGS):
     if plaq_weight > 0:
         fstr += f'_pw{plaq_weight}'.replace('.', '')
 
+    fstr += f'_bi{beta_init:.3g}_bf{beta_final:.3g}'.replace('.', '')
+
     if dropout_prob > 0:
         fstr += f'_dp{dropout_prob}'.replace('.', '')
 
     if eps_fixed:
         fstr += f'_eps{eps:.3g}'.replace('.', '')
 
-    if beta is not None:
-        fstr += f'_beta{beta:.3g}'.replace('.', '')
+    #  if beta_init == beta_final:
 
     if clip_value > 0:
         fstr += f'_clip{clip_value}'.replace('.', '')
@@ -256,10 +269,10 @@ def get_log_dir_fstr(FLAGS):
         fstr += f'_{network_type}'
 
     if separate_networks:
-        fstr += f'_sepNets'
+        fstr += '_sepNets'
 
     if using_ncp:
-        fstr += f'_NCProj'
+        fstr += '_NCProj'
 
     return fstr
 
@@ -296,8 +309,8 @@ def make_log_dir(FLAGS, model_type=None, log_file=None,
 
     log_dir = os.path.join(*dirs, month_str, run_str)
     if os.path.isdir(log_dir):
-        log(f'Existing directory found with the same name!')
-        log(f'Modifying date string to include seconds.')
+        log('\n'.join(['Existing directory found with the same name!',
+                       'Modifying the date string to include seconds.']))
         dstr = now.strftime('%Y-%m-%d-%H%M%S')
         run_str = f'{fstr}-{dstr}'
         log_dir = os.path.join(*dirs, month_str, run_str)
@@ -318,8 +331,8 @@ def make_run_dir(FLAGS, base_dir):
     run_str = f'{fstr}-{dstr}'
     run_dir = os.path.join(base_dir, run_str)
     if os.path.isdir(run_dir):
-        log(f'Existing directory found with the same name!')
-        log(f'Modifying date string to include seconds.')
+        log('\n'.join(['Existing directory found with the same name!',
+                       'Modifying the date string to include seconds.']))
         dstr = now.strftime('%Y-%m-%d-%H%M%S')
         run_str = f'{fstr}-{dstr}'
         run_dir = os.path.join(base_dir, run_str)
