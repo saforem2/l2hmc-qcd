@@ -8,6 +8,7 @@ export KMP_BLOCKTIME=1
 export OMP_NUM_THREADS=1
 export KMP_SETTINGS=TRUE
 export KMP_AFFINITY='granularity=fine,verbose,compact,1,0'
+export AUTOGRAPH_VERBOSITY=10
 
 # export TF_XLA_FLAGS=“--tf_xla_cpu_global_jit”
 
