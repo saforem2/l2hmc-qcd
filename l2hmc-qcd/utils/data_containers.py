@@ -21,15 +21,17 @@ from utils.attr_dict import AttrDict
 class DataContainer:
     """Base class for dealing with data."""
 
-    def __init__(self, steps, header=None, skip_keys=None):
+    def __init__(self, steps, header=None, dirs=None):
         self.steps = steps
-        if skip_keys is None:
-            skip_keys = ['']
 
-        self.skip_keys = skip_keys
+        self.dirs = dirs
         self.data_strs = [header]
         self.steps_arr = []
         self.data = AttrDict(defaultdict(list))
+        if dirs is not None:
+            io.check_else_make_dir(
+                [v for k, v in dirs.items() if 'file' not in k]
+            )
 
     def update(self, step, metrics):
         """Update `self.data` with new values from `data`."""
@@ -40,18 +42,30 @@ class DataContainer:
             except KeyError:
                 self.data[key] = [tf.convert_to_tensor(val).numpy()]
 
-    def get_fstr(self, step, metrics, rank=0):
-        """Get formatted data string from `data`."""
-        if rank != 0:
-            return ''
+    def get_header(self, metrics=None, prepend=None, append=None, skip=None):
+        """Get nicely formatted header of variable names for printing."""
+        if metrics is None:
+            metrics = self.data
 
-        fstr = f"{step:>6g}/{self.steps:<6g} "
-        if self.skip_keys is not None:
-            data = {
-                k: tf.reduce_mean(v) for k, v in metrics.items()
-                if k not in self.skip_keys
-            }
-        fstr += ' '.join([f'{v:^11.4g}' for _, v in data.items()])
+        header = io.make_header_from_dict(metrics,
+                                          skip=skip,
+                                          prepend=prepend,
+                                          append=append)
+
+        if self.data_strs[0] != header:
+            self.data_strs.insert(0, header)
+
+        return header
+
+    def get_fstr(self, step, metrics, skip=None):
+        """Get formatted data string from `data`."""
+        skip = [] if skip is None else skip
+
+        data = {
+            k: tf.reduce_mean(v) for k, v in metrics.items() if k not in skip
+        }
+        fstr = (f'{step:>6g}/{self.steps:<6g}'
+                + ''.join([f'{v:^12.4g}' for _, v in data.items()]))
 
         self.data_strs.append(fstr)
         return fstr
@@ -64,16 +78,14 @@ class DataContainer:
         x_file = os.path.join(data_dir, f'x_rank{rank}.z')
         x = io.loadz(x_file)
 
-        if rank == 0:
-            data = self.load_data(data_dir)
-
-            for key, val in data.items():
-                self.data[key] = np.array(val).tolist()
+        data = self.load_data(data_dir)
+        for key, val in data.items():
+            self.data[key] = np.array(val).tolist()
 
         return x
 
     @staticmethod
-    def load_data(data_dir, rank=0):
+    def load_data(data_dir):
         """Load data from `data_dir` and populate `self.data`."""
         contents = os.listdir(data_dir)
         fnames = [i for i in contents if i.endswith('.z')]
@@ -114,9 +126,12 @@ class DataContainer:
         joblib.dump(x, xfile)
 
     # pylint:disable=too-many-arguments
-    def save_and_flush(self, data_dir, out_file, rank=0, mode='a'):
+    def save_and_flush(self, data_dir=None, log_file=None, rank=0, mode='a'):
         """Call `self.save_data` and `self.flush_data_strs`."""
+        if data_dir is None:
+            data_dir = self.dirs.get('data_dir', None)
+        if log_file is None:
+            log_file = self.dirs.get('log_file', None)
+
         self.save_data(data_dir, rank=rank)
-        self.flush_data_strs(out_file, rank=rank, mode=mode)
-        #  beta_file = os.path.join(data_dir, f'beta.z')
-        #  io.savez(beta.numpy(), beta_file)
+        self.flush_data_strs(log_file, rank=rank, mode=mode)

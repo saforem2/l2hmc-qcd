@@ -30,33 +30,28 @@ try:
     import horovod.tensorflow as hvd
 
     hvd.init()
-    if hvd.rank() == 0:
-        print(f'Number of devices: {hvd.size()}')
-    if TF_VERSION == '2.x':
-        GPUS = tf.config.experimental.list_physical_devices('GPU')
-        for gpu in GPUS:
-            tf.config.experimental.set_memory_growth(gpu, True)
-        if GPUS:
-            tf.config.experimental.set_visible_devices(
-                GPUS[hvd.local_rank()], 'GPU'
-            )
-    elif TF_VERSION == '1.x':
-        CONFIG = tf.compat.v1.ConfigProto()
-        CONFIG.gpu_options.allow_growth = True
-        CONFIG.gpu_options.visible_device_list = str(hvd.local_rank())
-        tf.compat.v1.enable_eager_execution(config=CONFIG)
+    RANK = hvd.rank()
+    io.log(f'Number of devices: {hvd.size()}', RANK)
+    GPUS = tf.config.list_physical_devices('GPU')
+    for gpu in GPUS:
+        tf.config.experimental.set_memory_growth(gpu, True)
+    if GPUS:
+        tf.config.experimental.set_visible_devices(
+            GPUS[hvd.local_rank()], 'GPU'
+        )
 
 except ImportError:
-    if TF_VERSION == '1.x':
-        tf.compat.v1.enable_eager_execution()
+    RANK = 0
+
+IS_CHIEF = (RANK == 0)
 
 # pylint:disable=too-many-locals,invalid-name
 
 
-def check_if_chief(args):
-    """Helper function to determine if we're on `rank == 0`."""
-    using_hvd = args.get('horovod', False)
-    return hvd.rank() == 0 if using_hvd else not using_hvd
+#  def check_if_chief(args):
+#      """Helper function to determine if we're on `rank == 0`."""
+#      using_hvd = args.get('horovod', False)
+#      return hvd.rank() == 0 if using_hvd else not using_hvd
 
 
 def print_args(args):
@@ -84,12 +79,10 @@ def run_hmc(
         - 'run_steps'
         - 'lattice_shape'
     """
-    is_chief = check_if_chief(args)
-    if not is_chief:
+    if not IS_CHIEF:
         return None, None
 
     print_args(args)
-    #  args.log_dir = io.make_log_dir(args, 'GaugeModel', log_file)
 
     args.update({
         'hmc': True,
@@ -139,8 +132,8 @@ def load_and_run(
         runs_dir: str = None,
 ) -> (GaugeDynamics, AttrDict):
     """Load trained model from checkpoint and run inference."""
-    if not check_if_chief(args):
-        return None, None
+    if not IS_CHIEF:
+        return None, None, None
 
     print_args(args)
     if args.hmc:
@@ -178,7 +171,6 @@ def load_and_run(
         io.log(f'INFO:Restored model from: {manager.latest_checkpoint}')
         ckpt.restore(manager.latest_checkpoint).expect_partial()
 
-    #  args.update(FLAGS)
     dynamics, run_data, x = run(dynamics, args,
                                 runs_dir=runs_dir)
 
@@ -192,9 +184,9 @@ def run(dynamics, args, x=None, runs_dir=None):
         model(GaugeModel): Trained model
         ouptuts(dict): Dictionary of outputs from inference run.
     """
-    is_chief = check_if_chief(args)
-    if not is_chief:
-        return None, None
+    #  is_chief = check_if_chief(args)
+    if not IS_CHIEF:
+        return None, None, None
 
     if runs_dir is None:
         if args.hmc:
@@ -251,9 +243,8 @@ def run(dynamics, args, x=None, runs_dir=None):
 
 def run_dynamics(dynamics, flags, x=None):
     """Run inference on trained dynamics."""
-    is_chief = check_if_chief(flags)
-    if not is_chief:
-        return None
+    if not IS_CHIEF:
+        return None, None
 
     beta = flags.get('beta', None)
     print_steps = flags.get('print_steps', 5)
@@ -264,9 +255,7 @@ def run_dynamics(dynamics, flags, x=None):
         x = tf.random.uniform(shape=dynamics.config.input_shape,
                               minval=-PI, maxval=PI, dtype=TF_FLOAT)
 
-    run_data = DataContainer(flags.run_steps,
-                             skip_keys=['charges'],
-                             header=HEADER)
+    run_data = DataContainer(flags.run_steps)
 
     eps = dynamics.eps
     if hasattr(eps, 'numpy'):
@@ -277,28 +266,29 @@ def run_dynamics(dynamics, flags, x=None):
     else:
         test_step = tf.function(dynamics.test_step)
 
-    io.log(SEP)
     template = '\n'.join([
         f'beta: {beta}', f'eps: {eps:.4g}',
         f'net_weights: {dynamics.net_weights}'
     ])
     io.log(f'INFO:Running inference with:\n {template}')
-    io.log(SEP)
-    io.log(HEADER)
+
+    x, metrics = test_step((x, beta))
+    header = run_data.get_header(metrics,
+                                 skip=['charges'],
+                                 prepend=['{:^12s}'.format('step')])
+    io.log(header)
     for step in tf.cast(tf.range(flags.run_steps), dtype=tf.int64):
         start = time.time()
-        #  x = convert_to_angle(x)
-        #  x, metrics = dynamics.test_step((x, beta))
         x, metrics = test_step((x, beta))
         metrics.dt = time.time() - start
         run_data.update(step, metrics)
 
         if step % print_steps == 0:
-            data_str = run_data.get_fstr(step, metrics)
+            data_str = run_data.get_fstr(step, metrics, skip=['charges'])
             io.log(data_str)
             summarize_dict(metrics, step, prefix='testing')
 
         if step % 100 == 0:
-            io.log(HEADER)
+            io.log(header)
 
     return run_data, x
