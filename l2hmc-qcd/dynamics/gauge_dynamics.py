@@ -26,13 +26,15 @@ from typing import NoReturn
 import numpy as np
 import tensorflow as tf
 
-from config import (DynamicsConfig, lrConfig, NetWeights, NetworkConfig, PI,
-                    State, TWO_PI, BIN_DIR)
-from utils.attr_dict import AttrDict
+from config import (BIN_DIR, GaugeDynamicsConfig, lrConfig, NetWeights,
+                    NetworkConfig, PI, State, TWO_PI)
 from dynamics.dynamics import BaseDynamics
+from network.gauge_network import GaugeNetwork
+from utils.file_io import timeit  # pylint:disable=unused-import
+from utils.attr_dict import AttrDict
+from utils.seed_dict import vnet_seeds, xnet_seeds
 from lattice.utils import u1_plaq_exact_tf
 from lattice.lattice import GaugeLattice
-from utils.file_io import timeit  # pylint:disable=unused-import
 
 try:
     import horovod.tensorflow as hvd
@@ -54,13 +56,13 @@ def convert_to_angle(x):
 def build_dynamics(flags):
     """Build dynamics using parameters from FLAGS."""
     net_config = NetworkConfig(
-        type='GaugeNetwork',
+        name='GaugeNetwork',
         units=flags.units,
         activation_fn=tf.nn.relu,
         dropout_prob=flags.dropout_prob,
     )
 
-    config = DynamicsConfig(
+    config = GaugeDynamicsConfig(
         model_type='GaugeModel',
         eps=flags.eps,
         hmc=flags.hmc,
@@ -94,10 +96,11 @@ def build_dynamics(flags):
 # pylint:disable=invalid-name,too-many-locals,too-many-arguments
 class GaugeDynamics(BaseDynamics):
     """Implements the dynamics engine for the L2HMC sampler."""
+
     def __init__(
             self,
             params: AttrDict,
-            config: DynamicsConfig,
+            config: GaugeDynamicsConfig,
             network_config: NetworkConfig,
             lr_config: lrConfig,
     ) -> NoReturn:
@@ -132,7 +135,47 @@ class GaugeDynamics(BaseDynamics):
             self._vtw = self.net_weights.v_translation
             self._vqw = self.net_weights.v_transformation
 
-    @timeit(out_file=TIMING_FILE, should_log=False)
+    def _get_network(self, step):
+        if self.config.separate_networks:
+            step_int = int(step)
+            xnet = getattr(self, f'xnets{step_int}', None)
+            #  tf.gather(self.xnets, step_int))
+            #  tf.gather(self.vnets, step_int))
+            vnet = getattr(self, f'vnets{step_int}', None)
+            return xnet, vnet
+
+        return self.xnets, self.vnets
+
+    def _build_networks(self):
+        if self.config.separate_networks:
+            def _new_net(name, seeds_=None):
+                self.xnets = []
+                self.vnets = []
+                factor = 2. if name == 'XNet' else 1.
+                for idx in range(self.config.num_steps):
+                    #  new_seeds = {
+                    #      key: int(idx * val) for key, val in seeds_.items()
+                    #  }
+                    net = GaugeNetwork(self.net_config,
+                                       self.xdim, factor=factor,
+                                       #  net_seeds=new_seeds,
+                                       name=f'{name}_step{idx}')
+                    if name == 'XNet':
+                        setattr(self, f'xnets{int(idx)}', net)
+                        self.xnets.append(net)
+                    elif name == 'VNet':
+                        setattr(self, f'vnets{int(idx)}', net)
+                        self.vnets.append(net)
+
+            _new_net('XNet')  # , xnet_seeds)
+            _new_net('VNet')  # , vnet_seeds)
+
+        else:
+            self.xnets = GaugeNetwork(self.net_config, factor=2.,
+                                      xdim=self.xdim, name='XNet')
+            self.vnets = GaugeNetwork(self.net_config, factor=1.,
+                                      xdim=self.xdim, name='VNet')
+
     def calc_losses(self, inputs):
         """Calculate the total loss."""
         states, accept_prob = inputs
@@ -161,7 +204,6 @@ class GaugeDynamics(BaseDynamics):
 
         return ploss, qloss
 
-    #  @timeit(out_file=TIMING_FILE, should_log=False)
     def train_step(self, inputs, first_step=False):
         """Perform a single training step."""
         start = time.time()
@@ -169,6 +211,8 @@ class GaugeDynamics(BaseDynamics):
             #  tape.watch(x)
             #  tape.watch(beta)
             states, px, sld = self(inputs, training=True)
+            #  custom_loss = self.loss_wrapper(px)
+            #  ploss, qloss = custom_loss(states.init.x, states.proposed.x)
             ploss, qloss = self.calc_losses((states, px))
             loss = ploss + qloss
 
