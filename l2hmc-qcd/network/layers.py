@@ -87,13 +87,13 @@ def dense_layer(units, seed=None, factor=1.,
 class ScaledTanhLayer:
     """Wrapper class for dense layer + exp scaled tanh output."""
 
-    def __init__(self, name, factor, units, seed, zero_init=False):
+    def __init__(self, name, factor, units, seed=None, zero_init=False):
         self.coeff, self.layer = self._build(name, factor,
                                              units, seed,
                                              zero_init)
 
     @staticmethod
-    def _build(name, factor, units, seed, zero_init):
+    def _build(name, factor, units, seed=None, zero_init=False):
         layer_name = f'{name}_layer'
         coeff_name = f'coeff_{name}'
         with tf.name_scope(name):
@@ -117,7 +117,8 @@ class ScaledTanhLayer:
 class StackedLayer:
     """Wrapper class that stacks [cos(x), sin(x)] inputs."""
 
-    def __init__(self, name, factor, units, seed, zero_init=False, **kwargs):
+    def __init__(self, name, factor, units,
+                 seed=None, zero_init=False, **kwargs):
         """Initialization method."""
         self.layer = dense_layer(name=name, seed=seed,
                                  units=units, factor=factor,
@@ -153,9 +154,10 @@ class ScaledTanhLayerNP:
 class CartesianLayer:
     """Implements `CartesianLayer`."""
 
-    def __init__(self, name, factor, units, seed, zero_init=False, **kwargs):
-        xseed = int(2 * seed)
-        yseed = int(3 * seed)
+    def __init__(self, name, factor, units,
+                 seed=None, zero_init=False, **kwargs):
+        xseed = int(2 * seed) if seed is not None else seed
+        yseed = int(3 * seed) if seed is not None else seed
         self.x_layer = dense_layer(name=f'{name}_x', factor=factor/2,
                                    units=units, seed=xseed,
                                    zero_init=zero_init, **kwargs)
@@ -184,9 +186,10 @@ class CartesianLayerNP:
 class EncodingLayer:
     """Implements the EncodingLayer."""
 
-    def __init__(self, name, factor, units, seed, zero_init=False, **kwargs):
-        xseed = int(2 * seed)
-        yseed = int(3 * seed)
+    def __init__(self, name, factor, units,
+                 seed=None, zero_init=False, **kwargs):
+        xseed = int(2 * seed) if seed is not None else seed
+        yseed = int(3 * seed) if seed is not None else seed
         self.x_layer = dense_layer(name=f'{name}_x', factor=factor/2.,
                                    units=units, seed=xseed,
                                    zero_init=zero_init, **kwargs)
