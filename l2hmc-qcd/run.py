@@ -6,11 +6,14 @@ Run inference on trained model.
 from __future__ import absolute_import, division, print_function
 
 import os
+import tensorflow as tf
 
 import utils.file_io as io
+from config import TF_FLOAT
 from utils.attr_dict import AttrDict
 from utils.parse_inference_args import parse_args
 from utils.inference_utils import load_and_run, run_hmc
+
 
 def main(args):
     """Main method for running inference."""
@@ -31,7 +34,7 @@ def main(args):
         eps_file = os.path.join(args.log_dir, 'training',
                                 'train_data', 'eps.z')
         eps_arr = io.loadz(eps_file)
-        args.eps = eps_arr[-1]
+        args.eps = tf.cast(eps_arr[-1], TF_FLOAT)
 
     if args.beta is None:
         args.beta = train_flags['beta_final']
