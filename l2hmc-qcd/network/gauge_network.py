@@ -83,13 +83,15 @@ def save_layer_weights(net, out_file):
 class GaugeNetwork(tf.keras.layers.Layer):
     """GaugeNetwork. Implements stacked Cartesian repr. of `GenericNet`."""
 
-    def __init__(self,
-                 config: NetworkConfig,
-                 xdim: int,
-                 factor: float = 1.,
-                 net_seeds: dict = None,
-                 zero_init: bool = False,
-                 name: str = 'GaugeNetwork') -> None:
+    def __init__(
+            self,
+            config: NetworkConfig,
+            xdim: int,
+            factor: float = 1.,
+            net_seeds: dict = None,
+            zero_init: bool = False,
+            name: str = 'GaugeNetwork'
+    ):
         """Initialization method.
 
         Args:
@@ -113,54 +115,53 @@ class GaugeNetwork(tf.keras.layers.Layer):
             if config.dropout_prob > 0:
                 self.dropout = tf.keras.layers.Dropout(config.dropout_prob)
 
+            #  seed=net_seeds['x_layer'])
             self.x_layer = StackedLayer(name='x_layer',
                                         factor=factor/3.,
                                         zero_init=zero_init,
                                         units=config.units[0],
-                                        input_shape=(2 * xdim,),
-                                        seed=net_seeds['x_layer'])
+                                        input_shape=(2 * xdim,))
 
+            #  seed=net_seeds['v_layer'])
             self.v_layer = StackedLayer(name='v_layer',
                                         factor=1./3.,
                                         zero_init=False,
                                         units=config.units[0],
-                                        input_shape=(2 * xdim,),
-                                        seed=net_seeds['v_layer'])
+                                        input_shape=(2 * xdim,))
 
+            #  seed=net_seeds['t_layer'])
             self.t_layer = dense_layer(name='t_layer',
                                        factor=1./3.,
                                        zero_init=False,
                                        units=config.units[0],
-                                       input_shape=(2 * xdim,),
-                                       seed=net_seeds['t_layer'])
+                                       input_shape=(2 * xdim,))
 
             def make_hlayer(i, units):
+                #  seed=int(i * net_seeds['h_layer']))
                 return dense_layer(factor=1.,
                                    units=units,
                                    zero_init=True,
-                                   name=f'h_layer{i}',
-                                   seed=int(i * net_seeds['h_layer']))
+                                   name=f'h_layer{i}')
 
             self.hidden_layers = [
                 make_hlayer(i, n) for i, n in enumerate(config.units[1:])
             ]
 
+            #  seed=net_seeds[TNAME])
             self.translation_layer = dense_layer(name=TNAME,
                                                  factor=0.001,
                                                  units=xdim,
-                                                 zero_init=True,
-                                                 seed=net_seeds[TNAME])
+                                                 zero_init=True)
 
+            #  seed=net_seeds[SNAME],
             self.scale_layer = ScaledTanhLayer(name='scale',
                                                factor=0.001,
                                                zero_init=True,
-                                               seed=net_seeds[SNAME],
                                                units=xdim)
 
             self.transformation_layer = ScaledTanhLayer(name='transformation',
                                                         zero_init=True,
                                                         factor=0.001,
-                                                        seed=net_seeds[QNAME],
                                                         units=xdim)
 
         self.layers_dict = {
@@ -175,6 +176,7 @@ class GaugeNetwork(tf.keras.layers.Layer):
 
     @staticmethod
     def _get_layer_weights(layer, sess=None):
+        # pylint:disable=invalid-name
         if sess is None or tf.executing_eagerly():
             w, b = layer.weights
             return Weights(w=w.numpy(), b=b.numpy())
