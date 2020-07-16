@@ -8,13 +8,15 @@ import datetime
 
 import joblib
 import numpy as np
+import typing
+from utils.attr_dict import AttrDict
 
 from config import PROJECT_DIR
 
 # pylint:disable=invalid-name
 
 
-def log(s, nl=True, rank=0):
+def log(s: str, nl: bool = True, rank: int = 0):
     """Print string `s` to stdout if and only if hvd.rank() == 0."""
     if rank != 0:
         return
@@ -22,7 +24,7 @@ def log(s, nl=True, rank=0):
     print(s, end='\n' if nl else ' ')
 
 
-def write(s, f, mode='a', nl=True, rank=0):
+def write(s: str, f: str, mode: str = 'a', nl: bool = True, rank: int = 0):
     """Write string `s` to file `f` if and only if hvd.rank() == 0."""
     if rank != 0:
         return
@@ -30,13 +32,38 @@ def write(s, f, mode='a', nl=True, rank=0):
         ff.write(s + '\n' if nl else ' ')
 
 
-def log_and_write(s, f, rank=0, mode='a', nl=True):
+def make_header_from_dict(
+        data: dict,
+        dash: str = '-',
+        skip: list = None,
+        append: list = None,
+        prepend: list = None,
+):
+    """Build nicely formatted header with names of various metrics."""
+    append = [''] if append is None else append
+    prepend = [''] if prepend is None else prepend
+    skip = [] if skip is None else skip
+    keys = ['{:^12s}'.format(k) for k in data.keys() if k not in skip]
+    hstr = ''.join(prepend + keys + append)
+    sep = dash * len(hstr)
+    header = '\n'.join([sep, hstr, sep])
+
+    return header
+
+
+def log_and_write(
+        s: str,
+        f: str,
+        rank: int = 0,
+        mode: str = 'a',
+        nl: bool = True
+):
     """Print string `s` to std out and also write to file `f`."""
     log(s, nl, rank=rank)
     write(s, f, mode=mode, nl=nl, rank=rank)
 
 
-def check_else_make_dir(d, rank=0):
+def check_else_make_dir(d: str, rank: int = 0):
     """If directory `d` doesn't exist, it is created.
 
     Args:
@@ -55,7 +82,10 @@ def check_else_make_dir(d, rank=0):
             os.makedirs(d, exist_ok=True)
 
 
-def flush_data_strs(data_strs, out_file, rank=0, mode='a'):
+def flush_data_strs(data_strs: list,
+                    out_file: str,
+                    rank: int = 0,
+                    mode: str = 'a'):
     """Dump `data_strs` to `out_file` and return new, empty list."""
     if rank != 0:
         return []
@@ -67,7 +97,7 @@ def flush_data_strs(data_strs, out_file, rank=0, mode='a'):
     return []
 
 
-def save_params(params, out_dir, name=None, rank=0):
+def save_params(params: dict, out_dir: str, name: str = None, rank: int = 0):
     """save params(dict) to `out_dir`, as both `.z` and `.txt` files."""
     if rank != 0:
         return
@@ -83,7 +113,7 @@ def save_params(params, out_dir, name=None, rank=0):
     savez(params, zfile, name=name, rank=rank)
 
 
-def print_args(args, rank=0):
+def print_args(args: dict, rank: int = 0):
     """Print out parsed arguments."""
     log(80 * '=' + '\n' + 'Parsed args:\n', rank=rank)
     for key, val in args.items():
@@ -91,7 +121,7 @@ def print_args(args, rank=0):
     log(80 * '=', rank=rank)
 
 
-def savez(obj, fpath, name=None, rank=0):
+def savez(obj: typing.Any, fpath: str, name: str = None, rank: int = 0):
     """Save `obj` to compressed `.z` file at `fpath`."""
     if rank != 0:
         return
@@ -175,7 +205,7 @@ def get_run_num(run_dir):
     return sorted([int(i.split('_')[-1]) for i in dirnames])[-1] + 1
 
 
-def get_run_dir_fstr(FLAGS):
+def get_run_dir_fstr(FLAGS: AttrDict):
     """Parse FLAGS and create unique fstr for `run_dir`."""
     eps = FLAGS.get('eps', None)
     hmc = FLAGS.get('hmc', False)
@@ -188,7 +218,7 @@ def get_run_dir_fstr(FLAGS):
 
     fstr = ''
     if hmc:
-        fstr += f'HMC_'
+        fstr += 'HMC_'
     if beta is not None:
         fstr += f'beta{beta:.3g}'.replace('.', '')
     if num_steps is not None:
