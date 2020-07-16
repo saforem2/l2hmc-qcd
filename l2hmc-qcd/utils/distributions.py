@@ -18,7 +18,7 @@ from config import TF_FLOAT, NP_FLOAT
 
 def quadratic_gaussian(x, mu, S):
     """Simple quadratic Gaussian (normal) distribution."""
-    return tf.diag_part(0.5 * ((x - mu) @ S) @ tf.transpose((x - mu)))
+    return tf.linalg.diag_part(0.5 * ((x - mu) @ S) @ tf.transpose((x - mu)))
 
 
 def random_tilted_gaussian(dim, log_min=-2., log_max=2.):
@@ -82,8 +82,9 @@ def ring_of_gaussians(num_modes, sigma, r=1.):
         distances (np.ndarray): Array of the differences between different
             modes.
     """
-    covs, distribution = gen_ring(r=r, var=sigma, nb_mixtures=num_modes)
+    distribution = gen_ring(r=r, var=sigma, nb_mixtures=num_modes)
     mus = np.array(distribution.mus)
+    covs = np.array(distribution.sigmas)
     diffs = mus[1:] - mus[:-1, :]
     distances = [np.sqrt(np.dot(d, d.T)) for d in diffs]
 
@@ -208,14 +209,14 @@ class GaussianFunnel:
             s = tf.exp(v)
             sum_sq = tf.reduce_sum(tf.square(x[:, 1:]), axis=1)
             n = tf.cast(tf.shape(x)[1] - 1, TF_FLOAT)
-            E = 0.5 * (log_p_v + sum_sq / s + n * tf.log(2.0 * np.pi * s))
+            E = 0.5 * (log_p_v + sum_sq / s + n * tf.math.log(2.0 * np.pi * s))
             s_min = tf.exp(-self.clip)
             s_max = tf.exp(self.clip)
             E_safe1 = 0.5 * (
-                log_p_v + sum_sq / s_max + n * tf.log(2. * np.pi * s_max)
+                log_p_v + sum_sq / s_max + n * tf.math.log(2. * np.pi * s_max)
             )
             E_safe2 = 0.5 * (
-                log_p_v + sum_sq / s_min + n * tf.log(2.0 * np.pi * s_min)
+                log_p_v + sum_sq / s_min + n * tf.math.log(2.0 * np.pi * s_min)
             )
             #  E_safe = tf.minimum(E_safe1, E_safe2)
 
@@ -244,7 +245,7 @@ class GaussianFunnel:
         sum_sq = np.square(x[:, 1:]).sum(axis=1)
         n = tf.shape(x)[1] - 1
         return 0.5 * (
-            log_p_v + sum_sq / s + (n / 2) * tf.log(2 * np.pi * s)
+            log_p_v + sum_sq / s + (n / 2) * tf.math.log(2 * np.pi * s)
         )
 
 
@@ -275,11 +276,11 @@ class GMM:
             V = tf.concat([
                 tf.expand_dims(-quadratic_gaussian(x, self.mus[i],
                                                    self.i_sigmas[i])
-                               + tf.log(self.constants[i]), axis=1)
+                               + tf.math.log(self.constants[i]), axis=1)
                 for i in range(self.nb_mixtures)
             ], axis=1)
 
-            return -tf.reduce_logsumexp(V, axis=1)
+            return -1.0 * tf.math.reduce_logsumexp(V, axis=1)
         return fn
 
     def get_samples(self, n):
@@ -307,5 +308,3 @@ class GMM:
         ]
 
         return np.log(sum(exp_arr))
-
-

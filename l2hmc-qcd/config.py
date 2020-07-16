@@ -17,6 +17,14 @@ __date__ = '07/03/2020'
 
 # pylint:disable=invalid-name
 
+TRAIN_STR = (r"""
+  _____          _       _               _     ____  _   _ __  __  ____
+ |_   _| __ __ _(_)_ __ (_)_ __   __ _  | |   |___ \| | | |  \/  |/ ___|
+   | || '__/ _` | | '_ \| | '_ \ / _` | | |     __) | |_| | |\/| | |
+   | || | | (_| | | | | | | | | | (_| | | |___ / __/|  _  | |  | | |___ _ _ _
+   |_||_|  \__,_|_|_| |_|_|_| |_|\__, | |_____|_____|_| |_|_|  |_|\____(_|_|_)
+                                 |___/
+""")
 
 SNAME = 'scale_layer'
 TNAME = 'translation_layer'
@@ -27,29 +35,102 @@ QCOEFF = 'coeff_transformation'
 # ----------------------------------------------------------------
 # Included below is a catch-all for various structures
 # ----------------------------------------------------------------
-DynamicsConfig = namedtuple('DynamicsConfig', [
-    'eps',
-    'hmc',
-    'num_steps',
-    'model_type',
-    'eps_trainable',
-    'separate_networks',
-    'use_ncp',
-])
 
-NetworkConfig = namedtuple('NetworkConfig', [
-    'type',
-    'units',
-    'dropout_prob',
-    'activation_fn'
-])
+class DynamicsConfig(AttrDict):
+    """Configuration object for `BaseDynamics` object"""
 
-lrConfig = namedtuple('lrConfig', [
-    'init',
-    'decay_steps',
-    'decay_rate',
-    'warmup_steps',
-])
+    def __init__(self,
+                 eps: float,
+                 num_steps: int,
+                 hmc: bool = False,
+                 model_type: str = None,
+                 eps_trainable: bool = True):
+        super(DynamicsConfig, self).__init__(
+            eps=eps,
+            hmc=hmc,
+            num_steps=num_steps,
+            model_type=model_type,
+            eps_trainable=eps_trainable,
+        )
+
+
+class GaugeDynamicsConfig(AttrDict):
+    """Configuration object for `GaugeDynamics` object"""
+
+    # pylint:disable=too-many-arguments
+    def __init__(self,
+                 eps: float,
+                 num_steps: int,
+                 hmc: bool = False,
+                 use_ncp: bool = False,
+                 model_type: str = None,
+                 eps_trainable: bool = True,
+                 separate_networks: bool = False):
+        super(GaugeDynamicsConfig, self).__init__(
+            eps=eps,
+            hmc=hmc,
+            use_ncp=use_ncp,
+            num_steps=num_steps,
+            model_type=model_type,
+            eps_trainable=eps_trainable,
+            separate_networks=separate_networks
+        )
+
+
+class NetworkConfig(AttrDict):
+    """Configuration object for network of `Dynamics` object"""
+
+    def __init__(self,
+                 units: list,
+                 name: str = None,
+                 dropout_prob: float = 0.,
+                 activation_fn: callable = tf.nn.relu):
+        super(NetworkConfig, self).__init__(
+            name=name,
+            units=units,
+            dropout_prob=dropout_prob,
+            activation_fn=activation_fn
+        )
+
+
+class lrConfig(AttrDict):
+    """Configuration object for specifying learning rate schedule."""
+    def __init__(self,
+                 init: float,
+                 decay_steps: int,
+                 decay_rate: float,
+                 warmup_steps: int = 0):
+        super(lrConfig, self).__init__(
+            init=init,
+            decay_steps=decay_steps,
+            decay_rate=decay_rate,
+            warmup_steps=warmup_steps
+        )
+
+
+#  DynamicsConfig = namedtuple('DynamicsConfig', [
+#      'eps',
+#      'hmc',
+#      'num_steps',
+#      'model_type',
+#      'eps_trainable',
+#      'separate_networks',
+#      'use_ncp',
+#  ])
+#
+#  NetworkConfig = namedtuple('NetworkConfig', [
+#      'type',
+#      'units',
+#      'dropout_prob',
+#      'activation_fn'
+#  ])
+
+#  lrConfig = namedtuple('lrConfig', [
+#      'init',
+#      'decay_steps',
+#      'decay_rate',
+#      'warmup_steps',
+#  ])
 
 NAMES = [
     'step', 'dt', 'loss', 'ploss', 'qloss',
@@ -215,3 +296,4 @@ try:
     HAS_PSUTIL = True
 except ImportError:
     HAS_PSUTIL = False
+

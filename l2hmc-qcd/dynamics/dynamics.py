@@ -46,6 +46,7 @@ except ImportError:
 
 TIMING_FILE = os.path.join(BIN_DIR, 'timing_file.log')
 
+
 def identity(x):
     """Returns x"""
     return x
@@ -56,6 +57,7 @@ def identity(x):
 # pylint:disable=too-many-instance-attributes
 class BaseDynamics(tf.keras.Model):
     """Dynamics object for training the L2HMC sampler."""
+
     def __init__(
             self,
             params: AttrDict,
@@ -88,7 +90,10 @@ class BaseDynamics(tf.keras.Model):
         self.eps = self._build_eps(use_log=False)
         self.masks = self._build_masks(random=False)
         #  self._construct_time()
-        self._build_networks()
+        if self.config.hmc:
+            self.xnets, self.vnets = self._build_hmc_networks()
+        else:
+            self._build_networks()
 
         if self._has_trainable_params:
             self.lr_config = lr_config
@@ -122,11 +127,7 @@ class BaseDynamics(tf.keras.Model):
 
     def call(self, inputs, training=None):
         """Obtain a new state from `inputs`."""
-        #  return self._apply_transition(inputs, training=training)
-        try:
-            return self.apply_transition(inputs, training=training)
-        except:
-            import pudb; pudb.set_trace()
+        return self.apply_transition(inputs, training=training)
 
     def calc_losses(self, inputs):
         """Calculate the total loss."""
@@ -214,12 +215,14 @@ class BaseDynamics(tf.keras.Model):
         x_init, beta = inputs
         v_init = tf.random.normal(tf.shape(x_init))
         state_init = State(x=x_init, v=v_init, beta=beta)
-        if self.config.separate_networks:
-            tk_fn = self.transition_kernel_for
-        else:
-            tk_fn = self.transition_kernel_while
+        #  if self.config.separate_networks:
+        #      tk_fn = self.transition_kernel_for
+        #  else:
+        #      tk_fn = self.transition_kernel_while
 
-        state_prop, px, sld = tk_fn(state_init, forward, training)
+        state_prop, px, sld = self.transition_kernel_while(
+            state_init, forward, training
+        )
 
         return state_init, state_prop, px, sld
 
@@ -227,8 +230,14 @@ class BaseDynamics(tf.keras.Model):
         """Transition kernel using a `tf.while_loop` implementation."""
         lf_fn = self._forward_lf if forward else self._backward_lf
 
+        #  state_prop = State(*state)
+        step = tf.constant(0, dtype=tf.int64)
         sld = tf.zeros((self.batch_size,), dtype=state.x.dtype)
-        step = 0
+        #  cond = tf.less(step, self.config.num_steps)
+        #  while tf.less(step, self.config.num_steps):
+        #      state_prop, logdet = lf_fn(step, state_prop, training=training)
+        #      step += 1
+        #      sumlogdet += logdet
 
         def body(step, state, logdet):
             new_state, logdet = lf_fn(step, state, training=training)
@@ -265,8 +274,11 @@ class BaseDynamics(tf.keras.Model):
     def compute_accept_prob(self,
                             state_init: State,
                             state_prop: State,
-                            sumlogdet: tf.Tensor) -> tf.Tensor:
-        """Compute the acceptance prob. of `state_prop` given `state_init`."""
+                            sumlogdet: tf.Tensor):
+        """Compute the acceptance prob. of `state_prop` given `state_init`.
+
+        Returns: tf.Tensor
+        """
         h_init = self.hamiltonian(state_init)
         h_prop = self.hamiltonian(state_prop)
         dh = h_init - h_prop + sumlogdet
@@ -276,10 +288,11 @@ class BaseDynamics(tf.keras.Model):
 
     def _forward_lf(self, step, state, training=None):
         """Run the augmented leapfrog integrator in the forward direction."""
-        t = self._get_time_old(step, tile=tf.shape(state.x)[0])
         m, mc = self._get_mask(step)  # pylint: disable=invalid-name
         xnet, vnet = self._get_network(step)
-        sumlogdet = 0.
+        t = self._get_time_old(step, tile=tf.shape(state.x)[0])
+
+        sumlogdet = tf.constant(0., dtype=state.x.dtype)
 
         state, logdet = self._update_v_forward(vnet, state, t, training)
         sumlogdet += logdet
@@ -563,54 +576,18 @@ class BaseDynamics(tf.keras.Model):
         return m, 1. - m
 
     def _build_networks(self):
-        if self.config.hmc:
-            self.xnets = lambda inputs, is_training: [
-                tf.zeros_like(inputs[0]) for _ in range(3)
-            ]
-            self.vnets = lambda inputs, is_training: [
-                tf.zeros_like(inputs[0]) for _ in range(3)
-            ]
-        else:
-            if self.config.separate_networks:
-                def _new_net(name, seeds_):
-                    self.xnets = []
-                    self.vnets = []
-                    factor = 2. if name == 'XNet' else 1.
-                    for idx in range(self.config.num_steps):
-                        new_seeds = {
-                            key: int(idx * val) for key, val in seeds_.items()
-                        }
-                        net = GaugeNetwork(self.net_config,
-                                           self.xdim, factor=factor,
-                                           net_seeds=new_seeds,
-                                           name=f'{name}_step{idx}')
-                        if name == 'XNet':
-                            setattr(self, f'xnets{int(idx)}', net)
-                            self.xnets.append(net)
-                        elif name == 'VNet':
-                            setattr(self, f'vnets{int(idx)}', net)
-                            self.vnets.append(net)
+        """Must implement method for building the network."""
+        raise NotImplementedError
 
-                _new_net('XNet', xnet_seeds)
-                _new_net('VNet', vnet_seeds)
+    def _build_hmc_networks(self):
+        # pylint:disable=unused-argument
+        def hmc_net(inputs, is_training):
+            return [tf.zeros_like(inputs[0]) for _ in range(3)]
 
-            else:
-                self.xnets = GaugeNetwork(self.net_config,
-                                          xdim=self.xdim, factor=2.,
-                                          net_seeds=xnet_seeds, name='XNet')
-                self.vnets = GaugeNetwork(self.net_config,
-                                          xdim=self.xdim, factor=1.,
-                                          net_seeds=vnet_seeds, name='VNet')
+        return hmc_net, hmc_net
 
     def _get_network(self, step):
-        if self.config.hmc or not self.config.separate_networks:
-            return self.xnets, self.vnets
-
-        step_int = int(step)
-        xnet = getattr(self, f'xnets{step_int}', None)
-        vnet = getattr(self, f'vnets{step_int}', None)
-
-        return xnet, vnet
+        return self.xnets, self.vnets
 
     def _build_eps(self, use_log=False):
         """Create `self.eps` (i.e. the step size) as a `tf.Variable`.
