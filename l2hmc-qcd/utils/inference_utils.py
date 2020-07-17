@@ -252,7 +252,7 @@ def run_dynamics(dynamics, flags, x=None):
         beta = flags.get('beta_final', None)
 
     if x is None:
-        x = tf.random.uniform(shape=dynamics.config.input_shape,
+        x = tf.random.uniform(shape=dynamics.x_shape,
                               minval=-PI, maxval=PI, dtype=TF_FLOAT)
 
     run_data = DataContainer(flags.run_steps)
@@ -261,10 +261,11 @@ def run_dynamics(dynamics, flags, x=None):
     if hasattr(eps, 'numpy'):
         eps = eps.numpy()
 
-    if dynamics.config.separate_networks:
-        test_step = dynamics.test_step
+    #  if dynamics.config.separate_networks:
+    if flags.compile:
+        test_step =  tf.function(dynamics.test_step)
     else:
-        test_step = tf.function(dynamics.test_step)
+        test_step = dynamics.test_step
 
     template = '\n'.join([
         f'beta: {beta}', f'eps: {eps:.4g}',

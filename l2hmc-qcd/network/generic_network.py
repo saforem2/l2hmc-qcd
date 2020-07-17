@@ -57,28 +57,24 @@ class GenericNetwork(tf.keras.layers.Layer):
 
             self.x_layer = dense_layer(name='x_layer', factor=factor/3.,
                                        units=config.units[0],
-                                       input_shape=(2 * xdim,),
-                                       zero_init=zero_init,
-                                       seed=net_seeds['x_layer'])
+                                       input_shape=(xdim,),
+                                       zero_init=zero_init)
             self.v_layer = dense_layer(name='v_layer',
                                        factor=1./3,
                                        units=config.units[0],
                                        zero_init=zero_init,
-                                       input_shape=(1 * xdim,),
-                                       seed=net_seeds['v_layer'])
+                                       input_shape=(xdim,))
             self.t_layer = dense_layer(name='t_layer',
                                        factor=1/3.,
                                        units=config.units[0],
                                        zero_init=zero_init,
-                                       input_shape=(2 * xdim,),
-                                       seed=net_seeds['t_layer'])
+                                       input_shape=(xdim,))
 
             def make_hlayer(i, units):
                 return dense_layer(factor=1.,
                                    units=units,
                                    zero_init=zero_init,
-                                   name=f'h_layer{i}',
-                                   seed=int(i * net_seeds['h_layer']))
+                                   name=f'h_layer{i}')
 
             self.hidden_layers = [
                 make_hlayer(j, k) for j, k in enumerate(config.units[1:])
@@ -87,18 +83,15 @@ class GenericNetwork(tf.keras.layers.Layer):
             self.scale_layer = ScaledTanhLayer(units=xdim,
                                                factor=0.001,
                                                name='scale',
-                                               zero_init=zero_init,
-                                               seed=net_seeds[SNAME])
+                                               zero_init=zero_init)
             self.translation_layer = dense_layer(units=xdim,
                                                  factor=0.001,
                                                  name='translation',
-                                                 zero_init=zero_init,
-                                                 seed=net_seeds[TNAME])
+                                                 zero_init=zero_init)
             self.transformation_layer = ScaledTanhLayer(units=xdim,
                                                         factor=0.001,
                                                         name='transformation',
-                                                        zero_init=zero_init,
-                                                        seed=net_seeds[QNAME])
+                                                        zero_init=zero_init)
 
     # pylint:disable=invalid-name
     def call(self, inputs, training=None):
