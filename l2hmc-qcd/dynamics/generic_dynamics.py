@@ -89,7 +89,10 @@ class GenericDynamics(BaseDynamics):
 
         return loss
 
-    def train_step(self, inputs: tuple, first_step: bool = False):
+    def train_step(self,
+                   inputs: tuple,
+                   clip_val: float = 0.,
+                   first_step: bool = False):
         """Perform a single training step."""
         start = time.time()
         with tf.GradientTape() as tape:
@@ -99,8 +102,12 @@ class GenericDynamics(BaseDynamics):
                 tape = hvd.DistributedGradientTape(tape)
 
             grads = tape.gradient(loss, self.trainable_variables)
-            self.optimizer.apply_gradients(zip(grads,
-                                               self.trainable_variables))
+            if clip_val > 0:
+                grads = [tf.clip_by_norm(g, clip_val) for g in grads]
+
+            self.optimizer.apply_gradients(
+                zip(grads, self.trainable_variables)
+            )
 
             metrics = AttrDict({
                 'dt': time.time() - start,
