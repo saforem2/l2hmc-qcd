@@ -205,7 +205,10 @@ class GaugeDynamics(BaseDynamics):
 
         return ploss, qloss
 
-    def train_step(self, inputs, first_step=False):
+    def train_step(self,
+                   inputs: tuple,
+                   clip_val: float = None,
+                   first_step: bool = False):
         """Perform a single training step."""
         start = time.time()
         with tf.GradientTape() as tape:
@@ -221,6 +224,9 @@ class GaugeDynamics(BaseDynamics):
             tape = hvd.DistributedGradientTape(tape)
 
         grads = tape.gradient(loss, self.trainable_variables)
+        if clip_val is not None:
+            grads = [tf.clip_by_norm(g, clip_val) for g in grads]
+
         self.optimizer.apply_gradients(
             zip(grads, self.trainable_variables),
         )

@@ -15,6 +15,7 @@ import utils.file_io as io
 
 from config import HEADER, NET_WEIGHTS_HMC, PI, TF_FLOAT
 from dynamics.gauge_dynamics import build_dynamics, GaugeDynamics
+from dynamics.dynamics import BaseDynamics
 from utils.attr_dict import AttrDict
 from utils.plotting_utils import plot_data
 
@@ -303,7 +304,15 @@ def setup(dynamics, flags, dirs=None, x=None, betas=None):
     return output
 
 
-def train_dynamics(dynamics, flags, dirs=None, x=None, betas=None):
+# pylint: disable=too-many-arguments
+def train_dynamics(
+        dynamics: BaseDynamics,
+        flags: AttrDict,
+        dirs: str = None,
+        x: tf.Tensor = None,
+        betas: tf.Tensor = None,
+        clip_val: float = 0.,
+):
     """Train model."""
     outputs = setup(dynamics, flags, dirs, x, betas)
     x = outputs.x
@@ -325,7 +334,9 @@ def train_dynamics(dynamics, flags, dirs=None, x=None, betas=None):
 
     # run a single step to get header
     first_step = (dynamics.optimizer.iterations.numpy() == 0)
-    x, metrics = _timed_step((x, betas[0]), first_step=first_step)
+    x, metrics = _timed_step((x, betas[0]),
+                             clip_val=clip_val,
+                             first_step=first_step)
 
     header = train_data.get_header(metrics,
                                    skip=['charges'],
@@ -334,7 +345,7 @@ def train_dynamics(dynamics, flags, dirs=None, x=None, betas=None):
     betas = tf.cast(betas, dtype=TF_FLOAT)
     for step, beta in zip(steps, betas):
         # Perform a single training step
-        x, metrics = _timed_step((x, beta))
+        x, metrics = _timed_step((x, beta), clip_val=clip_val)
 
         # Start profiler
         #  if flags.profiler and step == profiler_start_step:
