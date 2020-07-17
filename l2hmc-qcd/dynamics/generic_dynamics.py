@@ -30,6 +30,7 @@ def identity(x):
 
 
 class GenericDynamics(BaseDynamics):
+    """Implements a generic `Dynamics` object, defined by `potential_fn`."""
 
     def __init__(self,
                  params: AttrDict,
@@ -73,7 +74,7 @@ class GenericDynamics(BaseDynamics):
                    x: tf.Tensor,
                    y: tf.Tensor,
                    accept_prob: tf.Tensor,
-                   scale: tf.Tensor = tf.Constant(1., dtype=TF_FLOAT)):
+                   scale: tf.Tensor = tf.constant(1., dtype=TF_FLOAT)):
         """Compute the mixed loss as: scale / esjd - esjd / scale"""
         esjd = self.calc_esjd(x, y, accept_prob)
         esjd /= scale

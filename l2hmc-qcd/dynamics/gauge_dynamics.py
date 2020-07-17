@@ -114,6 +114,7 @@ class GaugeDynamics(BaseDynamics):
         params.update({
             'batch_size': self.lattice_shape[0],
             'xdim': np.cumprod(self.lattice_shape[1:])[-1],
+            'mask_type': 'checkerboard',
         })
 
         super(GaugeDynamics, self).__init__(

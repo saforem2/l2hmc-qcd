@@ -81,6 +81,7 @@ class BaseDynamics(tf.keras.Model):
         self._model_type = config.model_type
 
         self.params = params
+        self.mask_type = params.get('mask_type', 'rand')
         self.config = config
         self.net_config = network_config
         self.potential_fn = potential_fn
@@ -88,7 +89,7 @@ class BaseDynamics(tf.keras.Model):
 
         self._parse_params(params)
         self.eps = self._build_eps(use_log=False)
-        self.masks = self._build_masks(random=False)
+        self.masks = self._build_masks(self.mask_type)
         #  self._construct_time()
         if self.config.hmc:
             self.xnets, self.vnets = self._build_hmc_networks()
@@ -543,23 +544,23 @@ class BaseDynamics(tf.keras.Model):
 
         return accept_mask, reject_mask
 
-    def _build_masks(self, random=False):
+    def _build_masks(self, mask_type=None):
         """Construct different binary masks for different time steps."""
         masks = []
-        if not random:
+        if mask_type == 'checkerboard':
             odds = np.arange(self.xdim) % 2.
             evens = 1. - odds
 
         for i in range(self.config.num_steps):
             # Need to use numpy.random here because tensorflow would
             # generate different random values across different calls.
-            if random:
+            if mask_type == 'checkerboard':
+                mask = evens if (i % 2 == 0) else odds
+            else:  # use randomly generated masks
                 _idx = np.arange(self.xdim)
                 idx = np.random.permutation(_idx)[:self.xdim // 2]
                 mask = np.zeros((self.xdim,))
                 mask[idx] = 1.
-            else:
-                mask = evens if (i % 2 == 0) else odds
 
             mask = tf.constant(mask, dtype=TF_FLOAT)
             masks.append(mask[None, :])
