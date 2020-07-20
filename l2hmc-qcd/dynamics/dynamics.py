@@ -580,12 +580,17 @@ class BaseDynamics(tf.keras.Model):
         """Must implement method for building the network."""
         raise NotImplementedError
 
-    def _build_hmc_networks(self):
+    @staticmethod
+    def _build_hmc_networks():
         # pylint:disable=unused-argument
-        def hmc_net(inputs, is_training):
-            return [tf.zeros_like(inputs[0]) for _ in range(3)]
+        xnets = lambda inputs, is_training: [  # noqa: E731
+            tf.zeros_like(inputs[0]) for _ in range(3)
+        ]
+        vnets = lambda inputs, is_training: [  # noqa: E731
+            tf.zeros_like(inputs[0]) for _ in range(3)
+        ]
 
-        return hmc_net, hmc_net
+        return xnets, vnets
 
     def _get_network(self, step):
         return self.xnets, self.vnets
