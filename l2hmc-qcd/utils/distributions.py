@@ -6,7 +6,9 @@ from __future__ import absolute_import, division, print_function
 import collections
 
 import numpy as np
+from typing import Optional, Dict, NoReturn, Callable, Tuple
 import tensorflow as tf
+import matplotlib.pyplot as plt
 
 from scipy.stats import multivariate_normal, ortho_group
 
@@ -14,6 +16,100 @@ from config import TF_FLOAT, NP_FLOAT
 
 # pylint:disable=invalid-name
 # pylint:disable=unused-argument
+
+
+def plot_samples2D(
+        samples: np.ndarray,
+        title: str = None,
+        fig: Optional[plt.Figure] = None,
+        ax: Optional[plt.Axes] = None,
+        **kwargs,
+):
+    """Plot collection of 2D samples."""
+    if fig is None and ax is None:
+        fig, ax = plt.subplots()
+
+    _ = ax.plot(samples[:, 0], samples[:, 1], **kwargs)
+    if title is not None:
+        _ = ax.set_title(title, fontsize='x-large')
+
+    return fig, ax
+
+
+def contour_potential(
+        potential_fn: Callable,
+        ax: Optional[plt.Axes] = None,
+        title: Optional[str] = None,
+        xlim: Optional[float] = 5.,
+        ylim: Optional[float] = 5
+):
+    """Plot contours of `potential_fn`."""
+    grid = np.mgrid[-xlim:xlim:100j, -ylim:ylim:100j]
+    grid_2d = grid.reshape(2, -1).T
+    cmap = plt.get_cmap('inferno')
+    if ax is None:
+        _, ax = plt.subplots()
+    pdf1e = np.exp(-potential_fn(grid_2d))
+    _ = ax.contourf(grid[0], grid[1], pdf1e.reshape(100, 100), cmap=cmap)
+    if title is not None:
+        ax.set_title(title, fontsize='x-large')
+    plt.tight_layout()
+
+    return ax
+
+
+def w1(z):
+    """Transformation."""
+    return tf.math.sin(2. * np.pi * z[0] / 4.)
+
+
+def w2(z):
+    """Transformation."""
+    return 3. * tf.exp(-0.5 * (((z[0] - 1.) / 0.6)) ** 2)
+
+
+def w3(z):
+    """Transformation."""
+    return 3. * (1 + tf.exp(-(z[0] - 1.) / 0.3)) ** (-1)
+
+
+def two_moons_potential(z):
+    """two-moons like potential."""
+    z = tf.transpose(z)
+    term1 = 0.5 * ((tf.linalg.norm(z, axis=0) - 2.) / 0.4) ** 2
+    logterm1 = tf.exp(-0.5 * ((z[0] - 2.) / 0.6) ** 2)
+    logterm2 = tf.exp(-0.5 * ((z[0] + 2.) / 0.6) ** 2)
+    output = term1 - tf.math.log(logterm1 + logterm2)
+
+    return output
+
+
+def sin_potential(z):
+    """Sin-like potential."""
+    z = tf.transpose(z)
+    return 0.5 * ((z[1] - w1(z)) / 0.4) ** 2 + 0.1 * tf.math.abs(z[0])
+
+
+def sin_potential1(z):
+    """Modified sin potential."""
+    z = tf.transpose(z)
+    logterm1 = tf.math.exp(-0.5 * ((z[1] - w1(z)) / 0.35) ** 2)
+    logterm2 = tf.math.exp(-0.5 * ((z[1] - w1(z) + w2(z)) / 0.35) ** 2)
+    term3 = 0.1 * tf.math.abs(z[0])
+    output = -1. * tf.math.log(logterm1 + logterm2) + term3
+
+    return output
+
+
+def sin_potential2(z):
+    """Modified sin potential."""
+    z = tf.transpose(z)
+    logterm1 = tf.math.exp(-0.5 * ((z[1] - w1(z)) / 0.4) ** 2)
+    logterm2 = tf.math.exp(-0.5 * ((z[1] - w1(z) + w3(z)) / 0.35) ** 2)
+    term3 = 0.1 * tf.math.abs(z[0])
+    output = -1. * tf.math.log(logterm1 + logterm2) + term3
+
+    return output
 
 
 def quadratic_gaussian(x, mu, S):
