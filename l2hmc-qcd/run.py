@@ -24,7 +24,7 @@ def main(args):
     skip = not args.get('overwrite', False)
 
     if log_dir is None:
-        _, _ = run_hmc(args=args, hmc_dir=None, skip_existing=skip)
+        _, _, _ = run_hmc(args=args, hmc_dir=None, skip_existing=skip)
         return
 
     hmc_dir = os.path.join(args.log_dir, 'inference_hmc')
@@ -55,7 +55,6 @@ def main(args):
 
     io.log(80 * '=')
     return
-
 
 
 if __name__ == '__main__':
