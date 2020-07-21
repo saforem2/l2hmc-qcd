@@ -199,7 +199,7 @@ def run(dynamics, args, x=None, runs_dir=None):
     data_dir = os.path.join(run_dir, 'run_data')
     summary_dir = os.path.join(run_dir, 'summaries')
     log_file = os.path.join(run_dir, 'run_log.txt')
-    io.check_else_make_dir(run_dir, data_dir)
+    io.check_else_make_dir([run_dir, data_dir, summary_dir])
     writer = tf.summary.create_file_writer(summary_dir)
     writer.set_as_default()
 
@@ -211,7 +211,7 @@ def run(dynamics, args, x=None, runs_dir=None):
     if x is None:
         x = convert_to_angle(tf.random.normal(shape=dynamics.x_shape))
 
-    run_data, x = run_dynamics(dynamics, args, x)
+    run_data, x, _ = run_dynamics(dynamics, args, x, save_x=False)
 
     run_data.flush_data_strs(log_file, mode='a')
     io.save_inference(run_dir, run_data)
@@ -241,7 +241,7 @@ def run(dynamics, args, x=None, runs_dir=None):
     return dynamics, run_data, x
 
 
-def run_dynamics(dynamics, flags, x=None):
+def run_dynamics(dynamics, flags, x=None, save_x=False):
     """Run inference on trained dynamics."""
     if not IS_CHIEF:
         return None, None
@@ -261,26 +261,32 @@ def run_dynamics(dynamics, flags, x=None):
     if hasattr(eps, 'numpy'):
         eps = eps.numpy()
 
-    #  if dynamics.config.separate_networks:
-    if flags.compile:
-        test_step =  tf.function(dynamics.test_step)
-    else:
-        test_step = dynamics.test_step
-
     template = '\n'.join([
         f'beta: {beta}', f'eps: {eps:.4g}',
         f'net_weights: {dynamics.net_weights}'
     ])
     io.log(f'INFO:Running inference with:\n {template}')
 
-    x, metrics = test_step((x, beta))
+    #  if dynamics.config.separate_networks:
+    #  if flags.compile:
+
+    if flags.get('compile', True):
+        test_step = tf.function(dynamics.test_step)
+        x, metrics = test_step((x, beta))
+    else:
+        test_step = dynamics.test_step
+        x, metrics = test_step((x, beta))
+
     header = run_data.get_header(metrics,
                                  skip=['charges'],
                                  prepend=['{:^12s}'.format('step')])
     io.log(header)
+    x_arr = []
     for step in tf.cast(tf.range(flags.run_steps), dtype=tf.int64):
         start = time.time()
         x, metrics = test_step((x, beta))
+        if save_x:
+            x_arr.append(x.numpy())
         metrics.dt = time.time() - start
         run_data.update(step, metrics)
 
@@ -292,4 +298,4 @@ def run_dynamics(dynamics, flags, x=None):
         if step % 100 == 0:
             io.log(header)
 
-    return run_data, x
+    return run_data, x, x_arr

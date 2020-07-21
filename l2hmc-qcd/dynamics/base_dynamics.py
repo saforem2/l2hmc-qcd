@@ -107,6 +107,7 @@ class BaseDynamics(tf.keras.Model):
         self.batch_size = params.get('batch_size', None)
         self.using_hvd = params.get('horovod', False)
         self.x_shape = (self.batch_size, self.xdim)
+        self.clip_val = params.get('clip_val', 0.)
         #  self.loss_scale = params.get('loss_scale', 0.1)
 
         # Determine if there are any parameters to be trained
@@ -134,7 +135,11 @@ class BaseDynamics(tf.keras.Model):
         """Calculate the total loss."""
         raise NotImplementedError
 
-    def train_step(self, inputs, first_step):
+    def train_step(
+            self,
+            inputs: tuple,
+            first_step: bool,
+    ):
         """Perform a single training step."""
         raise NotImplementedError
 

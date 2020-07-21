@@ -28,7 +28,7 @@ import tensorflow as tf
 
 from config import (BIN_DIR, GaugeDynamicsConfig, lrConfig, NetWeights,
                     NetworkConfig, PI, State, TWO_PI)
-from dynamics.dynamics import BaseDynamics
+from dynamics.base_dynamics import BaseDynamics
 from network.gauge_network import GaugeNetwork
 from utils.file_io import timeit  # pylint:disable=unused-import
 from utils.attr_dict import AttrDict
@@ -207,25 +207,20 @@ class GaugeDynamics(BaseDynamics):
 
     def train_step(self,
                    inputs: tuple,
-                   clip_val: float = None,
                    first_step: bool = False):
         """Perform a single training step."""
         start = time.time()
         with tf.GradientTape() as tape:
-            #  tape.watch(x)
-            #  tape.watch(beta)
-            states, px, sld = self(inputs, training=True)
-            #  custom_loss = self.loss_wrapper(px)
-            #  ploss, qloss = custom_loss(states.init.x, states.proposed.x)
-            ploss, qloss = self.calc_losses((states, px))
+            states, accept_prob, sumlogdet = self(inputs, training=True)
+            ploss, qloss = self.calc_losses((states, accept_prob))
             loss = ploss + qloss
 
         if self.using_hvd:
             tape = hvd.DistributedGradientTape(tape)
 
         grads = tape.gradient(loss, self.trainable_variables)
-        if clip_val is not None:
-            grads = [tf.clip_by_norm(g, clip_val) for g in grads]
+        if self.clip_val > 0:
+            grads = [tf.clip_by_norm(g, self.clip_val) for g in grads]
 
         self.optimizer.apply_gradients(
             zip(grads, self.trainable_variables),
@@ -236,10 +231,10 @@ class GaugeDynamics(BaseDynamics):
             'loss': loss,
             'ploss': ploss,
             'qloss': qloss,
-            'accept_prob': px,
+            'accept_prob': accept_prob,
             'eps': self.eps,
             'beta': states.init.beta,
-            'sumlogdet': sld.out,
+            'sumlogdet': sumlogdet.out,
         })
 
         observables = self.calc_observables(states, use_sin=True)
