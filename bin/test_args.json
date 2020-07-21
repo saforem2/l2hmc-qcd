@@ -19,7 +19,7 @@
     "hmc_steps": 30,
     "print_steps": 2,
     "logging_steps": 2,
-    "save_steps": 2,
+    "save_steps": 5,
     "train_steps": 10,
     "run_steps": 50,
     "warmup_steps": 0,

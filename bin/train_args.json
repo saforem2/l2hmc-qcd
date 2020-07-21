@@ -19,7 +19,7 @@
     "train_steps": 50000,
     "run_steps": 2000,
     "warmup_steps": 1000,
-    "lr_init": 0.0001,
+    "lr_init": 0.001,
     "loss_scale": 0.1,
     "plaq_weight": 10.0,
     "charge_weight": 0.1,
