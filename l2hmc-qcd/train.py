@@ -24,9 +24,9 @@ def main(args, log_file=None):
     tf.keras.backend.set_floatx('float32')
     x, dynamics, train_data, args = train(args, log_file=log_file)
     if args.run_steps > 0:
-        _, _ = run(dynamics, args, x=x)
+        dynamics, run_data, x = run(dynamics, args, x=x)
 
-    return x, dynamics, train_data, args
+    return x, dynamics, train_data, run_data, args
 
 
 if __name__ == '__main__':
