@@ -14,7 +14,7 @@ import tensorflow as tf
 
 from config import (BIN_DIR, DynamicsConfig, lrConfig, NetworkConfig,
                     NetWeights, PI, TF_FLOAT)
-from dynamics.dynamics import BaseDynamics
+from dynamics.base_dynamics import BaseDynamics
 from network.generic_network import GenericNetwork
 from utils.attr_dict import AttrDict
 try:
@@ -91,7 +91,6 @@ class GenericDynamics(BaseDynamics):
 
     def train_step(self,
                    inputs: tuple,
-                   clip_val: float = 0.,
                    first_step: bool = False):
         """Perform a single training step."""
         start = time.time()
@@ -102,8 +101,8 @@ class GenericDynamics(BaseDynamics):
                 tape = hvd.DistributedGradientTape(tape)
 
             grads = tape.gradient(loss, self.trainable_variables)
-            if clip_val > 0:
-                grads = [tf.clip_by_norm(g, clip_val) for g in grads]
+            if self.clip_val > 0:
+                grads = [tf.clip_by_norm(g, self.clip_val) for g in grads]
 
             self.optimizer.apply_gradients(
                 zip(grads, self.trainable_variables)

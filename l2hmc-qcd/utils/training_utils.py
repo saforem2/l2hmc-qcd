@@ -15,7 +15,7 @@ import utils.file_io as io
 
 from config import HEADER, NET_WEIGHTS_HMC, PI, TF_FLOAT
 from dynamics.gauge_dynamics import build_dynamics, GaugeDynamics
-from dynamics.dynamics import BaseDynamics
+from dynamics.base_dynamics import BaseDynamics
 from utils.attr_dict import AttrDict
 from utils.plotting_utils import plot_data
 
@@ -265,13 +265,13 @@ def setup(dynamics, flags, dirs=None, x=None, betas=None):
         else:
             betas = get_betas(len(steps), flags.beta_init, flags.beta_final)
 
-    dynamics.compile(loss=dynamics.calc_losses,
-                     optimizer=dynamics.optimizer,
-                     experimental_run_tf_function=False)
     # Compile dynamics w/ tf.function (autograph)?
     if flags.get('compile', False):
         cstr = 'INFO:Compiling `dynamics.train_step` via tf.function\n'
         io.log(cstr, RANK)
+        dynamics.compile(loss=dynamics.calc_losses,
+                         optimizer=dynamics.optimizer,
+                         experimental_run_tf_function=False)
         train_step = tf.function(dynamics.train_step,
                                  experimental_relax_shapes=True)
         #  optionals = tf.autograph.experimental.do_not_convert
@@ -280,6 +280,9 @@ def setup(dynamics, flags, dirs=None, x=None, betas=None):
         #                           experimental_autograph_options=optionals)
     else:
         io.log('INFO: Running dynamics.train_step imperatively.\n', RANK)
+        dynamics.compile(loss=dynamics.calc_losses,
+                         optimizer=dynamics.optimizer,
+                         experimental_run_tf_function=False)
         train_step = dynamics.train_step
 
     profiler_start_step = 0
@@ -335,7 +338,6 @@ def train_dynamics(
     # run a single step to get header
     first_step = (dynamics.optimizer.iterations.numpy() == 0)
     x, metrics = _timed_step((x, betas[0]),
-                             clip_val=clip_val,
                              first_step=first_step)
 
     header = train_data.get_header(metrics,
@@ -345,7 +347,7 @@ def train_dynamics(
     betas = tf.cast(betas, dtype=TF_FLOAT)
     for step, beta in zip(steps, betas):
         # Perform a single training step
-        x, metrics = _timed_step((x, beta), clip_val=clip_val)
+        x, metrics = _timed_step((x, beta))
 
         # Start profiler
         #  if flags.profiler and step == profiler_start_step:
