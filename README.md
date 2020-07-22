@@ -118,10 +118,7 @@ the topological charge \mathcal{Q},
 
 ## Training / Inference
 
-To train the model, either run the training script from [`bin/train.sh`](bin/train.sh), or modify the command line arguments found in [`bin/train_args.txt`](bin/train_args.txt) and run:
-```
-python3 train.py @/path/to/train_args.txt
-```
+To train the model, a sample script is provided in [`bin/train.sh`](bin/train.sh). The parameters used to build and train the model are specified in [`bin/train_args.json`](bin/train_args.json).
 
 Inference is automatically ran after training the model, but can also be ran by loading in a trained model from a checkpoint.
 
@@ -134,8 +131,13 @@ where `log_dir` is the directory (automatically created during training) contain
 All of the relevant command line options are well documented and can be found
 in [`l2hmc-qcd/utils/parse_args.py`](l2hmc-qcd/utils/parse_args.py) (training) or [`l2hmc-qcd/utils/parse_inference_args.py`](l2hmc-qcd/utils/parse_inference_args.py) (inference).
 
- Almost all relevant information about different parameters and run options
- can be found in this file.
+Details of the parameters can also be obtained via:
+```
+python3 train.py --help
+```
+ <!--  -->
+ <!-- Almost all relevant information about different parameters and run options -->
+ <!-- can be found in this file. -->
 
 
 # Features
