@@ -18,7 +18,7 @@ This work is based on the original implementation which can be found at [brain-r
 
 
 
-Given an *analytically* described target distribution, $\pi(x)$, L2HMC provides a *statistically exact* sampler that:
+Given an *analytically* described target distribution, π(x), L2HMC provides a *statistically exact* sampler that:
 
 - Quickly converges to the target distribution (fast ***burn-in***).
 - Quickly produces uncorrelated samples (fast ***mixing***).
@@ -30,7 +30,7 @@ Given an *analytically* described target distribution, $\pi(x)$, L2HMC provides 
 
 **Goal:** Use L2HMC to generate _gauge configurations_ for lattice QCD. 
 
-All lattice QCD simulations are performed at finit lattice spacing $a$, and need an extrapolation to the continuum in order to be used for computing values of physical quantities.
+All lattice QCD simulations are performed at finit lattice spacing a, and need an extrapolation to the continuum in order to be used for computing values of physical quantities.
 More reliable extrapolations can be done by simulating the theory at increasingly smaller lattice spacings.
 
 The picture that results when the lattice spacing is reduced and the physics kept constant is that all finite physical quantities of negative mass dimension diverge if measured in lattice units.
@@ -42,11 +42,9 @@ MCMC algorithms are known to encounter difficulties when used for simulating the
 
 In doing so, the overall efficiency of the simulation is subsequently improved.
 
-## $U(1)$ Lattice Gauge Theory
+## U(1) Lattice Gauge Theory
 
-We start by considering the simpler $(1+1)$-dimensional $U(1)$ lattice gauge
-theory, defined on an $N_{x} \times N_{t}$ lattice with periodic boundary
-conditions.
+We start by considering the simpler (1+1)-dimensional U(1) lattice gauge theory, defined on an Nx * Nt lattice with periodic boundary conditions.
 
 The action of this gauge theory is defined in terms of the *link variables*
 
@@ -62,7 +60,7 @@ and can be written as
 
 &nbsp;
 
-where $\phi_{P}$ is the sum of the link variables around an elementary plaquette:
+where <img src="https://render.githubusercontent.com/render/math?math=%5Cphi_%7BP%7D"> is the is the sum of the link variables around an elementary plaquette:
 
 &nbsp;
 
@@ -86,9 +84,11 @@ where $\phi_{P}$ is the sum of the link variables around an elementary plaquette
   <img src="assets/target_distribution.svg" alt="\pi(\phi) = \frac{e^{-\beta S[\phi]}}{\mathcal{Z}}"/>
   </div>
 
-  where $\mathcal{Z}$ is the partition function (normalizing factor), $\beta$ is the inverse coupling constant, and $S[\phi]$ is the Wilson gauge action for the 2D $U(1)$ theory.
+  where Z is the partition function (normalizing factor), β is the
+  inverse coupling constant, and S[ɸ] is the Wilson gauge action for the
+  2D U(1) theory.
 
-Lattice methods for the 2D $U(1)$ gauge model are implemented using the `GaugeLattice` object, which can be found at [`l2hmc-qcd/lattice/lattice.py`](l2hmc-qcd/lattice/lattice.py)
+Lattice methods for the 2D U(1) gauge model are implemented using the `GaugeLattice` object, which can be found at [`l2hmc-qcd/lattice/lattice.py`](l2hmc-qcd/lattice/lattice.py)
 
 
 # Organization
@@ -108,8 +108,8 @@ specifically the `GaugeLattice` object that provides the base structure on
 which our target distribution exists.
 
 Additionally, the `GaugeLattice` object implements a variety of methods for
-calculating physical observables such as the average plaquette, $\phi_{P}$, and
-the topological charge $\mathcal{Q}$,
+calculating physical observables such as the average plaquette, ɸₚ, and
+the topological charge \mathcal{Q},
 
 ## Model
 
