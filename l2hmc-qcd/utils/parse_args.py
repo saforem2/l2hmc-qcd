@@ -263,7 +263,7 @@ def parse_args():
                               dropout will be used. (Default: 0.)"""))
 
     parser.add_argument("--clip_val",
-                        dest="clip_value",
+                        dest="clip_val",
                         type=float,
                         default=0.,
                         required=False,
