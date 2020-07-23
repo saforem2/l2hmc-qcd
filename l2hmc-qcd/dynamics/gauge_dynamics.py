@@ -286,7 +286,7 @@ class GaugeDynamics(BaseDynamics):
         #    Broadcast should be done after the first gradient step to ensure
         #    optimizer intialization.
         #  if self.optimizer.iterations.numpy() == 0 and self.using_hvd:
-        if first_step:
+        if first_step and HAS_HOROVOD:
             hvd.broadcast_variables(self.variables, root_rank=0)
             hvd.broadcast_variables(self.optimizer.variables(), root_rank=0)
 
