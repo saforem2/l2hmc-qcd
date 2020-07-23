@@ -32,7 +32,11 @@ try:
     io.log(f'Number of devices: {hvd.size()}', RANK)
     GPUS = tf.config.experimental.list_physical_devices('GPU')
     for gpu in GPUS:
-        tf.config.experimental.set_memory_growth(gpu, True)
+        try:
+            tf.config.experimental.set_memory_growth(gpu, True)
+        except:  # noqa: E722 pylint:disable=bare-except noqa:E722
+            # Invalid device or cannot modify virtual devices once initialized
+            pass
     if GPUS:
         tf.config.experimental.set_visible_devices(
             GPUS[hvd.local_rank()], 'GPU'
