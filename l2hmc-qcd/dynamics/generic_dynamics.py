@@ -13,7 +13,7 @@ import time
 import tensorflow as tf
 
 from config import (BIN_DIR, DynamicsConfig, lrConfig, NetworkConfig,
-                    NetWeights, PI, TF_FLOAT)
+                    NetWeights, PI, TF_FLOAT, MonteCarloStates)
 from dynamics.base_dynamics import BaseDynamics
 from network.generic_network import GenericNetwork
 from utils.attr_dict import AttrDict
@@ -65,38 +65,21 @@ class GenericDynamics(BaseDynamics):
         self.vnets = GenericNetwork(self.net_config, factor=1.,
                                     xdim=self.xdim, name='VNet')
 
-    @staticmethod
-    def calc_esjd(x: tf.Tensor, y: tf.Tensor, accept_prob: tf.Tensor):
-        """Calculate the expected squared jump distance."""
-        return accept_prob * tf.reduce_sum((x - y) ** 2, axis=1) + 1e-4
-
-    def mixed_loss(self,
-                   x: tf.Tensor,
-                   y: tf.Tensor,
-                   accept_prob: tf.Tensor,
-                   scale: tf.Tensor = tf.constant(1., dtype=TF_FLOAT)):
-        """Compute the mixed loss as: scale / esjd - esjd / scale"""
-        esjd = self.calc_esjd(x, y, accept_prob)
-        esjd /= scale
-        loss = tf.reduce_mean(1. / esjd) - tf.reduce_mean(esjd)
-
-        return loss
-
-    def calc_losses(self, inputs: tuple):
+    def calc_losses(self, states: MonteCarloStates, accept_prob: tf.Tensor):
         """Calculate the total sampling loss."""
-        states, accept_prob = inputs
-        loss = self.mixed_loss(states.init.x, states.proposed.x, accept_prob)
+        loss = self._mixed_loss(states.init.x, states.proposed.x, accept_prob)
 
         return loss
 
     def train_step(self,
-                   inputs: tuple,
+                   x: tf.Tensor,
+                   beta: tf.Tensor,
                    first_step: bool = False):
         """Perform a single training step."""
         start = time.time()
         with tf.GradientTape() as tape:
-            states, accept_prob, sumlogdet = self(inputs, training=True)
-            loss = self.calc_losses((states, accept_prob))
+            states, accept_prob, sumlogdet = self(x, beta, training=True)
+            loss = self.calc_losses(states, accept_prob)
             if self.using_hvd:
                 tape = hvd.DistributedGradientTape(tape)
 
@@ -119,11 +102,11 @@ class GenericDynamics(BaseDynamics):
 
             return states.out.x, metrics
 
-    def test_step(self, inputs: tuple):
+    def test_step(self, x: tf.Tensor, beta: tf.Tensor):
         """Perform a single inference step."""
         start = time.time()
-        states, accept_prob, sumlogdet = self(inputs, training=False)
-        loss = self.calc_losses((states, accept_prob))
+        states, accept_prob, sumlogdet = self(x, beta, training=False)
+        loss = self.calc_losses(states, accept_prob)
 
         metrics = AttrDict({
             'dt': time.time() - start,

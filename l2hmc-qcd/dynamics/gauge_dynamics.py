@@ -16,6 +16,7 @@ https://infoscience.epfl.ch/record/264887/files/robust_parameter_estimation.pdf
 Author: Sam Foreman (github: @saforem2)
 Date: 7/3/2020
 """
+# noqa:401
 from __future__ import absolute_import, division, print_function
 
 import os
@@ -27,11 +28,12 @@ import numpy as np
 import tensorflow as tf
 
 from config import (BIN_DIR, GaugeDynamicsConfig, lrConfig, NetWeights,
-                    NetworkConfig, PI, State, TWO_PI)
+                    NetworkConfig, PI, State, TWO_PI, MonteCarloStates)
 from dynamics.base_dynamics import BaseDynamics
 from network.gauge_network import GaugeNetwork
-from utils.file_io import timeit  # pylint:disable=unused-import
 from utils.attr_dict import AttrDict
+import utils.file_io as io
+from utils.file_io import timeit  # pylint:disable=unused-import
 from utils.seed_dict import vnet_seeds, xnet_seeds
 from lattice.utils import u1_plaq_exact_tf
 from lattice.lattice import GaugeLattice
@@ -55,6 +57,22 @@ def convert_to_angle(x):
 
 def build_dynamics(flags):
     """Build dynamics using parameters from FLAGS."""
+    if flags.restore and flags.log_dir is not None:
+        flags_file = os.path.join(flags.log_dir, 'training', 'FLAGS.z')
+        flags_ = AttrDict(dict(io.loadz(flags_file)))
+        cfgdir = os.path.join(flags.log_dir, 'training', 'dynamics_configs')
+        if os.path.isdir(cfgdir):
+            config_ = io.loadz(os.path.join(cfgdir, 'dynamics_config.z'))
+            params_ = io.loadz(os.path.join(cfgdir, 'dynamics_params.z'))
+            net_config_ = io.loadz(os.path.join(cfgdir, 'network_config.z'))
+            lr_config_ = io.loadz(os.path.join(cfgdir, 'lr_config.z'))
+
+            flags_.update(params_)
+            config = GaugeDynamicsConfig(**config_)
+            net_config = NetworkConfig(**net_config_)
+            lr_config = lrConfig(**lr_config_)
+            return GaugeDynamics(flags_, config, net_config, lr_config)
+
     net_config = NetworkConfig(
         name='GaugeNetwork',
         units=flags.units,
@@ -93,7 +111,8 @@ def build_dynamics(flags):
 
 # pylint:disable=attribute-defined-outside-init
 # pylint:disable=too-many-instance-attributes,unused-argument
-# pylint:disable=invalid-name,too-many-locals,too-many-arguments
+# pylint:disable=invalid-name,too-many-locals,too-many-arguments,
+# pylint:disable=too-many-ancestors
 class GaugeDynamics(BaseDynamics):
     """Implements the dynamics engine for the L2HMC sampler."""
 
@@ -105,6 +124,7 @@ class GaugeDynamics(BaseDynamics):
             lr_config: lrConfig,
     ) -> NoReturn:
 
+        self.aux_weight = params.get('aux_weight', 0.)
         self.plaq_weight = params.get('plaq_weight', 10.)
         self.charge_weight = params.get('charge_weight', 0.1)
 
@@ -114,7 +134,7 @@ class GaugeDynamics(BaseDynamics):
         params.update({
             'batch_size': self.lattice_shape[0],
             'xdim': np.cumprod(self.lattice_shape[1:])[-1],
-            'mask_type': 'checkerboard',
+            'mask_type': 'rand',
         })
 
         super(GaugeDynamics, self).__init__(
@@ -127,22 +147,20 @@ class GaugeDynamics(BaseDynamics):
             potential_fn=self.lattice.calc_actions,
         )
 
-        if self.config.use_ncp and not self.config.hmc:
-            self.net_weights = NetWeights(1., 1., 1., 1., 1., 1.)
-            self._xsw = self.net_weights.x_scale
-            self._xtw = self.net_weights.x_translation
-            self._xqw = self.net_weights.x_transformation
-            self._vsw = self.net_weights.v_scale
-            self._vtw = self.net_weights.v_translation
-            self._vqw = self.net_weights.v_transformation
+        if self.config.hmc:
+            net_weights = NetWeights(0., 0., 0., 0., 0., 0.)
+        elif self.config.use_ncp:
+            net_weights = NetWeights(1., 1., 1., 1., 1., 1.)
+        else:
+            # FIXME: Changed Sx to 1. temporarily
+            net_weights = NetWeights(1., 1., 1., 1., 1., 1.)
+
+        self._parse_params(params, net_weights=net_weights)
 
     def _get_network(self, step):
         if self.config.separate_networks:
-            step_int = int(step)
-            xnet = getattr(self, f'xnets{step_int}', None)
-            #  tf.gather(self.xnets, step_int))
-            #  tf.gather(self.vnets, step_int))
-            vnet = getattr(self, f'vnets{step_int}', None)
+            xnet = getattr(self, f'xnets{int(step)}', None)
+            vnet = getattr(self, f'vnets{int(step)}', None)
             return xnet, vnet
 
         return self.xnets, self.vnets
@@ -177,11 +195,18 @@ class GaugeDynamics(BaseDynamics):
             self.vnets = GaugeNetwork(self.net_config, factor=1.,
                                       xdim=self.xdim, name='VNet')
 
-    def calc_losses(self, inputs):
+    @staticmethod
+    def mixed_loss(loss, weight):
+        """Returns: tf.reduce_mean(weight / loss - loss / weight)."""
+        return tf.reduce_mean((weight / loss) - (loss / weight))
+
+    def calc_losses(self, states: MonteCarloStates, accept_prob: tf.Tensor):
         """Calculate the total loss."""
-        states, accept_prob = inputs
         dtype = states.init.x.dtype
 
+        # FIXME:
+        #   - Should we stack `states = [states.init.x, states.proposed.x]`
+        #     and call `self.lattice.calc_plaq_sums(states)`?
         ps_init = self.lattice.calc_plaq_sums(samples=states.init.x)
         ps_prop = self.lattice.calc_plaq_sums(samples=states.proposed.x)
 
@@ -190,30 +215,42 @@ class GaugeDynamics(BaseDynamics):
         if self.plaq_weight > 0:
             dplaq = 2 * (1. - tf.math.cos(ps_prop - ps_init))
             ploss = accept_prob * tf.reduce_sum(dplaq, axis=(1, 2))
-            ploss = tf.reduce_mean(-ploss / self.plaq_weight, axis=0)
+            #  ploss = tf.reduce_mean(-ploss / self.plaq_weight, axis=0)
+            ploss = self.mixed_loss(ploss, self.plaq_weight)
 
         # Calculate the charge loss
         qloss = tf.constant(0., dtype=dtype)
         if self.charge_weight > 0:
-            q_init = self.lattice.calc_top_charges(plaq_sums=ps_init,
-                                                   use_sin=True)
-            q_prop = self.lattice.calc_top_charges(plaq_sums=ps_prop,
-                                                   use_sin=True)
+            q1 = self.lattice.calc_top_charges(plaq_sums=ps_init, use_sin=True)
+            q2 = self.lattice.calc_top_charges(plaq_sums=ps_prop, use_sin=True)
+            qloss = accept_prob * tf.reduce_sum((q2 - q1) ** 2) + 1e-4
+            qloss = self.mixed_loss(qloss, self.charge_weight)
+            #  qloss = tf.reduce_mean(
+            #      (self.charge_weight / qloss) - (q_esjd / self.charge_weight)
+            #  )
 
-            qloss = accept_prob * (q_prop - q_init) ** 2
-            qloss = tf.reduce_mean(-qloss / self.charge_weight)
+            #  qloss = accept_prob * (q_prop - q_init) ** 2
+            #  qloss = tf.reduce_mean(-qloss / self.charge_weight)
 
         return ploss, qloss
 
     def train_step(self,
-                   inputs: tuple,
+                   x: tf.Tensor,
+                   beta: tf.Tensor,
                    first_step: bool = False):
         """Perform a single training step."""
         start = time.time()
         with tf.GradientTape() as tape:
-            states, accept_prob, sumlogdet = self(inputs, training=True)
-            ploss, qloss = self.calc_losses((states, accept_prob))
+            states, accept_prob, sumlogdet = self(x, beta, training=True)
+            ploss, qloss = self.calc_losses(states, accept_prob)
             loss = ploss + qloss
+            if self.aux_weight > 0:
+                if first_step:
+                    print(f'aux_weight: {self.aux_weight}; made it in here!')
+                z = tf.random.normal(x.shape, dtype=x.dtype)
+                states_, accept_prob_, _ = self(z, beta, training=True)
+                ploss_, qloss_ = self.calc_losses(states_, accept_prob_)
+                loss += ploss_ + qloss_
 
         if self.using_hvd:
             tape = hvd.DistributedGradientTape(tape)
@@ -255,11 +292,11 @@ class GaugeDynamics(BaseDynamics):
 
         return states.out.x, metrics
 
-    def test_step(self, inputs):
+    def test_step(self, x, beta):
         """Perform a single inference step."""
         start = time.time()
-        states, px, sld = self(inputs, training=False)
-        ploss, qloss = self.calc_losses((states, px))
+        states, px, sld = self(x, beta, training=False)
+        ploss, qloss = self.calc_losses(states, px)
         loss = ploss + qloss
 
         metrics = AttrDict({
@@ -305,6 +342,22 @@ class GaugeDynamics(BaseDynamics):
         })
 
         return observables
+
+    def _update_v_forward(
+            self,
+            network: tf.keras.layers.Layer,
+            state: State,
+            t: tf.Tensor,
+            training: bool
+    ):
+        """Update the momentum `v` in the forward leapfrog step.
+
+        NOTE: We pass a modified State object, where `state.x` is ensured to be
+        in [-pi, pi) to satisfy the group constraint (x in U(1)).
+        """
+        state = State(x=self.normalizer(state.x),
+                      v=state.v, beta=state.beta)
+        return super()._update_v_forward(network, state, t, training)
 
     def _update_x_foward(self, network, state, t, masks, training):
         """Update the position `x` in the forward leapfrog step."""

@@ -22,14 +22,15 @@ from __future__ import absolute_import, division, print_function
 import os
 
 
-from typing import Callable, NoReturn
+from typing import Callable, NoReturn, Union
 
 import numpy as np
 import tensorflow as tf
 
 from config import (DynamicsConfig, MonteCarloStates, NET_WEIGHTS_HMC,
-                    NET_WEIGHTS_L2HMC, NetworkConfig, State,
+                    NET_WEIGHTS_L2HMC, NetworkConfig, State, NetWeights,
                     TF_FLOAT, TF_INT, lrConfig, BIN_DIR)
+import utils.file_io as io
 from network.gauge_network import GaugeNetwork
 from utils.attr_dict import AttrDict
 from utils.seed_dict import vnet_seeds, xnet_seeds
@@ -78,16 +79,16 @@ class BaseDynamics(tf.keras.Model):
             above, which just returns the input.
         """
         super(BaseDynamics, self).__init__(name=name)
-        self._model_type = config.model_type
+        self._model_type = config.get('model_type', 'BaseDynamics')
 
-        self.params = params
+        #  self.params = params
         self.mask_type = params.get('mask_type', 'rand')
         self.config = config
         self.net_config = network_config
         self.potential_fn = potential_fn
         self.normalizer = normalizer if normalizer is not None else identity
 
-        self._parse_params(params)
+        self.params = self._parse_params(params)
         self.eps = self._build_eps(use_log=False)
         self.masks = self._build_masks(self.mask_type)
         #  self._construct_time()
@@ -101,7 +102,14 @@ class BaseDynamics(tf.keras.Model):
             self.lr = self._create_lr(lr_config)
             self.optimizer = self._create_optimizer()
 
-    def _parse_params(self, params):
+    def save_config(self, config_dir):
+        """Helper method for saving configuration objects."""
+        io.save_dict(self.config, config_dir, name='dynamics_config')
+        io.save_dict(self.net_config, config_dir, name='network_config')
+        io.save_dict(self.lr_config, config_dir, name='lr_config')
+        io.save_dict(self.params, config_dir, name='dynamics_params')
+
+    def _parse_params(self, params, net_weights=None):
         """Set instance attributes from `params`."""
         self.xdim = params.get('xdim', None)
         self.batch_size = params.get('batch_size', None)
@@ -115,11 +123,13 @@ class BaseDynamics(tf.keras.Model):
         if self.config.hmc and not self.config.eps_trainable:
             self._has_trainable_params = False
 
-        self.net_weights = (
-            NET_WEIGHTS_HMC if self.config.hmc
-            else NET_WEIGHTS_L2HMC
-        )
+        if net_weights is None:
+            net_weights = (
+                NetWeights(0., 0., 0., 0., 0., 0.) if self.config.hmc
+                else NetWeights(1., 1., 1., 1., 1., 1.)
+            )
 
+        self.net_weights = net_weights
         self._xsw = self.net_weights.x_scale
         self._xtw = self.net_weights.x_translation
         self._xqw = self.net_weights.x_transformation
@@ -127,27 +137,60 @@ class BaseDynamics(tf.keras.Model):
         self._vtw = self.net_weights.v_translation
         self._vqw = self.net_weights.v_transformation
 
-    def call(self, inputs, training=None):
-        """Obtain a new state from `inputs`."""
-        return self.apply_transition(inputs, training=training)
+        params = AttrDict({
+            'xdim': self.xdim,
+            'batch_size': self.batch_size,
+            'using_hvd': self.using_hvd,
+            'x_shape': self.x_shape,
+            'clip_val': self.clip_val,
+            'net_weights': self.net_weights,
+        })
 
-    def calc_losses(self, inputs):
+        return params
+
+    def call(self, x: tf.Tensor, beta: tf.Tensor, training: bool = None):
+        """Call `self.apply_transition`.
+
+        Returns:
+            mc_states (MonteCarloStates): Initial, proposed, output `States`
+            accept_prob (tf.Tensor): Acceptance probabilities; (batch_size,)
+            sld_states: (MonteCarloStates): Initial, proposed, output sumlogdet
+        """
+        return self.apply_transition(x, beta, training=training)
+
+    def calc_losses(self, states: MonteCarloStates, accept_prob: tf.Tensor):
         """Calculate the total loss."""
         raise NotImplementedError
 
-    def train_step(
+    @staticmethod
+    def calc_esjd(x: tf.Tensor,
+                  y: tf.Tensor,
+                  accept_prob: tf.Tensor):
+        """Calculate the expected squared jump distance, ESJD."""
+        return accept_prob * tf.reduce_sum((x - y) ** 2, axis=1) + 1e-4
+
+    def _mixed_loss(
             self,
-            inputs: tuple,
-            first_step: bool,
+            x: tf.Tensor,
+            y: tf.Tensor,
+            accept_prob: tf.Tensor,
+            scale: tf.Tensor = tf.constant(1., dtype=TF_FLOAT)
     ):
+        """Compute the mixed loss as: scale / esjd - esjd / scale."""
+        esjd = self.calc_esjd(x, y, accept_prob)
+        loss = tf.reduce_mean(scale / esjd) - tf.reduce_mean(esjd / scale)
+
+        return loss
+
+    def train_step(self, x: tf.Tensor, beta: tf.Tensor, first_step: bool):
         """Perform a single training step."""
         raise NotImplementedError
 
-    def test_step(self, inputs):
+    def test_step(self, x: tf.Tensor, beta: tf.Tensor):
         """Perform a single inference step."""
         raise NotImplementedError
 
-    def _apply_transition(self, inputs, training=None):
+    def _random_direction(self, inputs: tuple, training: bool = None):
         """Propose a new state and perform the accept/reject step."""
         forward = tf.cast((tf.random.uniform(shape=[]) < 0.5), dtype=tf.bool)
         state_init, state_prop, px, sld = self._transition(inputs,
@@ -166,21 +209,24 @@ class BaseDynamics(tf.keras.Model):
 
         return mc_states, px, sld_states
 
-    def apply_transition(self, inputs, training=None):
+    def apply_transition(
+            self,
+            x: tf.Tensor,
+            beta: tf.Tensor,
+            training: bool = None,
+    ):
         """Propose a new state and perform the accept/reject step.
 
         NOTE: We simulate the molecular dynamics update in both the forward and
         backward directions, and use sampled masks to compute the actual
         solutions.
         """
-        x_init, beta = inputs
+        #  x_init, beta = inputs
         # Simulate the dynamics both forward and backward;
         # Use sampled Bernoulli masks to compute the actual solutions
-        sf_init, sf_prop, pxf, sldf = self._transition(inputs,
-                                                       forward=True,
+        sf_init, sf_prop, pxf, sldf = self._transition(x, beta, forward=True,
                                                        training=training)
-        sb_init, sb_prop, pxb, sldb = self._transition(inputs,
-                                                       forward=False,
+        sb_init, sb_prop, pxb, sldb = self._transition(x, beta, forward=False,
                                                        training=training)
 
         # Combine the forward / backward outputs;
@@ -192,58 +238,84 @@ class BaseDynamics(tf.keras.Model):
         x_prop = mf * sf_prop.x + mb * sb_prop.x
         v_prop = mf * sf_prop.v + mb * sb_prop.v
         sld_prop = mf_ * sldf + mb_ * sldb
+
         # Compute the acceptance probability
         accept_prob = mf_ * pxf + mb_ * pxb
 
+        # ma_: accept_mask, mr_: reject mask
         ma_, mr_ = self._get_accept_masks(accept_prob)
         ma = ma_[:, None]
         mr = mr_[:, None]
 
         # Construct the output configuration
-        x_out = ma * x_prop + mr * x_init
         v_out = ma * v_prop + mr * v_init
+        x_out = self.normalizer(ma * x_prop + mr * x)
         sumlogdet = ma_ * sld_prop  # NOTE: initial sumlogdet = 0
 
-        state_init = State(x=x_init, v=v_init, beta=beta)
+        state_init = State(x=x, v=v_init, beta=beta)
         state_prop = State(x=x_prop, v=v_prop, beta=beta)
         state_out = State(x=x_out, v=v_out, beta=beta)
-        mc_states = MonteCarloStates(init=state_init,
-                                     proposed=state_prop,
-                                     out=state_out)
-        sld_states = MonteCarloStates(init=0.,
-                                      proposed=sld_prop,
-                                      out=sumlogdet)
+
+        mc_states = MonteCarloStates(state_init, state_prop, state_out)
+        sld_states = MonteCarloStates(0., sld_prop, sumlogdet)
 
         return mc_states, accept_prob, sld_states
 
-    def _transition(self, inputs, forward, training=None):
+    def md_update(self, x: tf.Tensor, beta: tf.Tensor, training: bool = None):
+        """Perform the molecular dynamics (MD) update w/o accept/reject."""
+        #  x_init, beta = inputs
+        # Simulate the dynamics both forward and backward;
+        # Use sampled Bernoulli masks to compute the actual solutions
+        sf_init, sf_prop, _, sldf = self._transition(x, beta, forward=True,
+                                                     training=training)
+        sb_init, sb_prop, _, sldb = self._transition(x, beta, forward=False,
+                                                     training=training)
+        mf_, mb_ = self._get_direction_masks()
+        mf = mf_[:, None]
+        mb = mb_[:, None]
+
+        v_init = mf * sf_init.v + mb * sb_init.v
+        x_prop = mf * sf_prop.x + mb * sb_prop.x
+        v_prop = mf * sf_prop.v + mb * sb_prop.v
+        sld_prop = mf_ * sldf + mb_ * sldb
+        x_prop = self.normalizer(x_prop)
+
+        state_init = State(x=x, v=v_init, beta=beta)
+        state_prop = State(x=x_prop, v=v_prop, beta=beta)
+        mc_states = MonteCarloStates(init=state_init,
+                                     proposed=state_prop,
+                                     out=state_prop)
+        sld_states = MonteCarloStates(init=0.,
+                                      proposed=sld_prop,
+                                      out=sld_prop)
+
+        return mc_states, sld_states
+
+    def _transition(
+            self,
+            x: tf.Tensor,
+            beta: tf.Tensor,
+            forward: bool,
+            training: bool = None
+    ):
         """Run the augmented leapfrog integrator."""
-        x_init, beta = inputs
-        v_init = tf.random.normal(tf.shape(x_init))
-        state_init = State(x=x_init, v=v_init, beta=beta)
+        #  x_init, beta = inputs
+        v = tf.random.normal(tf.shape(x))
+        state = State(x=x, v=v, beta=beta)
+        state_, px, sld = self.transition_kernel(state, forward, training)
         #  if self.config.separate_networks:
         #      tk_fn = self.transition_kernel_for
         #  else:
         #      tk_fn = self.transition_kernel_while
 
-        state_prop, px, sld = self.transition_kernel_while(
-            state_init, forward, training
-        )
+        return state, state_, px, sld
 
-        return state_init, state_prop, px, sld
-
-    def transition_kernel_while(self, state, forward, training=None):
+    def transition_kernel(self, state, forward, training=None):
         """Transition kernel using a `tf.while_loop` implementation."""
         lf_fn = self._forward_lf if forward else self._backward_lf
 
-        #  state_prop = State(*state)
         step = tf.constant(0, dtype=tf.int64)
         sld = tf.zeros((self.batch_size,), dtype=state.x.dtype)
-        #  cond = tf.less(step, self.config.num_steps)
-        #  while tf.less(step, self.config.num_steps):
-        #      state_prop, logdet = lf_fn(step, state_prop, training=training)
-        #      step += 1
-        #      sumlogdet += logdet
 
         def body(step, state, logdet):
             new_state, logdet = lf_fn(step, state, training=training)
@@ -359,7 +431,7 @@ class BaseDynamics(tf.keras.Model):
         expS = tf.exp(scale)
         expQ = tf.exp(transf)
 
-        vf = state.v * expS - 0.5 * self.eps * (grad * expQ + transl)
+        vf = state.v * expS - 0.5 * self.eps * (grad * expQ - transl)
 
         state_out = State(x=x, v=vf, beta=state.beta)
         logdet = tf.reduce_sum(scale, axis=1)
@@ -424,7 +496,7 @@ class BaseDynamics(tf.keras.Model):
         expS = tf.exp(scale)
         expQ = tf.exp(transf)
 
-        vb = expS * (state.v + 0.5 * self.eps * (grad * expQ + transl))
+        vb = expS * (state.v + 0.5 * self.eps * (grad * expQ - transl))
 
         state_out = State(x=x, v=vb, beta=state.beta)
         logdet = tf.reduce_sum(scale, axis=1)
@@ -625,7 +697,8 @@ class BaseDynamics(tf.keras.Model):
         if lr_config is None:
             lr_config = self.lr_config
 
-        if lr_config.warmup_steps > 0:
+        warmup_steps = lr_config.get('warmup_steps', None)
+        if warmup_steps is not None and warmup_steps > 0:
             return WarmupExponentialDecay(lr_config, staircase=True,
                                           name='WarmupExponentialDecay')
 
