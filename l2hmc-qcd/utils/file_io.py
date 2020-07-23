@@ -32,6 +32,14 @@ def write(s: str, f: str, mode: str = 'a', nl: bool = True, rank: int = 0):
         ff.write(s + '\n' if nl else ' ')
 
 
+def print_flags(flags: AttrDict, rank: int = 0):
+    """Helper method for printing flags."""
+    log('\n'.join(
+        [80 * '=', 'FLAGS:', *[f' {k}: {v}' for k, v in flags.items()]]
+    ))
+
+
+
 def make_header_from_dict(
         data: dict,
         dash: str = '-',
@@ -112,6 +120,25 @@ def save_params(params: dict, out_dir: str, name: str = None, rank: int = 0):
             f.write(f"{key}: {val}\n")
     savez(params, zfile, name=name, rank=rank)
 
+
+def save_dict(d: dict, out_dir: str, name: str, rank: int = 0):
+    """Save dictionary to `out_dir` as both `.z` and `.txt` files."""
+    if rank != 0:
+        return
+
+    if isinstance(d, AttrDict):
+        d = dict(d)
+
+    check_else_make_dir(out_dir, rank=rank)
+
+    zfile = os.path.join(out_dir, f'{name}.z')
+    txt_file = os.path.join(out_dir, f'{name}.txt')
+    log(f'Saving {name} to: {zfile}, {txt_file}.')
+
+    savez(d, zfile, name=name, rank=rank)
+    with open(txt_file, 'w') as f:
+        for key, val in d.items():
+            f.write(f'{key}: {val}\n')
 
 def print_args(args: dict, rank: int = 0):
     """Print out parsed arguments."""

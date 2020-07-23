@@ -99,14 +99,11 @@ def get_betas(steps, beta_init, beta_final):
     """Get array of betas to use in annealing schedule."""
     t_init = 1. / beta_init
     t_final = 1. / beta_final
-    t_arr = [
+    t_arr = tf.convert_to_tensor(np.array([
         exp_mult_cooling(i, t_init, t_final, steps) for i in range(steps)
-    ]
+    ]))
 
-    return tf.constant(
-        1. / tf.convert_to_tensor(np.array(t_arr)),
-        dtype=TF_FLOAT
-    )
+    return tf.constant(1. / t_arr, dtype=TF_FLOAT)
 
 
 def restore_flags(flags, train_dir):
@@ -134,7 +131,8 @@ def setup_directories(flags, name='training'):
         'data_dir': os.path.join(train_dir, 'train_data'),
         'ckpt_dir': os.path.join(train_dir, 'checkpoints'),
         'summary_dir': os.path.join(train_dir, 'summaries'),
-        'log_file': os.path.join(train_dir, 'train_log.txt')
+        'log_file': os.path.join(train_dir, 'train_log.txt'),
+        'config_dir': os.path.join(train_dir, 'dynamics_configs'),
     })
 
     if IS_CHIEF:
@@ -152,6 +150,7 @@ def train(flags, log_file=None):
     if flags.log_dir is None:
         flags.log_dir = io.make_log_dir(flags, 'GaugeModel',
                                         log_file, rank=RANK)
+        flags.restore = False
     else:
         flags = restore_flags(flags, os.path.join(flags.log_dir, 'training'))
         flags.restore = True
@@ -164,9 +163,8 @@ def train(flags, log_file=None):
         flags.eps = eps_init
 
     dynamics = build_dynamics(flags)
-    io.log('\n'.join(
-        [80 * '=', 'FLAGS:', *[f' {k}: {v}' for k, v in flags.items()]]
-    ))
+    dynamics.save_config(train_dirs.config_dir)
+    io.print_flags(flags, rank=RANK)
 
     x, train_data = train_dynamics(dynamics, flags,
                                    x=x, dirs=train_dirs)
@@ -205,6 +203,7 @@ def train_hmc(flags):
 
     train_dirs = setup_directories(hmc_flags, 'training_hmc')
     dynamics = build_dynamics(hmc_flags)
+    dynamics.save_config(train_dirs.config_dir)
     x, train_data = train_dynamics(dynamics, hmc_flags,
                                    dirs=train_dirs)
     if IS_CHIEF:
@@ -250,41 +249,50 @@ def setup(dynamics, flags, dirs=None, x=None, betas=None):
     if IS_CHIEF:
         writer = tf.summary.create_file_writer(dirs.summary_dir)
 
-    # Determine the current global step
-    current_step = dynamics.optimizer.iterations.numpy()
-    steps = tf.cast(  # training steps
-        tf.range(current_step, flags.train_steps + 1),
-        dtype=tf.int64
-    )
+    current_step = dynamics.optimizer.iterations.numpy()  # get global step
+    steps = tf.range(current_step, flags.train_steps + 1, dtype=tf.int64)
     train_data.steps = steps[-1]
     if betas is None:
-        # train at fixed beta
-        if flags.beta_init == flags.beta_final:
-            betas = tf.convert_to_tensor(flags.beta_init * np.ones(len(steps)))
-        # get annealing schedule w/ same length as `steps`
-        else:
+        if flags.beta_init == flags.beta_final:  # train at fixed beta
+            betas = flags.beta_init * np.ones(len(steps))
+        else:  # get annealing schedule w/ same length as `steps`
             betas = get_betas(len(steps), flags.beta_init, flags.beta_final)
 
-    # Compile dynamics w/ tf.function (autograph)?
-    if flags.get('compile', False):
-        cstr = 'INFO:Compiling `dynamics.train_step` via tf.function\n'
-        io.log(cstr, RANK)
-        dynamics.compile(loss=dynamics.calc_losses,
-                         optimizer=dynamics.optimizer,
-                         experimental_run_tf_function=False)
-        train_step = tf.function(dynamics.train_step,
-                                 experimental_relax_shapes=True)
-        #  optionals = tf.autograph.experimental.do_not_convert
-        #  train_step = tf.function(dynamics.train_step,
-        #                           experimental_relax_shapes=True,
-        #                           experimental_autograph_options=optionals)
-    else:
-        io.log('INFO: Running dynamics.train_step imperatively.\n', RANK)
-        dynamics.compile(loss=dynamics.calc_losses,
-                         optimizer=dynamics.optimizer,
-                         experimental_run_tf_function=False)
-        train_step = dynamics.train_step
+    betas = tf.constant(betas, dtype=TF_FLOAT)
+    dynamics.compile(loss=dynamics.calc_losses,
+                     optimizer=dynamics.optimizer,
+                     experimental_run_tf_function=False)
+    train_step = tf.function(dynamics.train_step)
+    #  try:
+    #  except:  # FIXME: Figure out what exception gets thrown if compile fails
+    #      io.log('ERROR: Unable to wrap `dynamics.train_step` in `tf.function`')
+    #      train_step = dynamics.train_step
 
+    #  dynamics.compile(loss=dynamics.calc_losses,
+    #                   optimizer=dynamics.optimizer,
+    #                   experimental_run_tf_function=False)
+    #  train_step = dynamics.train_step
+
+    # Compile dynamics w/ tf.function (autograph)?
+    #  if flags.get('compile', False):
+    #      cstr = 'INFO:Compiling `dynamics.train_step` via tf.function\n'
+    #      io.log(cstr, RANK)
+    #      dynamics.compile(loss=dynamics.calc_losses,
+    #                       optimizer=dynamics.optimizer,
+    #                       experimental_run_tf_function=False)
+    #      train_step = tf.function(dynamics.train_step,
+    #                               experimental_relax_shapes=True)
+    #      #  optionals = tf.autograph.experimental.do_not_convert
+    #      #  train_step = tf.function(dynamics.train_step,
+    #      #                           experimental_relax_shapes=True,
+    #      #                           experimental_autograph_options=optionals)
+    #  else:
+    #      io.log('INFO: Running dynamics.train_step imperatively.\n', RANK)
+    #      dynamics.compile(loss=dynamics.calc_losses,
+    #                       optimizer=dynamics.optimizer,
+    #                       experimental_run_tf_function=False)
+    #      train_step = dynamics.train_step
+    #
     profiler_start_step = 0
     profiler_stop_step = 0
     if flags.profiler:
@@ -314,11 +322,11 @@ def train_dynamics(
         dirs: str = None,
         x: tf.Tensor = None,
         betas: tf.Tensor = None,
-        clip_val: float = 0.,
 ):
     """Train model."""
     outputs = setup(dynamics, flags, dirs, x, betas)
     x = outputs.x
+    #  md_steps = 5
     steps = outputs.steps
     betas = outputs.betas
     train_step = outputs.train_step
@@ -329,25 +337,28 @@ def train_dynamics(
         writer = outputs.writer
         writer.set_as_default()
 
-    def _timed_step(inputs, **kwargs):
-        start = time.time()
-        x, metrics = train_step(inputs, **kwargs)
-        metrics.dt = time.time() - start
-        return x, metrics
-
     # run a single step to get header
     first_step = (dynamics.optimizer.iterations.numpy() == 0)
-    x, metrics = _timed_step((x, betas[0]),
-                             first_step=first_step)
+    try:
+        x, metrics = train_step(x, betas[0], first_step=first_step)
+    except:
+        train_step = dynamics.train_step
+        x, metrics = train_step(x, betas[0], first_step=first_step)
+
+    def _timed_step(x: tf.Tensor, beta: tf.Tensor):
+        start = time.time()
+        x, metrics = train_step(x, beta)
+        metrics.dt = time.time() - start
+        return x, metrics
 
     header = train_data.get_header(metrics,
                                    skip=['charges'],
                                    prepend=['{:^12s}'.format('step')])
     io.log(header, rank=RANK)
-    betas = tf.cast(betas, dtype=TF_FLOAT)
+    #  betas = tf.cast(betas, dtype=TF_FLOAT)
     for step, beta in zip(steps, betas):
         # Perform a single training step
-        x, metrics = _timed_step((x, beta))
+        x, metrics = _timed_step(x, beta)
 
         # Start profiler
         #  if flags.profiler and step == profiler_start_step:
@@ -364,6 +375,11 @@ def train_dynamics(
                 train_data.save_and_flush(dirs.data_dir,
                                           dirs.log_file,
                                           rank=RANK, mode='a')
+
+            #  io.log(f'Running {md_steps} MD updates (w/o accept/reject)...')
+            #  for _ in range(md_steps):
+            #      mc_states, _ = dynamics.md_update((x, beta), training=True)
+            #      x = mc_states.out.x
 
         # Print current training state and metrics
         if IS_CHIEF and step % flags.print_steps == 0:
@@ -394,7 +410,7 @@ def train_dynamics(
         manager.save()
         if not dynamics.config.hmc and flags.profiler:
             tf.summary.trace_on(graph=True, profiler=True)
-            x, metrics = train_step((x, betas[-1]))
+            x, metrics = train_step(x, betas[-1])
             tf.summary.trace_export(name='train_step_trace', step=steps[-1],
                                     profiler_outdir=dirs.summary_dir)
             tf.summary.trace_off()

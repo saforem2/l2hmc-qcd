@@ -262,7 +262,7 @@ def parse_args():
                         help=("""Dropout probability in network. If > 0,
                               dropout will be used. (Default: 0.)"""))
 
-    parser.add_argument("--clip_value",
+    parser.add_argument("--clip_val",
                         dest="clip_value",
                         type=float,
                         default=0.,
@@ -307,7 +307,7 @@ def parse_args():
     parser.add_argument("--aux_weight",
                         dest="aux_weight",
                         type=float,
-                        default=1,
+                        default=0.,
                         required=False,
                         help=("""Multiplicative factor used to weigh relative
                               strength of auxiliary term in loss function.\n
@@ -316,7 +316,7 @@ def parse_args():
     parser.add_argument("--charge_weight",
                         dest="charge_weight",
                         type=float,
-                        default=0.,
+                        default=0.1,
                         required=False,
                         help=("""Multiplicative factor used to weigh relative
                               strength of top. charge term in loss
@@ -325,7 +325,7 @@ def parse_args():
     parser.add_argument("--plaq_weight",
                         dest="plaq_weight",
                         type=float,
-                        default=0.,
+                        default=10.,
                         required=False,
                         help=("""Multiplicative factor used to weigh relative
                               strength of plaquette difference term in loss

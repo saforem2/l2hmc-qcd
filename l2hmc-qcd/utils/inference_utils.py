@@ -45,14 +45,6 @@ except ImportError:
 
 IS_CHIEF = (RANK == 0)
 
-# pylint:disable=too-many-locals,invalid-name
-
-
-#  def check_if_chief(args):
-#      """Helper function to determine if we're on `rank == 0`."""
-#      using_hvd = args.get('horovod', False)
-#      return hvd.rank() == 0 if using_hvd else not using_hvd
-
 
 def print_args(args):
     """Print out parsed arguments."""
@@ -88,6 +80,7 @@ def run_hmc(
         'hmc': True,
         'units': [],
         'lr_init': 0,
+        'restore': False,
         'use_ncp': False,
         'horovod': False,
         'eps_fixed': True,
@@ -126,6 +119,31 @@ def run_hmc(
     return dynamics, run_data, x
 
 
+def restore_from_train_flags(args):
+    """Populate entries in `args` using the training `FLAGS` from `log_dir`."""
+    train_dir = os.path.join(args.log_dir, 'training')
+    FLAGS = AttrDict(dict(io.loadz(os.path.join(train_dir, 'FLAGS.z'))))
+    FLAGS.horovod = False
+    if args.get('lattice_shape', None) is None:
+        args.lattice_shape = FLAGS.lattice_shape
+    if args.get('beta', None) is None:
+        args.beta = FLAGS.beta_final
+    if args.get('num_steps', None) is None:
+        args.num_steps = FLAGS.num_steps
+    if args.get('eps', None) is None:
+        eps = io.loadz(os.path.join(train_dir, 'train_data', 'eps.z'))[-1]
+        args.eps = eps
+
+    FLAGS.update({
+        'eps': args.eps,
+        'beta': args.beta,
+        'num_steps': args.num_steps,
+        'lattice_shape': args.lattice_shape,
+    })
+
+    return FLAGS
+
+
 def load_and_run(
         args: AttrDict,
         x: tf.Tensor = None,
@@ -136,32 +154,9 @@ def load_and_run(
         return None, None, None
 
     print_args(args)
-    if args.hmc:
-        train_dir = os.path.join(args.log_dir, 'training_hmc')
-    else:
-        train_dir = os.path.join(args.log_dir, 'training')
-
-    ckpt_dir = os.path.join(train_dir, 'checkpoints')
-    FLAGS = AttrDict(dict(io.loadz(os.path.join(train_dir, 'FLAGS.z'))))
-    FLAGS.horovod = False
-
-    if args.get('beta', None) is None:
-        args.beta = FLAGS.beta_final
-
-    if args.get('num_steps') is None:
-        args.num_steps = FLAGS.num_steps
-
-    if args.get('eps') is None:
-        eps = io.loadz(os.path.join(train_dir, 'train_data', 'eps.z'))[-1]
-        args.eps = tf.cast(eps, dtype=TF_FLOAT)
-
-    FLAGS.update({
-        'eps': args.eps,
-        'beta': args.beta,
-        'num_steps': args.num_steps,
-    })
-
-    dynamics = build_dynamics(FLAGS)
+    ckpt_dir = os.path.join(args.log_dir, 'training', 'checkpoints')
+    flags = restore_from_train_flags(args)
+    dynamics = build_dynamics(flags)
 
     ckpt = tf.train.Checkpoint(dynamics=dynamics,
                                optimizer=dynamics.optimizer)
@@ -241,59 +236,66 @@ def run(dynamics, args, x=None, runs_dir=None):
     return dynamics, run_data, x
 
 
-def run_dynamics(dynamics, flags, x=None, save_x=False):
+def run_dynamics(dynamics, flags, x=None, save_x=False, run_md=True):
     """Run inference on trained dynamics."""
     if not IS_CHIEF:
         return None, None
 
-    beta = flags.get('beta', None)
+    # -------------------------------------------------------------
+    # Setup
     print_steps = flags.get('print_steps', 5)
-    if beta is None:
-        beta = flags.get('beta_final', None)
-
-    if x is None:
-        x = tf.random.uniform(shape=dynamics.x_shape,
-                              minval=-PI, maxval=PI, dtype=TF_FLOAT)
-
-    run_data = DataContainer(flags.run_steps)
-
-    eps = dynamics.eps
-    if hasattr(eps, 'numpy'):
-        eps = eps.numpy()
-
-    template = '\n'.join([
-        f'beta: {beta}', f'eps: {eps:.4g}',
-        f'net_weights: {dynamics.net_weights}'
-    ])
-    io.log(f'INFO:Running inference with:\n {template}')
-
-    #  if dynamics.config.separate_networks:
-    #  if flags.compile:
+    beta = flags.get('beta', flags.get('beta_final', None))
 
     if flags.get('compile', True):
         test_step = tf.function(dynamics.test_step)
-        x, metrics = test_step((x, beta))
     else:
         test_step = dynamics.test_step
-        x, metrics = test_step((x, beta))
 
+    if x is None:
+        x = tf.random.uniform(shape=dynamics.x_shape,
+                              minval=-PI, maxval=PI,
+                              dtype=TF_FLOAT)
+
+    run_data = DataContainer(flags.run_steps)
+
+    template = '\n'.join([f'beta: {beta}',
+                          f'eps: {dynamics.eps.numpy():.4g}',
+                          f'net_weights: {dynamics.net_weights}'])
+    io.log(f'INFO:Running inference with:\n {template}')
+
+    # Run 50 MD updates (w/o accept/reject) to ensure chains don't get stuck
+    if run_md:
+        md_steps = 10
+        for _ in range(md_steps):
+            mc_states, _ = dynamics.md_update(x, beta, training=False)
+            x = mc_states.out.x
+
+    x, metrics = test_step(x, beta)
     header = run_data.get_header(metrics,
                                  skip=['charges'],
                                  prepend=['{:^12s}'.format('step')])
     io.log(header)
+    # -------------------------------------------------------------
+
     x_arr = []
-    for step in tf.cast(tf.range(flags.run_steps), dtype=tf.int64):
+    def timed_step(x: tf.Tensor, beta: tf.Tensor):
         start = time.time()
-        x, metrics = test_step((x, beta))
+        x, metrics = test_step(x, beta)
+        metrics.dt = time.time() - start
         if save_x:
             x_arr.append(x.numpy())
-        metrics.dt = time.time() - start
+
+        return x, metrics
+
+    steps = tf.range(flags.run_steps, dtype=tf.int64)
+    for step in steps:
+        x, metrics = timed_step(x, beta)
         run_data.update(step, metrics)
 
         if step % print_steps == 0:
             data_str = run_data.get_fstr(step, metrics, skip=['charges'])
-            io.log(data_str)
             summarize_dict(metrics, step, prefix='testing')
+            io.log(data_str)
 
         if step % 100 == 0:
             io.log(header)
