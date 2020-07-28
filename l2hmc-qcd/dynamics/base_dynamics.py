@@ -302,7 +302,8 @@ class BaseDynamics(tf.keras.Model):
         #  x_init, beta = inputs
         v = tf.random.normal(tf.shape(x))
         state = State(x=x, v=v, beta=beta)
-        state_, px, sld = self.transition_kernel(state, forward, training)
+        state_, px, sld = self.transition_kernel_for(state, forward, training)
+        #  state_, px, sld = self.transition_kernel(state, forward, training)
         #  if self.config.separate_networks:
         #      tk_fn = self.transition_kernel_for
         #  else:
@@ -672,7 +673,7 @@ class BaseDynamics(tf.keras.Model):
     def _get_network(self, step):
         return self.xnets, self.vnets
 
-    def _build_eps(self, use_log=False):
+    def _build_eps(self, use_log=True):
         """Create `self.eps` (i.e. the step size) as a `tf.Variable`.
 
         Args:
@@ -684,9 +685,9 @@ class BaseDynamics(tf.keras.Model):
             eps: The (trainable) step size to be used in the L2HMC algorithm.
         """
         if use_log:
-            init = tf.math.log(tf.constant(self.config.eps))
+            init = tf.math.log(tf.constant(self.config.eps, dtype=TF_FLOAT))
         else:
-            init = tf.constant(self.config.eps)
+            init = tf.constant(self.config.eps, dtype=TF_FLOAT)
 
         return tf.Variable(initial_value=init,
                            name='eps', dtype=TF_FLOAT,

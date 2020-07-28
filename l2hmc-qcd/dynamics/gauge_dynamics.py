@@ -36,7 +36,8 @@ import utils.file_io as io
 from utils.file_io import timeit  # pylint:disable=unused-import
 from utils.seed_dict import vnet_seeds, xnet_seeds
 from lattice.utils import u1_plaq_exact_tf
-from lattice.lattice import GaugeLattice
+#  from lattice.lattice import GaugeLattice
+from lattice.gauge_lattice import GaugeLattice
 
 try:
     import horovod.tensorflow as hvd
@@ -57,21 +58,37 @@ def convert_to_angle(x):
 
 def build_dynamics(flags):
     """Build dynamics using parameters from FLAGS."""
-    if flags.restore and flags.log_dir is not None:
+    '''
+    if flags.log_dir is not None:
         flags_file = os.path.join(flags.log_dir, 'training', 'FLAGS.z')
         flags_ = AttrDict(dict(io.loadz(flags_file)))
         cfgdir = os.path.join(flags.log_dir, 'training', 'dynamics_configs')
+        if flags.get('eps', None) is None:
+            eps_file = os.path.join(flags.log_dir, 'training',
+                                    'train_data', 'eps.z')
+            io.log(f'Restoring `eps` from: {eps_file}...')
+            flags.eps = io.loadz(eps_file)[-1]
+        #  flags.update(flags_)
+        # FIXME: Ensure that files exist...
         if os.path.isdir(cfgdir):
-            config_ = io.loadz(os.path.join(cfgdir, 'dynamics_config.z'))
-            params_ = io.loadz(os.path.join(cfgdir, 'dynamics_params.z'))
-            net_config_ = io.loadz(os.path.join(cfgdir, 'network_config.z'))
-            lr_config_ = io.loadz(os.path.join(cfgdir, 'lr_config.z'))
-
-            flags_.update(params_)
-            config = GaugeDynamicsConfig(**config_)
-            net_config = NetworkConfig(**net_config_)
-            lr_config = lrConfig(**lr_config_)
-            return GaugeDynamics(flags_, config, net_config, lr_config)
+            cfg_file = os.path.join(cfgdir, 'dynamics_config.z')
+            prms_file = os.path.join(cfgdir, 'dynamics_params.z')
+            ncfg_file = os.path.join(cfgdir, 'network_config.z')
+            lcfg_file = os.path.join(cfgdir, 'lr_config.z')
+            try:
+                config_ = io.loadz(cfg_file)
+                params_ = io.loadz(prms_file)
+                net_config_ = io.loadz(ncfg_file)
+                lr_config_ = io.loadz(lcfg_file)
+                flags_.update(params_)
+                flags_.eps = flags.eps
+                config = GaugeDynamicsConfig(**config_)
+                net_config = NetworkConfig(**net_config_)
+                lr_config = lrConfig(**lr_config_)
+                return GaugeDynamics(flags_, config, net_config, lr_config)
+            except FileNotFoundError:
+                pass
+    '''
 
     net_config = NetworkConfig(
         name='GaugeNetwork',
@@ -134,7 +151,7 @@ class GaugeDynamics(BaseDynamics):
         params.update({
             'batch_size': self.lattice_shape[0],
             'xdim': np.cumprod(self.lattice_shape[1:])[-1],
-            'mask_type': 'rand',
+            'mask_type': 'checkerboard',
         })
 
         super(GaugeDynamics, self).__init__(
@@ -152,8 +169,7 @@ class GaugeDynamics(BaseDynamics):
         elif self.config.use_ncp:
             net_weights = NetWeights(1., 1., 1., 1., 1., 1.)
         else:
-            # FIXME: Changed Sx to 1. temporarily
-            net_weights = NetWeights(1., 1., 1., 1., 1., 1.)
+            net_weights = NetWeights(0., 1., 1., 1., 1., 1.)
 
         self._parse_params(params, net_weights=net_weights)
 
@@ -207,24 +223,28 @@ class GaugeDynamics(BaseDynamics):
         # FIXME:
         #   - Should we stack `states = [states.init.x, states.proposed.x]`
         #     and call `self.lattice.calc_plaq_sums(states)`?
-        ps_init = self.lattice.calc_plaq_sums(samples=states.init.x)
-        ps_prop = self.lattice.calc_plaq_sums(samples=states.proposed.x)
+        wl_init = self.lattice.calc_wilson_loops(states.init.x)
+        wl_prop = self.lattice.calc_wilson_loops(states.proposed.x)
+        #  ps_init = self.lattice.calc_plaq_sums(samples=states.init.x)
+        #  ps_prop = self.lattice.calc_plaq_sums(samples=states.proposed.x)
 
         # Calculate the plaquette loss
         ploss = tf.constant(0., dtype=dtype)
         if self.plaq_weight > 0:
-            dplaq = 2 * (1. - tf.math.cos(ps_prop - ps_init))
-            ploss = accept_prob * tf.reduce_sum(dplaq, axis=(1, 2))
+            dwloops = 2 * (1. - tf.math.cos(wl_prop - wl_init))
+            ploss = accept_prob * tf.reduce_sum(dwloops, axis=(1, 2))
+            ploss = tf.reduce_mean(-ploss / self.plaq_weight, axis=0)
             #  ploss = tf.reduce_mean(-ploss / self.plaq_weight, axis=0)
-            ploss = self.mixed_loss(ploss, self.plaq_weight)
+            #  ploss = self.mixed_loss(ploss, self.plaq_weight)
 
         # Calculate the charge loss
         qloss = tf.constant(0., dtype=dtype)
         if self.charge_weight > 0:
-            q1 = self.lattice.calc_top_charges(plaq_sums=ps_init, use_sin=True)
-            q2 = self.lattice.calc_top_charges(plaq_sums=ps_prop, use_sin=True)
-            qloss = accept_prob * tf.reduce_sum((q2 - q1) ** 2) + 1e-4
-            qloss = self.mixed_loss(qloss, self.charge_weight)
+            q_init = self.lattice.calc_charges(wloops=wl_init, use_sin=True)
+            q_prop = self.lattice.calc_charges(wloops=wl_prop, use_sin=True)
+            qloss = accept_prob * (q_prop - q_init) ** 2
+            qloss = tf.reduce_mean(-qloss / self.charge_weight, axis=0)
+            #  qloss = self.mixed_loss(qloss, self.charge_weight)
             #  qloss = tf.reduce_mean(
             #      (self.charge_weight / qloss) - (q_esjd / self.charge_weight)
             #  )
@@ -274,7 +294,7 @@ class GaugeDynamics(BaseDynamics):
             'sumlogdet': sumlogdet.out,
         })
 
-        observables = self.calc_observables(states, use_sin=True)
+        observables = self.calc_observables(states)
         metrics.update(**observables)
 
         # Horovod:
@@ -310,30 +330,27 @@ class GaugeDynamics(BaseDynamics):
             'sumlogdet': sld.out,
         })
 
-        observables = self.calc_observables(states, use_sin=False)
+        observables = self.calc_observables(states)
         metrics.update(**observables)
 
         return states.out.x, metrics
 
-    def _calc_observables(self, state, use_sin=False):
+    def _calc_observables(self, state):
         """Calculate the observables for a particular state.
 
         NOTE: We track the error in the plaquette instead of the actual value.
         """
-        x = tf.reshape(state.x, self.lattice_shape)
-        ps = self.lattice.calc_plaq_sums(samples=x)
-        plaqs = self.lattice.calc_plaqs(plaq_sums=ps)
-        plaqs_err = u1_plaq_exact_tf(state.beta) - plaqs
-        charges = self.lattice.calc_top_charges(
-            plaq_sums=ps, use_sin=use_sin
-        )
+        wloops = self.lattice.calc_wilson_loops(state.x)
+        charges = self.lattice.calc_charges(wloops=wloops)
+        plaqs = self.lattice.calc_plaqs(wloops=wloops, beta=state.beta)
 
-        return plaqs_err, charges
+        return plaqs, charges
 
-    def calc_observables(self, states, use_sin=False):
+    def calc_observables(self, states):
         """Calculate observables."""
-        _, q_init = self._calc_observables(states.init, use_sin=use_sin)
-        plaqs, q_out = self._calc_observables(states.out, use_sin=use_sin)
+        #  _, q_init = self._calc_observables(states.init)
+        q_init = self.lattice.calc_charges(x=states.init.x)
+        plaqs, q_out = self._calc_observables(states.out)
 
         observables = AttrDict({
             'dq': tf.math.abs(q_out - q_init),

@@ -77,6 +77,7 @@ class DataContainer:
 
         x_file = os.path.join(data_dir, f'x_rank{rank}.z')
         x = io.loadz(x_file)
+        io.log(f'INFO:Restored `x` from: {x_file}.')
 
         data = self.load_data(data_dir)
         for key, val in data.items():
@@ -95,6 +96,7 @@ class DataContainer:
         for key, val in zip(keys, data_files):
             if 'x_rank' in key:
                 continue
+            io.log(f'INFO:Restored {key} from {val}.')
             data[key] = io.loadz(val)
 
         return AttrDict(data)

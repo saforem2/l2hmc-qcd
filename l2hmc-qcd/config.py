@@ -59,12 +59,12 @@ class GaugeDynamicsConfig(AttrDict):
 
     # pylint:disable=too-many-arguments
     def __init__(self,
-                 eps: float,
-                 num_steps: int,
-                 hmc: bool = False,
-                 use_ncp: bool = False,
-                 model_type: str = None,
-                 eps_trainable: bool = True,
+                 eps: float,                    # step size
+                 num_steps: int,                # n leapfrog steps per acc/rej
+                 hmc: bool = False,             # run standard HMC?
+                 use_ncp: bool = False,         # Transform x using NCP?
+                 model_type: str = None,        # name for model
+                 eps_trainable: bool = True,    # trainable step size?
                  separate_networks: bool = False):
         super(GaugeDynamicsConfig, self).__init__(
             eps=eps,

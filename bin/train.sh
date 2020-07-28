@@ -14,5 +14,4 @@ export AUTOGRAPH_VERBOSITY=10
 
 export TF_XLA_FLAGS="--tf_xla_auto_jit=2 --tf_xla_cpu_global_jit"
 
-python3 -m pudb ${TRAINER} --json_file=${ARGS}
-# ipython3 -m pudb ${TRAINER} --json_file=./train_args.json
+python3 -m pudb ${TRAINER} --json_file=./train_args.json

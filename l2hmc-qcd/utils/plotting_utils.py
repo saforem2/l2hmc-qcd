@@ -150,12 +150,19 @@ def mcmc_traceplot(key, val, title=None, fpath=None):
 
 
 # pylint:disable=unsubscriptable-object
-def plot_data(train_data, base_dir, FLAGS, thermalize=False, params=None):
-    out_dir = os.path.join(base_dir, 'plots')
+def plot_data(train_data, out_dir, flags, thermalize=False, params=None):
+    out_dir = os.path.join(out_dir, 'plots')
     io.check_else_make_dir(out_dir)
 
     title = None if params is None else get_title_str_from_params(params)
-    logging_steps = FLAGS.logging_steps if 'training' in base_dir else 1
+
+    logging_steps = flags.get('logging_steps', 1)
+    flags_file = os.path.join(out_dir, 'FLAGS.z')
+    if os.path.isfile(flags_file):
+        train_flags = io.loadz(flags_file)
+        logging_steps = train_flags.get('logging_steps', 1)
+
+    #  logging_steps = flags.logging_steps if 'training' in out_dir else 1
 
     data_dict = {}
     for key, val in train_data.data.items():
