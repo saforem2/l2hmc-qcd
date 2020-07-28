@@ -38,6 +38,18 @@ def map_angle_to_reals(theta):
     return tf.math.tan(theta / 2.)
 
 
+def periodic_padding(image, padding=1):
+    """Create a periodic padding to emulate periodic boundary conditions."""
+    upper_pad = image[-padding:, :]
+    lower_pad = image[:padding, :]
+    partial_image = tf.concat([upper_pad, image, lower_pad], axis=0)
+    left_pad = partial_image[:, -padding:]
+    right_pad = partial_image[:, :padding]
+    padded_image = tf.concat([left_pad, partial_image, right_pad], axis=1)
+
+    return padded_image
+
+
 # pylint: disable=invalid-name
 class DenseLayerNP:
     """Implements fully-connected Dense layer using numpy."""

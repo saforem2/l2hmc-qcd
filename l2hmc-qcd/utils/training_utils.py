@@ -47,6 +47,12 @@ except ImportError:
 
 IS_CHIEF = (RANK == 0)
 
+try:
+    tf.config.experimental.enable_mlir_bridge()
+    tf.config.experimental.enable_mlir_graph_optimization()
+except:
+    pass
+
 
 def summarize_dict(d, step, prefix=None):
     """Create summaries for all items in d."""
@@ -112,16 +118,19 @@ def get_betas(steps, beta_init, beta_final):
 
 def restore_flags(flags, train_dir):
     """Update `FLAGS` using restored flags from `log_dir`."""
-    restored = AttrDict(dict(io.loadz(os.path.join(train_dir, 'FLAGS.z'))))
-    restored_flags = AttrDict({
-        'horovod': restored.horovod,
-        'plaq_weight': restored.plaq_weight,
-        'charge_weight': restored.charge_weight,
-        'lattice_shape': restored.lattice_shape,
-        'units': restored.units,
-    })
+    rf_file = os.path.join(train_dir, 'FLAGS.z')
+    restored = AttrDict(dict(io.loadz(rf_file)))
+    io.log(f'INFO:Restoring FLAGS from: {rf_file}...')
+    flags.update(restored)
+    #  restored_flags = AttrDict({
+    #      'horovod': restored.horovod,
+    #      'plaq_weight': restored.plaq_weight,
+    #      'charge_weight': restored.charge_weight,
+    #      'lattice_shape': restored.lattice_shape,
+    #      'units': restored.units,
+    #  })
 
-    flags.update(restored_flags)
+    #  flags.update(restored_flags)
 
     return flags
 
@@ -144,19 +153,23 @@ def setup_directories(flags, name='training'):
             [d for k, d in train_paths.items() if 'file' not in k],
             #  rank=rank
         )
-        io.save_params(dict(flags), train_dir, 'FLAGS')
+        if not flags.restore:
+            io.save_params(dict(flags), train_dir, 'FLAGS')
 
     return train_paths
 
 
-def train(flags, log_file=None):
+def train(flags, log_file=None, md_steps=0):
     """Train model."""
     if flags.log_dir is None:
         flags.log_dir = io.make_log_dir(flags, 'GaugeModel',
                                         log_file, rank=RANK)
         flags.restore = False
     else:
+        train_steps = flags.train_steps
         flags = restore_flags(flags, os.path.join(flags.log_dir, 'training'))
+        if train_steps == flags.train_steps:
+            flags.train_steps += flags.logging_steps
         flags.restore = True
 
     train_dirs = setup_directories(flags)
@@ -166,12 +179,17 @@ def train(flags, log_file=None):
         x, train_data, eps_init = train_hmc(flags)
         flags.eps = eps_init
 
+    if flags.restore:
+        xfile = os.path.join(train_dirs.train_dir,
+                             'train_data', f'x_rank{RANK}.z')
+        x = io.loadz(xfile)
+
     dynamics = build_dynamics(flags)
     dynamics.save_config(train_dirs.config_dir)
     io.print_flags(flags, rank=RANK)
 
-    x, train_data = train_dynamics(dynamics, flags,
-                                   x=x, dirs=train_dirs)
+    x, train_data = train_dynamics(dynamics, flags, x=x,
+                                   dirs=train_dirs, md_steps=md_steps)
     if IS_CHIEF:
         output_dir = os.path.join(train_dirs.train_dir, 'outputs')
         train_data.save_data(output_dir)
@@ -234,7 +252,8 @@ def train_hmc(flags):
 def setup(dynamics, flags, dirs=None, x=None, betas=None):
     """Setup training."""
     train_data = DataContainer(flags.train_steps, dirs=dirs)
-    ckpt = tf.train.Checkpoint(model=dynamics, optimizer=dynamics.optimizer)
+    ckpt = tf.train.Checkpoint(dynamics=dynamics,
+                               optimizer=dynamics.optimizer)
     manager = tf.train.CheckpointManager(ckpt, dirs.ckpt_dir, max_to_keep=5)
     if manager.latest_checkpoint:  # restore from checkpoint
         io.log(f'INFO:Restored model from: {manager.latest_checkpoint}')
@@ -254,7 +273,11 @@ def setup(dynamics, flags, dirs=None, x=None, betas=None):
         writer = tf.summary.create_file_writer(dirs.summary_dir)
 
     current_step = dynamics.optimizer.iterations.numpy()  # get global step
-    steps = tf.range(current_step, flags.train_steps + 1, dtype=tf.int64)
+    try:
+        steps = tf.range(current_step, flags.train_steps + 1, dtype=tf.int64)
+    except tf.errors.InvalidArgumentError:
+        flags.train_steps += flags.logging_steps
+        steps = tf.range(current_step, flags.train_steps + 1, dtype=tf.int64)
     train_data.steps = steps[-1]
     if betas is None:
         if flags.beta_init == flags.beta_final:  # train at fixed beta
@@ -326,6 +349,7 @@ def train_dynamics(
         dirs: str = None,
         x: tf.Tensor = None,
         betas: tf.Tensor = None,
+        md_steps: int = 0,
 ):
     """Train model."""
     outputs = setup(dynamics, flags, dirs, x, betas)
@@ -369,7 +393,7 @@ def train_dynamics(
         #      tf.profiler.experimental.start(flags.log_dir)
 
         # Save checkpoints and dump configs `x` from each rank
-        if step % flags.save_steps == 0 and ckpt is not None:
+        if (step + 1) % flags.save_steps == 0 and ckpt is not None:
             train_data.dump_configs(x, dirs.data_dir, rank=RANK)
             if IS_CHIEF:
                 manager.save()
@@ -379,6 +403,11 @@ def train_dynamics(
                 train_data.save_and_flush(dirs.data_dir,
                                           dirs.log_file,
                                           rank=RANK, mode='a')
+            if md_steps > 0:
+                io.log(f'INFO: Running {md_steps} MD updates...')
+                for _ in range(md_steps):
+                    mc_states, _ = dynamics.md_update(x, beta, training=True)
+                    x = mc_states.out.x
 
             #  io.log(f'Running {md_steps} MD updates (w/o accept/reject)...')
             #  for _ in range(md_steps):

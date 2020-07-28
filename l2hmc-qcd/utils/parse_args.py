@@ -145,7 +145,7 @@ def parse_args():
     parser.add_argument("--beta_init",
                         dest="beta_init",
                         type=float,
-                        default=2.,
+                        default=None,
                         required=False,
                         help=("""Initial value of beta (inverse coupling
                               constant) used in gauge model when
@@ -154,7 +154,7 @@ def parse_args():
     parser.add_argument("--beta_final",
                         dest="beta_final",
                         type=float,
-                        default=5.,
+                        default=None,
                         required=False,
                         help=("""Final value of beta (inverse coupling
                               constant) used in gauge model when

@@ -104,19 +104,22 @@ def catch_exception(fn):
     return wrapper
 
 
+#  def test_hmc_run(beta: float = 4.,
+#                   eps: float = 0.1,
+#                   num_steps: int = 2,
+#                   run_steps: int = 500):
 @timeit(out_file=TIMING_FILE)
-def test_hmc_run(beta: float = 4.,
-                 eps: float = 0.1,
-                 num_steps: int = 2,
-                 run_steps: int = 500):
+def test_hmc_run(args: AttrDict):
     """Testing generic HMC."""
     hmc_args = AttrDict({
         'hmc': True,
         'log_dir': None,
-        'beta': beta,
-        'eps': eps,
-        'num_steps': num_steps,
-        'run_steps': run_steps,
+        'beta': args.get('beta', 1.),
+        'eps': args.get('eps', 0.1),
+        'num_steps': args.get('num_steps', 2),
+        'run_steps': args.get('run_steps', 1000),
+        'plaq_weight': args.get('plaq_weight', 10.),
+        'charge_weight': args.get('charge_weight', 0.1),
         'lattice_shape': (128, 16, 16, 2),
     })
     hmc_dir = os.path.join(os.path.dirname(PROJECT_DIR),
@@ -193,23 +196,19 @@ def test_resume_training(log_dir: str):
 @timeit(out_file=TIMING_FILE)
 def test(flags: AttrDict):
     """Run tests."""
-    with tf.name_scope('single_network'):
-        flags.compile = True
-        single_net_out = test_single_network(flags)
-        log_dir = single_net_out.log_dir
-        _ = test_resume_training(log_dir)
-    with tf.name_scope('separate_networks'):
-        _ = test_separate_networks(flags)
-
-    with tf.name_scope('hmc_inference'):
-        _ = test_hmc_run()
+    flags.compile = True
+    single_net_out = test_single_network(flags)
+    log_dir = single_net_out.log_dir
+    _ = test_resume_training(log_dir)
+    _ = test_separate_networks(flags)
+    _ = test_hmc_run(flags)
 
 
 @timeit(out_file=TIMING_FILE)
 def main(args):
     """Main method."""
     if args.test_hmc_run:
-        _ = test_hmc_run()
+        _ = test_hmc_run(TEST_FLAGS)
 
     if args.test_separate_networks:
         _ = test_separate_networks(TEST_FLAGS)
@@ -235,4 +234,4 @@ if __name__ == '__main__':
     if FLAGS.horovod:
         TEST_FLAGS.horovod = True
 
-    test(TEST_FLAGS) if FLAGS.test_all else main(FLAGS)
+    _ = test(TEST_FLAGS) if FLAGS.test_all else main(FLAGS)
