@@ -10,6 +10,13 @@ import time
 
 import numpy as np
 import tensorflow as tf
+import horovod.tensorflow as hvd
+hvd.init()
+GPUS = tf.config.experimental.list_physical_devices('GPU')
+for gpu in GPUS:
+    tf.config.experimental.set_memory_growth(gpu, True)
+if GPUS:
+    tf.config.experimental.set_visible_devices(GPUS[hvd.local_rank()], 'GPU')
 
 import utils.file_io as io
 
@@ -24,13 +31,7 @@ from utils.data_containers import DataContainer
 # pylint:disable=no-member
 # pylint:disable=too-many-locals
 # pylint:disable=protected-access
-import horovod.tensorflow as hvd
-hvd.init()
-GPUS = tf.config.experimental.list_physical_devices('GPU')
-for gpu in GPUS:
-    tf.config.experimental.set_memory_growth(gpu, True)
-if GPUS:
-    tf.config.experimental.set_visible_devices(GPUS[hvd.local_rank()], 'GPU')
+
 
 RANK = hvd.rank()
 io.log(f'Number of devices: {hvd.size()}', RANK)
