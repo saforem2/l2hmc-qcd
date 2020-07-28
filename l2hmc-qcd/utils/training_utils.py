@@ -24,16 +24,27 @@ from utils.data_containers import DataContainer
 # pylint:disable=no-member
 # pylint:disable=too-many-locals
 # pylint:disable=protected-access
+import horovod.tensorflow as hvd
+hvd.init()
+GPUS = tf.config.experimental.list_physical_devices('GPU')
+for gpu in GPUS:
+    tf.config.experimental.set_memory_growth(gpu, True)
+if GPUS:
+    tf.config.experimental.set_visible_devices(GPUS[hvd.local_rank()], 'GPU')
+
+RANK = hvd.rank()
+io.log(f'Number of devices: {hvd.size()}', RANK)
+IS_CHIEF = (RANK == 0)
+'''
 try:
     import horovod.tensorflow as hvd
 
     hvd.init()
-    RANK = hvd.rank()
-    io.log(f'Number of devices: {hvd.size()}', RANK)
+    #  RANK = hvd.rank()
+    #  io.log(f'Number of devices: {hvd.size()}', RANK)
     GPUS = tf.config.experimental.list_physical_devices('GPU')
     for gpu in GPUS:
-        try:
-            tf.config.experimental.set_memory_growth(gpu, True)
+        tf.config.experimental.set_memory_growth(gpu, True)
         except:  # noqa: E722 pylint:disable=bare-except noqa:E722
             # Invalid device or cannot modify virtual devices once initialized
             pass
@@ -46,6 +57,7 @@ except ImportError:
     RANK = 0
 
 IS_CHIEF = (RANK == 0)
+'''
 
 try:
     tf.config.experimental.enable_mlir_bridge()
