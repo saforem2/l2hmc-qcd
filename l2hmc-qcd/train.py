@@ -25,6 +25,8 @@ def main(args, log_file=None):
     x, dynamics, train_data, args = train(args, log_file=log_file, md_steps=10)
     if args.run_steps > 0:
         dynamics, run_data, x = run(dynamics, args, x=x)
+        # run again with random start
+        dynamics, run_data, x = run(dynamics, args)
 
     return x, dynamics, train_data, run_data, args
 
