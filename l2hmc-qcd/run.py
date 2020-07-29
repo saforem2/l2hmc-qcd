@@ -7,6 +7,10 @@ from __future__ import absolute_import, division, print_function
 
 import os
 import tensorflow as tf
+import horovod.tensorflow as hvd
+hvd.init()
+RANK = hvd.rank()
+IS_CHIEF = (RANK == 0)
 
 import utils.file_io as io
 from config import TF_FLOAT
@@ -58,4 +62,5 @@ def main(args):
 if __name__ == '__main__':
     ARGS = parse_args()
     ARGS = AttrDict(ARGS.__dict__)
-    main(ARGS)
+    if IS_CHIEF:
+        main(ARGS)
