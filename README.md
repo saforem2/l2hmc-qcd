@@ -153,7 +153,7 @@ Specific details about the network can be found in
 
 
 <div align="center">
- <img src="assets/VNet.svg" alt="VNet architecture"/>
+ <img src="assets/VNet1.svg" alt="VNet architecture"/>
 </div>
 
 
