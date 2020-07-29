@@ -27,8 +27,11 @@ elif tf.__version__.startswith('2.'):
     TF_VERSION = '2.x'
 
 import horovod.tensorflow as hvd
-hvd.init()
-RANK = hvd.rank()
+try:
+    RANK = hvd.rank()
+except:
+    RANK = 0
+
 IS_CHIEF = (RANK == 0)
 
 

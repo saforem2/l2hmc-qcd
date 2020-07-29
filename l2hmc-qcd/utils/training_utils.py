@@ -348,7 +348,7 @@ def train_dynamics(
         #      tf.profiler.experimental.start(flags.log_dir)
 
         # Run inference when halfway done with training to compare against
-        if test_steps > 0 and (step + 1) == len(steps) // 2:
+        if test_steps > 0 and (step + 1) == len(steps) // 2 and IS_CHIEF:
             io.log(header)
             io.log(f'Running inference at beta = {beta:.3g}...')
             args = AttrDict({
