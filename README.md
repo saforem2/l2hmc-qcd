@@ -146,8 +146,16 @@ including a custom [`GaugeNetwork`](l2hmc-qcd/network/gauge_network.py) which
 is composed of a collection of `tf.keras.layers` objects, each of which can be
 found in [`network/layers.py`](l2hmc-qcd/network/layers.py).
 
+An illustration of the `VNet` architecture can be seen below.
+
 Specific details about the network can be found in
 [`l2hmc-qcd/network/gauge_network.py`](l2hmc-qcd/network/gauge_network.py).
+
+
+<div align="center">
+ <img src="assets/VNet.svg"/>
+</div>
+
 
 ## Lattice
 
