@@ -17,7 +17,7 @@ from dynamics.gauge_dynamics import (build_dynamics, convert_to_angle,
                                      GaugeDynamics)
 from utils.attr_dict import AttrDict
 from utils.plotting_utils import plot_data
-from utils.training_utils import summarize_dict
+from utils.summary_utils import summarize_dict
 from utils.data_containers import DataContainer
 
 # pylint:disable=no-member
@@ -30,28 +30,6 @@ import horovod.tensorflow as hvd
 hvd.init()
 RANK = hvd.rank()
 IS_CHIEF = (RANK == 0)
-#  try:
-#      import horovod.tensorflow as hvd
-#
-#      hvd.init()
-#      RANK = hvd.rank()
-#      io.log(f'Number of devices: {hvd.size()}', RANK)
-#      GPUS = tf.config.list_physical_devices('GPU')
-#      for gpu in GPUS:
-#          try:
-#              tf.config.experimental.set_memory_growth(gpu, True)
-#          except:  # noqa: E722 pylint:disable=bare-except noqa:E722
-#              # Invalid device or cannot modify virtual devices once initialized
-#              pass
-#      if GPUS:
-#          tf.config.experimental.set_visible_devices(
-#              GPUS[hvd.local_rank()], 'GPU'
-#          )
-#
-#  except ImportError:
-#      RANK = 0
-#
-#  IS_CHIEF = (RANK == 0)
 
 
 def print_args(args):
@@ -253,21 +231,16 @@ def run(dynamics, args, x=None, runs_dir=None):
     return dynamics, run_data, x
 
 
-def run_dynamics(dynamics, flags, x=None, save_x=False, run_md=False):
+def run_dynamics(dynamics, flags, x=None, save_x=False, md_steps=0):
     """Run inference on trained dynamics."""
     if not IS_CHIEF:
         return None, None
 
-    # -------------------------------------------------------------
-    md_steps = 10
     # Setup
     print_steps = flags.get('print_steps', 5)
     beta = flags.get('beta', flags.get('beta_final', None))
 
-    #  if flags.get('compile', True):
     test_step = tf.function(dynamics.test_step)
-    #  else:
-    #      test_step = dynamics.test_step
 
     if x is None:
         x = tf.random.uniform(shape=dynamics.x_shape,
@@ -282,8 +255,7 @@ def run_dynamics(dynamics, flags, x=None, save_x=False, run_md=False):
     io.log(f'INFO:Running inference with:\n {template}')
 
     # Run 50 MD updates (w/o accept/reject) to ensure chains don't get stuck
-    if run_md:
-        md_steps = 10
+    if md_steps > 0:
         for _ in range(md_steps):
             mc_states, _ = dynamics.md_update(x, beta, training=False)
             x = mc_states.out.x

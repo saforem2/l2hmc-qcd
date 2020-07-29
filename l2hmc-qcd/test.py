@@ -138,7 +138,9 @@ def test_hmc_run(args: AttrDict):
 def test_single_network(flags: AttrDict):
     """Test training on single network."""
     flags.separate_networks = False
-    x, dynamics, train_data, flags = train(flags, log_file=LOG_FILE)
+    x, dynamics, train_data, flags = train(flags,
+                                           test_steps=200,
+                                           log_file=LOG_FILE)
     model, run_data, x = run(dynamics, flags, x=x)
 
     return AttrDict({
@@ -158,7 +160,9 @@ def test_separate_networks(flags: AttrDict):
     flags.log_dir = None
     flags.separate_networks = True
     flags.compile = False
-    x, model, train_data, flags = train(flags, log_file=LOG_FILE)
+    x, model, train_data, flags = train(flags,
+                                        test_steps=200,
+                                        log_file=LOG_FILE)
     model, run_data, x = run(model, flags, x=x)
 
     return AttrDict({
@@ -180,7 +184,9 @@ def test_resume_training(log_dir: str):
 
     flags.log_dir = log_dir
     flags.train_steps += flags.get('save_steps', 10)
-    x, model, train_data, flags = train(flags, log_file=LOG_FILE)
+    x, model, train_data, flags = train(flags,
+                                        test_steps=200,
+                                        log_file=LOG_FILE)
     model, run_data, x = run(model, flags, x=x)
 
     return AttrDict({
