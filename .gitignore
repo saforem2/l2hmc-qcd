@@ -1,6 +1,9 @@
 ## --------------------------------
 ## USER-DEFINED .gitignore below
 ## --------------------------------
+.vscode/
+bin/restore.sh
+
 gauge_logs/
 gauge_logs_eager/
 gmm_logs/
