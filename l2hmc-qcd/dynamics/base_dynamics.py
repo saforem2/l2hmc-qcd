@@ -20,6 +20,7 @@ Date: 6/30/2020
 from __future__ import absolute_import, division, print_function
 
 import os
+import time
 
 
 from typing import Callable, NoReturn, Union
@@ -190,10 +191,15 @@ class BaseDynamics(tf.keras.Model):
         """Perform a single inference step."""
         raise NotImplementedError
 
-    def _random_direction(self, inputs: tuple, training: bool = None):
+    def _random_direction(
+                self,
+                x: tf.Tensor,
+                beta: tf.Tensor,
+                training: bool = None
+    ) -> (MonteCarloStates, tf.Tensor, MonteCarloStates):
         """Propose a new state and perform the accept/reject step."""
         forward = tf.cast((tf.random.uniform(shape=[]) < 0.5), dtype=tf.bool)
-        state_init, state_prop, px, sld = self._transition(inputs,
+        state_init, state_prop, px, sld = self._transition(x, beta,
                                                            forward=forward,
                                                            training=training)
         ma, mr = self._get_accept_masks(px)
@@ -302,7 +308,9 @@ class BaseDynamics(tf.keras.Model):
         #  x_init, beta = inputs
         v = tf.random.normal(tf.shape(x))
         state = State(x=x, v=v, beta=beta)
-        state_, px, sld = self.transition_kernel_for(state, forward, training)
+        state_, px, sld = self.transition_kernel_for(state,
+                                                     forward,
+                                                     training)
         #  state_, px, sld = self.transition_kernel(state, forward, training)
         #  if self.config.separate_networks:
         #      tk_fn = self.transition_kernel_for
@@ -310,6 +318,45 @@ class BaseDynamics(tf.keras.Model):
         #      tk_fn = self.transition_kernel_while
 
         return state, state_, px, sld
+
+    def test_transition_kernels(self, x, beta, forward, training=None):
+        """Test for difference between while and for loop."""
+        v = tf.random.normal(tf.shape(x))
+        state = State(x=x, v=v, beta=beta)
+
+        start_w = time.time()
+        state_w, px_w, sld_w = self.transition_kernel(state, forward,
+                                                      training)
+        end_w = time.time()
+
+        start_f = time.time()
+        state_f, px_f, sld_f = self.transition_kernel_for(state, forward,
+                                                          training)
+        end_f = time.time()
+
+        dt_w = end_w - start_w
+        dt_f = end_f - start_f
+        dpx_sum = tf.reduce_sum(px_w - px_f)
+        dpx_avg = tf.reduce_mean(px_w - px_f)
+        dsld_sum = tf.reduce_sum(sld_w - sld_f)
+        dsld_avg = tf.reduce_mean(sld_w - sld_f)
+        dx_sum = tf.reduce_sum(state_w.x - state_f.x)
+        dx_avg = tf.reduce_mean(state_w.x - state_f.x)
+        dv_sum = tf.reduce_sum(state_w.v - state_f.v)
+        dv_avg = tf.reduce_mean(state_w.v - state_f.v)
+
+        return AttrDict({
+            'dt_w': dt_w,
+            'dt_f': dt_f,
+            'dx_sum': dx_sum,
+            'dx_avg': dx_avg,
+            'dv_sum': dv_sum,
+            'dv_avg': dv_avg,
+            'dpx_sum': dpx_sum,
+            'dpx_avg': dpx_avg,
+            'dsld_sum': dsld_sum,
+            'dsld_avg': dsld_avg,
+        })
 
     def transition_kernel(self, state, forward, training=None):
         """Transition kernel using a `tf.while_loop` implementation."""

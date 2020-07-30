@@ -1,6 +1,7 @@
 """
 config.py
 """
+# pylint:disable=too-many-arguments
 from __future__ import absolute_import, division, print_function
 
 import os
@@ -15,17 +16,6 @@ from utils.attr_dict import AttrDict
 __author__ = 'Sam Foreman'
 __date__ = '07/03/2020'
 
-# pylint:disable=invalid-name
-
-TRAIN_STR = (r"""
-  _____          _       _               _     ____  _   _ __  __  ____
- |_   _| __ __ _(_)_ __ (_)_ __   __ _  | |   |___ \| | | |  \/  |/ ___|
-   | || '__/ _` | | '_ \| | '_ \ / _` | | |     __) | |_| | |\/| | |
-   | || | | (_| | | | | | | | | | (_| | | |___ / __/|  _  | |  | | |___ _ _ _
-   |_||_|  \__,_|_|_| |_|_|_| |_|\__, | |_____|_____|_| |_|_|  |_|\____(_|_|_)
-                                 |___/
-""")
-
 SNAME = 'scale_layer'
 TNAME = 'translation_layer'
 QNAME = 'transformation_layer'
@@ -35,6 +25,7 @@ QCOEFF = 'coeff_transformation'
 # ----------------------------------------------------------------
 # Included below is a catch-all for various structures
 # ----------------------------------------------------------------
+
 
 class DynamicsConfig(AttrDict):
     """Configuration object for `BaseDynamics` object"""
@@ -107,31 +98,6 @@ class lrConfig(AttrDict):
             warmup_steps=warmup_steps
         )
 
-
-#  DynamicsConfig = namedtuple('DynamicsConfig', [
-#      'eps',
-#      'hmc',
-#      'num_steps',
-#      'model_type',
-#      'eps_trainable',
-#      'separate_networks',
-#      'use_ncp',
-#  ])
-#
-#  NetworkConfig = namedtuple('NetworkConfig', [
-#      'type',
-#      'units',
-#      'dropout_prob',
-#      'activation_fn'
-#  ])
-
-#  lrConfig = namedtuple('lrConfig', [
-#      'init',
-#      'decay_steps',
-#      'decay_rate',
-#      'warmup_steps',
-#  ])
-
 NAMES = [
     'step', 'dt', 'loss', 'ploss', 'qloss',
     'px', 'eps', 'beta', 'sumlogdet', '|dq|', 'plaq_err',
@@ -139,34 +105,6 @@ NAMES = [
 HSTR = ''.join(["{:^12s}".format(name) for name in NAMES])
 SEP = '-' * len(HSTR)
 HEADER = '\n'.join([SEP, HSTR, SEP])
-
-#  DynamicsConfig = {
-#      'eps': None,
-#      'hmc': False,
-#      'num_steps': None,
-#      'model_type': None,
-#      'input_shape': None,
-#      'eps_trainable': True,
-#      'separate_networks': False,
-#  }
-#
-#  NetConfig = AttrDict({
-#      'type': None,
-#      'units': None,
-#      'dropout_prob': 0.,
-#      'activation_fn': tf.nn.relu,
-#  })
-
-#  DynamicsConfig = namedtuple('DynamicsConfig', [
-#      'eps',
-#      'hmc',
-#      'num_steps',
-#      'model_type',
-#      'input_shape',
-#      'net_weights',
-#      'eps_trainable',
-#  ])
-
 
 # State is an object for grouping the position/momentum
 # configurations together with the value of `beta`.
@@ -268,32 +206,57 @@ COLORS = [  # from seaborn `bright` style
 ]
 
 
-header = ("{:^12s}" + 8 * "{:^10s}").format(
-    "STEP", "t/STEP", "% ACC", "EPS", "BETA",
-    "ACTIONS", "PLAQS", "(EXACT)", "dQ"
-)
-dash0 = (len(header) + 1) * '='
-dash1 = (len(header) + 1) * '-'
-RUN_HEADER = dash0 + '\n' + header + '\n' + dash1
+#  header = ("{:^12s}" + 8 * "{:^10s}").format(
+#      "STEP", "t/STEP", "% ACC", "EPS", "BETA",
+#      "ACTIONS", "PLAQS", "(EXACT)", "dQ"
+#  )
+#  dash0 = (len(header) + 1) * '='
+#  dash1 = (len(header) + 1) * '-'
+#  RUN_HEADER = dash0 + '\n' + header + '\n' + dash1
 
-try:
-    import memory_profiler  # noqa: F401
+#  try:
+#      import memory_profiler  # noqa: F401
+#
+#      HAS_MEMORY_PROFILER = True
+#  except ImportError:
+#      HAS_MEMORY_PROFILER = False
+#
+#  try:
+#      import matplotlib.pyplot as plt  # noqa: F401
+#
+#      HAS_MATPLOTLIB = True
+#  except ImportError:
+#      HAS_MATPLOTLIB = False
+#
+#  try:
+#      import psutil  # noqa: F401
+#
+#      HAS_PSUTIL = True
+#  except ImportError:
+#      HAS_PSUTIL = False
+#
 
-    HAS_MEMORY_PROFILER = True
-except ImportError:
-    HAS_MEMORY_PROFILER = False
+# pylint:disable=invalid-name
+TRAIN_STR = (r"""
 
-try:
-    import matplotlib.pyplot as plt  # noqa: F401
+  _             _       _
+ | |           (_)     (_)
+ | |_ _ __ __ _ _ _ __  _ _ __   __ _
+ | __| '__/ _` | | '_ \| | '_ \ / _` |
+ | |_| | | (_| | | | | | | | | | (_| |_ _ _
+  \__|_|  \__,_|_|_| |_|_|_| |_|\__, (_|_|_)
+                                 __/ |
+                                |___/
+""")
 
-    HAS_MATPLOTLIB = True
-except ImportError:
-    HAS_MATPLOTLIB = False
+RUN_STR = (r"""
 
-try:
-    import psutil  # noqa: F401
-
-    HAS_PSUTIL = True
-except ImportError:
-    HAS_PSUTIL = False
-
+                         _
+                        (_)
+  _ __ _   _ _ __  _ __  _ _ __   __ _
+ | '__| | | | '_ \| '_ \| | '_ \ / _` |
+ | |  | |_| | | | | | | | | | | | (_| |_ _ _
+ |_|   \__,_|_| |_|_| |_|_|_| |_|\__, (_|_|_)
+                                  __/ |
+                                 |___/
+""")

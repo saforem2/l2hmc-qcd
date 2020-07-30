@@ -21,7 +21,7 @@ if GPUS:
 
 import utils.file_io as io
 
-from config import HEADER, NET_WEIGHTS_HMC, PI, TF_FLOAT
+from config import HEADER, NET_WEIGHTS_HMC, PI, TF_FLOAT, TRAIN_STR
 from utils.attr_dict import AttrDict
 from utils.summary_utils import (summarize_dict, summarize_list,
                                  update_summaries)
