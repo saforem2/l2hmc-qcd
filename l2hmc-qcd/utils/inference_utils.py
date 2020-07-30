@@ -35,13 +35,6 @@ except:
 IS_CHIEF = (RANK == 0)
 
 
-def print_args(args):
-    """Print out parsed arguments."""
-    io.log(80 * '=' + '\n' + 'Parsed args:\n')
-    for key, val in args.items():
-        io.log(f' {key}: {val}\n')
-    io.log(80 * '=')
-
 
 def restore_from_train_flags(args):
     """Populate entries in `args` using the training `FLAGS` from `log_dir`."""
@@ -72,7 +65,7 @@ def run_hmc(
         args: AttrDict,
         hmc_dir: str = None,
         skip_existing: bool = False,
-) -> (GaugeDynamics, DataContainer):
+) -> (GaugeDynamics, DataContainer, tf.Tensor):
     """Run HMC using `inference_args` on a model specified by `params`.
 
     NOTE:
@@ -140,12 +133,12 @@ def load_and_run(
         args: AttrDict,
         x: tf.Tensor = None,
         runs_dir: str = None,
-) -> (GaugeDynamics, AttrDict):
+) -> (GaugeDynamics, DataContainer, tf.Tensor):
     """Load trained model from checkpoint and run inference."""
     if not IS_CHIEF:
         return None, None, None
 
-    print_args(args)
+    io.print_flags(args)
     ckpt_dir = os.path.join(args.log_dir, 'training', 'checkpoints')
     flags = restore_from_train_flags(args)
     eps_file = os.path.join(args.log_dir, 'training', 'train_data', 'eps.z')
@@ -170,13 +163,13 @@ def load_and_run(
     return dynamics, run_data, x
 
 
-def run(dynamics, args, x=None, runs_dir=None):
-    """Run inference.
-
-    Returns:
-        model(GaugeModel): Trained model
-        ouptuts(dict): Dictionary of outputs from inference run.
-    """
+def run(
+        dynamics: GaugeDynamics,
+        args: AttrDict,
+        x: tf.Tensor = None,
+        runs_dir: str = None,
+) -> (GaugeDynamics, DataContainer, tf.Tensor):
+    """Run inference."""
     #  is_chief = check_if_chief(args)
     if not IS_CHIEF:
         return None, None, None
@@ -207,6 +200,7 @@ def run(dynamics, args, x=None, runs_dir=None):
     run_data, x, _ = run_dynamics(dynamics, args, x, save_x=False, )
 
     run_data.flush_data_strs(log_file, mode='a')
+    run_data.write_to_csv(args.log_dir, run_dir, hmc=args.hmc)
     io.save_inference(run_dir, run_data)
     if args.get('save_run_data', True):
         run_data.save_data(data_dir)
@@ -295,12 +289,6 @@ def run_dynamics(dynamics, flags, x=None, save_x=False, md_steps=0):
             data_str = run_data.get_fstr(step, metrics, skip=['charges'])
             summarize_dict(metrics, step, prefix='testing')
             io.log(data_str)
-
-        #  if (step + 1) % 250 == 0:
-        #      io.log(f'Running {md_steps} MD updates (no accept/reject)...')
-        #      for _ in range(md_steps):
-        #          mc_states, _ = dynamics.md_update(x, beta, training=False)
-        #          x = mc_states.out.x
 
         if step % 100 == 0:
             io.log(header)

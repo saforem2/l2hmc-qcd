@@ -10,10 +10,13 @@ import os
 from collections import defaultdict
 
 import numpy as np
+import pandas as pd
 import tensorflow as tf
 import joblib
 
 import utils.file_io as io
+from utils.data_utils import therm_arr
+from config import BASE_DIR
 
 from utils.attr_dict import AttrDict
 
@@ -120,11 +123,36 @@ class DataContainer:
 
         self.data_strs = []
 
+    def write_to_csv(self, log_dir, run_dir, hmc=False):
+        """Write data averages to bulk csv file for comparing runs."""
+        _, run_str = os.path.split(run_dir)
+        avg_data = {
+            'log_dir': log_dir,
+            'run_dir': run_str,
+            'hmc': hmc,
+        }
+        for key, val in self.data.items():
+            tensor = tf.convert_to_tensor(val)
+            arr, steps = therm_arr(tensor.numpy(), therm_frac=0.2)
+            if 'steps' not in avg_data:
+                avg_data['steps'] = len(steps)
+            avg_data[key] = np.mean(arr)
+            #  avg_data[key] = tf.reduce_mean(arr)
+
+        avg_df = pd.DataFrame(avg_data, index=[0])
+        csv_file = os.path.join(BASE_DIR, 'gauge_logs_eager',
+                                'inference_results.csv')
+        io.log(f'INFO:Appending inference results to {csv_file}.')
+        if not os.path.isfile(csv_file):
+            avg_df.to_csv(csv_file, header=True, index=False, mode='w')
+        else:
+            avg_df.to_csv(csv_file, header=False, index=False, mode='a')
+
     @staticmethod
     def dump_configs(x, data_dir, rank=0):
         """Save configs `x` separately for each rank."""
         xfile = os.path.join(data_dir, f'x_rank{rank}.z')
-        io.log(f'Saving configs from rank {rank} to: {xfile}.')
+        print(f'Saving configs from rank {rank} to: {xfile}.')
         joblib.dump(x, xfile)
 
     # pylint:disable=too-many-arguments

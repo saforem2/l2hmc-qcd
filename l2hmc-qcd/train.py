@@ -11,7 +11,6 @@ import tensorflow as tf
 
 import utils.file_io as io
 
-from config import TRAIN_STR
 from utils.attr_dict import AttrDict
 from utils.parse_args import parse_args
 from utils.training_utils import train
@@ -20,7 +19,7 @@ from utils.inference_utils import run
 
 def main(args, log_file=None):
     """Main method for training."""
-    io.log(TRAIN_STR)
+    #  io.log(TRAIN_STR)
     tf.keras.backend.set_floatx('float32')
     x, dynamics, train_data, args = train(args, log_file=log_file, md_steps=10)
     if args.run_steps > 0:

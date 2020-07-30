@@ -104,10 +104,26 @@ def catch_exception(fn):
     return wrapper
 
 
-#  def test_hmc_run(beta: float = 4.,
-#                   eps: float = 0.1,
-#                   num_steps: int = 2,
-#                   run_steps: int = 500):
+def test_transition_kernels(dynamics, x, beta, training=None):
+    tk_diffs_f = dynamics.test_transition_kernels(x, beta, forward=True,
+                                                  training=False)
+    tk_diffs_b = dynamics.test_transition_kernels(x, beta, forward=False,
+                                                  training=False)
+    io.log('\n\n\n')
+    io.log('\n'.join([80 * '=', 'transition kernel differences:']))
+    io.log('  forward:')
+    for key, val in tk_diffs_f.items():
+        print(f'    {key}: {val}\n')
+    io.log('  backward:')
+    for key, val in tk_diffs_b.items():
+        print(f'    {key}: {val}\n')
+
+    io.log(80 * '=' + '\n\n\n')
+
+    return AttrDict({'forward': tk_diffs_f, 'backward': tk_diffs_b})
+
+
+
 @timeit(out_file=TIMING_FILE)
 def test_hmc_run(args: AttrDict):
     """Testing generic HMC."""
@@ -124,13 +140,16 @@ def test_hmc_run(args: AttrDict):
     })
     hmc_dir = os.path.join(os.path.dirname(PROJECT_DIR),
                            'gauge_logs_eager', 'test', 'hmc_runs')
-    model, run_data, x = run_hmc(hmc_args, hmc_dir=hmc_dir)
+    dynamics, run_data, x = run_hmc(hmc_args, hmc_dir=hmc_dir)
+    beta = hmc_args.get('beta', 1.)
+    tk_diffs = test_transition_kernels(dynamics, x, beta, training=False)
 
     return {
         'x': x,
-        'model': model,
+        'dynamics': dynamics,
         'flags': hmc_args,
         'run_data': run_data,
+        'tk_diffs': tk_diffs,
     }
 
 
@@ -139,17 +158,20 @@ def test_single_network(flags: AttrDict):
     """Test training on single network."""
     flags.separate_networks = False
     x, dynamics, train_data, flags = train(flags,
-                                           test_steps=200,
+                                           test_steps=50,
                                            log_file=LOG_FILE)
-    model, run_data, x = run(dynamics, flags, x=x)
+    beta = flags.get('beta', 1.)
+    tk_diffs = test_transition_kernels(dynamics, x, beta, training=False)
+    dynamics, run_data, x = run(dynamics, flags, x=x)
 
     return AttrDict({
         'x': x,
         'flags': flags,
         'log_dir': flags.log_dir,
-        'model': model,
+        'dynamics': dynamics,
         'run_data': run_data,
         'train_data': train_data,
+        'tk_diffs': tk_diffs,
     })
 
 
@@ -160,18 +182,21 @@ def test_separate_networks(flags: AttrDict):
     flags.log_dir = None
     flags.separate_networks = True
     flags.compile = False
-    x, model, train_data, flags = train(flags,
-                                        test_steps=200,
-                                        log_file=LOG_FILE)
-    model, run_data, x = run(model, flags, x=x)
+    x, dynamics, train_data, flags = train(flags,
+                                           test_steps=50,
+                                           log_file=LOG_FILE)
+    beta = flags.get('beta', 1.)
+    tk_diffs = test_transition_kernels(dynamics, x, beta, training=False)
+    dynamics, run_data, x = run(dynamics, flags, x=x)
 
     return AttrDict({
         'x': x,
         'flags': flags,
         'log_dir': flags.log_dir,
-        'model': model,
+        'dynamics': dynamics,
         'run_data': run_data,
         'train_data': train_data,
+        'tk_diffs': tk_diffs,
     })
 
 
@@ -184,18 +209,21 @@ def test_resume_training(log_dir: str):
 
     flags.log_dir = log_dir
     flags.train_steps += flags.get('save_steps', 10)
-    x, model, train_data, flags = train(flags,
-                                        test_steps=200,
-                                        log_file=LOG_FILE)
-    model, run_data, x = run(model, flags, x=x)
+    x, dynamics, train_data, flags = train(flags,
+                                           test_steps=50,
+                                           log_file=LOG_FILE)
+    beta = flags.get('beta', 1.)
+    tk_diffs = test_transition_kernels(dynamics, x, beta, training=False)
+    dynamics, run_data, x = run(dynamics, flags, x=x)
 
     return AttrDict({
         'x': x,
         'flags': flags,
         'log_dir': flags.log_dir,
-        'model': model,
+        'dynamics': dynamics,
         'run_data': run_data,
         'train_data': train_data,
+        'tk_diffs': tk_diffs,
     })
 
 
