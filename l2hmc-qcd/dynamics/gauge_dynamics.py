@@ -225,15 +225,12 @@ class GaugeDynamics(BaseDynamics):
         #     and call `self.lattice.calc_plaq_sums(states)`?
         wl_init = self.lattice.calc_wilson_loops(states.init.x)
         wl_prop = self.lattice.calc_wilson_loops(states.proposed.x)
-        #  ps_init = self.lattice.calc_plaq_sums(samples=states.init.x)
-        #  ps_prop = self.lattice.calc_plaq_sums(samples=states.proposed.x)
 
         # Calculate the plaquette loss
         ploss = tf.constant(0., dtype=dtype)
         if self.plaq_weight > 0:
             dwloops = 2 * (1. - tf.math.cos(wl_prop - wl_init))
             ploss = accept_prob * tf.reduce_sum(dwloops, axis=(1, 2))
-
             ploss = tf.reduce_mean(-ploss / self.plaq_weight, axis=0)
             #  ploss = self.mixed_loss(ploss, self.plaq_weight)
 
@@ -394,16 +391,27 @@ class GaugeDynamics(BaseDynamics):
         expS = tf.exp(scale)
         expQ = tf.exp(transf)
 
-        x_transf = tf.math.tan(state.x/2)
-        y = (2 * tf.math.atan(x_transf * expS)
-             + self.eps * (state.v * expQ + transl))
+        x_ = 2 * tf.math.atan(tf.math.tan(state.x/2) * expS)
+        y = x_ + self.eps * (state.v * expQ + transl)
         xf = (m * state.x) + (mc * y)
+        #  y = (2 * tf.math.atan(x_ * expS)
+        #       + self.eps * (state.v * expQ + transl))
+        #  xf = (m * state.x) + (mc * y)
         state_out = State(x=xf, v=state.v, beta=state.beta)
 
-        denom = (2 * tf.math.cosh(scale)
-                 - 2 * tf.math.cos(state.x) * tf.math.sinh(scale))
-        log_jac = tf.math.log(1. / denom)
+        cterm = tf.math.cos(state.x / 2) ** 2
+        sterm = (expS * tf.math.sin(state.x / 2)) ** 2
+        log_jac = tf.math.log(expS / (cterm + sterm))
         logdet = tf.reduce_sum(mc * log_jac, axis=1)
+
+        #  denom = (tf.math.cos(state.x / 2) ** 2
+        #           + (expS * tf.math.sin(state.x/2)) ** 2)
+        #
+        #
+        #  denom = (2 * tf.math.cosh(scale)
+        #           - 2 * tf.math.cos(state.x) * tf.math.sinh(scale))
+        #  log_jac = tf.math.log(1. / denom)
+        #  logdet = tf.reduce_sum(mc * log_jac, axis=1)
 
         #  logdet = tf.reduce_sum(mc * scale, axis=-1)
 
@@ -426,18 +434,24 @@ class GaugeDynamics(BaseDynamics):
         expS = tf.exp(scale)
         expQ = tf.exp(transf)
 
-        x_transf = tf.math.tan(state.x / 2)
-        term1 = 2 * tf.math.atan(expS * x_transf)
+        #  x_ = tf.math.tan(state.x / 2)
+        term1 = 2 * tf.math.atan(expS * tf.math.tan(state.x / 2))
         term2 = expS * self.eps * (state.v * expQ + transl)
+        #  term2 = expS * self.eps * (state.v * expQ + transl)
         y = term1 - term2
         #  y = expS * (state.x - self.eps * (state.v * expQ + transl))
         xb = (m * state.x) + (mc * y)
         state_out = State(x=xb, v=state.v, beta=state.beta)
 
-        denom = 2 * (tf.math.cosh(scale)
-                     - tf.math.cos(state.x) * tf.math.sinh(scale))
-        log_jac = tf.math.log(1. / denom)
+        cterm = tf.math.cos(state.x / 2) ** 2
+        sterm = (expS * tf.math.sin(state.x / 2)) ** 2
+        log_jac = tf.math.log(expS / (cterm + sterm))
         logdet = tf.reduce_sum(mc * log_jac, axis=1)
+
+        #  denom = 2 * (tf.math.cosh(scale)
+        #               - tf.math.cos(state.x) * tf.math.sinh(scale))
+        #  log_jac = tf.math.log(1. / denom)
+        #  logdet = tf.reduce_sum(mc * log_jac, axis=1)
 
         #  logdet = tf.reduce_sum(mc * scale, axis=-1)
 
