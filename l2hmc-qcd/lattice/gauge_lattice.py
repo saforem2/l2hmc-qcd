@@ -92,7 +92,7 @@ class GaugeLattice:
 
         return tf.reduce_sum(1. - tf.cos(wloops), axis=(1, 2), name='actions')
 
-    def calc_charges(self, x=None, wloops=None, use_sin=True):
+    def calc_charges(self, x=None, wloops=None, use_sin=False):
         """Calculate the topological charges for a batch of lattices."""
         if wloops is None:
             try:

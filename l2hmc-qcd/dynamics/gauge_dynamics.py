@@ -336,19 +336,24 @@ class GaugeDynamics(BaseDynamics):
         NOTE: We track the error in the plaquette instead of the actual value.
         """
         wloops = self.lattice.calc_wilson_loops(state.x)
-        charges = self.lattice.calc_charges(wloops=wloops)
+        charges = self.lattice.calc_charges(wloops=wloops, use_sin=False)
+        charges_ = self.lattice.calc_charges(wloops=wloops, use_sin=True)
         plaqs = self.lattice.calc_plaqs(wloops=wloops, beta=state.beta)
 
-        return plaqs, charges
+        return plaqs, charges, charges_
 
     def calc_observables(self, states):
         """Calculate observables."""
         #  _, q_init = self._calc_observables(states.init)
-        q_init = self.lattice.calc_charges(x=states.init.x)
-        plaqs, q_out = self._calc_observables(states.out)
+        #  q_init = self.lattice.calc_charges(x=states.init.x)
+        #  q_init_ = self.lattice.calc_charges(x=states.init.x)
+        #  plaqs, q_out, q_out_approx = self._calc_observables(states.out)
+        _, q_init, q_init_ = self._calc_observables(states.init)
+        plaqs, q_out, q_out_ = self._calc_observables(states.out)
 
         observables = AttrDict({
             'dq': tf.math.abs(q_out - q_init),  # FIXME: Change to dQ ** 2
+            'dq_sin': tf.math.abs(q_out_ - q_init_),
             'charges': q_out,
             'plaqs': plaqs,
         })
