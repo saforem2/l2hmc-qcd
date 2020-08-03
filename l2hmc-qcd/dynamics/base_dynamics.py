@@ -22,21 +22,22 @@ from __future__ import absolute_import, division, print_function
 import os
 import time
 
-
-from typing import Callable, NoReturn, Union
+from typing import Callable
 
 import numpy as np
 import tensorflow as tf
 
-from config import (DynamicsConfig, MonteCarloStates, NET_WEIGHTS_HMC,
-                    NET_WEIGHTS_L2HMC, NetworkConfig, State, NetWeights,
-                    TF_FLOAT, TF_INT, lrConfig, BIN_DIR)
 import utils.file_io as io
-from network.gauge_network import GaugeNetwork
+
+from config import (BIN_DIR, DynamicsConfig, lrConfig, MonteCarloStates,
+                    NetWeights, NetworkConfig, State, TF_FLOAT, TF_INT)
 from utils.attr_dict import AttrDict
-from utils.seed_dict import vnet_seeds, xnet_seeds
 from utils.learning_rate import WarmupExponentialDecay
-from utils.file_io import timeit
+
+# pylint:disable=unused-import
+from utils.file_io import timeit  # noqa:E401
+from utils.seed_dict import vnet_seeds  # noqa:E401
+from utils.seed_dict import xnet_seeds  # noqa:E401
 
 try:
     import horovod.tensorflow as hvd
@@ -52,6 +53,17 @@ TIMING_FILE = os.path.join(BIN_DIR, 'timing_file.log')
 def identity(x):
     """Returns x"""
     return x
+
+
+def timed(fn):
+    def wrap(*args, **kwargs):
+        """Function to be timed."""
+        start = time.time()
+        result = fn(*args, **kwargs)
+        stop = time.time()
+
+        return result, stop - start
+    return wrap
 
 
 # pylint:disable=invalid-name, too-many-arguments
@@ -223,13 +235,9 @@ class BaseDynamics(tf.keras.Model):
     ):
         """Propose a new state and perform the accept/reject step.
 
-        NOTE: We simulate the molecular dynamics update in both the forward and
-        backward directions, and use sampled masks to compute the actual
-        solutions.
+        NOTE: We simulate the dynamics both forward and backward, and use
+        sampled Bernoulli masks to compute the actual solutions
         """
-        #  x_init, beta = inputs
-        # Simulate the dynamics both forward and backward;
-        # Use sampled Bernoulli masks to compute the actual solutions
         sf_init, sf_prop, pxf, sldf = self._transition(x, beta, forward=True,
                                                        training=training)
         sb_init, sb_prop, pxb, sldb = self._transition(x, beta, forward=False,
@@ -268,14 +276,16 @@ class BaseDynamics(tf.keras.Model):
         return mc_states, accept_prob, sld_states
 
     def md_update(self, x: tf.Tensor, beta: tf.Tensor, training: bool = None):
-        """Perform the molecular dynamics (MD) update w/o accept/reject."""
-        #  x_init, beta = inputs
-        # Simulate the dynamics both forward and backward;
-        # Use sampled Bernoulli masks to compute the actual solutions
+        """Perform the molecular dynamics (MD) update w/o accept/reject.
+
+        NOTE: We simulate the dynamics both forward and backward, and use
+        sampled Bernoulli masks to compute the actual solutions
+        """
         sf_init, sf_prop, _, sldf = self._transition(x, beta, forward=True,
                                                      training=training)
         sb_init, sb_prop, _, sldb = self._transition(x, beta, forward=False,
                                                      training=training)
+        # Decide direction uniformly
         mf_, mb_ = self._get_direction_masks()
         mf = mf_[:, None]
         mb = mb_[:, None]
@@ -305,12 +315,9 @@ class BaseDynamics(tf.keras.Model):
             training: bool = None
     ):
         """Run the augmented leapfrog integrator."""
-        #  x_init, beta = inputs
         v = tf.random.normal(tf.shape(x))
         state = State(x=x, v=v, beta=beta)
-        state_, px, sld = self.transition_kernel_for(state,
-                                                     forward,
-                                                     training)
+        state_, px, sld = self.transition_kernel(state, forward, training)
         #  state_, px, sld = self.transition_kernel(state, forward, training)
         #  if self.config.separate_networks:
         #      tk_fn = self.transition_kernel_for
@@ -324,48 +331,43 @@ class BaseDynamics(tf.keras.Model):
         v = tf.random.normal(tf.shape(x))
         state = State(x=x, v=v, beta=beta)
 
-        start_w = time.time()
-        state_w, px_w, sld_w = self.transition_kernel(state, forward,
-                                                      training)
-        end_w = time.time()
+        def _timeit(state, forward, training, fn):
+            start = time.time()
+            state_, px_, sld_ = fn(state, forward, training)
+            dt = time.time() - start
+            return state_, px_, sld_, dt
 
-        start_f = time.time()
-        state_f, px_f, sld_f = self.transition_kernel_for(state, forward,
-                                                          training)
-        end_f = time.time()
+        def _sum_mean_diff(x, y, name):
+            dxy = x - y
+            return {f'{name}_sum': tf.reduce_sum(dxy),
+                    f'{name}_avg': tf.reduce_mean(dxy)}
 
-        dt_w = end_w - start_w
-        dt_f = end_f - start_f
-        dpx_sum = tf.reduce_sum(px_w - px_f)
-        dpx_avg = tf.reduce_mean(px_w - px_f)
-        dsld_sum = tf.reduce_sum(sld_w - sld_f)
-        dsld_avg = tf.reduce_mean(sld_w - sld_f)
-        dx_sum = tf.reduce_sum(state_w.x - state_f.x)
-        dx_avg = tf.reduce_mean(state_w.x - state_f.x)
-        dv_sum = tf.reduce_sum(state_w.v - state_f.v)
-        dv_avg = tf.reduce_mean(state_w.v - state_f.v)
-
-        return AttrDict({
+        state_w, px_w, sld_w, dt_w = _timeit(state, forward, training,
+                                             self.transition_kernel_while)
+        state_f, px_f, sld_f, dt_f = _timeit(state, forward, training,
+                                             self.transition_kernel)
+        out = {
             'dt_w': dt_w,
             'dt_f': dt_f,
-            'dx_sum': dx_sum,
-            'dx_avg': dx_avg,
-            'dv_sum': dv_sum,
-            'dv_avg': dv_avg,
-            'dpx_sum': dpx_sum,
-            'dpx_avg': dpx_avg,
-            'dsld_sum': dsld_sum,
-            'dsld_avg': dsld_avg,
-        })
+        }
 
-    def transition_kernel(self, state, forward, training=None):
+        names = ['dpx', 'dsld', 'dx', 'dv']
+        vars_w = [px_w, sld_w, state_w.x, state_w.v]
+        vars_f = [px_f, sld_f, state_f.x, state_f.v]
+        for idx, (vw, vf) in enumerate(zip(vars_w, vars_f)):
+            d = _sum_mean_diff(vw, vf, names[idx])
+            out.update(d)
+
+        return AttrDict(out)
+
+    def transition_kernel_while(self, state, forward, training=None):
         """Transition kernel using a `tf.while_loop` implementation."""
         lf_fn = self._forward_lf if forward else self._backward_lf
 
         step = tf.constant(0, dtype=tf.int64)
         sld = tf.zeros((self.batch_size,), dtype=state.x.dtype)
 
-        def body(step, state, logdet):
+        def body(step, state, sld):
             new_state, logdet = lf_fn(step, state, training=training)
             return step+1, new_state, sld+logdet
 
@@ -383,12 +385,18 @@ class BaseDynamics(tf.keras.Model):
 
         return state_prop, accept_prob, sumlogdet
 
-    def transition_kernel_for(self, state, forward, training=None):
+    def transition_kernel(
+            self,
+            state: State,
+            forward: bool,
+            training: bool = None
+    ):
         """Transition kernel of the augmented leapfrog integrator."""
         lf_fn = self._forward_lf if forward else self._backward_lf
 
         state_prop = State(x=state.x, v=state.v, beta=state.beta)
         sumlogdet = tf.zeros((self.batch_size,), dtype=TF_FLOAT)
+
         for step in tf.range(self.config.num_steps):
             state_prop, logdet = lf_fn(step, state_prop, training)
             sumlogdet += logdet
@@ -717,6 +725,7 @@ class BaseDynamics(tf.keras.Model):
 
         return xnets, vnets
 
+    # pylint:disable=unused-argument
     def _get_network(self, step):
         return self.xnets, self.vnets
 

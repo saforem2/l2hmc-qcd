@@ -236,42 +236,12 @@ def setup(dynamics, flags, dirs=None, x=None, betas=None):
                      optimizer=dynamics.optimizer,
                      experimental_run_tf_function=False)
     train_step = tf.function(dynamics.train_step)
-    '''
-    try:
-    except:  # FIXME: Figure out what exception gets thrown if compile fails
-        io.log('ERROR: Unable to wrap `dynamics.train_step` in `tf.function`')
-        train_step = dynamics.train_step
 
-    dynamics.compile(loss=dynamics.calc_losses,
-                     optimizer=dynamics.optimizer,
-                     experimental_run_tf_function=False)
-    train_step = dynamics.train_step
-    # Compile dynamics w/ tf.function (autograph)?
-    if flags.get('compile', False):
-        cstr = 'INFO:Compiling `dynamics.train_step` via tf.function\n'
-        io.log(cstr, RANK)
-        dynamics.compile(loss=dynamics.calc_losses,
-                         optimizer=dynamics.optimizer,
-                         experimental_run_tf_function=False)
-        train_step = tf.function(dynamics.train_step,
-                                 experimental_relax_shapes=True)
-        #  optionals = tf.autograph.experimental.do_not_convert
-        #  train_step = tf.function(dynamics.train_step,
-        #                           experimental_relax_shapes=True,
-        #                           experimental_autograph_options=optionals)
-    else:
-        io.log('INFO: Running dynamics.train_step imperatively.\n', RANK)
-        dynamics.compile(loss=dynamics.calc_losses,
-                         optimizer=dynamics.optimizer,
-                         experimental_run_tf_function=False)
-        train_step = dynamics.train_step
-    '''
-
-    profiler_start_step = 0
-    profiler_stop_step = 0
+    pstart = 0
+    pstop = 0
     if flags.profiler:
-        profiler_start_step = len(betas) // 2
-        profiler_stop_step = profiler_start_step + 10
+        pstart = len(betas) // 2
+        pstop = pstart + 10
 
     output = AttrDict({
         'x': x,
@@ -282,8 +252,8 @@ def setup(dynamics, flags, dirs=None, x=None, betas=None):
         'checkpoint': ckpt,
         'train_step': train_step,
         'train_data': train_data,
-        'profiler_start_step': profiler_start_step,
-        'profiler_stop_step': profiler_stop_step,
+        'pstart': pstart,
+        'pstop': pstop,
     })
 
     return output
@@ -300,21 +270,23 @@ def train_dynamics(
         test_steps: int = 1000,
 ):
     """Train model."""
-    outputs = setup(dynamics, flags, dirs, x, betas)
-    x = outputs.x
-    #  md_steps = 5
-    steps = outputs.steps
-    betas = outputs.betas
-    train_step = outputs.train_step
-    ckpt = outputs.checkpoint
-    manager = outputs.manager
-    train_data = outputs.train_data
+    config = setup(dynamics, flags, dirs, x, betas)
+    x = config.x
+    steps = config.steps
+    betas = config.betas
+    train_step = config.train_step
+    ckpt = config.checkpoint
+    manager = config.manager
+    train_data = config.train_data
     if IS_CHIEF:
-        writer = outputs.writer
+        writer = config.writer
         writer.set_as_default()
+    # ================
 
     # run a single step to get header
     first_step = (dynamics.optimizer.iterations.numpy() == 0)
+    # -------------------------------------------------------------------------
+    # Try running compiled `train_step` function, otherwise run imperatively
     try:
         x, metrics = train_step(x, betas[0], first_step=first_step)
         io.log('Compiled `dynamics.train_step` using tf.function!')
@@ -322,12 +294,16 @@ def train_dynamics(
         train_step = dynamics.train_step
         x, metrics = train_step(x, betas[0], first_step=first_step)
         io.log('Unable to compile `dynamics.train_step`, running imperatively')
+    # -------------------------------------------------------------------------
 
+    # -------------------------------------------------------------------
+    # Run molecular dynamics update at the beginning to not get stuck...
     if md_steps > 0:
         io.log(f'INFO: Running {md_steps} MD updates...')
         for _ in range(md_steps):
             mc_states, _ = dynamics.md_update(x, betas[0], training=True)
             x = mc_states.out.x
+    # -------------------------------------------------------------------
 
     def _timed_step(x: tf.Tensor, beta: tf.Tensor):
         start = time.time()
@@ -343,9 +319,10 @@ def train_dynamics(
         # Perform a single training step
         x, metrics = _timed_step(x, beta)
 
-        # Start profiler
-        #  if flags.profiler and step == profiler_start_step:
-        #      tf.profiler.experimental.start(flags.log_dir)
+        #  Start profiler
+        #  if flags.profiler_start_step > 0 and step == profiler_start_step:
+        if config.pstart > 0 and step == config.pstart:
+            tf.profiler.experimental.start(flags.log_dir)
 
         # Run inference when halfway done with training to compare against
         if test_steps > 0 and (step + 1) == len(steps) // 2 and IS_CHIEF:
@@ -373,6 +350,7 @@ def train_dynamics(
                 train_data.save_and_flush(dirs.data_dir,
                                           dirs.log_file,
                                           rank=RANK, mode='a')
+
             #  io.log(f'Running {md_steps} MD updates (w/o accept/reject)...')
             #  for _ in range(md_steps):
             #      mc_states, _ = dynamics.md_update((x, beta), training=True)
@@ -393,14 +371,15 @@ def train_dynamics(
         if IS_CHIEF and step % 100 == 0:
             io.log(header, rank=RANK)
 
+        if config.pstop > 0 and step == config.pstop:
+            tf.profiler.experimental.stop()
         #  if flags.profiler and step == profiler_stop_step:
         #      tf.profiler.experimental.stop()
 
-    #  if flags.profiler:
-    #      try:
-    #          tf.profiler.experimental.stop()
-    #      except AttributeError:
-    #          pass
+    try:  # make sure profiler is shut down
+        tf.profiler.experimental.stop()
+    except (AttributeError, tf.errors.UnavailableError):
+        io.log(f'INFO:No active profiling session!')
 
     train_data.dump_configs(x, dirs.data_dir, rank=RANK)
     if IS_CHIEF:

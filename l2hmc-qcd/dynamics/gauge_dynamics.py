@@ -93,7 +93,7 @@ def build_dynamics(flags):
     net_config = NetworkConfig(
         name='GaugeNetwork',
         units=flags.units,
-        activation_fn=tf.nn.relu,
+        activation_fn=flags.get('activation_fn', tf.nn.relu),
         dropout_prob=flags.dropout_prob,
     )
 
@@ -233,8 +233,8 @@ class GaugeDynamics(BaseDynamics):
         if self.plaq_weight > 0:
             dwloops = 2 * (1. - tf.math.cos(wl_prop - wl_init))
             ploss = accept_prob * tf.reduce_sum(dwloops, axis=(1, 2))
+
             ploss = tf.reduce_mean(-ploss / self.plaq_weight, axis=0)
-            #  ploss = tf.reduce_mean(-ploss / self.plaq_weight, axis=0)
             #  ploss = self.mixed_loss(ploss, self.plaq_weight)
 
         # Calculate the charge loss
@@ -243,14 +243,9 @@ class GaugeDynamics(BaseDynamics):
             q_init = self.lattice.calc_charges(wloops=wl_init, use_sin=True)
             q_prop = self.lattice.calc_charges(wloops=wl_prop, use_sin=True)
             qloss = accept_prob * (q_prop - q_init) ** 2
+
             qloss = tf.reduce_mean(-qloss / self.charge_weight, axis=0)
             #  qloss = self.mixed_loss(qloss, self.charge_weight)
-            #  qloss = tf.reduce_mean(
-            #      (self.charge_weight / qloss) - (q_esjd / self.charge_weight)
-            #  )
-
-            #  qloss = accept_prob * (q_prop - q_init) ** 2
-            #  qloss = tf.reduce_mean(-qloss / self.charge_weight)
 
         return ploss, qloss
 
@@ -353,7 +348,7 @@ class GaugeDynamics(BaseDynamics):
         plaqs, q_out = self._calc_observables(states.out)
 
         observables = AttrDict({
-            'dq': tf.math.abs(q_out - q_init),
+            'dq': tf.math.abs(q_out - q_init),  # FIXME: Change to dQ ** 2
             'charges': q_out,
             'plaqs': plaqs,
         })
@@ -384,9 +379,8 @@ class GaugeDynamics(BaseDynamics):
         m, mc = masks
 
         # map x from [-pi, pi] to [-inf, inf]
-        x = tf.math.tan(state.x / 2.)
-
-        S, T, Q = network((state.v, m * x, t), training)
+        #  x = t.math.tan(state.x / 2.)
+        S, T, Q = network((state.v, m * state.x, t), training)
 
         transl = self._xtw * T
         transf = self._xqw * (self.eps * Q)
@@ -395,13 +389,18 @@ class GaugeDynamics(BaseDynamics):
         expS = tf.exp(scale)
         expQ = tf.exp(transf)
 
-        y = x * expS + self.eps * (state.v * expQ + transl)
-        xf = (m * x) + (mc * y)
-
-        # map xf from [-inf, inf] back to [-pi, pi]
-        xf = 2. * tf.math.atan(xf)
+        x_transf = tf.math.tan(state.x/2)
+        y = (2 * tf.math.atan(x_transf * expS)
+             + self.eps * (state.v * expQ + transl))
+        xf = (m * state.x) + (mc * y)
         state_out = State(x=xf, v=state.v, beta=state.beta)
-        logdet = tf.reduce_sum(mc * scale, axis=-1)
+
+        denom = (2 * tf.math.cosh(scale)
+                 - 2 * tf.math.cos(state.x) * tf.math.sinh(scale))
+        log_jac = tf.math.log(1. / denom)
+        logdet = tf.reduce_sum(mc * log_jac, axis=1)
+
+        #  logdet = tf.reduce_sum(mc * scale, axis=-1)
 
         return state_out, logdet
 
@@ -412,9 +411,8 @@ class GaugeDynamics(BaseDynamics):
                                               t, masks, training)
         m, mc = masks
         # map x from [-pi, pi] to [-inf, inf]
-        x = tf.math.tan(state.x / 2.)
-
-        S, T, Q = network((state.v, m * x, t), training)
+        #  x = tf.math.tan(state.x / 2.)
+        S, T, Q = network((state.v, m * state.x, t), training)
 
         transl = self._xtw * T
         transf = self._xqw * (self.eps * Q)
@@ -423,12 +421,19 @@ class GaugeDynamics(BaseDynamics):
         expS = tf.exp(scale)
         expQ = tf.exp(transf)
 
-        y = expS * (x - self.eps * (state.v * expQ + transl))
-        xb = (m * x) + (mc * y)
-
-        # map xb from [-inf, inf] back to [-pi, pi]
-        xb = 2. * tf.math.atan(xb)
+        x_transf = tf.math.tan(state.x / 2)
+        term1 = 2 * tf.math.atan(expS * x_transf)
+        term2 = expS * self.eps * (state.v * expQ + transl)
+        y = term1 - term2
+        #  y = expS * (state.x - self.eps * (state.v * expQ + transl))
+        xb = (m * state.x) + (mc * y)
         state_out = State(x=xb, v=state.v, beta=state.beta)
-        logdet = tf.reduce_sum(mc * scale, axis=-1)
+
+        denom = 2 * (tf.math.cosh(scale)
+                     - tf.math.cos(state.x) * tf.math.sinh(scale))
+        log_jac = tf.math.log(1. / denom)
+        logdet = tf.reduce_sum(mc * log_jac, axis=1)
+
+        #  logdet = tf.reduce_sum(mc * scale, axis=-1)
 
         return state_out, logdet
