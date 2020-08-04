@@ -258,13 +258,12 @@ def get_run_dir_fstr(FLAGS: AttrDict):
     return fstr
 
 
-# pylint:disable=too-many-branches, too-many-locals
+# pylint:disable=too-many-branches, too-many-locals, too-many-statements
 def get_log_dir_fstr(flags):
     """Parse FLAGS and create unique fstr for `log_dir`."""
     hmc = flags.get('hmc', False)
     batch_size = flags.get('batch_size', None)
     num_steps = flags.get('num_steps', None)
-    beta = flags.get('beta', None)
     beta_init = flags.get('beta_init', None)
     beta_final = flags.get('beta_final', None)
     eps = flags.get('eps', None)
@@ -277,7 +276,9 @@ def get_log_dir_fstr(flags):
     plaq_weight = flags.get('plaq_weight', 0.)
     eps_fixed = flags.get('eps_fixed', False)
     dropout_prob = flags.get('dropout_prob', 0.)
-    clip_value = flags.get('clip_value', 0.)
+    clip_val = flags.get('clip_val', 0.)
+    aux_weight = flags.get('aux_weight', 0.)
+    activation = flags.get('activation', 'relu')
     separate_networks = flags.get('separate_networks', False)
     using_ncp = flags.get('use_ncp', False)
 
@@ -309,6 +310,12 @@ def get_log_dir_fstr(flags):
     if plaq_weight > 0:
         fstr += f'_pw{plaq_weight}'.replace('.', '')
 
+    if aux_weight > 0:
+        fstr += f'_aw{aux_weight}'.replace('.', '')
+
+    if activation != 'relu':
+        fstr += f'_act{activation}'
+
     fstr += f'_bi{beta_init:.3g}_bf{beta_final:.3g}'.replace('.', '')
 
     if dropout_prob > 0:
@@ -317,10 +324,8 @@ def get_log_dir_fstr(flags):
     if eps_fixed:
         fstr += f'_eps{eps:.3g}'.replace('.', '')
 
-    #  if beta_init == beta_final:
-
-    if clip_value > 0:
-        fstr += f'_clip{clip_value}'.replace('.', '')
+    if clip_val > 0:
+        fstr += f'_clip{clip_val}'.replace('.', '')
 
     if network_type != 'GaugeNetwork':
         fstr += f'_{network_type}'
