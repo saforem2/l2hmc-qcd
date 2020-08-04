@@ -5,7 +5,7 @@
     "horovod": false,
     "compile": true,
     "profiler": false,
-    "use_ncp": false,
+    "use_ncp": true,
     "warmup_lr": false,
     "hmc_start": true,
     "restore": false,
@@ -30,6 +30,6 @@
     "dropout_prob": 0.0,
     "lr_decay_rate": 0.98,
     "lr_decay_steps": 25,
-    "lattice_shape": [512, 8, 8, 2],
-    "units": [512, 512]
+    "lattice_shape": [512, 16, 16, 2],
+    "units": [1024, 1024]
 }

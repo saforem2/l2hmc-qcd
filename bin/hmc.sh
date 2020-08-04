@@ -33,6 +33,8 @@ do
                 --eps ${eps} \
                 --beta ${beta} \
                 --num_steps ${steps} \
+                --plaq_weight 10. \
+                --charge_weight 0.1 \
                 --run_steps ${RUN_STEPS} \
                 --lattice_shape '128, 16, 16, 2'
             echo -e "\n"

@@ -195,7 +195,7 @@ class BaseDynamics(tf.keras.Model):
 
         return loss
 
-    def train_step(self, x: tf.Tensor, beta: tf.Tensor, first_step: bool):
+    def train_step(self, x: tf.Tensor, beta: tf.Tensor):
         """Perform a single training step."""
         raise NotImplementedError
 
@@ -318,11 +318,6 @@ class BaseDynamics(tf.keras.Model):
         v = tf.random.normal(tf.shape(x))
         state = State(x=x, v=v, beta=beta)
         state_, px, sld = self.transition_kernel(state, forward, training)
-        #  state_, px, sld = self.transition_kernel(state, forward, training)
-        #  if self.config.separate_networks:
-        #      tk_fn = self.transition_kernel_for
-        #  else:
-        #      tk_fn = self.transition_kernel_while
 
         return state, state_, px, sld
 
@@ -424,7 +419,7 @@ class BaseDynamics(tf.keras.Model):
         """Run the augmented leapfrog integrator in the forward direction."""
         m, mc = self._get_mask(step)  # pylint: disable=invalid-name
         xnet, vnet = self._get_network(step)
-        t = self._get_time_old(step, tile=tf.shape(state.x)[0])
+        t = self._get_time(step, tile=tf.shape(state.x)[0])
 
         sumlogdet = tf.constant(0., dtype=state.x.dtype)
 
@@ -444,19 +439,24 @@ class BaseDynamics(tf.keras.Model):
     def _backward_lf(self, step, state, training=None):
         """Run the augmented leapfrog integrator in the backward direction."""
         step_r = self.config.num_steps - step - 1
-        t = self._get_time_old(step_r, tile=tf.shape(state.x)[0])
         m, mc = self._get_mask(step_r)
         xnet, vnet = self._get_network(step_r)
+        t = self._get_time(step_r, tile=tf.shape(state.x)[0])
 
-        sumlogdet = 0.
+        #  sumlogdet = 0.
+        sumlogdet = tf.constant(0., dtype=state.x.dtype)
+
         state, logdet = self._update_v_backward(vnet, state, t, training)
         sumlogdet += logdet
+
         state, logdet = self._update_x_backward(xnet, state, t,
                                                 (mc, m), training)
         sumlogdet += logdet
+
         state, logdet = self._update_x_backward(xnet, state, t,
                                                 (m, mc), training)
         sumlogdet += logdet
+
         state, logdet = self._update_v_backward(vnet, state, t, training)
         sumlogdet += logdet
 
@@ -641,11 +641,11 @@ class BaseDynamics(tf.keras.Model):
 
             self.ts.append(tf.tile(tf.expand_dims(t, 0), (tile, 1)))
 
-    def _get_time(self, i):
+    def _get_time_bad(self, i):
         """Format the MCMC step as [cos(...), sin(...)]."""
         return tf.gather(self.ts, i)
 
-    def _get_time_old(self, i, tile=1):
+    def _get_time(self, i, tile=1):
         """Format the MCMC step as [cos(...), sin(...)]."""
         i = tf.cast(i, dtype=TF_FLOAT)
         trig_t = tf.squeeze([

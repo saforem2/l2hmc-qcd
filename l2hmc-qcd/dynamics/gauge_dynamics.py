@@ -32,11 +32,7 @@ from config import (BIN_DIR, GaugeDynamicsConfig, lrConfig, NetWeights,
 from dynamics.base_dynamics import BaseDynamics
 from network.gauge_network import GaugeNetwork
 from utils.attr_dict import AttrDict
-import utils.file_io as io
-from utils.file_io import timeit  # pylint:disable=unused-import
 from utils.seed_dict import vnet_seeds, xnet_seeds
-from lattice.utils import u1_plaq_exact_tf
-#  from lattice.lattice import GaugeLattice
 from lattice.gauge_lattice import GaugeLattice
 
 try:
@@ -45,7 +41,6 @@ try:
     HAS_HOROVOD = True
 except ImportError:
     HAS_HOROVOD = False
-
 
 TIMING_FILE = os.path.join(BIN_DIR, 'timing_file.log')
 
@@ -58,66 +53,46 @@ def convert_to_angle(x):
 
 def build_dynamics(flags):
     """Build dynamics using parameters from FLAGS."""
-    '''
-    if flags.log_dir is not None:
-        flags_file = os.path.join(flags.log_dir, 'training', 'FLAGS.z')
-        flags_ = AttrDict(dict(io.loadz(flags_file)))
-        cfgdir = os.path.join(flags.log_dir, 'training', 'dynamics_configs')
-        if flags.get('eps', None) is None:
-            eps_file = os.path.join(flags.log_dir, 'training',
-                                    'train_data', 'eps.z')
-            io.log(f'Restoring `eps` from: {eps_file}...')
-            flags.eps = io.loadz(eps_file)[-1]
-        #  flags.update(flags_)
-        # FIXME: Ensure that files exist...
-        if os.path.isdir(cfgdir):
-            cfg_file = os.path.join(cfgdir, 'dynamics_config.z')
-            prms_file = os.path.join(cfgdir, 'dynamics_params.z')
-            ncfg_file = os.path.join(cfgdir, 'network_config.z')
-            lcfg_file = os.path.join(cfgdir, 'lr_config.z')
-            try:
-                config_ = io.loadz(cfg_file)
-                params_ = io.loadz(prms_file)
-                net_config_ = io.loadz(ncfg_file)
-                lr_config_ = io.loadz(lcfg_file)
-                flags_.update(params_)
-                flags_.eps = flags.eps
-                config = GaugeDynamicsConfig(**config_)
-                net_config = NetworkConfig(**net_config_)
-                lr_config = lrConfig(**lr_config_)
-                return GaugeDynamics(flags_, config, net_config, lr_config)
-            except FileNotFoundError:
-                pass
-    '''
+    activation = flags.get('activation', 'relu')
+    print(f'Received: {activation}; ')
+    if activation == 'tanh':
+        print('using: `tf.nn.tanh` activation...')
+        activation_fn = tf.nn.tanh
+    elif activation == 'leaky_relu':
+        print('using: `tf.nn.leaky_relu` activation...')
+        activation_fn = tf.nn.leaky_relu
+    else:
+        print('using: `tf.nn.relu` activation...')
+        activation_fn = tf.nn.relu
 
     net_config = NetworkConfig(
         name='GaugeNetwork',
         units=flags.units,
-        activation_fn=flags.get('activation_fn', tf.nn.relu),
-        dropout_prob=flags.dropout_prob,
+        activation_fn=activation_fn,
+        dropout_prob=flags.get('dropout_prob', 0.),
     )
 
     config = GaugeDynamicsConfig(
         model_type='GaugeModel',
         eps=flags.eps,
         hmc=flags.hmc,
-        use_ncp=flags.use_ncp,
+        use_ncp=flags.get('use_ncp', False),
         num_steps=flags.num_steps,
         eps_trainable=not flags.eps_fixed,
-        separate_networks=flags.separate_networks,
+        separate_networks=flags.get('separate_networks', False),
     )
 
     lr_config = lrConfig(
         init=flags.lr_init,
         decay_rate=flags.lr_decay_rate,
         decay_steps=flags.lr_decay_steps,
-        warmup_steps=flags.warmup_steps,
+        warmup_steps=flags.get('warmup_steps', 0),
     )
 
     flags = AttrDict({
-        'horovod': flags.horovod,
-        'plaq_weight': flags.plaq_weight,
-        'charge_weight': flags.charge_weight,
+        'horovod': flags.get('horovod', False),
+        'plaq_weight': flags.get('plaq_weight', 0.),
+        'charge_weight': flags.get('charge_weight', 0.),
         'lattice_shape': flags.lattice_shape,
     })
 
@@ -248,8 +223,7 @@ class GaugeDynamics(BaseDynamics):
 
     def train_step(self,
                    x: tf.Tensor,
-                   beta: tf.Tensor,
-                   first_step: bool = False):
+                   beta: tf.Tensor):
         """Perform a single training step."""
         start = time.time()
         with tf.GradientTape() as tape:
@@ -257,8 +231,6 @@ class GaugeDynamics(BaseDynamics):
             ploss, qloss = self.calc_losses(states, accept_prob)
             loss = ploss + qloss
             if self.aux_weight > 0:
-                if first_step:
-                    print(f'aux_weight: {self.aux_weight}; made it in here!')
                 z = tf.random.normal(x.shape, dtype=x.dtype)
                 states_, accept_prob_, _ = self(z, beta, training=True)
                 ploss_, qloss_ = self.calc_losses(states_, accept_prob_)
@@ -298,7 +270,8 @@ class GaugeDynamics(BaseDynamics):
         #    Broadcast should be done after the first gradient step to ensure
         #    optimizer intialization.
         #  if self.optimizer.iterations.numpy() == 0 and self.using_hvd:
-        if first_step and HAS_HOROVOD:
+        #  if first_step and HAS_HOROVOD:
+        if self.optimizer.iterations == 0 and self.using_hvd:
             hvd.broadcast_variables(self.variables, root_rank=0)
             hvd.broadcast_variables(self.optimizer.variables(), root_rank=0)
 

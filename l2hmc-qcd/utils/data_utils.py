@@ -453,7 +453,7 @@ class DataLoader:
         px = self._load_sqz('px.pkl')
         avg_px = np.mean(px)
         if avg_px < 0.1 or not keep:
-            io.log(f'INFO: Skipping! nw: {net_weights}, avg_px: {avg_px:.3g}')
+            io.log(f'Skipping! nw: {net_weights}, avg_px: {avg_px:.3g}')
             return None, run_params
 
         io.log(f'Loading data for net_weights: {net_weights}...')

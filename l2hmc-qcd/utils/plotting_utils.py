@@ -174,6 +174,7 @@ def plot_data(train_data, out_dir, flags, thermalize=False, params=None):
 
         if thermalize or key == 'dt':
             arr, steps = therm_arr(arr, therm_frac=0.33)
+            steps *= logging_steps
 
         labels = ('MC Step', key)
         data = (steps, arr)
@@ -196,8 +197,6 @@ def plot_data(train_data, out_dir, flags, thermalize=False, params=None):
         plt.close('all')
 
     mcmc_avg_lineplots(data_dict, title, out_dir)
+    plot_charges(*data_dict['charges'], out_dir=out_dir, title=title)
 
-    plot_charges(*data_dict['charges'],
-                 out_dir=out_dir,
-                 title=title)
     plt.close('all')

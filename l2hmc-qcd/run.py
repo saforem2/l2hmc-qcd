@@ -27,7 +27,7 @@ def run(args, log_dir=None, random_start=True):
     if log_dir is None:
         log_dir = args.get('log_dir', None)
         if log_dir is None:
-            io.log('INFO:`log_dir` not specified, running generic HMC...')
+            io.log('`log_dir` not specified, running generic HMC...')
             _ = run_hmc(args=args, hmc_dir=None, skip_existing=skip)
             return
 
@@ -37,11 +37,11 @@ def run(args, log_dir=None, random_start=True):
     train_flags = io.loadz(train_flags_file)
 
     if args.beta is None:
-        io.log('INFO: Using `beta_final` from training flags')
+        io.log('Using `beta_final` from training flags')
         args.beta = train_flags['beta_final']
     if args.eps is None:
         eps_file = os.path.join(log_dir, 'training', 'train_data', 'eps.z')
-        io.log(f'INFO: Loading `eps` from {eps_file}')
+        io.log(fLoading `eps` from {eps_file}')
         eps_arr = io.loadz(eps_file)
         args.eps = tf.cast(eps_arr[-1], TF_FLOAT)
 
@@ -52,7 +52,7 @@ def run(args, log_dir=None, random_start=True):
     })
 
     if random_start:
-        io.log('INFO:Running inference with random start...')
+        io.log('Running inference with random start...')
         _ = load_and_run(args)
     else:
         x_file = os.path.join(args.log_dir, 'training',
@@ -61,8 +61,8 @@ def run(args, log_dir=None, random_start=True):
             x = io.loadz(x_file)
         else:
             x = None
-            io.log('\n'.join([f'INFO:Unable to load from: {x_file}',
-                              'INFO:Running with random start...']))
+            io.log('\n'.join([f'Unable to load from: {x_file}',
+                              'Running with random start...']))
         _ = load_and_run(args, x=x)
 
     #  _, _, _ = load_and_run(args, x=x)

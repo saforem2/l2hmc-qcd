@@ -11,6 +11,19 @@ import time
 import numpy as np
 import tensorflow as tf
 import horovod.tensorflow as hvd
+from tqdm import tqdm
+
+import utils.file_io as io
+
+from config import HEADER, NET_WEIGHTS_HMC, PI, TF_FLOAT, TRAIN_STR, CBARS
+from utils.attr_dict import AttrDict
+from utils.summary_utils import (summarize_dict, summarize_list,
+                                 update_summaries)
+from utils.plotting_utils import plot_data
+from utils.data_containers import DataContainer
+from utils.inference_utils import run
+from dynamics.base_dynamics import BaseDynamics
+from dynamics.gauge_dynamics import build_dynamics, GaugeDynamics
 
 hvd.init()
 GPUS = tf.config.experimental.list_physical_devices('GPU')
@@ -19,17 +32,6 @@ for gpu in GPUS:
 if GPUS:
     tf.config.experimental.set_visible_devices(GPUS[hvd.local_rank()], 'GPU')
 
-import utils.file_io as io
-
-from config import HEADER, NET_WEIGHTS_HMC, PI, TF_FLOAT, TRAIN_STR
-from utils.attr_dict import AttrDict
-from utils.summary_utils import (summarize_dict, summarize_list,
-                                 update_summaries)
-from utils.inference_utils import run
-from utils.plotting_utils import plot_data
-from utils.data_containers import DataContainer
-from dynamics.base_dynamics import BaseDynamics
-from dynamics.gauge_dynamics import build_dynamics, GaugeDynamics
 
 # pylint:disable=no-member
 # pylint:disable=too-many-locals
@@ -74,7 +76,7 @@ def restore_flags(flags, train_dir):
     """Update `FLAGS` using restored flags from `log_dir`."""
     rf_file = os.path.join(train_dir, 'FLAGS.z')
     restored = AttrDict(dict(io.loadz(rf_file)))
-    io.log(f'INFO:Restoring FLAGS from: {rf_file}...')
+    io.log(f'Restoring FLAGS from: {rf_file}...')
     flags.update(restored)
 
     return flags
@@ -189,7 +191,7 @@ def train(flags, log_file=None, md_steps=0, test_steps=0):
         plot_data(train_data, train_dirs.train_dir,
                   flags, thermalize=True, params=params)
 
-    io.log('\n'.join(['INFO:Done training model', 80 * '=']), rank=RANK)
+    io.log('\n'.join(['Done training model', 80 * '=']), rank=RANK)
 
     return x, dynamics, train_data, flags
 
@@ -201,7 +203,7 @@ def setup(dynamics, flags, dirs=None, x=None, betas=None):
                                optimizer=dynamics.optimizer)
     manager = tf.train.CheckpointManager(ckpt, dirs.ckpt_dir, max_to_keep=5)
     if manager.latest_checkpoint:  # restore from checkpoint
-        io.log(f'INFO:Restored model from: {manager.latest_checkpoint}')
+        io.log(f'Restored model from: {manager.latest_checkpoint}')
         ckpt.restore(manager.latest_checkpoint)
         current_step = dynamics.optimizer.iterations.numpy()
         x = train_data.restore(dirs.data_dir, rank=RANK, step=current_step)
@@ -284,22 +286,22 @@ def train_dynamics(
     # ================
 
     # run a single step to get header
-    first_step = (dynamics.optimizer.iterations.numpy() == 0)
+    #  first_step = (dynamics.optimizer.iterations.numpy() == 0)
     # -------------------------------------------------------------------------
     # Try running compiled `train_step` function, otherwise run imperatively
     try:
-        x, metrics = train_step(x, betas[0], first_step=first_step)
+        x, metrics = train_step(x, betas[0])  # , first_step=first_step)
         io.log('Compiled `dynamics.train_step` using tf.function!')
     except:  # noqa: E722  # pylint:disable=bare-except
         train_step = dynamics.train_step
-        x, metrics = train_step(x, betas[0], first_step=first_step)
+        x, metrics = train_step(x, betas[0])  # , first_step=first_step)
         io.log('Unable to compile `dynamics.train_step`, running imperatively')
     # -------------------------------------------------------------------------
 
     # -------------------------------------------------------------------
     # Run molecular dynamics update at the beginning to not get stuck...
     if md_steps > 0:
-        io.log(f'INFO: Running {md_steps} MD updates...')
+        io.log(f'Running {md_steps} MD updates...')
         for _ in range(md_steps):
             mc_states, _ = dynamics.md_update(x, betas[0], training=True)
             x = mc_states.out.x
@@ -313,9 +315,14 @@ def train_dynamics(
 
     header = train_data.get_header(metrics,
                                    skip=['charges'],
-                                   prepend=['{:^12s}'.format('step')])
+                                   prepend=['{:^12s}'.format('step')],
+                                   split=True)
     io.log(header, rank=RANK)
-    for step, beta in zip(steps, betas):
+    ctup = (CBARS['yellow'], CBARS['reset'])
+    steps_tqdm = tqdm(steps, desc='training',
+                      bar_format=("{l_bar}%s{bar}%s{r_bar}" % ctup),
+                      ncols=len(header[0]) + 64)
+    for step, beta in zip(steps_tqdm, betas):
         # Perform a single training step
         x, metrics = _timed_step(x, beta)
 
@@ -345,7 +352,7 @@ def train_dynamics(
             if IS_CHIEF:
                 manager.save()
                 io.log(
-                    f'INFO:Checkpoint saved to: {manager.latest_checkpoint}'
+                    f'Checkpoint saved to: {manager.latest_checkpoint}',
                 )
                 train_data.save_and_flush(dirs.data_dir,
                                           dirs.log_file,
@@ -379,7 +386,7 @@ def train_dynamics(
     try:  # make sure profiler is shut down
         tf.profiler.experimental.stop()
     except (AttributeError, tf.errors.UnavailableError):
-        io.log(f'INFO:No active profiling session!')
+        io.log('No active profiling session!')
 
     train_data.dump_configs(x, dirs.data_dir, rank=RANK)
     if IS_CHIEF:
@@ -391,7 +398,7 @@ def train_dynamics(
                                     profiler_outdir=dirs.summary_dir)
             tf.summary.trace_off()
 
-        io.log(f'INFO:Checkpoint saved to: {manager.latest_checkpoint}')
+        io.log(f'Checkpoint saved to: {manager.latest_checkpoint}')
         train_data.save_and_flush(dirs.data_dir,
                                   dirs.log_file,
                                   rank=RANK, mode='a')
