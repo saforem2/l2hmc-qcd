@@ -45,7 +45,8 @@ class DataContainer:
             except KeyError:
                 self.data[key] = [tf.convert_to_tensor(val).numpy()]
 
-    def get_header(self, metrics=None, prepend=None, append=None, skip=None):
+    def get_header(self, metrics=None, prepend=None,
+                   append=None, skip=None, split=False):
         """Get nicely formatted header of variable names for printing."""
         if metrics is None:
             metrics = self.data
@@ -53,7 +54,8 @@ class DataContainer:
         header = io.make_header_from_dict(metrics,
                                           skip=skip,
                                           prepend=prepend,
-                                          append=append)
+                                          append=append,
+                                          split=split)
 
         if self.data_strs[0] != header:
             self.data_strs.insert(0, header)
@@ -80,7 +82,7 @@ class DataContainer:
 
         x_file = os.path.join(data_dir, f'x_rank{rank}.z')
         x = io.loadz(x_file)
-        io.log(f'INFO:Restored `x` from: {x_file}.')
+        io.log(f'Restored `x` from: {x_file}.')
 
         data = self.load_data(data_dir)
         for key, val in data.items():
@@ -99,7 +101,7 @@ class DataContainer:
         for key, val in zip(keys, data_files):
             if 'x_rank' in key:
                 continue
-            io.log(f'INFO:Restored {key} from {val}.')
+            io.log(f'Restored {key} from {val}.')
             data[key] = io.loadz(val)
 
         return AttrDict(data)
@@ -142,7 +144,7 @@ class DataContainer:
         avg_df = pd.DataFrame(avg_data, index=[0])
         csv_file = os.path.join(BASE_DIR, 'gauge_logs_eager',
                                 'inference_results.csv')
-        io.log(f'INFO:Appending inference results to {csv_file}.')
+        io.log(f'Appending inference results to {csv_file}.')
         if not os.path.isfile(csv_file):
             avg_df.to_csv(csv_file, header=True, index=False, mode='w')
         else:
@@ -152,7 +154,7 @@ class DataContainer:
     def dump_configs(x, data_dir, rank=0):
         """Save configs `x` separately for each rank."""
         xfile = os.path.join(data_dir, f'x_rank{rank}.z')
-        print(f'Saving configs from rank {rank} to: {xfile}.')
+        io.log(f'Saving configs from rank {rank} to: {xfile}.', rank=rank)
         joblib.dump(x, xfile)
 
     # pylint:disable=too-many-arguments

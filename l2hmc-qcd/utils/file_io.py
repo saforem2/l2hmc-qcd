@@ -1,27 +1,53 @@
 """
 file_io.py
 """
+import io
 import os
+import sys
 import time
 import pickle
+import typing
+import logging
 import datetime
+import contextlib
+
+from urllib import request
 
 import joblib
 import numpy as np
-import typing
+
+from tqdm import tqdm
+
+from utils import DummyTqdmFile
+from config import PROJECT_DIR
 from utils.attr_dict import AttrDict
 
-from config import PROJECT_DIR
-
 # pylint:disable=invalid-name
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s:%(levelname)s:%(message)s",
+    stream=DummyTqdmFile(sys.stderr)
+)
+
+LOGGING_LEVELS = {
+    'CRITICAL': 50,
+    'ERROR': 40,
+    'WARNING': 30,
+    'INFO': 20,
+    'DEBUG': 10,
+}
 
 
-def log(s: str, nl: bool = True, rank: int = 0):
+def log(s: str, nl: bool = True, rank: int = 0, level: str = 'info'):
     """Print string `s` to stdout if and only if hvd.rank() == 0."""
     if rank != 0:
         return
 
-    print(s, end='\n' if nl else ' ')
+    if isinstance(s, (list, tuple)):
+        _ = [logging.log(LOGGING_LEVELS[level.upper()], s_) for s_ in s]
+    else:
+        logging.log(LOGGING_LEVELS[level.upper()], s)
+    #  print(s, end='\n' if nl else ' ')
 
 
 def write(s: str, f: str, mode: str = 'a', nl: bool = True, rank: int = 0):
@@ -32,12 +58,13 @@ def write(s: str, f: str, mode: str = 'a', nl: bool = True, rank: int = 0):
         ff.write(s + '\n' if nl else ' ')
 
 
+
+
 def print_flags(flags: AttrDict, rank: int = 0):
     """Helper method for printing flags."""
     log('\n'.join(
         [80 * '=', 'FLAGS:', *[f' {k}: {v}' for k, v in flags.items()]]
     ))
-
 
 
 def make_header_from_dict(
@@ -46,6 +73,7 @@ def make_header_from_dict(
         skip: list = None,
         append: list = None,
         prepend: list = None,
+        split: bool = False,
 ):
     """Build nicely formatted header with names of various metrics."""
     append = [''] if append is None else append
@@ -54,9 +82,11 @@ def make_header_from_dict(
     keys = ['{:^12s}'.format(k) for k in data.keys() if k not in skip]
     hstr = ''.join(prepend + keys + append)
     sep = dash * len(hstr)
-    header = '\n'.join([sep, hstr, sep])
+    header = [sep, hstr, sep]
+    if split:
+        return header
 
-    return header
+    return '\n'.join(header)
 
 
 def log_and_write(

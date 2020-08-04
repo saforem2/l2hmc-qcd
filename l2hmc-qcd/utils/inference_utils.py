@@ -9,10 +9,11 @@ import os
 import time
 
 import tensorflow as tf
+from tqdm import tqdm
 
 import utils.file_io as io
 
-from config import HEADER, PI, PROJECT_DIR, SEP, TF_FLOAT
+from config import HEADER, PI, PROJECT_DIR, SEP, TF_FLOAT, CBARS
 from dynamics.gauge_dynamics import (build_dynamics, convert_to_angle,
                                      GaugeDynamics)
 from utils.attr_dict import AttrDict
@@ -26,14 +27,14 @@ if tf.__version__.startswith('1.'):
 elif tf.__version__.startswith('2.'):
     TF_VERSION = '2.x'
 
-import horovod.tensorflow as hvd
 try:
+    import horovod.tensorflow as hvd
+    hvd.init()
     RANK = hvd.rank()
-except:
+except AttributeError:
     RANK = 0
 
 IS_CHIEF = (RANK == 0)
-
 
 
 def restore_from_train_flags(args):
@@ -47,12 +48,8 @@ def restore_from_train_flags(args):
         args.beta = flags.beta_final
     if args.get('num_steps', None) is None:
         args.num_steps = flags.num_steps
-    #  if args.get('eps', None) is None:
-    #      eps = io.loadz(os.path.join(train_dir, 'train_data', 'eps.z'))[-1]
-    #      args.eps = eps
 
     flags.update({
-        #  'eps': args.eps,
         'beta': args.beta,
         'num_steps': args.num_steps,
         'lattice_shape': args.lattice_shape,
@@ -150,12 +147,12 @@ def load_and_run(
     manager = tf.train.CheckpointManager(ckpt, max_to_keep=5,
                                          directory=ckpt_dir)
     if manager.latest_checkpoint:
-        io.log(f'INFO:Restored model from: {manager.latest_checkpoint}')
+        io.log(f'Restored model from: {manager.latest_checkpoint}')
         status = ckpt.restore(manager.latest_checkpoint)
         status.assert_existing_objects_matched()
         xfile = os.path.join(args.log_dir, 'training',
                              'train_data', f'x_rank{RANK}.z')
-        io.log(f'INFO:Restored x from: {xfile}.')
+        io.log(f'Restored x from: {xfile}.')
         x = io.loadz(xfile)
 
     dynamics, run_data, x = run(dynamics, args, x=x, runs_dir=runs_dir)
@@ -167,10 +164,9 @@ def run(
         dynamics: GaugeDynamics,
         args: AttrDict,
         x: tf.Tensor = None,
-        runs_dir: str = None,
+        runs_dir: str = None
 ) -> (GaugeDynamics, DataContainer, tf.Tensor):
     """Run inference."""
-    #  is_chief = check_if_chief(args)
     if not IS_CHIEF:
         return None, None, None
 
@@ -228,7 +224,13 @@ def run(
     return dynamics, run_data, x
 
 
-def run_dynamics(dynamics, flags, x=None, save_x=False, md_steps=0):
+def run_dynamics(
+        dynamics: GaugeDynamics,
+        flags: AttrDict,
+        x: tf.Tensor = None,
+        save_x: bool = False,
+        md_steps: int = 0,
+) -> (DataContainer, tf.Tensor, list):
     """Run inference on trained dynamics."""
     if not IS_CHIEF:
         return None, None
@@ -249,7 +251,7 @@ def run_dynamics(dynamics, flags, x=None, save_x=False, md_steps=0):
     template = '\n'.join([f'beta: {beta}',
                           f'eps: {dynamics.eps.numpy():.4g}',
                           f'net_weights: {dynamics.net_weights}'])
-    io.log(f'INFO:Running inference with:\n {template}')
+    io.log(f'Running inference with:\n {template}')
 
     # Run 50 MD updates (w/o accept/reject) to ensure chains don't get stuck
     if md_steps > 0:
@@ -265,7 +267,8 @@ def run_dynamics(dynamics, flags, x=None, save_x=False, md_steps=0):
 
     header = run_data.get_header(metrics,
                                  skip=['charges'],
-                                 prepend=['{:^12s}'.format('step')])
+                                 prepend=['{:^12s}'.format('step')],
+                                 split=True)
     io.log(header)
     # -------------------------------------------------------------
 
@@ -281,6 +284,10 @@ def run_dynamics(dynamics, flags, x=None, save_x=False, md_steps=0):
         return x, metrics
 
     steps = tf.range(flags.run_steps, dtype=tf.int64)
+    ctup = (CBARS['blue'], CBARS['reset'])
+    steps = tqdm(steps, desc='running',
+                 bar_format=("{l_bar}%s{bar}%s{r_bar}" % ctup),
+                 ncols=len(header[0]) + 64)
     for step in steps:
         x, metrics = timed_step(x, beta)
         run_data.update(step, metrics)

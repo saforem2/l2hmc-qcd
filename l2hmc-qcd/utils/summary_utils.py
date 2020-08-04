@@ -9,8 +9,6 @@ Date: 07/29/2020
 from __future__ import absolute_import, division, print_function
 
 import tensorflow as tf
-from dynamics.gauge_dynamics import GaugeDynamics
-from utils.attr_dict import AttrDict
 
 
 def summarize_dict(d, step, prefix=None):
@@ -33,7 +31,7 @@ def summarize_list(x, step, prefix=None):
         tf.summary.scalar(f'{name}_avg', tf.reduce_mean(t), step=step)
 
 
-def update_summaries(step: int, metrics: AttrDict, dynamics: GaugeDynamics):
+def update_summaries(step, metrics, dynamics):
     """Create summary objects.
 
     NOTE: Explicitly, we create summary objects for all entries in

@@ -8,6 +8,8 @@ import os
 
 from collections import namedtuple
 
+from colorama import Fore
+
 import numpy as np
 import tensorflow as tf
 
@@ -25,6 +27,17 @@ QCOEFF = 'coeff_transformation'
 # ----------------------------------------------------------------
 # Included below is a catch-all for various structures
 # ----------------------------------------------------------------
+CBARS = {
+    'black': Fore.BLACK,
+    'red': Fore.RED,
+    'green': Fore.GREEN,
+    'yellow': Fore.YELLOW,
+    'blue': Fore.BLUE,
+    'magenta': Fore.MAGENTA,
+    'cyan': Fore.CYAN,
+    'white': Fore.WHITE,
+    'reset': Fore.RESET,
+}
 
 
 class DynamicsConfig(AttrDict):

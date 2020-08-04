@@ -160,20 +160,11 @@ def parse_args():
                               constant) used in gauge model when
                               annealing.\n (Default: 5."""))
 
-    parser.add_argument("--warmup_lr",
-                        dest="warmup_lr",
-                        action="store_true",
-                        required=False,
-                        help=("""FLag that when passed will 'warmup' the
-                              learning rate (i.e. gradually scale it up to the
-                              value passed to `--lr_init` (performs better when
-                              using Horovod for distributed training)."""))
-
     parser.add_argument('--warmup_steps',
                         dest='warmup_steps',
                         type=int,
                         required=False,
-                        default=None,
+                        default=0,
                         help=("""Number of steps over which to warmup the
                               learning rate."""))
 
@@ -196,13 +187,6 @@ def parse_args():
                         required=False,
                         help=("""Number of inference steps to perform.\n
                               (Default: 5000)"""))
-
-    parser.add_argument('--inference',
-                        dest='inference',
-                        action='store_true',
-                        required=False,
-                        help=("""FLag that when passed will run inference on
-                              trained model."""))
 
     parser.add_argument("--save_steps",
                         dest="save_steps",
@@ -271,13 +255,6 @@ def parse_args():
                               gradients by global norm. (Default: 0.) If a
                               value greater than 0. is passed, gradient
                               clipping will be performed."""))
-
-    parser.add_argument('--no_summaries',
-                        dest="no_summaries",
-                        action="store_true",
-                        required=False,
-                        help=("""FLag that when passed will prevent tensorflow
-                              from creating tensorboard summary objects."""))
 
     parser.add_argument("--hmc",
                         dest="hmc",
@@ -377,24 +354,6 @@ def parse_args():
                         help=("""Flag that when passed uses Horovod for
                               distributed training on multiple nodes."""))
 
-    parser.add_argument("--restore",
-                        dest="restore",
-                        action="store_true",
-                        required=False,
-                        help=("""Restore model from previous run.  If this
-                              argument is passed, a `log_dir` must be specified
-                              and passed to `--log_dir argument."""))
-
-    parser.add_argument('--hmc_start',
-                        dest='hmc_start',
-                        action='store_true',
-                        required=False,
-                        help=("""Find optimal `eps` by training HMC model with
-                              `eps` a trainable parameter, and use this value
-                              along with the resulting thermalized config as
-                              the starting point for training the L2HMC
-                              sampler."""))
-
     parser.add_argument('--hmc_steps',
                         dest='hmc_steps',
                         type=int,
@@ -411,14 +370,6 @@ def parse_args():
                               If this argument is not passed, a new
                               directory will be created."""))
 
-    parser.add_argument("--float64",
-                        dest="float64",
-                        action="store_true",
-                        required=False,
-                        help=("""When passed, using 64 point floating precision
-                              by settings globals.TF_FLOAT = tf.float64. False
-                              by default (use tf.float32)."""))
-
     parser.add_argument("--json_file",
                         dest="json_file",
                         type=str,
@@ -428,17 +379,13 @@ def parse_args():
                               Command line options override values in file.
                               (DEFAULT: None)"""))
 
-    if sys.argv[1].startswith('@'):
-        args = parser.parse_args(
-            shlex.split(open(sys.argv[1][1:]).read(), comments=True)
-        )
-    else:
-        args = parser.parse_args()
-        if args.json_file is not None:
-            print(f'Loading flags from: {args.json_file}.')
-            with open(args.json_file, 'rt') as f:
-                t_args = argparse.Namespace()
-                t_args.__dict__.update(json.load(f))
-                args = parser.parse_args(namespace=t_args)
+    args = parser.parse_args()
+    if args.json_file is not None:
+        print(f'Loading flags from: {args.json_file}.')
+        with open(args.json_file, 'rt') as f:
+            t_args = argparse.Namespace()
+            # Overwrite parsed args with values from `.json` file
+            t_args.__dict__.update(json.load(f))
+            args = parser.parse_args(namespace=t_args)
 
     return args

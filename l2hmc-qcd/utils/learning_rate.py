@@ -109,8 +109,9 @@ class WarmupExponentialDecay(LearningRateSchedule):
             decay_steps = tf.cast(self.lr_config.decay_steps, dtype)
             decay_rate = tf.cast(self.lr_config.decay_rate, dtype)
             warmup_steps = tf.cast(self.lr_config.warmup_steps, dtype)
-
             global_step_recomp = tf.cast(step, dtype)
+
+            # warming up?
             if tf.less(global_step_recomp, warmup_steps):
                 return tf.math.multiply(
                     initial_learning_rate,
