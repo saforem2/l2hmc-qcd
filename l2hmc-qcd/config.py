@@ -27,6 +27,7 @@ QCOEFF = 'coeff_transformation'
 # ----------------------------------------------------------------
 # Included below is a catch-all for various structures
 # ----------------------------------------------------------------
+
 CBARS = {
     'black': Fore.BLACK,
     'red': Fore.RED,

@@ -379,6 +379,14 @@ def parse_args():
                               Command line options override values in file.
                               (DEFAULT: None)"""))
 
+    parser.add_argument('--logging_level',
+                        dest='logging_level',
+                        type=str,
+                        default='debug',
+                        required=False,
+                        help=("""Flag specifying the default logging level.
+                              Defaults to `INFO`."""))
+
     args = parser.parse_args()
     if args.json_file is not None:
         print(f'Loading flags from: {args.json_file}.')
