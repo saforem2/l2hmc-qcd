@@ -11,6 +11,16 @@ import logging
 
 import tensorflow as tf
 import horovod.tensorflow as hvd
+hvd.init()
+GPUS = tf.config.experimental.list_physical_devices('GPU')
+for gpu in GPUS:
+    tf.config.experimental.set_memory_growth(gpu, True)
+if GPUS:
+    GPU = GPUS[hvd.local_rank()]
+    tf.config.experimental.set_visible_devices(GPU, 'GPU')
+
+RANK = hvd.rank()
+IS_CHIEF = (RANK == 0)
 
 import utils.file_io as io
 
@@ -38,16 +48,6 @@ def main(args, log_file=None):
 
 
 if __name__ == '__main__':
-    hvd.init()
-    GPUS = tf.config.experimental.list_physical_devices('GPU')
-    for gpu in GPUS:
-        tf.config.experimental.set_memory_growth(gpu, True)
-    if GPUS:
-        GPU = GPUS[hvd.local_rank()]
-        tf.config.experimental.set_visible_devices(GPU, 'GPU')
-
-    RANK = hvd.rank()
-    IS_CHIEF = (RANK == 0)
     io.log(f'Number of devices: {hvd.size()}', RANK)
 
     FLAGS = parse_args()
