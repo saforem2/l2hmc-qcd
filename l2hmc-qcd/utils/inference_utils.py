@@ -30,14 +30,13 @@ elif tf.__version__.startswith('2.'):
 
 try:
     import horovod.tensorflow as hvd
-
-    #  hvd.init()
-    #  RANK = hvd.rank()
+    hvd.init()
+    RANK = hvd.rank()
 except AttributeError:
     pass
     #  RANK = 0
 
-#  IS_CHIEF = (RANK == 0)
+IS_CHIEF = (RANK == 0)
 
 
 def restore_from_train_flags(args):
