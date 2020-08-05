@@ -29,12 +29,13 @@ elif tf.__version__.startswith('2.'):
 
 try:
     import horovod.tensorflow as hvd
-    hvd.init()
-    RANK = hvd.rank()
+    #  hvd.init()
+    #  RANK = hvd.rank()
 except AttributeError:
-    RANK = 0
+    pass
+    #  RANK = 0
 
-IS_CHIEF = (RANK == 0)
+#  IS_CHIEF = (RANK == 0)
 
 
 def restore_from_train_flags(args):
@@ -151,7 +152,7 @@ def load_and_run(
         status = ckpt.restore(manager.latest_checkpoint)
         status.assert_existing_objects_matched()
         xfile = os.path.join(args.log_dir, 'training',
-                             'train_data', f'x_rank{RANK}.z')
+                             'train_data', f'x_rank0.z')
         io.log(f'Restored x from: {xfile}.')
         x = io.loadz(xfile)
 

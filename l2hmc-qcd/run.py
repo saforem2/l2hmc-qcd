@@ -8,9 +8,6 @@ from __future__ import absolute_import, division, print_function
 import os
 import tensorflow as tf
 import horovod.tensorflow as hvd
-hvd.init()
-RANK = hvd.rank()
-IS_CHIEF = (RANK == 0)
 
 import utils.file_io as io
 from config import TF_FLOAT
@@ -41,7 +38,7 @@ def run(args, log_dir=None, random_start=True):
         args.beta = train_flags['beta_final']
     if args.eps is None:
         eps_file = os.path.join(log_dir, 'training', 'train_data', 'eps.z')
-        io.log(fLoading `eps` from {eps_file}')
+        io.log(f'Loading `eps` from {eps_file}')
         eps_arr = io.loadz(eps_file)
         args.eps = tf.cast(eps_arr[-1], TF_FLOAT)
 
@@ -117,6 +114,10 @@ def main(args):
 
 
 if __name__ == '__main__':
+    hvd.init()
+    RANK = hvd.rank()
+    IS_CHIEF = (RANK == 0)
+
     ARGS = parse_args()
     ARGS = AttrDict(ARGS.__dict__)
     if IS_CHIEF:

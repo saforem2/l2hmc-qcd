@@ -10,10 +10,22 @@ import time
 import logging
 
 import numpy as np
-import tensorflow as tf
-import horovod.tensorflow as hvd
 from tqdm import tqdm
+import tensorflow as tf
 from tensorflow.python.ops import summary_ops_v2
+import horovod.tensorflow as hvd
+#  hvd.init()
+#  GPUS = tf.config.experimental.list_physical_devices('GPU')
+#  for gpu in GPUS:
+#      tf.config.experimental.set_memory_growth(gpu, True)
+#  if GPUS:
+#      tf.config.experimental.set_visible_devices(GPUS[hvd.local_rank()], 'GPU')
+#
+#  try:
+#      tf.config.experimental.enable_mlir_bridge()
+#      tf.config.experimental.enable_mlir_graph_optimization()
+#  except:  # noqa: E722
+#      pass
 
 import utils.file_io as io
 
@@ -26,19 +38,6 @@ from utils.data_containers import DataContainer
 from utils.inference_utils import run
 from dynamics.base_dynamics import BaseDynamics
 from dynamics.gauge_dynamics import build_dynamics, GaugeDynamics
-
-hvd.init()
-GPUS = tf.config.experimental.list_physical_devices('GPU')
-for gpu in GPUS:
-    tf.config.experimental.set_memory_growth(gpu, True)
-if GPUS:
-    tf.config.experimental.set_visible_devices(GPUS[hvd.local_rank()], 'GPU')
-
-try:
-    tf.config.experimental.enable_mlir_bridge()
-    tf.config.experimental.enable_mlir_graph_optimization()
-except:  # noqa: E722
-    pass
 
 # pylint:disable=no-member
 # pylint:disable=too-many-locals

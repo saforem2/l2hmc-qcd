@@ -10,7 +10,7 @@ import sys
 import logging
 
 import tensorflow as tf
-
+import horovod.tensorflow as hvd
 import utils.file_io as io
 
 from utils import DummyTqdmFile
@@ -34,6 +34,14 @@ def main(args, log_file=None):
 
 
 if __name__ == '__main__':
+    hvd.init()
+    GPUS = tf.config.experimental.list_physical_devices('GPU')
+    for gpu in GPUS:
+        tf.config.experimental.set_memory_growth(gpu, True)
+    if GPUS:
+        GPU = GPUS[hvd.local_rank()]
+        tf.config.experimental.set_visible_devices(gpu, 'GPU')
+
     FLAGS = parse_args()
     FLAGS = AttrDict(FLAGS.__dict__)
     #  LEVEL = FLAGS.get('logging_level', 'DEBUG').upper()
