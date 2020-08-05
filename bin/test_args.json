@@ -19,6 +19,7 @@
     "hmc_steps": 50,
     "print_steps": 1,
     "logging_steps": 5,
+    "logging_level": "DEBUG",
     "save_steps": 10,
     "train_steps": 50,
     "run_steps": 100,

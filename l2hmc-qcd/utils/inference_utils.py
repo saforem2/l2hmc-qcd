@@ -193,7 +193,7 @@ def run(
     if x is None:
         x = convert_to_angle(tf.random.normal(shape=dynamics.x_shape))
 
-    run_data, x, _ = run_dynamics(dynamics, args, x, save_x=False, )
+    run_data, x, _ = run_dynamics(dynamics, args, x, save_x=False)
 
     run_data.flush_data_strs(log_file, mode='a')
     run_data.write_to_csv(args.log_dir, run_dir, hmc=args.hmc)
@@ -286,8 +286,8 @@ def run_dynamics(
     steps = tf.range(flags.run_steps, dtype=tf.int64)
     ctup = (CBARS['blue'], CBARS['reset'])
     steps = tqdm(steps, desc='running',
-                 bar_format=("{l_bar}%s{bar}%s{r_bar}" % ctup),
-                 ncols=len(header[0]) + 64)
+                 #  ncols=len(header[0]) + 64,
+                 bar_format=("{l_bar}%s{bar}%s{r_bar}" % ctup))
     for step in steps:
         x, metrics = timed_step(x, beta)
         run_data.update(step, metrics)

@@ -73,6 +73,7 @@ class DataContainer:
                 + ''.join([f'{v:^12.4g}' for _, v in data.items()]))
 
         self.data_strs.append(fstr)
+
         return fstr
 
     def restore(self, data_dir, rank=0, step=None):

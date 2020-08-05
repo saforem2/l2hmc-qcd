@@ -24,7 +24,7 @@
     "aux_weight": 0.0,
     "plaq_weight": 0.0,
     "charge_weight": 0.001, 
-    "activation": "tanh",
+    "activation": "leaky_relu",
     "clip_val": 10.0,
     "dropout_prob": 0.5,
     "lr_decay_rate": 0.98,

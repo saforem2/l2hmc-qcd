@@ -22,14 +22,14 @@ from utils import DummyTqdmFile
 from config import PROJECT_DIR
 from utils.attr_dict import AttrDict
 
-# pylint:disable=invalid-name
+#  pylint:disable=invalid-name
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format="%(asctime)s:%(levelname)s:%(message)s",
     stream=DummyTqdmFile(sys.stderr)
 )
 
-LOGGING_LEVELS = {
+LOG_LEVELS_AS_INTS = {
     'CRITICAL': 50,
     'ERROR': 40,
     'WARNING': 30,
@@ -37,17 +37,24 @@ LOGGING_LEVELS = {
     'DEBUG': 10,
 }
 
+LOG_LEVELS = {
+    'CRITICAL': logging.CRITICAL,
+    'ERROR': logging.ERROR,
+    'WARNING': logging.WARNING,
+    'INFO': logging.INFO,
+    'DEBUG': logging.DEBUG,
+}
 
-def log(s: str, nl: bool = True, rank: int = 0, level: str = 'info'):
+
+def log(s: str, nl: bool = True, rank: int = 0, level: str = 'DEBUG'):
     """Print string `s` to stdout if and only if hvd.rank() == 0."""
     if rank != 0:
         return
 
     if isinstance(s, (list, tuple)):
-        _ = [logging.log(LOGGING_LEVELS[level.upper()], s_) for s_ in s]
+        _ = [logging.log(LOG_LEVELS_AS_INTS[level.upper()], s_) for s_ in s]
     else:
-        logging.log(LOGGING_LEVELS[level.upper()], s)
-    #  print(s, end='\n' if nl else ' ')
+        logging.log(LOG_LEVELS_AS_INTS[level.upper()], s)
 
 
 def write(s: str, f: str, mode: str = 'a', nl: bool = True, rank: int = 0):
@@ -56,8 +63,6 @@ def write(s: str, f: str, mode: str = 'a', nl: bool = True, rank: int = 0):
         return
     with open(f, mode) as ff:
         ff.write(s + '\n' if nl else ' ')
-
-
 
 
 def print_flags(flags: AttrDict, rank: int = 0):

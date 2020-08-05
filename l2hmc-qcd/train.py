@@ -6,11 +6,14 @@ Train 2D U(1) model using eager execution in tensorflow.
 from __future__ import absolute_import, division, print_function
 
 import os
+import sys
+import logging
 
 import tensorflow as tf
 
 import utils.file_io as io
 
+from utils import DummyTqdmFile
 from utils.attr_dict import AttrDict
 from utils.parse_args import parse_args
 from utils.training_utils import train
@@ -33,5 +36,13 @@ def main(args, log_file=None):
 if __name__ == '__main__':
     FLAGS = parse_args()
     FLAGS = AttrDict(FLAGS.__dict__)
+    #  LEVEL = FLAGS.get('logging_level', 'DEBUG').upper()
+
+    #  logging.basicConfig(
+    #      level=io.LOG_LEVELS[LEVEL],  # Defaults to INFO
+    #      format="%(asctime)s:%(levelname)s:%(message)s",
+    #      stream=DummyTqdmFile(sys.stderr)
+    #  )
+
     LOG_FILE = os.path.join(os.getcwd(), 'log_dirs.txt')
     _ = main(FLAGS, LOG_FILE)
