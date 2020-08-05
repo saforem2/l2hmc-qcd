@@ -7,11 +7,13 @@ from __future__ import absolute_import, division, print_function
 
 import os
 import time
+import logging
 
 import numpy as np
 import tensorflow as tf
 import horovod.tensorflow as hvd
 from tqdm import tqdm
+from tensorflow.python.ops import summary_ops_v2
 
 import utils.file_io as io
 
@@ -32,21 +34,21 @@ for gpu in GPUS:
 if GPUS:
     tf.config.experimental.set_visible_devices(GPUS[hvd.local_rank()], 'GPU')
 
-
-# pylint:disable=no-member
-# pylint:disable=too-many-locals
-# pylint:disable=protected-access
-
-
-RANK = hvd.rank()
-io.log(f'Number of devices: {hvd.size()}', RANK)
-IS_CHIEF = (RANK == 0)
-
 try:
     tf.config.experimental.enable_mlir_bridge()
     tf.config.experimental.enable_mlir_graph_optimization()
 except:  # noqa: E722
     pass
+
+# pylint:disable=no-member
+# pylint:disable=too-many-locals
+# pylint:disable=protected-access
+
+RANK = hvd.rank()
+io.log(f'Number of devices: {hvd.size()}', RANK)
+IS_CHIEF = (RANK == 0)
+
+COLOR_TUP = (CBARS['yellow'], CBARS['reset'])
 
 
 def exp_mult_cooling(step, temp_init, temp_final, num_steps, alpha=None):
@@ -145,7 +147,7 @@ def train_hmc(flags):
     return x, train_data, dynamics.eps.numpy()
 
 
-def train(flags, log_file=None, md_steps=0, test_steps=0):
+def train(flags, log_file=None, md_steps=0, test_steps=1000):
     """Train model."""
     if flags.log_dir is None:
         flags.log_dir = io.make_log_dir(flags, 'GaugeModel',
@@ -237,7 +239,11 @@ def setup(dynamics, flags, dirs=None, x=None, betas=None):
     dynamics.compile(loss=dynamics.calc_losses,
                      optimizer=dynamics.optimizer,
                      experimental_run_tf_function=False)
-    train_step = tf.function(dynamics.train_step)
+    x_tspec = tf.TensorSpec(dynamics.x_shape, dtype=x.dtype, name='x')
+    beta_tspec = tf.TensorSpec([], dtype=TF_FLOAT, name='beta')
+    train_step = tf.function(dynamics.train_step,
+                             input_signature=[x_tspec, beta_tspec])
+                             #  experimental_follow_type_hints=True)
 
     pstart = 0
     pstop = 0
@@ -283,30 +289,38 @@ def train_dynamics(
     if IS_CHIEF:
         writer = config.writer
         writer.set_as_default()
-    # ================
+    # +=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=+
 
-    # run a single step to get header
-    #  first_step = (dynamics.optimizer.iterations.numpy() == 0)
-    # -------------------------------------------------------------------------
-    # Try running compiled `train_step` function, otherwise run imperatively
+    # +---------------------------------------------------------------------+
+    # | Try running compiled `train_step` fn otherwise run imperatively     |
+    # +---------------------------------------------------------------------+
     try:
         x, metrics = train_step(x, betas[0])  # , first_step=first_step)
         io.log('Compiled `dynamics.train_step` using tf.function!')
+        # Create tensorboard summary of compiled graph
+        #  args = (x, betas[0])
+        #  graph = (
+        #      dynamics.call.get_concrete_function(*args, training=True).graph
+        #  )
+        #  summary_ops_v2.graph(graph.as_graph_def())
     except:  # noqa: E722  # pylint:disable=bare-except
         train_step = dynamics.train_step
         x, metrics = train_step(x, betas[0])  # , first_step=first_step)
         io.log('Unable to compile `dynamics.train_step`, running imperatively')
-    # -------------------------------------------------------------------------
 
-    # -------------------------------------------------------------------
-    # Run molecular dynamics update at the beginning to not get stuck...
+    # +----------------------------------------+
+    # |     Run MD update to not get stuck     |
+    # +----------------------------------------+
     if md_steps > 0:
         io.log(f'Running {md_steps} MD updates...')
         for _ in range(md_steps):
             mc_states, _ = dynamics.md_update(x, betas[0], training=True)
             x = mc_states.out.x
-    # -------------------------------------------------------------------
 
+    # +--------------------------------------------------------------------+
+    # | Final setup; create timing wrapper for `train_step` function       |
+    # | and get formatted header string to display during training.        |
+    # +--------------------------------------------------------------------+
     def _timed_step(x: tf.Tensor, beta: tf.Tensor):
         start = time.time()
         x, metrics = train_step(x, beta)
@@ -318,18 +332,52 @@ def train_dynamics(
                                    prepend=['{:^12s}'.format('step')],
                                    split=True)
     io.log(header, rank=RANK)
-    ctup = (CBARS['yellow'], CBARS['reset'])
-    steps_tqdm = tqdm(steps, desc='training',
-                      bar_format=("{l_bar}%s{bar}%s{r_bar}" % ctup),
-                      ncols=len(header[0]) + 64)
+    _, tail = os.path.split(dirs.log_dir)
+    steps_tqdm = tqdm(steps, desc=f'training: {tail}',
+                      #  ncols=len(header[0]) + 64,
+                      bar_format=("{l_bar}%s{bar}%s{r_bar}" % COLOR_TUP))
+
+    # +------------------------------------------------+
+    # |                 Training loop                  |
+    # +------------------------------------------------+
     for step, beta in zip(steps_tqdm, betas):
         # Perform a single training step
         x, metrics = _timed_step(x, beta)
 
         #  Start profiler
-        #  if flags.profiler_start_step > 0 and step == profiler_start_step:
         if config.pstart > 0 and step == config.pstart:
             tf.profiler.experimental.start(flags.log_dir)
+
+        # Save checkpoints and dump configs `x` from each rank
+        if (step + 1) % flags.save_steps == 0 and ckpt is not None:
+            train_data.dump_configs(x, dirs.data_dir, rank=RANK)
+            if IS_CHIEF:
+                manager.save()
+                io.log(
+                    f'Checkpoint saved to: {manager.latest_checkpoint}',
+                )
+                train_data.save_and_flush(dirs.data_dir,
+                                          dirs.log_file,
+                                          rank=RANK, mode='a')
+
+        # Print current training state and metrics
+        if IS_CHIEF and step % flags.print_steps == 0:
+            data_str = train_data.get_fstr(step, metrics, skip=['charges'])
+            io.log(data_str, rank=RANK, level='INFO')
+
+        # Update summary objects
+        #  tf.summary.record_if(IS_CHIEF and step % flags.logging_steps == 0)
+        if IS_CHIEF and step % flags.logging_steps == 0:
+            train_data.update(step, metrics)
+            update_summaries(step, metrics, dynamics)
+            writer.flush()
+
+        # Print header every hundred steps
+        if IS_CHIEF and step % 100 == 0:
+            io.log(header, rank=RANK)
+
+        if config.pstop > 0 and step == config.pstop:
+            tf.profiler.experimental.stop()
 
         # Run inference when halfway done with training to compare against
         if test_steps > 0 and (step + 1) == len(steps) // 2 and IS_CHIEF:
@@ -345,43 +393,6 @@ def train_dynamics(
             _ = run(dynamics, args, x=x)
             io.log('Done running inference. Resuming training...')
             io.log(header)
-
-        # Save checkpoints and dump configs `x` from each rank
-        if (step + 1) % flags.save_steps == 0 and ckpt is not None:
-            train_data.dump_configs(x, dirs.data_dir, rank=RANK)
-            if IS_CHIEF:
-                manager.save()
-                io.log(
-                    f'Checkpoint saved to: {manager.latest_checkpoint}',
-                )
-                train_data.save_and_flush(dirs.data_dir,
-                                          dirs.log_file,
-                                          rank=RANK, mode='a')
-
-            #  io.log(f'Running {md_steps} MD updates (w/o accept/reject)...')
-            #  for _ in range(md_steps):
-            #      mc_states, _ = dynamics.md_update((x, beta), training=True)
-            #      x = mc_states.out.x
-
-        # Print current training state and metrics
-        if IS_CHIEF and step % flags.print_steps == 0:
-            data_str = train_data.get_fstr(step, metrics, skip=['charges'])
-            io.log(data_str, rank=RANK)
-
-        # Update summary objects
-        #  tf.summary.record_if(IS_CHIEF and step % flags.logging_steps == 0)
-        if IS_CHIEF and step % flags.logging_steps == 0:
-            train_data.update(step, metrics)
-            update_summaries(step, metrics, dynamics)
-
-        # Print header every hundred steps
-        if IS_CHIEF and step % 100 == 0:
-            io.log(header, rank=RANK)
-
-        if config.pstop > 0 and step == config.pstop:
-            tf.profiler.experimental.stop()
-        #  if flags.profiler and step == profiler_stop_step:
-        #      tf.profiler.experimental.stop()
 
     try:  # make sure profiler is shut down
         tf.profiler.experimental.stop()
