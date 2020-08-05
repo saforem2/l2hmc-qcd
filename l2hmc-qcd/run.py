@@ -114,10 +114,6 @@ def main(args):
 
 
 if __name__ == '__main__':
-    hvd.init()
-    RANK = hvd.rank()
-    IS_CHIEF = (RANK == 0)
-
     ARGS = parse_args()
     ARGS = AttrDict(ARGS.__dict__)
     if IS_CHIEF:
