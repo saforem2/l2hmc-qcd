@@ -10,6 +10,7 @@ import sys
 import argparse
 import json
 import tensorflow as tf
+import horovod.tensorflow as hvd
 
 from config import PROJECT_DIR, BIN_DIR
 from functools import wraps

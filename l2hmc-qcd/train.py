@@ -10,7 +10,7 @@ import sys
 import logging
 
 import tensorflow as tf
-import horovod.tensorflow as hvd
+
 import utils.file_io as io
 
 from utils import DummyTqdmFile

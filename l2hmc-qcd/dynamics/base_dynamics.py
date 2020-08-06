@@ -22,7 +22,7 @@ from __future__ import absolute_import, division, print_function
 import os
 import time
 
-from typing import Callable
+from typing import Callable, Union, List
 
 import numpy as np
 import tensorflow as tf
@@ -161,15 +161,32 @@ class BaseDynamics(tf.keras.Model):
 
         return params
 
-    def call(self, x: tf.Tensor, beta: tf.Tensor, training: bool = None):
-        """Call `self.apply_transition`.
+    #  def call(self, x: tf.Tensor, beta: tf.Tensor, training: bool = None):
+    def call(self, inputs, training=None, mask=None):
+        """Calls the model on new inputs.
+
+        In this case `call` just reapplies all ops in the graph to the new
+        inputs (e.g. build a new computational graph from the provided inputs).
+
+        NOTE: Custom implementation calls `self.apply_transition` and returns a
+        list of the states (init, proposed, out), accept probability, and the
+        sumlogdet states (init, proposed, out):
+            [mc_states: MonteCarloStates,
+             accept_prob: tf.Tensor,
+             sld_states: MonteCarloStates]
+
+        Arguments:
+            inputs: A tensor or list of tensors.
+            training: Boolean or boolean scalar tensor, indicating whether to
+                run the `Network` in training mode or inference mode.
+            mask: A mask or list of masks. A mask can be either a tensor or
+                None (no mask).
 
         Returns:
-            mc_states (MonteCarloStates): Initial, proposed, output `States`
-            accept_prob (tf.Tensor): Acceptance probabilities; (batch_size,)
-            sld_states: (MonteCarloStates): Initial, proposed, output sumlogdet
+            A tensor if there is a single output, or a list of tensors if there
+            are more than one outputs.
         """
-        return self.apply_transition(x, beta, training=training)
+        return self.apply_transition(inputs, training=training)
 
     def calc_losses(self, states: MonteCarloStates, accept_prob: tf.Tensor):
         """Calculate the total loss."""
@@ -195,11 +212,11 @@ class BaseDynamics(tf.keras.Model):
 
         return loss
 
-    def train_step(self, x: tf.Tensor, beta: tf.Tensor):
+    def train_step(self, data):
         """Perform a single training step."""
         raise NotImplementedError
 
-    def test_step(self, x: tf.Tensor, beta: tf.Tensor):
+    def test_step(self, data):
         """Perform a single inference step."""
         raise NotImplementedError
 
@@ -229,8 +246,7 @@ class BaseDynamics(tf.keras.Model):
 
     def apply_transition(
             self,
-            x: tf.Tensor,
-            beta: tf.Tensor,
+            inputs,
             training: bool = None,
     ):
         """Propose a new state and perform the accept/reject step.
@@ -238,9 +254,10 @@ class BaseDynamics(tf.keras.Model):
         NOTE: We simulate the dynamics both forward and backward, and use
         sampled Bernoulli masks to compute the actual solutions
         """
-        sf_init, sf_prop, pxf, sldf = self._transition(x, beta, forward=True,
+        x, beta = inputs
+        sf_init, sf_prop, pxf, sldf = self._transition(inputs, forward=True,
                                                        training=training)
-        sb_init, sb_prop, pxb, sldb = self._transition(x, beta, forward=False,
+        sb_init, sb_prop, pxb, sldb = self._transition(inputs, forward=False,
                                                        training=training)
 
         # Combine the forward / backward outputs;
@@ -275,15 +292,18 @@ class BaseDynamics(tf.keras.Model):
 
         return mc_states, accept_prob, sld_states
 
-    def md_update(self, x: tf.Tensor, beta: tf.Tensor, training: bool = None):
+    def md_update(self,
+                  inputs: Union[tf.Tensor, List[tf.Tensor]],
+                  training: bool = None):
         """Perform the molecular dynamics (MD) update w/o accept/reject.
 
         NOTE: We simulate the dynamics both forward and backward, and use
         sampled Bernoulli masks to compute the actual solutions
         """
-        sf_init, sf_prop, _, sldf = self._transition(x, beta, forward=True,
+        x, beta = inputs
+        sf_init, sf_prop, _, sldf = self._transition(inputs, forward=True,
                                                      training=training)
-        sb_init, sb_prop, _, sldb = self._transition(x, beta, forward=False,
+        sb_init, sb_prop, _, sldb = self._transition(inputs, forward=False,
                                                      training=training)
         # Decide direction uniformly
         mf_, mb_ = self._get_direction_masks()
@@ -309,12 +329,12 @@ class BaseDynamics(tf.keras.Model):
 
     def _transition(
             self,
-            x: tf.Tensor,
-            beta: tf.Tensor,
+            inputs: Union[tf.Tensor, List[tf.Tensor]],
             forward: bool,
             training: bool = None
     ):
         """Run the augmented leapfrog integrator."""
+        x, beta = inputs
         v = tf.random.normal(tf.shape(x))
         state = State(x=x, v=v, beta=beta)
         state_, px, sld = self.transition_kernel(state, forward, training)

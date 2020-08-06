@@ -221,18 +221,17 @@ class GaugeDynamics(BaseDynamics):
 
         return ploss, qloss
 
-    def train_step(self,
-                   x: tf.Tensor,
-                   beta: tf.Tensor):
+    def train_step(self, data):
         """Perform a single training step."""
+        x, beta = data
         start = time.time()
         with tf.GradientTape() as tape:
-            states, accept_prob, sumlogdet = self(x, beta, training=True)
+            states, accept_prob, sumlogdet = self(data, training=True)
             ploss, qloss = self.calc_losses(states, accept_prob)
             loss = ploss + qloss
             if self.aux_weight > 0:
                 z = tf.random.normal(x.shape, dtype=x.dtype)
-                states_, accept_prob_, _ = self(z, beta, training=True)
+                states_, accept_prob_, _ = self((z, beta), training=True)
                 ploss_, qloss_ = self.calc_losses(states_, accept_prob_)
                 loss += ploss_ + qloss_
 
@@ -277,10 +276,11 @@ class GaugeDynamics(BaseDynamics):
 
         return states.out.x, metrics
 
-    def test_step(self, x, beta):
+    def test_step(self, data):
         """Perform a single inference step."""
+        x, beta = data
         start = time.time()
-        states, px, sld = self(x, beta, training=False)
+        states, px, sld = self(data, training=False)
         ploss, qloss = self.calc_losses(states, px)
         loss = ploss + qloss
 
@@ -353,8 +353,6 @@ class GaugeDynamics(BaseDynamics):
                                              t, masks, training)
         m, mc = masks
 
-        # map x from [-pi, pi] to [-inf, inf]
-        #  x = t.math.tan(state.x / 2.)
         S, T, Q = network((state.v, m * state.x, t), training)
 
         transl = self._xtw * T
@@ -367,26 +365,12 @@ class GaugeDynamics(BaseDynamics):
         x_ = 2 * tf.math.atan(tf.math.tan(state.x/2) * expS)
         y = x_ + self.eps * (state.v * expQ + transl)
         xf = (m * state.x) + (mc * y)
-        #  y = (2 * tf.math.atan(x_ * expS)
-        #       + self.eps * (state.v * expQ + transl))
-        #  xf = (m * state.x) + (mc * y)
         state_out = State(x=xf, v=state.v, beta=state.beta)
 
         cterm = tf.math.cos(state.x / 2) ** 2
         sterm = (expS * tf.math.sin(state.x / 2)) ** 2
         log_jac = tf.math.log(expS / (cterm + sterm))
         logdet = tf.reduce_sum(mc * log_jac, axis=1)
-
-        #  denom = (tf.math.cos(state.x / 2) ** 2
-        #           + (expS * tf.math.sin(state.x/2)) ** 2)
-        #
-        #
-        #  denom = (2 * tf.math.cosh(scale)
-        #           - 2 * tf.math.cos(state.x) * tf.math.sinh(scale))
-        #  log_jac = tf.math.log(1. / denom)
-        #  logdet = tf.reduce_sum(mc * log_jac, axis=1)
-
-        #  logdet = tf.reduce_sum(mc * scale, axis=-1)
 
         return state_out, logdet
 
@@ -396,8 +380,6 @@ class GaugeDynamics(BaseDynamics):
             return super()._update_x_backward(network, state,
                                               t, masks, training)
         m, mc = masks
-        # map x from [-pi, pi] to [-inf, inf]
-        #  x = tf.math.tan(state.x / 2.)
         S, T, Q = network((state.v, m * state.x, t), training)
 
         transl = self._xtw * T
@@ -407,12 +389,10 @@ class GaugeDynamics(BaseDynamics):
         expS = tf.exp(scale)
         expQ = tf.exp(transf)
 
-        #  x_ = tf.math.tan(state.x / 2)
+        # Apply Non-Compact Projection to the product $x \odot S_{x}$
         term1 = 2 * tf.math.atan(expS * tf.math.tan(state.x / 2))
         term2 = expS * self.eps * (state.v * expQ + transl)
-        #  term2 = expS * self.eps * (state.v * expQ + transl)
         y = term1 - term2
-        #  y = expS * (state.x - self.eps * (state.v * expQ + transl))
         xb = (m * state.x) + (mc * y)
         state_out = State(x=xb, v=state.v, beta=state.beta)
 
@@ -420,12 +400,5 @@ class GaugeDynamics(BaseDynamics):
         sterm = (expS * tf.math.sin(state.x / 2)) ** 2
         log_jac = tf.math.log(expS / (cterm + sterm))
         logdet = tf.reduce_sum(mc * log_jac, axis=1)
-
-        #  denom = 2 * (tf.math.cosh(scale)
-        #               - tf.math.cos(state.x) * tf.math.sinh(scale))
-        #  log_jac = tf.math.log(1. / denom)
-        #  logdet = tf.reduce_sum(mc * log_jac, axis=1)
-
-        #  logdet = tf.reduce_sum(mc * scale, axis=-1)
 
         return state_out, logdet
