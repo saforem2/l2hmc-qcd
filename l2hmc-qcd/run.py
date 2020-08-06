@@ -36,16 +36,21 @@ def run(args, log_dir=None, random_start=True):
     train_flags_file = os.path.join(log_dir, 'training', 'FLAGS.z')
     train_flags = io.loadz(train_flags_file)
 
-    if args.beta is None:
+    beta = args.get('beta', None)
+    eps = args.get('eps', None)
+
+    if beta is None:
         io.log('Using `beta_final` from training flags')
-        args.beta = train_flags['beta_final']
-    if args.eps is None:
+        beta = train_flags['beta_final']
+    if eps is None:
         eps_file = os.path.join(log_dir, 'training', 'train_data', 'eps.z')
-        io.log(fLoading `eps` from {eps_file}')
+        io.log(f'Loading `eps` from {eps_file}')
         eps_arr = io.loadz(eps_file)
-        args.eps = tf.cast(eps_arr[-1], TF_FLOAT)
+        eps = tf.cast(eps_arr[-1], TF_FLOAT)
 
     args.update({
+        'eps': eps,
+        'beta': beta,
         'hmc': False,
         'num_steps': int(train_flags['num_steps']),
         'lattice_shape': train_flags['lattice_shape'],
