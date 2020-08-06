@@ -311,7 +311,7 @@ def train_dynamics(
     if md_steps > 0:
         io.log(f'Running {md_steps} MD updates...')
         for _ in range(md_steps):
-            mc_states, _ = dynamics.md_update(x, tf.constant(betas[0]),
+            mc_states, _ = dynamics.md_update((x, tf.constant(betas[0])),
                                               training=True)
             x = mc_states.out.x
 
