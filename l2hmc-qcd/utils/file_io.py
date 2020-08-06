@@ -24,7 +24,7 @@ from utils.attr_dict import AttrDict
 
 #  pylint:disable=invalid-name
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format="%(asctime)s:%(levelname)s:%(message)s",
     stream=DummyTqdmFile(sys.stderr)
 )

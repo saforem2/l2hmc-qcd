@@ -8,18 +8,20 @@ from __future__ import absolute_import, division, print_function
 import os
 import time
 
-import tensorflow as tf
-
 from tqdm import tqdm
+import tensorflow as tf
+import horovod.tensorflow as hvd
+hvd.init()
+RANK = hvd.rank()
 
 import utils.file_io as io
 
-from config import CBARS, HEADER, PI, PROJECT_DIR, SEP, TF_FLOAT
+from config import HEADER, PI, PROJECT_DIR, SEP, TF_FLOAT, CBARS
 from dynamics.gauge_dynamics import (build_dynamics, convert_to_angle,
                                      GaugeDynamics)
 from utils.attr_dict import AttrDict
-from utils.summary_utils import summarize_dict
 from utils.plotting_utils import plot_data
+from utils.summary_utils import summarize_dict
 from utils.data_containers import DataContainer
 
 # pylint:disable=no-member
@@ -27,14 +29,6 @@ if tf.__version__.startswith('1.'):
     TF_VERSION = '1.x'
 elif tf.__version__.startswith('2.'):
     TF_VERSION = '2.x'
-
-try:
-    import horovod.tensorflow as hvd
-    hvd.init()
-    RANK = hvd.rank()
-except AttributeError:
-    pass
-    #  RANK = 0
 
 IS_CHIEF = (RANK == 0)
 
@@ -77,8 +71,8 @@ def run_hmc(
         - 'run_steps'
         - 'lattice_shape'
     """
-    #  if not IS_CHIEF:
-    #      return None, None
+    if not IS_CHIEF:
+        return None, None, None
 
     if args.log_dir is not None:
         args = restore_from_train_flags(args)
@@ -134,8 +128,8 @@ def load_and_run(
         runs_dir: str = None,
 ) -> (GaugeDynamics, DataContainer, tf.Tensor):
     """Load trained model from checkpoint and run inference."""
-    #  if not IS_CHIEF:
-    #      return None, None, None
+    if not IS_CHIEF:
+        return None, None, None
 
     io.print_flags(args)
     ckpt_dir = os.path.join(args.log_dir, 'training', 'checkpoints')
@@ -169,8 +163,8 @@ def run(
         runs_dir: str = None
 ) -> (GaugeDynamics, DataContainer, tf.Tensor):
     """Run inference."""
-    #  if not IS_CHIEF:
-    #      return None, None, None
+    if not IS_CHIEF:
+        return None, None, None
 
     if runs_dir is None:
         if args.hmc:
@@ -234,8 +228,8 @@ def run_dynamics(
         md_steps: int = 0,
 ) -> (DataContainer, tf.Tensor, list):
     """Run inference on trained dynamics."""
-    #  if not IS_CHIEF:
-    #      return None, None
+    if not IS_CHIEF:
+        return None, None, None
 
     # Setup
     print_steps = flags.get('print_steps', 5)
@@ -262,10 +256,10 @@ def run_dynamics(
             x = mc_states.out.x
 
     try:
-        x, metrics = test_step(x, beta)
+        x, metrics = test_step((x, tf.constant(beta)))
     except:
         test_step = dynamics.test_step
-        x, metrics = test_step(x, beta)
+        x, metrics = test_step((x, tf.constant(beta)))
 
     header = run_data.get_header(metrics,
                                  skip=['charges'],
@@ -278,7 +272,7 @@ def run_dynamics(
 
     def timed_step(x: tf.Tensor, beta: tf.Tensor):
         start = time.time()
-        x, metrics = test_step(x, beta)
+        x, metrics = test_step((x, tf.constant(beta)))
         metrics.dt = time.time() - start
         if save_x:
             x_arr.append(x.numpy())

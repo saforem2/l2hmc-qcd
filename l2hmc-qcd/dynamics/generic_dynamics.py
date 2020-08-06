@@ -71,11 +71,9 @@ class GenericDynamics(BaseDynamics):
 
         return loss
 
-    def train_step(self,
-                   x: tf.Tensor,
-                   beta: tf.Tensor,
-                   first_step: bool = False):
+    def train_step(self, data):
         """Perform a single training step."""
+        x, beta = data
         start = time.time()
         with tf.GradientTape() as tape:
             states, accept_prob, sumlogdet = self(x, beta, training=True)
@@ -87,23 +85,28 @@ class GenericDynamics(BaseDynamics):
             if self.clip_val > 0:
                 grads = [tf.clip_by_norm(g, self.clip_val) for g in grads]
 
-            self.optimizer.apply_gradients(
-                zip(grads, self.trainable_variables)
-            )
+        self.optimizer.apply_gradients(
+            zip(grads, self.trainable_variables)
+        )
 
-            metrics = AttrDict({
-                'dt': time.time() - start,
-                'loss': loss,
-                'accept_prob': accept_prob,
-                'eps': self.eps,
-                'beta': states.init.beta,
-                'sumlogdet': sumlogdet.out,
-            })
+        metrics = AttrDict({
+            'dt': time.time() - start,
+            'loss': loss,
+            'accept_prob': accept_prob,
+            'eps': self.eps,
+            'beta': states.init.beta,
+            'sumlogdet': sumlogdet.out,
+        })
 
-            return states.out.x, metrics
+        if self.optimizer.iterations == 0 and self.using_hvd:
+            hvd.broadcast_variables(self.variables, root_rank=0)
+            hvd.broadcast_variables(self.optimizer.variables(), root_rank=0)
 
-    def test_step(self, x: tf.Tensor, beta: tf.Tensor):
+        return states.out.x, metrics
+
+    def test_step(self, data):
         """Perform a single inference step."""
+        x, beta = data
         start = time.time()
         states, accept_prob, sumlogdet = self(x, beta, training=False)
         loss = self.calc_losses(states, accept_prob)
