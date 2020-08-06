@@ -26,7 +26,7 @@ from utils.attr_dict import AttrDict
 logging.basicConfig(
     level=logging.DEBUG,
     format="%(asctime)s:%(levelname)s:%(message)s",
-    stream=DummyTqdmFile(sys.stderr)
+    stream=DummyTqdmFile(sys.stdout)
 )
 
 LOG_LEVELS_AS_INTS = {
