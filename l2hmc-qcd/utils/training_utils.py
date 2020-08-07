@@ -237,10 +237,10 @@ def setup(dynamics, flags, dirs=None, x=None, betas=None):
     dynamics.compile(loss=dynamics.calc_losses,
                      optimizer=dynamics.optimizer,
                      experimental_run_tf_function=False)
-    x_tspec = tf.TensorSpec(dynamics.x_shape, dtype=x.dtype, name='x')
-    beta_tspec = tf.TensorSpec([], dtype=TF_FLOAT, name='beta')
+    #  x_tspec = tf.TensorSpec(dynamics.x_shape, dtype=x.dtype, name='x')
+    #  beta_tspec = tf.TensorSpec([], dtype=TF_FLOAT, name='beta')
+    #  input_signature=[x_tspec, beta_tspec])
     train_step = tf.function(dynamics.train_step)
-                             #  input_signature=[x_tspec, beta_tspec])
 
     pstart = 0
     pstop = 0
@@ -294,12 +294,6 @@ def train_dynamics(
     try:
         x, metrics = train_step((x, tf.constant(betas[0])))
         io.log('Compiled `dynamics.train_step` using tf.function!')
-        # Create tensorboard summary of compiled graph
-        #  args = (x, betas[0])
-        #  graph = (
-        #      dynamics.call.get_concrete_function(*args, training=True).graph
-        #  )
-        #  summary_ops_v2.graph(graph.as_graph_def())
     except:  # noqa: E722  # pylint:disable=bare-except
         train_step = dynamics.train_step
         x, metrics = train_step((x, tf.constant(betas[0])))
@@ -329,14 +323,12 @@ def train_dynamics(
                                    skip=['charges'],
                                    prepend=['{:^12s}'.format('step')],
                                    split=True)
-    #  io.log(header, rank=RANK)
-    #  _, tail = os.path.split(dirs.log_dir)
+
     steps_tqdm = tqdm(steps, desc='training',
                       #  ncols=len(header[0]) + 64,
                       bar_format=("{l_bar}%s{bar}%s{r_bar}" % COLOR_TUP))
 
     io.log(header, rank=RANK, level='INFO')
-    #  tqdm.write(header)
     # +------------------------------------------------+
     # |                 Training loop                  |
     # +------------------------------------------------+
@@ -355,6 +347,7 @@ def train_dynamics(
                 manager.save()
                 io.log(
                     f'Checkpoint saved to: {manager.latest_checkpoint}',
+                    level='INFO',
                 )
                 train_data.save_and_flush(dirs.data_dir,
                                           dirs.log_file,
@@ -374,14 +367,15 @@ def train_dynamics(
 
         # Print header every hundred steps
         if IS_CHIEF and step % 100 == 0:
-            io.log(header, rank=RANK)
+            io.log(header, rank=RANK, level='INFO')
 
         if config.pstop > 0 and step == config.pstop:
             tf.profiler.experimental.stop()
 
         # Run inference when halfway done with training to compare against
+        '''
         if test_steps > 0 and (step + 1) == len(steps) // 2 and IS_CHIEF:
-            io.log(header)
+            io.log(header, level='INFO')
             io.log(f'Running inference at beta = {beta:.3g}...')
             args = AttrDict({
                 'beta': beta,
@@ -392,7 +386,8 @@ def train_dynamics(
 
             _ = run(dynamics, args, x=x)
             io.log('Done running inference. Resuming training...')
-            io.log(header)
+            io.log(header, level='INFO')
+        '''
 
     try:  # make sure profiler is shut down
         tf.profiler.experimental.stop()

@@ -1,7 +1,6 @@
 """
 file_io.py
 """
-import io
 import os
 import sys
 import time
@@ -9,22 +8,17 @@ import pickle
 import typing
 import logging
 import datetime
-import contextlib
-
-from urllib import request
 
 import joblib
 import numpy as np
 
-from tqdm import tqdm
-
-from utils import DummyTqdmFile
 from config import PROJECT_DIR
+from utils import DummyTqdmFile
 from utils.attr_dict import AttrDict
 
 #  pylint:disable=invalid-name
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format="%(asctime)s:%(levelname)s:%(message)s",
     stream=DummyTqdmFile(sys.stdout)
 )
@@ -46,7 +40,7 @@ LOG_LEVELS = {
 }
 
 
-def log(s: str, nl: bool = True, rank: int = 0, level: str = 'DEBUG'):
+def log(s: str, rank: int = 0, level: str = 'INFO'):
     """Print string `s` to stdout if and only if hvd.rank() == 0."""
     if rank != 0:
         return
@@ -65,13 +59,14 @@ def write(s: str, f: str, mode: str = 'a', nl: bool = True, rank: int = 0):
         ff.write(s + '\n' if nl else ' ')
 
 
-def print_flags(flags: AttrDict, rank: int = 0):
+def print_flags(flags: AttrDict, rank=0):
     """Helper method for printing flags."""
     log('\n'.join(
         [80 * '=', 'FLAGS:', *[f' {k}: {v}' for k, v in flags.items()]]
-    ))
+    ), rank=rank)
 
 
+# pylint:disable=too-many-arguments
 def make_header_from_dict(
         data: dict,
         dash: str = '-',
@@ -102,7 +97,7 @@ def log_and_write(
         nl: bool = True
 ):
     """Print string `s` to std out and also write to file `f`."""
-    log(s, nl, rank=rank)
+    log(s, rank=rank)
     write(s, f, mode=mode, nl=nl, rank=rank)
 
 
@@ -174,6 +169,7 @@ def save_dict(d: dict, out_dir: str, name: str, rank: int = 0):
     with open(txt_file, 'w') as f:
         for key, val in d.items():
             f.write(f'{key}: {val}\n')
+
 
 def print_args(args: dict, rank: int = 0):
     """Print out parsed arguments."""
@@ -374,6 +370,7 @@ def get_log_dir_fstr(flags):
     return fstr
 
 
+# pylint:disable=too-many-arguments
 def make_log_dir(FLAGS, model_type=None, log_file=None,
                  base_dir=None, eager=True, rank=0):
     """Automatically create and name `log_dir` to save model data to.

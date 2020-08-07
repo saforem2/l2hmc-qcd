@@ -9,16 +9,16 @@ import os
 
 from collections import defaultdict
 
+import joblib
 import numpy as np
 import pandas as pd
 import tensorflow as tf
-import joblib
 
 import utils.file_io as io
-from utils.data_utils import therm_arr
-from config import BASE_DIR
 
+from config import BASE_DIR
 from utils.attr_dict import AttrDict
+from utils.data_utils import therm_arr
 
 
 class DataContainer:
@@ -45,6 +45,7 @@ class DataContainer:
             except KeyError:
                 self.data[key] = [tf.convert_to_tensor(val).numpy()]
 
+    # pylint:disable=too-many-arguments
     def get_header(self, metrics=None, prepend=None,
                    append=None, skip=None, split=False):
         """Get nicely formatted header of variable names for printing."""
@@ -70,7 +71,7 @@ class DataContainer:
             k: tf.reduce_mean(v) for k, v in metrics.items() if k not in skip
         }
         fstr = (f'{step:>6g}/{self.steps:<6g}'
-                + ''.join([f'{v:^12.4g}' for _, v in data.items()]))
+                + ''.join([f'{v:^12.4g}' for _, v in data.items()]) + '\n')
 
         self.data_strs.append(fstr)
 
