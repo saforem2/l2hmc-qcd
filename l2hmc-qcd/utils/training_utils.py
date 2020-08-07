@@ -76,7 +76,7 @@ def restore_flags(flags, train_dir):
     """Update `FLAGS` using restored flags from `log_dir`."""
     rf_file = os.path.join(train_dir, 'FLAGS.z')
     restored = AttrDict(dict(io.loadz(rf_file)))
-    io.log(f'Restoring FLAGS from: {rf_file}...')
+    io.log(f'Restoring FLAGS from: {rf_file}...', rank=RANK)
     flags.update(restored)
 
     return flags
@@ -203,7 +203,7 @@ def setup(dynamics, flags, dirs=None, x=None, betas=None):
                                optimizer=dynamics.optimizer)
     manager = tf.train.CheckpointManager(ckpt, dirs.ckpt_dir, max_to_keep=5)
     if manager.latest_checkpoint:  # restore from checkpoint
-        io.log(f'Restored model from: {manager.latest_checkpoint}')
+        io.log(f'Restored model from: {manager.latest_checkpoint}', rank=RANK)
         ckpt.restore(manager.latest_checkpoint)
         current_step = dynamics.optimizer.iterations.numpy()
         x = train_data.restore(dirs.data_dir, rank=RANK, step=current_step)
@@ -293,17 +293,20 @@ def train_dynamics(
     # +---------------------------------------------------------------------+
     try:
         x, metrics = train_step((x, tf.constant(betas[0])))
-        io.log('Compiled `dynamics.train_step` using tf.function!')
+        io.log('Compiled `dynamics.train_step` using tf.function!', rank=RANK)
     except:  # noqa: E722  # pylint:disable=bare-except
         train_step = dynamics.train_step
         x, metrics = train_step((x, tf.constant(betas[0])))
-        io.log('Unable to compile `dynamics.train_step`, running imperatively')
+        io.log(
+            'Unable to compile `dynamics.train_step`, running imperatively',
+            rank=RANK
+        )
 
     # +----------------------------------------+
     # |     Run MD update to not get stuck     |
     # +----------------------------------------+
     if md_steps > 0:
-        io.log(f'Running {md_steps} MD updates...')
+        io.log(f'Running {md_steps} MD updates...', rank=RANK)
         for _ in range(md_steps):
             mc_states, _ = dynamics.md_update((x, tf.constant(betas[0])),
                                               training=True)
@@ -347,7 +350,7 @@ def train_dynamics(
                 manager.save()
                 io.log(
                     f'Checkpoint saved to: {manager.latest_checkpoint}',
-                    level='INFO',
+                    level='INFO', rank=RANK
                 )
                 train_data.save_and_flush(dirs.data_dir,
                                           dirs.log_file,

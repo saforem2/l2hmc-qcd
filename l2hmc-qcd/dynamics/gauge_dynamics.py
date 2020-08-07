@@ -56,13 +56,10 @@ def build_dynamics(flags):
     activation = flags.get('activation', 'relu')
     print(f'Received: {activation}; ')
     if activation == 'tanh':
-        print('using: `tf.nn.tanh` activation...')
         activation_fn = tf.nn.tanh
     elif activation == 'leaky_relu':
-        print('using: `tf.nn.leaky_relu` activation...')
         activation_fn = tf.nn.leaky_relu
     else:
-        print('using: `tf.nn.relu` activation...')
         activation_fn = tf.nn.relu
 
     net_config = NetworkConfig(
