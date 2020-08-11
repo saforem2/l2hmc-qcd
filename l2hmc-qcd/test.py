@@ -124,13 +124,13 @@ def test_transition_kernels(dynamics, x, beta, training=None):
     return AttrDict({'forward': tk_diffs_f, 'backward': tk_diffs_b})
 
 
-
 @timeit(out_file=TIMING_FILE)
 def test_hmc_run(args: AttrDict):
     """Testing generic HMC."""
     hmc_args = AttrDict({
         'hmc': True,
         'log_dir': None,
+        'horovod': args.get('horovod', False),
         'beta': args.get('beta', 1.),
         'eps': args.get('eps', 0.1),
         'num_steps': args.get('num_steps', 2),
@@ -142,15 +142,15 @@ def test_hmc_run(args: AttrDict):
     hmc_dir = os.path.join(os.path.dirname(PROJECT_DIR),
                            'gauge_logs_eager', 'test', 'hmc_runs')
     dynamics, run_data, x = run_hmc(hmc_args, hmc_dir=hmc_dir)
-    beta = hmc_args.get('beta', 1.)
-    tk_diffs = test_transition_kernels(dynamics, x, beta, training=False)
+    #  beta = hmc_args.get('beta', 1.)
+    #  tk_diffs = test_transition_kernels(dynamics, x, beta, training=False)
 
     return {
         'x': x,
         'dynamics': dynamics,
         'flags': hmc_args,
         'run_data': run_data,
-        'tk_diffs': tk_diffs,
+        'tk_diffs': None,
     }
 
 

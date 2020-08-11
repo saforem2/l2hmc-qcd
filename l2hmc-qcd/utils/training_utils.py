@@ -6,12 +6,12 @@ Implements helper functions for training the model.
 from __future__ import absolute_import, division, print_function
 
 import os
+import sys
 import time
+import logging
 
 import numpy as np
-from tqdm import tqdm
 import tensorflow as tf
-from tensorflow.python.ops import summary_ops_v2
 import horovod.tensorflow as hvd
 hvd.init()
 GPUS = tf.config.experimental.list_physical_devices('GPU')
@@ -20,9 +20,14 @@ for gpu in GPUS:
 if GPUS:
     tf.config.experimental.set_visible_devices(GPUS[hvd.local_rank()], 'GPU')
 
+from tqdm import tqdm
+from tensorflow.python.ops import summary_ops_v2
+
+
 import utils.file_io as io
 
-from config import HEADER, NET_WEIGHTS_HMC, PI, TF_FLOAT, TRAIN_STR, CBARS
+from config import CBARS, HEADER, NET_WEIGHTS_HMC, PI, TF_FLOAT, TRAIN_STR
+from utils import DummyTqdmFile
 from utils.attr_dict import AttrDict
 from utils.summary_utils import (summarize_dict, summarize_list,
                                  update_summaries)
@@ -47,6 +52,21 @@ io.log(f'Number of devices: {hvd.size()}', RANK)
 IS_CHIEF = (RANK == 0)
 
 COLOR_TUP = (CBARS['yellow'], CBARS['reset'])
+
+logging.getLogger('tensorflow').setLevel(logging.ERROR)
+
+if IS_CHIEF:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s:%(levelname)s:%(message)s",
+        stream=sys.stdout,
+    )
+else:
+    logging.basicConfig(
+        level=logging.CRITICAL,
+        format="%(asctime)s:%(levelname)s:%(message)s",
+        stream=None
+    )
 
 
 def exp_mult_cooling(step, temp_init, temp_final, num_steps, alpha=None):
@@ -220,11 +240,15 @@ def setup(dynamics, flags, dirs=None, x=None, betas=None):
         writer = tf.summary.create_file_writer(dirs.summary_dir)
 
     current_step = dynamics.optimizer.iterations.numpy()  # get global step
+    num_steps = max([flags.train_steps + 1, current_step + 1])
+    steps = tf.range(current_step, num_steps, dtype=tf.int64)
+    '''
     try:
         steps = tf.range(current_step, flags.train_steps + 1, dtype=tf.int64)
     except tf.errors.InvalidArgumentError:
         flags.train_steps += flags.logging_steps
         steps = tf.range(current_step, flags.train_steps + 1, dtype=tf.int64)
+    '''
 
     train_data.steps = steps[-1]
     if betas is None:
@@ -275,6 +299,7 @@ def train_dynamics(
         test_steps: int = 1000,
 ):
     """Train model."""
+    # setup...
     config = setup(dynamics, flags, dirs, x, betas)
     x = config.x
     steps = config.steps
@@ -286,7 +311,6 @@ def train_dynamics(
     if IS_CHIEF:
         writer = config.writer
         writer.set_as_default()
-    # +=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=+
 
     # +---------------------------------------------------------------------+
     # | Try running compiled `train_step` fn otherwise run imperatively     |
@@ -324,18 +348,18 @@ def train_dynamics(
 
     header = train_data.get_header(metrics,
                                    skip=['charges'],
-                                   prepend=['{:^12s}'.format('step')],
-                                   split=True)
+                                   prepend=['{:^12s}'.format('step')])
+    if IS_CHIEF:
+        #  io.log(header)
+        steps = tqdm(steps, desc='training', unit='step',
+                     #  file=DummyTqdmFile(sys.stdout),
+                     bar_format=("{l_bar}%s{bar}%s{r_bar}" % COLOR_TUP))
+        io.log_tqdm(header.split('\n'))
 
-    steps_tqdm = tqdm(steps, desc='training',
-                      #  ncols=len(header[0]) + 64,
-                      bar_format=("{l_bar}%s{bar}%s{r_bar}" % COLOR_TUP))
-
-    io.log(header, rank=RANK, level='INFO')
     # +------------------------------------------------+
     # |                 Training loop                  |
     # +------------------------------------------------+
-    for step, beta in zip(steps_tqdm, betas):
+    for step, beta in zip(steps, betas):
         # Perform a single training step
         x, metrics = _timed_step(x, beta)
 
@@ -348,10 +372,9 @@ def train_dynamics(
             train_data.dump_configs(x, dirs.data_dir, rank=RANK)
             if IS_CHIEF:
                 manager.save()
-                io.log(
-                    f'Checkpoint saved to: {manager.latest_checkpoint}',
-                    level='INFO', rank=RANK
-                )
+                #  io.log(
+                #      f'Checkpoint saved to: {manager.latest_checkpoint}',
+                #  )
                 train_data.save_and_flush(dirs.data_dir,
                                           dirs.log_file,
                                           rank=RANK, mode='a')
@@ -359,7 +382,7 @@ def train_dynamics(
         # Print current training state and metrics
         if IS_CHIEF and step % flags.print_steps == 0:
             data_str = train_data.get_fstr(step, metrics, skip=['charges'])
-            io.log(data_str, rank=RANK, level='INFO')
+            io.log_tqdm(data_str)
 
         # Update summary objects
         #  tf.summary.record_if(IS_CHIEF and step % flags.logging_steps == 0)
@@ -369,33 +392,18 @@ def train_dynamics(
             writer.flush()
 
         # Print header every hundred steps
-        if IS_CHIEF and step % 100 == 0:
-            io.log(header, rank=RANK, level='INFO')
+        if IS_CHIEF and (step + 1) % 100 == 0:
+            io.log_tqdm(header.split('\n'))
+            #  io.log(header, rank=RANK, level='INFO')
 
         if config.pstop > 0 and step == config.pstop:
             tf.profiler.experimental.stop()
 
-        # Run inference when halfway done with training to compare against
-        '''
-        if test_steps > 0 and (step + 1) == len(steps) // 2 and IS_CHIEF:
-            io.log(header, level='INFO')
-            io.log(f'Running inference at beta = {beta:.3g}...')
-            args = AttrDict({
-                'beta': beta,
-                'hmc': False,
-                'log_dir': dirs.log_dir,
-                'run_steps': test_steps,
-            })
-
-            _ = run(dynamics, args, x=x)
-            io.log('Done running inference. Resuming training...')
-            io.log(header, level='INFO')
-        '''
-
     try:  # make sure profiler is shut down
         tf.profiler.experimental.stop()
     except (AttributeError, tf.errors.UnavailableError):
-        io.log('No active profiling session!')
+        pass
+        #  io.log('No active profiling session!')
 
     train_data.dump_configs(x, dirs.data_dir, rank=RANK)
     if IS_CHIEF:

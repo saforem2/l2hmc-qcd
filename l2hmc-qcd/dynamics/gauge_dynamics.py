@@ -20,6 +20,7 @@ Date: 7/3/2020
 from __future__ import absolute_import, division, print_function
 
 import os
+import json
 import time
 
 from typing import NoReturn
@@ -49,6 +50,15 @@ def convert_to_angle(x):
     """Returns x in -pi <= x < pi."""
     x = tf.math.floormod(x + PI, TWO_PI) - PI
     return x
+
+
+def build_test_dynamics():
+    """Build quick test dynamics for debugging."""
+    ff = os.path.abspath(os.path.join(BIN_DIR, 'test_dynamics_flags.json'))
+    with open(ff, 'rt') as f:
+        flags = json.load(f)
+    flags = AttrDict(flags)
+    return build_dynamics(flags)
 
 
 def build_dynamics(flags):
@@ -138,12 +148,14 @@ class GaugeDynamics(BaseDynamics):
 
         if self.config.hmc:
             net_weights = NetWeights(0., 0., 0., 0., 0., 0.)
-        elif self.config.use_ncp:
-            net_weights = NetWeights(1., 1., 1., 1., 1., 1.)
+            self.config.use_ncp = False
         else:
-            net_weights = NetWeights(0., 1., 1., 1., 1., 1.)
+            if self.config.use_ncp:
+                net_weights = NetWeights(1., 1., 1., 1., 1., 1.)
+            else:
+                net_weights = NetWeights(0., 1., 1., 1., 1., 1.)
 
-        self._parse_params(params, net_weights=net_weights)
+        self.params = self._parse_params(params, net_weights=net_weights)
 
     def _get_network(self, step):
         if self.config.separate_networks:
@@ -199,7 +211,7 @@ class GaugeDynamics(BaseDynamics):
         wl_prop = self.lattice.calc_wilson_loops(states.proposed.x)
 
         # Calculate the plaquette loss
-        ploss = tf.constant(0., dtype=dtype)
+        ploss = tf.cast(0., dtype=dtype)
         if self.plaq_weight > 0:
             dwloops = 2 * (1. - tf.math.cos(wl_prop - wl_init))
             ploss = accept_prob * tf.reduce_sum(dwloops, axis=(1, 2))
@@ -207,7 +219,7 @@ class GaugeDynamics(BaseDynamics):
             #  ploss = self.mixed_loss(ploss, self.plaq_weight)
 
         # Calculate the charge loss
-        qloss = tf.constant(0., dtype=dtype)
+        qloss = tf.cast(0., dtype=dtype)
         if self.charge_weight > 0:
             q_init = self.lattice.calc_charges(wloops=wl_init, use_sin=True)
             q_prop = self.lattice.calc_charges(wloops=wl_prop, use_sin=True)
@@ -275,7 +287,6 @@ class GaugeDynamics(BaseDynamics):
 
     def test_step(self, data):
         """Perform a single inference step."""
-        x, beta = data
         start = time.time()
         states, px, sld = self(data, training=False)
         ploss, qloss = self.calc_losses(states, px)
@@ -303,25 +314,23 @@ class GaugeDynamics(BaseDynamics):
         NOTE: We track the error in the plaquette instead of the actual value.
         """
         wloops = self.lattice.calc_wilson_loops(state.x)
-        charges = self.lattice.calc_charges(wloops=wloops, use_sin=False)
-        charges_ = self.lattice.calc_charges(wloops=wloops, use_sin=True)
+        q_sin = self.lattice.calc_charges(wloops=wloops, use_sin=True)
+        q_proj = self.lattice.calc_charges(wloops=wloops, use_sin=False)
         plaqs = self.lattice.calc_plaqs(wloops=wloops, beta=state.beta)
 
-        return plaqs, charges, charges_
+        return plaqs, q_sin, q_proj
 
     def calc_observables(self, states):
         """Calculate observables."""
-        #  _, q_init = self._calc_observables(states.init)
-        #  q_init = self.lattice.calc_charges(x=states.init.x)
-        #  q_init_ = self.lattice.calc_charges(x=states.init.x)
-        #  plaqs, q_out, q_out_approx = self._calc_observables(states.out)
-        _, q_init, q_init_ = self._calc_observables(states.init)
-        plaqs, q_out, q_out_ = self._calc_observables(states.out)
+        _, q_init_sin, q_init_proj = self._calc_observables(states.init)
+        plaqs, q_out_sin, q_out_proj = self._calc_observables(states.out)
+        dq_sin = tf.math.abs(q_out_sin - q_init_sin)
+        dq_proj = tf.math.abs(q_out_proj - q_init_proj)
 
         observables = AttrDict({
-            'dq': tf.math.abs(q_out - q_init),  # FIXME: Change to dQ ** 2
-            'dq_sin': tf.math.abs(q_out_ - q_init_),
-            'charges': q_out,
+            'dq': dq_proj,  # FIXME: Change to dQ ** 2 ??
+            'dq_sin': dq_sin,
+            'charges': q_out_proj,
             'plaqs': plaqs,
         })
 
@@ -359,6 +368,22 @@ class GaugeDynamics(BaseDynamics):
         expS = tf.exp(scale)
         expQ = tf.exp(transf)
 
+        # -----------------------------
+        # NOTE: Non-Compact Projection
+        # -----------------------------
+        # 1. Update,
+        #          x -> x' = m * x + (1 - m) * y
+        #    where
+        #          y = x * exp(eps * Sx) + eps * (v * Qx + Tx)
+        # 2. Let
+        #          z = f(x): [-pi, pi] -> R, given by z = tan(x / 2)
+        # 3. Then
+        #          x' = m * x + (1 - m) * (2 * arctan(y))
+        #    where
+        #          y = tan(x / 2) * exp(eps * Sx) + eps * (v * Qx + Tx))
+        # 4. With Jacobian:
+        #          J = 1 / {[cos(x/2)]^2 + [exp(eps*Sx) * sin(x/2)]^2}
+        # ---------------------------------------------------------------
         x_ = 2 * tf.math.atan(tf.math.tan(state.x/2) * expS)
         y = x_ + self.eps * (state.v * expQ + transl)
         xf = (m * state.x) + (mc * y)

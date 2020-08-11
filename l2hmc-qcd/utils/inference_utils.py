@@ -6,7 +6,10 @@ Collection of helper methods to use for running inference on trained model.
 from __future__ import absolute_import, division, print_function
 
 import os
+import sys
 import time
+import logging
+from utils import DummyTqdmFile
 
 from tqdm import tqdm
 import tensorflow as tf
@@ -31,6 +34,19 @@ elif tf.__version__.startswith('2.'):
     TF_VERSION = '2.x'
 
 IS_CHIEF = (RANK == 0)
+
+if IS_CHIEF:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s:%(levelname)s:%(message)s",
+        stream=DummyTqdmFile(sys.stdout)
+    )
+else:
+    logging.basicConfig(
+        level=logging.CRITICAL,
+        format="%(asctime)s:%(levelname)s:%(message)s",
+        stream=None
+    )
 
 
 def restore_from_train_flags(args):
@@ -281,19 +297,24 @@ def run_dynamics(
 
     steps = tf.range(flags.run_steps, dtype=tf.int64)
     ctup = (CBARS['blue'], CBARS['reset'])
-    steps = tqdm(steps, desc='running',
-                 #  ncols=len(header[0]) + 64,
+    steps = tqdm(steps, desc='running', unit='step',
+                 #  file=DummyTqdmFile(sys.stdout),
                  bar_format=("{l_bar}%s{bar}%s{r_bar}" % ctup))
+
     for step in steps:
         x, metrics = timed_step(x, beta)
         run_data.update(step, metrics)
 
         if step % print_steps == 0:
-            data_str = run_data.get_fstr(step, metrics, skip=['charges'])
             summarize_dict(metrics, step, prefix='testing')
-            io.log(data_str)
+            data_str = run_data.get_fstr(step, metrics, skip=['charges'])
+            io.log_tqdm(data_str)
+            #  tqdm.write(data_str, file=sys.stdout)
+            #  io.log(data_str)
 
-        if step % 100 == 0:
-            io.log(header)
+        if (step + 1) % 100 == 0:
+            io.log_tqdm(header.split('\n'))
+            #  _ = [tqdm.write(s, file=sys.stdout) for s in header]
+            #  io.log(header)
 
     return run_data, x, x_arr

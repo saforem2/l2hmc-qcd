@@ -17,7 +17,7 @@
     "beta_init": 1.0,
     "beta_final": 1.0,
     "hmc_steps": 50,
-    "print_steps": 1,
+    "print_steps": 5,
     "logging_steps": 5,
     "logging_level": "INFO",
     "save_steps": 10,

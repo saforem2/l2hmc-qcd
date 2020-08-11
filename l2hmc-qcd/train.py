@@ -24,7 +24,8 @@ def main(args, log_file=None):
     """Main method for training."""
     #  io.log(TRAIN_STR)
     tf.keras.backend.set_floatx('float32')
-    x, dynamics, train_data, args = train(args, log_file=log_file, md_steps=10)
+    x, dynamics, train_data, args = train(args, md_steps=100,
+                                          log_file=log_file)
     if args.run_steps > 0:
         dynamics, run_data, x = run(dynamics, args, x=x)
         # run again with random start
