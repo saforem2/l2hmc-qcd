@@ -107,6 +107,7 @@ class BaseDynamics(tf.keras.Model):
         #  self._construct_time()
         if self.config.hmc:
             self.xnets, self.vnets = self._build_hmc_networks()
+            self.net_weights = NetWeights(*(6 * [0.]))
         else:
             self._build_networks()
 
@@ -137,10 +138,10 @@ class BaseDynamics(tf.keras.Model):
             self._has_trainable_params = False
 
         if net_weights is None:
-            net_weights = (
-                NetWeights(0., 0., 0., 0., 0., 0.) if self.config.hmc
-                else NetWeights(1., 1., 1., 1., 1., 1.)
-            )
+            if self.config.hmc:
+                net_weights = NetWeights(*(6 * [0.]))
+            else:
+                net_weights = NetWeights(*(6 * [1.]))
 
         self.net_weights = net_weights
         self._xsw = self.net_weights.x_scale
@@ -161,7 +162,6 @@ class BaseDynamics(tf.keras.Model):
 
         return params
 
-    #  def call(self, x: tf.Tensor, beta: tf.Tensor, training: bool = None):
     def call(self, inputs, training=None, mask=None):
         """Calls the model on new inputs.
 
@@ -221,14 +221,13 @@ class BaseDynamics(tf.keras.Model):
         raise NotImplementedError
 
     def _random_direction(
-                self,
-                x: tf.Tensor,
-                beta: tf.Tensor,
-                training: bool = None
+            self,
+            inputs: Union[tf.Tensor, List[tf.Tensor]],
+            training: bool = None
     ) -> (MonteCarloStates, tf.Tensor, MonteCarloStates):
         """Propose a new state and perform the accept/reject step."""
         forward = tf.cast((tf.random.uniform(shape=[]) < 0.5), dtype=tf.bool)
-        state_init, state_prop, px, sld = self._transition(x, beta,
+        state_init, state_prop, px, sld = self._transition(inputs,
                                                            forward=forward,
                                                            training=training)
         ma, mr = self._get_accept_masks(px)
@@ -248,7 +247,7 @@ class BaseDynamics(tf.keras.Model):
             self,
             inputs,
             training: bool = None,
-    ):
+    ) -> (MonteCarloStates, tf.Tensor, MonteCarloStates):
         """Propose a new state and perform the accept/reject step.
 
         NOTE: We simulate the dynamics both forward and backward, and use
@@ -292,9 +291,11 @@ class BaseDynamics(tf.keras.Model):
 
         return mc_states, accept_prob, sld_states
 
-    def md_update(self,
-                  inputs: Union[tf.Tensor, List[tf.Tensor]],
-                  training: bool = None):
+    def md_update(
+            self,
+            inputs: Union[tf.Tensor, List[tf.Tensor]],
+            training: bool = None
+    ) -> (MonteCarloStates, MonteCarloStates):
         """Perform the molecular dynamics (MD) update w/o accept/reject.
 
         NOTE: We simulate the dynamics both forward and backward, and use
@@ -332,7 +333,7 @@ class BaseDynamics(tf.keras.Model):
             inputs: Union[tf.Tensor, List[tf.Tensor]],
             forward: bool,
             training: bool = None
-    ):
+    ) -> (State, State, tf.Tensor, State):
         """Run the augmented leapfrog integrator."""
         x, beta = inputs
         v = tf.random.normal(tf.shape(x))
@@ -340,6 +341,64 @@ class BaseDynamics(tf.keras.Model):
         state_, px, sld = self.transition_kernel(state, forward, training)
 
         return state, state_, px, sld
+
+    def test_reversibility(
+            self,
+            data: Union[tf.Tensor, List[tf.Tensor]],
+            training: bool = None
+    ):
+        """Test reversibility.
+
+        NOTE:
+         1. Run forward then backward
+                 (x, v) -> (xf, vf)
+                 (xf, vf) -> (xb, vb)
+            check that x == xb, v == vb
+
+         2. Run backward then forward
+                 (x, v) -> (xb, vb)
+                 (xb, vb) -> (xf, vf)
+            check that x == xf, v == vf
+        """
+        dxf, dvf = self._test_reversibility(data, forward_first=True,
+                                            training=training)
+        dxb, dvb = self._test_reversibility(data, forward_first=False,
+                                            training=training)
+        output = AttrDict({
+            'dxf': dxf,
+            'dvf': dvf,
+            'dxb': dxb,
+            'dvb': dvb,
+        })
+
+        return output
+
+    def _test_reversibility(
+            self,
+            data: Union[tf.Tensor, List[tf.Tensor]],
+            forward_first: bool,
+            training: bool = None
+    ):
+        """Helper method for `self.test_reversibility`.
+
+        NOTE:
+         - If `forward_first`, test (1.) (forward then backward).
+         - Else, test (2.) (backward then forward).
+        """
+        x, beta = data
+        v = tf.random.normal(tf.shape(x))
+
+        #  Run from (x, v) -> (x1, v1)
+        state1, _, _ = self.transition_kernel(State(x, v, beta),
+                                              forward_first, training)
+        # Run from (x1, v1) --> (x2, v2)
+        state2, _, _ = self.transition_kernel(state1,
+                                              not forward_first, training)
+        # If reversible, then x2 == x, v2 == v
+        dx = x - state2.x
+        dv = v - state2.v
+
+        return dx, dv
 
     def test_transition_kernels(self, x, beta, forward, training=None):
         """Test for difference between while and for loop."""
@@ -749,7 +808,7 @@ class BaseDynamics(tf.keras.Model):
     def _get_network(self, step):
         return self.xnets, self.vnets
 
-    def _build_eps(self, use_log=True):
+    def _build_eps(self, use_log=False):
         """Create `self.eps` (i.e. the step size) as a `tf.Variable`.
 
         Args:
