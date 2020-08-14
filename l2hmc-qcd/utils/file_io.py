@@ -8,22 +8,15 @@ import pickle
 import typing
 import logging
 import datetime
-import contextlib
 
 import joblib
 import numpy as np
 
 from tqdm import tqdm
 from config import PROJECT_DIR
-from utils import DummyTqdmFile
 from utils.attr_dict import AttrDict
 
-#  pylint:disable=invalid-name
-#  logging.basicConfig(
-#      level=logging.INFO,
-#      format="%(asctime)s:%(levelname)s:%(message)s",
-#      stream=DummyTqdmFile(sys.stderr)
-#  )
+# pylint:disable=invalid-name
 
 LOG_LEVELS_AS_INTS = {
     'CRITICAL': 50,
@@ -48,10 +41,8 @@ def log(s: str, rank: int = 0, level: str = 'INFO'):
         return
 
     if isinstance(s, (list, tuple)):
-        #  _ = [print(s_, end='\n') for s_ in s]
         _ = [logging.log(LOG_LEVELS_AS_INTS[level.upper()], s_) for s_ in s]
     else:
-        #  print(s, end='\n')
         logging.log(LOG_LEVELS_AS_INTS[level.upper()], s)
 
 
@@ -59,31 +50,17 @@ def write(s: str, f: str, mode: str = 'a', nl: bool = True, rank: int = 0):
     """Write string `s` to file `f` if and only if hvd.rank() == 0."""
     if rank != 0:
         return
-    with open(f, mode) as ff:
-        ff.write(s + '\n' if nl else ' ')
+    with open(f, mode) as f_:
+        f_.write(s + '\n' if nl else ' ')
 
 
 def log_tqdm(s, out=sys.stdout):
+    """Write to output using `tqdm`."""
     if isinstance(s, (tuple, list)):
         for i in s:
             tqdm.write(i, file=out)
     else:
         tqdm.write(s, file=out)
-
-
-@contextlib.contextmanager
-def std_out_err_redirect_tqdm():
-    orig_out_err = sys.stdout, sys.stderr
-    try:
-        sys.stdout, sys.stderr = map(DummyTqdmFile, orig_out_err)
-        yield orig_out_err[0]
-    # Relay exceptions
-    except Exception as exc:
-        raise exc
-    # Always resore sys.stdout/err if necessary
-    finally:
-        sys.stdout, sys.stderr = orig_out_err
-
 
 
 def print_flags(flags: AttrDict, rank=0):
