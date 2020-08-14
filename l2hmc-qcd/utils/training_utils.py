@@ -6,34 +6,67 @@ Implements helper functions for training the model.
 from __future__ import absolute_import, division, print_function
 
 import os
+import sys
 import time
 import logging
 
 import numpy as np
 import tensorflow as tf
 import horovod.tensorflow as hvd
+hvd.init()
+GPUS = tf.config.experimental.list_physical_devices('GPU')
+for gpu in GPUS:
+    tf.config.experimental.set_memory_growth(gpu, True)
+if GPUS:
+    tf.config.experimental.set_visible_devices(GPUS[hvd.local_rank()], 'GPU')
 
 from tqdm import tqdm
+from tensorflow.python.ops import summary_ops_v2
+
 
 import utils.file_io as io
 
-from config import CBARS, NET_WEIGHTS_HMC, PI, TF_FLOAT
+from config import CBARS, HEADER, NET_WEIGHTS_HMC, PI, TF_FLOAT, TRAIN_STR
+from utils import DummyTqdmFile
 from utils.attr_dict import AttrDict
-from utils.summary_utils import update_summaries
+from utils.summary_utils import (summarize_dict, summarize_list,
+                                 update_summaries)
 from utils.plotting_utils import plot_data
 from utils.data_containers import DataContainer
+from utils.inference_utils import run
 from dynamics.base_dynamics import BaseDynamics
-from dynamics.gauge_dynamics import build_dynamics
+from dynamics.gauge_dynamics import build_dynamics, GaugeDynamics
+
+try:
+    tf.config.experimental.enable_mlir_bridge()
+    tf.config.experimental.enable_mlir_graph_optimization()
+except:  # noqa: E722
+    pass
 
 # pylint:disable=no-member
 # pylint:disable=too-many-locals
 # pylint:disable=protected-access
 
-#  RANK = hvd.rank()
-#  IS_CHIEF = (RANK == 0)
+RANK = hvd.rank()
+io.log(f'Number of devices: {hvd.size()}', RANK)
+IS_CHIEF = (RANK == 0)
 
 COLOR_TUP = (CBARS['yellow'], CBARS['reset'])
+
 logging.getLogger('tensorflow').setLevel(logging.ERROR)
+
+if IS_CHIEF:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s:%(levelname)s:%(message)s",
+        stream=sys.stdout,
+    )
+else:
+    logging.basicConfig(
+        level=logging.CRITICAL,
+        format="%(asctime)s:%(levelname)s:%(message)s",
+        stream=None
+    )
 
 
 def exp_mult_cooling(step, temp_init, temp_final, num_steps, alpha=None):
@@ -59,17 +92,17 @@ def get_betas(steps, beta_init, beta_final):
     return tf.constant(1. / t_arr, dtype=TF_FLOAT)
 
 
-def restore_flags(flags, train_dir, rank=0):
+def restore_flags(flags, train_dir):
     """Update `FLAGS` using restored flags from `log_dir`."""
     rf_file = os.path.join(train_dir, 'FLAGS.z')
     restored = AttrDict(dict(io.loadz(rf_file)))
-    io.log(f'Restoring FLAGS from: {rf_file}...', rank=rank)
+    io.log(f'Restoring FLAGS from: {rf_file}...', rank=RANK)
     flags.update(restored)
 
     return flags
 
 
-def setup_directories(flags, name='training', is_chief=True):
+def setup_directories(flags, name='training'):
     """Setup relevant directories for training."""
     train_dir = os.path.join(flags.log_dir, name)
     train_paths = AttrDict({
@@ -82,7 +115,7 @@ def setup_directories(flags, name='training', is_chief=True):
         'config_dir': os.path.join(train_dir, 'dynamics_configs'),
     })
 
-    if is_chief:
+    if IS_CHIEF:
         io.check_else_make_dir(
             [d for k, d in train_paths.items() if 'file' not in k],
             #  rank=rank
@@ -93,9 +126,8 @@ def setup_directories(flags, name='training', is_chief=True):
     return train_paths
 
 
-def train_hmc(flags, rank=0):
+def train_hmc(flags):
     """Main method for training HMC model."""
-    is_chief = (rank == 0)
     hmc_flags = AttrDict(dict(flags))
     hmc_flags.dropout_prob = 0.
     hmc_flags.hmc = True
@@ -107,12 +139,12 @@ def train_hmc(flags, rank=0):
     hmc_flags.fixed_beta = True
     hmc_flags.no_summaries = True
 
-    train_dirs = setup_directories(hmc_flags, 'training_hmc', is_chief)
+    train_dirs = setup_directories(hmc_flags, 'training_hmc')
     dynamics = build_dynamics(hmc_flags)
+    dynamics.save_config(train_dirs.config_dir)
     x, train_data = train_dynamics(dynamics, hmc_flags,
-                                   dirs=train_dirs, rank=rank)
-    if is_chief:
-        dynamics.save_config(train_dirs.config_dir)
+                                   test_steps=0, dirs=train_dirs)
+    if IS_CHIEF:
         output_dir = os.path.join(train_dirs.train_dir, 'outputs')
         io.check_else_make_dir(output_dir)
         train_data.save_data(output_dir)
@@ -128,43 +160,43 @@ def train_hmc(flags, rank=0):
         plot_data(train_data, train_dirs.train_dir, hmc_flags,
                   thermalize=True, params=params)
 
+    io.log('\n'.join(['Done with HMC start.', 80 * '=']), rank=RANK)
+
     return x, train_data, dynamics.eps.numpy()
 
 
-def train(flags, log_file=None, md_steps=0, rank=0):
+def train(flags, log_file=None, md_steps=0, test_steps=1000):
     """Train model."""
-    is_chief = (rank == 0)
     if flags.log_dir is None:
         flags.log_dir = io.make_log_dir(flags, 'GaugeModel',
-                                        log_file, rank=rank)
+                                        log_file, rank=RANK)
         flags.restore = False
     else:
         train_steps = flags.train_steps
-        train_dir = os.path.join(flags.log_dir, 'training')
-        flags = restore_flags(flags, train_dir, rank)
+        flags = restore_flags(flags, os.path.join(flags.log_dir, 'training'))
         if train_steps == flags.train_steps:
             flags.train_steps += flags.logging_steps
         flags.restore = True
 
-    train_dirs = setup_directories(flags, 'training', is_chief)
+    train_dirs = setup_directories(flags)
 
     x = None
     if flags.hmc_steps > 0 and not flags.restore:
-        x, train_data, eps_init = train_hmc(flags, is_chief)
+        x, train_data, eps_init = train_hmc(flags)
         flags.eps = eps_init
 
     if flags.restore:
         xfile = os.path.join(train_dirs.train_dir,
-                             'train_data', f'x_rank{rank}.z')
+                             'train_data', f'x_rank{RANK}.z')
         x = io.loadz(xfile)
 
     dynamics = build_dynamics(flags)
     dynamics.save_config(train_dirs.config_dir)
-    io.print_flags(flags, rank=rank)
+    io.print_flags(flags, rank=RANK)
 
-    x, train_data = train_dynamics(dynamics, flags, x=x, rank=rank,
-                                   dirs=train_dirs, md_steps=md_steps)
-    if is_chief:
+    x, train_data = train_dynamics(dynamics, flags, x=x, dirs=train_dirs,
+                                   test_steps=test_steps, md_steps=md_steps)
+    if IS_CHIEF:
         output_dir = os.path.join(train_dirs.train_dir, 'outputs')
         train_data.save_data(output_dir)
 
@@ -179,22 +211,22 @@ def train(flags, log_file=None, md_steps=0, rank=0):
         plot_data(train_data, train_dirs.train_dir,
                   flags, thermalize=True, params=params)
 
+    io.log('\n'.join(['Done training model', 80 * '=']), rank=RANK)
+
     return x, dynamics, train_data, flags
 
 
-# pylint:disable=too-many-arguments
-def setup(dynamics, flags, dirs=None, x=None, betas=None, rank=0):
+def setup(dynamics, flags, dirs=None, x=None, betas=None):
     """Setup training."""
-    is_chief = (rank == 0)
     train_data = DataContainer(flags.train_steps, dirs=dirs)
     ckpt = tf.train.Checkpoint(dynamics=dynamics,
                                optimizer=dynamics.optimizer)
     manager = tf.train.CheckpointManager(ckpt, dirs.ckpt_dir, max_to_keep=5)
     if manager.latest_checkpoint:  # restore from checkpoint
-        io.log(f'Restored model from: {manager.latest_checkpoint}', rank=rank)
+        io.log(f'Restored model from: {manager.latest_checkpoint}', rank=RANK)
         ckpt.restore(manager.latest_checkpoint)
         current_step = dynamics.optimizer.iterations.numpy()
-        x = train_data.restore(dirs.data_dir, rank=rank, step=current_step)
+        x = train_data.restore(dirs.data_dir, rank=RANK, step=current_step)
         flags.beta_init = train_data.data.beta[-1]
 
     # Create initial samples if not restoring from ckpt
@@ -204,12 +236,20 @@ def setup(dynamics, flags, dirs=None, x=None, betas=None, rank=0):
                               dtype=TF_FLOAT)
     # Setup summary writer
     writer = None
-    if is_chief:
+    if IS_CHIEF:
         writer = tf.summary.create_file_writer(dirs.summary_dir)
 
     current_step = dynamics.optimizer.iterations.numpy()  # get global step
     num_steps = max([flags.train_steps + 1, current_step + 1])
     steps = tf.range(current_step, num_steps, dtype=tf.int64)
+    '''
+    try:
+        steps = tf.range(current_step, flags.train_steps + 1, dtype=tf.int64)
+    except tf.errors.InvalidArgumentError:
+        flags.train_steps += flags.logging_steps
+        steps = tf.range(current_step, flags.train_steps + 1, dtype=tf.int64)
+    '''
+
     train_data.steps = steps[-1]
     if betas is None:
         if flags.beta_init == flags.beta_final:  # train at fixed beta
@@ -248,7 +288,7 @@ def setup(dynamics, flags, dirs=None, x=None, betas=None, rank=0):
     return output
 
 
-# pylint: disable=too-many-arguments,too-many-statements, too-many-branches
+# pylint: disable=too-many-arguments,too-many-statements
 def train_dynamics(
         dynamics: BaseDynamics,
         flags: AttrDict,
@@ -256,11 +296,11 @@ def train_dynamics(
         x: tf.Tensor = None,
         betas: tf.Tensor = None,
         md_steps: int = 0,
-        rank: int = 0,
+        test_steps: int = 1000,
 ):
     """Train model."""
-    is_chief = (rank == 0)
-    config = setup(dynamics, flags, dirs, x, betas, rank=rank)
+    # setup...
+    config = setup(dynamics, flags, dirs, x, betas)
     x = config.x
     steps = config.steps
     betas = config.betas
@@ -268,7 +308,7 @@ def train_dynamics(
     ckpt = config.checkpoint
     manager = config.manager
     train_data = config.train_data
-    if is_chief:
+    if IS_CHIEF:
         writer = config.writer
         writer.set_as_default()
 
@@ -277,20 +317,20 @@ def train_dynamics(
     # +---------------------------------------------------------------------+
     try:
         x, metrics = train_step((x, tf.constant(betas[0])))
-        io.log('Compiled `dynamics.train_step` using tf.function!', rank=rank)
+        io.log('Compiled `dynamics.train_step` using tf.function!', rank=RANK)
     except:  # noqa: E722  # pylint:disable=bare-except
         train_step = dynamics.train_step
         x, metrics = train_step((x, tf.constant(betas[0])))
         io.log(
             'Unable to compile `dynamics.train_step`, running imperatively',
-            rank=rank
+            rank=RANK
         )
 
     # +----------------------------------------+
     # |     Run MD update to not get stuck     |
     # +----------------------------------------+
     if md_steps > 0:
-        io.log(f'Running {md_steps} MD updates...', rank=rank)
+        io.log(f'Running {md_steps} MD updates...', rank=RANK)
         for _ in range(md_steps):
             mc_states, _ = dynamics.md_update((x, tf.constant(betas[0])),
                                               training=True)
@@ -309,8 +349,10 @@ def train_dynamics(
     header = train_data.get_header(metrics,
                                    skip=['charges'],
                                    prepend=['{:^12s}'.format('step')])
-    if is_chief:
+    if IS_CHIEF:
+        #  io.log(header)
         steps = tqdm(steps, desc='training', unit='step',
+                     #  file=DummyTqdmFile(sys.stdout),
                      bar_format=("{l_bar}%s{bar}%s{r_bar}" % COLOR_TUP))
         io.log_tqdm(header.split('\n'))
 
@@ -327,28 +369,32 @@ def train_dynamics(
 
         # Save checkpoints and dump configs `x` from each rank
         if (step + 1) % flags.save_steps == 0 and ckpt is not None:
-            train_data.dump_configs(x, dirs.data_dir, rank=rank)
-            if is_chief:
+            train_data.dump_configs(x, dirs.data_dir, rank=RANK)
+            if IS_CHIEF:
                 manager.save()
+                #  io.log(
+                #      f'Checkpoint saved to: {manager.latest_checkpoint}',
+                #  )
                 train_data.save_and_flush(dirs.data_dir,
                                           dirs.log_file,
-                                          rank=rank, mode='a')
+                                          rank=RANK, mode='a')
 
         # Print current training state and metrics
-        if is_chief and step % flags.print_steps == 0:
+        if IS_CHIEF and step % flags.print_steps == 0:
             data_str = train_data.get_fstr(step, metrics, skip=['charges'])
             io.log_tqdm(data_str)
 
         # Update summary objects
         #  tf.summary.record_if(IS_CHIEF and step % flags.logging_steps == 0)
-        if is_chief and step % flags.logging_steps == 0:
+        if IS_CHIEF and step % flags.logging_steps == 0:
             train_data.update(step, metrics)
             update_summaries(step, metrics, dynamics)
             writer.flush()
 
         # Print header every hundred steps
-        if is_chief and (step + 1) % 100 == 0:
+        if IS_CHIEF and (step + 1) % 100 == 0:
             io.log_tqdm(header.split('\n'))
+            #  io.log(header, rank=RANK, level='INFO')
 
         if config.pstop > 0 and step == config.pstop:
             tf.profiler.experimental.stop()
@@ -357,9 +403,10 @@ def train_dynamics(
         tf.profiler.experimental.stop()
     except (AttributeError, tf.errors.UnavailableError):
         pass
+        #  io.log('No active profiling session!')
 
-    train_data.dump_configs(x, dirs.data_dir, rank=rank)
-    if is_chief:
+    train_data.dump_configs(x, dirs.data_dir, rank=RANK)
+    if IS_CHIEF:
         manager.save()
         if not dynamics.config.hmc and flags.profiler:
             tf.summary.trace_on(graph=True, profiler=True)
@@ -369,8 +416,9 @@ def train_dynamics(
             tf.summary.trace_off()
 
         io.log(f'Checkpoint saved to: {manager.latest_checkpoint}')
-        train_data.save_and_flush(dirs.data_dir, dirs.log_file,
-                                  rank=rank, mode='a')
+        train_data.save_and_flush(dirs.data_dir,
+                                  dirs.log_file,
+                                  rank=RANK, mode='a')
         writer.flush()
         writer.close()
 

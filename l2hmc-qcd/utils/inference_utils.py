@@ -6,22 +6,47 @@ Collection of helper methods to use for running inference on trained model.
 from __future__ import absolute_import, division, print_function
 
 import os
+import sys
 import time
-
-import tensorflow as tf
-import horovod.tensorflow as hvd
+import logging
+from utils import DummyTqdmFile
 
 from tqdm import tqdm
+import tensorflow as tf
+import horovod.tensorflow as hvd
+hvd.init()
+RANK = hvd.rank()
 
 import utils.file_io as io
 
-from config import CBARS, PI, PROJECT_DIR, TF_FLOAT
+from config import HEADER, PI, PROJECT_DIR, SEP, TF_FLOAT, CBARS
 from dynamics.gauge_dynamics import (build_dynamics, convert_to_angle,
                                      GaugeDynamics)
 from utils.attr_dict import AttrDict
-from utils.summary_utils import summarize_dict
 from utils.plotting_utils import plot_data
+from utils.summary_utils import summarize_dict
 from utils.data_containers import DataContainer
+
+# pylint:disable=no-member
+if tf.__version__.startswith('1.'):
+    TF_VERSION = '1.x'
+elif tf.__version__.startswith('2.'):
+    TF_VERSION = '2.x'
+
+IS_CHIEF = (RANK == 0)
+
+if IS_CHIEF:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s:%(levelname)s:%(message)s",
+        stream=DummyTqdmFile(sys.stdout)
+    )
+else:
+    logging.basicConfig(
+        level=logging.CRITICAL,
+        format="%(asctime)s:%(levelname)s:%(message)s",
+        stream=None
+    )
 
 
 def restore_from_train_flags(args):
@@ -29,12 +54,12 @@ def restore_from_train_flags(args):
     train_dir = os.path.join(args.log_dir, 'training')
     flags = AttrDict(dict(io.loadz(os.path.join(train_dir, 'FLAGS.z'))))
     flags.horovod = False
-    if args.get('beta', None) is None:
-        args.beta = flags.get('beta_final', None)
-    if args.get('num_steps', None) is None:
-        args.num_steps = flags.get('num_steps', None)
     if args.get('lattice_shape', None) is None:
-        args.lattice_shape = flags.get('lattice_shape', None)
+        args.lattice_shape = flags.lattice_shape
+    if args.get('beta', None) is None:
+        args.beta = flags.beta_final
+    if args.get('num_steps', None) is None:
+        args.num_steps = flags.num_steps
 
     flags.update({
         'beta': args.beta,
@@ -62,6 +87,9 @@ def run_hmc(
         - 'run_steps'
         - 'lattice_shape'
     """
+    if not IS_CHIEF:
+        return None, None, None
+
     if args.log_dir is not None:
         args = restore_from_train_flags(args)
 
@@ -116,6 +144,9 @@ def load_and_run(
         runs_dir: str = None,
 ) -> (GaugeDynamics, DataContainer, tf.Tensor):
     """Load trained model from checkpoint and run inference."""
+    if not IS_CHIEF:
+        return None, None, None
+
     io.print_flags(args)
     ckpt_dir = os.path.join(args.log_dir, 'training', 'checkpoints')
     flags = restore_from_train_flags(args)
@@ -148,6 +179,9 @@ def run(
         runs_dir: str = None
 ) -> (GaugeDynamics, DataContainer, tf.Tensor):
     """Run inference."""
+    if not IS_CHIEF:
+        return None, None, None
+
     if runs_dir is None:
         if args.hmc:
             runs_dir = os.path.join(args.log_dir, 'inference_hmc')
@@ -202,7 +236,6 @@ def run(
     return dynamics, run_data, x
 
 
-# pylint:disable=too-many-locals
 def run_dynamics(
         dynamics: GaugeDynamics,
         flags: AttrDict,
@@ -211,6 +244,9 @@ def run_dynamics(
         md_steps: int = 0,
 ) -> (DataContainer, tf.Tensor, list):
     """Run inference on trained dynamics."""
+    if not IS_CHIEF:
+        return None, None, None
+
     # Setup
     print_steps = flags.get('print_steps', 5)
     beta = flags.get('beta', flags.get('beta_final', None))
@@ -237,7 +273,7 @@ def run_dynamics(
 
     try:
         x, metrics = test_step((x, tf.constant(beta)))
-    except:  # noqa: E722, pylint:disable=bare-except
+    except:
         test_step = dynamics.test_step
         x, metrics = test_step((x, tf.constant(beta)))
 
@@ -246,6 +282,7 @@ def run_dynamics(
                                  prepend=['{:^12s}'.format('step')],
                                  split=True)
     io.log(header)
+    # -------------------------------------------------------------
 
     x_arr = []
 
@@ -258,9 +295,10 @@ def run_dynamics(
 
         return x, metrics
 
+    steps = tf.range(flags.run_steps, dtype=tf.int64)
     ctup = (CBARS['blue'], CBARS['reset'])
-    steps = tqdm(tf.range(flags.run_steps, dtype=tf.int64),
-                 desc='running', unit='step',
+    steps = tqdm(steps, desc='running', unit='step',
+                 #  file=DummyTqdmFile(sys.stdout),
                  bar_format=("{l_bar}%s{bar}%s{r_bar}" % ctup))
 
     for step in steps:
@@ -271,8 +309,12 @@ def run_dynamics(
             summarize_dict(metrics, step, prefix='testing')
             data_str = run_data.get_fstr(step, metrics, skip=['charges'])
             io.log_tqdm(data_str)
+            #  tqdm.write(data_str, file=sys.stdout)
+            #  io.log(data_str)
 
         if (step + 1) % 100 == 0:
-            io.log_tqdm(header)
+            io.log_tqdm(header.split('\n'))
+            #  _ = [tqdm.write(s, file=sys.stdout) for s in header]
+            #  io.log(header)
 
     return run_data, x, x_arr
