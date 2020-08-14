@@ -9,9 +9,6 @@ import os
 import sys
 import logging
 
-import tensorflow as tf
-import horovod.tensorflow as hvd
-
 import utils.file_io as io
 
 from utils import DummyTqdmFile
@@ -20,31 +17,23 @@ from utils.parse_args import parse_args
 from utils.training_utils import train
 from utils.inference_utils import run
 
+import tensorflow as tf
+import horovod.tensorflow as hvd
 hvd.init()
-RANK = hvd.rank()
-IS_CHIEF = (RANK == 0)
-GPUS = tf.config.experimental.list_physical_devices('GPU')
-for gpu in GPUS:
-    tf.config.experimental.set_memory_growth(gpu, True)
-if GPUS:
-    tf.config.experimental.set_visible_devices(GPUS[hvd.local_rank()], 'GPU')
+gpus = tf.config.experimental.list_physical_devices('GPU')
+if gpus:
+  try:
+    # Currently, memory growth needs to be the same across GPUs
+    for gpu in gpus:
+      tf.config.experimental.set_memory_growth(gpu, True)
+    logical_gpus = tf.config.experimental.list_logical_devices('GPU')
+    print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
+  except RuntimeError as e:
+    # Memory growth must be set before GPUs have been initialized
+    print(e)
 
-io.log(f'Number of devices: {hvd.size()}', RANK)
+
 logging.getLogger('tensorflow').setLevel(logging.ERROR)
-
-
-if IS_CHIEF:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s:%(levelname)s:%(message)s",
-        stream=sys.stdout,
-    )
-else:
-    logging.basicConfig(
-        level=logging.CRITICAL,
-        format="%(asctime)s:%(levelname)s:%(message)s",
-        stream=None
-    )
 
 
 def main(args, log_file=None):
@@ -62,6 +51,25 @@ def main(args, log_file=None):
 
 
 if __name__ == '__main__':
+    RANK = hvd.rank()
+    IS_CHIEF = (RANK == 0)
+
+    if IS_CHIEF:
+        logging.basicConfig(level=logging.INFO, stream=sys.stdout,
+                            format="%(asctime)s:%(levelname)s:%(message)s")
+    else:
+        logging.basicConfig(level=logging.CRITICAL, stream=None,
+                            format="%(asctime)s:%(levelname)s:%(message)s")
+
+    #  io.log(f'Number of devices: {hvd.size()}')
+    #  GPUS = tf.config.experimental.list_physical_devices('GPU')
+    #  #  for gpu in GPUS:
+    #  #      tf.config.experimental.set_memory_growth(gpu, True)
+    #  if GPUS:
+    #      tf.config.experimental.set_visible_devices(
+    #          GPUS[hvd.local_rank()], 'GPU'
+    #      )
+
     FLAGS = parse_args()
     FLAGS = AttrDict(FLAGS.__dict__)
     LOG_FILE = os.path.join(os.getcwd(), 'log_dirs.txt')
