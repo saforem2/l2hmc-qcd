@@ -5,57 +5,18 @@ from __future__ import absolute_import, division, print_function
 
 import collections
 
-import numpy as np
-from typing import Optional, Dict, NoReturn, Callable, Tuple
-import tensorflow as tf
-import matplotlib.pyplot as plt
+from typing import Callable, Optional
 
 from scipy.stats import multivariate_normal, ortho_group
 
-from config import TF_FLOAT, NP_FLOAT
+import numpy as np
+import matplotlib.pyplot as plt
+import tensorflow as tf
+
+from config import NP_FLOAT, TF_FLOAT
 
 # pylint:disable=invalid-name
 # pylint:disable=unused-argument
-
-
-def plot_samples2D(
-        samples: np.ndarray,
-        title: str = None,
-        fig: Optional[plt.Figure] = None,
-        ax: Optional[plt.Axes] = None,
-        **kwargs,
-):
-    """Plot collection of 2D samples."""
-    if fig is None and ax is None:
-        fig, ax = plt.subplots()
-
-    _ = ax.plot(samples[:, 0], samples[:, 1], **kwargs)
-    if title is not None:
-        _ = ax.set_title(title, fontsize='x-large')
-
-    return fig, ax
-
-
-def contour_potential(
-        potential_fn: Callable,
-        ax: Optional[plt.Axes] = None,
-        title: Optional[str] = None,
-        xlim: Optional[float] = 5.,
-        ylim: Optional[float] = 5
-):
-    """Plot contours of `potential_fn`."""
-    grid = np.mgrid[-xlim:xlim:100j, -ylim:ylim:100j]
-    grid_2d = grid.reshape(2, -1).T
-    cmap = plt.get_cmap('inferno')
-    if ax is None:
-        _, ax = plt.subplots()
-    pdf1e = np.exp(-potential_fn(grid_2d))
-    _ = ax.contourf(grid[0], grid[1], pdf1e.reshape(100, 100), cmap=cmap)
-    if title is not None:
-        ax.set_title(title, fontsize='x-large')
-    plt.tight_layout()
-
-    return ax
 
 
 def w1(z):
@@ -73,6 +34,61 @@ def w3(z):
     return 3. * (1 + tf.exp(-(z[0] - 1.) / 0.3)) ** (-1)
 
 
+def plot_samples2D(
+        samples: np.ndarray,
+        title: str = None,
+        fig: Optional[plt.Figure] = None,
+        ax: Optional[plt.Axes] = None,
+        **kwargs,
+):
+    """Plot collection of 2D samples.
+
+    NOTE: **kwargs are passed to `ax.plot(...)`.
+    """
+    if fig is None and ax is None:
+        fig, ax = plt.subplots()
+
+    _ = ax.plot(samples[:, 0], samples[:, 1], **kwargs)
+    if title is not None:
+        _ = ax.set_title(title, fontsize='x-large')
+
+    return fig, ax
+
+
+# pylint:disable=too-many-arguments
+def contour_potential(
+        potential_fn: Callable,
+        ax: Optional[plt.Axes] = None,
+        title: Optional[str] = None,
+        xlim: Optional[float] = 5.,
+        ylim: Optional[float] = 5.,
+        cmap: Optional[str] = 'inferno',
+):
+    """Plot contours of `potential_fn`."""
+    if isinstance(xlim, (tuple, list)):
+        x0, x1 = xlim
+    else:
+        x0 = -xlim
+        x1 = xlim
+    if isinstance(ylim, (tuple, list)):
+        y0, y1 = ylim
+    else:
+        y0 = -ylim
+        y1 = ylim
+    grid = np.mgrid[x0:x1:500j, y0:y1:500j]
+    grid_2d = grid.reshape(2, -1).T
+    cmap = plt.get_cmap(cmap)
+    if ax is None:
+        _, ax = plt.subplots()
+    pdf1e = np.exp(-potential_fn(grid_2d))
+    _ = ax.contourf(grid[0], grid[1], pdf1e.reshape(500, 500), cmap=cmap)
+    if title is not None:
+        ax.set_title(title, fontsize='x-large')
+    plt.tight_layout()
+
+    return ax
+
+
 def two_moons_potential(z):
     """two-moons like potential."""
     z = tf.transpose(z)
@@ -87,7 +103,8 @@ def two_moons_potential(z):
 def sin_potential(z):
     """Sin-like potential."""
     z = tf.transpose(z)
-    return 0.5 * ((z[1] - w1(z)) / 0.4) ** 2 + 0.1 * tf.math.abs(z[0])
+    x, y = z
+    return 0.5 * ((y - w1(z)) / 0.4) ** 2 + 0.1 * tf.math.abs(x)
 
 
 def sin_potential1(z):
@@ -114,6 +131,7 @@ def sin_potential2(z):
 
 def quadratic_gaussian(x, mu, S):
     """Simple quadratic Gaussian (normal) distribution."""
+    x = tf.cast(x, dtype=TF_FLOAT)
     return tf.linalg.diag_part(0.5 * ((x - mu) @ S) @ tf.transpose((x - mu)))
 
 
@@ -247,6 +265,7 @@ class Gaussian:
 
 class TiltedGaussian(Gaussian):
     """Implements a tilted Gaussian."""
+
     def __init__(self, dim, log_min, log_max):
         self.R = ortho_group.rvs(dim)
         rand_unif = np.random.uniform(log_min, log_max, size=(dim,))
@@ -265,6 +284,7 @@ class TiltedGaussian(Gaussian):
 
 class RoughWell:
     """Implements a rough well distribution."""
+
     def __init__(self, dim, eps, easy=False):
         self.dim = dim
         self.eps = eps
@@ -292,6 +312,7 @@ class RoughWell:
 
 
 class GaussianFunnel:
+    """Gaussian funnel distribution."""
     def __init__(self, dim=2, clip=6., sigma=2.):
         self.dim = dim
         self.sigma = sigma
@@ -347,6 +368,7 @@ class GaussianFunnel:
 
 class GMM:
     """Implements a Gaussian Mixutre Model distribution."""
+
     def __init__(self, mus, sigmas, pis):
         assert len(mus) == len(sigmas)
         assert sum(pis) == 1.0
@@ -397,6 +419,7 @@ class GMM:
         return samples
 
     def log_density(self, x):
+        """Returns the log density of the distribution."""
         exp_arr = [
             self.pis[i] * multivariate_normal(
                 mean=self.mus[i], cov=self.sigmas[i]
