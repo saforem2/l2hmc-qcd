@@ -146,7 +146,7 @@ def train(flags, log_file=None, md_steps=0, rank=0):
             flags.train_steps += flags.logging_steps
         flags.restore = True
 
-    train_dirs = setup_directories(flags, is_chief)
+    train_dirs = setup_directories(flags, 'training', is_chief)
 
     x = None
     if flags.hmc_steps > 0 and not flags.restore:
