@@ -11,6 +11,7 @@ import argparse
 import json
 import tensorflow as tf
 import horovod.tensorflow as hvd
+import numpy as np
 
 from config import PROJECT_DIR, BIN_DIR
 from functools import wraps
@@ -142,8 +143,6 @@ def test_hmc_run(args: AttrDict):
     hmc_dir = os.path.join(os.path.dirname(PROJECT_DIR),
                            'gauge_logs_eager', 'test', 'hmc_runs')
     dynamics, run_data, x = run_hmc(hmc_args, hmc_dir=hmc_dir)
-    #  beta = hmc_args.get('beta', 1.)
-    #  tk_diffs = test_transition_kernels(dynamics, x, beta, training=False)
 
     return {
         'x': x,
