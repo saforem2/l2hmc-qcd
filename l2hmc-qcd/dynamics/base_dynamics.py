@@ -35,16 +35,14 @@ from utils.attr_dict import AttrDict
 from utils.learning_rate import WarmupExponentialDecay
 
 # pylint:disable=unused-import
-from utils.file_io import timeit  # noqa:E401
-from utils.seed_dict import vnet_seeds  # noqa:E401
-from utils.seed_dict import xnet_seeds  # noqa:E401
+from utils.file_io import timeit  # noqa:F401
+from utils.seed_dict import vnet_seeds  # noqa:F401
+from utils.seed_dict import xnet_seeds  # noqa:F401
 
 try:
     import horovod.tensorflow as hvd
-
-    HAS_HOROVOD = True
 except ImportError:
-    HAS_HOROVOD = False
+    pass
 
 
 TIMING_FILE = os.path.join(BIN_DIR, 'timing_file.log')
@@ -55,20 +53,9 @@ def identity(x):
     return x
 
 
-def timed(fn):
-    def wrap(*args, **kwargs):
-        """Function to be timed."""
-        start = time.time()
-        result = fn(*args, **kwargs)
-        stop = time.time()
-
-        return result, stop - start
-    return wrap
-
-
-# pylint:disable=invalid-name, too-many-arguments
-# pylint:disable=attribute-defined-outside-init, too-many-locals
-# pylint:disable=too-many-instance-attributes
+# pylint:disable=attribute-defined-outside-init
+# pylint:disable=invalid-name, too-many-instance-attributes
+# pylint:disable=too-many-arguments, too-many-locals, too-many-ancestors
 class BaseDynamics(tf.keras.Model):
     """Dynamics object for training the L2HMC sampler."""
 
@@ -130,7 +117,7 @@ class BaseDynamics(tf.keras.Model):
         self.using_hvd = params.get('horovod', False)
         self.x_shape = (self.batch_size, self.xdim)
         self.clip_val = params.get('clip_val', 0.)
-        #  self.loss_scale = params.get('loss_scale', 0.1)
+        self.aux_weight = params.get('aux_weight', 0.)
 
         # Determine if there are any parameters to be trained
         self._has_trainable_params = True
@@ -719,10 +706,6 @@ class BaseDynamics(tf.keras.Model):
             ], dtype=TF_FLOAT)
 
             self.ts.append(tf.tile(tf.expand_dims(t, 0), (tile, 1)))
-
-    def _get_time_bad(self, i):
-        """Format the MCMC step as [cos(...), sin(...)]."""
-        return tf.gather(self.ts, i)
 
     def _get_time(self, i, tile=1):
         """Format the MCMC step as [cos(...), sin(...)]."""
