@@ -12,16 +12,15 @@ from __future__ import absolute_import, division, print_function
 import time
 import tensorflow as tf
 
-from config import (BIN_DIR, DynamicsConfig, lrConfig, NetworkConfig,
-                    NetWeights, PI, TF_FLOAT, MonteCarloStates)
+from config import (DynamicsConfig, lrConfig, NetworkConfig,
+                    NetWeights, MonteCarloStates)
 from dynamics.base_dynamics import BaseDynamics
 from network.generic_network import GenericNetwork
 from utils.attr_dict import AttrDict
 try:
     import horovod.tensorflow as hvd
-    HAS_HOROVOD = True
 except ImportError:
-    HAS_HOROVOD = False
+    pass
 
 
 def identity(x):
@@ -29,9 +28,11 @@ def identity(x):
     return x
 
 
+# pylint:disable=too-many-ancestors,too-many-instance-attributes
 class GenericDynamics(BaseDynamics):
     """Implements a generic `Dynamics` object, defined by `potential_fn`."""
 
+    # pylint:disable=too-many-arguments
     def __init__(self,
                  params: AttrDict,
                  config: DynamicsConfig,
@@ -76,14 +77,21 @@ class GenericDynamics(BaseDynamics):
         x, beta = data
         start = time.time()
         with tf.GradientTape() as tape:
-            states, accept_prob, sumlogdet = self(x, beta, training=True)
+            states, accept_prob, sumlogdet = self((x, beta), training=True)
             loss = self.calc_losses(states, accept_prob)
-            if self.using_hvd:
-                tape = hvd.DistributedGradientTape(tape)
 
-            grads = tape.gradient(loss, self.trainable_variables)
-            if self.clip_val > 0:
-                grads = [tf.clip_by_norm(g, self.clip_val) for g in grads]
+            if self.aux_weight > 0:
+                z = tf.random.normal(x.shape, dtype=x.dtype)
+                states_, accept_prob_, _ = self((z, beta), training=True)
+                loss_ = self.calc_losses(states_, accept_prob_)
+                loss += loss_
+
+        if self.using_hvd:
+            tape = hvd.DistributedGradientTape(tape)
+
+        grads = tape.gradient(loss, self.trainable_variables)
+        if self.clip_val > 0:
+            grads = [tf.clip_by_norm(g, self.clip_val) for g in grads]
 
         self.optimizer.apply_gradients(
             zip(grads, self.trainable_variables)
@@ -108,7 +116,7 @@ class GenericDynamics(BaseDynamics):
         """Perform a single inference step."""
         x, beta = data
         start = time.time()
-        states, accept_prob, sumlogdet = self(x, beta, training=False)
+        states, accept_prob, sumlogdet = self((x, beta), training=False)
         loss = self.calc_losses(states, accept_prob)
 
         metrics = AttrDict({

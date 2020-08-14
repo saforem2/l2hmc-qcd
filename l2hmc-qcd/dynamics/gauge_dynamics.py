@@ -54,8 +54,8 @@ def convert_to_angle(x):
 
 def build_test_dynamics():
     """Build quick test dynamics for debugging."""
-    ff = os.path.abspath(os.path.join(BIN_DIR, 'test_dynamics_flags.json'))
-    with open(ff, 'rt') as f:
+    jfile = os.path.abspath(os.path.join(BIN_DIR, 'test_dynamics_flags.json'))
+    with open(jfile, 'rt') as f:
         flags = json.load(f)
     flags = AttrDict(flags)
     return build_dynamics(flags)
@@ -204,9 +204,8 @@ class GaugeDynamics(BaseDynamics):
         """Calculate the total loss."""
         dtype = states.init.x.dtype
 
-        # FIXME:
-        #   - Should we stack `states = [states.init.x, states.proposed.x]`
-        #     and call `self.lattice.calc_plaq_sums(states)`?
+        # XXX: Should we stack `states = [states.init.x, states.proposed.x]`
+        # and call `self.lattice.calc_plaq_sums(states)`?
         wl_init = self.lattice.calc_wilson_loops(states.init.x)
         wl_prop = self.lattice.calc_wilson_loops(states.proposed.x)
 
@@ -215,8 +214,10 @@ class GaugeDynamics(BaseDynamics):
         if self.plaq_weight > 0:
             dwloops = 2 * (1. - tf.math.cos(wl_prop - wl_init))
             ploss = accept_prob * tf.reduce_sum(dwloops, axis=(1, 2))
-            ploss = tf.reduce_mean(-ploss / self.plaq_weight, axis=0)
+
+            # XXX: Try using mixed loss??
             #  ploss = self.mixed_loss(ploss, self.plaq_weight)
+            ploss = tf.reduce_mean(-ploss / self.plaq_weight, axis=0)
 
         # Calculate the charge loss
         qloss = tf.cast(0., dtype=dtype)
@@ -225,8 +226,9 @@ class GaugeDynamics(BaseDynamics):
             q_prop = self.lattice.calc_charges(wloops=wl_prop, use_sin=True)
             qloss = accept_prob * (q_prop - q_init) ** 2
 
-            qloss = tf.reduce_mean(-qloss / self.charge_weight, axis=0)
+            # XXX: Try using mixed loss??
             #  qloss = self.mixed_loss(qloss, self.charge_weight)
+            qloss = tf.reduce_mean(-qloss / self.charge_weight, axis=0)
 
         return ploss, qloss
 
@@ -328,7 +330,7 @@ class GaugeDynamics(BaseDynamics):
         dq_proj = tf.math.abs(q_out_proj - q_init_proj)
 
         observables = AttrDict({
-            'dq': dq_proj,  # FIXME: Change to dQ ** 2 ??
+            'dq': dq_proj,  # XXX: Change to sqrt(dQ ** 2) ??
             'dq_sin': dq_sin,
             'charges': q_out_proj,
             'plaqs': plaqs,
