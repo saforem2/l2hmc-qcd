@@ -3,41 +3,26 @@ run.py
 
 Run inference on trained model.
 """
+# pylint:disable=wrong-import-position
+# noqa:disable-all
 from __future__ import absolute_import, division, print_function
 
 import os
-import sys
-import logging
 
 import tensorflow as tf
 import horovod.tensorflow as hvd
-
-import utils.file_io as io
-
-from config import TF_FLOAT
-from utils import DummyTqdmFile
-from utils.attr_dict import AttrDict
-from utils.inference_utils import load_and_run, run_hmc
-from utils.parse_inference_args import parse_args
 
 hvd.init()
 RANK = hvd.rank()
 IS_CHIEF = (RANK == 0)
 
-logging.getLogger('tensorflow').setLevel(logging.ERROR)
+# noqa: E402
+import utils.file_io as io
 
-if IS_CHIEF:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s:%(levelname)s:%(message)s",
-        stream=DummyTqdmFile(sys.stdout)
-    )
-else:
-    logging.basicConfig(
-        level=logging.CRITICAL,
-        format="%(asctime)s:%(levelname)s:%(message)s",
-        stream=None
-    )
+from config import TF_FLOAT
+from utils.attr_dict import AttrDict
+from utils.inference_utils import load_and_run, run_hmc
+from utils.parse_inference_args import parse_args
 
 
 def main(args, random_start=True):
