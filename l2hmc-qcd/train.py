@@ -3,13 +3,13 @@ train.py
 
 Train 2D U(1) model using eager execution in tensorflow.
 """
+# pylint:disable=invalid-name
 from __future__ import absolute_import, division, print_function
 
 import os
 import sys
 import logging
 
-import utils.file_io as io
 
 from utils import DummyTqdmFile
 from utils.attr_dict import AttrDict
@@ -19,19 +19,32 @@ from utils.inference_utils import run
 
 import tensorflow as tf
 import horovod.tensorflow as hvd
+
+# Initialize Horovod
 hvd.init()
+RANK = hvd.rank()
+IS_CHIEF = (RANK == 0)
 gpus = tf.config.experimental.list_physical_devices('GPU')
 if gpus:
-  try:
-    # Currently, memory growth needs to be the same across GPUs
-    for gpu in gpus:
-      tf.config.experimental.set_memory_growth(gpu, True)
-    logical_gpus = tf.config.experimental.list_logical_devices('GPU')
-    print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
-  except RuntimeError as e:
+    try:  # Currently, memory growth needs to be the same across GPUs
+        for gpu in gpus:
+            tf.config.experimental.set_memory_growth(gpu, True)
+        logical_gpus = tf.config.experimental.list_logical_devices('GPU')
+        print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
+        tf.config.experimental.set_visible_devices(
+            gpus[hvd.local_rank()], 'GPU'
+        )
     # Memory growth must be set before GPUs have been initialized
-    print(e)
+    except RuntimeError as e:
+        print(e)
 
+# Set logging configuration
+if IS_CHIEF:
+    logging.basicConfig(level=logging.INFO, stream=DummyTqdmFile(sys.stdout),
+                        format="%(asctime)s:%(levelname)s:%(message)s")
+else:
+    logging.basicConfig(level=logging.CRITICAL, stream=None,
+                        format="%(asctime)s:%(levelname)s:%(message)s")
 
 logging.getLogger('tensorflow').setLevel(logging.ERROR)
 
@@ -51,16 +64,6 @@ def main(args, log_file=None):
 
 
 if __name__ == '__main__':
-    RANK = hvd.rank()
-    IS_CHIEF = (RANK == 0)
-
-    if IS_CHIEF:
-        logging.basicConfig(level=logging.INFO, stream=sys.stdout,
-                            format="%(asctime)s:%(levelname)s:%(message)s")
-    else:
-        logging.basicConfig(level=logging.CRITICAL, stream=None,
-                            format="%(asctime)s:%(levelname)s:%(message)s")
-
     #  io.log(f'Number of devices: {hvd.size()}')
     #  GPUS = tf.config.experimental.list_physical_devices('GPU')
     #  #  for gpu in GPUS:
