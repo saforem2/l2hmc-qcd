@@ -129,7 +129,7 @@ class ScaledTanhLayer:
 class StackedLayer:
     """Wrapper class that stacks [cos(x), sin(x)] inputs."""
 
-    def __init__(self, name, factor, units,
+    def __init__(self, units, factor=1., name='StackedLayer',
                  seed=None, zero_init=False, **kwargs):
         """Initialization method."""
         self.layer = dense_layer(name=name, seed=seed,
