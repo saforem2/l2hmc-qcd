@@ -313,7 +313,8 @@ def run_dynamics(
             #  io.log(data_str)
 
         if (step + 1) % 100 == 0:
-            io.log_tqdm(header.split('\n'))
+            io.log_tqdm(header)
+            #  io.log_tqdm(header.split('\n'))
             #  _ = [tqdm.write(s, file=sys.stdout) for s in header]
             #  io.log(header)
 
