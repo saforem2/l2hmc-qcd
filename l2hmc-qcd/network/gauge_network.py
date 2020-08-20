@@ -125,14 +125,14 @@ class GaugeNetwork(tf.keras.layers.Layer):
             #  seed=net_seeds['v_layer'])
             self.v_layer = StackedLayer(name='v_layer',
                                         factor=1./3.,
-                                        zero_init=False,
+                                        zero_init=zero_init,
                                         units=config.units[0],
                                         input_shape=(2 * xdim,))
 
             #  seed=net_seeds['t_layer'])
             self.t_layer = dense_layer(name='t_layer',
                                        factor=1./3.,
-                                       zero_init=False,
+                                       zero_init=zero_init,
                                        units=config.units[0],
                                        input_shape=(2 * xdim,))
 
@@ -140,7 +140,7 @@ class GaugeNetwork(tf.keras.layers.Layer):
                 #  seed=int(i * net_seeds['h_layer']))
                 return dense_layer(factor=1.,
                                    units=units,
-                                   zero_init=True,
+                                   zero_init=zero_init,
                                    name=f'h_layer{i}')
 
             self.hidden_layers = [
@@ -151,16 +151,16 @@ class GaugeNetwork(tf.keras.layers.Layer):
             self.translation_layer = dense_layer(name=TNAME,
                                                  factor=0.001,
                                                  units=xdim,
-                                                 zero_init=True)
+                                                 zero_init=zero_init)
 
             #  seed=net_seeds[SNAME],
             self.scale_layer = ScaledTanhLayer(name='scale',
                                                factor=0.001,
-                                               zero_init=True,
+                                               zero_init=zero_init,
                                                units=xdim)
 
             self.transformation_layer = ScaledTanhLayer(name='transformation',
-                                                        zero_init=True,
+                                                        zero_init=zero_init,
                                                         factor=0.001,
                                                         units=xdim)
 
