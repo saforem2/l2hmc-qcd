@@ -1,5 +1,6 @@
 """
 parse_args.py
+
 Implements method for parsing command line arguments for `gauge_model.py`
 Author: Sam Foreman (github: @saforem2)
 Date: 04/09/2019
@@ -386,6 +387,13 @@ def parse_args():
                         required=False,
                         help=("""Flag specifying the default logging level.
                               Defaults to `INFO`."""))
+
+    parser.add_argument('--zero_init',
+                        dest='zero_init',
+                        action='store_true',
+                        required=False,
+                        help=("""Whether or not to initialize networks with
+                              zeros."""))
 
     args = parser.parse_args()
     if args.json_file is not None:

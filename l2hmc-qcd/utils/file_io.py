@@ -316,6 +316,7 @@ def get_log_dir_fstr(flags):
     activation = flags.get('activation', 'relu')
     separate_networks = flags.get('separate_networks', False)
     using_ncp = flags.get('use_ncp', False)
+    zero_init = flags.get('zero_init', False)
 
     fstr = ''
 
@@ -370,6 +371,9 @@ def get_log_dir_fstr(flags):
 
     if using_ncp:
         fstr += '_NCProj'
+
+    if zero_init:
+        fstr += '_zero_init'
 
     return fstr
 

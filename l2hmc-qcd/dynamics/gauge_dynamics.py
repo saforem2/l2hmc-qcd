@@ -64,7 +64,8 @@ def build_test_dynamics():
 def build_dynamics(flags):
     """Build dynamics using parameters from FLAGS."""
     activation = flags.get('activation', 'relu')
-    print(f'Received: {activation}; ')
+    zero_init = flags.get('zero_init', False)
+    #  print(f'Received: {activation}; ')
     if activation == 'tanh':
         activation_fn = tf.nn.tanh
     elif activation == 'leaky_relu':
@@ -97,6 +98,7 @@ def build_dynamics(flags):
     )
 
     flags = AttrDict({
+        'zero_init': flags.get('zero_init', False),
         'horovod': flags.get('horovod', False),
         'plaq_weight': flags.get('plaq_weight', 0.),
         'charge_weight': flags.get('charge_weight', 0.),
@@ -126,6 +128,7 @@ class GaugeDynamics(BaseDynamics):
         self.aux_weight = params.get('aux_weight', 0.)
         self.plaq_weight = params.get('plaq_weight', 10.)
         self.charge_weight = params.get('charge_weight', 0.1)
+        self.zero_init = params.get('zero_init', False)
 
         self.lattice_shape = params.get('lattice_shape', None)
         self.lattice = GaugeLattice(self.lattice_shape)
@@ -147,7 +150,9 @@ class GaugeDynamics(BaseDynamics):
         )
 
         if self.config.hmc:
+            self.xnets, self.vnets = self._build_hmc_networks()
             net_weights = NetWeights(0., 0., 0., 0., 0., 0.)
+            self.config.separate_networks = False
             self.config.use_ncp = False
         else:
             if self.config.use_ncp:
@@ -159,14 +164,38 @@ class GaugeDynamics(BaseDynamics):
 
     def _get_network(self, step):
         if self.config.separate_networks:
-            xnet = getattr(self, f'xnets{int(step)}', None)
-            vnet = getattr(self, f'vnets{int(step)}', None)
-            return xnet, vnet
+            if step % 2 == 0:
+                return self.xnet_even, self.vnet_even
+            return self.xnet_odd, self.vnet_odd
+            #  xnet = getattr(self, f'xnets{int(step)}', None)
+            #  vnet = getattr(self, f'vnets{int(step)}', None)
+            #  return xnet, vnet
 
         return self.xnets, self.vnets
 
     def _build_networks(self):
         if self.config.separate_networks:
+            self.xnet_even = GaugeNetwork(self.net_config,
+                                          self.xdim, factor=2.,
+                                          zero_init=self.zero_init,
+                                          name='XNet_even')
+            self.xnet_odd = GaugeNetwork(self.net_config,
+                                         self.xdim, factor=2.,
+                                         zero_init=self.zero_init,
+                                         name='XNet_odd')
+            self.vnet_even = GaugeNetwork(self.net_config,
+                                          self.xdim, factor=1.,
+                                          zero_init=self.zero_init,
+                                          name='VNet_even')
+            self.vnet_odd = GaugeNetwork(self.net_config,
+                                         self.xdim, factor=1.,
+                                         zero_init=self.zero_init,
+                                         name='VNet_odd')
+            #  half_steps = self.config.num_steps // 2
+            #  self.xnets = half_steps * [self.xnet_even, self.xnet_odd]
+            #  self.vnets = half_steps * [self.vnet_even, self.vnet_odd]
+
+            '''
             def _new_net(name, seeds_=None):
                 self.xnets = []
                 self.vnets = []
@@ -188,11 +217,14 @@ class GaugeDynamics(BaseDynamics):
 
             _new_net('XNet')  # , xnet_seeds)
             _new_net('VNet')  # , vnet_seeds)
+            '''
 
         else:
             self.xnets = GaugeNetwork(self.net_config, factor=2.,
+                                      zero_init=self.zero_init,
                                       xdim=self.xdim, name='XNet')
             self.vnets = GaugeNetwork(self.net_config, factor=1.,
+                                      zero_init=self.zero_init,
                                       xdim=self.xdim, name='VNet')
 
     @staticmethod

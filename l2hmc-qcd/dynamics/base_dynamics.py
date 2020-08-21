@@ -92,6 +92,7 @@ class BaseDynamics(tf.keras.Model):
         self.eps = self._build_eps(use_log=False)
         self.masks = self._build_masks(self.mask_type)
         #  self._construct_time()
+        #  if build_networks:
         if self.config.hmc:
             self.xnets, self.vnets = self._build_hmc_networks()
             self.net_weights = NetWeights(*(6 * [0.]))
