@@ -6,12 +6,12 @@
     "profiler": false,
     "use_ncp": false,
     "warmup_lr": true,
-    "separate_networks": false,
+    "separate_networks": true,
     "network_type": "GaugeNetwork",
     "eps": 0.1,
-    "num_steps": 10,
-    "beta_init": 1.0,
-    "beta_final": 1.0,
+    "num_steps": 5,
+    "beta_init": 2.0,
+    "beta_final": 2.0,
     "hmc_steps": 1000,
     "print_steps": 10,
     "logging_steps": 50,
@@ -30,5 +30,6 @@
     "lr_decay_rate": 0.98,
     "lr_decay_steps": 50,
     "lattice_shape": [256, 16, 16, 2],
-    "units": [1024, 1024]
+    "units": [1024, 1024],
+    "zero_init": true
 }
