@@ -162,16 +162,83 @@ class GaugeDynamics(BaseDynamics):
 
         self.params = self._parse_params(params, net_weights=net_weights)
 
-    def _get_network(self, step):
-        if self.config.separate_networks:
-            if step % 2 == 0:
-                return self.xnet_even, self.vnet_even
-            return self.xnet_odd, self.vnet_odd
-            #  xnet = getattr(self, f'xnets{int(step)}', None)
-            #  vnet = getattr(self, f'vnets{int(step)}', None)
-            #  return xnet, vnet
+    def transition_kernel(
+            self,
+            state: State,
+            forward: bool,
+            training: bool = None
+    ):
+        """Transition kernel of the augmented leapfrog integrator."""
+        lf_fn = self._forward_lf if forward else self._backward_lf
 
+        state_prop = State(x=state.x, v=state.v, beta=state.beta)
+        sumlogdet = tf.zeros((self.batch_size,), dtype=state.x.dtype)
+
+        for step in tf.range(self.config.num_steps):
+            state_prop, logdet = lf_fn(step, state_prop, training)
+            sumlogdet += logdet
+            '''
+            else:
+                if step % 2 == 0:
+                    if forward:
+                        state_prop, logdet = self._forward_lf_even(step,
+                                                                   state_prop,
+                                                                   training)
+                    else:
+                        state_prop, logdet = self._backward_lf_even(step,
+                                                                    state_prop,
+                                                                    training)
+                else:
+                    if forward:
+                        state_prop, logdet = self._forward_lf_odd(step,
+                                                                  state_prop,
+                                                                  training)
+                    else:
+                        state_prop, logdet = self._backward_lf_odd(step,
+                                                                   state_prop,
+                                                                   training)
+            sumlogdet += logdet
+            '''
+
+        accept_prob = self.compute_accept_prob(state, state_prop, sumlogdet)
+
+        return state_prop, accept_prob, sumlogdet
+
+    def _get_network(self, step):
+        if self.config.separate_networks and step % 2 == 0:
+            return tf.constant([self.xnet_even, self.vnet])
+        if self.config.separate_networks and step % 2 != 0:
+            return tf.constant([self.xnet_odd, self.vnet])
+
+        #      if step % 2 == 0:
+        #          return self.xnet_even, self.vnet_even
+        #      return self.xnet_odd, self.vnet_odd
+        #      #  xnet = getattr(self, f'xnets{int(step)}', None)
+        #      #  vnet = getattr(self, f'vnets{int(step)}', None)
+        #      #  return xnet, vnet
+        #
+        #  return self.xnets, self.vnets
         return self.xnets, self.vnets
+
+    def _build_masks(self, mask_type=None):
+        masks = []
+        mh = np.zeros(self.lattice_shape[1:])  # ignore batch dim
+        mv = np.zeros(self.lattice_shape[1:])  # ignore batch dim
+
+        mh[::4, :, 1] = 1.
+        mv[:, ::4, 0] = 1.
+        for i in range(4):
+            mh_ = np.roll(mh, shift=i, axis=0).flatten()
+            mv_ = np.roll(mv, shift=i, axis=1).flatten()
+            masks.append(tf.constant(mh_, dtype=tf.float32)[None, :])
+            masks.append(tf.constant(mv_, dtype=tf.float32)[None, :])
+            #  mask = tf.constant(mh_ + mv_, dtype=tf.float32)
+            #  masks.append(mask[None, :])
+
+        #  mh = np.array([np.roll(mh_, shift=i, axis=1) for i in range(4)])
+        #  mv = np.array([np.roll(mv_, shift=i, axis=1) for i in range(4)])
+
+        return masks
 
     def _build_networks(self):
         if self.config.separate_networks:
@@ -183,14 +250,19 @@ class GaugeDynamics(BaseDynamics):
                                          self.xdim, factor=2.,
                                          zero_init=self.zero_init,
                                          name='XNet_odd')
-            self.vnet_even = GaugeNetwork(self.net_config,
-                                          self.xdim, factor=1.,
-                                          zero_init=self.zero_init,
-                                          name='VNet_even')
-            self.vnet_odd = GaugeNetwork(self.net_config,
-                                         self.xdim, factor=1.,
-                                         zero_init=self.zero_init,
-                                         name='VNet_odd')
+            self.vnet = GaugeNetwork(self.net_config, self.xdim,
+                                     factor=1., zero_init=self.zero_init,
+                                     name='VNet')
+            #  self.vnet_even = GaugeNetwork(self.net_config,
+            #                                self.xdim, factor=1.,
+            #                                zero_init=self.zero_init,
+            #                                name='VNet_even')
+            #  self.vnet_odd = GaugeNetwork(self.net_config,
+            #                               self.xdim, factor=1.,
+            #                               zero_init=self.zero_init,
+            #                               name='VNet_odd')
+            #  self.nets_even = (self.xnet_even, self.vnet_even)
+            #  self.nets_odd = (self.xnet_odd, self.vnet_odd)
             #  half_steps = self.config.num_steps // 2
             #  self.xnets = half_steps * [self.xnet_even, self.xnet_odd]
             #  self.vnets = half_steps * [self.vnet_even, self.vnet_odd]
@@ -369,6 +441,171 @@ class GaugeDynamics(BaseDynamics):
         })
 
         return observables
+
+    def _forward_lf_even(self, step, state, training=None):
+        """Run the augmented leapfrog integrator in the forward direction."""
+        m, mc = self._get_mask(step)
+        t = self._get_time(step, tile=tf.shape(state.x)[0])
+        xnet = self.xnet_even
+        vnet = self.vnet
+        #  idx_arr = [0., 1., 0., ..., ]
+        #  x = state.x[idx_arr]
+        sumlogdet = tf.constant(0., dtype=state.x.dtype)
+
+        state, logdet = self._update_v_forward(vnet, state, t, training)
+        sumlogdet += logdet
+        state, logdet = self._update_x_forward(xnet, state, t,
+                                               (m, mc), training)
+        sumlogdet += logdet
+        state, logdet = self._update_x_forward(xnet, state, t,
+                                               (mc, m), training)
+        sumlogdet += logdet
+        state, logdet = self._update_v_forward(vnet, state, t, training)
+        sumlogdet += logdet
+
+        return state, sumlogdet
+
+    def _forward_lf_odd(self, step, state, training=None):
+        """Run the augmented leapfrog integrator in the forward direction."""
+        m, mc = self._get_mask(step)
+        t = self._get_time(step, tile=tf.shape(state.x)[0])
+        xnet = self.xnet_odd
+        vnet = self.vnet
+        sumlogdet = tf.constant(0., dtype=state.x.dtype)
+
+        state, logdet = self._update_v_forward(vnet, state, t, training)
+        sumlogdet += logdet
+        state, logdet = self._update_x_forward(xnet, state, t,
+                                               (m, mc), training)
+        sumlogdet += logdet
+        state, logdet = self._update_x_forward(xnet, state, t,
+                                               (mc, m), training)
+        sumlogdet += logdet
+        state, logdet = self._update_v_forward(vnet, state, t, training)
+        sumlogdet += logdet
+
+        return state, sumlogdet
+
+    def _backward_lf_even(self, step, state, training=None):
+        """Run the augmented leapfrog integrator in the backward direction."""
+        step_r = self.config.num_steps - step - 1
+        m, mc = self._get_mask(step_r)
+        t = self._get_time(step_r, tile=tf.shape(state.x)[0])
+        xnet = self.xnet_even
+        vnet = self.vnet
+
+        #  sumlogdet = 0.
+        sumlogdet = tf.constant(0., dtype=state.x.dtype)
+
+        state, logdet = self._update_v_backward(vnet, state, t, training)
+        sumlogdet += logdet
+
+        state, logdet = self._update_x_backward(xnet, state, t,
+                                                (mc, m), training)
+        sumlogdet += logdet
+
+        state, logdet = self._update_x_backward(xnet, state, t,
+                                                (m, mc), training)
+        sumlogdet += logdet
+
+        state, logdet = self._update_v_backward(vnet, state, t, training)
+        sumlogdet += logdet
+
+        return state, sumlogdet
+
+    def _backward_lf_odd(self, step, state, training=None):
+        """Run the augmented leapfrog integrator in the backward direction."""
+        step_r = self.config.num_steps - step - 1
+        m, mc = self._get_mask(step_r)
+        t = self._get_time(step_r, tile=tf.shape(state.x)[0])
+        xnet = self.xnet_odd
+        vnet = self.vnet
+
+        #  sumlogdet = 0.
+        sumlogdet = tf.constant(0., dtype=state.x.dtype)
+
+        state, logdet = self._update_v_backward(vnet, state, t, training)
+        sumlogdet += logdet
+
+        state, logdet = self._update_x_backward(xnet, state, t,
+                                                (mc, m), training)
+        sumlogdet += logdet
+
+        state, logdet = self._update_x_backward(xnet, state, t,
+                                                (m, mc), training)
+        sumlogdet += logdet
+
+        state, logdet = self._update_v_backward(vnet, state, t, training)
+        sumlogdet += logdet
+
+        return state, sumlogdet
+
+    def _forward_lf(self, step, state, training=None):
+        """Run the augmented leapfrog integrator in the forward direction."""
+        #  m, mc = self._get_mask(step)  # pylint: disable=invalid-name
+        t = self._get_time(step, tile=tf.shape(state.x)[0])
+        xnet, vnet = self._get_network(step)
+
+        sumlogdet = tf.constant(0., dtype=state.x.dtype)
+
+        state, logdet = self._update_v_forward(vnet, state, t, training)
+        sumlogdet += logdet
+
+        for m in self.masks:
+            mc = 1. - m
+            state, logdet = self._update_x_forward(xnet, state, t,
+                                                   (m, mc), training)
+            sumlogdet += logdet
+            #  state, logdet = self._update_x_forward(xnet, state, t,
+            #                                         (mc, m), training)
+            #  sumlogdet += logdet
+
+        #  state, logdet = self._update_x_forward(xnet, state, t,
+        #                                         (m, mc), training)
+        #  sumlogdet += logdet
+        #  state, logdet = self._update_x_forward(xnet, state, t,
+        #                                         (mc, m), training)
+        #  sumlogdet += logdet
+        state, logdet = self._update_v_forward(vnet, state, t, training)
+        sumlogdet += logdet
+
+        return state, sumlogdet
+
+    def _backward_lf(self, step, state, training=None):
+        """Run the augmented leapfrog integrator in the backward direction."""
+        step_r = self.config.num_steps - step - 1
+        #  m, mc = self._get_mask(step_r)
+        t = self._get_time(step_r, tile=tf.shape(state.x)[0])
+        xnet, vnet = self._get_network(step_r)
+
+        #  sumlogdet = 0.
+        sumlogdet = tf.constant(0., dtype=state.x.dtype)
+
+        state, logdet = self._update_v_backward(vnet, state, t, training)
+        sumlogdet += logdet
+
+        for m in self.masks:
+            mc = 1. - m
+            state, logdet = self._update_x_backward(xnet, state, t,
+                                                    (mc, m), training)
+            sumlogdet += logdet
+
+            state, logdet = self._update_x_backward(xnet, state, t,
+                                                    (m, mc), training)
+            sumlogdet += logdet
+
+        #  state, logdet = self._update_x_backward(xnet, state, t,
+        #                                          (mc, m), training)
+        #  sumlogdet += logdet
+        #
+        #  state, logdet = self._update_x_backward(xnet, state, t,
+        #                                          (m, mc), training)
+        #  sumlogdet += logdet
+
+        state, logdet = self._update_v_backward(vnet, state, t, training)
+        sumlogdet += logdet
+
+        return state, sumlogdet
 
     def _update_v_forward(
             self,
