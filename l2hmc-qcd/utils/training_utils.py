@@ -142,8 +142,7 @@ def train_hmc(flags):
     train_dirs = setup_directories(hmc_flags, 'training_hmc')
     dynamics = build_dynamics(hmc_flags)
     dynamics.save_config(train_dirs.config_dir)
-    x, train_data = train_dynamics(dynamics, hmc_flags,
-                                   test_steps=0, dirs=train_dirs)
+    x, train_data = train_dynamics(dynamics, hmc_flags, dirs=train_dirs)
     if IS_CHIEF:
         output_dir = os.path.join(train_dirs.train_dir, 'outputs')
         io.check_else_make_dir(output_dir)
@@ -165,7 +164,7 @@ def train_hmc(flags):
     return x, train_data, dynamics.eps.numpy()
 
 
-def train(flags, log_file=None, md_steps=0, test_steps=1000):
+def train(flags, log_file=None, md_steps=0):
     """Train model."""
     if flags.log_dir is None:
         flags.log_dir = io.make_log_dir(flags, 'GaugeModel',
@@ -178,7 +177,7 @@ def train(flags, log_file=None, md_steps=0, test_steps=1000):
             flags.train_steps += flags.logging_steps
         flags.restore = True
 
-    train_dirs = setup_directories(flags)
+    dirs = setup_directories(flags)
 
     x = None
     if flags.hmc_steps > 0 and not flags.restore:
@@ -186,18 +185,19 @@ def train(flags, log_file=None, md_steps=0, test_steps=1000):
         flags.eps = eps_init
 
     if flags.restore:
-        xfile = os.path.join(train_dirs.train_dir,
+        xfile = os.path.join(dirs.train_dir,
                              'train_data', f'x_rank{RANK}.z')
         x = io.loadz(xfile)
 
     dynamics = build_dynamics(flags)
-    dynamics.save_config(train_dirs.config_dir)
+    dynamics.save_config(dirs.config_dir)
     io.print_flags(flags, rank=RANK)
 
-    x, train_data = train_dynamics(dynamics, flags, x=x, dirs=train_dirs,
-                                   test_steps=test_steps, md_steps=md_steps)
+    x, train_data = train_dynamics(dynamics, flags, dirs,
+                                   x=x, md_steps=md_steps)
+
     if IS_CHIEF:
-        output_dir = os.path.join(train_dirs.train_dir, 'outputs')
+        output_dir = os.path.join(dirs.train_dir, 'outputs')
         train_data.save_data(output_dir)
 
         params = {
@@ -208,8 +208,8 @@ def train(flags, log_file=None, md_steps=0, test_steps=1000):
             'num_steps': dynamics.config.num_steps,
             'net_weights': dynamics.net_weights,
         }
-        plot_data(train_data, train_dirs.train_dir,
-                  flags, thermalize=True, params=params)
+        plot_data(train_data, dirs.train_dir, flags,
+                  thermalize=True, params=params)
 
     io.log('\n'.join(['Done training model', 80 * '=']), rank=RANK)
 
@@ -242,14 +242,6 @@ def setup(dynamics, flags, dirs=None, x=None, betas=None):
     current_step = dynamics.optimizer.iterations.numpy()  # get global step
     num_steps = max([flags.train_steps + 1, current_step + 1])
     steps = tf.range(current_step, num_steps, dtype=tf.int64)
-    '''
-    try:
-        steps = tf.range(current_step, flags.train_steps + 1, dtype=tf.int64)
-    except tf.errors.InvalidArgumentError:
-        flags.train_steps += flags.logging_steps
-        steps = tf.range(current_step, flags.train_steps + 1, dtype=tf.int64)
-    '''
-
     train_data.steps = steps[-1]
     if betas is None:
         if flags.beta_init == flags.beta_final:  # train at fixed beta
@@ -296,7 +288,6 @@ def train_dynamics(
         x: tf.Tensor = None,
         betas: tf.Tensor = None,
         md_steps: int = 0,
-        test_steps: int = 1000,
 ):
     """Train model."""
     # setup...
@@ -311,13 +302,28 @@ def train_dynamics(
     if IS_CHIEF:
         writer = config.writer
         writer.set_as_default()
+        debug_dir = os.path.join(flags.log_dir, 'debugging')
+        io.check_else_make_dir(debug_dir)
+        tf.debugging.experimental.enable_dump_debug_info(
+            debug_dir, tensor_debug_mode="FULL_HEALTH", circular_buffer_size=-1
+        )
 
     # +---------------------------------------------------------------------+
     # | Try running compiled `train_step` fn otherwise run imperatively     |
     # +---------------------------------------------------------------------+
     try:
+        tf.summary.trace_on(graph=True, profiler=True)
         x, metrics = train_step((x, tf.constant(betas[0])))
+        if IS_CHIEF:
+            tf.summary.trace_export(name='train_step_trace', step=0,
+                                    profiler_outdir=dirs.train_dir)
+        io.log(80*'=')
+        io.log(80*'=')
+        io.log(train_step.pretty_printed_concrete_signatures())
         io.log('Compiled `dynamics.train_step` using tf.function!', rank=RANK)
+        io.log(80*'=')
+        io.log(80*'=')
+        tf.summary.trace_off()
     except:  # noqa: E722  # pylint:disable=bare-except
         train_step = dynamics.train_step
         x, metrics = train_step((x, tf.constant(betas[0])))
