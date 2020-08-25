@@ -256,6 +256,8 @@ def setup(dynamics, flags, dirs=None, x=None, betas=None):
     #  x_tspec = tf.TensorSpec(dynamics.x_shape, dtype=x.dtype, name='x')
     #  beta_tspec = tf.TensorSpec([], dtype=TF_FLOAT, name='beta')
     #  input_signature=[x_tspec, beta_tspec])
+
+    _ = dynamics.apply_transition((x, tf.constant(betas[0])), training=True)
     train_step = tf.function(dynamics.train_step)
 
     pstart = 0
@@ -311,27 +313,29 @@ def train_dynamics(
     # +---------------------------------------------------------------------+
     # | Try running compiled `train_step` fn otherwise run imperatively     |
     # +---------------------------------------------------------------------+
+    io.log(120*'=')
     try:
         tf.summary.trace_on(graph=True, profiler=True)
         x, metrics = train_step((x, tf.constant(betas[0])))
         if IS_CHIEF:
             tf.summary.trace_export(name='train_step_trace', step=0,
                                     profiler_outdir=dirs.train_dir)
-        io.log(80*'=')
-        io.log(80*'=')
         io.log(train_step.pretty_printed_concrete_signatures())
         io.log('Compiled `dynamics.train_step` using tf.function!', rank=RANK)
-        io.log(80*'=')
-        io.log(80*'=')
         tf.summary.trace_off()
-    except:  # noqa: E722  # pylint:disable=bare-except
+    except Exception as exception:  # pylint:disable broad-except
+        io.log(exception, rank=RANK, level='CRITICAL')
         train_step = dynamics.train_step
         x, metrics = train_step((x, tf.constant(betas[0])))
-        io.log(
-            'Unable to compile `dynamics.train_step`, running imperatively',
-            rank=RANK
-        )
+        lstr = '\n'.join(['`tf.function(dynamics.train_step)` failed!',
+                          'Running `dynamics.train_step` imperatively...'])
+        io.log(lstr, rank=RANK, level='CRITICAL')
+        #  io.log(['`tf.function(dynamics.train_step)` failed!
+        #      'Unable to compile `dynamics.train_step`, running imperatively',
+        #      rank=RANK
+        #  )
 
+    io.log(120*'=')
     # +----------------------------------------+
     # |     Run MD update to not get stuck     |
     # +----------------------------------------+

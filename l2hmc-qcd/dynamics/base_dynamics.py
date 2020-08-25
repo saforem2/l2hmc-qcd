@@ -82,7 +82,6 @@ class BaseDynamics(tf.keras.Model):
         self._model_type = config.get('model_type', 'BaseDynamics')
 
         #  self.params = params
-        self.mask_type = params.get('mask_type', 'rand')
         self.config = config
         self.net_config = network_config
         self.potential_fn = potential_fn
@@ -90,11 +89,10 @@ class BaseDynamics(tf.keras.Model):
 
         self.params = self._parse_params(params)
         self.eps = self._build_eps(use_log=False)
-        self.masks = self._build_masks(self.mask_type)
+        self.masks = self._build_masks()
         #  self._construct_time()
-        #  if build_networks:
         if self.config.hmc:
-            self.xnets, self.vnets = self._build_hmc_networks()
+            self.xnet, self.vnet = self._build_hmc_networks()
             self.net_weights = NetWeights(*(6 * [0.]))
         else:
             self._build_networks()
@@ -482,54 +480,71 @@ class BaseDynamics(tf.keras.Model):
 
         return tf.where(tf.math.is_finite(prob), prob, tf.zeros_like(prob))
 
-    def _forward_lf(self, step, state, training=None):
+    def _forward_lf(self, step: int, state: State, training: bool = None):
         """Run the augmented leapfrog integrator in the forward direction."""
+        # === NOTE: m = random mask (half 1s, half 0s); mc = 1. - m
         m, mc = self._get_mask(step)  # pylint: disable=invalid-name
-        xnet, vnet = self._get_network(step)
+        #  vnet = self._get_network(step)
         t = self._get_time(step, tile=tf.shape(state.x)[0])
 
         sumlogdet = tf.constant(0., dtype=state.x.dtype)
 
-        state, logdet = self._update_v_forward(vnet, state, t, training)
+        state, logdet = self._update_v_forward(state, t, training)
         sumlogdet += logdet
-        state, logdet = self._update_x_forward(xnet, state, t,
+        state, logdet = self._update_x_forward(state, t,
                                                (m, mc), training)
         sumlogdet += logdet
-        state, logdet = self._update_x_forward(xnet, state, t,
+        state, logdet = self._update_x_forward(state, t,
                                                (mc, m), training)
         sumlogdet += logdet
-        state, logdet = self._update_v_forward(vnet, state, t, training)
+        state, logdet = self._update_v_forward(state, t, training)
         sumlogdet += logdet
 
         return state, sumlogdet
 
-    def _backward_lf(self, step, state, training=None):
+    def _backward_lf(self, step: int, state: State, training: bool = None):
         """Run the augmented leapfrog integrator in the backward direction."""
         step_r = self.config.num_steps - step - 1
         m, mc = self._get_mask(step_r)
-        xnet, vnet = self._get_network(step_r)
+        #  vnet = self._get_network(step_r)
         t = self._get_time(step_r, tile=tf.shape(state.x)[0])
 
         #  sumlogdet = 0.
         sumlogdet = tf.constant(0., dtype=state.x.dtype)
 
-        state, logdet = self._update_v_backward(vnet, state, t, training)
+        state, logdet = self._update_v_backward(state, t, training)
         sumlogdet += logdet
 
-        state, logdet = self._update_x_backward(xnet, state, t,
+        state, logdet = self._update_x_backward(state, t,
                                                 (mc, m), training)
         sumlogdet += logdet
 
-        state, logdet = self._update_x_backward(xnet, state, t,
+        state, logdet = self._update_x_backward(state, t,
                                                 (m, mc), training)
         sumlogdet += logdet
 
-        state, logdet = self._update_v_backward(vnet, state, t, training)
+        state, logdet = self._update_v_backward(state, t, training)
         sumlogdet += logdet
 
         return state, sumlogdet
 
-    def _update_v_forward(self, network, state, t, training):
+    def _scattered_xnet(self, x, v, t, masks, training=None):
+        """Call `self.xnet` on non-zero entries of `x` via `tf.gather_nd`."""
+        m, _ = masks
+        shape = (self.batch_size, -1)
+        m = tf.reshape(m, shape)
+        idxs = tf.where(m)
+        _x = tf.reshape(tf.gather_nd(x, idxs), shape)
+        #  idxs = tf.where(tf.reshape(m, x.shape))
+        #  _x = tf.reshape(tf.gather_nd(x, idxs), (self.batch_size, -1))
+        S, T, Q = self.xnet((v, _x, t), training)
+        #  S = tf.scatter_nd(idxs, S, x.shape)
+        #  T = tf.scatter_nd(idxs, T, x.shape)
+        #  Q = tf.scatter_nd(idxs, Q, x.shape)
+
+        return S, T, Q
+
+    def _update_v_forward(self, state: State, t: tf.Tensor, training: bool):
         """Update the momentum `v` in the forward leapfrog step.
 
         Args:
@@ -545,7 +560,7 @@ class BaseDynamics(tf.keras.Model):
         x = self.normalizer(state.x)
 
         grad = self.grad_potential(x, state.beta)
-        S, T, Q = network((x, grad, t), training)
+        S, T, Q = self.vnet((x, grad, t), training)
 
         transl = self._vtw * T
         scale = self._vsw * (0.5 * self.eps * S)
@@ -561,7 +576,7 @@ class BaseDynamics(tf.keras.Model):
 
         return state_out, logdet
 
-    def _update_x_forward(self, network, state, t, masks, training):
+    def _update_x_forward(self, state: State, t: tf.Tensor, masks, training):
         """Update the position `x` in the forward leapfrog step.
 
         Args:
@@ -574,9 +589,18 @@ class BaseDynamics(tf.keras.Model):
             logdet (float): Jacobian factor.
         """
         x = self.normalizer(state.x)
-
         m, mc = masks
-        S, T, Q = network((state.v, m * x, t), training)
+
+        S, T, Q = self._scattered_xnet(x, state.v, t, masks, training)
+
+        #  idxs = tf.where(m == 1)
+        #  _x = tf.gather_nd(x, idxs, batch_dims=0)
+        #
+        #  S, T, Q = self.xnet((state.v, _x, t), training)
+        #
+        #  S = tf.scatter_nd(idxs, S, x.shape)
+        #  T = tf.scatter_nd(idxs, T, x.shape)
+        #  Q = tf.scatter_nd(idxs, Q, x.shape)
 
         transl = self._xtw * T
         scale = self._xsw * (self.eps * S)
@@ -595,7 +619,7 @@ class BaseDynamics(tf.keras.Model):
 
         return state_out, logdet
 
-    def _update_v_backward(self, network, state, t, training):
+    def _update_v_backward(self, state, t, training):
         """Update the momentum `v` in the backward leapfrog step.
 
         Args:
@@ -610,7 +634,7 @@ class BaseDynamics(tf.keras.Model):
         x = self.normalizer(state.x)
 
         grad = self.grad_potential(x, state.beta)
-        S, T, Q = network((x, grad, t), training)
+        S, T, Q = self.vnet((x, grad, t), training)
 
         scale = self._vsw * (-0.5 * self.eps * S)
         transf = self._vqw * (self.eps * Q)
@@ -626,7 +650,7 @@ class BaseDynamics(tf.keras.Model):
 
         return state_out, logdet
 
-    def _update_x_backward(self, network, state, t, masks, training):
+    def _update_x_backward(self, state, t, masks, training):
         """Update the position `x` in the forward leapfrog step.
 
         Args:
@@ -638,11 +662,9 @@ class BaseDynamics(tf.keras.Model):
             new_state (State): New state, with updated momentum.
             logdet (float): Jacobian factor.
         """
-        x = self.normalizer(state.x)
-
         m, mc = masks
-        S, T, Q = network((state.v, m * x, t), training)
-
+        x = self.normalizer(state.x)
+        S, T, Q = self._scattered_xnet(x, state.v, t, masks, training)
         scale = self._xsw * (-self.eps * S)
         transl = self._xtw * T
         transf = self._xqw * (self.eps * Q)
@@ -740,23 +762,16 @@ class BaseDynamics(tf.keras.Model):
 
         return accept_mask, reject_mask
 
-    def _build_masks(self, mask_type=None):
+    def _build_masks(self):
         """Construct different binary masks for different time steps."""
         masks = []
-        if mask_type == 'checkerboard':
-            odds = np.arange(self.xdim) % 2.
-            evens = 1. - odds
-
-        for i in range(self.config.num_steps):
+        for _ in range(self.config.num_steps):
             # Need to use numpy.random here because tensorflow would
             # generate different random values across different calls.
-            if mask_type == 'checkerboard':
-                mask = evens if (i % 2 == 0) else odds
-            else:  # use randomly generated masks
-                _idx = np.arange(self.xdim)
-                idx = np.random.permutation(_idx)[:self.xdim // 2]
-                mask = np.zeros((self.xdim,))
-                mask[idx] = 1.
+            _idx = np.arange(self.xdim)
+            idx = np.random.permutation(_idx)[:self.xdim // 2]
+            mask = np.zeros((self.xdim,))
+            mask[idx] = 1.
 
             mask = tf.constant(mask, dtype=TF_FLOAT)
             masks.append(mask[None, :])
@@ -779,18 +794,18 @@ class BaseDynamics(tf.keras.Model):
     @staticmethod
     def _build_hmc_networks():
         # pylint:disable=unused-argument
-        xnets = lambda inputs, is_training: [  # noqa: E731
+        xnet = lambda inputs, is_training: [  # noqa: E731
             tf.zeros_like(inputs[0]) for _ in range(3)
         ]
-        vnets = lambda inputs, is_training: [  # noqa: E731
+        vnet = lambda inputs, is_training: [  # noqa: E731
             tf.zeros_like(inputs[0]) for _ in range(3)
         ]
 
-        return xnets, vnets
+        return xnet, vnet
 
     # pylint:disable=unused-argument
     def _get_network(self, step):
-        return self.xnets, self.vnets
+        return self.xnet, self.vnet
 
     def _build_eps(self, use_log=False):
         """Create `self.eps` (i.e. the step size) as a `tf.Variable`.

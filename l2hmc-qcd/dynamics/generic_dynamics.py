@@ -61,10 +61,10 @@ class GenericDynamics(BaseDynamics):
             self._vqw = self.net_weights.v_transformation
 
     def _build_networks(self):
-        self.xnets = GenericNetwork(self.net_config, factor=2.,
-                                    xdim=self.xdim, name='XNet')
-        self.vnets = GenericNetwork(self.net_config, factor=1.,
-                                    xdim=self.xdim, name='VNet')
+        self.xnet = GenericNetwork(self.net_config, factor=2.,
+                                   xdim=self.xdim, name='XNet')
+        self.vnet = GenericNetwork(self.net_config, factor=1.,
+                                   xdim=self.xdim, name='VNet')
 
     def calc_losses(self, states: MonteCarloStates, accept_prob: tf.Tensor):
         """Calculate the total sampling loss."""
