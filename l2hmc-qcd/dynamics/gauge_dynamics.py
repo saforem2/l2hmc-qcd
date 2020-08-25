@@ -24,12 +24,13 @@ import json
 import time
 
 from typing import NoReturn
+from math import pi
 
 import numpy as np
 import tensorflow as tf
 
 from config import (BIN_DIR, GaugeDynamicsConfig, lrConfig, NetWeights,
-                    NetworkConfig, PI, State, TWO_PI, MonteCarloStates)
+                    NetworkConfig, State, TF_FLOAT, MonteCarloStates)
 from dynamics.base_dynamics import BaseDynamics
 from network.gauge_network import GaugeNetwork
 from utils.attr_dict import AttrDict
@@ -48,7 +49,7 @@ TIMING_FILE = os.path.join(BIN_DIR, 'timing_file.log')
 
 def convert_to_angle(x):
     """Returns x in -pi <= x < pi."""
-    x = tf.math.floormod(x + PI, TWO_PI) - PI
+    x = tf.math.floormod(x + pi, 2 * pi) - pi
     return x
 
 
@@ -64,8 +65,6 @@ def build_test_dynamics():
 def build_dynamics(flags):
     """Build dynamics using parameters from FLAGS."""
     activation = flags.get('activation', 'relu')
-    zero_init = flags.get('zero_init', False)
-    #  print(f'Received: {activation}; ')
     if activation == 'tanh':
         activation_fn = tf.nn.tanh
     elif activation == 'leaky_relu':
@@ -98,7 +97,6 @@ def build_dynamics(flags):
     )
 
     flags = AttrDict({
-        'zero_init': flags.get('zero_init', False),
         'horovod': flags.get('horovod', False),
         'plaq_weight': flags.get('plaq_weight', 0.),
         'charge_weight': flags.get('charge_weight', 0.),
@@ -136,7 +134,6 @@ class GaugeDynamics(BaseDynamics):
         params.update({
             'batch_size': self.lattice_shape[0],
             'xdim': np.cumprod(self.lattice_shape[1:])[-1],
-            'mask_type': 'checkerboard',
         })
 
         super(GaugeDynamics, self).__init__(
@@ -150,9 +147,7 @@ class GaugeDynamics(BaseDynamics):
         )
 
         if self.config.hmc:
-            self.xnets, self.vnets = self._build_hmc_networks()
             net_weights = NetWeights(0., 0., 0., 0., 0., 0.)
-            self.config.separate_networks = False
             self.config.use_ncp = False
         else:
             if self.config.use_ncp:
@@ -162,81 +157,53 @@ class GaugeDynamics(BaseDynamics):
 
         self.params = self._parse_params(params, net_weights=net_weights)
 
-    def transition_kernel(
-            self,
-            state: State,
-            forward: bool,
-            training: bool = None
-    ):
-        """Transition kernel of the augmented leapfrog integrator."""
-        lf_fn = self._forward_lf if forward else self._backward_lf
-
-        state_prop = State(x=state.x, v=state.v, beta=state.beta)
-        sumlogdet = tf.zeros((self.batch_size,), dtype=state.x.dtype)
-
-        for step in tf.range(self.config.num_steps):
-            state_prop, logdet = lf_fn(step, state_prop, training)
-            sumlogdet += logdet
-            '''
-            else:
-                if step % 2 == 0:
-                    if forward:
-                        state_prop, logdet = self._forward_lf_even(step,
-                                                                   state_prop,
-                                                                   training)
-                    else:
-                        state_prop, logdet = self._backward_lf_even(step,
-                                                                    state_prop,
-                                                                    training)
-                else:
-                    if forward:
-                        state_prop, logdet = self._forward_lf_odd(step,
-                                                                  state_prop,
-                                                                  training)
-                    else:
-                        state_prop, logdet = self._backward_lf_odd(step,
-                                                                   state_prop,
-                                                                   training)
-            sumlogdet += logdet
-            '''
-
-        accept_prob = self.compute_accept_prob(state, state_prop, sumlogdet)
-
-        return state_prop, accept_prob, sumlogdet
+    def get_config(self):
+        return {
+            'config': self.config,
+            'network_config': self.net_config,
+            'lr_config': self.lr_config,
+            'params': self.params
+        }
 
     def _get_network(self, step):
-        if self.config.separate_networks and step % 2 == 0:
-            return tf.constant([self.xnet_even, self.vnet])
-        if self.config.separate_networks and step % 2 != 0:
-            return tf.constant([self.xnet_odd, self.vnet])
+        if self.config.separate_networks:
+            xnet = getattr(self, f'xnets{int(step)}', None)
+            vnet = getattr(self, f'vnets{int(step)}', None)
+            return xnet, vnet
 
-        #      if step % 2 == 0:
-        #          return self.xnet_even, self.vnet_even
-        #      return self.xnet_odd, self.vnet_odd
-        #      #  xnet = getattr(self, f'xnets{int(step)}', None)
-        #      #  vnet = getattr(self, f'vnets{int(step)}', None)
-        #      #  return xnet, vnet
-        #
-        #  return self.xnets, self.vnets
-        return self.xnets, self.vnets
+        return self.xnet, self.vnet
 
-    def _build_masks(self, mask_type=None):
+    def _build_masks(self, gauge_equivariant_scheme=False):
+        """Construct different binary masks for different time steps."""
+        def rolled_reshape(m, ax, shape=None):
+            if shape is None:
+                shape = (self.batch_size, -1)
+
+            return sum([np.roll(m, i, ax).reshape(shape) for i in range(4)])
+
         masks = []
-        mh = np.zeros(self.lattice_shape[1:])  # ignore batch dim
-        mv = np.zeros(self.lattice_shape[1:])  # ignore batch dim
+        zeros = np.zeros(self.lattice_shape, dtype=np.float32)
 
-        mh[::4, :, 1] = 1.
-        mv[:, ::4, 0] = 1.
-        for i in range(4):
-            mh_ = np.roll(mh, shift=i, axis=0).flatten()
-            mv_ = np.roll(mv, shift=i, axis=1).flatten()
-            masks.append(tf.constant(mh_, dtype=tf.float32)[None, :])
-            masks.append(tf.constant(mv_, dtype=tf.float32)[None, :])
-            #  mask = tf.constant(mh_ + mv_, dtype=tf.float32)
-            #  masks.append(mask[None, :])
+        if gauge_equivariant_scheme:
+            mh_ = zeros.copy()
+            mv_ = zeros.copy()
+            mh_[:, ::4, :, 1] = 1.  # Horizontal masks
+            mv_[:, :, ::4, 0] = 1.  # Vertical masks
 
-        #  mh = np.array([np.roll(mh_, shift=i, axis=1) for i in range(4)])
-        #  mv = np.array([np.roll(mv_, shift=i, axis=1) for i in range(4)])
+            mh = rolled_reshape(mh_, ax=1)
+            mv = rolled_reshape(mv_, ax=2)
+            for i in range(self.config.num_steps):
+                mask = mh if i % 2 == 0 else mv
+                masks.append(tf.constant(mask))
+        else:
+            p = zeros.copy()
+            for idx, _ in np.ndenumerate(zeros):
+                p[idx] = (sum(idx) % 2 == 0)
+
+            for i in range(self.config.num_steps):
+                m = p if i % 2 == 0 else (1. - p)
+                mask = tf.reshape(m, (self.batch_size, -1))
+                masks.append(tf.constant(mask))
 
         return masks
 
@@ -250,23 +217,10 @@ class GaugeDynamics(BaseDynamics):
                                          self.xdim, factor=2.,
                                          zero_init=self.zero_init,
                                          name='XNet_odd')
-            self.vnet = GaugeNetwork(self.net_config, self.xdim,
-                                     factor=1., zero_init=self.zero_init,
+            self.vnet = GaugeNetwork(self.net_config,
+                                     self.xdim, factor=1.,
+                                     zero_init=self.zero_init,
                                      name='VNet')
-            #  self.vnet_even = GaugeNetwork(self.net_config,
-            #                                self.xdim, factor=1.,
-            #                                zero_init=self.zero_init,
-            #                                name='VNet_even')
-            #  self.vnet_odd = GaugeNetwork(self.net_config,
-            #                               self.xdim, factor=1.,
-            #                               zero_init=self.zero_init,
-            #                               name='VNet_odd')
-            #  self.nets_even = (self.xnet_even, self.vnet_even)
-            #  self.nets_odd = (self.xnet_odd, self.vnet_odd)
-            #  half_steps = self.config.num_steps // 2
-            #  self.xnets = half_steps * [self.xnet_even, self.xnet_odd]
-            #  self.vnets = half_steps * [self.vnet_even, self.vnet_odd]
-
             '''
             def _new_net(name, seeds_=None):
                 self.xnets = []
@@ -292,12 +246,10 @@ class GaugeDynamics(BaseDynamics):
             '''
 
         else:
-            self.xnets = GaugeNetwork(self.net_config, factor=2.,
-                                      zero_init=self.zero_init,
-                                      xdim=self.xdim, name='XNet')
-            self.vnets = GaugeNetwork(self.net_config, factor=1.,
-                                      zero_init=self.zero_init,
-                                      xdim=self.xdim, name='VNet')
+            self.xnet = GaugeNetwork(self.net_config, factor=2.,
+                                     xdim=self.xdim, name='XNet')
+            self.vnet = GaugeNetwork(self.net_config, factor=1.,
+                                     xdim=self.xdim, name='VNet')
 
     @staticmethod
     def mixed_loss(loss, weight):
@@ -307,9 +259,9 @@ class GaugeDynamics(BaseDynamics):
     def calc_losses(self, states: MonteCarloStates, accept_prob: tf.Tensor):
         """Calculate the total loss."""
         dtype = states.init.x.dtype
-
-        # XXX: Should we stack `states = [states.init.x, states.proposed.x]`
-        # and call `self.lattice.calc_plaq_sums(states)`?
+        # ==== FIXME: Should we stack
+        # ==== `states = [states.init.x, states.proposed.x]`
+        # ==== and call `self.lattice.calc_plaq_sums(states)`?
         wl_init = self.lattice.calc_wilson_loops(states.init.x)
         wl_prop = self.lattice.calc_wilson_loops(states.proposed.x)
 
@@ -319,7 +271,7 @@ class GaugeDynamics(BaseDynamics):
             dwloops = 2 * (1. - tf.math.cos(wl_prop - wl_init))
             ploss = accept_prob * tf.reduce_sum(dwloops, axis=(1, 2))
 
-            # XXX: Try using mixed loss??
+            # ==== FIXME: Try using mixed loss??
             #  ploss = self.mixed_loss(ploss, self.plaq_weight)
             ploss = tf.reduce_mean(-ploss / self.plaq_weight, axis=0)
 
@@ -330,7 +282,7 @@ class GaugeDynamics(BaseDynamics):
             q_prop = self.lattice.calc_charges(wloops=wl_prop, use_sin=True)
             qloss = accept_prob * (q_prop - q_init) ** 2
 
-            # XXX: Try using mixed loss??
+            # ==== FIXME: Try using mixed loss??
             #  qloss = self.mixed_loss(qloss, self.charge_weight)
             qloss = tf.reduce_mean(-qloss / self.charge_weight, axis=0)
 
@@ -434,7 +386,7 @@ class GaugeDynamics(BaseDynamics):
         dq_proj = tf.math.abs(q_out_proj - q_init_proj)
 
         observables = AttrDict({
-            'dq': dq_proj,  # XXX: Change to sqrt(dQ ** 2) ??
+            'dq': dq_proj,
             'dq_sin': dq_sin,
             'charges': q_out_proj,
             'plaqs': plaqs,
@@ -442,174 +394,8 @@ class GaugeDynamics(BaseDynamics):
 
         return observables
 
-    def _forward_lf_even(self, step, state, training=None):
-        """Run the augmented leapfrog integrator in the forward direction."""
-        m, mc = self._get_mask(step)
-        t = self._get_time(step, tile=tf.shape(state.x)[0])
-        xnet = self.xnet_even
-        vnet = self.vnet
-        #  idx_arr = [0., 1., 0., ..., ]
-        #  x = state.x[idx_arr]
-        sumlogdet = tf.constant(0., dtype=state.x.dtype)
-
-        state, logdet = self._update_v_forward(vnet, state, t, training)
-        sumlogdet += logdet
-        state, logdet = self._update_x_forward(xnet, state, t,
-                                               (m, mc), training)
-        sumlogdet += logdet
-        state, logdet = self._update_x_forward(xnet, state, t,
-                                               (mc, m), training)
-        sumlogdet += logdet
-        state, logdet = self._update_v_forward(vnet, state, t, training)
-        sumlogdet += logdet
-
-        return state, sumlogdet
-
-    def _forward_lf_odd(self, step, state, training=None):
-        """Run the augmented leapfrog integrator in the forward direction."""
-        m, mc = self._get_mask(step)
-        t = self._get_time(step, tile=tf.shape(state.x)[0])
-        xnet = self.xnet_odd
-        vnet = self.vnet
-        sumlogdet = tf.constant(0., dtype=state.x.dtype)
-
-        state, logdet = self._update_v_forward(vnet, state, t, training)
-        sumlogdet += logdet
-        state, logdet = self._update_x_forward(xnet, state, t,
-                                               (m, mc), training)
-        sumlogdet += logdet
-        state, logdet = self._update_x_forward(xnet, state, t,
-                                               (mc, m), training)
-        sumlogdet += logdet
-        state, logdet = self._update_v_forward(vnet, state, t, training)
-        sumlogdet += logdet
-
-        return state, sumlogdet
-
-    def _backward_lf_even(self, step, state, training=None):
-        """Run the augmented leapfrog integrator in the backward direction."""
-        step_r = self.config.num_steps - step - 1
-        m, mc = self._get_mask(step_r)
-        t = self._get_time(step_r, tile=tf.shape(state.x)[0])
-        xnet = self.xnet_even
-        vnet = self.vnet
-
-        #  sumlogdet = 0.
-        sumlogdet = tf.constant(0., dtype=state.x.dtype)
-
-        state, logdet = self._update_v_backward(vnet, state, t, training)
-        sumlogdet += logdet
-
-        state, logdet = self._update_x_backward(xnet, state, t,
-                                                (mc, m), training)
-        sumlogdet += logdet
-
-        state, logdet = self._update_x_backward(xnet, state, t,
-                                                (m, mc), training)
-        sumlogdet += logdet
-
-        state, logdet = self._update_v_backward(vnet, state, t, training)
-        sumlogdet += logdet
-
-        return state, sumlogdet
-
-    def _backward_lf_odd(self, step, state, training=None):
-        """Run the augmented leapfrog integrator in the backward direction."""
-        step_r = self.config.num_steps - step - 1
-        m, mc = self._get_mask(step_r)
-        t = self._get_time(step_r, tile=tf.shape(state.x)[0])
-        xnet = self.xnet_odd
-        vnet = self.vnet
-
-        #  sumlogdet = 0.
-        sumlogdet = tf.constant(0., dtype=state.x.dtype)
-
-        state, logdet = self._update_v_backward(vnet, state, t, training)
-        sumlogdet += logdet
-
-        state, logdet = self._update_x_backward(xnet, state, t,
-                                                (mc, m), training)
-        sumlogdet += logdet
-
-        state, logdet = self._update_x_backward(xnet, state, t,
-                                                (m, mc), training)
-        sumlogdet += logdet
-
-        state, logdet = self._update_v_backward(vnet, state, t, training)
-        sumlogdet += logdet
-
-        return state, sumlogdet
-
-    def _forward_lf(self, step, state, training=None):
-        """Run the augmented leapfrog integrator in the forward direction."""
-        #  m, mc = self._get_mask(step)  # pylint: disable=invalid-name
-        t = self._get_time(step, tile=tf.shape(state.x)[0])
-        xnet, vnet = self._get_network(step)
-
-        sumlogdet = tf.constant(0., dtype=state.x.dtype)
-
-        state, logdet = self._update_v_forward(vnet, state, t, training)
-        sumlogdet += logdet
-
-        for m in self.masks:
-            mc = 1. - m
-            state, logdet = self._update_x_forward(xnet, state, t,
-                                                   (m, mc), training)
-            sumlogdet += logdet
-            #  state, logdet = self._update_x_forward(xnet, state, t,
-            #                                         (mc, m), training)
-            #  sumlogdet += logdet
-
-        #  state, logdet = self._update_x_forward(xnet, state, t,
-        #                                         (m, mc), training)
-        #  sumlogdet += logdet
-        #  state, logdet = self._update_x_forward(xnet, state, t,
-        #                                         (mc, m), training)
-        #  sumlogdet += logdet
-        state, logdet = self._update_v_forward(vnet, state, t, training)
-        sumlogdet += logdet
-
-        return state, sumlogdet
-
-    def _backward_lf(self, step, state, training=None):
-        """Run the augmented leapfrog integrator in the backward direction."""
-        step_r = self.config.num_steps - step - 1
-        #  m, mc = self._get_mask(step_r)
-        t = self._get_time(step_r, tile=tf.shape(state.x)[0])
-        xnet, vnet = self._get_network(step_r)
-
-        #  sumlogdet = 0.
-        sumlogdet = tf.constant(0., dtype=state.x.dtype)
-
-        state, logdet = self._update_v_backward(vnet, state, t, training)
-        sumlogdet += logdet
-
-        for m in self.masks:
-            mc = 1. - m
-            state, logdet = self._update_x_backward(xnet, state, t,
-                                                    (mc, m), training)
-            sumlogdet += logdet
-
-            state, logdet = self._update_x_backward(xnet, state, t,
-                                                    (m, mc), training)
-            sumlogdet += logdet
-
-        #  state, logdet = self._update_x_backward(xnet, state, t,
-        #                                          (mc, m), training)
-        #  sumlogdet += logdet
-        #
-        #  state, logdet = self._update_x_backward(xnet, state, t,
-        #                                          (m, mc), training)
-        #  sumlogdet += logdet
-
-        state, logdet = self._update_v_backward(vnet, state, t, training)
-        sumlogdet += logdet
-
-        return state, sumlogdet
-
     def _update_v_forward(
             self,
-            network: tf.keras.layers.Layer,
             state: State,
             t: tf.Tensor,
             training: bool
@@ -621,16 +407,23 @@ class GaugeDynamics(BaseDynamics):
         """
         state = State(x=self.normalizer(state.x),
                       v=state.v, beta=state.beta)
-        return super()._update_v_forward(network, state, t, training)
+        return super()._update_v_forward(state, t, training)
 
-    def _update_x_foward(self, network, state, t, masks, training):
+    def _update_x_foward(self, state, t, masks, training):
         """Update the position `x` in the forward leapfrog step."""
         if not self.config.use_ncp:
-            return super()._update_x_forward(network, state,
+            return super()._update_x_forward(state,
                                              t, masks, training)
         m, mc = masks
+        x = self.normalizer(state.x)
+        #  S, T, Q = self._scattered_xnet(x, state.v, t, masks, training)
+        shape = (self.batch_size, -1)
+        m_ = tf.reshape(m, shape)
+        idxs = tf.where(m_)
+        x_ = tf.reshape(tf.gather_nd(x, idxs), shape)
+        S, T, Q = self.xnet((state.v, x_, t), training)
 
-        S, T, Q = network((state.v, m * state.x, t), training)
+        #  S, T, Q = self.xnet((state.v, m * state.x, t), training)
 
         transl = self._xtw * T
         transf = self._xqw * (self.eps * Q)
@@ -655,9 +448,9 @@ class GaugeDynamics(BaseDynamics):
         # 4. With Jacobian:
         #          J = 1 / {[cos(x/2)]^2 + [exp(eps*Sx) * sin(x/2)]^2}
         # ---------------------------------------------------------------
-        x_ = 2 * tf.math.atan(tf.math.tan(state.x/2) * expS)
-        y = x_ + self.eps * (state.v * expQ + transl)
-        xf = (m * state.x) + (mc * y)
+        _x = 2 * tf.math.atan(tf.math.tan(state.x/2) * expS)
+        _y = _x + self.eps * (state.v * expQ + transl)
+        xf = (m * state.x) + (mc * _y)
         state_out = State(x=xf, v=state.v, beta=state.beta)
 
         cterm = tf.math.cos(state.x / 2) ** 2
@@ -667,13 +460,19 @@ class GaugeDynamics(BaseDynamics):
 
         return state_out, logdet
 
-    def _update_x_backward(self, network, state, t, masks, training):
+    def _update_x_backward(self, state, t, masks, training):
         """Update the position `x` in the backward leapfrog step."""
         if not self.config.use_ncp:
-            return super()._update_x_backward(network, state,
+            return super()._update_x_backward(state,
                                               t, masks, training)
         m, mc = masks
-        S, T, Q = network((state.v, m * state.x, t), training)
+        x = self.normalizer(state.x)
+        #  S, T, Q = self._scattered_xnet(x, state.v, t, masks, training)
+        shape = (self.batch_size, -1)
+        m_ = tf.reshape(m, shape)
+        idxs = tf.where(m_)
+        x_ = tf.reshape(tf.gather_nd(x, idxs), shape)
+        S, T, Q = self.xnet((state.v, x_, t), training)
 
         transl = self._xtw * T
         transf = self._xqw * (self.eps * Q)
