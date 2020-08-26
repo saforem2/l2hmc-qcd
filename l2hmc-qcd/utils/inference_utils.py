@@ -14,8 +14,8 @@ from utils import DummyTqdmFile
 from tqdm import tqdm
 import tensorflow as tf
 import horovod.tensorflow as hvd
-hvd.init()
-RANK = hvd.rank()
+#  hvd.init()
+#  RANK = hvd.rank()
 
 import utils.file_io as io
 
@@ -33,6 +33,7 @@ if tf.__version__.startswith('1.'):
 elif tf.__version__.startswith('2.'):
     TF_VERSION = '2.x'
 
+RANK = hvd.rank()
 IS_CHIEF = (RANK == 0)
 
 if IS_CHIEF:

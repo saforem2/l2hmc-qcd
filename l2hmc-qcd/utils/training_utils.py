@@ -10,33 +10,31 @@ import sys
 import time
 import logging
 
-import numpy as np
-import tensorflow as tf
-import horovod.tensorflow as hvd
-hvd.init()
-GPUS = tf.config.experimental.list_physical_devices('GPU')
-for gpu in GPUS:
-    tf.config.experimental.set_memory_growth(gpu, True)
-if GPUS:
-    tf.config.experimental.set_visible_devices(GPUS[hvd.local_rank()], 'GPU')
+from typing import Union
 
 from tqdm import tqdm
-from tensorflow.python.ops import summary_ops_v2
+
+import horovod.tensorflow as hvd  # pylint:disable=wrong-import-order
+import numpy as np
+import tensorflow as tf
 
 
 import utils.file_io as io
 
-from config import (CBARS, HEADER, NET_WEIGHTS_HMC,
-                    PI, TF_FLOAT, TRAIN_STR, BIN_DIR)
-from utils import DummyTqdmFile
+from config import CBARS, NET_WEIGHTS_HMC, PI, TF_FLOAT
 from utils.attr_dict import AttrDict
-from utils.summary_utils import (summarize_dict, summarize_list,
-                                 update_summaries)
+from utils.summary_utils import update_summaries
 from utils.plotting_utils import plot_data
 from utils.data_containers import DataContainer
-from utils.inference_utils import run
 from dynamics.base_dynamics import BaseDynamics
 from dynamics.gauge_dynamics import build_dynamics, GaugeDynamics
+
+#  hvd.init()
+#  GPUS = tf.config.experimental.list_physical_devices('GPU')
+#  for gpu in GPUS:
+#      tf.config.experimental.set_memory_growth(gpu, True)
+#  if GPUS:
+#      tf.config.experimental.set_visible_devices(GPUS[hvd.local_rank()],'GPU')
 
 #  try:
 #      tf.config.experimental.enable_mlir_bridge()
@@ -181,8 +179,10 @@ def train(flags, log_file=None, md_steps=0):
     else:
         train_steps = flags.train_steps
         flags = restore_flags(flags, os.path.join(flags.log_dir, 'training'))
-        if train_steps == flags.train_steps:
-            flags.train_steps += flags.logging_steps
+        if train_steps > flags.train_steps:
+            flags.train_steps = train_steps
+        #  if train_steps == flags.train_steps:
+        #      flags.train_steps += flags.logging_steps
         flags.restore = True
 
     dirs = setup_directories(flags)
@@ -292,7 +292,7 @@ def setup(dynamics, flags, dirs=None, x=None, betas=None):
 
 # pylint: disable=too-many-arguments,too-many-statements, too-many-branches
 def train_dynamics(
-        dynamics: BaseDynamics,
+        dynamics: Union[BaseDynamics, GaugeDynamics],
         flags: AttrDict,
         dirs: str = None,
         x: tf.Tensor = None,
@@ -316,14 +316,18 @@ def train_dynamics(
     # +---------------------------------------------------------------------+
     # | Try running compiled `train_step` fn otherwise run imperatively     |
     # +---------------------------------------------------------------------+
-    io.log(120*'=')
+    # pylint:disable=broad-except
+    io.log(120*'*')
     try:
         tf.summary.trace_on(graph=True, profiler=True)
         x, metrics = train_step((x, tf.constant(betas[0])))
         if IS_CHIEF:
             tf.summary.trace_export(name='train_step_trace', step=0,
                                     profiler_outdir=dirs.train_dir)
-        io.log(train_step.pretty_printed_concrete_signatures())
+            try:
+                io.log(train_step.pretty_printed_concrete_signatures())
+            except Exception as exception:  # pylint:disable broad-except
+                io.log(f'Exception encountered: {exception}. Continuing...')
         io.log('Compiled `dynamics.train_step` using tf.function!', rank=RANK)
         tf.summary.trace_off()
     except Exception as exception:  # pylint:disable broad-except
@@ -333,8 +337,7 @@ def train_dynamics(
         lstr = '\n'.join(['`tf.function(dynamics.train_step)` failed!',
                           'Running `dynamics.train_step` imperatively...'])
         io.log(lstr, rank=RANK, level='CRITICAL')
-
-    io.log(120*'=')
+    io.log(120*'*')
     # +----------------------------------------+
     # |     Run MD update to not get stuck     |
     # +----------------------------------------+
@@ -381,9 +384,6 @@ def train_dynamics(
             train_data.dump_configs(x, dirs.data_dir, rank=RANK)
             if IS_CHIEF:
                 manager.save()
-                #  io.log(
-                #      f'Checkpoint saved to: {manager.latest_checkpoint}',
-                #  )
                 train_data.save_and_flush(dirs.data_dir,
                                           dirs.log_file,
                                           rank=RANK, mode='a')
@@ -403,7 +403,6 @@ def train_dynamics(
         # Print header every hundred steps
         if IS_CHIEF and (step + 1) % 1000 == 0:
             io.log_tqdm(header.split('\n'))
-            #  io.log(header, rank=RANK, level='INFO')
 
         if config.pstop > 0 and step == config.pstop:
             tf.profiler.experimental.stop()
@@ -416,18 +415,10 @@ def train_dynamics(
     train_data.dump_configs(x, dirs.data_dir, rank=RANK)
     if IS_CHIEF:
         manager.save()
-        if not dynamics.config.hmc and flags.profiler:
-            tf.summary.trace_on(graph=True, profiler=True)
-            x, metrics = train_step((x, tf.constant(betas[-1])))
-            tf.summary.trace_export(name='train_step_trace', step=steps[-1],
-                                    profiler_outdir=dirs.summary_dir)
-            tf.summary.trace_off()
-
-        io.log(f'Checkpoint saved to: {manager.latest_checkpoint}')
-        train_data.save_and_flush(dirs.data_dir,
-                                  dirs.log_file,
+        train_data.save_and_flush(dirs.data_dir, dirs.log_file,
                                   rank=RANK, mode='a')
         writer.flush()
         writer.close()
+        io.log(f'Checkpoint saved to: {manager.latest_checkpoint}')
 
     return x, train_data
