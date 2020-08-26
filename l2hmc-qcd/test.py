@@ -8,48 +8,35 @@ from __future__ import absolute_import, division, print_function
 import os
 import sys
 import argparse
+import json
+import tensorflow as tf
+import horovod.tensorflow as hvd
+import numpy as np
 
-from config import PROJECT_DIR
+from config import PROJECT_DIR, BIN_DIR
+from functools import wraps
 from utils.attr_dict import AttrDict
 from utils.training_utils import train
 from utils.inference_utils import load_and_run, run, run_hmc
+import utils.file_io as io
+from utils.file_io import timeit
+
+# pylint:disable=import-outside-toplevel, invalid-name, broad-except
+TIMING_FILE = os.path.join(BIN_DIR, 'test_benchmarks.log')
+
+LOG_FILE = os.path.join(
+    os.path.dirname(PROJECT_DIR), 'bin', 'log_dirs.txt'
+)
 
 DESCRIPTION = (
     "Various test functions to make sure everything runs as expected."
 )
 
-TEST_FLAGS = AttrDict({
-    'log_dir': None,
-    'restore': False,
-    'inference': True,
-    'run_steps': 100,
-    'horovod': False,
-    'rand': True,
-    'eps': 0.1,
-    'num_steps': 2,
-    'hmc': False,
-    'eps_fixed': False,
-    'beta_init': 1.,
-    'beta_final': 1.,
-    'train_steps': 25,
-    'save_steps': 5,
-    'print_steps': 1,
-    'logging_steps': 1,
-    'hmc_start': True,
-    'hmc_steps': 25,
-    'dropout_prob': 0.1,
-    'warmup_steps': 10,
-    'lr_init': 0.001,
-    'lr_decay_rate': 0.96,
-    'lr_decay_steps': 1000,
-    'plaq_weight': 10.,
-    'charge_weight': 0.1,
-    'save_train_data': True,
-    'separate_networks': False,
-    'network_type': 'GaugeNetwork',
-    'lattice_shape': [128, 16, 16, 2],
-    'units': [512, 256, 256, 256, 512],
-})
+TEST_FLAGS_FILE = os.path.join(BIN_DIR, 'test_args.json')
+with open(TEST_FLAGS_FILE, 'rt') as f:
+    TEST_FLAGS = json.load(f)
+
+TEST_FLAGS = AttrDict(TEST_FLAGS)
 
 
 def parse_args():
@@ -57,6 +44,16 @@ def parse_args():
     parser = argparse.ArgumentParser(
         description=DESCRIPTION,
     )
+    parser.add_argument('--horovod',
+                        action='store_true',
+                        required=False,
+                        help=("""Running with Horovod."""))
+
+    parser.add_argument('--test_all',
+                        action='store_true',
+                        required=False,
+                        help=("""Run all tests."""))
+
     parser.add_argument('--test_separate_networks',
                         action='store_true',
                         required=False,
@@ -78,6 +75,12 @@ def parse_args():
                         help=("""Test running inference from saved
                               (trained) model specifically."""))
 
+    parser.add_argument('--test_resume_training',
+                        action='store_true',
+                        required=False,
+                        help=("""Test resuming training from checkpoint. Must
+                              specify `--log_dir`."""))
+
     parser.add_argument('--log_dir',
                         default=None,
                         type=str,
@@ -89,108 +92,180 @@ def parse_args():
     return args
 
 
-def test_hmc_run(beta=4., eps=0.1, num_steps=2, run_steps=500):
+def catch_exception(fn):
+    """Decorator function for catching a method with `pudb`."""
+    @wraps(fn)
+    def wrapper(self, *args, **kwargs):
+        try:
+            return fn(self, *args, **kwargs)
+        except Exception as e:
+            print(type(e))
+            print(e)
+            import pudb
+            pudb.set_trace()
+    return wrapper
+
+
+def test_transition_kernels(dynamics, x, beta, training=None):
+    tk_diffs_f = dynamics.test_transition_kernels(x, beta, forward=True,
+                                                  training=False)
+    tk_diffs_b = dynamics.test_transition_kernels(x, beta, forward=False,
+                                                  training=False)
+    io.log('\n\n\n')
+    io.log('\n'.join([80 * '=', 'transition kernel differences:']))
+    io.log('  forward:')
+    for key, val in tk_diffs_f.items():
+        print(f'    {key}: {val}\n')
+    io.log('  backward:')
+    for key, val in tk_diffs_b.items():
+        print(f'    {key}: {val}\n')
+
+    io.log(80 * '=' + '\n\n\n')
+
+    return AttrDict({'forward': tk_diffs_f, 'backward': tk_diffs_b})
+
+
+@timeit(out_file=TIMING_FILE)
+def test_hmc_run(args: AttrDict):
     """Testing generic HMC."""
     hmc_args = AttrDict({
         'hmc': True,
         'log_dir': None,
-        'beta': beta,
-        'eps': eps,
-        'num_steps': num_steps,
-        'run_steps': run_steps,
+        'horovod': args.get('horovod', False),
+        'beta': args.get('beta', 1.),
+        'eps': args.get('eps', 0.1),
+        'num_steps': args.get('num_steps', 2),
+        'run_steps': args.get('run_steps', 1000),
+        'plaq_weight': args.get('plaq_weight', 10.),
+        'charge_weight': args.get('charge_weight', 0.1),
         'lattice_shape': (128, 16, 16, 2),
     })
     hmc_dir = os.path.join(os.path.dirname(PROJECT_DIR),
                            'gauge_logs_eager', 'test', 'hmc_runs')
-    model, run_data = run_hmc(hmc_args, hmc_dir=hmc_dir)
+    dynamics, run_data, x = run_hmc(hmc_args, hmc_dir=hmc_dir)
 
     return {
-        'model': model,
+        'x': x,
+        'dynamics': dynamics,
         'flags': hmc_args,
         'run_data': run_data,
+        'tk_diffs': None,
     }
 
 
-def test_single_network(flags):
+@timeit(out_file=TIMING_FILE)
+def test_single_network(flags: AttrDict):
     """Test training on single network."""
-    x, model, train_data, flags = train(flags)
-    model, run_data = run(model, flags, x=x)
+    flags.separate_networks = False
+    x, dynamics, train_data, flags = train(flags,
+                                           test_steps=50,
+                                           log_file=LOG_FILE)
+    beta = flags.get('beta', 1.)
+    tk_diffs = test_transition_kernels(dynamics, x, beta, training=False)
+    dynamics, run_data, x = run(dynamics, flags, x=x)
 
-    return {
+    return AttrDict({
         'x': x,
         'flags': flags,
-        'model': model,
+        'log_dir': flags.log_dir,
+        'dynamics': dynamics,
         'run_data': run_data,
         'train_data': train_data,
-    }
+        'tk_diffs': tk_diffs,
+    })
 
 
-def test_separate_networks(flags):
+@timeit(out_file=TIMING_FILE)
+def test_separate_networks(flags: AttrDict):
     """Test training on separate networks."""
+    flags.hmc_steps = 0
     flags.log_dir = None
     flags.separate_networks = True
-    x, model, train_data, flags = train(flags)
-    model, run_data = run(model, flags, x=x)
+    flags.compile = False
+    x, dynamics, train_data, flags = train(flags,
+                                           test_steps=50,
+                                           log_file=LOG_FILE)
+    beta = flags.get('beta', 1.)
+    tk_diffs = test_transition_kernels(dynamics, x, beta, training=False)
+    dynamics, run_data, x = run(dynamics, flags, x=x)
 
-    return {
+    return AttrDict({
         'x': x,
         'flags': flags,
-        'model': model,
+        'log_dir': flags.log_dir,
+        'dynamics': dynamics,
         'run_data': run_data,
         'train_data': train_data,
-    }
+        'tk_diffs': tk_diffs,
+    })
 
 
-def test_resume_training(flags):
+@timeit(out_file=TIMING_FILE)
+def test_resume_training(log_dir: str):
     """Test restoring a training session from a checkpoint."""
-    assert flags.log_dir is not None
-    flags.beta_init, flags.beta_final = flags.beta_final, flags.beta_final + 1
+    flags = AttrDict(
+        dict(io.loadz(os.path.join(log_dir, 'training', 'FLAGS.z')))
+    )
 
-    x, model, train_data, flags = train(flags)
-    model, run_data = run(model, flags, x=x)
+    flags.log_dir = log_dir
+    flags.train_steps += flags.get('save_steps', 10)
+    x, dynamics, train_data, flags = train(flags,
+                                           test_steps=50,
+                                           log_file=LOG_FILE)
+    beta = flags.get('beta', 1.)
+    tk_diffs = test_transition_kernels(dynamics, x, beta, training=False)
+    dynamics, run_data, x = run(dynamics, flags, x=x)
 
-    return {
+    return AttrDict({
         'x': x,
         'flags': flags,
-        'model': model,
+        'log_dir': flags.log_dir,
+        'dynamics': dynamics,
         'run_data': run_data,
         'train_data': train_data,
-    }
+        'tk_diffs': tk_diffs,
+    })
 
 
-def test(flags):
+@timeit(out_file=TIMING_FILE)
+def test(flags: AttrDict):
     """Run tests."""
-    hmc_out = test_hmc_run()
+    flags.compile = True
     single_net_out = test_single_network(flags)
-    separate_nets_out = test_separate_networks(flags)
-    restored_out = test_resume_training(single_net_out['flags'])
+    log_dir = single_net_out.log_dir
+    _ = test_resume_training(log_dir)
+    _ = test_separate_networks(flags)
+    _ = test_hmc_run(flags)
 
-    return {
-        'hmc': hmc_out,
-        'single_network': single_net_out,
-        'separate_networks': separate_nets_out,
-        'restored': restored_out,
-    }
+
+@timeit(out_file=TIMING_FILE)
+def main(args):
+    """Main method."""
+    if args.test_hmc_run:
+        _ = test_hmc_run(TEST_FLAGS)
+
+    if args.test_separate_networks:
+        _ = test_separate_networks(TEST_FLAGS)
+
+    if args.test_single_network:
+        TEST_FLAGS.hmc_steps = 0
+        TEST_FLAGS.hmc_start = False
+        _ = test_single_network(TEST_FLAGS)
+
+    if args.test_resume_training:
+        _ = test_resume_training(args.log_dir)
+
+    if args.test_inference_from_model:
+        if args.log_dir is None:
+            raise ValueError('`--log_dir` must be specified.')
+
+        TEST_FLAGS.log_dir = args.log_dir
+        _, _ = load_and_run(TEST_FLAGS)
 
 
 if __name__ == '__main__':
-    if len(sys.argv) <= 1:
-        _ = test(TEST_FLAGS)
-    else:
-        FLAGS = parse_args()
+    FLAGS = parse_args()
+    if FLAGS.horovod:
+        TEST_FLAGS.horovod = True
 
-        if FLAGS.test_hmc_run:
-            _ = test_hmc_run()
-
-        if FLAGS.test_separate_networks:
-            _ = test_separate_networks(TEST_FLAGS)
-
-        if FLAGS.test_single_network:
-            _ = test_single_network(TEST_FLAGS)
-
-        if FLAGS.test_inference_from_model:
-            if FLAGS.log_dir is None:
-                raise ValueError('`--log_dir` must be specified.')
-
-            DEFAULT_FLAGS.log_dir = FLAGS.log_dir
-            _, _ = load_and_run(DEFAULT_FLAGS)
+    _ = test(TEST_FLAGS) if FLAGS.test_all else main(FLAGS)

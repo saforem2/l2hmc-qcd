@@ -1,11 +1,14 @@
 """
 config.py
 """
+# pylint:disable=too-many-arguments
 from __future__ import absolute_import, division, print_function
 
 import os
 
 from collections import namedtuple
+
+from colorama import Fore
 
 import numpy as np
 import tensorflow as tf
@@ -14,9 +17,6 @@ from utils.attr_dict import AttrDict
 
 __author__ = 'Sam Foreman'
 __date__ = '07/03/2020'
-
-# pylint:disable=invalid-name
-
 
 SNAME = 'scale_layer'
 TNAME = 'translation_layer'
@@ -27,28 +27,90 @@ QCOEFF = 'coeff_transformation'
 # ----------------------------------------------------------------
 # Included below is a catch-all for various structures
 # ----------------------------------------------------------------
-DynamicsConfig = namedtuple('DynamicsConfig', [
-    'eps',
-    'hmc',
-    'num_steps',
-    'model_type',
-    'eps_trainable',
-    'separate_networks',
-])
 
-NetworkConfig = namedtuple('NetworkConfig', [
-    'type',
-    'units',
-    'dropout_prob',
-    'activation_fn'
-])
+CBARS = {
+    'black': Fore.BLACK,
+    'red': Fore.RED,
+    'green': Fore.GREEN,
+    'yellow': Fore.YELLOW,
+    'blue': Fore.BLUE,
+    'magenta': Fore.MAGENTA,
+    'cyan': Fore.CYAN,
+    'white': Fore.WHITE,
+    'reset': Fore.RESET,
+}
 
-lrConfig = namedtuple('lrConfig', [
-    'init',
-    'decay_steps',
-    'decay_rate',
-    'warmup_steps',
-])
+
+class DynamicsConfig(AttrDict):
+    """Configuration object for `BaseDynamics` object"""
+
+    def __init__(self,
+                 eps: float,
+                 num_steps: int,
+                 hmc: bool = False,
+                 model_type: str = None,
+                 eps_trainable: bool = True):
+        super(DynamicsConfig, self).__init__(
+            eps=eps,
+            hmc=hmc,
+            num_steps=num_steps,
+            model_type=model_type,
+            eps_trainable=eps_trainable,
+        )
+
+
+class GaugeDynamicsConfig(AttrDict):
+    """Configuration object for `GaugeDynamics` object"""
+
+    # pylint:disable=too-many-arguments
+    def __init__(self,
+                 eps: float,                    # step size
+                 num_steps: int,                # n leapfrog steps per acc/rej
+                 hmc: bool = False,             # run standard HMC?
+                 use_ncp: bool = False,         # Transform x using NCP?
+                 model_type: str = None,        # name for model
+                 eps_trainable: bool = True,    # trainable step size?
+                 separate_networks: bool = False):
+        super(GaugeDynamicsConfig, self).__init__(
+            eps=eps,
+            hmc=hmc,
+            use_ncp=use_ncp,
+            num_steps=num_steps,
+            model_type=model_type,
+            eps_trainable=eps_trainable,
+            separate_networks=separate_networks
+        )
+
+
+class NetworkConfig(AttrDict):
+    """Configuration object for network of `Dynamics` object"""
+
+    def __init__(self,
+                 units: list,
+                 name: str = None,
+                 dropout_prob: float = 0.,
+                 activation_fn: callable = tf.nn.relu):
+        super(NetworkConfig, self).__init__(
+            name=name,
+            units=units,
+            dropout_prob=dropout_prob,
+            activation_fn=activation_fn
+        )
+
+
+class lrConfig(AttrDict):
+    """Configuration object for specifying learning rate schedule."""
+    def __init__(self,
+                 init: float,
+                 decay_steps: int,
+                 decay_rate: float,
+                 warmup_steps: int = 0):
+        super(lrConfig, self).__init__(
+            init=init,
+            decay_steps=decay_steps,
+            decay_rate=decay_rate,
+            warmup_steps=warmup_steps
+        )
 
 NAMES = [
     'step', 'dt', 'loss', 'ploss', 'qloss',
@@ -57,34 +119,6 @@ NAMES = [
 HSTR = ''.join(["{:^12s}".format(name) for name in NAMES])
 SEP = '-' * len(HSTR)
 HEADER = '\n'.join([SEP, HSTR, SEP])
-
-#  DynamicsConfig = {
-#      'eps': None,
-#      'hmc': False,
-#      'num_steps': None,
-#      'model_type': None,
-#      'input_shape': None,
-#      'eps_trainable': True,
-#      'separate_networks': False,
-#  }
-#
-#  NetConfig = AttrDict({
-#      'type': None,
-#      'units': None,
-#      'dropout_prob': 0.,
-#      'activation_fn': tf.nn.relu,
-#  })
-
-#  DynamicsConfig = namedtuple('DynamicsConfig', [
-#      'eps',
-#      'hmc',
-#      'num_steps',
-#      'model_type',
-#      'input_shape',
-#      'net_weights',
-#      'eps_trainable',
-#  ])
-
 
 # State is an object for grouping the position/momentum
 # configurations together with the value of `beta`.
@@ -129,8 +163,10 @@ ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 FILE_PATH = os.path.abspath(os.path.dirname(__file__))
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 BASE_DIR = os.path.dirname(PROJECT_DIR)
+BIN_DIR = os.path.join(BASE_DIR, 'bin')
 GAUGE_LOGS_DIR = os.path.join(BASE_DIR, 'gauge_logs')
 TEST_LOGS_DIR = os.path.join(BASE_DIR, 'test_logs')
+BIN_DIR = os.path.join(BASE_DIR, 'bin')
 
 DEFAULT_FLAGS = AttrDict({
     'log_dir': None,
@@ -138,7 +174,6 @@ DEFAULT_FLAGS = AttrDict({
     'restore': False,
     'inference': True,
     'run_steps': 500,
-    'save_train_data': True,
     'horovod': False,
     'rand': True,
     'eps': 0.1,
@@ -185,31 +220,57 @@ COLORS = [  # from seaborn `bright` style
 ]
 
 
-header = ("{:^12s}" + 8 * "{:^10s}").format(
-    "STEP", "t/STEP", "% ACC", "EPS", "BETA",
-    "ACTIONS", "PLAQS", "(EXACT)", "dQ"
-)
-dash0 = (len(header) + 1) * '='
-dash1 = (len(header) + 1) * '-'
-RUN_HEADER = dash0 + '\n' + header + '\n' + dash1
+#  header = ("{:^12s}" + 8 * "{:^10s}").format(
+#      "STEP", "t/STEP", "% ACC", "EPS", "BETA",
+#      "ACTIONS", "PLAQS", "(EXACT)", "dQ"
+#  )
+#  dash0 = (len(header) + 1) * '='
+#  dash1 = (len(header) + 1) * '-'
+#  RUN_HEADER = dash0 + '\n' + header + '\n' + dash1
 
-try:
-    import memory_profiler  # noqa: F401
+#  try:
+#      import memory_profiler  # noqa: F401
+#
+#      HAS_MEMORY_PROFILER = True
+#  except ImportError:
+#      HAS_MEMORY_PROFILER = False
+#
+#  try:
+#      import matplotlib.pyplot as plt  # noqa: F401
+#
+#      HAS_MATPLOTLIB = True
+#  except ImportError:
+#      HAS_MATPLOTLIB = False
+#
+#  try:
+#      import psutil  # noqa: F401
+#
+#      HAS_PSUTIL = True
+#  except ImportError:
+#      HAS_PSUTIL = False
+#
 
-    HAS_MEMORY_PROFILER = True
-except ImportError:
-    HAS_MEMORY_PROFILER = False
+# pylint:disable=invalid-name
+TRAIN_STR = (r"""
 
-try:
-    import matplotlib.pyplot as plt  # noqa: F401
+  _             _       _
+ | |           (_)     (_)
+ | |_ _ __ __ _ _ _ __  _ _ __   __ _
+ | __| '__/ _` | | '_ \| | '_ \ / _` |
+ | |_| | | (_| | | | | | | | | | (_| |_ _ _
+  \__|_|  \__,_|_|_| |_|_|_| |_|\__, (_|_|_)
+                                 __/ |
+                                |___/
+""")
 
-    HAS_MATPLOTLIB = True
-except ImportError:
-    HAS_MATPLOTLIB = False
+RUN_STR = (r"""
 
-try:
-    import psutil  # noqa: F401
-
-    HAS_PSUTIL = True
-except ImportError:
-    HAS_PSUTIL = False
+                         _
+                        (_)
+  _ __ _   _ _ __  _ __  _ _ __   __ _
+ | '__| | | | '_ \| '_ \| | '_ \ / _` |
+ | |  | |_| | | | | | | | | | | | (_| |_ _ _
+ |_|   \__,_|_| |_|_| |_|_|_| |_|\__, (_|_|_)
+                                  __/ |
+                                 |___/
+""")

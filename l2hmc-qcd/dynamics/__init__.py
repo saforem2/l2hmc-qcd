@@ -1,13 +1,12 @@
-from collections import namedtuple
-from utils.attr_dict import AttrDict
-
 import os
 import sys
 
-from config import (
-    State, MonteCarloStates,
-    NET_WEIGHTS_HMC, NET_WEIGHTS_L2HMC
-)
+from collections import namedtuple
+
+import tensorflow as tf
+
+from config import MonteCarloStates, NET_WEIGHTS_HMC, NET_WEIGHTS_L2HMC, State
+from utils.attr_dict import AttrDict
 
 modulepath = os.path.join(os.path.dirname(__file__), '..')
 sys.path.append(modulepath)
@@ -60,7 +59,6 @@ class DynamicsParams:
         attrs.run_steps = params.get('run_steps', int(1e3))
         attrs.logging_steps = params.get('logging_steps', 50)
         attrs.save_run_data = params.get('save_run_data', True)
-        attrs.save_train_data = True
         attrs.save_steps = params.get('save_steps', None)
 
         attrs.should_compile = True
