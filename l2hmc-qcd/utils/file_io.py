@@ -2,41 +2,110 @@
 file_io.py
 """
 import os
+import sys
 import time
 import pickle
+import typing
+import logging
 import datetime
 
 import joblib
 import numpy as np
 
+from tqdm import tqdm
 from config import PROJECT_DIR
+from utils.attr_dict import AttrDict
 
 # pylint:disable=invalid-name
 
+LOG_LEVELS_AS_INTS = {
+    'CRITICAL': 50,
+    'ERROR': 40,
+    'WARNING': 30,
+    'INFO': 20,
+    'DEBUG': 10,
+}
 
-def log(s, nl=True, rank=0):
+LOG_LEVELS = {
+    'CRITICAL': logging.CRITICAL,
+    'ERROR': logging.ERROR,
+    'WARNING': logging.WARNING,
+    'INFO': logging.INFO,
+    'DEBUG': logging.DEBUG,
+}
+
+
+def log(s: str, rank: int = 0, level: str = 'INFO'):
     """Print string `s` to stdout if and only if hvd.rank() == 0."""
     if rank != 0:
         return
 
-    print(s, end='\n' if nl else ' ')
+    if isinstance(s, (list, tuple)):
+        _ = [logging.log(LOG_LEVELS_AS_INTS[level.upper()], s_) for s_ in s]
+    else:
+        logging.log(LOG_LEVELS_AS_INTS[level.upper()], s)
 
 
-def write(s, f, mode='a', nl=True, rank=0):
+def write(s: str, f: str, mode: str = 'a', nl: bool = True, rank: int = 0):
     """Write string `s` to file `f` if and only if hvd.rank() == 0."""
     if rank != 0:
         return
-    with open(f, mode) as ff:
-        ff.write(s + '\n' if nl else ' ')
+    with open(f, mode) as f_:
+        f_.write(s + '\n' if nl else ' ')
 
 
-def log_and_write(s, f, rank=0, mode='a', nl=True):
+def log_tqdm(s, out=sys.stdout):
+    """Write to output using `tqdm`."""
+    if isinstance(s, (tuple, list)):
+        for i in s:
+            tqdm.write(i, file=out)
+    else:
+        tqdm.write(s, file=out)
+
+
+def print_flags(flags: AttrDict, rank=0):
+    """Helper method for printing flags."""
+    log('\n'.join(
+        [80 * '=', 'FLAGS:', *[f' {k}: {v}' for k, v in flags.items()]]
+    ), rank=rank)
+
+
+# pylint:disable=too-many-arguments
+def make_header_from_dict(
+        data: dict,
+        dash: str = '-',
+        skip: list = None,
+        append: list = None,
+        prepend: list = None,
+        split: bool = False,
+):
+    """Build nicely formatted header with names of various metrics."""
+    append = [''] if append is None else append
+    prepend = [''] if prepend is None else prepend
+    skip = [] if skip is None else skip
+    keys = ['{:^12s}'.format(k) for k in data.keys() if k not in skip]
+    hstr = ''.join(prepend + keys + append)
+    sep = dash * len(hstr)
+    header = [sep, hstr, sep]
+    if split:
+        return header
+
+    return '\n'.join(header)
+
+
+def log_and_write(
+        s: str,
+        f: str,
+        rank: int = 0,
+        mode: str = 'a',
+        nl: bool = True
+):
     """Print string `s` to std out and also write to file `f`."""
-    log(s, nl, rank=rank)
+    log(s, rank=rank)
     write(s, f, mode=mode, nl=nl, rank=rank)
 
 
-def check_else_make_dir(d, rank=0):
+def check_else_make_dir(d: str, rank: int = 0):
     """If directory `d` doesn't exist, it is created.
 
     Args:
@@ -55,7 +124,10 @@ def check_else_make_dir(d, rank=0):
             os.makedirs(d, exist_ok=True)
 
 
-def flush_data_strs(data_strs, out_file, rank=0, mode='a'):
+def flush_data_strs(data_strs: list,
+                    out_file: str,
+                    rank: int = 0,
+                    mode: str = 'a'):
     """Dump `data_strs` to `out_file` and return new, empty list."""
     if rank != 0:
         return []
@@ -67,7 +139,7 @@ def flush_data_strs(data_strs, out_file, rank=0, mode='a'):
     return []
 
 
-def save_params(params, out_dir, name=None, rank=0):
+def save_params(params: dict, out_dir: str, name: str = None, rank: int = 0):
     """save params(dict) to `out_dir`, as both `.z` and `.txt` files."""
     if rank != 0:
         return
@@ -83,7 +155,27 @@ def save_params(params, out_dir, name=None, rank=0):
     savez(params, zfile, name=name, rank=rank)
 
 
-def print_args(args, rank=0):
+def save_dict(d: dict, out_dir: str, name: str, rank: int = 0):
+    """Save dictionary to `out_dir` as both `.z` and `.txt` files."""
+    if rank != 0:
+        return
+
+    if isinstance(d, AttrDict):
+        d = dict(d)
+
+    check_else_make_dir(out_dir, rank=rank)
+
+    zfile = os.path.join(out_dir, f'{name}.z')
+    txt_file = os.path.join(out_dir, f'{name}.txt')
+    log(f'Saving {name} to: {zfile}, {txt_file}.')
+
+    savez(d, zfile, name=name, rank=rank)
+    with open(txt_file, 'w') as f:
+        for key, val in d.items():
+            f.write(f'{key}: {val}\n')
+
+
+def print_args(args: dict, rank: int = 0):
     """Print out parsed arguments."""
     log(80 * '=' + '\n' + 'Parsed args:\n', rank=rank)
     for key, val in args.items():
@@ -91,7 +183,7 @@ def print_args(args, rank=0):
     log(80 * '=', rank=rank)
 
 
-def savez(obj, fpath, name=None, rank=0):
+def savez(obj: typing.Any, fpath: str, name: str = None, rank: int = 0):
     """Save `obj` to compressed `.z` file at `fpath`."""
     if rank != 0:
         return
@@ -134,23 +226,33 @@ def load_pkl(fpath):
     return data
 
 
-def timeit(method):
+def timeit(out_file=None, should_log=True, rank=0, sep=None):
     """Timing decorator."""
-    def timed(*args, **kwargs):
-        """Function to be timed."""
-        start_time = time.time()
-        result = method(*args, **kwargs)
-        end_time = time.time()
+    def wrap(fn):
+        def timed(*args, **kwargs):
+            """Function to be timed."""
+            start_time = time.time()
+            result = fn(*args, **kwargs)
+            end_time = time.time()
 
-        if 'log_time' in kwargs:
-            name = kwargs.get('log_name', method.__name__.upper())
-            kwargs['log_time'][name] = int((end_time - start_time) * 1000)
-        else:
-            log(80 * '-')
-            log(f'`{method.__name__}` took: {(end_time - start_time):.4g}s')
-            log(80 * '-')
-        return result
-    return timed
+            if 'log_time' in kwargs:
+                name = kwargs.get('log_name', fn.__name__.upper())
+                kwargs['log_time'][name] = int((end_time - start_time) * 1000)
+            else:
+                dt = (end_time - start_time) * 1000
+                tstr = f'`{fn.__name__}` took: {dt:.5g}ms'
+                if sep is not None:
+                    tstr = '\n'.join([sep, tstr, sep])
+                if out_file is not None:
+                    if should_log:
+                        log_and_write(tstr, out_file, rank=rank, mode='a')
+                    else:
+                        write(tstr, out_file, rank=rank, mode='a')
+                if should_log:
+                    log(tstr)
+            return result
+        return timed
+    return wrap
 
 
 def get_run_num(run_dir):
@@ -165,7 +267,7 @@ def get_run_num(run_dir):
     return sorted([int(i.split('_')[-1]) for i in dirnames])[-1] + 1
 
 
-def get_run_dir_fstr(FLAGS):
+def get_run_dir_fstr(FLAGS: AttrDict):
     """Parse FLAGS and create unique fstr for `run_dir`."""
     eps = FLAGS.get('eps', None)
     hmc = FLAGS.get('hmc', False)
@@ -178,7 +280,7 @@ def get_run_dir_fstr(FLAGS):
 
     fstr = ''
     if hmc:
-        fstr += f'HMC_'
+        fstr += 'HMC_'
     if beta is not None:
         fstr += f'beta{beta:.3g}'.replace('.', '')
     if num_steps is not None:
@@ -191,25 +293,30 @@ def get_run_dir_fstr(FLAGS):
     return fstr
 
 
-# pylint:disable=too-many-branches, too-many-locals
-def get_log_dir_fstr(FLAGS):
+# pylint:disable=too-many-branches, too-many-locals, too-many-statements
+def get_log_dir_fstr(flags):
     """Parse FLAGS and create unique fstr for `log_dir`."""
-    hmc = FLAGS.get('hmc', False)
-    batch_size = FLAGS.get('batch_size', None)
-    num_steps = FLAGS.get('num_steps', None)
-    beta = FLAGS.get('beta', None)
-    eps = FLAGS.get('eps', None)
-    space_size = FLAGS.get('space_size', None)
-    time_size = FLAGS.get('time_size', None)
-    lattice_shape = FLAGS.get('lattice_shape', None)
-    train_steps = FLAGS.get('train_steps', int(1e3))
-    network_type = FLAGS.get('network_type', 'GaugeNetwork')
-    charge_weight = FLAGS.get('charge_weight', 0.)
-    plaq_weight = FLAGS.get('plaq_weight', 0.)
-    eps_fixed = FLAGS.get('eps_fixed', False)
-    dropout_prob = FLAGS.get('dropout_prob', 0.)
-    clip_value = FLAGS.get('clip_value', 0.)
-    separate_networks = FLAGS.get('separate_networks', False)
+    hmc = flags.get('hmc', False)
+    batch_size = flags.get('batch_size', None)
+    num_steps = flags.get('num_steps', None)
+    beta_init = flags.get('beta_init', None)
+    beta_final = flags.get('beta_final', None)
+    eps = flags.get('eps', None)
+    space_size = flags.get('space_size', None)
+    time_size = flags.get('time_size', None)
+    lattice_shape = flags.get('lattice_shape', None)
+    train_steps = flags.get('train_steps', int(1e3))
+    network_type = flags.get('network_type', 'GaugeNetwork')
+    charge_weight = flags.get('charge_weight', 0.)
+    plaq_weight = flags.get('plaq_weight', 0.)
+    eps_fixed = flags.get('eps_fixed', False)
+    dropout_prob = flags.get('dropout_prob', 0.)
+    clip_val = flags.get('clip_val', 0.)
+    aux_weight = flags.get('aux_weight', 0.)
+    activation = flags.get('activation', 'relu')
+    separate_networks = flags.get('separate_networks', False)
+    using_ncp = flags.get('use_ncp', False)
+    zero_init = flags.get('zero_init', False)
 
     fstr = ''
 
@@ -233,17 +340,19 @@ def get_log_dir_fstr(FLAGS):
     if num_steps is not None:
         fstr += f'_lf{num_steps}'
 
-    if network_type != 'GaugeNetwork':
-        fstr += f'_{network_type}'
-
-    if separate_networks:
-        fstr += f'_sepNets'
-
     if charge_weight > 0:
         fstr += f'_qw{charge_weight}'.replace('.', '')
 
     if plaq_weight > 0:
         fstr += f'_pw{plaq_weight}'.replace('.', '')
+
+    if aux_weight > 0:
+        fstr += f'_aw{aux_weight}'.replace('.', '')
+
+    if activation != 'relu':
+        fstr += f'_act{activation}'
+
+    fstr += f'_bi{beta_init:.3g}_bf{beta_final:.3g}'.replace('.', '')
 
     if dropout_prob > 0:
         fstr += f'_dp{dropout_prob}'.replace('.', '')
@@ -251,15 +360,25 @@ def get_log_dir_fstr(FLAGS):
     if eps_fixed:
         fstr += f'_eps{eps:.3g}'.replace('.', '')
 
-    if beta is not None:
-        fstr += f'_beta{beta:.3g}'.replace('.', '')
+    if clip_val > 0:
+        fstr += f'_clip{clip_val}'.replace('.', '')
 
-    if clip_value > 0:
-        fstr += f'_clip{clip_value}'.replace('.', '')
+    if network_type != 'GaugeNetwork':
+        fstr += f'_{network_type}'
+
+    if separate_networks:
+        fstr += '_sepNets'
+
+    if using_ncp:
+        fstr += '_NCProj'
+
+    if zero_init:
+        fstr += '_zero_init'
 
     return fstr
 
 
+# pylint:disable=too-many-arguments
 def make_log_dir(FLAGS, model_type=None, log_file=None,
                  base_dir=None, eager=True, rank=0):
     """Automatically create and name `log_dir` to save model data to.
@@ -281,11 +400,9 @@ def make_log_dir(FLAGS, model_type=None, log_file=None,
     month_str = now.strftime('%Y_%m')
     dstr = now.strftime('%Y-%m-%d-%H%M%S')
     run_str = f'{fstr}-{dstr}'
-    #  run_str = f'{run_str}-{dstr}'
 
     root_dir = os.path.dirname(PROJECT_DIR)
     dirs = [root_dir]
-    #  if tf.executing_eagerly():
     if eager:
         dirs.append('gauge_logs_eager')
 
@@ -294,8 +411,8 @@ def make_log_dir(FLAGS, model_type=None, log_file=None,
 
     log_dir = os.path.join(*dirs, month_str, run_str)
     if os.path.isdir(log_dir):
-        log(f'Existing directory found with the same name!')
-        log(f'Modifying date string to include seconds.')
+        log('\n'.join(['Existing directory found with the same name!',
+                       'Modifying the date string to include seconds.']))
         dstr = now.strftime('%Y-%m-%d-%H%M%S')
         run_str = f'{fstr}-{dstr}'
         log_dir = os.path.join(*dirs, month_str, run_str)
@@ -316,15 +433,13 @@ def make_run_dir(FLAGS, base_dir):
     run_str = f'{fstr}-{dstr}'
     run_dir = os.path.join(base_dir, run_str)
     if os.path.isdir(run_dir):
-        log(f'Existing directory found with the same name!')
-        log(f'Modifying date string to include seconds.')
+        log('\n'.join(['Existing directory found with the same name!',
+                       'Modifying the date string to include seconds.']))
         dstr = now.strftime('%Y-%m-%d-%H%M%S')
         run_str = f'{fstr}-{dstr}'
         run_dir = os.path.join(base_dir, run_str)
 
     check_else_make_dir(run_dir)
-    #  if log_file is not None:
-    #      write(f'{run_dir}', log_file, 'a')
 
     return run_dir
 
@@ -368,15 +483,8 @@ def save(dynamics, train_data, train_dir, rank=0):
     if not dynamics.config.hmc:
         save_network_weights(dynamics, train_dir, rank=rank)
 
-    #  if model.save_train_data:
-    #      outputs_dir = os.path.join(train_dir, 'outputs')
-    #      check_else_make_dir(outputs_dir)
-    #      for key, val in outputs.items():
-    #          out_file = os.path.join(outputs_dir, f'{key}.z')
-    #          savez(np.array(val), out_file, key)
-    if dynamics.save_train_data:
-        output_dir = os.path.join(train_dir, 'outputs')
-        train_data.save_data(output_dir)
+    output_dir = os.path.join(train_dir, 'outputs')
+    train_data.save_data(output_dir)
 
 
 def save_inference(run_dir, run_data):
@@ -386,16 +494,6 @@ def save_inference(run_dir, run_data):
     check_else_make_dir([run_dir, data_dir])
     run_data.save_data(data_dir)
     run_data.flush_data_strs(log_file, mode='a')
-
-    #  history_file = os.path.join(run_dir, 'inference_log.txt')
-    #  with open(history_file, 'w') as f:
-    #      f.write('\n'.join(run_data.data_strs))
-    #
-    #  outputs_dir = os.path.join(run_dir, 'outputs')
-    #  check_else_make_dir(outputs_dir)
-    #  for key, val in run_data.data.items():
-    #      out_file = os.path.join(outputs_dir, f'{key}.z')
-    #      savez(np.array(val), out_file, key)
 
 
 def get_subdirs(root_dir):

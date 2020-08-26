@@ -33,6 +33,57 @@ TLS_DEFAULT = mpl.rcParams['xtick.labelsize']
 
 # pylint:disable=invalid-name
 
+def autocorrelation_time(x, s, mu, var):
+    """Compute the autocorrelation time."""
+    b, t, d = x.shape
+    act_ = np.zeros([d])
+    for i in range(b):
+        y = x[i] - mu
+        p, n = y[:-s], y[s:]
+        act_ += np.mean(p * n, axis=0) / var
+    act_ /= b
+
+    return act_
+
+
+def effective_sample_size(x, mu, var):
+    # batch_size, time, dimension
+    b, t, d = x.shape
+    ess_ = np.ones([d])
+    for s in range(1, t):
+        p = autocorrelation_time(x, s, mu, var)
+        if np.sum(p > 0.05) == 0:
+            break
+        else:
+            for j in range(d):
+                if p[j] > 0.05:
+                    ess_[j] += 2. * p[j] * (1. - float(s) / t)
+    return t / ess_
+
+
+def batch_means_ess(x):
+    """Estimate the ESS.
+
+    We estimate the ESS as the ratio of the variance of the batch means to the
+    variance of the chain, [ref](https://arxiv.org/pdf/1011.0175.pdf).
+
+    NOTE: `x` should be a chain with shape: [time_steps, num_chains, dim].
+    """
+    x = np.transpose(x, [1, 0, 2])
+    T, M, D = x.shape
+    num_batches = int(np.floor(T ** (1 / 3)))
+    batch_size = int(np.floor(num_batches ** 2))
+    batch_means = []
+    for i in range(num_batches):
+        batch = x[batch_size * i:batch_size * i + batch_size]
+        batch_means.append(np.mean(batch, axis=0))
+    batch_variance = np.var(np.array(batch_means), axis=0)
+    chain_variance = np.var(x, axis=0)
+    act = batch_size * batch_variance / (chain_variance + 1e-20)
+
+    return 1. / act
+
+
 def _calc_var_explained(x):
     """Calculate the % variance explained by the singular values of `x`."""
     _, s, _ = np.linalg.svd(x, full_matrices=True)
@@ -453,7 +504,7 @@ class DataLoader:
         px = self._load_sqz('px.pkl')
         avg_px = np.mean(px)
         if avg_px < 0.1 or not keep:
-            io.log(f'INFO: Skipping! nw: {net_weights}, avg_px: {avg_px:.3g}')
+            io.log(f'Skipping! nw: {net_weights}, avg_px: {avg_px:.3g}')
             return None, run_params
 
         io.log(f'Loading data for net_weights: {net_weights}...')
@@ -598,7 +649,8 @@ class DataLoader:
                           + f' {self._tws_title}')
             fname += f'_train{self._tws_fname}'
 
-        if self._params.get('clip_value', 0) > 0:
+        clip_value = self._params.get('clip_value', 0.)
+        if clip_value > 0:
             title_str += f', clip: {clip_value}'
             fname += f'_clip{clip_value}'.replace('.', '')
 

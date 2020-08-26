@@ -52,7 +52,7 @@ def parse_args():
     parser.add_argument("--run_steps",
                         dest="run_steps",
                         type=int,
-                        default=5000,
+                        default=2000,
                         required=False,
                         help=("""Number of evaluation 'run' steps to perform
                               after training (i.e. length of desired chain
@@ -74,6 +74,24 @@ def parse_args():
                         default=None,
                         required=False,
                         help=("""Flag specifying value of `eps` to use."""))
+
+    parser.add_argument("--charge_weight",
+                        dest="charge_weight",
+                        type=float,
+                        default=0.1,
+                        required=False,
+                        help=("""Multiplicative factor used to weigh relative
+                              strength of top. charge term in loss
+                              function.\n (Default: 0.)"""))
+
+    parser.add_argument("--plaq_weight",
+                        dest="plaq_weight",
+                        type=float,
+                        default=10.,
+                        required=False,
+                        help=("""Multiplicative factor used to weigh relative
+                              strength of plaquette difference term in loss
+                              function.\n (Default: 0.)"""))
 
     #################################
     # Flags for running generic HMC
@@ -98,7 +116,7 @@ def parse_args():
     parser.add_argument("-n", "--num_steps",
                         dest="num_steps",
                         type=int,
-                        default=1,
+                        default=None,
                         required=False,
                         help=("""Number of leapfrog steps to use in (augmented)
                               HMC sampler.\n(Default: 5)"""))

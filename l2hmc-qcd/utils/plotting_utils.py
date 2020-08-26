@@ -150,12 +150,19 @@ def mcmc_traceplot(key, val, title=None, fpath=None):
 
 
 # pylint:disable=unsubscriptable-object
-def plot_data(train_data, base_dir, FLAGS, thermalize=False, params=None):
-    out_dir = os.path.join(base_dir, 'plots')
+def plot_data(train_data, out_dir, flags, thermalize=False, params=None):
+    out_dir = os.path.join(out_dir, 'plots')
     io.check_else_make_dir(out_dir)
 
     title = None if params is None else get_title_str_from_params(params)
-    logging_steps = FLAGS.logging_steps if 'training' in base_dir else 1
+
+    logging_steps = flags.get('logging_steps', 1)
+    flags_file = os.path.join(out_dir, 'FLAGS.z')
+    if os.path.isfile(flags_file):
+        train_flags = io.loadz(flags_file)
+        logging_steps = train_flags.get('logging_steps', 1)
+
+    #  logging_steps = flags.logging_steps if 'training' in out_dir else 1
 
     data_dict = {}
     for key, val in train_data.data.items():
@@ -167,6 +174,7 @@ def plot_data(train_data, base_dir, FLAGS, thermalize=False, params=None):
 
         if thermalize or key == 'dt':
             arr, steps = therm_arr(arr, therm_frac=0.33)
+            steps *= logging_steps
 
         labels = ('MC Step', key)
         data = (steps, arr)
@@ -189,8 +197,6 @@ def plot_data(train_data, base_dir, FLAGS, thermalize=False, params=None):
         plt.close('all')
 
     mcmc_avg_lineplots(data_dict, title, out_dir)
+    plot_charges(*data_dict['charges'], out_dir=out_dir, title=title)
 
-    plot_charges(*data_dict['charges'],
-                 out_dir=out_dir,
-                 title=title)
     plt.close('all')

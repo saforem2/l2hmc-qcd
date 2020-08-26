@@ -84,9 +84,37 @@ class ConvNet2D(tf.keras.layers.Layer):
             strides=self.pool_config.pool_sizes[1],
         )
 
+    def reshape_4D(self, tensor):
+        """
+        Reshape tensor to be compatible with tf.keras.layers.Conv2D.
+
+        If self.data_format is 'channels_first', and input `tensor` has shape
+        (N, 2, L, L), the output tensor has shape (N, 1, 2, L, L).
+
+        If self.data_format is 'channels_last' and input `tensor` has shape
+        (N, L, L, 2), the output tensor has shape (N, 2, L, L, 1).
+        """
+        N, H, W, C = self._input_shape
+        if self.data_format == 'channels_first':
+            #  N, C, H, W = self._input_shape
+            #  N, D, H, W = tensor.shape
+            if isinstance(tensor, np.ndarray):
+                return np.reshape(tensor, (N, C, H, W))
+
+            return tf.reshape(tensor, (N, C, H, W))
+
+        if self.data_format == 'channels_last':
+            #  N, H, W, C = self._input_shape
+            if isinstance(tensor, np.ndarray):
+                return np.reshape(tensor, (N, H, W, C))
+
+            return tf.reshape(tensor, (N, H, W, C))
+
+        raise AttributeError("`self.data_format` should be one of "
+                             "'channels_first' or 'channels_last'")
+
     def call(self, inputs, training=None):
         """Call the layer (forward-pass)."""
-        pass
 
 
 class ConvNet2D_1(tf.keras.Model):
