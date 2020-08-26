@@ -127,6 +127,7 @@ class GaugeDynamics(BaseDynamics):
         self.plaq_weight = params.get('plaq_weight', 10.)
         self.charge_weight = params.get('charge_weight', 0.1)
         self.zero_init = params.get('zero_init', False)
+        self._gauge_eq_masks = params.get('gauge_eq_masks', True)
 
         self.lattice_shape = params.get('lattice_shape', None)
         self.lattice = GaugeLattice(self.lattice_shape)
@@ -173,7 +174,7 @@ class GaugeDynamics(BaseDynamics):
 
         return self.xnet, self.vnet
 
-    def _build_masks(self, gauge_equivariant_scheme=False):
+    def _build_masks(self):
         """Construct different binary masks for different time steps."""
         def rolled_reshape(m, ax, shape=None):
             if shape is None:
@@ -184,7 +185,7 @@ class GaugeDynamics(BaseDynamics):
         masks = []
         zeros = np.zeros(self.lattice_shape, dtype=np.float32)
 
-        if gauge_equivariant_scheme:
+        if self._gauge_eq_masks:
             mh_ = zeros.copy()
             mv_ = zeros.copy()
             mh_[:, ::4, :, 1] = 1.  # Horizontal masks

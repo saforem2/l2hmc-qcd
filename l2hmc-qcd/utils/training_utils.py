@@ -75,6 +75,9 @@ else:
     )
 
 
+# + --------------------------------------------+
+# | TODO: Include alternate annealing schedules |
+# + --------------------------------------------+
 def exp_mult_cooling(step, temp_init, temp_final, num_steps, alpha=None):
     """Annealing function."""
     if alpha is None:
@@ -165,8 +168,6 @@ def train_hmc(flags):
         plot_data(train_data, train_dirs.train_dir, hmc_flags,
                   thermalize=True, params=params)
 
-    io.log('\n'.join(['Done with HMC start.', 80 * '=']), rank=RANK)
-
     return x, train_data, dynamics.eps.numpy()
 
 
@@ -191,6 +192,7 @@ def train(flags, log_file=None, md_steps=0):
     if flags.hmc_steps > 0 and not flags.restore:
         x, train_data, eps_init = train_hmc(flags)
         flags.eps = eps_init
+        io.log('\n'.join(['Finished (pre)-training HMC.', 120 * '*']))
 
     if flags.restore:
         xfile = os.path.join(dirs.train_dir,
@@ -201,6 +203,7 @@ def train(flags, log_file=None, md_steps=0):
     dynamics.save_config(dirs.config_dir)
     io.print_flags(flags, rank=RANK)
 
+    io.log('\n'.join([120 * '*', 'Training L2HMC sampler...']))
     x, train_data = train_dynamics(dynamics, flags, dirs,
                                    x=x, md_steps=md_steps)
 
@@ -219,7 +222,7 @@ def train(flags, log_file=None, md_steps=0):
         plot_data(train_data, dirs.train_dir, flags,
                   thermalize=True, params=params)
 
-    io.log('\n'.join(['Done training model', 80 * '=']), rank=RANK)
+    io.log('\n'.join(['Done training model', 120 * '*']), rank=RANK)
 
     return x, dynamics, train_data, flags
 
