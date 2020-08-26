@@ -535,12 +535,7 @@ class BaseDynamics(tf.keras.Model):
         m = tf.reshape(m, shape)
         idxs = tf.where(m)
         _x = tf.reshape(tf.gather_nd(x, idxs), shape)
-        #  idxs = tf.where(tf.reshape(m, x.shape))
-        #  _x = tf.reshape(tf.gather_nd(x, idxs), (self.batch_size, -1))
         S, T, Q = self.xnet((v, _x, t), training)
-        #  S = tf.scatter_nd(idxs, S, x.shape)
-        #  T = tf.scatter_nd(idxs, T, x.shape)
-        #  Q = tf.scatter_nd(idxs, Q, x.shape)
 
         return S, T, Q
 
@@ -592,15 +587,6 @@ class BaseDynamics(tf.keras.Model):
         m, mc = masks
 
         S, T, Q = self._scattered_xnet(x, state.v, t, masks, training)
-
-        #  idxs = tf.where(m == 1)
-        #  _x = tf.gather_nd(x, idxs, batch_dims=0)
-        #
-        #  S, T, Q = self.xnet((state.v, _x, t), training)
-        #
-        #  S = tf.scatter_nd(idxs, S, x.shape)
-        #  T = tf.scatter_nd(idxs, T, x.shape)
-        #  Q = tf.scatter_nd(idxs, Q, x.shape)
 
         transl = self._xtw * T
         scale = self._xsw * (self.eps * S)
@@ -720,7 +706,6 @@ class BaseDynamics(tf.keras.Model):
 
     def _construct_time(self, tile):
         """Convert leapfrog step index into sinusoidal time."""
-        #  t = self._get_time(step_r, tile=tf.shape(state.x)[0])
         self.ts = []
         for i in range(self.config.num_steps):
             t = tf.constant([

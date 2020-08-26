@@ -207,6 +207,26 @@ class GaugeDynamics(BaseDynamics):
 
         return masks
 
+    def _build_separate_nets(self, name, seeds=None):
+        """Build separate networks for each leapfrog step."""
+        #  self.xnet = []
+        #  self.vnet = []
+        factor = 2. if name == 'XNet' else 1.
+        for idx in range(self.config.num_steps):
+            if seeds is not None:
+                seeds = {
+                    key: int(idx * val) for key, val in seeds.items()
+                }
+            net = GaugeNetwork(self.net_config, self.xdim,
+                               factor=factor, net_seeds=seeds,
+                               name=f'{name}_step{idx}')
+            if name == 'XNet':
+                setattr(self, f'xnet{int(idx)}', net)
+                #  self.xnets.append(net)
+            elif name == 'VNet':
+                setattr(self, f'vnets{int(idx)}', net)
+                #  self.vnets.append(net)
+
     def _build_networks(self):
         if self.config.separate_networks:
             self.xnet_even = GaugeNetwork(self.net_config,
@@ -221,29 +241,6 @@ class GaugeDynamics(BaseDynamics):
                                      self.xdim, factor=1.,
                                      zero_init=self.zero_init,
                                      name='VNet')
-            '''
-            def _new_net(name, seeds_=None):
-                self.xnets = []
-                self.vnets = []
-                factor = 2. if name == 'XNet' else 1.
-                for idx in range(self.config.num_steps):
-                    #  new_seeds = {
-                    #      key: int(idx * val) for key, val in seeds_.items()
-                    #  }
-                    net = GaugeNetwork(self.net_config,
-                                       self.xdim, factor=factor,
-                                       #  net_seeds=new_seeds,
-                                       name=f'{name}_step{idx}')
-                    if name == 'XNet':
-                        setattr(self, f'xnets{int(idx)}', net)
-                        self.xnets.append(net)
-                    elif name == 'VNet':
-                        setattr(self, f'vnets{int(idx)}', net)
-                        self.vnets.append(net)
-
-            _new_net('XNet')  # , xnet_seeds)
-            _new_net('VNet')  # , vnet_seeds)
-            '''
 
         else:
             self.xnet = GaugeNetwork(self.net_config, factor=2.,

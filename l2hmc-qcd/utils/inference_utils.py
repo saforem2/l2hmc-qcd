@@ -103,8 +103,6 @@ def run_hmc(
         'eps_fixed': True,
         'warmup_steps': 0,
         'dropout_prob': 0.,
-        #  'plaq_weight': 10.,
-        #  'charge_weight': 0.1,
         'lr_decay_steps': None,
         'lr_decay_rate': None,
         'separate_networks': False,
@@ -273,7 +271,8 @@ def run_dynamics(
 
     try:
         x, metrics = test_step((x, tf.constant(beta)))
-    except:
+    except Exception as exception:  # pylint:disable bare-except
+        io.log(f'Exception: {exception}', rank=RANK)
         test_step = dynamics.test_step
         x, metrics = test_step((x, tf.constant(beta)))
 
@@ -309,13 +308,8 @@ def run_dynamics(
             summarize_dict(metrics, step, prefix='testing')
             data_str = run_data.get_fstr(step, metrics, skip=['charges'])
             io.log_tqdm(data_str)
-            #  tqdm.write(data_str, file=sys.stdout)
-            #  io.log(data_str)
 
-        if (step + 1) % 100 == 0:
+        if (step + 1) % 1000 == 0:
             io.log_tqdm(header)
-            #  io.log_tqdm(header.split('\n'))
-            #  _ = [tqdm.write(s, file=sys.stdout) for s in header]
-            #  io.log(header)
 
     return run_data, x, x_arr

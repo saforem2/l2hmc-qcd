@@ -26,7 +26,8 @@ from tensorflow.python.ops import summary_ops_v2
 
 import utils.file_io as io
 
-from config import CBARS, HEADER, NET_WEIGHTS_HMC, PI, TF_FLOAT, TRAIN_STR
+from config import (CBARS, HEADER, NET_WEIGHTS_HMC,
+                    PI, TF_FLOAT, TRAIN_STR, BIN_DIR)
 from utils import DummyTqdmFile
 from utils.attr_dict import AttrDict
 from utils.summary_utils import (summarize_dict, summarize_list,
@@ -37,15 +38,22 @@ from utils.inference_utils import run
 from dynamics.base_dynamics import BaseDynamics
 from dynamics.gauge_dynamics import build_dynamics, GaugeDynamics
 
-try:
-    tf.config.experimental.enable_mlir_bridge()
-    tf.config.experimental.enable_mlir_graph_optimization()
-except:  # noqa: E722
-    pass
+#  try:
+#      tf.config.experimental.enable_mlir_bridge()
+#      tf.config.experimental.enable_mlir_graph_optimization()
+#  except:  # noqa: E722
+#      pass
 
 # pylint:disable=no-member
 # pylint:disable=too-many-locals
 # pylint:disable=protected-access
+
+#  debug_dir = os.path.join(BIN_DIR, 'debugging')
+#  io.check_else_make_dir(debug_dir)
+#  tf.debugging.experimental.enable_dump_debug_info(
+#      debug_dir, circular_buffer_size=-1,
+#      tensor_debug_mode="FULL_HEALTH",
+#  )
 
 RANK = hvd.rank()
 io.log(f'Number of devices: {hvd.size()}', RANK)
@@ -282,7 +290,7 @@ def setup(dynamics, flags, dirs=None, x=None, betas=None):
     return output
 
 
-# pylint: disable=too-many-arguments,too-many-statements
+# pylint: disable=too-many-arguments,too-many-statements, too-many-branches
 def train_dynamics(
         dynamics: BaseDynamics,
         flags: AttrDict,
@@ -304,11 +312,6 @@ def train_dynamics(
     if IS_CHIEF:
         writer = config.writer
         writer.set_as_default()
-        debug_dir = os.path.join(flags.log_dir, 'debugging')
-        io.check_else_make_dir(debug_dir)
-        tf.debugging.experimental.enable_dump_debug_info(
-            debug_dir, tensor_debug_mode="FULL_HEALTH", circular_buffer_size=-1
-        )
 
     # +---------------------------------------------------------------------+
     # | Try running compiled `train_step` fn otherwise run imperatively     |
@@ -330,10 +333,6 @@ def train_dynamics(
         lstr = '\n'.join(['`tf.function(dynamics.train_step)` failed!',
                           'Running `dynamics.train_step` imperatively...'])
         io.log(lstr, rank=RANK, level='CRITICAL')
-        #  io.log(['`tf.function(dynamics.train_step)` failed!
-        #      'Unable to compile `dynamics.train_step`, running imperatively',
-        #      rank=RANK
-        #  )
 
     io.log(120*'=')
     # +----------------------------------------+
@@ -402,7 +401,7 @@ def train_dynamics(
             writer.flush()
 
         # Print header every hundred steps
-        if IS_CHIEF and (step + 1) % 100 == 0:
+        if IS_CHIEF and (step + 1) % 1000 == 0:
             io.log_tqdm(header.split('\n'))
             #  io.log(header, rank=RANK, level='INFO')
 
@@ -413,7 +412,6 @@ def train_dynamics(
         tf.profiler.experimental.stop()
     except (AttributeError, tf.errors.UnavailableError):
         pass
-        #  io.log('No active profiling session!')
 
     train_data.dump_configs(x, dirs.data_dir, rank=RANK)
     if IS_CHIEF:
