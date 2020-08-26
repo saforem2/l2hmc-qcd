@@ -79,7 +79,7 @@ else:
 # | TODO: Include alternate annealing schedules |
 # + --------------------------------------------+
 def exp_mult_cooling(step, temp_init, temp_final, num_steps, alpha=None):
-    """Annealing function."""
+    """Exponential multiplicative cooling schedule."""
     if alpha is None:
         alpha = tf.exp(
             (tf.math.log(temp_final) - tf.math.log(temp_init)) / num_steps
@@ -88,6 +88,11 @@ def exp_mult_cooling(step, temp_init, temp_final, num_steps, alpha=None):
     temp = temp_init * (alpha ** step)
 
     return tf.cast(temp, TF_FLOAT)
+
+
+def linear_cooling(step, temp_init, temp_final, num_steps):
+    """Linear cooling annealing function."""
+    return ((temp_init - temp_final) * (1. - step / num_steps)) + temp_final
 
 
 def get_betas(steps, beta_init, beta_final):
