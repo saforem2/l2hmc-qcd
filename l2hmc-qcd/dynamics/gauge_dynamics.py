@@ -127,7 +127,7 @@ class GaugeDynamics(BaseDynamics):
         self.plaq_weight = params.get('plaq_weight', 10.)
         self.charge_weight = params.get('charge_weight', 0.1)
         self.zero_init = params.get('zero_init', False)
-        self._gauge_eq_masks = params.get('gauge_eq_masks', True)
+        self._gauge_eq_masks = params.get('gauge_eq_masks', False)
 
         self.lattice_shape = params.get('lattice_shape', None)
         self.lattice = GaugeLattice(self.lattice_shape)
@@ -197,14 +197,22 @@ class GaugeDynamics(BaseDynamics):
                 mask = mh if i % 2 == 0 else mv
                 masks.append(tf.constant(mask))
         else:
-            p = zeros.copy()
-            for idx, _ in np.ndenumerate(zeros):
-                p[idx] = (sum(idx) % 2 == 0)
-
+            evens = np.arange(self.xdim) % 2.
+            odds = 1. - evens
             for i in range(self.config.num_steps):
-                m = p if i % 2 == 0 else (1. - p)
-                mask = tf.reshape(m, (self.batch_size, -1))
-                masks.append(tf.constant(mask))
+                mask = tf.constant(evens if (i % 2 == 0) else odds,
+                                   dtype=TF_FLOAT)
+
+                masks.append(mask[None, :])
+
+            #  p = zeros.copy()
+            #  for idx, _ in np.ndenumerate(zeros):
+            #      p[idx] = (sum(idx) % 2 == 0)
+            #
+            #  for i in range(self.config.num_steps):
+            #      m = p if i % 2 == 0 else (1. - p)
+            #      mask = tf.reshape(m, (self.batch_size, -1))
+            #      masks.append(tf.constant(mask))
 
         return masks
 
