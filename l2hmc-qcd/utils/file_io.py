@@ -12,11 +12,17 @@ import datetime
 import joblib
 import numpy as np
 
-from tqdm import tqdm
+import horovod.tensorflow as hvd
+
+#  from tqdm import tqdm
+from tqdm.auto import tqdm
+#  from tqdm.autonotebook import tqdm
 from config import PROJECT_DIR
 from utils.attr_dict import AttrDict
 
 # pylint:disable=invalid-name
+RANK = hvd.rank()
+IS_CHIEF = (RANK == 0)
 
 LOG_LEVELS_AS_INTS = {
     'CRITICAL': 50,
@@ -34,16 +40,47 @@ LOG_LEVELS = {
     'DEBUG': logging.DEBUG,
 }
 
+logging.getLogger('tensorflow').setLevel(logging.ERROR)
+if IS_CHIEF:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s:%(levelname)s:%(message)s",
+        stream=sys.stdout,
+    )
+else:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s:%(levelname)s:%(message)s",
+        stream=None
+    )
 
-def log(s: str, rank: int = 0, level: str = 'INFO'):
+
+def in_notebook():
+    """Check if we're currently in a jupyter notebook."""
+    try:
+        # pylint:disable=import-outside-toplevel
+        from IPython import get_ipython
+        try:
+            cfg = get_ipython().config
+            if 'IPKernelApp' not in cfg:
+                return False
+        except AttributeError:
+            return False
+    except ImportError:
+        return False
+    return True
+
+
+def log(s: str, level: str = 'INFO'):
     """Print string `s` to stdout if and only if hvd.rank() == 0."""
-    if rank != 0:
+    if RANK != 0:
         return
 
+    level = LOG_LEVELS_AS_INTS[level.upper()]
     if isinstance(s, (list, tuple)):
-        _ = [logging.log(LOG_LEVELS_AS_INTS[level.upper()], s_) for s_ in s]
+        _ = [logging.log(level, s_) for s_ in s]
     else:
-        logging.log(LOG_LEVELS_AS_INTS[level.upper()], s)
+        logging.log(level, s)
 
 
 def write(s: str, f: str, mode: str = 'a', nl: bool = True, rank: int = 0):
@@ -63,11 +100,11 @@ def log_tqdm(s, out=sys.stdout):
         tqdm.write(s, file=out)
 
 
-def print_flags(flags: AttrDict, rank=0):
+def print_flags(flags: AttrDict):
     """Helper method for printing flags."""
     log('\n'.join(
         [80 * '=', 'FLAGS:', *[f' {k}: {v}' for k, v in flags.items()]]
-    ), rank=rank)
+    ))
 
 
 # pylint:disable=too-many-arguments
@@ -101,7 +138,7 @@ def log_and_write(
         nl: bool = True
 ):
     """Print string `s` to std out and also write to file `f`."""
-    log(s, rank=rank)
+    log(s)
     write(s, f, mode=mode, nl=nl, rank=rank)
 
 
@@ -120,7 +157,7 @@ def check_else_make_dir(d: str, rank: int = 0):
             check_else_make_dir(i)
     else:
         if not os.path.isdir(d):
-            log(f"Creating directory: {d}", rank=rank)
+            log(f"Creating directory: {d}")
             os.makedirs(d, exist_ok=True)
 
 
@@ -167,8 +204,7 @@ def save_dict(d: dict, out_dir: str, name: str, rank: int = 0):
 
     zfile = os.path.join(out_dir, f'{name}.z')
     txt_file = os.path.join(out_dir, f'{name}.txt')
-    log(f'Saving {name} to: {zfile}, {txt_file}.')
-
+    log('\n'.join([f'Saving {name} to:', f'  {zfile}', f'  {txt_file}']))
     savez(d, zfile, name=name, rank=rank)
     with open(txt_file, 'w') as f:
         for key, val in d.items():
@@ -177,10 +213,10 @@ def save_dict(d: dict, out_dir: str, name: str, rank: int = 0):
 
 def print_args(args: dict, rank: int = 0):
     """Print out parsed arguments."""
-    log(80 * '=' + '\n' + 'Parsed args:\n', rank=rank)
+    log(80 * '=' + '\n' + 'Parsed args:\n')
     for key, val in args.items():
-        log(f' {key}: {val}\n', rank=rank)
-    log(80 * '=', rank=rank)
+        log(f' {key}: {val}\n')
+    log(80 * '=')
 
 
 def savez(obj: typing.Any, fpath: str, name: str = None, rank: int = 0):
@@ -192,7 +228,7 @@ def savez(obj: typing.Any, fpath: str, name: str = None, rank: int = 0):
         fpath += '.z'
 
     if name is not None:
-        log(f'Saving {name} to {fpath}.', rank=rank)
+        log(f'Saving {name} to {fpath}.')
 
     joblib.dump(obj, fpath)
 
@@ -226,7 +262,7 @@ def load_pkl(fpath):
     return data
 
 
-def timeit(out_file=None, should_log=True, rank=0, sep=None):
+def timeit(out_file=None, should_log=True):
     """Timing decorator."""
     def wrap(fn):
         def timed(*args, **kwargs):
@@ -241,13 +277,11 @@ def timeit(out_file=None, should_log=True, rank=0, sep=None):
             else:
                 dt = (end_time - start_time) * 1000
                 tstr = f'`{fn.__name__}` took: {dt:.5g}ms'
-                if sep is not None:
-                    tstr = '\n'.join([sep, tstr, sep])
                 if out_file is not None:
                     if should_log:
-                        log_and_write(tstr, out_file, rank=rank, mode='a')
+                        log_and_write(tstr, out_file, mode='a')
                     else:
-                        write(tstr, out_file, rank=rank, mode='a')
+                        write(tstr, out_file, mode='a')
                 if should_log:
                     log(tstr)
             return result
