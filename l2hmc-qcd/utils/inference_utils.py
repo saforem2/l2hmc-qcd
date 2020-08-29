@@ -10,8 +10,11 @@ import sys
 import time
 import logging
 from utils import DummyTqdmFile
+from utils.file_io import timeit
 
-from tqdm import tqdm
+#  from tqdm import tqdm
+#  from tqdm.auto import tqdm
+from tqdm.autonotebook import tqdm
 import tensorflow as tf
 import horovod.tensorflow as hvd
 #  hvd.init()
@@ -71,6 +74,7 @@ def restore_from_train_flags(args):
     return flags
 
 
+@timeit(out_file=None)
 def run_hmc(
         args: AttrDict,
         hmc_dir: str = None,
@@ -137,6 +141,7 @@ def run_hmc(
     return dynamics, run_data, x
 
 
+@timeit(out_file=None)
 def load_and_run(
         args: AttrDict,
         x: tf.Tensor = None,
@@ -170,7 +175,7 @@ def load_and_run(
 
     return dynamics, run_data, x
 
-
+@timeit(out_file=None)
 def run(
         dynamics: GaugeDynamics,
         args: AttrDict,
@@ -235,6 +240,7 @@ def run(
     return dynamics, run_data, x
 
 
+@timeit(out_file=None)
 def run_dynamics(
         dynamics: GaugeDynamics,
         flags: AttrDict,
@@ -272,16 +278,16 @@ def run_dynamics(
 
     try:
         x, metrics = test_step((x, tf.constant(beta)))
-    except Exception as exception:  # pylint:disable bare-except
-        io.log(f'Exception: {exception}', rank=RANK)
+    except Exception as exception:  # pylint:disable=broad-except
+        io.log(f'Exception: {exception}')
         test_step = dynamics.test_step
         x, metrics = test_step((x, tf.constant(beta)))
 
     header = run_data.get_header(metrics,
                                  skip=['charges'],
-                                 prepend=['{:^12s}'.format('step')],
-                                 split=True)
-    io.log(header)
+                                 prepend=['{:^12s}'.format('step')])
+    #  io.log(header)
+    io.log_tqdm(header.split('\n'))
     # -------------------------------------------------------------
 
     x_arr = []

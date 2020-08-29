@@ -106,6 +106,7 @@ def catch_exception(fn):
     return wrapper
 
 
+@timeit(out_file=None)
 def test_transition_kernels(dynamics, x, beta, training=None):
     tk_diffs_f = dynamics.test_transition_kernels(x, beta, forward=True,
                                                   training=False)
@@ -125,7 +126,7 @@ def test_transition_kernels(dynamics, x, beta, training=None):
     return AttrDict({'forward': tk_diffs_f, 'backward': tk_diffs_b})
 
 
-@timeit(out_file=TIMING_FILE)
+@timeit(out_file=None)
 def test_hmc_run(args: AttrDict):
     """Testing generic HMC."""
     hmc_args = AttrDict({
@@ -153,12 +154,11 @@ def test_hmc_run(args: AttrDict):
     }
 
 
-@timeit(out_file=TIMING_FILE)
+@timeit(out_file=None)
 def test_single_network(flags: AttrDict):
     """Test training on single network."""
     flags.separate_networks = False
     x, dynamics, train_data, flags = train(flags,
-                                           test_steps=50,
                                            log_file=LOG_FILE)
     beta = flags.get('beta', 1.)
     tk_diffs = test_transition_kernels(dynamics, x, beta, training=False)
@@ -175,7 +175,7 @@ def test_single_network(flags: AttrDict):
     })
 
 
-@timeit(out_file=TIMING_FILE)
+@timeit(out_file=None)
 def test_separate_networks(flags: AttrDict):
     """Test training on separate networks."""
     flags.hmc_steps = 0
@@ -183,7 +183,6 @@ def test_separate_networks(flags: AttrDict):
     flags.separate_networks = True
     flags.compile = False
     x, dynamics, train_data, flags = train(flags,
-                                           test_steps=50,
                                            log_file=LOG_FILE)
     beta = flags.get('beta', 1.)
     tk_diffs = test_transition_kernels(dynamics, x, beta, training=False)
@@ -200,7 +199,7 @@ def test_separate_networks(flags: AttrDict):
     })
 
 
-@timeit(out_file=TIMING_FILE)
+@timeit(out_file=None)
 def test_resume_training(log_dir: str):
     """Test restoring a training session from a checkpoint."""
     flags = AttrDict(
@@ -210,7 +209,6 @@ def test_resume_training(log_dir: str):
     flags.log_dir = log_dir
     flags.train_steps += flags.get('save_steps', 10)
     x, dynamics, train_data, flags = train(flags,
-                                           test_steps=50,
                                            log_file=LOG_FILE)
     beta = flags.get('beta', 1.)
     tk_diffs = test_transition_kernels(dynamics, x, beta, training=False)
@@ -227,25 +225,25 @@ def test_resume_training(log_dir: str):
     })
 
 
-@timeit(out_file=TIMING_FILE)
+@timeit(out_file=None)
 def test(flags: AttrDict):
     """Run tests."""
     flags.compile = True
     single_net_out = test_single_network(flags)
     log_dir = single_net_out.log_dir
     _ = test_resume_training(log_dir)
-    _ = test_separate_networks(flags)
+    #  _ = test_separate_networks(flags)
     _ = test_hmc_run(flags)
 
 
-@timeit(out_file=TIMING_FILE)
+@timeit(out_file=None)
 def main(args):
     """Main method."""
     if args.test_hmc_run:
         _ = test_hmc_run(TEST_FLAGS)
 
-    if args.test_separate_networks:
-        _ = test_separate_networks(TEST_FLAGS)
+    #  if args.test_separate_networks:
+    #      _ = test_separate_networks(TEST_FLAGS)
 
     if args.test_single_network:
         TEST_FLAGS.hmc_steps = 0

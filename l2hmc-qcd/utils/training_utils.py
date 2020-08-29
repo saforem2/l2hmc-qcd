@@ -12,7 +12,10 @@ import logging
 
 from typing import Union
 
-from tqdm import tqdm
+#  from tqdm import tqdm
+from tqdm.auto import tqdm
+from utils.file_io import timeit
+#  from tqdm.autonotebook import tqdm
 
 import horovod.tensorflow as hvd  # pylint:disable=wrong-import-order
 import numpy as np
@@ -28,13 +31,6 @@ from utils.plotting_utils import plot_data
 from utils.data_containers import DataContainer
 from dynamics.base_dynamics import BaseDynamics
 from dynamics.gauge_dynamics import build_dynamics, GaugeDynamics
-
-#  hvd.init()
-#  GPUS = tf.config.experimental.list_physical_devices('GPU')
-#  for gpu in GPUS:
-#      tf.config.experimental.set_memory_growth(gpu, True)
-#  if GPUS:
-#      tf.config.experimental.set_visible_devices(GPUS[hvd.local_rank()],'GPU')
 
 #  try:
 #      tf.config.experimental.enable_mlir_bridge()
@@ -54,25 +50,44 @@ from dynamics.gauge_dynamics import build_dynamics, GaugeDynamics
 #  )
 
 RANK = hvd.rank()
-io.log(f'Number of devices: {hvd.size()}', RANK)
+io.log(f'Number of devices: {hvd.size()}')
 IS_CHIEF = (RANK == 0)
 
-COLOR_TUP = (CBARS['yellow'], CBARS['reset'])
+#  def log(s: str, level: str = 'INFO'):
+#      if RANK != 0:
+#          return
+#      level = io.LOG_LEVELS[level.upper()]
+#      if isinstance(s, (list, tuple)):
+#          _ = [logging.log(level, s_) for s_ in s]
+#      else:
+#          logging.log(level, s)
 
-logging.getLogger('tensorflow').setLevel(logging.ERROR)
-
-if IS_CHIEF:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s:%(levelname)s:%(message)s",
-        stream=sys.stdout,
-    )
-else:
-    logging.basicConfig(
-        level=logging.CRITICAL,
-        format="%(asctime)s:%(levelname)s:%(message)s",
-        stream=None
-    )
+#  IN_NOTEBOOK = io.in_notebook()
+#  if IN_NOTEBOOK:
+#      # pylint:disable=unused-argument
+#      def log(s: str, level: str = 'INFO'):
+#          """Printing function helper."""
+#          if RANK != 0:
+#              return
+#          if isinstance(s, (list, tuple)):
+#              _ = [print(s_) for s_ in s]
+#          else:
+#              print(s)
+#
+#  else:
+#      def log(s: str, level: str = 'INFO'):
+#          if RANK != 0:
+#              return
+#          try:
+#              level = io.LOG_LEVELS_AS_INTS[level.upper()]
+#          except:
+#              import pudb; pudb.set_trace()
+#          if isinstance(s, (list, tuple)):
+#              _ = [logging.log(level, s_) for s_ in s]
+#          else:
+#              logging.log(level, s)
+#
+#
 
 
 # + --------------------------------------------+
@@ -105,7 +120,8 @@ def restore_flags(flags, train_dir):
     """Update `FLAGS` using restored flags from `log_dir`."""
     rf_file = os.path.join(train_dir, 'FLAGS.z')
     restored = AttrDict(dict(io.loadz(rf_file)))
-    io.log(f'Restoring FLAGS from: {rf_file}...', rank=RANK)
+    #  io.log(f'Restoring FLAGS from: {rf_file}...', rank=RANK)
+    io.log(f'Restoring FLAGS from: {rf_file}...')
     flags.update(restored)
 
     return flags
@@ -135,6 +151,7 @@ def setup_directories(flags, name='training'):
     return train_paths
 
 
+@timeit(out_file=None)
 def train_hmc(flags):
     """Main method for training HMC model."""
     hmc_flags = AttrDict(dict(flags))
@@ -171,6 +188,7 @@ def train_hmc(flags):
     return x, train_data, dynamics.eps.numpy()
 
 
+@timeit(out_file=None)
 def train(flags, log_file=None, md_steps=0):
     """Train model."""
     if flags.log_dir is None:
@@ -201,7 +219,7 @@ def train(flags, log_file=None, md_steps=0):
 
     dynamics = build_dynamics(flags)
     dynamics.save_config(dirs.config_dir)
-    io.print_flags(flags, rank=RANK)
+    io.print_flags(flags)
 
     io.log('\n'.join([120 * '*', 'Training L2HMC sampler...']))
     x, train_data = train_dynamics(dynamics, flags, dirs,
@@ -222,7 +240,7 @@ def train(flags, log_file=None, md_steps=0):
         plot_data(train_data, dirs.train_dir, flags,
                   thermalize=True, params=params)
 
-    io.log('\n'.join(['Done training model', 120 * '*']), rank=RANK)
+    io.log('\n'.join(['Done training model', 120 * '*']))
 
     return x, dynamics, train_data, flags
 
@@ -234,7 +252,7 @@ def setup(dynamics, flags, dirs=None, x=None, betas=None):
                                optimizer=dynamics.optimizer)
     manager = tf.train.CheckpointManager(ckpt, dirs.ckpt_dir, max_to_keep=5)
     if manager.latest_checkpoint:  # restore from checkpoint
-        io.log(f'Restored model from: {manager.latest_checkpoint}', rank=RANK)
+        io.log(f'Restored model from: {manager.latest_checkpoint}')
         ckpt.restore(manager.latest_checkpoint)
         current_step = dynamics.optimizer.iterations.numpy()
         x = train_data.restore(dirs.data_dir, rank=RANK, step=current_step)
@@ -268,7 +286,10 @@ def setup(dynamics, flags, dirs=None, x=None, betas=None):
     #  beta_tspec = tf.TensorSpec([], dtype=TF_FLOAT, name='beta')
     #  input_signature=[x_tspec, beta_tspec])
 
-    _ = dynamics.apply_transition((x, tf.constant(betas[0])), training=True)
+    if dynamics.config.model_type == 'GaugeModel':
+        _ = dynamics.apply_transition((x, tf.constant(betas[0])),
+                                      training=True)
+
     train_step = tf.function(dynamics.train_step)
 
     pstart = 0
@@ -294,6 +315,7 @@ def setup(dynamics, flags, dirs=None, x=None, betas=None):
 
 
 # pylint: disable=too-many-arguments,too-many-statements, too-many-branches
+@timeit(out_file=None)
 def train_dynamics(
         dynamics: Union[BaseDynamics, GaugeDynamics],
         flags: AttrDict,
@@ -320,32 +342,29 @@ def train_dynamics(
     # | Try running compiled `train_step` fn otherwise run imperatively     |
     # +---------------------------------------------------------------------+
     # pylint:disable=broad-except
-    io.log(120*'*')
+    io.log(120 * '*')
     try:
-        tf.summary.trace_on(graph=True, profiler=True)
+        if flags.profiler:
+            tf.summary.trace_on(graph=True, profiler=True)
         x, metrics = train_step((x, tf.constant(betas[0])))
-        if IS_CHIEF:
+        io.log('Compiled `dynamics.train_step` using tf.function!')
+        if IS_CHIEF and flags.profiler:
             tf.summary.trace_export(name='train_step_trace', step=0,
                                     profiler_outdir=dirs.train_dir)
-            try:
-                io.log(train_step.pretty_printed_concrete_signatures())
-            except Exception as exception:  # pylint:disable broad-except
-                io.log(f'Exception encountered: {exception}. Continuing...')
-        io.log('Compiled `dynamics.train_step` using tf.function!', rank=RANK)
-        tf.summary.trace_off()
+            tf.summary.trace_off()
     except Exception as exception:  # pylint:disable broad-except
-        io.log(exception, rank=RANK, level='CRITICAL')
+        io.log(exception, level='CRITICAL')
         train_step = dynamics.train_step
         x, metrics = train_step((x, tf.constant(betas[0])))
         lstr = '\n'.join(['`tf.function(dynamics.train_step)` failed!',
                           'Running `dynamics.train_step` imperatively...'])
-        io.log(lstr, rank=RANK, level='CRITICAL')
+        io.log(lstr, level='CRITICAL')
     io.log(120*'*')
     # +----------------------------------------+
     # |     Run MD update to not get stuck     |
     # +----------------------------------------+
     if md_steps > 0:
-        io.log(f'Running {md_steps} MD updates...', rank=RANK)
+        io.log(f'Running {md_steps} MD updates...')
         for _ in range(md_steps):
             mc_states, _ = dynamics.md_update((x, tf.constant(betas[0])),
                                               training=True)
@@ -365,10 +384,10 @@ def train_dynamics(
                                    skip=['charges'],
                                    prepend=['{:^12s}'.format('step')])
     if IS_CHIEF:
-        #  io.log(header)
+        ctup = (CBARS['blue'], CBARS['yellow'],
+                CBARS['blue'], CBARS['reset'])
         steps = tqdm(steps, desc='training', unit='step',
-                     #  file=DummyTqdmFile(sys.stdout),
-                     bar_format=("{l_bar}%s{bar}%s{r_bar}" % COLOR_TUP))
+                     bar_format=("%s{l_bar}%s{bar}%s{r_bar}%s" % ctup))
         io.log_tqdm(header.split('\n'))
 
     # +------------------------------------------------+
@@ -404,7 +423,7 @@ def train_dynamics(
             writer.flush()
 
         # Print header every hundred steps
-        if IS_CHIEF and (step + 1) % 1000 == 0:
+        if IS_CHIEF and (step + 1) % 5000 == 0:
             io.log_tqdm(header.split('\n'))
 
         if config.pstop > 0 and step == config.pstop:

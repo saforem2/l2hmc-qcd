@@ -75,7 +75,7 @@ def contour_potential(
     else:
         y0 = -ylim
         y1 = ylim
-    grid = np.mgrid[x0:x1:500j, y0:y1:500j]
+    grid = np.mgrid[x0:x1:100j, y0:y1:100j]
     grid_2d = grid.reshape(2, -1).T
     cmap = plt.get_cmap(cmap)
     if ax is None:

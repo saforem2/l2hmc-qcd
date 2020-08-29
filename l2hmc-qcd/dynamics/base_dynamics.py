@@ -528,17 +528,6 @@ class BaseDynamics(tf.keras.Model):
 
         return state, sumlogdet
 
-    def _scattered_xnet(self, x, v, t, masks, training=None):
-        """Call `self.xnet` on non-zero entries of `x` via `tf.gather_nd`."""
-        m, _ = masks
-        shape = (self.batch_size, -1)
-        m = tf.reshape(m, shape)
-        idxs = tf.where(m)
-        _x = tf.reshape(tf.gather_nd(x, idxs), shape)
-        S, T, Q = self.xnet((v, _x, t), training)
-
-        return S, T, Q
-
     def _update_v_forward(self, state: State, t: tf.Tensor, training: bool):
         """Update the momentum `v` in the forward leapfrog step.
 
@@ -583,10 +572,10 @@ class BaseDynamics(tf.keras.Model):
             new_state (State): New state, with updated position.
             logdet (float): Jacobian factor.
         """
-        x = self.normalizer(state.x)
         m, mc = masks
+        x = self.normalizer(state.x)
 
-        S, T, Q = self._scattered_xnet(x, state.v, t, masks, training)
+        S, T, Q = self.xnet((state.v, m * x, t), training)
 
         transl = self._xtw * T
         scale = self._xsw * (self.eps * S)
@@ -650,7 +639,8 @@ class BaseDynamics(tf.keras.Model):
         """
         m, mc = masks
         x = self.normalizer(state.x)
-        S, T, Q = self._scattered_xnet(x, state.v, t, masks, training)
+        S, T, Q = self.xnet((state.v, m * x, t), training)
+
         scale = self._xsw * (-self.eps * S)
         transl = self._xtw * T
         transf = self._xqw * (self.eps * Q)

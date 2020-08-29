@@ -6,7 +6,7 @@ Initialization module for running training/inference.
 Author: Sam Foreman
 Date: 08/26/2020
 """
-from tqdm import tqdm
+from tqdm.auto import tqdm
 import tensorflow as tf
 import horovod.tensorflow as hvd  # pylint:disable=wrong-import-order
 hvd.init()

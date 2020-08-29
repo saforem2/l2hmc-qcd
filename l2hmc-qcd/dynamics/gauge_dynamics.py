@@ -30,7 +30,7 @@ import numpy as np
 import tensorflow as tf
 
 from config import (BIN_DIR, GaugeDynamicsConfig, lrConfig, NetWeights,
-                    NetworkConfig, State, TF_FLOAT, MonteCarloStates)
+                    NetworkConfig, State, MonteCarloStates)
 from dynamics.base_dynamics import BaseDynamics
 from network.gauge_network import GaugeNetwork
 from utils.attr_dict import AttrDict
@@ -392,36 +392,94 @@ class GaugeDynamics(BaseDynamics):
 
         return observables
 
-    def _update_v_forward(
-            self,
-            state: State,
-            t: tf.Tensor,
-            training: bool
-    ):
-        """Update the momentum `v` in the forward leapfrog step.
+    def _scattered_xnet(self, x, v, t, masks, training=None):
+        """Call `self.xnet` on non-zero entries of `x` via `tf.gather_nd`."""
+        m, _ = masks
+        shape = (self.batch_size, -1)
+        m = tf.reshape(m, shape)
+        idxs = tf.where(m)
+        _x = tf.reshape(tf.gather_nd(x, idxs), shape)
+        S, T, Q = self.xnet((v, _x, t), training)
 
-        NOTE: We pass a modified State object, where `state.x` is ensured to be
-        in [-pi, pi) to satisfy the group constraint (x in U(1)).
-        """
-        state = State(x=self.normalizer(state.x),
-                      v=state.v, beta=state.beta)
-        return super()._update_v_forward(state, t, training)
+        return S, T, Q
 
-    def _update_x_foward(self, state, t, masks, training):
+    def _update_x_forward(self, state, t, masks, training):
         """Update the position `x` in the forward leapfrog step."""
-        if not self.config.use_ncp:
-            return super()._update_x_forward(state,
-                                             t, masks, training)
+        if self.config.use_ncp:
+            return self._update_xf_ncp(state, t, masks, training)
+
         m, mc = masks
         x = self.normalizer(state.x)
-        #  S, T, Q = self._scattered_xnet(x, state.v, t, masks, training)
-        shape = (self.batch_size, -1)
-        m_ = tf.reshape(m, shape)
-        idxs = tf.where(m_)
-        x_ = tf.reshape(tf.gather_nd(x, idxs), shape)
-        S, T, Q = self.xnet((state.v, x_, t), training)
+        S, T, Q = self._scattered_xnet(x, state.v, t, masks, training)
 
-        #  S, T, Q = self.xnet((state.v, m * state.x, t), training)
+        transl = self._xtw * T
+        transf = self._xqw * (self.eps * Q)
+        scale = self._xsw * (self.eps * S)
+
+        expS = tf.exp(scale)
+        expQ = tf.exp(transf)
+        y = x * expS + self.eps * (state.v * expQ + transl)
+        xf = self.normalizer(m * x + mc * y)
+        state_out = State(x=xf, v=state.v, beta=state.beta)
+        logdet = tf.reduce_sum(mc * scale, axis=1)
+
+        return state_out, logdet
+
+    def _update_x_backward(self, state, t, masks, training):
+        """Update the position `x` in the backward leapfrog step.
+
+        Args:
+            state (State): Input state
+            t (float): Current leapfrog step, represented as periodic time.
+            training (bool): Currently training?
+
+        Returns:
+            new_state (State): New state, with updated momentum.
+            logdet (float): Jacobian factor.
+        """
+        if self.config.use_ncp:
+            return self._update_xb_ncp(state, t, masks, training)
+
+        m, mc = masks
+        x = self.normalizer(state.x)
+        S, T, Q = self._scattered_xnet(x, state.v, t, masks, training)
+
+        scale = self._xsw * (-self.eps * S)
+        transl = self._xtw * T
+        transf = self._xqw * (self.eps * Q)
+
+        expS = tf.exp(scale)
+        expQ = tf.exp(transf)
+        y = expS * (x - self.eps * (state.v * expQ + transl))
+        xb = self.normalizer(m * x + mc * y)
+        state_out = State(xb, v=state.v, beta=state.beta)
+        logdet = tf.reduce_sum(mc * scale, axis=1)
+
+        return state_out, logdet
+
+
+
+    def _update_xf_ncp(self, state, t, masks, training):
+        """Update the position `x` in the forward leapfrog step.
+
+        NOTE: Non-Compact Projection
+        -----------------------------
+        1. Update,
+                x -> x' = m * x + (1 - m) * y
+          where
+                y = x * exp(eps * Sx) + eps * (v * Qx + Tx)
+        2. Let
+                z = f(x): [-pi, pi] -> R, given by z = tan(x / 2)
+        3. Then
+                x' = m * x + (1 - m) * (2 * arctan(y))
+          where
+                y = tan(x / 2) * exp(eps * Sx) + eps * (v * Qx + Tx))
+        4. With Jacobian:
+                J = 1 / {[cos(x/2)]^2 + [exp(eps*Sx) * sin(x/2)]^2}
+        """
+        m, mc = masks
+        x = self.normalizer(state.x)
+        S, T, Q = self._scattered_xnet(x, state.v, t, masks, training)
 
         transl = self._xtw * T
         transf = self._xqw * (self.eps * Q)
@@ -430,22 +488,6 @@ class GaugeDynamics(BaseDynamics):
         expS = tf.exp(scale)
         expQ = tf.exp(transf)
 
-        # -----------------------------
-        # NOTE: Non-Compact Projection
-        # -----------------------------
-        # 1. Update,
-        #          x -> x' = m * x + (1 - m) * y
-        #    where
-        #          y = x * exp(eps * Sx) + eps * (v * Qx + Tx)
-        # 2. Let
-        #          z = f(x): [-pi, pi] -> R, given by z = tan(x / 2)
-        # 3. Then
-        #          x' = m * x + (1 - m) * (2 * arctan(y))
-        #    where
-        #          y = tan(x / 2) * exp(eps * Sx) + eps * (v * Qx + Tx))
-        # 4. With Jacobian:
-        #          J = 1 / {[cos(x/2)]^2 + [exp(eps*Sx) * sin(x/2)]^2}
-        # ---------------------------------------------------------------
         _x = 2 * tf.math.atan(tf.math.tan(state.x/2) * expS)
         _y = _x + self.eps * (state.v * expQ + transl)
         xf = (m * state.x) + (mc * _y)
@@ -458,7 +500,7 @@ class GaugeDynamics(BaseDynamics):
 
         return state_out, logdet
 
-    def _update_x_backward(self, state, t, masks, training):
+    def _update_xb_ncp(self, state, t, masks, training):
         """Update the position `x` in the backward leapfrog step."""
         if not self.config.use_ncp:
             return super()._update_x_backward(state,
