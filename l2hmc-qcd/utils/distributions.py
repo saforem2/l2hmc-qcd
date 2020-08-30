@@ -81,7 +81,8 @@ def contour_potential(
     if ax is None:
         _, ax = plt.subplots()
     pdf1e = np.exp(-potential_fn(grid_2d))
-    _ = ax.contourf(grid[0], grid[1], pdf1e.reshape(500, 500), cmap=cmap)
+    z = pdf1e.reshape(100, 100)
+    _ = ax.contourf(grid[0], grid[1], z, cmap=cmap, levels=8)
     if title is not None:
         ax.set_title(title, fontsize='x-large')
     plt.tight_layout()

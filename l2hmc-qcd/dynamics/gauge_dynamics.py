@@ -90,9 +90,9 @@ def build_dynamics(flags):
     )
 
     lr_config = lrConfig(
-        init=flags.lr_init,
-        decay_rate=flags.lr_decay_rate,
-        decay_steps=flags.lr_decay_steps,
+        init=hvd.size() * flags.get('lr_init', None),
+        decay_rate=flags.get('lr_decay_rate', None),
+        decay_steps=flags.get('lr_decay_steps', None),
         warmup_steps=flags.get('warmup_steps', 0),
     )
 
@@ -100,7 +100,7 @@ def build_dynamics(flags):
         'horovod': flags.get('horovod', False),
         'plaq_weight': flags.get('plaq_weight', 0.),
         'charge_weight': flags.get('charge_weight', 0.),
-        'lattice_shape': flags.lattice_shape,
+        'lattice_shape': flags.get('lattice_shape', None),
     })
 
     dynamics = GaugeDynamics(flags, config, net_config, lr_config)
