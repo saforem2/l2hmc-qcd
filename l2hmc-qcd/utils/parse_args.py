@@ -323,20 +323,6 @@ def parse_args():
                         help=("""Flag that when passed will profile the graph
                         execution using `TFProf`."""))
 
-    parser.add_argument("--gpu",
-                        dest="gpu",
-                        action="store_true",
-                        required=False,
-                        help=("""Flag that when passed indicates we're training
-                        using an NVIDIA GPU."""))
-
-    parser.add_argument("--use_bn",
-                        dest='use_bn',
-                        action="store_true",
-                        required=False,
-                        help=("""Flag that when passed causes batch
-                              normalization layer to be used in ConvNet."""))
-
     parser.add_argument("--activation",
                         dest='activation',
                         type=str,
@@ -344,13 +330,6 @@ def parse_args():
                         required=False,
                         help=("""Flag used to specify the activation function
                         to be used in the network."""))
-
-    parser.add_argument("--horovod",
-                        dest="horovod",
-                        action="store_true",
-                        required=False,
-                        help=("""Flag that when passed uses Horovod for
-                        distributed training on multiple nodes."""))
 
     parser.add_argument('--hmc_steps',
                         dest='hmc_steps',
@@ -377,14 +356,6 @@ def parse_args():
                         Command line options override values in file.
                         (DEFAULT: None)"""))
 
-    parser.add_argument('--logging_level',
-                        dest='logging_level',
-                        type=str,
-                        default='debug',
-                        required=False,
-                        help=("""Flag specifying the default logging level.
-                        Defaults to `INFO`."""))
-
     parser.add_argument("--md_steps",
                         dest="md_steps",
                         type=int,
@@ -400,6 +371,45 @@ def parse_args():
                         required=False,
                         help=("""Whether or not to initialize networks with
                         zeros."""))
+
+    parser.add_argument('--gauge_eq_masks',
+                        dest='gauge_eq_masks',
+                        action='store_true',
+                        required=False,
+                        help=("""Whether or not to use
+                              the gauge equivariant masking scheme
+                              (see https://arxiv.org/pdf/2008.05456)"""))
+
+    '''
+    parser.add_argument("--gpu",
+                        dest="gpu",
+                        action="store_true",
+                        required=False,
+                        help=("""Flag that when passed indicates we're training
+                        using an NVIDIA GPU."""))
+
+    parser.add_argument("--use_bn",
+                        dest='use_bn',
+                        action="store_true",
+                        required=False,
+                        help=("""Flag that when passed causes batch
+                              normalization layer to be used in ConvNet."""))
+
+    parser.add_argument("--horovod",
+                        dest="horovod",
+                        action="store_true",
+                        required=False,
+                        help=("""Flag that when passed uses Horovod for
+                        distributed training on multiple nodes."""))
+
+    parser.add_argument('--logging_level',
+                        dest='logging_level',
+                        type=str,
+                        default='debug',
+                        required=False,
+                        help=("""Flag specifying the default logging level.
+                        Defaults to `INFO`."""))
+    '''
 
     args = parser.parse_args()
     if args.json_file is not None:
