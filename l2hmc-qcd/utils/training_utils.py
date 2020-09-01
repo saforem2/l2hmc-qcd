@@ -6,29 +6,31 @@ Implements helper functions for training the model.
 from __future__ import absolute_import, division, print_function
 
 import os
-import sys
 import time
-import logging
 
 from typing import Union
 
-#  from tqdm import tqdm
-from tqdm.auto import tqdm
-from utils.file_io import timeit
-#  from tqdm.autonotebook import tqdm
-
-import horovod.tensorflow as hvd  # pylint:disable=wrong-import-order
 import numpy as np
 import tensorflow as tf
+import horovod.tensorflow as hvd
 
+from tqdm.auto import tqdm
 
 import utils.file_io as io
 
 from config import CBARS, NET_WEIGHTS_HMC, PI, TF_FLOAT
+from utils.file_io import timeit
 from utils.attr_dict import AttrDict
 from utils.summary_utils import update_summaries
 from utils.plotting_utils import plot_data
 from utils.data_containers import DataContainer
+
+# noqa:F401
+# pylint:disable=unused-import
+from utils.annealing_schedules import (exp_mult_cooling, get_betas,
+                                       linear_additive_cooling,
+                                       linear_multiplicative_cooling,
+                                       quadratic_additive_cooling)
 from dynamics.base_dynamics import BaseDynamics
 from dynamics.gauge_dynamics import build_dynamics, GaugeDynamics
 
@@ -53,74 +55,11 @@ RANK = hvd.rank()
 io.log(f'Number of devices: {hvd.size()}')
 IS_CHIEF = (RANK == 0)
 
-#  def log(s: str, level: str = 'INFO'):
-#      if RANK != 0:
-#          return
-#      level = io.LOG_LEVELS[level.upper()]
-#      if isinstance(s, (list, tuple)):
-#          _ = [logging.log(level, s_) for s_ in s]
-#      else:
-#          logging.log(level, s)
-
-#  IN_NOTEBOOK = io.in_notebook()
-#  if IN_NOTEBOOK:
-#      # pylint:disable=unused-argument
-#      def log(s: str, level: str = 'INFO'):
-#          """Printing function helper."""
-#          if RANK != 0:
-#              return
-#          if isinstance(s, (list, tuple)):
-#              _ = [print(s_) for s_ in s]
-#          else:
-#              print(s)
-#
-#  else:
-#      def log(s: str, level: str = 'INFO'):
-#          if RANK != 0:
-#              return
-#          try:
-#              level = io.LOG_LEVELS_AS_INTS[level.upper()]
-#          except:
-#              import pudb; pudb.set_trace()
-#          if isinstance(s, (list, tuple)):
-#              _ = [logging.log(level, s_) for s_ in s]
-#          else:
-#              logging.log(level, s)
-#
-#
-
-
-# + --------------------------------------------+
-# | TODO: Include alternate annealing schedules |
-# + --------------------------------------------+
-def exp_mult_cooling(step, temp_init, temp_final, num_steps, alpha=None):
-    """Annealing function."""
-    if alpha is None:
-        alpha = tf.exp(
-            (tf.math.log(temp_final) - tf.math.log(temp_init)) / num_steps
-        )
-
-    temp = temp_init * (alpha ** step)
-
-    return tf.cast(temp, TF_FLOAT)
-
-
-def get_betas(steps, beta_init, beta_final):
-    """Get array of betas to use in annealing schedule."""
-    t_init = 1. / beta_init
-    t_final = 1. / beta_final
-    t_arr = tf.convert_to_tensor(np.array([
-        exp_mult_cooling(i, t_init, t_final, steps) for i in range(steps)
-    ]))
-
-    return tf.constant(1. / t_arr, dtype=TF_FLOAT)
-
 
 def restore_flags(flags, train_dir):
     """Update `FLAGS` using restored flags from `log_dir`."""
     rf_file = os.path.join(train_dir, 'FLAGS.z')
     restored = AttrDict(dict(io.loadz(rf_file)))
-    #  io.log(f'Restoring FLAGS from: {rf_file}...', rank=RANK)
     io.log(f'Restoring FLAGS from: {rf_file}...')
     flags.update(restored)
 
@@ -155,15 +94,15 @@ def setup_directories(flags, name='training'):
 def train_hmc(flags):
     """Main method for training HMC model."""
     hmc_flags = AttrDict(dict(flags))
-    hmc_flags.dropout_prob = 0.
     hmc_flags.hmc = True
-    hmc_flags.train_steps = hmc_flags.pop('hmc_steps')
     hmc_flags.warmup_steps = 0
-    hmc_flags.lr_decay_steps = hmc_flags.train_steps // 4
-    hmc_flags.logging_steps = hmc_flags.train_steps // 20
-    hmc_flags.beta_final = hmc_flags.beta_init
+    hmc_flags.dropout_prob = 0.
     hmc_flags.fixed_beta = True
     hmc_flags.no_summaries = True
+    hmc_flags.beta_final = hmc_flags.beta_init
+    hmc_flags.train_steps = hmc_flags.pop('hmc_steps')
+    hmc_flags.lr_decay_steps = hmc_flags.train_steps // 4
+    hmc_flags.logging_steps = hmc_flags.train_steps // 20
 
     train_dirs = setup_directories(hmc_flags, 'training_hmc')
     dynamics = build_dynamics(hmc_flags)
@@ -200,8 +139,6 @@ def train(flags, log_file=None, md_steps=0):
         flags = restore_flags(flags, os.path.join(flags.log_dir, 'training'))
         if train_steps > flags.train_steps:
             flags.train_steps = train_steps
-        #  if train_steps == flags.train_steps:
-        #      flags.train_steps += flags.logging_steps
         flags.restore = True
 
     dirs = setup_directories(flags)
