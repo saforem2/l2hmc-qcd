@@ -232,7 +232,7 @@ def test(flags: AttrDict):
     single_net_out = test_single_network(flags)
     log_dir = single_net_out.log_dir
     _ = test_resume_training(log_dir)
-    #  _ = test_separate_networks(flags)
+    _ = test_separate_networks(flags)
     _ = test_hmc_run(flags)
 
 
@@ -242,8 +242,8 @@ def main(args):
     if args.test_hmc_run:
         _ = test_hmc_run(TEST_FLAGS)
 
-    #  if args.test_separate_networks:
-    #      _ = test_separate_networks(TEST_FLAGS)
+    if args.test_separate_networks:
+        _ = test_separate_networks(TEST_FLAGS)
 
     if args.test_single_network:
         TEST_FLAGS.hmc_steps = 0
