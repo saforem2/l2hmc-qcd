@@ -22,7 +22,7 @@ from __future__ import absolute_import, division, print_function
 import os
 import time
 
-from typing import Callable, Union, List
+from typing import Callable, Union, List, Tuple
 
 import numpy as np
 import tensorflow as tf
@@ -90,6 +90,7 @@ class BaseDynamics(tf.keras.Model):
         self.params = self._parse_params(params)
         self.eps = self._build_eps(use_log=False)
         self.masks = self._build_masks()
+        #  self.t_arr = self._build_time(tile=tf.shape(self.x_shape)[0])
         #  self._construct_time()
         if self.config.hmc:
             self.xnet, self.vnet = self._build_hmc_networks()
@@ -528,7 +529,12 @@ class BaseDynamics(tf.keras.Model):
 
         return state, sumlogdet
 
-    def _update_v_forward(self, state: State, t: tf.Tensor, training: bool):
+    def _update_v_forward(
+                self,
+                state: State,
+                t: tf.Tensor,
+                training: bool = None
+    ):
         """Update the momentum `v` in the forward leapfrog step.
 
         Args:
@@ -560,7 +566,13 @@ class BaseDynamics(tf.keras.Model):
 
         return state_out, logdet
 
-    def _update_x_forward(self, state: State, t: tf.Tensor, masks, training):
+    def _update_x_forward(
+                self,
+                state: State,
+                t: tf.Tensor,
+                masks: Tuple[tf.Tensor, tf.Tensor],   # (m, 1. - m)
+                training: bool = None
+    ):
         """Update the position `x` in the forward leapfrog step.
 
         Args:
@@ -568,9 +580,10 @@ class BaseDynamics(tf.keras.Model):
             t (float): Current leapfrog step, represented as periodic time.
             training (bool): Currently training?
 
+
         Returns:
-            new_state (State): New state, with updated position.
-            logdet (float): Jacobian factor.
+            new_state (State): New state, with updated momentum.
+            logdet (float): logdet of Jacobian factor.
         """
         m, mc = masks
         x = self.normalizer(state.x)
@@ -594,7 +607,12 @@ class BaseDynamics(tf.keras.Model):
 
         return state_out, logdet
 
-    def _update_v_backward(self, state, t, training):
+    def _update_v_backward(
+                self,
+                state: State,
+                t: tf.Tensor,
+                training: bool = None
+    ):
         """Update the momentum `v` in the backward leapfrog step.
 
         Args:
@@ -625,17 +643,24 @@ class BaseDynamics(tf.keras.Model):
 
         return state_out, logdet
 
-    def _update_x_backward(self, state, t, masks, training):
-        """Update the position `x` in the forward leapfrog step.
+    def _update_x_backward(
+                self,
+                state: State,
+                t: tf.Tensor,
+                masks: Tuple[tf.Tensor, tf.Tensor],   # (m, 1. - m)
+                training: bool = None
+    ):
+        """Update the position `x` in the backward leapfrog step.
 
         Args:
             state (State): Input state
             t (float): Current leapfrog step, represented as periodic time.
             training (bool): Currently training?
 
+
         Returns:
             new_state (State): New state, with updated momentum.
-            logdet (float): Jacobian factor.
+            logdet (float): logdet of Jacobian factor.
         """
         m, mc = masks
         x = self.normalizer(state.x)
@@ -649,9 +674,7 @@ class BaseDynamics(tf.keras.Model):
         expQ = tf.exp(transf)
 
         y = expS * (x - self.eps * (state.v * expQ + transl))
-        xb = m * x + mc * y
-
-        xb = self.normalizer(xb)
+        xb = self.normalizer(m * x + mc * y)
 
         state_out = State(x=xb, v=state.v, beta=state.beta)
         logdet = tf.reduce_sum(mc * scale, axis=1)
@@ -694,6 +717,17 @@ class BaseDynamics(tf.keras.Model):
 
         return potential + kinetic
 
+    def _get_time(self, i, tile=1):
+        """Format the MCMC step as [cos(...), sin(...)]."""
+        i = tf.cast(i, dtype=TF_FLOAT)
+        trig_t = tf.squeeze([
+            tf.cos(2 * np.pi * i / self.config.num_steps),
+            tf.sin(2 * np.pi * i / self.config.num_steps),
+        ])
+        t = tf.tile(tf.expand_dims(trig_t, 0), (tile, 1))
+
+        return t
+
     def _construct_time(self, tile):
         """Convert leapfrog step index into sinusoidal time."""
         self.ts = []
@@ -705,16 +739,19 @@ class BaseDynamics(tf.keras.Model):
 
             self.ts.append(tf.tile(tf.expand_dims(t, 0), (tile, 1)))
 
-    def _get_time(self, i, tile=1):
-        """Format the MCMC step as [cos(...), sin(...)]."""
-        i = tf.cast(i, dtype=TF_FLOAT)
-        trig_t = tf.squeeze([
-            tf.cos(2 * np.pi * i / self.config.num_steps),
-            tf.sin(2 * np.pi * i / self.config.num_steps),
-        ])
-        t = tf.tile(tf.expand_dims(trig_t, 0), (tile, 1))
+    def _build_time_new(self, tile=None):
+        """Pre-compute the trig. repr. of the time."""
+        t_arr = []
+        if tile is None:
+            tile = tf.shape(self.x_shape)[0]
+        for i in range(self.config.num_steps):
+            trig_t = tf.squeeze([
+                tf.cos(2 * np.pi * i / self.config.num_steps),
+                tf.sin(2 * np.pi * i / self.config.num_steps),
+            ])
+            t_arr.append(tf.tile(tf.expand_dims(trig_t, 0), (tile, 1)))
 
-        return t
+        return t_arr
 
     def _get_direction_masks(self):
         """Decide direction uniformly."""

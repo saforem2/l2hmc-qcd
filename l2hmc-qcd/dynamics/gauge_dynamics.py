@@ -17,13 +17,14 @@ Author: Sam Foreman (github: @saforem2)
 Date: 7/3/2020
 """
 # noqa:401
+# pylint:disable=unused-import
 from __future__ import absolute_import, division, print_function
 
 import os
 import json
 import time
 
-from typing import NoReturn
+from typing import NoReturn, Dict, Tuple, Union
 from math import pi
 
 import numpy as np
@@ -45,6 +46,14 @@ except ImportError:
     HAS_HOROVOD = False
 
 TIMING_FILE = os.path.join(BIN_DIR, 'timing_file.log')
+TFLOAT = tf.keras.backend.floatx()
+if TFLOAT == 'float32':
+    TF_FLOAT = tf.float32
+elif TFLOAT == 'float64':
+    TF_FLOAT = tf.float64
+
+
+INPUTS = Tuple[tf.Tensor, tf.Tensor]
 
 
 def convert_to_angle(x):
@@ -157,6 +166,108 @@ class GaugeDynamics(BaseDynamics):
                 net_weights = NetWeights(0., 1., 1., 1., 1., 1.)
 
         self.params = self._parse_params(params, net_weights=net_weights)
+
+    def apply_transition1(
+            self,
+            inputs: INPUTS,
+            training: bool = None,
+    ) -> (MonteCarloStates, tf.Tensor, MonteCarloStates):
+        """Propose a new state and perform the accept/reject step.
+
+        NOTE: We simulate the dynamics both forward and backward, and use
+        sampled Bernoulli masks to compute the actual solutions.
+        """
+        x, beta = inputs
+        # ====
+        # sf(b)_init: initial state forward (backward)
+        # sf(b)_prop: proposed state forward (backward)
+        # pxf(b): acceptance probability in the forward (backward) direction
+        # sldf(b): sumlogdet in the forward (backward) direction
+        # ====
+        sf_init, sf_prop, pxf, sldf = self._transition(inputs, forward=True,
+                                                       training=training)
+        sb_init, sb_prop, pxb, sldb = self._transition(inputs, forward=False,
+                                                       training=training)
+        # ====
+        # Combine the forward/backward outputs;
+        # these comprise the proposed configuration
+        # mf_, mb_: forward, backward masks (respectively)
+        # ====
+        mf_, mb_ = self._get_direction_masks()
+        mf = mf_[:, None]
+        mb = mb_[:, None]
+        v_init = mf * sf_init.v + mb * sb_init.v
+        x_prop = mf * sf_prop.x + mb * sb_prop.x
+        v_prop = mf * sf_prop.v + mb * sb_prop.v
+        sld_prop = mf_ * sldf + mb_ * sldb
+
+        # Compute the acceptance probability
+        accept_prob = mf_ * pxf + mb_ * pxb
+
+        # ma_: accept_mask; mr_: reject mask
+        ma_, mr_ = self._get_accept_masks(accept_prob)
+        ma = ma_[:, None]
+        mr = mr_[:, None]
+
+        # Construct the output configuration
+        v_out = ma * v_prop + mr * v_init
+        x_out = self.normalizer(ma * x_prop + mr * x)
+        sld_out = ma_ * sld_prop  # NOTE: initial sumlogdet = 0
+
+        state_init = State(x=x, v=v_init, beta=beta)
+        state_prop = State(x=x_prop, v=v_prop, beta=beta)
+        state_out = State(x=x_out, v=v_out, beta=beta)
+
+        mc_states = MonteCarloStates(state_init, state_prop, state_out)
+        sld_states = MonteCarloStates(0., sld_prop, sld_out)
+
+        return mc_states, sld_states
+
+    def transition_kernel_sep_nets(
+            self,
+            state: State,
+            forward: bool,
+            training: bool = None,
+    ):
+        """Transition kernel of the augmented leapfrog integrator.
+
+        Returns:
+            state_prop (State): Proposed state output from integrator.
+            accept_prob (tf.Tensor): (batch-wise) Acceptance probability.
+            sumlogdet (tf.Tensor): Total log determinant of the Jacobian
+        """
+        lf_fn = self._forward_lf if forward else self._backward_lf
+        state_prop = State(x=state.x, v=state.v, beta=state.beta)
+        sumlogdet = tf.zeros((self.batch_size,), dtype=TF_FLOAT)
+        for step in tf.range(tf.constant(self.config.num_steps)):
+            if step % 2 == 0:
+                setattr(self, 'xnet', self.xnet_even)
+            else:
+                setattr(self, 'xnet', self.xnet_odd)
+
+            state_prop, logdet = lf_fn(step, state_prop, training)
+            sumlogdet += logdet
+
+        accept_prob = self.compute_accept_prob(state, state_prop, sumlogdet)
+
+        return state_prop, accept_prob, sumlogdet
+
+    def transition_kernel(
+            self,
+            state: State,
+            forward: bool,
+            training: bool = None,
+    ):
+        """Transition kernel of the augmented leapfrog integrator.
+
+        Returns:
+            state_prop (State): Proposed state output from integrator.
+            accept_prob (tf.Tensor): (batch-wise) Acceptance probability.
+            sumlogdet (tf.Tensor): Total log determinant of the Jacobian
+        """
+        if self.config.separate_networks and not self.config.hmc:
+            return self.transition_kernel_sep_nets(state, forward, training)
+        return super().transition_kernel(state, forward, training)
 
     def get_config(self):
         return {
@@ -403,8 +514,25 @@ class GaugeDynamics(BaseDynamics):
 
         return S, T, Q
 
-    def _update_x_forward(self, state, t, masks, training):
-        """Update the position `x` in the forward leapfrog step."""
+    def _update_x_forward(
+                self,
+                state: State,
+                t: tf.Tensor,
+                masks: Tuple[tf.Tensor, tf.Tensor],  # [m, 1. - m]
+                training: bool = None
+    ):
+        """Update the position `x` in the forward leapfrog step.
+
+        Args:
+            state (State): Input state
+            t (float): Current leapfrog step, represented as periodic time.
+            training (bool): Currently training?
+
+
+        Returns:
+            new_state (State): New state, with updated momentum.
+            logdet (float): logdet of Jacobian factor.
+        """
         if self.config.use_ncp:
             return self._update_xf_ncp(state, t, masks, training)
 
@@ -425,7 +553,13 @@ class GaugeDynamics(BaseDynamics):
 
         return state_out, logdet
 
-    def _update_x_backward(self, state, t, masks, training):
+    def _update_x_backward(
+                self,
+                state: State,
+                t: tf.Tensor,
+                masks: Tuple[tf.Tensor, tf.Tensor],   # [m, 1. - m]
+                training: bool = None
+    ):
         """Update the position `x` in the backward leapfrog step.
 
         Args:
@@ -433,13 +567,15 @@ class GaugeDynamics(BaseDynamics):
             t (float): Current leapfrog step, represented as periodic time.
             training (bool): Currently training?
 
+
         Returns:
             new_state (State): New state, with updated momentum.
-            logdet (float): Jacobian factor.
+            logdet (float): logdet of Jacobian factor.
         """
         if self.config.use_ncp:
             return self._update_xb_ncp(state, t, masks, training)
 
+        # Call `XNet` using `self._scattered_xnet`
         m, mc = masks
         x = self.normalizer(state.x)
         S, T, Q = self._scattered_xnet(x, state.v, t, masks, training)
@@ -457,9 +593,13 @@ class GaugeDynamics(BaseDynamics):
 
         return state_out, logdet
 
-
-
-    def _update_xf_ncp(self, state, t, masks, training):
+    def _update_xf_ncp(
+                self,
+                state: State,
+                t: tf.Tensor,
+                masks: Tuple[tf.Tensor, tf.Tensor],   # [m, 1. - m]
+                training: bool = None
+    ):
         """Update the position `x` in the forward leapfrog step.
 
         NOTE: Non-Compact Projection
@@ -500,19 +640,25 @@ class GaugeDynamics(BaseDynamics):
 
         return state_out, logdet
 
-    def _update_xb_ncp(self, state, t, masks, training):
+    def _update_xb_ncp(
+                self,
+                state: State,
+                t: tf.Tensor,
+                masks: Tuple[tf.Tensor, tf.Tensor],   # [m, 1. - m]
+                training: bool = None
+    ):
         """Update the position `x` in the backward leapfrog step."""
         if not self.config.use_ncp:
             return super()._update_x_backward(state,
                                               t, masks, training)
         m, mc = masks
         x = self.normalizer(state.x)
-        #  S, T, Q = self._scattered_xnet(x, state.v, t, masks, training)
-        shape = (self.batch_size, -1)
-        m_ = tf.reshape(m, shape)
-        idxs = tf.where(m_)
-        x_ = tf.reshape(tf.gather_nd(x, idxs), shape)
-        S, T, Q = self.xnet((state.v, x_, t), training)
+        S, T, Q = self._scattered_xnet(x, state.v, t, masks, training)
+        #  shape = (self.batch_size, -1)
+        #  m_ = tf.reshape(m, shape)
+        #  idxs = tf.where(m_)
+        #  x_ = tf.reshape(tf.gather_nd(x, idxs), shape)
+        #  S, T, Q = self.xnet((state.v, x_, t), training)
 
         transl = self._xtw * T
         transf = self._xqw * (self.eps * Q)
