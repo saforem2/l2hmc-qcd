@@ -15,6 +15,7 @@ import tensorflow as tf
 #  from tensorflow.contrib.framework import add_arg_scope, arg_scope
 
 from config import NP_FLOAT, TF_FLOAT, Weights
+import utils.file_io as io
 from .network_utils import custom_dense, tf_zeros
 
 
@@ -48,6 +49,57 @@ def periodic_padding(image, padding=1):
     padded_image = tf.concat([left_pad, partial_image, right_pad], axis=1)
 
     return padded_image
+
+
+def convert_to_image(x):
+    """Create image from lattice by doubling the size."""
+    y = np.zeros((2 * x.shape[0], 2 * x.shape[1]))
+    y[::2, 1::2] = x[:, :, 0]
+    y[1::2, ::2] = x[:, :, 1]
+    return y
+
+
+def _get_layer_weights(layer):
+    """Get an individual layers' weights."""
+    w, b = layer.weights
+    return Weights(w=w.numpy(), b=b.numpy())
+
+
+def get_layer_weights(net):
+    """Helper method for extracting layer weights."""
+    wdict = {
+        'x_layer': _get_layer_weights(net.xlayer.layer),
+        'v_layer': _get_layer_weights(net.vlayer.layer),
+        't_layer': _get_layer_weights(net.t_layer),
+        'hidden_layers': [
+            _get_layer_weights(i) for i in net.hidden_layers
+        ],
+        'scale_layer': (
+            _get_layer_weights(net.scale_layer.layer)
+        ),
+        'translation_layer': (
+            _get_layer_weights(net.translation_layer)
+        ),
+        'transformation_layer': (
+            _get_layer_weights(net.transformation_layer.layer)
+        ),
+    }
+    coeffs = [
+        net.scale_layer.coeff.numpy(),
+        net.transformation_layer.coeff.numpy()
+    ]
+    wdict['coeff_scale'] = coeffs[0]
+    wdict['coeff_transformation'] = coeffs[1]
+
+    return wdict
+
+
+def save_layer_weights(net, out_file):
+    """Save all layer weights from `net` to `out_file`."""
+    weights_dict = get_layer_weights(net)
+    io.savez(weights_dict, out_file, name=net.name)
+
+
 
 
 # pylint: disable=invalid-name

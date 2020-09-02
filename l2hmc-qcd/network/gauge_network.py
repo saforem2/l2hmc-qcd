@@ -27,55 +27,6 @@ NetworkConfig = namedtuple('NetworkConfig', [
 ])
 
 
-def _get_layer_weights(layer):
-    """Get an individual layers' weights."""
-    w, b = layer.weights
-    return Weights(w=w.numpy(), b=b.numpy())
-
-
-def convert_to_image(x):
-    """Create image from lattice by doubling the size."""
-    y = np.zeros((2 * x.shape[0], 2 * x.shape[1]))
-    y[::2, 1::2] = x[:, :, 0]
-    y[1::2, ::2] = x[:, :, 1]
-    return y
-
-
-def get_layer_weights(net):
-    """Helper method for extracting layer weights."""
-    wdict = {
-        'x_layer': _get_layer_weights(net.xlayer.layer),
-        'v_layer': _get_layer_weights(net.vlayer.layer),
-        't_layer': _get_layer_weights(net.t_layer),
-        'hidden_layers': [
-            _get_layer_weights(i) for i in net.hidden_layers
-        ],
-        'scale_layer': (
-            _get_layer_weights(net.scale_layer.layer)
-        ),
-        'translation_layer': (
-            _get_layer_weights(net.translation_layer)
-        ),
-        'transformation_layer': (
-            _get_layer_weights(net.transformation_layer.layer)
-        ),
-    }
-    coeffs = [
-        net.scale_layer.coeff.numpy(),
-        net.transformation_layer.coeff.numpy()
-    ]
-    wdict['coeff_scale'] = coeffs[0]
-    wdict['coeff_transformation'] = coeffs[1]
-
-    return wdict
-
-
-def save_layer_weights(net, out_file):
-    """Save all layer weights from `net` to `out_file`."""
-    weights_dict = get_layer_weights(net)
-    io.savez(weights_dict, out_file, name=net.name)
-
-
 class GaugeNetwork(tf.keras.layers.Layer):
     """GaugeNetwork. Implements stacked Cartesian repr. of `GenericNet`."""
 
@@ -84,7 +35,7 @@ class GaugeNetwork(tf.keras.layers.Layer):
             config: NetworkConfig,
             xdim: int,
             factor: float = 1.,
-            net_seeds: dict = None,
+            net_seeds: dict = None,  # pylint:disable=unused-argument
             zero_init: bool = False,
             name: str = 'GaugeNetwork'
     ):
@@ -157,7 +108,6 @@ class GaugeNetwork(tf.keras.layers.Layer):
                                            zero_init=zero_init,
                                            name='scale')
 
-            #  seed=net_seeds[TNAME])
             self.translation_layer = dense_layer(units=xdim,
                                                  factor=0.001,
                                                  zero_init=zero_init,
@@ -167,15 +117,6 @@ class GaugeNetwork(tf.keras.layers.Layer):
                                                     factor=0.001,
                                                     zero_init=zero_init,
                                                     name='transformation')
-            #  self.scale_layer = ScaledTanhLayer(name='scale',
-            #                                     factor=0.001,
-            #                                     zero_init=zero_init,
-            #                                     units=xdim)
-
-            #  self.transformation_layer = ScaledTanhLayer(name='transformation',
-            #                                              zero_init=zero_init,
-            #                                              factor=0.001,
-            #                                              units=xdim)
 
         self.layers_dict = {
             'x_layer': self.x_layer.layer,

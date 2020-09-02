@@ -2,6 +2,7 @@
 Example distributions.
 """
 from __future__ import absolute_import, division, print_function
+import six
 
 import collections
 
@@ -63,6 +64,7 @@ def contour_potential(
         xlim: Optional[float] = 5.,
         ylim: Optional[float] = 5.,
         cmap: Optional[str] = 'inferno',
+        dtype: Optional[str] = 'float32'
 ):
     """Plot contours of `potential_fn`."""
     if isinstance(xlim, (tuple, list)):
@@ -80,7 +82,11 @@ def contour_potential(
     cmap = plt.get_cmap(cmap)
     if ax is None:
         _, ax = plt.subplots()
-    pdf1e = np.exp(-potential_fn(grid_2d))
+    try:
+        pdf1e = np.exp(-potential_fn(grid_2d))
+    except Exception as e:
+        pdf1e = np.exp(-potential_fn(tf.cast(grid_2d, TF_FLOAT)))
+
     z = pdf1e.reshape(100, 100)
     _ = ax.contourf(grid[0], grid[1], z, cmap=cmap, levels=8)
     if title is not None:
