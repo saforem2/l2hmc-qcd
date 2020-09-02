@@ -586,7 +586,7 @@ class GaugeDynamics(BaseDynamics):
         # Call `XNet` using `self._scattered_xnet`
         m, mc = masks
         x = self.normalizer(state.x)
-        S, T, Q = self.xnet((state.v, m * x, t))
+        S, T, Q = self.xnet((state.v, m * x, t), training=training)
         #  S, T, Q = self._scattered_xnet(x, state.v, t, masks, training)
 
         scale = self._xsw * (-self.eps * S)
@@ -628,7 +628,7 @@ class GaugeDynamics(BaseDynamics):
         """
         m, mc = masks
         x = self.normalizer(state.x)
-        S, T, Q = self.xnet((state.v, m * x, t))
+        S, T, Q = self.xnet((state.v, m * x, t), training=training)
         #  S, T, Q = self._scattered_xnet(x, state.v, t, masks, training)
 
         transl = self._xtw * T
@@ -658,12 +658,12 @@ class GaugeDynamics(BaseDynamics):
                 training: bool = None
     ):
         """Update the position `x` in the backward leapfrog step."""
-        if not self.config.use_ncp:
-            return super()._update_x_backward(state,
-                                              t, masks, training)
+        #  if not self.config.use_ncp:
+        #      return super()._update_x_backward(state,
+        #                                        t, masks, training)
         m, mc = masks
         x = self.normalizer(state.x)
-        S, T, Q = self.xnet((state.v, m * x, t))
+        S, T, Q = self.xnet((state.v, m * x, t), training=training)
         #  S, T, Q = self._scattered_xnet(x, state.v, t, masks, training)
         #  shape = (self.batch_size, -1)
         #  m_ = tf.reshape(m, shape)
