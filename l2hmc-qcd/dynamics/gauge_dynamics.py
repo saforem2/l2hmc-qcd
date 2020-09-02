@@ -162,10 +162,6 @@ class GaugeDynamics(BaseDynamics):
             net_weights = NetWeights(0., 0., 0., 0., 0., 0.)
             self.config.use_ncp = False
         else:
-            self.xnet = GaugeNetwork(self.net_config, self.xdim,
-                                     k_init='zeros', name='XNet')
-            self.vnet = GaugeNetwork(self.net_config, self.xdim,
-                                     k_init='zeros', name='VNet')
             if self.config.use_ncp:
                 net_weights = NetWeights(1., 1., 1., 1., 1., 1.)
             else:
@@ -541,6 +537,8 @@ class GaugeDynamics(BaseDynamics):
             new_state (State): New state, with updated momentum.
             logdet (float): logdet of Jacobian factor.
         """
+        if self.config.hmc:
+            return super()._update_x_forward(state, t, masks, training)
         if self.config.use_ncp:
             return self._update_xf_ncp(state, t, masks, training)
 
@@ -581,6 +579,8 @@ class GaugeDynamics(BaseDynamics):
             new_state (State): New state, with updated momentum.
             logdet (float): logdet of Jacobian factor.
         """
+        if self.config.hmc:
+            return super()._update_x_backward(state, t, masks, training)
         if self.config.use_ncp:
             return self._update_xb_ncp(state, t, masks, training)
 
