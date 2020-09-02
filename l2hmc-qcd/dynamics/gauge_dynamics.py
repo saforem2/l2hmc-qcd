@@ -345,23 +345,23 @@ class GaugeDynamics(BaseDynamics):
         if self.config.separate_networks:
             self.xnet_even = GaugeNetwork(self.net_config,
                                           xdim=self.xdim,  # factor=2.,
-                                          k_init='glorot_uniform',
+                                          k_init='zeros',
                                           name='XNet_even')
             self.xnet_odd = GaugeNetwork(self.net_config,
                                          xdim=self.xdim,  # factor=2.,
-                                         k_init='glorot_uniform',
+                                         k_init='zeros',
                                          name='XNet_odd')
             self.vnet = GaugeNetwork(self.net_config,
                                      xdim=self.xdim,  # factor=1.,
-                                     k_init='glorot_uniform',
+                                     k_init='zeros',
                                      name='VNet')
 
         else:
             self.xnet = GaugeNetwork(self.net_config,  # factor=2.,
-                                     k_init='glorot_uniform',
+                                     k_init='zeros',
                                      xdim=self.xdim, name='XNet')
             self.vnet = GaugeNetwork(self.net_config,  # factor=1.,
-                                     k_init='glorot_uniform',
+                                     k_init='zeros',
                                      xdim=self.xdim, name='VNet')
 
     @staticmethod
