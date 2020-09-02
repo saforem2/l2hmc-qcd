@@ -689,7 +689,9 @@ class BaseDynamics(tf.keras.Model):
                 with tf.GradientTape() as tape:
                     tape.watch(x)
                     pe = self.potential_energy(x, beta)
-                grad = tf.reshape(tape.gradient(pe, x), (self.batch_size, -1))
+                grad = tape.gradient(pe, x)
+                #  grad = tf.reshape(tape.gradient(pe, x),
+                #                    (self.batch_size, -1))
             else:
                 grad = tf.gradients(self.potential_energy(x, beta), [x])[0]
 

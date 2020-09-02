@@ -33,7 +33,8 @@ import tensorflow as tf
 from config import (BIN_DIR, GaugeDynamicsConfig, lrConfig, NetWeights,
                     NetworkConfig, State, MonteCarloStates)
 from dynamics.base_dynamics import BaseDynamics
-from network.gauge_network import GaugeNetwork
+#  from network.gauge_network import GaugeNetwork
+from network.gauge_network_new import GaugeNetwork
 from utils.attr_dict import AttrDict
 from utils.seed_dict import vnet_seeds, xnet_seeds
 from lattice.gauge_lattice import GaugeLattice
@@ -160,6 +161,10 @@ class GaugeDynamics(BaseDynamics):
             net_weights = NetWeights(0., 0., 0., 0., 0., 0.)
             self.config.use_ncp = False
         else:
+            self.xnet = GaugeNetwork(self.net_config, self.xdim,
+                                     k_init='zeros', name='XNet')
+            self.vnet = GaugeNetwork(self.net_config, self.xdim,
+                                     k_init='zeros', name='VNet')
             if self.config.use_ncp:
                 net_weights = NetWeights(1., 1., 1., 1., 1., 1.)
             else:
@@ -342,22 +347,24 @@ class GaugeDynamics(BaseDynamics):
     def _build_networks(self):
         if self.config.separate_networks:
             self.xnet_even = GaugeNetwork(self.net_config,
-                                          self.xdim, factor=2.,
-                                          zero_init=self.zero_init,
+                                          xdim=self.xdim,  # factor=2.,
+                                          k_init='glorot_uniform',
                                           name='XNet_even')
             self.xnet_odd = GaugeNetwork(self.net_config,
-                                         self.xdim, factor=2.,
-                                         zero_init=self.zero_init,
+                                         xdim=self.xdim,  # factor=2.,
+                                         k_init='glorot_uniform',
                                          name='XNet_odd')
             self.vnet = GaugeNetwork(self.net_config,
-                                     self.xdim, factor=1.,
-                                     zero_init=self.zero_init,
+                                     xdim=self.xdim,  # factor=1.,
+                                     k_init='glorot_uniform',
                                      name='VNet')
 
         else:
-            self.xnet = GaugeNetwork(self.net_config, factor=2.,
+            self.xnet = GaugeNetwork(self.net_config,  # factor=2.,
+                                     k_init='glorot_uniform',
                                      xdim=self.xdim, name='XNet')
-            self.vnet = GaugeNetwork(self.net_config, factor=1.,
+            self.vnet = GaugeNetwork(self.net_config,  # factor=1.,
+                                     k_init='glorot_uniform',
                                      xdim=self.xdim, name='VNet')
 
     @staticmethod
@@ -538,7 +545,8 @@ class GaugeDynamics(BaseDynamics):
 
         m, mc = masks
         x = self.normalizer(state.x)
-        S, T, Q = self._scattered_xnet(x, state.v, t, masks, training)
+        S, T, Q = self.xnet((state.v, m * x, t), training=training)
+        #  S, T, Q = self._scattered_xnet(x, state.v, t, masks, training)
 
         transl = self._xtw * T
         transf = self._xqw * (self.eps * Q)
@@ -578,7 +586,8 @@ class GaugeDynamics(BaseDynamics):
         # Call `XNet` using `self._scattered_xnet`
         m, mc = masks
         x = self.normalizer(state.x)
-        S, T, Q = self._scattered_xnet(x, state.v, t, masks, training)
+        S, T, Q = self.xnet((state.v, m * x, t))
+        #  S, T, Q = self._scattered_xnet(x, state.v, t, masks, training)
 
         scale = self._xsw * (-self.eps * S)
         transl = self._xtw * T
@@ -619,7 +628,8 @@ class GaugeDynamics(BaseDynamics):
         """
         m, mc = masks
         x = self.normalizer(state.x)
-        S, T, Q = self._scattered_xnet(x, state.v, t, masks, training)
+        S, T, Q = self.xnet((state.v, m * x, t))
+        #  S, T, Q = self._scattered_xnet(x, state.v, t, masks, training)
 
         transl = self._xtw * T
         transf = self._xqw * (self.eps * Q)
@@ -653,7 +663,8 @@ class GaugeDynamics(BaseDynamics):
                                               t, masks, training)
         m, mc = masks
         x = self.normalizer(state.x)
-        S, T, Q = self._scattered_xnet(x, state.v, t, masks, training)
+        S, T, Q = self.xnet((state.v, m * x, t))
+        #  S, T, Q = self._scattered_xnet(x, state.v, t, masks, training)
         #  shape = (self.batch_size, -1)
         #  m_ = tf.reshape(m, shape)
         #  idxs = tf.where(m_)
