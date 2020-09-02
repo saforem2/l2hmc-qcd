@@ -158,6 +158,7 @@ class GaugeDynamics(BaseDynamics):
         )
 
         if self.config.hmc:
+            self.xnet, self.vnet = self._build_hmc_networks()
             net_weights = NetWeights(0., 0., 0., 0., 0., 0.)
             self.config.use_ncp = False
         else:
