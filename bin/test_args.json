@@ -32,5 +32,5 @@
     "lr_decay_rate": 0.98,
     "lr_decay_steps": 25,
     "lattice_shape": [512, 16, 16, 2],
-    "units": [1024, 1024]
+    "units": [128, 128, 128]
 }

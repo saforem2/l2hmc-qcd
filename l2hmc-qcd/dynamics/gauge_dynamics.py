@@ -585,9 +585,7 @@ class GaugeDynamics(BaseDynamics):
             logdet (float): Jacobian factor
         """
         x = self.normalizer(state.x)
-
         grad = self.grad_potential(x, state.beta)
-
         S, T, Q = self.vnet((x, x, t), training)
 
         transl = self._vtw * T
@@ -630,7 +628,7 @@ class GaugeDynamics(BaseDynamics):
 
         m, mc = masks
         x = self.normalizer(state.x)
-        S, T, Q = self.xnet((state.v, x, t), training=training)
+        S, T, Q = self.xnet((state.v, m * x, t), training=training)
         #  S, T, Q = self.xnet((state.v, m * x, t), training=training)
         #  S, T, Q = self._scattered_xnet(x, state.v, t, masks, training)
 
@@ -715,7 +713,7 @@ class GaugeDynamics(BaseDynamics):
         m, mc = masks
         x = self.normalizer(state.x)
 
-        S, T, Q = self.xnet((state.v, x, t), training=training)
+        S, T, Q = self.xnet((state.v, m * x, t), training=training)
         #  S, T, Q = self.xnet((state.v, m * x, t), training=training)
         #  S, T, Q = self._scattered_xnet(x, state.v, t, masks, training)
 
@@ -759,7 +757,7 @@ class GaugeDynamics(BaseDynamics):
         m, mc = masks
         x = self.normalizer(state.x)
 
-        S, T, Q = self.xnet((v, x, t), training=training)
+        S, T, Q = self.xnet((state.v, m * x, t), training=training)
         #  S, T, Q = self.xnet((state.v, m * x, t), training=training)
         #  S, T, Q = self._scattered_xnet(x, state.v, t, masks, training)
 
@@ -795,7 +793,7 @@ class GaugeDynamics(BaseDynamics):
         #                                        t, masks, training)
         m, mc = masks
         x = self.normalizer(state.x)
-        S, T, Q = self.xnet((v, m * x, t), training=training)
+        S, T, Q = self.xnet((state.v, m * x, t), training=training)
         #  S, T, Q = self.xnet((state.v, m * x, t), training=training)
         #  S, T, Q = self._scattered_xnet(x, state.v, t, masks, training)
 
