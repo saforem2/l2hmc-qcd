@@ -83,9 +83,9 @@ def log(s: str, level: str = 'INFO'):
         logging.log(level, s)
 
 
-def write(s: str, f: str, mode: str = 'a', nl: bool = True, rank: int = 0):
+def write(s: str, f: str, mode: str = 'a', nl: bool = True):
     """Write string `s` to file `f` if and only if hvd.rank() == 0."""
-    if rank != 0:
+    if RANK != 0:
         return
     with open(f, mode) as f_:
         f_.write(s + '\n' if nl else ' ')
@@ -133,23 +133,22 @@ def make_header_from_dict(
 def log_and_write(
         s: str,
         f: str,
-        rank: int = 0,
         mode: str = 'a',
         nl: bool = True
 ):
     """Print string `s` to std out and also write to file `f`."""
     log(s)
-    write(s, f, mode=mode, nl=nl, rank=rank)
+    write(s, f, mode=mode, nl=nl)
 
 
-def check_else_make_dir(d: str, rank: int = 0):
+def check_else_make_dir(d: str):
     """If directory `d` doesn't exist, it is created.
 
     Args:
         d (str): Location where directory should be created if it doesn't
             already exist.
     """
-    if rank != 0:
+    if RANK != 0:
         return
 
     if isinstance(d, (list, np.ndarray)):
@@ -163,10 +162,9 @@ def check_else_make_dir(d: str, rank: int = 0):
 
 def flush_data_strs(data_strs: list,
                     out_file: str,
-                    rank: int = 0,
                     mode: str = 'a'):
     """Dump `data_strs` to `out_file` and return new, empty list."""
-    if rank != 0:
+    if RANK != 0:
         return []
 
     with open(out_file, mode) as f:
@@ -176,12 +174,12 @@ def flush_data_strs(data_strs: list,
     return []
 
 
-def save_params(params: dict, out_dir: str, name: str = None, rank: int = 0):
+def save_params(params: dict, out_dir: str, name: str = None):
     """save params(dict) to `out_dir`, as both `.z` and `.txt` files."""
-    if rank != 0:
+    if RANK != 0:
         return
 
-    check_else_make_dir(out_dir, rank=rank)
+    check_else_make_dir(out_dir)
     if name is None:
         name = 'params'
     params_txt_file = os.path.join(out_dir, f'{name}.txt')
@@ -189,29 +187,29 @@ def save_params(params: dict, out_dir: str, name: str = None, rank: int = 0):
     with open(params_txt_file, 'w') as f:
         for key, val in params.items():
             f.write(f"{key}: {val}\n")
-    savez(params, zfile, name=name, rank=rank)
+    savez(params, zfile, name=name)
 
 
-def save_dict(d: dict, out_dir: str, name: str, rank: int = 0):
+def save_dict(d: dict, out_dir: str, name: str):
     """Save dictionary to `out_dir` as both `.z` and `.txt` files."""
-    if rank != 0:
+    if RANK != 0:
         return
 
     if isinstance(d, AttrDict):
         d = dict(d)
 
-    check_else_make_dir(out_dir, rank=rank)
+    check_else_make_dir(out_dir)
 
     zfile = os.path.join(out_dir, f'{name}.z')
     txt_file = os.path.join(out_dir, f'{name}.txt')
     log('\n'.join([f'Saving {name} to:', f'  {zfile}', f'  {txt_file}']))
-    savez(d, zfile, name=name, rank=rank)
+    savez(d, zfile, name=name)
     with open(txt_file, 'w') as f:
         for key, val in d.items():
             f.write(f'{key}: {val}\n')
 
 
-def print_args(args: dict, rank: int = 0):
+def print_args(args: dict):
     """Print out parsed arguments."""
     log(80 * '=' + '\n' + 'Parsed args:\n')
     for key, val in args.items():
@@ -219,9 +217,9 @@ def print_args(args: dict, rank: int = 0):
     log(80 * '=')
 
 
-def savez(obj: typing.Any, fpath: str, name: str = None, rank: int = 0):
+def savez(obj: typing.Any, fpath: str, name: str = None):
     """Save `obj` to compressed `.z` file at `fpath`."""
-    if rank != 0:
+    if RANK != 0:
         return
 
     if not fpath.endswith('.z'):
@@ -351,6 +349,7 @@ def get_log_dir_fstr(flags):
     separate_networks = flags.get('separate_networks', False)
     using_ncp = flags.get('use_ncp', False)
     zero_init = flags.get('zero_init', False)
+    use_conv_net = flags.get('use_conv_net', False)
 
     fstr = ''
 
@@ -409,12 +408,15 @@ def get_log_dir_fstr(flags):
     if zero_init:
         fstr += '_zero_init'
 
+    if use_conv_net:
+        fstr += '_ConvNets'
+
     return fstr
 
 
 # pylint:disable=too-many-arguments
 def make_log_dir(FLAGS, model_type=None, log_file=None,
-                 base_dir=None, eager=True, rank=0):
+                 base_dir=None, eager=True):
     """Automatically create and name `log_dir` to save model data to.
 
     The created directory will be located in `logs/YYYY_M_D /`, and will have
@@ -451,7 +453,7 @@ def make_log_dir(FLAGS, model_type=None, log_file=None,
         run_str = f'{fstr}-{dstr}'
         log_dir = os.path.join(*dirs, month_str, run_str)
 
-    if rank == 0:
+    if RANK == 0:
         check_else_make_dir(log_dir)
         if log_file is not None:
             write(f'{log_dir}', log_file, 'a')
@@ -478,7 +480,7 @@ def make_run_dir(FLAGS, base_dir):
     return run_dir
 
 
-def save_network_weights(dynamics, train_dir, rank=0):
+def save_network_weights(dynamics, train_dir):
     """Save network weights as dictionary to `.z` files."""
     xnets = dynamics.xnets
     vnets = dynamics.vnets
@@ -498,8 +500,8 @@ def save_network_weights(dynamics, train_dir, rank=0):
 
         xweights_file = os.path.join(wdir, 'xnet_weights.z')
         vweights_file = os.path.join(wdir, 'vnet_weights.z')
-        savez(xnet_weights, xweights_file, 'xnet_weights', rank=rank)
-        savez(vnet_weights, vweights_file, 'vnet_weights', rank=rank)
+        savez(xnet_weights, xweights_file, 'xnet_weights')
+        savez(vnet_weights, vweights_file, 'vnet_weights')
     else:
         xfpath = os.path.join(wdir, 'xnet_weights.z')
         vfpath = os.path.join(wdir, 'vnet_weights.z')
@@ -507,15 +509,15 @@ def save_network_weights(dynamics, train_dir, rank=0):
         vnets.save_layer_weights(out_file=vfpath)
 
 
-def save(dynamics, train_data, train_dir, rank=0):
+def save(dynamics, train_data, train_dir):
     """Save training results."""
-    if rank != 0:
+    if RANK != 0:
         return
 
     check_else_make_dir(train_dir)
 
     if not dynamics.config.hmc:
-        save_network_weights(dynamics, train_dir, rank=rank)
+        save_network_weights(dynamics, train_dir)
 
     output_dir = os.path.join(train_dir, 'outputs')
     train_data.save_data(output_dir)

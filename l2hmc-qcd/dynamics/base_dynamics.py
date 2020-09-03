@@ -82,21 +82,27 @@ class BaseDynamics(tf.keras.Model):
         self._model_type = config.get('model_type', 'BaseDynamics')
 
         #  self.params = params
-        self.config = config
-        self.net_config = network_config
+        #  self.config = config
+        #  self.net_config = network_config
         self.potential_fn = potential_fn
         self.normalizer = normalizer if normalizer is not None else identity
+        self._build(params, config, network_config, lr_config)
 
+    def _build(self, params, config, network_config, lr_config, **kwargs):
+        self.config = config
+        self.net_config = network_config
         self.params = self._parse_params(params)
         self.eps = self._build_eps(use_log=False)
         self.masks = self._build_masks()
+        self.xnet, self.vnet = self._build_networks()
+        #  if not hasattr(self, 'xnet') and not hasattr(self, 'vnet'):
+        #      self.xnet, self.vnet = self._build_networks()
+
+        #  self.xnet, self.vnet = self._build_networks()
         #  self.t_arr = self._build_time(tile=tf.shape(self.x_shape)[0])
         #  self._construct_time()
         if self.config.hmc:
-            self.xnet, self.vnet = self._build_hmc_networks()
             self.net_weights = NetWeights(*(6 * [0.]))
-        else:
-            self._build_networks()
 
         if self._has_trainable_params:
             self.lr_config = lr_config

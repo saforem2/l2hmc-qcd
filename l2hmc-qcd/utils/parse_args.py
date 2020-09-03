@@ -44,6 +44,13 @@ def parse_args():
                         help=("""Whether or not to use separate networks for
                         each MC step."""))
 
+    parser.add_argument('--use_conv_net',
+                        dest='use_conv_net',
+                        action='store_true',
+                        required=False,
+                        help=("""Whether or not to use
+                              `GaugeNetworkConv2D`'s for `XNet, VNet`."""))
+
     parser.add_argument('--use_ncp',
                         dest='use_ncp',
                         action='store_true',
@@ -225,6 +232,52 @@ def parse_args():
                         help=("""String specifying the type of network to use.
                         Possible values: `'CartesianNet'`. If not specified,
                         will use generic `'FullNet'`."""))
+
+    parser.add_argument('--filters',
+                        dest='filters',
+                        type=lambda s: [int(i) for i in s.split(',')],
+                        default=None,
+                        required=False,
+                        help=("""Number of filters to use in the (2-layer)
+                        ConvNet, should be a list of two integers."""))
+
+    parser.add_argument('--sizes',
+                        dest='sizes',
+                        type=lambda s: [int(i) for i in s.split(',')],
+                        default=None,
+                        required=False,
+                        help=("""Sizes to use for (square)
+                              filters in Conv Net."""))
+
+    parser.add_argument('--pool_sizes',
+                        dest='pool_sizes',
+                        type=lambda s: [int(i) for i in s.split(',')],
+                        default=None,
+                        required=False,
+                        help=("""Sizes to use for MaxPooling2D layers in Conv
+                        Net."""))
+
+    parser.add_argument('--conv_activations',
+                        dest='conv_activations',
+                        type=lambda s: [str(i) for i in s.split(',')],
+                        default=None,
+                        required=False,
+                        help=("""Activation functions to use for Conv Net."""))
+
+    parser.add_argument('--conv_paddings',
+                        dest='conv_paddings',
+                        type=lambda s: [str(i) for i in s.split(',')],
+                        default=None,
+                        required=False,
+                        help=("""Sizes to use for MaxPooling2D layers in Conv
+                        Net."""))
+
+    parser.add_argument("--use_batch_norm",
+                        dest="use_batch_norm",
+                        action="store_true",
+                        required=False,
+                        help=("""Whether or not to use batch normalization
+                        layer in Conv Net."""))
 
     parser.add_argument('--units',
                         dest='units',
