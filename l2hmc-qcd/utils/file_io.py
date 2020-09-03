@@ -325,20 +325,79 @@ def get_run_dir_fstr(FLAGS: AttrDict):
     return fstr
 
 
+# pylint:disable=too-many-locals
+def parse_configs(flags):
+    """Parse configs to construct unique string for naming `log_dir`."""
+    config = AttrDict(flags.get('dynamics_config', None))
+    net_config = AttrDict(flags.get('network_config', None))
+    #  lr_config = flags.get('lr_config', None)
+    #  conv_config = flags.get('conv_config', None)
+    fstr = ''
+    if config.get('hmc', False):
+        fstr += 'HMC_'
+
+    lattice_shape = flags.get('lattice_shape', None)
+    if lattice_shape is not None:
+        fstr += f'L{lattice_shape[1]}_b{lattice_shape[0]}'
+
+    num_steps = config.get('num_steps', None)
+    fstr += f'_lf{num_steps}'
+
+    qw = flags.get('charge_weight', None)
+    pw = flags.get('plaq_weight', None)
+    aw = flags.get('aux_weight', None)
+    act = net_config.get('activation', None)
+    if qw > 0:
+        fstr += f'_qw{qw}'
+    if pw > 0:
+        fstr += f'_pw{pw}'
+    if aw > 0:
+        fstr += f'_aw{aw}'
+    if act != 'relu':
+        fstr += f'_act{act}'
+
+    bi = flags.get('beta_init', None)
+    bf = flags.get('beta_final', None)
+    fstr += f'_bi{bi:.3g}_bf{bf:.3g}'
+
+    dp = net_config.get('dropout_prob', None)
+    if dp > 0:
+        fstr += f'_dp{dp}'
+
+    eps = config.get('eps', None)
+    if flags.get('eps_fixed', False):
+        fstr += f'_eps{eps:.3g}'
+
+    cv = flags.get('clip_val', None)
+    if cv > 0:
+        fstr += f'_clip{cv}'
+
+    if config.get('separate_networks', False):
+        fstr += '_sepNets'
+
+    if config.get('use_ncp', False):
+        fstr += '_NCProj'
+
+    if flags.get('use_conv_net', False):
+        fstr += '_ConvNets'
+
+    return fstr.replace('.', '')
+
+
 # pylint:disable=too-many-branches, too-many-locals, too-many-statements
 def get_log_dir_fstr(flags):
     """Parse FLAGS and create unique fstr for `log_dir`."""
     hmc = flags.get('hmc', False)
-    batch_size = flags.get('batch_size', None)
+    #  batch_size = flags.get('batch_size', None)
     num_steps = flags.get('num_steps', None)
     beta_init = flags.get('beta_init', None)
     beta_final = flags.get('beta_final', None)
     eps = flags.get('eps', None)
-    space_size = flags.get('space_size', None)
-    time_size = flags.get('time_size', None)
+    #  space_size = flags.get('space_size', None)
+    #  time_size = flags.get('time_size', None)
     lattice_shape = flags.get('lattice_shape', None)
     train_steps = flags.get('train_steps', int(1e3))
-    network_type = flags.get('network_type', 'GaugeNetwork')
+    #  network_type = flags.get('network_type', 'GaugeNetwork')
     charge_weight = flags.get('charge_weight', 0.)
     plaq_weight = flags.get('plaq_weight', 0.)
     eps_fixed = flags.get('eps_fixed', False)
@@ -363,12 +422,12 @@ def get_log_dir_fstr(flags):
     if lattice_shape is not None:
         fstr += f'L{lattice_shape[1]}_b{lattice_shape[0]}'
 
-    else:
-        if space_size is not None:
-            fstr += f'L{time_size}'
-
-        if batch_size is not None:
-            fstr += f'_b{batch_size}'
+    #  else:
+    #      if space_size is not None:
+    #          fstr += f'L{time_size}'
+    #
+    #      if batch_size is not None:
+    #          fstr += f'_b{batch_size}'
 
     if num_steps is not None:
         fstr += f'_lf{num_steps}'
@@ -396,8 +455,8 @@ def get_log_dir_fstr(flags):
     if clip_val > 0:
         fstr += f'_clip{clip_val}'.replace('.', '')
 
-    if network_type != 'GaugeNetwork':
-        fstr += f'_{network_type}'
+    #  if network_type != 'GaugeNetwork':
+    #      fstr += f'_{network_type}'
 
     if separate_networks:
         fstr += '_sepNets'
@@ -430,7 +489,8 @@ def make_log_dir(FLAGS, model_type=None, log_file=None,
     NOTE: If log_dir does not already exist, it is created.
     """
     model_type = 'GaugeModel' if model_type is None else model_type
-    fstr = get_log_dir_fstr(FLAGS)
+    #  fstr = get_log_dir_fstr(FLAGS)
+    fstr = parse_configs(FLAGS)
 
     now = datetime.datetime.now()
     month_str = now.strftime('%Y_%m')

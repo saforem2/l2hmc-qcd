@@ -127,7 +127,7 @@ class BaseDynamics(tf.keras.Model):
 
         # Determine if there are any parameters to be trained
         self._has_trainable_params = True
-        if self.config.hmc and not self.config.eps_trainable:
+        if self.config.hmc and self.config.eps_fixed:
             self._has_trainable_params = False
 
         if net_weights is None:
@@ -845,7 +845,7 @@ class BaseDynamics(tf.keras.Model):
 
         return tf.Variable(initial_value=init,
                            name='eps', dtype=TF_FLOAT,
-                           trainable=self.config.eps_trainable)
+                           trainable=not self.config.eps_fixed)
 
     def _create_lr(self, lr_config=None):
         """Create the learning rate schedule to be used during training."""
@@ -866,10 +866,11 @@ class BaseDynamics(tf.keras.Model):
 
     def _create_optimizer(self):
         """Create the optimizer to be used for backpropagating gradients."""
-        if tf.executing_eagerly():
-            return tf.keras.optimizers.Adam(self.lr)
-
-        optimizer = tf.compat.v1.train.AdamOptimizer(self.lr)
+        #  if tf.executing_eagerly():
+        #      return tf.keras.optimizers.Adam(self.lr)
+        #
+        #  optimizer = tf.compat.v1.train.AdamOptimizer(self.lr)
+        optimizer = tf.keras.optimizers.Nadam(self.lr_config.init)
         if self.using_hvd:
             optimizer = hvd.DistributedOptimizer(optimizer)
 
