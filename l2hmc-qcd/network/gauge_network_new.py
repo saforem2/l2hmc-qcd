@@ -181,7 +181,6 @@ class GaugeNetwork(layers.Layer):
                                         kernel_initializer=vs_init(1./3.))
             self.t_layer = layers.Dense(name='t_layer', units=config.units[0],
                                         kernel_initializer=vs_init(1./3.))
-
             self.h_layer1 = layers.Dense(name='h_layer1',
                                          units=config.units[1],
                                          kernel_initializer=vs_init(1.))

@@ -610,7 +610,7 @@ class GaugeDynamics(BaseDynamics):
     def _update_v_forward(
                 self,
                 state: State,
-                t: tf.Tensor,
+                step: int,
                 training: bool = None
     ):
         """Update the momentum `v` in the forward leapfrog step.
@@ -627,6 +627,7 @@ class GaugeDynamics(BaseDynamics):
         """
         x = self.normalizer(state.x)
         grad = self.grad_potential(x, state.beta)
+        t = self._get_time(step, tile=tf.shape(x)[0])
         S, T, Q = self.vnet((x, x, t), training)
 
         transl = self._vtw * T
@@ -646,7 +647,7 @@ class GaugeDynamics(BaseDynamics):
     def _update_x_forward(
                 self,
                 state: State,
-                t: tf.Tensor,
+                step: int,
                 masks: Tuple[tf.Tensor, tf.Tensor],  # [m, 1. - m]
                 training: bool = None
     ):
@@ -663,13 +664,22 @@ class GaugeDynamics(BaseDynamics):
             logdet (float): logdet of Jacobian factor.
         """
         if self.config.hmc:
-            return super()._update_x_forward(state, t, masks, training)
+            return super()._update_x_forward(state, step, masks, training)
         if self.config.use_ncp:
-            return self._update_xf_ncp(state, t, masks, training)
+            return self._update_xf_ncp(state, step, masks, training)
 
         m, mc = masks
         x = self.normalizer(state.x)
-        S, T, Q = self.xnet((state.v, m * x, t), training=training)
+        t = self._get_time(step, tile=tf.shape(x)[0])
+
+        if self.config.separate_networks and step % 2 == 0:
+            S, T, Q = self.xnet_even((state.v, m * x, t), training=training)
+        if self.config.separate_networks and step % 2 == 1:
+            S, T, Q = self.xnet_odd((state.v, m * x, t), training=training)
+        else:
+            S, T, Q = self.xnet((state.v, m * x, t), training=training)
+
+        #  S, T, Q = self.xnet((state.v, m * x, t), training=training)
         #  S, T, Q = self.xnet((state.v, m * x, t), training=training)
         #  S, T, Q = self._scattered_xnet(x, state.v, t, masks, training)
 
@@ -689,7 +699,7 @@ class GaugeDynamics(BaseDynamics):
     def _update_v_backward(
                 self,
                 state: State,
-                t: tf.Tensor,
+                step: int,
                 training: bool = None
     ):
         """Update the momentum `v` in the backward leapfrog step.
@@ -704,6 +714,7 @@ class GaugeDynamics(BaseDynamics):
             logdet (float): Jacobian factor.
         """
         x = self.normalizer(state.x)
+        t = self._get_time(step, tile=tf.shape(x)[0])
         grad = self.grad_potential(x, state.beta)
         S, T, Q = self.vnet((x, grad, t), training)
 
@@ -729,7 +740,7 @@ class GaugeDynamics(BaseDynamics):
     def _update_x_backward(
                 self,
                 state: State,
-                t: tf.Tensor,
+                step: int,
                 masks: Tuple[tf.Tensor, tf.Tensor],   # [m, 1. - m]
                 training: bool = None
     ):
@@ -746,15 +757,23 @@ class GaugeDynamics(BaseDynamics):
             logdet (float): logdet of Jacobian factor.
         """
         if self.config.hmc:
-            return super()._update_x_backward(state, t, masks, training)
+            return super()._update_x_backward(state, step, masks, training)
         if self.config.use_ncp:
-            return self._update_xb_ncp(state, t, masks, training)
+            return self._update_xb_ncp(state, step, masks, training)
 
         # Call `XNet` using `self._scattered_xnet`
         m, mc = masks
         x = self.normalizer(state.x)
+        t = self._get_time(step, tile=tf.shape(x)[0])
 
-        S, T, Q = self.xnet((state.v, m * x, t), training=training)
+        if self.config.separate_networks and step % 2 == 0:
+            S, T, Q = self.xnet_even((state.v, m * x, t), training=training)
+        if self.config.separate_networks and step % 2 == 1:
+            S, T, Q = self.xnet_odd((state.v, m * x, t), training=training)
+        else:
+            S, T, Q = self.xnet((state.v, m * x, t), training=training)
+
+        #  S, T, Q = self.xnet((state.v, m * x, t), training=training)
         #  S, T, Q = self.xnet((state.v, m * x, t), training=training)
         #  S, T, Q = self._scattered_xnet(x, state.v, t, masks, training)
 
@@ -774,7 +793,7 @@ class GaugeDynamics(BaseDynamics):
     def _update_xf_ncp(
                 self,
                 state: State,
-                t: tf.Tensor,
+                step: int,
                 masks: Tuple[tf.Tensor, tf.Tensor],   # [m, 1. - m]
                 training: bool = None
     ):
@@ -797,8 +816,16 @@ class GaugeDynamics(BaseDynamics):
         """
         m, mc = masks
         x = self.normalizer(state.x)
+        t = self._get_time(step, tile=tf.shape(x)[0])
 
-        S, T, Q = self.xnet((state.v, m * x, t), training=training)
+        if self.config.separate_networks and step % 2 == 0:
+            S, T, Q = self.xnet_even((state.v, m * x, t), training=training)
+        if self.config.separate_networks and step % 2 == 1:
+            S, T, Q = self.xnet_odd((state.v, m * x, t), training=training)
+        else:
+            S, T, Q = self.xnet((state.v, m * x, t), training=training)
+
+        #  S, T, Q = self.xnet((state.v, m * x, t), training=training)
         #  S, T, Q = self.xnet((state.v, m * x, t), training=training)
         #  S, T, Q = self._scattered_xnet(x, state.v, t, masks, training)
 
@@ -824,7 +851,7 @@ class GaugeDynamics(BaseDynamics):
     def _update_xb_ncp(
                 self,
                 state: State,
-                t: tf.Tensor,
+                step: int,
                 masks: Tuple[tf.Tensor, tf.Tensor],   # [m, 1. - m]
                 training: bool = None
     ):
@@ -834,7 +861,16 @@ class GaugeDynamics(BaseDynamics):
         #                                        t, masks, training)
         m, mc = masks
         x = self.normalizer(state.x)
-        S, T, Q = self.xnet((state.v, m * x, t), training=training)
+        t = self._get_time(step, tile=tf.shape(x)[0])
+
+        if self.config.separate_networks and step % 2 == 0:
+            S, T, Q = self.xnet_even((state.v, m * x, t), training=training)
+        if self.config.separate_networks and step % 2 == 1:
+            S, T, Q = self.xnet_odd((state.v, m * x, t), training=training)
+        else:
+            S, T, Q = self.xnet((state.v, m * x, t), training=training)
+
+        #  S, T, Q = self.xnet((state.v, m * x, t), training=training)
         #  S, T, Q = self.xnet((state.v, m * x, t), training=training)
         #  S, T, Q = self._scattered_xnet(x, state.v, t, masks, training)
 

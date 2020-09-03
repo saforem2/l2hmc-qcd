@@ -27,7 +27,7 @@
         "hmc": false,
         "use_ncp": false,
         "eps_fixed": false,
-        "separate_networks": true
+        "separate_networks": false
     },
     "network_config": {
         "units": [128, 128, 128],
