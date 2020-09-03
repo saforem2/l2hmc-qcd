@@ -143,6 +143,14 @@ class NetworkConfig(AttrDict):
         )
 
 
+def vs_init(factor):
+    return tf.keras.initializers.VarianceScaling(
+        mode='fan_in',
+        scale=2.*factor,
+        distribution='truncated_normal',
+    )
+
+
 # pylint:disable=too-many-arguments, too-many-instance-attributes,
 # pylint:disable=too-many-ancestors
 class GaugeNetwork(layers.Layer):
@@ -152,7 +160,6 @@ class GaugeNetwork(layers.Layer):
             config: NetworkConfig,
             xdim: int,
             factor: Optional[float] = 1.,
-            k_init: Optional[Union[Callable, str]] = 'glorot_uniform',
             **kwargs,
     ):
         super(GaugeNetwork, self).__init__(**kwargs)
@@ -167,16 +174,20 @@ class GaugeNetwork(layers.Layer):
 
             kwargs = {
                 'units': config.units[0],
-                'kernel_initializer': k_init,
             }
-            self.x_layer = layers.Dense(name='x_layer', **kwargs)
-            self.v_layer = layers.Dense(name='v_layer', **kwargs)
-            self.t_layer = layers.Dense(name='t_layer', **kwargs)
+            self.x_layer = layers.Dense(name='x_layer', units=config.units[0],
+                                        kernel_initializer=vs_init(factor/3.))
+            self.v_layer = layers.Dense(name='v_layer', units=config.units[0],
+                                        kernel_initializer=vs_init(1./3.))
+            self.t_layer = layers.Dense(name='t_layer', units=config.units[0],
+                                        kernel_initializer=vs_init(1./3.))
 
             self.h_layer1 = layers.Dense(name='h_layer1',
-                                         units=config.units[1])
+                                         units=config.units[1],
+                                         kernel_initializer=vs_init(1.))
             self.h_layer2 = layers.Dense(name='h_layer2',
-                                         units=config.units[2])
+                                         units=config.units[2],
+                                         kernel_initializer=vs_init(1.))
 
             #  self.hidden_layers = [
             #      layers.Dense(name=f'h_layer{i}', units=n)
@@ -184,13 +195,16 @@ class GaugeNetwork(layers.Layer):
             #  ]
 
             self.scale_layer = ScaledTanhLayer(
-                name='scale', units=xdim, kernel_initializer=k_init,
+                name='scale', units=xdim,
+                kernel_initializer=vs_init(0.001),
             )
             self.translation_layer = layers.Dense(
-                name='translation', units=xdim, kernel_initializer=k_init
+                name='translation', units=xdim,
+                kernel_initializer=vs_init(0.001)
             )
             self.transformation_layer = ScaledTanhLayer(
-                name='transformation', units=xdim, kernel_initializer=k_init,
+                name='transformation', units=xdim,
+                kernel_initializer=vs_init(0.001),
             )
 
     def call(self, inputs, training=None):

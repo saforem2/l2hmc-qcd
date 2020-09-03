@@ -380,36 +380,31 @@ class GaugeDynamics(BaseDynamics):
             conv_config=self.conv_config,
             config=self.net_config,
             xdim=self.xdim,
-            k_init='zeros',
-            name='XGaugeConvNet2D'
+            factor=2.,
+            name='XNet'
         )
 
-        vnet = GaugeNetworkConv2D(
-            conv_config=self.conv_config,
+        vnet = GaugeNetwork(
+            #  conv_config=self.conv_config,
             config=self.net_config,
             xdim=self.xdim,
-            k_init='zeros',
-            name='VGaugeConvNet2D',
+            factor=1.,
+            name='VNet',
         )
 
         return xnet, vnet
 
     def _build_separate_networks(self):
         """Build separate networks for the even / odd update steps."""
-        xnet_even = GaugeNetwork(self.net_config, xdim=self.xdim,
-                                 k_init='zeros', name='XNet_even')
-        xnet_odd = GaugeNetwork(self.net_config, self.xdim,
-                                k_init='zeros', name='XNet_odd')
-        vnet = GaugeNetwork(self.net_config, self.xdim,
-                            k_init='zeros', name='VNet')
+        xnet_even = GaugeNetwork(self.net_config, self.xdim, name='XNet_even')
+        xnet_odd = GaugeNetwork(self.net_config, self.xdim, name='XNet_odd')
+        vnet = GaugeNetwork(self.net_config, self.xdim, name='VNet')
 
         return xnet_even, xnet_odd, vnet
 
     def _build_generic_networks(self):
-        xnet = GaugeNetwork(self.net_config, k_init='zeros',
-                            xdim=self.xdim, name='XNet')
-        vnet = GaugeNetwork(self.net_config, k_init='zeros',
-                            xdim=self.xdim, name='VNet')
+        xnet = GaugeNetwork(self.net_config, xdim=self.xdim, name='XNet')
+        vnet = GaugeNetwork(self.net_config, xdim=self.xdim, name='VNet')
         return xnet, vnet
 
     @staticmethod
