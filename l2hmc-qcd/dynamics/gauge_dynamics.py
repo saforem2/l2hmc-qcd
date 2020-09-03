@@ -33,6 +33,7 @@ import tensorflow as tf
 from config import (BIN_DIR, GaugeDynamicsConfig, lrConfig, NetWeights,
                     NetworkConfig, State, MonteCarloStates)
 from dynamics.base_dynamics import BaseDynamics
+import utils.file_io as io
 #  from network.gauge_network import GaugeNetwork
 from network.gauge_network_new import GaugeNetwork
 from network.gauge_conv_network import ConvolutionConfig, GaugeNetworkConv2D
@@ -78,11 +79,13 @@ def build_dynamics(flags):
     lr_config = lrConfig(**dict(flags.get('lr_config', None)))
     config = GaugeDynamicsConfig(**dict(flags.get('dynamics_config', None)))
 
-    conv_config = flags.get('conv_config', None)
-    conv_config.update({
-        'input_shape': flags.get('lattice_shape', None)[1:]
-    })
-    conv_config = ConvolutionConfig(**conv_config)
+    conv_config = None
+    if flags.get('use_conv_net', False):
+        conv_config = flags.get('conv_config', None)
+        conv_config.update({
+            'input_shape': flags.get('lattice_shape', None)[1:]
+        })
+        conv_config = ConvolutionConfig(**conv_config)
 
     net_config = flags.get('network_config', None)
     activation = net_config.pop('activation', 'relu')
@@ -189,10 +192,13 @@ class GaugeDynamics(BaseDynamics):
         self.zero_init = params.get('zero_init', False)
         self._gauge_eq_masks = params.get('gauge_eq_masks', True)
         self.use_conv_net = params.get('use_conv_net', False)
-        self.conv_config = conv_config
+
         self.config = config
-        self.net_config = network_config
         self.lr_config = lr_config
+        self.conv_config = conv_config
+        self.net_config = network_config
+        if not self.use_conv_net:
+            self.conv_config = None
 
         self.lattice_shape = params.get('lattice_shape', None)
         self.lattice = GaugeLattice(self.lattice_shape)
@@ -340,10 +346,20 @@ class GaugeDynamics(BaseDynamics):
             return self.transition_kernel_sep_nets(state, forward, training)
         return super().transition_kernel(state, forward, training)
 
+    def save_config(self, config_dir):
+        """Helper method for saving configuration objects."""
+        io.save_dict(self.config, config_dir, name='dynamics_config')
+        io.save_dict(self.net_config, config_dir, name='network_config')
+        io.save_dict(self.lr_config, config_dir, name='lr_config')
+        io.save_dict(self.params, config_dir, name='dynamics_params')
+        if self.use_conv_net:
+            io.save_dict(self.conv_config, config_dir, name='conv_config')
+
     def get_config(self):
         return {
             'config': self.config,
             'network_config': self.net_config,
+            'conv_config': self.conv_config,
             'lr_config': self.lr_config,
             'params': self.params
         }
