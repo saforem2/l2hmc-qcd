@@ -82,7 +82,6 @@ def setup_directories(flags, name='training'):
     if IS_CHIEF:
         io.check_else_make_dir(
             [d for k, d in train_paths.items() if 'file' not in k],
-            #  rank=rank
         )
         if not flags.restore:
             io.save_params(dict(flags), train_dir, 'FLAGS')
@@ -131,8 +130,7 @@ def train_hmc(flags):
 def train(flags, log_file=None, md_steps=0):
     """Train model."""
     if flags.log_dir is None:
-        flags.log_dir = io.make_log_dir(flags, 'GaugeModel',
-                                        log_file, rank=RANK)
+        flags.log_dir = io.make_log_dir(flags, 'GaugeModel', log_file)
         flags.restore = False
     else:
         train_steps = flags.train_steps
