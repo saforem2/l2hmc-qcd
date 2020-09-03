@@ -4,7 +4,7 @@
     "profiler": true,
     "zero_init": true,
     "eps_fixed": false,
-    "use_conv_net": true,
+    "use_conv_net": false,
     "gauge_eq_masks": false,
     "md_steps": 0,
     "beta_init": 2.0,
@@ -27,7 +27,7 @@
         "hmc": false,
         "use_ncp": false,
         "eps_fixed": false,
-        "separate_networks": false
+        "separate_networks": true
     },
     "network_config": {
         "units": [128, 128, 128],
