@@ -492,19 +492,19 @@ class BaseDynamics(tf.keras.Model):
         # === NOTE: m = random mask (half 1s, half 0s); mc = 1. - m
         m, mc = self._get_mask(step)  # pylint: disable=invalid-name
         #  vnet = self._get_network(step)
-        t = self._get_time(step, tile=tf.shape(state.x)[0])
+        #  t = self._get_time(step, tile=tf.shape(state.x)[0])
 
         sumlogdet = tf.constant(0., dtype=state.x.dtype)
 
-        state, logdet = self._update_v_forward(state, t, training)
+        state, logdet = self._update_v_forward(state, step, training)
         sumlogdet += logdet
-        state, logdet = self._update_x_forward(state, t,
+        state, logdet = self._update_x_forward(state, step,
                                                (m, mc), training)
         sumlogdet += logdet
-        state, logdet = self._update_x_forward(state, t,
+        state, logdet = self._update_x_forward(state, step,
                                                (mc, m), training)
         sumlogdet += logdet
-        state, logdet = self._update_v_forward(state, t, training)
+        state, logdet = self._update_v_forward(state, step, training)
         sumlogdet += logdet
 
         return state, sumlogdet
@@ -514,23 +514,23 @@ class BaseDynamics(tf.keras.Model):
         step_r = self.config.num_steps - step - 1
         m, mc = self._get_mask(step_r)
         #  vnet = self._get_network(step_r)
-        t = self._get_time(step_r, tile=tf.shape(state.x)[0])
+        #  t = self._get_time(step_r, tile=tf.shape(state.x)[0])
 
         #  sumlogdet = 0.
         sumlogdet = tf.constant(0., dtype=state.x.dtype)
 
-        state, logdet = self._update_v_backward(state, t, training)
+        state, logdet = self._update_v_backward(state, step_r, training)
         sumlogdet += logdet
 
-        state, logdet = self._update_x_backward(state, t,
+        state, logdet = self._update_x_backward(state, step_r,
                                                 (mc, m), training)
         sumlogdet += logdet
 
-        state, logdet = self._update_x_backward(state, t,
+        state, logdet = self._update_x_backward(state, step_r,
                                                 (m, mc), training)
         sumlogdet += logdet
 
-        state, logdet = self._update_v_backward(state, t, training)
+        state, logdet = self._update_v_backward(state, step_r, training)
         sumlogdet += logdet
 
         return state, sumlogdet
@@ -538,7 +538,7 @@ class BaseDynamics(tf.keras.Model):
     def _update_v_forward(
                 self,
                 state: State,
-                t: tf.Tensor,
+                step: int,
                 training: bool = None
     ):
         """Update the momentum `v` in the forward leapfrog step.
@@ -554,6 +554,7 @@ class BaseDynamics(tf.keras.Model):
             logdet (float): Jacobian factor
         """
         x = self.normalizer(state.x)
+        t = self._get_time(step, tile=tf.shape(x)[0])
 
         grad = self.grad_potential(x, state.beta)
         S, T, Q = self.vnet((x, grad, t), training)
@@ -575,7 +576,7 @@ class BaseDynamics(tf.keras.Model):
     def _update_x_forward(
                 self,
                 state: State,
-                t: tf.Tensor,
+                step: int,
                 masks: Tuple[tf.Tensor, tf.Tensor],   # (m, 1. - m)
                 training: bool = None
     ):
@@ -593,6 +594,7 @@ class BaseDynamics(tf.keras.Model):
         """
         m, mc = masks
         x = self.normalizer(state.x)
+        t = self._get_time(step, tile=tf.shape(x)[0])
 
         S, T, Q = self.xnet((state.v, m * x, t), training)
 
@@ -616,7 +618,7 @@ class BaseDynamics(tf.keras.Model):
     def _update_v_backward(
                 self,
                 state: State,
-                t: tf.Tensor,
+                step: int,
                 training: bool = None
     ):
         """Update the momentum `v` in the backward leapfrog step.
@@ -631,6 +633,7 @@ class BaseDynamics(tf.keras.Model):
             logdet (float): Jacobian factor.
         """
         x = self.normalizer(state.x)
+        t = self._get_time(step, tile=tf.shape(x)[0])
 
         grad = self.grad_potential(x, state.beta)
         S, T, Q = self.vnet((x, grad, t), training)
@@ -652,7 +655,7 @@ class BaseDynamics(tf.keras.Model):
     def _update_x_backward(
                 self,
                 state: State,
-                t: tf.Tensor,
+                step: int,
                 masks: Tuple[tf.Tensor, tf.Tensor],   # (m, 1. - m)
                 training: bool = None
     ):
@@ -670,6 +673,7 @@ class BaseDynamics(tf.keras.Model):
         """
         m, mc = masks
         x = self.normalizer(state.x)
+        t = self._get_time(step, tile=tf.shape(x)[0])
         S, T, Q = self.xnet((state.v, m * x, t), training)
 
         scale = self._xsw * (-self.eps * S)
