@@ -69,7 +69,7 @@ class GaugeDynamicsConfig(AttrDict):
                  hmc: bool = False,             # run standard HMC?
                  use_ncp: bool = False,         # Transform x using NCP?
                  model_type: str = None,        # name for model
-                 eps_trainable: bool = True,    # trainable step size?
+                 eps_fixed: bool = False,
                  separate_networks: bool = False):
         super(GaugeDynamicsConfig, self).__init__(
             eps=eps,
@@ -77,7 +77,7 @@ class GaugeDynamicsConfig(AttrDict):
             use_ncp=use_ncp,
             num_steps=num_steps,
             model_type=model_type,
-            eps_trainable=eps_trainable,
+            eps_fixed=eps_fixed,
             separate_networks=separate_networks
         )
 
@@ -101,14 +101,14 @@ class NetworkConfig(AttrDict):
 class lrConfig(AttrDict):
     """Configuration object for specifying learning rate schedule."""
     def __init__(self,
-                 init: float,
-                 decay_steps: int,
-                 decay_rate: float,
+                 lr_init: float,
+                 lr_decay_steps: int,
+                 lr_decay_rate: float,
                  warmup_steps: int = 0):
         super(lrConfig, self).__init__(
-            init=init,
-            decay_steps=decay_steps,
-            decay_rate=decay_rate,
+            init=lr_init,
+            decay_steps=lr_decay_steps,
+            decay_rate=lr_decay_rate,
             warmup_steps=warmup_steps
         )
 

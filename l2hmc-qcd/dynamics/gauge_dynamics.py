@@ -74,6 +74,37 @@ def build_test_dynamics():
 
 
 def build_dynamics(flags):
+    """Build dynamics using configs from FLAGS."""
+    lr_config = lrConfig(**dict(flags.get('lr_config', None)))
+    config = GaugeDynamicsConfig(**dict(flags.get('dynamics_config', None)))
+
+    conv_config = flags.get('conv_config', None)
+    conv_config.update({
+        'input_shape': flags.get('lattice_shape', None)[1:]
+    })
+    conv_config = ConvolutionConfig(**conv_config)
+
+    net_config = flags.get('network_config', None)
+    activation = net_config.pop('activation', 'relu')
+    if activation == 'tanh':
+        activation_fn = tf.nn.tanh
+    elif activation == 'leaky_relu':
+        activation_fn = tf.nn.leaky_relu
+    else:
+        activation_fn = tf.nn.relu
+
+    net_config.update({
+        'name': 'GaugeDynamics',
+        'activation_fn': activation_fn
+    })
+    net_config = NetworkConfig(**net_config)
+
+    dynamics = GaugeDynamics(flags, config, net_config, lr_config, conv_config)
+
+    return dynamics
+
+
+def build_dynamics_old(flags):
     """Build dynamics using parameters from FLAGS."""
     activation = flags.get('activation', 'relu')
     if activation == 'tanh':
@@ -101,7 +132,7 @@ def build_dynamics(flags):
 
     net_config = NetworkConfig(
         name='GaugeNetwork',
-        units=flags.units,
+        units=flags.get('units', None),
         activation_fn=activation_fn,
         dropout_prob=flags.get('dropout_prob', 0.),
     )
@@ -112,7 +143,6 @@ def build_dynamics(flags):
         hmc=flags.hmc,
         use_ncp=flags.get('use_ncp', False),
         num_steps=flags.num_steps,
-        eps_trainable=not flags.eps_fixed,
         separate_networks=flags.get('separate_networks', False),
     )
 

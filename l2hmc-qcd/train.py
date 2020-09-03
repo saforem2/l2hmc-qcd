@@ -10,7 +10,8 @@ import os
 import tensorflow as tf
 
 from utils.attr_dict import AttrDict
-from utils.parse_args import parse_args
+#  from utils.parse_args import parse_args
+from utils.parse_configs import parse_configs
 from utils.training_utils import train
 from utils.inference_utils import run, run_hmc
 
@@ -36,6 +37,7 @@ def main(args):
 
 
 if __name__ == '__main__':
-    FLAGS = parse_args()
+    #  FLAGS = parse_args()
+    FLAGS = parse_configs()
     FLAGS = AttrDict(FLAGS.__dict__)
     main(FLAGS)
