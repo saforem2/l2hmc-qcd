@@ -2,15 +2,15 @@ import numpy as np
 import tensorflow as tf
 
 import config as cfg
+from config import TF_FLOATS, NP_FLOATS
 from utils.seed_dict import seeds
 
-TF_FLOAT = cfg.TF_FLOAT
-NP_FLOAT = cfg.NP_FLOAT
-
 np.random.seed(seeds['global_np'])
+TF_FLOAT = TF_FLOATS[tf.keras.backend.floatx()]
+NP_FLOAT = NP_FLOATS[tf.keras.backend.floatx()]
 
-if '2.' not in tf.__version__:
-    tf.compat.v1.set_random_seed(seeds['global_tf'])
+#  if '2.' not in tf.__version__:
+#      tf.compat.v1.set_random_seed(seeds['global_tf'])
 
 
 # pylint: disable=no-member
@@ -50,9 +50,9 @@ def encode_angle(angle, method='cos_sin'):
 def decode_angle(arr, method='cos_sin'):
     """Returns decoded angle using specified method."""
     if method in ['binned', 'gaussian']:  # 1-of-500 or gaussian encoding
-        M = np.max(arr)
+        m = np.max(arr)
         for idx, x in enumerate(arr):
-            if abs(arr[i] - M) < 1e-5:
+            if abs(arr[idx] - m) < 1e-5:
                 angle = np.pi * x / 250 - np.pi
                 break
             angle = np.pi * np.dot(np.arange(500), arr) / 500  # averaging
@@ -162,7 +162,7 @@ def variable_on_cpu(name, shape, initializer):
     return var
 
 
-def variable_with_weight_decay(name, shape, stddev, wd, cpu=True):
+def variable_with_weight_decay(name, shape, stddev, weight_decay, cpu=True):
     """Helper to create an initialized Variable with weight decay.
 
     Note that the Variable is initialized with a truncated normal distribution.
@@ -188,8 +188,9 @@ def variable_with_weight_decay(name, shape, stddev, wd, cpu=True):
             name, shape, tf.truncated_normal_initializer(stddev=stddev,
                                                          dtype=TF_FLOAT)
         )
-    if wd is not None:
-        weight_decay = tf.multiply(tf.nn.l2_loss(var), wd, name='weight_loss')
+    if weight_decay is not None:
+        weight_decay = tf.multiply(tf.nn.l2_loss(var),
+                                   weight_decay, name='weight_loss')
         tf.add_to_collection('losses', weight_decay)
 
     return var
@@ -197,32 +198,30 @@ def variable_with_weight_decay(name, shape, stddev, wd, cpu=True):
 
 def create_periodic_padding(samples, filter_size):
     """Create periodic padding for multiple samples, using filter_size."""
-    original_size = np.shape(samples)
-    N = original_size[1]  # number of links in lattice
-    #  N = np.shape(samples)[1] # number of links in lattice
+    original_size = tf.shape(samples)
+    n = original_size[1]  # number of links in lattice
     padding = filter_size - 1
-
     samples = tf.reshape(samples, shape=(samples.shape[0], -1))
 
     x = []
     for sample in samples:
-        padded = np.zeros((N + 2 * padding), N + 2 * padding, 2)
+        padded = np.zeros((n + 2 * padding), n + 2 * padding, 2)
         # lower left corner
-        padded[:padding, :padding, :] = sample[N-padding:, N-padding:, :]
+        padded[:padding, :padding, :] = sample[n-padding:, n-padding:, :]
         # lower middle
-        padded[padding:N+padding, :padding, :] = sample[:, N-padding:, :]
+        padded[padding:n+padding, :padding, :] = sample[:, n-padding:, :]
         # loewr right corner
-        padded[N+padding:, :padding, :] = sample[:padding, N-padding:, :]
+        padded[n+padding:, :padding, :] = sample[:padding, n-padding:, :]
         # left side
-        padded[:padding, padding: N+padding, :] = sample[N-padding:, :, :]
+        padded[:padding, padding: n+padding, :] = sample[n-padding:, :, :]
         # center
-        padded[:padding:N+padding, padding:N+padding, :] = sample[:, :, :]
+        padded[:padding:n+padding, padding:n+padding, :] = sample[:, :, :]
         # right side
-        padded[N+padding:, padding:N+padding:, :] = sample[:padding, :, :]
+        padded[n+padding:, padding:n+padding:, :] = sample[:padding, :, :]
         # top middle
-        padded[:padding:N+padding, N+padding:, :] = sample[:, :padding, :]
+        padded[:padding:n+padding, n+padding:, :] = sample[:, :padding, :]
         # top right corner
-        padded[N+padding:, N+padding:, :] = sample[:padding, :padding, :]
+        padded[n+padding:, n+padding:, :] = sample[:padding, :padding, :]
 
         x.append(padded)
 

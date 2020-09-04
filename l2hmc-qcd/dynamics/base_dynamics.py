@@ -29,8 +29,9 @@ import tensorflow as tf
 
 import utils.file_io as io
 
-from config import (BIN_DIR, DynamicsConfig, lrConfig, MonteCarloStates,
-                    NetWeights, NetworkConfig, State, TF_FLOAT, TF_INT)
+from config import (BIN_DIR, DynamicsConfig, LearningRateConfig,
+                    MonteCarloStates, NetWeights, NetworkConfig, State,
+                    TF_FLOAT, TF_INT)
 from utils.attr_dict import AttrDict
 from utils.learning_rate import WarmupExponentialDecay
 
@@ -65,7 +66,7 @@ class BaseDynamics(tf.keras.Model):
             config: DynamicsConfig,
             network_config: NetworkConfig,
             potential_fn: Callable[[tf.Tensor], tf.Tensor],
-            lr_config: lrConfig = None,
+            lr_config: LearningRateConfig = None,
             normalizer: Callable[[tf.Tensor], tf.Tensor] = None,
             name: str = 'Dynamics',
     ):
@@ -861,12 +862,19 @@ class BaseDynamics(tf.keras.Model):
             return WarmupExponentialDecay(lr_config, staircase=True,
                                           name='WarmupExponentialDecay')
 
-        return tf.keras.optimizers.schedules.ExponentialDecay(
-            lr_config.init,
-            decay_steps=lr_config.decay_steps,
-            decay_rate=lr_config.decay_rate,
-            staircase=True,
-        )
+        decay_rate = lr_config.get('decay_rate', None)
+        decay_steps = lr_config.get('decay_steps', None)
+        cond1 = (decay_rate is not None and decay_rate > 0)
+        cond2 = (decay_steps is not None and decay_steps > 0)
+        if cond1 and cond2:
+            return tf.keras.optimizers.schedules.ExponentialDecay(
+                lr_config.init,
+                decay_steps=lr_config.decay_steps,
+                decay_rate=lr_config.decay_rate,
+                staircase=True,
+            )
+
+        return lr_config.get('lr_init', None)
 
     def _create_optimizer(self):
         """Create the optimizer to be used for backpropagating gradients."""

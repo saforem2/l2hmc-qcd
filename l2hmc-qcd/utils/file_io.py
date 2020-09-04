@@ -191,7 +191,7 @@ def save_params(params: dict, out_dir: str, name: str = None):
 
 def save_dict(d: dict, out_dir: str, name: str):
     """Save dictionary to `out_dir` as both `.z` and `.txt` files."""
-    if RANK != 0:
+    if RANK != 0 or d is None:
         return
 
     if isinstance(d, AttrDict):

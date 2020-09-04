@@ -24,6 +24,7 @@ from utils.attr_dict import AttrDict
 from utils.summary_utils import update_summaries
 from utils.plotting_utils import plot_data
 from utils.data_containers import DataContainer
+from config import GaugeDynamicsConfig, LearningRateConfig
 
 # noqa:F401
 # pylint:disable=unused-import
@@ -92,19 +93,31 @@ def setup_directories(flags, name='training'):
 @timeit(out_file=None)
 def train_hmc(flags):
     """Main method for training HMC model."""
-    hmc_flags = AttrDict(dict(flags))
-    hmc_flags.hmc = True
-    hmc_flags.warmup_steps = 0
-    hmc_flags.dropout_prob = 0.
-    hmc_flags.fixed_beta = True
-    hmc_flags.no_summaries = True
-    hmc_flags.beta_final = hmc_flags.beta_init
-    hmc_flags.train_steps = hmc_flags.pop('hmc_steps')
-    hmc_flags.lr_decay_steps = hmc_flags.train_steps // 4
-    hmc_flags.logging_steps = hmc_flags.train_steps // 20
+    hmc_flags = AttrDict(dict(flags).copy())
+    lr_config = hmc_flags.pop('lr_config', None)
+    config = hmc_flags.get('dynamics_config', None)
+    net_config = hmc_flags.pop('network_config', None)
+    hmc_flags.train_steps = hmc_flags.pop('hmc_steps', None)
+    hmc_flags.profiler = False
+    hmc_flags.make_summaries = False
+    config = GaugeDynamicsConfig(
+        hmc=True,
+        use_ncp=False,
+        separate_networks=False,
+        eps=config.get('eps', None),
+        num_steps=config.get('num_steps', None),
+        eps_fixed=config.get('eps_fixed', False),
+    )
+
+    lr_config = LearningRateConfig(
+        warmup_steps=None,
+        lr_decay_rate=None,
+        lr_decay_steps=None,
+        lr_init=lr_config.get('lr_init', None),
+    )
 
     train_dirs = setup_directories(hmc_flags, 'training_hmc')
-    dynamics = build_dynamics(hmc_flags)
+    dynamics = GaugeDynamics(hmc_flags, config, net_config, lr_config)
     dynamics.save_config(train_dirs.config_dir)
     x, train_data = train_dynamics(dynamics, hmc_flags, dirs=train_dirs)
     if IS_CHIEF:
@@ -143,6 +156,7 @@ def train(flags, log_file=None, md_steps=0):
 
     x = None
     if flags.hmc_steps > 0 and not flags.restore:
+        io.log('Training HMC!')
         x, train_data, eps_init = train_hmc(flags)
         flags.eps = eps_init
         io.log('\n'.join(['Finished (pre)-training HMC.', 120 * '*']))
@@ -200,7 +214,8 @@ def setup(dynamics, flags, dirs=None, x=None, betas=None):
                               dtype=TF_FLOAT)
     # Setup summary writer
     writer = None
-    if IS_CHIEF:
+    make_summaries = flags.get('make_summaries', True)
+    if IS_CHIEF and make_summaries:
         writer = tf.summary.create_file_writer(dirs.summary_dir)
 
     current_step = dynamics.optimizer.iterations.numpy()  # get global step
@@ -271,7 +286,8 @@ def train_dynamics(
     train_data = config.train_data
     if IS_CHIEF:
         writer = config.writer
-        writer.set_as_default()
+        if writer is not None:
+            writer.set_as_default()
 
     # +---------------------------------------------------------------------+
     # | Try running compiled `train_step` fn otherwise run imperatively     |
@@ -325,6 +341,27 @@ def train_dynamics(
                      bar_format=("%s{l_bar}%s{bar}%s{r_bar}%s" % ctup))
         io.log_tqdm(header.split('\n'))
 
+    def should_print(step):
+        if IS_CHIEF and step % flags.print_steps == 0:
+            return True
+        return False
+
+    def should_log(step):
+        ls_ = flags.get('logging_steps', None)
+        if IS_CHIEF and ls_ is not None:
+            if step % ls_ == 0 and ls_ > 0:
+                return True
+
+        #  if IS_CHIEF and step % ls_ == 0 and ls_ > 0:
+        #      return True
+        #  return False
+        return False
+
+    def should_save(step):
+        if IS_CHIEF and step % flags.save_steps == 0 and ckpt is not None:
+            return True
+        return False
+
     # +------------------------------------------------+
     # |                 Training loop                  |
     # +------------------------------------------------+
@@ -332,12 +369,9 @@ def train_dynamics(
         # Perform a single training step
         x, metrics = _timed_step(x, beta)
 
-        #  Start profiler
-        if config.pstart > 0 and step == config.pstart:
-            tf.profiler.experimental.start(flags.log_dir)
-
         # Save checkpoints and dump configs `x` from each rank
-        if (step + 1) % flags.save_steps == 0 and ckpt is not None:
+        #  if (step + 1) % flags.save_steps == 0 and ckpt is not None:
+        if should_save(step + 1):
             train_data.dump_configs(x, dirs.data_dir, rank=RANK)
             if IS_CHIEF:
                 manager.save()
@@ -346,36 +380,36 @@ def train_dynamics(
                                           rank=RANK, mode='a')
 
         # Print current training state and metrics
-        if IS_CHIEF and step % flags.print_steps == 0:
+        #  if IS_CHIEF and step % flags.print_steps == 0:
+        if should_print(step):
             data_str = train_data.get_fstr(step, metrics, skip=['charges'])
             io.log_tqdm(data_str)
 
         # Update summary objects
         #  tf.summary.record_if(IS_CHIEF and step % flags.logging_steps == 0)
-        if IS_CHIEF and step % flags.logging_steps == 0:
+        #  if IS_CHIEF and step % flags.logging_steps == 0:
+        if should_log(step):
             train_data.update(step, metrics)
-            update_summaries(step, metrics, dynamics)
-            writer.flush()
+            if writer is not None:
+                update_summaries(step, metrics, dynamics)
+                writer.flush()
 
         # Print header every hundred steps
         if IS_CHIEF and (step + 1) % 5000 == 0:
             io.log_tqdm(header.split('\n'))
 
-        if config.pstop > 0 and step == config.pstop:
-            tf.profiler.experimental.stop()
-
-    try:  # make sure profiler is shut down
-        tf.profiler.experimental.stop()
-    except (AttributeError, tf.errors.UnavailableError):
-        pass
+        #  if config.pstop > 0 and step == config.pstop:
+        #      tf.profiler.experimental.stop()
 
     train_data.dump_configs(x, dirs.data_dir, rank=RANK)
     if IS_CHIEF:
         manager.save()
-        train_data.save_and_flush(dirs.data_dir, dirs.log_file,
-                                  rank=RANK, mode='a')
-        writer.flush()
-        writer.close()
         io.log(f'Checkpoint saved to: {manager.latest_checkpoint}')
+        train_data.save_and_flush(dirs.data_dir,
+                                  dirs.log_file,
+                                  rank=RANK, mode='a')
+        if writer is not None:
+            writer.flush()
+            writer.close()
 
     return x, train_data

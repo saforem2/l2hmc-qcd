@@ -2,7 +2,6 @@
 Example distributions.
 """
 from __future__ import absolute_import, division, print_function
-import six
 
 import collections
 
@@ -14,7 +13,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 import tensorflow as tf
 
-from config import NP_FLOAT, TF_FLOAT
+from config import NP_FLOATS, TF_FLOATS
+
+
+TF_FLOAT = TF_FLOATS[tf.keras.backend.floatx()]
+NP_FLOAT = NP_FLOATS[tf.keras.backend.floatx()]
 
 # pylint:disable=invalid-name
 # pylint:disable=unused-argument
