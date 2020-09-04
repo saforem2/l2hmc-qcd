@@ -4,7 +4,7 @@
     "profiler": true,
     "zero_init": true,
     "eps_fixed": false,
-    "use_conv_net": false,
+    "use_conv_net": true,
     "gauge_eq_masks": false,
     "md_steps": 0,
     "beta_init": 2.0,

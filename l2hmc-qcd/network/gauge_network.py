@@ -1,236 +1,230 @@
 """
 gauge_network.py
 
-Implements a feed-forward neural network that operates on the stacked Cartesian
-representation of an angular variable phi in U(1).
+Implements the `GaugeNetwork` for training the L2HMC sampler on a 2D U(1)
+lattice gauge theory model.
 
-Author: Sam Foreman
-Date: 04/11/2020
+@author: Sam Foreman
+@date: 09/01/2020
 """
-# pylint: disable=invalid-name, too-many-instance-attributes
-# pylint: disable=too-many-arguments, too-few-public-methods
 from __future__ import absolute_import, division, print_function
 
-from collections import namedtuple
 
-import numpy as np
+from typing import Callable, List, Optional, Union
+
 import tensorflow as tf
 
-import utils.file_io as io
-
-from config import QCOEFF, QNAME, SCOEFF, SNAME, TNAME, Weights
-from .layers import (dense_layer, DenseLayerNP, relu, ScaledTanhLayer,
-                     ScaledTanhLayerNP, StackedLayer, StackedLayerNP)
-
-NetworkConfig = namedtuple('NetworkConfig', [
-    'type', 'units', 'dropout_prob', 'activation_fn'
-])
+from tensorflow.keras import layers
 
 
-class GaugeNetwork(tf.keras.layers.Layer):
-    """GaugeNetwork. Implements stacked Cartesian repr. of `GenericNet`."""
+from utils.attr_dict import AttrDict
 
+
+class ConvolutionBlock2D(layers.Layer):
+    """Implements a block consisting of: 2 x [Conv2D, MaxPooling2D]."""
+    def __init__(                # pylint:disable=too-many-arguments
+            self,
+            input_shape: tuple,  # (N, H, W, C)
+            filters: tuple,      # number of filters in layers 1, 2: (n1, n2)
+            sizes: tuple,        # ^ sizes: [x, y] (square) or [(x, y), (u, v)]
+            pool_sizes: tuple = None,      # MaxPool sizes (same as ^)
+            activations: str = None,       # activation function to use
+            paddings: str = None,          # Padding to use 'valid' or 'same'
+            use_batch_norm: bool = False,  # Use BatchNorm layer?
+            **kwargs,
+    ):
+        super(ConvolutionBlock2D, self).__init__(**kwargs)
+        if pool_sizes is None:
+            pool_sizes = 2 * [(2, 2)]
+        if activations is None:
+            activations = 2 * ['relu']
+        if isinstance(activations, str):
+            activations = 2 * [activations]
+        if isinstance(paddings, str):
+            paddings = 2 * [paddings]
+
+        self.conv1 = layers.Conv2D(
+            filters=filters[0],
+            kernel_size=sizes[0],
+            activation=activations[0],
+            input_shape=input_shape,
+            padding=paddings[0],
+        )
+        self.pool1 = layers.MaxPooling2D(pool_sizes[0])
+
+        self.conv2 = layers.Conv2D(
+            filters=filters[1],
+            kernel_size=sizes[1],
+            activation=activations[1],
+            padding=paddings[0],
+        )
+        self.pool2 = layers.MaxPooling2D(pool_sizes[1])
+
+        self.flatten = layers.Flatten()
+
+        self._use_batch_norm = use_batch_norm
+        if use_batch_norm:
+            self.batch_norm = layers.BatchNormalization(axis=-1)
+
+    def call(self, inputs, training=None, **kwargs):
+        inputs = self.pool1(self.conv1(inputs))
+        inputs = self.flatten(self.pool2(self.conv2(x)))
+        if self._use_batch_norm:
+            inputs = self.batch_norm(x, training=training)
+
+        return inputs
+
+# pylint:disable=arguments-differ
+class ConcatenatedDense(layers.Layer):
+    """Layer that converts from an angular repr to a [x, y] repr."""
+    def __init__(
+            self,
+            units: int,
+            kernel_initializer: Union[Callable, str] = 'glorot_uniform',
+            **kwargs
+    ):
+        super(ConcatenatedDense, self).__init__(**kwargs)
+        self._name = kwargs.get('name', 'ConcatenatedDense')
+        self.dense_x = layers.Dense(
+            units=units, kernel_initializer=kernel_initializer,
+        )
+        self.dense_y = layers.Dense(
+            units=units, kernel_initializer=kernel_initializer,
+        )
+
+    def call(self, phi):
+        """Call the layer (forward-pass)."""
+        x = self.dense_x(tf.math.cos(phi))
+        y = self.dense_y(tf.math.sin(phi))
+        #  xy_inputs = tf.squeeze(
+        #      tf.concat([tf.cos(inputs), tf.sin(inputs)], axis=-1)
+        #  )
+        #  return self.dense(xy_inputs)
+        #  return tf.math.angle(x + 1j * y)
+        return tf.math.angle(tf.complex(x, y))
+
+
+class ScaledTanhLayer(layers.Layer):
+    """Implements a custom dense layer that is scaled by a trainable var."""
+    def __init__(
+            self,
+            units: int,
+            kernel_initializer: Union[Callable, str] = 'glorot_uniform',
+            **kwargs
+    ):
+        super(ScaledTanhLayer, self).__init__(**kwargs)
+        name = kwargs.get('name', 'ScaledTanhLayer')
+        self.coeff = tf.Variable(initial_value=tf.zeros([1, units]),
+                                 name=f'{name}/coeff', trainable=True)
+        self.dense = layers.Dense(
+            units, kernel_initializer=kernel_initializer
+        )
+
+    def call(self, inputs):
+        out = tf.keras.activations.tanh(self.dense(inputs))
+        return tf.exp(self.coeff) * out
+
+
+class NetworkConfig(AttrDict):
+    """Configuration object for `GaugeNetwork` object."""
+    def __init__(
+            self,
+            units: List,
+            name: Optional[str] = None,
+            dropout_prob: Optional[float] = 0.,
+            activation_fn: Optional[Callable] = tf.nn.relu
+    ):
+        super(NetworkConfig, self).__init__(
+            name=name,
+            units=units,
+            dropout_prob=dropout_prob,
+            activation_fn=activation_fn,
+        )
+
+
+def vs_init(factor):
+    return tf.keras.initializers.VarianceScaling(
+        mode='fan_in',
+        scale=2.*factor,
+        distribution='truncated_normal',
+    )
+
+
+# pylint:disable=too-many-arguments, too-many-instance-attributes,
+# pylint:disable=too-many-ancestors
+class GaugeNetwork(layers.Layer):
+    """Implements the Feed-Forward NN for carrying out the L2HMC algorithm."""
     def __init__(
             self,
             config: NetworkConfig,
             xdim: int,
-            factor: float = 1.,
-            net_seeds: dict = None,  # pylint:disable=unused-argument
-            zero_init: bool = False,
-            name: str = 'GaugeNetwork'
+            factor: Optional[float] = 1.,
+            **kwargs,
     ):
-        """Initialization method.
-
-        Args:
-            config (NetworkConfig): Configuration specifying various network
-                properties.
-            xdim (int): Dimensionality of target space (features dim.).
-            factor (float): Scaling factor used in weight initialization of
-                `custom_dense` layers.
-            net_seeds (dict): Dictionary of random (int) seeds for
-                reproducibility.
-            name (str): Name of network.
-            **kwargs (keyword arguments): Passed to `tf.keras.Model.__init__`.
-        """
-        super(GaugeNetwork, self).__init__(name=name)
-
+        super(GaugeNetwork, self).__init__(**kwargs)
         self.xdim = xdim
         self.factor = factor
         self._config = config
         self.activation = config.activation_fn
+        name = kwargs.get('name', 'GaugeNetwork')
         with tf.name_scope(name):
             if config.dropout_prob > 0:
-                self.dropout = tf.keras.layers.Dropout(config.dropout_prob)
+                self.dropout = layers.Dropout(config.dropout_prob)
 
-            self.scale_coeff = tf.Variable(name='scale_coeff',
-                                           trainable=True,
-                                           initial_value=tf.zeros((xdim,)))
+            kwargs = {
+                'units': config.units[0],
+            }
+            self.x_layer = layers.Dense(name='x_layer', units=config.units[0],
+                                        kernel_initializer=vs_init(factor/3.))
+            self.v_layer = layers.Dense(name='v_layer', units=config.units[0],
+                                        kernel_initializer=vs_init(1./3.))
+            self.t_layer = layers.Dense(name='t_layer', units=config.units[0],
+                                        kernel_initializer=vs_init(1./3.))
+            self.h_layer1 = layers.Dense(name='h_layer1',
+                                         units=config.units[1],
+                                         kernel_initializer=vs_init(1.))
+            self.h_layer2 = layers.Dense(name='h_layer2',
+                                         units=config.units[2],
+                                         kernel_initializer=vs_init(1.))
 
-            self.transf_coeff = tf.Variable(name='transf_coeff',
-                                            trainable=True,
-                                            initial_value=tf.zeros((xdim,)))
+            #  self.hidden_layers = [
+            #      layers.Dense(name=f'h_layer{i}', units=n)
+            #      for i, n in enumerate(config.units[1:])
+            #  ]
 
-            #  seed=net_seeds['x_layer'])
-            self.x_layer = StackedLayer(name='x_layer',
-                                        factor=factor/3.,
-                                        zero_init=zero_init,
-                                        units=config.units[0],
-                                        input_shape=(2 * xdim,))
+            self.scale_layer = ScaledTanhLayer(
+                name='scale', units=xdim,
+                kernel_initializer=vs_init(0.001),
+            )
+            self.translation_layer = layers.Dense(
+                name='translation', units=xdim,
+                kernel_initializer=vs_init(0.001)
+            )
+            self.transformation_layer = ScaledTanhLayer(
+                name='transformation', units=xdim,
+                kernel_initializer=vs_init(0.001),
+            )
 
-            #  seed=net_seeds['v_layer'])
-            self.v_layer = StackedLayer(name='v_layer',
-                                        factor=1./3.,
-                                        zero_init=zero_init,
-                                        units=config.units[0],
-                                        input_shape=(2 * xdim,))
-
-            #  seed=net_seeds['t_layer'])
-            self.t_layer = dense_layer(name='t_layer',
-                                       factor=1./3.,
-                                       zero_init=zero_init,
-                                       units=config.units[0],
-                                       input_shape=(2 * xdim,))
-
-            def make_hlayer(i, units):
-                #  seed=int(i * net_seeds['h_layer']))
-                return dense_layer(factor=1.,
-                                   units=units,
-                                   zero_init=zero_init,
-                                   name=f'h_layer{i}')
-
-            self.hidden_layers = [
-                make_hlayer(i, n) for i, n in enumerate(config.units[1:])
-            ]
-
-            #  seed=net_seeds[SNAME],
-            self.scale_layer = dense_layer(units=xdim,
-                                           factor=0.001,
-                                           zero_init=zero_init,
-                                           name='scale')
-
-            self.translation_layer = dense_layer(units=xdim,
-                                                 factor=0.001,
-                                                 zero_init=zero_init,
-                                                 name='translation')
-
-            self.transformation_layer = dense_layer(units=xdim,
-                                                    factor=0.001,
-                                                    zero_init=zero_init,
-                                                    name='transformation')
-
-        self.layers_dict = {
-            'x_layer': self.x_layer.layer,
-            'v_layer': self.v_layer.layer,
-            't_layer': self.t_layer,
-            'hidden_layers': self.hidden_layers,
-            'scale_layer': self.scale_layer,
-            'translation_layer': self.translation_layer,
-            'transformation_layer': self.transformation_layer,
-        }
-
-    @staticmethod
-    def _get_layer_weights(layer, sess=None):
-        # pylint:disable=invalid-name
-        if sess is None or tf.executing_eagerly():
-            w, b = layer.weights
-            return Weights(w=w.numpy(), b=b.numpy())
-
-        w, b = sess.run(layer.weights)
-        return Weights(w=w, b=b)
-
-    def get_layer_weights(self, sess=None):
-        """Get dictionary of layer weights."""
-        weights_dict = {
-            'x_layer': self._get_layer_weights(self.x_layer.layer),
-            'v_layer': self._get_layer_weights(self.v_layer.layer),
-            't_layer': self._get_layer_weights(self.t_layer),
-            'hidden_layers': [
-                self._get_layer_weights(j) for j in self.hidden_layers
-            ],
-            'scale_layer': (
-                self._get_layer_weights(self.scale_layer)
-            ),
-            'translation_layer': (
-                self._get_layer_weights(self.translation_layer)
-            ),
-            'transformation_layer': (
-                self._get_layer_weights(self.transformation_layer)
-            ),
-        }
-
-        if sess is None or tf.executing_eagerly:
-            coeffs = [self.scale_coeff.numpy(),
-                      self.transf_coeff.numpy()]
-        else:
-            coeffs = sess.run([self.scale_coeff,
-                               self.transf_coeff])
-
-        weights_dict[SCOEFF] = coeffs[0]
-        weights_dict[QCOEFF] = coeffs[1]
-
-        return weights_dict
-
-    def save_layer_weights(self, sess=None, out_file=None):
-        """Save all layer weights to `out_file`."""
-        weights_dict = self.get_layer_weights(sess=sess)
-        io.savez(weights_dict, out_file, name=self.name)
-
-        return weights_dict
-
-    # pylint:disable=invalid-name
     def call(self, inputs, training=None):
         """Call the network (forward-pass)."""
         v, x, t = inputs
-        h = self.activation(
-            self.v_layer(v) + self.x_layer(x) + self.t_layer(t)
-        )
+        x_rect = tf.complex(tf.math.cos(x), tf.math.sin(x))
 
-        for layer in self.hidden_layers:
-            h = self.activation(layer(h))
+        v_out = self.v_layer(v)
+        t_out = self.t_layer(t)
+        x_out = tf.math.angle(self.x_layer(x_rect))
+        h = self.activation(x_out + v_out + t_out)
+        h = self.activation(self.h_layer1(h))
+        h = self.activation(self.h_layer2(h))
+
+        #  h = self.activation(
+        #      self.v_layer(v) + self.x_layer(x) + self.t_layer(t)
+        #  )
+        #  for layer in self.hidden_layers:
+        #      h = self.activation(layer(h))
 
         if self._config.dropout_prob > 0 and training:
             h = self.dropout(h, training=training)
-
-        scale = (tf.exp(self.scale_coeff)
-                 * tf.nn.tanh(self.scale_layer(h)))
-
-        translation = self.translation_layer(h)
-
-        transformation = (tf.exp(self.transf_coeff)
-                          * tf.nn.tanh(self.transformation_layer(h)))
-
-        return scale, translation, transformation
-
-
-class GaugeNetworkNP:
-    """Implements numpy version of `GaugeNetwork`."""
-
-    def __init__(self, weights, activation=relu):
-        self.activation = activation
-        self.x_layer = StackedLayerNP(weights['x_layer'])
-        self.v_layer = StackedLayerNP(weights['v_layer'])
-        self.t_layer = DenseLayerNP(weights['t_layer'])
-
-        self.hidden_layers = [
-            DenseLayerNP(w) for w in weights['hidden_layers']
-        ]
-
-        self.translation_layer = DenseLayerNP(weights[TNAME])
-
-        self.scale_layer = ScaledTanhLayerNP(weights[SCOEFF],
-                                             weights[SNAME])
-        self.transformation_layer = ScaledTanhLayerNP(weights[QCOEFF],
-                                                      weights[QNAME])
-
-    def __call__(self, inputs):
-        v, x, t = inputs
-        v = self.v_layer(v)
-        x = self.x_layer(x)
-        t = self.t_layer(t)
-        h = self.activation(v + x + t)
-
-        for layer in self.hidden_layers:
-            h = self.activation(layer(h))
 
         scale = self.scale_layer(h)
         translation = self.translation_layer(h)

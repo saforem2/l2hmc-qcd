@@ -14,13 +14,12 @@ import numpy as np
 
 import horovod.tensorflow as hvd
 
-#  from tqdm import tqdm
 from tqdm.auto import tqdm
-#  from tqdm.autonotebook import tqdm
 from config import PROJECT_DIR
 from utils.attr_dict import AttrDict
 
-# pylint:disable=invalid-name
+# pylint:disable=too-many-branches, too-many-statements
+# pylint:disable=too-many-locals,invalid-name too-many-locals
 RANK = hvd.rank()
 IS_CHIEF = (RANK == 0)
 
@@ -325,7 +324,6 @@ def get_run_dir_fstr(FLAGS: AttrDict):
     return fstr
 
 
-# pylint:disable=too-many-locals
 def parse_configs(flags):
     """Parse configs to construct unique string for naming `log_dir`."""
     config = AttrDict(flags.get('dynamics_config', None))
@@ -384,7 +382,6 @@ def parse_configs(flags):
     return fstr.replace('.', '')
 
 
-# pylint:disable=too-many-branches, too-many-locals, too-many-statements
 def get_log_dir_fstr(flags):
     """Parse FLAGS and create unique fstr for `log_dir`."""
     hmc = flags.get('hmc', False)
