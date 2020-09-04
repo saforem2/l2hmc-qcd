@@ -98,19 +98,20 @@ class NetworkConfig(AttrDict):
         )
 
 
-class lrConfig(AttrDict):
+class LearningRateConfig(AttrDict):
     """Configuration object for specifying learning rate schedule."""
     def __init__(self,
                  lr_init: float,
                  lr_decay_steps: int,
                  lr_decay_rate: float,
                  warmup_steps: int = 0):
-        super(lrConfig, self).__init__(
+        super(LearningRateConfig, self).__init__(
             init=lr_init,
             decay_steps=lr_decay_steps,
             decay_rate=lr_decay_rate,
             warmup_steps=warmup_steps
         )
+
 
 NAMES = [
     'step', 'dt', 'loss', 'ploss', 'qloss',
@@ -122,15 +123,16 @@ HEADER = '\n'.join([SEP, HSTR, SEP])
 
 # State is an object for grouping the position/momentum
 # configurations together with the value of `beta`.
-State = namedtuple('State', ['x', 'v', 'beta'])
-lfData = namedtuple('LFdata', ['init', 'proposed', 'prob'])
-EnergyData = namedtuple('EnergyData', ['init', 'proposed', 'out'])
-Energy = namedtuple('Energy', ['potential', 'kinetic', 'hamiltonian'])
-MonteCarloStates = namedtuple('MonteCarloStates', ['init', 'proposed', 'out'])
+#  lfData = namedtuple('LFdata', ['init', 'proposed', 'prob'])
+#  EnergyData = namedtuple('EnergyData', ['init', 'proposed', 'out'])
+#  Energy = namedtuple('Energy', ['potential', 'kinetic', 'hamiltonian'])
 
 # generic object for representing a `weight` matrix in the neural net
 # contains both the weight matrix and the bias term
 Weights = namedtuple('Weights', ['w', 'b'])
+
+State = namedtuple('State', ['x', 'v', 'beta'])
+MonteCarloStates = namedtuple('MonteCarloStates', ['init', 'proposed', 'out'])
 
 NetWeights = namedtuple('NetWeights', [
     'x_scale', 'x_translation', 'x_transformation',
@@ -145,8 +147,9 @@ ObsData = namedtuple('ObsData', [
 
 BootstrapData = namedtuple('BootstrapData', ['mean', 'err', 'means_bs'])
 
-l2hmcFn = namedtuple('l2hmcFn', ['v1', 'x1', 'x2', 'v2'])
-l2hmcFns = namedtuple('l2hmcFns', ['scale', 'translation', 'transformation'])
+#  l2hmcFn = namedtuple('l2hmcFn', ['v1', 'x1', 'x2', 'v2'])
+#  l2hmcFns = namedtuple('l2hmcFns',
+#                        ['scale', 'translation', 'transformation'])
 
 PI = np.pi
 TWO_PI = 2 * PI
@@ -156,8 +159,23 @@ NET_WEIGHTS_L2HMC = NetWeights(0., 1., 1., 1., 1., 1.)
 
 TF_FLOAT = tf.float32
 TF_INT = tf.int32
-NP_FLOAT = np.float32
 NP_INT = np.int32
+TF_FLOATS = {
+    'float16': tf.float16,
+    'float32': tf.float32,
+    'float64': tf.float64,
+}
+TF_INTS = {
+    'int8': tf.int8,
+    'int16': tf.int16,
+    'int32': tf.int32,
+    'int64': tf.int64,
+}
+NP_FLOATS = {
+    'float16': np.float16,
+    'float32': np.float32,
+    'float64': np.float64,
+}
 
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 FILE_PATH = os.path.abspath(os.path.dirname(__file__))

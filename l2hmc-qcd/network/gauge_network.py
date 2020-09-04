@@ -68,9 +68,9 @@ class ConvolutionBlock2D(layers.Layer):
 
     def call(self, inputs, training=None, **kwargs):
         inputs = self.pool1(self.conv1(inputs))
-        inputs = self.flatten(self.pool2(self.conv2(x)))
+        inputs = self.flatten(self.pool2(self.conv2(inputs)))
         if self._use_batch_norm:
-            inputs = self.batch_norm(x, training=training)
+            inputs = self.batch_norm(inputs, training=training)
 
         return inputs
 

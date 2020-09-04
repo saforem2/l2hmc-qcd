@@ -1,6 +1,5 @@
 {
     "log_dir": null,
-    "hmc": false,
     "profiler": true,
     "zero_init": true,
     "eps_fixed": false,
@@ -14,7 +13,7 @@
     "aux_weight": 0.0,
     "plaq_weight": 0.0,
     "charge_weight": 0.01,
-    "hmc_steps": 0,
+    "hmc_steps": 10,
     "print_steps": 1,
     "logging_steps": 10,
     "save_steps": 1000,

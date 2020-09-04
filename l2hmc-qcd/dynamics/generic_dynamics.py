@@ -12,7 +12,7 @@ from __future__ import absolute_import, division, print_function
 import time
 import tensorflow as tf
 
-from config import (DynamicsConfig, lrConfig, NetworkConfig,
+from config import (DynamicsConfig, LearningRateConfig, NetworkConfig,
                     NetWeights, MonteCarloStates)
 from dynamics.base_dynamics import BaseDynamics
 from network.generic_network import GenericNetwork
@@ -37,7 +37,7 @@ class GenericDynamics(BaseDynamics):
                  params: AttrDict,
                  config: DynamicsConfig,
                  network_config: NetworkConfig,
-                 lr_config: lrConfig,
+                 lr_config: LearningRateConfig,
                  potential_fn: callable,
                  normalizer: callable = identity,
                  name: str = 'GenericDynamics'):

@@ -16,7 +16,7 @@ from tensorflow.keras.optimizers.schedules import LearningRateSchedule
 
 import utils.file_io as io
 
-from config import lrConfig
+from config import LearningRateConfig
 
 
 # pylint:disable=too-many-arguments
@@ -90,7 +90,7 @@ class WarmupExponentialDecay(LearningRateSchedule):
 
     def __init__(
             self,
-            lr_config: lrConfig,
+            LearningRateConfig: LearningRateConfig,
             staircase: bool = True,
             name: str = 'WarmupExponentialDecay',
     ):

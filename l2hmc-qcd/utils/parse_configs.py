@@ -4,23 +4,15 @@ parse_configs.py
 Implements a method for parsing configuration objects from JSON file.
 """
 from __future__ import absolute_import, division, print_function
-import sys
 import argparse
 import json
-import shlex
-
-import utils.file_io as io
-
-
-DESCRIPTION = (
-    'L2HMC algorithm applied to a 2D U(1) lattice gauge model.'
-)
+from utils.attr_dict import AttrDict
 
 
 def parse_configs():
     """Parse configs from JSON file."""
     parser = argparse.ArgumentParser(
-        description=DESCRIPTION,
+        'L2HMC algorithm applied to a 2D U(1) lattice gauge model.'
     )
     parser.add_argument("--log_dir",
                         dest="log_dir",
@@ -41,5 +33,10 @@ def parse_configs():
         targs = argparse.Namespace()
         targs.__dict__.update(json.load(f))
         args = parser.parse_args(namespace=targs)
+
+    flags = AttrDict(args.__dict__)
+    for key, val in flags.items():
+        if isinstance(val, dict):
+            flags[key] = AttrDict(val)
 
     return args

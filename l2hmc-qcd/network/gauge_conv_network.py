@@ -11,7 +11,7 @@ used for training the L2HMC sampler on a 2D U(1) lattice gauge theory model.
 # pylint:disable=arguments-differ,invalid-name
 from __future__ import absolute_import, division, print_function
 
-from typing import Callable, List, Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union
 
 import tensorflow as tf
 
@@ -24,10 +24,15 @@ from network.gauge_network import GaugeNetwork, NetworkConfig
 layers = tf.keras.layers
 
 
-def wrap_pad(input, size):
-    M1 = tf.concat([input[:, :, -size:, :], input, input[:, :, 0:size, :]], 2)
-    M1 = tf.concat([M1[:, -size:, :, :], M1, M1[:, 0:size, :, :]], 1)
-    return M1
+def periodic_image(x, size):
+    """Apply wrapped padding (periodic boundary conditions) to `input`.
+
+    NOTE: The input is expected to have shape (N, H, W, C), then this applies
+    periodic boundary conditions along the (H, W) axes.
+    """
+    x = tf.concat([x[:, -size:, :, :], x, x[:, 0:size, :, :]], 1)
+    x = tf.concat([x[:, :, -size:, :], x, x[:, :, 0:size, :]], 2)
+    return x
 
 
 class ConvolutionConfig(AttrDict):
@@ -55,42 +60,6 @@ class ConvolutionConfig(AttrDict):
         )
 
 
-class PeriodicPadding2D(layers.Layer):
-    """Implements a periodic padding in 2D for ConvNet."""
-    def __init__(self, padding=1, **kwargs):
-        super(PeriodicPadding2D, self).__init__(**kwargs)
-        self.padding = conv_utils.normalize_tuple(padding, 1, 'padding')
-        self.input_spec = InputSpec(ndim=3)
-
-    @staticmethod
-    def wrap_pad(x, size):
-        """Perform the periodic padding."""
-        M1 = tf.concat([x[:, :, -size:], x, x[:, :, 0:size]], 2)
-        M1 = tf.concat([M1[:, -size:, :], M1, M1[:, 0:size, :]], 1)
-        return M1
-
-    def compute_output_shape(self, input_shape):
-        """Compute the output shape."""
-        shape = list(input_shape)
-        assert len(shape) == 3
-        if shape[1] is not None:
-            length = shape[1] + 2*self.padding[0]
-        else:
-            length = None
-
-        return tuple([shape[0], length, length])
-
-    def call(self, inputs):
-        """Call the PeriodicPadding Layer."""
-        return self.wrap_pad(inputs, self.padding[0])
-
-    def get_config(self):
-        """Get the configuration of the layer."""
-        config = {'padding': self.padding}
-        base_config = super(PeriodicPadding2D, self).get_config()
-        return dict(list(base_config.items()) + list(config.items()))
-
-
 class ConvolutionBlock2D(layers.Layer):
     """Implements a block consisting of: 2 x [Conv2D, MaxPooling2D]."""
     def __init__(self, config: ConvolutionConfig, **kwargs):
@@ -103,8 +72,6 @@ class ConvolutionBlock2D(layers.Layer):
         if isinstance(config.conv_paddings, str):
             config.conv_paddings = 2 * [config.conv_paddings]
 
-        #  self.periodic_padding = PeriodicPadding2D(padding=1,
-        #                                            name='periodic_padding')
         self.conv1 = layers.Conv2D(
             filters=config.filters[0],
             kernel_size=config.sizes[0],
@@ -129,7 +96,7 @@ class ConvolutionBlock2D(layers.Layer):
 
     def call(self, inputs, training=None):
         inputs = tf.reshape(inputs, (-1, *self._config.input_shape))
-        inputs = wrap_pad(inputs, 2)
+        inputs = periodic_image(inputs, self._config.sizes[0] - 1)
         y1 = self.pool1(self.conv1(inputs))
         y2 = self.flatten(self.pool2(self.conv2(y1)))
         if self._config.use_batch_norm:

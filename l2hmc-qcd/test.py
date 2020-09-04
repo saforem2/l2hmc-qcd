@@ -15,6 +15,7 @@ import numpy as np
 
 from config import PROJECT_DIR, BIN_DIR
 from functools import wraps
+from network.gauge_conv_network import ConvolutionConfig
 from utils.attr_dict import AttrDict
 from utils.training_utils import train
 from utils.inference_utils import load_and_run, run, run_hmc
@@ -197,6 +198,22 @@ def test_separate_networks(flags: AttrDict):
         'train_data': train_data,
         'tk_diffs': tk_diffs,
     })
+
+
+@timeit(out_file=None)
+def test_conv_networks(flags: AttrDict):
+    """Test training using ConvNets."""
+    flags.use_conv_net = True
+    flags.conv_config = ConvolutionConfig(
+        input_shape=flags.get('lattice_shape', None)[1:],
+        filters=[4, 8],
+        sizes=[2, 2],
+        pool_sizes=[2, 2],
+        conv_activations=['relu', 'relu'],
+        conv_paddings=['valid', 'valid'],
+        use_batch_norm=True,
+        name='ConvolutionBlock2D',
+    )
 
 
 @timeit(out_file=None)
