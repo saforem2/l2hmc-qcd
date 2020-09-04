@@ -24,7 +24,7 @@ import os
 import json
 import time
 
-from typing import NoReturn, Dict, Tuple, Union, Optional
+from typing import NoReturn, Dict, Tuple, Optional
 from math import pi
 
 import numpy as np
@@ -35,10 +35,10 @@ from config import (BIN_DIR, GaugeDynamicsConfig, lrConfig, NetWeights,
 from dynamics.base_dynamics import BaseDynamics
 import utils.file_io as io
 #  from network.gauge_network import GaugeNetwork
-from network.gauge_network_new import GaugeNetwork
+from network.gauge_network import GaugeNetwork
 from network.gauge_conv_network import ConvolutionConfig, GaugeNetworkConv2D
 from utils.attr_dict import AttrDict
-from utils.seed_dict import vnet_seeds, xnet_seeds
+from utils.seed_dict import vnet_seeds, xnet_seeds  # noqa:F401
 from lattice.gauge_lattice import GaugeLattice
 
 try:

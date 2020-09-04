@@ -19,7 +19,7 @@ from tensorflow.keras.layers import InputSpec
 from tensorflow.python.keras.utils import conv_utils
 
 from utils.attr_dict import AttrDict
-from network.gauge_network_new import GaugeNetwork, NetworkConfig
+from network.gauge_network import GaugeNetwork, NetworkConfig
 
 layers = tf.keras.layers
 
