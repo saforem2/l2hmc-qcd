@@ -247,7 +247,10 @@ class BaseDynamics(tf.keras.Model):
         NOTE: We simulate the dynamics both forward and backward, and use
         sampled Bernoulli masks to compute the actual solutions
         """
-        x, beta = inputs
+        if len(inputs) == 2:
+            x, beta = inputs
+        elif len(inputs) == 3:
+            x, v, beta = inputs
         sf_init, sf_prop, pxf, sldf = self._transition(inputs, forward=True,
                                                        training=training)
         sb_init, sb_prop, pxb, sldb = self._transition(inputs, forward=False,
@@ -329,8 +332,11 @@ class BaseDynamics(tf.keras.Model):
             training: bool = None
     ) -> (State, State, tf.Tensor, State):
         """Run the augmented leapfrog integrator."""
-        x, beta = inputs
-        v = tf.random.normal(tf.shape(x))
+        if len(inputs) == 2:
+            x, beta = inputs
+            v = tf.random.normal(tf.shape(x))
+        elif len(inputs) == 3:
+            x, v, beta = inputs
         state = State(x=x, v=v, beta=beta)
         state_, px, sld = self.transition_kernel(state, forward, training)
 

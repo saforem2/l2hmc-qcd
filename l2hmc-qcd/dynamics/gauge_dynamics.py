@@ -514,10 +514,13 @@ class GaugeDynamics(BaseDynamics):
 
     def train_step(self, data):
         """Perform a single training step."""
-        x, beta = data
         start = time.time()
         with tf.GradientTape() as tape:
-            states, accept_prob, sumlogdet = self(data, training=True)
+            x, beta = data
+            v = tf.random.normal(tf.shape(x))
+            tape.watch(x)
+            tape.watch(v)
+            states, accept_prob, sumlogdet = self((x, v, beta), training=True)
             ploss, qloss = self.calc_losses(states, accept_prob)
             loss = ploss + qloss
             if self.aux_weight > 0:
