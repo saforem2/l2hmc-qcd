@@ -882,8 +882,8 @@ class BaseDynamics(tf.keras.Model):
         #      return tf.keras.optimizers.Adam(self.lr)
         #
         #  optimizer = tf.compat.v1.train.AdamOptimizer(self.lr)
-        #  optimizer = tf.keras.optimizers.Nadam(self.lr_config.init)
-        optimizer = tf.keras.optimizers.Adam(self.lr)
+        optimizer = tf.keras.optimizers.Nadam(self.lr_config.init)
+        #  optimizer = tf.keras.optimizers.Adam(self.lr)
         if self.using_hvd:
             optimizer = hvd.DistributedOptimizer(optimizer)
 
