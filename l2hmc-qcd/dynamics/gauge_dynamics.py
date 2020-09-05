@@ -666,6 +666,56 @@ class GaugeDynamics(BaseDynamics):
 
         return state_out, logdet
 
+    def _update_xf_test(
+                self,
+                state: State,
+                step: int,
+                masks: Tuple[tf.Tensor, tf.Tensor],   # [m, 1. - m]
+                training: bool = None
+    ):
+        def xf():
+            m, mc = masks
+            x = self.normalizer(state.x)
+            t = self._get_time(step, tile=tf.shape(x)[0])
+
+            inputs = (state.v, m * x, t)
+            if not self.config.separate_networks:
+                S, T, Q = self.xnet(inputs, training=training)
+            elif step % 2 == 0:
+                S, T, Q = self.xnet_even(inputs, training=training)
+            else:
+                S, T, Q = self.xnet_odd(inputs, training=training)
+
+            inputs = (state.v, m * x, t)
+            if self.config.separate_networks:
+                if step % 2 == 0:
+                    S, T, Q = self.xnet_even(inputs, training=training)
+                S, T, Q = self.xnet_odd(inputs, training=training)
+            else:
+                S, T, Q = self.xnet(inputs, training=training)
+
+            transl = self._xtw * T
+            transf = self._xqw * (self.eps * Q)
+            scale = self._xsw * (self.eps * S)
+
+            expS = tf.exp(scale)
+            expQ = tf.exp(transf)
+            y = x * expS + self.eps * (state.v * expQ + transl)
+            xf = self.normalizer(m * x + mc * y)
+            state_out = State(x=xf, v=state.v, beta=state.beta)
+            logdet = tf.reduce_sum(mc * scale, axis=1)
+
+            return state_out, logdet
+
+        def hmc_xf():
+            return super()._update_x_forward(state, step, masks, training)
+
+        def ncp_xf():
+            return self._update_xf_ncp(state, step, masks, training)
+
+        def ncp_cond():
+            return tf.cond(self.config.use_ncp, ncp_xf, xf)
+
     def _update_x_forward(
                 self,
                 state: State,
