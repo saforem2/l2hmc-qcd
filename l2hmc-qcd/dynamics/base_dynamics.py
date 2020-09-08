@@ -890,7 +890,11 @@ class BaseDynamics(tf.keras.Model):
     def _create_optimizer(self):
         """Create the optimizer to be used for backpropagating gradients."""
         #  optimizer = tf.compat.v1.train.AdamOptimizer(self.lr)
-        optimizer = tf.keras.optimizers.Nadam(self.lr_config.init)
+        if self.clip_val > 0:
+            optimizer = tf.keras.optimizers.Nadam(self.lr_config.init,
+                                                  clipnorm=self.clip_val)
+        else:
+            optimizer = tf.keras.optimizers.Adam(self.lr_config.init)
         #  optimizer = tf.keras.optimizers.Adam(self.lr)
         #  if self.using_hvd:
         #  if NUM_RANKS > 1:

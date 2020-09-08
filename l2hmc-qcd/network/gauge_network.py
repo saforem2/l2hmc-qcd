@@ -46,7 +46,7 @@ class ConcatenatedDense(layers.Layer):
     ):
         super(ConcatenatedDense, self).__init__(**kwargs)
         self._name = kwargs.get('name', 'ConcatenatedDense')
-        self.layer = layers.Dense(units=units,
+        self.layer = layers.Dense(units=2*units,
                                   kernel_initializer=kernel_initializer)
         #  self.dense_x = layers.Dense(
         #      units=units, kernel_initializer=kernel_initializer,
@@ -67,7 +67,7 @@ class ConcatenatedDense(layers.Layer):
         #  return self.dense(xy_inputs)
         #  return tf.math.angle(x + 1j * y)
         #  return tf.math.angle(tf.complex(x, y))
-        return self.layer(phi)
+        #  return self.layer(phi)
 
 
 class ScaledTanhLayer(layers.Layer):
@@ -75,7 +75,7 @@ class ScaledTanhLayer(layers.Layer):
     def __init__(
             self,
             units: int,
-            kernel_initializer: Union[Callable, str] = 'glorot_uniform',
+            kernel_initializer: Union[Callable, str] = None,
             **kwargs
     ):
         super(ScaledTanhLayer, self).__init__(**kwargs)
@@ -125,12 +125,13 @@ class GaugeNetwork(layers.Layer):
             if config.dropout_prob > 0:
                 self.dropout = layers.Dropout(config.dropout_prob)
 
-            self.x_layer = layers.Dense(name='x_layer',
-                                        units=config.units[0],
-                                        kernel_initializer=xk_init)
             self.v_layer = layers.Dense(name='v_layer',
                                         units=config.units[0],
                                         kernel_initializer=vk_init)
+            #  self.x_layer = ConcatenatedDense(2 * config.units[0],
+            self.x_layer = layers.Dense(name='x_layer',
+                                        units=config.units[0],
+                                        kernel_initializer=xk_init)
             self.t_layer = layers.Dense(name='t_layer',
                                         units=config.units[0],
                                         kernel_initializer=tk_init)
@@ -159,11 +160,13 @@ class GaugeNetwork(layers.Layer):
     def call(self, inputs, training=None):
         """Call the network (forward-pass)."""
         v, x, t = inputs
-        x_rect = tf.complex(tf.math.cos(x), tf.math.sin(x))
+        #  xc = tf.complex(tf.math.cos(x), tf.math.sin(x))
 
         v_out = self.v_layer(v)
         t_out = self.t_layer(t)
-        x_out = tf.math.angle(self.x_layer(x_rect))
+        x_out = tf.math.angle(self.x_layer(
+            tf.complex(tf.math.cos(x), tf.math.sin(x))
+        ))
         h = self.activation(x_out + v_out + t_out)
         h = self.activation(self.h_layer1(h))
         h = self.activation(self.h_layer2(h))
