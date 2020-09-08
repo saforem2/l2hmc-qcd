@@ -78,21 +78,24 @@ class ConvolutionBlock2D(layers.Layer):
             activation=config.conv_activations[0],
             input_shape=config.input_shape,
             padding=config.conv_paddings[0],
+            name='conv1'
         )
-        self.pool1 = layers.MaxPooling2D(config.pool_sizes[0])
+        self.pool1 = layers.MaxPooling2D(config.pool_sizes[0], name='pool1')
 
         self.conv2 = layers.Conv2D(
             filters=config.filters[1],
             kernel_size=config.sizes[1],
             activation=config.conv_activations[1],
             padding=config.conv_paddings[0],
+            name='conv2',
         )
-        self.pool2 = layers.MaxPooling2D(config.pool_sizes[1])
+        self.pool2 = layers.MaxPooling2D(config.pool_sizes[1], name='pool2')
 
-        self.flatten = layers.Flatten()
+        self.flatten = layers.Flatten(name='flatten')
 
         if config.use_batch_norm:
-            self.batch_norm = layers.BatchNormalization(axis=-1)
+            self.batch_norm = layers.BatchNormalization(axis=-1,
+                                                        name='batch_norm')
 
     def call(self, inputs, training=None):
         inputs = tf.reshape(inputs, (-1, *self._config.input_shape))
@@ -116,9 +119,12 @@ class GaugeNetworkConv2D(tf.keras.models.Model):
             **kwargs,
     ):
         super(GaugeNetworkConv2D, self).__init__(**kwargs)
-        self.x_conv_block = ConvolutionBlock2D(conv_config, **kwargs)
-        self.v_conv_block = ConvolutionBlock2D(conv_config, **kwargs)
-        self.gauge_net = GaugeNetwork(config, xdim, factor, **kwargs)
+        with tf.name_scope('x_conv_block'):
+            self.x_conv_block = ConvolutionBlock2D(conv_config, **kwargs)
+        with tf.name_scope('v_conv_block'):
+            self.v_conv_block = ConvolutionBlock2D(conv_config, **kwargs)
+        with tf.name_scope('GaugeNetwork'):
+            self.gauge_net = GaugeNetwork(config, xdim, factor, **kwargs)
 
     def call(self, inputs, training=None):
         """Call the network (forward-pass)."""

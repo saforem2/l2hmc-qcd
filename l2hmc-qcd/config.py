@@ -179,47 +179,13 @@ NP_FLOATS = {
 
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 FILE_PATH = os.path.abspath(os.path.dirname(__file__))
-PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_DIR = os.path.dirname(os.path.relpath(__file__))
 BASE_DIR = os.path.dirname(PROJECT_DIR)
 BIN_DIR = os.path.join(BASE_DIR, 'bin')
-GAUGE_LOGS_DIR = os.path.join(BASE_DIR, 'gauge_logs')
+GAUGE_LOGS_DIR = os.path.join(BASE_DIR, 'logs', 'GaugeModel_logs')
+#  GAUGE_LOGS_DIR = os.path.join(BASE_DIR, 'gauge_logs')
 TEST_LOGS_DIR = os.path.join(BASE_DIR, 'test_logs')
 BIN_DIR = os.path.join(BASE_DIR, 'bin')
-
-DEFAULT_FLAGS = AttrDict({
-    'log_dir': None,
-    'eager_execution': False,
-    'restore': False,
-    'inference': True,
-    'run_steps': 500,
-    'horovod': False,
-    'rand': True,
-    'eps': 0.1,
-    'num_steps': 2,
-    'hmc': False,
-    'eps_fixed': False,
-    'beta_init': 1.,
-    'beta_final': 3.,
-    'train_steps': 50,
-    'save_steps': 5,
-    'print_steps': 1,
-    'logging_steps': 1,
-    'hmc_start': True,
-    'hmc_steps': 50,
-    'dropout_prob': 0.1,
-    'warmup_lr': True,
-    'warmup_steps': 10,
-    'lr_init': 0.001,
-    'lr_decay_steps': 1000,
-    'lr_decay_rate': 0.96,
-    'plaq_weight': 10.,
-    'charge_weight': 0.1,
-    'separate_networks': False,
-    'network_type': 'GaugeNetwork',
-    'lattice_shape': [128, 16, 16, 2],
-    'units': [512, 256, 256, 256, 512],
-})
-
 
 #  COLORS = 5000 * ['C0', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9']
 MARKERS = 5000 * ['o', 's', 'x', 'v', 'h', '^', 'p', '<', 'd', '>', 'o']
@@ -236,37 +202,6 @@ COLORS = [  # from seaborn `bright` style
     (1.0, 0.7686274509803922, 0.0),
     (0.0, 0.8431372549019608, 1.0)
 ]
-
-
-#  header = ("{:^12s}" + 8 * "{:^10s}").format(
-#      "STEP", "t/STEP", "% ACC", "EPS", "BETA",
-#      "ACTIONS", "PLAQS", "(EXACT)", "dQ"
-#  )
-#  dash0 = (len(header) + 1) * '='
-#  dash1 = (len(header) + 1) * '-'
-#  RUN_HEADER = dash0 + '\n' + header + '\n' + dash1
-
-#  try:
-#      import memory_profiler  # noqa: F401
-#
-#      HAS_MEMORY_PROFILER = True
-#  except ImportError:
-#      HAS_MEMORY_PROFILER = False
-#
-#  try:
-#      import matplotlib.pyplot as plt  # noqa: F401
-#
-#      HAS_MATPLOTLIB = True
-#  except ImportError:
-#      HAS_MATPLOTLIB = False
-#
-#  try:
-#      import psutil  # noqa: F401
-#
-#      HAS_PSUTIL = True
-#  except ImportError:
-#      HAS_PSUTIL = False
-#
 
 # pylint:disable=invalid-name
 TRAIN_STR = (r"""

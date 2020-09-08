@@ -15,9 +15,9 @@
     "hmc_steps": 0,
     "print_steps": 1,
     "logging_steps": 10,
-    "save_steps": 1000,
-    "run_steps": 2000,
-    "train_steps": 5,
+    "save_steps": 100,
+    "run_steps": 1000,
+    "train_steps": 1000,
     "lattice_shape": [256, 16, 16, 2],
     "dynamics_config": {
         "eps": 0.02,
@@ -25,7 +25,7 @@
         "hmc": false,
         "use_ncp": true,
         "eps_fixed": false,
-        "separate_networks": false
+        "separate_networks": true
     },
     "network_config": {
         "units": [128, 128, 128],

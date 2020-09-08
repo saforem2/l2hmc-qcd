@@ -162,31 +162,22 @@ class GaugeDynamics(BaseDynamics):
                 net_weights = NetWeights(0., 1., 1., 1., 1., 1.)
 
             if self.config.separate_networks:
-                self.use_conv_net = False
                 nets = self._build_separate_networks()
-                self.xnet_even = nets['xnet_even']
-                self.xnet_odd = nets['xnet_odd']
                 self.vnet = nets['vnet']
-            if self.use_conv_net:
-                self.xnet, self.vnet = self._build_conv_networks()
+                #  self.xnets = nets['xnets']
+                self.xnet_odd = nets['xnet_odd']
+                self.xnet_even = nets['xnet_even']
             else:
-                self.xnet, self.vnet = self._build_generic_networks()
+                if self.use_conv_net:
+                    self.xnet, self.vnet = self._build_conv_networks()
+                else:
+                    self.xnet, self.vnet = self._build_generic_networks()
 
         self.net_weights = self._parse_net_weights(net_weights)
         if self._has_trainable_params:
             self.lr_config = lr_config
             self.lr = self._create_lr(lr_config)
             self.optimizer = self._create_optimizer()
-        #  else:
-        #      if self.config.separate_networks:
-        #          nets = self._build_separate_networks()
-        #          self.xnet_even = nets['xnet_even']
-        #          self.xnet_odd = nets['xnet_odd']
-        #          self.vnet = nets['vnet']
-        #      if self.use_conv_net:
-        #          self.xnet, self.vnet = self._build_conv_networks()
-        #      else:
-        #          self.xnet, self.vnet = self._build_generic_networks()
 
     def _build(self, params, config, network_config, lr_config, **kwargs):
         self.config = config
@@ -309,6 +300,7 @@ class GaugeDynamics(BaseDynamics):
         state_prop = State(x=state.x, v=state.v, beta=state.beta)
         sumlogdet = tf.zeros((self.batch_size,), dtype=TF_FLOAT)
         for step in tf.range(tf.constant(self.config.num_steps)):
+            #  setattr(self, 'xnet', self.xnets[step])
             if step % 2 == 0:
                 setattr(self, 'xnet', self.xnet_even)
             else:
@@ -433,13 +425,37 @@ class GaugeDynamics(BaseDynamics):
 
     def _build_separate_networks(self):
         """Build separate networks for the even / odd update steps."""
-        vnet = GaugeNetwork(self.net_config, self.xdim, name='VNet')
-        xnet_odd = GaugeNetwork(self.net_config, self.xdim, name='XNet_odd')
-        xnet_even = GaugeNetwork(self.net_config, self.xdim, name='XNet_even')
+        vnet = GaugeNetwork(self.net_config, factor=1.,
+                            xdim=self.xdim, name='VNet')
+        #  if self.use_conv_net:
+        #      def make_net(i):
+        #          return GaugeNetworkConv2D(conv_config=self.conv_config,
+        #                                    config=self.net_config, factor=2.,
+        #                                    xdim=self.xdim, name=f'XNet{i}')
+        #      xnets = [make_net(i) for i in range(self.config.num_steps)]
+        #
+        #  else:
+        #      def make_net(i):
+        #          return GaugeNetwork(self.net_config, factor=2.,
+        #                              xdim=self.xdim, name=f'XNet{i}')
+        #      xnets = [make_net(i) for i in range(self.config.num_steps)]
+        #
+        if self.use_conv_net:
+            xnet_odd = GaugeNetworkConv2D(conv_config=self.conv_config,
+                                          config=self.net_config, factor=2.,
+                                          xdim=self.xdim, name='XNet_odd')
+            xnet_even = GaugeNetworkConv2D(conv_config=self.conv_config,
+                                           config=self.net_config, factor=2.,
+                                           xdim=self.xdim, name='XNet_even')
+        else:
+            xnet_odd = GaugeNetwork(config=self.net_config, factor=2.,
+                                    xdim=self.xdim, name='XNet_odd')
+            xnet_even = GaugeNetwork(config=self.net_config, factor=2.,
+                                     xdim=self.xdim, name='XNet_even')
         return {
-            'xnet_even': xnet_even,
-            'xnet_odd': xnet_odd,
             'vnet': vnet,
+            'xnet_odd': xnet_odd,
+            'xnet_even': xnet_even,
         }
 
     def _build_generic_networks(self):
@@ -626,10 +642,10 @@ class GaugeDynamics(BaseDynamics):
         x = self.normalizer(state.x)
         grad = self.grad_potential(x, state.beta)
         t = self._get_time(step, tile=tf.shape(x)[0])
-        S, T, Q = self.vnet((x, x, t), training)
+        S, T, Q = self.vnet((x, grad, t), training)
 
-        transl = self._vtw * T
         scale = self._vsw * (0.5 * self.eps * S)
+        transl = self._vtw * T
         transf = self._vqw * (self.eps * Q)
 
         expS = tf.exp(scale)
@@ -641,56 +657,6 @@ class GaugeDynamics(BaseDynamics):
         logdet = tf.reduce_sum(scale, axis=1)
 
         return state_out, logdet
-
-    def _update_xf_test(
-                self,
-                state: State,
-                step: int,
-                masks: Tuple[tf.Tensor, tf.Tensor],   # [m, 1. - m]
-                training: bool = None
-    ):
-        def xf():
-            m, mc = masks
-            x = self.normalizer(state.x)
-            t = self._get_time(step, tile=tf.shape(x)[0])
-
-            inputs = (state.v, m * x, t)
-            if not self.config.separate_networks:
-                S, T, Q = self.xnet(inputs, training=training)
-            elif step % 2 == 0:
-                S, T, Q = self.xnet_even(inputs, training=training)
-            else:
-                S, T, Q = self.xnet_odd(inputs, training=training)
-
-            inputs = (state.v, m * x, t)
-            if self.config.separate_networks:
-                if step % 2 == 0:
-                    S, T, Q = self.xnet_even(inputs, training=training)
-                S, T, Q = self.xnet_odd(inputs, training=training)
-            else:
-                S, T, Q = self.xnet(inputs, training=training)
-
-            transl = self._xtw * T
-            transf = self._xqw * (self.eps * Q)
-            scale = self._xsw * (self.eps * S)
-
-            expS = tf.exp(scale)
-            expQ = tf.exp(transf)
-            y = x * expS + self.eps * (state.v * expQ + transl)
-            xf = self.normalizer(m * x + mc * y)
-            state_out = State(x=xf, v=state.v, beta=state.beta)
-            logdet = tf.reduce_sum(mc * scale, axis=1)
-
-            return state_out, logdet
-
-        def hmc_xf():
-            return super()._update_x_forward(state, step, masks, training)
-
-        def ncp_xf():
-            return self._update_xf_ncp(state, step, masks, training)
-
-        def ncp_cond():
-            return tf.cond(self.config.use_ncp, ncp_xf, xf)
 
     def _update_x_forward(
                 self,
@@ -723,26 +689,23 @@ class GaugeDynamics(BaseDynamics):
         inputs = (state.v, m * x, t)
         if not self.config.separate_networks:
             S, T, Q = self.xnet(inputs, training=training)
-        elif step % 2 == 0:
-            S, T, Q = self.xnet_even(inputs, training=training)
         else:
-            S, T, Q = self.xnet_odd(inputs, training=training)
-
-        #  if not self.config.separate_networks:
-        #  try:
-        #      S, T, Q = self.xnet(input, training=training)
-        #  except AttributeError:
-        #      if step % 2 == 0:
-        #          S, T, Q = self.xnet_even(input, training=training)
-        #      S, T, Q = self.xnet_odd(input, training=training)
-
-        inputs = (state.v, m * x, t)
-        if self.config.separate_networks:
             if step % 2 == 0:
                 S, T, Q = self.xnet_even(inputs, training=training)
-            S, T, Q = self.xnet_odd(inputs, training=training)
-        else:
-            S, T, Q = self.xnet(inputs, training=training)
+            else:
+                S, T, Q = self.xnet_odd(inputs, training=training)
+        #  elif step % 2 == 0:
+        #      S, T, Q = self.xnet_even(inputs, training=training)
+        #  else:
+        #      S, T, Q = self.xnet_odd(inputs, training=training)
+        #
+        #  inputs = (state.v, m * x, t)
+        #  if self.config.separate_networks:
+        #      if step % 2 == 0:
+        #          S, T, Q = self.xnet_even(inputs, training=training)
+        #      S, T, Q = self.xnet_odd(inputs, training=training)
+        #  else:
+        #      S, T, Q = self.xnet(inputs, training=training)
 
         #  if self.config.separate_networks and step % 2 == 0:
         #      S, T, Q = self.xnet_even((state.v, m * x, t), training=training)
@@ -906,17 +869,6 @@ class GaugeDynamics(BaseDynamics):
         else:
             S, T, Q = self.xnet_odd(inputs, training=training)
 
-        #  if self.config.separate_networks and step % 2 == 0:
-        #      S, T, Q = self.xnet_even((state.v, m * x, t), training=training)
-        #  if self.config.separate_networks and step % 2 == 1:
-        #      S, T, Q = self.xnet_odd((state.v, m * x, t), training=training)
-        #  else:
-        #      S, T, Q = self.xnet((state.v, m * x, t), training=training)
-
-        #  S, T, Q = self.xnet((state.v, m * x, t), training=training)
-        #  S, T, Q = self.xnet((state.v, m * x, t), training=training)
-        #  S, T, Q = self._scattered_xnet(x, state.v, t, masks, training)
-
         transl = self._xtw * T
         transf = self._xqw * (self.eps * Q)
         scale = self._xsw * (self.eps * S)
@@ -934,6 +886,26 @@ class GaugeDynamics(BaseDynamics):
         log_jac = tf.math.log(expS / (cterm + sterm))
         logdet = tf.reduce_sum(mc * log_jac, axis=1)
 
+        # ----------------------------
+        #  S, T, Q = self.xnet(inputs, training=training)
+        #  if not self.config.separate_networks:
+        #      S, T, Q = self.xnet(inputs, training=training)
+        #  elif step % 2 == 0:
+        #      S, T, Q = self.xnet_even(inputs, training=training)
+        #  else:
+        #      S, T, Q = self.xnet_odd(inputs, training=training)
+        #
+        #  if self.config.separate_networks and step % 2 == 0:
+        #      S, T, Q = self.xnet_even((state.v, m * x, t), training=training)
+        #  if self.config.separate_networks and step % 2 == 1:
+        #      S, T, Q = self.xnet_odd((state.v, m * x, t), training=training)
+        #  else:
+        #      S, T, Q = self.xnet((state.v, m * x, t), training=training)
+        #  S, T, Q = self.xnet((state.v, m * x, t), training=training)
+        #  S, T, Q = self.xnet((state.v, m * x, t), training=training)
+        #  S, T, Q = self._scattered_xnet(x, state.v, t, masks, training)
+        # ----------------------------
+
         return state_out, logdet
 
     def _update_xb_ncp(
@@ -950,24 +922,14 @@ class GaugeDynamics(BaseDynamics):
         m, mc = masks
         x = self.normalizer(state.x)
         t = self._get_time(step, tile=tf.shape(x)[0])
-
-        if self.config.separate_networks and step % 2 == 0:
-            S, T, Q = self.xnet_even((state.v, m * x, t), training=training)
-        if self.config.separate_networks and step % 2 == 1:
-            S, T, Q = self.xnet_odd((state.v, m * x, t), training=training)
+        inputs = (state.v, m * x, t)
+        if not self.config.separate_networks:
+            S, T, Q = self.xnet(inputs, training=training)
         else:
-            S, T, Q = self.xnet((state.v, m * x, t), training=training)
-
-        #  S, T, Q = self.xnet((state.v, m * x, t), training=training)
-        #  S, T, Q = self.xnet((state.v, m * x, t), training=training)
-        #  S, T, Q = self._scattered_xnet(x, state.v, t, masks, training)
-
-        #  S, T, Q = self._scattered_xnet(x, state.v, t, masks, training)
-        #  shape = (self.batch_size, -1)
-        #  m_ = tf.reshape(m, shape)
-        #  idxs = tf.where(m_)
-        #  x_ = tf.reshape(tf.gather_nd(x, idxs), shape)
-        #  S, T, Q = self.xnet((state.v, x_, t), training)
+            if step % 2 == 0:
+                S, T, Q = self.xnet_even(inputs, training=training)
+            else:
+                S, T, Q = self.xnet_odd(inputs, training=training)
 
         transl = self._xtw * T
         transf = self._xqw * (self.eps * Q)
@@ -987,5 +949,26 @@ class GaugeDynamics(BaseDynamics):
         sterm = (expS * tf.math.sin(state.x / 2)) ** 2
         log_jac = tf.math.log(expS / (cterm + sterm))
         logdet = tf.reduce_sum(mc * log_jac, axis=1)
+
+        # =================================
+        #  S, T, Q = self.xnet(inputs, training=training)
+        #  if self.config.separate_networks and step % 2 == 0:
+        #      S, T, Q = self.xnet_even((state.v, m * x, t), training=training)
+        #  if self.config.separate_networks and step % 2 == 1:
+        #      S, T, Q = self.xnet_odd((state.v, m * x, t), training=training)
+        #  else:
+        #      S, T, Q = self.xnet((state.v, m * x, t), training=training)
+
+        #  S, T, Q = self.xnet((state.v, m * x, t), training=training)
+        #  S, T, Q = self.xnet((state.v, m * x, t), training=training)
+        #  S, T, Q = self._scattered_xnet(x, state.v, t, masks, training)
+
+        #  S, T, Q = self._scattered_xnet(x, state.v, t, masks, training)
+        #  shape = (self.batch_size, -1)
+        #  m_ = tf.reshape(m, shape)
+        #  idxs = tf.where(m_)
+        #  x_ = tf.reshape(tf.gather_nd(x, idxs), shape)
+        #  S, T, Q = self.xnet((state.v, x_, t), training)
+        # =================================
 
         return state_out, logdet

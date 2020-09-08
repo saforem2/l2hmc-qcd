@@ -410,12 +410,11 @@ def make_log_dir(FLAGS, model_type=None, log_file=None, root_dir=None):
     dstr = now.strftime('%Y-%m-%d-%H%M%S')
     run_str = f'{fstr}-{dstr}'
 
+    #  if root_dir is None:
     if root_dir is None:
         root_dir = os.path.dirname(PROJECT_DIR)
 
-    dirs = [root_dir]
-    dirs.append('gauge_logs_eager')
-
+    dirs = [root_dir, 'logs', f'{model_type}_logs']
     if fstr.startswith('DEBUG'):
         dirs.append('test')
 
