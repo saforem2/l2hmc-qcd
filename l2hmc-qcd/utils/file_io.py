@@ -380,6 +380,11 @@ def parse_configs(flags):
     if flags.get('use_conv_net', False):
         fstr += '_ConvNets'
 
+        conv_config = flags.get('conv_config', None)
+        use_bn = conv_config.get('use_batch_norm', False)
+        if use_bn:
+            fstr += '_bNorm'
+
     return fstr.replace('.', '')
 
 
