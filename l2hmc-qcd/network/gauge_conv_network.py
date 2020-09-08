@@ -39,14 +39,14 @@ class ConvolutionConfig(AttrDict):
     """Defines a configuration object for passing to `ConvolutionBlock2D`."""
     def __init__(
             self,
-            input_shape: Union[List[int], Tuple[int]],
-            filters: Union[List[int], Tuple[int]],
-            sizes: Union[List[int], Tuple[int]],
-            pool_sizes: Optional[Union[List[int], Tuple[int]]] = None,
-            conv_activations: Optional[Union[List[str], Tuple[str]]] = None,
-            conv_paddings: Optional[Union[Tuple[str], str]] = None,
-            use_batch_norm: Optional[bool] = False,
-            name: Optional[str] = None,
+            input_shape: List[int],  # expected input shape
+            filters: List[int],      # number of filters to use
+            sizes: List[int],        # filter sizes to use
+            pool_sizes: Optional[List[int]] = None,  # MaxPooling2D sizes
+            conv_activations: Optional[List[str]] = None,  # Activation fns
+            conv_paddings: Optional[List[str]] = None,  # Paddings to use
+            use_batch_norm: Optional[bool] = False,  # Use batch normalization?
+            name: Optional[str] = None,  # Name of model
     ):
         super(ConvolutionConfig, self).__init__(
             input_shape=input_shape,
@@ -105,7 +105,7 @@ class ConvolutionBlock2D(layers.Layer):
         return y2
 
 
-class GaugeNetworkConv2D(layers.Layer):
+class GaugeNetworkConv2D(tf.keras.models.Model):
     """"Prepends a conv. structure at the beginning of `GaugeNetwork`."""
     def __init__(
             self,

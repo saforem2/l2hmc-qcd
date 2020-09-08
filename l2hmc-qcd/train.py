@@ -10,6 +10,7 @@ import os
 import tensorflow as tf
 
 from utils.attr_dict import AttrDict
+
 #  from utils.parse_args import parse_args
 from utils.parse_configs import parse_configs
 from utils.training_utils import train
@@ -22,7 +23,7 @@ def main(args):
     tf.keras.backend.set_floatx('float32')
     log_file = os.path.join(os.getcwd(), 'log_dirs.txt')
 
-    x, dynamics, _, args = train(args, md_steps=md_steps, log_file=log_file)
+    _, dynamics, _, args = train(args, md_steps=md_steps, log_file=log_file)
     if args.run_steps > 0:
         # run with random start
         dynamics, _, _ = run(dynamics, args)
@@ -38,6 +39,16 @@ def main(args):
 
 if __name__ == '__main__':
     #  FLAGS = parse_args()
+    #  debug_dir = os.path.join(BIN_DIR, 'debugging')
+    #  io.check_else_make_dir(debug_dir)
+    #  debug_events_writer = tf.debugging.experimental.enable_dump_debug_info(
+    #      debug_dir, circular_buffer_size=-1,
+    #      tensor_debug_mode="FULL_HEALTH",
+    #  )
+
     FLAGS = parse_configs()
     FLAGS = AttrDict(FLAGS.__dict__)
     main(FLAGS)
+    #
+    #  debug_events_writer.FlushExecutionFiles()
+    #  debug_events_writer.FlushNonExecutionFiles()

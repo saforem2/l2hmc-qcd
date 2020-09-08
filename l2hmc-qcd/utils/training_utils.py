@@ -18,7 +18,7 @@ from tqdm.auto import tqdm
 
 import utils.file_io as io
 
-from config import CBARS, NET_WEIGHTS_HMC, PI, TF_FLOAT
+from config import CBARS, NET_WEIGHTS_HMC, PI, TF_FLOAT, BIN_DIR
 from utils.file_io import timeit
 from utils.attr_dict import AttrDict
 from utils.summary_utils import update_summaries
@@ -44,13 +44,6 @@ from dynamics.gauge_dynamics import build_dynamics, GaugeDynamics
 # pylint:disable=no-member
 # pylint:disable=too-many-locals
 # pylint:disable=protected-access
-
-#  debug_dir = os.path.join(BIN_DIR, 'debugging')
-#  io.check_else_make_dir(debug_dir)
-#  tf.debugging.experimental.enable_dump_debug_info(
-#      debug_dir, circular_buffer_size=-1,
-#      tensor_debug_mode="FULL_HEALTH",
-#  )
 
 RANK = hvd.rank()
 io.log(f'Number of devices: {hvd.size()}')
@@ -140,8 +133,15 @@ def train_hmc(flags):
 
 
 @timeit(out_file=None)
-def train(flags, log_file=None, md_steps=0):
-    """Train model."""
+def train(flags: AttrDict, log_file: str = None, md_steps: int = 0):
+    """Train model.
+
+    Returns:
+        x (tf.Tensor): Batch of configurations
+        dynamics (GaugeDynamics): Dynamics object.
+        train_data (DataContainer): Object containing train data.
+        flags (AttrDict): AttrDict containing flags used.
+    """
     if flags.log_dir is None:
         flags.log_dir = io.make_log_dir(flags, 'GaugeModel', log_file)
         flags.restore = False
