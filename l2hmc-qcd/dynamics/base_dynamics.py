@@ -893,7 +893,7 @@ class BaseDynamics(tf.keras.Model):
         optimizer = tf.keras.optimizers.Nadam(self.lr_config.init)
         #  optimizer = tf.keras.optimizers.Adam(self.lr)
         #  if self.using_hvd:
-        if NUM_RANKS > 1:
-            optimizer = hvd.DistributedOptimizer(optimizer)
+        #  if NUM_RANKS > 1:
+        #      optimizer = hvd.DistributedOptimizer(optimizer)
 
         return optimizer
