@@ -17,44 +17,38 @@ Author: Sam Foreman (github: @saforem2)
 Date: 7/3/2020
 """
 # noqa:401
-# pylint:disable=unused-import
+# pylint:disable=too-many-instance-attributes,too-many-locals
+# pylint:disable=invalid-name,too-many-arguments,too-many-ancestors
+# pylint:disable=unused-import,unused-argument,attribute-defined-outside-init
 from __future__ import absolute_import, division, print_function
 
 import os
 import json
 import time
 
-from typing import NoReturn, Dict, Tuple, Optional
 from math import pi
+from typing import NoReturn, Optional, Tuple
 
 import numpy as np
 import tensorflow as tf
+import horovod.tensorflow as hvd
+
+import utils.file_io as io
 
 from config import (BIN_DIR, GaugeDynamicsConfig, LearningRateConfig,
-                    NetWeights, NetworkConfig, State, MonteCarloStates)
+                    MonteCarloStates, NetWeights, NetworkConfig, State)
+from lattice.gauge_lattice import GaugeLattice
 from dynamics.base_dynamics import BaseDynamics
-import utils.file_io as io
-#  from network.gauge_network import GaugeNetwork
+from utils.attr_dict import AttrDict
+from utils.seed_dict import vnet_seeds  # noqa:F401
+from utils.seed_dict import xnet_seeds  # noqa:F401
 from network.gauge_network import GaugeNetwork
 from network.gauge_conv_network import ConvolutionConfig, GaugeNetworkConv2D
-from utils.attr_dict import AttrDict
-from utils.seed_dict import vnet_seeds, xnet_seeds  # noqa:F401
-from lattice.gauge_lattice import GaugeLattice
 
-try:
-    import horovod.tensorflow as hvd
-
-    HAS_HOROVOD = True
-except ImportError:
-    HAS_HOROVOD = False
+NUM_RANKS = hvd.size()
 
 TIMING_FILE = os.path.join(BIN_DIR, 'timing_file.log')
-TFLOAT = tf.keras.backend.floatx()
-if TFLOAT == 'float32':
-    TF_FLOAT = tf.float32
-elif TFLOAT == 'float64':
-    TF_FLOAT = tf.float64
-
+TF_FLOAT = tf.keras.backend.floatx()
 
 INPUTS = Tuple[tf.Tensor, tf.Tensor]
 
@@ -84,14 +78,16 @@ def build_dynamics(flags):
     """Build dynamics using configs from FLAGS."""
     lr_config = LearningRateConfig(**dict(flags.get('lr_config', None)))
     config = GaugeDynamicsConfig(**dict(flags.get('dynamics_config', None)))
-
-    net_config = flags.get('network_config', None)
-    act_fn = ACTIVATIONS.get(net_config.pop('activation', 'relu'), 'relu')
-    net_config.update({
-        'name': 'GaugeDynamics',
-        'activation_fn': act_fn
-    })
-    net_config = NetworkConfig(**net_config)
+    net_config = NetworkConfig(**dict(flags.get('network_config', None)))
+    #  net_config = flags.get('network_config', None)
+    #  act_fn = ACTIVATIONS.get(
+    #      net_config.pop('activation_fn', 'relu'), 'relu'
+    #  )
+    #  net_config.update({
+    #      'name': 'GaugeDynamics',
+    #      #  'activation_fn': act_fn
+    #  })
+    #  net_config = NetworkConfig(**net_config)
 
     conv_config = None
     if flags.get('use_conv_net', False):
@@ -104,73 +100,6 @@ def build_dynamics(flags):
     return GaugeDynamics(flags, config, net_config, lr_config, conv_config)
 
 
-def build_dynamics_old(flags):
-    """Build dynamics using parameters from FLAGS."""
-    activation = flags.get('activation', 'relu')
-    if activation == 'tanh':
-        activation_fn = tf.nn.tanh
-    elif activation == 'leaky_relu':
-        activation_fn = tf.nn.leaky_relu
-    else:
-        activation_fn = tf.nn.relu
-
-    use_conv_net = flags.get('use_conv_net', False)
-    lattice_shape = flags.get('lattice_shape', None)
-
-    conv_config = None
-    if use_conv_net:
-        conv_config = ConvolutionConfig(
-            input_shape=lattice_shape[1:],  # Ignore batch dimension
-            filters=flags.get('filters', None),
-            sizes=flags.get('sizes', None),
-            pool_sizes=flags.get('pool_sizes', None),
-            conv_activations=flags.get('conv_activations', None),
-            conv_paddings=flags.get('conv_paddings', None),
-            use_batch_norm=flags.get('use_batch_norm', None),
-            name='ConvolutionBlock2D'
-        )
-
-    net_config = NetworkConfig(
-        name='GaugeNetwork',
-        units=flags.get('units', None),
-        activation_fn=activation_fn,
-        dropout_prob=flags.get('dropout_prob', 0.),
-    )
-
-    config = GaugeDynamicsConfig(
-        model_type='GaugeModel',
-        eps=flags.eps,
-        hmc=flags.hmc,
-        use_ncp=flags.get('use_ncp', False),
-        num_steps=flags.num_steps,
-        separate_networks=flags.get('separate_networks', False),
-    )
-
-    lr_config = LearningRateConfig(
-        lr_init=hvd.size() * flags.get('lr_init', None),
-        lr_decay_rate=flags.get('lr_decay_rate', None),
-        lr_decay_steps=flags.get('lr_decay_steps', None),
-        warmup_steps=flags.get('warmup_steps', 0),
-    )
-
-    flags = AttrDict({
-        'horovod': flags.get('horovod', False),
-        'plaq_weight': flags.get('plaq_weight', 0.),
-        'charge_weight': flags.get('charge_weight', 0.),
-        'lattice_shape': flags.get('lattice_shape', None),
-        'use_conv_net': flags.get('use_conv_net', False)
-    })
-
-    dynamics = GaugeDynamics(flags, config, net_config,
-                             lr_config, conv_config=conv_config)
-
-    return dynamics
-
-
-# pylint:disable=attribute-defined-outside-init
-# pylint:disable=too-many-instance-attributes,unused-argument
-# pylint:disable=invalid-name,too-many-locals,too-many-arguments,
-# pylint:disable=too-many-ancestors
 class GaugeDynamics(BaseDynamics):
     """Implements the dynamics engine for the L2HMC sampler."""
 
@@ -214,7 +143,48 @@ class GaugeDynamics(BaseDynamics):
             network_config=network_config,
             lr_config=lr_config,
             potential_fn=self.lattice.calc_actions,
+            should_build=False,
         )
+        self._has_trainable_params = True
+        if self.config.hmc:
+            net_weights = NetWeights(0., 0., 0., 0., 0., 0.)
+            self.config.use_ncp = False
+            self.config.separate_networks = False
+            self.xnet, self.vnet = self._build_hmc_networks()
+            if self.config.eps_fixed:
+                self._has_trainable_params = False
+        else:
+            if self.config.use_ncp:
+                net_weights = NetWeights(1., 1., 1., 1., 1., 1.)
+            else:
+                net_weights = NetWeights(0., 1., 1., 1., 1., 1.)
+
+            if self.config.separate_networks:
+                nets = self._build_separate_networks()
+                self.xnet_even = nets['xnet_even']
+                self.xnet_odd = nets['xnet_odd']
+                self.vnet = nets['vnet']
+            if self.use_conv_net:
+                self.xnet, self.vnet = self._build_conv_networks()
+            else:
+                self.xnet, self.vnet = self._build_generic_networks()
+
+        self.net_weights = self._parse_net_weights(net_weights)
+        if self._has_trainable_params:
+            self.lr_config = lr_config
+            self.lr = self._create_lr(lr_config)
+            self.optimizer = self._create_optimizer()
+        #  else:
+        #      if self.config.separate_networks:
+        #          nets = self._build_separate_networks()
+        #          self.xnet_even = nets['xnet_even']
+        #          self.xnet_odd = nets['xnet_odd']
+        #          self.vnet = nets['vnet']
+        #      if self.use_conv_net:
+        #          self.xnet, self.vnet = self._build_conv_networks()
+        #      else:
+        #          self.xnet, self.vnet = self._build_generic_networks()
+
 
     def _build(self, params, config, network_config, lr_config, **kwargs):
         self.config = config
@@ -529,7 +499,8 @@ class GaugeDynamics(BaseDynamics):
                 ploss_, qloss_ = self.calc_losses(states_, accept_prob_)
                 loss += ploss_ + qloss_
 
-        if self.using_hvd:
+        #  if self.using_hvd:
+        if NUM_RANKS > 1:
             tape = hvd.DistributedGradientTape(tape)
 
         grads = tape.gradient(loss, self.trainable_variables)
@@ -564,7 +535,7 @@ class GaugeDynamics(BaseDynamics):
         #    optimizer intialization.
         #  if self.optimizer.iterations.numpy() == 0 and self.using_hvd:
         #  if first_step and HAS_HOROVOD:
-        if self.optimizer.iterations == 0 and self.using_hvd:
+        if self.optimizer.iterations == 0 and NUM_RANKS > 1:
             hvd.broadcast_variables(self.variables, root_rank=0)
             hvd.broadcast_variables(self.optimizer.variables(), root_rank=0)
 

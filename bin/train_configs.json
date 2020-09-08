@@ -12,13 +12,13 @@
     "aux_weight": 0.0,
     "plaq_weight": 0.0,
     "charge_weight": 0.01,
-    "hmc_steps": 100,
+    "hmc_steps": 0,
     "print_steps": 1,
     "logging_steps": 10,
     "save_steps": 1000,
     "run_steps": 2000,
-    "train_steps": 100000,
-    "lattice_shape": [128, 16, 16, 2],
+    "train_steps": 1000,
+    "lattice_shape": [256, 16, 16, 2],
     "dynamics_config": {
         "eps": 0.02,
         "num_steps": 10,
@@ -29,7 +29,7 @@
     },
     "network_config": {
         "units": [128, 128, 128],
-        "activation": "relu",
+        "activation_fn": "relu",
         "dropout_prob": 0.0
     },
     "lr_config": {
@@ -44,6 +44,6 @@
         "pool_sizes": [2, 2],
         "conv_activations": ["relu", "relu"],
         "conv_paddings": ["valid", "valid"],
-        "use_batch_norm": false
+        "use_batch_norm": true
     }
 }

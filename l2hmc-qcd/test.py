@@ -1,5 +1,5 @@
 """
-train_test.py
+grain_test.py
 
 Test training on 2D U(1) model using eager execution in tensorflow.
 """
@@ -29,68 +29,63 @@ LOG_FILE = os.path.join(
     os.path.dirname(PROJECT_DIR), 'bin', 'log_dirs.txt'
 )
 
-DESCRIPTION = (
-    "Various test functions to make sure everything runs as expected."
-)
-
-TEST_FLAGS_FILE = os.path.join(BIN_DIR, 'test_args.json')
-with open(TEST_FLAGS_FILE, 'rt') as f:
-    TEST_FLAGS = json.load(f)
-
-TEST_FLAGS = AttrDict(TEST_FLAGS)
-
 
 def parse_args():
     """Method for parsing CLI flags."""
-    parser = argparse.ArgumentParser(
-        description=DESCRIPTION,
+    description = (
+        "Various test functions to make sure everything runs as expected."
     )
-    parser.add_argument('--horovod',
-                        action='store_true',
-                        required=False,
+
+    parser = argparse.ArgumentParser(
+        description=description,
+    )
+    parser.add_argument('--horovod', action='store_true',
                         help=("""Running with Horovod."""))
 
-    parser.add_argument('--test_all',
-                        action='store_true',
-                        required=False,
+    parser.add_argument('--test_all', action='store_true',
                         help=("""Run all tests."""))
 
-    parser.add_argument('--test_separate_networks',
-                        action='store_true',
-                        required=False,
-                        help=("""Test `--separate_networks` specifically."""))
+    parser.add_argument('--test_separate_networks', action='store_true',
+                        help="Test `--separate_networks` specifically.")
 
-    parser.add_argument('--test_single_network',
-                        action='store_true',
-                        required=False,
-                        help=("""Test `--single_network` specifically."""))
+    parser.add_argument('--test_single_network', action='store_true',
+                        help="Test `--single_network` specifically.")
 
-    parser.add_argument('--test_hmc_run',
-                        action='store_true',
-                        required=False,
-                        help=("""Test HMC inference specifically."""))
+    parser.add_argument('--test_conv_net', action='store_true',
+                        help="Test conv. nets specifically.")
 
-    parser.add_argument('--test_inference_from_model',
-                        action='store_true',
-                        required=False,
-                        help=("""Test running inference from saved
-                              (trained) model specifically."""))
+    parser.add_argument('--test_hmc_run', action='store_true',
+                        help="Test HMC inference specifically.")
 
-    parser.add_argument('--test_resume_training',
-                        action='store_true',
-                        required=False,
-                        help=("""Test resuming training from checkpoint. Must
-                              specify `--log_dir`."""))
+    parser.add_argument('--test_inference_from_model', action='store_true',
+                        help=("Test running inference from saved "
+                              "(trained) model specifically."))
 
-    parser.add_argument('--log_dir',
-                        default=None,
-                        type=str,
-                        required=False,
-                        help=("""`log_dir` from which to load saved model for
-                              running inference on."""))
+    parser.add_argument('--test_resume_training', action='store_true',
+                        help=("Test resuming training from checkpoint. "
+                              "Must specify `--log_dir`."""))
+
+    parser.add_argument('--log_dir', default=None, type=str,
+                        help=("`log_dir` from which to load saved model "
+                              "for running inference on."""))
     args = parser.parse_args()
 
     return args
+
+
+def parse_test_configs(test_configs_file=None):
+    if test_configs_file is None:
+        test_configs_file = os.path.join(BIN_DIR, 'test_configs.json')
+
+    with open(test_configs_file, 'rt') as f:
+        test_flags = json.load(f)
+
+    test_flags = AttrDict(dict(test_flags))
+    for key, val in test_flags.items():
+        if isinstance(val, dict):
+            test_flags[key] = AttrDict(val)
+
+    return test_flags
 
 
 def catch_exception(fn):
@@ -128,39 +123,53 @@ def test_transition_kernels(dynamics, x, beta, training=None):
 
 
 @timeit(out_file=None)
-def test_hmc_run(args: AttrDict):
+def test_hmc_run(flags: AttrDict):
     """Testing generic HMC."""
-    hmc_args = AttrDict({
-        'hmc': True,
-        'log_dir': None,
-        'horovod': args.get('horovod', False),
-        'beta': args.get('beta', 1.),
-        'eps': args.get('eps', 0.1),
-        'num_steps': args.get('num_steps', 2),
-        'run_steps': args.get('run_steps', 1000),
-        'plaq_weight': args.get('plaq_weight', 10.),
-        'charge_weight': args.get('charge_weight', 0.1),
-        'lattice_shape': (128, 16, 16, 2),
-    })
+    flags.dynamics_config['hmc'] = True
     hmc_dir = os.path.join(os.path.dirname(PROJECT_DIR),
                            'gauge_logs_eager', 'test', 'hmc_runs')
-    dynamics, run_data, x = run_hmc(hmc_args, hmc_dir=hmc_dir)
+    dynamics, run_data, x = run_hmc(flags, hmc_dir=hmc_dir)
 
     return {
         'x': x,
         'dynamics': dynamics,
-        'flags': hmc_args,
+        'flags': flags,
         'run_data': run_data,
         'tk_diffs': None,
     }
 
 
 @timeit(out_file=None)
+def test_conv_net(flags: AttrDict):
+    """Test convolutional networks."""
+    flags.use_conv_net = True
+    flags.conv_config = ConvolutionConfig(
+        input_shape=flags.lattice_shape[1:],
+        filters=[16, 32],
+        sizes=[2, 2],
+        pool_sizes=[2, 2],
+        conv_activations=['relu', 'relu'],
+        conv_paddings=['valid', 'valid'],
+        use_batch_norm=True
+    )
+    x, dynamics, train_data, flags = train(flags, log_file=LOG_FILE)
+    dynamics, run_data, x = run(dynamics, flags, x=x)
+
+    return AttrDict({
+        'x': x,
+        'flags': flags,
+        'log_dir': flags.log_dir,
+        'dynamics': dynamics,
+        'run_data': run_data,
+        'train_data': train_data,
+    })
+
+
+@timeit(out_file=None)
 def test_single_network(flags: AttrDict):
     """Test training on single network."""
-    flags.separate_networks = False
-    x, dynamics, train_data, flags = train(flags,
-                                           log_file=LOG_FILE)
+    flags.dynamics_config.separate_networks = False
+    x, dynamics, train_data, flags = train(flags, log_file=LOG_FILE)
     beta = flags.get('beta', 1.)
     tk_diffs = test_transition_kernels(dynamics, x, beta, training=False)
     dynamics, run_data, x = run(dynamics, flags, x=x)
@@ -181,7 +190,7 @@ def test_separate_networks(flags: AttrDict):
     """Test training on separate networks."""
     flags.hmc_steps = 0
     flags.log_dir = None
-    flags.separate_networks = True
+    flags.dynamics_config.separate_networks = True
     flags.compile = False
     x, dynamics, train_data, flags = train(flags,
                                            log_file=LOG_FILE)
@@ -198,22 +207,6 @@ def test_separate_networks(flags: AttrDict):
         'train_data': train_data,
         'tk_diffs': tk_diffs,
     })
-
-
-@timeit(out_file=None)
-def test_conv_networks(flags: AttrDict):
-    """Test training using ConvNets."""
-    flags.use_conv_net = True
-    flags.conv_config = ConvolutionConfig(
-        input_shape=flags.get('lattice_shape', None)[1:],
-        filters=[4, 8],
-        sizes=[2, 2],
-        pool_sizes=[2, 2],
-        conv_activations=['relu', 'relu'],
-        conv_paddings=['valid', 'valid'],
-        use_batch_norm=True,
-        name='ConvolutionBlock2D',
-    )
 
 
 @timeit(out_file=None)
@@ -243,29 +236,33 @@ def test_resume_training(log_dir: str):
 
 
 @timeit(out_file=None)
-def test(flags: AttrDict):
+def test(args: AttrDict):
     """Run tests."""
-    flags.compile = True
+    flags = parse_test_configs()
     single_net_out = test_single_network(flags)
     log_dir = single_net_out.log_dir
     _ = test_resume_training(log_dir)
     _ = test_separate_networks(flags)
     _ = test_hmc_run(flags)
+    _ = test_conv_net(flags)
 
 
 @timeit(out_file=None)
-def main(args):
+def main(args, flags=None):
     """Main method."""
+    if flags is None:
+        flags = parse_test_configs()
+
     if args.test_hmc_run:
-        _ = test_hmc_run(TEST_FLAGS)
+        _ = test_hmc_run(flags)
 
     if args.test_separate_networks:
-        _ = test_separate_networks(TEST_FLAGS)
+        _ = test_separate_networks(flags)
 
     if args.test_single_network:
-        TEST_FLAGS.hmc_steps = 0
-        TEST_FLAGS.hmc_start = False
-        _ = test_single_network(TEST_FLAGS)
+        flags.hmc_steps = 0
+        flags.hmc_start = False
+        _ = test_single_network(flags)
 
     if args.test_resume_training:
         _ = test_resume_training(args.log_dir)
@@ -274,13 +271,13 @@ def main(args):
         if args.log_dir is None:
             raise ValueError('`--log_dir` must be specified.')
 
-        TEST_FLAGS.log_dir = args.log_dir
-        _, _ = load_and_run(TEST_FLAGS)
+        flags.log_dir = args.log_dir
+        _, _ = load_and_run(flags)
 
 
 if __name__ == '__main__':
-    FLAGS = parse_args()
-    if FLAGS.horovod:
-        TEST_FLAGS.horovod = True
+    ARGS = parse_args()
+    if ARGS.horovod:
+        ARGS.horovod = True
 
-    _ = test(TEST_FLAGS) if FLAGS.test_all else main(FLAGS)
+    _ = test(ARGS) if ARGS.test_all else main(ARGS)

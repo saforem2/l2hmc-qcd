@@ -57,19 +57,18 @@ def restore_from_train_flags(args):
     """Populate entries in `args` using the training `FLAGS` from `log_dir`."""
     train_dir = os.path.join(args.log_dir, 'training')
     flags = AttrDict(dict(io.loadz(os.path.join(train_dir, 'FLAGS.z'))))
-    flags.horovod = False
-    if args.get('lattice_shape', None) is None:
-        args.lattice_shape = flags.lattice_shape
-    if args.get('beta', None) is None:
-        args.beta = flags.beta_final
-    if args.get('num_steps', None) is None:
-        args.num_steps = flags.num_steps
-
-    flags.update({
-        'beta': args.beta,
-        'num_steps': args.num_steps,
-        'lattice_shape': args.lattice_shape,
-    })
+    #  if args.get('lattice_shape', None) is None:
+    #      args.lattice_shape = flags.lattice_shape
+    #  if args.get('beta', None) is None:
+    #      args.beta = flags.beta_final
+    #  if args.get('num_steps', None) is None:
+    #      args.num_steps = flags.num_steps
+    #
+    #  flags.update({
+    #      'beta': args.beta,
+    #      'num_steps': args.num_steps,
+    #      'lattice_shape': args.lattice_shape,
+    #  })
 
     return flags
 
@@ -95,25 +94,25 @@ def run_hmc(
     if not IS_CHIEF:
         return None, None, None
 
-    if args.log_dir is not None:
-        args = restore_from_train_flags(args)
+    #  if args.log_dir is not None:
+    #      args = restore_from_train_flags(args)
 
-    args.update({
-        'hmc': True,
-        'units': [],
-        'lr_init': 0,
-        'restore': False,
-        'use_ncp': False,
-        'horovod': False,
-        'eps_fixed': True,
-        'warmup_steps': 0,
-        'dropout_prob': 0.,
-        'lr_decay_steps': None,
-        'lr_decay_rate': None,
-        'separate_networks': False,
-    })
-
-    io.print_flags(args)
+    #  args.update({
+    #      'hmc': True,
+    #      'units': [],
+    #      'lr_init': 0,
+    #      'restore': False,
+    #      'use_ncp': False,
+    #      'horovod': False,
+    #      'eps_fixed': True,
+    #      'warmup_steps': 0,
+    #      'dropout_prob': 0.,
+    #      'lr_decay_steps': None,
+    #      'lr_decay_rate': None,
+    #      'separate_networks': False,
+    #  })
+    #
+    #  io.print_flags(args)
 
     if hmc_dir is None:
         root_dir = os.path.dirname(PROJECT_DIR)
@@ -175,6 +174,7 @@ def load_and_run(
 
     return dynamics, run_data, x
 
+
 @timeit(out_file=None)
 def run(
         dynamics: GaugeDynamics,
@@ -187,7 +187,7 @@ def run(
         return None, None, None
 
     if runs_dir is None:
-        if args.hmc:
+        if dynamics.config.hmc:
             runs_dir = os.path.join(args.log_dir, 'inference_hmc')
         else:
             runs_dir = os.path.join(args.log_dir, 'inference')
@@ -212,7 +212,7 @@ def run(
     run_data, x, _ = run_dynamics(dynamics, args, x, save_x=False)
 
     run_data.flush_data_strs(log_file, mode='a')
-    run_data.write_to_csv(args.log_dir, run_dir, hmc=args.hmc)
+    run_data.write_to_csv(args.log_dir, run_dir, hmc=dynamics.config.hmc)
     io.save_inference(run_dir, run_data)
     if args.get('save_run_data', True):
         run_data.save_data(data_dir)
@@ -302,10 +302,10 @@ def run_dynamics(
         return x, metrics
 
     steps = tf.range(flags.run_steps, dtype=tf.int64)
-    ctup = (CBARS['blue'], CBARS['reset'])
+    ctup = (CBARS['red'], CBARS['green'], CBARS['red'], CBARS['reset'])
     steps = tqdm(steps, desc='running', unit='step',
                  #  file=DummyTqdmFile(sys.stdout),
-                 bar_format=("{l_bar}%s{bar}%s{r_bar}" % ctup))
+                 bar_format=("%s{l_bar}%s{bar}%s{r_bar}%s" % ctup))
 
     for step in steps:
         x, metrics = timed_step(x, beta)

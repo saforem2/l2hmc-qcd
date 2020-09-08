@@ -1,9 +1,12 @@
 """
 file_io.py
 """
+# pylint:disable=too-many-branches, too-many-statements
+# pylint:disable=too-many-locals,invalid-name,too-many-locals
 import os
 import sys
 import time
+import json
 import pickle
 import typing
 import logging
@@ -18,8 +21,6 @@ from tqdm.auto import tqdm
 from config import PROJECT_DIR
 from utils.attr_dict import AttrDict
 
-# pylint:disable=too-many-branches, too-many-statements
-# pylint:disable=too-many-locals,invalid-name too-many-locals
 RANK = hvd.rank()
 IS_CHIEF = (RANK == 0)
 
@@ -40,6 +41,8 @@ LOG_LEVELS = {
 }
 
 logging.getLogger('tensorflow').setLevel(logging.ERROR)
+logging.getLogger('arviz').setLevel(logging.ERROR)
+
 if IS_CHIEF:
     logging.basicConfig(
         level=logging.INFO,
@@ -189,20 +192,18 @@ def save_params(params: dict, out_dir: str, name: str = None):
     savez(params, zfile, name=name)
 
 
-def save_dict(d: dict, out_dir: str, name: str):
-    """Save dictionary to `out_dir` as both `.z` and `.txt` files."""
-    if RANK != 0 or d is None:
+def save_dict(d: dict, out_dir: str, name: str = None):
+    """Save dictionary `d` to `out_dir` as both `.z` and `.txt` files."""
+    if RANK != 0:
         return
 
-    if isinstance(d, AttrDict):
-        d = dict(d)
-
     check_else_make_dir(out_dir)
+    name = 'dict' if name is None else name
 
     zfile = os.path.join(out_dir, f'{name}.z')
-    txt_file = os.path.join(out_dir, f'{name}.txt')
-    log('\n'.join([f'Saving {name} to:', f'  {zfile}', f'  {txt_file}']))
     savez(d, zfile, name=name)
+
+    txt_file = os.path.join(out_dir, f'{name}.txt')
     with open(txt_file, 'w') as f:
         for key, val in d.items():
             f.write(f'{key}: {val}\n')
@@ -344,7 +345,7 @@ def parse_configs(flags):
     qw = flags.get('charge_weight', None)
     pw = flags.get('plaq_weight', None)
     aw = flags.get('aux_weight', None)
-    act = net_config.get('activation', None)
+    act = net_config.get('activation_fn', None)
     if qw > 0:
         fstr += f'_qw{qw}'
     if pw > 0:
@@ -382,97 +383,8 @@ def parse_configs(flags):
     return fstr.replace('.', '')
 
 
-def get_log_dir_fstr(flags):
-    """Parse FLAGS and create unique fstr for `log_dir`."""
-    hmc = flags.get('hmc', False)
-    #  batch_size = flags.get('batch_size', None)
-    num_steps = flags.get('num_steps', None)
-    beta_init = flags.get('beta_init', None)
-    beta_final = flags.get('beta_final', None)
-    eps = flags.get('eps', None)
-    #  space_size = flags.get('space_size', None)
-    #  time_size = flags.get('time_size', None)
-    lattice_shape = flags.get('lattice_shape', None)
-    train_steps = flags.get('train_steps', int(1e3))
-    #  network_type = flags.get('network_type', 'GaugeNetwork')
-    charge_weight = flags.get('charge_weight', 0.)
-    plaq_weight = flags.get('plaq_weight', 0.)
-    eps_fixed = flags.get('eps_fixed', False)
-    dropout_prob = flags.get('dropout_prob', 0.)
-    clip_val = flags.get('clip_val', 0.)
-    aux_weight = flags.get('aux_weight', 0.)
-    activation = flags.get('activation', 'relu')
-    separate_networks = flags.get('separate_networks', False)
-    using_ncp = flags.get('use_ncp', False)
-    zero_init = flags.get('zero_init', False)
-    use_conv_net = flags.get('use_conv_net', False)
-
-    fstr = ''
-
-    if hmc:
-        fstr += 'HMC_'
-        eps_fixed = True
-    else:
-        if train_steps is not None and train_steps < 5000:
-            fstr += 'DEBUG_'
-
-    if lattice_shape is not None:
-        fstr += f'L{lattice_shape[1]}_b{lattice_shape[0]}'
-
-    #  else:
-    #      if space_size is not None:
-    #          fstr += f'L{time_size}'
-    #
-    #      if batch_size is not None:
-    #          fstr += f'_b{batch_size}'
-
-    if num_steps is not None:
-        fstr += f'_lf{num_steps}'
-
-    if charge_weight > 0:
-        fstr += f'_qw{charge_weight}'.replace('.', '')
-
-    if plaq_weight > 0:
-        fstr += f'_pw{plaq_weight}'.replace('.', '')
-
-    if aux_weight > 0:
-        fstr += f'_aw{aux_weight}'.replace('.', '')
-
-    if activation != 'relu':
-        fstr += f'_act{activation}'
-
-    fstr += f'_bi{beta_init:.3g}_bf{beta_final:.3g}'.replace('.', '')
-
-    if dropout_prob > 0:
-        fstr += f'_dp{dropout_prob}'.replace('.', '')
-
-    if eps_fixed:
-        fstr += f'_eps{eps:.3g}'.replace('.', '')
-
-    if clip_val > 0:
-        fstr += f'_clip{clip_val}'.replace('.', '')
-
-    #  if network_type != 'GaugeNetwork':
-    #      fstr += f'_{network_type}'
-
-    if separate_networks:
-        fstr += '_sepNets'
-
-    if using_ncp:
-        fstr += '_NCProj'
-
-    if zero_init:
-        fstr += '_zero_init'
-
-    if use_conv_net:
-        fstr += '_ConvNets'
-
-    return fstr
-
-
 # pylint:disable=too-many-arguments
-def make_log_dir(FLAGS, model_type=None, log_file=None,
-                 base_dir=None, eager=True):
+def make_log_dir(FLAGS, model_type=None, log_file=None, root_dir=None):
     """Automatically create and name `log_dir` to save model data to.
 
     The created directory will be located in `logs/YYYY_M_D /`, and will have
@@ -486,7 +398,6 @@ def make_log_dir(FLAGS, model_type=None, log_file=None,
     NOTE: If log_dir does not already exist, it is created.
     """
     model_type = 'GaugeModel' if model_type is None else model_type
-    #  fstr = get_log_dir_fstr(FLAGS)
     fstr = parse_configs(FLAGS)
 
     now = datetime.datetime.now()
@@ -494,10 +405,11 @@ def make_log_dir(FLAGS, model_type=None, log_file=None,
     dstr = now.strftime('%Y-%m-%d-%H%M%S')
     run_str = f'{fstr}-{dstr}'
 
-    root_dir = os.path.dirname(PROJECT_DIR)
+    if root_dir is None:
+        root_dir = os.path.dirname(PROJECT_DIR)
+
     dirs = [root_dir]
-    if eager:
-        dirs.append('gauge_logs_eager')
+    dirs.append('gauge_logs_eager')
 
     if fstr.startswith('DEBUG'):
         dirs.append('test')

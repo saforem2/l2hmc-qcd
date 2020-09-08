@@ -22,10 +22,11 @@ from __future__ import absolute_import, division, print_function
 import os
 import time
 
-from typing import Callable, Union, List, Tuple
+from typing import Callable, Union, List, Tuple, Optional
 
 import numpy as np
 import tensorflow as tf
+import horovod.tensorflow as hvd
 
 import utils.file_io as io
 
@@ -40,12 +41,8 @@ from utils.file_io import timeit  # noqa:F401
 from utils.seed_dict import vnet_seeds  # noqa:F401
 from utils.seed_dict import xnet_seeds  # noqa:F401
 
-try:
-    import horovod.tensorflow as hvd
-except ImportError:
-    pass
 
-
+NUM_RANKS = hvd.size()
 TIMING_FILE = os.path.join(BIN_DIR, 'timing_file.log')
 
 
@@ -68,6 +65,7 @@ class BaseDynamics(tf.keras.Model):
             potential_fn: Callable[[tf.Tensor], tf.Tensor],
             lr_config: LearningRateConfig = None,
             normalizer: Callable[[tf.Tensor], tf.Tensor] = None,
+            should_build: Optional[bool] = True,
             name: str = 'Dynamics',
     ):
         """Initialization method.
@@ -81,34 +79,33 @@ class BaseDynamics(tf.keras.Model):
         """
         super(BaseDynamics, self).__init__(name=name)
         self._model_type = config.get('model_type', 'BaseDynamics')
-
-        #  self.params = params
-        #  self.config = config
-        #  self.net_config = network_config
-        self.potential_fn = potential_fn
-        self.normalizer = normalizer if normalizer is not None else identity
-        self._build(params, config, network_config, lr_config)
-
-    def _build(self, params, config, network_config, lr_config, **kwargs):
+        self.params = params
         self.config = config
         self.net_config = network_config
-        self.params = self._parse_params(params)
+        self.potential_fn = potential_fn
+
+        self.xdim = params.get('xdim', None)
+        self.clip_val = params.get('clip_val', 0.)
+        self.aux_weight = params.get('aux_weight', 0.)
+        self.batch_size = params.get('batch_size', None)
+
+        self.x_shape = (self.batch_size, self.xdim)
         self.eps = self._build_eps(use_log=False)
         self.masks = self._build_masks()
-        self.xnet, self.vnet = self._build_networks()
-        #  if not hasattr(self, 'xnet') and not hasattr(self, 'vnet'):
-        #      self.xnet, self.vnet = self._build_networks()
-
-        #  self.xnet, self.vnet = self._build_networks()
-        #  self.t_arr = self._build_time(tile=tf.shape(self.x_shape)[0])
-        #  self._construct_time()
-        if self.config.hmc:
-            self.net_weights = NetWeights(*(6 * [0.]))
-
-        if self._has_trainable_params:
-            self.lr_config = lr_config
-            self.lr = self._create_lr(lr_config)
-            self.optimizer = self._create_optimizer()
+        self.normalizer = normalizer if normalizer is not None else identity
+        if should_build:
+            self._has_trainable_params = True
+            if self.config.hmc:
+                self.net_weights = NetWeights(0., 0., 0., 0., 0., 0.)
+                self.xnet, self.vnet = self._build_hmc_networks()
+                if self.config.eps_fixed:
+                    self._has_trainable_params = False
+            else:
+                self.xnet, self.vnet = self._build_networks()
+            if self._has_trainable_params:
+                self.lr_config = lr_config
+                self.lr = self._create_lr(lr_config)
+                self.optimizer = self._create_optimizer()
 
     def save_config(self, config_dir):
         """Helper method for saving configuration objects."""
@@ -117,11 +114,21 @@ class BaseDynamics(tf.keras.Model):
         io.save_dict(self.lr_config, config_dir, name='lr_config')
         io.save_dict(self.params, config_dir, name='dynamics_params')
 
+    def _parse_net_weights(self, net_weights):
+        self._xsw = net_weights.x_scale
+        self._xtw = net_weights.x_translation
+        self._xqw = net_weights.x_transformation
+        self._vsw = net_weights.v_scale
+        self._vtw = net_weights.v_translation
+        self._vqw = net_weights.v_transformation
+
+        return net_weights
+
     def _parse_params(self, params, net_weights=None):
         """Set instance attributes from `params`."""
         self.xdim = params.get('xdim', None)
         self.batch_size = params.get('batch_size', None)
-        self.using_hvd = params.get('horovod', False)
+        #  self.using_hvd = params.get('horovod', False)
         self.x_shape = (self.batch_size, self.xdim)
         self.clip_val = params.get('clip_val', 0.)
         self.aux_weight = params.get('aux_weight', 0.)
@@ -148,10 +155,8 @@ class BaseDynamics(tf.keras.Model):
         params = AttrDict({
             'xdim': self.xdim,
             'batch_size': self.batch_size,
-            'using_hvd': self.using_hvd,
             'x_shape': self.x_shape,
             'clip_val': self.clip_val,
-            'net_weights': self.net_weights,
         })
 
         return params
@@ -884,13 +889,11 @@ class BaseDynamics(tf.keras.Model):
 
     def _create_optimizer(self):
         """Create the optimizer to be used for backpropagating gradients."""
-        #  if tf.executing_eagerly():
-        #      return tf.keras.optimizers.Adam(self.lr)
-        #
         #  optimizer = tf.compat.v1.train.AdamOptimizer(self.lr)
         optimizer = tf.keras.optimizers.Nadam(self.lr_config.init)
         #  optimizer = tf.keras.optimizers.Adam(self.lr)
-        if self.using_hvd:
+        #  if self.using_hvd:
+        if NUM_RANKS > 1:
             optimizer = hvd.DistributedOptimizer(optimizer)
 
         return optimizer

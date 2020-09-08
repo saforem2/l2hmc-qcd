@@ -11,6 +11,7 @@ from __future__ import absolute_import, division, print_function
 
 
 from typing import Callable, List, Optional, Union
+from config import NetworkConfig
 
 import tensorflow as tf
 
@@ -19,60 +20,20 @@ from tensorflow.keras import layers
 
 from utils.attr_dict import AttrDict
 
+ACTIVATIONS = {
+    'tanh': tf.keras.activations.tanh,
+    'relu': tf.keras.activations.relu,
+    'linear': tf.keras.activations.linear,
+}
 
-class ConvolutionBlock2D(layers.Layer):
-    """Implements a block consisting of: 2 x [Conv2D, MaxPooling2D]."""
-    def __init__(                # pylint:disable=too-many-arguments
-            self,
-            input_shape: tuple,  # (N, H, W, C)
-            filters: tuple,      # number of filters in layers 1, 2: (n1, n2)
-            sizes: tuple,        # ^ sizes: [x, y] (square) or [(x, y), (u, v)]
-            pool_sizes: tuple = None,      # MaxPool sizes (same as ^)
-            activations: str = None,       # activation function to use
-            paddings: str = None,          # Padding to use 'valid' or 'same'
-            use_batch_norm: bool = False,  # Use BatchNorm layer?
-            **kwargs,
-    ):
-        super(ConvolutionBlock2D, self).__init__(**kwargs)
-        if pool_sizes is None:
-            pool_sizes = 2 * [(2, 2)]
-        if activations is None:
-            activations = 2 * ['relu']
-        if isinstance(activations, str):
-            activations = 2 * [activations]
-        if isinstance(paddings, str):
-            paddings = 2 * [paddings]
 
-        self.conv1 = layers.Conv2D(
-            filters=filters[0],
-            kernel_size=sizes[0],
-            activation=activations[0],
-            input_shape=input_shape,
-            padding=paddings[0],
-        )
-        self.pool1 = layers.MaxPooling2D(pool_sizes[0])
+def vs_init(factor):
+    return tf.keras.initializers.VarianceScaling(
+        mode='fan_in',
+        scale=2.*factor,
+        distribution='truncated_normal',
+    )
 
-        self.conv2 = layers.Conv2D(
-            filters=filters[1],
-            kernel_size=sizes[1],
-            activation=activations[1],
-            padding=paddings[0],
-        )
-        self.pool2 = layers.MaxPooling2D(pool_sizes[1])
-
-        self.flatten = layers.Flatten()
-
-        self._use_batch_norm = use_batch_norm
-        if use_batch_norm:
-            self.batch_norm = layers.BatchNormalization(axis=-1)
-
-    def call(self, inputs, training=None, **kwargs):
-        inputs = self.pool1(self.conv1(inputs))
-        inputs = self.flatten(self.pool2(self.conv2(inputs)))
-        if self._use_batch_norm:
-            inputs = self.batch_norm(inputs, training=training)
-
-        return inputs
 
 # pylint:disable=arguments-differ
 class ConcatenatedDense(layers.Layer):
@@ -80,28 +41,33 @@ class ConcatenatedDense(layers.Layer):
     def __init__(
             self,
             units: int,
-            kernel_initializer: Union[Callable, str] = 'glorot_uniform',
+            kernel_initializer: Union[Callable, str] = vs_init(1.),
             **kwargs
     ):
         super(ConcatenatedDense, self).__init__(**kwargs)
         self._name = kwargs.get('name', 'ConcatenatedDense')
-        self.dense_x = layers.Dense(
-            units=units, kernel_initializer=kernel_initializer,
-        )
-        self.dense_y = layers.Dense(
-            units=units, kernel_initializer=kernel_initializer,
-        )
+        self.layer = layers.Dense(units=units,
+                                  kernel_initializer=kernel_initializer)
+        #  self.dense_x = layers.Dense(
+        #      units=units, kernel_initializer=kernel_initializer,
+        #  )
+        #  self.dense_y = layers.Dense(
+        #      units=units, kernel_initializer=kernel_initializer,
+        #  )
 
     def call(self, phi):
         """Call the layer (forward-pass)."""
-        x = self.dense_x(tf.math.cos(phi))
-        y = self.dense_y(tf.math.sin(phi))
+        phi = tf.concat([tf.math.cos(phi), tf.math.sin(phi)], axis=-1)
+        return self.layer(phi)
+        #  x = self.dense_x(tf.math.cos(phi))
+        #  y = self.dense_y(tf.math.sin(phi))
         #  xy_inputs = tf.squeeze(
         #      tf.concat([tf.cos(inputs), tf.sin(inputs)], axis=-1)
         #  )
         #  return self.dense(xy_inputs)
         #  return tf.math.angle(x + 1j * y)
-        return tf.math.angle(tf.complex(x, y))
+        #  return tf.math.angle(tf.complex(x, y))
+        return self.layer(phi)
 
 
 class ScaledTanhLayer(layers.Layer):
@@ -125,31 +91,6 @@ class ScaledTanhLayer(layers.Layer):
         return tf.exp(self.coeff) * out
 
 
-class NetworkConfig(AttrDict):
-    """Configuration object for `GaugeNetwork` object."""
-    def __init__(
-            self,
-            units: List,
-            name: Optional[str] = None,
-            dropout_prob: Optional[float] = 0.,
-            activation_fn: Optional[Callable] = tf.nn.relu
-    ):
-        super(NetworkConfig, self).__init__(
-            name=name,
-            units=units,
-            dropout_prob=dropout_prob,
-            activation_fn=activation_fn,
-        )
-
-
-def vs_init(factor):
-    return tf.keras.initializers.VarianceScaling(
-        mode='fan_in',
-        scale=2.*factor,
-        distribution='truncated_normal',
-    )
-
-
 # pylint:disable=too-many-arguments, too-many-instance-attributes,
 # pylint:disable=too-many-ancestors
 class GaugeNetwork(layers.Layer):
@@ -159,51 +100,61 @@ class GaugeNetwork(layers.Layer):
             config: NetworkConfig,
             xdim: int,
             factor: Optional[float] = 1.,
+            kernel_initializer: Optional[Union[str, Callable]] = None,
             **kwargs,
     ):
         super(GaugeNetwork, self).__init__(**kwargs)
         self.xdim = xdim
         self.factor = factor
         self._config = config
-        self.activation = config.activation_fn
+        self._kernel_initializer = kernel_initializer
+        xk_init = self._get_kern_init(factor/3.)
+        vk_init = self._get_kern_init(1./3.)
+        tk_init = self._get_kern_init(1./3.)
+        h1_init = self._get_kern_init(1.)
+        h2_init = self._get_kern_init(1.)
+
+        sk_init = self._get_kern_init(0.001)
+        tk_init = self._get_kern_init(0.001)
+        qk_init = self._get_kern_init(0.001)
+
         name = kwargs.get('name', 'GaugeNetwork')
         with tf.name_scope(name):
+            self.activation = ACTIVATIONS.get(config.activation_fn,
+                                              ACTIVATIONS['relu'])
             if config.dropout_prob > 0:
                 self.dropout = layers.Dropout(config.dropout_prob)
 
-            kwargs = {
-                'units': config.units[0],
-            }
-            self.x_layer = layers.Dense(name='x_layer', units=config.units[0],
-                                        kernel_initializer=vs_init(factor/3.))
-            self.v_layer = layers.Dense(name='v_layer', units=config.units[0],
-                                        kernel_initializer=vs_init(1./3.))
-            self.t_layer = layers.Dense(name='t_layer', units=config.units[0],
-                                        kernel_initializer=vs_init(1./3.))
+            self.x_layer = layers.Dense(name='x_layer',
+                                        units=config.units[0],
+                                        kernel_initializer=xk_init)
+            self.v_layer = layers.Dense(name='v_layer',
+                                        units=config.units[0],
+                                        kernel_initializer=vk_init)
+            self.t_layer = layers.Dense(name='t_layer',
+                                        units=config.units[0],
+                                        kernel_initializer=tk_init)
             self.h_layer1 = layers.Dense(name='h_layer1',
                                          units=config.units[1],
-                                         kernel_initializer=vs_init(1.))
+                                         kernel_initializer=h1_init)
             self.h_layer2 = layers.Dense(name='h_layer2',
                                          units=config.units[2],
-                                         kernel_initializer=vs_init(1.))
-
-            #  self.hidden_layers = [
-            #      layers.Dense(name=f'h_layer{i}', units=n)
-            #      for i, n in enumerate(config.units[1:])
-            #  ]
+                                         kernel_initializer=h2_init)
 
             self.scale_layer = ScaledTanhLayer(
-                name='scale', units=xdim,
-                kernel_initializer=vs_init(0.001),
+                name='scale', units=xdim, kernel_initializer=sk_init,
             )
             self.translation_layer = layers.Dense(
-                name='translation', units=xdim,
-                kernel_initializer=vs_init(0.001)
+                name='translation', units=xdim, kernel_initializer=tk_init,
             )
             self.transformation_layer = ScaledTanhLayer(
-                name='transformation', units=xdim,
-                kernel_initializer=vs_init(0.001),
+                name='transformation', units=xdim, kernel_initializer=qk_init,
             )
+
+    def _get_kern_init(self, factor=1.):
+        if self._kernel_initializer == 'zeros':
+            return tf.keras.initializers.Zeros
+        return vs_init(factor)
 
     def call(self, inputs, training=None):
         """Call the network (forward-pass)."""
