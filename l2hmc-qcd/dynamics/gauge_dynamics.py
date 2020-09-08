@@ -150,6 +150,8 @@ class GaugeDynamics(BaseDynamics):
             net_weights = NetWeights(0., 0., 0., 0., 0., 0.)
             self.config.use_ncp = False
             self.config.separate_networks = False
+            self.use_conv_net = False
+            self.conv_config = None
             self.xnet, self.vnet = self._build_hmc_networks()
             if self.config.eps_fixed:
                 self._has_trainable_params = False
@@ -160,6 +162,7 @@ class GaugeDynamics(BaseDynamics):
                 net_weights = NetWeights(0., 1., 1., 1., 1., 1.)
 
             if self.config.separate_networks:
+                self.use_conv_net = False
                 nets = self._build_separate_networks()
                 self.xnet_even = nets['xnet_even']
                 self.xnet_odd = nets['xnet_odd']
@@ -184,7 +187,6 @@ class GaugeDynamics(BaseDynamics):
         #          self.xnet, self.vnet = self._build_conv_networks()
         #      else:
         #          self.xnet, self.vnet = self._build_generic_networks()
-
 
     def _build(self, params, config, network_config, lr_config, **kwargs):
         self.config = config
@@ -342,7 +344,7 @@ class GaugeDynamics(BaseDynamics):
         io.save_dict(self.net_config, config_dir, name='network_config')
         io.save_dict(self.lr_config, config_dir, name='lr_config')
         io.save_dict(self.params, config_dir, name='dynamics_params')
-        if self.use_conv_net:
+        if self.conv_config is not None and self.use_conv_net:
             io.save_dict(self.conv_config, config_dir, name='conv_config')
 
     def get_config(self):

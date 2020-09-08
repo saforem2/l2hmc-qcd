@@ -1,7 +1,7 @@
 {
     "log_dir": null,
     "profiler": true,
-    "zero_init": true,
+    "zero_init": false,
     "use_conv_net": true,
     "gauge_eq_masks": true,
     "md_steps": 0,
@@ -17,7 +17,7 @@
     "logging_steps": 10,
     "save_steps": 1000,
     "run_steps": 2000,
-    "train_steps": 1000,
+    "train_steps": 5,
     "lattice_shape": [256, 16, 16, 2],
     "dynamics_config": {
         "eps": 0.02,
