@@ -90,7 +90,7 @@ class WarmupExponentialDecay(LearningRateSchedule):
 
     def __init__(
             self,
-            LearningRateConfig: LearningRateConfig,
+            lr_config: LearningRateConfig,
             staircase: bool = True,
             name: str = 'WarmupExponentialDecay',
     ):

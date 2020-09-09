@@ -108,7 +108,7 @@ def run_hmc(
     #      'warmup_steps': 0,
     #      'dropout_prob': 0.,
     #      'lr_decay_steps': None,
-    #      'lr_decay_rate': None,
+    #      'decay_rate': None,
     #      'separate_networks': False,
     #  })
     #

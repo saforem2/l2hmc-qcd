@@ -108,6 +108,29 @@ class GaugeNetwork(layers.Layer):
         self.factor = factor
         self._config = config
         self._kernel_initializer = kernel_initializer
+        #  if kernel_initializer is None:
+        #      def vs_init(scale):
+        #          return tf.keras.initializers.VarianceScaling(scale)
+        #
+        #      kinits = AttrDict({
+        #          'x': vs_init(factor / 3.),
+        #          'v': vs_init(1 / 3.),
+        #          't': vs_init(1 / 3.),
+        #          'h1': vs_init(1.),
+        #          'h2': vs_init(1.),
+        #          'sk': vs_init(0.001),
+        #          'tk': vs_init(0.001),
+        #          'qk': vs_init(0.001),
+        #      })
+        #
+        #  if kernel_initializer == 'zeros':
+        #      self._kinit = 'zeros'
+        #  else:
+        #      self._kernel_initializer = lambda scale: (
+        #          tf.keras.initializers.VarianceScaling(scale)
+        #      )
+        #  self._kernel_initializer = kernel_initializer
+
         xk_init = self._get_kern_init(factor/3.)
         vk_init = self._get_kern_init(1./3.)
         tk_init = self._get_kern_init(1./3.)
@@ -128,10 +151,18 @@ class GaugeNetwork(layers.Layer):
             self.v_layer = layers.Dense(name='v_layer',
                                         units=config.units[0],
                                         kernel_initializer=vk_init)
-            #  self.x_layer = ConcatenatedDense(2 * config.units[0],
+
             self.x_layer = layers.Dense(name='x_layer',
                                         units=config.units[0],
                                         kernel_initializer=xk_init)
+            #  self.x_layer = ConcatenatedDense(name='x_layer',
+            #                                   units=config.units[0],
+            #                                   kernel_initializer=xk_init)
+
+            #  self.x_layer = ConcatenatedDense(2 * config.units[0],
+            #  self.x_layer = layers.Dense(name='x_layer',
+            #                              units=config.units[0],
+            #                              kernel_initializer=xk_init)
             self.t_layer = layers.Dense(name='t_layer',
                                         units=config.units[0],
                                         kernel_initializer=tk_init)
@@ -154,7 +185,7 @@ class GaugeNetwork(layers.Layer):
 
     def _get_kern_init(self, factor=1.):
         if self._kernel_initializer == 'zeros':
-            return tf.keras.initializers.Zeros
+            return 'zeros'
         return vs_init(factor)
 
     def call(self, inputs, training=None):
@@ -162,8 +193,10 @@ class GaugeNetwork(layers.Layer):
         v, x, t = inputs
         #  xc = tf.complex(tf.math.cos(x), tf.math.sin(x))
 
-        v_out = self.v_layer(v)
         t_out = self.t_layer(t)
+        v_out = tf.math.angle(self.v_layer(
+            tf.complex(tf.math.cos(v), tf.math.sin(v))
+        ))
         x_out = tf.math.angle(self.x_layer(
             tf.complex(tf.math.cos(x), tf.math.sin(x))
         ))

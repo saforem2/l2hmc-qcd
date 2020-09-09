@@ -81,6 +81,7 @@ class BaseDynamics(tf.keras.Model):
         self._model_type = config.get('model_type', 'BaseDynamics')
         self.params = params
         self.config = config
+        self.lr_config = lr_config
         self.net_config = network_config
         self.potential_fn = potential_fn
 
@@ -103,7 +104,6 @@ class BaseDynamics(tf.keras.Model):
             else:
                 self.xnet, self.vnet = self._build_networks()
             if self._has_trainable_params:
-                self.lr_config = lr_config
                 self.lr = self._create_lr(lr_config)
                 self.optimizer = self._create_optimizer()
 
@@ -885,16 +885,18 @@ class BaseDynamics(tf.keras.Model):
                 staircase=True,
             )
 
-        return lr_config.get('lr_init', None)
+        return lr_config.init
 
     def _create_optimizer(self):
         """Create the optimizer to be used for backpropagating gradients."""
         #  optimizer = tf.compat.v1.train.AdamOptimizer(self.lr)
         if self.clip_val > 0:
-            optimizer = tf.keras.optimizers.Nadam(self.lr_config.init,
-                                                  clipnorm=self.clip_val)
+            optimizer = tf.keras.optimizers.Adam(self.lr,
+                                                 clipnorm=self.clip_val)
+            #  optimizer = tf.keras.optimizers.Nadam(self.lr_config.init,
+            #                                        clipnorm=self.clip_val)
         else:
-            optimizer = tf.keras.optimizers.Adam(self.lr_config.init)
+            optimizer = tf.keras.optimizers.Adam(self.lr)
         #  optimizer = tf.keras.optimizers.Adam(self.lr)
         #  if self.using_hvd:
         #  if NUM_RANKS > 1:

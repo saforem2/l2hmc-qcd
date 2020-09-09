@@ -49,13 +49,13 @@ class DynamicsConfig(AttrDict):
                  num_steps: int,
                  hmc: bool = False,
                  model_type: str = None,
-                 eps_trainable: bool = True):
+                 eps_fixed: bool = False):
         super(DynamicsConfig, self).__init__(
             eps=eps,
             hmc=hmc,
             num_steps=num_steps,
             model_type=model_type,
-            eps_trainable=eps_trainable,
+            eps_fixed=eps_fixed,
         )
 
 
@@ -103,12 +103,12 @@ class LearningRateConfig(AttrDict):
     def __init__(self,
                  lr_init: float,
                  lr_decay_steps: int,
-                 lr_decay_rate: float,
+                 decay_rate: float,
                  warmup_steps: int = 0):
         super(LearningRateConfig, self).__init__(
             init=lr_init,
             decay_steps=lr_decay_steps,
-            decay_rate=lr_decay_rate,
+            decay_rate=decay_rate,
             warmup_steps=warmup_steps
         )
 
@@ -182,6 +182,8 @@ FILE_PATH = os.path.abspath(os.path.dirname(__file__))
 PROJECT_DIR = os.path.dirname(os.path.relpath(__file__))
 BASE_DIR = os.path.dirname(PROJECT_DIR)
 BIN_DIR = os.path.join(BASE_DIR, 'bin')
+LOGS_DIR = os.path.abspath('../logs')
+#  LOGS_DIR = os.path.join(BASE_DIR, 'logs')
 GAUGE_LOGS_DIR = os.path.join(BASE_DIR, 'logs', 'GaugeModel_logs')
 #  GAUGE_LOGS_DIR = os.path.join(BASE_DIR, 'gauge_logs')
 TEST_LOGS_DIR = os.path.join(BASE_DIR, 'test_logs')
