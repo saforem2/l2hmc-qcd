@@ -104,7 +104,7 @@ def train_hmc(flags):
 
     lr_config = LearningRateConfig(
         warmup_steps=None,
-        lr_decay_rate=None,
+        decay_rate=None,
         lr_decay_steps=None,
         lr_init=lr_config.get('lr_init', None),
     )

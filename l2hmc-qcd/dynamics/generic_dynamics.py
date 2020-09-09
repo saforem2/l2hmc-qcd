@@ -11,16 +11,15 @@ from __future__ import absolute_import, division, print_function
 
 import time
 import tensorflow as tf
+import horovod.tensorflow as hvd
 
 from config import (DynamicsConfig, LearningRateConfig, NetworkConfig,
                     NetWeights, MonteCarloStates)
 from dynamics.base_dynamics import BaseDynamics
 from network.generic_network import GenericNetwork
 from utils.attr_dict import AttrDict
-try:
-    import horovod.tensorflow as hvd
-except ImportError:
-    pass
+
+NUM_RANKS = hvd.size()
 
 
 def identity(x):
@@ -49,7 +48,14 @@ class GenericDynamics(BaseDynamics):
             normalizer=normalizer,
             potential_fn=potential_fn,
             network_config=network_config,
+            should_build=True
         )
+        self.loss_metric = tf.keras.metrics.Mean(name='loss')
+        self.dt_metric = tf.keras.metrics.Mean(name='dt')
+        self.accept_prob_metric = tf.keras.metrics.Mean(name='accept_prob')
+        self.sumlogdet_metric = tf.keras.metrics.Mean(name='sumlogdet')
+        self.eps_metric = tf.keras.metrics.Mean(name='eps')
+        self.beta_metric = tf.keras.metrics.Mean(name='beta')
 
         if not self.config.hmc:
             self.net_weights = NetWeights(1., 1., 1., 1., 1., 1.)
@@ -59,6 +65,18 @@ class GenericDynamics(BaseDynamics):
             self._vsw = self.net_weights.v_scale
             self._vtw = self.net_weights.v_translation
             self._vqw = self.net_weights.v_transformation
+
+    def call(self, inputs, training=None):
+        t0 = time.time()
+        mc_states, accept_prob, sld_states = self.apply_transition(inputs,
+                                                                   training)
+        self.add_metric(self.dt_metric(time.time() - t0))
+        self.add_metric(self.accept_prob_metric(accept_prob))
+        self.add_metric(self.sumlogdet_metric(sld_states.out))
+        self.add_metric(self.eps_metric(self.eps))
+        self.add_metric(self.beta_metric(mc_states.init.beta))
+
+        return mc_states, accept_prob,  sld_states
 
     def _build(self, params, config, network_config, lr_config, **kwargs):
         """Build the model."""
@@ -78,14 +96,15 @@ class GenericDynamics(BaseDynamics):
             self.optimizer = self._create_optimizer()
 
     def _build_networks(self):
-        xnet = GenericNetwork(self.net_config, xdim=self.xdim, name='XNet')
-        vnet = GenericNetwork(self.net_config, xdim=self.xdim, name='VNet')
+        xnet = GenericNetwork(self.net_config, factor=2.,
+                              xdim=self.xdim, name='XNet')
+        vnet = GenericNetwork(self.net_config, factor=1.,
+                              xdim=self.xdim, name='VNet')
         return xnet, vnet
 
     def calc_losses(self, states: MonteCarloStates, accept_prob: tf.Tensor):
         """Calculate the total sampling loss."""
         loss = self._mixed_loss(states.init.x, states.proposed.x, accept_prob)
-
         return loss
 
     def train_step(self, data):
@@ -95,6 +114,7 @@ class GenericDynamics(BaseDynamics):
         with tf.GradientTape() as tape:
             states, accept_prob, sumlogdet = self((x, beta), training=True)
             loss = self.calc_losses(states, accept_prob)
+            self.add_metric(self.loss_metric(loss))
 
             if self.aux_weight > 0:
                 z = tf.random.normal(x.shape, dtype=x.dtype)
@@ -102,16 +122,17 @@ class GenericDynamics(BaseDynamics):
                 loss_ = self.calc_losses(states_, accept_prob_)
                 loss += loss_
 
-        if self.using_hvd:
+        if NUM_RANKS > 1:
             tape = hvd.DistributedGradientTape(tape)
 
         grads = tape.gradient(loss, self.trainable_variables)
-        if self.clip_val > 0:
-            grads = [tf.clip_by_norm(g, self.clip_val) for g in grads]
+        self.optimizer.apply_gradients(zip(grads, self.trainable_variables))
+        #  if self.clip_val > 0:
+        #      grads = [tf.clip_by_norm(g, self.clip_val) for g in grads]
 
-        self.optimizer.apply_gradients(
-            zip(grads, self.trainable_variables)
-        )
+        #  self.optimizer.apply_gradients(
+        #      zip(grads, self.trainable_variables)
+        #  )
 
         metrics = AttrDict({
             'dt': time.time() - start,
@@ -122,7 +143,12 @@ class GenericDynamics(BaseDynamics):
             'sumlogdet': sumlogdet.out,
         })
 
-        if self.optimizer.iterations == 0 and self.using_hvd:
+        #  if self.optimizer.iterations == 0:
+        #      for key, val in metrics.items():
+        #          self.add_metric(
+        #          self.metrics[key].update_state(val)
+        #
+        if self.optimizer.iterations == 0 and NUM_RANKS > 1:
             hvd.broadcast_variables(self.variables, root_rank=0)
             hvd.broadcast_variables(self.optimizer.variables(), root_rank=0)
 

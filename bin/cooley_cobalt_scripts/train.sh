@@ -78,7 +78,7 @@ mpirun -np ${PROCS} \
         --warmup_steps 5000 \
         --lr_init 0.001 \
         --lr_decay_steps 2500 \
-        --lr_decay_rate 0.96 \
+        --decay_rate 0.96 \
         --plaq_weight 10. \
         --charge_weight 0.1 \
         --network_type 'GaugeNetwork' \

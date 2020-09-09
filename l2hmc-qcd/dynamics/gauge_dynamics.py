@@ -59,6 +59,11 @@ ACTIVATIONS = {
 }
 
 
+def project_angle(x):
+    """Returns the projection of an angle `x` from [-4pi, 4pi] to [-pi, pi]."""
+    return x - 2 * np.pi * tf.math.floor((x + np.pi) / (2 * np.pi))
+
+
 def convert_to_angle(x):
     """Returns x in -pi <= x < pi."""
     x = tf.math.floormod(x + pi, 2 * pi) - pi
@@ -406,26 +411,25 @@ class GaugeDynamics(BaseDynamics):
         return self._build_generic_networks()
 
     def _build_conv_networks(self):
-        xnet = GaugeNetworkConv2D(
-            conv_config=self.conv_config,
-            config=self.net_config,
-            xdim=self.xdim,
-            factor=2.,
-            name='XNet'
-        )
+        kinit = 'zeros' if self.zero_init else None
+        xnet = GaugeNetworkConv2D(name='XNet',
+                                  factor=2.,
+                                  xdim=self.xdim,
+                                  config=self.net_config,
+                                  kernel_initializer=kinit,
+                                  conv_config=self.conv_config)
 
-        vnet = GaugeNetwork(
-            config=self.net_config,
-            xdim=self.xdim,
-            factor=1.,
-            name='VNet',
-        )
+        vnet = GaugeNetwork(name='VNet', xdim=self.xdim,
+                            kernel_initializer=kinit,
+                            config=self.net_config, factor=1.)
 
         return xnet, vnet
 
     def _build_separate_networks(self):
         """Build separate networks for the even / odd update steps."""
+        kinit = 'zeros' if self.zero_init else None
         vnet = GaugeNetwork(self.net_config, factor=1.,
+                            kernel_initializer=kinit,
                             xdim=self.xdim, name='VNet')
         #  if self.use_conv_net:
         #      def make_net(i):
@@ -459,8 +463,11 @@ class GaugeDynamics(BaseDynamics):
         }
 
     def _build_generic_networks(self):
-        xnet = GaugeNetwork(self.net_config, xdim=self.xdim, name='XNet')
-        vnet = GaugeNetwork(self.net_config, xdim=self.xdim, name='VNet')
+        kinit = 'zeros' if self.zero_init else None
+        xnet = GaugeNetwork(self.net_config, factor=2., xdim=self.xdim,
+                            kernel_initializer=kinit, name='XNet')
+        vnet = GaugeNetwork(self.net_config, factor=1., xdim=self.xdim,
+                            kernel_initializer=kinit, name='VNet')
         return xnet, vnet
 
     @staticmethod
@@ -500,6 +507,28 @@ class GaugeDynamics(BaseDynamics):
 
         return ploss, qloss
 
+    def calc_wilson_loops(self, x):
+        """Calculate the plaqs by summing the links in the CCW direction."""
+        x = tf.reshape(x, shape=self.lattice_shape)
+        plaqs = (x[..., 0]
+                 - x[..., 1]
+                 - tf.roll(x[..., 0], shift=-1, axis=2)
+                 + tf.roll(x[..., 1], shift=-1, axis=1))
+
+        return plaqs
+
+    def calc_charges(self, x=None, wloops=None, use_sin=False):
+        """Calculate the topological charges for a batch of lattices."""
+        if wloops is None:
+            try:
+                wloops = self.calc_wilson_loops(x)
+            except ValueError as err:
+                raise err
+
+        q = tf.sin(wloops) if use_sin else project_angle(wloops)
+
+        return tf.reduce_sum(q, axis=(1, 2), name='charges') / (2 * np.pi)
+
     def train_step(self, data):
         """Perform a single training step."""
         start = time.time()
@@ -522,8 +551,8 @@ class GaugeDynamics(BaseDynamics):
             tape = hvd.DistributedGradientTape(tape)
 
         grads = tape.gradient(loss, self.trainable_variables)
-        if self.clip_val > 0:
-            grads = [tf.clip_by_norm(g, self.clip_val) for g in grads]
+        #  if self.clip_val > 0:
+        #      grads = [tf.clip_by_norm(g, self.clip_val) for g in grads]
 
         self.optimizer.apply_gradients(
             zip(grads, self.trainable_variables),
@@ -694,29 +723,6 @@ class GaugeDynamics(BaseDynamics):
                 S, T, Q = self.xnet_even(inputs, training=training)
             else:
                 S, T, Q = self.xnet_odd(inputs, training=training)
-        #  elif step % 2 == 0:
-        #      S, T, Q = self.xnet_even(inputs, training=training)
-        #  else:
-        #      S, T, Q = self.xnet_odd(inputs, training=training)
-        #
-        #  inputs = (state.v, m * x, t)
-        #  if self.config.separate_networks:
-        #      if step % 2 == 0:
-        #          S, T, Q = self.xnet_even(inputs, training=training)
-        #      S, T, Q = self.xnet_odd(inputs, training=training)
-        #  else:
-        #      S, T, Q = self.xnet(inputs, training=training)
-
-        #  if self.config.separate_networks and step % 2 == 0:
-        #      S, T, Q = self.xnet_even((state.v, m * x, t), training=training)
-        #  if self.config.separate_networks and step % 2 == 1:
-        #      S, T, Q = self.xnet_odd((state.v, m * x, t), training=training)
-        #  else:
-        #      S, T, Q = self.xnet((state.v, m * x, t), training=training)
-
-        #  S, T, Q = self.xnet((state.v, m * x, t), training=training)
-        #  S, T, Q = self.xnet((state.v, m * x, t), training=training)
-        #  S, T, Q = self._scattered_xnet(x, state.v, t, masks, training)
 
         transl = self._xtw * T
         transf = self._xqw * (self.eps * Q)

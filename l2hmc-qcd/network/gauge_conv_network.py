@@ -11,12 +11,13 @@ used for training the L2HMC sampler on a 2D U(1) lattice gauge theory model.
 # pylint:disable=arguments-differ,invalid-name
 from __future__ import absolute_import, division, print_function
 
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union, Callable
 
 import tensorflow as tf
 
 from tensorflow.keras.layers import InputSpec
 from tensorflow.python.keras.utils import conv_utils
+from network.gauge_network import vs_init
 
 from utils.attr_dict import AttrDict
 from network.gauge_network import GaugeNetwork, NetworkConfig
@@ -116,6 +117,7 @@ class GaugeNetworkConv2D(tf.keras.models.Model):
             config: NetworkConfig,
             xdim: int,
             factor: Optional[float] = 1.,
+            kernel_initializer: Optional[Union[str, Callable]] = None,
             **kwargs,
     ):
         super(GaugeNetworkConv2D, self).__init__(**kwargs)
@@ -124,7 +126,14 @@ class GaugeNetworkConv2D(tf.keras.models.Model):
         with tf.name_scope('v_conv_block'):
             self.v_conv_block = ConvolutionBlock2D(conv_config, **kwargs)
         with tf.name_scope('GaugeNetwork'):
-            self.gauge_net = GaugeNetwork(config, xdim, factor, **kwargs)
+            self.gauge_net = GaugeNetwork(
+                config, xdim, factor,
+                kernel_initializer=kernel_initializer)
+
+    def _get_kern_init(self, factor=1.):
+        if self._kernel_initializer == 'zeros':
+            return 'zeros'
+        return vs_init(factor)
 
     def call(self, inputs, training=None):
         """Call the network (forward-pass)."""

@@ -139,8 +139,8 @@ def parse_args():
                         help=("""Number of steps after which to decay learning
                         rate.\n (Default: 500)"""))
 
-    parser.add_argument("--lr_decay_rate",
-                        dest="lr_decay_rate",
+    parser.add_argument("--decay_rate",
+                        dest="decay_rate",
                         type=float, default=0.96,
                         required=False,
                         help=("""Learning rate decay rate to be used during
