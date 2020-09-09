@@ -358,7 +358,7 @@ def train_dynamics(
         return False
 
     def should_save(step):
-        if IS_CHIEF and step % flags.save_steps == 0 and ckpt is not None:
+        if step % flags.save_steps == 0 and ckpt is not None:
             return True
         return False
 
