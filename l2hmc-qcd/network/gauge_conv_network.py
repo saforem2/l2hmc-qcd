@@ -121,10 +121,11 @@ class GaugeNetworkConv2D(tf.keras.models.Model):
             **kwargs,
     ):
         super(GaugeNetworkConv2D, self).__init__(**kwargs)
+        self._kernel_initializer = kernel_initializer
         with tf.name_scope('x_conv_block'):
             self.x_conv_block = ConvolutionBlock2D(conv_config, **kwargs)
-        with tf.name_scope('v_conv_block'):
-            self.v_conv_block = ConvolutionBlock2D(conv_config, **kwargs)
+        #  with tf.name_scope('v_conv_block'):
+        #      self.v_conv_block = ConvolutionBlock2D(conv_config, **kwargs)
         with tf.name_scope('GaugeNetwork'):
             self.gauge_net = GaugeNetwork(
                 config, xdim, factor,
@@ -137,8 +138,9 @@ class GaugeNetworkConv2D(tf.keras.models.Model):
 
     def call(self, inputs, training=None):
         """Call the network (forward-pass)."""
-        v, x, t = inputs
+        #  v, x, t = inputs
+        x, v, t = inputs
         # pylint:disable=protected-access
+        #  v_conv = self.v_conv_block(v, training=training)
         x_conv = self.x_conv_block(x, training=training)
-        v_conv = self.v_conv_block(v, training=training)
-        return self.gauge_net((v_conv, x_conv, t), training=training)
+        return self.gauge_net((v, x_conv, t), training=training)

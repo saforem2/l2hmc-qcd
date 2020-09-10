@@ -11,7 +11,7 @@
     "loss_scale": 0.1,
     "aux_weight": 0.0,
     "plaq_weight": 0.0,
-    "charge_weight": 0.01,
+    "charge_weight": 0.1,
     "hmc_steps": 0,
     "print_steps": 1,
     "logging_steps": 10,
