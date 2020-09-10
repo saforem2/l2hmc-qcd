@@ -395,7 +395,7 @@ def train_dynamics(
                 writer.flush()
 
         # Print header every hundred steps
-        if IS_CHIEF and (step + 1) % 5000 == 0:
+        if IS_CHIEF and (step + 1) % (50 * flags.print_steps) == 0:
             io.log_tqdm(header.split('\n'))
 
         #  if config.pstop > 0 and step == config.pstop:

@@ -8,6 +8,8 @@ from __future__ import absolute_import, division, print_function
 import os
 
 import tensorflow as tf
+import traceback
+import contextlib
 
 from utils.attr_dict import AttrDict
 
@@ -15,6 +17,16 @@ from utils.attr_dict import AttrDict
 from utils.parse_configs import parse_configs
 from utils.training_utils import train
 from utils.inference_utils import run, run_hmc
+
+
+@contextlib.contextmanager
+def options(options):
+    old_opts = tf.config.optimizer.get_experimental_options()
+    tf.config.optimizer.set_experimental_options(options)
+    try:
+        yield
+    finally:
+        tf.config.optimizer.set_experimental_options(old_opts)
 
 
 def main(args):

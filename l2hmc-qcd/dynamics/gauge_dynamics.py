@@ -127,6 +127,7 @@ class GaugeDynamics(BaseDynamics):
         self.lattice = GaugeLattice(self.lattice_shape)
         self.batch_size = self.lattice_shape[0]
         self.xdim = np.cumprod(self.lattice_shape[1:])[-1]
+        self._annealed_trajectories = False
 
         self.config = config
         self.lr_config = lr_config
@@ -318,6 +319,38 @@ class GaugeDynamics(BaseDynamics):
 
         return state_prop, accept_prob, sumlogdet
 
+    def transition_kernel_annealing(
+            self,
+            state: State,
+            forward: bool,
+            training: bool = None,
+    ):
+        """Transition kernel of the augmented leapfrog integrator.
+
+        NOTE: This method attempts to perform simulated annealing WITHIN
+        a trajectory, by linearly decreasing beta by 10% over the first
+        half of the trajectory, followed by a linear increase back to its
+        original value over the second half of the trajectory.
+        """
+        lf_fn = self._forward_lf if forward else self._backward_lf
+        state_ = State(state.x, state.v, state.beta)
+        sumlogdet = tf.zeros((self.batch_size,), dtype=TF_FLOAT)
+        beta_mid = state.beta - 0.5 * state.beta
+        step_mid = self.config.num_steps // 2
+        betas1 = tf.linspace(state.beta, beta_mid, step_mid)
+        betas2 = tf.linspace(beta_mid, state.beta, step_mid)
+        betas = tf.concat([betas1, betas2], axis=-1)
+
+        for step in tf.range(self.config.num_steps):
+            beta = tf.gather(betas, step)
+            state_ = State(state_.x, state_.v, beta)
+            state_, logdet = lf_fn(step, state_, training)
+            sumlogdet += logdet
+
+        px = self.compute_accept_prob(state, state_, sumlogdet)
+
+        return state_, px, sumlogdet
+
     def transition_kernel(
             self,
             state: State,
@@ -331,6 +364,8 @@ class GaugeDynamics(BaseDynamics):
             accept_prob (tf.Tensor): (batch-wise) Acceptance probability.
             sumlogdet (tf.Tensor): Total log determinant of the Jacobian
         """
+        if self._annealed_trajectories:
+            return self.transition_kernel_annealing(state, forward, training)
         if self.config.separate_networks and not self.config.hmc:
             return self.transition_kernel_sep_nets(state, forward, training)
         return super().transition_kernel(state, forward, training)
@@ -497,13 +532,20 @@ class GaugeDynamics(BaseDynamics):
         # Calculate the charge loss
         qloss = tf.cast(0., dtype=dtype)
         if self.charge_weight > 0:
-            q_init = self.lattice.calc_charges(wloops=wl_init, use_sin=True)
-            q_prop = self.lattice.calc_charges(wloops=wl_prop, use_sin=True)
-            qloss = accept_prob * (q_prop - q_init) ** 2
+            q_init = tf.sin(wl_init)
+            q_prop = tf.sin(wl_prop)
+            dq_sum = tf.reduce_sum((q_prop - q_init) ** 2, axis=(1, 2))
+            qloss = accept_prob * dq_sum + 1e-4
+            qloss = (tf.reduce_mean(self.charge_weight / qloss)
+                     - tf.reduce_mean(qloss / self.charge_weight))
+
+            #  q_init = self.lattice.calc_charges(wloops=wl_init, use_sin=True)
+            #  q_prop = self.lattice.calc_charges(wloops=wl_prop, use_sin=True)
+            #  qloss = accept_prob * (q_prop - q_init) ** 2
 
             # ==== FIXME: Try using mixed loss??
             #  qloss = self.mixed_loss(qloss, self.charge_weight)
-            qloss = tf.reduce_mean(-qloss / self.charge_weight, axis=0)
+            #  qloss = tf.reduce_mean(-qloss / self.charge_weight, axis=0)
 
         return ploss, qloss
 
@@ -572,6 +614,12 @@ class GaugeDynamics(BaseDynamics):
         observables = self.calc_observables(states)
         metrics.update(**observables)
 
+        if loss > 50:
+            x_out = tf.random.normal(states.out.x.shape,
+                                     dtype=states.out.x.dtype)
+        else:
+            x_out = states.out.x
+
         # Horovod:
         #    Broadcast initial variable states from rank 0 to all other
         #    processes. This is necessary to ensure consistent initialization
@@ -586,7 +634,7 @@ class GaugeDynamics(BaseDynamics):
             hvd.broadcast_variables(self.variables, root_rank=0)
             hvd.broadcast_variables(self.optimizer.variables(), root_rank=0)
 
-        return states.out.x, metrics
+        return x_out, metrics
 
     def test_step(self, data):
         """Perform a single inference step."""
@@ -671,7 +719,7 @@ class GaugeDynamics(BaseDynamics):
         x = self.normalizer(state.x)
         grad = self.grad_potential(x, state.beta)
         t = self._get_time(step, tile=tf.shape(x)[0])
-        S, T, Q = self.vnet((x, grad, t), training)
+        S, T, Q = self.vnet((grad, x, t), training)
 
         scale = self._vsw * (0.5 * self.eps * S)
         transl = self._vtw * T
@@ -700,7 +748,6 @@ class GaugeDynamics(BaseDynamics):
             state (State): Input state
             t (float): Current leapfrog step, represented as periodic time.
             training (bool): Currently training?
-
 
         Returns:
             new_state (State): New state, with updated momentum.
@@ -757,7 +804,7 @@ class GaugeDynamics(BaseDynamics):
         x = self.normalizer(state.x)
         t = self._get_time(step, tile=tf.shape(x)[0])
         grad = self.grad_potential(x, state.beta)
-        S, T, Q = self.vnet((x, grad, t), training)
+        S, T, Q = self.vnet((grad, x, t), training)
 
         #  x = tf.reshape(x, self.lattice_shape)
         #  grad = tf.reshape(grad, self.lattice_shape)
@@ -891,26 +938,6 @@ class GaugeDynamics(BaseDynamics):
         sterm = (expS * tf.math.sin(state.x / 2)) ** 2
         log_jac = tf.math.log(expS / (cterm + sterm))
         logdet = tf.reduce_sum(mc * log_jac, axis=1)
-
-        # ----------------------------
-        #  S, T, Q = self.xnet(inputs, training=training)
-        #  if not self.config.separate_networks:
-        #      S, T, Q = self.xnet(inputs, training=training)
-        #  elif step % 2 == 0:
-        #      S, T, Q = self.xnet_even(inputs, training=training)
-        #  else:
-        #      S, T, Q = self.xnet_odd(inputs, training=training)
-        #
-        #  if self.config.separate_networks and step % 2 == 0:
-        #      S, T, Q = self.xnet_even((state.v, m * x, t), training=training)
-        #  if self.config.separate_networks and step % 2 == 1:
-        #      S, T, Q = self.xnet_odd((state.v, m * x, t), training=training)
-        #  else:
-        #      S, T, Q = self.xnet((state.v, m * x, t), training=training)
-        #  S, T, Q = self.xnet((state.v, m * x, t), training=training)
-        #  S, T, Q = self.xnet((state.v, m * x, t), training=training)
-        #  S, T, Q = self._scattered_xnet(x, state.v, t, masks, training)
-        # ----------------------------
 
         return state_out, logdet
 
