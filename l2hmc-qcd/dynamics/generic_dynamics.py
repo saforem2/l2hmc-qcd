@@ -50,12 +50,13 @@ class GenericDynamics(BaseDynamics):
             network_config=network_config,
             should_build=True
         )
-        self.loss_metric = tf.keras.metrics.Mean(name='loss')
-        self.dt_metric = tf.keras.metrics.Mean(name='dt')
-        self.accept_prob_metric = tf.keras.metrics.Mean(name='accept_prob')
-        self.sumlogdet_metric = tf.keras.metrics.Mean(name='sumlogdet')
-        self.eps_metric = tf.keras.metrics.Mean(name='eps')
-        self.beta_metric = tf.keras.metrics.Mean(name='beta')
+        #  self.loss_metric = tf.keras.metrics.Mean(name='loss')
+        #  self.dt_metric = tf.keras.metrics.Mean(name='dt')
+        #  self.accept_prob_metric = tf.keras.metrics.Mean(name='accept_prob')
+        #  self.sumlogdet_metric = tf.keras.metrics.Mean(name='sumlogdet')
+        #  self.eps_metric = tf.keras.metrics.Mean(name='eps')
+        #  self.beta_metric = tf.keras.metrics.Mean(name='beta')
+        #  self.aux_weight = params.get('aux_weight', 0.)
 
         if not self.config.hmc:
             self.net_weights = NetWeights(1., 1., 1., 1., 1., 1.)
@@ -67,14 +68,14 @@ class GenericDynamics(BaseDynamics):
             self._vqw = self.net_weights.v_transformation
 
     def call(self, inputs, training=None):
-        t0 = time.time()
+        #  t0 = time.time()
         mc_states, accept_prob, sld_states = self.apply_transition(inputs,
                                                                    training)
-        self.add_metric(self.dt_metric(time.time() - t0))
-        self.add_metric(self.accept_prob_metric(accept_prob))
-        self.add_metric(self.sumlogdet_metric(sld_states.out))
-        self.add_metric(self.eps_metric(self.eps))
-        self.add_metric(self.beta_metric(mc_states.init.beta))
+        #  self.add_metric(self.dt_metric(time.time() - t0))
+        #  self.add_metric(self.accept_prob_metric(accept_prob))
+        #  self.add_metric(self.sumlogdet_metric(sld_states.out))
+        #  self.add_metric(self.eps_metric(self.eps))
+        #  self.add_metric(self.beta_metric(mc_states.init.beta))
 
         return mc_states, accept_prob,  sld_states
 
@@ -114,7 +115,7 @@ class GenericDynamics(BaseDynamics):
         with tf.GradientTape() as tape:
             states, accept_prob, sumlogdet = self((x, beta), training=True)
             loss = self.calc_losses(states, accept_prob)
-            self.add_metric(self.loss_metric(loss))
+            #  self.add_metric(self.loss_metric(loss))
 
             if self.aux_weight > 0:
                 z = tf.random.normal(x.shape, dtype=x.dtype)

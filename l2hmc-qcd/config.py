@@ -102,12 +102,12 @@ class LearningRateConfig(AttrDict):
     """Configuration object for specifying learning rate schedule."""
     def __init__(self,
                  lr_init: float,
-                 lr_decay_steps: int,
+                 decay_steps: int,
                  decay_rate: float,
                  warmup_steps: int = 0):
         super(LearningRateConfig, self).__init__(
             init=lr_init,
-            decay_steps=lr_decay_steps,
+            decay_steps=decay_steps,
             decay_rate=decay_rate,
             warmup_steps=warmup_steps
         )

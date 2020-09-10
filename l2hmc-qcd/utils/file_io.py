@@ -335,6 +335,9 @@ def parse_configs(flags):
     if config.get('hmc', False):
         fstr += 'HMC_'
 
+    if flags.get('train_steps', None) < 1e4:
+        fstr += 'DEBUG_'
+
     lattice_shape = flags.get('lattice_shape', None)
     if lattice_shape is not None:
         fstr += f'L{lattice_shape[1]}_b{lattice_shape[0]}'

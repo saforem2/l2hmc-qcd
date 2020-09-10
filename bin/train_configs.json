@@ -35,7 +35,7 @@
     "lr_config": {
         "lr_init": 1.0e-3,
         "decay_rate": 0.8,
-        "lr_decay_steps": 10000,
+        "decay_steps": 10000,
         "warmup_steps": 500 
     },
     "conv_config": {

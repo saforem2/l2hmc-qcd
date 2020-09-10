@@ -8,6 +8,7 @@ import collections
 from typing import Callable, Optional
 
 from scipy.stats import multivariate_normal, ortho_group
+import tensorflow_probability as tfp
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -15,6 +16,8 @@ import tensorflow as tf
 
 from config import NP_FLOATS, TF_FLOATS
 
+
+tfd = tfp.distributions
 
 TF_FLOAT = TF_FLOATS[tf.keras.backend.floatx()]
 NP_FLOAT = NP_FLOATS[tf.keras.backend.floatx()]
@@ -59,6 +62,17 @@ def plot_samples2D(
     return fig, ax
 
 
+def meshgrid(x, y=None):
+    """Create a mesgrid of dtype 'float32'."""
+    if y is None:
+        y = x
+
+    [gx, gy] = np.meshgrid(x, y, indexing='ij')
+    gx, gy = np.float32(gx), np.float32(gy)
+    grid = np.concatenate([gx.ravel()[None, :], gy.ravel()[None, :]], axis=0)
+    return grid.T.reshape(x.size, y.size, 2)
+
+
 # pylint:disable=too-many-arguments
 def contour_potential(
         potential_fn: Callable,
@@ -81,6 +95,7 @@ def contour_potential(
         y0 = -ylim
         y1 = ylim
     grid = np.mgrid[x0:x1:100j, y0:y1:100j]
+    #  grid_2d = meshgrid(np.arange(x0, x1, 0.05), np.arange(y0, y1, 0.05))
     grid_2d = grid.reshape(2, -1).T
     cmap = plt.get_cmap(cmap)
     if ax is None:
@@ -88,7 +103,7 @@ def contour_potential(
     try:
         pdf1e = np.exp(-potential_fn(grid_2d))
     except Exception as e:
-        pdf1e = np.exp(-potential_fn(tf.cast(grid_2d, TF_FLOAT)))
+        pdf1e = np.exp(-potential_fn(tf.cast(grid_2d, dtype)))
 
     z = pdf1e.reshape(100, 100)
     _ = ax.contourf(grid[0], grid[1], z, cmap=cmap, levels=8)
@@ -437,3 +452,36 @@ class GMM:
         ]
 
         return np.log(sum(exp_arr))
+
+
+class GaussianMixtureModel:
+    """Gaussian mixture model, using tensorflow-probability."""
+    def __init__(self, mus, sigmas, pis):
+        #  if isinstance(sigmas, list):
+        #      if len(sigmas[0].shape) == 1:
+        #          sigmas[0
+        self.mus = tf.convert_to_tensor(mus, dtype=tf.float32)
+        self.sigmas = tf.convert_to_tensor(sigmas, dtype=tf.float32)
+        self.pis = tf.convert_to_tensor(pis, dtype=tf.float32)
+
+        self.dist = tfd.Mixture(
+            cat=tfd.Categorical(probs=self.pis),
+            components=[
+                tfd.MultivariateNormalDiag(loc=m, scale_diag=s)
+                for m, s in zip(self.mus, self.sigmas)
+            ]
+        )
+
+    def get_energy_function(self):
+        """Get the energy function (log probability) of the distribution."""
+        return self.dist.log_prob
+
+    def plot_contours(self, num_pts=500):
+        """Plot contours of the target distribution."""
+        grid = meshgrid(np.linspace(np.min(self.mus) - 1,
+                                    np.max(self.mus) + 1,
+                                    num_pts, dtype=np.float32))
+        fig, ax = plt.subplots()
+        ax.contour(grid[..., 0], grid[..., 1], self.dist.prob(grid))
+        ax.set_title('Gaussian Mixture Model', fontsize='large')
+        return fig, ax
