@@ -385,6 +385,9 @@ def parse_configs(flags):
         if use_bn:
             fstr += '_bNorm'
 
+    if flags.get('zero_init', False):
+        fstr += '_zero_init'
+
     return fstr.replace('.', '')
 
 

@@ -475,6 +475,10 @@ class BaseDynamics(tf.keras.Model):
 
         state_prop = State(x=state.x, v=state.v, beta=state.beta)
         sumlogdet = tf.zeros((self.batch_size,), dtype=TF_FLOAT)
+        #  beta_peak = state.beta - 0.2 * state.beta
+        #  b1 = np.linspace(state.beta, beta_peak, self.config.num_steps // 2)
+        #  b2 = np.linspace(beta_peak, state.beta, self.config.num_steps // 2)
+        #  betas = tf.concat([b1, b2], axis=-1)
 
         for step in tf.range(self.config.num_steps):
             state_prop, logdet = lf_fn(step, state_prop, training)
@@ -893,8 +897,8 @@ class BaseDynamics(tf.keras.Model):
         if self.clip_val > 0:
             optimizer = tf.keras.optimizers.Adam(self.lr,
                                                  clipnorm=self.clip_val)
-            #  optimizer = tf.keras.optimizers.Nadam(self.lr_config.init,
-            #                                        clipnorm=self.clip_val)
+        #  optimizer = tf.keras.optimizers.Nadam(self.lr_config.init,
+        #                                        clipnorm=self.clip_val)
         else:
             optimizer = tf.keras.optimizers.Adam(self.lr)
         #  optimizer = tf.keras.optimizers.Adam(self.lr)

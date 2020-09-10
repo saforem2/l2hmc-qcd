@@ -108,29 +108,6 @@ class GaugeNetwork(layers.Layer):
         self.factor = factor
         self._config = config
         self._kernel_initializer = kernel_initializer
-        #  if kernel_initializer is None:
-        #      def vs_init(scale):
-        #          return tf.keras.initializers.VarianceScaling(scale)
-        #
-        #      kinits = AttrDict({
-        #          'x': vs_init(factor / 3.),
-        #          'v': vs_init(1 / 3.),
-        #          't': vs_init(1 / 3.),
-        #          'h1': vs_init(1.),
-        #          'h2': vs_init(1.),
-        #          'sk': vs_init(0.001),
-        #          'tk': vs_init(0.001),
-        #          'qk': vs_init(0.001),
-        #      })
-        #
-        #  if kernel_initializer == 'zeros':
-        #      self._kinit = 'zeros'
-        #  else:
-        #      self._kernel_initializer = lambda scale: (
-        #          tf.keras.initializers.VarianceScaling(scale)
-        #      )
-        #  self._kernel_initializer = kernel_initializer
-
         xk_init = self._get_kern_init(factor/3.)
         vk_init = self._get_kern_init(1./3.)
         tk_init = self._get_kern_init(1./3.)
@@ -194,9 +171,11 @@ class GaugeNetwork(layers.Layer):
         #  xc = tf.complex(tf.math.cos(x), tf.math.sin(x))
 
         t_out = self.t_layer(t)
-        v_out = tf.math.angle(self.v_layer(
-            tf.complex(tf.math.cos(v), tf.math.sin(v))
-        ))
+        v_out = self.v_layer(v)
+        #  x_out = self.x_layer(tf.concat([tf.math.cos(x), tf.math.sin(x)], -1))
+        #  v_out = tf.math.angle(self.v_layer(
+        #      tf.complex(tf.math.cos(v), tf.math.sin(v))
+        #  ))
         x_out = tf.math.angle(self.x_layer(
             tf.complex(tf.math.cos(x), tf.math.sin(x))
         ))

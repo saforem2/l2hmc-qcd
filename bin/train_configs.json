@@ -1,7 +1,7 @@
 {
     "log_dir": null,
     "profiler": true,
-    "zero_init": true,
+    "zero_init": false,
     "use_conv_net": true,
     "gauge_eq_masks": false,
     "md_steps": 0,
@@ -13,14 +13,14 @@
     "plaq_weight": 0.0,
     "charge_weight": 0.01,
     "hmc_steps": 0,
-    "print_steps": 10,
+    "print_steps": 1,
     "logging_steps": 10,
     "save_steps": 100,
     "run_steps": 1000,
     "train_steps": 10000,
-    "lattice_shape": [256, 8, 8, 2],
+    "lattice_shape": [4, 16, 16, 2],
     "dynamics_config": {
-        "eps": 0.1,
+        "eps": 0.02,
         "num_steps": 10,
         "hmc": false,
         "use_ncp": true,
@@ -28,7 +28,7 @@
         "separate_networks": false
     },
     "network_config": {
-        "units": [128, 128, 128],
+        "units": [256, 256, 256],
         "activation_fn": "relu",
         "dropout_prob": 0.2
     },
@@ -39,7 +39,7 @@
         "warmup_steps": 500 
     },
     "conv_config": {
-        "filters": [8, 16],
+        "filters": [16, 32],
         "sizes": [2, 2],
         "pool_sizes": [2, 2],
         "conv_activations": ["relu", "relu"],
