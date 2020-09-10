@@ -96,8 +96,9 @@ class GenericNetwork(tf.keras.layers.Layer):
     # pylint:disable=invalid-name
     def call(self, inputs, training=None):
         """Call the network (forward-pass)."""
-        v, x, t = inputs
-        h = self.v_layer(v) + self.x_layer(x) + self.t_layer(t)
+        #  v, x, t = inputs
+        x, v, t = inputs
+        h = self.x_layer(x) + self.v_layer(v) + self.t_layer(t)
         h = self.activation(h)
         for layer in self.hidden_layers:
             h = self.activation(layer(h))

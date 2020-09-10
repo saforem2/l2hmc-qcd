@@ -244,7 +244,7 @@ class BaseDynamics(tf.keras.Model):
 
     def apply_transition(
             self,
-            inputs,
+            inputs: Tuple[tf.Tensor],
             training: bool = None,
     ) -> (MonteCarloStates, tf.Tensor, MonteCarloStates):
         """Propose a new state and perform the accept/reject step.
@@ -339,7 +339,7 @@ class BaseDynamics(tf.keras.Model):
         """Run the augmented leapfrog integrator."""
         if len(inputs) == 2:
             x, beta = inputs
-            v = tf.random.normal(tf.shape(x))
+            v = tf.random.normal(x.shape, dtype=x.dtype)
         elif len(inputs) == 3:
             x, v, beta = inputs
         state = State(x=x, v=v, beta=beta)
@@ -612,7 +612,7 @@ class BaseDynamics(tf.keras.Model):
         x = self.normalizer(state.x)
         t = self._get_time(step, tile=tf.shape(x)[0])
 
-        S, T, Q = self.xnet((state.v, m * x, t), training)
+        S, T, Q = self.xnet((m * x, state.v, t), training)
 
         transl = self._xtw * T
         scale = self._xsw * (self.eps * S)
@@ -690,7 +690,7 @@ class BaseDynamics(tf.keras.Model):
         m, mc = masks
         x = self.normalizer(state.x)
         t = self._get_time(step, tile=tf.shape(x)[0])
-        S, T, Q = self.xnet((state.v, m * x, t), training)
+        S, T, Q = self.xnet((m * x, state.v, t), training)
 
         scale = self._xsw * (-self.eps * S)
         transl = self._xtw * T

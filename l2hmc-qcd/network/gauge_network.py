@@ -167,7 +167,8 @@ class GaugeNetwork(layers.Layer):
 
     def call(self, inputs, training=None):
         """Call the network (forward-pass)."""
-        v, x, t = inputs
+        #  v, x, t = inputs
+        x, v, t = inputs
         #  xc = tf.complex(tf.math.cos(x), tf.math.sin(x))
 
         t_out = self.t_layer(t)
