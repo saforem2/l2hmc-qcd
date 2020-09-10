@@ -128,6 +128,7 @@ class GaugeDynamics(BaseDynamics):
         self.batch_size = self.lattice_shape[0]
         self.xdim = np.cumprod(self.lattice_shape[1:])[-1]
         self._annealed_trajectories = False
+        self._use_mixed_loss = False
 
         self.config = config
         self.lr_config = lr_config
@@ -526,8 +527,10 @@ class GaugeDynamics(BaseDynamics):
             ploss = accept_prob * tf.reduce_sum(dwloops, axis=(1, 2))
 
             # ==== FIXME: Try using mixed loss??
-            #  ploss = self.mixed_loss(ploss, self.plaq_weight)
-            ploss = tf.reduce_mean(-ploss / self.plaq_weight, axis=0)
+            if self._use_mixed_loss:
+                ploss = self.mixed_loss(ploss, self.plaq_weight)
+            else:
+                ploss = tf.reduce_mean(-ploss / self.plaq_weight, axis=0)
 
         # Calculate the charge loss
         dq_ = tf.cast(0., dtype=dtype)
@@ -536,11 +539,15 @@ class GaugeDynamics(BaseDynamics):
             q_prop = tf.reduce_sum(tf.sin(wl_prop), axis=(1, 2)) / (2 * np.pi)
             #  q_prop = tf.sin(wl_prop)
             #  dq2 = (q_prop - q_init)
-            dq_ = accept_prob * (q_prop - q_init) ** 2 + 1e-4
+            qloss = accept_prob * (q_prop - q_init) ** 2 + 1e-4
+            if self._use_mixed_loss:
+                qloss = self.mixed_loss(dq_, self.charge_weight)
+            else:
+                qloss = tf.reduce_mean(-qloss / self.charge_weight, axis=0)
             #  dq_sum = tf.reduce_sum((q_prop - q_init) ** 2, axis=(1, 2))
             #  qloss = accept_prob * dq_sum + 1e-4
-            qloss = (tf.reduce_mean(self.charge_weight / dq_)
-                     - tf.reduce_mean(dq_ / self.charge_weight))
+            #  qloss = (tf.reduce_mean(self.charge_weight / dq_)
+            #           - tf.reduce_mean(dq_ / self.charge_weight))
 
             #  q_init = self.lattice.calc_charges(wloops=wl_init, use_sin=True)
             #  q_prop = self.lattice.calc_charges(wloops=wl_prop, use_sin=True)
@@ -608,6 +615,20 @@ class GaugeDynamics(BaseDynamics):
             'loss': loss,
             'ploss': ploss,
             'qloss': qloss,
+        })
+
+        if self.aux_weight > 0:
+            metrics.update({
+                'ploss_aux': ploss_,
+                'qloss_aux': qloss_
+            })
+
+        #  metrics = AttrDict({
+        metrics.update({
+            #  'dt': time.time() - start,
+            #  'loss': loss,
+            #  'ploss': ploss,
+            #  'qloss': qloss,
             'accept_prob': accept_prob,
             'eps': self.eps,
             'beta': states.init.beta,
@@ -617,11 +638,11 @@ class GaugeDynamics(BaseDynamics):
         observables = self.calc_observables(states)
         metrics.update(**observables)
 
-        if loss > 50:
-            x_out = tf.random.normal(states.out.x.shape,
-                                     dtype=states.out.x.dtype)
-        else:
-            x_out = states.out.x
+        #  if loss > 50:
+        #      x_out = tf.random.normal(states.out.x.shape,
+        #                               dtype=states.out.x.dtype)
+        #  else:
+        #      x_out = states.out.x
 
         # Horovod:
         #    Broadcast initial variable states from rank 0 to all other
@@ -637,7 +658,7 @@ class GaugeDynamics(BaseDynamics):
             hvd.broadcast_variables(self.variables, root_rank=0)
             hvd.broadcast_variables(self.optimizer.variables(), root_rank=0)
 
-        return x_out, metrics
+        return states.out.x, metrics
 
     def test_step(self, data):
         """Perform a single inference step."""
