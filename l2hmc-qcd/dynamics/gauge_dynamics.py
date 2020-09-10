@@ -530,14 +530,17 @@ class GaugeDynamics(BaseDynamics):
             ploss = tf.reduce_mean(-ploss / self.plaq_weight, axis=0)
 
         # Calculate the charge loss
-        qloss = tf.cast(0., dtype=dtype)
+        dq_ = tf.cast(0., dtype=dtype)
         if self.charge_weight > 0:
-            q_init = tf.sin(wl_init)
-            q_prop = tf.sin(wl_prop)
-            dq_sum = tf.reduce_sum((q_prop - q_init) ** 2, axis=(1, 2))
-            qloss = accept_prob * dq_sum + 1e-4
-            qloss = (tf.reduce_mean(self.charge_weight / qloss)
-                     - tf.reduce_mean(qloss / self.charge_weight))
+            q_init = tf.reduce_sum(tf.sin(wl_init), axis=(1, 2)) / (2 * np.pi)
+            q_prop = tf.reduce_sum(tf.sin(wl_prop), axis=(1, 2)) / (2 * np.pi)
+            #  q_prop = tf.sin(wl_prop)
+            #  dq2 = (q_prop - q_init)
+            dq_ = accept_prob * (q_prop - q_init) ** 2 + 1e-4
+            #  dq_sum = tf.reduce_sum((q_prop - q_init) ** 2, axis=(1, 2))
+            #  qloss = accept_prob * dq_sum + 1e-4
+            qloss = (tf.reduce_mean(self.charge_weight / dq_)
+                     - tf.reduce_mean(dq_ / self.charge_weight))
 
             #  q_init = self.lattice.calc_charges(wloops=wl_init, use_sin=True)
             #  q_prop = self.lattice.calc_charges(wloops=wl_prop, use_sin=True)
