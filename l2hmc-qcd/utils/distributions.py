@@ -457,9 +457,6 @@ class GMM:
 class GaussianMixtureModel:
     """Gaussian mixture model, using tensorflow-probability."""
     def __init__(self, mus, sigmas, pis):
-        #  if isinstance(sigmas, list):
-        #      if len(sigmas[0].shape) == 1:
-        #          sigmas[0
         self.mus = tf.convert_to_tensor(mus, dtype=tf.float32)
         self.sigmas = tf.convert_to_tensor(sigmas, dtype=tf.float32)
         self.pis = tf.convert_to_tensor(pis, dtype=tf.float32)
@@ -474,7 +471,9 @@ class GaussianMixtureModel:
 
     def get_energy_function(self):
         """Get the energy function (log probability) of the distribution."""
-        return self.dist.log_prob
+        def f(x):
+            return -1 * self.dist.log_prob(x)
+        return f
 
     def plot_contours(self, num_pts=500):
         """Plot contours of the target distribution."""
