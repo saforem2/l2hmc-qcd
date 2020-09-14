@@ -119,7 +119,7 @@ class GaugeDynamics(BaseDynamics):
         self.lattice = GaugeLattice(self.lattice_shape)
         self.batch_size = self.lattice_shape[0]
         self.xdim = np.cumprod(self.lattice_shape[1:])[-1]
-        self._annealed_trajectories = True
+        self._annealed_trajectories = False
         self._use_mixed_loss = False
 
         self.config = config
