@@ -143,4 +143,4 @@ class GaugeNetworkConv2D(tf.keras.models.Model):
         # pylint:disable=protected-access
         #  v_conv = self.v_conv_block(v, training=training)
         x_conv = self.x_conv_block(x, training=training)
-        return self.gauge_net((v, x_conv, t), training=training)
+        return self.gauge_net((x_conv, v, t), training=training)

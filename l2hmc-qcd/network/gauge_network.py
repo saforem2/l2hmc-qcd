@@ -125,13 +125,18 @@ class GaugeNetwork(layers.Layer):
             if config.dropout_prob > 0:
                 self.dropout = layers.Dropout(config.dropout_prob)
 
+            self.x_layer = layers.Dense(name='x_layer',
+                                        units=config.units[0],
+                                        kernel_initializer=xk_init)
+
             self.v_layer = layers.Dense(name='v_layer',
                                         units=config.units[0],
                                         kernel_initializer=vk_init)
 
-            self.x_layer = layers.Dense(name='x_layer',
+            self.t_layer = layers.Dense(name='t_layer',
                                         units=config.units[0],
-                                        kernel_initializer=xk_init)
+                                        kernel_initializer=tk_init)
+
             #  self.x_layer = ConcatenatedDense(name='x_layer',
             #                                   units=config.units[0],
             #                                   kernel_initializer=xk_init)
@@ -140,9 +145,6 @@ class GaugeNetwork(layers.Layer):
             #  self.x_layer = layers.Dense(name='x_layer',
             #                              units=config.units[0],
             #                              kernel_initializer=xk_init)
-            self.t_layer = layers.Dense(name='t_layer',
-                                        units=config.units[0],
-                                        kernel_initializer=tk_init)
             self.h_layer1 = layers.Dense(name='h_layer1',
                                          units=config.units[1],
                                          kernel_initializer=h1_init)
@@ -171,9 +173,11 @@ class GaugeNetwork(layers.Layer):
         x, v, t = inputs
         #  xc = tf.complex(tf.math.cos(x), tf.math.sin(x))
 
+        x_out = self.x_layer(x)
         t_out = self.t_layer(t)
         v_out = self.v_layer(v)
-        x_out = self.x_layer(tf.concat([tf.math.cos(x), tf.math.sin(x)], -1))
+        #  x_out = tf.math.angle(self.x_layer(tf.complex(tf.math.cos(x),
+        #                                                tf.math.sin(x))))
         #  v_out = tf.math.angle(self.v_layer(
         #      tf.complex(tf.math.cos(v), tf.math.sin(v))
         #  ))
