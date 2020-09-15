@@ -61,17 +61,18 @@ class PeriodicPadding(layers.Layer):
         self._size = size
 
     def call(self, inputs, **kwargs):
-        z1 = inputs[:, -self._size:, :, :]
-        z2 = inputs[:, 0:self._size, :, :]
+        z1 = inputs[:, -self._size:, :, ...]
+        z2 = inputs[:, 0:self._size, :, ...]
 
         inputs = tf.concat([z1, inputs, z2], 1)
 
-        z3 = inputs[:, :, -self._size:, :]
-        z4 = inputs[:, :, 0:self._size, :]
+        z3 = inputs[:, :, -self._size:, ...]
+        z4 = inputs[:, :, 0:self._size, ...]
 
         inputs = tf.concat([z3, inputs, z4], 2)
 
         return inputs
+
 
 
 # pylint:disable=too-many-locals, invalid-name
@@ -99,6 +100,8 @@ def get_gauge_network(
     v_input = keras.Input(shape=(xdim,), batch_size=batch_size, name='v')
     t_input = keras.Input(shape=(2,), batch_size=batch_size, name='t')
 
+    x = tf.concat([tf.math.cos(x_input), tf.math.sin(x_input)], axis=-1)
+
     if conv_config is not None:
         n1 = conv_config.filters[0]
         n2 = conv_config.filters[1]
@@ -106,7 +109,8 @@ def get_gauge_network(
         f2 = conv_config.sizes[1]
         p1 = conv_config.pool_sizes[0]
 
-        x = tf.reshape(x_input, shape=(batch_size, T, X, d))
+        x = tf.reshape(x, shape=(batch_size, T, X, 2 * d))
+        #  x = tf.transpose(x, (0, 1, 2, 4, 3))
         #  x = periodic_image(x, f1 - 1)
         x = PeriodicPadding(f1 - 1)(x)
         x = layers.Conv2D(n1, f1, activation='relu', name='xConv1')(x)
@@ -119,7 +123,7 @@ def get_gauge_network(
             x = layers.BatchNormalization(axis=-1, name='batch_norm')(x)
         #  v = layers.Flatten()(v_input)
     else:
-        x = layers.Flatten()(x_input)
+        x = layers.Flatten()(x)
         #  x = layers.Flatten()(x_input)
         #  v = layers.Flatten()(v_input)
 
