@@ -116,11 +116,26 @@ class GaugeDynamics(BaseDynamics):
         self._gauge_eq_masks = params.get('gauge_eq_masks', True)
         self.use_conv_net = params.get('use_conv_net', False)
         self.lattice_shape = params.get('lattice_shape', None)
+
+        # +-------------------------------------------------------------
+        #  TODO: Add the following parameters to `utils/parse_args.py`
+        self._use_scattered_xnet = False
+        self._annealed_trajectories = False
+        self._use_mixed_loss = False
+        if self._annealed_trajectories:
+            print('USING ANNEALED TRAJECTORIES!!!')
+        if self._use_mixed_loss:
+            print('USING MIXED LOSS!')
+        # +-------------------------------------------------------------
+
         self.lattice = GaugeLattice(self.lattice_shape)
         self.batch_size = self.lattice_shape[0]
         self.xdim = np.cumprod(self.lattice_shape[1:])[-1]
-        self._annealed_trajectories = False
-        self._use_mixed_loss = False
+
+        #  names = ['aux_weight', 'plaq_weight', 'charge_weight',
+        #           'zero_init', 'gauge_eq_masks', 'use_conv_net',
+        #           'lattice_shape', 'batch_size', 'xdim',
+        #           'use_tempered_trajectories', 'use_mixed_loss']
 
         self.config = config
         self.lr_config = lr_config
@@ -160,18 +175,25 @@ class GaugeDynamics(BaseDynamics):
             else:
                 net_weights = NetWeights(0., 1., 1., 1., 1., 1.)
 
+            if self.zero_init:
+                kinit = 'zeros'
+            else:
+                kinit = None
             if self.config.separate_networks:
                 #  nets = self._build_separate_networks()
                 self.xnet_even = get_gauge_network(self.lattice_shape,
                                                    self.net_config,
                                                    self.conv_config,
+                                                   kernel_initializer=kinit,
                                                    factor=2., name='XNet_even')
                 self.xnet_odd = get_gauge_network(self.lattice_shape,
                                                   self.net_config,
                                                   self.conv_config,
+                                                  kernel_initializer=kinit,
                                                   factor=2., name='XNet_odd')
                 self.vnet = get_gauge_network(self.lattice_shape,
                                               self.net_config,
+                                              kernel_initializer=kinit,
                                               factor=1., name='VNet')
                 #
                 #  self.vnet = nets['vnet']
@@ -182,9 +204,11 @@ class GaugeDynamics(BaseDynamics):
                 self.xnet = get_gauge_network(self.lattice_shape,
                                               self.net_config,
                                               self.conv_config,
+                                              kernel_initializer=kinit,
                                               factor=2., name='XNet')
                 self.vnet = get_gauge_network(self.lattice_shape,
                                               self.net_config,
+                                              kernel_initializer=kinit,
                                               factor=2., name='VNet')
                 #  if self.use_conv_net:
                 #      self.xnet, self.vnet = self._build_conv_networks()
@@ -743,6 +767,25 @@ class GaugeDynamics(BaseDynamics):
 
         return S, T, Q
 
+    def _call_xnet(self, inputs, mask, step, training=None):
+        """Call `self.xnet` to get Sx, Tx, Qx for updating `x`."""
+        if len(mask) == 2:
+            mask, mask_ = mask
+
+        x, v, t = inputs
+        #  shape = (self.batch_size, -1)
+        #  m = tf.reshape(mask, shape)
+        #  x = tf.concat([mask * tf.math.cos(x),
+        #                 mask * tf.math.sin(x)], axis=-1)
+        if not self.config.separate_networks:
+            S, T, Q = self.xnet((x, v, t), training)
+        else:
+            if step % 2 == 0:
+                S, T, Q = self.xnet_even((x, v, t), training)
+            else:
+                S, T, Q = self.xnet_odd((x, v, t), training)
+
+        return S, T, Q
 
     def _update_v_forward(
                 self,
@@ -765,7 +808,7 @@ class GaugeDynamics(BaseDynamics):
         x = self.normalizer(state.x)
         grad = self.grad_potential(x, state.beta)
         t = self._get_time(step, tile=tf.shape(x)[0])
-        S, T, Q = self.vnet((grad, x, t), training)
+        S, T, Q = self.vnet((x, grad, t), training)
 
         scale = self._vsw * (0.5 * self.eps * S)
         transl = self._vtw * T
@@ -801,38 +844,37 @@ class GaugeDynamics(BaseDynamics):
         """
         if self.config.hmc:
             return super()._update_x_forward(state, step, masks, training)
-        if self.config.use_ncp:
-            return self._update_xf_ncp(state, step, masks, training)
+        #  if self.config.use_ncp:
+        #      return self._update_xf_ncp(state, step, masks, training)
 
         m, mc = masks
         x = self.normalizer(state.x)
         t = self._get_time(step, tile=tf.shape(x)[0])
 
-        S, T, Q = self._scattered_xnet((state.v, x, t), m,
-                                       step=step, training=training)
-        #  inputs = (state.v, m * x, t)
-        #  if not self.config.separate_networks:
-        #      S, T, Q = self.xnet(inputs, training=training)
-        #      #  S, T, Q = self._scattered_xnet((state.v, x, t), m,
-        #      #                                 step=step, training=training)
-        #  else:
-        #      if step % 2 == 0:
-        #          #  S, T, Q = self._scattered_xnet(
-        #          #      (state.v, x, t), m, step=step, training=training)
-        #          S, T, Q = self.xnet_even(inputs, training=training)
-        #      else:
-        #          S, T, Q = self.xnet_odd(inputs, training=training)
-
+        S, T, Q = self._call_xnet((x, state.v, t), m, step, training)
+        scale = self._xsw * (self.eps * S)
         transl = self._xtw * T
         transf = self._xqw * (self.eps * Q)
-        scale = self._xsw * (self.eps * S)
 
         expS = tf.exp(scale)
         expQ = tf.exp(transf)
-        y = x * expS + self.eps * (state.v * expQ + transl)
-        xf = self.normalizer(m * x + mc * y)
+
+        if self.config.use_ncp:
+            _x = 2 * tf.math.atan(tf.math.tan(state.x/2.) * expS)
+            _y = _x + self.eps * (state.v * expQ + transl)
+            xf = self.normalizer((m * state.x) + (mc * _y))
+
+            cterm = tf.math.cos(state.x / 2) ** 2
+            sterm = (expS * tf.math.sin(state.x / 2)) ** 2
+            logdet_ = tf.math.log(expS / (cterm + sterm))
+            logdet = tf.reduce_sum(mc * logdet_, axis=1)
+
+        else:
+            y = x * expS + self.eps * (state.v * expQ + transl)
+            xf = self.normalizer(m * x + mc * y)
+            logdet = tf.reduce_sum(mc * scale, axis=1)
+
         state_out = State(x=xf, v=state.v, beta=state.beta)
-        logdet = tf.reduce_sum(mc * scale, axis=1)
 
         return state_out, logdet
 
@@ -856,7 +898,7 @@ class GaugeDynamics(BaseDynamics):
         x = self.normalizer(state.x)
         t = self._get_time(step, tile=tf.shape(x)[0])
         grad = self.grad_potential(x, state.beta)
-        S, T, Q = self.vnet((grad, x, t), training)
+        S, T, Q = self.vnet((x, grad, t), training)
 
         #  x = tf.reshape(x, self.lattice_shape)
         #  grad = tf.reshape(grad, self.lattice_shape)
@@ -898,35 +940,14 @@ class GaugeDynamics(BaseDynamics):
         """
         if self.config.hmc:
             return super()._update_x_backward(state, step, masks, training)
-        if self.config.use_ncp:
-            return self._update_xb_ncp(state, step, masks, training)
+        #  if self.config.use_ncp:
+        #      return self._update_xb_ncp(state, step, masks, training)
 
         # Call `XNet` using `self._scattered_xnet`
         m, mc = masks
         x = self.normalizer(state.x)
         t = self._get_time(step, tile=tf.shape(x)[0])
-        S, T, Q = self._scattered_xnet((x, state.v, t), m, step, training)
-        #  S, T, Q = self._scattered_xnet((x, state.v, t), m, step,
-        #                                 training=training)
-
-        #  inputs = (state.v, m * x, t)
-        #  if not self.config.separate_networks:
-        #      S, T, Q = self.xnet(inputs, training=training)
-        #  elif step % 2 == 0:
-        #      S, T, Q = self.xnet_even(inputs, training=training)
-        #  else:
-        #      S, T, Q = self.xnet_odd(inputs, training=training)
-
-        #  if self.config.separate_networks and step % 2 == 0:
-        #      S, T, Q = self.xnet_even((state.v, m * x, t), training=training)
-        #  if self.config.separate_networks and step % 2 == 1:
-        #      S, T, Q = self.xnet_odd((state.v, m * x, t), training=training)
-        #  else:
-        #      S, T, Q = self.xnet((state.v, m * x, t), training=training)
-
-        #  S, T, Q = self.xnet((state.v, m * x, t), training=training)
-        #  S, T, Q = self.xnet((state.v, m * x, t), training=training)
-        #  S, T, Q = self._scattered_xnet(x, state.v, t, masks, training)
+        S, T, Q = self._call_xnet((x, state.v, t), m, step, training)
 
         scale = self._xsw * (-self.eps * S)
         transl = self._xtw * T
@@ -934,14 +955,27 @@ class GaugeDynamics(BaseDynamics):
 
         expS = tf.exp(scale)
         expQ = tf.exp(transf)
-        y = expS * (x - self.eps * (state.v * expQ + transl))
-        xb = self.normalizer(m * x + mc * y)
-        state_out = State(xb, v=state.v, beta=state.beta)
-        logdet = tf.reduce_sum(mc * scale, axis=1)
 
+        if self.config.use_ncp:
+            term1 = 2 * tf.math.atan(expS * tf.math.tan(state.x / 2))
+            term2 = expS * self.eps * (state.v * expQ + transl)
+            y = term1 - term2
+            xb = self.normalizer((m * state.x) + (mc * y))
+
+            cterm = tf.math.cos(state.x / 2) ** 2
+            sterm = (expS * tf.math.sin(state.x / 2)) ** 2
+            logdet_ = tf.math.log(expS / (cterm + sterm))
+            logdet = tf.reduce_sum(mc * logdet_, axis=1)
+
+        else:
+            y = expS * (x - self.eps * (state.v * expQ + transl))
+            xb = self.normalizer(m * x + mc * y)
+            logdet = tf.reduce_sum(mc * scale, axis=1)
+
+        state_out = State(xb, v=state.v, beta=state.beta)
         return state_out, logdet
 
-    def _update_xf_ncp(
+    def _update_xf_ncp1(
                 self,
                 state: State,
                 step: int,
@@ -969,8 +1003,8 @@ class GaugeDynamics(BaseDynamics):
         x = self.normalizer(state.x)
         t = self._get_time(step, tile=tf.shape(x)[0])
 
-        S, T, Q = self._scattered_xnet((x, state.v, t), m, step,
-                                       training=training)
+        #  S, T, Q = self._scattered_xnet((x, state.v, t), m, step,
+        #                                 training=training)
         #  inputs = (state.v, m * x, t)
         #  if not self.config.separate_networks:
         #      S, T, Q = self.xnet(inputs, training=training)
@@ -998,7 +1032,7 @@ class GaugeDynamics(BaseDynamics):
 
         return state_out, logdet
 
-    def _update_xb_ncp(
+    def _update_xb_ncp1(
                 self,
                 state: State,
                 step: int,
