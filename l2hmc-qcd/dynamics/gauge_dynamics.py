@@ -109,24 +109,14 @@ class GaugeDynamics(BaseDynamics):
             conv_config: Optional[ConvolutionConfig] = None
     ) -> NoReturn:
 
-        self.aux_weight = params.get('aux_weight', 0.)
-        self.plaq_weight = params.get('plaq_weight', 10.)
-        self.charge_weight = params.get('charge_weight', 0.1)
-        self.zero_init = params.get('zero_init', False)
-        self._gauge_eq_masks = params.get('gauge_eq_masks', True)
-        self.use_conv_net = params.get('use_conv_net', False)
-        self.lattice_shape = params.get('lattice_shape', None)
-
-        # +-------------------------------------------------------------
-        #  TODO: Add the following parameters to `utils/parse_args.py`
-        self._use_scattered_xnet = False
-        self._annealed_trajectories = False
-        self._use_mixed_loss = False
-        if self._annealed_trajectories:
-            print('USING ANNEALED TRAJECTORIES!!!')
-        if self._use_mixed_loss:
-            print('USING MIXED LOSS!')
-        # +-------------------------------------------------------------
+        self.aux_weight = config.get('aux_weight', 0.)
+        self.plaq_weight = config.get('plaq_weight', 10.)
+        self.charge_weight = config.get('charge_weight', 0.1)
+        self.zero_init = config.get('zero_init', False)
+        self._gauge_eq_masks = config.get('gauge_eq_masks', True)
+        self.use_conv_net = config.get('use_conv_net', False)
+        self.lattice_shape = config.get('lattice_shape', None)
+        self.use_mixed_loss = config.get('use_mixed_loss', False)
 
         self.lattice = GaugeLattice(self.lattice_shape)
         self.batch_size = self.lattice_shape[0]
@@ -180,17 +170,23 @@ class GaugeDynamics(BaseDynamics):
             else:
                 kinit = None
             if self.config.separate_networks:
+                args = (self.lattice_shape, self.net_config, self.conv_config)
+                kwargs = {'kernel_initializer': kinit, 'factor': 2.}
+                self.xnets = [
+                    get_gauge_network(*args, **kwargs, name=f'XNet{i}')
+                    for i in range(self.config.num_steps)
+                ]
                 #  nets = self._build_separate_networks()
-                self.xnet_even = get_gauge_network(self.lattice_shape,
-                                                   self.net_config,
-                                                   self.conv_config,
-                                                   kernel_initializer=kinit,
-                                                   factor=2., name='XNet_even')
-                self.xnet_odd = get_gauge_network(self.lattice_shape,
-                                                  self.net_config,
-                                                  self.conv_config,
-                                                  kernel_initializer=kinit,
-                                                  factor=2., name='XNet_odd')
+                #  self.xnet_even = get_gauge_network(self.lattice_shape,
+                #                                     self.net_config,
+                #                                     self.conv_config,
+                #                                     kernel_initializer=kinit,
+                #                                     factor=2., name='XNet_even')
+                #  self.xnet_odd = get_gauge_network(self.lattice_shape,
+                #                                    self.net_config,
+                #                                    self.conv_config,
+                #                                    kernel_initializer=kinit,
+                #                                    factor=2., name='XNet_odd')
                 self.vnet = get_gauge_network(self.lattice_shape,
                                               self.net_config,
                                               kernel_initializer=kinit,
@@ -221,137 +217,7 @@ class GaugeDynamics(BaseDynamics):
             self.lr = self._create_lr(lr_config)
             self.optimizer = self._create_optimizer()
 
-    def _build(self, params, config, network_config, lr_config, **kwargs):
-        self.config = config
-        self.net_config = network_config
-        self.eps = self._build_eps(use_log=False)
-        self.masks = self._build_masks()
-        self._has_trainable_params = True
-        if self.config.hmc:
-            net_weights = NetWeights(0., 0., 0., 0., 0., 0.)
-            self.config.use_ncp = False
-            self.config.separate_networks = False
-            if self.config.eps_fixed:
-                self._has_trainable_params = False
-        else:
-            if self.config.use_ncp:
-                net_weights = NetWeights(1., 1., 1., 1., 1., 1.)
-            else:
-                net_weights = NetWeights(0., 1., 1., 1., 1., 1.)
-
-        self.params = self._parse_params(params, net_weights=net_weights)
-        if self.config.hmc:
-            self.xnet, self.vnet = self._build_hmc_networks()
-            if self.config.eps_fixed:
-                self._has_trainable_params = False
-        else:
-            if self.config.separate_networks:
-                nets = self._build_separate_networks()
-                self.xnet_even = nets['xnet_even']
-                self.xnet_odd = nets['xnet_odd']
-                self.vnet = nets['vnet']
-            else:
-                if self.use_conv_net:
-                    self.xnet, self.vnet = self._build_conv_networks()
-                else:
-                    self.xnet, self.vnet = self._build_generic_networks()
-
-        #  elif self.config.separate_networks:
-        #      nets = self._build_separate_networks()
-        #      self.xnet_even = nets['xnet_even']
-        #      self.xnet_odd = nets['xnet_odd']
-        #      self.vnet = nets['vnet']
-        #  else:
-        #      self.xnet, self.vnet = self._build_networks()
-        #
-        if self._has_trainable_params:
-            self.lr_config = lr_config
-            self.lr = self._create_lr(lr_config)
-            self.optimizer = self._create_optimizer()
-
-    def apply_transition1(
-            self, inputs: INPUTS, training: bool = None,
-    ) -> (MonteCarloStates, tf.Tensor, MonteCarloStates):
-        """Propose a new state and perform the accept/reject step.
-
-        NOTE: We simulate the dynamics both forward and backward, and use
-        sampled Bernoulli masks to compute the actual solutions.
-        """
-        x, beta = inputs
-        # ====
-        # sf(b)_init: initial state forward (backward)
-        # sf(b)_prop: proposed state forward (backward)
-        # pxf(b): acceptance probability in the forward (backward) direction
-        # sldf(b): sumlogdet in the forward (backward) direction
-        # ====
-        sf_init, sf_prop, pxf, sldf = self._transition(inputs, forward=True,
-                                                       training=training)
-        sb_init, sb_prop, pxb, sldb = self._transition(inputs, forward=False,
-                                                       training=training)
-        # ====
-        # Combine the forward/backward outputs;
-        # these comprise the proposed configuration
-        # mf_, mb_: forward, backward masks (respectively)
-        # ====
-        mf_, mb_ = self._get_direction_masks()
-        mf = mf_[:, None]
-        mb = mb_[:, None]
-        v_init = mf * sf_init.v + mb * sb_init.v
-        x_prop = mf * sf_prop.x + mb * sb_prop.x
-        v_prop = mf * sf_prop.v + mb * sb_prop.v
-        sld_prop = mf_ * sldf + mb_ * sldb
-
-        # Compute the acceptance probability
-        accept_prob = mf_ * pxf + mb_ * pxb
-
-        # ma_: accept_mask; mr_: reject mask
-        ma_, mr_ = self._get_accept_masks(accept_prob)
-        ma = ma_[:, None]
-        mr = mr_[:, None]
-
-        # Construct the output configuration
-        v_out = ma * v_prop + mr * v_init
-        x_out = self.normalizer(ma * x_prop + mr * x)
-        sld_out = ma_ * sld_prop  # NOTE: initial sumlogdet = 0
-
-        state_init = State(x=x, v=v_init, beta=beta)
-        state_prop = State(x=x_prop, v=v_prop, beta=beta)
-        state_out = State(x=x_out, v=v_out, beta=beta)
-
-        mc_states = MonteCarloStates(state_init, state_prop, state_out)
-        sld_states = MonteCarloStates(0., sld_prop, sld_out)
-
-        return mc_states, sld_states
-
-    def transition_kernel_sep_nets(
-            self, state: State, forward: bool, training: bool = None,
-    ):
-        """Transition kernel of the augmented leapfrog integrator.
-
-        Returns:
-            state_prop (State): Proposed state output from integrator.
-            accept_prob (tf.Tensor): (batch-wise) Acceptance probability.
-            sumlogdet (tf.Tensor): Total log determinant of the Jacobian
-        """
-        lf_fn = self._forward_lf if forward else self._backward_lf
-        state_prop = State(x=state.x, v=state.v, beta=state.beta)
-        sumlogdet = tf.zeros((self.batch_size,), dtype=TF_FLOAT)
-        for step in tf.range(tf.constant(self.config.num_steps)):
-            #  self.xnet = self.xnets.get(step.ref(), None)
-            if step % 2 == 0:
-                setattr(self, 'xnet', self.xnet_even)
-            else:
-                setattr(self, 'xnet', self.xnet_odd)
-            #      setattr(self, 'xnet', self.xnet_odd)
-
-            state_prop, logdet = lf_fn(step, state_prop, training)
-            sumlogdet += logdet
-
-        accept_prob = self.compute_accept_prob(state, state_prop, sumlogdet)
-
-        return state_prop, accept_prob, sumlogdet
-
-    def transition_kernel_annealing(
+    def transition_kernel_tempered(
                 self, state: State, forward: bool, training: bool = None
     ):
         """Transition kernel of the augmented leapfrog integrator.
@@ -383,22 +249,6 @@ class GaugeDynamics(BaseDynamics):
         px = self.compute_accept_prob(state, state_, sumlogdet)
 
         return state_, px, sumlogdet
-
-    def transition_kernel(
-            self, state: State, forward: bool, training: bool = None,
-    ):
-        """Transition kernel of the augmented leapfrog integrator.
-
-        Returns:
-            state_prop (State): Proposed state output from integrator.
-            accept_prob (tf.Tensor): (batch-wise) Acceptance probability.
-            sumlogdet (tf.Tensor): Total log determinant of the Jacobian
-        """
-        if self._annealed_trajectories:
-            return self.transition_kernel_annealing(state, forward, training)
-        if self.config.separate_networks and not self.config.hmc:
-            return self.transition_kernel_sep_nets(state, forward, training)
-        return super().transition_kernel(state, forward, training)
 
     def save_config(self, config_dir: str):
         """Helper method for saving configuration objects."""
@@ -460,86 +310,6 @@ class GaugeDynamics(BaseDynamics):
 
         return masks
 
-    def _build_networks(self):
-        """Build the nets that parameterize the aumgmented LF integrator."""
-        if self.config.hmc:
-            print('USING HMC NETWORKS')
-            return self._build_hmc_networks()
-        if self.use_conv_net:
-            print('USING CONV NETS')
-            return self._build_conv_networks()
-        if self.config.separate_networks:
-            print('USING SEPARATE NETWORKS')
-            return self._build_separate_networks()
-
-        print('USING GENERIC NETWORKS')
-        return self._build_generic_networks()
-
-    def _build_conv_networks(self):
-        kinit = 'zeros' if self.zero_init else None
-        xnet = GaugeNetworkConv2D(name='XNet',
-                                  factor=2.,
-                                  xdim=self.xdim,
-                                  config=self.net_config,
-                                  kernel_initializer=kinit,
-                                  conv_config=self.conv_config)
-
-        vnet = GaugeNetwork(name='VNet', xdim=self.xdim,
-                            kernel_initializer=kinit,
-                            config=self.net_config, factor=1.)
-
-        return xnet, vnet
-
-    def _build_separate_networks(self):
-        """Build separate networks for the even / odd update steps."""
-        kinit = 'zeros' if self.zero_init else None
-        vnet = GaugeNetwork(self.net_config, factor=1.,
-                            kernel_initializer=kinit,
-                            xdim=self.xdim, name='VNet')
-        #  if self.use_conv_net:
-        #      def make_net(i):
-        #          return GaugeNetworkConv2D(conv_config=self.conv_config,
-        #                                    config=self.net_config, factor=2.,
-        #                                    xdim=self.xdim, name=f'XNet{i}')
-        #      xnets = [make_net(i) for i in range(self.config.num_steps)]
-        #
-        #  else:
-        #      def make_net(i):
-        #          return GaugeNetwork(self.net_config, factor=2.,
-        #                              xdim=self.xdim, name=f'XNet{i}')
-        #      xnets = [make_net(i) for i in range(self.config.num_steps)]
-        #
-
-        if self.use_conv_net:
-            xnet_odd = GaugeNetworkConv2D(conv_config=self.conv_config,
-                                          kernel_initializer=kinit,
-                                          config=self.net_config, factor=2.,
-                                          xdim=self.xdim, name='XNet_odd')
-            xnet_even = GaugeNetworkConv2D(conv_config=self.conv_config,
-                                           kernel_initializer=kinit,
-                                           config=self.net_config, factor=2.,
-                                           xdim=self.xdim, name='XNet_even')
-        else:
-            xnet_odd = GaugeNetwork(config=self.net_config, factor=2.,
-                                    kernel_initializer=kinit,
-                                    xdim=self.xdim, name='XNet_odd')
-            xnet_even = GaugeNetwork(config=self.net_config, factor=2.,
-                                     kernel_initializer=kinit,
-                                     xdim=self.xdim, name='XNet_even')
-        return {
-            'vnet': vnet,
-            'xnet_odd': xnet_odd,
-            'xnet_even': xnet_even,
-        }
-
-    def _build_generic_networks(self):
-        kinit = 'zeros' if self.zero_init else None
-        xnet = GaugeNetwork(self.net_config, factor=2., xdim=self.xdim,
-                            kernel_initializer=kinit, name='XNet')
-        vnet = GaugeNetwork(self.net_config, factor=1., xdim=self.xdim,
-                            kernel_initializer=kinit, name='VNet')
-        return xnet, vnet
-
     @staticmethod
     def mixed_loss(loss: tf.Tensor, weight: float):
         """Returns: tf.reduce_mean(weight / loss - loss / weight)."""
@@ -547,7 +317,7 @@ class GaugeDynamics(BaseDynamics):
 
     def calc_losses(self, states: MonteCarloStates, accept_prob: tf.Tensor):
         """Calculate the total loss."""
-        dtype = states.init.x.dtype
+        #  dtype = states.init.x.dtype
         # ==== FIXME: Should we stack
         # ==== `states = [states.init.x, states.proposed.x]`
         # ==== and call `self.lattice.calc_plaq_sums(states)`?
@@ -555,27 +325,29 @@ class GaugeDynamics(BaseDynamics):
         wl_prop = self.lattice.calc_wilson_loops(states.proposed.x)
 
         # Calculate the plaquette loss
-        ploss = tf.cast(0., dtype=dtype)
+        #  ploss = tf.cast(0., dtype=dtype)
+        ploss = 0.
         if self.plaq_weight > 0:
             dwloops = 2 * (1. - tf.math.cos(wl_prop - wl_init))
             ploss = accept_prob * tf.reduce_sum(dwloops, axis=(1, 2))
 
             # ==== FIXME: Try using mixed loss??
-            if self._use_mixed_loss:
+            if self.use_mixed_loss:
                 ploss = self.mixed_loss(ploss, self.plaq_weight)
             else:
                 ploss = tf.reduce_mean(-ploss / self.plaq_weight, axis=0)
 
         # Calculate the charge loss
-        dq_ = tf.cast(0., dtype=dtype)
+        #  qloss = tf.cast(0., dtype=dtype)
+        qloss = 0.
         if self.charge_weight > 0:
             q_init = tf.reduce_sum(tf.sin(wl_init), axis=(1, 2)) / (2 * np.pi)
             q_prop = tf.reduce_sum(tf.sin(wl_prop), axis=(1, 2)) / (2 * np.pi)
             #  q_prop = tf.sin(wl_prop)
             #  dq2 = (q_prop - q_init)
             qloss = accept_prob * (q_prop - q_init) ** 2 + 1e-4
-            if self._use_mixed_loss:
-                qloss = self.mixed_loss(dq_, self.charge_weight)
+            if self.use_mixed_loss:
+                qloss = self.mixed_loss(qloss, self.charge_weight)
             else:
                 qloss = tf.reduce_mean(-qloss / self.charge_weight, axis=0)
             #  dq_sum = tf.reduce_sum((q_prop - q_init) ** 2, axis=(1, 2))
@@ -760,17 +532,15 @@ class GaugeDynamics(BaseDynamics):
         if not self.config.separate_networks:
             S, T, Q = self.xnet((_x, v, t), training)
         else:
-            if step % 2 == 0:
-                S, T, Q = self.xnet_even((_x, v, t), training)
-            else:
-                S, T, Q = self.xnet_odd((_x, v, t), training)
+            xnet = self.xnets[step]
+            S, T, Q = xnet((x, v, t), training)
 
         return S, T, Q
 
     def _call_xnet(self, inputs, mask, step, training=None):
         """Call `self.xnet` to get Sx, Tx, Qx for updating `x`."""
         if len(mask) == 2:
-            mask, mask_ = mask
+            mask, _ = mask
 
         x, v, t = inputs
         #  shape = (self.batch_size, -1)
@@ -780,10 +550,13 @@ class GaugeDynamics(BaseDynamics):
         if not self.config.separate_networks:
             S, T, Q = self.xnet((x, v, t), training)
         else:
-            if step % 2 == 0:
-                S, T, Q = self.xnet_even((x, v, t), training)
-            else:
-                S, T, Q = self.xnet_odd((x, v, t), training)
+            #  xnet = self.xnets[step]
+            xnet = self.xnets[tf.cast(step, tf.int32)]
+            S, T, Q = xnet((x, v, t), training)
+            #  if step % 2 == 0:
+            #      S, T, Q = self.xnet_even((x, v, t), training)
+            #  else:
+            #      S, T, Q = self.xnet_odd((x, v, t), training)
 
         return S, T, Q
 
@@ -852,6 +625,7 @@ class GaugeDynamics(BaseDynamics):
         t = self._get_time(step, tile=tf.shape(x)[0])
 
         S, T, Q = self._call_xnet((x, state.v, t), m, step, training)
+
         scale = self._xsw * (self.eps * S)
         transl = self._xtw * T
         transf = self._xqw * (self.eps * Q)
@@ -973,130 +747,4 @@ class GaugeDynamics(BaseDynamics):
             logdet = tf.reduce_sum(mc * scale, axis=1)
 
         state_out = State(xb, v=state.v, beta=state.beta)
-        return state_out, logdet
-
-    def _update_xf_ncp1(
-                self,
-                state: State,
-                step: int,
-                masks: Tuple[tf.Tensor, tf.Tensor],   # [m, 1. - m]
-                training: bool = None
-    ):
-        """Update the position `x` in the forward leapfrog step.
-
-        NOTE: Non-Compact Projection
-        -----------------------------
-        1. Update,
-                x -> x' = m * x + (1 - m) * y
-          where
-                y = x * exp(eps * Sx) + eps * (v * Qx + Tx)
-        2. Let
-                z = f(x): [-pi, pi] -> R, given by z = tan(x / 2)
-        3. Then
-                x' = m * x + (1 - m) * (2 * arctan(y))
-          where
-                y = tan(x / 2) * exp(eps * Sx) + eps * (v * Qx + Tx))
-        4. With Jacobian:
-                J = 1 / {[cos(x/2)]^2 + [exp(eps*Sx) * sin(x/2)]^2}
-        """
-        m, mc = masks
-        x = self.normalizer(state.x)
-        t = self._get_time(step, tile=tf.shape(x)[0])
-
-        #  S, T, Q = self._scattered_xnet((x, state.v, t), m, step,
-        #                                 training=training)
-        #  inputs = (state.v, m * x, t)
-        #  if not self.config.separate_networks:
-        #      S, T, Q = self.xnet(inputs, training=training)
-        #  elif step % 2 == 0:
-        #      S, T, Q = self.xnet_even(inputs, training=training)
-        #  else:
-        #      S, T, Q = self.xnet_odd(inputs, training=training)
-
-        transl = self._xtw * T
-        transf = self._xqw * (self.eps * Q)
-        scale = self._xsw * (self.eps * S)
-
-        expS = tf.exp(scale)
-        expQ = tf.exp(transf)
-
-        _x = 2 * tf.math.atan(tf.math.tan(state.x/2) * expS)
-        _y = _x + self.eps * (state.v * expQ + transl)
-        xf = (m * state.x) + (mc * _y)
-        state_out = State(x=xf, v=state.v, beta=state.beta)
-
-        cterm = tf.math.cos(state.x / 2) ** 2
-        sterm = (expS * tf.math.sin(state.x / 2)) ** 2
-        log_jac = tf.math.log(expS / (cterm + sterm))
-        logdet = tf.reduce_sum(mc * log_jac, axis=1)
-
-        return state_out, logdet
-
-    def _update_xb_ncp1(
-                self,
-                state: State,
-                step: int,
-                masks: Tuple[tf.Tensor, tf.Tensor],   # [m, 1. - m]
-                training: bool = None
-    ):
-        """Update the position `x` in the backward leapfrog step."""
-        m, mc = masks
-        x = self.normalizer(state.x)
-        t = self._get_time(step, tile=tf.shape(x)[0])
-        S, T, Q = self._scattered_xnet((x, state.v, t), m, step, training)
-        #  if not self.config.use_ncp:
-        #      return super()._update_x_backward(state,
-        #                                        t, masks, training)
-        #  m, mc = masks
-        #  x = self.normalizer(state.x)
-        #  t = self._get_time(step, tile=tf.shape(x)[0])
-        #  inputs = (state.v, m * x, t)
-        #  if not self.config.separate_networks:
-        #      S, T, Q = self.xnet(inputs, training=training)
-        #  else:
-        #      if step % 2 == 0:
-        #          S, T, Q = self.xnet_even(inputs, training=training)
-        #      else:
-        #          S, T, Q = self.xnet_odd(inputs, training=training)
-        #
-        transl = self._xtw * T
-        transf = self._xqw * (self.eps * Q)
-        scale = self._xsw * (-self.eps * S)
-
-        expS = tf.exp(scale)
-        expQ = tf.exp(transf)
-
-        # Apply Non-Compact Projection to the product $x \odot S_{x}$
-        term1 = 2 * tf.math.atan(expS * tf.math.tan(state.x / 2))
-        term2 = expS * self.eps * (state.v * expQ + transl)
-        y = term1 - term2
-        xb = (m * state.x) + (mc * y)
-        state_out = State(x=xb, v=state.v, beta=state.beta)
-
-        cterm = tf.math.cos(state.x / 2) ** 2
-        sterm = (expS * tf.math.sin(state.x / 2)) ** 2
-        log_jac = tf.math.log(expS / (cterm + sterm))
-        logdet = tf.reduce_sum(mc * log_jac, axis=1)
-
-        # =================================
-        #  S, T, Q = self.xnet(inputs, training=training)
-        #  if self.config.separate_networks and step % 2 == 0:
-        #      S, T, Q = self.xnet_even((state.v, m * x, t), training=training)
-        #  if self.config.separate_networks and step % 2 == 1:
-        #      S, T, Q = self.xnet_odd((state.v, m * x, t), training=training)
-        #  else:
-        #      S, T, Q = self.xnet((state.v, m * x, t), training=training)
-
-        #  S, T, Q = self.xnet((state.v, m * x, t), training=training)
-        #  S, T, Q = self.xnet((state.v, m * x, t), training=training)
-        #  S, T, Q = self._scattered_xnet(x, state.v, t, masks, training)
-
-        #  S, T, Q = self._scattered_xnet(x, state.v, t, masks, training)
-        #  shape = (self.batch_size, -1)
-        #  m_ = tf.reshape(m, shape)
-        #  idxs = tf.where(m_)
-        #  x_ = tf.reshape(tf.gather_nd(x, idxs), shape)
-        #  S, T, Q = self.xnet((state.v, x_, t), training)
-        # =================================
-
         return state_out, logdet

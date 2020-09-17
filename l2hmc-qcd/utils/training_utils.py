@@ -92,7 +92,7 @@ def train_hmc(flags):
     net_config = hmc_flags.pop('network_config', None)
     hmc_flags.train_steps = hmc_flags.pop('hmc_steps', None)
     hmc_flags.profiler = False
-    hmc_flags.make_summaries = False
+    hmc_flags.make_summaries = True
     config = GaugeDynamicsConfig(
         hmc=True,
         use_ncp=False,
@@ -103,9 +103,9 @@ def train_hmc(flags):
     )
 
     lr_config = LearningRateConfig(
-        warmup_steps=None,
-        decay_rate=None,
-        lr_decay_steps=None,
+        warmup_steps=0,
+        decay_rate=1.,
+        decay_steps=int(1e6),
         lr_init=lr_config.get('lr_init', None),
     )
 
@@ -123,7 +123,7 @@ def train_hmc(flags):
             'num_steps': dynamics.config.num_steps,
             'beta_init': hmc_flags.beta_init,
             'beta_final': hmc_flags.beta_final,
-            'lattice_shape': dynamics.lattice_shape,
+            'lattice_shape': dynamics.config.lattice_shape,
             'net_weights': NET_WEIGHTS_HMC,
         }
         plot_data(train_data, train_dirs.train_dir, hmc_flags,
@@ -168,7 +168,7 @@ def train(flags: AttrDict, log_file: str = None, md_steps: int = 0):
 
     dynamics = build_dynamics(flags)
     dynamics.save_config(dirs.config_dir)
-    io.print_flags(flags)
+    #  io.print_flags(flags)
 
     io.log('\n'.join([120 * '*', 'Training L2HMC sampler...']))
     x, train_data = train_dynamics(dynamics, flags, dirs,
@@ -182,7 +182,7 @@ def train(flags: AttrDict, log_file: str = None, md_steps: int = 0):
             'beta_init': train_data.data.beta[0],
             'beta_final': train_data.data.beta[-1],
             'eps': dynamics.eps.numpy(),
-            'lattice_shape': dynamics.lattice_shape,
+            'lattice_shape': dynamics.config.lattice_shape,
             'num_steps': dynamics.config.num_steps,
             'net_weights': dynamics.net_weights,
         }
@@ -301,7 +301,7 @@ def train_dynamics(
         io.log('Compiled `dynamics.train_step` using tf.function!')
         if IS_CHIEF and flags.profiler:
             tf.summary.trace_export(name='train_step_trace', step=0,
-                                    profiler_outdir=dirs.train_dir)
+                                    profiler_outdir=dirs.summary_dir)
             tf.summary.trace_off()
     except Exception as exception:  # pylint:disable broad-except
         io.log(exception, level='CRITICAL')

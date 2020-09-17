@@ -93,67 +93,80 @@ def get_gauge_network(
     h1 = net_config.units[0]
     h2 = net_config.units[1]
     kinits = get_kernel_initializers(factor, kernel_initializer)
+    if name is None:
+        name = 'GaugeNetwork'
+
+    def _name(s):
+        return f'{name}/{s}'
 
     #  x_input = keras.Input(shape=(T, X, d), batch_size=batch_size, name='x')
     #  v_input = keras.Input(shape=(T, X, d), batch_size=batch_size, name='v')
-    x_input = keras.Input(shape=(xdim,), batch_size=batch_size, name='x')
-    v_input = keras.Input(shape=(xdim,), batch_size=batch_size, name='v')
-    t_input = keras.Input(shape=(2,), batch_size=batch_size, name='t')
+    with tf.name_scope(name):
+        x_input = keras.Input(shape=(xdim,), batch_size=batch_size)
+        v_input = keras.Input(shape=(xdim,), batch_size=batch_size)
+        t_input = keras.Input(shape=(2,), batch_size=batch_size)
 
-    x = tf.concat([tf.math.cos(x_input), tf.math.sin(x_input)], axis=-1)
+        #  x = tf.concat([tf.math.cos(x_input), tf.math.sin(x_input)], axis=-1)
 
-    if conv_config is not None:
-        n1 = conv_config.filters[0]
-        n2 = conv_config.filters[1]
-        f1 = conv_config.sizes[0]
-        f2 = conv_config.sizes[1]
-        p1 = conv_config.pool_sizes[0]
+        if conv_config is not None:
+            n1 = conv_config.filters[0]
+            n2 = conv_config.filters[1]
+            f1 = conv_config.sizes[0]
+            f2 = conv_config.sizes[1]
+            p1 = conv_config.pool_sizes[0]
 
-        x = tf.reshape(x, shape=(batch_size, T, X, 2 * d))
-        #  x = tf.transpose(x, (0, 1, 2, 4, 3))
-        #  x = periodic_image(x, f1 - 1)
-        x = PeriodicPadding(f1 - 1)(x)
-        x = layers.Conv2D(n1, f1, activation='relu', name='xConv1')(x)
-        x = layers.Conv2D(n2, f2, activation='relu', name='xConv2')(x)
-        x = layers.MaxPooling2D(p1, name='xPool')(x)
-        x = layers.Conv2D(n2, f2, activation='relu', name='xConv3')(x)
-        x = layers.Conv2D(n1, f1, activation='relu', name='xConv4')(x)
-        x = layers.Flatten()(x)
-        if conv_config.use_batch_norm:
-            x = layers.BatchNormalization(axis=-1, name='batch_norm')(x)
-        #  v = layers.Flatten()(v_input)
-    else:
-        x = layers.Flatten()(x)
-        #  x = layers.Flatten()(x_input)
-        #  v = layers.Flatten()(v_input)
+            x = tf.reshape(x_input, shape=(batch_size, T, X, d))
+            #  x = tf.transpose(x, (0, 1, 2, 4, 3))
+            #  x = periodic_image(x, f1 - 1)
+            x = PeriodicPadding(f1 - 1)(x)
+            x = layers.Conv2D(n1, f1, activation='relu',
+                              name=_name('xConv1'))(x)
+            x = layers.Conv2D(n2, f2, activation='relu',
+                              name=_name('xConv2'))(x)
+            x = layers.MaxPooling2D(p1, name='xPool')(x)
+            x = layers.Conv2D(n2, f2, activation='relu',
+                              name=_name('xConv3'))(x)
+            x = layers.Conv2D(n1, f1, activation='relu',
+                              name=_name('xConv4'))(x)
+            x = layers.Flatten()(x)
+            if conv_config.use_batch_norm:
+                x = layers.BatchNormalization(axis=-1,
+                                              name=_name('batch_norm'))(x)
+            #  v = layers.Flatten()(v_input)
+        else:
+            x = layers.Flatten()(x_input)
+            #  x = layers.Flatten()(x_input)
+            #  v = layers.Flatten()(v_input)
 
-    #  v = layers.Dense(h1, name='v_layer')(v_input)
-    #  t = layers.Dense(h1, name='t_layer')(t_input)
-    x = custom_dense(h1, kinits['x_layer'], 'x_layer')(x)
-    v = custom_dense(h1, kinits['v_layer'], 'v_layer')(v_input)
-    t = custom_dense(h1, kinits['t_layer'], 't_layer')(t_input)
-    z = layers.Add()([x, v, t])
-    z = keras.activations.relu(z)
-    z = custom_dense(h2, kinits['h_layer1'], 'h_layer1')(z)
-    z = custom_dense(h2, kinits['h_layer2'], 'h_layer2')(z)
-    #  z = layers.Dense(h2, name='h_layer1')(z)
-    #  z = layers.Dense(h2, name='h_layer2')(z)
-    if net_config.dropout_prob > 0:
-        z = layers.Dropout(net_config.dropout_prob)(z)
+        #  v = layers.Dense(h1, name='v_layer')(v_input)
+        #  t = layers.Dense(h1, name='t_layer')(t_input)
+        x = custom_dense(h1, kinits['x_layer'], _name('x_layer'))(x)
+        v = custom_dense(h1, kinits['v_layer'], _name('v_layer'))(v_input)
+        t = custom_dense(h1, kinits['t_layer'], _name('t_layer'))(t_input)
+        z = layers.Add()([x, v, t])
+        z = keras.activations.relu(z)
+        z = custom_dense(h2, kinits['h_layer1'], _name('h_layer1'))(z)
+        #  z = custom_dense(h2, kinits['h_layer2'], 'h_layer2')(z)
+        #  z = layers.Dense(h2, name='h_layer1')(z)
+        #  z = layers.Dense(h2, name='h_layer2')(z)
+        if net_config.dropout_prob > 0:
+            z = layers.Dropout(net_config.dropout_prob)(z)
 
-    scale = ScaledTanhLayer(xdim, kinits['scale_layer'], name='scale_layer')(z)
-    #  transl = layers.Dense(xdim, name='translation_layer')(z)
-    transl = custom_dense(xdim, kinits['transl_layer'], 'transl_layer')(z)
-    kwargs = {
-        'kernel_initializer': kinits['transf_layer'],
-        'name': 'transformation_layer'
-    }
-    transf = ScaledTanhLayer(xdim, **kwargs)(z)
+        args = (xdim, kinits['scale_layer'])
+        scale = ScaledTanhLayer(*args, name=_name('scale_layer'))(z)
+        transl = custom_dense(xdim, kinits['transl_layer'],
+                              _name('transl_layer'))(z)
 
-    model = keras.Model(
-        name=name,
-        inputs=[x_input, v_input, t_input],
-        outputs=[scale, transl, transf]
-    )
+        kwargs = {
+            'kernel_initializer': kinits['transf_layer'],
+            'name': _name('transformation_layer')
+        }
+        transf = ScaledTanhLayer(xdim, **kwargs)(z)
+
+        model = keras.Model(
+            name=name,
+            inputs=[x_input, v_input, t_input],
+            outputs=[scale, transl, transf]
+        )
 
     return model

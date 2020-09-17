@@ -475,10 +475,6 @@ class BaseDynamics(tf.keras.Model):
 
         state_prop = State(x=state.x, v=state.v, beta=state.beta)
         sumlogdet = tf.zeros((self.batch_size,), dtype=TF_FLOAT)
-        #  beta_peak = state.beta - 0.2 * state.beta
-        #  b1 = np.linspace(state.beta, beta_peak, self.config.num_steps // 2)
-        #  b2 = np.linspace(beta_peak, state.beta, self.config.num_steps // 2)
-        #  betas = tf.concat([b1, b2], axis=-1)
 
         for step in tf.range(self.config.num_steps):
             state_prop, logdet = lf_fn(step, state_prop, training)
@@ -510,7 +506,8 @@ class BaseDynamics(tf.keras.Model):
         #  vnet = self._get_network(step)
         #  t = self._get_time(step, tile=tf.shape(state.x)[0])
 
-        sumlogdet = tf.constant(0., dtype=state.x.dtype)
+        #  sumlogdet = tf.constant(0., dtype=state.x.dtype)
+        sumlogdet = 0.
 
         state, logdet = self._update_v_forward(state, step, training)
         sumlogdet += logdet
@@ -529,11 +526,9 @@ class BaseDynamics(tf.keras.Model):
         """Run the augmented leapfrog integrator in the backward direction."""
         step_r = self.config.num_steps - step - 1
         m, mc = self._get_mask(step_r)
-        #  vnet = self._get_network(step_r)
-        #  t = self._get_time(step_r, tile=tf.shape(state.x)[0])
 
-        #  sumlogdet = 0.
-        sumlogdet = tf.constant(0., dtype=state.x.dtype)
+        sumlogdet = 0.
+        #  sumlogdet = tf.constant(0., dtype=state.x.dtype)
 
         state, logdet = self._update_v_backward(state, step_r, training)
         sumlogdet += logdet

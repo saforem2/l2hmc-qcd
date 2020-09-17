@@ -338,16 +338,16 @@ def parse_configs(flags):
     if flags.get('train_steps', None) < 1e4:
         fstr += 'DEBUG_'
 
-    lattice_shape = flags.get('lattice_shape', None)
+    lattice_shape = config.get('lattice_shape', None)
     if lattice_shape is not None:
         fstr += f'L{lattice_shape[1]}_b{lattice_shape[0]}'
 
     num_steps = config.get('num_steps', None)
     fstr += f'_lf{num_steps}'
 
-    qw = flags.get('charge_weight', None)
-    pw = flags.get('plaq_weight', None)
-    aw = flags.get('aux_weight', None)
+    qw = config.get('charge_weight', None)
+    pw = config.get('plaq_weight', None)
+    aw = config.get('aux_weight', None)
     act = net_config.get('activation_fn', None)
     if qw > 0:
         fstr += f'_qw{qw}'
@@ -380,7 +380,7 @@ def parse_configs(flags):
     if config.get('use_ncp', False):
         fstr += '_NCProj'
 
-    if flags.get('use_conv_net', False):
+    if config.get('use_conv_net', False):
         fstr += '_ConvNets'
 
         conv_config = flags.get('conv_config', None)
@@ -388,8 +388,17 @@ def parse_configs(flags):
         if use_bn:
             fstr += '_bNorm'
 
-    if flags.get('zero_init', False):
+    if config.get('zero_init', False):
         fstr += '_zero_init'
+
+    if config.get('use_mixed_loss', False):
+        fstr += '_mixedLoss'
+
+    if config.get('use_scattered_xnet_update', False):
+        fstr += '_xScatter'
+
+    if config.get('use_tempered_trajectories', False):
+        fstr += '_temperedTraj'
 
     return fstr.replace('.', '')
 
