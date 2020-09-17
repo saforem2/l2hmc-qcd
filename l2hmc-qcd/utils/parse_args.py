@@ -37,6 +37,28 @@ def parse_args():
         fromfile_prefix_chars='@',
     )
 
+    parser.add_argument("--use_mixed_loss",
+                        dest='use_mixed_loss',
+                        action='store_true',
+                        required=False,
+                        help=("""Whether or not to use mixed loss:
+                        (weight / loss) - (loss / weight)."""))
+
+    parser.add_argument("--use_scattered_xnet",
+                        dest='use_scattered_xnet',
+                        action='store_true',
+                        required=False,
+                        help=("""Whether or not to use scatter/gather
+                        operations in `x_update` to avoid passing unnecessary
+                        0's to network."""))
+
+    parser.add_argument("--use_tempered_traj",
+                        dest='use_tempered_traj',
+                        action='store_true',
+                        required=False,
+                        help=("""Whether or not to use simulated tempering
+                        within a leapfrog trajectory."""))
+
     parser.add_argument("--separate_networks",
                         dest='separate_networks',
                         action='store_true',

@@ -70,7 +70,17 @@ class GaugeDynamicsConfig(AttrDict):
                  use_ncp: bool = False,         # Transform x using NCP?
                  model_type: str = None,        # name for model
                  eps_fixed: bool = False,
-                 separate_networks: bool = False):
+                 lattice_shape: tuple = None,
+                 aux_weight: float = 0.,
+                 plaq_weight: float = 0.,
+                 charge_weight: float = 0.,
+                 zero_init: bool = False,
+                 separate_networks: bool = False,
+                 use_conv_net: bool = False,
+                 use_mixed_loss: bool = False,
+                 use_scattered_xnet_update: bool = False,
+                 use_tempered_trajectories: bool = False,
+                 gauge_eq_masks: bool = False):
         super(GaugeDynamicsConfig, self).__init__(
             eps=eps,
             hmc=hmc,
@@ -78,7 +88,17 @@ class GaugeDynamicsConfig(AttrDict):
             num_steps=num_steps,
             model_type=model_type,
             eps_fixed=eps_fixed,
-            separate_networks=separate_networks
+            lattice_shape=lattice_shape,
+            aux_weight=aux_weight,
+            plaq_weight=plaq_weight,
+            charge_weight=charge_weight,
+            zero_init=zero_init,
+            separate_networks=separate_networks,
+            use_conv_net=use_conv_net,
+            use_mixed_loss=use_mixed_loss,
+            use_scattered_xnet_update=use_scattered_xnet_update,
+            use_tempered_trajectories=use_tempered_trajectories,
+            gauge_eq_masks=gauge_eq_masks,
         )
 
 
