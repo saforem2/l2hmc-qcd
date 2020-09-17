@@ -22,6 +22,7 @@ from config import PROJECT_DIR
 from utils.attr_dict import AttrDict
 
 RANK = hvd.rank()
+NUM_NODES = hvd.size()
 IS_CHIEF = (RANK == 0)
 
 LOG_LEVELS_AS_INTS = {

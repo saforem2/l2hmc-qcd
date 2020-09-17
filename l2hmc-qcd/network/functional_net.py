@@ -12,11 +12,12 @@ from typing import Tuple
 import tensorflow as tf
 
 from tensorflow import keras
-from tensorflow.keras import layers
 
 from config import NetworkConfig
 from network.gauge_network import ScaledTanhLayer
 from network.gauge_conv_network import ConvolutionConfig, periodic_image
+
+layers = tf.keras.layers
 
 
 def custom_dense(units, kernel_initializer, name=None):
@@ -74,12 +75,12 @@ class PeriodicPadding(layers.Layer):
         return inputs
 
 
-
 # pylint:disable=too-many-locals, invalid-name
 def get_gauge_network(
         lattice_shape: Tuple, net_config: NetworkConfig,
         conv_config: ConvolutionConfig = None,
         kernel_initializer: str = None,
+        input_shapes: dict = None,
         factor: float = 1.,
         batch_size: Tuple = None, name: str = None,
 ):
@@ -90,22 +91,41 @@ def get_gauge_network(
         T, X, d = lattice_shape
 
     xdim = T * X * d
+
+    if input_shapes is None:
+        input_shapes = {
+            'x': (xdim, 2), 'v': (xdim,), 't': (2,)
+        }
+
     h1 = net_config.units[0]
     h2 = net_config.units[1]
     kinits = get_kernel_initializers(factor, kernel_initializer)
     if name is None:
         name = 'GaugeNetwork'
 
-    def _name(s):
-        return f'{name}/{s}'
+    def s_(x):
+        return f'{name}/{x}'
+
+    def get_input(s):
+        return keras.Input(input_shapes[s], name=s_(s), batch_size=batch_size)
 
     #  x_input = keras.Input(shape=(T, X, d), batch_size=batch_size, name='x')
     #  v_input = keras.Input(shape=(T, X, d), batch_size=batch_size, name='v')
     with tf.name_scope(name):
-        x_input = keras.Input(shape=(xdim,), batch_size=batch_size)
-        v_input = keras.Input(shape=(xdim,), batch_size=batch_size)
-        t_input = keras.Input(shape=(2,), batch_size=batch_size)
+        #  if conv_config is None:
+        #      x_input = keras.Input(shape=(xdim, 2), batch_size=batch_size)
+        #  else:
+        #      x_input = keras.Input(shape=(T, X, d, 2), batch_size=batch_size)
+        x_input = get_input('x')
+        v_input = get_input('v')
+        t_input = get_input('t')
 
+        #  x_input = keras.Input(input_shapes['x'],
+        #                        name=s_('x'), batch_size=batch_size)
+        #  v_input = keras.Input(input_shapes['v'],
+        #                        name=s_('v'), batch_size=batch_size)
+        #  t_input = keras.Input(input_shapes['t'],
+        #                        name=s_('t'), batch_size=batch_size)
         #  x = tf.concat([tf.math.cos(x_input), tf.math.sin(x_input)], axis=-1)
 
         if conv_config is not None:
@@ -115,23 +135,23 @@ def get_gauge_network(
             f2 = conv_config.sizes[1]
             p1 = conv_config.pool_sizes[0]
 
-            x = tf.reshape(x_input, shape=(batch_size, T, X, d))
+            #  x = tf.reshape(x_input, shape=(batch_size, T, X, 2, d))
             #  x = tf.transpose(x, (0, 1, 2, 4, 3))
             #  x = periodic_image(x, f1 - 1)
-            x = PeriodicPadding(f1 - 1)(x)
-            x = layers.Conv2D(n1, f1, activation='relu',
-                              name=_name('xConv1'))(x)
-            x = layers.Conv2D(n2, f2, activation='relu',
-                              name=_name('xConv2'))(x)
-            x = layers.MaxPooling2D(p1, name='xPool')(x)
-            x = layers.Conv2D(n2, f2, activation='relu',
-                              name=_name('xConv3'))(x)
-            x = layers.Conv2D(n1, f1, activation='relu',
-                              name=_name('xConv4'))(x)
+            x = PeriodicPadding(f1 - 1)(x_input)
+            x = layers.Conv3D(n1, f1, activation='relu',
+                              name=s_('xConv1'))(x)
+            x = layers.Conv3D(n2, f2, activation='relu',
+                              name=s_('xConv2'))(x)
+            x = layers.MaxPooling3D(p1, name='xPool')(x)
+            x = layers.Conv3D(n2, f2, activation='relu',
+                              name=s_('xConv3'))(x)
+            x = layers.Conv3D(n1, f1, activation='relu',
+                              name=s_('xConv4'))(x)
             x = layers.Flatten()(x)
             if conv_config.use_batch_norm:
                 x = layers.BatchNormalization(axis=-1,
-                                              name=_name('batch_norm'))(x)
+                                              name=s_('batch_norm'))(x)
             #  v = layers.Flatten()(v_input)
         else:
             x = layers.Flatten()(x_input)
@@ -140,12 +160,12 @@ def get_gauge_network(
 
         #  v = layers.Dense(h1, name='v_layer')(v_input)
         #  t = layers.Dense(h1, name='t_layer')(t_input)
-        x = custom_dense(h1, kinits['x_layer'], _name('x_layer'))(x)
-        v = custom_dense(h1, kinits['v_layer'], _name('v_layer'))(v_input)
-        t = custom_dense(h1, kinits['t_layer'], _name('t_layer'))(t_input)
+        x = custom_dense(h1, kinits['x_layer'], s_('x_layer'))(x)
+        v = custom_dense(h1, kinits['v_layer'], s_('v_layer'))(v_input)
+        t = custom_dense(h1, kinits['t_layer'], s_('t_layer'))(t_input)
         z = layers.Add()([x, v, t])
         z = keras.activations.relu(z)
-        z = custom_dense(h2, kinits['h_layer1'], _name('h_layer1'))(z)
+        z = custom_dense(h2, kinits['h_layer1'], s_('h_layer1'))(z)
         #  z = custom_dense(h2, kinits['h_layer2'], 'h_layer2')(z)
         #  z = layers.Dense(h2, name='h_layer1')(z)
         #  z = layers.Dense(h2, name='h_layer2')(z)
@@ -153,13 +173,13 @@ def get_gauge_network(
             z = layers.Dropout(net_config.dropout_prob)(z)
 
         args = (xdim, kinits['scale_layer'])
-        scale = ScaledTanhLayer(*args, name=_name('scale_layer'))(z)
+        scale = ScaledTanhLayer(*args, name=s_('scale_layer'))(z)
         transl = custom_dense(xdim, kinits['transl_layer'],
-                              _name('transl_layer'))(z)
+                              s_('transl_layer'))(z)
 
         kwargs = {
             'kernel_initializer': kinits['transf_layer'],
-            'name': _name('transformation_layer')
+            'name': s_('transformation_layer')
         }
         transf = ScaledTanhLayer(xdim, **kwargs)(z)
 

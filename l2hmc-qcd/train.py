@@ -50,9 +50,6 @@ def main(args):
 
 
 if __name__ == '__main__':
-    #  FLAGS = parse_args()
-    #  debug_dir = os.path.join(BIN_DIR, 'debugging')
-    #  io.check_else_make_dir(debug_dir)
     #  debug_events_writer = tf.debugging.experimental.enable_dump_debug_info(
     #      debug_dir, circular_buffer_size=-1,
     #      tensor_debug_mode="FULL_HEALTH",
