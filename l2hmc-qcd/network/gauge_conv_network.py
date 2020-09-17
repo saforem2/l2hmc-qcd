@@ -1,7 +1,7 @@
 """
 gauge_conv_network.py
 
-Prepends a `ConvolutionBlock2D` at the beginning of the `GaugeNetwork`
+Prepends a `ConvolutionBlock` at the beginning of the `GaugeNetwork`
 used for training the L2HMC sampler on a 2D U(1) lattice gauge theory model.
 
 @author: Sam Foreman
@@ -37,13 +37,13 @@ def periodic_image(x, size):
 
 
 class ConvolutionConfig(AttrDict):
-    """Defines a configuration object for passing to `ConvolutionBlock2D`."""
+    """Defines a configuration object for passing to `ConvolutionBlock`."""
     def __init__(
             self,
             input_shape: List[int],  # expected input shape
             filters: List[int],      # number of filters to use
             sizes: List[int],        # filter sizes to use
-            pool_sizes: Optional[List[int]] = None,  # MaxPooling2D sizes
+            pool_sizes: Optional[List[int]] = None,  # MaxPooling sizes
             conv_activations: Optional[List[str]] = None,  # Activation fns
             conv_paddings: Optional[List[str]] = None,  # Paddings to use
             use_batch_norm: Optional[bool] = False,  # Use batch normalization?
@@ -61,10 +61,10 @@ class ConvolutionConfig(AttrDict):
         )
 
 
-class ConvolutionBlock2D(layers.Layer):
-    """Implements a block consisting of: 2 x [Conv2D, MaxPooling2D]."""
+class ConvolutionBlock(layers.Layer):
+    """Implements a block consisting of: 2 x [Conv, MaxPooling]."""
     def __init__(self, config: ConvolutionConfig, **kwargs):
-        super(ConvolutionBlock2D, self).__init__(**kwargs)
+        super(ConvolutionBlock, self).__init__(**kwargs)
         self._config = config
         if config.pool_sizes is None:
             config.pool_sizes = 2 * [(2, 2)]
@@ -73,7 +73,7 @@ class ConvolutionBlock2D(layers.Layer):
         if isinstance(config.conv_paddings, str):
             config.conv_paddings = 2 * [config.conv_paddings]
 
-        self.conv1 = layers.Conv2D(
+        self.conv1 = layers.Conv3D(
             filters=config.filters[0],
             kernel_size=config.sizes[0],
             activation=config.conv_activations[0],
@@ -81,16 +81,16 @@ class ConvolutionBlock2D(layers.Layer):
             padding=config.conv_paddings[0],
             name='conv1'
         )
-        self.pool1 = layers.MaxPooling2D(config.pool_sizes[0], name='pool1')
+        self.pool1 = layers.MaxPooling3D(config.pool_sizes[0], name='pool1')
 
-        self.conv2 = layers.Conv2D(
+        self.conv2 = layers.Conv3D(
             filters=config.filters[1],
             kernel_size=config.sizes[1],
             activation=config.conv_activations[1],
             padding=config.conv_paddings[0],
             name='conv2',
         )
-        self.pool2 = layers.MaxPooling2D(config.pool_sizes[1], name='pool2')
+        self.pool2 = layers.MaxPooling(config.pool_sizes[1], name='pool2')
 
         self.flatten = layers.Flatten(name='flatten')
 
@@ -109,7 +109,7 @@ class ConvolutionBlock2D(layers.Layer):
         return y2
 
 
-class GaugeNetworkConv2D(tf.keras.models.Model):
+class GaugeNetworkConv(tf.keras.models.Model):
     """"Prepends a conv. structure at the beginning of `GaugeNetwork`."""
     def __init__(
             self,
@@ -120,12 +120,12 @@ class GaugeNetworkConv2D(tf.keras.models.Model):
             kernel_initializer: Optional[Union[str, Callable]] = None,
             **kwargs,
     ):
-        super(GaugeNetworkConv2D, self).__init__(**kwargs)
+        super(GaugeNetworkConv, self).__init__(**kwargs)
         self._kernel_initializer = kernel_initializer
         with tf.name_scope('x_conv_block'):
-            self.x_conv_block = ConvolutionBlock2D(conv_config, **kwargs)
+            self.x_conv_block = ConvolutionBlock(conv_config, **kwargs)
         #  with tf.name_scope('v_conv_block'):
-        #      self.v_conv_block = ConvolutionBlock2D(conv_config, **kwargs)
+        #      self.v_conv_block = ConvolutionBlock(conv_config, **kwargs)
         with tf.name_scope('GaugeNetwork'):
             self.gauge_net = GaugeNetwork(
                 config, xdim, factor,

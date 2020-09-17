@@ -43,7 +43,7 @@ from utils.attr_dict import AttrDict
 from utils.seed_dict import vnet_seeds  # noqa:F401
 from utils.seed_dict import xnet_seeds  # noqa:F401
 from network.gauge_network import GaugeNetwork
-from network.gauge_conv_network import ConvolutionConfig, GaugeNetworkConv2D
+from network.gauge_conv_network import ConvolutionConfig, GaugeNetworkConv
 from network.functional_net import get_gauge_network
 
 NUM_RANKS = hvd.size()
@@ -165,51 +165,34 @@ class GaugeDynamics(BaseDynamics):
             else:
                 net_weights = NetWeights(0., 1., 1., 1., 1., 1.)
 
-            if self.zero_init:
-                kinit = 'zeros'
-            else:
-                kinit = None
+            kinit = 'zeros' if self.zero_init else None
+            xnet_input_shapes = {
+                'x': (self.xdim, 2), 'v': (self.xdim,), 't': (2,)
+            }
+            vnet_input_shapes = {
+                'x': (self.xdim,), 'v': (self.xdim,), 't': (2,),
+            }
+
+            args = (self.lattice_shape, self.net_config)
+            self.vnet = get_gauge_network(*args, name='VNet',
+                                          kernel_initializer=kinit,
+                                          factor=1., conv_config=None,
+                                          input_shapes=vnet_input_shapes)
+
+            xnet_kwargs = {
+                'factor': 2.,
+                'kernel_initializer': kinit,
+                'conv_config': self.conv_config,
+                'input_shapes': xnet_input_shapes,
+            }
+
             if self.config.separate_networks:
-                args = (self.lattice_shape, self.net_config, self.conv_config)
-                kwargs = {'kernel_initializer': kinit, 'factor': 2.}
                 self.xnets = [
-                    get_gauge_network(*args, **kwargs, name=f'XNet{i}')
+                    get_gauge_network(*args, **xnet_kwargs, name=f'XNet{i}')
                     for i in range(self.config.num_steps)
                 ]
-                #  nets = self._build_separate_networks()
-                #  self.xnet_even = get_gauge_network(self.lattice_shape,
-                #                                     self.net_config,
-                #                                     self.conv_config,
-                #                                     kernel_initializer=kinit,
-                #                                     factor=2., name='XNet_even')
-                #  self.xnet_odd = get_gauge_network(self.lattice_shape,
-                #                                    self.net_config,
-                #                                    self.conv_config,
-                #                                    kernel_initializer=kinit,
-                #                                    factor=2., name='XNet_odd')
-                self.vnet = get_gauge_network(self.lattice_shape,
-                                              self.net_config,
-                                              kernel_initializer=kinit,
-                                              factor=1., name='VNet')
-                #
-                #  self.vnet = nets['vnet']
-                #  #  self.xnets = nets['xnets']
-                #  self.xnet_odd = nets['xnet_odd']
-                #  self.xnet_even = nets['xnet_even']
             else:
-                self.xnet = get_gauge_network(self.lattice_shape,
-                                              self.net_config,
-                                              self.conv_config,
-                                              kernel_initializer=kinit,
-                                              factor=2., name='XNet')
-                self.vnet = get_gauge_network(self.lattice_shape,
-                                              self.net_config,
-                                              kernel_initializer=kinit,
-                                              factor=2., name='VNet')
-                #  if self.use_conv_net:
-                #      self.xnet, self.vnet = self._build_conv_networks()
-                #  else:
-                #      self.xnet, self.vnet = self._build_generic_networks()
+                self.xnet = get_gauge_network(*args, **xnet_kwargs)
 
         self.net_weights = self._parse_net_weights(net_weights)
         if self._has_trainable_params:
@@ -543,15 +526,18 @@ class GaugeDynamics(BaseDynamics):
             mask, _ = mask
 
         x, v, t = inputs
-        #  shape = (self.batch_size, -1)
-        #  m = tf.reshape(mask, shape)
-        #  x = tf.concat([mask * tf.math.cos(x),
-        #                 mask * tf.math.sin(x)], axis=-1)
+
+        x_cos = mask * tf.math.cos(x)
+        x_sin = mask * tf.math.sin(x)
+        if self.config.use_conv_net:
+            x_cos = tf.reshape(x_cos, self.lattice_shape)
+            x_sin = tf.reshape(x_sin, self.lattice_shape)
+
+        x = tf.concat([x_cos, x_sin], axis=-1)
         if not self.config.separate_networks:
             S, T, Q = self.xnet((x, v, t), training)
         else:
-            #  xnet = self.xnets[step]
-            xnet = self.xnets[tf.cast(step, tf.int32)]
+            xnet = self.xnets[step]
             S, T, Q = xnet((x, v, t), training)
             #  if step % 2 == 0:
             #      S, T, Q = self.xnet_even((x, v, t), training)
@@ -581,6 +567,7 @@ class GaugeDynamics(BaseDynamics):
         x = self.normalizer(state.x)
         grad = self.grad_potential(x, state.beta)
         t = self._get_time(step, tile=tf.shape(x)[0])
+
         S, T, Q = self.vnet((x, grad, t), training)
 
         scale = self._vsw * (0.5 * self.eps * S)
@@ -670,14 +657,9 @@ class GaugeDynamics(BaseDynamics):
             logdet (float): Jacobian factor.
         """
         x = self.normalizer(state.x)
-        t = self._get_time(step, tile=tf.shape(x)[0])
         grad = self.grad_potential(x, state.beta)
+        t = self._get_time(step, tile=tf.shape(x)[0])
         S, T, Q = self.vnet((x, grad, t), training)
-
-        #  x = tf.reshape(x, self.lattice_shape)
-        #  grad = tf.reshape(grad, self.lattice_shape)
-        #
-        #  S, T, Q = self.vnet((x, grad, t), training)
 
         scale = self._vsw * (-0.5 * self.eps * S)
         transf = self._vqw * (self.eps * Q)

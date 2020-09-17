@@ -7,6 +7,7 @@ from __future__ import absolute_import, division, print_function
 
 import os
 import time
+import json
 
 from typing import Union
 
@@ -153,6 +154,7 @@ def train(flags: AttrDict, log_file: str = None, md_steps: int = 0):
         flags.restore = True
 
     dirs = setup_directories(flags)
+    flags.update({'dirs': dirs})
 
     x = None
     if flags.hmc_steps > 0 and not flags.restore:
@@ -190,6 +192,10 @@ def train(flags: AttrDict, log_file: str = None, md_steps: int = 0):
                   thermalize=True, params=params)
 
     io.log('\n'.join(['Done training model', 120 * '*']))
+
+    json_file = os.path.join(dirs.log_dir, 'flags.json')
+    with open(json_file, 'w') as f:
+        f.write(json.dumps(flags, indent=4))
 
     return x, dynamics, train_data, flags
 
