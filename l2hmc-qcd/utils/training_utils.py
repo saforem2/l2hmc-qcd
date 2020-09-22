@@ -25,7 +25,7 @@ from utils.attr_dict import AttrDict
 from utils.summary_utils import update_summaries
 from utils.plotting_utils import plot_data
 from utils.data_containers import DataContainer
-from config import GaugeDynamicsConfig, LearningRateConfig
+from config import LearningRateConfig
 
 # noqa:F401
 # pylint:disable=unused-import
@@ -34,7 +34,8 @@ from utils.annealing_schedules import (exp_mult_cooling, get_betas,
                                        linear_multiplicative_cooling,
                                        quadratic_additive_cooling)
 from dynamics.base_dynamics import BaseDynamics
-from dynamics.gauge_dynamics import build_dynamics, GaugeDynamics
+from dynamics.gauge_dynamics import (GaugeDynamicsConfig, build_dynamics,
+                                     GaugeDynamics)
 
 #  try:
 #      tf.config.experimental.enable_mlir_bridge()
@@ -51,57 +52,31 @@ io.log(f'Number of devices: {hvd.size()}')
 IS_CHIEF = (RANK == 0)
 
 
-def restore_flags(flags, train_dir):
-    """Update `FLAGS` using restored flags from `log_dir`."""
-    rf_file = os.path.join(train_dir, 'FLAGS.z')
-    restored = AttrDict(dict(io.loadz(rf_file)))
-    io.log(f'Restoring FLAGS from: {rf_file}...')
-    flags.update(restored)
-
-    return flags
-
-
-def setup_directories(flags, name='training'):
-    """Setup relevant directories for training."""
-    train_dir = os.path.join(flags.log_dir, name)
-    train_paths = AttrDict({
-        'log_dir': flags.log_dir,
-        'train_dir': train_dir,
-        'data_dir': os.path.join(train_dir, 'train_data'),
-        'ckpt_dir': os.path.join(train_dir, 'checkpoints'),
-        'summary_dir': os.path.join(train_dir, 'summaries'),
-        'log_file': os.path.join(train_dir, 'train_log.txt'),
-        'config_dir': os.path.join(train_dir, 'dynamics_configs'),
-    })
-
-    if IS_CHIEF:
-        io.check_else_make_dir(
-            [d for k, d in train_paths.items() if 'file' not in k],
-        )
-        if not flags.restore:
-            io.save_params(dict(flags), train_dir, 'FLAGS')
-
-    return train_paths
-
-
 @timeit(out_file=None)
 def train_hmc(flags):
     """Main method for training HMC model."""
-    hmc_flags = AttrDict(dict(flags).copy())
-    lr_config = hmc_flags.pop('lr_config', None)
-    config = hmc_flags.get('dynamics_config', None)
-    net_config = hmc_flags.pop('network_config', None)
-    hmc_flags.train_steps = hmc_flags.pop('hmc_steps', None)
-    hmc_flags.profiler = False
-    hmc_flags.make_summaries = True
-    config = GaugeDynamicsConfig(
-        hmc=True,
-        use_ncp=False,
-        separate_networks=False,
-        eps=config.get('eps', None),
-        num_steps=config.get('num_steps', None),
-        eps_fixed=config.get('eps_fixed', False),
-    )
+    hflags = AttrDict(dict(flags).copy())
+    lr_config = AttrDict(hflags.pop('lr_config', None))
+    config = AttrDict(hflags.pop('dynamics_config', None))
+    net_config = AttrDict(hflags.pop('network_config', None))
+    hflags.train_steps = hflags.pop('hmc_steps', None)
+    hflags.beta_init = hflags.beta_final
+
+    config.update({
+        'hmc': True,
+        'use_ncp': False,
+        'aux_weight': 0.,
+        'zero_init': False,
+        'separate_networks': False,
+        'use_conv_net': False,
+        'directional_updates': False,
+        'use_scattered_xnet_update': False,
+        'use_tempered_traj': False,
+        'gauge_eq_masks': False,
+    })
+
+    hflags.profiler = False
+    hflags.make_summaries = True
 
     lr_config = LearningRateConfig(
         warmup_steps=0,
@@ -110,10 +85,10 @@ def train_hmc(flags):
         lr_init=lr_config.get('lr_init', None),
     )
 
-    train_dirs = setup_directories(hmc_flags, 'training_hmc')
-    dynamics = GaugeDynamics(hmc_flags, config, net_config, lr_config)
+    train_dirs = io.setup_directories(hflags, 'training_hmc')
+    dynamics = GaugeDynamics(hflags, config, net_config, lr_config)
     dynamics.save_config(train_dirs.config_dir)
-    x, train_data = train_dynamics(dynamics, hmc_flags, dirs=train_dirs)
+    x, train_data = train_dynamics(dynamics, hflags, dirs=train_dirs)
     if IS_CHIEF:
         output_dir = os.path.join(train_dirs.train_dir, 'outputs')
         io.check_else_make_dir(output_dir)
@@ -122,19 +97,24 @@ def train_hmc(flags):
         params = {
             'eps': dynamics.eps,
             'num_steps': dynamics.config.num_steps,
-            'beta_init': hmc_flags.beta_init,
-            'beta_final': hmc_flags.beta_final,
+            'beta_init': hflags.beta_init,
+            'beta_final': hflags.beta_final,
             'lattice_shape': dynamics.config.lattice_shape,
             'net_weights': NET_WEIGHTS_HMC,
         }
-        plot_data(train_data, train_dirs.train_dir, hmc_flags,
+        plot_data(train_data, train_dirs.train_dir, hflags,
                   thermalize=True, params=params)
 
     return x, train_data, dynamics.eps.numpy()
 
 
 @timeit(out_file=None)
-def train(flags: AttrDict, log_file: str = None, md_steps: int = 0):
+def train(
+        flags: AttrDict,
+        log_file: str = None,
+        md_steps: int = 0,
+        x: tf.Tensor = None
+):
     """Train model.
 
     Returns:
@@ -143,25 +123,12 @@ def train(flags: AttrDict, log_file: str = None, md_steps: int = 0):
         train_data (DataContainer): Object containing train data.
         flags (AttrDict): AttrDict containing flags used.
     """
-    if flags.log_dir is None:
-        flags.log_dir = io.make_log_dir(flags, 'GaugeModel', log_file)
-        flags.restore = False
-    else:
-        train_steps = flags.train_steps
-        flags = restore_flags(flags, os.path.join(flags.log_dir, 'training'))
-        if train_steps > flags.train_steps:
-            flags.train_steps = train_steps
-        flags.restore = True
-
-    dirs = setup_directories(flags)
+    dirs = io.setup_directories(flags)
     flags.update({'dirs': dirs})
 
-    x = None
-    if flags.hmc_steps > 0 and not flags.restore:
-        io.log('Training HMC!')
-        x, train_data, eps_init = train_hmc(flags)
-        flags.eps = eps_init
-        io.log('\n'.join(['Finished (pre)-training HMC.', 120 * '*']))
+    if x is None:
+        x = tf.random.normal(flags.dynamics_config['lattice_shape'])
+        x = tf.reshape(x, (x.shape[0], -1))
 
     if flags.restore:
         xfile = os.path.join(dirs.train_dir,
@@ -170,7 +137,6 @@ def train(flags: AttrDict, log_file: str = None, md_steps: int = 0):
 
     dynamics = build_dynamics(flags)
     dynamics.save_config(dirs.config_dir)
-    #  io.print_flags(flags)
 
     io.log('\n'.join([120 * '*', 'Training L2HMC sampler...']))
     x, train_data = train_dynamics(dynamics, flags, dirs,
@@ -192,10 +158,7 @@ def train(flags: AttrDict, log_file: str = None, md_steps: int = 0):
                   thermalize=True, params=params)
 
     io.log('\n'.join(['Done training model', 120 * '*']))
-
-    json_file = os.path.join(dirs.log_dir, 'flags.json')
-    with open(json_file, 'w') as f:
-        f.write(json.dumps(flags, indent=4))
+    io.save_dict(dict(flags), dirs.log_dir, 'configs')
 
     return x, dynamics, train_data, flags
 
@@ -242,9 +205,9 @@ def setup(dynamics, flags, dirs=None, x=None, betas=None):
     #  beta_tspec = tf.TensorSpec([], dtype=TF_FLOAT, name='beta')
     #  input_signature=[x_tspec, beta_tspec])
 
-    if dynamics.config.model_type == 'GaugeModel':
-        _ = dynamics.apply_transition((x, tf.constant(betas[0])),
-                                      training=True)
+    #  if dynamics.config['model_type'] == 'GaugeModel':
+    inputs = (x, tf.constant(betas[0]))
+    _ = dynamics.apply_transition(inputs, training=True)
 
     train_step = tf.function(dynamics.train_step)
 

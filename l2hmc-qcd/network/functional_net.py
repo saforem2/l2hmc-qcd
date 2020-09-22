@@ -37,6 +37,7 @@ def vs_init(factor, kernel_initializer=None):
 
 
 def get_kernel_initializers(factor=1., kernel_initializer=None):
+    """Get kernel initializers, layer by layer."""
     names = ['x_layer', 'v_layer', 't_layer', 'h_layer1', 'h_layer2',
              'scale_layer', 'transl_layer', 'transf_layer']
     if kernel_initializer == 'zeros':
@@ -44,11 +45,11 @@ def get_kernel_initializers(factor=1., kernel_initializer=None):
         return dict(zip(names, kinits))
 
     return {
-        'x_layer': vs_init(factor / 3.),
-        'v_layer': vs_init(1. / 3.),
-        't_layer': vs_init(1. / 3.),
-        'h_layer1': vs_init(1.),
-        'h_layer2': vs_init(1.),
+        'x_layer': vs_init(factor/3.),
+        'v_layer': vs_init(1./3.),
+        't_layer': vs_init(1./3.),
+        'h_layer1': vs_init(1./2.),
+        'h_layer2': vs_init(1./2.),
         'scale_layer': vs_init(0.001),
         'transl_layer': vs_init(0.001),
         'transf_layer': vs_init(0.001),
@@ -62,6 +63,7 @@ class PeriodicPadding(layers.Layer):
         self._size = size
 
     def call(self, inputs, **kwargs):
+        """Call the network (forward-pass)."""
         z1 = inputs[:, -self._size:, :, ...]
         z2 = inputs[:, 0:self._size, :, ...]
 
@@ -135,18 +137,18 @@ def get_gauge_network(
             f2 = conv_config.sizes[1]
             p1 = conv_config.pool_sizes[0]
 
-            #  x = tf.reshape(x_input, shape=(batch_size, T, X, 2, d))
+            x = tf.reshape(x_input, shape=(batch_size, T, X, d + 2))
             #  x = tf.transpose(x, (0, 1, 2, 4, 3))
             #  x = periodic_image(x, f1 - 1)
-            x = PeriodicPadding(f1 - 1)(x_input)
-            x = layers.Conv3D(n1, f1, activation='relu',
+            x = PeriodicPadding(f1 - 1)(x)
+            x = layers.Conv2D(n1, f1, activation='relu',
                               name=s_('xConv1'))(x)
-            x = layers.Conv3D(n2, f2, activation='relu',
+            x = layers.Conv2D(n2, f2, activation='relu',
                               name=s_('xConv2'))(x)
-            x = layers.MaxPooling3D(p1, name='xPool')(x)
-            x = layers.Conv3D(n2, f2, activation='relu',
+            x = layers.MaxPooling2D(p1, name=s_('xPool'))(x)
+            x = layers.Conv2D(n2, f2, activation='relu',
                               name=s_('xConv3'))(x)
-            x = layers.Conv3D(n1, f1, activation='relu',
+            x = layers.Conv2D(n1, f1, activation='relu',
                               name=s_('xConv4'))(x)
             x = layers.Flatten()(x)
             if conv_config.use_batch_norm:
@@ -166,7 +168,7 @@ def get_gauge_network(
         z = layers.Add()([x, v, t])
         z = keras.activations.relu(z)
         z = custom_dense(h2, kinits['h_layer1'], s_('h_layer1'))(z)
-        #  z = custom_dense(h2, kinits['h_layer2'], 'h_layer2')(z)
+        z = custom_dense(h2, kinits['h_layer2'], s_('h_layer2'))(z)
         #  z = layers.Dense(h2, name='h_layer1')(z)
         #  z = layers.Dense(h2, name='h_layer2')(z)
         if net_config.dropout_prob > 0:
