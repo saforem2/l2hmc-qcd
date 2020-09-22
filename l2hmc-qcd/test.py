@@ -142,15 +142,16 @@ def test_hmc_run(flags: AttrDict):
 @timeit(out_file=None)
 def test_conv_net(flags: AttrDict):
     """Test convolutional networks."""
-    flags.use_conv_net = True
+    #  flags.use_conv_net = True
+    flags['dynamics_config']['use_conv_net'] = True
     flags.conv_config = ConvolutionConfig(
-        input_shape=flags.lattice_shape[1:],
-        filters=[16, 32],
         sizes=[2, 2],
+        filters=[16, 32],
         pool_sizes=[2, 2],
-        conv_activations=['relu', 'relu'],
+        use_batch_norm=True,
         conv_paddings=['valid', 'valid'],
-        use_batch_norm=True
+        conv_activations=['relu', 'relu'],
+        input_shape=flags['dynamics_config']['lattice_shape'][1:],
     )
     x, dynamics, train_data, flags = train(flags, log_file=LOG_FILE)
     dynamics, run_data, x = run(dynamics, flags, x=x)
@@ -236,9 +237,13 @@ def test_resume_training(log_dir: str):
 
 
 @timeit(out_file=None)
-def test(args: AttrDict):
+def test():
     """Run tests."""
     flags = parse_test_configs()
+    if flags.get('log_dir', None) is None:
+        flags.log_dir = io.make_log_dir(flags, 'GaugeModel')
+        flags.restore = False
+
     single_net_out = test_single_network(flags)
     log_dir = single_net_out.log_dir
     _ = test_resume_training(log_dir)
@@ -280,4 +285,4 @@ if __name__ == '__main__':
     if ARGS.horovod:
         ARGS.horovod = True
 
-    _ = test(ARGS) if ARGS.test_all else main(ARGS)
+    _ = test() if ARGS.test_all else main(ARGS)

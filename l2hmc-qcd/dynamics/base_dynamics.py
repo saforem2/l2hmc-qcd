@@ -243,10 +243,8 @@ class BaseDynamics(tf.keras.Model):
         return mc_states, px, sld_states
 
     def apply_transition(
-            self,
-            inputs: Tuple[tf.Tensor],
-            training: bool = None,
-    ) -> (MonteCarloStates, tf.Tensor, MonteCarloStates):
+            self, inputs: Tuple[tf.Tensor], training: bool = None,
+    ):
         """Propose a new state and perform the accept/reject step.
 
         NOTE: We simulate the dynamics both forward and backward, and use
@@ -465,10 +463,7 @@ class BaseDynamics(tf.keras.Model):
         return state_prop, accept_prob, sumlogdet
 
     def transition_kernel(
-            self,
-            state: State,
-            forward: bool,
-            training: bool = None
+            self, state: State, forward: bool, training: bool = None
     ):
         """Transition kernel of the augmented leapfrog integrator."""
         lf_fn = self._forward_lf if forward else self._backward_lf
@@ -484,10 +479,9 @@ class BaseDynamics(tf.keras.Model):
 
         return state_prop, accept_prob, sumlogdet
 
-    def compute_accept_prob(self,
-                            state_init: State,
-                            state_prop: State,
-                            sumlogdet: tf.Tensor):
+    def compute_accept_prob(
+            self, state_init: State, state_prop: State, sumlogdet: tf.Tensor
+    ):
         """Compute the acceptance prob. of `state_prop` given `state_init`.
 
         Returns: tf.Tensor

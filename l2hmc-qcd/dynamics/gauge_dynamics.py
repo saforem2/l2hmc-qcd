@@ -32,11 +32,12 @@ from typing import NoReturn, Optional, Tuple
 import numpy as np
 import tensorflow as tf
 import horovod.tensorflow as hvd
+from collections import namedtuple
 
 import utils.file_io as io
 
-from config import (BIN_DIR, GaugeDynamicsConfig, LearningRateConfig,
-                    MonteCarloStates, NetWeights, NetworkConfig, State)
+from config import (BIN_DIR, LearningRateConfig,
+                    MonteCarloStates, NetWeights, NetworkConfig)
 from lattice.gauge_lattice import GaugeLattice
 from dynamics.base_dynamics import BaseDynamics
 from utils.attr_dict import AttrDict
@@ -58,6 +59,58 @@ ACTIVATIONS = {
     'tanh': tf.nn.tanh,
     'leaky_relu': tf.nn.leaky_relu
 }
+
+
+State = namedtuple('State', ['x', 'v', 'beta'])
+#  class State(AttrDict):
+#      """Configuration object for `State` object"""
+#      def __init__(self, x: tf.Tensor, v: tf.Tensor, beta: tf.Tensor):
+#          super(State, self).__init__(x=x, v=v, beta=beta)
+
+
+class GaugeDynamicsConfig(AttrDict):
+    """Configuration object for `GaugeDynamics` object"""
+
+    # pylint:disable=too-many-arguments
+    def __init__(self,
+                 eps: float,                    # step size
+                 num_steps: int,                # n leapfrog steps per acc/rej
+                 hmc: bool = False,             # run standard HMC?
+                 use_ncp: bool = False,         # Transform x using NCP?
+                 model_type: str = None,        # name for model
+                 eps_fixed: bool = False,
+                 lattice_shape: tuple = None,
+                 aux_weight: float = 0.,
+                 plaq_weight: float = 0.,
+                 charge_weight: float = 0.,
+                 zero_init: bool = False,
+                 directional_updates: bool = False,
+                 separate_networks: bool = False,
+                 use_conv_net: bool = False,
+                 use_mixed_loss: bool = False,
+                 use_scattered_xnet_update: bool = False,
+                 use_tempered_traj: bool = False,
+                 gauge_eq_masks: bool = False):
+        super(GaugeDynamicsConfig, self).__init__(
+            eps=eps,
+            hmc=hmc,
+            use_ncp=use_ncp,
+            num_steps=num_steps,
+            model_type=model_type,
+            eps_fixed=eps_fixed,
+            lattice_shape=lattice_shape,
+            aux_weight=aux_weight,
+            plaq_weight=plaq_weight,
+            charge_weight=charge_weight,
+            zero_init=zero_init,
+            directional_updates=directional_updates,
+            separate_networks=separate_networks,
+            use_conv_net=use_conv_net,
+            use_mixed_loss=use_mixed_loss,
+            use_scattered_xnet_update=use_scattered_xnet_update,
+            use_tempered_traj=use_tempered_traj,
+            gauge_eq_masks=gauge_eq_masks,
+        )
 
 
 def project_angle(x):
@@ -86,9 +139,9 @@ def build_dynamics(flags):
     config = GaugeDynamicsConfig(**dict(flags.get('dynamics_config', None)))
     net_config = NetworkConfig(**dict(flags.get('network_config', None)))
     conv_config = None
-    if flags.get('use_conv_net', False):
+    if config.get('use_conv_net', False):
         conv_config = flags.get('conv_config', None)
-        input_shape = flags.get('lattice_shape', None)[1:]
+        input_shape = config.get('lattice_shape', None)[1:]
         conv_config.update({
             'input_shape': input_shape,
         })
@@ -107,31 +160,25 @@ class GaugeDynamics(BaseDynamics):
             network_config: Optional[NetworkConfig] = None,
             lr_config: Optional[LearningRateConfig] = None,
             conv_config: Optional[ConvolutionConfig] = None
-    ) -> NoReturn:
-
+    ):
         self.aux_weight = config.get('aux_weight', 0.)
-        self.plaq_weight = config.get('plaq_weight', 10.)
-        self.charge_weight = config.get('charge_weight', 0.1)
-        self.zero_init = config.get('zero_init', False)
-        self._gauge_eq_masks = config.get('gauge_eq_masks', True)
-        self.use_conv_net = config.get('use_conv_net', False)
+        self.plaq_weight = config.get('plaq_weight', 0.)
+        self.charge_weight = config.get('charge_weight', 0.01)
+        self._gauge_eq_masks = config.get('gauge_eq_masks', False)
         self.lattice_shape = config.get('lattice_shape', None)
-        self.use_mixed_loss = config.get('use_mixed_loss', False)
+        self._alpha = 1.
+        if config.use_tempered_traj:
+            self._alpha = 1.1
 
         self.lattice = GaugeLattice(self.lattice_shape)
         self.batch_size = self.lattice_shape[0]
         self.xdim = np.cumprod(self.lattice_shape[1:])[-1]
 
-        #  names = ['aux_weight', 'plaq_weight', 'charge_weight',
-        #           'zero_init', 'gauge_eq_masks', 'use_conv_net',
-        #           'lattice_shape', 'batch_size', 'xdim',
-        #           'use_tempered_trajectories', 'use_mixed_loss']
-
         self.config = config
         self.lr_config = lr_config
         self.conv_config = conv_config
         self.net_config = network_config
-        if not self.use_conv_net:
+        if not self.config.use_conv_net:
             self.conv_config = None
 
         params.update({
@@ -154,7 +201,7 @@ class GaugeDynamics(BaseDynamics):
             net_weights = NetWeights(0., 0., 0., 0., 0., 0.)
             self.config.use_ncp = False
             self.config.separate_networks = False
-            self.use_conv_net = False
+            self.config.use_conv_net = False
             self.conv_config = None
             self.xnet, self.vnet = self._build_hmc_networks()
             if self.config.eps_fixed:
@@ -165,28 +212,35 @@ class GaugeDynamics(BaseDynamics):
             else:
                 net_weights = NetWeights(0., 1., 1., 1., 1., 1.)
 
-            kinit = 'zeros' if self.zero_init else None
+            kinit = 'zeros' if self.config.zero_init else None
+
+            if self.config.use_conv_net:
+                xshape = (*self.lattice_shape[1:], 2)
+            else:
+                xshape = (self.xdim, 2)
+
             xnet_input_shapes = {
-                'x': (self.xdim, 2), 'v': (self.xdim,), 't': (2,)
+                'x': xshape, 'v': (self.xdim,), 't': (2,)
             }
             vnet_input_shapes = {
                 'x': (self.xdim,), 'v': (self.xdim,), 't': (2,),
             }
-
             args = (self.lattice_shape, self.net_config)
             self.vnet = get_gauge_network(*args, name='VNet',
                                           kernel_initializer=kinit,
-                                          factor=1., conv_config=None,
+                                          factor=1.0, conv_config=None,
                                           input_shapes=vnet_input_shapes)
 
             xnet_kwargs = {
-                'factor': 2.,
+                'factor': 2.0,
                 'kernel_initializer': kinit,
                 'conv_config': self.conv_config,
                 'input_shapes': xnet_input_shapes,
             }
 
             if self.config.separate_networks:
+                #  for i in range(self.config.num_steps):
+                #      setattr(self, f'xnet{i}', get_gauge_network(...))
                 self.xnets = [
                     get_gauge_network(*args, **xnet_kwargs, name=f'XNet{i}')
                     for i in range(self.config.num_steps)
@@ -201,37 +255,104 @@ class GaugeDynamics(BaseDynamics):
             self.optimizer = self._create_optimizer()
 
     def transition_kernel_tempered(
-                self, state: State, forward: bool, training: bool = None
+            self, state: State,
+            forward: bool, training: bool = None
     ):
-        """Transition kernel of the augmented leapfrog integrator.
+        """Transition kernel of the augmented leapfrog integrator."""
+        if forward:
+            lf_fn = self._forward_lf_tempered
+        else:
+            lf_fn = self._backward_lf_tempered
 
-        NOTE: This method attempts to perform simulated annealing WITHIN
-        a trajectory, by linearly decreasing beta by 10% over the first
-        half of the trajectory, followed by a linear increase back to its
-        original value over the second half of the trajectory.
-        """
-        lf_fn = self._forward_lf if forward else self._backward_lf
-        state_ = State(state.x, state.v, state.beta)
+        state_prop = State(state.x, state.v, state.beta)
         sumlogdet = tf.zeros((self.batch_size,), dtype=TF_FLOAT)
-
-        step_mid = self.config.num_steps // 2
-        beta_mid = state.beta - 0.5 * state.beta
-
-        betas = tf.concat([
-            tf.linspace(state.beta, beta_mid, step_mid),  # beta0 --> beta_mid
-            tf.linspace(beta_mid, state.beta, step_mid),  # beta_mid --> beta0
-        ], axis=-1)
-        #  betas = tf.concat([betas1, betas2], axis=-1)
-
-        for step in tf.range(self.config.num_steps):
-            beta = tf.gather(betas, step)
-            state_ = State(state_.x, state_.v, beta)
-            state_, logdet = lf_fn(step, state_, training)
+        for step in range(self.config.num_steps):
+            state_prop, logdet = lf_fn(step, state_prop, training)
             sumlogdet += logdet
 
-        px = self.compute_accept_prob(state, state_, sumlogdet)
+        accept_prob = self.compute_accept_prob(state, state_prop, sumlogdet)
 
-        return state_, px, sumlogdet
+        return state_prop, accept_prob, sumlogdet
+
+    def transition_kernel_directional(
+        self, state: State, training: bool = None
+    ):
+        """Implements a series of directional updates."""
+        state_prop = State(state.x, state.v, state.beta)
+        sumlogdet = tf.zeros((self.batch_size,), dtype=TF_FLOAT)
+        midpt = self.config.num_steps // 2
+        lf_fns = midpt * [self._forward_lf] + midpt * [self._backward_lf]
+        for step, lf_fn in enumerate(lf_fns):
+            state_prop, logdet = lf_fn(step, state_prop, training)
+            sumlogdet += logdet
+
+        accept_prob = self.compute_accept_prob(state, state_prop, sumlogdet)
+
+        return state_prop, accept_prob, sumlogdet
+
+    def transition_kernel(
+            self, state: State, forward: bool, training: bool = None
+    ):
+        """Transition kernel of the augmented leapfrog integrator."""
+        if self.config.use_tempered_traj:
+            return self.transition_kernel_tempered(state, forward, training)
+
+        if self.config.directional_updates:
+            return self.transition_kernel_directional(state, training)
+
+        return super().transition_kernel(state, forward, training)
+
+    def _forward_lf_tempered(
+            self, step: int, state: State, training: bool = None
+    ):
+
+        def _tempered_v(step, v):
+            if step < self.config.num_steps // 2:
+                return v * tf.math.sqrt(self._alpha)
+            return v / tf.math.sqrt(self._alpha)
+
+        sumlogdet = 0.
+        m, mc = self._get_mask(step)
+        v = self._tempered_v(step, state.v)
+        state = State(state.x, v, state.beta)
+        state, logdet = self._update_v_forward(state, step, training)
+        sumlogdet += logdet
+        state, logdet = self._update_x_forward(state, step, (m, mc), training)
+        sumlogdet += logdet
+        state, logdet = self._update_x_forward(state, step, (mc, m), training)
+        sumlogdet += logdet
+        state, logdet = self._update_v_forward(state, step, training)
+        sumlogdet += logdet
+        v = self._tempered_v(step, state.v)
+        state = State(state.x, v, state.beta)
+
+        return state, sumlogdet
+
+    def _backward_lf_tempered(
+            self, step: int, state: State, training: bool = None
+    ):
+        """Run the augmented leapfrog integrator in the backward direction."""
+        def _tempered_v(step, v):
+            if step > self.config.num_steps // 2:
+                return v * tf.math.sqrt(self._alpha)
+            return v / tf.math.sqrt(self._alpha)
+        sumlogdet = 0.
+        step = self.config.num_steps - step - 1  # reversed step
+        m, mc = self._get_mask(step)
+        v = self._tempered_v(step, state.v)
+        state = State(state.x, v, state.beta)
+        state, logdet = self._update_v_backward(state, step, training)
+        sumlogdet += logdet
+        state, logdet = self._update_x_backward(state, step, (mc, m), training)
+        sumlogdet += logdet
+        state, logdet = self._update_x_backward(state, step, (m, mc), training)
+        sumlogdet += logdet
+        state, logdet = self._update_v_backward(state, step, training)
+        sumlogdet += logdet
+        v = self._tempered_v(step, state.v)
+        state = State(state.x, v, state.beta)
+
+        return state, logdet
 
     def save_config(self, config_dir: str):
         """Helper method for saving configuration objects."""
@@ -239,10 +360,11 @@ class GaugeDynamics(BaseDynamics):
         io.save_dict(self.net_config, config_dir, name='network_config')
         io.save_dict(self.lr_config, config_dir, name='lr_config')
         io.save_dict(self.params, config_dir, name='dynamics_params')
-        if self.conv_config is not None and self.use_conv_net:
+        if self.conv_config is not None and self.config.use_conv_net:
             io.save_dict(self.conv_config, config_dir, name='conv_config')
 
     def get_config(self):
+        """Get configuration as dict."""
         return {
             'config': self.config,
             'network_config': self.net_config,
@@ -315,7 +437,7 @@ class GaugeDynamics(BaseDynamics):
             ploss = accept_prob * tf.reduce_sum(dwloops, axis=(1, 2))
 
             # ==== FIXME: Try using mixed loss??
-            if self.use_mixed_loss:
+            if self.config.use_mixed_loss:
                 ploss = self.mixed_loss(ploss, self.plaq_weight)
             else:
                 ploss = tf.reduce_mean(-ploss / self.plaq_weight, axis=0)
@@ -326,13 +448,22 @@ class GaugeDynamics(BaseDynamics):
         if self.charge_weight > 0:
             q_init = tf.reduce_sum(tf.sin(wl_init), axis=(1, 2)) / (2 * np.pi)
             q_prop = tf.reduce_sum(tf.sin(wl_prop), axis=(1, 2)) / (2 * np.pi)
-            #  q_prop = tf.sin(wl_prop)
-            #  dq2 = (q_prop - q_init)
-            qloss = accept_prob * (q_prop - q_init) ** 2 + 1e-4
-            if self.use_mixed_loss:
+            qloss = (accept_prob * (q_prop - q_init) ** 2) + 1e-4
+            if self.config.use_mixed_loss:
                 qloss = self.mixed_loss(qloss, self.charge_weight)
             else:
                 qloss = tf.reduce_mean(-qloss / self.charge_weight, axis=0)
+            #  q_init = self.lattice.calc_charges(wloops=wl_init, use_sin=True)
+            #  q_prop = self.lattice.calc_charges(wloops=wl_prop, use_sin=True)
+            #  qloss = accept_prob * (q_prop - q_init) ** 2
+            #  if self.config.use_mixed_loss:
+            #      qloss = self.mixed_loss(qloss, self.charge_weight)
+            #  else:
+            #      qloss = tf.reduce_mean(-qloss / self.charge_weight, axis=0)
+
+            #  q_prop = tf.sin(wl_prop)
+            #  #  dq2 = (q_prop - q_init)
+
             #  dq_sum = tf.reduce_sum((q_prop - q_init) ** 2, axis=(1, 2))
             #  qloss = accept_prob * dq_sum + 1e-4
             #  qloss = (tf.reduce_mean(self.charge_weight / dq_)
@@ -533,7 +664,7 @@ class GaugeDynamics(BaseDynamics):
             x_cos = tf.reshape(x_cos, self.lattice_shape)
             x_sin = tf.reshape(x_sin, self.lattice_shape)
 
-        x = tf.concat([x_cos, x_sin], axis=-1)
+        x = tf.concat([x_cos, x_sin], -1)
         if not self.config.separate_networks:
             S, T, Q = self.xnet((x, v, t), training)
         else:
@@ -621,20 +752,21 @@ class GaugeDynamics(BaseDynamics):
         expQ = tf.exp(transf)
 
         if self.config.use_ncp:
-            _x = 2 * tf.math.atan(tf.math.tan(state.x/2.) * expS)
+            _x = 2 * tf.math.atan(tf.math.tan(x/2.) * expS)
             _y = _x + self.eps * (state.v * expQ + transl)
-            xf = self.normalizer((m * state.x) + (mc * _y))
+            xf = (m * x) + (mc * _y)
 
-            cterm = tf.math.cos(state.x / 2) ** 2
-            sterm = (expS * tf.math.sin(state.x / 2)) ** 2
+            cterm = tf.math.cos(x / 2) ** 2
+            sterm = (expS * tf.math.sin(x / 2)) ** 2
             logdet_ = tf.math.log(expS / (cterm + sterm))
             logdet = tf.reduce_sum(mc * logdet_, axis=1)
 
         else:
             y = x * expS + self.eps * (state.v * expQ + transl)
-            xf = self.normalizer(m * x + mc * y)
+            xf = (m * x) + (mc * y)
             logdet = tf.reduce_sum(mc * scale, axis=1)
 
+        xf = self.normalizer(xf)
         state_out = State(x=xf, v=state.v, beta=state.beta)
 
         return state_out, logdet
@@ -716,17 +848,18 @@ class GaugeDynamics(BaseDynamics):
             term1 = 2 * tf.math.atan(expS * tf.math.tan(state.x / 2))
             term2 = expS * self.eps * (state.v * expQ + transl)
             y = term1 - term2
-            xb = self.normalizer((m * state.x) + (mc * y))
+            xb = (m * x) + (mc * y)
 
-            cterm = tf.math.cos(state.x / 2) ** 2
-            sterm = (expS * tf.math.sin(state.x / 2)) ** 2
+            cterm = tf.math.cos(x / 2) ** 2
+            sterm = (expS * tf.math.sin(x / 2)) ** 2
             logdet_ = tf.math.log(expS / (cterm + sterm))
             logdet = tf.reduce_sum(mc * logdet_, axis=1)
 
         else:
             y = expS * (x - self.eps * (state.v * expQ + transl))
-            xb = self.normalizer(m * x + mc * y)
+            xb = m * x + mc * y
             logdet = tf.reduce_sum(mc * scale, axis=1)
 
+        xb = self.normalizer(xb)
         state_out = State(xb, v=state.v, beta=state.beta)
         return state_out, logdet

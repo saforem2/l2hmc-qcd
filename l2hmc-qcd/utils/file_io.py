@@ -110,6 +110,31 @@ def print_flags(flags: AttrDict):
     ))
 
 
+def setup_directories(flags, name='training'):
+    """Setup relevant directories for training."""
+    train_dir = os.path.join(flags.log_dir, name)
+    train_paths = AttrDict({
+        'log_dir': flags.log_dir,
+        'train_dir': train_dir,
+        'data_dir': os.path.join(train_dir, 'train_data'),
+        'ckpt_dir': os.path.join(train_dir, 'checkpoints'),
+        'summary_dir': os.path.join(train_dir, 'summaries'),
+        'log_file': os.path.join(train_dir, 'train_log.txt'),
+        'config_dir': os.path.join(train_dir, 'dynamics_configs'),
+    })
+
+    if IS_CHIEF:
+        check_else_make_dir(
+            [d for k, d in train_paths.items() if 'file' not in k],
+        )
+        if not flags.restore:
+            save_params(dict(flags), train_dir, 'FLAGS')
+
+    return train_paths
+
+
+
+
 # pylint:disable=too-many-arguments
 def make_header_from_dict(
         data: dict,
