@@ -186,7 +186,7 @@ class GaugeDynamics(BaseDynamics):
             'xdim': np.cumprod(self.lattice_shape[1:])[-1],
         })
 
-        super(GaugeDynamics, self).__init__(
+        super().__init__(
             params=params,
             config=config,
             name='GaugeDynamics',
@@ -238,9 +238,9 @@ class GaugeDynamics(BaseDynamics):
                 'input_shapes': xnet_input_shapes,
             }
 
+            #  for i in range(self.config.num_steps):
+            #      setattr(self, f'xnet{i}', get_gauge_network(...))
             if self.config.separate_networks:
-                #  for i in range(self.config.num_steps):
-                #      setattr(self, f'xnet{i}', get_gauge_network(...))
                 self.xnets = [
                     get_gauge_network(*args, **xnet_kwargs, name=f'XNet{i}')
                     for i in range(self.config.num_steps)
@@ -255,8 +255,10 @@ class GaugeDynamics(BaseDynamics):
             self.optimizer = self._create_optimizer()
 
     def transition_kernel_tempered(
-            self, state: State,
-            forward: bool, training: bool = None
+            self,
+            state: State,
+            forward: bool,
+            training: bool = None
     ):
         """Transition kernel of the augmented leapfrog integrator."""
         if forward:
@@ -290,12 +292,31 @@ class GaugeDynamics(BaseDynamics):
 
         return state_prop, accept_prob, sumlogdet
 
+    def transition_kernel_sep_nets(
+            self, state: State, forward: bool, training: bool = None
+    ):
+        """Implements a transition kernel when using separate networks."""
+        lf_fn = self._forward_lf if forward else self._backward_lf
+        state_prop = State(x=state.x, v=state.v, beta=state.beta)
+        sumlogdet = tf.zeros((self.batch_size,), dtype=TF_FLOAT)
+
+        for step in range(self.config.num_steps):
+            state_prop, logdet = lf_fn(step, state_prop, training)
+            sumlogdet += logdet
+
+        accept_prob = self.compute_accept_prob(state, state_prop, sumlogdet)
+
+        return state_prop, accept_prob, sumlogdet
+
     def transition_kernel(
             self, state: State, forward: bool, training: bool = None
     ):
         """Transition kernel of the augmented leapfrog integrator."""
         if self.config.use_tempered_traj:
             return self.transition_kernel_tempered(state, forward, training)
+
+        if self.config.separate_networks:
+            return self.transition_kernel_sep_nets(state, forward, training)
 
         if self.config.directional_updates:
             return self.transition_kernel_directional(state, training)
@@ -311,7 +332,7 @@ class GaugeDynamics(BaseDynamics):
                 return v * tf.math.sqrt(self._alpha)
             return v / tf.math.sqrt(self._alpha)
 
-        sumlogdet = 0.
+        sumlogdet = tf.zeros((self.batch_size,), dtype=TF_FLOAT)
         m, mc = self._get_mask(step)
         v = self._tempered_v(step, state.v)
         state = State(state.x, v, state.beta)
@@ -336,6 +357,7 @@ class GaugeDynamics(BaseDynamics):
             if step > self.config.num_steps // 2:
                 return v * tf.math.sqrt(self._alpha)
             return v / tf.math.sqrt(self._alpha)
+
         sumlogdet = 0.
         step = self.config.num_steps - step - 1  # reversed step
         m, mc = self._get_mask(step)
@@ -353,283 +375,6 @@ class GaugeDynamics(BaseDynamics):
         state = State(state.x, v, state.beta)
 
         return state, logdet
-
-    def save_config(self, config_dir: str):
-        """Helper method for saving configuration objects."""
-        io.save_dict(self.config, config_dir, name='dynamics_config')
-        io.save_dict(self.net_config, config_dir, name='network_config')
-        io.save_dict(self.lr_config, config_dir, name='lr_config')
-        io.save_dict(self.params, config_dir, name='dynamics_params')
-        if self.conv_config is not None and self.config.use_conv_net:
-            io.save_dict(self.conv_config, config_dir, name='conv_config')
-
-    def get_config(self):
-        """Get configuration as dict."""
-        return {
-            'config': self.config,
-            'network_config': self.net_config,
-            'conv_config': self.conv_config,
-            'lr_config': self.lr_config,
-            'params': self.params
-        }
-
-    def _get_network(self, step: int):
-        if self.config.separate_networks:
-            xnet = getattr(self, f'xnets{int(step)}', None)
-            vnet = getattr(self, f'vnets{int(step)}', None)
-            return xnet, vnet
-
-        return self.xnet, self.vnet
-
-    def _build_masks(self):
-        """Construct different binary masks for different time steps."""
-        def rolled_reshape(m, ax, shape=None):
-            if shape is None:
-                shape = (self.batch_size, -1)
-
-            return sum([np.roll(m, i, ax).reshape(shape) for i in range(4)])
-
-        masks = []
-        zeros = np.zeros(self.lattice_shape, dtype=np.float32)
-
-        if self._gauge_eq_masks:
-            mh_ = zeros.copy()
-            mv_ = zeros.copy()
-            mh_[:, ::4, :, 1] = 1.  # Horizontal masks
-            mv_[:, :, ::4, 0] = 1.  # Vertical masks
-
-            mh = rolled_reshape(mh_, ax=1)
-            mv = rolled_reshape(mv_, ax=2)
-            for i in range(self.config.num_steps):
-                mask = mh if i % 2 == 0 else mv
-                masks.append(tf.constant(mask))
-        else:
-            p = zeros.copy()
-            for idx, _ in np.ndenumerate(zeros):
-                p[idx] = (sum(idx) % 2 == 0)
-
-            for i in range(self.config.num_steps):
-                m = p if i % 2 == 0 else (1. - p)
-                mask = tf.reshape(m, (self.batch_size, -1))
-                masks.append(tf.constant(mask))
-
-        return masks
-
-    @staticmethod
-    def mixed_loss(loss: tf.Tensor, weight: float):
-        """Returns: tf.reduce_mean(weight / loss - loss / weight)."""
-        return tf.reduce_mean((weight / loss) - (loss / weight))
-
-    def calc_losses(self, states: MonteCarloStates, accept_prob: tf.Tensor):
-        """Calculate the total loss."""
-        #  dtype = states.init.x.dtype
-        # ==== FIXME: Should we stack
-        # ==== `states = [states.init.x, states.proposed.x]`
-        # ==== and call `self.lattice.calc_plaq_sums(states)`?
-        wl_init = self.lattice.calc_wilson_loops(states.init.x)
-        wl_prop = self.lattice.calc_wilson_loops(states.proposed.x)
-
-        # Calculate the plaquette loss
-        #  ploss = tf.cast(0., dtype=dtype)
-        ploss = 0.
-        if self.plaq_weight > 0:
-            dwloops = 2 * (1. - tf.math.cos(wl_prop - wl_init))
-            ploss = accept_prob * tf.reduce_sum(dwloops, axis=(1, 2))
-
-            # ==== FIXME: Try using mixed loss??
-            if self.config.use_mixed_loss:
-                ploss = self.mixed_loss(ploss, self.plaq_weight)
-            else:
-                ploss = tf.reduce_mean(-ploss / self.plaq_weight, axis=0)
-
-        # Calculate the charge loss
-        #  qloss = tf.cast(0., dtype=dtype)
-        qloss = 0.
-        if self.charge_weight > 0:
-            q_init = tf.reduce_sum(tf.sin(wl_init), axis=(1, 2)) / (2 * np.pi)
-            q_prop = tf.reduce_sum(tf.sin(wl_prop), axis=(1, 2)) / (2 * np.pi)
-            qloss = (accept_prob * (q_prop - q_init) ** 2) + 1e-4
-            if self.config.use_mixed_loss:
-                qloss = self.mixed_loss(qloss, self.charge_weight)
-            else:
-                qloss = tf.reduce_mean(-qloss / self.charge_weight, axis=0)
-            #  q_init = self.lattice.calc_charges(wloops=wl_init, use_sin=True)
-            #  q_prop = self.lattice.calc_charges(wloops=wl_prop, use_sin=True)
-            #  qloss = accept_prob * (q_prop - q_init) ** 2
-            #  if self.config.use_mixed_loss:
-            #      qloss = self.mixed_loss(qloss, self.charge_weight)
-            #  else:
-            #      qloss = tf.reduce_mean(-qloss / self.charge_weight, axis=0)
-
-            #  q_prop = tf.sin(wl_prop)
-            #  #  dq2 = (q_prop - q_init)
-
-            #  dq_sum = tf.reduce_sum((q_prop - q_init) ** 2, axis=(1, 2))
-            #  qloss = accept_prob * dq_sum + 1e-4
-            #  qloss = (tf.reduce_mean(self.charge_weight / dq_)
-            #           - tf.reduce_mean(dq_ / self.charge_weight))
-
-            #  q_init = self.lattice.calc_charges(wloops=wl_init, use_sin=True)
-            #  q_prop = self.lattice.calc_charges(wloops=wl_prop, use_sin=True)
-            #  qloss = accept_prob * (q_prop - q_init) ** 2
-
-            # ==== FIXME: Try using mixed loss??
-            #  qloss = self.mixed_loss(qloss, self.charge_weight)
-            #  qloss = tf.reduce_mean(-qloss / self.charge_weight, axis=0)
-
-        return ploss, qloss
-
-    def calc_wilson_loops(self, x):
-        """Calculate the plaqs by summing the links in the CCW direction."""
-        x = tf.reshape(x, shape=self.lattice_shape)
-        plaqs = (x[..., 0]
-                 - x[..., 1]
-                 - tf.roll(x[..., 0], shift=-1, axis=2)
-                 + tf.roll(x[..., 1], shift=-1, axis=1))
-
-        return plaqs
-
-    def calc_charges(self, x=None, wloops=None, use_sin=False):
-        """Calculate the topological charges for a batch of lattices."""
-        if wloops is None:
-            try:
-                wloops = self.calc_wilson_loops(x)
-            except ValueError as err:
-                raise err
-
-        q = tf.sin(wloops) if use_sin else project_angle(wloops)
-
-        return tf.reduce_sum(q, axis=(1, 2), name='charges') / (2 * np.pi)
-
-    def train_step(self, data):
-        """Perform a single training step."""
-        start = time.time()
-        with tf.GradientTape() as tape:
-            x, beta = data
-            #  v = tf.random.normal((self.batch_size, self.xdim // 2))
-            tape.watch(x)
-            #  tape.watch(v)
-            states, accept_prob, sumlogdet = self((x, beta), training=True)
-            ploss, qloss = self.calc_losses(states, accept_prob)
-            loss = ploss + qloss
-            if self.aux_weight > 0:
-                z = tf.random.normal(x.shape, dtype=x.dtype)
-                states_, accept_prob_, _ = self((z, beta), training=True)
-                ploss_, qloss_ = self.calc_losses(states_, accept_prob_)
-                loss += ploss_ + qloss_
-
-        #  if self.using_hvd:
-        if NUM_RANKS > 1:
-            tape = hvd.DistributedGradientTape(tape)
-
-        grads = tape.gradient(loss, self.trainable_variables)
-        #  if self.clip_val > 0:
-        #      grads = [tf.clip_by_norm(g, self.clip_val) for g in grads]
-
-        self.optimizer.apply_gradients(
-            zip(grads, self.trainable_variables),
-        )
-
-        metrics = AttrDict({
-            'dt': time.time() - start,
-            'loss': loss,
-            'ploss': ploss,
-            'qloss': qloss,
-        })
-
-        if self.aux_weight > 0:
-            metrics.update({
-                'ploss_aux': ploss_,
-                'qloss_aux': qloss_
-            })
-
-        #  metrics = AttrDict({
-        metrics.update({
-            #  'dt': time.time() - start,
-            #  'loss': loss,
-            #  'ploss': ploss,
-            #  'qloss': qloss,
-            'accept_prob': accept_prob,
-            'eps': self.eps,
-            'beta': states.init.beta,
-            'sumlogdet': sumlogdet.out,
-        })
-
-        observables = self.calc_observables(states)
-        metrics.update(**observables)
-
-        #  if loss > 50:
-        #      x_out = tf.random.normal(states.out.x.shape,
-        #                               dtype=states.out.x.dtype)
-        #  else:
-        #      x_out = states.out.x
-
-        # Horovod:
-        #    Broadcast initial variable states from rank 0 to all other
-        #    processes. This is necessary to ensure consistent initialization
-        #    of all workers when training is started with random weights or
-        #    restored from a checkpoint.
-        # NOTE:
-        #    Broadcast should be done after the first gradient step to ensure
-        #    optimizer intialization.
-        #  if self.optimizer.iterations.numpy() == 0 and self.using_hvd:
-        #  if first_step and HAS_HOROVOD:
-        if self.optimizer.iterations == 0 and NUM_RANKS > 1:
-            hvd.broadcast_variables(self.variables, root_rank=0)
-            hvd.broadcast_variables(self.optimizer.variables(), root_rank=0)
-
-        return states.out.x, metrics
-
-    def test_step(self, data):
-        """Perform a single inference step."""
-        start = time.time()
-        states, px, sld = self(data, training=False)
-        ploss, qloss = self.calc_losses(states, px)
-        loss = ploss + qloss
-
-        metrics = AttrDict({
-            'dt': time.time() - start,
-            'loss': loss,
-            'ploss': ploss,
-            'qloss': qloss,
-            'accept_prob': px,
-            'eps': self.eps,
-            'beta': states.init.beta,
-            'sumlogdet': sld.out,
-        })
-
-        observables = self.calc_observables(states)
-        metrics.update(**observables)
-
-        return states.out.x, metrics
-
-    def _calc_observables(self, state):
-        """Calculate the observables for a particular state.
-
-        NOTE: We track the error in the plaquette instead of the actual value.
-        """
-        wloops = self.lattice.calc_wilson_loops(state.x)
-        q_sin = self.lattice.calc_charges(wloops=wloops, use_sin=True)
-        q_proj = self.lattice.calc_charges(wloops=wloops, use_sin=False)
-        plaqs = self.lattice.calc_plaqs(wloops=wloops, beta=state.beta)
-
-        return plaqs, q_sin, q_proj
-
-    def calc_observables(self, states):
-        """Calculate observables."""
-        _, q_init_sin, q_init_proj = self._calc_observables(states.init)
-        plaqs, q_out_sin, q_out_proj = self._calc_observables(states.out)
-        dq_sin = tf.math.abs(q_out_sin - q_init_sin)
-        dq_proj = tf.math.abs(q_out_proj - q_init_proj)
-
-        observables = AttrDict({
-            'dq': dq_proj,
-            'dq_sin': dq_sin,
-            'charges': q_out_proj,
-            'plaqs': plaqs,
-        })
-
-        return observables
 
     def _scattered_xnet(self, inputs, mask, step, training=None):
         """Call `self.xnet` on non-zero entries of `x` via `tf.gather_nd`."""
@@ -863,3 +608,280 @@ class GaugeDynamics(BaseDynamics):
         xb = self.normalizer(xb)
         state_out = State(xb, v=state.v, beta=state.beta)
         return state_out, logdet
+
+    @staticmethod
+    def mixed_loss(loss: tf.Tensor, weight: float):
+        """Returns: tf.reduce_mean(weight / loss - loss / weight)."""
+        return tf.reduce_mean((weight / loss) - (loss / weight))
+
+    def calc_losses(self, states: MonteCarloStates, accept_prob: tf.Tensor):
+        """Calculate the total loss."""
+        #  dtype = states.init.x.dtype
+        # ==== FIXME: Should we stack
+        # ==== `states = [states.init.x, states.proposed.x]`
+        # ==== and call `self.lattice.calc_plaq_sums(states)`?
+        wl_init = self.lattice.calc_wilson_loops(states.init.x)
+        wl_prop = self.lattice.calc_wilson_loops(states.proposed.x)
+
+        # Calculate the plaquette loss
+        #  ploss = tf.cast(0., dtype=dtype)
+        ploss = 0.
+        if self.plaq_weight > 0:
+            dwloops = 2 * (1. - tf.math.cos(wl_prop - wl_init))
+            ploss = accept_prob * tf.reduce_sum(dwloops, axis=(1, 2))
+
+            # ==== FIXME: Try using mixed loss??
+            if self.config.use_mixed_loss:
+                ploss = self.mixed_loss(ploss, self.plaq_weight)
+            else:
+                ploss = tf.reduce_mean(-ploss / self.plaq_weight, axis=0)
+
+        # Calculate the charge loss
+        #  qloss = tf.cast(0., dtype=dtype)
+        qloss = 0.
+        if self.charge_weight > 0:
+            q_init = tf.reduce_sum(tf.sin(wl_init), axis=(1, 2)) / (2 * np.pi)
+            q_prop = tf.reduce_sum(tf.sin(wl_prop), axis=(1, 2)) / (2 * np.pi)
+            qloss = (accept_prob * (q_prop - q_init) ** 2) + 1e-4
+            if self.config.use_mixed_loss:
+                qloss = self.mixed_loss(qloss, self.charge_weight)
+            else:
+                qloss = tf.reduce_mean(-qloss / self.charge_weight, axis=0)
+            #  q_init = self.lattice.calc_charges(wloops=wl_init, use_sin=True)
+            #  q_prop = self.lattice.calc_charges(wloops=wl_prop, use_sin=True)
+            #  qloss = accept_prob * (q_prop - q_init) ** 2
+            #  if self.config.use_mixed_loss:
+            #      qloss = self.mixed_loss(qloss, self.charge_weight)
+            #  else:
+            #      qloss = tf.reduce_mean(-qloss / self.charge_weight, axis=0)
+
+            #  q_prop = tf.sin(wl_prop)
+            #  #  dq2 = (q_prop - q_init)
+
+            #  dq_sum = tf.reduce_sum((q_prop - q_init) ** 2, axis=(1, 2))
+            #  qloss = accept_prob * dq_sum + 1e-4
+            #  qloss = (tf.reduce_mean(self.charge_weight / dq_)
+            #           - tf.reduce_mean(dq_ / self.charge_weight))
+
+            #  q_init = self.lattice.calc_charges(wloops=wl_init, use_sin=True)
+            #  q_prop = self.lattice.calc_charges(wloops=wl_prop, use_sin=True)
+            #  qloss = accept_prob * (q_prop - q_init) ** 2
+
+            # ==== FIXME: Try using mixed loss??
+            #  qloss = self.mixed_loss(qloss, self.charge_weight)
+            #  qloss = tf.reduce_mean(-qloss / self.charge_weight, axis=0)
+
+        return ploss, qloss
+
+    def calc_wilson_loops(self, x):
+        """Calculate the plaqs by summing the links in the CCW direction."""
+        x = tf.reshape(x, shape=self.lattice_shape)
+        plaqs = (x[..., 0]
+                 - x[..., 1]
+                 - tf.roll(x[..., 0], shift=-1, axis=2)
+                 + tf.roll(x[..., 1], shift=-1, axis=1))
+
+        return plaqs
+
+    def calc_charges(self, x=None, wloops=None, use_sin=False):
+        """Calculate the topological charges for a batch of lattices."""
+        if wloops is None:
+            try:
+                wloops = self.calc_wilson_loops(x)
+            except ValueError as err:
+                raise err
+
+        q = tf.sin(wloops) if use_sin else project_angle(wloops)
+
+        return tf.reduce_sum(q, axis=(1, 2), name='charges') / (2 * np.pi)
+
+    def train_step(self, data):
+        """Perform a single training step."""
+        start = time.time()
+        with tf.GradientTape() as tape:
+            x, beta = data
+            #  v = tf.random.normal((self.batch_size, self.xdim // 2))
+            tape.watch(x)
+            #  tape.watch(v)
+            states, accept_prob, sumlogdet = self((x, beta), training=True)
+            ploss, qloss = self.calc_losses(states, accept_prob)
+            loss = ploss + qloss
+            if self.aux_weight > 0:
+                z = tf.random.normal(x.shape, dtype=x.dtype)
+                states_, accept_prob_, _ = self((z, beta), training=True)
+                ploss_, qloss_ = self.calc_losses(states_, accept_prob_)
+                loss += ploss_ + qloss_
+
+        #  if self.using_hvd:
+        if NUM_RANKS > 1:
+            tape = hvd.DistributedGradientTape(tape)
+
+        grads = tape.gradient(loss, self.trainable_variables)
+        #  if self.clip_val > 0:
+        #      grads = [tf.clip_by_norm(g, self.clip_val) for g in grads]
+
+        self.optimizer.apply_gradients(
+            zip(grads, self.trainable_variables),
+        )
+
+        metrics = AttrDict({
+            'dt': time.time() - start,
+            'loss': loss,
+            'ploss': ploss,
+            'qloss': qloss,
+        })
+
+        if self.aux_weight > 0:
+            metrics.update({
+                'ploss_aux': ploss_,
+                'qloss_aux': qloss_
+            })
+
+        #  metrics = AttrDict({
+        metrics.update({
+            #  'dt': time.time() - start,
+            #  'loss': loss,
+            #  'ploss': ploss,
+            #  'qloss': qloss,
+            'accept_prob': accept_prob,
+            'eps': self.eps,
+            'beta': states.init.beta,
+            'sumlogdet': sumlogdet.out,
+        })
+
+        observables = self.calc_observables(states)
+        metrics.update(**observables)
+
+        #  if loss > 50:
+        #      x_out = tf.random.normal(states.out.x.shape,
+        #                               dtype=states.out.x.dtype)
+        #  else:
+        #      x_out = states.out.x
+
+        # Horovod:
+        #    Broadcast initial variable states from rank 0 to all other
+        #    processes. This is necessary to ensure consistent initialization
+        #    of all workers when training is started with random weights or
+        #    restored from a checkpoint.
+        # NOTE:
+        #    Broadcast should be done after the first gradient step to ensure
+        #    optimizer intialization.
+        #  if self.optimizer.iterations.numpy() == 0 and self.using_hvd:
+        #  if first_step and HAS_HOROVOD:
+        if self.optimizer.iterations == 0 and NUM_RANKS > 1:
+            hvd.broadcast_variables(self.variables, root_rank=0)
+            hvd.broadcast_variables(self.optimizer.variables(), root_rank=0)
+
+        return states.out.x, metrics
+
+    def test_step(self, data):
+        """Perform a single inference step."""
+        start = time.time()
+        states, px, sld = self(data, training=False)
+        ploss, qloss = self.calc_losses(states, px)
+        loss = ploss + qloss
+
+        metrics = AttrDict({
+            'dt': time.time() - start,
+            'loss': loss,
+            'ploss': ploss,
+            'qloss': qloss,
+            'accept_prob': px,
+            'eps': self.eps,
+            'beta': states.init.beta,
+            'sumlogdet': sld.out,
+        })
+
+        observables = self.calc_observables(states)
+        metrics.update(**observables)
+
+        return states.out.x, metrics
+
+    def _calc_observables(self, state):
+        """Calculate the observables for a particular state.
+
+        NOTE: We track the error in the plaquette instead of the actual value.
+        """
+        wloops = self.lattice.calc_wilson_loops(state.x)
+        q_sin = self.lattice.calc_charges(wloops=wloops, use_sin=True)
+        q_proj = self.lattice.calc_charges(wloops=wloops, use_sin=False)
+        plaqs = self.lattice.calc_plaqs(wloops=wloops, beta=state.beta)
+
+        return plaqs, q_sin, q_proj
+
+    def calc_observables(self, states):
+        """Calculate observables."""
+        _, q_init_sin, q_init_proj = self._calc_observables(states.init)
+        plaqs, q_out_sin, q_out_proj = self._calc_observables(states.out)
+        dq_sin = tf.math.abs(q_out_sin - q_init_sin)
+        dq_proj = tf.math.abs(q_out_proj - q_init_proj)
+
+        observables = AttrDict({
+            'dq': dq_proj,
+            'dq_sin': dq_sin,
+            'charges': q_out_proj,
+            'plaqs': plaqs,
+        })
+
+        return observables
+
+    def save_config(self, config_dir: str):
+        """Helper method for saving configuration objects."""
+        io.save_dict(self.config, config_dir, name='dynamics_config')
+        io.save_dict(self.net_config, config_dir, name='network_config')
+        io.save_dict(self.lr_config, config_dir, name='lr_config')
+        io.save_dict(self.params, config_dir, name='dynamics_params')
+        if self.conv_config is not None and self.config.use_conv_net:
+            io.save_dict(self.conv_config, config_dir, name='conv_config')
+
+    def get_config(self):
+        """Get configuration as dict."""
+        return {
+            'config': self.config,
+            'network_config': self.net_config,
+            'conv_config': self.conv_config,
+            'lr_config': self.lr_config,
+            'params': self.params
+        }
+
+    def _get_network(self, step: int):
+        if self.config.separate_networks:
+            xnet = getattr(self, f'xnets{int(step)}', None)
+            vnet = getattr(self, f'vnets{int(step)}', None)
+            return xnet, vnet
+
+        return self.xnet, self.vnet
+
+    def _build_masks(self):
+        """Construct different binary masks for different time steps."""
+        def rolled_reshape(m, ax, shape=None):
+            if shape is None:
+                shape = (self.batch_size, -1)
+
+            return sum([np.roll(m, i, ax).reshape(shape) for i in range(4)])
+
+        masks = []
+        zeros = np.zeros(self.lattice_shape, dtype=np.float32)
+
+        if self._gauge_eq_masks:
+            mh_ = zeros.copy()
+            mv_ = zeros.copy()
+            mh_[:, ::4, :, 1] = 1.  # Horizontal masks
+            mv_[:, :, ::4, 0] = 1.  # Vertical masks
+
+            mh = rolled_reshape(mh_, ax=1)
+            mv = rolled_reshape(mv_, ax=2)
+            for i in range(self.config.num_steps):
+                mask = mh if i % 2 == 0 else mv
+                masks.append(tf.constant(mask))
+        else:
+            p = zeros.copy()
+            for idx, _ in np.ndenumerate(zeros):
+                p[idx] = (sum(idx) % 2 == 0)
+
+            for i in range(self.config.num_steps):
+                m = p if i % 2 == 0 else (1. - p)
+                mask = tf.reshape(m, (self.batch_size, -1))
+                masks.append(tf.constant(mask))
+
+        return masks
