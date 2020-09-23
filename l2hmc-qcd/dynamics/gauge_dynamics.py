@@ -23,6 +23,7 @@ Date: 7/3/2020
 from __future__ import absolute_import, division, print_function
 
 import os
+import copy
 import json
 import time
 
@@ -161,14 +162,17 @@ class GaugeDynamics(BaseDynamics):
             lr_config: Optional[LearningRateConfig] = None,
             conv_config: Optional[ConvolutionConfig] = None
     ):
+        # ====
+        # Set attributes from `config`
         self.aux_weight = config.get('aux_weight', 0.)
         self.plaq_weight = config.get('plaq_weight', 0.)
         self.charge_weight = config.get('charge_weight', 0.01)
         self._gauge_eq_masks = config.get('gauge_eq_masks', False)
         self.lattice_shape = config.get('lattice_shape', None)
-        self._alpha = 1.
+        self._alpha = tf.constant(1.)
+        #  self._alpha = tf.Variable(initial_value=1., trainable=False)
         if config.use_tempered_traj:
-            self._alpha = 1.1
+            self._alpha = tf.Variable(initial_value=1., trainable=True)
 
         self.lattice = GaugeLattice(self.lattice_shape)
         self.batch_size = self.lattice_shape[0]
@@ -212,47 +216,101 @@ class GaugeDynamics(BaseDynamics):
             else:
                 net_weights = NetWeights(0., 1., 1., 1., 1., 1.)
 
-            kinit = 'zeros' if self.config.zero_init else None
-
-            if self.config.use_conv_net:
-                xshape = (*self.lattice_shape[1:], 2)
-            else:
-                xshape = (self.xdim, 2)
-
-            xnet_input_shapes = {
-                'x': xshape, 'v': (self.xdim,), 't': (2,)
-            }
-            vnet_input_shapes = {
-                'x': (self.xdim,), 'v': (self.xdim,), 't': (2,),
-            }
-            args = (self.lattice_shape, self.net_config)
-            self.vnet = get_gauge_network(*args, name='VNet',
-                                          kernel_initializer=kinit,
-                                          factor=1.0, conv_config=None,
-                                          input_shapes=vnet_input_shapes)
-
-            xnet_kwargs = {
-                'factor': 2.0,
-                'kernel_initializer': kinit,
-                'conv_config': self.conv_config,
-                'input_shapes': xnet_input_shapes,
-            }
-
-            #  for i in range(self.config.num_steps):
-            #      setattr(self, f'xnet{i}', get_gauge_network(...))
-            if self.config.separate_networks:
-                self.xnets = [
-                    get_gauge_network(*args, **xnet_kwargs, name=f'XNet{i}')
-                    for i in range(self.config.num_steps)
-                ]
-            else:
-                self.xnet = get_gauge_network(*args, **xnet_kwargs)
+            self.xnet, self.vnet = self._build_networks(self.net_config,
+                                                        self.conv_config)
+            # ============
 
         self.net_weights = self._parse_net_weights(net_weights)
         if self._has_trainable_params:
             self.lr_config = lr_config
             self.lr = self._create_lr(lr_config)
             self.optimizer = self._create_optimizer()
+
+    def _build_networks(
+            self,
+            net_config: NetworkConfig = None,
+            conv_config: ConvolutionConfig = None,
+    ):
+        """Build position and momentum networks.
+
+        Returns:
+            xnet: tf.keras.models.Model
+            vnet: tf.keras.models.Model
+        """
+        if net_config is None:
+            net_config = self.net_config
+
+        if conv_config is None and self.config.use_conv_net:
+            conv_config = self.conv_config
+
+        xshape = (self.xdim, 2)
+        if self.config.use_conv_net:
+            xshape = (*self.lattice_shape[1:], 2)
+
+        kinit = None
+        if self.config.zero_init:
+            kinit = 'zeros'
+
+        # ====
+        # Specify common kwargs
+        #  kwargs = {
+        #      'net_config': net_config,
+        #      'conv_config': conv_config,
+        # ====
+        # xNet configuration
+        xkwargs = {
+            'factor': 2.0,
+            'net_config': net_config,
+            'conv_config': conv_config,
+            'kernel_initializer': kinit,
+            'lattice_shape': self.lattice_shape,
+            'input_shapes': {
+                'x': xshape, 'v': (self.xdim,), 't': (2,)
+            }
+        }
+
+        vkwargs = {
+            'factor': 1.0,
+            'net_config': net_config,
+            'conv_config': None,
+            'kernel_initializer': kinit,
+            'lattice_shape': self.lattice_shape,
+            'input_shapes': {
+                'x': (self.xdim,), 'v': (self.xdim,), 't': (2,)
+            }
+        }
+
+        # ====
+        # vNet configuration
+        #  vkwargs = copy.deepcopy(kwargs)
+        #  vkwargs.update({
+        #      'factor': 1.0,
+        #      'conv_config': None,
+        #      'input_shapes': {
+        #          'x': (self.xdim,), 'v': (self.xdim,), 't': (2,),
+        #      }
+        #  })
+
+        if self.config.separate_networks:
+            # ====
+            # Build separate networks
+            vnet = [
+                get_gauge_network(**vkwargs, name=f'VNet{i}')
+                for i in range(self.config.num_steps)
+            ]
+
+            xnet = [
+                get_gauge_network(**xkwargs, name=f'XNet{i}')
+                for i in range(self.config.num_steps)
+            ]
+
+        else:
+            # ====
+            # Build single network
+            vnet = get_gauge_network(**vkwargs, name='VNet')
+            xnet = get_gauge_network(**xkwargs, name='XNet')
+
+        return xnet, vnet
 
     def transition_kernel_tempered(
             self,
@@ -268,7 +326,7 @@ class GaugeDynamics(BaseDynamics):
 
         state_prop = State(state.x, state.v, state.beta)
         sumlogdet = tf.zeros((self.batch_size,), dtype=TF_FLOAT)
-        for step in range(self.config.num_steps):
+        for step in tf.range(self.config.num_steps):
             state_prop, logdet = lf_fn(step, state_prop, training)
             sumlogdet += logdet
 
@@ -334,7 +392,7 @@ class GaugeDynamics(BaseDynamics):
 
         sumlogdet = tf.zeros((self.batch_size,), dtype=TF_FLOAT)
         m, mc = self._get_mask(step)
-        v = self._tempered_v(step, state.v)
+        v = _tempered_v(step, state.v)
         state = State(state.x, v, state.beta)
         state, logdet = self._update_v_forward(state, step, training)
         sumlogdet += logdet
@@ -344,7 +402,7 @@ class GaugeDynamics(BaseDynamics):
         sumlogdet += logdet
         state, logdet = self._update_v_forward(state, step, training)
         sumlogdet += logdet
-        v = self._tempered_v(step, state.v)
+        v = _tempered_v(step, state.v)
         state = State(state.x, v, state.beta)
 
         return state, sumlogdet
@@ -354,14 +412,14 @@ class GaugeDynamics(BaseDynamics):
     ):
         """Run the augmented leapfrog integrator in the backward direction."""
         def _tempered_v(step, v):
-            if step > self.config.num_steps // 2:
-                return v * tf.math.sqrt(self._alpha)
-            return v / tf.math.sqrt(self._alpha)
+            if step < self.config.num_steps // 2:
+                return v / tf.math.sqrt(self._alpha)
+            return v * tf.math.sqrt(self._alpha)
 
         sumlogdet = 0.
         step = self.config.num_steps - step - 1  # reversed step
         m, mc = self._get_mask(step)
-        v = self._tempered_v(step, state.v)
+        v = _tempered_v(step, state.v)
         state = State(state.x, v, state.beta)
         state, logdet = self._update_v_backward(state, step, training)
         sumlogdet += logdet
@@ -371,7 +429,7 @@ class GaugeDynamics(BaseDynamics):
         sumlogdet += logdet
         state, logdet = self._update_v_backward(state, step, training)
         sumlogdet += logdet
-        v = self._tempered_v(step, state.v)
+        v = _tempered_v(step, state.v)
         state = State(state.x, v, state.beta)
 
         return state, logdet
@@ -391,8 +449,19 @@ class GaugeDynamics(BaseDynamics):
         if not self.config.separate_networks:
             S, T, Q = self.xnet((_x, v, t), training)
         else:
-            xnet = self.xnets[step]
+            xnet = self.xnet[step]
             S, T, Q = xnet((x, v, t), training)
+
+        return S, T, Q
+
+    def _call_vnet(self, inputs, step, training=None):
+        """Call `self.xnet` to get Sx, Tx, Qx for updating `x`."""
+        x, grad, t = inputs
+        if not self.config.separate_networks:
+            S, T, Q = self.vnet((x, grad, t), training)
+        else:
+            vnet = self.vnet[step]
+            S, T, Q = vnet((x, grad, t), training)
 
         return S, T, Q
 
@@ -413,7 +482,7 @@ class GaugeDynamics(BaseDynamics):
         if not self.config.separate_networks:
             S, T, Q = self.xnet((x, v, t), training)
         else:
-            xnet = self.xnets[step]
+            xnet = self.xnet[step]
             S, T, Q = xnet((x, v, t), training)
             #  if step % 2 == 0:
             #      S, T, Q = self.xnet_even((x, v, t), training)
@@ -444,7 +513,8 @@ class GaugeDynamics(BaseDynamics):
         grad = self.grad_potential(x, state.beta)
         t = self._get_time(step, tile=tf.shape(x)[0])
 
-        S, T, Q = self.vnet((x, grad, t), training)
+        S, T, Q = self._call_vnet((x, grad, t), step, training)
+        #  S, T, Q = self.vnet((x, grad, t), training)
 
         scale = self._vsw * (0.5 * self.eps * S)
         transl = self._vtw * T
@@ -536,7 +606,8 @@ class GaugeDynamics(BaseDynamics):
         x = self.normalizer(state.x)
         grad = self.grad_potential(x, state.beta)
         t = self._get_time(step, tile=tf.shape(x)[0])
-        S, T, Q = self.vnet((x, grad, t), training)
+        S, T, Q = self._call_vnet((x, grad, t), step, training)
+        #  S, T, Q = self.vnet((x, grad, t), training)
 
         scale = self._vsw * (-0.5 * self.eps * S)
         transf = self._vqw * (self.eps * Q)
