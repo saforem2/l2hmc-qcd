@@ -3,11 +3,12 @@ training_utils.py
 
 Implements helper functions for training the model.
 """
+# noqa: F401
+# pylint:disable=unused-import
 from __future__ import absolute_import, division, print_function
 
 import os
 import time
-import json
 
 from typing import Union
 
@@ -19,23 +20,19 @@ from tqdm.auto import tqdm
 
 import utils.file_io as io
 
-from config import CBARS, NET_WEIGHTS_HMC, PI, TF_FLOAT, BIN_DIR
+from config import CBARS, LearningRateConfig, NET_WEIGHTS_HMC, TF_FLOAT
 from utils.file_io import timeit
 from utils.attr_dict import AttrDict
 from utils.summary_utils import update_summaries
 from utils.plotting_utils import plot_data
 from utils.data_containers import DataContainer
-from config import LearningRateConfig
-
-# noqa:F401
-# pylint:disable=unused-import
 from utils.annealing_schedules import (exp_mult_cooling, get_betas,
                                        linear_additive_cooling,
                                        linear_multiplicative_cooling,
                                        quadratic_additive_cooling)
 from dynamics.base_dynamics import BaseDynamics
-from dynamics.gauge_dynamics import (GaugeDynamicsConfig, build_dynamics,
-                                     GaugeDynamics)
+from dynamics.gauge_dynamics import (build_dynamics, GaugeDynamics,
+                                     GaugeDynamicsConfig)
 
 #  try:
 #      tf.config.experimental.enable_mlir_bridge()
@@ -110,10 +107,7 @@ def train_hmc(flags):
 
 @timeit(out_file=None)
 def train(
-        flags: AttrDict,
-        log_file: str = None,
-        md_steps: int = 0,
-        x: tf.Tensor = None
+        flags: AttrDict, x: tf.Tensor = None
 ):
     """Train model.
 
@@ -139,8 +133,7 @@ def train(
     dynamics.save_config(dirs.config_dir)
 
     io.log('\n'.join([120 * '*', 'Training L2HMC sampler...']))
-    x, train_data = train_dynamics(dynamics, flags, dirs,
-                                   x=x, md_steps=md_steps)
+    x, train_data = train_dynamics(dynamics, flags, dirs, x=x)
 
     if IS_CHIEF:
         output_dir = os.path.join(dirs.train_dir, 'outputs')
@@ -178,9 +171,8 @@ def setup(dynamics, flags, dirs=None, x=None, betas=None):
 
     # Create initial samples if not restoring from ckpt
     if x is None:
-        x = tf.random.uniform(shape=dynamics.x_shape,
-                              minval=-PI, maxval=PI,
-                              dtype=TF_FLOAT)
+        x = np.pi * tf.random.normal(shape=dynamics.x_shape)
+
     # Setup summary writer
     writer = None
     make_summaries = flags.get('make_summaries', True)
@@ -241,7 +233,6 @@ def train_dynamics(
         dirs: str = None,
         x: tf.Tensor = None,
         betas: tf.Tensor = None,
-        md_steps: int = 0,
 ):
     """Train model."""
     # setup...
@@ -258,9 +249,9 @@ def train_dynamics(
         if writer is not None:
             writer.set_as_default()
 
-    # +---------------------------------------------------------------------+
-    # | Try running compiled `train_step` fn otherwise run imperatively     |
-    # +---------------------------------------------------------------------+
+    # +-----------------------------------------------------------------+
+    # | Try running compiled `train_step` fn otherwise run imperatively |
+    # +-----------------------------------------------------------------+
     # pylint:disable=broad-except
     io.log(120 * '*')
     try:
@@ -280,9 +271,11 @@ def train_dynamics(
                           'Running `dynamics.train_step` imperatively...'])
         io.log(lstr, level='CRITICAL')
     io.log(120*'*')
-    # +----------------------------------------+
-    # |     Run MD update to not get stuck     |
-    # +----------------------------------------+
+
+    # +--------------------------------+
+    # | Run MD update to not get stuck |
+    # +--------------------------------+
+    md_steps = flags.get('md_steps', 0)
     if md_steps > 0:
         io.log(f'Running {md_steps} MD updates...')
         for _ in range(md_steps):
@@ -290,10 +283,10 @@ def train_dynamics(
                                               training=True)
             x = mc_states.out.x
 
-    # +--------------------------------------------------------------------+
-    # | Final setup; create timing wrapper for `train_step` function       |
-    # | and get formatted header string to display during training.        |
-    # +--------------------------------------------------------------------+
+    # +--------------------------------------------------------------+
+    # | Final setup; create timing wrapper for `train_step` function |
+    # | and get formatted header string to display during training.  |
+    # +--------------------------------------------------------------+
     def _timed_step(x: tf.Tensor, beta: tf.Tensor):
         start = time.time()
         x, metrics = train_step((x, tf.constant(beta)))

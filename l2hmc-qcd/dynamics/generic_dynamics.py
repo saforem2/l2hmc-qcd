@@ -15,7 +15,7 @@ import horovod.tensorflow as hvd
 
 from config import (DynamicsConfig, LearningRateConfig, NetworkConfig,
                     NetWeights, MonteCarloStates)
-from dynamics.base_dynamics import BaseDynamics
+from dynamics.base_dynamics import BaseDynamics, DynamicsConfig
 from network.generic_network import GenericNetwork
 from utils.attr_dict import AttrDict
 
@@ -32,14 +32,17 @@ class GenericDynamics(BaseDynamics):
     """Implements a generic `Dynamics` object, defined by `potential_fn`."""
 
     # pylint:disable=too-many-arguments
-    def __init__(self,
-                 params: AttrDict,
-                 config: DynamicsConfig,
-                 network_config: NetworkConfig,
-                 lr_config: LearningRateConfig,
-                 potential_fn: callable,
-                 normalizer: callable = identity,
-                 name: str = 'GenericDynamics'):
+    def __init__(
+            self,
+            params: AttrDict,
+            config: DynamicsConfig,
+            network_config: NetworkConfig,
+            lr_config: LearningRateConfig,
+            potential_fn: callable,
+            normalizer: callable = identity,
+            name: str = 'GenericDynamics'
+    ):
+        """Initialization method for generic (Euclidean) Dynamics."""
         super(GenericDynamics, self).__init__(
             name=name,
             params=params,
@@ -50,13 +53,6 @@ class GenericDynamics(BaseDynamics):
             network_config=network_config,
             should_build=True
         )
-        #  self.loss_metric = tf.keras.metrics.Mean(name='loss')
-        #  self.dt_metric = tf.keras.metrics.Mean(name='dt')
-        #  self.accept_prob_metric = tf.keras.metrics.Mean(name='accept_prob')
-        #  self.sumlogdet_metric = tf.keras.metrics.Mean(name='sumlogdet')
-        #  self.eps_metric = tf.keras.metrics.Mean(name='eps')
-        #  self.beta_metric = tf.keras.metrics.Mean(name='beta')
-        #  self.aux_weight = params.get('aux_weight', 0.)
 
         if not self.config.hmc:
             self.net_weights = NetWeights(1., 1., 1., 1., 1., 1.)
@@ -68,16 +64,7 @@ class GenericDynamics(BaseDynamics):
             self._vqw = self.net_weights.v_transformation
 
     def call(self, inputs, training=None):
-        #  t0 = time.time()
-        mc_states, accept_prob, sld_states = self.apply_transition(inputs,
-                                                                   training)
-        #  self.add_metric(self.dt_metric(time.time() - t0))
-        #  self.add_metric(self.accept_prob_metric(accept_prob))
-        #  self.add_metric(self.sumlogdet_metric(sld_states.out))
-        #  self.add_metric(self.eps_metric(self.eps))
-        #  self.add_metric(self.beta_metric(mc_states.init.beta))
-
-        return mc_states, accept_prob,  sld_states
+        return self.apply_transition(inputs, training)
 
     def _build(self, params, config, network_config, lr_config, **kwargs):
         """Build the model."""
