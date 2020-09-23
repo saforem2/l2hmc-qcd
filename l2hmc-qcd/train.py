@@ -42,37 +42,37 @@ def restore_flags(flags, train_dir):
 
 def main(args):
     """Main method for training."""
-    md_steps = args.get('md_steps', 10)
     hmc_steps = args.get('hmc_steps', 0)
     tf.keras.backend.set_floatx('float32')
     log_file = os.path.join(os.getcwd(), 'log_dirs.txt')
 
-    if args.get('log_dir', None) is None:
-        args.log_dir = io.make_log_dir(args, 'GaugeModel', log_file)
-        args.restore = False
-    else:
-        train_steps = args.train_steps
+    x = None
+    log_dir = args.get('log_dir', None)
+    if log_dir is not None:  # we want to restore from latest checkpoint
+        train_steps = args.get('train_steps', None)
         args = restore_flags(args, os.path.join(args.log_dir, 'training'))
+        args.restore = True
         if train_steps > args.train_steps:
             args.train_steps = train_steps
-        args.restore = True
 
-        args.restore = True
+    else:  # New training session
+        args.log_dir = io.make_log_dir(args, 'GaugeModel', log_file)
+        args.restore = False
+        if hmc_steps > 0:
+            x, _, eps = train_hmc(args)
+            args.dynamics_config['eps'] = eps
 
-    if hmc_steps > 0:
-        x, _, eps_init = train_hmc(args)
-        args.dynamics_config['eps'] = eps_init
+    _, dynamics, _, args = train(args, x=x)
 
-    _, dynamics, _, args = train(args, md_steps=md_steps,
-                                 log_file=log_file, x=x)
-    if args.run_steps > 0:
-        # run with random start
+    # ====
+    # Run inference on trained model
+    if args.get('run_steps', 5000) > 0:
+        # ====
+        # Run with random start
         dynamics, _, _ = run(dynamics, args)
 
-        # run using chains from training?
-        #  dynamics, run_data, x = run(dynamics, args, x=x)
-
-        # run hmc
+        # ====
+        # Run HMC
         args.hmc = True
         hmc_dir = os.path.join(args.log_dir, 'inference_hmc')
         _ = run_hmc(args=args, hmc_dir=hmc_dir)

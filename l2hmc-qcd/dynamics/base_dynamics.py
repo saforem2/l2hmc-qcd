@@ -30,7 +30,8 @@ import horovod.tensorflow as hvd
 
 import utils.file_io as io
 
-from config import (BIN_DIR, DynamicsConfig, LearningRateConfig,
+from network.gauge_conv_network import ConvolutionConfig
+from config import (BIN_DIR, LearningRateConfig,
                     MonteCarloStates, NetWeights, NetworkConfig, State,
                     TF_FLOAT, TF_INT)
 from utils.attr_dict import AttrDict
@@ -49,6 +50,25 @@ TIMING_FILE = os.path.join(BIN_DIR, 'timing_file.log')
 def identity(x):
     """Returns x"""
     return x
+
+
+class DynamicsConfig(AttrDict):
+    """Configuration object for `BaseDynamics` object"""
+
+    # pylint:disable=too-many-arguments
+    def __init__(self,
+                 eps: float,
+                 num_steps: int,
+                 hmc: bool = False,
+                 model_type: str = None,
+                 eps_fixed: bool = False):
+        super(DynamicsConfig, self).__init__(
+            eps=eps,
+            hmc=hmc,
+            num_steps=num_steps,
+            model_type=model_type,
+            eps_fixed=eps_fixed,
+        )
 
 
 # pylint:disable=attribute-defined-outside-init
@@ -107,61 +127,7 @@ class BaseDynamics(tf.keras.Model):
                 self.lr = self._create_lr(lr_config)
                 self.optimizer = self._create_optimizer()
 
-    def save_config(self, config_dir):
-        """Helper method for saving configuration objects."""
-        io.save_dict(self.config, config_dir, name='dynamics_config')
-        io.save_dict(self.net_config, config_dir, name='network_config')
-        io.save_dict(self.lr_config, config_dir, name='lr_config')
-        io.save_dict(self.params, config_dir, name='dynamics_params')
-
-    def _parse_net_weights(self, net_weights):
-        self._xsw = net_weights.x_scale
-        self._xtw = net_weights.x_translation
-        self._xqw = net_weights.x_transformation
-        self._vsw = net_weights.v_scale
-        self._vtw = net_weights.v_translation
-        self._vqw = net_weights.v_transformation
-
-        return net_weights
-
-    def _parse_params(self, params, net_weights=None):
-        """Set instance attributes from `params`."""
-        self.xdim = params.get('xdim', None)
-        self.batch_size = params.get('batch_size', None)
-        #  self.using_hvd = params.get('horovod', False)
-        self.x_shape = (self.batch_size, self.xdim)
-        self.clip_val = params.get('clip_val', 0.)
-        self.aux_weight = params.get('aux_weight', 0.)
-
-        # Determine if there are any parameters to be trained
-        self._has_trainable_params = True
-        if self.config.hmc and self.config.eps_fixed:
-            self._has_trainable_params = False
-
-        if net_weights is None:
-            if self.config.hmc:
-                net_weights = NetWeights(*(6 * [0.]))
-            else:
-                net_weights = NetWeights(*(6 * [1.]))
-
-        self.net_weights = net_weights
-        self._xsw = self.net_weights.x_scale
-        self._xtw = self.net_weights.x_translation
-        self._xqw = self.net_weights.x_transformation
-        self._vsw = self.net_weights.v_scale
-        self._vtw = self.net_weights.v_translation
-        self._vqw = self.net_weights.v_transformation
-
-        params = AttrDict({
-            'xdim': self.xdim,
-            'batch_size': self.batch_size,
-            'x_shape': self.x_shape,
-            'clip_val': self.clip_val,
-        })
-
-        return params
-
-    def call(self, inputs, training=None, mask=None):
+    def call(self, inputs, training=None):
         """Calls the model on new inputs.
 
         In this case `call` just reapplies all ops in the graph to the new
@@ -192,9 +158,9 @@ class BaseDynamics(tf.keras.Model):
         raise NotImplementedError
 
     @staticmethod
-    def calc_esjd(x: tf.Tensor,
-                  y: tf.Tensor,
-                  accept_prob: tf.Tensor):
+    def calc_esjd(
+            x: tf.Tensor, y: tf.Tensor, accept_prob: tf.Tensor
+    ):
         """Calculate the expected squared jump distance, ESJD."""
         return accept_prob * tf.reduce_sum((x - y) ** 2, axis=1) + 1e-4
 
@@ -816,8 +782,17 @@ class BaseDynamics(tf.keras.Model):
 
         return m, 1. - m
 
-    def _build_networks(self):
-        """Must implement method for building the network."""
+    def _build_networks(
+            self,
+            net_config: NetworkConfig = None,
+            conv_config: ConvolutionConfig = None
+    ):
+        """Logic for building the position and momentum networks.
+
+        Returns:
+            xnet: tf.keras.models.Model
+            vnet: tf.keras.models.Model
+        """
         raise NotImplementedError
 
     @staticmethod
@@ -896,3 +871,57 @@ class BaseDynamics(tf.keras.Model):
         #      optimizer = hvd.DistributedOptimizer(optimizer)
 
         return optimizer
+
+    def save_config(self, config_dir):
+        """Helper method for saving configuration objects."""
+        io.save_dict(self.config, config_dir, name='dynamics_config')
+        io.save_dict(self.net_config, config_dir, name='network_config')
+        io.save_dict(self.lr_config, config_dir, name='lr_config')
+        io.save_dict(self.params, config_dir, name='dynamics_params')
+
+    def _parse_net_weights(self, net_weights):
+        self._xsw = net_weights.x_scale
+        self._xtw = net_weights.x_translation
+        self._xqw = net_weights.x_transformation
+        self._vsw = net_weights.v_scale
+        self._vtw = net_weights.v_translation
+        self._vqw = net_weights.v_transformation
+
+        return net_weights
+
+    def _parse_params(self, params, net_weights=None):
+        """Set instance attributes from `params`."""
+        self.xdim = params.get('xdim', None)
+        self.batch_size = params.get('batch_size', None)
+        #  self.using_hvd = params.get('horovod', False)
+        self.x_shape = (self.batch_size, self.xdim)
+        self.clip_val = params.get('clip_val', 0.)
+        self.aux_weight = params.get('aux_weight', 0.)
+
+        # Determine if there are any parameters to be trained
+        self._has_trainable_params = True
+        if self.config.hmc and self.config.eps_fixed:
+            self._has_trainable_params = False
+
+        if net_weights is None:
+            if self.config.hmc:
+                net_weights = NetWeights(*(6 * [0.]))
+            else:
+                net_weights = NetWeights(*(6 * [1.]))
+
+        self.net_weights = net_weights
+        self._xsw = self.net_weights.x_scale
+        self._xtw = self.net_weights.x_translation
+        self._xqw = self.net_weights.x_transformation
+        self._vsw = self.net_weights.v_scale
+        self._vtw = self.net_weights.v_translation
+        self._vqw = self.net_weights.v_transformation
+
+        params = AttrDict({
+            'xdim': self.xdim,
+            'batch_size': self.batch_size,
+            'x_shape': self.x_shape,
+            'clip_val': self.clip_val,
+        })
+
+        return params

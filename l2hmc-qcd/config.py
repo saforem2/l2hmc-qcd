@@ -41,24 +41,6 @@ CBARS = {
 }
 
 
-class DynamicsConfig(AttrDict):
-    """Configuration object for `BaseDynamics` object"""
-
-    def __init__(self,
-                 eps: float,
-                 num_steps: int,
-                 hmc: bool = False,
-                 model_type: str = None,
-                 eps_fixed: bool = False):
-        super(DynamicsConfig, self).__init__(
-            eps=eps,
-            hmc=hmc,
-            num_steps=num_steps,
-            model_type=model_type,
-            eps_fixed=eps_fixed,
-        )
-
-
 class GaugeDynamicsConfig(AttrDict):
     """Configuration object for `GaugeDynamics` object"""
 

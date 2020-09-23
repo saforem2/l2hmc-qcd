@@ -6,7 +6,10 @@ from `GaugeeNetwork` in `network/gauge_network.py`.
 
 Author: Sam Foreman (github: @saforem2)
 Date: 09/14/2020
+
 """
+# pylint:disable=invalid-name
+
 from typing import Tuple
 
 import tensorflow as tf
@@ -27,6 +30,7 @@ def custom_dense(units, kernel_initializer, name=None):
 
 
 def vs_init(factor, kernel_initializer=None):
+    """Create `VarianceScaling` initializer for network weights."""
     if kernel_initializer == 'zeros':
         return 'zeros'
     return tf.keras.initializers.VarianceScaling(
@@ -56,13 +60,14 @@ def get_kernel_initializers(factor=1., kernel_initializer=None):
     }
 
 
+# pylint:disable=unused-argument
 class PeriodicPadding(layers.Layer):
     """Implements PeriodicPadding as a `tf.keras.layers.Layer`."""
     def __init__(self, size, **kwargs):
         super(PeriodicPadding, self).__init__(**kwargs)
         self._size = size
 
-    def call(self, inputs, **kwargs):
+    def call(self, inputs, training=None):
         """Call the network (forward-pass)."""
         z1 = inputs[:, -self._size:, :, ...]
         z2 = inputs[:, 0:self._size, :, ...]
@@ -77,14 +82,16 @@ class PeriodicPadding(layers.Layer):
         return inputs
 
 
-# pylint:disable=too-many-locals, invalid-name
+# pylint:disable=too-many-locals
 def get_gauge_network(
-        lattice_shape: Tuple, net_config: NetworkConfig,
+        lattice_shape: Tuple,
+        net_config: NetworkConfig,
         conv_config: ConvolutionConfig = None,
         kernel_initializer: str = None,
         input_shapes: dict = None,
         factor: float = 1.,
-        batch_size: Tuple = None, name: str = None,
+        batch_size: Tuple = None,
+        name: str = None,
 ):
     """Returns a (functional) `tf.keras.Model`."""
     if len(lattice_shape) == 4:
@@ -111,24 +118,10 @@ def get_gauge_network(
     def get_input(s):
         return keras.Input(input_shapes[s], name=s_(s), batch_size=batch_size)
 
-    #  x_input = keras.Input(shape=(T, X, d), batch_size=batch_size, name='x')
-    #  v_input = keras.Input(shape=(T, X, d), batch_size=batch_size, name='v')
     with tf.name_scope(name):
-        #  if conv_config is None:
-        #      x_input = keras.Input(shape=(xdim, 2), batch_size=batch_size)
-        #  else:
-        #      x_input = keras.Input(shape=(T, X, d, 2), batch_size=batch_size)
         x_input = get_input('x')
         v_input = get_input('v')
         t_input = get_input('t')
-
-        #  x_input = keras.Input(input_shapes['x'],
-        #                        name=s_('x'), batch_size=batch_size)
-        #  v_input = keras.Input(input_shapes['v'],
-        #                        name=s_('v'), batch_size=batch_size)
-        #  t_input = keras.Input(input_shapes['t'],
-        #                        name=s_('t'), batch_size=batch_size)
-        #  x = tf.concat([tf.math.cos(x_input), tf.math.sin(x_input)], axis=-1)
 
         if conv_config is not None:
             n1 = conv_config.filters[0]

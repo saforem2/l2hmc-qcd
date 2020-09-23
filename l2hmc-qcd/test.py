@@ -1,7 +1,7 @@
 """
-grain_test.py
+test.py
 
-Test training on 2D U(1) model using eager execution in tensorflow.
+Test training on 2D U(1) model.
 """
 from __future__ import absolute_import, division, print_function
 
@@ -153,7 +153,7 @@ def test_conv_net(flags: AttrDict):
         conv_activations=['relu', 'relu'],
         input_shape=flags['dynamics_config']['lattice_shape'][1:],
     )
-    x, dynamics, train_data, flags = train(flags, log_file=LOG_FILE)
+    x, dynamics, train_data, flags = train(flags)
     dynamics, run_data, x = run(dynamics, flags, x=x)
 
     return AttrDict({
@@ -170,7 +170,7 @@ def test_conv_net(flags: AttrDict):
 def test_single_network(flags: AttrDict):
     """Test training on single network."""
     flags.dynamics_config.separate_networks = False
-    x, dynamics, train_data, flags = train(flags, log_file=LOG_FILE)
+    x, dynamics, train_data, flags = train(flags)
     beta = flags.get('beta', 1.)
     tk_diffs = test_transition_kernels(dynamics, x, beta, training=False)
     dynamics, run_data, x = run(dynamics, flags, x=x)
@@ -190,11 +190,12 @@ def test_single_network(flags: AttrDict):
 def test_separate_networks(flags: AttrDict):
     """Test training on separate networks."""
     flags.hmc_steps = 0
-    flags.log_dir = None
+    #  flags.log_dir = None
+    flags.log_dir = io.make_log_dir(flags, 'GaugeModel', LOG_FILE)
+
     flags.dynamics_config.separate_networks = True
     flags.compile = False
-    x, dynamics, train_data, flags = train(flags,
-                                           log_file=LOG_FILE)
+    x, dynamics, train_data, flags = train(flags)
     beta = flags.get('beta', 1.)
     tk_diffs = test_transition_kernels(dynamics, x, beta, training=False)
     dynamics, run_data, x = run(dynamics, flags, x=x)
@@ -218,9 +219,8 @@ def test_resume_training(log_dir: str):
     )
 
     flags.log_dir = log_dir
-    flags.train_steps += flags.get('save_steps', 10)
-    x, dynamics, train_data, flags = train(flags,
-                                           log_file=LOG_FILE)
+    flags.train_steps += flags.get('train_steps', 10)
+    x, dynamics, train_data, flags = train(flags)
     beta = flags.get('beta', 1.)
     tk_diffs = test_transition_kernels(dynamics, x, beta, training=False)
     dynamics, run_data, x = run(dynamics, flags, x=x)
@@ -246,6 +246,7 @@ def test():
 
     single_net_out = test_single_network(flags)
     log_dir = single_net_out.log_dir
+    flags.log_dir = log_dir
     _ = test_resume_training(log_dir)
     _ = test_separate_networks(flags)
     _ = test_hmc_run(flags)
