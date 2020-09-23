@@ -43,6 +43,7 @@ from dynamics.gauge_dynamics import (build_dynamics, GaugeDynamics,
 # pylint:disable=no-member
 # pylint:disable=too-many-locals
 # pylint:disable=protected-access
+# pylint:disable=invalid-name
 
 RANK = hvd.rank()
 io.log(f'Number of devices: {hvd.size()}')
@@ -77,8 +78,8 @@ def train_hmc(flags):
 
     lr_config = LearningRateConfig(
         warmup_steps=0,
-        decay_rate=1.,
-        decay_steps=int(1e6),
+        decay_rate=0.9,
+        decay_steps=hflags.train_steps // 10,
         lr_init=lr_config.get('lr_init', None),
     )
 
