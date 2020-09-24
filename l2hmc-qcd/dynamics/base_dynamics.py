@@ -840,11 +840,18 @@ class BaseDynamics(tf.keras.Model):
                            name='eps', dtype=TF_FLOAT,
                            trainable=not self.config.eps_fixed)
 
-    def _create_lr(self, lr_config=None):
+    def _create_lr(
+            self, lr_config: LearningRateConfig = None, scale: bool = True
+    ):
         """Create the learning rate schedule to be used during training."""
         if lr_config is None:
             lr_config = self.lr_config
 
+        if scale:
+            tf.print('Scaling learning rate...\n')
+            tf.print(f'original lr: {lr_config.lr_init}')
+            lr_config.lr_init *= hvd.size()
+            tf.print(f'new (scaled) lr: {lr_config.lr_init}')
         warmup_steps = lr_config.get('warmup_steps', None)
         if warmup_steps is not None and warmup_steps > 0:
             return WarmupExponentialDecay(lr_config, staircase=True,

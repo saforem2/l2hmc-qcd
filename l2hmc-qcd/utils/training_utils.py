@@ -125,7 +125,7 @@ def train(
         x = tf.random.normal(flags.dynamics_config['lattice_shape'])
         x = tf.reshape(x, (x.shape[0], -1))
 
-    if flags.restore:
+    if flags.get('restore', False):
         xfile = os.path.join(dirs.train_dir,
                              'train_data', f'x_rank{RANK}.z')
         x = io.loadz(xfile)

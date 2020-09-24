@@ -37,6 +37,25 @@ def parse_args():
         fromfile_prefix_chars='@',
     )
 
+    parser.add_argument("--log_dir",
+                        dest="log_dir",
+                        type=str,
+                        default=None,
+                        required=False,
+                        help=("""Log directory to use from previous run.  If
+                        this argument is not passed, a new directory will be
+                        created."""))
+
+    parser.add_argument("--json_file",
+                        dest="json_file",
+                        type=str,
+                        default=None,
+                        required=False,
+                        help=("""Path to JSON file containing CLI flags.
+                        Command line options override values in file.
+                        (DEFAULT: None)"""))
+
+    '''
     parser.add_argument("--use_mixed_loss",
                         dest='use_mixed_loss',
                         action='store_true',
@@ -412,25 +431,6 @@ def parse_args():
                         default=10000,
                         required=False,
                         help=("""Number of steps to train HMC sampler."""))
-
-    parser.add_argument("--log_dir",
-                        dest="log_dir",
-                        type=str,
-                        default=None,
-                        required=False,
-                        help=("""Log directory to use from previous run.  If
-                        this argument is not passed, a new directory will be
-                        created."""))
-
-    parser.add_argument("--json_file",
-                        dest="json_file",
-                        type=str,
-                        default=None,
-                        required=False,
-                        help=("""Path to JSON file containing CLI flags.
-                        Command line options override values in file.
-                        (DEFAULT: None)"""))
-
     parser.add_argument("--md_steps",
                         dest="md_steps",
                         type=int,
@@ -454,8 +454,6 @@ def parse_args():
                         help=("""Whether or not to use
                               the gauge equivariant masking scheme
                               (see https://arxiv.org/pdf/2008.05456)"""))
-
-    '''
     parser.add_argument("--gpu",
                         dest="gpu",
                         action="store_true",
@@ -487,6 +485,7 @@ def parse_args():
     '''
 
     args = parser.parse_args()
+    log_dir = args.json_file
     if args.json_file is not None:
         print(f'Loading flags from: {args.json_file}.')
         with open(args.json_file, 'rt') as f:
@@ -494,5 +493,8 @@ def parse_args():
             # Overwrite parsed args with values from `.json` file
             t_args.__dict__.update(json.load(f))
             args = parser.parse_args(namespace=t_args)
+
+    if log_dir is not None:
+        args.__dict__['log_dir'] = log_dir
 
     return args
