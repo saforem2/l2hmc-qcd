@@ -108,7 +108,7 @@ class LearningRateConfig(AttrDict):
                  decay_rate: float,
                  warmup_steps: int = 0):
         super(LearningRateConfig, self).__init__(
-            init=lr_init,
+            lr_init=lr_init,
             decay_steps=decay_steps,
             decay_rate=decay_rate,
             warmup_steps=warmup_steps

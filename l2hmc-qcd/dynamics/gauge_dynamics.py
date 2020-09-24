@@ -140,6 +140,7 @@ def build_dynamics(flags):
     config = GaugeDynamicsConfig(**dict(flags.get('dynamics_config', None)))
     net_config = NetworkConfig(**dict(flags.get('network_config', None)))
     conv_config = None
+
     if config.get('use_conv_net', False):
         conv_config = flags.get('conv_config', None)
         input_shape = config.get('lattice_shape', None)[1:]
@@ -780,9 +781,15 @@ class GaugeDynamics(BaseDynamics):
         metrics = AttrDict({
             'dt': time.time() - start,
             'loss': loss,
-            'ploss': ploss,
-            'qloss': qloss,
         })
+        if self.plaq_weight > 0:
+            metrics.update({
+                'ploss': ploss,
+            })
+        if self.charge_weight > 0:
+            metrics.update({
+                'qloss': qloss
+            })
 
         if self.aux_weight > 0:
             metrics.update({
@@ -792,10 +799,6 @@ class GaugeDynamics(BaseDynamics):
 
         #  metrics = AttrDict({
         metrics.update({
-            #  'dt': time.time() - start,
-            #  'loss': loss,
-            #  'ploss': ploss,
-            #  'qloss': qloss,
             'accept_prob': accept_prob,
             'eps': self.eps,
             'beta': states.init.beta,
@@ -804,12 +807,6 @@ class GaugeDynamics(BaseDynamics):
 
         observables = self.calc_observables(states)
         metrics.update(**observables)
-
-        #  if loss > 50:
-        #      x_out = tf.random.normal(states.out.x.shape,
-        #                               dtype=states.out.x.dtype)
-        #  else:
-        #      x_out = states.out.x
 
         # Horovod:
         #    Broadcast initial variable states from rank 0 to all other
