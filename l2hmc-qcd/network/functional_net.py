@@ -82,6 +82,73 @@ class PeriodicPadding(layers.Layer):
         return inputs
 
 
+def get_generic_network(
+    input_shape: Tuple,
+    net_config: NetworkConfig,
+    kernel_initializer: str = None,
+    input_shapes: Tuple = None,
+    factor: float = 1.,
+    name: str = None,
+):
+    """Returns a (functional) `tf.keras.Model`."""
+    h1 = net_config.units[0]
+    h2 = net_config.units[1]
+    batch_size, xdim = input_shape
+    kinits = get_kernel_initializers(factor, kernel_initializer)
+    if name is None:
+        name = 'GenericNetwork'
+
+    def s_(x):
+        return f'{name}/{x}'
+
+    if input_shapes is None:
+        input_shapes = {
+            'x': (input_shape[1],),
+            'v': (input_shape[1],),
+            't': (2,),
+        }
+
+    def get_input(s):
+        return keras.Input(input_shapes[s], name=s_(s),
+                           batch_size=batch_size)
+
+    with tf.name_scope(name):
+        x_input = get_input('x')
+        v_input = get_input('v')
+        t_input = get_input('t')
+
+        x = custom_dense(h1, kinits['x_layer'], s_('x_layer'))(x_input)
+        v = custom_dense(h1, kinits['v_layer'], s_('v_layer'))(v_input)
+        t = custom_dense(h1, kinits['t_layer'], s_('t_layer'))(t_input)
+        z = layers.Add()([x, v, t])
+        z = keras.activations.relu(z)
+        z = custom_dense(h2, kinits['h_layer1'], s_('h_layer1'))(z)
+        z = custom_dense(h2, kinits['h_layer2'], s_('h_layer2'))(z)
+        #  z = layers.Dense(h2, name='h_layer1')(z)
+        #  z = layers.Dense(h2, name='h_layer2')(z)
+        if net_config.dropout_prob > 0:
+            z = layers.Dropout(net_config.dropout_prob)(z)
+
+        args = (xdim, kinits['scale_layer'])
+        scale = ScaledTanhLayer(*args, name=s_('scale_layer'))(z)
+        transl = custom_dense(xdim, kinits['transl_layer'],
+                              s_('transl_layer'))(z)
+
+        kwargs = {
+            'kernel_initializer': kinits['transf_layer'],
+            'name': s_('transformation_layer')
+        }
+        transf = ScaledTanhLayer(xdim, **kwargs)(z)
+
+        model = keras.Model(
+            name=name,
+            inputs=[x_input, v_input, t_input],
+            outputs=[scale, transl, transf]
+        )
+
+    return model
+
+
 # pylint:disable=too-many-locals
 def get_gauge_network(
         lattice_shape: Tuple,
