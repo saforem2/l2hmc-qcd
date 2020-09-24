@@ -133,8 +133,6 @@ def setup_directories(flags, name='training'):
     return train_paths
 
 
-
-
 # pylint:disable=too-many-arguments
 def make_header_from_dict(
         data: dict,
@@ -351,7 +349,7 @@ def get_run_dir_fstr(FLAGS: AttrDict):
     return fstr
 
 
-def parse_configs(flags):
+def parse_configs(flags, debug=False):
     """Parse configs to construct unique string for naming `log_dir`."""
     config = AttrDict(flags.get('dynamics_config', None))
     net_config = AttrDict(flags.get('network_config', None))
@@ -361,7 +359,7 @@ def parse_configs(flags):
     if config.get('hmc', False):
         fstr += 'HMC_'
 
-    if flags.get('train_steps', None) < 1e4:
+    if flags.get('train_steps', None) < 1e4 or debug:
         fstr += 'DEBUG_'
 
     lattice_shape = config.get('lattice_shape', None)
