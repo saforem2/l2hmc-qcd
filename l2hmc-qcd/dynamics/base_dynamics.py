@@ -61,13 +61,19 @@ class DynamicsConfig(AttrDict):
                  num_steps: int,
                  hmc: bool = False,
                  model_type: str = None,
-                 eps_fixed: bool = False):
+                 eps_fixed: bool = False,
+                 aux_weight: float = 0.,
+                 loss_scale: float = 1.,
+                 use_mixed_loss: bool = False):
         super(DynamicsConfig, self).__init__(
             eps=eps,
             hmc=hmc,
             num_steps=num_steps,
             model_type=model_type,
             eps_fixed=eps_fixed,
+            aux_weight=aux_weight,
+            loss_scale=loss_scale,
+            use_mixed_loss=use_mixed_loss
         )
 
 
@@ -105,6 +111,8 @@ class BaseDynamics(tf.keras.Model):
         self.net_config = network_config
         self.potential_fn = potential_fn
 
+        loss_scale = self.config.get('loss_scale', 1.)
+        self._loss_scale = tf.constant(loss_scale, name='loss_scale')
         self.xdim = params.get('xdim', None)
         self.clip_val = params.get('clip_val', 0.)
         self.aux_weight = params.get('aux_weight', 0.)
@@ -169,9 +177,12 @@ class BaseDynamics(tf.keras.Model):
             x: tf.Tensor,
             y: tf.Tensor,
             accept_prob: tf.Tensor,
-            scale: tf.Tensor = tf.constant(1., dtype=TF_FLOAT)
+            scale: tf.Tensor = None,
     ):
         """Compute the mixed loss as: scale / esjd - esjd / scale."""
+        if scale is None:
+            scale = self._loss_scale
+
         esjd = self.calc_esjd(x, y, accept_prob)
         loss = tf.reduce_mean(scale / esjd) - tf.reduce_mean(esjd / scale)
 
@@ -216,10 +227,8 @@ class BaseDynamics(tf.keras.Model):
         NOTE: We simulate the dynamics both forward and backward, and use
         sampled Bernoulli masks to compute the actual solutions
         """
-        if len(inputs) == 2:
-            x, beta = inputs
-        elif len(inputs) == 3:
-            x, v, beta = inputs
+        x, beta = inputs
+
         sf_init, sf_prop, pxf, sldf = self._transition(inputs, forward=True,
                                                        training=training)
         sb_init, sb_prop, pxb, sldb = self._transition(inputs, forward=False,
