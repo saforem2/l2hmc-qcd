@@ -252,13 +252,8 @@ class GaugeDynamics(BaseDynamics):
             kinit = 'zeros'
 
         # ====
-        # Specify common kwargs
-        #  kwargs = {
-        #      'net_config': net_config,
-        #      'conv_config': conv_config,
-        # ====
         # xNet configuration
-        xkwargs = {
+        xnet_cfg = {
             'factor': 2.0,
             'net_config': net_config,
             'conv_config': conv_config,
@@ -269,7 +264,9 @@ class GaugeDynamics(BaseDynamics):
             }
         }
 
-        vkwargs = {
+        # ====
+        # xNet configuration
+        vnet_cfg = {
             'factor': 1.0,
             'net_config': net_config,
             'conv_config': None,
@@ -280,35 +277,24 @@ class GaugeDynamics(BaseDynamics):
             }
         }
 
-        # ====
-        # vNet configuration
-        #  vkwargs = copy.deepcopy(kwargs)
-        #  vkwargs.update({
-        #      'factor': 1.0,
-        #      'conv_config': None,
-        #      'input_shapes': {
-        #          'x': (self.xdim,), 'v': (self.xdim,), 't': (2,),
-        #      }
-        #  })
-
         if self.config.separate_networks:
             # ====
             # Build separate networks
             vnet = [
-                get_gauge_network(**vkwargs, name=f'VNet{i}')
+                get_gauge_network(**vnet_cfg, name=f'VNet{i}')
                 for i in range(self.config.num_steps)
             ]
 
             xnet = [
-                get_gauge_network(**xkwargs, name=f'XNet{i}')
+                get_gauge_network(**xnet_cfg, name=f'XNet{i}')
                 for i in range(self.config.num_steps)
             ]
 
         else:
             # ====
             # Build single network
-            vnet = get_gauge_network(**vkwargs, name='VNet')
-            xnet = get_gauge_network(**xkwargs, name='XNet')
+            vnet = get_gauge_network(**vnet_cfg, name='VNet')
+            xnet = get_gauge_network(**xnet_cfg, name='XNet')
 
         return xnet, vnet
 
@@ -484,10 +470,6 @@ class GaugeDynamics(BaseDynamics):
         else:
             xnet = self.xnet[step]
             S, T, Q = xnet((x, v, t), training)
-            #  if step % 2 == 0:
-            #      S, T, Q = self.xnet_even((x, v, t), training)
-            #  else:
-            #      S, T, Q = self.xnet_odd((x, v, t), training)
 
         return S, T, Q
 
