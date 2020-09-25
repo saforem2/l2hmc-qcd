@@ -162,7 +162,8 @@ class DataContainer:
         """Save configs `x` separately for each rank."""
         xfile = os.path.join(data_dir, f'x_rank{rank}.z')
         io.log_tqdm(f'Saving configs from rank {rank} to: {xfile}.')
-        #  log.info(f'Saving configs from rank {rank} to: {xfile}.')
+        head, _ = os.path.split(xfile)
+        io.check_else_make_dir(head)
         joblib.dump(x, xfile)
 
     # pylint:disable=too-many-arguments
