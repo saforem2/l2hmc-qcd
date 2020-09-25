@@ -850,7 +850,7 @@ class BaseDynamics(tf.keras.Model):
         if scale:
             tf.print('Scaling learning rate...\n')
             tf.print(f'original lr: {lr_config.lr_init}')
-            lr_config.lr_init *= tf.math.sqrt(hvd.size())
+            lr_config.lr_init *= tf.math.sqrt(tf.cast(hvd.size(), TF_FLOAT))
             tf.print(f'new (scaled) lr: {lr_config.lr_init}')
         warmup_steps = lr_config.get('warmup_steps', None)
         if warmup_steps is not None and warmup_steps > 0:
