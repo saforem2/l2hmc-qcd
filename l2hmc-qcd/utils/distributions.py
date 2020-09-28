@@ -128,7 +128,9 @@ def two_moons_potential(z):
 def sin_potential(z):
     """Sin-like potential."""
     z = tf.transpose(z)
-    x, y = z
+    x = z[0]
+    y = z[1]
+    #  x, y = z
     return 0.5 * ((y - w1(z)) / 0.4) ** 2 + 0.1 * tf.math.abs(x)
 
 

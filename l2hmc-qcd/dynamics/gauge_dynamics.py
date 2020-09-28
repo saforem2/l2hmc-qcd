@@ -23,30 +23,28 @@ Date: 7/3/2020
 from __future__ import absolute_import, division, print_function
 
 import os
-import copy
 import json
 import time
 
 from math import pi
-from typing import NoReturn, Optional, Tuple
+from typing import Optional, Tuple
+from collections import namedtuple
 
 import numpy as np
 import tensorflow as tf
-import horovod.tensorflow as hvd
-from collections import namedtuple
 
 import utils.file_io as io
+import horovod.tensorflow as hvd
 
-from config import (BIN_DIR, LearningRateConfig,
-                    MonteCarloStates, NetWeights, NetworkConfig)
+from config import BIN_DIR, MonteCarloStates, NetWeights
 from lattice.gauge_lattice import GaugeLattice
 from dynamics.base_dynamics import BaseDynamics
+from dynamics.config import GaugeDynamicsConfig
 from utils.attr_dict import AttrDict
 from utils.seed_dict import vnet_seeds  # noqa:F401
 from utils.seed_dict import xnet_seeds  # noqa:F401
-from network.gauge_network import GaugeNetwork
-from network.gauge_conv_network import ConvolutionConfig, GaugeNetworkConv
 from network.functional_net import get_gauge_network
+from network.config import LearningRateConfig, NetworkConfig, ConvolutionConfig
 
 NUM_RANKS = hvd.size()
 
@@ -63,55 +61,6 @@ ACTIVATIONS = {
 
 
 State = namedtuple('State', ['x', 'v', 'beta'])
-#  class State(AttrDict):
-#      """Configuration object for `State` object"""
-#      def __init__(self, x: tf.Tensor, v: tf.Tensor, beta: tf.Tensor):
-#          super(State, self).__init__(x=x, v=v, beta=beta)
-
-
-class GaugeDynamicsConfig(AttrDict):
-    """Configuration object for `GaugeDynamics` object"""
-
-    # pylint:disable=too-many-arguments
-    def __init__(self,
-                 eps: float,                    # step size
-                 num_steps: int,                # n leapfrog steps per acc/rej
-                 hmc: bool = False,             # run standard HMC?
-                 use_ncp: bool = False,         # Transform x using NCP?
-                 model_type: str = None,        # name for model
-                 eps_fixed: bool = False,
-                 lattice_shape: tuple = None,
-                 aux_weight: float = 0.,
-                 plaq_weight: float = 0.,
-                 charge_weight: float = 0.,
-                 zero_init: bool = False,
-                 directional_updates: bool = False,
-                 separate_networks: bool = False,
-                 use_conv_net: bool = False,
-                 use_mixed_loss: bool = False,
-                 use_scattered_xnet_update: bool = False,
-                 use_tempered_traj: bool = False,
-                 gauge_eq_masks: bool = False):
-        super(GaugeDynamicsConfig, self).__init__(
-            eps=eps,
-            hmc=hmc,
-            use_ncp=use_ncp,
-            num_steps=num_steps,
-            model_type=model_type,
-            eps_fixed=eps_fixed,
-            lattice_shape=lattice_shape,
-            aux_weight=aux_weight,
-            plaq_weight=plaq_weight,
-            charge_weight=charge_weight,
-            zero_init=zero_init,
-            directional_updates=directional_updates,
-            separate_networks=separate_networks,
-            use_conv_net=use_conv_net,
-            use_mixed_loss=use_mixed_loss,
-            use_scattered_xnet_update=use_scattered_xnet_update,
-            use_tempered_traj=use_tempered_traj,
-            gauge_eq_masks=gauge_eq_masks,
-        )
 
 
 def project_angle(x):
@@ -322,7 +271,7 @@ class GaugeDynamics(BaseDynamics):
         return state_prop, accept_prob, sumlogdet
 
     def transition_kernel_directional(
-        self, state: State, training: bool = None
+            self, state: State, training: bool = None
     ):
         """Implements a series of directional updates."""
         state_prop = State(state.x, state.v, state.beta)
@@ -670,15 +619,10 @@ class GaugeDynamics(BaseDynamics):
 
     def calc_losses(self, states: MonteCarloStates, accept_prob: tf.Tensor):
         """Calculate the total loss."""
-        #  dtype = states.init.x.dtype
-        # ==== FIXME: Should we stack
-        # ==== `states = [states.init.x, states.proposed.x]`
-        # ==== and call `self.lattice.calc_plaq_sums(states)`?
         wl_init = self.lattice.calc_wilson_loops(states.init.x)
         wl_prop = self.lattice.calc_wilson_loops(states.proposed.x)
 
         # Calculate the plaquette loss
-        #  ploss = tf.cast(0., dtype=dtype)
         ploss = 0.
         if self.plaq_weight > 0:
             dwloops = 2 * (1. - tf.math.cos(wl_prop - wl_init))
@@ -691,7 +635,6 @@ class GaugeDynamics(BaseDynamics):
                 ploss = tf.reduce_mean(-ploss / self.plaq_weight, axis=0)
 
         # Calculate the charge loss
-        #  qloss = tf.cast(0., dtype=dtype)
         qloss = 0.
         if self.charge_weight > 0:
             q_init = tf.reduce_sum(tf.sin(wl_init), axis=(1, 2)) / (2 * np.pi)
@@ -701,62 +644,15 @@ class GaugeDynamics(BaseDynamics):
                 qloss = self.mixed_loss(qloss, self.charge_weight)
             else:
                 qloss = tf.reduce_mean(-qloss / self.charge_weight, axis=0)
-            #  q_init = self.lattice.calc_charges(wloops=wl_init, use_sin=True)
-            #  q_prop = self.lattice.calc_charges(wloops=wl_prop, use_sin=True)
-            #  qloss = accept_prob * (q_prop - q_init) ** 2
-            #  if self.config.use_mixed_loss:
-            #      qloss = self.mixed_loss(qloss, self.charge_weight)
-            #  else:
-            #      qloss = tf.reduce_mean(-qloss / self.charge_weight, axis=0)
-
-            #  q_prop = tf.sin(wl_prop)
-            #  #  dq2 = (q_prop - q_init)
-
-            #  dq_sum = tf.reduce_sum((q_prop - q_init) ** 2, axis=(1, 2))
-            #  qloss = accept_prob * dq_sum + 1e-4
-            #  qloss = (tf.reduce_mean(self.charge_weight / dq_)
-            #           - tf.reduce_mean(dq_ / self.charge_weight))
-
-            #  q_init = self.lattice.calc_charges(wloops=wl_init, use_sin=True)
-            #  q_prop = self.lattice.calc_charges(wloops=wl_prop, use_sin=True)
-            #  qloss = accept_prob * (q_prop - q_init) ** 2
-
-            # ==== FIXME: Try using mixed loss??
-            #  qloss = self.mixed_loss(qloss, self.charge_weight)
-            #  qloss = tf.reduce_mean(-qloss / self.charge_weight, axis=0)
 
         return ploss, qloss
-
-    def calc_wilson_loops(self, x):
-        """Calculate the plaqs by summing the links in the CCW direction."""
-        x = tf.reshape(x, shape=self.lattice_shape)
-        plaqs = (x[..., 0]
-                 - x[..., 1]
-                 - tf.roll(x[..., 0], shift=-1, axis=2)
-                 + tf.roll(x[..., 1], shift=-1, axis=1))
-
-        return plaqs
-
-    def calc_charges(self, x=None, wloops=None, use_sin=False):
-        """Calculate the topological charges for a batch of lattices."""
-        if wloops is None:
-            try:
-                wloops = self.calc_wilson_loops(x)
-            except ValueError as err:
-                raise err
-
-        q = tf.sin(wloops) if use_sin else project_angle(wloops)
-
-        return tf.reduce_sum(q, axis=(1, 2), name='charges') / (2 * np.pi)
 
     def train_step(self, data):
         """Perform a single training step."""
         start = time.time()
         with tf.GradientTape() as tape:
             x, beta = data
-            #  v = tf.random.normal((self.batch_size, self.xdim // 2))
             tape.watch(x)
-            #  tape.watch(v)
             states, accept_prob, sumlogdet = self((x, beta), training=True)
             ploss, qloss = self.calc_losses(states, accept_prob)
             loss = ploss + qloss
@@ -766,13 +662,10 @@ class GaugeDynamics(BaseDynamics):
                 ploss_, qloss_ = self.calc_losses(states_, accept_prob_)
                 loss += ploss_ + qloss_
 
-        #  if self.using_hvd:
         if NUM_RANKS > 1:
             tape = hvd.DistributedGradientTape(tape)
 
         grads = tape.gradient(loss, self.trainable_variables)
-        #  if self.clip_val > 0:
-        #      grads = [tf.clip_by_norm(g, self.clip_val) for g in grads]
 
         self.optimizer.apply_gradients(
             zip(grads, self.trainable_variables),
@@ -797,7 +690,6 @@ class GaugeDynamics(BaseDynamics):
                 'qloss_aux': qloss_
             })
 
-        #  metrics = AttrDict({
         metrics.update({
             'accept_prob': accept_prob,
             'eps': self.eps,
@@ -816,8 +708,6 @@ class GaugeDynamics(BaseDynamics):
         # NOTE:
         #    Broadcast should be done after the first gradient step to ensure
         #    optimizer intialization.
-        #  if self.optimizer.iterations.numpy() == 0 and self.using_hvd:
-        #  if first_step and HAS_HOROVOD:
         if self.optimizer.iterations == 0 and NUM_RANKS > 1:
             hvd.broadcast_variables(self.variables, root_rank=0)
             hvd.broadcast_variables(self.optimizer.variables(), root_rank=0)

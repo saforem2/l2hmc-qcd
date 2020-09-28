@@ -14,13 +14,14 @@ from typing import Union
 
 import numpy as np
 import tensorflow as tf
-import horovod.tensorflow as hvd
 
 from tqdm.auto import tqdm
 
 import utils.file_io as io
+import horovod.tensorflow as hvd
 
-from config import CBARS, LearningRateConfig, NET_WEIGHTS_HMC, TF_FLOAT
+from config import CBARS, NET_WEIGHTS_HMC, TF_FLOAT
+from network.config import LearningRateConfig
 from utils.file_io import timeit
 from utils.attr_dict import AttrDict
 from utils.summary_utils import update_summaries
@@ -30,9 +31,9 @@ from utils.annealing_schedules import (exp_mult_cooling, get_betas,
                                        linear_additive_cooling,
                                        linear_multiplicative_cooling,
                                        quadratic_additive_cooling)
+from dynamics.config import GaugeDynamicsConfig
 from dynamics.base_dynamics import BaseDynamics
-from dynamics.gauge_dynamics import (build_dynamics, GaugeDynamics,
-                                     GaugeDynamicsConfig)
+from dynamics.gauge_dynamics import build_dynamics, GaugeDynamics
 
 #  try:
 #      tf.config.experimental.enable_mlir_bridge()
@@ -294,16 +295,6 @@ def train_dynamics(
         metrics.dt = time.time() - start
         return x, metrics
 
-    header = train_data.get_header(metrics,
-                                   skip=['charges'],
-                                   prepend=['{:^12s}'.format('step')])
-    if IS_CHIEF:
-        ctup = (CBARS['blue'], CBARS['yellow'],
-                CBARS['blue'], CBARS['reset'])
-        steps = tqdm(steps, desc='training', unit='step',
-                     bar_format=("%s{l_bar}%s{bar}%s{r_bar}%s" % ctup))
-        io.log_tqdm(header.split('\n'))
-
     def should_print(step):
         if IS_CHIEF and step % flags.print_steps == 0:
             return True
@@ -315,15 +306,22 @@ def train_dynamics(
             if step % ls_ == 0 and ls_ > 0:
                 return True
 
-        #  if IS_CHIEF and step % ls_ == 0 and ls_ > 0:
-        #      return True
-        #  return False
         return False
 
     def should_save(step):
         if step % flags.save_steps == 0 and ckpt is not None:
             return True
         return False
+
+    header = train_data.get_header(metrics,
+                                   skip=['charges'],
+                                   prepend=['{:^12s}'.format('step')])
+    if IS_CHIEF:
+        ctup = (CBARS['blue'], CBARS['yellow'],
+                CBARS['blue'], CBARS['reset'])
+        steps = tqdm(steps, desc='training', unit='step',
+                     bar_format=("%s{l_bar}%s{bar}%s{r_bar}%s" % ctup))
+        io.log_tqdm(header.split('\n'))
 
     # +------------------------------------------------+
     # |                 Training loop                  |
@@ -333,7 +331,6 @@ def train_dynamics(
         x, metrics = _timed_step(x, beta)
 
         # Save checkpoints and dump configs `x` from each rank
-        #  if (step + 1) % flags.save_steps == 0 and ckpt is not None:
         if should_save(step + 1):
             train_data.dump_configs(x, dirs.data_dir, rank=RANK)
             if IS_CHIEF:
@@ -343,14 +340,11 @@ def train_dynamics(
                                           rank=RANK, mode='a')
 
         # Print current training state and metrics
-        #  if IS_CHIEF and step % flags.print_steps == 0:
         if should_print(step):
             data_str = train_data.get_fstr(step, metrics, skip=['charges'])
             io.log_tqdm(data_str)
 
         # Update summary objects
-        #  tf.summary.record_if(IS_CHIEF and step % flags.logging_steps == 0)
-        #  if IS_CHIEF and step % flags.logging_steps == 0:
         if should_log(step):
             train_data.update(step, metrics)
             if writer is not None:
@@ -360,9 +354,6 @@ def train_dynamics(
         # Print header every hundred steps
         if IS_CHIEF and (step + 1) % (50 * flags.print_steps) == 0:
             io.log_tqdm(header.split('\n'))
-
-        #  if config.pstop > 0 and step == config.pstop:
-        #      tf.profiler.experimental.stop()
 
     train_data.dump_configs(x, dirs.data_dir, rank=RANK)
     if IS_CHIEF:

@@ -22,26 +22,23 @@ from __future__ import absolute_import, division, print_function
 import os
 import time
 
-from typing import Callable, Union, List, Tuple, Optional
+from typing import Callable, List, Optional, Tuple, Union
 
 import numpy as np
 import tensorflow as tf
-import horovod.tensorflow as hvd
 
 import utils.file_io as io
+import horovod.tensorflow as hvd
 
-from network.gauge_conv_network import ConvolutionConfig
-from config import (BIN_DIR, LearningRateConfig,
-                    MonteCarloStates, NetWeights, NetworkConfig, State,
-                    TF_FLOAT, TF_INT)
-from utils.attr_dict import AttrDict
-from utils.learning_rate import WarmupExponentialDecay
-
-# pylint:disable=unused-import
+from config import (BIN_DIR, MonteCarloStates, NetWeights, State, TF_FLOAT,
+                    TF_INT)
+from network.config import (ConvolutionConfig, LearningRateConfig,
+                            NetworkConfig)
+from dynamics.config import DynamicsConfig
 from utils.file_io import timeit  # noqa:F401
-from utils.seed_dict import vnet_seeds  # noqa:F401
-from utils.seed_dict import xnet_seeds  # noqa:F401
-
+from utils.attr_dict import AttrDict
+from utils.seed_dict import vnet_seeds, xnet_seeds  # noqa:F401
+from utils.learning_rate import WarmupExponentialDecay
 
 NUM_RANKS = hvd.size()
 TIMING_FILE = os.path.join(BIN_DIR, 'timing_file.log')
@@ -50,31 +47,6 @@ TIMING_FILE = os.path.join(BIN_DIR, 'timing_file.log')
 def identity(x):
     """Returns x"""
     return x
-
-
-class DynamicsConfig(AttrDict):
-    """Configuration object for `BaseDynamics` object"""
-
-    # pylint:disable=too-many-arguments
-    def __init__(self,
-                 eps: float,
-                 num_steps: int,
-                 hmc: bool = False,
-                 model_type: str = None,
-                 eps_fixed: bool = False,
-                 aux_weight: float = 0.,
-                 loss_scale: float = 1.,
-                 use_mixed_loss: bool = False):
-        super(DynamicsConfig, self).__init__(
-            eps=eps,
-            hmc=hmc,
-            num_steps=num_steps,
-            model_type=model_type,
-            eps_fixed=eps_fixed,
-            aux_weight=aux_weight,
-            loss_scale=loss_scale,
-            use_mixed_loss=use_mixed_loss
-        )
 
 
 # pylint:disable=attribute-defined-outside-init
@@ -234,12 +206,15 @@ class BaseDynamics(tf.keras.Model):
         sb_init, sb_prop, pxb, sldb = self._transition(inputs, forward=False,
                                                        training=training)
 
+        # ====
         # Combine the forward / backward outputs;
-        # these are the proposed configuration
+        # get forward / backward masks:
         mf_, mb_ = self._get_direction_masks()
         mf = mf_[:, None]
         mb = mb_[:, None]
+        # reconstruct v_init
         v_init = mf * sf_init.v + mb * sb_init.v
+        # construct proposed configuration: `x`, `v`
         x_prop = mf * sf_prop.x + mb * sb_prop.x
         v_prop = mf * sf_prop.v + mb * sb_prop.v
         sld_prop = mf_ * sldf + mb_ * sldb
@@ -247,7 +222,7 @@ class BaseDynamics(tf.keras.Model):
         # Compute the acceptance probability
         accept_prob = mf_ * pxf + mb_ * pxb
 
-        # ma_: accept_mask, mr_: reject mask
+        # get accept `ma_`, reject `mr_` masks
         ma_, mr_ = self._get_accept_masks(accept_prob)
         ma = ma_[:, None]
         mr = mr_[:, None]
@@ -472,10 +447,6 @@ class BaseDynamics(tf.keras.Model):
         """Run the augmented leapfrog integrator in the forward direction."""
         # === NOTE: m = random mask (half 1s, half 0s); mc = 1. - m
         m, mc = self._get_mask(step)  # pylint: disable=invalid-name
-        #  vnet = self._get_network(step)
-        #  t = self._get_time(step, tile=tf.shape(state.x)[0])
-
-        #  sumlogdet = tf.constant(0., dtype=state.x.dtype)
         sumlogdet = 0.
 
         state, logdet = self._update_v_forward(state, step, training)
@@ -495,9 +466,7 @@ class BaseDynamics(tf.keras.Model):
         """Run the augmented leapfrog integrator in the backward direction."""
         step_r = self.config.num_steps - step - 1
         m, mc = self._get_mask(step_r)
-
         sumlogdet = 0.
-        #  sumlogdet = tf.constant(0., dtype=state.x.dtype)
 
         state, logdet = self._update_v_backward(state, step_r, training)
         sumlogdet += logdet
@@ -841,7 +810,7 @@ class BaseDynamics(tf.keras.Model):
                            trainable=not self.config.eps_fixed)
 
     def _create_lr(
-            self, lr_config: LearningRateConfig = None, scale: bool = True
+            self, lr_config: LearningRateConfig = None, scale: bool = False
     ):
         """Create the learning rate schedule to be used during training."""
         if lr_config is None:
@@ -873,18 +842,11 @@ class BaseDynamics(tf.keras.Model):
 
     def _create_optimizer(self):
         """Create the optimizer to be used for backpropagating gradients."""
-        #  optimizer = tf.compat.v1.train.AdamOptimizer(self.lr)
         if self.clip_val > 0:
             optimizer = tf.keras.optimizers.Adam(self.lr,
                                                  clipnorm=self.clip_val)
-        #  optimizer = tf.keras.optimizers.Nadam(self.lr_config.init,
-        #                                        clipnorm=self.clip_val)
         else:
             optimizer = tf.keras.optimizers.Adam(self.lr)
-        #  optimizer = tf.keras.optimizers.Adam(self.lr)
-        #  if self.using_hvd:
-        #  if NUM_RANKS > 1:
-        #      optimizer = hvd.DistributedOptimizer(optimizer)
 
         return optimizer
 

@@ -15,7 +15,7 @@ import numpy as np
 
 from config import PROJECT_DIR, BIN_DIR
 from functools import wraps
-from network.gauge_conv_network import ConvolutionConfig
+from network.config import ConvolutionConfig
 from utils.attr_dict import AttrDict
 from utils.training_utils import train
 from utils.inference_utils import load_and_run, run, run_hmc
