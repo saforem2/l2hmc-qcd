@@ -31,11 +31,6 @@ from utils.summary_utils import summarize_dict
 from utils.data_containers import DataContainer
 
 # pylint:disable=no-member
-if tf.__version__.startswith('1.'):
-    TF_VERSION = '1.x'
-elif tf.__version__.startswith('2.'):
-    TF_VERSION = '2.x'
-
 RANK = hvd.rank()
 IS_CHIEF = (RANK == 0)
 
@@ -57,18 +52,6 @@ def restore_from_train_flags(args):
     """Populate entries in `args` using the training `FLAGS` from `log_dir`."""
     train_dir = os.path.join(args.log_dir, 'training')
     flags = AttrDict(dict(io.loadz(os.path.join(train_dir, 'FLAGS.z'))))
-    #  if args.get('lattice_shape', None) is None:
-    #      args.lattice_shape = flags.lattice_shape
-    #  if args.get('beta', None) is None:
-    #      args.beta = flags.beta_final
-    #  if args.get('num_steps', None) is None:
-    #      args.num_steps = flags.num_steps
-    #
-    #  flags.update({
-    #      'beta': args.beta,
-    #      'num_steps': args.num_steps,
-    #      'lattice_shape': args.lattice_shape,
-    #  })
 
     return flags
 
@@ -94,26 +77,6 @@ def run_hmc(
     if not IS_CHIEF:
         return None, None, None
 
-    #  if args.log_dir is not None:
-    #      args = restore_from_train_flags(args)
-
-    #  args.update({
-    #      'hmc': True,
-    #      'units': [],
-    #      'lr_init': 0,
-    #      'restore': False,
-    #      'use_ncp': False,
-    #      'horovod': False,
-    #      'eps_fixed': True,
-    #      'warmup_steps': 0,
-    #      'dropout_prob': 0.,
-    #      'lr_decay_steps': None,
-    #      'decay_rate': None,
-    #      'separate_networks': False,
-    #  })
-    #
-    #  io.print_flags(args)
-
     if hmc_dir is None:
         root_dir = os.path.dirname(PROJECT_DIR)
         hmc_dir = os.path.join(root_dir, 'gauge_logs_eager', 'hmc_runs')
@@ -134,8 +97,7 @@ def run_hmc(
             return None, None, None
 
     dynamics = build_dynamics(args)
-    dynamics, run_data, x = run(dynamics, args,
-                                runs_dir=hmc_dir)
+    dynamics, run_data, x = run(dynamics, args, runs_dir=hmc_dir)
 
     return dynamics, run_data, x
 

@@ -41,7 +41,7 @@ CBARS = {
 }
 
 
-class GaugeDynamicsConfig(AttrDict):
+class GaugeDynamicsConfig1(AttrDict):
     """Configuration object for `GaugeDynamics` object"""
 
     # pylint:disable=too-many-arguments
@@ -63,7 +63,7 @@ class GaugeDynamicsConfig(AttrDict):
                  use_scattered_xnet_update: bool = False,
                  use_tempered_trajectories: bool = False,
                  gauge_eq_masks: bool = False):
-        super(GaugeDynamicsConfig, self).__init__(
+        super(GaugeDynamicsConfig1, self).__init__(
             eps=eps,
             hmc=hmc,
             use_ncp=use_ncp,
@@ -81,37 +81,6 @@ class GaugeDynamicsConfig(AttrDict):
             use_scattered_xnet_update=use_scattered_xnet_update,
             use_tempered_trajectories=use_tempered_trajectories,
             gauge_eq_masks=gauge_eq_masks,
-        )
-
-
-class NetworkConfig(AttrDict):
-    """Configuration object for network of `Dynamics` object"""
-
-    def __init__(self,
-                 units: list,
-                 name: str = None,
-                 dropout_prob: float = 0.,
-                 activation_fn: callable = tf.nn.relu):
-        super(NetworkConfig, self).__init__(
-            name=name,
-            units=units,
-            dropout_prob=dropout_prob,
-            activation_fn=activation_fn
-        )
-
-
-class LearningRateConfig(AttrDict):
-    """Configuration object for specifying learning rate schedule."""
-    def __init__(self,
-                 lr_init: float,
-                 decay_steps: int,
-                 decay_rate: float,
-                 warmup_steps: int = 0):
-        super(LearningRateConfig, self).__init__(
-            lr_init=lr_init,
-            decay_steps=decay_steps,
-            decay_rate=decay_rate,
-            warmup_steps=warmup_steps
         )
 
 

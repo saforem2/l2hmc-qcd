@@ -9,16 +9,14 @@ Date: 09/14/2020
 
 """
 # pylint:disable=invalid-name
-
 from typing import Tuple
 
 import tensorflow as tf
 
 from tensorflow import keras
 
-from config import NetworkConfig
-from network.gauge_network import ScaledTanhLayer
-from network.gauge_conv_network import ConvolutionConfig, periodic_image
+from network.config import ConvolutionConfig, NetworkConfig
+from network.layers import ScaledTanhLayer
 
 layers = tf.keras.layers
 
@@ -82,13 +80,14 @@ class PeriodicPadding(layers.Layer):
         return inputs
 
 
+# pylint:disable=too-many-locals, too-many-arguments
 def get_generic_network(
-    input_shape: Tuple,
-    net_config: NetworkConfig,
-    kernel_initializer: str = None,
-    input_shapes: Tuple = None,
-    factor: float = 1.,
-    name: str = None,
+        input_shape: Tuple,
+        net_config: NetworkConfig,
+        kernel_initializer: str = None,
+        input_shapes: Tuple = None,
+        factor: float = 1.,
+        name: str = None,
 ):
     """Returns a (functional) `tf.keras.Model`."""
     h1 = net_config.units[0]
@@ -149,7 +148,7 @@ def get_generic_network(
     return model
 
 
-# pylint:disable=too-many-locals
+# pylint:disable=too-many-locals, too-many-arguments
 def get_gauge_network(
         lattice_shape: Tuple,
         net_config: NetworkConfig,
@@ -199,7 +198,6 @@ def get_gauge_network(
 
             x = tf.reshape(x_input, shape=(batch_size, T, X, d + 2))
             #  x = tf.transpose(x, (0, 1, 2, 4, 3))
-            #  x = periodic_image(x, f1 - 1)
             x = PeriodicPadding(f1 - 1)(x)
             x = layers.Conv2D(n1, f1, activation='relu',
                               name=s_('xConv1'))(x)

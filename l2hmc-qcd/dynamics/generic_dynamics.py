@@ -13,11 +13,10 @@ import time
 import tensorflow as tf
 import horovod.tensorflow as hvd
 
-from config import (LearningRateConfig, NetworkConfig,
-                    NetWeights, MonteCarloStates)
-from dynamics.base_dynamics import BaseDynamics, DynamicsConfig
-from network.gauge_conv_network import ConvolutionConfig
-from network.generic_network import GenericNetwork
+from config import NetWeights, MonteCarloStates
+from dynamics.base_dynamics import BaseDynamics
+from dynamics.config import DynamicsConfig
+from network.config import NetworkConfig, LearningRateConfig, ConvolutionConfig
 from network.functional_net import get_generic_network
 from utils.attr_dict import AttrDict
 
@@ -102,18 +101,12 @@ class GenericDynamics(BaseDynamics):
         if net_config is None:
             net_config = self.net_config
         input_shapes = {
-            'x': (self.xdim,),
-            'v': (self.xdim,),
-            't':  (2,)
+            'x': (self.xdim,), 'v': (self.xdim,), 't':  (2,)
         }
         xnet = get_generic_network(self.x_shape, net_config, name='xNet',
                                    factor=2., input_shapes=input_shapes)
         vnet = get_generic_network(self.x_shape, net_config, name='vNet',
                                    factor=1., input_shapes=input_shapes)
-        #  xnet = GenericNetwork(self.net_config, factor=2.,
-        #                        xdim=self.xdim, name='XNet')
-        #  vnet = GenericNetwork(self.net_config, factor=1.,
-        #                        xdim=self.xdim, name='VNet')
         return xnet, vnet
 
     def calc_losses(self, states: MonteCarloStates, accept_prob: tf.Tensor):
@@ -129,7 +122,6 @@ class GenericDynamics(BaseDynamics):
         with tf.GradientTape() as tape:
             states, accept_prob, sumlogdet = self((x, beta), training=True)
             loss = self.calc_losses(states, accept_prob)
-            #  self.add_metric(self.loss_metric(loss))
 
             if self.aux_weight > 0:
                 z = tf.random.normal(x.shape, dtype=x.dtype)
@@ -142,12 +134,6 @@ class GenericDynamics(BaseDynamics):
 
         grads = tape.gradient(loss, self.trainable_variables)
         self.optimizer.apply_gradients(zip(grads, self.trainable_variables))
-        #  if self.clip_val > 0:
-        #      grads = [tf.clip_by_norm(g, self.clip_val) for g in grads]
-
-        #  self.optimizer.apply_gradients(
-        #      zip(grads, self.trainable_variables)
-        #  )
 
         metrics = AttrDict({
             'dt': time.time() - start,
@@ -158,11 +144,6 @@ class GenericDynamics(BaseDynamics):
             'sumlogdet': sumlogdet.out,
         })
 
-        #  if self.optimizer.iterations == 0:
-        #      for key, val in metrics.items():
-        #          self.add_metric(
-        #          self.metrics[key].update_state(val)
-        #
         if self.optimizer.iterations == 0 and NUM_RANKS > 1:
             hvd.broadcast_variables(self.variables, root_rank=0)
             hvd.broadcast_variables(self.optimizer.variables(), root_rank=0)

@@ -16,8 +16,7 @@ from tensorflow.keras.optimizers.schedules import LearningRateSchedule
 
 import utils.file_io as io
 
-from config import LearningRateConfig
-
+from network.config import LearningRateConfig
 
 # pylint:disable=too-many-arguments
 # pylint:disable=too-few-public-methods

@@ -10,6 +10,7 @@ Date: 04/01/2020
 from __future__ import absolute_import, division, print_function
 
 import numpy as np
+from typing import Union, Callable
 import tensorflow as tf
 
 from config import NP_FLOATS, TF_FLOATS, Weights
@@ -18,6 +19,8 @@ import utils.file_io as io
 
 TF_FLOAT = TF_FLOATS[tf.keras.backend.floatx()]
 NP_FLOAT = NP_FLOATS[tf.keras.backend.floatx()]
+
+layers = tf.keras.layers
 
 # pylint:disable=too-many-arguments
 
@@ -103,20 +106,6 @@ def save_layer_weights(net, out_file):
     io.savez(weights_dict, out_file, name=net.name)
 
 
-# pylint: disable=invalid-name
-class DenseLayerNP:
-    """Implements fully-connected Dense layer using numpy."""
-
-    def __init__(self, weights, activation=linear):
-        self.activation = activation
-        self.weights = weights
-        self.w = weights.w
-        self.b = weights.b
-
-    def __call__(self, x):
-        return self.activation(np.dot(x, self.w) + self.b)
-
-
 def dense_layer(units, seed=None, factor=1.,
                 zero_init=False, name=None, **kwargs):
     """Custom dense layer with specified weight initialization."""
@@ -140,34 +129,25 @@ def dense_layer(units, seed=None, factor=1.,
     )
 
 
-class ScaledTanhLayer:
-    """Wrapper class for dense layer + exp scaled tanh output."""
+class ScaledTanhLayer(layers.Layer):
+    """Implements a custom dense layer that is scaled by a trainable var."""
+    def __init__(
+            self,
+            units: int,
+            kernel_initializer: Union[Callable, str] = None,
+            **kwargs
+    ):
+        super(ScaledTanhLayer, self).__init__(**kwargs)
+        name = kwargs.get('name', 'ScaledTanhLayer')
+        self.coeff = tf.Variable(initial_value=tf.zeros([1, units]),
+                                 name=f'{name}/coeff', trainable=True)
+        self.dense = layers.Dense(
+            units, kernel_initializer=kernel_initializer
+        )
 
-    def __init__(self, name, factor, units, seed=None, zero_init=False):
-        self.coeff, self.layer = self._build(name, factor,
-                                             units, seed,
-                                             zero_init)
-
-    @staticmethod
-    def _build(name, factor, units, seed=None, zero_init=False):
-        layer_name = f'{name}_layer'
-        coeff_name = f'coeff_{name}'
-        with tf.name_scope(name):
-            coeff = tf.Variable(name=coeff_name,
-                                trainable=True,
-                                dtype=TF_FLOAT,
-                                initial_value=tf.zeros([1, units]))
-
-            layer = dense_layer(seed=seed,
-                                units=units,
-                                factor=factor,
-                                zero_init=zero_init,
-                                name=layer_name)
-
-        return coeff, layer
-
-    def __call__(self, x):
-        return tf.exp(self.coeff) * tf.nn.tanh(self.layer(x))
+    def call(self, inputs):
+        out = tf.keras.activations.tanh(self.dense(inputs))
+        return tf.exp(self.coeff) * out
 
 
 class StackedLayer:
@@ -183,25 +163,3 @@ class StackedLayer:
     def __call__(self, phi):
         phi = tf.concat([tf.cos(phi), tf.sin(phi)], axis=-1)
         return self.layer(phi)
-
-
-class StackedLayerNP:
-    """Numpy version of `StackedLayer`."""
-
-    def __init__(self, weights):
-        self.layer = DenseLayerNP(weights)
-
-    def __call__(self, phi):
-        phi = np.concatenate([np.cos(phi), np.sin(phi)], axis=-1)
-        return self.layer(phi)
-
-
-class ScaledTanhLayerNP:
-    """Implements numpy version of `ScaledTanhLayer`."""
-
-    def __init__(self, coeff_weight, layer_weight):
-        self.coeff = coeff_weight
-        self.layer = DenseLayerNP(layer_weight)
-
-    def __call__(self, x):
-        return np.exp(self.coeff) * np.tanh(self.layer(x))

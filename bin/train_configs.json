@@ -28,7 +28,7 @@
         "use_scattered_xnet_update": false,
         "use_tempered_traj": false,
         "gauge_eq_masks": false,
-        "lattice_shape": [128, 16, 16, 2]
+        "lattice_shape": [128, 8, 8, 2]
     },
     "network_config": {
         "units": [256, 256, 256],
