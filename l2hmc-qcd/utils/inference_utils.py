@@ -33,12 +33,13 @@ from utils.data_containers import DataContainer
 # pylint:disable=no-member
 RANK = hvd.rank()
 IS_CHIEF = (RANK == 0)
+NUM_NODES = hvd.size()
 
 if IS_CHIEF:
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s:%(levelname)s:%(message)s",
-        stream=DummyTqdmFile(sys.stdout)
+        stream=sys.stdout
     )
 else:
     logging.basicConfig(
@@ -264,10 +265,10 @@ def run_dynamics(
         return x, metrics
 
     steps = tf.range(flags.run_steps, dtype=tf.int64)
-    ctup = (CBARS['red'], CBARS['green'], CBARS['red'], CBARS['reset'])
-    steps = tqdm(steps, desc='running', unit='step',
-                 #  file=DummyTqdmFile(sys.stdout),
-                 bar_format=("%s{l_bar}%s{bar}%s{r_bar}%s" % ctup))
+    if NUM_NODES == 1:
+        ctup = (CBARS['red'], CBARS['green'], CBARS['red'], CBARS['reset'])
+        steps = tqdm(steps, desc='running', unit='step',
+                     bar_format=("%s{l_bar}%s{bar}%s{r_bar}%s" % ctup))
 
     for step in steps:
         x, metrics = timed_step(x, beta)

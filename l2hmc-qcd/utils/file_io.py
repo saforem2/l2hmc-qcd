@@ -96,11 +96,14 @@ def write(s: str, f: str, mode: str = 'a', nl: bool = True):
 
 def log_tqdm(s, out=sys.stdout):
     """Write to output using `tqdm`."""
-    if isinstance(s, (tuple, list)):
-        for i in s:
-            tqdm.write(i, file=out)
+    if NUM_NODES > 1:
+        log(s)
     else:
-        tqdm.write(s, file=out)
+        if isinstance(s, (tuple, list)):
+            for i in s:
+                tqdm.write(i, file=out)
+        else:
+            tqdm.write(s, file=out)
 
 
 def print_flags(flags: AttrDict):
@@ -143,7 +146,7 @@ def make_header_from_dict(
         split: bool = False,
 ):
     """Build nicely formatted header with names of various metrics."""
-    append = [''] if append is None else append
+    append = ['      '] if append is None else append
     prepend = [''] if prepend is None else prepend
     skip = [] if skip is None else skip
     keys = ['{:^12s}'.format(k) for k in data.keys() if k not in skip]
