@@ -653,7 +653,7 @@ class GaugeDynamics(BaseDynamics):
         with tf.GradientTape() as tape:
             x, beta = data
             tape.watch(x)
-            states, accept_prob, sumlogdet = self((x, beta), training=True)
+            states, accept_prob, _ = self((x, beta), training=True)
             ploss, qloss = self.calc_losses(states, accept_prob)
             loss = ploss + qloss
             if self.aux_weight > 0:
@@ -694,7 +694,7 @@ class GaugeDynamics(BaseDynamics):
             'accept_prob': accept_prob,
             'eps': self.eps,
             'beta': states.init.beta,
-            'sumlogdet': sumlogdet.out,
+            #  'sumlogdet': sumlogdet.out,
         })
 
         observables = self.calc_observables(states)
