@@ -359,7 +359,7 @@ def parse_configs(flags, debug=False):
     if config.get('hmc', False):
         fstr += 'HMC_'
 
-    if flags.get('train_steps', None) < 1e4 or debug:
+    if debug or 0 < flags.get('train_steps', None) < 1e4:
         fstr += 'DEBUG_'
 
     lattice_shape = config.get('lattice_shape', None)
