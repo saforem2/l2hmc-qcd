@@ -48,10 +48,16 @@ def main(args):
 
     x = None
     log_dir = args.get('log_dir', None)
+    beta_init = args.get('beta_init', None)
+    beta_final = args.get('beta_final', None)
     if log_dir is not None:  # we want to restore from latest checkpoint
         train_steps = args.get('train_steps', None)
         args = restore_flags(args, os.path.join(args.log_dir, 'training'))
         args.restore = True
+        if beta_init != args.get('beta_init', None):
+            args.beta_init = beta_init
+        if beta_final != args.get('beta_final', None):
+            args.beta_final = beta_final
         if train_steps > args.train_steps:
             args.train_steps = train_steps
 

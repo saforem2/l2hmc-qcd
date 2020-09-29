@@ -169,7 +169,7 @@ def setup(dynamics, flags, dirs=None, x=None, betas=None):
         ckpt.restore(manager.latest_checkpoint)
         current_step = dynamics.optimizer.iterations.numpy()
         x = train_data.restore(dirs.data_dir, rank=RANK, step=current_step)
-        flags.beta_init = train_data.data.beta[-1]
+        #  flags.beta_init = train_data.data.beta[-1]
 
     # Create initial samples if not restoring from ckpt
     if x is None:
