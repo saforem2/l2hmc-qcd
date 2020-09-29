@@ -47,8 +47,9 @@ from dynamics.gauge_dynamics import build_dynamics, GaugeDynamics
 # pylint:disable=invalid-name
 
 RANK = hvd.rank()
-io.log(f'Number of devices: {hvd.size()}')
 IS_CHIEF = (RANK == 0)
+NUM_NODES = hvd.size()
+io.log(f'Number of devices: {NUM_NODES}')
 
 
 @timeit(out_file=None)
@@ -317,11 +318,12 @@ def train_dynamics(
                                    skip=['charges'],
                                    prepend=['{:^12s}'.format('step')])
     if IS_CHIEF:
-        ctup = (CBARS['blue'], CBARS['yellow'],
-                CBARS['blue'], CBARS['reset'])
-        steps = tqdm(steps, desc='training', unit='step',
-                     bar_format=("%s{l_bar}%s{bar}%s{r_bar}%s" % ctup))
         io.log_tqdm(header.split('\n'))
+        if NUM_NODES == 1:
+            ctup = (CBARS['blue'], CBARS['yellow'],
+                    CBARS['blue'], CBARS['reset'])
+            steps = tqdm(steps, desc='training', unit='step',
+                         bar_format=("%s{l_bar}%s{bar}%s{r_bar}%s" % ctup))
 
     # +------------------------------------------------+
     # |                 Training loop                  |
