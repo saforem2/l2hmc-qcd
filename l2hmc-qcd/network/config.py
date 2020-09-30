@@ -10,6 +10,37 @@ import tensorflow as tf
 from utils.attr_dict import AttrDict
 
 
+class LearningRateConfig(AttrDict):
+    """Configuration object for specifying learning rate schedule."""
+    def __init__(self,
+                 lr_init: float,
+                 decay_steps: int,
+                 decay_rate: float,
+                 warmup_steps: int = 0):
+        super(LearningRateConfig, self).__init__(
+            lr_init=lr_init,
+            decay_steps=decay_steps,
+            decay_rate=decay_rate,
+            warmup_steps=warmup_steps
+        )
+
+
+class NetworkConfig(AttrDict):
+    """Configuration object for network of `Dynamics` object"""
+
+    def __init__(self,
+                 units: list,
+                 name: str = None,
+                 dropout_prob: float = 0.,
+                 activation_fn: callable = tf.nn.relu):
+        super(NetworkConfig, self).__init__(
+            name=name,
+            units=units,
+            dropout_prob=dropout_prob,
+            activation_fn=activation_fn
+        )
+
+
 class ConvolutionConfig(AttrDict):
     """Defines a configuration object for passing to `ConvolutionBlock`."""
     def __init__(
@@ -33,35 +64,3 @@ class ConvolutionConfig(AttrDict):
             use_batch_norm=use_batch_norm,
             name=name,
         )
-
-
-class NetworkConfig(AttrDict):
-    """Configuration object for network of `Dynamics` object"""
-
-    def __init__(self,
-                 units: list,
-                 name: str = None,
-                 dropout_prob: float = 0.,
-                 activation_fn: callable = tf.nn.relu):
-        super(NetworkConfig, self).__init__(
-            name=name,
-            units=units,
-            dropout_prob=dropout_prob,
-            activation_fn=activation_fn
-        )
-
-
-class LearningRateConfig(AttrDict):
-    """Configuration object for specifying learning rate schedule."""
-    def __init__(self,
-                 lr_init: float,
-                 decay_steps: int,
-                 decay_rate: float,
-                 warmup_steps: int = 0):
-        super(LearningRateConfig, self).__init__(
-            lr_init=lr_init,
-            decay_steps=decay_steps,
-            decay_rate=decay_rate,
-            warmup_steps=warmup_steps
-        )
-
