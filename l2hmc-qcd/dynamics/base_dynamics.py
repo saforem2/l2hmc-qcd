@@ -832,13 +832,13 @@ class BaseDynamics(tf.keras.Model):
         cond2 = (decay_steps is not None and decay_steps > 0)
         if cond1 and cond2:
             return tf.keras.optimizers.schedules.ExponentialDecay(
-                lr_config.init,
+                lr_config.lr_init,
                 decay_steps=lr_config.decay_steps,
                 decay_rate=lr_config.decay_rate,
                 staircase=True,
             )
 
-        return lr_config.init
+        return lr_config.lr_init
 
     def _create_optimizer(self):
         """Create the optimizer to be used for backpropagating gradients."""
