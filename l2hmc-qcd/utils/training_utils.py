@@ -290,23 +290,23 @@ def train_dynamics(
     # | Final setup; create timing wrapper for `train_step` function |
     # | and get formatted header string to display during training.  |
     # +--------------------------------------------------------------+
-    def _timed_step(x: tf.Tensor, beta: tf.Tensor):
+    ps_ = flags.get('print_steps', None)
+    ls_ = flags.get('logging_steps', None)
+
+    def timed_step(x: tf.Tensor, beta: tf.Tensor):
         start = time.time()
         x, metrics = train_step((x, tf.constant(beta)))
         metrics.dt = time.time() - start
         return x, metrics
 
     def should_print(step):
-        if IS_CHIEF and step % flags.print_steps == 0:
+        if IS_CHIEF and step % ps_ == 0:
             return True
         return False
 
     def should_log(step):
-        ls_ = flags.get('logging_steps', None)
-        if IS_CHIEF and ls_ is not None:
-            if step % ls_ == 0 and ls_ > 0:
-                return True
-
+        if IS_CHIEF and step % ls_ == 0:
+            return True
         return False
 
     def should_save(step):
@@ -318,7 +318,7 @@ def train_dynamics(
                                    skip=['charges'],
                                    prepend=['{:^12s}'.format('step')])
     if IS_CHIEF:
-        io.log_tqdm(header.split('\n'))
+        io.log(header.split('\n'), should_print=True)
         if NUM_NODES == 1:
             ctup = (CBARS['blue'], CBARS['yellow'],
                     CBARS['blue'], CBARS['reset'])
@@ -330,7 +330,7 @@ def train_dynamics(
     # +------------------------------------------------+
     for step, beta in zip(steps, betas):
         # Perform a single training step
-        x, metrics = _timed_step(x, beta)
+        x, metrics = timed_step(x, beta)
 
         # Save checkpoints and dump configs `x` from each rank
         if should_save(step + 1):
@@ -344,7 +344,7 @@ def train_dynamics(
         # Print current training state and metrics
         if should_print(step):
             data_str = train_data.get_fstr(step, metrics, skip=['charges'])
-            io.log_tqdm(data_str)
+            io.log(data_str, should_print=True)
 
         # Update summary objects
         if should_log(step):
@@ -355,7 +355,7 @@ def train_dynamics(
 
         # Print header every hundred steps
         if IS_CHIEF and (step + 1) % (50 * flags.print_steps) == 0:
-            io.log_tqdm(header.split('\n'))
+            io.log(header.split('\n'), should_print=True)
 
     train_data.dump_configs(x, dirs.data_dir, rank=RANK)
     if IS_CHIEF:

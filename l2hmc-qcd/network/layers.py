@@ -132,21 +132,39 @@ def dense_layer(units, seed=None, factor=1.,
 class ScaledTanhLayer(layers.Layer):
     """Implements a custom dense layer that is scaled by a trainable var."""
     def __init__(
-            self,
-            units: int,
-            kernel_initializer: Union[Callable, str] = None,
-            **kwargs
+            self, units: int, factor: float, name='ScaledTanhLayer'
     ):
-        super(ScaledTanhLayer, self).__init__(**kwargs)
-        name = kwargs.get('name', 'ScaledTanhLayer')
-        self.coeff = tf.Variable(initial_value=tf.zeros([1, units]),
-                                 name=f'{name}/coeff', trainable=True)
-        self.dense = layers.Dense(
-            units, kernel_initializer=kernel_initializer
+        super(ScaledTanhLayer, self).__init__(name=name)
+        self.units = units
+        self.factor = factor
+        self.coeff = tf.Variable(
+            initial_value=tf.zeros([1, units]),
+            name=f'{name}/coeff', trainable=True
         )
+        self.dense = layers.Dense(
+            units, kernel_initializer=tf.keras.initializers.VarianceScaling(
+                mode='fan_in', scale=2.*self.factor,
+                distribution='truncated_normal'
+            )
+        )
+
+    def get_config(self):
+        config = super(ScaledTanhLayer, self).get_config()
+        config.update({
+            'units': self.units,
+            'factor': self.factor,
+            'coeff': self.coeff.numpy(),
+        })
+
+        return config
+
+    @classmethod
+    def from_config(cls, config):
+        return cls(**config)
 
     def call(self, inputs):
         out = tf.keras.activations.tanh(self.dense(inputs))
+
         return tf.exp(self.coeff) * out
 
 

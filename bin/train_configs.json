@@ -5,15 +5,15 @@
     "beta_final": 2.0,
     "clip_val": 1.0,
     "loss_scale": 0.1,
-    "hmc_steps": 0,
+    "hmc_steps": 1000,
     "print_steps": 10,
-    "logging_steps": 50,
-    "save_steps": 200,
+    "logging_steps": 100,
+    "save_steps": 1000,
     "run_steps": 5000,
-    "train_steps": 20000,
+    "train_steps": 100000,
     "dynamics_config": {
         "eps": 0.1,
-        "num_steps": 5,
+        "num_steps": 4,
         "hmc": false,
         "use_ncp": true,
         "eps_fixed": false,
@@ -28,7 +28,7 @@
         "use_scattered_xnet_update": false,
         "use_tempered_traj": false,
         "gauge_eq_masks": false,
-        "lattice_shape": [128, 8, 8, 2]
+        "lattice_shape": [256, 8, 8, 2]
     },
     "network_config": {
         "units": [256, 256, 256],
@@ -39,7 +39,7 @@
         "lr_init": 1.0e-3,
         "decay_rate": 0.8,
         "decay_steps": 10000,
-        "warmup_steps": 500 
+        "warmup_steps": 100 
     },
     "conv_config": {
         "filters": [16, 32],

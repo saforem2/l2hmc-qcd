@@ -22,7 +22,7 @@
         "plaq_weight": 0.0,
         "charge_weight": 0.01,
         "zero_init": false,
-        "separate_networks": true,
+        "separate_networks": false,
         "use_conv_net": false,
         "use_mixed_loss": false,
         "directional_updates": true,
