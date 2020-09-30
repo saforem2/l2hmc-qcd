@@ -21,10 +21,14 @@ from network.layers import ScaledTanhLayer
 layers = tf.keras.layers
 
 
-def custom_dense(units, kernel_initializer, name=None):
+def custom_dense(units, scale=1., name=None):
     """Implements a `layers.Dense` object with custom kernel initializer."""
-    return layers.Dense(units, name=name,
-                        kernel_initializer=kernel_initializer)
+    kinit = tf.keras.initializers.VarianceScaling(
+        mode='fan_in', scale=2.*scale,
+        distribution='truncated_normal',
+    )
+
+    return layers.Dense(units, name=f'{name}_layer', kernel_initializer=kinit)
 
 
 def vs_init(factor, kernel_initializer=None):
@@ -40,21 +44,20 @@ def vs_init(factor, kernel_initializer=None):
 
 def get_kernel_initializers(factor=1., kernel_initializer=None):
     """Get kernel initializers, layer by layer."""
-    names = ['x_layer', 'v_layer', 't_layer', 'h_layer1', 'h_layer2',
-             'scale_layer', 'transl_layer', 'transf_layer']
+    names = ['x', 'v', 't', 'h1', 'h2', 'scale', 'transl', 'transf']
     if kernel_initializer == 'zeros':
         kinits = len(names) * ['zeros']
         return dict(zip(names, kinits))
 
     return {
-        'x_layer': vs_init(factor/3.),
-        'v_layer': vs_init(1./3.),
-        't_layer': vs_init(1./3.),
-        'h_layer1': vs_init(1./2.),
-        'h_layer2': vs_init(1./2.),
-        'scale_layer': vs_init(0.001),
-        'transl_layer': vs_init(0.001),
-        'transf_layer': vs_init(0.001),
+        'x': vs_init(factor/3.),
+        'v': vs_init(1./3.),
+        't': vs_init(1./3.),
+        'h1': vs_init(1./2.),
+        'h2': vs_init(1./2.),
+        'scale': vs_init(0.001),
+        'transl': vs_init(0.001),
+        'transf': vs_init(0.001),
     }
 
 
@@ -93,7 +96,11 @@ def get_generic_network(
     h1 = net_config.units[0]
     h2 = net_config.units[1]
     batch_size, xdim = input_shape
-    kinits = get_kernel_initializers(factor, kernel_initializer)
+    #  kinits = get_kernel_initializers(factor, kernel_initializer)
+    scale_coeff = tf.Variable(initial_value=tf.zeros([1, xdim]),
+                              name='scale/coeff', trainable=True)
+    transf_coeff = tf.Variable(initial_value=tf.zeros([1, xdim]),
+                               name='transf/coeff', trainable=True)
     if name is None:
         name = 'GenericNetwork'
 
@@ -116,28 +123,30 @@ def get_generic_network(
         v_input = get_input('v')
         t_input = get_input('t')
 
-        x = custom_dense(h1, kinits['x_layer'], s_('x_layer'))(x_input)
-        v = custom_dense(h1, kinits['v_layer'], s_('v_layer'))(v_input)
-        t = custom_dense(h1, kinits['t_layer'], s_('t_layer'))(t_input)
+        x = custom_dense(h1, factor/3., f'{name}/x')(x_input)
+        v = custom_dense(h1, 1./3., f'{name}/v')(v_input)
+        t = custom_dense(h1, 1./3., f'{name}/t')(t_input)
         z = layers.Add()([x, v, t])
         z = keras.activations.relu(z)
-        z = custom_dense(h2, kinits['h_layer1'], s_('h_layer1'))(z)
-        z = custom_dense(h2, kinits['h_layer2'], s_('h_layer2'))(z)
+        z = custom_dense(h2, 1., f'{name}/h1')(z)
+        z = custom_dense(h2, 1., f'{name}/h2')(z)
         #  z = layers.Dense(h2, name='h_layer1')(z)
         #  z = layers.Dense(h2, name='h_layer2')(z)
         if net_config.dropout_prob > 0:
             z = layers.Dropout(net_config.dropout_prob)(z)
 
-        args = (xdim, kinits['scale_layer'])
-        scale = ScaledTanhLayer(*args, name=s_('scale_layer'))(z)
-        transl = custom_dense(xdim, kinits['transl_layer'],
-                              s_('transl_layer'))(z)
-
-        kwargs = {
-            'kernel_initializer': kinits['transf_layer'],
-            'name': s_('transformation_layer')
-        }
-        transf = ScaledTanhLayer(xdim, **kwargs)(z)
+        #  args = (xdim, )
+        #  scale = ScaledTanhLayer(xdim, 0.001, name=f'{name}/scale')(z)
+        transl = custom_dense(xdim, 0.001, name=f'{name}/transl')(z)
+        scale = tf.exp(scale_coeff) * tf.keras.activations.tanh(
+            custom_dense(xdim, 0.001, name=f'{name}/scale')(z)
+        )
+        transf = tf.exp(transf_coeff) * tf.keras.activations.tanh(
+            custom_dense(xdim, 0.001, name=f'{name}/transformation')(z)
+        )
+        #  transf = ScaledTanhLayer(
+        #      xdim, 0.001, name=f'{name}/transformation'
+        #  )(z)
 
         model = keras.Model(
             name=name,
@@ -174,7 +183,7 @@ def get_gauge_network(
 
     h1 = net_config.units[0]
     h2 = net_config.units[1]
-    kinits = get_kernel_initializers(factor, kernel_initializer)
+    #  kinits = get_kernel_initializers(factor, kernel_initializer)
     if name is None:
         name = 'GaugeNetwork'
 
@@ -184,10 +193,18 @@ def get_gauge_network(
     def get_input(s):
         return keras.Input(input_shapes[s], name=s_(s), batch_size=batch_size)
 
+    # +-----------------------+
+    # |     BUILD NETWORK     |
+    # +-----------------------+
     with tf.name_scope(name):
         x_input = get_input('x')
         v_input = get_input('v')
         t_input = get_input('t')
+
+        scale_coeff = tf.Variable(initial_value=tf.zeros([1, xdim]),
+                                  name='scale/coeff', trainable=True)
+        transf_coeff = tf.Variable(initial_value=tf.zeros([1, xdim]),
+                                   name='transf/coeff', trainable=True)
 
         if conv_config is not None:
             n1 = conv_config.filters[0]
@@ -212,36 +229,31 @@ def get_gauge_network(
             if conv_config.use_batch_norm:
                 x = layers.BatchNormalization(axis=-1,
                                               name=s_('batch_norm'))(x)
-            #  v = layers.Flatten()(v_input)
         else:
             x = layers.Flatten()(x_input)
-            #  x = layers.Flatten()(x_input)
-            #  v = layers.Flatten()(v_input)
 
-        #  v = layers.Dense(h1, name='v_layer')(v_input)
-        #  t = layers.Dense(h1, name='t_layer')(t_input)
-        x = custom_dense(h1, kinits['x_layer'], s_('x_layer'))(x)
-        v = custom_dense(h1, kinits['v_layer'], s_('v_layer'))(v_input)
-        t = custom_dense(h1, kinits['t_layer'], s_('t_layer'))(t_input)
+        x = custom_dense(h1, factor/3., f'{name}/x')(x)
+        v = custom_dense(h1, 1./3., f'{name}/v')(v_input)
+        t = custom_dense(h1, 1./3., f'{name}/t')(t_input)
         z = layers.Add()([x, v, t])
         z = keras.activations.relu(z)
-        z = custom_dense(h2, kinits['h_layer1'], s_('h_layer1'))(z)
-        z = custom_dense(h2, kinits['h_layer2'], s_('h_layer2'))(z)
-        #  z = layers.Dense(h2, name='h_layer1')(z)
-        #  z = layers.Dense(h2, name='h_layer2')(z)
+        z = custom_dense(h2, 1., f'{name}/h1')(z)
+        z = custom_dense(h2, 1., f'{name}/h2')(z)
         if net_config.dropout_prob > 0:
             z = layers.Dropout(net_config.dropout_prob)(z)
 
-        args = (xdim, kinits['scale_layer'])
-        scale = ScaledTanhLayer(*args, name=s_('scale_layer'))(z)
-        transl = custom_dense(xdim, kinits['transl_layer'],
-                              s_('transl_layer'))(z)
+        transl = custom_dense(xdim, 0.001, name=f'{name}/transl')(z)
+        scale = tf.exp(scale_coeff) * tf.keras.activations.tanh(
+            custom_dense(xdim, 0.001, name=f'{name}/scale')(z)
+        )
+        transf = tf.exp(transf_coeff) * tf.keras.activations.tanh(
+            custom_dense(xdim, 0.001, name=f'{name}/transformation')(z)
+        )
 
-        kwargs = {
-            'kernel_initializer': kinits['transf_layer'],
-            'name': s_('transformation_layer')
-        }
-        transf = ScaledTanhLayer(xdim, **kwargs)(z)
+        #  scale = ScaledTanhLayer(xdim, 0.001, name=f'{name}/scale')(z)
+        #  transl = custom_dense(xdim, 0.001, name=f'{name}/transl')(z)
+        #  transf = ScaledTanhLayer(
+        #      xdim, 0.001, name=f'{name}/transformation')(z)
 
         model = keras.Model(
             name=name,

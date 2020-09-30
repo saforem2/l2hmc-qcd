@@ -74,16 +74,28 @@ def in_notebook():
     return True
 
 
-def log(s: str, level: str = 'INFO'):
+def log(s: str, level: str = 'INFO', out=sys.stdout, should_print=False):
     """Print string `s` to stdout if and only if hvd.rank() == 0."""
     if RANK != 0:
         return
-
-    level = LOG_LEVELS_AS_INTS[level.upper()]
-    if isinstance(s, (list, tuple)):
-        _ = [logging.log(level, s_) for s_ in s]
+    if NUM_NODES == 1:
+        if isinstance(s, (tuple, list)):
+            for i in s:
+                tqdm.write(i, file=out)
+        else:
+            tqdm.write(s, file=out)
     else:
-        logging.log(level, s)
+        level = LOG_LEVELS_AS_INTS[level.upper()]
+        if isinstance(s, (list, tuple)):
+            if should_print:
+                _ = [print(s_) for s_ in s]
+            else:
+                _ = [logging.log(level, s_) for s_ in s]
+        else:
+            if should_print:
+                print(s)
+            else:
+                logging.log(level, s)
 
 
 def write(s: str, f: str, mode: str = 'a', nl: bool = True):
@@ -96,14 +108,15 @@ def write(s: str, f: str, mode: str = 'a', nl: bool = True):
 
 def log_tqdm(s, out=sys.stdout):
     """Write to output using `tqdm`."""
-    if NUM_NODES > 1:
-        log(s)
-    else:
-        if isinstance(s, (tuple, list)):
-            for i in s:
-                tqdm.write(i, file=out)
-        else:
-            tqdm.write(s, file=out)
+    #  if NUM_NODES > 1:
+    #      log(s)
+    #  else:
+    #      if isinstance(s, (tuple, list)):
+    #          for i in s:
+    #              tqdm.write(i, file=out)
+    #      else:
+    #          tqdm.write(s, file=out)
+    pass
 
 
 def print_flags(flags: AttrDict):
@@ -113,7 +126,7 @@ def print_flags(flags: AttrDict):
     ))
 
 
-def setup_directories(flags, name='training'):
+def setup_directories(flags, name='training', new_beta=False):
     """Setup relevant directories for training."""
     train_dir = os.path.join(flags.log_dir, name)
     train_paths = AttrDict({
@@ -146,8 +159,8 @@ def make_header_from_dict(
         split: bool = False,
 ):
     """Build nicely formatted header with names of various metrics."""
-    append = ['      '] if append is None else append
-    prepend = [''] if prepend is None else prepend
+    append = [] if append is None else append
+    prepend = [] if prepend is None else prepend
     skip = [] if skip is None else skip
     keys = ['{:^12s}'.format(k) for k in data.keys() if k not in skip]
     hstr = ''.join(prepend + keys + append)

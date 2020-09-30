@@ -9,16 +9,11 @@ import os
 import sys
 import time
 import logging
-from utils import DummyTqdmFile
 from utils.file_io import timeit
 
-#  from tqdm import tqdm
-#  from tqdm.auto import tqdm
 from tqdm.autonotebook import tqdm
 import tensorflow as tf
 import horovod.tensorflow as hvd
-#  hvd.init()
-#  RANK = hvd.rank()
 
 import utils.file_io as io
 
@@ -250,7 +245,7 @@ def run_dynamics(
                                  skip=['charges'],
                                  prepend=['{:^12s}'.format('step')])
     #  io.log(header)
-    io.log_tqdm(header.split('\n'))
+    io.log(header.split('\n'), should_print=True)
     # -------------------------------------------------------------
 
     x_arr = []
@@ -277,9 +272,9 @@ def run_dynamics(
         if step % print_steps == 0:
             summarize_dict(metrics, step, prefix='testing')
             data_str = run_data.get_fstr(step, metrics, skip=['charges'])
-            io.log_tqdm(data_str)
+            io.log(data_str, should_print=True)
 
         if (step + 1) % 1000 == 0:
-            io.log_tqdm(header)
+            io.log(header, should_print=True)
 
     return run_data, x, x_arr

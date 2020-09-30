@@ -414,7 +414,8 @@ class GaugeDynamics(BaseDynamics):
             x_cos = tf.reshape(x_cos, self.lattice_shape)
             x_sin = tf.reshape(x_sin, self.lattice_shape)
 
-        x = tf.concat([x_cos, x_sin], -1)
+        #  x = tf.concat([x_cos, x_sin], -1)
+        x = tf.stack([x_cos, x_sin], axis=-1)
         if not self.config.separate_networks:
             S, T, Q = self.xnet((x, v, t), training)
         else:
@@ -675,15 +676,11 @@ class GaugeDynamics(BaseDynamics):
             'dt': time.time() - start,
             'loss': loss,
         })
-        if self.plaq_weight > 0:
+        if self.plaq_weight > 0 and self.charge_weight > 0:
             metrics.update({
                 'ploss': ploss,
-            })
-        if self.charge_weight > 0:
-            metrics.update({
                 'qloss': qloss
             })
-
         if self.aux_weight > 0:
             metrics.update({
                 'ploss_aux': ploss_,

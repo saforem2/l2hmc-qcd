@@ -71,7 +71,7 @@ class DataContainer:
         data = {
             k: tf.reduce_mean(v) for k, v in metrics.items() if k not in skip
         }
-        fstr = (f'{step:>6g}/{self.steps:<6g} '
+        fstr = (f'{step:>5g}/{self.steps:<5g} '
                 + ''.join([f'{v:^12.4g}' for _, v in data.items()]))
 
         self.data_strs.append(fstr)
