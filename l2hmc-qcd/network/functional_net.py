@@ -170,11 +170,11 @@ def get_gauge_network(
 ):
     """Returns a (functional) `tf.keras.Model`."""
     if len(lattice_shape) == 4:
-        batch_size, T, X, d = lattice_shape
+        batch_size, transl, X, d = lattice_shape
     elif len(lattice_shape) == 3:
-        T, X, d = lattice_shape
+        transl, X, d = lattice_shape
 
-    xdim = T * X * d
+    xdim = transl * X * d
 
     if input_shapes is None:
         input_shapes = {
@@ -201,10 +201,11 @@ def get_gauge_network(
         v_input = get_input('v')
         t_input = get_input('t')
 
-        scale_coeff = tf.Variable(initial_value=tf.zeros([1, xdim]),
-                                  name='scale/coeff', trainable=True)
-        transf_coeff = tf.Variable(initial_value=tf.zeros([1, xdim]),
-                                   name='transf/coeff', trainable=True)
+        coeff_kwargs = {
+            'trainable': True, 'initial_value': tf.zeros([1, xdim]),
+        }
+        scale_coeff = tf.Variable(name=f'{name}/scale/coeff', **coeff_kwargs)
+        transf_coeff = tf.Variable(name=f'{name}/transf/coeff', **coeff_kwargs)
 
         if conv_config is not None:
             n1 = conv_config.filters[0]
@@ -213,7 +214,7 @@ def get_gauge_network(
             f2 = conv_config.sizes[1]
             p1 = conv_config.pool_sizes[0]
 
-            x = tf.reshape(x_input, shape=(batch_size, T, X, d + 2))
+            x = tf.reshape(x_input, shape=(batch_size, transl, X, d + 2))
             #  x = tf.transpose(x, (0, 1, 2, 4, 3))
             x = PeriodicPadding(f1 - 1)(x)
             x = layers.Conv2D(n1, f1, activation='relu',
@@ -232,23 +233,46 @@ def get_gauge_network(
         else:
             x = layers.Flatten()(x_input)
 
-        x = custom_dense(h1, factor/3., f'{name}/x')(x)
-        v = custom_dense(h1, 1./3., f'{name}/v')(v_input)
-        t = custom_dense(h1, 1./3., f'{name}/t')(t_input)
+        args = {
+            'x': (h1, factor / 3., f'{name}/x'),
+            'v': (h1, 1. / 3., f'{name}/v'),
+            't': (h1, 1. / 3., f'{name}/t'),
+            'h1': (h2, 1. / 2., f'{name}/h1'),
+            'h2': (h2, 1. / 2., f'{name}/h2'),
+            'scale': (xdim, 0.001, f'{name}/scale'),
+            'transl': (xdim, 0.001, f'{name}/transl'),
+            'transf': (xdim, 0.001, f'{name}/transformation'),
+        }
+
+        x = custom_dense(*args['x'])(x)
+        v = custom_dense(*args['v'])(v_input)
+        t = custom_dense(*args['t'])(t_input)
+
         z = layers.Add()([x, v, t])
         z = keras.activations.relu(z)
-        z = custom_dense(h2, 1/2., f'{name}/h1')(z)
-        z = custom_dense(h2, 1/2., f'{name}/h2')(z)
+
+        z = custom_dense(*args['h1'])(z)
+        z = custom_dense(*args['h2'])(z)
+
         if net_config.dropout_prob > 0:
             z = layers.Dropout(net_config.dropout_prob)(z)
 
-        transl = custom_dense(xdim, 0.001, name=f'{name}/transl')(z)
-        scale = tf.exp(scale_coeff) * tf.keras.activations.tanh(
-            custom_dense(xdim, 0.001, name=f'{name}/scale')(z)
-        )
-        transf = tf.exp(transf_coeff) * tf.keras.activations.tanh(
-            custom_dense(xdim, 0.001, name=f'{name}/transformation')(z)
-        )
+        scale = custom_dense(*args['scale'])(z)
+        transl = custom_dense(*args['transl'])(z)
+        transf = custom_dense(*args['transf'])(z)
+
+        scale = tf.exp(scale_coeff) * tf.keras.activations.tanh(scale)
+        transf = tf.exp(transf_coeff) * tf.keras.activations.tanh(transf)
+
+        #  scale = tf.exp(scale_coeff) * tf.keras.activations.tanh(
+        #      custom_dense(xdim, factors['S'], name=f'{name}/scale')(z)
+        #  )
+        #
+        #  transf = tf.exp(transf_coeff) * tf.keras.activations.tanh(
+        #      custom_dense(
+        #          xdim, factors['Q'], name=f'{name}/transformation'
+        #      )(z)
+        #  )
 
         #  scale = ScaledTanhLayer(xdim, 0.001, name=f'{name}/scale')(z)
         #  transl = custom_dense(xdim, 0.001, name=f'{name}/transl')(z)
