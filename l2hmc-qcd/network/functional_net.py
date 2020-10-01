@@ -237,8 +237,8 @@ def get_gauge_network(
         t = custom_dense(h1, 1./3., f'{name}/t')(t_input)
         z = layers.Add()([x, v, t])
         z = keras.activations.relu(z)
-        z = custom_dense(h2, 1., f'{name}/h1')(z)
-        z = custom_dense(h2, 1., f'{name}/h2')(z)
+        z = custom_dense(h2, 1/2., f'{name}/h1')(z)
+        z = custom_dense(h2, 1/2., f'{name}/h2')(z)
         if net_config.dropout_prob > 0:
             z = layers.Dropout(net_config.dropout_prob)(z)
 
