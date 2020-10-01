@@ -414,8 +414,8 @@ class GaugeDynamics(BaseDynamics):
             x_cos = tf.reshape(x_cos, self.lattice_shape)
             x_sin = tf.reshape(x_sin, self.lattice_shape)
 
-        #  x = tf.concat([x_cos, x_sin], -1)
-        x = tf.stack([x_cos, x_sin], axis=-1)
+        #  x = tf.stack([x_cos, x_sin], axis=-1)
+        x = tf.concat([x_cos, x_sin], -1)
         if not self.config.separate_networks:
             S, T, Q = self.xnet((x, v, t), training)
         else:
