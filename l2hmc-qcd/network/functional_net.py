@@ -220,7 +220,7 @@ def get_gauge_network(
         z = layers.Add()([x, v, t])
         z = keras.activations.relu(z)
 
-        for idx, units in net_config.units[1:]:
+        for idx, units in enumerate(net_config.units[1:]):
             z = custom_dense(units, 1./2., f'{name}/h{idx}')(z)
         #  z = custom_dense(*args['h1'])(z)
         #  z = custom_dense(*args['h2'])(z)
