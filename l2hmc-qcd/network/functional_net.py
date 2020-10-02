@@ -16,7 +16,7 @@ import tensorflow as tf
 from tensorflow import keras
 
 from network.config import ConvolutionConfig, NetworkConfig
-from network.layers import ScaledTanhLayer
+#  from network.layers import ScaledTanhLayer
 
 layers = tf.keras.layers
 
@@ -172,11 +172,11 @@ def get_gauge_network(
 ):
     """Returns a (functional) `tf.keras.Model`."""
     if len(lattice_shape) == 4:
-        batch_size, transl, X, d = lattice_shape
+        batch_size, T, X, d = lattice_shape
     elif len(lattice_shape) == 3:
-        transl, X, d = lattice_shape
+        T, X, d = lattice_shape
 
-    xdim = transl * X * d
+    xdim = T * X * d
 
     if input_shapes is None:
         input_shapes = {
@@ -220,7 +220,7 @@ def get_gauge_network(
             f2 = conv_config.sizes[1]
             p1 = conv_config.pool_sizes[0]
 
-            x = tf.reshape(x_input, shape=(batch_size, transl, X, d + 2))
+            x = tf.reshape(x_input, shape=(batch_size, T, X, d + 2))
             #  x = tf.transpose(x, (0, 1, 2, 4, 3))
             x = PeriodicPadding(f1 - 1)(x)
             x = layers.Conv2D(n1, f1, activation='relu',
