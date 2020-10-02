@@ -21,14 +21,17 @@ from network.layers import ScaledTanhLayer
 layers = tf.keras.layers
 
 
-def custom_dense(units, scale=1., name=None):
+def custom_dense(units, scale=1., name=None, activation=None):
     """Implements a `layers.Dense` object with custom kernel initializer."""
     kinit = tf.keras.initializers.VarianceScaling(
         mode='fan_in', scale=2.*scale,
         distribution='truncated_normal',
     )
 
-    return layers.Dense(units, name=f'{name}_layer', kernel_initializer=kinit)
+    return layers.Dense(units,
+                        name=f'{name}_layer',
+                        activation=activation,
+                        kernel_initializer=kinit)
 
 
 def vs_init(factor, kernel_initializer=None):
@@ -96,7 +99,6 @@ def get_generic_network(
     h1 = net_config.units[0]
     h2 = net_config.units[1]
     batch_size, xdim = input_shape
-    #  kinits = get_kernel_initializers(factor, kernel_initializer)
     scale_coeff = tf.Variable(initial_value=tf.zeros([1, xdim]),
                               name='scale/coeff', trainable=True)
     transf_coeff = tf.Variable(initial_value=tf.zeros([1, xdim]),
@@ -251,18 +253,21 @@ def get_gauge_network(
         z = layers.Add()([x, v, t])
         z = keras.activations.relu(z)
 
-        z = custom_dense(*args['h1'])(z)
-        z = custom_dense(*args['h2'])(z)
+        for n, units in enumerate(net_config.units):
+            z = custom_dense(units, 1./2., name=f'{name}/h{n}')(z)
+
+        #  z = custom_dense(*args['h1'])(z)
+        #  z = custom_dense(*args['h2'])(z)
 
         if net_config.dropout_prob > 0:
             z = layers.Dropout(net_config.dropout_prob)(z)
 
-        scale = custom_dense(*args['scale'])(z)
+        scale = custom_dense(*args['scale'], activation='tanh')(z)
         transl = custom_dense(*args['transl'])(z)
-        transf = custom_dense(*args['transf'])(z)
+        transf = custom_dense(*args['transf'], activation='tanh')(z)
 
-        scale = tf.exp(scale_coeff) * tf.keras.activations.tanh(scale)
-        transf = tf.exp(transf_coeff) * tf.keras.activations.tanh(transf)
+        scale *= tf.exp(scale_coeff)
+        transf *= tf.exp(transf_coeff)
 
         #  scale = tf.exp(scale_coeff) * tf.keras.activations.tanh(
         #      custom_dense(xdim, factors['S'], name=f'{name}/scale')(z)
