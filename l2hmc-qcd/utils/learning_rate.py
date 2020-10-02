@@ -136,5 +136,5 @@ class WarmupExponentialDecay(LearningRateSchedule):
             'decay_rate': self.lr_config.decay_rate,
             'decay_steps': self.lr_config.decay_steps,
             'warmup_steps': self.lr_config.warmup_steps,
-            'initial_learning_rate': self.lr_config.init,
+            'initial_learning_rate': self.lr_config.lr_init,
         }
