@@ -45,25 +45,6 @@ def vs_init(factor, kernel_initializer=None):
     )
 
 
-def get_kernel_initializers(factor=1., kernel_initializer=None):
-    """Get kernel initializers, layer by layer."""
-    names = ['x', 'v', 't', 'h1', 'h2', 'scale', 'transl', 'transf']
-    if kernel_initializer == 'zeros':
-        kinits = len(names) * ['zeros']
-        return dict(zip(names, kinits))
-
-    return {
-        'x': vs_init(factor/3.),
-        'v': vs_init(1./3.),
-        't': vs_init(1./3.),
-        'h1': vs_init(1./2.),
-        'h2': vs_init(1./2.),
-        'scale': vs_init(0.001),
-        'transl': vs_init(0.001),
-        'transf': vs_init(0.001),
-    }
-
-
 # pylint:disable=unused-argument
 class PeriodicPadding(layers.Layer):
     """Implements PeriodicPadding as a `tf.keras.layers.Layer`."""
@@ -132,13 +113,9 @@ def get_generic_network(
         z = keras.activations.relu(z)
         z = custom_dense(h2, 1., f'{name}/h1')(z)
         z = custom_dense(h2, 1., f'{name}/h2')(z)
-        #  z = layers.Dense(h2, name='h_layer1')(z)
-        #  z = layers.Dense(h2, name='h_layer2')(z)
         if net_config.dropout_prob > 0:
             z = layers.Dropout(net_config.dropout_prob)(z)
 
-        #  args = (xdim, )
-        #  scale = ScaledTanhLayer(xdim, 0.001, name=f'{name}/scale')(z)
         transl = custom_dense(xdim, 0.001, name=f'{name}/transl')(z)
         scale = tf.exp(scale_coeff) * tf.keras.activations.tanh(
             custom_dense(xdim, 0.001, name=f'{name}/scale')(z)
@@ -146,9 +123,6 @@ def get_generic_network(
         transf = tf.exp(transf_coeff) * tf.keras.activations.tanh(
             custom_dense(xdim, 0.001, name=f'{name}/transformation')(z)
         )
-        #  transf = ScaledTanhLayer(
-        #      xdim, 0.001, name=f'{name}/transformation'
-        #  )(z)
 
         model = keras.Model(
             name=name,
@@ -159,7 +133,7 @@ def get_generic_network(
     return model
 
 
-# pylint:disable=too-many-locals, too-many-arguments
+# pylint:disable=too-many-locals, too-many-arguments, too-many-statements
 def get_gauge_network(
         lattice_shape: Tuple,
         net_config: NetworkConfig,
@@ -182,14 +156,7 @@ def get_gauge_network(
         input_shapes = {
             'x': (xdim, 2), 'v': (xdim,), 't': (2,)
         }
-    if len(net_config.units) == 3:
-        h1, h2, h3 = net_config.units
-    elif len(net_config.units) == 2:
-        h1, h2 = net_config.units
-        h3 = h2
-    else:
-        h1 = h2 = h3 = net_config.units
-    #  kinits = get_kernel_initializers(factor, kernel_initializer)
+
     if name is None:
         name = 'GaugeNetwork'
 
@@ -221,31 +188,28 @@ def get_gauge_network(
             p1 = conv_config.pool_sizes[0]
 
             x = tf.reshape(x_input, shape=(batch_size, T, X, d + 2))
-            #  x = tf.transpose(x, (0, 1, 2, 4, 3))
             x = PeriodicPadding(f1 - 1)(x)
             x = layers.Conv2D(n1, f1, activation='relu',
-                              name=s_('xConv1'))(x)
+                              name=f'{name}/xConv1')(x)
             x = layers.Conv2D(n2, f2, activation='relu',
-                              name=s_('xConv2'))(x)
-            x = layers.MaxPooling2D(p1, name=s_('xPool'))(x)
+                              name=f'{name}/xConv2')(x)
+            x = layers.MaxPooling2D(p1, name=f'{name}/xPool')(x)
             x = layers.Conv2D(n2, f2, activation='relu',
-                              name=s_('xConv3'))(x)
+                              name=f'{name}/xConv3')(x)
             x = layers.Conv2D(n1, f1, activation='relu',
-                              name=s_('xConv4'))(x)
+                              name=f'{name}/xConv4')(x)
             x = layers.Flatten()(x)
             if conv_config.use_batch_norm:
-                x = layers.BatchNormalization(axis=-1,
-                                              name=s_('batch_norm'))(x)
+                x = layers.BatchNormalization(-1, name=f'{name}/batch_norm')(x)
         else:
             x = layers.Flatten()(x_input)
 
         args = {
-            'x': (h1, factor / 3., f'{name}/x'),
-            'v': (h1, 1. / 3., f'{name}/v'),
-            't': (h1, 1. / 3., f'{name}/t'),
-            'h1': (h2, 1. / 2., f'{name}/h1'),
-            'h2': (h2, 1. / 2., f'{name}/h2'),
-            'h3': (h3, 1. / 2., f'{name}/h3'),
+            'x': (net_config.units[0], factor / 3., f'{name}/x'),
+            'v': (net_config.units[0], 1. / 3., f'{name}/v'),
+            't': (net_config.units[0], 1. / 3., f'{name}/t'),
+            'h1': (net_config.units[1], 1. / 2., f'{name}/h1'),
+            'h2': (net_config.units[1], 1. / 2., f'{name}/h2'),
             'scale': (xdim, 0.001, f'{name}/scale'),
             'transl': (xdim, 0.001, f'{name}/transl'),
             'transf': (xdim, 0.001, f'{name}/transf'),
@@ -258,12 +222,12 @@ def get_gauge_network(
         z = layers.Add()([x, v, t])
         z = keras.activations.relu(z)
 
-        #  for n, units in enumerate(net_config.units):
-        #      z = custom_dense(units, 1./2., name=f'{name}/h{n}')(z)
-
         z = custom_dense(*args['h1'])(z)
         z = custom_dense(*args['h2'])(z)
-        z = custom_dense(*args['h3'])(z)
+
+        if len(net_config.units) > 2:
+            for idx, units in net_config.units[2:]:
+                z = custom_dense(units, 1./2., f'{name}/h{idx}')(z)
 
         if net_config.dropout_prob > 0:
             z = layers.Dropout(net_config.dropout_prob)(z)
@@ -275,25 +239,8 @@ def get_gauge_network(
         scale *= tf.exp(scale_coeff)
         transf *= tf.exp(transf_coeff)
 
-        #  scale = tf.exp(scale_coeff) * tf.keras.activations.tanh(
-        #      custom_dense(xdim, factors['S'], name=f'{name}/scale')(z)
-        #  )
-        #
-        #  transf = tf.exp(transf_coeff) * tf.keras.activations.tanh(
-        #      custom_dense(
-        #          xdim, factors['Q'], name=f'{name}/transformation'
-        #      )(z)
-        #  )
-
-        #  scale = ScaledTanhLayer(xdim, 0.001, name=f'{name}/scale')(z)
-        #  transl = custom_dense(xdim, 0.001, name=f'{name}/transl')(z)
-        #  transf = ScaledTanhLayer(
-        #      xdim, 0.001, name=f'{name}/transformation')(z)
-
-        model = keras.Model(
-            name=name,
-            inputs=[x_input, v_input, t_input],
-            outputs=[scale, transl, transf]
-        )
+        model = keras.Model(name=name,
+                            inputs=[x_input, v_input, t_input],
+                            outputs=[scale, transl, transf])
 
     return model
