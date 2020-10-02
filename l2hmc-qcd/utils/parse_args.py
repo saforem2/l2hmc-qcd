@@ -37,12 +37,60 @@ def parse_args():
         fromfile_prefix_chars='@',
     )
 
+    parser.add_argument("--log_dir",
+                        dest="log_dir",
+                        type=str,
+                        default=None,
+                        required=False,
+                        help=("""Log directory to use from previous run.  If
+                        this argument is not passed, a new directory will be
+                        created."""))
+
+    parser.add_argument("--json_file",
+                        dest="json_file",
+                        type=str,
+                        default=None,
+                        required=False,
+                        help=("""Path to JSON file containing CLI flags.
+                        Command line options override values in file.
+                        (DEFAULT: None)"""))
+
+    '''
+    parser.add_argument("--use_mixed_loss",
+                        dest='use_mixed_loss',
+                        action='store_true',
+                        required=False,
+                        help=("""Whether or not to use mixed loss:
+                        (weight / loss) - (loss / weight)."""))
+
+    parser.add_argument("--use_scattered_xnet",
+                        dest='use_scattered_xnet',
+                        action='store_true',
+                        required=False,
+                        help=("""Whether or not to use scatter/gather
+                        operations in `x_update` to avoid passing unnecessary
+                        0's to network."""))
+
+    parser.add_argument("--use_tempered_traj",
+                        dest='use_tempered_traj',
+                        action='store_true',
+                        required=False,
+                        help=("""Whether or not to use simulated tempering
+                        within a leapfrog trajectory."""))
+
     parser.add_argument("--separate_networks",
                         dest='separate_networks',
                         action='store_true',
                         required=False,
                         help=("""Whether or not to use separate networks for
                         each MC step."""))
+
+    parser.add_argument('--use_conv_net',
+                        dest='use_conv_net',
+                        action='store_true',
+                        required=False,
+                        help=("""Whether or not to use
+                              `GaugeNetworkConv2D`'s for `XNet, VNet`."""))
 
     parser.add_argument('--use_ncp',
                         dest='use_ncp',
@@ -132,8 +180,8 @@ def parse_args():
                         help=("""Number of steps after which to decay learning
                         rate.\n (Default: 500)"""))
 
-    parser.add_argument("--lr_decay_rate",
-                        dest="lr_decay_rate",
+    parser.add_argument("--decay_rate",
+                        dest="decay_rate",
                         type=float, default=0.96,
                         required=False,
                         help=("""Learning rate decay rate to be used during
@@ -225,6 +273,52 @@ def parse_args():
                         help=("""String specifying the type of network to use.
                         Possible values: `'CartesianNet'`. If not specified,
                         will use generic `'FullNet'`."""))
+
+    parser.add_argument('--filters',
+                        dest='filters',
+                        type=lambda s: [int(i) for i in s.split(',')],
+                        default=None,
+                        required=False,
+                        help=("""Number of filters to use in the (2-layer)
+                        ConvNet, should be a list of two integers."""))
+
+    parser.add_argument('--sizes',
+                        dest='sizes',
+                        type=lambda s: [int(i) for i in s.split(',')],
+                        default=None,
+                        required=False,
+                        help=("""Sizes to use for (square)
+                              filters in Conv Net."""))
+
+    parser.add_argument('--pool_sizes',
+                        dest='pool_sizes',
+                        type=lambda s: [int(i) for i in s.split(',')],
+                        default=None,
+                        required=False,
+                        help=("""Sizes to use for MaxPooling2D layers in Conv
+                        Net."""))
+
+    parser.add_argument('--conv_activations',
+                        dest='conv_activations',
+                        type=lambda s: [str(i) for i in s.split(',')],
+                        default=None,
+                        required=False,
+                        help=("""Activation functions to use for Conv Net."""))
+
+    parser.add_argument('--conv_paddings',
+                        dest='conv_paddings',
+                        type=lambda s: [str(i) for i in s.split(',')],
+                        default=None,
+                        required=False,
+                        help=("""Sizes to use for MaxPooling2D layers in Conv
+                        Net."""))
+
+    parser.add_argument("--use_batch_norm",
+                        dest="use_batch_norm",
+                        action="store_true",
+                        required=False,
+                        help=("""Whether or not to use batch normalization
+                        layer in Conv Net."""))
 
     parser.add_argument('--units',
                         dest='units',
@@ -323,20 +417,6 @@ def parse_args():
                         help=("""Flag that when passed will profile the graph
                         execution using `TFProf`."""))
 
-    parser.add_argument("--gpu",
-                        dest="gpu",
-                        action="store_true",
-                        required=False,
-                        help=("""Flag that when passed indicates we're training
-                        using an NVIDIA GPU."""))
-
-    parser.add_argument("--use_bn",
-                        dest='use_bn',
-                        action="store_true",
-                        required=False,
-                        help=("""Flag that when passed causes batch
-                              normalization layer to be used in ConvNet."""))
-
     parser.add_argument("--activation",
                         dest='activation',
                         type=str,
@@ -345,46 +425,12 @@ def parse_args():
                         help=("""Flag used to specify the activation function
                         to be used in the network."""))
 
-    parser.add_argument("--horovod",
-                        dest="horovod",
-                        action="store_true",
-                        required=False,
-                        help=("""Flag that when passed uses Horovod for
-                        distributed training on multiple nodes."""))
-
     parser.add_argument('--hmc_steps',
                         dest='hmc_steps',
                         type=int,
                         default=10000,
                         required=False,
                         help=("""Number of steps to train HMC sampler."""))
-
-    parser.add_argument("--log_dir",
-                        dest="log_dir",
-                        type=str,
-                        default=None,
-                        required=False,
-                        help=("""Log directory to use from previous run.  If
-                        this argument is not passed, a new directory will be
-                        created."""))
-
-    parser.add_argument("--json_file",
-                        dest="json_file",
-                        type=str,
-                        default=None,
-                        required=False,
-                        help=("""Path to JSON file containing CLI flags.
-                        Command line options override values in file.
-                        (DEFAULT: None)"""))
-
-    parser.add_argument('--logging_level',
-                        dest='logging_level',
-                        type=str,
-                        default='debug',
-                        required=False,
-                        help=("""Flag specifying the default logging level.
-                        Defaults to `INFO`."""))
-
     parser.add_argument("--md_steps",
                         dest="md_steps",
                         type=int,
@@ -401,7 +447,45 @@ def parse_args():
                         help=("""Whether or not to initialize networks with
                         zeros."""))
 
+    parser.add_argument('--gauge_eq_masks',
+                        dest='gauge_eq_masks',
+                        action='store_true',
+                        required=False,
+                        help=("""Whether or not to use
+                              the gauge equivariant masking scheme
+                              (see https://arxiv.org/pdf/2008.05456)"""))
+    parser.add_argument("--gpu",
+                        dest="gpu",
+                        action="store_true",
+                        required=False,
+                        help=("""Flag that when passed indicates we're training
+                        using an NVIDIA GPU."""))
+
+    parser.add_argument("--use_bn",
+                        dest='use_bn',
+                        action="store_true",
+                        required=False,
+                        help=("""Flag that when passed causes batch
+                              normalization layer to be used in ConvNet."""))
+
+    parser.add_argument("--horovod",
+                        dest="horovod",
+                        action="store_true",
+                        required=False,
+                        help=("""Flag that when passed uses Horovod for
+                        distributed training on multiple nodes."""))
+
+    parser.add_argument('--logging_level',
+                        dest='logging_level',
+                        type=str,
+                        default='debug',
+                        required=False,
+                        help=("""Flag specifying the default logging level.
+                        Defaults to `INFO`."""))
+    '''
+
     args = parser.parse_args()
+    log_dir = args.json_file
     if args.json_file is not None:
         print(f'Loading flags from: {args.json_file}.')
         with open(args.json_file, 'rt') as f:
@@ -409,5 +493,8 @@ def parse_args():
             # Overwrite parsed args with values from `.json` file
             t_args.__dict__.update(json.load(f))
             args = parser.parse_args(namespace=t_args)
+
+    if log_dir is not None:
+        args.__dict__['log_dir'] = log_dir
 
     return args

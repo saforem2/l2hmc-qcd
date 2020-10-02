@@ -1,6 +1,0 @@
---hmc
---beta 5.
---eps 0.1
---num_steps 2
---run_steps 1000
---lattice_shape '128, 16, 16, 2'

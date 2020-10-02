@@ -42,7 +42,10 @@ def update_summaries(step, metrics, dynamics):
     Returns:
         None
     """
-    learning_rate = dynamics.lr(tf.constant(step)).numpy()
+    #  learning_rate = dynamics.lr(tf.constant(step))
+    #  opt_cfg = dynamics.optimizer.get_config()
+    #  learning_rate = opt_cfg['learning_rate']
+    learning_rate = dynamics.lr(tf.constant(step))
     opt_vars = dynamics.optimizer.variables()
     summarize_dict(metrics, step, prefix='training')
     summarize_list(dynamics.variables, step, prefix='dynamics')

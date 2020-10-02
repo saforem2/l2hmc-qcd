@@ -78,7 +78,7 @@ class DynamicsParams:
             attrs.warmup_steps = params.get('warmup_steps', None)
             attrs.using_hvd = params.get('horovod', False)
             attrs.lr_decay_steps = params.get('lr_decay_steps', None)
-            attrs.lr_decay_rate = params.get('lr_decay_rate', None)
+            attrs.decay_rate = params.get('decay_rate', None)
 
             attrs.train_steps = params.get('train_steps', None)
             attrs.beta_init = params.get('beta_init', None)
