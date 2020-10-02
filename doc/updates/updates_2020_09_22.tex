@@ -63,22 +63,24 @@ While this approach dramatically increases the number of trainable parameters,
 it is also vastly more expressive and allows the model to learn independent
 updates for each leapfrog step.
 %
-\begin{figure}[htpb]
-  \centering
-  \begin{subfigure}[htpb]{0.3\textwdith}
-    \includegraphics[width=\textwidth]{updates_2020_09_22/loss.png}
-  \end{subfigure}
-  \hfill
-  \begin{subfigure}[htpb]{0.3\textwdith}
-    \includegraphics[width=\textwidth]{updates_2020_09_22/dq.png}
-  \end{subfigure}
-  \hfill
-  \begin{subfigure}[htpb]{0.3\textwdith}
-    \includegraphics[width=\textwidth]{updates_2020_09_22/dq_sin.png}
-  \end{subfigure}
-  \caption{Loss \(\mathcal{L}(\theta)\), and tunneling rates, \(\delta
-  \mathcal{Q}, \delta\mathcal{Q}_{\sin}\) vs training step}
-\end{figure}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% \begin{figure}[htpb]
+%   \centering
+%   \begin{subfigure}[htpb]{0.30\textwdith}
+%     \includegraphics[width=\textwidth]{updates_2020_09_22/loss.png}
+%   \end{subfigure}
+%   \hfill
+%   \begin{subfigure}[htpb]{0.30\textwdith}
+%     \includegraphics[width=\textwidth]{updates_2020_09_22/dq.png}
+%   \end{subfigure}
+%   \hfill
+%   \begin{subfigure}[htpb]{0.30\textwdith}
+%     \includegraphics[width=\textwidth]{updates_2020_09_22/dq_sin.png}
+%   \end{subfigure}
+%   \caption{Loss \(\mathcal{L}(\theta)\), and tunneling rates, \(\delta
+%   \mathcal{Q}, \delta\mathcal{Q}_{\sin}\) vs training step}
+% \end{figure}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
 % And for a complete trajectory consisting of \(\Nlf\) leapfrog steps, the above process is repeated
 % We can write this update procedure using the single-step leapfrog operator,
@@ -98,12 +100,12 @@ updates for each leapfrog step.
 \begin{figure}[htpb]
   \centering
   \begin{subfigure}[htpb]{\textwidth}
-    \includegraphics[width=\textwidth]{updates_2020_09_22/sep_nets_results/dq_.png}
+    \includegraphics[width=\textwidth]{updates_2020_09_22/sep_nets_results/dq.png}
     % \caption{\(\langle \delta \mathcal{Q}\rangle\) vs training step}
   \end{subfigure}
   % \vspace{2cm}
   \begin{subfigure}[htpb]{\textwidth}
-    \includegraphics[width=\textwidth]{updates_2020_09_22/sep_nets_results/dq_sin_.png}
+    \includegraphics[width=\textwidth]{updates_2020_09_22/sep_nets_results/dq_sin.png}
     % \caption{\(\langle \delta \mathcal{Q_{\sin}}\rangle\) vs training step}
   \end{subfigure}
   \caption{Tunneling rates, \(\delta \mathcal{Q}, \delta\mathcal{Q}_{\sin}\)
