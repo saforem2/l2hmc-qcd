@@ -1,2 +1,0 @@
---log_dir='/Users/saforem2/DLHMC/l2hmc-qcd/gauge_logs_eager/2020_06/L16_b1024_lf2_qw01_pw100_dp01-2020-06-17-02-01'
---run_steps 1000

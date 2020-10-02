@@ -10,12 +10,19 @@ Date: 04/01/2020
 from __future__ import absolute_import, division, print_function
 
 import numpy as np
+from typing import Union, Callable
 import tensorflow as tf
 
-#  from tensorflow.contrib.framework import add_arg_scope, arg_scope
+from config import NP_FLOATS, TF_FLOATS, Weights
+import utils.file_io as io
 
-from config import NP_FLOAT, TF_FLOAT, Weights
-from .network_utils import custom_dense, tf_zeros
+
+TF_FLOAT = TF_FLOATS[tf.keras.backend.floatx()]
+NP_FLOAT = NP_FLOATS[tf.keras.backend.floatx()]
+
+layers = tf.keras.layers
+
+# pylint:disable=too-many-arguments
 
 
 def relu(x):
@@ -50,18 +57,53 @@ def periodic_padding(image, padding=1):
     return padded_image
 
 
-# pylint: disable=invalid-name
-class DenseLayerNP:
-    """Implements fully-connected Dense layer using numpy."""
+def convert_to_image(x):
+    """Create image from lattice by doubling the size."""
+    y = np.zeros((2 * x.shape[0], 2 * x.shape[1]))
+    y[::2, 1::2] = x[:, :, 0]
+    y[1::2, ::2] = x[:, :, 1]
+    return y
 
-    def __init__(self, weights, activation=linear):
-        self.activation = activation
-        self.weights = weights
-        self.w = weights.w
-        self.b = weights.b
 
-    def __call__(self, x):
-        return self.activation(np.dot(x, self.w) + self.b)
+def _get_layer_weights(layer):
+    """Get an individual layers' weights."""
+    w, b = layer.weights
+    return Weights(w=w.numpy(), b=b.numpy())
+
+
+def get_layer_weights(net):
+    """Helper method for extracting layer weights."""
+    wdict = {
+        'x_layer': _get_layer_weights(net.xlayer.layer),
+        'v_layer': _get_layer_weights(net.vlayer.layer),
+        't_layer': _get_layer_weights(net.t_layer),
+        'hidden_layers': [
+            _get_layer_weights(i) for i in net.hidden_layers
+        ],
+        'scale_layer': (
+            _get_layer_weights(net.scale_layer.layer)
+        ),
+        'translation_layer': (
+            _get_layer_weights(net.translation_layer)
+        ),
+        'transformation_layer': (
+            _get_layer_weights(net.transformation_layer.layer)
+        ),
+    }
+    coeffs = [
+        net.scale_layer.coeff.numpy(),
+        net.transformation_layer.coeff.numpy()
+    ]
+    wdict['coeff_scale'] = coeffs[0]
+    wdict['coeff_transformation'] = coeffs[1]
+
+    return wdict
+
+
+def save_layer_weights(net, out_file):
+    """Save all layer weights from `net` to `out_file`."""
+    weights_dict = get_layer_weights(net)
+    io.savez(weights_dict, out_file, name=net.name)
 
 
 def dense_layer(units, seed=None, factor=1.,
@@ -70,21 +112,12 @@ def dense_layer(units, seed=None, factor=1.,
     if zero_init:
         kern_init = tf.zeros_initializer()
 
-    try:
-        kern_init = tf.keras.initializers.VarianceScaling(
-            seed=seed,
-            mode='fan_in',
-            scale=2.*factor,
-            distribution='truncated_normal',
-        )
-    except AttributeError:
-        kern_init = tf.contrib.layers.variance_scaling_initializer(
-            seed=seed,
-            mode='FAN_IN',
-            uniform=False,
-            dtype=TF_FLOAT,
-            factor=2.*factor,
-        )
+    kern_init = tf.keras.initializers.VarianceScaling(
+        seed=seed,
+        mode='fan_in',
+        scale=2.*factor,
+        distribution='truncated_normal',
+    )
 
     return tf.keras.layers.Dense(
         units=units,
@@ -96,34 +129,43 @@ def dense_layer(units, seed=None, factor=1.,
     )
 
 
-class ScaledTanhLayer:
-    """Wrapper class for dense layer + exp scaled tanh output."""
+class ScaledTanhLayer(layers.Layer):
+    """Implements a custom dense layer that is scaled by a trainable var."""
+    def __init__(
+            self, units: int, factor: float, name='ScaledTanhLayer'
+    ):
+        super(ScaledTanhLayer, self).__init__(name=name)
+        self.units = units
+        self.factor = factor
+        self.coeff = tf.Variable(
+            initial_value=tf.zeros([1, units]),
+            name=f'{name}/coeff', trainable=True
+        )
+        self.dense = layers.Dense(
+            units, kernel_initializer=tf.keras.initializers.VarianceScaling(
+                mode='fan_in', scale=2.*self.factor,
+                distribution='truncated_normal'
+            )
+        )
 
-    def __init__(self, name, factor, units, seed=None, zero_init=False):
-        self.coeff, self.layer = self._build(name, factor,
-                                             units, seed,
-                                             zero_init)
+    def get_config(self):
+        config = super(ScaledTanhLayer, self).get_config()
+        config.update({
+            'units': self.units,
+            'factor': self.factor,
+            'coeff': self.coeff.numpy(),
+        })
 
-    @staticmethod
-    def _build(name, factor, units, seed=None, zero_init=False):
-        layer_name = f'{name}_layer'
-        coeff_name = f'coeff_{name}'
-        with tf.name_scope(name):
-            coeff = tf.Variable(name=coeff_name,
-                                trainable=True,
-                                dtype=TF_FLOAT,
-                                initial_value=tf_zeros([1, units]))
+        return config
 
-            layer = dense_layer(seed=seed,
-                                units=units,
-                                factor=factor,
-                                zero_init=zero_init,
-                                name=layer_name)
+    @classmethod
+    def from_config(cls, config):
+        return cls(**config)
 
-        return coeff, layer
+    def call(self, inputs):
+        out = tf.keras.activations.tanh(self.dense(inputs))
 
-    def __call__(self, x):
-        return tf.exp(self.coeff) * tf.nn.tanh(self.layer(x))
+        return tf.exp(self.coeff) * out
 
 
 class StackedLayer:
@@ -139,188 +181,3 @@ class StackedLayer:
     def __call__(self, phi):
         phi = tf.concat([tf.cos(phi), tf.sin(phi)], axis=-1)
         return self.layer(phi)
-
-
-class StackedLayerNP:
-    """Numpy version of `StackedLayer`."""
-
-    def __init__(self, weights):
-        self.layer = DenseLayerNP(weights)
-
-    def __call__(self, phi):
-        phi = np.concatenate([np.cos(phi), np.sin(phi)], axis=-1)
-        return self.layer(phi)
-
-
-class ScaledTanhLayerNP:
-    """Implements numpy version of `ScaledTanhLayer`."""
-
-    def __init__(self, coeff_weight, layer_weight):
-        self.coeff = coeff_weight
-        self.layer = DenseLayerNP(layer_weight)
-
-    def __call__(self, x):
-        return np.exp(self.coeff) * np.tanh(self.layer(x))
-
-
-class CartesianLayer:
-    """Implements `CartesianLayer`."""
-
-    def __init__(self, name, factor, units,
-                 seed=None, zero_init=False, **kwargs):
-        xseed = int(2 * seed) if seed is not None else seed
-        yseed = int(3 * seed) if seed is not None else seed
-        self.x_layer = dense_layer(name=f'{name}_x', factor=factor/2,
-                                   units=units, seed=xseed,
-                                   zero_init=zero_init, **kwargs)
-        self.y_layer = dense_layer(name=f'{name}_y', factor=factor/2,
-                                   units=units, seed=yseed,
-                                   zero_init=zero_init, **kwargs)
-
-    def __call__(self, x, y):
-        xout = self.x_layer(x)
-        yout = self.y_layer(y)
-
-        return xout, yout
-
-
-class CartesianLayerNP:
-    """Implements numpy version of `CartesianLayer`."""
-
-    def __init__(self, weights):
-        self.x_layer = DenseLayerNP(weights['x_layer'])
-        self.y_layer = DenseLayerNP(weights['y_layer'])
-
-    def __call__(self, x, y):
-        return self.x_layer(x), self.y_layer(y)
-
-
-class EncodingLayer:
-    """Implements the EncodingLayer."""
-
-    def __init__(self, name, factor, units,
-                 seed=None, zero_init=False, **kwargs):
-        xseed = int(2 * seed) if seed is not None else seed
-        yseed = int(3 * seed) if seed is not None else seed
-        self.x_layer = dense_layer(name=f'{name}_x', factor=factor/2.,
-                                   units=units, seed=xseed,
-                                   zero_init=zero_init, **kwargs)
-        self.y_layer = dense_layer(name=f'{name}_y', factor=factor/2.,
-                                   units=units, seed=yseed,
-                                   zero_init=zero_init, **kwargs)
-
-    @staticmethod
-    def encode(phi):
-        """Encode the angle `phi` 𝜙 --> [cos(𝜙), sin(𝜙)]."""
-        return tf.convert_to_tensor([tf.cos(phi), tf.sin(phi)])
-
-    @staticmethod
-    def decode(x, y):
-        """Decode [cos(𝜙), sin(𝜙)] --> 𝜙."""
-        return tf.atan2(y, x)
-
-    def __call__(self, phi):
-        phi_enc = self.encode(phi)
-        xout = self.x_layer(phi_enc[0])  # W1 * cos(phi) + b1
-        yout = self.y_layer(phi_enc[1])  # W2 * sin(phi) + b2
-
-        return self.decode(xout, yout)
-
-
-class EncodingLayerNP:
-    """Implements the numpy analog of `EncodingLayer` defined above."""
-
-    def __init__(self, weights, activation=linear):
-        self.weights = weights
-        self.x_layer = DenseLayerNP(weights['x_layer'])
-        self.y_layer = DenseLayerNP(weights['y_layer'])
-
-    @staticmethod
-    def decode(x, y):
-        """Inverse of `self.encode`."""
-        return np.arctan2(y, x)
-
-    @staticmethod
-    def encode(phi):
-        """Encode the angle `phi` 𝜙 --> [cos(𝜙), sin(𝜙)]."""
-        return np.array([np.cos(phi), np.sin(phi)])
-
-    def __call__(self, phi):
-        phi_enc = self.encode(phi)
-        xout = self.x_layer(phi_enc[0])
-        yout = self.y_layer(phi_enc[1])
-
-        return self.decode(xout, yout)
-
-
-def _assign_moving_average(orig_val, new_val, momentum, name):
-    """Assign moving average."""
-    with tf.name_scope(name):
-        scaled_diff = (1 - momentum) * (new_val - orig_val)
-        return tf.assign_add(orig_val, scaled_diff)
-
-
-#  @add_arg_scope
-def batch_norm(x,
-               phase,
-               axis=-1,
-               shift=True,
-               scale=True,
-               momentum=0.99,
-               eps=1e-3,
-               internal_update=False,
-               scope=None,
-               reuse=None):
-    """Implements a `BatchNormalization` layer."""
-    C = x._shape_as_list()[axis]
-    ndim = len(x.shape)
-    var_shape = [1] * (ndim - 1) + [C]
-
-    with tf.variable_scope(scope, 'batch_norm', reuse=reuse):
-        def training():
-            m, v = tf.nn.moments(x, list(range(ndim - 1)), keep_dims=True)
-            update_m = _assign_moving_average(moving_m,
-                                              m, momentum,
-                                              'update_mean')
-            update_v = _assign_moving_average(moving_v,
-                                              v, momentum,
-                                              'update_var')
-            #  tf.add_to_collection(tf.GraphKeys.UPDATE_OPS, update_m)
-            #  tf.add_to_collection(tf.GraphKeys.UPDATE_OPS, update_v)
-            tf.add_to_collection('update_ops', update_m)
-            tf.add_to_collection('update_ops', update_v)
-
-            if internal_update:
-                with tf.control_dependencies([update_m, update_v]):
-                    output = (x - m) * tf.rsqrt(v + eps)
-            else:
-                output = (x - m) * tf.rsqrt(v + eps)
-            return output
-
-        def testing():
-            m, v = moving_m, moving_v
-            output = (x - m) * tf.rsqrt(v + eps)
-            return output
-
-        # Get mean and variance, normalize input
-        moving_m = tf.get_variable('mean', var_shape,
-                                   initializer=tf.zeros_initializer,
-                                   trainable=False)
-        moving_v = tf.get_variable('var', var_shape,
-                                   initializer=tf.ones_initializer,
-                                   trainable=False)
-
-        if isinstance(phase, bool):
-            output = training() if phase else testing()
-        else:
-            output = tf.cond(phase, training, testing)
-
-        if scale:
-            output *= tf.get_variable('gamma', var_shape,
-                                      initializer=tf.ones_initializer)
-
-        if shift:
-            output += tf.get_variable('beta', var_shape,
-                                      initializer=tf.zeros_initializer)
-
-    return output

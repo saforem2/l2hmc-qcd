@@ -41,25 +41,7 @@ CBARS = {
 }
 
 
-class DynamicsConfig(AttrDict):
-    """Configuration object for `BaseDynamics` object"""
-
-    def __init__(self,
-                 eps: float,
-                 num_steps: int,
-                 hmc: bool = False,
-                 model_type: str = None,
-                 eps_trainable: bool = True):
-        super(DynamicsConfig, self).__init__(
-            eps=eps,
-            hmc=hmc,
-            num_steps=num_steps,
-            model_type=model_type,
-            eps_trainable=eps_trainable,
-        )
-
-
-class GaugeDynamicsConfig(AttrDict):
+class GaugeDynamicsConfig1(AttrDict):
     """Configuration object for `GaugeDynamics` object"""
 
     # pylint:disable=too-many-arguments
@@ -69,48 +51,38 @@ class GaugeDynamicsConfig(AttrDict):
                  hmc: bool = False,             # run standard HMC?
                  use_ncp: bool = False,         # Transform x using NCP?
                  model_type: str = None,        # name for model
-                 eps_trainable: bool = True,    # trainable step size?
-                 separate_networks: bool = False):
-        super(GaugeDynamicsConfig, self).__init__(
+                 eps_fixed: bool = False,
+                 lattice_shape: tuple = None,
+                 aux_weight: float = 0.,
+                 plaq_weight: float = 0.,
+                 charge_weight: float = 0.,
+                 zero_init: bool = False,
+                 separate_networks: bool = False,
+                 use_conv_net: bool = False,
+                 use_mixed_loss: bool = False,
+                 use_scattered_xnet_update: bool = False,
+                 use_tempered_trajectories: bool = False,
+                 gauge_eq_masks: bool = False):
+        super(GaugeDynamicsConfig1, self).__init__(
             eps=eps,
             hmc=hmc,
             use_ncp=use_ncp,
             num_steps=num_steps,
             model_type=model_type,
-            eps_trainable=eps_trainable,
-            separate_networks=separate_networks
+            eps_fixed=eps_fixed,
+            lattice_shape=lattice_shape,
+            aux_weight=aux_weight,
+            plaq_weight=plaq_weight,
+            charge_weight=charge_weight,
+            zero_init=zero_init,
+            separate_networks=separate_networks,
+            use_conv_net=use_conv_net,
+            use_mixed_loss=use_mixed_loss,
+            use_scattered_xnet_update=use_scattered_xnet_update,
+            use_tempered_trajectories=use_tempered_trajectories,
+            gauge_eq_masks=gauge_eq_masks,
         )
 
-
-class NetworkConfig(AttrDict):
-    """Configuration object for network of `Dynamics` object"""
-
-    def __init__(self,
-                 units: list,
-                 name: str = None,
-                 dropout_prob: float = 0.,
-                 activation_fn: callable = tf.nn.relu):
-        super(NetworkConfig, self).__init__(
-            name=name,
-            units=units,
-            dropout_prob=dropout_prob,
-            activation_fn=activation_fn
-        )
-
-
-class lrConfig(AttrDict):
-    """Configuration object for specifying learning rate schedule."""
-    def __init__(self,
-                 init: float,
-                 decay_steps: int,
-                 decay_rate: float,
-                 warmup_steps: int = 0):
-        super(lrConfig, self).__init__(
-            init=init,
-            decay_steps=decay_steps,
-            decay_rate=decay_rate,
-            warmup_steps=warmup_steps
-        )
 
 NAMES = [
     'step', 'dt', 'loss', 'ploss', 'qloss',
@@ -122,15 +94,16 @@ HEADER = '\n'.join([SEP, HSTR, SEP])
 
 # State is an object for grouping the position/momentum
 # configurations together with the value of `beta`.
-State = namedtuple('State', ['x', 'v', 'beta'])
-lfData = namedtuple('LFdata', ['init', 'proposed', 'prob'])
-EnergyData = namedtuple('EnergyData', ['init', 'proposed', 'out'])
-Energy = namedtuple('Energy', ['potential', 'kinetic', 'hamiltonian'])
-MonteCarloStates = namedtuple('MonteCarloStates', ['init', 'proposed', 'out'])
+#  lfData = namedtuple('LFdata', ['init', 'proposed', 'prob'])
+#  EnergyData = namedtuple('EnergyData', ['init', 'proposed', 'out'])
+#  Energy = namedtuple('Energy', ['potential', 'kinetic', 'hamiltonian'])
 
 # generic object for representing a `weight` matrix in the neural net
 # contains both the weight matrix and the bias term
 Weights = namedtuple('Weights', ['w', 'b'])
+
+State = namedtuple('State', ['x', 'v', 'beta'])
+MonteCarloStates = namedtuple('MonteCarloStates', ['init', 'proposed', 'out'])
 
 NetWeights = namedtuple('NetWeights', [
     'x_scale', 'x_translation', 'x_transformation',
@@ -145,8 +118,9 @@ ObsData = namedtuple('ObsData', [
 
 BootstrapData = namedtuple('BootstrapData', ['mean', 'err', 'means_bs'])
 
-l2hmcFn = namedtuple('l2hmcFn', ['v1', 'x1', 'x2', 'v2'])
-l2hmcFns = namedtuple('l2hmcFns', ['scale', 'translation', 'transformation'])
+#  l2hmcFn = namedtuple('l2hmcFn', ['v1', 'x1', 'x2', 'v2'])
+#  l2hmcFns = namedtuple('l2hmcFns',
+#                        ['scale', 'translation', 'transformation'])
 
 PI = np.pi
 TWO_PI = 2 * PI
@@ -156,52 +130,35 @@ NET_WEIGHTS_L2HMC = NetWeights(0., 1., 1., 1., 1., 1.)
 
 TF_FLOAT = tf.float32
 TF_INT = tf.int32
-NP_FLOAT = np.float32
 NP_INT = np.int32
+TF_FLOATS = {
+    'float16': tf.float16,
+    'float32': tf.float32,
+    'float64': tf.float64,
+}
+TF_INTS = {
+    'int8': tf.int8,
+    'int16': tf.int16,
+    'int32': tf.int32,
+    'int64': tf.int64,
+}
+NP_FLOATS = {
+    'float16': np.float16,
+    'float32': np.float32,
+    'float64': np.float64,
+}
 
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 FILE_PATH = os.path.abspath(os.path.dirname(__file__))
-PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_DIR = os.path.dirname(os.path.relpath(__file__))
 BASE_DIR = os.path.dirname(PROJECT_DIR)
 BIN_DIR = os.path.join(BASE_DIR, 'bin')
-GAUGE_LOGS_DIR = os.path.join(BASE_DIR, 'gauge_logs')
+LOGS_DIR = os.path.abspath('../logs')
+#  LOGS_DIR = os.path.join(BASE_DIR, 'logs')
+GAUGE_LOGS_DIR = os.path.join(BASE_DIR, 'logs', 'GaugeModel_logs')
+#  GAUGE_LOGS_DIR = os.path.join(BASE_DIR, 'gauge_logs')
 TEST_LOGS_DIR = os.path.join(BASE_DIR, 'test_logs')
 BIN_DIR = os.path.join(BASE_DIR, 'bin')
-
-DEFAULT_FLAGS = AttrDict({
-    'log_dir': None,
-    'eager_execution': False,
-    'restore': False,
-    'inference': True,
-    'run_steps': 500,
-    'horovod': False,
-    'rand': True,
-    'eps': 0.1,
-    'num_steps': 2,
-    'hmc': False,
-    'eps_fixed': False,
-    'beta_init': 1.,
-    'beta_final': 3.,
-    'train_steps': 50,
-    'save_steps': 5,
-    'print_steps': 1,
-    'logging_steps': 1,
-    'hmc_start': True,
-    'hmc_steps': 50,
-    'dropout_prob': 0.1,
-    'warmup_lr': True,
-    'warmup_steps': 10,
-    'lr_init': 0.001,
-    'lr_decay_steps': 1000,
-    'lr_decay_rate': 0.96,
-    'plaq_weight': 10.,
-    'charge_weight': 0.1,
-    'separate_networks': False,
-    'network_type': 'GaugeNetwork',
-    'lattice_shape': [128, 16, 16, 2],
-    'units': [512, 256, 256, 256, 512],
-})
-
 
 #  COLORS = 5000 * ['C0', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9']
 MARKERS = 5000 * ['o', 's', 'x', 'v', 'h', '^', 'p', '<', 'd', '>', 'o']
@@ -218,37 +175,6 @@ COLORS = [  # from seaborn `bright` style
     (1.0, 0.7686274509803922, 0.0),
     (0.0, 0.8431372549019608, 1.0)
 ]
-
-
-#  header = ("{:^12s}" + 8 * "{:^10s}").format(
-#      "STEP", "t/STEP", "% ACC", "EPS", "BETA",
-#      "ACTIONS", "PLAQS", "(EXACT)", "dQ"
-#  )
-#  dash0 = (len(header) + 1) * '='
-#  dash1 = (len(header) + 1) * '-'
-#  RUN_HEADER = dash0 + '\n' + header + '\n' + dash1
-
-#  try:
-#      import memory_profiler  # noqa: F401
-#
-#      HAS_MEMORY_PROFILER = True
-#  except ImportError:
-#      HAS_MEMORY_PROFILER = False
-#
-#  try:
-#      import matplotlib.pyplot as plt  # noqa: F401
-#
-#      HAS_MATPLOTLIB = True
-#  except ImportError:
-#      HAS_MATPLOTLIB = False
-#
-#  try:
-#      import psutil  # noqa: F401
-#
-#      HAS_PSUTIL = True
-#  except ImportError:
-#      HAS_PSUTIL = False
-#
 
 # pylint:disable=invalid-name
 TRAIN_STR = (r"""

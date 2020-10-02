@@ -18,7 +18,10 @@ import tensorflow as tf
 
 from scipy.special import i0, i1
 
-from config import NP_FLOAT, TF_FLOAT
+from config import NP_FLOATS, TF_FLOATS
+
+TF_FLOAT = TF_FLOATS[tf.keras.backend.floatx()]
+NP_FLOAT = NP_FLOATS[tf.keras.backend.floatx()]
 
 
 def u1_plaq_exact(beta):

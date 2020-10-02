@@ -21,13 +21,12 @@ from utils.attr_dict import AttrDict
 from utils.data_utils import therm_arr
 
 
-
 class DataContainer:
     """Base class for dealing with data."""
 
-    def __init__(self, steps, header=None, dirs=None):
+    def __init__(self, steps, header=None, dirs=None, print_steps=100):
         self.steps = steps
-
+        self.print_steps = print_steps
         self.dirs = dirs
         self.data_strs = [header]
         self.steps_arr = []
@@ -53,11 +52,8 @@ class DataContainer:
         if metrics is None:
             metrics = self.data
 
-        header = io.make_header_from_dict(metrics,
-                                          skip=skip,
-                                          prepend=prepend,
-                                          append=append,
-                                          split=split)
+        header = io.make_header_from_dict(metrics, skip=skip, split=split,
+                                          prepend=prepend, append=append)
 
         if self.data_strs[0] != header:
             self.data_strs.insert(0, header)
@@ -71,8 +67,20 @@ class DataContainer:
         data = {
             k: tf.reduce_mean(v) for k, v in metrics.items() if k not in skip
         }
-        fstr = (f'{step:>6g}/{self.steps:<6g}'
-                + ''.join([f'{v:^12.4g}' for _, v in data.items()]))
+
+        try:
+            n = step - self.print_steps
+            data['dt'] = 0.5 * (
+                data['dt'] + tf.reduce_mean(self.data['dt'][-n:])
+            )
+
+        except (IndexError, KeyError):
+            pass
+
+        fstr = (
+            f'{step:>5g}/{self.steps:<5g} '
+            + ''.join([f'{v:^12.4g}' for _, v in data.items()])
+        )
 
         self.data_strs.append(fstr)
 
@@ -84,8 +92,12 @@ class DataContainer:
             self.steps += step
 
         x_file = os.path.join(data_dir, f'x_rank{rank}.z')
-        x = io.loadz(x_file)
-        #  io.log(f'Restored `x` from: {x_file}.')
+        try:
+            x = io.loadz(x_file)
+            io.log_tqdm(f'Restored `x` from: {x_file}.')
+        except FileNotFoundError as err:
+            io.log_tqdm(f'Unable to load `x` from {x_file}.')
+            raise err
 
         data = self.load_data(data_dir)
         for key, val in data.items():
@@ -104,7 +116,7 @@ class DataContainer:
         for key, val in zip(keys, data_files):
             if 'x_rank' in key:
                 continue
-            #  io.log(f'Restored {key} from {val}.')
+            io.log_tqdm(f'Restored {key} from {val}.')
             data[key] = io.loadz(val)
 
         return AttrDict(data)
@@ -145,10 +157,9 @@ class DataContainer:
             #  avg_data[key] = tf.reduce_mean(arr)
 
         avg_df = pd.DataFrame(avg_data, index=[0])
-        csv_file = os.path.join(BASE_DIR, 'gauge_logs_eager',
+        csv_file = os.path.join(BASE_DIR, 'logs', 'GaugeModel_logs',
                                 'inference_results.csv')
-        #  log.info('Appending inference results to: {csv_file}.')
-        #  io.log(f'Appending inference results to {csv_file}.')
+        io.log_tqdm(f'Appending inference results to {csv_file}.')
         if not os.path.isfile(csv_file):
             avg_df.to_csv(csv_file, header=True, index=False, mode='w')
         else:
@@ -158,8 +169,9 @@ class DataContainer:
     def dump_configs(x, data_dir, rank=0):
         """Save configs `x` separately for each rank."""
         xfile = os.path.join(data_dir, f'x_rank{rank}.z')
-        #  io.log(f'Saving configs from rank {rank} to: {xfile}.', rank=rank)
-        #  log.info(f'Saving configs from rank {rank} to: {xfile}.')
+        io.log_tqdm(f'Saving configs from rank {rank} to: {xfile}.')
+        head, _ = os.path.split(xfile)
+        io.check_else_make_dir(head)
         joblib.dump(x, xfile)
 
     # pylint:disable=too-many-arguments

@@ -9,13 +9,11 @@ import os
 import sys
 import time
 import logging
-from utils import DummyTqdmFile
+from utils.file_io import timeit
 
-from tqdm import tqdm
+from tqdm.autonotebook import tqdm
 import tensorflow as tf
 import horovod.tensorflow as hvd
-#  hvd.init()
-#  RANK = hvd.rank()
 
 import utils.file_io as io
 
@@ -28,19 +26,15 @@ from utils.summary_utils import summarize_dict
 from utils.data_containers import DataContainer
 
 # pylint:disable=no-member
-if tf.__version__.startswith('1.'):
-    TF_VERSION = '1.x'
-elif tf.__version__.startswith('2.'):
-    TF_VERSION = '2.x'
-
 RANK = hvd.rank()
 IS_CHIEF = (RANK == 0)
+NUM_NODES = hvd.size()
 
 if IS_CHIEF:
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s:%(levelname)s:%(message)s",
-        stream=DummyTqdmFile(sys.stdout)
+        stream=sys.stdout
     )
 else:
     logging.basicConfig(
@@ -54,23 +48,11 @@ def restore_from_train_flags(args):
     """Populate entries in `args` using the training `FLAGS` from `log_dir`."""
     train_dir = os.path.join(args.log_dir, 'training')
     flags = AttrDict(dict(io.loadz(os.path.join(train_dir, 'FLAGS.z'))))
-    flags.horovod = False
-    if args.get('lattice_shape', None) is None:
-        args.lattice_shape = flags.lattice_shape
-    if args.get('beta', None) is None:
-        args.beta = flags.beta_final
-    if args.get('num_steps', None) is None:
-        args.num_steps = flags.num_steps
-
-    flags.update({
-        'beta': args.beta,
-        'num_steps': args.num_steps,
-        'lattice_shape': args.lattice_shape,
-    })
 
     return flags
 
 
+@timeit(out_file=None)
 def run_hmc(
         args: AttrDict,
         hmc_dir: str = None,
@@ -90,26 +72,6 @@ def run_hmc(
     """
     if not IS_CHIEF:
         return None, None, None
-
-    if args.log_dir is not None:
-        args = restore_from_train_flags(args)
-
-    args.update({
-        'hmc': True,
-        'units': [],
-        'lr_init': 0,
-        'restore': False,
-        'use_ncp': False,
-        'horovod': False,
-        'eps_fixed': True,
-        'warmup_steps': 0,
-        'dropout_prob': 0.,
-        'lr_decay_steps': None,
-        'lr_decay_rate': None,
-        'separate_networks': False,
-    })
-
-    io.print_flags(args)
 
     if hmc_dir is None:
         root_dir = os.path.dirname(PROJECT_DIR)
@@ -131,12 +93,12 @@ def run_hmc(
             return None, None, None
 
     dynamics = build_dynamics(args)
-    dynamics, run_data, x = run(dynamics, args,
-                                runs_dir=hmc_dir)
+    dynamics, run_data, x = run(dynamics, args, runs_dir=hmc_dir)
 
     return dynamics, run_data, x
 
 
+@timeit(out_file=None)
 def load_and_run(
         args: AttrDict,
         x: tf.Tensor = None,
@@ -171,6 +133,7 @@ def load_and_run(
     return dynamics, run_data, x
 
 
+@timeit(out_file=None)
 def run(
         dynamics: GaugeDynamics,
         args: AttrDict,
@@ -182,7 +145,7 @@ def run(
         return None, None, None
 
     if runs_dir is None:
-        if args.hmc:
+        if dynamics.config.hmc:
             runs_dir = os.path.join(args.log_dir, 'inference_hmc')
         else:
             runs_dir = os.path.join(args.log_dir, 'inference')
@@ -207,7 +170,7 @@ def run(
     run_data, x, _ = run_dynamics(dynamics, args, x, save_x=False)
 
     run_data.flush_data_strs(log_file, mode='a')
-    run_data.write_to_csv(args.log_dir, run_dir, hmc=args.hmc)
+    run_data.write_to_csv(args.log_dir, run_dir, hmc=dynamics.config.hmc)
     io.save_inference(run_dir, run_data)
     if args.get('save_run_data', True):
         run_data.save_data(data_dir)
@@ -235,6 +198,7 @@ def run(
     return dynamics, run_data, x
 
 
+@timeit(out_file=None)
 def run_dynamics(
         dynamics: GaugeDynamics,
         flags: AttrDict,
@@ -272,16 +236,16 @@ def run_dynamics(
 
     try:
         x, metrics = test_step((x, tf.constant(beta)))
-    except Exception as exception:  # pylint:disable bare-except
-        io.log(f'Exception: {exception}', rank=RANK)
+    except Exception as exception:  # pylint:disable=broad-except
+        io.log(f'Exception: {exception}')
         test_step = dynamics.test_step
         x, metrics = test_step((x, tf.constant(beta)))
 
     header = run_data.get_header(metrics,
                                  skip=['charges'],
-                                 prepend=['{:^12s}'.format('step')],
-                                 split=True)
-    io.log(header)
+                                 prepend=['{:^12s}'.format('step')])
+    #  io.log(header)
+    io.log(header.split('\n'), should_print=True)
     # -------------------------------------------------------------
 
     x_arr = []
@@ -296,10 +260,10 @@ def run_dynamics(
         return x, metrics
 
     steps = tf.range(flags.run_steps, dtype=tf.int64)
-    ctup = (CBARS['blue'], CBARS['reset'])
-    steps = tqdm(steps, desc='running', unit='step',
-                 #  file=DummyTqdmFile(sys.stdout),
-                 bar_format=("{l_bar}%s{bar}%s{r_bar}" % ctup))
+    if NUM_NODES == 1:
+        ctup = (CBARS['red'], CBARS['green'], CBARS['red'], CBARS['reset'])
+        steps = tqdm(steps, desc='running', unit='step',
+                     bar_format=("%s{l_bar}%s{bar}%s{r_bar}%s" % ctup))
 
     for step in steps:
         x, metrics = timed_step(x, beta)
@@ -308,9 +272,9 @@ def run_dynamics(
         if step % print_steps == 0:
             summarize_dict(metrics, step, prefix='testing')
             data_str = run_data.get_fstr(step, metrics, skip=['charges'])
-            io.log_tqdm(data_str)
+            io.log(data_str, should_print=True)
 
         if (step + 1) % 1000 == 0:
-            io.log_tqdm(header)
+            io.log(header, should_print=True)
 
     return run_data, x, x_arr

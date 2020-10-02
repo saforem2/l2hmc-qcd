@@ -15,9 +15,12 @@ import matplotlib.pyplot as plt
 import utils.file_io as io
 
 from config import (NET_WEIGHTS_HMC, NET_WEIGHTS_L2HMC, NetWeights,
-                    NP_FLOAT, PI, PROJECT_DIR, TF_FLOAT)
+                    NP_FLOATS, PI, PROJECT_DIR, TF_FLOATS)
 
 sns.set_palette('bright')
+
+TF_FLOAT = TF_FLOATS[tf.keras.backend.floatx()]
+NP_FLOAT = NP_FLOATS[tf.keras.backend.floatx()]
 
 COLORS = ['C0', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9']
 

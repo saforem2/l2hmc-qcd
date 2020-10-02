@@ -22,29 +22,25 @@ from __future__ import absolute_import, division, print_function
 import os
 import time
 
-from typing import Callable, Union, List
+from typing import Callable, List, Optional, Tuple, Union
 
 import numpy as np
 import tensorflow as tf
 
 import utils.file_io as io
+import horovod.tensorflow as hvd
 
-from config import (BIN_DIR, DynamicsConfig, lrConfig, MonteCarloStates,
-                    NetWeights, NetworkConfig, State, TF_FLOAT, TF_INT)
+from config import (BIN_DIR, MonteCarloStates, NetWeights, State, TF_FLOAT,
+                    TF_INT)
+from network.config import (ConvolutionConfig, LearningRateConfig,
+                            NetworkConfig)
+from dynamics.config import DynamicsConfig
+from utils.file_io import timeit  # noqa:F401
 from utils.attr_dict import AttrDict
+from utils.seed_dict import vnet_seeds, xnet_seeds  # noqa:F401
 from utils.learning_rate import WarmupExponentialDecay
 
-# pylint:disable=unused-import
-from utils.file_io import timeit  # noqa:F401
-from utils.seed_dict import vnet_seeds  # noqa:F401
-from utils.seed_dict import xnet_seeds  # noqa:F401
-
-try:
-    import horovod.tensorflow as hvd
-except ImportError:
-    pass
-
-
+NUM_RANKS = hvd.size()
 TIMING_FILE = os.path.join(BIN_DIR, 'timing_file.log')
 
 
@@ -65,8 +61,9 @@ class BaseDynamics(tf.keras.Model):
             config: DynamicsConfig,
             network_config: NetworkConfig,
             potential_fn: Callable[[tf.Tensor], tf.Tensor],
-            lr_config: lrConfig = None,
+            lr_config: LearningRateConfig = None,
             normalizer: Callable[[tf.Tensor], tf.Tensor] = None,
+            should_build: Optional[bool] = True,
             name: str = 'Dynamics',
     ):
         """Initialization method.
@@ -80,75 +77,37 @@ class BaseDynamics(tf.keras.Model):
         """
         super(BaseDynamics, self).__init__(name=name)
         self._model_type = config.get('model_type', 'BaseDynamics')
-
-        #  self.params = params
+        self.params = params
         self.config = config
+        self.lr_config = lr_config
         self.net_config = network_config
         self.potential_fn = potential_fn
-        self.normalizer = normalizer if normalizer is not None else identity
 
-        self.params = self._parse_params(params)
-        self.eps = self._build_eps(use_log=False)
-        self.masks = self._build_masks()
-        #  self._construct_time()
-        if self.config.hmc:
-            self.xnet, self.vnet = self._build_hmc_networks()
-            self.net_weights = NetWeights(*(6 * [0.]))
-        else:
-            self._build_networks()
-
-        if self._has_trainable_params:
-            self.lr_config = lr_config
-            self.lr = self._create_lr(lr_config)
-            self.optimizer = self._create_optimizer()
-
-    def save_config(self, config_dir):
-        """Helper method for saving configuration objects."""
-        io.save_dict(self.config, config_dir, name='dynamics_config')
-        io.save_dict(self.net_config, config_dir, name='network_config')
-        io.save_dict(self.lr_config, config_dir, name='lr_config')
-        io.save_dict(self.params, config_dir, name='dynamics_params')
-
-    def _parse_params(self, params, net_weights=None):
-        """Set instance attributes from `params`."""
+        loss_scale = self.config.get('loss_scale', 1.)
+        self._loss_scale = tf.constant(loss_scale, name='loss_scale')
         self.xdim = params.get('xdim', None)
-        self.batch_size = params.get('batch_size', None)
-        self.using_hvd = params.get('horovod', False)
-        self.x_shape = (self.batch_size, self.xdim)
         self.clip_val = params.get('clip_val', 0.)
         self.aux_weight = params.get('aux_weight', 0.)
+        self.batch_size = params.get('batch_size', None)
 
-        # Determine if there are any parameters to be trained
-        self._has_trainable_params = True
-        if self.config.hmc and not self.config.eps_trainable:
-            self._has_trainable_params = False
-
-        if net_weights is None:
+        self.x_shape = (self.batch_size, self.xdim)
+        self.eps = self._build_eps(use_log=False)
+        self.masks = self._build_masks()
+        self.normalizer = normalizer if normalizer is not None else identity
+        if should_build:
+            self._has_trainable_params = True
             if self.config.hmc:
-                net_weights = NetWeights(*(6 * [0.]))
+                self.net_weights = NetWeights(0., 0., 0., 0., 0., 0.)
+                self.xnet, self.vnet = self._build_hmc_networks()
+                if self.config.eps_fixed:
+                    self._has_trainable_params = False
             else:
-                net_weights = NetWeights(*(6 * [1.]))
+                self.xnet, self.vnet = self._build_networks()
+            if self._has_trainable_params:
+                self.lr = self._create_lr(lr_config)
+                self.optimizer = self._create_optimizer()
 
-        self.net_weights = net_weights
-        self._xsw = self.net_weights.x_scale
-        self._xtw = self.net_weights.x_translation
-        self._xqw = self.net_weights.x_transformation
-        self._vsw = self.net_weights.v_scale
-        self._vtw = self.net_weights.v_translation
-        self._vqw = self.net_weights.v_transformation
-
-        params = AttrDict({
-            'xdim': self.xdim,
-            'batch_size': self.batch_size,
-            'using_hvd': self.using_hvd,
-            'x_shape': self.x_shape,
-            'clip_val': self.clip_val,
-            'net_weights': self.net_weights,
-        })
-
-        return params
-
-    def call(self, inputs, training=None, mask=None):
+    def call(self, inputs, training=None):
         """Calls the model on new inputs.
 
         In this case `call` just reapplies all ops in the graph to the new
@@ -179,9 +138,9 @@ class BaseDynamics(tf.keras.Model):
         raise NotImplementedError
 
     @staticmethod
-    def calc_esjd(x: tf.Tensor,
-                  y: tf.Tensor,
-                  accept_prob: tf.Tensor):
+    def calc_esjd(
+            x: tf.Tensor, y: tf.Tensor, accept_prob: tf.Tensor
+    ):
         """Calculate the expected squared jump distance, ESJD."""
         return accept_prob * tf.reduce_sum((x - y) ** 2, axis=1) + 1e-4
 
@@ -190,9 +149,12 @@ class BaseDynamics(tf.keras.Model):
             x: tf.Tensor,
             y: tf.Tensor,
             accept_prob: tf.Tensor,
-            scale: tf.Tensor = tf.constant(1., dtype=TF_FLOAT)
+            scale: tf.Tensor = None,
     ):
         """Compute the mixed loss as: scale / esjd - esjd / scale."""
+        if scale is None:
+            scale = self._loss_scale
+
         esjd = self.calc_esjd(x, y, accept_prob)
         loss = tf.reduce_mean(scale / esjd) - tf.reduce_mean(esjd / scale)
 
@@ -230,27 +192,29 @@ class BaseDynamics(tf.keras.Model):
         return mc_states, px, sld_states
 
     def apply_transition(
-            self,
-            inputs,
-            training: bool = None,
-    ) -> (MonteCarloStates, tf.Tensor, MonteCarloStates):
+            self, inputs: Tuple[tf.Tensor], training: bool = None,
+    ):
         """Propose a new state and perform the accept/reject step.
 
         NOTE: We simulate the dynamics both forward and backward, and use
         sampled Bernoulli masks to compute the actual solutions
         """
         x, beta = inputs
+
         sf_init, sf_prop, pxf, sldf = self._transition(inputs, forward=True,
                                                        training=training)
         sb_init, sb_prop, pxb, sldb = self._transition(inputs, forward=False,
                                                        training=training)
 
+        # ====
         # Combine the forward / backward outputs;
-        # these are the proposed configuration
+        # get forward / backward masks:
         mf_, mb_ = self._get_direction_masks()
         mf = mf_[:, None]
         mb = mb_[:, None]
+        # reconstruct v_init
         v_init = mf * sf_init.v + mb * sb_init.v
+        # construct proposed configuration: `x`, `v`
         x_prop = mf * sf_prop.x + mb * sb_prop.x
         v_prop = mf * sf_prop.v + mb * sb_prop.v
         sld_prop = mf_ * sldf + mb_ * sldb
@@ -258,7 +222,7 @@ class BaseDynamics(tf.keras.Model):
         # Compute the acceptance probability
         accept_prob = mf_ * pxf + mb_ * pxb
 
-        # ma_: accept_mask, mr_: reject mask
+        # get accept `ma_`, reject `mr_` masks
         ma_, mr_ = self._get_accept_masks(accept_prob)
         ma = ma_[:, None]
         mr = mr_[:, None]
@@ -321,8 +285,11 @@ class BaseDynamics(tf.keras.Model):
             training: bool = None
     ) -> (State, State, tf.Tensor, State):
         """Run the augmented leapfrog integrator."""
-        x, beta = inputs
-        v = tf.random.normal(tf.shape(x))
+        if len(inputs) == 2:
+            x, beta = inputs
+            v = tf.random.normal(x.shape, dtype=x.dtype)
+        elif len(inputs) == 3:
+            x, v, beta = inputs
         state = State(x=x, v=v, beta=beta)
         state_, px, sld = self.transition_kernel(state, forward, training)
 
@@ -446,10 +413,7 @@ class BaseDynamics(tf.keras.Model):
         return state_prop, accept_prob, sumlogdet
 
     def transition_kernel(
-            self,
-            state: State,
-            forward: bool,
-            training: bool = None
+            self, state: State, forward: bool, training: bool = None
     ):
         """Transition kernel of the augmented leapfrog integrator."""
         lf_fn = self._forward_lf if forward else self._backward_lf
@@ -465,10 +429,9 @@ class BaseDynamics(tf.keras.Model):
 
         return state_prop, accept_prob, sumlogdet
 
-    def compute_accept_prob(self,
-                            state_init: State,
-                            state_prop: State,
-                            sumlogdet: tf.Tensor):
+    def compute_accept_prob(
+            self, state_init: State, state_prop: State, sumlogdet: tf.Tensor
+    ):
         """Compute the acceptance prob. of `state_prop` given `state_init`.
 
         Returns: tf.Tensor
@@ -484,20 +447,17 @@ class BaseDynamics(tf.keras.Model):
         """Run the augmented leapfrog integrator in the forward direction."""
         # === NOTE: m = random mask (half 1s, half 0s); mc = 1. - m
         m, mc = self._get_mask(step)  # pylint: disable=invalid-name
-        #  vnet = self._get_network(step)
-        t = self._get_time(step, tile=tf.shape(state.x)[0])
+        sumlogdet = 0.
 
-        sumlogdet = tf.constant(0., dtype=state.x.dtype)
-
-        state, logdet = self._update_v_forward(state, t, training)
+        state, logdet = self._update_v_forward(state, step, training)
         sumlogdet += logdet
-        state, logdet = self._update_x_forward(state, t,
+        state, logdet = self._update_x_forward(state, step,
                                                (m, mc), training)
         sumlogdet += logdet
-        state, logdet = self._update_x_forward(state, t,
+        state, logdet = self._update_x_forward(state, step,
                                                (mc, m), training)
         sumlogdet += logdet
-        state, logdet = self._update_v_forward(state, t, training)
+        state, logdet = self._update_v_forward(state, step, training)
         sumlogdet += logdet
 
         return state, sumlogdet
@@ -506,40 +466,30 @@ class BaseDynamics(tf.keras.Model):
         """Run the augmented leapfrog integrator in the backward direction."""
         step_r = self.config.num_steps - step - 1
         m, mc = self._get_mask(step_r)
-        #  vnet = self._get_network(step_r)
-        t = self._get_time(step_r, tile=tf.shape(state.x)[0])
+        sumlogdet = 0.
 
-        #  sumlogdet = 0.
-        sumlogdet = tf.constant(0., dtype=state.x.dtype)
-
-        state, logdet = self._update_v_backward(state, t, training)
+        state, logdet = self._update_v_backward(state, step_r, training)
         sumlogdet += logdet
 
-        state, logdet = self._update_x_backward(state, t,
+        state, logdet = self._update_x_backward(state, step_r,
                                                 (mc, m), training)
         sumlogdet += logdet
 
-        state, logdet = self._update_x_backward(state, t,
+        state, logdet = self._update_x_backward(state, step_r,
                                                 (m, mc), training)
         sumlogdet += logdet
 
-        state, logdet = self._update_v_backward(state, t, training)
+        state, logdet = self._update_v_backward(state, step_r, training)
         sumlogdet += logdet
 
         return state, sumlogdet
 
-    def _scattered_xnet(self, x, v, t, masks, training=None):
-        """Call `self.xnet` on non-zero entries of `x` via `tf.gather_nd`."""
-        m, _ = masks
-        shape = (self.batch_size, -1)
-        m = tf.reshape(m, shape)
-        idxs = tf.where(m)
-        _x = tf.reshape(tf.gather_nd(x, idxs), shape)
-        S, T, Q = self.xnet((v, _x, t), training)
-
-        return S, T, Q
-
-    def _update_v_forward(self, state: State, t: tf.Tensor, training: bool):
+    def _update_v_forward(
+                self,
+                state: State,
+                step: int,
+                training: bool = None
+    ):
         """Update the momentum `v` in the forward leapfrog step.
 
         Args:
@@ -553,6 +503,7 @@ class BaseDynamics(tf.keras.Model):
             logdet (float): Jacobian factor
         """
         x = self.normalizer(state.x)
+        t = self._get_time(step, tile=tf.shape(x)[0])
 
         grad = self.grad_potential(x, state.beta)
         S, T, Q = self.vnet((x, grad, t), training)
@@ -571,7 +522,13 @@ class BaseDynamics(tf.keras.Model):
 
         return state_out, logdet
 
-    def _update_x_forward(self, state: State, t: tf.Tensor, masks, training):
+    def _update_x_forward(
+                self,
+                state: State,
+                step: int,
+                masks: Tuple[tf.Tensor, tf.Tensor],   # (m, 1. - m)
+                training: bool = None
+    ):
         """Update the position `x` in the forward leapfrog step.
 
         Args:
@@ -579,14 +536,16 @@ class BaseDynamics(tf.keras.Model):
             t (float): Current leapfrog step, represented as periodic time.
             training (bool): Currently training?
 
-        Returns:
-            new_state (State): New state, with updated position.
-            logdet (float): Jacobian factor.
-        """
-        x = self.normalizer(state.x)
-        m, mc = masks
 
-        S, T, Q = self._scattered_xnet(x, state.v, t, masks, training)
+        Returns:
+            new_state (State): New state, with updated momentum.
+            logdet (float): logdet of Jacobian factor.
+        """
+        m, mc = masks
+        x = self.normalizer(state.x)
+        t = self._get_time(step, tile=tf.shape(x)[0])
+
+        S, T, Q = self.xnet((m * x, state.v, t), training)
 
         transl = self._xtw * T
         scale = self._xsw * (self.eps * S)
@@ -605,7 +564,12 @@ class BaseDynamics(tf.keras.Model):
 
         return state_out, logdet
 
-    def _update_v_backward(self, state, t, training):
+    def _update_v_backward(
+                self,
+                state: State,
+                step: int,
+                training: bool = None
+    ):
         """Update the momentum `v` in the backward leapfrog step.
 
         Args:
@@ -618,6 +582,7 @@ class BaseDynamics(tf.keras.Model):
             logdet (float): Jacobian factor.
         """
         x = self.normalizer(state.x)
+        t = self._get_time(step, tile=tf.shape(x)[0])
 
         grad = self.grad_potential(x, state.beta)
         S, T, Q = self.vnet((x, grad, t), training)
@@ -636,21 +601,30 @@ class BaseDynamics(tf.keras.Model):
 
         return state_out, logdet
 
-    def _update_x_backward(self, state, t, masks, training):
-        """Update the position `x` in the forward leapfrog step.
+    def _update_x_backward(
+                self,
+                state: State,
+                step: int,
+                masks: Tuple[tf.Tensor, tf.Tensor],   # (m, 1. - m)
+                training: bool = None
+    ):
+        """Update the position `x` in the backward leapfrog step.
 
         Args:
             state (State): Input state
             t (float): Current leapfrog step, represented as periodic time.
             training (bool): Currently training?
 
+
         Returns:
             new_state (State): New state, with updated momentum.
-            logdet (float): Jacobian factor.
+            logdet (float): logdet of Jacobian factor.
         """
         m, mc = masks
         x = self.normalizer(state.x)
-        S, T, Q = self._scattered_xnet(x, state.v, t, masks, training)
+        t = self._get_time(step, tile=tf.shape(x)[0])
+        S, T, Q = self.xnet((m * x, state.v, t), training)
+
         scale = self._xsw * (-self.eps * S)
         transl = self._xtw * T
         transf = self._xqw * (self.eps * Q)
@@ -659,9 +633,7 @@ class BaseDynamics(tf.keras.Model):
         expQ = tf.exp(transf)
 
         y = expS * (x - self.eps * (state.v * expQ + transl))
-        xb = m * x + mc * y
-
-        xb = self.normalizer(xb)
+        xb = self.normalizer(m * x + mc * y)
 
         state_out = State(x=xb, v=state.v, beta=state.beta)
         logdet = tf.reduce_sum(mc * scale, axis=1)
@@ -676,7 +648,9 @@ class BaseDynamics(tf.keras.Model):
                 with tf.GradientTape() as tape:
                     tape.watch(x)
                     pe = self.potential_energy(x, beta)
-                grad = tf.reshape(tape.gradient(pe, x), (self.batch_size, -1))
+                grad = tape.gradient(pe, x)
+                #  grad = tf.reshape(tape.gradient(pe, x),
+                #                    (self.batch_size, -1))
             else:
                 grad = tf.gradients(self.potential_energy(x, beta), [x])[0]
 
@@ -704,6 +678,17 @@ class BaseDynamics(tf.keras.Model):
 
         return potential + kinetic
 
+    def _get_time(self, i, tile=1):
+        """Format the MCMC step as [cos(...), sin(...)]."""
+        i = tf.cast(i, dtype=TF_FLOAT)
+        trig_t = tf.squeeze([
+            tf.cos(2 * np.pi * i / self.config.num_steps),
+            tf.sin(2 * np.pi * i / self.config.num_steps),
+        ])
+        t = tf.tile(tf.expand_dims(trig_t, 0), (tile, 1))
+
+        return t
+
     def _construct_time(self, tile):
         """Convert leapfrog step index into sinusoidal time."""
         self.ts = []
@@ -715,16 +700,19 @@ class BaseDynamics(tf.keras.Model):
 
             self.ts.append(tf.tile(tf.expand_dims(t, 0), (tile, 1)))
 
-    def _get_time(self, i, tile=1):
-        """Format the MCMC step as [cos(...), sin(...)]."""
-        i = tf.cast(i, dtype=TF_FLOAT)
-        trig_t = tf.squeeze([
-            tf.cos(2 * np.pi * i / self.config.num_steps),
-            tf.sin(2 * np.pi * i / self.config.num_steps),
-        ])
-        t = tf.tile(tf.expand_dims(trig_t, 0), (tile, 1))
+    def _build_time_new(self, tile=None):
+        """Pre-compute the trig. repr. of the time."""
+        t_arr = []
+        if tile is None:
+            tile = tf.shape(self.x_shape)[0]
+        for i in range(self.config.num_steps):
+            trig_t = tf.squeeze([
+                tf.cos(2 * np.pi * i / self.config.num_steps),
+                tf.sin(2 * np.pi * i / self.config.num_steps),
+            ])
+            t_arr.append(tf.tile(tf.expand_dims(trig_t, 0), (tile, 1)))
 
-        return t
+        return t_arr
 
     def _get_direction_masks(self):
         """Decide direction uniformly."""
@@ -772,8 +760,17 @@ class BaseDynamics(tf.keras.Model):
 
         return m, 1. - m
 
-    def _build_networks(self):
-        """Must implement method for building the network."""
+    def _build_networks(
+            self,
+            net_config: NetworkConfig = None,
+            conv_config: ConvolutionConfig = None
+    ):
+        """Logic for building the position and momentum networks.
+
+        Returns:
+            xnet: tf.keras.models.Model
+            vnet: tf.keras.models.Model
+        """
         raise NotImplementedError
 
     @staticmethod
@@ -810,32 +807,99 @@ class BaseDynamics(tf.keras.Model):
 
         return tf.Variable(initial_value=init,
                            name='eps', dtype=TF_FLOAT,
-                           trainable=self.config.eps_trainable)
+                           trainable=not self.config.eps_fixed)
 
-    def _create_lr(self, lr_config=None):
+    def _create_lr(
+            self, lr_config: LearningRateConfig = None, scale: bool = False
+    ):
         """Create the learning rate schedule to be used during training."""
         if lr_config is None:
             lr_config = self.lr_config
 
+        if scale:
+            tf.print('Scaling learning rate...\n')
+            tf.print(f'original lr: {lr_config.lr_init}')
+            lr_config.lr_init *= tf.math.sqrt(tf.cast(hvd.size(), TF_FLOAT))
+            tf.print(f'new (scaled) lr: {lr_config.lr_init}')
         warmup_steps = lr_config.get('warmup_steps', None)
         if warmup_steps is not None and warmup_steps > 0:
             return WarmupExponentialDecay(lr_config, staircase=True,
                                           name='WarmupExponentialDecay')
 
-        return tf.keras.optimizers.schedules.ExponentialDecay(
-            lr_config.init,
-            decay_steps=lr_config.decay_steps,
-            decay_rate=lr_config.decay_rate,
-            staircase=True,
-        )
+        decay_rate = lr_config.get('decay_rate', None)
+        decay_steps = lr_config.get('decay_steps', None)
+        cond1 = (decay_rate is not None and decay_rate > 0)
+        cond2 = (decay_steps is not None and decay_steps > 0)
+        if cond1 and cond2:
+            return tf.keras.optimizers.schedules.ExponentialDecay(
+                lr_config.lr_init,
+                decay_steps=lr_config.decay_steps,
+                decay_rate=lr_config.decay_rate,
+                staircase=True,
+            )
+
+        return lr_config.lr_init
 
     def _create_optimizer(self):
         """Create the optimizer to be used for backpropagating gradients."""
-        if tf.executing_eagerly():
-            return tf.keras.optimizers.Adam(self.lr)
-
-        optimizer = tf.compat.v1.train.AdamOptimizer(self.lr)
-        if self.using_hvd:
-            optimizer = hvd.DistributedOptimizer(optimizer)
+        if self.clip_val > 0:
+            optimizer = tf.keras.optimizers.Adam(self.lr,
+                                                 clipnorm=self.clip_val)
+        else:
+            optimizer = tf.keras.optimizers.Adam(self.lr)
 
         return optimizer
+
+    def save_config(self, config_dir):
+        """Helper method for saving configuration objects."""
+        io.save_dict(self.config, config_dir, name='dynamics_config')
+        io.save_dict(self.net_config, config_dir, name='network_config')
+        io.save_dict(self.lr_config, config_dir, name='lr_config')
+        io.save_dict(self.params, config_dir, name='dynamics_params')
+
+    def _parse_net_weights(self, net_weights):
+        self._xsw = net_weights.x_scale
+        self._xtw = net_weights.x_translation
+        self._xqw = net_weights.x_transformation
+        self._vsw = net_weights.v_scale
+        self._vtw = net_weights.v_translation
+        self._vqw = net_weights.v_transformation
+
+        return net_weights
+
+    def _parse_params(self, params, net_weights=None):
+        """Set instance attributes from `params`."""
+        self.xdim = params.get('xdim', None)
+        self.batch_size = params.get('batch_size', None)
+        #  self.using_hvd = params.get('horovod', False)
+        self.x_shape = (self.batch_size, self.xdim)
+        self.clip_val = params.get('clip_val', 0.)
+        self.aux_weight = params.get('aux_weight', 0.)
+
+        # Determine if there are any parameters to be trained
+        self._has_trainable_params = True
+        if self.config.hmc and self.config.eps_fixed:
+            self._has_trainable_params = False
+
+        if net_weights is None:
+            if self.config.hmc:
+                net_weights = NetWeights(*(6 * [0.]))
+            else:
+                net_weights = NetWeights(*(6 * [1.]))
+
+        self.net_weights = net_weights
+        self._xsw = self.net_weights.x_scale
+        self._xtw = self.net_weights.x_translation
+        self._xqw = self.net_weights.x_transformation
+        self._vsw = self.net_weights.v_scale
+        self._vtw = self.net_weights.v_translation
+        self._vqw = self.net_weights.v_transformation
+
+        params = AttrDict({
+            'xdim': self.xdim,
+            'batch_size': self.batch_size,
+            'x_shape': self.x_shape,
+            'clip_val': self.clip_val,
+        })
+
+        return params

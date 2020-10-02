@@ -16,8 +16,7 @@ from tensorflow.keras.optimizers.schedules import LearningRateSchedule
 
 import utils.file_io as io
 
-from config import lrConfig
-
+from network.config import LearningRateConfig
 
 # pylint:disable=too-many-arguments
 # pylint:disable=too-few-public-methods
@@ -90,7 +89,7 @@ class WarmupExponentialDecay(LearningRateSchedule):
 
     def __init__(
             self,
-            lr_config: lrConfig,
+            lr_config: LearningRateConfig,
             staircase: bool = True,
             name: str = 'WarmupExponentialDecay',
     ):
@@ -103,17 +102,18 @@ class WarmupExponentialDecay(LearningRateSchedule):
     def __call__(self, step):
         with tf.name_scope(self.name or 'WarmupExponentialDecay') as name:
             initial_learning_rate = ops.convert_to_tensor_v2(
-                self.lr_config.init, name='initial_learning_rate'
+                self.lr_config.lr_init, name='initial_learning_rate'
             )
             dtype = initial_learning_rate.dtype
             decay_steps = tf.cast(self.lr_config.decay_steps, dtype)
             decay_rate = tf.cast(self.lr_config.decay_rate, dtype)
             warmup_steps = tf.cast(self.lr_config.warmup_steps, dtype)
             global_step_recomp = tf.cast(step, dtype)
+            min_lr = tf.constant(1e-5, dtype)
 
             # warming up?
             if tf.less(global_step_recomp, warmup_steps):
-                return tf.math.multiply(
+                return min_lr + tf.math.multiply(
                     initial_learning_rate,
                     tf.math.divide(global_step_recomp, warmup_steps),
                     name=name
@@ -136,5 +136,5 @@ class WarmupExponentialDecay(LearningRateSchedule):
             'decay_rate': self.lr_config.decay_rate,
             'decay_steps': self.lr_config.decay_steps,
             'warmup_steps': self.lr_config.warmup_steps,
-            'initial_learning_rate': self.lr_config.init,
+            'initial_learning_rate': self.lr_config.lr_init,
         }
