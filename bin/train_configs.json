@@ -5,7 +5,7 @@
     "beta_final": 2.0,
     "clip_val": 1.0,
     "loss_scale": 0.1,
-    "hmc_steps": 1000,
+    "hmc_steps": 0,
     "print_steps": 10,
     "logging_steps": 100,
     "save_steps": 1000,
@@ -31,7 +31,7 @@
         "lattice_shape": [256, 8, 8, 2]
     },
     "network_config": {
-        "units": [256, 256, 256],
+        "units": [64, 128, 256],
         "activation_fn": "relu",
         "dropout_prob": 0.0
     },
