@@ -280,10 +280,15 @@ def train_dynamics(
         xf = os.path.join(dirs.log_dir, 'dynamics_xnet.png')
         vf = os.path.join(dirs.log_dir, 'dynamics_vnet.png')
         try:
-            tf.keras.utils.plot_model(dynamics.xnet,
-                                      show_shapes=True, to_file=xf)
-            tf.keras.utils.plot_model(dynamics.vnet,
-                                      show_shapes=True, to_file=vf)
+            xnet = dynamics.xnet
+            vnet = dynamics.vnet
+            if dynamics.config.separate_networks:
+                xnet = xnet[0]
+                vnet = vnet[0]
+
+            tf.keras.utils.plot_model(xnet, show_shapes=True, to_file=xf)
+            tf.keras.utils.plot_model(vnet, show_shapes=True, to_file=vf)
+
         except Exception as e:
             print(e)
 
