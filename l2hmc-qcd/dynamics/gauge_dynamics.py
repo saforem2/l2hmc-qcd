@@ -285,7 +285,7 @@ class GaugeDynamics(BaseDynamics):
 
         # ====
         # Flip momentum
-        state_prop.v *= -1
+        state_prop = State(state_prop.x, -1. * state_prop.v, state_prop.beta)
 
         # ====
         # Backward for second half of trajectory
