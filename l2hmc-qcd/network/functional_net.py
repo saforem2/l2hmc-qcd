@@ -208,8 +208,6 @@ def get_gauge_network(
             'x': (net_config.units[0], factor / 3., f'{name}/x'),
             'v': (net_config.units[0], 1. / 3., f'{name}/v'),
             't': (net_config.units[0], 1. / 3., f'{name}/t'),
-            'h1': (net_config.units[1], 1. / 2., f'{name}/h1'),
-            'h2': (net_config.units[1], 1. / 2., f'{name}/h2'),
             'scale': (xdim, 0.001, f'{name}/scale'),
             'transl': (xdim, 0.001, f'{name}/transl'),
             'transf': (xdim, 0.001, f'{name}/transf'),
@@ -222,12 +220,10 @@ def get_gauge_network(
         z = layers.Add()([x, v, t])
         z = keras.activations.relu(z)
 
-        z = custom_dense(*args['h1'])(z)
-        z = custom_dense(*args['h2'])(z)
-
-        if len(net_config.units) > 2:
-            for idx, units in net_config.units[2:]:
-                z = custom_dense(units, 1./2., f'{name}/h{idx}')(z)
+        for idx, units in net_config.units[1:]:
+            z = custom_dense(units, 1./2., f'{name}/h{idx}')(z)
+        #  z = custom_dense(*args['h1'])(z)
+        #  z = custom_dense(*args['h2'])(z)
 
         if net_config.dropout_prob > 0:
             z = layers.Dropout(net_config.dropout_prob)(z)
