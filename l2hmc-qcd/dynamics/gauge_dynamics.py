@@ -396,8 +396,7 @@ class GaugeDynamics(BaseDynamics):
         if not self.config.separate_networks:
             S, T, Q = self.vnet((x, grad, t), training)
         else:
-            vnet = self.vnet[step]
-            S, T, Q = vnet((x, grad, t), training)
+            S, T, Q = self.vnet[step]((x, grad, t), training)
 
         return S, T, Q
 
@@ -419,8 +418,7 @@ class GaugeDynamics(BaseDynamics):
         if not self.config.separate_networks:
             S, T, Q = self.xnet((x, v, t), training)
         else:
-            xnet = self.xnet[step]
-            S, T, Q = xnet((x, v, t), training)
+            S, T, Q = self.xnet[step]((x, v, t), training)
 
         return S, T, Q
 

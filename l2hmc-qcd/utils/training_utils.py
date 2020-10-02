@@ -183,8 +183,8 @@ def setup(dynamics, flags, dirs=None, x=None, betas=None):
     if IS_CHIEF and make_summaries:
         writer = tf.summary.create_file_writer(dirs.summary_dir)
 
-    current_step = dynamics.optimizer.iterations.numpy()  # get global step
-    num_steps = max([flags.train_steps + 1, current_step + 1])
+    current_step = dynamics.optimizer.iterations.numpy() + 1  # get global step
+    num_steps = max([flags.train_steps + 2, current_step + 2])
     steps = tf.range(current_step, num_steps, dtype=tf.int64)
     train_data.steps = steps[-1]
     if betas is None:
@@ -279,15 +279,13 @@ def train_dynamics(
     if IS_CHIEF:
         xf = os.path.join(dirs.log_dir, 'dynamics_xnet.png')
         vf = os.path.join(dirs.log_dir, 'dynamics_vnet.png')
-        tf.keras.utils.plot_model(dynamics.xnet, show_shapes=True, to_file=xf)
-        tf.keras.utils.plot_model(dynamics.vnet, show_shapes=True, to_file=vf)
-        io.log(120 * '-')
-        dynamics.xnet.summary()
-        io.log(60 * '- ')
-        dynamics.vnet.summary()
-        io.log(120 * '-')
-        #  print('\n'.join([120 * '=', dynamics.xnet.summary(),
-        #                   120 * '=', dynamics.vnet.summary()]))
+        try:
+            tf.keras.utils.plot_model(dynamics.xnet,
+                                      show_shapes=True, to_file=xf)
+            tf.keras.utils.plot_model(dynamics.vnet,
+                                      show_shapes=True, to_file=vf)
+        except Exception as e:
+            print(e)
 
     # +--------------------------------+
     # | Run MD update to not get stuck |
@@ -339,9 +337,9 @@ def train_dynamics(
             steps = tqdm(steps, desc='training', unit='step',
                          bar_format=("%s{l_bar}%s{bar}%s{r_bar}%s" % ctup))
 
-    # +------------------------------------------------+
-    # |                 Training loop                  |
-    # +------------------------------------------------+
+    # +---------------+
+    # | Training loop |
+    # +---------------+
     for step, beta in zip(steps, betas):
         # Perform a single training step
         x, metrics = timed_step(x, beta)
@@ -367,7 +365,7 @@ def train_dynamics(
                 update_summaries(step, metrics, dynamics)
                 writer.flush()
 
-        # Print header every hundred steps
+        # Print header every so often
         if IS_CHIEF and (step + 1) % (50 * flags.print_steps) == 0:
             io.log(header.split('\n'), should_print=True)
 

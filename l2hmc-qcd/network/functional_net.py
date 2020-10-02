@@ -243,7 +243,7 @@ def get_gauge_network(
             'h2': (h2, 1. / 2., f'{name}/h2'),
             'scale': (xdim, 0.001, f'{name}/scale'),
             'transl': (xdim, 0.001, f'{name}/transl'),
-            'transf': (xdim, 0.001, f'{name}/transformation'),
+            'transf': (xdim, 0.001, f'{name}/transf'),
         }
 
         x = custom_dense(*args['x'])(x)
