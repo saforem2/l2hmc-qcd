@@ -276,10 +276,21 @@ class GaugeDynamics(BaseDynamics):
         """Implements a series of directional updates."""
         state_prop = State(state.x, state.v, state.beta)
         sumlogdet = tf.zeros((self.batch_size,), dtype=TF_FLOAT)
-        midpt = self.config.num_steps // 2
-        lf_fns = midpt * [self._forward_lf] + midpt * [self._backward_lf]
-        for step, lf_fn in enumerate(lf_fns):
-            state_prop, logdet = lf_fn(step, state_prop, training)
+
+        # ====
+        # Forward for first half of trajectory
+        for step in range(self.config.num_steps // 2):
+            state_prop, logdet = self._forward_lf(step, state_prop, training)
+            sumlogdet += logdet
+
+        # ====
+        # Flip momentum
+        state_prop.v *= -1
+
+        # ====
+        # Backward for second half of trajectory
+        for step in range(self.config.num_steps // 2, self.config.num_steps):
+            state_prop, logdet = self._backward_lf(step, state_prop, training)
             sumlogdet += logdet
 
         accept_prob = self.compute_accept_prob(state, state_prop, sumlogdet)
@@ -396,7 +407,8 @@ class GaugeDynamics(BaseDynamics):
         if not self.config.separate_networks:
             S, T, Q = self.vnet((x, grad, t), training)
         else:
-            S, T, Q = self.vnet[step]((x, grad, t), training)
+            vnet = self.vnet[step]
+            S, T, Q = vnet((x, grad, t), training)
 
         return S, T, Q
 
@@ -418,7 +430,8 @@ class GaugeDynamics(BaseDynamics):
         if not self.config.separate_networks:
             S, T, Q = self.xnet((x, v, t), training)
         else:
-            S, T, Q = self.xnet[step]((x, v, t), training)
+            xnet = self.xnet[step]
+            S, T, Q = xnet((x, v, t), training)
 
         return S, T, Q
 
@@ -445,7 +458,6 @@ class GaugeDynamics(BaseDynamics):
         t = self._get_time(step, tile=tf.shape(x)[0])
 
         S, T, Q = self._call_vnet((x, grad, t), step, training)
-        #  S, T, Q = self.vnet((x, grad, t), training)
 
         scale = self._vsw * (0.5 * self.eps * S)
         transl = self._vtw * T
@@ -538,7 +550,6 @@ class GaugeDynamics(BaseDynamics):
         grad = self.grad_potential(x, state.beta)
         t = self._get_time(step, tile=tf.shape(x)[0])
         S, T, Q = self._call_vnet((x, grad, t), step, training)
-        #  S, T, Q = self.vnet((x, grad, t), training)
 
         scale = self._vsw * (-0.5 * self.eps * S)
         transf = self._vqw * (self.eps * Q)
