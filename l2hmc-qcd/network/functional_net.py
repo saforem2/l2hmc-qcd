@@ -182,9 +182,13 @@ def get_gauge_network(
         input_shapes = {
             'x': (xdim, 2), 'v': (xdim,), 't': (2,)
         }
-
-    h1 = net_config.units[0]
-    h2 = net_config.units[1]
+    if len(net_config.units) == 3:
+        h1, h2, h3 = net_config.units
+    elif len(net_config.units) == 2:
+        h1, h2 = net_config.units
+        h3 = h2
+    else:
+        h1 = h2 = h3 = net_config.units
     #  kinits = get_kernel_initializers(factor, kernel_initializer)
     if name is None:
         name = 'GaugeNetwork'
@@ -241,6 +245,7 @@ def get_gauge_network(
             't': (h1, 1. / 3., f'{name}/t'),
             'h1': (h2, 1. / 2., f'{name}/h1'),
             'h2': (h2, 1. / 2., f'{name}/h2'),
+            'h3': (h3, 1. / 2., f'{name}/h3'),
             'scale': (xdim, 0.001, f'{name}/scale'),
             'transl': (xdim, 0.001, f'{name}/transl'),
             'transf': (xdim, 0.001, f'{name}/transf'),
@@ -253,11 +258,12 @@ def get_gauge_network(
         z = layers.Add()([x, v, t])
         z = keras.activations.relu(z)
 
-        for n, units in enumerate(net_config.units):
-            z = custom_dense(units, 1./2., name=f'{name}/h{n}')(z)
+        #  for n, units in enumerate(net_config.units):
+        #      z = custom_dense(units, 1./2., name=f'{name}/h{n}')(z)
 
-        #  z = custom_dense(*args['h1'])(z)
-        #  z = custom_dense(*args['h2'])(z)
+        z = custom_dense(*args['h1'])(z)
+        z = custom_dense(*args['h2'])(z)
+        z = custom_dense(*args['h3'])(z)
 
         if net_config.dropout_prob > 0:
             z = layers.Dropout(net_config.dropout_prob)(z)
