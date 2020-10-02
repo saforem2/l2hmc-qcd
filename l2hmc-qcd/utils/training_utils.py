@@ -161,7 +161,8 @@ def train(
 
 def setup(dynamics, flags, dirs=None, x=None, betas=None):
     """Setup training."""
-    train_data = DataContainer(flags.train_steps, dirs=dirs)
+    train_data = DataContainer(flags.train_steps, dirs=dirs,
+                               print_steps=flags.print_steps)
     ckpt = tf.train.Checkpoint(dynamics=dynamics,
                                optimizer=dynamics.optimizer)
     manager = tf.train.CheckpointManager(ckpt, dirs.ckpt_dir, max_to_keep=5)
@@ -274,6 +275,19 @@ def train_dynamics(
                           'Running `dynamics.train_step` imperatively...'])
         io.log(lstr, level='CRITICAL')
     io.log(120*'*')
+
+    if IS_CHIEF:
+        xf = os.path.join(dirs.log_dir, 'dynamics_xnet.png')
+        vf = os.path.join(dirs.log_dir, 'dynamics_vnet.png')
+        tf.keras.utils.plot_model(dynamics.xnet, show_shapes=True, to_file=xf)
+        tf.keras.utils.plot_model(dynamics.vnet, show_shapes=True, to_file=vf)
+        io.log(120 * '-')
+        dynamics.xnet.summary()
+        io.log(60 * '- ')
+        dynamics.vnet.summary()
+        io.log(120 * '-')
+        #  print('\n'.join([120 * '=', dynamics.xnet.summary(),
+        #                   120 * '=', dynamics.vnet.summary()]))
 
     # +--------------------------------+
     # | Run MD update to not get stuck |
