@@ -1,0 +1,46 @@
+\section{07/02/2020}
+\begin{itemize}
+  \item Monitor during training/inference:
+    \begin{itemize}
+      \item Topological loss
+      \item Plaquette loss
+      \item Full loss (if different from above)
+      \item Acceptance
+      \item Tunneling rate
+    \end{itemize}
+  \item Get HMC results with above for varying step size
+\end{itemize}
+
+\section{07/10/2020}
+\begin{itemize}
+  \item Find out why loss increases
+  \item Train at fixed beta and determine when loss stops decreasing
+  \item Modify network (depth?) and compare loss, fixing all other run
+    parameters
+  \item Save configurations on each rank when saving checkpoints (horovod)
+\end{itemize}
+
+\section{07/17/2020}
+\begin{itemize}
+  \item Run MD (no accept/reject) for initial set of trajectories to avoid
+    getting stuck
+  \item Check that no runs in batch are getting stuck
+  \item Check that plaq error is small
+  \item Try training at \(\beta = 2\) for a while, then switch to \(\beta
+    = 3\); compare to training at just \(\beta = 3\)
+\end{itemize}
+
+\section{07/24/2020}
+\begin{itemize}
+  \item MD seems to remove bias
+  \item Training after MD seems to give lower loss function
+    \begin{itemize}
+      \item Check if reproducible
+      \item See why lower (acceptance? tunneling?)
+      \item See if results at end of training are consistent with inference
+        from random start
+    \end{itemize}
+\end{itemize}
+
+
+

@@ -1,0 +1,45 @@
+\section{Non Compact Projection}%
+\label{sec:ncp}
+Recall the expression for the \(x\) update in the augmented L2HMC sampler,
+%
+\begin{align}
+  x^{\prime} &= m^{t}\odot x + \bar{m}^{t}\odot\big[x\odot\exp(\varepsilon
+           S_{x}(\zeta^{t}_{2})) + \varepsilon * \big(v \odot \exp(\varepsilon
+           Q_x(\zeta^{t}_{2})) + T_{x}(\zeta^{t}_{2})\big)\big]\\
+        &= m^{t}\odot x + \bar{m}^{t}\odot\left[\alpha x + \beta\right]
+        % &= m^{t}\odot x + \bar{m}^{t}\odot g(x)
+\end{align}
+%
+where \(\alpha = \exp(\varepsilon S_{x}), \beta =
+\varepsilon\cdot\left(v\odot\exp(\varepsilon Q_{x}) + T_{x}\right)\), depend on
+\(\zeta_{2} = (m^{t}\odot x, v, t)\), but are independent of \(\bar{m}^{t}\odot
+x\).
+
+Let \(z = h(x): [-\pi, \pi] \rightarrow \mathbb{R}\) be given by
+%
+\begin{equation}
+  z = \tan\left(\frac{x}{2}\right).
+\end{equation}
+%
+We can perform the affine transformation in \(\mathbb{R}\) and then project
+back to \([-\pi, \pi]\) via \(x = h^{-1}(z)\) to complete the
+update:
+%
+% &= m^{t}\odot x + \bar{m}^{t}\odot h^{-1}\left(g\left(h(x)\right)\right) \\
+\begin{align}
+  x^{\prime} &= m^{t}\odot x + \bar{m}^{t}\odot \left[2\tan^{-1}\left(\alpha
+           \tan\left(\frac{x}{2}\right)\right) + \beta\right]
+           %   &= m^{t}\odot x +
+           %   \bar{m}^{t}\odot\big[2\tan^{-1}\left(\tan{\left(\frac{x}{2}\right)}\odot\exp(\varepsilon
+           %       S_{x}(\zeta^{t}_{2}))\right) + \varepsilon * \big(v \odot \exp(\varepsilon
+           % Q_x(\zeta^{t}_{2})) + T_{x}(\zeta^{t}_{2})\big)\big]
+\end{align}
+%
+With Jacobian factor
+%
+\begin{align}
+  \frac{\partial x^{\prime}}{\partial x} 
+  &= \frac{\alpha}{\cos^{2}(\frac{x}{2})+\alpha^{2}\sin^{2}(\frac{x}{2})} \\
+  &= \frac{\exp{(\eps S_{x})}}{\cos^{2}{(\frac{x}{2})} 
+  + \exp{(2\cdot\eps S_{x})} \sin{(\frac{x}{2})}}
+\end{align}
