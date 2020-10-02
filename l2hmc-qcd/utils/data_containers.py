@@ -21,13 +21,12 @@ from utils.attr_dict import AttrDict
 from utils.data_utils import therm_arr
 
 
-
 class DataContainer:
     """Base class for dealing with data."""
 
-    def __init__(self, steps, header=None, dirs=None):
+    def __init__(self, steps, header=None, dirs=None, print_steps=100):
         self.steps = steps
-
+        self.print_steps = print_steps
         self.dirs = dirs
         self.data_strs = [header]
         self.steps_arr = []
@@ -53,11 +52,8 @@ class DataContainer:
         if metrics is None:
             metrics = self.data
 
-        header = io.make_header_from_dict(metrics,
-                                          skip=skip,
-                                          prepend=prepend,
-                                          append=append,
-                                          split=split)
+        header = io.make_header_from_dict(metrics, skip=skip, split=split,
+                                          prepend=prepend, append=append)
 
         if self.data_strs[0] != header:
             self.data_strs.insert(0, header)
@@ -71,8 +67,20 @@ class DataContainer:
         data = {
             k: tf.reduce_mean(v) for k, v in metrics.items() if k not in skip
         }
-        fstr = (f'{step:>5g}/{self.steps:<5g} '
-                + ''.join([f'{v:^12.4g}' for _, v in data.items()]))
+
+        try:
+            n = step - self.print_steps
+            data['dt'] = 0.5 * (
+                data['dt'] + tf.reduce_mean(self.data['dt'][-n:])
+            )
+
+        except (IndexError, KeyError):
+            pass
+
+        fstr = (
+            f'{step:>5g}/{self.steps:<5g} '
+            + ''.join([f'{v:^12.4g}' for _, v in data.items()])
+        )
 
         self.data_strs.append(fstr)
 
