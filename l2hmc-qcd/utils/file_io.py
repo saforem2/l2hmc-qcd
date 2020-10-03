@@ -281,20 +281,10 @@ def change_extension(fpath, ext):
 def loadz(fpath):
     """Load from `fpath` using `joblib.load`."""
     try:
-        obj = joblib.load(fpath)
-    except FileNotFoundError:
-        fpath_pkl = change_extension(fpath, 'pkl')
-        obj = load_pkl(fpath_pkl)
-
-    return obj
-
-
-def load_pkl(fpath):
-    """Load from `fpath` using `pickle.load`."""
-    with open(fpath, 'rb') as f:
-        data = pickle.load(f)
-
-    return data
+        return joblib.load(fpath)
+    except FileNotFoundError as e:
+        log(e)
+        log(f'Unable to load from: {fpath}')
 
 
 def timeit(out_file=None, should_log=True):
