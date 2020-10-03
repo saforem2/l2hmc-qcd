@@ -47,6 +47,7 @@ from dynamics.gauge_dynamics import build_dynamics, GaugeDynamics
 # pylint:disable=invalid-name
 
 RANK = hvd.rank()
+LOCAL_RANK = hvd.local_rank()
 IS_CHIEF = (RANK == 0)
 NUM_NODES = hvd.size()
 io.log(f'Number of devices: {NUM_NODES}')
@@ -129,7 +130,7 @@ def train(
 
     if flags.get('restore', False):
         xfile = os.path.join(dirs.train_dir,
-                             'train_data', f'x_rank{RANK}.z')
+                             'train_data', f'x_rank{RANK}-{LOCAL_RANK}.z')
         x = io.loadz(xfile)
 
     dynamics = build_dynamics(flags)
@@ -170,7 +171,16 @@ def setup(dynamics, flags, dirs=None, x=None, betas=None):
         io.log(f'Restored model from: {manager.latest_checkpoint}')
         ckpt.restore(manager.latest_checkpoint)
         current_step = dynamics.optimizer.iterations.numpy()
-        x = train_data.restore(dirs.data_dir, rank=RANK, step=current_step)
+        try:
+            x = train_data.restore(dirs.data_dir, step=current_step,
+                                   rank=RANK, local_rank=LOCAL_RANK)
+        except FileNotFoundError as e:
+            io.log(e, level='warning')
+            io.log('UNABLE TO RESTORE `x` ON'
+                   f'RANK: {RANK}, LOCAL_RANK: {LOCAL_RANK}', level='warning')
+            io.log('Resuming training with randomly initialized `x`.',
+                   level='warning')
+            x = tf.random.normal(dynamics.x_shape)
         #  flags.beta_init = train_data.data.beta[-1]
 
     # Create initial samples if not restoring from ckpt
@@ -201,11 +211,13 @@ def setup(dynamics, flags, dirs=None, x=None, betas=None):
     #  beta_tspec = tf.TensorSpec([], dtype=TF_FLOAT, name='beta')
     #  input_signature=[x_tspec, beta_tspec])
 
-    #  if dynamics.config['model_type'] == 'GaugeModel':
     inputs = (x, tf.constant(betas[0]))
     _ = dynamics.apply_transition(inputs, training=True)
 
-    train_step = tf.function(dynamics.train_step)
+    if flags.get('compile', True):
+        train_step = tf.function(dynamics.train_step)
+    else:
+        train_step = dynamics.train_step
 
     pstart = 0
     pstop = 0
@@ -351,7 +363,8 @@ def train_dynamics(
 
         # Save checkpoints and dump configs `x` from each rank
         if should_save(step + 1):
-            train_data.dump_configs(x, dirs.data_dir, rank=RANK)
+            train_data.dump_configs(x, dirs.data_dir,
+                                    rank=RANK, local_rank=LOCAL_RANK)
             if IS_CHIEF:
                 manager.save()
                 train_data.save_and_flush(dirs.data_dir,
@@ -374,7 +387,7 @@ def train_dynamics(
         if IS_CHIEF and (step + 1) % (50 * flags.print_steps) == 0:
             io.log(header.split('\n'), should_print=True)
 
-    train_data.dump_configs(x, dirs.data_dir, rank=RANK)
+    train_data.dump_configs(x, dirs.data_dir, rank=RANK, local_rank=LOCAL_RANK)
     if IS_CHIEF:
         manager.save()
         io.log(f'Checkpoint saved to: {manager.latest_checkpoint}')
