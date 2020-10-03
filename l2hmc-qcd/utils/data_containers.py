@@ -86,19 +86,14 @@ class DataContainer:
 
         return fstr
 
-    def restore(self, data_dir, rank=0, step=None):
+    def restore(self, data_dir, rank=0, local_rank=0, step=None):
         """Restore `self.data` from `data_dir`."""
         if step is not None:
             self.steps += step
 
-        x_file = os.path.join(data_dir, f'x_rank{rank}.z')
-        try:
-            x = io.loadz(x_file)
-            io.log_tqdm(f'Restored `x` from: {x_file}.')
-        except FileNotFoundError as err:
-            io.log_tqdm(f'Unable to load `x` from {x_file}.')
-            raise err
-
+        x_file = os.path.join(data_dir, f'x_rank{rank}-{local_rank}.z')
+        x = io.loadz(x_file)
+        io.log_tqdm(f'Restored `x` from: {x_file}.')
         data = self.load_data(data_dir)
         for key, val in data.items():
             self.data[key] = np.array(val).tolist()
@@ -166,16 +161,19 @@ class DataContainer:
             avg_df.to_csv(csv_file, header=False, index=False, mode='a')
 
     @staticmethod
-    def dump_configs(x, data_dir, rank=0):
+    def dump_configs(x, data_dir, rank=0, local_rank=0):
         """Save configs `x` separately for each rank."""
-        xfile = os.path.join(data_dir, f'x_rank{rank}.z')
-        io.log_tqdm(f'Saving configs from rank {rank} to: {xfile}.')
+        xfile = os.path.join(data_dir, f'x_rank{rank}-{local_rank}.z')
+        io.log_tqdm('Saving configs from rank '
+                    f'{rank}-{local_rank} to: {xfile}.')
         head, _ = os.path.split(xfile)
         io.check_else_make_dir(head)
         joblib.dump(x, xfile)
 
     # pylint:disable=too-many-arguments
-    def save_and_flush(self, data_dir=None, log_file=None, rank=0, mode='a'):
+    def save_and_flush(
+        self, data_dir=None, log_file=None, rank=0, mode='a'
+    ):
         """Call `self.save_data` and `self.flush_data_strs`."""
         if data_dir is None:
             data_dir = self.dirs.get('data_dir', None)
