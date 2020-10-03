@@ -280,11 +280,7 @@ def change_extension(fpath, ext):
 
 def loadz(fpath):
     """Load from `fpath` using `joblib.load`."""
-    try:
-        return joblib.load(fpath)
-    except FileNotFoundError as e:
-        log(e)
-        log(f'Unable to load from: {fpath}')
+    return joblib.load(fpath)
 
 
 def timeit(out_file=None, should_log=True):

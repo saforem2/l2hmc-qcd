@@ -128,10 +128,12 @@ def train(
         x = tf.random.normal(flags.dynamics_config['lattice_shape'])
         x = tf.reshape(x, (x.shape[0], -1))
 
+    '''
     if flags.get('restore', False):
         xfile = os.path.join(dirs.train_dir,
                              'train_data', f'x_rank{RANK}-{LOCAL_RANK}.z')
         x = io.loadz(xfile)
+    '''
 
     dynamics = build_dynamics(flags)
     dynamics.save_config(dirs.config_dir)
@@ -171,9 +173,10 @@ def setup(dynamics, flags, dirs=None, x=None, betas=None):
         io.log(f'Restored model from: {manager.latest_checkpoint}')
         ckpt.restore(manager.latest_checkpoint)
         current_step = dynamics.optimizer.iterations.numpy()
-        try:
-            x = train_data.restore(dirs.data_dir, step=current_step,
-                                   rank=RANK, local_rank=LOCAL_RANK)
+        x = train_data.restore(dirs.data_dir, step=current_step,
+                               rank=RANK, local_rank=LOCAL_RANK,
+                               x_shape=dynamics.x_shape)
+        '''
         except FileNotFoundError as e:
             io.log(e, level='warning')
             io.log('UNABLE TO RESTORE `x` ON'
@@ -181,6 +184,7 @@ def setup(dynamics, flags, dirs=None, x=None, betas=None):
             io.log('Resuming training with randomly initialized `x`.',
                    level='warning')
             x = tf.random.normal(dynamics.x_shape)
+        '''
         #  flags.beta_init = train_data.data.beta[-1]
 
     # Create initial samples if not restoring from ckpt
