@@ -86,14 +86,20 @@ class DataContainer:
 
         return fstr
 
-    def restore(self, data_dir, rank=0, local_rank=0, step=None):
+    def restore(self, data_dir, rank=0, local_rank=0, step=None, x_shape=None):
         """Restore `self.data` from `data_dir`."""
         if step is not None:
             self.steps += step
 
         x_file = os.path.join(data_dir, f'x_rank{rank}-{local_rank}.z')
-        x = io.loadz(x_file)
-        io.log_tqdm(f'Restored `x` from: {x_file}.')
+        try:
+            x = io.loadz(x_file)
+            io.log(f'Restored `x` from: {x_file}.', should_print=True)
+        except FileNotFoundError:
+            io.log(f'Unable to load `x` from {x_file}.', level='WARNING')
+            io.log('Using random normal init.', level='WARNING')
+            x = tf.random.normal(x_shape)
+
         data = self.load_data(data_dir)
         for key, val in data.items():
             self.data[key] = np.array(val).tolist()
