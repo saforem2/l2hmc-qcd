@@ -190,9 +190,6 @@ def check_else_make_dir(d: str):
         d (str): Location where directory should be created if it doesn't
             already exist.
     """
-    if RANK != 0:
-        return
-
     if isinstance(d, (list, np.ndarray)):
         for i in d:
             check_else_make_dir(i)
