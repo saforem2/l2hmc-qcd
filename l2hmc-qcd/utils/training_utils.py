@@ -197,8 +197,8 @@ def setup(dynamics, flags, dirs=None, x=None, betas=None):
     if IS_CHIEF and make_summaries:
         writer = tf.summary.create_file_writer(dirs.summary_dir)
 
-    current_step = dynamics.optimizer.iterations.numpy() + 1  # get global step
-    num_steps = max([flags.train_steps + 2, current_step + 2])
+    current_step = dynamics.optimizer.iterations.numpy()  # get global step
+    num_steps = max([flags.train_steps + 1, current_step + 1])
     steps = tf.range(current_step, num_steps, dtype=tf.int64)
     train_data.steps = steps[-1]
     if betas is None:

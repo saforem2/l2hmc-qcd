@@ -103,26 +103,6 @@ def catch_exception(fn):
 
 
 @timeit(out_file=None)
-def test_transition_kernels(dynamics, x, beta, training=None):
-    tk_diffs_f = dynamics.test_transition_kernels(x, beta, forward=True,
-                                                  training=False)
-    tk_diffs_b = dynamics.test_transition_kernels(x, beta, forward=False,
-                                                  training=False)
-    io.log('\n\n\n')
-    io.log('\n'.join([80 * '=', 'transition kernel differences:']))
-    io.log('  forward:')
-    for key, val in tk_diffs_f.items():
-        print(f'    {key}: {val}\n')
-    io.log('  backward:')
-    for key, val in tk_diffs_b.items():
-        print(f'    {key}: {val}\n')
-
-    io.log(80 * '=' + '\n\n\n')
-
-    return AttrDict({'forward': tk_diffs_f, 'backward': tk_diffs_b})
-
-
-@timeit(out_file=None)
 def test_hmc_run(flags: AttrDict):
     """Testing generic HMC."""
     flags.dynamics_config['hmc'] = True
@@ -135,7 +115,6 @@ def test_hmc_run(flags: AttrDict):
         'dynamics': dynamics,
         'flags': flags,
         'run_data': run_data,
-        'tk_diffs': None,
     }
 
 
@@ -172,7 +151,6 @@ def test_single_network(flags: AttrDict):
     flags.dynamics_config.separate_networks = False
     x, dynamics, train_data, flags = train(flags)
     beta = flags.get('beta', 1.)
-    tk_diffs = test_transition_kernels(dynamics, x, beta, training=False)
     dynamics, run_data, x = run(dynamics, flags, x=x)
 
     return AttrDict({
@@ -182,7 +160,6 @@ def test_single_network(flags: AttrDict):
         'dynamics': dynamics,
         'run_data': run_data,
         'train_data': train_data,
-        'tk_diffs': tk_diffs,
     })
 
 
@@ -197,7 +174,6 @@ def test_separate_networks(flags: AttrDict):
     flags.compile = False
     x, dynamics, train_data, flags = train(flags)
     beta = flags.get('beta', 1.)
-    tk_diffs = test_transition_kernels(dynamics, x, beta, training=False)
     dynamics, run_data, x = run(dynamics, flags, x=x)
 
     return AttrDict({
@@ -207,7 +183,6 @@ def test_separate_networks(flags: AttrDict):
         'dynamics': dynamics,
         'run_data': run_data,
         'train_data': train_data,
-        'tk_diffs': tk_diffs,
     })
 
 
@@ -222,7 +197,6 @@ def test_resume_training(log_dir: str):
     flags.train_steps += flags.get('train_steps', 10)
     x, dynamics, train_data, flags = train(flags)
     beta = flags.get('beta', 1.)
-    tk_diffs = test_transition_kernels(dynamics, x, beta, training=False)
     dynamics, run_data, x = run(dynamics, flags, x=x)
 
     return AttrDict({
@@ -232,7 +206,6 @@ def test_resume_training(log_dir: str):
         'dynamics': dynamics,
         'run_data': run_data,
         'train_data': train_data,
-        'tk_diffs': tk_diffs,
     })
 
 
