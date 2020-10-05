@@ -215,7 +215,10 @@ def run_dynamics(
     print_steps = flags.get('print_steps', 5)
     beta = flags.get('beta', flags.get('beta_final', None))
 
-    test_step = tf.function(dynamics.test_step)
+    test_step = dynamics.test_step
+    if flags.get('compile', True):
+        test_step = tf.function(dynamics.test_step)
+        io.log('Compiled `dynamics.test_step` using tf.function!')
 
     if x is None:
         x = tf.random.uniform(shape=dynamics.x_shape,
