@@ -193,6 +193,7 @@ def run(
     run_params.update(dynamics.params)
     io.save_params(run_params, run_dir, name='run_params')
 
+    args.logging_steps = 1
     plot_data(run_data, run_dir, args, thermalize=True, params=run_params)
 
     return dynamics, run_data, x
