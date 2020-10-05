@@ -381,6 +381,11 @@ def parse_configs(flags, debug=False):
     if act != 'relu':
         fstr += f'_act{act}'
 
+    if config.get('hmc', False):
+        eps = config.get('eps', None)
+        if eps is not None:
+            fstr += f'_eps{eps}'.replace('.', '')
+
     bi = flags.get('beta_init', None)
     bf = flags.get('beta_final', None)
     fstr += f'_bi{bi:.3g}_bf{bf:.3g}'
