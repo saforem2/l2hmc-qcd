@@ -80,6 +80,7 @@ def main(args):
         # ====
         # Run HMC
         args.hmc = True
+        args.dynamics_config['eps'] = 0.15
         hmc_dir = os.path.join(args.log_dir, 'inference_hmc')
         _ = run_hmc(args=args, hmc_dir=hmc_dir)
 
