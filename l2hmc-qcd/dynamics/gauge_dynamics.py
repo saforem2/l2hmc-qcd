@@ -374,8 +374,6 @@ class GaugeDynamics(BaseDynamics):
                                       clear_after_read=False)
             energies = energies.write(0, self.hamiltonian(state_prop))
             logdets = logdets.write(0, sumlogdet)
-        #  logdets = [sumlogdet]
-        #  energies = [self.hamiltonian(state_prop)]
 
         for step in range(self.config.num_steps):
             state_prop, logdet = lf_fn(step, state_prop, training)
@@ -881,10 +879,10 @@ class GaugeDynamics(BaseDynamics):
         """
         wloops = self.lattice.calc_wilson_loops(state.x)
         q_sin = self.lattice.calc_charges(wloops=wloops, use_sin=True)
-        q_proj = self.lattice.calc_charges(wloops=wloops, use_sin=False)
+        q_int = self.lattice.calc_charges(wloops=wloops, use_sin=False)
         plaqs = self.lattice.calc_plaqs(wloops=wloops, beta=state.beta)
 
-        return plaqs, q_sin, q_proj
+        return plaqs, q_sin, q_int
 
     def calc_observables(self, states):
         """Calculate observables."""
@@ -928,6 +926,23 @@ class GaugeDynamics(BaseDynamics):
             return xnet, vnet
 
         return self.xnet, self.vnet
+
+    def _get_time(self, i, tile=1):
+        """Format the MCMC step as:
+               [cos(2pi*step/num_steps), sin(2pi*step/num_steps)]
+        """
+        if self.config.separate_networks:
+            trig_t = tf.squeeze([0, 0])
+        else:
+            i = tf.cast(i, dtype=TF_FLOAT)
+            trig_t = tf.squeeze([
+                tf.cos(2 * np.pi * i / self.config.num_steps),
+                tf.sin(2 * np.pi * i / self.config.num_steps),
+            ])
+
+        t = tf.tile(tf.expand_dims(trig_t, 0), (tile, 1))
+
+        return t
 
     def _build_masks(self):
         """Construct different binary masks for different time steps."""
