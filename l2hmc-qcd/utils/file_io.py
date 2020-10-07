@@ -119,6 +119,19 @@ def log_tqdm(s, out=sys.stdout):
     pass
 
 
+def print_dict(d, indent=0, name=None, **kwargs):
+    indent_str = indent * ' '
+    if name is not None:
+        log(f'{indent_str}{name}:', **kwargs)
+        sep_str = indent_str + len(name) * '-'
+        log(sep_str, **kwargs)
+    for key, val in d.items():
+        if isinstance(val, (AttrDict, dict)):
+            print_dict(val, indent=indent+2, name=str(key), **kwargs)
+        else:
+            log(f'  {indent_str}{key}: {val}', **kwargs)
+
+
 def print_flags(flags: AttrDict):
     """Helper method for printing flags."""
     log('\n'.join(
@@ -263,7 +276,7 @@ def savez(obj: typing.Any, fpath: str, name: str = None):
         fpath += '.z'
 
     if name is not None:
-        log(f'Saving {name} to {fpath}.')
+        log(f'Saving {name} to {os.path.abspath(fpath)}.')
 
     joblib.dump(obj, fpath)
 
@@ -322,29 +335,43 @@ def get_run_num(run_dir):
     return sorted([int(i.split('_')[-1]) for i in dirnames])[-1] + 1
 
 
-def get_run_dir_fstr(FLAGS: AttrDict):
+def get_run_dir_fstr(flags: AttrDict):
     """Parse FLAGS and create unique fstr for `run_dir`."""
-    eps = FLAGS.get('eps', None)
-    hmc = FLAGS.get('hmc', False)
-    beta = FLAGS.get('beta', None)
-    num_steps = FLAGS.get('num_steps', None)
-    lattice_shape = FLAGS.get('lattice_shape', None)
+    beta = flags.get('beta', None)
+    config = flags.get('dynamics_config', None)
+
+    eps = config.get('eps', None)
+    hmc = config.get('hmc', False)
+    num_steps = config.get('num_steps', None)
+    lattice_shape = config.get('lattice_shape', None)
 
     if beta is None:
-        beta = FLAGS.get('beta_final', None)
+        beta_final = flags.get('beta_final', None)
+        if beta_final is None:
+            beta_init = flags.get('beta_init', None)
+            if beta_init is None:
+                raise ValueError('beta not specified.')
+            beta = beta_init
+        else:
+            beta = beta_final
 
     fstr = ''
     if hmc:
         fstr += 'HMC_'
+    if lattice_shape is not None:
+        if lattice_shape[1] == lattice_shape[2]:
+            fstr += f'L{lattice_shape[1]}_b{lattice_shape[0]}_'
+        else:
+            fstr += (
+                f'L{lattice_shape[1]}_T{lattice_shape[2]}_b{lattice_shape[0]}_'
+            )
+
     if beta is not None:
         fstr += f'beta{beta:.3g}'.replace('.', '')
     if num_steps is not None:
         fstr += f'_lf{num_steps}'
     if eps is not None:
         fstr += f'_eps{eps:.3g}'.replace('.', '')
-    if lattice_shape is not None:
-        fstr += f'_b{lattice_shape[0]}'
-
     return fstr
 
 
@@ -431,6 +458,13 @@ def parse_configs(flags, debug=False):
     return fstr.replace('.', '')
 
 
+def get_timestamp(format=None):
+    now = datetime.datetime.now()
+    if format is None:
+        return now.strftime('%Y-%m-%d-%H%M%S')
+    return now.strftime(format)
+
+
 # pylint:disable=too-many-arguments
 def make_log_dir(FLAGS, model_type=None, log_file=None, root_dir=None):
     """Automatically create and name `log_dir` to save model data to.
@@ -446,27 +480,25 @@ def make_log_dir(FLAGS, model_type=None, log_file=None, root_dir=None):
     NOTE: If log_dir does not already exist, it is created.
     """
     model_type = 'GaugeModel' if model_type is None else model_type
-    fstr = parse_configs(FLAGS)
+    cfg_str = parse_configs(FLAGS)
 
-    now = datetime.datetime.now()
-    month_str = now.strftime('%Y_%m')
-    dstr = now.strftime('%Y-%m-%d-%H%M%S')
-    run_str = f'{fstr}-{dstr}'
+    month_str = get_timestamp('%Y_%m')
+    time_str = get_timestamp('%Y-%m-%d-%H%M%S')
+    run_str = f'{cfg_str}-{time_str}'
 
-    #  if root_dir is None:
     if root_dir is None:
-        root_dir = os.path.dirname(PROJECT_DIR)
+        root_dir = PROJECT_DIR
 
     dirs = [root_dir, 'logs', f'{model_type}_logs']
-    if fstr.startswith('DEBUG'):
+    if cfg_str.startswith('DEBUG'):
         dirs.append('test')
 
     log_dir = os.path.join(*dirs, month_str, run_str)
     if os.path.isdir(log_dir):
         log('\n'.join(['Existing directory found with the same name!',
                        'Modifying the date string to include seconds.']))
-        dstr = now.strftime('%Y-%m-%d-%H%M%S')
-        run_str = f'{fstr}-{dstr}'
+        dstr = get_timestamp('%Y-%m-%d-%H%M%S')
+        run_str = f'{cfg_str}-{dstr}'
         log_dir = os.path.join(*dirs, month_str, run_str)
 
     if RANK == 0:
