@@ -115,6 +115,7 @@ LOGS_DIR = os.path.join(PROJECT_DIR, 'logs')
 GAUGE_LOGS_DIR = os.path.join(LOGS_DIR, 'GaugeModel_logs')
 HMC_LOGS_DIR = os.path.join(GAUGE_LOGS_DIR, 'hmc_logs')
 
+FIGSIZE = (4, 3)
 COLORS = 5000 * ['C0', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9']
 MARKERS = 5000 * ['o', 's', '^', '<', 'd', 'v', 'h', '>', 'p', 'x', '+', '*']
 LINESTYLES = 5000 * ['-', '--', ':', '-.', '-', '--', ':', '-.', '-', '--']

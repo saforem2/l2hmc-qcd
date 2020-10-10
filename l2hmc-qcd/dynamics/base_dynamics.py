@@ -181,6 +181,27 @@ class BaseDynamics(tf.keras.Model):
         """Perform a single inference step."""
         raise NotImplementedError
 
+    def _forward(
+        self,
+        inputs: Union[tf.Tensor, List[tf.Tensor]],
+        training: bool = None,
+    ):
+        """Propose a new state by running the leapfrog integrator forward."""
+        state_init, state_prop, data = self._transition(inputs, forward=True,
+                                                        training=training)
+        sumlogdet = data.get('sumlogdet', None)
+        accept_prob = data.get('accept_prob', None)
+        ma_, mr_ = self._get_accept_masks(accept_prob)
+        ma = ma_[:, None]
+        mr = mr_[:, None]
+        x_out = state_prop.x * ma + state_init.x * mr
+        v_out = state_prop.v * ma + state_init.v * mr
+        data.sumlogdet_out = sumlogdet * ma
+        state_out = State(x_out, v_out, state_init.beta)
+        mc_states = MonteCarloStates(state_init, state_prop, state_out)
+
+        return mc_states, data
+
     def _random_direction(
             self,
             inputs: Union[tf.Tensor, List[tf.Tensor]],
@@ -397,24 +418,25 @@ class BaseDynamics(tf.keras.Model):
 
         state_prop = State(x=state.x, v=state.v, beta=state.beta)
         sumlogdet = tf.zeros((self.batch_size,), dtype=TF_FLOAT)
-        if self._verbose:
-            logdets = tf.TensorArray(TF_FLOAT,
-                                     dynamic_size=True,
-                                     size=self.batch_size,
-                                     clear_after_read=False)
-            energies = tf.TensorArray(TF_FLOAT,
-                                      dynamic_size=True,
-                                      size=0)
-            energies = energies.write(0, self.hamiltonian(state_prop))
-            logdets = logdets.write(0, sumlogdet)
+        logdets = tf.TensorArray(TF_FLOAT,
+                                 dynamic_size=True,
+                                 size=self.batch_size,
+                                 clear_after_read=True)
+        energies = tf.TensorArray(TF_FLOAT,
+                                  dynamic_size=True,
+                                  size=self.batch_size,
+                                  clear_after_read=True)
+        #  if self._verbose:
+        #      energies = energies.write(0, self.hamiltonian(state_prop))
+        #      logdets = logdets.write(0, sumlogdet)
 
         for step in tf.range(self.config.num_steps):
+            if self._verbose:
+                logdets = logdets.write(step, sumlogdet)
+                energies = energies.write(step, self.hamiltonian(state_prop))
+
             state_prop, logdet = lf_fn(step, state_prop, training)
             sumlogdet += logdet
-
-            if self._verbose:
-                logdets = logdets.write(step, logdet)
-                energies = energies.write(step, self.hamiltonian(state_prop))
 
         accept_prob = self.compute_accept_prob(state, state_prop, sumlogdet)
         metrics = AttrDict({

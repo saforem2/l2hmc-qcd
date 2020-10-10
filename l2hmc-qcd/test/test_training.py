@@ -13,7 +13,12 @@ import tensorflow as tf
 import horovod.tensorflow as hvd
 import numpy as np
 
-from config import PROJECT_DIR, BIN_DIR
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+PARENT_DIR = os.path.dirname(CURRENT_DIR)
+if PARENT_DIR not in sys.path:
+    sys.path.append(PARENT_DIR)
+
+from config import BIN_DIR, GAUGE_LOGS_DIR
 from functools import wraps
 from network.config import ConvolutionConfig
 from utils.attr_dict import AttrDict
@@ -24,10 +29,11 @@ from utils.file_io import timeit
 
 # pylint:disable=import-outside-toplevel, invalid-name, broad-except
 TIMING_FILE = os.path.join(BIN_DIR, 'test_benchmarks.log')
+LOG_FILE = os.path.join(BIN_DIR, 'log_dirs.txt')
 
-LOG_FILE = os.path.join(
-    os.path.dirname(PROJECT_DIR), 'bin', 'log_dirs.txt'
-)
+#  LOG_FILE = os.path.join(
+#      os.path.dirname(PROJECT_DIR), 'bin', 'log_dirs.txt'
+#  )
 
 
 def parse_args():
@@ -106,8 +112,9 @@ def catch_exception(fn):
 def test_hmc_run(flags: AttrDict):
     """Testing generic HMC."""
     flags.dynamics_config['hmc'] = True
-    hmc_dir = os.path.join(os.path.dirname(PROJECT_DIR),
-                           'gauge_logs_eager', 'test', 'hmc_runs')
+    #  hmc_dir = os.path.join(os.path.dirname(PROJECT_DIR),
+    #                         'gauge_logs_eager', 'test', 'hmc_runs')
+    hmc_dir = os.path.join(GAUGE_LOGS_DIR, 'hmc_test_logs')
     dynamics, run_data, x = run_hmc(flags, hmc_dir=hmc_dir)
 
     return {

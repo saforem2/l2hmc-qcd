@@ -177,7 +177,8 @@ def plot_data(train_data, out_dir, flags, thermalize=False, params=None):
 
         if thermalize or key == 'dt':
             arr, steps = therm_arr(arr, therm_frac=0.33)
-            steps *= logging_steps
+            #  steps = steps[::logging_setps]
+            #  steps *= logging_steps
 
         labels = ('MC Step', key)
         data = (steps, arr)

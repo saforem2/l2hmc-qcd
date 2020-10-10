@@ -17,7 +17,8 @@ import horovod.tensorflow as hvd
 
 import utils.file_io as io
 
-from config import HEADER, PI, PROJECT_DIR, SEP, TF_FLOAT, CBARS
+from config import (HEADER, PI, PROJECT_DIR, SEP, TF_FLOAT, CBARS, LOGS_DIR,
+                    GAUGE_LOGS_DIR)
 from dynamics.gauge_dynamics import (build_dynamics, convert_to_angle,
                                      GaugeDynamics)
 from utils.attr_dict import AttrDict
@@ -74,8 +75,9 @@ def run_hmc(
         return None, None, None
 
     if hmc_dir is None:
-        root_dir = os.path.dirname(PROJECT_DIR)
-        hmc_dir = os.path.join(root_dir, 'gauge_logs_eager', 'hmc_runs')
+        root_dir = os.path.join(GAUGE_LOGS_DIR, 'hmc_logs')
+        month_str = io.get_timestamp('%Y_%m')
+        hmc_dir = os.path.join(root_dir, month_str)
 
     io.check_else_make_dir(hmc_dir)
 
@@ -108,7 +110,7 @@ def load_and_run(
     if not IS_CHIEF:
         return None, None, None
 
-    io.print_flags(args)
+    io.print_dict(args)
     ckpt_dir = os.path.join(args.log_dir, 'training', 'checkpoints')
     flags = restore_from_train_flags(args)
     eps_file = os.path.join(args.log_dir, 'training', 'train_data', 'eps.z')
