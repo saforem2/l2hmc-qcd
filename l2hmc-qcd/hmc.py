@@ -9,6 +9,7 @@ import os
 import json
 from utils.inference_utils import run_hmc
 from utils.attr_dict import AttrDict
+from config import GAUGE_LOGS_DIR, BIN_DIR
 
 import utils.file_io as io
 
@@ -44,7 +45,8 @@ def multiple_runs():
     num_steps = 10
     run_steps = 5000
     betas = [2., 3., 4., 5., 6.]
-    eps = [0.1, 0.125, 0.15, 0.175, 0.2]
+    #  eps = [0.1, 0.125, 0.15, 0.175, 0.2]
+    eps = [0.05, 0.075, 0.225, 0.25, 0.275]
     for b in betas:
         for e in eps:
             args = AttrDict({
@@ -56,30 +58,35 @@ def multiple_runs():
             _ = main(args)
 
 
+def load_hmc_flags():
+    """Load HMC flags from `BIN_DIR/hmc_configs.json`."""
+    cfg_file = os.path.join(BIN_DIR, 'hmc_configs.json')
+    with open(cfg_file, 'rt') as f:
+        flags = json.load(f)
+
+    return AttrDict(flags)
+
+
+# pylint:disable=no-member
 def main(args):
     """Main method for running HMC."""
-    cfg_file = os.path.relpath(os.path.join('..', 'bin', 'hmc_configs.json'))
-    with open(cfg_file, 'rt') as f:
-        configs = json.load(f)
-
-    configs = AttrDict(configs)
+    flags = load_hmc_flags()
 
     if args.beta is not None:
-        configs.beta_final = configs.beta_init = args.beta
+        flags.beta = args.beta
+        flags.beta_init = args.beta
+        flags.beta_final = args.beta
 
     if args.run_steps is not None:
-        configs.run_steps = args.run_steps
+        flags.run_steps = args.run_steps
 
     if args.eps is not None:
-        configs.dynamics_config['eps'] = args.eps
+        flags.dynamics_config['eps'] = args.eps
 
     if args.num_steps is not None:
-        configs.dynamics_config['num_steps'] = args.num_steps
+        flags.dynamics_config['num_steps'] = args.num_steps
 
-    log_dir = io.make_log_dir(configs)
-    configs.log_dir = log_dir
-
-    return run_hmc(configs, hmc_dir=log_dir)
+    return run_hmc(flags)
 
 
 if __name__ == '__main__':

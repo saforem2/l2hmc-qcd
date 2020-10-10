@@ -111,7 +111,7 @@ def train_hmc(flags):
 
 @timeit(out_file=None)
 def train(
-        flags: AttrDict, x: tf.Tensor = None
+        flags: AttrDict, x: tf.Tensor = None, restore_x: bool = False
 ):
     """Train model.
 
@@ -124,16 +124,18 @@ def train(
     dirs = io.setup_directories(flags)
     flags.update({'dirs': dirs})
 
+    if restore_x:
+        x = None
+        try:
+            xfile = os.path.join(dirs.train_dir, 'train_data',
+                                 f'x_rank{RANK}-{LOCAL_RANK}.z')
+            x = io.loadz(xfile)
+        except FileNotFoundError:
+            io.log(f'Unable to restore x from {xfile}. Using random init.')
+
     if x is None:
         x = tf.random.normal(flags.dynamics_config['lattice_shape'])
         x = tf.reshape(x, (x.shape[0], -1))
-
-    '''
-    if flags.get('restore', False):
-        xfile = os.path.join(dirs.train_dir,
-                             'train_data', f'x_rank{RANK}-{LOCAL_RANK}.z')
-        x = io.loadz(xfile)
-    '''
 
     dynamics = build_dynamics(flags)
     dynamics.save_config(dirs.config_dir)
@@ -176,16 +178,8 @@ def setup(dynamics, flags, dirs=None, x=None, betas=None):
         x = train_data.restore(dirs.data_dir, step=current_step,
                                rank=RANK, local_rank=LOCAL_RANK,
                                x_shape=dynamics.x_shape)
-        '''
-        except FileNotFoundError as e:
-            io.log(e, level='warning')
-            io.log('UNABLE TO RESTORE `x` ON'
-                   f'RANK: {RANK}, LOCAL_RANK: {LOCAL_RANK}', level='warning')
-            io.log('Resuming training with randomly initialized `x`.',
-                   level='warning')
-            x = tf.random.normal(dynamics.x_shape)
-        '''
-        #  flags.beta_init = train_data.data.beta[-1]
+    else:
+        io.log('Starting new training run...')
 
     # Create initial samples if not restoring from ckpt
     if x is None:
@@ -364,6 +358,13 @@ def train_dynamics(
     for step, beta in zip(steps, betas):
         # Perform a single training step
         x, metrics = timed_step(x, beta)
+
+        # Check if ALL chains are stuck, refresh x if so
+        px = tf.reduce_mean(metrics.accept_prob)
+        if px < 0.1:
+            io.log(f'Refreshing x! (avg(accept_prob): {px})',
+                   level='WARNING', should_print=True)
+            x = tf.random.normal(dynamics.x_shape)
 
         # Save checkpoints and dump configs `x` from each rank
         if should_save(step + 1):

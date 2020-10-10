@@ -1,4 +1,5 @@
 {
+    "compile": true,
     "log_dir":  null,
     "profiler": true,
     "md_steps": 0,
@@ -13,7 +14,7 @@
     "run_steps": 5000,
     "train_steps": 1,
     "dynamics_config": {
-        "verbose": true,
+        "verbose": false,
         "eps": 0.15,
         "num_steps": 10,
         "hmc": true,

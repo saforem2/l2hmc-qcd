@@ -31,7 +31,13 @@ from typing import Optional, Tuple
 
 import numpy as np
 import tensorflow as tf
-import horovod.tensorflow as hvd
+try:
+    import horovod.tensorflow as hvd
+    NUM_RANKS = hvd.size()
+    HAS_HOROVOD = True
+except ImportError:
+    NUM_RANKS = 1
+    HAS_HOROVOD = False
 
 import utils.file_io as io
 
@@ -47,7 +53,9 @@ from dynamics.config import GaugeDynamicsConfig
 from dynamics.base_dynamics import (BaseDynamics, MonteCarloStates, NetWeights,
                                     State)
 
-NUM_RANKS = hvd.size()
+print(f'hvd.size : {hvd.size()}')
+print(f'hvd.local_size: {hvd.local_size()}')
+
 
 TIMING_FILE = os.path.join(BIN_DIR, 'timing_file.log')
 TF_FLOAT = tf.keras.backend.floatx()
@@ -254,24 +262,24 @@ class GaugeDynamics(BaseDynamics):
 
         state_prop = State(state.x, state.v, state.beta)
         sumlogdet = tf.zeros((self.batch_size,), dtype=TF_FLOAT)
-        if self._verbose:
-            logdets = tf.TensorArray(TF_FLOAT,
-                                     dynamic_size=True,
-                                     size=self.batch_size,
-                                     clear_after_read=False)
-            energies = tf.TensorArray(TF_FLOAT,
-                                      dynamic_size=True,
-                                      size=self.batch_size,
-                                      clear_after_read=False)
-            energies = energies.write(0, self.hamiltonian(state_prop))
-            logdets = logdets.write(0, sumlogdet)
+        logdets = tf.TensorArray(TF_FLOAT,
+                                 dynamic_size=True,
+                                 size=self.batch_size,
+                                 clear_after_read=True)
+        energies = tf.TensorArray(TF_FLOAT,
+                                  dynamic_size=True,
+                                  size=self.batch_size,
+                                  clear_after_read=True)
+        #  if self._verbose:
+        #      energies = energies.write(0, self.hamiltonian(state_prop))
+        #      logdets = logdets.write(0, sumlogdet)
         for step in tf.range(self.config.num_steps):
+            if self._verbose:
+                logdets = logdets.write(step, sumlogdet)
+                energies = energies.write(step, self.hamiltonian(state_prop))
+
             state_prop, logdet = lf_fn(step, state_prop, training)
             sumlogdet += logdet
-
-            if self._verbose:
-                logdets = logdets.write(step, logdet)
-                energies = energies.write(step, self.hamiltonian(state_prop))
 
         accept_prob = self.compute_accept_prob(state, state_prop, sumlogdet)
 
@@ -301,27 +309,28 @@ class GaugeDynamics(BaseDynamics):
         """Implements a series of directional updates."""
         state_prop = State(state.x, state.v, state.beta)
         sumlogdet = tf.zeros((self.batch_size,), dtype=TF_FLOAT)
-        if self._verbose:
-            logdets = tf.TensorArray(TF_FLOAT,
-                                     dynamic_size=True,
-                                     size=self.batch_size,
-                                     clear_after_read=False)
-            energies = tf.TensorArray(TF_FLOAT,
-                                      dynamic_size=True,
-                                      size=self.batch_size,
-                                      clear_after_read=False)
-            energies = energies.write(0, self.hamiltonian(state_prop))
-            logdets = logdets.write(0, sumlogdet)
+        logdets = tf.TensorArray(TF_FLOAT,
+                                 dynamic_size=True,
+                                 size=self.batch_size,
+                                 clear_after_read=True)
+        energies = tf.TensorArray(TF_FLOAT,
+                                  dynamic_size=True,
+                                  size=self.batch_size,
+                                  clear_after_read=True)
+        #  if self._verbose:
+        #      energies = energies.write(0, self.hamiltonian(state_prop))
+        #      logdets = logdets.write(0, tf.zeros((self.batch_size,),
+        #                                          dtype=TF_FLOAT))
 
         # ====
         # Forward for first half of trajectory
         for step in range(self.config.num_steps // 2):
+            if self._verbose:
+                logdets = logdets.write(step, sumlogdet)
+                energies = energies.write(step, self.hamiltonian(state_prop))
+
             state_prop, logdet = self._forward_lf(step, state_prop, training)
             sumlogdet += logdet
-
-            if self._verbose:
-                logdets = logdets.write(step, logdet)
-                energies = energies.write(step, self.hamiltonian(state_prop))
 
         # ====
         # Flip momentum
@@ -363,25 +372,26 @@ class GaugeDynamics(BaseDynamics):
         lf_fn = self._forward_lf if forward else self._backward_lf
         state_prop = State(x=state.x, v=state.v, beta=state.beta)
         sumlogdet = tf.zeros((self.batch_size,))
-        if self._verbose:
-            logdets = tf.TensorArray(TF_FLOAT,
-                                     dynamic_size=True,
-                                     size=self.batch_size,
-                                     clear_after_read=False)
-            energies = tf.TensorArray(TF_FLOAT,
-                                      dynamic_size=True,
-                                      size=self.batch_size,
-                                      clear_after_read=False)
-            energies = energies.write(0, self.hamiltonian(state_prop))
-            logdets = logdets.write(0, sumlogdet)
+        logdets = tf.TensorArray(TF_FLOAT,
+                                 dynamic_size=True,
+                                 size=self.batch_size,
+                                 clear_after_read=True)
+        energies = tf.TensorArray(TF_FLOAT,
+                                  dynamic_size=True,
+                                  size=self.batch_size,
+                                  clear_after_read=True)
+        #  if self._verbose:
+        #      #  clear_after_read=False)
+        #      energies = energies.write(0, self.hamiltonian(state_prop))
+        #      logdets = logdets.write(0, sumlogdet)
 
         for step in range(self.config.num_steps):
+            if self._verbose:
+                logdets = logdets.write(step, sumlogdet)
+                energies = energies.write(step, self.hamiltonian(state_prop))
+
             state_prop, logdet = lf_fn(step, state_prop, training)
             sumlogdet += logdet
-
-            if self._verbose:
-                logdets = logdets.write(step, logdet)
-                energies = energies.write(step, self.hamiltonian(state_prop))
 
         accept_prob = self.compute_accept_prob(state, state_prop, sumlogdet)
 
@@ -513,8 +523,8 @@ class GaugeDynamics(BaseDynamics):
             x_cos = tf.reshape(x_cos, self.lattice_shape)
             x_sin = tf.reshape(x_sin, self.lattice_shape)
 
-        #  x = tf.stack([x_cos, x_sin], axis=-1)
-        x = tf.concat([x_cos, x_sin], -1)
+        x = tf.stack([x_cos, x_sin], axis=-1)
+        #  x = tf.concat([x_cos, x_sin], -1)
         if not self.config.separate_networks:
             S, T, Q = self.xnet((x, v, t), training)
         else:
@@ -762,7 +772,7 @@ class GaugeDynamics(BaseDynamics):
                 ploss_, qloss_ = self.calc_losses(states_, accept_prob_)
                 loss += ploss_ + qloss_
 
-        if NUM_RANKS > 1:
+        if HAS_HOROVOD:
             tape = hvd.DistributedGradientTape(tape)
 
         grads = tape.gradient(loss, self.trainable_variables)
@@ -820,7 +830,7 @@ class GaugeDynamics(BaseDynamics):
         # NOTE:
         #    Broadcast should be done after the first gradient step to ensure
         #    optimizer intialization.
-        if self.optimizer.iterations == 0 and NUM_RANKS > 1:
+        if self.optimizer.iterations == 0 and HAS_HOROVOD > 1:
             hvd.broadcast_variables(self.variables, root_rank=0)
             hvd.broadcast_variables(self.optimizer.variables(), root_rank=0)
 
