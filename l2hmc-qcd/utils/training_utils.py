@@ -200,6 +200,7 @@ def setup(dynamics, flags, dirs=None, x=None, betas=None):
             betas = flags.beta_init * np.ones(len(steps))
         else:  # get annealing schedule w/ same length as `steps`
             betas = get_betas(len(steps), flags.beta_init, flags.beta_final)
+        betas = betas[current_step:]
 
     betas = tf.constant(betas, dtype=TF_FLOAT)
     dynamics.compile(loss=dynamics.calc_losses,
@@ -239,7 +240,8 @@ def setup(dynamics, flags, dirs=None, x=None, betas=None):
     return output
 
 
-# pylint: disable=too-many-arguments,too-many-statements, too-many-branches
+# pylint: disable=broad-except
+# pylint: disable=too-many-arguments,too-many-statements, too-many-branches,
 @timeit(out_file=None)
 def train_dynamics(
         dynamics: Union[BaseDynamics, GaugeDynamics],
@@ -266,7 +268,6 @@ def train_dynamics(
     # +-----------------------------------------------------------------+
     # | Try running compiled `train_step` fn otherwise run imperatively |
     # +-----------------------------------------------------------------+
-    # pylint:disable=broad-except
     io.log(120 * '*')
     try:
         if flags.profiler:
@@ -277,7 +278,7 @@ def train_dynamics(
             tf.summary.trace_export(name='train_step_trace', step=0,
                                     profiler_outdir=dirs.summary_dir)
             tf.summary.trace_off()
-    except Exception as exception:  # pylint:disable broad-except
+    except Exception as exception:
         io.log(exception, level='CRITICAL')
         train_step = dynamics.train_step
         x, metrics = train_step((x, tf.constant(betas[0])))
@@ -299,8 +300,8 @@ def train_dynamics(
             tf.keras.utils.plot_model(xnet, show_shapes=True, to_file=xf)
             tf.keras.utils.plot_model(vnet, show_shapes=True, to_file=vf)
 
-        except Exception as e:
-            print(e)
+        except Exception as exception:
+            print(exception)
 
     # +--------------------------------+
     # | Run MD update to not get stuck |
@@ -360,11 +361,11 @@ def train_dynamics(
         x, metrics = timed_step(x, beta)
 
         # Check if ALL chains are stuck, refresh x if so
-        px = tf.reduce_mean(metrics.accept_prob)
-        if px < 0.1:
-            io.log(f'Refreshing x! (avg(accept_prob): {px})',
-                   level='WARNING', should_print=True)
-            x = tf.random.normal(dynamics.x_shape)
+        #  px = tf.reduce_mean(metrics.accept_prob)
+        #  if px < 0.1:
+        #      io.log(f'Refreshing x! (avg(accept_prob): {px})',
+        #             level='WARNING', should_print=True)
+        #      x = tf.random.normal(dynamics.x_shape)
 
         # Save checkpoints and dump configs `x` from each rank
         if should_save(step + 1):
