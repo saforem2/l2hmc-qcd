@@ -68,14 +68,15 @@ class DataContainer:
             k: tf.reduce_mean(v) for k, v in metrics.items() if k not in skip
         }
 
-        #  try:
-        #      n = step - self.print_steps
-        #      data['dt'] = 0.5 * (
-        #          data['dt'] + tf.reduce_mean(self.data['dt'][-n:])
-        #      )
-        #
-        #  except (IndexError, KeyError):
-        #      pass
+        try:
+            n = step - self.print_steps
+            data['dt'] = tf.reduce_mean(self.data['dt'][-n:])
+            #  data['dt'] = 0.5 * (
+            #      data['dt'] + tf.reduce_mean(self.data['dt'][-n:])
+            #  )
+
+        except (IndexError, KeyError):
+            pass
 
         fstr = (
             f'{step:>5g}/{self.steps:<5g} '
