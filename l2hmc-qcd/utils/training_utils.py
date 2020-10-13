@@ -202,6 +202,13 @@ def setup(dynamics, flags, dirs=None, x=None, betas=None):
             betas = get_betas(len(steps), flags.beta_init, flags.beta_final)
         betas = betas[current_step:]
 
+    if len(betas) == 0:
+        if flags.beta_init == flags.beta_final:  # train at fixed beta
+            betas = flags.beta_init * np.ones(len(steps))
+        else:  # get annealing schedule w/ same length as `steps`
+            betas = get_betas(len(steps), flags.beta_init, flags.beta_final)
+        betas = betas[current_step:]
+
     betas = tf.constant(betas, dtype=TF_FLOAT)
     dynamics.compile(loss=dynamics.calc_losses,
                      optimizer=dynamics.optimizer,
