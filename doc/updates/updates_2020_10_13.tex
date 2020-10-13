@@ -1,0 +1,43 @@
+%\begin{document}
+\section{Updates: 10/13/2020 (Tunneling Rates)}%
+\label{sec:updates_2020_10_13}
+% \subsection{Tunneling Rates}%
+% \label{subsec:tunneling_rates}
+%
+For inference, we generate \(M\times N\) configurations (batch of \(M\) chains in
+parallel, for \(N\) MH-Accept/Rejects), and drop the first \(\sim 25\%\)
+percent of the data before computing observables to account for
+burn-in\footnote{For computing statistics of observables, we use bootstrap
+resampling.}.
+%
+We compute the topological charge, \(\mathcal{Q} =
+\frac{1}{2\pi}\sum_{x}\mathrm{Arg}\left(\phi_{\mu\nu}(x)\right) \in
+\mathbb{Z}\), with \( \mathrm{Arg}\left(\phi_{\mu\nu}(x)\right) \in \left[-\pi,
+\pi\right]\) for each configuration.
+%
+
+For the \(m^{\mathrm{th}}\) chain in our batch, we define 
+%
+\begin{align}
+  \delta\mathcal{Q}_{m}(n) &\coloneqq \mathcal{Q}{(n+1)} - \mathcal{Q}{(n)}\\
+  \langle\delta\mathcal{Q}_{m}\rangle &\coloneqq
+  \frac{1}{N}\sum_{n=0}\delta\mathcal{Q}_{m}(n).
+\end{align}
+%
+We can then compute the average tunneling rate over all chains (i.e.\@ the
+number of tunneling events per step) as
+%
+\begin{equation}
+  \langle \delta\mathcal{Q}\rangle%
+  \coloneqq \frac{1}{M}\sum_{m=1}^{M}\langle\delta\mathcal{Q}_{m}\rangle
+  =\frac{1}{M}\sum_{m=1}^{M}\left[\frac{1}{N}\sum_{n=0}^{N} \delta\mathcal{Q}_{m}(n)\right]
+\end{equation}
+%
+
+\begin{figure}[htpb]
+  \centering
+  \includegraphics[width=0.9\textwidth]{updates_2020_10_13/tunneling_rates_lf10.png}
+  \caption{Comparison of the tunneling rates,
+  \(\langle\delta\mathcal{Q}\rangle\) for HMC and L2HMC}
+\end{figure}
+%\end{document}
