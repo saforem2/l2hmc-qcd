@@ -810,10 +810,10 @@ class GaugeDynamics(BaseDynamics):
                 'Hb_start': data.backward.energies[0],
                 'Hb_mid': data.backward.energies[self.config.num_steps//2],
                 'Hb_end': data.backward.energies[-1],
-                'ld_f_start': data.forward.logdets[0],
+                #  'ld_f_start': data.forward.logdets[0],
                 'ld_f_mid': data.forward.logdets[self.config.num_steps//2],
                 'ld_f_end': data.forward.logdets[-1],
-                'ld_b_start': data.backward.logdets[0],
+                #  'ld_b_start': data.backward.logdets[0],
                 'ld_b_mid': data.backward.logdets[self.config.num_steps//2],
                 'ld_b_end': data.backward.logdets[-1],
                 #  'sumlogdet': sumlogdet.out,
@@ -939,7 +939,9 @@ class GaugeDynamics(BaseDynamics):
 
     def _get_time(self, i, tile=1):
         """Format the MCMC step as:
-               [cos(2pi*step/num_steps), sin(2pi*step/num_steps)]
+           ```
+           [cos(2pi*step/num_steps), sin(2pi*step/num_steps)]
+           ```
         """
         if self.config.separate_networks:
             trig_t = tf.squeeze([0, 0])

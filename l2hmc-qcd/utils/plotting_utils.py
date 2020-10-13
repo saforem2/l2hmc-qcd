@@ -46,6 +46,41 @@ def therm_arr(arr, therm_frac=0.2, ret_steps=True):
     return arr
 
 
+def plot_energy_distributions(data, out_dir=None, title=None):
+    energies = {
+        'forward': {
+            'start': data['Hf_start'],
+            'mid': data['Hf_mid'],
+            'end': data['Hf_end'],
+        },
+        'backward': {
+            'start': data['Hb_start'],
+            'mid': data['Hb_mid'],
+            'end': data['Hb_end'],
+        }
+    }
+
+    fig, axes = plt.subplots(nrows=2, sharex=True, constrained_layout=True)
+    #  plt.tight_layout()
+    axes = axes.flatten()
+    for idx, (key, val) in enumerate(energies.items()):
+        for k, v, in val.items():
+            x, y = v
+            _ = sns.distplot(y.flatten(), label=f'{key}/{k}',
+                             hist=False, ax=axes[idx])
+
+    _ = axes[0].legend(loc='best')
+    _ = axes[1].legend(loc='best')
+    _ = axes[1].set_xlabel(r"$\mathcal{H}$", fontsize='large')
+    if title is not None:
+        _ = fig.suptitle(title, fontsize='x-large')
+    if out_dir is not None:
+        out_file = os.path.join(out_dir, 'energy_dists_traj.png')
+        _ = plt.savefig(out_file, dpi=400, bbox_inches='tight')
+
+    return fig, axes
+
+
 def plot_charges(steps, charges, title=None, out_dir=None):
     charges = charges.T
     if charges.shape[0] > 4:
@@ -68,6 +103,8 @@ def plot_charges(steps, charges, title=None, out_dir=None):
         fpath = os.path.join(out_dir, 'charge_chains.png')
         io.log(f'Saving figure to: {fpath}.')
         plt.savefig(fpath, dpi=400, bbox_inches='tight')
+
+    return fig, ax
 
 
 def get_title_str_from_params(params):
@@ -101,8 +138,9 @@ def get_title_str_from_params(params):
 def mcmc_avg_lineplots(data, title=None, out_dir=None):
     """Plot trace of avg."""
     for idx, (key, val) in enumerate(data.items()):
-        plt.tight_layout()
-        fig, axes = plt.subplots(ncols=2, figsize=(8, 4))
+        #  plt.tight_layout()
+        fig, axes = plt.subplots(ncols=2, figsize=(8, 4),
+                                 constrained_layout=True)
         axes = axes.flatten()
         if len(val) == 2:
             if len(val[0].shape) > len(val[1].shape):
@@ -127,12 +165,13 @@ def mcmc_avg_lineplots(data, title=None, out_dir=None):
         ylabel = r"$\langle$" + f'{key}' + r"$\rangle$"
         #  labels = (xlabel, ylabel)
 
-        _ = axes[0].plot(steps, avg, color=COLORS[idx])
-        _ = axes[0].set_xlabel(xlabel, fontsize='large')
-        _ = axes[0].set_ylabel(ylabel, fontsize='large')
+        _ = axes[1].plot(steps, avg, color=COLORS[idx])
+        _ = axes[1].set_xlabel(xlabel, fontsize='large')
+        _ = axes[1].set_ylabel(ylabel, fontsize='large')
         _ = sns.distplot(arr.flatten(), hist=False,
-                         color=COLORS[idx], ax=axes[1])
-        _ = axes[1].set_xlabel(ylabel, fontsize='large')
+                         color=COLORS[idx], ax=axes[0])
+        _ = axes[0].set_xlabel(ylabel, fontsize='large')
+        _ = axes[0].set_ylabel('', fontsize='large')
         if title is not None:
             _ = fig.suptitle(title, fontsize='x-large')
 
@@ -231,7 +270,8 @@ def plot_data(train_data, out_dir, flags, thermalize=False, params=None):
 
         plt.close('all')
 
-    mcmc_avg_lineplots(data_dict, title, out_dir)
-    plot_charges(*data_dict['charges'], out_dir=out_dir, title=title)
+    _ = mcmc_avg_lineplots(data_dict, title, out_dir)
+    _ = plot_charges(*data_dict['charges'], out_dir=out_dir, title=title)
+    _ = plot_energy_distributions(data_dict, out_dir=out_dir, title=title)
 
     plt.close('all')
