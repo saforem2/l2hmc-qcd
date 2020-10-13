@@ -139,8 +139,14 @@ def print_flags(flags: AttrDict):
     ))
 
 
-def setup_directories(flags, name='training', new_beta=False):
+def setup_directories(flags, name='training', new_beta=False, save=True):
     """Setup relevant directories for training."""
+    if isinstance(flags, dict):
+        flags = AttrDict(flags)
+
+    if flags.get('log_dir', None) is None:
+        flags.log_dir = make_log_dir(flags, name)
+
     train_dir = os.path.join(flags.log_dir, name)
     train_paths = AttrDict({
         'log_dir': flags.log_dir,
@@ -156,7 +162,8 @@ def setup_directories(flags, name='training', new_beta=False):
         check_else_make_dir(
             [d for k, d in train_paths.items() if 'file' not in k],
         )
-        if not flags.restore:
+        #  if not flags.get('restore', False):
+        if save:
             save_params(dict(flags), train_dir, 'FLAGS')
 
     return train_paths
@@ -466,7 +473,8 @@ def get_timestamp(format=None):
 
 
 # pylint:disable=too-many-arguments
-def make_log_dir(FLAGS, model_type=None, log_file=None, root_dir=None):
+def make_log_dir(FLAGS, model_type=None, log_file=None, root_dir=None,
+                 timestamps=None):
     """Automatically create and name `log_dir` to save model data to.
 
     The created directory will be located in `logs/YYYY_M_D /`, and will have
@@ -482,9 +490,18 @@ def make_log_dir(FLAGS, model_type=None, log_file=None, root_dir=None):
     model_type = 'GaugeModel' if model_type is None else model_type
     cfg_str = parse_configs(FLAGS)
 
-    month_str = get_timestamp('%Y_%m')
-    time_str = get_timestamp('%Y-%m-%d-%H%M%S')
-    run_str = f'{cfg_str}-{time_str}'
+    if timestamps is None:
+        timestamps = AttrDict({
+            'month': get_timestamp('%Y_%m'),
+            'time': get_timestamp('%Y-%M-%d-%H%M%S'),
+            'hour': get_timestamp('%Y-%m-%d-%H'),
+            'minute': get_timestamp('%Y-%m-%d-%H%M'),
+            'second': get_timestamp('%Y-%m-%d-%H%M%S'),
+        })
+
+    #  month_str = get_timestamp('%Y_%m')
+    #  time_str = get_timestamp('%Y-%m-%d-%H%M%S')
+    #  run_str = f'{cfg_str}-{timestamps.month}'
 
     if root_dir is None:
         root_dir = PROJECT_DIR
@@ -493,13 +510,20 @@ def make_log_dir(FLAGS, model_type=None, log_file=None, root_dir=None):
     if cfg_str.startswith('DEBUG'):
         dirs.append('test')
 
-    log_dir = os.path.join(*dirs, month_str, run_str)
+    #  log_dir = os.path.join(*dirs, month_str, run_str)
+    log_dir = os.path.join(*dirs, timestamps.month, cfg_str)
     if os.path.isdir(log_dir):
+        log_dir = os.path.join(*dirs, timestamps.month,
+                               f'{cfg_str}-{timestamps.hour}')
+        if os.path.isdir(log_dir):
+            log_dir = os.path.join(*dirs, timestamps.month,
+                                   f'{cfg_str}-{timestamps.minute}')
+
         log('\n'.join(['Existing directory found with the same name!',
                        'Modifying the date string to include seconds.']))
-        dstr = get_timestamp('%Y-%m-%d-%H%M%S')
-        run_str = f'{cfg_str}-{dstr}'
-        log_dir = os.path.join(*dirs, month_str, run_str)
+        #  dstr = get_timestamp('%Y-%m-%d-%H%M%S')
+        #  run_str = f'{cfg_str}-{dstr}'
+        #  log_dir = os.path.join(*dirs, month_str, run_str)
 
     if RANK == 0:
         check_else_make_dir(log_dir)

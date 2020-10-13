@@ -62,7 +62,15 @@ def main(args):
         args.train_steps = train_steps
 
     else:  # New training session
-        args.log_dir = io.make_log_dir(args, 'GaugeModel', log_file)
+        timestamps = AttrDict({
+            'month': io.get_timestamp('%Y_%m'),
+            'time': io.get_timestamp('%Y-%M-%d-%H%M%S'),
+            'hour': io.get_timestamp('%Y-%m-%d-%H'),
+            'minute': io.get_timestamp('%Y-%m-%d-%H%M'),
+            'second': io.get_timestamp('%Y-%m-%d-%H%M%S'),
+        })
+        args.log_dir = io.make_log_dir(args, 'GaugeModel', log_file,
+                                       timestamps=timestamps)
         args.restore = False
         if hmc_steps > 0:
             x, _, eps = train_hmc(args)
