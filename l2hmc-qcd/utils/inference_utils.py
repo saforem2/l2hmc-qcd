@@ -152,6 +152,12 @@ def run(
         else:
             runs_dir = os.path.join(args.log_dir, 'inference')
 
+    eps = dynamics.eps
+    if hasattr(eps, 'numpy'):
+        eps = eps.numpy()
+
+    args.eps = eps
+
     io.check_else_make_dir(runs_dir)
     run_dir = io.make_run_dir(args, runs_dir)
     data_dir = os.path.join(run_dir, 'run_data')
@@ -176,10 +182,6 @@ def run(
     io.save_inference(run_dir, run_data)
     if args.get('save_run_data', True):
         run_data.save_data(data_dir)
-
-    eps = dynamics.eps
-    if hasattr(eps, 'numpy'):
-        eps = eps.numpy()
 
     run_params = {
         'eps': eps,

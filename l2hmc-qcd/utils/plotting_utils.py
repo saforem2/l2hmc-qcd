@@ -93,27 +93,58 @@ def get_title_str_from_params(params):
     title_str += f'shape: {tuple(lattice_shape)}'
 
     if net_weights == NET_WEIGHTS_HMC:
-        title_str += f', (HMC)'
+        title_str += ', (HMC)'
 
     return title_str
 
 
 def mcmc_avg_lineplots(data, title=None, out_dir=None):
+    """Plot trace of avg."""
     for idx, (key, val) in enumerate(data.items()):
-        steps, arr = val
+        plt.tight_layout()
+        fig, axes = plt.subplots(ncols=2, figsize=(8, 4))
+        axes = axes.flatten()
+        if len(val) == 2:
+            if len(val[0].shape) > len(val[1].shape):
+                arr, steps = val
+            else:
+                steps, arr = val
+        else:
+            arr = val
+            steps = np.arange(arr.shape[0])
+
+            #  if len(val[0].shape) == 1:
+            #      steps, arr = val
+            #  elif len(val[1].shape) == 1:
+            #      arr, steps == val
+
+        #  steps, arr = val
+        #  arr, steps = val
         avg = np.mean(arr, axis=1)
-        xy_data = (steps, avg)
+        #  xy_data = (steps, avg)
 
         xlabel = 'MC Step'
         ylabel = r"$\langle$" + f'{key}' + r"$\rangle$"
-        labels = (xlabel, ylabel)
+        #  labels = (xlabel, ylabel)
+
+        _ = axes[0].plot(steps, avg, color=COLORS[idx])
+        _ = axes[0].set_xlabel(xlabel, fontsize='large')
+        _ = axes[0].set_ylabel(ylabel, fontsize='large')
+        _ = sns.distplot(arr.flatten(), hist=False,
+                         color=COLORS[idx], ax=axes[1])
+        _ = axes[1].set_xlabel(ylabel, fontsize='large')
+        if title is not None:
+            _ = fig.suptitle(title, fontsize='x-large')
 
         if out_dir is not None:
             fpath = os.path.join(out_dir, f'{key}_avg.png')
+            savefig(fig, fpath)
+        #
+        #  _, _ = mcmc_lineplot(xy_data, labels, title=title,
+        #                       fpath=fpath, show_avg=True,
+        #                       color=COLORS[idx])
 
-        _, _ = mcmc_lineplot(xy_data, labels, title=title,
-                             fpath=fpath, show_avg=True,
-                             color=COLORS[idx])
+    return fig, axes
 
 
 def mcmc_lineplot(data, labels, title=None,
