@@ -78,7 +78,7 @@ def log(s: str, level: str = 'INFO', out=sys.stdout, should_print=False):
     """Print string `s` to stdout if and only if hvd.rank() == 0."""
     if RANK != 0:
         return
-    if NUM_NODES == 1:
+    if NUM_WORKERS == 1:
         if isinstance(s, (tuple, list)):
             for i in s:
                 tqdm.write(i, file=out)
