@@ -34,9 +34,11 @@ import tensorflow as tf
 try:
     import horovod.tensorflow as hvd
     NUM_RANKS = hvd.size()
+    NUM_WORKERS = NUM_RANKS * hvd.local_size()
     HAS_HOROVOD = True
 except ImportError:
     NUM_RANKS = 1
+    NUM_WORKERS = NUM_RANKS
     HAS_HOROVOD = False
 
 import utils.file_io as io
@@ -830,7 +832,7 @@ class GaugeDynamics(BaseDynamics):
         # NOTE:
         #    Broadcast should be done after the first gradient step to ensure
         #    optimizer intialization.
-        if self.optimizer.iterations == 0 and HAS_HOROVOD > 1:
+        if self.optimizer.iterations == 0 and HAS_HOROVOD and NUM_WORKERS > 1:
             hvd.broadcast_variables(self.variables, root_rank=0)
             hvd.broadcast_variables(self.optimizer.variables(), root_rank=0)
 
