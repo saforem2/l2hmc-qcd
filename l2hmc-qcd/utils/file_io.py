@@ -22,7 +22,7 @@ from config import PROJECT_DIR
 from utils.attr_dict import AttrDict
 
 RANK = hvd.rank()
-NUM_NODES = hvd.size()
+NUM_WORKERS = hvd.size()
 IS_CHIEF = (RANK == 0)
 
 LOG_LEVELS_AS_INTS = {
@@ -512,7 +512,7 @@ def make_log_dir(FLAGS, model_type=None, log_file=None, root_dir=None,
 
     #  log_dir = os.path.join(*dirs, month_str, run_str)
     log_dir = os.path.join(*dirs, timestamps.month, cfg_str)
-    if os.path.isdir(log_dir):
+    if os.path.isdir(log_dir) and NUM_WORKERS == 1:
         log_dir = os.path.join(*dirs, timestamps.month,
                                f'{cfg_str}-{timestamps.hour}')
         if os.path.isdir(log_dir):
