@@ -207,7 +207,7 @@ def setup(dynamics, flags, dirs=None, x=None, betas=None):
             betas = flags.beta_init * np.ones(len(steps))
         else:  # get annealing schedule w/ same length as `steps`
             betas = get_betas(len(steps), flags.beta_init, flags.beta_final)
-        betas = betas[current_step:]
+            betas = betas[current_step:]
 
     betas = tf.constant(betas, dtype=TF_FLOAT)
     dynamics.compile(loss=dynamics.calc_losses,
@@ -217,7 +217,15 @@ def setup(dynamics, flags, dirs=None, x=None, betas=None):
     #  beta_tspec = tf.TensorSpec([], dtype=TF_FLOAT, name='beta')
     #  input_signature=[x_tspec, beta_tspec])
 
-    inputs = (x, tf.constant(betas[0]))
+    try:
+        inputs = (x, tf.constant(betas[0]))
+    except IndexError:
+        if flags.beta_init == flags.beta_final:  # train at fixed beta
+            betas = flags.beta_init * np.ones(len(steps))
+        else:  # get annealing schedule w/ same length as `steps`
+            betas = get_betas(len(steps), flags.beta_init, flags.beta_final)
+            betas = betas[current_step:]
+
     _ = dynamics.apply_transition(inputs, training=True)
 
     if flags.get('compile', True):
