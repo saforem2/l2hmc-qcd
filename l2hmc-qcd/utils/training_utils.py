@@ -255,6 +255,33 @@ def setup(dynamics, flags, dirs=None, x=None, betas=None):
     return output
 
 
+def save_models(dynamics, dirs):
+    if dynamics.config.separate_networks:
+        xnet_files = [
+            os.path.join(dirs.models_dir, f'dynamics_xnet{i}')
+            for i in range(dynamics.config.num_steps)
+        ]
+        vnet_files = [
+            os.path.join(dirs.models_dir, f'dynamics_vnet{i}')
+            for i in range(dynamics.config.num_steps)
+        ]
+        for idx, (xf, vf) in enumerate(zip(xnet_files, vnet_files)):
+            xnet = dynamics.xnet[idx]
+            vnet = dynamics.vnet[idx]
+            io.log(f'Saving `GaugeDynamics.xnet{idx}` to {xf}.')
+            io.log(f'Saving `GaugeDynamics.vnet{idx}` to {vf}.')
+            xnet.save(xf)
+            vnet.save(vf)
+
+    else:
+        xnet_files = os.path.join(dirs.models_dir, 'dynamics_xnet')
+        vnet_files = os.path.join(dirs.models_dir, 'dynamics_vnet')
+        io.log(f'Saving `GaugeDynamics.xnet` to {xnet_files}.')
+        io.log(f'Saving `GaugeDynamics.vnet` to {vnet_files}.')
+        dynamics.xnet.save(xnet_files)
+        dynamics.vnet.save(vnet_files)
+
+
 # pylint: disable=broad-except
 # pylint: disable=too-many-arguments,too-many-statements, too-many-branches,
 @timeit(out_file=None)
@@ -388,6 +415,7 @@ def train_dynamics(
                                     rank=RANK, local_rank=LOCAL_RANK)
             if IS_CHIEF:
                 manager.save()
+                save_models(dynamics, dirs)
                 train_data.save_and_flush(dirs.data_dir,
                                           dirs.log_file,
                                           rank=RANK, mode='a')
