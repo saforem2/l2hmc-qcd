@@ -12,6 +12,7 @@ from __future__ import absolute_import, division, print_function
 import time
 import tensorflow as tf
 import horovod.tensorflow as hvd
+from typing import Callable
 
 from config import NetWeights, MonteCarloStates
 from dynamics.base_dynamics import BaseDynamics
@@ -39,8 +40,8 @@ class GenericDynamics(BaseDynamics):
             config: DynamicsConfig,
             network_config: NetworkConfig,
             lr_config: LearningRateConfig,
-            potential_fn: callable,
-            normalizer: callable = identity,
+            potential_fn: Callable,
+            normalizer: Callable = identity,
             name: str = 'GenericDynamics'
     ):
         """Initialization method for generic (Euclidean) Dynamics."""

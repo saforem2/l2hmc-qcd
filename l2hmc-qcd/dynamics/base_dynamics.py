@@ -146,7 +146,9 @@ class BaseDynamics(tf.keras.Model):
         """
         return self.apply_transition(inputs, training=training)
 
-    def calc_losses(self, states: MonteCarloStates, accept_prob: tf.Tensor):
+    def calc_losses(
+            self, states: MonteCarloStates, accept_prob: tf.Tensor
+    ):
         """Calculate the total loss."""
         raise NotImplementedError
 
@@ -173,18 +175,20 @@ class BaseDynamics(tf.keras.Model):
 
         return loss
 
-    def train_step(self, data):
+    # pylint:disable=arguments-differ
+    def train_step(self, inputs: Tuple[tf.Tensor, tf.Tensor]):
         """Perform a single training step."""
         raise NotImplementedError
 
-    def test_step(self, data):
+    # pylint:disable=arguments-differ
+    def test_step(self, inputs: Tuple[tf.Tensor, tf.Tensor]):
         """Perform a single inference step."""
         raise NotImplementedError
 
     def _forward(
-        self,
-        inputs: Union[tf.Tensor, List[tf.Tensor]],
-        training: bool = None,
+            self,
+            inputs: Union[tf.Tensor, List[tf.Tensor]],
+            training: bool = None,
     ):
         """Propose a new state by running the leapfrog integrator forward."""
         state_init, state_prop, data = self._transition(inputs, forward=True,
@@ -426,9 +430,6 @@ class BaseDynamics(tf.keras.Model):
                                   dynamic_size=True,
                                   size=self.batch_size,
                                   clear_after_read=True)
-        #  if self._verbose:
-        #      energies = energies.write(0, self.hamiltonian(state_prop))
-        #      logdets = logdets.write(0, sumlogdet)
 
         for step in tf.range(self.config.num_steps):
             if self._verbose:
@@ -444,6 +445,9 @@ class BaseDynamics(tf.keras.Model):
             'accept_prob': accept_prob,
         })
         if self._verbose:
+            logdets = logdets.write(self.config.num_steps, sumlogdet)
+            energies = energies.write(self.config.num_steps,
+                                      self.hamiltonian(state_prop))
             metrics.update({
                 'energies': [
                     energies.read(i) for i in range(self.config.num_steps)

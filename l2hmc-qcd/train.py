@@ -71,6 +71,7 @@ def main(args):
         })
         args.log_dir = io.make_log_dir(args, 'GaugeModel', log_file,
                                        timestamps=timestamps)
+        io.write(f'{args.log_dir}', log_file, 'a')
         args.restore = False
         if hmc_steps > 0:
             x, _, eps = train_hmc(args)
