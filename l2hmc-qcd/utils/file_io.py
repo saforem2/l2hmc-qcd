@@ -152,6 +152,7 @@ def setup_directories(flags, name='training', new_beta=False, save=True):
         'log_dir': flags.log_dir,
         'train_dir': train_dir,
         'data_dir': os.path.join(train_dir, 'train_data'),
+        'models_dir': os.path.join(train_dir, 'models'),
         'ckpt_dir': os.path.join(train_dir, 'checkpoints'),
         'summary_dir': os.path.join(train_dir, 'summaries'),
         'log_file': os.path.join(train_dir, 'train_log.txt'),
