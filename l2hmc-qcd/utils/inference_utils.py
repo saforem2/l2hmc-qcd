@@ -13,7 +13,17 @@ from utils.file_io import timeit
 
 from tqdm.autonotebook import tqdm
 import tensorflow as tf
-import horovod.tensorflow as hvd
+try:
+    import horovod.tensorflow as hvd
+    HAS_HOROVOD = True
+    RANK = hvd.rank()
+    IS_CHIEF = (RANK == 0)
+    NUM_NODES = hvd.size()
+except (ImportError, ModuleNotFoundError):
+    HAS_HOROVOD = False
+    RANK = 0
+    IS_CHIEF = (RANK == 0)
+    NUM_NODES = 1
 
 import utils.file_io as io
 
@@ -27,9 +37,6 @@ from utils.summary_utils import summarize_dict
 from utils.data_containers import DataContainer
 
 # pylint:disable=no-member
-RANK = hvd.rank()
-IS_CHIEF = (RANK == 0)
-NUM_NODES = hvd.size()
 
 if IS_CHIEF:
     logging.basicConfig(

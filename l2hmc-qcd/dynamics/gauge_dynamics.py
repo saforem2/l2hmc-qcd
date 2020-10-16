@@ -36,7 +36,10 @@ try:
     NUM_RANKS = hvd.size()
     NUM_WORKERS = NUM_RANKS * hvd.local_size()
     HAS_HOROVOD = True
-except ImportError:
+    print(f'hvd.size : {hvd.size()}')
+    print(f'hvd.local_size: {hvd.local_size()}')
+
+except (ImportError, ModuleNotFoundError):
     NUM_RANKS = 1
     NUM_WORKERS = NUM_RANKS
     HAS_HOROVOD = False
@@ -54,9 +57,6 @@ from network.functional_net import get_gauge_network
 from dynamics.config import GaugeDynamicsConfig
 from dynamics.base_dynamics import (BaseDynamics, MonteCarloStates, NetWeights,
                                     State)
-
-print(f'hvd.size : {hvd.size()}')
-print(f'hvd.local_size: {hvd.local_size()}')
 
 
 TIMING_FILE = os.path.join(BIN_DIR, 'timing_file.log')

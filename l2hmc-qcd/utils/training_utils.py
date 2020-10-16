@@ -18,7 +18,22 @@ import tensorflow as tf
 from tqdm.auto import tqdm
 
 import utils.file_io as io
-import horovod.tensorflow as hvd
+try:
+    import horovod.tensorflow as hvd
+    HAS_HOROVOD = True
+    RANK = hvd.rank()
+    LOCAL_RANK = hvd.local_rank()
+    IS_CHIEF = (RANK == 0)
+    NUM_NODES = hvd.size()
+    io.log(f'Number of devices: {NUM_NODES}')
+except (ImportError, ModuleNotFoundError):
+    HAS_HOROVOD = False
+    RANK = 0
+    LOCAL_RANK = 0
+    IS_CHIEF = (RANK == 0)
+    NUM_NODES = 1
+    io.log(f'Number of devices: {NUM_NODES}')
+
 
 from config import CBARS, NET_WEIGHTS_HMC, TF_FLOAT
 from network.config import LearningRateConfig
@@ -46,11 +61,6 @@ from dynamics.gauge_dynamics import build_dynamics, GaugeDynamics
 # pylint:disable=protected-access
 # pylint:disable=invalid-name
 
-RANK = hvd.rank()
-LOCAL_RANK = hvd.local_rank()
-IS_CHIEF = (RANK == 0)
-NUM_NODES = hvd.size()
-io.log(f'Number of devices: {NUM_NODES}')
 
 
 @timeit(out_file=None)

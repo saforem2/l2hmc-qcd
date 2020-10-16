@@ -1,6 +1,6 @@
 {
     "compile": false,
-    "profiler": true,
+    "profiler": false,
     "md_steps": 0,
     "beta_init": 2.0,
     "beta_final": 4.0,

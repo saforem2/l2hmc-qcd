@@ -71,9 +71,9 @@ def plot_energy_distributions(data, out_dir=None, title=None):
 
     _ = axes[0].legend(loc='best')
     _ = axes[1].legend(loc='best')
-    _ = axes[1].set_xlabel(r"$\mathcal{H}$", fontsize='large')
+    _ = axes[1].set_xlabel(r"$\mathcal{H}$")  # , fontsize='large')
     if title is not None:
-        _ = fig.suptitle(title, fontsize='x-large')
+        _ = fig.suptitle(title)  # , fontsize='x-large')
     if out_dir is not None:
         out_file = os.path.join(out_dir, 'energy_dists_traj.png')
         _ = plt.savefig(out_file, dpi=400, bbox_inches='tight')
@@ -92,11 +92,11 @@ def plot_charges(steps, charges, title=None, out_dir=None):
     ax.set_yticklabels([])
     ax.xmargin: 0
     ax.yaxis.set_label_coords(-0.03, 0.5)
-    ax.set_ylabel(r"$\mathcal{Q}$", fontsize='x-large',
+    ax.set_ylabel(r"$\mathcal{Q}$",  # , fontsize='x-large',
                   rotation='horizontal')
-    ax.set_xlabel('MC Step', fontsize='x-large')
+    ax.set_xlabel('MC Step')  # , fontsize='x-large')
     if title is not None:
-        ax.set_title(title, fontsize='x-large')
+        ax.set_title(title)  # , fontsize='x-large')
     plt.tight_layout()
 
     if out_dir is not None:
@@ -166,14 +166,15 @@ def mcmc_avg_lineplots(data, title=None, out_dir=None):
         #  labels = (xlabel, ylabel)
 
         _ = axes[1].plot(steps, avg, color=COLORS[idx])
-        _ = axes[1].set_xlabel(xlabel, fontsize='large')
-        _ = axes[1].set_ylabel(ylabel, fontsize='large')
+        _ = axes[1].set_xlabel(xlabel)  # , fontsize='large')
+        _ = axes[1].set_ylabel(ylabel,  # , fontsize='large',
+                               rotation='horizontal')
         _ = sns.distplot(arr.flatten(), hist=False,
                          color=COLORS[idx], ax=axes[0])
-        _ = axes[0].set_xlabel(ylabel, fontsize='large')
-        _ = axes[0].set_ylabel('', fontsize='large')
+        _ = axes[0].set_xlabel(ylabel)  # , fontsize='large')
+        _ = axes[0].set_ylabel('')  # , fontsize='large')
         if title is not None:
-            _ = fig.suptitle(title, fontsize='x-large')
+            _ = fig.suptitle(title)  # , fontsize='x-large')
 
         if out_dir is not None:
             fpath = os.path.join(out_dir, f'{key}_avg.png')
@@ -199,10 +200,10 @@ def mcmc_lineplot(data, labels, title=None,
         ax.legend(loc='best')
 
     ax.plot(*data, **kwargs)
-    ax.set_xlabel(labels[0], fontsize='large')
-    ax.set_ylabel(labels[1], fontsize='large')
+    ax.set_xlabel(labels[0])  # , fontsize='large')
+    ax.set_ylabel(labels[1])  # , fontsize='large')
     if title is not None:
-        ax.set_title(title, fontsize='x-large')
+        ax.set_title(title)  # , fontsize='x-large')
 
     if fpath is not None:
         savefig(fig, fpath)
@@ -214,7 +215,7 @@ def mcmc_traceplot(key, val, title=None, fpath=None):
     az.plot_trace({key: val})
     fig = plt.gcf()
     if title is not None:
-        fig.suptitle(title, fontsize='x-large', y=1.06)
+        fig.suptitle(title)  # , fontsize='x-large', y=1.06)
 
     if fpath is not None:
         savefig(fig, fpath)
