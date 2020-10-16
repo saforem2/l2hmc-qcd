@@ -20,7 +20,7 @@ try:
 
     HAS_HOROVOD = True
 
-except ImportError:
+except (ImportError, ModuleNotFoundError):
     HAS_HOROVOD = False
 
 

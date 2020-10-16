@@ -29,7 +29,13 @@ import numpy as np
 import tensorflow as tf
 
 import utils.file_io as io
-import horovod.tensorflow as hvd
+try:
+    import horovod.tensorflow as hvd
+    HAS_HOROVOD = True
+    NUM_RANKS = hvd.size()
+except (ImportError, ModuleNotFoundError):
+    HAS_HOROVOD = False
+    NUM_RANKS = 1
 
 from config import BIN_DIR
 from network.config import (ConvolutionConfig, LearningRateConfig,
@@ -40,7 +46,6 @@ from utils.attr_dict import AttrDict
 from utils.seed_dict import vnet_seeds, xnet_seeds  # noqa:F401
 from utils.learning_rate import WarmupExponentialDecay
 
-NUM_RANKS = hvd.size()
 TIMING_FILE = os.path.join(BIN_DIR, 'timing_file.log')
 
 
@@ -447,7 +452,7 @@ class BaseDynamics(tf.keras.Model):
         if self._verbose:
             logdets = logdets.write(self.config.num_steps, sumlogdet)
             energies = energies.write(self.config.num_steps,
-                                      self.hamiltonian(state_prop))
+                                      self.hamiltogian(state_prop))
             metrics.update({
                 'energies': [
                     energies.read(i) for i in range(self.config.num_steps)

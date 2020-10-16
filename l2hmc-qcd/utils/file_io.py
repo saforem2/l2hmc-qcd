@@ -15,15 +15,22 @@ import datetime
 import joblib
 import numpy as np
 
-import horovod.tensorflow as hvd
+try:
+    import horovod.tensorflow as hvd
+    RANK = hvd.rank()
+    NUM_WORKERS = hvd.size()
+    IS_CHIEF = (RANK == 0)
+    HAS_HOROVOD = True
+except (ImportError, ModuleNotFoundError):
+    RANK = 0
+    NUM_WORKERS = 1
+    IS_CHIEF = (RANK == 0)
+    HAS_HOROVOD = False
 
 from tqdm.auto import tqdm
 from config import PROJECT_DIR
 from utils.attr_dict import AttrDict
 
-RANK = hvd.rank()
-NUM_WORKERS = hvd.size()
-IS_CHIEF = (RANK == 0)
 
 LOG_LEVELS_AS_INTS = {
     'CRITICAL': 50,
