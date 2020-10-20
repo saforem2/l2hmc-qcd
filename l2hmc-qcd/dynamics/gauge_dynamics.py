@@ -168,8 +168,13 @@ class GaugeDynamics(BaseDynamics):
             else:
                 net_weights = NetWeights(0., 1., 1., 1., 1., 1.)
 
-            self.xnet, self.vnet = self._build_networks(self.net_config,
-                                                        self.conv_config)
+            log_dir = self.config.get('log_dir', None)
+            if log_dir is None:
+                self.xnet, self.vnet = self._build_networks(self.net_config,
+                                                            self.conv_config)
+            else:
+                io.log(f'Loading `xnet`, `vnet`, from {log_dir} !!')
+                self.xnet, self.vnet = self._load_networks(log_dir)
             # ============
 
         self.net_weights = self._parse_net_weights(net_weights)
@@ -177,6 +182,50 @@ class GaugeDynamics(BaseDynamics):
             self.lr_config = lr_config
             self.lr = self._create_lr(lr_config)
             self.optimizer = self._create_optimizer()
+
+    def _load_networks(self, log_dir):
+        models_dir = os.path.join(log_dir, 'training', 'models')
+        xnet_paths = [
+            os.path.join(models_dir, f'dynamics_xnet{i}')
+            for i in range(self.config.num_steps)
+        ]
+        vnet_paths = [
+            os.path.join(models_dir, f'dynamics_vnet{i}')
+            for i in range(self.config.num_steps)
+        ]
+
+        xnet = [tf.keras.models.load_model(xp) for xp in xnet_paths]
+        vnet = [tf.keras.models.load_model(vp) for vp in vnet_paths]
+
+        return xnet, vnet
+
+    def save_networks(self, log_dir):
+        """Save networks to disk."""
+        models_dir = os.path.join(log_dir, 'training', 'models')
+        io.check_else_make_dir(models_dir)
+        if self.config.separate_networks:
+            xnet_paths = [
+                os.path.join(models_dir, f'dynamics_xnet{i}')
+                for i in range(self.config.num_steps)
+            ]
+            vnet_paths = [
+                os.path.join(models_dir, f'dynamics_vnet{i}')
+                for i in range(self.config.num_steps)
+            ]
+            for idx, (xf, vf) in enumerate(zip(xnet_paths, vnet_paths)):
+                xnet = self.xnet[idx]
+                vnet = self.vnet[idx]
+                io.log(f'Saving `xnet{idx}` to {xf}.')
+                io.log(f'Saving `vnet{idx}` to {vf}.')
+                xnet.save(xf)
+                vnet.save(vf)
+        else:
+            xnet_paths = os.path.join(models_dir, 'dynamics_xnet')
+            vnet_paths = os.path.join(models_dir, 'dynamics_vnet')
+            io.log(f'Saving `xnet` to {xnet_paths}.')
+            io.log(f'Saving `vnet` to {vnet_paths}.')
+            self.xnet.save(xnet_paths)
+            self.vnet.save(vnet_paths)
 
     def _build_networks(
             self,
