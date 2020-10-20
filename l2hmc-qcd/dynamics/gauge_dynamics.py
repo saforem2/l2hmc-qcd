@@ -88,7 +88,8 @@ def build_test_dynamics():
 def build_dynamics(flags):
     """Build dynamics using configs from FLAGS."""
     lr_config = LearningRateConfig(**dict(flags.get('lr_config', None)))
-    config = GaugeDynamicsConfig(**dict(flags.get('dynamics_config', None)))
+    #  config = GaugeDynamicsConfig(**dict(flags.get('dynamics_config', None)))
+    config = AttrDict(flags.get('dynamics_config', None))
     net_config = NetworkConfig(**dict(flags.get('network_config', None)))
     conv_config = None
 
@@ -121,6 +122,7 @@ class GaugeDynamics(BaseDynamics):
         self.charge_weight = config.get('charge_weight', 0.01)
         self._gauge_eq_masks = config.get('gauge_eq_masks', False)
         self.lattice_shape = config.get('lattice_shape', None)
+        self._combined_updates = config.get('combined_updates', False)
         self._alpha = tf.constant(1.)
         #  self._alpha = tf.Variable(initial_value=1., trainable=False)
 
@@ -467,18 +469,34 @@ class GaugeDynamics(BaseDynamics):
         return state_prop, metrics
 
     def transition_kernel(
-            self, state: State, forward: bool, training: bool = None
+            self,
+            state: State,
+            forward: bool,
+            training: bool = None
     ):
         """Transition kernel of the augmented leapfrog integrator."""
+        step = self.optimizer.iterations
         if self.config.separate_networks:
-            if forward:
-                return self._transition_kernel_forward(state, training)
+            if self._combined_updates:
+                if forward:
+                    if step == 0:
+                        print('Using `self._transition_kernel_forward`  !!')
+                    return self._transition_kernel_forward(state, training)
+                if step == 0:
+                    print('Using `self._transition_kernel_backward`  !!')
+                return self._transition_kernel_backward(state, training)
 
-            return self._transition_kernel_backward(state, training)
-            #  return self.transition_kernel_sep_nets(state, forward, training)
+            if step == 0:
+                print('Using `self._transition_kernel_sep_nets` !!')
+            return self.transition_kernel_sep_nets(state, forward, training)
 
         if self.config.directional_updates:
+            if step == 0:
+                print('Using `self._transition_kernel_directional` !!')
             return self.transition_kernel_directional(state, training)
+
+        if step == 0:
+            print('Using `super().transition_kernel` !!')
 
         return super().transition_kernel(state, forward, training)
 
