@@ -125,7 +125,7 @@ class BaseDynamics(tf.keras.Model):
                 self.lr = self._create_lr(lr_config)
                 self.optimizer = self._create_optimizer()
 
-    def call(self, inputs, training=None):
+    def call(self, inputs: Tuple[tf.Tensor, tf.Tensor], training: bool = None):
         """Calls the model on new inputs.
 
         In this case `call` just reapplies all ops in the graph to the new
@@ -139,11 +139,9 @@ class BaseDynamics(tf.keras.Model):
              sld_states: MonteCarloStates]
 
         Arguments:
-            inputs: A tensor or list of tensors.
+            inputs: A tuple of `tf.Tensor`'s (x, beta).
             training: Boolean or boolean scalar tensor, indicating whether to
                 run the `Network` in training mode or inference mode.
-            mask: A mask or list of masks. A mask can be either a tensor or
-                None (no mask).
 
         Returns:
             A tensor if there is a single output, or a list of tensors if there
@@ -246,8 +244,10 @@ class BaseDynamics(tf.keras.Model):
         if len(inputs) == 2:
             x, beta = inputs
             v = tf.random.normal(x.shape, dtype=x.dtype)
+
         elif len(inputs) == 3:
             x, v, beta = inputs
+
         state = State(x=x, v=v, beta=beta)
         state_, data = self.transition_kernel(state, forward, training)
         #  state_, px, sld = self.transition_kernel(state, forward, training)
@@ -416,6 +416,123 @@ class BaseDynamics(tf.keras.Model):
 
         return dx, dv
 
+    def _transition_kernel_forward(
+            self,
+            state: State,
+            training: bool = None
+    ):
+        """Run the augmented leapfrog sampler in the forward direction."""
+        sumlogdet = tf.zeros((self.batch_size,))
+        logdets = tf.TensorArray(TF_FLOAT,
+                                 dynamic_size=True,
+                                 size=self.batch_size,
+                                 clear_after_read=True)
+        energies = tf.TensorArray(TF_FLOAT,
+                                  dynamic_size=True,
+                                  size=self.batch_size,
+                                  clear_after_read=True)
+        #  step = 0
+        state_prop = State(self.normalizer(state.x), state.v, state.beta)
+        state_prop, logdet = self._half_v_update_forward(state_prop,
+                                                         0, training)
+        sumlogdet += logdet
+
+        for step in range(self.config.num_steps):
+            if self._verbose:
+                logdets = logdets.write(step, sumlogdet)
+                energies = energies.write(step, self.hamiltonian(state_prop))
+
+            state_prop, logdet = self._full_x_update_forward(state_prop,
+                                                             step, training)
+            sumlogdet += logdet
+
+            if step < self.config.num_steps - 1:
+                state_prop, logdet = self._full_v_update_forward(
+                    state_prop, step, training
+                )
+                sumlogdet += logdet
+
+        state_prop, logdet = self._half_v_update_forward(state_prop,
+                                                         step, training)
+        sumlogdet += logdet
+
+        accept_prob = self.compute_accept_prob(state, state_prop, sumlogdet)
+
+        metrics = AttrDict({
+            'sumlogdet': sumlogdet,
+            'accept_prob': accept_prob,
+        })
+        if self._verbose:
+            metrics.update({
+                'energies': [
+                    energies.read(i) for i in range(self.config.num_steps)
+                ],
+                'logdets': [
+                    logdets.read(i) for i in range(self.config.num_steps)
+                ],
+            })
+
+        return state_prop, metrics
+
+    def _transition_kernel_backward(
+            self,
+            state: State,
+            training: bool = None
+    ):
+        """Run the augmented leapfrog sampler in the forward direction."""
+        kwargs = {
+            'dynamic_size': True,
+            'size': self.batch_size,
+            'clear_after_read': True
+        }
+        logdets = tf.TensorArray(TF_FLOAT, **kwargs)
+        energies = tf.TensorArray(TF_FLOAT, **kwargs)
+        sumlogdet = tf.zeros((self.batch_size,))
+        state_prop = State(state.x, state.v, state.beta)
+
+        state_prop, logdet = self._half_v_update_backward(state_prop,
+                                                          0, training)
+        sumlogdet += logdet
+        for step in range(self.config.num_steps):
+            if self._verbose:
+                logdets = logdets.write(step, sumlogdet)
+                energies = energies.write(step, self.hamiltonian(state_prop))
+
+            state_prop, logdet = self._full_x_update_backward(state_prop,
+                                                              step, training)
+
+            if step < self.config.num_steps - 1:
+                state_prop, logdet = self._full_v_update_backward(
+                    state_prop, step, training
+                )
+                sumlogdet += logdet
+
+        state_prop, logdet = self._half_v_update_backward(state_prop,
+                                                          step, training)
+        sumlogdet += logdet
+
+        accept_prob = self.compute_accept_prob(state, state_prop, sumlogdet)
+
+        metrics = AttrDict({
+            'sumlogdet': sumlogdet,
+            'accept_prob': accept_prob,
+        })
+        if self._verbose:
+            logdets = logdets.write(self.config.num_steps, sumlogdet)
+            energies = energies.write(self.config.num_steps,
+                                      self.hamiltonian(state_prop))
+            metrics.update({
+                'energies': [
+                    energies.read(i) for i in range(self.config.num_steps)
+                ],
+                'logdets': [
+                    logdets.read(i) for i in range(self.config.num_steps)
+                ],
+            })
+
+        return state_prop, metrics
+
+
     def transition_kernel(
             self,
             state: State,
@@ -436,7 +553,7 @@ class BaseDynamics(tf.keras.Model):
                                   size=self.batch_size,
                                   clear_after_read=True)
 
-        for step in tf.range(self.config.num_steps):
+        for step in range(self.config.num_steps):
             if self._verbose:
                 logdets = logdets.write(step, sumlogdet)
                 energies = energies.write(step, self.hamiltonian(state_prop))
@@ -452,7 +569,7 @@ class BaseDynamics(tf.keras.Model):
         if self._verbose:
             logdets = logdets.write(self.config.num_steps, sumlogdet)
             energies = energies.write(self.config.num_steps,
-                                      self.hamiltogian(state_prop))
+                                      self.hamiltonian(state_prop))
             metrics.update({
                 'energies': [
                     energies.read(i) for i in range(self.config.num_steps)
@@ -519,6 +636,68 @@ class BaseDynamics(tf.keras.Model):
 
         return state, sumlogdet
 
+    def _call_vnet(self, inputs, step, training=None):
+        """Call `self.vnet` to get Sv, Tv, Qv for updating `v`."""
+        raise NotImplementedError
+
+    def _call_xnet(self, inputs, mask, step, training=None):
+        """Call `self.xnet` to get Sx, Tx, Qx for updating `x`."""
+        raise NotImplementedError
+
+    def _full_v_update_forward(
+            self,
+            state: State,
+            step: int,
+            training: bool = None,
+    ):
+        """Perform a full-step momentum update in the forward direction."""
+        x = self.normalizer(state.x)
+        grad = self.grad_potential(x, state.beta)
+        t = self._get_time(step, tile=tf.shape(x)[0])
+
+        S, T, Q = self._call_vnet((x, grad, t), step, training)
+
+        scale = self._vsw * (0.5 * self.eps * S)
+        transl = self._vtw * T
+        transf = self._vqw * (self.eps * Q)
+
+        expS = tf.exp(scale)
+        expQ = tf.exp(transf)
+
+        vf = state.v * expS - self.eps * (grad * expQ - transl)
+
+        state_out = State(x=x, v=vf, beta=state.beta)
+        logdet = tf.reduce_sum(scale, axis=1)
+
+        return state_out, logdet
+
+    def _half_v_update_forward(
+            self,
+            state: State,
+            step: int,
+            training: bool = None,
+    ):
+        """Perform a half-step momentum update in the forward direction."""
+        x = self.normalizer(state.x)
+        grad = self.grad_potential(x, state.beta)
+        t = self._get_time(step, tile=tf.shape(x)[0])
+
+        S, T, Q = self._call_vnet((x, grad, t), step, training)
+
+        scale = self._vsw * (0.5 * self.eps * S)
+        transl = self._vtw * T
+        transf = self._vqw * (self.eps * Q)
+
+        expS = tf.exp(scale)
+        expQ = tf.exp(transf)
+
+        vf = state.v * expS - 0.5 * self.eps * (grad * expQ - transl)
+
+        state_out = State(x=x, v=vf, beta=state.beta)
+        logdet = tf.reduce_sum(scale, axis=1)
+
+        return state_out, logdet
+
     def _update_v_forward(
                 self,
                 state: State,
@@ -556,6 +735,24 @@ class BaseDynamics(tf.keras.Model):
         logdet = tf.reduce_sum(scale, axis=1)
 
         return state_out, logdet
+
+    def _full_x_update_forward(
+            self,
+            state: State,
+            step: int,
+            training: bool = None
+    ):
+        """Perform a full-step position update in the forward direction."""
+        m, mc = self._get_mask(step)
+        sumlogdet = tf.zeros((self.batch_size,))
+        state, logdet = self._update_x_forward(state, step,
+                                               (m, mc), training)
+        sumlogdet += logdet
+        state, logdet = self._update_x_forward(state, step,
+                                               (mc, m), training)
+        sumlogdet += logdet
+
+        return state, sumlogdet
 
     def _update_x_forward(
                 self,
@@ -599,6 +796,60 @@ class BaseDynamics(tf.keras.Model):
 
         return state_out, logdet
 
+    def _full_v_update_backward(
+            self,
+            state: State,
+            step: int,
+            training: bool = None
+    ):
+        """Perform a full update of the momentum in the backward direction."""
+        step_r = self.config.num_steps - step - 1
+        x = self.normalizer(state.x)
+        grad = self.grad_potential(x, state.beta)
+        t = self._get_time(step_r, tile=tf.shape(x)[0])
+        S, T, Q = self._call_vnet((x, grad, t), step_r, training)
+
+        scale = self._vsw * (-0.5 * self.eps * S)
+        transf = self._vqw * (self.eps * Q)
+        transl = self._vtw * T
+
+        expS = tf.exp(scale)
+        expQ = tf.exp(transf)
+
+        vb = expS * (state.v + self.eps * (grad * expQ - transl))
+
+        state_out = State(x=x, v=vb, beta=state.beta)
+        logdet = tf.reduce_sum(scale, axis=1)
+
+        return state_out, logdet
+
+    def _half_v_update_backward(
+            self,
+            state: State,
+            step: int,
+            training: bool = None
+    ):
+        """Perform a half update of the momentum in the backward direction."""
+        step_r = self.config.num_steps - step - 1
+        x = self.normalizer(state.x)
+        grad = self.grad_potential(x, state.beta)
+        t = self._get_time(step_r, tile=tf.shape(x)[0])
+        S, T, Q = self._call_vnet((x, grad, t), step_r, training)
+
+        scale = self._vsw * (-0.5 * self.eps * S)
+        transf = self._vqw * (self.eps * Q)
+        transl = self._vtw * T
+
+        expS = tf.exp(scale)
+        expQ = tf.exp(transf)
+
+        vb = expS * (state.v + 0.5 * self.eps * (grad * expQ - transl))
+
+        state_out = State(x=x, v=vb, beta=state.beta)
+        logdet = tf.reduce_sum(scale, axis=1)
+
+        return state_out, logdet
+
     def _update_v_backward(
                 self,
                 state: State,
@@ -635,6 +886,27 @@ class BaseDynamics(tf.keras.Model):
         logdet = tf.reduce_sum(scale, axis=1)
 
         return state_out, logdet
+
+    def _full_x_update_backward(
+            self,
+            state: State,
+            step: int,
+            training: bool = None
+    ):
+        """Perform a full-step position update in the backward direction."""
+        step_r = self.config.num_steps - step - 1
+        m, mc = self._get_mask(step_r)
+        sumlogdet = tf.zeros((self.batch_size,))
+
+        state, logdet = self._update_x_backward(state, step_r,
+                                                (mc, m), training)
+        sumlogdet += logdet
+
+        state, logdet = self._update_x_backward(state, step_r,
+                                                (m, mc), training)
+        sumlogdet += logdet
+
+        return state, sumlogdet
 
     def _update_x_backward(
                 self,
