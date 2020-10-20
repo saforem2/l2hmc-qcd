@@ -61,16 +61,6 @@ def main(args):
             args.beta_final = beta_final
         args.train_steps = train_steps
 
-    dynamics_config = args.get('dynamics_config', None)
-    if dynamics_config is not None:
-        log_dir = dynamics_config.get('log_dir', None)
-        if log_dir is not None:
-            eps_file = os.path.join(log_dir, 'training', 'models', 'eps.z')
-            if os.path.isfile(eps_file):
-                io.log(f'Loading eps from: {eps_file}')
-                eps = io.loadz(eps_file)
-                args.dynamics_config['eps'] = eps
-
     else:  # New training session
         timestamps = AttrDict({
             'month': io.get_timestamp('%Y_%m'),
@@ -86,6 +76,16 @@ def main(args):
         if hmc_steps > 0:
             x, _, eps = train_hmc(args)
             args.dynamics_config['eps'] = eps
+
+    dynamics_config = args.get('dynamics_config', None)
+    if dynamics_config is not None:
+        log_dir = dynamics_config.get('log_dir', None)
+        if log_dir is not None:
+            eps_file = os.path.join(log_dir, 'training', 'models', 'eps.z')
+            if os.path.isfile(eps_file):
+                io.log(f'Loading eps from: {eps_file}')
+                eps = io.loadz(eps_file)
+                args.dynamics_config['eps'] = eps
 
     _, dynamics, _, args = train(args, x=x)
 
