@@ -123,8 +123,6 @@ class GaugeDynamics(BaseDynamics):
         self.lattice_shape = config.get('lattice_shape', None)
         self._alpha = tf.constant(1.)
         #  self._alpha = tf.Variable(initial_value=1., trainable=False)
-        if config.use_tempered_traj:
-            self._alpha = tf.Variable(initial_value=1., trainable=True)
 
         self.lattice = GaugeLattice(self.lattice_shape)
         self.batch_size = self.lattice_shape[0]
@@ -250,58 +248,6 @@ class GaugeDynamics(BaseDynamics):
 
         return xnet, vnet
 
-    def transition_kernel_tempered(
-            self,
-            state: State,
-            forward: bool,
-            training: bool = None,
-    ):
-        """Transition kernel of the augmented leapfrog integrator."""
-        if forward:
-            lf_fn = self._forward_lf_tempered
-        else:
-            lf_fn = self._backward_lf_tempered
-
-        state_prop = State(state.x, state.v, state.beta)
-        sumlogdet = tf.zeros((self.batch_size,), dtype=TF_FLOAT)
-        logdets = tf.TensorArray(TF_FLOAT,
-                                 dynamic_size=True,
-                                 size=self.batch_size,
-                                 clear_after_read=True)
-        energies = tf.TensorArray(TF_FLOAT,
-                                  dynamic_size=True,
-                                  size=self.batch_size,
-                                  clear_after_read=True)
-        #  if self._verbose:
-        #      energies = energies.write(0, self.hamiltonian(state_prop))
-        #      logdets = logdets.write(0, sumlogdet)
-        for step in tf.range(self.config.num_steps):
-            if self._verbose:
-                logdets = logdets.write(step, sumlogdet)
-                energies = energies.write(step, self.hamiltonian(state_prop))
-
-            state_prop, logdet = lf_fn(step, state_prop, training)
-            sumlogdet += logdet
-
-        accept_prob = self.compute_accept_prob(state, state_prop, sumlogdet)
-
-        metrics = AttrDict({
-            'sumlogdet': sumlogdet,
-            'accept_prob': accept_prob,
-        })
-
-        if self._verbose:
-            metrics.update({
-                'energies': [
-                    energies.read(i) for i in range(self.config.num_steps)
-                ],
-                'logdets': [
-                    logdets.read(i) for i in range(self.config.num_steps)
-                ],
-            })
-
-        return state_prop, metrics
-
     def transition_kernel_directional(
             self,
             state: State,
@@ -319,11 +265,6 @@ class GaugeDynamics(BaseDynamics):
                                   dynamic_size=True,
                                   size=self.batch_size,
                                   clear_after_read=True)
-        #  if self._verbose:
-        #      energies = energies.write(0, self.hamiltonian(state_prop))
-        #      logdets = logdets.write(0, tf.zeros((self.batch_size,),
-        #                                          dtype=TF_FLOAT))
-
         # ====
         # Forward for first half of trajectory
         for step in range(self.config.num_steps // 2):
@@ -382,10 +323,6 @@ class GaugeDynamics(BaseDynamics):
                                   dynamic_size=True,
                                   size=self.batch_size,
                                   clear_after_read=True)
-        #  if self._verbose:
-        #      #  clear_after_read=False)
-        #      energies = energies.write(0, self.hamiltonian(state_prop))
-        #      logdets = logdets.write(0, sumlogdet)
 
         for step in range(self.config.num_steps):
             if self._verbose:
@@ -413,73 +350,137 @@ class GaugeDynamics(BaseDynamics):
 
         return state_prop, metrics
 
+    def _transition_kernel_forward(
+            self,
+            state: State,
+            training: bool = None
+    ):
+        """Run the augmented leapfrog sampler in the forward direction."""
+        sumlogdet = tf.zeros((self.batch_size,))
+        logdets = tf.TensorArray(TF_FLOAT,
+                                 dynamic_size=True,
+                                 size=self.batch_size,
+                                 clear_after_read=True)
+        energies = tf.TensorArray(TF_FLOAT,
+                                  dynamic_size=True,
+                                  size=self.batch_size,
+                                  clear_after_read=True)
+        #  step = 0
+        state_prop = State(self.normalizer(state.x), state.v, state.beta)
+        state_prop, logdet = self._half_v_update_forward(state_prop,
+                                                         0, training)
+        sumlogdet += logdet
+
+        for step in range(self.config.num_steps):
+            if self._verbose:
+                logdets = logdets.write(step, sumlogdet)
+                energies = energies.write(step, self.hamiltonian(state_prop))
+
+            state_prop, logdet = self._full_x_update_forward(state_prop,
+                                                             step, training)
+            sumlogdet += logdet
+
+            if step < self.config.num_steps - 1:
+                state_prop, logdet = self._full_v_update_forward(
+                    state_prop, step, training
+                )
+                sumlogdet += logdet
+
+        state_prop, logdet = self._half_v_update_forward(state_prop,
+                                                         step, training)
+        sumlogdet += logdet
+
+        accept_prob = self.compute_accept_prob(state, state_prop, sumlogdet)
+
+        metrics = AttrDict({
+            'sumlogdet': sumlogdet,
+            'accept_prob': accept_prob,
+        })
+        if self._verbose:
+            metrics.update({
+                'energies': [
+                    energies.read(i) for i in range(self.config.num_steps)
+                ],
+                'logdets': [
+                    logdets.read(i) for i in range(self.config.num_steps)
+                ],
+            })
+
+        return state_prop, metrics
+
+    def _transition_kernel_backward(
+            self,
+            state: State,
+            training: bool = None
+    ):
+        """Run the augmented leapfrog sampler in the forward direction."""
+        kwargs = {
+            'dynamic_size': True,
+            'size': self.batch_size,
+            'clear_after_read': True
+        }
+        logdets = tf.TensorArray(TF_FLOAT, **kwargs)
+        energies = tf.TensorArray(TF_FLOAT, **kwargs)
+        sumlogdet = tf.zeros((self.batch_size,))
+        state_prop = State(state.x, state.v, state.beta)
+
+        state_prop, logdet = self._half_v_update_backward(state_prop,
+                                                          0, training)
+        sumlogdet += logdet
+        for step in range(self.config.num_steps):
+            if self._verbose:
+                logdets = logdets.write(step, sumlogdet)
+                energies = energies.write(step, self.hamiltonian(state_prop))
+
+            state_prop, logdet = self._full_x_update_backward(state_prop,
+                                                              step, training)
+
+            if step < self.config.num_steps - 1:
+                state_prop, logdet = self._full_v_update_backward(
+                    state_prop, step, training
+                )
+                sumlogdet += logdet
+
+        state_prop, logdet = self._half_v_update_backward(state_prop,
+                                                          step, training)
+        sumlogdet += logdet
+
+        accept_prob = self.compute_accept_prob(state, state_prop, sumlogdet)
+
+        metrics = AttrDict({
+            'sumlogdet': sumlogdet,
+            'accept_prob': accept_prob,
+        })
+        if self._verbose:
+            logdets = logdets.write(self.config.num_steps, sumlogdet)
+            energies = energies.write(self.config.num_steps,
+                                      self.hamiltonian(state_prop))
+            metrics.update({
+                'energies': [
+                    energies.read(i) for i in range(self.config.num_steps)
+                ],
+                'logdets': [
+                    logdets.read(i) for i in range(self.config.num_steps)
+                ],
+            })
+
+        return state_prop, metrics
+
     def transition_kernel(
             self, state: State, forward: bool, training: bool = None
     ):
         """Transition kernel of the augmented leapfrog integrator."""
-        if self.config.use_tempered_traj:
-            return self.transition_kernel_tempered(state, forward, training)
-
         if self.config.separate_networks:
-            return self.transition_kernel_sep_nets(state, forward, training)
+            if forward:
+                return self._transition_kernel_forward(state, training)
+
+            return self._transition_kernel_backward(state, training)
+            #  return self.transition_kernel_sep_nets(state, forward, training)
 
         if self.config.directional_updates:
             return self.transition_kernel_directional(state, training)
 
         return super().transition_kernel(state, forward, training)
-
-    def _forward_lf_tempered(
-            self, step: int, state: State, training: bool = None
-    ):
-
-        def _tempered_v(step, v):
-            if step < self.config.num_steps // 2:
-                return v * tf.math.sqrt(self._alpha)
-            return v / tf.math.sqrt(self._alpha)
-
-        sumlogdet = tf.zeros((self.batch_size,), dtype=TF_FLOAT)
-        m, mc = self._get_mask(step)
-        v = _tempered_v(step, state.v)
-        state = State(state.x, v, state.beta)
-        state, logdet = self._update_v_forward(state, step, training)
-        sumlogdet += logdet
-        state, logdet = self._update_x_forward(state, step, (m, mc), training)
-        sumlogdet += logdet
-        state, logdet = self._update_x_forward(state, step, (mc, m), training)
-        sumlogdet += logdet
-        state, logdet = self._update_v_forward(state, step, training)
-        sumlogdet += logdet
-        v = _tempered_v(step, state.v)
-        state = State(state.x, v, state.beta)
-
-        return state, sumlogdet
-
-    def _backward_lf_tempered(
-            self, step: int, state: State, training: bool = None
-    ):
-        """Run the augmented leapfrog integrator in the backward direction."""
-        def _tempered_v(step, v):
-            if step < self.config.num_steps // 2:
-                return v / tf.math.sqrt(self._alpha)
-            return v * tf.math.sqrt(self._alpha)
-
-        sumlogdet = 0.
-        step = self.config.num_steps - step - 1  # reversed step
-        m, mc = self._get_mask(step)
-        v = _tempered_v(step, state.v)
-        state = State(state.x, v, state.beta)
-        state, logdet = self._update_v_backward(state, step, training)
-        sumlogdet += logdet
-        state, logdet = self._update_x_backward(state, step, (mc, m), training)
-        sumlogdet += logdet
-        state, logdet = self._update_x_backward(state, step, (m, mc), training)
-        sumlogdet += logdet
-        state, logdet = self._update_v_backward(state, step, training)
-        sumlogdet += logdet
-        v = _tempered_v(step, state.v)
-        state = State(state.x, v, state.beta)
-
-        return state, logdet
 
     def _scattered_xnet(self, inputs, mask, step, training=None):
         """Call `self.xnet` on non-zero entries of `x` via `tf.gather_nd`."""
@@ -503,14 +504,11 @@ class GaugeDynamics(BaseDynamics):
 
     def _call_vnet(self, inputs, step, training=None):
         """Call `self.xnet` to get Sx, Tx, Qx for updating `x`."""
-        x, grad, t = inputs
         if not self.config.separate_networks:
-            S, T, Q = self.vnet((x, grad, t), training)
-        else:
-            vnet = self.vnet[step]
-            S, T, Q = vnet((x, grad, t), training)
+            return self.vnet(inputs, training)
 
-        return S, T, Q
+        vnet = self.vnet[step]
+        return vnet(inputs, training)
 
     def _call_xnet(self, inputs, mask, step, training=None):
         """Call `self.xnet` to get Sx, Tx, Qx for updating `x`."""
@@ -528,31 +526,45 @@ class GaugeDynamics(BaseDynamics):
         x = tf.stack([x_cos, x_sin], axis=-1)
         #  x = tf.concat([x_cos, x_sin], -1)
         if not self.config.separate_networks:
-            S, T, Q = self.xnet((x, v, t), training)
-        else:
-            xnet = self.xnet[step]
-            S, T, Q = xnet((x, v, t), training)
+            return self.xnet((x, v, t), training)
 
-        return S, T, Q
+        xnet = self.xnet[step]
+        return xnet((x, v, t), training)
 
-    def _update_v_forward(
-                self,
-                state: State,
-                step: int,
-                training: bool = None
+    def _full_v_update_forward(
+            self,
+            state: State,
+            step: int,
+            training: bool = None,
     ):
-        """Update the momentum `v` in the forward leapfrog step.
+        """Perform a full-step momentum update in the forward direction."""
+        x = self.normalizer(state.x)
+        grad = self.grad_potential(x, state.beta)
+        t = self._get_time(step, tile=tf.shape(x)[0])
 
-        Args:
-            network (tf.keras.Layers): Network to use
-            state (State): Input state
-            t (float): Current leapfrog step, represented as periodic time.
-            training (bool): Currently training?
+        S, T, Q = self._call_vnet((x, grad, t), step, training)
 
-        Returns:
-            new_state (State): New state, with updated momentum.
-            logdet (float): Jacobian factor
-        """
+        scale = self._vsw * (0.5 * self.eps * S)
+        transl = self._vtw * T
+        transf = self._vqw * (self.eps * Q)
+
+        expS = tf.exp(scale)
+        expQ = tf.exp(transf)
+
+        vf = state.v * expS - self.eps * (grad * expQ - transl)
+
+        state_out = State(x=x, v=vf, beta=state.beta)
+        logdet = tf.reduce_sum(scale, axis=1)
+
+        return state_out, logdet
+
+    def _half_v_update_forward(
+            self,
+            state: State,
+            step: int,
+            training: bool = None,
+    ):
+        """Perform a half-step momentum update in the forward direction."""
         x = self.normalizer(state.x)
         grad = self.grad_potential(x, state.beta)
         t = self._get_time(step, tile=tf.shape(x)[0])
@@ -572,6 +584,65 @@ class GaugeDynamics(BaseDynamics):
         logdet = tf.reduce_sum(scale, axis=1)
 
         return state_out, logdet
+
+    def _update_v_forward(
+                self,
+                state: State,
+                step: int,
+                training: bool = None
+    ):
+        """Update the momentum `v` in the forward leapfrog step.
+
+        Args:
+            network (tf.keras.Layers): Network to use
+            state (State): Input state
+            t (float): Current leapfrog step, represented as periodic time.
+            training (bool): Currently training?
+
+        Returns:
+            new_state (State): New state, with updated momentum.
+            logdet (float): Jacobian factor
+        """
+        if self.config.hmc:
+            return super()._update_v_forward(state, step, training)
+
+        x = self.normalizer(state.x)
+        grad = self.grad_potential(x, state.beta)
+        t = self._get_time(step, tile=tf.shape(x)[0])
+
+        S, T, Q = self._call_vnet((x, grad, t), step, training)
+
+        scale = self._vsw * (0.5 * self.eps * S)
+        transl = self._vtw * T
+        transf = self._vqw * (self.eps * Q)
+
+        expS = tf.exp(scale)
+        expQ = tf.exp(transf)
+
+        vf = state.v * expS - 0.5 * self.eps * (grad * expQ - transl)
+
+        state_out = State(x=x, v=vf, beta=state.beta)
+        logdet = tf.reduce_sum(scale, axis=1)
+
+        return state_out, logdet
+
+    def _full_x_update_forward(
+            self,
+            state: State,
+            step: int,
+            training: bool = None
+    ):
+        """Perform a full-step position update in the forward direction."""
+        m, mc = self._get_mask(step)
+        sumlogdet = tf.zeros((self.batch_size,))
+        state, logdet = self._update_x_forward(state, step,
+                                               (m, mc), training)
+        sumlogdet += logdet
+        state, logdet = self._update_x_forward(state, step,
+                                               (mc, m), training)
+        sumlogdet += logdet
+
+        return state, sumlogdet
 
     def _update_x_forward(
                 self,
@@ -629,6 +700,60 @@ class GaugeDynamics(BaseDynamics):
 
         return state_out, logdet
 
+    def _full_v_update_backward(
+            self,
+            state: State,
+            step: int,
+            training: bool = None
+    ):
+        """Perform a full update of the momentum in the backward direction."""
+        step_r = self.config.num_steps - step - 1
+        x = self.normalizer(state.x)
+        grad = self.grad_potential(x, state.beta)
+        t = self._get_time(step_r, tile=tf.shape(x)[0])
+        S, T, Q = self._call_vnet((x, grad, t), step_r, training)
+
+        scale = self._vsw * (-0.5 * self.eps * S)
+        transf = self._vqw * (self.eps * Q)
+        transl = self._vtw * T
+
+        expS = tf.exp(scale)
+        expQ = tf.exp(transf)
+
+        vb = expS * (state.v + self.eps * (grad * expQ - transl))
+
+        state_out = State(x=x, v=vb, beta=state.beta)
+        logdet = tf.reduce_sum(scale, axis=1)
+
+        return state_out, logdet
+
+    def _half_v_update_backward(
+            self,
+            state: State,
+            step: int,
+            training: bool = None
+    ):
+        """Perform a half update of the momentum in the backward direction."""
+        step_r = self.config.num_steps - step - 1
+        x = self.normalizer(state.x)
+        grad = self.grad_potential(x, state.beta)
+        t = self._get_time(step_r, tile=tf.shape(x)[0])
+        S, T, Q = self._call_vnet((x, grad, t), step_r, training)
+
+        scale = self._vsw * (-0.5 * self.eps * S)
+        transf = self._vqw * (self.eps * Q)
+        transl = self._vtw * T
+
+        expS = tf.exp(scale)
+        expQ = tf.exp(transf)
+
+        vb = expS * (state.v + 0.5 * self.eps * (grad * expQ - transl))
+
+        state_out = State(x=x, v=vb, beta=state.beta)
+        logdet = tf.reduce_sum(scale, axis=1)
+
+        return state_out, logdet
+
     def _update_v_backward(
                 self,
                 state: State,
@@ -664,6 +789,27 @@ class GaugeDynamics(BaseDynamics):
         logdet = tf.reduce_sum(scale, axis=1)
 
         return state_out, logdet
+
+    def _full_x_update_backward(
+            self,
+            state: State,
+            step: int,
+            training: bool = None
+    ):
+        """Perform a full-step position update in the backward direction."""
+        step_r = self.config.num_steps - step - 1
+        m, mc = self._get_mask(step_r)
+        sumlogdet = tf.zeros((self.batch_size,))
+
+        state, logdet = self._update_x_backward(state, step_r,
+                                                (mc, m), training)
+        sumlogdet += logdet
+
+        state, logdet = self._update_x_backward(state, step_r,
+                                                (m, mc), training)
+        sumlogdet += logdet
+
+        return state, sumlogdet
 
     def _update_x_backward(
                 self,
