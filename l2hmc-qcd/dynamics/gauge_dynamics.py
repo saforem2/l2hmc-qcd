@@ -613,7 +613,7 @@ class GaugeDynamics(BaseDynamics):
 
         S, T, Q = self._call_vnet((x, grad, t), step, training)
 
-        scale = self._vsw * (0.5 * self.eps * S)
+        scale = self._vsw * (self.eps * S)
         transl = self._vtw * T
         transf = self._vqw * (self.eps * Q)
 
@@ -782,7 +782,7 @@ class GaugeDynamics(BaseDynamics):
         t = self._get_time(step_r, tile=tf.shape(x)[0])
         S, T, Q = self._call_vnet((x, grad, t), step_r, training)
 
-        scale = self._vsw * (-0.5 * self.eps * S)
+        scale = self._vsw * (-self.eps * S)
         transf = self._vqw * (self.eps * Q)
         transl = self._vtw * T
 
