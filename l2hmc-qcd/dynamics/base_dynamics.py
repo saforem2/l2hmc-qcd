@@ -754,6 +754,18 @@ class BaseDynamics(tf.keras.Model):
 
         return state, sumlogdet
 
+    def _full_x_update(
+        self,
+        state: State,
+        step: int,
+        forward: bool,
+        training: bool = None
+    ):
+        if forward:
+            return self._full_x_update_forward(state, step, training)
+
+        return self._full_x_update_backward(state, step, training)
+
     def _update_x_forward(
                 self,
                 state: State,
@@ -1078,6 +1090,12 @@ class BaseDynamics(tf.keras.Model):
             xnet: tf.keras.models.Model
             vnet: tf.keras.models.Model
         """
+        raise NotImplementedError
+
+    def _load_networks(
+            self,
+            log_dir: str
+    ):
         raise NotImplementedError
 
     @staticmethod

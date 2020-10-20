@@ -203,6 +203,8 @@ class GaugeDynamics(BaseDynamics):
         """Save networks to disk."""
         models_dir = os.path.join(log_dir, 'training', 'models')
         io.check_else_make_dir(models_dir)
+        eps_file = os.path.join(models_dir, 'eps.z')
+        io.savez(self.eps.numpy(), eps_file, name='eps')
         if self.config.separate_networks:
             xnet_paths = [
                 os.path.join(models_dir, f'dynamics_xnet{i}')
@@ -417,7 +419,7 @@ class GaugeDynamics(BaseDynamics):
                                   size=self.batch_size,
                                   clear_after_read=True)
         #  step = 0
-        state_prop = State(self.normalizer(state.x), state.v, state.beta)
+        state_prop = State(state.x, state.v, state.beta)
         state_prop, logdet = self._half_v_update_forward(state_prop,
                                                          0, training)
         sumlogdet += logdet
