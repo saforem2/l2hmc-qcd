@@ -11,6 +11,7 @@ import os
 import time
 
 from typing import Union
+from utils.learning_rate import ReduceLROnPlateau
 
 import numpy as np
 import tensorflow as tf
@@ -303,9 +304,16 @@ def train_dynamics(
 ):
     """Train model."""
     # setup...
-    lr_reducer = tf.keras.callbacks.ReduceLROnPlateau(monitor='loss',
-                                                      min_lr=1e-4, verbose=1)
-    lr_reducer.set_model(dynamics)
+    factor = flags.get('reduce_lr_factor', 0.5)
+    patience = flags.get('patience', 10)
+    min_lr = flags.get('min_lr')
+    warmup_steps = dynamics.lr_config.get('warmup_steps', 1000)
+    reduce_lr = ReduceLROnPlateau(monitor='loss', mode='min',
+                                  warmup_steps=warmup_steps,
+                                  factor=factor, min_lr=min_lr,
+                                  verbose=1, patience=patience)
+    reduce_lr.set_model(dynamics)
+
     config = setup(dynamics, flags, dirs, x, betas)
     x = config.x
     steps = config.steps
@@ -410,13 +418,17 @@ def train_dynamics(
     # +---------------+
     # | Training loop |
     # +---------------+
+    warmup_steps = dynamics.lr_config.get('warmup_steps', 100)
+    steps_per_epoch = flags.get('steps_per_epoch', 1000)
+    print(f'steps_per_epoch: {steps_per_epoch}')
     for step, beta in zip(steps, betas):
         # Perform a single training step
         x, metrics = timed_step(x, beta)
 
-        if step + 1 % flags.get('logging_steps', None) == 0:
-            logs = {'loss': train_data.data.get('loss', None)}
-            lr_reducer.on_epoch_end(step+1, logs)
+        #  if step % 10 == 0:
+        if (step + 1) > warmup_steps and (step + 1) % steps_per_epoch == 0:
+            #  logs = {'loss': train_data.data.get('loss', None)}
+            reduce_lr.on_epoch_end(step+1, {'loss': metrics.loss})
 
         # Check if ALL chains are stuck, refresh x if so
         #  px = tf.reduce_mean(metrics.accept_prob)

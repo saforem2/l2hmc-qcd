@@ -17,6 +17,7 @@ Author: Sam Foreman (github: @saforem2)
 Date: 7/3/2020
 """
 # noqa:401
+# pylint:disable=no-name-in-module
 # pylint:disable=too-many-instance-attributes,too-many-locals
 # pylint:disable=invalid-name,too-many-arguments,too-many-ancestors
 # pylint:disable=unused-import,unused-argument,attribute-defined-outside-init
@@ -31,8 +32,12 @@ from typing import Optional, Tuple
 
 import numpy as np
 import tensorflow as tf
+
+from tensorflow.python.keras import backend as K
+
 try:
     import horovod.tensorflow as hvd
+
     NUM_RANKS = hvd.size()
     NUM_WORKERS = NUM_RANKS * hvd.local_size()
     HAS_HOROVOD = True
@@ -57,7 +62,6 @@ from network.functional_net import get_gauge_network
 from dynamics.config import GaugeDynamicsConfig
 from dynamics.base_dynamics import (BaseDynamics, MonteCarloStates, NetWeights,
                                     State)
-
 
 TIMING_FILE = os.path.join(BIN_DIR, 'timing_file.log')
 TF_FLOAT = tf.keras.backend.floatx()
@@ -172,6 +176,8 @@ class GaugeDynamics(BaseDynamics):
             if log_dir is None:
                 self.xnet, self.vnet = self._build_networks(self.net_config,
                                                             self.conv_config)
+                # Build feature extractor (fe) networks for summaries
+                #  feature_extractors = self._build_feature_extractors()
             else:
                 io.log(f'Loading `xnet`, `vnet`, from {log_dir} !!')
                 self.xnet, self.vnet = self._load_networks(log_dir)
@@ -180,7 +186,7 @@ class GaugeDynamics(BaseDynamics):
         self.net_weights = self._parse_net_weights(net_weights)
         if self._has_trainable_params:
             self.lr_config = lr_config
-            self.lr = self._create_lr(lr_config)
+            self.lr = self._create_lr(lr_config, auto=True)
             self.optimizer = self._create_optimizer()
 
     def _load_networks(self, log_dir):
@@ -228,6 +234,24 @@ class GaugeDynamics(BaseDynamics):
             io.log(f'Saving `vnet` to {vnet_paths}.')
             self.xnet.save(xnet_paths)
             self.vnet.save(vnet_paths)
+
+    def _build_feature_extractors(self):
+        """Build feature extractor models for xnet, vnet."""
+        if self.config.separate_networks:
+            xnet_feature_extractor = []
+            vnet_feature_extractor = []
+            for step in range(self.config.num_steps):
+                xnet = self.xnet[step]
+                vnet = self.vnet[step]
+                xfe = self._build_feature_extractor(xnet)
+                vfe = self._build_feature_extractor(vnet)
+                xnet_feature_extractor.append(xfe)
+                vnet_feature_extractor.append(vfe)
+        else:
+            xnet_feature_extractor = self._build_feature_extractor(self.xnet)
+            vnet_feature_extractor = self._build_feature_extractor(self.vnet)
+
+        return xnet_feature_extractor, vnet_feature_extractor
 
     def _build_networks(
             self,
@@ -972,11 +996,21 @@ class GaugeDynamics(BaseDynamics):
 
         return ploss, qloss
 
-    def train_step(self, inputs):
+    def _get_lr(self, step=None):
+        if step is None:
+            step = self.optimizer.iterations
+
+        #  if isinstance(self.lr, callable):
+        if callable(self.lr):
+            return self.lr(step)
+
+        return K.get_value(self.optimizer.lr)
+
+    def train_step(self, data):
         """Perform a single training step."""
         start = time.time()
         with tf.GradientTape() as tape:
-            x, beta = inputs
+            x, beta = data
             tape.watch(x)
             states, data = self((x, beta), training=True)
             accept_prob = data.get('accept_prob', None)
@@ -999,6 +1033,7 @@ class GaugeDynamics(BaseDynamics):
         )
 
         metrics = AttrDict({
+            'lr': self._get_lr(),
             'dt': time.time() - start,
             'loss': loss,
         })
@@ -1038,6 +1073,10 @@ class GaugeDynamics(BaseDynamics):
 
         observables = self.calc_observables(states)
         metrics.update(**observables)
+
+        metrics.update({
+            'lr': self._get_lr(),
+        })
 
         # Horovod:
         #    Broadcast initial variable states from rank 0 to all other
@@ -1160,14 +1199,14 @@ class GaugeDynamics(BaseDynamics):
            [cos(2pi*step/num_steps), sin(2pi*step/num_steps)]
            ```
         """
-        if self.config.separate_networks:
-            trig_t = tf.squeeze([0, 0])
-        else:
-            i = tf.cast(i, dtype=TF_FLOAT)
-            trig_t = tf.squeeze([
-                tf.cos(2 * np.pi * i / self.config.num_steps),
-                tf.sin(2 * np.pi * i / self.config.num_steps),
-            ])
+        #  if self.config.separate_networks:
+        #      trig_t = tf.squeeze([0, 0])
+        #  else:
+        i = tf.cast(i, dtype=TF_FLOAT)
+        trig_t = tf.squeeze([
+            tf.cos(2 * np.pi * i / self.config.num_steps),
+            tf.sin(2 * np.pi * i / self.config.num_steps),
+        ])
 
         t = tf.tile(tf.expand_dims(trig_t, 0), (tile, 1))
 
@@ -1179,14 +1218,17 @@ class GaugeDynamics(BaseDynamics):
             if shape is None:
                 shape = (self.batch_size, -1)
 
-            return sum([np.roll(m, i, ax).reshape(shape) for i in range(4)])
+            return sum([tf.roll(m, i, ax).reshape(shape) for i in range(4)])
 
         masks = []
         zeros = np.zeros(self.lattice_shape, dtype=np.float32)
+        #  zeros = tf.zeros(self.lattice_shape, dtype=TF_FLOAT)
 
         if self._gauge_eq_masks:
             mh_ = zeros.copy()
             mv_ = zeros.copy()
+            #  mh_ = tf.zeros_like(zeros)
+            #  mv_ = tf.zeros_like(zeros)
             mh_[:, ::4, :, 1] = 1.  # Horizontal masks
             mv_[:, :, ::4, 0] = 1.  # Vertical masks
 
@@ -1202,7 +1244,8 @@ class GaugeDynamics(BaseDynamics):
 
             for i in range(self.config.num_steps):
                 m = p if i % 2 == 0 else (1. - p)
-                mask = tf.reshape(m, (self.batch_size, -1))
-                masks.append(tf.constant(mask))
+                mask = tf.reshape(tf.constant(m), (self.batch_size, -1))
+                mask = tf.convert_to_tensor(mask)
+                masks.append(mask)
 
         return masks

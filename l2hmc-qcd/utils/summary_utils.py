@@ -9,6 +9,7 @@ Date: 07/29/2020
 from __future__ import absolute_import, division, print_function
 
 import tensorflow as tf
+from tensorflow.python.keras import backend as K
 
 keras = tf.keras
 
@@ -44,10 +45,25 @@ def update_summaries(step, metrics, dynamics):
     Returns:
         None
     """
+    learning_rate = dynamics._get_lr(step)
     #  learning_rate = dynamics.lr(tf.constant(step))
     #  opt_cfg = dynamics.optimizer.get_config()
     #  learning_rate = opt_cfg['learning_rate']
-    learning_rate = dynamics.lr(tf.constant(step))
+    #  try:
+    #      learning_rate = K.get_value(dynamics.optimizer.lr)
+    #  except Exception as e:
+    #      print(e)
+    #      learning_rate = dynamics.lr(step)
+    #  try:
+    #      learning_rate = dynamics.lr(tf.constant(step))
+    #  except TypeError as err:
+    #      print(err)
+    #      try:
+    #          learning_rate = K.get_value(dynamics.optimizer.lr)
+    #      except Exception as e:
+    #          print(e)
+    #          raise Exception
+
     opt_vars = dynamics.optimizer.variables()
     summarize_dict(metrics, step, prefix='training')
     summarize_list(dynamics.variables, step, prefix='dynamics')
