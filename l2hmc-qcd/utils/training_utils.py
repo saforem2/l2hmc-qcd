@@ -303,6 +303,9 @@ def train_dynamics(
 ):
     """Train model."""
     # setup...
+    lr_reducer = tf.keras.callbacks.ReduceLROnPlateau(monitor='loss',
+                                                      min_lr=1e-4, verbose=1)
+    lr_reducer.set_model(dynamics)
     config = setup(dynamics, flags, dirs, x, betas)
     x = config.x
     steps = config.steps
@@ -410,6 +413,10 @@ def train_dynamics(
     for step, beta in zip(steps, betas):
         # Perform a single training step
         x, metrics = timed_step(x, beta)
+
+        if step + 1 % flags.get('logging_steps', None) == 0:
+            logs = {'loss': train_data.data.get('loss', None)}
+            lr_reducer.on_epoch_end(step+1, logs)
 
         # Check if ALL chains are stuck, refresh x if so
         #  px = tf.reduce_mean(metrics.accept_prob)

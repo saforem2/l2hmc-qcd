@@ -10,6 +10,8 @@ from __future__ import absolute_import, division, print_function
 
 import tensorflow as tf
 
+keras = tf.keras
+
 
 def summarize_dict(d, step, prefix=None):
     """Create summaries for all items in `d`."""
