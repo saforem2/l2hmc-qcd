@@ -66,6 +66,7 @@ def identity(x):
     return x
 
 
+tf.keras.models.Model.call
 # pylint:disable=attribute-defined-outside-init
 # pylint:disable=invalid-name, too-many-instance-attributes
 # pylint:disable=too-many-arguments, too-many-locals, too-many-ancestors
@@ -125,7 +126,19 @@ class BaseDynamics(tf.keras.Model):
                 self.lr = self._create_lr(lr_config)
                 self.optimizer = self._create_optimizer()
 
-    def call(self, inputs: Tuple[tf.Tensor, tf.Tensor], training: bool = None):
+    @staticmethod
+    def _build_feature_extractor(model):
+        return tf.keras.Model(
+            inputs=model.inputs,
+            outputs=[layer.output for layer in model.layers]
+        )
+
+    def call(
+            self,
+            inputs: Tuple[tf.Tensor, tf.Tensor],
+            training: bool = None,
+            mask=None
+    ):
         """Calls the model on new inputs.
 
         In this case `call` just reapplies all ops in the graph to the new
@@ -148,6 +161,14 @@ class BaseDynamics(tf.keras.Model):
             are more than one outputs.
         """
         return self.apply_transition(inputs, training=training)
+
+    def call_feature_extractors(
+            self,
+            inputs: Tuple[tf.Tensor, tf.Tensor],
+            training: bool = None,
+    ):
+        """Call feature extractor models on inputs."""
+        pass
 
     def calc_losses(
             self, states: MonteCarloStates, accept_prob: tf.Tensor
@@ -178,13 +199,11 @@ class BaseDynamics(tf.keras.Model):
 
         return loss
 
-    # pylint:disable=arguments-differ
-    def train_step(self, inputs: Tuple[tf.Tensor, tf.Tensor]):
+    def train_step(self, data):
         """Perform a single training step."""
         raise NotImplementedError
 
-    # pylint:disable=arguments-differ
-    def test_step(self, inputs: Tuple[tf.Tensor, tf.Tensor]):
+    def test_step(self, data):
         """Perform a single inference step."""
         raise NotImplementedError
 
@@ -532,7 +551,6 @@ class BaseDynamics(tf.keras.Model):
 
         return state_prop, metrics
 
-
     def transition_kernel(
             self,
             state: State,
@@ -755,11 +773,11 @@ class BaseDynamics(tf.keras.Model):
         return state, sumlogdet
 
     def _full_x_update(
-        self,
-        state: State,
-        step: int,
-        forward: bool,
-        training: bool = None
+            self,
+            state: State,
+            step: int,
+            forward: bool,
+            training: bool = None
     ):
         if forward:
             return self._full_x_update_forward(state, step, training)
@@ -959,7 +977,7 @@ class BaseDynamics(tf.keras.Model):
 
         return state_out, logdet
 
-    def grad_potential(self, x, beta):
+    def grad_potential(self, x: tf.Tensor, beta: tf.Tensor):
         """Compute the gradient of the potential function."""
         with tf.name_scope('grad_potential'):
             x = self.normalizer(x)
@@ -975,7 +993,7 @@ class BaseDynamics(tf.keras.Model):
 
         return grad
 
-    def potential_energy(self, x, beta):
+    def potential_energy(self, x: tf.Tensor, beta: tf.Tensor):
         """Compute the potential energy as beta times the potential fn."""
         with tf.name_scope('potential_energy'):
             x = self.normalizer(x)
@@ -984,12 +1002,12 @@ class BaseDynamics(tf.keras.Model):
         return pe
 
     @staticmethod
-    def kinetic_energy(v):
+    def kinetic_energy(v: tf.Tensor):
         """Compute the kinetic energy of the momentum as 0.5 * (v ** 2)."""
         with tf.name_scope('kinetic_energy'):
             return 0.5 * tf.reduce_sum(v ** 2, axis=1)
 
-    def hamiltonian(self, state):
+    def hamiltonian(self, state: State):
         """Compute the overall Hamiltonian."""
         with tf.name_scope('hamiltonian'):
             kinetic = self.kinetic_energy(state.v)
@@ -997,7 +1015,7 @@ class BaseDynamics(tf.keras.Model):
 
         return potential + kinetic
 
-    def _get_time(self, i, tile=1):
+    def _get_time(self, i: int, tile=1):
         """Format the MCMC step as [cos(...), sin(...)]."""
         i = tf.cast(i, dtype=TF_FLOAT)
         trig_t = tf.squeeze([
@@ -1007,31 +1025,6 @@ class BaseDynamics(tf.keras.Model):
         t = tf.tile(tf.expand_dims(trig_t, 0), (tile, 1))
 
         return t
-
-    def _construct_time(self, tile):
-        """Convert leapfrog step index into sinusoidal time."""
-        self.ts = []
-        for i in range(self.config.num_steps):
-            t = tf.constant([
-                np.cos(2 * np.pi * i / self.config.num_steps),
-                np.sin(2 * np.pi * i / self.config.num_steps)
-            ], dtype=TF_FLOAT)
-
-            self.ts.append(tf.tile(tf.expand_dims(t, 0), (tile, 1)))
-
-    def _build_time_new(self, tile=None):
-        """Pre-compute the trig. repr. of the time."""
-        t_arr = []
-        if tile is None:
-            tile = tf.shape(self.x_shape)[0]
-        for i in range(self.config.num_steps):
-            trig_t = tf.squeeze([
-                tf.cos(2 * np.pi * i / self.config.num_steps),
-                tf.sin(2 * np.pi * i / self.config.num_steps),
-            ])
-            t_arr.append(tf.tile(tf.expand_dims(trig_t, 0), (tile, 1)))
-
-        return t_arr
 
     def _get_direction_masks(self):
         """Decide direction uniformly."""
@@ -1044,7 +1037,7 @@ class BaseDynamics(tf.keras.Model):
         return forward_mask, backward_mask
 
     @staticmethod
-    def _get_accept_masks(accept_prob):
+    def _get_accept_masks(accept_prob: tf.Tensor):
         """Create binary array to pick out which idxs are accepted."""
         accept_mask = tf.cast(
             accept_prob > tf.random.uniform(tf.shape(accept_prob)),
@@ -1070,7 +1063,7 @@ class BaseDynamics(tf.keras.Model):
 
         return masks
 
-    def _get_mask(self, i):
+    def _get_mask(self, i: int):
         """Retrieve the binary mask for the i-th leapfrog step."""
         if tf.executing_eagerly():
             m = self.masks[int(i)]
@@ -1111,10 +1104,10 @@ class BaseDynamics(tf.keras.Model):
         return xnet, vnet
 
     # pylint:disable=unused-argument
-    def _get_network(self, step):
+    def _get_network(self, step: int):
         return self.xnet, self.vnet
 
-    def _build_eps(self, use_log=False):
+    def _build_eps(self, use_log: bool = False):
         """Create `self.eps` (i.e. the step size) as a `tf.Variable`.
 
         Args:
@@ -1135,7 +1128,10 @@ class BaseDynamics(tf.keras.Model):
                            trainable=not self.config.eps_fixed)
 
     def _create_lr(
-            self, lr_config: LearningRateConfig = None, scale: bool = False
+            self,
+            lr_config: LearningRateConfig = None,
+            scale: bool = False,
+            auto: bool = True,
     ):
         """Create the learning rate schedule to be used during training."""
         if lr_config is None:
@@ -1146,8 +1142,12 @@ class BaseDynamics(tf.keras.Model):
             tf.print(f'original lr: {lr_config.lr_init}')
             lr_config.lr_init *= tf.math.sqrt(tf.cast(hvd.size(), TF_FLOAT))
             tf.print(f'new (scaled) lr: {lr_config.lr_init}')
+
+        if auto:
+            return lr_config.lr_init
+
         warmup_steps = lr_config.get('warmup_steps', None)
-        if warmup_steps is not None and warmup_steps > 0:
+        if warmup_steps > 0:
             return WarmupExponentialDecay(lr_config, staircase=True,
                                           name='WarmupExponentialDecay')
 
@@ -1175,14 +1175,14 @@ class BaseDynamics(tf.keras.Model):
 
         return optimizer
 
-    def save_config(self, config_dir):
+    def save_config(self, config_dir: str):
         """Helper method for saving configuration objects."""
         io.save_dict(self.config, config_dir, name='dynamics_config')
         io.save_dict(self.net_config, config_dir, name='network_config')
         io.save_dict(self.lr_config, config_dir, name='lr_config')
         io.save_dict(self.params, config_dir, name='dynamics_params')
 
-    def _parse_net_weights(self, net_weights):
+    def _parse_net_weights(self, net_weights: NetWeights):
         self._xsw = net_weights.x_scale
         self._xtw = net_weights.x_translation
         self._xqw = net_weights.x_transformation
@@ -1192,7 +1192,7 @@ class BaseDynamics(tf.keras.Model):
 
         return net_weights
 
-    def _parse_params(self, params, net_weights=None):
+    def _parse_params(self, params: AttrDict, net_weights: NetWeights = None):
         """Set instance attributes from `params`."""
         self.xdim = params.get('xdim', None)
         self.batch_size = params.get('batch_size', None)
