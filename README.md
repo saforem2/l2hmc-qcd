@@ -87,13 +87,11 @@ Lattice methods for the 2D U(1) gauge model are implemented using the `GaugeLatt
 
 The base class for the augmented L2HMC leapfrog integrator is implemented in the [`BaseDynamics`](l2hmc-qcd/dynamics/base_dynamics.py) (a `tf.keras.Model` object).
 
-The [`GaugeDynamics`](l2hmc-qcd/dynamics/gauge_dynamics.py) is a subclass of `BaseDynamics` containing modifications for the 2D U(1) pure gauge theory,
-including a custom [`GaugeNetwork`](l2hmc-qcd/network/gauge_network.py) which is composed of a collection of `tf.keras.layers` objects, each of which can be
-found in [`network/layers.py`](l2hmc-qcd/network/layers.py).
+The [`GaugeDynamics`](l2hmc-qcd/dynamics/gauge_dynamics.py) is a subclass of `BaseDynamics` containing modifications for the 2D U(1) pure gauge theory.
 
-An illustration of the `VNet` architecture can be seen below.
+The network is defined in [` l2hmc-qcd/network/functional_net.py`](l2hmc-qcd/network/functional_net.py).
 
-Specific details about the network can be found in [`l2hmc-qcd/network/gauge_network.py`](l2hmc-qcd/network/gauge_network.py).
+An illustration of the `xNet` network can be seen below.
 
 
 <div align="center">
@@ -109,7 +107,7 @@ Additionally, the `GaugeLattice` object implements a variety of methods for calc
 
 ## Training
 
-The training loop is implemented in [` utils/training_utils.py `](utils/training_utils.py).
+The training loop is implemented in [`l2hmc-qcd/utils/training_utils.py `](l2hmc-qcd/utils/training_utils.py).
 
 To train the sampler on a 2D U(1) gauge model using the parameters specified in [` bin/train_configs.json`](bin/train_configs.json):
 
