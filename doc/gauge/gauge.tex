@@ -195,56 +195,56 @@ We see that this metric gives the expected behavior, since $\delta \rightarrow
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\subsection{Issues with the Average Plaquette}
+% \subsection{Issues with the Average Plaquette}
+% %
+% When running inference using the trained sampler, an issue was encountered in
+% which the average plaquette, $\langle \phi_{P}\rangle$ seems to converge to a
+% value which is noticeably different from the expected value in the infinite
+% volume limit, and can be seen in Fig.~\ref{fig:bad_convergence}.
+% %
+% In order to quantify this unexpected behavior, we can calculate the difference
+% between the observed value of the average plaquette, $\langle \phi_{P}\rangle$
+% and the expected value $\phi_{P}^{(*)}$ (calculated from the infinite volume
+% limit):
+% %
+% \begin{equation}
+%   {\delta_{\phi_P}}(\alpha_Q, N_{\mathrm{LF}}) \equiv \langle \phi_P\rangle -
+%   \phi_{P}^{(*)} \neq 0.
+%   % - \langle{\phi_{P}^{\mathrm{(exact)}}}\rangle \neq 0}.
+% \end{equation}
+% %
+% % Which allows us to quantify this difference.%
 %
-When running inference using the trained sampler, an issue was encountered in
-which the average plaquette, $\langle \phi_{P}\rangle$ seems to converge to a
-value which is noticeably different from the expected value in the infinite
-volume limit, and can be seen in Fig.~\ref{fig:bad_convergence}.
 %
-In order to quantify this unexpected behavior, we can calculate the difference
-between the observed value of the average plaquette, $\langle \phi_{P}\rangle$
-and the expected value $\phi_{P}^{(*)}$ (calculated from the infinite volume
-limit):
-% 
-\begin{equation}
-  {\delta_{\phi_P}}(\alpha_Q, N_{\mathrm{LF}}) \equiv \langle \phi_P\rangle -
-  \phi_{P}^{(*)} \neq 0.
-  % - \langle{\phi_{P}^{\mathrm{(exact)}}}\rangle \neq 0}.
-\end{equation}
-%
-% Which allows us to quantify this difference.%
-
-
-% Upon further testing, an issue was encountered in which the
-% of the average plaquette
-% $\langle \phi_{P}\rangle$ seems to converge to a value which is noticeably
-% different from the expected value in the infinite volume limit.
-%
-% This behavior can be seen in Fig.~\ref{fig:bad_convergence}, and seems to
-% depend on both the number of augmented leapfrog steps used by our integrator,
-% as well as the `strength' of the topological loss term in
-% Eq.~\ref{eq:topological_loss_term}.
-%
-% The parameters used in Fig~\ref{fig:bad_convergence} are as follows: $L = 8$,
-% $N_{\mathrm{LF}} = 7$, and $N_{\mathrm{samples}} = 128$,
-% and the sampler was trained for $N_{\mathrm{train}} = 1\times10^{4}$.
-%
-% In Fig~\ref{fig:good_convergence}, the only change was the weight factor for
-% the topological charge term in the loss function $\alpha_{Q} = 0$.
-%
-\begin{figure}[htpb]%
-  \centering
-    \includegraphics[width=0.49\textwidth]{new_figures/plaq_error/plaqs_diffs_vs_step_l2hmc_lf16.pdf}
-    \includegraphics[width=0.49\textwidth]{new_figures/plaq_error/plaqs_diffs_vs_step_hmc_lf16.pdf}
-    % \includegraphics[width=0.49\textwidth]{plaq_plots/plaqs_diffs_vs_step_bad.pdf}
-    \caption{Difference between the observed and expected value of the average
-      plaquette, $\delta_{\phi_{P}}$, \textbf{(left)}: using the trained L2HMC
-      sampler, and \textbf{(right)}: using generic HMC.}%
-      % trained L2HMC sampler \textbf{(left)} and generic HMC \textbf{(right)} .
-      % HMC result, obtained by setting $\alpha_{S} = \alpha_{Q} = \alpha{T} = 0$
-      % \textbf{(right)}:
-      % \ref{subsec:net_weights}).}%
-\label{fig:bad_convergence}
-\end{figure}%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% % Upon further testing, an issue was encountered in which the
+% % of the average plaquette
+% % $\langle \phi_{P}\rangle$ seems to converge to a value which is noticeably
+% % different from the expected value in the infinite volume limit.
+% %
+% % This behavior can be seen in Fig.~\ref{fig:bad_convergence}, and seems to
+% % depend on both the number of augmented leapfrog steps used by our integrator,
+% % as well as the `strength' of the topological loss term in
+% % Eq.~\ref{eq:topological_loss_term}.
+% %
+% % The parameters used in Fig~\ref{fig:bad_convergence} are as follows: $L = 8$,
+% % $N_{\mathrm{LF}} = 7$, and $N_{\mathrm{samples}} = 128$,
+% % and the sampler was trained for $N_{\mathrm{train}} = 1\times10^{4}$.
+% %
+% % In Fig~\ref{fig:good_convergence}, the only change was the weight factor for
+% % the topological charge term in the loss function $\alpha_{Q} = 0$.
+% %
+% \begin{figure}[htpb]%
+%   \centering
+%     \includegraphics[width=0.49\textwidth]{new_figures/plaq_error/plaqs_diffs_vs_step_l2hmc_lf16.pdf}
+%     \includegraphics[width=0.49\textwidth]{new_figures/plaq_error/plaqs_diffs_vs_step_hmc_lf16.pdf}
+%     % \includegraphics[width=0.49\textwidth]{plaq_plots/plaqs_diffs_vs_step_bad.pdf}
+%     \caption{Difference between the observed and expected value of the average
+%       plaquette, $\delta_{\phi_{P}}$, \textbf{(left)}: using the trained L2HMC
+%       sampler, and \textbf{(right)}: using generic HMC.}%
+%       % trained L2HMC sampler \textbf{(left)} and generic HMC \textbf{(right)} .
+%       % HMC result, obtained by setting $\alpha_{S} = \alpha_{Q} = \alpha{T} = 0$
+%       % \textbf{(right)}:
+%       % \ref{subsec:net_weights}).}%
+% \label{fig:bad_convergence}
+% \end{figure}%
+% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

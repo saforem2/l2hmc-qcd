@@ -8,19 +8,26 @@ paramterizing the functions used in the position updates (`$\Xnet$', i.e.\
 $Q_x$, $S_x$, and $T_x$), and the network responsible for parameterizing the
 momentum updates (`$\Vnet$', i.e.\ $Q_v$, $S_v$, and $T_v$).
 %
-Since both networks are identical, we describe the architecture of $\Vnet$
-below, and include a flowchart for $\Xnet$ illustrative purposes in
-Fig~\ref{fig:x_net_flowchart}.
-%
+% Since both networks are identical, we describe the architecture of $\Vnet$
+% below, and include a flowchart for $\Xnet$ illustrative purposes in
+% Fig~\ref{fig:x_net_flowchart}.
 %
 \begin{figure}[htpb]
   \centering
-  \includegraphics[width=\textwidth]{generic_net/generic_net4.png}
+  \includegraphics[width=\textwidth]{final/net.png}
   \caption{Illustration showing the generic (fully-connected) network
-    architecture for training $S_v$, $Q_v$, and $T_v$. Figure adapted
-		with permission from~\cite{joeyl2hmc}.}%
-\label{fig:generic_net}
+    architecture for training $S_x$, $Q_x$, and $T_x$.}%
+    \label{fig:xnet}
 \end{figure}
+
+% \begin{figure}[htpb]
+%   \centering
+%   \input{tikz/vnet}
+%   \caption{Illustration showing the generic (fully-connected) network
+%     architecture for training $S_v$, $Q_v$, and $T_v$. Figure adapted
+%     with permission from~\cite{joeyl2hmc}.}%
+% \label{fig:generic_net}
+% \end{figure}
 %
 
 The network takes as input $\zeta_1 = (x, \partial_{x} U(x), t)$, where $x, v
@@ -79,14 +86,15 @@ as input $(x, \partial_x U(x), t)$ where again $t$ is encoded as above.  The
 architecture of this network is the same, and produces outputs $T_v$, $Q_v$,
 and $S_v$.
 
-\begin{figure}[htpb]
-  \centering
-  \includegraphics[width=\textwidth]{generic_net/x_net_flowchart4.png}
-  \caption{Flowchart illustrating the generic fully-connected network
-    architecture including the intermediate variables computed at each hidden
-    layer of the network.}%
-\label{fig:x_net_flowchart}
-\end{figure}
+% \begin{figure}[htpb]
+%   \centering
+%   % \includegraphics[width=\textwidth]{generic_net/x_net_flowchart4.png}
+%   % \input{tikz/vnet.tex}
+%   \caption{Flowchart illustrating the generic fully-connected network
+%     architecture including the intermediate variables computed at each hidden
+%     layer of the network.}%
+% \label{fig:x_net_flowchart}
+% \end{figure}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %
