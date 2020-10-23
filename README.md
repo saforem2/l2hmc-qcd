@@ -57,7 +57,9 @@ and can be written as
 <div align="center">
  <img src="assets/action1.svg" alt="S = \sum_{P}\, 1 - \cos(\phi_{P})"/>
 </div>
-where <img src="https://render.githubusercontent.com/render/math?math=%5Cphi_%7BP%7D"> is the is the sum of the link variables around an elementary plaquette:
+where:
+
+&nbsp;
 
 <div align="center">
 <img src="assets/plaquette_eq.svg"/>
