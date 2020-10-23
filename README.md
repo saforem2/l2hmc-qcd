@@ -70,6 +70,7 @@ where:
 <div align="center">
   <img src="assets/nerds2.svg" alt="image-20200220120110456" style="width:85vw; min-width:330px; height=auto"/>
 </div>
+
 ### Target distribution:
 
 - Our target distribution is then given by:
