@@ -20,15 +20,13 @@ Date: 6/30/2020
 from __future__ import absolute_import, division, print_function
 
 import os
-import time
-
 from collections import namedtuple
 from typing import Callable, List, Optional, Tuple, Union
 
 import numpy as np
 import tensorflow as tf
-
 import utils.file_io as io
+
 try:
     import horovod.tensorflow as hvd
     HAS_HOROVOD = True
@@ -37,14 +35,12 @@ except (ImportError, ModuleNotFoundError):
     HAS_HOROVOD = False
     NUM_RANKS = 1
 
-from config import BIN_DIR
-from network.config import (ConvolutionConfig, LearningRateConfig,
-                            NetworkConfig)
-from dynamics.config import DynamicsConfig
-from utils.file_io import timeit  # noqa:F401
+from network.config import ConvolutionConfig, LearningRateConfig, NetworkConfig
 from utils.attr_dict import AttrDict
-from utils.seed_dict import vnet_seeds, xnet_seeds  # noqa:F401
 from utils.learning_rate import WarmupExponentialDecay
+
+from config import BIN_DIR
+from dynamics.config import DynamicsConfig
 
 TIMING_FILE = os.path.join(BIN_DIR, 'timing_file.log')
 
@@ -126,13 +122,6 @@ class BaseDynamics(tf.keras.Model):
                 self.lr = self._create_lr(lr_config)
                 self.optimizer = self._create_optimizer()
 
-    @staticmethod
-    def _build_feature_extractor(model):
-        return tf.keras.Model(
-            inputs=model.inputs,
-            outputs=[layer.output for layer in model.layers]
-        )
-
     def call(
             self,
             inputs: Tuple[tf.Tensor, tf.Tensor],
@@ -161,14 +150,6 @@ class BaseDynamics(tf.keras.Model):
             are more than one outputs.
         """
         return self.apply_transition(inputs, training=training)
-
-    def call_feature_extractors(
-            self,
-            inputs: Tuple[tf.Tensor, tf.Tensor],
-            training: bool = None,
-    ):
-        """Call feature extractor models on inputs."""
-        pass
 
     def calc_losses(
             self, states: MonteCarloStates, accept_prob: tf.Tensor
@@ -232,7 +213,7 @@ class BaseDynamics(tf.keras.Model):
             self,
             inputs: Union[tf.Tensor, List[tf.Tensor]],
             training: bool = None
-    ) -> (MonteCarloStates, tf.Tensor, MonteCarloStates):
+    ) -> Tuple[MonteCarloStates, tf.Tensor, MonteCarloStates]:
         """Propose a new state and perform the accept/reject step."""
         forward = tf.cast((tf.random.uniform(shape=[]) < 0.5), dtype=tf.bool)
         state_init, state_prop, data = self._transition(inputs,
@@ -258,7 +239,7 @@ class BaseDynamics(tf.keras.Model):
             inputs: Union[tf.Tensor, List[tf.Tensor]],
             forward: bool,
             training: bool = None
-    ) -> (State, State, tf.Tensor, State):
+    ) -> Tuple[State, State, tf.Tensor, State]:
         """Run the augmented leapfrog integrator."""
         if len(inputs) == 2:
             x, beta = inputs
@@ -340,7 +321,7 @@ class BaseDynamics(tf.keras.Model):
             self,
             inputs: Union[tf.Tensor, List[tf.Tensor]],
             training: bool = None
-    ) -> (MonteCarloStates, MonteCarloStates):
+    ) -> Tuple[MonteCarloStates, MonteCarloStates]:
         """Perform the molecular dynamics (MD) update w/o accept/reject.
 
         NOTE: We simulate the dynamics both forward and backward, and use

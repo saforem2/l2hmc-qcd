@@ -20,6 +20,14 @@ from utils.training_utils import train, train_hmc
 from utils.inference_utils import run, run_hmc
 
 
+if tf.__version__.startswith('1'):
+    tf.compat.v1.enable_v2_behavior()
+    tf.compat.v1.enable_control_flow_v2()
+    tf.compat.v1.enable_v2_tensorshape()
+    tf.compat.v1.enable_eager_execution()
+    tf.compat.v1.enable_resource_variables()
+
+
 @contextlib.contextmanager
 def options(options):
     old_opts = tf.config.optimizer.get_experimental_options()
