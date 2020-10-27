@@ -145,13 +145,6 @@ class ReduceLROnPlateau(tf.keras.callbacks.Callback):
             return lr
 
         logs = logs or {}
-        #  try:
-        #      logs['lr'] = K.get_value(self.model.optimizer.lr)
-        #  except ValueError:
-        #      logs['lr'] = self.model.lr(self.model.optimizer.iterations)
-        #  finally:
-        #      logs['lr']
-        #  #  logs['lr'] = self.model.lr(self.model.optimizer.iterations)
         current = logs.get(self.monitor)
         if current is None:
             logging.warning(
@@ -164,16 +157,12 @@ class ReduceLROnPlateau(tf.keras.callbacks.Callback):
             if self.in_cooldown():
                 self.cooldown_counter -= 1
                 self.wait = 0
-            # if current < best - delta:
-            #  if current < best * (1 - delta):
             if self.monitor_op(current, self.best):
                 self.best = current
                 self.wait = 0
             elif not self.in_cooldown():
                 self.wait += 1
                 if self.wait >= self.patience:
-                    #  old_lr = float(K.get_value(self.model.optimizer.lr))
-                    #  old_lr = _get_lr()
                     step = self.model.optimizer.iterations
                     old_lr = self.model._get_lr(step)
                     if old_lr > self.min_lr:

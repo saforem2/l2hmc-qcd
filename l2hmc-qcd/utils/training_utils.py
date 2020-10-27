@@ -16,6 +16,11 @@ from utils.learning_rate import ReduceLROnPlateau
 import numpy as np
 import tensorflow as tf
 
+TF_VERSION = 2
+if tf.__version__.startswith('1.'):
+    TF_VERSION = 1
+
+
 from tqdm.auto import tqdm
 
 import utils.file_io as io
@@ -199,7 +204,7 @@ def setup(dynamics, flags, dirs=None, x=None, betas=None):
     # Setup summary writer
     writer = None
     make_summaries = flags.get('make_summaries', True)
-    if IS_CHIEF and make_summaries:
+    if IS_CHIEF and make_summaries and TF_VERSION == 2:
         writer = tf.summary.create_file_writer(dirs.summary_dir)
 
     current_step = dynamics.optimizer.iterations.numpy()  # get global step
