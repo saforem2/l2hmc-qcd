@@ -258,7 +258,7 @@ def main(args, flags=None):
             raise ValueError('`--log_dir` must be specified.')
 
         flags.log_dir = args.log_dir
-        _, _ = load_and_run(flags)
+        _ = load_and_run(flags)
 
 
 if __name__ == '__main__':
