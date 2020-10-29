@@ -13,11 +13,22 @@ from utils.file_io import timeit
 
 from tqdm.autonotebook import tqdm
 import tensorflow as tf
-import horovod.tensorflow as hvd
+try:
+    import horovod.tensorflow as hvd
+    HAS_HOROVOD = True
+    RANK = hvd.rank()
+    IS_CHIEF = (RANK == 0)
+    NUM_NODES = hvd.size()
+except (ImportError, ModuleNotFoundError):
+    HAS_HOROVOD = False
+    RANK = 0
+    IS_CHIEF = (RANK == 0)
+    NUM_NODES = 1
 
 import utils.file_io as io
 
-from config import HEADER, PI, PROJECT_DIR, SEP, TF_FLOAT, CBARS
+from config import (HEADER, PI, PROJECT_DIR, SEP, TF_FLOAT, CBARS, LOGS_DIR,
+                    GAUGE_LOGS_DIR)
 from dynamics.gauge_dynamics import (build_dynamics, convert_to_angle,
                                      GaugeDynamics)
 from utils.attr_dict import AttrDict
@@ -26,9 +37,6 @@ from utils.summary_utils import summarize_dict
 from utils.data_containers import DataContainer
 
 # pylint:disable=no-member
-RANK = hvd.rank()
-IS_CHIEF = (RANK == 0)
-NUM_NODES = hvd.size()
 
 if IS_CHIEF:
     logging.basicConfig(
@@ -74,8 +82,9 @@ def run_hmc(
         return None, None, None
 
     if hmc_dir is None:
-        root_dir = os.path.dirname(PROJECT_DIR)
-        hmc_dir = os.path.join(root_dir, 'gauge_logs_eager', 'hmc_runs')
+        root_dir = os.path.join(GAUGE_LOGS_DIR, 'hmc_logs')
+        month_str = io.get_timestamp('%Y_%m')
+        hmc_dir = os.path.join(root_dir, month_str)
 
     io.check_else_make_dir(hmc_dir)
 
@@ -108,7 +117,7 @@ def load_and_run(
     if not IS_CHIEF:
         return None, None, None
 
-    io.print_flags(args)
+    io.print_dict(args)
     ckpt_dir = os.path.join(args.log_dir, 'training', 'checkpoints')
     flags = restore_from_train_flags(args)
     eps_file = os.path.join(args.log_dir, 'training', 'train_data', 'eps.z')
@@ -150,6 +159,12 @@ def run(
         else:
             runs_dir = os.path.join(args.log_dir, 'inference')
 
+    eps = dynamics.eps
+    if hasattr(eps, 'numpy'):
+        eps = eps.numpy()
+
+    args.eps = eps
+
     io.check_else_make_dir(runs_dir)
     run_dir = io.make_run_dir(args, runs_dir)
     data_dir = os.path.join(run_dir, 'run_data')
@@ -175,10 +190,6 @@ def run(
     if args.get('save_run_data', True):
         run_data.save_data(data_dir)
 
-    eps = dynamics.eps
-    if hasattr(eps, 'numpy'):
-        eps = eps.numpy()
-
     run_params = {
         'eps': eps,
         'beta': beta,
@@ -193,6 +204,7 @@ def run(
     run_params.update(dynamics.params)
     io.save_params(run_params, run_dir, name='run_params')
 
+    args.logging_steps = 1
     plot_data(run_data, run_dir, args, thermalize=True, params=run_params)
 
     return dynamics, run_data, x
@@ -214,7 +226,10 @@ def run_dynamics(
     print_steps = flags.get('print_steps', 5)
     beta = flags.get('beta', flags.get('beta_final', None))
 
-    test_step = tf.function(dynamics.test_step)
+    test_step = dynamics.test_step
+    if flags.get('compile', True):
+        test_step = tf.function(dynamics.test_step)
+        io.log('Compiled `dynamics.test_step` using tf.function!')
 
     if x is None:
         x = tf.random.uniform(shape=dynamics.x_shape,

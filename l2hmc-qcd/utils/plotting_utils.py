@@ -22,7 +22,7 @@ sns.set_palette('bright')
 TF_FLOAT = TF_FLOATS[tf.keras.backend.floatx()]
 NP_FLOAT = NP_FLOATS[tf.keras.backend.floatx()]
 
-COLORS = ['C0', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9']
+COLORS = 100 * ['C0', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9']
 
 
 def savefig(fig, fpath):
@@ -46,6 +46,41 @@ def therm_arr(arr, therm_frac=0.2, ret_steps=True):
     return arr
 
 
+def plot_energy_distributions(data, out_dir=None, title=None):
+    energies = {
+        'forward': {
+            'start': data['Hf_start'],
+            'mid': data['Hf_mid'],
+            'end': data['Hf_end'],
+        },
+        'backward': {
+            'start': data['Hb_start'],
+            'mid': data['Hb_mid'],
+            'end': data['Hb_end'],
+        }
+    }
+
+    fig, axes = plt.subplots(nrows=2, sharex=True, constrained_layout=True)
+    #  plt.tight_layout()
+    axes = axes.flatten()
+    for idx, (key, val) in enumerate(energies.items()):
+        for k, v, in val.items():
+            x, y = v
+            _ = sns.distplot(y.flatten(), label=f'{key}/{k}',
+                             hist=False, ax=axes[idx])
+
+    _ = axes[0].legend(loc='best')
+    _ = axes[1].legend(loc='best')
+    _ = axes[1].set_xlabel(r"$\mathcal{H}$")  # , fontsize='large')
+    if title is not None:
+        _ = fig.suptitle(title)  # , fontsize='x-large')
+    if out_dir is not None:
+        out_file = os.path.join(out_dir, 'energy_dists_traj.png')
+        _ = plt.savefig(out_file, dpi=400, bbox_inches='tight')
+
+    return fig, axes
+
+
 def plot_charges(steps, charges, title=None, out_dir=None):
     charges = charges.T
     if charges.shape[0] > 4:
@@ -57,17 +92,19 @@ def plot_charges(steps, charges, title=None, out_dir=None):
     ax.set_yticklabels([])
     ax.xmargin: 0
     ax.yaxis.set_label_coords(-0.03, 0.5)
-    ax.set_ylabel(r"$\mathcal{Q}$", fontsize='x-large',
+    ax.set_ylabel(r"$\mathcal{Q}$",  # , fontsize='x-large',
                   rotation='horizontal')
-    ax.set_xlabel('MC Step', fontsize='x-large')
+    ax.set_xlabel('MC Step')  # , fontsize='x-large')
     if title is not None:
-        ax.set_title(title, fontsize='x-large')
+        ax.set_title(title)  # , fontsize='x-large')
     plt.tight_layout()
 
     if out_dir is not None:
         fpath = os.path.join(out_dir, 'charge_chains.png')
         io.log(f'Saving figure to: {fpath}.')
         plt.savefig(fpath, dpi=400, bbox_inches='tight')
+
+    return fig, ax
 
 
 def get_title_str_from_params(params):
@@ -93,27 +130,61 @@ def get_title_str_from_params(params):
     title_str += f'shape: {tuple(lattice_shape)}'
 
     if net_weights == NET_WEIGHTS_HMC:
-        title_str += f', (HMC)'
+        title_str += ', (HMC)'
 
     return title_str
 
 
 def mcmc_avg_lineplots(data, title=None, out_dir=None):
+    """Plot trace of avg."""
     for idx, (key, val) in enumerate(data.items()):
-        steps, arr = val
+        #  plt.tight_layout()
+        fig, axes = plt.subplots(ncols=2, figsize=(8, 4),
+                                 constrained_layout=True)
+        axes = axes.flatten()
+        if len(val) == 2:
+            if len(val[0].shape) > len(val[1].shape):
+                arr, steps = val
+            else:
+                steps, arr = val
+        else:
+            arr = val
+            steps = np.arange(arr.shape[0])
+
+            #  if len(val[0].shape) == 1:
+            #      steps, arr = val
+            #  elif len(val[1].shape) == 1:
+            #      arr, steps == val
+
+        #  steps, arr = val
+        #  arr, steps = val
         avg = np.mean(arr, axis=1)
-        xy_data = (steps, avg)
+        #  xy_data = (steps, avg)
 
         xlabel = 'MC Step'
         ylabel = r"$\langle$" + f'{key}' + r"$\rangle$"
-        labels = (xlabel, ylabel)
+        #  labels = (xlabel, ylabel)
+
+        _ = axes[1].plot(steps, avg, color=COLORS[idx])
+        _ = axes[1].set_xlabel(xlabel)  # , fontsize='large')
+        _ = axes[1].set_ylabel(ylabel,  # , fontsize='large',
+                               rotation='horizontal')
+        _ = sns.distplot(arr.flatten(), hist=False,
+                         color=COLORS[idx], ax=axes[0])
+        _ = axes[0].set_xlabel(ylabel)  # , fontsize='large')
+        _ = axes[0].set_ylabel('')  # , fontsize='large')
+        if title is not None:
+            _ = fig.suptitle(title)  # , fontsize='x-large')
 
         if out_dir is not None:
             fpath = os.path.join(out_dir, f'{key}_avg.png')
+            savefig(fig, fpath)
+        #
+        #  _, _ = mcmc_lineplot(xy_data, labels, title=title,
+        #                       fpath=fpath, show_avg=True,
+        #                       color=COLORS[idx])
 
-        _, _ = mcmc_lineplot(xy_data, labels, title=title,
-                             fpath=fpath, show_avg=True,
-                             color=COLORS[idx])
+    return fig, axes
 
 
 def mcmc_lineplot(data, labels, title=None,
@@ -129,10 +200,10 @@ def mcmc_lineplot(data, labels, title=None,
         ax.legend(loc='best')
 
     ax.plot(*data, **kwargs)
-    ax.set_xlabel(labels[0], fontsize='large')
-    ax.set_ylabel(labels[1], fontsize='large')
+    ax.set_xlabel(labels[0])  # , fontsize='large')
+    ax.set_ylabel(labels[1])  # , fontsize='large')
     if title is not None:
-        ax.set_title(title, fontsize='x-large')
+        ax.set_title(title)  # , fontsize='x-large')
 
     if fpath is not None:
         savefig(fig, fpath)
@@ -144,7 +215,7 @@ def mcmc_traceplot(key, val, title=None, fpath=None):
     az.plot_trace({key: val})
     fig = plt.gcf()
     if title is not None:
-        fig.suptitle(title, fontsize='x-large', y=1.06)
+        fig.suptitle(title)  # , fontsize='x-large', y=1.06)
 
     if fpath is not None:
         savefig(fig, fpath)
@@ -177,7 +248,8 @@ def plot_data(train_data, out_dir, flags, thermalize=False, params=None):
 
         if thermalize or key == 'dt':
             arr, steps = therm_arr(arr, therm_frac=0.33)
-            steps *= logging_steps
+            #  steps = steps[::logging_setps]
+            #  steps *= logging_steps
 
         labels = ('MC Step', key)
         data = (steps, arr)
@@ -199,7 +271,8 @@ def plot_data(train_data, out_dir, flags, thermalize=False, params=None):
 
         plt.close('all')
 
-    mcmc_avg_lineplots(data_dict, title, out_dir)
-    plot_charges(*data_dict['charges'], out_dir=out_dir, title=title)
+    _ = mcmc_avg_lineplots(data_dict, title, out_dir)
+    _ = plot_charges(*data_dict['charges'], out_dir=out_dir, title=title)
+    _ = plot_energy_distributions(data_dict, out_dir=out_dir, title=title)
 
     plt.close('all')

@@ -1,0 +1,131 @@
+%\begin{document}
+\section{Separate Networks}%
+\label{sec:separate_networks}
+% \subsection{Single Network}%
+% \label{subsec:single_network}
+%
+Recall that a single leapfrog step (in the \emph{forward} \((d = +1)\)
+direction) of the L2HMC algorithm consists of the following 4 updates:
+% \vspace{-20pt}
+\begin{enumerate}
+  \item \(\mathrm{\textbf{vNet}}: \zeta_{1} \coloneqq (x, \partial_{x}U(x), t)
+    \longrightarrow (S_{v}, T_{v}, Q_{v})\):
+    \begin{equation}
+      \vp = v \odot \exp{\left(\frac{\eps}{2}S_{v}(\zeta_{1})\right)}% 
+             - \frac{\eps}{2}\left[\partial_{x}\,U(x)\odot \exp{\left(\eps
+               Q_{v}(\zeta_{1})\right)}%
+             + T_{v}(\zeta_{1})\right]
+    \end{equation}
+  \item \(\mathrm{\mathbf{xNet}}: \zeta_{2} \coloneqq 
+    (x_{\bar{m}^{t}}, \vp, t) \longrightarrow (S_{x}, T_{x}, Q_{x})\):
+    \begin{equation}
+      \xp = x_{\bar{m}^{t}} + m^{t}\odot \left[x \odot \exp{\left(\eps
+              S_{x}(\zeta_{2})\right)}%
+            + \eps\left(\vp\odot\exp{\left(\eps Q_{x}(\zeta_{2})\right)} 
+            + T_{x}(\zeta_{2})\right)\right]
+    \end{equation}
+  \item \(\mathrm{\mathbf{xNet}}: \zeta_{3} \coloneqq (x_{m^{t}}^{\prime}, \vp,
+    t) \longrightarrow (S_{x}, T_{x}, Q_{x})\):
+    \begin{equation}
+      \xpp = x^{\prime}_{m^{t}} + \bar{m}^{t}\odot \left[\xp \odot \exp{\left(\eps
+              S_{x}(\zeta_{3})\right)}%
+            + \eps\left(\vp\odot\exp{\left(\eps Q_{x}(\zeta_{3})\right)}
+            + T_{x}(\zeta_{3})\right)\right]
+    \end{equation}
+  \item \(\mathrm{\mathbf{vNet}}: \zeta_{4} \coloneqq (\xpp,
+    \partial_{x}U(\xpp), t) \longrightarrow (S_{v}, T_{v}, Q_{v})\):
+    \begin{equation}
+      \vpp = \vp \odot \exp{\left(\frac{\eps}{2}S_{v}(\zeta_{4})\right)}%
+              - \frac{\eps}{2}\left[\partial_{x}\,U(\xpp)\odot \exp{\left(\eps
+                  Q_{v}(\zeta_{4})\right)}%
+              + T_{v}(\zeta_{4})\right].
+    \end{equation}
+\end{enumerate}
+%
+
+A complete trajectory (of \(\Nlf\) leapfrog steps) is then obtained via
+\(\Nlf\) successive applications of the above procedure, followed by a MH
+accept/reject step.
+%
+Note that in this approach we use the \textbf{same two networks for all
+leapfrog steps}, namely: \(\{\mathrm{\mathbf{xNet}}, \mathrm{\mathbf{vNet}}\}\),
+which update \(\{x, v\}\) respectively.
+%
+% \subsection{Separate Networks}%
+% \label{subsec:separate_networks}
+%
+This can be generalized by introducing \textbf{different networks for each
+leapfrog step} (e.g.\@ the first LF step uses \(\{\xNet^{(1)},
+\vNet^{(1)}\}\), the second uses \(\{\xNet^{(2)}, \vNet^{(2)}\}\), \(\ldots\), and
+the final step uses \(\{\xNet^{(\Nlf)}, \vNet^{(\Nlf)}\}\)).
+%
+While this approach dramatically increases the number of trainable parameters,
+it is also vastly more expressive and allows the model to learn independent
+updates for each leapfrog step.
+%
+
+Explicitly, let \(\LBtheta^{(i)}: \xi \rightarrow \xip\) denote the operator which performs
+the \(i^{th}\) (augmented) leapfrog step in the direction \(d\), and introduce
+\(\Gamma_{\pm}^{(i)}: \left(v; \zeta_{v}\right) \rightarrow \vp\),
+\(\Lambda_{\pm}^{(i)}: \left(x; \zeta_{x}\right)\rightarrow \xp\),
+%
+where \(\zeta_{v} = (x, \partial_{x}U(x), t)\), \(\zeta_{x} = (x, v, t)\).
+% , and
+% the functions \(\GammaPMi, \LambdaPMi\) update the momentum and position
+% variables, respectively.
+%
+We can then write the full position and momentum updates in terms of these
+functions
+%
+\begin{align}
+  \Gamma_{\pm}^{(i)}\left(v; \zeta_{v}\right) % \coloneqq \vp =
+    &= \begin{cases}%\,\,\,
+      v \odot \exp{\left(\frac{\eps}{2}\Svi(\zeta_{v})\right)}% 
+        - \frac{\eps}{2}\left[\partial_{x}\,U(x)\odot \exp{\left(\eps
+            \Qvi(\zeta_{v})\right)}%
+        + \Tvi(\zeta_{v})\right]
+        &\quad (d = + 1)\\
+      % -------------------
+      % \vspace{0.75cm}%\,\,\,
+      % -------------------
+      \left\{v + \frac{\eps}{2}\left[\partial_{x}\,U(x)\odot
+          \exp{\left(\eps \Qvi(\zeta_{1})\right)}%
+            + \Tvi(\zeta_{1})\right]\right\} \odot
+            \exp{\left(-\frac{\eps}{2}\Svi(\zeta_{1})\right)}
+      &\quad (d = - 1)
+    \end{cases}\\
+  %%%%%%%%%%%%%%%%%
+  % \vspace{2.5cm}
+    &\quad \nonumber \\
+  %%%%%%%%%%%%%%%%%
+  \Lambda_{\pm}^{(i)}\left(x; \zeta_{x}\right) % \coloneqq \xp
+    &= \begin{cases}%\,\,\,%
+      x \odot \exp{\left(\eps
+        \Sxi(\zeta_{x})\right)}%
+        + \eps\left[\vp\odot\exp{\left(\eps \Qxi(\zeta_{x})\right)} 
+        + \Txi(\zeta_{x})\right]%
+      &\quad (d = + 1) \\
+      % -------------------
+      % \vspace{0.75cm}%\,\,\,
+      % -------------------
+      \left\{x - \eps{\left[\vp\odot\exp{\left(\eps \Qxi(\zeta_{x})\right)}%
+          + \Txi(\zeta_{x})\right]}\right\}\odot \exp{\left(-\eps
+          \Sxi(\zeta_{x})\right)}%
+      &\quad (d = + 1)
+  \end{cases}\\
+\end{align}
+%
+We can write the \(i^{th}\) leapfrog step as:
+%
+\begin{enumerate}
+  \item \(v \longrightarrow \vp = \Gamma_{\pm}^{(i)}(v; \zeta_{v})\)
+  \item \(x \longrightarrow \xp = x_{\bar{m}^{t}} +
+    \Lambda_{\pm}^{(i)}(x_{m^{t}}; \zeta_{x})\)
+  \item \(\xp \longrightarrow \xpp = \xp_{\bar{m}^{t}} +
+    \Lambda_{\pm}^{(i)}(\xp_{m^{t}}; \zeta_{x}^{\prime})\)
+  \item \(\vp \longrightarrow \vpp = \Gamma_{\pm}^{(i)}(\vp; \zeta_{v}^{\prime\prime})\)
+\end{enumerate}
+%
+and we can obtain a complete trajectory (of \(\Nlf\) leapfrog steps) by
+succesively applying the above steps.
+%

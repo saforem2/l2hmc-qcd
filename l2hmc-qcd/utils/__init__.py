@@ -8,13 +8,20 @@ Date: 08/26/2020
 """
 from tqdm.auto import tqdm
 import tensorflow as tf
-import horovod.tensorflow as hvd  # pylint:disable=wrong-import-order
-hvd.init()
-GPUS = tf.config.experimental.list_physical_devices('GPU')
-for gpu in GPUS:
-    tf.config.experimental.set_memory_growth(gpu, True)
-if GPUS:
-    tf.config.experimental.set_visible_devices(GPUS[hvd.local_rank()], 'GPU')
+try:
+    import horovod.tensorflow as hvd  # pylint:disable=wrong-import-order
+    hvd.init()
+    GPUS = tf.config.experimental.list_physical_devices('GPU')
+    for gpu in GPUS:
+        tf.config.experimental.set_memory_growth(gpu, True)
+    if GPUS:
+        gpu = GPUS[hvd.local_rank()]
+        tf.config.experimental.set_visible_devices(gpu, 'GPU')
+
+    HAS_HOROVOD = True
+
+except (ImportError, ModuleNotFoundError):
+    HAS_HOROVOD = False
 
 
 class DummyTqdmFile:

@@ -17,6 +17,7 @@ Author: Sam Foreman (github: @saforem2)
 Date: 7/3/2020
 """
 # noqa:401
+# pylint:disable=no-name-in-module
 # pylint:disable=too-many-instance-attributes,too-many-locals
 # pylint:disable=invalid-name,too-many-arguments,too-many-ancestors
 # pylint:disable=unused-import,unused-argument,attribute-defined-outside-init
@@ -28,39 +29,44 @@ import time
 
 from math import pi
 from typing import Optional, Tuple
-from collections import namedtuple
 
 import numpy as np
 import tensorflow as tf
 
-import utils.file_io as io
-import horovod.tensorflow as hvd
+from tensorflow.python.keras import backend as K
 
-from config import BIN_DIR, MonteCarloStates, NetWeights
+try:
+    import horovod.tensorflow as hvd
+
+    NUM_RANKS = hvd.size()
+    NUM_WORKERS = NUM_RANKS * hvd.local_size()
+    HAS_HOROVOD = True
+    print(f'hvd.size : {hvd.size()}')
+    print(f'hvd.local_size: {hvd.local_size()}')
+
+except (ImportError, ModuleNotFoundError):
+    NUM_RANKS = 1
+    NUM_WORKERS = NUM_RANKS
+    HAS_HOROVOD = False
+
+import utils.file_io as io
+
+from config import BIN_DIR
 from lattice.gauge_lattice import GaugeLattice
-from dynamics.base_dynamics import BaseDynamics
-from dynamics.config import GaugeDynamicsConfig
 from utils.attr_dict import AttrDict
 from utils.seed_dict import vnet_seeds  # noqa:F401
 from utils.seed_dict import xnet_seeds  # noqa:F401
+from network.config import (ConvolutionConfig, LearningRateConfig,
+                            NetworkConfig)
 from network.functional_net import get_gauge_network
-from network.config import LearningRateConfig, NetworkConfig, ConvolutionConfig
-
-NUM_RANKS = hvd.size()
+from dynamics.config import GaugeDynamicsConfig
+from dynamics.base_dynamics import (BaseDynamics, MonteCarloStates, NetWeights,
+                                    State)
 
 TIMING_FILE = os.path.join(BIN_DIR, 'timing_file.log')
 TF_FLOAT = tf.keras.backend.floatx()
 
-INPUTS = Tuple[tf.Tensor, tf.Tensor]
-
-ACTIVATIONS = {
-    'relu': tf.nn.relu,
-    'tanh': tf.nn.tanh,
-    'leaky_relu': tf.nn.leaky_relu
-}
-
-
-State = namedtuple('State', ['x', 'v', 'beta'])
+#  INPUTS = Tuple[tf.Tensor, tf.Tensor]
 
 
 def project_angle(x):
@@ -86,7 +92,8 @@ def build_test_dynamics():
 def build_dynamics(flags):
     """Build dynamics using configs from FLAGS."""
     lr_config = LearningRateConfig(**dict(flags.get('lr_config', None)))
-    config = GaugeDynamicsConfig(**dict(flags.get('dynamics_config', None)))
+    #  config = GaugeDynamicsConfig(**dict(flags.get('dynamics_config', None)))
+    config = AttrDict(flags.get('dynamics_config', None))
     net_config = NetworkConfig(**dict(flags.get('network_config', None)))
     conv_config = None
 
@@ -119,10 +126,9 @@ class GaugeDynamics(BaseDynamics):
         self.charge_weight = config.get('charge_weight', 0.01)
         self._gauge_eq_masks = config.get('gauge_eq_masks', False)
         self.lattice_shape = config.get('lattice_shape', None)
+        self._combined_updates = config.get('combined_updates', False)
         self._alpha = tf.constant(1.)
         #  self._alpha = tf.Variable(initial_value=1., trainable=False)
-        if config.use_tempered_traj:
-            self._alpha = tf.Variable(initial_value=1., trainable=True)
 
         self.lattice = GaugeLattice(self.lattice_shape)
         self.batch_size = self.lattice_shape[0]
@@ -166,15 +172,66 @@ class GaugeDynamics(BaseDynamics):
             else:
                 net_weights = NetWeights(0., 1., 1., 1., 1., 1.)
 
-            self.xnet, self.vnet = self._build_networks(self.net_config,
-                                                        self.conv_config)
+            log_dir = self.config.get('log_dir', None)
+            if log_dir is None:
+                self.xnet, self.vnet = self._build_networks(self.net_config,
+                                                            self.conv_config)
+            else:
+                io.log(f'Loading `xnet`, `vnet`, from {log_dir} !!')
+                self.xnet, self.vnet = self._load_networks(log_dir)
             # ============
 
         self.net_weights = self._parse_net_weights(net_weights)
         if self._has_trainable_params:
             self.lr_config = lr_config
-            self.lr = self._create_lr(lr_config)
+            self.lr = self._create_lr(lr_config, auto=True)
             self.optimizer = self._create_optimizer()
+
+    def _load_networks(self, log_dir):
+        models_dir = os.path.join(log_dir, 'training', 'models')
+        xnet_paths = [
+            os.path.join(models_dir, f'dynamics_xnet{i}')
+            for i in range(self.config.num_steps)
+        ]
+        vnet_paths = [
+            os.path.join(models_dir, f'dynamics_vnet{i}')
+            for i in range(self.config.num_steps)
+        ]
+
+        xnet = [tf.keras.models.load_model(xp) for xp in xnet_paths]
+        vnet = [tf.keras.models.load_model(vp) for vp in vnet_paths]
+
+        return xnet, vnet
+
+    def save_networks(self, log_dir):
+        """Save networks to disk."""
+        models_dir = os.path.join(log_dir, 'training', 'models')
+        io.check_else_make_dir(models_dir)
+        eps_file = os.path.join(models_dir, 'eps.z')
+        io.savez(self.eps.numpy(), eps_file, name='eps')
+        if self.config.separate_networks:
+            xnet_paths = [
+                os.path.join(models_dir, f'dynamics_xnet{i}')
+                for i in range(self.config.num_steps)
+            ]
+            vnet_paths = [
+                os.path.join(models_dir, f'dynamics_vnet{i}')
+                for i in range(self.config.num_steps)
+            ]
+            for idx, (xf, vf) in enumerate(zip(xnet_paths, vnet_paths)):
+                xnet = self.xnet[idx]  # type: tf.keras.models.Model
+                vnet = self.vnet[idx]  # type: tf.keras.models.Model
+                io.log(f'Saving `xnet{idx}` to {xf}.')
+                io.log(f'Saving `vnet{idx}` to {vf}.')
+                xnet.save(xf)
+                vnet.save(vf)
+        else:
+            xnet_paths = os.path.join(models_dir, 'dynamics_xnet')
+            vnet_paths = os.path.join(models_dir, 'dynamics_vnet')
+            io.log(f'Saving `xnet` to {xnet_paths}.')
+            io.log(f'Saving `vnet` to {vnet_paths}.')
+            self.xnet.save(xnet_paths)
+            self.vnet.save(vnet_paths)
 
     def _build_networks(
             self,
@@ -248,38 +305,30 @@ class GaugeDynamics(BaseDynamics):
 
         return xnet, vnet
 
-    def transition_kernel_tempered(
+    def transition_kernel_directional(
             self,
             state: State,
             forward: bool,
-            training: bool = None
-    ):
-        """Transition kernel of the augmented leapfrog integrator."""
-        if forward:
-            lf_fn = self._forward_lf_tempered
-        else:
-            lf_fn = self._backward_lf_tempered
-
-        state_prop = State(state.x, state.v, state.beta)
-        sumlogdet = tf.zeros((self.batch_size,), dtype=TF_FLOAT)
-        for step in tf.range(self.config.num_steps):
-            state_prop, logdet = lf_fn(step, state_prop, training)
-            sumlogdet += logdet
-
-        accept_prob = self.compute_accept_prob(state, state_prop, sumlogdet)
-
-        return state_prop, accept_prob, sumlogdet
-
-    def transition_kernel_directional(
-            self, state: State, training: bool = None
+            training: bool = None,
     ):
         """Implements a series of directional updates."""
         state_prop = State(state.x, state.v, state.beta)
         sumlogdet = tf.zeros((self.batch_size,), dtype=TF_FLOAT)
-
+        logdets = tf.TensorArray(TF_FLOAT,
+                                 dynamic_size=True,
+                                 size=self.batch_size,
+                                 clear_after_read=True)
+        energies = tf.TensorArray(TF_FLOAT,
+                                  dynamic_size=True,
+                                  size=self.batch_size,
+                                  clear_after_read=True)
         # ====
         # Forward for first half of trajectory
         for step in range(self.config.num_steps // 2):
+            if self._verbose:
+                logdets = logdets.write(step, sumlogdet)
+                energies = energies.write(step, self.hamiltonian(state_prop))
+
             state_prop, logdet = self._forward_lf(step, state_prop, training)
             sumlogdet += logdet
 
@@ -293,93 +342,218 @@ class GaugeDynamics(BaseDynamics):
             state_prop, logdet = self._backward_lf(step, state_prop, training)
             sumlogdet += logdet
 
-        accept_prob = self.compute_accept_prob(state, state_prop, sumlogdet)
+            logdets = logdets.write(step, logdet)
+            energies = energies.write(step, self.hamiltonian(state_prop))
 
-        return state_prop, accept_prob, sumlogdet
+        accept_prob = self.compute_accept_prob(state, state_prop, sumlogdet)
+        metrics = AttrDict({
+            'sumlogdet': sumlogdet,
+            'accept_prob': accept_prob,
+        })
+        if self._verbose:
+            metrics.update({
+                'energies': [
+                    energies.read(i) for i in range(self.config.num_steps)
+                ],
+                'logdets': [
+                    logdets.read(i) for i in range(self.config.num_steps)
+                ],
+            })
+
+        return state_prop, metrics
 
     def transition_kernel_sep_nets(
-            self, state: State, forward: bool, training: bool = None
+            self,
+            state: State,
+            forward: bool,
+            training: bool = None,
     ):
         """Implements a transition kernel when using separate networks."""
         lf_fn = self._forward_lf if forward else self._backward_lf
         state_prop = State(x=state.x, v=state.v, beta=state.beta)
-        sumlogdet = tf.zeros((self.batch_size,), dtype=TF_FLOAT)
+        sumlogdet = tf.zeros((self.batch_size,))
+        logdets = tf.TensorArray(TF_FLOAT,
+                                 dynamic_size=True,
+                                 size=self.batch_size,
+                                 clear_after_read=True)
+        energies = tf.TensorArray(TF_FLOAT,
+                                  dynamic_size=True,
+                                  size=self.batch_size,
+                                  clear_after_read=True)
 
         for step in range(self.config.num_steps):
+            if self._verbose:
+                logdets = logdets.write(step, sumlogdet)
+                energies = energies.write(step, self.hamiltonian(state_prop))
+
             state_prop, logdet = lf_fn(step, state_prop, training)
             sumlogdet += logdet
 
         accept_prob = self.compute_accept_prob(state, state_prop, sumlogdet)
 
-        return state_prop, accept_prob, sumlogdet
+        metrics = AttrDict({
+            'sumlogdet': sumlogdet,
+            'accept_prob': accept_prob,
+        })
+        if self._verbose:
+            metrics.update({
+                'energies': [
+                    energies.read(i) for i in range(self.config.num_steps)
+                ],
+                'logdets': [
+                    logdets.read(i) for i in range(self.config.num_steps)
+                ],
+            })
+
+        return state_prop, metrics
+
+    def _transition_kernel_forward(
+            self,
+            state: State,
+            training: bool = None
+    ):
+        """Run the augmented leapfrog sampler in the forward direction."""
+        sumlogdet = tf.zeros((self.batch_size,))
+        logdets = tf.TensorArray(TF_FLOAT,
+                                 dynamic_size=True,
+                                 size=self.batch_size,
+                                 clear_after_read=True)
+        energies = tf.TensorArray(TF_FLOAT,
+                                  dynamic_size=True,
+                                  size=self.batch_size,
+                                  clear_after_read=True)
+        #  step = 0
+        state_prop = State(state.x, state.v, state.beta)
+        state_prop, logdet = self._half_v_update_forward(state_prop,
+                                                         0, training)
+        sumlogdet += logdet
+
+        for step in range(self.config.num_steps):
+            if self._verbose:
+                logdets = logdets.write(step, sumlogdet)
+                energies = energies.write(step, self.hamiltonian(state_prop))
+
+            state_prop, logdet = self._full_x_update_forward(state_prop,
+                                                             step, training)
+            sumlogdet += logdet
+
+            if step < self.config.num_steps - 1:
+                state_prop, logdet = self._full_v_update_forward(
+                    state_prop, step, training
+                )
+                sumlogdet += logdet
+
+        state_prop, logdet = self._half_v_update_forward(state_prop,
+                                                         step, training)
+        sumlogdet += logdet
+
+        accept_prob = self.compute_accept_prob(state, state_prop, sumlogdet)
+
+        metrics = AttrDict({
+            'sumlogdet': sumlogdet,
+            'accept_prob': accept_prob,
+        })
+        if self._verbose:
+            metrics.update({
+                'energies': [
+                    energies.read(i) for i in range(self.config.num_steps)
+                ],
+                'logdets': [
+                    logdets.read(i) for i in range(self.config.num_steps)
+                ],
+            })
+
+        return state_prop, metrics
+
+    def _transition_kernel_backward(
+            self,
+            state: State,
+            training: bool = None
+    ):
+        """Run the augmented leapfrog sampler in the forward direction."""
+        kwargs = {
+            'dynamic_size': True,
+            'size': self.batch_size,
+            'clear_after_read': True
+        }
+        logdets = tf.TensorArray(TF_FLOAT, **kwargs)
+        energies = tf.TensorArray(TF_FLOAT, **kwargs)
+        sumlogdet = tf.zeros((self.batch_size,))
+        state_prop = State(state.x, state.v, state.beta)
+
+        state_prop, logdet = self._half_v_update_backward(state_prop,
+                                                          0, training)
+        sumlogdet += logdet
+        for step in range(self.config.num_steps):
+            if self._verbose:
+                logdets = logdets.write(step, sumlogdet)
+                energies = energies.write(step, self.hamiltonian(state_prop))
+
+            state_prop, logdet = self._full_x_update_backward(state_prop,
+                                                              step, training)
+
+            if step < self.config.num_steps - 1:
+                state_prop, logdet = self._full_v_update_backward(
+                    state_prop, step, training
+                )
+                sumlogdet += logdet
+
+        state_prop, logdet = self._half_v_update_backward(state_prop,
+                                                          step, training)
+        sumlogdet += logdet
+
+        accept_prob = self.compute_accept_prob(state, state_prop, sumlogdet)
+
+        metrics = AttrDict({
+            'sumlogdet': sumlogdet,
+            'accept_prob': accept_prob,
+        })
+        if self._verbose:
+            logdets = logdets.write(self.config.num_steps, sumlogdet)
+            energies = energies.write(self.config.num_steps,
+                                      self.hamiltonian(state_prop))
+            metrics.update({
+                'energies': [
+                    energies.read(i) for i in range(self.config.num_steps)
+                ],
+                'logdets': [
+                    logdets.read(i) for i in range(self.config.num_steps)
+                ],
+            })
+
+        return state_prop, metrics
 
     def transition_kernel(
-            self, state: State, forward: bool, training: bool = None
+            self,
+            state: State,
+            forward: bool,
+            training: bool = None
     ):
         """Transition kernel of the augmented leapfrog integrator."""
-        if self.config.use_tempered_traj:
-            return self.transition_kernel_tempered(state, forward, training)
-
+        step = self.optimizer.iterations
         if self.config.separate_networks:
+            if self._combined_updates:
+                if forward:
+                    if step == 0:
+                        print('Using `self._transition_kernel_forward`  !!')
+                    return self._transition_kernel_forward(state, training)
+                if step == 0:
+                    print('Using `self._transition_kernel_backward`  !!')
+                return self._transition_kernel_backward(state, training)
+
+            if step == 0:
+                print('Using `self._transition_kernel_sep_nets` !!')
             return self.transition_kernel_sep_nets(state, forward, training)
 
         if self.config.directional_updates:
+            if step == 0:
+                print('Using `self._transition_kernel_directional` !!')
             return self.transition_kernel_directional(state, training)
 
+        if step == 0:
+            print('Using `super().transition_kernel` !!')
+
         return super().transition_kernel(state, forward, training)
-
-    def _forward_lf_tempered(
-            self, step: int, state: State, training: bool = None
-    ):
-
-        def _tempered_v(step, v):
-            if step < self.config.num_steps // 2:
-                return v * tf.math.sqrt(self._alpha)
-            return v / tf.math.sqrt(self._alpha)
-
-        sumlogdet = tf.zeros((self.batch_size,), dtype=TF_FLOAT)
-        m, mc = self._get_mask(step)
-        v = _tempered_v(step, state.v)
-        state = State(state.x, v, state.beta)
-        state, logdet = self._update_v_forward(state, step, training)
-        sumlogdet += logdet
-        state, logdet = self._update_x_forward(state, step, (m, mc), training)
-        sumlogdet += logdet
-        state, logdet = self._update_x_forward(state, step, (mc, m), training)
-        sumlogdet += logdet
-        state, logdet = self._update_v_forward(state, step, training)
-        sumlogdet += logdet
-        v = _tempered_v(step, state.v)
-        state = State(state.x, v, state.beta)
-
-        return state, sumlogdet
-
-    def _backward_lf_tempered(
-            self, step: int, state: State, training: bool = None
-    ):
-        """Run the augmented leapfrog integrator in the backward direction."""
-        def _tempered_v(step, v):
-            if step < self.config.num_steps // 2:
-                return v / tf.math.sqrt(self._alpha)
-            return v * tf.math.sqrt(self._alpha)
-
-        sumlogdet = 0.
-        step = self.config.num_steps - step - 1  # reversed step
-        m, mc = self._get_mask(step)
-        v = _tempered_v(step, state.v)
-        state = State(state.x, v, state.beta)
-        state, logdet = self._update_v_backward(state, step, training)
-        sumlogdet += logdet
-        state, logdet = self._update_x_backward(state, step, (mc, m), training)
-        sumlogdet += logdet
-        state, logdet = self._update_x_backward(state, step, (m, mc), training)
-        sumlogdet += logdet
-        state, logdet = self._update_v_backward(state, step, training)
-        sumlogdet += logdet
-        v = _tempered_v(step, state.v)
-        state = State(state.x, v, state.beta)
-
-        return state, logdet
 
     def _scattered_xnet(self, inputs, mask, step, training=None):
         """Call `self.xnet` on non-zero entries of `x` via `tf.gather_nd`."""
@@ -403,14 +577,11 @@ class GaugeDynamics(BaseDynamics):
 
     def _call_vnet(self, inputs, step, training=None):
         """Call `self.xnet` to get Sx, Tx, Qx for updating `x`."""
-        x, grad, t = inputs
         if not self.config.separate_networks:
-            S, T, Q = self.vnet((x, grad, t), training)
-        else:
-            vnet = self.vnet[step]
-            S, T, Q = vnet((x, grad, t), training)
+            return self.vnet(inputs, training)
 
-        return S, T, Q
+        vnet = self.vnet[step]
+        return vnet(inputs, training)
 
     def _call_xnet(self, inputs, mask, step, training=None):
         """Call `self.xnet` to get Sx, Tx, Qx for updating `x`."""
@@ -425,34 +596,48 @@ class GaugeDynamics(BaseDynamics):
             x_cos = tf.reshape(x_cos, self.lattice_shape)
             x_sin = tf.reshape(x_sin, self.lattice_shape)
 
-        #  x = tf.stack([x_cos, x_sin], axis=-1)
-        x = tf.concat([x_cos, x_sin], -1)
+        x = tf.stack([x_cos, x_sin], axis=-1)
+        #  x = tf.concat([x_cos, x_sin], -1)
         if not self.config.separate_networks:
-            S, T, Q = self.xnet((x, v, t), training)
-        else:
-            xnet = self.xnet[step]
-            S, T, Q = xnet((x, v, t), training)
+            return self.xnet((x, v, t), training)
 
-        return S, T, Q
+        xnet = self.xnet[step]
+        return xnet((x, v, t), training)
 
-    def _update_v_forward(
-                self,
-                state: State,
-                step: int,
-                training: bool = None
+    def _full_v_update_forward(
+            self,
+            state: State,
+            step: int,
+            training: bool = None,
     ):
-        """Update the momentum `v` in the forward leapfrog step.
+        """Perform a full-step momentum update in the forward direction."""
+        x = self.normalizer(state.x)
+        grad = self.grad_potential(x, state.beta)
+        t = self._get_time(step, tile=tf.shape(x)[0])
 
-        Args:
-            network (tf.keras.Layers): Network to use
-            state (State): Input state
-            t (float): Current leapfrog step, represented as periodic time.
-            training (bool): Currently training?
+        S, T, Q = self._call_vnet((x, grad, t), step, training)
 
-        Returns:
-            new_state (State): New state, with updated momentum.
-            logdet (float): Jacobian factor
-        """
+        scale = self._vsw * (self.eps * S)
+        transl = self._vtw * T
+        transf = self._vqw * (self.eps * Q)
+
+        expS = tf.exp(scale)
+        expQ = tf.exp(transf)
+
+        vf = state.v * expS - self.eps * (grad * expQ - transl)
+
+        state_out = State(x=x, v=vf, beta=state.beta)
+        logdet = tf.reduce_sum(scale, axis=1)
+
+        return state_out, logdet
+
+    def _half_v_update_forward(
+            self,
+            state: State,
+            step: int,
+            training: bool = None,
+    ):
+        """Perform a half-step momentum update in the forward direction."""
         x = self.normalizer(state.x)
         grad = self.grad_potential(x, state.beta)
         t = self._get_time(step, tile=tf.shape(x)[0])
@@ -472,6 +657,65 @@ class GaugeDynamics(BaseDynamics):
         logdet = tf.reduce_sum(scale, axis=1)
 
         return state_out, logdet
+
+    def _update_v_forward(
+                self,
+                state: State,
+                step: int,
+                training: bool = None
+    ):
+        """Update the momentum `v` in the forward leapfrog step.
+
+        Args:
+            network (tf.keras.Layers): Network to use
+            state (State): Input state
+            t (float): Current leapfrog step, represented as periodic time.
+            training (bool): Currently training?
+
+        Returns:
+            new_state (State): New state, with updated momentum.
+            logdet (float): Jacobian factor
+        """
+        if self.config.hmc:
+            return super()._update_v_forward(state, step, training)
+
+        x = self.normalizer(state.x)
+        grad = self.grad_potential(x, state.beta)
+        t = self._get_time(step, tile=tf.shape(x)[0])
+
+        S, T, Q = self._call_vnet((x, grad, t), step, training)
+
+        scale = self._vsw * (0.5 * self.eps * S)
+        transl = self._vtw * T
+        transf = self._vqw * (self.eps * Q)
+
+        expS = tf.exp(scale)
+        expQ = tf.exp(transf)
+
+        vf = state.v * expS - 0.5 * self.eps * (grad * expQ - transl)
+
+        state_out = State(x=x, v=vf, beta=state.beta)
+        logdet = tf.reduce_sum(scale, axis=1)
+
+        return state_out, logdet
+
+    def _full_x_update_forward(
+            self,
+            state: State,
+            step: int,
+            training: bool = None
+    ):
+        """Perform a full-step position update in the forward direction."""
+        m, mc = self._get_mask(step)
+        sumlogdet = tf.zeros((self.batch_size,))
+        state, logdet = self._update_x_forward(state, step,
+                                               (m, mc), training)
+        sumlogdet += logdet
+        state, logdet = self._update_x_forward(state, step,
+                                               (mc, m), training)
+        sumlogdet += logdet
+
+        return state, sumlogdet
 
     def _update_x_forward(
                 self,
@@ -529,6 +773,60 @@ class GaugeDynamics(BaseDynamics):
 
         return state_out, logdet
 
+    def _full_v_update_backward(
+            self,
+            state: State,
+            step: int,
+            training: bool = None
+    ):
+        """Perform a full update of the momentum in the backward direction."""
+        step_r = self.config.num_steps - step - 1
+        x = self.normalizer(state.x)
+        grad = self.grad_potential(x, state.beta)
+        t = self._get_time(step_r, tile=tf.shape(x)[0])
+        S, T, Q = self._call_vnet((x, grad, t), step_r, training)
+
+        scale = self._vsw * (-self.eps * S)
+        transf = self._vqw * (self.eps * Q)
+        transl = self._vtw * T
+
+        expS = tf.exp(scale)
+        expQ = tf.exp(transf)
+
+        vb = expS * (state.v + self.eps * (grad * expQ - transl))
+
+        state_out = State(x=x, v=vb, beta=state.beta)
+        logdet = tf.reduce_sum(scale, axis=1)
+
+        return state_out, logdet
+
+    def _half_v_update_backward(
+            self,
+            state: State,
+            step: int,
+            training: bool = None
+    ):
+        """Perform a half update of the momentum in the backward direction."""
+        step_r = self.config.num_steps - step - 1
+        x = self.normalizer(state.x)
+        grad = self.grad_potential(x, state.beta)
+        t = self._get_time(step_r, tile=tf.shape(x)[0])
+        S, T, Q = self._call_vnet((x, grad, t), step_r, training)
+
+        scale = self._vsw * (-0.5 * self.eps * S)
+        transf = self._vqw * (self.eps * Q)
+        transl = self._vtw * T
+
+        expS = tf.exp(scale)
+        expQ = tf.exp(transf)
+
+        vb = expS * (state.v + 0.5 * self.eps * (grad * expQ - transl))
+
+        state_out = State(x=x, v=vb, beta=state.beta)
+        logdet = tf.reduce_sum(scale, axis=1)
+
+        return state_out, logdet
+
     def _update_v_backward(
                 self,
                 state: State,
@@ -564,6 +862,27 @@ class GaugeDynamics(BaseDynamics):
         logdet = tf.reduce_sum(scale, axis=1)
 
         return state_out, logdet
+
+    def _full_x_update_backward(
+            self,
+            state: State,
+            step: int,
+            training: bool = None
+    ):
+        """Perform a full-step position update in the backward direction."""
+        step_r = self.config.num_steps - step - 1
+        m, mc = self._get_mask(step_r)
+        sumlogdet = tf.zeros((self.batch_size,))
+
+        state, logdet = self._update_x_backward(state, step_r,
+                                                (mc, m), training)
+        sumlogdet += logdet
+
+        state, logdet = self._update_x_backward(state, step_r,
+                                                (m, mc), training)
+        sumlogdet += logdet
+
+        return state, sumlogdet
 
     def _update_x_backward(
                 self,
@@ -657,22 +976,34 @@ class GaugeDynamics(BaseDynamics):
 
         return ploss, qloss
 
+    def _get_lr(self, step=None):
+        if step is None:
+            step = self.optimizer.iterations
+
+        #  if isinstance(self.lr, callable):
+        if callable(self.lr):
+            return self.lr(step)
+
+        return K.get_value(self.optimizer.lr)
+
     def train_step(self, data):
         """Perform a single training step."""
         start = time.time()
         with tf.GradientTape() as tape:
             x, beta = data
             tape.watch(x)
-            states, accept_prob, _ = self((x, beta), training=True)
+            states, data = self((x, beta), training=True)
+            accept_prob = data.get('accept_prob', None)
             ploss, qloss = self.calc_losses(states, accept_prob)
             loss = ploss + qloss
             if self.aux_weight > 0:
                 z = tf.random.normal(x.shape, dtype=x.dtype)
-                states_, accept_prob_, _ = self((z, beta), training=True)
+                states_, data_ = self((z, beta), training=True)
+                accept_prob_ = data_.get('accept_prob', None)
                 ploss_, qloss_ = self.calc_losses(states_, accept_prob_)
                 loss += ploss_ + qloss_
 
-        if NUM_RANKS > 1:
+        if HAS_HOROVOD:
             tape = hvd.DistributedGradientTape(tape)
 
         grads = tape.gradient(loss, self.trainable_variables)
@@ -682,6 +1013,7 @@ class GaugeDynamics(BaseDynamics):
         )
 
         metrics = AttrDict({
+            'lr': self._get_lr(),
             'dt': time.time() - start,
             'loss': loss,
         })
@@ -700,11 +1032,31 @@ class GaugeDynamics(BaseDynamics):
             'accept_prob': accept_prob,
             'eps': self.eps,
             'beta': states.init.beta,
-            #  'sumlogdet': sumlogdet.out,
         })
+
+        if self._verbose:
+            metrics.update({
+                'Hf_start': data.forward.energies[0],
+                'Hf_mid': data.forward.energies[self.config.num_steps//2],
+                'Hf_end': data.forward.energies[-1],
+                'Hb_start': data.backward.energies[0],
+                'Hb_mid': data.backward.energies[self.config.num_steps//2],
+                'Hb_end': data.backward.energies[-1],
+                #  'ld_f_start': data.forward.logdets[0],
+                'ld_f_mid': data.forward.logdets[self.config.num_steps//2],
+                'ld_f_end': data.forward.logdets[-1],
+                #  'ld_b_start': data.backward.logdets[0],
+                'ld_b_mid': data.backward.logdets[self.config.num_steps//2],
+                'ld_b_end': data.backward.logdets[-1],
+                #  'sumlogdet': sumlogdet.out,
+            })
 
         observables = self.calc_observables(states)
         metrics.update(**observables)
+
+        metrics.update({
+            'lr': self._get_lr(),
+        })
 
         # Horovod:
         #    Broadcast initial variable states from rank 0 to all other
@@ -714,7 +1066,7 @@ class GaugeDynamics(BaseDynamics):
         # NOTE:
         #    Broadcast should be done after the first gradient step to ensure
         #    optimizer intialization.
-        if self.optimizer.iterations == 0 and NUM_RANKS > 1:
+        if self.optimizer.iterations == 0 and HAS_HOROVOD and NUM_WORKERS > 1:
             hvd.broadcast_variables(self.variables, root_rank=0)
             hvd.broadcast_variables(self.optimizer.variables(), root_rank=0)
 
@@ -723,20 +1075,43 @@ class GaugeDynamics(BaseDynamics):
     def test_step(self, data):
         """Perform a single inference step."""
         start = time.time()
-        states, px, sld = self(data, training=False)
-        ploss, qloss = self.calc_losses(states, px)
+        states, data = self(data, training=False)
+        accept_prob = data.get('accept_prob', None)
+        ploss, qloss = self.calc_losses(states, accept_prob)
         loss = ploss + qloss
 
         metrics = AttrDict({
             'dt': time.time() - start,
             'loss': loss,
-            'ploss': ploss,
-            'qloss': qloss,
-            'accept_prob': px,
+        })
+        if self.plaq_weight > 0 and self.charge_weight > 0:
+            metrics.update({
+                'ploss': ploss,
+                'qloss': qloss
+            })
+
+        metrics.update({
+            'accept_prob': accept_prob,
             'eps': self.eps,
             'beta': states.init.beta,
-            'sumlogdet': sld.out,
         })
+
+        if self._verbose:
+            metrics.update({
+                'Hf_start': data.forward.energies[0],
+                'Hf_mid': data.forward.energies[self.config.num_steps//2],
+                'Hf_end': data.forward.energies[-1],
+                'Hb_start': data.backward.energies[0],
+                'Hb_mid': data.backward.energies[self.config.num_steps//2],
+                'Hb_end': data.backward.energies[-1],
+                'ld_f_start': data.forward.logdets[0],
+                'ld_f_mid': data.forward.logdets[self.config.num_steps//2],
+                'ld_f_end': data.forward.logdets[-1],
+                'ld_b_start': data.backward.logdets[0],
+                'ld_b_mid': data.backward.logdets[self.config.num_steps//2],
+                'ld_b_end': data.backward.logdets[-1],
+                #  'sumlogdet': sumlogdet.out,
+            })
 
         observables = self.calc_observables(states)
         metrics.update(**observables)
@@ -750,10 +1125,10 @@ class GaugeDynamics(BaseDynamics):
         """
         wloops = self.lattice.calc_wilson_loops(state.x)
         q_sin = self.lattice.calc_charges(wloops=wloops, use_sin=True)
-        q_proj = self.lattice.calc_charges(wloops=wloops, use_sin=False)
+        q_int = self.lattice.calc_charges(wloops=wloops, use_sin=False)
         plaqs = self.lattice.calc_plaqs(wloops=wloops, beta=state.beta)
 
-        return plaqs, q_sin, q_proj
+        return plaqs, q_sin, q_int
 
     def calc_observables(self, states):
         """Calculate observables."""
@@ -798,20 +1173,42 @@ class GaugeDynamics(BaseDynamics):
 
         return self.xnet, self.vnet
 
+    def _get_time(self, i, tile=1):
+        """Format the MCMC step as:
+           ```
+           [cos(2pi*step/num_steps), sin(2pi*step/num_steps)]
+           ```
+        """
+        #  if self.config.separate_networks:
+        #      trig_t = tf.squeeze([0, 0])
+        #  else:
+        i = tf.cast(i, dtype=TF_FLOAT)
+        trig_t = tf.squeeze([
+            tf.cos(2 * np.pi * i / self.config.num_steps),
+            tf.sin(2 * np.pi * i / self.config.num_steps),
+        ])
+
+        t = tf.tile(tf.expand_dims(trig_t, 0), (tile, 1))
+
+        return t
+
     def _build_masks(self):
         """Construct different binary masks for different time steps."""
         def rolled_reshape(m, ax, shape=None):
             if shape is None:
                 shape = (self.batch_size, -1)
 
-            return sum([np.roll(m, i, ax).reshape(shape) for i in range(4)])
+            return sum([tf.roll(m, i, ax).reshape(shape) for i in range(4)])
 
         masks = []
         zeros = np.zeros(self.lattice_shape, dtype=np.float32)
+        #  zeros = tf.zeros(self.lattice_shape, dtype=TF_FLOAT)
 
         if self._gauge_eq_masks:
             mh_ = zeros.copy()
             mv_ = zeros.copy()
+            #  mh_ = tf.zeros_like(zeros)
+            #  mv_ = tf.zeros_like(zeros)
             mh_[:, ::4, :, 1] = 1.  # Horizontal masks
             mv_[:, :, ::4, 0] = 1.  # Vertical masks
 
@@ -827,7 +1224,8 @@ class GaugeDynamics(BaseDynamics):
 
             for i in range(self.config.num_steps):
                 m = p if i % 2 == 0 else (1. - p)
-                mask = tf.reshape(m, (self.batch_size, -1))
-                masks.append(tf.constant(mask))
+                mask = tf.reshape(tf.constant(m), (self.batch_size, -1))
+                mask = tf.convert_to_tensor(mask)
+                masks.append(mask)
 
         return masks
