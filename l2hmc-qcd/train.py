@@ -6,22 +6,50 @@ Train 2D U(1) model using eager execution in tensorflow.
 from __future__ import absolute_import, division, print_function
 
 import os
+import contextlib
 
 import tensorflow as tf
-import traceback
-import contextlib
+if tf.__version__.startswith('1'):
+    try:
+        tf.compat.v1.enable_v2_behavior()
+    except AttributeError:
+        print('Unable to call \n'
+              '`tf.compat.v1.enable_v2_behavior()`. Continuing...')
+    try:
+        tf.compat.v1.enable_control_flow_v2()
+    except AttributeError:
+        print('Unable to call \n'
+              '`tf.compat.v1.enable_control_flow_v2()`. Continuing...')
+    try:
+        tf.compat.v1.enable_v2_tensorshape()
+    except AttributeError:
+        print('Unable to call \n'
+              '`tf.compat.v1.enable_v2_tensorshape()`. Continuing...')
+    try:
+        tf.compat.v1.enable_eager_execution()
+    except AttributeError:
+        print('Unable to call \n'
+              '`tf.compat.v1.enable_eager_execution()`. Continuing...')
+    try:
+        tf.compat.v1.enable_resource_variables()
+    except AttributeError:
+        print('Unable to call \n'
+              '`tf.compat.v1.enable_resource_variables()`. Continuing...')
+
+
+# pylint:disable=wrong-import-position
 import utils.file_io as io
 
 from utils.attr_dict import AttrDict
 
-#  from utils.parse_args import parse_args
 from utils.parse_configs import parse_configs
 from utils.training_utils import train, train_hmc
 from utils.inference_utils import run, run_hmc
 
 
 @contextlib.contextmanager
-def options(options):
+def experimental_options(options):
+    """Run inside contextmanager with special options."""
     old_opts = tf.config.optimizer.get_experimental_options()
     tf.config.optimizer.set_experimental_options(options)
     try:
@@ -53,20 +81,39 @@ def main(args):
     if log_dir is not None:  # we want to restore from latest checkpoint
         train_steps = args.get('train_steps', None)
         args = restore_flags(args, os.path.join(args.log_dir, 'training'))
+        args.train_steps = train_steps  # use newly passed value
         args.restore = True
         if beta_init != args.get('beta_init', None):
             args.beta_init = beta_init
         if beta_final != args.get('beta_final', None):
             args.beta_final = beta_final
-        if train_steps > args.train_steps:
-            args.train_steps = train_steps
+        args.train_steps = train_steps
 
     else:  # New training session
-        args.log_dir = io.make_log_dir(args, 'GaugeModel', log_file)
+        timestamps = AttrDict({
+            'month': io.get_timestamp('%Y_%m'),
+            'time': io.get_timestamp('%Y-%M-%d-%H%M%S'),
+            'hour': io.get_timestamp('%Y-%m-%d-%H'),
+            'minute': io.get_timestamp('%Y-%m-%d-%H%M'),
+            'second': io.get_timestamp('%Y-%m-%d-%H%M%S'),
+        })
+        args.log_dir = io.make_log_dir(args, 'GaugeModel', log_file,
+                                       timestamps=timestamps)
+        io.write(f'{args.log_dir}', log_file, 'a')
         args.restore = False
         if hmc_steps > 0:
             x, _, eps = train_hmc(args)
             args.dynamics_config['eps'] = eps
+
+    dynamics_config = args.get('dynamics_config', None)
+    if dynamics_config is not None:
+        log_dir = dynamics_config.get('log_dir', None)
+        if log_dir is not None:
+            eps_file = os.path.join(log_dir, 'training', 'models', 'eps.z')
+            if os.path.isfile(eps_file):
+                io.log(f'Loading eps from: {eps_file}')
+                eps = io.loadz(eps_file)
+                args.dynamics_config['eps'] = eps
 
     _, dynamics, _, args = train(args, x=x)
 
@@ -80,6 +127,7 @@ def main(args):
         # ====
         # Run HMC
         args.hmc = True
+        args.dynamics_config['eps'] = 0.15
         hmc_dir = os.path.join(args.log_dir, 'inference_hmc')
         _ = run_hmc(args=args, hmc_dir=hmc_dir)
 

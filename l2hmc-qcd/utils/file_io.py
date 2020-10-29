@@ -6,8 +6,6 @@ file_io.py
 import os
 import sys
 import time
-import json
-import pickle
 import typing
 import logging
 import datetime
@@ -15,15 +13,22 @@ import datetime
 import joblib
 import numpy as np
 
-import horovod.tensorflow as hvd
+try:
+    import horovod.tensorflow as hvd
+    RANK = hvd.rank()
+    NUM_WORKERS = hvd.size()
+    IS_CHIEF = (RANK == 0)
+    HAS_HOROVOD = True
+except (ImportError, ModuleNotFoundError):
+    RANK = 0
+    NUM_WORKERS = 1
+    IS_CHIEF = (RANK == 0)
+    HAS_HOROVOD = False
 
 from tqdm.auto import tqdm
 from config import PROJECT_DIR
 from utils.attr_dict import AttrDict
 
-RANK = hvd.rank()
-NUM_NODES = hvd.size()
-IS_CHIEF = (RANK == 0)
 
 LOG_LEVELS_AS_INTS = {
     'CRITICAL': 50,
@@ -78,7 +83,7 @@ def log(s: str, level: str = 'INFO', out=sys.stdout, should_print=False):
     """Print string `s` to stdout if and only if hvd.rank() == 0."""
     if RANK != 0:
         return
-    if NUM_NODES == 1:
+    if NUM_WORKERS == 1:
         if isinstance(s, (tuple, list)):
             for i in s:
                 tqdm.write(i, file=out)
@@ -106,17 +111,18 @@ def write(s: str, f: str, mode: str = 'a', nl: bool = True):
         f_.write(s + '\n' if nl else ' ')
 
 
-def log_tqdm(s, out=sys.stdout):
-    """Write to output using `tqdm`."""
-    #  if NUM_NODES > 1:
-    #      log(s)
-    #  else:
-    #      if isinstance(s, (tuple, list)):
-    #          for i in s:
-    #              tqdm.write(i, file=out)
-    #      else:
-    #          tqdm.write(s, file=out)
-    pass
+def print_dict(d, indent=0, name=None, **kwargs):
+    """Print nicely-formatted dictionary."""
+    indent_str = indent * ' '
+    if name is not None:
+        log(f'{indent_str}{name}:', **kwargs)
+        sep_str = indent_str + len(name) * '-'
+        log(sep_str, **kwargs)
+    for key, val in d.items():
+        if isinstance(val, (AttrDict, dict)):
+            print_dict(val, indent=indent+2, name=str(key), **kwargs)
+        else:
+            log(f'  {indent_str}{key}: {val}', **kwargs)
 
 
 def print_flags(flags: AttrDict):
@@ -126,13 +132,20 @@ def print_flags(flags: AttrDict):
     ))
 
 
-def setup_directories(flags, name='training', new_beta=False):
+def setup_directories(flags, name='training', save=True):
     """Setup relevant directories for training."""
+    if isinstance(flags, dict):
+        flags = AttrDict(flags)
+
+    if flags.get('log_dir', None) is None:
+        flags.log_dir = make_log_dir(flags, name)
+
     train_dir = os.path.join(flags.log_dir, name)
     train_paths = AttrDict({
         'log_dir': flags.log_dir,
         'train_dir': train_dir,
         'data_dir': os.path.join(train_dir, 'train_data'),
+        'models_dir': os.path.join(train_dir, 'models'),
         'ckpt_dir': os.path.join(train_dir, 'checkpoints'),
         'summary_dir': os.path.join(train_dir, 'summaries'),
         'log_file': os.path.join(train_dir, 'train_log.txt'),
@@ -143,7 +156,8 @@ def setup_directories(flags, name='training', new_beta=False):
         check_else_make_dir(
             [d for k, d in train_paths.items() if 'file' not in k],
         )
-        if not flags.restore:
+        #  if not flags.get('restore', False):
+        if save:
             save_params(dict(flags), train_dir, 'FLAGS')
 
     return train_paths
@@ -263,7 +277,7 @@ def savez(obj: typing.Any, fpath: str, name: str = None):
         fpath += '.z'
 
     if name is not None:
-        log(f'Saving {name} to {fpath}.')
+        log(f'Saving {name} to {os.path.abspath(fpath)}.')
 
     joblib.dump(obj, fpath)
 
@@ -280,21 +294,7 @@ def change_extension(fpath, ext):
 
 def loadz(fpath):
     """Load from `fpath` using `joblib.load`."""
-    try:
-        obj = joblib.load(fpath)
-    except FileNotFoundError:
-        fpath_pkl = change_extension(fpath, 'pkl')
-        obj = load_pkl(fpath_pkl)
-
-    return obj
-
-
-def load_pkl(fpath):
-    """Load from `fpath` using `pickle.load`."""
-    with open(fpath, 'rb') as f:
-        data = pickle.load(f)
-
-    return data
+    return joblib.load(fpath)
 
 
 def timeit(out_file=None, should_log=True):
@@ -336,29 +336,43 @@ def get_run_num(run_dir):
     return sorted([int(i.split('_')[-1]) for i in dirnames])[-1] + 1
 
 
-def get_run_dir_fstr(FLAGS: AttrDict):
+def get_run_dir_fstr(flags: AttrDict):
     """Parse FLAGS and create unique fstr for `run_dir`."""
-    eps = FLAGS.get('eps', None)
-    hmc = FLAGS.get('hmc', False)
-    beta = FLAGS.get('beta', None)
-    num_steps = FLAGS.get('num_steps', None)
-    lattice_shape = FLAGS.get('lattice_shape', None)
+    beta = flags.get('beta', None)
+    config = flags.get('dynamics_config', None)
+
+    eps = config.get('eps', None)
+    hmc = config.get('hmc', False)
+    num_steps = config.get('num_steps', None)
+    lattice_shape = config.get('lattice_shape', None)
 
     if beta is None:
-        beta = FLAGS.get('beta_final', None)
+        beta_final = flags.get('beta_final', None)
+        if beta_final is None:
+            beta_init = flags.get('beta_init', None)
+            if beta_init is None:
+                raise ValueError('beta not specified.')
+            beta = beta_init
+        else:
+            beta = beta_final
 
     fstr = ''
     if hmc:
         fstr += 'HMC_'
+    if lattice_shape is not None:
+        if lattice_shape[1] == lattice_shape[2]:
+            fstr += f'L{lattice_shape[1]}_b{lattice_shape[0]}_'
+        else:
+            fstr += (
+                f'L{lattice_shape[1]}_T{lattice_shape[2]}_b{lattice_shape[0]}_'
+            )
+
     if beta is not None:
         fstr += f'beta{beta:.3g}'.replace('.', '')
     if num_steps is not None:
         fstr += f'_lf{num_steps}'
     if eps is not None:
         fstr += f'_eps{eps:.3g}'.replace('.', '')
-    if lattice_shape is not None:
-        fstr += f'_b{lattice_shape[0]}'
-
     return fstr
 
 
@@ -394,6 +408,11 @@ def parse_configs(flags, debug=False):
         fstr += f'_aw{aw}'
     if act != 'relu':
         fstr += f'_act{act}'
+
+    if config.get('hmc', False):
+        eps = config.get('eps', None)
+        if eps is not None:
+            fstr += f'_eps{eps}'.replace('.', '')
 
     bi = flags.get('beta_init', None)
     bf = flags.get('beta_final', None)
@@ -440,8 +459,17 @@ def parse_configs(flags, debug=False):
     return fstr.replace('.', '')
 
 
+def get_timestamp(fstr=None):
+    """Get formatted timestamp."""
+    now = datetime.datetime.now()
+    if fstr is None:
+        return now.strftime('%Y-%m-%d-%H%M%S')
+    return now.strftime(fstr)
+
+
 # pylint:disable=too-many-arguments
-def make_log_dir(FLAGS, model_type=None, log_file=None, root_dir=None):
+def make_log_dir(FLAGS, model_type=None, log_file=None, root_dir=None,
+                 timestamps=None):
     """Automatically create and name `log_dir` to save model data to.
 
     The created directory will be located in `logs/YYYY_M_D /`, and will have
@@ -455,28 +483,42 @@ def make_log_dir(FLAGS, model_type=None, log_file=None, root_dir=None):
     NOTE: If log_dir does not already exist, it is created.
     """
     model_type = 'GaugeModel' if model_type is None else model_type
-    fstr = parse_configs(FLAGS)
+    cfg_str = parse_configs(FLAGS)
 
-    now = datetime.datetime.now()
-    month_str = now.strftime('%Y_%m')
-    dstr = now.strftime('%Y-%m-%d-%H%M%S')
-    run_str = f'{fstr}-{dstr}'
+    if timestamps is None:
+        timestamps = AttrDict({
+            'month': get_timestamp('%Y_%m'),
+            'time': get_timestamp('%Y-%M-%d-%H%M%S'),
+            'hour': get_timestamp('%Y-%m-%d-%H'),
+            'minute': get_timestamp('%Y-%m-%d-%H%M'),
+            'second': get_timestamp('%Y-%m-%d-%H%M%S'),
+        })
 
-    #  if root_dir is None:
+    #  month_str = get_timestamp('%Y_%m')
+    #  time_str = get_timestamp('%Y-%m-%d-%H%M%S')
+    #  run_str = f'{cfg_str}-{timestamps.month}'
+
     if root_dir is None:
-        root_dir = os.path.dirname(PROJECT_DIR)
+        root_dir = PROJECT_DIR
 
     dirs = [root_dir, 'logs', f'{model_type}_logs']
-    if fstr.startswith('DEBUG'):
+    if cfg_str.startswith('DEBUG'):
         dirs.append('test')
 
-    log_dir = os.path.join(*dirs, month_str, run_str)
-    if os.path.isdir(log_dir):
+    #  log_dir = os.path.join(*dirs, month_str, run_str)
+    log_dir = os.path.join(*dirs, timestamps.month, cfg_str)
+    if os.path.isdir(log_dir) and NUM_WORKERS == 1:
+        log_dir = os.path.join(*dirs, timestamps.month,
+                               f'{cfg_str}-{timestamps.hour}')
+        if os.path.isdir(log_dir):
+            log_dir = os.path.join(*dirs, timestamps.month,
+                                   f'{cfg_str}-{timestamps.minute}')
+
         log('\n'.join(['Existing directory found with the same name!',
                        'Modifying the date string to include seconds.']))
-        dstr = now.strftime('%Y-%m-%d-%H%M%S')
-        run_str = f'{fstr}-{dstr}'
-        log_dir = os.path.join(*dirs, month_str, run_str)
+        #  dstr = get_timestamp('%Y-%m-%d-%H%M%S')
+        #  run_str = f'{cfg_str}-{dstr}'
+        #  log_dir = os.path.join(*dirs, month_str, run_str)
 
     if RANK == 0:
         check_else_make_dir(log_dir)

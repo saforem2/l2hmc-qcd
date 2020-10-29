@@ -41,49 +41,6 @@ CBARS = {
 }
 
 
-class GaugeDynamicsConfig1(AttrDict):
-    """Configuration object for `GaugeDynamics` object"""
-
-    # pylint:disable=too-many-arguments
-    def __init__(self,
-                 eps: float,                    # step size
-                 num_steps: int,                # n leapfrog steps per acc/rej
-                 hmc: bool = False,             # run standard HMC?
-                 use_ncp: bool = False,         # Transform x using NCP?
-                 model_type: str = None,        # name for model
-                 eps_fixed: bool = False,
-                 lattice_shape: tuple = None,
-                 aux_weight: float = 0.,
-                 plaq_weight: float = 0.,
-                 charge_weight: float = 0.,
-                 zero_init: bool = False,
-                 separate_networks: bool = False,
-                 use_conv_net: bool = False,
-                 use_mixed_loss: bool = False,
-                 use_scattered_xnet_update: bool = False,
-                 use_tempered_trajectories: bool = False,
-                 gauge_eq_masks: bool = False):
-        super(GaugeDynamicsConfig1, self).__init__(
-            eps=eps,
-            hmc=hmc,
-            use_ncp=use_ncp,
-            num_steps=num_steps,
-            model_type=model_type,
-            eps_fixed=eps_fixed,
-            lattice_shape=lattice_shape,
-            aux_weight=aux_weight,
-            plaq_weight=plaq_weight,
-            charge_weight=charge_weight,
-            zero_init=zero_init,
-            separate_networks=separate_networks,
-            use_conv_net=use_conv_net,
-            use_mixed_loss=use_mixed_loss,
-            use_scattered_xnet_update=use_scattered_xnet_update,
-            use_tempered_trajectories=use_tempered_trajectories,
-            gauge_eq_masks=gauge_eq_masks,
-        )
-
-
 NAMES = [
     'step', 'dt', 'loss', 'ploss', 'qloss',
     'px', 'eps', 'beta', 'sumlogdet', '|dq|', 'plaq_err',
@@ -148,55 +105,31 @@ NP_FLOATS = {
     'float64': np.float64,
 }
 
-ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
-FILE_PATH = os.path.abspath(os.path.dirname(__file__))
-PROJECT_DIR = os.path.dirname(os.path.relpath(__file__))
-BASE_DIR = os.path.dirname(PROJECT_DIR)
-BIN_DIR = os.path.join(BASE_DIR, 'bin')
-LOGS_DIR = os.path.abspath('../logs')
-#  LOGS_DIR = os.path.join(BASE_DIR, 'logs')
-GAUGE_LOGS_DIR = os.path.join(BASE_DIR, 'logs', 'GaugeModel_logs')
-#  GAUGE_LOGS_DIR = os.path.join(BASE_DIR, 'gauge_logs')
-TEST_LOGS_DIR = os.path.join(BASE_DIR, 'test_logs')
-BIN_DIR = os.path.join(BASE_DIR, 'bin')
 
-#  COLORS = 5000 * ['C0', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9']
-MARKERS = 5000 * ['o', 's', 'x', 'v', 'h', '^', 'p', '<', 'd', '>', 'o']
+SRC_DIR = os.path.dirname(os.path.abspath(__file__))
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+PROJECT_DIR = ROOT_DIR
+BASE_DIR = ROOT_DIR
+BIN_DIR = os.path.join(PROJECT_DIR, 'bin')
+LOGS_DIR = os.path.join(PROJECT_DIR, 'logs')
+GAUGE_LOGS_DIR = os.path.join(LOGS_DIR, 'GaugeModel_logs')
+HMC_LOGS_DIR = os.path.join(GAUGE_LOGS_DIR, 'hmc_logs')
+
+FIGSIZE = (4, 3)
+COLORS = 5000 * ['C0', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9']
+MARKERS = 5000 * ['o', 's', '^', '<', 'd', 'v', 'h', '>', 'p', 'x', '+', '*']
 LINESTYLES = 5000 * ['-', '--', ':', '-.', '-', '--', ':', '-.', '-', '--']
-COLORS = [  # from seaborn `bright` style
-    (0.00784313725490196, 0.24313725490196078, 1.0),
-    (1.0, 0.48627450980392156, 0.0),
-    (0.10196078431372549, 0.788235294117647, 0.2196078431372549),
-    (0.9098039215686274, 0.0, 0.043137254901960784),
-    (0.5450980392156862, 0.16862745098039217, 0.8862745098039215),
-    (0.6235294117647059, 0.2823529411764706, 0.0),
-    (0.9450980392156862, 0.2980392156862745, 0.7568627450980392),
-    (0.6392156862745098, 0.6392156862745098, 0.6392156862745098),
-    (1.0, 0.7686274509803922, 0.0),
-    (0.0, 0.8431372549019608, 1.0)
-]
+#  COLORS = [  # from seaborn `bright` style
+#    (0.00784313725490196, 0.24313725490196078, 1.0),
+#    (1.0, 0.48627450980392156, 0.0),
+#    (0.10196078431372549, 0.788235294117647, 0.2196078431372549),
+#    (0.9098039215686274, 0.0, 0.043137254901960784),
+#    (0.5450980392156862, 0.16862745098039217, 0.8862745098039215),
+#    (0.6235294117647059, 0.2823529411764706, 0.0),
+#    (0.9450980392156862, 0.2980392156862745, 0.7568627450980392),
+#    (0.6392156862745098, 0.6392156862745098, 0.6392156862745098),
+#    (1.0, 0.7686274509803922, 0.0),
+#    (0.0, 0.8431372549019608, 1.0)
+#  ]
 
 # pylint:disable=invalid-name
-TRAIN_STR = (r"""
-
-  _             _       _
- | |           (_)     (_)
- | |_ _ __ __ _ _ _ __  _ _ __   __ _
- | __| '__/ _` | | '_ \| | '_ \ / _` |
- | |_| | | (_| | | | | | | | | | (_| |_ _ _
-  \__|_|  \__,_|_|_| |_|_|_| |_|\__, (_|_|_)
-                                 __/ |
-                                |___/
-""")
-
-RUN_STR = (r"""
-
-                         _
-                        (_)
-  _ __ _   _ _ __  _ __  _ _ __   __ _
- | '__| | | | '_ \| '_ \| | '_ \ / _` |
- | |  | |_| | | | | | | | | | | | (_| |_ _ _
- |_|   \__,_|_| |_|_| |_|_|_| |_|\__, (_|_|_)
-                                  __/ |
-                                 |___/
-""")

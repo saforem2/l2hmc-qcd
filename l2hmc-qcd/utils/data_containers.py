@@ -68,15 +68,6 @@ class DataContainer:
             k: tf.reduce_mean(v) for k, v in metrics.items() if k not in skip
         }
 
-        try:
-            n = step - self.print_steps
-            data['dt'] = 0.5 * (
-                data['dt'] + tf.reduce_mean(self.data['dt'][-n:])
-            )
-
-        except (IndexError, KeyError):
-            pass
-
         fstr = (
             f'{step:>5g}/{self.steps:<5g} '
             + ''.join([f'{v:^12.4g}' for _, v in data.items()])
@@ -86,18 +77,19 @@ class DataContainer:
 
         return fstr
 
-    def restore(self, data_dir, rank=0, step=None):
+    def restore(self, data_dir, rank=0, local_rank=0, step=None, x_shape=None):
         """Restore `self.data` from `data_dir`."""
         if step is not None:
             self.steps += step
 
-        x_file = os.path.join(data_dir, f'x_rank{rank}.z')
+        x_file = os.path.join(data_dir, f'x_rank{rank}-{local_rank}.z')
         try:
             x = io.loadz(x_file)
-            io.log_tqdm(f'Restored `x` from: {x_file}.')
-        except FileNotFoundError as err:
-            io.log_tqdm(f'Unable to load `x` from {x_file}.')
-            raise err
+            io.log(f'Restored `x` from: {x_file}.', should_print=True)
+        except FileNotFoundError:
+            io.log(f'Unable to load `x` from {x_file}.', level='WARNING')
+            io.log('Using random normal init.', level='WARNING')
+            x = tf.random.normal(x_shape)
 
         data = self.load_data(data_dir)
         for key, val in data.items():
@@ -116,7 +108,7 @@ class DataContainer:
         for key, val in zip(keys, data_files):
             if 'x_rank' in key:
                 continue
-            io.log_tqdm(f'Restored {key} from {val}.')
+            io.log(f'Restored {key} from {val}.')
             data[key] = io.loadz(val)
 
         return AttrDict(data)
@@ -159,23 +151,26 @@ class DataContainer:
         avg_df = pd.DataFrame(avg_data, index=[0])
         csv_file = os.path.join(BASE_DIR, 'logs', 'GaugeModel_logs',
                                 'inference_results.csv')
-        io.log_tqdm(f'Appending inference results to {csv_file}.')
+        io.log(f'Appending inference results to {csv_file}.')
         if not os.path.isfile(csv_file):
             avg_df.to_csv(csv_file, header=True, index=False, mode='w')
         else:
             avg_df.to_csv(csv_file, header=False, index=False, mode='a')
 
     @staticmethod
-    def dump_configs(x, data_dir, rank=0):
+    def dump_configs(x, data_dir, rank=0, local_rank=0):
         """Save configs `x` separately for each rank."""
-        xfile = os.path.join(data_dir, f'x_rank{rank}.z')
-        io.log_tqdm(f'Saving configs from rank {rank} to: {xfile}.')
+        xfile = os.path.join(data_dir, f'x_rank{rank}-{local_rank}.z')
+        io.log('Saving configs from rank '
+               f'{rank}-{local_rank} to: {xfile}.')
         head, _ = os.path.split(xfile)
         io.check_else_make_dir(head)
         joblib.dump(x, xfile)
 
     # pylint:disable=too-many-arguments
-    def save_and_flush(self, data_dir=None, log_file=None, rank=0, mode='a'):
+    def save_and_flush(
+            self, data_dir=None, log_file=None, rank=0, mode='a'
+    ):
         """Call `self.save_data` and `self.flush_data_strs`."""
         if data_dir is None:
             data_dir = self.dirs.get('data_dir', None)

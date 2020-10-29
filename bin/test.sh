@@ -10,7 +10,7 @@ export AUTOGRAPH_VERBOSITY=10
 
 export TF_XLA_FLAGS="--tf_xla_auto_jit=2 --tf_xla_cpu_global_jit"
 
-TEST_FILE='../l2hmc-qcd/test.py'
+TEST_FILE='../l2hmc-qcd/test/test_training.py'
 
 which -a python3
 

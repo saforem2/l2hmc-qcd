@@ -12,73 +12,18 @@
       \item While this doubles the size of our inputs, it avoids complications
         that arise from angles near \(0\) and \(2\pi\).
     \end{itemize}
-  \item \color{blue}{Under this new representation, the bias in the average
-    plaquette no longer seems to be an issue.}\color{black}
-  \item However, there is no noticeable improvement in the tunneling rate when
-    compared to generic HMC.\@
-  \color{red}{\item \textbf{TODO:}}\color{black}
-  \begin{todolist}
-    \item Continue testing with additional hidden layers.
-    \item Add convolutional/pooling layers at beginning of network to ensure
-      translational invariance.
-  \end{todolist}
+  % \item \color{blue}{Under this new representation, the bias in the average
+  %   plaquette no longer seems to be an issue.}\color{black}
+  % \item However, there is no noticeable improvement in the tunneling rate when
+  %   compared to generic HMC.\@
+  % \color{red}{\item \textbf{TODO:}}\color{black}
+  % \begin{todolist}
+  %   \item Continue testing with additional hidden layers.
+  %   \item Add convolutional/pooling layers at beginning of network to ensure
+  %     translational invariance.
+  % \end{todolist}
 \end{itemize}
-%
-\begin{table}[ht!]
-  \centering
-  \begin{tabular}{@{}rccc@{}}
-  % \cmidrule(l){1-4}
-  \multicolumn{1}{l}{} & \multicolumn{1}{l}{\textbf{tunneling events}} & \multicolumn{1}{l}{\textbf{tunneling rate}} & \multicolumn{1}{l}{\textbf{accept prob}} \\
-  \cmidrule(l){1-4} 
-   \multicolumn{1}{r}{\textit{chain 1}} & 1 & 0.000125 & 0.684 \(\pm\) 0.003 \\
-   \multicolumn{1}{r}{\textit{chain 2}} & 4 & 0.000500 & 0.695 \(\pm\) 0.003 \\
-   \multicolumn{1}{r}{\textit{chain 3}} & 4 & 0.000500 & 0.696 \(\pm\) 0.003 \\
-   \multicolumn{1}{r}{\textit{chain 4}} & 3 & 0.000375 & 0.698 \(\pm\) 0.003 \\
-  \cmidrule(l){1-4}
-   \multicolumn{1}{r}{\textbf{average}} & \textbf{2.4} & \textbf{0.0003} &
-   \textbf{0.696 \(\pm\) 0.003}
-  \end{tabular}
-  \caption{Inference results for trained \textbf{L2HMC} sampler ran for \(N = 1\times
-  10^{4}\) accept/reject steps at \(\beta = 5\).}%
-  \label{tab:l2hmc_inference}
-\end{table}
-%
-\begin{table}[ht!]
-  \centering
-  \begin{tabular}{@{}rccc@{}}
-  % \cmidrule(l){2-4}
-  \multicolumn{1}{l}{} & \multicolumn{1}{l}{\textbf{tunneling events}} & \multicolumn{1}{l}{\textbf{tunneling rate}} & \multicolumn{1}{l}{\textbf{accept prob}} \\
-  \cmidrule(l){1-4}
-  \multicolumn{1}{r}{\textit{chain 1}} & 2 & 0.000250 & 0.279 \(\pm\) 0.004 \\
-  \multicolumn{1}{r}{\textit{chain 2}} & 1 & 0.000125 & 0.271 \(\pm\) 0.004 \\
-  \multicolumn{1}{r}{\textit{chain 3}} & 3 & 0.000375 & 0.281 \(\pm\) 0.004 \\
-  \multicolumn{1}{r}{\textit{chain 4}} & 4 & 0.000500 & 0.286 \(\pm\) 0.004 \\
-  \cmidrule(l){1-4}
-  \multicolumn{1}{r}{\textbf{average}} & \textbf{2} & \textbf{0.00025} &
-  \textbf{0.282 \(\pm\) 0.004}
-  \end{tabular}
-  \caption{Inference results for generic \textbf{HMC} sampler ran for \(N = 1\times
-  10^{4}\) accept/reject steps at \(\beta = 5\).}%
-  \label{tab:hmc_inference}
-\end{table}
-%
-\clearpage
-%
-\begin{figure}[ht!]
-  \centering
-  \includegraphics[width=0.7\linewidth]{figures/updates_2020_04_13/l2hmc.png}
-  \caption{Inference results from trained \textbf{L2HMC} sampler.}%
-  \label{fig:l2hmc_inference}
-\end{figure}
-%
-\begin{figure}[ht!]
-  \centering
-  \includegraphics[width=0.7\linewidth]{figures/updates_2020_04_13/hmc.png}
-  \caption{Inference results from generic \textbf{HMC} sampler.}%
-  \label{fig:hmc_inference}
-\end{figure}
-%
-%
+
 \subsection{Changes to the loss function}%
 \label{subsec:changes_to_loss_fn}
 %
@@ -161,6 +106,63 @@ Finally, our loss function becomes
 where \(\alpha_{P}, \alpha_{\Q}\) are weights to control the respective terms
 contribution to the overall loss function.
 
+
+%
+% \begin{table}[ht!]
+%   \centering
+%   \begin{tabular}{@{}rccc@{}}
+%   % \cmidrule(l){1-4}
+%   \multicolumn{1}{l}{} & \multicolumn{1}{l}{\textbf{tunneling events}} & \multicolumn{1}{l}{\textbf{tunneling rate}} & \multicolumn{1}{l}{\textbf{accept prob}} \\
+%   \cmidrule(l){1-4}
+%    \multicolumn{1}{r}{\textit{chain 1}} & 1 & 0.000125 & 0.684 \(\pm\) 0.003 \\
+%    \multicolumn{1}{r}{\textit{chain 2}} & 4 & 0.000500 & 0.695 \(\pm\) 0.003 \\
+%    \multicolumn{1}{r}{\textit{chain 3}} & 4 & 0.000500 & 0.696 \(\pm\) 0.003 \\
+%    \multicolumn{1}{r}{\textit{chain 4}} & 3 & 0.000375 & 0.698 \(\pm\) 0.003 \\
+%   \cmidrule(l){1-4}
+%    \multicolumn{1}{r}{\textbf{average}} & \textbf{2.4} & \textbf{0.0003} &
+%    \textbf{0.696 \(\pm\) 0.003}
+%   \end{tabular}
+%   \caption{Inference results for trained \textbf{L2HMC} sampler ran for \(N = 1\times
+%   10^{4}\) accept/reject steps at \(\beta = 5\).}%
+%   \label{tab:l2hmc_inference}
+% \end{table}
+% %
+% \begin{table}[ht!]
+%   \centering
+%   \begin{tabular}{@{}rccc@{}}
+%   % \cmidrule(l){2-4}
+%   \multicolumn{1}{l}{} & \multicolumn{1}{l}{\textbf{tunneling events}} & \multicolumn{1}{l}{\textbf{tunneling rate}} & \multicolumn{1}{l}{\textbf{accept prob}} \\
+%   \cmidrule(l){1-4}
+%   \multicolumn{1}{r}{\textit{chain 1}} & 2 & 0.000250 & 0.279 \(\pm\) 0.004 \\
+%   \multicolumn{1}{r}{\textit{chain 2}} & 1 & 0.000125 & 0.271 \(\pm\) 0.004 \\
+%   \multicolumn{1}{r}{\textit{chain 3}} & 3 & 0.000375 & 0.281 \(\pm\) 0.004 \\
+%   \multicolumn{1}{r}{\textit{chain 4}} & 4 & 0.000500 & 0.286 \(\pm\) 0.004 \\
+%   \cmidrule(l){1-4}
+%   \multicolumn{1}{r}{\textbf{average}} & \textbf{2} & \textbf{0.00025} &
+%   \textbf{0.282 \(\pm\) 0.004}
+%   \end{tabular}
+%   \caption{Inference results for generic \textbf{HMC} sampler ran for \(N = 1\times
+%   10^{4}\) accept/reject steps at \(\beta = 5\).}%
+%   \label{tab:hmc_inference}
+% \end{table}
+% %
+% \clearpage
+% %
+% \begin{figure}[ht!]
+%   \centering
+%   \includegraphics[width=0.7\linewidth]{figures/updates_2020_04_13/l2hmc.png}
+%   \caption{Inference results from trained \textbf{L2HMC} sampler.}%
+%   \label{fig:l2hmc_inference}
+% \end{figure}
+% %
+% \begin{figure}[ht!]
+%   \centering
+%   \includegraphics[width=0.7\linewidth]{figures/updates_2020_04_13/hmc.png}
+%   \caption{Inference results from generic \textbf{HMC} sampler.}%
+%   \label{fig:hmc_inference}
+% \end{figure}
+% %
+% %
 % \begin{figure}[htpb]
 %  \centering
 %  \begin{subfigure}[t]{0.48\textwidth}
