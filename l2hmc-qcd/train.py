@@ -6,30 +6,50 @@ Train 2D U(1) model using eager execution in tensorflow.
 from __future__ import absolute_import, division, print_function
 
 import os
+import contextlib
 
 import tensorflow as tf
-import traceback
-import contextlib
+if tf.__version__.startswith('1'):
+    try:
+        tf.compat.v1.enable_v2_behavior()
+    except AttributeError:
+        print('Unable to call \n'
+              '`tf.compat.v1.enable_v2_behavior()`. Continuing...')
+    try:
+        tf.compat.v1.enable_control_flow_v2()
+    except AttributeError:
+        print('Unable to call \n'
+              '`tf.compat.v1.enable_control_flow_v2()`. Continuing...')
+    try:
+        tf.compat.v1.enable_v2_tensorshape()
+    except AttributeError:
+        print('Unable to call \n'
+              '`tf.compat.v1.enable_v2_tensorshape()`. Continuing...')
+    try:
+        tf.compat.v1.enable_eager_execution()
+    except AttributeError:
+        print('Unable to call \n'
+              '`tf.compat.v1.enable_eager_execution()`. Continuing...')
+    try:
+        tf.compat.v1.enable_resource_variables()
+    except AttributeError:
+        print('Unable to call \n'
+              '`tf.compat.v1.enable_resource_variables()`. Continuing...')
+
+
+# pylint:disable=wrong-import-position
 import utils.file_io as io
 
 from utils.attr_dict import AttrDict
 
-#  from utils.parse_args import parse_args
 from utils.parse_configs import parse_configs
 from utils.training_utils import train, train_hmc
 from utils.inference_utils import run, run_hmc
 
 
-if tf.__version__.startswith('1'):
-    tf.compat.v1.enable_v2_behavior()
-    tf.compat.v1.enable_control_flow_v2()
-    tf.compat.v1.enable_v2_tensorshape()
-    tf.compat.v1.enable_eager_execution()
-    tf.compat.v1.enable_resource_variables()
-
-
 @contextlib.contextmanager
-def options(options):
+def experimental_options(options):
+    """Run inside contextmanager with special options."""
     old_opts = tf.config.optimizer.get_experimental_options()
     tf.config.optimizer.set_experimental_options(options)
     try:
