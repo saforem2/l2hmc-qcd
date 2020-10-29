@@ -61,9 +61,15 @@ def experimental_options(options):
 def restore_flags(flags, train_dir):
     """Update `FLAGS` using restored flags from `log_dir`."""
     rf_file = os.path.join(train_dir, 'FLAGS.z')
-    restored = AttrDict(dict(io.loadz(rf_file)))
-    io.log(f'Restoring FLAGS from: {rf_file}...')
-    flags.update(restored)
+    if os.path.isfile(rf_file):
+        try:
+            restored = io.loadz(rf_file)
+            restored = AttrDict(restored)
+            io.log(f'Restoring FLAGS from: {rf_file}...')
+            flags.update(restored)
+        except (FileNotFoundError, EOFError):
+            pass
+        #  restored = AttrDict(dict(io.loadz(rf_file)))
 
     return flags
 
