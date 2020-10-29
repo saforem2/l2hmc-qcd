@@ -11,21 +11,17 @@ import os
 import time
 
 from typing import Union
-from utils.learning_rate import ReduceLROnPlateau
+from tqdm.auto import tqdm
 
 import numpy as np
 import tensorflow as tf
 
-TF_VERSION = 2
-if tf.__version__.startswith('1.'):
-    TF_VERSION = 1
-
-
-from tqdm.auto import tqdm
 
 import utils.file_io as io
+
 try:
     import horovod.tensorflow as hvd
+
     HAS_HOROVOD = True
     RANK = hvd.rank()
     LOCAL_RANK = hvd.local_rank()
@@ -40,21 +36,21 @@ except (ImportError, ModuleNotFoundError):
     NUM_NODES = 1
     io.log(f'Number of devices: {NUM_NODES}')
 
-
 from config import CBARS, NET_WEIGHTS_HMC, TF_FLOAT
 from network.config import LearningRateConfig
 from utils.file_io import timeit
 from utils.attr_dict import AttrDict
 from utils.summary_utils import update_summaries
+from utils.learning_rate import ReduceLROnPlateau
 from utils.plotting_utils import plot_data
 from utils.data_containers import DataContainer
-from utils.annealing_schedules import (exp_mult_cooling, get_betas,
-                                       linear_additive_cooling,
-                                       linear_multiplicative_cooling,
-                                       quadratic_additive_cooling)
-from dynamics.config import GaugeDynamicsConfig
+from utils.annealing_schedules import get_betas
 from dynamics.base_dynamics import BaseDynamics
 from dynamics.gauge_dynamics import build_dynamics, GaugeDynamics
+
+TF_VERSION = 2
+if tf.__version__.startswith('1.'):
+    TF_VERSION = 1
 
 #  try:
 #      tf.config.experimental.enable_mlir_bridge()
@@ -66,7 +62,6 @@ from dynamics.gauge_dynamics import build_dynamics, GaugeDynamics
 # pylint:disable=too-many-locals
 # pylint:disable=protected-access
 # pylint:disable=invalid-name
-
 
 
 @timeit(out_file=None)
@@ -180,6 +175,7 @@ def train(
     return x, dynamics, train_data, flags
 
 
+# pylint:disable=too-many-statements
 def setup(dynamics, flags, dirs=None, x=None, betas=None):
     """Setup training."""
     train_data = DataContainer(flags.train_steps, dirs=dirs,
@@ -268,9 +264,6 @@ def setup(dynamics, flags, dirs=None, x=None, betas=None):
         'pstop': pstop,
     })
 
-    return output
-
-
     if dynamics.config.separate_networks:
         xnet_files = [
             os.path.join(dirs.models_dir, f'dynamics_xnet{i}')
@@ -287,14 +280,17 @@ def setup(dynamics, flags, dirs=None, x=None, betas=None):
             io.log(f'Saving `GaugeDynamics.vnet{idx}` to {vf}.')
             xnet.save(xf)
             vnet.save(vf)
-
     else:
-        xnet_files = os.path.join(dirs.models_dir, 'dynamics_xnet')
-        vnet_files = os.path.join(dirs.models_dir, 'dynamics_vnet')
-        io.log(f'Saving `GaugeDynamics.xnet` to {xnet_files}.')
-        io.log(f'Saving `GaugeDynamics.vnet` to {vnet_files}.')
-        dynamics.xnet.save(xnet_files)
-        dynamics.vnet.save(vnet_files)
+        # Save only if not running generic HMC
+        if not dynamics.config.get('hmc', False):
+            xnet_files = os.path.join(dirs.models_dir, 'dynamics_xnet')
+            vnet_files = os.path.join(dirs.models_dir, 'dynamics_vnet')
+            io.log(f'Saving `GaugeDynamics.xnet` to {xnet_files}.')
+            io.log(f'Saving `GaugeDynamics.vnet` to {vnet_files}.')
+            dynamics.xnet.save(xnet_files)
+            dynamics.vnet.save(vnet_files)
+
+    return output
 
 
 # pylint: disable=broad-except
@@ -434,13 +430,6 @@ def train_dynamics(
         if (step + 1) > warmup_steps and (step + 1) % steps_per_epoch == 0:
             #  logs = {'loss': train_data.data.get('loss', None)}
             reduce_lr.on_epoch_end(step+1, {'loss': metrics.loss})
-
-        # Check if ALL chains are stuck, refresh x if so
-        #  px = tf.reduce_mean(metrics.accept_prob)
-        #  if px < 0.1:
-        #      io.log(f'Refreshing x! (avg(accept_prob): {px})',
-        #             level='WARNING', should_print=True)
-        #      x = tf.random.normal(dynamics.x_shape)
 
         # Save checkpoints and dump configs `x` from each rank
         if should_save(step + 1):
