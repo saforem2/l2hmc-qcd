@@ -176,8 +176,6 @@ class GaugeDynamics(BaseDynamics):
             if log_dir is None:
                 self.xnet, self.vnet = self._build_networks(self.net_config,
                                                             self.conv_config)
-                # Build feature extractor (fe) networks for summaries
-                #  feature_extractors = self._build_feature_extractors()
             else:
                 io.log(f'Loading `xnet`, `vnet`, from {log_dir} !!')
                 self.xnet, self.vnet = self._load_networks(log_dir)
@@ -221,8 +219,8 @@ class GaugeDynamics(BaseDynamics):
                 for i in range(self.config.num_steps)
             ]
             for idx, (xf, vf) in enumerate(zip(xnet_paths, vnet_paths)):
-                xnet = self.xnet[idx]
-                vnet = self.vnet[idx]
+                xnet = self.xnet[idx]  # type: tf.keras.models.Model
+                vnet = self.vnet[idx]  # type: tf.keras.models.Model
                 io.log(f'Saving `xnet{idx}` to {xf}.')
                 io.log(f'Saving `vnet{idx}` to {vf}.')
                 xnet.save(xf)
@@ -234,24 +232,6 @@ class GaugeDynamics(BaseDynamics):
             io.log(f'Saving `vnet` to {vnet_paths}.')
             self.xnet.save(xnet_paths)
             self.vnet.save(vnet_paths)
-
-    def _build_feature_extractors(self):
-        """Build feature extractor models for xnet, vnet."""
-        if self.config.separate_networks:
-            xnet_feature_extractor = []
-            vnet_feature_extractor = []
-            for step in range(self.config.num_steps):
-                xnet = self.xnet[step]
-                vnet = self.vnet[step]
-                xfe = self._build_feature_extractor(xnet)
-                vfe = self._build_feature_extractor(vnet)
-                xnet_feature_extractor.append(xfe)
-                vnet_feature_extractor.append(vfe)
-        else:
-            xnet_feature_extractor = self._build_feature_extractor(self.xnet)
-            vnet_feature_extractor = self._build_feature_extractor(self.vnet)
-
-        return xnet_feature_extractor, vnet_feature_extractor
 
     def _build_networks(
             self,
