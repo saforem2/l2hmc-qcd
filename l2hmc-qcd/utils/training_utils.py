@@ -175,7 +175,7 @@ def train(
     return x, dynamics, train_data, flags
 
 
-# pylint:disable=too-many-statements
+# pylint:disable=too-many-statements, too-many-branches
 def setup(dynamics, flags, dirs=None, x=None, betas=None):
     """Setup training."""
     train_data = DataContainer(flags.train_steps, dirs=dirs,

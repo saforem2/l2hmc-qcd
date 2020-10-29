@@ -6,8 +6,6 @@ file_io.py
 import os
 import sys
 import time
-import json
-import pickle
 import typing
 import logging
 import datetime
@@ -113,20 +111,8 @@ def write(s: str, f: str, mode: str = 'a', nl: bool = True):
         f_.write(s + '\n' if nl else ' ')
 
 
-def log_tqdm(s, out=sys.stdout):
-    """Write to output using `tqdm`."""
-    #  if NUM_NODES > 1:
-    #      log(s)
-    #  else:
-    #      if isinstance(s, (tuple, list)):
-    #          for i in s:
-    #              tqdm.write(i, file=out)
-    #      else:
-    #          tqdm.write(s, file=out)
-    pass
-
-
 def print_dict(d, indent=0, name=None, **kwargs):
+    """Print nicely-formatted dictionary."""
     indent_str = indent * ' '
     if name is not None:
         log(f'{indent_str}{name}:', **kwargs)
@@ -146,7 +132,7 @@ def print_flags(flags: AttrDict):
     ))
 
 
-def setup_directories(flags, name='training', new_beta=False, save=True):
+def setup_directories(flags, name='training', save=True):
     """Setup relevant directories for training."""
     if isinstance(flags, dict):
         flags = AttrDict(flags)
@@ -473,11 +459,12 @@ def parse_configs(flags, debug=False):
     return fstr.replace('.', '')
 
 
-def get_timestamp(format=None):
+def get_timestamp(fstr=None):
+    """Get formatted timestamp."""
     now = datetime.datetime.now()
-    if format is None:
+    if fstr is None:
         return now.strftime('%Y-%m-%d-%H%M%S')
-    return now.strftime(format)
+    return now.strftime(fstr)
 
 
 # pylint:disable=too-many-arguments

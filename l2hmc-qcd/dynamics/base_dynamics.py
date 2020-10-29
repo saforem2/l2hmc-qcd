@@ -62,7 +62,6 @@ def identity(x):
     return x
 
 
-tf.keras.models.Model.call
 # pylint:disable=attribute-defined-outside-init
 # pylint:disable=invalid-name, too-many-instance-attributes
 # pylint:disable=too-many-arguments, too-many-locals, too-many-ancestors

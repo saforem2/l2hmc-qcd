@@ -68,16 +68,6 @@ class DataContainer:
             k: tf.reduce_mean(v) for k, v in metrics.items() if k not in skip
         }
 
-        #  try:
-        #      n = step - self.print_steps
-        #      data['dt'] = tf.reduce_mean(self.data['dt'][-n:])
-        #      data['dt'] = 0.5 * (
-        #          data['dt'] + tf.reduce_mean(self.data['dt'][-n:])
-        #      )
-        #
-        #  except (IndexError, KeyError):
-        #      pass
-
         fstr = (
             f'{step:>5g}/{self.steps:<5g} '
             + ''.join([f'{v:^12.4g}' for _, v in data.items()])
@@ -118,7 +108,7 @@ class DataContainer:
         for key, val in zip(keys, data_files):
             if 'x_rank' in key:
                 continue
-            io.log_tqdm(f'Restored {key} from {val}.')
+            io.log(f'Restored {key} from {val}.')
             data[key] = io.loadz(val)
 
         return AttrDict(data)
@@ -161,7 +151,7 @@ class DataContainer:
         avg_df = pd.DataFrame(avg_data, index=[0])
         csv_file = os.path.join(BASE_DIR, 'logs', 'GaugeModel_logs',
                                 'inference_results.csv')
-        io.log_tqdm(f'Appending inference results to {csv_file}.')
+        io.log(f'Appending inference results to {csv_file}.')
         if not os.path.isfile(csv_file):
             avg_df.to_csv(csv_file, header=True, index=False, mode='w')
         else:
@@ -171,15 +161,15 @@ class DataContainer:
     def dump_configs(x, data_dir, rank=0, local_rank=0):
         """Save configs `x` separately for each rank."""
         xfile = os.path.join(data_dir, f'x_rank{rank}-{local_rank}.z')
-        io.log_tqdm('Saving configs from rank '
-                    f'{rank}-{local_rank} to: {xfile}.')
+        io.log('Saving configs from rank '
+               f'{rank}-{local_rank} to: {xfile}.')
         head, _ = os.path.split(xfile)
         io.check_else_make_dir(head)
         joblib.dump(x, xfile)
 
     # pylint:disable=too-many-arguments
     def save_and_flush(
-        self, data_dir=None, log_file=None, rank=0, mode='a'
+            self, data_dir=None, log_file=None, rank=0, mode='a'
     ):
         """Call `self.save_data` and `self.flush_data_strs`."""
         if data_dir is None:
