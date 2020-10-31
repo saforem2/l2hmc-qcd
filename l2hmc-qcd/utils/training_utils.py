@@ -1,10 +1,11 @@
+# noqa: F401
+# pylint: disable=unused-import,invalid-name
+# pylint: disable=no-member,too-many-locals,protected-access
 """
 training_utils.py
 
 Implements helper functions for training the model.
 """
-# noqa: F401
-# pylint:disable=unused-import
 from __future__ import absolute_import, division, print_function
 
 import os
@@ -57,11 +58,6 @@ if tf.__version__.startswith('1.'):
 #      tf.config.experimental.enable_mlir_graph_optimization()
 #  except:  # noqa: E722
 #      pass
-
-# pylint:disable=no-member
-# pylint:disable=too-many-locals
-# pylint:disable=protected-access
-# pylint:disable=invalid-name
 
 
 @timeit(out_file=None)
@@ -141,7 +137,8 @@ def train(
             xfile = os.path.join(dirs.train_dir, 'train_data',
                                  f'x_rank{RANK}-{LOCAL_RANK}.z')
             x = io.loadz(xfile)
-        except FileNotFoundError:
+        except Exception as e:  # pylint:disable=broad-except
+            io.log(f'exception: {e}')
             io.log(f'Unable to restore x from {xfile}. Using random init.')
 
     if x is None:
@@ -264,31 +261,31 @@ def setup(dynamics, flags, dirs=None, x=None, betas=None):
         'pstop': pstop,
     })
 
-    if dynamics.config.separate_networks:
-        xnet_files = [
-            os.path.join(dirs.models_dir, f'dynamics_xnet{i}')
-            for i in range(dynamics.config.num_steps)
-        ]
-        vnet_files = [
-            os.path.join(dirs.models_dir, f'dynamics_vnet{i}')
-            for i in range(dynamics.config.num_steps)
-        ]
-        for idx, (xf, vf) in enumerate(zip(xnet_files, vnet_files)):
-            xnet = dynamics.xnet[idx]
-            vnet = dynamics.vnet[idx]
-            io.log(f'Saving `GaugeDynamics.xnet{idx}` to {xf}.')
-            io.log(f'Saving `GaugeDynamics.vnet{idx}` to {vf}.')
-            xnet.save(xf)
-            vnet.save(vf)
-    else:
-        # Save only if not running generic HMC
-        if not dynamics.config.get('hmc', False):
-            xnet_files = os.path.join(dirs.models_dir, 'dynamics_xnet')
-            vnet_files = os.path.join(dirs.models_dir, 'dynamics_vnet')
-            io.log(f'Saving `GaugeDynamics.xnet` to {xnet_files}.')
-            io.log(f'Saving `GaugeDynamics.vnet` to {vnet_files}.')
-            dynamics.xnet.save(xnet_files)
-            dynamics.vnet.save(vnet_files)
+    #  if dynamics.config.separate_networks:
+    #      xnet_files = [
+    #          os.path.join(dirs.models_dir, f'dynamics_xnet{i}')
+    #          for i in range(dynamics.config.num_steps)
+    #      ]
+    #      vnet_files = [
+    #          os.path.join(dirs.models_dir, f'dynamics_vnet{i}')
+    #          for i in range(dynamics.config.num_steps)
+    #      ]
+    #      for idx, (xf, vf) in enumerate(zip(xnet_files, vnet_files)):
+    #          xnet = dynamics.xnet[idx]
+    #          vnet = dynamics.vnet[idx]
+    #          io.log(f'Saving `GaugeDynamics.xnet{idx}` to {xf}.')
+    #          io.log(f'Saving `GaugeDynamics.vnet{idx}` to {vf}.')
+    #          xnet.save(xf)
+    #          vnet.save(vf)
+    #  else:
+    #      # Save only if not running generic HMC
+    #      if not dynamics.config.get('hmc', False):
+    #          xnet_files = os.path.join(dirs.models_dir, 'dynamics_xnet')
+    #          vnet_files = os.path.join(dirs.models_dir, 'dynamics_vnet')
+    #          io.log(f'Saving `GaugeDynamics.xnet` to {xnet_files}.')
+    #          io.log(f'Saving `GaugeDynamics.vnet` to {vnet_files}.')
+    #          dynamics.xnet.save(xnet_files)
+    #          dynamics.vnet.save(vnet_files)
 
     return output
 
@@ -409,6 +406,7 @@ def train_dynamics(
                                    skip=['charges'],
                                    prepend=['{:^12s}'.format('step')])
     if IS_CHIEF:
+        #  hstr = ["[bold red blink]"] + header.split('\n') + ["[/]"]
         io.log(header.split('\n'), should_print=True)
         if NUM_NODES == 1:
             ctup = (CBARS['blue'], CBARS['yellow'],
