@@ -276,7 +276,7 @@ class GaugeDynamics(BaseDynamics):
         vnet_cfg = {
             'factor': 1.0,
             'net_config': net_config,
-            'conv_config': None,
+            'conv_config': conv_config,
             'kernel_initializer': kinit,
             'lattice_shape': self.lattice_shape,
             'input_shapes': {
