@@ -94,13 +94,25 @@ The [`GaugeDynamics`](l2hmc-qcd/dynamics/gauge_dynamics.py) is a subclass of `Ba
 
 The network is defined in [` l2hmc-qcd/network/functional_net.py`](l2hmc-qcd/network/functional_net.py).
 
-An illustration of the `xNet` network can be seen below.
 
+### Network Architecture
+An illustration of the `xNet` network architecture used for updating the position variable `x` can be seen below.
 
 <div align="center">
- <img src="assets/net.png" alt="Network architecture"/>
+ <img src="assets/net.png" alt="xNet network architecture" width=800/>
 </div>
 
+The network takes as input the position `x`, momentum `v` and a fictitious time `t` variable and outputs the quantities `Sx, Tx, Qx`, which are then used in the augmented Hamiltonian dynamics to update `x`.
+
+Similarly, the network used for updating the momentum variable `v` has an identical architecture, taking as inputs the position `x`, the gradient of the potential, `dUdX`, and the same fictitious time `t`, and outputs the quantities `Sv, Tv, Qv` which are then used to update `v`.
+
+Explicitly:
+```
+xNet: (x, v, t) --> (Sx, Tx, Qx)
+vNet: (x, dUdX, t) --> (Sv, Tv, Qv)
+```
+
+**Note:** In the image above, the quantities `x', v', t'` represent the outputs of a Dense layer followed by a `ReLu` nonlinearity.
 
 ## Lattice
 
@@ -134,10 +146,8 @@ Or via the [` bin/train.sh `](bin/train.sh) script provided in [` bin/ `](bin/).
   horovodrun -np ${PROCS} python3 ${TRAINER} --json_file=${JSON_FILE}
   ```
 
-  
-
 # Contact
-
+---
 ***Code author:*** Sam Foreman
 
 ***Pull requests and issues should be directed to:*** [saforem2](http://github.com/saforem2)
