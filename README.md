@@ -145,7 +145,7 @@ Or via the [` bin/train.sh `](bin/train.sh) script provided in [` bin/ `](bin/).
 ## Citation
 
 If you use this code, please cite the original paper:
-```
+```bibtex
 @article{levy2017generalizing,
   title={Generalizing Hamiltonian Monte Carlo with Neural Networks},
   author={Levy, Daniel and Hoffman, Matthew D. and Sohl-Dickstein, Jascha},
@@ -157,7 +157,7 @@ If you use this code, please cite the original paper:
 # Acknowledgement
 
 <div align="center">
- <img src="assets/anl.png" alt="Argonne National Laboratory Icon"/>
+ <img src="assets/anl.png" alt="Argonne National Laboratory Icon" style="width:85vw; min-width:300px; height=auto"/>
 </div>
 This research used resources of the Argonne Leadership Computing Facility, which is a DOE Office of Science User Facility supported under contract DE_AC02-06CH11357.  This work describes objective technical results and analysis. Any subjective views or opinions that might be expressed in the work do not necessarily represent the views of the U.S. DOE or the United States
 Government. Declaration of Interests - None.
