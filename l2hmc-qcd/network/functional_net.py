@@ -187,7 +187,11 @@ def get_gauge_network(
             f2 = conv_config.sizes[1]
             p1 = conv_config.pool_sizes[0]
 
-            x = tf.reshape(x_input, shape=(batch_size, T, X, d + 2))
+            if 'xnet' in name.lower():
+                x = tf.reshape(x_input, shape=(batch_size, T, X, d + 2))
+            else:
+                x = tf.reshape(x_input, shape=(batch_size, T, X, d))
+
             x = PeriodicPadding(f1 - 1)(x)
             x = layers.Conv2D(n1, f1, activation='relu',
                               name=f'{name}/xConv1')(x)
