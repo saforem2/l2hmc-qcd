@@ -156,8 +156,9 @@ If you use this code, please cite the original paper:
 
 # Acknowledgement
 
+ <!-- <img src="assets/anl.png" alt="Argonne National Laboratory Icon" style="width:85vw; min-width:300px; height=auto"/> -->
 <div align="center">
- <img src="assets/anl.png" alt="Argonne National Laboratory Icon" style="width:85vw; min-width:300px; height=auto"/>
+ <img src="assets/anl.png" alt="Argonne National Laboratory Icon" width=500/>
 </div>
 This research used resources of the Argonne Leadership Computing Facility, which is a DOE Office of Science User Facility supported under contract DE_AC02-06CH11357.  This work describes objective technical results and analysis. Any subjective views or opinions that might be expressed in the work do not necessarily represent the views of the U.S. DOE or the United States
 Government. Declaration of Interests - None.
