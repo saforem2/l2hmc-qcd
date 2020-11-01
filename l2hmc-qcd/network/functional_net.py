@@ -52,7 +52,7 @@ class PeriodicPadding(layers.Layer):
         super(PeriodicPadding, self).__init__(**kwargs)
         self._size = size
 
-    def call(self, inputs, training=None):
+    def call(self, inputs, training=None, masks=None):
         """Call the network (forward-pass)."""
         z1 = inputs[:, -self._size:, :, ...]
         z2 = inputs[:, 0:self._size, :, ...]

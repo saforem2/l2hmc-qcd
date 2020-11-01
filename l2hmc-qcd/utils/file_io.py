@@ -3,6 +3,9 @@ file_io.py
 """
 # pylint:disable=too-many-branches, too-many-statements
 # pylint:disable=too-many-locals,invalid-name,too-many-locals
+# pylint:disable=too-many-arguments
+from __future__ import absolute_import, annotations, division, print_function
+
 import os
 import sys
 import time
@@ -10,11 +13,26 @@ import typing
 import logging
 import datetime
 
+from typing import Any, Dict, Type
+from tqdm.auto import tqdm
+
 import joblib
 import numpy as np
 
 try:
+    from rich.logging import RichHandler
+    handlers = [RichHandler(rich_tracebacks=True)]
+
+except ImportError:
+    handlers = []
+
+
+if typing.TYPE_CHECKING:
+    from dynamics.base_dynamics import BaseDynamics
+
+try:
     import horovod.tensorflow as hvd
+
     RANK = hvd.rank()
     NUM_WORKERS = hvd.size()
     IS_CHIEF = (RANK == 0)
@@ -25,10 +43,9 @@ except (ImportError, ModuleNotFoundError):
     IS_CHIEF = (RANK == 0)
     HAS_HOROVOD = False
 
-from tqdm.auto import tqdm
+# pylint:disable=wrong-import-position
 from config import PROJECT_DIR
 from utils.attr_dict import AttrDict
-
 
 LOG_LEVELS_AS_INTS = {
     'CRITICAL': 50,
@@ -53,7 +70,8 @@ if IS_CHIEF:
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s:%(levelname)s:%(message)s",
-        stream=sys.stdout,
+        #  stream=sys.stdout,
+        handlers=handlers
     )
 else:
     logging.basicConfig(
@@ -68,6 +86,7 @@ def in_notebook():
     try:
         # pylint:disable=import-outside-toplevel
         from IPython import get_ipython
+
         try:
             cfg = get_ipython().config
             if 'IPKernelApp' not in cfg:
@@ -111,7 +130,7 @@ def write(s: str, f: str, mode: str = 'a', nl: bool = True):
         f_.write(s + '\n' if nl else ' ')
 
 
-def print_dict(d, indent=0, name=None, **kwargs):
+def print_dict(d: Dict, indent: int = 0, name: str = None, **kwargs):
     """Print nicely-formatted dictionary."""
     indent_str = indent * ' '
     if name is not None:
@@ -127,12 +146,15 @@ def print_dict(d, indent=0, name=None, **kwargs):
 
 def print_flags(flags: AttrDict):
     """Helper method for printing flags."""
-    log('\n'.join(
-        [80 * '=', 'FLAGS:', *[f' {k}: {v}' for k, v in flags.items()]]
-    ))
+    strs = [80 * '=', 'FLAGS:', *[f' {k}: {v}' for k, v in flags.items()]]
+    log('\n'.join(strs))
 
 
-def setup_directories(flags, name='training', save=True):
+def setup_directories(
+        flags: AttrDict,
+        name: str = 'training',
+        save_flags: bool = True
+):
     """Setup relevant directories for training."""
     if isinstance(flags, dict):
         flags = AttrDict(flags)
@@ -156,14 +178,12 @@ def setup_directories(flags, name='training', save=True):
         check_else_make_dir(
             [d for k, d in train_paths.items() if 'file' not in k],
         )
-        #  if not flags.get('restore', False):
-        if save:
+        if save_flags:
             save_params(dict(flags), train_dir, 'FLAGS')
 
     return train_paths
 
 
-# pylint:disable=too-many-arguments
 def make_header_from_dict(
         data: dict,
         dash: str = '-',
@@ -268,7 +288,7 @@ def print_args(args: dict):
     log(80 * '=')
 
 
-def savez(obj: typing.Any, fpath: str, name: str = None):
+def savez(obj: Any, fpath: str, name: str = None):
     """Save `obj` to compressed `.z` file at `fpath`."""
     if RANK != 0:
         return
@@ -376,7 +396,7 @@ def get_run_dir_fstr(flags: AttrDict):
     return fstr
 
 
-def parse_configs(flags, debug=False):
+def parse_configs(flags: AttrDict, debug: bool = False):
     """Parse configs to construct unique string for naming `log_dir`."""
     config = AttrDict(flags.get('dynamics_config', None))
     net_config = AttrDict(flags.get('network_config', None))
@@ -400,8 +420,6 @@ def parse_configs(flags, debug=False):
     pw = config.get('plaq_weight', None)
     aw = config.get('aux_weight', None)
     act = net_config.get('activation_fn', None)
-    if qw > 0:
-        fstr += f'_qw{qw}'
     if pw > 0:
         fstr += f'_pw{pw}'
     if aw > 0:
@@ -456,6 +474,9 @@ def parse_configs(flags, debug=False):
     if config.get('use_tempered_trajectories', False):
         fstr += '_temperedTraj'
 
+    if config.get('use_batch_norm', False):
+        fstr += '_bNorm'
+
     return fstr.replace('.', '')
 
 
@@ -467,15 +488,14 @@ def get_timestamp(fstr=None):
     return now.strftime(fstr)
 
 
-# pylint:disable=too-many-arguments
-def make_log_dir(FLAGS, model_type=None, log_file=None, root_dir=None,
-                 timestamps=None):
+def make_log_dir(
+        configs: AttrDict,
+        model_type: str = None,
+        log_file: str = None,
+        root_dir: str = None,
+        timestamps: AttrDict = None
+):
     """Automatically create and name `log_dir` to save model data to.
-
-    The created directory will be located in `logs/YYYY_M_D /`, and will have
-    the format(without `_qw{QW}` if running generic HMC):
-
-        `lattice{LX}_batch{NS}_lf{LF}_eps{SS}_qw{QW}`
 
     Returns:
         FLAGS, with FLAGS.log_dir being equal to the newly created log_dir.
@@ -483,7 +503,7 @@ def make_log_dir(FLAGS, model_type=None, log_file=None, root_dir=None,
     NOTE: If log_dir does not already exist, it is created.
     """
     model_type = 'GaugeModel' if model_type is None else model_type
-    cfg_str = parse_configs(FLAGS)
+    cfg_str = parse_configs(configs)
 
     if timestamps is None:
         timestamps = AttrDict({
@@ -494,10 +514,6 @@ def make_log_dir(FLAGS, model_type=None, log_file=None, root_dir=None,
             'second': get_timestamp('%Y-%m-%d-%H%M%S'),
         })
 
-    #  month_str = get_timestamp('%Y_%m')
-    #  time_str = get_timestamp('%Y-%m-%d-%H%M%S')
-    #  run_str = f'{cfg_str}-{timestamps.month}'
-
     if root_dir is None:
         root_dir = PROJECT_DIR
 
@@ -505,7 +521,6 @@ def make_log_dir(FLAGS, model_type=None, log_file=None, root_dir=None,
     if cfg_str.startswith('DEBUG'):
         dirs.append('test')
 
-    #  log_dir = os.path.join(*dirs, month_str, run_str)
     log_dir = os.path.join(*dirs, timestamps.month, cfg_str)
     if os.path.isdir(log_dir) and NUM_WORKERS == 1:
         log_dir = os.path.join(*dirs, timestamps.month,
@@ -516,9 +531,6 @@ def make_log_dir(FLAGS, model_type=None, log_file=None, root_dir=None,
 
         log('\n'.join(['Existing directory found with the same name!',
                        'Modifying the date string to include seconds.']))
-        #  dstr = get_timestamp('%Y-%m-%d-%H%M%S')
-        #  run_str = f'{cfg_str}-{dstr}'
-        #  log_dir = os.path.join(*dirs, month_str, run_str)
 
     if RANK == 0:
         check_else_make_dir(log_dir)
@@ -547,7 +559,7 @@ def make_run_dir(FLAGS, base_dir):
     return run_dir
 
 
-def save_network_weights(dynamics, train_dir):
+def save_network_weights(dynamics: Type[BaseDynamics], train_dir):
     """Save network weights as dictionary to `.z` files."""
     xnets = dynamics.xnets
     vnets = dynamics.vnets
