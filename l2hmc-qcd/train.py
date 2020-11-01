@@ -144,9 +144,10 @@ if __name__ == '__main__':
     #      tensor_debug_mode="FULL_HEALTH",
     #  )
 
-    FLAGS = parse_configs()
-    FLAGS = AttrDict(FLAGS.__dict__)
-    main(FLAGS)
+    CONFIGS = parse_configs()
+    CONFIGS = AttrDict(CONFIGS.__dict__)
+    io.print_dict(CONFIGS)
+    main(CONFIGS)
     #
     #  debug_events_writer.FlushExecutionFiles()
     #  debug_events_writer.FlushNonExecutionFiles()
