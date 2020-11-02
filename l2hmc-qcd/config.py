@@ -112,6 +112,9 @@ PROJECT_DIR = ROOT_DIR
 BASE_DIR = ROOT_DIR
 BIN_DIR = os.path.join(PROJECT_DIR, 'bin')
 LOGS_DIR = os.path.join(PROJECT_DIR, 'logs')
+PLOTS_DIR = os.path.join(PROJECT_DIR, 'plots')
+DOC_DIR = os.path.join(PROJECT_DIR, 'doc')
+TEX_FIGURES_DIR = os.path.join(DOC_DIR, 'figures')
 GAUGE_LOGS_DIR = os.path.join(LOGS_DIR, 'GaugeModel_logs')
 HMC_LOGS_DIR = os.path.join(GAUGE_LOGS_DIR, 'hmc_logs')
 
