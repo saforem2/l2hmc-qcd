@@ -20,25 +20,9 @@ import tensorflow as tf
 
 import utils.file_io as io
 
-try:
-    import horovod.tensorflow as hvd
-
-    HAS_HOROVOD = True
-    RANK = hvd.rank()
-    LOCAL_RANK = hvd.local_rank()
-    IS_CHIEF = (RANK == 0)
-    NUM_NODES = hvd.size()
-    io.log(f'Number of devices: {NUM_NODES}')
-except (ImportError, ModuleNotFoundError):
-    HAS_HOROVOD = False
-    RANK = 0
-    LOCAL_RANK = 0
-    IS_CHIEF = (RANK == 0)
-    NUM_NODES = 1
-    io.log(f'Number of devices: {NUM_NODES}')
-
 from config import CBARS, NET_WEIGHTS_HMC, TF_FLOAT
 from network.config import LearningRateConfig
+from utils import RANK, LOCAL_RANK, IS_CHIEF, NUM_WORKERS
 from utils.file_io import timeit
 from utils.attr_dict import AttrDict
 from utils.summary_utils import update_summaries
@@ -304,7 +288,7 @@ def train_dynamics(
     # setup...
     factor = flags.get('reduce_lr_factor', 0.5)
     patience = flags.get('patience', 10)
-    min_lr = flags.get('min_lr')
+    min_lr = flags.get('min_lr', 1e-5)
     warmup_steps = dynamics.lr_config.get('warmup_steps', 1000)
     reduce_lr = ReduceLROnPlateau(monitor='loss', mode='min',
                                   warmup_steps=warmup_steps,
@@ -408,7 +392,7 @@ def train_dynamics(
     if IS_CHIEF:
         #  hstr = ["[bold red blink]"] + header.split('\n') + ["[/]"]
         io.log(header.split('\n'), should_print=True)
-        if NUM_NODES == 1:
+        if NUM_WORKERS == 1:
             ctup = (CBARS['blue'], CBARS['yellow'],
                     CBARS['blue'], CBARS['reset'])
             steps = tqdm(steps, desc='training', unit='step',
@@ -436,6 +420,8 @@ def train_dynamics(
             if IS_CHIEF:
                 manager.save()
                 dynamics.save_networks(dirs.log_dir)
+                io.log(f'Checkpoint saved to: {manager.latest_checkpoint}',
+                       should_print=True)
                 #  save_models(dynamics, dirs)
                 train_data.save_and_flush(dirs.data_dir,
                                           dirs.log_file,
@@ -461,6 +447,7 @@ def train_dynamics(
     if IS_CHIEF:
         manager.save()
         io.log(f'Checkpoint saved to: {manager.latest_checkpoint}')
+        dynamics.save_networks(dirs.log_dir)
         train_data.save_and_flush(dirs.data_dir,
                                   dirs.log_file,
                                   rank=RANK, mode='a')
