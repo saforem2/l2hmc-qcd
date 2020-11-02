@@ -15,13 +15,21 @@ try:
     for gpu in GPUS:
         tf.config.experimental.set_memory_growth(gpu, True)
     if GPUS:
-        gpu = GPUS[hvd.local_rank()]
+        gpu = GPUS[hvd.local_rank()]  # pylint:disable=invalid-name
         tf.config.experimental.set_visible_devices(gpu, 'GPU')
 
     HAS_HOROVOD = True
+    RANK = hvd.rank()
+    LOCAL_RANK = hvd.local_rank()
+    NUM_WORKERS = hvd.size()
+    IS_CHIEF = (RANK == 0)
 
 except (ImportError, ModuleNotFoundError):
     HAS_HOROVOD = False
+    RANK = 0
+    LOCAL_RANK = 0
+    NUM_WORKERS = 1
+    IS_CHIEF = (RANK == 0)
 
 
 class DummyTqdmFile:
