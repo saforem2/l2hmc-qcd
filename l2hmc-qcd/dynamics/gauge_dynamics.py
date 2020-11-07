@@ -446,12 +446,12 @@ class GaugeDynamics(BaseDynamics):
                 metrics['logdets'].append(logdets_)
                 metrics['Hw'].append(energy_ - logdets_)
 
-            metrics.update({
-                'energies_transformed': [
-                    (energies.read(i) - logdets.read(i))
-                    for i in range(self.config.num_steps)
-                ]
-            })
+            #  metrics.update({
+            #      'energies_transformed': [
+            #          (energies.read(i) - logdets.read(i))
+            #          for i in range(self.config.num_steps)
+            #      ]
+            #  })
         #  metrics.update({
         #      'energies': {
         #          f'energy_lf{i}': energies.read(i)
@@ -583,12 +583,15 @@ class GaugeDynamics(BaseDynamics):
             logdets = logdets.write(step, sumlogdet)
             energies = energies.write(step, self.hamiltonian(state_prop))
             metrics.update({
-                'energies_transformed': [
-                    (energies.read(i) - logdets.read(i))
-                    for i in range(self.config.num_steps)
-                ]
+                'H': [], 'Hw': [], 'logdets': [],
             })
-            #
+            for i in range(self.config.num_steps):
+                energy_ = energies.read(i)
+                logdets_ = logdets.read(i)
+                metrics['H'].append(energy_)
+                metrics['logdets'].append(logdets_)
+                metrics['Hw'].append(energy_ - logdets_)
+
             #  logdets = logdets.write(self.config.num_steps, sumlogdet)
             #  energies = energies.write(self.config.num_steps,
             #                            self.hamiltonian(state_prop))
