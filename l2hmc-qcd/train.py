@@ -85,15 +85,22 @@ def main(args):
     beta_init = args.get('beta_init', None)
     beta_final = args.get('beta_final', None)
     if log_dir is not None:  # we want to restore from latest checkpoint
-        train_steps = args.get('train_steps', None)
-        args = restore_flags(args, os.path.join(args.log_dir, 'training'))
-        args.train_steps = train_steps  # use newly passed value
         args.restore = True
+        train_steps = args.get('train_steps', None)
+        restored = restore_flags(args, os.path.join(args.log_dir, 'training'))
+        for key, val in args.items():
+            if key in restored:
+                if val != restored[key]:
+                    print(f'Restored {key}: {restored[key]}')
+                    print(f'Using {key}: {val}')
+
+        args.update({
+            'train_steps': train_steps,
+        })
         if beta_init != args.get('beta_init', None):
             args.beta_init = beta_init
         if beta_final != args.get('beta_final', None):
             args.beta_final = beta_final
-        args.train_steps = train_steps
 
     else:  # New training session
         timestamps = AttrDict({
@@ -121,14 +128,16 @@ def main(args):
                 eps = io.loadz(eps_file)
                 args.dynamics_config['eps'] = eps
 
-    _, dynamics, _, args = train(args, x=x)
+    x, dynamics, train_data, args = train(args, x=x)
 
     # ====
     # Run inference on trained model
     if args.get('run_steps', 5000) > 0:
         # ====
         # Run with random start
-        dynamics, _, _ = run(dynamics, args)
+        dynamics, run_data, x, _ = run(dynamics, args,
+                                       dirs=args.dirs,
+                                       save_x=False)
 
         # ====
         # Run HMC
