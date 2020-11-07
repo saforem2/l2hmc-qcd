@@ -92,8 +92,9 @@ def build_test_dynamics():
 def build_dynamics(flags):
     """Build dynamics using configs from FLAGS."""
     lr_config = LearningRateConfig(**dict(flags.get('lr_config', None)))
+    log_dir = flags['dynamics_config'].pop('log_dir', None)
+    config = GaugeDynamicsConfig(**dict(flags.get('dynamics_config', None)))
     #  config = GaugeDynamicsConfig(**dict(flags.get('dynamics_config', None)))
-    config = AttrDict(flags.get('dynamics_config', None))
     net_config = NetworkConfig(**dict(flags.get('network_config', None)))
     conv_config = None
 
@@ -103,9 +104,18 @@ def build_dynamics(flags):
         conv_config.update({
             'input_shape': input_shape,
         })
-        conv_config = ConvolutionConfig(**conv_config)
+        conv_config = ConvolutionConfig(**dict(conv_config))
 
-    return GaugeDynamics(flags, config, net_config, lr_config, conv_config)
+    dynamics = GaugeDynamics(
+        params=flags,
+        config=config,
+        network_config=net_config,
+        lr_config=lr_config,
+        conv_config=conv_config,
+        log_dir=log_dir
+    )
+
+    return dynamics
 
 
 class GaugeDynamics(BaseDynamics):
@@ -117,7 +127,8 @@ class GaugeDynamics(BaseDynamics):
             config: GaugeDynamicsConfig,
             network_config: Optional[NetworkConfig] = None,
             lr_config: Optional[LearningRateConfig] = None,
-            conv_config: Optional[ConvolutionConfig] = None
+            conv_config: Optional[ConvolutionConfig] = None,
+            log_dir: Optional[str] = None,
     ):
         # ====
         # Set attributes from `config`
@@ -317,11 +328,11 @@ class GaugeDynamics(BaseDynamics):
         logdets = tf.TensorArray(TF_FLOAT,
                                  dynamic_size=True,
                                  size=self.batch_size,
-                                 clear_after_read=True)
+                                 clear_after_read=False)
         energies = tf.TensorArray(TF_FLOAT,
                                   dynamic_size=True,
                                   size=self.batch_size,
-                                  clear_after_read=True)
+                                  clear_after_read=False)
         # ====
         # Forward for first half of trajectory
         for step in range(self.config.num_steps // 2):
@@ -375,16 +386,17 @@ class GaugeDynamics(BaseDynamics):
         logdets = tf.TensorArray(TF_FLOAT,
                                  dynamic_size=True,
                                  size=self.batch_size,
-                                 clear_after_read=True)
+                                 clear_after_read=False)
         energies = tf.TensorArray(TF_FLOAT,
                                   dynamic_size=True,
                                   size=self.batch_size,
-                                  clear_after_read=True)
+                                  clear_after_read=False)
 
         for step in range(self.config.num_steps):
             if self._verbose:
+                energy = self.hamiltonian(state_prop)
                 logdets = logdets.write(step, sumlogdet)
-                energies = energies.write(step, self.hamiltonian(state_prop))
+                energies = energies.write(step, energy)
 
             state_prop, logdet = lf_fn(step, state_prop, training)
             sumlogdet += logdet
@@ -396,14 +408,33 @@ class GaugeDynamics(BaseDynamics):
             'accept_prob': accept_prob,
         })
         if self._verbose:
+            logdets = logdets.write(step, sumlogdet)
+            energies = energies.write(step, self.hamiltonian(state_prop))
             metrics.update({
-                'energies': [
-                    energies.read(i) for i in range(self.config.num_steps)
-                ],
-                'logdets': [
-                    logdets.read(i) for i in range(self.config.num_steps)
-                ],
+                'H': [], 'Hw': [], 'logdets': [],
             })
+            for i in range(self.config.num_steps):
+                energy_ = energies.read(i)
+                logdets_ = logdets.read(i)
+                metrics['H'].append(energy_)
+                metrics['logdets'].append(logdets_)
+                metrics['Hw'].append(energy_ - logdets_)
+
+            metrics.update({
+                'energies_transformed': [
+                    (energies.read(i) - logdets.read(i))
+                    for i in range(self.config.num_steps)
+                ]
+            })
+        #  metrics.update({
+        #      'energies': {
+        #          f'energy_lf{i}': energies.read(i)
+        #          energies.read(i) for i in range(self.config.num_steps)
+        #      },
+        #      'logdets': [
+        #          logdets.read(i) for i in range(self.config.num_steps)
+        #      ],
+        #  })
 
         return state_prop, metrics
 
@@ -414,25 +445,24 @@ class GaugeDynamics(BaseDynamics):
     ):
         """Run the augmented leapfrog sampler in the forward direction."""
         sumlogdet = tf.zeros((self.batch_size,))
-        logdets = tf.TensorArray(TF_FLOAT,
-                                 dynamic_size=True,
-                                 size=self.batch_size,
-                                 clear_after_read=True)
-        energies = tf.TensorArray(TF_FLOAT,
-                                  dynamic_size=True,
-                                  size=self.batch_size,
-                                  clear_after_read=True)
-        #  step = 0
         state_prop = State(state.x, state.v, state.beta)
+        if self._verbose:
+            kwargs = {
+                'dynamic_size': True,
+                'size': self.batch_size,
+                'clear_after_read': False
+            }
+            logdets = tf.TensorArray(TF_FLOAT, **kwargs)
+            energies = tf.TensorArray(TF_FLOAT, **kwargs)
+
+            logdets = logdets.write(0, sumlogdet)
+            energies = energies.write(0, self.hamiltonian(state_prop))
+
         state_prop, logdet = self._half_v_update_forward(state_prop,
                                                          0, training)
         sumlogdet += logdet
 
         for step in range(self.config.num_steps):
-            if self._verbose:
-                logdets = logdets.write(step, sumlogdet)
-                energies = energies.write(step, self.hamiltonian(state_prop))
-
             state_prop, logdet = self._full_x_update_forward(state_prop,
                                                              step, training)
             sumlogdet += logdet
@@ -442,6 +472,10 @@ class GaugeDynamics(BaseDynamics):
                     state_prop, step, training
                 )
                 sumlogdet += logdet
+                if self._verbose:
+                    logdets = logdets.write(step + 1, sumlogdet)
+                    energies = energies.write(step + 1,
+                                              self.hamiltonian(state_prop))
 
         state_prop, logdet = self._half_v_update_forward(state_prop,
                                                          step, training)
@@ -453,15 +487,19 @@ class GaugeDynamics(BaseDynamics):
             'sumlogdet': sumlogdet,
             'accept_prob': accept_prob,
         })
+
         if self._verbose:
+            logdets = logdets.write(step, sumlogdet)
+            energies = energies.write(step, self.hamiltonian(state_prop))
             metrics.update({
-                'energies': [
-                    energies.read(i) for i in range(self.config.num_steps)
-                ],
-                'logdets': [
-                    logdets.read(i) for i in range(self.config.num_steps)
-                ],
+                'H': [], 'Hw': [], 'logdets': [],
             })
+            for i in range(self.config.num_steps):
+                energy_ = energies.read(i)
+                logdets_ = logdets.read(i)
+                metrics['H'].append(energy_)
+                metrics['logdets'].append(logdets_)
+                metrics['Hw'].append(energy_ - logdets_)
 
         return state_prop, metrics
 
@@ -471,32 +509,38 @@ class GaugeDynamics(BaseDynamics):
             training: bool = None
     ):
         """Run the augmented leapfrog sampler in the forward direction."""
-        kwargs = {
-            'dynamic_size': True,
-            'size': self.batch_size,
-            'clear_after_read': True
-        }
-        logdets = tf.TensorArray(TF_FLOAT, **kwargs)
-        energies = tf.TensorArray(TF_FLOAT, **kwargs)
         sumlogdet = tf.zeros((self.batch_size,))
         state_prop = State(state.x, state.v, state.beta)
+        if self._verbose:
+            kwargs = {
+                'dynamic_size': True,
+                'size': self.batch_size,
+                'clear_after_read': False
+            }
+            logdets = tf.TensorArray(TF_FLOAT, **kwargs)
+            energies = tf.TensorArray(TF_FLOAT, **kwargs)
+
+            logdets = logdets.write(0, sumlogdet)
+            energies = energies.write(0, self.hamiltonian(state_prop))
 
         state_prop, logdet = self._half_v_update_backward(state_prop,
                                                           0, training)
         sumlogdet += logdet
         for step in range(self.config.num_steps):
-            if self._verbose:
-                logdets = logdets.write(step, sumlogdet)
-                energies = energies.write(step, self.hamiltonian(state_prop))
-
             state_prop, logdet = self._full_x_update_backward(state_prop,
                                                               step, training)
+            sumlogdet += logdet
 
             if step < self.config.num_steps - 1:
                 state_prop, logdet = self._full_v_update_backward(
                     state_prop, step, training
                 )
                 sumlogdet += logdet
+
+                if self._verbose:
+                    logdets = logdets.write(step+1, sumlogdet)
+                    energy = self.hamiltonian(state_prop)
+                    energies = energies.write(step+1, energy)
 
         state_prop, logdet = self._half_v_update_backward(state_prop,
                                                           step, training)
@@ -508,18 +552,28 @@ class GaugeDynamics(BaseDynamics):
             'sumlogdet': sumlogdet,
             'accept_prob': accept_prob,
         })
+
         if self._verbose:
-            logdets = logdets.write(self.config.num_steps, sumlogdet)
-            energies = energies.write(self.config.num_steps,
-                                      self.hamiltonian(state_prop))
+            logdets = logdets.write(step, sumlogdet)
+            energies = energies.write(step, self.hamiltonian(state_prop))
             metrics.update({
-                'energies': [
-                    energies.read(i) for i in range(self.config.num_steps)
-                ],
-                'logdets': [
-                    logdets.read(i) for i in range(self.config.num_steps)
-                ],
+                'energies_transformed': [
+                    (energies.read(i) - logdets.read(i))
+                    for i in range(self.config.num_steps)
+                ]
             })
+            #
+            #  logdets = logdets.write(self.config.num_steps, sumlogdet)
+            #  energies = energies.write(self.config.num_steps,
+            #                            self.hamiltonian(state_prop))
+            #  metrics.update({
+            #      'energies': [
+            #          energies.read(i) for i in range(self.config.num_steps)
+            #      ],
+            #      'logdets': [
+            #          logdets.read(i) for i in range(self.config.num_steps)
+            #      ],
+            #  })
 
         return state_prop, metrics
 
@@ -527,30 +581,32 @@ class GaugeDynamics(BaseDynamics):
             self,
             state: State,
             forward: bool,
-            training: bool = None
+            training: bool = None,
+            verbose: bool = False,
     ):
         """Transition kernel of the augmented leapfrog integrator."""
         step = self.optimizer.iterations
         if self.config.separate_networks:
             if self._combined_updates:
                 if forward:
-                    if step == 0:
+                    if step == 0 and verbose:
                         print('Using `self._transition_kernel_forward`  !!')
                     return self._transition_kernel_forward(state, training)
-                if step == 0:
+
+                if step == 0 and verbose:
                     print('Using `self._transition_kernel_backward`  !!')
                 return self._transition_kernel_backward(state, training)
 
-            if step == 0:
+            if step == 0 and verbose:
                 print('Using `self._transition_kernel_sep_nets` !!')
             return self.transition_kernel_sep_nets(state, forward, training)
 
         if self.config.directional_updates:
-            if step == 0:
+            if step == 0 and verbose:
                 print('Using `self._transition_kernel_directional` !!')
             return self.transition_kernel_directional(state, training)
 
-        if step == 0:
+        if step == 0 and verbose:
             print('Using `super().transition_kernel` !!')
 
         return super().transition_kernel(state, forward, training)
@@ -986,16 +1042,25 @@ class GaugeDynamics(BaseDynamics):
 
         return K.get_value(self.optimizer.lr)
 
-    def train_step(self, data):
-        """Perform a single training step."""
+    def train_step(
+            self,
+            inputs: Tuple[tf.Tensor, tf.Tensor]
+    ) -> (tf.Tensor, AttrDict):
+        """Perform a single training step.
+
+        Returns:
+            states.out.x (tf.Tensor): Next `x` state in the Markov Chain.
+            metrics (AttrDict): Dictionary of various metrics for logging.
+        """
         start = time.time()
         with tf.GradientTape() as tape:
-            x, beta = data
+            x, beta = inputs
             tape.watch(x)
             states, data = self((x, beta), training=True)
             accept_prob = data.get('accept_prob', None)
             ploss, qloss = self.calc_losses(states, accept_prob)
             loss = ploss + qloss
+
             if self.aux_weight > 0:
                 z = tf.random.normal(x.shape, dtype=x.dtype)
                 states_, data_ = self((z, beta), training=True)
@@ -1012,8 +1077,20 @@ class GaugeDynamics(BaseDynamics):
             zip(grads, self.trainable_variables),
         )
 
+        # Horovod:
+        #    Broadcast initial variable states from rank 0 to all other
+        #    processes. This is necessary to ensure consistent initialization
+        #    of all workers when training is started with random weights or
+        #    restored from a checkpoint.
+        # NOTE:
+        #    Broadcast should be done after the first gradient step to ensure
+        #    optimizer intialization.
+        if self.optimizer.iterations == 0 and HAS_HOROVOD:
+            hvd.broadcast_variables(self.variables, root_rank=0)
+            hvd.broadcast_variables(self.optimizer.variables(), root_rank=0)
+
         metrics = AttrDict({
-            'lr': self._get_lr(),
+            #  'lr': self._get_lr(),
             'dt': time.time() - start,
             'loss': loss,
         })
@@ -1025,57 +1102,78 @@ class GaugeDynamics(BaseDynamics):
         if self.aux_weight > 0:
             metrics.update({
                 'ploss_aux': ploss_,
-                'qloss_aux': qloss_
+                'qloss_aux': qloss_,
+                'accept_prob_aux': accept_prob_,
             })
 
+        # Separated from [1038] for ordering when printing
         metrics.update({
             'accept_prob': accept_prob,
             'eps': self.eps,
             'beta': states.init.beta,
+            'sumlogdet': data.get('sumlogdet', None),
+            'accept_mask': data.get('accept_mask', None),
         })
 
         if self._verbose:
             metrics.update({
-                'Hf_start': data.forward.energies[0],
-                'Hf_mid': data.forward.energies[self.config.num_steps//2],
-                'Hf_end': data.forward.energies[-1],
-                'Hb_start': data.backward.energies[0],
-                'Hb_mid': data.backward.energies[self.config.num_steps//2],
-                'Hb_end': data.backward.energies[-1],
-                #  'ld_f_start': data.forward.logdets[0],
-                'ld_f_mid': data.forward.logdets[self.config.num_steps//2],
-                'ld_f_end': data.forward.logdets[-1],
-                #  'ld_b_start': data.backward.logdets[0],
-                'ld_b_mid': data.backward.logdets[self.config.num_steps//2],
-                'ld_b_end': data.backward.logdets[-1],
-                #  'sumlogdet': sumlogdet.out,
+                #  'Hf': data.forward.energies,
+                'Hf': data.forward.H,
+                'Hwf': data.forward.Hw,
+                # ----
+                'Hf_start': data.forward.H[0],
+                'Hwf_start': data.forward.Hw[0],
+                # ----
+                'Hf_mid': data.forward.H[self.config.num_steps//2],
+                'Hwf_mid': data.forward.Hw[self.config.num_steps//2],
+                # ----
+                'Hf_end': data.forward.H[-1],
+                'Hwf_end': data.forward.Hw[-1],
+                # ----
+                'ldf_start': data.forward.logdets[0],
+                'ldf_mid': data.forward.logdets[self.config.num_steps//2],
+                'ldf_end': data.forward.logdets[-1],
+                'sldf': data.forward.logdets,
+                # ----
+                'Hb': data.backward.H,
+                'Hwb': data.backward.Hw,
+                # ----
+                'Hb_start': data.backward.H[0],
+                'Hwb_start': data.backward.Hw[0],
+                # ----
+                'Hb_mid': data.backward.H[self.config.num_steps//2],
+                'Hwb_mid': data.backward.Hw[self.config.num_steps//2],
+                # ----
+                'Hb_end': data.backward.H[-1],
+                'Hwb_end': data.backward.Hw[-1],
+                # ----
+                'ldb_start': data.backward.logdets[0],
+                'ldb_mid': data.backward.logdets[self.config.num_steps//2],
+                'ldb_end': data.backward.logdets[-1],
+                'sldb': data.backward.logdets,
             })
 
         observables = self.calc_observables(states)
         metrics.update(**observables)
 
-        metrics.update({
-            'lr': self._get_lr(),
-        })
-
-        # Horovod:
-        #    Broadcast initial variable states from rank 0 to all other
-        #    processes. This is necessary to ensure consistent initialization
-        #    of all workers when training is started with random weights or
-        #    restored from a checkpoint.
-        # NOTE:
-        #    Broadcast should be done after the first gradient step to ensure
-        #    optimizer intialization.
-        if self.optimizer.iterations == 0 and HAS_HOROVOD and NUM_WORKERS > 1:
-            hvd.broadcast_variables(self.variables, root_rank=0)
-            hvd.broadcast_variables(self.optimizer.variables(), root_rank=0)
+        #  metrics.update({
+        #      'lr': self._get_lr(),
+        #  })
 
         return states.out.x, metrics
 
-    def test_step(self, data):
-        """Perform a single inference step."""
+    def test_step(
+            self,
+            inputs: Tuple[tf.Tensor, tf.Tensor]
+    ) -> (tf.Tensor, AttrDict):
+        """Perform a single inference step.
+
+        Returns:
+            states.out.x (tf.Tensor): Next `x` state in the Markov Chain.
+            metrics (AttrDict): Dictionary of various metrics for logging.
+        """
         start = time.time()
-        states, data = self(data, training=False)
+        states, data = self(inputs, training=False)
         accept_prob = data.get('accept_prob', None)
         ploss, qloss = self.calc_losses(states, accept_prob)
         loss = ploss + qloss
@@ -1094,23 +1192,46 @@ class GaugeDynamics(BaseDynamics):
             'accept_prob': accept_prob,
             'eps': self.eps,
             'beta': states.init.beta,
+            'sumlogdet': data.get('sumlogdet', None),
+            'accept_mask': data.get('accept_mask', None),
         })
 
         if self._verbose:
             metrics.update({
-                'Hf_start': data.forward.energies[0],
-                'Hf_mid': data.forward.energies[self.config.num_steps//2],
-                'Hf_end': data.forward.energies[-1],
-                'Hb_start': data.backward.energies[0],
-                'Hb_mid': data.backward.energies[self.config.num_steps//2],
-                'Hb_end': data.backward.energies[-1],
-                'ld_f_start': data.forward.logdets[0],
-                'ld_f_mid': data.forward.logdets[self.config.num_steps//2],
-                'ld_f_end': data.forward.logdets[-1],
-                'ld_b_start': data.backward.logdets[0],
-                'ld_b_mid': data.backward.logdets[self.config.num_steps//2],
-                'ld_b_end': data.backward.logdets[-1],
-                #  'sumlogdet': sumlogdet.out,
+                #  'Hf': data.forward.energies,
+                'Hf': data.forward.H,
+                'Hwf': data.forward.Hw,
+                # ----
+                'Hf_start': data.forward.H[0],
+                'Hwf_start': data.forward.Hw[0],
+                # ----
+                'Hf_mid': data.forward.H[self.config.num_steps//2],
+                'Hwf_mid': data.forward.Hw[self.config.num_steps//2],
+                # ----
+                'Hf_end': data.forward.H[-1],
+                'Hwf_end': data.forward.Hw[-1],
+                # ----
+                'ldf_start': data.forward.logdets[0],
+                'ldf_mid': data.forward.logdets[self.config.num_steps//2],
+                'ldf_end': data.forward.logdets[-1],
+                'sldf': data.forward.logdets,
+                # ----
+                'Hb': data.backward.H,
+                'Hwb': data.backward.Hw,
+                # ----
+                'Hb_start': data.backward.H[0],
+                'Hwb_start': data.backward.Hw[0],
+                # ----
+                'Hb_mid': data.backward.H[self.config.num_steps//2],
+                'Hwb_mid': data.backward.Hw[self.config.num_steps//2],
+                # ----
+                'Hb_end': data.backward.H[-1],
+                'Hwb_end': data.backward.Hw[-1],
+                # ----
+                'ldb_start': data.backward.logdets[0],
+                'ldb_mid': data.backward.logdets[self.config.num_steps//2],
+                'ldb_end': data.backward.logdets[-1],
+                'sldb': data.backward.logdets,
             })
 
         observables = self.calc_observables(states)
@@ -1118,7 +1239,7 @@ class GaugeDynamics(BaseDynamics):
 
         return states.out.x, metrics
 
-    def _calc_observables(self, state):
+    def _calc_observables(self, state: State):
         """Calculate the observables for a particular state.
 
         NOTE: We track the error in the plaquette instead of the actual value.
@@ -1207,8 +1328,6 @@ class GaugeDynamics(BaseDynamics):
         if self._gauge_eq_masks:
             mh_ = zeros.copy()
             mv_ = zeros.copy()
-            #  mh_ = tf.zeros_like(zeros)
-            #  mv_ = tf.zeros_like(zeros)
             mh_[:, ::4, :, 1] = 1.  # Horizontal masks
             mv_[:, :, ::4, 0] = 1.  # Vertical masks
 
