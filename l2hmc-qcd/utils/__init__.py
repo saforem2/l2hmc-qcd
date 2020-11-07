@@ -8,6 +8,23 @@ Date: 08/26/2020
 """
 from tqdm.auto import tqdm
 import tensorflow as tf
+
+
+def _try_except(function):
+    try:
+        function()
+    except AttributeError:
+        print(f'Unable to call {function}`. Continuing...')
+
+
+if tf.__version__.startswith('1.'):
+    _try_except(tf.compat.v1.enable_v2_behavior)
+    _try_except(tf.compat.v1.enable_control_flow_v2)
+    _try_except(tf.compat.v1.enable_v2_tensorshape)
+    _try_except(tf.compat.v1.enable_eager_execution)
+    _try_except(tf.compat.v1.enable_resource_variables)
+
+
 try:
     import horovod.tensorflow as hvd  # pylint:disable=wrong-import-order
     hvd.init()

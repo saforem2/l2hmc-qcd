@@ -19,9 +19,13 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 
+from typing import Dict
+from pathlib import Path
+
 import utils.file_io as io
 from utils.file_io import timeit
 from lattice.utils import u1_plaq_exact
+from utils.attr_dict import AttrDict
 
 #  from plotters.plot_utils import get_matching_log_dirs
 #  from plotters.plot_observables import get_obs_dict, grid_plot
@@ -32,6 +36,97 @@ TLS_DEFAULT = mpl.rcParams['xtick.labelsize']
 
 
 # pylint:disable=invalid-name
+
+def flatten_dict(d):
+    """Recursively convert all entries of `d` to be `AttrDict`."""
+    if not isinstance(d, AttrDict):
+        d = AttrDict(**d)
+
+    for key, val in d.items():
+        if isinstance(val, dict):
+            if not isinstance(val, AttrDict):
+                d[key] = flatten_dict(val)
+            else:
+                d[key] = AttrDict(**val)
+
+    return d
+
+
+def _load_inference_data(log_dir, fnames, inference_str='inference'):
+    """Helper function for loading inference data from `log_dir`."""
+    run_dir = os.path.join(log_dir, inference_str)
+    if os.path.isdir(run_dir):
+        data_dir = os.path.join(run_dir, 'run_data')
+        rp_file = os.path.join(run_dir, 'run_params.z')
+        if os.path.isfile(rp_file) and os.path.isdir(data_dir):
+            run_params = io.loadz(rp_file)
+            key = (run_params['beta'],
+                   run_params['eps'],
+                   run_params['num_steps'])
+            data = [
+                io.loadz(os.path.join(data_dir, f'{fname}.z'))
+                for fname in fnames
+            ]
+
+    return key, data
+
+
+def load_inference_data(dirs, search_strs, inference_str='inference'):
+    data = {
+        s: {} for s in search_strs
+    }
+
+    for d in dirs:
+        print(f'Looking in dir: {d}...')
+        run_dir = Path(os.path.join(d, inference_str))
+        if run_dir.is_dir():
+            run_dirs = [x for x in run_dir.iterdir() if x.is_dir()]
+            for rd in run_dirs:
+                print(f'...looking in run_dir: {rd}...')
+                rp_file = os.path.join(str(rd), 'run_params.z')
+                if os.path.isfile(rp_file):
+                    params = io.loadz(rp_file)
+                    beta = params['beta']
+                    eps = params['eps']
+                    num_steps = params['num_steps']
+                    data_dir = os.path.join(str(rd), 'run_data')
+                    if os.path.isdir(data_dir):
+                        for search_str in search_strs:
+                            dfile = os.path.join(data_dir, f'{search_str}.z')
+                            if os.path.isfile(dfile):
+                                _data = io.loadz(dfile)
+                                try:
+                                    data[search_str].update({
+                                        (beta, num_steps, eps): _data
+                                    })
+                                except KeyError:
+                                    data[search_str] = {
+                                        (beta, num_steps, eps): _data
+                                    }
+
+        return data
+
+
+def get_l2hmc_dirs(paths, search_str=None):
+    """Look for `log_dirs` containing a training/inference run for L2HMC."""
+    if search_str is None:
+        search_str = '*L16_b*'
+
+    dirs = []
+    for path in paths:
+        if not isinstance(path, Path):
+            path = Path(os.path.abspath(path))
+
+        print(f'Looking in {path}...')
+        dirs += [
+            x for x in path.rglob(search_str)
+            if 'GaugeModel_logs' in str(x)
+            and 'HMC_' not in str(x)
+            and x.is_dir()
+        ]
+
+    return dirs
+
 
 def autocorrelation_time(x, s, mu, var):
     """Compute the autocorrelation time."""

@@ -8,6 +8,7 @@ Date: 08/30/2020
 """
 import numpy as np
 import tensorflow as tf
+from typing import Callable
 
 TF_FLOAT = getattr(tf, tf.keras.backend.floatx(), tf.float32)
 
@@ -63,8 +64,21 @@ def quadratic_additive_cooling(
     return t1 + (t0 - t1) * ((num_steps - step) / num_steps) ** 2
 
 
-def get_betas(steps, beta_init, beta_final, cooling_fn=exp_mult_cooling):
+def get_betas(
+        steps: int,
+        beta_init: float,
+        beta_final: float,
+        cooling_fn: Callable = exp_mult_cooling,
+        discrete: bool = False
+):
     """Get array of betas to use in annealing schedule."""
+    if discrete:
+        betas = []
+        for beta in range(beta_init, beta_final):
+            betas += (steps / np.abs(beta_final - beta_init)) * [beta]
+
+        return tf.constant(betas, dtype=TF_FLOAT)
+
     t_init = 1. / beta_init
     t_final = 1. / beta_final
     t_arr = tf.convert_to_tensor(np.array([

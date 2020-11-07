@@ -139,7 +139,7 @@ def print_dict(d: Dict, indent: int = 0, name: str = None, **kwargs):
         log(sep_str, **kwargs)
     for key, val in d.items():
         if isinstance(val, (AttrDict, dict)):
-            print_dict(val, indent=indent+2, name=str(key), **kwargs)
+            print_dict(val, indent=indent, name=str(key), **kwargs)
         else:
             log(f'  {indent_str}{key}: {val}', **kwargs)
 
@@ -416,10 +416,12 @@ def parse_configs(flags: AttrDict, debug: bool = False):
     num_steps = config.get('num_steps', None)
     fstr += f'_lf{num_steps}'
 
-    qw = config.get('charge_weight', None)
-    pw = config.get('plaq_weight', None)
-    aw = config.get('aux_weight', None)
+    qw = config.get('charge_weight', 0.)
+    pw = config.get('plaq_weight', 0.)
+    aw = config.get('aux_weight', 0.)
     act = net_config.get('activation_fn', None)
+    if qw == 0:
+        fstr += '_qw0'
     if pw > 0:
         fstr += f'_pw{pw}'
     if aw > 0:
@@ -450,6 +452,9 @@ def parse_configs(flags: AttrDict, debug: bool = False):
 
     if config.get('separate_networks', False):
         fstr += '_sepNets'
+
+    if config.get('combined_updates', False):
+        fstr += '_combinedUpdates'
 
     if config.get('use_ncp', False):
         fstr += '_NCProj'

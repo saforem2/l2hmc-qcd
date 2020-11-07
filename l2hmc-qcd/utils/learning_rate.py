@@ -61,17 +61,19 @@ class ReduceLROnPlateau(tf.keras.callbacks.Callback):
             after lr has been reduced.
         min_lr: lower bound on the learning rate.
     """
-    def __init__(self,
-                 monitor='val_loss',
-                 factor=0.1,
-                 patience=10,
-                 verbose=0,
-                 mode='auto',
-                 warmup_steps=0,
-                 min_delta=1e-4,
-                 cooldown=0,
-                 min_lr=0,
-                 **kwargs):
+    def __init__(
+            self,
+            monitor='loss',
+            factor=0.5,
+            patience=10,
+            verbose=1,
+            mode='auto',
+            warmup_steps=1000,
+            min_delta=1e-4,
+            cooldown=0,
+            min_lr=1e-6,
+            **kwargs
+    ):
         super(ReduceLROnPlateau, self).__init__()
         self.monitor = monitor
         if factor >= 1.0:
@@ -130,24 +132,25 @@ class ReduceLROnPlateau(tf.keras.callbacks.Callback):
     def on_train_begin(self, logs=None):
         self._reset()
 
-    def on_epoch_end(self, epoch, logs=None):
-        if epoch < self.warmup_steps:
+    def on_epoch_end(self, step, logs=None):
+        if step < self.warmup_steps:
             return
 
-        def _get_lr():
-            try:
-                lr = K.get_value(self.model.optimizer.lr)
-            except ValueError:
-                lr = self.model.lr(self.model.optimizer.iterations)
-            finally:
-                lr = None
-
-            return lr
+        #  def _get_lr():
+        #      try:
+        #          lr = K.get_value(self.model.optimizer.lr)
+        #      except ValueError:
+        #          lr = self.model.lr(self.model.optimizer.iterations)
+        #      finally:
+        #          lr = None
+        #
+        #      return lr
 
         logs = logs or {}
         current = logs.get(self.monitor)
         if current is None:
-            logging.warning(
+            #  logging.warning(
+            io.log(
                 f'ReduceLROnPlateau conditioned on metric'
                 f' {self.monitor} which is not available.'
                 f' Available metrics are: {",".join(list(logs.keys()))}'
@@ -170,10 +173,11 @@ class ReduceLROnPlateau(tf.keras.callbacks.Callback):
                         new_lr = max(new_lr, self.min_lr)
                         K.set_value(self.model.optimizer.lr, new_lr)
                         if self.verbose > 0:
-                            logging.warning(
-                                f'ReduceLROnPlateau (step {epoch}):'
+                            #  logging.warning(
+                            print(
+                                f'ReduceLROnPlateau (step {step}):'
                                 ' Reducing learning rate from:'
-                                f' {old_lr} to {new_lr:g}.'
+                                f' {old_lr} to {new_lr}.',
                             )
                             print(f'current: {current}, best: {self.best}')
                             #  print(f'\nstep {epoch}: ReduceLROnPlateau'
