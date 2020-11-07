@@ -11,7 +11,7 @@ from __future__ import absolute_import, division, print_function
 import os
 import time
 
-from typing import Union
+from typing import Union, Optional
 from tqdm.auto import tqdm
 
 import numpy as np
@@ -20,10 +20,10 @@ import tensorflow as tf
 
 import utils.file_io as io
 
-from config import CBARS, NET_WEIGHTS_HMC, TF_FLOAT
+from config import CBARS, TF_FLOAT
+from dynamics.config import NET_WEIGHTS_HMC
 from network.config import LearningRateConfig
 from utils import RANK, LOCAL_RANK, IS_CHIEF, NUM_WORKERS
-from utils.file_io import timeit
 from utils.attr_dict import AttrDict
 from utils.summary_utils import update_summaries
 from utils.learning_rate import ReduceLROnPlateau
@@ -44,7 +44,6 @@ if tf.__version__.startswith('1.'):
 #      pass
 
 
-@timeit(out_file=None)
 def train_hmc(flags):
     """Main method for training HMC model."""
     hflags = AttrDict(dict(flags).copy())
@@ -100,7 +99,6 @@ def train_hmc(flags):
     return x, train_data, dynamics.eps.numpy()
 
 
-@timeit(out_file=None)
 def train(
         flags: AttrDict, x: tf.Tensor = None, restore_x: bool = False
 ):
@@ -159,6 +157,12 @@ def train(
 # pylint:disable=too-many-statements, too-many-branches
 def setup(dynamics, flags, dirs=None, x=None, betas=None):
     """Setup training."""
+    if dirs is None:
+        dirs = io.setup_directories(flags)
+        flags.update({
+            'dirs': dirs,
+        })
+
     train_data = DataContainer(flags.train_steps, dirs=dirs,
                                print_steps=flags.print_steps)
     ckpt = tf.train.Checkpoint(dynamics=dynamics,
@@ -226,6 +230,24 @@ def setup(dynamics, flags, dirs=None, x=None, betas=None):
     else:
         train_step = dynamics.train_step
 
+    # ====
+    # Plot computational graph of `dynamics.xnet`, `dynamics.vnet`
+    if IS_CHIEF:
+        xf = os.path.join(dirs.log_dir, 'dynamics_xnet.png')
+        vf = os.path.join(dirs.log_dir, 'dynamics_vnet.png')
+        try:
+            xnet = dynamics.xnet
+            vnet = dynamics.vnet
+            if dynamics.config.separate_networks:
+                xnet = xnet[0]
+                vnet = vnet[0]
+
+            tf.keras.utils.plot_model(xnet, show_shapes=True, to_file=xf)
+            tf.keras.utils.plot_model(vnet, show_shapes=True, to_file=vf)
+
+        except Exception as exception:
+            print(exception)
+
     pstart = 0
     pstop = 0
     if flags.profiler:
@@ -235,6 +257,7 @@ def setup(dynamics, flags, dirs=None, x=None, betas=None):
     output = AttrDict({
         'x': x,
         'betas': betas,
+        'dirs': dirs,
         'steps': steps,
         'writer': writer,
         'manager': manager,
@@ -245,47 +268,26 @@ def setup(dynamics, flags, dirs=None, x=None, betas=None):
         'pstop': pstop,
     })
 
-    #  if dynamics.config.separate_networks:
-    #      xnet_files = [
-    #          os.path.join(dirs.models_dir, f'dynamics_xnet{i}')
-    #          for i in range(dynamics.config.num_steps)
-    #      ]
-    #      vnet_files = [
-    #          os.path.join(dirs.models_dir, f'dynamics_vnet{i}')
-    #          for i in range(dynamics.config.num_steps)
-    #      ]
-    #      for idx, (xf, vf) in enumerate(zip(xnet_files, vnet_files)):
-    #          xnet = dynamics.xnet[idx]
-    #          vnet = dynamics.vnet[idx]
-    #          io.log(f'Saving `GaugeDynamics.xnet{idx}` to {xf}.')
-    #          io.log(f'Saving `GaugeDynamics.vnet{idx}` to {vf}.')
-    #          xnet.save(xf)
-    #          vnet.save(vf)
-    #  else:
-    #      # Save only if not running generic HMC
-    #      if not dynamics.config.get('hmc', False):
-    #          xnet_files = os.path.join(dirs.models_dir, 'dynamics_xnet')
-    #          vnet_files = os.path.join(dirs.models_dir, 'dynamics_vnet')
-    #          io.log(f'Saving `GaugeDynamics.xnet` to {xnet_files}.')
-    #          io.log(f'Saving `GaugeDynamics.vnet` to {vnet_files}.')
-    #          dynamics.xnet.save(xnet_files)
-    #          dynamics.vnet.save(vnet_files)
-
     return output
 
 
 # pylint: disable=broad-except
 # pylint: disable=too-many-arguments,too-many-statements, too-many-branches,
-@timeit(out_file=None)
 def train_dynamics(
         dynamics: Union[BaseDynamics, GaugeDynamics],
         flags: AttrDict,
-        dirs: str = None,
-        x: tf.Tensor = None,
-        betas: tf.Tensor = None,
+        dirs: Optional[str] = None,
+        x: Optional[tf.Tensor] = None,
+        betas: Optional[tf.Tensor] = None,
 ):
     """Train model."""
     # setup...
+    config = setup(dynamics, flags, dirs, x, betas)
+    if dirs is None:
+        dirs = flags.get('dirs', None)
+        if dirs is None:
+            dirs = config.get('dirs', None)
+
     factor = flags.get('reduce_lr_factor', 0.5)
     patience = flags.get('patience', 10)
     min_lr = flags.get('min_lr', 1e-5)
@@ -296,7 +298,6 @@ def train_dynamics(
                                   verbose=1, patience=patience)
     reduce_lr.set_model(dynamics)
 
-    config = setup(dynamics, flags, dirs, x, betas)
     x = config.x
     steps = config.steps
     betas = config.betas
@@ -323,29 +324,13 @@ def train_dynamics(
                                     profiler_outdir=dirs.summary_dir)
             tf.summary.trace_off()
     except Exception as exception:
-        io.log(exception, level='CRITICAL')
+        io.log(str(exception), level='CRITICAL')
         train_step = dynamics.train_step
         x, metrics = train_step((x, tf.constant(betas[0])))
         lstr = '\n'.join(['`tf.function(dynamics.train_step)` failed!',
                           'Running `dynamics.train_step` imperatively...'])
         io.log(lstr, level='CRITICAL')
     io.log(120*'*')
-
-    if IS_CHIEF:
-        xf = os.path.join(dirs.log_dir, 'dynamics_xnet.png')
-        vf = os.path.join(dirs.log_dir, 'dynamics_vnet.png')
-        try:
-            xnet = dynamics.xnet
-            vnet = dynamics.vnet
-            if dynamics.config.separate_networks:
-                xnet = xnet[0]
-                vnet = vnet[0]
-
-            tf.keras.utils.plot_model(xnet, show_shapes=True, to_file=xf)
-            tf.keras.utils.plot_model(vnet, show_shapes=True, to_file=vf)
-
-        except Exception as exception:
-            print(exception)
 
     # +--------------------------------+
     # | Run MD update to not get stuck |
@@ -386,8 +371,17 @@ def train_dynamics(
             return True
         return False
 
-    header = train_data.get_header(metrics,
-                                   skip=['charges'],
+    skip = ['charges',
+            'sldf', 'sldb',
+            'Hf', 'Hb',
+            'Hwf', 'Hwb',
+            'ldf_start', 'ldb_start',
+            'ldf_mid', 'ldf_end',
+            'ldb_mid', 'ldb_end',
+            'Hf_start', 'Hf_mid', 'Hf_end',
+            'Hb_start', 'Hb_mid', 'Hb_end']
+
+    header = train_data.get_header(metrics, skip=skip,
                                    prepend=['{:^12s}'.format('step')])
     if IS_CHIEF:
         #  hstr = ["[bold red blink]"] + header.split('\n') + ["[/]"]
@@ -429,7 +423,7 @@ def train_dynamics(
 
         # Print current training state and metrics
         if should_print(step):
-            data_str = train_data.get_fstr(step, metrics, skip=['charges'])
+            data_str = train_data.get_fstr(step, metrics, skip=skip)
             io.log(data_str, should_print=True)
 
         # Update summary objects
