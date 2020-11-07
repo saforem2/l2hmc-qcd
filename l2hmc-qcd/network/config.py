@@ -8,9 +8,41 @@ from typing import List, Optional, Callable
 import tensorflow as tf
 
 from utils.attr_dict import AttrDict
+from dataclasses import dataclass
 
+#
+#  @dataclass
+#  class LearningRateConfig:
+#      lr_init: float
+#      decay_steps: int = int(5e3)
+#      decay_rate: float = 0.99
+#      warmup_steps: int = 0
+#
+#
+#  @dataclass
+#  class NetworkConfig:
+#      """Configuration object for model network."""
+#      units: list
+#      name: str = None
+#      dropout_prob: float = 0.
+#      activation_fn: callable = tf.nn.relu
+#      use_batch_norm: bool = False
+#
+#
+#  @dataclass
+#  class ConvolutionConfig:
+#      """Configuration object for convolutional block of network."""
+#      input_shape: List
+#      filters: List
+#      sizes: List
+#      pool_sizes: List = None
+#      conv_activations: List = None
+#      conv_paddings: List = None
+#      use_batch_norm: bool = True
+#      name: str = None
+#
 
-# pylint:disable=too-many-arguments
+#  pylint:disable=too-many-arguments
 
 class LearningRateConfig(AttrDict):
     """Configuration object for specifying learning rate schedule."""
@@ -38,8 +70,8 @@ class NetworkConfig(AttrDict):
             units: list,
             name: Optional[str] = None,              # Name of network
             dropout_prob: Optional[float] = 0.,      # Dropout probability
-            activation_fn: Optional[Callable] = tf.nn.relu,  # Activation fn
-            use_batch_norm: Optional[bool] = False,  # Use batch normalization
+            activation_fn: Optional[Callable] = tf.nn.relu,
+            use_batch_norm: Optional[bool] = False,
     ):
         super(NetworkConfig, self).__init__(
             name=name,
@@ -58,11 +90,11 @@ class ConvolutionConfig(AttrDict):
             input_shape: List[int],  # expected input shape
             filters: List[int],      # number of filters to use
             sizes: List[int],        # filter sizes to use
-            pool_sizes: Optional[List[int]] = None,        # MaxPooling sizes
-            conv_activations: Optional[List[str]] = None,  # Activation fns
-            conv_paddings: Optional[List[str]] = None,     # Paddings to use
-            use_batch_norm: Optional[bool] = False,  # Use batch normalization?
-            name: Optional[str] = None,              # Name of model
+            pool_sizes: Optional[List[int]] = None,
+            conv_activations: Optional[List[str]] = None,
+            conv_paddings: Optional[List[str]] = None,
+            use_batch_norm: Optional[bool] = False,
+            name: Optional[str] = None,
     ):
         super(ConvolutionConfig, self).__init__(
             input_shape=input_shape,
