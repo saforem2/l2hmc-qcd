@@ -11,11 +11,12 @@ import xarray as xr
 import tensorflow as tf
 import seaborn as sns
 import matplotlib.pyplot as plt
+import itertools as it
 
 import utils.file_io as io
 
-from config import (NET_WEIGHTS_HMC, NET_WEIGHTS_L2HMC, NetWeights,
-                    NP_FLOATS, PI, PROJECT_DIR, TF_FLOATS)
+from dynamics.config import NetWeights
+from config import NP_FLOATS, PI, PROJECT_DIR, TF_FLOATS
 
 sns.set_palette('bright')
 
@@ -23,6 +24,12 @@ TF_FLOAT = TF_FLOATS[tf.keras.backend.floatx()]
 NP_FLOAT = NP_FLOATS[tf.keras.backend.floatx()]
 
 COLORS = 100 * ['C0', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9']
+
+
+def drop_sequential_duplicates(chain):
+    if tf.is_tensor(chain):
+        return tf.convert_to_tensor([i[0] for i in it.groupby(chain)])
+    return np.array([i[0] for i in it.groupby(chain)])
 
 
 def savefig(fig, fpath):
@@ -129,7 +136,7 @@ def get_title_str_from_params(params):
 
     title_str += f'shape: {tuple(lattice_shape)}'
 
-    if net_weights == NET_WEIGHTS_HMC:
+    if net_weights == NetWeights(0., 0., 0., 0., 0., 0.):
         title_str += ', (HMC)'
 
     return title_str
@@ -261,10 +268,25 @@ def plot_data(train_data, out_dir, flags, thermalize=False, params=None):
 
         elif len(arr.shape) > 1:
             data_dict[key] = data
-            chains = np.arange(arr.shape[1])
-            data_arr = xr.DataArray(arr.T,
-                                    dims=['chain', 'draw'],
-                                    coords=[chains, steps])
+            cond1 = (key in ['Hf', 'Hb', 'Hwf', 'Hwb', 'sldf', 'sldb'])
+            cond2 = (arr.shape[1] == flags.dynamics_config.get('num_steps'))
+            if cond1 and cond2:
+                for idx in range(arr.shape[1]):
+                    arr_ = arr[:, idx, :]
+                    chains = np.arange(arr_.shape[1])
+                    data_arr = xr.DataArray(arr_.T,
+                                            dims=['chain', 'draw'],
+                                            coords=[chains, steps])
+                    new_key = f'{key}_lf{idx}'
+                    tplot_fname = os.path.join(out_dir,
+                                               f'{new_key}_traceplot.png')
+                    _ = mcmc_traceplot(new_key, data_arr, title, tplot_fname)
+
+            else:
+                chains = np.arange(arr.shape[1])
+                data_arr = xr.DataArray(arr.T,
+                                        dims=['chain', 'draw'],
+                                        coords=[chains, steps])
 
             tplot_fname = os.path.join(out_dir, f'{key}_traceplot.png')
             _ = mcmc_traceplot(key, data_arr, title, tplot_fname)
