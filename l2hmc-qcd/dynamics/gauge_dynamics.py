@@ -200,17 +200,30 @@ class GaugeDynamics(BaseDynamics):
 
     def _load_networks(self, log_dir):
         models_dir = os.path.join(log_dir, 'training', 'models')
-        xnet_paths = [
-            os.path.join(models_dir, f'dynamics_xnet{i}')
-            for i in range(self.config.num_steps)
-        ]
-        vnet_paths = [
-            os.path.join(models_dir, f'dynamics_vnet{i}')
-            for i in range(self.config.num_steps)
-        ]
-
-        xnet = [tf.keras.models.load_model(xp) for xp in xnet_paths]
-        vnet = [tf.keras.models.load_model(vp) for vp in vnet_paths]
+        #  xnet_paths = [
+        #      os.path.join(models_dir, f'dynamics_xnet{i}')
+        #      for i in range(self.config.num_steps)
+        #  ]
+        #  vnet_paths = [
+        #      os.path.join(models_dir, f'dynamics_vnet{i}')
+        #      for i in range(self.config.num_steps)
+        #  ]
+        xnet = []
+        vnet = []
+        for i in range(self.config.num_steps):
+            xnet_path = os.path.join(models_dir, f'dynamics_xnet{i}')
+            vnet_path = os.path.join(models_dir, f'dynamics_vnet{i}')
+            if os.path.isdir(xnet_path) and os.path.isdir(vnet_path):
+                print(f'Loading xNet{i} from: {xnet_path}...')
+                xnet.append(tf.keras.models.load_model(xnet_path))
+                print(f'Loading vNet{i} from: {vnet_path}...')
+                vnet.append(tf.keras.models.load_model(vnet_path))
+            else:
+                print(f'Unable to load model from: {xnet_path}...')
+                print(f'Creating new network for xNet{i}...')
+                xnet_, vnet_ = self._build_network(step=i)
+                xnet.append(xnet)
+                vnet.append(vnet)
 
         return xnet, vnet
 
@@ -244,8 +257,9 @@ class GaugeDynamics(BaseDynamics):
             self.xnet.save(xnet_paths)
             self.vnet.save(vnet_paths)
 
-    def _build_networks(
+    def _build_network(
             self,
+            step: int = None,
             net_config: NetworkConfig = None,
             conv_config: ConvolutionConfig = None,
     ):
@@ -295,24 +309,36 @@ class GaugeDynamics(BaseDynamics):
             }
         }
 
-        if self.config.separate_networks:
-            # ====
-            # Build separate networks
-            vnet = [
-                get_gauge_network(**vnet_cfg, name=f'VNet{i}')
-                for i in range(self.config.num_steps)
-            ]
+        vname = f'VNet{step}' if step is not None else 'VNet'
+        xname = f'XNet{step}' if step is not None else 'XNet'
+        vnet = get_gauge_network(**vnet_cfg, name=vname)
+        xnet = get_gauge_network(**xnet_cfg, name=xname)
 
-            xnet = [
-                get_gauge_network(**xnet_cfg, name=f'XNet{i}')
-                for i in range(self.config.num_steps)
-            ]
+        return xnet, vnet
+
+    def _build_networks(
+            self,
+            net_config: NetworkConfig = None,
+            conv_config: ConvolutionConfig = None,
+    ):
+        """Build position and momentum networks.
+
+        Returns:
+            xnet: tf.keras.models.Model
+            vnet: tf.keras.models.Model
+        """
+        if self.config.separate_networks:
+            xnet = []
+            vnet = []
+            for step in range(self.config.num_steps):
+                xnet_, vnet_ = self._build_network(step=step,
+                                                   net_config=net_config,
+                                                   conv_config=conv_config)
+                xnet.append(xnet_)
+                vnet.append(vnet_)
 
         else:
-            # ====
-            # Build single network
-            vnet = get_gauge_network(**vnet_cfg, name='VNet')
-            xnet = get_gauge_network(**xnet_cfg, name='XNet')
+            xnet, vnet = self._build_network(net_config, conv_config)
 
         return xnet, vnet
 
