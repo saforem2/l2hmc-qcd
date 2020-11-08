@@ -282,6 +282,37 @@ class BaseDynamics(tf.keras.Model):
 
         return state, state_, data
 
+    def _hmc_transition(
+        self, state: State, training: Optional[bool] = None,
+    ) -> (MonteCarloStates, AttrDict):
+        """Propose a new state and perform the accept/reject step."""
+        #  x, beta = inputs
+        state, state_prop, data = self._transition(state, forward=True,
+                                                   training=training)
+
+        accept_prob = data.get('accept_prob')
+        ma_, mr_ = self._get_accept_masks(accept_prob)
+        ma = ma_[:, None]
+        mr = mr_[:, None]
+
+        # Construct the output configuration
+        v_out = ma * state_prop.v + mr * state.v
+        x_out = self.normalizer(ma * state_prop.x + mr * state.x)
+        sumlogdet = ma_ * data['sumlogdet']  # NOTE: initial sumlogdet = 0
+
+        #  state_init = State(x=x, v=state_init.v, beta=beta)
+        state_prop = State(x=state_prop.x, v=state_prop.v, beta=state.beta)
+        state_out = State(x=x_out, v=v_out, beta=state.beta)
+
+        mc_states = MonteCarloStates(state, state_prop, state_out)
+        #  sld_states = MonteCarloStates(0., sld_prop, sumlogdet)
+        data.update({
+            'accept_mask': ma_,
+            'sumlogdet': sumlogdet,
+        })
+
+        return mc_states, data
+
     def apply_transition(
             self, inputs: Tuple[tf.Tensor], training: Optional[bool] = None,
     ) -> (MonteCarloStates, AttrDict):

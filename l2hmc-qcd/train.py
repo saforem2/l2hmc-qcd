@@ -115,8 +115,11 @@ def main(args):
         io.write(f'{args.log_dir}', log_file, 'a')
         args.restore = False
         if hmc_steps > 0:
-            x, _, eps = train_hmc(args)
-            args.dynamics_config['eps'] = eps
+            #  x, _, eps = train_hmc(args)
+            x, dynamics_hmc, _, hflags = train_hmc(args)
+            dirs_hmc = hflags.get('dirs', None)
+            args.dynamics_config['eps'] = dynamics_hmc.eps.numpy()
+            _ = run(dynamics_hmc, hflags, dirs=dirs_hmc, save_x=False)
 
     dynamics_config = args.get('dynamics_config', None)
     if dynamics_config is not None:
@@ -135,10 +138,7 @@ def main(args):
     if args.get('run_steps', 5000) > 0:
         # ====
         # Run with random start
-        dynamics, run_data, x, _ = run(dynamics, args,
-                                       dirs=args.dirs,
-                                       save_x=False)
-
+        _ = run(dynamics, args, dirs=args.dirs, save_x=False)
         # ====
         # Run HMC
         args.hmc = True
