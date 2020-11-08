@@ -116,7 +116,7 @@ def plot_energy_distributions(data, out_dir=None, title=None):
     _ = axes[1].legend(loc='best')
     _ = axes[2].legend(loc='best')
     _ = axes[3].legend(loc='best')
-    _ = axes[1].set_xlabel(r"$\mathcal{H}$")  # , fontsize='large')
+    _ = axes[2].set_xlabel(r"$\mathcal{H}$")  # , fontsize='large')
     _ = axes[3].set_xlabel(r"$\mathcal{H} - \sum\log\|\mathcal{J}\|$")
     if title is not None:
         _ = fig.suptitle(title)  # , fontsize='x-large')
@@ -273,11 +273,11 @@ def mcmc_lineplot(data, labels, title=None,
     return fig, ax
 
 
-def mcmc_traceplot(key, val, title=None, fpath=None):
+def mcmc_traceplot(key, val, title=None, fpath=None, **kwargs):
     if '_' in key:
         key = ' '.join(key.split('_'))
 
-    az.plot_trace({key: val})
+    az.plot_trace({key: val}, **kwargs)
     fig = plt.gcf()
     if title is not None:
         fig.suptitle(title)  # , fontsize='x-large', y=1.06)
@@ -322,7 +322,7 @@ def plot_data(train_data, out_dir, flags, thermalize=False, params=None):
         arr = np.array(val)
         steps = logging_steps * np.arange(len(arr))
 
-        if thermalize or key == 'dt':
+        if thermalize:
             arr, steps = therm_arr(arr, therm_frac=0.33)
             #  steps = steps[::logging_setps]
             #  steps *= logging_steps

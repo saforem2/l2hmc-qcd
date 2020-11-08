@@ -11,25 +11,25 @@ from __future__ import absolute_import, division, print_function
 import os
 import time
 
-from typing import Union, Optional
-from tqdm.auto import tqdm
+from typing import Optional, Union
 
 import numpy as np
 import tensorflow as tf
 
+from tqdm.auto import tqdm
 
 import utils.file_io as io
 
 from config import CBARS, TF_FLOAT
-from dynamics.config import NET_WEIGHTS_HMC
 from network.config import LearningRateConfig
-from utils import RANK, LOCAL_RANK, IS_CHIEF, NUM_WORKERS
+from utils import IS_CHIEF, LOCAL_RANK, NUM_WORKERS, RANK
 from utils.attr_dict import AttrDict
-from utils.summary_utils import update_summaries
 from utils.learning_rate import ReduceLROnPlateau
+from utils.summary_utils import update_summaries
 from utils.plotting_utils import plot_data
 from utils.data_containers import DataContainer
 from utils.annealing_schedules import get_betas
+from dynamics.config import NET_WEIGHTS_HMC
 from dynamics.base_dynamics import BaseDynamics
 from dynamics.gauge_dynamics import build_dynamics, GaugeDynamics
 
@@ -42,6 +42,15 @@ if tf.__version__.startswith('1.'):
 #      tf.config.experimental.enable_mlir_graph_optimization()
 #  except:  # noqa: E722
 #      pass
+
+skip = ['charges',
+        'Hf', 'Hb',
+        'Hwf', 'Hwb',
+        'sldf', 'sldb',
+        'Hf_start', 'Hf_mid', 'Hf_end',
+        'Hb_start', 'Hb_mid', 'Hb_end',
+        'ldf_start', 'ldf_mid', 'ldf_end',
+        'ldb_start', 'ldb_mid', 'ldb_end']
 
 
 def train_hmc(flags):
@@ -66,9 +75,6 @@ def train_hmc(flags):
         'gauge_eq_masks': False,
     })
 
-    hflags.profiler = False
-    hflags.make_summaries = True
-
     lr_config = LearningRateConfig(
         warmup_steps=0,
         decay_rate=0.9,
@@ -76,32 +82,62 @@ def train_hmc(flags):
         lr_init=lr_config.get('lr_init', None),
     )
 
-    train_dirs = io.setup_directories(hflags, 'training_hmc')
+    dirs = io.setup_directories(hflags, 'training_hmc')
+    hflags.update({
+        'profiler': False,
+        'make_summaries': True,
+        'lr_config': lr_config,
+        'dynamics_config': config,
+        'dirs': io.setup_directories(hflags, 'training_hmc'),
+    })
+
     dynamics = GaugeDynamics(hflags, config, net_config, lr_config)
-    dynamics.save_config(train_dirs.config_dir)
-    x, train_data = train_dynamics(dynamics, hflags, dirs=train_dirs)
+    dynamics.save_config(dirs.config_dir)
+
+    #  if IS_CHIEF:
+    #      output_dir = os.path.join(dirs.train_dir, 'outputs')
+    #      train_data.save_data(output_dir)
+    #
+    #      params = {
+    #          'beta_init': train_data.data.beta[0],
+    #          'beta_final': train_data.data.beta[-1],
+    #          'eps': dynamics.eps.numpy(),
+    #          'lattice_shape': dynamics.config.lattice_shape,
+    #          'num_steps': dynamics.config.num_steps,
+    #          'net_weights': dynamics.net_weights,
+    #      }
+    #      plot_data(train_data, dirs.train_dir, flags,
+    #                thermalize=True, params=params)
+    #
+    #  io.log('\n'.join(['Done training model', 120 * '*']))
+    #  io.save_dict(dict(flags), dirs.log_dir, 'configs')
+
+    x, train_data = train_dynamics(dynamics, hflags, dirs=dirs)
     if IS_CHIEF:
-        output_dir = os.path.join(train_dirs.train_dir, 'outputs')
+        output_dir = os.path.join(dirs.train_dir, 'outputs')
         io.check_else_make_dir(output_dir)
         train_data.save_data(output_dir)
 
         params = {
-            'eps': dynamics.eps,
+            'eps': dynamics.eps.numpy(),
             'num_steps': dynamics.config.num_steps,
-            'beta_init': hflags.beta_init,
-            'beta_final': hflags.beta_final,
+            'beta_init': train_data.data.beta[0],
+            'beta_final': train_data.data.beta[-1],
             'lattice_shape': dynamics.config.lattice_shape,
             'net_weights': NET_WEIGHTS_HMC,
         }
-        plot_data(train_data, train_dirs.train_dir, hflags,
+        plot_data(train_data, dirs.train_dir, hflags,
                   thermalize=True, params=params)
+        io.log('\n'.join(['Done with HMC training', 120 * '*']))
 
-    return x, train_data, dynamics.eps.numpy()
+    return x, dynamics, train_data, hflags
 
 
 def train(
-        flags: AttrDict, x: tf.Tensor = None, restore_x: bool = False
-):
+        flags: AttrDict,
+        x: tf.Tensor = None,
+        restore_x: bool = False
+) -> (tf.Tensor, Union[BaseDynamics, GaugeDynamics], DataContainer, AttrDict):
     """Train model.
 
     Returns:
@@ -371,16 +407,6 @@ def train_dynamics(
             return True
         return False
 
-    skip = ['charges',
-            'sldf', 'sldb',
-            'Hf', 'Hb',
-            'Hwf', 'Hwb',
-            'ldf_start', 'ldb_start',
-            'ldf_mid', 'ldf_end',
-            'ldb_mid', 'ldb_end',
-            'Hf_start', 'Hf_mid', 'Hf_end',
-            'Hb_start', 'Hb_mid', 'Hb_end']
-
     header = train_data.get_header(metrics, skip=skip,
                                    prepend=['{:^12s}'.format('step')])
     if IS_CHIEF:
@@ -412,14 +438,18 @@ def train_dynamics(
             train_data.dump_configs(x, dirs.data_dir,
                                     rank=RANK, local_rank=LOCAL_RANK)
             if IS_CHIEF:
+                # Save CheckpointManager
                 manager.save()
-                dynamics.save_networks(dirs.log_dir)
-                io.log(f'Checkpoint saved to: {manager.latest_checkpoint}',
-                       should_print=True)
-                #  save_models(dynamics, dirs)
-                train_data.save_and_flush(dirs.data_dir,
-                                          dirs.log_file,
+                mstr = f'Checkpoint saved to: {manager.latest_checkpoint}'
+                io.log(mstr, should_print=True)
+                # Save train_data and free consumed memory
+                train_data.save_and_flush(dirs.data_dir, dirs.log_file,
                                           rank=RANK, mode='a')
+                if not dynamics.config.hmc:
+                    # Save network weights
+                    nstr = ' '.join(['Networks saved to:', f'{dirs.log_dir}'])
+                    io.log(nstr, should_print=True)
+                    dynamics.save_networks(dirs.log_dir)
 
         # Print current training state and metrics
         if should_print(step):
@@ -437,14 +467,17 @@ def train_dynamics(
         if IS_CHIEF and (step + 1) % (50 * flags.print_steps) == 0:
             io.log(header.split('\n'), should_print=True)
 
+    # Dump config objects
     train_data.dump_configs(x, dirs.data_dir, rank=RANK, local_rank=LOCAL_RANK)
     if IS_CHIEF:
         manager.save()
         io.log(f'Checkpoint saved to: {manager.latest_checkpoint}')
-        dynamics.save_networks(dirs.log_dir)
         train_data.save_and_flush(dirs.data_dir,
                                   dirs.log_file,
                                   rank=RANK, mode='a')
+        if not dynamics.config.hmc:
+            dynamics.save_networks(dirs.log_dir)
+
         if writer is not None:
             writer.flush()
             writer.close()

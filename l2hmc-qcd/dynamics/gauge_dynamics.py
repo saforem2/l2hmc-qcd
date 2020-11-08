@@ -222,8 +222,8 @@ class GaugeDynamics(BaseDynamics):
                 print(f'Unable to load model from: {xnet_path}...')
                 print(f'Creating new network for xNet{i}...')
                 xnet_, vnet_ = self._build_network(step=i)
-                xnet.append(xnet)
-                vnet.append(vnet)
+                xnet.append(xnet_)
+                vnet.append(vnet_)
 
         return xnet, vnet
 
@@ -446,22 +446,6 @@ class GaugeDynamics(BaseDynamics):
                 metrics['logdets'].append(logdets_)
                 metrics['Hw'].append(energy_ - logdets_)
 
-            #  metrics.update({
-            #      'energies_transformed': [
-            #          (energies.read(i) - logdets.read(i))
-            #          for i in range(self.config.num_steps)
-            #      ]
-            #  })
-        #  metrics.update({
-        #      'energies': {
-        #          f'energy_lf{i}': energies.read(i)
-        #          energies.read(i) for i in range(self.config.num_steps)
-        #      },
-        #      'logdets': [
-        #          logdets.read(i) for i in range(self.config.num_steps)
-        #      ],
-        #  })
-
         return state_prop, metrics
 
     def _transition_kernel_forward(
@@ -614,21 +598,38 @@ class GaugeDynamics(BaseDynamics):
             verbose: bool = False,
     ):
         """Transition kernel of the augmented leapfrog integrator."""
+        if self.config.hmc:
+            if self._combined_updates:
+                args = (state, training)
+                return (
+                    self._transition_kernel_forward(*args)
+                    if forward else
+                    self._transition_kernel_backward(*args)
+                )
+            return self.transition_kernel_sep_nets(state, forward, training)
+
         step = self.optimizer.iterations
         if self.config.separate_networks:
             if self._combined_updates:
-                if forward:
-                    if step == 0 and verbose:
-                        print('Using `self._transition_kernel_forward`  !!')
-                    return self._transition_kernel_forward(state, training)
-
-                if step == 0 and verbose:
-                    print('Using `self._transition_kernel_backward`  !!')
-                return self._transition_kernel_backward(state, training)
-
-            if step == 0 and verbose:
-                print('Using `self._transition_kernel_sep_nets` !!')
+                print('Using self._combined_updates !!')
+                return (
+                    self._transition_kernel_forward(state, training)
+                    if forward else
+                    self._transition_kernel_backward(state, training)
+                )
             return self.transition_kernel_sep_nets(state, forward, training)
+            #  if forward:
+            #      if step == 0 and verbose:
+            #          print('Using `self._transition_kernel_forward`  !!')
+            #      return self._transition_kernel_forward(state, training)
+            #
+            #  if step == 0 and verbose:
+            #      print('Using `self._transition_kernel_backward`  !!')
+            #  return self._transition_kernel_backward(state, training)
+
+            #  if step == 0 and verbose:
+            #      print('Using `self._transition_kernel_sep_nets` !!')
+            #  return self.transition_kernel_sep_nets(state, forward, training)
 
         if self.config.directional_updates:
             if step == 0 and verbose:
@@ -1027,7 +1028,7 @@ class GaugeDynamics(BaseDynamics):
         return state_out, logdet
 
     @staticmethod
-    def mixed_loss(loss: tf.Tensor, weight: float):
+    def mixed_loss(loss: tf.Tensor, weight: float) -> (tf.Tensor):
         """Returns: tf.reduce_mean(weight / loss - loss / weight)."""
         return tf.reduce_mean((weight / loss) - (loss / weight))
 
@@ -1061,7 +1062,7 @@ class GaugeDynamics(BaseDynamics):
 
         return ploss, qloss
 
-    def _get_lr(self, step=None):
+    def _get_lr(self, step=None) -> (tf.Tensor):
         if step is None:
             step = self.optimizer.iterations
 
@@ -1268,7 +1269,9 @@ class GaugeDynamics(BaseDynamics):
 
         return states.out.x, metrics
 
-    def _calc_observables(self, state: State):
+    def _calc_observables(
+            self, state: State
+    ) -> (tf.Tensor, tf.Tensor, tf.Tensor):
         """Calculate the observables for a particular state.
 
         NOTE: We track the error in the plaquette instead of the actual value.
@@ -1280,7 +1283,10 @@ class GaugeDynamics(BaseDynamics):
 
         return plaqs, q_sin, q_int
 
-    def calc_observables(self, states):
+    def calc_observables(
+            self,
+            states: MonteCarloStates
+    ) -> (AttrDict):
         """Calculate observables."""
         _, q_init_sin, q_init_proj = self._calc_observables(states.init)
         plaqs, q_out_sin, q_out_proj = self._calc_observables(states.out)
@@ -1314,14 +1320,6 @@ class GaugeDynamics(BaseDynamics):
             'lr_config': self.lr_config,
             'params': self.params
         }
-
-    def _get_network(self, step: int):
-        if self.config.separate_networks:
-            xnet = getattr(self, f'xnets{int(step)}', None)
-            vnet = getattr(self, f'vnets{int(step)}', None)
-            return xnet, vnet
-
-        return self.xnet, self.vnet
 
     def _get_time(self, i, tile=1):
         """Format the MCMC step as:
