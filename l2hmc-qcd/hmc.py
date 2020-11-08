@@ -20,6 +20,10 @@ def parse_args():
         description='Run generic HMC.'
     )
 
+    parser.add_argument('--json_file', dest='json_file',
+                        type=str, default=None, required=False,
+                        help='json file containing HMC config')
+
     parser.add_argument('--run_steps', dest='run_steps',
                         type=int, default=None, required=False,
                         help='Number of sampling steps.')
@@ -41,27 +45,31 @@ def parse_args():
     return parser.parse_args()
 
 
-def multiple_runs():
+def multiple_runs(json_file=None):
+    """Perform multiple runs across a range of parameters."""
     num_steps = 10
-    run_steps = 5000
+    run_steps = 10000
     betas = [2., 3., 4., 5., 6.]
     #  eps = [0.1, 0.125, 0.15, 0.175, 0.2]
-    eps = [0.05, 0.075, 0.225, 0.25, 0.275]
+    eps = [0.05, 0.075, 0.1, 0.125, 0.15, 0.175, 0.2, 0.225, 0.25, 0.275]
     for b in betas:
         for e in eps:
             args = AttrDict({
                 'eps': e,
                 'beta': b,
                 'num_steps': num_steps,
-                'run_steps': run_steps
+                'run_steps': run_steps,
+                'json_file': json_file,
             })
             _ = main(args)
 
 
-def load_hmc_flags():
+def load_hmc_flags(json_file=None):
     """Load HMC flags from `BIN_DIR/hmc_configs.json`."""
-    cfg_file = os.path.join(BIN_DIR, 'hmc_configs.json')
-    with open(cfg_file, 'rt') as f:
+    if json_file is None:
+        json_file = os.path.join(BIN_DIR, 'hmc_configs.json')
+
+    with open(json_file, 'rt') as f:
         flags = json.load(f)
 
     return AttrDict(flags)
@@ -70,7 +78,8 @@ def load_hmc_flags():
 # pylint:disable=no-member
 def main(args):
     """Main method for running HMC."""
-    flags = load_hmc_flags()
+    #  flags = load_hmc_flags()
+    flags = load_hmc_flags(args.json_file)
 
     if args.beta is not None:
         flags.beta = args.beta
@@ -93,6 +102,6 @@ if __name__ == '__main__':
     FLAGS = parse_args()
     FLAGS = AttrDict(FLAGS.__dict__)  # pylint:disable=protected-access
     if FLAGS.run_loop:
-        multiple_runs()
+        multiple_runs(FLAGS.json_file)
     else:
         _ = main(FLAGS)
