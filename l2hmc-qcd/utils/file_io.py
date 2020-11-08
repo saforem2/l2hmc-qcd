@@ -523,6 +523,12 @@ def make_log_dir(
         root_dir = PROJECT_DIR
 
     dirs = [root_dir, 'logs', f'{model_type}_logs']
+
+    dynamics_config = configs.get('dynamics_config', None)
+    if dynamics_config is not None:
+        if dynamics_config.get('hmc', False):
+            dirs.append('hmc_logs')
+
     if cfg_str.startswith('DEBUG'):
         dirs.append('test')
 

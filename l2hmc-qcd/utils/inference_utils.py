@@ -109,12 +109,17 @@ def setup(
         runs_dir: Optional[str] = None
 ):
     """Setup to run inference."""
-    log_dir = dirs.get('log_dir', None)
-    if log_dir is None:
-        dirs = flags.get('dirs', None)
+    if dirs is None:
+        log_dir = flags.get('log_dir', None)
+        if log_dir is None:
+            log_dir = io.make_log_dir(flags)
+
+    else:
         log_dir = dirs.get('log_dir', None)
         if log_dir is None:
-            raise ValueError('Unable to resolve `log_dir`.')
+            log_dir = flags.get('log_dir', None)
+            if log_dir is None:
+                io.make_log_dir(flags)
 
     if runs_dir is None:
         if dynamics.config.get('hmc', False):
@@ -191,7 +196,7 @@ def setup(
         'steps': steps,
         'flags': flags,
         'runs_dir': runs_dir,
-        'log_dir': dirs.log_dir,
+        'log_dir': log_dir,
         'log_file': log_file,
         'run_dir': run_dir,
         'data_dir': data_dir,
@@ -312,20 +317,31 @@ def run_hmc(
     if not IS_CHIEF:
         return None, None, None
 
-    #  if dirs is None:
-    #      dirs = AttrDict({'log_dir': HMC_LOGS_DIR})
-    #      #  dirs = io.setup_directories(args, 'HMC')
-    #  if dirs is None:
-    #      dirs = AttrDict({'log_dir': HMC_LOGS_DIR})
+    log_dir = None
     if dirs is None:
-        dirs = io.setup_directories(args, name='HMC')
+        dirs = AttrDict({})
+        log_dir = args.get('log_dir', None)
+
+    if log_dir is None:
+        log_dir = args.get('log_dir', None)
 
     if hmc_dir is None:
         #  root_dir = HMC_LOGS_DIR
         month_str = io.get_timestamp('%Y_%m')
-        hmc_dir = os.path.join(dirs.log_dir, month_str)
+        if dirs is not None:
+            log_dir = dirs.get('log_dir', None)
+            if log_dir is None:
+                log_dir = args.get('log_dir', None)
+        if log_dir is None:
+            log_dir = HMC_LOGS_DIR
+
+        hmc_dir = os.path.join(log_dir, month_str)
 
     io.check_else_make_dir(hmc_dir)
+    dirs.update({
+        'log_dir': log_dir,
+        'hmc_dir': hmc_dir
+    })
 
     def get_run_fstr(run_dir):
         _, tail = os.path.split(run_dir)
