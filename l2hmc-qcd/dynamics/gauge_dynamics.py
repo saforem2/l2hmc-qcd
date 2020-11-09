@@ -258,9 +258,8 @@ class GaugeDynamics(BaseDynamics):
             self.xnet.save(xnet_paths)
             self.vnet.save(vnet_paths)
 
-    def _build_network(
+    def _build_networks(
             self,
-            step: int = None,
             net_config: NetworkConfig = None,
             conv_config: ConvolutionConfig = None,
     ):
@@ -310,14 +309,27 @@ class GaugeDynamics(BaseDynamics):
             }
         }
 
-        vname = f'VNet{step}' if step is not None else 'VNet'
-        xname = f'XNet{step}' if step is not None else 'XNet'
-        vnet = get_gauge_network(**vnet_cfg, name=vname)
-        xnet = get_gauge_network(**xnet_cfg, name=xname)
+        if self.config.separate_networks:
+            #  vname = f'VNet{step}' if step is not None else 'VNet'
+            #  xname = f'XNet{step}' if step is not None else 'XNet'
+            io.log('Using separate (x, v)-networks for each LF step!!')
+            vnet = [
+                get_gauge_network(**vnet_cfg, name=f'VNet{i}')
+                for i in range(self.config.num_steps)
+            ]
+            xnet = [
+                get_gauge_network(**xnet_cfg, name=f'XNet{i}')
+                for i in range(self.config.num_steps)
+            ]
+
+        else:
+            io.log('Using a single (x, v)-network for all LF steps!!')
+            vnet = get_gauge_network(**vnet_cfg, name='VNet')
+            xnet = get_gauge_network(**xnet_cfg, name='XNet')
 
         return xnet, vnet
 
-    def _build_networks(
+    def _build_networks_deprecated(
             self,
             net_config: NetworkConfig = None,
             conv_config: ConvolutionConfig = None,
@@ -328,20 +340,21 @@ class GaugeDynamics(BaseDynamics):
             xnet: tf.keras.models.Model
             vnet: tf.keras.models.Model
         """
-        if self.config.separate_networks:
-            xnet = []
-            vnet = []
-            for step in range(self.config.num_steps):
-                xnet_, vnet_ = self._build_network(step=step,
-                                                   net_config=net_config,
-                                                   conv_config=conv_config)
-                xnet.append(xnet_)
-                vnet.append(vnet_)
-
-        else:
-            xnet, vnet = self._build_network(net_config, conv_config)
-
-        return xnet, vnet
+        #  if self.config.separate_networks:
+        #      xnet = []
+        #      vnet = []
+        #      for step in range(self.config.num_steps):
+        #          xnet_, vnet_ = self._build_network(step=step,
+        #                                             net_config=net_config,
+        #                                             conv_config=conv_config)
+        #          xnet.append(xnet_)
+        #          vnet.append(vnet_)
+        #
+        #  else:
+        #      xnet, vnet = self._build_network(net_config, conv_config)
+        #
+        #  return xnet, vnet
+        pass
 
     def transition_kernel_directional(
             self,
@@ -577,18 +590,6 @@ class GaugeDynamics(BaseDynamics):
                 metrics['logdets'].append(logdets_)
                 metrics['Hw'].append(energy_ - logdets_)
 
-            #  logdets = logdets.write(self.config.num_steps, sumlogdet)
-            #  energies = energies.write(self.config.num_steps,
-            #                            self.hamiltonian(state_prop))
-            #  metrics.update({
-            #      'energies': [
-            #          energies.read(i) for i in range(self.config.num_steps)
-            #      ],
-            #      'logdets': [
-            #          logdets.read(i) for i in range(self.config.num_steps)
-            #      ],
-            #  })
-
         return state_prop, metrics
 
     def transition_kernel(
@@ -600,46 +601,36 @@ class GaugeDynamics(BaseDynamics):
     ):
         """Transition kernel of the augmented leapfrog integrator."""
         if self.config.hmc:
-            if self._combined_updates:
-                args = (state, training)
-                return (
-                    self._transition_kernel_forward(*args)
-                    if forward else
-                    self._transition_kernel_backward(*args)
-                )
-            return self.transition_kernel_sep_nets(state, forward, training)
+            return super().transition_kernel(state, forward, training)
 
-        step = self.optimizer.iterations
+        # ====
+        # If using `self._combined_updates`, we combine the half-step
+        # momentum-updates into a single full-step momentum updates in the
+        # inner leapfrog steps.
+        if self._combined_updates:
+            return (
+                self._transition_kernel_forward(state, training)
+                if forward else
+                self._transition_kernel_backward(state, training)
+            )
+
+        # ====
+        # Using separate networks for each leapfrog step?
+        # Significantly increases both the expressivity of the model,
+        # as well as its training cost.
         if self.config.separate_networks:
-            if self._combined_updates:
-                print('Using self._combined_updates !!')
-                return (
-                    self._transition_kernel_forward(state, training)
-                    if forward else
-                    self._transition_kernel_backward(state, training)
-                )
             return self.transition_kernel_sep_nets(state, forward, training)
-            #  if forward:
-            #      if step == 0 and verbose:
-            #          print('Using `self._transition_kernel_forward`  !!')
-            #      return self._transition_kernel_forward(state, training)
-            #
-            #  if step == 0 and verbose:
-            #      print('Using `self._transition_kernel_backward`  !!')
-            #  return self._transition_kernel_backward(state, training)
 
-            #  if step == 0 and verbose:
-            #      print('Using `self._transition_kernel_sep_nets` !!')
-            #  return self.transition_kernel_sep_nets(state, forward, training)
-
+        # ====
+        # Using directional updates? (Experimental, not well tested!!)
         if self.config.directional_updates:
-            if step == 0 and verbose:
-                print('Using `self._transition_kernel_directional` !!')
             return self.transition_kernel_directional(state, training)
 
-        if step == 0 and verbose:
-            print('Using `super().transition_kernel` !!')
-
+        # ====
+        # IF not using separate networks,
+        # AND not using combined momentum updates
+        # AND not using directional (persistent?) updates,
+        # THEN, use `BaseDynamics.transition_kernel()`.
         return super().transition_kernel(state, forward, training)
 
     def _scattered_xnet(self, inputs, mask, step, training=None):
