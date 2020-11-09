@@ -173,6 +173,7 @@ class GaugeDynamics(BaseDynamics):
             self.config.use_ncp = False
             self.config.separate_networks = False
             self.config.use_conv_net = False
+            self.net_config['use_batch_norm'] = False
             self.conv_config = None
             self.xnet, self.vnet = self._build_hmc_networks()
             if self.config.eps_fixed:
@@ -1139,48 +1140,43 @@ class GaugeDynamics(BaseDynamics):
         # Separated from [1038] for ordering when printing
         metrics.update({
             'accept_prob': accept_prob,
+            'accept_mask': data.get('accept_mask', None),
             'eps': self.eps,
             'beta': states.init.beta,
             'sumlogdet': data.get('sumlogdet', None),
-            'accept_mask': data.get('accept_mask', None),
         })
 
         if self._verbose:
             metrics.update({
-                #  'Hf': data.forward.energies,
                 'Hf': data.forward.H,
-                'Hwf': data.forward.Hw,
-                # ----
-                'Hf_start': data.forward.H[0],
-                'Hwf_start': data.forward.Hw[0],
-                # ----
-                'Hf_mid': data.forward.H[self.config.num_steps//2],
-                'Hwf_mid': data.forward.Hw[self.config.num_steps//2],
-                # ----
-                'Hf_end': data.forward.H[-1],
-                'Hwf_end': data.forward.Hw[-1],
-                # ----
-                'ldf_start': data.forward.logdets[0],
-                'ldf_mid': data.forward.logdets[self.config.num_steps//2],
-                'ldf_end': data.forward.logdets[-1],
-                'sldf': data.forward.logdets,
-                # ----
                 'Hb': data.backward.H,
+                'Hwf': data.forward.Hw,
                 'Hwb': data.backward.Hw,
                 # ----
+                'Hf_start': data.forward.H[0],
                 'Hb_start': data.backward.H[0],
+                'Hwf_start': data.forward.Hw[0],
                 'Hwb_start': data.backward.Hw[0],
                 # ----
+                'Hf_mid': data.forward.H[self.config.num_steps//2],
                 'Hb_mid': data.backward.H[self.config.num_steps//2],
+                'Hwf_mid': data.forward.Hw[self.config.num_steps//2],
                 'Hwb_mid': data.backward.Hw[self.config.num_steps//2],
                 # ----
+                'Hf_end': data.forward.H[-1],
                 'Hb_end': data.backward.H[-1],
+                'Hwf_end': data.forward.Hw[-1],
                 'Hwb_end': data.backward.Hw[-1],
                 # ----
+                'ldf_start': data.forward.logdets[0],
                 'ldb_start': data.backward.logdets[0],
+                'ldf_mid': data.forward.logdets[self.config.num_steps//2],
                 'ldb_mid': data.backward.logdets[self.config.num_steps//2],
+                'ldf_end': data.forward.logdets[-1],
                 'ldb_end': data.backward.logdets[-1],
+                'sldf': data.forward.logdets,
                 'sldb': data.backward.logdets,
+                # ----
             })
 
         observables = self.calc_observables(states)
@@ -1203,7 +1199,9 @@ class GaugeDynamics(BaseDynamics):
             metrics (AttrDict): Dictionary of various metrics for logging.
         """
         start = time.time()
-        states, data = self(inputs, training=False)
+        x, beta = inputs
+        x = self.normalizer(x)
+        states, data = self((x, beta), training=False)
         accept_prob = data.get('accept_prob', None)
         ploss, qloss = self.calc_losses(states, accept_prob)
         loss = ploss + qloss
@@ -1220,48 +1218,43 @@ class GaugeDynamics(BaseDynamics):
 
         metrics.update({
             'accept_prob': accept_prob,
+            'accept_mask': data.get('accept_mask', None),
             'eps': self.eps,
             'beta': states.init.beta,
             'sumlogdet': data.get('sumlogdet', None),
-            'accept_mask': data.get('accept_mask', None),
         })
 
         if self._verbose:
             metrics.update({
-                #  'Hf': data.forward.energies,
                 'Hf': data.forward.H,
-                'Hwf': data.forward.Hw,
-                # ----
-                'Hf_start': data.forward.H[0],
-                'Hwf_start': data.forward.Hw[0],
-                # ----
-                'Hf_mid': data.forward.H[self.config.num_steps//2],
-                'Hwf_mid': data.forward.Hw[self.config.num_steps//2],
-                # ----
-                'Hf_end': data.forward.H[-1],
-                'Hwf_end': data.forward.Hw[-1],
-                # ----
-                'ldf_start': data.forward.logdets[0],
-                'ldf_mid': data.forward.logdets[self.config.num_steps//2],
-                'ldf_end': data.forward.logdets[-1],
-                'sldf': data.forward.logdets,
-                # ----
                 'Hb': data.backward.H,
+                'Hwf': data.forward.Hw,
                 'Hwb': data.backward.Hw,
                 # ----
+                'Hf_start': data.forward.H[0],
                 'Hb_start': data.backward.H[0],
+                'Hwf_start': data.forward.Hw[0],
                 'Hwb_start': data.backward.Hw[0],
                 # ----
+                'Hf_mid': data.forward.H[self.config.num_steps//2],
                 'Hb_mid': data.backward.H[self.config.num_steps//2],
+                'Hwf_mid': data.forward.Hw[self.config.num_steps//2],
                 'Hwb_mid': data.backward.Hw[self.config.num_steps//2],
                 # ----
+                'Hf_end': data.forward.H[-1],
                 'Hb_end': data.backward.H[-1],
+                'Hwf_end': data.forward.Hw[-1],
                 'Hwb_end': data.backward.Hw[-1],
                 # ----
+                'ldf_start': data.forward.logdets[0],
                 'ldb_start': data.backward.logdets[0],
+                'ldf_mid': data.forward.logdets[self.config.num_steps//2],
                 'ldb_mid': data.backward.logdets[self.config.num_steps//2],
+                'ldf_end': data.forward.logdets[-1],
                 'ldb_end': data.backward.logdets[-1],
+                'sldf': data.forward.logdets,
                 'sldb': data.backward.logdets,
+                # ----
             })
 
         observables = self.calc_observables(states)
