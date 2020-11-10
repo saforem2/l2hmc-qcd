@@ -10,6 +10,27 @@ from tqdm.auto import tqdm
 import tensorflow as tf
 
 
+class Horovod:
+    """Dummy object for Horovod."""
+    def __init__(self):
+        pass
+
+    def init(self):
+        return 0
+
+    def rank(self):
+        return 0
+
+    def local_rank(self):
+        return 0
+
+    def size(self):
+        return 1
+
+    def local_size(self):
+        return 1
+
+
 def _try_except(function):
     try:
         function()
@@ -26,6 +47,7 @@ if tf.__version__.startswith('1.'):
 
 
 try:
+    import horovod
     import horovod.tensorflow as hvd  # pylint:disable=wrong-import-order
     hvd.init()
     GPUS = tf.config.experimental.list_physical_devices('GPU')

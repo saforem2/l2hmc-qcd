@@ -19,12 +19,13 @@ from tqdm.auto import tqdm
 import joblib
 import numpy as np
 
-try:
-    from rich.logging import RichHandler
-    handlers = [RichHandler(rich_tracebacks=True)]
-
-except ImportError:
-    handlers = []
+handlers = []
+#  try:
+#      from rich.logging import RichHandler
+#      handlers = [RichHandler(rich_tracebacks=True)]
+#
+#  except ImportError:
+#      handlers = []
 
 
 if typing.TYPE_CHECKING:
@@ -32,16 +33,15 @@ if typing.TYPE_CHECKING:
 
 try:
     import horovod.tensorflow as hvd
-
-    RANK = hvd.rank()
-    NUM_WORKERS = hvd.size()
-    IS_CHIEF = (RANK == 0)
     HAS_HOROVOD = True
 except (ImportError, ModuleNotFoundError):
-    RANK = 0
-    NUM_WORKERS = 1
-    IS_CHIEF = (RANK == 0)
+    from utils import Horovod
+    hvd = Horovod()
     HAS_HOROVOD = False
+
+RANK = hvd.rank()
+NUM_WORKERS = hvd.size()
+IS_CHIEF = (RANK == 0)
 
 # pylint:disable=wrong-import-position
 from config import PROJECT_DIR

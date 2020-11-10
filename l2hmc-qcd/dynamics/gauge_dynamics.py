@@ -1064,6 +1064,7 @@ class GaugeDynamics(BaseDynamics):
 
         return K.get_value(self.optimizer.lr)
 
+    @tf.function
     def train_step(
             self,
             inputs: Tuple[tf.Tensor, tf.Tensor]
@@ -1077,7 +1078,7 @@ class GaugeDynamics(BaseDynamics):
         start = time.time()
         with tf.GradientTape() as tape:
             x, beta = inputs
-            tape.watch(x)
+            #  tape.watch(x)
             states, data = self((x, beta), training=True)
             accept_prob = data.get('accept_prob', None)
             ploss, qloss = self.calc_losses(states, accept_prob)
@@ -1179,6 +1180,7 @@ class GaugeDynamics(BaseDynamics):
 
         return states.out.x, metrics
 
+    @tf.function
     def test_step(
             self,
             inputs: Tuple[tf.Tensor, tf.Tensor]
