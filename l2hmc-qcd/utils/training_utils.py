@@ -15,6 +15,18 @@ from typing import Optional, Union
 
 import numpy as np
 import tensorflow as tf
+try:
+    import horovod.tensorflow as hvd
+    HAS_HOROVOD = True
+except (ImportError, ModuleNotFoundError):
+    from utils import Horovod
+    hvd = Horovod()
+    HAS_HOROVOD = False
+
+RANK = hvd.rank()
+NUM_WORKERS = hvd.size()
+LOCAL_RANK = hvd.local_rank()
+IS_CHIEF = (RANK == 0)
 
 from tqdm.auto import tqdm
 
@@ -22,7 +34,7 @@ import utils.file_io as io
 
 from config import CBARS, TF_FLOAT
 from network.config import LearningRateConfig
-from utils import IS_CHIEF, LOCAL_RANK, NUM_WORKERS, RANK
+#  from utils import IS_CHIEF, LOCAL_RANK, NUM_WORKERS, RANK
 from utils.attr_dict import AttrDict
 from utils.learning_rate import ReduceLROnPlateau
 from utils.summary_utils import update_summaries
@@ -33,9 +45,10 @@ from dynamics.config import NET_WEIGHTS_HMC
 from dynamics.base_dynamics import BaseDynamics
 from dynamics.gauge_dynamics import build_dynamics, GaugeDynamics
 
-TF_VERSION = 2
 if tf.__version__.startswith('1.'):
     TF_VERSION = 1
+elif tf.__version__.startswith('2.'):
+    TF_VERSION = 2
 
 #  try:
 #      tf.config.experimental.enable_mlir_bridge()
@@ -261,10 +274,10 @@ def setup(dynamics, flags, dirs=None, x=None, betas=None):
 
     _ = dynamics.apply_transition(inputs, training=True)
 
-    if flags.get('compile', True):
-        train_step = tf.function(dynamics.train_step)
-    else:
-        train_step = dynamics.train_step
+    #  if flags.get('compile', True):
+    #      train_step = tf.function(dynamics.train_step)
+    #  else:
+    #      train_step = dynamics.train_step
 
     # ====
     # Plot computational graph of `dynamics.xnet`, `dynamics.vnet`
@@ -298,7 +311,7 @@ def setup(dynamics, flags, dirs=None, x=None, betas=None):
         'writer': writer,
         'manager': manager,
         'checkpoint': ckpt,
-        'train_step': train_step,
+        #  'train_step': train_step,
         'train_data': train_data,
         'pstart': pstart,
         'pstop': pstop,
@@ -337,7 +350,7 @@ def train_dynamics(
     x = config.x
     steps = config.steps
     betas = config.betas
-    train_step = config.train_step
+    #  train_step = config.train_step
     ckpt = config.checkpoint
     manager = config.manager
     train_data = config.train_data
@@ -350,22 +363,28 @@ def train_dynamics(
     # | Try running compiled `train_step` fn otherwise run imperatively |
     # +-----------------------------------------------------------------+
     io.log(120 * '*')
-    try:
-        if flags.profiler:
-            tf.summary.trace_on(graph=True, profiler=True)
-        x, metrics = train_step((x, tf.constant(betas[0])))
-        io.log('Compiled `dynamics.train_step` using tf.function!')
-        if IS_CHIEF and flags.profiler:
-            tf.summary.trace_export(name='train_step_trace', step=0,
-                                    profiler_outdir=dirs.summary_dir)
-            tf.summary.trace_off()
-    except Exception as exception:
-        io.log(str(exception), level='CRITICAL')
-        train_step = dynamics.train_step
-        x, metrics = train_step((x, tf.constant(betas[0])))
-        lstr = '\n'.join(['`tf.function(dynamics.train_step)` failed!',
-                          'Running `dynamics.train_step` imperatively...'])
-        io.log(lstr, level='CRITICAL')
+    if flags.profiler:
+        #  tf.summary.trace_on(graph=True, profiler=True)
+        io.log('Profiling for 10 steps...')
+        for step in range(10):
+            pkwargs = {'step_num': step, '_r': 1}
+            with tf.profiler.experimental.Trace('train', **pkwargs):
+                x, metrics = dynamics.train_step(
+                    (x, tf.constant(betas[0]))
+                )
+
+        #  io.log('Compiled `dynamics.train_step` using tf.function!')
+        #  if IS_CHIEF and flags.profiler:
+        #      tf.summary.trace_export(name='train_step_trace', step=0,
+        #                              profiler_outdir=dirs.summary_dir)
+        #      tf.summary.trace_off()
+    #  except Exception as exception:
+    #      io.log(str(exception), level='CRITICAL')
+    #      train_step = dynamics.train_step
+    #      x, metrics = train_step((x, tf.constant(betas[0])))
+    #      lstr = '\n'.join(['`tf.function(dynamics.train_step)` failed!',
+    #                        'Running `dynamics.train_step` imperatively...'])
+    #      io.log(lstr, level='CRITICAL')
     io.log(120*'*')
 
     # +--------------------------------+
@@ -388,7 +407,7 @@ def train_dynamics(
 
     def timed_step(x: tf.Tensor, beta: tf.Tensor):
         start = time.time()
-        x, metrics = train_step((x, tf.constant(beta)))
+        x, metrics = dynamics.train_step((x, tf.constant(beta)))
         metrics.dt = time.time() - start
         return x, metrics
 

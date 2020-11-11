@@ -23,9 +23,19 @@ class AttrDict(dict):
         if d is None:
             d = self.__dict__
 
+        if not isinstance(d, AttrDict):
+            d = AttrDict(**d)
+
         for key, val in d.items():
             if isinstance(val, dict):
                 if not isinstance(val, AttrDict):
-                    return self.flatten(val)
-                d[key] = AttrDict(val)
+                    d[key] = self.flatten(val)
+        #
+        #
+        #  for key, val in d.items():
+        #      if isinstance(val, dict):
+        #          if not isinstance(val, AttrDict):
+        #              return self.flatten(val)
+        #          d[key] = AttrDict(val)
+        #  return d
         return d

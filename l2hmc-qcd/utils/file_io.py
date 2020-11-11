@@ -4,7 +4,7 @@ file_io.py
 # pylint:disable=too-many-branches, too-many-statements
 # pylint:disable=too-many-locals,invalid-name,too-many-locals
 # pylint:disable=too-many-arguments
-from __future__ import absolute_import, annotations, division, print_function
+from __future__ import absolute_import, division, print_function
 
 import os
 import sys
@@ -28,8 +28,8 @@ handlers = []
 #      handlers = []
 
 
-if typing.TYPE_CHECKING:
-    from dynamics.base_dynamics import BaseDynamics
+#  if typing.TYPE_CHECKING:
+#      from dynamics.base_dynamics import BaseDynamics
 
 try:
     import horovod.tensorflow as hvd
@@ -570,7 +570,7 @@ def make_run_dir(FLAGS, base_dir):
     return run_dir
 
 
-def save_network_weights(dynamics: Type[BaseDynamics], train_dir):
+def save_network_weights(dynamics, train_dir):
     """Save network weights as dictionary to `.z` files."""
     xnets = dynamics.xnets
     vnets = dynamics.vnets
