@@ -32,8 +32,12 @@ handlers = []
 #      from dynamics.base_dynamics import BaseDynamics
 
 try:
+    import horovod
     import horovod.tensorflow as hvd
     HAS_HOROVOD = True
+    logging.info(f'Using horovod version: {horovod.__version__}')
+    logging.info(f'Using horovod from: {horovod.__file__}')
+
 except (ImportError, ModuleNotFoundError):
     from utils import Horovod
     hvd = Horovod()
@@ -63,15 +67,22 @@ LOG_LEVELS = {
     'DEBUG': logging.DEBUG,
 }
 
-logging.getLogger('tensorflow').setLevel(logging.ERROR)
-logging.getLogger('arviz').setLevel(logging.ERROR)
+logging.getLogger('tensorflow').setLevel(logging.INFO)
+logging.getLogger('arviz').setLevel(logging.INFO)
+logger = logging.getLogger(__name__)
+logging_datefmt = '%Y-%m-%d %H:%M:%S'
+logging_level = logging.INFO
+logging_format = (
+    '%(asctime)s %(levelname)s:%(process)s:%(thread)s:%(name)s:%(message)s'
+)
 
 if IS_CHIEF:
     logging.basicConfig(
         level=logging.INFO,
-        format="%(asctime)s:%(levelname)s:%(message)s",
-        #  stream=sys.stdout,
-        handlers=handlers
+        format=logging_format,
+        datefmt=logging_datefmt,
+        handlers=handlers,
+        stream=sys.stdout,
     )
 else:
     logging.basicConfig(
@@ -79,6 +90,23 @@ else:
         format="%(asctime)s:%(levelname)s:%(message)s",
         stream=None
     )
+
+if HAS_HOROVOD:
+    logging_format = (
+        '%(asctime)s %(levelname)s:%(process)s:%(thread)s:'
+        + ('%05d' % hvd.rank()) + ':%(name)s:%(message)s'
+    )
+    if RANK > 0:
+        logging_level = logging.WARNING
+
+    logging.basicConfig(level=logging_level,
+                        format=logging_format,
+                        datefmt=logging_datefmt,
+                        stream=sys.stdout if hvd.rank() == 0 else None)
+    logging.warning(' '.join([f'rank: {hvd.rank()}',
+                              f'local_rank: {hvd.local_rank()}',
+                              f'size: {hvd.size()}',
+                              f'local_size: {hvd.local_size()}']))
 
 
 def in_notebook():

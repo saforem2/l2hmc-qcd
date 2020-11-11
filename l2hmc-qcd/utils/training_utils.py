@@ -15,6 +15,7 @@ from typing import Optional, Union
 
 import numpy as np
 import tensorflow as tf
+import utils.file_io as io
 try:
     import horovod.tensorflow as hvd
     HAS_HOROVOD = True
@@ -30,7 +31,6 @@ IS_CHIEF = (RANK == 0)
 
 from tqdm.auto import tqdm
 
-import utils.file_io as io
 
 from config import CBARS, TF_FLOAT
 from network.config import LearningRateConfig
@@ -365,19 +365,17 @@ def train_dynamics(
     io.log(120 * '*')
     if flags.profiler:
         #  tf.summary.trace_on(graph=True, profiler=True)
-        io.log('Profiling for 10 steps...')
+        tf.profiler.experimental.start(logdir=dirs.summary_dir)
+        io.log('Running 10 profiling steps...')
         for step in range(10):
-            pkwargs = {'step_num': step, '_r': 1}
-            with tf.profiler.experimental.Trace('train', **pkwargs):
-                x, metrics = dynamics.train_step(
-                    (x, tf.constant(betas[0]))
-                )
+            x, metrics = dynamics.train_step((x, tf.constant(betas[0])))
+            #  x, metrics = train_step((x, tf.constant(betas[0])))
 
-        #  io.log('Compiled `dynamics.train_step` using tf.function!')
-        #  if IS_CHIEF and flags.profiler:
-        #      tf.summary.trace_export(name='train_step_trace', step=0,
-        #                              profiler_outdir=dirs.summary_dir)
-        #      tf.summary.trace_off()
+        tf.profiler.experimental.stop(save=True)
+        #  tf.summary.trace_export(name='train_step_trace', step=0,
+        #                          profiler_outdir=dirs.summary_dir)
+        #  tf.summary.trace_off()
+        io.log('Done!')
     #  except Exception as exception:
     #      io.log(str(exception), level='CRITICAL')
     #      train_step = dynamics.train_step
@@ -397,6 +395,7 @@ def train_dynamics(
             mc_states, _ = dynamics.md_update((x, tf.constant(betas[0])),
                                               training=True)
             x = mc_states.out.x
+        io.log('Done!')
 
     # +--------------------------------------------------------------+
     # | Final setup; create timing wrapper for `train_step` function |
