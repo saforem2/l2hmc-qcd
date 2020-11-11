@@ -8,16 +8,24 @@ Train 2D U(1) model using eager execution in tensorflow.
 from __future__ import absolute_import, division, print_function
 
 import os
-import sys
-os.environ['TF_CPP_MIN_VLOG_LEVEL'] = '3'
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 import logging
 import contextlib
+from utils import run_tf_check
 
 import tensorflow as tf
-from utils import run_tf_check, RANK, LOCAL_RANK, NUM_WORKERS, IS_CHIEF
+import utils.file_io as io
+
+from utils.attr_dict import AttrDict
+
+from utils.parse_configs import parse_configs
+from utils.training_utils import train, train_hmc
+from utils.inference_utils import run, run_hmc
+
 run_tf_check()
+
+os.environ['TF_CPP_MIN_VLOG_LEVEL'] = '3'
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 logger = logging.getLogger(__name__)
 logging_datefmt = '%Y-%m-%d %H:%M:%S'
@@ -33,51 +41,22 @@ logging_format = (
 #                      stream=sys.stdout if RANK == 0 else sys.stderr)
 
 
-try:
-    import horovod
-    import horovod.tensorflow as hvd
-    #  hvd.init()
-    HAS_HOROVOD = True
-    #  gpus = tf.config.experimental.list_physical_devices('GPU')
-    #  for gpu in gpus:
-    #      tf.config.experimental.set_memory_growth(gpu, True)
-    #  if gpus:
-    #      tf.config.experimental.set_visible_devices(
-    #          gpus[hvd.local_rank()], 'GPU'
-    #      )
+logging.info(f'using tensorflow version: {tf.__version__}')
+logging.info(f'using tensorflow from: {tf.__file__}')
 
-    logging_format = (
-        '%(asctime)s %(levelname)s:%(process)s:%(thread)s:'
-        + ('%05d' % hvd.rank()) + ':%(name)s:%(message)s'
-    )
-    logging.basicConfig(level=logging_level,
-                        format=logging_format,
-                        datefmt=logging_datefmt,
-                        stream=sys.stdout if hvd.rank() == 0 else None)
-    logging.warning(' '.join([f'rank: {hvd.rank()}',
-                              f'local_rank: {hvd.local_rank()}',
-                              f'size: {hvd.size()}',
-                              f'local_size: {hvd.local_size()}']))
-    logging.info(f'using tensorflow version: {tf.__version__}')
-    logging.info(f'using tensorflow from: {tf.__file__}')
-    logging.info(f'using horovod version: {horovod.__version__}')
-    logging.info(f'using horovod from: {horovod.__file__}')
-
-
-except ImportError:
-    HAS_HOROVOD = False
-
-
-if RANK > 0:
-    logging_level = logging.WARNING
-
-import utils.file_io as io
-
-from utils.attr_dict import AttrDict
-
-from utils.parse_configs import parse_configs
-from utils.training_utils import train, train_hmc
-from utils.inference_utils import run, run_hmc
+#  try:
+#      import horovod
+#      import horovod.tensorflow as hvd
+#      #  hvd.init()
+#      HAS_HOROVOD = True
+#      logging.info(f'using horovod version: {horovod.__version__}')
+#      logging.info(f'using horovod from: {horovod.__file__}')
+#  except ImportError:
+#      HAS_HOROVOD = False
+#
+#
+#  if RANK > 0:
+#      logging_level = logging.WARNING
 
 
 @contextlib.contextmanager

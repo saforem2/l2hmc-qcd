@@ -451,14 +451,20 @@ class GaugeDynamics(BaseDynamics):
             logdets = logdets.write(step, sumlogdet)
             energies = energies.write(step, self.hamiltonian(state_prop))
             metrics.update({
-                'H': [], 'Hw': [], 'logdets': [],
+                'H': energies.stack(),
+                'logdets': logdets.stack(),
+                'Hw': energies.stack() - logdets.stack()
             })
-            for i in range(self.config.num_steps):
-                energy_ = energies.read(i)
-                logdets_ = logdets.read(i)
-                metrics['H'].append(energy_)
-                metrics['logdets'].append(logdets_)
-                metrics['Hw'].append(energy_ - logdets_)
+            #  metrics.update({
+            #      'H': [], 'Hw': [], 'logdets': [],
+            #  })
+            #
+            #  for i in range(self.config.num_steps):
+            #      energy_ = energies.read(i)
+            #      logdets_ = logdets.read(i)
+            #      metrics['H'].append(energy_)
+            #      metrics['logdets'].append(logdets_)
+            #      metrics['Hw'].append(energy_ - logdets_)
 
         return state_prop, metrics
 
@@ -516,14 +522,19 @@ class GaugeDynamics(BaseDynamics):
             logdets = logdets.write(step, sumlogdet)
             energies = energies.write(step, self.hamiltonian(state_prop))
             metrics.update({
-                'H': [], 'Hw': [], 'logdets': [],
+                'H': energies.stack(),
+                'logdets': logdets.stack(),
+                'Hw': energies.stack() - logdets.stack()
             })
-            for i in range(self.config.num_steps):
-                energy_ = energies.read(i)
-                logdets_ = logdets.read(i)
-                metrics['H'].append(energy_)
-                metrics['logdets'].append(logdets_)
-                metrics['Hw'].append(energy_ - logdets_)
+            #  metrics.update({
+            #      'H': [], 'Hw': [], 'logdets': [],
+            #  })
+            #  for i in range(self.config.num_steps):
+            #      energy_ = energies.read(i)
+            #      logdets_ = logdets.read(i)
+            #      metrics['H'].append(energy_)
+            #      metrics['logdets'].append(logdets_)
+            #      metrics['Hw'].append(energy_ - logdets_)
 
         return state_prop, metrics
 
@@ -581,14 +592,19 @@ class GaugeDynamics(BaseDynamics):
             logdets = logdets.write(step, sumlogdet)
             energies = energies.write(step, self.hamiltonian(state_prop))
             metrics.update({
-                'H': [], 'Hw': [], 'logdets': [],
+                'H': energies.stack(),
+                'logdets': logdets.stack(),
+                'Hw': energies.stack() - logdets.stack()
             })
-            for i in range(self.config.num_steps):
-                energy_ = energies.read(i)
-                logdets_ = logdets.read(i)
-                metrics['H'].append(energy_)
-                metrics['logdets'].append(logdets_)
-                metrics['Hw'].append(energy_ - logdets_)
+            #  metrics.update({
+            #      'H': [], 'Hw': [], 'logdets': [],
+            #  })
+            #  for i in range(self.config.num_steps):
+            #      energy_ = energies.read(i)
+            #      logdets_ = logdets.read(i)
+            #      metrics['H'].append(energy_)
+            #      metrics['logdets'].append(logdets_)
+            #      metrics['Hw'].append(energy_ - logdets_)
 
         return state_prop, metrics
 
@@ -1064,7 +1080,7 @@ class GaugeDynamics(BaseDynamics):
 
         return K.get_value(self.optimizer.lr)
 
-    @tf.function
+    @tf.function(experimental_follow_type_hints=True)
     def train_step(
             self,
             inputs: Tuple[tf.Tensor, tf.Tensor]
@@ -1155,17 +1171,17 @@ class GaugeDynamics(BaseDynamics):
                 'Hwf_mid': data.forward.Hw[self.config.num_steps//2],
                 'Hwb_mid': data.backward.Hw[self.config.num_steps//2],
                 # ----
-                'Hf_end': data.forward.H[-1],
-                'Hb_end': data.backward.H[-1],
-                'Hwf_end': data.forward.Hw[-1],
-                'Hwb_end': data.backward.Hw[-1],
+                'Hf_end': data.forward.H[self.config.num_steps-1],
+                'Hb_end': data.backward.H[self.config.num_steps-1],
+                'Hwf_end': data.forward.Hw[self.config.num_steps-1],
+                'Hwb_end': data.backward.Hw[self.config.num_steps-1],
                 # ----
                 'ldf_start': data.forward.logdets[0],
                 'ldb_start': data.backward.logdets[0],
                 'ldf_mid': data.forward.logdets[self.config.num_steps//2],
                 'ldb_mid': data.backward.logdets[self.config.num_steps//2],
-                'ldf_end': data.forward.logdets[-1],
-                'ldb_end': data.backward.logdets[-1],
+                'ldf_end': data.forward.logdets[self.config.num_steps-1],
+                'ldb_end': data.backward.logdets[self.config.num_steps-1],
                 'sldf': data.forward.logdets,
                 'sldb': data.backward.logdets,
                 # ----
@@ -1180,7 +1196,7 @@ class GaugeDynamics(BaseDynamics):
 
         return states.out.x, metrics
 
-    @tf.function
+    @tf.function(experimental_follow_type_hints=True)
     def test_step(
             self,
             inputs: Tuple[tf.Tensor, tf.Tensor]
@@ -1234,17 +1250,17 @@ class GaugeDynamics(BaseDynamics):
                 'Hwf_mid': data.forward.Hw[self.config.num_steps//2],
                 'Hwb_mid': data.backward.Hw[self.config.num_steps//2],
                 # ----
-                'Hf_end': data.forward.H[-1],
-                'Hb_end': data.backward.H[-1],
-                'Hwf_end': data.forward.Hw[-1],
-                'Hwb_end': data.backward.Hw[-1],
+                'Hf_end': data.forward.H[self.config.num_steps-1],
+                'Hb_end': data.backward.H[self.config.num_steps-1],
+                'Hwf_end': data.forward.Hw[self.config.num_steps-1],
+                'Hwb_end': data.backward.Hw[self.config.num_steps-1],
                 # ----
                 'ldf_start': data.forward.logdets[0],
                 'ldb_start': data.backward.logdets[0],
                 'ldf_mid': data.forward.logdets[self.config.num_steps//2],
                 'ldb_mid': data.backward.logdets[self.config.num_steps//2],
-                'ldf_end': data.forward.logdets[-1],
-                'ldb_end': data.backward.logdets[-1],
+                'ldf_end': data.forward.logdets[self.config.num_steps-1],
+                'ldb_end': data.backward.logdets[self.config.num_steps-1],
                 'sldf': data.forward.logdets,
                 'sldb': data.backward.logdets,
                 # ----
