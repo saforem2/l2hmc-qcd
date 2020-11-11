@@ -8,6 +8,7 @@ Train 2D U(1) model using eager execution in tensorflow.
 from __future__ import absolute_import, division, print_function
 
 import os
+import sys
 os.environ['TF_CPP_MIN_VLOG_LEVEL'] = '3'
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
@@ -15,33 +16,8 @@ import logging
 import contextlib
 
 import tensorflow as tf
-if tf.__version__.startswith('1.'):
-    try:
-        tf.compat.v1.enable_v2_behavior()
-    except AttributeError:
-        print('Unable to call \n'
-              '`tf.compat.v1.enable_v2_behavior()`. Continuing...')
-    try:
-        tf.compat.v1.enable_control_flow_v2()
-    except AttributeError:
-        print('Unable to call \n'
-              '`tf.compat.v1.enable_control_flow_v2()`. Continuing...')
-    try:
-        tf.compat.v1.enable_v2_tensorshape()
-    except AttributeError:
-        print('Unable to call \n'
-              '`tf.compat.v1.enable_v2_tensorshape()`. Continuing...')
-    try:
-        tf.compat.v1.enable_eager_execution()
-    except AttributeError:
-        print('Unable to call \n'
-              '`tf.compat.v1.enable_eager_execution()`. Continuing...')
-    try:
-        tf.compat.v1.enable_resource_variables()
-    except AttributeError:
-        print('Unable to call \n'
-              '`tf.compat.v1.enable_resource_variables()`. Continuing...')
-
+from utils import run_tf_check, RANK, LOCAL_RANK, NUM_WORKERS, IS_CHIEF
+run_tf_check()
 
 logger = logging.getLogger(__name__)
 logging_datefmt = '%Y-%m-%d %H:%M:%S'
@@ -49,26 +25,35 @@ logging_level = logging.INFO
 logging_format = (
     '%(asctime)s %(levelname)s:%(process)s:%(thread)s:%(name)s:%(message)s'
 )
-logging.basicConfig(level=logging_level,
-                    format=logging_format,
-                    datefmt=logging_datefmt)
+#  stream = sys.stdout if RANK == 0 else sys.stderr
+#
+#  logging.basicConfig(level=logging_level,
+#                      format=logging_format,
+#                      datefmt=logging_datefmt,
+#                      stream=sys.stdout if RANK == 0 else sys.stderr)
+
 
 try:
     import horovod
     import horovod.tensorflow as hvd
-    hvd.init()
-    gpus = tf.config.experimental.list_physical_devices('GPU')
-    for gpu in gpus:
-        tf.config.experimental.set_memory_growth(gpu, True)
-    if gpus:
-        tf.config.experimental.set_visible_devices(
-            gpus[hvd.local_rank()], 'GPU'
-        )
+    #  hvd.init()
+    HAS_HOROVOD = True
+    #  gpus = tf.config.experimental.list_physical_devices('GPU')
+    #  for gpu in gpus:
+    #      tf.config.experimental.set_memory_growth(gpu, True)
+    #  if gpus:
+    #      tf.config.experimental.set_visible_devices(
+    #          gpus[hvd.local_rank()], 'GPU'
+    #      )
 
     logging_format = (
         '%(asctime)s %(levelname)s:%(process)s:%(thread)s:'
         + ('%05d' % hvd.rank()) + ':%(name)s:%(message)s'
     )
+    logging.basicConfig(level=logging_level,
+                        format=logging_format,
+                        datefmt=logging_datefmt,
+                        stream=sys.stdout if hvd.rank() == 0 else None)
     logging.warning(' '.join([f'rank: {hvd.rank()}',
                               f'local_rank: {hvd.local_rank()}',
                               f'size: {hvd.size()}',
@@ -80,12 +65,9 @@ try:
 
 
 except ImportError:
-    from utils import Horovod
-    hvd = Horovod()
+    HAS_HOROVOD = False
 
 
-RANK = hvd.rank()
-NUM_RANKS = hvd.size()
 if RANK > 0:
     logging_level = logging.WARNING
 
