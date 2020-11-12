@@ -34,17 +34,26 @@ try:
     import horovod
     import horovod.tensorflow as hvd
     HAS_HOROVOD = True
+    RANK = hvd.rank()
+    LOCAL_RANK = hvd.local_rank()
+    NUM_WORKERS = hvd.size()
+    IS_CHIEF = (RANK == 0)
     logging.info(f'Using horovod version: {horovod.__version__}')
     logging.info(f'Using horovod from: {horovod.__file__}')
 
 except (ImportError, ModuleNotFoundError):
-    from utils import Horovod
-    hvd = Horovod()
     HAS_HOROVOD = False
+    RANK = LOCAL_RANK = 0
+    NUM_WORKERS = 1
+    IS_CHIEF = True
 
-RANK = hvd.rank()
-NUM_WORKERS = hvd.size()
-IS_CHIEF = (RANK == 0)
+    #  from utils import Horovod
+    #  hvd = Horovod()
+    #  HAS_HOROVOD = False
+
+#  RANK = hvd.rank()
+#  NUM_WORKERS = hvd.size()
+#  IS_CHIEF = (RANK == 0)
 
 # pylint:disable=wrong-import-position
 from config import PROJECT_DIR

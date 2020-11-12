@@ -3,17 +3,40 @@ train.py
 
 Train 2D U(1) model using eager execution in tensorflow.
 """
-# noqa: E402
-# pylint:disable=wrong-import-position,invalid-name
+# noqa: E402, F401
+# pylint:disable=wrong-import-position,invalid-name, unused-import,
+# pylint: disable=ungrouped-imports
 from __future__ import absolute_import, division, print_function
 
 import os
-
-import logging
 import contextlib
-from utils import run_tf_check
-
+import logging
 import tensorflow as tf
+import utils
+
+try:
+    import horovod
+    import horovod.tensorflow as hvd
+    try:
+        RANK = hvd.rank()
+    except ValueError:
+        hvd.init()
+
+    RANK = hvd.rank()
+    HAS_HOROVOD = True
+    logging.info(f'using horovod version: {horovod.__version__}')
+    logging.info(f'using horovod from: {horovod.__file__}')
+    GPUS = tf.config.experimental.list_physical_devices('GPU')
+    for gpu in GPUS:
+        tf.config.experimental.set_memory_growth(gpu, True)
+    if GPUS:
+        gpu = GPUS[hvd.local_rank()]
+        tf.config.experimental.set_visible_devices(gpu, 'GPU')
+
+except (ImportError, ModuleNotFoundError):
+    HAS_HOROVOD = False
+
+
 import utils.file_io as io
 
 from utils.attr_dict import AttrDict
@@ -22,7 +45,6 @@ from utils.parse_configs import parse_configs
 from utils.training_utils import train, train_hmc
 from utils.inference_utils import run, run_hmc
 
-run_tf_check()
 
 os.environ['TF_CPP_MIN_VLOG_LEVEL'] = '3'
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
