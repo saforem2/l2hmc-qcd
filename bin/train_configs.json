@@ -1,13 +1,14 @@
 {
     "log_dir": null,
-    "compile": false,
+    "compile": true,
+    "debug": false,
     "profiler": false,
     "md_steps": 0,
-    "beta_init": 4.0,
-    "beta_final": 4.0,
+    "beta_init": 4.3,
+    "beta_final": 4.3,
     "clip_val": 50.0,
     "loss_scale": 0.1,
-    "hmc_steps": 100,
+    "hmc_steps": 0,
     "print_steps": 1,
     "logging_steps": 50,
     "steps_per_epoch": 100,
@@ -36,7 +37,7 @@
         "use_scattered_xnet_update": false,
         "use_tempered_traj": false,
         "gauge_eq_masks": false,
-        "lattice_shape": [1024, 8, 8, 2],
+        "lattice_shape": [128, 8, 8, 2],
         "log_dir": null
     },
     "network_config": {

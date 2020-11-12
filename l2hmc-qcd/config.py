@@ -5,6 +5,7 @@ config.py
 from __future__ import absolute_import, division, print_function
 
 import os
+import attr
 
 from collections import namedtuple
 
@@ -62,28 +63,67 @@ HEADER = '\n'.join([SEP, HSTR, SEP])
 # pylint:disable=invalid-name
 
 
-@dataclass
+@attr.s
 class Weights:
-    """Object for holding weight, bias pair: (W, b)."""
-    w: tf.Tensor
-    b: tf.Tensor
+    w: tf.Tensor = attr.ib()
+    b: tf.Tensor = attr.ib()
 
 
-@dataclass
+@attr.s
 class TrainData:
-    """"Object for holding training data."""
-    loss: tf.Tensor
-    px: tf.Tensor
-    eps: tf.Tensor
+    loss: tf.Tensor = attr.ib()
+    px: tf.Tensor = attr.ib()
+    eps: tf.Tensor = attr.ib()
 
 
-@dataclass
-class ObsData:
-    """Object for holding observation data."""
-    actions: tf.Tensor
-    plaqs: tf.Tensor
-    charges: tf.Tensor
+@attr.s
+class Obsdata:
+    actions: tf.Tensor = attr.ib()
+    plaqs: tf.Tensor = attr.ib()
+    charges: tf.Tensor = attr.ib()
 
+
+@attr.s
+class NetWeights:
+    x_scale: float = attr.ib(init=1.)
+    x_translation: float = attr.ib(init=1.)
+    x_transformation: float = attr.ib(init=1.)
+    v_scale: float = attr.ib(init=1.)
+    v_translation: float = attr.ib(init=1.)
+    v_transformation: float = attr.ib(init=1.)
+
+
+NetWeights = namedtuple('NetWeights', [
+    'x_scale', 'x_translation', 'x_transformation',
+    'v_scale', 'v_translation', 'v_transformation'
+])
+
+
+
+#
+#
+#  @dataclass
+#  class Weights:
+#      """Object for holding weight, bias pair: (W, b)."""
+#      w: tf.Tensor
+#      b: tf.Tensor
+#
+#
+#  @dataclass
+#  class TrainData:
+#      """"Object for holding training data."""
+#      loss: tf.Tensor
+#      px: tf.Tensor
+#      eps: tf.Tensor
+#
+#
+#  @dataclass
+#  class ObsData:
+#      """Object for holding observation data."""
+#      actions: tf.Tensor
+#      plaqs: tf.Tensor
+#      charges: tf.Tensor
+#
 
 #  Weights = namedtuple('Weights', ['w', 'b'])
 
@@ -91,10 +131,6 @@ class ObsData:
 #  MonteCarloStates = namedtuple('MonteCarloStates',
 #                                ['init', 'proposed', 'out'])
 
-NetWeights = namedtuple('NetWeights', [
-    'x_scale', 'x_translation', 'x_transformation',
-    'v_scale', 'v_translation', 'v_transformation'
-])
 
 #  TrainData = namedtuple('TrainData', ['loss', 'px', 'eps'])
 

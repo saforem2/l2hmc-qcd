@@ -37,17 +37,24 @@ from tensorflow.python.keras import backend as K
 
 try:
     import horovod.tensorflow as hvd
-
-    NUM_RANKS = hvd.size()
-    NUM_WORKERS = NUM_RANKS * hvd.local_size()
     HAS_HOROVOD = True
-    print(f'hvd.size : {hvd.size()}')
-    print(f'hvd.local_size: {hvd.local_size()}')
-
-except (ImportError, ModuleNotFoundError):
-    NUM_RANKS = 1
-    NUM_WORKERS = NUM_RANKS
+except ImportError:
+    from utils import Horovod as hvd
     HAS_HOROVOD = False
+
+NUM_RANKS = hvd.size()
+NUM_WORKERS = hvd.size()
+#
+#      NUM_RANKS = hvd.size()
+#      NUM_WORKERS = NUM_RANKS * hvd.local_size()
+#      HAS_HOROVOD = True
+#      print(f'hvd.size : {hvd.size()}')
+#      print(f'hvd.local_size: {hvd.local_size()}')
+#
+#  except (ImportError, ModuleNotFoundError):
+#      NUM_RANKS = 1
+#      NUM_WORKERS = NUM_RANKS
+#      HAS_HOROVOD = False
 
 import utils.file_io as io
 
@@ -368,11 +375,11 @@ class GaugeDynamics(BaseDynamics):
         logdets = tf.TensorArray(TF_FLOAT,
                                  dynamic_size=True,
                                  size=self.batch_size,
-                                 clear_after_read=False)
+                                 clear_after_read=True)
         energies = tf.TensorArray(TF_FLOAT,
                                   dynamic_size=True,
                                   size=self.batch_size,
-                                  clear_after_read=False)
+                                  clear_after_read=True)
         # ====
         # Forward for first half of trajectory
         for step in range(self.config.num_steps // 2):
@@ -426,11 +433,11 @@ class GaugeDynamics(BaseDynamics):
         logdets = tf.TensorArray(TF_FLOAT,
                                  dynamic_size=True,
                                  size=self.batch_size,
-                                 clear_after_read=False)
+                                 clear_after_read=True)
         energies = tf.TensorArray(TF_FLOAT,
                                   dynamic_size=True,
                                   size=self.batch_size,
-                                  clear_after_read=False)
+                                  clear_after_read=True)
 
         for step in range(self.config.num_steps):
             if self._verbose:
@@ -446,15 +453,18 @@ class GaugeDynamics(BaseDynamics):
         metrics = AttrDict({
             'sumlogdet': sumlogdet,
             'accept_prob': accept_prob,
+            'H': [], 'logdets': [], 'Hw': [],
         })
         if self._verbose:
             logdets = logdets.write(step, sumlogdet)
             energies = energies.write(step, self.hamiltonian(state_prop))
-            metrics.update({
-                'H': energies.stack(),
-                'logdets': logdets.stack(),
-                'Hw': energies.stack() - logdets.stack()
-            })
+            for step in range(self.config.num_steps):
+                energy = energies.read(step)
+                sld = logdets.read(step)
+                escaled = energy - sld
+                metrics['H'].append(energy)
+                metrics['logdets'].append(sld)
+                metrics['Hw'].append(escaled)
             #  metrics.update({
             #      'H': [], 'Hw': [], 'logdets': [],
             #  })
@@ -480,7 +490,7 @@ class GaugeDynamics(BaseDynamics):
             kwargs = {
                 'dynamic_size': True,
                 'size': self.batch_size,
-                'clear_after_read': False
+                'clear_after_read': True
             }
             logdets = tf.TensorArray(TF_FLOAT, **kwargs)
             energies = tf.TensorArray(TF_FLOAT, **kwargs)
@@ -516,25 +526,18 @@ class GaugeDynamics(BaseDynamics):
         metrics = AttrDict({
             'sumlogdet': sumlogdet,
             'accept_prob': accept_prob,
+            'H': [], 'logdets': [], 'Hw': [],
         })
-
         if self._verbose:
             logdets = logdets.write(step, sumlogdet)
             energies = energies.write(step, self.hamiltonian(state_prop))
-            metrics.update({
-                'H': energies.stack(),
-                'logdets': logdets.stack(),
-                'Hw': energies.stack() - logdets.stack()
-            })
-            #  metrics.update({
-            #      'H': [], 'Hw': [], 'logdets': [],
-            #  })
-            #  for i in range(self.config.num_steps):
-            #      energy_ = energies.read(i)
-            #      logdets_ = logdets.read(i)
-            #      metrics['H'].append(energy_)
-            #      metrics['logdets'].append(logdets_)
-            #      metrics['Hw'].append(energy_ - logdets_)
+            for step in range(self.config.num_steps):
+                energy = energies.read(step)
+                sld = logdets.read(step)
+                escaled = energy - sld
+                metrics['H'].append(energy)
+                metrics['logdets'].append(sld)
+                metrics['Hw'].append(escaled)
 
         return state_prop, metrics
 
@@ -550,7 +553,7 @@ class GaugeDynamics(BaseDynamics):
             kwargs = {
                 'dynamic_size': True,
                 'size': self.batch_size,
-                'clear_after_read': False
+                'clear_after_read': True,
             }
             logdets = tf.TensorArray(TF_FLOAT, **kwargs)
             energies = tf.TensorArray(TF_FLOAT, **kwargs)
@@ -586,25 +589,18 @@ class GaugeDynamics(BaseDynamics):
         metrics = AttrDict({
             'sumlogdet': sumlogdet,
             'accept_prob': accept_prob,
+            'H': [], 'logdets': [], 'Hw': [],
         })
-
         if self._verbose:
             logdets = logdets.write(step, sumlogdet)
             energies = energies.write(step, self.hamiltonian(state_prop))
-            metrics.update({
-                'H': energies.stack(),
-                'logdets': logdets.stack(),
-                'Hw': energies.stack() - logdets.stack()
-            })
-            #  metrics.update({
-            #      'H': [], 'Hw': [], 'logdets': [],
-            #  })
-            #  for i in range(self.config.num_steps):
-            #      energy_ = energies.read(i)
-            #      logdets_ = logdets.read(i)
-            #      metrics['H'].append(energy_)
-            #      metrics['logdets'].append(logdets_)
-            #      metrics['Hw'].append(energy_ - logdets_)
+            for step in range(self.config.num_steps):
+                energy = energies.read(step)
+                sld = logdets.read(step)
+                escaled = energy - sld
+                metrics['H'].append(energy)
+                metrics['logdets'].append(sld)
+                metrics['Hw'].append(escaled)
 
         return state_prop, metrics
 
@@ -1080,7 +1076,7 @@ class GaugeDynamics(BaseDynamics):
 
         return K.get_value(self.optimizer.lr)
 
-    @tf.function(experimental_follow_type_hints=True)
+    @tf.function
     def train_step(
             self,
             inputs: Tuple[tf.Tensor, tf.Tensor]
@@ -1094,7 +1090,7 @@ class GaugeDynamics(BaseDynamics):
         start = time.time()
         with tf.GradientTape() as tape:
             x, beta = inputs
-            #  tape.watch(x)
+            tape.watch(x)
             states, data = self((x, beta), training=True)
             accept_prob = data.get('accept_prob', None)
             ploss, qloss = self.calc_losses(states, accept_prob)
@@ -1196,7 +1192,7 @@ class GaugeDynamics(BaseDynamics):
 
         return states.out.x, metrics
 
-    @tf.function(experimental_follow_type_hints=True)
+    @tf.function
     def test_step(
             self,
             inputs: Tuple[tf.Tensor, tf.Tensor]
