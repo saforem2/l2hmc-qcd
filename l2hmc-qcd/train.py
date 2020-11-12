@@ -51,7 +51,7 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 logger = logging.getLogger(__name__)
 logging_datefmt = '%Y-%m-%d %H:%M:%S'
-logging_level = logging.INFO
+logging_level = logging.WARNING
 logging_format = (
     '%(asctime)s %(levelname)s:%(process)s:%(thread)s:%(name)s:%(message)s'
 )
@@ -193,6 +193,8 @@ if __name__ == '__main__':
         logging_level = logging.DEBUG
         os.environ['TF_CPP_MIN_VLOG_LEVEL'] = '0'
         os.environ['TF_CPP_MIN_LOG_LEVEL'] = '0'
+    else:
+        logging_level = logging.WARNING
     io.print_dict(CONFIGS)
     main(CONFIGS)
     #
