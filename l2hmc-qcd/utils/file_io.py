@@ -75,25 +75,25 @@ LOG_LEVELS = {
     'DEBUG': logging.DEBUG,
 }
 
-logging.getLogger('tensorflow').setLevel(logging.INFO)
-logging.getLogger('arviz').setLevel(logging.INFO)
+logging.getLogger('tensorflow').setLevel(logging.WARNING)
+logging.getLogger('arviz').setLevel(logging.ERROR)
 logger = logging.getLogger(__name__)
 logging_datefmt = '%Y-%m-%d %H:%M:%S'
-logging_level = logging.INFO
+logging_level = logging.WARNING
 logging_format = (
     '%(asctime)s %(levelname)s:%(process)s:%(thread)s:%(name)s:%(message)s'
 )
 
 if IS_CHIEF:
     logging.basicConfig(
-        level=logging.INFO,
+        level=logging.ERROR,
         format=logging_format,
         datefmt=logging_datefmt,
         stream=sys.stdout,
     )
 else:
     logging.basicConfig(
-        level=logging.INFO,
+        level=logging.WARNING,
         format="%(asctime)s:%(levelname)s:%(message)s",
         stream=None
     )
@@ -103,6 +103,7 @@ if HAS_HOROVOD:
         '%(asctime)s %(levelname)s:%(process)s:%(thread)s:'
         + ('%05d' % hvd.rank()) + ':%(name)s:%(message)s'
     )
+    logging_level = logging.WARNING
     if RANK > 0:
         logging_level = logging.WARNING
 
