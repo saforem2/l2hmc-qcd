@@ -19,7 +19,6 @@ from tqdm.auto import tqdm
 import joblib
 import numpy as np
 
-handlers = []
 #  try:
 #      from rich.logging import RichHandler
 #      handlers = [RichHandler(rich_tracebacks=True)]
@@ -81,7 +80,6 @@ if IS_CHIEF:
         level=logging.INFO,
         format=logging_format,
         datefmt=logging_datefmt,
-        handlers=handlers,
         stream=sys.stdout,
     )
 else:

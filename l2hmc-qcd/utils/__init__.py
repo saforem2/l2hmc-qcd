@@ -33,21 +33,34 @@ def run_tf_check():
 class Horovod:
     """Dummy object for Horovod."""
     def __init__(self):
+        self._size = 1
+        self._num_ranks = 1
+        self._local_rank = 0
+        self._rank = 0
+        self._local_size = 1
+
+    @staticmethod
+    def broadcast_variables(*args, **kwargs):
         pass
 
-    def init(self):
+    @staticmethod
+    def init(*args, **kwargs):
         return 0
 
-    def rank(self):
+    @staticmethod
+    def rank(*args, **kwargs):
         return 0
 
-    def local_rank(self):
+    @staticmethod
+    def local_rank(*args, **kwargs):
         return 0
 
-    def size(self):
+    @staticmethod
+    def size(*args, **kwargs):
         return 1
 
-    def local_size(self):
+    @staticmethod
+    def local_size(*args, **kwargs):
         return 1
 
 

@@ -376,6 +376,9 @@ def train_dynamics(
         #                          profiler_outdir=dirs.summary_dir)
         #  tf.summary.trace_off()
         io.log('Done!')
+    else:
+        x, metrics = dynamics.train_step((x, tf.constant(betas[0])))
+
     #  except Exception as exception:
     #      io.log(str(exception), level='CRITICAL')
     #      train_step = dynamics.train_step

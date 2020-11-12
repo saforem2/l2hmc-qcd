@@ -66,7 +66,7 @@ class DynamicsConfig(AttrDict):
             use_mixed_loss=use_mixed_loss,
             verbose=verbose,
         )
-        self._custom_update(**kwargs)
+        #  self._custom_update(**kwargs)
 
     def _custom_update(self, **kwargs):
         for key, val in kwargs.items():
@@ -126,9 +126,8 @@ class GaugeDynamicsConfig(AttrDict):
             use_tempered_traj=use_tempered_traj,
             gauge_eq_masks=gauge_eq_masks,
         )
-
-        self._custom_update(**kwargs)
-        self._custom_update(**kwargs)
+        #  self._custom_update(**kwargs)
+        #  self._custom_update(**kwargs)
 
     def _custom_update(self, **kwargs):
         for key, val in kwargs.items():
