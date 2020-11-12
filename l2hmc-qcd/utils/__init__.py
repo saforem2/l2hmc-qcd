@@ -7,27 +7,69 @@ Author: Sam Foreman
 Date: 08/26/2020
 """
 import os
-import sys
 os.environ['TF_CPP_MIN_VLOG_LEVEL'] = '3'
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 from tqdm.auto import tqdm
 import tensorflow as tf
-
-def run_tf_check():
-    print(f'tf.__version__: {tf.__version__}')
+print(f'tf.__version__: {tf.__version__}')
+if tf.__version__.startswith('1.'):
     def _try_except(function):
         try:
             function()
         except AttributeError:
-            print(f'Unable to call {function}`. Continuing...')
+            print(f'Unable to call `{function}`. Continuing...')
 
-    if tf.__version__.startswith('1.'):
-        _try_except(tf.compat.v1.enable_v2_behavior)
-        _try_except(tf.compat.v1.enable_control_flow_v2)
-        _try_except(tf.compat.v1.enable_v2_tensorshape)
-        _try_except(tf.compat.v1.enable_eager_execution)
-        _try_except(tf.compat.v1.enable_resource_variables)
+    _try_except(tf.compat.v1.enable_v2_behavior)
+    _try_except(tf.compat.v1.enable_control_flow_v2)
+    _try_except(tf.compat.v1.enable_v2_tensorshape)
+    _try_except(tf.compat.v1.enable_eager_execution)
+    _try_except(tf.compat.v1.enable_resource_variables)
+
+
+try:
+    import horovod
+    import horovod.tensorflow as hvd  # pylint:disable=wrong-import-order
+    try:
+        RANK = hvd.rank()
+    except ValueError:
+        hvd.init()
+
+    RANK = hvd.rank()
+    HAS_HOROVOD = True
+    NUM_WORKERS = hvd.size()
+    #  hvd.init()
+    GPUS = tf.config.experimental.list_physical_devices('GPU')
+    for gpu in GPUS:
+        tf.config.experimental.set_memory_growth(gpu, True)
+    if GPUS:
+        gpu = GPUS[hvd.local_rank()]  # pylint:disable=invalid-name
+        tf.config.experimental.set_visible_devices(gpu, 'GPU')
+
+except (ImportError, ModuleNotFoundError):
+    HAS_HOROVOD = False
+    RANK = LOCAL_RANK = 0
+    SIZE = LOCAL_SIZE = 1
+    IS_CHIEF = (RANK == 0)
+    #      HAS_HOROVOD = True
+    #      RANK = hvd.rank()
+    #      LOCAL_RANK = hvd.local_rank()
+    #      NUM_WORKERS = hvd.size()
+    #      IS_CHIEF = (RANK == 0)
+    #
+    #  except (ImportError, ModuleNotFoundError):
+    #      HAS_HOROVOD = False
+    #      RANK = 0
+    #      LOCAL_RANK = 0
+    #      NUM_WORKERS = 1
+    #      IS_CHIEF = (RANK == 0)
+    #
+
+#  RANK = hvd.rank()
+#  LOCAL_RANK = hvd.local_rank()
+#  NUM_WORKERS = hvd.size()
+#  IS_CHIEF = (RANK == 0)
+
 
 
 class Horovod:
@@ -63,40 +105,6 @@ class Horovod:
     def local_size(*args, **kwargs):
         return 1
 
-
-try:
-    import horovod
-    import horovod.tensorflow as hvd  # pylint:disable=wrong-import-order
-    HAS_HOROVOD = True
-    hvd.init()
-    GPUS = tf.config.experimental.list_physical_devices('GPU')
-    for gpu in GPUS:
-        tf.config.experimental.set_memory_growth(gpu, True)
-    if GPUS:
-        gpu = GPUS[hvd.local_rank()]  # pylint:disable=invalid-name
-        tf.config.experimental.set_visible_devices(gpu, 'GPU')
-
-except (ImportError, ModuleNotFoundError):
-    hvd = Horovod()
-    HAS_HOROVOD = False
-    #      HAS_HOROVOD = True
-    #      RANK = hvd.rank()
-    #      LOCAL_RANK = hvd.local_rank()
-    #      NUM_WORKERS = hvd.size()
-    #      IS_CHIEF = (RANK == 0)
-    #
-    #  except (ImportError, ModuleNotFoundError):
-    #      HAS_HOROVOD = False
-    #      RANK = 0
-    #      LOCAL_RANK = 0
-    #      NUM_WORKERS = 1
-    #      IS_CHIEF = (RANK == 0)
-    #
-
-RANK = hvd.rank()
-LOCAL_RANK = hvd.local_rank()
-NUM_WORKERS = hvd.size()
-IS_CHIEF = (RANK == 0)
 
 class DummyTqdmFile:
     """Dummy file-like that will write to tqdm.
