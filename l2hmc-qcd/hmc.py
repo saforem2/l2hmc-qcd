@@ -56,6 +56,7 @@ def multiple_runs(json_file=None):
     eps = [0.05, 0.1, 0.15, 0.2, 0.25, 0.3]
     #  eps = [0.1, 0.125, 0.15, 0.175, 0.2]
     # pylint:disable=invalid-name
+
     for ls in lattice_shapes:
         for ns in num_steps:
             for b in betas:
@@ -67,7 +68,7 @@ def multiple_runs(json_file=None):
                         'run_steps': run_steps,
                         'lattice_shape': ls,
                     })
-                    _ = main(args)
+                    _ = main(args, json_file=json_file)
 
 
 def load_hmc_flags(json_file=None):
@@ -82,9 +83,10 @@ def load_hmc_flags(json_file=None):
 
 
 # pylint:disable=no-member
-def main(args):
+def main(args, json_file=None):
     """Main method for running HMC."""
-    flags = load_hmc_flags(args.json_file)
+    flags = load_hmc_flags(json_file)
+
     if args.lattice_shape is not None:
         flags.dynamics_config['lattice_shape'] = args.lattice_shape
 
@@ -111,4 +113,4 @@ if __name__ == '__main__':
     if FLAGS.run_loop:
         multiple_runs(FLAGS.json_file)
     else:
-        _ = main(FLAGS)
+        _ = main(FLAGS, FLAGS.json_file)
