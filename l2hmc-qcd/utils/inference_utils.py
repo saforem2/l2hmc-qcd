@@ -109,6 +109,10 @@ def setup(
         runs_dir: Optional[str] = None
 ):
     """Setup to run inference."""
+    if isinstance(flags, dict):
+        if not isinstance(flags, AttrDict):
+            flags = AttrDict(**flags)
+
     if dirs is None:
         log_dir = flags.get('log_dir', None)
         if log_dir is None:
@@ -157,8 +161,7 @@ def setup(
     run_data = DataContainer(flags.run_steps)
 
     template = '\n'.join([f'beta: {beta}',
-                          f'eps: {dynamics.eps.numpy():.4g}',
-                          f'net_weights: {dynamics.net_weights}'])
+                          f'eps: {dynamics.eps.numpy():.4g}'])
     io.log(f'Running inference with:\n{template}')
 
     # Run 50 MD updates (w/o accept/reject) to ensure chains don't get stuck

@@ -1289,10 +1289,10 @@ class GaugeDynamics(BaseDynamics):
         _, q_init_sin, q_init_proj = self._calc_observables(states.init)
         plaqs, q_out_sin, q_out_proj = self._calc_observables(states.out)
         dq_sin = tf.math.abs(q_out_sin - q_init_sin)
-        dq_proj = tf.math.abs(q_out_proj - q_init_proj)
+        dq_int = tf.math.abs(q_out_proj - q_init_proj)
 
         observables = AttrDict({
-            'dq': dq_proj,
+            'dq': dq_int,
             'dq_sin': dq_sin,
             'charges': q_out_proj,
             'plaqs': plaqs,
