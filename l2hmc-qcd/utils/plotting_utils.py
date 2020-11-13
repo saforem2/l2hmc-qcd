@@ -25,6 +25,12 @@ NP_FLOAT = NP_FLOATS[tf.keras.backend.floatx()]
 COLORS = 100 * ['C0', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9']
 
 
+def drop_sequential_duplicates(chain):
+    if tf.is_tensor(chain):
+        return tf.convert_to_tensor([i[0] for i in it.groupby(chain)])
+    return np.array([i[0] for i in it.groupby(chain)])
+
+
 def savefig(fig, fpath):
     io.check_else_make_dir(os.path.dirname(fpath))
     io.log(f'Saving figure to: {fpath}.')
@@ -79,6 +85,28 @@ def plot_energy_distributions(data, out_dir=None, title=None):
         _ = plt.savefig(out_file, dpi=400, bbox_inches='tight')
 
     return fig, axes
+
+
+def energy_traceplot(key, arr, out_dir=None, title=None):
+    if out_dir is not None:
+        out_dir = os.path.join(out_dir, 'energy_traceplots')
+        io.check_else_make_dir(out_dir)
+
+    for idx in range(arr.shape[1]):
+        arr_ = arr[:, idx, :]
+        steps = np.arange(arr_.shape[0])
+        chains = np.arange(arr_.shape[1])
+        data_arr = xr.DataArray(arr_.T,
+                                dims=['chain', 'draw'],
+                                coords=[chains, steps])
+        new_key = f'{key}_lf{idx}'
+        if out_dir is not None:
+            tplot_fname = os.path.join(out_dir,
+                                       f'{new_key}_traceplot.png')
+
+        _ = mcmc_traceplot(new_key, data_arr, title, tplot_fname)
+
+
 
 
 def plot_charges(steps, charges, title=None, out_dir=None):
@@ -223,8 +251,78 @@ def mcmc_traceplot(key, val, title=None, fpath=None):
     return fig
 
 
-# pylint:disable=unsubscriptable-object
 def plot_data(train_data, out_dir, flags, thermalize=False, params=None):
+    out_dir = os.path.join(out_dir, 'plots')
+    io.check_else_make_dir(out_dir)
+
+    title = None if params is None else get_title_str_from_params(params)
+
+    logging_steps = flags.get('logging_steps', 1)
+    flags_file = os.path.join(out_dir, 'FLAGS.z')
+    if os.path.isfile(flags_file):
+        train_flags = io.loadz(flags_file)
+        logging_steps = train_flags.get('logging_steps', 1)
+
+    data_dict = {}
+    for key, val in train_data.data.items():
+        if key == 'x':
+            continue
+
+        out_dir_ = out_dir
+        if 'ld' in key:
+            out_dir_ = os.path.join(out_dir_, 'logdets')
+
+        if 'H' in key:
+            if 'Hw' in key:
+                out_dir_ = os.path.join(out_dir_, 'energies_combined')
+            else:
+                out_dir_ = os.path.join(out_dir_, 'energies')
+
+        io.check_else_make_dir(out_dir_)
+
+        arr = np.array(val)
+        steps = logging_steps * np.arange(len(arr))
+
+        if thermalize:
+            arr, steps = therm_arr(arr, therm_frac=0.33)
+            #  steps = steps[::logging_setps]
+            #  steps *= logging_steps
+
+        labels = ('MC Step', key)
+        data = (steps, arr)
+
+        if len(arr.shape) == 1:
+            lplot_fname = os.path.join(out_dir_, f'{key}.png')
+            _, _ = mcmc_lineplot(data, labels, title,
+                                 lplot_fname, show_avg=True)
+
+        elif len(arr.shape) > 1:
+            data_dict[key] = data
+            cond1 = (key in ['Hf', 'Hb', 'Hwf', 'Hwb', 'sldf', 'sldb'])
+            cond2 = (arr.shape[1] == flags.dynamics_config.get('num_steps'))
+            if cond1 and cond2:
+                _ = energy_traceplot(key, arr, out_dir=out_dir_, title=title)
+            else:
+                out_dir_ = os.path.join(out_dir_, 'traceplots')
+                chains = np.arange(arr.shape[1])
+                data_arr = xr.DataArray(arr.T,
+                                        dims=['chain', 'draw'],
+                                        coords=[chains, steps])
+
+                tplot_fname = os.path.join(out_dir_, f'{key}_traceplot.png')
+                _ = mcmc_traceplot(key, data_arr, title, tplot_fname)
+
+        plt.close('all')
+
+    _ = mcmc_avg_lineplots(data_dict, title, out_dir)
+    _ = plot_charges(*data_dict['charges'], out_dir=out_dir, title=title)
+    _ = plot_energy_distributions(data_dict, out_dir=out_dir, title=title)
+
+    plt.close('all')
+
+
+#  pylint:disable=unsubscriptable-object
+def plot_data1(train_data, out_dir, flags, thermalize=False, params=None):
     out_dir = os.path.join(out_dir, 'plots')
     io.check_else_make_dir(out_dir)
 
@@ -276,3 +374,5 @@ def plot_data(train_data, out_dir, flags, thermalize=False, params=None):
     _ = plot_energy_distributions(data_dict, out_dir=out_dir, title=title)
 
     plt.close('all')
+
+
