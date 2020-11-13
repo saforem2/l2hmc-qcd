@@ -180,6 +180,8 @@ def get_gauge_network(
         scale_coeff = tf.Variable(name=f'{name}/scale/coeff', **coeff_kwargs)
         transf_coeff = tf.Variable(name=f'{name}/transf/coeff', **coeff_kwargs)
 
+        # ====
+        # Build ConvNet if conv_config is not None
         if conv_config is not None:
             n1 = conv_config.filters[0]
             n2 = conv_config.filters[1]
@@ -201,6 +203,8 @@ def get_gauge_network(
             x = layers.Flatten()(x)
             if conv_config.use_batch_norm:
                 x = layers.BatchNormalization(-1, name=f'{name}/batch_norm')(x)
+        # ====
+        # Otherwise, flatten `x_input
         else:
             x = layers.Flatten()(x_input)
 
@@ -224,6 +228,8 @@ def get_gauge_network(
             z = custom_dense(units, 1./2., f'{name}/h{idx}')(z)
         #  z = custom_dense(*args['h1'])(z)
         #  z = custom_dense(*args['h2'])(z)
+        if net_config.get('use_batch_norm', False):
+            z = layers.BatchNormalization(-1, name=f'{name}/batch_norm1')(z)
 
         if net_config.dropout_prob > 0:
             z = layers.Dropout(net_config.dropout_prob)(z)

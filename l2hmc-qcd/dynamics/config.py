@@ -4,6 +4,7 @@ config.py
 Contains configuration objects for various `Dynamics`.
 """
 import os
+import dataclasses
 
 from collections import namedtuple
 
@@ -40,6 +41,17 @@ NET_WEIGHTS_HMC = NetWeights(0., 0., 0., 0., 0., 0.)
 NET_WEIGHTS_L2MC = NetWeights(1., 1., 1., 1., 1., 1.)
 
 
+def dataclass_from_dict(class_name, d):
+    """Convert a dictionary into a dataclass."""
+    try:
+        fieldtypes = {f.name: f.type for f in dataclasses.fields(class_name)}
+        return class_name(**{
+            f: dataclass_from_dict(fieldtypes[f], d[f]) for f in d
+        })
+    except:
+        return d
+
+
 class DynamicsConfig(AttrDict):
     """Configuration object for `BaseDynamics` object"""
 
@@ -73,6 +85,7 @@ class DynamicsConfig(AttrDict):
     def _custom_update(self, **kwargs):
         for key, val in kwargs.items():
             setattr(self, key, val)
+
 
 
 # pylint:disable=too-many-locals

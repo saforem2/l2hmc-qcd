@@ -283,11 +283,11 @@ class BaseDynamics(tf.keras.Model):
         return state, state_, data
 
     def _hmc_transition(
-        self, state: State, training: Optional[bool] = None,
+            self, inputs: Tuple[tf.Tensor], training: Optional[bool] = None,
     ) -> (MonteCarloStates, AttrDict):
         """Propose a new state and perform the accept/reject step."""
         #  x, beta = inputs
-        state, state_prop, data = self._transition(state, forward=True,
+        state, state_prop, data = self._transition(inputs, forward=True,
                                                    training=training)
 
         accept_prob = data.get('accept_prob')
@@ -298,7 +298,7 @@ class BaseDynamics(tf.keras.Model):
         # Construct the output configuration
         v_out = ma * state_prop.v + mr * state.v
         x_out = self.normalizer(ma * state_prop.x + mr * state.x)
-        sumlogdet = ma_ * data['sumlogdet']  # NOTE: initial sumlogdet = 0
+        #  sumlogdet = ma_ * data['sumlogdet']  # NOTE: initial sumlogdet = 0
 
         #  state_init = State(x=x, v=state_init.v, beta=beta)
         state_prop = State(x=state_prop.x, v=state_prop.v, beta=state.beta)
@@ -308,7 +308,6 @@ class BaseDynamics(tf.keras.Model):
         #  sld_states = MonteCarloStates(0., sld_prop, sumlogdet)
         data.update({
             'accept_mask': ma_,
-            'sumlogdet': sumlogdet,
         })
 
         return mc_states, data
@@ -321,6 +320,9 @@ class BaseDynamics(tf.keras.Model):
         NOTE: We simulate the dynamics both forward and backward, and use
         sampled Bernoulli masks to compute the actual solutions
         """
+        if self.config.hmc:
+            return self._hmc_transition(inputs, training)
+
         x, beta = inputs
 
         sf_init, sf_prop, dataf = self._transition(inputs, forward=True,
@@ -674,14 +676,6 @@ class BaseDynamics(tf.keras.Model):
                 metrics['H'].append(energies.read(i))
                 metrics['logdets'].append(logdets.read(i))
                 metrics['Hw'].append(energies.read(i) - logdets.read(i))
-
-            #  metrics.update({
-            #      'H': [energies.read(i) for i in range(
-            #      'Heff': [
-            #          (energies.read(i) - logdets.read(i))
-            #          for i in range(self.config.num_steps)
-            #      ]
-            #  })
 
         return state_prop, metrics
 

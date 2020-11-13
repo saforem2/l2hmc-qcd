@@ -38,12 +38,12 @@ from tensorflow.python.keras import backend as K
 try:
     import horovod.tensorflow as hvd
     HAS_HOROVOD = True
+    NUM_RANKS = hvd.size()
+    NUM_WORKERS = hvd.size()
 except ImportError:
-    from utils import Horovod as hvd
     HAS_HOROVOD = False
+    NUM_RANKS = NUM_WORKERS = 1
 
-NUM_RANKS = hvd.size()
-NUM_WORKERS = hvd.size()
 #
 #      NUM_RANKS = hvd.size()
 #      NUM_WORKERS = NUM_RANKS * hvd.local_size()
@@ -70,8 +70,8 @@ from dynamics.config import GaugeDynamicsConfig
 from dynamics.base_dynamics import (BaseDynamics, MonteCarloStates, NetWeights,
                                     State)
 
-TIMING_FILE = os.path.join(BIN_DIR, 'timing_file.log')
 TF_FLOAT = tf.keras.backend.floatx()
+TIMING_FILE = os.path.join(BIN_DIR, 'timing_file.log')
 
 #  INPUTS = Tuple[tf.Tensor, tf.Tensor]
 
@@ -98,24 +98,32 @@ def build_test_dynamics():
 
 def build_dynamics(flags):
     """Build dynamics using configs from FLAGS."""
-    lr_config = LearningRateConfig(**dict(flags.get('lr_config', None)))
-    log_dir = flags['dynamics_config'].pop('log_dir', None)
-    config = GaugeDynamicsConfig(**dict(flags.get('dynamics_config', None)))
-    #  config = GaugeDynamicsConfig(**dict(flags.get('dynamics_config', None)))
-    net_config = NetworkConfig(**dict(flags.get('network_config', None)))
-    conv_config = None
+    dynamics_config = AttrDict(**dict(flags.get('dynamics_config', {})))
+    net_config = AttrDict(**dict(flags.get('network_config', {})))
+    lr_config = AttrDict(**dict(flags.get('lr_config', {})))
+    conv_config = AttrDict(**dict(flags.get('conv_config', {})))
 
-    if config.get('use_conv_net', False):
-        conv_config = flags.get('conv_config', None)
-        input_shape = config.get('lattice_shape', None)[1:]
-        conv_config.update({
-            'input_shape': input_shape,
-        })
-        conv_config = ConvolutionConfig(**dict(conv_config))
+    #  if dynamics_config is not None and dynamics_config.
+    log_dir = None
+    if dynamics_config.get('hmc', True):
+        lr_config = net_config = conv_config = None
+    else:
+        #  log_dir = flags.get('dynamics_config').pop('log_dir', None)
+        log_dir = dynamics_config.get('log_dir', None)
+        net_config = NetworkConfig(**dict(net_config))
+        lr_config = LearningRateConfig(**dict(lr_config))
+        dynamics_config = GaugeDynamicsConfig(**dict(dynamics_config))
+
+        if dynamics_config.get('use_conv_net', False):
+            input_shape = dynamics_config.get('lattice_shape', None)[1:]
+            conv_config.update({'input_shape': input_shape})
+            conv_config = ConvolutionConfig(**dict(conv_config))
+        else:
+            conv_config = None
 
     dynamics = GaugeDynamics(
         params=flags,
-        config=config,
+        config=dynamics_config,
         network_config=net_config,
         lr_config=lr_config,
         conv_config=conv_config,
@@ -180,7 +188,7 @@ class GaugeDynamics(BaseDynamics):
             self.config.use_ncp = False
             self.config.separate_networks = False
             self.config.use_conv_net = False
-            self.net_config['use_batch_norm'] = False
+            #  self.net_config['use_batch_norm'] = False
             self.conv_config = None
             self.xnet, self.vnet = self._build_hmc_networks()
             if self.config.eps_fixed:

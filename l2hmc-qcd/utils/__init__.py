@@ -8,6 +8,7 @@ Date: 08/26/2020
 """
 from tqdm.auto import tqdm
 import tensorflow as tf
+from dataclasses import dataclass
 try:
     import horovod.tensorflow as hvd  # pylint:disable=wrong-import-order
     hvd.init()

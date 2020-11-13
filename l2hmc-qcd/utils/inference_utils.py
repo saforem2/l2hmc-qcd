@@ -9,7 +9,7 @@ import os
 import sys
 import time
 import logging
-from utils.file_io import timeit
+from typing import Optional
 
 from tqdm.autonotebook import tqdm
 import tensorflow as tf
@@ -28,7 +28,7 @@ except (ImportError, ModuleNotFoundError):
 import utils.file_io as io
 
 from config import (HEADER, PI, PROJECT_DIR, SEP, TF_FLOAT, CBARS, LOGS_DIR,
-                    GAUGE_LOGS_DIR)
+                    GAUGE_LOGS_DIR, HMC_LOGS_DIR)
 from dynamics.gauge_dynamics import (build_dynamics, convert_to_angle,
                                      GaugeDynamics)
 from utils.attr_dict import AttrDict
@@ -52,6 +52,12 @@ else:
     )
 
 
+SKIP = ['charges', 'sldf', 'sldb', 'Hf', 'Hb', 'Hwf', 'Hwb',
+        'ldf_start', 'ldb_start', 'ldf_mid', 'ldf_end',
+        'ldb_mid', 'ldb_end', 'Hf_start', 'Hf_mid', 'Hf_end',
+        'Hb_start', 'Hb_mid', 'Hb_end']
+
+
 def restore_from_train_flags(args):
     """Populate entries in `args` using the training `FLAGS` from `log_dir`."""
     train_dir = os.path.join(args.log_dir, 'training')
@@ -60,7 +66,6 @@ def restore_from_train_flags(args):
     return flags
 
 
-@timeit(out_file=None)
 def run_hmc(
         args: AttrDict,
         hmc_dir: str = None,
@@ -82,9 +87,10 @@ def run_hmc(
         return None, None, None
 
     if hmc_dir is None:
-        root_dir = os.path.join(GAUGE_LOGS_DIR, 'hmc_logs')
+        #  root_dir = os.path.join(HMC_LOGS_DIR)
+        #  root_dir = os.path.join(GAUGE_LOGS_DIR, 'hmc_logs')
         month_str = io.get_timestamp('%Y_%m')
-        hmc_dir = os.path.join(root_dir, month_str)
+        hmc_dir = os.path.join(HMC_LOGS_DIR, month_str)
 
     io.check_else_make_dir(hmc_dir)
 
@@ -107,7 +113,6 @@ def run_hmc(
     return dynamics, run_data, x
 
 
-@timeit(out_file=None)
 def load_and_run(
         args: AttrDict,
         x: tf.Tensor = None,
@@ -142,12 +147,12 @@ def load_and_run(
     return dynamics, run_data, x
 
 
-@timeit(out_file=None)
 def run(
         dynamics: GaugeDynamics,
         args: AttrDict,
         x: tf.Tensor = None,
-        runs_dir: str = None
+        runs_dir: str = None,
+        make_plots=True,
 ) -> (GaugeDynamics, DataContainer, tf.Tensor):
     """Run inference."""
     if not IS_CHIEF:
@@ -163,7 +168,10 @@ def run(
     if hasattr(eps, 'numpy'):
         eps = eps.numpy()
 
-    args.eps = eps
+    try:
+        args.eps = eps
+    except AttributeError:
+        args.update({'eps': eps})
 
     io.check_else_make_dir(runs_dir)
     run_dir = io.make_run_dir(args, runs_dir)
@@ -191,6 +199,7 @@ def run(
         run_data.save_data(data_dir)
 
     run_params = {
+        'run_dir': run_dir,
         'eps': eps,
         'beta': beta,
         'run_steps': run_steps,
@@ -201,16 +210,16 @@ def run(
         'net_weights': dynamics.net_weights,
         'input_shape': dynamics.x_shape,
     }
-    run_params.update(dynamics.params)
+    #  run_params.update(dynamics.params)
     io.save_params(run_params, run_dir, name='run_params')
 
     args.logging_steps = 1
-    plot_data(run_data, run_dir, args, thermalize=True, params=run_params)
+    if make_plots:
+        plot_data(run_data, run_dir, args, thermalize=True, params=run_params)
 
     return dynamics, run_data, x
 
 
-@timeit(out_file=None)
 def run_dynamics(
         dynamics: GaugeDynamics,
         flags: AttrDict,
@@ -257,7 +266,7 @@ def run_dynamics(
         x, metrics = test_step((x, tf.constant(beta)))
 
     header = run_data.get_header(metrics,
-                                 skip=['charges'],
+                                 skip=SKIP,
                                  prepend=['{:^12s}'.format('step')])
     #  io.log(header)
     io.log(header.split('\n'), should_print=True)
@@ -286,7 +295,7 @@ def run_dynamics(
 
         if step % print_steps == 0:
             summarize_dict(metrics, step, prefix='testing')
-            data_str = run_data.get_fstr(step, metrics, skip=['charges'])
+            data_str = run_data.get_fstr(step, metrics, skip=SKIP)
             io.log(data_str, should_print=True)
 
         if (step + 1) % 1000 == 0:

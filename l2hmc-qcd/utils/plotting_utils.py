@@ -11,6 +11,7 @@ import xarray as xr
 import tensorflow as tf
 import seaborn as sns
 import matplotlib.pyplot as plt
+import itertools as it
 
 import utils.file_io as io
 
@@ -26,12 +27,14 @@ COLORS = 100 * ['C0', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9']
 
 
 def drop_sequential_duplicates(chain):
+    """Drop sequential duplicates from chain."""
     if tf.is_tensor(chain):
         return tf.convert_to_tensor([i[0] for i in it.groupby(chain)])
     return np.array([i[0] for i in it.groupby(chain)])
 
 
 def savefig(fig, fpath):
+    """Save figure `fig` to `fpath`."""
     io.check_else_make_dir(os.path.dirname(fpath))
     io.log(f'Saving figure to: {fpath}.')
     fig.savefig(fpath, dpi=400, bbox_inches='tight')
@@ -39,8 +42,10 @@ def savefig(fig, fpath):
 
 def therm_arr(arr, therm_frac=0.2, ret_steps=True):
     """Drop first `therm_frac` steps of `arr` to account for thermalization."""
-    #  step_axis = np.argmax(arr.shape)
-    step_axis = 0
+    step_axis = np.argmax(arr.shape)
+    if step_axis != 0:
+        io.log(f'Expected step axis to be 0, instead: {step_axis}!',
+               level='WARNING')
     num_steps = arr.shape[step_axis]
     therm_steps = int(therm_frac * num_steps)
     arr = np.delete(arr, np.s_[:therm_steps], axis=step_axis)
@@ -53,27 +58,31 @@ def therm_arr(arr, therm_frac=0.2, ret_steps=True):
 
 
 def plot_energy_distributions(data, out_dir=None, title=None):
+    eforward = {
+        'start': data.get('Hf_start', None),
+        'mid': data.get('Hf_mid', None),
+        'end': data.get('Hf_end', None),
+    }
+    ebackward = {
+        'start': data.get('Hb_start', None),
+        'mid': data.get('Hb_mid', None),
+        'end': data.get('Hb_end', None),
+    }
     energies = {
-        'forward': {
-            'start': data['Hf_start'],
-            'mid': data['Hf_mid'],
-            'end': data['Hf_end'],
-        },
-        'backward': {
-            'start': data['Hb_start'],
-            'mid': data['Hb_mid'],
-            'end': data['Hb_end'],
-        }
+        'forward': eforward,
+        'backward': ebackward,
     }
 
     fig, axes = plt.subplots(nrows=2, sharex=True, constrained_layout=True)
     #  plt.tight_layout()
     axes = axes.flatten()
     for idx, (key, val) in enumerate(energies.items()):
-        for k, v, in val.items():
-            x, y = v
-            _ = sns.distplot(y.flatten(), label=f'{key}/{k}',
-                             hist=False, ax=axes[idx])
+        if val is not None:
+            for k, v, in val.items():
+                if v is not None:
+                    x, y = v
+                    _ = sns.distplot(y.flatten(), label=f'{key}/{k}',
+                                     hist=False, ax=axes[idx])
 
     _ = axes[0].legend(loc='best')
     _ = axes[1].legend(loc='best')
@@ -105,8 +114,6 @@ def energy_traceplot(key, arr, out_dir=None, title=None):
                                        f'{new_key}_traceplot.png')
 
         _ = mcmc_traceplot(new_key, data_arr, title, tplot_fname)
-
-
 
 
 def plot_charges(steps, charges, title=None, out_dir=None):
@@ -243,7 +250,7 @@ def mcmc_traceplot(key, val, title=None, fpath=None):
     az.plot_trace({key: val})
     fig = plt.gcf()
     if title is not None:
-        fig.suptitle(title)  # , fontsize='x-large', y=1.06)
+        fig.suptitle(str(title).replace('_', ' '))
 
     if fpath is not None:
         savefig(fig, fpath)
@@ -268,6 +275,9 @@ def plot_data(train_data, out_dir, flags, thermalize=False, params=None):
         if key == 'x':
             continue
 
+        if key == b'accept_prob':
+            key = 'accept_prob'
+
         out_dir_ = out_dir
         if 'ld' in key:
             out_dir_ = os.path.join(out_dir_, 'logdets')
@@ -288,7 +298,7 @@ def plot_data(train_data, out_dir, flags, thermalize=False, params=None):
             #  steps = steps[::logging_setps]
             #  steps *= logging_steps
 
-        labels = ('MC Step', key)
+        labels = ('MC Step', str(key))
         data = (steps, arr)
 
         if len(arr.shape) == 1:
@@ -310,7 +320,7 @@ def plot_data(train_data, out_dir, flags, thermalize=False, params=None):
                                         coords=[chains, steps])
 
                 tplot_fname = os.path.join(out_dir_, f'{key}_traceplot.png')
-                _ = mcmc_traceplot(key, data_arr, title, tplot_fname)
+                _ = mcmc_traceplot(str(key), data_arr, title, tplot_fname)
 
         plt.close('all')
 
@@ -374,5 +384,3 @@ def plot_data1(train_data, out_dir, flags, thermalize=False, params=None):
     _ = plot_energy_distributions(data_dict, out_dir=out_dir, title=title)
 
     plt.close('all')
-
-
