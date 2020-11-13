@@ -20,6 +20,10 @@ def parse_args():
         description='Run generic HMC.'
     )
 
+    parser.add_argument('--json_file', dest='json_file',
+                        type=str, default=None, required=False,
+                        help='json file containing HMC config')
+
     parser.add_argument('--run_steps', dest='run_steps',
                         type=int, default=None, required=False,
                         help='Number of sampling steps.')
@@ -41,7 +45,7 @@ def parse_args():
     return parser.parse_args()
 
 
-def multiple_runs():
+def multiple_runs(json_file=None):
     num_steps = 10
     run_steps = 5000
     betas = [2., 3., 4., 5., 6.]
@@ -58,10 +62,12 @@ def multiple_runs():
             _ = main(args)
 
 
-def load_hmc_flags():
+def load_hmc_flags(json_file=None):
     """Load HMC flags from `BIN_DIR/hmc_configs.json`."""
-    cfg_file = os.path.join(BIN_DIR, 'hmc_configs.json')
-    with open(cfg_file, 'rt') as f:
+    if json_file is None:
+        json_file = os.path.join(BIN_DIR, 'hmc_configs.json')
+
+    with open(json_file, 'rt') as f:
         flags = json.load(f)
 
     return AttrDict(flags)
@@ -70,7 +76,7 @@ def load_hmc_flags():
 # pylint:disable=no-member
 def main(args):
     """Main method for running HMC."""
-    flags = load_hmc_flags()
+    flags = load_hmc_flags(args.json_file)
 
     if args.beta is not None:
         flags.beta = args.beta
