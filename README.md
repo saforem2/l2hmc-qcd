@@ -13,6 +13,7 @@ A detailed description of the ongoing work to apply this algorithm to simulation
 
 # Overview
 
+<!-- <details><summary>FFHQ 256</summary> -->
 We are interested in applying the L2HMC algorithm to generate *gauge configurations* for LatticeQCD.    
 
 This work is based on the original implementation which can be found at [brain-research/l2hmc/](https://github.com/brain-research/l2hmc). 
