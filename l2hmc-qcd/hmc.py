@@ -46,20 +46,28 @@ def parse_args():
 
 
 def multiple_runs(json_file=None):
-    num_steps = 10
-    run_steps = 5000
+    lattice_shapes = [
+        (512, 8, 8, 2),
+        (512, 16, 16, 2),
+    ]
+    num_steps = [10, 15, 20]
+    run_steps = 10000
     betas = [2., 3., 4., 5., 6.]
+    eps = [0.05, 0.1, 0.15, 0.2, 0.25, 0.3]
     #  eps = [0.1, 0.125, 0.15, 0.175, 0.2]
-    eps = [0.05, 0.075, 0.225, 0.25, 0.275]
-    for b in betas:
-        for e in eps:
-            args = AttrDict({
-                'eps': e,
-                'beta': b,
-                'num_steps': num_steps,
-                'run_steps': run_steps
-            })
-            _ = main(args)
+    # pylint:disable=invalid-name
+    for ls in lattice_shapes:
+        for ns in num_steps:
+            for b in betas:
+                for e in eps:
+                    args = AttrDict({
+                        'eps': e,
+                        'beta': b,
+                        'num_steps': ns,
+                        'run_steps': run_steps,
+                        'lattice_shape': ls,
+                    })
+                    _ = main(args)
 
 
 def load_hmc_flags(json_file=None):
@@ -77,6 +85,8 @@ def load_hmc_flags(json_file=None):
 def main(args):
     """Main method for running HMC."""
     flags = load_hmc_flags(args.json_file)
+    if args.lattice_shape is not None:
+        flags.dynamics_config['lattice_shape'] = args.lattice_shape
 
     if args.beta is not None:
         flags.beta = args.beta
@@ -99,6 +109,6 @@ if __name__ == '__main__':
     FLAGS = parse_args()
     FLAGS = AttrDict(FLAGS.__dict__)  # pylint:disable=protected-access
     if FLAGS.run_loop:
-        multiple_runs()
+        multiple_runs(FLAGS.json_file)
     else:
         _ = main(FLAGS)
