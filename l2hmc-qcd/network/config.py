@@ -32,12 +32,14 @@ class NetworkConfig(AttrDict):
                  units: list,
                  name: str = None,
                  dropout_prob: float = 0.,
-                 activation_fn: callable = tf.nn.relu):
+                 activation_fn: callable = tf.nn.relu,
+                 use_batch_norm: bool = False):
         super(NetworkConfig, self).__init__(
             name=name,
             units=units,
             dropout_prob=dropout_prob,
-            activation_fn=activation_fn
+            activation_fn=activation_fn,
+            use_batch_norm=use_batch_norm,
         )
 
 
