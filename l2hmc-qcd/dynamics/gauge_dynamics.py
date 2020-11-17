@@ -373,11 +373,13 @@ class GaugeDynamics(BaseDynamics):
         state_prop = State(state.x, state.v, state.beta)
         sumlogdet = tf.zeros((self.batch_size,), dtype=TF_FLOAT)
         logdets = tf.TensorArray(TF_FLOAT,
-                                 dynamic_size=True,
+                                 dynamic_size=False,
+                                 element_shape=(self.batch_size,),
                                  size=self.batch_size,
                                  clear_after_read=True)
         energies = tf.TensorArray(TF_FLOAT,
-                                  dynamic_size=True,
+                                  dynamic_size=False,
+                                  element_shape=(self.batch_size,),
                                   size=self.batch_size,
                                   clear_after_read=True)
         # ====
@@ -431,12 +433,14 @@ class GaugeDynamics(BaseDynamics):
         state_prop = State(x=state.x, v=state.v, beta=state.beta)
         sumlogdet = tf.zeros((self.batch_size,))
         logdets = tf.TensorArray(TF_FLOAT,
-                                 dynamic_size=True,
+                                 dynamic_size=False,
+                                 element_shape=(self.batch_size,),
                                  size=self.batch_size,
                                  clear_after_read=True)
         energies = tf.TensorArray(TF_FLOAT,
-                                  dynamic_size=True,
+                                  dynamic_size=False,
                                   size=self.batch_size,
+                                  element_shape=(self.batch_size,),
                                   clear_after_read=True)
 
         for step in range(self.config.num_steps):
@@ -488,7 +492,8 @@ class GaugeDynamics(BaseDynamics):
         state_prop = State(state.x, state.v, state.beta)
         if self._verbose:
             kwargs = {
-                'dynamic_size': True,
+                'dynamic_size': False,
+                'element_shape': (self.batch_size,),
                 'size': self.batch_size,
                 'clear_after_read': True
             }
@@ -551,9 +556,10 @@ class GaugeDynamics(BaseDynamics):
         state_prop = State(state.x, state.v, state.beta)
         if self._verbose:
             kwargs = {
-                'dynamic_size': True,
+                'dynamic_size': False,
+                'element_shape': (self.batch_size,),
                 'size': self.batch_size,
-                'clear_after_read': True,
+                'clear_after_read': True
             }
             logdets = tf.TensorArray(TF_FLOAT, **kwargs)
             energies = tf.TensorArray(TF_FLOAT, **kwargs)
