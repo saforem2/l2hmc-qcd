@@ -63,41 +63,40 @@ HEADER = '\n'.join([SEP, HSTR, SEP])
 # pylint:disable=invalid-name
 
 
-@attr.s
-class Weights:
-    w: tf.Tensor = attr.ib()
-    b: tf.Tensor = attr.ib()
-
-
-@attr.s
-class TrainData:
-    loss: tf.Tensor = attr.ib()
-    px: tf.Tensor = attr.ib()
-    eps: tf.Tensor = attr.ib()
-
-
-@attr.s
-class Obsdata:
-    actions: tf.Tensor = attr.ib()
-    plaqs: tf.Tensor = attr.ib()
-    charges: tf.Tensor = attr.ib()
-
-
-@attr.s
-class NetWeights:
-    x_scale: float = attr.ib(init=1.)
-    x_translation: float = attr.ib(init=1.)
-    x_transformation: float = attr.ib(init=1.)
-    v_scale: float = attr.ib(init=1.)
-    v_translation: float = attr.ib(init=1.)
-    v_transformation: float = attr.ib(init=1.)
-
+#  @attr.s
+#  class Weights:
+#      w: tf.Tensor = attr.ib()
+#      b: tf.Tensor = attr.ib()
+#
+#
+#  @attr.s
+#  class TrainData:
+#      loss: tf.Tensor = attr.ib()
+#      px: tf.Tensor = attr.ib()
+#      eps: tf.Tensor = attr.ib()
+#
+#
+#  @attr.s
+#  class Obsdata:
+#      actions: tf.Tensor = attr.ib()
+#      plaqs: tf.Tensor = attr.ib()
+#      charges: tf.Tensor = attr.ib()
+#
+#
+#  @attr.s
+#  class NetWeights:
+#      x_scale: float = attr.ib(init=1.)
+#      x_translation: float = attr.ib(init=1.)
+#      x_transformation: float = attr.ib(init=1.)
+#      v_scale: float = attr.ib(init=1.)
+#      v_translation: float = attr.ib(init=1.)
+#      v_transformation: float = attr.ib(init=1.)
+#
 
 NetWeights = namedtuple('NetWeights', [
     'x_scale', 'x_translation', 'x_transformation',
     'v_scale', 'v_translation', 'v_transformation'
 ])
-
 
 
 #
@@ -125,18 +124,18 @@ NetWeights = namedtuple('NetWeights', [
 #      charges: tf.Tensor
 #
 
-#  Weights = namedtuple('Weights', ['w', 'b'])
+Weights = namedtuple('Weights', ['w', 'b'])
 
-#  State = namedtuple('State', ['x', 'v', 'beta'])
-#  MonteCarloStates = namedtuple('MonteCarloStates',
-#                                ['init', 'proposed', 'out'])
+State = namedtuple('State', ['x', 'v', 'beta'])
+MonteCarloStates = namedtuple('MonteCarloStates',
+                              ['init', 'proposed', 'out'])
 
 
-#  TrainData = namedtuple('TrainData', ['loss', 'px', 'eps'])
+TrainData = namedtuple('TrainData', ['loss', 'px', 'eps'])
 
-#  ObsData = namedtuple('ObsData', [
-#      'actions', 'plaqs', 'charges',  # 'charge_diffs'
-#  ])
+ObsData = namedtuple('ObsData', [
+    'actions', 'plaqs', 'charges',  # 'charge_diffs'
+])
 
 #  BootstrapData = namedtuple('BootstrapData', ['mean', 'err', 'means_bs'])
 
