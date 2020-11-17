@@ -216,14 +216,6 @@ class GaugeDynamics(BaseDynamics):
 
     def _load_networks(self, log_dir):
         models_dir = os.path.join(log_dir, 'training', 'models')
-        #  xnet_paths = [
-        #      os.path.join(models_dir, f'dynamics_xnet{i}')
-        #      for i in range(self.config.num_steps)
-        #  ]
-        #  vnet_paths = [
-        #      os.path.join(models_dir, f'dynamics_vnet{i}')
-        #      for i in range(self.config.num_steps)
-        #  ]
         xnet = []
         vnet = []
         for i in range(self.config.num_steps):

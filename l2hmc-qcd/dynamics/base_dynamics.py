@@ -48,6 +48,7 @@ __all__ = ['BaseDynamics', 'State', 'MonteCarloStates', 'NetWeights']
 
 # pylint:disable=invalid-name
 
+
 def identity(x):
     """Returns x"""
     return x
@@ -635,7 +636,6 @@ class BaseDynamics(tf.keras.Model):
             state: State,
             forward: bool,
             training: Optional[bool] = None,
-            verbose: Optional[bool] = False,
     ):
         """Transition kernel of the augmented leapfrog integrator."""
         lf_fn = self._forward_lf if forward else self._backward_lf
