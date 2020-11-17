@@ -500,8 +500,9 @@ class BaseDynamics(tf.keras.Model):
         state_prop = State(self.normalizer(state.x), state.v, state.beta)
         if self._verbose:
             kwargs = {
-                'dynamic_size': True,
-                'size': self.batch_size,
+                'dynamic_size': False,
+                'size': self.config.num_steps - 1,
+                'element_shape': (self.batch_size,),
                 'clear_after_read': True
             }
             logdets = tf.TensorArray(TF_FLOAT, **kwargs)
@@ -572,9 +573,10 @@ class BaseDynamics(tf.keras.Model):
 
         if self._verbose:
             kwargs = {
-                'dynamic_size': True,
-                'size': self.batch_size,
-                'clear_after_read': False
+                'dynamic_size': False,
+                'size': self.config.num_steps - 1,
+                'element_shape': (self.batch_size,),
+                'clear_after_read': True
             }
             logdets = tf.TensorArray(TF_FLOAT, **kwargs)
             energies = tf.TensorArray(TF_FLOAT, **kwargs)
@@ -641,9 +643,10 @@ class BaseDynamics(tf.keras.Model):
         sumlogdet = tf.zeros((self.batch_size,), dtype=TF_FLOAT)
         if self._verbose:
             kwargs = {
-                'dynamic_size': True,
-                'size': self.batch_size,
-                'clear_after_read': False,
+                'dynamic_size': False,
+                'size': self.config.num_steps - 1,
+                'element_shape': (self.batch_size,),
+                'clear_after_read': True
             }
             logdets = tf.TensorArray(TF_FLOAT, **kwargs)
             energies = tf.TensorArray(TF_FLOAT, **kwargs)
