@@ -56,14 +56,14 @@ elif tf.__version__.startswith('2.'):
 #  except:  # noqa: E722
 #      pass
 
-skip = ['charges',
-        'Hf', 'Hb',
-        'Hwf', 'Hwb',
-        'sldf', 'sldb',
-        'Hf_start', 'Hf_mid', 'Hf_end',
-        'Hb_start', 'Hb_mid', 'Hb_end',
-        'ldf_start', 'ldf_mid', 'ldf_end',
-        'ldb_start', 'ldb_mid', 'ldb_end']
+SKIP_KEYS = ['charges',
+             'Hf', 'Hb',
+             'Hwf', 'Hwb',
+             'sldf', 'sldb',
+             'Hf_start', 'Hf_mid', 'Hf_end',
+             'Hb_start', 'Hb_mid', 'Hb_end',
+             'ldf_start', 'ldf_mid', 'ldf_end',
+             'ldb_start', 'ldb_mid', 'ldb_end']
 
 
 def train_hmc(flags):
@@ -428,7 +428,7 @@ def train_dynamics(
             return True
         return False
 
-    header = train_data.get_header(metrics, skip=skip,
+    header = train_data.get_header(metrics, skip=SKIP_KEYS,
                                    prepend=['{:^12s}'.format('step')])
     if IS_CHIEF:
         #  hstr = ["[bold red blink]"] + header.split('\n') + ["[/]"]
@@ -474,7 +474,7 @@ def train_dynamics(
 
         # Print current training state and metrics
         if should_print(step):
-            data_str = train_data.get_fstr(step, metrics, skip=skip)
+            data_str = train_data.get_fstr(step, metrics, skip=SKIP_KEYS)
             io.log(data_str, should_print=True)
 
         # Update summary objects
