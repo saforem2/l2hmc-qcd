@@ -70,6 +70,7 @@ def run_hmc(
         args: AttrDict,
         hmc_dir: str = None,
         skip_existing: bool = False,
+        save_x: bool = False,
 ) -> (GaugeDynamics, DataContainer, tf.Tensor):
     """Run HMC using `inference_args` on a model specified by `params`.
 
@@ -84,7 +85,7 @@ def run_hmc(
         - 'lattice_shape'
     """
     if not IS_CHIEF:
-        return None, None, None
+        return None, None, None, None
 
     if hmc_dir is None:
         #  root_dir = os.path.join(HMC_LOGS_DIR)
@@ -105,22 +106,25 @@ def run_hmc(
         run_fstr = io.get_run_dir_fstr(args)
         if run_fstr in run_fstrs:
             io.log('ERROR:Existing run found! Skipping.')
-            return None, None, None
+            return None, None, None, None
 
     dynamics = build_dynamics(args)
-    dynamics, run_data, x = run(dynamics, args, runs_dir=hmc_dir)
+    dynamics, run_data, x, x_arr = run(dynamics, args,
+                                       runs_dir=hmc_dir,
+                                       save_x=save_x)
 
-    return dynamics, run_data, x
+    return dynamics, run_data, x, x_arr
 
 
 def load_and_run(
         args: AttrDict,
         x: tf.Tensor = None,
         runs_dir: str = None,
+        save_x: bool = False,
 ) -> (GaugeDynamics, DataContainer, tf.Tensor):
     """Load trained model from checkpoint and run inference."""
     if not IS_CHIEF:
-        return None, None, None
+        return None, None, None, None
 
     io.print_dict(args)
     ckpt_dir = os.path.join(args.log_dir, 'training', 'checkpoints')
@@ -142,9 +146,10 @@ def load_and_run(
         io.log(f'Restored x from: {xfile}.')
         x = io.loadz(xfile)
 
-    dynamics, run_data, x = run(dynamics, args, x=x, runs_dir=runs_dir)
+    dynamics, run_data, x, x_arr = run(dynamics, args, x=x,
+                                       runs_dir=runs_dir, save_x=save_x)
 
-    return dynamics, run_data, x
+    return dynamics, run_data, x, x_arr
 
 
 def run(
@@ -152,11 +157,12 @@ def run(
         args: AttrDict,
         x: tf.Tensor = None,
         runs_dir: str = None,
-        make_plots=True,
+        make_plots: bool = True,
+        save_x: bool = False,
 ) -> (GaugeDynamics, DataContainer, tf.Tensor):
     """Run inference."""
     if not IS_CHIEF:
-        return None, None, None
+        return None, None, None, None
 
     if runs_dir is None:
         if dynamics.config.hmc:
@@ -190,7 +196,7 @@ def run(
     if x is None:
         x = convert_to_angle(tf.random.normal(shape=dynamics.x_shape))
 
-    run_data, x, _ = run_dynamics(dynamics, args, x, save_x=False)
+    run_data, x, x_arr = run_dynamics(dynamics, args, x, save_x=save_x)
 
     run_data.flush_data_strs(log_file, mode='a')
     run_data.write_to_csv(args.log_dir, run_dir, hmc=dynamics.config.hmc)
@@ -217,7 +223,7 @@ def run(
     if make_plots:
         plot_data(run_data, run_dir, args, thermalize=True, params=run_params)
 
-    return dynamics, run_data, x
+    return dynamics, run_data, x, x_arr
 
 
 def run_dynamics(
