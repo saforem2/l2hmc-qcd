@@ -41,10 +41,10 @@ if tf.__version__.startswith('1'):
               '`tf.compat.v1.enable_resource_variables()`. Continuing...')
 
 
-try:
-    import horovod.tensorflow as hvd
-except ImportError:
-    pass
+#  try:
+#      import horovod.tensorflow as hvd
+#  except ImportError:
+#      pass
 
 import numpy as np
 
@@ -157,7 +157,7 @@ def catch_exception(fn):
 def test_hmc_run(flags: AttrDict):
     """Testing generic HMC."""
     flags = AttrDict(**dict(copy.deepcopy(flags)))
-    flags.dynamics_config['hmc'] = True
+    flags['dynamics_config']['hmc'] = True
     #  hmc_dir = os.path.join(os.path.dirname(PROJECT_DIR),
     #                         'gauge_logs_eager', 'test', 'hmc_runs')
     hmc_dir = os.path.join(GAUGE_LOGS_DIR, 'hmc_test_logs')
@@ -185,6 +185,9 @@ def test_conv_net(flags: AttrDict):
         conv_activations=['relu', 'relu'],
         input_shape=flags['dynamics_config']['lattice_shape'][1:],
     )
+    dirs = io.setup_directories(flags)
+    flags['dirs'] = dirs
+    flags['log_dir'] = dirs.get('log_dir', None)
     x, dynamics, train_data, flags = train(flags)
     dynamics, run_data, x, _ = run(dynamics, flags, x=x)
 
@@ -201,7 +204,8 @@ def test_conv_net(flags: AttrDict):
 def test_single_network(flags: AttrDict):
     """Test training on single network."""
     flags = AttrDict(**dict(copy.deepcopy(flags)))
-    flags.dynamics_config.separate_networks = False
+    flags['dynamics_config']['separate_networks'] = False
+    #  flags.dynamics_config.separate_networks = False
     x, dynamics, train_data, flags = train(flags)
     dynamics, run_data, x, _ = run(dynamics, flags, x=x)
 
@@ -279,29 +283,23 @@ def test():
 @timeit(out_file=None)
 def main(args, flags=None):
     """Main method."""
+    fn_map = {
+        'test_hmc_run': test_separate_networks,
+        'test_separate_networks': test_separate_networks,
+        'test_single_network': test_single_network,
+        'test_resume_training': test_resume_training,
+        'test_conv_net': test_conv_net,
+        #  'test_inference_from_model': test_inference_from_model,
+    }
     if flags is None:
         flags = parse_test_configs()
 
-    if args.test_hmc_run:
-        _ = test_hmc_run(flags)
-
-    if args.test_separate_networks:
-        _ = test_separate_networks(flags)
-
-    if args.test_single_network:
-        flags.hmc_steps = 0
-        flags.hmc_start = False
-        _ = test_single_network(flags)
-
-    if args.test_resume_training:
-        _ = test_resume_training(args.log_dir)
-
-    if args.test_inference_from_model:
-        if args.log_dir is None:
-            raise ValueError('`--log_dir` must be specified.')
-
-        flags.log_dir = args.log_dir
-        _ = load_and_run(flags)
+    for arg, fn in fn_map.items():
+        if args.__dict__.get(arg):
+            if arg == 'test_resume_training':
+                _ = fn(args.log_dir)
+            else:
+                _ = fn(flags)
 
 
 if __name__ == '__main__':
