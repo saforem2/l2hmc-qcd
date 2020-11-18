@@ -355,6 +355,9 @@ def plot_data(train_data, out_dir, flags, thermalize=False, params=None):
 
     _ = mcmc_avg_lineplots(data_dict, title, out_dir)
     _ = plot_charges(*data_dict['charges'], out_dir=out_dir, title=title)
-    _ = plot_energy_distributions(data_dict, out_dir=out_dir, title=title)
+    try:
+        _ = plot_energy_distributions(data_dict, out_dir=out_dir, title=title)
+    except KeyError:
+        pass
 
     plt.close('all')
