@@ -10,6 +10,9 @@ import os
 from collections import defaultdict
 
 import joblib
+import xarray as xr
+import seaborn as sns
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import tensorflow as tf
@@ -19,6 +22,13 @@ import utils.file_io as io
 from config import BASE_DIR
 from utils.attr_dict import AttrDict
 from utils.data_utils import therm_arr
+from utils.plotting_utils import set_size, make_ridgeplots
+
+
+plt.style.use('default')
+sns.set_context('paper')
+sns.set_style('whitegrid')
+sns.set_palette('bright')
 
 
 class DataContainer:
@@ -27,6 +37,8 @@ class DataContainer:
     def __init__(self, steps, header=None, dirs=None, print_steps=100):
         self.steps = steps
         self.print_steps = print_steps
+        if dirs is not None:
+            dirs = AttrDict(**dirs)
         self.dirs = dirs
         self.data_strs = [header]
         self.steps_arr = []
@@ -35,6 +47,55 @@ class DataContainer:
             io.check_else_make_dir(
                 [v for k, v in dirs.items() if 'file' not in k]
             )
+
+    def update_dirs(self, dirs: dict):
+        """Update `self.dirs` with key, val pairs from `dirs`."""
+        if self.dirs is None:
+            self.dirs = AttrDict(**dirs)
+        else:
+            for key, val in dirs.items():
+                self.dirs.update({key: val})
+
+    def get_dataset(self, therm_frac=0.) -> (xr.Dataset):
+        """Create `xr.Dataset` from `self.data`."""
+        data_vars = {}
+        for key, val in self.data.items():
+            arr = np.array(val)
+            steps = np.arange(len(arr))
+            if therm_frac > 0:
+                arr, steps = therm_arr(arr, therm_frac=therm_frac)
+            if len(arr.shape) == 1:
+                data_vars[key] = xr.DataArray(arr, dims=['draw'],
+                                              coords=[steps])
+            elif len(arr.shape) == 3:
+                arr = arr.T
+                num_chains, num_lf, _ = arr.shape
+                dims = ['chain', 'leapfrog', 'draw']
+                coords = [np.arange(num_chains), np.arange(num_lf), steps]
+                data_vars[key] = xr.DataArray(arr, dims=dims, coords=coords)
+                #  for idx in range(arr.shape[1]):
+                #      x = arr[:, idx, :]
+                #      chains = np.arange(x.shape[1])
+                #      kidx = f'{key}_lf{idx}'
+                #      data_vars[kidx] = xr.DataArray(x.T, dims=['chain', 'draw'],
+                #                                     coords=[chains, steps])
+                #  data_arr = xr.DataArray(x.T, dims=['chain', 'draw'],
+                #                          coords=[chains, steps])
+                #  data_vars[key] = data_arr
+                #  key = f'{key}_lf{idx}'
+            else:
+                chains = np.arange(arr.shape[1])
+                data_vars[key] = xr.DataArray(arr.T, dims=['chain', 'draw'],
+                                              coords=[chains, steps])
+
+        return xr.Dataset(data_vars)
+
+    def save_dataset(self, out_dir, therm_frac=0.):
+        """Save `self.data` as `xr.Dataset` to `out_dir/dataset.nc`."""
+        dataset = self.get_dataset(therm_frac)
+        out_file = os.path.join(out_dir, 'dataset.nc')
+        io.log(f'Saving dataset to: {out_file}.')
+        dataset.to_netcdf(os.path.join(out_dir, 'dataset.nc'))
 
     def update(self, step, metrics):
         """Update `self.data` with new values from `data`."""
@@ -118,10 +179,35 @@ class DataContainer:
         if rank != 0:
             return
 
+        self.save_dataset(data_dir)
         io.check_else_make_dir(data_dir)
         for key, val in self.data.items():
             out_file = os.path.join(data_dir, f'{key}.z')
             io.savez(np.array(val), out_file)
+
+    def plot_data(self, out_dir=None, therm_frac=0.):
+        """Create trace plot + histogram for each entry in self.data."""
+        dataset = self.get_dataset(therm_frac)
+        for key, val in dataset.data_vars.items():
+            if np.std(val.values.flatten()) < 1e-2:
+                continue
+            fig, ax = plt.subplots(constrained_layout=True,
+                                   figsize=set_size())
+            _ = val.plot(ax=ax)
+            #  _ = sns.kdeplot(val.values.flatten(), ax=axes[1], shade=True)
+            #  _ = axes[1].set_ylabel('')
+            #  _ = fig.suptitle(key)
+            if out_dir is not None:
+                io.check_else_make_dir(out_dir)
+                out_file = os.path.join(out_dir, f'{key}_xrPlot.png')
+                fig.savefig(out_file, dpi=400, bbox_inches='tight')
+
+        if out_dir is not None:
+            out_dir = os.path.join(out_dir, 'ridgeplots')
+            io.check_else_make_dir(out_dir)
+
+        make_ridgeplots(dataset, out_dir)
+
 
     def flush_data_strs(self, out_file, rank=0, mode='a'):
         """Dump `data_strs` to `out_file` and return new, empty list."""
