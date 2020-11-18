@@ -27,19 +27,19 @@ plt.style.use('default')
 sns.set_context('paper')
 sns.set_style('whitegrid')
 sns.set_palette('bright')
-plt.ticklabel_format(scilimits=None)
-plt.rc('text', usetex=True)
-plt.rc('text.latex', preamble=(
-    r"""
-    \usepackage{amsmath}
-    \usepackage[sups]{XCharter}
-    \usepackage[scaled=1.04,varqu,varl]{inconsolata}
-    \usepackage[type1]{cabin}
-    \usepackage[charter,vvarbb,scaled=1.07]{newtxmath}
-    \usepackage[cal=boondoxo]{mathalfa}
-    """
-))
-
+#  plt.ticklabel_format(scilimits=None)
+#  plt.rc('text', usetex=True)
+#  plt.rc('text.latex', preamble=(
+#      r"""
+#      \usepackage{amsmath}
+#      \usepackage[sups]{XCharter}
+#      \usepackage[scaled=1.04,varqu,varl]{inconsolata}
+#      \usepackage[type1]{cabin}
+#      \usepackage[charter,vvarbb,scaled=1.07]{newtxmath}
+#      \usepackage[cal=boondoxo]{mathalfa}
+#      """
+#  ))
+#
 
 def drop_sequential_duplicates(chain):
     if tf.is_tensor(chain):
