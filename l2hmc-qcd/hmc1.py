@@ -7,11 +7,37 @@ from __future__ import absolute_import, division, print_function
 import argparse
 import os
 import json
+import tensorflow as tf
+import utils
+
+try:
+    import horovod
+    import horovod.tensorflow as hvd
+    try:
+        RANK = hvd.rank()
+    except ValueError:
+        hvd.init()
+
+    RANK = hvd.rank()
+    HAS_HOROVOD = True
+    logging.info(f'using horovod version: {horovod.__version__}')
+    logging.info(f'using horovod from: {horovod.__file__}')
+    GPUS = tf.config.experimental.list_physical_devices('GPU')
+    for gpu in GPUS:
+        tf.config.experimental.set_memory_growth(gpu, True)
+    if GPUS:
+        gpu = GPUS[hvd.local_rank()]
+        tf.config.experimental.set_visible_devices(gpu, 'GPU')
+
+except (ImportError, ModuleNotFoundError):
+    HAS_HOROVOD = False
+
+
+import utils.file_io as io
+
 from utils.inference_utils import run_hmc
 from utils.attr_dict import AttrDict
 from config import GAUGE_LOGS_DIR, BIN_DIR
-
-import utils.file_io as io
 
 
 def parse_args():
