@@ -52,10 +52,10 @@ else:
     )
 
 
-SKIP = ['charges', 'sldf', 'sldb', 'Hf', 'Hb', 'Hwf', 'Hwb',
-        'ldf_start', 'ldb_start', 'ldf_mid', 'ldf_end',
-        'ldb_mid', 'ldb_end', 'Hf_start', 'Hf_mid', 'Hf_end',
-        'Hb_start', 'Hb_mid', 'Hb_end']
+SKIP_KEYS = ['charges', 'sldf', 'sldb', 'Hf', 'Hb', 'Hwf', 'Hwb',
+             'ldf_start', 'ldb_start', 'ldf_mid', 'ldf_end',
+             'ldb_mid', 'ldb_end', 'Hf_start', 'Hf_mid', 'Hf_end',
+             'Hb_start', 'Hb_mid', 'Hb_end']
 
 
 def restore_from_train_flags(args):
@@ -94,6 +94,7 @@ def run_hmc(
         hmc_dir = os.path.join(HMC_LOGS_DIR, month_str)
 
     io.check_else_make_dir(hmc_dir)
+    SKIP_KEYS.extend('sumlogdet')
 
     def get_run_fstr(run_dir):
         _, tail = os.path.split(run_dir)
@@ -188,6 +189,7 @@ def run(
     writer = tf.summary.create_file_writer(summary_dir)
     writer.set_as_default()
 
+    args.logging_steps = 1
     run_steps = args.get('run_steps', 2000)
     beta = args.get('beta', None)
     if beta is None:
@@ -197,7 +199,10 @@ def run(
         x = convert_to_angle(tf.random.normal(shape=dynamics.x_shape))
 
     run_data, x, x_arr = run_dynamics(dynamics, args, x, save_x=save_x)
-
+    run_data.update_dirs({
+        'log_dir': args.log_dir,
+        'run_dir': run_dir,
+    })
     run_data.flush_data_strs(log_file, mode='a')
     run_data.write_to_csv(args.log_dir, run_dir, hmc=dynamics.config.hmc)
     io.save_inference(run_dir, run_data)
@@ -205,6 +210,7 @@ def run(
         run_data.save_data(data_dir)
 
     run_params = {
+        'hmc': dynamics.config.hmc,
         'run_dir': run_dir,
         'eps': eps,
         'beta': beta,
@@ -219,7 +225,6 @@ def run(
     #  run_params.update(dynamics.params)
     io.save_params(run_params, run_dir, name='run_params')
 
-    args.logging_steps = 1
     if make_plots:
         plot_data(run_data, run_dir, args, thermalize=True, params=run_params)
 
@@ -272,7 +277,7 @@ def run_dynamics(
         x, metrics = test_step((x, tf.constant(beta)))
 
     header = run_data.get_header(metrics,
-                                 skip=SKIP,
+                                 skip=SKIP_KEYS,
                                  prepend=['{:^12s}'.format('step')])
     #  io.log(header)
     io.log(header.split('\n'), should_print=True)
@@ -301,7 +306,7 @@ def run_dynamics(
 
         if step % print_steps == 0:
             summarize_dict(metrics, step, prefix='testing')
-            data_str = run_data.get_fstr(step, metrics, skip=SKIP)
+            data_str = run_data.get_fstr(step, metrics, skip=SKIP_KEYS)
             io.log(data_str, should_print=True)
 
         if (step + 1) % 1000 == 0:
