@@ -8,15 +8,17 @@ import os
 import arviz as az
 import numpy as np
 import xarray as xr
+import pandas as pd
 import tensorflow as tf
 import seaborn as sns
 import matplotlib.pyplot as plt
 import itertools as it
 
 import utils.file_io as io
+from utils.attr_dict import AttrDict
 
+from config import NP_FLOATS, PI, TF_FLOATS
 from dynamics.config import NetWeights
-from config import NP_FLOATS, PI, PROJECT_DIR, TF_FLOATS
 
 TF_FLOAT = TF_FLOATS[tf.keras.backend.floatx()]
 NP_FLOAT = NP_FLOATS[tf.keras.backend.floatx()]
@@ -27,6 +29,10 @@ plt.style.use('default')
 sns.set_context('paper')
 sns.set_style('whitegrid')
 sns.set_palette('bright')
+
+#  if TYPE_CHECKING:
+#      from utils.data_containers import DataContainer
+
 #  plt.ticklabel_format(scilimits=None)
 #  plt.rc('text', usetex=True)
 #  plt.rc('text.latex', preamble=(
@@ -40,6 +46,86 @@ sns.set_palette('bright')
 #      """
 #  ))
 #
+
+
+def make_ridgeplots(dataset, out_dir=None):
+    sns.set(style='white', rc={"axes.facecolor": (0, 0, 0, 0)})
+    for key, val in dataset.data_vars.items():
+        if 'leapfrog' in val.coords.dims:
+            lf_data = {
+                key: [],
+                'lf': [],
+            }
+            for lf in val.leapfrog.values:
+                x = val[{'leapfrog': lf}].values.flatten()
+                lf_arr = np.array(len(x) * [f'{lf}'])
+                lf_data[key].extend(x)
+                lf_data['lf'].extend(lf_arr)
+
+            lfdf = pd.DataFrame(lf_data)
+
+            # Initialize the FacetGrid object
+            pal = sns.cubehelix_palette(10, rot=-0.25, light=0.7)
+            g = sns.FacetGrid(lfdf, row='lf', hue='lf',
+                              aspect=15, height=0.5, palette=pal)
+
+            # Draw the densities in a few steps
+            _ = g.map(sns.kdeplot, key,
+                      bw_adjust=0.5, clip_on=False,
+                      fill=True, alpha=1, linewidth=1.5)
+            _ = g.map(sns.kdeplot, key, clip_on=False, color='w',
+                      lw=2, bw_adjust=0.5)
+            _ = g.map(plt.axhline, y=0, lw=2, clip_on=False)
+
+            # Define and use a simple function to
+            # label the plot in axes coords:
+            def label(x, color, label):
+                ax = plt.gca()
+                ax.text(0, 0.2, label, fontweight='bold', color=color,
+                        ha='left', va='center', transform=ax.transAxes)
+
+            _ = g.map(label, key)
+            # Set the subplots to overlap
+            _ = g.fig.subplots_adjust(hspace=-0.25)
+            # Remove the axes details that don't play well with overlap
+            _ = g.set_titles('')
+            _ = g.set(yticks=[])
+            _ = g.despine(bottom=True, left=True)
+            if out_dir is not None:
+                io.check_else_make_dir(out_dir)
+                out_file = os.path.join(out_dir, f'{key}_ridgeplot.png')
+                io.log(f'Saving figure to: {out_file}.')
+                plt.savefig(out_file, dpi=400, bbox_inches='tight')
+
+
+
+def set_size(
+        width: float = None,
+        fraction: float = 1,
+        subplots: tuple = (1, 1)
+):
+    """Set figure dimensions to avoid scaling in LaTeX."""
+    if width is None:
+        width_pt = 345
+    if width == 'thesis':
+        width_pt = 426.79135
+    elif width == 'beamer':
+        width_pt = 307.28987
+
+    # Width of figure (in pts)
+    fig_width_pt = width_pt * fraction
+    # Convert from pt to inches
+    inches_per_pt = 1 / 72.27
+
+    # Golden ratio to set asethetic figure height
+    golden_ratio = (5 ** 0.5 - 1) / 2
+
+    # Figure width in inches
+    fig_width_in = fig_width_pt * inches_per_pt
+    fig_height_in = fig_width_in * golden_ratio * (subplots[0] / subplots[1])
+
+    return (fig_width_in, fig_height_in)
+
 
 def drop_sequential_duplicates(chain):
     if tf.is_tensor(chain):
@@ -101,16 +187,14 @@ def plot_energy_distributions(data, out_dir=None, title=None):
     for idx, (key, val) in enumerate(energies.items()):
         for k, v, in val.items():
             x, y = v
-            _ = sns.distplot(y.flatten(), label=f'{key}/{k}',
-                             hist=False, ax=axes[idx],
-                             kde_kws={'shade': True})
+            _ = sns.kdeplot(y.flatten(), label=f'{key}/{k}',
+                            ax=axes[idx], shade=True)
 
     for idx, (key, val) in enumerate(energies_combined.items()):
         for k, v in val.items():
             x, y = v
-            _ = sns.distplot(y.flatten(), label=f'{key}/{k}',
-                             hist=False, ax=axes[idx+2],
-                             kde_kws={'shade': True})
+            _ = sns.kdeplot(y.flatten(), label=f'{key}/{k}',
+                            ax=axes[idx], shade=True)
 
     _ = axes[0].legend(loc='best')
     _ = axes[1].legend(loc='best')
@@ -237,7 +321,7 @@ def mcmc_avg_lineplots(data, title=None, out_dir=None):
                 dir_ = os.path.join(out_dir, 'energies')
             if 'Hwf' in key or 'Hwb' in key:
                 dir_ = os.path.join(out_dir,
-                                    'energies_combined')
+                                    'energies_scaled')
             if 'sld' in key or 'ldf' in key or 'ldb' in key:
                 dir_ = os.path.join(out_dir, 'logdets')
 
@@ -290,9 +374,19 @@ def mcmc_traceplot(key, val, title=None, fpath=None, **kwargs):
 
 
 # pylint:disable=unsubscriptable-object
-def plot_data(train_data, out_dir, flags, thermalize=False, params=None):
+def plot_data(
+        data_container: "DataContainer",  # noqa:F821
+        out_dir: str,
+        flags: AttrDict,
+        thermalize: bool = False,
+        params: AttrDict = None
+):
+    """Plot data from `data_container.data`."""
     out_dir = os.path.join(out_dir, 'plots')
     io.check_else_make_dir(out_dir)
+    hmc = params.get('hmc', False)
+    if hmc:
+        skip_strs = ['Hw', 'ld', 'sld', 'sumlogdet']
 
     title = None if params is None else get_title_str_from_params(params)
 
@@ -303,9 +397,18 @@ def plot_data(train_data, out_dir, flags, thermalize=False, params=None):
         logging_steps = train_flags.get('logging_steps', 1)
 
     data_dict = {}
-    for key, val in train_data.data.items():
+    data_vars = {}
+    for key, val in data_container.data.items():
         if key == 'x':
             continue
+
+        # ====
+        # Conditional to skip logdet-related data
+        # from being plotted if data generated from HMC run
+        if hmc:
+            for skip_str in skip_strs:
+                if skip_str in key:
+                    continue
 
         out_dir_ = out_dir
         if 'ld' in key:
@@ -321,6 +424,9 @@ def plot_data(train_data, out_dir, flags, thermalize=False, params=None):
 
         arr = np.array(val)
         steps = logging_steps * np.arange(len(arr))
+
+        if np.std(arr.flatten()) < 1e-2:
+            continue
 
         if thermalize:
             arr, steps = therm_arr(arr, therm_frac=0.33)
@@ -350,6 +456,7 @@ def plot_data(train_data, out_dir, flags, thermalize=False, params=None):
 
                 tplot_fname = os.path.join(out_dir_, f'{key}_traceplot.png')
                 _ = mcmc_traceplot(key, data_arr, title, tplot_fname)
+                data_vars[key] = data_arr
 
         plt.close('all')
 
@@ -359,5 +466,11 @@ def plot_data(train_data, out_dir, flags, thermalize=False, params=None):
         _ = plot_energy_distributions(data_dict, out_dir=out_dir, title=title)
     except KeyError:
         pass
+
+    out_dir_xr = None
+    if out_dir is not None:
+        out_dir_xr = os.path.join(out_dir, 'xarr_plots')
+
+    data_container.plot_data(out_dir_xr, therm_frac=0.33)
 
     plt.close('all')
