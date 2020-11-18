@@ -501,9 +501,9 @@ class BaseDynamics(tf.keras.Model):
         if self._verbose:
             kwargs = {
                 'dynamic_size': False,
-                'size': self.config.num_steps - 1,
+                'size': self.config.num_steps,
                 'element_shape': (self.batch_size,),
-                'clear_after_read': True
+                'clear_after_read': False
             }
             logdets = tf.TensorArray(TF_FLOAT, **kwargs)
             energies = tf.TensorArray(TF_FLOAT, **kwargs)
@@ -574,9 +574,9 @@ class BaseDynamics(tf.keras.Model):
         if self._verbose:
             kwargs = {
                 'dynamic_size': False,
-                'size': self.config.num_steps - 1,
+                'size': self.config.num_steps,
                 'element_shape': (self.batch_size,),
-                'clear_after_read': True
+                'clear_after_read': False
             }
             logdets = tf.TensorArray(TF_FLOAT, **kwargs)
             energies = tf.TensorArray(TF_FLOAT, **kwargs)
@@ -644,9 +644,9 @@ class BaseDynamics(tf.keras.Model):
         if self._verbose:
             kwargs = {
                 'dynamic_size': False,
-                'size': self.config.num_steps - 1,
+                'size': self.config.num_steps,
                 'element_shape': (self.batch_size,),
-                'clear_after_read': True
+                'clear_after_read': False
             }
             logdets = tf.TensorArray(TF_FLOAT, **kwargs)
             energies = tf.TensorArray(TF_FLOAT, **kwargs)
@@ -666,8 +666,7 @@ class BaseDynamics(tf.keras.Model):
         })
         if self._verbose:
             logdets = logdets.write(step, sumlogdet)
-            energies = energies.write(self.config.num_steps,
-                                      self.hamiltonian(state_prop))
+            energies = energies.write(step, self.hamiltonian(state_prop))
             metrics.update({
                 'H': [],
                 'Hw': [],
