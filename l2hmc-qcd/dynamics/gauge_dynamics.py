@@ -372,16 +372,15 @@ class GaugeDynamics(BaseDynamics):
         """Implements a series of directional updates."""
         state_prop = State(state.x, state.v, state.beta)
         sumlogdet = tf.zeros((self.batch_size,), dtype=TF_FLOAT)
-        logdets = tf.TensorArray(TF_FLOAT,
-                                 dynamic_size=False,
-                                 element_shape=(self.batch_size,),
-                                 size=self.batch_size,
-                                 clear_after_read=True)
-        energies = tf.TensorArray(TF_FLOAT,
-                                  dynamic_size=False,
-                                  element_shape=(self.batch_size,),
-                                  size=self.batch_size,
-                                  clear_after_read=True)
+        if self._verbose:
+            kwargs = {
+                'dynamic_size': False,
+                'size': self.config.num_steps,
+                'element_shape': (self.batch_size,),
+                'clear_after_read': False
+            }
+            logdets = tf.TensorArray(TF_FLOAT, **kwargs)
+            energies = tf.TensorArray(TF_FLOAT, **kwargs)
         # ====
         # Forward for first half of trajectory
         for step in range(self.config.num_steps // 2):
@@ -432,16 +431,15 @@ class GaugeDynamics(BaseDynamics):
         lf_fn = self._forward_lf if forward else self._backward_lf
         state_prop = State(x=state.x, v=state.v, beta=state.beta)
         sumlogdet = tf.zeros((self.batch_size,))
-        logdets = tf.TensorArray(TF_FLOAT,
-                                 dynamic_size=False,
-                                 element_shape=(self.batch_size,),
-                                 size=self.batch_size,
-                                 clear_after_read=True)
-        energies = tf.TensorArray(TF_FLOAT,
-                                  dynamic_size=False,
-                                  size=self.batch_size,
-                                  element_shape=(self.batch_size,),
-                                  clear_after_read=True)
+        if self._verbose:
+            kwargs = {
+                'dynamic_size': False,
+                'element_shape': (self.batch_size,),
+                'size': self.config.num_steps,
+                'clear_after_read': False
+            }
+            logdets = tf.TensorArray(TF_FLOAT, **kwargs)
+            energies = tf.TensorArray(TF_FLOAT, **kwargs)
 
         for step in range(self.config.num_steps):
             if self._verbose:
@@ -494,8 +492,8 @@ class GaugeDynamics(BaseDynamics):
             kwargs = {
                 'dynamic_size': False,
                 'element_shape': (self.batch_size,),
-                'size': self.batch_size,
-                'clear_after_read': True
+                'size': self.config.num_steps,
+                'clear_after_read': False
             }
             logdets = tf.TensorArray(TF_FLOAT, **kwargs)
             energies = tf.TensorArray(TF_FLOAT, **kwargs)
@@ -558,8 +556,8 @@ class GaugeDynamics(BaseDynamics):
             kwargs = {
                 'dynamic_size': False,
                 'element_shape': (self.batch_size,),
-                'size': self.batch_size,
-                'clear_after_read': True
+                'size': self.config.num_steps,
+                'clear_after_read': False
             }
             logdets = tf.TensorArray(TF_FLOAT, **kwargs)
             energies = tf.TensorArray(TF_FLOAT, **kwargs)
@@ -1343,6 +1341,18 @@ class GaugeDynamics(BaseDynamics):
         t = tf.tile(tf.expand_dims(trig_t, 0), (tile, 1))
 
         return t
+
+    def _build_conv_mask(self):
+        """Construct checkerboard mask with size L * L and 2 channels."""
+        batch_size, tsize, xsize, channels = self.lattice_shape
+        arr = np.linspace(0, xsize * (xsize + 1) - 1, xsize * (xsize + 1))
+        mask = (arr % 2 == 1).reshape(xsize, xsize+1)[:, :-1]
+        mask_conj = ~mask
+        x_mask = np.stack([mask, mask_conj, mask], axis=0)
+        x_mask = x_mask.reshape(1, channels, xsize, xsize)
+        x_mask_conj = ~x_mask
+
+        return tf.convert_to_tensor(x_mask), tf.convert_to_tensor(x_mask_conj)
 
     def _build_masks(self):
         """Construct different binary masks for different time steps."""
