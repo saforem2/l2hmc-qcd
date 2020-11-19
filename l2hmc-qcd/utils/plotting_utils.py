@@ -97,6 +97,8 @@ def make_ridgeplots(dataset, out_dir=None):
                 io.log(f'Saving figure to: {out_file}.')
                 plt.savefig(out_file, dpi=400, bbox_inches='tight')
 
+    plt.style.use('default')
+    sns.set(style='whitegrid', palette='bright', context='paper')
 
 
 def set_size(
@@ -194,13 +196,20 @@ def plot_energy_distributions(data, out_dir=None, title=None):
         for k, v in val.items():
             x, y = v
             _ = sns.kdeplot(y.flatten(), label=f'{key}/{k}',
-                            ax=axes[idx], shade=True)
+                            ax=axes[idx+2], shade=True)
 
+    for ax in axes:
+        ax.set_ylabel('')
+
+    _ = axes[0].set_title('forward')
+    _ = axes[1].set_title('backward')
     _ = axes[0].legend(loc='best')
-    _ = axes[1].legend(loc='best')
-    _ = axes[2].legend(loc='best')
-    _ = axes[3].legend(loc='best')
-    _ = axes[2].set_xlabel(r"$\mathcal{H}$")  # , fontsize='large')
+    #  _ = axes[1].legend(loc='best')
+    #  _ = axes[2].legend(loc='best')
+    #  _ = axes[3].legend(loc='best')
+    _ = axes[0].set_xlabel(r"$\mathcal{H}$")  # , fontsize='large')
+    _ = axes[1].set_xlabel(r"$\mathcal{H}$")  # , fontsize='large')
+    _ = axes[2].set_xlabel(r"$\mathcal{H} - \sum\log\|\mathcal{J}\|$")
     _ = axes[3].set_xlabel(r"$\mathcal{H} - \sum\log\|\mathcal{J}\|$")
     if title is not None:
         _ = fig.suptitle(title)  # , fontsize='x-large')
@@ -443,20 +452,21 @@ def plot_data(
 
         elif len(arr.shape) > 1:
             data_dict[key] = data
-            cond1 = (key in ['Hf', 'Hb', 'Hwf', 'Hwb', 'sldf', 'sldb'])
-            cond2 = (arr.shape[1] == flags.dynamics_config.get('num_steps'))
-            if cond1 and cond2:
-                _ = energy_traceplot(key, arr, out_dir=out_dir_, title=title)
-            else:
-                out_dir_ = os.path.join(out_dir_, 'traceplots')
-                chains = np.arange(arr.shape[1])
-                data_arr = xr.DataArray(arr.T,
-                                        dims=['chain', 'draw'],
-                                        coords=[chains, steps])
+            #  cond1 = (key in ['Hf', 'Hb', 'Hwf', 'Hwb', 'sldf', 'sldb'])
+            #  cond2 = (arr.shape[1] == flags.dynamics_config.get('num_steps'))
+            #  if cond1 and cond2:
+            #      _ = energy_traceplot(key, arr,
+            #                           out_dir=out_dir_, title=title)
+            #  else:
+            out_dir_ = os.path.join(out_dir_, 'traceplots')
+            chains = np.arange(arr.shape[1])
+            data_arr = xr.DataArray(arr.T,
+                                    dims=['chain', 'draw'],
+                                    coords=[chains, steps])
 
-                tplot_fname = os.path.join(out_dir_, f'{key}_traceplot.png')
-                _ = mcmc_traceplot(key, data_arr, title, tplot_fname)
-                data_vars[key] = data_arr
+            tplot_fname = os.path.join(out_dir_, f'{key}_traceplot.png')
+            _ = mcmc_traceplot(key, data_arr, title, tplot_fname)
+            data_vars[key] = data_arr
 
         plt.close('all')
 
