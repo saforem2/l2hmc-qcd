@@ -174,16 +174,18 @@ class DataContainer:
 
         return AttrDict(data)
 
-    def save_data(self, data_dir, rank=0):
+    def save_data(self, data_dir, rank=0, save_dataset=False):
         """Save `self.data` entries to individual files in `output_dir`."""
         if rank != 0:
             return
 
-        self.save_dataset(data_dir)
         io.check_else_make_dir(data_dir)
         for key, val in self.data.items():
             out_file = os.path.join(data_dir, f'{key}.z')
             io.savez(np.array(val), out_file)
+
+        if save_dataset:
+            self.save_dataset(data_dir)
 
     def plot_data(self, out_dir=None, therm_frac=0.):
         """Create trace plot + histogram for each entry in self.data."""
@@ -263,5 +265,5 @@ class DataContainer:
         if log_file is None:
             log_file = self.dirs.get('log_file', None)
 
-        self.save_data(data_dir, rank=rank)
+        self.save_data(data_dir, rank=rank, save_dataset=False)
         self.flush_data_strs(log_file, rank=rank, mode=mode)

@@ -184,7 +184,7 @@ def train(
 
     if IS_CHIEF:
         output_dir = os.path.join(dirs.train_dir, 'outputs')
-        train_data.save_data(output_dir)
+        train_data.save_data(output_dir, save_dataset=True)
 
         params = {
             'beta_init': train_data.data.beta[0],
