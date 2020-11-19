@@ -74,11 +74,11 @@ def parse_args():
 
 def multiple_runs(json_file=None):
     lattice_shapes = [
-        (512, 8, 8, 2),
-        (512, 16, 16, 2),
+        (128, 8, 8, 2),
+        (128, 16, 16, 2),
     ]
     num_steps = [10, 15, 20]
-    run_steps = 10000
+    run_steps = 5000
     betas = [2., 3., 4., 5., 6.]
     eps = [0.05, 0.1, 0.15, 0.2, 0.25, 0.3]
     #  eps = [0.1, 0.125, 0.15, 0.175, 0.2]
