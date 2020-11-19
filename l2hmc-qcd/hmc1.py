@@ -8,8 +8,10 @@ import argparse
 import os
 import json
 import logging
+from tqdm.auto import trange, tqdm
 import tensorflow as tf
 import utils
+from config import CBARS
 
 try:
     import horovod
@@ -74,16 +76,31 @@ def parse_args():
 
 def multiple_runs(json_file=None):
     lattice_shapes = [
-        (128, 8, 8, 2),
-        (128, 16, 16, 2),
+        (128, 4, 4, 2),
+        #  (128, 16, 16, 2),
     ]
     num_steps = [10, 15, 20]
     run_steps = 5000
     betas = [2., 3., 4., 5., 6.]
     eps = [0.05, 0.1, 0.15, 0.2, 0.25, 0.3]
     #  eps = [0.1, 0.125, 0.15, 0.175, 0.2]
-    # pylint:disable=invalid-name
 
+    # =====
+    # NOTE: Color tuples for tqdm formatting follow the pattern:
+    # (left_text, bar, right_text, reset)
+    lstup = (CBARS['reset'], CBARS['red'], CBARS['reset'], CBARS['reset'])
+    nstup = (CBARS['reset'], CBARS['blue'], CBARS['reset'], CBARS['reset'])
+    btup = (CBARS['reset'], CBARS['magenta'], CBARS['reset'], CBARS['reset'])
+    etup = (CBARS['reset'], CBARS['cyan'], CBARS['reset'], CBARS['reset'])
+    eps = tqdm(eps, desc='eps', unit='step',
+               bar_format=("%s{l_bar}%s{bar}%s{r_bar}%s" % etup))
+    betas = tqdm(betas, desc='betas', unit='step',
+                 bar_format=("%s{l_bar}%s{bar}%s{r_bar}%s" % btup))
+    num_steps = tqdm(num_steps, desc='num_steps', unit='step',
+                     bar_format=("%s{l_bar}%s{bar}%s{r_bar}%s" % nstup))
+    lattice_shapes = tqdm(lattice_shapes, desc='lattice_shapes', unit='step',
+                          bar_format=("%s{l_bar}%s{bar}%s{r_bar}%s" % lstup))
+    # pylint:disable=invalid-name
     for ls in lattice_shapes:
         for ns in num_steps:
             for b in betas:
