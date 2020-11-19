@@ -11,7 +11,7 @@ import time
 import logging
 from typing import Optional
 
-from tqdm.autonotebook import tqdm
+from tqdm.auto import tqdm
 import tensorflow as tf
 try:
     import horovod.tensorflow as hvd
@@ -296,7 +296,8 @@ def run_dynamics(
 
     steps = tf.range(flags.run_steps, dtype=tf.int64)
     if NUM_NODES == 1:
-        ctup = (CBARS['red'], CBARS['green'], CBARS['red'], CBARS['reset'])
+        #  ctup = (CBARS['reset'], CBARS['green'],
+        #          CBARS['reset'], CBARS['reset'])
         steps = tqdm(steps, desc='running', unit='step',
                      bar_format=("%s{l_bar}%s{bar}%s{r_bar}%s" % ctup))
 
