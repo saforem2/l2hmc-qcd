@@ -296,8 +296,8 @@ def run_dynamics(
 
     steps = tf.range(flags.run_steps, dtype=tf.int64)
     if NUM_NODES == 1:
-        #  ctup = (CBARS['reset'], CBARS['green'],
-        #          CBARS['reset'], CBARS['reset'])
+        ctup = (CBARS['reset'], CBARS['green'],
+                CBARS['reset'], CBARS['reset'])
         steps = tqdm(steps, desc='running', unit='step',
                      bar_format=("%s{l_bar}%s{bar}%s{r_bar}%s" % ctup))
 
