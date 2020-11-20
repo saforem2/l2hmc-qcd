@@ -141,8 +141,13 @@ def savefig(fig, fpath):
     fig.savefig(fpath, dpi=400, bbox_inches='tight')
 
 
-def therm_arr(arr, therm_frac=0.2, ret_steps=True):
+def therm_arr(arr, therm_frac=0., ret_steps=True):
     """Drop first `therm_frac` steps of `arr` to account for thermalization."""
+    if therm_frac == 0:
+        if ret_steps:
+            return arr, np.arange(len(arr))
+        return arr
+
     #  step_axis = np.argmax(arr.shape)
     step_axis = 0
     num_steps = arr.shape[step_axis]
@@ -308,8 +313,15 @@ def mcmc_avg_lineplots(data, title=None, out_dir=None):
             arr = val
             steps = np.arange(arr.shape[0])
 
-        avg = np.mean(arr, axis=1)
+        if isinstance(arr, xr.DataArray):
+            arr = arr.values
 
+        if len(arr.shape) == 3:
+            # ====
+            # TODO: Create separate plots for each leapfrog?
+            arr = np.mean(arr, axis=1)
+
+        avg = np.mean(arr, axis=1)
         xlabel = 'MC Step'
         ylabel = ' '.join(key.split('_')) + r" avg"
 
@@ -388,6 +400,7 @@ def plot_data(
         out_dir: str,
         flags: AttrDict,
         thermalize: bool = False,
+        therm_frac: float = 0.,
         params: AttrDict = None
 ):
     """Plot data from `data_container.data`."""
@@ -437,10 +450,9 @@ def plot_data(
         if np.std(arr.flatten()) < 1e-2:
             continue
 
-        if thermalize:
-            arr, steps = therm_arr(arr, therm_frac=0.33)
-            #  steps = steps[::logging_setps]
-            #  steps *= logging_steps
+        arr, steps = therm_arr(arr, therm_frac=therm_frac)
+        #  steps = steps[::logging_setps]
+        #  steps *= logging_steps
 
         labels = ('MC Step', key)
         data = (steps, arr)
@@ -450,7 +462,7 @@ def plot_data(
             _, _ = mcmc_lineplot(data, labels, title,
                                  lplot_fname, show_avg=True)
 
-        elif len(arr.shape) > 1:
+        elif len(arr.shape) == 2:
             data_dict[key] = data
             #  cond1 = (key in ['Hf', 'Hb', 'Hwf', 'Hwb', 'sldf', 'sldb'])
             #  cond2 = (arr.shape[1] == flags.dynamics_config.get('num_steps'))
@@ -468,6 +480,18 @@ def plot_data(
             _ = mcmc_traceplot(key, data_arr, title, tplot_fname)
             data_vars[key] = data_arr
 
+        elif len(arr.shape) == 3:
+            num_steps, num_lf, num_chains = arr.shape
+            chains = np.arange(num_chains)
+            leapfrogs = np.arange(num_lf)
+            data_dict[key] = xr.DataArray(arr.T,
+                                          dims=['chain', 'leapfrog', 'draw'],
+                                          coords=[chains, leapfrogs, steps])
+
+        else:
+            raise ValueError('Unexpected shape encountered in data.')
+
+        #  elif len(arr.shape) > 1:
         plt.close('all')
 
     _ = mcmc_avg_lineplots(data_dict, title, out_dir)
@@ -481,6 +505,6 @@ def plot_data(
     if out_dir is not None:
         out_dir_xr = os.path.join(out_dir, 'xarr_plots')
 
-    data_container.plot_data(out_dir_xr, therm_frac=0.33)
+    data_container.plot_data(out_dir_xr, therm_frac=therm_frac)
 
     plt.close('all')
