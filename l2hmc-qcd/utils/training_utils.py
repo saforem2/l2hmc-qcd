@@ -399,6 +399,7 @@ def train_dynamics(
                                               training=True)
             x = mc_states.out.x
         io.log('Done!')
+        io.log(120*'*')
 
     # +--------------------------------------------------------------+
     # | Final setup; create timing wrapper for `train_step` function |
@@ -434,8 +435,8 @@ def train_dynamics(
         #  hstr = ["[bold red blink]"] + header.split('\n') + ["[/]"]
         io.log(header.split('\n'), should_print=True)
         if NUM_WORKERS == 1:
-            ctup = (CBARS['blue'], CBARS['yellow'],
-                    CBARS['blue'], CBARS['reset'])
+            ctup = (CBARS['reset'], CBARS['yellow'],
+                    CBARS['reset'], CBARS['reset'])
             steps = tqdm(steps, desc='training', unit='step',
                          bar_format=("%s{l_bar}%s{bar}%s{r_bar}%s" % ctup))
 
