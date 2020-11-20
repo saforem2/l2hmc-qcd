@@ -44,17 +44,6 @@ except ImportError:
 
 NUM_RANKS = hvd.size()
 NUM_WORKERS = hvd.size()
-#
-#      NUM_RANKS = hvd.size()
-#      NUM_WORKERS = NUM_RANKS * hvd.local_size()
-#      HAS_HOROVOD = True
-#      print(f'hvd.size : {hvd.size()}')
-#      print(f'hvd.local_size: {hvd.local_size()}')
-#
-#  except (ImportError, ModuleNotFoundError):
-#      NUM_RANKS = 1
-#      NUM_WORKERS = NUM_RANKS
-#      HAS_HOROVOD = False
 
 import utils.file_io as io
 
@@ -74,6 +63,7 @@ TIMING_FILE = os.path.join(BIN_DIR, 'timing_file.log')
 TF_FLOAT = tf.keras.backend.floatx()
 
 #  INPUTS = Tuple[tf.Tensor, tf.Tensor]
+
 
 
 def project_angle(x):
@@ -99,7 +89,7 @@ def build_test_dynamics():
 def build_dynamics(flags):
     """Build dynamics using configs from FLAGS."""
     lr_config = LearningRateConfig(**dict(flags.get('lr_config', None)))
-    log_dir = flags['dynamics_config'].pop('log_dir', None)
+    #  log_dir = flags['dynamics_config'].pop('log_dir', None)
     config = GaugeDynamicsConfig(**dict(flags.get('dynamics_config', None)))
     #  config = GaugeDynamicsConfig(**dict(flags.get('dynamics_config', None)))
     net_config = NetworkConfig(**dict(flags.get('network_config', None)))
@@ -119,7 +109,7 @@ def build_dynamics(flags):
         network_config=net_config,
         lr_config=lr_config,
         conv_config=conv_config,
-        log_dir=log_dir
+        #  log_dir=log_dir
     )
 
     return dynamics
@@ -135,7 +125,6 @@ class GaugeDynamics(BaseDynamics):
             network_config: Optional[NetworkConfig] = None,
             lr_config: Optional[LearningRateConfig] = None,
             conv_config: Optional[ConvolutionConfig] = None,
-            log_dir: Optional[str] = None,
     ):
         # ====
         # Set attributes from `config`
@@ -191,13 +180,18 @@ class GaugeDynamics(BaseDynamics):
             else:
                 net_weights = NetWeights(0., 1., 1., 1., 1., 1.)
 
-            log_dir = self.config.get('log_dir', None)
-            if log_dir is None:
-                self.xnet, self.vnet = self._build_networks(self.net_config,
-                                                            self.conv_config)
-            else:
-                io.log(f'Loading `xnet`, `vnet`, from {log_dir} !!')
-                self.xnet, self.vnet = self._load_networks(log_dir)
+            self.xnet, self.vnet = self._build_networks(
+                net_config=self.net_config,
+                conv_config=self.conv_config,
+                log_dir=self.config.get('log_dir', None)
+            )
+            #  log_dir = self.config.get('log_dir', None)
+            #  if log_dir is not None:
+            #      io.log(f'Loading `xnet`, `vnet`, from {log_dir} !!')
+            #      self.xnet, self.vnet = self._load_networks(log_dir)
+            #  #  if self._log_dir is None:
+            #  else:
+            #      self.xnet, self.vnet = self._build_networks()
             # ============
 
         self.net_weights = self._parse_net_weights(net_weights)
@@ -206,8 +200,30 @@ class GaugeDynamics(BaseDynamics):
             self.lr = self._create_lr(lr_config, auto=True)
             self.optimizer = self._create_optimizer()
 
-    def _load_networks(self, log_dir):
+    def _load_networks(
+            self,
+            log_dir: str = None
+    ) -> ([tf.keras.Model], [tf.keras.Model]):
+        """Load networks from `log_dir`.
+
+        Builds new networks if unable to load or
+        self.config.num_steps > # networks available to load.
+        """
         models_dir = os.path.join(log_dir, 'training', 'models')
+        if not os.path.isdir(models_dir):
+            raise ValueError('Unable to locate `models_dir: {models_dir}`')
+
+        try:
+            _lcfgs = dict(io.loadz(os.path.join(log_dir, 'configs.z')))
+            _lnum_steps = _lcfgs['dynamics_config']['num_steps']
+        except (FileNotFoundError, KeyError):
+            _lnum_steps = self.config.num_steps
+
+        if self.config.num_steps != _lnum_steps:
+            io.log('Mismatch between '
+                   f'self.config.num_steps = {self.config.num_steps} and '
+                   f'loaded_config.num_steps = {_lnum_steps}', level='WARNING')
+
         #  xnet_paths = [
         #      os.path.join(models_dir, f'dynamics_xnet{i}')
         #      for i in range(self.config.num_steps)
@@ -265,17 +281,12 @@ class GaugeDynamics(BaseDynamics):
             self.xnet.save(xnet_paths)
             self.vnet.save(vnet_paths)
 
-    def _build_networks(
+    def _get_network_configs(
             self,
-            net_config: NetworkConfig = None,
-            conv_config: ConvolutionConfig = None,
+            net_config: NetworkConfig,
+            conv_config: ConvolutionConfig
     ):
-        """Build position and momentum networks.
-
-        Returns:
-            xnet: tf.keras.models.Model
-            vnet: tf.keras.models.Model
-        """
+        """Returns `cfgs` for passing to `get_gauge_network`."""
         if net_config is None:
             net_config = self.net_config
 
@@ -290,8 +301,7 @@ class GaugeDynamics(BaseDynamics):
         if self.config.zero_init:
             kinit = 'zeros'
 
-        # ====
-        # xNet configuration
+        # ==== xNet
         xnet_cfg = {
             'factor': 2.0,
             'net_config': net_config,
@@ -303,8 +313,7 @@ class GaugeDynamics(BaseDynamics):
             }
         }
 
-        # ====
-        # xNet configuration
+        # ==== vNet
         vnet_cfg = {
             'factor': 1.0,
             'net_config': net_config,
@@ -316,28 +325,11 @@ class GaugeDynamics(BaseDynamics):
             }
         }
 
-        if self.config.separate_networks:
-            #  vname = f'VNet{step}' if step is not None else 'VNet'
-            #  xname = f'XNet{step}' if step is not None else 'XNet'
-            io.log('Using separate (x, v)-networks for each LF step!!')
-            vnet = [
-                get_gauge_network(**vnet_cfg, name=f'VNet{i}')
-                for i in range(self.config.num_steps)
-            ]
-            xnet = [
-                get_gauge_network(**xnet_cfg, name=f'XNet{i}')
-                for i in range(self.config.num_steps)
-            ]
+        return AttrDict({'xnet': xnet_cfg, 'vnet': vnet_cfg})
 
-        else:
-            io.log('Using a single (x, v)-network for all LF steps!!')
-            vnet = get_gauge_network(**vnet_cfg, name='VNet')
-            xnet = get_gauge_network(**xnet_cfg, name='XNet')
-
-        return xnet, vnet
-
-    def _build_networks_deprecated(
+    def _build_network(
             self,
+            step: int = None,
             net_config: NetworkConfig = None,
             conv_config: ConvolutionConfig = None,
     ):
@@ -347,21 +339,66 @@ class GaugeDynamics(BaseDynamics):
             xnet: tf.keras.models.Model
             vnet: tf.keras.models.Model
         """
-        #  if self.config.separate_networks:
-        #      xnet = []
-        #      vnet = []
-        #      for step in range(self.config.num_steps):
-        #          xnet_, vnet_ = self._build_network(step=step,
-        #                                             net_config=net_config,
-        #                                             conv_config=conv_config)
-        #          xnet.append(xnet_)
-        #          vnet.append(vnet_)
-        #
-        #  else:
-        #      xnet, vnet = self._build_network(net_config, conv_config)
-        #
-        #  return xnet, vnet
-        pass
+        cfgs = self._get_network_configs(net_config, conv_config)
+
+        if self.config.separate_networks:
+            #  vname = f'VNet{step}' if step is not None else 'VNet'
+            #  xname = f'XNet{step}' if step is not None else 'XNet'
+            io.log('Using separate (x, v)-networks for each LF step!!')
+            vnet = get_gauge_network(**cfgs['vnet'], name=f'VNet{step}')
+            xnet = get_gauge_network(**cfgs['xnet'], name=f'XNet{step}')
+            #  vnet = [
+            #      get_gauge_network(**vnet_cfg, name=f'VNet{i}')
+            #      for i in range(self.config.num_steps)
+            #  ]
+            #  xnet = [
+            #      get_gauge_network(**xnet_cfg, name=f'XNet{i}')
+            #      for i in range(self.config.num_steps)
+            #  ]
+
+        else:
+            io.log('Using a single (x, v)-network for all LF steps!!')
+            vnet = get_gauge_network(**cfgs['vnet'], name='VNet')
+            xnet = get_gauge_network(**cfgs['xnet'], name='XNet')
+
+        return xnet, vnet
+
+    def _build_networks(
+            self,
+            net_config: NetworkConfig = None,
+            conv_config: ConvolutionConfig = None,
+            log_dir: str = None,
+    ):
+        """Build position and momentum networks.
+
+        Returns:
+            xnet: tf.keras.models.Model
+            vnet: tf.keras.models.Model
+        """
+        if log_dir is not None:
+            return self._load_networks(log_dir)
+
+        cfgs = self._get_network_configs(net_config, conv_config)
+
+        if self.config.separate_networks:
+            #  vname = f'VNet{step}' if step is not None else 'VNet'
+            #  xname = f'XNet{step}' if step is not None else 'XNet'
+            io.log('Using separate (x, v)-networks for each LF step!!')
+            vnet = [
+                get_gauge_network(**cfgs['vnet'], name=f'VNet{i}')
+                for i in range(self.config.num_steps)
+            ]
+            xnet = [
+                get_gauge_network(**cfgs['xnet'], name=f'XNet{i}')
+                for i in range(self.config.num_steps)
+            ]
+
+        else:
+            io.log('Using a single (x, v)-network for all LF steps!!')
+            vnet = get_gauge_network(**cfgs['vnet'], name='VNet')
+            xnet = get_gauge_network(**cfgs['xnet'], name='XNet')
+
+        return xnet, vnet
 
     def transition_kernel_directional(
             self,
