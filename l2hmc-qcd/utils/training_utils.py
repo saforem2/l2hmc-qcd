@@ -177,6 +177,12 @@ def train(
         x = tf.reshape(x, (x.shape[0], -1))
 
     dynamics = build_dynamics(flags)
+    network_dir = dynamics.config.get('log_dir', None)
+    if network_dir is not None:
+        xnet, vnet = dynamics._load_networks(network_dir)
+        dynamics.xnet = xnet
+        dynamics.vnet = vnet
+
     dynamics.save_config(dirs.config_dir)
 
     io.log('\n'.join([120 * '*', 'Training L2HMC sampler...']))
