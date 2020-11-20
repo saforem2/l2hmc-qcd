@@ -22,7 +22,9 @@ import utils.file_io as io
 from config import BASE_DIR
 from utils.attr_dict import AttrDict
 from utils.data_utils import therm_arr
-from utils.plotting_utils import set_size, make_ridgeplots
+from utils.plotting_utils import (set_size, make_ridgeplots, mcmc_lineplot,
+                                  mcmc_traceplot, get_title_str_from_params,
+                                  plot_data)
 
 
 plt.style.use('default')
@@ -56,7 +58,18 @@ class DataContainer:
             for key, val in dirs.items():
                 self.dirs.update({key: val})
 
-    def get_dataset(self, therm_frac=0.) -> (xr.Dataset):
+    def plot_data(
+            self,
+            out_dir: str = None,
+            flags: AttrDict = None,
+            therm_frac: float = 0.,
+            params: AttrDict = None,
+    ):
+        """Make plots from `self.data`."""
+        plot_data(self.data, out_dir, flags,
+                  therm_frac=therm_frac, params=params)
+
+    def get_dataset(self, therm_frac=0., make_plots=False) -> (xr.Dataset):
         """Create `xr.Dataset` from `self.data`."""
         data_vars = {}
         for key, val in self.data.items():
@@ -73,16 +86,6 @@ class DataContainer:
                 dims = ['chain', 'leapfrog', 'draw']
                 coords = [np.arange(num_chains), np.arange(num_lf), steps]
                 data_vars[key] = xr.DataArray(arr, dims=dims, coords=coords)
-                #  for idx in range(arr.shape[1]):
-                #      x = arr[:, idx, :]
-                #      chains = np.arange(x.shape[1])
-                #      kidx = f'{key}_lf{idx}'
-                #      data_vars[kidx] = xr.DataArray(x.T, dims=['chain', 'draw'],
-                #                                     coords=[chains, steps])
-                #  data_arr = xr.DataArray(x.T, dims=['chain', 'draw'],
-                #                          coords=[chains, steps])
-                #  data_vars[key] = data_arr
-                #  key = f'{key}_lf{idx}'
             else:
                 chains = np.arange(arr.shape[1])
                 data_vars[key] = xr.DataArray(arr.T, dims=['chain', 'draw'],
