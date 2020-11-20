@@ -65,16 +65,15 @@ def make_ridgeplots(dataset, out_dir=None):
             lfdf = pd.DataFrame(lf_data)
 
             # Initialize the FacetGrid object
-            pal = sns.cubehelix_palette(10, rot=-0.25, light=0.7)
+            pal = sns.cubehelix_palette(len(val.leapfrog.values),
+                                        rot=-0.25, light=0.7)
             g = sns.FacetGrid(lfdf, row='lf', hue='lf',
                               aspect=15, height=0.5, palette=pal)
 
             # Draw the densities in a few steps
-            _ = g.map(sns.kdeplot, key,
-                      bw_adjust=0.5, clip_on=False,
-                      fill=True, alpha=1, linewidth=1.5)
-            _ = g.map(sns.kdeplot, key, clip_on=False, color='w',
-                      lw=2, bw_adjust=0.5)
+            _ = g.map(sns.kdeplot, key, bw=0.5,  # clip_on=False,
+                      shade=True, alpha=1, linewidth=1.5)
+            _ = g.map(sns.kdeplot, key, color='w', lw=2, bw=0.5)
             _ = g.map(plt.axhline, y=0, lw=2, clip_on=False)
 
             # Define and use a simple function to
@@ -209,6 +208,8 @@ def plot_energy_distributions(data, out_dir=None, title=None):
     _ = axes[0].set_title('forward')
     _ = axes[1].set_title('backward')
     _ = axes[0].legend(loc='best')
+    _ = axes[0].set_xlabel(r"$\mathcal{H}$")
+    _ = axes[1].set_xlabel(r"$\mathcal{H}$")
     #  _ = axes[1].legend(loc='best')
     #  _ = axes[2].legend(loc='best')
     #  _ = axes[3].legend(loc='best')
