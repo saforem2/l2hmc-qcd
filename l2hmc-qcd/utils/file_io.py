@@ -3,6 +3,9 @@ file_io.py
 """
 # pylint:disable=too-many-branches, too-many-statements
 # pylint:disable=too-many-locals,invalid-name,too-many-locals
+# pylint:disable=too-many-arguments
+from __future__ import absolute_import, division, print_function
+
 import os
 import sys
 import time
@@ -10,25 +13,51 @@ import typing
 import logging
 import datetime
 
+from typing import Any, Dict, Type
+from tqdm.auto import tqdm
+
 import joblib
 import numpy as np
 
+#  try:
+#      from rich.logging import RichHandler
+#      handlers = [RichHandler(rich_tracebacks=True)]
+#
+#  except ImportError:
+#      handlers = []
+
+
+#  if typing.TYPE_CHECKING:
+#      from dynamics.base_dynamics import BaseDynamics
+
 try:
+    import horovod
     import horovod.tensorflow as hvd
+    HAS_HOROVOD = True
     RANK = hvd.rank()
+    LOCAL_RANK = hvd.local_rank()
     NUM_WORKERS = hvd.size()
     IS_CHIEF = (RANK == 0)
-    HAS_HOROVOD = True
-except (ImportError, ModuleNotFoundError):
-    RANK = 0
-    NUM_WORKERS = 1
-    IS_CHIEF = (RANK == 0)
-    HAS_HOROVOD = False
+    logging.info(f'Using horovod version: {horovod.__version__}')
+    logging.info(f'Using horovod from: {horovod.__file__}')
 
-from tqdm.auto import tqdm
+except (ImportError, ModuleNotFoundError):
+    HAS_HOROVOD = False
+    RANK = LOCAL_RANK = 0
+    NUM_WORKERS = 1
+    IS_CHIEF = True
+
+    #  from utils import Horovod
+    #  hvd = Horovod()
+    #  HAS_HOROVOD = False
+
+#  RANK = hvd.rank()
+#  NUM_WORKERS = hvd.size()
+#  IS_CHIEF = (RANK == 0)
+
+# pylint:disable=wrong-import-position
 from config import PROJECT_DIR
 from utils.attr_dict import AttrDict
-
 
 LOG_LEVELS_AS_INTS = {
     'CRITICAL': 50,
@@ -46,21 +75,46 @@ LOG_LEVELS = {
     'DEBUG': logging.DEBUG,
 }
 
-logging.getLogger('tensorflow').setLevel(logging.ERROR)
+logging.getLogger('tensorflow').setLevel(logging.WARNING)
 logging.getLogger('arviz').setLevel(logging.ERROR)
+logger = logging.getLogger(__name__)
+logging_datefmt = '%Y-%m-%d %H:%M:%S'
+logging_level = logging.WARNING
+logging_format = (
+    '%(asctime)s %(levelname)s:%(process)s:%(thread)s:%(name)s:%(message)s'
+)
 
 if IS_CHIEF:
     logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s:%(levelname)s:%(message)s",
+        level=logging.ERROR,
+        format=logging_format,
+        datefmt=logging_datefmt,
         stream=sys.stdout,
     )
 else:
     logging.basicConfig(
-        level=logging.INFO,
+        level=logging.WARNING,
         format="%(asctime)s:%(levelname)s:%(message)s",
         stream=None
     )
+
+if HAS_HOROVOD:
+    logging_format = (
+        '%(asctime)s %(levelname)s:%(process)s:%(thread)s:'
+        + ('%05d' % hvd.rank()) + ':%(name)s:%(message)s'
+    )
+    logging_level = logging.WARNING
+    if RANK > 0:
+        logging_level = logging.WARNING
+
+    logging.basicConfig(level=logging_level,
+                        format=logging_format,
+                        datefmt=logging_datefmt,
+                        stream=sys.stdout if hvd.rank() == 0 else None)
+    logging.warning(' '.join([f'rank: {hvd.rank()}',
+                              f'local_rank: {hvd.local_rank()}',
+                              f'size: {hvd.size()}',
+                              f'local_size: {hvd.local_size()}']))
 
 
 def in_notebook():
@@ -68,6 +122,7 @@ def in_notebook():
     try:
         # pylint:disable=import-outside-toplevel
         from IPython import get_ipython
+
         try:
             cfg = get_ipython().config
             if 'IPKernelApp' not in cfg:
@@ -111,7 +166,7 @@ def write(s: str, f: str, mode: str = 'a', nl: bool = True):
         f_.write(s + '\n' if nl else ' ')
 
 
-def print_dict(d, indent=0, name=None, **kwargs):
+def print_dict(d: Dict, indent: int = 0, name: str = None, **kwargs):
     """Print nicely-formatted dictionary."""
     indent_str = indent * ' '
     if name is not None:
@@ -120,19 +175,22 @@ def print_dict(d, indent=0, name=None, **kwargs):
         log(sep_str, **kwargs)
     for key, val in d.items():
         if isinstance(val, (AttrDict, dict)):
-            print_dict(val, indent=indent+2, name=str(key), **kwargs)
+            print_dict(val, indent=indent, name=str(key), **kwargs)
         else:
             log(f'  {indent_str}{key}: {val}', **kwargs)
 
 
 def print_flags(flags: AttrDict):
     """Helper method for printing flags."""
-    log('\n'.join(
-        [80 * '=', 'FLAGS:', *[f' {k}: {v}' for k, v in flags.items()]]
-    ))
+    strs = [80 * '=', 'FLAGS:', *[f' {k}: {v}' for k, v in flags.items()]]
+    log('\n'.join(strs))
 
 
-def setup_directories(flags, name='training', save=True):
+def setup_directories(
+        flags: AttrDict,
+        name: str = 'training',
+        save_flags: bool = True
+):
     """Setup relevant directories for training."""
     if isinstance(flags, dict):
         flags = AttrDict(flags)
@@ -156,14 +214,12 @@ def setup_directories(flags, name='training', save=True):
         check_else_make_dir(
             [d for k, d in train_paths.items() if 'file' not in k],
         )
-        #  if not flags.get('restore', False):
-        if save:
+        if save_flags:
             save_params(dict(flags), train_dir, 'FLAGS')
 
     return train_paths
 
 
-# pylint:disable=too-many-arguments
 def make_header_from_dict(
         data: dict,
         dash: str = '-',
@@ -268,7 +324,7 @@ def print_args(args: dict):
     log(80 * '=')
 
 
-def savez(obj: typing.Any, fpath: str, name: str = None):
+def savez(obj: Any, fpath: str, name: str = None):
     """Save `obj` to compressed `.z` file at `fpath`."""
     if RANK != 0:
         return
@@ -346,15 +402,15 @@ def get_run_dir_fstr(flags: AttrDict):
     num_steps = config.get('num_steps', None)
     lattice_shape = config.get('lattice_shape', None)
 
-    if beta is None:
-        beta_final = flags.get('beta_final', None)
-        if beta_final is None:
-            beta_init = flags.get('beta_init', None)
-            if beta_init is None:
-                raise ValueError('beta not specified.')
-            beta = beta_init
-        else:
-            beta = beta_final
+    #  if beta is None:
+    #      beta_final = flags.get('beta_final', None)
+    #      if beta_final is None:
+    #          beta_init = flags.get('beta_init', None)
+    #          if beta_init is None:
+    #              raise ValueError('beta not specified.')
+    #          beta = beta_init
+    #      else:
+    #          beta = beta_final
 
     fstr = ''
     if hmc:
@@ -376,7 +432,7 @@ def get_run_dir_fstr(flags: AttrDict):
     return fstr
 
 
-def parse_configs(flags, debug=False):
+def parse_configs(flags: AttrDict, debug: bool = False):
     """Parse configs to construct unique string for naming `log_dir`."""
     config = AttrDict(flags.get('dynamics_config', None))
     net_config = AttrDict(flags.get('network_config', None))
@@ -396,12 +452,12 @@ def parse_configs(flags, debug=False):
     num_steps = config.get('num_steps', None)
     fstr += f'_lf{num_steps}'
 
-    qw = config.get('charge_weight', None)
-    pw = config.get('plaq_weight', None)
-    aw = config.get('aux_weight', None)
+    qw = config.get('charge_weight', 0.)
+    pw = config.get('plaq_weight', 0.)
+    aw = config.get('aux_weight', 0.)
     act = net_config.get('activation_fn', None)
-    if qw > 0:
-        fstr += f'_qw{qw}'
+    if qw == 0:
+        fstr += '_qw0'
     if pw > 0:
         fstr += f'_pw{pw}'
     if aw > 0:
@@ -433,6 +489,9 @@ def parse_configs(flags, debug=False):
     if config.get('separate_networks', False):
         fstr += '_sepNets'
 
+    if config.get('combined_updates', False):
+        fstr += '_combinedUpdates'
+
     if config.get('use_ncp', False):
         fstr += '_NCProj'
 
@@ -456,6 +515,9 @@ def parse_configs(flags, debug=False):
     if config.get('use_tempered_trajectories', False):
         fstr += '_temperedTraj'
 
+    if config.get('use_batch_norm', False):
+        fstr += '_bNorm'
+
     return fstr.replace('.', '')
 
 
@@ -467,15 +529,14 @@ def get_timestamp(fstr=None):
     return now.strftime(fstr)
 
 
-# pylint:disable=too-many-arguments
-def make_log_dir(FLAGS, model_type=None, log_file=None, root_dir=None,
-                 timestamps=None):
+def make_log_dir(
+        configs: AttrDict,
+        model_type: str = None,
+        log_file: str = None,
+        root_dir: str = None,
+        timestamps: AttrDict = None
+):
     """Automatically create and name `log_dir` to save model data to.
-
-    The created directory will be located in `logs/YYYY_M_D /`, and will have
-    the format(without `_qw{QW}` if running generic HMC):
-
-        `lattice{LX}_batch{NS}_lf{LF}_eps{SS}_qw{QW}`
 
     Returns:
         FLAGS, with FLAGS.log_dir being equal to the newly created log_dir.
@@ -483,7 +544,7 @@ def make_log_dir(FLAGS, model_type=None, log_file=None, root_dir=None,
     NOTE: If log_dir does not already exist, it is created.
     """
     model_type = 'GaugeModel' if model_type is None else model_type
-    cfg_str = parse_configs(FLAGS)
+    cfg_str = parse_configs(configs)
 
     if timestamps is None:
         timestamps = AttrDict({
@@ -494,18 +555,19 @@ def make_log_dir(FLAGS, model_type=None, log_file=None, root_dir=None,
             'second': get_timestamp('%Y-%m-%d-%H%M%S'),
         })
 
-    #  month_str = get_timestamp('%Y_%m')
-    #  time_str = get_timestamp('%Y-%m-%d-%H%M%S')
-    #  run_str = f'{cfg_str}-{timestamps.month}'
-
     if root_dir is None:
         root_dir = PROJECT_DIR
 
     dirs = [root_dir, 'logs', f'{model_type}_logs']
+
+    dynamics_config = configs.get('dynamics_config', None)
+    if dynamics_config is not None:
+        if dynamics_config.get('hmc', False):
+            dirs.append('hmc_logs')
+
     if cfg_str.startswith('DEBUG'):
         dirs.append('test')
 
-    #  log_dir = os.path.join(*dirs, month_str, run_str)
     log_dir = os.path.join(*dirs, timestamps.month, cfg_str)
     if os.path.isdir(log_dir) and NUM_WORKERS == 1:
         log_dir = os.path.join(*dirs, timestamps.month,
@@ -516,9 +578,6 @@ def make_log_dir(FLAGS, model_type=None, log_file=None, root_dir=None,
 
         log('\n'.join(['Existing directory found with the same name!',
                        'Modifying the date string to include seconds.']))
-        #  dstr = get_timestamp('%Y-%m-%d-%H%M%S')
-        #  run_str = f'{cfg_str}-{dstr}'
-        #  log_dir = os.path.join(*dirs, month_str, run_str)
 
     if RANK == 0:
         check_else_make_dir(log_dir)

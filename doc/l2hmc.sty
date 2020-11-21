@@ -61,32 +61,14 @@
 \usepackage[english]{babel}
 % textcomp fixes undefined control sequence errors with listings
 \usepackage{textcomp}
-% \usepackage{listings}
-% \usepackage{minted}
-% \renewcommand*\familydefault{ttdefault}
-% \usepackage{lineno}
+
 \usepackage{pgfplots} % NEEDED FOR tikzPlotLib
 % \usepgflibrary{pgfplots.groupplots}
 \usetikzlibrary{patterns,shapes.arrows}
 \usetikzlibrary{pgfplots.groupplots}
 
 \usepackage{physics}
-% \usepackage{yhmath}
-% \usepackage{color}
-% \usepackage{siunitx}
-% \usepackage{array}
-% \usepackage{multirow}
-% \usepackage{amssymb}
-% \usepackage{gensymb}
-% \usepackage{tabularx}
-% \usepackage{booktabs}
-% \usetikzlibrary{fadings}
-% \usetikzlibrary{patterns}
 \usetikzlibrary{shadows.blur}
-% \usetikzlibrary{shapes}
-
-
-
 
 \pgfplotsset{compat=newest}
 \usepackage{mathtools}
@@ -175,64 +157,34 @@
 % \UseRawInputEncoding%
 %% set par indent
 \usepackage{indentfirst}
-% \setlength{\parindent}{6.5ex}
 
-% Temporarily use sans-serif font {{{
-% \usepackage{helvet}
-% \usepackage{charter}
-% \usepacka[charter]{mathdesign}
-% \renewcommand{\familydefault}{\sfdefault}
-% }}}
-
-%% customize heading styles
-% {\normalfont\fontsize{20.74}{19}\sffamily\bfseries}
 \definecolor{gray75}{gray}{0.75}
 \newcommand{\hspp}{\hspace{4pt}}
 \newcommand{\hspn}{\hspace{-1pt}}
-% \usepackage[indentafter]{titlesec}
 \usepackage{titlesec}
-% {\normalfont\Huge\sffamily\bfseries}
 \titleformat{\chapter}[hang]
   {\sffamily\Large\bfseries}
   {\thechapter\hsp\textcolor{gray75}{$|$}\hsp}
   {0pt}
   {}
-  % {\usefont{T1}{qhv}{m}{n}\selectfont\Large\bfseries}
-  % {\MakeUppercase\normalfont\fontsize{20}{19}\sffamily\bfseries}
 
-  % {\normalfont\fontsize{15}{16}\sffamily\bfseries}
-% {\normalfont\Large\sffamily\bfseries}
-% {\thesection}
-% {\thesection\hsp\textcolor{gray75}{$\, |$}\hsp}
 \titleformat{\section}[hang]
   {\sffamily\Large\bfseries}
   {\thesection\hspp\hspp\textcolor{gray75}{$|$}\hspn}
   {1em}
   {}
 
-  % {\usefont{T1}{qhv}{m}{n}\selectfont\large\bfseries}
-  % {\normalfont\fontsize{14}{16}\sffamily\bfseries\slshape}%
-% {\normalfont\large\sffamily\bfseries\slshape}%
 \titleformat{\subsection}[hang]
   {\sffamily\large\bfseries\slshape}%
   {\thesubsection}
   {1em}
   {}
 
-  % {\usefont{T1}{qhv}{m}{n}\selectfont\normalsize\bfseries\slshape}%
-  % {\normalfont\large\sffamily\slshape}%
-% {\normalfont\normalsize\bfseries\sffamily}
-  % {\usefont{T1}{qhv}{m}{n}\selectfont\normalsize\slshape}
 \titleformat{\subsubsection}[hang]
   {\sffamily\normalsize\slshape}%
   {\thesubsubsection}
   {1em}
   {}
-
-
-% \renewcommand{\vec}[1]{\mathbold{#1}}
-% \newcommand{\mat}[1]{\mathbold{#1}}
-
 
 \newlist{todolist}{itemize}{2}
 \setlist[todolist]{label=$\square$}
@@ -241,33 +193,3 @@
 \newcommand{\done}{\rlap{$\square$}{\raisebox{2pt}{\large\hspace{1pt}\cmark}}%
 \hspace{-2.5pt}}
 \newcommand{\wontfix}{\rlap{$\square$}{\large\hspace{1pt}\xmark}}
-% \usepackage{extras}
-
-
-% \usepackage{sectsty}
-% \chapterfont{\usefont{T1}{qhv}{b}{n}\selectfont\Huge\bfseries}
-
-% \titleformat{\section}[hang]
-%   {\normalsize\bf}
-%   {}
-%   {0pt}
-%   {\MakeUppercase\bfseries}
-%%%% heading 1
-% \titleformat{\section}
-%   {\normalsize\center\bf}
-%   {}
-%   {0pt}
-%   {\MakeUppercase}
-% %%%% heading 2
-% \titleformat{\subsection}
-%   {\normalsize\center\bf}
-%   {}
-%   {0pt}
-%   {\capitalize}
-% %%%% heading 3
-% \titleformat{\subsubsection}
-%   {\normalsize\bf}
-%   {}
-%   {0pt}
-%   {\capitalize}
-%\titleformat{⟨command⟩}[⟨shape⟩]{⟨format⟩}{⟨label⟩}{⟨sep⟩}{⟨before-code⟩}[⟨after-code⟩] 
