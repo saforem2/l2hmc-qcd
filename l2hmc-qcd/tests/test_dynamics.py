@@ -1,24 +1,30 @@
 """
 test_dynamics.py
 """
+from __future__ import absolute_import, division, print_function
+
 import os
 import json
 
 from typing import Callable, Union
 from pathlib import Path
 
-import numpy as np
-import tensorflow as tf
+import pytest
 
 import utils.file_io as io
 
 from config import BIN_DIR
-from network import LearningRateConfig, NetworkConfig
-from dynamics import DynamicsConfig
-from dynamics.generic_dynamics import GenericDynamics
+from network.config import LearningRateConfig, NetworkConfig
 from utils.attr_dict import AttrDict
+from dynamics.config import DynamicsConfig
+from dynamics.generic_dynamics import GenericDynamics
 
 TEST_CONFIGS_FILE = os.path.join(BIN_DIR, 'test_configs.json')
+
+
+@pytest.mark_dependency()
+def test_tf():
+    import tensorflow as tf
 
 
 def identity(x):

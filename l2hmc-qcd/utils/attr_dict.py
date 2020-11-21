@@ -17,3 +17,25 @@ class AttrDict(dict):
     def __init__(self, *args, **kwargs):
         super(AttrDict, self).__init__(*args, **kwargs)
         self.__dict__ = self
+
+    def flatten(self, d=None):
+        """Flatten (possibly) nested dictionaries to all be `AttrDict`'s."""
+        if d is None:
+            d = self.__dict__
+
+        if not isinstance(d, AttrDict):
+            d = AttrDict(**d)
+
+        for key, val in d.items():
+            if isinstance(val, dict):
+                if not isinstance(val, AttrDict):
+                    d[key] = self.flatten(val)
+        #
+        #
+        #  for key, val in d.items():
+        #      if isinstance(val, dict):
+        #          if not isinstance(val, AttrDict):
+        #              return self.flatten(val)
+        #          d[key] = AttrDict(val)
+        #  return d
+        return d

@@ -7,25 +7,67 @@ from __future__ import absolute_import, division, print_function
 
 import os
 import sys
-import argparse
 import json
+import copy
+import argparse
+
 import tensorflow as tf
-import horovod.tensorflow as hvd
+
+if tf.__version__.startswith('1'):
+    try:
+        tf.compat.v1.enable_v2_behavior()
+    except AttributeError:
+        print('Unable to call \n'
+              '`tf.compat.v1.enable_v2_behavior()`. Continuing...')
+    try:
+        tf.compat.v1.enable_control_flow_v2()
+    except AttributeError:
+        print('Unable to call \n'
+              '`tf.compat.v1.enable_control_flow_v2()`. Continuing...')
+    try:
+        tf.compat.v1.enable_v2_tensorshape()
+    except AttributeError:
+        print('Unable to call \n'
+              '`tf.compat.v1.enable_v2_tensorshape()`. Continuing...')
+    try:
+        tf.compat.v1.enable_eager_execution()
+    except AttributeError:
+        print('Unable to call \n'
+              '`tf.compat.v1.enable_eager_execution()`. Continuing...')
+    try:
+        tf.compat.v1.enable_resource_variables()
+    except AttributeError:
+        print('Unable to call \n'
+              '`tf.compat.v1.enable_resource_variables()`. Continuing...')
+
+
+#  try:
+#      import horovod.tensorflow as hvd
+#  except ImportError:
+#      pass
+
 import numpy as np
 
-CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
-PARENT_DIR = os.path.dirname(CURRENT_DIR)
-if PARENT_DIR not in sys.path:
-    sys.path.append(PARENT_DIR)
+
+MODULEPATH = os.path.join(os.path.dirname(__file__), '..')
+if MODULEPATH not in sys.path:
+    sys.path.append(MODULEPATH)
+
+
+#  CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+#  PARENT_DIR = os.path.dirname(CURRENT_DIR)
+#  if PARENT_DIR not in sys.path:
+#      sys.path.append(PARENT_DIR)
+from functools import wraps
+
+import utils.file_io as io
 
 from config import BIN_DIR, GAUGE_LOGS_DIR
-from functools import wraps
 from network.config import ConvolutionConfig
+from utils.file_io import timeit
 from utils.attr_dict import AttrDict
 from utils.training_utils import train
 from utils.inference_utils import load_and_run, run, run_hmc
-import utils.file_io as io
-from utils.file_io import timeit
 
 # pylint:disable=import-outside-toplevel, invalid-name, broad-except
 TIMING_FILE = os.path.join(BIN_DIR, 'test_benchmarks.log')
@@ -80,6 +122,7 @@ def parse_args():
 
 
 def parse_test_configs(test_configs_file=None):
+    """Parse `test_config.json`."""
     if test_configs_file is None:
         test_configs_file = os.path.join(BIN_DIR, 'test_configs.json')
 
@@ -103,7 +146,9 @@ def catch_exception(fn):
         except Exception as e:
             print(type(e))
             print(e)
+
             import pudb
+
             pudb.set_trace()
     return wrapper
 
@@ -111,16 +156,16 @@ def catch_exception(fn):
 @timeit(out_file=None)
 def test_hmc_run(flags: AttrDict):
     """Testing generic HMC."""
-    flags.dynamics_config['hmc'] = True
+    flags = AttrDict(**dict(copy.deepcopy(flags)))
+    flags['dynamics_config']['hmc'] = True
     #  hmc_dir = os.path.join(os.path.dirname(PROJECT_DIR),
     #                         'gauge_logs_eager', 'test', 'hmc_runs')
     hmc_dir = os.path.join(GAUGE_LOGS_DIR, 'hmc_test_logs')
-    dynamics, run_data, x = run_hmc(flags, hmc_dir=hmc_dir)
+    dynamics, run_data, x, _ = run_hmc(flags, hmc_dir=hmc_dir)
 
     return {
         'x': x,
         'dynamics': dynamics,
-        'flags': flags,
         'run_data': run_data,
     }
 
@@ -128,6 +173,7 @@ def test_hmc_run(flags: AttrDict):
 @timeit(out_file=None)
 def test_conv_net(flags: AttrDict):
     """Test convolutional networks."""
+    flags = AttrDict(**dict(copy.deepcopy(flags)))
     #  flags.use_conv_net = True
     flags['dynamics_config']['use_conv_net'] = True
     flags.conv_config = ConvolutionConfig(
@@ -139,12 +185,14 @@ def test_conv_net(flags: AttrDict):
         conv_activations=['relu', 'relu'],
         input_shape=flags['dynamics_config']['lattice_shape'][1:],
     )
+    dirs = io.setup_directories(flags)
+    flags['dirs'] = dirs
+    flags['log_dir'] = dirs.get('log_dir', None)
     x, dynamics, train_data, flags = train(flags)
-    dynamics, run_data, x = run(dynamics, flags, x=x)
+    dynamics, run_data, x, _ = run(dynamics, flags, x=x)
 
     return AttrDict({
         'x': x,
-        'flags': flags,
         'log_dir': flags.log_dir,
         'dynamics': dynamics,
         'run_data': run_data,
@@ -155,14 +203,14 @@ def test_conv_net(flags: AttrDict):
 @timeit(out_file=None)
 def test_single_network(flags: AttrDict):
     """Test training on single network."""
-    flags.dynamics_config.separate_networks = False
+    flags = AttrDict(**dict(copy.deepcopy(flags)))
+    flags['dynamics_config']['separate_networks'] = False
+    #  flags.dynamics_config.separate_networks = False
     x, dynamics, train_data, flags = train(flags)
-    beta = flags.get('beta', 1.)
-    dynamics, run_data, x = run(dynamics, flags, x=x)
+    dynamics, run_data, x, _ = run(dynamics, flags, x=x)
 
     return AttrDict({
         'x': x,
-        'flags': flags,
         'log_dir': flags.log_dir,
         'dynamics': dynamics,
         'run_data': run_data,
@@ -173,19 +221,19 @@ def test_single_network(flags: AttrDict):
 @timeit(out_file=None)
 def test_separate_networks(flags: AttrDict):
     """Test training on separate networks."""
+    flags = AttrDict(**dict(copy.deepcopy(flags)))
     flags.hmc_steps = 0
     #  flags.log_dir = None
     flags.log_dir = io.make_log_dir(flags, 'GaugeModel', LOG_FILE)
 
-    flags.dynamics_config.separate_networks = True
+    flags.dynamics_config['separate_networks'] = True
     flags.compile = False
     x, dynamics, train_data, flags = train(flags)
-    beta = flags.get('beta', 1.)
-    dynamics, run_data, x = run(dynamics, flags, x=x)
+    #  beta = flags.get('beta', 1.)
+    dynamics, run_data, x, _ = run(dynamics, flags, x=x)
 
     return AttrDict({
         'x': x,
-        'flags': flags,
         'log_dir': flags.log_dir,
         'dynamics': dynamics,
         'run_data': run_data,
@@ -199,16 +247,16 @@ def test_resume_training(log_dir: str):
     flags = AttrDict(
         dict(io.loadz(os.path.join(log_dir, 'training', 'FLAGS.z')))
     )
+    flags = AttrDict(**dict(copy.deepcopy(flags)))
 
     flags.log_dir = log_dir
     flags.train_steps += flags.get('train_steps', 10)
     x, dynamics, train_data, flags = train(flags)
-    beta = flags.get('beta', 1.)
-    dynamics, run_data, x = run(dynamics, flags, x=x)
+    #  beta = flags.get('beta', 1.)
+    dynamics, run_data, x, _ = run(dynamics, flags, x=x)
 
     return AttrDict({
         'x': x,
-        'flags': flags,
         'log_dir': flags.log_dir,
         'dynamics': dynamics,
         'run_data': run_data,
@@ -225,9 +273,8 @@ def test():
         flags.restore = False
 
     single_net_out = test_single_network(flags)
-    log_dir = single_net_out.log_dir
-    flags.log_dir = log_dir
-    _ = test_resume_training(log_dir)
+    flags.log_dir = single_net_out.log_dir
+    _ = test_resume_training(flags.log_dir)
     _ = test_separate_networks(flags)
     _ = test_hmc_run(flags)
     _ = test_conv_net(flags)
@@ -236,29 +283,23 @@ def test():
 @timeit(out_file=None)
 def main(args, flags=None):
     """Main method."""
+    fn_map = {
+        'test_hmc_run': test_separate_networks,
+        'test_separate_networks': test_separate_networks,
+        'test_single_network': test_single_network,
+        'test_resume_training': test_resume_training,
+        'test_conv_net': test_conv_net,
+        #  'test_inference_from_model': test_inference_from_model,
+    }
     if flags is None:
         flags = parse_test_configs()
 
-    if args.test_hmc_run:
-        _ = test_hmc_run(flags)
-
-    if args.test_separate_networks:
-        _ = test_separate_networks(flags)
-
-    if args.test_single_network:
-        flags.hmc_steps = 0
-        flags.hmc_start = False
-        _ = test_single_network(flags)
-
-    if args.test_resume_training:
-        _ = test_resume_training(args.log_dir)
-
-    if args.test_inference_from_model:
-        if args.log_dir is None:
-            raise ValueError('`--log_dir` must be specified.')
-
-        flags.log_dir = args.log_dir
-        _ = load_and_run(flags)
+    for arg, fn in fn_map.items():
+        if args.__dict__.get(arg):
+            if arg == 'test_resume_training':
+                _ = fn(args.log_dir)
+            else:
+                _ = fn(flags)
 
 
 if __name__ == '__main__':

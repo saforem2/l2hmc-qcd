@@ -19,43 +19,34 @@ Date: 6/30/2020
 """
 from __future__ import absolute_import, division, print_function
 
-import os
-from collections import namedtuple
-from typing import Callable, List, Optional, Tuple, Union
+import typing
+from typing import Callable, List, Optional, Tuple, Union, NamedTuple
 
 import numpy as np
 import tensorflow as tf
+
 import utils.file_io as io
 
 try:
     import horovod.tensorflow as hvd
+
     HAS_HOROVOD = True
     NUM_RANKS = hvd.size()
 except (ImportError, ModuleNotFoundError):
     HAS_HOROVOD = False
     NUM_RANKS = 1
 
-from network.config import ConvolutionConfig, LearningRateConfig, NetworkConfig
+from network.config import (ConvolutionConfig,
+                            LearningRateConfig, NetworkConfig)
+from dynamics.config import (DynamicsConfig,
+                             State, MonteCarloStates,
+                             NetWeights, TF_FLOAT)
 from utils.attr_dict import AttrDict
 from utils.learning_rate import WarmupExponentialDecay
 
-from config import BIN_DIR
-from dynamics.config import DynamicsConfig
+__all__ = ['BaseDynamics', 'State', 'MonteCarloStates', 'NetWeights']
 
-TIMING_FILE = os.path.join(BIN_DIR, 'timing_file.log')
-
-
-TF_FLOAT = tf.keras.backend.floatx()
-
-State = namedtuple('State', ['x', 'v', 'beta'])
-
-MonteCarloStates = namedtuple('MonteCarloStates', ['init', 'proposed', 'out'])
-
-NetWeights = namedtuple('NetWeights', [
-    'x_scale', 'x_translation', 'x_transformation',
-    'v_scale', 'v_translation', 'v_transformation'
-])
-
+# pylint:disable=invalid-name
 
 def identity(x):
     """Returns x"""
@@ -179,12 +170,29 @@ class BaseDynamics(tf.keras.Model):
 
         return loss
 
-    def train_step(self, data):
-        """Perform a single training step."""
+    def train_step(  # pylint:disable=arguments-differ
+            self,
+            inputs: Tuple[tf.Tensor, tf.Tensor],
+    ):
+        """Perform a single training step.
+
+        Returns:
+            x_out (tf.Tensor): Next `x` configuration in chain.
+            metrics (AttrDict): Dictionary of various metrics for logging.
+        """
         raise NotImplementedError
 
-    def test_step(self, data):
-        """Perform a single inference step."""
+    def test_step(  # pylint:disable=arguments-differ
+            self,
+            inputs: Tuple[tf.Tensor, tf.Tensor],
+    ):
+        """Perform a single inference step.
+
+        Returns:
+            x_out (tf.Tensor): Next `x` configuration in chain.
+            metrics (AttrDict): Dictionary of various metrics for logging.
+        """
+
         raise NotImplementedError
 
     def _forward(
@@ -208,11 +216,32 @@ class BaseDynamics(tf.keras.Model):
 
         return mc_states, data
 
+    def _backward(
+            self,
+            inputs: Union[tf.Tensor, List[tf.Tensor]],
+            training: bool = None,
+    ):
+        """Propose a new state by running the leapfrog integrator forward."""
+        state_init, state_prop, data = self._transition(inputs, forward=False,
+                                                        training=training)
+        sumlogdet = data.get('sumlogdet', None)
+        accept_prob = data.get('accept_prob', None)
+        ma_, mr_ = self._get_accept_masks(accept_prob)
+        ma = ma_[:, None]
+        mr = mr_[:, None]
+        x_out = state_prop.x * ma + state_init.x * mr
+        v_out = state_prop.v * ma + state_init.v * mr
+        data.sumlogdet_out = sumlogdet * ma
+        state_out = State(x_out, v_out, state_init.beta)
+        mc_states = MonteCarloStates(state_init, state_prop, state_out)
+
+        return mc_states, data
+
     def _random_direction(
             self,
             inputs: Union[tf.Tensor, List[tf.Tensor]],
             training: bool = None
-    ) -> Tuple[MonteCarloStates, tf.Tensor, MonteCarloStates]:
+    ) -> (MonteCarloStates, AttrDict):
         """Propose a new state and perform the accept/reject step."""
         forward = tf.cast((tf.random.uniform(shape=[]) < 0.5), dtype=tf.bool)
         state_init, state_prop, data = self._transition(inputs,
@@ -238,7 +267,7 @@ class BaseDynamics(tf.keras.Model):
             inputs: Union[tf.Tensor, List[tf.Tensor]],
             forward: bool,
             training: bool = None
-    ) -> Tuple[State, State, tf.Tensor, State]:
+    ) -> (State, State, AttrDict):
         """Run the augmented leapfrog integrator."""
         if len(inputs) == 2:
             x, beta = inputs
@@ -253,9 +282,40 @@ class BaseDynamics(tf.keras.Model):
 
         return state, state_, data
 
+    def _hmc_transition(
+        self, state: State, training: Optional[bool] = None,
+    ) -> (MonteCarloStates, AttrDict):
+        """Propose a new state and perform the accept/reject step."""
+        #  x, beta = inputs
+        state, state_prop, data = self._transition(state, forward=True,
+                                                   training=training)
+
+        accept_prob = data.get('accept_prob')
+        ma_, mr_ = self._get_accept_masks(accept_prob)
+        ma = ma_[:, None]
+        mr = mr_[:, None]
+
+        # Construct the output configuration
+        v_out = ma * state_prop.v + mr * state.v
+        x_out = self.normalizer(ma * state_prop.x + mr * state.x)
+        sumlogdet = ma_ * data['sumlogdet']  # NOTE: initial sumlogdet = 0
+
+        #  state_init = State(x=x, v=state_init.v, beta=beta)
+        state_prop = State(x=state_prop.x, v=state_prop.v, beta=state.beta)
+        state_out = State(x=x_out, v=v_out, beta=state.beta)
+
+        mc_states = MonteCarloStates(state, state_prop, state_out)
+        #  sld_states = MonteCarloStates(0., sld_prop, sumlogdet)
+        data.update({
+            'accept_mask': ma_,
+            'sumlogdet': sumlogdet,
+        })
+
+        return mc_states, data
+
     def apply_transition(
-            self, inputs: Tuple[tf.Tensor], training: bool = None,
-    ):
+            self, inputs: Tuple[tf.Tensor], training: Optional[bool] = None,
+    ) -> (MonteCarloStates, AttrDict):
         """Propose a new state and perform the accept/reject step.
 
         NOTE: We simulate the dynamics both forward and backward, and use
@@ -309,7 +369,8 @@ class BaseDynamics(tf.keras.Model):
             'forward': dataf,
             'backward': datab,
             'accept_prob': accept_prob,
-            'sumlogdet_out': sumlogdet,
+            'accept_mask': ma_,
+            'sumlogdet': sumlogdet,
             'sumlogdet_prop': sld_prop,
         })
 
@@ -320,7 +381,7 @@ class BaseDynamics(tf.keras.Model):
             self,
             inputs: Union[tf.Tensor, List[tf.Tensor]],
             training: bool = None
-    ) -> Tuple[MonteCarloStates, MonteCarloStates]:
+    ) -> (MonteCarloStates, MonteCarloStates):
         """Perform the molecular dynamics (MD) update w/o accept/reject.
 
         NOTE: We simulate the dynamics both forward and backward, and use
@@ -359,7 +420,9 @@ class BaseDynamics(tf.keras.Model):
 
     def test_reversibility(
             self,
-            data: Union[tf.Tensor, List[tf.Tensor]],
+            x: tf.Tensor = None,
+            v: tf.Tensor = None,
+            beta: tf.Tensor = None,
             training: bool = None
     ):
         """Test reversibility.
@@ -375,23 +438,37 @@ class BaseDynamics(tf.keras.Model):
                  (xb, vb) -> (xf, vf)
             check that x == xf, v == vf
         """
-        dxf, dvf = self._test_reversibility(data, forward_first=True,
+        if x is None:
+            x = tf.random.normal(self.x_shape)
+        if v is None:
+            v = tf.random.normal(self.x_shape)
+        if beta is None:
+            beta = tf.constant(1.)
+
+        state = State(x, v, beta)
+        dxf, dvf = self._test_reversibility(state,
+                                            forward_first=True,
                                             training=training)
-        dxb, dvb = self._test_reversibility(data, forward_first=False,
+        dxb, dvb = self._test_reversibility(state,
+                                            forward_first=False,
                                             training=training)
         output = AttrDict({
-            'dxf': dxf,
-            'dvf': dvf,
-            'dxb': dxb,
-            'dvb': dvb,
+            'forward': {
+                'dx': dxf,
+                'dv': dvf,
+            },
+            'backward': {
+                'dx': dxb,
+                'dv': dvb,
+            }
         })
 
         return output
 
     def _test_reversibility(
             self,
-            data: Union[tf.Tensor, List[tf.Tensor]],
-            forward_first: bool,
+            state: State,
+            forward_first: bool = False,
             training: bool = None
     ):
         """Helper method for `self.test_reversibility`.
@@ -400,18 +477,16 @@ class BaseDynamics(tf.keras.Model):
          - If `forward_first`, test (1.) (forward then backward).
          - Else, test (2.) (backward then forward).
         """
-        x, beta = data
-        v = tf.random.normal(tf.shape(x))
+        #  x, beta = data
+        #  v = tf.random.normal(tf.shape(x))
 
         #  Run from (x, v) -> (x1, v1)
-        state1, _ = self.transition_kernel(State(x, v, beta),
-                                           forward_first, training)
+        state1, _ = self.transition_kernel(state, forward_first, training)
         # Run from (x1, v1) --> (x2, v2)
-        state2, _ = self.transition_kernel(state1,
-                                           not forward_first, training)
+        state2, _ = self.transition_kernel(state1, not forward_first, training)
         # If reversible, then x2 == x, v2 == v
-        dx = x - state2.x
-        dv = v - state2.v
+        dx = state.x - state2.x
+        dv = state.v - state2.v
 
         return dx, dv
 
@@ -422,25 +497,22 @@ class BaseDynamics(tf.keras.Model):
     ):
         """Run the augmented leapfrog sampler in the forward direction."""
         sumlogdet = tf.zeros((self.batch_size,))
-        logdets = tf.TensorArray(TF_FLOAT,
-                                 dynamic_size=True,
-                                 size=self.batch_size,
-                                 clear_after_read=True)
-        energies = tf.TensorArray(TF_FLOAT,
-                                  dynamic_size=True,
-                                  size=self.batch_size,
-                                  clear_after_read=True)
-        #  step = 0
         state_prop = State(self.normalizer(state.x), state.v, state.beta)
-        state_prop, logdet = self._half_v_update_forward(state_prop,
-                                                         0, training)
+        if self._verbose:
+            kwargs = {
+                'dynamic_size': False,
+                'size': self.config.num_steps,
+                'element_shape': (self.batch_size,),
+                'clear_after_read': False
+            }
+            logdets = tf.TensorArray(TF_FLOAT, **kwargs)
+            energies = tf.TensorArray(TF_FLOAT, **kwargs)
+
+        state_prop, logdet = self._half_v_update_forward(state_prop, step=0,
+                                                         training=training)
         sumlogdet += logdet
 
         for step in range(self.config.num_steps):
-            if self._verbose:
-                logdets = logdets.write(step, sumlogdet)
-                energies = energies.write(step, self.hamiltonian(state_prop))
-
             state_prop, logdet = self._full_x_update_forward(state_prop,
                                                              step, training)
             sumlogdet += logdet
@@ -450,11 +522,14 @@ class BaseDynamics(tf.keras.Model):
                     state_prop, step, training
                 )
                 sumlogdet += logdet
+                if self._verbose:
+                    logdets = logdets.write(step, sumlogdet)
+                    energies = energies.write(step,
+                                              self.hamiltonian(state_prop))
 
         state_prop, logdet = self._half_v_update_forward(state_prop,
                                                          step, training)
         sumlogdet += logdet
-
         accept_prob = self.compute_accept_prob(state, state_prop, sumlogdet)
 
         metrics = AttrDict({
@@ -462,14 +537,28 @@ class BaseDynamics(tf.keras.Model):
             'accept_prob': accept_prob,
         })
         if self._verbose:
+            logdets = logdets.write(step, sumlogdet)
+            energies = energies.write(step, self.hamiltonian(state_prop))
             metrics.update({
-                'energies': [
-                    energies.read(i) for i in range(self.config.num_steps)
-                ],
-                'logdets': [
-                    logdets.read(i) for i in range(self.config.num_steps)
-                ],
+                'H': [],
+                'Hw': [],
+                'logdets': [],
             })
+            for i in range(self.config.num_steps):
+                energy_ = energies.read(i)
+                logdets_ = logdets.read(i)
+                metrics['H'].append(energy_)
+                metrics['logdets'].append(logdets_)
+                metrics['Hw'].append(energy_ - logdets_)
+
+            #  metrics.update({
+            #      'energies': [
+            #          energies.read(i) for i in range(self.config.num_steps)
+            #      ],
+            #      'logdets': [
+            #          logdets.read(i) for i in range(self.config.num_steps)
+            #      ],
+            #  })
 
         return state_prop, metrics
 
@@ -479,15 +568,18 @@ class BaseDynamics(tf.keras.Model):
             training: bool = None
     ):
         """Run the augmented leapfrog sampler in the forward direction."""
-        kwargs = {
-            'dynamic_size': True,
-            'size': self.batch_size,
-            'clear_after_read': True
-        }
-        logdets = tf.TensorArray(TF_FLOAT, **kwargs)
-        energies = tf.TensorArray(TF_FLOAT, **kwargs)
         sumlogdet = tf.zeros((self.batch_size,))
         state_prop = State(state.x, state.v, state.beta)
+
+        if self._verbose:
+            kwargs = {
+                'dynamic_size': False,
+                'size': self.config.num_steps,
+                'element_shape': (self.batch_size,),
+                'clear_after_read': False
+            }
+            logdets = tf.TensorArray(TF_FLOAT, **kwargs)
+            energies = tf.TensorArray(TF_FLOAT, **kwargs)
 
         state_prop, logdet = self._half_v_update_backward(state_prop,
                                                           0, training)
@@ -521,13 +613,20 @@ class BaseDynamics(tf.keras.Model):
             energies = energies.write(self.config.num_steps,
                                       self.hamiltonian(state_prop))
             metrics.update({
-                'energies': [
-                    energies.read(i) for i in range(self.config.num_steps)
-                ],
-                'logdets': [
-                    logdets.read(i) for i in range(self.config.num_steps)
-                ],
+                'H': [], 'Hw': [], 'logdets': [],
             })
+            for i in range(self.config.num_steps):
+                energy_ = energies.read(i)
+                logdets_ = logdets.read(i)
+                metrics['H'].append(energy_)
+                metrics['logdets'].append(logdets_)
+                metrics['Hw'].append(energy_ - logdets_)
+            #  metrics.update({
+            #      'H_eff': [
+            #          (energies.read(i) - logdets.read(i))
+            #          for i in range(self.config.num_steps)
+            #      ]
+            #  })
 
         return state_prop, metrics
 
@@ -535,21 +634,22 @@ class BaseDynamics(tf.keras.Model):
             self,
             state: State,
             forward: bool,
-            training: bool = None,
+            training: Optional[bool] = None,
+            verbose: Optional[bool] = False,
     ):
         """Transition kernel of the augmented leapfrog integrator."""
         lf_fn = self._forward_lf if forward else self._backward_lf
-
         state_prop = State(x=state.x, v=state.v, beta=state.beta)
         sumlogdet = tf.zeros((self.batch_size,), dtype=TF_FLOAT)
-        logdets = tf.TensorArray(TF_FLOAT,
-                                 dynamic_size=True,
-                                 size=self.batch_size,
-                                 clear_after_read=True)
-        energies = tf.TensorArray(TF_FLOAT,
-                                  dynamic_size=True,
-                                  size=self.batch_size,
-                                  clear_after_read=True)
+        if self._verbose:
+            kwargs = {
+                'dynamic_size': False,
+                'size': self.config.num_steps,
+                'element_shape': (self.batch_size,),
+                'clear_after_read': False
+            }
+            logdets = tf.TensorArray(TF_FLOAT, **kwargs)
+            energies = tf.TensorArray(TF_FLOAT, **kwargs)
 
         for step in range(self.config.num_steps):
             if self._verbose:
@@ -565,17 +665,25 @@ class BaseDynamics(tf.keras.Model):
             'accept_prob': accept_prob,
         })
         if self._verbose:
-            logdets = logdets.write(self.config.num_steps, sumlogdet)
-            energies = energies.write(self.config.num_steps,
-                                      self.hamiltonian(state_prop))
+            logdets = logdets.write(step, sumlogdet)
+            energies = energies.write(step, self.hamiltonian(state_prop))
             metrics.update({
-                'energies': [
-                    energies.read(i) for i in range(self.config.num_steps)
-                ],
-                'logdets': [
-                    logdets.read(i) for i in range(self.config.num_steps)
-                ],
+                'H': [],
+                'Hw': [],
+                'logdets': [],
             })
+            for i in range(self.config.num_steps):
+                metrics['H'].append(energies.read(i))
+                metrics['logdets'].append(logdets.read(i))
+                metrics['Hw'].append(energies.read(i) - logdets.read(i))
+
+            #  metrics.update({
+            #      'H': [energies.read(i) for i in range(
+            #      'Heff': [
+            #          (energies.read(i) - logdets.read(i))
+            #          for i in range(self.config.num_steps)
+            #      ]
+            #  })
 
         return state_prop, metrics
 

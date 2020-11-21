@@ -52,7 +52,7 @@ class PeriodicPadding(layers.Layer):
         super(PeriodicPadding, self).__init__(**kwargs)
         self._size = size
 
-    def call(self, inputs, training=None):
+    def call(self, inputs, training=None, masks=None):
         """Call the network (forward-pass)."""
         z1 = inputs[:, -self._size:, :, ...]
         z2 = inputs[:, 0:self._size, :, ...]
@@ -187,7 +187,11 @@ def get_gauge_network(
             f2 = conv_config.sizes[1]
             p1 = conv_config.pool_sizes[0]
 
-            x = tf.reshape(x_input, shape=(batch_size, T, X, d + 2))
+            if 'xnet' in name.lower():
+                x = tf.reshape(x_input, shape=(batch_size, T, X, d + 2))
+            else:
+                x = tf.reshape(x_input, shape=(batch_size, T, X, d))
+
             x = PeriodicPadding(f1 - 1)(x)
             x = layers.Conv2D(n1, f1, activation='relu',
                               name=f'{name}/xConv1')(x)
@@ -219,14 +223,17 @@ def get_gauge_network(
 
         z = layers.Add()([x, v, t])
         z = keras.activations.relu(z)
-
         for idx, units in enumerate(net_config.units[1:]):
             z = custom_dense(units, 1./2., f'{name}/h{idx}')(z)
+
         #  z = custom_dense(*args['h1'])(z)
         #  z = custom_dense(*args['h2'])(z)
 
         if net_config.dropout_prob > 0:
             z = layers.Dropout(net_config.dropout_prob)(z)
+
+        if net_config.get('use_batch_norm', False):
+            z = layers.BatchNormalization(-1, name=f'{name}/batch_norm1')(z)
 
         scale = custom_dense(*args['scale'], activation='tanh')(z)
         transl = custom_dense(*args['transl'])(z)

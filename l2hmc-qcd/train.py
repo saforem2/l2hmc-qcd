@@ -3,41 +3,40 @@ train.py
 
 Train 2D U(1) model using eager execution in tensorflow.
 """
+# noqa: E402, F401
+# pylint:disable=wrong-import-position,invalid-name, unused-import,
+# pylint: disable=ungrouped-imports
 from __future__ import absolute_import, division, print_function
 
 import os
 import contextlib
-
+import logging
 import tensorflow as tf
-if tf.__version__.startswith('1'):
+import utils
+
+try:
+    import horovod
+    import horovod.tensorflow as hvd
     try:
-        tf.compat.v1.enable_v2_behavior()
-    except AttributeError:
-        print('Unable to call \n'
-              '`tf.compat.v1.enable_v2_behavior()`. Continuing...')
-    try:
-        tf.compat.v1.enable_control_flow_v2()
-    except AttributeError:
-        print('Unable to call \n'
-              '`tf.compat.v1.enable_control_flow_v2()`. Continuing...')
-    try:
-        tf.compat.v1.enable_v2_tensorshape()
-    except AttributeError:
-        print('Unable to call \n'
-              '`tf.compat.v1.enable_v2_tensorshape()`. Continuing...')
-    try:
-        tf.compat.v1.enable_eager_execution()
-    except AttributeError:
-        print('Unable to call \n'
-              '`tf.compat.v1.enable_eager_execution()`. Continuing...')
-    try:
-        tf.compat.v1.enable_resource_variables()
-    except AttributeError:
-        print('Unable to call \n'
-              '`tf.compat.v1.enable_resource_variables()`. Continuing...')
+        RANK = hvd.rank()
+    except ValueError:
+        hvd.init()
+
+    RANK = hvd.rank()
+    HAS_HOROVOD = True
+    logging.info(f'using horovod version: {horovod.__version__}')
+    logging.info(f'using horovod from: {horovod.__file__}')
+    GPUS = tf.config.experimental.list_physical_devices('GPU')
+    for gpu in GPUS:
+        tf.config.experimental.set_memory_growth(gpu, True)
+    if GPUS:
+        gpu = GPUS[hvd.local_rank()]
+        tf.config.experimental.set_visible_devices(gpu, 'GPU')
+
+except (ImportError, ModuleNotFoundError):
+    HAS_HOROVOD = False
 
 
-# pylint:disable=wrong-import-position
 import utils.file_io as io
 
 from utils.attr_dict import AttrDict
@@ -45,6 +44,41 @@ from utils.attr_dict import AttrDict
 from utils.parse_configs import parse_configs
 from utils.training_utils import train, train_hmc
 from utils.inference_utils import run, run_hmc
+
+
+os.environ['TF_CPP_MIN_VLOG_LEVEL'] = '3'
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+
+logger = logging.getLogger(__name__)
+logging_datefmt = '%Y-%m-%d %H:%M:%S'
+logging_level = logging.WARNING
+logging_format = (
+    '%(asctime)s %(levelname)s:%(process)s:%(thread)s:%(name)s:%(message)s'
+)
+#  stream = sys.stdout if RANK == 0 else sys.stderr
+#
+#  logging.basicConfig(level=logging_level,
+#                      format=logging_format,
+#                      datefmt=logging_datefmt,
+#                      stream=sys.stdout if RANK == 0 else sys.stderr)
+
+
+logging.info(f'using tensorflow version: {tf.__version__}')
+logging.info(f'using tensorflow from: {tf.__file__}')
+
+#  try:
+#      import horovod
+#      import horovod.tensorflow as hvd
+#      #  hvd.init()
+#      HAS_HOROVOD = True
+#      logging.info(f'using horovod version: {horovod.__version__}')
+#      logging.info(f'using horovod from: {horovod.__file__}')
+#  except ImportError:
+#      HAS_HOROVOD = False
+#
+#
+#  if RANK > 0:
+#      logging_level = logging.WARNING
 
 
 @contextlib.contextmanager
@@ -61,9 +95,15 @@ def experimental_options(options):
 def restore_flags(flags, train_dir):
     """Update `FLAGS` using restored flags from `log_dir`."""
     rf_file = os.path.join(train_dir, 'FLAGS.z')
-    restored = AttrDict(dict(io.loadz(rf_file)))
-    io.log(f'Restoring FLAGS from: {rf_file}...')
-    flags.update(restored)
+    if os.path.isfile(rf_file):
+        try:
+            restored = io.loadz(rf_file)
+            restored = AttrDict(restored)
+            io.log(f'Restoring FLAGS from: {rf_file}...')
+            flags.update(restored)
+        except (FileNotFoundError, EOFError):
+            pass
+        #  restored = AttrDict(dict(io.loadz(rf_file)))
 
     return flags
 
@@ -79,15 +119,22 @@ def main(args):
     beta_init = args.get('beta_init', None)
     beta_final = args.get('beta_final', None)
     if log_dir is not None:  # we want to restore from latest checkpoint
-        train_steps = args.get('train_steps', None)
-        args = restore_flags(args, os.path.join(args.log_dir, 'training'))
-        args.train_steps = train_steps  # use newly passed value
         args.restore = True
+        train_steps = args.get('train_steps', None)
+        restored = restore_flags(args, os.path.join(args.log_dir, 'training'))
+        for key, val in args.items():
+            if key in restored:
+                if val != restored[key]:
+                    print(f'Restored {key}: {restored[key]}')
+                    print(f'Using {key}: {val}')
+
+        args.update({
+            'train_steps': train_steps,
+        })
         if beta_init != args.get('beta_init', None):
             args.beta_init = beta_init
         if beta_final != args.get('beta_final', None):
             args.beta_final = beta_final
-        args.train_steps = train_steps
 
     else:  # New training session
         timestamps = AttrDict({
@@ -102,28 +149,30 @@ def main(args):
         io.write(f'{args.log_dir}', log_file, 'a')
         args.restore = False
         if hmc_steps > 0:
-            x, _, eps = train_hmc(args)
-            args.dynamics_config['eps'] = eps
+            #  x, _, eps = train_hmc(args)
+            x, dynamics_hmc, _, hflags = train_hmc(args)
+            #  dirs_hmc = hflags.get('dirs', None)
+            args.dynamics_config['eps'] = dynamics_hmc.eps.numpy()
+            _ = run(dynamics_hmc, hflags, save_x=False)
 
-    dynamics_config = args.get('dynamics_config', None)
-    if dynamics_config is not None:
-        log_dir = dynamics_config.get('log_dir', None)
-        if log_dir is not None:
-            eps_file = os.path.join(log_dir, 'training', 'models', 'eps.z')
-            if os.path.isfile(eps_file):
-                io.log(f'Loading eps from: {eps_file}')
-                eps = io.loadz(eps_file)
-                args.dynamics_config['eps'] = eps
+    #  dynamics_config = args.get('dynamics_config', None)
+    #  if dynamics_config is not None:
+    #      log_dir = dynamics_config.get('log_dir', None)
+    #      if log_dir is not None:
+    #          eps_file = os.path.join(log_dir, 'training', 'models', 'eps.z')
+    #          if os.path.isfile(eps_file):
+    #              io.log(f'Loading eps from: {eps_file}')
+    #              eps = io.loadz(eps_file)
+    #              args.dynamics_config['eps'] = eps
 
-    _, dynamics, _, args = train(args, x=x)
+    x, dynamics, train_data, args = train(args, x=x)
 
     # ====
     # Run inference on trained model
     if args.get('run_steps', 5000) > 0:
         # ====
         # Run with random start
-        dynamics, _, _ = run(dynamics, args)
-
+        _ = run(dynamics, args)
         # ====
         # Run HMC
         args.hmc = True
@@ -138,9 +187,16 @@ if __name__ == '__main__':
     #      tensor_debug_mode="FULL_HEALTH",
     #  )
 
-    FLAGS = parse_configs()
-    FLAGS = AttrDict(FLAGS.__dict__)
-    main(FLAGS)
+    CONFIGS = parse_configs()
+    CONFIGS = AttrDict(CONFIGS.__dict__)
+    if CONFIGS.get('debug', False):
+        logging_level = logging.DEBUG
+        os.environ['TF_CPP_MIN_VLOG_LEVEL'] = '0'
+        os.environ['TF_CPP_MIN_LOG_LEVEL'] = '0'
+    else:
+        logging_level = logging.WARNING
+    io.print_dict(CONFIGS)
+    main(CONFIGS)
     #
     #  debug_events_writer.FlushExecutionFiles()
     #  debug_events_writer.FlushNonExecutionFiles()

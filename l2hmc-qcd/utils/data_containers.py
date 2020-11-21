@@ -10,6 +10,9 @@ import os
 from collections import defaultdict
 
 import joblib
+import xarray as xr
+import seaborn as sns
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import tensorflow as tf
@@ -19,6 +22,15 @@ import utils.file_io as io
 from config import BASE_DIR
 from utils.attr_dict import AttrDict
 from utils.data_utils import therm_arr
+from utils.plotting_utils import (set_size, make_ridgeplots, mcmc_lineplot,
+                                  mcmc_traceplot, get_title_str_from_params,
+                                  plot_data)
+
+
+plt.style.use('default')
+sns.set_context('paper')
+sns.set_style('whitegrid')
+sns.set_palette('bright')
 
 
 class DataContainer:
@@ -27,6 +39,8 @@ class DataContainer:
     def __init__(self, steps, header=None, dirs=None, print_steps=100):
         self.steps = steps
         self.print_steps = print_steps
+        if dirs is not None:
+            dirs = AttrDict(**dirs)
         self.dirs = dirs
         self.data_strs = [header]
         self.steps_arr = []
@@ -35,6 +49,56 @@ class DataContainer:
             io.check_else_make_dir(
                 [v for k, v in dirs.items() if 'file' not in k]
             )
+
+    def update_dirs(self, dirs: dict):
+        """Update `self.dirs` with key, val pairs from `dirs`."""
+        if self.dirs is None:
+            self.dirs = AttrDict(**dirs)
+        else:
+            for key, val in dirs.items():
+                self.dirs.update({key: val})
+
+    def plot_data(
+            self,
+            out_dir: str = None,
+            flags: AttrDict = None,
+            therm_frac: float = 0.,
+            params: AttrDict = None,
+    ):
+        """Make plots from `self.data`."""
+        plot_data(self.data, out_dir, flags,
+                  therm_frac=therm_frac, params=params)
+
+    def get_dataset(self, therm_frac=0., make_plots=False) -> (xr.Dataset):
+        """Create `xr.Dataset` from `self.data`."""
+        data_vars = {}
+        for key, val in self.data.items():
+            arr = np.array(val)
+            steps = np.arange(len(arr))
+            if therm_frac > 0:
+                arr, steps = therm_arr(arr, therm_frac=therm_frac)
+            if len(arr.shape) == 1:
+                data_vars[key] = xr.DataArray(arr, dims=['draw'],
+                                              coords=[steps])
+            elif len(arr.shape) == 3:
+                arr = arr.T
+                num_chains, num_lf, _ = arr.shape
+                dims = ['chain', 'leapfrog', 'draw']
+                coords = [np.arange(num_chains), np.arange(num_lf), steps]
+                data_vars[key] = xr.DataArray(arr, dims=dims, coords=coords)
+            else:
+                chains = np.arange(arr.shape[1])
+                data_vars[key] = xr.DataArray(arr.T, dims=['chain', 'draw'],
+                                              coords=[chains, steps])
+
+        return xr.Dataset(data_vars)
+
+    def save_dataset(self, out_dir, therm_frac=0.):
+        """Save `self.data` as `xr.Dataset` to `out_dir/dataset.nc`."""
+        dataset = self.get_dataset(therm_frac)
+        out_file = os.path.join(out_dir, 'dataset.nc')
+        io.log(f'Saving dataset to: {out_file}.')
+        dataset.to_netcdf(os.path.join(out_dir, 'dataset.nc'))
 
     def update(self, step, metrics):
         """Update `self.data` with new values from `data`."""
@@ -113,7 +177,7 @@ class DataContainer:
 
         return AttrDict(data)
 
-    def save_data(self, data_dir, rank=0):
+    def save_data(self, data_dir, rank=0, save_dataset=False):
         """Save `self.data` entries to individual files in `output_dir`."""
         if rank != 0:
             return
@@ -122,6 +186,33 @@ class DataContainer:
         for key, val in self.data.items():
             out_file = os.path.join(data_dir, f'{key}.z')
             io.savez(np.array(val), out_file)
+
+        if save_dataset:
+            self.save_dataset(data_dir)
+
+    def plot_data(self, out_dir=None, therm_frac=0.):
+        """Create trace plot + histogram for each entry in self.data."""
+        dataset = self.get_dataset(therm_frac)
+        for key, val in dataset.data_vars.items():
+            if np.std(val.values.flatten()) < 1e-2:
+                continue
+            fig, ax = plt.subplots(constrained_layout=True,
+                                   figsize=set_size())
+            _ = val.plot(ax=ax)
+            #  _ = sns.kdeplot(val.values.flatten(), ax=axes[1], shade=True)
+            #  _ = axes[1].set_ylabel('')
+            #  _ = fig.suptitle(key)
+            if out_dir is not None:
+                io.check_else_make_dir(out_dir)
+                out_file = os.path.join(out_dir, f'{key}_xrPlot.png')
+                fig.savefig(out_file, dpi=400, bbox_inches='tight')
+
+        if out_dir is not None:
+            out_dir = os.path.join(out_dir, 'ridgeplots')
+            io.check_else_make_dir(out_dir)
+
+        make_ridgeplots(dataset, out_dir)
+
 
     def flush_data_strs(self, out_file, rank=0, mode='a'):
         """Dump `data_strs` to `out_file` and return new, empty list."""
@@ -177,5 +268,5 @@ class DataContainer:
         if log_file is None:
             log_file = self.dirs.get('log_file', None)
 
-        self.save_data(data_dir, rank=rank)
+        self.save_data(data_dir, rank=rank, save_dataset=False)
         self.flush_data_strs(log_file, rank=rank, mode=mode)
