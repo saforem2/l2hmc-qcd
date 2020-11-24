@@ -5,6 +5,7 @@ config.py
 from __future__ import absolute_import, division, print_function
 
 import os
+import json
 #  import attr
 
 from collections import namedtuple
@@ -25,6 +26,28 @@ TNAME = 'translation_layer'
 QNAME = 'transformation_layer'
 SCOEFF = 'coeff_scale'
 QCOEFF = 'coeff_transformation'
+
+SRC_DIR = os.path.dirname(os.path.abspath(__file__))
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+PROJECT_DIR = ROOT_DIR
+BASE_DIR = ROOT_DIR
+BIN_DIR = os.path.join(PROJECT_DIR, 'bin')
+TIMING_FILE = os.path.join(BIN_DIR, 'timing_file.log')
+LOGS_DIR = os.path.join(PROJECT_DIR, 'logs')
+PLOTS_DIR = os.path.join(PROJECT_DIR, 'plots')
+DOC_DIR = os.path.join(PROJECT_DIR, 'doc')
+TEX_FIGURES_DIR = os.path.join(DOC_DIR, 'figures')
+GAUGE_LOGS_DIR = os.path.join(LOGS_DIR, 'GaugeModel_logs')
+HMC_LOGS_DIR = os.path.join(GAUGE_LOGS_DIR, 'hmc_logs')
+TRAIN_CONFIGS_FILE = os.path.join(BIN_DIR, 'train_configs.json')
+with open(TRAIN_CONFIGS_FILE, 'rt') as f:
+    TRAIN_CONFIGS = json.load(f)
+
+TRAIN_CONFIGS = AttrDict(TRAIN_CONFIGS)
+
+
+
+
 
 # ----------------------------------------------------------------
 # Included below is a catch-all for various structures
@@ -169,19 +192,6 @@ NP_FLOATS = {
     'float64': np.float64,
 }
 
-
-SRC_DIR = os.path.dirname(os.path.abspath(__file__))
-ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PROJECT_DIR = ROOT_DIR
-BASE_DIR = ROOT_DIR
-BIN_DIR = os.path.join(PROJECT_DIR, 'bin')
-TIMING_FILE = os.path.join(BIN_DIR, 'timing_file.log')
-LOGS_DIR = os.path.join(PROJECT_DIR, 'logs')
-PLOTS_DIR = os.path.join(PROJECT_DIR, 'plots')
-DOC_DIR = os.path.join(PROJECT_DIR, 'doc')
-TEX_FIGURES_DIR = os.path.join(DOC_DIR, 'figures')
-GAUGE_LOGS_DIR = os.path.join(LOGS_DIR, 'GaugeModel_logs')
-HMC_LOGS_DIR = os.path.join(GAUGE_LOGS_DIR, 'hmc_logs')
 
 FIGSIZE = (4, 3)
 COLORS = 5000 * ['C0', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9']
