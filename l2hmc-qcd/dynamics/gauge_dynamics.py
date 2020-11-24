@@ -400,6 +400,32 @@ class GaugeDynamics(BaseDynamics):
 
         return xnet, vnet
 
+    def _init_metrics(self, state: State) -> (tf.TensorArray, tf.TensorArray):
+        """Create logdet/energy metrics for verbose logging."""
+        metrics = super()._init_metrics(state)
+
+        if not self._verbose:
+            return metrics
+
+        sin_qs = tf.TensorArray(TF_FLOAT,
+                                size=self.config.num_steps+1,
+                                element_shape=(self.batch_size,),
+                                dynamic_size=False,
+                                clear_after_read=False)
+
+        sinq = self.lattice.calc_charges(x=state.x, use_sin=True)
+        metrics.update({'sinQ': sin_qs.write(0, sinq)})
+
+        return metrics
+
+    def _update_metrics(self, metrics, step, state, sumlogdet, **kwargs):
+        """Write to metrics."""
+        sinq = self.lattice.calc_charges(x=state.x, use_sin=True)
+        metrics['sinQ'] = metrics['sinQ'].write(step, sinq)
+
+        return super()._update_metrics(metrics, step, state,
+                                       sumlogdet, **kwargs)
+
     def transition_kernel_directional(
             self,
             state: State,
@@ -409,24 +435,24 @@ class GaugeDynamics(BaseDynamics):
         """Implements a series of directional updates."""
         state_prop = State(state.x, state.v, state.beta)
         sumlogdet = tf.zeros((self.batch_size,), dtype=TF_FLOAT)
-        if self._verbose:
-            kwargs = {
-                'dynamic_size': False,
-                'size': self.config.num_steps,
-                'element_shape': (self.batch_size,),
-                'clear_after_read': False
-            }
-            logdets = tf.TensorArray(TF_FLOAT, **kwargs)
-            energies = tf.TensorArray(TF_FLOAT, **kwargs)
+        metrics = self._init_metrics(state_prop)
+
         # ====
         # Forward for first half of trajectory
         for step in range(self.config.num_steps // 2):
-            if self._verbose:
-                logdets = logdets.write(step, sumlogdet)
-                energies = energies.write(step, self.hamiltonian(state_prop))
-
             state_prop, logdet = self._forward_lf(step, state_prop, training)
             sumlogdet += logdet
+            if self._verbose:
+                energy = self.hamiltonian(state_prop)
+                sinq = self.lattice.calc_charges(x=state_prop.x, use_sin=True)
+                metrics['sinQ'] = metrics['sinQ'].write(step+1, sinq)
+                metrics['H'] = metrics['H'].write(step+1, energy)
+                metrics['logdets'] = metrics['logdets'].write(step+1,
+                                                              sumlogdet)
+                metrics['Hw'] = metrics['Hw'].write(step+1,
+                                                    energy - sumlogdet)
+            #  metrics = self._update_metrics(metrics, step+1,
+            #                                 state_prop, sumlogdet)
 
         # ====
         # Flip momentum
@@ -437,24 +463,44 @@ class GaugeDynamics(BaseDynamics):
         for step in range(self.config.num_steps // 2, self.config.num_steps):
             state_prop, logdet = self._backward_lf(step, state_prop, training)
             sumlogdet += logdet
-
-            logdets = logdets.write(step, logdet)
-            energies = energies.write(step, self.hamiltonian(state_prop))
+            if self._verbose:
+                energy = self.hamiltonian(state_prop)
+                sinq = self.lattice.calc_charges(x=state_prop.x, use_sin=True)
+                metrics['sinQ'] = metrics['sinQ'].write(step+1, sinq)
+                metrics['H'] = metrics['H'].write(step+1, energy)
+                metrics['logdets'] = metrics['logdets'].write(step+1,
+                                                              sumlogdet)
+                metrics['Hw'] = metrics['Hw'].write(step+1,
+                                                    energy - sumlogdet)
+            #  metrics = self._update_metrics(metrics, step+1,
+            #                                 state_prop, sumlogdet)
 
         accept_prob = self.compute_accept_prob(state, state_prop, sumlogdet)
-        metrics = AttrDict({
-            'sumlogdet': sumlogdet,
-            'accept_prob': accept_prob,
-        })
+        metrics['sumlogdet'] = sumlogdet
+        metrics['accept_prob'] = accept_prob
         if self._verbose:
-            metrics.update({
-                'energies': [
-                    energies.read(i) for i in range(self.config.num_steps)
-                ],
-                'logdets': [
-                    logdets.read(i) for i in range(self.config.num_steps)
-                ],
-            })
+            energy = self.hamiltonian(state_prop)
+            sinq = self.lattice.calc_charges(x=state_prop.x, use_sin=True)
+            metrics['sinQ'] = metrics['sinQ'].write(step+1, sinq)
+            metrics['H'] = metrics['H'].write(step+1, energy)
+            metrics['logdets'] = metrics['logdets'].write(step+1,
+                                                          sumlogdet)
+            metrics['Hw'] = metrics['Hw'].write(step+1,
+                                                energy-sumlogdet)
+            metrics['sinQ'] = metrics['sinQ'].stack()
+            metrics['H'] = metrics['H'].stack()
+            metrics['logdets'] = metrics['logdets'].stack()
+            metrics['Hw'] = metrics['Hw'].stack()
+            #  energies = metrics.pop('H')
+            #  logdets = metrics.pop('logdets')
+            #  escaled = metrics.pop('Hw')
+            #  for step in range(self.config.num_steps+1):
+            #      metrics['H'] = [energies.read(step)]
+            #      metrics['logdets'] = [logdets.read(step)]
+            #      metrics['Hw'] = [escaled.read(step)]
+        #  metrics = self._update_metrics(metrics, step+1,
+        #                                 state_prop, sumlogdet,
+        #                                 accept_prob=accept_prob)
 
         return state_prop, metrics
 
@@ -468,52 +514,56 @@ class GaugeDynamics(BaseDynamics):
         lf_fn = self._forward_lf if forward else self._backward_lf
         state_prop = State(x=state.x, v=state.v, beta=state.beta)
         sumlogdet = tf.zeros((self.batch_size,))
-        if self._verbose:
-            kwargs = {
-                'dynamic_size': False,
-                'element_shape': (self.batch_size,),
-                'size': self.config.num_steps,
-                'clear_after_read': False
-            }
-            logdets = tf.TensorArray(TF_FLOAT, **kwargs)
-            energies = tf.TensorArray(TF_FLOAT, **kwargs)
+        metrics = self._init_metrics(state_prop)
+
+        def _update_metrics(data, step):
+            for key, val in data.items():
+                metrics[key] = metrics[key].write(step, val)
+
+            return metrics
+
+        def _get_metrics(state):
+            energy = self.hamiltonian(state)
+            sinq = self.lattice.calc_charges(x=state.x, use_sin=True)
+            return {'H': energy, 'sinQ': sinq}
 
         for step in range(self.config.num_steps):
-            if self._verbose:
-                energy = self.hamiltonian(state_prop)
-                logdets = logdets.write(step, sumlogdet)
-                energies = energies.write(step, energy)
-
             state_prop, logdet = lf_fn(step, state_prop, training)
             sumlogdet += logdet
+            if self._verbose:
+                energy = self.hamiltonian(state_prop)
+                sinq = self.lattice.calc_charges(x=state_prop.x, use_sin=True)
+                data = _get_metrics(state_prop)
+                data.update({'logdets': sumlogdet,
+                             'Hw': data['H'] - sumlogdet})
+                metrics = _update_metrics(data, step+1)
+
+            #  metrics = self._update_metrics(metrics, step+1,
+            #                                 state_prop, sumlogdet)
 
         accept_prob = self.compute_accept_prob(state, state_prop, sumlogdet)
-
-        metrics = AttrDict({
-            'sumlogdet': sumlogdet,
-            'accept_prob': accept_prob,
-            'H': [], 'logdets': [], 'Hw': [],
-        })
+        metrics['sumlogdet'] = sumlogdet
+        metrics['accept_prob'] = accept_prob
         if self._verbose:
-            logdets = logdets.write(step, sumlogdet)
-            energies = energies.write(step, self.hamiltonian(state_prop))
-            for step in range(self.config.num_steps):
-                energy = energies.read(step)
-                sld = logdets.read(step)
-                escaled = energy - sld
-                metrics['H'].append(energy)
-                metrics['logdets'].append(sld)
-                metrics['Hw'].append(escaled)
-            #  metrics.update({
-            #      'H': [], 'Hw': [], 'logdets': [],
-            #  })
-            #
-            #  for i in range(self.config.num_steps):
-            #      energy_ = energies.read(i)
-            #      logdets_ = logdets.read(i)
-            #      metrics['H'].append(energy_)
-            #      metrics['logdets'].append(logdets_)
-            #      metrics['Hw'].append(energy_ - logdets_)
+            energy = self.hamiltonian(state_prop)
+            sinq = self.lattice.calc_charges(x=state_prop.x, use_sin=True)
+            metrics['sinQ'] = metrics['sinQ'].write(step+1, sinq)
+            metrics['H'] = metrics['H'].write(step+1, energy)
+            metrics['logdets'] = metrics['logdets'].write(step+1,
+                                                          sumlogdet)
+            metrics['Hw'] = metrics['Hw'].write(step+1,
+                                                energy-sumlogdet)
+            metrics['sinQ'] = metrics['sinQ'].stack()
+            metrics['H'] = metrics['H'].stack()
+            metrics['logdets'] = metrics['logdets'].stack()
+            metrics['Hw'] = metrics['Hw'].stack()
+            #  for step in range(self.config.num_steps+1):
+            #      metrics['H'] = [metrics['H'].read(step)]
+            #      metrics['logdets'] = [metrics['logdets'].read(step)]
+            #      metrics['Hw'] = [metrics['Hw'].read(step)]
+        #  metrics = self._update_metrics(metrics, step+1,
+        #                                 state_prop, sumlogdet,
+        #                                 accept_prob=accept_prob)
 
         return state_prop, metrics
 
@@ -525,18 +575,7 @@ class GaugeDynamics(BaseDynamics):
         """Run the augmented leapfrog sampler in the forward direction."""
         sumlogdet = tf.zeros((self.batch_size,))
         state_prop = State(state.x, state.v, state.beta)
-        if self._verbose:
-            kwargs = {
-                'dynamic_size': False,
-                'element_shape': (self.batch_size,),
-                'size': self.config.num_steps,
-                'clear_after_read': False
-            }
-            logdets = tf.TensorArray(TF_FLOAT, **kwargs)
-            energies = tf.TensorArray(TF_FLOAT, **kwargs)
-
-            logdets = logdets.write(0, sumlogdet)
-            energies = energies.write(0, self.hamiltonian(state_prop))
+        metrics = self._init_metrics(state_prop)
 
         state_prop, logdet = self._half_v_update_forward(state_prop,
                                                          0, training)
@@ -553,32 +592,49 @@ class GaugeDynamics(BaseDynamics):
                 )
                 sumlogdet += logdet
                 if self._verbose:
-                    logdets = logdets.write(step + 1, sumlogdet)
-                    energies = energies.write(step + 1,
-                                              self.hamiltonian(state_prop))
+                    energy = self.hamiltonian(state_prop)
+                    sinq = self.lattice.calc_charges(x=state_prop.x,
+                                                     use_sin=True)
+                    metrics['sinQ'] = metrics['sinQ'].write(step+1, sinq)
+                    metrics['H'] = metrics['H'].write(step+1, energy)
+                    metrics['logdets'] = metrics['logdets'].write(step+1,
+                                                                  sumlogdet)
+                    metrics['Hw'] = metrics['Hw'].write(step+1,
+                                                        energy - sumlogdet)
+                #  metrics = self._update_metrics(metrics, step+1,
+                #                                 state_prop, sumlogdet)
 
         state_prop, logdet = self._half_v_update_forward(state_prop,
                                                          step, training)
         sumlogdet += logdet
 
         accept_prob = self.compute_accept_prob(state, state_prop, sumlogdet)
-
-        metrics = AttrDict({
-            'sumlogdet': sumlogdet,
-            'accept_prob': accept_prob,
-            'H': [], 'logdets': [], 'Hw': [],
-        })
+        metrics['sumlogdet'] = sumlogdet
+        metrics['accept_prob'] = accept_prob
         if self._verbose:
-            logdets = logdets.write(step, sumlogdet)
-            energies = energies.write(step, self.hamiltonian(state_prop))
-            for step in range(self.config.num_steps):
-                energy = energies.read(step)
-                sld = logdets.read(step)
-                escaled = energy - sld
-                metrics['H'].append(energy)
-                metrics['logdets'].append(sld)
-                metrics['Hw'].append(escaled)
-
+            energy = self.hamiltonian(state_prop)
+            sinq = self.lattice.calc_charges(x=state_prop.x, use_sin=True)
+            metrics['sinQ'] = metrics['sinQ'].write(step+1, sinq)
+            metrics['H'] = metrics['H'].write(step+1, energy)
+            metrics['logdets'] = metrics['logdets'].write(step+1,
+                                                          sumlogdet)
+            metrics['Hw'] = metrics['Hw'].write(step+1,
+                                                energy-sumlogdet)
+            metrics['sinQ'] = metrics['sinQ'].stack()
+            metrics['H'] = metrics['H'].stack()
+            metrics['logdets'] = metrics['logdets'].stack()
+            metrics['Hw'] = metrics['Hw'].stack()
+            #  energies = metrics.pop('H')
+            #  logdets = metrics.pop('logdets')
+            #  escaled = metrics.pop('Hw')
+            #  for step in range(self.config.num_steps+1):
+            #      metrics['H'] = [energies.read(step)]
+            #      metrics['logdets'] = [logdets.read(step)]
+            #      metrics['Hw'] = [escaled.read(step)]
+        #  metrics = self._update_metrics(metrics, step+1,
+        #                                 state_prop, sumlogdet,
+        #                                 accept_prob=accept_prob)
+        #
         return state_prop, metrics
 
     def _transition_kernel_backward(
@@ -589,19 +645,7 @@ class GaugeDynamics(BaseDynamics):
         """Run the augmented leapfrog sampler in the forward direction."""
         sumlogdet = tf.zeros((self.batch_size,))
         state_prop = State(state.x, state.v, state.beta)
-        if self._verbose:
-            kwargs = {
-                'dynamic_size': False,
-                'element_shape': (self.batch_size,),
-                'size': self.config.num_steps,
-                'clear_after_read': False
-            }
-            logdets = tf.TensorArray(TF_FLOAT, **kwargs)
-            energies = tf.TensorArray(TF_FLOAT, **kwargs)
-
-            logdets = logdets.write(0, sumlogdet)
-            energies = energies.write(0, self.hamiltonian(state_prop))
-
+        metrics = self._init_metrics(state_prop)
         state_prop, logdet = self._half_v_update_backward(state_prop,
                                                           0, training)
         sumlogdet += logdet
@@ -615,33 +659,46 @@ class GaugeDynamics(BaseDynamics):
                     state_prop, step, training
                 )
                 sumlogdet += logdet
-
                 if self._verbose:
-                    logdets = logdets.write(step+1, sumlogdet)
                     energy = self.hamiltonian(state_prop)
-                    energies = energies.write(step+1, energy)
+                    sinq = self.lattice.calc_charges(x=state_prop.x,
+                                                     use_sin=True)
+                    metrics['sinQ'] = metrics['sinQ'].write(step+1, sinq)
+                    metrics['H'] = metrics['H'].write(step+1, energy)
+                    metrics['logdets'] = metrics['logdets'].write(step+1,
+                                                                  sumlogdet)
+                    metrics['Hw'] = metrics['Hw'].write(step+1,
+                                                        energy - sumlogdet)
+                #  metrics = self._update_metrics(metrics, step+1,
+                #                                 state_prop, sumlogdet)
 
         state_prop, logdet = self._half_v_update_backward(state_prop,
                                                           step, training)
         sumlogdet += logdet
 
         accept_prob = self.compute_accept_prob(state, state_prop, sumlogdet)
-
-        metrics = AttrDict({
-            'sumlogdet': sumlogdet,
-            'accept_prob': accept_prob,
-            'H': [], 'logdets': [], 'Hw': [],
-        })
+        metrics['sumlogdet'] = sumlogdet
+        metrics['accept_prob'] = accept_prob
         if self._verbose:
-            logdets = logdets.write(step, sumlogdet)
-            energies = energies.write(step, self.hamiltonian(state_prop))
-            for step in range(self.config.num_steps):
-                energy = energies.read(step)
-                sld = logdets.read(step)
-                escaled = energy - sld
-                metrics['H'].append(energy)
-                metrics['logdets'].append(sld)
-                metrics['Hw'].append(escaled)
+            energy = self.hamiltonian(state_prop)
+            sinq = self.lattice.calc_charges(x=state_prop.x, use_sin=True)
+            metrics['sinQ'] = metrics['sinQ'].write(step+1, sinq)
+            metrics['H'] = metrics['H'].write(step+1, energy)
+            metrics['logdets'] = metrics['logdets'].write(step+1,
+                                                          sumlogdet)
+            metrics['Hw'] = metrics['Hw'].write(step+1,
+                                                energy-sumlogdet)
+            metrics['sinQ'] = metrics['sinQ'].stack()
+            metrics['H'] = metrics['H'].stack()
+            metrics['logdets'] = metrics['logdets'].stack()
+            metrics['Hw'] = metrics['Hw'].stack()
+            #  for step in range(self.config.num_steps+1):
+            #      metrics['H'] = [metrics['H'].read(step)]
+            #      metrics['logdets'] = [metrics['logdets'].read(step)]
+            #      metrics['Hw'] = [metrics['Hw'].read(step)]
+        #  metrics = self._update_metrics(metrics, step+1,
+        #                                 state_prop, sumlogdet,
+        #                                 accept_prob=accept_prob)
 
         return state_prop, metrics
 
@@ -684,7 +741,8 @@ class GaugeDynamics(BaseDynamics):
         # AND not using combined momentum updates
         # AND not using directional (persistent?) updates,
         # THEN, use `BaseDynamics.transition_kernel()`.
-        return super().transition_kernel(state, forward, training)
+        #  return super().transition_kernel(state, forward, training)
+        return self.transition_kernel_sep_nets(state, forward, training)
 
     def _scattered_xnet(self, inputs, mask, step, training=None):
         """Call `self.xnet` on non-zero entries of `x` via `tf.gather_nd`."""
@@ -1132,15 +1190,15 @@ class GaugeDynamics(BaseDynamics):
         with tf.GradientTape() as tape:
             x, beta = inputs
             tape.watch(x)
-            states, data = self((x, beta), training=True)
-            accept_prob = data.get('accept_prob', None)
+            states, metrics = self((x, beta), training=True)
+            accept_prob = metrics.get('accept_prob', None)
             ploss, qloss = self.calc_losses(states, accept_prob)
             loss = ploss + qloss
 
             if self.aux_weight > 0:
                 z = tf.random.normal(x.shape, dtype=x.dtype)
-                states_, data_ = self((z, beta), training=True)
-                accept_prob_ = data_.get('accept_prob', None)
+                states_, metrics_ = self((z, beta), training=True)
+                accept_prob_ = metrics_.get('accept_prob', None)
                 ploss_, qloss_ = self.calc_losses(states_, accept_prob_)
                 loss += ploss_ + qloss_
 
@@ -1165,76 +1223,175 @@ class GaugeDynamics(BaseDynamics):
             hvd.broadcast_variables(self.variables, root_rank=0)
             hvd.broadcast_variables(self.optimizer.variables(), root_rank=0)
 
-        metrics = AttrDict({
+        data = AttrDict({
             #  'lr': self._get_lr(),
             'dt': time.time() - start,
             'loss': loss,
         })
         if self.plaq_weight > 0 and self.charge_weight > 0:
-            metrics.update({
+            data.update({
                 'ploss': ploss,
                 'qloss': qloss
             })
         if self.aux_weight > 0:
-            metrics.update({
+            data.update({
                 'ploss_aux': ploss_,
                 'qloss_aux': qloss_,
                 'accept_prob_aux': accept_prob_,
             })
 
         # Separated from [1038] for ordering when printing
-        metrics.update({
+        data.update({
             'accept_prob': accept_prob,
-            'accept_mask': data.get('accept_mask', None),
+            'accept_mask': metrics.get('accept_mask', None),
             'eps': self.eps,
             'beta': states.init.beta,
-            'sumlogdet': data.get('sumlogdet', None),
+            'sumlogdet': metrics.get('sumlogdet', None),
         })
 
         if self._verbose:
-            metrics.update({
-                'Hf': data.forward.H,
-                'Hb': data.backward.H,
-                'Hwf': data.forward.Hw,
-                'Hwb': data.backward.Hw,
-                # ----
-                'Hf_start': data.forward.H[0],
-                'Hb_start': data.backward.H[0],
-                'Hwf_start': data.forward.Hw[0],
-                'Hwb_start': data.backward.Hw[0],
-                # ----
-                'Hf_mid': data.forward.H[self.config.num_steps//2],
-                'Hb_mid': data.backward.H[self.config.num_steps//2],
-                'Hwf_mid': data.forward.Hw[self.config.num_steps//2],
-                'Hwb_mid': data.backward.Hw[self.config.num_steps//2],
-                # ----
-                'Hf_end': data.forward.H[self.config.num_steps-1],
-                'Hb_end': data.backward.H[self.config.num_steps-1],
-                'Hwf_end': data.forward.Hw[self.config.num_steps-1],
-                'Hwb_end': data.backward.Hw[self.config.num_steps-1],
-                # ----
-                'ldf_start': data.forward.logdets[0],
-                'ldb_start': data.backward.logdets[0],
-                'ldf_mid': data.forward.logdets[self.config.num_steps//2],
-                'ldb_mid': data.backward.logdets[self.config.num_steps//2],
-                'ldf_end': data.forward.logdets[self.config.num_steps-1],
-                'ldb_end': data.backward.logdets[self.config.num_steps-1],
-                'sldf': data.forward.logdets,
-                'sldb': data.backward.logdets,
-                # ----
-            })
-
+            midpt = self.config.num_steps // 2
+            for (kf, vf), (kb, vb) in zip(metrics.forward.items(),
+                                          metrics.backward.items()):
+                data.update({
+                    f'{kf}f': tf.squeeze(vf),
+                    f'{kb}b': tf.squeeze(vb),
+                    f'{kf}f_start': vf[0],
+                    f'{kf}f_mid': vf[midpt],
+                    f'{kf}f_end': vf[-1],
+                    f'{kb}b_start': vb[0],
+                    f'{kb}b_mid': vb[midpt],
+                    f'{kb}b_end': vb[-1],
+                })
         observables = self.calc_observables(states)
         metrics.update(**observables)
+
+        data.update(**metrics)
 
         #  metrics.update({
         #      'lr': self._get_lr(),
         #  })
 
-        return states.out.x, metrics
+        return states.out.x, data
 
     @tf.function
     def test_step(
+            self,
+            inputs: Tuple[tf.Tensor, tf.Tensor]
+    ) -> (tf.Tensor, AttrDict):
+        """Perform a single training step.
+
+        Returns:
+            states.out.x (tf.Tensor): Next `x` state in the Markov Chain.
+            metrics (AttrDict): Dictionary of various metrics for logging.
+        """
+        start = time.time()
+        x, beta = inputs
+        states, metrics = self((x, beta), training=True)
+        accept_prob = metrics.get('accept_prob', None)
+        ploss, qloss = self.calc_losses(states, accept_prob)
+        loss = ploss + qloss
+        data = AttrDict({
+            #  'lr': self._get_lr(),
+            'dt': time.time() - start,
+            'loss': loss,
+        })
+        if self.plaq_weight > 0 and self.charge_weight > 0:
+            data.update({
+                'ploss': ploss,
+                'qloss': qloss
+            })
+
+        # Separated from [1038] for ordering when printing
+        data.update({
+            'accept_prob': accept_prob,
+            'accept_mask': metrics.get('accept_mask', None),
+            'eps': self.eps,
+            'beta': states.init.beta,
+            'sumlogdet': metrics.get('sumlogdet', None),
+        })
+
+        if self._verbose:
+            midpt = self.config.num_steps // 2
+            for (kf, vf), (kb, vb) in zip(metrics.forward.items(),
+                                          metrics.backward.items()):
+                data.update({
+                    f'{kf}f': tf.squeeze(vf),
+                    f'{kb}b': tf.squeeze(vb),
+                    f'{kf}f_start': vf[0],
+                    f'{kf}f_mid': vf[midpt],
+                    f'{kf}f_end': vf[-1],
+                    f'{kb}b_start': vb[0],
+                    f'{kb}b_mid': vb[midpt],
+                    f'{kb}b_end': vb[-1],
+                })
+            # metrics = {'forward': metrics_f, 'backward': metrics_b}
+            #  for direction, directional_metrics in metrics.items():
+            #      if isinstance(directional_metrics, (dict, AttrDict)):
+            #          for key, val in directional_metrics.items():
+            #              # dstr will be 'f' if forward or 'b' if backward
+            #              dstr = direction[0]
+            #              if isinstance(val, tf.Tensor):
+            #                  data.update({f'{key}{dstr}': val})
+            #              elif isinstance(val, tf.TensorArray):
+            #                  data.update({
+            #                      f'{key}{dstr}': val,
+            #                      f'{key}{dstr}_start': val.read(0),
+            #                      f'{key}{dstr}_mid': val.read(midpt),
+            #                      f'{key}{dstr}_end': val.read(midpt),
+            #                  })
+            #  data.update({
+            #      'Hf': tf.squeeze(metrics.forward.H),
+            #      'Hb': tf.squeeze(metrics.backward.H),
+            #      'Hwf': tf.squeeze(metrics.forward.Hw),
+            #      'Hwb': tf.squeeze(metrics.backward.Hw),
+            #      'sldf': tf.squeeze(metrics.forward.logdets),
+            #      'sldb': tf.squeeze(metrics.backward.logdets),
+            #      'sinQf': tf.squeeze(metrics.forward.sin_qs),
+            #      'sinQb': tf.squeeze(metrics.backward.sin_qs),
+            #      # ----
+            #      'Hf_start': metrics.forward.H[0],
+            #      'Hb_start': metrics.backward.H[0],
+            #      'Hwf_start': metrics.forward.Hw[0],
+            #      'Hwb_start': metrics.backward.Hw[0],
+            #      'ldf_start': metrics.forward.logdets[0],
+            #      'ldb_start': metrics.backward.logdets[0],
+            #      'sinQf_start': metrics.forward.sin_qs[0],
+            #      'sinQb_start': metrics.backward.sin_qs[0],
+            #      # ----
+            #      'Hf_mid': metrics.forward.H[midpt],
+            #      'Hb_mid': metrics.backward.H[midpt],
+            #      'Hwf_mid': metrics.forward.Hw[midpt],
+            #      'Hwb_mid': metrics.backward.Hw[midpt],
+            #      'ldf_mid': metrics.forward.logdets[midpt],
+            #      'ldb_mid': metrics.backward.logdets[midpt],
+            #      'sinQf_mid': metrics.forward.sin_qs[midpt],
+            #      'sinQb_mid': metrics.backward.sin_qs[midpt],
+            #      # ----
+            #      'Hf_end': metrics.forward.H[-1],
+            #      'Hb_end': metrics.backward.H[-1],
+            #      'Hwf_end': metrics.forward.Hw[-1],
+            #      'Hwb_end': metrics.backward.Hw[-1],
+            #      'ldf_end': metrics.forward.logdets[-1],
+            #      'ldb_end': metrics.backward.logdets[-1],
+            #      'sinQf_end': metrics.forward.sin_qs[-1],
+            #      'sinQb_end': metrics.backward.sin_qs[-1],
+            #      # ----
+            #  })
+
+        observables = self.calc_observables(states)
+        metrics.update(**observables)
+
+        data.update(**metrics)
+
+        #  metrics.update({
+        #      'lr': self._get_lr(),
+        #  })
+
+        return states.out.x, data
+
+    @tf.function
+    def test_step1(
             self,
             inputs: Tuple[tf.Tensor, tf.Tensor]
     ) -> (tf.Tensor, AttrDict):
@@ -1247,64 +1404,74 @@ class GaugeDynamics(BaseDynamics):
         start = time.time()
         x, beta = inputs
         x = self.normalizer(x)
-        states, data = self((x, beta), training=False)
-        accept_prob = data.get('accept_prob', None)
+        states, metrics = self((x, beta), training=False)
+        accept_prob = metrics.get('accept_prob', None)
         ploss, qloss = self.calc_losses(states, accept_prob)
         loss = ploss + qloss
 
-        metrics = AttrDict({
+        data = AttrDict({
             'dt': time.time() - start,
             'loss': loss,
         })
         if self.plaq_weight > 0 and self.charge_weight > 0:
-            metrics.update({
+            data.update({
                 'ploss': ploss,
                 'qloss': qloss
             })
 
-        metrics.update({
+        data.update({
             'accept_prob': accept_prob,
-            'accept_mask': data.get('accept_mask', None),
+            'accept_mask': metrics.get('accept_mask', None),
             'eps': self.eps,
             'beta': states.init.beta,
-            'sumlogdet': data.get('sumlogdet', None),
+            'sumlogdet': metrics.get('sumlogdet', None),
         })
 
         if self._verbose:
-            metrics.update({
-                'Hf': data.forward.H,
-                'Hb': data.backward.H,
-                'Hwf': data.forward.Hw,
-                'Hwb': data.backward.Hw,
+            midpt = self.config.num_steps // 2
+            ns = self.config.num_steps + 1
+            data.update({
+                'Hf': metrics.forward.H,
+                'Hb': metrics.backward.H,
+                'Hwf': metrics.forward.Hw,
+                'Hwb': metrics.backward.Hw,
+                'sldf': metrics.forward.logdets,
+                'sldb': metrics.backward.logdets,
+                'sinQf': metrics.forward.sin_qs,
+                'sinQb': metrics.backward.sin_qs,
                 # ----
-                'Hf_start': data.forward.H[0],
-                'Hb_start': data.backward.H[0],
-                'Hwf_start': data.forward.Hw[0],
-                'Hwb_start': data.backward.Hw[0],
+                'Hf_start': metrics.forward.H[0],
+                'Hb_start': metrics.backward.H[0],
+                'Hwf_start': metrics.forward.Hw[0],
+                'Hwb_start': metrics.backward.Hw[0],
+                'ldf_start': metrics.forward.logdets[0],
+                'ldb_start': metrics.backward.logdets[0],
+                'sinQf_start': metrics.forward.sin_qs[0],
+                'sinQb_start': metrics.backward.sin_qs[0],
                 # ----
-                'Hf_mid': data.forward.H[self.config.num_steps//2],
-                'Hb_mid': data.backward.H[self.config.num_steps//2],
-                'Hwf_mid': data.forward.Hw[self.config.num_steps//2],
-                'Hwb_mid': data.backward.Hw[self.config.num_steps//2],
+                'Hf_mid': metrics.forward.H[midpt],
+                'Hb_mid': metrics.backward.H[midpt],
+                'Hwf_mid': metrics.forward.Hw[midpt],
+                'Hwb_mid': metrics.backward.Hw[midpt],
+                'ldf_mid': metrics.forward.logdets[midpt],
+                'ldb_mid': metrics.backward.logdets[midpt],
+                'sinQf_mid': metrics.forward.sin_qs[midpt],
+                'sinQb_mid': metrics.backward.sin_qs[midpt],
                 # ----
-                'Hf_end': data.forward.H[self.config.num_steps-1],
-                'Hb_end': data.backward.H[self.config.num_steps-1],
-                'Hwf_end': data.forward.Hw[self.config.num_steps-1],
-                'Hwb_end': data.backward.Hw[self.config.num_steps-1],
-                # ----
-                'ldf_start': data.forward.logdets[0],
-                'ldb_start': data.backward.logdets[0],
-                'ldf_mid': data.forward.logdets[self.config.num_steps//2],
-                'ldb_mid': data.backward.logdets[self.config.num_steps//2],
-                'ldf_end': data.forward.logdets[self.config.num_steps-1],
-                'ldb_end': data.backward.logdets[self.config.num_steps-1],
-                'sldf': data.forward.logdets,
-                'sldb': data.backward.logdets,
+                'Hf_end': metrics.forward.H[-1],
+                'Hb_end': metrics.backward.H[-1],
+                'Hwf_end': metrics.forward.Hw[-1],
+                'Hwb_end': metrics.backward.Hw[-1],
+                'ldf_end': metrics.forward.logdets[-1],
+                'ldb_end': metrics.backward.logdets[-1],
+                'sinQf_end': metrics.forward.sin_qs[-1],
+                'sinQb_end': metrics.backward.sin_qs[-1],
                 # ----
             })
 
         observables = self.calc_observables(states)
         metrics.update(**observables)
+        data.update(**metrics)
 
         return states.out.x, metrics
 
