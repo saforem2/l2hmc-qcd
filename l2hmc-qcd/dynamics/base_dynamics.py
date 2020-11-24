@@ -490,6 +490,101 @@ class BaseDynamics(tf.keras.Model):
 
         return dx, dv
 
+    def _init_metrics(self, state: State) -> (AttrDict):
+        """Create logdet/energy metrics for verbose logging."""
+        metrics = AttrDict({
+            'sumlogdet': 0.,
+            'accept_prob': None,
+        })
+        if not self._verbose:
+            return metrics
+
+        kwargs = {
+            'dynamic_size': False,
+            'element_shape': (self.batch_size,),
+            'size': self.config.num_steps + 1,
+            'clear_after_read': False
+        }
+        logdets = tf.TensorArray(TF_FLOAT, **kwargs)
+        energies = tf.TensorArray(TF_FLOAT, **kwargs)
+        energies_scaled = tf.TensorArray(TF_FLOAT, **kwargs)
+
+        energy = self.hamiltonian(state)
+        logdet = tf.zeros((self.batch_size))
+        energy_scaled = energy - logdet
+        metrics.update({
+            'H': energies.write(0, energy),
+            'logdets': logdets.write(0, logdet),
+            'Hw': energies_scaled.write(0, energy_scaled),
+        })
+
+        return metrics
+
+    def _update_metrics(
+            self,
+            metrics: AttrDict,
+            step: int,
+            state: State,
+            sumlogdet: float,
+            **kwargs
+    ) -> (AttrDict):
+        """Write to metrics."""
+        metrics['sumlogdet'] = sumlogdet
+        for key, val in kwargs.items():
+            #  if not isinstance(val, tf.TensorArray):
+            if isinstance(val, tf.Tensor):
+                metrics[key] = val
+
+        if not self._verbose:
+            return metrics
+
+        tarr_len = self.config.num_steps + 1
+        #  logdets = metrics['logdets']
+        kwargs = {
+            'size': self.config.num_steps+1,
+            'element_shape': (self.batch_size,),
+        }
+        logdets = tf.TensorArray(TF_FLOAT, **kwargs).unstack(
+            metrics['logdets']
+        )
+        energies = tf.TensorArray(TF_FLOAT, **kwargs).unstack(
+            metrics['H']
+        )
+        energies_ = tf.TensorArray(TF_FLOAT, **kwargs).unstack(
+            metrics['Hw']
+        )
+
+        if step == self.config.num_steps + 1:
+            for key, val in metrics.items():
+                if isinstance(val, tf.TensorArray):
+                    tensor = val.stack()
+                    metrics[key] = tensor
+                    #  metrics[key] = [val.read(i) for i in range(tarr_len)]
+                    #  metrics[key] = val.stack()
+        else:
+            energy = self.hamiltonian(state)
+            energies = energies.write(step, energy)
+            logdets = logdets.write(step, sumlogdet)
+            energies_ = energies_.write(step, energy - sumlogdet)
+            metrics['H'] = energies.stack()
+            metrics['logdets'] = logdets.stack()
+            metrics['Hw'] = energies_.stack()
+            #  items = {
+            #      'logdets': metrics['logdets'].write(step, sumlogdet),
+            #      'H': metrics['H'].write(step, energy),
+            #      'Hw': metrics['Hw'].write(step, energy - sumlogdet),
+            #  }
+            #  for key, val in items.items():
+            #      metrics[key] = val
+            #  for key, val in items.items():
+            #      metrics[key] = metrics[key].write(step, val)
+
+            #  for key, val in kwargs.items():
+            #      if isinstance(val, tf.TensorArray):
+            #          metrics[key] = metrics[key].write(step, val)
+
+        return metrics
+
     def _transition_kernel_forward(
             self,
             state: State,
@@ -498,16 +593,7 @@ class BaseDynamics(tf.keras.Model):
         """Run the augmented leapfrog sampler in the forward direction."""
         sumlogdet = tf.zeros((self.batch_size,))
         state_prop = State(self.normalizer(state.x), state.v, state.beta)
-        if self._verbose:
-            kwargs = {
-                'dynamic_size': False,
-                'size': self.config.num_steps,
-                'element_shape': (self.batch_size,),
-                'clear_after_read': False
-            }
-            logdets = tf.TensorArray(TF_FLOAT, **kwargs)
-            energies = tf.TensorArray(TF_FLOAT, **kwargs)
-
+        metrics = self._init_metrics(state_prop)
         state_prop, logdet = self._half_v_update_forward(state_prop, step=0,
                                                          training=training)
         sumlogdet += logdet
@@ -523,43 +609,41 @@ class BaseDynamics(tf.keras.Model):
                 )
                 sumlogdet += logdet
                 if self._verbose:
-                    logdets = logdets.write(step, sumlogdet)
-                    energies = energies.write(step,
-                                              self.hamiltonian(state_prop))
+                    energy = self.hamiltonian(state_prop)
+                    metrics['H'] = metrics['H'].write(step+1, energy)
+                    metrics['logdets'] = metrics['logdets'].write(step+1,
+                                                                  sumlogdet)
+                    metrics['Hw'] = metrics['Hw'].write(step+1,
+                                                        energy - sumlogdet)
+                #  metrics = self._update_metrics(metrics, step+1,
+                #                                 state_prop, sumlogdet)
 
         state_prop, logdet = self._half_v_update_forward(state_prop,
                                                          step, training)
         sumlogdet += logdet
         accept_prob = self.compute_accept_prob(state, state_prop, sumlogdet)
-
-        metrics = AttrDict({
-            'sumlogdet': sumlogdet,
-            'accept_prob': accept_prob,
-        })
+        metrics['sumlogdet'] = sumlogdet
+        metrics['accept_prob'] = accept_prob
         if self._verbose:
-            logdets = logdets.write(step, sumlogdet)
-            energies = energies.write(step, self.hamiltonian(state_prop))
-            metrics.update({
-                'H': [],
-                'Hw': [],
-                'logdets': [],
-            })
-            for i in range(self.config.num_steps):
-                energy_ = energies.read(i)
-                logdets_ = logdets.read(i)
-                metrics['H'].append(energy_)
-                metrics['logdets'].append(logdets_)
-                metrics['Hw'].append(energy_ - logdets_)
-
-            #  metrics.update({
-            #      'energies': [
-            #          energies.read(i) for i in range(self.config.num_steps)
-            #      ],
-            #      'logdets': [
-            #          logdets.read(i) for i in range(self.config.num_steps)
-            #      ],
-            #  })
-
+            energy = self.hamiltonian(state_prop)
+            metrics['H'] = metrics['H'].write(step+1, energy)
+            metrics['logdets'] = metrics['logdets'].write(step+1,
+                                                          sumlogdet)
+            metrics['Hw'] = metrics['Hw'].write(step+1,
+                                                energy-sumlogdet)
+            metrics['H'] = metrics['H'].stack()
+            metrics['logdets'] = metrics['logdets'].stack()
+            metrics['Hw'] = metrics['Hw'].stack()
+            #  energies = metrics.pop('H')
+            #  logdets = metrics.pop('logdets')
+            #  escaled = metrics.pop('Hw')
+            #  for step in range(self.config.num_steps+1):
+            #      metrics['H'] = [metrics['H'].read(step)]
+            #      metrics['logdets'] = [metrics['logdets'].read(step)]
+            #      metrics['Hw'] = [metrics['Hw'].read(step)]
+        #  metrics = self._update_metrics(metrics, step+1,
+        #                                 state_prop, sumlogdet,
+        #                                 accept_prob=accept_prob)
         return state_prop, metrics
 
     def _transition_kernel_backward(
@@ -570,25 +654,12 @@ class BaseDynamics(tf.keras.Model):
         """Run the augmented leapfrog sampler in the forward direction."""
         sumlogdet = tf.zeros((self.batch_size,))
         state_prop = State(state.x, state.v, state.beta)
-
-        if self._verbose:
-            kwargs = {
-                'dynamic_size': False,
-                'size': self.config.num_steps,
-                'element_shape': (self.batch_size,),
-                'clear_after_read': False
-            }
-            logdets = tf.TensorArray(TF_FLOAT, **kwargs)
-            energies = tf.TensorArray(TF_FLOAT, **kwargs)
+        metrics = self._init_metrics(state_prop)
 
         state_prop, logdet = self._half_v_update_backward(state_prop,
                                                           0, training)
         sumlogdet += logdet
         for step in range(self.config.num_steps):
-            if self._verbose:
-                logdets = logdets.write(step, sumlogdet)
-                energies = energies.write(step, self.hamiltonian(state_prop))
-
             state_prop, logdet = self._full_x_update_backward(state_prop,
                                                               step, training)
 
@@ -597,36 +668,40 @@ class BaseDynamics(tf.keras.Model):
                     state_prop, step, training
                 )
                 sumlogdet += logdet
+                if self._verbose:
+                    energy = self.hamiltonian(state_prop)
+                    metrics['H'] = metrics['H'].write(step+1, energy)
+                    metrics['logdets'] = metrics['logdets'].write(step+1,
+                                                                  sumlogdet)
+                    metrics['Hw'] = metrics['Hw'].write(step+1,
+                                                        energy - sumlogdet)
+                #  metrics = self._update_metrics(metrics, step+1,
+                #                                 state_prop, sumlogdet)
 
         state_prop, logdet = self._half_v_update_backward(state_prop,
                                                           step, training)
         sumlogdet += logdet
 
         accept_prob = self.compute_accept_prob(state, state_prop, sumlogdet)
-
-        metrics = AttrDict({
-            'sumlogdet': sumlogdet,
-            'accept_prob': accept_prob,
-        })
+        metrics['sumlogdet'] = sumlogdet
+        metrics['accept_prob'] = accept_prob
         if self._verbose:
-            logdets = logdets.write(self.config.num_steps, sumlogdet)
-            energies = energies.write(self.config.num_steps,
-                                      self.hamiltonian(state_prop))
-            metrics.update({
-                'H': [], 'Hw': [], 'logdets': [],
-            })
-            for i in range(self.config.num_steps):
-                energy_ = energies.read(i)
-                logdets_ = logdets.read(i)
-                metrics['H'].append(energy_)
-                metrics['logdets'].append(logdets_)
-                metrics['Hw'].append(energy_ - logdets_)
-            #  metrics.update({
-            #      'H_eff': [
-            #          (energies.read(i) - logdets.read(i))
-            #          for i in range(self.config.num_steps)
-            #      ]
-            #  })
+            energy = self.hamiltonian(state_prop)
+            metrics['H'] = metrics['H'].write(step+1, energy)
+            metrics['logdets'] = metrics['logdets'].write(step+1,
+                                                          sumlogdet)
+            metrics['Hw'] = metrics['Hw'].write(step+1,
+                                                energy-sumlogdet)
+            metrics['H'] = metrics['H'].stack()
+            metrics['logdets'] = metrics['logdets'].stack()
+            metrics['Hw'] = metrics['Hw'].stack()
+            #  for step in range(self.config.num_steps+1):
+            #      metrics['H'] = [metrics['H'].read(step)]
+            #      metrics['logdets'] = [metrics['logdets'].read(step)]
+            #      metrics['Hw'] = [metrics['Hw'].read(step)]
+        #  metrics = self._update_metrics(metrics, step+1,
+        #                                 state_prop, sumlogdet,
+        #                                 accept_prob=accept_prob)
 
         return state_prop, metrics
 
@@ -641,49 +716,40 @@ class BaseDynamics(tf.keras.Model):
         lf_fn = self._forward_lf if forward else self._backward_lf
         state_prop = State(x=state.x, v=state.v, beta=state.beta)
         sumlogdet = tf.zeros((self.batch_size,), dtype=TF_FLOAT)
-        if self._verbose:
-            kwargs = {
-                'dynamic_size': False,
-                'size': self.config.num_steps,
-                'element_shape': (self.batch_size,),
-                'clear_after_read': False
-            }
-            logdets = tf.TensorArray(TF_FLOAT, **kwargs)
-            energies = tf.TensorArray(TF_FLOAT, **kwargs)
-
+        metrics = self._init_metrics(state_prop)
         for step in range(self.config.num_steps):
-            if self._verbose:
-                logdets = logdets.write(step, sumlogdet)
-                energies = energies.write(step, self.hamiltonian(state_prop))
-
             state_prop, logdet = lf_fn(step, state_prop, training)
             sumlogdet += logdet
+            if self._verbose:
+                energy = self.hamiltonian(state_prop)
+                metrics['H'] = metrics['H'].write(step+1, energy)
+                metrics['logdets'] = metrics['logdets'].write(step+1,
+                                                              sumlogdet)
+                metrics['Hw'] = metrics['Hw'].write(step+1,
+                                                    energy - sumlogdet)
+            #  metrics = self._update_metrics(metrics, step+1,
+            #                                 state_prop, sumlogdet)
 
         accept_prob = self.compute_accept_prob(state, state_prop, sumlogdet)
-        metrics = AttrDict({
-            'sumlogdet': sumlogdet,
-            'accept_prob': accept_prob,
-        })
+        metrics['sumlogdet'] = sumlogdet
+        metrics['accept_prob'] = accept_prob
         if self._verbose:
-            logdets = logdets.write(step, sumlogdet)
-            energies = energies.write(step, self.hamiltonian(state_prop))
-            metrics.update({
-                'H': [],
-                'Hw': [],
-                'logdets': [],
-            })
-            for i in range(self.config.num_steps):
-                metrics['H'].append(energies.read(i))
-                metrics['logdets'].append(logdets.read(i))
-                metrics['Hw'].append(energies.read(i) - logdets.read(i))
-
-            #  metrics.update({
-            #      'H': [energies.read(i) for i in range(
-            #      'Heff': [
-            #          (energies.read(i) - logdets.read(i))
-            #          for i in range(self.config.num_steps)
-            #      ]
-            #  })
+            energy = self.hamiltonian(state_prop)
+            metrics['H'] = metrics['H'].write(step+1, energy)
+            metrics['logdets'] = metrics['logdets'].write(step+1,
+                                                          sumlogdet)
+            metrics['Hw'] = metrics['Hw'].write(step+1,
+                                                energy-sumlogdet)
+            metrics['H'] = metrics['H'].stack()
+            metrics['logdets'] = metrics['logdets'].stack()
+            metrics['Hw'] = metrics['Hw'].stack()
+            #  for step in range(self.config.num_steps+1):
+            #      metrics['H'] = [metrics['H'].read(step)]
+            #      metrics['logdets'] = [metrics['logdets'].read(step)]
+            #      metrics['Hw'] = [metrics['Hw'].read(step)]
+        #  metrics = self._update_metrics(metrics, step+1,
+        #                                 state_prop, sumlogdet,
+        #                                 accept_prob=accept_prob)
 
         return state_prop, metrics
 
