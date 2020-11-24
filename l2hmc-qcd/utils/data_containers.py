@@ -104,10 +104,18 @@ class DataContainer:
         """Update `self.data` with new values from `data`."""
         self.steps_arr.append(step)
         for key, val in metrics.items():
-            try:
-                self.data[key].append(tf.convert_to_tensor(val).numpy())
-            except KeyError:
-                self.data[key] = [tf.convert_to_tensor(val).numpy()]
+            if isinstance(val, tf.Tensor):
+                try:
+                    self.data[key].append(val.numpy())
+                except KeyError:
+                    self.data[key] = [val.numpy()]
+            #  elif isinstance(val, (dict, AttrDict)):
+            #      for k, v in val.items():
+            #          if isinstance(v, tf.Tensor):
+            #              try:
+            #                  self.data[f'{k}/{key[0]}'].append(v)
+            #              except KeyError:
+            #                  self.data[f'{k}/{key[0]}'] = [v]
 
     # pylint:disable=too-many-arguments
     def get_header(self, metrics=None, prepend=None,
@@ -127,14 +135,18 @@ class DataContainer:
     def get_fstr(self, step, metrics, skip=None):
         """Get formatted data string from `data`."""
         skip = [] if skip is None else skip
+        data = {}
 
         data = {
-            k: tf.reduce_mean(v) for k, v in metrics.items() if k not in skip
+            k: tf.reduce_mean(v) for k, v in metrics.items()
+            if k not in skip and not isinstance(v, dict)
         }
 
         fstr = (
-            f'{step:>5g}/{self.steps:<5g} '
-            + ''.join([f'{v:^12.4g}' for _, v in data.items()])
+            f'{step:>5g}/{self.steps:<5g} ' + ''.join([
+                f'{v:^12.4g}' for _, v in data.items()
+                if not isinstance(v, dict)
+            ])
         )
 
         self.data_strs.append(fstr)
@@ -185,6 +197,8 @@ class DataContainer:
         io.check_else_make_dir(data_dir)
         for key, val in self.data.items():
             out_file = os.path.join(data_dir, f'{key}.z')
+            head, tail = os.path.split(out_file)
+            io.check_else_make_dir(head)
             io.savez(np.array(val), out_file)
 
         if save_dataset:

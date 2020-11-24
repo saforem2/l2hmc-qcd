@@ -12,6 +12,7 @@ import tensorflow as tf
 from tensorflow.python.keras import backend as K
 
 keras = tf.keras
+from utils.attr_dict import AttrDict
 
 
 def summarize_dict(d, step, prefix=None):
@@ -19,9 +20,16 @@ def summarize_dict(d, step, prefix=None):
     if prefix is None:
         prefix = ''
     for key, val in d.items():
-        name = f'{prefix}/{key}'
-        tf.summary.histogram(name, val, step=step)
-        tf.summary.scalar(f'{name}_avg', tf.reduce_mean(val), step=step)
+        if isinstance(val, (dict, AttrDict)):
+            summarize_dict(val, step, prefix=f'{prefix}_{key}')
+            #  for k, v in val.items():
+            #      name = f'{prefix}/{key}/{k}'
+            #      tf.summary.histogram(name, v, step=step)
+            #      tf.summary.scalar(f'{name}_avg', tf.reduce_mean(v), step=step)
+        else:
+            name = f'{prefix}/{key}'
+            tf.summary.histogram(name, val, step=step)
+            tf.summary.scalar(f'{name}_avg', tf.reduce_mean(val), step=step)
 
 
 def summarize_list(x, step, prefix=None):

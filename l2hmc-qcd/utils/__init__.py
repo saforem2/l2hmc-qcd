@@ -51,26 +51,31 @@ except (ImportError, ModuleNotFoundError):
     RANK = LOCAL_RANK = 0
     SIZE = LOCAL_SIZE = 1
     IS_CHIEF = (RANK == 0)
-    #      HAS_HOROVOD = True
-    #      RANK = hvd.rank()
-    #      LOCAL_RANK = hvd.local_rank()
-    #      NUM_WORKERS = hvd.size()
-    #      IS_CHIEF = (RANK == 0)
-    #
-    #  except (ImportError, ModuleNotFoundError):
-    #      HAS_HOROVOD = False
-    #      RANK = 0
-    #      LOCAL_RANK = 0
-    #      NUM_WORKERS = 1
-    #      IS_CHIEF = (RANK == 0)
-    #
 
-#  RANK = hvd.rank()
-#  LOCAL_RANK = hvd.local_rank()
-#  NUM_WORKERS = hvd.size()
-#  IS_CHIEF = (RANK == 0)
-
-
+SKIP_KEYS = ['charges',
+             'Hf', 'Hb',
+             'Hwf', 'Hwb',
+             'sldf', 'sldb',
+             'forward', 'backward',
+             'sinQf', 'sinQb', 'sumlogdet_prop',
+             'sumlogdet_start', 'sumlogdet_mid', 'sumlogdet_end',
+             'sumlogdetf_start', 'sumlogdetf_mid', 'sumlogdetf_end',
+             'sumlogdetb_start', 'sumlogdetb_mid', 'sumlogdetb_end',
+             'logdetf_start', 'logdetf_mid', 'logdetf_end',
+             'logdetb_start', 'logdetb_mid', 'logdetb_end',
+             'logdetsf_end', 'logdetsb_end',
+             'accept_probf', 'accept_probb',
+             'accept_probf_start', 'accept_probf_mid', 'accept_probf_end',
+             'accept_probb_start', 'accept_probb_mid', 'accept_probb_end',
+             'logdetsf', 'logdetsb',
+             'logdetsf_start', 'logdetsf_mid', 'logdtsf_end',
+             'logdetsb_start', 'logdetsb_mid', 'logdtsb_end',
+             'sinQf_start', 'sinQf_mid', 'sinQf_end',
+             'sinQb_start', 'sinQb_mid', 'sinQb_end',
+             'Hf_start', 'Hf_mid', 'Hf_end',
+             'Hb_start', 'Hb_mid', 'Hb_end',
+             'ldf_start', 'ldf_mid', 'ldf_end',
+             'ldb_start', 'ldb_mid', 'ldb_end']
 
 class Horovod:
     """Dummy object for Horovod."""
