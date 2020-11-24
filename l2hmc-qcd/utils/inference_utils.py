@@ -26,6 +26,7 @@ except (ImportError, ModuleNotFoundError):
     NUM_NODES = 1
 
 import utils.file_io as io
+from utils import SKIP_KEYS
 
 from config import (HEADER, PI, PROJECT_DIR, SEP, TF_FLOAT, CBARS, LOGS_DIR,
                     GAUGE_LOGS_DIR, HMC_LOGS_DIR)
@@ -50,12 +51,6 @@ else:
         format="%(asctime)s:%(levelname)s:%(message)s",
         stream=None
     )
-
-
-SKIP_KEYS = ['charges', 'sldf', 'sldb', 'Hf', 'Hb', 'Hwf', 'Hwb',
-             'ldf_start', 'ldb_start', 'ldf_mid', 'ldf_end',
-             'ldb_mid', 'ldb_end', 'Hf_start', 'Hf_mid', 'Hf_end',
-             'Hb_start', 'Hb_mid', 'Hb_end']
 
 
 def restore_from_train_flags(args):

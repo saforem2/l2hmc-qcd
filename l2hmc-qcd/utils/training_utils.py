@@ -15,6 +15,7 @@ from typing import Optional, Union
 
 import numpy as np
 import tensorflow as tf
+from utils import SKIP_KEYS
 import utils.file_io as io
 try:
     import horovod.tensorflow as hvd
@@ -55,16 +56,6 @@ elif tf.__version__.startswith('2.'):
 #      tf.config.experimental.enable_mlir_graph_optimization()
 #  except:  # noqa: E722
 #      pass
-
-SKIP_KEYS = ['charges',
-             'Hf', 'Hb',
-             'Hwf', 'Hwb',
-             'sldf', 'sldb',
-             'Hf_start', 'Hf_mid', 'Hf_end',
-             'Hb_start', 'Hb_mid', 'Hb_end',
-             'ldf_start', 'ldf_mid', 'ldf_end',
-             'ldb_start', 'ldb_mid', 'ldb_end']
-
 
 def train_hmc(flags):
     """Main method for training HMC model."""
