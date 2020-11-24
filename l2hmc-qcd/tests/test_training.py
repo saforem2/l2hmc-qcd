@@ -284,7 +284,7 @@ def test():
 def main(args, flags=None):
     """Main method."""
     fn_map = {
-        'test_hmc_run': test_separate_networks,
+        'test_hmc_run': test_hmc_run,
         'test_separate_networks': test_separate_networks,
         'test_single_network': test_single_network,
         'test_resume_training': test_resume_training,
