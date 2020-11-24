@@ -9,7 +9,7 @@
     "loss_scale": 0.1,
     "hmc_steps": 10,
     "print_steps": 1,
-    "logging_steps": 2,
+    "logging_steps": 1,
     "steps_per_epoch": 1,
     "factor": 0.5,
     "patience": 1,
@@ -20,27 +20,28 @@
     "dynamics_config": {
         "verbose": true,
         "eps": 0.1,
-        "num_steps": 4,
+        "num_steps": 5,
         "hmc": false,
         "use_ncp": true,
         "eps_fixed": false,
-        "aux_weight": 1.0,
+        "aux_weight": 0.0,
         "plaq_weight": 0.0,
         "charge_weight": 0.01,
         "zero_init": false,
-        "separate_networks": false,
+        "separate_networks": true,
         "use_conv_net": false,
         "use_mixed_loss": false,
         "directional_updates": false,
         "use_scattered_xnet_update": false,
         "use_tempered_traj": false,
         "gauge_eq_masks": false,
-        "lattice_shape": [512, 16, 16, 2]
+        "lattice_shape": [128, 16, 16, 2]
     },
     "network_config": {
         "units": [32, 32, 32],
         "activation_fn": "relu",
-        "dropout_prob": 0.0
+        "dropout_prob": 0.0,
+        "use_batch_norm": true
     },
     "lr_config": {
         "lr_init": 1.0e-3,
