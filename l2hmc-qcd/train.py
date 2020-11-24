@@ -9,10 +9,16 @@ Train 2D U(1) model using eager execution in tensorflow.
 from __future__ import absolute_import, division, print_function
 
 import os
+import json
 import contextlib
 import logging
 import tensorflow as tf
+from config import BIN_DIR
 import utils
+#  from sacred import Experiment
+#
+#  ex = Experiment('l2hmc-qcd')
+#  ex.add_config(os.path.join(BIN_DIR, 'train_configs.json'))
 
 try:
     import horovod
