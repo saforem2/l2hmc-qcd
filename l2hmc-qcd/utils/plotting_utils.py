@@ -68,24 +68,25 @@ def make_ridgeplots(dataset, out_dir=None):
             pal = sns.cubehelix_palette(len(val.leapfrog.values),
                                         rot=-0.25, light=0.7)
             g = sns.FacetGrid(lfdf, row='lf', hue='lf',
-                              aspect=15, height=0.5, palette=pal)
+                              aspect=15, height=0.25, palette=pal)
 
             # Draw the densities in a few steps
-            _ = g.map(sns.kdeplot, key, bw=0.5,  # clip_on=False,
-                      shade=True, alpha=1, linewidth=1.5)
-            _ = g.map(sns.kdeplot, key, color='w', lw=2, bw=0.5)
-            _ = g.map(plt.axhline, y=0, lw=2, clip_on=False)
+            _ = g.map(sns.kdeplot, key,  # bw_adjust=0.5,  # clip_on=False,
+                      shade=True, alpha=0.7, linewidth=1.25)
+            _ = g.map(sns.kdeplot, key, color='w', lw=1.5)  # , bw_adjust=0.5)
+            _ = g.map(plt.axhline, y=0, lw=1.5, alpha=0.7, clip_on=False)
 
             # Define and use a simple function to
             # label the plot in axes coords:
             def label(x, color, label):
                 ax = plt.gca()
-                ax.text(0, 0.2, label, fontweight='bold', color=color,
-                        ha='left', va='center', transform=ax.transAxes)
+                ax.text(0, 0.20, label, fontweight='bold', color=color,
+                        ha='left', va='center', transform=ax.transAxes,
+                        fontsize='small')
 
             _ = g.map(label, key)
             # Set the subplots to overlap
-            _ = g.fig.subplots_adjust(hspace=-0.25)
+            _ = g.fig.subplots_adjust(hspace=-0.5)
             # Remove the axes details that don't play well with overlap
             _ = g.set_titles('')
             _ = g.set(yticks=[])
@@ -138,6 +139,7 @@ def savefig(fig, fpath):
     io.check_else_make_dir(os.path.dirname(fpath))
     io.log(f'Saving figure to: {fpath}.')
     fig.savefig(fpath, dpi=400, bbox_inches='tight')
+    plt.close('all')
 
 
 def therm_arr(arr, therm_frac=0., ret_steps=True):
@@ -399,25 +401,33 @@ def mcmc_traceplot(key, val, title=None, fpath=None, **kwargs):
 def plot_data(
         data_container: "DataContainer",  # noqa:F821
         out_dir: str,
-        flags: AttrDict,
+        flags: AttrDict = None,
         thermalize: bool = False,
-        therm_frac: float = 0.,
-        params: AttrDict = None
+        therm_frac: float = 0,
+        params: AttrDict = None,
+        hmc: bool = None,
 ):
     """Plot data from `data_container.data`."""
     out_dir = os.path.join(out_dir, 'plots')
     io.check_else_make_dir(out_dir)
-    hmc = params.get('hmc', False)
+    if hmc is None:
+        if params is not None:
+            hmc = params.get('hmc', False)
+        hmc = False
+
     if hmc:
         skip_strs = ['Hw', 'ld', 'sld', 'sumlogdet']
 
     title = None if params is None else get_title_str_from_params(params)
 
-    logging_steps = flags.get('logging_steps', 1)
-    flags_file = os.path.join(out_dir, 'FLAGS.z')
-    if os.path.isfile(flags_file):
-        train_flags = io.loadz(flags_file)
-        logging_steps = train_flags.get('logging_steps', 1)
+    if flags is not None:
+        logging_steps = flags.get('logging_steps', 1)
+        flags_file = os.path.join(out_dir, 'FLAGS.z')
+        if os.path.isfile(flags_file):
+            train_flags = io.loadz(flags_file)
+            logging_steps = train_flags.get('logging_steps', 1)
+    else:
+        logging_steps = 1
 
     data_dict = {}
     data_vars = {}
