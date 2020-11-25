@@ -262,26 +262,6 @@ class BaseDynamics(tf.keras.Model):
 
         return mc_states, data
 
-    def _transition(
-            self,
-            inputs: Union[tf.Tensor, List[tf.Tensor]],
-            forward: bool,
-            training: bool = None
-    ) -> (State, State, AttrDict):
-        """Run the augmented leapfrog integrator."""
-        if len(inputs) == 2:
-            x, beta = inputs
-            v = tf.random.normal(x.shape, dtype=x.dtype)
-
-        elif len(inputs) == 3:
-            x, v, beta = inputs
-
-        state = State(x=x, v=v, beta=beta)
-        state_, data = self.transition_kernel(state, forward, training)
-        #  state_, px, sld = self.transition_kernel(state, forward, training)
-
-        return state, state_, data
-
     def _hmc_transition(
         self, state: State, training: Optional[bool] = None,
     ) -> (MonteCarloStates, AttrDict):
@@ -312,6 +292,26 @@ class BaseDynamics(tf.keras.Model):
         })
 
         return mc_states, data
+
+    def _transition(
+            self,
+            inputs: Union[tf.Tensor, List[tf.Tensor]],
+            forward: bool,
+            training: bool = None
+    ) -> (State, State, AttrDict):
+        """Run the augmented leapfrog integrator."""
+        if len(inputs) == 2:
+            x, beta = inputs
+            v = tf.random.normal(x.shape, dtype=x.dtype)
+
+        elif len(inputs) == 3:
+            x, v, beta = inputs
+
+        state = State(x=x, v=v, beta=beta)
+        state_, data = self.transition_kernel(state, forward, training)
+
+        return state, state_, data
+
 
     def apply_transition(
             self, inputs: Tuple[tf.Tensor], training: Optional[bool] = None,
@@ -559,8 +559,6 @@ class BaseDynamics(tf.keras.Model):
                 if isinstance(val, tf.TensorArray):
                     tensor = val.stack()
                     metrics[key] = tensor
-                    #  metrics[key] = [val.read(i) for i in range(tarr_len)]
-                    #  metrics[key] = val.stack()
         else:
             energy = self.hamiltonian(state)
             energies = energies.write(step, energy)
@@ -569,19 +567,6 @@ class BaseDynamics(tf.keras.Model):
             metrics['H'] = energies.stack()
             metrics['logdets'] = logdets.stack()
             metrics['Hw'] = energies_.stack()
-            #  items = {
-            #      'logdets': metrics['logdets'].write(step, sumlogdet),
-            #      'H': metrics['H'].write(step, energy),
-            #      'Hw': metrics['Hw'].write(step, energy - sumlogdet),
-            #  }
-            #  for key, val in items.items():
-            #      metrics[key] = val
-            #  for key, val in items.items():
-            #      metrics[key] = metrics[key].write(step, val)
-
-            #  for key, val in kwargs.items():
-            #      if isinstance(val, tf.TensorArray):
-            #          metrics[key] = metrics[key].write(step, val)
 
         return metrics
 
@@ -634,16 +619,7 @@ class BaseDynamics(tf.keras.Model):
             metrics['H'] = metrics['H'].stack()
             metrics['logdets'] = metrics['logdets'].stack()
             metrics['Hw'] = metrics['Hw'].stack()
-            #  energies = metrics.pop('H')
-            #  logdets = metrics.pop('logdets')
-            #  escaled = metrics.pop('Hw')
-            #  for step in range(self.config.num_steps+1):
-            #      metrics['H'] = [metrics['H'].read(step)]
-            #      metrics['logdets'] = [metrics['logdets'].read(step)]
-            #      metrics['Hw'] = [metrics['Hw'].read(step)]
-        #  metrics = self._update_metrics(metrics, step+1,
-        #                                 state_prop, sumlogdet,
-        #                                 accept_prob=accept_prob)
+
         return state_prop, metrics
 
     def _transition_kernel_backward(
@@ -695,13 +671,6 @@ class BaseDynamics(tf.keras.Model):
             metrics['H'] = metrics['H'].stack()
             metrics['logdets'] = metrics['logdets'].stack()
             metrics['Hw'] = metrics['Hw'].stack()
-            #  for step in range(self.config.num_steps+1):
-            #      metrics['H'] = [metrics['H'].read(step)]
-            #      metrics['logdets'] = [metrics['logdets'].read(step)]
-            #      metrics['Hw'] = [metrics['Hw'].read(step)]
-        #  metrics = self._update_metrics(metrics, step+1,
-        #                                 state_prop, sumlogdet,
-        #                                 accept_prob=accept_prob)
 
         return state_prop, metrics
 

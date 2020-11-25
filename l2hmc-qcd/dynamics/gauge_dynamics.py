@@ -407,14 +407,23 @@ class GaugeDynamics(BaseDynamics):
         if not self._verbose:
             return metrics
 
-        sin_qs = tf.TensorArray(TF_FLOAT,
-                                size=self.config.num_steps+1,
-                                element_shape=(self.batch_size,),
-                                dynamic_size=False,
-                                clear_after_read=False)
+        kwargs = {
+            'size': self.config.num_steps+1,
+            'element_shape': (self.batch_size,),
+            'dynamic_size': False,
+            'clear_after_read': False
+        }
+        sinq = tf.TensorArray(TF_FLOAT, **kwargs)
+        intq = tf.TensorArray(TF_FLOAT, **kwargs)
 
-        sinq = self.lattice.calc_charges(x=state.x, use_sin=True)
-        metrics.update({'sinQ': sin_qs.write(0, sinq)})
+        #  sinq = self.lattice.calc_charges(x=state.x, use_sin=True)
+        charges = self.lattice.calc_both_charges(x=state.x)
+        sinq = sinq.write(0, charges.sinQ)
+        intq = intq.write(0, charges.intQ)
+        metrics.update({
+            'sinQ': sinq.write(0, charges.sinQ),
+            'intQ': intq.write(0, charges.intQ),
+        })
 
         return metrics
 
@@ -433,9 +442,30 @@ class GaugeDynamics(BaseDynamics):
             training: bool = None,
     ):
         """Implements a series of directional updates."""
-        state_prop = State(state.x, state.v, state.beta)
-        sumlogdet = tf.zeros((self.batch_size,), dtype=TF_FLOAT)
+        state_prop = State(x=state.x, v=state.v, beta=state.beta)
+        sumlogdet = tf.zeros((self.batch_size,))
         metrics = self._init_metrics(state_prop)
+
+        def _update_metrics(data, step):
+            for key, val in data.items():
+                metrics[key] = metrics[key].write(step, val)
+
+            return metrics
+
+        def _get_metrics(state, logdet):
+            energy = self.hamiltonian(state)
+            charges = self.lattice.calc_both_charges(x=state_prop.x)
+            escaled = energy - logdet
+            return {
+                'H': energy, 'Hw': escaled, 'logdets': logdet,
+                'sinQ': charges.sinQ, 'intQ': charges.intQ,
+            }
+
+        def _stack_metrics():
+            for key, val in metrics.items():
+                if isinstance(val, tf.TensorArray):
+                    metrics[key] = val.stack()
+            return metrics
 
         # ====
         # Forward for first half of trajectory
@@ -443,16 +473,8 @@ class GaugeDynamics(BaseDynamics):
             state_prop, logdet = self._forward_lf(step, state_prop, training)
             sumlogdet += logdet
             if self._verbose:
-                energy = self.hamiltonian(state_prop)
-                sinq = self.lattice.calc_charges(x=state_prop.x, use_sin=True)
-                metrics['sinQ'] = metrics['sinQ'].write(step+1, sinq)
-                metrics['H'] = metrics['H'].write(step+1, energy)
-                metrics['logdets'] = metrics['logdets'].write(step+1,
-                                                              sumlogdet)
-                metrics['Hw'] = metrics['Hw'].write(step+1,
-                                                    energy - sumlogdet)
-            #  metrics = self._update_metrics(metrics, step+1,
-            #                                 state_prop, sumlogdet)
+                data = _get_metrics(state_prop, sumlogdet)
+                metrics = _update_metrics(data, step+1)
 
         # ====
         # Flip momentum
@@ -464,47 +486,146 @@ class GaugeDynamics(BaseDynamics):
             state_prop, logdet = self._backward_lf(step, state_prop, training)
             sumlogdet += logdet
             if self._verbose:
-                energy = self.hamiltonian(state_prop)
-                sinq = self.lattice.calc_charges(x=state_prop.x, use_sin=True)
-                metrics['sinQ'] = metrics['sinQ'].write(step+1, sinq)
-                metrics['H'] = metrics['H'].write(step+1, energy)
-                metrics['logdets'] = metrics['logdets'].write(step+1,
-                                                              sumlogdet)
-                metrics['Hw'] = metrics['Hw'].write(step+1,
-                                                    energy - sumlogdet)
-            #  metrics = self._update_metrics(metrics, step+1,
-            #                                 state_prop, sumlogdet)
+                data = _get_metrics(state_prop, sumlogdet)
+                metrics = _update_metrics(data, step+1)
 
         accept_prob = self.compute_accept_prob(state, state_prop, sumlogdet)
         metrics['sumlogdet'] = sumlogdet
         metrics['accept_prob'] = accept_prob
         if self._verbose:
-            energy = self.hamiltonian(state_prop)
-            sinq = self.lattice.calc_charges(x=state_prop.x, use_sin=True)
-            metrics['sinQ'] = metrics['sinQ'].write(step+1, sinq)
-            metrics['H'] = metrics['H'].write(step+1, energy)
-            metrics['logdets'] = metrics['logdets'].write(step+1,
-                                                          sumlogdet)
-            metrics['Hw'] = metrics['Hw'].write(step+1,
-                                                energy-sumlogdet)
-            metrics['sinQ'] = metrics['sinQ'].stack()
-            metrics['H'] = metrics['H'].stack()
-            metrics['logdets'] = metrics['logdets'].stack()
-            metrics['Hw'] = metrics['Hw'].stack()
-            #  energies = metrics.pop('H')
-            #  logdets = metrics.pop('logdets')
-            #  escaled = metrics.pop('Hw')
-            #  for step in range(self.config.num_steps+1):
-            #      metrics['H'] = [energies.read(step)]
-            #      metrics['logdets'] = [logdets.read(step)]
-            #      metrics['Hw'] = [escaled.read(step)]
-        #  metrics = self._update_metrics(metrics, step+1,
-        #                                 state_prop, sumlogdet,
-        #                                 accept_prob=accept_prob)
+            data = _get_metrics(state_prop, sumlogdet)
+            metrics = _update_metrics(data, step+1)
+            metrics = _stack_metrics()
 
         return state_prop, metrics
 
-    def transition_kernel_sep_nets(
+    def _transition_kernel_forward(
+            self,
+            state: State,
+            training: bool = None
+    ):
+        """Run the augmented leapfrog sampler in the forward direction."""
+        state_prop = State(x=state.x, v=state.v, beta=state.beta)
+        sumlogdet = tf.zeros((self.batch_size,))
+        metrics = self._init_metrics(state_prop)
+
+        def _update_metrics(data, step):
+            for key, val in data.items():
+                metrics[key] = metrics[key].write(step, val)
+
+            return metrics
+
+        def _get_metrics(state, logdet):
+            energy = self.hamiltonian(state)
+            charges = self.lattice.calc_both_charges(x=state_prop.x)
+            escaled = energy - logdet
+            return {
+                'H': energy, 'Hw': escaled, 'logdets': logdet,
+                'sinQ': charges.sinQ, 'intQ': charges.intQ,
+            }
+
+        def _stack_metrics():
+            for key, val in metrics.items():
+                if isinstance(val, tf.TensorArray):
+                    metrics[key] = val.stack()
+            return metrics
+
+        state_prop, logdet = self._half_v_update_forward(state_prop,
+                                                          0, training)
+        sumlogdet += logdet
+        for step in range(self.config.num_steps):
+            state_prop, logdet = self._full_x_update_forward(state_prop,
+                                                              step, training)
+            sumlogdet += logdet
+
+            if step < self.config.num_steps - 1:
+                state_prop, logdet = self._full_v_update_forward(
+                    state_prop, step, training
+                )
+                sumlogdet += logdet
+                if self._verbose:
+                    data = _get_metrics(state_prop, sumlogdet)
+                    metrics = _update_metrics(data, step+1)
+
+        state_prop, logdet = self._half_v_update_forward(state_prop,
+                                                          step, training)
+        sumlogdet += logdet
+
+        accept_prob = self.compute_accept_prob(state, state_prop, sumlogdet)
+        metrics['sumlogdet'] = sumlogdet
+        metrics['accept_prob'] = accept_prob
+        if self._verbose:
+            data = _get_metrics(state_prop, sumlogdet)
+            metrics = _update_metrics(data, step+1)
+            metrics = _stack_metrics()
+
+
+        return state_prop, metrics
+
+    def _transition_kernel_backward(
+            self,
+            state: State,
+            training: bool = None
+    ):
+        """Run the augmented leapfrog sampler in the forward direction."""
+        state_prop = State(x=state.x, v=state.v, beta=state.beta)
+        sumlogdet = tf.zeros((self.batch_size,))
+        metrics = self._init_metrics(state_prop)
+
+        def _update_metrics(data, step):
+            for key, val in data.items():
+                metrics[key] = metrics[key].write(step, val)
+
+            return metrics
+
+        def _get_metrics(state, logdet):
+            energy = self.hamiltonian(state)
+            charges = self.lattice.calc_both_charges(x=state_prop.x)
+            escaled = energy - logdet
+            return {
+                'H': energy, 'Hw': escaled, 'logdets': logdet,
+                'sinQ': charges.sinQ, 'intQ': charges.intQ,
+            }
+
+        def _stack_metrics():
+            for key, val in metrics.items():
+                if isinstance(val, tf.TensorArray):
+                    metrics[key] = val.stack()
+            return metrics
+
+        state_prop, logdet = self._half_v_update_backward(state_prop,
+                                                          0, training)
+        sumlogdet += logdet
+        for step in range(self.config.num_steps):
+            state_prop, logdet = self._full_x_update_backward(state_prop,
+                                                              step, training)
+            sumlogdet += logdet
+
+            if step < self.config.num_steps - 1:
+                state_prop, logdet = self._full_v_update_backward(
+                    state_prop, step, training
+                )
+                sumlogdet += logdet
+                if self._verbose:
+                    data = _get_metrics(state_prop, sumlogdet)
+                    metrics = _update_metrics(data, step+1)
+
+        state_prop, logdet = self._half_v_update_backward(state_prop,
+                                                          step, training)
+        sumlogdet += logdet
+
+        accept_prob = self.compute_accept_prob(state, state_prop, sumlogdet)
+        metrics['sumlogdet'] = sumlogdet
+        metrics['accept_prob'] = accept_prob
+        if self._verbose:
+            data = _get_metrics(state_prop, sumlogdet)
+            metrics = _update_metrics(data, step+1)
+            metrics = _stack_metrics()
+
+
+        return state_prop, metrics
+
+    def _transition_kernel(
             self,
             state: State,
             forward: bool,
@@ -522,185 +643,40 @@ class GaugeDynamics(BaseDynamics):
 
             return metrics
 
-        def _get_metrics(state):
+        def _get_metrics(state, logdet):
             energy = self.hamiltonian(state)
-            sinq = self.lattice.calc_charges(x=state.x, use_sin=True)
-            return {'H': energy, 'sinQ': sinq}
+            charges = self.lattice.calc_both_charges(x=state_prop.x)
+            escaled = energy - logdet
+            return {
+                'H': energy, 'Hw': escaled, 'logdets': logdet,
+                'sinQ': charges.sinQ, 'intQ': charges.intQ,
+            }
 
+        def _stack_metrics():
+            for key, val in metrics.items():
+                if isinstance(val, tf.TensorArray):
+                    metrics[key] = val.stack()
+            return metrics
+
+        # ====
+        # LOOP OVER LEAPFROG STEPS
         for step in range(self.config.num_steps):
             state_prop, logdet = lf_fn(step, state_prop, training)
             sumlogdet += logdet
             if self._verbose:
-                energy = self.hamiltonian(state_prop)
-                sinq = self.lattice.calc_charges(x=state_prop.x, use_sin=True)
-                data = _get_metrics(state_prop)
-                data.update({'logdets': sumlogdet,
-                             'Hw': data['H'] - sumlogdet})
+                data = _get_metrics(state_prop, sumlogdet)
                 metrics = _update_metrics(data, step+1)
 
-            #  metrics = self._update_metrics(metrics, step+1,
-            #                                 state_prop, sumlogdet)
-
         accept_prob = self.compute_accept_prob(state, state_prop, sumlogdet)
         metrics['sumlogdet'] = sumlogdet
         metrics['accept_prob'] = accept_prob
         if self._verbose:
-            energy = self.hamiltonian(state_prop)
-            sinq = self.lattice.calc_charges(x=state_prop.x, use_sin=True)
-            metrics['sinQ'] = metrics['sinQ'].write(step+1, sinq)
-            metrics['H'] = metrics['H'].write(step+1, energy)
-            metrics['logdets'] = metrics['logdets'].write(step+1,
-                                                          sumlogdet)
-            metrics['Hw'] = metrics['Hw'].write(step+1,
-                                                energy-sumlogdet)
-            metrics['sinQ'] = metrics['sinQ'].stack()
-            metrics['H'] = metrics['H'].stack()
-            metrics['logdets'] = metrics['logdets'].stack()
-            metrics['Hw'] = metrics['Hw'].stack()
-            #  for step in range(self.config.num_steps+1):
-            #      metrics['H'] = [metrics['H'].read(step)]
-            #      metrics['logdets'] = [metrics['logdets'].read(step)]
-            #      metrics['Hw'] = [metrics['Hw'].read(step)]
-        #  metrics = self._update_metrics(metrics, step+1,
-        #                                 state_prop, sumlogdet,
-        #                                 accept_prob=accept_prob)
+            data = _get_metrics(state_prop, sumlogdet)
+            metrics = _update_metrics(data, step+1)
+            metrics = _stack_metrics()
 
         return state_prop, metrics
 
-    def _transition_kernel_forward(
-            self,
-            state: State,
-            training: bool = None
-    ):
-        """Run the augmented leapfrog sampler in the forward direction."""
-        sumlogdet = tf.zeros((self.batch_size,))
-        state_prop = State(state.x, state.v, state.beta)
-        metrics = self._init_metrics(state_prop)
-
-        state_prop, logdet = self._half_v_update_forward(state_prop,
-                                                         0, training)
-        sumlogdet += logdet
-
-        for step in range(self.config.num_steps):
-            state_prop, logdet = self._full_x_update_forward(state_prop,
-                                                             step, training)
-            sumlogdet += logdet
-
-            if step < self.config.num_steps - 1:
-                state_prop, logdet = self._full_v_update_forward(
-                    state_prop, step, training
-                )
-                sumlogdet += logdet
-                if self._verbose:
-                    energy = self.hamiltonian(state_prop)
-                    sinq = self.lattice.calc_charges(x=state_prop.x,
-                                                     use_sin=True)
-                    metrics['sinQ'] = metrics['sinQ'].write(step+1, sinq)
-                    metrics['H'] = metrics['H'].write(step+1, energy)
-                    metrics['logdets'] = metrics['logdets'].write(step+1,
-                                                                  sumlogdet)
-                    metrics['Hw'] = metrics['Hw'].write(step+1,
-                                                        energy - sumlogdet)
-                #  metrics = self._update_metrics(metrics, step+1,
-                #                                 state_prop, sumlogdet)
-
-        state_prop, logdet = self._half_v_update_forward(state_prop,
-                                                         step, training)
-        sumlogdet += logdet
-
-        accept_prob = self.compute_accept_prob(state, state_prop, sumlogdet)
-        metrics['sumlogdet'] = sumlogdet
-        metrics['accept_prob'] = accept_prob
-        if self._verbose:
-            energy = self.hamiltonian(state_prop)
-            sinq = self.lattice.calc_charges(x=state_prop.x, use_sin=True)
-            metrics['sinQ'] = metrics['sinQ'].write(step+1, sinq)
-            metrics['H'] = metrics['H'].write(step+1, energy)
-            metrics['logdets'] = metrics['logdets'].write(step+1,
-                                                          sumlogdet)
-            metrics['Hw'] = metrics['Hw'].write(step+1,
-                                                energy-sumlogdet)
-            metrics['sinQ'] = metrics['sinQ'].stack()
-            metrics['H'] = metrics['H'].stack()
-            metrics['logdets'] = metrics['logdets'].stack()
-            metrics['Hw'] = metrics['Hw'].stack()
-            #  energies = metrics.pop('H')
-            #  logdets = metrics.pop('logdets')
-            #  escaled = metrics.pop('Hw')
-            #  for step in range(self.config.num_steps+1):
-            #      metrics['H'] = [energies.read(step)]
-            #      metrics['logdets'] = [logdets.read(step)]
-            #      metrics['Hw'] = [escaled.read(step)]
-        #  metrics = self._update_metrics(metrics, step+1,
-        #                                 state_prop, sumlogdet,
-        #                                 accept_prob=accept_prob)
-        #
-        return state_prop, metrics
-
-    def _transition_kernel_backward(
-            self,
-            state: State,
-            training: bool = None
-    ):
-        """Run the augmented leapfrog sampler in the forward direction."""
-        sumlogdet = tf.zeros((self.batch_size,))
-        state_prop = State(state.x, state.v, state.beta)
-        metrics = self._init_metrics(state_prop)
-        state_prop, logdet = self._half_v_update_backward(state_prop,
-                                                          0, training)
-        sumlogdet += logdet
-        for step in range(self.config.num_steps):
-            state_prop, logdet = self._full_x_update_backward(state_prop,
-                                                              step, training)
-            sumlogdet += logdet
-
-            if step < self.config.num_steps - 1:
-                state_prop, logdet = self._full_v_update_backward(
-                    state_prop, step, training
-                )
-                sumlogdet += logdet
-                if self._verbose:
-                    energy = self.hamiltonian(state_prop)
-                    sinq = self.lattice.calc_charges(x=state_prop.x,
-                                                     use_sin=True)
-                    metrics['sinQ'] = metrics['sinQ'].write(step+1, sinq)
-                    metrics['H'] = metrics['H'].write(step+1, energy)
-                    metrics['logdets'] = metrics['logdets'].write(step+1,
-                                                                  sumlogdet)
-                    metrics['Hw'] = metrics['Hw'].write(step+1,
-                                                        energy - sumlogdet)
-                #  metrics = self._update_metrics(metrics, step+1,
-                #                                 state_prop, sumlogdet)
-
-        state_prop, logdet = self._half_v_update_backward(state_prop,
-                                                          step, training)
-        sumlogdet += logdet
-
-        accept_prob = self.compute_accept_prob(state, state_prop, sumlogdet)
-        metrics['sumlogdet'] = sumlogdet
-        metrics['accept_prob'] = accept_prob
-        if self._verbose:
-            energy = self.hamiltonian(state_prop)
-            sinq = self.lattice.calc_charges(x=state_prop.x, use_sin=True)
-            metrics['sinQ'] = metrics['sinQ'].write(step+1, sinq)
-            metrics['H'] = metrics['H'].write(step+1, energy)
-            metrics['logdets'] = metrics['logdets'].write(step+1,
-                                                          sumlogdet)
-            metrics['Hw'] = metrics['Hw'].write(step+1,
-                                                energy-sumlogdet)
-            metrics['sinQ'] = metrics['sinQ'].stack()
-            metrics['H'] = metrics['H'].stack()
-            metrics['logdets'] = metrics['logdets'].stack()
-            metrics['Hw'] = metrics['Hw'].stack()
-            #  for step in range(self.config.num_steps+1):
-            #      metrics['H'] = [metrics['H'].read(step)]
-            #      metrics['logdets'] = [metrics['logdets'].read(step)]
-            #      metrics['Hw'] = [metrics['Hw'].read(step)]
-        #  metrics = self._update_metrics(metrics, step+1,
-        #                                 state_prop, sumlogdet,
-        #                                 accept_prob=accept_prob)
-
-        return state_prop, metrics
 
     def transition_kernel(
             self,
@@ -710,9 +686,6 @@ class GaugeDynamics(BaseDynamics):
             verbose: bool = False,
     ):
         """Transition kernel of the augmented leapfrog integrator."""
-        if self.config.hmc:
-            return super().transition_kernel(state, forward, training)
-
         # ====
         # If using `self._combined_updates`, we combine the half-step
         # momentum-updates into a single full-step momentum updates in the
@@ -725,24 +698,11 @@ class GaugeDynamics(BaseDynamics):
             )
 
         # ====
-        # Using separate networks for each leapfrog step?
-        # Significantly increases both the expressivity of the model,
-        # as well as its training cost.
-        if self.config.separate_networks:
-            return self.transition_kernel_sep_nets(state, forward, training)
-
-        # ====
         # Using directional updates? (Experimental, not well tested!!)
         if self.config.directional_updates:
             return self.transition_kernel_directional(state, training)
 
-        # ====
-        # IF not using separate networks,
-        # AND not using combined momentum updates
-        # AND not using directional (persistent?) updates,
-        # THEN, use `BaseDynamics.transition_kernel()`.
-        #  return super().transition_kernel(state, forward, training)
-        return self.transition_kernel_sep_nets(state, forward, training)
+        return self._transition_kernel(state, forward, training)
 
     def _scattered_xnet(self, inputs, mask, step, training=None):
         """Call `self.xnet` on non-zero entries of `x` via `tf.gather_nd`."""
