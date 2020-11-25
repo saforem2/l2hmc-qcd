@@ -8,6 +8,7 @@ from __future__ import absolute_import, division, print_function
 
 import os
 import sys
+import json
 import time
 import typing
 import logging
@@ -115,6 +116,33 @@ if HAS_HOROVOD:
                               f'local_rank: {hvd.local_rank()}',
                               f'size: {hvd.size()}',
                               f'local_size: {hvd.local_size()}']))
+
+
+class NumpyEncoder(json.JSONEncoder):
+    """ Custom encoder for numpy data types """
+    def default(self, obj):
+        if isinstance(obj, (np.int_, np.intc, np.intp, np.int8,
+                            np.int16, np.int32, np.int64, np.uint8,
+                            np.uint16, np.uint32, np.uint64)):
+
+            return int(obj)
+
+        elif isinstance(obj, (np.float_, np.float16, np.float32, np.float64)):
+            return float(obj)
+
+        elif isinstance(obj, (np.complex_, np.complex64, np.complex128)):
+            return {'real': obj.real, 'imag': obj.imag}
+
+        elif isinstance(obj, (np.ndarray,)):
+            return obj.tolist()
+
+        elif isinstance(obj, (np.bool_)):
+            return bool(obj)
+
+        elif isinstance(obj, (np.void)):
+            return None
+
+        return json.JSONEncoder.default(self, obj)
 
 
 def in_notebook():
@@ -309,6 +337,10 @@ def save_dict(d: dict, out_dir: str, name: str = None):
 
     zfile = os.path.join(out_dir, f'{name}.z')
     savez(d, zfile, name=name)
+
+    json_file = os.path.join(out_dir, f'{name}.json')
+    with open(json_file, 'w') as f:
+        json.dump(d, f, indent=4, ensure_ascii=False, cls=NumpyEncoder)
 
     txt_file = os.path.join(out_dir, f'{name}.txt')
     with open(txt_file, 'w') as f:
@@ -581,15 +613,16 @@ def make_log_dir(
 
     if RANK == 0:
         check_else_make_dir(log_dir)
+        save_dict(configs, log_dir, name='configs')
         if log_file is not None:
             write(f'{log_dir}', log_file, 'a')
 
     return log_dir
 
 
-def make_run_dir(FLAGS, base_dir):
+def make_run_dir(configs, base_dir):
     """Automatically create `run_dir` for storing inference data."""
-    fstr = get_run_dir_fstr(FLAGS)
+    fstr = get_run_dir_fstr(configs)
     now = datetime.datetime.now()
     dstr = now.strftime('%Y-%m-%d-%H%M')
     run_str = f'{fstr}-{dstr}'
@@ -601,7 +634,9 @@ def make_run_dir(FLAGS, base_dir):
         run_str = f'{fstr}-{dstr}'
         run_dir = os.path.join(base_dir, run_str)
 
-    check_else_make_dir(run_dir)
+    if RANK == 0:
+        check_else_make_dir(run_dir)
+        save_dict(configs, run_dir, name='configs')
 
     return run_dir
 
