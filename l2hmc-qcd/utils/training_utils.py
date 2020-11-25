@@ -57,7 +57,7 @@ elif tf.__version__.startswith('2.'):
 #  except:  # noqa: E722
 #      pass
 
-def train_hmc(flags):
+def train_hmc(flags: AttrDict, make_plots: bool = True):
     """Main method for training HMC model."""
     hflags = AttrDict(dict(flags).copy())
     lr_config = AttrDict(hflags.pop('lr_config', None))
@@ -98,26 +98,8 @@ def train_hmc(flags):
     dynamics = GaugeDynamics(hflags, config, net_config, lr_config)
     dynamics.save_config(dirs.config_dir)
 
-    #  if IS_CHIEF:
-    #      output_dir = os.path.join(dirs.train_dir, 'outputs')
-    #      train_data.save_data(output_dir)
-    #
-    #      params = {
-    #          'beta_init': train_data.data.beta[0],
-    #          'beta_final': train_data.data.beta[-1],
-    #          'eps': dynamics.eps.numpy(),
-    #          'lattice_shape': dynamics.config.lattice_shape,
-    #          'num_steps': dynamics.config.num_steps,
-    #          'net_weights': dynamics.net_weights,
-    #      }
-    #      plot_data(train_data, dirs.train_dir, flags,
-    #                thermalize=True, params=params)
-    #
-    #  io.log('\n'.join(['Done training model', 120 * '*']))
-    #  io.save_dict(dict(flags), dirs.log_dir, 'configs')
-
     x, train_data = train_dynamics(dynamics, hflags, dirs=dirs)
-    if IS_CHIEF:
+    if IS_CHIEF and make_plots:
         output_dir = os.path.join(dirs.train_dir, 'outputs')
         io.check_else_make_dir(output_dir)
         train_data.save_data(output_dir)
@@ -131,7 +113,7 @@ def train_hmc(flags):
             'net_weights': NET_WEIGHTS_HMC,
         }
         plot_data(train_data, dirs.train_dir, hflags,
-                  thermalize=True, params=params)
+                  therm_frac=0.2, params=params)
         io.log('\n'.join(['Done with HMC training', 120 * '*']))
 
     return x, dynamics, train_data, hflags
@@ -140,7 +122,8 @@ def train_hmc(flags):
 def train(
         flags: AttrDict,
         x: tf.Tensor = None,
-        restore_x: bool = False
+        restore_x: bool = False,
+        make_plots: bool = True,
 ) -> (tf.Tensor, Union[BaseDynamics, GaugeDynamics], DataContainer, AttrDict):
     """Train model.
 
@@ -179,7 +162,7 @@ def train(
     io.log('\n'.join([120 * '*', 'Training L2HMC sampler...']))
     x, train_data = train_dynamics(dynamics, flags, dirs, x=x)
 
-    if IS_CHIEF:
+    if IS_CHIEF and make_plots:
         output_dir = os.path.join(dirs.train_dir, 'outputs')
         train_data.save_data(output_dir, save_dataset=True)
 
@@ -256,9 +239,6 @@ def setup(dynamics, flags, dirs=None, x=None, betas=None):
     dynamics.compile(loss=dynamics.calc_losses,
                      optimizer=dynamics.optimizer,
                      experimental_run_tf_function=False)
-    #  x_tspec = tf.TensorSpec(dynamics.x_shape, dtype=x.dtype, name='x')
-    #  beta_tspec = tf.TensorSpec([], dtype=TF_FLOAT, name='beta')
-    #  input_signature=[x_tspec, beta_tspec])
 
     try:
         inputs = (x, tf.constant(betas[0]))
