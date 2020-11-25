@@ -161,7 +161,8 @@ def test_hmc_run(flags: AttrDict):
     #  hmc_dir = os.path.join(os.path.dirname(PROJECT_DIR),
     #                         'gauge_logs_eager', 'test', 'hmc_runs')
     hmc_dir = os.path.join(GAUGE_LOGS_DIR, 'hmc_test_logs')
-    dynamics, run_data, x, _ = run_hmc(flags, hmc_dir=hmc_dir)
+    dynamics, run_data, x, _ = run_hmc(flags, hmc_dir=hmc_dir,
+                                       make_plots=False)
 
     return {
         'x': x,
@@ -188,8 +189,8 @@ def test_conv_net(flags: AttrDict):
     dirs = io.setup_directories(flags)
     flags['dirs'] = dirs
     flags['log_dir'] = dirs.get('log_dir', None)
-    x, dynamics, train_data, flags = train(flags)
-    dynamics, run_data, x, _ = run(dynamics, flags, x=x)
+    x, dynamics, train_data, flags = train(flags, make_plots=False)
+    dynamics, run_data, x, _ = run(dynamics, flags, x=x, make_plots=False)
 
     return AttrDict({
         'x': x,
@@ -206,8 +207,8 @@ def test_single_network(flags: AttrDict):
     flags = AttrDict(**dict(copy.deepcopy(flags)))
     flags['dynamics_config']['separate_networks'] = False
     #  flags.dynamics_config.separate_networks = False
-    x, dynamics, train_data, flags = train(flags)
-    dynamics, run_data, x, _ = run(dynamics, flags, x=x)
+    x, dynamics, train_data, flags = train(flags, make_plots=False)
+    dynamics, run_data, x, _ = run(dynamics, flags, x=x, make_plots=False)
 
     return AttrDict({
         'x': x,
@@ -228,9 +229,9 @@ def test_separate_networks(flags: AttrDict):
 
     flags.dynamics_config['separate_networks'] = True
     flags.compile = False
-    x, dynamics, train_data, flags = train(flags)
+    x, dynamics, train_data, flags = train(flags, make_plots=False)
     #  beta = flags.get('beta', 1.)
-    dynamics, run_data, x, _ = run(dynamics, flags, x=x)
+    dynamics, run_data, x, _ = run(dynamics, flags, x=x, make_plots=False)
 
     return AttrDict({
         'x': x,
@@ -251,9 +252,9 @@ def test_resume_training(log_dir: str):
 
     flags.log_dir = log_dir
     flags.train_steps += flags.get('train_steps', 10)
-    x, dynamics, train_data, flags = train(flags)
+    x, dynamics, train_data, flags = train(flags, make_plots=False)
     #  beta = flags.get('beta', 1.)
-    dynamics, run_data, x, _ = run(dynamics, flags, x=x)
+    dynamics, run_data, x, _ = run(dynamics, flags, x=x, make_plots=False)
 
     return AttrDict({
         'x': x,
