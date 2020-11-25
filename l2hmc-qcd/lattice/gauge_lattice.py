@@ -11,6 +11,14 @@ from __future__ import absolute_import, division, print_function
 
 import numpy as np
 import tensorflow as tf
+from dataclasses import dataclass
+from utils.attr_dict import AttrDict
+
+
+@dataclass
+class Charges:
+    sinQ: tf.Tensor
+    intQ: tf.Tensor
 
 
 def plaq_exact(beta):
@@ -104,3 +112,18 @@ class GaugeLattice:
         q = tf.sin(wloops) if use_sin else project_angle(wloops)
 
         return tf.reduce_sum(q, axis=(1, 2), name='charges') / (2 * np.pi)
+
+    def calc_both_charges(self, x=None, wloops=None):
+        """Calculate the charges using both integer and sin represntations."""
+        if wloops is None:
+            try:
+                wloops = self.calc_wilson_loops(x)
+            except ValueError as err:
+                print('One of `x` or `wloops` must be specified.')
+                raise err
+
+        sinq = tf.reduce_sum(tf.sin(wloops), axis=(1, 2)) / (2 * np.pi)
+        intq = tf.reduce_sum(project_angle(wloops), axis=(1, 2)) / (2 * np.pi)
+        return Charges(sinQ=sinq, intQ=intq)
+
+
