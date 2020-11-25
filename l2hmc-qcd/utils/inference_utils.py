@@ -8,6 +8,7 @@ from __future__ import absolute_import, division, print_function
 import os
 import sys
 import time
+import json
 import logging
 from typing import Optional
 
@@ -30,6 +31,7 @@ from utils import SKIP_KEYS
 
 from config import (HEADER, PI, PROJECT_DIR, SEP, TF_FLOAT, CBARS, LOGS_DIR,
                     GAUGE_LOGS_DIR, HMC_LOGS_DIR)
+from dynamics.config import GaugeDynamicsConfig
 from dynamics.gauge_dynamics import (build_dynamics, convert_to_angle,
                                      GaugeDynamics)
 from utils.attr_dict import AttrDict
@@ -66,6 +68,7 @@ def run_hmc(
         hmc_dir: str = None,
         skip_existing: bool = False,
         save_x: bool = False,
+        make_plots: bool = True,
 ) -> (GaugeDynamics, DataContainer, tf.Tensor):
     """Run HMC using `inference_args` on a model specified by `params`.
 
@@ -107,7 +110,7 @@ def run_hmc(
     dynamics = build_dynamics(args)
     dynamics, run_data, x, x_arr = run(dynamics, args,
                                        runs_dir=hmc_dir,
-                                       save_x=save_x)
+                                       save_x=save_x, make_plots=False)
 
     return dynamics, run_data, x, x_arr
 
@@ -166,6 +169,7 @@ def run(
         else:
             runs_dir = os.path.join(args.log_dir, 'inference')
 
+    md_steps = args.get('md_steps', 50)
     eps = dynamics.eps
     if hasattr(eps, 'numpy'):
         eps = eps.numpy()
@@ -193,7 +197,8 @@ def run(
     if x is None:
         x = convert_to_angle(tf.random.normal(shape=dynamics.x_shape))
 
-    run_data, x, x_arr = run_dynamics(dynamics, args, x, save_x=save_x)
+    run_data, x, x_arr = run_dynamics(dynamics, args, x, save_x=save_x,
+                                      md_steps=md_steps)
     run_data.update_dirs({
         'log_dir': args.log_dir,
         'run_dir': run_dir,
@@ -221,7 +226,7 @@ def run(
     io.save_params(run_params, run_dir, name='run_params')
 
     if make_plots:
-        plot_data(run_data, run_dir, args, thermalize=True, params=run_params)
+        plot_data(run_data, run_dir, args, therm_frac=0.33, params=run_params)
 
     return dynamics, run_data, x, x_arr
 
@@ -261,7 +266,7 @@ def run_dynamics(
     # Run 50 MD updates (w/o accept/reject) to ensure chains don't get stuck
     if md_steps > 0:
         for _ in range(md_steps):
-            mc_states, _ = dynamics.md_update(x, beta, training=False)
+            mc_states, _ = dynamics.md_update((x, beta), training=False)
             x = mc_states.out.x
 
     try:
@@ -289,6 +294,11 @@ def run_dynamics(
 
         return x, metrics
 
+    if flags.run_steps < 1000:
+        summary_steps = 5
+    else:
+        summary_steps = flags.run_steps // 100
+
     steps = tf.range(flags.run_steps, dtype=tf.int64)
     if NUM_NODES == 1:
         ctup = (CBARS['reset'], CBARS['green'],
@@ -298,10 +308,12 @@ def run_dynamics(
 
     for step in steps:
         x, metrics = timed_step(x, beta)
-        run_data.update(step, metrics)
+        run_data.update(step, metrics)  # update data after every accept/reject
+
+        if step % summary_steps == 0:
+            summarize_dict(metrics, step, prefix='testing')
 
         if step % print_steps == 0:
-            summarize_dict(metrics, step, prefix='testing')
             data_str = run_data.get_fstr(step, metrics, skip=SKIP_KEYS)
             io.log(data_str, should_print=True)
 
@@ -309,3 +321,53 @@ def run_dynamics(
             io.log(header, should_print=True)
 
     return run_data, x, x_arr
+
+
+def run_inference_from_log_dir(
+        log_dir: str,
+        run_steps: int = 5000,
+        dynamics_config: GaugeDynamicsConfig = None,
+        date_str: str = None
+) -> (GaugeDynamics, DataContainer):
+    """Run inference by loading networks in from `log_dir`."""
+    if date_str is None:
+        date_str = ''
+
+    configs = io.loadz(os.path.join(log_dir, 'configs.z'))
+
+    eps_file = os.path.join(log_dir, 'training', 'models', 'eps.z')
+    eps = io.loadz(eps_file)
+
+    if dynamics_config is not None:
+        if dynamics_config.get('eps', None) is None:
+            dynamics_config['eps'] = eps
+
+        configs['dynamics_config'].update(dynamics_config)
+    else:
+        configs['dynamics_config'].update({'eps': eps})
+
+    configs = AttrDict(configs)
+    dynamics = build_dynamics(configs)
+
+    xnet, vnet = dynamics._load_networks(log_dir)
+    dynamics.xnet = xnet
+    dynamics.vnet = vnet
+
+    _, log_str = os.path.split(log_dir)
+
+    timestamp = io.get_timestamp('%Y-%m-%d-%H%M')
+    x = convert_to_angle(tf.random.normal(dynamics.x_shape))
+
+    configs['run_steps'] = run_steps
+    configs['print_steps'] = run_steps // 100
+    configs['md_steps'] = 100
+    runs_dir = os.path.join(
+        GAUGE_LOGS_DIR, 'LOADED',
+        date_str, timestamp, log_str,
+        'inference'
+    )
+    io.check_else_make_dir(runs_dir)
+    io.save_dict(configs, runs_dir)
+    dynamics, run_data, x, x_arr = run(dynamics, args=configs, x=x,
+                                       runs_dir=runs_dir, make_plots=True)
+    return dynamics, run_data, x, x_arr
