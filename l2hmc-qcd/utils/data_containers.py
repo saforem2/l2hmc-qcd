@@ -98,7 +98,10 @@ class DataContainer:
         dataset = self.get_dataset(therm_frac)
         out_file = os.path.join(out_dir, 'dataset.nc')
         io.log(f'Saving dataset to: {out_file}.')
-        dataset.to_netcdf(os.path.join(out_dir, 'dataset.nc'))
+        try:
+            dataset.to_netcdf(os.path.join(out_dir, 'dataset.nc'))
+        except ValueError:
+            io.log(f'Unable to save dataset! Continuing...')
 
     def update(self, step, metrics):
         """Update `self.data` with new values from `data`."""
@@ -202,7 +205,10 @@ class DataContainer:
             io.savez(np.array(val), out_file)
 
         if save_dataset:
-            self.save_dataset(data_dir)
+            try:
+                self.save_dataset(data_dir)
+            except ValueError:
+                print(f'Unable to save `xarray.Dataset`. Continuing...')
 
     def plot_data(self, out_dir=None, therm_frac=0.):
         """Create trace plot + histogram for each entry in self.data."""
