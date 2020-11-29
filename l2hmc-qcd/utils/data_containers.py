@@ -262,6 +262,8 @@ class DataContainer:
         avg_df = pd.DataFrame(avg_data, index=[0])
         csv_file = os.path.join(BASE_DIR, 'logs', 'GaugeModel_logs',
                                 'inference_results.csv')
+        head, tail = os.path.split(csv_file)
+        io.check_else_make_dir(head)
         io.log(f'Appending inference results to {csv_file}.')
         if not os.path.isfile(csv_file):
             avg_df.to_csv(csv_file, header=True, index=False, mode='w')
