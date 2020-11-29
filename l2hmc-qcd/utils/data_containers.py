@@ -210,7 +210,7 @@ class DataContainer:
             except ValueError:
                 print(f'Unable to save `xarray.Dataset`. Continuing...')
 
-    def plot_data(self, out_dir=None, therm_frac=0.):
+    def plot_dataset(self, out_dir=None, therm_frac=0.):
         """Create trace plot + histogram for each entry in self.data."""
         dataset = self.get_dataset(therm_frac)
         for key, val in dataset.data_vars.items():
@@ -226,6 +226,8 @@ class DataContainer:
                 io.check_else_make_dir(out_dir)
                 out_file = os.path.join(out_dir, f'{key}_xrPlot.png')
                 fig.savefig(out_file, dpi=400, bbox_inches='tight')
+                plt.close('all')
+                plt.clf()
 
         if out_dir is not None:
             out_dir = os.path.join(out_dir, 'ridgeplots')
