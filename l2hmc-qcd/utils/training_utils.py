@@ -229,35 +229,40 @@ def setup(dynamics, flags, dirs=None, x=None, betas=None):
     num_steps = max([flags.train_steps + 1, current_step + 1])
     steps = tf.range(current_step, num_steps, dtype=tf.int64)
     train_data.steps = steps[-1]
-    if betas is None:
-        if flags.beta_init == flags.beta_final:  # train at fixed beta
-            betas = flags.beta_init * np.ones(len(steps))
-        else:  # get annealing schedule w/ same length as `steps`
-            betas = get_betas(len(steps), flags.beta_init, flags.beta_final)
+    if flags.beta_init == flags.beta_final:
+        betas = flags.beta_init * np.ones(len(steps))
+    else:
+        betas = get_betas(num_steps - 1, flags.beta_init, flags.beta_final)
         betas = betas[current_step:]
-
-    if len(betas) == 0:
-        if flags.beta_init == flags.beta_final:  # train at fixed beta
-            betas = flags.beta_init * np.ones(len(steps))
-        else:  # get annealing schedule w/ same length as `steps`
-            betas = get_betas(len(steps), flags.beta_init, flags.beta_final)
-            betas = betas[current_step:]
-
-    betas = tf.constant(betas, dtype=TF_FLOAT)
+    #  if betas is None:
+    #      if flags.beta_init == flags.beta_final:  # train at fixed beta
+    #          betas = flags.beta_init * np.ones(len(steps))
+    #      else:  # get annealing schedule w/ same length as `steps`
+    #          betas = get_betas(len(steps), flags.beta_init, flags.beta_final)
+    #      betas = betas[current_step:]
+    #
+    #  if len(betas) == 0:
+    #      if flags.beta_init == flags.beta_final:  # train at fixed beta
+    #          betas = flags.beta_init * np.ones(len(steps))
+    #      else:  # get annealing schedule w/ same length as `steps`
+    #          betas = get_betas(len(steps), flags.beta_init, flags.beta_final)
+    #          betas = betas[current_step:]
+    #
+    #  betas = tf.constant(betas, dtype=TF_FLOAT)
     dynamics.compile(loss=dynamics.calc_losses,
                      optimizer=dynamics.optimizer,
                      experimental_run_tf_function=False)
+    _ = dynamics.apply_transition((x, tf.constant(betas[0])), training=True)
 
-    try:
-        inputs = (x, tf.constant(betas[0]))
-    except IndexError:
-        if flags.beta_init == flags.beta_final:  # train at fixed beta
-            betas = flags.beta_init * np.ones(len(steps))
-        else:  # get annealing schedule w/ same length as `steps`
-            betas = get_betas(len(steps), flags.beta_init, flags.beta_final)
-            betas = betas[current_step:]
+    #  try:
+    #      inputs = (x, tf.constant(betas[0]))
+    #  except IndexError:
+    #      if flags.beta_init == flags.beta_final:  # train at fixed beta
+    #          betas = flags.beta_init * np.ones(len(steps))
+    #      else:  # get annealing schedule w/ same length as `steps`
+    #          betas = get_betas(len(steps), flags.beta_init, flags.beta_final)
+    #          betas = betas[current_step:]
 
-    _ = dynamics.apply_transition(inputs, training=True)
 
     #  if flags.get('compile', True):
     #      train_step = tf.function(dynamics.train_step)

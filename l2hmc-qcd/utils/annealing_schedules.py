@@ -77,12 +77,12 @@ def get_betas(
         for beta in range(beta_init, beta_final):
             betas += (steps / np.abs(beta_final - beta_init)) * [beta]
 
-        return tf.constant(betas, dtype=TF_FLOAT)
+        return 1. / np.array(betas)
 
     t_init = 1. / beta_init
     t_final = 1. / beta_final
-    t_arr = tf.convert_to_tensor(np.array([
+    t_arr = np.array([
         cooling_fn(i, t_init, t_final, steps) for i in range(steps)
-    ]))
+    ])
 
-    return tf.constant(1. / t_arr, dtype=TF_FLOAT)
+    return 1. / t_arr
