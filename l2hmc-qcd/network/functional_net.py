@@ -194,14 +194,14 @@ def get_gauge_network(
 
             x = PeriodicPadding(f1 - 1)(x)
             x = layers.Conv2D(n1, f1, activation='relu',
-                              name=f'{name}_xConv1')(x)
+                              name=f'{name}_xconv1')(x)
             x = layers.Conv2D(n2, f2, activation='relu',
-                              name=f'{name}_xConv2')(x)
-            x = layers.MaxPooling2D(p1, name=f'{name}_xPool')(x)
+                              name=f'{name}_xconv2')(x)
+            x = layers.MaxPooling2D(p1, name=f'{name}_xpool')(x)
             x = layers.Conv2D(n2, f2, activation='relu',
-                              name=f'{name}_xConv3')(x)
+                              name=f'{name}_xconv3')(x)
             x = layers.Conv2D(n1, f1, activation='relu',
-                              name=f'{name}_xConv4')(x)
+                              name=f'{name}_xconv4')(x)
             x = layers.Flatten()(x)
             if conv_config.use_batch_norm:
                 x = layers.BatchNormalization(-1, name=f'{name}_batch_norm')(x)
