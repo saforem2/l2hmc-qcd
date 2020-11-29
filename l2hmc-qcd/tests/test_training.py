@@ -229,9 +229,9 @@ def test_separate_networks(flags: AttrDict):
 
     flags.dynamics_config['separate_networks'] = True
     flags.compile = False
-    x, dynamics, train_data, flags = train(flags, make_plots=False)
+    x, dynamics, train_data, flags = train(flags, make_plots=True)
     #  beta = flags.get('beta', 1.)
-    dynamics, run_data, x, _ = run(dynamics, flags, x=x, make_plots=False)
+    dynamics, run_data, x, _ = run(dynamics, flags, x=x, make_plots=True)
 
     return AttrDict({
         'x': x,
