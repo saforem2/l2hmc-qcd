@@ -327,24 +327,35 @@ def run_inference_from_log_dir(
         log_dir: str,
         run_steps: int = 5000,
         dynamics_config: GaugeDynamicsConfig = None,
-        date_str: str = None
+        make_plots: bool = True,
 ) -> (GaugeDynamics, DataContainer):
     """Run inference by loading networks in from `log_dir`."""
-    if date_str is None:
-        date_str = ''
+    try:
+        configs = io.loadz(os.path.join(log_dir, 'configs.z'))
+    except FileNotFoundError:
+        try:
+            configs = [x for x in log_dir.rglob('*configs.z*') if x.is_file()]
+            configs = io.loadz(configs[0])
+        except IndexError:
+            configs = [x for x in log_dir.rglob('*FLAGS.z*') if x.is_file()]
+            configs = io.loadz(configs[0])
 
-    configs = io.loadz(os.path.join(log_dir, 'configs.z'))
+    eps = None
+    try:
+        eps_file = os.path.join(log_dir, 'training', 'models', 'eps.z')
+        eps = io.loadz(eps_file)
+    except FileNotFoundError:
+        eps = configs.get('dynamics_config', None).get('eps', None)
 
-    eps_file = os.path.join(log_dir, 'training', 'models', 'eps.z')
-    eps = io.loadz(eps_file)
-
-    if dynamics_config is not None:
-        if dynamics_config.get('eps', None) is None:
-            dynamics_config['eps'] = eps
-
-        configs['dynamics_config'].update(dynamics_config)
-    else:
-        configs['dynamics_config'].update({'eps': eps})
+    if eps is not None:
+        configs['dynamics_config']['eps'] = eps
+    #  if dynamics_config is not None:
+    #      if dynamics_config.get('eps', None) is None:
+    #          dynamics_config['eps'] = eps
+    #
+    #      configs['dynamics_config'].update(dynamics_config)
+    #  else:
+    #      configs['dynamics_config'].update({'eps': eps})
 
     configs = AttrDict(configs)
     dynamics = build_dynamics(configs)
@@ -362,12 +373,11 @@ def run_inference_from_log_dir(
     configs['print_steps'] = run_steps // 100
     configs['md_steps'] = 100
     runs_dir = os.path.join(
-        GAUGE_LOGS_DIR, 'LOADED',
-        date_str, timestamp, log_str,
-        'inference'
+        log_dir, 'LOADED', 'inference',
     )
     io.check_else_make_dir(runs_dir)
     io.save_dict(configs, runs_dir)
-    dynamics, run_data, x, x_arr = run(dynamics, args=configs, x=x,
-                                       runs_dir=runs_dir, make_plots=True)
+    dynamics, run_data, x, x_arr = run(dynamics, args=configs,
+                                       x=x, runs_dir=runs_dir,
+                                       make_plots=make_plots)
     return dynamics, run_data, x, x_arr
