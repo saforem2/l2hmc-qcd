@@ -3,6 +3,9 @@ plotting.py
 
 Methods for plotting data.
 """
+import matplotlib.style as mplstyle
+mplstyle.use('fast')
+
 import os
 
 import arviz as az
@@ -458,8 +461,11 @@ def plot_data(
         arr = np.array(val)
         steps = logging_steps * np.arange(len(arr))
 
-        if np.std(arr.flatten()) < 1e-2:
-            continue
+        try:
+            if np.std(arr.flatten()) < 1e-2:
+                continue
+        except ValueError:
+            pass
 
         arr, steps = therm_arr(arr, therm_frac=therm_frac)
         #  steps = steps[::logging_setps]
