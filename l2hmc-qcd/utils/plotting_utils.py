@@ -100,6 +100,8 @@ def make_ridgeplots(dataset, out_dir=None):
                 io.log(f'Saving figure to: {out_file}.')
                 plt.savefig(out_file, dpi=400, bbox_inches='tight')
 
+            plt.close('all')
+
     plt.style.use('default')
     sns.set(style='whitegrid', palette='bright', context='paper')
 
