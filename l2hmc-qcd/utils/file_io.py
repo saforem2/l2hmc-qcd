@@ -16,6 +16,7 @@ import datetime
 
 from typing import Any, Dict, Type
 from tqdm.auto import tqdm
+from pathlib import Path
 
 import joblib
 import numpy as np
@@ -121,6 +122,9 @@ if HAS_HOROVOD:
 class NumpyEncoder(json.JSONEncoder):
     """ Custom encoder for numpy data types """
     def default(self, obj):
+        if isinstance(obj, Path):
+            return str(obj)
+
         if isinstance(obj, (np.int_, np.intc, np.intp, np.int8,
                             np.int16, np.int32, np.int64, np.uint8,
                             np.uint16, np.uint32, np.uint64)):
@@ -339,8 +343,11 @@ def save_dict(d: dict, out_dir: str, name: str = None):
     savez(d, zfile, name=name)
 
     json_file = os.path.join(out_dir, f'{name}.json')
-    with open(json_file, 'w') as f:
-        json.dump(d, f, indent=4, ensure_ascii=False, cls=NumpyEncoder)
+    try:
+        with open(json_file, 'w') as f:
+            json.dump(d, f, indent=4, ensure_ascii=False, cls=NumpyEncoder)
+    except TypeError:
+        log(f'Unable to save to `.json` file. Continuing...')
 
     txt_file = os.path.join(out_dir, f'{name}.txt')
     with open(txt_file, 'w') as f:

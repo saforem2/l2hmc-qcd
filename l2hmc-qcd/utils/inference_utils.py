@@ -11,6 +11,7 @@ import time
 import json
 import logging
 from typing import Optional
+from pathlib import Path
 
 from tqdm.auto import tqdm
 import tensorflow as tf
@@ -334,10 +335,10 @@ def run_inference_from_log_dir(
         configs = io.loadz(os.path.join(log_dir, 'configs.z'))
     except FileNotFoundError:
         try:
-            configs = [x for x in log_dir.rglob('*configs.z*') if x.is_file()]
+            configs = [x for x in Path(log_dir).rglob('*configs.z*') if x.is_file()]
             configs = io.loadz(configs[0])
         except IndexError:
-            configs = [x for x in log_dir.rglob('*FLAGS.z*') if x.is_file()]
+            configs = [x for x in Path(log_dir).rglob('*FLAGS.z*') if x.is_file()]
             configs = io.loadz(configs[0])
 
     eps = None
