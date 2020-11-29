@@ -31,11 +31,8 @@ LOCAL_RANK = hvd.local_rank()
 IS_CHIEF = (RANK == 0)
 
 from tqdm.auto import tqdm
-
-
 from config import CBARS, TF_FLOAT
 from network.config import LearningRateConfig
-#  from utils import IS_CHIEF, LOCAL_RANK, NUM_WORKERS, RANK
 from utils.attr_dict import AttrDict
 from utils.learning_rate import ReduceLROnPlateau
 from utils.summary_utils import update_summaries
@@ -56,6 +53,7 @@ elif tf.__version__.startswith('2.'):
 #      tf.config.experimental.enable_mlir_graph_optimization()
 #  except:  # noqa: E722
 #      pass
+
 
 def train_hmc(flags: AttrDict, make_plots: bool = True):
     """Main method for training HMC model."""
@@ -112,8 +110,13 @@ def train_hmc(flags: AttrDict, make_plots: bool = True):
             'lattice_shape': dynamics.config.lattice_shape,
             'net_weights': NET_WEIGHTS_HMC,
         }
+        t0 = time.time()
         plot_data(train_data, dirs.train_dir, hflags,
                   therm_frac=0.2, params=params)
+        dt = time.time() - t0
+        io.log(120 * '#')
+        io.log(f'Time spent plotting: {dt}s = {dt // 60}m {(dt % 60):.3g}s')
+        io.log(120 * '#')
         io.log('\n'.join(['Done with HMC training', 120 * '*']))
 
     return x, dynamics, train_data, hflags
@@ -174,8 +177,13 @@ def train(
             'num_steps': dynamics.config.num_steps,
             'net_weights': dynamics.net_weights,
         }
+        t0 = time.time()
         plot_data(train_data, dirs.train_dir, flags,
                   thermalize=True, params=params)
+        dt = time.time() - t0
+        io.log(120 * '#')
+        io.log(f'Time spent plotting: {dt}s = {dt // 60}m{dt % 60}s')
+        io.log(120 * '#')
 
     io.log('\n'.join(['Done training model', 120 * '*']))
     io.save_dict(dict(flags), dirs.log_dir, 'configs')
