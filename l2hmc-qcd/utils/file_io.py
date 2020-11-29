@@ -49,14 +49,6 @@ except (ImportError, ModuleNotFoundError):
     NUM_WORKERS = 1
     IS_CHIEF = True
 
-    #  from utils import Horovod
-    #  hvd = Horovod()
-    #  HAS_HOROVOD = False
-
-#  RANK = hvd.rank()
-#  NUM_WORKERS = hvd.size()
-#  IS_CHIEF = (RANK == 0)
-
 # pylint:disable=wrong-import-position
 from config import PROJECT_DIR
 from utils.attr_dict import AttrDict
