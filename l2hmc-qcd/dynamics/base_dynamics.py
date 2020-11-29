@@ -1188,10 +1188,11 @@ class BaseDynamics(tf.keras.Model):
 
     def _get_mask(self, i: int):
         """Retrieve the binary mask for the i-th leapfrog step."""
-        if tf.executing_eagerly():
-            m = self.masks[int(i)]
-        else:
-            m = tf.gather(self.masks, tf.cast(i, dtype=tf.int32))
+        m = self.masks[i]
+        #  if tf.executing_eagerly():
+        #      m = self.masks[int(i)]
+        #  else:
+        #      m = tf.gather(self.masks, tf.cast(i, dtype=tf.int32))
 
         return m, 1. - m
 
