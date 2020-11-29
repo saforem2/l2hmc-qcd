@@ -345,8 +345,8 @@ class GaugeDynamics(BaseDynamics):
             #  vname = f'VNet{step}' if step is not None else 'VNet'
             #  xname = f'XNet{step}' if step is not None else 'XNet'
             io.log('Using separate (x, v)-networks for each LF step!!')
-            vnet = get_gauge_network(**cfgs['vnet'], name=f'VNet{step}')
-            xnet = get_gauge_network(**cfgs['xnet'], name=f'XNet{step}')
+            vnet = get_gauge_network(**cfgs['vnet'], name=f'vvet{step}')
+            xnet = get_gauge_network(**cfgs['xnet'], name=f'xnet{step}')
             #  vnet = [
             #      get_gauge_network(**vnet_cfg, name=f'VNet{i}')
             #      for i in range(self.config.num_steps)
@@ -358,8 +358,8 @@ class GaugeDynamics(BaseDynamics):
 
         else:
             io.log('Using a single (x, v)-network for all LF steps!!')
-            vnet = get_gauge_network(**cfgs['vnet'], name='VNet')
-            xnet = get_gauge_network(**cfgs['xnet'], name='XNet')
+            vnet = get_gauge_network(**cfgs['vnet'], name='vnet')
+            xnet = get_gauge_network(**cfgs['xnet'], name='xnet')
 
         return xnet, vnet
 
@@ -385,18 +385,18 @@ class GaugeDynamics(BaseDynamics):
             #  xname = f'XNet{step}' if step is not None else 'XNet'
             io.log('Using separate (x, v)-networks for each LF step!!')
             vnet = [
-                get_gauge_network(**cfgs['vnet'], name=f'VNet{i}')
+                get_gauge_network(**cfgs['vnet'], name=f'vnet{i}')
                 for i in range(self.config.num_steps)
             ]
             xnet = [
-                get_gauge_network(**cfgs['xnet'], name=f'XNet{i}')
+                get_gauge_network(**cfgs['xnet'], name=f'xnet{i}')
                 for i in range(self.config.num_steps)
             ]
 
         else:
             io.log('Using a single (x, v)-network for all LF steps!!')
-            vnet = get_gauge_network(**cfgs['vnet'], name='VNet')
-            xnet = get_gauge_network(**cfgs['xnet'], name='XNet')
+            vnet = get_gauge_network(**cfgs['vnet'], name='vnet')
+            xnet = get_gauge_network(**cfgs['xnet'], name='xnet')
 
         return xnet, vnet
 
