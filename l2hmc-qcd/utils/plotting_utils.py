@@ -18,6 +18,7 @@ import matplotlib.pyplot as plt
 import itertools as it
 
 import utils.file_io as io
+from utils.file_io import timeit
 from utils.attr_dict import AttrDict
 
 from config import NP_FLOATS, PI, TF_FLOATS
@@ -51,6 +52,7 @@ sns.set_palette('bright')
 #
 
 
+@timeit(should_log=True)
 def make_ridgeplots(dataset, out_dir=None):
     sns.set(style='white', rc={"axes.facecolor": (0, 0, 0, 0)})
     for key, val in dataset.data_vars.items():
@@ -74,9 +76,9 @@ def make_ridgeplots(dataset, out_dir=None):
                               aspect=15, height=0.25, palette=pal)
 
             # Draw the densities in a few steps
-            _ = g.map(sns.kdeplot, key,  # bw_adjust=0.5,  # clip_on=False,
+            _ = g.map(sns.kdeplot, key, cut=1, # bw_adjust=0.5,  # clip_on=False,
                       shade=True, alpha=0.7, linewidth=1.25)
-            _ = g.map(sns.kdeplot, key, color='w', lw=1.5)  # , bw_adjust=0.5)
+            _ = g.map(sns.kdeplot, key, color='w', cut=1, lw=1.5)
             _ = g.map(plt.axhline, y=0, lw=1.5, alpha=0.7, clip_on=False)
 
             # Define and use a simple function to
@@ -106,6 +108,7 @@ def make_ridgeplots(dataset, out_dir=None):
     sns.set(style='whitegrid', palette='bright', context='paper')
 
 
+@timeit(should_log=True)
 def set_size(
         width: float = None,
         fraction: float = 1,
@@ -140,6 +143,7 @@ def drop_sequential_duplicates(chain):
     return np.array([i[0] for i in it.groupby(chain)])
 
 
+@timeit(should_log=True)
 def savefig(fig, fpath):
     io.check_else_make_dir(os.path.dirname(fpath))
     io.log(f'Saving figure to: {fpath}.')
@@ -147,6 +151,7 @@ def savefig(fig, fpath):
     plt.close('all')
 
 
+@timeit(should_log=True)
 def therm_arr(arr, therm_frac=0., ret_steps=True):
     """Drop first `therm_frac` steps of `arr` to account for thermalization."""
     if therm_frac == 0:
@@ -167,6 +172,7 @@ def therm_arr(arr, therm_frac=0., ret_steps=True):
     return arr
 
 
+@timeit(should_log=True)
 def plot_energy_distributions(data, out_dir=None, title=None):
     energies = {
         'forward': {
@@ -233,6 +239,7 @@ def plot_energy_distributions(data, out_dir=None, title=None):
     return fig, axes
 
 
+@timeit(should_log=True)
 def energy_traceplot(key, arr, out_dir=None, title=None):
     if out_dir is not None:
         out_dir = os.path.join(out_dir, 'energy_traceplots')
@@ -253,6 +260,7 @@ def energy_traceplot(key, arr, out_dir=None, title=None):
         _ = mcmc_traceplot(new_key, data_arr, title, tplot_fname)
 
 
+@timeit(should_log=True)
 def plot_charges(steps, charges, title=None, out_dir=None):
     charges = charges.T
     if charges.shape[0] > 4:
@@ -278,6 +286,7 @@ def plot_charges(steps, charges, title=None, out_dir=None):
     return fig, ax
 
 
+@timeit(should_log=True)
 def get_title_str_from_params(params):
     """Create a formatted string with relevant params from `params`."""
     eps = params.get('eps', None)
@@ -306,6 +315,7 @@ def get_title_str_from_params(params):
     return title_str
 
 
+@timeit(should_log=True)
 def mcmc_avg_lineplots(data, title=None, out_dir=None):
     """Plot trace of avg."""
     for idx, (key, val) in enumerate(data.items()):
@@ -336,9 +346,11 @@ def mcmc_avg_lineplots(data, title=None, out_dir=None):
         _ = axes[0].plot(steps, avg, color=COLORS[idx])
         _ = axes[0].set_xlabel(xlabel)
         _ = axes[0].set_ylabel(ylabel)
-        _ = sns.distplot(arr.flatten(), hist=False,
-                         color=COLORS[idx], ax=axes[1],
-                         kde_kws={'shade': True})
+        _ = sns.kdeplot(arr.flatten(), ax=axes[1],
+                        color=COLORS[idx], fill=True)
+        #  _ = sns.distplot(arr.flatten(), hist=False,
+        #                   color=COLORS[idx], ax=axes[1],
+        #                   kde_kws={'shade': True})
         _ = axes[1].set_xlabel(ylabel)
         _ = axes[1].set_ylabel('')
         if title is not None:
@@ -362,6 +374,7 @@ def mcmc_avg_lineplots(data, title=None, out_dir=None):
     return fig, axes
 
 
+@timeit(should_log=True)
 def mcmc_lineplot(data, labels, title=None,
                   fpath=None, show_avg=False, **kwargs):
     """Make a simple lineplot."""
@@ -386,6 +399,7 @@ def mcmc_lineplot(data, labels, title=None,
     return fig, ax
 
 
+@timeit(should_log=True)
 def mcmc_traceplot(key, val, title=None, fpath=None, **kwargs):
     if '_' in key:
         key = ' '.join(key.split('_'))
@@ -408,6 +422,7 @@ def mcmc_traceplot(key, val, title=None, fpath=None, **kwargs):
 
 
 # pylint:disable=unsubscriptable-object
+@timeit(should_log=True)
 def plot_data(
         data_container: "DataContainer",  # noqa:F821
         out_dir: str,
@@ -502,6 +517,7 @@ def plot_data(
 
             tplot_fname = os.path.join(out_dir_, f'{key}_traceplot.png')
             _ = mcmc_traceplot(key, data_arr, title, tplot_fname)
+
             data_vars[key] = data_arr
 
         elif len(arr.shape) == 3:
@@ -519,9 +535,12 @@ def plot_data(
         plt.close('all')
 
     _ = mcmc_avg_lineplots(data_dict, title, out_dir)
+    plt.close('all')
     _ = plot_charges(*data_dict['charges'], out_dir=out_dir, title=title)
+    plt.close('all')
     try:
         _ = plot_energy_distributions(data_dict, out_dir=out_dir, title=title)
+        plt.close('all')
     except KeyError:
         pass
 
@@ -529,6 +548,6 @@ def plot_data(
     if out_dir is not None:
         out_dir_xr = os.path.join(out_dir, 'xarr_plots')
 
-    data_container.plot_data(out_dir_xr, therm_frac=therm_frac)
+    data_container.plot_dataset(out_dir_xr, therm_frac=therm_frac)
 
     plt.close('all')
