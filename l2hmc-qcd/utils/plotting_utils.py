@@ -390,16 +390,21 @@ def mcmc_traceplot(key, val, title=None, fpath=None, **kwargs):
     if '_' in key:
         key = ' '.join(key.split('_'))
 
-    az.plot_trace({key: val}, **kwargs)
-    fig = plt.gcf()
-    if title is not None:
-        fig.suptitle(title)  # , fontsize='x-large', y=1.06)
+    try:
+        az.plot_trace({key: val}, **kwargs)
+        fig = plt.gcf()
+        if title is not None:
+            fig.suptitle(title)  # , fontsize='x-large', y=1.06)
 
-    #  plt.tight_layout()
-    if fpath is not None:
-        savefig(fig, fpath)
+        #  plt.tight_layout()
+        if fpath is not None:
+            savefig(fig, fpath)
 
-    return fig
+        return fig
+
+    except ValueError:
+        return None
+
 
 
 # pylint:disable=unsubscriptable-object
