@@ -350,13 +350,6 @@ def run_inference_from_log_dir(
 
     if eps is not None:
         configs['dynamics_config']['eps'] = eps
-    #  if dynamics_config is not None:
-    #      if dynamics_config.get('eps', None) is None:
-    #          dynamics_config['eps'] = eps
-    #
-    #      configs['dynamics_config'].update(dynamics_config)
-    #  else:
-    #      configs['dynamics_config'].update({'eps': eps})
 
     configs = AttrDict(configs)
     dynamics = build_dynamics(configs)
