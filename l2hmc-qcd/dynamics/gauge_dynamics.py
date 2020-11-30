@@ -119,6 +119,15 @@ def build_dynamics(flags):
         #  log_dir=log_dir
     )
 
+    log_dir = flags['dynamics_config'].pop('log_dir', None)
+    if log_dir is not None:
+        io.log(120 * '#')
+        io.log(f'LOADING NETWORKS FROM: {log_dir}  !!!')
+        io.log(120 * '#')
+        xnet, vnet = dynamics._load_networks(log_dir)
+        dynamics.xnet = xnet
+        dynamics.vnet = vnet
+
     return dynamics
 
 
