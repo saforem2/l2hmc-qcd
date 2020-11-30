@@ -1,5 +1,4 @@
 {
-    "compile": true,
     "log_dir": null,
     "profiler": false,
     "md_steps": 10,
@@ -11,7 +10,6 @@
     "print_steps": 1,
     "logging_steps": 1,
     "steps_per_epoch": 1,
-    "factor": 0.5,
     "patience": 1,
     "min_lr": 1e-5,
     "save_steps": 5,

@@ -153,7 +153,7 @@ def catch_exception(fn):
     return wrapper
 
 
-@timeit(out_file=None)
+@timeit
 def test_hmc_run(flags: AttrDict):
     """Testing generic HMC."""
     flags = AttrDict(**dict(copy.deepcopy(flags)))
@@ -171,7 +171,7 @@ def test_hmc_run(flags: AttrDict):
     }
 
 
-@timeit(out_file=None)
+@timeit
 def test_conv_net(flags: AttrDict):
     """Test convolutional networks."""
     flags = AttrDict(**dict(copy.deepcopy(flags)))
@@ -201,7 +201,7 @@ def test_conv_net(flags: AttrDict):
     })
 
 
-@timeit(out_file=None)
+@timeit
 def test_single_network(flags: AttrDict):
     """Test training on single network."""
     flags = AttrDict(**dict(copy.deepcopy(flags)))
@@ -219,7 +219,7 @@ def test_single_network(flags: AttrDict):
     })
 
 
-@timeit(out_file=None)
+@timeit
 def test_separate_networks(flags: AttrDict):
     """Test training on separate networks."""
     flags = AttrDict(**dict(copy.deepcopy(flags)))
@@ -242,7 +242,7 @@ def test_separate_networks(flags: AttrDict):
     })
 
 
-@timeit(out_file=None)
+@timeit
 def test_resume_training(log_dir: str):
     """Test restoring a training session from a checkpoint."""
     flags = AttrDict(
@@ -265,7 +265,7 @@ def test_resume_training(log_dir: str):
     })
 
 
-@timeit(out_file=None)
+@timeit
 def test():
     """Run tests."""
     flags = parse_test_configs()
@@ -281,7 +281,7 @@ def test():
     _ = test_conv_net(flags)
 
 
-@timeit(out_file=None)
+@timeit
 def main(args, flags=None):
     """Main method."""
     fn_map = {
