@@ -210,14 +210,26 @@ class DataContainer:
             except ValueError:
                 print(f'Unable to save `xarray.Dataset`. Continuing...')
 
-    def plot_dataset(self, out_dir=None, therm_frac=0.):
+    def plot_dataset(
+            self,
+            out_dir: str = None,
+            therm_frac: int = 0.,
+            num_chains: int = None,
+            ridgeplots: bool = True
+    ):
         """Create trace plot + histogram for each entry in self.data."""
         dataset = self.get_dataset(therm_frac)
         for key, val in dataset.data_vars.items():
             if np.std(val.values.flatten()) < 1e-2:
                 continue
-            fig, ax = plt.subplots(constrained_layout=True,
-                                   figsize=set_size())
+
+            if len(val.shape) == 2:  # shape: (chain, draw)
+                val = val[:num_chains, :]
+
+            if len(val.shape) == 3:  # shape: (chain, leapfrogs, draw)
+                val = val[:num_chains, :, :]
+
+            fig, ax = plt.subplots(constrained_layout=True, figsize=set_size())
             _ = val.plot(ax=ax)
             #  _ = sns.kdeplot(val.values.flatten(), ax=axes[1], shade=True)
             #  _ = axes[1].set_ylabel('')
@@ -233,7 +245,8 @@ class DataContainer:
             out_dir = os.path.join(out_dir, 'ridgeplots')
             io.check_else_make_dir(out_dir)
 
-        make_ridgeplots(dataset, out_dir)
+        if ridgeplots:
+            make_ridgeplots(dataset, num_chains=num_chains, out_dir=out_dir)
 
 
     def flush_data_strs(self, out_file, rank=0, mode='a'):

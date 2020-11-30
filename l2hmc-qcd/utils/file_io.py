@@ -21,17 +21,10 @@ from pathlib import Path
 import joblib
 import numpy as np
 
-#  try:
-#      from rich.logging import RichHandler
-#      handlers = [RichHandler(rich_tracebacks=True)]
-#
-#  except ImportError:
-#      handlers = []
+from config import PROJECT_DIR
+from utils.attr_dict import AttrDict
 
-
-#  if typing.TYPE_CHECKING:
-#      from dynamics.base_dynamics import BaseDynamics
-
+# pylint:disable=wrong-import-position
 try:
     import horovod
     import horovod.tensorflow as hvd
@@ -49,9 +42,7 @@ except (ImportError, ModuleNotFoundError):
     NUM_WORKERS = 1
     IS_CHIEF = True
 
-# pylint:disable=wrong-import-position
-from config import PROJECT_DIR
-from utils.attr_dict import AttrDict
+
 
 LOG_LEVELS_AS_INTS = {
     'CRITICAL': 50,
@@ -109,6 +100,18 @@ if HAS_HOROVOD:
                               f'local_rank: {hvd.local_rank()}',
                               f'size: {hvd.size()}',
                               f'local_size: {hvd.local_size()}']))
+
+#  try:
+#      from rich.logging import RichHandler
+#      handlers = [RichHandler(rich_tracebacks=True)]
+#
+#  except ImportError:
+#      handlers = []
+
+
+#  if typing.TYPE_CHECKING:
+#      from dynamics.base_dynamics import BaseDynamics
+
 
 
 class NumpyEncoder(json.JSONEncoder):
@@ -384,7 +387,25 @@ def loadz(fpath):
     return joblib.load(fpath)
 
 
-def timeit(out_file=None, should_log=True):
+def timeit(fn):
+    def timed(*args, **kwargs):
+        """Function to be timed."""
+        start_time = time.time()
+        result = fn(*args, **kwargs)
+        end_time = time.time()
+        dt = (end_time - start_time)
+        dt_s = (dt % 60)
+        dt_min = (dt // 60)
+        dt_ms = dt * 1000
+        tstr = (f'`{fn.__name__}` took: {dt_ms:.5g}ms '
+                f' ({dt_min}m {dt_s}s)')
+
+        log(tstr, should_print=True)
+        return result
+    return timed
+
+
+def timeit1(out_file=None, should_log=True):
     """Timing decorator."""
     def wrap(fn):
         def timed(*args, **kwargs):
@@ -612,7 +633,7 @@ def make_log_dir(
 
     if RANK == 0:
         check_else_make_dir(log_dir)
-        save_dict(configs, log_dir, name='configs')
+        save_dict(configs, log_dir, name='train_configs')
         if log_file is not None:
             write(f'{log_dir}', log_file, 'a')
 
@@ -635,7 +656,7 @@ def make_run_dir(configs, base_dir):
 
     if RANK == 0:
         check_else_make_dir(run_dir)
-        save_dict(configs, run_dir, name='configs')
+        save_dict(configs, run_dir, name='inference_configs')
 
     return run_dir
 
@@ -645,6 +666,7 @@ def save_network_weights(dynamics, train_dir):
     xnets = dynamics.xnets
     vnets = dynamics.vnets
     wdir = os.path.join(train_dir, 'dynamics_weights')
+
     check_else_make_dir(wdir)
     if dynamics.config.separate_networks:
         iterable = enumerate(zip(xnets, vnets))

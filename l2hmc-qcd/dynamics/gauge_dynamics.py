@@ -88,20 +88,28 @@ def build_test_dynamics():
 
 def build_dynamics(flags):
     """Build dynamics using configs from FLAGS."""
-    lr_config = LearningRateConfig(**dict(flags.get('lr_config', None)))
-    #  log_dir = flags['dynamics_config'].pop('log_dir', None)
     config = GaugeDynamicsConfig(**dict(flags.get('dynamics_config', None)))
-    #  config = GaugeDynamicsConfig(**dict(flags.get('dynamics_config', None)))
-    net_config = NetworkConfig(**dict(flags.get('network_config', None)))
-    conv_config = None
 
-    if config.get('use_conv_net', False):
+    lr_config = None
+    if flags.get('lr_config', None) is not None:
+        lr_config = LearningRateConfig(**dict(flags.get('lr_config', None)))
+
+    net_config = None
+    if flags.get('network_config', None) is not None:
+        net_config = NetworkConfig(**dict(flags.get('network_config', None)))
+
+    conv_config = None
+    if flags.get('conv_config', None) is not None:
+        config.use_conv_net = True
         conv_config = flags.get('conv_config', None)
         input_shape = config.get('lattice_shape', None)[1:]
         conv_config.update({
             'input_shape': input_shape,
         })
         conv_config = ConvolutionConfig(**dict(conv_config))
+
+    #  log_dir = flags['dynamics_config'].pop('log_dir', None)
+    #  config = GaugeDynamicsConfig(**dict(flags.get('dynamics_config', None)))
 
     dynamics = GaugeDynamics(
         params=flags,
@@ -168,10 +176,6 @@ class GaugeDynamics(BaseDynamics):
             net_weights = NetWeights(0., 0., 0., 0., 0., 0.)
             self.config.use_ncp = False
             self.config.separate_networks = False
-            self.config.use_conv_net = False
-            self.net_config['use_batch_norm'] = False
-            self.conv_config = None
-            self.xnet, self.vnet = self._build_hmc_networks()
             if self.config.eps_fixed:
                 self._has_trainable_params = False
         else:
@@ -185,6 +189,13 @@ class GaugeDynamics(BaseDynamics):
                 conv_config=self.conv_config,
                 log_dir=self.config.get('log_dir', None)
             )
+
+        self.net_weights = self._parse_net_weights(net_weights)
+        if self._has_trainable_params:
+            self.lr_config = lr_config
+            self.lr = self._create_lr(lr_config, auto=True)
+            self.optimizer = self._create_optimizer()
+
             #  log_dir = self.config.get('log_dir', None)
             #  if log_dir is not None:
             #      io.log(f'Loading `xnet`, `vnet`, from {log_dir} !!')
@@ -194,11 +205,18 @@ class GaugeDynamics(BaseDynamics):
             #      self.xnet, self.vnet = self._build_networks()
             # ============
 
-        self.net_weights = self._parse_net_weights(net_weights)
-        if self._has_trainable_params:
-            self.lr_config = lr_config
-            self.lr = self._create_lr(lr_config, auto=True)
-            self.optimizer = self._create_optimizer()
+        #  if self.config.hmc:
+        #      net_weights = NetWeights(0., 0., 0., 0., 0., 0.)
+        #      self.config.use_ncp = False
+        #      self.config.separate_networks = False
+        #      self.config.use_conv_net = False
+        #      #  self.net_config['use_batch_norm'] = False
+        #      self.conv_config = None
+        #      self.xnet, self.vnet = self._build_hmc_networks()
+        #      if self.config.eps_fixed:
+        #          self._has_trainable_params = False
+        #  else:
+        #  if not self.config.hmc:
 
     def _load_networks(
             self,
