@@ -99,8 +99,7 @@ def build_dynamics(flags):
         net_config = NetworkConfig(**dict(flags.get('network_config', None)))
 
     conv_config = None
-    if flags.get('conv_config', None) is not None:
-        config.use_conv_net = True
+    if flags.get('conv_config', None) is not None and config.use_conv_net:
         conv_config = flags.get('conv_config', None)
         input_shape = config.get('lattice_shape', None)[1:]
         conv_config.update({
@@ -1291,18 +1290,28 @@ class GaugeDynamics(BaseDynamics):
 
         if self._verbose:
             midpt = self.config.num_steps // 2
-            for (kf, vf), (kb, vb) in zip(metrics.forward.items(),
-                                          metrics.backward.items()):
-                data.update({
-                    f'{kf}f': tf.squeeze(vf),
-                    f'{kb}b': tf.squeeze(vb),
-                    f'{kf}f_start': vf[0],
-                    f'{kf}f_mid': vf[midpt],
-                    f'{kf}f_end': vf[-1],
-                    f'{kb}b_start': vb[0],
-                    f'{kb}b_mid': vb[midpt],
-                    f'{kb}b_end': vb[-1],
-                })
+            if self.config.hmc:
+                for k, v in metrics.items():
+                    data.update({
+                        f'{k}': tf.squeeze(v),
+                        f'{k}_start': v[0],
+                        f'{k}_mid': v[midpt],
+                        f'{k}_end': v[-1],
+                    })
+            else:
+                zipped_iter = zip(metrics.forward.items(),
+                                  metrics.backward.items())
+                for (kf, vf), (kb, vb) in zipped_iter:
+                    data.update({
+                        f'{kf}f': tf.squeeze(vf),
+                        f'{kb}b': tf.squeeze(vb),
+                        f'{kf}f_start': vf[0],
+                        f'{kf}f_mid': vf[midpt],
+                        f'{kf}f_end': vf[-1],
+                        f'{kb}b_start': vb[0],
+                        f'{kb}b_mid': vb[midpt],
+                        f'{kb}b_end': vb[-1],
+                    })
             # metrics = {'forward': metrics_f, 'backward': metrics_b}
             #  for direction, directional_metrics in metrics.items():
             #      if isinstance(directional_metrics, (dict, AttrDict)):
