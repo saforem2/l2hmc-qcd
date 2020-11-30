@@ -99,14 +99,21 @@ class BaseDynamics(tf.keras.Model):
         self.eps = self._build_eps(use_log=False)
         self.masks = self._build_masks()
         self.normalizer = normalizer if normalizer is not None else identity
+        if self.config.hmc:
+            self.net_weights = NetWeights(0., 0., 0., 0., 0., 0.)
+            self.xnet, self.vnet = self._build_hmc_networks()
+            if self.config.eps_fixed:
+                self._has_trainable_params = False
+
         if should_build:
-            self._has_trainable_params = True
-            if self.config.hmc:
-                self.net_weights = NetWeights(0., 0., 0., 0., 0., 0.)
-                self.xnet, self.vnet = self._build_hmc_networks()
-                if self.config.eps_fixed:
-                    self._has_trainable_params = False
-            else:
+            #  self._has_trainable_params = True
+            #  if self.config.hmc:
+            #      self.net_weights = NetWeights(0., 0., 0., 0., 0., 0.)
+            #      self.xnet, self.vnet = self._build_hmc_networks()
+            #      if self.config.eps_fixed:
+            #          self._has_trainable_params = False
+            #  else:
+            if not self.config.hmc:
                 self.xnet, self.vnet = self._build_networks()
             if self._has_trainable_params:
                 self.lr = self._create_lr(lr_config)
@@ -263,9 +270,16 @@ class BaseDynamics(tf.keras.Model):
         return mc_states, data
 
     def _hmc_transition(
-        self, state: State, training: Optional[bool] = None,
+        self, inputs: tuple, training: Optional[bool] = None,
     ) -> (MonteCarloStates, AttrDict):
         """Propose a new state and perform the accept/reject step."""
+        if len(inputs) == 2:
+            x, beta = inputs
+            v = tf.random.normal(x.shape, dtype=x.dtype)
+        elif len(inputs) == 3:
+            x, v, beta = inputs
+
+        state = State(x, v, beta)
         #  x, beta = inputs
         state, state_prop, data = self._transition(state, forward=True,
                                                    training=training)
@@ -321,6 +335,9 @@ class BaseDynamics(tf.keras.Model):
         NOTE: We simulate the dynamics both forward and backward, and use
         sampled Bernoulli masks to compute the actual solutions
         """
+        if self.config.hmc:
+            return self._hmc_transition(inputs, training)
+
         x, beta = inputs
 
         sf_init, sf_prop, dataf = self._transition(inputs, forward=True,
@@ -1302,8 +1319,10 @@ class BaseDynamics(tf.keras.Model):
     def save_config(self, config_dir: str):
         """Helper method for saving configuration objects."""
         io.save_dict(self.config, config_dir, name='dynamics_config')
-        io.save_dict(self.net_config, config_dir, name='network_config')
-        io.save_dict(self.lr_config, config_dir, name='lr_config')
+        if self.net_config is not None:
+            io.save_dict(self.net_config, config_dir, name='network_config')
+        if self.lr_config is not None:
+            io.save_dict(self.lr_config, config_dir, name='lr_config')
         io.save_dict(self.params, config_dir, name='dynamics_params')
 
     def _parse_net_weights(self, net_weights: NetWeights):

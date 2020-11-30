@@ -171,7 +171,7 @@ def main(args):
     #              eps = io.loadz(eps_file)
     #              args.dynamics_config['eps'] = eps
 
-    x, dynamics, train_data, args = train(args, x=x)
+    x, dynamics, train_data, args = train(args, x=x, make_plots=True)
 
     # ====
     # Run inference on trained model

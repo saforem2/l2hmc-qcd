@@ -249,6 +249,7 @@ def setup(dynamics, flags, dirs=None, x=None, betas=None):
     #          betas = betas[current_step:]
     #
     #  betas = tf.constant(betas, dtype=TF_FLOAT)
+    betas = tf.convert_to_tensor(betas, dtype=x.dtype)
     dynamics.compile(loss=dynamics.calc_losses,
                      optimizer=dynamics.optimizer,
                      experimental_run_tf_function=False)

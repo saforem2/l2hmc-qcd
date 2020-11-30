@@ -52,8 +52,8 @@ sns.set_palette('bright')
 #
 
 
-@timeit(should_log=True)
-def make_ridgeplots(dataset, out_dir=None):
+@timeit
+def make_ridgeplots(dataset, num_chains=None, out_dir=None):
     sns.set(style='white', rc={"axes.facecolor": (0, 0, 0, 0)})
     for key, val in dataset.data_vars.items():
         if 'leapfrog' in val.coords.dims:
@@ -62,7 +62,15 @@ def make_ridgeplots(dataset, out_dir=None):
                 'lf': [],
             }
             for lf in val.leapfrog.values:
-                x = val[{'leapfrog': lf}].values.flatten()
+                # val.shape = (chain, leapfrog, draw)
+                # x.shape = (chain, draw);  selects data for a single lf
+                x = val[{'leapfrog': lf}].values
+                # if num_chains is not None, keep `num_chains` for plotting
+                if num_chains is not None:
+                    x = x[:num_chains, :]
+
+                x = x.flatten()
+                #  x = val[{'leapfrog': lf}].values.flatten()
                 lf_arr = np.array(len(x) * [f'{lf}'])
                 lf_data[key].extend(x)
                 lf_data['lf'].extend(lf_arr)
@@ -78,7 +86,7 @@ def make_ridgeplots(dataset, out_dir=None):
             # Draw the densities in a few steps
             _ = g.map(sns.kdeplot, key, cut=1, # bw_adjust=0.5,  # clip_on=False,
                       shade=True, alpha=0.7, linewidth=1.25)
-            _ = g.map(sns.kdeplot, key, color='w', cut=1, lw=1.5)
+            #  _ = g.map(sns.kdeplot, key, color='w', cut=1, lw=1.5)
             _ = g.map(plt.axhline, y=0, lw=1.5, alpha=0.7, clip_on=False)
 
             # Define and use a simple function to
@@ -108,7 +116,7 @@ def make_ridgeplots(dataset, out_dir=None):
     sns.set(style='whitegrid', palette='bright', context='paper')
 
 
-@timeit(should_log=True)
+@timeit
 def set_size(
         width: float = None,
         fraction: float = 1,
@@ -143,7 +151,7 @@ def drop_sequential_duplicates(chain):
     return np.array([i[0] for i in it.groupby(chain)])
 
 
-@timeit(should_log=True)
+@timeit
 def savefig(fig, fpath):
     io.check_else_make_dir(os.path.dirname(fpath))
     io.log(f'Saving figure to: {fpath}.')
@@ -151,7 +159,7 @@ def savefig(fig, fpath):
     plt.close('all')
 
 
-@timeit(should_log=True)
+@timeit
 def therm_arr(arr, therm_frac=0., ret_steps=True):
     """Drop first `therm_frac` steps of `arr` to account for thermalization."""
     if therm_frac == 0:
@@ -172,7 +180,7 @@ def therm_arr(arr, therm_frac=0., ret_steps=True):
     return arr
 
 
-@timeit(should_log=True)
+@timeit
 def plot_energy_distributions(data, out_dir=None, title=None):
     energies = {
         'forward': {
@@ -239,7 +247,7 @@ def plot_energy_distributions(data, out_dir=None, title=None):
     return fig, axes
 
 
-@timeit(should_log=True)
+@timeit
 def energy_traceplot(key, arr, out_dir=None, title=None):
     if out_dir is not None:
         out_dir = os.path.join(out_dir, 'energy_traceplots')
@@ -260,7 +268,7 @@ def energy_traceplot(key, arr, out_dir=None, title=None):
         _ = mcmc_traceplot(new_key, data_arr, title, tplot_fname)
 
 
-@timeit(should_log=True)
+@timeit
 def plot_charges(steps, charges, title=None, out_dir=None):
     charges = charges.T
     if charges.shape[0] > 4:
@@ -286,7 +294,7 @@ def plot_charges(steps, charges, title=None, out_dir=None):
     return fig, ax
 
 
-@timeit(should_log=True)
+@timeit
 def get_title_str_from_params(params):
     """Create a formatted string with relevant params from `params`."""
     eps = params.get('eps', None)
@@ -315,7 +323,7 @@ def get_title_str_from_params(params):
     return title_str
 
 
-@timeit(should_log=True)
+@timeit
 def mcmc_avg_lineplots(data, title=None, out_dir=None):
     """Plot trace of avg."""
     for idx, (key, val) in enumerate(data.items()):
@@ -374,7 +382,7 @@ def mcmc_avg_lineplots(data, title=None, out_dir=None):
     return fig, axes
 
 
-@timeit(should_log=True)
+@timeit
 def mcmc_lineplot(data, labels, title=None,
                   fpath=None, show_avg=False, **kwargs):
     """Make a simple lineplot."""
@@ -399,7 +407,7 @@ def mcmc_lineplot(data, labels, title=None,
     return fig, ax
 
 
-@timeit(should_log=True)
+@timeit
 def mcmc_traceplot(key, val, title=None, fpath=None, **kwargs):
     if '_' in key:
         key = ' '.join(key.split('_'))
@@ -420,17 +428,15 @@ def mcmc_traceplot(key, val, title=None, fpath=None, **kwargs):
         return None
 
 
-
-# pylint:disable=unsubscriptable-object
-@timeit(should_log=True)
+@timeit
 def plot_data(
         data_container: "DataContainer",  # noqa:F821
         out_dir: str,
         flags: AttrDict = None,
-        thermalize: bool = False,
         therm_frac: float = 0,
         params: AttrDict = None,
         hmc: bool = None,
+        num_chains: int = None,
 ):
     """Plot data from `data_container.data`."""
     out_dir = os.path.join(out_dir, 'plots')
@@ -496,12 +502,12 @@ def plot_data(
         labels = ('MC Step', key)
         data = (steps, arr)
 
-        if len(arr.shape) == 1:
+        if len(arr.shape) == 1:  # shape: (draws,)
             lplot_fname = os.path.join(out_dir_, f'{key}.png')
             _, _ = mcmc_lineplot(data, labels, title,
                                  lplot_fname, show_avg=True)
 
-        elif len(arr.shape) == 2:
+        elif len(arr.shape) == 2:  # shape: (draws, chains)
             data_dict[key] = data
             #  cond1 = (key in ['Hf', 'Hb', 'Hwf', 'Hwb', 'sldf', 'sldb'])
             #  cond2 = (arr.shape[1] == flags.dynamics_config.get('num_steps'))
@@ -520,10 +526,10 @@ def plot_data(
 
             data_vars[key] = data_arr
 
-        elif len(arr.shape) == 3:
-            num_steps, num_lf, num_chains = arr.shape
-            chains = np.arange(num_chains)
-            leapfrogs = np.arange(num_lf)
+        elif len(arr.shape) == 3:  # shape: (draws, leapfrogs, chains)
+            steps_, leapfrogs_, chains_ = arr.shape
+            chains = np.arange(chains_)
+            leapfrogs = np.arange(leapfrogs_)
             data_dict[key] = xr.DataArray(arr.T,
                                           dims=['chain', 'leapfrog', 'draw'],
                                           coords=[chains, leapfrogs, steps])
@@ -548,6 +554,8 @@ def plot_data(
     if out_dir is not None:
         out_dir_xr = os.path.join(out_dir, 'xarr_plots')
 
-    data_container.plot_dataset(out_dir_xr, therm_frac=therm_frac)
+    data_container.plot_dataset(out_dir_xr,
+                                num_chains=num_chains,
+                                therm_frac=therm_frac)
 
     plt.close('all')
