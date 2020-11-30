@@ -54,8 +54,12 @@ elif tf.__version__.startswith('2.'):
 #  except:  # noqa: E722
 #      pass
 
-
-def train_hmc(flags: AttrDict, make_plots: bool = True):
+def train_hmc(
+        flags: AttrDict,
+        make_plots: bool = True,
+        therm_frac: float = 0.33,
+        num_chains: int = None,
+):
     """Main method for training HMC model."""
     hflags = AttrDict(dict(flags).copy())
     lr_config = AttrDict(hflags.pop('lr_config', None))
@@ -111,8 +115,9 @@ def train_hmc(flags: AttrDict, make_plots: bool = True):
             'net_weights': NET_WEIGHTS_HMC,
         }
         t0 = time.time()
-        plot_data(train_data, dirs.train_dir, hflags,
-                  therm_frac=0.2, params=params)
+        plot_data(data_container=train_data, flags=hflags,
+                  params=params, out_dir=dirs.train_dir,
+                  therm_frac=therm_frac, num_chains=num_chains)
         dt = time.time() - t0
         io.log(120 * '#')
         io.log(f'Time spent plotting: {dt}s = {dt // 60}m {(dt % 60):.3g}s')
@@ -127,6 +132,8 @@ def train(
         x: tf.Tensor = None,
         restore_x: bool = False,
         make_plots: bool = True,
+        therm_frac: float = 0.33,
+        num_chains: int = None,
 ) -> (tf.Tensor, Union[BaseDynamics, GaugeDynamics], DataContainer, AttrDict):
     """Train model.
 
@@ -178,8 +185,10 @@ def train(
             'net_weights': dynamics.net_weights,
         }
         t0 = time.time()
-        plot_data(train_data, dirs.train_dir, flags,
-                  thermalize=True, params=params)
+        plot_data(data_container=train_data, flags=flags,
+                  params=params, out_dir=dirs.train_dir,
+                  therm_frac=therm_frac, num_chains=num_chains)
+
         dt = time.time() - t0
         io.log(120 * '#')
         io.log(f'Time spent plotting: {dt}s = {dt // 60}m{dt % 60}s')
