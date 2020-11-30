@@ -1,10 +1,9 @@
 {
     "log_dir": null,
-    "compile": true,
     "debug": false,
     "profiler": false,
     "md_steps": 0,
-    "beta_init": 2.5,
+    "beta_init": 1.0,
     "beta_final": 2.5,
     "clip_val": 50.0,
     "loss_scale": 0.1,
@@ -15,7 +14,7 @@
     "reduce_lr_factor": 0.99,
     "patience": 2,
     "min_lr": 1e-5,
-    "save_steps": 500,
+    "save_steps": 100,
     "run_steps": 1000,
     "train_steps": 1000,
     "dynamics_config": {
