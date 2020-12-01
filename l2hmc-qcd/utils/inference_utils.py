@@ -163,7 +163,10 @@ def run_hmc(
 
     if skip_existing:
         fstr = io.get_run_dir_fstr(args)
-        matches = list(Path(hmc_dir).rglob(f'*{fstr}*'))
+        base_dir = os.path.dirname(hmc_dir)
+        matches = list(
+            Path(base_dir).rglob(f'*{fstr}*')
+        )
         if len(matches) > 0:
             io.log(120 * '#')
             io.log(f'Existing run with current parameters found! Skipping...')
