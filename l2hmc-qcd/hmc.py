@@ -90,8 +90,8 @@ def multiple_runs(json_file=None):
     #  eps = [0.1, 0.125, 0.15, 0.175, 0.2]
 
     for ls in lattice_shapes:
-        for ns in num_steps:
-            for b in betas:
+        for b in betas:
+            for ns in num_steps:
                 for e in eps:
                     args = AttrDict({
                         'eps': e,
@@ -137,7 +137,7 @@ def main(args, json_file=None):
     if args.get('num_steps', None) is not None:
         flags.dynamics_config['num_steps'] = args.num_steps
 
-    return run_hmc(flags, skip_existing=True)
+    return run_hmc(flags, skip_existing=True, num_chains=16, make_plots=True)
 
 
 if __name__ == '__main__':
