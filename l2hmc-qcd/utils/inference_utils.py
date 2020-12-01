@@ -33,15 +33,6 @@ from dynamics.config import GaugeDynamicsConfig
 from dynamics.gauge_dynamics import (build_dynamics, convert_to_angle,
                                      GaugeDynamics)
 
-#  if HAS_HOROVOD:
-#      RANK = hvd.rank()
-#      NUM_NODES = hvd.size()
-#  else:
-#      RANK = 0
-#      NUM_NODES = 1
-#
-#  IS_CHIEF = (RANK == 0)
-
 InferenceResults = namedtuple('InferenceResults',
                               ['dynamics', 'run_data', 'x', 'x_arr'])
 
@@ -110,6 +101,30 @@ def short_training(
     return dynamics, train_data, x
 
 
+def _get_hmc_log_str(configs):
+    dynamics_config = configs.get('dynamics_config', None)
+
+    lf = dynamics_config.get('num_steps', None)
+    eps = dynamics_config.get('eps', None)
+    ls = dynamics_config.get('lattice_shape', None)
+    bs = ls[0]  # batch size
+    nx = ls[1]
+
+    b = configs.get('beta', None)
+    if b is None:
+        b = configs.get('beta_final', None)
+
+
+    log_str = (
+        f'HMC_L{nx}_b{bs}_beta{float(b)}_lf{lf}_eps{eps}'.replace('.0', '')
+    )
+
+    log_str = log_str.replace('.', '')
+
+    return log_str
+
+
+
 def run_hmc(
         args: AttrDict,
         hmc_dir: str = None,
@@ -135,8 +150,6 @@ def run_hmc(
         return InferenceResults(None, None, None, None)
 
     if hmc_dir is None:
-        #  root_dir = os.path.join(HMC_LOGS_DIR)
-        #  root_dir = os.path.join(GAUGE_LOGS_DIR, 'hmc_logs')
         month_str = io.get_timestamp('%Y_%m')
         hmc_dir = os.path.join(HMC_LOGS_DIR, month_str)
 
@@ -149,11 +162,12 @@ def run_hmc(
         return fstr
 
     if skip_existing:
-        run_dirs = [os.path.join(hmc_dir, i) for i in os.listdir(hmc_dir)]
-        run_fstrs = [get_run_fstr(i) for i in run_dirs]
-        run_fstr = io.get_run_dir_fstr(args)
-        if run_fstr in run_fstrs:
-            io.log('ERROR:Existing run found! Skipping.')
+        fstr = io.get_run_dir_fstr(args)
+        matches = list(Path(hmc_dir).rglob(f'*{fstr}*'))
+        if len(matches) > 0:
+            io.log(120 * '#')
+            io.log(f'Existing run with current parameters found! Skipping...')
+            io.log(120 * '#')
             return InferenceResults(None, None, None, None)
 
     dynamics = build_dynamics(args)

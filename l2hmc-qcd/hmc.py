@@ -53,6 +53,11 @@ def parse_args():
                         type=str, default=None, required=False,
                         help='json file containing HMC config')
 
+    parser.add_argument('--lattice_shape', dest='lattice_shape',
+                        type=lambda s: [int(i) for i in s.split(',')],
+                        default=None, required=False,
+                        help='Specify shape of lattice (batch, Lt, Lx, 2)')
+
     parser.add_argument('--run_steps', dest='run_steps',
                         type=int, default=None, required=False,
                         help='Number of sampling steps.')
@@ -76,32 +81,14 @@ def parse_args():
 
 def multiple_runs(json_file=None):
     lattice_shapes = [
-        #  (128, 4, 4, 2),
-        (128, 8, 8, 2),
-        (128, 16, 16, 2),
+        (512, 16, 16, 2),
     ]
-    num_steps = [10, 15, 20]
+    num_steps = [15, 20, 25]
     run_steps = 5000
-    betas = [3., 4., 4.5, 5., 6.]
-    eps = [0.05, 0.1, 0.15, 0.2, 0.25, 0.3]
+    betas = [4.5, 5.0, 5.5, 6.0]
+    eps = [0.025, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3]
     #  eps = [0.1, 0.125, 0.15, 0.175, 0.2]
 
-    # =====
-    # NOTE: Color tuples for tqdm formatting follow the pattern:
-    # (left_text, bar, right_text, reset)
-    lstup = (CBARS['reset'], CBARS['red'], CBARS['reset'], CBARS['reset'])
-    nstup = (CBARS['reset'], CBARS['blue'], CBARS['reset'], CBARS['reset'])
-    btup = (CBARS['reset'], CBARS['magenta'], CBARS['reset'], CBARS['reset'])
-    etup = (CBARS['reset'], CBARS['cyan'], CBARS['reset'], CBARS['reset'])
-    eps = tqdm(eps, desc='eps', unit='step',
-               bar_format=("%s{l_bar}%s{bar}%s{r_bar}%s" % etup))
-    betas = tqdm(betas, desc='betas', unit='step',
-                 bar_format=("%s{l_bar}%s{bar}%s{r_bar}%s" % btup))
-    num_steps = tqdm(num_steps, desc='num_steps', unit='step',
-                     bar_format=("%s{l_bar}%s{bar}%s{r_bar}%s" % nstup))
-    lattice_shapes = tqdm(lattice_shapes, desc='lattice_shapes', unit='step',
-                          bar_format=("%s{l_bar}%s{bar}%s{r_bar}%s" % lstup))
-    # pylint:disable=invalid-name
     for ls in lattice_shapes:
         for ns in num_steps:
             for b in betas:
@@ -147,10 +134,10 @@ def main(args, json_file=None):
     if args.get('eps', None) is not None:
         flags.dynamics_config['eps'] = args.eps
 
-    if args.get('num-steps', None) is not None:
+    if args.get('num_steps', None) is not None:
         flags.dynamics_config['num_steps'] = args.num_steps
 
-    return run_hmc(flags)
+    return run_hmc(flags, skip_existing=True)
 
 
 if __name__ == '__main__':

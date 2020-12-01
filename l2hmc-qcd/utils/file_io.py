@@ -454,16 +454,6 @@ def get_run_dir_fstr(flags: AttrDict):
     num_steps = config.get('num_steps', None)
     lattice_shape = config.get('lattice_shape', None)
 
-    #  if beta is None:
-    #      beta_final = flags.get('beta_final', None)
-    #      if beta_final is None:
-    #          beta_init = flags.get('beta_init', None)
-    #          if beta_init is None:
-    #              raise ValueError('beta not specified.')
-    #          beta = beta_init
-    #      else:
-    #          beta = beta_final
-
     fstr = ''
     if hmc:
         fstr += 'HMC_'
