@@ -114,7 +114,7 @@ def restore_flags(flags, train_dir):
     return flags
 
 
-def main(args):
+def main(args, num_chains=256):
     """Main method for training."""
     hmc_steps = args.get('hmc_steps', 0)
     tf.keras.backend.set_floatx('float32')
@@ -156,22 +156,14 @@ def main(args):
         args.restore = False
         if hmc_steps > 0:
             #  x, _, eps = train_hmc(args)
-            x, dynamics_hmc, _, hflags = train_hmc(args)
+            x, dynamics_hmc, _, hflags = train_hmc(args, num_chains=num_chains)
             #  dirs_hmc = hflags.get('dirs', None)
             args.dynamics_config['eps'] = dynamics_hmc.eps.numpy()
             _ = run(dynamics_hmc, hflags, save_x=False)
 
-    #  dynamics_config = args.get('dynamics_config', None)
-    #  if dynamics_config is not None:
-    #      log_dir = dynamics_config.get('log_dir', None)
-    #      if log_dir is not None:
-    #          eps_file = os.path.join(log_dir, 'training', 'models', 'eps.z')
-    #          if os.path.isfile(eps_file):
-    #              io.log(f'Loading eps from: {eps_file}')
-    #              eps = io.loadz(eps_file)
-    #              args.dynamics_config['eps'] = eps
-
-    x, dynamics, train_data, args = train(args, x=x, make_plots=True)
+    x, dynamics, train_data, args = train(args, x=x,
+                                          make_plots=True,
+                                          num_chains=num_chains)
 
     # ====
     # Run inference on trained model
