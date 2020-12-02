@@ -34,6 +34,9 @@ def parse_args():
                         type=int, default=5000, required=False,
                         help='Number of inference steps.')
 
+    parser.add_argument('--beta', dest='beta',
+                        type=float, default=None, required=False,
+                        help='Value of beta at which to run inference.')
 
     parser.add_argument('--therm_frac', dest='therm_frac',
                         type=float, default=0.33, required=False,
@@ -60,6 +63,7 @@ def parse_args():
 def inference(
         log_dir,
         run_steps: int = None,
+        beta: float = None,
         make_plots: bool = True,
         train_steps: int = 100,
         therm_frac: float = 0.33,
@@ -68,6 +72,7 @@ def inference(
     """Run inference on model stored in `log_dir`."""
     inference_results = run_inference_from_log_dir(log_dir=log_dir,
                                                    run_steps=run_steps,
+                                                   beta=beta,
                                                    therm_frac=therm_frac,
                                                    num_chains=num_chains,
                                                    make_plots=make_plots,
