@@ -38,6 +38,10 @@ def parse_args():
                         type=float, default=None, required=False,
                         help='Value of beta at which to run inference.')
 
+    parser.add_argument('--eps', dest='eps',
+                        type=float, default=None, required=False,
+                        help='Value of eps (step-size) to use for inference.')
+
     parser.add_argument('--therm_frac', dest='therm_frac',
                         type=float, default=0.33, required=False,
                         help=('Percentage of total chain length to drop '

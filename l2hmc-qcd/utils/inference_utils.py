@@ -221,6 +221,7 @@ def run_inference_from_log_dir(
         log_dir: str,
         run_steps: int = 5000,
         beta: float = None,
+        eps: float = None,
         make_plots: bool = True,
         train_steps: int = 10,
         therm_frac: float = 0.33,
@@ -233,15 +234,18 @@ def run_inference_from_log_dir(
             f'Unable to load configs from `log_dir`: {log_dir}. Exiting'
         )
 
-    eps = None
-    try:
-        eps_file = os.path.join(log_dir, 'training', 'models', 'eps.z')
-        eps = io.loadz(eps_file)
-    except FileNotFoundError:
-        eps = configs.get('dynamics_config', None).get('eps', None)
-
     if eps is not None:
         configs['dynamics_config']['eps'] = eps
+
+    else:
+        try:
+            eps_file = os.path.join(log_dir, 'training', 'models', 'eps.z')
+            eps = io.loadz(eps_file)
+        except FileNotFoundError:
+            eps = configs.get('dynamics_config', None).get('eps', None)
+
+    #  if eps is not None:
+    #      configs['dynamics_config']['eps'] = eps
 
     if beta is not None:
         configs.update({'beta': beta, 'beta_final': beta})
