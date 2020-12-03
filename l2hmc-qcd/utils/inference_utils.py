@@ -327,7 +327,9 @@ def run(
     if x is None:
         x = convert_to_angle(tf.random.normal(shape=dynamics.x_shape))
 
-    results = run_dynamics(dynamics, args, x, save_x=save_x, md_steps=md_steps)
+    results = run_dynamics(dynamics=dynamics,
+                           flags=args, x=x, beta=beta,
+                           save_x=save_x, md_steps=md_steps)
     run_data = results.run_data
 
     run_data.update_dirs({
@@ -371,6 +373,7 @@ def run_dynamics(
         dynamics: GaugeDynamics,
         flags: AttrDict,
         x: tf.Tensor = None,
+        beta: float = None,
         save_x: bool = False,
         md_steps: int = 0,
 ) -> (InferenceResults):
@@ -380,7 +383,8 @@ def run_dynamics(
 
     # Setup
     print_steps = flags.get('print_steps', 5)
-    beta = flags.get('beta', flags.get('beta_final', None))
+    if beta is None:
+        beta = flags.get('beta', flags.get('beta_final', None))
 
     test_step = dynamics.test_step
     if flags.get('compile', True):
@@ -459,5 +463,3 @@ def run_dynamics(
     return InferenceResults(dynamics=dynamics,
                             run_data=run_data,
                             x=x, x_arr=x_arr)
-
-

@@ -85,6 +85,7 @@ if __name__ == '__main__':
     args = AttrDict(args.__dict__)
     inference(log_dir=args.log_dir,
               run_steps=args.run_steps,
+              beta=args.beta,
               num_chains=args.num_chains,
               therm_frac=args.therm_frac,
               make_plots=(not args.no_plots),
