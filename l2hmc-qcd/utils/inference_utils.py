@@ -244,10 +244,7 @@ def run_inference_from_log_dir(
         configs['dynamics_config']['eps'] = eps
 
     if beta is not None:
-        configs.update({
-            'beta': beta,
-            'beta_final': beta,
-        })
+        configs.update({'beta': beta, 'beta_final': beta})
 
     configs = AttrDict(configs)
     dynamics = build_dynamics(configs)
@@ -272,12 +269,11 @@ def run_inference_from_log_dir(
     configs['run_steps'] = run_steps
     configs['print_steps'] = max((run_steps // 100, 1))
     configs['md_steps'] = 100
-    runs_dir = os.path.join(
-        log_dir, 'LOADED', 'inference',
-    )
+    runs_dir = os.path.join(log_dir, 'LOADED', 'inference')
     io.check_else_make_dir(runs_dir)
     io.save_dict(configs, runs_dir, name='inference_configs')
-    inference_results = run(dynamics=dynamics, args=configs, x=x,
+    inference_results = run(dynamics=dynamics,
+                            args=configs, x=x, beta=beta,
                             runs_dir=runs_dir, make_plots=make_plots,
                             therm_frac=therm_frac, num_chains=num_chains)
     return inference_results
@@ -287,6 +283,7 @@ def run(
         dynamics: GaugeDynamics,
         args: AttrDict,
         x: tf.Tensor = None,
+        beta: float = None,
         runs_dir: str = None,
         make_plots: bool = True,
         therm_frac: float = 0.33,
@@ -324,9 +321,8 @@ def run(
 
     args.logging_steps = 1
     run_steps = args.get('run_steps', 2000)
-    beta = args.get('beta', None)
     if beta is None:
-        beta = args.get('beta_final', None)
+        beta = args.get('beta_final', args.get('beta', None))
 
     if x is None:
         x = convert_to_angle(tf.random.normal(shape=dynamics.x_shape))
