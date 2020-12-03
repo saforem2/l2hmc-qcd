@@ -47,6 +47,10 @@ def parse_args():
                         help=('Percentage of total chain length to drop '
                               '(from beginning, to account for burn-in).'))
 
+    parser.add_argument('--batch_size', dest='batch_size',
+                        type=float, default=None, required=False,
+                        help='Batch size to use for inference.')
+
     parser.add_argument('--num_chains', dest='num_chains',
                         type=int, default=None, required=False,
                         help='Number of chains to include when plotting.')
