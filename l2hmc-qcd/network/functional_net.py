@@ -20,6 +20,12 @@ from network.config import ConvolutionConfig, NetworkConfig
 
 layers = tf.keras.layers
 
+ACTIVATION_FNS = {
+    'relu': tf.keras.activations.relu,
+    'tanh': tf.keras.activations.tanh,
+    'swish': tf.keras.activations.swish,
+}
+
 
 def custom_dense(units, scale=1., name=None, activation=None):
     """Implements a `layers.Dense` object with custom kernel initializer."""
@@ -151,6 +157,14 @@ def get_gauge_network(
         T, X, d = lattice_shape
 
     xdim = T * X * d
+    activation_fn = net_config.activation_fn
+    if isinstance(activation_fn, str):
+        activation_fn = ACTIVATION_FNS.get(activation_fn, None)
+        if activation_fn is None:
+            raise KeyError(
+                f'Bad activation fn specified: {activation_fn}. '
+                f'Expected one of: {tuple(ACTIVATION_FNS.keys())}.'
+            )
 
     if input_shapes is None:
         input_shapes = {
@@ -222,9 +236,11 @@ def get_gauge_network(
         t = custom_dense(*args['t'])(t_input)
 
         z = layers.Add()([x, v, t])
-        z = keras.activations.relu(z)
+        z = activation_fn(z)
+        #  z = keras.activations.relu(z)
         for idx, units in enumerate(net_config.units[1:]):
-            z = custom_dense(units, 1./2., f'{name}_h{idx}')(z)
+            z = custom_dense(units, 1./2., f'{name}_h{idx}',
+                             activation=activation_fn)(z)
 
         #  z = custom_dense(*args['h1'])(z)
         #  z = custom_dense(*args['h2'])(z)
@@ -232,7 +248,8 @@ def get_gauge_network(
         if net_config.dropout_prob > 0:
             z = layers.Dropout(net_config.dropout_prob)(z)
 
-        if net_config.get('use_batch_norm', False):
+        #  if net_config.get('use_batch_norm', False):
+        if net_config.use_batch_norm:
             z = layers.BatchNormalization(-1, name=f'{name}_batch_norm1')(z)
 
         scale = custom_dense(*args['scale'], activation='tanh')(z)
