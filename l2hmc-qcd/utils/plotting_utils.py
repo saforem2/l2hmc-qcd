@@ -34,8 +34,6 @@ sns.set_context('paper')
 sns.set_style('whitegrid')
 sns.set_palette('bright')
 
-# pylint:disable=invalid-name
-
 #  if TYPE_CHECKING:
 #      from utils.data_containers import DataContainer
 
@@ -55,7 +53,7 @@ sns.set_palette('bright')
 
 
 @timeit
-def make_ridgeplots(dataset, num_chains=None, out_dir=None):
+def make_ridgeplots(dataset, num_chains=None, out_dir=None, drop_zeros=False):
     sns.set(style='white', rc={"axes.facecolor": (0, 0, 0, 0)})
     for key, val in dataset.data_vars.items():
         if 'leapfrog' in val.coords.dims:
@@ -72,6 +70,8 @@ def make_ridgeplots(dataset, num_chains=None, out_dir=None):
                     x = x[:num_chains, :]
 
                 x = x.flatten()
+                if drop_zeros:
+                    x = x[x!=0]
                 #  x = val[{'leapfrog': lf}].values.flatten()
                 lf_arr = np.array(len(x) * [f'{lf}'])
                 lf_data[key].extend(x)
@@ -86,7 +86,7 @@ def make_ridgeplots(dataset, num_chains=None, out_dir=None):
                               aspect=15, height=0.25, palette=pal)
 
             # Draw the densities in a few steps
-            _ = g.map(sns.kdeplot, key, cut=1,
+            _ = g.map(sns.kdeplot, key, cut=1, # bw_adjust=0.5,  # clip_on=False,
                       shade=True, alpha=0.7, linewidth=1.25)
             #  _ = g.map(sns.kdeplot, key, color='w', cut=1, lw=1.5)
             _ = g.map(plt.axhline, y=0, lw=1.5, alpha=0.7, clip_on=False)
@@ -228,17 +228,18 @@ def plot_energy_distributions(data, out_dir=None, title=None):
     for ax in axes:
         ax.set_ylabel('')
 
-    _ = axes[0].legend(loc='best')
-
     _ = axes[0].set_title('forward')
     _ = axes[1].set_title('backward')
-
-    hstr = r"$\mathcal{H}$"
-    hwstr = hstr + r"$ - \sum\log\|\mathcal{J}\|$"
-    _ = axes[0].set_xlabel(hstr)   # upper left
-    _ = axes[1].set_xlabel(hstr)   # upper right
-    _ = axes[2].set_xlabel(hwstr)  # lower left
-    _ = axes[3].set_xlabel(hwstr)  # lower right
+    _ = axes[0].legend(loc='best')
+    _ = axes[0].set_xlabel(r"$\mathcal{H}$")
+    _ = axes[1].set_xlabel(r"$\mathcal{H}$")
+    #  _ = axes[1].legend(loc='best')
+    #  _ = axes[2].legend(loc='best')
+    #  _ = axes[3].legend(loc='best')
+    _ = axes[0].set_xlabel(r"$\mathcal{H}$")  # , fontsize='large')
+    _ = axes[1].set_xlabel(r"$\mathcal{H}$")  # , fontsize='large')
+    _ = axes[2].set_xlabel(r"$\mathcal{H} - \sum\log\|\mathcal{J}\|$")
+    _ = axes[3].set_xlabel(r"$\mathcal{H} - \sum\log\|\mathcal{J}\|$")
     if title is not None:
         _ = fig.suptitle(title)  # , fontsize='x-large')
     if out_dir is not None:
@@ -357,6 +358,9 @@ def mcmc_avg_lineplots(data, title=None, out_dir=None):
         _ = axes[0].set_ylabel(ylabel)
         _ = sns.kdeplot(arr.flatten(), ax=axes[1],
                         color=COLORS[idx], fill=True)
+        #  _ = sns.distplot(arr.flatten(), hist=False,
+        #                   color=COLORS[idx], ax=axes[1],
+        #                   kde_kws={'shade': True})
         _ = axes[1].set_xlabel(ylabel)
         _ = axes[1].set_ylabel('')
         if title is not None:
@@ -497,16 +501,15 @@ def plot_data(
         #  steps = steps[::logging_setps]
         #  steps *= logging_steps
 
-        #  labels = ('MC Step', key)
+        labels = ('MC Step', key)
         data = (steps, arr)
 
-        #  if len(arr.shape) == 1:  # shape: (draws,)
-        #      lplot_fname = os.path.join(out_dir_, f'{key}.png')
-        #      _, _ = mcmc_lineplot(data, labels, title,
-        #                           lplot_fname, show_avg=True)
+        if len(arr.shape) == 1:  # shape: (draws,)
+            lplot_fname = os.path.join(out_dir_, f'{key}.png')
+            _, _ = mcmc_lineplot(data, labels, title,
+                                 lplot_fname, show_avg=True)
 
-        #  elif len(arr.shape) == 2:  # shape: (draws, chains)
-        if len(arr.shape) == 2:  # shape = (draws, chains)
+        elif len(arr.shape) == 2:  # shape: (draws, chains)
             data_dict[key] = data
             out_dir_ = os.path.join(out_dir_, 'traceplots')
             chains = np.arange(arr.shape[1])
@@ -532,7 +535,13 @@ def plot_data(
 
         plt.close('all')
 
-    _ = plot_charges(*data_dict['charges'], out_dir=out_dir, title=title)
+    out_dir_xr = None
+    if out_dir is not None:
+        out_dir_xr = os.path.join(out_dir, 'xarr_plots')
+
+    data_container.plot_dataset(out_dir_xr,
+                                num_chains=num_chains,
+                                therm_frac=therm_frac)
     plt.close('all')
 
     try:
@@ -541,18 +550,7 @@ def plot_data(
     except KeyError:
         pass
 
-    out_dir_xr = None
-    if out_dir is not None:
-        out_dir_xr = os.path.join(out_dir, 'xarr_plots')
-
-    data_container.plot_dataset(out_dir_xr,
-                                num_chains=num_chains,
-                                therm_frac=therm_frac)
-
-    plt.close('all')
-
-    # ====
-    # Make plot trace and density estimation side by side
     _ = mcmc_avg_lineplots(data_dict, title, out_dir)
     plt.close('all')
-
+    _ = plot_charges(*data_dict['charges'], out_dir=out_dir, title=title)
+    plt.close('all')
