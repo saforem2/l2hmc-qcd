@@ -80,15 +80,17 @@ class BaseDynamics(tf.keras.Model):
             above, which just returns the input.
         """
         super(BaseDynamics, self).__init__(name=name)
-        self._model_type = config.get('model_type', 'BaseDynamics')
+        #  self._model_type = config.get('model_type', 'BaseDynamics')
         self.params = params
         self.config = config
         self.lr_config = lr_config
         self.net_config = network_config
         self.potential_fn = potential_fn
-        self._verbose = config.get('verbose', False)
+        self._verbose = config.verbose
+        #  self._verbose = config.get('verbose', False)
 
-        loss_scale = self.config.get('loss_scale', 1.)
+        loss_scale = config.loss_scale
+        #  loss_scale = self.config.get('loss_scale', 1.)
         self._loss_scale = tf.constant(loss_scale, name='loss_scale')
         self.xdim = params.get('xdim', None)
         self.clip_val = params.get('clip_val', 0.)
