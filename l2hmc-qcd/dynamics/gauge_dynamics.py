@@ -101,11 +101,13 @@ def build_dynamics(flags):
     conv_config = None
     if flags.get('conv_config', None) is not None and config.use_conv_net:
         conv_config = flags.get('conv_config', None)
-        input_shape = config.get('lattice_shape', None)[1:]
-        conv_config.update({
-            'input_shape': input_shape,
-        })
-        conv_config = ConvolutionConfig(**dict(conv_config))
+        input_shape = config.lattice_shape[1:]
+        conv_config.input_shape = input_shape
+        #  input_shape = config.get('lattice_shape', None)[1:]
+        #  conv_config.update({
+        #      'input_shape': input_shape,
+        #  })
+        #  conv_config = ConvolutionConfig(**dict(conv_config))
 
     #  log_dir = flags['dynamics_config'].pop('log_dir', None)
     #  config = GaugeDynamicsConfig(**dict(flags.get('dynamics_config', None)))
@@ -119,8 +121,8 @@ def build_dynamics(flags):
         #  log_dir=log_dir
     )
 
-    log_dir = flags['dynamics_config'].pop('log_dir', None)
-    if log_dir is not None:
+    log_dir = flags['dynamics_config'].get('log_dir', None)
+    if log_dir is not None and log_dir != '':
         io.log(120 * '#')
         io.log(f'LOADING NETWORKS FROM: {log_dir}  !!!')
         io.log(120 * '#')
@@ -144,12 +146,18 @@ class GaugeDynamics(BaseDynamics):
     ):
         # ====
         # Set attributes from `config`
-        self.aux_weight = config.get('aux_weight', 0.)
-        self.plaq_weight = config.get('plaq_weight', 0.)
-        self.charge_weight = config.get('charge_weight', 0.01)
-        self._gauge_eq_masks = config.get('gauge_eq_masks', False)
-        self.lattice_shape = config.get('lattice_shape', None)
-        self._combined_updates = config.get('combined_updates', False)
+        self.aux_weight = config.aux_weight
+        self.plaq_weight = config.plaq_weight
+        self.charge_weight = config.charge_weight
+        self._gauge_eq_masks = config.gauge_eq_masks
+        self.lattice_shape = config.lattice_shape
+        self._combined_updates = config.combined_updates
+        #  self.aux_weight = config.get('aux_weight', 0.)
+        #  self.plaq_weight = config.get('plaq_weight', 0.)
+        #  self.charge_weight = config.get('charge_weight', 0.01)
+        #  self._gauge_eq_masks = config.get('gauge_eq_masks', False)
+        #  self.lattice_shape = config.get('lattice_shape', None)
+        #  self._combined_updates = config.get('combined_updates', False)
         self._alpha = tf.constant(1.)
         #  self._alpha = tf.Variable(initial_value=1., trainable=False)
 
@@ -195,7 +203,7 @@ class GaugeDynamics(BaseDynamics):
             self.xnet, self.vnet = self._build_networks(
                 net_config=self.net_config,
                 conv_config=self.conv_config,
-                log_dir=self.config.get('log_dir', None)
+                #  log_dir=self.config.get('log_dir', None)
             )
 
         self.net_weights = self._parse_net_weights(net_weights)
@@ -359,7 +367,7 @@ class GaugeDynamics(BaseDynamics):
             net_config: NetworkConfig = None,
             conv_config: ConvolutionConfig = None,
     ):
-        """Build position and momentum networks.
+        """Build single instances of the position and momentum networks.
 
         Returns:
             xnet: tf.keras.models.Model
@@ -368,19 +376,9 @@ class GaugeDynamics(BaseDynamics):
         cfgs = self._get_network_configs(net_config, conv_config)
 
         if self.config.separate_networks:
-            #  vname = f'VNet{step}' if step is not None else 'VNet'
-            #  xname = f'XNet{step}' if step is not None else 'XNet'
             io.log('Using separate (x, v)-networks for each LF step!!')
             vnet = get_gauge_network(**cfgs['vnet'], name=f'vvet{step}')
             xnet = get_gauge_network(**cfgs['xnet'], name=f'xnet{step}')
-            #  vnet = [
-            #      get_gauge_network(**vnet_cfg, name=f'VNet{i}')
-            #      for i in range(self.config.num_steps)
-            #  ]
-            #  xnet = [
-            #      get_gauge_network(**xnet_cfg, name=f'XNet{i}')
-            #      for i in range(self.config.num_steps)
-            #  ]
 
         else:
             io.log('Using a single (x, v)-network for all LF steps!!')
@@ -397,6 +395,13 @@ class GaugeDynamics(BaseDynamics):
     ):
         """Build position and momentum networks.
 
+        If `self.config.separate_networks`, build an array of identical copies
+        of `xnet`, `vnet` for each leapfrog step (generally makes the model
+        more expressive).
+
+        Otherwise, build a single instance of `xnet` and `vnet` to use for
+        different leapfrog steps.
+
         Returns:
             xnet: tf.keras.models.Model
             vnet: tf.keras.models.Model
@@ -407,8 +412,6 @@ class GaugeDynamics(BaseDynamics):
         cfgs = self._get_network_configs(net_config, conv_config)
 
         if self.config.separate_networks:
-            #  vname = f'VNet{step}' if step is not None else 'VNet'
-            #  xname = f'XNet{step}' if step is not None else 'XNet'
             io.log('Using separate (x, v)-networks for each LF step!!')
             vnet = [
                 get_gauge_network(**cfgs['vnet'], name=f'vnet{i}')
@@ -648,8 +651,29 @@ class GaugeDynamics(BaseDynamics):
             metrics = _update_metrics(data, step+1)
             metrics = _stack_metrics()
 
-
         return state_prop, metrics
+
+    def split_metrics_by_accept_reject(self, metrics, mask_a, mask_r=None):
+        if mask_r is None:
+            mask_r = 1. - mask_a
+
+        metrics_a = {}
+        metrics_r = {}
+        for key, val in metrics.items():
+            if len(val.shape) == 1:
+                val_a = mask_a * val
+                val_r = mask_r * val
+            if len(val.shape) == 2:
+                val_a = tf.convert_to_tensor([mask_a * i for i in val])
+                val_r = tf.convert_to_tensor([mask_r * i for i in val])
+
+            metrics_a[key] = val_a
+            metrics_r[key] = val_r
+
+        return {
+            'accept': metrics_a,
+            'reject': metrics_r
+        }
 
     def _transition_kernel(
             self,
@@ -702,7 +726,6 @@ class GaugeDynamics(BaseDynamics):
             metrics = _stack_metrics()
 
         return state_prop, metrics
-
 
     def transition_kernel(
             self,
@@ -1227,6 +1250,9 @@ class GaugeDynamics(BaseDynamics):
             })
 
         # Separated from [1038] for ordering when printing
+        #  mask_a = metrics.get('accept_mask', None)
+        #  if mask_a is not None:
+        #      metrics_ = self.split_metrics_by_accept_reject(metrics, mask_a)
         data.update({
             'accept_prob': accept_prob,
             'accept_mask': metrics.get('accept_mask', None),
@@ -1321,155 +1347,13 @@ class GaugeDynamics(BaseDynamics):
                         f'{kb}b_mid': vb[midpt],
                         f'{kb}b_end': vb[-1],
                     })
-            # metrics = {'forward': metrics_f, 'backward': metrics_b}
-            #  for direction, directional_metrics in metrics.items():
-            #      if isinstance(directional_metrics, (dict, AttrDict)):
-            #          for key, val in directional_metrics.items():
-            #              # dstr will be 'f' if forward or 'b' if backward
-            #              dstr = direction[0]
-            #              if isinstance(val, tf.Tensor):
-            #                  data.update({f'{key}{dstr}': val})
-            #              elif isinstance(val, tf.TensorArray):
-            #                  data.update({
-            #                      f'{key}{dstr}': val,
-            #                      f'{key}{dstr}_start': val.read(0),
-            #                      f'{key}{dstr}_mid': val.read(midpt),
-            #                      f'{key}{dstr}_end': val.read(midpt),
-            #                  })
-            #  data.update({
-            #      'Hf': tf.squeeze(metrics.forward.H),
-            #      'Hb': tf.squeeze(metrics.backward.H),
-            #      'Hwf': tf.squeeze(metrics.forward.Hw),
-            #      'Hwb': tf.squeeze(metrics.backward.Hw),
-            #      'sldf': tf.squeeze(metrics.forward.logdets),
-            #      'sldb': tf.squeeze(metrics.backward.logdets),
-            #      'sinQf': tf.squeeze(metrics.forward.sin_qs),
-            #      'sinQb': tf.squeeze(metrics.backward.sin_qs),
-            #      # ----
-            #      'Hf_start': metrics.forward.H[0],
-            #      'Hb_start': metrics.backward.H[0],
-            #      'Hwf_start': metrics.forward.Hw[0],
-            #      'Hwb_start': metrics.backward.Hw[0],
-            #      'ldf_start': metrics.forward.logdets[0],
-            #      'ldb_start': metrics.backward.logdets[0],
-            #      'sinQf_start': metrics.forward.sin_qs[0],
-            #      'sinQb_start': metrics.backward.sin_qs[0],
-            #      # ----
-            #      'Hf_mid': metrics.forward.H[midpt],
-            #      'Hb_mid': metrics.backward.H[midpt],
-            #      'Hwf_mid': metrics.forward.Hw[midpt],
-            #      'Hwb_mid': metrics.backward.Hw[midpt],
-            #      'ldf_mid': metrics.forward.logdets[midpt],
-            #      'ldb_mid': metrics.backward.logdets[midpt],
-            #      'sinQf_mid': metrics.forward.sin_qs[midpt],
-            #      'sinQb_mid': metrics.backward.sin_qs[midpt],
-            #      # ----
-            #      'Hf_end': metrics.forward.H[-1],
-            #      'Hb_end': metrics.backward.H[-1],
-            #      'Hwf_end': metrics.forward.Hw[-1],
-            #      'Hwb_end': metrics.backward.Hw[-1],
-            #      'ldf_end': metrics.forward.logdets[-1],
-            #      'ldb_end': metrics.backward.logdets[-1],
-            #      'sinQf_end': metrics.forward.sin_qs[-1],
-            #      'sinQb_end': metrics.backward.sin_qs[-1],
-            #      # ----
-            #  })
 
         observables = self.calc_observables(states)
         metrics.update(**observables)
 
         data.update(**metrics)
-
-        #  metrics.update({
-        #      'lr': self._get_lr(),
-        #  })
 
         return states.out.x, data
-
-    @tf.function
-    def test_step1(
-            self,
-            inputs: Tuple[tf.Tensor, tf.Tensor]
-    ) -> (tf.Tensor, AttrDict):
-        """Perform a single inference step.
-
-        Returns:
-            states.out.x (tf.Tensor): Next `x` state in the Markov Chain.
-            metrics (AttrDict): Dictionary of various metrics for logging.
-        """
-        start = time.time()
-        x, beta = inputs
-        x = self.normalizer(x)
-        states, metrics = self((x, beta), training=False)
-        accept_prob = metrics.get('accept_prob', None)
-        ploss, qloss = self.calc_losses(states, accept_prob)
-        loss = ploss + qloss
-
-        data = AttrDict({
-            'dt': time.time() - start,
-            'loss': loss,
-        })
-        if self.plaq_weight > 0 and self.charge_weight > 0:
-            data.update({
-                'ploss': ploss,
-                'qloss': qloss
-            })
-
-        data.update({
-            'accept_prob': accept_prob,
-            'accept_mask': metrics.get('accept_mask', None),
-            'eps': self.eps,
-            'beta': states.init.beta,
-            'sumlogdet': metrics.get('sumlogdet', None),
-        })
-
-        if self._verbose:
-            midpt = self.config.num_steps // 2
-            ns = self.config.num_steps + 1
-            data.update({
-                'Hf': metrics.forward.H,
-                'Hb': metrics.backward.H,
-                'Hwf': metrics.forward.Hw,
-                'Hwb': metrics.backward.Hw,
-                'sldf': metrics.forward.logdets,
-                'sldb': metrics.backward.logdets,
-                'sinQf': metrics.forward.sin_qs,
-                'sinQb': metrics.backward.sin_qs,
-                # ----
-                'Hf_start': metrics.forward.H[0],
-                'Hb_start': metrics.backward.H[0],
-                'Hwf_start': metrics.forward.Hw[0],
-                'Hwb_start': metrics.backward.Hw[0],
-                'ldf_start': metrics.forward.logdets[0],
-                'ldb_start': metrics.backward.logdets[0],
-                'sinQf_start': metrics.forward.sin_qs[0],
-                'sinQb_start': metrics.backward.sin_qs[0],
-                # ----
-                'Hf_mid': metrics.forward.H[midpt],
-                'Hb_mid': metrics.backward.H[midpt],
-                'Hwf_mid': metrics.forward.Hw[midpt],
-                'Hwb_mid': metrics.backward.Hw[midpt],
-                'ldf_mid': metrics.forward.logdets[midpt],
-                'ldb_mid': metrics.backward.logdets[midpt],
-                'sinQf_mid': metrics.forward.sin_qs[midpt],
-                'sinQb_mid': metrics.backward.sin_qs[midpt],
-                # ----
-                'Hf_end': metrics.forward.H[-1],
-                'Hb_end': metrics.backward.H[-1],
-                'Hwf_end': metrics.forward.Hw[-1],
-                'Hwb_end': metrics.backward.Hw[-1],
-                'ldf_end': metrics.forward.logdets[-1],
-                'ldb_end': metrics.backward.logdets[-1],
-                'sinQf_end': metrics.forward.sin_qs[-1],
-                'sinQb_end': metrics.backward.sin_qs[-1],
-                # ----
-            })
-
-        observables = self.calc_observables(states)
-        metrics.update(**observables)
-        data.update(**metrics)
-
-        return states.out.x, metrics
 
     def _calc_observables(
             self, state: State
@@ -1506,12 +1390,17 @@ class GaugeDynamics(BaseDynamics):
 
     def save_config(self, config_dir: str):
         """Helper method for saving configuration objects."""
-        io.save_dict(self.config, config_dir, name='dynamics_config')
-        io.save_dict(self.net_config, config_dir, name='network_config')
-        io.save_dict(self.lr_config, config_dir, name='lr_config')
-        io.save_dict(self.params, config_dir, name='dynamics_params')
+        io.save_dict(self.config.__dict__,
+                     config_dir, name='dynamics_config')
+        io.save_dict(self.net_config.__dict__,
+                     config_dir, name='network_config')
+        io.save_dict(self.lr_config.__dict__,
+                     config_dir, name='lr_config')
+        io.save_dict(self.params,
+                     config_dir, name='dynamics_params')
         if self.conv_config is not None and self.config.use_conv_net:
-            io.save_dict(self.conv_config, config_dir, name='conv_config')
+            io.save_dict(self.conv_config.__dict__,
+                         config_dir, name='conv_config')
 
     def get_config(self):
         """Get configuration as dict."""
@@ -1526,7 +1415,7 @@ class GaugeDynamics(BaseDynamics):
     def _get_time(self, i, tile=1):
         """Format the MCMC step as:
            ```
-           [cos(2pi*step/num_steps), sin(2pi*step/num_steps)]
+           [cos(2 * step/num_steps), sin(2pi*step/num_steps)]
            ```
         """
         #  if self.config.separate_networks:
@@ -1548,7 +1437,7 @@ class GaugeDynamics(BaseDynamics):
         arr = np.linspace(0, xsize * (xsize + 1) - 1, xsize * (xsize + 1))
         mask = (arr % 2 == 1).reshape(xsize, xsize+1)[:, :-1]
         mask_conj = ~mask
-        x_mask = np.stack([mask, mask_conj, mask], axis=0)
+        x_mask = np.stack([mask, mask_conj], axis=0)
         x_mask = x_mask.reshape(1, channels, xsize, xsize)
         x_mask_conj = ~x_mask
 
