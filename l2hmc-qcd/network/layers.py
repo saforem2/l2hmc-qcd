@@ -25,6 +25,10 @@ layers = tf.keras.layers
 # pylint:disable=too-many-arguments
 
 
+def swish(x):
+    return tf.keras.activations.swish(x)
+
+
 def relu(x):
     """Rectified Linear Unit Activation Function."""
     return np.where(x >= 0, x, 0)
