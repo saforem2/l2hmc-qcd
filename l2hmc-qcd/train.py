@@ -15,10 +15,6 @@ import logging
 import tensorflow as tf
 from config import BIN_DIR
 import utils
-#  from sacred import Experiment
-#
-#  ex = Experiment('l2hmc-qcd')
-#  ex.add_config(os.path.join(BIN_DIR, 'train_configs.json'))
 
 try:
     import horovod
@@ -61,31 +57,9 @@ logging_level = logging.WARNING
 logging_format = (
     '%(asctime)s %(levelname)s:%(process)s:%(thread)s:%(name)s:%(message)s'
 )
-#  stream = sys.stdout if RANK == 0 else sys.stderr
-#
-#  logging.basicConfig(level=logging_level,
-#                      format=logging_format,
-#                      datefmt=logging_datefmt,
-#                      stream=sys.stdout if RANK == 0 else sys.stderr)
-
 
 logging.info(f'using tensorflow version: {tf.__version__}')
 logging.info(f'using tensorflow from: {tf.__file__}')
-
-#  try:
-#      import horovod
-#      import horovod.tensorflow as hvd
-#      #  hvd.init()
-#      HAS_HOROVOD = True
-#      logging.info(f'using horovod version: {horovod.__version__}')
-#      logging.info(f'using horovod from: {horovod.__file__}')
-#  except ImportError:
-#      HAS_HOROVOD = False
-#
-#
-#  if RANK > 0:
-#      logging_level = logging.WARNING
-
 
 @contextlib.contextmanager
 def experimental_options(options):
