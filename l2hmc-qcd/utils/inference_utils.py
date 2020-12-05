@@ -168,9 +168,9 @@ def run_hmc(
             Path(base_dir).rglob(f'*{fstr}*')
         )
         if len(matches) > 0:
-            io.log(120 * '#')
-            io.log(f'Existing run with current parameters found! Skipping...')
-            io.log(120 * '#')
+            io.log('\n'.join([
+                120*'#', 'Existing run with current parameters found!', 120*'#'
+            ]))
             return InferenceResults(None, None, None, None)
 
     dynamics = build_dynamics(args)
@@ -267,7 +267,6 @@ def run_inference_from_log_dir(
 
     _, log_str = os.path.split(log_dir)
 
-    timestamp = io.get_timestamp('%Y-%m-%d-%H%M')
     x = convert_to_angle(tf.random.normal(dynamics.x_shape))
 
     configs['run_steps'] = run_steps
@@ -280,6 +279,7 @@ def run_inference_from_log_dir(
                             args=configs, x=x, beta=beta,
                             runs_dir=runs_dir, make_plots=make_plots,
                             therm_frac=therm_frac, num_chains=num_chains)
+
     return inference_results
 
 
