@@ -12,16 +12,12 @@ Date: 11/09/2019
 """
 from __future__ import absolute_import, division, print_function
 
-import scipy
 import numpy as np
 import tensorflow as tf
 
 from scipy.special import i0, i1
 
-from config import NP_FLOATS, TF_FLOATS
-
-TF_FLOAT = TF_FLOATS[tf.keras.backend.floatx()]
-NP_FLOAT = NP_FLOATS[tf.keras.backend.floatx()]
+from config import NP_FLOAT
 
 
 def u1_plaq_exact(beta):
@@ -46,12 +42,12 @@ def pbc(tup, shape):
 
 def pbc_tf(tup, shape):
     """Tensorflow implementation of `pbc` defined above."""
-    return list(tf.mod(tup, shape))
+    return list(tf.math.mod(tup, shape))
 
 
 def mat_adj(mat):
     """Returns the adjoint (i.e. conjugate transpose) of a matrix `mat`."""
-    return tf.transpose(tf.conj(mat))  # conjugate transpose
+    return tf.transpose(tf.math.conj(mat))  # conjugate transpose
 
 
 def project_angle(x):
@@ -64,7 +60,7 @@ def project_angle_np(x):
     return x - 2 * np.pi * np.floor((x + np.pi) / (2 * np.pi))
 
 
-def project_angle_fft(x, N=10):
+def project_angle_fft(x, n=10):
     """Use the fourier series representation `x` to approx `project_angle`.
     NOTE: Because `project_angle` suffers a discontinuity, we approximate `x`
     with its Fourier series representation in order to have a differentiable
@@ -74,8 +70,8 @@ def project_angle_fft(x, N=10):
         N (int): Number of terms to keep in Fourier series.
     """
     y = np.zeros(x.shape, dtype=NP_FLOAT)
-    for n in range(1, N):
-        y += (-2 / n) * ((-1) ** n) * tf.sin(n * x)
+    for i in range(1, n):
+        y += (-2 / i) * ((-1) ** i) * tf.sin(i * x)
     return y
 
 
@@ -120,7 +116,7 @@ def expand_samples(samples):
         ValueError if unable to correctly expand samples.
     """
     if len(samples.shape) == 2:
-        bs = samples.shape[0]
+        bs = samples.shape[0]  # pylint:disable=invalid-name
         x_dim = samples.shape[1]
         size = np.sqrt(x_dim / 2)
         if size - int(size) < 1e-2:
@@ -153,12 +149,12 @@ def plaq_sums(samples):
     if len(samples.shape) == 2:
         samples = expand_samples(samples)
 
-    plaq_sums = (samples[:, :, :, 0]
-                 - samples[:, :, :, 1]
-                 - np.roll(samples[:, :, :, 0], shift=-1, axis=2)
-                 + np.roll(samples[:, :, :, 1], shift=-1, axis=1))
+    plaqs = (samples[:, :, :, 0]
+             - samples[:, :, :, 1]
+             - np.roll(samples[:, :, :, 0], shift=-1, axis=2)
+             + np.roll(samples[:, :, :, 1], shift=-1, axis=1))
 
-    return plaq_sums
+    return plaqs
 
 
 def actions(samples):
@@ -172,11 +168,7 @@ def actions(samples):
     Returns:
         actions: The total action calculated for each lattice in `samples`.
     """
-    ps = plaq_sums(samples)
-
-    actions = np.sum(1. - np.cos(ps), axis=(1, 2))
-
-    return actions
+    return np.sum(1. - np.cos(plaq_sums(samples)), axis=(1, 2))
 
 
 def avg_plaqs(samples, ps=None):
@@ -196,9 +188,7 @@ def avg_plaqs(samples, ps=None):
     if plaq_sums is None:
         ps = plaq_sums(samples)
 
-    plaqs_avg = np.mean(np.cos(ps), axis=(1, 2, 3))
-
-    return plaqs_avg
+    return np.mean(np.cos(ps), axis=(1, 2, 3))
 
 
 def top_charges(samples, ps=None):
@@ -219,6 +209,4 @@ def top_charges(samples, ps=None):
     if ps is None:
         ps = plaq_sums(samples)
 
-    tc = np.sin(ps)
-
-    return tc
+    return np.sin(ps)
