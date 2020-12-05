@@ -21,11 +21,11 @@ import utils.file_io as io
 from utils.file_io import timeit
 from utils.attr_dict import AttrDict
 
-from config import NP_FLOATS, PI, TF_FLOATS
+from config import TF_FLOAT, NP_FLOAT
 from dynamics.config import NetWeights
 
-TF_FLOAT = TF_FLOATS[tf.keras.backend.floatx()]
-NP_FLOAT = NP_FLOATS[tf.keras.backend.floatx()]
+#  TF_FLOAT = FLOATS[tf.keras.backend.floatx()]
+#  NP_FLOAT = NP_FLOATS[tf.keras.backend.floatx()]
 
 COLORS = 100 * ['C0', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9']
 
@@ -71,7 +71,7 @@ def make_ridgeplots(dataset, num_chains=None, out_dir=None, drop_zeros=False):
 
                 x = x.flatten()
                 if drop_zeros:
-                    x = x[x!=0]
+                    x = x[x != 0]
                 #  x = val[{'leapfrog': lf}].values.flatten()
                 lf_arr = np.array(len(x) * [f'{lf}'])
                 lf_data[key].extend(x)
@@ -86,7 +86,7 @@ def make_ridgeplots(dataset, num_chains=None, out_dir=None, drop_zeros=False):
                               aspect=15, height=0.25, palette=pal)
 
             # Draw the densities in a few steps
-            _ = g.map(sns.kdeplot, key, cut=1, # bw_adjust=0.5,  # clip_on=False,
+            _ = g.map(sns.kdeplot, key, cut=1,
                       shade=True, alpha=0.7, linewidth=1.25)
             #  _ = g.map(sns.kdeplot, key, color='w', cut=1, lw=1.5)
             _ = g.map(plt.axhline, y=0, lw=1.5, alpha=0.7, clip_on=False)
@@ -101,7 +101,7 @@ def make_ridgeplots(dataset, num_chains=None, out_dir=None, drop_zeros=False):
 
             _ = g.map(label, key)
             # Set the subplots to overlap
-            _ = g.fig.subplots_adjust(hspace=-0.5)
+            _ = g.fig.subplots_adjust(hspace=-0.75)
             # Remove the axes details that don't play well with overlap
             _ = g.set_titles('')
             _ = g.set(yticks=[])
