@@ -52,6 +52,24 @@ except (ImportError, ModuleNotFoundError):
     SIZE = LOCAL_SIZE = 1
     IS_CHIEF = (RANK == 0)
 
+_d = ('f', 'b')
+_t = ('start', 'mid', 'end')
+
+
+base_keys = [
+    'H', 'ld', 'sld',
+    'sinQ', 'intQ', 'accept_prob',
+    'sumlogdet', 'logdets', 'logdet',
+]
+
+SKEYS = []
+for bk in base_keys:
+    for d in _d:                          # =====
+        SKEYS.append(f'{bk}{d}')          # 'Hf', 'Hb', 'Hwf', 'Hwb', etc.
+        for t in _t:                      # ====
+            SKEYS.append(f'{bk}{d}_{t}')  # 'Hf_start', 'Hf_mid', etc.
+
+
 SKIP_KEYS = ['charges',
              'Hf', 'Hb',
              'Hwf', 'Hwb',
