@@ -83,9 +83,9 @@ def multiple_runs(json_file=None):
     lattice_shapes = [
         (512, 16, 16, 2),
     ]
-    num_steps = [15, 20, 25]
+    num_steps = [10, 15, 20, 25]
     run_steps = 5000
-    betas = [4.5, 5.0, 5.5, 6.0]
+    betas = [4.5, 5.0, 5.5, 6.0, 7.0]
     eps = [0.025, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3]
     #  eps = [0.1, 0.125, 0.15, 0.175, 0.2]
 
