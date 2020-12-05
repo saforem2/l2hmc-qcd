@@ -161,7 +161,8 @@ def train(
         x = tf.reshape(x, (x.shape[0], -1))
 
     dynamics = build_dynamics(flags)
-    network_dir = dynamics.config.get('log_dir', None)
+    #  network_dir = dynamics.config.get('log_dir', None)
+    network_dir = dynamics.config.log_dir
     if network_dir is not None:
         xnet, vnet = dynamics._load_networks(network_dir)
         dynamics.xnet = xnet
@@ -340,7 +341,8 @@ def train_dynamics(
     factor = flags.get('reduce_lr_factor', 0.5)
     patience = flags.get('patience', 10)
     min_lr = flags.get('min_lr', 1e-5)
-    warmup_steps = dynamics.lr_config.get('warmup_steps', 1000)
+    #  warmup_steps = dynamics.lr_config.get('warmup_steps', 1000)
+    warmup_steps = dynamics.lr_config.warmup_steps
     reduce_lr = ReduceLROnPlateau(monitor='loss', mode='min',
                                   warmup_steps=warmup_steps,
                                   factor=factor, min_lr=min_lr,
@@ -443,7 +445,8 @@ def train_dynamics(
     # +---------------+
     # | Training loop |
     # +---------------+
-    warmup_steps = dynamics.lr_config.get('warmup_steps', 100)
+    #  warmup_steps = dynamics.lr_config.get('warmup_steps', 100)
+    warmup_steps = dynamics.lr_config.warmup_steps
     steps_per_epoch = flags.get('steps_per_epoch', 1000)
     print(f'steps_per_epoch: {steps_per_epoch}')
     for step, beta in zip(steps, betas):
