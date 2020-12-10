@@ -290,7 +290,8 @@ class GaugeDynamics(BaseDynamics):
         models_dir = os.path.join(log_dir, 'training', 'models')
         io.check_else_make_dir(models_dir)
         eps_file = os.path.join(models_dir, 'eps.z')
-        io.savez(self.eps.numpy(), eps_file, name='eps')
+        io.savez([e.numpy() for e in self.eps_arr], eps_file, name='eps')
+        #  io.savez(self.eps.numpy(), eps_file, name='eps')
         if self.config.separate_networks:
             xnet_paths = [
                 os.path.join(models_dir, f'dynamics_xnet{i}')
@@ -809,20 +810,21 @@ class GaugeDynamics(BaseDynamics):
             training: bool = None,
     ):
         """Perform a full-step momentum update in the forward direction."""
+        eps = self.eps_arr[step]
         x = self.normalizer(state.x)
         grad = self.grad_potential(x, state.beta)
         t = self._get_time(step, tile=tf.shape(x)[0])
 
         S, T, Q = self._call_vnet((x, grad, t), step, training)
 
-        scale = self._vsw * (self.eps * S)
+        scale = self._vsw * (eps * S)
         transl = self._vtw * T
-        transf = self._vqw * (self.eps * Q)
+        transf = self._vqw * (eps * Q)
 
         expS = tf.exp(scale)
         expQ = tf.exp(transf)
 
-        vf = state.v * expS - self.eps * (grad * expQ - transl)
+        vf = state.v * expS - eps * (grad * expQ - transl)
 
         state_out = State(x=x, v=vf, beta=state.beta)
         logdet = tf.reduce_sum(scale, axis=1)
@@ -836,20 +838,21 @@ class GaugeDynamics(BaseDynamics):
             training: bool = None,
     ):
         """Perform a half-step momentum update in the forward direction."""
+        eps = self.eps_arr[step]
         x = self.normalizer(state.x)
         grad = self.grad_potential(x, state.beta)
         t = self._get_time(step, tile=tf.shape(x)[0])
 
         S, T, Q = self._call_vnet((x, grad, t), step, training)
 
-        scale = self._vsw * (0.5 * self.eps * S)
+        scale = self._vsw * (0.5 * eps * S)
         transl = self._vtw * T
-        transf = self._vqw * (self.eps * Q)
+        transf = self._vqw * (eps * Q)
 
         expS = tf.exp(scale)
         expQ = tf.exp(transf)
 
-        vf = state.v * expS - 0.5 * self.eps * (grad * expQ - transl)
+        vf = state.v * expS - 0.5 * eps * (grad * expQ - transl)
 
         state_out = State(x=x, v=vf, beta=state.beta)
         logdet = tf.reduce_sum(scale, axis=1)
@@ -877,20 +880,21 @@ class GaugeDynamics(BaseDynamics):
         if self.config.hmc:
             return super()._update_v_forward(state, step, training)
 
+        eps = self.eps_arr[step]
         x = self.normalizer(state.x)
         grad = self.grad_potential(x, state.beta)
         t = self._get_time(step, tile=tf.shape(x)[0])
 
         S, T, Q = self._call_vnet((x, grad, t), step, training)
 
-        scale = self._vsw * (0.5 * self.eps * S)
+        scale = self._vsw * (0.5 * eps * S)
         transl = self._vtw * T
-        transf = self._vqw * (self.eps * Q)
+        transf = self._vqw * (eps * Q)
 
         expS = tf.exp(scale)
         expQ = tf.exp(transf)
 
-        vf = state.v * expS - 0.5 * self.eps * (grad * expQ - transl)
+        vf = state.v * expS - 0.5 * eps * (grad * expQ - transl)
 
         state_out = State(x=x, v=vf, beta=state.beta)
         logdet = tf.reduce_sum(scale, axis=1)
@@ -939,21 +943,22 @@ class GaugeDynamics(BaseDynamics):
         #      return self._update_xf_ncp(state, step, masks, training)
 
         m, mc = masks
+        eps = self.eps_arr[step]
         x = self.normalizer(state.x)
         t = self._get_time(step, tile=tf.shape(x)[0])
 
         S, T, Q = self._call_xnet((x, state.v, t), m, step, training)
 
-        scale = self._xsw * (self.eps * S)
+        scale = self._xsw * (eps * S)
         transl = self._xtw * T
-        transf = self._xqw * (self.eps * Q)
+        transf = self._xqw * (eps * Q)
 
         expS = tf.exp(scale)
         expQ = tf.exp(transf)
 
         if self.config.use_ncp:
             _x = 2 * tf.math.atan(tf.math.tan(x/2.) * expS)
-            _y = _x + self.eps * (state.v * expQ + transl)
+            _y = _x + eps * (state.v * expQ + transl)
             xf = (m * x) + (mc * _y)
 
             cterm = tf.math.cos(x / 2) ** 2
@@ -962,7 +967,7 @@ class GaugeDynamics(BaseDynamics):
             logdet = tf.reduce_sum(mc * logdet_, axis=1)
 
         else:
-            y = x * expS + self.eps * (state.v * expQ + transl)
+            y = x * expS + eps * (state.v * expQ + transl)
             xf = (m * x) + (mc * y)
             logdet = tf.reduce_sum(mc * scale, axis=1)
 
@@ -979,19 +984,20 @@ class GaugeDynamics(BaseDynamics):
     ):
         """Perform a full update of the momentum in the backward direction."""
         step_r = self.config.num_steps - step - 1
+        eps = self.eps_arr[step_r]
         x = self.normalizer(state.x)
         grad = self.grad_potential(x, state.beta)
         t = self._get_time(step_r, tile=tf.shape(x)[0])
         S, T, Q = self._call_vnet((x, grad, t), step_r, training)
 
-        scale = self._vsw * (-self.eps * S)
-        transf = self._vqw * (self.eps * Q)
+        scale = self._vsw * (-eps * S)
+        transf = self._vqw * (eps * Q)
         transl = self._vtw * T
 
         expS = tf.exp(scale)
         expQ = tf.exp(transf)
 
-        vb = expS * (state.v + self.eps * (grad * expQ - transl))
+        vb = expS * (state.v + eps * (grad * expQ - transl))
 
         state_out = State(x=x, v=vb, beta=state.beta)
         logdet = tf.reduce_sum(scale, axis=1)
@@ -1006,19 +1012,20 @@ class GaugeDynamics(BaseDynamics):
     ):
         """Perform a half update of the momentum in the backward direction."""
         step_r = self.config.num_steps - step - 1
+        eps = self.eps_arr[step_r]
         x = self.normalizer(state.x)
         grad = self.grad_potential(x, state.beta)
         t = self._get_time(step_r, tile=tf.shape(x)[0])
         S, T, Q = self._call_vnet((x, grad, t), step_r, training)
 
-        scale = self._vsw * (-0.5 * self.eps * S)
-        transf = self._vqw * (self.eps * Q)
+        scale = self._vsw * (-0.5 * eps * S)
+        transf = self._vqw * (eps * Q)
         transl = self._vtw * T
 
         expS = tf.exp(scale)
         expQ = tf.exp(transf)
 
-        vb = expS * (state.v + 0.5 * self.eps * (grad * expQ - transl))
+        vb = expS * (state.v + 0.5 * eps * (grad * expQ - transl))
 
         state_out = State(x=x, v=vb, beta=state.beta)
         logdet = tf.reduce_sum(scale, axis=1)
@@ -1042,19 +1049,20 @@ class GaugeDynamics(BaseDynamics):
             new_state (State): New state, with updated momentum.
             logdet (float): Jacobian factor.
         """
+        eps = self.eps_arr[step]
         x = self.normalizer(state.x)
         grad = self.grad_potential(x, state.beta)
         t = self._get_time(step, tile=tf.shape(x)[0])
         S, T, Q = self._call_vnet((x, grad, t), step, training)
 
-        scale = self._vsw * (-0.5 * self.eps * S)
-        transf = self._vqw * (self.eps * Q)
+        scale = self._vsw * (-0.5 * eps * S)
+        transf = self._vqw * (eps * Q)
         transl = self._vtw * T
 
         expS = tf.exp(scale)
         expQ = tf.exp(transf)
 
-        vb = expS * (state.v + 0.5 * self.eps * (grad * expQ - transl))
+        vb = expS * (state.v + 0.5 * eps * (grad * expQ - transl))
 
         state_out = State(x=x, v=vb, beta=state.beta)
         logdet = tf.reduce_sum(scale, axis=1)
@@ -1108,20 +1116,21 @@ class GaugeDynamics(BaseDynamics):
 
         # Call `XNet` using `self._scattered_xnet`
         m, mc = masks
+        eps = self.eps_arr[step]
         x = self.normalizer(state.x)
         t = self._get_time(step, tile=tf.shape(x)[0])
         S, T, Q = self._call_xnet((x, state.v, t), m, step, training)
 
-        scale = self._xsw * (-self.eps * S)
+        scale = self._xsw * (-eps * S)
         transl = self._xtw * T
-        transf = self._xqw * (self.eps * Q)
+        transf = self._xqw * (eps * Q)
 
         expS = tf.exp(scale)
         expQ = tf.exp(transf)
 
         if self.config.use_ncp:
             term1 = 2 * tf.math.atan(expS * tf.math.tan(state.x / 2))
-            term2 = expS * self.eps * (state.v * expQ + transl)
+            term2 = expS * eps * (state.v * expQ + transl)
             y = term1 - term2
             xb = (m * x) + (mc * y)
 
@@ -1131,7 +1140,7 @@ class GaugeDynamics(BaseDynamics):
             logdet = tf.reduce_sum(mc * logdet_, axis=1)
 
         else:
-            y = expS * (x - self.eps * (state.v * expQ + transl))
+            y = expS * (x - eps * (state.v * expQ + transl))
             xb = m * x + mc * y
             logdet = tf.reduce_sum(mc * scale, axis=1)
 
@@ -1256,7 +1265,7 @@ class GaugeDynamics(BaseDynamics):
         data.update({
             'accept_prob': accept_prob,
             'accept_mask': metrics.get('accept_mask', None),
-            'eps': self.eps,
+            'eps': tf.reduce_mean(self.eps_arr),
             'beta': states.init.beta,
             'sumlogdet': metrics.get('sumlogdet', None),
         })
@@ -1318,7 +1327,7 @@ class GaugeDynamics(BaseDynamics):
         data.update({
             'accept_prob': accept_prob,
             'accept_mask': metrics.get('accept_mask', None),
-            'eps': self.eps,
+            'eps': tf.reduce_mean(self.eps_arr),
             'beta': states.init.beta,
             'sumlogdet': metrics.get('sumlogdet', None),
         })

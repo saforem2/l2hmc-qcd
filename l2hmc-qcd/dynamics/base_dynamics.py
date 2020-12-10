@@ -98,7 +98,13 @@ class BaseDynamics(tf.keras.Model):
         self.batch_size = params.get('batch_size', None)
 
         self.x_shape = (self.batch_size, self.xdim)
-        self.eps = self._build_eps(use_log=False)
+        #  self.eps = self._build_eps(use_log=False)
+        self.eps_arr = [
+            self._build_eps(use_log=False) for _ in
+            range(self.config.num_steps)
+        ]
+        self.eps = self.eps_arr
+        self._lf_step = 0
         self.masks = self._build_masks()
         self.normalizer = normalizer if normalizer is not None else identity
         if self.config.hmc:
