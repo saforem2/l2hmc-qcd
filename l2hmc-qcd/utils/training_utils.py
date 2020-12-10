@@ -180,7 +180,7 @@ def train(
         params = {
             'beta_init': train_data.data.beta[0],
             'beta_final': train_data.data.beta[-1],
-            'eps': dynamics.eps.numpy(),
+            'eps': tf.reduce_mean(dynamics.eps).numpy(),
             'lattice_shape': dynamics.config.lattice_shape,
             'num_steps': dynamics.config.num_steps,
             'net_weights': dynamics.net_weights,
