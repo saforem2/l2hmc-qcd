@@ -65,7 +65,6 @@ TF_FLOAT = tf.keras.backend.floatx()
 #  INPUTS = Tuple[tf.Tensor, tf.Tensor]
 
 
-
 def project_angle(x):
     """Returns the projection of an angle `x` from [-4pi, 4pi] to [-pi, pi]."""
     return x - 2 * np.pi * tf.math.floor((x + np.pi) / (2 * np.pi))
@@ -289,8 +288,11 @@ class GaugeDynamics(BaseDynamics):
         """Save networks to disk."""
         models_dir = os.path.join(log_dir, 'training', 'models')
         io.check_else_make_dir(models_dir)
-        eps_file = os.path.join(models_dir, 'eps.z')
-        io.savez([e.numpy() for e in self.eps_arr], eps_file, name='eps')
+        xeps_file = os.path.join(models_dir, 'x_eps.z')
+        veps_file = os.path.join(models_dir, 'v_eps.z')
+        io.savez([e.numpy() for e in self.x_eps_arr], xeps_file, name='x_eps')
+        io.savez([e.numpy() for e in self.v_eps_arr], veps_file, name='v_eps')
+        #  io.savez([e.numpy() for e in self.eps_arr], eps_file, name='eps')
         #  io.savez(self.eps.numpy(), eps_file, name='eps')
         if self.config.separate_networks:
             xnet_paths = [
@@ -561,11 +563,11 @@ class GaugeDynamics(BaseDynamics):
             return metrics
 
         state_prop, logdet = self._half_v_update_forward(state_prop,
-                                                          0, training)
+                                                         0, training)
         sumlogdet += logdet
         for step in range(self.config.num_steps):
             state_prop, logdet = self._full_x_update_forward(state_prop,
-                                                              step, training)
+                                                             step, training)
             sumlogdet += logdet
 
             if step < self.config.num_steps - 1:
@@ -578,7 +580,7 @@ class GaugeDynamics(BaseDynamics):
                     metrics = _update_metrics(data, step+1)
 
         state_prop, logdet = self._half_v_update_forward(state_prop,
-                                                          step, training)
+                                                         step, training)
         sumlogdet += logdet
 
         accept_prob = self.compute_accept_prob(state, state_prop, sumlogdet)
@@ -588,7 +590,6 @@ class GaugeDynamics(BaseDynamics):
             data = _get_metrics(state_prop, sumlogdet)
             metrics = _update_metrics(data, step+1)
             metrics = _stack_metrics()
-
 
         return state_prop, metrics
 
@@ -654,7 +655,8 @@ class GaugeDynamics(BaseDynamics):
 
         return state_prop, metrics
 
-    def split_metrics_by_accept_reject(self, metrics, mask_a, mask_r=None):
+    @staticmethod
+    def split_metrics_by_accept_reject(metrics, mask_a, mask_r=None):
         if mask_r is None:
             mask_r = 1. - mask_a
 
@@ -810,7 +812,7 @@ class GaugeDynamics(BaseDynamics):
             training: bool = None,
     ):
         """Perform a full-step momentum update in the forward direction."""
-        eps = self.eps_arr[step]
+        eps = self.v_eps_arr[step]
         x = self.normalizer(state.x)
         grad = self.grad_potential(x, state.beta)
         t = self._get_time(step, tile=tf.shape(x)[0])
@@ -838,7 +840,7 @@ class GaugeDynamics(BaseDynamics):
             training: bool = None,
     ):
         """Perform a half-step momentum update in the forward direction."""
-        eps = self.eps_arr[step]
+        eps = self.v_eps_arr[step]
         x = self.normalizer(state.x)
         grad = self.grad_potential(x, state.beta)
         t = self._get_time(step, tile=tf.shape(x)[0])
@@ -880,7 +882,7 @@ class GaugeDynamics(BaseDynamics):
         if self.config.hmc:
             return super()._update_v_forward(state, step, training)
 
-        eps = self.eps_arr[step]
+        eps = self.v_eps_arr[step]
         x = self.normalizer(state.x)
         grad = self.grad_potential(x, state.beta)
         t = self._get_time(step, tile=tf.shape(x)[0])
@@ -943,7 +945,7 @@ class GaugeDynamics(BaseDynamics):
         #      return self._update_xf_ncp(state, step, masks, training)
 
         m, mc = masks
-        eps = self.eps_arr[step]
+        eps = self.x_eps_arr[step]
         x = self.normalizer(state.x)
         t = self._get_time(step, tile=tf.shape(x)[0])
 
@@ -984,7 +986,7 @@ class GaugeDynamics(BaseDynamics):
     ):
         """Perform a full update of the momentum in the backward direction."""
         step_r = self.config.num_steps - step - 1
-        eps = self.eps_arr[step_r]
+        eps = self.v_eps_arr[step_r]
         x = self.normalizer(state.x)
         grad = self.grad_potential(x, state.beta)
         t = self._get_time(step_r, tile=tf.shape(x)[0])
@@ -1012,7 +1014,7 @@ class GaugeDynamics(BaseDynamics):
     ):
         """Perform a half update of the momentum in the backward direction."""
         step_r = self.config.num_steps - step - 1
-        eps = self.eps_arr[step_r]
+        eps = self.v_eps_arr[step_r]
         x = self.normalizer(state.x)
         grad = self.grad_potential(x, state.beta)
         t = self._get_time(step_r, tile=tf.shape(x)[0])
@@ -1049,7 +1051,7 @@ class GaugeDynamics(BaseDynamics):
             new_state (State): New state, with updated momentum.
             logdet (float): Jacobian factor.
         """
-        eps = self.eps_arr[step]
+        eps = self.v_eps_arr[step]
         x = self.normalizer(state.x)
         grad = self.grad_potential(x, state.beta)
         t = self._get_time(step, tile=tf.shape(x)[0])
@@ -1116,7 +1118,7 @@ class GaugeDynamics(BaseDynamics):
 
         # Call `XNet` using `self._scattered_xnet`
         m, mc = masks
-        eps = self.eps_arr[step]
+        eps = self.x_eps_arr[step]
         x = self.normalizer(state.x)
         t = self._get_time(step, tile=tf.shape(x)[0])
         S, T, Q = self._call_xnet((x, state.v, t), m, step, training)
@@ -1265,7 +1267,8 @@ class GaugeDynamics(BaseDynamics):
         data.update({
             'accept_prob': accept_prob,
             'accept_mask': metrics.get('accept_mask', None),
-            'eps': tf.reduce_mean(self.eps_arr),
+            'xeps_avg': tf.reduce_mean(self.x_eps_arr),
+            'veps_avg': tf.reduce_mean(self.v_eps_arr),
             'beta': states.init.beta,
             'sumlogdet': metrics.get('sumlogdet', None),
         })
@@ -1288,10 +1291,6 @@ class GaugeDynamics(BaseDynamics):
         metrics.update(**observables)
 
         data.update(**metrics)
-
-        #  metrics.update({
-        #      'lr': self._get_lr(),
-        #  })
 
         return states.out.x, data
 
@@ -1327,7 +1326,9 @@ class GaugeDynamics(BaseDynamics):
         data.update({
             'accept_prob': accept_prob,
             'accept_mask': metrics.get('accept_mask', None),
-            'eps': tf.reduce_mean(self.eps_arr),
+            'xeps_avg': tf.reduce_mean(self.x_eps_arr),
+            'veps_avg': tf.reduce_mean(self.v_eps_arr),
+            #  'eps': tf.reduce_mean(self.eps_arr),
             'beta': states.init.beta,
             'sumlogdet': metrics.get('sumlogdet', None),
         })
@@ -1442,7 +1443,7 @@ class GaugeDynamics(BaseDynamics):
 
     def _build_conv_mask(self):
         """Construct checkerboard mask with size L * L and 2 channels."""
-        batch_size, tsize, xsize, channels = self.lattice_shape
+        _, tsize, xsize, channels = self.lattice_shape
         arr = np.linspace(0, xsize * (xsize + 1) - 1, xsize * (xsize + 1))
         mask = (arr % 2 == 1).reshape(xsize, xsize+1)[:, :-1]
         mask_conj = ~mask
