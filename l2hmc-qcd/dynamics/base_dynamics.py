@@ -99,11 +99,15 @@ class BaseDynamics(tf.keras.Model):
 
         self.x_shape = (self.batch_size, self.xdim)
         #  self.eps = self._build_eps(use_log=False)
-        self.eps_arr = [
+        self.v_eps_arr = [
             self._build_eps(use_log=False) for _ in
             range(self.config.num_steps)
         ]
-        self.eps = self.eps_arr
+        self.x_eps_arr = [
+            self._build_eps(use_log=False) for _ in
+            range(self.config.num_steps)
+        ]
+        #  self.eps = self.eps_arr
         self._lf_step = 0
         self.masks = self._build_masks()
         self.normalizer = normalizer if normalizer is not None else identity
@@ -817,20 +821,21 @@ class BaseDynamics(tf.keras.Model):
             training: bool = None,
     ):
         """Perform a full-step momentum update in the forward direction."""
+        eps = self.v_eps_arr[step]
         x = self.normalizer(state.x)
         grad = self.grad_potential(x, state.beta)
         t = self._get_time(step, tile=tf.shape(x)[0])
 
         S, T, Q = self._call_vnet((x, grad, t), step, training)
 
-        scale = self._vsw * (0.5 * self.eps * S)
+        scale = self._vsw * (0.5 * eps * S)
         transl = self._vtw * T
-        transf = self._vqw * (self.eps * Q)
+        transf = self._vqw * (eps * Q)
 
         expS = tf.exp(scale)
         expQ = tf.exp(transf)
 
-        vf = state.v * expS - self.eps * (grad * expQ - transl)
+        vf = state.v * expS - eps * (grad * expQ - transl)
 
         state_out = State(x=x, v=vf, beta=state.beta)
         logdet = tf.reduce_sum(scale, axis=1)
@@ -847,17 +852,18 @@ class BaseDynamics(tf.keras.Model):
         x = self.normalizer(state.x)
         grad = self.grad_potential(x, state.beta)
         t = self._get_time(step, tile=tf.shape(x)[0])
+        eps = self.v_eps_arr[step]
 
         S, T, Q = self._call_vnet((x, grad, t), step, training)
 
-        scale = self._vsw * (0.5 * self.eps * S)
+        scale = self._vsw * (0.5 * eps * S)
         transl = self._vtw * T
-        transf = self._vqw * (self.eps * Q)
+        transf = self._vqw * (eps * Q)
 
         expS = tf.exp(scale)
         expQ = tf.exp(transf)
 
-        vf = state.v * expS - 0.5 * self.eps * (grad * expQ - transl)
+        vf = state.v * expS - 0.5 * eps * (grad * expQ - transl)
 
         state_out = State(x=x, v=vf, beta=state.beta)
         logdet = tf.reduce_sum(scale, axis=1)
@@ -884,18 +890,18 @@ class BaseDynamics(tf.keras.Model):
         """
         x = self.normalizer(state.x)
         t = self._get_time(step, tile=tf.shape(x)[0])
-
+        eps = self.v_eps_arr[step]
         grad = self.grad_potential(x, state.beta)
         S, T, Q = self.vnet((x, grad, t), training)
 
         transl = self._vtw * T
-        scale = self._vsw * (0.5 * self.eps * S)
-        transf = self._vqw * (self.eps * Q)
+        scale = self._vsw * (0.5 * eps * S)
+        transf = self._vqw * (eps * Q)
 
         expS = tf.exp(scale)
         expQ = tf.exp(transf)
 
-        vf = state.v * expS - 0.5 * self.eps * (grad * expQ - transl)
+        vf = state.v * expS - 0.5 * eps * (grad * expQ - transl)
 
         state_out = State(x=x, v=vf, beta=state.beta)
         logdet = tf.reduce_sum(scale, axis=1)
@@ -954,17 +960,18 @@ class BaseDynamics(tf.keras.Model):
         m, mc = masks
         x = self.normalizer(state.x)
         t = self._get_time(step, tile=tf.shape(x)[0])
+        eps = self.x_eps_arr[step]
 
         S, T, Q = self.xnet((m * x, state.v, t), training)
 
         transl = self._xtw * T
-        scale = self._xsw * (self.eps * S)
-        transf = self._xqw * (self.eps * Q)
+        scale = self._xsw * (eps * S)
+        transf = self._xqw * (eps * Q)
 
         expS = tf.exp(scale)
         expQ = tf.exp(transf)
 
-        y = x * expS + self.eps * (state.v * expQ + transl)
+        y = x * expS + eps * (state.v * expQ + transl)
         xf = m * x + mc * y
 
         xf = self.normalizer(xf)
@@ -985,16 +992,17 @@ class BaseDynamics(tf.keras.Model):
         x = self.normalizer(state.x)
         grad = self.grad_potential(x, state.beta)
         t = self._get_time(step_r, tile=tf.shape(x)[0])
+        eps = self.v_eps_arr[step_r]
         S, T, Q = self._call_vnet((x, grad, t), step_r, training)
 
-        scale = self._vsw * (-0.5 * self.eps * S)
-        transf = self._vqw * (self.eps * Q)
+        scale = self._vsw * (-0.5 * eps * S)
+        transf = self._vqw * (eps * Q)
         transl = self._vtw * T
 
         expS = tf.exp(scale)
         expQ = tf.exp(transf)
 
-        vb = expS * (state.v + self.eps * (grad * expQ - transl))
+        vb = expS * (state.v + eps * (grad * expQ - transl))
 
         state_out = State(x=x, v=vb, beta=state.beta)
         logdet = tf.reduce_sum(scale, axis=1)
@@ -1012,16 +1020,17 @@ class BaseDynamics(tf.keras.Model):
         x = self.normalizer(state.x)
         grad = self.grad_potential(x, state.beta)
         t = self._get_time(step_r, tile=tf.shape(x)[0])
+        eps = self.v_eps_arr[step]
         S, T, Q = self._call_vnet((x, grad, t), step_r, training)
 
-        scale = self._vsw * (-0.5 * self.eps * S)
-        transf = self._vqw * (self.eps * Q)
+        scale = self._vsw * (-0.5 * eps * S)
+        transf = self._vqw * (eps * Q)
         transl = self._vtw * T
 
         expS = tf.exp(scale)
         expQ = tf.exp(transf)
 
-        vb = expS * (state.v + 0.5 * self.eps * (grad * expQ - transl))
+        vb = expS * (state.v + 0.5 * eps * (grad * expQ - transl))
 
         state_out = State(x=x, v=vb, beta=state.beta)
         logdet = tf.reduce_sum(scale, axis=1)
@@ -1047,18 +1056,19 @@ class BaseDynamics(tf.keras.Model):
         """
         x = self.normalizer(state.x)
         t = self._get_time(step, tile=tf.shape(x)[0])
+        eps = self.v_eps_arr[step]
 
         grad = self.grad_potential(x, state.beta)
         S, T, Q = self.vnet((x, grad, t), training)
 
-        scale = self._vsw * (-0.5 * self.eps * S)
-        transf = self._vqw * (self.eps * Q)
+        scale = self._vsw * (-0.5 * eps * S)
+        transf = self._vqw * (eps * Q)
         transl = self._vtw * T
 
         expS = tf.exp(scale)
         expQ = tf.exp(transf)
 
-        vb = expS * (state.v + 0.5 * self.eps * (grad * expQ - transl))
+        vb = expS * (state.v + 0.5 * eps * (grad * expQ - transl))
 
         state_out = State(x=x, v=vb, beta=state.beta)
         logdet = tf.reduce_sum(scale, axis=1)
@@ -1108,16 +1118,17 @@ class BaseDynamics(tf.keras.Model):
         m, mc = masks
         x = self.normalizer(state.x)
         t = self._get_time(step, tile=tf.shape(x)[0])
+        eps = self.x_eps_arr[step]
         S, T, Q = self.xnet((m * x, state.v, t), training)
 
-        scale = self._xsw * (-self.eps * S)
+        scale = self._xsw * (-eps * S)
         transl = self._xtw * T
-        transf = self._xqw * (self.eps * Q)
+        transf = self._xqw * (eps * Q)
 
         expS = tf.exp(scale)
         expQ = tf.exp(transf)
 
-        y = expS * (x - self.eps * (state.v * expQ + transl))
+        y = expS * (x - eps * (state.v * expQ + transl))
         xb = self.normalizer(m * x + mc * y)
 
         state_out = State(x=xb, v=state.v, beta=state.beta)
@@ -1224,7 +1235,8 @@ class BaseDynamics(tf.keras.Model):
     def _build_networks(
             self,
             net_config: NetworkConfig = None,
-            conv_config: ConvolutionConfig = None
+            conv_config: ConvolutionConfig = None,
+            log_dir: str = None,
     ):
         """Logic for building the position and momentum networks.
 
