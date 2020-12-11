@@ -403,7 +403,8 @@ def run_dynamics(
     run_data = DataContainer(flags.run_steps)
 
     template = '\n'.join([f'beta: {beta}',
-                          f'eps: {dynamics.eps.numpy():.4g}',
+                          f'eps: {dynamics.eps}',
+                          #  f'eps: {dynamics.eps.numpy():.4g}',
                           f'net_weights: {dynamics.net_weights}'])
     io.log(f'Running inference with:\n {template}')
 
