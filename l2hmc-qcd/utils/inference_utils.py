@@ -114,7 +114,6 @@ def _get_hmc_log_str(configs):
     if b is None:
         b = configs.get('beta_final', None)
 
-
     log_str = (
         f'HMC_L{nx}_b{bs}_beta{float(b)}_lf{lf}_eps{eps}'.replace('.0', '')
     )
@@ -305,14 +304,13 @@ def run(
             runs_dir = os.path.join(args.log_dir, 'inference')
 
     md_steps = args.get('md_steps', 50)
-    eps = dynamics.eps
-    if hasattr(eps, 'numpy'):
-        eps = eps.numpy()
-
-    try:
-        args.eps = eps
-    except AttributeError:
-        args.update({'eps': eps})
+    #  eps = dynamics.eps
+    #  if hasattr(eps, 'numpy'):
+    #      eps = eps.numpy()
+    #  try:
+    #      args.eps = eps
+    #  except AttributeError:
+    #      args.update({'eps': eps})
 
     io.check_else_make_dir(runs_dir)
     run_dir = io.make_run_dir(args, runs_dir)
@@ -346,10 +344,18 @@ def run(
     if args.get('save_run_data', True):
         run_data.save_data(data_dir)
 
+    xeps_avg = tf.reduce_mean(dynamics.xeps)
+    veps_avg = tf.reduce_mean(dynamics.veps)
+
     run_params = {
         'hmc': dynamics.config.hmc,
         'run_dir': run_dir,
-        'eps': eps,
+        'xeps': dynamics.xeps,
+        'veps': dynamics.veps,
+        'xeps_avg': xeps_avg,
+        'veps_avg': veps_avg,
+        'eps_avg': (xeps_avg + veps_avg) / 2.,
+        #  'eps': eps,
         'beta': beta,
         'run_steps': run_steps,
         'plaq_weight': dynamics.plaq_weight,
@@ -403,7 +409,8 @@ def run_dynamics(
     run_data = DataContainer(flags.run_steps)
 
     template = '\n'.join([f'beta: {beta}',
-                          f'eps: {dynamics.eps}',
+                          f'x_eps_arr: {dynamics.xeps}',
+                          f'v_eps_arr: {dynamics.veps}',
                           #  f'eps: {dynamics.eps.numpy():.4g}',
                           f'net_weights: {dynamics.net_weights}'])
     io.log(f'Running inference with:\n {template}')
@@ -424,7 +431,7 @@ def run_dynamics(
     header = run_data.get_header(metrics,
                                  skip=SKIP_KEYS,
                                  prepend=['{:^12s}'.format('step')])
-    #  io.log(header)
+
     io.log(header.split('\n'), should_print=True)
     # -------------------------------------------------------------
 
