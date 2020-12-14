@@ -102,14 +102,6 @@ def build_dynamics(flags):
         conv_config = flags.get('conv_config', None)
         input_shape = config.lattice_shape[1:]
         conv_config.input_shape = input_shape
-        #  input_shape = config.get('lattice_shape', None)[1:]
-        #  conv_config.update({
-        #      'input_shape': input_shape,
-        #  })
-        #  conv_config = ConvolutionConfig(**dict(conv_config))
-
-    #  log_dir = flags['dynamics_config'].pop('log_dir', None)
-    #  config = GaugeDynamicsConfig(**dict(flags.get('dynamics_config', None)))
 
     dynamics = GaugeDynamics(
         params=flags,
@@ -117,12 +109,13 @@ def build_dynamics(flags):
         network_config=net_config,
         lr_config=lr_config,
         conv_config=conv_config,
-        #  log_dir=log_dir
     )
 
     log_dir = flags['dynamics_config'].get('log_dir', None)
     if log_dir is not None and log_dir != '':
-        io.log(120 * '#')
+        io.log(
+            '\n'.join([120*'#', f'LOADING NETWORKS FROM: {log_dir}', 120*'#'])
+        )
         io.log(f'LOADING NETWORKS FROM: {log_dir}  !!!')
         io.log(120 * '#')
         xnet, vnet = dynamics._load_networks(log_dir)
@@ -288,10 +281,10 @@ class GaugeDynamics(BaseDynamics):
         """Save networks to disk."""
         models_dir = os.path.join(log_dir, 'training', 'models')
         io.check_else_make_dir(models_dir)
-        xeps_file = os.path.join(models_dir, 'x_eps.z')
-        veps_file = os.path.join(models_dir, 'v_eps.z')
-        io.savez([e.numpy() for e in self.x_eps_arr], xeps_file, name='x_eps')
-        io.savez([e.numpy() for e in self.v_eps_arr], veps_file, name='v_eps')
+        xeps_file = os.path.join(models_dir, 'xeps.z')
+        veps_file = os.path.join(models_dir, 'veps.z')
+        io.savez([e.numpy() for e in self.xeps], xeps_file, name='xeps')
+        io.savez([e.numpy() for e in self.veps], veps_file, name='veps')
         #  io.savez([e.numpy() for e in self.eps_arr], eps_file, name='eps')
         #  io.savez(self.eps.numpy(), eps_file, name='eps')
         if self.config.separate_networks:
@@ -812,7 +805,7 @@ class GaugeDynamics(BaseDynamics):
             training: bool = None,
     ):
         """Perform a full-step momentum update in the forward direction."""
-        eps = self.v_eps_arr[step]
+        eps = self.veps[step]
         x = self.normalizer(state.x)
         grad = self.grad_potential(x, state.beta)
         t = self._get_time(step, tile=tf.shape(x)[0])
@@ -840,7 +833,7 @@ class GaugeDynamics(BaseDynamics):
             training: bool = None,
     ):
         """Perform a half-step momentum update in the forward direction."""
-        eps = self.v_eps_arr[step]
+        eps = self.veps[step]
         x = self.normalizer(state.x)
         grad = self.grad_potential(x, state.beta)
         t = self._get_time(step, tile=tf.shape(x)[0])
@@ -882,7 +875,7 @@ class GaugeDynamics(BaseDynamics):
         if self.config.hmc:
             return super()._update_v_forward(state, step, training)
 
-        eps = self.v_eps_arr[step]
+        eps = self.veps[step]
         x = self.normalizer(state.x)
         grad = self.grad_potential(x, state.beta)
         t = self._get_time(step, tile=tf.shape(x)[0])
@@ -945,7 +938,7 @@ class GaugeDynamics(BaseDynamics):
         #      return self._update_xf_ncp(state, step, masks, training)
 
         m, mc = masks
-        eps = self.x_eps_arr[step]
+        eps = self.xeps[step]
         x = self.normalizer(state.x)
         t = self._get_time(step, tile=tf.shape(x)[0])
 
@@ -986,7 +979,7 @@ class GaugeDynamics(BaseDynamics):
     ):
         """Perform a full update of the momentum in the backward direction."""
         step_r = self.config.num_steps - step - 1
-        eps = self.v_eps_arr[step_r]
+        eps = self.veps[step_r]
         x = self.normalizer(state.x)
         grad = self.grad_potential(x, state.beta)
         t = self._get_time(step_r, tile=tf.shape(x)[0])
@@ -1014,7 +1007,7 @@ class GaugeDynamics(BaseDynamics):
     ):
         """Perform a half update of the momentum in the backward direction."""
         step_r = self.config.num_steps - step - 1
-        eps = self.v_eps_arr[step_r]
+        eps = self.veps[step_r]
         x = self.normalizer(state.x)
         grad = self.grad_potential(x, state.beta)
         t = self._get_time(step_r, tile=tf.shape(x)[0])
@@ -1051,7 +1044,7 @@ class GaugeDynamics(BaseDynamics):
             new_state (State): New state, with updated momentum.
             logdet (float): Jacobian factor.
         """
-        eps = self.v_eps_arr[step]
+        eps = self.veps[step]
         x = self.normalizer(state.x)
         grad = self.grad_potential(x, state.beta)
         t = self._get_time(step, tile=tf.shape(x)[0])
@@ -1118,7 +1111,7 @@ class GaugeDynamics(BaseDynamics):
 
         # Call `XNet` using `self._scattered_xnet`
         m, mc = masks
-        eps = self.x_eps_arr[step]
+        eps = self.xeps[step]
         x = self.normalizer(state.x)
         t = self._get_time(step, tile=tf.shape(x)[0])
         S, T, Q = self._call_xnet((x, state.v, t), m, step, training)
@@ -1260,6 +1253,19 @@ class GaugeDynamics(BaseDynamics):
                 'accept_prob_aux': accept_prob_,
             })
 
+        midpt = self.config.num_steps // 2
+
+        def _traj_summ(x, key=None):
+            if key is not None:
+                return {
+                    f'{key}': tf.squeeze(x),
+                    f'{key}_start': x[0],
+                    f'{key}_mid': x[midpt],
+                    f'{key}_end': x[-1],
+                }
+
+            return (x[0], x[midpt], x[1])
+
         # Separated from [1038] for ordering when printing
         #  mask_a = metrics.get('accept_mask', None)
         #  if mask_a is not None:
@@ -1267,30 +1273,25 @@ class GaugeDynamics(BaseDynamics):
         data.update({
             'accept_prob': accept_prob,
             'accept_mask': metrics.get('accept_mask', None),
-            'xeps_avg': tf.reduce_mean(self.x_eps_arr),
-            'veps_avg': tf.reduce_mean(self.v_eps_arr),
+            #  'xeps_avg': tf.reduce_mean(self._arr),
+            #  'veps_avg': tf.reduce_mean(self.veps),
             'beta': states.init.beta,
             'sumlogdet': metrics.get('sumlogdet', None),
         })
+        data.update(**_traj_summ(self.xeps, 'xeps'))
+        data.update(**_traj_summ(self.veps, 'veps'))
 
-        if self._verbose:
-            midpt = self.config.num_steps // 2
+        if self._verbose and not self.config.hmc:
             for (kf, vf), (kb, vb) in zip(metrics.forward.items(),
                                           metrics.backward.items()):
-                data.update({
-                    f'{kf}f': tf.squeeze(vf),
-                    f'{kb}b': tf.squeeze(vb),
-                    f'{kf}f_start': vf[0],
-                    f'{kf}f_mid': vf[midpt],
-                    f'{kf}f_end': vf[-1],
-                    f'{kb}b_start': vb[0],
-                    f'{kb}b_mid': vb[midpt],
-                    f'{kb}b_end': vb[-1],
-                })
-        observables = self.calc_observables(states)
-        metrics.update(**observables)
+                data.update(**_traj_summ(vf, f'{kf}f'))
+                data.update(**_traj_summ(vb, f'{kb}b'))
+        #  observables = self.calc_observables(states)
+        data.update({k: v for k, v in metrics.items()})
+        data.update({k: v for k, v in self.calc_observables(states).items()})
+        #  metrics.update(**observables)
 
-        data.update(**metrics)
+        #  data.update(**metrics)
 
         return states.out.x, data
 
@@ -1311,6 +1312,7 @@ class GaugeDynamics(BaseDynamics):
         accept_prob = metrics.get('accept_prob', None)
         ploss, qloss = self.calc_losses(states, accept_prob)
         loss = ploss + qloss
+
         data = AttrDict({
             #  'lr': self._get_lr(),
             'dt': time.time() - start,
@@ -1322,46 +1324,94 @@ class GaugeDynamics(BaseDynamics):
                 'qloss': qloss
             })
 
+        midpt = self.config.num_steps // 2
+
+        def _traj_summ(x, key=None):
+            if key is not None:
+                return {
+                    f'{key}': tf.squeeze(x),
+                    #  f'{key}_start': x[0],
+                    #  f'{key}_mid': x[midpt],
+                    #  f'{key}_end': x[-1],
+                }
+
+            return (x[0], x[midpt], x[1])
+
         # Separated from [1038] for ordering when printing
+        #  mask_a = metrics.get('accept_mask', None)
+        #  if mask_a is not None:
+        #      metrics_ = self.split_metrics_by_accept_reject(metrics, mask_a)
         data.update({
             'accept_prob': accept_prob,
             'accept_mask': metrics.get('accept_mask', None),
-            'xeps_avg': tf.reduce_mean(self.x_eps_arr),
-            'veps_avg': tf.reduce_mean(self.v_eps_arr),
-            #  'eps': tf.reduce_mean(self.eps_arr),
+            'xeps_avg': tf.reduce_mean(self.xeps),
+            'veps_avg': tf.reduce_mean(self.veps),
             'beta': states.init.beta,
             'sumlogdet': metrics.get('sumlogdet', None),
         })
+        data.update(**_traj_summ(self.xeps, 'xeps'))
+        data.update(**_traj_summ(self.veps, 'veps'))
 
-        if self._verbose:
-            midpt = self.config.num_steps // 2
-            if self.config.hmc:
-                for k, v in metrics.items():
-                    data.update({
-                        f'{k}': tf.squeeze(v),
-                        f'{k}_start': v[0],
-                        f'{k}_mid': v[midpt],
-                        f'{k}_end': v[-1],
-                    })
-            else:
-                zipped_iter = zip(metrics.forward.items(),
-                                  metrics.backward.items())
-                for (kf, vf), (kb, vb) in zipped_iter:
-                    data.update({
-                        f'{kf}f': tf.squeeze(vf),
-                        f'{kb}b': tf.squeeze(vb),
-                        f'{kf}f_start': vf[0],
-                        f'{kf}f_mid': vf[midpt],
-                        f'{kf}f_end': vf[-1],
-                        f'{kb}b_start': vb[0],
-                        f'{kb}b_mid': vb[midpt],
-                        f'{kb}b_end': vb[-1],
-                    })
+        if self._verbose and not self.config.hmc:
+            for (kf, vf), (kb, vb) in zip(metrics.forward.items(),
+                                          metrics.backward.items()):
+                data.update(**_traj_summ(vf, f'{kf}f'))
+                data.update(**_traj_summ(vb, f'{kb}b'))
+        data.update({k: v for k, v in metrics.items()})
+        data.update({k: v for k, v in self.calc_observables(states).items()})
 
-        observables = self.calc_observables(states)
-        metrics.update(**observables)
-
-        data.update(**metrics)
+        # #############################################
+        #  data = AttrDict({
+        #      #  'lr': self._get_lr(),
+        #      'dt': time.time() - start,
+        #      'loss': loss,
+        #  })
+        #  if self.plaq_weight > 0 and self.charge_weight > 0:
+        #      data.update({
+        #          'ploss': ploss,
+        #          'qloss': qloss
+        #      })
+        #
+        #  # Separated from [1038] for ordering when printing
+        #  data.update({
+        #      'accept_prob': accept_prob,
+        #      'accept_mask': metrics.get('accept_mask', None),
+        #      #  'xeps_avg': tf.reduce_mean(self._arr),
+        #      #  'veps_avg': tf.reduce_mean(self.veps),
+        #      #  'eps': tf.reduce_mean(self.eps_arr),
+        #      'beta': states.init.beta,
+        #      'sumlogdet': metrics.get('sumlogdet', None),
+        #  })
+        #
+        #  if self._verbose:
+        #      midpt = self.config.num_steps // 2
+        #      if self.config.hmc:
+        #          for k, v in metrics.items():
+        #              data.update({
+        #                  f'{k}': tf.squeeze(v),
+        #                  f'{k}_start': v[0],
+        #                  f'{k}_mid': v[midpt],
+        #                  f'{k}_end': v[-1],
+        #              })
+        #      else:
+        #          zipped_iter = zip(metrics.forward.items(),
+        #                            metrics.backward.items())
+        #          for (kf, vf), (kb, vb) in zipped_iter:
+        #              data.update({
+        #                  f'{kf}f': tf.squeeze(vf),
+        #                  f'{kb}b': tf.squeeze(vb),
+        #                  f'{kf}f_start': vf[0],
+        #                  f'{kf}f_mid': vf[midpt],
+        #                  f'{kf}f_end': vf[-1],
+        #                  f'{kb}b_start': vb[0],
+        #                  f'{kb}b_mid': vb[midpt],
+        #                  f'{kb}b_end': vb[-1],
+        #              })
+        #
+        #  observables = self.calc_observables(states)
+        #  metrics.update(**observables)
+        #
+        #  data.update(**metrics)
 
         return states.out.x, data
 

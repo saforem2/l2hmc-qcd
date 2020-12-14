@@ -99,11 +99,11 @@ class BaseDynamics(tf.keras.Model):
 
         self.x_shape = (self.batch_size, self.xdim)
         #  self.eps = self._build_eps(use_log=False)
-        self.v_eps_arr = [
+        self.veps = [
             self._build_eps(use_log=False) for _ in
             range(self.config.num_steps)
         ]
-        self.x_eps_arr = [
+        self.xeps = [
             self._build_eps(use_log=False) for _ in
             range(self.config.num_steps)
         ]
@@ -567,7 +567,7 @@ class BaseDynamics(tf.keras.Model):
         if not self._verbose:
             return metrics
 
-        tarr_len = self.config.num_steps + 1
+        #  tarr_len = self.config.num_steps + 1
         #  logdets = metrics['logdets']
         kwargs = {
             'size': self.config.num_steps+1,
@@ -821,7 +821,7 @@ class BaseDynamics(tf.keras.Model):
             training: bool = None,
     ):
         """Perform a full-step momentum update in the forward direction."""
-        eps = self.v_eps_arr[step]
+        eps = self.veps[step]
         x = self.normalizer(state.x)
         grad = self.grad_potential(x, state.beta)
         t = self._get_time(step, tile=tf.shape(x)[0])
@@ -852,7 +852,7 @@ class BaseDynamics(tf.keras.Model):
         x = self.normalizer(state.x)
         grad = self.grad_potential(x, state.beta)
         t = self._get_time(step, tile=tf.shape(x)[0])
-        eps = self.v_eps_arr[step]
+        eps = self.veps[step]
 
         S, T, Q = self._call_vnet((x, grad, t), step, training)
 
@@ -890,7 +890,7 @@ class BaseDynamics(tf.keras.Model):
         """
         x = self.normalizer(state.x)
         t = self._get_time(step, tile=tf.shape(x)[0])
-        eps = self.v_eps_arr[step]
+        eps = self.veps[step]
         grad = self.grad_potential(x, state.beta)
         S, T, Q = self.vnet((x, grad, t), training)
 
@@ -960,7 +960,7 @@ class BaseDynamics(tf.keras.Model):
         m, mc = masks
         x = self.normalizer(state.x)
         t = self._get_time(step, tile=tf.shape(x)[0])
-        eps = self.x_eps_arr[step]
+        eps = self.xeps[step]
 
         S, T, Q = self.xnet((m * x, state.v, t), training)
 
@@ -992,7 +992,7 @@ class BaseDynamics(tf.keras.Model):
         x = self.normalizer(state.x)
         grad = self.grad_potential(x, state.beta)
         t = self._get_time(step_r, tile=tf.shape(x)[0])
-        eps = self.v_eps_arr[step_r]
+        eps = self.veps[step_r]
         S, T, Q = self._call_vnet((x, grad, t), step_r, training)
 
         scale = self._vsw * (-0.5 * eps * S)
@@ -1020,7 +1020,7 @@ class BaseDynamics(tf.keras.Model):
         x = self.normalizer(state.x)
         grad = self.grad_potential(x, state.beta)
         t = self._get_time(step_r, tile=tf.shape(x)[0])
-        eps = self.v_eps_arr[step]
+        eps = self.veps[step]
         S, T, Q = self._call_vnet((x, grad, t), step_r, training)
 
         scale = self._vsw * (-0.5 * eps * S)
@@ -1056,7 +1056,7 @@ class BaseDynamics(tf.keras.Model):
         """
         x = self.normalizer(state.x)
         t = self._get_time(step, tile=tf.shape(x)[0])
-        eps = self.v_eps_arr[step]
+        eps = self.veps[step]
 
         grad = self.grad_potential(x, state.beta)
         S, T, Q = self.vnet((x, grad, t), training)
@@ -1118,7 +1118,7 @@ class BaseDynamics(tf.keras.Model):
         m, mc = masks
         x = self.normalizer(state.x)
         t = self._get_time(step, tile=tf.shape(x)[0])
-        eps = self.x_eps_arr[step]
+        eps = self.xeps[step]
         S, T, Q = self.xnet((m * x, state.v, t), training)
 
         scale = self._xsw * (-eps * S)
@@ -1225,11 +1225,6 @@ class BaseDynamics(tf.keras.Model):
     def _get_mask(self, i: int):
         """Retrieve the binary mask for the i-th leapfrog step."""
         m = self.masks[i]
-        #  if tf.executing_eagerly():
-        #      m = self.masks[int(i)]
-        #  else:
-        #      m = tf.gather(self.masks, tf.cast(i, dtype=tf.int32))
-
         return m, 1. - m
 
     def _build_networks(
