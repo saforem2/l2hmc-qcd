@@ -95,7 +95,7 @@ def make_ridgeplots(dataset, num_chains=None, out_dir=None, drop_zeros=False):
             # label the plot in axes coords:
             def label(x, color, label):
                 ax = plt.gca()
-                ax.text(0, 0.20, label, fontweight='bold', color=color,
+                ax.text(0, 0.10, label, fontweight='bold', color=color,
                         ha='left', va='center', transform=ax.transAxes,
                         fontsize='small')
 
@@ -299,13 +299,13 @@ def plot_charges(steps, charges, title=None, out_dir=None):
 @timeit
 def get_title_str_from_params(params):
     """Create a formatted string with relevant params from `params`."""
-    eps = params.get('eps', None)
+    #  eps = params.get('eps', None)
     net_weights = params.get('net_weights', None)
     num_steps = params.get('num_steps', None)
     lattice_shape = params.get('lattice_shape', None)
 
-    title_str = (r"$N_{\mathrm{LF}} = $" + f'{num_steps}, '
-                 r"$\varepsilon = $" + f'{tf.reduce_mean(eps):.4g}, ')
+    title_str = (r"$N_{\mathrm{LF}} = $" + f'{num_steps}, ')
+                 #  r"$\varepsilon = $" + f'{tf.reduce_mean(eps):.4g}, ')
 
     if 'beta_init' in params and 'beta_final' in params:
         beta_init = params.get('beta_init', None)
