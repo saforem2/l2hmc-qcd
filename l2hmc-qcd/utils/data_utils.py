@@ -37,6 +37,64 @@ TLS_DEFAULT = mpl.rcParams['xtick.labelsize']
 
 # pylint:disable=invalid-name
 
+# Reference: https://dfm.io/posts/autocorr/
+def next_pow_two(n):
+    i = 1
+    while i < n:
+        i = i << 1
+
+    return i
+
+
+def autocorr_func_1d(x, norm=True):
+    """Compute the autocorrelation function of a 1D chain."""
+    x = np.atleast_1d(x)
+    if len(x.shape) != 1:
+        raise ValueError('Invalid dimensions for 1D autocorrelation function.')
+
+    n = next_pow_two(len(x))
+    # Compute the FFT and then (from that) the auto-correlation function
+    f = np.fft.fft(x - np.mean(x), n=2*n)
+    acf = np.fft.ifft(f * np.conjugate(f))[:len(x)].real
+    acf /= 4 * n
+
+    # Optionally normalize
+    if norm:
+        acf /= acf[0]
+
+    return acf
+
+
+def auto_window(taus, c):
+    """Automated windowing procedure following Sokal (1989)."""
+    m = np.arange(len(taus)) < c * taus
+    if np.any(m):
+        return np.argmin(m)
+
+    return len(taus) - 1
+
+
+def autocorr_gw2010(y, c=5.0):
+    """Following the suggestion from Goodman & Weare (2010)."""
+    f = autocorr_func_1d(np.mean(y, axis=0))
+    taus = 2.0 * np.cumsum(f) - 1.0
+    window = auto_window(taus, c)
+
+    return taus[window]
+
+
+def autocorr_new(y, c=5.0):
+    """New implementation of autocorrelation function."""
+    f = np.zeros(y.shape[1])
+    for yy in y:
+        f += autocorr_func_1d(yy)
+
+    f /= len(y)
+    taus = 2.0 * np.cumsum(f) - 1.0
+    window = auto_window(taus, c)
+
+    return taus[window]
+
 def flatten_dict(d):
     """Recursively convert all entries of `d` to be `AttrDict`."""
     if not isinstance(d, AttrDict):
