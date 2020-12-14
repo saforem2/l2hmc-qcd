@@ -273,10 +273,12 @@ def test():
         flags.log_dir = io.make_log_dir(flags, 'GaugeModel')
         flags.restore = False
 
+    _ = test_separate_networks(flags)
+
     single_net_out = test_single_network(flags)
     flags.log_dir = single_net_out.log_dir
     _ = test_resume_training(flags.log_dir)
-    _ = test_separate_networks(flags)
+
     _ = test_hmc_run(flags)
     _ = test_conv_net(flags)
 
