@@ -176,11 +176,18 @@ def train(
     if IS_CHIEF and make_plots:
         output_dir = os.path.join(dirs.train_dir, 'outputs')
         train_data.save_data(output_dir, save_dataset=True)
+        #  xeps_avg = tf.reduce_mean(dynamics.xeps)
+        #  veps_avg = tf.reduce_mean(dynamics.veps)
 
         params = {
             'beta_init': train_data.data.beta[0],
             'beta_final': train_data.data.beta[-1],
-            'eps': tf.reduce_mean(dynamics.eps).numpy(),
+            #  'xeps': dynamics.xeps,
+            #  'veps': dynamics.veps,
+            #  'xeps_avg': xeps_avg,
+            #  'veps_avg': veps_avg,
+            #  'eps_avg': (xeps_avg + veps_avg) / 2.,
+            #  'eps': tf.reduce_mean(dynamics.eps).numpy(),
             'lattice_shape': dynamics.config.lattice_shape,
             'num_steps': dynamics.config.num_steps,
             'net_weights': dynamics.net_weights,
