@@ -774,10 +774,10 @@ class BaseDynamics(tf.keras.Model):
         state, logdet = self._update_v_forward(state, step, training)
         sumlogdet += logdet
         state, logdet = self._update_x_forward(state, step,
-                                               (m, mc), training)
+                                               (m, mc), training, first=True)
         sumlogdet += logdet
         state, logdet = self._update_x_forward(state, step,
-                                               (mc, m), training)
+                                               (mc, m), training, first=False)
         sumlogdet += logdet
         state, logdet = self._update_v_forward(state, step, training)
         sumlogdet += logdet
@@ -918,10 +918,10 @@ class BaseDynamics(tf.keras.Model):
         m, mc = self._get_mask(step)
         sumlogdet = tf.zeros((self.batch_size,))
         state, logdet = self._update_x_forward(state, step,
-                                               (m, mc), training)
+                                               (m, mc), training, first=True)
         sumlogdet += logdet
         state, logdet = self._update_x_forward(state, step,
-                                               (mc, m), training)
+                                               (mc, m), training, first=False)
         sumlogdet += logdet
 
         return state, sumlogdet
@@ -943,7 +943,8 @@ class BaseDynamics(tf.keras.Model):
                 state: State,
                 step: int,
                 masks: Tuple[tf.Tensor, tf.Tensor],   # (m, 1. - m)
-                training: bool = None
+                training: bool = None,
+                first: bool = True,
     ):
         """Update the position `x` in the forward leapfrog step.
 
@@ -1101,7 +1102,8 @@ class BaseDynamics(tf.keras.Model):
                 state: State,
                 step: int,
                 masks: Tuple[tf.Tensor, tf.Tensor],   # (m, 1. - m)
-                training: bool = None
+                training: bool = None,
+                first_update: bool = True,
     ):
         """Update the position `x` in the backward leapfrog step.
 
@@ -1281,6 +1283,7 @@ class BaseDynamics(tf.keras.Model):
 
         return tf.Variable(initial_value=init,
                            name='eps', dtype=TF_FLOAT,
+                           constraint=tf.keras.constraints.non_neg(),
                            trainable=not self.config.eps_fixed)
 
     def _create_lr(
