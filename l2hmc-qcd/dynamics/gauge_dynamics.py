@@ -288,20 +288,30 @@ class GaugeDynamics(BaseDynamics):
         #  io.savez([e.numpy() for e in self.eps_arr], eps_file, name='eps')
         #  io.savez(self.eps.numpy(), eps_file, name='eps')
         if self.config.separate_networks:
-            xnet_paths = [
-                os.path.join(models_dir, f'dynamics_xnet{i}')
+            xnet_first_paths = [
+                os.path.join(models_dir, f'dynamics_xnet_first{i}')
                 for i in range(self.config.num_steps)
             ]
+            xnet_second_paths = [
+                os.path.join(models_dir, f'dynamics_xnet_second{i}')
+                for i in range(self.config.num_steps)
+            ]
+
             vnet_paths = [
                 os.path.join(models_dir, f'dynamics_vnet{i}')
                 for i in range(self.config.num_steps)
             ]
-            for idx, (xf, vf) in enumerate(zip(xnet_paths, vnet_paths)):
-                xnet = self.xnet[idx]  # type: tf.keras.models.Model
+
+            paths = zip(xnet_first_paths, xnet_second_paths, vnet_paths)
+            #  for idx, (xf0, xf1, vf) in enumerate(zip(xnet_paths, vnet_paths)):
+            for idx, (xf0, xf1, vf) in enumerate(paths):
+                xnets = self.xnet[idx]  # type: tf.keras.models.Model
                 vnet = self.vnet[idx]  # type: tf.keras.models.Model
-                io.log(f'Saving `xnet{idx}` to {xf}.')
+                io.log(f'Saving `xnet_first{idx}` to {xf0}.')
+                io.log(f'Saving `xnet_second{idx}` to {xf1}.')
                 io.log(f'Saving `vnet{idx}` to {vf}.')
-                xnet.save(xf)
+                xnets[0].save(xf0)
+                xnets[1].save(xf1)
                 vnet.save(vf)
         else:
             xnet_paths = os.path.join(models_dir, 'dynamics_xnet')
@@ -414,7 +424,8 @@ class GaugeDynamics(BaseDynamics):
                 for i in range(self.config.num_steps)
             ]
             xnet = [
-                get_gauge_network(**cfgs['xnet'], name=f'xnet{i}')
+                (get_gauge_network(**cfgs['xnet'], name=f'xnet_first{i}'),
+                 get_gauge_network(**cfgs['xnet'], name=f'xnet_second{i}'))
                 for i in range(self.config.num_steps)
             ]
 
@@ -678,11 +689,6 @@ class GaugeDynamics(BaseDynamics):
             training: bool = None,
     ):
         """Implements a transition kernel when using separate networks."""
-        lf_fn = self._forward_lf if forward else self._backward_lf
-        state_prop = State(x=state.x, v=state.v, beta=state.beta)
-        sumlogdet = tf.zeros((self.batch_size,))
-        metrics = self._init_metrics(state_prop)
-
         def _update_metrics(data, step):
             for key, val in data.items():
                 metrics[key] = metrics[key].write(step, val)
@@ -705,7 +711,15 @@ class GaugeDynamics(BaseDynamics):
             return metrics
 
         # ====
-        # LOOP OVER LEAPFROG STEPS
+        # Setup
+        lf_fn = self._forward_lf if forward else self._backward_lf
+        state_prop = State(x=state.x, v=state.v, beta=state.beta)
+        sumlogdet = tf.zeros((self.batch_size,))
+        metrics = self._init_metrics(state_prop)
+
+
+        # ====
+        # Loop over leapfrog steps
         for step in range(self.config.num_steps):
             state_prop, logdet = lf_fn(step, state_prop, training)
             sumlogdet += logdet
@@ -713,6 +727,8 @@ class GaugeDynamics(BaseDynamics):
                 data = _get_metrics(state_prop, sumlogdet)
                 metrics = _update_metrics(data, step+1)
 
+        # ====
+        # Compute accept prob and update metrics
         accept_prob = self.compute_accept_prob(state, state_prop, sumlogdet)
         metrics['sumlogdet'] = sumlogdet
         metrics['accept_prob'] = accept_prob
@@ -777,25 +793,38 @@ class GaugeDynamics(BaseDynamics):
         vnet = self.vnet[step]
         return vnet(inputs, training)
 
-    def _call_xnet(self, inputs, mask, step, training=None):
-        """Call `self.xnet` to get Sx, Tx, Qx for updating `x`."""
+    def _convert_to_cartesian(self, x: tf.Tensor, mask: tf.Tensor):
+        """Convert `x` from an angle to [cos(x), sin(x)]."""
         if len(mask) == 2:
             mask, _ = mask
 
+        xcos = mask * tf.math.cos(x)
+        xsin = mask * tf.math.sin(x)
+        if self.config.use_conv_net:
+            xcos = tf.reshape(xcos, self.lattice_shape)
+            xsin = tf.reshape(xsin, self.lattice_shape)
+
+        x = tf.stack([xcos, xsin], axis=-1)
+        #  x = tf.concat([x_cos, x_sin], -1)
+
+        return x
+
+    def _call_xnet(self, inputs, mask, step,
+                   training=None, first: bool = False):
+        """Call `self.xnet` to get Sx, Tx, Qx for updating `x`."""
         x, v, t = inputs
 
-        x_cos = mask * tf.math.cos(x)
-        x_sin = mask * tf.math.sin(x)
-        if self.config.use_conv_net:
-            x_cos = tf.reshape(x_cos, self.lattice_shape)
-            x_sin = tf.reshape(x_sin, self.lattice_shape)
-
-        x = tf.stack([x_cos, x_sin], axis=-1)
-        #  x = tf.concat([x_cos, x_sin], -1)
         if not self.config.separate_networks:
             return self.xnet((x, v, t), training)
 
-        xnet = self.xnet[step]
+        x = self._convert_to_cartesian(x, mask)
+
+        xnets = self.xnet[step]
+        if first:
+            xnet = xnets[0]
+        else:
+            xnet = xnets[1]
+
         return xnet((x, v, t), training)
 
     def _full_v_update_forward(
@@ -906,10 +935,10 @@ class GaugeDynamics(BaseDynamics):
         m, mc = self._get_mask(step)
         sumlogdet = tf.zeros((self.batch_size,))
         state, logdet = self._update_x_forward(state, step,
-                                               (m, mc), training)
+                                               (m, mc), training, first=True)
         sumlogdet += logdet
         state, logdet = self._update_x_forward(state, step,
-                                               (mc, m), training)
+                                               (mc, m), training, first=False)
         sumlogdet += logdet
 
         return state, sumlogdet
@@ -919,7 +948,8 @@ class GaugeDynamics(BaseDynamics):
                 state: State,
                 step: int,
                 masks: Tuple[tf.Tensor, tf.Tensor],  # [m, 1. - m]
-                training: bool = None
+                training: bool = None,
+                first: bool = True,
     ):
         """Update the position `x` in the forward leapfrog step.
 
@@ -942,7 +972,7 @@ class GaugeDynamics(BaseDynamics):
         x = self.normalizer(state.x)
         t = self._get_time(step, tile=tf.shape(x)[0])
 
-        S, T, Q = self._call_xnet((x, state.v, t), m, step, training)
+        S, T, Q = self._call_xnet((x, state.v, t), m, step, training, first)
 
         scale = self._xsw * (eps * S)
         transl = self._xtw * T
@@ -1090,7 +1120,8 @@ class GaugeDynamics(BaseDynamics):
                 state: State,
                 step: int,
                 masks: Tuple[tf.Tensor, tf.Tensor],   # [m, 1. - m]
-                training: bool = None
+                training: bool = None,
+                first: bool = True,
     ):
         """Update the position `x` in the backward leapfrog step.
 
@@ -1114,7 +1145,7 @@ class GaugeDynamics(BaseDynamics):
         eps = self.xeps[step]
         x = self.normalizer(state.x)
         t = self._get_time(step, tile=tf.shape(x)[0])
-        S, T, Q = self._call_xnet((x, state.v, t), m, step, training)
+        S, T, Q = self._call_xnet((x, state.v, t), m, step, training, first)
 
         scale = self._xsw * (-eps * S)
         transl = self._xtw * T
