@@ -813,19 +813,16 @@ class GaugeDynamics(BaseDynamics):
                    training=None, first: bool = False):
         """Call `self.xnet` to get Sx, Tx, Qx for updating `x`."""
         x, v, t = inputs
+        x = self._convert_to_cartesian(x, mask)
 
         if not self.config.separate_networks:
             return self.xnet((x, v, t), training)
 
-        x = self._convert_to_cartesian(x, mask)
-
-        xnets = self.xnet[step]
+        xnet0, xnet1 = self.xnet[step]
         if first:
-            xnet = xnets[0]
-        else:
-            xnet = xnets[1]
+            return xnet0((x, v, t), training)
 
-        return xnet((x, v, t), training)
+        return xnet1((x, v, t), training)
 
     def _full_v_update_forward(
             self,
