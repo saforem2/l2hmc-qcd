@@ -23,7 +23,7 @@ import utils.file_io as io
 
 from config import (CBARS, GAUGE_LOGS_DIR, HEADER, HMC_LOGS_DIR, LOGS_DIR, PI,
                     PROJECT_DIR, SEP, TF_FLOAT)
-from utils import SKIP_KEYS
+from utils import SKEYS
 from utils.file_io import IS_CHIEF, NUM_WORKERS, RANK
 from utils.attr_dict import AttrDict
 from utils.summary_utils import summarize_dict
@@ -88,14 +88,14 @@ def short_training(
 
     x, metrics = dynamics.train_step((x, tf.constant(beta)))
 
-    header = train_data.get_header(metrics, skip=SKIP_KEYS,
+    header = train_data.get_header(metrics, skip=SKEYS,
                                    prepend=['{:^12s}'.format('step')])
     io.log(header.split('\n'), should_print=True)
     for step in range(current_step, current_step + train_steps):
         start = time.time()
         x, metrics = dynamics.train_step((x, tf.constant(beta)))
         metrics.dt = time.time() - start
-        data_str = train_data.get_fstr(step, metrics, skip=SKIP_KEYS)
+        data_str = train_data.get_fstr(step, metrics, skip=SKEYS)
         io.log(data_str, should_print=True)
 
     return dynamics, train_data, x
@@ -130,7 +130,7 @@ def run_hmc(
         skip_existing: bool = False,
         save_x: bool = False,
         therm_frac: float = 0.33,
-        num_chains: int = None,
+        num_chains: int = 16,
         make_plots: bool = True,
 ) -> (InferenceResults):
     """Run HMC using `inference_args` on a model specified by `params`.
@@ -153,7 +153,6 @@ def run_hmc(
         hmc_dir = os.path.join(HMC_LOGS_DIR, month_str)
 
     io.check_else_make_dir(hmc_dir)
-    SKIP_KEYS.extend('sumlogdet')
 
     def get_run_fstr(run_dir):
         _, tail = os.path.split(run_dir)
@@ -224,7 +223,8 @@ def run_inference_from_log_dir(
         make_plots: bool = True,
         train_steps: int = 10,
         therm_frac: float = 0.33,
-        num_chains: int = None,
+        batch_size: int = 16,
+        num_chains: int = 16,
 ) -> InferenceResults:      # (type: InferenceResults)
     """Run inference by loading networks in from `log_dir`."""
     configs = _find_configs(log_dir)
@@ -248,6 +248,11 @@ def run_inference_from_log_dir(
 
     if beta is not None:
         configs.update({'beta': beta, 'beta_final': beta})
+
+    if batch_size is not None:
+        old_shape = configs['dynamics_config'].get('lattice_shape', None)
+        new_shape = (batch_size, *old_shape[1:])
+        configs['dynamics_config']['lattice_shape'] = new_shape
 
     configs = AttrDict(configs)
     dynamics = build_dynamics(configs)
@@ -290,10 +295,14 @@ def run(
         runs_dir: str = None,
         make_plots: bool = True,
         therm_frac: float = 0.33,
-        num_chains: int = None,
+        num_chains: int = 16,
         save_x: bool = False,
-) -> InferenceResults:
+) -> (InferenceResults):
     """Run inference. (Note: Higher-level than `run_dynamics`)."""
+    if num_chains > 16:
+        print(f'Reducing `num_chains` from: {num_chains} to {16}.')
+        num_chains = 16
+
     if not IS_CHIEF:
         return InferenceResults(None, None, None, None)
 
@@ -429,10 +438,11 @@ def run_dynamics(
         x, metrics = test_step((x, tf.constant(beta)))
 
     header = run_data.get_header(metrics,
-                                 skip=SKIP_KEYS,
+                                 skip=SKEYS,
                                  prepend=['{:^12s}'.format('step')])
 
-    io.log(header.split('\n'), should_print=True)
+    io.print_header(header)
+    #  io.log(header.split('\n'), should_print=True)
     # -------------------------------------------------------------
 
     x_arr = []
@@ -466,7 +476,7 @@ def run_dynamics(
             summarize_dict(metrics, step, prefix='testing')
 
         if step % print_steps == 0:
-            data_str = run_data.get_fstr(step, metrics, skip=SKIP_KEYS)
+            data_str = run_data.get_fstr(step, metrics, skip=SKEYS)
             io.log(data_str, should_print=True)
 
         if (step + 1) % 1000 == 0:

@@ -15,7 +15,7 @@ from typing import Optional, Union
 
 import numpy as np
 import tensorflow as tf
-from utils import SKIP_KEYS
+from utils import SKEYS
 import utils.file_io as io
 try:
     import horovod.tensorflow as hvd
@@ -58,7 +58,7 @@ def train_hmc(
         flags: AttrDict,
         make_plots: bool = True,
         therm_frac: float = 0.33,
-        num_chains: int = None,
+        num_chains: int = 32,
 ):
     """Main method for training HMC model."""
     hflags = AttrDict(dict(flags).copy())
@@ -133,7 +133,7 @@ def train(
         restore_x: bool = False,
         make_plots: bool = True,
         therm_frac: float = 0.33,
-        num_chains: int = None,
+        num_chains: int = 32,
 ) -> (tf.Tensor, Union[BaseDynamics, GaugeDynamics], DataContainer, AttrDict):
     """Train model.
 
@@ -182,12 +182,6 @@ def train(
         params = {
             'beta_init': train_data.data.beta[0],
             'beta_final': train_data.data.beta[-1],
-            #  'xeps': dynamics.xeps,
-            #  'veps': dynamics.veps,
-            #  'xeps_avg': xeps_avg,
-            #  'veps_avg': veps_avg,
-            #  'eps_avg': (xeps_avg + veps_avg) / 2.,
-            #  'eps': tf.reduce_mean(dynamics.eps).numpy(),
             'lattice_shape': dynamics.config.lattice_shape,
             'num_steps': dynamics.config.num_steps,
             'net_weights': dynamics.net_weights,
@@ -237,10 +231,12 @@ def setup(dynamics, flags, dirs=None, x=None, betas=None):
         x = np.pi * tf.random.normal(shape=dynamics.x_shape)
 
     # Setup summary writer
-    writer = None
     make_summaries = flags.get('make_summaries', True)
-    if IS_CHIEF and make_summaries and TF_VERSION == 2:
-        writer = tf.summary.create_file_writer(dirs.summary_dir)
+    if IS_CHIEF and make_summaries:  # and TF_VERSION == 2:
+        try:
+            writer = tf.summary.create_file_writer(dirs.summary_dir)
+        except:
+            writer = None
 
     current_step = dynamics.optimizer.iterations.numpy()  # get global step
     num_steps = max([flags.train_steps + 1, current_step + 1])
@@ -251,41 +247,12 @@ def setup(dynamics, flags, dirs=None, x=None, betas=None):
     else:
         betas = get_betas(num_steps - 1, flags.beta_init, flags.beta_final)
         betas = betas[current_step:]
-    #  if betas is None:
-    #      if flags.beta_init == flags.beta_final:  # train at fixed beta
-    #          betas = flags.beta_init * np.ones(len(steps))
-    #      else:  # get annealing schedule w/ same length as `steps`
-    #          betas = get_betas(len(steps), flags.beta_init, flags.beta_final)
-    #      betas = betas[current_step:]
-    #
-    #  if len(betas) == 0:
-    #      if flags.beta_init == flags.beta_final:  # train at fixed beta
-    #          betas = flags.beta_init * np.ones(len(steps))
-    #      else:  # get annealing schedule w/ same length as `steps`
-    #          betas = get_betas(len(steps), flags.beta_init, flags.beta_final)
-    #          betas = betas[current_step:]
-    #
-    #  betas = tf.constant(betas, dtype=TF_FLOAT)
+
     betas = tf.convert_to_tensor(betas, dtype=x.dtype)
     dynamics.compile(loss=dynamics.calc_losses,
                      optimizer=dynamics.optimizer,
                      experimental_run_tf_function=False)
     _ = dynamics.apply_transition((x, tf.constant(betas[0])), training=True)
-
-    #  try:
-    #      inputs = (x, tf.constant(betas[0]))
-    #  except IndexError:
-    #      if flags.beta_init == flags.beta_final:  # train at fixed beta
-    #          betas = flags.beta_init * np.ones(len(steps))
-    #      else:  # get annealing schedule w/ same length as `steps`
-    #          betas = get_betas(len(steps), flags.beta_init, flags.beta_final)
-    #          betas = betas[current_step:]
-
-
-    #  if flags.get('compile', True):
-    #      train_step = tf.function(dynamics.train_step)
-    #  else:
-    #      train_step = dynamics.train_step
 
     # ====
     # Plot computational graph of `dynamics.xnet`, `dynamics.vnet`
@@ -338,7 +305,33 @@ def train_dynamics(
         betas: Optional[tf.Tensor] = None,
 ):
     """Train model."""
-    # setup...
+    # + ------------------------------------------------------+
+    # | Helper functions for training, logging, saving, etc.  |
+    # + ------------------------------------------------------+
+    def timed_step(x: tf.Tensor, beta: tf.Tensor):
+        start = time.time()
+        x, metrics = dynamics.train_step((x, tf.constant(beta)))
+        metrics.dt = time.time() - start
+        return x, metrics
+
+    def should_print(step):
+        if IS_CHIEF and step % ps_ == 0:
+            return True
+        return False
+
+    def should_log(step):
+        if IS_CHIEF and step % ls_ == 0:
+            return True
+        return False
+
+    def should_save(step):
+        if step % flags.save_steps == 0 and ckpt is not None:
+            return True
+        return False
+
+    # + -------------+
+    # | setup...     |
+    # + -------------+
     config = setup(dynamics, flags, dirs, x, betas)
     if dirs is None:
         dirs = flags.get('dirs', None)
@@ -373,39 +366,25 @@ def train_dynamics(
     # +-----------------------------------------------------------------+
     io.log(120 * '*')
     if flags.profiler:
-        #  tf.summary.trace_on(graph=True, profiler=True)
         tf.profiler.experimental.start(logdir=dirs.summary_dir)
         io.log('Running 10 profiling steps...')
         for step in range(10):
             x, metrics = dynamics.train_step((x, tf.constant(betas[0])))
-            #  x, metrics = train_step((x, tf.constant(betas[0])))
 
         tf.profiler.experimental.stop(save=True)
-        #  tf.summary.trace_export(name='train_step_trace', step=0,
-        #                          profiler_outdir=dirs.summary_dir)
-        #  tf.summary.trace_off()
         io.log('Done!')
     else:
         x, metrics = dynamics.train_step((x, tf.constant(betas[0])))
-
-    #  except Exception as exception:
-    #      io.log(str(exception), level='CRITICAL')
-    #      train_step = dynamics.train_step
-    #      x, metrics = train_step((x, tf.constant(betas[0])))
-    #      lstr = '\n'.join(['`tf.function(dynamics.train_step)` failed!',
-    #                        'Running `dynamics.train_step` imperatively...'])
-    #      io.log(lstr, level='CRITICAL')
-    io.log(120*'*')
 
     # +--------------------------------+
     # | Run MD update to not get stuck |
     # +--------------------------------+
     md_steps = flags.get('md_steps', 0)
     if md_steps > 0:
+        io.log(120*'*')
         io.log(f'Running {md_steps} MD updates...')
         for _ in range(md_steps):
-            mc_states, _ = dynamics.md_update((x, tf.constant(betas[0])),
-                                              training=True)
+            mc_states, _ = dynamics.md_update((x, betas[0]), training=True)
             x = mc_states.out.x
         io.log('Done!')
         io.log(120*'*')
@@ -417,32 +396,13 @@ def train_dynamics(
     ps_ = flags.get('print_steps', None)
     ls_ = flags.get('logging_steps', None)
 
-    def timed_step(x: tf.Tensor, beta: tf.Tensor):
-        start = time.time()
-        x, metrics = dynamics.train_step((x, tf.constant(beta)))
-        metrics.dt = time.time() - start
-        return x, metrics
-
-    def should_print(step):
-        if IS_CHIEF and step % ps_ == 0:
-            return True
-        return False
-
-    def should_log(step):
-        if IS_CHIEF and step % ls_ == 0:
-            return True
-        return False
-
-    def should_save(step):
-        if step % flags.save_steps == 0 and ckpt is not None:
-            return True
-        return False
-
-    header = train_data.get_header(metrics, skip=SKIP_KEYS,
+    header = train_data.get_header(metrics, skip=SKEYS,
                                    prepend=['{:^12s}'.format('step')])
     if IS_CHIEF:
-        #  hstr = ["[bold red blink]"] + header.split('\n') + ["[/]"]
-        io.log(header.split('\n'), should_print=True)
+        io.print_header(header)
+        #  hstr = ["[bold red]"] + header.split('\n') + ["[/bold red]"]
+        #  io.log(hstr, should_print=True)
+        #  io.log(header.split('\n'), should_print=True)
         if NUM_WORKERS == 1:
             ctup = (CBARS['reset'], CBARS['yellow'],
                     CBARS['reset'], CBARS['reset'])
@@ -452,54 +412,50 @@ def train_dynamics(
     # +---------------+
     # | Training loop |
     # +---------------+
-    #  warmup_steps = dynamics.lr_config.get('warmup_steps', 100)
     warmup_steps = dynamics.lr_config.warmup_steps
     steps_per_epoch = flags.get('steps_per_epoch', 1000)
-    print(f'steps_per_epoch: {steps_per_epoch}')
     for step, beta in zip(steps, betas):
-        # Perform a single training step
+        # -- Perform a single training step -------------------------------
         x, metrics = timed_step(x, beta)
 
-        #  if step % 10 == 0:
         if (step + 1) > warmup_steps and (step + 1) % steps_per_epoch == 0:
-            #  logs = {'loss': train_data.data.get('loss', None)}
             reduce_lr.on_epoch_end(step+1, {'loss': metrics.loss})
 
-        # Save checkpoints and dump configs `x` from each rank
+        # -- Save checkpoints and dump configs `x` from each rank ----------
         if should_save(step + 1):
             train_data.dump_configs(x, dirs.data_dir,
                                     rank=RANK, local_rank=LOCAL_RANK)
             if IS_CHIEF:
-                # Save CheckpointManager
+                # -- Save CheckpointManager -------------
                 manager.save()
                 mstr = f'Checkpoint saved to: {manager.latest_checkpoint}'
                 io.log(mstr, should_print=True)
-                # Save train_data and free consumed memory
+                # -- Save train_data and free consumed memory --------
                 train_data.save_and_flush(dirs.data_dir, dirs.log_file,
                                           rank=RANK, mode='a')
                 if not dynamics.config.hmc:
-                    # Save network weights
+                    # -- Save network weights -------------------------------
                     nstr = ' '.join(['Networks saved to:', f'{dirs.log_dir}'])
                     io.log(nstr, should_print=True)
                     dynamics.save_networks(dirs.log_dir)
 
-        # Print current training state and metrics
+        # -- Print current training state and metrics ---------------
         if should_print(step):
-            data_str = train_data.get_fstr(step, metrics, skip=SKIP_KEYS)
+            data_str = train_data.get_fstr(step, metrics, skip=SKEYS)
             io.log(data_str, should_print=True)
 
-        # Update summary objects
+        # -- Update summary objects ---------------------
         if should_log(step):
             train_data.update(step, metrics)
             if writer is not None:
                 update_summaries(step, metrics, dynamics)
                 writer.flush()
 
-        # Print header every so often
+        # -- Print header every so often --------------------------
         if IS_CHIEF and (step + 1) % (50 * flags.print_steps) == 0:
             io.log(header.split('\n'), should_print=True)
 
-    # Dump config objects
+    # -- Dump config objects -------------------------------------------------
     train_data.dump_configs(x, dirs.data_dir, rank=RANK, local_rank=LOCAL_RANK)
     if IS_CHIEF:
         manager.save()
