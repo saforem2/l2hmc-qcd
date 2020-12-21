@@ -18,6 +18,11 @@ from typing import Any, Dict, Type
 from tqdm.auto import tqdm
 from pathlib import Path
 
+from rich.console import Console
+console = Console()
+#  print = console.print
+from rich.logging import RichHandler
+
 import joblib
 import numpy as np
 
@@ -65,37 +70,48 @@ logging.getLogger('arviz').setLevel(logging.ERROR)
 logger = logging.getLogger(__name__)
 logging_datefmt = '%Y-%m-%d %H:%M:%S'
 logging_level = logging.WARNING
-logging_format = (
-    '%(asctime)s %(levelname)s:%(process)s:%(thread)s:%(name)s:%(message)s'
-)
+FORMAT = "%(levelname)s:%(process)s:%(thread)s:%(name)s:%(message)s"
+#  logging_format = (
+#      '%(asctime)s %(levelname)s:%(process)s:%(thread)s:%(name)s:%(message)s'
+#  )
 
 if IS_CHIEF:
     logging.basicConfig(
         level=logging.ERROR,
-        format=logging_format,
-        datefmt=logging_datefmt,
-        stream=sys.stdout,
+        format=FORMAT,
+        datefmt="[%X]",
+        handlers=[RichHandler(rich_tracebacks=True)],
+        #  stream=sys.stdout,
     )
 else:
     logging.basicConfig(
         level=logging.WARNING,
-        format="%(asctime)s:%(levelname)s:%(message)s",
-        stream=None
+        format=FORMAT,
+        #  format="%(asctime)s:%(levelname)s:%(message)s",
+        datefmr="[%X]",
+        handlers=[RichHandler(rich_tracebacks=True)],
+        #  stream=None
     )
 
 if HAS_HOROVOD:
-    logging_format = (
-        '%(asctime)s %(levelname)s:%(process)s:%(thread)s:'
-        + ('%05d' % hvd.rank()) + ':%(name)s:%(message)s'
+    FORMAT = (
+        '%(levelname)s:%(process)s:%(thread)s:'
+        + ('%04d' % hvd.rank()) + ':%(name)s:%(message)s'
     )
+    #  logging_format = (
+    #      '%(asctime)s %(levelname)s:%(process)s:%(thread)s:'
+    #      + ('%05d' % hvd.rank()) + ':%(name)s:%(message)s'
+    #  )
     logging_level = logging.WARNING
     if RANK > 0:
-        logging_level = logging.WARNING
+        logging_level = logging.ERROR
 
+    handlers = [RichHandler(rich_tracebacks=True)] if hvd.rank() == 0 else None
     logging.basicConfig(level=logging_level,
-                        format=logging_format,
-                        datefmt=logging_datefmt,
-                        stream=sys.stdout if hvd.rank() == 0 else None)
+                        format=FORMAT,
+                        datefmt="[%X]",
+                        handlers=handlers)
+                        #  stream=sys.stdout if hvd.rank() == 0 else None)
     logging.warning(' '.join([f'rank: {hvd.rank()}',
                               f'local_rank: {hvd.local_rank()}',
                               f'size: {hvd.size()}',
@@ -161,6 +177,88 @@ def in_notebook():
     return True
 
 
+def filter_dict(d: dict, cond: callable, key: str = None):
+    """Filter dict using conditionals.
+
+    Explicitly, loop through key, val pairs and accumulate those entries for
+    which cond is True.
+
+    If a key is passed, we perform the search on `d[key]`.
+
+    Returns:
+        dict: Dictionary containing the matched items.
+    """
+    if key is not None:
+        val = d[key]
+        if isinstance(val, dict):
+            return {
+                k: v for k, v in val.items() if cond
+            }
+        raise ValueError('If passing a key, d[key] should be a dict.')
+    return {
+        k: v for k, v in d.items() if cond
+    }
+
+def _look(p, s, conds=None):
+    console.print(f'Looking in {p}...')
+    matches = [x for x in Path(p).rglob(f'*{s}*')]
+    if conds is not None:
+        if isinstance(conds, (list, tuple)):
+            for cond in conds:
+                matches = [x for x in matches if cond(x)]
+        else:
+            matches = [x for x in matches if cond(x)]
+
+    return matches
+
+
+def get_l2hmc_dirs(paths, search_str='L16_b'):
+    def _look(p, s, conds=None):
+        console.print(f'Looking in {p}...')
+        matches = [x for x in Path(p).rglob(f'*{s}*')]
+        if conds is not None:
+            if isinstance(conds, (list, tuple)):
+                for cond in conds:
+                    matches = [x for x in matches if cond(x)]
+            else:
+                matches = [x for x in matches if cond(x)]
+        return matches
+
+    dirs = []
+    conds = (
+        lambda x: 'GaugeModel_logs' in (str(x)),
+        lambda x: 'HMC_' not in str(x),
+        lambda x: Path(x).is_dir(),
+    )
+    if isinstance(paths, (list, tuple)):
+        for path in paths:
+            dirs += _look(path, search_str, conds)
+    else:
+        dirs = _look(paths, search_str, conds)
+
+    return dirs
+
+
+def find_matching_files(d, search_str):
+    darr = [x for x in Path(d).iterdir() if x.is_dir()]
+    matches = []
+    for rd in darr:
+        results = sorted(rd.rglob(f'*{search_str}*'))
+        matches.extend(results)
+
+    return matches
+
+
+def print_header(header):
+    strs = header.split('\n')
+    for s in strs:
+        console.print(s, style='bold red')
+    #  console.print(header[0], style='bold red')
+    #  console.print(header[1], style='bold red')
+    #  console.print(header[-1]
+    #  console.print(header.split('\n'), style='bold red')
+
+
 def log(s: str, level: str = 'INFO', out=sys.stdout, should_print=False):
     """Print string `s` to stdout if and only if hvd.rank() == 0."""
     if RANK != 0:
@@ -175,14 +273,14 @@ def log(s: str, level: str = 'INFO', out=sys.stdout, should_print=False):
         level = LOG_LEVELS_AS_INTS[level.upper()]
         if isinstance(s, (list, tuple)):
             if should_print:
-                _ = [print(s_) for s_ in s]
+                _ = [console.print(s_) for s_ in s]
             else:
-                _ = [logging.log(level, s_) for s_ in s]
+                _ = [console.log(level, s_) for s_ in s]
         else:
             if should_print:
-                print(s)
+                console.print(s)
             else:
-                logging.log(level, s)
+                console.log(level, s)
 
 
 def write(s: str, f: str, mode: str = 'a', nl: bool = True):
