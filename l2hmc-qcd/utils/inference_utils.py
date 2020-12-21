@@ -353,17 +353,9 @@ def run(
     if args.get('save_run_data', True):
         run_data.save_data(data_dir)
 
-    xeps_avg = tf.reduce_mean(dynamics.xeps)
-    veps_avg = tf.reduce_mean(dynamics.veps)
-
     run_params = {
         'hmc': dynamics.config.hmc,
         'run_dir': run_dir,
-        'xeps': dynamics.xeps,
-        'veps': dynamics.veps,
-        'xeps_avg': xeps_avg,
-        'veps_avg': veps_avg,
-        'eps_avg': (xeps_avg + veps_avg) / 2.,
         #  'eps': eps,
         'beta': beta,
         'run_steps': run_steps,
@@ -374,6 +366,23 @@ def run(
         'net_weights': dynamics.net_weights,
         'input_shape': dynamics.x_shape,
     }
+
+    if hasattr(dynamics, 'xeps') and hasattr(dynamics, 'veps'):
+        xeps_avg = tf.reduce_mean(dynamics.xeps)
+        veps_avg = tf.reduce_mean(dynamics.veps)
+        run_params.update({
+            'xeps': dynamics.xeps,
+            'veps': dynamics.veps,
+            'xeps_avg': xeps_avg,
+            'veps_avg': veps_avg,
+            'eps_avg': (xeps_avg + veps_avg) / 2.,
+        })
+
+    elif hasattr(dynamics, 'eps'):
+        run_params.update({
+            'eps': dynamics.eps,
+        })
+
     #  run_params.update(dynamics.params)
     io.save_params(run_params, run_dir, name='run_params')
 
@@ -418,8 +427,8 @@ def run_dynamics(
     run_data = DataContainer(flags.run_steps)
 
     template = '\n'.join([f'beta: {beta}',
-                          f'x_eps_arr: {dynamics.xeps}',
-                          f'v_eps_arr: {dynamics.veps}',
+                          #  f'x_eps_arr: {dynamics.xeps}',
+                          #  f'v_eps_arr: {dynamics.veps}',
                           #  f'eps: {dynamics.eps.numpy():.4g}',
                           f'net_weights: {dynamics.net_weights}'])
     io.log(f'Running inference with:\n {template}')
