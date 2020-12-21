@@ -125,5 +125,3 @@ class GaugeLattice:
         sinq = tf.reduce_sum(tf.sin(wloops), axis=(1, 2)) / (2 * np.pi)
         intq = tf.reduce_sum(project_angle(wloops), axis=(1, 2)) / (2 * np.pi)
         return Charges(sinQ=sinq, intQ=intq)
-
-
