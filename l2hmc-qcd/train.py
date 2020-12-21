@@ -45,7 +45,7 @@ from utils.attr_dict import AttrDict
 
 from utils.parse_configs import parse_configs
 from utils.training_utils import train, train_hmc
-from utils.inference_utils import run, run_hmc
+from utils.inference_utils import run, run_hmc, run_inference_from_log_dir
 
 
 os.environ['TF_CPP_MIN_VLOG_LEVEL'] = '3'
@@ -141,15 +141,30 @@ def main(args, num_chains=256):
     # ====
     # Run inference on trained model
     if args.get('run_steps', 5000) > 0:
-        # ====
+        run_steps = args.get('run_steps', 125000)
+        log_dir = args.log_dir
+        beta = args.get('beta_final')
+        num_chains = 8
+        batch_size = 256
+        therm_frac=0.2
+        make_plots=True
+        xbatch = x[:batch_size]
+        _ = run_inference_from_log_dir(log_dir=log_dir,
+                                       run_steps=run_steps,
+                                       beta=beta,
+                                       num_chains=num_chains,
+                                       batch_size=batch_size,
+                                       therm_frac=0.2,
+                                       make_plots=True,
+                                       train_steps=0,
+                                       x=xbatch)
         # Run with random start
-        _ = run(dynamics, args)
-        # ====
-        # Run HMC
-        args.hmc = True
-        args.dynamics_config['eps'] = 0.15
-        hmc_dir = os.path.join(args.log_dir, 'inference_hmc')
-        _ = run_hmc(args=args, hmc_dir=hmc_dir)
+        #  _ = run(dynamics, args)
+        #  # Run HMC
+        #  args.hmc = True
+        #  args.dynamics_config['eps'] = 0.15
+        #  hmc_dir = os.path.join(args.log_dir, 'inference_hmc')
+        #  _ = run_hmc(args=args, hmc_dir=hmc_dir)
 
 
 if __name__ == '__main__':
