@@ -232,12 +232,13 @@ def setup(dynamics, flags, dirs=None, x=None, betas=None):
 
     # Setup summary writer
     make_summaries = flags.get('make_summaries', True)
-    writer = None
-    if IS_CHIEF and make_summaries:  # and TF_VERSION == 2:
+    if IS_CHIEF and make_summaries and TF_VERSION == 2:
         try:
             writer = tf.summary.create_file_writer(dirs.summary_dir)
         except:
             writer = None
+    else:
+        writer = None
 
     current_step = dynamics.optimizer.iterations.numpy()  # get global step
     num_steps = max([flags.train_steps + 1, current_step + 1])
