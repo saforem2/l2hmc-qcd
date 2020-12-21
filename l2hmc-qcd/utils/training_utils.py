@@ -305,9 +305,7 @@ def train_dynamics(
         betas: Optional[tf.Tensor] = None,
 ):
     """Train model."""
-    # + ------------------------------------------------------+
-    # | Helper functions for training, logging, saving, etc.  |
-    # + ------------------------------------------------------+
+    # -- Helper functions for training, logging, saving, etc. --------------
     def timed_step(x: tf.Tensor, beta: tf.Tensor):
         start = time.time()
         x, metrics = dynamics.train_step((x, tf.constant(beta)))
@@ -329,9 +327,7 @@ def train_dynamics(
             return True
         return False
 
-    # + -------------+
-    # | setup...     |
-    # + -------------+
+    # -- setup ----------------------------------------------------
     config = setup(dynamics, flags, dirs, x, betas)
     if dirs is None:
         dirs = flags.get('dirs', None)
@@ -361,9 +357,7 @@ def train_dynamics(
         if writer is not None:
             writer.set_as_default()
 
-    # +-----------------------------------------------------------------+
-    # | Try running compiled `train_step` fn otherwise run imperatively |
-    # +-----------------------------------------------------------------+
+    # -- Try running compiled `train_step` fn otherwise run imperatively ----
     io.log(120 * '*')
     if flags.profiler:
         tf.profiler.experimental.start(logdir=dirs.summary_dir)
@@ -376,9 +370,7 @@ def train_dynamics(
     else:
         x, metrics = dynamics.train_step((x, tf.constant(betas[0])))
 
-    # +--------------------------------+
-    # | Run MD update to not get stuck |
-    # +--------------------------------+
+    # -- Run MD update to not get stuck -----------------
     md_steps = flags.get('md_steps', 0)
     if md_steps > 0:
         io.log(120*'*')
@@ -389,10 +381,8 @@ def train_dynamics(
         io.log('Done!')
         io.log(120*'*')
 
-    # +--------------------------------------------------------------+
-    # | Final setup; create timing wrapper for `train_step` function |
-    # | and get formatted header string to display during training.  |
-    # +--------------------------------------------------------------+
+    # -- Final setup; create timing wrapper for `train_step` function -------
+    # -- and get formatted header string to display during training. --------
     ps_ = flags.get('print_steps', None)
     ls_ = flags.get('logging_steps', None)
 
@@ -409,9 +399,7 @@ def train_dynamics(
             steps = tqdm(steps, desc='training', unit='step',
                          bar_format=("%s{l_bar}%s{bar}%s{r_bar}%s" % ctup))
 
-    # +---------------+
-    # | Training loop |
-    # +---------------+
+    # -- Training loop ----------------------------------------------------
     warmup_steps = dynamics.lr_config.warmup_steps
     steps_per_epoch = flags.get('steps_per_epoch', 1000)
     for step, beta in zip(steps, betas):

@@ -68,6 +68,7 @@ def short_training(
         beta: float,
         log_dir: str,
         dynamics: GaugeDynamics,
+        x: tf.Tensor = None,
 ):
     """Perform a brief training run prior to running inference."""
     ckpt_dir = os.path.join(log_dir, 'training', 'checkpoints')
@@ -79,7 +80,9 @@ def short_training(
         ckpt.restore(manager.latest_checkpoint)
         current_step = dynamics.optimizer.iterations.numpy()
 
-    x = convert_to_angle(tf.random.normal(dynamics.x_shape))
+    if x is None:
+        x = convert_to_angle(tf.random.normal(dynamics.x_shape))
+
     train_data = DataContainer(current_step+train_steps, print_steps=1)
 
     dynamics.compile(loss=dynamics.calc_losses,
@@ -225,6 +228,7 @@ def run_inference_from_log_dir(
         therm_frac: float = 0.33,
         batch_size: int = 16,
         num_chains: int = 16,
+        x: tf.Tensor = None,
 ) -> InferenceResults:      # (type: InferenceResults)
     """Run inference by loading networks in from `log_dir`."""
     configs = _find_configs(log_dir)
@@ -266,7 +270,7 @@ def run_inference_from_log_dir(
     if train_steps > 0:
         dynamics, train_data, x = short_training(train_steps,
                                                  configs.beta_final,
-                                                 log_dir, dynamics)
+                                                 log_dir, dynamics, x=x)
     else:
         dynamics.compile(loss=dynamics.calc_losses,
                          optimizer=dynamics.optimizer,
@@ -274,7 +278,8 @@ def run_inference_from_log_dir(
 
     _, log_str = os.path.split(log_dir)
 
-    x = convert_to_angle(tf.random.normal(dynamics.x_shape))
+    if x is None:
+        x = convert_to_angle(tf.random.normal(dynamics.x_shape))
 
     configs['run_steps'] = run_steps
     configs['print_steps'] = max((run_steps // 100, 1))
