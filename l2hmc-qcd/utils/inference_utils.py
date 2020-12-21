@@ -249,10 +249,11 @@ def run_inference_from_log_dir(
     if beta is not None:
         configs.update({'beta': beta, 'beta_final': beta})
 
-    if batch_size is not None:
-        old_shape = configs['dynamics_config'].get('lattice_shape', None)
-        new_shape = (batch_size, *old_shape[1:])
-        configs['dynamics_config']['lattice_shape'] = new_shape
+    configs['dynamics_config']['lattice_shape'] = (8, 16, 16, 2)
+    #  if batch_size is not None:
+    #      old_shape = configs['dynamics_config'].get('lattice_shape', None)
+    #      new_shape = (batch_size, *old_shape[1:])
+    #      configs['dynamics_config']['lattice_shape'] = new_shape
 
     configs = AttrDict(configs)
     dynamics = build_dynamics(configs)
