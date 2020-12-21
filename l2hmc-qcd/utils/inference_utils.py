@@ -251,6 +251,7 @@ def run_inference_from_log_dir(
 
     #  configs['dynamics_config']['lattice_shape'] = (8, 16, 16, 2)
     if batch_size is not None:
+        batch_size = int(batch_size)
         configs['dynamics_config']['lattice_shape'] = (batch_size, 16, 16, 2)
         #  old_shape = configs['dynamics_config'].get('lattice_shape', None)
         #  new_shape = (batch_size, *old_shape[1:])
