@@ -81,7 +81,7 @@ def make_ridgeplots(dataset, num_chains=None, out_dir=None, drop_zeros=False):
 
             # Initialize the FacetGrid object
             pal = sns.cubehelix_palette(len(val.leapfrog.values),
-                                        rot=-0.25, light=0.7)
+                                        rot=-2.25, light=0.7)
             g = sns.FacetGrid(lfdf, row='lf', hue='lf',
                               aspect=15, height=0.25, palette=pal)
 
@@ -431,6 +431,50 @@ def mcmc_traceplot(key, val, title=None, fpath=None, **kwargs):
 
 
 @timeit
+def plot_autocorrs(
+    beta: float,
+    data: dict,
+    data_compare: dict = None,
+    out_dir: str = None,
+    ax: plt.Axes = None,
+    labels: tuple = None,
+    cmap: str = 'Blues',
+):
+    if ax is None:
+        _, ax = plt.subplots()
+
+    num_items = len(list(data.keys()))
+    cmap = plt.get_cmap(cmap, num_items + 10)
+    good_idxs = [0, num_items - 1, (num_items - 1) // 2]
+    if data_compare is not None:
+        for idx, (key, val) in enumerate(data_compare):
+            if not np.isfinite(val['tint'][-1]) or max(val['tint']) > 500:
+                continue
+
+            label = None
+            if beta == 7.:
+                label = ('HMC, '
+                         + r"$N_{\mathrm{LF}} \cdot$"
+                         + r"$\varepsilon = {{{key:.2g}}}$")
+
+            _ = ax.loglog(val['N'], val['tint'], marker='.', ls='',
+                          lw=0.8,
+                          alpha=0.8, color=cmap(idx+10), label=label)
+
+    for idx, (key, val) in enumerate(data.items()):
+        cond1 = max(val['N']) < 1e3
+        cond2 = not np.isfinite(val['tint'][-1])
+        cond3 = max(val['tint']) > 500
+        if cond1 or cond2 or cond3:
+            continue
+
+        if beta == 7. and idx == 0:
+            # TODO: FINISH
+            pass
+
+
+
+@timeit
 def plot_data(
         data_container: "DataContainer",  # noqa:F821
         out_dir: str,
@@ -438,9 +482,12 @@ def plot_data(
         therm_frac: float = 0,
         params: AttrDict = None,
         hmc: bool = None,
-        num_chains: int = None,
+        num_chains: int = 32,
 ):
     """Plot data from `data_container.data`."""
+    if num_chains > 32:
+        io.log(f'Reducing `num_chains` from {num_chains} to 16 for plotting.')
+
     out_dir = os.path.join(out_dir, 'plots')
     io.check_else_make_dir(out_dir)
     if hmc is None:
