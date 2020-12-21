@@ -545,6 +545,10 @@ class BaseDynamics(tf.keras.Model):
             'H': energies.write(0, energy),
             'logdets': logdets.write(0, logdet),
             'Hw': energies_scaled.write(0, energy_scaled),
+            # pad with 1st elt (copy) to have same length as TensorArray's
+            # defined above (useful for creating ridgeplots)
+            'xeps': [self.xeps[0], *self.xeps],
+            'veps': [self.veps[0], *self.veps],
         })
 
         return metrics
@@ -558,6 +562,12 @@ class BaseDynamics(tf.keras.Model):
             **kwargs
     ) -> (AttrDict):
         """Write to metrics."""
+        midpt = self.config.num_steps // 2
+        def _traj_summ(x, key=None):
+            if key is not None:
+                return {f'{key}': tf.squeeze(x)}
+            return (x[0], x[midpt], x[1])
+
         metrics['sumlogdet'] = sumlogdet
         for key, val in kwargs.items():
             #  if not isinstance(val, tf.TensorArray):
