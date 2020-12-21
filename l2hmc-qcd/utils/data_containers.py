@@ -37,18 +37,17 @@ class DataContainer:
     """Base class for dealing with data."""
 
     def __init__(self, steps, header=None, dirs=None, print_steps=100):
-        self.steps = steps
-        self.print_steps = print_steps
         if dirs is not None:
             dirs = AttrDict(**dirs)
+            names = [v for k, v in dirs.items() if 'file' not in k]
+            io.check_else_make_dir(names)
+
         self.dirs = dirs
-        self.data_strs = [header]
+        self.steps = steps
         self.steps_arr = []
+        self.data_strs = [header]
+        self.print_steps = print_steps
         self.data = AttrDict(defaultdict(list))
-        if dirs is not None:
-            io.check_else_make_dir(
-                [v for k, v in dirs.items() if 'file' not in k]
-            )
 
     def update_dirs(self, dirs: dict):
         """Update `self.dirs` with key, val pairs from `dirs`."""
