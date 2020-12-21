@@ -75,6 +75,7 @@ def inference(
         make_plots: bool = True,
         train_steps: int = 100,
         therm_frac: float = 0.33,
+        batch_size: int = None,
         num_chains: int = None,
 ):
     """Run inference on model stored in `log_dir`."""
@@ -84,6 +85,7 @@ def inference(
                                                    therm_frac=therm_frac,
                                                    num_chains=num_chains,
                                                    make_plots=make_plots,
+                                                   batch_size=batch_size,
                                                    train_steps=train_steps)
     return inference_results
 

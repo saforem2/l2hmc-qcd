@@ -83,7 +83,6 @@ def restore_flags(flags, train_dir):
             flags.update(restored)
         except (FileNotFoundError, EOFError):
             pass
-        #  restored = AttrDict(dict(io.loadz(rf_file)))
 
     return flags
 
