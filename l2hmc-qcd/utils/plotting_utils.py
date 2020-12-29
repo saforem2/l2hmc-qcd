@@ -118,7 +118,6 @@ def make_ridgeplots(dataset, num_chains=None, out_dir=None, drop_zeros=False):
     sns.set(style='whitegrid', palette='bright', context='paper')
 
 
-@timeit
 def set_size(
         width: float = None,
         fraction: float = 1,

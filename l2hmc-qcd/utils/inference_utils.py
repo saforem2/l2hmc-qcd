@@ -11,6 +11,7 @@ import json
 import time
 import logging
 
+from rich.progress import track
 from typing import Optional
 from pathlib import Path
 from collections import namedtuple
@@ -93,13 +94,13 @@ def short_training(
 
     header = train_data.get_header(metrics, skip=SKEYS,
                                    prepend=['{:^12s}'.format('step')])
-    io.log(header.split('\n'), should_print=True)
+    io.log(header.split('\n'))
     for step in range(current_step, current_step + train_steps):
         start = time.time()
         x, metrics = dynamics.train_step((x, tf.constant(beta)))
         metrics.dt = time.time() - start
         data_str = train_data.get_fstr(step, metrics, skip=SKEYS)
-        io.log(data_str, should_print=True)
+        io.log(data_str)
 
     return dynamics, train_data, x
 
@@ -454,12 +455,12 @@ def run_dynamics(
         test_step = dynamics.test_step
         x, metrics = test_step((x, tf.constant(beta)))
 
-    header = run_data.get_header(metrics,
-                                 skip=SKEYS,
-                                 prepend=['{:^12s}'.format('step')])
-
-    io.print_header(header)
-    #  io.log(header.split('\n'), should_print=True)
+    #  header = run_data.get_header(metrics,
+    #                               skip=SKEYS,
+    #                               prepend=['{:^12s}'.format('step')])
+    #
+    #  io.print_header(header)
+    #  io.log(header.split('\n'))
     # -------------------------------------------------------------
 
     x_arr = []
@@ -482,10 +483,17 @@ def run_dynamics(
     if NUM_WORKERS == 1:
         ctup = (CBARS['reset'], CBARS['green'],
                 CBARS['reset'], CBARS['reset'])
-        steps = tqdm(steps, desc='running', unit='step',
-                     bar_format=("%s{l_bar}%s{bar}%s{r_bar}%s" % ctup))
+        iter = track(enumerate(steps), total=len(steps),
+                     description='Inference...', transient=True)
+        #  steps = tqdm(steps, desc='running', unit='step',
+        #               bar_format=("%s{l_bar}%s{bar}%s{r_bar}%s" % ctup))
 
-    for step in steps:
+    for idx, step in iter:
+        if idx == 0 or step == 0:
+            header = run_data.get_header(metrics, skip=SKEYS, with_sep=False,
+                                         prepend=['{:^12s}'.format('step')])
+            io.log(header, style='green')
+
         x, metrics = timed_step(x, beta)
         run_data.update(step, metrics)  # update data after every accept/reject
 
@@ -494,10 +502,10 @@ def run_dynamics(
 
         if step % print_steps == 0:
             data_str = run_data.get_fstr(step, metrics, skip=SKEYS)
-            io.log(data_str, should_print=True)
+            io.log(data_str)
 
         if (step + 1) % 1000 == 0:
-            io.log(header, should_print=True)
+            io.log(header)
 
     return InferenceResults(dynamics=dynamics,
                             run_data=run_data,

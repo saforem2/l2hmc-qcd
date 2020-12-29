@@ -121,13 +121,14 @@ class DataContainer:
 
     # pylint:disable=too-many-arguments
     def get_header(self, metrics=None, prepend=None,
-                   append=None, skip=None, split=False):
+                   append=None, skip=None, split=False, with_sep=True):
         """Get nicely formatted header of variable names for printing."""
         if metrics is None:
             metrics = self.data
 
         header = io.make_header_from_dict(metrics, skip=skip, split=split,
-                                          prepend=prepend, append=append)
+                                          prepend=prepend, append=append,
+                                          with_sep=with_sep)
 
         if self.data_strs[0] != header:
             self.data_strs.insert(0, header)
@@ -163,7 +164,7 @@ class DataContainer:
         x_file = os.path.join(data_dir, f'x_rank{rank}-{local_rank}.z')
         try:
             x = io.loadz(x_file)
-            io.log(f'Restored `x` from: {x_file}.', should_print=True)
+            io.log(f'Restored `x` from: {x_file}.')
         except FileNotFoundError:
             io.log(f'Unable to load `x` from {x_file}.', level='WARNING')
             io.log('Using random normal init.', level='WARNING')
@@ -207,7 +208,8 @@ class DataContainer:
             try:
                 self.save_dataset(data_dir)
             except ValueError:
-                print(f'Unable to save `xarray.Dataset`. Continuing...')
+                io.console.log('Unable to save `xarray.Dataset`, continuing')
+                #  print(f'Unable to save `xarray.Dataset`. Continuing...')
 
     def plot_dataset(
             self,
@@ -288,8 +290,8 @@ class DataContainer:
     def dump_configs(x, data_dir, rank=0, local_rank=0):
         """Save configs `x` separately for each rank."""
         xfile = os.path.join(data_dir, f'x_rank{rank}-{local_rank}.z')
-        io.log('Saving configs from rank '
-               f'{rank}-{local_rank} to: {xfile}.')
+        #  io.log('Saving configs from rank '
+        #         f'{rank}-{local_rank} to: {xfile}.')
         head, _ = os.path.split(xfile)
         io.check_else_make_dir(head)
         joblib.dump(x, xfile)
