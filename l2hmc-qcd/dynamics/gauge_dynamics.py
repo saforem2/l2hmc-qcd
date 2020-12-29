@@ -201,6 +201,25 @@ class GaugeDynamics(BaseDynamics):
             self.lr = self._create_lr(lr_config, auto=True)
             self.optimizer = self._create_optimizer()
 
+    def _load_eps(
+            self,
+            log_dir: str = None,
+    ) -> (list, list):
+        """Load `xeps` and `veps` from saved model."""
+        models_dir = os.path.join(log_dir, 'training', 'models')
+        if not os.path.isdir(models_dir):
+            raise ValueError('Unable to locate `models_dir`: {models_dir}')
+
+        veps_file = os.path.join(models_dir, 'veps.z')
+        xeps_file = os.path.join(models_dir, 'xeps.z')
+        xeps = io.loadz(xeps_file)
+        veps = io.loadz(veps_file)
+
+        xeps = list(xeps)
+        veps = list(veps)
+
+        return xeps, veps
+
     def _load_networks(
             self,
             log_dir: str = None
@@ -298,8 +317,8 @@ class GaugeDynamics(BaseDynamics):
         else:
             xnet_paths = os.path.join(models_dir, 'dynamics_xnet')
             vnet_paths = os.path.join(models_dir, 'dynamics_vnet')
-            io.log(f'Saving `xnet` to {xnet_paths}.')
-            io.log(f'Saving `vnet` to {vnet_paths}.')
+            #  io.log(f'Saving `xnet` to {xnet_paths}.')
+            #  io.log(f'Saving `vnet` to {vnet_paths}.')
             self.xnet.save(xnet_paths)
             self.vnet.save(vnet_paths)
 
