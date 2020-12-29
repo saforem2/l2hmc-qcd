@@ -150,15 +150,18 @@ def main(args, num_chains=256):
         therm_frac=0.2
         make_plots=True
         xbatch = x[:batch_size]
-        _ = run_inference_from_log_dir(log_dir=log_dir,
-                                       run_steps=run_steps,
-                                       beta=beta,
-                                       num_chains=num_chains,
-                                       batch_size=batch_size,
-                                       therm_frac=0.2,
-                                       make_plots=True,
-                                       train_steps=0,
-                                       x=xbatch)
+        _ = run(dynamics, args, xbatch, beta=beta, make_plots=True,
+                therm_frac=0.2, num_chains=8, save_x=False)
+
+        #  _ = run_inference_from_log_dir(log_dir=log_dir,
+        #                                 run_steps=run_steps,
+        #                                 beta=beta,
+        #                                 num_chains=num_chains,
+        #                                 batch_size=batch_size,
+        #                                 therm_frac=0.2,
+        #                                 make_plots=True,
+        #                                 train_steps=0,
+        #                                 x=xbatch)
         # Run with random start
         #  _ = run(dynamics, args)
         #  # Run HMC
@@ -185,8 +188,8 @@ if __name__ == '__main__':
         logging_level = logging.WARNING
     io.print_dict(CONFIGS)
     main(CONFIGS)
-    if RANK == 0:
-        console.save_text(os.path.join(os.getcwd(), 'train.log'), styles=False)
+    #  if RANK == 0:
+    #      console.save_text(os.path.join(os.getcwd(), 'train.log'), styles=False)
 
     #
     #  debug_events_writer.FlushExecutionFiles()
