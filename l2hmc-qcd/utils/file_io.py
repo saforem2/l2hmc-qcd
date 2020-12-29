@@ -293,8 +293,9 @@ def rule(s: str = ' ', **kwargs: dict):
 
 def log(s: str, level: str = 'INFO', out=console, style=None):
     """Print string `s` to stdout if and only if hvd.rank() == 0."""
-    #  if RANK != 0:
-    #      return
+    if RANK != 0:
+        return
+
     tstr = get_timestamp('%X')
     hstr = f'[{tstr}] •'  # , {RANK}••{LOCAL_RANK}]'
     #hstr += '•'
