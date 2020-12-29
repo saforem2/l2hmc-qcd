@@ -39,6 +39,7 @@ except (ImportError, ModuleNotFoundError):
     HAS_HOROVOD = False
 
 
+from utils.file_io import console
 import utils.file_io as io
 
 from utils.attr_dict import AttrDict
@@ -104,8 +105,8 @@ def main(args, num_chains=256):
         for key, val in args.items():
             if key in restored:
                 if val != restored[key]:
-                    print(f'Restored {key}: {restored[key]}')
-                    print(f'Using {key}: {val}')
+                    io.log(f'Restored {key}: {restored[key]}')
+                    io.log(f'Using {key}: {val}')
 
         args.update({
             'train_steps': train_steps,
@@ -168,6 +169,7 @@ def main(args, num_chains=256):
 
 
 if __name__ == '__main__':
+    timestamp = io.get_timestamp('%Y-%m-%d-%H%M')
     #  debug_events_writer = tf.debugging.experimental.enable_dump_debug_info(
     #      debug_dir, circular_buffer_size=-1,
     #      tensor_debug_mode="FULL_HEALTH",
@@ -183,6 +185,9 @@ if __name__ == '__main__':
         logging_level = logging.WARNING
     io.print_dict(CONFIGS)
     main(CONFIGS)
+    if RANK == 0:
+        console.save_text(os.path.join(os.getcwd(), 'train.log'), styles=False)
+
     #
     #  debug_events_writer.FlushExecutionFiles()
     #  debug_events_writer.FlushNonExecutionFiles()

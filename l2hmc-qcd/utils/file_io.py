@@ -19,7 +19,18 @@ from tqdm.auto import tqdm
 from pathlib import Path
 
 from rich.console import Console
-console = Console()
+from rich.progress import (
+    BarColumn,
+    DownloadColumn,
+    TextColumn,
+    TimeRemainingColumn,
+    Progress,
+    TaskID,
+)
+
+console = Console(width=None, record=True,
+                  log_time_format="[%X] ")
+#  FORMAT = "%(levelname)s:%(process)s:%(thread)s:%(name)s:%(message)s"
 #  print = console.print
 from rich.logging import RichHandler
 
@@ -38,16 +49,16 @@ try:
     LOCAL_RANK = hvd.local_rank()
     NUM_WORKERS = hvd.size()
     IS_CHIEF = (RANK == 0)
-    logging.info(f'Using horovod version: {horovod.__version__}')
-    logging.info(f'Using horovod from: {horovod.__file__}')
+    console.log(f'{RANK} :: Using horovod version: {horovod.__version__}')
+    console.log(f'{RANK} :: Using horovod from: {horovod.__file__}')
+    #  logging.info(f'Using horovod version: {horovod.__version__}')
+    #  logging.info(f'Using horovod from: {horovod.__file__}')
 
 except (ImportError, ModuleNotFoundError):
     HAS_HOROVOD = False
     RANK = LOCAL_RANK = 0
     NUM_WORKERS = 1
     IS_CHIEF = True
-
-
 
 LOG_LEVELS_AS_INTS = {
     'CRITICAL': 50,
@@ -67,55 +78,71 @@ LOG_LEVELS = {
 
 logging.getLogger('tensorflow').setLevel(logging.WARNING)
 logging.getLogger('arviz').setLevel(logging.ERROR)
-logger = logging.getLogger(__name__)
-logging_datefmt = '%Y-%m-%d %H:%M:%S'
-logging_level = logging.WARNING
-FORMAT = "%(levelname)s:%(process)s:%(thread)s:%(name)s:%(message)s"
+
+#  logger = logging.getLogger('rich')
+#  logging_level = logging.WARNING
+#  FORMAT = "%(level) - %(message)s"
+# ----
+#  logger = logging.getLogger(__name__)
+#  logging_datefmt = '%Y-%m-%d %H:%M:%S'
+#  FORMAT = "(levelname)s:(%message)s"
+#  FORMAT = "%(asctime)-15s - %(level) - %(message)s"
+#  FORMAT = "%(levelname)s:%(process)s:%(thread)s:%(name)s:%(message)s"
 #  logging_format = (
 #      '%(asctime)s %(levelname)s:%(process)s:%(thread)s:%(name)s:%(message)s'
 #  )
 
-if IS_CHIEF:
-    logging.basicConfig(
-        level=logging.ERROR,
-        format=FORMAT,
-        datefmt="[%X]",
-        handlers=[RichHandler(rich_tracebacks=True)],
-        #  stream=sys.stdout,
-    )
-else:
-    logging.basicConfig(
-        level=logging.WARNING,
-        format=FORMAT,
-        #  format="%(asctime)s:%(levelname)s:%(message)s",
-        datefmr="[%X]",
-        handlers=[RichHandler(rich_tracebacks=True)],
-        #  stream=None
-    )
+#  if IS_CHIEF:
+#      logging.basicConfig(
+#          level=logging.ERROR,
+#          format=FORMAT,
+#          datefmt="[%X]",
+#          handlers=[RichHandler(rich_tracebacks=True, markup=True)],
+#          #  stream=sys.stdout,
+#      )
+#  else:
+#      logging.basicConfig(
+#          level=logging.WARNING,
+#          format=FORMAT,
+#          #  format="%(asctime)s:%(levelname)s:%(message)s",
+#          datefmt="[%X]",
+#          handlers=None,
+#          #  handlers=[RichHandler(rich_tracebacks=True)],
+#          #  stream=None
+#      )
 
 if HAS_HOROVOD:
-    FORMAT = (
-        '%(levelname)s:%(process)s:%(thread)s:'
-        + ('%04d' % hvd.rank()) + ':%(name)s:%(message)s'
-    )
-    #  logging_format = (
-    #      '%(asctime)s %(levelname)s:%(process)s:%(thread)s:'
-    #      + ('%05d' % hvd.rank()) + ':%(name)s:%(message)s'
+    #  FORMAT = (
+    #      '%(levelname)s:%(process)s:%(thread)s:'
+    #      + ('%04d' % hvd.rank()) + ':%(name)s:%(message)s'
     #  )
-    logging_level = logging.WARNING
-    if RANK > 0:
-        logging_level = logging.ERROR
-
-    handlers = [RichHandler(rich_tracebacks=True)] if hvd.rank() == 0 else None
-    logging.basicConfig(level=logging_level,
-                        format=FORMAT,
-                        datefmt="[%X]",
-                        handlers=handlers)
-                        #  stream=sys.stdout if hvd.rank() == 0 else None)
-    logging.warning(' '.join([f'rank: {hvd.rank()}',
-                              f'local_rank: {hvd.local_rank()}',
-                              f'size: {hvd.size()}',
-                              f'local_size: {hvd.local_size()}']))
+    #  #  logging_format = (
+    #  #      '%(asctime)s %(levelname)s:%(process)s:%(thread)s:'
+    #  #      + ('%05d' % hvd.rank()) + ':%(name)s:%(message)s'
+    #  #  )
+    #  logging_level = logging.WARNING
+    #  if RANK > 0:
+    #      logging_level = logging.ERROR
+    #
+    #  handlers = [RichHandler(rich_tracebacks=True)] if hvd.rank() == 0 else None
+    #  logging.basicConfig(level=logging_level,
+    #                      format=FORMAT,
+    #                      datefmt="[%X]",
+    #                      handlers=handlers)
+    #  logger = logging.getLogger('rich')
+    #  stream=sys.stdout if hvd.rank() == 0 else None)
+    #  console.log(' '.join([f'rank: {hvd.rank()}',
+    #                        f'local_rank: {hvd.local_rank()}',
+    #                        f'size: {hvd.size()}',
+    #                        f'local_size: {hvd.local_size()}']))
+    console.log(' '.join([f'rank: {hvd.rank()}',
+                          f'local_rank: {hvd.local_rank()}',
+                          f'size: {hvd.size()}',
+                          f'local_size: {hvd.local_size()}']))
+    #  logger.warning(' '.join([f'rank: {hvd.rank()}',
+    #                           f'local_rank: {hvd.local_rank()}',
+    #                           f'size: {hvd.size()}',
+    #                           f'local_size: {hvd.local_size()}']))
 
 #  try:
 #      from rich.logging import RichHandler
@@ -199,6 +226,7 @@ def filter_dict(d: dict, cond: callable, key: str = None):
         k: v for k, v in d.items() if cond
     }
 
+
 def _look(p, s, conds=None):
     console.print(f'Looking in {p}...')
     matches = [x for x in Path(p).rglob(f'*{s}*')]
@@ -259,28 +287,52 @@ def print_header(header):
     #  console.print(header.split('\n'), style='bold red')
 
 
-def log(s: str, level: str = 'INFO', out=sys.stdout, should_print=False):
+def rule(s: str = ' ', **kwargs: dict):
+    console.rule(s, **kwargs)
+
+
+def log(s: str, level: str = 'INFO', out=console, style=None):
     """Print string `s` to stdout if and only if hvd.rank() == 0."""
-    if RANK != 0:
-        return
-    if NUM_WORKERS == 1:
-        if isinstance(s, (tuple, list)):
-            for i in s:
-                tqdm.write(i, file=out)
-        else:
-            tqdm.write(s, file=out)
+    #  if RANK != 0:
+    #      return
+    tstr = get_timestamp('%X')
+    hstr = f'[{tstr}]'  # , {RANK}••{LOCAL_RANK}]'
+    if NUM_WORKERS > 1:
+        hstr += f'[{RANK}'
+        if  hvd.local_size() > 1:
+            hstr += f': {hvd.local_rank()}]'
+        hstr += '•'
     else:
-        level = LOG_LEVELS_AS_INTS[level.upper()]
-        if isinstance(s, (list, tuple)):
-            if should_print:
-                _ = [console.print(s_) for s_ in s]
-            else:
-                _ = [console.log(level, s_) for s_ in s]
-        else:
-            if should_print:
-                console.print(s)
-            else:
-                console.log(level, s)
+        hstr += '•'
+    #  if NUM_WORKERS == 1:
+    #      if isinstance(s, (tuple, list)):
+    #          for i in s:
+    #              tqdm.write(i, file=out)
+    #      else:
+    #          tqdm.write(s, file=out)
+    #  else:
+    #  level = LOG_LEVELS_AS_INTS[level.upper()]
+    if isinstance(s, (list, tuple)):
+        for ss in s:
+            console.print(' '.join([f'[#505050]{hstr}[/#505050]', ss]),
+                          style=style)
+            #  console.print(' '.join([hstr, ss]), style='#505050')
+            #  console.log(hstr + ss)
+        #  console.log(level, '\n'.join(s))
+        #  console.log(level, '
+        #  if should_print:
+        #      _ = [console.print(s_) for s_ in s]
+        #  else:
+        #  _ = [console.log(level, s_) for s_ in s]
+    else:
+        console.print(' '.join([f'[#505050]{hstr}[/#505050]', s]),
+                      style=style)
+        #  console.log(' '.join([hstr, s]))
+        #  console.log(hstr + s)
+        #  if should_print:
+        #      console.print(s)
+        #  else:
+        #  console.log(level, s)
 
 
 def write(s: str, f: str, mode: str = 'a', nl: bool = True):
@@ -293,16 +345,17 @@ def write(s: str, f: str, mode: str = 'a', nl: bool = True):
 
 def print_dict(d: Dict, indent: int = 0, name: str = None, **kwargs):
     """Print nicely-formatted dictionary."""
-    indent_str = indent * ' '
-    if name is not None:
-        log(f'{indent_str}{name}:', **kwargs)
-        sep_str = indent_str + len(name) * '-'
-        log(sep_str, **kwargs)
-    for key, val in d.items():
-        if isinstance(val, (AttrDict, dict)):
-            print_dict(val, indent=indent, name=str(key), **kwargs)
-        else:
-            log(f'  {indent_str}{key}: {val}', **kwargs)
+    console.print(dict)
+    #  indent_str = indent * ' '
+    #  if name is not None:
+    #      log(f'{indent_str}{name}:', **kwargs)
+    #      sep_str = indent_str + len(name) * '-'
+    #      log(sep_str, **kwargs)
+    #  for key, val in d.items():
+    #      if isinstance(val, (AttrDict, dict)):
+    #          print_dict(val, indent=indent, name=str(key), **kwargs)
+    #      else:
+    #          log(f'  {indent_str}{key}: {val}', **kwargs)
 
 
 def print_flags(flags: AttrDict):
@@ -352,19 +405,22 @@ def make_header_from_dict(
         append: list = None,
         prepend: list = None,
         split: bool = False,
+        with_sep: bool = True,
 ):
     """Build nicely formatted header with names of various metrics."""
     append = [] if append is None else append
     prepend = [] if prepend is None else prepend
     skip = [] if skip is None else skip
     keys = ['{:^12s}'.format(k) for k in data.keys() if k not in skip]
-    hstr = ''.join(prepend + keys + append)
-    sep = dash * len(hstr)
-    header = [sep, hstr, sep]
-    if split:
-        return header
-
-    return '\n'.join(header)
+    header = ''.join(prepend + keys + append)
+    if with_sep:
+        sep = dash * len(header)
+        header = [sep, header, sep]
+        return '\n'.join(header)
+    #  if split:
+    #      return header
+    #  return '\n'.join(header)
+    return header
 
 
 def log_and_write(
@@ -440,7 +496,7 @@ def save_dict(d: dict, out_dir: str, name: str = None):
         with open(json_file, 'w') as f:
             json.dump(d, f, indent=4, ensure_ascii=False, cls=NumpyEncoder)
     except TypeError:
-        log(f'Unable to save to `.json` file. Continuing...')
+        log('Unable to save to `.json` file. Continuing...')
 
     txt_file = os.path.join(out_dir, f'{name}.txt')
     with open(txt_file, 'w') as f:
@@ -498,7 +554,7 @@ def timeit(fn):
         tstr = (f'`{fn.__name__}` took: {dt_ms:.5g}ms '
                 f' ({dt_min}m {dt_s}s)')
 
-        log(tstr, should_print=True)
+        log(tstr)
         return result
     return timed
 
