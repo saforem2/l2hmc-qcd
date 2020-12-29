@@ -17,6 +17,7 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import itertools as it
 
+from utils import SKEYS
 import utils.file_io as io
 from utils.file_io import timeit
 from utils.attr_dict import AttrDict
@@ -80,9 +81,11 @@ def make_ridgeplots(dataset, num_chains=None, out_dir=None, drop_zeros=False):
             lfdf = pd.DataFrame(lf_data)
 
             # Initialize the FacetGrid object
-            pal = sns.cubehelix_palette(len(val.leapfrog.values),
-                                        rot=-2.25, light=0.7)
-            g = sns.FacetGrid(lfdf, row='lf', hue='lf',
+            pal = sns.color_palette('flare', n_colors=len(val.leapfrog.values))
+            #  n_colors=len(val.leapfrog.values))
+            #pal = sns.cubehelix_palette(len(val.leapfrog.values),
+            #                            rot=-2.25, light=0.7)
+            g = sns.FacetGrid(lfdf, row='lf', hue='lf', # hue_kws={'cmap': pal},
                               aspect=15, height=0.25, palette=pal)
 
             # Draw the densities in a few steps
@@ -116,6 +119,10 @@ def make_ridgeplots(dataset, num_chains=None, out_dir=None, drop_zeros=False):
 
     plt.style.use('default')
     sns.set(style='whitegrid', palette='bright', context='paper')
+    fig = plt.gcf()
+    ax = plt.gca()
+
+    return fig, ax
 
 
 def set_size(
@@ -157,10 +164,10 @@ def savefig(fig, fpath):
     io.check_else_make_dir(os.path.dirname(fpath))
     io.log(f'Saving figure to: {fpath}.')
     fig.savefig(fpath, dpi=400, bbox_inches='tight')
+    fig.clf()
     plt.close('all')
 
 
-@timeit
 def therm_arr(arr, therm_frac=0., ret_steps=True):
     """Drop first `therm_frac` steps of `arr` to account for thermalization."""
     if therm_frac == 0:
@@ -183,46 +190,63 @@ def therm_arr(arr, therm_frac=0., ret_steps=True):
 
 @timeit
 def plot_energy_distributions(data, out_dir=None, title=None):
-    energies = {
-        'forward': {
-            'start': data['Hf_start'],
-            'mid': data['Hf_mid'],
-            'end': data['Hf_end'],
-        },
-        'backward': {
-            'start': data['Hb_start'],
-            'mid': data['Hb_mid'],
-            'end': data['Hb_end'],
-        }
-    }
+    #  energies = {
+    #      'forward': {
+    #          'start': data['Hf_start'],
+    #          'mid': data['Hf_mid'],
+    #          'end': data['Hf_end'],
+    #      },
+    #      'backward': {
+    #          'start': data['Hb_start'],
+    #          'mid': data['Hb_mid'],
+    #          'end': data['Hb_end'],
+    #      }
+    #  }
+    #  energies_combined = {
+    #      'forward': {
+    #          'start': data['Hwf_start'],
+    #          'mid': data['Hwf_mid'],
+    #          'end': data['Hwf_end'],
+    #      },
+    #      'backward': {
+    #          'start': data['Hwb_start'],
+    #          'mid': data['Hwb_mid'],
+    #          'end': data['Hwb_end'],
+    #      }
+    #  }
+    chains, leapfrogs, draws = data['Hwf'].shape
+    midpt = leapfrogs // 2
     energies_combined = {
         'forward': {
-            'start': data['Hwf_start'],
-            'mid': data['Hwf_mid'],
-            'end': data['Hwf_end'],
+            'start': data['Hwf'][:, 0, :],
+            'mid': data['Hwf'][:, midpt, :],
+            'end': data['Hwf'][:, -1, :],
         },
         'backward': {
-            'start': data['Hwb_start'],
-            'mid': data['Hwb_mid'],
-            'end': data['Hwb_end'],
+            'start': data['Hwb'][:, 0, :],
+            'mid': data['Hwb'][:, midpt, :],
+            'end': data['Hwb'][:, -1, :],
         }
     }
 
-    fig, axes = plt.subplots(nrows=2, ncols=2, sharex='col',
+    fig, axes = plt.subplots(nrows=1, ncols=2, sharex='col', figsize=(8, 4),
                              constrained_layout=True)
     #  plt.tight_layout()
-    axes = axes.flatten()
-    for idx, (key, val) in enumerate(energies.items()):
-        for k, v, in val.items():
-            x, y = v
-            _ = sns.kdeplot(y.flatten(), label=f'{key}/{k}',
-                            ax=axes[idx], shade=True)
+    #  axes = axes.flatten()
+    #  for idx, (key, val) in enumerate(energies.items()):
+    #      for k, v, in val.items():
+    #          #  y = v.values
+    #          #  x, y = v
+    #          y = v.values
+    #          _ = sns.kdeplot(y.flatten(), label=f'{key}/{k}',
+    #                          ax=axes[idx], shade=True)
 
     for idx, (key, val) in enumerate(energies_combined.items()):
         for k, v in val.items():
-            x, y = v
+            #  x, y = v
+            y = v.values
             _ = sns.kdeplot(y.flatten(), label=f'{key}/{k}',
-                            ax=axes[idx+2], shade=True)
+                            ax=axes[idx], shade=True)
 
     for ax in axes:
         ax.set_ylabel('')
@@ -230,22 +254,23 @@ def plot_energy_distributions(data, out_dir=None, title=None):
     _ = axes[0].set_title('forward')
     _ = axes[1].set_title('backward')
     _ = axes[0].legend(loc='best')
-    _ = axes[0].set_xlabel(r"$\mathcal{H}$")
-    _ = axes[1].set_xlabel(r"$\mathcal{H}$")
+    #  _ = axes[0].set_xlabel(r"$\mathcal{H}$")
+    #  _ = axes[1].set_xlabel(r"$\mathcal{H}$")
     #  _ = axes[1].legend(loc='best')
     #  _ = axes[2].legend(loc='best')
     #  _ = axes[3].legend(loc='best')
-    _ = axes[0].set_xlabel(r"$\mathcal{H}$")  # , fontsize='large')
-    _ = axes[1].set_xlabel(r"$\mathcal{H}$")  # , fontsize='large')
-    _ = axes[2].set_xlabel(r"$\mathcal{H} - \sum\log\|\mathcal{J}\|$")
-    _ = axes[3].set_xlabel(r"$\mathcal{H} - \sum\log\|\mathcal{J}\|$")
+    #  axes = axes.reshape(2, 2)
+    #  _ = axes[0, 0].set_xlabel(r"$\mathcal{H}$")  # , fontsize='large')
+    #  _ = axes[0, 1].set_xlabel(r"$\mathcal{H}$")  # , fontsize='large')
+    _ = axes[0].set_xlabel(r"$\mathcal{H} - \sum\log\|\mathcal{J}\|$")
+    _ = axes[1].set_xlabel(r"$\mathcal{H} - \sum\log\|\mathcal{J}\|$")
     if title is not None:
         _ = fig.suptitle(title)  # , fontsize='x-large')
     if out_dir is not None:
         out_file = os.path.join(out_dir, 'energy_dists_traj.png')
         savefig(fig, out_file)
 
-    return fig, axes
+    return fig, axes.flatten()
 
 
 @timeit
@@ -348,9 +373,16 @@ def mcmc_avg_lineplots(data, title=None, out_dir=None):
             # TODO: Create separate plots for each leapfrog?
             arr = np.mean(arr, axis=1)
 
-        avg = np.mean(arr, axis=1)
         xlabel = 'MC Step'
-        ylabel = ' '.join(key.split('_')) + r" avg"
+        if len(val.shape) == 1:
+            avg = arr
+            ylabel = ' '.join(key.split('_'))
+            #  avg = np.mean(arr)
+
+        else:
+            avg = np.mean(arr, axis=1)
+            ylabel = ' '.join(key.split('_')) + r" avg"
+
 
         _ = axes[0].plot(steps, avg, color=COLORS[idx])
         _ = axes[0].set_xlabel(xlabel)
@@ -367,13 +399,13 @@ def mcmc_avg_lineplots(data, title=None, out_dir=None):
 
         if out_dir is not None:
             dir_ = out_dir
-            if 'Hf' in key or 'Hb' in key:
-                dir_ = os.path.join(out_dir, 'energies')
-            if 'Hwf' in key or 'Hwb' in key:
-                dir_ = os.path.join(out_dir,
-                                    'energies_scaled')
-            if 'sld' in key or 'ldf' in key or 'ldb' in key:
-                dir_ = os.path.join(out_dir, 'logdets')
+            #  if 'Hf' in key or 'Hb' in key:
+            #      dir_ = os.path.join(out_dir, 'energies')
+            #  if 'Hwf' in key or 'Hwb' in key:
+            #      dir_ = os.path.join(out_dir,
+            #                          'energies_scaled')
+            #  if 'sld' in key or 'ldf' in key or 'ldb' in key:
+            #      dir_ = os.path.join(out_dir, 'logdets')
 
             dir_ = os.path.join(dir_, 'avg_lineplots')
             io.check_else_make_dir(dir_)
@@ -440,7 +472,7 @@ def plot_autocorrs(
     cmap: str = 'Blues',
 ):
     if ax is None:
-        _, ax = plt.subplots()
+        fig, ax = plt.subplots()
 
     num_items = len(list(data.keys()))
     cmap = plt.get_cmap(cmap, num_items + 10)
@@ -484,8 +516,18 @@ def plot_data(
         num_chains: int = 32,
 ):
     """Plot data from `data_container.data`."""
-    if num_chains > 32:
+    keep_strs = [
+        'charges', 'plaqs', 'accept_prob',
+        'Hf_start', 'Hf_mid', 'Hf_end',
+        'Hb_start', 'Hb_mid', 'Hb_end',
+        'Hwf_start', 'Hwf_mid', 'Hwf_end',
+        'Hwb_start', 'Hwb_mid', 'Hwb_end',
+        'xeps_start', 'xeps_mid', 'xeps_end',
+        'veps_start', 'veps_mid', 'veps_end'
+    ]
+    if num_chains > 16:
         io.log(f'Reducing `num_chains` from {num_chains} to 16 for plotting.')
+        num_chains = 16
 
     out_dir = os.path.join(out_dir, 'plots')
     io.check_else_make_dir(out_dir)
@@ -510,10 +552,14 @@ def plot_data(
 
     data_dict = {}
     data_vars = {}
+    charges_steps = []
+    charges_arr = []
     for key, val in data_container.data.items():
-        if key == 'x':
+        if key in SKEYS and key not in keep_strs:
             continue
-
+        #  if key == 'x':
+        #      continue
+        #
         # ====
         # Conditional to skip logdet-related data
         # from being plotted if data generated from HMC run
@@ -522,17 +568,17 @@ def plot_data(
                 if skip_str in key:
                     continue
 
-        out_dir_ = out_dir
-        if 'ld' in key:
-            out_dir_ = os.path.join(out_dir_, 'logdets')
+        #  out_dir_ = out_dir
+        #  if 'ld' in key:
+        #      out_dir_ = os.path.join(out_dir_, 'logdets')
+        #
+        #  if 'H' in key:
+        #      if 'Hw' in key:
+        #          out_dir_ = os.path.join(out_dir_, 'energies_combined')
+        #      else:
+        #          out_dir_ = os.path.join(out_dir_, 'energies')
 
-        if 'H' in key:
-            if 'Hw' in key:
-                out_dir_ = os.path.join(out_dir_, 'energies_combined')
-            else:
-                out_dir_ = os.path.join(out_dir_, 'energies')
-
-        io.check_else_make_dir(out_dir_)
+        #  io.check_else_make_dir(out_dir_)
 
         arr = np.array(val)
         steps = logging_steps * np.arange(len(arr))
@@ -549,11 +595,17 @@ def plot_data(
 
         labels = ('MC Step', key)
         data = (steps, arr)
+        if key == 'charges':
+            charges_steps = steps
+            charges_arr = arr
 
         if len(arr.shape) == 1:  # shape: (draws,)
+            out_dir_ = os.path.join(out_dir, f'mcmc_lineplots')
+            io.check_else_make_dir(out_dir_)
             lplot_fname = os.path.join(out_dir_, f'{key}.png')
-            _, _ = mcmc_lineplot(data, labels, title,
-                                 lplot_fname, show_avg=True)
+            data_dict[key] = xr.DataArray(arr, dims=['draw'], coords=[steps])
+            #  _, _ = mcmc_lineplot(data, labels, title,
+            #                       lplot_fname, show_avg=True)
 
         elif len(arr.shape) == 2:  # shape: (draws, chains)
             data_dict[key] = data
@@ -562,12 +614,13 @@ def plot_data(
             data_arr = xr.DataArray(arr.T,
                                     dims=['chain', 'draw'],
                                     coords=[chains, steps])
-
-            tplot_fname = os.path.join(out_dir_, f'{key}_traceplot.png')
-            _ = mcmc_traceplot(key, data_arr, title, tplot_fname)
-
+            data_dict[key] = data_arr
             data_vars[key] = data_arr
 
+            #  tplot_fname = os.path.join(out_dir_, f'{key}_traceplot.png')
+            #  _ = mcmc_traceplot(key, data_arr, title, tplot_fname)
+
+        #
         elif len(arr.shape) == 3:  # shape: (draws, leapfrogs, chains)
             steps_, leapfrogs_, chains_ = arr.shape
             chains = np.arange(chains_)
@@ -576,8 +629,8 @@ def plot_data(
                                           dims=['chain', 'leapfrog', 'draw'],
                                           coords=[chains, leapfrogs, steps])
 
-        else:
-            raise ValueError('Unexpected shape encountered in data.')
+        #  else:
+        #      raise ValueError('Unexpected shape encountered in data.')
 
         plt.close('all')
 
@@ -590,13 +643,13 @@ def plot_data(
                                 therm_frac=therm_frac)
     plt.close('all')
 
-    try:
-        _ = plot_energy_distributions(data_dict, out_dir=out_dir, title=title)
-        plt.close('all')
-    except KeyError:
-        pass
+    #  try:
+    _ = plot_energy_distributions(data_dict, out_dir=out_dir, title=title)
+    #  except KeyError:
+    #      import pudb; pudb.set_trace()
+    #      pass
 
     _ = mcmc_avg_lineplots(data_dict, title, out_dir)
-    plt.close('all')
-    _ = plot_charges(*data_dict['charges'], out_dir=out_dir, title=title)
+    _ = plot_charges(charges_steps,
+                     charges_arr, out_dir=out_dir, title=title)
     plt.close('all')
