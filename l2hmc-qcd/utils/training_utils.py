@@ -173,7 +173,7 @@ def train(
 
     dynamics.save_config(dirs.config_dir)
 
-    io.rule('Training L2HMC sampler...')
+    io.rule('TRAINING')
     #  io.rule('[bold red]')
     #  io.log('\n'.join([120 * '*', 'Training L2HMC sampler...']))
     x, train_data = train_dynamics(dynamics, flags, dirs, x=x)
@@ -377,12 +377,14 @@ def train_dynamics(
     #  io.log(120 * '*')
     if flags.profiler:
         tf.profiler.experimental.start(logdir=dirs.summary_dir)
-        io.log('Running 10 profiling steps...')
+        io.rule('Running 10 profiling steps')
+        #  io.log('Running 10 profiling steps...')
         for step in range(10):
             x, metrics = dynamics.train_step((x, tf.constant(betas[0])))
 
         tf.profiler.experimental.stop(save=True)
-        io.log('Done!')
+        io.rule('done')
+        #  io.log('Done!')
     else:
         x, metrics = dynamics.train_step((x, tf.constant(betas[0])))
 
@@ -390,11 +392,11 @@ def train_dynamics(
     md_steps = flags.get('md_steps', 0)
     if md_steps > 0:
         #  io.log(120*'*')
-        io.log(f'Running {md_steps} MD updates...')
+        io.rule(f'Running {md_steps} MD updates')
         for _ in range(md_steps):
             mc_states, _ = dynamics.md_update((x, betas[0]), training=True)
             x = mc_states.out.x
-        io.log('Done!')
+        io.rule('done!')
         #  io.log(120*'*')
 
     # -- Final setup; create timing wrapper for `train_step` function -------
@@ -419,7 +421,7 @@ def train_dynamics(
     warmup_steps = dynamics.lr_config.warmup_steps
     steps_per_epoch = flags.get('steps_per_epoch', 1000)
     iterable = track(enumerate(zip(steps, betas)), total=len(betas),
-                     description='Training...', transient=True)
+                     description='training', transient=True)
     #  for idx, (step, beta) in track(
     #          enumerate(zip(steps, betas), total=len(betas))
     #  ):
@@ -427,9 +429,11 @@ def train_dynamics(
     for idx, (step, beta) in iterable:
         # -- Perform a single training step -------------------------------
         if idx == 0 or step == 0:
+            io.rule()
             header = train_data.get_header(metrics, skip=SKEYS, with_sep=False,
                                            prepend=['{:^12s}'.format('step')])
             io.log(header, style='green')
+            io.rule()
 
         x, metrics = timed_step(x, beta)
 

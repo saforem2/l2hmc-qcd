@@ -28,7 +28,7 @@ from rich.progress import (
     TaskID,
 )
 
-console = Console(width=None, record=True,
+console = Console(width=319, record=True,
                   log_time_format="[%X] ")
 #  FORMAT = "%(levelname)s:%(process)s:%(thread)s:%(name)s:%(message)s"
 #  print = console.print
@@ -296,14 +296,14 @@ def log(s: str, level: str = 'INFO', out=console, style=None):
     #  if RANK != 0:
     #      return
     tstr = get_timestamp('%X')
-    hstr = f'[{tstr}]'  # , {RANK}••{LOCAL_RANK}]'
-    if NUM_WORKERS > 1:
-        hstr += f'[{RANK}'
-        if  hvd.local_size() > 1:
-            hstr += f': {hvd.local_rank()}]'
-        hstr += '•'
-    else:
-        hstr += '•'
+    hstr = f'[{tstr}] •'  # , {RANK}••{LOCAL_RANK}]'
+    #hstr += '•'
+    #  if NUM_WORKERS > 1:
+    #      hstr += f'[{RANK}'
+    #      if  hvd.local_size() > 1:
+    #          hstr += f': {hvd.local_rank()}]'
+    #      hstr += '•'
+    #  else:
     #  if NUM_WORKERS == 1:
     #      if isinstance(s, (tuple, list)):
     #          for i in s:
