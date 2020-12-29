@@ -28,8 +28,9 @@ from rich.progress import (
     TaskID,
 )
 
-console = Console(width=319, record=True,
-                  log_time_format="[%X] ")
+console = Console(width=319, record=False,
+                  log_time_format='[%X] ')
+                  #  log_time_format="[%X] ")
 #  FORMAT = "%(levelname)s:%(process)s:%(thread)s:%(name)s:%(message)s"
 #  print = console.print
 from rich.logging import RichHandler
@@ -296,8 +297,8 @@ def log(s: str, level: str = 'INFO', out=console, style=None):
     if RANK != 0:
         return
 
-    tstr = get_timestamp('%X')
-    hstr = f'[{tstr}] •'  # , {RANK}••{LOCAL_RANK}]'
+    #  tstr = get_timestamp('%X')
+    #  hstr = f'[{tstr}] •'  # , {RANK}••{LOCAL_RANK}]'
     #hstr += '•'
     #  if NUM_WORKERS > 1:
     #      hstr += f'[{RANK}'
@@ -313,10 +314,13 @@ def log(s: str, level: str = 'INFO', out=console, style=None):
     #          tqdm.write(s, file=out)
     #  else:
     #  level = LOG_LEVELS_AS_INTS[level.upper()]
-    if isinstance(s, (list, tuple)):
-        for ss in s:
-            console.print(' '.join([f'[#505050]{hstr}[/#505050]', ss]),
-                          style=style)
+    #  if isinstance(s, (list, tuple)):
+    #      for ss in s:
+    #          console.log(ss, style=style, highlight=True)
+    #  else:
+    console.log(s, style=style, markup=True, highlight=True)
+            #  console.print(' '.join([f'[#505050]{hstr}[/#505050]', ss]),
+            #                style=style)
             #  console.print(' '.join([hstr, ss]), style='#505050')
             #  console.log(hstr + ss)
         #  console.log(level, '\n'.join(s))
@@ -325,15 +329,16 @@ def log(s: str, level: str = 'INFO', out=console, style=None):
         #      _ = [console.print(s_) for s_ in s]
         #  else:
         #  _ = [console.log(level, s_) for s_ in s]
-    else:
-        console.print(' '.join([f'[#505050]{hstr}[/#505050]', s]),
-                      style=style)
-        #  console.log(' '.join([hstr, s]))
-        #  console.log(hstr + s)
-        #  if should_print:
-        #      console.print(s)
-        #  else:
-        #  console.log(level, s)
+    #  else:
+    #      console.log(s, style=style)
+    #      #  console.print(' '.join([f'[#505050]{hstr}[/#505050]', s]),
+    #      #                style=style)
+    #      #  console.log(' '.join([hstr, s]))
+    #      #  console.log(hstr + s)
+    #      #  if should_print:
+    #      #      console.print(s)
+    #      #  else:
+    #      #  console.log(level, s)
 
 
 def write(s: str, f: str, mode: str = 'a', nl: bool = True):
@@ -522,7 +527,7 @@ def savez(obj: Any, fpath: str, name: str = None):
         fpath += '.z'
 
     if name is not None:
-        log(f'Saving {name} to {os.path.abspath(fpath)}.')
+        console.log(f'Saving {name} to {os.path.abspath(fpath)}.')
 
     joblib.dump(obj, fpath)
 
@@ -552,8 +557,9 @@ def timeit(fn):
         dt_s = (dt % 60)
         dt_min = (dt // 60)
         dt_ms = dt * 1000
-        tstr = (f'`{fn.__name__}` took: {dt_ms:.5g}ms '
-                f' ({dt_min}m {dt_s}s)')
+        tstr = f'`{fn.__name__}` took: {dt_ms:.3g}ms '
+        if dt_min > 0:
+            tstr += f' ({int(dt_min)} min {dt_s:3.2g} sec)'
 
         log(tstr)
         return result

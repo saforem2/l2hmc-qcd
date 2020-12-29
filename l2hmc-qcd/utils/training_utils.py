@@ -421,19 +421,31 @@ def train_dynamics(
     warmup_steps = dynamics.lr_config.warmup_steps
     steps_per_epoch = flags.get('steps_per_epoch', 1000)
     iterable = track(enumerate(zip(steps, betas)), total=len(betas),
-                     description='training', transient=True)
+                     console=io.console, description='training',
+                     transient=True)
+
+    keep = ['dt', 'loss', 'accept_prob', 'beta',
+            'Hf_start', 'Hf_mid', 'Hf_end'
+            'Hb_start', 'Hb_mid', 'Hb_end',
+            'Hwb_start', 'Hwb_mid', 'Hwb_end',
+            'Hwf_start', 'Hwf_mid', 'Hwf_end',
+            'dq', 'dq_sin', 'plaqs']
     #  for idx, (step, beta) in track(
     #          enumerate(zip(steps, betas), total=len(betas))
     #  ):
     #  for idx, (step, beta) in iterable:
     for idx, (step, beta) in iterable:
         # -- Perform a single training step -------------------------------
-        if idx == 0 or step == 0:
-            io.rule()
-            header = train_data.get_header(metrics, skip=SKEYS, with_sep=False,
-                                           prepend=['{:^12s}'.format('step')])
-            io.log(header, style='green')
-            io.rule()
+        #  if idx == 10 or step == 0:
+        #      timestamp = io.get_timestamp('%Y-%m-%d %H:%M:%s')
+        #      io.rule(timestamp)
+        #      header = train_data.get_header(
+        #          metrics, skip=SKEYS, with_sep=False,
+        #          prepend=['{:^12s}'.format('step')]
+        #      )
+        #      header = 142 * ' ' + header
+        #      io.log(header, style='green')
+        #      io.rule(timestamp)
 
         x, metrics = timed_step(x, beta)
 
@@ -463,7 +475,15 @@ def train_dynamics(
 
         # -- Print current training state and metrics ---------------
         if should_print(step):
-            data_str = train_data.get_fstr(step, metrics, skip=SKEYS)
+            if step % 5000 == 0:
+                keep_ = keep + ['xeps_start', 'xeps_mid', 'xeps_end',
+                                'veps_start', 'veps_mid', 'veps_end',]
+                data_str = train_data.get_fstr(step, metrics,
+                                               skip=SKEYS, keep=keep_)
+            else:
+                data_str = train_data.get_fstr(step, metrics,
+                                               skip=SKEYS, keep=keep)
+
             io.log(data_str)
             #  io.log(data_str)
 
@@ -474,12 +494,13 @@ def train_dynamics(
                 update_summaries(step, metrics, dynamics)
                 writer.flush()
 
+
         # -- Print header every so often --------------------------
         if IS_CHIEF and (step + 1) % (50 * flags.print_steps) == 0:
             #  io.rule(["bold red]"])
-            io.rule()
-            io.log(header, style='green')
-            io.rule()
+            timestamp = io.get_timestamp('%Y-%m-%d %H:%M')
+            io.rule(timestamp)
+            #  io.log(header, style='green')
             #  io.rule(["bold red]"])
             #  io.log(header.split('\n'))
 

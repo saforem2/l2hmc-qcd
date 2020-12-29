@@ -17,6 +17,7 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 
+from utils import SKEYS
 import utils.file_io as io
 
 from config import BASE_DIR
@@ -135,22 +136,36 @@ class DataContainer:
 
         return header
 
-    def get_fstr(self, step, metrics, skip=None):
+    def get_fstr(self, step, metrics, skip=None, keep=None):
         """Get formatted data string from `data`."""
         skip = [] if skip is None else skip
         data = {}
 
         data = {
             k: tf.reduce_mean(v) for k, v in metrics.items()
-            if k not in skip and not isinstance(v, dict)
+            if k not in skip and not isinstance(v, dict) and k not in SKEYS
         }
+        if keep is not None:
+            data = {k: v for k, v in data.items() if k in keep}
 
+        #  fstr = f'{step:>5g}/{self.steps:<5g}, '
+        #  for k, v in data.items():
+        #      sk = str(k)
+        #      lsk = len(sk)
+        sstr = 'step'
         fstr = (
-            f'{step:>5g}/{self.steps:<5g} ' + ''.join([
-                f'{v:^12.4g}' for _, v in data.items()
-                if not isinstance(v, dict)
+            f'{sstr:>s}: {step:>5g}/{self.steps:<5g} ' + ' '.join([
+                f'{k:>s}: {v:>5.3g}' for k, v in data.items()
+                #  if not isinstance(v, dict)
             ])
         )
+
+        #  fstr = (
+        #      f'{step:>5g}/{self.steps:<5g} ' + ''.join([
+        #          f'{v:^12.4g}' for _, v in data.items()
+        #          if not isinstance(v, dict)
+        #      ])
+        #  )
 
         self.data_strs.append(fstr)
 

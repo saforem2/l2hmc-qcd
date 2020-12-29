@@ -127,7 +127,6 @@ def _get_hmc_log_str(configs):
     return log_str
 
 
-
 def run_hmc(
         args: AttrDict,
         hmc_dir: str = None,
@@ -484,15 +483,16 @@ def run_dynamics(
         ctup = (CBARS['reset'], CBARS['green'],
                 CBARS['reset'], CBARS['reset'])
         iter = track(enumerate(steps), total=len(steps),
-                     description='Inference...', transient=True)
+                     description='Inference...', transient=True,
+                     console=io.console)
         #  steps = tqdm(steps, desc='running', unit='step',
         #               bar_format=("%s{l_bar}%s{bar}%s{r_bar}%s" % ctup))
 
     for idx, step in iter:
-        if idx == 0 or step == 0:
-            header = run_data.get_header(metrics, skip=SKEYS, with_sep=False,
-                                         prepend=['{:^12s}'.format('step')])
-            io.log(header, style='green')
+        #  if idx == 0 or step == 0:
+        #      header = run_data.get_header(metrics, skip=SKEYS, with_sep=False,
+        #                                   prepend=['{:^12s}'.format('step')])
+        #      io.log(header, style='green')
 
         x, metrics = timed_step(x, beta)
         run_data.update(step, metrics)  # update data after every accept/reject
@@ -504,8 +504,8 @@ def run_dynamics(
             data_str = run_data.get_fstr(step, metrics, skip=SKEYS)
             io.log(data_str)
 
-        if (step + 1) % 1000 == 0:
-            io.log(header)
+        #  if (step + 1) % 1000 == 0:
+        #      io.log(header)
 
     return InferenceResults(dynamics=dynamics,
                             run_data=run_data,
