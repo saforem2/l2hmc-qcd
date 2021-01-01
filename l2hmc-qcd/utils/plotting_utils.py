@@ -554,6 +554,7 @@ def plot_data(
     data_vars = {}
     charges_steps = []
     charges_arr = []
+    out_dir_ = out_dir
     for key, val in data_container.data.items():
         if key in SKEYS and key not in keep_strs:
             continue
