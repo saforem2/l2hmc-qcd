@@ -257,7 +257,9 @@ def setup(dynamics, flags, dirs=None, x=None, betas=None):
     steps = tf.range(current_step, num_steps, dtype=tf.int64)
     train_data.steps = steps[-1]
     if flags.beta_init == flags.beta_final:
-        betas = flags.beta_init * np.ones(len(steps))
+        #  betas = flags.beta_init * np.ones(len(steps))
+        ones = tf.ones(len(steps))
+        betas = tf.cast(flags.beta_final, ones.dtype) * ones
     else:
         betas = get_betas(num_steps - 1, flags.beta_init, flags.beta_final)
         betas = betas[current_step:]
