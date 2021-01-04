@@ -158,7 +158,12 @@ def run_hmc(
     io.check_else_make_dir(hmc_dir)
 
     def get_run_fstr(run_dir):
+        # take relevant part of run_dir:
+        # ```
+        # /path/to/HMC_L16_b512... -> HMC_L16_b512...
+        # ```
         _, tail = os.path.split(run_dir)
+        # strip off timestamp at the end of `run_dir`
         fstr = tail.split('-')[0]
         return fstr
 
