@@ -645,7 +645,8 @@ def plot_data(
     plt.close('all')
 
     #  try:
-    _ = plot_energy_distributions(data_dict, out_dir=out_dir, title=title)
+    if not hmc:
+        _ = plot_energy_distributions(data_dict, out_dir=out_dir, title=title)
     #  except KeyError:
     #      import pudb; pudb.set_trace()
     #      pass
