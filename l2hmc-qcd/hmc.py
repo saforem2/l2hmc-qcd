@@ -98,8 +98,9 @@ def check_existing(beta, num_steps, eps):
 
 
 def multiple_runs(flags, json_file=None):
+    default = (512, 16, 16, 2)
     run_steps = flags.run_steps if flags.run_steps is not None else 125000
-    lattice_shape = (512, 16, 16, 2)
+    shape = flags.lattice_shape if flags.lattice_shape is not None else default
 
     betas = [5.0, 6.0, 7.0]
     num_steps = [10, 15, 20, 25]
@@ -114,7 +115,7 @@ def multiple_runs(flags, json_file=None):
                     'beta': b,
                     'num_steps': ns,
                     'run_steps': run_steps,
-                    'lattice_shape': lattice_shape,
+                    'lattice_shape': shape,
                 })
                 exists = check_existing(b, ns, e)
                 if exists:
@@ -164,7 +165,7 @@ def main(args, json_file=None):
     if args.get('num_steps', None) is not None:
         flags.dynamics_config['num_steps'] = args.num_steps
 
-    return run_hmc(flags, skip_existing=False, num_chains=4, make_plots=True)
+    return run_hmc(flags, skip_existing=True, num_chains=4, make_plots=True)
 
 
 if __name__ == '__main__':
