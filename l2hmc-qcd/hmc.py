@@ -4,18 +4,23 @@ hmc.py
 Runs generic HMC by loading in from `config.BIN_DIR/hmc_configs.json`
 """
 from __future__ import absolute_import, division, print_function
-import argparse
+
 import os
 import json
 import logging
-from tqdm.auto import trange, tqdm
-import tensorflow as tf
+import argparse
+
 import utils
+import numpy as np
+import tensorflow as tf
+
 from config import CBARS
+from tqdm.auto import tqdm, trange
 
 try:
     import horovod
     import horovod.tensorflow as hvd
+
     try:
         RANK = hvd.rank()
     except ValueError:
@@ -35,12 +40,11 @@ try:
 except (ImportError, ModuleNotFoundError):
     HAS_HOROVOD = False
 
-
 import utils.file_io as io
 
-from utils.inference_utils import run_hmc
+from config import BIN_DIR, GAUGE_LOGS_DIR
 from utils.attr_dict import AttrDict
-from config import GAUGE_LOGS_DIR, BIN_DIR
+from utils.inference_utils import run_hmc
 
 
 def parse_args():
@@ -79,30 +83,53 @@ def parse_args():
     return parser.parse_args()
 
 
+def check_existing(beta, num_steps, eps):
+    from config import HMC_LOGS_DIR
+
+    root_dir = os.path.abspath(os.path.join(HMC_LOGS_DIR, '2021_01'))
+    runs = os.listdir(root_dir)
+    dirname = f'HMC_L16_b512_beta{beta}_lf{num_steps}_eps{eps}'
+    match = False
+    for run in runs:
+        if run.startswith(dirname):
+            match = True
+
+    return match
+
+
 def multiple_runs(flags, json_file=None):
-    run_steps = flags.run_steps if flags.run_steps is not None else 125000
+    #  run_steps = flags.run_steps if flags.run_steps is not None else 125000
+    run_steps = 125000
 
-    lattice_shapes = [
-        (512, 16, 16, 2),
-    ]
+    lattice_shape = [(512, 16, 16, 2)]
 
-    num_steps = [10, 15, 20, 25]
-    betas = [5.0, 6.0, 7.0]
-    eps = [0.025, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3]
+    betas = np.random.shuffle([5.0, 6.0, 7.0])
+    num_steps = np.random.shuffle([10, 15, 20, 25])
+    eps = np.random.shuffle([0.025, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3])
     #  eps = [0.1, 0.125, 0.15, 0.175, 0.2]
 
-    for ls in lattice_shapes:
-        for b in betas:
-            for ns in num_steps:
-                for e in eps:
-                    args = AttrDict({
-                        'eps': e,
-                        'beta': b,
-                        'num_steps': ns,
-                        'run_steps': run_steps,
-                        'lattice_shape': ls,
-                    })
-                    _ = main(args, json_file=json_file)
+    for b in np.random.shuffle([5.0, 6.0, 7.0]):
+        for ns in np.random.shuffle([10, 15, 20, 25]):
+            for e in np.random.shuffle([0.025, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3]):
+                args = AttrDict({
+                    'eps': e,
+                    'beta': b,
+                    'num_steps': ns,
+                    'run_steps': run_steps,
+                    'lattice_shape': lattice_shape,
+                })
+                exists = check_existing(b, ns, e)
+                if exists:
+                    io.rule('Skipping existing run!')
+                    #  io.log(
+                    #      'Found existing run with: '
+                    #      f'beta: {beta}, lf: {ns}, eps: {e:.2g}, '
+                    #      'skipping!'
+                    #  )
+                    #  io.rule('continuing!')
+                    continue
+
+                _ = main(args, json_file=json_file)
 
 
 def load_hmc_flags(json_file=None):
@@ -139,7 +166,7 @@ def main(args, json_file=None):
     if args.get('num_steps', None) is not None:
         flags.dynamics_config['num_steps'] = args.num_steps
 
-    return run_hmc(flags, skip_existing=True, num_chains=16, make_plots=True)
+    return run_hmc(flags, skip_existing=True, num_chains=4, make_plots=True)
 
 
 if __name__ == '__main__':
