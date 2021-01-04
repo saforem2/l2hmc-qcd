@@ -30,7 +30,6 @@
         "directional_updates": false,
         "use_scattered_xnet_update": false,
         "use_tempered_traj": false,
-        "use_combined_updates": false,
         "gauge_eq_masks": false,
         "lattice_shape": [256, 16, 16, 2]
     }
