@@ -11,7 +11,7 @@ import logging
 import argparse
 
 import utils
-import numpy as np
+import random
 import tensorflow as tf
 
 from config import CBARS
@@ -98,19 +98,17 @@ def check_existing(beta, num_steps, eps):
 
 
 def multiple_runs(flags, json_file=None):
-    #  run_steps = flags.run_steps if flags.run_steps is not None else 125000
-    run_steps = 125000
+    run_steps = flags.run_steps if flags.run_steps is not None else 125000
+    lattice_shape = (512, 16, 16, 2)
 
-    lattice_shape = [(512, 16, 16, 2)]
-
-    betas = np.random.shuffle([5.0, 6.0, 7.0])
-    num_steps = np.random.shuffle([10, 15, 20, 25])
-    eps = np.random.shuffle([0.025, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3])
+    betas = [5.0, 6.0, 7.0]
+    num_steps = [10, 15, 20, 25]
+    eps = [0.025, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3]
     #  eps = [0.1, 0.125, 0.15, 0.175, 0.2]
 
-    for b in np.random.shuffle([5.0, 6.0, 7.0]):
-        for ns in np.random.shuffle([10, 15, 20, 25]):
-            for e in np.random.shuffle([0.025, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3]):
+    for b in random.sample(betas, len(betas)):
+        for ns in random.sample(num_steps, len(num_steps)):
+            for e in random.sample(eps, len(eps)):
                 args = AttrDict({
                     'eps': e,
                     'beta': b,
@@ -166,7 +164,7 @@ def main(args, json_file=None):
     if args.get('num_steps', None) is not None:
         flags.dynamics_config['num_steps'] = args.num_steps
 
-    return run_hmc(flags, skip_existing=True, num_chains=4, make_plots=True)
+    return run_hmc(flags, skip_existing=False, num_chains=4, make_plots=True)
 
 
 if __name__ == '__main__':
