@@ -1311,7 +1311,7 @@ class GaugeDynamics(BaseDynamics):
         data.update(**_traj_summ(self.xeps, 'xeps'))
         data.update(**_traj_summ(self.veps, 'veps'))
 
-        if self._verbose:
+        if self._verbose and not self.config.hmc:
             metricsf = metrics.get('forward', None)
             metricsb = metrics.get('backward', None)
             for (kf, vf), (kb, vb) in zip(metricsf.items(), metricsb.items()):
@@ -1371,7 +1371,7 @@ class GaugeDynamics(BaseDynamics):
         data.update(**_traj_summ(self.xeps, 'xeps'))
         data.update(**_traj_summ(self.veps, 'veps'))
 
-        if self._verbose:
+        if self._verbose and not self.config.hmc:
             for (kf, vf), (kb, vb) in zip(metrics.forward.items(),
                                           metrics.backward.items()):
                 data.update(**_traj_summ(vf, f'{kf}f'))
