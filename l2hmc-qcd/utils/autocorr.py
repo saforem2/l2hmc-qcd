@@ -144,16 +144,28 @@ def load_charge_data(dirs, hmc=False):
     """Load in charge data from `dirs`."""
     q = {}
     for d in dirs:
-        io.log(f'Looking in {d}...')
-        if 'inference_hmc' in str(d):
+        if not os.path.isdir(d):
+            io.log('\n'.join([
+                'WARNING: Skipping entry!',
+                f'\t {d} is not a directory.',
+            ]), style='blue')
+
             continue
 
-        qfile = d.rglob('charges.z')
-        pxfile = d.rglob('accept_prob.z')
-        rpfile = d.rglob('run_params.z')
-        num_runs = len(qfile)
+        io.log(f'Looking in {d}...')
+        if 'inference_hmc' in str(d) and not hmc:
+            continue
+
+        qfiles = [x for x in d.rglob('charges.z') if x.is_file()]
+        pxfiles = [x for x in d.rglob('accept_prob.z') if x.is_file()]
+        rpfiles = [x for x in d.rglob('run_params.z') if x.is_file()]
+        #  qfile = d.rglob('charges.z')
+        #  pxfile = d.rglob('accept_prob.z')
+        #  rpfile = d.rglob('run_params.z')
+        num_runs = len(qfiles)
+        io.log(f'num_runs: {num_runs}')
         if num_runs > 0:
-            for qf, pxf, rpf in zip(qfile, pxfile, rpfile):
+            for qf, pxf, rpf in zip(qfiles, pxfiles, rpfiles):
                 params = io.loadz(rpf)
 
                 # -- Ignore those runs which have poor acceptance
@@ -164,11 +176,11 @@ def load_charge_data(dirs, hmc=False):
                     io.log('\n'.join([
                         'WARNING: Skipping entry!',
                         f'\t px_avg: {px_avg:.3g} < 0.1',
-                    ], style='blue'))
+                    ]), style='blue')
 
                     continue
 
-                if 'xeps' and 'veps' in params.items():
+                if 'xeps' and 'veps' in params.keys():
                     xeps = tf.reduce_sum(params['xeps'])
                     veps = tf.reduce_mean(params['veps'])
                     eps = tf.reduce_mean([xeps, veps])
@@ -183,8 +195,8 @@ def load_charge_data(dirs, hmc=False):
                 lf = params['num_steps']
                 eps = tf.reduce_mean(eps).numpy()
                 template = ', '.join([
-                    f'beta: {beta}',
-                    f'lf: {lf}',
+                    f'beta: {str(beta)}',
+                    f'lf: {str(lf)}',
                     f'eps: {eps:.3g}',
                 ])
                 io.log(f'Loading data for: {template}')
@@ -195,12 +207,12 @@ def load_charge_data(dirs, hmc=False):
                     qarr = io.loadz(qf)
                     qarr = np.array(qarr, dtype=int)
 
-                    if (lf, eps) not in z[beta].keys():
+                    if (lf, eps) not in q[beta].keys():
                         q[beta][(lf, eps)] = qarr
                     else:
                         small_delta = 1e-6 * np.random.randn()
                         q[beta][(lf, eps + small_delta)] = qarr
-        return q
+    return q
 
 
 def integrated_autocorr(x: np.ndarray, size: str = 'cbrt'):
@@ -406,7 +418,7 @@ def calc_tau_int(
                 io.log('\n'.join([
                     'WARNING: Skipping entry!',
                     f'\tchains: {chains} < min_chains: {min_chains}'
-                ], style='blue'))
+                ]), style='blue')
 
                 continue
 
@@ -414,7 +426,7 @@ def calc_tau_int(
                 io.log('\n'.join([
                     'WARNING: Skipping entry!',
                     f'\tdraws: {draws} < min_draws: {min_draws}'
-                ], style='blue'))
+                ]), style='blue')
 
                 continue
 
