@@ -189,7 +189,13 @@ def load_charge_data(dirs, hmc=False):
                     eps = params['eps']
 
                 else:
-                    raise ValueError('Unable to determine step size eps.')
+                    head, tail = os.path.split(rpf)
+                    cfgs_file = os.path.join(head, 'inference_configs.z')
+                    if os.path.isfile(cfgs_file):
+                        configs = io.loadz(cfgs_file)
+                        eps = configs['dynamics_config']['eps']
+                    else:
+                        raise ValueError('Unable to determine step size eps.')
 
                 beta = params['beta']
                 lf = params['num_steps']
