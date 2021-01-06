@@ -45,6 +45,21 @@ class IntAutocorrTimeData:
     tau_int: np.ndarray
 
 
+def make_hcolors(data, cmap='viridis', skip=0):
+    keys = {
+        k: list(data[k].keys()) for k in data.keys()
+    }
+    colors = {}
+    for key, val in keys.items():
+        if skip > 0:
+            num_items = len(val) + skip
+        c = plt.get_cmap(cmap, num_items)
+        colors[key] = {
+            t: c(idx + skip) for idx, t in enumerate(val)
+        }
+
+    return colors
+
 
 def filter_dict(d: dict, cond: bool, key: str = None):
     """Filter dictionary by applying `cond` to `d`.
@@ -398,7 +413,7 @@ def calc_autocorr_alt(y, num_pts=20, nstart=100):
     """Alternative to the above method, `calc_autocorr`."""
     N = np.exp(
         np.linspace(np.log(nstart), np.log(y.shape[0]), num_pts).astype(int)
-    )
+    ).astype(int)
     acfs = np.zeros((len(N), y.shape[1]))
     for i, n in enumerate(N):
         acfs[i] = integrated_autocorr(y[:n, :])
@@ -412,7 +427,7 @@ def calc_tau_int(
         min_draws: int = 1,
         min_chains: int = 1,
         num_pts: int = 50,
-        autocorr_fn: callable = autocorr_new
+        use_alt_autocorr: bool = False,
 ):
     tau_int = {key: {} for key, _ in qdata.items()}
     for key, val in qdata.items():
@@ -438,14 +453,14 @@ def calc_tau_int(
 
             t0 = time.time()
             try:
-                if autocorr_fn == autocorr_new:
+                if use_alt_autocorr:
+                    n, tint = calc_autocorr_alt(qarr, num_pts=num_pts,
+                                                nstart=min_draws)
+                else:
                     # NOTE: `calc_autocorr` expects
                     # `input.shape = (chains, draws),` so we pass `qarr.T`
                     n, tint = calc_autocorr(qarr.T, num_pts=num_pts,
                                             nstart=min_draws)
-                elif autocorr_fn == integrated_autocorr:
-                    n, tint = calc_autocorr_alt(qarr, num_pts=num_pts,
-                                                nstart=min_draws)
             except ZeroDivisionError:
                 io.log(f'ZeroDivisionError, skipping! ({key}, {k})')
                 continue
@@ -487,19 +502,3 @@ def calc_tau_int(
             }
 
     return data
-
-
-def make_hcolors(data, cmap='viridis', skip=0):
-    keys = {
-        k: list(data[k].keys()) for k in data.keys()
-    }
-    colors = {}
-    for key, val in keys.items():
-        if skip > 0:
-            num_items = len(val) + skip
-        c = plt.get_cmap(cmap, num_items)
-        colors[key] = {
-            t: c(idx + skip) for idx, t in enumerate(val)
-        }
-
-    return colors
