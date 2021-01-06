@@ -5,6 +5,7 @@ import datetime
 
 from pathlib import Path
 from dataclasses import dataclass
+from copy import deepcopy
 
 import autograd
 import celerite
@@ -467,6 +468,8 @@ def calc_tau_int(
                 continue
 
             io.log(', '.join([
+                f'lf: {k[0]}',
+                f'eps: {k[1]:.3g}',
                 f'traj_len: {k[0] * k[1]:.3g}',
                 f'chains: {chains}',
                 f'draws: {draws}',
@@ -496,10 +499,107 @@ def calc_tau_int(
                     'lf': k[0],
                     'eps': k[1],
                     'traj_len': k[0] * k[1],
-                    'draws': v['N'],
+                    'draws': v['draws'],
                     'chains': v['chains'],
                     'tau_int': v['tau_int'],
                 }
             }
 
     return data
+
+
+
+def get_plot_data(
+        tint_data: dict,
+        cmap: str = 'Greys',
+        skip: int = 10,
+        hcolors: dict = None
+):
+    """Get data for plotting."""
+    betas = list(tint_data.keys())
+
+    template = {
+        beta: {
+            'hmc': {},
+            'l2hmc': {},
+        } for beta in betas
+    }
+    tint_nsamples = deepcopy(template)
+    tint_traj_len = deepcopy(template)
+    tint_beta = deepcopy(template)
+
+    if hcolors is None:
+        hdata = {
+            key: val['hmc'] for key, val in tint_data.items()
+        }
+        hcolors = make_hcolors(hdata, cmap, skip=skip)
+
+    for idx, (beta, d) in enumerate(tint_data.items()):
+        hmc_avgs = []
+        hmc_errs = []
+        for (lf, eps), tint in d['hmc'].items():
+            # -- Scale tau_int by number of leapfrog steps:
+            tint_scaled = tint * lf
+            draws = d['hmc'][(lf, eps)]['draws']
+
+            # Compute statistics across chains (axis=1)
+            chain_avg = np.mean(tint_scaled, axis=1)
+            chain_err = np.std(tint_scaled, axis=1) / chain_avg
+            tint_nsamples[beta]['hmc'][(lf, eps)] = {
+                'x': draws,
+                'y': chain_avg,
+                'yerr': chain_err,
+                'color': hcolors[beta][(lf, eps)],
+            }
+
+            # Take best (last) value of the estimate for tau_int
+            best = tint[-1]
+            tint_traj_len[beta]['hmc'][(lf, eps)] = {
+                'x': lf * eps,
+                'y': np.mean(tint_scaled[-1]),
+                'yerr': np.std(tint_scaled[-1]),
+                'color': hcolors[beta][(lf, eps)],
+            }
+
+            avg = np.mean(tint_scaled)
+            err = np.std(tint_scaled) / avg
+            hmc_avgs.append(avg)
+            hmc_errs.append(err)
+
+        tint_beta[beta]['hmc'] = {
+            'x': beta,
+            'y': np.mean(hmc_avgs),
+            'yerr': np.mean(hmc_errs),
+        }
+
+        l2hmc_avgs = []
+        l2hmc_errs = []
+        for (lf, eps), tint in d['l2hmc'].items():
+            # -- Repeat calculation as above
+            tint_scaled = tint * lf
+            N = d['l2hmc'][(lf, eps)]['draws']
+
+            chain_avg = np.mean(tint_scaled, axis=1)
+            chain_err = np.std(tint_scaled, axis=1) / chain_avg
+            tint_nsamples[beta]['l2hmc'][(lf, eps)] = {
+                'x': N,
+                'y': chain_avg,
+                'yerr': chain_err,
+            }
+
+            tint_traj_len[beta]['l2hmc'][(lf, eps)] = {
+                'x': lf * eps,
+                'y': np.mean(tint_scaled[-1]),
+                'yerr': np.std(tint_scaled[-1]),
+            }
+
+            l2hmc_avgs.append(np.mean(tint))
+            l2hmc_errs.append(np.std(tint))
+
+        tint_beta[beta]['l2hmc'] = {
+            'x': beta,
+            'y': np.mean(l2hmc_avgs),
+            'yerr': np.mean(l2hmc_errs),
+        }
+
+    return tint_nsamples, tint_traj_len, tint_beta
