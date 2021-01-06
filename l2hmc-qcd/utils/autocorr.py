@@ -444,6 +444,9 @@ def calc_tau_int(
         io.rule(f'beta: {key}')
         for k, v in val.items():
             qarr, _ = therm_arr(v, therm_frac=therm_frac)
+            lf = k[0]
+            eps = k[1]
+            traj_len = lf * eps
             draws, chains = qarr.shape
             if chains < min_chains:
                 io.log('\n'.join([
@@ -475,27 +478,33 @@ def calc_tau_int(
                 io.log(f'ZeroDivisionError, skipping! ({key}, {k})')
                 continue
 
-            io.log(', '.join([
-                f'lf: {k[0]}',
-                f'eps: {k[1]:.3g}',
-                f'traj_len: {k[0] * k[1]:.3g}',
-                f'chains: {chains}',
-                f'draws: {draws}',
-                f'tau_int: {tint[-1].mean():.3g}',
-                f'+/- {tint[-1].std():.3g}',
-                f'took: {time.time() - t0:.3g}s',
-            ]))
-
             # -- Only keep finite estimates
             if np.isfinite(tint[-1].mean()):
+                io.log(', '.join([
+                    f'lf: {lf}',
+                    f'eps: {eps:.3g}',
+                    f'traj_len: {traj_len:.3g}',
+                    f'chains: {chains}',
+                    f'draws: {draws}',
+                    f'tau_int: {tint[-1].mean():.3g}',
+                    f'+/- {tint[-1].std():.3g}',
+                    f'took: {time.time() - t0:.3g}s',
+                ]))
                 tau_int[key][k] = {
-                    'draws': n,
-                    'lf': k[0],
-                    'eps': k[1],
-                    'tau_int': tint,
-                    'chains': chains,
+                    'lf': lf,
+                    'eps': eps,
                     'traj_len': k[0] * k[1],
+                    'chains': chains,
+                    'draws': n,
+                    'tau_int': tint,
                 }
+
+            else:
+                io.log('\n'.join([
+                    'WARNING: Skipping entry!',
+                    f'\tint[-1] is np.nan'
+                ]), style='yellow')
+
 
     # -- Sort data by trajectory length, k[0] = (lf, eps)
     data = {}
@@ -504,9 +513,9 @@ def calc_tau_int(
         for k, v in vsort.items():
             data[key] = {
                 (k[0],  k[1]): {
-                    'lf': k[0],
-                    'eps': k[1],
-                    'traj_len': k[0] * k[1],
+                    'lf': v['lf'],
+                    'eps': v['eps'],
+                    'traj_len': v['traj_len'],
                     'draws': v['draws'],
                     'chains': v['chains'],
                     'tau_int': v['tau_int'],
