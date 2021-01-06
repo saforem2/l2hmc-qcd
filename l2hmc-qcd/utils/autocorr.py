@@ -511,6 +511,7 @@ def calc_tau_int(
 
 def get_plot_data(
         tint_data: dict,
+        ndata: dict,
         cmap: str = 'Greys',
         skip: int = 10,
         hcolors: dict = None
@@ -540,20 +541,20 @@ def get_plot_data(
         for (lf, eps), tint in d['hmc'].items():
             # -- Scale tau_int by number of leapfrog steps:
             tint_scaled = tint * lf
-            draws = d['hmc'][(lf, eps)]['draws']
+            #  draws = d['hmc'][(lf, eps)]['draws']
 
             # Compute statistics across chains (axis=1)
             chain_avg = np.mean(tint_scaled, axis=1)
             chain_err = np.std(tint_scaled, axis=1) / chain_avg
+            chain_len = ndata[beta]['hmc'][(lf, eps)]
             tint_nsamples[beta]['hmc'][(lf, eps)] = {
-                'x': draws,
+                'x': chain_len,
                 'y': chain_avg,
                 'yerr': chain_err,
                 'color': hcolors[beta][(lf, eps)],
             }
 
             # Take best (last) value of the estimate for tau_int
-            best = tint[-1]
             tint_traj_len[beta]['hmc'][(lf, eps)] = {
                 'x': lf * eps,
                 'y': np.mean(tint_scaled[-1]),
@@ -577,12 +578,12 @@ def get_plot_data(
         for (lf, eps), tint in d['l2hmc'].items():
             # -- Repeat calculation as above
             tint_scaled = tint * lf
-            N = d['l2hmc'][(lf, eps)]['draws']
 
+            chain_len = ndata[beta]['l2hmc'][(lf, eps)]
             chain_avg = np.mean(tint_scaled, axis=1)
             chain_err = np.std(tint_scaled, axis=1) / chain_avg
             tint_nsamples[beta]['l2hmc'][(lf, eps)] = {
-                'x': N,
+                'x': chain_len,
                 'y': chain_avg,
                 'yerr': chain_err,
             }
