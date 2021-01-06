@@ -397,8 +397,8 @@ def calc_autocorr(y, num_pts=20, nstart=100, autocorr_fn=autocorr_new):
     """Compute the integrated autocorrelation time vs. num_samples."""
     lower = np.log(nstart)
     upper = np.log(y.shape[1])
-    lspace = np.linspace(lower, upper, num_pts).astype(int)
-    N = np.exp(lspace)
+    lspace = np.linspace(lower, upper, num_pts)
+    N = np.exp(lspace).astype(int)
 
     chains, draws = y.shape
     acfs = np.zeros((len(N), chains))
