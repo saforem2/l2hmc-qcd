@@ -424,9 +424,10 @@ def calc_autocorr_alt(y, num_pts=20, nstart=100):
 def calc_tau_int(
         qdata: dict,
         therm_frac: float = 0.2,
-        min_draws: int = 1,
+        min_draws: int = 1000,
         min_chains: int = 1,
         num_pts: int = 50,
+        nstart: int = 100,
         use_alt_autocorr: bool = False,
 ):
     tau_int = {key: {} for key, _ in qdata.items()}
@@ -455,12 +456,12 @@ def calc_tau_int(
             try:
                 if use_alt_autocorr:
                     n, tint = calc_autocorr_alt(qarr, num_pts=num_pts,
-                                                nstart=min_draws)
+                                                nstart=nstart)
                 else:
                     # NOTE: `calc_autocorr` expects
                     # `input.shape = (chains, draws),` so we pass `qarr.T`
                     n, tint = calc_autocorr(qarr.T, num_pts=num_pts,
-                                            nstart=min_draws)
+                                            nstart=nstart)
             except ZeroDivisionError:
                 io.log(f'ZeroDivisionError, skipping! ({key}, {k})')
                 continue
