@@ -158,13 +158,14 @@ def load_from_dir(d, fnames=None):
 
 def load_charge_data(dirs, hmc=False):
     """Load in charge data from `dirs`."""
-    q = {}
+    data = {}
+    dirmap = {}
     for d in dirs:
         if not os.path.isdir(d):
             io.log('\n'.join([
                 'WARNING: Skipping entry!',
                 f'\t {d} is not a directory.',
-            ]), style='blue')
+            ]), style='yellow')
 
             continue
 
@@ -190,11 +191,16 @@ def load_charge_data(dirs, hmc=False):
                 px_avg = np.mean(px[midpt:])
                 if px_avg < 0.1:
                     io.log('\n'.join([
-                        'WARNING: Skipping entry!',
-                        f'\t px_avg: {px_avg:.3g} < 0.1',
-                    ]), style='blue')
-
-                    continue
+                        '[yellow]WARNING[/yellow]: Bad acceptance prob.',
+                        f'px_avg: {px_avg:.3g} < 0.1',
+                        f'dir: {d}',
+                    ]), style='yellow')
+                    #  io.log('\n'.join([
+                    #      'WARNING: Skipping entry!',
+                    #      f'\t px_avg: {px_avg:.3g} < 0.1',
+                    #  ]), style='yellow')
+                    #
+                    #  #  continue
 
                 if 'xeps' and 'veps' in params.keys():
                     xeps = tf.reduce_sum(params['xeps'])
@@ -222,19 +228,21 @@ def load_charge_data(dirs, hmc=False):
                     f'eps: {eps:.3g}',
                 ])
                 io.log(f'Loading data for: {template}')
-                if beta not in q.keys():
-                    q[beta] = {}
-
+                if beta not in data.keys():
+                    data[beta] = {}
+                    dirmap[beta] = {}
                 else:
                     qarr = io.loadz(qf)
-                    qarr = np.array(qarr, dtype=int)
+                    qarr = np.array(qarr)  #, dtype=int)
 
-                    if (lf, eps) not in q[beta].keys():
-                        q[beta][(lf, eps)] = qarr
+                    if (lf, eps) not in data[beta].keys():
+                        data[beta][(lf, eps)] = qarr
+                        dirmap[beta][(lf, eps)] = d
                     else:
                         small_delta = 1e-6 * np.random.randn()
-                        q[beta][(lf, eps + small_delta)] = qarr
-    return q
+                        data[beta][(lf, eps + small_delta)] = qarr
+                        dirmap[beta][(lf, eps + small_delta)] = d
+    return data
 
 
 def integrated_autocorr(x: np.ndarray, size: str = 'cbrt'):
@@ -441,7 +449,7 @@ def calc_tau_int(
                 io.log('\n'.join([
                     'WARNING: Skipping entry!',
                     f'\tchains: {chains} < min_chains: {min_chains}'
-                ]), style='blue')
+                ]), style='yellow')
 
                 continue
 
@@ -449,7 +457,7 @@ def calc_tau_int(
                 io.log('\n'.join([
                     'WARNING: Skipping entry!',
                     f'\tdraws: {draws} < min_draws: {min_draws}'
-                ]), style='blue')
+                ]), style='yellow')
 
                 continue
 
