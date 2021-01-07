@@ -9,7 +9,6 @@ import json
 
 from collections import namedtuple
 
-from colorama import Fore
 
 import numpy as np
 import tensorflow as tf
@@ -93,23 +92,11 @@ COLORS = 5000 * ['C0', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9']
 MARKERS = 5000 * ['o', 's', '^', '<', 'd', 'v', 'h', '>', 'p', 'x', '+', '*']
 LINESTYLES = 5000 * ['-', '--', ':', '-.', '-', '--', ':', '-.', '-', '--']
 
-CBARS = {
-    'black': Fore.BLACK,
-    'red': Fore.RED,
-    'green': Fore.GREEN,
-    'yellow': Fore.YELLOW,
-    'blue': Fore.BLUE,
-    'magenta': Fore.MAGENTA,
-    'cyan': Fore.CYAN,
-    'white': Fore.WHITE,
-    'reset': Fore.RESET,
-}
-
-
 NAMES = [
     'step', 'dt', 'loss', 'ploss', 'qloss',
     'px', 'eps', 'beta', 'sumlogdet', '|dq|', 'plaq_err',
 ]
+
 HSTR = ''.join(["{:^12s}".format(name) for name in NAMES])
 SEP = '-' * len(HSTR)
 HEADER = '\n'.join([SEP, HSTR, SEP])
