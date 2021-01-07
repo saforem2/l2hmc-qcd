@@ -46,6 +46,12 @@ from utils.learning_rate import WarmupExponentialDecay
 
 __all__ = ['BaseDynamics', 'State', 'MonteCarloStates', 'NetWeights']
 
+OPTIMIZERS_MAP = {
+    'adam': tf.keras.optimizers.Adam,
+    'Nadam': tf.keras.optimizers.Nadam,
+    'sgd': tf.keras.optimizers.SGD,
+}
+
 # pylint:disable=invalid-name
 
 def identity(x):
@@ -129,7 +135,7 @@ class BaseDynamics(tf.keras.Model):
                 self.xnet, self.vnet = self._build_networks()
             if self._has_trainable_params:
                 self.lr = self._create_lr(lr_config)
-                self.optimizer = self._create_optimizer()
+                self.optimizer = self._create_optimizer(self.config.optimizer)
 
     def call(
             self,
@@ -1334,13 +1340,13 @@ class BaseDynamics(tf.keras.Model):
 
         return lr_config.lr_init
 
-    def _create_optimizer(self):
+    def _create_optimizer(self, opt: str = 'adam'):
         """Create the optimizer to be used for backpropagating gradients."""
+        opt_fn = OPTIMIZERS_MAP[opt]
         if self.clip_val > 0:
-            optimizer = tf.keras.optimizers.Adam(self.lr,
-                                                 clipnorm=self.clip_val)
+            optimizer = opt_fn(self.lr, clipnorm=self.clip_val)
         else:
-            optimizer = tf.keras.optimizers.Adam(self.lr)
+            optimizer = opt_fn(self.lr)
 
         return optimizer
 
