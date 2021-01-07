@@ -1,5 +1,6 @@
 import os
 import sys
+import platform
 import time
 import datetime
 
@@ -25,6 +26,25 @@ sns.set_palette('bright')
 
 THETA_LOCAL = os.path.abspath('/Users/saforem2/thetaGPU')
 THETA_REMOTE = os.path.abspath('/lus/theta-fs0/projects/DLHMC/thetaGPU')
+WSTR = f'[yellow]WARNING[/yellow]'
+
+sns.set_style('whitegrid')
+sns.set_palette('bright')
+
+# -- Check if we're running on OSX (w/ appropriate LaTeX env)
+if 'Darwin' in platform.system():
+    plt.rc('text', usetex=True)
+    plt.rc('text.latex', preamble=(
+        r"""
+        \usepackage{amsmath}
+        \usepackage[sups]{XCharter}
+        \usepackage[scaled=1.04,varqu,varl]{inconsolata}
+        \usepackage[type1]{cabin}
+        \usepackage[charter,vvarbb,scaled=1.07]{newtxmath}
+        \usepackage[cal=boondoxo]{mathalfa}
+        """
+    ))
+
 
 @dataclass
 class ChargeData:
@@ -156,92 +176,216 @@ def load_from_dir(d, fnames=None):
     return data
 
 
-def load_charge_data(dirs, hmc=False):
+# pylint:disable=invalid-name,too-many-locals
+def load_charges_from_dir(d: str, hmc: bool = False, px_cutoff: float = None):
+    """Load charge data from `d`."""
+    io.log(f'Looking in {d}...')
+
+    if not os.path.isdir(os.path.abspath(d)):
+        io.log('\n'.join([
+            'WARNING: Skipping entry!',
+            f'\t {d} is not a directory.',
+        ]), style='yellow')
+
+        return None
+
+    if 'inference_hmc' in str(d) and not hmc:
+        return None
+
+    qfs = [x for x in d.rglob('charges.z') if x.is_file()]
+    pxfs = [x for x in d.rglob('accept_prob.z') if x.is_file()]
+    rpfs = [x for x in d.rglob('run_params.z') if x.is_file()]
+    num_runs = len(qfs)
+
+    if num_runs == 0:
+        return None
+
+    output_arr = []
+    for idx, (qf, pxf, rpf) in enumerate(zip(qfs, pxfs, rpfs)):
+        params = io.loadz(rpf)
+        beta = params['beta']
+        lf = params['num_steps']
+        run_dir, _ = os.path.split(rpf)
+
+        if px_cutoff is not None:
+            px = io.loadz(pxf)
+            midpt = px.shape[0] // 2
+            px_avg = np.mean(px[midpt:])
+            if px_avg < px_cutoff:
+                io.log('\n'.join([
+                    f'{WSTR}: Bad acceptance prob.',
+                    f'px_avg: {px_avg:.3g} < 0.1',
+                    f'dir: {d}',
+                ]))
+
+                return None
+
+        if 'xeps' and 'veps' in params.keys():
+            xeps = np.mean(params['xeps'])
+            veps = np.mean(params['veps'])
+            eps = np.mean([xeps, veps])
+
+        else:
+            eps = params.get('eps', None)
+            if eps is None:
+                raise ValueError('Unable to determine eps.')
+
+        #  eps = tf.reduce_mean(eps).numpy()
+        io.log('Loading data for: ' + ', '.join([
+            f'beta: {str(beta)}', f'lf: {str(lf)}',
+            f'eps: {str(eps)}', f'run_dir: {run_dir}',
+        ]))
+
+        charges = io.loadz(qf)
+        charges = np.array(charges, dtype=int)
+        output = {
+            'beta': beta,
+            'lf': lf,
+            'eps': eps,
+            'traj_len': lf * eps,
+            'qarr': charges,
+            'run_params': params,
+            'run_dir': run_dir,
+        }
+        output_arr.append(output)
+
+    return output
+
+
+# pylint:disable=invalid-name
+def load_charge_data(dirs, hmc=False, px_cutoff=None):
     """Load in charge data from `dirs`."""
     data = {}
-    dirmap = {}
+    #  dirmap = {}
     for d in dirs:
-        if not os.path.isdir(d):
-            io.log('\n'.join([
-                'WARNING: Skipping entry!',
-                f'\t {d} is not a directory.',
-            ]), style='yellow')
-
+        output_arr = load_charges_from_dir(d, hmc, px_cutoff)
+        if output_arr is None:
             continue
 
-        io.log(f'Looking in {d}...')
-        if 'inference_hmc' in str(d) and not hmc:
-            continue
-
-        qfiles = [x for x in d.rglob('charges.z') if x.is_file()]
-        pxfiles = [x for x in d.rglob('accept_prob.z') if x.is_file()]
-        rpfiles = [x for x in d.rglob('run_params.z') if x.is_file()]
-        #  qfile = d.rglob('charges.z')
-        #  pxfile = d.rglob('accept_prob.z')
-        #  rpfile = d.rglob('run_params.z')
-        num_runs = len(qfiles)
-        io.log(f'num_runs: {num_runs}')
-        if num_runs > 0:
-            for qf, pxf, rpf in zip(qfiles, pxfiles, rpfiles):
-                params = io.loadz(rpf)
-
-                # -- Ignore those runs which have poor acceptance
-                px = io.loadz(pxf)  # px.shape = (draws, chains)
-                midpt = px.shape[0] //2
-                px_avg = np.mean(px[midpt:])
-                if px_avg < 0.1:
-                    io.log('\n'.join([
-                        '[yellow]WARNING[/yellow]: Bad acceptance prob.',
-                        f'px_avg: {px_avg:.3g} < 0.1',
-                        f'dir: {d}',
-                    ]), style='yellow')
-                    #  io.log('\n'.join([
-                    #      'WARNING: Skipping entry!',
-                    #      f'\t px_avg: {px_avg:.3g} < 0.1',
-                    #  ]), style='yellow')
-                    #
-                    #  #  continue
-
-                if 'xeps' and 'veps' in params.keys():
-                    xeps = tf.reduce_sum(params['xeps'])
-                    veps = tf.reduce_mean(params['veps'])
-                    eps = tf.reduce_mean([xeps, veps])
-
-                elif 'eps' in params.keys():
-                    eps = params['eps']
-
-                else:
-                    head, tail = os.path.split(rpf)
-                    cfgs_file = os.path.join(head, 'inference_configs.z')
-                    if os.path.isfile(cfgs_file):
-                        configs = io.loadz(cfgs_file)
-                        eps = configs['dynamics_config']['eps']
-                    else:
-                        raise ValueError('Unable to determine step size eps.')
-
-                beta = params['beta']
-                lf = params['num_steps']
-                eps = tf.reduce_mean(eps).numpy()
-                template = ', '.join([
-                    f'beta: {str(beta)}',
-                    f'lf: {str(lf)}',
-                    f'eps: {eps:.3g}',
-                ])
-                io.log(f'Loading data for: {template}')
-                if beta not in data.keys():
+        if len(output_arr) > 1:
+            for out in output_arr:
+                beta = out['beta']
+                lf = out['lf']
+                eps = out['eps']
+                if out[beta] not in data.keys():
                     data[beta] = {}
-                    dirmap[beta] = {}
-                else:
-                    qarr = io.loadz(qf)
-                    qarr = np.array(qarr)  #, dtype=int)
+                elif (lf, eps) not in data[beta].keys():
+                    data[beta][(lf, eps)] = out
 
-                    if (lf, eps) not in data[beta].keys():
-                        data[beta][(lf, eps)] = qarr
-                        dirmap[beta][(lf, eps)] = d
-                    else:
-                        small_delta = 1e-6 * np.random.randn()
-                        data[beta][(lf, eps + small_delta)] = qarr
-                        dirmap[beta][(lf, eps + small_delta)] = d
+                if out['beta'] not in data.keys():
+                    data[beta] = {}
+
+                if (lf, eps) in data[beta].keys():
+                    small_delta = 1e-6 * np.random.randn()
+                    data[beta][(lf, eps + small_delta)] = out
+
+                else:
+                    data[beta][(lf, eps)] = out
+                #
+                #  elif (out['lf'], out['eps']) not in data[beta].keys():
+                #      data[out['beta']][(out['lf'], out['eps'])]
+                #  else:
+                #      if (data['lf'], data['eps']) not in data[beta].keys():
+        #  if not os.path.isdir(d):
+        #      io.log('\n'.join([
+        #          'WARNING: Skipping entry!',
+        #          f'\t {d} is not a directory.',
+        #      ]), style='yellow')
+        #
+        #      continue
+        #
+        #  io.log(f'Looking in {d}...')
+        #  if 'inference_hmc' in str(d) and not hmc:
+        #      continue
+        #
+        #  qfiles = [x for x in d.rglob('charges.z') if x.is_file()]
+        #  pxfiles = [x for x in d.rglob('accept_prob.z') if x.is_file()]
+        #  rpfiles = [x for x in d.rglob('run_params.z') if x.is_file()]
+        #  #  qfile = d.rglob('charges.z')
+        #  #  pxfile = d.rglob('accept_prob.z')
+        #  #  rpfile = d.rglob('run_params.z')
+        #  num_runs = len(qfiles)
+        #  io.log(f'num_runs: {num_runs}')
+        #  if num_runs > 0:
+        #      for qf, pxf, rpf in zip(qfiles, pxfiles, rpfiles):
+        #          output = _load_charge_data(
+        #          #  params = io.loadz(rpf)
+        #          #
+        #          #  io.log(f'Loading data for: {template}')
+        #          #  if beta not in data.keys():
+        #          #      data[beta] = {}
+        #          #      dirmap[beta] = {}
+        #          #  else:
+        #          #      qarr = io.loadz(qf)
+        #          #      qarr = np.array(qarr)  #, dtype=int)
+        #          #
+        #          #      if (lf, eps) not in data[beta].keys():
+        #          #          data[beta][(lf, eps)] = qarr
+        #          #          dirmap[beta][(lf, eps)] = d
+        #          #      else:
+        #          #          small_delta = 1e-6 * np.random.randn()
+        #          #          data[beta][(lf, eps + small_delta)] = qarr
+        #          #          dirmap[beta][(lf, eps + small_delta)] = d
+        #
+        #          # -- Ignore those runs which have poor acceptance
+        #          #  px = io.loadz(pxf)  # px.shape = (draws, chains)
+        #          #  midpt = px.shape[0] // 2
+        #          #  px_avg = np.mean(px[midpt:])
+        #          #  if px_avg < 0.1:
+        #          #      io.log('\n'.join([
+        #          #          '[yellow]WARNING[/yellow]: Bad acceptance prob.',
+        #          #          f'px_avg: {px_avg:.3g} < 0.1',
+        #          #          f'dir: {d}',
+        #          #      ]), style='yellow')
+        #          #      #  io.log('\n'.join([
+        #          #      #      'WARNING: Skipping entry!',
+        #          #      #      f'\t px_avg: {px_avg:.3g} < 0.1',
+        #          #      #  ]), style='yellow')
+        #          #      #
+        #          #      #  #  continue
+        #          #
+        #          #  if 'xeps' and 'veps' in params.keys():
+        #          #      xeps = tf.reduce_mean(params['xeps'])
+        #          #      veps = tf.reduce_mean(params['veps'])
+        #          #      eps = tf.reduce_mean([xeps, veps])
+        #          #
+        #          #  elif 'eps' in params.keys():
+        #          #      eps = params['eps']
+        #          #
+        #          #  else:
+        #          #      head, tail = os.path.split(rpf)
+        #          #      cfgs_file = os.path.join(head, 'inference_configs.z')
+        #          #      if os.path.isfile(cfgs_file):
+        #          #          configs = io.loadz(cfgs_file)
+        #          #          eps = configs['dynamics_config']['eps']
+        #          #   else:
+        #          #       raise ValueError(
+        #          #           'Unable to determine step size eps.'
+        #          #       )
+        #          #
+        #          #  beta = params['beta']
+        #          #  lf = params['num_steps']
+        #          #  eps = tf.reduce_mean(eps).numpy()
+        #          #  template = ', '.join([
+        #          #      f'beta: {str(beta)}',
+        #          #      f'lf: {str(lf)}',
+        #          #      f'eps: {eps:.3g}',
+        #          #  ])
+        #          #  io.log(f'Loading data for: {template}')
+        #          #  if beta not in data.keys():
+        #          #      data[beta] = {}
+        #          #      dirmap[beta] = {}
+        #          #  else:
+        #          #      qarr = io.loadz(qf)
+        #          #      qarr = np.array(qarr)  #, dtype=int)
+        #          #
+        #          #      if (lf, eps) not in data[beta].keys():
+        #          #          data[beta][(lf, eps)] = qarr
+        #          #          dirmap[beta][(lf, eps)] = d
+        #          #      else:
+        #          #          small_delta = 1e-6 * np.random.randn()
+        #          #          data[beta][(lf, eps + small_delta)] = qarr
+        #          #          dirmap[beta][(lf, eps + small_delta)] = d
     return data
 
 
@@ -418,8 +562,15 @@ def calc_autocorr(y, num_pts=20, nstart=100, autocorr_fn=autocorr_new):
     return N, acfs
 
 
-def calc_autocorr_alt(y, num_pts=20, nstart=100):
-    """Alternative to the above method, `calc_autocorr`."""
+def calc_autocorr_alt(y: np.ndarray, num_pts: int = 20, nstart: int = 100):
+    """Alternative to the above method, `calc_autocorr`.
+
+    Returns:
+        N (np.ndarray): Array containing the number of draws for which the
+            integrated autocorrelation was calculated.
+        acfs (np.ndarray): Array of estimates of integrated autocorrelation
+            times.
+    """
     N = np.exp(
         np.linspace(np.log(nstart), np.log(y.shape[0]), num_pts).astype(int)
     ).astype(int)
@@ -505,7 +656,6 @@ def calc_tau_int(
                     f'\tint[-1] is np.nan'
                 ]), style='yellow')
 
-
     # -- Sort data by trajectory length, k[0] = (lf, eps)
     data = {}
     for key, val in tau_int.items():
@@ -523,7 +673,6 @@ def calc_tau_int(
             }
 
     return data
-
 
 
 def get_plot_data(
@@ -621,3 +770,89 @@ def get_plot_data(
         }
 
     return tint_nsamples, tint_traj_len, tint_beta
+
+
+def calc_tau_int_from_dir(
+        input_path: str,
+        hmc: bool = False,
+        px_cutoff: float = None,
+        therm_frac: float = 0.2,
+        num_pts: int = 50,
+        nstart: int = 100,
+        make_plot: bool = True,
+        save_data: bool = True,
+        keep_charges: bool = False,
+):
+    output = load_charges_from_dir(input_path, hmc=hmc)
+    if output is None:
+        io.log('\n'.join([
+            'WARNING: Skipping entry!',
+            f'\t unable to load charge data from {input_path}',
+        ]), style='yellow')
+
+        return None
+
+    lf = output['lf']
+    eps = output['eps']
+    beta = output['beta']
+    traj_len = lf * eps
+
+    qarr, _ = therm_arr(output['qarr'], therm_frac=therm_frac)
+
+    n, tint = calc_autocorr(qarr.T, num_pts=num_pts, nstart=nstart)
+    output.update({
+        'draws': n,
+        'tau_int': tint,
+        'qarr.shape': qarr.shape,
+    })
+
+    if save_data:
+        data_dir = os.path.join(input_path, 'run_data')
+        outfile = os.path.join(data_dir, 'tau_int_data.z')
+        io.savez(output, outfile, name='tau_int_data')
+
+    if make_plot:
+        plot_dir = os.path.join(input_path, 'plots', 'tau_int_plots')
+        fdraws = os.path.join(plot_dir, 'tau_int_vs_draws.pdf')
+        ftlen = os.path.join(plot_dir, 'tau_int_vs_traj_len.pdf')
+        #  fbeta = os.path.join(plot_dir, 'tau_int_vs_beta.pdf')
+        io.check_else_make_dir(plot_dir)
+        prefix = 'HMC' if hmc else 'L2HMC'
+        xlabel = 'draws'
+        ylabel = r'$\tau_{\mathrm{int}}$ (estimate)'
+        title = (f'{prefix}, '
+                 + r'$\beta=$' + f'{beta}, '
+                 + r'$N_{\mathrm{lf}}=$' + f'{lf}, '
+                 + r'$\varepsilon=$' + f'{eps:.2g}, '
+                 + r'$\lambda=$' + f'{traj_len:.2g}')
+
+        _, ax = plt.subplots(constrained_layout=True)
+        best = []
+        for t in tint.T:
+            _ = ax.plot(n, t, marker='.', color='k')
+            best.append(t[-1])
+
+        _ = ax.set_ylabel(ylabel)
+        _ = ax.set_xlabel(xlabel)
+        _ = ax.set_title(title)
+
+        _ = ax.set_xscale('log')
+        _ = ax.set_yscale('log')
+        _ = ax.grid(alpha=0.4)
+        io.log(f'Saving figure to: {fdraws}')
+        _ = plt.savefig(fdraws, dpi=400, bbox_inches='tight')
+        plt.close('all')
+
+        _, ax = plt.subplots()
+        for b in best:
+            _ = ax.plot(traj_len, b, marker='.', color='k')
+        _ = ax.set_ylabel(ylabel)
+        _ = ax.set_xlabel(r'trajectory length, $\lambda$')
+        _ = ax.set_title(title)
+        _ = ax.set_yscale('log')
+        _ = ax.grid(True, alpha=0.4)
+        io.log(f'Saving figure to: {ftlen}')
+        _ = plt.savefig(ftlen, dpi=400, bbox_inches='tight')
+        plt.close('all')
+
+    return output
