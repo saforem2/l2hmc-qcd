@@ -485,14 +485,15 @@ def run_dynamics(
         summary_steps = flags.run_steps // 100
 
     steps = tf.range(flags.run_steps, dtype=tf.int64)
-    if NUM_WORKERS == 1:
-        #  ctup = (CBARS['reset'], CBARS['green'],
-        #          CBARS['reset'], CBARS['reset'])
-        iter = track(enumerate(steps), total=len(steps),
-                     description='Inference...', transient=True,
-                     console=io.console)
-        #  steps = tqdm(steps, desc='running', unit='step',
-        #               bar_format=("%s{l_bar}%s{bar}%s{r_bar}%s" % ctup))
+    iter = track(enumerate(steps), total=len(steps),
+                 description='Inference...', transient=True,
+                 console=io.console)
+    #  if NUM_WORKERS == 1:
+    #  ctup = (CBARS['reset'], CBARS['green'],
+    #          CBARS['reset'], CBARS['reset'])
+    #  else:
+    #  steps = tqdm(steps, desc='running', unit='step',
+    #               bar_format=("%s{l_bar}%s{bar}%s{r_bar}%s" % ctup))
 
     for idx, step in iter:
         #  if idx == 0 or step == 0:
