@@ -6,10 +6,7 @@ Collection of helper methods to use for running inference on trained model.
 from __future__ import absolute_import, division, print_function
 
 import os
-import sys
-import json
 import time
-import logging
 
 from rich.progress import track
 from typing import Optional
@@ -18,14 +15,11 @@ from collections import namedtuple
 
 import tensorflow as tf
 
-from tqdm.auto import tqdm
-
 import utils.file_io as io
 
-from config import (CBARS, GAUGE_LOGS_DIR, HEADER, HMC_LOGS_DIR, LOGS_DIR, PI,
-                    PROJECT_DIR, SEP, TF_FLOAT)
+from config import HMC_LOGS_DIR, PI, TF_FLOAT
 from utils import SKEYS
-from utils.file_io import IS_CHIEF, NUM_WORKERS, RANK
+from utils.file_io import IS_CHIEF, NUM_WORKERS
 from utils.attr_dict import AttrDict
 from utils.summary_utils import summarize_dict
 from utils.plotting_utils import plot_data
@@ -36,6 +30,10 @@ from dynamics.gauge_dynamics import (build_dynamics, convert_to_angle,
 
 InferenceResults = namedtuple('InferenceResults',
                               ['dynamics', 'run_data', 'x', 'x_arr'])
+
+#  import sys
+#  import json
+#  import logging
 
 
 def restore_from_train_flags(args):
