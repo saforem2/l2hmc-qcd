@@ -174,9 +174,12 @@ def run_hmc(
             Path(base_dir).rglob(f'*{fstr}*')
         )
         if len(matches) > 0:
-            io.log('\n'.join([
-                120*'#', 'Existing run with current parameters found!', 120*'#'
-            ]))
+            io.rule('Existing run with current parameters found!')
+            io.log(args)
+            #  io.log('\n'.join([
+            #      120*'#',
+            #      'Existing run with current parameters found!', 120*'#'
+            #  ]))
             return InferenceResults(None, None, None, None)
 
     dynamics = build_dynamics(args)
