@@ -1,6 +1,7 @@
 """
 file_io.py
 """
+# pylint:disable=wrong-import-position
 # pylint:disable=too-many-branches, too-many-statements
 # pylint:disable=too-many-locals,invalid-name,too-many-locals
 # pylint:disable=too-many-arguments
@@ -14,11 +15,15 @@ import typing
 import logging
 import datetime
 
+import joblib
+import numpy as np
+
 from typing import Any, Dict, Type
 from tqdm.auto import tqdm
 from pathlib import Path
 
 from rich.console import Console
+from rich.theme import Theme
 from rich.progress import (
     BarColumn,
     DownloadColumn,
@@ -29,14 +34,11 @@ from rich.progress import (
 )
 
 console = Console(width=319, record=False,
-                  log_time_format='[%X] ')
-                  #  log_time_format="[%X] ")
+                  log_time_format='[%X] ',
+                  theme=Theme({'repr.number': '#ff79ff'}))
 #  FORMAT = "%(levelname)s:%(process)s:%(thread)s:%(name)s:%(message)s"
 #  print = console.print
 from rich.logging import RichHandler
-
-import joblib
-import numpy as np
 
 from config import PROJECT_DIR
 from utils.attr_dict import AttrDict
@@ -52,8 +54,6 @@ try:
     IS_CHIEF = (RANK == 0)
     console.log(f'{RANK} :: Using horovod version: {horovod.__version__}')
     console.log(f'{RANK} :: Using horovod from: {horovod.__file__}')
-    #  logging.info(f'Using horovod version: {horovod.__version__}')
-    #  logging.info(f'Using horovod from: {horovod.__file__}')
 
 except (ImportError, ModuleNotFoundError):
     HAS_HOROVOD = False
@@ -80,129 +80,14 @@ LOG_LEVELS = {
 logging.getLogger('tensorflow').setLevel(logging.WARNING)
 logging.getLogger('arviz').setLevel(logging.ERROR)
 
-#  logger = logging.getLogger('rich')
-#  logging_level = logging.WARNING
-#  FORMAT = "%(level) - %(message)s"
-# ----
-#  logger = logging.getLogger(__name__)
-#  logging_datefmt = '%Y-%m-%d %H:%M:%S'
-#  FORMAT = "(levelname)s:(%message)s"
-#  FORMAT = "%(asctime)-15s - %(level) - %(message)s"
-#  FORMAT = "%(levelname)s:%(process)s:%(thread)s:%(name)s:%(message)s"
-#  logging_format = (
-#      '%(asctime)s %(levelname)s:%(process)s:%(thread)s:%(name)s:%(message)s'
-#  )
-
-#  if IS_CHIEF:
-#      logging.basicConfig(
-#          level=logging.ERROR,
-#          format=FORMAT,
-#          datefmt="[%X]",
-#          handlers=[RichHandler(rich_tracebacks=True, markup=True)],
-#          #  stream=sys.stdout,
-#      )
-#  else:
-#      logging.basicConfig(
-#          level=logging.WARNING,
-#          format=FORMAT,
-#          #  format="%(asctime)s:%(levelname)s:%(message)s",
-#          datefmt="[%X]",
-#          handlers=None,
-#          #  handlers=[RichHandler(rich_tracebacks=True)],
-#          #  stream=None
-#      )
-
 if HAS_HOROVOD:
-    #  FORMAT = (
-    #      '%(levelname)s:%(process)s:%(thread)s:'
-    #      + ('%04d' % hvd.rank()) + ':%(name)s:%(message)s'
-    #  )
-    #  #  logging_format = (
-    #  #      '%(asctime)s %(levelname)s:%(process)s:%(thread)s:'
-    #  #      + ('%05d' % hvd.rank()) + ':%(name)s:%(message)s'
-    #  #  )
-    #  logging_level = logging.WARNING
-    #  if RANK > 0:
-    #      logging_level = logging.ERROR
-    #
-    #  handlers = [RichHandler(rich_tracebacks=True)] if hvd.rank() == 0 else None
-    #  logging.basicConfig(level=logging_level,
-    #                      format=FORMAT,
-    #                      datefmt="[%X]",
-    #                      handlers=handlers)
-    #  logger = logging.getLogger('rich')
-    #  stream=sys.stdout if hvd.rank() == 0 else None)
-    #  console.log(' '.join([f'rank: {hvd.rank()}',
-    #                        f'local_rank: {hvd.local_rank()}',
-    #                        f'size: {hvd.size()}',
-    #                        f'local_size: {hvd.local_size()}']))
     console.log(' '.join([f'rank: {hvd.rank()}',
                           f'local_rank: {hvd.local_rank()}',
                           f'size: {hvd.size()}',
                           f'local_size: {hvd.local_size()}']))
-    #  logger.warning(' '.join([f'rank: {hvd.rank()}',
-    #                           f'local_rank: {hvd.local_rank()}',
-    #                           f'size: {hvd.size()}',
-    #                           f'local_size: {hvd.local_size()}']))
-
-#  try:
-#      from rich.logging import RichHandler
-#      handlers = [RichHandler(rich_tracebacks=True)]
-#
-#  except ImportError:
-#      handlers = []
-
 
 #  if typing.TYPE_CHECKING:
 #      from dynamics.base_dynamics import BaseDynamics
-
-
-
-class NumpyEncoder(json.JSONEncoder):
-    """ Custom encoder for numpy data types """
-    def default(self, obj):
-        if isinstance(obj, Path):
-            return str(obj)
-
-        if isinstance(obj, (np.int_, np.intc, np.intp, np.int8,
-                            np.int16, np.int32, np.int64, np.uint8,
-                            np.uint16, np.uint32, np.uint64)):
-
-            return int(obj)
-
-        elif isinstance(obj, (np.float_, np.float16, np.float32, np.float64)):
-            return float(obj)
-
-        elif isinstance(obj, (np.complex_, np.complex64, np.complex128)):
-            return {'real': obj.real, 'imag': obj.imag}
-
-        elif isinstance(obj, (np.ndarray,)):
-            return obj.tolist()
-
-        elif isinstance(obj, (np.bool_)):
-            return bool(obj)
-
-        elif isinstance(obj, (np.void)):
-            return None
-
-        return json.JSONEncoder.default(self, obj)
-
-
-def in_notebook():
-    """Check if we're currently in a jupyter notebook."""
-    try:
-        # pylint:disable=import-outside-toplevel
-        from IPython import get_ipython
-
-        try:
-            cfg = get_ipython().config
-            if 'IPKernelApp' not in cfg:
-                return False
-        except AttributeError:
-            return False
-    except ImportError:
-        return False
-    return True
 
 
 def filter_dict(d: dict, cond: callable, key: str = None):
@@ -230,7 +115,7 @@ def filter_dict(d: dict, cond: callable, key: str = None):
 
 def _look(p, s, conds=None):
     console.print(f'Looking in {p}...')
-    matches = [x for x in Path(p).rglob(f'*{s}*')]
+    matches = [x for x in Path(p).rglob(f'*{s}*') if x.is_dir()]
     if conds is not None:
         if isinstance(conds, (list, tuple)):
             for cond in conds:
@@ -282,10 +167,6 @@ def print_header(header):
     strs = header.split('\n')
     for s in strs:
         console.print(s, style='bold red')
-    #  console.print(header[0], style='bold red')
-    #  console.print(header[1], style='bold red')
-    #  console.print(header[-1]
-    #  console.print(header.split('\n'), style='bold red')
 
 
 def rule(s: str = ' ', **kwargs: dict):
@@ -296,49 +177,7 @@ def log(s: str, level: str = 'INFO', out=console, style=None):
     """Print string `s` to stdout if and only if hvd.rank() == 0."""
     if RANK != 0:
         return
-
-    #  tstr = get_timestamp('%X')
-    #  hstr = f'[{tstr}] •'  # , {RANK}••{LOCAL_RANK}]'
-    #hstr += '•'
-    #  if NUM_WORKERS > 1:
-    #      hstr += f'[{RANK}'
-    #      if  hvd.local_size() > 1:
-    #          hstr += f': {hvd.local_rank()}]'
-    #      hstr += '•'
-    #  else:
-    #  if NUM_WORKERS == 1:
-    #      if isinstance(s, (tuple, list)):
-    #          for i in s:
-    #              tqdm.write(i, file=out)
-    #      else:
-    #          tqdm.write(s, file=out)
-    #  else:
-    #  level = LOG_LEVELS_AS_INTS[level.upper()]
-    #  if isinstance(s, (list, tuple)):
-    #      for ss in s:
-    #          console.log(ss, style=style, highlight=True)
-    #  else:
     console.log(s, style=style, markup=True, highlight=True)
-            #  console.print(' '.join([f'[#505050]{hstr}[/#505050]', ss]),
-            #                style=style)
-            #  console.print(' '.join([hstr, ss]), style='#505050')
-            #  console.log(hstr + ss)
-        #  console.log(level, '\n'.join(s))
-        #  console.log(level, '
-        #  if should_print:
-        #      _ = [console.print(s_) for s_ in s]
-        #  else:
-        #  _ = [console.log(level, s_) for s_ in s]
-    #  else:
-    #      console.log(s, style=style)
-    #      #  console.print(' '.join([f'[#505050]{hstr}[/#505050]', s]),
-    #      #                style=style)
-    #      #  console.log(' '.join([hstr, s]))
-    #      #  console.log(hstr + s)
-    #      #  if should_print:
-    #      #      console.print(s)
-    #      #  else:
-    #      #  console.log(level, s)
 
 
 def write(s: str, f: str, mode: str = 'a', nl: bool = True):
@@ -352,16 +191,6 @@ def write(s: str, f: str, mode: str = 'a', nl: bool = True):
 def print_dict(d: Dict, indent: int = 0, name: str = None, **kwargs):
     """Print nicely-formatted dictionary."""
     console.print(dict)
-    #  indent_str = indent * ' '
-    #  if name is not None:
-    #      log(f'{indent_str}{name}:', **kwargs)
-    #      sep_str = indent_str + len(name) * '-'
-    #      log(sep_str, **kwargs)
-    #  for key, val in d.items():
-    #      if isinstance(val, (AttrDict, dict)):
-    #          print_dict(val, indent=indent, name=str(key), **kwargs)
-    #      else:
-    #          log(f'  {indent_str}{key}: {val}', **kwargs)
 
 
 def print_flags(flags: AttrDict):
@@ -873,3 +702,52 @@ def get_subdirs(root_dir):
         if os.path.isdir(os.path.join(root_dir, i))
     ]
     return subdirs
+
+
+class NumpyEncoder(json.JSONEncoder):
+    """ Custom encoder for numpy data types """
+    def default(self, obj):
+        if isinstance(obj, Path):
+            return str(obj)
+
+        if isinstance(obj, (np.int_, np.intc, np.intp, np.int8,
+                            np.int16, np.int32, np.int64, np.uint8,
+                            np.uint16, np.uint32, np.uint64)):
+
+            return int(obj)
+
+        elif isinstance(obj, (np.float_, np.float16, np.float32, np.float64)):
+            return float(obj)
+
+        elif isinstance(obj, (np.complex_, np.complex64, np.complex128)):
+            return {'real': obj.real, 'imag': obj.imag}
+
+        elif isinstance(obj, (np.ndarray,)):
+            return obj.tolist()
+
+        elif isinstance(obj, (np.bool_)):
+            return bool(obj)
+
+        elif isinstance(obj, (np.void)):
+            return None
+
+        return json.JSONEncoder.default(self, obj)
+
+
+def in_notebook():
+    """Check if we're currently in a jupyter notebook."""
+    try:
+        # pylint:disable=import-outside-toplevel
+        from IPython import get_ipython
+
+        try:
+            cfg = get_ipython().config
+            if 'IPKernelApp' not in cfg:
+                return False
+        except AttributeError:
+            return False
+    except ImportError:
+        return False
+    return True
+
+
