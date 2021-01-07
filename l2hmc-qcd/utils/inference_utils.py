@@ -488,8 +488,8 @@ def run_dynamics(
 
     steps = tf.range(flags.run_steps, dtype=tf.int64)
     if NUM_WORKERS == 1:
-        ctup = (CBARS['reset'], CBARS['green'],
-                CBARS['reset'], CBARS['reset'])
+        #  ctup = (CBARS['reset'], CBARS['green'],
+        #          CBARS['reset'], CBARS['reset'])
         iter = track(enumerate(steps), total=len(steps),
                      description='Inference...', transient=True,
                      console=io.console)
