@@ -101,7 +101,7 @@ class DataContainer:
         try:
             dataset.to_netcdf(os.path.join(out_dir, 'dataset.nc'))
         except ValueError:
-            io.log(f'Unable to save dataset! Continuing...')
+            io.log('Unable to save dataset! Continuing...')
 
     def update(self, step, metrics):
         """Update `self.data` with new values from `data`."""
