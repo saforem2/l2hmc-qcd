@@ -192,9 +192,9 @@ def load_charges_from_dir(d: str, hmc: bool = False, px_cutoff: float = None):
     if 'inference_hmc' in str(d) and not hmc:
         return None
 
-    qfs = [x for x in d.rglob('charges.z') if x.is_file()]
-    pxfs = [x for x in d.rglob('accept_prob.z') if x.is_file()]
-    rpfs = [x for x in d.rglob('run_params.z') if x.is_file()]
+    qfs = [x for x in Path(d).rglob('charges.z') if x.is_file()]
+    pxfs = [x for x in Path(d).rglob('accept_prob.z') if x.is_file()]
+    rpfs = [x for x in Path(d).rglob('run_params.z') if x.is_file()]
     num_runs = len(qfs)
 
     if num_runs == 0:
