@@ -182,9 +182,9 @@ def load_charges_from_dir(d: str, hmc: bool = False, px_cutoff: float = None):
     io.log(f'Looking in {d}...')
 
     if not os.path.isdir(os.path.abspath(d)):
-        io.log('\n'.join([
+        io.log(', '.join([
             'WARNING: Skipping entry!',
-            f'\t {d} is not a directory.',
+            f'{d} is not a directory.',
         ]), style='yellow')
 
         return None
@@ -212,7 +212,7 @@ def load_charges_from_dir(d: str, hmc: bool = False, px_cutoff: float = None):
             midpt = px.shape[0] // 2
             px_avg = np.mean(px[midpt:])
             if px_avg < px_cutoff:
-                io.log('\n'.join([
+                io.log(', '.join([
                     f'{WSTR}: Bad acceptance prob.',
                     f'px_avg: {px_avg:.3g} < 0.1',
                     f'dir: {d}',
@@ -249,7 +249,7 @@ def load_charges_from_dir(d: str, hmc: bool = False, px_cutoff: float = None):
         }
         output_arr.append(output)
 
-    return output
+    return output_arr
 
 
 # pylint:disable=invalid-name
@@ -495,7 +495,7 @@ def calc_tau_int(
             traj_len = lf * eps
             draws, chains = qarr.shape
             if chains < min_chains:
-                io.log('\n'.join([
+                io.log(', '.join([
                     'WARNING: Skipping entry!',
                     f'\tchains: {chains} < min_chains: {min_chains}'
                 ]), style='yellow')
@@ -503,7 +503,7 @@ def calc_tau_int(
                 continue
 
             if draws < min_draws:
-                io.log('\n'.join([
+                io.log(', '.join([
                     'WARNING: Skipping entry!',
                     f'\tdraws: {draws} < min_draws: {min_draws}'
                 ]), style='yellow')
@@ -546,7 +546,7 @@ def calc_tau_int(
                 }
 
             else:
-                io.log('\n'.join([
+                io.log(', '.join([
                     'WARNING: Skipping entry!',
                     f'\tint[-1] is np.nan'
                 ]), style='yellow')
@@ -682,82 +682,98 @@ def calc_tau_int_from_dir(
         save_data: bool = True,
         keep_charges: bool = False,
 ):
-    output = load_charges_from_dir(input_path, hmc=hmc)
-    if output is None:
-        io.log('\n'.join([
+    output_arr = load_charges_from_dir(input_path, hmc=hmc)
+    if output_arr is None:
+        io.log(', '.join([
             'WARNING: Skipping entry!',
             f'\t unable to load charge data from {input_path}',
         ]), style='yellow')
 
         return None
 
-    lf = output['lf']
-    eps = output['eps']
-    beta = output['beta']
-    traj_len = lf * eps
-
-    qarr, _ = therm_arr(output['qarr'], therm_frac=therm_frac)
-
-    n, tint = calc_autocorr(qarr.T, num_pts=num_pts, nstart=nstart)
-    output.update({
-        'draws': n,
-        'tau_int': tint,
-        'qarr.shape': qarr.shape,
-    })
-
-    if save_data:
+    for output in output_arr:
         if hmc:
             data_dir = os.path.join(input_path, 'run_data')
-            outfile = os.path.join(data_dir, 'tau_int_data.z')
+            plot_dir = os.path.join(input_path, 'plots', 'tau_int_plots')
         else:
             run_dir = output['run_params']['run_dir']
             data_dir = os.path.join(run_dir, 'run_data')
-            outfile = os.path.join(data_dir, f'tau_int_data.z')
+            plot_dir = os.path.join(run_dir, 'plots')
 
-        io.savez(output, outfile, name='tau_int_data')
-
-    if make_plot:
-        plot_dir = os.path.join(input_path, 'plots', 'tau_int_plots')
+        outfile = os.path.join(data_dir, 'tau_int_data.z')
         fdraws = os.path.join(plot_dir, 'tau_int_vs_draws.pdf')
         ftlen = os.path.join(plot_dir, 'tau_int_vs_traj_len.pdf')
-        #  fbeta = os.path.join(plot_dir, 'tau_int_vs_beta.pdf')
-        io.check_else_make_dir(plot_dir)
-        prefix = 'HMC' if hmc else 'L2HMC'
-        xlabel = 'draws'
-        ylabel = r'$\tau_{\mathrm{int}}$ (estimate)'
-        title = (f'{prefix}, '
-                 + r'$\beta=$' + f'{beta}, '
-                 + r'$N_{\mathrm{lf}}=$' + f'{lf}, '
-                 + r'$\varepsilon=$' + f'{eps:.2g}, '
-                 + r'$\lambda=$' + f'{traj_len:.2g}')
+        c1 = os.path.isfile(outfile)
+        c2 = os.path.isfile(fdraws)
+        c3 = os.path.isfile(ftlen)
+        if c1 or c2 or c3:
+            loaded = io.loadz(outfile)
+            output.update(loaded)
+            io.log(', '.join([
+                'WARNING: Loading existing data'
+                f'\t Found existing data at: {outfile}.',
+            ]), style='yellow')
+            loaded = io.loadz(outfile)
+            output.update(loaded)
 
-        _, ax = plt.subplots(constrained_layout=True)
-        best = []
-        for t in tint.T:
-            _ = ax.plot(n, t, marker='.', color='k')
-            best.append(t[-1])
+        lf = output['lf']
+        eps = output['eps']
+        beta = output['beta']
+        traj_len = lf * eps
+        if tf.is_tensor(eps):
+            eps = eps.numpy()
 
-        _ = ax.set_ylabel(ylabel)
-        _ = ax.set_xlabel(xlabel)
-        _ = ax.set_title(title)
+        qarr, _ = therm_arr(output['qarr'], therm_frac=therm_frac)
 
-        _ = ax.set_xscale('log')
-        _ = ax.set_yscale('log')
-        _ = ax.grid(alpha=0.4)
-        io.log(f'Saving figure to: {fdraws}')
-        _ = plt.savefig(fdraws, dpi=400, bbox_inches='tight')
-        plt.close('all')
+        n, tint = calc_autocorr(qarr.T, num_pts=num_pts, nstart=nstart)
+        output.update({
+            'draws': n,
+            'tau_int': tint,
+            'qarr.shape': qarr.shape,
+        })
 
-        _, ax = plt.subplots()
-        for b in best:
-            _ = ax.plot(traj_len, b, marker='.', color='k')
-        _ = ax.set_ylabel(ylabel)
-        _ = ax.set_xlabel(r'trajectory length, $\lambda$')
-        _ = ax.set_title(title)
-        _ = ax.set_yscale('log')
-        _ = ax.grid(True, alpha=0.4)
-        io.log(f'Saving figure to: {ftlen}')
-        _ = plt.savefig(ftlen, dpi=400, bbox_inches='tight')
-        plt.close('all')
+        if save_data:
+            io.savez(output, outfile, name='tau_int_data')
 
-    return output
+        if make_plot:
+            #  fbeta = os.path.join(plot_dir, 'tau_int_vs_beta.pdf')
+            io.check_else_make_dir(plot_dir)
+            prefix = 'HMC' if hmc else 'L2HMC'
+            xlabel = 'draws'
+            ylabel = r'$\tau_{\mathrm{int}}$ (estimate)'
+            title = (f'{prefix}, '
+                     + r'$\beta=$' + f'{beta}, '
+                     + r'$N_{\mathrm{lf}}=$' + f'{lf}, '
+                     + r'$\varepsilon=$' + f'{eps:.2g}, '
+                     + r'$\lambda=$' + f'{traj_len:.2g}')
+
+            _, ax = plt.subplots(constrained_layout=True)
+            best = []
+            for t in tint.T:
+                _ = ax.plot(n, t, marker='.', color='k')
+                best.append(t[-1])
+
+            _ = ax.set_ylabel(ylabel)
+            _ = ax.set_xlabel(xlabel)
+            _ = ax.set_title(title)
+
+            _ = ax.set_xscale('log')
+            _ = ax.set_yscale('log')
+            _ = ax.grid(alpha=0.4)
+            io.log(f'Saving figure to: {fdraws}')
+            _ = plt.savefig(fdraws, dpi=400, bbox_inches='tight')
+            plt.close('all')
+
+            _, ax = plt.subplots()
+            for b in best:
+                _ = ax.plot(traj_len, b, marker='.', color='k')
+            _ = ax.set_ylabel(ylabel)
+            _ = ax.set_xlabel(r'trajectory length, $\lambda$')
+            _ = ax.set_title(title)
+            _ = ax.set_yscale('log')
+            _ = ax.grid(True, alpha=0.4)
+            io.log(f'Saving figure to: {ftlen}')
+            _ = plt.savefig(ftlen, dpi=400, bbox_inches='tight')
+            plt.close('all')
+
+    return output_arr
