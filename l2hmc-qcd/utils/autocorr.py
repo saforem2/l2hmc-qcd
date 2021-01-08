@@ -717,11 +717,25 @@ def calc_tau_int_from_dir(
             output.update(loaded)
 
         lf = output['lf']
-        eps = output['eps']
         beta = output['beta']
+
+        xeps_check = 'xeps' in output['run_params'].keys()
+        veps_check = 'veps' in output['run_params'].keys()
+        if xeps_check and veps_check:
+            xeps = tf.reduce_mean(output['run_params']['xeps'])
+            veps = tf.reduce_mean(output['run_params']['veps'])
+            eps = tf.reduce_mean([xeps, veps]).numpy()
+        else:
+            eps = output['eps']
+            if isinstance(eps, list):
+                eps = tf.reduce_mean(eps)
+            elif tf.is_tensor(eps):
+                try:
+                    eps = eps.numpy()
+                except AttributeError:
+                    eps = tf.reduce_mean(eps)
+
         traj_len = lf * eps
-        if tf.is_tensor(eps):
-            eps = eps.numpy()
 
         qarr, _ = therm_arr(output['qarr'], therm_frac=therm_frac)
 
