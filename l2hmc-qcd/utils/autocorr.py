@@ -706,8 +706,14 @@ def calc_tau_int_from_dir(
     })
 
     if save_data:
-        data_dir = os.path.join(input_path, 'run_data')
-        outfile = os.path.join(data_dir, 'tau_int_data.z')
+        if hmc:
+            data_dir = os.path.join(input_path, 'run_data')
+            outfile = os.path.join(data_dir, 'tau_int_data.z')
+        else:
+            run_dir = output['run_params']['run_dir']
+            data_dir = os.path.join(run_dir, 'run_data')
+            outfile = os.path.join(data_dir, f'tau_int_data.z')
+
         io.savez(output, outfile, name='tau_int_data')
 
     if make_plot:
