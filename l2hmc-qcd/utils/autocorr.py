@@ -281,111 +281,6 @@ def load_charge_data(dirs, hmc=False, px_cutoff=None):
 
                 else:
                     data[beta][(lf, eps)] = out
-                #
-                #  elif (out['lf'], out['eps']) not in data[beta].keys():
-                #      data[out['beta']][(out['lf'], out['eps'])]
-                #  else:
-                #      if (data['lf'], data['eps']) not in data[beta].keys():
-        #  if not os.path.isdir(d):
-        #      io.log('\n'.join([
-        #          'WARNING: Skipping entry!',
-        #          f'\t {d} is not a directory.',
-        #      ]), style='yellow')
-        #
-        #      continue
-        #
-        #  io.log(f'Looking in {d}...')
-        #  if 'inference_hmc' in str(d) and not hmc:
-        #      continue
-        #
-        #  qfiles = [x for x in d.rglob('charges.z') if x.is_file()]
-        #  pxfiles = [x for x in d.rglob('accept_prob.z') if x.is_file()]
-        #  rpfiles = [x for x in d.rglob('run_params.z') if x.is_file()]
-        #  #  qfile = d.rglob('charges.z')
-        #  #  pxfile = d.rglob('accept_prob.z')
-        #  #  rpfile = d.rglob('run_params.z')
-        #  num_runs = len(qfiles)
-        #  io.log(f'num_runs: {num_runs}')
-        #  if num_runs > 0:
-        #      for qf, pxf, rpf in zip(qfiles, pxfiles, rpfiles):
-        #          output = _load_charge_data(
-        #          #  params = io.loadz(rpf)
-        #          #
-        #          #  io.log(f'Loading data for: {template}')
-        #          #  if beta not in data.keys():
-        #          #      data[beta] = {}
-        #          #      dirmap[beta] = {}
-        #          #  else:
-        #          #      qarr = io.loadz(qf)
-        #          #      qarr = np.array(qarr)  #, dtype=int)
-        #          #
-        #          #      if (lf, eps) not in data[beta].keys():
-        #          #          data[beta][(lf, eps)] = qarr
-        #          #          dirmap[beta][(lf, eps)] = d
-        #          #      else:
-        #          #          small_delta = 1e-6 * np.random.randn()
-        #          #          data[beta][(lf, eps + small_delta)] = qarr
-        #          #          dirmap[beta][(lf, eps + small_delta)] = d
-        #
-        #          # -- Ignore those runs which have poor acceptance
-        #          #  px = io.loadz(pxf)  # px.shape = (draws, chains)
-        #          #  midpt = px.shape[0] // 2
-        #          #  px_avg = np.mean(px[midpt:])
-        #          #  if px_avg < 0.1:
-        #          #      io.log('\n'.join([
-        #          #          '[yellow]WARNING[/yellow]: Bad acceptance prob.',
-        #          #          f'px_avg: {px_avg:.3g} < 0.1',
-        #          #          f'dir: {d}',
-        #          #      ]), style='yellow')
-        #          #      #  io.log('\n'.join([
-        #          #      #      'WARNING: Skipping entry!',
-        #          #      #      f'\t px_avg: {px_avg:.3g} < 0.1',
-        #          #      #  ]), style='yellow')
-        #          #      #
-        #          #      #  #  continue
-        #          #
-        #          #  if 'xeps' and 'veps' in params.keys():
-        #          #      xeps = tf.reduce_mean(params['xeps'])
-        #          #      veps = tf.reduce_mean(params['veps'])
-        #          #      eps = tf.reduce_mean([xeps, veps])
-        #          #
-        #          #  elif 'eps' in params.keys():
-        #          #      eps = params['eps']
-        #          #
-        #          #  else:
-        #          #      head, tail = os.path.split(rpf)
-        #          #      cfgs_file = os.path.join(head, 'inference_configs.z')
-        #          #      if os.path.isfile(cfgs_file):
-        #          #          configs = io.loadz(cfgs_file)
-        #          #          eps = configs['dynamics_config']['eps']
-        #          #   else:
-        #          #       raise ValueError(
-        #          #           'Unable to determine step size eps.'
-        #          #       )
-        #          #
-        #          #  beta = params['beta']
-        #          #  lf = params['num_steps']
-        #          #  eps = tf.reduce_mean(eps).numpy()
-        #          #  template = ', '.join([
-        #          #      f'beta: {str(beta)}',
-        #          #      f'lf: {str(lf)}',
-        #          #      f'eps: {eps:.3g}',
-        #          #  ])
-        #          #  io.log(f'Loading data for: {template}')
-        #          #  if beta not in data.keys():
-        #          #      data[beta] = {}
-        #          #      dirmap[beta] = {}
-        #          #  else:
-        #          #      qarr = io.loadz(qf)
-        #          #      qarr = np.array(qarr)  #, dtype=int)
-        #          #
-        #          #      if (lf, eps) not in data[beta].keys():
-        #          #          data[beta][(lf, eps)] = qarr
-        #          #          dirmap[beta][(lf, eps)] = d
-        #          #      else:
-        #          #          small_delta = 1e-6 * np.random.randn()
-        #          #          data[beta][(lf, eps + small_delta)] = qarr
-        #          #          dirmap[beta][(lf, eps + small_delta)] = d
     return data
 
 
@@ -711,7 +606,9 @@ def get_plot_data(
 
             # Compute statistics across chains (axis=1)
             chain_avg = np.mean(tint_scaled, axis=1)
-            chain_err = np.std(tint_scaled, axis=1) / chain_avg
+            # error scaling reference:
+            # https://faculty.washington.edu/stuve/log_error.pdf
+            chain_err = np.std(tint_scaled, axis=1) * (0.434 / chain_avg)
             chain_len = ndata[beta]['hmc'][(lf, eps)]
             tint_nsamples[beta]['hmc'][(lf, eps)] = {
                 'x': chain_len,
@@ -729,7 +626,7 @@ def get_plot_data(
             }
 
             avg = np.mean(tint_scaled)
-            err = np.std(tint_scaled) / avg
+            err = np.std(tint_scaled) / (0.434 / chain_avg)
             hmc_avgs.append(avg)
             hmc_errs.append(err)
 
@@ -747,17 +644,19 @@ def get_plot_data(
 
             chain_len = ndata[beta]['l2hmc'][(lf, eps)]
             chain_avg = np.mean(tint_scaled, axis=1)
-            chain_err = np.std(tint_scaled, axis=1) / chain_avg
+            chain_err = np.std(tint_scaled, axis=1) * (0.434 / chain_avg)
             tint_nsamples[beta]['l2hmc'][(lf, eps)] = {
                 'x': chain_len,
                 'y': chain_avg,
                 'yerr': chain_err,
             }
 
+            best_avg = np.mean(tint_scaled[-1])
+            best_err = np.std(tint_scaled[-1]) * (0.434 / best_avg)
             tint_traj_len[beta]['l2hmc'][(lf, eps)] = {
                 'x': lf * eps,
-                'y': np.mean(tint_scaled[-1]),
-                'yerr': np.std(tint_scaled[-1]),
+                'y': best_avg,
+                'yerr': best_err,
             }
 
             l2hmc_avgs.append(np.mean(tint))
