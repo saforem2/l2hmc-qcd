@@ -32,7 +32,7 @@ LOCAL_RANK = hvd.local_rank()
 IS_CHIEF = (RANK == 0)
 
 from tqdm.auto import tqdm
-from config import CBARS, TF_FLOAT
+from config import TF_FLOAT
 from network.config import LearningRateConfig
 from utils.attr_dict import AttrDict
 from utils.learning_rate import ReduceLROnPlateau
