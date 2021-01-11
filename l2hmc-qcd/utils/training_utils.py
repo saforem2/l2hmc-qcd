@@ -105,6 +105,7 @@ def train_hmc(
     if IS_CHIEF and make_plots:
         output_dir = os.path.join(dirs.train_dir, 'outputs')
         io.check_else_make_dir(output_dir)
+        #  skip_keys = ['plaqsf', 'plaqsb', '
         train_data.save_data(output_dir)
 
         params = {
@@ -116,16 +117,14 @@ def train_hmc(
             'net_weights': NET_WEIGHTS_HMC,
         }
         t0 = time.time()
-        plot_data(data_container=train_data, flags=hflags,
-                  params=params, out_dir=dirs.train_dir,
-                  therm_frac=therm_frac, num_chains=num_chains)
+        output = plot_data(data_container=train_data, flags=hflags,
+                           params=params, out_dir=dirs.train_dir,
+                           therm_frac=therm_frac, num_chains=num_chains)
+        data_container = output['data_container']
+        data_container.plot_dataset(output['out_dir'], num_chains=num_chains,
+                                    therm_frac=therm_frac, ridgeplots=True)
         dt = time.time() - t0
-        #  io.log(120 * '#')
-        io.rule(
-            f'Time spent plotting: {dt}s = {dt // 60}m {(dt % 60):.3g}s'
-        )
-        #  io.rule("[bold red]")
-        #  io.log('\n'.join(['Done with HMC training', 120 * '*']))
+        io.rule(f'Time spent plotting: {dt}s = {dt // 60}m {(dt % 60):.3g}s')
 
     return x, dynamics, train_data, hflags
 
@@ -146,6 +145,7 @@ def train(
         train_data (DataContainer): Object containing train data.
         flags (AttrDict): AttrDict containing flags used.
     """
+    t0 = time.time()
     dirs = io.setup_directories(flags)
     flags.update({'dirs': dirs})
 
@@ -192,23 +192,18 @@ def train(
             'net_weights': dynamics.net_weights,
         }
         t0 = time.time()
-        plot_data(data_container=train_data, flags=flags,
-                  params=params, out_dir=dirs.train_dir,
-                  therm_frac=therm_frac, num_chains=num_chains)
-
+        output = plot_data(data_container=train_data, flags=flags,
+                           params=params, out_dir=dirs.train_dir,
+                           therm_frac=therm_frac, num_chains=num_chains)
+        data_container = output['data_container']
+        data_container.plot_dataset(output['out_dir'], num_chains=num_chains,
+                                    therm_frac=therm_frac, ridgeplots=True)
+        import pudb; pudb.set_trace()
         dt = time.time() - t0
-        io.rule(
-            f'Time spent plotting: {dt}s = {dt // 60}m {(dt % 60):.3g}s'
-        )
-        #  io.rule("[bold red]")
-        #  io.log(120 * '#')
-        #  io.log(f'Time spent plotting: {dt}s = {dt // 60}m{dt % 60}s')
-        #  io.log(120 * '#')
+        io.rule(f'Time spent plotting: {dt}s = {dt // 60}m {(dt % 60):.3g}s')
 
-    io.rule('[bold green]')
-    io.log('Done training model')
-    io.rule('[bold green]')
-    #  io.log('\n'.join(['Done training model', 120 * '*']))
+    dt = time.time() - t0
+    io.rule(f'Done training model! took: {dt:.3g}s')
     io.save_dict(dict(flags), dirs.log_dir, 'configs')
 
     return x, dynamics, train_data, flags
@@ -500,8 +495,8 @@ def train_dynamics(
         # -- Print header every so often --------------------------
         if IS_CHIEF and (step + 1) % (50 * flags.print_steps) == 0:
             #  io.rule(["bold red]"])
-            timestamp = io.get_timestamp('%Y-%m-%d %H:%M')
-            io.rule(timestamp)
+            #  timestamp = io.get_timestamp('%Y-%m-%d %H:%M')
+            io.rule('')
             #  io.log(header, style='green')
             #  io.rule(["bold red]"])
             #  io.log(header.split('\n'))

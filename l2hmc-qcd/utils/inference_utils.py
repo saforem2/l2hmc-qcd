@@ -401,9 +401,13 @@ def run(
     io.save_params(run_params, run_dir, name='run_params')
 
     if make_plots:
-        plot_data(data_container=run_data, flags=args, params=run_params,
-                  out_dir=run_dir, hmc=dynamics.config.hmc,
-                  therm_frac=therm_frac, num_chains=num_chains)
+        _ = plot_data(data_container=run_data,
+                      flags=args,
+                      params=run_params,
+                      out_dir=run_dir,
+                      hmc=dynamics.config.hmc,
+                      therm_frac=therm_frac,
+                      num_chains=num_chains)
 
     return InferenceResults(dynamics=results.dynamics,
                             run_data=run_data,
