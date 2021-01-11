@@ -14,11 +14,23 @@ import tensorflow as tf
 from dataclasses import dataclass
 from utils.attr_dict import AttrDict
 
-
 @dataclass
 class Charges:
     sinQ: tf.Tensor
     intQ: tf.Tensor
+
+#  @dataclass
+#  class ChargesDiff:
+#      dsinQ: tf.Tensor
+#      dintQ: tf.Tensor
+
+
+@dataclass
+class LatticeMetrics:
+    charges: Charges
+    actions: tf.Tensor
+    plaqs: tf.Tensor
+
 
 
 def plaq_exact(beta):
@@ -47,6 +59,9 @@ class GaugeLattice:
         self._nt, self._nx, self._dim = self.lattice_shape
         self.num_plaqs = self._nt * self._nx
         self.num_links = self.num_plaqs * self._dim
+
+    def unnormalized_log_prob(self, x):
+        return self.calc_actions(x=x)
 
     def calc_observables(self, x, beta=None):
         """Calculate all observables for a batch of lattices `x`."""
