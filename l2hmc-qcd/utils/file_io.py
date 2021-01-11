@@ -33,7 +33,7 @@ from rich.progress import (
     TaskID,
 )
 
-console = Console(width=319, record=False,
+console = Console(record=False,
                   log_time_format='[%X] ',
                   theme=Theme({'repr.number': '#ff79ff'}))
 #  FORMAT = "%(levelname)s:%(process)s:%(thread)s:%(name)s:%(message)s"
@@ -170,6 +170,9 @@ def print_header(header):
 
 
 def rule(s: str = ' ', **kwargs: dict):
+    day = get_timestamp('%Y-%m-%d')
+    t = get_timestamp('%H:%M')
+    s = f'[{day} {t}] {s}'
     console.rule(s, **kwargs)
 
 
