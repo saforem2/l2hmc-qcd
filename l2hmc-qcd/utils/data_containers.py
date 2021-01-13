@@ -6,6 +6,7 @@ Implements `TrainData` class, for working with training data.
 from __future__ import absolute_import, division, print_function
 
 import os
+from copy import deepcopy
 
 from collections import defaultdict
 
@@ -136,17 +137,34 @@ class DataContainer:
 
         return header
 
-    def get_fstr(self, step, metrics, skip=None, keep=None):
+    def get_fstr(
+            self,
+            step: int,
+            metrics: dict,
+            skip: list = None,
+            keep: list = None,
+            skip_endpts: bool = None
+    ):
         """Get formatted data string from `data`."""
         skip = [] if skip is None else skip
-        data = {}
 
         data = {
-            k: tf.reduce_mean(v) for k, v in metrics.items()
-            if k not in skip and not isinstance(v, dict) and k not in SKEYS
+            k: tf.reduce_mean(v) for k, v in metrics.items() if (
+                k not in skip
+                and not isinstance(v, dict)
+                and k not in SKEYS
+            )
         }
+
         if keep is not None:
             data = {k: v for k, v in data.items() if k in keep}
+
+        if skip_endpts:
+            data = {k: v for k, v in data.items() if (
+                '_start' not in str(k)
+                and '_mid' not in str(k)
+                and '_end' not in str(k)
+            )}
 
         #  fstr = f'{step:>5g}/{self.steps:<5g}, '
         #  for k, v in data.items():
@@ -154,8 +172,8 @@ class DataContainer:
         #      lsk = len(sk)
         sstr = 'step'
         fstr = (
-            f'{sstr:>s}: {step:>5g}/{self.steps:<5g} ' + ' '.join([
-                f'{k:>s}: {v:>5.3g}' for k, v in data.items()
+            f'{sstr:s}: {step:5g}/{self.steps:<5g} ' + ' '.join([
+                f'{k:s}: {v:5.3g}' for k, v in data.items()
                 #  if not isinstance(v, dict)
             ])
         )
@@ -207,13 +225,17 @@ class DataContainer:
 
         return AttrDict(data)
 
-    def save_data(self, data_dir, rank=0, save_dataset=False):
+    def save_data(self, data_dir, rank=0, save_dataset=False, skip_keys=None):
         """Save `self.data` entries to individual files in `output_dir`."""
         if rank != 0:
             return
 
         io.check_else_make_dir(data_dir)
         for key, val in self.data.items():
+            if skip_keys is not None:
+                if key in skip_keys:
+                    continue
+
             out_file = os.path.join(data_dir, f'{key}.z')
             head, tail = os.path.split(out_file)
             io.check_else_make_dir(head)
