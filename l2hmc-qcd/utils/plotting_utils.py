@@ -295,7 +295,13 @@ def get_title_str_from_params(params):
     """Create a formatted string with relevant params from `params`."""
     net_weights = params.get('net_weights', None)
     num_steps = params.get('num_steps', None)
-    lattice_shape = params.get('lattice_shape', None)
+
+    x_shape = None
+    dynamics_config = params.get('dynamics_config', None)
+    if dynamics_config is not None:
+        x_shape = dynamics_config.get('x_shape', None)
+
+    #  x_shape = params.get('x_shape', None)
 
     title_str = (r"$N_{\mathrm{LF}} = $" + f'{num_steps}, ')
 
@@ -308,7 +314,8 @@ def get_title_str_from_params(params):
         beta = params.get('beta', None)
         title_str += r"$\beta = $" + f'{beta:.3g}, '
 
-    title_str += f'shape: {tuple(lattice_shape)}'
+    if x_shape is not None:
+        title_str += f'shape: {tuple(x_shape)}'
 
     if net_weights == NetWeights(0., 0., 0., 0., 0., 0.):
         title_str += ', (HMC)'
@@ -507,7 +514,8 @@ def plot_data(
     data_vars = {}
     charges_steps = []
     charges_arr = []
-    out_dir_ = out_dir
+    plots_dir = out_dir
+    #  out_dir_ = out_dir
     for key, val in data_container.data.items():
         if key in SKEYS and key not in keep_strs:
             continue
@@ -542,7 +550,7 @@ def plot_data(
             charges_arr = arr
 
         if len(arr.shape) == 1:  # shape: (draws,)
-            out_dir_ = os.path.join(out_dir, f'mcmc_lineplots')
+            out_dir_ = os.path.join(plots_dir, f'mcmc_lineplots')
             io.check_else_make_dir(out_dir_)
             lplot_fname = os.path.join(out_dir_, f'{key}.png')
             data_dict[key] = xr.DataArray(arr, dims=['draw'], coords=[steps])
@@ -551,7 +559,7 @@ def plot_data(
 
         elif len(arr.shape) == 2:  # shape: (draws, chains)
             data_dict[key] = data
-            out_dir_ = os.path.join(out_dir_, 'traceplots')
+            out_dir_ = os.path.join(plots_dir, 'traceplots')
             chains = np.arange(arr.shape[1])
             data_arr = xr.DataArray(arr.T,
                                     dims=['chain', 'draw'],
@@ -576,10 +584,11 @@ def plot_data(
 
         plt.close('all')
 
-    out_dir_xr = None
-    if out_dir is not None:
-        out_dir_xr = os.path.join(out_dir, 'xarr_plots')
+    #  out_dir_xr = None
+    #  if out_dir is not None:
+    #      out_dir_xr = os.path.join(out_dir, 'xarr_plots')
 
+    out_dir_xr = os.path.join(plots_dir, 'xarr_plots')
     data_container.plot_dataset(out_dir_xr,
                                 num_chains=num_chains,
                                 therm_frac=therm_frac,

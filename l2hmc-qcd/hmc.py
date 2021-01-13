@@ -57,7 +57,7 @@ def parse_args():
                         type=str, default=None, required=False,
                         help='json file containing HMC config')
 
-    parser.add_argument('--lattice_shape', dest='lattice_shape',
+    parser.add_argument('--x_shape', dest='x_shape',
                         type=lambda s: [int(i) for i in s.split(',')],
                         default=None, required=False,
                         help='Specify shape of lattice (batch, Lt, Lx, 2)')
@@ -100,7 +100,7 @@ def check_existing(beta, num_steps, eps):
 def multiple_runs(flags, json_file=None):
     default = (512, 16, 16, 2)
     run_steps = flags.run_steps if flags.run_steps is not None else 125000
-    shape = flags.lattice_shape if flags.lattice_shape is not None else default
+    shape = flags.x_shape if flags.x_shape is not None else default
 
     betas = [5.0, 6.0, 7.0]
     num_steps = [10, 15, 20, 25]
@@ -115,7 +115,7 @@ def multiple_runs(flags, json_file=None):
                     'beta': b,
                     'num_steps': ns,
                     'run_steps': run_steps,
-                    'lattice_shape': shape,
+                    'x_shape': shape,
                 })
                 exists = check_existing(b, ns, e)
                 if exists:
@@ -147,9 +147,9 @@ def main(args, json_file=None):
     """Main method for running HMC."""
     flags = load_hmc_flags(json_file)
 
-    if args.get('lattice_shape', None) is not None:
-        flags['dynamics_config']['lattice_shape'] = args.lattice_shape
-        #  flags.dynamics_config['lattice_shape'] = args.lattice_shape
+    if args.get('x_shape', None) is not None:
+        flags['dynamics_config']['x_shape'] = args.x_shape
+        #  flags.dynamics_config['x_shape'] = args.x_shape
 
     if args.get('beta', None) is not None:
         flags.beta = args.beta

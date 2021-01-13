@@ -149,7 +149,6 @@ def catch_exception(fn):
 
             import pudb
 
-            pudb.set_trace()
     return wrapper
 
 
@@ -184,7 +183,7 @@ def test_conv_net(flags: AttrDict):
         use_batch_norm=True,
         conv_paddings=['valid', 'valid'],
         conv_activations=['relu', 'relu'],
-        input_shape=flags['dynamics_config']['lattice_shape'][1:],
+        input_shape=flags['dynamics_config']['x_shape'][1:],
     )
     dirs = io.setup_directories(flags)
     flags['dirs'] = dirs

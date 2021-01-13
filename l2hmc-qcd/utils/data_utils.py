@@ -46,7 +46,7 @@ class RunParams:
     plaq_weight: float
     charge_weight: float
     num_steps: int
-    lattice_shape: tuple
+    x_shape: tuple
     input_shape: tuple
 
     def __post__init__(self):
