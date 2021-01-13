@@ -15,11 +15,10 @@ We compute the topological charge, \(\mathcal{Q} =
 \mathbb{Z}\), with \( \mathrm{Arg}\left(\phi_{\mu\nu}(x)\right) \in \left[-\pi,
 \pi\right]\) for each configuration.
 %
-
 For the \(m^{\mathrm{th}}\) chain in our batch, we define 
 %
 \begin{align}
-  \delta\mathcal{Q}_{m}(n) &\coloneqq \mathcal{Q}{(n+1)} - \mathcal{Q}{(n)}\\
+  \delta\mathcal{Q}_{m}(n) &\coloneqq |\mathcal{Q}{(n+1)} - \mathcal{Q}{(n)}|\\
   \langle\delta\mathcal{Q}_{m}\rangle &\coloneqq
   \frac{1}{N}\sum_{n=0}\delta\mathcal{Q}_{m}(n).
 \end{align}
@@ -36,7 +35,7 @@ number of tunneling events per step) as
 
 \begin{figure}[htpb]
   \centering
-  \includegraphics[width=\textwidth]{tunneling_rates/dq_lf10}
+  \includegraphics[width=\textwidth]{tunneling_rates/dq_vs_beta}
   \caption{Comparison of the tunneling rates,
   \(\langle\delta\mathcal{Q}\rangle\) for HMC and L2HMC}
 \end{figure}
