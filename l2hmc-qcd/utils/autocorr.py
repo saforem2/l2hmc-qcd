@@ -189,6 +189,9 @@ def load_charges_from_dir(d: str, hmc: bool = False, px_cutoff: float = None):
 
         return None
 
+    if 'old' in str(d):
+        return None
+
     if 'inference_hmc' in str(d) and not hmc:
         return None
 
@@ -682,6 +685,19 @@ def calc_tau_int_from_dir(
         save_data: bool = True,
         keep_charges: bool = False,
 ):
+    """
+    NOTE: `load_charges_from_dir` returns:
+      `output_arr` is a list of dicts, each of which look like:
+            output = {
+                'beta': beta,
+                'lf': lf,
+                'eps': eps,
+                'traj_len': lf * eps,
+                'qarr': charges,
+                'run_params': params,
+                'run_dir': run_dir,
+            }
+    """
     output_arr = load_charges_from_dir(input_path, hmc=hmc)
     if output_arr is None:
         io.log(', '.join([
