@@ -84,11 +84,11 @@ def calc_plaqs_np(x):
     return potential
 
 
-def get_potential_fn(lattice_shape):
-    """Wrapper method that reshapes `x` to `lattice_shape`."""
+def get_potential_fn(x_shape):
+    """Wrapper method that reshapes `x` to `x_shape`."""
     def gauge_potential(x):
         """Defines the potential energy function using the Wilson action."""
-        x = tf.reshape(x, lattice_shape)
+        x = tf.reshape(x, x_shape)
         potential = (x[..., 0]
                      - x[..., 1]
                      - tf.roll(x[..., 0], shift=-1, axis=2)

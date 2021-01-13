@@ -55,8 +55,8 @@ class GaugeLattice:
         NOTE: shape = (batch_size, Lt, Lx, dim) = (B, T, X, D)
         """
         self._shape = shape
-        self.batch_size, self.lattice_shape = shape[0], shape[1:]
-        self._nt, self._nx, self._dim = self.lattice_shape
+        self.batch_size, self.x_shape = shape[0], shape[1:]
+        self._nt, self._nx, self._dim = self.x_shape
         self.num_plaqs = self._nt * self._nx
         self.num_links = self.num_plaqs * self._dim
 
