@@ -8,6 +8,7 @@ Implements helper functions for training the model.
 """
 from __future__ import absolute_import, division, print_function
 
+
 import os
 import time
 
@@ -15,6 +16,7 @@ from typing import Optional, Union
 
 import numpy as np
 import tensorflow as tf
+#  tf.autograph.set_verbosity(3, True)
 from utils import SKEYS
 import utils.file_io as io
 from rich.progress import track
@@ -48,6 +50,12 @@ if tf.__version__.startswith('1.'):
     TF_VERSION = 1
 elif tf.__version__.startswith('2.'):
     TF_VERSION = 2
+
+
+TO_KEEP = [
+    'H', 'Hf', 'plaqs', 'actions', 'charges', 'dqint', 'dqsin', 'accept_prob',
+    'accept_mask', 'xeps', 'veps', 'sumlogdet', 'beta', 'loss'
+]
 
 #  try:
 #      tf.config.experimental.enable_mlir_bridge()
@@ -105,7 +113,6 @@ def train_hmc(
     if IS_CHIEF and make_plots:
         output_dir = os.path.join(dirs.train_dir, 'outputs')
         io.check_else_make_dir(output_dir)
-        #  skip_keys = ['plaqsf', 'plaqsb', '
         train_data.save_data(output_dir)
 
         params = {
@@ -113,7 +120,7 @@ def train_hmc(
             'num_steps': dynamics.config.num_steps,
             'beta_init': train_data.data.beta[0],
             'beta_final': train_data.data.beta[-1],
-            'lattice_shape': dynamics.config.lattice_shape,
+            'x_shape': dynamics.config.x_shape,
             'net_weights': NET_WEIGHTS_HMC,
         }
         t0 = time.time()
@@ -121,8 +128,6 @@ def train_hmc(
                            params=params, out_dir=dirs.train_dir,
                            therm_frac=therm_frac, num_chains=num_chains)
         data_container = output['data_container']
-        data_container.plot_dataset(output['out_dir'], num_chains=num_chains,
-                                    therm_frac=therm_frac, ridgeplots=True)
         dt = time.time() - t0
         io.rule(f'Time spent plotting: {dt}s = {dt // 60}m {(dt % 60):.3g}s')
 
@@ -160,7 +165,7 @@ def train(
             io.log(f'Unable to restore x from {xfile}. Using random init.')
 
     if x is None:
-        x = tf.random.normal(flags.dynamics_config['lattice_shape'])
+        x = tf.random.normal(flags.dynamics_config['x_shape'])
         x = tf.reshape(x, (x.shape[0], -1))
 
     dynamics = build_dynamics(flags)
@@ -174,20 +179,16 @@ def train(
     dynamics.save_config(dirs.config_dir)
 
     io.rule('TRAINING')
-    #  io.rule('[bold red]')
-    #  io.log('\n'.join([120 * '*', 'Training L2HMC sampler...']))
     x, train_data = train_dynamics(dynamics, flags, dirs, x=x)
 
     if IS_CHIEF and make_plots:
         output_dir = os.path.join(dirs.train_dir, 'outputs')
         train_data.save_data(output_dir, save_dataset=True)
-        #  xeps_avg = tf.reduce_mean(dynamics.xeps)
-        #  veps_avg = tf.reduce_mean(dynamics.veps)
 
         params = {
             'beta_init': train_data.data.beta[0],
             'beta_final': train_data.data.beta[-1],
-            'lattice_shape': dynamics.config.lattice_shape,
+            'x_shape': dynamics.config.x_shape,
             'num_steps': dynamics.config.num_steps,
             'net_weights': dynamics.net_weights,
         }
@@ -195,10 +196,11 @@ def train(
         output = plot_data(data_container=train_data, flags=flags,
                            params=params, out_dir=dirs.train_dir,
                            therm_frac=therm_frac, num_chains=num_chains)
-        data_container = output['data_container']
-        data_container.plot_dataset(output['out_dir'], num_chains=num_chains,
-                                    therm_frac=therm_frac, ridgeplots=True)
-        import pudb; pudb.set_trace()
+        #  data_container = output['data_container']
+        #  data_container.plot_dataset(output['out_dir'],
+        #                              num_chains=num_chains,
+        #                              therm_frac=therm_frac,
+        #                              ridgeplots=True)
         dt = time.time() - t0
         io.rule(f'Time spent plotting: {dt}s = {dt // 60}m {(dt % 60):.3g}s')
 
@@ -265,8 +267,7 @@ def setup(dynamics, flags, dirs=None, x=None, betas=None):
                      experimental_run_tf_function=False)
     _ = dynamics.apply_transition((x, tf.constant(betas[0])), training=True)
 
-    # ====
-    # Plot computational graph of `dynamics.xnet`, `dynamics.vnet`
+    # -- Plot computational graph of `dynamics.xnet`, `dynamics.vnet` ------
     if IS_CHIEF:
         xf = os.path.join(dirs.log_dir, 'dynamics_xnet.png')
         vf = os.path.join(dirs.log_dir, 'dynamics_vnet.png')
@@ -297,7 +298,6 @@ def setup(dynamics, flags, dirs=None, x=None, betas=None):
         'writer': writer,
         'manager': manager,
         'checkpoint': ckpt,
-        #  'train_step': train_step,
         'train_data': train_data,
         'pstart': pstart,
         'pstop': pstop,
@@ -325,20 +325,12 @@ def train_dynamics(
 
     def should_print(step):
         return IS_CHIEF and step % ps_ == 0
-        #  if IS_CHIEF and step % ps_ == 0:
-        #      return True
-        #  return False
 
     def should_log(step):
         return IS_CHIEF and step % ls_ == 0
-        #  if IS_CHIEF and step % ls_ == 0:
-        #      return True
-        #  return False
 
     def should_save(step):
         return step % flags.save_steps == 0 and ckpt is not None
-        #      return True
-        #  return False
 
     # -- setup ----------------------------------------------------
     config = setup(dynamics, flags, dirs, x, betas)
@@ -370,49 +362,33 @@ def train_dynamics(
         if writer is not None:
             writer.set_as_default()
 
+    #  tf.compat.v1.autograph.experimental.do_not_convert(dynamics.train_step)
+
     # -- Try running compiled `train_step` fn otherwise run imperatively ----
-    #  io.log(120 * '*')
     if flags.profiler:
         tf.profiler.experimental.start(logdir=dirs.summary_dir)
         io.rule('Running 10 profiling steps')
-        #  io.log('Running 10 profiling steps...')
         for step in range(10):
             x, metrics = dynamics.train_step((x, tf.constant(betas[0])))
 
         tf.profiler.experimental.stop(save=True)
         io.rule('done')
-        #  io.log('Done!')
     else:
         x, metrics = dynamics.train_step((x, tf.constant(betas[0])))
 
     # -- Run MD update to not get stuck -----------------
     md_steps = flags.get('md_steps', 0)
     if md_steps > 0:
-        #  io.log(120*'*')
         io.rule(f'Running {md_steps} MD updates')
         for _ in range(md_steps):
             mc_states, _ = dynamics.md_update((x, betas[0]), training=True)
             x = mc_states.out.x
         io.rule('done!')
-        #  io.log(120*'*')
 
     # -- Final setup; create timing wrapper for `train_step` function -------
     # -- and get formatted header string to display during training. --------
     ps_ = flags.get('print_steps', None)
     ls_ = flags.get('logging_steps', None)
-
-    #  io.rule()
-    #  io.log(header, style='bold red')
-    #  io.rule()
-    #  io.print_header(header)
-    #  hstr = ["[bold red]"] + header.split('\n') + ["[/bold red]"]
-    #  io.log(hstr)
-    #  io.log(header.split('\n'))
-    #  if NUM_WORKERS == 1:
-    #      ctup = (CBARS['reset'], CBARS['yellow'],
-    #              CBARS['reset'], CBARS['reset'])
-    #      #  steps = tqdm(steps, desc='training', unit='step',
-    #      #               bar_format=("%s{l_bar}%s{bar}%s{r_bar}%s" % ctup))
 
     # -- Training loop ----------------------------------------------------
     warmup_steps = dynamics.lr_config.warmup_steps
@@ -426,24 +402,10 @@ def train_dynamics(
             'Hb_start', 'Hb_mid', 'Hb_end',
             'Hwb_start', 'Hwb_mid', 'Hwb_end',
             'Hwf_start', 'Hwf_mid', 'Hwf_end',
-            'dq', 'dq_sin', 'plaqs']
-    #  for idx, (step, beta) in track(
-    #          enumerate(zip(steps, betas), total=len(betas))
-    #  ):
-    #  for idx, (step, beta) in iterable:
+            'xeps', 'veps', 'dq', 'dq_sin', 'plaqs']
+
     for idx, (step, beta) in iterable:
         # -- Perform a single training step -------------------------------
-        #  if idx == 10 or step == 0:
-        #      timestamp = io.get_timestamp('%Y-%m-%d %H:%M:%s')
-        #      io.rule(timestamp)
-        #      header = train_data.get_header(
-        #          metrics, skip=SKEYS, with_sep=False,
-        #          prepend=['{:^12s}'.format('step')]
-        #      )
-        #      header = 142 * ' ' + header
-        #      io.log(header, style='green')
-        #      io.rule(timestamp)
-
         x, metrics = timed_step(x, beta)
 
         if (step + 1) > warmup_steps and (step + 1) % steps_per_epoch == 0:
@@ -463,10 +425,6 @@ def train_dynamics(
                                           rank=RANK, mode='a')
                 if not dynamics.config.hmc:
                     # -- Save network weights -------------------------------
-                    #  nstr = ' '.join([
-                    #      'Networks saved to:', f'{dirs.log_dir}'
-                    #  ])
-                    #  io.log(nstr)
                     dynamics.save_networks(dirs.log_dir)
                     io.log(f'Networks saved to: {dirs.log_dir}')
 
@@ -475,14 +433,15 @@ def train_dynamics(
             if step % 5000 == 0:
                 keep_ = keep + ['xeps_start', 'xeps_mid', 'xeps_end',
                                 'veps_start', 'veps_mid', 'veps_end',]
+                data_str = train_data.get_fstr(step, metrics)
+                                               #  skip=SKEYS, keep=keep_)
+            else:
+                keep_ = ['step', 'dt', 'loss', 'accept_prob', 'beta', 'plaqs',
+                         'dq', 'dq_sin', 'dQint', 'dQsin']
                 data_str = train_data.get_fstr(step, metrics,
                                                skip=SKEYS, keep=keep_)
-            else:
-                data_str = train_data.get_fstr(step, metrics,
-                                               skip=SKEYS, keep=keep)
 
             io.log(data_str)
-            #  io.log(data_str)
 
         # -- Update summary objects ---------------------
         if should_log(step):
@@ -491,23 +450,16 @@ def train_dynamics(
                 update_summaries(step, metrics, dynamics)
                 writer.flush()
 
-
         # -- Print header every so often --------------------------
         if IS_CHIEF and (step + 1) % (50 * flags.print_steps) == 0:
-            #  io.rule(["bold red]"])
-            #  timestamp = io.get_timestamp('%Y-%m-%d %H:%M')
             io.rule('')
-            #  io.log(header, style='green')
-            #  io.rule(["bold red]"])
-            #  io.log(header.split('\n'))
 
     # -- Dump config objects -------------------------------------------------
     train_data.dump_configs(x, dirs.data_dir, rank=RANK, local_rank=LOCAL_RANK)
     if IS_CHIEF:
         manager.save()
         io.log(f'Checkpoint saved to: {manager.latest_checkpoint}')
-        train_data.save_and_flush(dirs.data_dir,
-                                  dirs.log_file,
+        train_data.save_and_flush(dirs.data_dir, dirs.log_file,
                                   rank=RANK, mode='a')
         if not dynamics.config.hmc:
             dynamics.save_networks(dirs.log_dir)

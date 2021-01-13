@@ -445,17 +445,17 @@ def get_run_dir_fstr(flags: AttrDict):
     eps = config.get('eps', None)
     hmc = config.get('hmc', False)
     num_steps = config.get('num_steps', None)
-    lattice_shape = config.get('lattice_shape', None)
+    x_shape = config.get('x_shape', None)
 
     fstr = ''
     if hmc:
         fstr += 'HMC_'
-    if lattice_shape is not None:
-        if lattice_shape[1] == lattice_shape[2]:
-            fstr += f'L{lattice_shape[1]}_b{lattice_shape[0]}_'
+    if x_shape is not None:
+        if x_shape[1] == x_shape[2]:
+            fstr += f'L{x_shape[1]}_b{x_shape[0]}_'
         else:
             fstr += (
-                f'L{lattice_shape[1]}_T{lattice_shape[2]}_b{lattice_shape[0]}_'
+                f'L{x_shape[1]}_T{x_shape[2]}_b{x_shape[0]}_'
             )
 
     if beta is not None:
@@ -480,9 +480,9 @@ def parse_configs(flags: AttrDict, debug: bool = False):
     if debug or 0 < flags.get('train_steps', None) < 1e4:
         fstr += 'DEBUG_'
 
-    lattice_shape = config.get('lattice_shape', None)
-    if lattice_shape is not None:
-        fstr += f'L{lattice_shape[1]}_b{lattice_shape[0]}'
+    x_shape = config.get('x_shape', None)
+    if x_shape is not None:
+        fstr += f'L{x_shape[1]}_b{x_shape[0]}'
 
     num_steps = config.get('num_steps', None)
     fstr += f'_lf{num_steps}'

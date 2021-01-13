@@ -31,10 +31,6 @@ from dynamics.gauge_dynamics import (build_dynamics, convert_to_angle,
 InferenceResults = namedtuple('InferenceResults',
                               ['dynamics', 'run_data', 'x', 'x_arr'])
 
-#  import sys
-#  import json
-#  import logging
-
 
 def restore_from_train_flags(args):
     """Populate entries in `args` using the training `FLAGS` from `log_dir`."""
@@ -108,9 +104,9 @@ def _get_hmc_log_str(configs):
 
     lf = dynamics_config.get('num_steps', None)
     eps = dynamics_config.get('eps', None)
-    ls = dynamics_config.get('lattice_shape', None)
+    ls = dynamics_config.get('x_shape', None)
     bs = ls[0]  # batch size
-    nx = ls[1]
+    nx = ls[1]  # size in 'x' direction
 
     b = configs.get('beta', None)
     if b is None:
@@ -144,7 +140,7 @@ def run_hmc(
         - 'beta'
         - 'num_steps'
         - 'run_steps'
-        - 'lattice_shape'
+        - 'x_shape'
     """
     if not IS_CHIEF:
         return InferenceResults(None, None, None, None)
@@ -174,10 +170,6 @@ def run_hmc(
         if len(matches) > 0:
             io.rule('Existing run with current parameters found!')
             io.log(args)
-            #  io.log('\n'.join([
-            #      120*'#',
-            #      'Existing run with current parameters found!', 120*'#'
-            #  ]))
             return InferenceResults(None, None, None, None)
 
     dynamics = build_dynamics(args)
@@ -253,19 +245,14 @@ def run_inference_from_log_dir(
         except FileNotFoundError:
             eps = configs.get('dynamics_config', None).get('eps', None)
 
-    #  if eps is not None:
-    #      configs['dynamics_config']['eps'] = eps
-
     if beta is not None:
         configs.update({'beta': beta, 'beta_final': beta})
 
-    #  configs['dynamics_config']['lattice_shape'] = (8, 16, 16, 2)
     if batch_size is not None:
         batch_size = int(batch_size)
-        configs['dynamics_config']['lattice_shape'] = (batch_size, 16, 16, 2)
-        #  old_shape = configs['dynamics_config'].get('lattice_shape', None)
-        #  new_shape = (batch_size, *old_shape[1:])
-        #  configs['dynamics_config']['lattice_shape'] = new_shape
+        prev_shape = configs['dynamics_config']['x_shape']
+        new_shape = (batch_size, *prev_shape[1:])
+        configs['dynamics_config']['x_shape'] = new_shape
 
     configs = AttrDict(configs)
     dynamics = build_dynamics(configs)
@@ -327,14 +314,6 @@ def run(
             runs_dir = os.path.join(args.log_dir, 'inference')
 
     md_steps = args.get('md_steps', 50)
-    #  eps = dynamics.eps
-    #  if hasattr(eps, 'numpy'):
-    #      eps = eps.numpy()
-    #  try:
-    #      args.eps = eps
-    #  except AttributeError:
-    #      args.update({'eps': eps})
-
     io.check_else_make_dir(runs_dir)
     run_dir = io.make_run_dir(args, runs_dir)
     data_dir = os.path.join(run_dir, 'run_data')
@@ -370,12 +349,11 @@ def run(
     run_params = {
         'hmc': dynamics.config.hmc,
         'run_dir': run_dir,
-        #  'eps': eps,
         'beta': beta,
         'run_steps': run_steps,
         'plaq_weight': dynamics.plaq_weight,
         'charge_weight': dynamics.charge_weight,
-        'lattice_shape': dynamics.lattice_shape,
+        'x_shape': dynamics.x_shape,
         'num_steps': dynamics.config.num_steps,
         'net_weights': dynamics.net_weights,
         'input_shape': dynamics.x_shape,
@@ -397,7 +375,6 @@ def run(
             'eps': dynamics.eps,
         })
 
-    #  run_params.update(dynamics.params)
     io.save_params(run_params, run_dir, name='run_params')
 
     if make_plots:
@@ -427,7 +404,7 @@ def run_dynamics(
     if not IS_CHIEF:
         return InferenceResults(None, None, None, None)
 
-    # Setup
+    # -- Setup -----------------------------
     print_steps = flags.get('print_steps', 5)
     if beta is None:
         beta = flags.get('beta', flags.get('beta_final', None))
@@ -445,13 +422,11 @@ def run_dynamics(
     run_data = DataContainer(flags.run_steps)
 
     template = '\n'.join([f'beta: {beta}',
-                          #  f'x_eps_arr: {dynamics.xeps}',
-                          #  f'v_eps_arr: {dynamics.veps}',
-                          #  f'eps: {dynamics.eps.numpy():.4g}',
                           f'net_weights: {dynamics.net_weights}'])
     io.log(f'Running inference with:\n {template}')
 
-    # Run 50 MD updates (w/o accept/reject) to ensure chains don't get stuck
+    # Run `md_steps MD updates (w/o accept/reject)
+    # to ensure chains don't get stuck
     if md_steps > 0:
         for _ in range(md_steps):
             mc_states, _ = dynamics.md_update((x, beta), training=False)
@@ -464,16 +439,7 @@ def run_dynamics(
         test_step = dynamics.test_step
         x, metrics = test_step((x, tf.constant(beta)))
 
-    #  header = run_data.get_header(metrics,
-    #                               skip=SKEYS,
-    #                               prepend=['{:^12s}'.format('step')])
-    #
-    #  io.print_header(header)
-    #  io.log(header.split('\n'))
-    # -------------------------------------------------------------
-
     x_arr = []
-
     def timed_step(x: tf.Tensor, beta: tf.Tensor):
         start = time.time()
         x, metrics = test_step((x, tf.constant(beta)))
@@ -489,22 +455,10 @@ def run_dynamics(
         summary_steps = flags.run_steps // 100
 
     steps = tf.range(flags.run_steps, dtype=tf.int64)
-    iter = track(enumerate(steps), total=len(steps),
-                 description='Inference...', transient=True,
-                 console=io.console)
-    #  if NUM_WORKERS == 1:
-    #  ctup = (CBARS['reset'], CBARS['green'],
-    #          CBARS['reset'], CBARS['reset'])
-    #  else:
-    #  steps = tqdm(steps, desc='running', unit='step',
-    #               bar_format=("%s{l_bar}%s{bar}%s{r_bar}%s" % ctup))
+    iter = track(enumerate(steps), total=len(steps), description='Inference',
+                 transient=True, console=io.console)
 
     for idx, step in iter:
-        #  if idx == 0 or step == 0:
-        #      header = run_data.get_header(metrics, skip=SKEYS, with_sep=False,
-        #                                   prepend=['{:^12s}'.format('step')])
-        #      io.log(header, style='green')
-
         x, metrics = timed_step(x, beta)
         run_data.update(step, metrics)  # update data after every accept/reject
 
@@ -514,9 +468,6 @@ def run_dynamics(
         if step % print_steps == 0:
             data_str = run_data.get_fstr(step, metrics, skip=SKEYS)
             io.log(data_str)
-
-        #  if (step + 1) % 1000 == 0:
-        #      io.log(header)
 
     return InferenceResults(dynamics=dynamics,
                             run_data=run_data,
