@@ -12,7 +12,7 @@ different topological sectors.
 %
 Specifically, we looked at how the effective energy, \(\mathcal{H} -
 \log|\mathcal{J}|\) varies during a trajectory, as shown in
-Fig.~\ref{fig:energyfig:energy_dists_traj,fig:effective_energy_ridgeplots}.
+Fig.~\ref{fig:energies_fb,}.
 %
 We immediately notice that the energy tends to increase during the first-half
 of the trajectory, before decreasing back towards its initial value.
@@ -26,11 +26,12 @@ In~\cite{Neal_2012} the authors introduced this idea, referred to as
 similar effect are discussed.
 %
 In Fig.~\ref{fig:sinQ_ridgeplots}, we look at how the continuously-valued
-topological charge,
+topological charge, \(\sin\mathcal{Q} \equiv
+\frac{1}{2\pi}\sum_{P}\sin{\phi_{P}}\)
 %
-\begin{equation}
-  \sin\mathcal{Q} \equiv \frac{1}{2\pi}\sum_{P}\sin{\phi_{P}}
-\end{equation}
+% \begin{equation}
+%   \sin\mathcal{Q} \equiv \frac{1}{2\pi}\sum_{P}\sin{\phi_{P}}
+% \end{equation}
 %
 varies during a trajectory.
 %
@@ -41,71 +42,87 @@ varies during a trajectory.
 %
 \begin{figure}[htpb]
   \centering
-  \includegraphics[width=\textwidth]{transformations/energy_dists_traj}
-  \caption{Illustration of the energy \(\mathcal{H}\) (top row) and re-scaled
-    energy \(\mathcal{H} - \sum{\log|\mathcal{J}|}\)(bottom row) at the
-  start, middle, and end of a trajectory during inference.}%
-  \label{fig:energy_dists_traj}
+  \includegraphics[width=0.75\textwidth]{transformations/energy_dists_traj}
+  % \caption{The rescaled energy \(\mathcal{H} -
+  % \sum{\log|\mathcal{J}|}\)} %at the start (blue), middle (orange), and end
+  %   %(green) of a trajectory during inference.}%
+  \label{fig:energies_fb}
 \end{figure}
 %
 \begin{figure}[htpb]
   \centering
-  \begin{subfigure}{0.48\textwidth}
+  % \begin{subfigure}{0.66\textwidth}
+  %   \centering
+  %   \includegraphics[width=\textwidth]{transformations/energy_dists_traj}
+  % \end{subfigure}
+  % \vspace{0.1cm}
+  \begin{subfigure}{0.33\textwidth}
+    \centering
     \includegraphics[width=\textwidth]{transformations/ridgeplots/Hwf_ridgeplot}
-    \caption{Forward direction, \(d = +1\)}
+    % \caption{Forward direction, \(d = +1\)}
   \end{subfigure}
-  \begin{subfigure}{0.48\textwidth}
+  \begin{subfigure}{0.33\textwidth}
     \includegraphics[width=\textwidth]{transformations/ridgeplots/Hwb_ridgeplot}
-    \caption{Backward direction, \(d = -1\)}
+    % \caption{Backward direction, \(d = -1\)}
   \end{subfigure}
-    \caption{Illustration of the effective energy \(\mathcal{H} -
-    \sum{\log|\mathcal{J}|}\) at each leapfrog step during the trajectory.}%
-    \label{fig:effective_energy_ridgeplots}
-\end{figure}
-%
-\begin{figure}[htpb]
-  \centering
-  \begin{subfigure}{0.48\textwidth}
+  % \caption{Illustration of the effective energy \(\mathcal{H} -
+  %   \sum{\log|\mathcal{J}|}\) at each leapfrog step during the trajectory.}%
+  %   \label{fig:effective_energy_ridgeplots}
+% \end{figure}
+% %
+% \begin{figure}[htpb]
+%   \centering
+  \begin{subfigure}{0.33\textwidth}
+    \includegraphics[width=\textwidth]{transformations/ridgeplots/plaqsf_ridgeplot}
+  \end{subfigure}
+  \begin{subfigure}{0.33\textwidth}
+    \includegraphics[width=\textwidth]{transformations/ridgeplots/plaqsb_ridgeplot}
+  \end{subfigure}
+    % \caption{Error in the average plaquette, \(\langle \phi_{P}\rangle\) for
+    % the forward (left) and backward (right) directions.}
+  %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+  \begin{subfigure}{0.33\textwidth}
     \includegraphics[width=\textwidth]{transformations/ridgeplots/sinQf_ridgeplot}
-    \caption{Forward direction, \(d = +1\)}
   \end{subfigure}
-  \begin{subfigure}{0.48\textwidth}
+  \begin{subfigure}{0.33\textwidth}
     \includegraphics[width=\textwidth]{transformations/ridgeplots/sinQb_ridgeplot}
-    \caption{Backward direction, \(d = -1\)}
   \end{subfigure}
-  \caption{Illustration of the continuously-valued topoological charge,
-  \(\sin\mathcal{Q}\) at each leapfrog step during the trajectory.}%
+  %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+  % \caption{Illustration of the effective energy \(\mathcal{H} -
+  %   \sum{\log|\mathcal{J}|}\) (top-row), and the continuously-valued
+  %   topoological charge, \(\sin\mathcal{Q}\) at each leapfrog step during the
+  %   trajectory.}%
   \label{fig:sinQ_ridgeplots}
 \end{figure}
 %
-\begin{figure}[htpb]
-  \centering
-  \begin{subfigure}{0.31\textwidth}
-    \includegraphics[width=\textwidth]{transformations/intQf_start_xrPlot}
-    \caption{Start, forward \(d=+1\).}
-  \end{subfigure}
-  \begin{subfigure}{0.31\textwidth}
-    \includegraphics[width=\textwidth]{transformations/intQf_mid_xrPlot}
-    \caption{Middle, forward \(d=+1\).}
-  \end{subfigure}
-  \begin{subfigure}{0.31\textwidth}
-    \includegraphics[width=\textwidth]{transformations/intQf_end_xrPlot}
-    \caption{End, forward \(d=+1\).}
-  \end{subfigure}
-  \begin{subfigure}{0.31\textwidth}
-    \includegraphics[width=\textwidth]{transformations/intQb_start_xrPlot}
-    \caption{Start, backward \(d=-1\).}
-  \end{subfigure}
-  \begin{subfigure}{0.31\textwidth}
-    \includegraphics[width=\textwidth]{transformations/intQb_mid_xrPlot}
-    \caption{Middle, backward \(d=-1\).}
-  \end{subfigure}
-  \begin{subfigure}{0.31\textwidth}
-    \includegraphics[width=\textwidth]{transformations/intQb_end_xrPlot}
-    \caption{End, backward \(d=-1\).}
-  \end{subfigure}
-  \caption{Illustration of the topological charge, \(\mathcal{Q}\) for each 
-  configuration at the beginning, middle and end of a trajectory proceeding in
-  the forward \(d = +1\) (top row) and backward \(d = -1\) (bottom row)
-  direction.}
-\end{figure}
+% \begin{figure}[htpb]
+%   \centering
+%   \begin{subfigure}{0.31\textwidth}
+%     \includegraphics[width=\textwidth]{transformations/intQf_start_xrPlot}
+%     \caption{Start, forward \(d=+1\).}
+%   \end{subfigure}
+%   \begin{subfigure}{0.31\textwidth}
+%     \includegraphics[width=\textwidth]{transformations/intQf_mid_xrPlot}
+%     \caption{Middle, forward \(d=+1\).}
+%   \end{subfigure}
+%   \begin{subfigure}{0.31\textwidth}
+%     \includegraphics[width=\textwidth]{transformations/intQf_end_xrPlot}
+%     \caption{End, forward \(d=+1\).}
+%   \end{subfigure}
+%   \begin{subfigure}{0.31\textwidth}
+%     \includegraphics[width=\textwidth]{transformations/intQb_start_xrPlot}
+%     \caption{Start, backward \(d=-1\).}
+%   \end{subfigure}
+%   \begin{subfigure}{0.31\textwidth}
+%     \includegraphics[width=\textwidth]{transformations/intQb_mid_xrPlot}
+%     \caption{Middle, backward \(d=-1\).}
+%   \end{subfigure}
+%   \begin{subfigure}{0.31\textwidth}
+%     \includegraphics[width=\textwidth]{transformations/intQb_end_xrPlot}
+%     \caption{End, backward \(d=-1\).}
+%   \end{subfigure}
+%   \caption{Illustration of the topological charge, \(\mathcal{Q}\) for each
+%   configuration at the beginning, middle and end of a trajectory proceeding in
+%   the forward \(d = +1\) (top row) and backward \(d = -1\) (bottom row)
+%   direction.}
+% \end{figure}
