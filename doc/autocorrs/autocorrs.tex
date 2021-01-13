@@ -1,0 +1,52 @@
+%\begin{document}
+\section{Integrated Autocorrelation Time}%
+\label{sec:integrated_autocorrelation_time}
+%
+We include below plots of the integrated autocorrelation time for the
+topological charge, \(\tau_{\mathrm{int}}^{\mathcal{Q}}\), for \(\mathcal{Q}
+\in \mathbb{Z}\).
+%
+\begin{figure}[htpb]
+  \centering
+  \begin{subfigure}{\textwidth}
+    \centering
+    \includegraphics[width=\textwidth]{autocorrs/tau_int_vs_draws}%
+    \caption{\label{fig:tau_int_vs_draws}Estimate of \(\tau_\mathrm{int}\) vs
+      number of draws (length of chain) across \(\beta = 5\) (left), \(\beta =
+      6\) (center), and \(\beta = 7\) (right), for both HMC (grayscale) and the
+    trained sampler (pink).}
+    % \caption{Estimate of \(\tau_{\mathrm{int}}^{\mathcal{Q}}\) vs number of
+    %   samples, $N$ for \(\beta = 5\) (left), \(6\) (middle), and \(7\)
+    %   (right).}%
+  \end{subfigure}
+  \begin{subfigure}{\textwidth}
+    \centering
+    \includegraphics[width=\textwidth]{autocorrs/tau_int_vs_traj_len}
+    \caption{\label{fig:tau_int_vs_traj_len}Estimate of \(\tau_{\mathrm{int}}\)
+      vs trajectory length, \(\lambda\) across \(\beta = 5\) (left), \(\beta =
+      6\) (center), and \(\beta = 7\) (right), for both HMC (grayscale) and the
+    trained sampler (pink).}
+    % \caption{Estimate of \(\tau_{\mathrm{int}}^{\mathcal{Q}}\) vs trajectory
+    %   length, \(N_\mathrm{LF} \cdot \varepsilon\) for \(\beta = 5\) (left), \(6\)
+    %   (middle), and \(7\) (right).}%
+      % \label{fig:tau_int_vs_traj_len}
+  \end{subfigure}%
+  \caption{Intermediate steps in the calculation of the integrated
+    autocorrelation time \(\tau_{\mathrm{int}}^{\mathcal{Q}}\) vs \(\beta\) for
+  \(\beta = 5\) (left), \(6\) (middle) \(7\) (right).}
+  % \begin{subfigure}{\textwidth}
+  %   \centering
+  %   \includegraphics[width=0.7\textwidth]{autocorrs/tau_int_vs_beta}
+  %   \caption{Estimate of \(\tau_{\mathrm{int}}^{\mathcal{Q}}\) vs \(\beta\) for
+  %     both HMC and L2HMC samplers.}%
+  %   \label{fig:tau_int_vs_beta}
+  % \end{subfigure}
+\end{figure}
+%
+\begin{figure}[htpb]
+  \centering
+  \includegraphics[width=0.475\textwidth]{autocorrs/tau_int_vs_beta}
+  \caption{Estimate of \(\tau_{\mathrm{int}}^{\mathcal{Q}}\) vs \(\beta\) for both
+    HMC and L2HMC samplers.}%
+  \label{fig:tau_int_vs_beta}
+\end{figure}
