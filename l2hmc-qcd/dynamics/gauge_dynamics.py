@@ -349,7 +349,7 @@ class GaugeDynamics(BaseDynamics):
             'net_config': net_config,
             'conv_config': conv_config,
             'kernel_initializer': kinit,
-            'lattice_shape': self.lattice_shape,
+            'x_shape': self.lattice_shape,
             'input_shapes': {
                 'x': xshape, 'v': (self.xdim,), 't': (2,)
             }
