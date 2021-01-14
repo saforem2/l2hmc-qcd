@@ -43,6 +43,7 @@ NET_WEIGHTS_L2MC = NetWeights(1., 1., 1., 1., 1., 1.)
 class DynamicsConfig:
     eps: float
     num_steps: int
+    clip_val: float = 0.
     hmc: bool = False
     eps_fixed: bool = False
     aux_weight: float = 0.
@@ -54,6 +55,7 @@ class DynamicsConfig:
 @dataclass
 class GaugeDynamicsConfig:
     eps: float                          # step size
+    #  xdim: int                        # dimensionality of target distribution
     num_steps: int                      # n leapfrog steps per acc/rej
     hmc: bool = False                   # run standard HMC?
     eps_fixed: bool = False             # Fixed step size?
@@ -62,7 +64,7 @@ class GaugeDynamicsConfig:
     use_mixed_loss: bool = False        # Use mixed loss?
     verbose: bool = False               # Verbose metric logging?
     use_ncp: bool = False               # Transform x using NCP?
-    lattice_shape: tuple = None         # (batch_size Lt Lx 2)
+    x_shape: tuple = None               # (batch_size Lt Lx 2)
     plaq_weight: float = 0.             # Weight of plaq term in loss
     charge_weight: float = 0.           # Weight of charge term in loss
     zero_init: bool = False             # Initialize weights as zeros?
@@ -74,4 +76,4 @@ class GaugeDynamicsConfig:
     use_tempered_traj: bool = False     # Use tempered trajectory?
     gauge_eq_masks: bool = False        # Use gauge eq. masks?
     log_dir: str = None                 # `log_dir` containing loadable nets
-    optimizer: str = 'adam'
+    optimizer: str = 'adam'             # optimizer to use for backprop
