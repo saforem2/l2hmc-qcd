@@ -1,6 +1,7 @@
 """
 file_io.py
 """
+# pylint:disable=wrong-import-position
 # pylint:disable=too-many-branches, too-many-statements
 # pylint:disable=too-many-locals,invalid-name,too-many-locals
 # pylint:disable=too-many-arguments
@@ -8,28 +9,42 @@ from __future__ import absolute_import, division, print_function
 
 import os
 import sys
+import json
 import time
 import typing
 import logging
 import datetime
 
-from typing import Any, Dict, Type
-from tqdm.auto import tqdm
-
 import joblib
 import numpy as np
 
-#  try:
-#      from rich.logging import RichHandler
-#      handlers = [RichHandler(rich_tracebacks=True)]
-#
-#  except ImportError:
-#      handlers = []
+from typing import Any, Dict, Type
+from tqdm.auto import tqdm
+from pathlib import Path
 
+from rich.console import Console
+from rich.theme import Theme
+from rich.progress import (
+    BarColumn,
+    DownloadColumn,
+    TextColumn,
+    TimeRemainingColumn,
+    Progress,
+    TaskID,
+)
 
-#  if typing.TYPE_CHECKING:
-#      from dynamics.base_dynamics import BaseDynamics
+console = Console(record=False,
+                  width=240,
+                  log_time_format='[%X] ',
+                  theme=Theme({'repr.number': '#71c6ff'}))
+#  FORMAT = "%(levelname)s:%(process)s:%(thread)s:%(name)s:%(message)s"
+#  print = console.print
+from rich.logging import RichHandler
 
+from config import PROJECT_DIR
+from utils.attr_dict import AttrDict
+
+# pylint:disable=wrong-import-position
 try:
     import horovod
     import horovod.tensorflow as hvd
@@ -38,26 +53,14 @@ try:
     LOCAL_RANK = hvd.local_rank()
     NUM_WORKERS = hvd.size()
     IS_CHIEF = (RANK == 0)
-    logging.info(f'Using horovod version: {horovod.__version__}')
-    logging.info(f'Using horovod from: {horovod.__file__}')
+    console.log(f'{RANK} :: Using horovod version: {horovod.__version__}')
+    console.log(f'{RANK} :: Using horovod from: {horovod.__file__}')
 
 except (ImportError, ModuleNotFoundError):
     HAS_HOROVOD = False
     RANK = LOCAL_RANK = 0
     NUM_WORKERS = 1
     IS_CHIEF = True
-
-    #  from utils import Horovod
-    #  hvd = Horovod()
-    #  HAS_HOROVOD = False
-
-#  RANK = hvd.rank()
-#  NUM_WORKERS = hvd.size()
-#  IS_CHIEF = (RANK == 0)
-
-# pylint:disable=wrong-import-position
-from config import PROJECT_DIR
-from utils.attr_dict import AttrDict
 
 LOG_LEVELS_AS_INTS = {
     'CRITICAL': 50,
@@ -77,85 +80,108 @@ LOG_LEVELS = {
 
 logging.getLogger('tensorflow').setLevel(logging.WARNING)
 logging.getLogger('arviz').setLevel(logging.ERROR)
-logger = logging.getLogger(__name__)
-logging_datefmt = '%Y-%m-%d %H:%M:%S'
-logging_level = logging.WARNING
-logging_format = (
-    '%(asctime)s %(levelname)s:%(process)s:%(thread)s:%(name)s:%(message)s'
-)
-
-if IS_CHIEF:
-    logging.basicConfig(
-        level=logging.ERROR,
-        format=logging_format,
-        datefmt=logging_datefmt,
-        stream=sys.stdout,
-    )
-else:
-    logging.basicConfig(
-        level=logging.WARNING,
-        format="%(asctime)s:%(levelname)s:%(message)s",
-        stream=None
-    )
 
 if HAS_HOROVOD:
-    logging_format = (
-        '%(asctime)s %(levelname)s:%(process)s:%(thread)s:'
-        + ('%05d' % hvd.rank()) + ':%(name)s:%(message)s'
+    console.log(' '.join([f'rank: {hvd.rank()}',
+                          f'local_rank: {hvd.local_rank()}',
+                          f'size: {hvd.size()}',
+                          f'local_size: {hvd.local_size()}']))
+
+#  if typing.TYPE_CHECKING:
+#      from dynamics.base_dynamics import BaseDynamics
+
+
+def filter_dict(d: dict, cond: callable, key: str = None):
+    """Filter dict using conditionals.
+
+    Explicitly, loop through key, val pairs and accumulate those entries for
+    which cond is True.
+
+    If a key is passed, we perform the search on `d[key]`.
+
+    Returns:
+        dict: Dictionary containing the matched items.
+    """
+    if key is not None:
+        val = d[key]
+        if isinstance(val, dict):
+            return {
+                k: v for k, v in val.items() if cond
+            }
+        raise ValueError('If passing a key, d[key] should be a dict.')
+    return {
+        k: v for k, v in d.items() if cond
+    }
+
+
+def _look(p, s, conds=None):
+    console.print(f'Looking in {p}...')
+    matches = [x for x in Path(p).rglob(f'*{s}*') if x.is_dir()]
+    if conds is not None:
+        if isinstance(conds, (list, tuple)):
+            for cond in conds:
+                matches = [x for x in matches if cond(x)]
+        else:
+            matches = [x for x in matches if cond(x)]
+
+    return matches
+
+
+def get_l2hmc_dirs(paths, search_str='L16_b'):
+    def _look(p, s, conds=None):
+        console.print(f'Looking in {p}...')
+        matches = [x for x in Path(p).rglob(f'*{s}*')]
+        if conds is not None:
+            if isinstance(conds, (list, tuple)):
+                for cond in conds:
+                    matches = [x for x in matches if cond(x)]
+            else:
+                matches = [x for x in matches if cond(x)]
+        return matches
+
+    dirs = []
+    conds = (
+        lambda x: 'GaugeModel_logs' in (str(x)),
+        lambda x: 'HMC_' not in str(x),
+        lambda x: Path(x).is_dir(),
     )
-    logging_level = logging.WARNING
-    if RANK > 0:
-        logging_level = logging.WARNING
+    if isinstance(paths, (list, tuple)):
+        for path in paths:
+            dirs += _look(path, search_str, conds)
+    else:
+        dirs = _look(paths, search_str, conds)
 
-    logging.basicConfig(level=logging_level,
-                        format=logging_format,
-                        datefmt=logging_datefmt,
-                        stream=sys.stdout if hvd.rank() == 0 else None)
-    logging.warning(' '.join([f'rank: {hvd.rank()}',
-                              f'local_rank: {hvd.local_rank()}',
-                              f'size: {hvd.size()}',
-                              f'local_size: {hvd.local_size()}']))
+    return dirs
 
 
-def in_notebook():
-    """Check if we're currently in a jupyter notebook."""
-    try:
-        # pylint:disable=import-outside-toplevel
-        from IPython import get_ipython
+def find_matching_files(d, search_str):
+    darr = [x for x in Path(d).iterdir() if x.is_dir()]
+    matches = []
+    for rd in darr:
+        results = sorted(rd.rglob(f'*{search_str}*'))
+        matches.extend(results)
 
-        try:
-            cfg = get_ipython().config
-            if 'IPKernelApp' not in cfg:
-                return False
-        except AttributeError:
-            return False
-    except ImportError:
-        return False
-    return True
+    return matches
 
 
-def log(s: str, level: str = 'INFO', out=sys.stdout, should_print=False):
+def print_header(header):
+    strs = header.split('\n')
+    for s in strs:
+        console.print(s, style='bold red')
+
+
+def rule(s: str = ' ', **kwargs: dict):
+    day = get_timestamp('%Y-%m-%d')
+    t = get_timestamp('%H:%M')
+    s = f'[{day} {t}] {s}'
+    console.rule(s, **kwargs)
+
+
+def log(s: str, level: str = 'INFO', out=console, style=None):
     """Print string `s` to stdout if and only if hvd.rank() == 0."""
     if RANK != 0:
         return
-    if NUM_WORKERS == 1:
-        if isinstance(s, (tuple, list)):
-            for i in s:
-                tqdm.write(i, file=out)
-        else:
-            tqdm.write(s, file=out)
-    else:
-        level = LOG_LEVELS_AS_INTS[level.upper()]
-        if isinstance(s, (list, tuple)):
-            if should_print:
-                _ = [print(s_) for s_ in s]
-            else:
-                _ = [logging.log(level, s_) for s_ in s]
-        else:
-            if should_print:
-                print(s)
-            else:
-                logging.log(level, s)
+    console.log(s, style=style, markup=True, highlight=True)
 
 
 def write(s: str, f: str, mode: str = 'a', nl: bool = True):
@@ -168,16 +194,7 @@ def write(s: str, f: str, mode: str = 'a', nl: bool = True):
 
 def print_dict(d: Dict, indent: int = 0, name: str = None, **kwargs):
     """Print nicely-formatted dictionary."""
-    indent_str = indent * ' '
-    if name is not None:
-        log(f'{indent_str}{name}:', **kwargs)
-        sep_str = indent_str + len(name) * '-'
-        log(sep_str, **kwargs)
-    for key, val in d.items():
-        if isinstance(val, (AttrDict, dict)):
-            print_dict(val, indent=indent, name=str(key), **kwargs)
-        else:
-            log(f'  {indent_str}{key}: {val}', **kwargs)
+    console.print(dict)
 
 
 def print_flags(flags: AttrDict):
@@ -227,19 +244,22 @@ def make_header_from_dict(
         append: list = None,
         prepend: list = None,
         split: bool = False,
+        with_sep: bool = True,
 ):
     """Build nicely formatted header with names of various metrics."""
     append = [] if append is None else append
     prepend = [] if prepend is None else prepend
     skip = [] if skip is None else skip
     keys = ['{:^12s}'.format(k) for k in data.keys() if k not in skip]
-    hstr = ''.join(prepend + keys + append)
-    sep = dash * len(hstr)
-    header = [sep, hstr, sep]
-    if split:
-        return header
-
-    return '\n'.join(header)
+    header = ''.join(prepend + keys + append)
+    if with_sep:
+        sep = dash * len(header)
+        header = [sep, header, sep]
+        return '\n'.join(header)
+    #  if split:
+    #      return header
+    #  return '\n'.join(header)
+    return header
 
 
 def log_and_write(
@@ -310,6 +330,13 @@ def save_dict(d: dict, out_dir: str, name: str = None):
     zfile = os.path.join(out_dir, f'{name}.z')
     savez(d, zfile, name=name)
 
+    json_file = os.path.join(out_dir, f'{name}.json')
+    try:
+        with open(json_file, 'w') as f:
+            json.dump(d, f, indent=4, ensure_ascii=False, cls=NumpyEncoder)
+    except TypeError:
+        log('Unable to save to `.json` file. Continuing...')
+
     txt_file = os.path.join(out_dir, f'{name}.txt')
     with open(txt_file, 'w') as f:
         for key, val in d.items():
@@ -333,12 +360,12 @@ def savez(obj: Any, fpath: str, name: str = None):
         fpath += '.z'
 
     if name is not None:
-        log(f'Saving {name} to {os.path.abspath(fpath)}.')
+        console.log(f'Saving {name} to {os.path.abspath(fpath)}.')
 
     joblib.dump(obj, fpath)
 
 
-def change_extension(fpath, ext):
+def change_extension(fpath: str, ext: str):
     """Change extension of `fpath` to `.ext`."""
     tmp = fpath.split('/')
     out_file = tmp[-1]
@@ -348,14 +375,33 @@ def change_extension(fpath, ext):
     return new_fpath
 
 
-def loadz(fpath):
+def loadz(fpath: str):
     """Load from `fpath` using `joblib.load`."""
     return joblib.load(fpath)
 
 
-def timeit(out_file=None, should_log=True):
+def timeit(fn: callable):
+    def timed(*args, **kwargs):
+        """Function to be timed."""
+        start_time = time.time()
+        result = fn(*args, **kwargs)
+        end_time = time.time()
+        dt = (end_time - start_time)
+        dt_s = (dt % 60)
+        dt_min = (dt // 60)
+        dt_ms = dt * 1000
+        tstr = f'`{fn.__name__}` took: {dt_ms:.3g}ms '
+        if dt_min > 0:
+            tstr += f' ({int(dt_min)} min {dt_s:3.2g} sec)'
+
+        log(tstr)
+        return result
+    return timed
+
+
+def timeit1(out_file: str = None, should_log: bool = True):
     """Timing decorator."""
-    def wrap(fn):
+    def wrap(fn: callable):
         def timed(*args, **kwargs):
             """Function to be timed."""
             start_time = time.time()
@@ -380,7 +426,7 @@ def timeit(out_file=None, should_log=True):
     return wrap
 
 
-def get_run_num(run_dir):
+def get_run_num(run_dir: str):
     """Get the integer label for naming `run_dir`."""
     dirnames = [
         i for i in os.listdir(run_dir)
@@ -400,27 +446,17 @@ def get_run_dir_fstr(flags: AttrDict):
     eps = config.get('eps', None)
     hmc = config.get('hmc', False)
     num_steps = config.get('num_steps', None)
-    lattice_shape = config.get('lattice_shape', None)
-
-    #  if beta is None:
-    #      beta_final = flags.get('beta_final', None)
-    #      if beta_final is None:
-    #          beta_init = flags.get('beta_init', None)
-    #          if beta_init is None:
-    #              raise ValueError('beta not specified.')
-    #          beta = beta_init
-    #      else:
-    #          beta = beta_final
+    x_shape = config.get('x_shape', None)
 
     fstr = ''
     if hmc:
         fstr += 'HMC_'
-    if lattice_shape is not None:
-        if lattice_shape[1] == lattice_shape[2]:
-            fstr += f'L{lattice_shape[1]}_b{lattice_shape[0]}_'
+    if x_shape is not None:
+        if x_shape[1] == x_shape[2]:
+            fstr += f'L{x_shape[1]}_b{x_shape[0]}_'
         else:
             fstr += (
-                f'L{lattice_shape[1]}_T{lattice_shape[2]}_b{lattice_shape[0]}_'
+                f'L{x_shape[1]}_T{x_shape[2]}_b{x_shape[0]}_'
             )
 
     if beta is not None:
@@ -445,9 +481,9 @@ def parse_configs(flags: AttrDict, debug: bool = False):
     if debug or 0 < flags.get('train_steps', None) < 1e4:
         fstr += 'DEBUG_'
 
-    lattice_shape = config.get('lattice_shape', None)
-    if lattice_shape is not None:
-        fstr += f'L{lattice_shape[1]}_b{lattice_shape[0]}'
+    x_shape = config.get('x_shape', None)
+    if x_shape is not None:
+        fstr += f'L{x_shape[1]}_b{x_shape[0]}'
 
     num_steps = config.get('num_steps', None)
     fstr += f'_lf{num_steps}'
@@ -581,15 +617,16 @@ def make_log_dir(
 
     if RANK == 0:
         check_else_make_dir(log_dir)
+        save_dict(configs, log_dir, name='train_configs')
         if log_file is not None:
             write(f'{log_dir}', log_file, 'a')
 
     return log_dir
 
 
-def make_run_dir(FLAGS, base_dir):
+def make_run_dir(configs: AttrDict, base_dir: str):
     """Automatically create `run_dir` for storing inference data."""
-    fstr = get_run_dir_fstr(FLAGS)
+    fstr = get_run_dir_fstr(configs)
     now = datetime.datetime.now()
     dstr = now.strftime('%Y-%m-%d-%H%M')
     run_str = f'{fstr}-{dstr}'
@@ -601,7 +638,9 @@ def make_run_dir(FLAGS, base_dir):
         run_str = f'{fstr}-{dstr}'
         run_dir = os.path.join(base_dir, run_str)
 
-    check_else_make_dir(run_dir)
+    if RANK == 0:
+        check_else_make_dir(run_dir)
+        save_dict(configs, run_dir, name='inference_configs')
 
     return run_dir
 
@@ -611,6 +650,7 @@ def save_network_weights(dynamics, train_dir):
     xnets = dynamics.xnets
     vnets = dynamics.vnets
     wdir = os.path.join(train_dir, 'dynamics_weights')
+
     check_else_make_dir(wdir)
     if dynamics.config.separate_networks:
         iterable = enumerate(zip(xnets, vnets))
@@ -658,7 +698,7 @@ def save_inference(run_dir, run_data):
     run_data.flush_data_strs(log_file, mode='a')
 
 
-def get_subdirs(root_dir):
+def get_subdirs(root_dir: str):
     """Returns all subdirectories in `root_dir`."""
     subdirs = [
         os.path.join(root_dir, i)
@@ -666,3 +706,50 @@ def get_subdirs(root_dir):
         if os.path.isdir(os.path.join(root_dir, i))
     ]
     return subdirs
+
+
+class NumpyEncoder(json.JSONEncoder):
+    """ Custom encoder for numpy data types """
+    def default(self, obj):
+        if isinstance(obj, Path):
+            return str(obj)
+
+        if isinstance(obj, (np.int_, np.intc, np.intp, np.int8,
+                            np.int16, np.int32, np.int64, np.uint8,
+                            np.uint16, np.uint32, np.uint64)):
+
+            return int(obj)
+
+        if isinstance(obj, (np.float_, np.float16, np.float32, np.float64)):
+            return float(obj)
+
+        if isinstance(obj, (np.complex_, np.complex64, np.complex128)):
+            return {'real': obj.real, 'imag': obj.imag}
+
+        if isinstance(obj, (np.ndarray,)):
+            return obj.tolist()
+
+        if isinstance(obj, (np.bool_)):
+            return bool(obj)
+
+        if isinstance(obj, (np.void)):
+            return None
+
+        return json.JSONEncoder.default(self, obj)
+
+
+def in_notebook():
+    """Check if we're currently in a jupyter notebook."""
+    try:
+        # pylint:disable=import-outside-toplevel
+        from IPython import get_ipython
+
+        try:
+            cfg = get_ipython().config
+            if 'IPKernelApp' not in cfg:
+                return False
+        except AttributeError:
+            return False
+    except ImportError:
+        return False
+    return True

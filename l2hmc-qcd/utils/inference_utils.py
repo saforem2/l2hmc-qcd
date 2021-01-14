@@ -6,56 +6,30 @@ Collection of helper methods to use for running inference on trained model.
 from __future__ import absolute_import, division, print_function
 
 import os
-import sys
 import time
-import logging
-from typing import Optional
 
-from tqdm.auto import tqdm
+from rich.progress import track
+from typing import Optional
+from pathlib import Path
+from collections import namedtuple
+
 import tensorflow as tf
-try:
-    import horovod.tensorflow as hvd
-    HAS_HOROVOD = True
-    RANK = hvd.rank()
-    IS_CHIEF = (RANK == 0)
-    NUM_NODES = hvd.size()
-except (ImportError, ModuleNotFoundError):
-    HAS_HOROVOD = False
-    RANK = 0
-    IS_CHIEF = (RANK == 0)
-    NUM_NODES = 1
 
 import utils.file_io as io
 
-from config import (HEADER, PI, PROJECT_DIR, SEP, TF_FLOAT, CBARS, LOGS_DIR,
-                    GAUGE_LOGS_DIR, HMC_LOGS_DIR)
+from config import HMC_LOGS_DIR, PI, TF_FLOAT
+from utils import SKEYS
+from utils.file_io import IS_CHIEF, NUM_WORKERS
+from utils.attr_dict import AttrDict
+from utils.summary_utils import summarize_dict
+from utils.plotting_utils import plot_data
+from utils.data_containers import DataContainer
+from dynamics.config import GaugeDynamicsConfig
 from dynamics.gauge_dynamics import (build_dynamics, convert_to_angle,
                                      GaugeDynamics)
-from utils.attr_dict import AttrDict
-from utils.plotting_utils import plot_data
-from utils.summary_utils import summarize_dict
-from utils.data_containers import DataContainer
 
-# pylint:disable=no-member
-
-if IS_CHIEF:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s:%(levelname)s:%(message)s",
-        stream=sys.stdout
-    )
-else:
-    logging.basicConfig(
-        level=logging.CRITICAL,
-        format="%(asctime)s:%(levelname)s:%(message)s",
-        stream=None
-    )
-
-
-SKIP_KEYS = ['charges', 'sldf', 'sldb', 'Hf', 'Hb', 'Hwf', 'Hwb',
-             'ldf_start', 'ldb_start', 'ldf_mid', 'ldf_end',
-             'ldb_mid', 'ldb_end', 'Hf_start', 'Hf_mid', 'Hf_end',
-             'Hb_start', 'Hb_mid', 'Hb_end']
+InferenceResults = namedtuple('InferenceResults',
+                              ['dynamics', 'run_data', 'x', 'x_arr'])
 
 
 def restore_from_train_flags(args):
@@ -66,12 +40,96 @@ def restore_from_train_flags(args):
     return flags
 
 
+def _find_configs(log_dir):
+    configs_file = os.path.join(log_dir, 'configs.z')
+    if os.path.isfile(configs_file):
+        return io.loadz(configs_file)
+    configs = [
+        x for x in Path(log_dir).rglob('*configs.z*') if x.is_file()
+    ]
+    if configs != []:
+        return io.loadz(configs[0])
+    configs = [
+        x for x in Path(log_dir).rglob('*FLAGS.z*') if x.is_file()
+    ]
+    if configs != []:
+        return io.loadz(configs[0])
+
+    return None
+
+
+def short_training(
+        train_steps: int,
+        beta: float,
+        log_dir: str,
+        dynamics: GaugeDynamics,
+        x: tf.Tensor = None,
+):
+    """Perform a brief training run prior to running inference."""
+    ckpt_dir = os.path.join(log_dir, 'training', 'checkpoints')
+    ckpt = tf.train.Checkpoint(dynamics=dynamics, optimizer=dynamics.optimizer)
+    manager = tf.train.CheckpointManager(ckpt, ckpt_dir, max_to_keep=5)
+    current_step = 0
+    if manager.latest_checkpoint:
+        io.log(f'Restored model from: {manager.latest_checkpoint}')
+        ckpt.restore(manager.latest_checkpoint)
+        current_step = dynamics.optimizer.iterations.numpy()
+
+    if x is None:
+        x = convert_to_angle(tf.random.normal(dynamics.x_shape))
+
+    train_data = DataContainer(current_step+train_steps, print_steps=1)
+
+    dynamics.compile(loss=dynamics.calc_losses,
+                     optimizer=dynamics.optimizer,
+                     experimental_run_tf_function=False)
+
+    x, metrics = dynamics.train_step((x, tf.constant(beta)))
+
+    header = train_data.get_header(metrics, skip=SKEYS,
+                                   prepend=['{:^12s}'.format('step')])
+    io.log(header.split('\n'))
+    for step in range(current_step, current_step + train_steps):
+        start = time.time()
+        x, metrics = dynamics.train_step((x, tf.constant(beta)))
+        metrics.dt = time.time() - start
+        data_str = train_data.get_fstr(step, metrics, skip=SKEYS)
+        io.log(data_str)
+
+    return dynamics, train_data, x
+
+
+def _get_hmc_log_str(configs):
+    dynamics_config = configs.get('dynamics_config', None)
+
+    lf = dynamics_config.get('num_steps', None)
+    eps = dynamics_config.get('eps', None)
+    ls = dynamics_config.get('x_shape', None)
+    bs = ls[0]  # batch size
+    nx = ls[1]  # size in 'x' direction
+
+    b = configs.get('beta', None)
+    if b is None:
+        b = configs.get('beta_final', None)
+
+    log_str = (
+        f'HMC_L{nx}_b{bs}_beta{float(b)}_lf{lf}_eps{eps}'.replace('.0', '')
+    )
+
+    log_str = log_str.replace('.', '')
+
+    return log_str
+
+
 def run_hmc(
         args: AttrDict,
         hmc_dir: str = None,
         skip_existing: bool = False,
         save_x: bool = False,
-) -> (GaugeDynamics, DataContainer, tf.Tensor):
+        therm_frac: float = 0.33,
+        num_chains: int = 16,
+        make_plots: bool = True,
+) -> (InferenceResults):
     """Run HMC using `inference_args` on a model specified by `params`.
 
     NOTE:
@@ -82,39 +140,44 @@ def run_hmc(
         - 'beta'
         - 'num_steps'
         - 'run_steps'
-        - 'lattice_shape'
+        - 'x_shape'
     """
     if not IS_CHIEF:
-        return None, None, None, None
+        return InferenceResults(None, None, None, None)
 
     if hmc_dir is None:
-        #  root_dir = os.path.join(HMC_LOGS_DIR)
-        #  root_dir = os.path.join(GAUGE_LOGS_DIR, 'hmc_logs')
         month_str = io.get_timestamp('%Y_%m')
         hmc_dir = os.path.join(HMC_LOGS_DIR, month_str)
 
     io.check_else_make_dir(hmc_dir)
-    SKIP_KEYS.extend('sumlogdet')
 
     def get_run_fstr(run_dir):
+        # take relevant part of run_dir:
+        # ```
+        # /path/to/HMC_L16_b512... -> HMC_L16_b512...
+        # ```
         _, tail = os.path.split(run_dir)
+        # strip off timestamp at the end of `run_dir`
         fstr = tail.split('-')[0]
         return fstr
 
     if skip_existing:
-        run_dirs = [os.path.join(hmc_dir, i) for i in os.listdir(hmc_dir)]
-        run_fstrs = [get_run_fstr(i) for i in run_dirs]
-        run_fstr = io.get_run_dir_fstr(args)
-        if run_fstr in run_fstrs:
-            io.log('ERROR:Existing run found! Skipping.')
-            return None, None, None, None
+        fstr = io.get_run_dir_fstr(args)
+        base_dir = os.path.dirname(hmc_dir)
+        matches = list(
+            Path(base_dir).rglob(f'*{fstr}*')
+        )
+        if len(matches) > 0:
+            io.rule('Existing run with current parameters found!')
+            io.log(args)
+            return InferenceResults(None, None, None, None)
 
     dynamics = build_dynamics(args)
-    dynamics, run_data, x, x_arr = run(dynamics, args,
-                                       runs_dir=hmc_dir,
-                                       save_x=save_x)
+    inference_results = run(dynamics=dynamics, args=args, runs_dir=hmc_dir,
+                            make_plots=make_plots, save_x=save_x,
+                            therm_frac=therm_frac, num_chains=num_chains)
 
-    return dynamics, run_data, x, x_arr
+    return inference_results
 
 
 def load_and_run(
@@ -125,7 +188,7 @@ def load_and_run(
 ) -> (GaugeDynamics, DataContainer, tf.Tensor):
     """Load trained model from checkpoint and run inference."""
     if not IS_CHIEF:
-        return None, None, None, None
+        return InferenceResults(None, None, None, None)
 
     io.print_dict(args)
     ckpt_dir = os.path.join(args.log_dir, 'training', 'checkpoints')
@@ -147,23 +210,102 @@ def load_and_run(
         io.log(f'Restored x from: {xfile}.')
         x = io.loadz(xfile)
 
-    dynamics, run_data, x, x_arr = run(dynamics, args, x=x,
-                                       runs_dir=runs_dir, save_x=save_x)
+    inference_results = run(dynamics, args, x=x,
+                            runs_dir=runs_dir, save_x=save_x)
 
-    return dynamics, run_data, x, x_arr
+    return inference_results
+
+
+def run_inference_from_log_dir(
+        log_dir: str,
+        run_steps: int = 5000,
+        beta: float = None,
+        eps: float = None,
+        make_plots: bool = True,
+        train_steps: int = 10,
+        therm_frac: float = 0.33,
+        batch_size: int = 16,
+        num_chains: int = 16,
+        x: tf.Tensor = None,
+) -> InferenceResults:      # (type: InferenceResults)
+    """Run inference by loading networks in from `log_dir`."""
+    configs = _find_configs(log_dir)
+    if configs is None:
+        raise FileNotFoundError(
+            f'Unable to load configs from `log_dir`: {log_dir}. Exiting'
+        )
+
+    if eps is not None:
+        configs['dynamics_config']['eps'] = eps
+
+    else:
+        try:
+            eps_file = os.path.join(log_dir, 'training', 'models', 'eps.z')
+            eps = io.loadz(eps_file)
+        except FileNotFoundError:
+            eps = configs.get('dynamics_config', None).get('eps', None)
+
+    if beta is not None:
+        configs.update({'beta': beta, 'beta_final': beta})
+
+    if batch_size is not None:
+        batch_size = int(batch_size)
+        prev_shape = configs['dynamics_config']['x_shape']
+        new_shape = (batch_size, *prev_shape[1:])
+        configs['dynamics_config']['x_shape'] = new_shape
+
+    configs = AttrDict(configs)
+    dynamics = build_dynamics(configs)
+    xnet, vnet = dynamics._load_networks(log_dir)
+    dynamics.xnet = xnet
+    dynamics.vnet = vnet
+
+    if train_steps > 0:
+        dynamics, train_data, x = short_training(train_steps,
+                                                 configs.beta_final,
+                                                 log_dir, dynamics, x=x)
+    else:
+        dynamics.compile(loss=dynamics.calc_losses,
+                         optimizer=dynamics.optimizer,
+                         experimental_run_tf_function=False)
+
+    _, log_str = os.path.split(log_dir)
+
+    if x is None:
+        x = convert_to_angle(tf.random.normal(dynamics.x_shape))
+
+    configs['run_steps'] = run_steps
+    configs['print_steps'] = max((run_steps // 100, 1))
+    configs['md_steps'] = 100
+    runs_dir = os.path.join(log_dir, 'LOADED', 'inference')
+    io.check_else_make_dir(runs_dir)
+    io.save_dict(configs, runs_dir, name='inference_configs')
+    inference_results = run(dynamics=dynamics,
+                            args=configs, x=x, beta=beta,
+                            runs_dir=runs_dir, make_plots=make_plots,
+                            therm_frac=therm_frac, num_chains=num_chains)
+
+    return inference_results
 
 
 def run(
         dynamics: GaugeDynamics,
         args: AttrDict,
         x: tf.Tensor = None,
+        beta: float = None,
         runs_dir: str = None,
         make_plots: bool = True,
+        therm_frac: float = 0.33,
+        num_chains: int = 16,
         save_x: bool = False,
-) -> (GaugeDynamics, DataContainer, tf.Tensor):
-    """Run inference."""
+) -> (InferenceResults):
+    """Run inference. (Note: Higher-level than `run_dynamics`)."""
+    if num_chains > 16:
+        print(f'Reducing `num_chains` from: {num_chains} to {16}.')
+        num_chains = 16
+
     if not IS_CHIEF:
-        return None, None, None, None
+        return InferenceResults(None, None, None, None)
 
     if runs_dir is None:
         if dynamics.config.hmc:
@@ -171,15 +313,7 @@ def run(
         else:
             runs_dir = os.path.join(args.log_dir, 'inference')
 
-    eps = dynamics.eps
-    if hasattr(eps, 'numpy'):
-        eps = eps.numpy()
-
-    try:
-        args.eps = eps
-    except AttributeError:
-        args.update({'eps': eps})
-
+    md_steps = args.get('md_steps', 50)
     io.check_else_make_dir(runs_dir)
     run_dir = io.make_run_dir(args, runs_dir)
     data_dir = os.path.join(run_dir, 'run_data')
@@ -191,14 +325,17 @@ def run(
 
     args.logging_steps = 1
     run_steps = args.get('run_steps', 2000)
-    beta = args.get('beta', None)
     if beta is None:
-        beta = args.get('beta_final', None)
+        beta = args.get('beta_final', args.get('beta', None))
 
     if x is None:
         x = convert_to_angle(tf.random.normal(shape=dynamics.x_shape))
 
-    run_data, x, x_arr = run_dynamics(dynamics, args, x, save_x=save_x)
+    results = run_dynamics(dynamics=dynamics,
+                           flags=args, x=x, beta=beta,
+                           save_x=save_x, md_steps=md_steps)
+    run_data = results.run_data
+
     run_data.update_dirs({
         'log_dir': args.log_dir,
         'run_dir': run_dir,
@@ -212,39 +349,65 @@ def run(
     run_params = {
         'hmc': dynamics.config.hmc,
         'run_dir': run_dir,
-        'eps': eps,
         'beta': beta,
         'run_steps': run_steps,
         'plaq_weight': dynamics.plaq_weight,
         'charge_weight': dynamics.charge_weight,
-        'lattice_shape': dynamics.lattice_shape,
+        'x_shape': dynamics.x_shape,
         'num_steps': dynamics.config.num_steps,
         'net_weights': dynamics.net_weights,
         'input_shape': dynamics.x_shape,
     }
-    #  run_params.update(dynamics.params)
+
+    if hasattr(dynamics, 'xeps') and hasattr(dynamics, 'veps'):
+        xeps_avg = tf.reduce_mean(dynamics.xeps)
+        veps_avg = tf.reduce_mean(dynamics.veps)
+        run_params.update({
+            'xeps': dynamics.xeps,
+            'veps': dynamics.veps,
+            'xeps_avg': xeps_avg,
+            'veps_avg': veps_avg,
+            'eps_avg': (xeps_avg + veps_avg) / 2.,
+        })
+
+    elif hasattr(dynamics, 'eps'):
+        run_params.update({
+            'eps': dynamics.eps,
+        })
+
     io.save_params(run_params, run_dir, name='run_params')
 
     if make_plots:
-        plot_data(run_data, run_dir, args, thermalize=True, params=run_params)
+        _ = plot_data(data_container=run_data,
+                      flags=args,
+                      params=run_params,
+                      out_dir=run_dir,
+                      hmc=dynamics.config.hmc,
+                      therm_frac=therm_frac,
+                      num_chains=num_chains)
 
-    return dynamics, run_data, x, x_arr
+    return InferenceResults(dynamics=results.dynamics,
+                            run_data=run_data,
+                            x=results.x,
+                            x_arr=results.x_arr)
 
 
 def run_dynamics(
         dynamics: GaugeDynamics,
         flags: AttrDict,
         x: tf.Tensor = None,
+        beta: float = None,
         save_x: bool = False,
         md_steps: int = 0,
-) -> (DataContainer, tf.Tensor, list):
+) -> (InferenceResults):
     """Run inference on trained dynamics."""
     if not IS_CHIEF:
-        return None, None, None
+        return InferenceResults(None, None, None, None)
 
-    # Setup
+    # -- Setup -----------------------------
     print_steps = flags.get('print_steps', 5)
-    beta = flags.get('beta', flags.get('beta_final', None))
+    if beta is None:
+        beta = flags.get('beta', flags.get('beta_final', None))
 
     test_step = dynamics.test_step
     if flags.get('compile', True):
@@ -259,14 +422,14 @@ def run_dynamics(
     run_data = DataContainer(flags.run_steps)
 
     template = '\n'.join([f'beta: {beta}',
-                          f'eps: {dynamics.eps.numpy():.4g}',
                           f'net_weights: {dynamics.net_weights}'])
     io.log(f'Running inference with:\n {template}')
 
-    # Run 50 MD updates (w/o accept/reject) to ensure chains don't get stuck
+    # Run `md_steps MD updates (w/o accept/reject)
+    # to ensure chains don't get stuck
     if md_steps > 0:
         for _ in range(md_steps):
-            mc_states, _ = dynamics.md_update(x, beta, training=False)
+            mc_states, _ = dynamics.md_update((x, beta), training=False)
             x = mc_states.out.x
 
     try:
@@ -276,15 +439,7 @@ def run_dynamics(
         test_step = dynamics.test_step
         x, metrics = test_step((x, tf.constant(beta)))
 
-    header = run_data.get_header(metrics,
-                                 skip=SKIP_KEYS,
-                                 prepend=['{:^12s}'.format('step')])
-    #  io.log(header)
-    io.log(header.split('\n'), should_print=True)
-    # -------------------------------------------------------------
-
     x_arr = []
-
     def timed_step(x: tf.Tensor, beta: tf.Tensor):
         start = time.time()
         x, metrics = test_step((x, tf.constant(beta)))
@@ -294,23 +449,27 @@ def run_dynamics(
 
         return x, metrics
 
-    steps = tf.range(flags.run_steps, dtype=tf.int64)
-    if NUM_NODES == 1:
-        ctup = (CBARS['reset'], CBARS['green'],
-                CBARS['reset'], CBARS['reset'])
-        steps = tqdm(steps, desc='running', unit='step',
-                     bar_format=("%s{l_bar}%s{bar}%s{r_bar}%s" % ctup))
+    if flags.run_steps < 1000:
+        summary_steps = 5
+    else:
+        summary_steps = flags.run_steps // 100
 
-    for step in steps:
+    steps = tf.range(flags.run_steps, dtype=tf.int64)
+    tracked_iter = track(enumerate(steps), total=len(steps),
+                         description='Inference', transient=True,
+                         console=io.console)
+
+    for idx, step in tracked_iter:
         x, metrics = timed_step(x, beta)
-        run_data.update(step, metrics)
+        run_data.update(step, metrics)  # update data after every accept/reject
+
+        if step % summary_steps == 0:
+            summarize_dict(metrics, step, prefix='testing')
 
         if step % print_steps == 0:
-            summarize_dict(metrics, step, prefix='testing')
-            data_str = run_data.get_fstr(step, metrics, skip=SKIP_KEYS)
-            io.log(data_str, should_print=True)
+            data_str = run_data.get_fstr(step, metrics, skip=SKEYS)
+            io.log(data_str)
 
-        if (step + 1) % 1000 == 0:
-            io.log(header, should_print=True)
-
-    return run_data, x, x_arr
+    return InferenceResults(dynamics=dynamics,
+                            run_data=run_data,
+                            x=x, x_arr=x_arr)

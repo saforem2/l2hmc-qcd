@@ -4,18 +4,23 @@ hmc.py
 Runs generic HMC by loading in from `config.BIN_DIR/hmc_configs.json`
 """
 from __future__ import absolute_import, division, print_function
-import argparse
+
 import os
 import json
 import logging
-from tqdm.auto import trange, tqdm
-import tensorflow as tf
+import argparse
+
 import utils
+import random
+import tensorflow as tf
+
 from config import CBARS
+from tqdm.auto import tqdm, trange
 
 try:
     import horovod
     import horovod.tensorflow as hvd
+
     try:
         RANK = hvd.rank()
     except ValueError:
@@ -35,12 +40,11 @@ try:
 except (ImportError, ModuleNotFoundError):
     HAS_HOROVOD = False
 
-
 import utils.file_io as io
 
-from utils.inference_utils import run_hmc
+from config import BIN_DIR, GAUGE_LOGS_DIR
 from utils.attr_dict import AttrDict
-from config import GAUGE_LOGS_DIR, BIN_DIR
+from utils.inference_utils import run_hmc
 
 
 def parse_args():
@@ -52,6 +56,11 @@ def parse_args():
     parser.add_argument('--json_file', dest='json_file',
                         type=str, default=None, required=False,
                         help='json file containing HMC config')
+
+    parser.add_argument('--x_shape', dest='x_shape',
+                        type=lambda s: [int(i) for i in s.split(',')],
+                        default=None, required=False,
+                        help='Specify shape of lattice (batch, Lt, Lx, 2)')
 
     parser.add_argument('--run_steps', dest='run_steps',
                         type=int, default=None, required=False,
@@ -74,46 +83,52 @@ def parse_args():
     return parser.parse_args()
 
 
-def multiple_runs(json_file=None):
-    lattice_shapes = [
-        #  (128, 4, 4, 2),
-        (128, 8, 8, 2),
-        (128, 16, 16, 2),
-    ]
-    num_steps = [10, 15, 20]
-    run_steps = 5000
-    betas = [3., 4., 4.5, 5., 6.]
-    eps = [0.05, 0.1, 0.15, 0.2, 0.25, 0.3]
+def check_existing(beta, num_steps, eps):
+    from config import HMC_LOGS_DIR
+
+    root_dir = os.path.abspath(os.path.join(HMC_LOGS_DIR, '2021_01'))
+    runs = os.listdir(root_dir)
+    dirname = f'HMC_L16_b512_beta{beta}_lf{num_steps}_eps{eps}'
+    match = False
+    for run in runs:
+        if run.startswith(dirname):
+            match = True
+
+    return match
+
+
+def multiple_runs(flags, json_file=None):
+    default = (512, 16, 16, 2)
+    run_steps = flags.run_steps if flags.run_steps is not None else 125000
+    shape = flags.x_shape if flags.x_shape is not None else default
+
+    betas = [5.0, 6.0, 7.0]
+    num_steps = [10, 15, 20, 25]
+    eps = [0.025, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3]
     #  eps = [0.1, 0.125, 0.15, 0.175, 0.2]
 
-    # =====
-    # NOTE: Color tuples for tqdm formatting follow the pattern:
-    # (left_text, bar, right_text, reset)
-    lstup = (CBARS['reset'], CBARS['red'], CBARS['reset'], CBARS['reset'])
-    nstup = (CBARS['reset'], CBARS['blue'], CBARS['reset'], CBARS['reset'])
-    btup = (CBARS['reset'], CBARS['magenta'], CBARS['reset'], CBARS['reset'])
-    etup = (CBARS['reset'], CBARS['cyan'], CBARS['reset'], CBARS['reset'])
-    eps = tqdm(eps, desc='eps', unit='step',
-               bar_format=("%s{l_bar}%s{bar}%s{r_bar}%s" % etup))
-    betas = tqdm(betas, desc='betas', unit='step',
-                 bar_format=("%s{l_bar}%s{bar}%s{r_bar}%s" % btup))
-    num_steps = tqdm(num_steps, desc='num_steps', unit='step',
-                     bar_format=("%s{l_bar}%s{bar}%s{r_bar}%s" % nstup))
-    lattice_shapes = tqdm(lattice_shapes, desc='lattice_shapes', unit='step',
-                          bar_format=("%s{l_bar}%s{bar}%s{r_bar}%s" % lstup))
-    # pylint:disable=invalid-name
-    for ls in lattice_shapes:
-        for ns in num_steps:
-            for b in betas:
-                for e in eps:
-                    args = AttrDict({
-                        'eps': e,
-                        'beta': b,
-                        'num_steps': ns,
-                        'run_steps': run_steps,
-                        'lattice_shape': ls,
-                    })
-                    _ = main(args, json_file=json_file)
+    for b in random.sample(betas, len(betas)):
+        for ns in random.sample(num_steps, len(num_steps)):
+            for e in random.sample(eps, len(eps)):
+                args = AttrDict({
+                    'eps': e,
+                    'beta': b,
+                    'num_steps': ns,
+                    'run_steps': run_steps,
+                    'x_shape': shape,
+                })
+                exists = check_existing(b, ns, e)
+                if exists:
+                    io.rule('Skipping existing run!')
+                    #  io.log(
+                    #      'Found existing run with: '
+                    #      f'beta: {beta}, lf: {ns}, eps: {e:.2g}, '
+                    #      'skipping!'
+                    #  )
+                    #  io.rule('continuing!')
+                    continue
+
+                _ = main(args, json_file=json_file)
 
 
 def load_hmc_flags(json_file=None):
@@ -132,9 +147,9 @@ def main(args, json_file=None):
     """Main method for running HMC."""
     flags = load_hmc_flags(json_file)
 
-    if args.get('lattice_shape', None) is not None:
-        flags['dynamics_config']['lattice_shape'] = args.lattice_shape
-        #  flags.dynamics_config['lattice_shape'] = args.lattice_shape
+    if args.get('x_shape', None) is not None:
+        flags['dynamics_config']['x_shape'] = args.x_shape
+        #  flags.dynamics_config['x_shape'] = args.x_shape
 
     if args.get('beta', None) is not None:
         flags.beta = args.beta
@@ -147,16 +162,16 @@ def main(args, json_file=None):
     if args.get('eps', None) is not None:
         flags.dynamics_config['eps'] = args.eps
 
-    if args.get('num-steps', None) is not None:
+    if args.get('num_steps', None) is not None:
         flags.dynamics_config['num_steps'] = args.num_steps
 
-    return run_hmc(flags)
+    return run_hmc(flags, skip_existing=True, num_chains=4, make_plots=True)
 
 
 if __name__ == '__main__':
     FLAGS = parse_args()
     FLAGS = AttrDict(FLAGS.__dict__)  # pylint:disable=protected-access
     if FLAGS.run_loop:
-        multiple_runs(FLAGS.json_file)
+        multiple_runs(FLAGS, FLAGS.json_file)
     else:
         _ = main(FLAGS, FLAGS.json_file)

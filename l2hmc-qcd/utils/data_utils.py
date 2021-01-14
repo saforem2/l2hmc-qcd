@@ -12,8 +12,10 @@ import os
 
 import arviz as az
 import numpy as np
+import tensorflow as tf
 import pandas as pd
 import xarray as xr
+from dataclasses import dataclass
 import seaborn as sns
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -34,8 +36,258 @@ mpl.style.use('fast')
 sns.set_palette('bright')
 TLS_DEFAULT = mpl.rcParams['xtick.labelsize']
 
+@dataclass
+class RunParams:
+    hmc: bool
+    run_dir: str
+    eps: float
+    beta: float
+    run_steps: int
+    plaq_weight: float
+    charge_weight: float
+    num_steps: int
+    x_shape: tuple
+    input_shape: tuple
+
+    def __post__init__(self):
+        self.traj_len = self.num_steps * self.eps
+
+
+@dataclass
+class ChargeData:
+    q: tf.Tensor
+    dq: tf.Tensor
+    params: RunParams
+
 
 # pylint:disable=invalid-name
+
+def filter_dict(d, cond, key=None):
+    if key is not None:
+        val = d[key]
+        if isinstance(val, dict):
+            return {
+                k: v for k, v in val.items() if cond
+            }
+        raise ValueError('If passing a key, d[key] must be a dict.')
+    return {
+        k: v for k, v in d.items() if cond
+    }
+
+
+def _look(p, s, conds=None):
+    print(f'Looking in {p}...')
+    matches = [x for x in Path(p).rglob(f'*{s}*')]
+    if conds is not None:
+        if isinstance(conds, (list, tuple)):
+            for cond in conds:
+                matches = [x for x in matches if cond(x)]
+        else:
+            matches = [x for x in matches if cond(x)]
+
+    return matches
+
+
+def _get_dirs(paths, hmc=False):
+    def _look(p, s, conds=None):
+        print(f'Looking in {p}...')
+        matches = [x for x in Path(p).rglob(f'*{s}*')]
+        if conds is not None:
+            if isinstance(conds, (list, tuple)):
+                for cond in conds:
+                    matches = [x for x in matches if cond(x)]
+            else:
+                matches = [x for x in matches if cond(x)]
+        return matches
+
+    dirs = []
+    if hmc:
+        search_str = 'HMC_L16_b'
+        conds = (
+            lambda x: 'hmc_logs' in str(x),
+            lambda x: 'hmc' in str(x).lower()
+        )
+    else:
+        search_str = 'L16_b2048'
+        conds = (
+            lambda x: 'GaugeModel_logs' in (str(x)),
+            lambda x: 'HMC_' not in str(x),
+            lambda x: Path(x).is_dir(),
+        )
+
+    if isinstance(paths, (list, tuple)):
+        for path in paths:
+            dirs += _look(path, search_str, conds)
+
+    else:
+        dirs = _look(paths, search_str, conds)
+
+    return dirs
+
+
+
+def load_from_dir(d, fnames=None):
+    if fnames is None:
+        fnames = {
+            'dq': 'dq.z',
+            'charges': 'charges.z',
+            'run_params': 'run_params.z'
+        }
+
+    darr = [x for x in Path(d).iterdir() if x.is_dir()]
+    for rd in darr:
+        files = {k: sorted(rd.glob(f'*{v}*')) for k, v in fnames.items()}
+        data = {k: io.loadz(v) for k, v in files.items()}
+
+    return data
+
+
+def load_charge_data(dirs, hmc=False):
+    data = {}
+    for d in dirs:
+        print(f'Looking in dir: {d}...')
+        if 'inference_hmc' in str(d):
+            print(f'Skipping {str(d)}...')
+            continue
+
+        dqfile = sorted(d.rglob('dq.z'))
+        qfile = sorted(d.rglob('charges.z'))
+        rpfile = sorted(d.rglob('run_params.z'))
+        num_runs = len(dqfile)
+        if num_runs > 0:
+            for dqf, qf, rpf in zip(dqfile, qfile, rpfile):
+                params = io.loadz(rpf)
+
+                if 'xeps' and 'veps' in params.keys():
+                    xeps = np.array([i.numpy() for i in params['xeps']])
+                    veps = np.array([i.numpy() for i in params['veps']])
+                    eps = (np.mean(xeps) + np.mean(veps)) / 2.
+                elif 'eps' in params.keys():
+                    eps = params['eps']
+
+                params['eps'] = eps
+                params = RunParams(**params)
+                qarr = io.loadz(qf)
+                dqarr = io.loadz(dqf)
+
+                print(
+                    '...loading data for (beta, num_steps, eps): '
+                    f'({params.beta}, {params.num_steps}, {params.eps:.3g})'
+                )
+
+                charge_data = ChargeData(q=qarr, dq=dqarr, params=params)
+                try:
+                    data[params.beta].update({params.traj_len: charge_data})
+                except KeyError:
+                    data[params.beta] = {params.traj_len: charge_data}
+
+                #  def _update_dict(beta, z, qdata):
+                #      try:
+                #          z[beta].update({params.traj_len: qdata})
+                #      except KeyError:
+                #          z[beta] = {params.traj_len: qdata}
+                #
+                #      return z
+                #
+                #  data = _update_dict(params.beta, data, charge_data)
+
+    return data
+
+
+def calc_tau_int(data, therm_frac=0.2):
+    """Calculate the integrated autocorrelation time."""
+    tau_int = {}
+    for key, val in data.items():
+        tau_int[key] = {}
+        for k, v in val.items():
+            arr, _ = therm_arr(v, therm_frac=therm_frac)
+            arr = arr.T
+            pass
+
+
+# reference:
+# https://github.com/rougier/numpy-100/blob/master/100_Numpy_exercises_with_solutions.md
+# ----------
+# Problem:
+#   100. Compute bootstrapped 95% confidence intervals for the mean of a 1D
+#   array X (i.e., resample the elements of an array with replacement N times,
+#   compute the mean of each sample, and then compute percentiles over the
+#   means).
+def bootstrapped_confidence_interval(x: np.ndarray, N: int = 1000):
+    idx = np.random.randint(0, x.size, (N, x.size))
+    means = x[idx].mean(axis=1)
+    confint = np.percentile(means, [2.5, 97.5])
+
+    return confint
+
+
+# Reference: https://dfm.io/posts/autocorr/
+def next_pow_two(n):
+    i = 1
+    while i < n:
+        i = i << 1
+
+    return i
+
+
+def autocorr_func_1d(x, norm=True):
+    """Compute the autocorrelation function of a 1D chain."""
+    x = np.atleast_1d(x)
+    if len(x.shape) != 1:
+        raise ValueError('Invalid dimensions for 1D autocorrelation function.')
+
+    n = next_pow_two(len(x))
+    # Compute the FFT and then (from that) the auto-correlation function
+    f = np.fft.fft(x - np.mean(x), n=2*n)
+    acf = np.fft.ifft(f * np.conjugate(f))[:len(x)].real
+    acf /= 4 * n
+
+    # Optionally normalize
+    if norm:
+        acf /= acf[0]
+
+    return acf
+
+
+def auto_window(taus, c):
+    """Automated windowing procedure following Sokal (1989)."""
+    m = np.arange(len(taus)) < c * taus
+    if np.any(m):
+        return np.argmin(m)
+
+    return len(taus) - 1
+
+
+def autocorr_gw2010(y, c=5.0):
+    """Following the suggestion from Goodman & Weare (2010)."""
+    f = autocorr_func_1d(np.mean(y, axis=0))
+    taus = 2.0 * np.cumsum(f) - 1.0
+    window = auto_window(taus, c)
+
+    return taus[window]
+
+
+def autocorr_new(y, c=5.0):
+    """New implementation of autocorrelation function."""
+    f = np.zeros(y.shape[1])
+    for yy in y:
+        f += autocorr_func_1d(yy)
+
+    f /= len(y)
+    taus = 2.0 * np.cumsum(f) - 1.0
+    window = auto_window(taus, c)
+
+    return taus[window]
+
+
+def calc_autocorr(x):
+    N = np.exp(np.linspace(np.log(100), np.log(y.shape[1]), 20)).astype(int)
+    new = np.empty(len(N))
+    for i, n in enumerate(N):
+        new[i] = autocorr_new(y[:, :n])
+
+    return N, new
+
 
 def flatten_dict(d):
     """Recursively convert all entries of `d` to be `AttrDict`."""
@@ -107,7 +359,7 @@ def load_inference_data(dirs, search_strs, inference_str='inference'):
         return data
 
 
-def get_l2hmc_dirs(paths, search_str=None):
+def _get_l2hmc_dirs(paths, search_str=None):
     """Look for `log_dirs` containing a training/inference run for L2HMC."""
     if search_str is None:
         search_str = '*L16_b*'
@@ -126,6 +378,90 @@ def get_l2hmc_dirs(paths, search_str=None):
         ]
 
     return dirs
+
+
+def get_l2hmc_dirs():
+    bd_local = os.path.abspath(
+        '/Users/saforem2/thetaGPU/training'
+    )
+    bd_theta = os.path.abspath(
+        '/lus/theta-fs0/projects/DLHMC/thetaGPU/training'
+    )
+
+    l2hmc_dirs = []
+    if os.path.isdir(bd_local):
+        l2hmc_dirs += _get_l2hmc_dirs(bd_local)
+
+    if os.path.isdir(bd_theta):
+        l2hmc_dirs += _get_l2hmc_dirs(bd_theta)
+
+    return l2hmc_dirs
+
+
+def get_hmc_dirs(base_dir=None):
+    if base_dir is None:
+        base_dir = os.path.abspath(
+            '/lus/theta-fs0/projects/DLHMC/thetaGPU/inference/'
+        )
+        if not os.path.isdir(base_dir):
+            base_dir = os.path.abspath(
+                '/Users/saforem2/thetaGPU/inference'
+            )
+            if not os.path.isdir(base_dir):
+                raise FileNotFoundError(f'Unable to locate {base_dir}')
+    base_dir = Path(base_dir)
+    hmc_dirs = [x for x in hmc_dir.rglob('*HMC_L16*') if x.is_dir()]
+
+    return hmc_dirs
+
+
+def bootstrap(x, reps=10000):
+    n = len(x)
+    xb = np.random.choice(x, (n, reps), replace=True)
+    yb = xb.mean(axis=0)
+    upper, lower = np.percentile(yb, [2.5, 97.5])
+
+    return yb, (lower, upper)
+
+
+def dq_stats(dq, reps=10000, therm_frac=0.2):
+    stats = {}
+    for key, val in dq.items():
+        for k, v in val.items():
+            data = therm_arr(v, therm_frac=therm_frac, ret_steps=False)
+            avgs = []
+            errs = []
+            for chain in data.T:
+                avg, (lower, upper) = bootstrap(chain, reps)
+                err = np.max([np.abs(avg - lower), np.abs(upper - avg)])
+                avgs.append(avg)
+                errs.append(err)
+
+            try:
+                stats[key].update({
+                    k: {
+                        'avg': np.mean(avgs),
+                        'avg_std': np.std(avgs),
+                        'err': np.mean(errs),
+                        'err_std': np.std(errs),
+                        'min': np.min(data),
+                        'max': np.max(data),
+                    }
+                })
+            except KeyError:
+                stats[key] = {
+                    k: {
+                        'avg': np.mean(avgs),
+                        'avg_std': np.std(avgs),
+                        'err': np.mean(errs),
+                        'err_std': np.std(errs),
+                        'min': np.min(data),
+                        'max': np.max(data),
+                    },
+                }
+
+    return stats
+
 
 
 def autocorrelation_time(x, s, mu, var):
@@ -199,7 +535,7 @@ def calc_var_explained(weights_dict):
     return var_explained
 
 
-def bootstrap(data, n_boot=10000, ci=68):
+def bootstrap_old(data, n_boot=10000, ci=68):
     """Bootstrap resampling.
 
     Returns:
@@ -563,7 +899,8 @@ class DataLoader:
 
     def _stats(self, arr, axis=0):
         """Calculate statistics using `bootstrap` resampling along `axis`."""
-        _, _, arr = bootstrap(arr, n_boot=self._n_boot)
+        #  _, _, arr = bootstrap(arr, n_boot=self._n_boot)
+        arr, _ = bootstrap(arr, n_boot=self._n_boot)
         return arr.mean(axis=axis).flatten(), arr.std(axis=axis).flatten()
 
     def _get_observables_bs(self, data, run_params):
@@ -825,9 +1162,7 @@ class DataLoader:
             tp_out_file1 = os.path.join(out_dir, f'{tp_fname}.pdf')
             pp_out_file1 = os.path.join(out_dir, f'{pp_fname}.pdf')
 
-        ###################################################
-        # Create traceplot + posterior plot of observables
-        ###################################################
+        # -- Create traceplot + posterior plot of observables -----------
         self._plot_trace(dataset, tp_out_file,
                          var_names=var_names,
                          out_file1=tp_out_file1)
@@ -853,9 +1188,7 @@ class DataLoader:
             rp_out_file1 = os.path.join(out_dir, f'{rp_fname}.pdf')
             self._savefig(fig, rp_out_file1)
 
-        # * * * * * * * * * * * * * * * * * * * * * * * * * *
-        # Create traceplot + posterior plot of energy data  *
-        # * * * * * * * * * * * * * * * * * * * * * * * * * *
+        # -- Create traceplot + posterior plot of energy data --------------
         if energy_data is not None:
             energy_dataset = self.energy_plots(energy_data,
                                                fname, out_dir=out_dir)
