@@ -63,7 +63,7 @@ def run_from_dir(d):
             train_steps = 1000
             therm_frac = 0.2
             num_chains = 8
-            lattice_shape = (8, 16, 16, 2)
+            x_shape = (8, 16, 16, 2)
             return run_inference_from_log_dir(log_dir=log_dir,
                                               run_steps=run_steps,
                                               therm_frac=therm_frac,
