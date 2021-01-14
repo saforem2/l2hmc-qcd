@@ -34,8 +34,9 @@ from rich.progress import (
 )
 
 console = Console(record=False,
+                  width=240,
                   log_time_format='[%X] ',
-                  theme=Theme({'repr.number': '#ff79ff'}))
+                  theme=Theme({'repr.number': '#71c6ff'}))
 #  FORMAT = "%(levelname)s:%(process)s:%(thread)s:%(name)s:%(message)s"
 #  print = console.print
 from rich.logging import RichHandler
@@ -364,7 +365,7 @@ def savez(obj: Any, fpath: str, name: str = None):
     joblib.dump(obj, fpath)
 
 
-def change_extension(fpath, ext):
+def change_extension(fpath: str, ext: str):
     """Change extension of `fpath` to `.ext`."""
     tmp = fpath.split('/')
     out_file = tmp[-1]
@@ -374,12 +375,12 @@ def change_extension(fpath, ext):
     return new_fpath
 
 
-def loadz(fpath):
+def loadz(fpath: str):
     """Load from `fpath` using `joblib.load`."""
     return joblib.load(fpath)
 
 
-def timeit(fn):
+def timeit(fn: callable):
     def timed(*args, **kwargs):
         """Function to be timed."""
         start_time = time.time()
@@ -398,9 +399,9 @@ def timeit(fn):
     return timed
 
 
-def timeit1(out_file=None, should_log=True):
+def timeit1(out_file: str = None, should_log: bool = True):
     """Timing decorator."""
-    def wrap(fn):
+    def wrap(fn: callable):
         def timed(*args, **kwargs):
             """Function to be timed."""
             start_time = time.time()
@@ -425,7 +426,7 @@ def timeit1(out_file=None, should_log=True):
     return wrap
 
 
-def get_run_num(run_dir):
+def get_run_num(run_dir: str):
     """Get the integer label for naming `run_dir`."""
     dirnames = [
         i for i in os.listdir(run_dir)
@@ -623,7 +624,7 @@ def make_log_dir(
     return log_dir
 
 
-def make_run_dir(configs, base_dir):
+def make_run_dir(configs: AttrDict, base_dir: str):
     """Automatically create `run_dir` for storing inference data."""
     fstr = get_run_dir_fstr(configs)
     now = datetime.datetime.now()
@@ -697,7 +698,7 @@ def save_inference(run_dir, run_data):
     run_data.flush_data_strs(log_file, mode='a')
 
 
-def get_subdirs(root_dir):
+def get_subdirs(root_dir: str):
     """Returns all subdirectories in `root_dir`."""
     subdirs = [
         os.path.join(root_dir, i)
@@ -752,5 +753,3 @@ def in_notebook():
     except ImportError:
         return False
     return True
-
-
