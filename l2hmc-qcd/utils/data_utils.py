@@ -197,10 +197,7 @@ def calc_tau_int(data, therm_frac=0.2):
         for k, v in val.items():
             arr, _ = therm_arr(v, therm_frac=therm_frac)
             arr = arr.T
-
-            chains, draws = arr.shape
-            n, tint = calc_autocorr
-
+            pass
 
 
 # reference:
@@ -897,7 +894,8 @@ class DataLoader:
 
     def _stats(self, arr, axis=0):
         """Calculate statistics using `bootstrap` resampling along `axis`."""
-        _, _, arr = bootstrap(arr, n_boot=self._n_boot)
+        #  _, _, arr = bootstrap(arr, n_boot=self._n_boot)
+        arr, _ = bootstrap(arr, n_boot=self._n_boot)
         return arr.mean(axis=axis).flatten(), arr.std(axis=axis).flatten()
 
     def _get_observables_bs(self, data, run_params):
