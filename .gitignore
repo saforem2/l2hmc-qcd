@@ -1,6 +1,19 @@
 ## --------------------------------
 ## USER-DEFINED .gitignore below
 ## --------------------------------
+logs/
+plots/
+data/
+doc/tikz/
+**broken**
+doc/hmc/
+doc/comments.tex
+doc/extra_plots.tex
+tags
+./pyrightconfig.json
+./l2hmc-qcd/utils/rich_table_movie.py
+l2hmc-qcd.code-workspace
+
 .vscode/
 bin/restore.sh
 

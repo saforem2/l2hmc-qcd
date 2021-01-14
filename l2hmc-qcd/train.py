@@ -9,9 +9,11 @@ Train 2D U(1) model using eager execution in tensorflow.
 from __future__ import absolute_import, division, print_function
 
 import os
+import json
 import contextlib
 import logging
 import tensorflow as tf
+from config import BIN_DIR
 import utils
 
 try:
@@ -37,13 +39,14 @@ except (ImportError, ModuleNotFoundError):
     HAS_HOROVOD = False
 
 
+from utils.file_io import console
 import utils.file_io as io
 
 from utils.attr_dict import AttrDict
 
 from utils.parse_configs import parse_configs
 from utils.training_utils import train, train_hmc
-from utils.inference_utils import run, run_hmc
+from utils.inference_utils import run, run_hmc, run_inference_from_log_dir
 
 
 os.environ['TF_CPP_MIN_VLOG_LEVEL'] = '3'
@@ -55,31 +58,9 @@ logging_level = logging.WARNING
 logging_format = (
     '%(asctime)s %(levelname)s:%(process)s:%(thread)s:%(name)s:%(message)s'
 )
-#  stream = sys.stdout if RANK == 0 else sys.stderr
-#
-#  logging.basicConfig(level=logging_level,
-#                      format=logging_format,
-#                      datefmt=logging_datefmt,
-#                      stream=sys.stdout if RANK == 0 else sys.stderr)
-
 
 logging.info(f'using tensorflow version: {tf.__version__}')
 logging.info(f'using tensorflow from: {tf.__file__}')
-
-#  try:
-#      import horovod
-#      import horovod.tensorflow as hvd
-#      #  hvd.init()
-#      HAS_HOROVOD = True
-#      logging.info(f'using horovod version: {horovod.__version__}')
-#      logging.info(f'using horovod from: {horovod.__file__}')
-#  except ImportError:
-#      HAS_HOROVOD = False
-#
-#
-#  if RANK > 0:
-#      logging_level = logging.WARNING
-
 
 @contextlib.contextmanager
 def experimental_options(options):
@@ -103,12 +84,11 @@ def restore_flags(flags, train_dir):
             flags.update(restored)
         except (FileNotFoundError, EOFError):
             pass
-        #  restored = AttrDict(dict(io.loadz(rf_file)))
 
     return flags
 
 
-def main(args):
+def main(args, num_chains=256):
     """Main method for training."""
     hmc_steps = args.get('hmc_steps', 0)
     tf.keras.backend.set_floatx('float32')
@@ -125,8 +105,8 @@ def main(args):
         for key, val in args.items():
             if key in restored:
                 if val != restored[key]:
-                    print(f'Restored {key}: {restored[key]}')
-                    print(f'Using {key}: {val}')
+                    io.log(f'Restored {key}: {restored[key]}')
+                    io.log(f'Using {key}: {val}')
 
         args.update({
             'train_steps': train_steps,
@@ -150,38 +130,49 @@ def main(args):
         args.restore = False
         if hmc_steps > 0:
             #  x, _, eps = train_hmc(args)
-            x, dynamics_hmc, _, hflags = train_hmc(args)
+            x, dynamics_hmc, _, hflags = train_hmc(args, num_chains=num_chains)
             #  dirs_hmc = hflags.get('dirs', None)
             args.dynamics_config['eps'] = dynamics_hmc.eps.numpy()
             _ = run(dynamics_hmc, hflags, save_x=False)
 
-    #  dynamics_config = args.get('dynamics_config', None)
-    #  if dynamics_config is not None:
-    #      log_dir = dynamics_config.get('log_dir', None)
-    #      if log_dir is not None:
-    #          eps_file = os.path.join(log_dir, 'training', 'models', 'eps.z')
-    #          if os.path.isfile(eps_file):
-    #              io.log(f'Loading eps from: {eps_file}')
-    #              eps = io.loadz(eps_file)
-    #              args.dynamics_config['eps'] = eps
-
-    x, dynamics, train_data, args = train(args, x=x)
+    x, dynamics, train_data, args = train(args, x=x,
+                                          make_plots=True,
+                                          num_chains=num_chains)
 
     # ====
     # Run inference on trained model
     if args.get('run_steps', 5000) > 0:
-        # ====
+        run_steps = args.get('run_steps', 125000)
+        log_dir = args.log_dir
+        beta = args.get('beta_final')
+        num_chains = 8
+        batch_size = 256
+        therm_frac=0.2
+        make_plots=True
+        xbatch = x[:batch_size]
+        _ = run(dynamics, args, xbatch, beta=beta, make_plots=True,
+                therm_frac=0.2, num_chains=8, save_x=False)
+
+        #  _ = run_inference_from_log_dir(log_dir=log_dir,
+        #                                 run_steps=run_steps,
+        #                                 beta=beta,
+        #                                 num_chains=num_chains,
+        #                                 batch_size=batch_size,
+        #                                 therm_frac=0.2,
+        #                                 make_plots=True,
+        #                                 train_steps=0,
+        #                                 x=xbatch)
         # Run with random start
-        _ = run(dynamics, args)
-        # ====
-        # Run HMC
-        args.hmc = True
-        args.dynamics_config['eps'] = 0.15
-        hmc_dir = os.path.join(args.log_dir, 'inference_hmc')
-        _ = run_hmc(args=args, hmc_dir=hmc_dir)
+        #  _ = run(dynamics, args)
+        #  # Run HMC
+        #  args.hmc = True
+        #  args.dynamics_config['eps'] = 0.15
+        #  hmc_dir = os.path.join(args.log_dir, 'inference_hmc')
+        #  _ = run_hmc(args=args, hmc_dir=hmc_dir)
 
 
 if __name__ == '__main__':
+    timestamp = io.get_timestamp('%Y-%m-%d-%H%M')
     #  debug_events_writer = tf.debugging.experimental.enable_dump_debug_info(
     #      debug_dir, circular_buffer_size=-1,
     #      tensor_debug_mode="FULL_HEALTH",
@@ -197,6 +188,9 @@ if __name__ == '__main__':
         logging_level = logging.WARNING
     io.print_dict(CONFIGS)
     main(CONFIGS)
+    #  if RANK == 0:
+    #      console.save_text(os.path.join(os.getcwd(), 'train.log'), styles=False)
+
     #
     #  debug_events_writer.FlushExecutionFiles()
     #  debug_events_writer.FlushNonExecutionFiles()

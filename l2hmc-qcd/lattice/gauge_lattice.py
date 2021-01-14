@@ -11,6 +11,26 @@ from __future__ import absolute_import, division, print_function
 
 import numpy as np
 import tensorflow as tf
+from dataclasses import dataclass
+from utils.attr_dict import AttrDict
+
+@dataclass
+class Charges:
+    sinQ: tf.Tensor
+    intQ: tf.Tensor
+
+#  @dataclass
+#  class ChargesDiff:
+#      dsinQ: tf.Tensor
+#      dintQ: tf.Tensor
+
+
+@dataclass
+class LatticeMetrics:
+    charges: Charges
+    actions: tf.Tensor
+    plaqs: tf.Tensor
+
 
 
 def plaq_exact(beta):
@@ -35,10 +55,13 @@ class GaugeLattice:
         NOTE: shape = (batch_size, Lt, Lx, dim) = (B, T, X, D)
         """
         self._shape = shape
-        self.batch_size, self.lattice_shape = shape[0], shape[1:]
-        self._nt, self._nx, self._dim = self.lattice_shape
+        self.batch_size, self.x_shape = shape[0], shape[1:]
+        self._nt, self._nx, self._dim = self.x_shape
         self.num_plaqs = self._nt * self._nx
         self.num_links = self.num_plaqs * self._dim
+
+    def unnormalized_log_prob(self, x):
+        return self.calc_actions(x=x)
 
     def calc_observables(self, x, beta=None):
         """Calculate all observables for a batch of lattices `x`."""
@@ -104,3 +127,16 @@ class GaugeLattice:
         q = tf.sin(wloops) if use_sin else project_angle(wloops)
 
         return tf.reduce_sum(q, axis=(1, 2), name='charges') / (2 * np.pi)
+
+    def calc_both_charges(self, x=None, wloops=None):
+        """Calculate the charges using both integer and sin represntations."""
+        if wloops is None:
+            try:
+                wloops = self.calc_wilson_loops(x)
+            except ValueError as err:
+                print('One of `x` or `wloops` must be specified.')
+                raise err
+
+        sinq = tf.reduce_sum(tf.sin(wloops), axis=(1, 2)) / (2 * np.pi)
+        intq = tf.reduce_sum(project_angle(wloops), axis=(1, 2)) / (2 * np.pi)
+        return Charges(sinQ=sinq, intQ=intq)

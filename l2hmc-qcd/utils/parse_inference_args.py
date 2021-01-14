@@ -103,13 +103,13 @@ def parse_args():
                         required=False,
                         help="""Run generic HMC.""")
 
-    parser.add_argument('--lattice_shape',
-                        dest='lattice_shape',
+    parser.add_argument('--x_shape',
+                        dest='x_shape',
                         type=lambda s: [int(i) for i in s.split(',')],
                         default="128, 16, 16, 2",
                         required=False,
                         help=("""Specifies the shape of our data, with:
-                              lattice_shape =
+                              x_shape =
                               (batch_size, time_size, space_size, dim)
                               Defaults to: (128, 16, 16, 2)"""))
 

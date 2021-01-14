@@ -6,6 +6,7 @@ Implements `TrainData` class, for working with training data.
 from __future__ import absolute_import, division, print_function
 
 import os
+from copy import deepcopy
 
 from collections import defaultdict
 
@@ -17,6 +18,7 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 
+from utils import SKEYS
 import utils.file_io as io
 
 from config import BASE_DIR
@@ -37,18 +39,17 @@ class DataContainer:
     """Base class for dealing with data."""
 
     def __init__(self, steps, header=None, dirs=None, print_steps=100):
-        self.steps = steps
-        self.print_steps = print_steps
         if dirs is not None:
             dirs = AttrDict(**dirs)
+            names = [v for k, v in dirs.items() if 'file' not in k]
+            io.check_else_make_dir(names)
+
         self.dirs = dirs
-        self.data_strs = [header]
+        self.steps = steps
         self.steps_arr = []
+        self.data_strs = [header]
+        self.print_steps = print_steps
         self.data = AttrDict(defaultdict(list))
-        if dirs is not None:
-            io.check_else_make_dir(
-                [v for k, v in dirs.items() if 'file' not in k]
-            )
 
     def update_dirs(self, dirs: dict):
         """Update `self.dirs` with key, val pairs from `dirs`."""
@@ -98,44 +99,91 @@ class DataContainer:
         dataset = self.get_dataset(therm_frac)
         out_file = os.path.join(out_dir, 'dataset.nc')
         io.log(f'Saving dataset to: {out_file}.')
-        dataset.to_netcdf(os.path.join(out_dir, 'dataset.nc'))
+        try:
+            dataset.to_netcdf(os.path.join(out_dir, 'dataset.nc'))
+        except ValueError:
+            io.log('Unable to save dataset! Continuing...')
 
     def update(self, step, metrics):
         """Update `self.data` with new values from `data`."""
         self.steps_arr.append(step)
         for key, val in metrics.items():
-            try:
-                self.data[key].append(tf.convert_to_tensor(val).numpy())
-            except KeyError:
-                self.data[key] = [tf.convert_to_tensor(val).numpy()]
+            if isinstance(val, tf.Tensor):
+                try:
+                    self.data[key].append(val.numpy())
+                except KeyError:
+                    self.data[key] = [val.numpy()]
+            #  elif isinstance(val, (dict, AttrDict)):
+            #      for k, v in val.items():
+            #          if isinstance(v, tf.Tensor):
+            #              try:
+            #                  self.data[f'{k}/{key[0]}'].append(v)
+            #              except KeyError:
+            #                  self.data[f'{k}/{key[0]}'] = [v]
 
     # pylint:disable=too-many-arguments
     def get_header(self, metrics=None, prepend=None,
-                   append=None, skip=None, split=False):
+                   append=None, skip=None, split=False, with_sep=True):
         """Get nicely formatted header of variable names for printing."""
         if metrics is None:
             metrics = self.data
 
         header = io.make_header_from_dict(metrics, skip=skip, split=split,
-                                          prepend=prepend, append=append)
+                                          prepend=prepend, append=append,
+                                          with_sep=with_sep)
 
         if self.data_strs[0] != header:
             self.data_strs.insert(0, header)
 
         return header
 
-    def get_fstr(self, step, metrics, skip=None):
+    def get_fstr(
+            self,
+            step: int,
+            metrics: dict,
+            skip: list = None,
+            keep: list = None,
+            skip_endpts: bool = None
+    ):
         """Get formatted data string from `data`."""
         skip = [] if skip is None else skip
 
         data = {
-            k: tf.reduce_mean(v) for k, v in metrics.items() if k not in skip
+            k: tf.reduce_mean(v) for k, v in metrics.items() if (
+                k not in skip
+                and not isinstance(v, dict)
+                and k not in SKEYS
+            )
         }
 
+        if keep is not None:
+            data = {k: v for k, v in data.items() if k in keep}
+
+        if skip_endpts:
+            data = {k: v for k, v in data.items() if (
+                '_start' not in str(k)
+                and '_mid' not in str(k)
+                and '_end' not in str(k)
+            )}
+
+        #  fstr = f'{step:>5g}/{self.steps:<5g}, '
+        #  for k, v in data.items():
+        #      sk = str(k)
+        #      lsk = len(sk)
+        sstr = 'step'
         fstr = (
-            f'{step:>5g}/{self.steps:<5g} '
-            + ''.join([f'{v:^12.4g}' for _, v in data.items()])
+            f'{sstr:s}: {step:5g}/{self.steps:<5g} ' + ' '.join([
+                f'{k:s}: {v:5.3g}' for k, v in data.items()
+                #  if not isinstance(v, dict)
+            ])
         )
+
+        #  fstr = (
+        #      f'{step:>5g}/{self.steps:<5g} ' + ''.join([
+        #          f'{v:^12.4g}' for _, v in data.items()
+        #          if not isinstance(v, dict)
+        #      ])
+        #  )
 
         self.data_strs.append(fstr)
 
@@ -149,7 +197,7 @@ class DataContainer:
         x_file = os.path.join(data_dir, f'x_rank{rank}-{local_rank}.z')
         try:
             x = io.loadz(x_file)
-            io.log(f'Restored `x` from: {x_file}.', should_print=True)
+            io.log(f'Restored `x` from: {x_file}.')
         except FileNotFoundError:
             io.log(f'Unable to load `x` from {x_file}.', level='WARNING')
             io.log('Using random normal init.', level='WARNING')
@@ -177,27 +225,49 @@ class DataContainer:
 
         return AttrDict(data)
 
-    def save_data(self, data_dir, rank=0, save_dataset=False):
+    def save_data(self, data_dir, rank=0, save_dataset=False, skip_keys=None):
         """Save `self.data` entries to individual files in `output_dir`."""
         if rank != 0:
             return
 
         io.check_else_make_dir(data_dir)
         for key, val in self.data.items():
+            if skip_keys is not None:
+                if key in skip_keys:
+                    continue
+
             out_file = os.path.join(data_dir, f'{key}.z')
+            head, tail = os.path.split(out_file)
+            io.check_else_make_dir(head)
             io.savez(np.array(val), out_file)
 
         if save_dataset:
-            self.save_dataset(data_dir)
+            try:
+                self.save_dataset(data_dir)
+            except ValueError:
+                io.console.log('Unable to save `xarray.Dataset`, continuing')
+                #  print(f'Unable to save `xarray.Dataset`. Continuing...')
 
-    def plot_data(self, out_dir=None, therm_frac=0.):
+    def plot_dataset(
+            self,
+            out_dir: str = None,
+            therm_frac: int = 0.,
+            num_chains: int = None,
+            ridgeplots: bool = True
+    ):
         """Create trace plot + histogram for each entry in self.data."""
         dataset = self.get_dataset(therm_frac)
         for key, val in dataset.data_vars.items():
             if np.std(val.values.flatten()) < 1e-2:
                 continue
-            fig, ax = plt.subplots(constrained_layout=True,
-                                   figsize=set_size())
+
+            if len(val.shape) == 2:  # shape: (chain, draw)
+                val = val[:num_chains, :]
+
+            if len(val.shape) == 3:  # shape: (chain, leapfrogs, draw)
+                val = val[:num_chains, :, :]
+
+            fig, ax = plt.subplots(constrained_layout=True, figsize=set_size())
             _ = val.plot(ax=ax)
             #  _ = sns.kdeplot(val.values.flatten(), ax=axes[1], shade=True)
             #  _ = axes[1].set_ylabel('')
@@ -206,12 +276,15 @@ class DataContainer:
                 io.check_else_make_dir(out_dir)
                 out_file = os.path.join(out_dir, f'{key}_xrPlot.png')
                 fig.savefig(out_file, dpi=400, bbox_inches='tight')
+                plt.close('all')
+                plt.clf()
 
         if out_dir is not None:
             out_dir = os.path.join(out_dir, 'ridgeplots')
             io.check_else_make_dir(out_dir)
 
-        make_ridgeplots(dataset, out_dir)
+        if ridgeplots:
+            make_ridgeplots(dataset, num_chains=num_chains, out_dir=out_dir)
 
 
     def flush_data_strs(self, out_file, rank=0, mode='a'):
@@ -242,6 +315,8 @@ class DataContainer:
         avg_df = pd.DataFrame(avg_data, index=[0])
         csv_file = os.path.join(BASE_DIR, 'logs', 'GaugeModel_logs',
                                 'inference_results.csv')
+        head, tail = os.path.split(csv_file)
+        io.check_else_make_dir(head)
         io.log(f'Appending inference results to {csv_file}.')
         if not os.path.isfile(csv_file):
             avg_df.to_csv(csv_file, header=True, index=False, mode='w')
@@ -252,8 +327,8 @@ class DataContainer:
     def dump_configs(x, data_dir, rank=0, local_rank=0):
         """Save configs `x` separately for each rank."""
         xfile = os.path.join(data_dir, f'x_rank{rank}-{local_rank}.z')
-        io.log('Saving configs from rank '
-               f'{rank}-{local_rank} to: {xfile}.')
+        #  io.log('Saving configs from rank '
+        #         f'{rank}-{local_rank} to: {xfile}.')
         head, _ = os.path.split(xfile)
         io.check_else_make_dir(head)
         joblib.dump(x, xfile)
