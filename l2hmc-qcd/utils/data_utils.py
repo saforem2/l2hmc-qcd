@@ -175,16 +175,21 @@ def load_charge_data(dirs, hmc=False):
                     f'({params.beta}, {params.num_steps}, {params.eps:.3g})'
                 )
 
-                def _update_dict(beta, z, qdata):
-                    try:
-                        z[beta].update({params.traj_len: qdata})
-                    except KeyError:
-                        z[beta] = {params.traj_len: qdata}
-
-                    return z
-
                 charge_data = ChargeData(q=qarr, dq=dqarr, params=params)
-                data = _update_dict(params.beta, data, charge_data)
+                try:
+                    data[params.beta].update({params.traj_len: charge_data})
+                except KeyError:
+                    data[params.beta] = {params.traj_len: charge_data}
+
+                #  def _update_dict(beta, z, qdata):
+                #      try:
+                #          z[beta].update({params.traj_len: qdata})
+                #      except KeyError:
+                #          z[beta] = {params.traj_len: qdata}
+                #
+                #      return z
+                #
+                #  data = _update_dict(params.beta, data, charge_data)
 
     return data
 
