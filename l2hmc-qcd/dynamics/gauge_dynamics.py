@@ -100,7 +100,7 @@ def build_dynamics(flags):
     conv_config = None
     if flags.get('conv_config', None) is not None and config.use_conv_net:
         conv_config = flags.get('conv_config', None)
-        input_shape = config.lattice_shape[1:]
+        input_shape = config.x_shape[1:]
         conv_config.input_shape = input_shape
 
     dynamics = GaugeDynamics(
@@ -142,7 +142,8 @@ class GaugeDynamics(BaseDynamics):
         self.plaq_weight = config.plaq_weight
         self.charge_weight = config.charge_weight
         self._gauge_eq_masks = config.gauge_eq_masks
-        self.lattice_shape = config.lattice_shape
+        self.lattice_shape = config.x_shape
+        #  self.lattice_shape = config.lattice_shape
         self._combined_updates = config.combined_updates
         self._alpha = tf.constant(1.)
 
