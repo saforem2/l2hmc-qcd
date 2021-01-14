@@ -8,6 +8,7 @@ Author: Sam Foreman (github: @saforem2)
 Date: 09/14/2020
 
 """
+import numpy as np
 # pylint:disable=invalid-name
 from typing import Tuple
 
@@ -141,7 +142,7 @@ def get_generic_network(
 
 # pylint:disable=too-many-locals, too-many-arguments, too-many-statements
 def get_gauge_network(
-        lattice_shape: Tuple,
+        x_shape: Tuple,
         net_config: NetworkConfig,
         conv_config: ConvolutionConfig = None,
         kernel_initializer: str = None,
@@ -151,12 +152,18 @@ def get_gauge_network(
         name: str = None,
 ):
     """Returns a (functional) `tf.keras.Model`."""
-    if len(lattice_shape) == 4:
-        batch_size, T, X, d = lattice_shape
-    elif len(lattice_shape) == 3:
-        T, X, d = lattice_shape
+    if len(x_shape) == 4:
+        batch_size, T, X, d = x_shape
+    elif len(x_shape) == 3:
+        T, X, d = x_shape
 
     xdim = T * X * d
+    #  if len(x_shape) == 4:
+    #      batch_size, T, X, d = x_shape
+    #  elif len(x_shape) == 3:
+    #      T, X, d = x_shape
+    #
+    #  xdim = T * X * d
     activation_fn = net_config.activation_fn
     if isinstance(activation_fn, str):
         activation_fn = ACTIVATION_FNS.get(activation_fn, None)
