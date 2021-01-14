@@ -164,10 +164,10 @@ def load_from_dir(d, fnames=None):
     darr = [x for x in Path(d).iterdir() if x.is_dir()]
 
     data = {}
-    for d in darr:
+    for p in darr:
         for fname in fnames:
             data[fname] = {}
-            files = d.rglob(f'*{fname}*')
+            files = p.rglob(f'*{fname}*')
             if len(files) > 0:
                 for f in files:
                     x = io.loadz(f)
