@@ -1,4 +1,4 @@
-#/bin/bash
+#!/bin/bash
 
 RUNNER='../l2hmc-qcd/run.py'
 # ARGS="$@"
