@@ -1,6 +1,16 @@
 ## --------------------------------
 ## USER-DEFINED .gitignore below
 ## --------------------------------
+logs/
+plots/
+data/
+doc/tikz/
+**broken**
+doc/hmc/
+doc/comments.tex
+doc/extra_plots.tex
+l2hmc-qcd.code-workspace
+
 .vscode/
 bin/restore.sh
 
