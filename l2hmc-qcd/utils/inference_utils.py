@@ -455,10 +455,11 @@ def run_dynamics(
         summary_steps = flags.run_steps // 100
 
     steps = tf.range(flags.run_steps, dtype=tf.int64)
-    iter = track(enumerate(steps), total=len(steps), description='Inference',
-                 transient=True, console=io.console)
+    tracked_iter = track(enumerate(steps), total=len(steps),
+                         description='Inference', transient=True,
+                         console=io.console)
 
-    for idx, step in iter:
+    for idx, step in tracked_iter:
         x, metrics = timed_step(x, beta)
         run_data.update(step, metrics)  # update data after every accept/reject
 

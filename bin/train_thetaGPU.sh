@@ -67,7 +67,7 @@ LOG_DIR_FILE="$DIR/log_dirs.txt"
 # ====
 # Specify GPU information for thetaGPU
 # total num of gpus = (num nodes * 8 gpus / node)
-NODES=`cat $COBALT_NODEFILE | wc -l`
+NODES=$(cat $COBALT_NODEFILE | wc -l)
 PPN=8
 PROCS=$((NODES * PPN))
 echo NODES=$NODES  PPN=$PPN  PROCS=$PROCS

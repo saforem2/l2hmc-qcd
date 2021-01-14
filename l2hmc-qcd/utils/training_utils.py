@@ -244,7 +244,7 @@ def setup(dynamics, flags, dirs=None, x=None, betas=None):
     if IS_CHIEF and make_summaries and TF_VERSION == 2:
         try:
             writer = tf.summary.create_file_writer(dirs.summary_dir)
-        except:
+        except AttributeError:  # pylint:disable=bare-except
             writer = None
     else:
         writer = None
