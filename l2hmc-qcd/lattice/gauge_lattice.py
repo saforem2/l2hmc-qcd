@@ -32,6 +32,10 @@ class LatticeMetrics:
     plaqs: tf.Tensor
 
 
+def area_law(beta, num_plaqs):
+    """Returns the expected value of the Wilson loop containing `num_plaqs`."""
+    return (tf.math.bessel_i1(beta) / tf.math.bessel_i0(beta)) ** num_plaqs
+
 
 def plaq_exact(beta):
     """Computes the expected value of the avg. plaquette for 2D U(1)."""
@@ -89,6 +93,39 @@ class GaugeLattice:
                         + tf.roll(x[..., 1], shift=-1, axis=1))
 
         return wilson_loops
+
+    def calc_wilson_loops4x4(self, x):
+        """Calculate 4x4 Wilson loops."""
+        x = tf.reshape(x, shape=self._shape)
+        wl4x4 = (
+            x[..., 0]                                       #  U_{0}(x, y)
+            + tf.roll(x[..., 0], -1, axis=1)                #  U_{0}(x+1, y)
+            + tf.roll(x[..., 0], -2, axis=1)                #  U_{0}(x+2, y)
+            + tf.roll(x[..., 0], -3, axis=1)                #  U_{0}(x+3, y)
+            + tf.roll(x[..., 1], (-3, -1), axis=(1, 2))     #  U_{1}(x+3, y+1)
+            + tf.roll(x[..., 1], (-3, -2), axis=(1, 2))     #  U_{1}(x+3, y+2)
+            - tf.roll(x[..., 0], (-2, -3), axis=(1, 2))     # -U_{0}(x+3, y+2)
+            - tf.roll(x[..., 0], (-1, -3), axis=(1, 2))     # -U_{0}(x+1, y+3)
+            - tf.roll(x[..., 0], -3, axis=2)                # -U_{0}(x, y+3)
+            - tf.roll(x[..., 1], -2, axis=2)                # -U_{1}(x, y+3)
+            - tf.roll(x[..., 1], -1, axis=2)                # -U_{1}(x, y+2)
+            - x[..., 1]                                     # -U_{1}(x, y)
+        )
+
+        return wl4x4
+
+    def calc_plaqs4x4(self, x=None, wloops=None, beta=None):
+        """Calculate the 4x4 Wilson loops for a batch of lattices."""
+        if wloops is None:
+            try:
+                wloops = self.calc_wilson_loops4x4(x)
+            except ValueError as err:
+                print(f'One of `x` or `wloops` must be specified.')
+                raise err
+        if beta is not None:
+            return area_law(beta, 9) - tf.reduce_mean(tf.cos(wloops), (1, 2))
+
+        return tf.reduce_mean(tf.cos(wloops), (1, 2))
 
     def calc_plaqs(self, x=None, wloops=None, beta=None):
         """Calculate the plaquettes for a batch of lattices."""

@@ -398,11 +398,11 @@ def train_dynamics(
                      transient=True)
 
     keep = ['dt', 'loss', 'accept_prob', 'beta',
-            'Hf_start', 'Hf_mid', 'Hf_end'
-            'Hb_start', 'Hb_mid', 'Hb_end',
+            #  'Hf_start', 'Hf_mid', 'Hf_end'
+            #  'Hb_start', 'Hb_mid', 'Hb_end',
             'Hwb_start', 'Hwb_mid', 'Hwb_end',
             'Hwf_start', 'Hwf_mid', 'Hwf_end',
-            'xeps', 'veps', 'dq', 'dq_sin', 'plaqs']
+            'xeps', 'veps', 'dq', 'dq_sin', 'plaqs', 'p4x4']
 
     for idx, (step, beta) in iterable:
         # -- Perform a single training step -------------------------------
@@ -436,8 +436,8 @@ def train_dynamics(
                 data_str = train_data.get_fstr(step, metrics)
                                                #  skip=SKEYS, keep=keep_)
             else:
-                keep_ = ['step', 'dt', 'loss', 'accept_prob', 'beta', 'plaqs',
-                         'dq', 'dq_sin', 'dQint', 'dQsin']
+                keep_ = ['step', 'dt', 'loss', 'accept_prob', 'beta',
+                         'dq_int', 'dq_sin', 'dQint', 'dQsin', 'plaqs', 'p4x4']
                 data_str = train_data.get_fstr(step, metrics,
                                                skip=SKEYS, keep=keep_)
 

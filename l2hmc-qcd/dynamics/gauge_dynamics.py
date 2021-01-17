@@ -457,16 +457,19 @@ class GaugeDynamics(BaseDynamics):
         sinq = tf.TensorArray(TF_FLOAT, **kwargs)
         intq = tf.TensorArray(TF_FLOAT, **kwargs)
         plaqs = tf.TensorArray(TF_FLOAT, **kwargs)
+        p4x4 = tf.TensorArray(TF_FLOAT, **kwargs)
 
         #  sinq = self.lattice.calc_charges(x=state.x, use_sin=True)
-        plaqs_arr, charges = self._calc_observables(state)
+        plaqs_arr, charges, plaqs4x4_arr = self._calc_observables(state)
         plaqs = plaqs.write(0, plaqs_arr)
+        p4x4 = p4x4.write(0, plaqs4x4_arr)
         sinq = sinq.write(0, charges.sinQ)
         intq = intq.write(0, charges.intQ)
         metrics.update({
             'sinQ': sinq,
             'intQ': intq,
             'plaqs': plaqs,
+            'p4x4': p4x4,
             #  'sinQ': sinq.write(0, charges.sinQ),
             #  'intQ': intq.write(0, charges.intQ),
         })
@@ -504,11 +507,12 @@ class GaugeDynamics(BaseDynamics):
         def _get_metrics(state, logdet):
             energy = self.hamiltonian(state)
             #  charges = self.lattice.calc_both_charges(x=state_prop.x)
-            plaqs, charges = self._calc_observables(state)
+            plaqs, charges, p4x4 = self._calc_observables(state)
             escaled = energy - logdet
             return {
                 'H': energy, 'Hw': escaled, 'logdets': logdet,
                 'sinQ': charges.sinQ, 'intQ': charges.intQ,
+                'plaqs': plaqs, 'p4x4': p4x4,
                 #  'sinQ': charges.sinQ, 'intQ': charges.intQ,
             }
 
@@ -712,10 +716,11 @@ class GaugeDynamics(BaseDynamics):
 
         def _get_metrics(state, logdet):
             energy = self.hamiltonian(state)
-            plaqs, charges = self._calc_observables(state)
+            plaqs, charges, p4x4 = self._calc_observables(state)
             return {
                 'H': energy, 'Hw': energy - logdet, 'logdets': logdet,
-                'sinQ': charges.sinQ, 'intQ': charges.intQ, 'plaqs': plaqs,
+                'sinQ': charges.sinQ, 'intQ': charges.intQ,
+                'plaqs': plaqs, 'p4x4': p4x4,
             }
 
         def _stack_metrics():
@@ -1394,26 +1399,30 @@ class GaugeDynamics(BaseDynamics):
         NOTE: We track the error in the plaquette instead of the actual value.
         """
         wloops = self.lattice.calc_wilson_loops(state.x)
+        wloops4x4 = self.lattice.calc_wilson_loops4x4(state.x)
         charges = self.lattice.calc_both_charges(x=state.x)
         plaqs = self.lattice.calc_plaqs(wloops=wloops, beta=state.beta)
+        plaqs4x4 = self.lattice.calc_plaqs4x4(wloops=wloops4x4,
+                                              beta=state.beta)
 
-        return plaqs, charges
+        return plaqs, charges, plaqs4x4
 
     def calc_observables(
             self,
             states: MonteCarloStates
     ) -> (AttrDict):
         """Calculate observables."""
-        _, q_init = self._calc_observables(states.init)
-        plaqs, q_out = self._calc_observables(states.out)
+        _, q_init, _ = self._calc_observables(states.init)
+        plaqs, q_out, p4x4 = self._calc_observables(states.out)
         dqsin = tf.math.abs(q_out.sinQ - q_init.sinQ)
         dqint = tf.math.abs(q_out.intQ - q_init.intQ)
 
         observables = AttrDict({
-            'dq': dqint,
+            'dq_int': dqint,
             'dq_sin': dqsin,
             'charges': q_out.intQ,
             'plaqs': plaqs,
+            'p4x4': p4x4,
         })
 
         return observables
