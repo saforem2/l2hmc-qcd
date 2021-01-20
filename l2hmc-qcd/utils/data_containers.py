@@ -113,13 +113,6 @@ class DataContainer:
                     self.data[key].append(val.numpy())
                 except KeyError:
                     self.data[key] = [val.numpy()]
-            #  elif isinstance(val, (dict, AttrDict)):
-            #      for k, v in val.items():
-            #          if isinstance(v, tf.Tensor):
-            #              try:
-            #                  self.data[f'{k}/{key[0]}'].append(v)
-            #              except KeyError:
-            #                  self.data[f'{k}/{key[0]}'] = [v]
 
     # pylint:disable=too-many-arguments
     def get_header(self, metrics=None, prepend=None,
@@ -166,24 +159,12 @@ class DataContainer:
                 and '_end' not in str(k)
             )}
 
-        #  fstr = f'{step:>5g}/{self.steps:<5g}, '
-        #  for k, v in data.items():
-        #      sk = str(k)
-        #      lsk = len(sk)
         sstr = 'step'
         fstr = (
             f'{sstr:s}: {step:5g}/{self.steps:<5g} ' + ' '.join([
                 f'{k:s}: {v:5.3g}' for k, v in data.items()
-                #  if not isinstance(v, dict)
             ])
         )
-
-        #  fstr = (
-        #      f'{step:>5g}/{self.steps:<5g} ' + ''.join([
-        #          f'{v:^12.4g}' for _, v in data.items()
-        #          if not isinstance(v, dict)
-        #      ])
-        #  )
 
         self.data_strs.append(fstr)
 
