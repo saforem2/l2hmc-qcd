@@ -52,6 +52,21 @@ sns.set_palette('bright')
 #  ))
 #
 
+def truncate_colormap(
+        cmap: str,
+        minval:float = 0.0,
+        maxval:float = 1.0,
+        n:int = 100,
+):
+    import matplotlib as mpl
+    if isinstance(cmap, str):
+        cmap = plt.get_cmap(cmap)
+    new_cmap = mpl.colors.LinearSegmentedColormap.from_list(
+        'trunc({n},{a:.2f},{b:.2f})'.format(n=cmap.name, a=minval, b=maxval),
+        cmap(np.linspace(minval, maxval, n))
+    )
+    return new_cmap
+
 
 @timeit
 def make_ridgeplots(dataset, num_chains=None, out_dir=None, drop_zeros=False):
@@ -111,7 +126,7 @@ def make_ridgeplots(dataset, num_chains=None, out_dir=None, drop_zeros=False):
             _ = g.despine(bottom=True, left=True)
             if out_dir is not None:
                 io.check_else_make_dir(out_dir)
-                out_file = os.path.join(out_dir, f'{key}_ridgeplot.png')
+                out_file = os.path.join(out_dir, f'{key}_ridgeplot.pdf')
                 io.log(f'Saving figure to: {out_file}.')
                 plt.savefig(out_file, dpi=400, bbox_inches='tight')
 
@@ -238,7 +253,7 @@ def plot_energy_distributions(data, out_dir=None, title=None):
     if title is not None:
         _ = fig.suptitle(title)
     if out_dir is not None:
-        out_file = os.path.join(out_dir, 'energy_dists_traj.png')
+        out_file = os.path.join(out_dir, 'energy_dists_traj.pdf')
         savefig(fig, out_file)
 
     return fig, axes.flatten()
@@ -260,7 +275,7 @@ def energy_traceplot(key, arr, out_dir=None, title=None):
         new_key = f'{key}_lf{idx}'
         if out_dir is not None:
             tplot_fname = os.path.join(out_dir,
-                                       f'{new_key}_traceplot.png')
+                                       f'{new_key}_traceplot.pdf')
 
         _ = mcmc_traceplot(new_key, data_arr, title, tplot_fname)
 
@@ -284,7 +299,7 @@ def plot_charges(steps, charges, title=None, out_dir=None):
         ax.set_title(title)
 
     if out_dir is not None:
-        fpath = os.path.join(out_dir, 'charge_chains.png')
+        fpath = os.path.join(out_dir, 'charge_chains.pdf')
         savefig(fig, fpath)
 
     return fig, ax
@@ -370,7 +385,7 @@ def mcmc_avg_lineplots(data, title=None, out_dir=None):
         if out_dir is not None:
             dir_ = os.path.join(out_dir, 'avg_lineplots')
             io.check_else_make_dir(dir_)
-            fpath = os.path.join(dir_, f'{key}_avg.png')
+            fpath = os.path.join(dir_, f'{key}_avg.pdf')
             savefig(fig, fpath)
 
     return fig, axes
@@ -552,7 +567,7 @@ def plot_data(
         if len(arr.shape) == 1:  # shape: (draws,)
             out_dir_ = os.path.join(plots_dir, f'mcmc_lineplots')
             io.check_else_make_dir(out_dir_)
-            lplot_fname = os.path.join(out_dir_, f'{key}.png')
+            lplot_fname = os.path.join(out_dir_, f'{key}.pdf')
             data_dict[key] = xr.DataArray(arr, dims=['draw'], coords=[steps])
             #  _, _ = mcmc_lineplot(data, labels, title,
             #                       lplot_fname, show_avg=True)
