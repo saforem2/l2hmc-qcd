@@ -257,35 +257,28 @@ class GaugeDynamics(BaseDynamics):
                     vnets.append(vp)
                     print(f'Loading vnet{i}_second from: {vp}...')
                     vnet.append(tf.keras.models.load_model(vp))
-                else:
-                    _, vnet_ = self._build_network(step=i)
-                    vnet.append(vnet_)
 
                 # Check if xnet_first and xnet_second networks exist...
                 xp0 = os.path.join(models_dir, f'dynamics_xnet_first{i}')
                 xp1 = os.path.join(models_dir, f'dynamics_xnet_second{i}')
                 if os.path.isdir(xp0) and os.path.isdir(xp1):
-                        # If so, load them into `xnets_first`, `xnets_second`
-                        xnets_first.append(xp0)
-                        xnets_second.append(xp1)
-                        print(f'Loading xnet{i}_first from: {xp0}...')
-                        print(f'Loading xnet{i}_second from: {xp1}...')
-                        xnet.append(
-                            (tf.keras.models.load_model(xp0),
-                             tf.keras.models.load_model(xp1))
-                        )
-
-                xp = os.path.join(models_dir, f'dynamics_xnet{i}')
-                elif os.path.isdir(xp):
-                    xnet.append(tf.keras.models.load_model(xp))
+                    # If so, load them into `xnets_first`, `xnets_second`
+                    xnets_first.append(xp0)
+                    xnets_second.append(xp1)
+                    print(f'Loading xnet{i}_first from: {xp0}...')
+                    print(f'Loading xnet{i}_second from: {xp1}...')
+                    xnet.append(
+                        (tf.keras.models.load_model(xp0),
+                         tf.keras.models.load_model(xp1))
+                    )
 
                 else:
-                    print(f'Unable to load model from {vp}...')
-                    print(f'Initializing new network for step {i}')
-                    xnet_, _ = self._build_network(step=i)
-                    #  xnet_, vnet_ = self._build_network(step=i)
-                    xnet.append(xnet_)
-                    #  vnet.append(vnet_)
+                    xp = os.path.join(models_dir, f'dynamics_xnet{i}')
+                    if os.path.isdir(xp):
+                        xnet.append(tf.keras.models.load_model(xp))
+                    else:
+                        xnet_, _ = self._build_network(step=i)
+                        xnet.append(xnet_)
 
         return xnet, vnet
 
@@ -837,22 +830,22 @@ class GaugeDynamics(BaseDynamics):
         x, v, t = inputs
         x = self._convert_to_cartesian(x, mask)
 
-        if not self.config.separate_networks:
-            return self.xnet((x, v, t), training)
-
         #  xnet0, xnet1 = self.xnet[step]
         #  if first:
         #      return xnet0((x, v, t), training)
         #
         #  return xnet1((x, v, t), training)
 
-        xnet = self.xnet[step]
-        if len(xnet) == 2:
-            if first:
-                return xnet[0]((x, v, t), training)
-            return xnet[1]((x, v, t), training)
+        if not self.config.separate_networks:
+            return self.xnet((x, v, t), training)
 
-        return xnet((x, v, t), training)
+        xnet = self.xnet[step]
+        if callable(xnet):
+            return xnet((x, v, t), training)
+        if first:
+            return xnet[0]((x, v, t), training)
+        return xnet[1]((x, v, t), training)
+
 
 
     def _full_v_update_forward(
