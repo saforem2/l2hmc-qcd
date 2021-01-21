@@ -202,6 +202,15 @@ class GaugeDynamics(BaseDynamics):
             self.lr = self._create_lr(lr_config, auto=True)
             self.optimizer = self._create_optimizer()
 
+    def _set_net_weights(self, net_weights: NetWeights):
+        self.net_weights = net_weights
+        self._xsw = net_weights.x_scale
+        self._xtw = net_weights.x_translation
+        self._xqw = net_weights.x_transformation
+        self._vsw = net_weights.v_scale
+        self._vtw = net_weights.v_translation
+        self._vqw = net_weights.v_transformation
+
     def _load_eps(
             self,
             log_dir: str = None,

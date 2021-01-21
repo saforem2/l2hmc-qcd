@@ -6,7 +6,7 @@ import numpy as np
 from config import NetWeights, PROJECT_DIR
 from dynamics.gauge_dynamics import build_dynamics
 from utils.attr_dict import AttrDict
-from utils.inference_utils import run
+from utils.inference_utils import run, short_training
 
 
 def load_configs_from_log_dir(log_dir):
@@ -47,10 +47,14 @@ def run_from_log_dir(log_dir: str, net_weights: NetWeights, run_steps=5000):
     dynamics.vnet = vnet
     io.log(f'Original dynamics.net_weights: {dynamics.net_weights}')
     io.log(f'Setting `dynamics.net_weights` to: {net_weights}')
+    dynamics._set_net_weights(net_weights)
     dynamics.net_weights = net_weights
     io.log(f'Now, dynamics.net_weights: {dynamics.net_weights}')
+    dynamics, train_data, x = short_training(1000, beta, log_dir=log_dir,
+                                             dynamics=dynamics, x=None)
     inference_results = run(dynamics, configs, beta=beta, runs_dir=run_dir,
-                            make_plots=True, therm_frac=0.2, num_chains=16)
+                            md_steps=500, make_plots=True, therm_frac=0.2,
+                            num_chains=16)
 
     return inference_results
 
