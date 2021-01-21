@@ -298,6 +298,7 @@ def run(
         therm_frac: float = 0.33,
         num_chains: int = 16,
         save_x: bool = False,
+        md_steps: int = 50,
 ) -> (InferenceResults):
     """Run inference. (Note: Higher-level than `run_dynamics`)."""
     if num_chains > 16:
@@ -313,7 +314,6 @@ def run(
         else:
             runs_dir = os.path.join(args.log_dir, 'inference')
 
-    md_steps = args.get('md_steps', 50)
     io.check_else_make_dir(runs_dir)
     run_dir = io.make_run_dir(args, runs_dir)
     data_dir = os.path.join(run_dir, 'run_data')
