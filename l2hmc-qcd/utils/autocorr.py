@@ -674,6 +674,17 @@ def get_plot_data(
     return tint_nsamples, tint_traj_len, tint_beta
 
 
+def calc_tau_int_vs_draws(
+        qarr: np.ndarray,
+        num_pts:int = 20,
+        nstart=1000,
+        therm_frac=0.2
+):
+    qarr, _ = therm_arr(qarr, therm_frac=therm_frac)
+    n, tint = calc_autocorr(qarr.T, num_pts=num_pts, nstart=nstart)
+    return {'q': qarr, 'narr': n, 'tint': tint}
+
+
 def calc_tau_int_from_dir(
         input_path: str,
         hmc: bool = False,
