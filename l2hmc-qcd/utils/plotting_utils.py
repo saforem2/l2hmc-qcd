@@ -643,10 +643,9 @@ def plot_data(
     plt.close('all')
     charges = np.array(data_container.data['charges'])
     lf = flags['dynamics_config']['num_steps']
-    tint_dict, _ = :plot_autocorrs_vs_draws(charges, num_pts=20,
-                                            nstart=1000, therm_frac=0.2,
-                                            out_dir=out_dir, lf=lf)
-
+    tint_dict, _ = plot_autocorrs_vs_draws(charges, num_pts=20,
+                                           nstart=1000, therm_frac=0.2,
+                                           out_dir=out_dir, lf=lf)
     #  try:
     if not hmc and 'Hwf' in data_dict.keys():
         _ = plot_energy_distributions(data_dict, out_dir=out_dir, title=title)
