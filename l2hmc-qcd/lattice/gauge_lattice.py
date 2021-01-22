@@ -85,7 +85,7 @@ class GaugeLattice:
 
     def calc_wilson_loops(self, x):
         """Calculate the plaquettes by summing the links in CCW direction."""
-        x = tf.reshape(x, shape=self._shape)
+        x = tf.reshape(x, shape=(-1, self.x_shape))
         # NOTE: x.shape = (B, T, X, D) -> plaqs.shape = (B, T, L)
         wilson_loops = (x[..., 0]                           # + U_{0}(x, y)
                         - x[..., 1]                         # - U_{1}(x, y)
@@ -97,7 +97,7 @@ class GaugeLattice:
     def calc_wilson_loops4x4(self, x):
         """Calculate 4x4 Wilson loops."""
         # x.shape = (batch_size, T, X, 2)
-        x = tf.reshape(x, shape=self._shape)
+        x = tf.reshape(x, shape=(-1, self.x_shape))
         wl4x4 = (x[..., 0]                                      # U_{0}(x, y)
                  + tf.roll(x[..., 0], -1, axis=2)               # U_{0}(x+1, y)
                  + tf.roll(x[..., 0], -2, axis=2)               # U_{0}(x+2, y)
