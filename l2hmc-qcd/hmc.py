@@ -14,9 +14,6 @@ import utils
 import random
 import tensorflow as tf
 
-from config import CBARS
-from tqdm.auto import tqdm, trange
-
 try:
     import horovod
     import horovod.tensorflow as hvd
@@ -102,9 +99,12 @@ def multiple_runs(flags, json_file=None):
     run_steps = flags.run_steps if flags.run_steps is not None else 125000
     shape = flags.x_shape if flags.x_shape is not None else default
 
-    betas = [5.0, 6.0, 7.0]
-    num_steps = [10, 15, 20, 25]
-    eps = [0.025, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3]
+    num_steps = [10, 20]
+    eps = [0.05, 0.1, 0.2]
+    betas = [1., 2., 3., 4.]
+    #  betas = [5.0, 6.0, 7.0]
+    #num_steps = [10, 15, 20, 25]
+    #  eps = [0.025, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3]
     #  eps = [0.1, 0.125, 0.15, 0.175, 0.2]
 
     for b in random.sample(betas, len(betas)):
@@ -120,12 +120,6 @@ def multiple_runs(flags, json_file=None):
                 exists = check_existing(b, ns, e)
                 if exists:
                     io.rule('Skipping existing run!')
-                    #  io.log(
-                    #      'Found existing run with: '
-                    #      f'beta: {beta}, lf: {ns}, eps: {e:.2g}, '
-                    #      'skipping!'
-                    #  )
-                    #  io.rule('continuing!')
                     continue
 
                 _ = main(args, json_file=json_file)
@@ -149,7 +143,6 @@ def main(args, json_file=None):
 
     if args.get('x_shape', None) is not None:
         flags['dynamics_config']['x_shape'] = args.x_shape
-        #  flags.dynamics_config['x_shape'] = args.x_shape
 
     if args.get('beta', None) is not None:
         flags.beta = args.beta
