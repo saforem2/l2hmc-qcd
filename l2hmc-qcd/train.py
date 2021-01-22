@@ -45,6 +45,7 @@ import utils.file_io as io
 from utils.attr_dict import AttrDict
 
 from utils.parse_configs import parse_configs
+from dynamics.gauge_dynamics import build_dynamics
 from utils.training_utils import train, train_hmc
 from utils.inference_utils import run, run_hmc, run_inference_from_log_dir
 
@@ -88,33 +89,34 @@ def restore_flags(flags, train_dir):
     return flags
 
 
-def main(args, num_chains=256):
+def main(configs, num_chains=256):
     """Main method for training."""
-    hmc_steps = args.get('hmc_steps', 0)
+    hmc_steps = configs.get('hmc_steps', 0)
     tf.keras.backend.set_floatx('float32')
     log_file = os.path.join(os.getcwd(), 'log_dirs.txt')
 
     x = None
-    log_dir = args.get('log_dir', None)
-    beta_init = args.get('beta_init', None)
-    beta_final = args.get('beta_final', None)
+    log_dir = configs.get('log_dir', None)
+    beta_init = configs.get('beta_init', None)
+    beta_final = configs.get('beta_final', None)
     if log_dir is not None:  # we want to restore from latest checkpoint
-        args.restore = True
-        train_steps = args.get('train_steps', None)
-        restored = restore_flags(args, os.path.join(args.log_dir, 'training'))
-        for key, val in args.items():
+        configs.restore = True
+        train_steps = configs.get('train_steps', None)
+        restored = restore_flags(configs,
+                                 os.path.join(configs.log_dir, 'training'))
+        for key, val in configs.items():
             if key in restored:
                 if val != restored[key]:
                     io.log(f'Restored {key}: {restored[key]}')
                     io.log(f'Using {key}: {val}')
 
-        args.update({
+        configs.update({
             'train_steps': train_steps,
         })
-        if beta_init != args.get('beta_init', None):
-            args.beta_init = beta_init
-        if beta_final != args.get('beta_final', None):
-            args.beta_final = beta_final
+        if beta_init != configs.get('beta_init', None):
+            configs.beta_init = beta_init
+        if beta_final != configs.get('beta_final', None):
+            configs.beta_final = beta_final
 
     else:  # New training session
         timestamps = AttrDict({
@@ -124,33 +126,37 @@ def main(args, num_chains=256):
             'minute': io.get_timestamp('%Y-%m-%d-%H%M'),
             'second': io.get_timestamp('%Y-%m-%d-%H%M%S'),
         })
-        args.log_dir = io.make_log_dir(args, 'GaugeModel', log_file,
-                                       timestamps=timestamps)
-        io.write(f'{args.log_dir}', log_file, 'a')
-        args.restore = False
+        configs.log_dir = io.make_log_dir(configs, 'GaugeModel', log_file,
+                                          timestamps=timestamps)
+        io.write(f'{configs.log_dir}', log_file, 'a')
+        configs.restore = False
         if hmc_steps > 0:
             #  x, _, eps = train_hmc(args)
-            x, dynamics_hmc, _, hflags = train_hmc(args, num_chains=num_chains)
+            x, dynamics_hmc, _, hflags = train_hmc(configs,
+                                                   num_chains=num_chains)
             #  dirs_hmc = hflags.get('dirs', None)
-            args.dynamics_config['eps'] = dynamics_hmc.eps.numpy()
+            #  args.dynamics_config['eps'] = dynamics_hmc.eps.numpy()
             _ = run(dynamics_hmc, hflags, save_x=False)
 
-    x, dynamics, train_data, args = train(args, x=x,
-                                          make_plots=True,
-                                          num_chains=num_chains)
+    x, dynamics, _, configs = train(configs, x=x, make_plots=True,
+                                    num_chains=num_chains)
 
     # ====
     # Run inference on trained model
-    if args.get('run_steps', 5000) > 0:
-        run_steps = args.get('run_steps', 125000)
-        log_dir = args.log_dir
-        beta = args.get('beta_final')
+    if configs.get('run_steps', 5000) > 0:
+        #  run_steps = args.get('run_steps', 125000)
+        log_dir = configs.log_dir
+        beta = configs.get('beta_final')
         num_chains = 8
-        batch_size = 256
-        therm_frac=0.2
-        make_plots=True
-        xbatch = x[:batch_size]
-        _ = run(dynamics, args, xbatch, beta=beta, make_plots=True,
+        if configs.get('small_batch', False):
+            batch_size = 256
+            old_shape = configs['dynamics_config']['x_shape']
+            new_shape = (batch_size, *old_shape[1:])
+            configs['dynamics_config']['x_shape'] = new_shape
+            dynamics = build_dynamics(configs, log_dir=log_dir)
+            x = x[:batch_size]
+
+        _ = run(dynamics, configs, x, beta=beta, make_plots=True,
                 therm_frac=0.2, num_chains=8, save_x=False)
 
         #  _ = run_inference_from_log_dir(log_dir=log_dir,

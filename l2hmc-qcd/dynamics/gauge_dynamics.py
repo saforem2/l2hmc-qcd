@@ -85,7 +85,7 @@ def build_test_dynamics():
     return build_dynamics(flags)
 
 
-def build_dynamics(flags):
+def build_dynamics(flags, log_dir=None):
     """Build dynamics using configs from FLAGS."""
     config = GaugeDynamicsConfig(**dict(flags.get('dynamics_config', None)))
 
@@ -111,13 +111,16 @@ def build_dynamics(flags):
         conv_config=conv_config,
     )
 
-    log_dir = flags['dynamics_config'].get('log_dir', None)
+    if log_dir is None:
+        log_dir = flags['dynamics_config'].get('log_dir', None)
+
     if log_dir is not None and log_dir != '':
         io.log(
             '\n'.join([120*'#', f'LOADING NETWORKS FROM: {log_dir}', 120*'#'])
         )
-        io.log(f'LOADING NETWORKS FROM: {log_dir}  !!!')
-        io.log(120 * '#')
+        io.rule(f'[red]Loading networks from: {log_dir} ![\red]')
+        #  io.log(f'LOADING NETWORKS FROM: {log_dir}  !!!', style='red')
+        #  io.log(120 * '#')
         xnet, vnet = dynamics._load_networks(log_dir)
         dynamics.xnet = xnet
         dynamics.vnet = vnet
