@@ -21,6 +21,7 @@ from utils import SKEYS
 import utils.file_io as io
 from utils.file_io import timeit
 from utils.attr_dict import AttrDict
+from utils.autocorr import calc_tau_int_vs_draws
 
 from config import TF_FLOAT, NP_FLOAT
 from dynamics.config import NetWeights
@@ -436,8 +437,39 @@ def mcmc_traceplot(key, val, title=None, fpath=None, **kwargs):
         return None
 
 
+def plot_autocorrs_vs_draws(
+        qarr: np.ndarray,
+        num_pts: int = 20,
+        nstart: int = 1000,
+        therm_frac: float = 0.2,
+        out_dir: str = None,
+        lf: int = None,
+):
+    tint_dict = calc_tau_int_vs_draws(qarr, num_pts, nstart, therm_frac)
+    fig, ax = plt.subplots()
+    y = np.mean(tint_dict['tint'], axis=-1)
+
+    xlabel = f'MC step'
+    if lf is not None:
+        y *= lf
+        ylabel = r'$N_{\mathrm{LF}}\cdot \tau_{\mathrm{int}}$'
+    else:
+        ylabel = r'$\tau_{\mathrm{int}}$'
+
+    yerr = np.std(tint_dict['tint'], axis=-1)
+    _ = ax.errorbar(tint_dict['narr'], y, yerr, marker='.', ls='')
+    _ = ax.set_ylabel(ylabel)
+    _ = ax.set_xlabel(xlabel)
+    if out_dir is not None:
+        out_file = os.path.join(out_dir, 'tint_vs_draws.pdf')
+        io.log(f'Saving figure to: {out_file}')
+        plt.savefig(out_file, dpi=400, bbox_inches='tight')
+
+    return tint_dict, (fig, ax)
+
+
 @timeit
-def plot_autocorrs(
+def plot_autocorrs1(
     beta: float,
     data: dict,
     data_compare: dict = None,
@@ -609,6 +641,11 @@ def plot_data(
                                 therm_frac=therm_frac,
                                 ridgeplots=True)
     plt.close('all')
+    charges = np.array(data_container.data['charges'])
+    lf = flags['dynamics_config']['num_steps']
+    tint_dict, _ = :plot_autocorrs_vs_draws(charges, num_pts=20,
+                                            nstart=1000, therm_frac=0.2,
+                                            out_dir=out_dir, lf=lf)
 
     #  try:
     if not hmc and 'Hwf' in data_dict.keys():
@@ -622,6 +659,7 @@ def plot_data(
     plt.close('all')
 
     output = {
+        'tint_dict': tint_dict,
         'data_container': data_container,
         'data_dict': data_dict,
         'data_vars': data_vars,

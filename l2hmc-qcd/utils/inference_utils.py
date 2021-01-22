@@ -9,6 +9,7 @@ import os
 import time
 
 from rich.progress import track
+from rich.console import Console
 from typing import Optional
 from pathlib import Path
 from collections import namedtuple
@@ -299,6 +300,7 @@ def run(
         num_chains: int = 16,
         save_x: bool = False,
         md_steps: int = 50,
+        console: Console = None,
 ) -> (InferenceResults):
     """Run inference. (Note: Higher-level than `run_dynamics`)."""
     if num_chains > 16:
@@ -333,7 +335,7 @@ def run(
 
     results = run_dynamics(dynamics=dynamics,
                            flags=args, x=x, beta=beta,
-                           save_x=save_x, md_steps=md_steps)
+                           save_x=save_x, md_steps=md_steps, console=console)
     run_data = results.run_data
 
     run_data.update_dirs({
@@ -378,13 +380,19 @@ def run(
     io.save_params(run_params, run_dir, name='run_params')
 
     if make_plots:
-        _ = plot_data(data_container=run_data,
-                      flags=args,
-                      params=run_params,
-                      out_dir=run_dir,
-                      hmc=dynamics.config.hmc,
-                      therm_frac=therm_frac,
-                      num_chains=num_chains)
+        output = plot_data(data_container=run_data,
+                           flags=args,
+                           params=run_params,
+                           out_dir=run_dir,
+                           hmc=dynamics.config.hmc,
+                           therm_frac=therm_frac,
+                           num_chains=num_chains)
+        tint_data = {
+            'narr': output['tint_dict']['narr'],
+            'tint': output['tint_dict']['tint'],
+        }
+        tint_file = os.path.join(run_dir, 'tint_data.z')
+        io.savez(tint_data, tint_file, 'tint_data')
 
     return InferenceResults(dynamics=results.dynamics,
                             run_data=run_data,
@@ -399,6 +407,7 @@ def run_dynamics(
         beta: float = None,
         save_x: bool = False,
         md_steps: int = 0,
+        console: Console = None,
 ) -> (InferenceResults):
     """Run inference on trained dynamics."""
     if not IS_CHIEF:
@@ -440,6 +449,7 @@ def run_dynamics(
         x, metrics = test_step((x, tf.constant(beta)))
 
     x_arr = []
+
     def timed_step(x: tf.Tensor, beta: tf.Tensor):
         start = time.time()
         x, metrics = test_step((x, tf.constant(beta)))
@@ -454,10 +464,13 @@ def run_dynamics(
     else:
         summary_steps = flags.run_steps // 100
 
+    if console is None:
+        console = io.console
+
     steps = tf.range(flags.run_steps, dtype=tf.int64)
     tracked_iter = track(enumerate(steps), total=len(steps),
                          description='Inference', transient=True,
-                         console=io.console)
+                         console=console)
 
     for idx, step in tracked_iter:
         x, metrics = timed_step(x, beta)
