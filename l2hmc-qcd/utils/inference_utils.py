@@ -174,9 +174,13 @@ def run_hmc(
             return InferenceResults(None, None, None, None)
 
     dynamics = build_dynamics(args)
-    inference_results = run(dynamics=dynamics, args=args, runs_dir=hmc_dir,
-                            make_plots=make_plots, save_x=save_x,
-                            therm_frac=therm_frac, num_chains=num_chains)
+    try:
+        inference_results = run(dynamics=dynamics, args=args, runs_dir=hmc_dir,
+                                make_plots=make_plots, save_x=save_x,
+                                therm_frac=therm_frac, num_chains=num_chains)
+    except FileExistsError:
+        inference_results = None
+        io.rule('Existing run with current parameters found! Skipping!!')
 
     return inference_results
 
@@ -301,6 +305,7 @@ def run(
         save_x: bool = False,
         md_steps: int = 50,
         console: Console = None,
+        skip_existing: bool = False,
 ) -> (InferenceResults):
     """Run inference. (Note: Higher-level than `run_dynamics`)."""
     if num_chains > 16:
