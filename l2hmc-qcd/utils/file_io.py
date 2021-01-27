@@ -570,7 +570,7 @@ def make_log_dir(
         model_type: str = None,
         log_file: str = None,
         root_dir: str = None,
-        timestamps: AttrDict = None
+        timestamps: AttrDict = None,
         skip_existing: bool = False,
 ):
     """Automatically create and name `log_dir` to save model data to.
