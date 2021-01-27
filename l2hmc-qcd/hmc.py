@@ -101,7 +101,8 @@ def multiple_runs(flags, json_file=None):
 
     num_steps = [10, 20]
     eps = [0.05, 0.1, 0.2]
-    betas = [1., 2., 3., 4.]
+    betas = [1., 2., 3., 4., 5., 6., 7.]
+    run_steps = 75000
     #  betas = [5.0, 6.0, 7.0]
     #num_steps = [10, 15, 20, 25]
     #  eps = [0.025, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3]
