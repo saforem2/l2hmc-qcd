@@ -1,10 +1,10 @@
 # l2hmc-qcd  [![CodeFactor](https://www.codefactor.io/repository/github/saforem2/l2hmc-qcd/badge)](https://www.codefactor.io/repository/github/saforem2/l2hmc-qcd) ![HitCount](http://hits.dwyl.io/saforem2/l2hmc-qcd.svg)
 ---
 
-## Overview
-
 **Note:** An end-to-end training + inference example can be found in
 [this notebook](l2hmc-qcd/notebooks/complete_example_2021_01_26.ipynb).
+
+## Overview
 
 The L2HMC algorithm aims to improve upon [HMC](https://en.wikipedia.org/wiki/Hamiltonian_Monte_Carlo)
 by optimizing a carefully chosen loss function which is designed to minimize autocorrelations
