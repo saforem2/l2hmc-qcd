@@ -3,6 +3,9 @@
 
 ## Overview
 
+**Note:** An end-to-end training + inference example can be found in
+[this notebook](l2hmc-qcd/notebooks/complete_example_2021_01_26.ipynb).
+
 The L2HMC algorithm aims to improve upon [HMC](https://en.wikipedia.org/wiki/Hamiltonian_Monte_Carlo)
 by optimizing a carefully chosen loss function which is designed to minimize autocorrelations
 within the Markov Chain, thereby improving the efficiency of the sampler.
