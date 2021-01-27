@@ -571,6 +571,7 @@ def make_log_dir(
         log_file: str = None,
         root_dir: str = None,
         timestamps: AttrDict = None
+        skip_existing: bool = False,
 ):
     """Automatically create and name `log_dir` to save model data to.
 
@@ -612,6 +613,9 @@ def make_log_dir(
             log_dir = os.path.join(*dirs, timestamps.month,
                                    f'{cfg_str}-{timestamps.minute}')
 
+        if skip_existing:
+            raise FileExistsError(f'`log_dir`: {log_dir} already exists! ')
+
         log('\n'.join(['Existing directory found with the same name!',
                        'Modifying the date string to include seconds.']))
 
@@ -624,7 +628,11 @@ def make_log_dir(
     return log_dir
 
 
-def make_run_dir(configs: AttrDict, base_dir: str):
+def make_run_dir(
+        configs: AttrDict,
+        base_dir: str,
+        skip_existing: bool = False
+):
     """Automatically create `run_dir` for storing inference data."""
     fstr = get_run_dir_fstr(configs)
     now = datetime.datetime.now()
@@ -632,6 +640,8 @@ def make_run_dir(configs: AttrDict, base_dir: str):
     run_str = f'{fstr}-{dstr}'
     run_dir = os.path.join(base_dir, run_str)
     if os.path.isdir(run_dir):
+        if skip_existing:
+            raise FileExistsError('Existing run found!')
         log('\n'.join(['Existing directory found with the same name!',
                        'Modifying the date string to include seconds.']))
         dstr = now.strftime('%Y-%m-%d-%H%M%S')

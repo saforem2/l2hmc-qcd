@@ -158,6 +158,7 @@ def main(args, json_file=None):
     if args.get('num_steps', None) is not None:
         flags.dynamics_config['num_steps'] = args.num_steps
 
+    #  return run_hmc(flags, skip_existing=True, num_chains=4, make_plots=True)
     return run_hmc(flags, skip_existing=True, num_chains=4, make_plots=True)
 
 
