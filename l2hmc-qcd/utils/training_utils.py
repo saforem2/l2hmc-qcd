@@ -141,6 +141,7 @@ def train(
         make_plots: bool = True,
         therm_frac: float = 0.33,
         num_chains: int = 32,
+        should_track: bool = True,
 ) -> (tf.Tensor, Union[BaseDynamics, GaugeDynamics], DataContainer, AttrDict):
     """Train model.
 
@@ -166,7 +167,9 @@ def train(
 
     if x is None:
         x = tf.random.normal(flags.dynamics_config['x_shape'])
-        x = tf.reshape(x, (x.shape[0], -1))
+
+    # Reshape x from (batch_size, Nt, Nx, 2) --> (batch_size, Nt * Nx * 2)
+    x = tf.reshape(x, (x.shape[0], -1))
 
     dynamics = build_dynamics(flags)
     #  network_dir = dynamics.config.get('log_dir', None)
@@ -179,7 +182,8 @@ def train(
     dynamics.save_config(dirs.config_dir)
 
     io.rule('TRAINING')
-    x, train_data = train_dynamics(dynamics, flags, dirs, x=x)
+    x, train_data = train_dynamics(dynamics, flags, dirs, x=x,
+                                   should_track=should_track)
 
     if IS_CHIEF and make_plots:
         output_dir = os.path.join(dirs.train_dir, 'outputs')
@@ -314,6 +318,7 @@ def train_dynamics(
         dirs: Optional[str] = None,
         x: Optional[tf.Tensor] = None,
         betas: Optional[tf.Tensor] = None,
+        should_track: Optional[bool] = True,
 ):
     """Train model."""
     # -- Helper functions for training, logging, saving, etc. --------------
@@ -393,9 +398,12 @@ def train_dynamics(
     # -- Training loop ----------------------------------------------------
     warmup_steps = dynamics.lr_config.warmup_steps
     steps_per_epoch = flags.get('steps_per_epoch', 1000)
-    iterable = track(enumerate(zip(steps, betas)), total=len(betas),
-                     console=io.console, description='training',
-                     transient=True)
+    if should_track:
+        iterable = track(enumerate(zip(steps, betas)), total=len(betas),
+                         console=io.console, description='training',
+                         transient=True)
+    else:
+        iterable = enumerate(zip(steps, betas))
 
     keep = ['dt', 'loss', 'accept_prob', 'beta',
             #  'Hf_start', 'Hf_mid', 'Hf_end'
