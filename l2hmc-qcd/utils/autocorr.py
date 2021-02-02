@@ -177,7 +177,12 @@ def load_from_dir(d, fnames=None):
 
 
 # pylint:disable=invalid-name,too-many-locals
-def load_charges_from_dir(d: str, hmc: bool = False, px_cutoff: float = None):
+def load_charges_from_dir(
+        d: str,
+        hmc: bool = False,
+        px_cutoff: float = None
+):
+
     """Load charge data from `d`."""
     io.log(f'Looking in {d}...')
 
@@ -697,7 +702,7 @@ def calc_tau_int_from_dir(
         keep_charges: bool = False,
 ):
     """
-    NOTE: `load_charges_from_dir` returns:
+    NOTE: `load_charges_from_dir` returns `output_arr`:
       `output_arr` is a list of dicts, each of which look like:
             output = {
                 'beta': beta,
@@ -718,7 +723,15 @@ def calc_tau_int_from_dir(
 
         return None
 
+    tint_data = {}
     for output in output_arr:
+        run_dir = output['run_dir']
+        beta = output['beta']
+        lf = output['lf']
+        #  eps = output['eps']
+        #  traj_len = output['traj_len']
+        run_params = output['run_params']
+
         if hmc:
             data_dir = os.path.join(input_path, 'run_data')
             plot_dir = os.path.join(input_path, 'plots', 'tau_int_plots')
@@ -728,12 +741,14 @@ def calc_tau_int_from_dir(
             plot_dir = os.path.join(run_dir, 'plots')
 
         outfile = os.path.join(data_dir, 'tau_int_data.z')
+        outfile1 = os.path.join(data_dir, 'tint_data.z')
         fdraws = os.path.join(plot_dir, 'tau_int_vs_draws.pdf')
         ftlen = os.path.join(plot_dir, 'tau_int_vs_traj_len.pdf')
         c1 = os.path.isfile(outfile)
+        c11 = os.path.isfile(outfile1)
         c2 = os.path.isfile(fdraws)
         c3 = os.path.isfile(ftlen)
-        if c1 or c2 or c3:
+        if c1 or c11 or c2 or c3:
             loaded = io.loadz(outfile)
             output.update(loaded)
             io.log(', '.join([
@@ -742,9 +757,6 @@ def calc_tau_int_from_dir(
             ]), style='yellow')
             loaded = io.loadz(outfile)
             output.update(loaded)
-
-        lf = output['lf']
-        beta = output['beta']
 
         xeps_check = 'xeps' in output['run_params'].keys()
         veps_check = 'veps' in output['run_params'].keys()
@@ -767,14 +779,24 @@ def calc_tau_int_from_dir(
         qarr, _ = therm_arr(output['qarr'], therm_frac=therm_frac)
 
         n, tint = calc_autocorr(qarr.T, num_pts=num_pts, nstart=nstart)
-        output.update({
-            'draws': n,
-            'tau_int': tint,
+        #  output.update({
+        #      'draws': n,
+        #      'tau_int': tint,
+        #      'qarr.shape': qarr.shape,
+        #  })
+        tint_data[run_dir] = {
+            'run_dir': run_dir,
+            'run_params': run_params,
+            'lf': lf,
+            'eps': eps,
+            'traj_len': traj_len,
+            'narr': n,
+            'tint': tint,
             'qarr.shape': qarr.shape,
-        })
-
+        }
         if save_data:
-            io.savez(output, outfile, name='tau_int_data')
+            io.savez(tint_data, outfile, 'tint_data')
+            #  io.savez(output, outfile, name='tint_data')
 
         if make_plot:
             #  fbeta = os.path.join(plot_dir, 'tau_int_vs_beta.pdf')
@@ -817,4 +839,4 @@ def calc_tau_int_from_dir(
             _ = plt.savefig(ftlen, dpi=400, bbox_inches='tight')
             plt.close('all')
 
-    return output_arr
+    return tint_data
