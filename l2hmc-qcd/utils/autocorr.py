@@ -690,6 +690,81 @@ def calc_tau_int_vs_draws(
     return {'q': qarr, 'narr': n, 'tint': tint}
 
 
+def look_for_tint_data(path: str, save_new: bool = False):
+    tint_data = {}
+    tint_files = [x for x in Path(path).rglob('*tint_data.z*') if x.is_file()]
+    bad_dirs = {}
+    for tint_file in tint_files:
+        tint = io.loadz(tint_file)
+        head, _ = os.path.split(str(tint_file))
+        narr = tint.get('narr', tint.get('draws', None))
+        if narr is None:
+            io.log(
+                f'Unable to parse data loaded from {tint_file}. Skipping!',
+                style='red',
+            )
+            continue
+
+        params_file = os.path.join(head, 'run_params.z')
+        if os.path.isfile(params_file):
+            params = io.loadz(params_file)
+        else:
+            io.log(
+                f'Unable to locate `run_params.z` in {head}, skipping',
+                style='red'
+            )
+            continue
+
+        lf = params.get('lf', None)
+        beta = params.get('beta', params.get('beta_final', None))
+        xeps = params.get('xeps', None)
+        if xeps is None:
+            eps = params.get('eps', params.get('eps_avg', None))
+            if eps is None:
+                io.log(
+                    f'Unable to determine `eps` for {head}, skipping',
+                    style='red',
+                )
+                continue
+            else:
+                eps = np.mean(eps)
+        else:
+            eps = np.mean(xeps)
+            traj_len = np.sum(xeps)
+
+        data = {
+            'lf': lf,
+            'eps': eps,
+            'traj_len': traj_len,
+            'tint': tint,
+            'narr': narr,
+            'beta': beta,
+            'run_dir': head,
+            'run_params': params,
+        }
+        if save_new:
+            outfile = os.path.join(head, 'tint_data.z')
+            io.log(f'Saving tint data to: {outfile}.')
+            io.savez(data, outfile, 'tint_data')
+
+        if beta not in tint_data:
+            tint_data[beta] = {
+                traj_len: data
+            }
+        else:
+            traj_len_duplicate = traj_len + 1e-6 * np.random.randn()
+            tint_data[beta] = {
+                traj_len_duplicate: data
+            }
+
+        if save_new:
+            outfile = os.path.join(head, 'tint_data.z')
+            io.log(f'Saving tint_data to: {outfile}.')
+            io.savez(tint_data)
+
+    return tint_data
+
+
 def calc_tau_int_from_dir(
         input_path: str,
         hmc: bool = False,
@@ -756,6 +831,8 @@ def calc_tau_int_from_dir(
                 f'\t Found existing data at: {outfile}.',
             ]), style='yellow')
             loaded = io.loadz(outfile)
+            n = loaded.get('draws', loaded.get('narr', None))
+            tint = loaded.get('tau_int', loaded.get('tint', None))
             output.update(loaded)
 
         xeps_check = 'xeps' in output['run_params'].keys()
