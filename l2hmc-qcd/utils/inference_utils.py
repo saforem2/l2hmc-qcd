@@ -366,11 +366,15 @@ def run(
         'input_shape': dynamics.x_shape,
     }
 
+    traj_len = dynamics.config.num_steps * tf.reduce_mean(dynamics.xeps)
+
     if hasattr(dynamics, 'xeps') and hasattr(dynamics, 'veps'):
         xeps_avg = tf.reduce_mean(dynamics.xeps)
         veps_avg = tf.reduce_mean(dynamics.veps)
+        traj_len = tf.reduce_sum(dynamics.xeps)
         run_params.update({
             'xeps': dynamics.xeps,
+            'traj_len': traj_len,
             'veps': dynamics.veps,
             'xeps_avg': xeps_avg,
             'veps_avg': veps_avg,
@@ -393,16 +397,21 @@ def run(
                            therm_frac=therm_frac,
                            num_chains=num_chains)
         tint_data = {
+            'beta': beta,
+            'run_dir': run_dir,
+            'traj_len': traj_len,
+            'run_params': run_params,
+            'eps': run_params['eps_avg'],
+            'lf': run_params['num_steps'],
             'narr': output['tint_dict']['narr'],
             'tint': output['tint_dict']['tint'],
         }
+
         tint_file = os.path.join(run_dir, 'tint_data.z')
         io.savez(tint_data, tint_file, 'tint_data')
 
-    return InferenceResults(dynamics=results.dynamics,
-                            run_data=run_data,
-                            x=results.x,
-                            x_arr=results.x_arr)
+    return InferenceResults(dynamics=results.dynamics, run_data=run_data,
+                            x=results.x, x_arr=results.x_arr)
 
 
 def run_dynamics(
