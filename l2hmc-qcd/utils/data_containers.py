@@ -286,7 +286,7 @@ class DataContainer:
             'hmc': hmc,
         }
 
-        for key, val in dict(sorted(self.data.items())):
+        for key, val in dict(sorted(self.data.items())).items():
             tensor = tf.convert_to_tensor(val)
             arr, steps = therm_arr(tensor.numpy(), therm_frac=0.2)
             if 'steps' not in avg_data:
