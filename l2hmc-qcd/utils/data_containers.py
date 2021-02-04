@@ -285,17 +285,19 @@ class DataContainer:
             'run_dir': run_str,
             'hmc': hmc,
         }
-        for key, val in self.data.items():
+
+        for key, val in dict(sorted(self.data.items())):
             tensor = tf.convert_to_tensor(val)
             arr, steps = therm_arr(tensor.numpy(), therm_frac=0.2)
             if 'steps' not in avg_data:
                 avg_data['steps'] = len(steps)
             avg_data[key] = np.mean(arr)
+
             #  avg_data[key] = tf.reduce_mean(arr)
 
         avg_df = pd.DataFrame(avg_data, index=[0])
-        csv_file = os.path.join(BASE_DIR, 'logs', 'GaugeModel_logs',
-                                'inference_results.csv')
+        outdir = os.path.join(BASE_DIR, 'logs', 'GaugeModel_logs')
+        csv_file = os.path.join(outdir, 'inference.csv')
         head, tail = os.path.split(csv_file)
         io.check_else_make_dir(head)
         io.log(f'Appending inference results to {csv_file}.')
