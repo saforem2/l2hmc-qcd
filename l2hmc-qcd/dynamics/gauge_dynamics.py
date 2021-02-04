@@ -815,6 +815,10 @@ class GaugeDynamics(BaseDynamics):
 
     def _call_vnet(self, inputs, step, training=None):
         """Call `self.xnet` to get Sx, Tx, Qx for updating `x`."""
+        if self.config.hmc:
+            x, grad, t = inputs
+            return [tf.zeros_like(inputs[0]) for _ in range(3)]
+
         if not self.config.separate_networks:
             return self.vnet(inputs, training)
 
@@ -836,17 +840,20 @@ class GaugeDynamics(BaseDynamics):
 
         return x
 
-    def _call_xnet(self, inputs, mask, step,
-                   training=None, first: bool = False):
+    def _call_xnet(
+            self,
+            inputs: tuple,
+            mask: tf.Tensor,
+            step: int,
+            training: bool = None,
+            first: bool = False
+    ):
         """Call `self.xnet` to get Sx, Tx, Qx for updating `x`."""
         x, v, t = inputs
-        x = self._convert_to_cartesian(x, mask)
+        if self.config.hmc:
+            return [tf.zeros_like(inputs[0]) for _ in range(3)]
 
-        #  xnet0, xnet1 = self.xnet[step]
-        #  if first:
-        #      return xnet0((x, v, t), training)
-        #
-        #  return xnet1((x, v, t), training)
+        x = self._convert_to_cartesian(x, mask)
 
         if not self.config.separate_networks:
             return self.xnet((x, v, t), training)
@@ -857,8 +864,6 @@ class GaugeDynamics(BaseDynamics):
         if first:
             return xnet[0]((x, v, t), training)
         return xnet[1]((x, v, t), training)
-
-
 
     def _full_v_update_forward(
             self,
@@ -1370,13 +1375,6 @@ class GaugeDynamics(BaseDynamics):
         """
         def _traj_summ(x, key=None):
             """Helper fn for summarizing `x` along the trajectory"""
-            #  return {f'{key}': tf.squeeze(x)} if key is not None
-            #  if key is not None:
-            #      return {
-            #          f'{key}': tf.squeeze(x),
-            #      }
-            #
-            #  return (x[0], x[midpt], x[1])
             return (x[0], x[midpt], x[1]) if key is None else {
                 f'{key}': tf.squeeze(x)
             }
