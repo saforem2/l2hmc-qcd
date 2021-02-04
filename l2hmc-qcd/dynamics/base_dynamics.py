@@ -826,7 +826,14 @@ class BaseDynamics(tf.keras.Model):
         """Call `self.vnet` to get Sv, Tv, Qv for updating `v`."""
         raise NotImplementedError
 
-    def _call_xnet(self, inputs, mask, step, training=None):
+    def _call_xnet(
+            self,
+            inputs: tuple,
+            mask: tf.Tensor,
+            step: int,
+            training: bool = None,
+            first: bool = False,
+    ):
         """Call `self.xnet` to get Sx, Tx, Qx for updating `x`."""
         raise NotImplementedError
 
