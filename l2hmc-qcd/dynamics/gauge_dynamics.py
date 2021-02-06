@@ -48,7 +48,7 @@ NUM_WORKERS = hvd.size()
 import utils.file_io as io
 
 from config import BIN_DIR
-from lattice.gauge_lattice import GaugeLattice, Charges
+from lattice.gauge_lattice import GaugeLattice, Charges, area_law
 from utils.attr_dict import AttrDict
 from utils.seed_dict import vnet_seeds  # noqa:F401
 from utils.seed_dict import xnet_seeds  # noqa:F401
@@ -1420,13 +1420,14 @@ class GaugeDynamics(BaseDynamics):
         NOTE: We track the error in the plaquette instead of the actual value.
         """
         wloops = self.lattice.calc_wilson_loops(state.x)
-        wloops4x4 = self.lattice.calc_wilson_loops4x4(state.x)
+        p4x4_obs = self.lattice.calc_plaqs4x4(x=state.x, beta=state.beta)
+        p4x4_exp = area_law(state.beta, 16)  # 4x4 plaquette, area = 16
+        p4x4_err = p4x4_obs - p4x4_exp
+        #  wloops4x4 = self.lattice.calc_wilson_loops4x4(state.x)
         charges = self.lattice.calc_both_charges(x=state.x)
         plaqs = self.lattice.calc_plaqs(wloops=wloops, beta=state.beta)
-        plaqs4x4 = self.lattice.calc_plaqs4x4(wloops=wloops4x4,
-                                              beta=state.beta)
 
-        return plaqs, charges, plaqs4x4
+        return plaqs, charges, p4x4_err
 
     def calc_observables(
             self,
