@@ -45,6 +45,7 @@ from utils.annealing_schedules import get_betas
 from dynamics.config import NET_WEIGHTS_HMC
 from dynamics.base_dynamics import BaseDynamics
 from dynamics.gauge_dynamics import build_dynamics, GaugeDynamics
+from utils.inference_utils import run as run_inference
 
 if tf.__version__.startswith('1.'):
     TF_VERSION = 1
@@ -62,6 +63,10 @@ TO_KEEP = [
 #      tf.config.experimental.enable_mlir_graph_optimization()
 #  except:  # noqa: E722
 #      pass
+
+def check_if_int(x):
+    nearest_int = tf.math.round(x)
+    return tf.math.abs(x - nearest_int) < 1e-3
 
 def train_hmc(
         flags: AttrDict,
@@ -371,10 +376,11 @@ def train_dynamics(
 
     # -- Try running compiled `train_step` fn otherwise run imperatively ----
     if flags.profiler:
-        tf.profiler.experimental.start(logdir=dirs.summary_dir)
         io.rule('Running 10 profiling steps')
         for step in range(10):
-            x, metrics = dynamics.train_step((x, tf.constant(betas[0])))
+            with tf.profiler.experimental.Trace('train', step_num=step, _r=1):
+            #  tf.profiler.experimental.start(logdir=dirs.summary_dir)
+                x, metrics = dynamics.train_step((x, tf.constant(betas[0])))
 
         tf.profiler.experimental.stop(save=True)
         io.rule('done')
@@ -412,9 +418,14 @@ def train_dynamics(
             'Hwf_start', 'Hwf_mid', 'Hwf_end',
             'xeps', 'veps', 'dq', 'dq_sin', 'plaqs', 'p4x4']
 
+    discrete_betas = np.arange(beta, 8, dtype=int)
     for idx, (step, beta) in iterable:
         # -- Perform a single training step -------------------------------
         x, metrics = timed_step(x, beta)
+
+        # TODO: Run inference when beta hits an integer
+        #  if (step + 1) > 0 and beta in discrete_betas:
+        #      _ = run(dynamics, flags, x, beta=beta,
 
         if (step + 1) > warmup_steps and (step + 1) % steps_per_epoch == 0:
             reduce_lr.on_epoch_end(step+1, {'loss': metrics.loss})
