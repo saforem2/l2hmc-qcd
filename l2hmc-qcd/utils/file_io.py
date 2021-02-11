@@ -479,7 +479,7 @@ def parse_configs(flags: AttrDict, debug: bool = False):
     if config.get('hmc', False):
         fstr += 'HMC_'
 
-    if debug or 0 < flags.get('train_steps', None) < 1e4:
+    if debug or 0 < flags.get('train_steps', None) < 1e3:
         fstr += 'DEBUG_'
 
     x_shape = config.get('x_shape', None)
