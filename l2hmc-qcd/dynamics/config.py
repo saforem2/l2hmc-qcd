@@ -77,3 +77,4 @@ class GaugeDynamicsConfig:
     gauge_eq_masks: bool = False        # Use gauge eq. masks?
     log_dir: str = None                 # `log_dir` containing loadable nets
     optimizer: str = 'adam'             # optimizer to use for backprop
+    net_weights: NetWeights = None

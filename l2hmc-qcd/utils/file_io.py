@@ -16,6 +16,7 @@ import logging
 import datetime
 
 import joblib
+import h5py
 import numpy as np
 
 from typing import Any, Dict, Type
@@ -41,7 +42,7 @@ console = Console(record=False,
 #  print = console.print
 from rich.logging import RichHandler
 
-from config import PROJECT_DIR
+from config import PROJECT_DIR, NetWeights
 from utils.attr_dict import AttrDict
 
 # pylint:disable=wrong-import-position
@@ -553,6 +554,12 @@ def parse_configs(flags: AttrDict, debug: bool = False):
 
     if config.get('use_batch_norm', False):
         fstr += '_bNorm'
+
+    if config.get('net_weights', None) is not None:
+        nw = config.get('net_weights', None)
+        if nw != NetWeights(1., 1., 1., 1., 1., 1.):
+            nwstr = ''.join([str(int(i)) for i in tuple(nw)])
+            fstr += f'_nw{nwstr}'
 
     return fstr.replace('.', '')
 
