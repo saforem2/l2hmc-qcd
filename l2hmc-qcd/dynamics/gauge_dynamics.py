@@ -1475,10 +1475,12 @@ class GaugeDynamics(BaseDynamics):
         }
 
     def _get_time(self, i, tile=1):
-        """Format the MCMC step as:
-           ```
-           [cos(2 * step/num_steps), sin(2pi*step/num_steps)]
-           ```
+        """Format the current leapfrog step as:
+        ```
+        [cos(2pi * step/num_steps), sin(2pi * step/num_steps)]
+        ```
+        for step in [0, 1, ..., num_steps], and reshape so that each chain in
+        our batch of inputs gets a copy.
         """
         #  if self.config.separate_networks:
         #      trig_t = tf.squeeze([0, 0])
