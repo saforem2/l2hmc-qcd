@@ -199,7 +199,12 @@ class GaugeDynamics(BaseDynamics):
                 #  log_dir=self.config.get('log_dir', None)
             )
 
-        self.net_weights = self._parse_net_weights(net_weights)
+        if self.config.net_weights is None:
+            self.net_weights = self._parse_net_weights(net_weights)
+        else:
+            net_weights = NetWeights(*self.config.net_weights)
+            self.net_weights = self._parse_net_weights(net_weights)
+
         if self._has_trainable_params:
             self.lr_config = lr_config
             self.lr = self._create_lr(lr_config, auto=True)

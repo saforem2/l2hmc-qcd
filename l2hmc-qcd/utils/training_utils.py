@@ -177,6 +177,7 @@ def train(
     x = tf.reshape(x, (x.shape[0], -1))
 
     dynamics = build_dynamics(flags)
+    io.log(f'dynamics.net_weights: {dynamics.net_weights}')
     #  network_dir = dynamics.config.get('log_dir', None)
     network_dir = dynamics.config.log_dir
     if network_dir is not None:
