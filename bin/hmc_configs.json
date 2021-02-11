@@ -16,7 +16,7 @@
     "dynamics_config": {
         "verbose": false,
         "eps": 0.15,
-        "num_steps": 10,
+        "num_steps": 9,
         "hmc": true,
         "use_ncp": false,
         "eps_fixed": true,
