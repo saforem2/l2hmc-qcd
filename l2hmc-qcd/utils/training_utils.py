@@ -419,7 +419,7 @@ def train_dynamics(
             'Hwf_start', 'Hwf_mid', 'Hwf_end',
             'xeps', 'veps', 'dq', 'dq_sin', 'plaqs', 'p4x4']
 
-    discrete_betas = np.arange(beta, 8, dtype=int)
+    #  discrete_betas = np.arange(beta, 8, dtype=int)
     for idx, (step, beta) in iterable:
         # -- Perform a single training step -------------------------------
         x, metrics = timed_step(x, beta)
