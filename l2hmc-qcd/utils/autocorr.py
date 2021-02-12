@@ -690,79 +690,159 @@ def calc_tau_int_vs_draws(
     return {'q': qarr, 'narr': n, 'tint': tint}
 
 
-def look_for_tint_data(path: str, save_new: bool = False):
+def _get_important_params(path):
+    """Get important parameters by finding and loading from `run_params.z`."""
+    params_file = os.path.join(path, 'run_params.z')
+    try:
+        params = io.loadz(params_file)
+    except FileNotFoundError as err:
+        io.log(f'Unable to locate {params_file}.', style='red')
+        raise err
+
+    lf = params.get('num_steps', None)
+    beta = params.get('beta', params.get('beta_final', None))
+    xeps = params.get('xeps', None)
+    traj_len = params.get('traj_len', None)
+    if xeps is None:
+        eps = params.get('eps', params.get('eps_avg', None))
+        if eps is None:
+            raise ValueError(f'Unable to determine `eps`.')
+        eps = np.mean(eps)
+        traj_len = lf * eps
+    else:
+        eps = np.mean(xeps)
+        traj_len = np.sum(xeps)
+
+    important_params = {
+        'lf': lf,
+        'eps': eps,
+        'traj_len': traj_len,
+        'beta': beta,
+        'run_params': params,
+    }
+
+    return important_params
+
+
+def _deal_with_new_data(tint_file: str, save: bool = False):
+    loaded = io.loadz(tint_file)
+    if 'tau_int_data' in tint_file:
+        head = os.path.dirname(os.path.split(tint_file)[0])
+    else:
+        head, _ = os.path.split(str(tint_file))
+    tint_arr = loaded.get('tint', loaded.get('tau_int', None))
+    narr = loaded.get('narr', loaded.get('draws', None))
+    if tint_arr is None or narr is None:
+        raise ValueError(f'Unable to load from {tint_file}.')
+
+    try:
+        params = _get_important_params(head)
+    except (ValueError, FileNotFoundError) as err:
+        io.log(f'Error loading params from {head}, skipping!', style='red')
+        raise err
+
+    lf = params.get('lf', None)
+    eps = params.get('eps', None)
+    traj_len = params.get('traj_len', None)
+    beta = params.get('beta', None)
+    data = {
+        'tint': tint_arr,
+        'narr': narr,
+        'run_dir': head,
+        'lf': lf,
+        'eps': eps,
+        'traj_len': traj_len,
+        'beta': beta,
+        'run_params': params.get('run_params', None),
+    }
+    if save:
+        outfile = os.path.join(head, 'tint_data.z')
+        io.log(f'Saving tint data to: {outfile}.')
+        io.savez(data, outfile, 'tint_data')
+
+    return data
+
+
+def deal_with_new_data(path: str, save: bool = False):
     tint_data = {}
-    tint_files = [x for x in Path(path).rglob('*tint_data.z*') if x.is_file()]
+    tint_files = [
+        x for x in Path(path).rglob('*tint_data.z*') if x.is_file()
+    ]
+    tau_int_files = [
+        x for x in Path(path).rglob(f'*tau_int_data.z*') if x.is_file()
+    ]
     bad_dirs = {}
     for tint_file in tint_files:
-        tint = io.loadz(tint_file)
-        head, _ = os.path.split(str(tint_file))
-        narr = tint.get('narr', tint.get('draws', None))
-        if narr is None:
-            io.log(
-                f'Unable to parse data loaded from {tint_file}. Skipping!',
-                style='red',
-            )
+        try:
+            tint = _deal_with_new_data(tint_file, save=save)
+        except (ValueError, FileNotFoundError) as err:
+            io.log(f'Unable to get tint data from: {tint_file}, skipping!')
             continue
 
-        params_file = os.path.join(head, 'run_params.z')
-        if os.path.isfile(params_file):
-            params = io.loadz(params_file)
-        else:
-            io.log(
-                f'Unable to locate `run_params.z` in {head}, skipping',
-                style='red'
-            )
-            continue
-
-        lf = params.get('lf', None)
-        beta = params.get('beta', params.get('beta_final', None))
-        xeps = params.get('xeps', None)
-        if xeps is None:
-            eps = params.get('eps', params.get('eps_avg', None))
-            if eps is None:
-                io.log(
-                    f'Unable to determine `eps` for {head}, skipping',
-                    style='red',
-                )
-                continue
-            else:
-                eps = np.mean(eps)
-        else:
-            eps = np.mean(xeps)
-            traj_len = np.sum(xeps)
-
-        data = {
-            'lf': lf,
-            'eps': eps,
-            'traj_len': traj_len,
-            'tint': tint,
-            'narr': narr,
-            'beta': beta,
-            'run_dir': head,
-            'run_params': params,
-        }
-        if save_new:
-            outfile = os.path.join(head, 'tint_data.z')
-            io.log(f'Saving tint data to: {outfile}.')
-            io.savez(data, outfile, 'tint_data')
-
+        beta = tint['beta']
+        traj_len = tint['traj_len']
+        run_dir = tint['run_dir']
         if beta not in tint_data:
             tint_data[beta] = {
-                traj_len: data
+                tint['traj_len']: tint
             }
         else:
-            traj_len_duplicate = traj_len + 1e-6 * np.random.randn()
-            tint_data[beta] = {
-                traj_len_duplicate: data
-            }
+            if traj_len not in tint_data[beta]:
+                tint_data[beta][traj_len] = tint
+            else:
+                # If traj_len is already in tint_data[beta], jitter it by some
+                # small amount to create new entry in `tint_data[beta]`
+                #  traj_len_modified = traj_len + 1e-6 * np.random.randn()
+                traj_len += 1e-6 * np.random.randn()
+                tint_data[beta][traj_len] = tint
 
-        if save_new:
-            outfile = os.path.join(head, 'tint_data.z')
+        if save:
+            outfile = os.path.join(run_dir, 'tint_data.z')
             io.log(f'Saving tint_data to: {outfile}.')
-            io.savez(tint_data)
+            io.savez(tint, outfile, 'tint_data')
+
+    for tau_int_file in tau_int_files:
+        try:
+            tint = _deal_with_new_data(tau_int_file, save=save)
+        except (ValueError, FileNotFoundError) as err:
+            io.log(f'Unable to get tint data from: {tau_int_file}, skipping!')
+            continue
+        beta = tint['beta']
+        traj_len = tint['traj_len']
+        run_dir = tint['run_dir']
+        if beta not in tint_data:
+            tint_data[beta] = {
+                tint['traj_len']: tint
+            }
+        else:
+            if traj_len not in tint_data[beta]:
+                tint_data[beta][traj_len] = tint
+            else:
+                traj_len += 1e-6 * np.random.randn()
+                tint_data[beta][traj_len] = tint
+        if save:
+            outfile = os.path.join(run_dir, 'tint_data.z')
+            io.log(f'Saving tint data to: {outfile}.')
+            io.savez(tint, outfile, 'tint_data')
 
     return tint_data
+
+
+def deal_with_old_data(path: str, save: bool = False):
+    tint_data = {}
+    tau_int_files = [
+        x for x in Path(path).rglob('*tau_int_data.z*') if x.is_file()
+    ]
+    for tau_int_file in tau_int_files:
+        pass
+
+
+def look_for_tint_data(path: str, save: bool = False):
+    tint_data = {}
+    new_data = deal_with_new_data(path, save=save)
+    pass
+
+
 
 
 def calc_tau_int_from_dir(
