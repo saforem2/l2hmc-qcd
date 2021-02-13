@@ -751,6 +751,7 @@ def get_hmc_dirs(extra_paths=None):
 
     return list(np.unique(hmc_dirs))
 
+
 def _look(p, s, conds=None):
     matches = [x for x in Path(p).rglob(f'*{s}*')]
     if conds is not None:
@@ -784,4 +785,4 @@ def get_l2hmc_dirs(extra_paths=None):
         l2hmc_dirs += _look(d, 'L16_b', conds)
         console.log(f'len(l2hmc_dirs): {len(l2hmc_dirs)}')
 
-    return list(np.unque(l2hmc_dirs))
+    return list(np.unique(l2hmc_dirs))
