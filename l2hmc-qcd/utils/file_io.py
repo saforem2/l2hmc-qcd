@@ -316,6 +316,8 @@ def savez(obj: Any, fpath: str, name: str = None):
 
     if name is not None:
         console.log(f'Saving {name} to {os.path.abspath(fpath)}.')
+    else:
+        console.log(f'Saving {obj.__class__} to {os.path.abspath(fpath)}.')
 
     joblib.dump(obj, fpath)
 
