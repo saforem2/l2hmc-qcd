@@ -99,7 +99,10 @@ def build_dynamics(flags, log_dir=None):
 
     conv_config = None
     if flags.get('conv_config', None) is not None and config.use_conv_net:
-        conv_config = ConvolutionConfig(**flags.get('conv_config', None))
+        conv_config = flags.get('conv_config', None)
+        if not isinstance(conv_config, ConvolutionConfig):
+            conv_config = ConvolutionConfig(**flags.get('conv_config', None))
+
         input_shape = config.x_shape[1:]
         conv_config.input_shape = input_shape
 
