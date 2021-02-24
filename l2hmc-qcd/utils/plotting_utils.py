@@ -551,9 +551,10 @@ def plot_data(
     })
 
     run_dir = params.get('run_dir', None)
-    if os.path.isdir(str(Path(run_dir))):
-        tint_file = os.path.join(run_dir, 'tint_data.z')
-        io.savez(tint_data, tint_file, 'tint_data')
+    if run_dir is not None:
+        if os.path.isdir(str(Path(run_dir))):
+            tint_file = os.path.join(run_dir, 'tint_data.z')
+            io.savez(tint_data, tint_file, 'tint_data')
 
     out_dir = os.path.join(out_dir, 'plots')
     io.check_else_make_dir(out_dir)
