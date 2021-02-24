@@ -16,8 +16,10 @@ import tensorflow as tf
 import seaborn as sns
 import matplotlib.pyplot as plt
 import itertools as it
+from pathlib import Path
 
 from utils import SKEYS
+from copy import deepcopy
 import utils.file_io as io
 from utils.file_io import timeit
 from utils.attr_dict import AttrDict
@@ -536,6 +538,23 @@ def plot_data(
         io.log(f'Reducing `num_chains` from {num_chains} to 16 for plotting.')
         num_chains = 16
 
+    charges = np.array(data_container.data['charges'])
+    lf = flags['dynamics_config']['num_steps']
+    tint_dict, _ = plot_autocorrs_vs_draws(charges, num_pts=20,
+                                           nstart=1000, therm_frac=0.2,
+                                           out_dir=out_dir, lf=lf)
+    tint_data = deepcopy(params)
+    tint_data.update({
+        'narr': tint_dict['narr'],
+        'tint': tint_dict['tint'],
+        'run_params': params,
+    })
+
+    run_dir = params.get('run_dir', None)
+    if os.path.isdir(str(Path(run_dir))):
+        tint_file = os.path.join(run_dir, 'tint_data.z')
+        io.savez(tint_data, tint_file, 'tint_data')
+
     out_dir = os.path.join(out_dir, 'plots')
     io.check_else_make_dir(out_dir)
     if hmc is None:
@@ -641,11 +660,6 @@ def plot_data(
                                 therm_frac=therm_frac,
                                 ridgeplots=True)
     plt.close('all')
-    charges = np.array(data_container.data['charges'])
-    lf = flags['dynamics_config']['num_steps']
-    tint_dict, _ = plot_autocorrs_vs_draws(charges, num_pts=20,
-                                           nstart=1000, therm_frac=0.2,
-                                           out_dir=out_dir, lf=lf)
     #  try:
     if not hmc and 'Hwf' in data_dict.keys():
         _ = plot_energy_distributions(data_dict, out_dir=out_dir, title=title)
