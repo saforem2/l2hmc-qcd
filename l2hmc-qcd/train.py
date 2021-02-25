@@ -143,7 +143,7 @@ def main(configs, num_chains=256):
 
     # ====
     # Run inference on trained model
-    if configs.get('run_steps', 5000) > 0:
+    if configs.get('run_steps', 50000) > 0:
         #  run_steps = args.get('run_steps', 125000)
         log_dir = configs.log_dir
         beta = configs.get('beta_final')
@@ -157,7 +157,7 @@ def main(configs, num_chains=256):
             x = x[:batch_size]
 
         _ = run(dynamics, configs, x, beta=beta, make_plots=True,
-                therm_frac=0.2, num_chains=8, save_x=False)
+                therm_frac=0.1, num_chains=15, save_x=False)
 
         #  _ = run_inference_from_log_dir(log_dir=log_dir,
         #                                 run_steps=run_steps,

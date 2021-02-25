@@ -223,7 +223,7 @@ def load_and_run(
 
 def run_inference_from_log_dir(
         log_dir: str,
-        run_steps: int = 5000,
+        run_steps: int = 50000,
         beta: float = None,
         eps: float = None,
         make_plots: bool = True,
@@ -331,7 +331,7 @@ def run(
     writer.set_as_default()
 
     args.logging_steps = 1
-    run_steps = args.get('run_steps', 2000)
+    run_steps = args.get('run_steps', 50000)
     if beta is None:
         beta = args.get('beta_final', args.get('beta', None))
 
