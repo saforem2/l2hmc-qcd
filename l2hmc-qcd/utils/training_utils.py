@@ -269,7 +269,19 @@ def setup(dynamics, flags, dirs=None, x=None, betas=None):
         betas = tf.cast(flags.beta_final, ones.dtype) * ones
     else:
         betas = get_betas(num_steps - 1, flags.beta_init, flags.beta_final)
-        betas = betas[current_step:]
+
+    if current_step > len(betas):
+        diff = current_step - len(betas)
+        betas = list(betas) + [flags.beta_final for _ in range(diff)]
+
+    betas = betas[current_step:]
+
+    if len(betas) < flags.train_steps:
+        diff = flags.train_steps - len(betas)
+        betas = (
+            [i for i in betas]
+            + [flags.beta_final for _ in range(diff)]
+        )
 
     betas = tf.convert_to_tensor(betas, dtype=x.dtype)
     dynamics.compile(loss=dynamics.calc_losses,
