@@ -24,7 +24,7 @@ import numpy as np
 
 from tqdm.auto import tqdm
 
-from config import NetWeights, PROJECT_DIR
+from config import NetWeights, PROJECT_DIR, GREEN
 from utils.attr_dict import AttrDict
 from rich.theme import Theme
 from rich.console import Console
@@ -35,7 +35,7 @@ from rich.progress import (BarColumn, DownloadColumn, Progress, TaskID,
 console = Console(record=False,
                   width=240,
                   log_time_format='[%X] ',
-                  theme=Theme({'repr.number': '#71c6ff'}))
+                  theme=Theme({'repr.number': GREEN}))
 
 
 # pylint:disable=wrong-import-position
@@ -310,6 +310,9 @@ def savez(obj: Any, fpath: str, name: str = None):
     """Save `obj` to compressed `.z` file at `fpath`."""
     if RANK != 0:
         return
+
+    head, tail = os.path.split(fpath)
+    check_else_make_dir(head)
 
     if not fpath.endswith('.z'):
         fpath += '.z'
