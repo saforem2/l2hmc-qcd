@@ -306,6 +306,7 @@ def run(
         md_steps: int = 50,
         console: Console = None,
         skip_existing: bool = False,
+        run_steps: int = None,
 ) -> (InferenceResults):
     """Run inference. (Note: Higher-level than `run_dynamics`)."""
     if num_chains > 16:
@@ -331,7 +332,10 @@ def run(
     writer.set_as_default()
 
     args.logging_steps = 1
-    run_steps = args.get('run_steps', 50000)
+    #  run_steps = args.get('run_steps', 50000)
+    if run_steps is None:
+        run_steps = args.get('run_steps', 50000)
+
     if beta is None:
         beta = args.get('beta_final', args.get('beta', None))
 
@@ -339,8 +343,8 @@ def run(
         x = convert_to_angle(tf.random.normal(shape=dynamics.x_shape))
 
     results = run_dynamics(dynamics=dynamics,
-                           flags=args, x=x, beta=beta,
-                           save_x=save_x, md_steps=md_steps, console=console)
+                           flags=args, x=x, beta=beta, save_x=save_x,
+                           md_steps=md_steps, console=console)
     run_data = results.run_data
 
     run_data.update_dirs({

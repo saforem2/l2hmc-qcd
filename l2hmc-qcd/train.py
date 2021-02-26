@@ -101,6 +101,7 @@ def main(configs, num_chains=256):
     beta_final = configs.get('beta_final', None)
     if log_dir is not None:  # we want to restore from latest checkpoint
         configs.restore = True
+        run_steps = configs.get('run_steps', None)
         train_steps = configs.get('train_steps', None)
         restored = restore_flags(configs,
                                  os.path.join(configs.log_dir, 'training'))
@@ -112,6 +113,7 @@ def main(configs, num_chains=256):
 
         configs.update({
             'train_steps': train_steps,
+            'run_steps': run_steps,
         })
         if beta_init != configs.get('beta_init', None):
             configs.beta_init = beta_init
@@ -147,7 +149,7 @@ def main(configs, num_chains=256):
         #  run_steps = args.get('run_steps', 125000)
         log_dir = configs.log_dir
         beta = configs.get('beta_final')
-        num_chains = 8
+        num_chains = 16
         if configs.get('small_batch', False):
             batch_size = 256
             old_shape = configs['dynamics_config']['x_shape']
