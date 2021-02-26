@@ -69,18 +69,18 @@ def check_if_int(x):
     return tf.math.abs(x - nearest_int) < 1e-3
 
 def train_hmc(
-        flags: AttrDict,
+        configs: AttrDict,
         make_plots: bool = True,
         therm_frac: float = 0.33,
         num_chains: int = 32,
 ):
     """Main method for training HMC model."""
-    hflags = AttrDict(dict(flags).copy())
-    lr_config = AttrDict(hflags.pop('lr_config', None))
-    config = AttrDict(hflags.pop('dynamics_config', None))
-    net_config = AttrDict(hflags.pop('network_config', None))
-    hflags.train_steps = hflags.pop('hmc_steps', None)
-    hflags.beta_init = hflags.beta_final
+    hconfigs = AttrDict(dict(configs).copy())
+    lr_config = AttrDict(hconfigs.pop('lr_config', None))
+    config = AttrDict(hconfigs.pop('dynamics_config', None))
+    net_config = AttrDict(hconfigs.pop('network_config', None))
+    hconfigs.train_steps = hconfigs.pop('hmc_steps', None)
+    hconfigs.beta_init = hconfigs.beta_final
 
     config.update({
         'hmc': True,
@@ -98,23 +98,23 @@ def train_hmc(
     lr_config = LearningRateConfig(
         warmup_steps=0,
         decay_rate=0.9,
-        decay_steps=hflags.train_steps // 10,
+        decay_steps=hconfigs.train_steps // 10,
         lr_init=lr_config.get('lr_init', None),
     )
 
-    dirs = io.setup_directories(hflags, 'training_hmc')
-    hflags.update({
+    dirs = io.setup_directories(hconfigs, 'training_hmc')
+    hconfigs.update({
         'profiler': False,
         'make_summaries': True,
         'lr_config': lr_config,
         'dynamics_config': config,
-        'dirs': io.setup_directories(hflags, 'training_hmc'),
+        'dirs': io.setup_directories(hconfigs, 'training_hmc'),
     })
 
-    dynamics = GaugeDynamics(hflags, config, net_config, lr_config)
+    dynamics = GaugeDynamics(hconfigs, config, net_config, lr_config)
     dynamics.save_config(dirs.config_dir)
 
-    x, train_data = train_dynamics(dynamics, hflags, dirs=dirs)
+    x, train_data = train_dynamics(dynamics, hconfigs, dirs=dirs)
     if IS_CHIEF and make_plots:
         output_dir = os.path.join(dirs.train_dir, 'outputs')
         io.check_else_make_dir(output_dir)
@@ -129,18 +129,18 @@ def train_hmc(
             'net_weights': NET_WEIGHTS_HMC,
         }
         t0 = time.time()
-        output = plot_data(data_container=train_data, flags=hflags,
+        output = plot_data(data_container=train_data, flags=hconfigs,
                            params=params, out_dir=dirs.train_dir,
                            therm_frac=therm_frac, num_chains=num_chains)
         data_container = output['data_container']
         dt = time.time() - t0
         io.rule(f'Time spent plotting: {dt}s = {dt // 60}m {(dt % 60):.3g}s')
 
-    return x, dynamics, train_data, hflags
+    return x, dynamics, train_data, hconfigs
 
 
 def train(
-        flags: AttrDict,
+        configs: AttrDict,
         x: tf.Tensor = None,
         restore_x: bool = False,
         make_plots: bool = True,
@@ -154,11 +154,11 @@ def train(
         x (tf.Tensor): Batch of configurations
         dynamics (GaugeDynamics): Dynamics object.
         train_data (DataContainer): Object containing train data.
-        flags (AttrDict): AttrDict containing flags used.
+        configs (AttrDict): AttrDict containing configs used.
     """
     t0 = time.time()
-    dirs = io.setup_directories(flags)
-    flags.update({'dirs': dirs})
+    dirs = io.setup_directories(configs)
+    configs.update({'dirs': dirs})
 
     if restore_x:
         x = None
@@ -171,12 +171,12 @@ def train(
             io.log(f'Unable to restore x from {xfile}. Using random init.')
 
     if x is None:
-        x = tf.random.normal(flags.dynamics_config['x_shape'])
+        x = tf.random.normal(configs.dynamics_config['x_shape'])
 
     # Reshape x from (batch_size, Nt, Nx, 2) --> (batch_size, Nt * Nx * 2)
     x = tf.reshape(x, (x.shape[0], -1))
 
-    dynamics = build_dynamics(flags)
+    dynamics = build_dynamics(configs)
     io.log(f'dynamics.net_weights: {dynamics.net_weights}')
     #  network_dir = dynamics.config.get('log_dir', None)
     network_dir = dynamics.config.log_dir
@@ -188,7 +188,7 @@ def train(
     dynamics.save_config(dirs.config_dir)
 
     io.rule('TRAINING')
-    x, train_data = train_dynamics(dynamics, flags, dirs, x=x,
+    x, train_data = train_dynamics(dynamics, configs, dirs, x=x,
                                    should_track=should_track)
 
     if IS_CHIEF and make_plots:
@@ -203,7 +203,7 @@ def train(
             'net_weights': dynamics.net_weights,
         }
         t0 = time.time()
-        output = plot_data(data_container=train_data, flags=flags,
+        output = plot_data(data_container=train_data, flags=configs,
                            params=params, out_dir=dirs.train_dir,
                            therm_frac=therm_frac, num_chains=num_chains)
         #  data_container = output['data_container']
@@ -216,22 +216,22 @@ def train(
 
     dt = time.time() - t0
     io.rule(f'Done training model! took: {dt:.3g}s')
-    io.save_dict(dict(flags), dirs.log_dir, 'configs')
+    io.save_dict(dict(configs), dirs.log_dir, 'configs')
 
-    return x, dynamics, train_data, flags
+    return x, dynamics, train_data, configs
 
 
 # pylint:disable=too-many-statements, too-many-branches
-def setup(dynamics, flags, dirs=None, x=None, betas=None):
+def setup(dynamics, configs, dirs=None, x=None, betas=None):
     """Setup training."""
     if dirs is None:
-        dirs = io.setup_directories(flags)
-        flags.update({
+        dirs = io.setup_directories(configs)
+        configs.update({
             'dirs': dirs,
         })
 
-    train_data = DataContainer(flags.train_steps, dirs=dirs,
-                               print_steps=flags.print_steps)
+    train_data = DataContainer(configs.train_steps, dirs=dirs,
+                               print_steps=configs.print_steps)
     ckpt = tf.train.Checkpoint(dynamics=dynamics,
                                optimizer=dynamics.optimizer)
     manager = tf.train.CheckpointManager(ckpt, dirs.ckpt_dir, max_to_keep=5)
@@ -250,7 +250,7 @@ def setup(dynamics, flags, dirs=None, x=None, betas=None):
         x = np.pi * tf.random.normal(shape=dynamics.x_shape)
 
     # Setup summary writer
-    make_summaries = flags.get('make_summaries', True)
+    make_summaries = configs.get('make_summaries', True)
     if IS_CHIEF and make_summaries and TF_VERSION == 2:
         try:
             writer = tf.summary.create_file_writer(dirs.summary_dir)
@@ -260,27 +260,27 @@ def setup(dynamics, flags, dirs=None, x=None, betas=None):
         writer = None
 
     current_step = dynamics.optimizer.iterations.numpy()  # get global step
-    num_steps = max([flags.train_steps + 1, current_step + 1])
+    num_steps = max([configs.train_steps + 1, current_step + 1])
     steps = tf.range(current_step, num_steps, dtype=tf.int64)
     train_data.steps = steps[-1]
-    if flags.beta_init == flags.beta_final:
-        #  betas = flags.beta_init * np.ones(len(steps))
+    if configs.beta_init == configs.beta_final:
+        #  betas = configs.beta_init * np.ones(len(steps))
         ones = tf.ones(len(steps))
-        betas = tf.cast(flags.beta_final, ones.dtype) * ones
+        betas = tf.cast(configs.beta_final, ones.dtype) * ones
     else:
-        betas = get_betas(num_steps - 1, flags.beta_init, flags.beta_final)
+        betas = get_betas(num_steps - 1, configs.beta_init, configs.beta_final)
 
     if current_step > len(betas):
         diff = current_step - len(betas)
-        betas = list(betas) + [flags.beta_final for _ in range(diff)]
+        betas = list(betas) + [configs.beta_final for _ in range(diff)]
 
     betas = betas[current_step:]
 
-    if len(betas) < flags.train_steps:
-        diff = flags.train_steps - len(betas)
+    if len(betas) < configs.train_steps:
+        diff = configs.train_steps - len(betas)
         betas = (
             [i for i in betas]
-            + [flags.beta_final for _ in range(diff)]
+            + [configs.beta_final for _ in range(diff)]
         )
 
     betas = tf.convert_to_tensor(betas, dtype=x.dtype)
@@ -308,7 +308,7 @@ def setup(dynamics, flags, dirs=None, x=None, betas=None):
 
     pstart = 0
     pstop = 0
-    if flags.profiler:
+    if configs.profiler:
         pstart = len(betas) // 2
         pstop = pstart + 10
 
@@ -332,7 +332,7 @@ def setup(dynamics, flags, dirs=None, x=None, betas=None):
 # pylint: disable=too-many-arguments,too-many-statements, too-many-branches,
 def train_dynamics(
         dynamics: Union[BaseDynamics, GaugeDynamics],
-        flags: AttrDict,
+        configs: AttrDict,
         dirs: Optional[str] = None,
         x: Optional[tf.Tensor] = None,
         betas: Optional[tf.Tensor] = None,
@@ -353,18 +353,18 @@ def train_dynamics(
         return IS_CHIEF and step % ls_ == 0
 
     def should_save(step):
-        return step % flags.save_steps == 0 and ckpt is not None
+        return step % configs.save_steps == 0 and ckpt is not None
 
     # -- setup ----------------------------------------------------
-    config = setup(dynamics, flags, dirs, x, betas)
+    config = setup(dynamics, configs, dirs, x, betas)
     if dirs is None:
-        dirs = flags.get('dirs', None)
+        dirs = configs.get('dirs', None)
         if dirs is None:
             dirs = config.get('dirs', None)
 
-    factor = flags.get('reduce_lr_factor', 0.5)
-    patience = flags.get('patience', 10)
-    min_lr = flags.get('min_lr', 1e-5)
+    factor = configs.get('reduce_lr_factor', 0.5)
+    patience = configs.get('patience', 10)
+    min_lr = configs.get('min_lr', 1e-5)
     #  warmup_steps = dynamics.lr_config.get('warmup_steps', 1000)
     warmup_steps = dynamics.lr_config.warmup_steps
     reduce_lr = ReduceLROnPlateau(monitor='loss', mode='min',
@@ -388,7 +388,7 @@ def train_dynamics(
     #  tf.compat.v1.autograph.experimental.do_not_convert(dynamics.train_step)
 
     # -- Try running compiled `train_step` fn otherwise run imperatively ----
-    if flags.profiler:
+    if configs.profiler:
         io.rule('Running 10 profiling steps')
         for step in range(10):
             with tf.profiler.experimental.Trace('train', step_num=step, _r=1):
@@ -401,7 +401,7 @@ def train_dynamics(
         x, metrics = dynamics.train_step((x, tf.constant(betas[0])))
 
     # -- Run MD update to not get stuck -----------------
-    md_steps = flags.get('md_steps', 0)
+    md_steps = configs.get('md_steps', 0)
     if md_steps > 0:
         io.rule(f'Running {md_steps} MD updates')
         for _ in range(md_steps):
@@ -411,12 +411,12 @@ def train_dynamics(
 
     # -- Final setup; create timing wrapper for `train_step` function -------
     # -- and get formatted header string to display during training. --------
-    ps_ = flags.get('print_steps', None)
-    ls_ = flags.get('logging_steps', None)
+    ps_ = configs.get('print_steps', None)
+    ls_ = configs.get('logging_steps', None)
 
     # -- Training loop ----------------------------------------------------
     warmup_steps = dynamics.lr_config.warmup_steps
-    steps_per_epoch = flags.get('steps_per_epoch', 1000)
+    steps_per_epoch = configs.get('steps_per_epoch', 1000)
     if should_track:
         iterable = track(enumerate(zip(steps, betas)), total=len(betas),
                          console=io.console, description='training',
@@ -438,7 +438,7 @@ def train_dynamics(
 
         # TODO: Run inference when beta hits an integer
         #  if (step + 1) > 0 and beta in discrete_betas:
-        #      _ = run(dynamics, flags, x, beta=beta,
+        #      _ = run(dynamics, configs, x, beta=beta,
 
         if (step + 1) > warmup_steps and (step + 1) % steps_per_epoch == 0:
             reduce_lr.on_epoch_end(step+1, {'loss': metrics.loss})
@@ -483,7 +483,7 @@ def train_dynamics(
                 writer.flush()
 
         # -- Print header every so often --------------------------
-        if IS_CHIEF and (step + 1) % (50 * flags.print_steps) == 0:
+        if IS_CHIEF and (step + 1) % (50 * configs.print_steps) == 0:
             io.rule('')
 
     # -- Dump config objects -------------------------------------------------
