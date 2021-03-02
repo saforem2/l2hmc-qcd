@@ -104,6 +104,8 @@ class DataContainer:
         except ValueError:
             io.log('Unable to save dataset! Continuing...')
 
+        return dataset
+
     def update(self, step, metrics):
         """Update `self.data` with new values from `data`."""
         self.steps_arr.append(step)
