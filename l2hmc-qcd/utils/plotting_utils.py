@@ -72,7 +72,13 @@ def truncate_colormap(
 
 
 @timeit
-def make_ridgeplots(dataset, num_chains=None, out_dir=None, drop_zeros=False):
+def make_ridgeplots(
+        dataset,
+        num_chains=None,
+        out_dir=None,
+        drop_zeros=False,
+        cmap='viridis_r'
+):
     sns.set(style='white', rc={"axes.facecolor": (0, 0, 0, 0)})
     for key, val in dataset.data_vars.items():
         if 'leapfrog' in val.coords.dims:
@@ -99,17 +105,13 @@ def make_ridgeplots(dataset, num_chains=None, out_dir=None, drop_zeros=False):
             lfdf = pd.DataFrame(lf_data)
 
             # Initialize the FacetGrid object
-            pal = sns.color_palette('flare', n_colors=len(val.leapfrog.values))
-            #  n_colors=len(val.leapfrog.values))
-            #pal = sns.cubehelix_palette(len(val.leapfrog.values),
-            #                            rot=-2.25, light=0.7)
+            pal = sns.color_palette(cmap, n_colors=len(val.leapfrog.values))
             g = sns.FacetGrid(lfdf, row='lf', hue='lf', # hue_kws={'cmap': pal},
                               aspect=15, height=0.25, palette=pal)
 
             # Draw the densities in a few steps
             _ = g.map(sns.kdeplot, key, cut=1,
                       shade=True, alpha=0.7, linewidth=1.25)
-            #  _ = g.map(sns.kdeplot, key, color='w', cut=1, lw=1.5)
             _ = g.map(plt.axhline, y=0, lw=1.5, alpha=0.7, clip_on=False)
 
             # Define and use a simple function to
