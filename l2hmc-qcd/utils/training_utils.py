@@ -52,6 +52,8 @@ if tf.__version__.startswith('1.'):
 elif tf.__version__.startswith('2.'):
     TF_VERSION = 2
 
+#SHOULD_TRACK = os.environ.get('TRACK', True)
+SHOULD_TRACK = not os.environ.get('NOTRACK', False)
 
 TO_KEEP = [
     'H', 'Hf', 'plaqs', 'actions', 'charges', 'dqint', 'dqsin', 'accept_prob',
@@ -189,7 +191,7 @@ def train(
 
     io.rule('TRAINING')
     x, train_data = train_dynamics(dynamics, configs, dirs, x=x,
-                                   should_track=should_track)
+                                   should_track=SHOULD_TRACK)
 
     if IS_CHIEF and make_plots:
         output_dir = os.path.join(dirs.train_dir, 'outputs')

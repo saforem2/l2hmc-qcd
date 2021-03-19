@@ -29,6 +29,8 @@ from dynamics.config import GaugeDynamicsConfig
 from dynamics.gauge_dynamics import (build_dynamics, convert_to_angle,
                                      GaugeDynamics)
 
+SHOULD_TRACK = not os.environ.get('NOTRACK', False)
+
 InferenceResults = namedtuple('InferenceResults',
                               ['dynamics', 'run_data', 'x', 'x_arr'])
 
@@ -486,9 +488,12 @@ def run_dynamics(
         console = io.console
 
     steps = tf.range(flags.run_steps, dtype=tf.int64)
-    tracked_iter = track(enumerate(steps), total=len(steps),
-                         description='Inference', transient=True,
-                         console=console)
+    if SHOULD_TRACK:
+        tracked_iter = track(enumerate(steps), total=len(steps),
+                             description='Inference', transient=True,
+                             console=console)
+    else:
+        tracked_iter = enumerate(steps)
 
     for idx, step in tracked_iter:
         x, metrics = timed_step(x, beta)
