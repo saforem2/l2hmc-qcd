@@ -33,6 +33,7 @@ from rich.progress import (BarColumn, DownloadColumn, Progress, TaskID,
                            TextColumn, TimeRemainingColumn)
 
 console = Console(record=False,
+                  log_path=False,
                   width=240,
                   log_time_format='[%X] ',
                   theme=Theme({'repr.number': GREEN}))
@@ -769,14 +770,31 @@ def _look(p, s, conds=None):
     return matches
 
 
-def get_l2hmc_dirs(extra_paths=None):
-    base_dirs = [
-        os.path.abspath('/Users/saforem2/thetaGPU/training'),
-        os.path.abspath('/Users/saforem2/grand/projects/DLHMC/training'),
-        os.path.abspath('/lus/theta-fs0/projects/DLHMC/thetaGPU/training'),
-        os.path.abspath('/lus/grand/projects/DLHMC/thetaGPU/training'),
-        os.path.abspath('/lus/grand/projects/DLHMC/l2hmc-qcd/logs/GaugeModel_logs/l2hmc_logs'),
-    ]
+def get_l2hmc_dirs(base_dirs=None, extra_paths=None):
+    if base_dirs is None:
+        local_path = '/Users/saforem2/'
+        thetaGPU_path = '/lus/'
+        base_dirs = [
+            os.path.abspath(f'{local_path}/thetaGPU/training/'),
+            os.path.abspath(f'{local_path}/grand/projects/DLHMC/training/'),
+            os.path.abspath(
+                f'{local_path}/grand/projects/DLHMC/l2hmc-qcd/logs/GaugeModel_logs/l2hmc_logs/'
+            ),
+            os.path.abspath(f'{local_path}/grand/projects/DLHMC/training/annealing_schedules/'),
+            os.path.abspath('/Users/saforem2/grand/projects/DLHMC/l2hmc-qcd/logs/GaugeModel_logs/2021_02'),
+            # ---------------------------------------------------------
+            os.path.abspath('/lus/theta-fs0/projects/DLHMC/thetaGPU/training/'),
+            os.path.abspath('/lus/grand/projects/DLHMC/training/'),
+            os.path.abspath('/lus/grand/projects/DLHMC/l2hmc-qcd/logs/GaugeModel_logs/l2hmc_logs/'),
+            os.path.abspath('/lus/grand/projects/DLHMC/training/annealing_schedules/'),
+            os.path.abspath('/lus/grand/projects/DLHMC/l2hmc-qcd/logs/GaugeModel_logs/2021_02')
+        ]
+    #  base_dirs = [ os.path.abspath('/Users/saforem2/thetaGPU/training'),
+    #      os.path.abspath('/Users/saforem2/grand/projects/DLHMC/training'),
+    #      os.path.abspath('/lus/theta-fs0/projects/DLHMC/thetaGPU/training'),
+    #      os.path.abspath('/lus/grand/projects/DLHMC/thetaGPU/training'),
+    #      os.path.abspath('/lus/grand/projects/DLHMC/l2hmc-qcd/logs/GaugeModel_logs/l2hmc_logs'),
+    #  ]
     l2hmc_dirs = []
     for d in base_dirs:
         console.log(f'Looking in: {d}...')
