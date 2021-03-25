@@ -47,6 +47,12 @@ def project_angle(x):
     return x - 2 * np.pi * tf.math.floor((x + np.pi) / (2 * np.pi))
 
 
+def topological_susceptibility(beta, nx, nt):
+    term1 = np.exp(-beta * ((2 * np.pi) ** 2) / (2 * nx * nt))
+    term2 = np.exp(-beta * ((2 * np.pi) ** 2) / (2 * nx * nt))
+    return term1 + term2
+
+
 # pylint:disable=too-many-instance-attributes
 class GaugeLattice:
     """GaugeLattice object."""
