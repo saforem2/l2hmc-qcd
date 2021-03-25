@@ -477,3 +477,13 @@ TSWLatexianTemp*
 # option is specified. Footnotes are the stored in a file with suffix Notes.bib.
 # Uncomment the next line to have this generated file ignored.
 #*Notes.bib
+l2hmc-qcd/pytorch
+l2hmc_dirs.rtf
+top_susceptibility/
+pyrightconfig.json
+l2hmc_dirs_list.txt
+l2hmc-qcd/nflow_tutorial
+batch_scaling_tests/
+hmc_dirs_list.txt
+datasets/
+*.txt
