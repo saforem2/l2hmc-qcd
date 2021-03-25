@@ -18,12 +18,14 @@ Author: Sam Foreman (github: @saforem2)
 Date: 6/30/2020
 """
 from __future__ import absolute_import, division, print_function
+import os
 
 import typing
 from typing import Callable, List, Optional, Tuple, Union, NamedTuple
 
 import numpy as np
 import tensorflow as tf
+from tensorflow.python.keras import backend as K
 
 import utils.file_io as io
 
@@ -74,9 +76,11 @@ class BaseDynamics(tf.keras.Model):
             lr_config: LearningRateConfig = None,
             normalizer: Callable[[tf.Tensor], tf.Tensor] = None,
             should_build: Optional[bool] = True,
-            name: str = 'Dynamics',
+            name: Optional[str] = 'Dynamics',
     ):
         """Initialization method.
+
+        #  name: str = 'Dynamics',
 
         * NOTE: `normalizer` is meant to be a function that forces the
             configurations to exist in some restricted space. For example,
@@ -86,6 +90,8 @@ class BaseDynamics(tf.keras.Model):
             above, which just returns the input.
         """
         super(BaseDynamics, self).__init__(name=name)
+        #  super(BaseDynamics, self).__init__(name=name)
+        self._has_trainable_params = False
         #  self._model_type = config.get('model_type', 'BaseDynamics')
         self.params = params
         self.config = config
@@ -116,18 +122,26 @@ class BaseDynamics(tf.keras.Model):
         self._lf_step = 0
         self.masks = self._build_masks()
         self.normalizer = normalizer if normalizer is not None else identity
+
+        if not self.config.hmc:
+            self.xnet, self.vnet = self._build_networks()
+
+        #  if self._has_trainable_params:
+        self.lr = self._create_lr(lr_config)
+        self.optimizer = self._create_optimizer(self.config.optimizer)
+
         if self.config.hmc:
             self.net_weights = NetWeights(0., 0., 0., 0., 0., 0.)
             self.xnet, self.vnet = self._build_hmc_networks()
             if self.config.eps_fixed:
                 self._has_trainable_params = False
 
-        if should_build:
-            if not self.config.hmc:
-                self.xnet, self.vnet = self._build_networks()
-            if self._has_trainable_params:
-                self.lr = self._create_lr(lr_config)
-                self.optimizer = self._create_optimizer(self.config.optimizer)
+        #  if should_build:
+        #      if not self.config.hmc:
+        #          self.xnet, self.vnet = self._build_networks()
+        #      if self._has_trainable_params:
+        #          self.lr = self._create_lr(lr_config)
+        #          self.optimizer = self._create_optimizer(self.config.optimizer)
 
     def call(
             self,
@@ -186,6 +200,16 @@ class BaseDynamics(tf.keras.Model):
         loss = tf.reduce_mean(scale / esjd) - tf.reduce_mean(esjd / scale)
 
         return loss
+
+    def _get_lr(self, step=None) -> (tf.Tensor):
+        if step is None:
+            step = self.optimizer.iterations
+
+        #  if isinstance(self.lr, callable):
+        if callable(self.lr):
+            return self.lr(step)
+
+        return K.get_value(self.optimizer.lr)
 
     def train_step(  # pylint:disable=arguments-differ
             self,
@@ -1354,6 +1378,48 @@ class BaseDynamics(tf.keras.Model):
         if self.lr_config is not None:
             io.save_dict(self.lr_config, config_dir, name='lr_config')
         io.save_dict(self.params, config_dir, name='dynamics_params')
+
+    def save_networks(self, log_dir):
+        """Save networks to disk."""
+        models_dir = os.path.join(log_dir, 'training', 'models')
+        io.check_else_make_dir(models_dir)
+        veps_file = os.path.join(models_dir, 'veps.z')
+        xeps_file = os.path.join(models_dir, 'xeps.z')
+
+        io.savez([e.numpy() for e in self.veps], veps_file, name='veps')
+        io.savez([e.numpy() for e in self.xeps], xeps_file, name='xeps')
+        if self.config.separate_networks:
+            xnet_first_paths = [
+                os.path.join(models_dir, f'dynamics_xnet_first{i}')
+                for i in range(self.config.num_steps)
+            ]
+            xnet_second_paths = [
+                os.path.join(models_dir, f'dynamics_xnet_second{i}')
+                for i in range(self.config.num_steps)
+            ]
+
+            vnet_paths = [
+                os.path.join(models_dir, f'dynamics_vnet{i}')
+                for i in range(self.config.num_steps)
+            ]
+
+            paths = zip(xnet_first_paths, xnet_second_paths, vnet_paths)
+            #  for idx, (xf0, xf1, vf) in enumerate(zip(xnet_paths, vnet_paths)):
+            for idx, (xf0, xf1, vf) in enumerate(paths):
+                try:
+                    xnets = self.xnet[idx]  # type: tf.keras.models.Model
+                    vnet = self.vnet[idx]  # type: tf.keras.models.Model
+                    xnets[0].save(xf0)
+                    xnets[1].save(xf1)
+                    vnet.save(vf)
+                except TypeError:
+                    continue
+        else:
+            xnet_paths = os.path.join(models_dir, 'dynamics_xnet')
+            vnet_paths = os.path.join(models_dir, 'dynamics_vnet')
+            self.xnet.save(xnet_paths)
+            self.vnet.save(vnet_paths)
+
 
     def _parse_net_weights(self, net_weights: NetWeights):
         self._xsw = net_weights.x_scale
