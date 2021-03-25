@@ -50,6 +50,8 @@ class DynamicsConfig:
     loss_scale: float = 1.
     use_mixed_loss: bool = False
     verbose: bool = False
+    optimizer: str = 'adam'
+    separate_networks: bool = True
 
 
 @dataclass
