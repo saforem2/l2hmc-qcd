@@ -38,12 +38,13 @@ from tensorflow.python.keras import backend as K
 try:
     import horovod.tensorflow as hvd
     HAS_HOROVOD = True
+    NUM_RANKS = hvd.size()
+    NUM_WORKERS = hvd.size()
 except ImportError:
     from utils import Horovod as hvd
     HAS_HOROVOD = False
-
-NUM_RANKS = hvd.size()
-NUM_WORKERS = hvd.size()
+    NUM_RANKS = 1
+    NUM_WORKERS = 1
 
 import utils.file_io as io
 
