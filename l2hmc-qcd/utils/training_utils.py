@@ -133,7 +133,7 @@ def train_hmc(
         t0 = time.time()
         output = plot_data(data_container=train_data, flags=hconfigs,
                            params=params, out_dir=dirs.train_dir,
-                           therm_frac=therm_frac, num_chains=num_chains)
+                           therm_frac=0.0, num_chains=num_chains)
         data_container = output['data_container']
         dt = time.time() - t0
         io.rule(f'Time spent plotting: {dt}s = {dt // 60}m {(dt % 60):.3g}s')
