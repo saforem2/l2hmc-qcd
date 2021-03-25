@@ -16,8 +16,10 @@ import tensorflow as tf
 import seaborn as sns
 import matplotlib.pyplot as plt
 import itertools as it
+from pathlib import Path
 
 from utils import SKEYS
+from copy import deepcopy
 import utils.file_io as io
 from utils.file_io import timeit
 from utils.attr_dict import AttrDict
@@ -70,7 +72,13 @@ def truncate_colormap(
 
 
 @timeit
-def make_ridgeplots(dataset, num_chains=None, out_dir=None, drop_zeros=False):
+def make_ridgeplots(
+        dataset,
+        num_chains=None,
+        out_dir=None,
+        drop_zeros=False,
+        cmap='viridis_r'
+):
     sns.set(style='white', rc={"axes.facecolor": (0, 0, 0, 0)})
     for key, val in dataset.data_vars.items():
         if 'leapfrog' in val.coords.dims:
@@ -97,17 +105,13 @@ def make_ridgeplots(dataset, num_chains=None, out_dir=None, drop_zeros=False):
             lfdf = pd.DataFrame(lf_data)
 
             # Initialize the FacetGrid object
-            pal = sns.color_palette('flare', n_colors=len(val.leapfrog.values))
-            #  n_colors=len(val.leapfrog.values))
-            #pal = sns.cubehelix_palette(len(val.leapfrog.values),
-            #                            rot=-2.25, light=0.7)
+            pal = sns.color_palette(cmap, n_colors=len(val.leapfrog.values))
             g = sns.FacetGrid(lfdf, row='lf', hue='lf', # hue_kws={'cmap': pal},
                               aspect=15, height=0.25, palette=pal)
 
             # Draw the densities in a few steps
             _ = g.map(sns.kdeplot, key, cut=1,
                       shade=True, alpha=0.7, linewidth=1.25)
-            #  _ = g.map(sns.kdeplot, key, color='w', cut=1, lw=1.5)
             _ = g.map(plt.axhline, y=0, lw=1.5, alpha=0.7, clip_on=False)
 
             # Define and use a simple function to
@@ -131,7 +135,7 @@ def make_ridgeplots(dataset, num_chains=None, out_dir=None, drop_zeros=False):
                 io.log(f'Saving figure to: {out_file}.')
                 plt.savefig(out_file, dpi=400, bbox_inches='tight')
 
-            plt.close('all')
+            #plt.close('all')
 
     plt.style.use('default')
     sns.set(style='whitegrid', palette='bright', context='paper')
@@ -536,6 +540,24 @@ def plot_data(
         io.log(f'Reducing `num_chains` from {num_chains} to 16 for plotting.')
         num_chains = 16
 
+    charges = np.array(data_container.data['charges'])
+    lf = flags['dynamics_config']['num_steps']
+    tint_dict, _ = plot_autocorrs_vs_draws(charges, num_pts=20,
+                                           nstart=1000, therm_frac=0.2,
+                                           out_dir=out_dir, lf=lf)
+    tint_data = deepcopy(params)
+    tint_data.update({
+        'narr': tint_dict['narr'],
+        'tint': tint_dict['tint'],
+        'run_params': params,
+    })
+
+    run_dir = params.get('run_dir', None)
+    if run_dir is not None:
+        if os.path.isdir(str(Path(run_dir))):
+            tint_file = os.path.join(run_dir, 'tint_data.z')
+            io.savez(tint_data, tint_file, 'tint_data')
+
     out_dir = os.path.join(out_dir, 'plots')
     io.check_else_make_dir(out_dir)
     if hmc is None:
@@ -641,11 +663,6 @@ def plot_data(
                                 therm_frac=therm_frac,
                                 ridgeplots=True)
     plt.close('all')
-    charges = np.array(data_container.data['charges'])
-    lf = flags['dynamics_config']['num_steps']
-    tint_dict, _ = plot_autocorrs_vs_draws(charges, num_pts=20,
-                                           nstart=1000, therm_frac=0.2,
-                                           out_dir=out_dir, lf=lf)
     #  try:
     if not hmc and 'Hwf' in data_dict.keys():
         _ = plot_energy_distributions(data_dict, out_dir=out_dir, title=title)

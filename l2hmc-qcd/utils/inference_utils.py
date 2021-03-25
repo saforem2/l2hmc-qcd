@@ -29,6 +29,8 @@ from dynamics.config import GaugeDynamicsConfig
 from dynamics.gauge_dynamics import (build_dynamics, convert_to_angle,
                                      GaugeDynamics)
 
+SHOULD_TRACK = not os.environ.get('NOTRACK', False)
+
 InferenceResults = namedtuple('InferenceResults',
                               ['dynamics', 'run_data', 'x', 'x_arr'])
 
@@ -223,7 +225,7 @@ def load_and_run(
 
 def run_inference_from_log_dir(
         log_dir: str,
-        run_steps: int = 5000,
+        run_steps: int = 50000,
         beta: float = None,
         eps: float = None,
         make_plots: bool = True,
@@ -306,6 +308,7 @@ def run(
         md_steps: int = 50,
         console: Console = None,
         skip_existing: bool = False,
+        run_steps: int = None,
 ) -> (InferenceResults):
     """Run inference. (Note: Higher-level than `run_dynamics`)."""
     if num_chains > 16:
@@ -331,7 +334,10 @@ def run(
     writer.set_as_default()
 
     args.logging_steps = 1
-    run_steps = args.get('run_steps', 2000)
+    #  run_steps = args.get('run_steps', 50000)
+    if run_steps is None:
+        run_steps = args.get('run_steps', 50000)
+
     if beta is None:
         beta = args.get('beta_final', args.get('beta', None))
 
@@ -339,8 +345,8 @@ def run(
         x = convert_to_angle(tf.random.normal(shape=dynamics.x_shape))
 
     results = run_dynamics(dynamics=dynamics,
-                           flags=args, x=x, beta=beta,
-                           save_x=save_x, md_steps=md_steps, console=console)
+                           flags=args, x=x, beta=beta, save_x=save_x,
+                           md_steps=md_steps, console=console)
     run_data = results.run_data
 
     run_data.update_dirs({
@@ -482,9 +488,12 @@ def run_dynamics(
         console = io.console
 
     steps = tf.range(flags.run_steps, dtype=tf.int64)
-    tracked_iter = track(enumerate(steps), total=len(steps),
-                         description='Inference', transient=True,
-                         console=console)
+    if SHOULD_TRACK:
+        tracked_iter = track(enumerate(steps), total=len(steps),
+                             description='Inference', transient=True,
+                             console=console)
+    else:
+        tracked_iter = enumerate(steps)
 
     for idx, step in tracked_iter:
         x, metrics = timed_step(x, beta)

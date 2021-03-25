@@ -89,10 +89,10 @@ def restore_flags(flags, train_dir):
     return flags
 
 
-def main(configs, num_chains=256):
+def main(configs, num_chains=None, run_steps=None):
     """Main method for training."""
     hmc_steps = configs.get('hmc_steps', 0)
-    tf.keras.backend.set_floatx('float32')
+    #  tf.keras.backend.set_floatx('float32')
     log_file = os.path.join(os.getcwd(), 'log_dirs.txt')
 
     x = None
@@ -101,6 +101,7 @@ def main(configs, num_chains=256):
     beta_final = configs.get('beta_final', None)
     if log_dir is not None:  # we want to restore from latest checkpoint
         configs.restore = True
+        run_steps = configs.get('run_steps', None)
         train_steps = configs.get('train_steps', None)
         restored = restore_flags(configs,
                                  os.path.join(configs.log_dir, 'training'))
@@ -112,6 +113,7 @@ def main(configs, num_chains=256):
 
         configs.update({
             'train_steps': train_steps,
+            'run_steps': run_steps,
         })
         if beta_init != configs.get('beta_init', None):
             configs.beta_init = beta_init
@@ -119,6 +121,9 @@ def main(configs, num_chains=256):
             configs.beta_final = beta_final
 
     else:  # New training session
+        train_steps = configs.get('train_steps', None)
+        run_steps = configs.get('run_steps', None)
+
         timestamps = AttrDict({
             'month': io.get_timestamp('%Y_%m'),
             'time': io.get_timestamp('%Y-%M-%d-%H%M%S'),
@@ -138,16 +143,21 @@ def main(configs, num_chains=256):
             #  args.dynamics_config['eps'] = dynamics_hmc.eps.numpy()
             _ = run(dynamics_hmc, hflags, save_x=False)
 
+    if num_chains is None:
+        num_chains = configs.get('num_chains', 15)
+
     x, dynamics, _, configs = train(configs, x=x, make_plots=True,
                                     num_chains=num_chains)
 
+    if run_steps is None:
+        run_steps = configs.get('run_steps', 50000)
+
     # ====
     # Run inference on trained model
-    if configs.get('run_steps', 5000) > 0:
+    if run_steps > 0:
         #  run_steps = args.get('run_steps', 125000)
         log_dir = configs.log_dir
         beta = configs.get('beta_final')
-        num_chains = 8
         if configs.get('small_batch', False):
             batch_size = 256
             old_shape = configs['dynamics_config']['x_shape']
@@ -156,8 +166,16 @@ def main(configs, num_chains=256):
             dynamics = build_dynamics(configs, log_dir=log_dir)
             x = x[:batch_size]
 
-        _ = run(dynamics, configs, x, beta=beta, make_plots=True,
-                therm_frac=0.2, num_chains=8, save_x=False)
+        results = run(dynamics, configs, x, beta=beta, make_plots=True,
+                      therm_frac=0.1, num_chains=num_chains, save_x=False)
+        try:
+            run_data = results.run_data
+            run_dir = run_data.dirs['run_dir']
+            dataset = run_data.save_dataset(run_dir, therm_frac=0.)
+        except:
+            # TODO: Properly catch exception (if thrown)
+            pass
+
 
         #  _ = run_inference_from_log_dir(log_dir=log_dir,
         #                                 run_steps=run_steps,
@@ -192,7 +210,8 @@ if __name__ == '__main__':
         os.environ['TF_CPP_MIN_LOG_LEVEL'] = '0'
     else:
         logging_level = logging.WARNING
-    io.print_dict(CONFIGS)
+    io.console.log(f'CONFIGS: {dict(**CONFIGS)}')
+    #  io.print_dict(CONFIGS)
     main(CONFIGS)
     #  if RANK == 0:
     #      console.save_text(os.path.join(os.getcwd(), 'train.log'), styles=False)
