@@ -487,3 +487,4 @@ batch_scaling_tests/
 hmc_dirs_list.txt
 datasets/
 *.txt
+l2hmc-qcd/nflows_tutorial/
