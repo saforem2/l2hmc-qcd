@@ -234,9 +234,11 @@ def setup(dynamics, configs, dirs=None, x=None, betas=None):
 
     train_data = DataContainer(configs.train_steps, dirs=dirs,
                                print_steps=configs.print_steps)
+    #  if dynamics._has_trainable_params:
     ckpt = tf.train.Checkpoint(dynamics=dynamics,
                                optimizer=dynamics.optimizer)
-    manager = tf.train.CheckpointManager(ckpt, dirs.ckpt_dir, max_to_keep=5)
+    manager = tf.train.CheckpointManager(ckpt, dirs.ckpt_dir,
+                                         max_to_keep=5)
     if manager.latest_checkpoint:  # restore from checkpoint
         io.log(f'Restored model from: {manager.latest_checkpoint}')
         ckpt.restore(manager.latest_checkpoint)
@@ -244,8 +246,8 @@ def setup(dynamics, configs, dirs=None, x=None, betas=None):
         x = train_data.restore(dirs.data_dir, step=current_step,
                                rank=RANK, local_rank=LOCAL_RANK,
                                x_shape=dynamics.x_shape)
-    else:
-        io.log('Starting new training run...')
+    #  else:
+    #      io.log('Starting new training run...')
 
     # Create initial samples if not restoring from ckpt
     if x is None:
@@ -459,8 +461,11 @@ def train_dynamics(
                                           rank=RANK, mode='a')
                 if not dynamics.config.hmc:
                     # -- Save network weights -------------------------------
-                    dynamics.save_networks(dirs.log_dir)
-                    io.log(f'Networks saved to: {dirs.log_dir}')
+                    try:
+                        dynamics.save_networks(dirs.log_dir)
+                        io.log(f'Networks saved to: {dirs.log_dir}')
+                    except (AttributeError, TypeError):
+                        pass
 
         # -- Print current training state and metrics ---------------
         if should_print(step):
@@ -496,7 +501,10 @@ def train_dynamics(
         train_data.save_and_flush(dirs.data_dir, dirs.log_file,
                                   rank=RANK, mode='a')
         if not dynamics.config.hmc:
-            dynamics.save_networks(dirs.log_dir)
+            try:
+                dynamics.save_networks(dirs.log_dir)
+            except (AttributeError, TypeError):
+                pass
 
         if writer is not None:
             writer.flush()
