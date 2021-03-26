@@ -515,7 +515,6 @@ def plot_autocorrs1(
             pass
 
 
-
 @timeit
 def plot_data(
         data_container: "DataContainer",  # noqa:F821
@@ -540,23 +539,24 @@ def plot_data(
         io.log(f'Reducing `num_chains` from {num_chains} to 16 for plotting.')
         num_chains = 16
 
-    charges = np.array(data_container.data['charges'])
-    lf = flags['dynamics_config']['num_steps']
-    tint_dict, _ = plot_autocorrs_vs_draws(charges, num_pts=20,
-                                           nstart=1000, therm_frac=0.2,
-                                           out_dir=out_dir, lf=lf)
-    tint_data = deepcopy(params)
-    tint_data.update({
-        'narr': tint_dict['narr'],
-        'tint': tint_dict['tint'],
-        'run_params': params,
-    })
+    if 'charges' in data_container.data:
+        lf = flags['dynamics_config']['num_steps']
+        charges = np.array(data_container.data['charges'])
+        tint_dict, _ = plot_autocorrs_vs_draws(charges, num_pts=20,
+                                               nstart=1000, therm_frac=0.2,
+                                               out_dir=out_dir, lf=lf)
+        tint_data = deepcopy(params)
+        tint_data.update({
+            'narr': tint_dict['narr'],
+            'tint': tint_dict['tint'],
+            'run_params': params,
+        })
 
-    run_dir = params.get('run_dir', None)
-    if run_dir is not None:
-        if os.path.isdir(str(Path(run_dir))):
-            tint_file = os.path.join(run_dir, 'tint_data.z')
-            io.savez(tint_data, tint_file, 'tint_data')
+        run_dir = params.get('run_dir', None)
+        if run_dir is not None:
+            if os.path.isdir(str(Path(run_dir))):
+                tint_file = os.path.join(run_dir, 'tint_data.z')
+                io.savez(tint_data, tint_file, 'tint_data')
 
     out_dir = os.path.join(out_dir, 'plots')
     io.check_else_make_dir(out_dir)
@@ -671,17 +671,24 @@ def plot_data(
     #      pass
 
     _ = mcmc_avg_lineplots(data_dict, title, out_dir)
-    _ = plot_charges(charges_steps, charges_arr, out_dir=out_dir, title=title)
-    plt.close('all')
 
     output = {
-        'tint_dict': tint_dict,
         'data_container': data_container,
         'data_dict': data_dict,
         'data_vars': data_vars,
-        'charges_steps': charges_steps,
-        'charges_arr': charges_arr,
         'out_dir': out_dir_,
     }
+
+    if 'charges' in data_container.data:
+        _ = plot_charges(charges_steps, charges_arr, out_dir=out_dir,
+                         title=title)
+        output.update({
+            'tint_dict': tint_dict,
+            'charges_steps': charges_steps,
+            'charges_arr': charges_arr,
+        })
+
+    plt.close('all')
+
 
     return output
