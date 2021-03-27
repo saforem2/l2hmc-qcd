@@ -18,6 +18,11 @@ from utils.attr_dict import AttrDict
 __author__ = 'Sam Foreman'
 __date__ = '07/03/2020'
 
+GREEN = '#87ff00'
+PINK = '#F92672'
+BLUE = '#007dff'
+RED = '#ff4050'
+
 SNAME = 'scale_layer'
 TNAME = 'translation_layer'
 QNAME = 'transformation_layer'

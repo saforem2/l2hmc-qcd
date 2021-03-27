@@ -113,7 +113,6 @@ class BaseDynamics(tf.keras.Model):
             self._build_eps(use_log=False) for _ in
             range(self.config.num_steps)
         ]
-        #  self.eps = self.eps_arr
         self._lf_step = 0
         self.masks = self._build_masks()
         self.normalizer = normalizer if normalizer is not None else identity
@@ -124,13 +123,6 @@ class BaseDynamics(tf.keras.Model):
                 self._has_trainable_params = False
 
         if should_build:
-            #  self._has_trainable_params = True
-            #  if self.config.hmc:
-            #      self.net_weights = NetWeights(0., 0., 0., 0., 0., 0.)
-            #      self.xnet, self.vnet = self._build_hmc_networks()
-            #      if self.config.eps_fixed:
-            #          self._has_trainable_params = False
-            #  else:
             if not self.config.hmc:
                 self.xnet, self.vnet = self._build_networks()
             if self._has_trainable_params:
@@ -696,9 +688,6 @@ class BaseDynamics(tf.keras.Model):
                                                                   sumlogdet)
                     metrics['Hw'] = metrics['Hw'].write(step+1,
                                                         energy - sumlogdet)
-                #  metrics = self._update_metrics(metrics, step+1,
-                #                                 state_prop, sumlogdet)
-
         state_prop, logdet = self._half_v_update_backward(state_prop,
                                                           step, training)
         sumlogdet += logdet
