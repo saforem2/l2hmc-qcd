@@ -15,40 +15,35 @@ import typing
 import logging
 import datetime
 
-import joblib
-import h5py
-import numpy as np
-
 from typing import Any, Dict, Type
-from tqdm.auto import tqdm
 from pathlib import Path
 
-from rich.console import Console
+import h5py
+import joblib
+import numpy as np
+
+from tqdm.auto import tqdm
+
+from config import NetWeights, PROJECT_DIR, GREEN
+from utils.attr_dict import AttrDict
 from rich.theme import Theme
-from rich.progress import (
-    BarColumn,
-    DownloadColumn,
-    TextColumn,
-    TimeRemainingColumn,
-    Progress,
-    TaskID,
-)
+from rich.console import Console
+from rich.logging import RichHandler
+from rich.progress import (BarColumn, DownloadColumn, Progress, TaskID,
+                           TextColumn, TimeRemainingColumn)
 
 console = Console(record=False,
+                  log_path=False,
                   width=240,
                   log_time_format='[%X] ',
-                  theme=Theme({'repr.number': '#71c6ff'}))
-#  FORMAT = "%(levelname)s:%(process)s:%(thread)s:%(name)s:%(message)s"
-#  print = console.print
-from rich.logging import RichHandler
+                  theme=Theme({'repr.number': GREEN}))
 
-from config import PROJECT_DIR, NetWeights
-from utils.attr_dict import AttrDict
 
 # pylint:disable=wrong-import-position
 try:
     import horovod
     import horovod.tensorflow as hvd
+
     HAS_HOROVOD = True
     RANK = hvd.rank()
     LOCAL_RANK = hvd.local_rank()
@@ -113,46 +108,6 @@ def filter_dict(d: dict, cond: callable, key: str = None):
     return {
         k: v for k, v in d.items() if cond
     }
-
-
-def _look(p, s, conds=None):
-    console.print(f'Looking in {p}...')
-    matches = [x for x in Path(p).rglob(f'*{s}*') if x.is_dir()]
-    if conds is not None:
-        if isinstance(conds, (list, tuple)):
-            for cond in conds:
-                matches = [x for x in matches if cond(x)]
-        else:
-            matches = [x for x in matches if cond(x)]
-
-    return matches
-
-
-def get_l2hmc_dirs(paths, search_str='L16_b'):
-    def _look(p, s, conds=None):
-        console.print(f'Looking in {p}...')
-        matches = [x for x in Path(p).rglob(f'*{s}*')]
-        if conds is not None:
-            if isinstance(conds, (list, tuple)):
-                for cond in conds:
-                    matches = [x for x in matches if cond(x)]
-            else:
-                matches = [x for x in matches if cond(x)]
-        return matches
-
-    dirs = []
-    conds = (
-        lambda x: 'GaugeModel_logs' in (str(x)),
-        lambda x: 'HMC_' not in str(x),
-        lambda x: Path(x).is_dir(),
-    )
-    if isinstance(paths, (list, tuple)):
-        for path in paths:
-            dirs += _look(path, search_str, conds)
-    else:
-        dirs = _look(paths, search_str, conds)
-
-    return dirs
 
 
 def find_matching_files(d, search_str):
@@ -357,11 +312,16 @@ def savez(obj: Any, fpath: str, name: str = None):
     if RANK != 0:
         return
 
+    head, tail = os.path.split(fpath)
+    check_else_make_dir(head)
+
     if not fpath.endswith('.z'):
         fpath += '.z'
 
     if name is not None:
         console.log(f'Saving {name} to {os.path.abspath(fpath)}.')
+    else:
+        console.log(f'Saving {obj.__class__} to {os.path.abspath(fpath)}.')
 
     joblib.dump(obj, fpath)
 
@@ -770,3 +730,82 @@ def in_notebook():
     except ImportError:
         return False
     return True
+
+
+def get_hmc_dirs(extra_paths=None):
+    base_dirs = [
+        os.path.abspath('/Users/saforem2/grand/projects/DLHMC/l2hmc-qcd/logs/GaugeModel_logs/hmc_logs'),
+        os.path.abspath('/Users/saforem2/theta-fs0/projects/DLHMC/thetaGPU/inference'),
+        os.path.abspath('/Users/saforem2/thetagpu/inference'),
+        os.path.abspath('/lus/grand/projects/DLHMC/l2hmc-qcd/logs/GaugeModel_logs/hmc_logs'),
+        os.path.abspath('/lus/theta-fs0/projects/DLHMC/thetaGPU/inference'),
+    ]
+
+    if extra_paths is not None:
+        if isinstance(extra_paths, (list, tuple)):
+            for p in extra_paths:
+                base_dirs += p
+        else:
+            base_dirs += extra_paths
+
+    hmc_dirs = []
+    for d in base_dirs:
+        if os.path.isdir(d):
+            console.log(f'Looking in: {d}...')
+            hmc_dirs += [x for x in Path(d).rglob('*HMC_L16*') if x.is_dir()]
+            console.log(f'len(hmc_dirs): {len(hmc_dirs)}')
+
+    return list(np.unique(hmc_dirs))
+
+
+def _look(p, s, conds=None):
+    matches = [x for x in Path(p).rglob(f'*{s}*')]
+    if conds is not None:
+        if isinstance(conds, (list, tuple)):
+            for cond in conds:
+                matches = [x for x in matches if cond(x)]
+        else:
+            matches = [x for x in matches if cond(x)]
+
+    return matches
+
+
+def get_l2hmc_dirs(base_dirs=None, extra_paths=None):
+    if base_dirs is None:
+        local_path = '/Users/saforem2/'
+        thetaGPU_path = '/lus/'
+        base_dirs = [
+            os.path.abspath(f'{local_path}/thetaGPU/training/'),
+            os.path.abspath(f'{local_path}/grand/projects/DLHMC/training/'),
+            os.path.abspath(
+                f'{local_path}/grand/projects/DLHMC/l2hmc-qcd/logs/GaugeModel_logs/l2hmc_logs/'
+            ),
+            os.path.abspath(f'{local_path}/grand/projects/DLHMC/training/annealing_schedules/'),
+            os.path.abspath('/Users/saforem2/grand/projects/DLHMC/l2hmc-qcd/logs/GaugeModel_logs/2021_02'),
+            # ---------------------------------------------------------
+            os.path.abspath('/lus/theta-fs0/projects/DLHMC/thetaGPU/training/'),
+            os.path.abspath('/lus/grand/projects/DLHMC/training/'),
+            os.path.abspath('/lus/grand/projects/DLHMC/l2hmc-qcd/logs/GaugeModel_logs/l2hmc_logs/'),
+            os.path.abspath('/lus/grand/projects/DLHMC/training/annealing_schedules/'),
+            os.path.abspath('/lus/grand/projects/DLHMC/l2hmc-qcd/logs/GaugeModel_logs/2021_02')
+        ]
+    #  base_dirs = [ os.path.abspath('/Users/saforem2/thetaGPU/training'),
+    #      os.path.abspath('/Users/saforem2/grand/projects/DLHMC/training'),
+    #      os.path.abspath('/lus/theta-fs0/projects/DLHMC/thetaGPU/training'),
+    #      os.path.abspath('/lus/grand/projects/DLHMC/thetaGPU/training'),
+    #      os.path.abspath('/lus/grand/projects/DLHMC/l2hmc-qcd/logs/GaugeModel_logs/l2hmc_logs'),
+    #  ]
+    l2hmc_dirs = []
+    for d in base_dirs:
+        console.log(f'Looking in: {d}...')
+        conds = (
+            lambda x: 'GaugeModel_logs' in (str(x)),
+            lambda x: 'HMC_' not in str(x),
+            lambda x: Path(x).is_dir(),
+            lambda x: os.path.isdir(os.path.join(str(x), 'run_data')),
+            lambda x: os.path.isfile(os.path.join(str(x), 'run_params.z')),
+        )
+        l2hmc_dirs += _look(d, 'L16_b', conds)
+        console.log(f'len(l2hmc_dirs): {len(l2hmc_dirs)}')
+
+    return list(np.unique(l2hmc_dirs))
