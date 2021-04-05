@@ -1517,15 +1517,15 @@ class GaugeDynamics(BaseDynamics):
 
     def _build_masks(self):
         """Construct different binary masks for different time steps."""
+        masks = []
+        zeros = np.zeros(self.lattice_shape, dtype=np.float32)
+        #  zeros = tf.zeros(self.lattice_shape, dtype=TF_FLOAT)
+
         def rolled_reshape(m, ax, shape=None):
             if shape is None:
                 shape = (self.batch_size, -1)
 
             return sum([tf.roll(m, i, ax).reshape(shape) for i in range(4)])
-
-        masks = []
-        zeros = np.zeros(self.lattice_shape, dtype=np.float32)
-        #  zeros = tf.zeros(self.lattice_shape, dtype=TF_FLOAT)
 
         if self._gauge_eq_masks:
             mh_ = zeros.copy()
