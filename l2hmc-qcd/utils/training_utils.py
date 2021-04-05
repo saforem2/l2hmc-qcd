@@ -396,7 +396,7 @@ def train_dynamics(
         io.rule('Running 10 profiling steps')
         for step in range(10):
             with tf.profiler.experimental.Trace('train', step_num=step, _r=1):
-            #  tf.profiler.experimental.start(logdir=dirs.summary_dir)
+                #  tf.profiler.experimental.start(logdir=dirs.summary_dir)
                 x, metrics = dynamics.train_step((x, tf.constant(betas[0])))
 
         tf.profiler.experimental.stop(save=True)
@@ -461,19 +461,19 @@ def train_dynamics(
                                           rank=RANK, mode='a')
                 if not dynamics.config.hmc:
                     # -- Save network weights -------------------------------
-                    try:
-                        dynamics.save_networks(dirs.log_dir)
-                        io.log(f'Networks saved to: {dirs.log_dir}')
-                    except (AttributeError, TypeError):
-                        pass
+                    #  try:
+                    dynamics.save_networks(dirs.log_dir)
+                    io.log(f'Networks saved to: {dirs.log_dir}')
+                    #  except (AttributeError, TypeError):
+                    #      pass
 
         # -- Print current training state and metrics ---------------
         if should_print(step):
             if step % 5000 == 0:
                 keep_ = keep + ['xeps_start', 'xeps_mid', 'xeps_end',
-                                'veps_start', 'veps_mid', 'veps_end',]
+                                'veps_start', 'veps_mid', 'veps_end']
                 data_str = train_data.get_fstr(step, metrics)
-                                               #  skip=SKEYS, keep=keep_)
+                #  skip=SKEYS, keep=keep_)
             else:
                 keep_ = ['step', 'dt', 'loss', 'accept_prob', 'beta',
                          'dq_int', 'dq_sin', 'dQint', 'dQsin', 'plaqs', 'p4x4']
