@@ -376,7 +376,6 @@ def mcmc_avg_lineplots(data, title=None, out_dir=None):
             avg = np.mean(arr, axis=1)
             ylabel = ' '.join(key.split('_')) + r" avg"
 
-
         _ = axes[0].plot(steps, avg, color=COLORS[idx])
         _ = axes[0].set_xlabel(xlabel)
         _ = axes[0].set_ylabel(ylabel)
