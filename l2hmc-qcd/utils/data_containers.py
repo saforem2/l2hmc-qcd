@@ -229,7 +229,6 @@ class DataContainer:
                 self.save_dataset(data_dir)
             except ValueError:
                 io.console.log('Unable to save `xarray.Dataset`, continuing')
-                #  print(f'Unable to save `xarray.Dataset`. Continuing...')
 
     def plot_dataset(
             self,
@@ -252,9 +251,6 @@ class DataContainer:
 
             fig, ax = plt.subplots(constrained_layout=True, figsize=set_size())
             _ = val.plot(ax=ax)
-            #  _ = sns.kdeplot(val.values.flatten(), ax=axes[1], shade=True)
-            #  _ = axes[1].set_ylabel('')
-            #  _ = fig.suptitle(key)
             if out_dir is not None:
                 io.check_else_make_dir(out_dir)
                 out_file = os.path.join(out_dir, f'{key}_xrPlot.png')
