@@ -19,11 +19,6 @@ class Charges:
     sinQ: tf.Tensor
     intQ: tf.Tensor
 
-#  @dataclass
-#  class ChargesDiff:
-#      dsinQ: tf.Tensor
-#      dintQ: tf.Tensor
-
 
 @dataclass
 class LatticeMetrics:
