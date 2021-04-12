@@ -860,9 +860,10 @@ class BaseDynamics(tf.keras.Model):
         eps = self.veps[step]
         x = self.normalizer(state.x)
         grad = self.grad_potential(x, state.beta)
-        t = self._get_time(step, tile=tf.shape(x)[0])
+        #  t = self._get_time(step, tile=tf.shape(x)[0])
 
-        S, T, Q = self._call_vnet((x, grad, t), step, training)
+        #  S, T, Q = self._call_vnet((x, grad, t), step, training)
+        S, T, Q = self._call_vnet((x, grad), step, training)
 
         scale = self._vsw * (0.5 * eps * S)
         transl = self._vtw * T
@@ -887,10 +888,11 @@ class BaseDynamics(tf.keras.Model):
         """Perform a half-step momentum update in the forward direction."""
         x = self.normalizer(state.x)
         grad = self.grad_potential(x, state.beta)
-        t = self._get_time(step, tile=tf.shape(x)[0])
+        #  t = self._get_time(step, tile=tf.shape(x)[0])
         eps = self.veps[step]
 
-        S, T, Q = self._call_vnet((x, grad, t), step, training)
+        #  S, T, Q = self._call_vnet((x, grad, t), step, training)
+        S, T, Q = self._call_vnet((x, grad), step, training)
 
         scale = self._vsw * (0.5 * eps * S)
         transl = self._vtw * T
@@ -925,10 +927,11 @@ class BaseDynamics(tf.keras.Model):
             logdet (float): Jacobian factor
         """
         x = self.normalizer(state.x)
-        t = self._get_time(step, tile=tf.shape(x)[0])
+        #  t = self._get_time(step, tile=tf.shape(x)[0])
         eps = self.veps[step]
         grad = self.grad_potential(x, state.beta)
-        S, T, Q = self.vnet((x, grad, t), training)
+        #  S, T, Q = self.vnet((x, grad, t), training)
+        S, T, Q = self.vnet((x, grad), training)
 
         transl = self._vtw * T
         scale = self._vsw * (0.5 * eps * S)
@@ -996,10 +999,11 @@ class BaseDynamics(tf.keras.Model):
         """
         m, mc = masks
         x = self.normalizer(state.x)
-        t = self._get_time(step, tile=tf.shape(x)[0])
+        #  t = self._get_time(step, tile=tf.shape(x)[0])
         eps = self.xeps[step]
 
-        S, T, Q = self.xnet((m * x, state.v, t), training)
+        S, T, Q = self.xnet((m * x, state.v), training)
+        #  S, T, Q = self.xnet((m * x, state.v, t), training)
 
         transl = self._xtw * T
         scale = self._xsw * (eps * S)
@@ -1028,9 +1032,10 @@ class BaseDynamics(tf.keras.Model):
         step_r = self.config.num_steps - step - 1
         x = self.normalizer(state.x)
         grad = self.grad_potential(x, state.beta)
-        t = self._get_time(step_r, tile=tf.shape(x)[0])
+        #  t = self._get_time(step_r, tile=tf.shape(x)[0])
         eps = self.veps[step_r]
-        S, T, Q = self._call_vnet((x, grad, t), step_r, training)
+        S, T, Q = self._call_vnet((x, grad), step_r, training)
+        #  S, T, Q = self._call_vnet((x, grad, t), step_r, training)
 
         scale = self._vsw * (-0.5 * eps * S)
         transf = self._vqw * (eps * Q)
@@ -1056,9 +1061,10 @@ class BaseDynamics(tf.keras.Model):
         step_r = self.config.num_steps - step - 1
         x = self.normalizer(state.x)
         grad = self.grad_potential(x, state.beta)
-        t = self._get_time(step_r, tile=tf.shape(x)[0])
+        #  t = self._get_time(step_r, tile=tf.shape(x)[0])
         eps = self.veps[step]
-        S, T, Q = self._call_vnet((x, grad, t), step_r, training)
+        #  S, T, Q = self._call_vnet((x, grad, t), step_r, training)
+        S, T, Q = self._call_vnet((x, grad), step_r, training)
 
         scale = self._vsw * (-0.5 * eps * S)
         transf = self._vqw * (eps * Q)
@@ -1092,11 +1098,12 @@ class BaseDynamics(tf.keras.Model):
             logdet (float): Jacobian factor.
         """
         x = self.normalizer(state.x)
-        t = self._get_time(step, tile=tf.shape(x)[0])
+        #  t = self._get_time(step, tile=tf.shape(x)[0])
         eps = self.veps[step]
 
         grad = self.grad_potential(x, state.beta)
-        S, T, Q = self.vnet((x, grad, t), training)
+        #  S, T, Q = self.vnet((x, grad, t), training)
+        S, T, Q = self.vnet((x, grad), training)
 
         scale = self._vsw * (-0.5 * eps * S)
         transf = self._vqw * (eps * Q)
@@ -1155,9 +1162,10 @@ class BaseDynamics(tf.keras.Model):
         """
         m, mc = masks
         x = self.normalizer(state.x)
-        t = self._get_time(step, tile=tf.shape(x)[0])
+        #  t = self._get_time(step, tile=tf.shape(x)[0])
         eps = self.xeps[step]
-        S, T, Q = self.xnet((m * x, state.v, t), training)
+        S, T, Q = self.xnet((m * x, state.v), training)
+        #  S, T, Q = self.xnet((m * x, state.v, t), training)
 
         scale = self._xsw * (-eps * S)
         transl = self._xtw * T
