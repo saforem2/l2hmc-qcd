@@ -488,3 +488,8 @@ hmc_dirs_list.txt
 datasets/
 *.txt
 l2hmc-qcd/nflows_tutorial/
+log_dirs.txt
+l2hmc-qcd/notebooks/log_dirs
+doc/autocorrelation_plots.tex
+doc/leapfrog/leapfrog_plots_vimtex_selected.pdf
+l2hmc-qcd/notebooks/model.png
