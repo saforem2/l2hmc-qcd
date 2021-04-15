@@ -14,13 +14,13 @@ import numpy as np
 import matplotlib.pyplot as plt
 import tensorflow as tf
 
-from config import NP_FLOATS, TF_FLOATS
+from config import TF_FLOATS
 
 
 tfd = tfp.distributions
 
 TF_FLOAT = TF_FLOATS[tf.keras.backend.floatx()]
-NP_FLOAT = NP_FLOATS[tf.keras.backend.floatx()]
+#  NP_FLOAT = [tf.keras.backend.floatx()]
 
 # pylint:disable=invalid-name
 # pylint:disable=unused-argument
@@ -203,7 +203,8 @@ def distribution_arr(x_dim, num_distributions):
         small_pi = (1. - sum(pis)) / (x_dim - num_distributions)
         pis.extend((x_dim - num_distributions) * [small_pi])
 
-    return np.array(pis, dtype=NP_FLOAT)
+    #  return np.array(pis)#, dtype=NP_FLOAT)
+    return np.array(pis)
 
 
 def ring_of_gaussians(num_modes, sigma, r=1.):

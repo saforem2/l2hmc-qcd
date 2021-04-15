@@ -11,7 +11,19 @@ from __future__ import absolute_import, division, print_function
 
 import time
 import tensorflow as tf
-import horovod.tensorflow as hvd
+try:
+    import horovod.tensorflow as hvd
+    HAS_HOROVOD = True
+except ImportError:
+    HAS_HOROVOD = False
+    class hvd(object):
+        def __init__(self):
+            self._size = 1
+
+        def size(self):
+            return self._size
+
+
 from typing import Callable
 
 from config import NetWeights, MonteCarloStates
@@ -21,7 +33,10 @@ from network.config import NetworkConfig, LearningRateConfig, ConvolutionConfig
 from network.functional_net import get_generic_network
 from utils.attr_dict import AttrDict
 
-NUM_RANKS = hvd.size()
+if HAS_HOROVOD:
+    NUM_RANKS = hvd.size()
+else:
+    NUM_RANKS = 1
 
 
 def identity(x):
@@ -46,7 +61,6 @@ class GenericDynamics(BaseDynamics):
     ):
         """Initialization method for generic (Euclidean) Dynamics."""
         super(GenericDynamics, self).__init__(
-            name=name,
             params=params,
             config=config,
             lr_config=lr_config,
@@ -74,8 +88,8 @@ class GenericDynamics(BaseDynamics):
     def _build(self, params, config, network_config, lr_config):
         """Build the model."""
         self.config = config
-        self.net_config = network_config
-        self.eps = self._build_eps(use_log=False)
+        #  self.net_config = network_config
+        #  self.eps = self._build_eps(use_log=False)
         self.masks = self._build_masks()
         if self.config.hmc:
             net_weights = NetWeights(0., 0., 0., 0., 0., 0.)
@@ -116,13 +130,15 @@ class GenericDynamics(BaseDynamics):
 
         return loss
 
+    @tf.function
     def train_step(self, data):
         """Perform a single training step."""
         x, beta = data
         start = time.time()
         with tf.GradientTape() as tape:
-            states, accept_prob, sumlogdet = self((x, beta), training=True)
-            loss = self.calc_losses(states, accept_prob)
+            states, data = self((x, beta), training=True)
+            #  states, accept_prob, sumlogdet = self((x, beta), training=True)
+            loss = self.calc_losses(states, data.accept_prob)
 
             if self.aux_weight > 0:
                 z = tf.random.normal(x.shape, dtype=x.dtype)
@@ -130,7 +146,7 @@ class GenericDynamics(BaseDynamics):
                 loss_ = self.calc_losses(states_, accept_prob_)
                 loss += loss_
 
-        if NUM_RANKS > 1:
+        if NUM_RANKS > 1 and HAS_HOROVOD:
             tape = hvd.DistributedGradientTape(tape)
 
         grads = tape.gradient(loss, self.trainable_variables)
@@ -139,32 +155,42 @@ class GenericDynamics(BaseDynamics):
         metrics = AttrDict({
             'dt': time.time() - start,
             'loss': loss,
-            'accept_prob': accept_prob,
-            'eps': self.eps,
+            'accept_prob': data.accept_prob,
+            #  'eps': self.eps,
             'beta': states.init.beta,
-            'sumlogdet': sumlogdet.out,
+            'sumlogdet': data.sumlogdet,
+            #  'sumlogdet': data.sumlogdet.out,
         })
 
-        if self.optimizer.iterations == 0 and NUM_RANKS > 1:
+        #  if self.optimizer.iterations == 0 and NUM_RANKS > 1 and HAS_HOROVOD:
+        if HAS_HOROVOD and NUM_RANKS > 1 and self.optimizer.iterations == 0:
             hvd.broadcast_variables(self.variables, root_rank=0)
             hvd.broadcast_variables(self.optimizer.variables(), root_rank=0)
 
         return states.out.x, metrics
 
+    @tf.function
     def test_step(self, data):
         """Perform a single inference step."""
         x, beta = data
         start = time.time()
-        states, accept_prob, sumlogdet = self((x, beta), training=False)
-        loss = self.calc_losses(states, accept_prob)
-
-        metrics = AttrDict({
-            'dt': time.time() - start,
+        states, data = self((x, beta), training=False)
+        #  states, accept_prob, sumlogdet = self((x, beta), training=False)
+        loss = self.calc_losses(states, data.accept_prob)
+        data.update({
             'loss': loss,
-            'accept_prob': accept_prob,
-            'eps': self.eps,
+            'dt': time.time() - start,
             'beta': states.init.beta,
-            'sumlogdet': sumlogdet.out,
         })
+        #
+        #  metrics = AttrDict({
+        #      'dt': time.time() - start,
+        #      'loss': loss,
+        #      'accept_prob': data.accept_prob,
+        #      #  'eps': self.eps,
+        #      'beta': states.init.beta,
+        #      'sumlogdet': data.sumlogdet,
+        #      #  'sumlogdet': sumlogdet.out,
+        #  })
 
-        return states.out.x, metrics
+        return states.out.x, data

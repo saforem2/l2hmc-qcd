@@ -175,7 +175,7 @@ def get_gauge_network(
 
     if input_shapes is None:
         input_shapes = {
-            'x': (xdim, 2), 'v': (xdim,), 't': (2,)
+            'x': (xdim, 2), 'v': (xdim,), # 't': (2,)
         }
 
     if name is None:
@@ -193,7 +193,7 @@ def get_gauge_network(
     with tf.name_scope(name):
         x_input = get_input('x')
         v_input = get_input('v')
-        t_input = get_input('t')
+        #  t_input = get_input('t')
 
         coeff_kwargs = {
             'trainable': True, 'initial_value': tf.zeros([1, xdim]),
@@ -232,7 +232,7 @@ def get_gauge_network(
         args = {
             'x': (net_config.units[0], factor / 3., f'{name}_x'),
             'v': (net_config.units[0], 1. / 3., f'{name}_v'),
-            't': (net_config.units[0], 1. / 3., f'{name}_t'),
+            #  't': (net_config.units[0], 1. / 3., f'{name}_t'),
             'scale': (xdim, 0.001, f'{name}_scale'),
             'transl': (xdim, 0.001, f'{name}_transl'),
             'transf': (xdim, 0.001, f'{name}_transf'),
@@ -240,9 +240,10 @@ def get_gauge_network(
 
         x = custom_dense(*args['x'])(x)
         v = custom_dense(*args['v'])(v_input)
-        t = custom_dense(*args['t'])(t_input)
+        #  t = custom_dense(*args['t'])(t_input)
 
-        z = layers.Add()([x, v, t])
+        z = layers.Add()([x, v])
+        #  z = layers.Add()([x, v, t])
         z = activation_fn(z)
         #  z = keras.activations.relu(z)
         for idx, units in enumerate(net_config.units[1:]):
@@ -267,7 +268,7 @@ def get_gauge_network(
         transf *= tf.exp(transf_coeff)
 
         model = keras.Model(name=name,
-                            inputs=[x_input, v_input, t_input],
+                            inputs=[x_input, v_input],  # , t_input],
                             outputs=[scale, transl, transf])
 
     return model

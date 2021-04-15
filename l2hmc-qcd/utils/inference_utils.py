@@ -428,6 +428,7 @@ def run_dynamics(
         save_x: bool = False,
         md_steps: int = 0,
         console: Console = None,
+        should_track: bool = False,
 ) -> (InferenceResults):
     """Run inference on trained dynamics."""
     if not IS_CHIEF:
@@ -488,7 +489,7 @@ def run_dynamics(
         console = io.console
 
     steps = tf.range(flags.run_steps, dtype=tf.int64)
-    if SHOULD_TRACK:
+    if SHOULD_TRACK and should_track:
         tracked_iter = track(enumerate(steps), total=len(steps),
                              description='Inference', transient=True,
                              console=console)
