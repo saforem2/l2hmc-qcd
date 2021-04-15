@@ -67,7 +67,7 @@ An illustration of the `leapfrog layer` updating `(x, v) --> (x', v')` can be se
 
 Lattice code can be found in [`lattice.py`](l2hmc-qcd/lattice/lattice.py), specifically the `GaugeLattice` object that provides the base structure on which our target distribution exists.
 
-Additionally, the `GaugeLattice` object implements a variety of methods for calculating physical observables such as the average plaquette, ɸₚ, and the topological charge \mathcal{Q},
+Additionally, the `GaugeLattice` object implements a variety of methods for calculating physical observables such as the average plaquette, ɸₚ, and the topological charge Q,
 
 ### Training
 
