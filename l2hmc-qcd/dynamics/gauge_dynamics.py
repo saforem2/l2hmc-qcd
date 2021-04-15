@@ -38,12 +38,13 @@ from tensorflow.python.keras import backend as K
 try:
     import horovod.tensorflow as hvd
     HAS_HOROVOD = True
+    NUM_RANKS = hvd.size()
+    NUM_WORKERS = hvd.size()
 except ImportError:
     from utils import Horovod as hvd
     HAS_HOROVOD = False
-
-NUM_RANKS = hvd.size()
-NUM_WORKERS = hvd.size()
+    NUM_RANKS = 1
+    NUM_WORKERS = 1
 
 import utils.file_io as io
 
@@ -807,24 +808,28 @@ class GaugeDynamics(BaseDynamics):
         if len(mask) == 2:
             mask, _ = mask
 
-        x, v, t = inputs
+        x, v = inputs
+        #  x, v, t = inputs
         shape = (self.batch_size, -1)
         m = tf.reshape(mask, shape)
         idxs = tf.where(m)
         _x = tf.reshape(tf.gather_nd(x, idxs), shape)
         _x = tf.concat([tf.math.cos(_x), tf.math.sin(_x)], axis=-1)
         if not self.config.separate_networks:
-            S, T, Q = self.xnet((_x, v, t), training)
+            #  S, T, Q = self.xnet((_x, v, t), training)
+            S, T, Q = self.xnet((_x, v), training)
         else:
             xnet = self.xnet[step]
-            S, T, Q = xnet((x, v, t), training)
+            #  S, T, Q = xnet((x, v, t), training)
+            S, T, Q = xnet((x, v), training)
 
         return S, T, Q
 
     def _call_vnet(self, inputs, step, training=None):
         """Call `self.xnet` to get Sx, Tx, Qx for updating `x`."""
         if self.config.hmc:
-            x, grad, t = inputs
+            x, grad = inputs
+            #  x, grad, t = inputs
             return [tf.zeros_like(inputs[0]) for _ in range(3)]
 
         if not self.config.separate_networks:
@@ -857,21 +862,26 @@ class GaugeDynamics(BaseDynamics):
             first: bool = False
     ):
         """Call `self.xnet` to get Sx, Tx, Qx for updating `x`."""
-        x, v, t = inputs
+        x, v = inputs
+        #  x, v, t = inputs
         if self.config.hmc:
-            return [tf.zeros_like(inputs[0]) for _ in range(3)]
+            return [tf.zeros_like(inputs[0]) for _ in range(2)]
 
         x = self._convert_to_cartesian(x, mask)
 
         if not self.config.separate_networks:
-            return self.xnet((x, v, t), training)
+            return self.xnet((x, v), training)
+            #  return self.xnet((x, v, t), training)
 
         xnet = self.xnet[step]
         if callable(xnet):
-            return xnet((x, v, t), training)
+            #  return xnet((x, v, t), training)
+            return xnet((x, v), training)
         if first:
-            return xnet[0]((x, v, t), training)
-        return xnet[1]((x, v, t), training)
+            #  return xnet[0]((x, v, t), training)
+            return xnet[0]((x, v), training)
+        #  return xnet[1]((x, v, t), training)
+        return xnet[1]((x, v), training)
 
     def _full_v_update_forward(
             self,
@@ -883,9 +893,10 @@ class GaugeDynamics(BaseDynamics):
         eps = self.veps[step]
         x = self.normalizer(state.x)
         grad = self.grad_potential(x, state.beta)
-        t = self._get_time(step, tile=tf.shape(x)[0])
+        #  t = self._get_time(step, tile=tf.shape(x)[0])
 
-        S, T, Q = self._call_vnet((x, grad, t), step, training)
+        #  S, T, Q = self._call_vnet((x, grad, t), step, training)
+        S, T, Q = self._call_vnet((x, grad), step, training)
 
         scale = self._vsw * (eps * S)
         transl = self._vtw * T
@@ -911,9 +922,10 @@ class GaugeDynamics(BaseDynamics):
         eps = self.veps[step]
         x = self.normalizer(state.x)
         grad = self.grad_potential(x, state.beta)
-        t = self._get_time(step, tile=tf.shape(x)[0])
+        #  t = self._get_time(step, tile=tf.shape(x)[0])
 
-        S, T, Q = self._call_vnet((x, grad, t), step, training)
+        #  S, T, Q = self._call_vnet((x, grad, t), step, training)
+        S, T, Q = self._call_vnet((x, grad), step, training)
 
         scale = self._vsw * (0.5 * eps * S)
         transl = self._vtw * T
@@ -953,9 +965,10 @@ class GaugeDynamics(BaseDynamics):
         eps = self.veps[step]
         x = self.normalizer(state.x)
         grad = self.grad_potential(x, state.beta)
-        t = self._get_time(step, tile=tf.shape(x)[0])
+        #  t = self._get_time(step, tile=tf.shape(x)[0])
 
-        S, T, Q = self._call_vnet((x, grad, t), step, training)
+        #  S, T, Q = self._call_vnet((x, grad, t), step, training)
+        S, T, Q = self._call_vnet((x, grad), step, training)
 
         scale = self._vsw * (0.5 * eps * S)
         transl = self._vtw * T
@@ -1016,9 +1029,10 @@ class GaugeDynamics(BaseDynamics):
         m, mc = masks
         eps = self.xeps[step]
         x = self.normalizer(state.x)
-        t = self._get_time(step, tile=tf.shape(x)[0])
+        #  t = self._get_time(step, tile=tf.shape(x)[0])
 
-        S, T, Q = self._call_xnet((x, state.v, t), m, step, training, first)
+        S, T, Q = self._call_xnet((x, state.v), m, step, training, first)
+        #  S, T, Q = self._call_xnet((x, state.v, t), m, step, training, first)
 
         scale = self._xsw * (eps * S)
         transl = self._xtw * T
@@ -1058,8 +1072,9 @@ class GaugeDynamics(BaseDynamics):
         eps = self.veps[step_r]
         x = self.normalizer(state.x)
         grad = self.grad_potential(x, state.beta)
-        t = self._get_time(step_r, tile=tf.shape(x)[0])
-        S, T, Q = self._call_vnet((x, grad, t), step_r, training)
+        #  t = self._get_time(step_r, tile=tf.shape(x)[0])
+        S, T, Q = self._call_vnet((x, grad), step_r, training)
+        #  S, T, Q = self._call_vnet((x, grad, t), step_r, training)
 
         scale = self._vsw * (-eps * S)
         transf = self._vqw * (eps * Q)
@@ -1086,8 +1101,9 @@ class GaugeDynamics(BaseDynamics):
         eps = self.veps[step_r]
         x = self.normalizer(state.x)
         grad = self.grad_potential(x, state.beta)
-        t = self._get_time(step_r, tile=tf.shape(x)[0])
-        S, T, Q = self._call_vnet((x, grad, t), step_r, training)
+        #  t = self._get_time(step_r, tile=tf.shape(x)[0])
+        #  S, T, Q = self._call_vnet((x, grad, t), step_r, training)
+        S, T, Q = self._call_vnet((x, grad), step_r, training)
 
         scale = self._vsw * (-0.5 * eps * S)
         transf = self._vqw * (eps * Q)
@@ -1123,8 +1139,9 @@ class GaugeDynamics(BaseDynamics):
         eps = self.veps[step]
         x = self.normalizer(state.x)
         grad = self.grad_potential(x, state.beta)
-        t = self._get_time(step, tile=tf.shape(x)[0])
-        S, T, Q = self._call_vnet((x, grad, t), step, training)
+        #  t = self._get_time(step, tile=tf.shape(x)[0])
+        #  S, T, Q = self._call_vnet((x, grad, t), step, training)
+        S, T, Q = self._call_vnet((x, grad), step, training)
 
         scale = self._vsw * (-0.5 * eps * S)
         transf = self._vqw * (eps * Q)
@@ -1190,8 +1207,9 @@ class GaugeDynamics(BaseDynamics):
         m, mc = masks
         eps = self.xeps[step]
         x = self.normalizer(state.x)
-        t = self._get_time(step, tile=tf.shape(x)[0])
-        S, T, Q = self._call_xnet((x, state.v, t), m, step, training, first)
+        #  t = self._get_time(step, tile=tf.shape(x)[0])
+        #  S, T, Q = self._call_xnet((x, state.v, t), m, step, training, first)
+        S, T, Q = self._call_xnet((x, state.v), m, step, training, first)
 
         scale = self._xsw * (-eps * S)
         transl = self._xtw * T

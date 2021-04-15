@@ -80,7 +80,7 @@ def get_layer_weights(net):
     wdict = {
         'x_layer': _get_layer_weights(net.xlayer.layer),
         'v_layer': _get_layer_weights(net.vlayer.layer),
-        't_layer': _get_layer_weights(net.t_layer),
+        #  't_layer': _get_layer_weights(net.t_layer),
         'hidden_layers': [
             _get_layer_weights(i) for i in net.hidden_layers
         ],
