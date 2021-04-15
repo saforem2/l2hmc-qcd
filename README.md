@@ -34,63 +34,9 @@ Broadly, given an *analytically* described target distribution, π(x), L2HMC pro
 A detailed description of the (ongoing) work to apply this algorithm to simulations in 
 lattice QCD (specifically, a 2D U(1) lattice gauge theory model) can be found in [`doc/main.pdf`](doc/main.pdf).
 
-### Background
-
-MCMC algorithms are known to encounter difficulties when used for simulating theories close to a critical point,
-a phenomenon known as [_critical slowing down_](https://doi.org/10.1016/0920-5632(90)90224-I).
-
-In order to extract meaningful physics from the discretized lattice theory, an extrapolation to the continuum limit is necessary.
-
-Unfortunately, as we simulate the theory on increasingly smaller lattice spacings, the computational resources
-(when using [traditional sampling methods](https://en.wikipedia.org/wiki/Hamiltonian_Monte_Carlo)) 
-necessary to generate independent gauge configurations grows exponentially.
-
-To combat this effect, we propose a generalized version of the L2HMC algorithm 
-and demonstrate improvements for the case of a two-dimensional U(1) lattice gauge theory.
-
-
-### U(1) Lattice Gauge Theory
-
-We start by considering the simpler (1+1)-dimensional U(1) lattice gauge theory, defined on an Nx * Nt lattice with periodic boundary conditions.
-
-The action of this gauge theory is defined in terms of the *link variables*
-
 <div align="center">
- <img src="assets/link_var.svg"/>
+ <img src="assets/l2hmc_poster.jpeg" alt="l2hmc-qcd poster"/>
 </div>
-
-and can be written as
-
-<div align="center">
- <img src="assets/action1.svg" alt="S = \sum_{P}\, 1 - \cos(\phi_{P})"/>
-</div>
-where:
-
-&nbsp;
-
-<div align="center">
-<img src="assets/plaquette_eq.svg"/>
-</div>
-
-&nbsp;
-
-<div align="center">
-  <img src="assets/nerds2.svg" alt="image-20200220120110456" style="width:85vw; min-width:330px; height=auto"/>
-</div>
-
-### Target distribution:
-
-Our target distribution is then given by:
-
-<div align="center">
-<img src="assets/target_distribution.svg"/>
-</div>
-where Z is the partition function (normalizing factor), β is the inverse coupling constant,
-and S[ɸ] is the Wilson gauge action for the 2D U(1) theory.
-
-Lattice methods for the 2D U(1) gauge model are implemented using the `GaugeLattice` object, which can be found at
-[`l2hmc-qcd/lattice/lattice.py`](l2hmc-qcd/lattice/lattice.py)
-
 
 ## Organization
 
@@ -105,23 +51,17 @@ The network is defined in [` l2hmc-qcd/network/functional_net.py`](l2hmc-qcd/net
 
 #### Network Architecture
 
-An illustration of the `xNet` network architecture used for updating the position variable `x` can be seen below.
+An illustration of the `leapfrog layer` updating `(x, v) --> (x', v')` can be seen below.
 
 <div align="center">
- <img src="assets/network.png" alt="xNet network architecture" width=800/>
+ <img src="assets/lflayer.png" alt="leapfrog layer" width=800/>
 </div>
 
-The network takes as input the position `x`, momentum `v` and a fictitious time `tau` variable and outputs the quantities `sx, tx, qx`, which are then used in the augmented Hamiltonian dynamics to update `x`.
+<!---The network takes as input the position `x`, momentum `v` and and outputs the quantities `sx, tx, qx`, which are then used in the augmented Hamiltonian dynamics to update `x`.--->
 
-Similarly, the network used for updating the momentum variable `v` has an identical architecture, taking as inputs the position `x`, the gradient of the potential, `dUdX`, and the same fictitious time `t`, and outputs the quantities `sv, tv, qv` which are then used to update `v`.
+<!---Similarly, the network used for updating the momentum variable `v` has an identical architecture, taking as inputs the position `x`, the gradient of the potential, `dUdX`, and the same fictitious time `t`, and outputs the quantities `sv, tv, qv` which are then used to update `v`.--->
 
-Explicitly:
-```
-xNet: (x, v, t) --> (sx, tx, qx)
-vNet: (x, dUdX, t) --> (sv, tv, qv)
-```
-
-**Note:** In the image above, the quantities `x', v', t'` represent the outputs of a Dense layer followed by a `ReLu` nonlinearity.
+<!---**Note:** In the image above, the quantities `x', v''` represent the outputs of a Dense layer followed by a `ReLu` nonlinearity.--->
 
 ### Lattice
 
@@ -175,9 +115,9 @@ If you use this code, please cite the original paper:
 
 ## Acknowledgement
 
-<div align="center">
+<!---<div align="center">
  <img src="assets/anl.png" alt="Argonne National Laboratory Icon" width=500/>
-</div>
+</div>!--->
 This research used resources of the Argonne Leadership Computing Facility, which is a DOE Office of Science User Facility supported under contract DE_AC02-06CH11357.  This work describes objective technical results and analysis. Any subjective views or opinions that might be expressed in the work do not necessarily represent the views of the U.S. DOE or the United States
 Government. Declaration of Interests - None.
 
