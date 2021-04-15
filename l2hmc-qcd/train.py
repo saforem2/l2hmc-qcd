@@ -50,8 +50,8 @@ from utils.training_utils import train, train_hmc
 from utils.inference_utils import run, run_hmc, run_inference_from_log_dir
 
 
-os.environ['TF_CPP_MIN_VLOG_LEVEL'] = '3'
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+#  os.environ['TF_CPP_MIN_VLOG_LEVEL'] = '3'
+#  os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 logger = logging.getLogger(__name__)
 logging_datefmt = '%Y-%m-%d %H:%M:%S'
@@ -146,8 +146,8 @@ def main(configs, num_chains=None, run_steps=None):
     if num_chains is None:
         num_chains = configs.get('num_chains', 15)
 
-    x, dynamics, _, configs = train(configs, x=x, make_plots=True,
-                                    num_chains=num_chains)
+    x, dynamics, train_data, configs = train(configs, x=x, make_plots=True,
+                                             num_chains=num_chains)
 
     if run_steps is None:
         run_steps = configs.get('run_steps', 50000)
