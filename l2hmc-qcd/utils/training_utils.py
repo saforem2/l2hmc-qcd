@@ -295,7 +295,8 @@ def setup(dynamics, configs, dirs=None, x=None, betas=None):
 
     # -- Plot computational graph of `dynamics.xnet`, `dynamics.vnet` ------
     if IS_CHIEF:
-        xf = os.path.join(dirs.log_dir, 'dynamics_xnet.png')
+        xf0 = os.path.join(dirs.log_dir, 'dynamics_xnet0.png')
+        xf1 = os.path.join(dirs.log_dir, 'dynamics_xnet1.png')
         vf = os.path.join(dirs.log_dir, 'dynamics_vnet.png')
         try:
             xnet = dynamics.xnet
@@ -304,7 +305,8 @@ def setup(dynamics, configs, dirs=None, x=None, betas=None):
                 xnet = xnet[0]
                 vnet = vnet[0]
 
-            tf.keras.utils.plot_model(xnet, show_shapes=True, to_file=xf)
+            tf.keras.utils.plot_model(xnet[0], show_shapes=True, to_file=xf0)
+            tf.keras.utils.plot_model(xnet[1], show_shapes=True, to_file=xf1)
             tf.keras.utils.plot_model(vnet, show_shapes=True, to_file=vf)
 
         except Exception as exception:
