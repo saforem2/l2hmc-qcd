@@ -210,7 +210,7 @@ if __name__ == '__main__':
         os.environ['TF_CPP_MIN_LOG_LEVEL'] = '0'
     else:
         logging_level = logging.WARNING
-    io.console.log(f'CONFIGS: {dict(**CONFIGS)}')
+    console.log(f'CONFIGS: {dict(**CONFIGS)}')
     #  io.print_dict(CONFIGS)
     main(CONFIGS)
     #  if RANK == 0:
