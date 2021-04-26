@@ -7,8 +7,8 @@ Author: Sam Foreman
 Date: 08/26/2020
 """
 import os
-os.environ['TF_CPP_MIN_VLOG_LEVEL'] = '3'
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+#  os.environ['TF_CPP_MIN_VLOG_LEVEL'] = '3'
+#  os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 from tqdm.auto import tqdm
 import tensorflow as tf

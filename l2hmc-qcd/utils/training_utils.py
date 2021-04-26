@@ -56,8 +56,10 @@ elif tf.__version__.startswith('2.'):
 SHOULD_TRACK = not os.environ.get('NOTRACK', False)
 
 TO_KEEP = [
-    'H', 'Hf', 'plaqs', 'actions', 'charges', 'dqint', 'dqsin', 'accept_prob',
-    'accept_mask', 'xeps', 'veps', 'sumlogdet', 'beta', 'loss'
+    'H', 'Hf', 'plaqs', 'actions', 'charges', 'sin_charges', 'dqint', 'dqsin',
+    'accept_prob', 'accept_mask', 'xeps', 'veps', 'sumlogdet', 'beta', 'loss',
+    'dt',
+
 ]
 
 #  try:
@@ -435,7 +437,9 @@ def train_dynamics(
             #  'Hb_start', 'Hb_mid', 'Hb_end',
             'Hwb_start', 'Hwb_mid', 'Hwb_end',
             'Hwf_start', 'Hwf_mid', 'Hwf_end',
-            'xeps', 'veps', 'dq', 'dq_sin', 'plaqs', 'p4x4']
+            'xeps', 'veps', 'dq', 'dq_sin',
+            'plaqs', 'p4x4',
+            'charges', 'sin_charges']
 
     #  discrete_betas = np.arange(beta, 8, dtype=int)
     for idx, (step, beta) in iterable:
