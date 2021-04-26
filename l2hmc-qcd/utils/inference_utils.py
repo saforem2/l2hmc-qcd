@@ -475,6 +475,10 @@ def run_dynamics(
         start = time.time()
         x, metrics = test_step((x, tf.constant(beta)))
         metrics.dt = time.time() - start
+        if 'sin_charges' not in metrics:
+            charges = dynamics.lattice.calc_both_charges(x=x)
+            metrics['charges'] = charges.intQ
+            metrics['sin_charges'] = charges.sinQ
         if save_x:
             x_arr.append(x.numpy())
 

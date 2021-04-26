@@ -1469,6 +1469,7 @@ class GaugeDynamics(BaseDynamics):
             'dq_int': dqint,
             'dq_sin': dqsin,
             'charges': q_out.intQ,
+            'sin_charges': q_out.sinQ,
             'plaqs': plaqs,
             'p4x4': p4x4,
         })
