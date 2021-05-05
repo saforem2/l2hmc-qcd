@@ -6,20 +6,19 @@
 
 ---
 
-**Accepted** :white_check_mark: as a contribution to the [Deep Learning for Simulation (SimDL) Workshop](https://simdl.github.io/overview/) at ICLR 2021 ​🎊 :🎉 
+ :white_check_mark:   Accepted as a contribution to the [Deep Learning for Simulation (SimDL) Workshop](https://simdl.github.io/overview/) at ICLR 2021 🎊 :🎉 
 
 - [Link to Paper](https://simdl.github.io/files/57.pdf)
 
 - [Link to Poster](https://simdl.github.io/posters/57-supp_DLHMC_Foreman_SimDL-ICLR2021_poster1.pdf)
 
+---
+
 ## Overview
 
-**Note:** An end-to-end training + inference example can be found in
-[this notebook](l2hmc-qcd/notebooks/complete_example_2021_01_26.ipynb).
+**Note:** An end-to-end training + inference example can be found in [this notebook](l2hmc-qcd/notebooks/complete_example_2021_01_26.ipynb).
 
-The L2HMC algorithm aims to improve upon [HMC](https://en.wikipedia.org/wiki/Hamiltonian_Monte_Carlo)
-by optimizing a carefully chosen loss function which is designed to minimize autocorrelations
-within the Markov Chain, thereby improving the efficiency of the sampler.
+The L2HMC algorithm aims to improve upon [HMC](https://en.wikipedia.org/wiki/Hamiltonian_Monte_Carlo) by optimizing a carefully chosen loss function which is designed to minimize autocorrelations within the Markov Chain, thereby improving the efficiency of the sampler.
 
 This work is based on the original implementation: [brain-research/l2hmc/](https://github.com/brain-research/l2hmc).
 
@@ -41,8 +40,7 @@ Broadly, given an *analytically* described target distribution, π(x), L2HMC pro
 
 **Goal:** Use L2HMC to **efficiently** generate _gauge configurations_ for calculating observables in lattice QCD.
 
-A detailed description of the (ongoing) work to apply this algorithm to simulations in 
-lattice QCD (specifically, a 2D U(1) lattice gauge theory model) can be found in [`doc/main.pdf`](doc/main.pdf).
+A detailed description of the (ongoing) work to apply this algorithm to simulations in lattice QCD (specifically, a 2D U(1) lattice gauge theory model) can be found in [`doc/main.pdf`](doc/main.pdf).
 
 <div align="center">
  <img src="assets/l2hmc_poster.jpeg" alt="l2hmc-qcd poster"/>
