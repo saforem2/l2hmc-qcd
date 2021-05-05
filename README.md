@@ -1,11 +1,21 @@
-# l2hmc-qcd  [![CodeFactor](https://www.codefactor.io/repository/github/saforem2/l2hmc-qcd/badge)](https://www.codefactor.io/repository/github/saforem2/l2hmc-qcd) [![HitCount](http://hits.dwyl.com/saforem2/l2hmc-qcd.svg)](http://hits.dwyl.com/saforem2/l2hmc-qcd)
+# l2hmc-qcd  [![CodeFactor](https://www.codefactor.io/repository/github/saforem2/l2hmc-qcd/badge)](https://www.codefactor.io/repository/github/saforem2/l2hmc-qcd)
+
+<!---![hits] (https://hitcounter.pythonanywhere.com/nocount/tag.svg?url=https://github.com/saforem2/l2hmc-qcd)--->
+
+<!---![HitCount] (http://hits.dwyl.com/saforem2/l2hmc-qcd.svg)--->
 
 ---
 
-**Note:** An end-to-end training + inference example can be found in
-[this notebook](l2hmc-qcd/notebooks/complete_example_2021_01_26.ipynb).
+**Accepted** :white_check_mark: as a contribution to the [Deep Learning for Simulation (SimDL) Workshop](https://simdl.github.io/overview/) at ICLR 2021 ​🎊 :🎉 
+
+- [Link to Paper](https://simdl.github.io/files/57.pdf)
+
+- [Link to Poster](https://simdl.github.io/posters/57-supp_DLHMC_Foreman_SimDL-ICLR2021_poster1.pdf)
 
 ## Overview
+
+**Note:** An end-to-end training + inference example can be found in
+[this notebook](l2hmc-qcd/notebooks/complete_example_2021_01_26.ipynb).
 
 The L2HMC algorithm aims to improve upon [HMC](https://en.wikipedia.org/wiki/Hamiltonian_Monte_Carlo)
 by optimizing a carefully chosen loss function which is designed to minimize autocorrelations
@@ -56,7 +66,6 @@ An illustration of the `leapfrog layer` updating `(x, v) --> (x', v')` can be se
 <div align="center">
  <img src="assets/lflayer.png" alt="leapfrog layer" width=800/>
 </div>
-
 <!---The network takes as input the position `x`, momentum `v` and and outputs the quantities `sx, tx, qx`, which are then used in the augmented Hamiltonian dynamics to update `x`.--->
 
 <!---Similarly, the network used for updating the momentum variable `v` has an identical architecture, taking as inputs the position `x`, the gradient of the potential, `dUdX`, and the same fictitious time `t`, and outputs the quantities `sv, tv, qv` which are then used to update `v`.--->
