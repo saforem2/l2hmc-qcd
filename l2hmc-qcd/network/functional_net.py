@@ -101,7 +101,7 @@ def get_generic_network(
         input_shapes = {
             'x': (input_shape[1],),
             'v': (input_shape[1],),
-            't': (2,),
+            #  't': (2,),
         }
 
     def get_input(s):
@@ -111,12 +111,13 @@ def get_generic_network(
     with tf.name_scope(name):
         x_input = get_input('x')
         v_input = get_input('v')
-        t_input = get_input('t')
+        #  t_input = get_input('t')
 
-        x = custom_dense(h1, factor/3., f'{name}_x')(x_input)
-        v = custom_dense(h1, 1./3., f'{name}_v')(v_input)
-        t = custom_dense(h1, 1./3., f'{name}_t')(t_input)
-        z = layers.Add()([x, v, t])
+        x = custom_dense(h1, factor/2., f'{name}_x')(x_input)
+        v = custom_dense(h1, 1./2., f'{name}_v')(v_input)
+        #  t = custom_dense(h1, 1./3., f'{name}_t')(t_input)
+        z = layers.Add()([x, v])
+        #  z = layers.Add()([x, v, t])
         z = keras.activations.relu(z)
         z = custom_dense(h2, 1., f'{name}_h1')(z)
         z = custom_dense(h2, 1., f'{name}_h2')(z)
@@ -131,9 +132,14 @@ def get_generic_network(
             custom_dense(xdim, 0.001, name=f'{name}_transformation')(z)
         )
 
+        #  model = keras.Model(
+        #      name=name,
+        #      inputs=[x_input, v_input, t_input],
+        #      outputs=[scale, transl, transf]
+        #  )
         model = keras.Model(
             name=name,
-            inputs=[x_input, v_input, t_input],
+            inputs=[x_input, v_input],
             outputs=[scale, transl, transf]
         )
 
@@ -230,8 +236,8 @@ def get_gauge_network(
             x = layers.Flatten()(x_input)
 
         args = {
-            'x': (net_config.units[0], factor / 3., f'{name}_x'),
-            'v': (net_config.units[0], 1. / 3., f'{name}_v'),
+            'x': (net_config.units[0], factor / 2., f'{name}_x'),
+            'v': (net_config.units[0], 1. / 2., f'{name}_v'),
             #  't': (net_config.units[0], 1. / 3., f'{name}_t'),
             'scale': (xdim, 0.001, f'{name}_scale'),
             'transl': (xdim, 0.001, f'{name}_transl'),
@@ -268,7 +274,7 @@ def get_gauge_network(
         transf *= tf.exp(transf_coeff)
 
         model = keras.Model(name=name,
-                            inputs=[x_input, v_input],  # , t_input],
+                            inputs=[x_input, v_input], #, t_input],
                             outputs=[scale, transl, transf])
 
     return model

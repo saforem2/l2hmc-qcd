@@ -141,7 +141,9 @@ class BaseDynamics(tf.keras.Model):
         #          self.xnet, self.vnet = self._build_networks()
         #      if self._has_trainable_params:
         #          self.lr = self._create_lr(lr_config)
-        #          self.optimizer = self._create_optimizer(self.config.optimizer)
+        #          self.optimizer = self._create_optimizer(
+        #              self.config.optimizer
+        #          )
 
     def call(
             self,
@@ -304,7 +306,7 @@ class BaseDynamics(tf.keras.Model):
         return mc_states, data
 
     def _hmc_transition(
-        self, inputs: tuple, training: Optional[bool] = None,
+            self, inputs: tuple, training: Optional[bool] = None,
     ) -> (MonteCarloStates, AttrDict):
         """Propose a new state and perform the accept/reject step."""
         if len(inputs) == 2:
@@ -348,6 +350,12 @@ class BaseDynamics(tf.keras.Model):
             training: bool = None
     ) -> (State, State, AttrDict):
         """Run the augmented leapfrog integrator."""
+        if not isinstance(inputs, (tuple, List)):
+            raise ValueError(
+                f'Expected inputs to be one of: [list, tuple]. \n'
+                f'Received: {type(inputs)}'
+            )
+
         if len(inputs) == 2:
             x, beta = inputs
             v = tf.random.normal(x.shape, dtype=x.dtype)
@@ -359,7 +367,6 @@ class BaseDynamics(tf.keras.Model):
         state_, data = self.transition_kernel(state, forward, training)
 
         return state, state_, data
-
 
     def apply_transition(
             self, inputs: Tuple[tf.Tensor], training: Optional[bool] = None,
@@ -835,7 +842,12 @@ class BaseDynamics(tf.keras.Model):
 
         return state, sumlogdet
 
-    def _call_vnet(self, inputs, step, training=None):
+    def _call_vnet(
+            self,
+            inputs: tuple,
+            step: int,
+            training: bool = None
+    ):
         """Call `self.vnet` to get Sv, Tv, Qv for updating `v`."""
         raise NotImplementedError
 
@@ -860,7 +872,7 @@ class BaseDynamics(tf.keras.Model):
         eps = self.veps[step]
         x = self.normalizer(state.x)
         grad = self.grad_potential(x, state.beta)
-        #  t = self._get_time(step, tile=tf.shape(x)[0])
+        t = self._get_time(step, tile=tf.shape(x)[0])
 
         #  S, T, Q = self._call_vnet((x, grad, t), step, training)
         S, T, Q = self._call_vnet((x, grad), step, training)
@@ -888,7 +900,7 @@ class BaseDynamics(tf.keras.Model):
         """Perform a half-step momentum update in the forward direction."""
         x = self.normalizer(state.x)
         grad = self.grad_potential(x, state.beta)
-        #  t = self._get_time(step, tile=tf.shape(x)[0])
+        t = self._get_time(step, tile=tf.shape(x)[0])
         eps = self.veps[step]
 
         #  S, T, Q = self._call_vnet((x, grad, t), step, training)
@@ -927,11 +939,12 @@ class BaseDynamics(tf.keras.Model):
             logdet (float): Jacobian factor
         """
         x = self.normalizer(state.x)
-        #  t = self._get_time(step, tile=tf.shape(x)[0])
+        t = self._get_time(step, tile=tf.shape(x)[0])
         eps = self.veps[step]
         grad = self.grad_potential(x, state.beta)
         #  S, T, Q = self.vnet((x, grad, t), training)
-        S, T, Q = self.vnet((x, grad), training)
+        #  S, T, Q = self.vnet((x, grad), training)
+        S, T, Q = self._call_vnet((x, grad), step, training)
 
         transl = self._vtw * T
         scale = self._vsw * (0.5 * eps * S)
@@ -999,11 +1012,11 @@ class BaseDynamics(tf.keras.Model):
         """
         m, mc = masks
         x = self.normalizer(state.x)
-        #  t = self._get_time(step, tile=tf.shape(x)[0])
+        t = self._get_time(step, tile=tf.shape(x)[0])
         eps = self.xeps[step]
 
-        S, T, Q = self.xnet((m * x, state.v), training)
-        #  S, T, Q = self.xnet((m * x, state.v, t), training)
+        #  S, T, Q = self.xnet((m * x, state.v), training)
+        S, T, Q = self.xnet((m * x, state.v, t), training)
 
         transl = self._xtw * T
         scale = self._xsw * (eps * S)
@@ -1032,10 +1045,10 @@ class BaseDynamics(tf.keras.Model):
         step_r = self.config.num_steps - step - 1
         x = self.normalizer(state.x)
         grad = self.grad_potential(x, state.beta)
-        #  t = self._get_time(step_r, tile=tf.shape(x)[0])
+        t = self._get_time(step_r, tile=tf.shape(x)[0])
         eps = self.veps[step_r]
-        S, T, Q = self._call_vnet((x, grad), step_r, training)
         #  S, T, Q = self._call_vnet((x, grad, t), step_r, training)
+        S, T, Q = self._call_vnet((x, grad), step_r, training)
 
         scale = self._vsw * (-0.5 * eps * S)
         transf = self._vqw * (eps * Q)
@@ -1061,7 +1074,7 @@ class BaseDynamics(tf.keras.Model):
         step_r = self.config.num_steps - step - 1
         x = self.normalizer(state.x)
         grad = self.grad_potential(x, state.beta)
-        #  t = self._get_time(step_r, tile=tf.shape(x)[0])
+        t = self._get_time(step_r, tile=tf.shape(x)[0])
         eps = self.veps[step]
         #  S, T, Q = self._call_vnet((x, grad, t), step_r, training)
         S, T, Q = self._call_vnet((x, grad), step_r, training)
@@ -1098,12 +1111,13 @@ class BaseDynamics(tf.keras.Model):
             logdet (float): Jacobian factor.
         """
         x = self.normalizer(state.x)
-        #  t = self._get_time(step, tile=tf.shape(x)[0])
+        t = self._get_time(step, tile=tf.shape(x)[0])
         eps = self.veps[step]
 
         grad = self.grad_potential(x, state.beta)
         #  S, T, Q = self.vnet((x, grad, t), training)
-        S, T, Q = self.vnet((x, grad), training)
+        #  S, T, Q = self.vnet((x, grad), training)
+        S, T, Q = self._call_vnet((x, grad), step, training)
 
         scale = self._vsw * (-0.5 * eps * S)
         transf = self._vqw * (eps * Q)
@@ -1162,10 +1176,10 @@ class BaseDynamics(tf.keras.Model):
         """
         m, mc = masks
         x = self.normalizer(state.x)
-        #  t = self._get_time(step, tile=tf.shape(x)[0])
+        t = self._get_time(step, tile=tf.shape(x)[0])
         eps = self.xeps[step]
-        S, T, Q = self.xnet((m * x, state.v), training)
-        #  S, T, Q = self.xnet((m * x, state.v, t), training)
+        #  S, T, Q = self.xnet((m * x, state.v), training)
+        S, T, Q = self.xnet((m * x, state.v, t), training)
 
         scale = self._xsw * (-eps * S)
         transl = self._xtw * T
@@ -1297,10 +1311,10 @@ class BaseDynamics(tf.keras.Model):
     def _build_hmc_networks():
         # pylint:disable=unused-argument
         xnet = lambda inputs, is_training: [  # noqa: E731
-            tf.zeros_like(inputs[0]) for _ in range(3)
+            tf.zeros_like(inputs[0]) for _ in range(2)
         ]
         vnet = lambda inputs, is_training: [  # noqa: E731
-            tf.zeros_like(inputs[0]) for _ in range(3)
+            tf.zeros_like(inputs[0]) for _ in range(2)
         ]
 
         return xnet, vnet

@@ -37,12 +37,14 @@ from tensorflow.python.keras import backend as K
 
 try:
     import horovod.tensorflow as hvd
+    COMPRESS = True
     HAS_HOROVOD = True
     NUM_RANKS = hvd.size()
     NUM_WORKERS = hvd.size()
 except ImportError:
     from utils import Horovod as hvd
     HAS_HOROVOD = False
+    COMPRESS = False
     NUM_RANKS = 1
     NUM_WORKERS = 1
 
@@ -162,6 +164,14 @@ class GaugeDynamics(BaseDynamics):
         self.lr_config = lr_config
         self.conv_config = conv_config
         self.net_config = network_config
+
+        self._fp16 = None
+        if HAS_HOROVOD:
+            if COMPRESS:
+                self._fp16 = hvd.Compression.fp16
+            else:
+                self._fp16 = hvd.Compression.none
+
         if not self.config.use_conv_net:
             self.conv_config = None
 
@@ -731,6 +741,12 @@ class GaugeDynamics(BaseDynamics):
             training: bool = None,
     ):
         """Implements a transition kernel when using separate networks."""
+        # -- Setup -------------------------------------------------
+        lf_fn = self._forward_lf if forward else self._backward_lf
+        state_prop = State(x=state.x, v=state.v, beta=state.beta)
+        sumlogdet = tf.zeros((self.batch_size,))
+        metrics = self._init_metrics(state_prop)
+
         def _update_metrics(data, step):
             for key, val in data.items():
                 metrics[key] = metrics[key].write(step, val)
@@ -751,12 +767,6 @@ class GaugeDynamics(BaseDynamics):
                 if isinstance(val, tf.TensorArray):
                     metrics[key] = val.stack()
             return metrics
-
-        # -- Setup -------------------------------------------------
-        lf_fn = self._forward_lf if forward else self._backward_lf
-        state_prop = State(x=state.x, v=state.v, beta=state.beta)
-        sumlogdet = tf.zeros((self.batch_size,))
-        metrics = self._init_metrics(state_prop)
 
         # -- Loop over leapfrog steps ----------------------------
         for step in range(self.config.num_steps):
@@ -828,8 +838,8 @@ class GaugeDynamics(BaseDynamics):
     def _call_vnet(self, inputs, step, training=None):
         """Call `self.xnet` to get Sx, Tx, Qx for updating `x`."""
         if self.config.hmc:
-            x, grad = inputs
-            #  x, grad, t = inputs
+            #  x, grad = inputs
+            x, grad, t = inputs
             return [tf.zeros_like(inputs[0]) for _ in range(3)]
 
         if not self.config.separate_networks:
@@ -840,7 +850,8 @@ class GaugeDynamics(BaseDynamics):
 
     def _convert_to_cartesian(self, x: tf.Tensor, mask: tf.Tensor):
         """Convert `x` from an angle to [cos(x), sin(x)]."""
-        if len(mask) == 2:
+        #  if len(mask) == 2:
+        if mask.shape[0] == 2:
             mask, _ = mask
 
         xcos = mask * tf.math.cos(x)
@@ -862,6 +873,7 @@ class GaugeDynamics(BaseDynamics):
             first: bool = False
     ):
         """Call `self.xnet` to get Sx, Tx, Qx for updating `x`."""
+        #  x, v, t = inputs
         x, v = inputs
         #  x, v, t = inputs
         if self.config.hmc:
@@ -1031,8 +1043,8 @@ class GaugeDynamics(BaseDynamics):
         x = self.normalizer(state.x)
         #  t = self._get_time(step, tile=tf.shape(x)[0])
 
-        S, T, Q = self._call_xnet((x, state.v), m, step, training, first)
         #  S, T, Q = self._call_xnet((x, state.v, t), m, step, training, first)
+        S, T, Q = self._call_xnet((x, state.v), m, step, training, first)
 
         scale = self._xsw * (eps * S)
         transl = self._xtw * T
@@ -1073,8 +1085,8 @@ class GaugeDynamics(BaseDynamics):
         x = self.normalizer(state.x)
         grad = self.grad_potential(x, state.beta)
         #  t = self._get_time(step_r, tile=tf.shape(x)[0])
-        S, T, Q = self._call_vnet((x, grad), step_r, training)
         #  S, T, Q = self._call_vnet((x, grad, t), step_r, training)
+        S, T, Q = self._call_vnet((x, grad), step_r, training)
 
         scale = self._vsw * (-eps * S)
         transf = self._vqw * (eps * Q)
@@ -1322,7 +1334,7 @@ class GaugeDynamics(BaseDynamics):
                 loss += ploss_ + qloss_
 
         if HAS_HOROVOD:
-            tape = hvd.DistributedGradientTape(tape)
+            tape = hvd.DistributedGradientTape(tape, compression=self._fp16)
 
         grads = tape.gradient(loss, self.trainable_variables)
 
