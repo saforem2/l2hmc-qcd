@@ -42,6 +42,7 @@ NET_WEIGHTS_L2MC = NetWeights(1., 1., 1., 1., 1., 1.)
 @dataclass
 class DynamicsConfig:
     eps: float
+    xdim: int
     num_steps: int
     clip_val: float = 0.
     hmc: bool = False
