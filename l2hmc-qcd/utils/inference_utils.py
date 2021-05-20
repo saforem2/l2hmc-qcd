@@ -353,11 +353,6 @@ def run(
         'log_dir': args.log_dir,
         'run_dir': run_dir,
     })
-    run_data.flush_data_strs(log_file, mode='a')
-    run_data.write_to_csv(args.log_dir, run_dir, hmc=dynamics.config.hmc)
-    io.save_inference(run_dir, run_data)
-    if args.get('save_run_data', True):
-        run_data.save_data(data_dir)
 
     run_params = {
         'hmc': dynamics.config.hmc,
@@ -373,7 +368,6 @@ def run(
     }
 
     traj_len = dynamics.config.num_steps * tf.reduce_mean(dynamics.xeps)
-
     if hasattr(dynamics, 'xeps') and hasattr(dynamics, 'veps'):
         xeps_avg = tf.reduce_mean(dynamics.xeps)
         veps_avg = tf.reduce_mean(dynamics.veps)
@@ -415,6 +409,12 @@ def run(
 
         tint_file = os.path.join(run_dir, 'tint_data.z')
         io.savez(tint_data, tint_file, 'tint_data')
+
+    run_data.flush_data_strs(log_file, mode='a')
+    run_data.write_to_csv(args.log_dir, run_dir, hmc=dynamics.config.hmc)
+    io.save_inference(run_dir, run_data)
+    if args.get('save_run_data', True):
+        run_data.save_data(data_dir)
 
     return InferenceResults(dynamics=results.dynamics, run_data=run_data,
                             x=results.x, x_arr=results.x_arr)

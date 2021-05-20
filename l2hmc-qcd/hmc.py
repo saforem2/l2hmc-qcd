@@ -77,6 +77,11 @@ def parse_args():
                         action='store_true', default=False, required=False,
                         help='Run HMC over loop of parameters.')
 
+    parser.add_argument('--overwrite', dest='overwrite',
+                        action='overwrite', default=False, required=False,
+                        help=('If an existing run with identical config is '
+                              'found, should it be overwritten?'))
+
     return parser.parse_args()
 
 
@@ -96,13 +101,13 @@ def check_existing(beta, num_steps, eps):
 
 def multiple_runs(flags, json_file=None):
     default = (512, 16, 16, 2)
-    run_steps = flags.run_steps if flags.run_steps is not None else 125000
+    #  run_steps = flags.run_steps if flags.run_steps is not None else 125000
     shape = flags.x_shape if flags.x_shape is not None else default
 
-    num_steps = [10, 20]
+    num_steps = [5, 10]
     eps = [0.05, 0.1, 0.2]
-    betas = [1., 2., 3., 4., 5., 6., 7.]
-    run_steps = 75000
+    betas = [2., 3., 4., 5., 6., 7.]
+    #  run_steps = [50000, 50000, 50000, 100000, 100000, 100000]
     #  betas = [5.0, 6.0, 7.0]
     #num_steps = [10, 15, 20, 25]
     #  eps = [0.025, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3]
@@ -111,6 +116,7 @@ def multiple_runs(flags, json_file=None):
     for b in random.sample(betas, len(betas)):
         for ns in random.sample(num_steps, len(num_steps)):
             for e in random.sample(eps, len(eps)):
+                run_steps = 50000 if b < 5. else 100000
                 args = AttrDict({
                     'eps': e,
                     'beta': b,
@@ -118,10 +124,11 @@ def multiple_runs(flags, json_file=None):
                     'run_steps': run_steps,
                     'x_shape': shape,
                 })
-                exists = check_existing(b, ns, e)
-                if exists:
-                    io.rule('Skipping existing run!')
-                    continue
+                if not flags.overwrite:
+                    exists = check_existing(b, ns, e)
+                    if exists:
+                        io.rule('Skipping existing run!')
+                        continue
 
                 _ = main(args, json_file=json_file)
 
