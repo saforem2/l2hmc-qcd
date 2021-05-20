@@ -8,6 +8,7 @@ file_io.py
 from __future__ import absolute_import, division, print_function
 
 import os
+import shutil
 import sys
 import json
 import time
@@ -24,7 +25,7 @@ import numpy as np
 
 from tqdm.auto import tqdm
 
-from config import NetWeights, PROJECT_DIR, GREEN
+from config import NetWeights, PROJECT_DIR, GREEN, RED, BLUE
 from utils.attr_dict import AttrDict
 from rich.theme import Theme
 from rich.console import Console
@@ -32,11 +33,16 @@ from rich.logging import RichHandler
 from rich.progress import (BarColumn, DownloadColumn, Progress, TaskID,
                            TextColumn, TimeRemainingColumn)
 
+WIDTH, _ = shutil.get_terminal_size(fallback=(156, 50))
+
+# noqa:E999
+
 console = Console(record=False,
                   log_path=False,
                   width=240,
                   log_time_format='[%X] ',
-                  theme=Theme({'repr.number': GREEN}))
+                  theme=Theme({'repr.path': BLUE,
+                               'repr.number': GREEN}))
 
 
 # pylint:disable=wrong-import-position

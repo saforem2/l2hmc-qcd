@@ -127,8 +127,9 @@ class BaseDynamics(tf.keras.Model):
             self.xnet, self.vnet = self._build_networks()
 
         #  if self._has_trainable_params:
-        self.lr = self._create_lr(lr_config)
-        self.optimizer = self._create_optimizer(self.config.optimizer)
+        if not self.config.hmc and not self.config.eps_fixed:
+            self.lr = self._create_lr(lr_config)
+            self.optimizer = self._create_optimizer(self.config.optimizer)
 
         if self.config.hmc:
             self.net_weights = NetWeights(0., 0., 0., 0., 0., 0.)
@@ -1015,8 +1016,8 @@ class BaseDynamics(tf.keras.Model):
         t = self._get_time(step, tile=tf.shape(x)[0])
         eps = self.xeps[step]
 
-        #  S, T, Q = self.xnet((m * x, state.v), training)
-        S, T, Q = self.xnet((m * x, state.v, t), training)
+        S, T, Q = self.xnet((m * x, state.v), training)
+        #  S, T, Q = self.xnet((m * x, state.v, t), training)
 
         transl = self._xtw * T
         scale = self._xsw * (eps * S)
@@ -1311,10 +1312,10 @@ class BaseDynamics(tf.keras.Model):
     def _build_hmc_networks():
         # pylint:disable=unused-argument
         xnet = lambda inputs, is_training: [  # noqa: E731
-            tf.zeros_like(inputs[0]) for _ in range(2)
+            tf.zeros_like(inputs[0]) for _ in range(3)
         ]
         vnet = lambda inputs, is_training: [  # noqa: E731
-            tf.zeros_like(inputs[0]) for _ in range(2)
+            tf.zeros_like(inputs[0]) for _ in range(3)
         ]
 
         return xnet, vnet

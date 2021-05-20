@@ -160,7 +160,8 @@ def main(args, json_file=None):
         flags.dynamics_config['num_steps'] = args.num_steps
 
     #  return run_hmc(flags, skip_existing=True, num_chains=4, make_plots=True)
-    return run_hmc(flags, skip_existing=True, num_chains=4, make_plots=True)
+    #  skip_existing = os.environ.get('SKIP_EXISTING', True)
+    return run_hmc(flags, skip_existing=False, num_chains=4, make_plots=True)
 
 
 if __name__ == '__main__':
