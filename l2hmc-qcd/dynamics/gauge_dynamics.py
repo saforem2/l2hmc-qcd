@@ -219,7 +219,8 @@ class GaugeDynamics(BaseDynamics):
             net_weights = NetWeights(*self.config.net_weights)
             self.net_weights = self._parse_net_weights(net_weights)
 
-        if self._has_trainable_params:
+        #  if self._has_trainable_params:
+        if not self.config.hmc and not self.config.eps_fixed:
             self.lr_config = lr_config
             self.lr = self._create_lr(lr_config, auto=True)
             self.optimizer = self._create_optimizer()
@@ -838,8 +839,8 @@ class GaugeDynamics(BaseDynamics):
     def _call_vnet(self, inputs, step, training=None):
         """Call `self.xnet` to get Sx, Tx, Qx for updating `x`."""
         if self.config.hmc:
-            #  x, grad = inputs
-            x, grad, t = inputs
+            x, grad = inputs
+            #  x, grad, t = inputs
             return [tf.zeros_like(inputs[0]) for _ in range(3)]
 
         if not self.config.separate_networks:
