@@ -97,7 +97,9 @@ class Logger:
     def rule(self, s: str, *args, **kwargs):
         """Print horizontal line."""
         w = kwargs.pop('width', self.width)
-        line = '-' * (w - len(s) - 2) // 2
+        strlen = (w - len(s) - 2) // 2
+        line = '-' * strlen
+        #  line = '-' * (w - len(s) - 2) // 2
         self.console.log(' '.join([line, s, line]))
 
     def log(self, s: str, *args, **kwargs):
@@ -131,7 +133,8 @@ class Logger:
 #                    log_time_format='[%X] ',
 #                    theme=Theme({'repr.path': BLUE,
 #                                 'repr.number': GREEN}))
-console = Logger()
+logger = Logger()
+console = logger.console
 
 
 # pylint:disable=wrong-import-position
@@ -412,15 +415,15 @@ def strformat(k, v, window: int = 0):
     outstr = ''
     if isinstance(v, bool):
         v = 'True' if v else 'False'
-        outstr = f'{str(k)}={v}'
+        return f'{str(k)}={v}'
 
-    elif isinstance(v, dict):
+    if isinstance(v, dict):
         outstr_arr = []
         for key, val in v.items():
             outstr_arr.append(strformat(key, val, window))
         outstr = '\n'.join(outstr_arr)
     else:
-        if isinstance(v, (list, np.ndarray, tf.Tensor)):
+        if isinstance(v, (tuple, list, np.ndarray, tf.Tensor)):
             v = np.array(v)
             if window > 0 and len(v.shape) > 0:
                 window = min((v.shape[0], window))
