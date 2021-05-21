@@ -78,7 +78,7 @@ def parse_args():
                         help='Run HMC over loop of parameters.')
 
     parser.add_argument('--overwrite', dest='overwrite',
-                        action='overwrite', default=False, required=False,
+                        action='store_true', default=False, required=False,
                         help=('If an existing run with identical config is '
                               'found, should it be overwritten?'))
 
@@ -88,7 +88,7 @@ def parse_args():
 def check_existing(beta, num_steps, eps):
     from config import HMC_LOGS_DIR
 
-    root_dir = os.path.abspath(os.path.join(HMC_LOGS_DIR, '2021_01'))
+    root_dir = os.path.abspath(os.path.join(HMC_LOGS_DIR))
     runs = os.listdir(root_dir)
     dirname = f'HMC_L16_b512_beta{beta}_lf{num_steps}_eps{eps}'
     match = False
@@ -113,6 +113,7 @@ def multiple_runs(flags, json_file=None):
     #  eps = [0.025, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3]
     #  eps = [0.1, 0.125, 0.15, 0.175, 0.2]
 
+    #  skip_existing = not flags.overwrite
     for b in random.sample(betas, len(betas)):
         for ns in random.sample(num_steps, len(num_steps)):
             for e in random.sample(eps, len(eps)):
@@ -123,8 +124,10 @@ def multiple_runs(flags, json_file=None):
                     'num_steps': ns,
                     'run_steps': run_steps,
                     'x_shape': shape,
+                    'skip_existing': (not flags.overwrite),
                 })
-                if not flags.overwrite:
+                #  if not flags.overwrite:
+                if (not flags.overwrite):
                     exists = check_existing(b, ns, e)
                     if exists:
                         io.rule('Skipping existing run!')
@@ -168,7 +171,12 @@ def main(args, json_file=None):
 
     #  return run_hmc(flags, skip_existing=True, num_chains=4, make_plots=True)
     #  skip_existing = os.environ.get('SKIP_EXISTING', True)
-    return run_hmc(flags, skip_existing=False, num_chains=4, make_plots=True)
+    #  skip_existing = (not flags.overwrite)
+    skip_existing = args.get('skip_existing',
+                             not args.get('overwrite', False))
+
+    return run_hmc(flags, skip_existing=skip_existing,
+                   num_chains=4, make_plots=True)
 
 
 if __name__ == '__main__':

@@ -172,7 +172,7 @@ def run_hmc(
         )
         if len(matches) > 0:
             io.rule('Existing run with current parameters found!')
-            io.log(args)
+            io.print_args(args)
             return InferenceResults(None, None, None, None)
 
     dynamics = build_dynamics(args)
@@ -388,6 +388,8 @@ def run(
 
     io.save_params(run_params, run_dir, name='run_params')
 
+    save_times = {}
+    plot_times = {}
     if make_plots:
         output = plot_data(data_container=run_data,
                            flags=args,
@@ -395,7 +397,14 @@ def run(
                            out_dir=run_dir,
                            hmc=dynamics.config.hmc,
                            therm_frac=therm_frac,
-                           num_chains=num_chains)
+                           num_chains=num_chains,
+                           profile=True)
+
+        save_times = io.SortedDict(**output['save_times'])
+        plot_times = io.SortedDict(**output['plot_times'])
+        dt1 = io.SortedDict(**plot_times['data_container.plot_dataset'])
+        plot_times['data_container.plot_dataset'] = dt1
+
         tint_data = {
             'beta': beta,
             'run_dir': run_dir,
@@ -407,14 +416,36 @@ def run(
             'tint': output['tint_dict']['tint'],
         }
 
+        t0 = time.time()
         tint_file = os.path.join(run_dir, 'tint_data.z')
         io.savez(tint_data, tint_file, 'tint_data')
+        save_times['savez_tint_data'] = time.time() - t0
 
+    t0 = time.time()
     run_data.flush_data_strs(log_file, mode='a')
+    save_times['run_data.flush_data_strs'] = time.time() - t0
+
+    t0 = time.time()
     run_data.write_to_csv(args.log_dir, run_dir, hmc=dynamics.config.hmc)
+    save_times['run_data.write_to_csv'] = time.time() - t0
+
+    t0 = time.time()
     io.save_inference(run_dir, run_data)
+    save_times['io.save_inference'] = time.time() - t0
+
     if args.get('save_run_data', True):
+        t0 = time.time()
         run_data.save_data(data_dir)
+        save_times['run_data.save_data'] = time.time() - t0
+
+    #  tstamp = io.get_timestamp('%Y-%m-%d-%H%M%S')
+    #  infodir = os.path.join(os.getcwd(), f'profile_info_{tstamp}')
+
+    profdir = os.path.join(run_dir, 'profile_info')
+    io.check_else_make_dir(profdir)
+    io.save_dict(plot_times, profdir, name='plot_times')
+    io.save_dict(save_times, profdir, name='save_times')
+
 
     return InferenceResults(dynamics=results.dynamics, run_data=run_data,
                             x=results.x, x_arr=results.x_arr)

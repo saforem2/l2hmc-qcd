@@ -493,3 +493,9 @@ log_dirs.txt
 doc/autocorrelation_plots.tex
 doc/leapfrog/leapfrog_plots_vimtex_selected.pdf
 l2hmc-qcd/notebooks/model.png
+l2hmc-qcd/notebooks/log_dirs/
+l2hmc-qcd/notebooks/*thetaGPU*
+l2hmc-qcd/notebooks/*Copy*
+l2hmc-qcd/notebooks/*test*
+*.numbers
+*.csv

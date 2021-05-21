@@ -5,7 +5,7 @@ Methods for plotting data.
 """
 import matplotlib.style as mplstyle
 mplstyle.use('fast')
-
+import time
 import os
 
 import arviz as az
@@ -440,6 +440,7 @@ def mcmc_traceplot(key, val, title=None, fpath=None, **kwargs):
         return None
 
 
+@timeit
 def plot_autocorrs_vs_draws(
         qarr: np.ndarray,
         num_pts: int = 20,
@@ -523,6 +524,7 @@ def plot_data(
         params: AttrDict = None,
         hmc: bool = None,
         num_chains: int = 32,
+        profile: bool = False,
 ):
     """Plot data from `data_container.data`."""
     keep_strs = [
@@ -538,12 +540,17 @@ def plot_data(
         io.log(f'Reducing `num_chains` from {num_chains} to 16 for plotting.')
         num_chains = 16
 
+    plot_times = {}
+    save_times = {}
     if 'charges' in data_container.data:
         lf = flags['dynamics_config']['num_steps']
         charges = np.array(data_container.data['charges'])
+        t0 = time.time()
         tint_dict, _ = plot_autocorrs_vs_draws(charges, num_pts=20,
                                                nstart=1000, therm_frac=0.2,
                                                out_dir=out_dir, lf=lf)
+        plot_times['plot_autocorrs_vs_draws'] = time.time() - t0
+
         tint_data = deepcopy(params)
         tint_data.update({
             'narr': tint_dict['narr'],
@@ -555,7 +562,9 @@ def plot_data(
         if run_dir is not None:
             if os.path.isdir(str(Path(run_dir))):
                 tint_file = os.path.join(run_dir, 'tint_data.z')
+                t0 = time.time()
                 io.savez(tint_data, tint_file, 'tint_data')
+                save_times['tint_data'] = time.time() - t0
 
     out_dir = os.path.join(out_dir, 'plots')
     io.check_else_make_dir(out_dir)
@@ -657,35 +666,53 @@ def plot_data(
     #      out_dir_xr = os.path.join(out_dir, 'xarr_plots')
 
     out_dir_xr = os.path.join(plots_dir, 'xarr_plots')
-    data_container.plot_dataset(out_dir_xr,
-                                num_chains=num_chains,
-                                therm_frac=therm_frac,
-                                ridgeplots=True)
+    t0 = time.time()
+    dtplot_container = data_container.plot_dataset(out_dir_xr,
+                                                   num_chains=num_chains,
+                                                   therm_frac=therm_frac,
+                                                   ridgeplots=True,
+                                                   profile=profile)
+    plot_times['data_container.plot_dataset'] = {
+        'total': time.time() - t0,
+    }
+    for key, val in dtplot_container.items():
+        plot_times['data_container.plot_dataset'][key] = val
+
     plt.close('all')
     #  try:
     if not hmc and 'Hwf' in data_dict.keys():
+        t0 = time.time()
         _ = plot_energy_distributions(data_dict, out_dir=out_dir, title=title)
+        plot_times['plot_energy_distributions'] = time.time() - t0
     #  except KeyError:
     #      import pudb; pudb.set_trace()
     #      pass
 
+    t0 = time.time()
     _ = mcmc_avg_lineplots(data_dict, title, out_dir)
+    plot_times['mcmc_avg_lineplots'] = time.time() - t0
 
     output = {
         'data_container': data_container,
         'data_dict': data_dict,
         'data_vars': data_vars,
         'out_dir': out_dir_,
+        'save_times': save_times,
     }
 
     if 'charges' in data_container.data:
+        t0 = time.time()
         _ = plot_charges(charges_steps, charges_arr, out_dir=out_dir,
                          title=title)
+        plot_times['plot_charges'] = time.time() - t0
         output.update({
             'tint_dict': tint_dict,
             'charges_steps': charges_steps,
             'charges_arr': charges_arr,
         })
+
+    output['plot_times'] = plot_times
+
 
     plt.close('all')
 
