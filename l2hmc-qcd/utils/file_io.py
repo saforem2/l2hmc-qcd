@@ -15,6 +15,7 @@ import time
 import typing
 import logging
 import datetime
+import tensorflow as tf
 
 from typing import Any, Dict, Type
 from pathlib import Path
@@ -27,22 +28,110 @@ from tqdm.auto import tqdm
 
 from config import NetWeights, PROJECT_DIR, GREEN, RED, BLUE
 from utils.attr_dict import AttrDict
-from rich.theme import Theme
-from rich.console import Console
-from rich.logging import RichHandler
-from rich.progress import (BarColumn, DownloadColumn, Progress, TaskID,
-                           TextColumn, TimeRemainingColumn)
+#  from rich.theme import Theme
+#  from rich.console import Console as RichConsole
+#  from rich.logging import RichHandler
+#  from rich.progress import (BarColumn, DownloadColumn, Progress, TaskID,
+#                             TextColumn, TimeRemainingColumn)
 
 WIDTH, _ = shutil.get_terminal_size(fallback=(156, 50))
 
+
+def in_notebook():
+    """Check if we're currently in a jupyter notebook."""
+    try:
+        # pylint:disable=import-outside-toplevel
+        from IPython import get_ipython
+
+        try:
+            cfg = get_ipython().config
+            if 'IPKernelApp' not in cfg:
+                return False
+        except AttributeError:
+            return False
+    except ImportError:
+        return False
+    return True
+
+
+
 # noqa:E999
 
-console = Console(record=False,
-                  log_path=False,
-                  width=240,
-                  log_time_format='[%X] ',
-                  theme=Theme({'repr.path': BLUE,
-                               'repr.number': GREEN}))
+class Console:
+    """Fallback console object in case Rich isn't installed."""
+    def __init__(self, width: int = None):
+        if width is None:
+            width = WIDTH
+
+        self.width = width
+
+    @staticmethod
+    def log(s, *args, **kwargs):
+        now = get_timestamp('%X')
+        print(f'[{now}] {s}', *args, **kwargs)
+
+
+
+class Logger:
+    def __init__(self, width: int = None):
+        # pylint:disable=import-outside-toplevel
+        if width is None:
+            width = WIDTH
+
+        try:
+            from rich.console import Console as RichConsole
+            #  from rich.theme import Theme
+            #  theme = Theme({
+            #      'repr.number': 'bold bright_magenta',
+            #      'repr.attrib_name':
+            console = RichConsole(record=False,
+                                  log_time_format='[%X] ',
+                                  log_path=False, width=width,
+                                  force_jupyter=in_notebook())
+        except (ImportError, ModuleNotFoundError):
+            console = Console(width)
+
+        self.width = width
+        self.console = console
+
+    def rule(self, s: str, *args, **kwargs):
+        """Print horizontal line."""
+        w = kwargs.pop('width', self.width)
+        line = '-' * (w - len(s) - 2) // 2
+        self.console.log(' '.join([line, s, line]))
+
+    def log(self, s: str, *args, **kwargs):
+        """Print `s` using `self.console` object."""
+        self.console.log(s, *args, **kwargs)
+
+    def print_metrics(
+        self,
+        metrics: dict,
+        pre: list = None,
+        outfile: str = None,
+    ):
+        """Print nicely formatted representation of data in `metrics`."""
+        outstr = ' '.join([
+            strformat(k, v) for k, v in metrics.items()
+        ])
+        if pre is not None:
+            outstr = ' '.join([*pre, outstr])
+
+        self.log(outstr)
+        if outfile is not None:
+            with open(outfile, 'a') as f:
+                f.write(outstr)
+
+        return outstr
+
+
+#  console = Console(record=False,
+#                    log_path=False,
+#                    width=240,
+#                    log_time_format='[%X] ',
+#                    theme=Theme({'repr.path': BLUE,
+#                                 'repr.number': GREEN}))
+console = Logger()
 
 
 # pylint:disable=wrong-import-position
@@ -92,6 +181,17 @@ if HAS_HOROVOD:
 #  if typing.TYPE_CHECKING:
 #      from dynamics.base_dynamics import BaseDynamics
 
+from collections import OrderedDict
+
+class SortedDict(OrderedDict):
+    def __init__(self, **kwargs):
+        super(SortedDict, self).__init__()
+        for key, val in sorted(kwargs.items()):
+            if isinstance(val, dict):
+                self[key] = SortedDict(**val)
+            else:
+                self[key] = val
+
 
 def filter_dict(d: dict, cond: callable, key: str = None):
     """Filter dict using conditionals.
@@ -132,7 +232,7 @@ def print_header(header):
         console.print(s, style='bold red')
 
 
-def rule(s: str = ' ', **kwargs: dict):
+def rule(s: str = ' ', with_time: bool= True, **kwargs: dict):
     day = get_timestamp('%Y-%m-%d')
     t = get_timestamp('%H:%M')
     s = f'[{day} {t}] {s}'
@@ -156,12 +256,12 @@ def write(s: str, f: str, mode: str = 'a', nl: bool = True):
 
 def print_dict(d: Dict, indent: int = 0, name: str = None, **kwargs):
     """Print nicely-formatted dictionary."""
-    console.print(dict)
+    console.print(d)
 
 
 def print_flags(flags: AttrDict):
     """Helper method for printing flags."""
-    strs = [80 * '=', 'FLAGS:', *[f' {k}: {v}' for k, v in flags.items()]]
+    strs = [80 * '=', 'FLAGS:', *[f' {k}={v}' for k, v in flags.items()]]
     log('\n'.join(strs))
 
 
@@ -305,12 +405,53 @@ def save_dict(d: dict, out_dir: str, name: str = None):
             f.write(f'{key}: {val}\n')
 
 
-def print_args(args: dict):
+def strformat(k, v, window: int = 0):
+    if v is None:
+        v = 'None'
+
+    outstr = ''
+    if isinstance(v, bool):
+        v = 'True' if v else 'False'
+        outstr = f'{str(k)}={v}'
+
+    elif isinstance(v, dict):
+        outstr_arr = []
+        for key, val in v.items():
+            outstr_arr.append(strformat(key, val, window))
+        outstr = '\n'.join(outstr_arr)
+    else:
+        if isinstance(v, (list, np.ndarray, tf.Tensor)):
+            v = np.array(v)
+            if window > 0 and len(v.shape) > 0:
+                window = min((v.shape[0], window))
+                avgd = np.mean(v[-window:])
+            else:
+                avgd = np.mean(v)
+            outstr = f'{str(k)}={avgd:<5.4g}'
+        else:
+            if isinstance(v, float):
+                outstr = f'{str(k)}={v:<5.4g}'
+            else:
+                try:
+                    outstr = f'{str(k)}={v:<5g}'
+                except ValueError:
+                    outstr = f'{str(k)}={v:<5}'
+    return outstr
+
+
+def print_args(args: dict, name: str = None):
     """Print out parsed arguments."""
-    log(80 * '=' + '\n' + 'Parsed args:\n')
-    for key, val in args.items():
-        log(f' {key}: {val}\n')
-    log(80 * '=')
+    rule(f'{name}', False) if name is not None else rule(with_time=False)
+    outstr = '\n'.join([
+        strformat(k, v) for k, v in args.items()
+    ])
+    log(outstr)
+
+    #  log(80 * '=' + '\n' + 'Parsed args:\n')
+    #  for key, val in args.items():
+    #      log(f' {key}={val}\n')
+    #  log(80 * '=')
+    rule(with_time=False)
 
 
 def savez(obj: Any, fpath: str, name: str = None):
@@ -356,10 +497,11 @@ def timeit(fn: callable):
         dt = (end_time - start_time)
         dt_s = (dt % 60)
         dt_min = (dt // 60)
-        dt_ms = dt * 1000
-        tstr = f'`{fn.__name__}` took: {dt_ms:.3g}ms '
-        if dt_min > 0:
-            tstr += f' ({int(dt_min)} min {dt_s:3.2g} sec)'
+        #  dt_ms = dt * 1000
+        #  tstr = f'`fn.__
+        tstr = ' '.join([f'`{fn.__name__}` took: {dt_s:.3g}s',
+                         f' ({int(dt_min)} min {dt_s:3.8g} sec)'])
+        #  if dt_min > 0:
 
         log(tstr)
         return result
@@ -719,23 +861,6 @@ class NumpyEncoder(json.JSONEncoder):
             return None
 
         return json.JSONEncoder.default(self, obj)
-
-
-def in_notebook():
-    """Check if we're currently in a jupyter notebook."""
-    try:
-        # pylint:disable=import-outside-toplevel
-        from IPython import get_ipython
-
-        try:
-            cfg = get_ipython().config
-            if 'IPKernelApp' not in cfg:
-                return False
-        except AttributeError:
-            return False
-    except ImportError:
-        return False
-    return True
 
 
 def get_hmc_dirs(extra_paths=None):

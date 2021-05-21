@@ -7,6 +7,7 @@ from __future__ import absolute_import, division, print_function
 
 import os
 from copy import deepcopy
+import time
 
 from collections import defaultdict
 
@@ -143,13 +144,13 @@ class DataContainer:
         """Get formatted data string from `data`."""
         skip = [] if skip is None else skip
 
-        data = {
-            k: tf.reduce_mean(v) for k, v in metrics.items() if (
-                k not in skip
-                and not isinstance(v, dict)
-                and k not in SKEYS
-            )
-        }
+        #  data = {
+        #      k: tf.reduce_mean(v) for k, v in metrics.items() if (
+        #          k not in skip
+        #          and not isinstance(v, dict)
+        #          and k not in SKEYS
+        #      )
+        #  }
 
         if keep is not None:
             data = {k: v for k, v in data.items() if k in keep}
@@ -161,10 +162,28 @@ class DataContainer:
                 and '_end' not in str(k)
             )}
 
+        conds = lambda k: (
+            k not in skip
+            and k not in SKEYS
+            and (k in keep if keep is not None else True)
+            and '_start' not in str(k)
+            and '_mid' not in str(k)
+            and '_end' not in str(k)
+        )
+
         sstr = 'step'
         fstr = (
             f'{sstr:s}: {step:5g}/{self.steps:<5g} ' + ' '.join([
-                f'{k:s}: {v:5.3g}' for k, v in data.items()
+                io.strformat(k, v, window=10) for k, v in metrics.items()
+                if conds(k)
+                #  if k not in skip
+                #  and not isinstance(v, dict)
+                #  and k not in SKEYS
+                #  and k in keep if keep is not None
+                #  and '_start' not in str(k)
+                #  and '_mid' not in str(k)
+                #  and '_end' not in str(k)
+                #  f'{k:s}={v:5.3g}' for k, v in data.items()
             ])
         )
 
@@ -235,11 +254,14 @@ class DataContainer:
             out_dir: str = None,
             therm_frac: int = 0.,
             num_chains: int = None,
-            ridgeplots: bool = True
+            ridgeplots: bool = True,
+            profile: bool = False,
     ):
         """Create trace plot + histogram for each entry in self.data."""
+        tdict = {}
         dataset = self.get_dataset(therm_frac)
         for key, val in dataset.data_vars.items():
+            t0 = time.time()
             if np.std(val.values.flatten()) < 1e-2:
                 continue
 
@@ -258,6 +280,10 @@ class DataContainer:
                 plt.close('all')
                 plt.clf()
 
+            if profile:
+                tdict[key] = time.time() - t0
+                io.log(f'time spent plotting {key}: {tdict[key]}')
+
         if out_dir is not None:
             out_dir = os.path.join(out_dir, 'ridgeplots')
             io.check_else_make_dir(out_dir)
@@ -265,6 +291,7 @@ class DataContainer:
         if ridgeplots:
             make_ridgeplots(dataset, num_chains=num_chains, out_dir=out_dir)
 
+        return tdict
 
     def flush_data_strs(self, out_file, rank=0, mode='a'):
         """Dump `data_strs` to `out_file` and return new, empty list."""

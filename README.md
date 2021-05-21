@@ -8,15 +8,14 @@
 
  :white_check_mark:   Accepted as a contribution to the [Deep Learning for Simulation (SimDL) Workshop](https://simdl.github.io/overview/) at ICLR 2021 🎊 :🎉 
 
-- [Link to Paper](https://simdl.github.io/files/57.pdf)
-
-- [Link to Poster](https://simdl.github.io/posters/57-supp_DLHMC_Foreman_SimDL-ICLR2021_poster1.pdf)
+- **Paper**: [arXiv:2105.03418](https://simdl.github.io/files/57.pdf)
+- **Poster**: [bit.ly/l2hmc_poster](bit.ly/l2hmc_poster)
 
 ---
 
 ## Overview
 
-**Note:** An end-to-end training + inference example can be found in [this notebook](l2hmc-qcd/notebooks/complete_example_2021_01_26.ipynb).
+**Note:** An end-to-end example of how to run training + inference can be found in [this notebook](l2hmc-qcd/notebooks/complete_example_2021_01_26.ipynb).
 
 The L2HMC algorithm aims to improve upon [HMC](https://en.wikipedia.org/wiki/Hamiltonian_Monte_Carlo) by optimizing a carefully chosen loss function which is designed to minimize autocorrelations within the Markov Chain, thereby improving the efficiency of the sampler.
 
@@ -110,8 +109,20 @@ Or via the [` bin/train.sh `](bin/train.sh) script provided in [` bin/ `](bin/).
 
 ## Citation
 
-If you use this code, please cite the original paper:
-```bibtex
+If you use this code or found this work interesting, please cite our work along with the original paper:
+
+```latex
+@misc{foreman2021deep,
+      title={Deep Learning Hamiltonian Monte Carlo}, 
+      author={Sam Foreman and Xiao-Yong Jin and James C. Osborn},
+      year={2021},
+      eprint={2105.03418},
+      archivePrefix={arXiv},
+      primaryClass={hep-lat}
+}
+```
+
+```latex
 @article{levy2017generalizing,
   title={Generalizing Hamiltonian Monte Carlo with Neural Networks},
   author={Levy, Daniel and Hoffman, Matthew D. and Sohl-Dickstein, Jascha},
