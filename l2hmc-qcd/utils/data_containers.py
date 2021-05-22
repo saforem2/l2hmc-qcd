@@ -133,13 +133,14 @@ class DataContainer:
 
         return header
 
+
     def get_fstr(
             self,
             step: int,
             metrics: dict,
             skip: list = None,
             keep: list = None,
-            skip_endpts: bool = None
+            #  skip_endpts: bool = True
     ):
         """Get formatted data string from `data`."""
         skip = [] if skip is None else skip
@@ -152,16 +153,16 @@ class DataContainer:
         #      )
         #  }
 
-        if keep is not None:
-            data = {k: v for k, v in data.items() if k in keep}
+        #  if keep is not None:
+        #      metrics = {k: v for k, v in metrics.items() if k in keep}
 
-        if skip_endpts:
-            data = {k: v for k, v in data.items() if (
-                '_start' not in str(k)
-                and '_mid' not in str(k)
-                and '_end' not in str(k)
-            )}
-
+        #  if skip_endpts:
+        #      data = {k: v for k, v in metrics.items() if (
+        #          '_start' not in str(k)
+        #          and '_mid' not in str(k)
+        #          and '_end' not in str(k)
+        #      )}
+        #
         conds = lambda k: (
             k not in skip
             and k not in SKEYS
