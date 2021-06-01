@@ -5,12 +5,13 @@ file_io.py
 # pylint:disable=too-many-branches, too-many-statements
 # pylint:disable=too-many-locals,invalid-name,too-many-locals
 # pylint:disable=too-many-arguments
-from __future__ import absolute_import, division, print_function
+from __future__ import absolute_import, division, print_function, annotations
 
 import os
 import shutil
 import sys
 import json
+from collections import OrderedDict
 import time
 import typing
 import logging
@@ -42,10 +43,8 @@ def in_notebook():
     try:
         # pylint:disable=import-outside-toplevel
         from IPython import get_ipython
-
         try:
-            cfg = get_ipython().config
-            if 'IPKernelApp' not in cfg:
+            if 'IPKernelApp' not in get_ipython().config:
                 return False
         except AttributeError:
             return False
@@ -54,25 +53,98 @@ def in_notebook():
     return True
 
 
-
 # noqa:E999
-
 class Console:
-    """Fallback console object in case Rich isn't installed."""
-    def __init__(self, width: int = None):
-        if width is None:
-            width = WIDTH
-
-        self.width = width
-
+    """Fallback console object used in case `rich` isn't installed."""
     @staticmethod
     def log(s, *args, **kwargs):
         now = get_timestamp('%X')
         print(f'[{now}] {s}', *args, **kwargs)
 
 
-
 class Logger:
+    """Logger class for pretty printing metrics during training/testing."""
+    def __init__(self, width=None):
+        try:
+            # pylint:disable=import-outside-toplevel
+            from rich.console import Console as RichConsole
+            from rich.theme import Theme
+            theme = None
+            if in_notebook():
+                theme = Theme({
+                    'repr.number': 'bold bright_green',
+                    'repr.attrib_name': 'bold bright_magent'
+                })
+            console = RichConsole(record=False, log_path=False,
+                                  force_jupyter=in_notebook(),
+                                  log_time_format='[%X] ',
+                                  theme=theme)
+        except (ImportError, ModuleNotFoundError):
+            console = Console()
+
+        self.width = width
+        self.console = console
+
+    def rule(self, s: str, *args, **kwargs):
+        """Print horizontal line."""
+        w = self.width - (8 + len(s))
+        hw = w // 2
+        rule = ' '.join((hw * '-', f'{s}', hw * '-'))
+        self.console.log(f'{rule}\n', *args, **kwargs)
+
+    def log(self, s: str, *args, **kwargs):
+        self.console.log(s, *args, **kwargs)
+
+    def print_metrics(
+        self,
+        metrics: dict,
+        window: int = 0,
+        pre: list = None,
+        outfile: str = None,
+        skip: list[str] = None,
+    ):
+        """Print nicely formatted string of summary of items in `metrics`."""
+        if skip is None:
+            skip = []
+
+        outstr = ' '.join([
+            strformat(k, v, window) for k, v in metrics.items()
+            if k not in skip
+        ])
+        if pre is not None:
+            outstr = ' '.join([*pre, outstr])
+
+        self.log(outstr)
+        if outfile is not None:
+            with open(outfile, 'a') as f:
+                f.write(outstr)
+
+        return outstr
+
+    def save_metrics(
+        self,
+        metrics: dict,
+        outfile: str = None,
+        tstamp: str = None,
+    ):
+        """Save `metrics` to compressed `.z.` file."""
+        #  if tstamp is None:
+        #      tstamp = get_timestamp('%Y-%m-%d-%H%M%S')
+        #
+        #  if outfile is None:
+        #      outdir = os.path.join(os.getcwd(), tstamp)
+        #      fname = 'metrics.z'
+        #  else:
+        #      outdir, fname = os.path.split(outfile)
+        #
+        #  check_else_make_dir(outdir)
+        #  outfile = os.path.join(os.getcwd(), tstamp
+        # TODO: rethink this
+        pass
+
+
+
+class Logger1:
     def __init__(self, width: int = None):
         # pylint:disable=import-outside-toplevel
         if width is None:
@@ -181,10 +253,10 @@ if HAS_HOROVOD:
                           f'size: {hvd.size()}',
                           f'local_size: {hvd.local_size()}']))
 
+logger = Logger()
+
 #  if typing.TYPE_CHECKING:
 #      from dynamics.base_dynamics import BaseDynamics
-
-from collections import OrderedDict
 
 class SortedDict(OrderedDict):
     def __init__(self, **kwargs):
@@ -242,11 +314,14 @@ def rule(s: str = ' ', with_time: bool= True, **kwargs: dict):
     console.rule(s, **kwargs)
 
 
-def log(s: str, level: str = 'INFO', out=console, style=None):
+def log(s: str, *args, **kwargs):
+    #  def log(s: str, level: str = 'INFO', out=console, style=None):
     """Print string `s` to stdout if and only if hvd.rank() == 0."""
     if RANK != 0:
         return
-    console.log(s, style=style, markup=True, highlight=True)
+
+    #  console.log(s, style=style, markup=True, highlight=True)
+    logger.log(s, *args, **kwargs)
 
 
 def write(s: str, f: str, mode: str = 'a', nl: bool = True):

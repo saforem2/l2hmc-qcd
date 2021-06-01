@@ -6,7 +6,7 @@ training_utils.py
 
 Implements helper functions for training the model.
 """
-from __future__ import absolute_import, division, print_function
+from __future__ import absolute_import, division, print_function, annotations
 
 
 import os
@@ -33,7 +33,7 @@ NUM_WORKERS = hvd.size()
 LOCAL_RANK = hvd.local_rank()
 IS_CHIEF = (RANK == 0)
 
-from tqdm.auto import tqdm
+#  from tqdm.auto import tqdm
 from config import TF_FLOAT
 from network.config import LearningRateConfig
 from utils.attr_dict import AttrDict
@@ -61,6 +61,8 @@ TO_KEEP = [
     'dt',
 
 ]
+
+logger = io.Logger()
 
 #  try:
 #      tf.config.experimental.enable_mlir_bridge()
@@ -171,8 +173,8 @@ def train(
                                  f'x_rank{RANK}-{LOCAL_RANK}.z')
             x = io.loadz(xfile)
         except Exception as e:  # pylint:disable=broad-except
-            io.log(f'exception: {e}')
-            io.log(f'Unable to restore x from {xfile}. Using random init.')
+            logger.log(f'exception: {e}')
+            logger.log(f'Unable to restore x from {xfile}. Using random init.')
 
     if x is None:
         x = tf.random.normal(configs.dynamics_config['x_shape'])
@@ -181,7 +183,7 @@ def train(
     x = tf.reshape(x, (x.shape[0], -1))
 
     dynamics = build_dynamics(configs)
-    io.log(f'dynamics.net_weights: {dynamics.net_weights}')
+    logger.log(f'dynamics.net_weights: {dynamics.net_weights}')
     #  network_dir = dynamics.config.get('log_dir', None)
     network_dir = dynamics.config.log_dir
     if network_dir is not None:
@@ -242,14 +244,14 @@ def setup(dynamics, configs, dirs=None, x=None, betas=None):
     manager = tf.train.CheckpointManager(ckpt, dirs.ckpt_dir,
                                          max_to_keep=5)
     if manager.latest_checkpoint:  # restore from checkpoint
-        io.log(f'Restored model from: {manager.latest_checkpoint}')
+        logger.log(f'Restored model from: {manager.latest_checkpoint}')
         ckpt.restore(manager.latest_checkpoint)
         current_step = dynamics.optimizer.iterations.numpy()
         x = train_data.restore(dirs.data_dir, step=current_step,
                                rank=RANK, local_rank=LOCAL_RANK,
                                x_shape=dynamics.x_shape)
     #  else:
-    #      io.log('Starting new training run...')
+    #      logger.log('Starting new training run...')
 
     # Create initial samples if not restoring from ckpt
     if x is None:
@@ -461,7 +463,7 @@ def train_dynamics(
                 # -- Save CheckpointManager -------------
                 manager.save()
                 mstr = f'Checkpoint saved to: {manager.latest_checkpoint}'
-                io.log(mstr)
+                logger.log(mstr)
                 # -- Save train_data and free consumed memory --------
                 train_data.save_and_flush(dirs.data_dir, dirs.log_file,
                                           rank=RANK, mode='a')
@@ -469,7 +471,7 @@ def train_dynamics(
                     # -- Save network weights -------------------------------
                     #  try:
                     dynamics.save_networks(dirs.log_dir)
-                    io.log(f'Networks saved to: {dirs.log_dir}')
+                    logger.log(f'Networks saved to: {dirs.log_dir}')
                     #  except (AttributeError, TypeError):
                     #      pass
 
@@ -486,7 +488,7 @@ def train_dynamics(
                 data_str = train_data.get_fstr(step, metrics,
                                                skip=SKEYS, keep=keep_)
 
-            io.log(data_str)
+            logger.log(data_str)
 
         # -- Update summary objects ---------------------
         if should_log(step):
@@ -503,7 +505,7 @@ def train_dynamics(
     train_data.dump_configs(x, dirs.data_dir, rank=RANK, local_rank=LOCAL_RANK)
     if IS_CHIEF:
         manager.save()
-        io.log(f'Checkpoint saved to: {manager.latest_checkpoint}')
+        logger.log(f'Checkpoint saved to: {manager.latest_checkpoint}')
         train_data.save_and_flush(dirs.data_dir, dirs.log_file,
                                   rank=RANK, mode='a')
         if not dynamics.config.hmc:
