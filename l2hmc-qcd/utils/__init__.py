@@ -10,7 +10,7 @@ import os
 #  os.environ['TF_CPP_MIN_VLOG_LEVEL'] = '3'
 #  os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
-from tqdm.auto import tqdm
+#  from tqdm.auto import tqdm
 import tensorflow as tf
 print(f'tf.__version__: {tf.__version__}')
 if tf.__version__.startswith('1.'):

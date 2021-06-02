@@ -34,6 +34,8 @@ SHOULD_TRACK = not os.environ.get('NOTRACK', False)
 InferenceResults = namedtuple('InferenceResults',
                               ['dynamics', 'run_data', 'x', 'x_arr'])
 
+logger = io.Logger()
+
 
 def restore_from_train_flags(args):
     """Populate entries in `args` using the training `FLAGS` from `log_dir`."""

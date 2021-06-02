@@ -5,199 +5,36 @@ file_io.py
 # pylint:disable=too-many-branches, too-many-statements
 # pylint:disable=too-many-locals,invalid-name,too-many-locals
 # pylint:disable=too-many-arguments
-from __future__ import absolute_import, division, print_function, annotations
+from __future__ import absolute_import, annotations, division, print_function
 
+import datetime
+import json
+import logging
 import os
 import shutil
 import sys
-import json
-from collections import OrderedDict
 import time
 import typing
-import logging
-import datetime
-import tensorflow as tf
-
-from typing import Any, Dict, Type
+from collections import OrderedDict
 from pathlib import Path
+from typing import Any, Dict, Type
 
 import h5py
 import joblib
 import numpy as np
+import tensorflow as tf
 
-from tqdm.auto import tqdm
-
-from config import NetWeights, PROJECT_DIR, GREEN, RED, BLUE
+from config import BLUE, GREEN, PROJECT_DIR, RED, NetWeights
 from utils.attr_dict import AttrDict
+from utils.logger import Logger, strformat
+
+#  from tqdm.auto import tqdm
+
 #  from rich.theme import Theme
 #  from rich.console import Console as RichConsole
 #  from rich.logging import RichHandler
 #  from rich.progress import (BarColumn, DownloadColumn, Progress, TaskID,
 #                             TextColumn, TimeRemainingColumn)
-
-WIDTH, _ = shutil.get_terminal_size(fallback=(156, 50))
-
-
-def in_notebook():
-    """Check if we're currently in a jupyter notebook."""
-    try:
-        # pylint:disable=import-outside-toplevel
-        from IPython import get_ipython
-        try:
-            if 'IPKernelApp' not in get_ipython().config:
-                return False
-        except AttributeError:
-            return False
-    except ImportError:
-        return False
-    return True
-
-
-# noqa:E999
-class Console:
-    """Fallback console object used in case `rich` isn't installed."""
-    @staticmethod
-    def log(s, *args, **kwargs):
-        now = get_timestamp('%X')
-        print(f'[{now}] {s}', *args, **kwargs)
-
-
-class Logger:
-    """Logger class for pretty printing metrics during training/testing."""
-    def __init__(self, width=None):
-        try:
-            # pylint:disable=import-outside-toplevel
-            from rich.console import Console as RichConsole
-            from rich.theme import Theme
-            theme = None
-            if in_notebook():
-                theme = Theme({
-                    'repr.number': 'bold bright_green',
-                    'repr.attrib_name': 'bold bright_magent'
-                })
-            console = RichConsole(record=False, log_path=False,
-                                  force_jupyter=in_notebook(),
-                                  log_time_format='[%X] ',
-                                  theme=theme)
-        except (ImportError, ModuleNotFoundError):
-            console = Console()
-
-        self.width = width
-        self.console = console
-
-    def rule(self, s: str, *args, **kwargs):
-        """Print horizontal line."""
-        w = self.width - (8 + len(s))
-        hw = w // 2
-        rule = ' '.join((hw * '-', f'{s}', hw * '-'))
-        self.console.log(f'{rule}\n', *args, **kwargs)
-
-    def log(self, s: str, *args, **kwargs):
-        self.console.log(s, *args, **kwargs)
-
-    def print_metrics(
-        self,
-        metrics: dict,
-        window: int = 0,
-        pre: list = None,
-        outfile: str = None,
-        skip: list[str] = None,
-    ):
-        """Print nicely formatted string of summary of items in `metrics`."""
-        if skip is None:
-            skip = []
-
-        outstr = ' '.join([
-            strformat(k, v, window) for k, v in metrics.items()
-            if k not in skip
-        ])
-        if pre is not None:
-            outstr = ' '.join([*pre, outstr])
-
-        self.log(outstr)
-        if outfile is not None:
-            with open(outfile, 'a') as f:
-                f.write(outstr)
-
-        return outstr
-
-    def save_metrics(
-        self,
-        metrics: dict,
-        outfile: str = None,
-        tstamp: str = None,
-    ):
-        """Save `metrics` to compressed `.z.` file."""
-        #  if tstamp is None:
-        #      tstamp = get_timestamp('%Y-%m-%d-%H%M%S')
-        #
-        #  if outfile is None:
-        #      outdir = os.path.join(os.getcwd(), tstamp)
-        #      fname = 'metrics.z'
-        #  else:
-        #      outdir, fname = os.path.split(outfile)
-        #
-        #  check_else_make_dir(outdir)
-        #  outfile = os.path.join(os.getcwd(), tstamp
-        # TODO: rethink this
-        pass
-
-
-
-class Logger1:
-    def __init__(self, width: int = None):
-        # pylint:disable=import-outside-toplevel
-        if width is None:
-            width = WIDTH
-
-        try:
-            from rich.console import Console as RichConsole
-            #  from rich.theme import Theme
-            #  theme = Theme({
-            #      'repr.number': 'bold bright_magenta',
-            #      'repr.attrib_name':
-            console = RichConsole(record=False,
-                                  log_time_format='[%X] ',
-                                  log_path=False, width=width,
-                                  force_jupyter=in_notebook())
-        except (ImportError, ModuleNotFoundError):
-            console = Console(width)
-
-        self.width = width
-        self.console = console
-
-    def rule(self, s: str, *args, **kwargs):
-        """Print horizontal line."""
-        w = kwargs.pop('width', self.width)
-        strlen = (w - len(s) - 2) // 2
-        line = '-' * strlen
-        #  line = '-' * (w - len(s) - 2) // 2
-        self.console.log(' '.join([line, s, line]))
-
-    def log(self, s: str, *args, **kwargs):
-        """Print `s` using `self.console` object."""
-        self.console.log(s, *args, **kwargs)
-
-    def print_metrics(
-        self,
-        metrics: dict,
-        pre: list = None,
-        outfile: str = None,
-    ):
-        """Print nicely formatted representation of data in `metrics`."""
-        outstr = ' '.join([
-            strformat(k, v) for k, v in metrics.items()
-        ])
-        if pre is not None:
-            outstr = ' '.join([*pre, outstr])
-
-        self.log(outstr)
-        if outfile is not None:
-            with open(outfile, 'a') as f:
-                f.write(outstr)
-
-        return outstr
-
 
 #  console = Console(record=False,
 #                    log_path=False,
@@ -205,9 +42,6 @@ class Logger1:
 #                    log_time_format='[%X] ',
 #                    theme=Theme({'repr.path': BLUE,
 #                                 'repr.number': GREEN}))
-logger = Logger()
-console = logger.console
-
 
 # pylint:disable=wrong-import-position
 try:
@@ -219,8 +53,12 @@ try:
     LOCAL_RANK = hvd.local_rank()
     NUM_WORKERS = hvd.size()
     IS_CHIEF = (RANK == 0)
-    console.log(f'{RANK} :: Using horovod version: {horovod.__version__}')
-    console.log(f'{RANK} :: Using horovod from: {horovod.__file__}')
+    print(80 * '=')
+    print(f'{RANK} :: Using tensorflow version: {tf.__version__}')
+    print(f'{RANK} :: Using tensorflow from: {tf.__file__}')
+    print(f'{RANK} :: Using horovod version: {horovod.__version__}')
+    print(f'{RANK} :: Using horovod from: {horovod.__file__}')
+    print(80 * '=')
 
 except (ImportError, ModuleNotFoundError):
     HAS_HOROVOD = False
@@ -244,16 +82,19 @@ LOG_LEVELS = {
     'DEBUG': logging.DEBUG,
 }
 
+
 logging.getLogger('tensorflow').setLevel(logging.WARNING)
 logging.getLogger('arviz').setLevel(logging.ERROR)
 
 if HAS_HOROVOD:
-    console.log(' '.join([f'rank: {hvd.rank()}',
-                          f'local_rank: {hvd.local_rank()}',
-                          f'size: {hvd.size()}',
-                          f'local_size: {hvd.local_size()}']))
+    print(' '.join([f'rank: {hvd.rank()}',
+                    f'local_rank: {hvd.local_rank()}',
+                    f'size: {hvd.size()}',
+                    f'local_size: {hvd.local_size()}']))
 
 logger = Logger()
+console = logger.console
+
 
 #  if typing.TYPE_CHECKING:
 #      from dynamics.base_dynamics import BaseDynamics
@@ -481,40 +322,6 @@ def save_dict(d: dict, out_dir: str, name: str = None):
     with open(txt_file, 'w') as f:
         for key, val in d.items():
             f.write(f'{key}: {val}\n')
-
-
-def strformat(k, v, window: int = 0):
-    if v is None:
-        v = 'None'
-
-    outstr = ''
-    if isinstance(v, bool):
-        v = 'True' if v else 'False'
-        return f'{str(k)}={v}'
-
-    if isinstance(v, dict):
-        outstr_arr = []
-        for key, val in v.items():
-            outstr_arr.append(strformat(key, val, window))
-        outstr = '\n'.join(outstr_arr)
-    else:
-        if isinstance(v, (tuple, list, np.ndarray, tf.Tensor)):
-            v = np.array(v)
-            if window > 0 and len(v.shape) > 0:
-                window = min((v.shape[0], window))
-                avgd = np.mean(v[-window:])
-            else:
-                avgd = np.mean(v)
-            outstr = f'{str(k)}={avgd:<5.4g}'
-        else:
-            if isinstance(v, float):
-                outstr = f'{str(k)}={v:<5.4g}'
-            else:
-                try:
-                    outstr = f'{str(k)}={v:<5g}'
-                except ValueError:
-                    outstr = f'{str(k)}={v:<5}'
-    return outstr
 
 
 def print_args(args: dict, name: str = None):
