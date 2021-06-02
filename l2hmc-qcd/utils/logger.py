@@ -97,6 +97,7 @@ class Console:
 class Logger:
     """Logger class for pretty printing metrics during training/testing."""
     def __init__(self, width=None):
+        self.rank = RANK
         try:
             # pylint:disable=import-outside-toplevel
             from rich.console import Console as RichConsole
@@ -137,6 +138,9 @@ class Logger:
         skip: list[str] = None,
     ):
         """Print nicely formatted string of summary of items in `metrics`."""
+        if self.rank != 0:
+            return
+
         if keep is None:
             keep = list(metrics.keys())
 
