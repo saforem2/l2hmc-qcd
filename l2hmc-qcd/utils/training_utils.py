@@ -46,6 +46,7 @@ from dynamics.config import NET_WEIGHTS_HMC
 from dynamics.base_dynamics import BaseDynamics
 from dynamics.gauge_dynamics import build_dynamics, GaugeDynamics
 from utils.inference_utils import run as run_inference
+from utils.logger import Logger
 
 if tf.__version__.startswith('1.'):
     TF_VERSION = 1
@@ -53,7 +54,8 @@ elif tf.__version__.startswith('2.'):
     TF_VERSION = 2
 
 #SHOULD_TRACK = os.environ.get('TRACK', True)
-SHOULD_TRACK = not os.environ.get('NOTRACK', False)
+#  SHOULD_TRACK = not os.environ.get('NOTRACK', False)
+SHOULD_TRACK = False
 
 TO_KEEP = [
     'H', 'Hf', 'plaqs', 'actions', 'charges', 'sin_charges', 'dqint', 'dqsin',
@@ -63,6 +65,7 @@ TO_KEEP = [
 ]
 
 logger = io.Logger()
+#  logger = io.Logger()
 
 #  try:
 #      tf.config.experimental.enable_mlir_bridge()
@@ -346,7 +349,7 @@ def train_dynamics(
         dirs: Optional[str] = None,
         x: Optional[tf.Tensor] = None,
         betas: Optional[tf.Tensor] = None,
-        should_track: Optional[bool] = True,
+        should_track: Optional[bool] = False,
 ):
     """Train model."""
     # -- Helper functions for training, logging, saving, etc. --------------
@@ -427,8 +430,9 @@ def train_dynamics(
     # -- Training loop ----------------------------------------------------
     warmup_steps = dynamics.lr_config.warmup_steps
     steps_per_epoch = configs.get('steps_per_epoch', 1000)
+    total_steps = len(betas)
     if should_track:
-        iterable = track(enumerate(zip(steps, betas)), total=len(betas),
+        iterable = track(enumerate(zip(steps, betas)), total=total_steps,
                          console=io.console, description='training',
                          transient=True)
     else:
@@ -480,15 +484,21 @@ def train_dynamics(
             if step % 5000 == 0:
                 keep_ = keep + ['xeps_start', 'xeps_mid', 'xeps_end',
                                 'veps_start', 'veps_mid', 'veps_end']
-                data_str = train_data.get_fstr(step, metrics)
+                pre = [f'step={step}/{total_steps}']
+                data_str = logger.print_metrics(metrics, window=50,
+                                                pre=pre, keep=keep_)
+                #  data_str = train_data.get_fstr(step, metrics)
                 #  skip=SKEYS, keep=keep_)
             else:
                 keep_ = ['step', 'dt', 'loss', 'accept_prob', 'beta',
                          'dq_int', 'dq_sin', 'dQint', 'dQsin', 'plaqs', 'p4x4']
-                data_str = train_data.get_fstr(step, metrics,
-                                               skip=SKEYS, keep=keep_)
+                pre = [f'step={step}/{total_steps}']
+                data_str = logger.print_metrics(metrics, window=50,
+                                                pre=pre, keep=keep_)
+                #  data_str = train_data.get_fstr(step, metrics,
+                #                                 skip=SKEYS, keep=keep_)
 
-            logger.log(data_str)
+            #  logger.log(data_str)
 
         # -- Update summary objects ---------------------
         if should_log(step):
