@@ -16,22 +16,48 @@ from typing import Optional, Union
 
 import numpy as np
 import tensorflow as tf
+try:
+    import horovod
+    import horovod.tensorflow as hvd  # pylint:disable=wrong-import-order
+    try:
+        RANK = hvd.rank()
+    except ValueError:
+        hvd.init()
+
+    RANK = hvd.rank()
+    HAS_HOROVOD = True
+    NUM_WORKERS = hvd.size()
+    #  hvd.init()
+    GPUS = tf.config.experimental.list_physical_devices('GPU')
+    for gpu in GPUS:
+        tf.config.experimental.set_memory_growth(gpu, True)
+    if GPUS:
+        gpu = GPUS[hvd.local_rank()]  # pylint:disable=invalid-name
+        tf.config.experimental.set_visible_devices(gpu, 'GPU')
+
+except (ImportError, ModuleNotFoundError):
+    HAS_HOROVOD = False
+    RANK = LOCAL_RANK = 0
+    SIZE = LOCAL_SIZE = 1
+    IS_CHIEF = (RANK == 0)
+
+
 #  tf.autograph.set_verbosity(3, True)
 from utils import SKEYS
 import utils.file_io as io
-from rich.progress import track
-try:
-    import horovod.tensorflow as hvd
-    HAS_HOROVOD = True
-except (ImportError, ModuleNotFoundError):
-    from utils import Horovod
-    hvd = Horovod()
-    HAS_HOROVOD = False
+#  from rich.progress import track
+#  try:
+#      import horovod.tensorflow as hvd
+#      HAS_HOROVOD = True
+#  except (ImportError, ModuleNotFoundError):
+#      from utils import Horovod
+#      hvd = Horovod()
+#      HAS_HOROVOD = False
 
-RANK = hvd.rank()
-NUM_WORKERS = hvd.size()
-LOCAL_RANK = hvd.local_rank()
-IS_CHIEF = (RANK == 0)
+#  RANK = hvd.rank()
+#  NUM_WORKERS = hvd.size()
+#  LOCAL_RANK = hvd.local_rank()
+#  IS_CHIEF = (RANK == 0)
 
 #  from tqdm.auto import tqdm
 from config import TF_FLOAT
