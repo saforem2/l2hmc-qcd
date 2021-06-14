@@ -878,7 +878,7 @@ class GaugeDynamics(BaseDynamics):
         x, v = inputs
         #  x, v, t = inputs
         if self.config.hmc:
-            return [tf.zeros_like(inputs[0]) for _ in range(2)]
+            return [tf.zeros_like(inputs[0]) for _ in range(3)]
 
         x = self._convert_to_cartesian(x, mask)
 
