@@ -25,6 +25,8 @@ try:
         hvd.init()
 
     RANK = hvd.rank()
+    LOCAL_RANK = hvd.local_rank()
+    IS_CHIEF = (RANK == 0)
     HAS_HOROVOD = True
     NUM_WORKERS = hvd.size()
     #  hvd.init()
@@ -511,7 +513,7 @@ def train_dynamics(
                 keep_ = keep + ['xeps_start', 'xeps_mid', 'xeps_end',
                                 'veps_start', 'veps_mid', 'veps_end']
                 pre = [f'step={step}/{total_steps}']
-                data_str = logger.print_metrics(metrics, window=50,
+                data_str = logger.print_metrics(metrics,
                                                 pre=pre, keep=keep_)
                 #  data_str = train_data.get_fstr(step, metrics)
                 #  skip=SKEYS, keep=keep_)
