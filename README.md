@@ -9,7 +9,7 @@
  :white_check_mark:   Accepted as a contribution to the [Deep Learning for Simulation (SimDL) Workshop](https://simdl.github.io/overview/) at ICLR 2021 🎊 :🎉 
 
 - **Paper**: [arXiv:2105.03418](https://simdl.github.io/files/57.pdf)
-- **Poster**: [bit.ly/l2hmc_poster](bit.ly/l2hmc_poster)
+- **Poster**: [bit.ly/l2hmc_poster](https://www.bit.ly/l2hmc_poster)
 
 ---
 
