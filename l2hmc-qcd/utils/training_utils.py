@@ -6,16 +6,15 @@ training_utils.py
 
 Implements helper functions for training the model.
 """
-from __future__ import absolute_import, division, print_function, annotations
-
+from __future__ import absolute_import, annotations, division, print_function
 
 import os
 import time
-
 from typing import Optional, Union
 
 import numpy as np
 import tensorflow as tf
+
 try:
     import horovod
     import horovod.tensorflow as hvd  # pylint:disable=wrong-import-order
@@ -44,9 +43,19 @@ except (ImportError, ModuleNotFoundError):
     IS_CHIEF = (RANK == 0)
 
 
+import utils.file_io as io
+#  from tqdm.auto import tqdm
+from config import TF_FLOAT
+from network.config import LearningRateConfig
 #  tf.autograph.set_verbosity(3, True)
 from utils import SKEYS
-import utils.file_io as io
+from utils.attr_dict import AttrDict
+from utils.learning_rate import ReduceLROnPlateau
+from utils.live_plots import (init_plots, update_joint_plots,
+                              update_plot, LivePlotData)
+from utils.plotting_utils import plot_data
+from utils.summary_utils import update_summaries
+
 #  from rich.progress import track
 #  try:
 #      import horovod.tensorflow as hvd
@@ -61,18 +70,11 @@ import utils.file_io as io
 #  LOCAL_RANK = hvd.local_rank()
 #  IS_CHIEF = (RANK == 0)
 
-#  from tqdm.auto import tqdm
-from config import TF_FLOAT
-from network.config import LearningRateConfig
-from utils.attr_dict import AttrDict
-from utils.learning_rate import ReduceLROnPlateau
-from utils.summary_utils import update_summaries
-from utils.plotting_utils import plot_data
-from utils.data_containers import DataContainer
-from utils.annealing_schedules import get_betas
-from dynamics.config import NET_WEIGHTS_HMC
 from dynamics.base_dynamics import BaseDynamics
-from dynamics.gauge_dynamics import build_dynamics, GaugeDynamics
+from dynamics.config import NET_WEIGHTS_HMC
+from dynamics.gauge_dynamics import GaugeDynamics, build_dynamics
+from utils.annealing_schedules import get_betas
+from utils.data_containers import DataContainer
 from utils.inference_utils import run as run_inference
 from utils.logger import Logger
 
@@ -223,6 +225,11 @@ def train(
         dynamics.vnet = vnet
 
     dynamics.save_config(dirs.config_dir)
+    #  (configs.train_steps,
+    #   params=configs, dpi=400, figsize=(5, 2),
+    #   xlabel='Train Step', ylabel=['Loss', 'beta'])
+
+
 
     io.rule('TRAINING')
     x, train_data = train_dynamics(dynamics, configs, dirs, x=x,
@@ -369,6 +376,7 @@ def setup(dynamics, configs, dirs=None, x=None, betas=None):
     return output
 
 
+
 # pylint: disable=broad-except
 # pylint: disable=too-many-arguments,too-many-statements, too-many-branches,
 def train_dynamics(
@@ -475,6 +483,7 @@ def train_dynamics(
             'plaqs', 'p4x4',
             'charges', 'sin_charges']
 
+    plots = init_plots(configs, figsize=(5, 2), dpi=500)
     #  discrete_betas = np.arange(beta, 8, dtype=int)
     for idx, (step, beta) in iterable:
         # -- Perform a single training step -------------------------------
@@ -523,6 +532,17 @@ def train_dynamics(
                 pre = [f'step={step}/{total_steps}']
                 data_str = logger.print_metrics(metrics, window=50,
                                                 pre=pre, keep=keep_)
+                update_plot(y=metrics['dq_int'],
+                            ax=plots['dq_int']['ax'],
+                            fig=plots['dq_int']['fig'],
+                            line=plots['dq_int']['line'],
+                            display_id=plots['dq_int']['display_id'])
+
+                bpdata = LivePlotData(metrics['beta'],
+                                      plots['loss']['plot_obj2'])
+                lpdata = LivePlotData(metrics['loss'],
+                                      plots['loss']['plot_obj1'])
+                update_joint_plots(lpdata, bpdata, plots['loss']['display_id'])
                 #  data_str = train_data.get_fstr(step, metrics,
                 #                                 skip=SKEYS, keep=keep_)
 
