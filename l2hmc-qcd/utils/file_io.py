@@ -83,7 +83,7 @@ LOG_LEVELS = {
 }
 
 
-logging.getLogger('tensorflow').setLevel(logging.WARNING)
+logging.getLogger('tensorflow').setLevel(logging.ERROR)
 logging.getLogger('arviz').setLevel(logging.ERROR)
 
 if HAS_HOROVOD:
@@ -95,6 +95,7 @@ if HAS_HOROVOD:
 logger = Logger()
 console = logger.console
 
+VERBOSE = os.environ.get('VERBOSE', False)
 
 #  if typing.TYPE_CHECKING:
 #      from dynamics.base_dynamics import BaseDynamics
@@ -181,7 +182,7 @@ def print_dict(d: Dict, indent: int = 0, name: str = None, **kwargs):
 def print_flags(flags: AttrDict):
     """Helper method for printing flags."""
     strs = [80 * '=', 'FLAGS:', *[f' {k}={v}' for k, v in flags.items()]]
-    log('\n'.join(strs))
+    logger.log('\n'.join(strs))
 
 
 def setup_directories(
@@ -350,10 +351,10 @@ def savez(obj: Any, fpath: str, name: str = None):
     if not fpath.endswith('.z'):
         fpath += '.z'
 
-    if name is not None:
+    if VERBOSE:
+        if name is not None:
+            name = obj.get('__class__', type(name))
         console.log(f'Saving {name} to {os.path.abspath(fpath)}.')
-    else:
-        console.log(f'Saving {obj.__class__} to {os.path.abspath(fpath)}.')
 
     joblib.dump(obj, fpath)
 

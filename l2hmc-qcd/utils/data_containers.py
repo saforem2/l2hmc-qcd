@@ -36,6 +36,8 @@ sns.set_style('whitegrid')
 sns.set_palette('bright')
 
 
+VERBOSE = os.environ.get('VERBOSE', False)
+
 class DataContainer:
     """Base class for dealing with data."""
 
@@ -223,8 +225,11 @@ class DataContainer:
         for key, val in zip(keys, data_files):
             if 'x_rank' in key:
                 continue
-            io.log(f'Restored {key} from {val}.')
+
             data[key] = io.loadz(val)
+            if VERBOSE:
+                io.log(f'Restored {key} from {val}.')
+
 
         return AttrDict(data)
 
