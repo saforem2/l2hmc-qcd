@@ -106,7 +106,8 @@ class Logger:
             if in_notebook():
                 theme = Theme({
                     'repr.number': 'bold bright_green',
-                    'repr.attrib_name': 'bold bright_magent'
+                    'repr.attrib_name': 'bold bright_magenta',
+                    'repr.str': '#FFFF00',
                 })
             console = RichConsole(record=False, log_path=False,
                                   force_jupyter=in_notebook(),
