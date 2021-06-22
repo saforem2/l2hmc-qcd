@@ -1460,8 +1460,8 @@ class GaugeDynamics(BaseDynamics):
         """
         wloops = self.lattice.calc_wilson_loops(state.x)
         p4x4_obs = self.lattice.calc_plaqs4x4(x=state.x, beta=state.beta)
-        p4x4_exp = area_law(state.beta, 16)  # 4x4 plaquette, area = 16
-        p4x4_err = p4x4_obs - p4x4_exp
+        #  p4x4_exp = area_law(state.beta, 16)  # 4x4 plaquette, area = 16
+        p4x4_err = p4x4_obs # - p4x4_exp
         #  wloops4x4 = self.lattice.calc_wilson_loops4x4(state.x)
         charges = self.lattice.calc_both_charges(x=state.x)
         plaqs = self.lattice.calc_plaqs(wloops=wloops, beta=state.beta)

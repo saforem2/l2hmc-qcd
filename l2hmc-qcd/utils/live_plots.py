@@ -105,11 +105,15 @@ def update_plot(
         line: list[plt.Line2D],
         display_id: DisplayHandle,
         window: int = 15,
+        plot_freq: int = 1,
 ):
+    if not in_notebook():
+        return
+
     y = np.array(y)
     yavg = moving_average(y, window=window)
     line[0].set_ydata(y)
-    line[0].set_xdata(np.arange(y.shape[0]))
+    line[0].set_xdata(plot_freq * np.arange(y.shape[0]))
     #  line[0].set_xdata(np.arange(len(yavg)))
     ax.relim()
     ax.autoscale_view()
@@ -123,7 +127,11 @@ def update_joint_plots(
         display_id: DisplayHandle,
         window=15,
         alt_loss=None,
+        plot_freq: int = 1,
 ):
+    if not in_notebook():
+        return
+
     x1 = plot_data1.data
     x2 = plot_data2.data
     plot_obj1 = plot_data1.plot_obj
@@ -136,10 +144,10 @@ def update_joint_plots(
     y1 = moving_average(x1, window=window)
     y2 = moving_average(x2, window=window)
     plot_obj2.line[0].set_ydata(y2)
-    plot_obj2.line[0].set_xdata(np.arange(y2.shape[0]))
+    plot_obj2.line[0].set_xdata(plot_freq * np.arange(y2.shape[0]))
 
     plot_obj1.line[0].set_ydata(np.array(y1))
-    plot_obj1.line[0].set_xdata(np.arange(y1.shape[0]))
+    plot_obj1.line[0].set_xdata(plot_freq * np.arange(y1.shape[0]))
     plot_obj1.ax.relim()
     plot_obj2.ax.relim()
     plot_obj1.ax.autoscale_view()

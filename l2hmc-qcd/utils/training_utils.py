@@ -76,7 +76,7 @@ from dynamics.gauge_dynamics import GaugeDynamics, build_dynamics
 from utils.annealing_schedules import get_betas
 from utils.data_containers import DataContainer
 from utils.inference_utils import run as run_inference
-from utils.logger import Logger
+from utils.logger import Logger, in_notebook
 
 if tf.__version__.startswith('1.'):
     TF_VERSION = 1
@@ -91,7 +91,6 @@ TO_KEEP = [
     'H', 'Hf', 'plaqs', 'actions', 'charges', 'sin_charges', 'dqint', 'dqsin',
     'accept_prob', 'accept_mask', 'xeps', 'veps', 'sumlogdet', 'beta', 'loss',
     'dt',
-
 ]
 
 logger = io.Logger()
@@ -532,17 +531,23 @@ def train_dynamics(
                 pre = [f'step={step}/{total_steps}']
                 data_str = logger.print_metrics(metrics, window=50,
                                                 pre=pre, keep=keep_)
-                update_plot(y=metrics['dq_int'],
-                            ax=plots['dq_int']['ax'],
-                            fig=plots['dq_int']['fig'],
-                            line=plots['dq_int']['line'],
-                            display_id=plots['dq_int']['display_id'])
+                #  return IS_CHIEF and step % ps_ == 0
+                if in_notebook():
+                    update_plot(y=metrics['dq_int'],
+                                plot_freq=ps_,
+                                ax=plots['dq_int']['ax'],
+                                fig=plots['dq_int']['fig'],
+                                line=plots['dq_int']['line'],
+                                display_id=plots['dq_int']['display_id'])
 
-                bpdata = LivePlotData(metrics['beta'],
-                                      plots['loss']['plot_obj2'])
-                lpdata = LivePlotData(metrics['loss'],
-                                      plots['loss']['plot_obj1'])
-                update_joint_plots(lpdata, bpdata, plots['loss']['display_id'])
+                    bpdata = LivePlotData(metrics['beta'],
+                                          plots['loss']['plot_obj2'])
+                    lpdata = LivePlotData(metrics['loss'],
+                                          plots['loss']['plot_obj1'])
+                    update_joint_plots(lpdata,
+                                       bpdata,
+                                       plots['loss']['display_id'],
+                                       plot_freq=ps_)
                 #  data_str = train_data.get_fstr(step, metrics,
                 #                                 skip=SKEYS, keep=keep_)
 
