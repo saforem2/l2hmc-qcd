@@ -16,6 +16,14 @@ import tensorflow as tf
 from config import BIN_DIR
 import utils
 
+
+try:
+    tf.config.experimental.enable_mlir_bridge()
+    tf.config.experimental.enable_mlir_graph_optimization()
+except:  # noqa: E722
+    pass
+
+
 try:
     import horovod
     import horovod.tensorflow as hvd
@@ -89,6 +97,19 @@ def restore_flags(flags, train_dir):
     return flags
 
 
+def dict_to_str(d):
+    strs = []
+    for key, val in d.items():
+        if isinstance(val, dict):
+            strs_ = dict_to_str(val)
+        else:
+            strs_ = f'{key}: {val}'
+
+        strs.append(strs_)
+
+    return '\n'.join(strs)
+
+
 def main(configs, num_chains=None, run_steps=None):
     """Main method for training."""
     hmc_steps = configs.get('hmc_steps', 0)
@@ -99,6 +120,7 @@ def main(configs, num_chains=None, run_steps=None):
     log_dir = configs.get('log_dir', None)
     beta_init = configs.get('beta_init', None)
     beta_final = configs.get('beta_final', None)
+
     if log_dir is not None:  # we want to restore from latest checkpoint
         configs.restore = True
         run_steps = configs.get('run_steps', None)
@@ -210,7 +232,10 @@ if __name__ == '__main__':
         os.environ['TF_CPP_MIN_LOG_LEVEL'] = '0'
     else:
         logging_level = logging.WARNING
-    console.log(f'CONFIGS: {dict(**CONFIGS)}')
+    #  cfgs_str = '\n'.join([f'{k}: {v}' for k, v in dict(**CONFIGS).items()])
+    cstr = dict_to_str(dict(**CONFIGS))
+    console.log(cstr)
+    #  console.log(f'CONFIGS: {dict(**CONFIGS)}')
     #  io.print_dict(CONFIGS)
     main(CONFIGS)
     #  if RANK == 0:

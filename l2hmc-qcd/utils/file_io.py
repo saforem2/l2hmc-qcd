@@ -188,14 +188,17 @@ def print_flags(flags: AttrDict):
 def setup_directories(
         flags: AttrDict,
         name: str = 'training',
-        save_flags: bool = True
+        save_flags: bool = True,
+        ensure_new: bool = False,
 ):
     """Setup relevant directories for training."""
     if isinstance(flags, dict):
         flags = AttrDict(flags)
 
     if flags.get('log_dir', None) is None:
-        flags.log_dir = make_log_dir(flags, name)
+        flags.log_dir = make_log_dir(flags=flags,
+                                     name=name,
+                                     ensure_new=ensure_new)
 
     train_dir = os.path.join(flags.log_dir, name)
     train_paths = AttrDict({
@@ -573,6 +576,7 @@ def make_log_dir(
         root_dir: str = None,
         timestamps: AttrDict = None,
         skip_existing: bool = False,
+        ensure_new: bool = False,
 ):
     """Automatically create and name `log_dir` to save model data to.
 
@@ -607,18 +611,27 @@ def make_log_dir(
         dirs.append('test')
 
     log_dir = os.path.join(*dirs, timestamps.month, cfg_str)
-    if os.path.isdir(log_dir) and NUM_WORKERS == 1:
-        log_dir = os.path.join(*dirs, timestamps.month,
-                               f'{cfg_str}-{timestamps.hour}')
-        if os.path.isdir(log_dir):
+    if os.path.isdir(log_dir):
+        if ensure_new or configs.get('ensure_new', False):
+
+            logger.rule('Forcing new directory!')
+
             log_dir = os.path.join(*dirs, timestamps.month,
-                                   f'{cfg_str}-{timestamps.minute}')
+                                   f'{cfg_str}-{timestamps.hour}')
+            if os.path.isdir(log_dir):
+                log_dir = os.path.join(*dirs, timestamps.month,
+                                       f'{cfg_str}-{timestamps.minute}')
+            if skip_existing:
+                raise FileExistsError(f'`log_dir`: {log_dir} already exists! ')
 
-        if skip_existing:
-            raise FileExistsError(f'`log_dir`: {log_dir} already exists! ')
-
-        log('\n'.join(['Existing directory found with the same name!',
-                       'Modifying the date string to include seconds.']))
+            log('\n'.join(['Existing directory found with the same name!',
+                           'Modifying the date string to include seconds.']))
+        #      log_dir = os.path.join(*dirs, timestamps.month,
+        #                             f'{cfg_str}-{timestamps.second}')
+        #  #  if os.path.isdir(log_dir) and NUM_WORKERS == 1:
+        #  else:
+            #  if NUM_WORKERS > 1:
+            #      pass
 
     if RANK == 0:
         check_else_make_dir(log_dir)
