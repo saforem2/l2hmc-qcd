@@ -499,3 +499,6 @@ l2hmc-qcd/notebooks/*Copy*
 l2hmc-qcd/notebooks/*test*
 *.numbers
 *.csv
+pyrightconfig1.json
+notebooks/HMC_data_plots.ipynb
+notebooks/autocorrelations.ipynb
