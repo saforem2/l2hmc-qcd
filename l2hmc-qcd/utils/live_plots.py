@@ -112,8 +112,8 @@ def update_plot(
 
     y = np.array(y)
     yavg = moving_average(y, window=window)
-    line[0].set_ydata(y)
-    line[0].set_xdata(plot_freq * np.arange(y.shape[0]))
+    #  line[0].set_ydata(y)
+    #  line[0].set_xdata(plot_freq * np.arange(y.shape[0]))
     #  line[0].set_xdata(np.arange(len(yavg)))
     ax.relim()
     ax.autoscale_view()
