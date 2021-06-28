@@ -15,6 +15,24 @@ from typing import Optional, Union
 import numpy as np
 import tensorflow as tf
 
+import utils.file_io as io
+from config import TF_FLOAT
+from dynamics.base_dynamics import BaseDynamics
+from dynamics.config import NET_WEIGHTS_HMC
+from dynamics.gauge_dynamics import GaugeDynamics, build_dynamics
+from network.config import LearningRateConfig
+from utils import SKEYS
+from utils.annealing_schedules import get_betas
+from utils.attr_dict import AttrDict
+from utils.data_containers import DataContainer
+from utils.inference_utils import run as run_inference
+from utils.learning_rate import ReduceLROnPlateau
+from utils.live_plots import (LivePlotData, init_plots, update_joint_plots,
+                              update_plot)
+from utils.logger import Logger, in_notebook
+from utils.plotting_utils import plot_data
+from utils.summary_utils import update_summaries
+
 try:
     import horovod
     import horovod.tensorflow as hvd  # pylint:disable=wrong-import-order
@@ -43,40 +61,7 @@ except (ImportError, ModuleNotFoundError):
     IS_CHIEF = (RANK == 0)
 
 
-import utils.file_io as io
-#  from tqdm.auto import tqdm
-from config import TF_FLOAT
-from network.config import LearningRateConfig
-#  tf.autograph.set_verbosity(3, True)
-from utils import SKEYS
-from utils.attr_dict import AttrDict
-from utils.learning_rate import ReduceLROnPlateau
-from utils.live_plots import (init_plots, update_joint_plots,
-                              update_plot, LivePlotData)
-from utils.plotting_utils import plot_data
-from utils.summary_utils import update_summaries
 
-#  from rich.progress import track
-#  try:
-#      import horovod.tensorflow as hvd
-#      HAS_HOROVOD = True
-#  except (ImportError, ModuleNotFoundError):
-#      from utils import Horovod
-#      hvd = Horovod()
-#      HAS_HOROVOD = False
-
-#  RANK = hvd.rank()
-#  NUM_WORKERS = hvd.size()
-#  LOCAL_RANK = hvd.local_rank()
-#  IS_CHIEF = (RANK == 0)
-
-from dynamics.base_dynamics import BaseDynamics
-from dynamics.config import NET_WEIGHTS_HMC
-from dynamics.gauge_dynamics import GaugeDynamics, build_dynamics
-from utils.annealing_schedules import get_betas
-from utils.data_containers import DataContainer
-from utils.inference_utils import run as run_inference
-from utils.logger import Logger, in_notebook
 
 if tf.__version__.startswith('1.'):
     TF_VERSION = 1
@@ -185,6 +170,7 @@ def train(
         therm_frac: float = 0.33,
         num_chains: int = 32,
         should_track: bool = True,
+        ensure_new: bool = False,
 ) -> (tf.Tensor, Union[BaseDynamics, GaugeDynamics], DataContainer, AttrDict):
     """Train model.
 
@@ -195,7 +181,8 @@ def train(
         configs (AttrDict): AttrDict containing configs used.
     """
     t0 = time.time()
-    dirs = io.setup_directories(configs)
+    ensure_new = configs.get('ensure_new', False)
+    dirs = io.setup_directories(configs, ensure_new=ensure_new)
     configs.update({'dirs': dirs})
 
     if restore_x:
@@ -375,6 +362,40 @@ def setup(dynamics, configs, dirs=None, x=None, betas=None):
     return output
 
 
+def run_md(
+        dynamics: GaugeDynamics,
+        inputs: tuple[tf.Tensor],
+        md_steps: int
+):
+    io.rule(f'Running {md_steps} MD updates!')
+    for _ in range(md_steps):
+        mc_states, _ = dynamics.md_update(inputs, training=True)
+        x = mc_states.out.x
+    io.rule(f'Done!')
+
+    return x
+
+
+def run_profiler(
+        dynamics: GaugeDynamics,
+        inputs: tuple[tf.Tensor],
+        logdir: str = None,
+        steps: int = 10
+):
+    io.rule(f'Running {steps} profiling steps!')
+    if logdir is None:
+        logdir = os.getcwd()
+
+    x, beta = inputs
+    for i in range(steps):
+        with tf.profiler.experimental.Trace('train', step_num=step, _r=1):
+            tf.profiler.experimental.start(logdir=logdir)
+            x, metrics = dynamics.train_step((x, beta))
+
+    tf.profiler.experimental.stop(save=True)
+    io.rule(f'Done!')
+
+    return x, metrics
 
 # pylint: disable=broad-except
 # pylint: disable=too-many-arguments,too-many-statements, too-many-branches,
@@ -437,32 +458,23 @@ def train_dynamics(
 
     # -- Try running compiled `train_step` fn otherwise run imperatively ----
     if configs.profiler:
-        io.rule('Running 10 profiling steps')
-        for step in range(10):
-            with tf.profiler.experimental.Trace('train', step_num=step, _r=1):
-                #  tf.profiler.experimental.start(logdir=dirs.summary_dir)
-                x, metrics = dynamics.train_step((x, tf.constant(betas[0])))
-
-        tf.profiler.experimental.stop(save=True)
-        io.rule('done')
+        x, metrics = run_profiler(dynamics, (x, betas[0]),
+                                  logdir=dirs.summary_dir, steps=10)
     else:
         x, metrics = dynamics.train_step((x, tf.constant(betas[0])))
+
 
     # -- Run MD update to not get stuck -----------------
     md_steps = configs.get('md_steps', 0)
     if md_steps > 0:
-        io.rule(f'Running {md_steps} MD updates')
-        for _ in range(md_steps):
-            mc_states, _ = dynamics.md_update((x, betas[0]), training=True)
-            x = mc_states.out.x
-        io.rule('done!')
+        x = run_md(dynamics, (x, betas[0]), md_steps)
+
 
     # -- Final setup; create timing wrapper for `train_step` function -------
     # -- and get formatted header string to display during training. --------
     ps_ = configs.get('print_steps', None)
     ls_ = configs.get('logging_steps', None)
 
-    # -- Training loop ----------------------------------------------------
     warmup_steps = dynamics.lr_config.warmup_steps
     steps_per_epoch = configs.get('steps_per_epoch', 1000)
     total_steps = len(betas)
@@ -484,6 +496,8 @@ def train_dynamics(
 
     plots = init_plots(configs, figsize=(5, 2), dpi=500)
     #  discrete_betas = np.arange(beta, 8, dtype=int)
+
+    # -- Training loop ----------------------------------------------------
     for idx, (step, beta) in iterable:
         # -- Perform a single training step -------------------------------
         x, metrics = timed_step(x, beta)
@@ -521,10 +535,7 @@ def train_dynamics(
                 keep_ = keep + ['xeps_start', 'xeps_mid', 'xeps_end',
                                 'veps_start', 'veps_mid', 'veps_end']
                 pre = [f'step={step}/{total_steps}']
-                data_str = logger.print_metrics(metrics,
-                                                pre=pre, keep=keep_)
-                #  data_str = train_data.get_fstr(step, metrics)
-                #  skip=SKEYS, keep=keep_)
+                data_str = logger.print_metrics(metrics, pre=pre, keep=keep_)
             else:
                 keep_ = ['step', 'dt', 'loss', 'accept_prob', 'beta',
                          'dq_int', 'dq_sin', 'dQint', 'dQsin', 'plaqs', 'p4x4']
