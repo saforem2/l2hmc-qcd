@@ -6,22 +6,20 @@ Train 2D U(1) model using eager execution in tensorflow.
 # noqa: E402, F401
 # pylint:disable=wrong-import-position,invalid-name, unused-import,
 # pylint: disable=ungrouped-imports
-from __future__ import absolute_import, division, print_function
+from __future__ import absolute_import, division, print_function, annotations
 
 import os
-import json
 import contextlib
 import logging
 import tensorflow as tf
-from config import BIN_DIR
-import utils
+from tensorflow.python.ops.gen_math_ops import Any
 
 
-try:
-    tf.config.experimental.enable_mlir_bridge()
-    tf.config.experimental.enable_mlir_graph_optimization()
-except:  # noqa: E722
-    pass
+#  try:
+#      tf.config.experimental.enable_mlir_bridge()
+#      tf.config.experimental.enable_mlir_graph_optimization()
+#  except:  # noqa: E722
+#      pass
 
 
 try:
@@ -110,37 +108,39 @@ def dict_to_str(d):
     return '\n'.join(strs)
 
 
-def main(configs, num_chains=None, run_steps=None):
+def main(
+        configs: AttrDict,
+        num_chains: int = None,
+        run_steps: int = None
+):
     """Main method for training."""
     hmc_steps = configs.get('hmc_steps', 0)
     #  tf.keras.backend.set_floatx('float32')
     log_file = os.path.join(os.getcwd(), 'log_dirs.txt')
 
     x = None
-    log_dir = configs.get('log_dir', None)
+    logdir = configs.get('log_dir', None)
     beta_init = configs.get('beta_init', None)
     beta_final = configs.get('beta_final', None)
 
-    if log_dir is not None:  # we want to restore from latest checkpoint
-        configs.restore = True
+    if logdir is not None:  # we want to restore from latest checkpoint
+        configs['restore'] = True
+        #  logdir = configs.get('log_dir', None)
         run_steps = configs.get('run_steps', None)
         train_steps = configs.get('train_steps', None)
-        restored = restore_flags(configs,
-                                 os.path.join(configs.log_dir, 'training'))
+        restored = restore_flags(configs, os.path.join(logdir, 'training'))
         for key, val in configs.items():
             if key in restored:
                 if val != restored[key]:
                     io.log(f'Restored {key}: {restored[key]}')
                     io.log(f'Using {key}: {val}')
 
-        configs.update({
-            'train_steps': train_steps,
-            'run_steps': run_steps,
-        })
+        configs['run_steps'] = run_steps
+        configs['train_steps'] = train_steps
         if beta_init != configs.get('beta_init', None):
-            configs.beta_init = beta_init
+            configs['beta_init'] = beta_init
         if beta_final != configs.get('beta_final', None):
-            configs.beta_final = beta_final
+            configs['beta_final'] = beta_final
 
     else:  # New training session
         train_steps = configs.get('train_steps', None)
@@ -153,51 +153,53 @@ def main(configs, num_chains=None, run_steps=None):
             'minute': io.get_timestamp('%Y-%m-%d-%H%M'),
             'second': io.get_timestamp('%Y-%m-%d-%H%M%S'),
         })
-        configs.log_dir = io.make_log_dir(configs, 'GaugeModel', log_file,
-                                          timestamps=timestamps)
-        io.write(f'{configs.log_dir}', log_file, 'a')
-        configs.restore = False
+        logdir = io.make_log_dir(configs, 'GaugeModel', log_file,
+                                 timestamps=timestamps)
+        configs['log_dir'] = logdir
+        io.write(f'{logdir}', log_file, 'a')
+        configs['restore'] = False
         if hmc_steps > 0:
-            #  x, _, eps = train_hmc(args)
-            x, dynamics_hmc, _, hflags = train_hmc(configs,
-                                                   num_chains=num_chains)
-            #  dirs_hmc = hflags.get('dirs', None)
-            #  args.dynamics_config['eps'] = dynamics_hmc.eps.numpy()
-            _ = run(dynamics_hmc, hflags, save_x=False)
+            x, hdynamics, _, hflags = train_hmc(configs, num_chains=num_chains)
+            _ = run(hdynamics, hflags, save_x=False)
 
     if num_chains is None:
         num_chains = configs.get('num_chains', 15)
 
-    x, dynamics, train_data, configs = train(configs, x=x, make_plots=True,
-                                             num_chains=num_chains)
+    #  x, dynamics, train_data, configs = train(configs=configs,
+    nchains = int(num_chains)
+    out = train(configs=configs, x=x, make_plots=True, num_chains=nchains)
+    x = out.x
+    train_data = out.data
+    dynamics = out.dynamics
+    configs = out.configs
 
-    if run_steps is None:
-        run_steps = configs.get('run_steps', 50000)
+    rs = configs.get('run_steps', 50000)
+    run_steps = rs if run_steps is None else run_steps
 
     # ====
     # Run inference on trained model
     if run_steps > 0:
         #  run_steps = args.get('run_steps', 125000)
-        log_dir = configs.log_dir
+        #  logdir = configs.log_dir
         beta = configs.get('beta_final')
         if configs.get('small_batch', False):
             batch_size = 256
             old_shape = configs['dynamics_config']['x_shape']
             new_shape = (batch_size, *old_shape[1:])
             configs['dynamics_config']['x_shape'] = new_shape
-            dynamics = build_dynamics(configs, log_dir=log_dir)
+            dynamics = build_dynamics(configs, log_dir=logdir)
             x = x[:batch_size]
 
         results = run(dynamics, configs, x, beta=beta, make_plots=True,
                       therm_frac=0.1, num_chains=num_chains, save_x=False)
-        try:
-            run_data = results.run_data
-            run_dir = run_data.dirs['run_dir']
-            dataset = run_data.save_dataset(run_dir, therm_frac=0.)
-        except:
-            # TODO: Properly catch exception (if thrown)
-            pass
-
+        #  try:
+        #      run_data = results.run_data
+        #      #  run_dir = run_data.dirs['run_dir']
+        #      #  dataset = run_data.save_dataset(run_dir, therm_frac=0.)
+        #  except:
+        #      # TODO: Properly catch exception (if thrown)
+        #      pass
+        #
 
         #  _ = run_inference_from_log_dir(log_dir=log_dir,
         #                                 run_steps=run_steps,

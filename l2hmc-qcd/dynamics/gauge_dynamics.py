@@ -152,6 +152,7 @@ class GaugeDynamics(BaseDynamics):
         self.charge_weight = config.charge_weight
         self._gauge_eq_masks = config.gauge_eq_masks
         self.lattice_shape = config.x_shape
+        self._xshape = config.x_shape
         #  self.lattice_shape = config.lattice_shape
         self._combined_updates = config.combined_updates
         self._alpha = tf.constant(1.)

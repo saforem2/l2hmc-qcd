@@ -17,11 +17,10 @@ https://infoscience.epfl.ch/record/264887/files/robust_parameter_estimation.pdf
 Author: Sam Foreman (github: @saforem2)
 Date: 6/30/2020
 """
-from __future__ import absolute_import, division, print_function
-import os
+from __future__ import absolute_import, annotations, division, print_function
 
-import typing
-from typing import Callable, List, Optional, Tuple, Union, NamedTuple
+import os
+from typing import Callable, List, Optional, Tuple, Union
 
 import numpy as np
 import tensorflow as tf
@@ -31,18 +30,15 @@ import utils.file_io as io
 
 try:
     import horovod.tensorflow as hvd
-
     HAS_HOROVOD = True
     NUM_RANKS = hvd.size()
 except (ImportError, ModuleNotFoundError):
     HAS_HOROVOD = False
     NUM_RANKS = 1
 
-from network.config import (ConvolutionConfig,
-                            LearningRateConfig, NetworkConfig)
-from dynamics.config import (DynamicsConfig,
-                             State, MonteCarloStates,
-                             NetWeights, TF_FLOAT)
+from dynamics.config import (TF_FLOAT, DynamicsConfig, MonteCarloStates,
+                             NetWeights, State)
+from network.config import ConvolutionConfig, LearningRateConfig, NetworkConfig
 from utils.attr_dict import AttrDict
 from utils.learning_rate import WarmupExponentialDecay
 
@@ -148,7 +144,7 @@ class BaseDynamics(tf.keras.Model):
 
     def call(
             self,
-            inputs: Tuple[tf.Tensor, tf.Tensor],
+            inputs: tuple[tf.Tensor, ...],
             training: bool = None,
             mask=None
     ):
@@ -228,7 +224,7 @@ class BaseDynamics(tf.keras.Model):
 
     def test_step(  # pylint:disable=arguments-differ
             self,
-            inputs: Tuple[tf.Tensor, tf.Tensor],
+            inputs: Tuple[tf.Tensor, ...],
     ):
         """Perform a single inference step.
 
@@ -241,7 +237,7 @@ class BaseDynamics(tf.keras.Model):
 
     def _forward(
             self,
-            inputs: Union[tf.Tensor, List[tf.Tensor]],
+            inputs: tuple[tf.Tensor, ...],
             training: bool = None,
     ):
         """Propose a new state by running the leapfrog integrator forward."""
@@ -262,7 +258,7 @@ class BaseDynamics(tf.keras.Model):
 
     def _backward(
             self,
-            inputs: Union[tf.Tensor, List[tf.Tensor]],
+            inputs: tuple[tf.Tensor, ...],
             training: bool = None,
     ):
         """Propose a new state by running the leapfrog integrator forward."""
@@ -283,7 +279,7 @@ class BaseDynamics(tf.keras.Model):
 
     def _random_direction(
             self,
-            inputs: Union[tf.Tensor, List[tf.Tensor]],
+            inputs: tuple[tf.Tensor, ...],
             training: bool = None
     ) -> (MonteCarloStates, AttrDict):
         """Propose a new state and perform the accept/reject step."""
@@ -307,9 +303,10 @@ class BaseDynamics(tf.keras.Model):
         return mc_states, data
 
     def _hmc_transition(
-            self, inputs: tuple, training: Optional[bool] = None,
+            self, inputs: [tf.Tensor, ...], training: bool = None,
     ) -> (MonteCarloStates, AttrDict):
         """Propose a new state and perform the accept/reject step."""
+        x, v, beta = None, None, None
         if len(inputs) == 2:
             x, beta = inputs
             v = tf.random.normal(x.shape, dtype=x.dtype)
@@ -321,7 +318,8 @@ class BaseDynamics(tf.keras.Model):
         state, state_prop, data = self._transition(state, forward=True,
                                                    training=training)
 
-        accept_prob = data.get('accept_prob')
+        sumlogdet = data.get('sumlogdet', None)
+        accept_prob = data.get('accept_prob', None)
         ma_, mr_ = self._get_accept_masks(accept_prob)
         ma = ma_[:, None]
         mr = mr_[:, None]
@@ -329,7 +327,7 @@ class BaseDynamics(tf.keras.Model):
         # Construct the output configuration
         v_out = ma * state_prop.v + mr * state.v
         x_out = self.normalizer(ma * state_prop.x + mr * state.x)
-        sumlogdet = ma_ * data['sumlogdet']  # NOTE: initial sumlogdet = 0
+        sumlogdet = ma_ * sumlogdet  # NOTE: initial sumlogdet = 0
 
         #  state_init = State(x=x, v=state_init.v, beta=beta)
         state_prop = State(x=state_prop.x, v=state_prop.v, beta=state.beta)
@@ -346,11 +344,12 @@ class BaseDynamics(tf.keras.Model):
 
     def _transition(
             self,
-            inputs: Union[tf.Tensor, List[tf.Tensor]],
+            inputs: tuple[tf.Tensor, ...],
             forward: bool,
             training: bool = None
     ) -> (State, State, AttrDict):
         """Run the augmented leapfrog integrator."""
+        x, v, beta = None, None, None
         if not isinstance(inputs, (tuple, List)):
             raise ValueError(
                 f'Expected inputs to be one of: [list, tuple]. \n'
@@ -438,7 +437,7 @@ class BaseDynamics(tf.keras.Model):
 
     def md_update(
             self,
-            inputs: Union[tf.Tensor, List[tf.Tensor]],
+            inputs: tuple[tf.Tensor, tf.Tensor],
             training: bool = None
     ) -> (MonteCarloStates, MonteCarloStates):
         """Perform the molecular dynamics (MD) update w/o accept/reject.
