@@ -32,6 +32,7 @@ import utils.live_plots as plotter
 #  from utils.live_plots import (LivePlotData, init_plots, update_joint_plots,
 #                                update_plot, update_plots)
 from utils.logger import Logger, in_notebook
+from utils.logger_config import logger as logging
 from utils.plotting_utils import plot_data
 from utils.summary_utils import update_summaries
 #  from utils.training_utils import train_dynamics
@@ -83,6 +84,7 @@ TO_KEEP = [
 ]
 
 logger = io.Logger()
+
 #  logger = io.Logger()
 
 #  try:
@@ -155,11 +157,11 @@ def train_hmc(
     })
 
     dynamics = GaugeDynamics(hconfigs, config, net_config, lr_config)
-    dynamics.save_config(dirs.config_dir)
+    dynamics.save_config(dirs['config_dir'])
 
     x, train_data = train_dynamics(dynamics, hconfigs, dirs=dirs)
     if IS_CHIEF and make_plots:
-        output_dir = os.path.join(dirs.train_dir, 'outputs')
+        output_dir = os.path.join(dirs['train_dir'], 'outputs')
         io.check_else_make_dir(output_dir)
         train_data.save_data(output_dir)
 
@@ -173,7 +175,7 @@ def train_hmc(
         }
         t0 = time.time()
         output = plot_data(data_container=train_data, flags=hconfigs,
-                           params=params, out_dir=dirs.train_dir,
+                           params=params, out_dir=dirs['train_dir'],
                            therm_frac=0.0, num_chains=num_chains)
         data_container = output['data_container']
         dt = time.time() - t0
@@ -259,7 +261,7 @@ def train(
         }
         t0 = time.time()
         output = plot_data(data_container=train_data, flags=configs,
-                           params=params, out_dir=dirs.train_dir,
+                           params=params, out_dir=dirs['train_dir'],
                            therm_frac=therm_frac, num_chains=num_chains)
         #  data_container = output['data_container']
         #  data_container.plot_dataset(output['out_dir'],
@@ -293,7 +295,7 @@ def setup(dynamics, configs, dirs=None, x=None, betas=None):
     datadir = dirs['data_dir']
     summdir = dirs['summary_dir']
     manager = tf.train.CheckpointManager(ckpt, ckptdir, max_to_keep=5)
-    if manager.latest_checkpoint and not configs['ensure_new']:
+    if manager.latest_checkpoint and not configs.get('ensure_new', False):
         logger.log(f'Restored model from: {manager.latest_checkpoint}')
         ckpt.restore(manager.latest_checkpoint)
         current_step = dynamics.optimizer.iterations.numpy()
@@ -543,13 +545,15 @@ def train_dynamics(
     warmup_steps = dynamics.lr_config.warmup_steps
     steps_per_epoch = configs.get('steps_per_epoch', 1000)
     total_steps = len(betas)
+    if len(steps) != len(betas):
+        logger.log(f'WARNING: len(steps) != len(betas) Restarting step count!')
+        logger.log(f'len(steps): {len(steps)}, len(betas): {len(betas)}')
+        steps = np.arange(len(betas))
     #  if should_track:
     #      iterable = track(enumerate(zip(steps, betas)), total=total_steps,
     #                       console=io.console, description='training',
     #                       transient=True)
     #  else:
-    assert len(steps) == len(betas)
-    iterable = enumerate(zip(steps, betas))
 
     keep = ['dt', 'loss', 'accept_prob', 'beta',
             #  'Hf_start', 'Hf_mid', 'Hf_end'
@@ -567,13 +571,13 @@ def train_dynamics(
         plots = plotter.init_plots(configs, figsize=(9, 3), dpi=125)
 
     # -- Training loop ----------------------------------------------------
+    data_strs = []
     logdir = dirs['log_dir']
     data_dir = dirs['data_dir']
     logfile = dirs['log_file']
     assert manager is not None
     assert x is not None
     #  for idx, (step, beta) in iterable:
-    data_strs = []
     for idx, (step, beta) in enumerate(zip(steps, betas)):
         # -- Perform a single training step -------------------------------
         x, metrics = train_step(x, beta)
