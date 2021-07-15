@@ -80,6 +80,7 @@ def make_ridgeplots(
         cmap='viridis_r'
 ):
     sns.set(style='white', rc={"axes.facecolor": (0, 0, 0, 0)})
+    data = {}
     for key, val in dataset.data_vars.items():
         if 'leapfrog' in val.coords.dims:
             lf_data = {
@@ -103,6 +104,7 @@ def make_ridgeplots(
                 lf_data['lf'].extend(lf_arr)
 
             lfdf = pd.DataFrame(lf_data)
+            data[key] = lfdf
 
             # Initialize the FacetGrid object
             pal = sns.color_palette(cmap, n_colors=len(val.leapfrog.values))
@@ -142,7 +144,7 @@ def make_ridgeplots(
     fig = plt.gcf()
     ax = plt.gca()
 
-    return fig, ax
+    return fig, ax, data
 
 
 def set_size(
@@ -448,6 +450,7 @@ def plot_autocorrs_vs_draws(
         therm_frac: float = 0.2,
         out_dir: str = None,
         lf: int = None,
+        title: str = None,
 ):
     tint_dict = calc_tau_int_vs_draws(qarr, num_pts, nstart, therm_frac)
     fig, ax = plt.subplots()
@@ -464,6 +467,9 @@ def plot_autocorrs_vs_draws(
     _ = ax.errorbar(tint_dict['narr'], y, yerr, marker='.', ls='')
     _ = ax.set_ylabel(ylabel)
     _ = ax.set_xlabel(xlabel)
+    if title is not None:
+        ax.set_title(title)
+
     if out_dir is not None:
         out_file = os.path.join(out_dir, 'tint_vs_draws.pdf')
         io.log(f'Saving figure to: {out_file}')
@@ -542,6 +548,7 @@ def plot_data(
 
     plot_times = {}
     save_times = {}
+    title = None if params is None else get_title_str_from_params(params)
     if 'charges' in data_container.data:
         lf = flags['dynamics_config']['num_steps']
         charges = np.array(data_container.data['charges'])
@@ -575,8 +582,6 @@ def plot_data(
 
     if hmc:
         skip_strs = ['Hw', 'ld', 'sld', 'sumlogdet']
-
-    title = None if params is None else get_title_str_from_params(params)
 
     if flags is not None:
         logging_steps = flags.get('logging_steps', 1)

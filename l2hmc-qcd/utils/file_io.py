@@ -17,7 +17,7 @@ import time
 import typing
 from collections import OrderedDict
 from pathlib import Path
-from typing import Any, Dict, Type
+from typing import Any, Dict, Type, Union
 
 import h5py
 import joblib
@@ -186,23 +186,21 @@ def print_flags(flags: AttrDict):
 
 
 def setup_directories(
-        flags: AttrDict,
+        configs: dict[str, Any],
         name: str = 'training',
         save_flags: bool = True,
         ensure_new: bool = False,
 ):
     """Setup relevant directories for training."""
-    if isinstance(flags, dict):
-        flags = AttrDict(flags)
+    if configs.get('log_dir', None) is None:
+        logger.rule('Making new log_dir')
+        configs['log_dir'] = make_log_dir(configs=configs,
+                                          model_type='GaugeModel',
+                                          ensure_new=ensure_new)
 
-    if flags.get('log_dir', None) is None:
-        flags.log_dir = make_log_dir(flags=flags,
-                                     name=name,
-                                     ensure_new=ensure_new)
-
-    train_dir = os.path.join(flags.log_dir, name)
-    train_paths = AttrDict({
-        'log_dir': flags.log_dir,
+    train_dir = os.path.join(configs['log_dir'], name)
+    train_paths = {
+        'log_dir': configs['log_dir'],
         'train_dir': train_dir,
         'data_dir': os.path.join(train_dir, 'train_data'),
         'models_dir': os.path.join(train_dir, 'models'),
@@ -210,14 +208,14 @@ def setup_directories(
         'summary_dir': os.path.join(train_dir, 'summaries'),
         'log_file': os.path.join(train_dir, 'train_log.txt'),
         'config_dir': os.path.join(train_dir, 'dynamics_configs'),
-    })
+    }
 
     if IS_CHIEF:
-        check_else_make_dir(
-            [d for k, d in train_paths.items() if 'file' not in k],
-        )
+        for k, v in train_paths.items():
+            if 'file' not in k:
+                check_else_make_dir(v)
         if save_flags:
-            save_params(dict(flags), train_dir, 'FLAGS')
+            save_params(dict(configs), train_dir, 'FLAGS')
 
     return train_paths
 
@@ -466,17 +464,18 @@ def get_run_dir_fstr(flags: AttrDict):
     return fstr
 
 
-def parse_configs(flags: AttrDict, debug: bool = False):
+def parse_configs(configs: dict[str, Any], debug: bool = False):
     """Parse configs to construct unique string for naming `log_dir`."""
-    config = AttrDict(flags.get('dynamics_config', None))
-    net_config = AttrDict(flags.get('network_config', None))
+    config = AttrDict(configs.get('dynamics_config', None))
+    net_config = AttrDict(configs.get('network_config', None))
     #  lr_config = flags.get('lr_config', None)
     #  conv_config = flags.get('conv_config', None)
     fstr = ''
     if config.get('hmc', False):
         fstr += 'HMC_'
 
-    if debug or 0 < flags.get('train_steps', None) < 1e3:
+    train_steps = configs.get('train_steps', 1e5)
+    if debug or 0 < train_steps < 1e3:
         fstr += 'DEBUG_'
 
     x_shape = config.get('x_shape', None)
@@ -504,19 +503,24 @@ def parse_configs(flags: AttrDict, debug: bool = False):
         if eps is not None:
             fstr += f'_eps{eps}'.replace('.', '')
 
-    bi = flags.get('beta_init', None)
-    bf = flags.get('beta_final', None)
+    bi = configs.get('beta_init', None)
+    bf = configs.get('beta_final', None)
     fstr += f'_bi{bi:.3g}_bf{bf:.3g}'
 
-    dp = net_config.get('dropout_prob', None)
+    dp = net_config.get('dropout_prob', 0.)
     if dp > 0:
         fstr += f'_dp{dp}'
 
+    hstr = ''.join([f'{i}' for i in net_config.get('units', [])])
+    if len(hstr) > 0:
+        fstr += f'_nh{hstr}'
+
+
     eps = config.get('eps', None)
-    if flags.get('eps_fixed', False):
+    if configs.get('eps_fixed', False):
         fstr += f'_eps{eps:.3g}'
 
-    cv = flags.get('clip_val', None)
+    cv = configs.get('clip_val', 0.)
     if cv > 0:
         fstr += f'_clip{cv}'
 
@@ -532,7 +536,7 @@ def parse_configs(flags: AttrDict, debug: bool = False):
     if config.get('use_conv_net', False):
         fstr += '_ConvNets'
 
-        conv_config = flags.get('conv_config', None)
+        conv_config = configs.get('conv_config', {})
         use_bn = conv_config.get('use_batch_norm', False)
         if use_bn:
             fstr += '_bNorm'
@@ -552,8 +556,12 @@ def parse_configs(flags: AttrDict, debug: bool = False):
     if config.get('use_batch_norm', False):
         fstr += '_bNorm'
 
-    if config.get('net_weights', None) is not None:
-        nw = config.get('net_weights', None)
+    nw = config.get('net_weights', None)
+    #  if config.get('net_weights', None) is not None:
+    if nw is not None:
+        if isinstance(nw, tuple):
+            nw = NetWeights(*nw)
+
         if nw != NetWeights(1., 1., 1., 1., 1., 1.):
             nwstr = ''.join([str(int(i)) for i in tuple(nw)])
             fstr += f'_nw{nwstr}'
@@ -570,13 +578,14 @@ def get_timestamp(fstr=None):
 
 
 def make_log_dir(
-        configs: AttrDict,
+        configs: Union[dict[str, Any], AttrDict],
         model_type: str = None,
         log_file: str = None,
         root_dir: str = None,
         timestamps: AttrDict = None,
         skip_existing: bool = False,
         ensure_new: bool = False,
+        name: str = None,
 ):
     """Automatically create and name `log_dir` to save model data to.
 

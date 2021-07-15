@@ -502,3 +502,9 @@ l2hmc-qcd/notebooks/*test*
 pyrightconfig1.json
 notebooks/HMC_data_plots.ipynb
 notebooks/autocorrelations.ipynb
+bin/*beta*
+bin/*hmc*
+bin/*experiments*
+*node_modules*
+*2021_*
+bin/*scale_*
