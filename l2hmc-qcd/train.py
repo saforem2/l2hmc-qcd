@@ -10,6 +10,7 @@ from __future__ import absolute_import, division, print_function, annotations
 
 import os
 import contextlib
+import warnings
 import logging
 import tensorflow as tf
 from tensorflow.python.ops.gen_math_ops import Any
@@ -21,6 +22,8 @@ from tensorflow.python.ops.gen_math_ops import Any
 #  except:  # noqa: E722
 #      pass
 
+warnings.filterwarnings('ignore')
+warnings.filterwarnings('ignore', 'WARNING:matplotlib')
 
 try:
     import horovod
@@ -54,6 +57,7 @@ from utils.parse_configs import parse_configs
 from dynamics.gauge_dynamics import build_dynamics
 from utils.training_utils import train, train_hmc
 from utils.inference_utils import run, run_hmc, run_inference_from_log_dir
+from utils.logger import Logger
 
 
 #  os.environ['TF_CPP_MIN_VLOG_LEVEL'] = '3'
@@ -68,6 +72,9 @@ logging_format = (
 
 logging.info(f'using tensorflow version: {tf.__version__}')
 logging.info(f'using tensorflow from: {tf.__file__}')
+
+
+logger = Logger()
 
 @contextlib.contextmanager
 def experimental_options(options):
@@ -114,17 +121,65 @@ def main(
         run_steps: int = None
 ):
     """Main method for training."""
+    # TODO: Move setup code to separate function and refactor
     hmc_steps = configs.get('hmc_steps', 0)
     #  tf.keras.backend.set_floatx('float32')
-    log_file = os.path.join(os.getcwd(), 'log_dirs.txt')
 
     x = None
     logdir = configs.get('log_dir', None)
     beta_init = configs.get('beta_init', None)
     beta_final = configs.get('beta_final', None)
+    ensure_new = configs.get('ensure_new', False)
+    logfile = os.path.join(os.getcwd(), 'log_dirs.txt')
+
+    if logdir is None:
+        # Check and see if `./log_dirs.txt` exists and if so, try loading from
+        # there if configs are compatible
+        # TODO: Check if configs are explicitly compatible
+        if os.path.isfile(logfile):
+            logger.rule('Found `log_dirs.txt`!')
+            logger.log(f'logfile: {logfile}')
+            logdirs = []
+            with open(logfile, 'r') as f:
+                for line in f.readlines():
+                    logdirs.append(line.rstrip('\n'))
+
+            logdir = logdirs[-1]
+            if os.path.isdir(logdir):
+                if ensure_new:
+                    err = (f'configs["ensure_new"] = {ensure_new}, but '
+                           f'found existing `log_dir` at:\n'
+                           f'  log_dir: {logdir}. Exiting!!')
+                    raise ValueError(err)
+
+                else:
+                    logdir = None
+
+            # If `./log_dirs.txt` exists and points to a directory containing
+            # training checkpoints
+            #  if ensure_new and os.path.isdir(logdir):
+            #      ckptdir = os.path.join(logdir, 'training', 'checkpoints')
+            #      exists = (len(os.listdir(ckptdir)) > 0)
+            #      if exists:
+            #          err = (f'configs["ensure_new"] = {ensure_new}, but '
+            #                 f'found checkpoints in `log_dir` from '
+            #                 f'./`log_dirs.txt. Exiting!\n'
+            #                 f'  log_dir: {logdir}')
+            #          raise ValueError(err)
+            #
+            #      #  exist = len(os.listdir(ckptdir)) > 0 if os.path.isdir(ckptdir)
+            #      #  if len(ckpts) > 0:
+            #      #      raise
+            #      #  if os.path.isdir(ckptdir):
+            #      #      ckpts = os.listdir(ckptdir)
+            #      #      if len(ckpts) > 0:
+            #      #          err = (f'configs["ensure_new"] = {ensure_new}, but '
+            #      #                 f'found checkpoints in `log_dir` from '
+            #      #                 f'./`log_dirs.txt. Exiting!\n'
+            #      #                 f'  log_dir: {logdir}')
+            #      #          raise ValueError(err)
 
     if logdir is not None:  # we want to restore from latest checkpoint
-        configs['restore'] = True
         #  logdir = configs.get('log_dir', None)
         run_steps = configs.get('run_steps', None)
         train_steps = configs.get('train_steps', None)
@@ -142,6 +197,9 @@ def main(
         if beta_final != configs.get('beta_final', None):
             configs['beta_final'] = beta_final
 
+        configs['restore'] = True
+        configs['restored_from'] = logdir
+
     else:  # New training session
         train_steps = configs.get('train_steps', None)
         run_steps = configs.get('run_steps', None)
@@ -153,10 +211,10 @@ def main(
             'minute': io.get_timestamp('%Y-%m-%d-%H%M'),
             'second': io.get_timestamp('%Y-%m-%d-%H%M%S'),
         })
-        logdir = io.make_log_dir(configs, 'GaugeModel', log_file,
+        logdir = io.make_log_dir(configs, 'GaugeModel', logfile,
                                  timestamps=timestamps)
         configs['log_dir'] = logdir
-        io.write(f'{logdir}', log_file, 'a')
+        io.write(f'{logdir}', logfile, 'a')
         configs['restore'] = False
         if hmc_steps > 0:
             x, hdynamics, _, hflags = train_hmc(configs, num_chains=num_chains)
@@ -167,11 +225,11 @@ def main(
 
     #  x, dynamics, train_data, configs = train(configs=configs,
     nchains = int(num_chains)
-    out = train(configs=configs, x=x, make_plots=True, num_chains=nchains)
-    x = out.x
-    train_data = out.data
-    dynamics = out.dynamics
-    configs = out.configs
+    train_out = train(configs=configs, x=x, make_plots=True, num_chains=nchains)
+    x = train_out.x
+    train_data = train_out.data
+    dynamics = train_out.dynamics
+    configs = train_out.configs
 
     rs = configs.get('run_steps', 50000)
     run_steps = rs if run_steps is None else run_steps
@@ -191,7 +249,7 @@ def main(
             x = x[:batch_size]
 
         results = run(dynamics, configs, x, beta=beta, make_plots=True,
-                      therm_frac=0.1, num_chains=num_chains, save_x=False)
+                      therm_frac=0.1, num_chains=nchains, save_x=False)
         #  try:
         #      run_data = results.run_data
         #      #  run_dir = run_data.dirs['run_dir']

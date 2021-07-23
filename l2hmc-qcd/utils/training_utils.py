@@ -32,7 +32,7 @@ import utils.live_plots as plotter
 #  from utils.live_plots import (LivePlotData, init_plots, update_joint_plots,
 #                                update_plot, update_plots)
 from utils.logger import Logger, in_notebook
-from utils.logger_config import logger as logging
+#  from utils.logger_config import logger as logging
 from utils.plotting_utils import plot_data
 from utils.summary_utils import update_summaries
 #  from utils.training_utils import train_dynamics
@@ -275,7 +275,8 @@ def train(
     io.rule(f'Done training model! took: {dt:.3g}s')
     io.save_dict(dict(configs), dirs['log_dir'], 'configs')
 
-    return x, dynamics, train_data, configs
+    #  return x, dynamics, train_data, configs
+    return TrainOutputs(x, configs, train_data, dynamics)
 
 
 # pylint:disable=too-many-statements, too-many-branches
