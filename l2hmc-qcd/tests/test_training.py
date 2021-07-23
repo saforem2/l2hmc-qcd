@@ -188,14 +188,18 @@ def test_conv_net(flags: AttrDict):
     dirs = io.setup_directories(flags)
     flags['dirs'] = dirs
     flags['log_dir'] = dirs.get('log_dir', None)
-    x, dynamics, train_data, flags = train(flags, make_plots=False)
-    dynamics, run_data, x, _ = run(dynamics, flags, x=x, make_plots=False)
+    outputs = train(flags, make_plots=False)
+    x = outputs.x
+    train_data = outputs.data
+    dynamics = outputs.dynamics
+    run_outputs = run(dynamics, flags, x=x, make_plots=False)
+    #  x, dynamics, train_data, flags = train(flags, make_plots=False)
 
     return AttrDict({
         'x': x,
         'log_dir': flags.log_dir,
         'dynamics': dynamics,
-        'run_data': run_data,
+        'run_data': run_outputs,
         'train_data': train_data,
     })
 
@@ -206,14 +210,18 @@ def test_single_network(flags: AttrDict):
     flags = AttrDict(**dict(copy.deepcopy(flags)))
     flags['dynamics_config']['separate_networks'] = False
     #  flags.dynamics_config.separate_networks = False
-    x, dynamics, train_data, flags = train(flags, make_plots=False)
-    dynamics, run_data, x, _ = run(dynamics, flags, x=x, make_plots=False)
+    #  x, dynamics, train_data, flags = train(flags, make_plots=False)
+    outputs = train(flags, make_plots=False)
+    x = outputs.x
+    train_data = outputs.data
+    dynamics = outputs.dynamics
+    run_outputs = run(dynamics, flags, x=x, make_plots=False)
 
     return AttrDict({
         'x': x,
         'log_dir': flags.log_dir,
         'dynamics': dynamics,
-        'run_data': run_data,
+        'run_data': run_outputs,
         'train_data': train_data,
     })
 
@@ -228,39 +236,41 @@ def test_separate_networks(flags: AttrDict):
 
     flags.dynamics_config['separate_networks'] = True
     flags.compile = False
-    x, dynamics, train_data, flags = train(flags, make_plots=True)
+    outputs = train(flags, make_plots=False)
+    x = outputs.x
+    train_data = outputs.data
+    dynamics = outputs.dynamics
+
     #  beta = flags.get('beta', 1.)
-    dynamics, run_data, x, _ = run(dynamics, flags, x=x, make_plots=True)
+    run_out = run(dynamics, flags, x=x, make_plots=True)
 
     return AttrDict({
         'x': x,
         'log_dir': flags.log_dir,
         'dynamics': dynamics,
-        'run_data': run_data,
+        'run_data': run_out,
         'train_data': train_data,
     })
 
 
 @timeit
-def test_resume_training(log_dir: str):
+def test_resume_training(logdir: str):
     """Test restoring a training session from a checkpoint."""
-    flags = AttrDict(
-        dict(io.loadz(os.path.join(log_dir, 'training', 'FLAGS.z')))
-    )
-    flags = AttrDict(**dict(copy.deepcopy(flags)))
+    flags = dict(io.loadz(os.path.join(logdir, 'training', 'FLAGS.z')))
+    flags = AttrDict(flags)
+    flags['train_steps'] = flags.get('train_steps', 10)
 
-    flags.log_dir = log_dir
-    flags.train_steps += flags.get('train_steps', 10)
-    x, dynamics, train_data, flags = train(flags, make_plots=False)
-    #  beta = flags.get('beta', 1.)
-    dynamics, run_data, x, _ = run(dynamics, flags, x=x, make_plots=False)
+    out = train(flags, make_plots=False)
+    run_out = run(out.dynamics, flags, out.x)
+    #  flags = AttrDict(**dict(copy.deepcopy(flags)))
+
 
     return AttrDict({
-        'x': x,
-        'log_dir': flags.log_dir,
-        'dynamics': dynamics,
-        'run_data': run_data,
-        'train_data': train_data,
+        'x': out.x,
+        'log_dir': logdir,
+        'dynamics': out.dynamics,
+        'run_data': run_out,
+        'train_data': out.data,
     })
 
 
