@@ -3,13 +3,13 @@ inference_utils.py
 
 Collection of helper methods to use for running inference on trained model.
 """
+
 from __future__ import absolute_import, division, print_function
 
 import os
 import time
 
 from rich.progress import track
-from rich.console import Console
 from typing import Optional
 from pathlib import Path
 from collections import namedtuple
@@ -20,7 +20,8 @@ import utils.file_io as io
 
 from config import HMC_LOGS_DIR, PI, TF_FLOAT
 from utils import SKEYS
-from utils.file_io import IS_CHIEF, NUM_WORKERS
+from utils.hvd_init import IS_CHIEF
+#  from utils.file_io import IS_CHIEF, NUM_WORKERS
 from utils.attr_dict import AttrDict
 from utils.summary_utils import summarize_dict
 from utils.plotting_utils import plot_data
@@ -28,13 +29,14 @@ from utils.data_containers import DataContainer
 from dynamics.config import GaugeDynamicsConfig
 from dynamics.gauge_dynamics import (build_dynamics, convert_to_angle,
                                      GaugeDynamics)
+from utils.logger import Logger
 
 SHOULD_TRACK = not os.environ.get('NOTRACK', False)
 
 InferenceResults = namedtuple('InferenceResults',
                               ['dynamics', 'run_data', 'x', 'x_arr'])
 
-logger = io.Logger()
+logger = Logger()
 
 
 def restore_from_train_flags(args):
@@ -98,7 +100,7 @@ def short_training(
         start = time.time()
         x, metrics = dynamics.train_step((x, tf.constant(beta)))
         metrics.dt = time.time() - start
-        data_str = train_data.get_fstr(step, metrics, skip=SKEYS)
+        #  data_str = train_data.get_fstr(step, metrics, skip=SKEYS)
         io.log(data_str)
 
     return dynamics, train_data, x
@@ -127,7 +129,7 @@ def _get_hmc_log_str(configs):
 
 
 def run_hmc(
-        args: AttrDict,
+        args: dict,
         hmc_dir: str = None,
         skip_existing: bool = False,
         save_x: bool = False,
@@ -158,9 +160,7 @@ def run_hmc(
 
     def get_run_fstr(run_dir):
         # take relevant part of run_dir:
-        # ```
         # /path/to/HMC_L16_b512... -> HMC_L16_b512...
-        # ```
         _, tail = os.path.split(run_dir)
         # strip off timestamp at the end of `run_dir`
         fstr = tail.split('-')[0]
@@ -299,7 +299,7 @@ def run_inference_from_log_dir(
 
 def run(
         dynamics: GaugeDynamics,
-        args: AttrDict,
+        args: dict,
         x: tf.Tensor = None,
         beta: float = None,
         runs_dir: str = None,
@@ -308,7 +308,6 @@ def run(
         num_chains: int = 16,
         save_x: bool = False,
         md_steps: int = 50,
-        console: Console = None,
         skip_existing: bool = False,
         run_steps: int = None,
 ) -> (InferenceResults):
@@ -320,11 +319,10 @@ def run(
     if not IS_CHIEF:
         return InferenceResults(None, None, None, None)
 
+    logdir = args.get('log_dir', args.get('logdir', None))
     if runs_dir is None:
-        if dynamics.config.hmc:
-            runs_dir = os.path.join(args.log_dir, 'inference_hmc')
-        else:
-            runs_dir = os.path.join(args.log_dir, 'inference')
+        rs = 'inference_hmc' if dynamics.config.hmc else 'inference'
+        runs_dir = os.path.join(logdir, rs)
 
     io.check_else_make_dir(runs_dir)
     run_dir = io.make_run_dir(args, runs_dir)
@@ -335,7 +333,8 @@ def run(
     writer = tf.summary.create_file_writer(summary_dir)
     writer.set_as_default()
 
-    args.logging_steps = 1
+    args['logging_steps'] = 1
+    #  args.logging_steps = 1
     #  run_steps = args.get('run_steps', 50000)
     if run_steps is None:
         run_steps = args.get('run_steps', 50000)
@@ -348,11 +347,11 @@ def run(
 
     results = run_dynamics(dynamics=dynamics,
                            flags=args, x=x, beta=beta, save_x=save_x,
-                           md_steps=md_steps, console=console)
+                           md_steps=md_steps)
     run_data = results.run_data
 
     run_data.update_dirs({
-        'log_dir': args.log_dir,
+        'log_dir': logdir,
         'run_dir': run_dir,
     })
 
@@ -428,7 +427,7 @@ def run(
     save_times['run_data.flush_data_strs'] = time.time() - t0
 
     t0 = time.time()
-    run_data.write_to_csv(args.log_dir, run_dir, hmc=dynamics.config.hmc)
+    run_data.write_to_csv(logdir, run_dir, hmc=dynamics.config.hmc)
     save_times['run_data.write_to_csv'] = time.time() - t0
 
     t0 = time.time()
@@ -446,6 +445,7 @@ def run(
     profdir = os.path.join(run_dir, 'profile_info')
     io.check_else_make_dir(profdir)
     io.save_dict(plot_times, profdir, name='plot_times')
+
     io.save_dict(save_times, profdir, name='save_times')
 
 
@@ -455,13 +455,12 @@ def run(
 
 def run_dynamics(
         dynamics: GaugeDynamics,
-        flags: AttrDict,
+        flags: dict,
         x: tf.Tensor = None,
         beta: float = None,
         save_x: bool = False,
         md_steps: int = 0,
-        console: Console = None,
-        should_track: bool = False,
+        #  should_track: bool = False,
 ) -> (InferenceResults):
     """Run inference on trained dynamics."""
     if not IS_CHIEF:
@@ -471,6 +470,7 @@ def run_dynamics(
     print_steps = flags.get('print_steps', 5)
     if beta is None:
         beta = flags.get('beta', flags.get('beta_final', None))
+        assert beta is not None
 
     test_step = dynamics.test_step
     if flags.get('compile', True):
@@ -482,7 +482,8 @@ def run_dynamics(
                               minval=-PI, maxval=PI,
                               dtype=TF_FLOAT)
 
-    run_data = DataContainer(flags.run_steps)
+    run_steps = flags.get('run_steps', 20000)
+    run_data = DataContainer(run_steps)
 
     template = '\n'.join([f'beta: {beta}',
                           f'net_weights: {dynamics.net_weights}'])
@@ -497,8 +498,9 @@ def run_dynamics(
 
     try:
         x, metrics = test_step((x, tf.constant(beta)))
-    except Exception as exception:  # pylint:disable=broad-except
-        io.log(f'Exception: {exception}')
+    except Exception as err:  # pylint:disable=broad-except
+        logger.log(err)
+        #  io.log(f'Exception: {exception}')
         test_step = dynamics.test_step
         x, metrics = test_step((x, tf.constant(beta)))
 
@@ -517,23 +519,14 @@ def run_dynamics(
 
         return x, metrics
 
-    if flags.run_steps < 1000:
-        summary_steps = 5
-    else:
-        summary_steps = flags.run_steps // 100
+    summary_steps = max(run_steps // 100, 50)
 
-    if console is None:
-        console = io.console
+    steps = tf.range(run_steps, dtype=tf.int64)
+    keep_ = ['step', 'dt', 'loss', 'accept_prob', 'beta',
+             'dq_int', 'dq_sin', 'dQint', 'dQsin', 'plaqs', 'p4x4']
 
-    steps = tf.range(flags.run_steps, dtype=tf.int64)
-    if SHOULD_TRACK and should_track:
-        tracked_iter = track(enumerate(steps), total=len(steps),
-                             description='Inference', transient=True,
-                             console=console)
-    else:
-        tracked_iter = enumerate(steps)
-
-    for idx, step in tracked_iter:
+    beta = tf.constant(beta, dtype=TF_FLOAT)
+    for idx, step in enumerate(steps):
         x, metrics = timed_step(x, beta)
         run_data.update(step, metrics)  # update data after every accept/reject
 
@@ -541,9 +534,7 @@ def run_dynamics(
             summarize_dict(metrics, step, prefix='testing')
 
         if step % print_steps == 0:
-            data_str = run_data.get_fstr(step, metrics, skip=SKEYS)
-            io.log(data_str)
+            pre = [f'step={step}/{steps[-1]}']
+            _ = logger.print_metrics(metrics, window=50, pre=pre, keep=keep_)
 
-    return InferenceResults(dynamics=dynamics,
-                            run_data=run_data,
-                            x=x, x_arr=x_arr)
+    return InferenceResults(dynamics, run_data, x, x_arr)
