@@ -20,7 +20,7 @@ Date: 6/30/2020
 from __future__ import absolute_import, annotations, division, print_function
 
 import os
-from typing import Callable, List, Optional, Tuple, Union
+from typing import Any, Callable, List, Optional, Tuple, Union
 
 import numpy as np
 import tensorflow as tf
@@ -65,7 +65,7 @@ class BaseDynamics(tf.keras.Model):
 
     def __init__(
             self,
-            params: AttrDict,
+            params: dict,
             config: DynamicsConfig,
             network_config: NetworkConfig,
             potential_fn: Callable[[tf.Tensor], tf.Tensor],
@@ -439,7 +439,7 @@ class BaseDynamics(tf.keras.Model):
             self,
             inputs: tuple[tf.Tensor, tf.Tensor],
             training: bool = None
-    ) -> (MonteCarloStates, MonteCarloStates):
+    ) -> Tuple[MonteCarloStates[State], MonteCarloStates[float]]:
         """Perform the molecular dynamics (MD) update w/o accept/reject.
 
         NOTE: We simulate the dynamics both forward and backward, and use
@@ -1453,7 +1453,11 @@ class BaseDynamics(tf.keras.Model):
 
         return net_weights
 
-    def _parse_params(self, params: AttrDict, net_weights: NetWeights = None):
+    def _parse_params(
+            self,
+            params: dict[str, Any],
+            net_weights: NetWeights = None
+    ):
         """Set instance attributes from `params`."""
         self.xdim = params.get('xdim', None)
         self.batch_size = params.get('batch_size', None)
@@ -1481,11 +1485,9 @@ class BaseDynamics(tf.keras.Model):
         self._vtw = self.net_weights.v_translation
         self._vqw = self.net_weights.v_transformation
 
-        params = AttrDict({
+        return {
             'xdim': self.xdim,
             'batch_size': self.batch_size,
             'x_shape': self.x_shape,
             'clip_val': self.clip_val,
-        })
-
-        return params
+        }

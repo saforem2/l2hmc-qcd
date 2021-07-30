@@ -1,12 +1,12 @@
 import os
 import sys
 
-from collections import namedtuple
 
-import tensorflow as tf
+HERE = os.path.abspath(os.path.dirname(__file__))
+MODULEPATH = os.path.dirname(HERE)
+if MODULEPATH not in sys.path:
+    sys.path.append(MODULEPATH)
 
-from utils.attr_dict import AttrDict
-
-modulepath = os.path.join(os.path.dirname(__file__), '..')
-sys.path.append(modulepath)
+#  modulepath = os.path.join(os.path.dirname(__file__), '..')
+#  sys.path.append(modulepath)
 

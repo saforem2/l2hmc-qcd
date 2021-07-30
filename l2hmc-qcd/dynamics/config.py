@@ -3,25 +3,23 @@ config.py
 
 Contains configuration objects for various `Dynamics`.
 """
-from __future__ import absolute_import, division, print_function, annotations
-import os
+from __future__ import absolute_import, annotations, division, print_function
 
 from collections import namedtuple
+from dataclasses import dataclass, field
+#  from config import BIN_DIR, TIMING_FILE
+from typing import NamedTuple, Optional
 
 import tensorflow as tf
 
-from config import BIN_DIR, TIMING_FILE
-from typing import NamedTuple, Optional
 from utils.attr_dict import AttrDict
-from dataclasses import dataclass, field
-
 
 TF_FLOAT = tf.keras.backend.floatx()
 
 ACTIVATIONS = {
     'relu': tf.nn.relu,
     'tanh': tf.nn.tanh,
-    'leaky_relu': tf.nn.leaky_relu
+    'leaky_relu': tf.nn.leaky_relu,
 }
 
 
