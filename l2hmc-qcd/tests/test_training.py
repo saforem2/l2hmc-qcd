@@ -147,8 +147,6 @@ def catch_exception(fn):
             print(type(e))
             print(e)
 
-            import pudb
-
     return wrapper
 
 
@@ -232,7 +230,7 @@ def test_separate_networks(flags: AttrDict):
     flags = AttrDict(**dict(copy.deepcopy(flags)))
     flags.hmc_steps = 0
     #  flags.log_dir = None
-    flags.log_dir = io.make_log_dir(flags, 'GaugeModel', LOG_FILE)
+    #  flags.log_dir = io.make_log_dir(flags, 'GaugeModel', LOG_FILE)
 
     flags.dynamics_config['separate_networks'] = True
     flags.compile = False
@@ -256,14 +254,25 @@ def test_separate_networks(flags: AttrDict):
 @timeit
 def test_resume_training(logdir: str):
     """Test restoring a training session from a checkpoint."""
-    flags = dict(io.loadz(os.path.join(logdir, 'training', 'FLAGS.z')))
-    flags = AttrDict(flags)
-    flags['train_steps'] = flags.get('train_steps', 10)
+    fpath = os.path.join(logdir, 'train_configs.json')
+    try:
+        with open(fpath, 'r') as f:
+            train_configs = json.load(f)
+    except FileNotFoundError:
+        try:
+            train_configs = io.loadz(os.path.join(logdir, 'FLAGS.z'))
+        except FileNotFoundError as err:
+            raise(err)
 
-    out = train(flags, make_plots=False)
-    run_out = run(out.dynamics, flags, out.x)
+    if not os.path.isfile(fpath):
+        fpath = os.path.join(logdir, 'FLAGS.z')
+
+    if not os.path.isfile(fpath):
+        raise FileNotFoundError('Unable to find train_configs to load.')
+
+    out = train(train_configs, make_plots=False)
+    run_out = run(out.dynamics, train_configs, out.x)
     #  flags = AttrDict(**dict(copy.deepcopy(flags)))
-
 
     return AttrDict({
         'x': out.x,
@@ -278,9 +287,9 @@ def test_resume_training(logdir: str):
 def test():
     """Run tests."""
     flags = parse_test_configs()
-    if flags.get('log_dir', None) is None:
-        flags.log_dir = io.make_log_dir(flags, 'GaugeModel')
-        flags.restore = False
+    #  if flags.get('log_dir', None) is None:
+    #      flags.log_dir = io.make_log_dir(flags, 'GaugeModel')
+    #      flags.restore = False
 
     _ = test_separate_networks(flags)
 
