@@ -11,22 +11,20 @@ from dataclasses import dataclass
 
 import os
 import time
-from typing import Any, Optional, Union
+import json
+from typing import Any, Optional
 
 import numpy as np
 import tensorflow as tf
 
 import utils.file_io as io
-from config import PI, TF_FLOAT
-from dynamics.base_dynamics import BaseDynamics
+from config import PI
 from dynamics.config import NET_WEIGHTS_HMC
 from dynamics.gauge_dynamics import GaugeDynamics, build_dynamics
 from network.config import LearningRateConfig
-from utils import SKEYS
 from utils.annealing_schedules import get_betas
 from utils.attr_dict import AttrDict
 from utils.data_containers import DataContainer
-from utils.inference_utils import run as run_inference
 from utils.learning_rate import ReduceLROnPlateau
 import utils.live_plots as plotter
 #  import utils.live_plots as plotter
@@ -186,30 +184,33 @@ def train_hmc(
     return x, dynamics, train_data, hconfigs
 
 
-def try_loading_configs(logdir: str, configs: dict[str, Any]) -> tf.Tensor:
-    """Setup directories for training."""
+def random_init_from_configs(configs: dict[str, Any]) -> tf.Tensor:
+    xshape = configs.get('dynamics_config', {}).get('x_shape', None)
+    assert xshape is not None
+    return tf.random.uniform(xshape, -PI, PI)
+
+
+def load_last_training_point(logdir) -> tf.Tensor:
+    """Load previous states from `logdir`."""
     xfpath = os.path.join(logdir, 'training', 'train_data',
                           f'x_rank{RANK}-{LOCAL_RANK}.z')
-    try:
-        x = io.loadz(xfpath)
-    except Exception as e:  # pylint:disable=broad-except
-        logger.warning(f'exception: {e}')
-        logger.warning(f'Unable to restore x from {xfpath}.')
-        logger.warning('Using random initialization!!')
+    return io.loadz(xfpath)
 
-        xshape = configs.get('dynamics_config', {}).get('x_shape', None)
-        assert xshape is not None
-        x = tf.random.uniform(xshape, -PI, PI)
 
-    return x
+def get_starting_point(configs: dict[str, Any]) -> tf.Tensor:
+    logdir = configs.get('log_dir', configs.get('logdir', None))
+    if logdir is None:
+        return random_init_from_configs(configs)
+    else:
+        return load_last_training_point(logdir)
 
 
 def plot_models(dynamics, logdir: str):
     if dynamics.config.separate_networks:
         networks = {
             'dynamics_vnet': dynamics.vnet[0],
-            'dynamics_xnet0': dynamics.xnet[0],
-            'dynamics_xnet1': dynamics.xnet[1],
+            'dynamics_xnet0': dynamics.xnet[0][0],
+            'dynamics_xnet1': dynamics.xnet[0][1],
         }
     else:
         networks = {
@@ -222,27 +223,41 @@ def plot_models(dynamics, logdir: str):
             fpath = os.path.join(logdir, f'{key}.png')
             tf.keras.utils.plot_model(val, show_shapes=True, to_file=fpath)
         except Exception as exception:
-            logger.warning(exception)
+            raise exception
 
 
 # TODO: Add type annotations
 # pylint:disable=too-many-statements, too-many-branches
 def setup(configs, dirs=None, x=None, betas=None):
     """Setup training."""
-    ldir = configs.get('logdir', configs.get('log_dir', None))
-    x = try_loading_configs(ldir, configs)
-
-    dirs = io.setup_directories(configs)
-    #  dirs = setup_directories(configs)
-    configs['dirs'] = dirs
-    configs['log_dir'] = dirs['log_dir']
-    train_steps = configs.get('train_steps')
-    print_steps = configs.get('print_steps')
-
+    x = get_starting_point(configs)
     # Reshape x from (batch_size, Nt, Nx, 2) --> (batch_size, Nt * Nx * 2)
     x = tf.reshape(x, (x.shape[0], -1))
 
+    logdir = configs.get('logdir', configs.get('log_dir', None))
+    existing = False
+    if logdir is not None:
+        if os.path.isdir(logdir):
+            existing = True
+
+    dirs = io.setup_directories(configs)
     dynamics = build_dynamics(configs)
+
+    logdir = dirs['log_dir']
+    if existing:
+        logger.info(f'Loading networks from: {logdir}')
+        networks = dynamics._load_networks(str(logdir))
+        dynamics.xnet = networks['xnet']
+        dynamics.vnet = networks['vnet']
+
+
+    #  dirs = setup_directories(configs)
+    #  configs['dirs'] = dirs
+    #  configs['log_dir'] = dirs['log_dir']
+    train_steps = configs.get('train_steps')
+    print_steps = configs.get('print_steps')
+
+
     logger.info(f'dynamics.net_weights: {dynamics.net_weights}')
     network_dir = dynamics.config.log_dir
     if network_dir is not None:
@@ -328,6 +343,13 @@ def setup(configs, dirs=None, x=None, betas=None):
 
     if IS_CHIEF:
         plot_models(dynamics, dirs['log_dir'])
+        io.savez(configs, os.path.join(dirs['log_dir'], 'train_configs.z'))
+        #  cfgs_fpath = os.path.join(dirs['log_dir'], 'train_configs.json')
+        #  cfgs = {str(k): v for k, v in configs.items()}
+        #  logger.info(cfgs)
+        #  with open(cfgs_fpath, 'w') as f:
+        #      json.dump(cfgs, f)
+
 
     #  prof_range = (0, 0)
     # If profiling, run for 10 steps in the middle of training
@@ -353,13 +375,14 @@ def setup(configs, dirs=None, x=None, betas=None):
 @dataclass
 class TrainOutputs:
     x: tf.Tensor
-    configs: AttrDict
+    logdir: str
+    configs: dict
     data: DataContainer
     dynamics: GaugeDynamics
 
 
 def train(
-        configs: AttrDict,
+        configs: dict[str, Any],
         x: tf.Tensor = None,
         num_chains: int = 32,
         restore_x: bool = False,
@@ -427,7 +450,7 @@ def train(
     io.save_dict(dict(configs), dirs['log_dir'], 'configs')
 
     #  return x, dynamics, train_data, configs
-    return TrainOutputs(x, configs, train_data, dynamics)
+    return TrainOutputs(x, dirs['log_dir'], configs, train_data, dynamics)
 
 
 def run_md(
@@ -570,6 +593,7 @@ def train_dynamics(
     # -- Run MD update to not get stuck -----------------
     md_steps = configs.get('md_steps', 0)
     if md_steps > 0:
+        b0 = tf.constant(b0, )
         x = run_md(dynamics, (x, b0), md_steps)
 
 

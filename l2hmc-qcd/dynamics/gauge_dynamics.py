@@ -131,20 +131,6 @@ def build_dynamics(configs: dict[str, Any], log_dir: Union[str, Path] = None):
         conv_config=conv_config,
     )
 
-    if log_dir is None:
-        log_dir = configs['dynamics_config'].get('log_dir', None)
-
-    if log_dir is not None and log_dir != '':
-        io.log(
-            '\n'.join([120*'#', f'LOADING NETWORKS FROM: {log_dir}', 120*'#'])
-        )
-        io.rule(f'[red]Loading networks from: {log_dir} ![\red]')
-        #  io.log(f'LOADING NETWORKS FROM: {log_dir}  !!!', style='red')
-        #  io.log(120 * '#')
-        xnet, vnet = dynamics._load_networks(log_dir)
-        dynamics.xnet = xnet
-        dynamics.vnet = vnet
-
     return dynamics
 
 
@@ -266,37 +252,28 @@ class GaugeDynamics(BaseDynamics):
 
         return xeps, veps
 
-    def _load_networks(
-            self,
-            log_dir: str = None
-    ) -> Tuple[tf.keras.Model, tf.keras.Model]:
+    def _load_networks(self, log_dir: str) -> dict:
         """Load networks from `log_dir`.
 
         Builds new networks if unable to load or
         self.config.num_steps > # networks available to load.
         """
-        xnet, vnet = None, None
         models_dir = os.path.join(log_dir, 'training', 'models')
-        if not os.path.isdir(models_dir):
-            raise ValueError('Unable to locate `models_dir: {models_dir}`')
+        if not self.config.separate_networks:
+            xnet, vnet = None, None
+            vp = os.path.join(models_dir, 'dynamics_vnet')
+            if os.path.isdir(vp):
+                vnet = tf.keras.models.load_model(vp)
 
-        try:
-            _lcfgs = dict(io.loadz(os.path.join(log_dir, 'configs.z')))
-            _lnum_steps = _lcfgs['dynamics_config']['num_steps']
-        except (FileNotFoundError, KeyError):
-            _lnum_steps = self.config.num_steps
-
-        if self.config.num_steps != _lnum_steps:
-            io.log('Mismatch between '
-                   f'self.config.num_steps = {self.config.num_steps} and '
-                   f'loaded_config.num_steps = {_lnum_steps}', level='WARNING')
-
-        if self.config.separate_networks:
+            xp = os.path.join(models_dir, 'dynamics_xnet')
+            if os.path.isdir(xp):
+                xnet = tf.keras.models.load_model(xp)
+        else:
+            xnet = []
+            vnet = []
             vnets = []
             xnets_first = []
             xnets_second = []
-            xnet = []
-            vnet = []
             for i in range(self.config.num_steps):
                 vp = os.path.join(models_dir, f'dynamics_vnet{i}')
                 if os.path.isdir(vp):  # Load vnet from vp...
@@ -326,7 +303,7 @@ class GaugeDynamics(BaseDynamics):
                         xnet_, _ = self._build_network(step=i)
                         xnet.append(xnet_)
 
-        return xnet, vnet
+        return {'xnet': xnet, 'vnet': vnet}
 
     def save_networks(self, log_dir):
         """Save networks to disk."""

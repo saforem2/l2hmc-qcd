@@ -102,12 +102,12 @@ def load_configs_from_logdir(logdir: Union[str, Path]):
     return configs
 
 
-def setup(configs: Union[AttrDict, dict[str, Any]]):
+def setup(configs: dict[str, Any]):
     """Setup for training."""
     # Create copy of configs.
     # Try loading configs from `configs.logdir/train_configs.json` and restore
     if hasattr(configs, '__dict__'):
-        configs = configs.__dict__
+        configs = getattr(configs, '__dict__')
 
     output = deepcopy(configs)
     logdir = configs.get('logdir', configs.get('log_dir', None))
@@ -118,6 +118,7 @@ def setup(configs: Union[AttrDict, dict[str, Any]]):
 
         output = load_configs_from_logdir(logdir)
         output['restored'] = True
+        output['log_dir'] = logdir
         output['logdir'] = logdir
         output['restored_from'] = logdir
         to_overwrite = ['train_steps', 'run_steps', 'beta_final']
@@ -135,6 +136,7 @@ def setup(configs: Union[AttrDict, dict[str, Any]]):
         logfile = os.path.join(os.getcwd(), 'log_dirs.txt')
         logdir = io.make_log_dir(configs, 'GaugeModel', logfile)
         output['log_dir'] = logdir
+        output['logdir'] = logdir
         output['restore'] = False
         io.write(f'{logdir}', logfile, 'a')
 
@@ -146,11 +148,7 @@ def setup(configs: Union[AttrDict, dict[str, Any]]):
     return output
 
 
-def main(
-        configs: Union[dict, AttrDict],
-        #  num_chains: int = None,
-        #  run_steps: int = None
-):
+def main(configs: dict[str, Any]):
     """Main method for training."""
     # TODO: Move setup code to separate function and refactor
     configs = setup(configs)
@@ -235,6 +233,7 @@ def main(
     #  x, dynamics, train_data, configs = train(configs=configs,
     train_out = train(configs=configs, x=x, make_plots=True) # , num_chains=nchains)
     x = train_out.x
+    logdir = train_out.logdir
     #  train_data = train_out.data
     dynamics = train_out.dynamics
     configs = train_out.configs
