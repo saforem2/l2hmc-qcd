@@ -3,24 +3,34 @@ logger.py
 
 Contains implementation of `Logger` object for printing metrics.
 """
-from __future__ import absolute_import, division, print_function, annotations
-from dataclasses import asdict, is_dataclass
-import shutil
+from __future__ import absolute_import, annotations, division, print_function
+
 import datetime
+import os
+from pathlib import Path
+import shutil
+from dataclasses import asdict, is_dataclass
+from typing import Any, Union
+
+import joblib
 import numpy as np
 import tensorflow as tf
 
-try:
-    import horovod
-    import horovod.tensorflow as hvd
-    try:
-        RANK = hvd.rank()
-    except AttributeError:
-        hvd.init()
+from utils.logger_config import logger as log
+from utils.logger_config import in_notebook
+from utils.hvd_init import RANK, SIZE
 
-    RANK = hvd.rank()
-except (ImportError, ModuleNotFoundError):
-    RANK = 0
+#  try:
+#      import horovod
+#      import horovod.tensorflow as hvd
+#      try:
+#          RANK = hvd.rank()
+#      except AttributeError:
+#          hvd.init()
+#
+#      RANK = hvd.rank()
+#  except (ImportError, ModuleNotFoundError):
+#      RANK = 0
 
 
 WIDTH, _ = shutil.get_terminal_size(fallback=(156, 50))
@@ -31,21 +41,6 @@ def get_timestamp(fstr=None):
     if fstr is None:
         return now.strftime('%Y-%m-%d-%H%M%S')
     return now.strftime(fstr)
-
-
-def in_notebook():
-    """Check if we're currently in a jupyter notebook."""
-    try:
-        # pylint:disable=import-outside-toplevel
-        from IPython import get_ipython
-        try:
-            if 'IPKernelApp' not in get_ipython().config:
-                return False
-        except AttributeError:
-            return False
-    except ImportError:
-        return False
-    return True
 
 
 def strformat(k, v, window: int = 0):
@@ -83,111 +78,167 @@ def strformat(k, v, window: int = 0):
     return outstr
 
 
-
-
-# noqa:E999
+# noqa: E999
+# pylint:disable=too-few-public-methods,redefined-outer-name
+# pylint:disable=missing-function-docstring,missing-class-docstring
 class Console:
-    """Fallback console object used in case `rich` isn't installed."""
+    """Fallback console object used as in case `rich` isn't installed."""
+    def rule(self, s, *args, **kwargs):
+        line = len(s) * '-'
+        log.info('\n'.join([line, s, line]), *args, **kwargs)
+        #  self.log('\n'.join([line, s, line]), *args, **kwargs)
+
     @staticmethod
     def log(s, *args, **kwargs):
-        if RANK == 0:
-            now = get_timestamp('%X')
-            print(f'[{now}] {s}', *args, **kwargs)
+        now = get_timestamp('%X')
+        log.info(f'[{now}]  {s}', *args, **kwargs)
+
 
 
 class Logger:
     """Logger class for pretty printing metrics during training/testing."""
-    def __init__(self, width=None):
-        self.rank = RANK
-        if width is None:
-            width = 120
-
+    def __init__(self, theme: dict = None):
         try:
             # pylint:disable=import-outside-toplevel
             from rich.console import Console as RichConsole
             from rich.theme import Theme
-            theme = None
-            if in_notebook():
-                theme = Theme({
-                    'repr.number': 'bold bright_green',
-                    'repr.attrib_name': 'bold bright_magenta',
-                    'repr.str': '#FFFF00',
-                })
+            if theme is None:
+                if in_notebook():
+                    theme = {
+                        'repr.number': 'bold #87ff00',
+                        'repr.attrib_name': 'bold #ff5fff',
+                        'repr.str': 'italic #FFFF00',
+                    }
+
+
+            with_jupyter = in_notebook()
             console = RichConsole(record=False, log_path=False,
-                                  force_jupyter=in_notebook(),
-                                  width=width, theme=theme,
-                                  log_time_format='[%X] ')
+                                  force_jupyter=with_jupyter,
+                                  force_terminal=(not with_jupyter),
+                                  log_time_format='[%x %X] ',
+                                  theme=Theme(theme))#, width=width)
+
         except (ImportError, ModuleNotFoundError):
             console = Console()
 
-        self.width = width
         self.console = console
+
+    def error(self, s: str, *args, **kwargs):
+        log.error(s, *args, **kwargs)
+
+    def debug(self, s: str, *args, **kwargs):
+        log.debug(s, *args, **kwargs)
+
+    def warning(self, s: str, *args, **kwargs):
+        log.warning(s, *args, **kwargs)
 
     def rule(self, s: str, *args, **kwargs):
         """Print horizontal line."""
-        #  w = self.width - (8 + len(s))
-        #  hw = w // 2
-        #  rule = ' '.join((hw * '-', f'{s}', hw * '-'))
-        #  self.console.log(f'{rule}\n', *args, **kwargs)
-        self.console.rule(f'{s}', *args, **kwargs)
+        self.console.rule(s, *args, **kwargs)
 
-    def log(self, s: str, *args, **kwargs):
-        self.console.log(s, *args, **kwargs)
+    def info(self, s: Any, *args, **kwargs):
+        self.log(s, *args, **kwargs)
+
+    def log(self, s: Any, *args, **kwargs):
+        """Print `s` using `self.console` object."""
+        pre = None
+        if SIZE > 1 and RANK == 0:
+            pre = f'{RANK}: '
+
+        if isinstance(s, dict):
+             _ = self.print_dict(s)
+             return
+
+        out = ' '.join([pre, s]) if pre is not None else s
+
+        log.info(out, *args, **kwargs)
+
+    def load_metrics(self, infile: str = None):
+        """Try loading metrics from infile."""
+        return joblib.load(infile)
 
     def print_metrics(
         self,
         metrics: dict,
         window: int = 0,
-        pre: list = None,
         outfile: str = None,
-        keep: list[str] = None,
         skip: list[str] = None,
+        keep: list[str] = None,
+        pre: Union[str, list, tuple] = None,
     ):
         """Print nicely formatted string of summary of items in `metrics`."""
-        if self.rank != 0:
-            return
-
+        if skip is None:
+            skip = []
         if keep is None:
             keep = list(metrics.keys())
 
-        if skip is None:
-            skip = []
-
-        outstr = ' '.join([
+        fstrs = [
             strformat(k, v, window) for k, v in metrics.items()
             if k not in skip
             and k in keep
-        ])
+        ]
         if pre is not None:
-            outstr = ' '.join([*pre, outstr])
+            fstrs = [pre, *fstrs] if isinstance(pre, str) else [*pre] + fstrs
 
-        self.log(outstr)
+        outstr = ' '.join(fstrs)
+        #  self.log(outstr)
+        log.info(outstr)
         if outfile is not None:
             with open(outfile, 'a') as f:
                 f.write(outstr)
 
         return outstr
 
+    def dict_to_str(self, d: dict, indent: int = 0, name: str = None):
+        kvstrs = []
+        pre = indent * ' '
+        if name is not None:
+            nstr = f'{str(name)}'
+            line = len(nstr) * '-'
+            kvstrs.extend([pre + nstr, pre + line])
+        for key, val in d.items():
+            if is_dataclass(val):
+                val = asdict(val)
+
+            if isinstance(val, dict):
+                strs = self.dict_to_str(val, indent=indent+2, name=key)
+            else:
+                strs = pre + '='.join([str(key), str(val)])
+
+            kvstrs.append(strs)
+
+        dstr = '\n'.join(kvstrs)
+
+        return dstr
+
+    def print_dict(self, d: dict, indent: int = 0, name: str = None):
+        dstr = self.dict_to_str(d, indent, name)
+        log.info(dstr)
+
     def save_metrics(
-        self,
-        metrics: dict,
-        outfile: str = None,
-        tstamp: str = None,
+            self,
+            metrics: dict,
+            outfile: str = None,
+            tstamp: str = None,
     ):
-        """Save `metrics` to compressed `.z.` file."""
-        #  if tstamp is None:
-        #      tstamp = get_timestamp('%Y-%m-%d-%H%M%S')
-        #
-        #  if outfile is None:
-        #      outdir = os.path.join(os.getcwd(), tstamp)
-        #      fname = 'metrics.z'
-        #  else:
-        #      outdir, fname = os.path.split(outfile)
-        #
-        #  check_else_make_dir(outdir)
-        #  outfile = os.path.join(os.getcwd(), tstamp
-        # TODO: rethink this
-        pass
+        """Save metrics to compressed `.z.` file."""
+        if tstamp is None:
+            tstamp = get_timestamp('%Y-%m-%d-%H%M%S')
+        if outfile is None:
+            outdir = os.path.join(os.getcwd(), tstamp)
+            fname = 'metrics.z'
+        else:
+            outdir, fname = os.path.split(outfile)
+        check_else_make_dir(outdir)
+        outfile = os.path.join(os.getcwd(), tstamp, 'metrics.z')
+        #  self.log(f'Saving metrics to: {os.path.relpath(outdir)}')
+        (f'Saving metrics to: {os.path.relpath(outdir)}')
+        savez(metrics, outfile, name=fname.split('.')[0])
+
+        return
+
+
+logger = Logger()
 
 
 def print_dict(d: dict, indent=0, name: str = None):
@@ -210,3 +261,34 @@ def print_dict(d: dict, indent=0, name: str = None):
         kv_strs.append(strs)
 
     return '\n'.join(kv_strs)
+
+
+def check_else_make_dir(outdir: Union[str, Path, list, tuple]):
+    if isinstance(outdir, (str, Path)) and not os.path.isdir(str(outdir)):
+        logger.log(f'Creating directory: {os.path.relpath(outdir)}')
+        os.makedirs(str(outdir))
+
+    elif isinstance(outdir, (tuple, list)):
+        _ = [check_else_make_dir(str(d)) for d in outdir]
+
+
+def loadz(infile: str):
+    return joblib.load(infile)
+
+
+def savez(obj: Any, fpath: str, name: str = None):
+    """Save `obj` to compressed `.z` file at `fpath`."""
+    head, _ = os.path.split(fpath)
+
+    check_else_make_dir(head)
+
+    if not fpath.endswith('.z'):
+        fpath += '.z'
+
+    if name is not None:
+        logger.log(f'Saving {name} to {os.path.relpath(fpath)}.')
+    else:
+        logger.log(f'Saving {obj.__class__} to {os.path.relpath(fpath)}.')
+
+    joblib.dump(obj, fpath)
+

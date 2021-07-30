@@ -103,46 +103,30 @@ class Horovod:
 
     @staticmethod
     def broadcast_variables(*args, **kwargs):
+        _, _ = args, kwargs
         pass
 
     @staticmethod
     def init(*args, **kwargs):
-        return 0
+        _, _ = args, kwargs
+        pass
 
     @staticmethod
     def rank(*args, **kwargs):
+        _, _ = args, kwargs
         return 0
 
     @staticmethod
     def local_rank(*args, **kwargs):
+        _, _ = args, kwargs
         return 0
 
     @staticmethod
     def size(*args, **kwargs):
+        _, _ = args, kwargs
         return 1
 
     @staticmethod
     def local_size(*args, **kwargs):
+        _, _ = args, kwargs
         return 1
-
-
-class DummyTqdmFile:
-    """Dummy file-like that will write to tqdm.
-
-    NOTE: This approach is taken from
-        https://github.com/tqdm/tqdm/issues/313
-    """
-    file = None
-
-    def __init__(self, file):
-        self.file = file
-
-    def write(self, x):
-        """Write out using `tqdm.write` wrapper."""
-        # Avoid print() second call (useless \n)
-        if len(x.rstrip()) > 0:
-            tqdm.write(x, file=self.file)  # , end='')
-
-    def flush(self):
-        """Flush to file."""
-        return getattr(self.file, "flush", lambda: None)()

@@ -9,7 +9,6 @@ from __future__ import absolute_import, annotations, division, print_function
 
 import datetime
 import json
-import logging
 import os
 import shutil
 import sys
@@ -27,6 +26,8 @@ import tensorflow as tf
 from config import BLUE, GREEN, PROJECT_DIR, RED, NetWeights
 from utils.attr_dict import AttrDict
 from utils.logger import Logger, strformat
+from utils.hvd_init import HAS_HOROVOD, RANK, IS_CHIEF
+#  from utils.logger_config import log
 
 #  from tqdm.auto import tqdm
 
@@ -44,56 +45,51 @@ from utils.logger import Logger, strformat
 #                                 'repr.number': GREEN}))
 
 # pylint:disable=wrong-import-position
-try:
-    import horovod
-    import horovod.tensorflow as hvd
+#  try:
+#      import horovod
+#      import horovod.tensorflow as hvd
+#
+#      HAS_HOROVOD = True
+#      RANK = hvd.rank()
+#      LOCAL_RANK = hvd.local_rank()
+#      NUM_WORKERS = hvd.size()
+#      IS_CHIEF = (RANK == 0)
+#      print(80 * '=')
+#
+#  except (ImportError, ModuleNotFoundError):
+#      HAS_HOROVOD = False
+#      RANK = LOCAL_RANK = 0
+#      NUM_WORKERS = 1
+#      IS_CHIEF = True
 
-    HAS_HOROVOD = True
-    RANK = hvd.rank()
-    LOCAL_RANK = hvd.local_rank()
-    NUM_WORKERS = hvd.size()
-    IS_CHIEF = (RANK == 0)
-    print(80 * '=')
-    print(f'{RANK} :: Using tensorflow version: {tf.__version__}')
-    print(f'{RANK} :: Using tensorflow from: {tf.__file__}')
-    print(f'{RANK} :: Using horovod version: {horovod.__version__}')
-    print(f'{RANK} :: Using horovod from: {horovod.__file__}')
-    print(80 * '=')
+#  LOG_LEVELS_AS_INTS = {
+#      'CRITICAL': 50,
+#      'ERROR': 40,
+#      'WARNING': 30,
+#      'INFO': 20,
+#      'DEBUG': 10,
+#  }
+#
+#  LOG_LEVELS = {
+#      'CRITICAL': logging.CRITICAL,
+#      'ERROR': logging.ERROR,
+#      'WARNING': logging.WARNING,
+#      'INFO': logging.INFO,
+#      'DEBUG': logging.DEBUG,
+#  }
+#
+#
+#  logging.getLogger('tensorflow').setLevel(logging.ERROR)
+#  logging.getLogger('matplotlib').setLevel(logging.ERROR)
+#  logging.getLogger('arviz').setLevel(logging.ERROR)
 
-except (ImportError, ModuleNotFoundError):
-    HAS_HOROVOD = False
-    RANK = LOCAL_RANK = 0
-    NUM_WORKERS = 1
-    IS_CHIEF = True
-
-LOG_LEVELS_AS_INTS = {
-    'CRITICAL': 50,
-    'ERROR': 40,
-    'WARNING': 30,
-    'INFO': 20,
-    'DEBUG': 10,
-}
-
-LOG_LEVELS = {
-    'CRITICAL': logging.CRITICAL,
-    'ERROR': logging.ERROR,
-    'WARNING': logging.WARNING,
-    'INFO': logging.INFO,
-    'DEBUG': logging.DEBUG,
-}
-
-
-logging.getLogger('tensorflow').setLevel(logging.ERROR)
-logging.getLogger('arviz').setLevel(logging.ERROR)
-
-if HAS_HOROVOD:
-    print(' '.join([f'rank: {hvd.rank()}',
-                    f'local_rank: {hvd.local_rank()}',
-                    f'size: {hvd.size()}',
-                    f'local_size: {hvd.local_size()}']))
+#  if HAS_HOROVOD:
+#      print(' '.join([f'rank: {hvd.rank()}',
+#                      f'local_rank: {hvd.local_rank()}',
+#                      f'size: {hvd.size()}',
+#                      f'local_size: {hvd.local_size()}']))
 
 logger = Logger()
-console = logger.console
 
 VERBOSE = os.environ.get('VERBOSE', False)
 
@@ -146,14 +142,14 @@ def find_matching_files(d, search_str):
 def print_header(header):
     strs = header.split('\n')
     for s in strs:
-        console.print(s, style='bold red')
+        logger.log(s, style='bold red')
 
 
 def rule(s: str = ' ', with_time: bool= True, **kwargs: dict):
     day = get_timestamp('%Y-%m-%d')
     t = get_timestamp('%H:%M')
     s = f'[{day} {t}] {s}'
-    console.rule(s, **kwargs)
+    logger.rule(s, **kwargs)
 
 
 def log(s: str, *args, **kwargs):
@@ -174,9 +170,9 @@ def write(s: str, f: str, mode: str = 'a', nl: bool = True):
         f_.write(s + '\n' if nl else ' ')
 
 
-def print_dict(d: Dict, indent: int = 0, name: str = None, **kwargs):
+def print_dict(d: dict, *args, **kwargs):
     """Print nicely-formatted dictionary."""
-    console.print(d)
+    logger.log(d, *args, **kwargs)
 
 
 def print_flags(flags: AttrDict):
@@ -192,15 +188,19 @@ def setup_directories(
         ensure_new: bool = False,
 ):
     """Setup relevant directories for training."""
-    if configs.get('log_dir', None) is None:
-        logger.rule('Making new log_dir')
+    #  if configs.get('log_dir', configs.get('logdir', None)) is None:
+    logdir = configs.get('logdir', configs.get('log_dir', None))
+    if logdir is None:
+        logger.warning('Making new log_dir')
         configs['log_dir'] = make_log_dir(configs=configs,
                                           model_type='GaugeModel',
                                           ensure_new=ensure_new)
+        logdir = configs['log_dir']
 
-    train_dir = os.path.join(configs['log_dir'], name)
+    configs['logdir'] = logdir
+    train_dir = os.path.join(logdir, name)
     train_paths = {
-        'log_dir': configs['log_dir'],
+        'log_dir': logdir,
         'train_dir': train_dir,
         'data_dir': os.path.join(train_dir, 'train_data'),
         'models_dir': os.path.join(train_dir, 'models'),
@@ -252,7 +252,7 @@ def log_and_write(
         nl: bool = True
 ):
     """Print string `s` to std out and also write to file `f`."""
-    log(s)
+    logger.log(s)
     write(s, f, mode=mode, nl=nl)
 
 
@@ -268,7 +268,7 @@ def check_else_make_dir(d: str):
             check_else_make_dir(i)
     else:
         if not os.path.isdir(d):
-            log(f"Creating directory: {d}")
+            logger.debug(f"Creating directory: {d}")
             os.makedirs(d, exist_ok=True)
 
 
@@ -302,6 +302,18 @@ def save_params(params: dict, out_dir: str, name: str = None):
     savez(params, zfile, name=name)
 
 
+def dict_as_json(d: dict[Any, Any]):
+    copy = {}
+    for key, val in d.items():
+        strkey = str(key)
+        if isinstance(val, dict):
+            copy[strkey] = dict_as_json(val)
+        else:
+            copy[strkey] = val
+
+    return copy
+
+
 def save_dict(d: dict, out_dir: str, name: str = None):
     """Save dictionary `d` to `out_dir` as both `.z` and `.txt` files."""
     if RANK != 0:
@@ -314,9 +326,11 @@ def save_dict(d: dict, out_dir: str, name: str = None):
     savez(d, zfile, name=name)
 
     json_file = os.path.join(out_dir, f'{name}.json')
+    jd = dict_as_json(d)
     try:
         with open(json_file, 'w') as f:
-            json.dump(d, f, indent=4, ensure_ascii=False, cls=NumpyEncoder)
+            json.dump(jd, f, indent=4, ensure_ascii=False, cls=NumpyEncoder)
+            #  json.dump(jd, f, indent=4, ensure_ascii=False, cls=NumpyEncoder)
     except TypeError:
         log('Unable to save to `.json` file. Continuing...')
 
@@ -355,7 +369,7 @@ def savez(obj: Any, fpath: str, name: str = None):
     if VERBOSE:
         if name is not None:
             name = obj.get('__class__', type(name))
-        console.log(f'Saving {name} to {os.path.abspath(fpath)}.')
+        logger.debug(f'Saving {name} to {os.path.abspath(fpath)}.')
 
     joblib.dump(obj, fpath)
 
@@ -597,14 +611,13 @@ def make_log_dir(
     model_type = 'GaugeModel' if model_type is None else model_type
     cfg_str = parse_configs(configs)
 
-    if timestamps is None:
-        timestamps = AttrDict({
-            'month': get_timestamp('%Y_%m'),
-            'time': get_timestamp('%Y-%M-%d-%H%M%S'),
-            'hour': get_timestamp('%Y-%m-%d-%H'),
-            'minute': get_timestamp('%Y-%m-%d-%H%M'),
-            'second': get_timestamp('%Y-%m-%d-%H%M%S'),
-        })
+    timestamps = {
+        'month': get_timestamp('%Y_%m'),
+        'time': get_timestamp('%Y-%M-%d-%H%M%S'),
+        'hour': get_timestamp('%Y-%m-%d-%H'),
+        'minute': get_timestamp('%Y-%m-%d-%H%M'),
+        'second': get_timestamp('%Y-%m-%d-%H%M%S'),
+    }
 
     if root_dir is None:
         root_dir = PROJECT_DIR
@@ -619,28 +632,20 @@ def make_log_dir(
     if cfg_str.startswith('DEBUG'):
         dirs.append('test')
 
-    log_dir = os.path.join(*dirs, timestamps.month, cfg_str)
+    log_dir = os.path.join(*dirs, timestamps['month'], cfg_str)
     if os.path.isdir(log_dir):
         if ensure_new or configs.get('ensure_new', False):
-
             logger.rule('Forcing new directory!')
-
-            log_dir = os.path.join(*dirs, timestamps.month,
-                                   f'{cfg_str}-{timestamps.hour}')
+            log_dir = os.path.join(*dirs, timestamps['month'],
+                                   f'{cfg_str}-{timestamps["hour"]}')
             if os.path.isdir(log_dir):
                 log_dir = os.path.join(*dirs, timestamps.month,
-                                       f'{cfg_str}-{timestamps.minute}')
+                                       f'{cfg_str}-{timestamps["minute"]}')
             if skip_existing:
                 raise FileExistsError(f'`log_dir`: {log_dir} already exists! ')
 
             log('\n'.join(['Existing directory found with the same name!',
                            'Modifying the date string to include seconds.']))
-        #      log_dir = os.path.join(*dirs, timestamps.month,
-        #                             f'{cfg_str}-{timestamps.second}')
-        #  #  if os.path.isdir(log_dir) and NUM_WORKERS == 1:
-        #  else:
-            #  if NUM_WORKERS > 1:
-            #      pass
 
     if RANK == 0:
         check_else_make_dir(log_dir)
@@ -790,9 +795,9 @@ def get_hmc_dirs(extra_paths=None):
     hmc_dirs = []
     for d in base_dirs:
         if os.path.isdir(d):
-            console.log(f'Looking in: {d}...')
+            logger.debug(f'Looking in: {d}...')
             hmc_dirs += [x for x in Path(d).rglob('*HMC_L16*') if x.is_dir()]
-            console.log(f'len(hmc_dirs): {len(hmc_dirs)}')
+            logger.debug(f'len(hmc_dirs): {len(hmc_dirs)}')
 
     return list(np.unique(hmc_dirs))
 
@@ -836,7 +841,7 @@ def get_l2hmc_dirs(base_dirs=None, extra_paths=None):
     #  ]
     l2hmc_dirs = []
     for d in base_dirs:
-        console.log(f'Looking in: {d}...')
+        logger.debug(f'Looking in: {d}...')
         conds = (
             lambda x: 'GaugeModel_logs' in (str(x)),
             lambda x: 'HMC_' not in str(x),
@@ -845,6 +850,6 @@ def get_l2hmc_dirs(base_dirs=None, extra_paths=None):
             lambda x: os.path.isfile(os.path.join(str(x), 'run_params.z')),
         )
         l2hmc_dirs += _look(d, 'L16_b', conds)
-        console.log(f'len(l2hmc_dirs): {len(l2hmc_dirs)}')
+        logger.debug(f'len(l2hmc_dirs): {len(l2hmc_dirs)}')
 
     return list(np.unique(l2hmc_dirs))
