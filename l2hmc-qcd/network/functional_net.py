@@ -162,6 +162,8 @@ def get_gauge_network(
         batch_size, T, X, d = x_shape
     elif len(x_shape) == 3:
         T, X, d = x_shape
+    else:
+        raise ValueError('Incorrect shape passed for `x_shape`.')
 
     xdim = T * X * d
     #  if len(x_shape) == 4:
