@@ -3,7 +3,7 @@ test.py
 
 Test training on 2D U(1) model.
 """
-from __future__ import absolute_import, division, print_function
+from __future__ import absolute_import, division, print_function, annotations
 
 import os
 import sys
@@ -12,6 +12,7 @@ import copy
 import argparse
 
 import tensorflow as tf
+from tensorflow.python.ops.gen_math_ops import Any
 
 if tf.__version__.startswith('1'):
     try:
@@ -68,6 +69,10 @@ from utils.file_io import timeit
 from utils.attr_dict import AttrDict
 from utils.training_utils import train
 from utils.inference_utils import load_and_run, run, run_hmc
+from utils.logger import Logger
+
+logger = Logger()
+
 
 # pylint:disable=import-outside-toplevel, invalid-name, broad-except
 TIMING_FILE = os.path.join(BIN_DIR, 'test_benchmarks.log')
@@ -186,117 +191,108 @@ def test_conv_net(flags: AttrDict):
     dirs = io.setup_directories(flags)
     flags['dirs'] = dirs
     flags['log_dir'] = dirs.get('log_dir', None)
-    outputs = train(flags, make_plots=False)
-    x = outputs.x
-    train_data = outputs.data
-    dynamics = outputs.dynamics
-    run_outputs = run(dynamics, flags, x=x, make_plots=False)
+    train_out = train(flags, make_plots=False)
+    run_outputs = run(train_out.dynamics, flags, make_plots=False)
     #  x, dynamics, train_data, flags = train(flags, make_plots=False)
+    return {'train_out': train_out, 'run_out': run_outputs}
 
-    return AttrDict({
-        'x': x,
-        'log_dir': flags.log_dir,
-        'dynamics': dynamics,
-        'run_data': run_outputs,
-        'train_data': train_data,
-    })
 
 
 @timeit
-def test_single_network(flags: AttrDict):
+def test_single_network(flags: dict[str, Any]):
     """Test training on single network."""
-    flags = AttrDict(**dict(copy.deepcopy(flags)))
+    flags = dict(copy.deepcopy(flags))
     flags['dynamics_config']['separate_networks'] = False
-    #  flags.dynamics_config.separate_networks = False
-    #  x, dynamics, train_data, flags = train(flags, make_plots=False)
-    outputs = train(flags, make_plots=False)
-    x = outputs.x
-    train_data = outputs.data
-    dynamics = outputs.dynamics
-    run_outputs = run(dynamics, flags, x=x, make_plots=False)
+    train_out = train(flags, make_plots=False)
+    logdir = train_out.logdir
+    runs_dir = os.path.join(logdir, 'inference')
+    run_out = run(train_out.dynamics, flags, x=train_out.x,
+                  runs_dir=runs_dir, make_plots=False)
 
-    return AttrDict({
-        'x': x,
-        'log_dir': flags.log_dir,
-        'dynamics': dynamics,
-        'run_data': run_outputs,
-        'train_data': train_data,
-    })
+    return {'train_out': train_out, 'run_out': run_out}
 
 
 @timeit
-def test_separate_networks(flags: AttrDict):
+def test_separate_networks(flags: dict[str, Any]):
     """Test training on separate networks."""
-    flags = AttrDict(**dict(copy.deepcopy(flags)))
-    flags.hmc_steps = 0
+    #  flags = AttrDict(**dict(copy.deepcopy(flags)))
+    flags = dict(copy.deepcopy(flags))
+    flags['hmc_steps'] = 0
+    flags['dynamics_config']['separate_networks'] = True
+    flags['compile'] = False
+    train_out = train(flags, make_plots=False)
     #  flags.log_dir = None
     #  flags.log_dir = io.make_log_dir(flags, 'GaugeModel', LOG_FILE)
 
-    flags.dynamics_config['separate_networks'] = True
-    flags.compile = False
-    outputs = train(flags, make_plots=False)
-    x = outputs.x
-    train_data = outputs.data
-    dynamics = outputs.dynamics
-
+    #  flags.dynamics_config['separate_networks'] = True
+    #  flags.compile = False
+    x = train_out.x
+    train_data = train_out.data
+    dynamics = train_out.dynamics
+    logdir = train_out.logdir
+    runs_dir = os.path.join(logdir, 'inference')
+    run_out = run(dynamics, flags, x=x, runs_dir=runs_dir, make_plots=True)
     #  beta = flags.get('beta', 1.)
-    run_out = run(dynamics, flags, x=x, make_plots=True)
 
-    return AttrDict({
-        'x': x,
-        'log_dir': flags.log_dir,
-        'dynamics': dynamics,
-        'run_data': run_out,
-        'train_data': train_data,
-    })
+    return {'train_out': train_out, 'run_out': run_out}
+
 
 
 @timeit
-def test_resume_training(logdir: str):
+def test_resume_training(configs: dict[str, Any]):
     """Test restoring a training session from a checkpoint."""
-    fpath = os.path.join(logdir, 'train_configs.json')
-    try:
-        with open(fpath, 'r') as f:
-            train_configs = json.load(f)
-    except FileNotFoundError:
+    logdir = configs.get('logdir', configs.get('log_dir', None))
+    if logdir is None:
+        dirs = configs.get('dirs', None)
+        if dirs is not None:
+            logdir = dirs.get('log_dir', dirs.get('logdir', None))
+
+    assert logdir is not None
+
+    #  fpath = os.path.join(logdir, 'train_configs.json')
+    fpath = os.path.join(logdir, 'train_configs.z')
+    if os.path.isfile(fpath):
+        train_configs = io.loadz(fpath)
+
+    else:
         try:
-            train_configs = io.loadz(os.path.join(logdir, 'FLAGS.z'))
-        except FileNotFoundError as err:
-            raise(err)
+            fpath = os.path.join(logdir, 'train_configs.json')
+            with open(fpath, 'r') as f:
+                train_configs = json.load(f)
+        except FileNotFoundError:
+            try:
+                train_configs = io.loadz(os.path.join(logdir, 'FLAGS.z'))
+            except FileNotFoundError as err:
+                raise(err)
 
-    if not os.path.isfile(fpath):
-        fpath = os.path.join(logdir, 'FLAGS.z')
+    logger.info('Restored train_configs successfully.')
+    logger.info('Setting `restored_flag` in `train_configs`.')
+    train_configs['log_dir'] = logdir
+    train_configs['restored'] = True
 
-    if not os.path.isfile(fpath):
-        raise FileNotFoundError('Unable to find train_configs to load.')
+    logger.info(f'logdir: {train_configs["log_dir"]}')
+    logger.info(f'restored: {train_configs["restored"]}')
 
-    out = train(train_configs, make_plots=False)
-    run_out = run(out.dynamics, train_configs, out.x)
-    #  flags = AttrDict(**dict(copy.deepcopy(flags)))
-
-    return AttrDict({
-        'x': out.x,
-        'log_dir': logdir,
-        'dynamics': out.dynamics,
-        'run_data': run_out,
-        'train_data': out.data,
-    })
+    train_out = train(train_configs, make_plots=False)
+    dynamics = train_out.dynamics
+    logdir = train_out.logdir
+    x = train_out.x
+    runs_dir = os.path.join(logdir, 'inference')
+    run_out = run(dynamics, train_configs, x=x, runs_dir=runs_dir)
+    return {'train_out': train_out, 'run_out': run_out}
 
 
 @timeit
 def test():
     """Run tests."""
     flags = parse_test_configs()
-    #  if flags.get('log_dir', None) is None:
-    #      flags.log_dir = io.make_log_dir(flags, 'GaugeModel')
-    #      flags.restore = False
 
     _ = test_separate_networks(flags)
 
     single_net_out = test_single_network(flags)
-    flags.log_dir = single_net_out.log_dir
-    _ = test_resume_training(flags.log_dir)
+    flags['log_dir'] = single_net_out['train_out'].logdir
 
+    _ = test_resume_training(flags)
     _ = test_hmc_run(flags)
     _ = test_conv_net(flags)
 

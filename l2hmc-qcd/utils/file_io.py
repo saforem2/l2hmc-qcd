@@ -190,17 +190,24 @@ def setup_directories(
     """Setup relevant directories for training."""
     #  if configs.get('log_dir', configs.get('logdir', None)) is None:
     logdir = configs.get('logdir', configs.get('log_dir', None))
+    if logdir is not None:
+        if os.path.isdir(logdir):
+            existing = True
+
     if logdir is None:
         logger.warning('Making new log_dir')
-        configs['log_dir'] = make_log_dir(configs=configs,
-                                          model_type='GaugeModel',
-                                          ensure_new=ensure_new)
-        logdir = configs['log_dir']
+        logdir = make_log_dir(configs=configs,
+                              model_type='GaugeModel',
+                              ensure_new=ensure_new)
+    else:
+        logger.info(f'Found `log_dir` in configs.')
+        isdir = os.path.isdir(logdir)
+        logger.info(f'`os.path.isdir(log_dir) = {isdir}`')
 
-    configs['logdir'] = logdir
     train_dir = os.path.join(logdir, name)
     train_paths = {
         'log_dir': logdir,
+        'logdir': logdir,
         'train_dir': train_dir,
         'data_dir': os.path.join(train_dir, 'train_data'),
         'models_dir': os.path.join(train_dir, 'models'),
@@ -596,7 +603,7 @@ def make_log_dir(
         model_type: str = None,
         log_file: str = None,
         root_dir: str = None,
-        timestamps: AttrDict = None,
+        timestamps: dict[str, str] = None,
         skip_existing: bool = False,
         ensure_new: bool = False,
         name: str = None,
@@ -639,7 +646,7 @@ def make_log_dir(
             log_dir = os.path.join(*dirs, timestamps['month'],
                                    f'{cfg_str}-{timestamps["hour"]}')
             if os.path.isdir(log_dir):
-                log_dir = os.path.join(*dirs, timestamps.month,
+                log_dir = os.path.join(*dirs, timestamps['month'],
                                        f'{cfg_str}-{timestamps["minute"]}')
             if skip_existing:
                 raise FileExistsError(f'`log_dir`: {log_dir} already exists! ')

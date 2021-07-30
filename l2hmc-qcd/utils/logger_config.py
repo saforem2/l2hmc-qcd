@@ -92,7 +92,6 @@ def in_notebook():
     return True
 
 
-
 logging.config.dictConfig(logging_config)
 logger = logging.getLogger('root')
 
@@ -106,13 +105,13 @@ if in_notebook():
 
 
 with_jupyter = in_notebook()
-console = RichConsole(record=False, log_path=False,
-                      force_jupyter=with_jupyter,
-                      force_terminal=(not with_jupyter),
-                      log_time_format='[%x %X] ',
-                      theme=Theme(theme))#, width=width)
+#  console = RichConsole(record=False, log_path=False,
+#                        force_jupyter=with_jupyter,
+#                        force_terminal=(not with_jupyter),
+#                        log_time_format='[%x %X] ',
+#                        theme=Theme(theme))#, width=width)
 logger.handlers[0] = RichHandler(markup=True,
-                                 console=console,
+                                 #  console=console,
                                  show_path=False,
                                  rich_tracebacks=True)
 logging.getLogger('matplotlib').setLevel(logging.ERROR)
