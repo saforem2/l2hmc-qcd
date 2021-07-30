@@ -24,12 +24,14 @@ import utils.file_io as io
 from utils.file_io import timeit
 from utils.attr_dict import AttrDict
 from utils.autocorr import calc_tau_int_vs_draws
+from utils.logger import Logger
 
 from config import TF_FLOAT, NP_FLOAT
 from dynamics.config import NetWeights
 
 #  TF_FLOAT = FLOATS[tf.keras.backend.floatx()]
 #  NP_FLOAT = NP_FLOATS[tf.keras.backend.floatx()]
+logger = Logger()
 
 COLORS = 100 * ['C0', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9']
 
@@ -134,7 +136,7 @@ def make_ridgeplots(
             if out_dir is not None:
                 io.check_else_make_dir(out_dir)
                 out_file = os.path.join(out_dir, f'{key}_ridgeplot.pdf')
-                io.log(f'Saving figure to: {out_file}.')
+                logger.log(f'Saving figure to: {out_file}.')
                 plt.savefig(out_file, dpi=400, bbox_inches='tight')
 
             #plt.close('all')
@@ -184,7 +186,7 @@ def drop_sequential_duplicates(chain):
 @timeit
 def savefig(fig, fpath):
     io.check_else_make_dir(os.path.dirname(fpath))
-    io.log(f'Saving figure to: {fpath}.')
+    logger.log(f'Saving figure to: {fpath}.')
     fig.savefig(fpath, dpi=400, bbox_inches='tight')
     fig.clf()
     plt.close('all')
@@ -224,8 +226,8 @@ def plot_energy_distributions(data, out_dir=None, title=None):
     try:
         chains, leapfrogs, draws = data['Hwf'].shape
     except KeyError:
-        io.log('WARNING: `Hwf` not in `data.keys()`.', style='#ffff00')
-        io.log('Not creating energy distribution plots, returning!')
+        logger.warning('WARNING: `Hwf` not in `data.keys()`.', style='#ffff00')
+        logger.warning('Not creating energy distribution plots, returning!')
 
     midpt = leapfrogs // 2
     energies_combined = {
@@ -472,7 +474,7 @@ def plot_autocorrs_vs_draws(
 
     if out_dir is not None:
         out_file = os.path.join(out_dir, 'tint_vs_draws.pdf')
-        io.log(f'Saving figure to: {out_file}')
+        logger.log(f'Saving figure to: {out_file}')
         plt.savefig(out_file, dpi=400, bbox_inches='tight')
 
     return tint_dict, (fig, ax)
@@ -543,7 +545,9 @@ def plot_data(
         'veps_start', 'veps_mid', 'veps_end'
     ]
     if num_chains > 16:
-        io.log(f'Reducing `num_chains` from {num_chains} to 16 for plotting.')
+        logger.log(
+            f'Reducing `num_chains` from {num_chains} to 16 for plotting.'
+        )
         num_chains = 16
 
     plot_times = {}

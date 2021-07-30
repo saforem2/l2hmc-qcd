@@ -11,7 +11,7 @@ from dataclasses import dataclass
 
 import os
 import time
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
 import numpy as np
 import tensorflow as tf
@@ -29,42 +29,45 @@ from utils.data_containers import DataContainer
 from utils.inference_utils import run as run_inference
 from utils.learning_rate import ReduceLROnPlateau
 import utils.live_plots as plotter
+#  import utils.live_plots as plotter
 #  from utils.live_plots import (LivePlotData, init_plots, update_joint_plots,
-#                                update_plot, update_plots)
 from utils.logger import Logger, in_notebook
-#  from utils.logger_config import logger as logging
+#  from utils.logger import Logger, in_notebook
 from utils.plotting_utils import plot_data
 from utils.summary_utils import update_summaries
-#  from utils.training_utils import train_dynamics
-
-try:
-    import horovod
-    import horovod.tensorflow as hvd  # pylint:disable=wrong-import-order
-    try:
-        RANK = hvd.rank()
-    except ValueError:
-        hvd.init()
-
-    RANK = hvd.rank()
-    LOCAL_RANK = hvd.local_rank()
-    IS_CHIEF = (RANK == 0)
-    HAS_HOROVOD = True
-    NUM_WORKERS = hvd.size()
-    #  hvd.init()
-    GPUS = tf.config.experimental.list_physical_devices('GPU')
-    for gpu in GPUS:
-        tf.config.experimental.set_memory_growth(gpu, True)
-    if GPUS:
-        gpu = GPUS[hvd.local_rank()]  # pylint:disable=invalid-name
-        tf.config.experimental.set_visible_devices(gpu, 'GPU')
-
-except (ImportError, ModuleNotFoundError):
-    HAS_HOROVOD = False
-    RANK = LOCAL_RANK = 0
-    SIZE = LOCAL_SIZE = 1
-    IS_CHIEF = (RANK == 0)
-
-
+from utils.hvd_init import RANK, LOCAL_RANK, IS_CHIEF
+#  from utils.logger_config import log
+#  from utils.summary_utils import update_summaries
+#  try:
+#      import horovod
+#      import horovod.tensorflow as hvd  # pylint:disable=wrong-import-order
+#      try:
+#          RANK = hvd.rank()
+#      except ValueError:
+#          hvd.init()
+#
+#      RANK = hvd.rank()
+#      LOCAL_RANK = hvd.local_rank()
+#      IS_CHIEF = (RANK == 0)
+#      HAS_HOROVOD = True
+#      NUM_WORKERS = hvd.size()
+#      #  hvd.init()
+#      GPUS = tf.config.experimental.list_physical_devices('GPU')
+#      for gpu in GPUS:
+#          tf.config.experimental.set_memory_growth(gpu, True)
+#      if GPUS:
+#          gpu = GPUS[hvd.local_rank()]  # pylint:disable=invalid-name
+#          tf.config.experimental.set_visible_devices(gpu, 'GPU')
+#
+#  except (ImportError, ModuleNotFoundError):
+#      HAS_HOROVOD = False
+#      RANK = LOCAL_RANK = 0
+#      SIZE = LOCAL_SIZE = 1
+#      IS_CHIEF = (RANK == 0)
+#
+#  #      IS_CHIEF = (RANK == 0)
+#  #
+#
 
 
 if tf.__version__.startswith('1.'):
@@ -83,7 +86,8 @@ TO_KEEP = [
     'dt',
 ]
 
-logger = io.Logger()
+#  logger = io.Logger()
+logger = Logger()
 
 #  logger = io.Logger()
 
@@ -146,14 +150,12 @@ def train_hmc(
         decay_steps=hconfigs.train_steps // 10,
         lr_init=lr_config.get('lr_init', None),
     )
-
     dirs = io.setup_directories(hconfigs, 'training_hmc')
     hconfigs.update({
         'profiler': False,
         'make_summaries': True,
         'lr_config': lr_config,
-        'dynamics_config': config,
-        'dirs': io.setup_directories(hconfigs, 'training_hmc'),
+        'dirs': dirs,
     })
 
     dynamics = GaugeDynamics(hconfigs, config, net_config, lr_config)
@@ -178,10 +180,174 @@ def train_hmc(
                            params=params, out_dir=dirs['train_dir'],
                            therm_frac=0.0, num_chains=num_chains)
         data_container = output['data_container']
-        dt = time.time() - t0
-        io.rule(f'Time spent plotting: {dt}s = {dt // 60}m {(dt % 60):.3g}s')
+        logger.rule(f'Time spent plotting: {dt}s = {dt // 60}m {(dt % 60):.3g}s')
+        logger.rule(f'Time spent plotting: {dt}s = {dt // 60}m {(dt % 60):.3g}s')
 
     return x, dynamics, train_data, hconfigs
+
+
+def try_loading_configs(logdir: str, configs: dict[str, Any]) -> tf.Tensor:
+    """Setup directories for training."""
+    xfpath = os.path.join(logdir, 'training', 'train_data',
+                          f'x_rank{RANK}-{LOCAL_RANK}.z')
+    try:
+        x = io.loadz(xfpath)
+    except Exception as e:  # pylint:disable=broad-except
+        logger.warning(f'exception: {e}')
+        logger.warning(f'Unable to restore x from {xfpath}.')
+        logger.warning('Using random initialization!!')
+
+        xshape = configs.get('dynamics_config', {}).get('x_shape', None)
+        assert xshape is not None
+        x = tf.random.uniform(xshape, -PI, PI)
+
+    return x
+
+
+def plot_models(dynamics, logdir: str):
+    if dynamics.config.separate_networks:
+        networks = {
+            'dynamics_vnet': dynamics.vnet[0],
+            'dynamics_xnet0': dynamics.xnet[0],
+            'dynamics_xnet1': dynamics.xnet[1],
+        }
+    else:
+        networks = {
+            'dynamics_vnet': dynamics.vnet,
+            'dynamics_xnet': dynamics.xnet,
+        }
+
+    for key, val in networks.items():
+        try:
+            fpath = os.path.join(logdir, f'{key}.png')
+            tf.keras.utils.plot_model(val, show_shapes=True, to_file=fpath)
+        except Exception as exception:
+            logger.warning(exception)
+
+
+# TODO: Add type annotations
+# pylint:disable=too-many-statements, too-many-branches
+def setup(configs, dirs=None, x=None, betas=None):
+    """Setup training."""
+    ldir = configs.get('logdir', configs.get('log_dir', None))
+    x = try_loading_configs(ldir, configs)
+
+    dirs = io.setup_directories(configs)
+    #  dirs = setup_directories(configs)
+    configs['dirs'] = dirs
+    configs['log_dir'] = dirs['log_dir']
+    train_steps = configs.get('train_steps')
+    print_steps = configs.get('print_steps')
+
+    # Reshape x from (batch_size, Nt, Nx, 2) --> (batch_size, Nt * Nx * 2)
+    x = tf.reshape(x, (x.shape[0], -1))
+
+    dynamics = build_dynamics(configs)
+    logger.info(f'dynamics.net_weights: {dynamics.net_weights}')
+    network_dir = dynamics.config.log_dir
+    if network_dir is not None:
+        xnet, vnet = dynamics._load_networks(network_dir)
+        dynamics.xnet = xnet
+        dynamics.vnet = vnet
+    train_data = DataContainer(train_steps, dirs=dirs,
+                               print_steps=print_steps)
+    #  if dynamics._has_trainable_params:
+    ckpt = tf.train.Checkpoint(dynamics=dynamics,
+                               optimizer=dynamics.optimizer)
+    ckptdir = dirs['ckpt_dir']
+    datadir = dirs['data_dir']
+    summdir = dirs['summary_dir']
+    manager = tf.train.CheckpointManager(ckpt, ckptdir, max_to_keep=5)
+    if manager.latest_checkpoint and not configs.get('ensure_new', False):
+        logger.rule(f'Restoring model')
+        logger.info(f'Restored model from: {manager.latest_checkpoint}')
+        ckpt.restore(manager.latest_checkpoint)
+        current_step = dynamics.optimizer.iterations.numpy()
+        x = train_data.restore(datadir, step=current_step,
+                               rank=RANK, local_rank=LOCAL_RANK,
+                               x_shape=dynamics.x_shape)
+        if current_step >= train_steps:
+            logger.warning(', '.join(['Current step >= train_steps',
+                                      f'current_step={current_step}',
+                                      f'train_steps={train_steps}']))
+            train_steps = current_step + 10
+            logger.warning(f'Setting train_steps={train_steps}')
+    else:
+        logger.warning('Starting new training run')
+        logger.rule('NEW TRAINING RUN')
+
+    # Create initial samples if not restoring from ckpt
+    if x is None:
+        x = tf.random.uniform(shape=dynamics.x_shape, minval=-PI, maxval=PI)
+
+    # Setup summary writer
+    make_summaries = configs.get('make_summaries', True)
+    if IS_CHIEF and make_summaries and TF_VERSION == 2:
+        try:
+            writer = tf.summary.create_file_writer(summdir)
+        except AttributeError:  # pylint:disable=bare-except
+            writer = None
+    else:
+        writer = None
+
+    current_step = dynamics.optimizer.iterations.numpy()  # get global step
+    if current_step > train_steps:
+        train_steps = current_step + 10
+
+    steps = tf.range(current_step, train_steps, dtype=tf.int64)
+    train_data.steps = steps[-1]
+
+    beta_init = configs.get('beta_init', None)
+    beta_final = configs.get('beta_final', None)
+    assert beta_init is not None and beta_final is not None
+    if beta_init != beta_final:
+        betas = get_betas(train_steps, beta_init, beta_final)
+        betas = betas[current_step:]
+    else:
+        betas = beta_init * tf.ones(len(steps))
+
+    #  if current_step > len(betas):
+    #      diff = current_step - len(betas)
+    #      betas = list(betas) + diff * [tf.constant(beta_final)]
+    #      #  betas = list(betas) +  * tf.ones(diff)
+    #      #  betas = list(betas) + [betas[-1] for _ in range(diff)]
+
+
+    remaining_steps = train_steps - current_step
+    if len(betas) < remaining_steps:
+        diff = remaining_steps - len(betas)
+        betas = list(betas) + diff * [tf.constant(beta_final)]
+
+
+    betas = tf.convert_to_tensor(betas, dtype=x.dtype)
+    dynamics.compile(loss=dynamics.calc_losses,
+                     optimizer=dynamics.optimizer,
+                     experimental_run_tf_function=False)
+
+    _ = dynamics.apply_transition((x, tf.constant(betas[0])), training=True)
+
+    if IS_CHIEF:
+        plot_models(dynamics, dirs['log_dir'])
+
+    #  prof_range = (0, 0)
+    # If profiling, run for 10 steps in the middle of training
+    #  if configs.get('profiler', False):
+    #      pstart = len(betas) // 2
+    #      prof_range = (pstart, pstart + 10)
+
+    return {
+        'x': x,
+        'betas': betas,
+        'dynamics': dynamics,
+        'dirs': dirs,
+        'steps': steps,
+        'writer': writer,
+        'manager': manager,
+        'configs': configs,
+        'checkpoint': ckpt,
+        'train_data': train_data,
+    }
+
 
 
 @dataclass
@@ -210,41 +376,24 @@ def train(
         train_data (DataContainer): Object containing train data.
         configs (AttrDict): AttrDict containing configs used.
     """
-    t0 = time.time()
-    ensure_new = configs.get('ensure_new', False)
-    dirs = io.setup_directories(configs, ensure_new=ensure_new)
-    configs.update({'dirs': dirs})
+    start = time.time()
+    config = setup(configs, x=x)
+    dynamics = config['dynamics']
+    #  manager = config['manager']
+    dirs = config['dirs']
+    #  betas = config['betas']
+    #  steps = config['steps']
+    #  writer = config['writer']
+    configs = config['configs']
+    #  ckpt = config['checkpoint']
+    train_data = config['train_data']
+    #  dirs = io.setup_directories(configs, ensure_new=ensure_new)
+    #  configs.update({'dirs': dirs})
 
-    if restore_x:
-        x, xfile = None, None
-        try:
-            xfile = os.path.join(dirs['train_dir'], 'train_data',
-                                 f'x_rank{RANK}-{LOCAL_RANK}.z')
-            x = io.loadz(xfile)
-        except Exception as e:  # pylint:disable=broad-except
-            logger.log(f'exception: {e}')
-            logger.log(f'Unable to restore x from {xfile}. Using random init.')
-
-    if x is None:
-        xshape = configs.get('dynamics_config', {}).get('x_shape')
-        x = tf.random.uniform(xshape, -PI, PI)
-
-    # Reshape x from (batch_size, Nt, Nx, 2) --> (batch_size, Nt * Nx * 2)
-    x = tf.reshape(x, (x.shape[0], -1))
-
-    dynamics = build_dynamics(configs)
-    logger.log(f'dynamics.net_weights: {dynamics.net_weights}')
-    network_dir = dynamics.config.log_dir
-    if network_dir is not None:
-        xnet, vnet = dynamics._load_networks(network_dir)
-        dynamics.xnet = xnet
-        dynamics.vnet = vnet
 
     dynamics.save_config(dirs['config_dir'])
-
-    io.rule('TRAINING')
-    assert x is not None
-    x, train_data = train_dynamics(dynamics, configs, dirs, x=x)
+    logger.rule('TRAINING')
+    x, train_data = train_dynamics(dynamics, config, dirs, x=x)
     #  x, train_data = train_dynamics(dynamics, configs, dirs, x=x,
     #                                 should_track=SHOULD_TRACK)
 
@@ -269,140 +418,29 @@ def train(
         #                              therm_frac=therm_frac,
         #                              ridgeplots=True)
         dt = time.time() - t0
-        io.rule(f'Time spent plotting: {dt}s = {dt // 60}m {(dt % 60):.3g}s')
+        logger.debug(
+            f'Time spent plotting: {dt}s = {dt // 60}m {(dt % 60):.3g}s'
+        )
 
-    dt = time.time() - t0
-    io.rule(f'Done training model! took: {dt:.3g}s')
+    dt = start - time.time()
+    logger.info(f'Done training model! took: {dt:.3g}s')
     io.save_dict(dict(configs), dirs['log_dir'], 'configs')
 
     #  return x, dynamics, train_data, configs
     return TrainOutputs(x, configs, train_data, dynamics)
 
 
-# pylint:disable=too-many-statements, too-many-branches
-def setup(dynamics, configs, dirs=None, x=None, betas=None):
-    """Setup training."""
-    if dirs is None:
-        dirs = io.setup_directories(configs)
-        configs['dirs'] = dirs
-        configs['log_dir'] = dirs['log_dir']
-
-    train_data = DataContainer(configs.train_steps, dirs=dirs,
-                               print_steps=configs.print_steps)
-    #  if dynamics._has_trainable_params:
-    ckpt = tf.train.Checkpoint(dynamics=dynamics,
-                               optimizer=dynamics.optimizer)
-    ckptdir = dirs['ckpt_dir']
-    datadir = dirs['data_dir']
-    summdir = dirs['summary_dir']
-    manager = tf.train.CheckpointManager(ckpt, ckptdir, max_to_keep=5)
-    if manager.latest_checkpoint and not configs.get('ensure_new', False):
-        logger.log(f'Restored model from: {manager.latest_checkpoint}')
-        ckpt.restore(manager.latest_checkpoint)
-        current_step = dynamics.optimizer.iterations.numpy()
-        x = train_data.restore(datadir, step=current_step,
-                               rank=RANK, local_rank=LOCAL_RANK,
-                               x_shape=dynamics.x_shape)
-    else:
-        logger.rule('Starting new training run')
-
-    # Create initial samples if not restoring from ckpt
-    if x is None:
-        x = np.pi * tf.random.normal(shape=dynamics.x_shape)
-
-    # Setup summary writer
-    make_summaries = configs.get('make_summaries', True)
-    if IS_CHIEF and make_summaries and TF_VERSION == 2:
-        try:
-            writer = tf.summary.create_file_writer(summdir)
-        except AttributeError:  # pylint:disable=bare-except
-            writer = None
-    else:
-        writer = None
-
-    current_step = dynamics.optimizer.iterations.numpy()  # get global step
-    num_steps = max([configs.train_steps + 1, current_step + 1])
-    steps = tf.range(current_step, num_steps, dtype=tf.int64)
-    train_data.steps = steps[-1]
-    if configs.beta_init == configs.beta_final:
-        #  betas = configs.beta_init * np.ones(len(steps))
-        ones = tf.ones(len(steps))
-        betas = tf.cast(configs.beta_final, ones.dtype) * ones
-    else:
-        betas = get_betas(num_steps - 1, configs.beta_init, configs.beta_final)
-
-    if current_step > len(betas):
-        diff = current_step - len(betas)
-        betas = list(betas) + [configs.beta_final for _ in range(diff)]
-
-    betas = betas[current_step:]
-
-    if len(betas) < configs.train_steps:
-        diff = configs.train_steps - len(betas)
-        betas = (
-            [i for i in betas]
-            + [configs.beta_final for _ in range(diff)]
-        )
-
-    betas = tf.convert_to_tensor(betas, dtype=x.dtype)
-    dynamics.compile(loss=dynamics.calc_losses,
-                     optimizer=dynamics.optimizer,
-                     experimental_run_tf_function=False)
-    _ = dynamics.apply_transition((x, tf.constant(betas[0])), training=True)
-
-    # -- Plot computational graph of `dynamics.xnet`, `dynamics.vnet` ------
-    if IS_CHIEF:
-        xf0 = os.path.join(dirs['log_dir'], 'dynamics_xnet0.png')
-        xf1 = os.path.join(dirs['log_dir'], 'dynamics_xnet1.png')
-        vf = os.path.join(dirs['log_dir'], 'dynamics_vnet.png')
-        try:
-            xnet = dynamics.xnet
-            vnet = dynamics.vnet
-            if dynamics.config.separate_networks:
-                xnet = xnet[0]
-                vnet = vnet[0]
-
-            tf.keras.utils.plot_model(xnet[0], show_shapes=True, to_file=xf0)
-            tf.keras.utils.plot_model(xnet[1], show_shapes=True, to_file=xf1)
-            tf.keras.utils.plot_model(vnet, show_shapes=True, to_file=vf)
-
-        except Exception as exception:
-            print(exception)
-
-    pstart = 0
-    pstop = 0
-    if configs.profiler:
-        pstart = len(betas) // 2
-        pstop = pstart + 10
-
-    output = {
-        'x': x,
-        'betas': betas,
-        'dynamics': dynamics,
-        'dirs': dirs,
-        'steps': steps,
-        'writer': writer,
-        'manager': manager,
-        'configs': configs,
-        'checkpoint': ckpt,
-        'train_data': train_data,
-        'pstart': pstart,
-        'pstop': pstop,
-    }
-
-    return output
-
-
 def run_md(
         dynamics: GaugeDynamics,
         inputs: tuple[tf.Tensor, tf.Tensor],
-        md_steps: int
+        md_steps: int,
 ):
-    io.rule(f'Running {md_steps} MD updates!')
+    x, beta = inputs
+    logger.debug(f'Running {md_steps} MD updates!')
     for _ in range(md_steps):
-        mc_states, _ = dynamics.md_update(inputs, training=True)
+        mc_states, _ = dynamics.md_update((x, beta), training=True)
         x = mc_states.out.x
-    io.rule(f'Done!')
+    logger.debug(f'Done!')
 
     return x
 
@@ -413,7 +451,7 @@ def run_profiler(
         logdir: str,
         steps: int = 10
 ):
-    io.rule(f'Running {steps} profiling steps!')
+    logger.debug(f'Running {steps} profiling steps!')
     x, beta = inputs
     metrics = None
     for step in range(steps):
@@ -421,16 +459,16 @@ def run_profiler(
             tf.profiler.experimental.start(logdir=logdir)
             x, metrics = dynamics.train_step((x, beta))
 
-    tf.profiler.experimental.stop(save=True)
-    io.rule(f'Done!')
+    logger.debug(f'Done!')
 
     return x, metrics
 
 # pylint: disable=broad-except
 # pylint: disable=too-many-arguments,too-many-statements, too-many-branches,
+
 def train_dynamics(
         dynamics: GaugeDynamics,
-        configs: AttrDict,
+        input: dict[str, Any],
         dirs: Optional[dict[str, str]] = None,
         x: Optional[tf.Tensor] = None,
         betas: Optional[tf.Tensor] = None,
@@ -438,6 +476,22 @@ def train_dynamics(
 ):
     """Train model."""
     # -- Helper functions for training, logging, saving, etc. --------------
+    def train_step(x: tf.Tensor, beta: tf.Tensor):
+        start = time.time()
+        x, metrics = dynamics.train_step((x, tf.constant(beta)))
+        metrics.dt = time.time() - start
+        return x, metrics
+
+    def should_print(step: int) -> bool:
+        return IS_CHIEF and step % ps_ == 0
+
+    def should_log(step: int) -> bool:
+        return IS_CHIEF and step % ls_ == 0
+
+    def should_save(step: int) -> bool:
+        return step % save_steps == 0 and ckpt is not None
+
+    configs = input['configs']
     min_lr = configs.get('min_lr', 1e-5)
     patience = configs.get('patience', 10)
     save_steps = configs.get('save_steps', None)
@@ -445,35 +499,18 @@ def train_dynamics(
     factor = configs.get('reduce_lr_factor', 0.5)
     steps = configs.get('steps', [])
 
-    def train_step(x: tf.Tensor, beta: tf.Tensor):
-        start = time.time()
-        x, metrics = dynamics.train_step((x, tf.constant(beta)))
-        metrics.dt = time.time() - start
-        return x, metrics
-
-    def should_print(step):
-        return IS_CHIEF and step % ps_ == 0
-
-    def should_log(step):
-        return IS_CHIEF and step % ls_ == 0
-
-    def should_save(step):
-        return step % save_steps == 0 and ckpt is not None
-
     # -- setup ----------------------------------------------------
-    config = setup(dynamics, configs, dirs, x, betas)
+    #  config = setup(dynamics, configs, dirs, x, betas)
 
-    x = config['x']
-    dynamics = config['dynamics']
-    betas = config['betas']
-    dirs = config['dirs']
-    configs = config['configs']
+    betas = input.get('betas')
+    if dirs is None:
+        dirs = input.get('dirs')
 
-    steps = config['steps']
-    writer = config['writer']
-    manager = config['manager']
-    ckpt = config['checkpoint']
-    train_data = config['train_data']
+    steps = input['steps']
+    writer = input['writer']
+    manager = input['manager']
+    ckpt = input['checkpoint']
+    train_data = input['train_data']
 
     #  if dirs is None:
     #      dirs = configs.get('dirs', None)
@@ -518,9 +555,7 @@ def train_dynamics(
     xshape = dynamics._xshape
     #  xshape = tuple(dynamics.config.x_shape)
     xr = tf.random.uniform(xshape, -PI, PI)
-    x = config.get('x', xr) if x is None else x
-
-    train_data = config.get('train_data', DataContainer(steps))
+    x = input.get('x', xr) if x is None else x
 
     assert x is not None
     assert b0 is not None
@@ -542,13 +577,13 @@ def train_dynamics(
     # -- and get formatted header string to display during training. --------
     ps_ = configs.get('print_steps', None)
     ls_ = configs.get('logging_steps', None)
+    steps_per_epoch = configs.get('steps_per_epoch', 1000)
 
     warmup_steps = dynamics.lr_config.warmup_steps
-    steps_per_epoch = configs.get('steps_per_epoch', 1000)
     total_steps = len(betas)
     if len(steps) != len(betas):
-        logger.log(f'WARNING: len(steps) != len(betas) Restarting step count!')
-        logger.log(f'len(steps): {len(steps)}, len(betas): {len(betas)}')
+        logger.warning(f'len(steps) != len(betas) Restarting step count!')
+        logger.warning(f'len(steps): {len(steps)}, len(betas): {len(betas)}')
         steps = np.arange(len(betas))
     #  if should_track:
     #      iterable = track(enumerate(zip(steps, betas)), total=total_steps,
@@ -579,13 +614,14 @@ def train_dynamics(
     assert manager is not None
     assert x is not None
     #  for idx, (step, beta) in iterable:
-    for idx, (step, beta) in enumerate(zip(steps, betas)):
-        # -- Perform a single training step -------------------------------
+    #  for idx, (step, beta) in enumerate(zip(steps, betas)):
+    for step, beta in zip(steps, betas):
         x, metrics = train_step(x, beta)
 
         # TODO: Run inference when beta hits an integer
-        #  if (step + 1) > 0 and beta in discrete_betas:
-        #      _ = run(dynamics, configs, x, beta=beta,
+        # >>> beta_inf = {i: False, for i in np.arange(beta_final)}
+        # >>> if any(np.isclose(beta, np.array(list(beta_inf.keys())))):
+        # >>>     run_inference(...)
 
         if (step + 1) > warmup_steps and (step + 1) % steps_per_epoch == 0:
             reduce_lr.on_epoch_end(step+1, {'loss': metrics.loss})
@@ -634,14 +670,11 @@ def train_dynamics(
 
         # -- Update summary objects ---------------------
         if should_log(step):
+            logger.rule('')
             train_data.update(step, metrics)
             if writer is not None:
                 update_summaries(step, metrics, dynamics)
                 writer.flush()
-
-        # -- Print header every so often --------------------------
-        if IS_CHIEF and (step + 1) % (50 * print_steps) == 0:
-            io.rule('')
 
     # -- Dump config objects -------------------------------------------------
     train_data.dump_configs(x, data_dir, rank=RANK, local_rank=LOCAL_RANK)
