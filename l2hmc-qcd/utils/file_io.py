@@ -620,7 +620,7 @@ def make_log_dir(
 
     timestamps = {
         'month': get_timestamp('%Y_%m'),
-        'time': get_timestamp('%Y-%M-%d-%H%M%S'),
+        'time': get_timestamp('%Y-%m-%d-%H%M%S'),
         'hour': get_timestamp('%Y-%m-%d-%H'),
         'minute': get_timestamp('%Y-%m-%d-%H%M'),
         'second': get_timestamp('%Y-%m-%d-%H%M%S'),
@@ -644,15 +644,10 @@ def make_log_dir(
         if ensure_new or configs.get('ensure_new', False):
             logger.rule('Forcing new directory!')
             log_dir = os.path.join(*dirs, timestamps['month'],
-                                   f'{cfg_str}-{timestamps["hour"]}')
-            if os.path.isdir(log_dir):
-                log_dir = os.path.join(*dirs, timestamps['month'],
-                                       f'{cfg_str}-{timestamps["minute"]}')
+                                   f'{cfg_str}-{timestamps["second"]}')
             if skip_existing:
                 raise FileExistsError(f'`log_dir`: {log_dir} already exists! ')
 
-            log('\n'.join(['Existing directory found with the same name!',
-                           'Modifying the date string to include seconds.']))
 
     if RANK == 0:
         check_else_make_dir(log_dir)
