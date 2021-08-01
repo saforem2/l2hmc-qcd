@@ -139,23 +139,24 @@ class Logger:
     def info(self, s: Any, *args, **kwargs):
         self.log(s, *args, **kwargs)
 
-    def log(self, s: Any, *args, **kwargs):
-        """Print `s` using `self.console` object."""
-        pre = None
-        if SIZE > 1 and RANK == 0:
-            pre = f'{RANK}: '
-
-        if isinstance(s, dict):
-             _ = self.print_dict(s)
-             return
-
-        out = ' '.join([pre, s]) if pre is not None else s
-
-        log.info(out, *args, **kwargs)
 
     def load_metrics(self, infile: str = None):
         """Try loading metrics from infile."""
         return joblib.load(infile)
+
+    def log(self, s: Any, *args, **kwargs):
+        """Print `s` using `self.console` object."""
+        #  pre = None
+        #  if SIZE > 1 and RANK == 0:
+        #      pre = f'{RANK}: '
+
+        if is_dataclass(s):
+            s = asdict(s)
+        if isinstance(s, dict):
+             _ = self.print_dict(s)
+             return
+
+        log.info(s, *args, **kwargs)
 
     def print_metrics(
         self,
