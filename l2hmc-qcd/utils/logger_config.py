@@ -5,6 +5,8 @@ from rich.logging import RichHandler
 from rich.console import Console as RichConsole
 from rich.theme import Theme
 
+import warnings
+
 import logging.config
 #  from utils.logger import Logger
 
@@ -114,7 +116,11 @@ logger.handlers[0] = RichHandler(markup=True,
                                  #  console=console,
                                  show_path=False,
                                  rich_tracebacks=True)
+warnings.filterwarnings('once', 'UserWarning')
+
 logging.getLogger('matplotlib').setLevel(logging.ERROR)
+logging.getLogger('seaborn').setLevel(logging.ERROR)
+logging.getLogger('keras').setLevel(logging.ERROR)
 logging.getLogger('arviz').setLevel(logging.ERROR)
 logging.getLogger('tensorflow').setLevel(logging.ERROR)
                                  #  console=Logger().console)

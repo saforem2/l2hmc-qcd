@@ -67,7 +67,7 @@ from config import BIN_DIR, GAUGE_LOGS_DIR
 from network.config import ConvolutionConfig
 from utils.file_io import timeit
 from utils.attr_dict import AttrDict
-from utils.training_utils import train
+from utils.training_utils import train, TrainOutputs
 from utils.inference_utils import load_and_run, run, run_hmc
 from utils.logger import Logger
 
@@ -174,46 +174,44 @@ def test_hmc_run(flags: AttrDict):
 
 
 @timeit
-def test_conv_net(flags: AttrDict):
+def test_conv_net(configs: dict[str, Any]):
     """Test convolutional networks."""
-    flags = AttrDict(**dict(copy.deepcopy(flags)))
+    configs = AttrDict(**dict(copy.deepcopy(configs)))
     #  flags.use_conv_net = True
-    flags['dynamics_config']['use_conv_net'] = True
-    flags.conv_config = ConvolutionConfig(
+    configs['dynamics_config']['use_conv_net'] = True
+    configs['conv_config'] = dict(
         sizes=[2, 2],
         filters=[16, 32],
         pool_sizes=[2, 2],
         use_batch_norm=True,
         conv_paddings=['valid', 'valid'],
         conv_activations=['relu', 'relu'],
-        input_shape=flags['dynamics_config']['x_shape'][1:],
+        input_shape=configs['dynamics_config']['x_shape'][1:],
     )
-    dirs = io.setup_directories(flags)
-    flags['dirs'] = dirs
-    flags['log_dir'] = dirs.get('log_dir', None)
-    train_out = train(flags, make_plots=False)
-    run_outputs = run(train_out.dynamics, flags, make_plots=False)
-    #  x, dynamics, train_data, flags = train(flags, make_plots=False)
-    return {'train_out': train_out, 'run_out': run_outputs}
+    train_out = train(configs, make_plots=False)
+    runs_dir = os.path.join(train_out.logdir, 'inference')
+    run_out = run(train_out.dynamics, configs, x=train_out.x,
+                  runs_dir=runs_dir, make_plots=False)
+    return {'train_out': train_out, 'run_out': run_out}
 
 
 
 @timeit
-def test_single_network(flags: dict[str, Any]):
+def test_single_network(configs: dict[str, Any]) -> dict[str, TrainOutputs]:
     """Test training on single network."""
-    flags = dict(copy.deepcopy(flags))
-    flags['dynamics_config']['separate_networks'] = False
-    train_out = train(flags, make_plots=False)
+    configs = dict(copy.deepcopy(configs))
+    configs['dynamics_config']['separate_networks'] = False
+    train_out = train(configs, make_plots=False)
     logdir = train_out.logdir
     runs_dir = os.path.join(logdir, 'inference')
-    run_out = run(train_out.dynamics, flags, x=train_out.x,
+    run_out = run(train_out.dynamics, configs, x=train_out.x,
                   runs_dir=runs_dir, make_plots=False)
 
     return {'train_out': train_out, 'run_out': run_out}
 
 
 @timeit
-def test_separate_networks(flags: dict[str, Any]):
+def test_separate_networks(flags: dict[str, Any]) -> dict[str, TrainOutputs]:
     """Test training on separate networks."""
     #  flags = AttrDict(**dict(copy.deepcopy(flags)))
     flags = dict(copy.deepcopy(flags))
@@ -227,7 +225,6 @@ def test_separate_networks(flags: dict[str, Any]):
     #  flags.dynamics_config['separate_networks'] = True
     #  flags.compile = False
     x = train_out.x
-    train_data = train_out.data
     dynamics = train_out.dynamics
     logdir = train_out.logdir
     runs_dir = os.path.join(logdir, 'inference')
@@ -269,6 +266,7 @@ def test_resume_training(configs: dict[str, Any]):
     logger.info('Setting `restored_flag` in `train_configs`.')
     train_configs['log_dir'] = logdir
     train_configs['restored'] = True
+    train_configs['ensure_new'] = False
 
     logger.info(f'logdir: {train_configs["log_dir"]}')
     logger.info(f'restored: {train_configs["restored"]}')
@@ -285,16 +283,29 @@ def test_resume_training(configs: dict[str, Any]):
 @timeit
 def test():
     """Run tests."""
-    flags = parse_test_configs()
+    configs = parse_test_configs()
 
-    _ = test_separate_networks(flags)
+    sep_configs = copy.deepcopy(configs)
+    conv_configs = copy.deepcopy(configs)
+    single_configs = copy.deepcopy(configs)
 
-    single_net_out = test_single_network(flags)
-    flags['log_dir'] = single_net_out['train_out'].logdir
 
-    _ = test_resume_training(flags)
-    _ = test_hmc_run(flags)
-    _ = test_conv_net(flags)
+    sep_out = test_separate_networks(sep_configs)
+    sep_configs_copy = copy.deepcopy(sep_out['train_out'].configs)
+    sep_configs_copy['log_dir'] = sep_out['train_out'].logdir
+    sep_configs_copy['ensure_new'] = False
+    _ = test_resume_training(sep_configs_copy)
+
+    single_net_out = test_single_network(single_configs)
+    single_configs_copy = copy.deepcopy(single_net_out['train_out'].configs)
+    single_configs_copy['log_dir'] = single_net_out['train_out'].logdir
+    single_configs_copy['ensure_new'] = False
+    _ = test_resume_training(single_configs_copy)
+
+    _ = test_hmc_run(configs)
+    _ = test_conv_net(conv_configs)
+
+    logger.info(f'All tests passed!')
 
 
 @timeit

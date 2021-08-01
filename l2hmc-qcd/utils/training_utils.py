@@ -201,8 +201,12 @@ def get_starting_point(configs: dict[str, Any]) -> tf.Tensor:
     logdir = configs.get('log_dir', configs.get('logdir', None))
     if logdir is None:
         return random_init_from_configs(configs)
-    else:
-        return load_last_training_point(logdir)
+    try:
+        return load_last_training_point(
+            configs.get('log_dir', configs.get('logdir', None))
+        )
+    except FileNotFoundError:
+        return random_init_from_configs(configs)
 
 
 def plot_models(dynamics, logdir: str):
@@ -235,16 +239,17 @@ def setup(configs, dirs=None, x=None, betas=None):
     x = tf.reshape(x, (x.shape[0], -1))
 
     logdir = configs.get('logdir', configs.get('log_dir', None))
-    existing = False
+    ensure_new = configs.get('ensure_new', False)
     if logdir is not None:
-        if os.path.isdir(logdir):
-            existing = True
+        if os.path.isdir(logdir) and ensure_new:
+            raise ValueError('logdir exists but `ensure_new` flag is set.')
 
     dirs = io.setup_directories(configs)
     dynamics = build_dynamics(configs)
 
     logdir = dirs['log_dir']
-    if existing:
+    models_dir = os.path.join(logdir, 'training', 'models')
+    if os.path.isdir(models_dir) and not ensure_new:
         logger.info(f'Loading networks from: {logdir}')
         networks = dynamics._load_networks(str(logdir))
         dynamics.xnet = networks['xnet']
@@ -258,12 +263,12 @@ def setup(configs, dirs=None, x=None, betas=None):
     print_steps = configs.get('print_steps')
 
 
-    logger.info(f'dynamics.net_weights: {dynamics.net_weights}')
-    network_dir = dynamics.config.log_dir
-    if network_dir is not None:
-        xnet, vnet = dynamics._load_networks(network_dir)
-        dynamics.xnet = xnet
-        dynamics.vnet = vnet
+    #  logger.info(f'dynamics.net_weights: {dynamics.net_weights}')
+    #  network_dir = dynamics.config.log_dir
+    #  if network_dir is not None:
+    #      xnet, vnet = dynamics._load_networks(network_dir)
+    #      dynamics.xnet = xnet
+    #      dynamics.vnet = vnet
     train_data = DataContainer(train_steps, dirs=dirs,
                                print_steps=print_steps)
     #  if dynamics._has_trainable_params:
@@ -273,7 +278,7 @@ def setup(configs, dirs=None, x=None, betas=None):
     datadir = dirs['data_dir']
     summdir = dirs['summary_dir']
     manager = tf.train.CheckpointManager(ckpt, ckptdir, max_to_keep=5)
-    if manager.latest_checkpoint and not configs.get('ensure_new', False):
+    if manager.latest_checkpoint:  # and not configs.get('ensure_new', False):
         logger.rule(f'Restoring model')
         logger.info(f'Restored model from: {manager.latest_checkpoint}')
         ckpt.restore(manager.latest_checkpoint)

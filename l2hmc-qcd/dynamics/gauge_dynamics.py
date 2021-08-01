@@ -61,6 +61,7 @@ if parent not in sys.path:
 
 
 import utils.file_io as io
+from utils.logger import Logger
 
 from config import BIN_DIR
 from lattice.gauge_lattice import GaugeLattice, Charges, area_law
@@ -79,6 +80,7 @@ TF_FLOAT = tf.keras.backend.floatx()
 
 #  INPUTS = Tuple[tf.Tensor, tf.Tensor]
 
+logger = Logger()
 
 def project_angle(x):
     """Returns the projection of an angle `x` from [-4pi, 4pi] to [-pi, pi]."""
@@ -260,36 +262,27 @@ class GaugeDynamics(BaseDynamics):
         """
         models_dir = os.path.join(log_dir, 'training', 'models')
         if not self.config.separate_networks:
-            xnet, vnet = None, None
             vp = os.path.join(models_dir, 'dynamics_vnet')
-            if os.path.isdir(vp):
-                vnet = tf.keras.models.load_model(vp)
+            vnet = tf.keras.models.load_model(vp)
 
             xp = os.path.join(models_dir, 'dynamics_xnet')
-            if os.path.isdir(xp):
-                xnet = tf.keras.models.load_model(xp)
+            xnet = tf.keras.models.load_model(xp)
         else:
-            xnet = []
-            vnet = []
-            vnets = []
-            xnets_first = []
-            xnets_second = []
+            xnet, vnet = [], []
             for i in range(self.config.num_steps):
                 vp = os.path.join(models_dir, f'dynamics_vnet{i}')
-                if os.path.isdir(vp):  # Load vnet from vp...
-                    vnets.append(vp)
-                    print(f'Loading vnet{i}_second from: {vp}...')
-                    vnet.append(tf.keras.models.load_model(vp))
+                logger.info(f'Loading vnet{i}_second from: {vp}...')
+                vnet.append(tf.keras.models.load_model(vp))
 
                 # Check if xnet_first and xnet_second networks exist...
                 xp0 = os.path.join(models_dir, f'dynamics_xnet_first{i}')
                 xp1 = os.path.join(models_dir, f'dynamics_xnet_second{i}')
                 if os.path.isdir(xp0) and os.path.isdir(xp1):
                     # If so, load them into `xnets_first`, `xnets_second`
-                    xnets_first.append(xp0)
-                    xnets_second.append(xp1)
-                    print(f'Loading xnet{i}_first from: {xp0}...')
-                    print(f'Loading xnet{i}_second from: {xp1}...')
+                    #  xnets_first.append(xp0)
+                    #  xnets_second.append(xp1)
+                    logger.info(f'Loading xnet{i}_first from: {xp0}...')
+                    logger.info(f'Loading xnet{i}_second from: {xp1}...')
                     xnet.append(
                         (tf.keras.models.load_model(xp0),
                          tf.keras.models.load_model(xp1))
@@ -297,11 +290,7 @@ class GaugeDynamics(BaseDynamics):
 
                 else:
                     xp = os.path.join(models_dir, f'dynamics_xnet{i}')
-                    if os.path.isdir(xp):
-                        xnet.append(tf.keras.models.load_model(xp))
-                    else:
-                        xnet_, _ = self._build_network(step=i)
-                        xnet.append(xnet_)
+                    xnet.append(tf.keras.models.load_model(xp))
 
         return {'xnet': xnet, 'vnet': vnet}
 
@@ -445,7 +434,7 @@ class GaugeDynamics(BaseDynamics):
         cfgs = self._get_network_configs(net_config, conv_config)
 
         if self.config.separate_networks:
-            io.log('Using separate (x, v)-networks for each LF step!!')
+            logger.info('Using separate (x, v)-networks for each LF step!!')
             vnet = [
                 get_gauge_network(**cfgs['vnet'], name=f'vnet{i}')
                 for i in range(self.config.num_steps)
@@ -457,7 +446,7 @@ class GaugeDynamics(BaseDynamics):
             ]
 
         else:
-            io.log('Using a single (x, v)-network for all LF steps!!')
+            logger.info('Using a single (x, v)-network for all LF steps!!')
             vnet = get_gauge_network(**cfgs['vnet'], name='vnet')
             xnet = get_gauge_network(**cfgs['xnet'], name='xnet')
 
