@@ -254,17 +254,17 @@ def get_gauge_network(
         #  z = layers.Add()([x, v, t])
         z = activation_fn(z)
         #  z = keras.activations.relu(z)
+        # ------------------------------------------
+        # TODO: Replace 1./2. in custom_dense with:
+        # 1 / len(net_config.units[1:])
+        # ------------------------------------------
         for idx, units in enumerate(net_config.units[1:]):
             z = custom_dense(units, 1./2., f'{name}_h{idx}',
                              activation=activation_fn)(z)
 
-        #  z = custom_dense(*args['h1'])(z)
-        #  z = custom_dense(*args['h2'])(z)
-
         if net_config.dropout_prob > 0:
             z = layers.Dropout(net_config.dropout_prob)(z)
 
-        #  if net_config.get('use_batch_norm', False):
         if net_config.use_batch_norm:
             z = layers.BatchNormalization(-1, name=f'{name}_batch_norm1')(z)
 
