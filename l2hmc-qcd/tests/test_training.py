@@ -4,12 +4,15 @@ test.py
 Test training on 2D U(1) model.
 """
 from __future__ import absolute_import, division, print_function, annotations
+from dataclasses import dataclass
 
 import os
 import sys
+import time
 import json
 import copy
 import argparse
+from typing import Union
 
 import tensorflow as tf
 from tensorflow.python.ops.gen_math_ops import Any
@@ -63,12 +66,13 @@ from functools import wraps
 
 import utils.file_io as io
 
+from utils.hvd_init import RANK
 from config import BIN_DIR, GAUGE_LOGS_DIR
 from network.config import ConvolutionConfig
 from utils.file_io import timeit
 from utils.attr_dict import AttrDict
 from utils.training_utils import train, TrainOutputs
-from utils.inference_utils import load_and_run, run, run_hmc
+from utils.inference_utils import InferenceResults, load_and_run, run, run_hmc
 from utils.logger import Logger
 
 logger = Logger()
@@ -81,6 +85,12 @@ LOG_FILE = os.path.join(BIN_DIR, 'log_dirs.txt')
 #  LOG_FILE = os.path.join(
 #      os.path.dirname(PROJECT_DIR), 'bin', 'log_dirs.txt'
 #  )
+@dataclass
+class TestOutputs:
+    train: TrainOutputs
+    run: Union[InferenceResults, None]
+
+
 
 
 def parse_args():
@@ -155,15 +165,14 @@ def catch_exception(fn):
     return wrapper
 
 
-@timeit
-def test_hmc_run(flags: AttrDict):
+def test_hmc_run(configs: dict[str, Any]):
     """Testing generic HMC."""
-    flags = AttrDict(**dict(copy.deepcopy(flags)))
-    flags['dynamics_config']['hmc'] = True
+    configs = AttrDict(**dict(copy.deepcopy(configs)))
+    configs['dynamics_config']['hmc'] = True
     #  hmc_dir = os.path.join(os.path.dirname(PROJECT_DIR),
     #                         'gauge_logs_eager', 'test', 'hmc_runs')
     hmc_dir = os.path.join(GAUGE_LOGS_DIR, 'hmc_test_logs')
-    dynamics, run_data, x, _ = run_hmc(flags, hmc_dir=hmc_dir,
+    dynamics, run_data, x, _ = run_hmc(configs, hmc_dir=hmc_dir,
                                        make_plots=False)
 
     return {
@@ -173,8 +182,7 @@ def test_hmc_run(flags: AttrDict):
     }
 
 
-@timeit
-def test_conv_net(configs: dict[str, Any]):
+def test_conv_net(configs: dict[str, Any]) -> TestOutputs:
     """Test convolutional networks."""
     configs = AttrDict(**dict(copy.deepcopy(configs)))
     #  flags.use_conv_net = True
@@ -190,53 +198,49 @@ def test_conv_net(configs: dict[str, Any]):
     )
     train_out = train(configs, make_plots=False)
     runs_dir = os.path.join(train_out.logdir, 'inference')
-    run_out = run(train_out.dynamics, configs, x=train_out.x,
-                  runs_dir=runs_dir, make_plots=False)
-    return {'train_out': train_out, 'run_out': run_out}
+    run_out = None
+    if RANK == 0:
+        run_out = run(train_out.dynamics, configs, x=train_out.x,
+                      runs_dir=runs_dir, make_plots=False)
+    return TestOutputs(train_out, run_out)
 
 
 
-@timeit
-def test_single_network(configs: dict[str, Any]) -> dict[str, TrainOutputs]:
+def test_single_network(configs: dict[str, Any]) -> TestOutputs:
     """Test training on single network."""
     configs = dict(copy.deepcopy(configs))
     configs['dynamics_config']['separate_networks'] = False
     train_out = train(configs, make_plots=False)
     logdir = train_out.logdir
     runs_dir = os.path.join(logdir, 'inference')
-    run_out = run(train_out.dynamics, configs, x=train_out.x,
-                  runs_dir=runs_dir, make_plots=False)
+    run_out = None
+    if RANK == 0:
+        run_out = run(train_out.dynamics, configs, x=train_out.x,
+                      runs_dir=runs_dir, make_plots=False)
 
-    return {'train_out': train_out, 'run_out': run_out}
+    return TestOutputs(train_out, run_out)
 
 
-@timeit
-def test_separate_networks(flags: dict[str, Any]) -> dict[str, TrainOutputs]:
+def test_separate_networks(flags: dict[str, Any]) -> TestOutputs:
     """Test training on separate networks."""
-    #  flags = AttrDict(**dict(copy.deepcopy(flags)))
     flags = dict(copy.deepcopy(flags))
     flags['hmc_steps'] = 0
     flags['dynamics_config']['separate_networks'] = True
     flags['compile'] = False
     train_out = train(flags, make_plots=False)
-    #  flags.log_dir = None
-    #  flags.log_dir = io.make_log_dir(flags, 'GaugeModel', LOG_FILE)
-
-    #  flags.dynamics_config['separate_networks'] = True
-    #  flags.compile = False
     x = train_out.x
     dynamics = train_out.dynamics
     logdir = train_out.logdir
     runs_dir = os.path.join(logdir, 'inference')
-    run_out = run(dynamics, flags, x=x, runs_dir=runs_dir, make_plots=True)
-    #  beta = flags.get('beta', 1.)
+    run_out = None
+    if RANK == 0:
+        run_out = run(dynamics, flags, x=x, runs_dir=runs_dir, make_plots=True)
 
-    return {'train_out': train_out, 'run_out': run_out}
+    return TestOutputs(train_out, run_out)
 
 
 
-@timeit
-def test_resume_training(configs: dict[str, Any]):
+def test_resume_training(configs: dict[str, Any]) -> TestOutputs:
     """Test restoring a training session from a checkpoint."""
     logdir = configs.get('logdir', configs.get('log_dir', None))
     if logdir is None:
@@ -250,7 +254,6 @@ def test_resume_training(configs: dict[str, Any]):
     fpath = os.path.join(logdir, 'train_configs.z')
     if os.path.isfile(fpath):
         train_configs = io.loadz(fpath)
-
     else:
         try:
             fpath = os.path.join(logdir, 'train_configs.json')
@@ -276,11 +279,13 @@ def test_resume_training(configs: dict[str, Any]):
     logdir = train_out.logdir
     x = train_out.x
     runs_dir = os.path.join(logdir, 'inference')
-    run_out = run(dynamics, train_configs, x=x, runs_dir=runs_dir)
-    return {'train_out': train_out, 'run_out': run_out}
+    run_out = None
+    if RANK == 0:
+        run_out = run(dynamics, train_configs, x=x, runs_dir=runs_dir)
+
+    return TestOutputs(train_out, run_out)
 
 
-@timeit
 def test():
     """Run tests."""
     configs = parse_test_configs()
@@ -290,25 +295,70 @@ def test():
     single_configs = copy.deepcopy(configs)
 
 
+
+    logger.rule(f'Testing separate networks')
+    t0 = time.time()
     sep_out = test_separate_networks(sep_configs)
-    sep_configs_copy = copy.deepcopy(sep_out['train_out'].configs)
-    sep_configs_copy['log_dir'] = sep_out['train_out'].logdir
+    dt = time.time() - t0
+    logger.rule(f'Passed! Took: {dt:.4f}')
+
+    sep_configs_copy = copy.deepcopy(sep_out.train.configs)
+    sep_configs_copy['log_dir'] = sep_out.train.logdir
     sep_configs_copy['ensure_new'] = False
+
+    logger.rule(f'Testing restoring separate networks')
+    t0 = time.time()
     _ = test_resume_training(sep_configs_copy)
+    dt = time.time() - t0
+    logger.rule(f'Passed! took: {dt:.4f}')
 
+
+    logger.rule(f'Testing single networks')
+    t0 = time.time()
     single_net_out = test_single_network(single_configs)
-    single_configs_copy = copy.deepcopy(single_net_out['train_out'].configs)
-    single_configs_copy['log_dir'] = single_net_out['train_out'].logdir
-    single_configs_copy['ensure_new'] = False
-    _ = test_resume_training(single_configs_copy)
+    dt = time.time() - t0
+    logger.rule(f'Passed! took: {dt:.4f}')
 
-    _ = test_hmc_run(configs)
+    single_configs_copy = copy.deepcopy(single_net_out.train.configs)
+    single_configs_copy['log_dir'] = single_net_out.train.logdir
+    single_configs_copy['ensure_new'] = False
+
+    logger.rule(f'Testing restoring separate networks')
+    t0 = time.time()
+    _ = test_resume_training(single_configs_copy)
+    dt = time.time() - t0
+    logger.rule(f'Passed! took: {dt:.4f}')
+
+    configs['ensure_new'] = True
+    configs['log_dir'] = None
+
+    logger.rule(f'Testing separate networks with `ensure_new=True`')
+    t0 = time.time()
+    _ = test_separate_networks(configs)
+    dt = time.time() - t0
+    logger.rule(f'Passed! took: {dt:.4f}')
+
+    configs['ensure_new'] = True
+    configs['log_dir'] = None
+
+    logger.rule(f'Testing single network with `ensure_new=True`')
+    t0 = time.time()
+    _ = test_single_network(configs)
+    dt = time.time() - t0
+    logger.rule(f'Passed! took: {dt:.4f}')
+
+    logger.rule(f'Testing convNets')
+    t0 = time.time()
     _ = test_conv_net(conv_configs)
+    dt = time.time() - t0
+    logger.rule(f'Passed! took: {dt:.4f}')
+
+    if RANK  == 0:
+        _ = test_hmc_run(configs)
 
     logger.info(f'All tests passed!')
 
 
-@timeit
 def main(args, flags=None):
     """Main method."""
     fn_map = {
