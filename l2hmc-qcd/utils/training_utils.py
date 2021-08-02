@@ -7,12 +7,14 @@ training_utils.py
 Implements helper functions for training the model.
 """
 from __future__ import absolute_import, annotations, division, print_function
+from copy import deepcopy
 from dataclasses import dataclass
 
 import os
+from pathlib import Path
 import time
 import json
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
 import numpy as np
 import tensorflow as tf
@@ -83,6 +85,18 @@ TO_KEEP = [
     'accept_prob', 'accept_mask', 'xeps', 'veps', 'sumlogdet', 'beta', 'loss',
     'dt',
 ]
+
+names = ['month', 'time', 'hour', 'minute', 'second']
+formats = [
+    '%Y_%m',
+    '%Y-%m-%d-%H%M%S',
+    '%Y-%m-%d-%H',
+    '%Y-%m-%d-%H%M',
+    '%Y-%m-%d-%H%M%S'
+]
+TSTAMPS = {
+    k: io.get_timestamp(v) for k, v in dict(zip(names, formats)).items()
+}
 
 #  logger = io.Logger()
 logger = Logger()
@@ -230,6 +244,91 @@ def plot_models(dynamics, logdir: str):
             raise exception
 
 
+def load_configs_from_logdir(logdir: Union[str, Path]):
+    fpath = os.path.join(logdir, 'train_configs.json')
+    with open(fpath, 'r') as f:
+        configs = json.load(f)
+
+    return configs
+
+def setup_directories(configs: dict[str, Any]):
+    """Setup directories for training."""
+    if hasattr(configs, '__dict__'):
+        configs = getattr(configs, '__dict__')
+
+    logfile = os.path.join(os.getcwd(), 'log_dirs.txt')
+    ensure_new = configs.get('ensure_new', False)
+    logdir = configs.get('logdir', configs.get('log_dir', None))
+    if logdir is not None:
+        logdir_exists = os.path.isdir(logdir)
+        contents = os.listdir(logdir)
+        logdir_nonempty = False
+        if contents is not None and isinstance(contents, list):
+            if len(contents) > 0:
+                logdir_nonempty = True
+
+        if logdir_exists and logdir_nonempty and ensure_new:
+            raise ValueError(
+                f'Nonempty `logdir`, but `ensure_new={ensure_new}'
+            )
+
+    dirs = io.setup_directories(configs, timestamps= TSTAMPS)
+    logdir = dirs.get('logdir', dirs.get('log_dir', None))
+    if ensure_new:
+        restored = False
+        restored_from = None
+        #  dirs = io.setup_directories(configs, timestamps=TSTAMPS)
+        #  configs['dirs'] = dirs
+        #  #  logdir = io.make_log_dir(configs, 'GaugeModel', logfile)
+        #  configs['log_dir'] = logdir
+        #  configs['logdir'] = logdir
+        #  configs['restore'] = False
+        #  io.write(f'{logdir}', logfile, 'a')
+
+    else:
+        restored = True
+        restored_from = logdir
+        #  dirs = io.setup_directories(configs, timestamps=TSTAMPS)
+        #  logdir = dirs['logdir']
+        #  output['restore'] = True
+        #  output['logdir'] = logdir
+        #  output['log_dir'] = logdir
+        #  output['restored_from'] = logdir
+        #  if logdir is not None:
+        #      output = load_configs_from_logdir(logdir)
+        #      output['restored'] = True
+        #      output['log_dir'] = logdir
+        #      output['logdir'] = logdir
+        #      output['restored_from'] = logdir
+        if logdir is not None:
+            if os.path.isdir(logdir):
+                loaded = load_configs_from_logdir(logdir)
+                to_overwrite = ['train_steps', 'run_steps', 'beta_final']
+                changed = {k: configs.get(k) for k in to_overwrite}
+                for key, new in changed.items():
+                    old = loaded.get(key)
+                    if new != old:
+                        logger.warning(
+                            f'Overwriting {key} from {old} to {new} in configs'
+                        )
+                        configs[key] = new
+
+    logdir = dirs.get('logdir', dirs.get('log_dir', None))
+    configs['dirs'] = dirs
+    configs['log_dir'] = logdir
+    configs['restored'] = restored
+    configs['restored_from'] = restored_from
+    #  num_chains = output.get('num_chains', 16)
+    #  if output.get('hmc_steps', 0) > 0:
+    #      x, hdynamics, _, hflags = train_hmc(output, num_chains=num_chains)
+    #      _ = run(hdynamics, hflags, save_x=False)
+
+    if RANK == 0:
+        io.write(f'{logdir}', logfile, 'a')
+
+    return configs
+
+
 # TODO: Add type annotations
 # pylint:disable=too-many-statements, too-many-branches
 def setup(configs, x=None, betas=None):
@@ -286,8 +385,8 @@ def setup(configs, x=None, betas=None):
         logger.rule(f'Restoring model')
         logger.info(f'Restored model from: {manager.latest_checkpoint}')
         ckpt.restore(manager.latest_checkpoint)
-        configs['restored'] = True
-        configs['restored_from'] = manager.latest_checkpoint
+        #  configs['restored'] = True
+        #  configs['restored_from'] = manager.latest_checkpoint
         current_step = dynamics.optimizer.iterations.numpy()
         x = train_data.restore(datadir, step=current_step,
                                rank=RANK, local_rank=LOCAL_RANK,
@@ -299,8 +398,8 @@ def setup(configs, x=None, betas=None):
             train_steps = current_step + 10
             logger.warning(f'Setting train_steps={train_steps}')
     else:
-        configs['restored'] = False
-        configs['restored_from'] = None
+        #  configs['restored'] = False
+        #  configs['restored_from'] = None
         logger.warning('Starting new training run')
         logger.rule('NEW TRAINING RUN')
 
@@ -398,10 +497,10 @@ def train(
         configs: dict[str, Any],
         x: tf.Tensor = None,
         num_chains: int = 32,
-        restore_x: bool = False,
+        #  restore_x: bool = False,
         make_plots: bool = True,
         therm_frac: float = 0.33,
-        ensure_new: bool = False,
+        #  ensure_new: bool = False,
         #  should_track: bool = True,
 ) -> TrainOutputs:
     """Train model.
@@ -413,6 +512,7 @@ def train(
         configs (AttrDict): AttrDict containing configs used.
     """
     start = time.time()
+    configs = setup_directories(configs)
     config = setup(configs, x=x)
     dynamics = config['dynamics']
     #  manager = config['manager']
@@ -455,11 +555,10 @@ def train(
         #                              ridgeplots=True)
         dt = time.time() - t0
         logger.debug(
-            f'Time spent plotting: {dt}s = {dt // 60}m {(dt % 60):.3g}s'
+            f'Time spent plotting: {dt}s = {dt // 60}m {(dt % 60):.4f}s'
         )
 
-    dt = start - time.time()
-    logger.info(f'Done training model! took: {dt:.3g}s')
+    logger.info(f'Done training model! took: {time.time() - start:.4f}s')
     io.save_dict(dict(configs), dirs['log_dir'], 'configs')
 
     #  return x, dynamics, train_data, configs
