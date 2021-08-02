@@ -15,7 +15,7 @@ REPO = 'fthmc'
 # Directories
 BASE_DIR = Path(__file__).parent.parent.absolute()
 CONFIG_DIR = Path(BASE_DIR, 'config')
-LOGS_DIR = Path(BASE_DIR, 'logs')
+LOGS_DIR = Path(BASE_DIR, 'l2hmclogs')
 DATA_DIR = Path(BASE_DIR, 'data')
 MODEL_DIR = Path(BASE_DIR, 'model')
 STORES_DIR = Path(BASE_DIR, 'stores')
