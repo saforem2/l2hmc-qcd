@@ -65,7 +65,7 @@ class BaseDynamics(tf.keras.Model):
 
     def __init__(
             self,
-            params: dict,
+            params: AttrDict,
             config: DynamicsConfig,
             network_config: NetworkConfig,
             potential_fn: Callable[[tf.Tensor], tf.Tensor],

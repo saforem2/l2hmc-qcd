@@ -141,7 +141,7 @@ class GaugeDynamics(BaseDynamics):
 
     def __init__(
             self,
-            params: dict[str, Any],
+            params: AttrDict,
             config: GaugeDynamicsConfig,
             network_config: Optional[NetworkConfig] = None,
             lr_config: Optional[LearningRateConfig] = None,
