@@ -1,3 +1,4 @@
+import os
 import sys
 import logging
 from pathlib import Path
@@ -13,7 +14,8 @@ import logging.config
 REPO = 'fthmc'
 
 # Directories
-BASE_DIR = Path(__file__).parent.parent.absolute()
+#BASE_DIR = Path(__file__).parent.parent.absolute()
+BASE_DIR = Path(str(os.getcwd()))
 CONFIG_DIR = Path(BASE_DIR, 'config')
 LOGS_DIR = Path(BASE_DIR, 'l2hmclogs')
 DATA_DIR = Path(BASE_DIR, 'data')
