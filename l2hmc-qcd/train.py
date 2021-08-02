@@ -25,7 +25,7 @@ import tensorflow as tf
 #  except:  # noqa: E722
 #      pass
 
-from utils.hvd_init import HAS_HOROVOD
+from utils.hvd_init import HAS_HOROVOD, RANK
 from utils.logger import Logger
 from utils import file_io as io
 from utils import attr_dict as AttrDict
@@ -43,6 +43,17 @@ logger = Logger()
 
 warnings.filterwarnings('ignore')
 warnings.filterwarnings('ignore', 'WARNING:matplotlib')
+names = ['month', 'time', 'hour', 'minute', 'second']
+formats = [
+    '%Y_%m',
+    '%Y-%m-%d-%H%M%S',
+    '%Y-%m-%d-%H',
+    '%Y-%m-%d-%H%M',
+    '%Y-%m-%d-%H%M%S'
+]
+TSTAMPS = {
+    k: io.get_timestamp(v) for k, v in dict(zip(names, formats)).items()
+}
 
 #  logger = logging.getLogger(__name__)
 #  logging_datefmt = '%Y-%m-%d %H:%M:%S'
@@ -110,40 +121,58 @@ def setup(configs: dict[str, Any]):
         configs = getattr(configs, '__dict__')
 
     output = deepcopy(configs)
-    logdir = configs.get('logdir', configs.get('log_dir', None))
-    ensure_new = configs.get('ensure_new', False)
-    if logdir is not None:
-        if ensure_new:
-            raise ValueError(f'Both `ensure_new` and `logdir` specified.')
+    logfile = os.path.join(os.getcwd(), 'log_dirs.txt')
 
-        output = load_configs_from_logdir(logdir)
-        output['restored'] = True
-        output['log_dir'] = logdir
-        output['logdir'] = logdir
-        output['restored_from'] = logdir
-        to_overwrite = ['train_steps', 'run_steps', 'beta_final']
-        changed = {k: configs.get(k) for k in to_overwrite}
-        for key, new in changed.items():
-            old = output.get(key)
-            if new != old:
-                logger.warning(
-                    f'Overwriting {key} from {old} to {new} in configs'
-                )
-                output[key] = new
-    else:
-        #  train_steps = configs.get('train_steps', None)
-        #  run_steps = configs.get('run_steps', None)
-        logfile = os.path.join(os.getcwd(), 'log_dirs.txt')
-        logdir = io.make_log_dir(configs, 'GaugeModel', logfile)
+    ensure_new = configs.get('ensure_new', False)
+    logdir = configs.get('logdir', configs.get('log_dir', None))
+    if logdir is not None:
+        logdir_exists = os.path.isdir(logdir)
+        logdir_nonempty = len(os.listdir(logdir)) > 0
+        if logdir_exists and logdir_nonempty and ensure_new:
+            raise ValueError(
+                f'Nonempty `logdir`, but `ensure_new={ensure_new}'
+            )
+
+    dirs = io.setup_directories(configs, timestamps = TSTAMPS)
+    if ensure_new:
+        dirs = io.setup_directories(configs, timestamps=TSTAMPS)
+        output['dirs'] = dirs
+        #  logdir = io.make_log_dir(configs, 'GaugeModel', logfile)
         output['log_dir'] = logdir
         output['logdir'] = logdir
         output['restore'] = False
-        io.write(f'{logdir}', logfile, 'a')
+        #  io.write(f'{logdir}', logfile, 'a')
 
-        num_chains = output.get('num_chains', 16)
-        if output.get('hmc_steps', 0) > 0:
-            x, hdynamics, _, hflags = train_hmc(output, num_chains=num_chains)
-            _ = run(hdynamics, hflags, save_x=False)
+    else:
+        dirs = io.setup_directories(configs, timestamps=TSTAMPS)
+        logdir = dirs['logdir']
+        output['restore'] = True
+        output['logdir'] = logdir
+        output['log_dir'] = logdir
+        output['restored_from'] = logdir
+        if logdir is not None:
+            output = load_configs_from_logdir(logdir)
+            output['restored'] = True
+            output['log_dir'] = logdir
+            output['logdir'] = logdir
+            output['restored_from'] = logdir
+            to_overwrite = ['train_steps', 'run_steps', 'beta_final']
+            changed = {k: configs.get(k) for k in to_overwrite}
+            for key, new in changed.items():
+                old = output.get(key)
+                if new != old:
+                    logger.warning(
+                        f'Overwriting {key} from {old} to {new} in configs'
+                    )
+                    output[key] = new
+
+    num_chains = output.get('num_chains', 16)
+    if output.get('hmc_steps', 0) > 0:
+        x, hdynamics, _, hflags = train_hmc(output, num_chains=num_chains)
+        _ = run(hdynamics, hflags, save_x=False)
+
+    if RANK == 0:
+        io.write(f'{logdir}', logfile, 'a')
 
     return output
 
