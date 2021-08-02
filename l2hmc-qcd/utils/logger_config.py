@@ -116,8 +116,8 @@ logger = logging.getLogger('root')
 logger.handlers[0] = RichHandler(markup=True,
                                  #  console=console,
                                  show_path=False)
-warnings.filterwarnings('once', 'UserWarning')
 
+warnings.filterwarnings('once', 'seaborn')
 logging.getLogger('matplotlib').setLevel(logging.ERROR)
 logging.getLogger('seaborn').setLevel(logging.ERROR)
 logging.getLogger('keras').setLevel(logging.ERROR)
