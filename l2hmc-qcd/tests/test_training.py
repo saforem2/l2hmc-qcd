@@ -294,21 +294,19 @@ def test():
     conv_configs = copy.deepcopy(configs)
     single_configs = copy.deepcopy(configs)
 
-
-
     logger.rule(f'Testing separate networks')
     t0 = time.time()
     sep_out = test_separate_networks(sep_configs)
     dt = time.time() - t0
     logger.rule(f'Passed! Took: {dt:.4f}')
 
-    sep_configs_copy = copy.deepcopy(sep_out.train.configs)
-    sep_configs_copy['log_dir'] = sep_out.train.logdir
-    sep_configs_copy['ensure_new'] = False
+    #  sep_configs_copy = copy.deepcopy(sep_out.train.configs)
+    sep_configs['log_dir'] = sep_out.train.logdir
+    sep_configs['ensure_new'] = False
 
     logger.rule(f'Testing restoring separate networks')
     t0 = time.time()
-    _ = test_resume_training(sep_configs_copy)
+    _ = test_resume_training(sep_configs)
     dt = time.time() - t0
     logger.rule(f'Passed! took: {dt:.4f}')
 
