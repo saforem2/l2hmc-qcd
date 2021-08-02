@@ -232,7 +232,7 @@ def plot_models(dynamics, logdir: str):
 
 # TODO: Add type annotations
 # pylint:disable=too-many-statements, too-many-branches
-def setup(configs, dirs=None, x=None, betas=None):
+def setup(configs, x=None, betas=None):
     """Setup training."""
     x = get_starting_point(configs)
     # Reshape x from (batch_size, Nt, Nx, 2) --> (batch_size, Nt * Nx * 2)
@@ -240,16 +240,20 @@ def setup(configs, dirs=None, x=None, betas=None):
 
     logdir = configs.get('logdir', configs.get('log_dir', None))
     ensure_new = configs.get('ensure_new', False)
-    if logdir is not None:
-        if os.path.isdir(logdir) and ensure_new:
-            raise ValueError('logdir exists but `ensure_new` flag is set.')
+    #  if logdir is not None:
+    #      if os.path.isdir(logdir) and ensure_new:
+    #          raise ValueError('logdir exists but `ensure_new` flag is set.')
 
-    dirs = io.setup_directories(configs)
+    #  dirs = io.setup_directories(configs)
     dynamics = build_dynamics(configs)
 
-    logdir = dirs['log_dir']
+    dirs = configs.get('dirs', None)
+    assert dirs is not None
+
+    logdir = dirs.get('logdir', dirs.get('log_dir', None))
     models_dir = os.path.join(logdir, 'training', 'models')
-    if os.path.isdir(models_dir) and not ensure_new:
+    nets_exist = os.path.isdir(models_dir) and len(os.listdir(models_dir)) > 0
+    if nets_exist and not ensure_new:
         logger.info(f'Loading networks from: {logdir}')
         networks = dynamics._load_networks(str(logdir))
         dynamics.xnet = networks['xnet']
@@ -282,6 +286,8 @@ def setup(configs, dirs=None, x=None, betas=None):
         logger.rule(f'Restoring model')
         logger.info(f'Restored model from: {manager.latest_checkpoint}')
         ckpt.restore(manager.latest_checkpoint)
+        configs['restored'] = True
+        configs['restored_from'] = manager.latest_checkpoint
         current_step = dynamics.optimizer.iterations.numpy()
         x = train_data.restore(datadir, step=current_step,
                                rank=RANK, local_rank=LOCAL_RANK,
@@ -293,6 +299,8 @@ def setup(configs, dirs=None, x=None, betas=None):
             train_steps = current_step + 10
             logger.warning(f'Setting train_steps={train_steps}')
     else:
+        configs['restored'] = False
+        configs['restored_from'] = None
         logger.warning('Starting new training run')
         logger.rule('NEW TRAINING RUN')
 
