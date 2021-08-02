@@ -94,9 +94,6 @@ def in_notebook():
     return True
 
 
-logging.config.dictConfig(logging_config)
-logger = logging.getLogger('root')
-
 theme = {}
 if in_notebook():
     theme = {
@@ -112,10 +109,11 @@ with_jupyter = in_notebook()
 #                        force_terminal=(not with_jupyter),
 #                        log_time_format='[%x %X] ',
 #                        theme=Theme(theme))#, width=width)
+logging.config.dictConfig(logging_config)
+logger = logging.getLogger('root')
 logger.handlers[0] = RichHandler(markup=True,
                                  #  console=console,
-                                 show_path=False,
-                                 rich_tracebacks=True)
+                                 show_path=False)
 warnings.filterwarnings('once', 'UserWarning')
 
 logging.getLogger('matplotlib').setLevel(logging.ERROR)
