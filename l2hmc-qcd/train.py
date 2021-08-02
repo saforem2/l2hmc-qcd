@@ -127,7 +127,12 @@ def setup(configs: dict[str, Any]):
     logdir = configs.get('logdir', configs.get('log_dir', None))
     if logdir is not None:
         logdir_exists = os.path.isdir(logdir)
-        logdir_nonempty = len(os.listdir(logdir)) > 0
+        contents = os.listdir(logdir)
+        logdir_nonempty = False
+        if contents is not None and isinstance(contents, list):
+            if len(contents) > 0:
+                logdir_nonempty = True
+
         if logdir_exists and logdir_nonempty and ensure_new:
             raise ValueError(
                 f'Nonempty `logdir`, but `ensure_new={ensure_new}'
