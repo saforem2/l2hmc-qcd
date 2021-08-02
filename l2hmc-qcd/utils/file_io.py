@@ -185,24 +185,24 @@ def setup_directories(
         configs: dict[str, Any],
         name: str = 'training',
         save_flags: bool = True,
-        ensure_new: bool = False,
+        timestamps: dict[str, str] = None,
 ):
     """Setup relevant directories for training."""
     #  if configs.get('log_dir', configs.get('logdir', None)) is None:
     logdir = configs.get('logdir', configs.get('log_dir', None))
-    if logdir is not None:
-        if os.path.isdir(logdir):
-            existing = True
+    ensure_new = configs.get('ensure_new', False)
 
-    if logdir is None:
-        logger.warning('Making new log_dir')
+    if logdir is None or ensure_new:
         logdir = make_log_dir(configs=configs,
                               model_type='GaugeModel',
+                              timestamps=timestamps,
                               ensure_new=ensure_new)
     else:
+        logdir_exists = os.path.isdir(logdir)
+        logdir_nonempty = (len(os.listdir(logdir)) > 0)
         logger.info(f'Found `log_dir` in configs.')
-        isdir = os.path.isdir(logdir)
-        logger.info(f'`os.path.isdir(log_dir) = {isdir}`')
+        logger.info(f'logdir_exists: {logdir_exists}')
+        logger.info(f'logdir_nonempty: {logdir_nonempty}')
 
     train_dir = os.path.join(logdir, name)
     train_paths = {
@@ -618,13 +618,14 @@ def make_log_dir(
     model_type = 'GaugeModel' if model_type is None else model_type
     cfg_str = parse_configs(configs)
 
-    timestamps = {
-        'month': get_timestamp('%Y_%m'),
-        'time': get_timestamp('%Y-%m-%d-%H%M%S'),
-        'hour': get_timestamp('%Y-%m-%d-%H'),
-        'minute': get_timestamp('%Y-%m-%d-%H%M'),
-        'second': get_timestamp('%Y-%m-%d-%H%M%S'),
-    }
+    if timestamps is None:
+        timestamps = {
+            'month': get_timestamp('%Y_%m'),
+            'time': get_timestamp('%Y-%m-%d-%H%M%S'),
+            'hour': get_timestamp('%Y-%m-%d-%H'),
+            'minute': get_timestamp('%Y-%m-%d-%H%M'),
+            'second': get_timestamp('%Y-%m-%d-%H%M%S'),
+        }
 
     if root_dir is None:
         root_dir = PROJECT_DIR
