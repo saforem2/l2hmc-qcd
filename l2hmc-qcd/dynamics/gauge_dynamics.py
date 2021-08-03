@@ -102,7 +102,7 @@ def build_test_dynamics():
     return build_dynamics(flags)
 
 
-def build_dynamics(configs: dict[str, Any], log_dir: Union[str, Path] = None):
+def build_dynamics(configs: dict[str, Any]) -> GaugeDynamics:
     """Build dynamics using configs from FLAGS."""
     config = GaugeDynamicsConfig(**dict(configs.get('dynamics_config', None)))
 
@@ -1492,15 +1492,14 @@ class GaugeDynamics(BaseDynamics):
 
     def save_config(self, config_dir: str):
         """Helper method for saving configuration objects."""
-        io.save_dict(asdict(self.config),
+        io.save_dict(self.config.__dict__,
                      config_dir, name='dynamics_config')
-        io.save_dict(asdict(self.net_config), config_dir, name='network_config')
-        io.save_dict(asdict(self.lr_config), config_dir, name='lr_config')
-        #  io.save_dict(self.params, config_dir, name='params')
-        #  io.save_dict(extras, config_dir, name='params')
-        #  io.save_dict(self.get_config(), config_dir, name='config')
+        io.save_dict(self.net_config.__dict__,
+                     config_dir, name='network_config')
+        io.save_dict(self.lr_config.__dict__,
+                     config_dir, name='lr_config')
         if self.conv_config is not None and self.config.use_conv_net:
-            io.save_dict(asdict(self.conv_config),
+            io.save_dict(self.conv_config.__dict__,
                          config_dir, name='conv_config')
 
     def get_config(self):
