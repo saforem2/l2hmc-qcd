@@ -7,19 +7,21 @@ training_utils.py
 Implements helper functions for training the model.
 """
 from __future__ import absolute_import, annotations, division, print_function
+
+import json
+import os
+import time
 from copy import deepcopy
 from dataclasses import dataclass
-
-import os
 from pathlib import Path
-import time
-import json
 from typing import Any, Optional, Union
 
 import numpy as np
 import tensorflow as tf
+import warnings
 
 import utils.file_io as io
+import utils.live_plots as plotter
 from config import PI
 from dynamics.config import NET_WEIGHTS_HMC
 from dynamics.gauge_dynamics import GaugeDynamics, build_dynamics
@@ -27,48 +29,15 @@ from network.config import LearningRateConfig
 from utils.annealing_schedules import get_betas
 from utils.attr_dict import AttrDict
 from utils.data_containers import DataContainer
+from utils.hvd_init import IS_CHIEF, LOCAL_RANK, RANK
 from utils.learning_rate import ReduceLROnPlateau
-import utils.live_plots as plotter
-#  import utils.live_plots as plotter
-#  from utils.live_plots import (LivePlotData, init_plots, update_joint_plots,
 from utils.logger import Logger, in_notebook
-#  from utils.logger import Logger, in_notebook
 from utils.plotting_utils import plot_data
 from utils.summary_utils import update_summaries
-from utils.hvd_init import RANK, LOCAL_RANK, IS_CHIEF
-#  from utils.logger_config import log
-#  from utils.summary_utils import update_summaries
-#  try:
-#      import horovod
-#      import horovod.tensorflow as hvd  # pylint:disable=wrong-import-order
-#      try:
-#          RANK = hvd.rank()
-#      except ValueError:
-#          hvd.init()
-#
-#      RANK = hvd.rank()
-#      LOCAL_RANK = hvd.local_rank()
-#      IS_CHIEF = (RANK == 0)
-#      HAS_HOROVOD = True
-#      NUM_WORKERS = hvd.size()
-#      #  hvd.init()
-#      GPUS = tf.config.experimental.list_physical_devices('GPU')
-#      for gpu in GPUS:
-#          tf.config.experimental.set_memory_growth(gpu, True)
-#      if GPUS:
-#          gpu = GPUS[hvd.local_rank()]  # pylint:disable=invalid-name
-#          tf.config.experimental.set_visible_devices(gpu, 'GPU')
-#
-#  except (ImportError, ModuleNotFoundError):
-#      HAS_HOROVOD = False
-#      RANK = LOCAL_RANK = 0
-#      SIZE = LOCAL_SIZE = 1
-#      IS_CHIEF = (RANK == 0)
-#
-#  #      IS_CHIEF = (RANK == 0)
-#  #
-#
 
+#  import utils.live_plots as plotter
+#  from utils.live_plots import (LivePlotData, init_plots, update_joint_plots,
+#  from utils.logger import Logger, in_notebook
 
 if tf.__version__.startswith('1.'):
     TF_VERSION = 1
@@ -98,17 +67,19 @@ TSTAMPS = {
     k: io.get_timestamp(v) for k, v in dict(zip(names, formats)).items()
 }
 
-#  logger = io.Logger()
 logger = Logger()
 
-#  logger = io.Logger()
+warnings.filterwarnings(action='once', category=UserWarning)
+warnings.filterwarnings('once', 'keras')
 
 #  try:
 #      tf.config.experimental.enable_mlir_bridge()
 #      tf.config.experimental.enable_mlir_graph_optimization()
 #  except:  # noqa: E722
 #      pass
+
 PlotData = plotter.LivePlotData
+
 
 def update_plots(history: dict, plots: dict, window: int = 1):
     lpdata = PlotData(history['loss'], plots['loss']['plot_obj1'])
@@ -123,11 +94,10 @@ def update_plots(history: dict, plots: dict, window: int = 1):
             plotter.update_plot(y=val, window=window, **plots[key])
 
 
-
-
-def check_if_int(x):
+def check_if_int(x: tf.Tensor) -> tf.Tensor:
     nearest_int = tf.math.round(x)
     return tf.math.abs(x - nearest_int) < 1e-3
+
 
 def train_hmc(
         configs: AttrDict,
@@ -187,13 +157,10 @@ def train_hmc(
             'x_shape': dynamics.config.x_shape,
             'net_weights': NET_WEIGHTS_HMC,
         }
-        t0 = time.time()
-        output = plot_data(data_container=train_data, flags=hconfigs,
-                           params=params, out_dir=dirs['train_dir'],
-                           therm_frac=0.0, num_chains=num_chains)
-        data_container = output['data_container']
-        logger.rule(f'Time spent plotting: {dt}s = {dt // 60}m {(dt % 60):.3g}s')
-        logger.rule(f'Time spent plotting: {dt}s = {dt // 60}m {(dt % 60):.3g}s')
+        _ = plot_data(data_container=train_data, flags=hconfigs,
+                      params=params, out_dir=dirs['train_dir'],
+                      therm_frac=0.0, num_chains=num_chains)
+        #  data_container = output['data_container']
 
     return x, dynamics, train_data, hconfigs
 
@@ -204,7 +171,7 @@ def random_init_from_configs(configs: dict[str, Any]) -> tf.Tensor:
     return tf.random.uniform(xshape, -PI, PI)
 
 
-def load_last_training_point(logdir) -> tf.Tensor:
+def load_last_training_point(logdir: Union[str, Path]) -> tf.Tensor:
     """Load previous states from `logdir`."""
     xfpath = os.path.join(logdir, 'training', 'train_data',
                           f'x_rank{RANK}-{LOCAL_RANK}.z')
@@ -223,7 +190,7 @@ def get_starting_point(configs: dict[str, Any]) -> tf.Tensor:
         return random_init_from_configs(configs)
 
 
-def plot_models(dynamics, logdir: str):
+def plot_models(dynamics: GaugeDynamics, logdir: Union[str, Path]):
     if dynamics.config.separate_networks:
         networks = {
             'dynamics_vnet': dynamics.vnet[0],
@@ -244,19 +211,81 @@ def plot_models(dynamics, logdir: str):
             raise exception
 
 
-def load_configs_from_logdir(logdir: Union[str, Path]):
+def load_configs_from_logdir(logdir: Union[str, Path]) -> dict[str, Any]:
     fpath = os.path.join(logdir, 'train_configs.json')
     with open(fpath, 'r') as f:
         configs = json.load(f)
 
     return configs
 
-def setup_directories(configs: dict[str, Any]):
-    """Setup directories for training."""
-    if hasattr(configs, '__dict__'):
-        configs = getattr(configs, '__dict__')
 
+def check_if_logdir_exists(logdir: Union[str, Path] = None) -> bool:
+    if logdir is None:
+        return False
+
+    exists = os.path.isdir(logdir)
+    if exists:
+        contents = os.listdir(logdir)
+        if contents is not None and isinstance(contents, list):
+            if len(contents) > 0:
+                return True
+
+
+def setup_directories(configs: dict[str, Any]) -> dict[str, Any]:
+    """Setup directories for training."""
     logfile = os.path.join(os.getcwd(), 'log_dirs.txt')
+    restore_dir = configs.get('restore_from', None)
+    restored = None
+    if restore_dir is not None:
+        restored = load_configs_from_logdir(restore_dir)
+        lf_old = restored['dynamics_config']['num_steps']
+        lf_new = configs['dynamics_config']['num_steps']
+
+        bi_old = restored['beta_init']
+        bf_old = restored['beta_final']
+
+        bi_new = configs['beta_init']
+        bf_new = configs['beta_final']
+        if bi_old == bi_new and bf_old == bf_new:
+            configs['ensure_new'] = False
+        else:
+            configs['ensure_new'] = True
+
+        configs['restored_configs'] = restored
+        assert lf_old == lf_new
+        new_dynamics_config = dict(configs['dynamics_config'])
+        old_dynamics_config = dict(restored['dynamics_config'])
+        for key, new in new_dynamics_config.items():
+            old = old_dynamics_config[key]
+            if new != old:
+                logger.warning(
+                    'Mismatch between new and restored dynamics configs: \n'
+                    f'key: {key} \n'
+                    f'configs["dynamics_config"][{key}] = {new} \n'
+                    f'restored["dynamics_config"][{key}] = {old} \n'
+                )
+
+                logger.warning(f'Overwriting configs with restored value')
+                configs['dynamics_config'][key] = old
+
+        new_network_config = configs['network_config']
+        old_network_config = restored['network_config']
+        for key, new in new_network_config.items():
+            old = old_network_config[key]
+            if new != old:
+                logger.warning(
+                    'Mismatch between new and restored network configs: \n'
+                    f'key: {key} \n'
+                    f'configs["network_config"][{key}] = {new} \n'
+                    f'restored["network_config"][{key}] = {old} \n'
+                )
+
+                logger.warning(f'Overwriting configs with restored value')
+                configs['network_config'][key] = old
+
+
+        configs['restored'] = True
+
     ensure_new = configs.get('ensure_new', False)
     logdir = configs.get('logdir', configs.get('log_dir', None))
     if logdir is not None:
@@ -272,196 +301,156 @@ def setup_directories(configs: dict[str, Any]):
                 f'Nonempty `logdir`, but `ensure_new={ensure_new}'
             )
 
-    dirs = io.setup_directories(configs, timestamps= TSTAMPS)
-    logdir = dirs.get('logdir', dirs.get('log_dir', None))
-    if ensure_new:
-        restored = False
-        restored_from = None
-        #  dirs = io.setup_directories(configs, timestamps=TSTAMPS)
-        #  configs['dirs'] = dirs
-        #  #  logdir = io.make_log_dir(configs, 'GaugeModel', logfile)
-        #  configs['log_dir'] = logdir
-        #  configs['logdir'] = logdir
-        #  configs['restore'] = False
-        #  io.write(f'{logdir}', logfile, 'a')
-
-    else:
-        restored = True
-        restored_from = logdir
-        #  dirs = io.setup_directories(configs, timestamps=TSTAMPS)
-        #  logdir = dirs['logdir']
-        #  output['restore'] = True
-        #  output['logdir'] = logdir
-        #  output['log_dir'] = logdir
-        #  output['restored_from'] = logdir
-        #  if logdir is not None:
-        #      output = load_configs_from_logdir(logdir)
-        #      output['restored'] = True
-        #      output['log_dir'] = logdir
-        #      output['logdir'] = logdir
-        #      output['restored_from'] = logdir
-        if logdir is not None:
-            if os.path.isdir(logdir):
-                loaded = load_configs_from_logdir(logdir)
-                to_overwrite = ['train_steps', 'run_steps', 'beta_final']
-                changed = {k: configs.get(k) for k in to_overwrite}
-                for key, new in changed.items():
-                    old = loaded.get(key)
-                    if new != old:
-                        logger.warning(
-                            f'Overwriting {key} from {old} to {new} in configs'
-                        )
-                        configs[key] = new
-
-    logdir = dirs.get('logdir', dirs.get('log_dir', None))
+    # Create `logdir`, `logdir/training/...`' etc
+    dirs = io.setup_directories(configs, timestamps=TSTAMPS)
     configs['dirs'] = dirs
+    logdir = dirs.get('logdir', dirs.get('log_dir', None))
     configs['log_dir'] = logdir
-    configs['restored'] = restored
-    configs['restored_from'] = restored_from
-    #  num_chains = output.get('num_chains', 16)
-    #  if output.get('hmc_steps', 0) > 0:
-    #      x, hdynamics, _, hflags = train_hmc(output, num_chains=num_chains)
-    #      _ = run(hdynamics, hflags, save_x=False)
+    configs['logdir'] = logdir
 
     if RANK == 0:
+        io.save_dict(configs, logdir, name='train_configs')
         io.write(f'{logdir}', logfile, 'a')
+
+        if restored is not None:
+            io.save_dict(restored, logdir, name='restored_train_configs')
 
     return configs
 
+
+def restore_from(restore_dir: Union[str, Path]) -> GaugeDynamics:
+    """Load trained networks and restore model from checkpoint."""
+    logger.warning(f'Loading networks from: {restore_dir}')
+    configs_file = os.path.join(restore_dir, 'train_configs.z')
+    configs = io.loadz(configs_file)
+    dynamics = build_dynamics(configs)
+
+    networks = dynamics._load_networks(str(restore_dir))
+    dynamics.xnet = networks['xnet']
+    dynamics.vnet = networks['vnet']
+
+    ckptdir = os.path.join(restore_dir, 'training', 'checkpoints')
+    ckpt = tf.train.Checkpoint(dynamics=dynamics, optimizer=dynamics.optimizer)
+    manager = tf.train.CheckpointManager(ckpt, ckptdir, max_to_keep=5)
+    ckpt.restore(manager.latest_checkpoint)
+    if manager.latest_checkpoint:
+        logger.warning(f'Restored from {manager.latest_checkpoint}')
+
+    return dynamics
+
+
+def setup_betas(
+        bi: float,
+        bf: float,
+        train_steps: int,
+        current_step: int,
+):
+    remaining_steps = train_steps - current_step
+
+    if bi == bf:
+        return bi * tf.ones(remaining_steps)
+
+    betas = get_betas(remaining_steps, bi, bf)
+
+    if len(betas) < remaining_steps:
+        diff = remaining_steps - len(betas)
+        betas = list(betas) + diff * [tf.constant(bf)]
+
+    return tf.convert_to_tensor(betas)
 
 # TODO: Add type annotations
 # pylint:disable=too-many-statements, too-many-branches
 def setup(configs, x=None, betas=None):
     """Setup training."""
-    x = get_starting_point(configs)
-    # Reshape x from (batch_size, Nt, Nx, 2) --> (batch_size, Nt * Nx * 2)
-    x = tf.reshape(x, (x.shape[0], -1))
-
-    logdir = configs.get('logdir', configs.get('log_dir', None))
-    ensure_new = configs.get('ensure_new', False)
+    #  logdir = configs.get('logdir', configs.get('log_dir', None))
+    #  ensure_new = configs.get('ensure_new', False)
     #  if logdir is not None:
     #      if os.path.isdir(logdir) and ensure_new:
     #          raise ValueError('logdir exists but `ensure_new` flag is set.')
-
-    #  dirs = io.setup_directories(configs)
-    dynamics = build_dynamics(configs)
-
-    dirs = configs.get('dirs', None)
-    assert dirs is not None
-
-    logdir = dirs.get('logdir', dirs.get('log_dir', None))
-    models_dir = os.path.join(logdir, 'training', 'models')
-    nets_exist = os.path.isdir(models_dir) and len(os.listdir(models_dir)) > 0
-    if nets_exist and not ensure_new:
-        logger.info(f'Loading networks from: {logdir}')
-        networks = dynamics._load_networks(str(logdir))
-        dynamics.xnet = networks['xnet']
-        dynamics.vnet = networks['vnet']
-
-
-    #  dirs = setup_directories(configs)
-    #  configs['dirs'] = dirs
-    #  configs['log_dir'] = dirs['log_dir']
+    save_steps = configs.get('save_steps')
     train_steps = configs.get('train_steps')
     print_steps = configs.get('print_steps')
 
-
-    #  logger.info(f'dynamics.net_weights: {dynamics.net_weights}')
-    #  network_dir = dynamics.config.log_dir
-    #  if network_dir is not None:
-    #      xnet, vnet = dynamics._load_networks(network_dir)
-    #      dynamics.xnet = xnet
-    #      dynamics.vnet = vnet
-    train_data = DataContainer(train_steps, dirs=dirs,
-                               print_steps=print_steps)
-    #  if dynamics._has_trainable_params:
-    ckpt = tf.train.Checkpoint(dynamics=dynamics,
-                               optimizer=dynamics.optimizer)
-    ckptdir = dirs['ckpt_dir']
-    datadir = dirs['data_dir']
-    summdir = dirs['summary_dir']
-    manager = tf.train.CheckpointManager(ckpt, ckptdir, max_to_keep=5)
-    if manager.latest_checkpoint:  # and not configs.get('ensure_new', False):
-        logger.rule(f'Restoring model')
-        logger.info(f'Restored model from: {manager.latest_checkpoint}')
-        ckpt.restore(manager.latest_checkpoint)
-        #  configs['restored'] = True
-        #  configs['restored_from'] = manager.latest_checkpoint
-        current_step = dynamics.optimizer.iterations.numpy()
-        x = train_data.restore(datadir, step=current_step,
-                               rank=RANK, local_rank=LOCAL_RANK,
-                               x_shape=dynamics.x_shape)
-        if current_step >= train_steps:
-            logger.warning(', '.join(['Current step >= train_steps',
-                                      f'current_step={current_step}',
-                                      f'train_steps={train_steps}']))
-            train_steps = current_step + 10
-            logger.warning(f'Setting train_steps={train_steps}')
-    else:
-        #  configs['restored'] = False
-        #  configs['restored_from'] = None
-        logger.warning('Starting new training run')
-        logger.rule('NEW TRAINING RUN')
-
-    # Create initial samples if not restoring from ckpt
-    if x is None:
-        x = tf.random.uniform(shape=dynamics.x_shape, minval=-PI, maxval=PI)
-
-    # Setup summary writer
-    make_summaries = configs.get('make_summaries', True)
-    if IS_CHIEF and make_summaries and TF_VERSION == 2:
-        try:
-            writer = tf.summary.create_file_writer(summdir)
-        except AttributeError:  # pylint:disable=bare-except
-            writer = None
-    else:
-        writer = None
-
-    current_step = dynamics.optimizer.iterations.numpy()  # get global step
-    if current_step > train_steps:
-        train_steps = current_step + 10
-
-    steps = tf.range(current_step, train_steps, dtype=tf.int64)
-    train_data.steps = steps[-1]
-
     beta_init = configs.get('beta_init', None)
     beta_final = configs.get('beta_final', None)
+
+    dirs = configs.get('dirs', None)
+    logdir = dirs.get('logdir', dirs.get('log_dir', None))
+
+    assert dirs is not None
+    assert logdir is not None
     assert beta_init is not None and beta_final is not None
-    if beta_init != beta_final:
-        betas = get_betas(train_steps, beta_init, beta_final)
-        betas = betas[current_step:]
+
+    train_data = DataContainer(train_steps, dirs=dirs, print_steps=print_steps)
+
+    # Check if we want to restore from existing directory
+    restore_dir = configs.get('restore_from', None)
+    if restore_dir is not None:
+        dynamics = restore_from(restore_dir)
+        datadir = os.path.join(restore_dir, 'training', 'train_data')
+        current_step = dynamics.optimizer.iterations.numpy()
+        train_steps = current_step + train_steps
+        x = train_data.restore(datadir, step=current_step,
+                               x_shape=dynamics.x_shape,
+                               rank=RANK, local_rank=LOCAL_RANK)
+        #  ckpt = restored['ckpt']
+        #  manager = restored['manager']
+
+    # Otherwise, create new dynamics
     else:
-        betas = beta_init * tf.ones(len(steps))
+        logger.warning('Starting new training run')
+        logger.warning('Initializing `x` from `uniform[-pi, pi]`')
+        dynamics = build_dynamics(configs)
+        x = tf.random.uniform(dynamics.x_shape, minval=np.pi, maxval=np.pi)
 
-    #  if current_step > len(betas):
-    #      diff = current_step - len(betas)
-    #      betas = list(betas) + diff * [tf.constant(beta_final)]
-    #      #  betas = list(betas) +  * tf.ones(diff)
-    #      #  betas = list(betas) + [betas[-1] for _ in range(diff)]
+    # Reshape x from [batch_size, Nt, Nx, Nd] --> [batch_size, Nt * Nx * Nd]
+    x = tf.reshape(x, (x.shape[0], -1))
 
+    # Create checkpoint and checkpoint manager for saving during training
+    ckptdir = os.path.join(logdir, 'training', 'checkpoints')
+    ckpt = tf.train.Checkpoint(dynamics=dynamics, optimizer=dynamics.optimizer)
+    manager = tf.train.CheckpointManager(ckpt, ckptdir, max_to_keep=5)
+    ckpt.restore(manager.latest_checkpoint)
+    if manager.latest_checkpoint:
+        logger.warning(f'Restored ckpt from: {manager.latest_checkpoint}')
 
-    remaining_steps = train_steps - current_step
-    if len(betas) < remaining_steps:
-        diff = remaining_steps - len(betas)
-        betas = list(betas) + diff * [tf.constant(beta_final)]
+    # Determine current training step
+    current_step = dynamics.optimizer.iterations.numpy()
+    if current_step >= train_steps:
+        logger.warning(', '.join(['Current step >= train_steps',
+                                  f'current_step={current_step}',
+                                  f'train_steps={train_steps}']))
+        train_steps = current_step + train_steps + save_steps
+        train_data.steps = current_step + save_steps
+        logger.warning(f'Setting train_steps={train_steps}')
 
+    # Setup summary writer for logging metrics through tensorboard
+    summdir = dirs['summary_dir']
+    make_summaries = configs.get('make_summaries', True)
 
-    betas = tf.convert_to_tensor(betas, dtype=x.dtype)
+    steps = tf.range(current_step, train_steps, dtype=tf.int64)
+    train_data.steps = train_steps
+
+    betas = setup_betas(beta_init, beta_final,
+                        train_steps, current_step)
+
     dynamics.compile(loss=dynamics.calc_losses,
                      optimizer=dynamics.optimizer,
                      experimental_run_tf_function=False)
 
     _ = dynamics.apply_transition((x, tf.constant(betas[0])), training=True)
 
+    writer = None
     if IS_CHIEF:
         plot_models(dynamics, dirs['log_dir'])
         io.savez(configs, os.path.join(dirs['log_dir'], 'train_configs.z'))
-        #  cfgs_fpath = os.path.join(dirs['log_dir'], 'train_configs.json')
-        #  cfgs = {str(k): v for k, v in configs.items()}
-        #  logger.info(cfgs)
-        #  with open(cfgs_fpath, 'w') as f:
-        #      json.dump(cfgs, f)
-
+        if make_summaries and TF_VERSION == 2:
+            try:
+                writer = tf.summary.create_file_writer(summdir)
+            except AttributeError:
+                writer = None
+        else:
+            writer = None
 
     #  prof_range = (0, 0)
     # If profiling, run for 10 steps in the middle of training
@@ -483,12 +472,11 @@ def setup(configs, x=None, betas=None):
     }
 
 
-
 @dataclass
 class TrainOutputs:
     x: tf.Tensor
     logdir: str
-    configs: dict
+    configs: dict[str, Any]
     data: DataContainer
     dynamics: GaugeDynamics
 
@@ -497,39 +485,39 @@ def train(
         configs: dict[str, Any],
         x: tf.Tensor = None,
         num_chains: int = 32,
-        #  restore_x: bool = False,
         make_plots: bool = True,
         therm_frac: float = 0.33,
+        #  restore_x: bool = False,
         #  ensure_new: bool = False,
         #  should_track: bool = True,
 ) -> TrainOutputs:
     """Train model.
 
     Returns:
-        x (tf.Tensor): Batch of configurations
-        dynamics (GaugeDynamics): Dynamics object.
-        train_data (DataContainer): Object containing train data.
-        configs (AttrDict): AttrDict containing configs used.
+        train_outputs: Dataclass with attributes:
+          - x: tf.Tensor
+          - logdir: str
+          - configs: dict[str, Any]
+          - data: DataContainer
+          - dynamics: GaugeDynamics
     """
     start = time.time()
     configs = setup_directories(configs)
     config = setup(configs, x=x)
     dynamics = config['dynamics']
-    #  manager = config['manager']
     dirs = config['dirs']
-    #  betas = config['betas']
-    #  steps = config['steps']
-    #  writer = config['writer']
     configs = config['configs']
-    #  ckpt = config['checkpoint']
     train_data = config['train_data']
-    #  dirs = io.setup_directories(configs, ensure_new=ensure_new)
-    #  configs.update({'dirs': dirs})
-
 
     dynamics.save_config(dirs['config_dir'])
+    # ------------------------------------
+    # Train dynamics
     logger.rule('TRAINING')
+    t0 = time.time()
     x, train_data = train_dynamics(dynamics, config, dirs, x=x)
+    logger.rule(f'DONE TRAINING. TOOK: {time.time() - t0:.4f}')
+    logger.info(f'Training took: {time.time() - t0:.4f}')
+    # ------------------------------------
     #  x, train_data = train_dynamics(dynamics, configs, dirs, x=x,
     #                                 should_track=SHOULD_TRACK)
 
@@ -610,6 +598,17 @@ def train_dynamics(
         #  should_track: bool = False,
 ):
     """Train model."""
+
+    configs = input['configs']
+    steps = configs.get('steps', [])
+    min_lr = configs.get('min_lr', 1e-5)
+    patience = configs.get('patience', 10)
+    save_steps = configs.get('save_steps', None)
+    factor = configs.get('reduce_lr_factor', 0.5)
+    print_steps = configs.get('print_steps', 1000)
+    logging_steps = configs.get('logging_steps', None)
+    steps_per_epoch = configs.get('steps_per_epoch', 1000)
+
     # -- Helper functions for training, logging, saving, etc. --------------
     def train_step(x: tf.Tensor, beta: tf.Tensor):
         start = time.time()
@@ -618,24 +617,13 @@ def train_dynamics(
         return x, metrics
 
     def should_print(step: int) -> bool:
-        return IS_CHIEF and step % ps_ == 0
+        return IS_CHIEF and step % print_steps == 0
 
     def should_log(step: int) -> bool:
-        return IS_CHIEF and step % ls_ == 0
+        return IS_CHIEF and step % logging_steps == 0
 
     def should_save(step: int) -> bool:
         return step % save_steps == 0 and ckpt is not None
-
-    configs = input['configs']
-    min_lr = configs.get('min_lr', 1e-5)
-    patience = configs.get('patience', 10)
-    save_steps = configs.get('save_steps', None)
-    print_steps = configs.get('print_steps', 1000)
-    factor = configs.get('reduce_lr_factor', 0.5)
-    steps = configs.get('steps', [])
-
-    # -- setup ----------------------------------------------------
-    #  config = setup(dynamics, configs, dirs, x, betas)
 
     betas = input.get('betas')
     if dirs is None:
@@ -647,11 +635,6 @@ def train_dynamics(
     ckpt = input['checkpoint']
     train_data = input['train_data']
 
-    #  if dirs is None:
-    #      dirs = configs.get('dirs', None)
-    #      if dirs is None:
-    #          dirs = config.get('dirs', None)
-
     assert dynamics.lr_config is not None
     warmup_steps = dynamics.lr_config.warmup_steps
     reduce_lr = ReduceLROnPlateau(monitor='loss', mode='min',
@@ -660,31 +643,12 @@ def train_dynamics(
                                   verbose=1, patience=patience)
     reduce_lr.set_model(dynamics)
 
-    #  steps = config.get('steps', [])
-    #  train_step = config.train_step
-
     if IS_CHIEF and writer is not None:
         writer.set_as_default()
-        #  writer = config.get('writer', None)
-        #  if writer is not None:
-        #      writer.set_as_default()
 
     #  tf.compat.v1.autograph.experimental.do_not_convert(dynamics.train_step)
 
     # -- Try running compiled `train_step` fn otherwise run imperatively ----
-    #  if betas is None:
-    #      betas = config.get('betas', [])  # type: list[tf.Tensor]
-
-    #  if steps is None:
-    #      steps = np.arange(len(betas))
-    #  if x is None:
-    #      xshape = dynamics.config.x_shape
-    #      x = config.get('x', tf.random.uniform(xshape, -PI, PI))
-
-    #  cbetas = config.get('betas', None)
-    #  csteps = config.get('steps', None)
-    #  betas = cbetas if cbetas is None else betas
-    #  steps = np.arange(len(betas)) if csteps is None else steps
     assert betas is not None and len(betas) > 0
     b0 = tf.constant(betas[0])
     xshape = dynamics._xshape
@@ -711,9 +675,6 @@ def train_dynamics(
 
     # -- Final setup; create timing wrapper for `train_step` function -------
     # -- and get formatted header string to display during training. --------
-    ps_ = configs.get('print_steps', None)
-    ls_ = configs.get('logging_steps', None)
-    steps_per_epoch = configs.get('steps_per_epoch', 1000)
 
     warmup_steps = dynamics.lr_config.warmup_steps
     total_steps = len(betas)
@@ -721,18 +682,13 @@ def train_dynamics(
         logger.warning(f'len(steps) != len(betas) Restarting step count!')
         logger.warning(f'len(steps): {len(steps)}, len(betas): {len(betas)}')
         steps = np.arange(len(betas))
-    #  if should_track:
-    #      iterable = track(enumerate(zip(steps, betas)), total=total_steps,
-    #                       console=io.console, description='training',
-    #                       transient=True)
-    #  else:
 
     keep = ['dt', 'loss', 'accept_prob', 'beta',
-            #  'Hf_start', 'Hf_mid', 'Hf_end'
-            #  'Hb_start', 'Hb_mid', 'Hb_end',
-            'Hwb_start', 'Hwb_mid', 'Hwb_end',
-            'Hwf_start', 'Hwf_mid', 'Hwf_end',
-            'xeps', 'veps', 'dq', 'dq_sin',
+            'Hwb_start', 'Hwf_start',
+            'Hwb_mid', 'Hwf_mid',
+            'Hwb_end', 'Hwf_end',
+            'xeps', 'veps',
+            'dq', 'dq_sin',
             'plaqs', 'p4x4',
             'charges', 'sin_charges']
 
@@ -771,14 +727,14 @@ def train_dynamics(
                 # -- Save CheckpointManager -------------
                 manager.save()
                 mstr = f'Checkpoint saved to: {manager.latest_checkpoint}'
-                logger.log(mstr)
+                logger.info(mstr)
                 # -- Save train_data and free consumed memory --------
                 train_data.save_and_flush(data_dir, logfile,
                                           rank=RANK, mode='a')
                 if not dynamics.config.hmc:
                     # -- Save network weights -------------------------------
                     dynamics.save_networks(logdir)
-                    logger.log(f'Networks saved to: {logdir}')
+                    logger.info(f'Networks saved to: {logdir}')
 
         # -- Print current training state and metrics ---------------
         if should_print(step):
@@ -806,7 +762,8 @@ def train_dynamics(
 
         # -- Update summary objects ---------------------
         if should_log(step):
-            logger.rule('')
+            #  logger.rule('')
+            logger.info('Updating summaries')
             train_data.update(step, metrics)
             if writer is not None:
                 update_summaries(step, metrics, dynamics)

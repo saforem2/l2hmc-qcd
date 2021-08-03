@@ -23,6 +23,12 @@ def parse_configs():
                         help=("""Log directory to use from previous run.  If
                         this argument is not passed, a new directory will be
                         created."""))
+    parser.add_argument('--restore_from',
+                        dest='restore_from',
+                        type=str,
+                        default=None,
+                        required=False,
+                        help=("""Directory to restore from."""))
     parser.add_argument("--json_file",
                         dest="json_file",
                         type=str,
@@ -42,6 +48,10 @@ def parse_configs():
 
     if logdir is not None:
         args.__dict__['log_dir'] = logdir
+
+    restore_from = args.restore_from
+    if restore_from is not None:
+        args.__dict__['restore_from'] = restore_from
 
     #  flags = AttrDict(args.__dict__)
     #  for key, val in flags.items():
