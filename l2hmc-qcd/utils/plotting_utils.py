@@ -3,31 +3,33 @@ plotting.py
 
 Methods for plotting data.
 """
+from __future__ import absolute_import, print_function, division, annotations
 import matplotlib.style as mplstyle
-mplstyle.use('fast')
-import time
-import os
 
-import arviz as az
-import numpy as np
-import xarray as xr
-import pandas as pd
-import tensorflow as tf
-import seaborn as sns
-import matplotlib.pyplot as plt
+mplstyle.use('fast')
 import itertools as it
+import os
+import time
+import warnings
+from copy import deepcopy
 from pathlib import Path
 
-from utils import SKEYS
-from copy import deepcopy
+import arviz as az
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import seaborn as sns
+import tensorflow as tf
+import xarray as xr
+
 import utils.file_io as io
-from utils.file_io import timeit
+#  from config import NP_FLOAT, TF_FLOAT
+from dynamics.config import NetWeights
+from utils import SKEYS
 from utils.attr_dict import AttrDict
 from utils.autocorr import calc_tau_int_vs_draws
+#  from utils.file_io import timeit
 from utils.logger import Logger
-
-from config import TF_FLOAT, NP_FLOAT
-from dynamics.config import NetWeights
 
 #  TF_FLOAT = FLOATS[tf.keras.backend.floatx()]
 #  NP_FLOAT = NP_FLOATS[tf.keras.backend.floatx()]
@@ -39,6 +41,8 @@ plt.style.use('default')
 sns.set_context('paper')
 sns.set_style('whitegrid')
 sns.set_palette('bright')
+warnings.filterwarnings('once', 'UserWarning:')
+warnings.filterwarnings('once', 'seaborn')
 
 #  if TYPE_CHECKING:
 #      from utils.data_containers import DataContainer
@@ -73,7 +77,6 @@ def truncate_colormap(
     return new_cmap
 
 
-@timeit
 def make_ridgeplots(
         dataset,
         num_chains=None,
@@ -136,7 +139,7 @@ def make_ridgeplots(
             if out_dir is not None:
                 io.check_else_make_dir(out_dir)
                 out_file = os.path.join(out_dir, f'{key}_ridgeplot.pdf')
-                logger.log(f'Saving figure to: {out_file}.')
+                #  logger.log(f'Saving figure to: {out_file}.')
                 plt.savefig(out_file, dpi=400, bbox_inches='tight')
 
             #plt.close('all')
@@ -183,10 +186,9 @@ def drop_sequential_duplicates(chain):
     return np.array([i[0] for i in it.groupby(chain)])
 
 
-@timeit
 def savefig(fig, fpath):
     io.check_else_make_dir(os.path.dirname(fpath))
-    logger.log(f'Saving figure to: {fpath}.')
+    #  logger.log(f'Saving figure to: {fpath}.')
     fig.savefig(fpath, dpi=400, bbox_inches='tight')
     fig.clf()
     plt.close('all')
@@ -212,7 +214,6 @@ def therm_arr(arr, therm_frac=0., ret_steps=True):
     return arr
 
 
-@timeit
 def plot_energy_distributions(data, out_dir=None, title=None):
     """Plot energy distributions at beginning, middle, and end of trajectory.
 
@@ -268,7 +269,6 @@ def plot_energy_distributions(data, out_dir=None, title=None):
     return fig, axes.flatten()
 
 
-@timeit
 def energy_traceplot(key, arr, out_dir=None, title=None):
     if out_dir is not None:
         out_dir = os.path.join(out_dir, 'energy_traceplots')
@@ -289,7 +289,6 @@ def energy_traceplot(key, arr, out_dir=None, title=None):
         _ = mcmc_traceplot(new_key, data_arr, title, tplot_fname)
 
 
-@timeit
 def plot_charges(steps, charges, title=None, out_dir=None):
     charges = charges.T
     if charges.shape[0] > 4:
@@ -314,7 +313,6 @@ def plot_charges(steps, charges, title=None, out_dir=None):
     return fig, ax
 
 
-@timeit
 def get_title_str_from_params(params):
     """Create a formatted string with relevant params from `params`."""
     net_weights = params.get('net_weights', None)
@@ -347,9 +345,9 @@ def get_title_str_from_params(params):
     return title_str
 
 
-@timeit
 def mcmc_avg_lineplots(data, title=None, out_dir=None):
     """Plot trace of avg."""
+    fig, axes = None, None
     for idx, (key, val) in enumerate(data.items()):
         fig, axes = plt.subplots(ncols=2, figsize=(8, 4),
                                  constrained_layout=True)
@@ -399,7 +397,6 @@ def mcmc_avg_lineplots(data, title=None, out_dir=None):
     return fig, axes
 
 
-@timeit
 def mcmc_lineplot(data, labels, title=None,
                   fpath=None, show_avg=False, **kwargs):
     """Make a simple lineplot."""
@@ -424,7 +421,6 @@ def mcmc_lineplot(data, labels, title=None,
     return fig, ax
 
 
-@timeit
 def mcmc_traceplot(key, val, title=None, fpath=None, **kwargs):
     if '_' in key:
         key = ' '.join(key.split('_'))
@@ -444,7 +440,6 @@ def mcmc_traceplot(key, val, title=None, fpath=None, **kwargs):
         return None
 
 
-@timeit
 def plot_autocorrs_vs_draws(
         qarr: np.ndarray,
         num_pts: int = 20,
@@ -480,14 +475,13 @@ def plot_autocorrs_vs_draws(
     return tint_dict, (fig, ax)
 
 
-@timeit
 def plot_autocorrs1(
     beta: float,
     data: dict,
     data_compare: dict = None,
-    out_dir: str = None,
     ax: plt.Axes = None,
-    labels: tuple = None,
+    #  out_dir: str = None,
+    #  labels: tuple = None,
     cmap: str = 'Blues',
 ):
     if ax is None:
@@ -523,7 +517,6 @@ def plot_autocorrs1(
             pass
 
 
-@timeit
 def plot_data(
         data_container: "DataContainer",  # noqa:F821
         out_dir: str,
