@@ -118,6 +118,9 @@ logger.handlers[0] = RichHandler(markup=True,
                                  show_path=False)
 
 warnings.filterwarnings('once', 'seaborn')
+warnings.filterwarnings('once', 'keras')
+warnings.filterwarnings('once', 'UserWarning:')
+warnings.filterwarnings('once', 'CustomMaskWarning:')
 logging.getLogger('matplotlib').setLevel(logging.ERROR)
 logging.getLogger('seaborn').setLevel(logging.ERROR)
 logging.getLogger('keras').setLevel(logging.ERROR)
