@@ -205,8 +205,7 @@ class DataContainer:
             io.log(f'Restored `x` from: {x_file}.')
         except FileNotFoundError:
             io.log(f'Unable to load `x` from {x_file}.', level='WARNING')
-            io.log('Using random normal init.', level='WARNING')
-            x = tf.random.normal(x_shape)
+            x = tf.random.uniform(x_shape, minval=np.pi, maxval=np.pi)
 
         data = self.load_data(data_dir)
         for key, val in data.items():
@@ -288,7 +287,7 @@ class DataContainer:
 
             if profile:
                 tdict[key] = time.time() - t0
-                io.log(f'time spent plotting {key}: {tdict[key]}')
+                #  io.log(f'time spent plotting {key}: {tdict[key]}')
 
         if out_dir is not None:
             out_dir = os.path.join(out_dir, 'ridgeplots')
