@@ -50,8 +50,6 @@ if tf.__version__.startswith('1'):
 #  except ImportError:
 #      pass
 
-import numpy as np
-
 
 MODULEPATH = os.path.join(os.path.dirname(__file__), '..')
 if MODULEPATH not in sys.path:
@@ -68,11 +66,9 @@ import utils.file_io as io
 
 from utils.hvd_init import RANK
 from config import BIN_DIR, GAUGE_LOGS_DIR
-from network.config import ConvolutionConfig
-from utils.file_io import timeit
 from utils.attr_dict import AttrDict
 from utils.training_utils import train, TrainOutputs
-from utils.inference_utils import InferenceResults, load_and_run, run, run_hmc
+from utils.inference_utils import InferenceResults, run, run_hmc
 from utils.logger import Logger
 
 logger = Logger()
@@ -167,6 +163,8 @@ def catch_exception(fn):
 
 def test_hmc_run(configs: dict[str, Any]):
     """Testing generic HMC."""
+    logger.info(f'Testing generic HMC')
+    t0 = time.time()
     configs = AttrDict(**dict(copy.deepcopy(configs)))
     configs['dynamics_config']['hmc'] = True
     #  hmc_dir = os.path.join(os.path.dirname(PROJECT_DIR),
@@ -175,6 +173,7 @@ def test_hmc_run(configs: dict[str, Any]):
     dynamics, run_data, x, _ = run_hmc(configs, hmc_dir=hmc_dir,
                                        make_plots=False)
 
+    logger.info(f'Passed! Took: {time.time() - t0:.4f} seconds')
     return {
         'x': x,
         'dynamics': dynamics,
@@ -184,6 +183,8 @@ def test_hmc_run(configs: dict[str, Any]):
 
 def test_conv_net(configs: dict[str, Any]) -> TestOutputs:
     """Test convolutional networks."""
+    t0 = time.time()
+    logger.info(f'Testing convolutional network')
     configs = AttrDict(**dict(copy.deepcopy(configs)))
     #  flags.use_conv_net = True
     configs['dynamics_config']['use_conv_net'] = True
@@ -202,12 +203,15 @@ def test_conv_net(configs: dict[str, Any]) -> TestOutputs:
     if RANK == 0:
         run_out = run(train_out.dynamics, configs, x=train_out.x,
                       runs_dir=runs_dir, make_plots=False)
+    logger.info(f'Passed! Took: {time.time() - t0:.4f} seconds')
     return TestOutputs(train_out, run_out)
 
 
 
 def test_single_network(configs: dict[str, Any]) -> TestOutputs:
     """Test training on single network."""
+    t0 = time.time()
+    logger.info(f'Testing single network')
     configs = dict(copy.deepcopy(configs))
     configs['dynamics_config']['separate_networks'] = False
     train_out = train(configs, make_plots=False)
@@ -218,11 +222,14 @@ def test_single_network(configs: dict[str, Any]) -> TestOutputs:
         run_out = run(train_out.dynamics, configs, x=train_out.x,
                       runs_dir=runs_dir, make_plots=False)
 
+    logger.info(f'Passed! Took: {time.time() - t0:.4f} seconds')
     return TestOutputs(train_out, run_out)
 
 
 def test_separate_networks(flags: dict[str, Any]) -> TestOutputs:
     """Test training on separate networks."""
+    t0 = time.time()
+    logger.info(f'Testing separate networks')
     flags = dict(copy.deepcopy(flags))
     flags['hmc_steps'] = 0
     flags['dynamics_config']['separate_networks'] = True
@@ -236,53 +243,60 @@ def test_separate_networks(flags: dict[str, Any]) -> TestOutputs:
     if RANK == 0:
         run_out = run(dynamics, flags, x=x, runs_dir=runs_dir, make_plots=True)
 
+    logger.info(f'Passed! Took: {time.time() - t0:.4f} seconds')
     return TestOutputs(train_out, run_out)
 
 
 
 def test_resume_training(configs: dict[str, Any]) -> TestOutputs:
     """Test restoring a training session from a checkpoint."""
-    logdir = configs.get('logdir', configs.get('log_dir', None))
-    if logdir is None:
-        dirs = configs.get('dirs', None)
-        if dirs is not None:
-            logdir = dirs.get('log_dir', dirs.get('logdir', None))
+    t0 = time.time()
+    logger.info(f'Testing resuming training')
+    #  restore_dir = configs.get('restore_dir', None)
+    #  logdir = configs.get('logdir', configs.get('log_dir', None))
+    #  if logdir is None:
+    #      dirs = configs.get('dirs', None)
+    #      if dirs is not None:
+    #          logdir = dirs.get('log_dir', dirs.get('logdir', None))
 
-    assert logdir is not None
+    #  assert logdir is not None
+    #
+    #  #  fpath = os.path.join(logdir, 'train_configs.json')
+    #  fpath = os.path.join(logdir, 'train_configs.z')
+    #  if os.path.isfile(fpath):
+    #      train_configs = io.loadz(fpath)
+    #  else:
+    #      try:
+    #          fpath = os.path.join(logdir, 'train_configs.json')
+    #          with open(fpath, 'r') as f:
+    #              train_configs = json.load(f)
+    #      except FileNotFoundError:
+    #          try:
+    #              train_configs = io.loadz(os.path.join(logdir, 'FLAGS.z'))
+    #          except FileNotFoundError as err:
+    #              raise(err)
 
-    #  fpath = os.path.join(logdir, 'train_configs.json')
-    fpath = os.path.join(logdir, 'train_configs.z')
-    if os.path.isfile(fpath):
-        train_configs = io.loadz(fpath)
-    else:
-        try:
-            fpath = os.path.join(logdir, 'train_configs.json')
-            with open(fpath, 'r') as f:
-                train_configs = json.load(f)
-        except FileNotFoundError:
-            try:
-                train_configs = io.loadz(os.path.join(logdir, 'FLAGS.z'))
-            except FileNotFoundError as err:
-                raise(err)
+    #  logger.info('Restored train_configs successfully.')
+    #  logger.info('Setting `restored_flag` in `train_configs`.')
+    #  train_configs['log_dir'] = logdir
+    #  train_configs['restored'] = True
+    #  train_configs['ensure_new'] = False
 
-    logger.info('Restored train_configs successfully.')
-    logger.info('Setting `restored_flag` in `train_configs`.')
-    train_configs['log_dir'] = logdir
-    train_configs['restored'] = True
-    train_configs['ensure_new'] = False
+    #  logger.info(f'logdir: {train_configs["log_dir"]}')
+    #  logger.info(f'restored: {train_configs["restored"]}')
 
-    logger.info(f'logdir: {train_configs["log_dir"]}')
-    logger.info(f'restored: {train_configs["restored"]}')
+    assert configs.get('restore_from', None) is not None
 
-    train_out = train(train_configs, make_plots=False)
+    train_out = train(configs, make_plots=False)
     dynamics = train_out.dynamics
     logdir = train_out.logdir
     x = train_out.x
     runs_dir = os.path.join(logdir, 'inference')
     run_out = None
     if RANK == 0:
-        run_out = run(dynamics, train_configs, x=x, runs_dir=runs_dir)
+        run_out = run(dynamics, configs, x=x, runs_dir=runs_dir)
 
+    logger.info(f'Passed! Took: {time.time() - t0:.4f} seconds')
     return TestOutputs(train_out, run_out)
 
 
@@ -294,62 +308,38 @@ def test():
     conv_configs = copy.deepcopy(configs)
     single_configs = copy.deepcopy(configs)
 
-    logger.rule(f'Testing separate networks')
-    t0 = time.time()
     sep_out = test_separate_networks(sep_configs)
-    dt = time.time() - t0
-    logger.rule(f'Passed! Took: {dt:.4f}')
 
     #  sep_configs_copy = copy.deepcopy(sep_out.train.configs)
-    sep_configs['log_dir'] = sep_out.train.logdir
-    sep_configs['ensure_new'] = False
+    sep_configs['restore_from'] = sep_out.train.logdir
 
-    logger.rule(f'Testing restoring separate networks')
-    t0 = time.time()
+
+    bf = sep_configs.get('beta_final')
+    beta_final = bf + 1
+    sep_configs['beta_final'] = beta_final
+    logger.log(f'Increasing beta: {bf} -> {beta_final}')
+    sep_configs['beta_final'] = sep_configs['beta_final'] + 1
+
     _ = test_resume_training(sep_configs)
-    dt = time.time() - t0
-    logger.rule(f'Passed! took: {dt:.4f}')
 
-
-    logger.rule(f'Testing single networks')
-    t0 = time.time()
     single_net_out = test_single_network(single_configs)
-    dt = time.time() - t0
-    logger.rule(f'Passed! took: {dt:.4f}')
-
-    single_configs_copy = copy.deepcopy(single_net_out.train.configs)
-    single_configs_copy['log_dir'] = single_net_out.train.logdir
-    single_configs_copy['ensure_new'] = False
-
-    logger.rule(f'Testing restoring separate networks')
-    t0 = time.time()
-    _ = test_resume_training(single_configs_copy)
-    dt = time.time() - t0
-    logger.rule(f'Passed! took: {dt:.4f}')
+    single_configs['restore_from'] = single_net_out.train.logdir
+    #  single_configs_copy['ensure_new'] = False
+    #  single_configs_copy = copy.deepcopy(single_net_out.train.configs)
+    single_configs['dynamics_config']['separate_networks'] = False
+    _ = test_resume_training(single_configs)
 
     configs['ensure_new'] = True
     configs['log_dir'] = None
 
-    logger.rule(f'Testing separate networks with `ensure_new=True`')
-    t0 = time.time()
     _ = test_separate_networks(configs)
-    dt = time.time() - t0
-    logger.rule(f'Passed! took: {dt:.4f}')
 
     configs['ensure_new'] = True
     configs['log_dir'] = None
 
-    logger.rule(f'Testing single network with `ensure_new=True`')
-    t0 = time.time()
     _ = test_single_network(configs)
-    dt = time.time() - t0
-    logger.rule(f'Passed! took: {dt:.4f}')
 
-    logger.rule(f'Testing convNets')
-    t0 = time.time()
     _ = test_conv_net(conv_configs)
-    dt = time.time() - t0
-    logger.rule(f'Passed! took: {dt:.4f}')
 
     if RANK  == 0:
         _ = test_hmc_run(configs)
