@@ -7,19 +7,24 @@ from __future__ import absolute_import, annotations, division, print_function
 
 import datetime
 import os
-from pathlib import Path
 import shutil
+import warnings
 from dataclasses import asdict, is_dataclass
+from pathlib import Path
 from typing import Any, Union
 
 import joblib
 import numpy as np
 import tensorflow as tf
 
-from utils.logger_config import logger as log
-from utils.logger_config import in_notebook
 from utils.hvd_init import RANK, SIZE
+from utils.logger_config import in_notebook
+from utils.logger_config import logger as log
 
+warnings.filterwarnings('once', 'seaborn')
+warnings.filterwarnings('once', 'keras')
+warnings.filterwarnings('once', 'UserWarning:')
+warnings.filterwarnings('once', 'CustomMaskWarning:')
 #  try:
 #      import horovod
 #      import horovod.tensorflow as hvd
