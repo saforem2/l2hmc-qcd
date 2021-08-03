@@ -190,19 +190,10 @@ def setup_directories(
     """Setup relevant directories for training."""
     #  if configs.get('log_dir', configs.get('logdir', None)) is None:
     logdir = configs.get('logdir', configs.get('log_dir', None))
-    ensure_new = configs.get('ensure_new', False)
-
-    if logdir is None or ensure_new:
+    if logdir is None:
         logdir = make_log_dir(configs=configs,
                               model_type='GaugeModel',
-                              timestamps=timestamps,
-                              ensure_new=ensure_new)
-    else:
-        logdir_exists = os.path.isdir(logdir)
-        logdir_nonempty = (len(os.listdir(logdir)) > 0)
-        logger.info(f'Found `log_dir` in configs.')
-        logger.info(f'logdir_exists: {logdir_exists}')
-        logger.info(f'logdir_nonempty: {logdir_nonempty}')
+                              timestamps=timestamps)
 
     train_dir = os.path.join(logdir, name)
     train_paths = {
@@ -302,10 +293,11 @@ def save_params(params: dict, out_dir: str, name: str = None):
     if name is None:
         name = 'params'
     params_txt_file = os.path.join(out_dir, f'{name}.txt')
-    zfile = os.path.join(out_dir, f'{name}.z')
     with open(params_txt_file, 'w') as f:
         for key, val in params.items():
             f.write(f"{key}: {val}\n")
+
+    zfile = os.path.join(out_dir, f'{name}.z')
     savez(params, zfile, name=name)
 
 
@@ -455,9 +447,9 @@ def get_run_num(run_dir: str):
     return sorted([int(i.split('_')[-1]) for i in dirnames])[-1] + 1
 
 
-def get_run_dir_fstr(flags: AttrDict):
+def get_run_dir_fstr(flags: AttrDict, beta: float):
     """Parse FLAGS and create unique fstr for `run_dir`."""
-    beta = flags.get('beta', None)
+    #  beta = flags.get('beta', None)
     config = flags.get('dynamics_config', None)
 
     eps = config.get('eps', None)
@@ -476,8 +468,7 @@ def get_run_dir_fstr(flags: AttrDict):
                 f'L{x_shape[1]}_T{x_shape[2]}_b{x_shape[0]}_'
             )
 
-    if beta is not None:
-        fstr += f'beta{beta:.3g}'.replace('.', '')
+    fstr += f'beta{beta:.3g}'.replace('.', '')
     if num_steps is not None:
         fstr += f'_lf{num_steps}'
     if eps is not None:
@@ -642,8 +633,8 @@ def make_log_dir(
 
     log_dir = os.path.join(*dirs, timestamps['month'], cfg_str)
     if os.path.isdir(log_dir):
-        if ensure_new or configs.get('ensure_new', False):
-            logger.rule('Forcing new directory!')
+        if configs.get('ensure_new', False):
+            logger.warning('Forcing new directory!')
             log_dir = os.path.join(*dirs, timestamps['month'],
                                    f'{cfg_str}-{timestamps["second"]}')
             if skip_existing:
@@ -662,10 +653,11 @@ def make_log_dir(
 def make_run_dir(
         configs: AttrDict,
         base_dir: str,
+        beta: float,
         skip_existing: bool = False
 ):
     """Automatically create `run_dir` for storing inference data."""
-    fstr = get_run_dir_fstr(configs)
+    fstr = get_run_dir_fstr(configs, beta)
     now = datetime.datetime.now()
     dstr = now.strftime('%Y-%m-%d-%H%M')
     run_str = f'{fstr}-{dstr}'
@@ -681,6 +673,7 @@ def make_run_dir(
 
     if RANK == 0:
         check_else_make_dir(run_dir)
+        configs['beta'] = beta
         save_dict(configs, run_dir, name='inference_configs')
 
     return run_dir

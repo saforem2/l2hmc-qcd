@@ -169,6 +169,7 @@ if __name__ == '__main__':
     #  )
 
     configs = parse_configs()
+    cdict = configs.__dict__
     #  CONFIGS = AttrDict(CONFIGS.__dict__)
     #  if CONFIGS.get('debug', False):
     #  if configs.debug:
@@ -178,11 +179,11 @@ if __name__ == '__main__':
     #  else:
     #      logging_level = logging.WARNING
     #  cfgs_str = '\n'.join([f'{k}: {v}' for k, v in dict(**CONFIGS).items()])
-    logger.log(configs.__dict__)
+    logger.log(cdict)
     #  logger.log(dict(**CONFIGS))
     #  cstr = dict_to_str(dict(**CONFIGS))
     #  io.print_dict(CONFIGS)
-    main(configs)
+    main(cdict)
     #  if RANK == 0:
     #      console.save_text(os.path.join(os.getcwd(), 'train.log'), styles=False)
 
