@@ -1,3 +1,10 @@
+"""
+logger_config.py
+"""
+from __future__ import absolute_import, division, print_function, annotations
+import warnings
+warnings.filterwarnings('once')
+warnings.simplefilter('once')
 import os
 import sys
 import logging
@@ -6,12 +13,11 @@ from rich.logging import RichHandler
 from rich.console import Console as RichConsole
 from rich.theme import Theme
 
-import warnings
 
 import logging.config
 #  from utils.logger import Logger
 
-REPO = 'fthmc'
+REPO = 'l2hmc-qcd'
 
 # Directories
 #BASE_DIR = Path(__file__).parent.parent.absolute()
@@ -40,7 +46,7 @@ MODEL_REGISTRY.mkdir(parents=True, exist_ok=True)
 # Logger
 logging_config = {
     "version": 1,
-    "disable_existing_loggers": True,
+    "disable_existing_loggers": False,
     "formatters": {
         "minimal": {"format": "%(message)s"},
         "detailed": {
@@ -74,7 +80,7 @@ logging_config = {
     "loggers": {
         "root": {
             "handlers": ["console", "info", "error"],
-            "level": logging.INFO,
+            "level": logging.NOTSET,
             "propagate": True,
         },
     },
@@ -114,19 +120,26 @@ with_jupyter = in_notebook()
 logging.config.dictConfig(logging_config)
 logger = logging.getLogger('root')
 logger.handlers[0] = RichHandler(markup=True,
+                                 rich_tracebacks=True,
                                  #  console=console,
                                  show_path=False)
 
+#  tflogger = logging.getLogger('tensorflow')
+#  tflogger.handlers[0] = RichHandler(markup=True,
+#                                     rich_tracebacks=True,
+#                                     show_path=False)
+
 logging.captureWarnings(True)
-warnings.filterwarnings('once', 'seaborn')
-warnings.filterwarnings('once', 'keras')
-warnings.filterwarnings('once', 'UserWarning:')
-warnings.filterwarnings('once', 'CustomMaskWarning:')
+#  warnings.filterwarnings('once', 'seaborn')
+#  warnings.filterwarnings('once', 'keras')
+#  warnings.filterwarnings('once', 'UserWarning:')
+#  warnings.filterwarnings('once', 'CustomMaskWarning:')
 logging.getLogger('matplotlib').setLevel(logging.ERROR)
 logging.getLogger('seaborn').setLevel(logging.ERROR)
 logging.getLogger('keras').setLevel(logging.ERROR)
 logging.getLogger('arviz').setLevel(logging.ERROR)
 logging.getLogger('tensorflow').setLevel(logging.ERROR)
+#  logging.getLogger('tensorflow').setLevel(logging.ERROR)
                                  #  console=Logger().console)
 
 # Exclusion criteria
