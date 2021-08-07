@@ -352,9 +352,9 @@ def setup_betas(
     """Setup array of betas for training."""
 
     if bi == bf:
-        return bi * tf.ones(train_steps)
-
-    betas = get_betas(train_steps, bi, bf)
+        betas = bi * tf.ones(train_steps)
+    else:
+        betas = get_betas(train_steps, bi, bf)
 
     #  remaining_steps = train_steps - current_step
     #  if len(betas) < remaining_steps:
@@ -702,9 +702,10 @@ def train_dynamics(
     warmup_steps = dynamics.lr_config.warmup_steps
     total_steps = steps[-1].numpy()
     if len(steps) != len(betas):
-        logger.warning(f'len(steps) != len(betas) Restarting step count!')
-        logger.warning(f'len(steps): {len(steps)}, len(betas): {len(betas)}')
-        steps = np.arange(len(betas))
+        betas = betas[steps[0]:]
+        #  logger.warning(f'len(steps) != len(betas) Restarting step count!')
+        #  logger.warning(f'len(steps): {len(steps)}, len(betas): {len(betas)}')
+        #  steps = np.arange(len(betas))
 
     keep = ['dt', 'loss', 'accept_prob', 'beta',
             'Hwb_start', 'Hwf_start',
