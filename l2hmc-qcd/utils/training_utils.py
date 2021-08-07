@@ -786,7 +786,7 @@ def train_dynamics(
         # -- Update summary objects ---------------------
         if should_log(step):
             #  logger.rule('')
-            logger.info('Updating summaries')
+            #  logger.info('Updating summaries')
             train_data.update(step, metrics)
             if writer is not None:
                 update_summaries(step, metrics, dynamics)
