@@ -69,6 +69,7 @@ TSTAMPS = {
 
 logger = Logger()
 
+warnings.filterwarnings('once')
 warnings.filterwarnings(action='once', category=UserWarning)
 warnings.filterwarnings('once', 'keras')
 
@@ -102,8 +103,8 @@ def check_if_int(x: tf.Tensor) -> tf.Tensor:
 def train_hmc(
         configs: AttrDict,
         make_plots: bool = True,
-        therm_frac: float = 0.33,
         num_chains: int = 32,
+        #  therm_frac: float = 0.33,
 ):
     """Main method for training HMC model."""
     hconfigs = AttrDict(dict(configs).copy())
@@ -345,36 +346,45 @@ def setup_betas(
         train_steps: int,
         current_step: int,
 ):
-    remaining_steps = train_steps - current_step
+    """Setup array of betas for training."""
 
     if bi == bf:
-        return bi * tf.ones(remaining_steps)
+        return bi * tf.ones(train_steps)
 
-    betas = get_betas(remaining_steps, bi, bf)
+    betas = get_betas(train_steps, bi, bf)
 
-    if len(betas) < remaining_steps:
-        diff = remaining_steps - len(betas)
-        betas = list(betas) + diff * [tf.constant(bf)]
+    #  remaining_steps = train_steps - current_step
+    #  if len(betas) < remaining_steps:
+    #      diff = remaining_steps - len(betas)
+    #      betas = list(betas) + diff * [tf.constant(bf)]
+
+    if current_step > 0:
+        betas = betas[current_step:]
 
     return tf.convert_to_tensor(betas)
 
+
 # TODO: Add type annotations
 # pylint:disable=too-many-statements, too-many-branches
-def setup(configs, x=None, betas=None):
+def setup(
+        configs: dict,
+        x: tf.Tensor = None,
+        betas: list[tf.Tensor]=None
+):
     """Setup training."""
     #  logdir = configs.get('logdir', configs.get('log_dir', None))
     #  ensure_new = configs.get('ensure_new', False)
     #  if logdir is not None:
     #      if os.path.isdir(logdir) and ensure_new:
     #          raise ValueError('logdir exists but `ensure_new` flag is set.')
-    save_steps = configs.get('save_steps')
-    train_steps = configs.get('train_steps')
-    print_steps = configs.get('print_steps')
+    train_steps = configs.get('train_steps', None)  # type: int
+    save_steps = configs.get('save_steps', None)    # type: int
+    print_steps = configs.get('print_steps', None)  # type: int
 
-    beta_init = configs.get('beta_init', None)
-    beta_final = configs.get('beta_final', None)
+    beta_init = configs.get('beta_init', None)      # type: float
+    beta_final = configs.get('beta_final', None)    # type: float
 
-    dirs = configs.get('dirs', None)
+    dirs = configs.get('dirs', None)  # type: dict[str, Any]
     logdir = dirs.get('logdir', dirs.get('log_dir', None))
 
     assert dirs is not None
@@ -389,10 +399,18 @@ def setup(configs, x=None, betas=None):
         dynamics = restore_from(restore_dir)
         datadir = os.path.join(restore_dir, 'training', 'train_data')
         current_step = dynamics.optimizer.iterations.numpy()
-        train_steps = current_step + train_steps
+        if train_steps <= current_step:
+            train_steps = current_step + save_steps
+        #  if train_steps > current_step:
+        #      train_steps -= current_step
+        #  else:
+        #      train_steps = current_step + save_steps
+        #  train_steps = current_step + train_steps
         x = train_data.restore(datadir, step=current_step,
                                x_shape=dynamics.x_shape,
                                rank=RANK, local_rank=LOCAL_RANK)
+        train_data.steps = train_steps
+        #  train_data.steps = train_steps + current_step
         #  ckpt = restored['ckpt']
         #  manager = restored['manager']
 
@@ -400,6 +418,7 @@ def setup(configs, x=None, betas=None):
     else:
         logger.warning('Starting new training run')
         logger.warning('Initializing `x` from `uniform[-pi, pi]`')
+        current_step = 0
         dynamics = build_dynamics(configs)
         x = tf.random.uniform(dynamics.x_shape, minval=np.pi, maxval=np.pi)
 
@@ -415,24 +434,25 @@ def setup(configs, x=None, betas=None):
         logger.warning(f'Restored ckpt from: {manager.latest_checkpoint}')
 
     # Determine current training step
-    current_step = dynamics.optimizer.iterations.numpy()
-    if current_step >= train_steps:
-        logger.warning(', '.join(['Current step >= train_steps',
-                                  f'current_step={current_step}',
-                                  f'train_steps={train_steps}']))
-        train_steps = current_step + train_steps + save_steps
-        train_data.steps = current_step + save_steps
-        logger.warning(f'Setting train_steps={train_steps}')
+    #  current_step = dynamics.optimizer.iterations.numpy()
+    #  if current_step >= train_steps:
+    #      logger.warning(', '.join(['Current step >= train_steps',
+    #                                f'current_step={current_step}',
+    #                                f'train_steps={train_steps}']))
+    #      #  train_steps = current_step + train_steps + save_steps
+    #      #  train_data.steps = current_step + save_steps
+    #      train_steps = current_step + save_steps
+    #      train_data.steps = train_steps
+    #      logger.warning(f'Setting train_steps={train_steps}')
 
     # Setup summary writer for logging metrics through tensorboard
     summdir = dirs['summary_dir']
     make_summaries = configs.get('make_summaries', True)
 
     steps = tf.range(current_step, train_steps, dtype=tf.int64)
-    train_data.steps = train_steps
+    #  train_data.steps = train_steps
 
-    betas = setup_betas(beta_init, beta_final,
-                        train_steps, current_step)
+    betas = setup_betas(beta_init, beta_final, train_steps, current_step)
 
     dynamics.compile(loss=dynamics.calc_losses,
                      optimizer=dynamics.optimizer,
@@ -677,7 +697,7 @@ def train_dynamics(
     # -- and get formatted header string to display during training. --------
 
     warmup_steps = dynamics.lr_config.warmup_steps
-    total_steps = len(betas)
+    total_steps = steps[-1].numpy()
     if len(steps) != len(betas):
         logger.warning(f'len(steps) != len(betas) Restarting step count!')
         logger.warning(f'len(steps): {len(steps)}, len(betas): {len(betas)}')

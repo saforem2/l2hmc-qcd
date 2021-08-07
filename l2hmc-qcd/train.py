@@ -33,7 +33,7 @@ from utils import attr_dict as AttrDict
 from utils.parse_configs import parse_configs
 from dynamics.gauge_dynamics import build_dynamics
 
-from utils.training_utils import train, train_hmc
+from utils.training_utils import train
 from utils.inference_utils import run
 
 
@@ -41,8 +41,10 @@ logger = Logger()
 #  os.environ['TF_CPP_MIN_VLOG_LEVEL'] = '3'
 #  os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
-warnings.filterwarnings('ignore')
+warnings.filterwarnings('once')
+warnings.filterwarnings('once', message='Custom mask layers', lineno=494)
 warnings.filterwarnings('ignore', 'WARNING:matplotlib')
+
 names = ['month', 'time', 'hour', 'minute', 'second']
 formats = [
     '%Y_%m',
@@ -112,7 +114,7 @@ def main(configs: dict[str, Any]):
     #  tf.keras.backend.set_floatx('float32')
     train_out = train(configs=configs, make_plots=True) # , num_chains=nchains)
     x = train_out.x
-    logdir = train_out.logdir
+    #  logdir = train_out.logdir
     #  train_data = train_out.data
     dynamics = train_out.dynamics
     configs = train_out.configs
@@ -129,7 +131,7 @@ def main(configs: dict[str, Any]):
             old_shape = configs['dynamics_config']['x_shape']
             new_shape = (batch_size, *old_shape[1:])
             configs['dynamics_config']['x_shape'] = new_shape
-            dynamics = build_dynamics(configs, log_dir=logdir)
+            dynamics = build_dynamics(configs)  # , log_dir=logdir)
             x = x[:batch_size]
 
         _ = run(dynamics, configs, x, beta=beta, make_plots=True,
@@ -170,19 +172,7 @@ if __name__ == '__main__':
 
     configs = parse_configs()
     cdict = configs.__dict__
-    #  CONFIGS = AttrDict(CONFIGS.__dict__)
-    #  if CONFIGS.get('debug', False):
-    #  if configs.debug:
-    #      logging_level = logging.DEBUG
-    #      os.environ['TF_CPP_MIN_VLOG_LEVEL'] = '0'
-    #      os.environ['TF_CPP_MIN_LOG_LEVEL'] = '0'
-    #  else:
-    #      logging_level = logging.WARNING
-    #  cfgs_str = '\n'.join([f'{k}: {v}' for k, v in dict(**CONFIGS).items()])
     logger.log(cdict)
-    #  logger.log(dict(**CONFIGS))
-    #  cstr = dict_to_str(dict(**CONFIGS))
-    #  io.print_dict(CONFIGS)
     main(cdict)
     #  if RANK == 0:
     #      console.save_text(os.path.join(os.getcwd(), 'train.log'), styles=False)
