@@ -7,6 +7,8 @@ Train 2D U(1) model using eager execution in tensorflow.
 # pylint:disable=wrong-import-position,invalid-name, unused-import,
 # pylint: disable=ungrouped-imports
 from __future__ import absolute_import, division, print_function, annotations
+import warnings
+warnings.simplefilter('once')
 import json
 from copy import deepcopy
 
@@ -40,10 +42,16 @@ from utils.inference_utils import run
 logger = Logger()
 #  os.environ['TF_CPP_MIN_VLOG_LEVEL'] = '3'
 #  os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+warnings.simplefilter('once')
 
-warnings.filterwarnings('once')
-warnings.filterwarnings('once', message='Custom mask layers', lineno=494)
-warnings.filterwarnings('ignore', 'WARNING:matplotlib')
+#  warnings.filterwarnings('once')
+#  warnings.filterwarnings('once', message='Custom mask layers', lineno=494)
+#  warnings.filterwarnings('ignore', 'WARNING:matplotlib')
+#  warnings.filterwarnings('once', message='Tight', module='seaborn', append=True)
+#  warnings.filterwarnings('once', 'CustomMaskWarning', append=True)
+#  warnings.filterwarnings('ignore', module='generic_utils.py', append=True)
+#  warnings.filterwarnings(action='once', category=UserWarning)
+#  warnings.filterwarnings('once', 'keras')
 
 names = ['month', 'time', 'hour', 'minute', 'second']
 formats = [

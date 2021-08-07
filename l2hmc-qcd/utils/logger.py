@@ -21,10 +21,10 @@ from utils.hvd_init import RANK, SIZE
 from utils.logger_config import in_notebook
 from utils.logger_config import logger as log
 
-warnings.filterwarnings('once', 'seaborn')
-warnings.filterwarnings('once', 'keras')
-warnings.filterwarnings('once', 'UserWarning:')
-warnings.filterwarnings('once', 'CustomMaskWarning:')
+#  warnings.filterwarnings('once', 'seaborn')
+#  warnings.filterwarnings('once', 'keras')
+#  warnings.filterwarnings('once', 'UserWarning:')
+#  warnings.filterwarnings('once', 'CustomMaskWarning:')
 #  try:
 #      import horovod
 #      import horovod.tensorflow as hvd
@@ -142,8 +142,7 @@ class Logger:
         self.console.rule(s, *args, **kwargs)
 
     def info(self, s: Any, *args, **kwargs):
-        self.log(s, *args, **kwargs)
-
+        log.info(s, *args, **kwargs)
 
     def load_metrics(self, infile: str = None):
         """Try loading metrics from infile."""
