@@ -117,6 +117,7 @@ logger.handlers[0] = RichHandler(markup=True,
                                  #  console=console,
                                  show_path=False)
 
+logging.captureWarnings(True)
 warnings.filterwarnings('once', 'seaborn')
 warnings.filterwarnings('once', 'keras')
 warnings.filterwarnings('once', 'UserWarning:')
