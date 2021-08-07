@@ -322,8 +322,11 @@ def setup_directories(configs: dict[str, Any]) -> dict[str, Any]:
 def restore_from(restore_dir: Union[str, Path]) -> GaugeDynamics:
     """Load trained networks and restore model from checkpoint."""
     logger.warning(f'Loading networks from: {restore_dir}')
-    configs_file = os.path.join(restore_dir, 'train_configs.z')
-    configs = io.loadz(configs_file)
+    configs_file = os.path.join(restore_dir, 'train_configs.json')
+    with open(configs_file, 'r') as f:
+        configs = json.load(f)
+    #  configs_file = os.path.join(restore_dir, 'train_configs.z')
+    #  configs = io.loadz(configs_file)
     dynamics = build_dynamics(configs)
 
     networks = dynamics._load_networks(str(restore_dir))
