@@ -12,10 +12,14 @@ import time
 import json
 import copy
 import argparse
+import warnings
 from typing import Union
 
 import tensorflow as tf
 from tensorflow.python.ops.gen_math_ops import Any
+
+warnings.filterwarnings(action='once', category=UserWarning)
+warnings.filterwarnings('once', 'keras')
 
 if tf.__version__.startswith('1'):
     try:
