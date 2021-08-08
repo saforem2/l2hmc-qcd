@@ -3,8 +3,8 @@ logger_config.py
 """
 from __future__ import absolute_import, division, print_function, annotations
 import warnings
-warnings.filterwarnings('once')
-warnings.simplefilter('once')
+#  warnings.filterwarnings('once')
+#  warnings.simplefilter('once')
 import os
 import sys
 import logging
@@ -46,7 +46,7 @@ MODEL_REGISTRY.mkdir(parents=True, exist_ok=True)
 # Logger
 logging_config = {
     "version": 1,
-    "disable_existing_loggers": False,
+    "disable_existing_loggers": True,
     "formatters": {
         "minimal": {"format": "%(message)s"},
         "detailed": {
@@ -80,8 +80,8 @@ logging_config = {
     "loggers": {
         "root": {
             "handlers": ["console", "info", "error"],
-            "level": logging.NOTSET,
-            "propagate": True,
+            "level": logging.DEBUG,
+            "propagate": False,
         },
     },
 }
@@ -134,11 +134,11 @@ logging.captureWarnings(True)
 #  warnings.filterwarnings('once', 'keras')
 #  warnings.filterwarnings('once', 'UserWarning:')
 #  warnings.filterwarnings('once', 'CustomMaskWarning:')
-logging.getLogger('matplotlib').setLevel(logging.ERROR)
-logging.getLogger('seaborn').setLevel(logging.ERROR)
-logging.getLogger('keras').setLevel(logging.ERROR)
-logging.getLogger('arviz').setLevel(logging.ERROR)
-logging.getLogger('tensorflow').setLevel(logging.ERROR)
+#  logging.getLogger('matplotlib').setLevel(logging.ERROR)
+#  logging.getLogger('seaborn').setLevel(logging.ERROR)
+#  logging.getLogger('keras').setLevel(logging.ERROR)
+#  logging.getLogger('arviz').setLevel(logging.ERROR)
+#  logging.getLogger('tensorflow').setLevel(logging.ERROR)
 #  logging.getLogger('tensorflow').setLevel(logging.ERROR)
                                  #  console=Logger().console)
 

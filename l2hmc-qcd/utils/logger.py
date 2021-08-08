@@ -163,13 +163,13 @@ class Logger:
         log.info(s, *args, **kwargs)
 
     def print_metrics(
-        self,
-        metrics: dict,
-        window: int = 0,
-        outfile: str = None,
-        skip: list[str] = None,
-        keep: list[str] = None,
-        pre: Union[str, list, tuple] = None,
+            self,
+            metrics: dict,
+            window: int = 0,
+            outfile: str = None,
+            skip: list[str] = None,
+            keep: list[str] = None,
+            pre: Union[str, list, tuple] = None,
     ):
         """Print nicely formatted string of summary of items in `metrics`."""
         if skip is None:
@@ -186,8 +186,8 @@ class Logger:
             fstrs = [pre, *fstrs] if isinstance(pre, str) else [*pre] + fstrs
 
         outstr = ' '.join(fstrs)
-        #  self.log(outstr)
-        log.info(outstr)
+        self.log(outstr)
+        #  log.info(outstr)
         if outfile is not None:
             with open(outfile, 'a') as f:
                 f.write(outstr)
