@@ -12,7 +12,7 @@ from pathlib import Path
 from rich.logging import RichHandler
 from rich.console import Console as RichConsole
 from rich.theme import Theme
-
+from tensorflow.python.keras.utils.generic_utils import CustomMaskWarning
 
 import logging.config
 #  from utils.logger import Logger
@@ -134,11 +134,18 @@ logging.captureWarnings(True)
 #  warnings.filterwarnings('once', 'keras')
 #  warnings.filterwarnings('once', 'UserWarning:')
 #  warnings.filterwarnings('once', 'CustomMaskWarning:')
-#  logging.getLogger('matplotlib').setLevel(logging.ERROR)
-#  logging.getLogger('seaborn').setLevel(logging.ERROR)
-#  logging.getLogger('keras').setLevel(logging.ERROR)
-#  logging.getLogger('arviz').setLevel(logging.ERROR)
-#  logging.getLogger('tensorflow').setLevel(logging.ERROR)
+logging.getLogger('matplotlib').setLevel(logging.CRITICAL)
+logging.getLogger('seaborn').setLevel(logging.CRITICAL)
+logging.getLogger('seaborn.axisgrid').setLevel(logging.CRITICAL)
+logging.getLogger('keras').setLevel(logging.CRITICAL)
+logging.getLogger('arviz').setLevel(logging.CRITICAL)
+logging.getLogger('tensorflow').setLevel(logging.CRITICAL)
+logging.getLogger('tensorflow.keras').setLevel(logging.CRITICAL)
+logging.getLogger('tensorflow.python.keras.utils.generic_utils').setLevel(logging.CRITICAL)
+warnings.simplefilter('once', category=CustomMaskWarning, lineno=494)
+warnings.filterwarnings('once',
+                        module='tensorflow.python.keras.utils.generic_utils',
+                        category=CustomMaskWarning, lineno=494, append=True)
 #  logging.getLogger('tensorflow').setLevel(logging.ERROR)
                                  #  console=Logger().console)
 
