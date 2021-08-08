@@ -67,11 +67,10 @@ TSTAMPS = {
     k: io.get_timestamp(v) for k, v in dict(zip(names, formats)).items()
 }
 
-logger = Logger()
 
-warnings.filterwarnings('once')
-warnings.filterwarnings(action='once', category=UserWarning)
-warnings.filterwarnings('once', 'keras')
+#  warnings.filterwarnings('once')
+#  warnings.filterwarnings(action='once', category=UserWarning)
+#  warnings.filterwarnings('once', 'keras')
 
 #  try:
 #      tf.config.experimental.enable_mlir_bridge()
@@ -81,6 +80,7 @@ warnings.filterwarnings('once', 'keras')
 
 PlotData = plotter.LivePlotData
 
+logger = Logger()
 
 def update_plots(history: dict, plots: dict, window: int = 1):
     lpdata = PlotData(history['loss'], plots['loss']['plot_obj1'])
@@ -213,9 +213,13 @@ def plot_models(dynamics: GaugeDynamics, logdir: Union[str, Path]):
 
 
 def load_configs_from_logdir(logdir: Union[str, Path]) -> dict[str, Any]:
-    fpath = os.path.join(logdir, 'train_configs.json')
-    with open(fpath, 'r') as f:
-        configs = json.load(f)
+    try:
+        configs_file = os.path.join(logdir, 'train_configs.z')
+        configs = io.loadz(configs_file)
+    except EOFError:
+        configs_file = os.path.join(logdir, 'train_configs.json')
+        with open(configs_file, 'r') as f:
+            configs = json.load(f)
 
     return configs
 
@@ -232,60 +236,81 @@ def check_if_logdir_exists(logdir: Union[str, Path] = None) -> bool:
                 return True
 
 
-def setup_directories(configs: dict[str, Any]) -> dict[str, Any]:
+def find_conflicts(
+        new: dict,
+        old: dict,
+        name: str = None,
+):
+    conflicts = []
+    for key in new.keys():
+        old_ = old.get(key, None)
+        new_ = new.get(key, None)
+        if new_ != old_:
+            nstr = '' if name is None else name
+            logger.error(' '.join([
+                'Mismatch encountered',
+                f'in {name}\n' if name is not None else '\n',
+                '\n'.join([
+                    f'{nstr} old[{key}]: {old_}',
+                    f'{nstr} new[{key}]: {new_}'
+                ]),
+            ]))
+            conflicts.append(key)
+
+    return conflicts
+
+
+def check_compatibility(new: dict, old: dict, strict: bool = False):
+    use_conv_net_old = old['dynamics_config']['use_conv_net']  # type: bool
+    use_conv_net_new = new['dynamics_config']['use_conv_net']  # type: bool
+
+    lf_old = old['dynamics_config']['num_steps']  # type: int
+    lf_new = new['dynamics_config']['num_steps']  # type: int
+
+    bi_old = old['beta_init']  # type: float
+    bi_new = new['beta_init']  # type: float
+
+    bf_old = old['beta_final']  # type: float
+    bf_new = new['beta_final']  # type: float
+
+    assert lf_old == lf_new
+    assert bf_old == bf_new
+    assert use_conv_net_old == use_conv_net_new
+
+    if bi_old == bi_new and bf_old == bf_new and lf_old == lf_new:
+        new['ensure_new'] = False
+    else:
+        new['ensure_new'] = True
+
+    names = ['dynamics_config', 'network_config']
+    if new['dynamics_config']['use_conv_net']:
+        names.append('conv_config')
+
+    conflicts = {
+        name: find_conflicts(new[name], old[name], name=name)
+        for name in names
+    }
+    for name, conflict in conflicts.items():
+        if len(conflict) == 0:
+            continue
+
+        if strict and len(conflict) > 0:
+            raise ValueError(
+                f'Incompatible configurations.\n {name}: {conflict}'
+            )
+
+        old_ = old[name][conflict]
+        new_ = new[name][conflict]
+        logger.warning(f'Overwriting {name}[{conflict}] with restored val')
+        logger.warning(f'{name}[{conflict}]={new_} --> {old_}')
+        new[name][conflict] = old_
+
+    return new
+
+
+def setup_directories(configs: dict) -> dict:
     """Setup directories for training."""
     logfile = os.path.join(os.getcwd(), 'log_dirs.txt')
-    restore_dir = configs.get('restore_from', None)
-    restored = None
-    if restore_dir is not None:
-        restored = load_configs_from_logdir(restore_dir)
-        lf_old = restored['dynamics_config']['num_steps']
-        lf_new = configs['dynamics_config']['num_steps']
-
-        bi_old = restored['beta_init']
-        bf_old = restored['beta_final']
-
-        bi_new = configs['beta_init']
-        bf_new = configs['beta_final']
-        if bi_old == bi_new and bf_old == bf_new:
-            configs['ensure_new'] = False
-        else:
-            configs['ensure_new'] = True
-
-        configs['restored_configs'] = restored
-        assert lf_old == lf_new
-        new_dynamics_config = dict(configs['dynamics_config'])
-        old_dynamics_config = dict(restored['dynamics_config'])
-        for key, new in new_dynamics_config.items():
-            old = old_dynamics_config[key]
-            if new != old:
-                logger.warning(
-                    'Mismatch between new and restored dynamics configs: \n'
-                    f'key: {key} \n'
-                    f'configs["dynamics_config"][{key}] = {new} \n'
-                    f'restored["dynamics_config"][{key}] = {old} \n'
-                )
-
-                logger.warning(f'Overwriting configs with restored value')
-                configs['dynamics_config'][key] = old
-
-        new_network_config = configs['network_config']
-        old_network_config = restored['network_config']
-        for key, new in new_network_config.items():
-            old = old_network_config[key]
-            if new != old:
-                logger.warning(
-                    'Mismatch between new and restored network configs: \n'
-                    f'key: {key} \n'
-                    f'configs["network_config"][{key}] = {new} \n'
-                    f'restored["network_config"][{key}] = {old} \n'
-                )
-
-                logger.warning(f'Overwriting configs with restored value')
-                configs['network_config'][key] = old
-
-
-        configs['restored'] = True
 
     ensure_new = configs.get('ensure_new', False)
     logdir = configs.get('logdir', configs.get('log_dir', None))
@@ -313,26 +338,31 @@ def setup_directories(configs: dict[str, Any]) -> dict[str, Any]:
         io.save_dict(configs, logdir, name='train_configs')
         io.write(f'{logdir}', logfile, 'a')
 
-        if restored is not None:
-            io.save_dict(restored, logdir, name='restored_train_configs')
+        restore_from = configs.get('restore_from', None)
+        if restore_from is not None:
+            restored = load_configs_from_logdir(restore_from)
+            if restored is not None:
+                io.save_dict(restored, logdir, name='restored_train_configs')
 
     return configs
 
 
-def restore_from(restore_dir: Union[str, Path]) -> GaugeDynamics:
+def restore_from(
+        configs: dict,
+        restore_dir: Union[str, Path],
+        strict: bool = False
+) -> GaugeDynamics:
     """Load trained networks and restore model from checkpoint."""
     logger.warning(f'Loading networks from: {restore_dir}')
-    try:
-        configs_file = os.path.join(restore_dir, 'train_configs.z')
-        configs = io.loadz(configs_file)
-    except EOFError:
-        configs_file = os.path.join(restore_dir, 'train_configs.json')
-        with open(configs_file, 'r') as f:
-            configs = json.load(f)
-    #  configs_file = os.path.join(restore_dir, 'train_configs.z')
-    #  configs = io.loadz(configs_file)
-    dynamics = build_dynamics(configs)
 
+    restored = None
+    if restore_dir is not None:
+        restored = load_configs_from_logdir(restore_dir)
+        configs = check_compatibility(configs, restored, strict=strict)
+        configs['restored'] = True
+        configs['restored_configs'] = restored
+
+    dynamics = build_dynamics(configs)
     networks = dynamics._load_networks(str(restore_dir))
     dynamics.xnet = networks['xnet']
     dynamics.vnet = networks['vnet']
@@ -376,7 +406,8 @@ def setup_betas(
 def setup(
         configs: dict,
         x: tf.Tensor = None,
-        betas: list[tf.Tensor]=None
+        betas: list[tf.Tensor]=None,
+        strict: bool = False,
 ):
     """Setup training."""
     #  logdir = configs.get('logdir', configs.get('log_dir', None))
@@ -403,30 +434,33 @@ def setup(
     # Check if we want to restore from existing directory
     restore_dir = configs.get('restore_from', None)
     if restore_dir is not None:
-        dynamics = restore_from(restore_dir)
+        dynamics = restore_from(configs, restore_dir, strict=strict)
         datadir = os.path.join(restore_dir, 'training', 'train_data')
-        current_step = dynamics.optimizer.iterations.numpy()
-        if train_steps <= current_step:
-            train_steps = current_step + save_steps
-        #  if train_steps > current_step:
-        #      train_steps -= current_step
-        #  else:
-        #      train_steps = current_step + save_steps
-        #  train_steps = current_step + train_steps
-        x = train_data.restore(datadir, step=current_step,
-                               x_shape=dynamics.x_shape,
-                               rank=RANK, local_rank=LOCAL_RANK)
-        train_data.steps = train_steps
-        #  train_data.steps = train_steps + current_step
-        #  ckpt = restored['ckpt']
-        #  manager = restored['manager']
-
-    # Otherwise, create new dynamics
     else:
-        logger.warning('Starting new training run')
+        datadir = os.path.join(logdir, 'training', 'train_data')
+        try:
+            dynamics = restore_from(configs, logdir, strict=strict)
+        except:
+            dynamics = build_dynamics(configs)
+
+    current_step = dynamics.optimizer.iterations.numpy()
+    if train_steps <= current_step:
+        train_steps = current_step + save_steps
+    #  if train_steps > current_step:
+    #      train_steps -= current_step
+    #  else:
+    #      train_steps = current_step + save_steps
+    #  train_steps = current_step + train_steps
+    x = None
+    if os.path.isdir(datadir):
+        nonempty = len(os.listdir(datadir)) > 0
+        if nonempty:
+            x = train_data.restore(datadir, step=current_step,
+                                   x_shape=dynamics.x_shape,
+                                   rank=RANK, local_rank=LOCAL_RANK)
+    train_data.steps = train_steps
+    if x is None:
         logger.warning('Initializing `x` from `uniform[-pi, pi]`')
-        current_step = 0
-        dynamics = build_dynamics(configs)
         x = tf.random.uniform(dynamics.x_shape, minval=np.pi, maxval=np.pi)
 
     # Reshape x from [batch_size, Nt, Nx, Nd] --> [batch_size, Nt * Nx * Nd]
@@ -455,10 +489,8 @@ def setup(
     # Setup summary writer for logging metrics through tensorboard
     summdir = dirs['summary_dir']
     make_summaries = configs.get('make_summaries', True)
-
     steps = tf.range(current_step, train_steps, dtype=tf.int64)
     #  train_data.steps = train_steps
-
     betas = setup_betas(beta_init, beta_final, train_steps, current_step)
 
     dynamics.compile(loss=dynamics.calc_losses,
