@@ -138,7 +138,7 @@ logging.getLogger('matplotlib').setLevel(logging.ERROR)
 logging.getLogger('seaborn').setLevel(logging.ERROR)
 logging.getLogger('keras').setLevel(logging.ERROR)
 logging.getLogger('arviz').setLevel(logging.ERROR)
-logging.getLogger('tensorflow').setLevel(logging.INFO)
+logging.getLogger('tensorflow').setLevel(logging.ERROR)
 #  logging.getLogger('tensorflow').setLevel(logging.ERROR)
                                  #  console=Logger().console)
 
