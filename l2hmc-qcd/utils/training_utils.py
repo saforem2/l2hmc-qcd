@@ -836,6 +836,11 @@ def train_dynamics(
         logger.log(f'Checkpoint saved to: {manager.latest_checkpoint}')
         train_data.save_and_flush(data_dir, logfile,
                                   rank=RANK, mode='a')
+
+        logfile = os.path.join(logdir, 'training', 'train_log.txt')
+        with open(logfile, 'a') as f:
+            f.writelines('\n'.join(data_strs))
+
         if not dynamics.config.hmc:
             try:
                 dynamics.save_networks(logdir)
