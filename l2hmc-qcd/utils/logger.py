@@ -17,7 +17,7 @@ import joblib
 import numpy as np
 import tensorflow as tf
 
-from utils.hvd_init import RANK, SIZE
+#  from utils.hvd_init import RANK, SIZE
 from utils.logger_config import in_notebook
 from utils.logger_config import logger as log
 
