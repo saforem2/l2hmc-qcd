@@ -216,36 +216,37 @@ def test_single_network(configs: dict[str, Any]) -> TestOutputs:
     """Test training on single network."""
     t0 = time.time()
     logger.info(f'Testing single network')
-    configs = dict(copy.deepcopy(configs))
-    configs['dynamics_config']['separate_networks'] = False
-    train_out = train(configs, make_plots=False)
+    configs_ = dict(copy.deepcopy(configs))
+    configs_['dynamics_config']['separate_networks'] = False
+    train_out = train(configs_, make_plots=False)
     logdir = train_out.logdir
     runs_dir = os.path.join(logdir, 'inference')
     run_out = None
     if RANK == 0:
-        run_out = run(train_out.dynamics, configs, x=train_out.x,
+        run_out = run(train_out.dynamics, configs_, x=train_out.x,
                       runs_dir=runs_dir, make_plots=False)
 
     logger.info(f'Passed! Took: {time.time() - t0:.4f} seconds')
     return TestOutputs(train_out, run_out)
 
 
-def test_separate_networks(flags: dict[str, Any]) -> TestOutputs:
+def test_separate_networks(configs: dict[str, Any]) -> TestOutputs:
     """Test training on separate networks."""
     t0 = time.time()
     logger.info(f'Testing separate networks')
-    flags = dict(copy.deepcopy(flags))
-    flags['hmc_steps'] = 0
-    flags['dynamics_config']['separate_networks'] = True
-    flags['compile'] = False
-    train_out = train(flags, make_plots=False)
+    configs_ = dict(copy.deepcopy(configs))
+    configs_['hmc_steps'] = 0
+    configs_['dynamics_config']['separate_networks'] = True
+    configs_['compile'] = False
+    train_out = train(configs_, make_plots=False)
     x = train_out.x
     dynamics = train_out.dynamics
     logdir = train_out.logdir
     runs_dir = os.path.join(logdir, 'inference')
     run_out = None
     if RANK == 0:
-        run_out = run(dynamics, flags, x=x, runs_dir=runs_dir, make_plots=True)
+        run_out = run(dynamics, configs_, x=x,
+                      runs_dir=runs_dir, make_plots=True)
 
     logger.info(f'Passed! Took: {time.time() - t0:.4f} seconds')
     return TestOutputs(train_out, run_out)
@@ -289,16 +290,17 @@ def test_resume_training(configs: dict[str, Any]) -> TestOutputs:
     #  logger.info(f'logdir: {train_configs["log_dir"]}')
     #  logger.info(f'restored: {train_configs["restored"]}')
 
-    assert configs.get('restore_from', None) is not None
+    configs_ = copy.deepcopy(configs)
+    assert configs_.get('restore_from', None) is not None
 
-    train_out = train(configs, make_plots=False)
+    train_out = train(configs_, make_plots=False)
     dynamics = train_out.dynamics
     logdir = train_out.logdir
     x = train_out.x
     runs_dir = os.path.join(logdir, 'inference')
     run_out = None
     if RANK == 0:
-        run_out = run(dynamics, configs, x=x, runs_dir=runs_dir)
+        run_out = run(dynamics, configs_, x=x, runs_dir=runs_dir)
 
     logger.info(f'Passed! Took: {time.time() - t0:.4f} seconds')
     return TestOutputs(train_out, run_out)
@@ -315,8 +317,10 @@ def test():
     sep_out = test_separate_networks(sep_configs)
 
     #  sep_configs_copy = copy.deepcopy(sep_out.train.configs)
+    sep_configs['train_steps'] += 10
     sep_configs['restore_from'] = sep_out.train.logdir
-
+    sep_configs['log_dir'] = None
+    _ = test_resume_training(sep_configs)
 
     bf = sep_configs.get('beta_final')
     beta_final = bf + 1
