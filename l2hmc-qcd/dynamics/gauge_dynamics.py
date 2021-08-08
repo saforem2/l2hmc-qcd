@@ -271,7 +271,7 @@ class GaugeDynamics(BaseDynamics):
             xnet, vnet = [], []
             for i in range(self.config.num_steps):
                 vp = os.path.join(models_dir, f'dynamics_vnet{i}')
-                logger.info(f'Loading vnet{i}_second from: {vp}...')
+                logger.debug(f'Loading vnet{i}_second from: {vp}...')
                 vnet.append(tf.keras.models.load_model(vp))
 
                 # Check if xnet_first and xnet_second networks exist...
@@ -281,8 +281,8 @@ class GaugeDynamics(BaseDynamics):
                     # If so, load them into `xnets_first`, `xnets_second`
                     #  xnets_first.append(xp0)
                     #  xnets_second.append(xp1)
-                    logger.info(f'Loading xnet{i}_first from: {xp0}...')
-                    logger.info(f'Loading xnet{i}_second from: {xp1}...')
+                    logger.debug(f'Loading xnet{i}_first from: {xp0}...')
+                    logger.debug(f'Loading xnet{i}_second from: {xp1}...')
                     xnet.append(
                         (tf.keras.models.load_model(xp0),
                          tf.keras.models.load_model(xp1))
@@ -434,7 +434,7 @@ class GaugeDynamics(BaseDynamics):
         cfgs = self._get_network_configs(net_config, conv_config)
 
         if self.config.separate_networks:
-            logger.info('Using separate (x, v)-networks for each LF step!!')
+            logger.debug('Using separate (x, v)-networks for each LF step!!')
             vnet = [
                 get_gauge_network(**cfgs['vnet'], name=f'vnet{i}')
                 for i in range(self.config.num_steps)
@@ -446,7 +446,7 @@ class GaugeDynamics(BaseDynamics):
             ]
 
         else:
-            logger.info('Using a single (x, v)-network for all LF steps!!')
+            logger.debug('Using a single (x, v)-network for all LF steps!!')
             vnet = get_gauge_network(**cfgs['vnet'], name='vnet')
             xnet = get_gauge_network(**cfgs['xnet'], name='xnet')
 
