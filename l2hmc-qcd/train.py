@@ -8,7 +8,7 @@ Train 2D U(1) model using eager execution in tensorflow.
 # pylint: disable=ungrouped-imports
 from __future__ import absolute_import, division, print_function, annotations
 import warnings
-warnings.simplefilter('once')
+#  warnings.filterwarnings('once')
 import json
 from copy import deepcopy
 
@@ -42,7 +42,6 @@ from utils.inference_utils import run
 logger = Logger()
 #  os.environ['TF_CPP_MIN_VLOG_LEVEL'] = '3'
 #  os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-warnings.simplefilter('once')
 
 #  warnings.filterwarnings('once')
 #  warnings.filterwarnings('once', message='Custom mask layers', lineno=494)
@@ -180,7 +179,7 @@ if __name__ == '__main__':
 
     configs = parse_configs()
     cdict = configs.__dict__
-    logger.log(cdict)
+    logger.log(f'configs:\n {json.dumps(cdict)}')
     main(cdict)
     #  if RANK == 0:
     #      console.save_text(os.path.join(os.getcwd(), 'train.log'), styles=False)
