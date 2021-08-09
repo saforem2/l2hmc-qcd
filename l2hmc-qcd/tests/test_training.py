@@ -56,6 +56,9 @@ def parse_args():
     parser = argparse.ArgumentParser(
         description=description,
     )
+    parser.add_argument('--make_plots', action='store_true',
+                        help=("""Whether or not to make plots."""))
+
     parser.add_argument('--horovod', action='store_true',
                         help=("""Running with Horovod."""))
 
@@ -224,38 +227,6 @@ def test_resume_training(
     """Test restoring a training session from a checkpoint."""
     t0 = time.time()
     logger.info(f'Testing resuming training')
-    #  restore_dir = configs.get('restore_dir', None)
-    #  logdir = configs.get('logdir', configs.get('log_dir', None))
-    #  if logdir is None:
-    #      dirs = configs.get('dirs', None)
-    #      if dirs is not None:
-    #          logdir = dirs.get('log_dir', dirs.get('logdir', None))
-
-    #  assert logdir is not None
-    #
-    #  #  fpath = os.path.join(logdir, 'train_configs.json')
-    #  fpath = os.path.join(logdir, 'train_configs.z')
-    #  if os.path.isfile(fpath):
-    #      train_configs = io.loadz(fpath)
-    #  else:
-    #      try:
-    #          fpath = os.path.join(logdir, 'train_configs.json')
-    #          with open(fpath, 'r') as f:
-    #              train_configs = json.load(f)
-    #      except FileNotFoundError:
-    #          try:
-    #              train_configs = io.loadz(os.path.join(logdir, 'FLAGS.z'))
-    #          except FileNotFoundError as err:
-    #              raise(err)
-
-    #  logger.info('Restored train_configs successfully.')
-    #  logger.info('Setting `restored_flag` in `train_configs`.')
-    #  train_configs['log_dir'] = logdir
-    #  train_configs['restored'] = True
-    #  train_configs['ensure_new'] = False
-
-    #  logger.info(f'logdir: {train_configs["log_dir"]}')
-    #  logger.info(f'restored: {train_configs["restored"]}')
 
     configs_ = copy.deepcopy(configs)
     assert configs_.get('restore_from', None) is not None
@@ -274,7 +245,7 @@ def test_resume_training(
     return TestOutputs(train_out, run_out)
 
 
-def test():
+def test(make_plots: bool = False):
     """Run tests."""
     t0 = time.time()
     configs = parse_test_configs()
@@ -283,13 +254,12 @@ def test():
     conv_configs = copy.deepcopy(configs)
     single_configs = copy.deepcopy(configs)
 
-    sep_out = test_separate_networks(sep_configs, make_plots=True)
+    sep_out = test_separate_networks(sep_configs, make_plots=make_plots)
 
-    #  sep_configs_copy = copy.deepcopy(sep_out.train.configs)
     sep_configs['train_steps'] += 10
     sep_configs['restore_from'] = sep_out.train.logdir
     sep_configs['log_dir'] = None
-    _ = test_resume_training(sep_configs, make_plots=True)
+    _ = test_resume_training(sep_configs, make_plots=make_plots)
 
     bf = sep_configs.get('beta_final')
     beta_final = bf + 1
@@ -298,12 +268,10 @@ def test():
     sep_configs['ensure_new'] = True
     sep_configs['beta_final'] = sep_configs['beta_final'] + 1
 
-    _ = test_resume_training(sep_configs, make_plots=True)
+    _ = test_resume_training(sep_configs, make_plots=make_plots)
 
-    single_net_out = test_single_network(single_configs, make_plots=True)
+    single_net_out = test_single_network(single_configs, make_plots=make_plots)
     single_configs['restore_from'] = single_net_out.train.logdir
-    #  single_configs_copy['ensure_new'] = False
-    #  single_configs_copy = copy.deepcopy(single_net_out.train.configs)
     single_configs['dynamics_config']['separate_networks'] = False
     _ = test_resume_training(single_configs, make_plots=False)
 
@@ -317,7 +285,7 @@ def test():
 
     _ = test_single_network(configs, make_plots=False)
 
-    _ = test_conv_net(conv_configs, make_plots=True)
+    _ = test_conv_net(conv_configs, make_plots=make_plots)
 
     if RANK  == 0:
         _ = test_hmc_run(configs, make_plots=False)
@@ -351,4 +319,4 @@ if __name__ == '__main__':
     if ARGS.horovod:
         ARGS.horovod = True
 
-    _ = test() if ARGS.test_all else main(ARGS)
+    _ = test(ARGS.make_plots) if ARGS.test_all else main(ARGS)
