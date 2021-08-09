@@ -50,12 +50,11 @@ class LivePlotData:
     plot_obj: PlotObject
 
 
-def moving_average(x: np.ndarray, window: int = 10):
-    #  if len(x) < window:
+xType = Union[Any, np.ndarray]
+
+def moving_average(x: xType, window: int = 10):
     if len(x.shape) > 0 and x.shape[0] < window:
         return np.mean(x, keepdims=True)
-    #  if x.shape[0] < window:
-    #      return np.mean(x, keepdims=True)
 
     return np.convolve(x, np.ones(window), 'valid') / window
 
@@ -93,7 +92,7 @@ def update_plot(
         line: list[plt.Line2D],
         display_id: DisplayHandle,
         window: int = 15,
-        plot_freq: int = 1,
+        logging_steps: int = 1,
 ):
     if not in_notebook():
         return
@@ -104,7 +103,7 @@ def update_plot(
 
     yavg = moving_average(y.squeeze(), window=window)
     line[0].set_ydata(yavg)
-    line[0].set_xdata(np.arange(yavg.shape[0]))
+    line[0].set_xdata(logging_steps * np.arange(yavg.shape[0]))
     #  line[0].set_ydata(y)
     #  line[0].set_xdata(plot_freq * np.arange(y.shape[0]))
     #  line[0].set_xdata(np.arange(len(yavg)))
@@ -119,7 +118,7 @@ def update_joint_plots(
         plot_data2: LivePlotData,
         display_id: DisplayHandle,
         window: int = 15,
-        plot_freq: int = 1,
+        logging_steps: int = 1,
         fig: plt.Figure = None,
 ):
     if not in_notebook():
@@ -128,26 +127,31 @@ def update_joint_plots(
     if fig is None:
         fig = plt.gcf()
 
-    x1 = plot_data1.data
-    x2 = plot_data2.data
     plot_obj1 = plot_data1.plot_obj
     plot_obj2 = plot_data2.plot_obj
 
-    x1 = np.array(x1).squeeze()
-    x2 = np.array(x2).squeeze()
-    if len(x1.shape) == 2:
-        x1 = x1.mean(-1)
-    if len(x2.shape) == 2:
-        x2 = x2.mean(-1)
+    x1 = np.array(plot_data1.data).squeeze()  # type: np.ndarray
+    x2 = np.array(plot_data2.data).squeeze()  # type: np.ndarray
 
-    y1 = moving_average(x1, window=window)
-    y2 = moving_average(x2, window=window)
+    #  x1avg = x1.mean(-1) if len(x1.shape) == 2 else x1  # type: np.ndarray
+    #  x2avg = x2.mean(-1) if len(x2.shape) == 2 else x2  # type: np.ndarray
+    if len(x1.shape) == 2:
+        x1avg = np.mean(x1, -1)
+    else:
+        x1avg = x1
+    if len(x2.shape) == 2:
+        x2avg = np.mean(x2, -1)
+    else:
+        x2avg = x2
+
+    y1 = moving_average(x1avg, window=window)
+    y2 = moving_average(x2avg, window=window)
 
     plot_obj1.line[0].set_ydata(np.array(y1))
-    plot_obj1.line[0].set_xdata(plot_freq * np.arange(y1.shape[0]))
+    plot_obj1.line[0].set_xdata(logging_steps * np.arange(y1.shape[0]))
 
     plot_obj2.line[0].set_ydata(y2)
-    plot_obj2.line[0].set_xdata(plot_freq * np.arange(y2.shape[0]))
+    plot_obj2.line[0].set_xdata(logging_steps * np.arange(y2.shape[0]))
 
     plot_obj1.ax.relim()
     plot_obj2.ax.relim()

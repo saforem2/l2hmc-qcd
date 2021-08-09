@@ -30,6 +30,8 @@ from utils.attr_dict import AttrDict
 from utils.autocorr import calc_tau_int_vs_draws
 #  from utils.file_io import timeit
 from utils.logger import Logger
+from utils.logger_config import in_notebook
+from dynamics.gauge_dynamics import GaugeDynamics
 
 #  TF_FLOAT = FLOATS[tf.keras.backend.floatx()]
 #  NP_FLOAT = NP_FLOATS[tf.keras.backend.floatx()]
@@ -78,74 +80,74 @@ def truncate_colormap(
 
 
 def make_ridgeplots(
-        dataset,
-        num_chains=None,
-        out_dir=None,
-        drop_zeros=False,
-        cmap='crest'
+        dataset: xr.Dataset,
+        num_chains: int = None,
+        out_dir: str = None,
+        drop_zeros: bool = False,
+        cmap: str = 'crest',
+        default_style: dict = None,
 ):
-    sns.set(style='white', rc={"axes.facecolor": (0, 0, 0, 0)})
     data = {}
-    for key, val in dataset.data_vars.items():
-        if 'leapfrog' in val.coords.dims:
-            lf_data = {
-                key: [],
-                'lf': [],
-            }
-            for lf in val.leapfrog.values:
-                # val.shape = (chain, leapfrog, draw)
-                # x.shape = (chain, draw);  selects data for a single lf
-                x = val[{'leapfrog': lf}].values
-                # if num_chains is not None, keep `num_chains` for plotting
-                if num_chains is not None:
-                    x = x[:num_chains, :]
+    with sns.axes_style('white', rc={'axes.facecolor': (0, 0, 0, 0)}):
+        for key, val in dataset.data_vars.items():
+            if 'leapfrog' in val.coords.dims:
+                lf_data = {
+                    key: [],
+                    'lf': [],
+                }
+                for lf in val.leapfrog.values:
+                    # val.shape = (chain, leapfrog, draw)
+                    # x.shape = (chain, draw);  selects data for a single lf
+                    x = val[{'leapfrog': lf}].values
+                    # if num_chains is not None, keep `num_chains` for plotting
+                    if num_chains is not None:
+                        x = x[:num_chains, :]
 
-                x = x.flatten()
-                if drop_zeros:
-                    x = x[x != 0]
-                #  x = val[{'leapfrog': lf}].values.flatten()
-                lf_arr = np.array(len(x) * [f'{lf}'])
-                lf_data[key].extend(x)
-                lf_data['lf'].extend(lf_arr)
+                    x = x.flatten()
+                    if drop_zeros:
+                        x = x[x != 0]
+                    #  x = val[{'leapfrog': lf}].values.flatten()
+                    lf_arr = np.array(len(x) * [f'{lf}'])
+                    lf_data[key].extend(x)
+                    lf_data['lf'].extend(lf_arr)
 
-            lfdf = pd.DataFrame(lf_data)
-            data[key] = lfdf
+                lfdf = pd.DataFrame(lf_data)
+                data[key] = lfdf
 
-            # Initialize the FacetGrid object
-            pal = sns.color_palette(cmap, n_colors=len(val.leapfrog.values))
-            g = sns.FacetGrid(lfdf, row='lf', hue='lf', # hue_kws={'cmap': pal},
-                              aspect=15, height=0.25, palette=pal)
+                # Initialize the FacetGrid object
+                pal = sns.color_palette(cmap, n_colors=len(val.leapfrog.values))
+                g = sns.FacetGrid(lfdf, row='lf', hue='lf',
+                                  aspect=15, height=0.25, palette=pal)
 
-            # Draw the densities in a few steps
-            _ = g.map(sns.kdeplot, key, cut=1,
-                      shade=True, alpha=0.7, linewidth=1.25)
-            _ = g.map(plt.axhline, y=0, lw=1.5, alpha=0.7, clip_on=False)
+                # Draw the densities in a few steps
+                _ = g.map(sns.kdeplot, key, cut=1,
+                          shade=True, alpha=0.7, linewidth=1.25)
+                _ = g.map(plt.axhline, y=0, lw=1.5, alpha=0.7, clip_on=False)
 
-            # Define and use a simple function to
-            # label the plot in axes coords:
-            def label(x, color, label):
-                ax = plt.gca()
-                ax.text(0, 0.10, label, fontweight='bold', color=color,
-                        ha='left', va='center', transform=ax.transAxes,
-                        fontsize='small')
+                # Define and use a simple function to
+                # label the plot in axes coords:
+                def label(x, color, label):
+                    ax = plt.gca()
+                    ax.text(0, 0.10, label, fontweight='bold', color=color,
+                            ha='left', va='center', transform=ax.transAxes,
+                            fontsize='small')
 
-            _ = g.map(label, key)
-            # Set the subplots to overlap
-            _ = g.fig.subplots_adjust(hspace=-0.75)
-            # Remove the axes details that don't play well with overlap
-            _ = g.set_titles('')
-            _ = g.set(yticks=[])
-            _ = g.despine(bottom=True, left=True)
-            if out_dir is not None:
-                io.check_else_make_dir(out_dir)
-                out_file = os.path.join(out_dir, f'{key}_ridgeplot.pdf')
-                #  logger.log(f'Saving figure to: {out_file}.')
-                plt.savefig(out_file, dpi=400, bbox_inches='tight')
+                _ = g.map(label, key)
+                # Set the subplots to overlap
+                _ = g.fig.subplots_adjust(hspace=-0.75)
+                # Remove the axes details that don't play well with overlap
+                _ = g.set_titles('')
+                _ = g.set(yticks=[])
+                _ = g.despine(bottom=True, left=True)
+                if out_dir is not None:
+                    io.check_else_make_dir(out_dir)
+                    out_file = os.path.join(out_dir, f'{key}_ridgeplot.pdf')
+                    #  logger.log(f'Saving figure to: {out_file}.')
+                    plt.savefig(out_file, dpi=400, bbox_inches='tight')
 
             #plt.close('all')
 
-    plt.style.use('default')
-    sns.set(style='whitegrid', palette='bright', context='paper')
+    #  sns.set(style='whitegrid', palette='bright', context='paper')
     fig = plt.gcf()
     ax = plt.gca()
 
@@ -517,10 +519,30 @@ def plot_autocorrs1(
             pass
 
 
+def get_params_from_configs(configs: dict):
+    keys = ['num_steps', 'beta_init', 'beta_final', 'x_shape',
+            'net_weights']
+
+    #  eps = dynamics.eps.numpy()
+    num_steps = configs['dynamics_config']['num_steps']
+    beta_init = configs['beta_init']
+    beta_final = configs['beta_final']
+    x_shape = configs['dynamics_config']['x_shape']
+    net_weights = configs['dynamics_config']['net_weights']
+    params = {
+        'num_steps': configs['dynamics_config']['num_steps'],
+        'x_shape': configs['dynamics_config']['x_shape'],
+        'beta_init': configs['beta_init'],
+        'beta_final': configs['beta_final'],
+        'net_weights': configs['dynamics_config']['net_weights'],
+    }
+
+
+
 def plot_data(
         data_container: "DataContainer",  # noqa:F821
-        out_dir: str,
         configs: dict,
+        out_dir: str = None,
         therm_frac: float = 0,
         params: AttrDict = None,
         hmc: bool = None,
@@ -533,6 +555,7 @@ def plot_data(
     """Plot data from `data_container.data`."""
     if verbose:
         keep_strs = list(data_container.data.keys())
+
     else:
         keep_strs = [
             'charges', 'plaqs', 'accept_prob',
@@ -544,6 +567,7 @@ def plot_data(
             'veps_start', 'veps_mid', 'veps_end'
         ]
 
+    with_jupyter = in_notebook()
     # -- TODO: --------------------------------------
     #  * Get rid of unnecessary `params` argument,
     #    all of the entries exist in `configs`.
@@ -558,11 +582,20 @@ def plot_data(
     save_times = {}
 
     title = None if params is None else get_title_str_from_params(params)
-    params = {} if params is None else params
+    if params is None:
+        params = {
+            'beta_init': configs['beta_init'],
+            'beta_final': configs['beta_final'],
+            'x_shape': configs['dynamics_config']['x_shape'],
+            'num_steps': configs['dynamics_config']['num_steps'],
+            'net_weights': configs['dynamics_config']['net_weights'],
+        }
 
     tstamp = io.get_timestamp('%Y-%m-%d-%H%M%S')
-    plotdir = os.path.join(out_dir, f'plots_{tstamp}')
-    io.check_else_make_dir(plotdir)
+    plotdir = None
+    if out_dir is not None:
+        plotdir = os.path.join(out_dir, f'plots_{tstamp}')
+        io.check_else_make_dir(plotdir)
 
     tint_data = {}
     output = {}
@@ -669,24 +702,27 @@ def plot_data(
                                           dims=['chain', 'leapfrog', 'draw'],
                                           coords=[chains, leapfrogs, steps])
 
-        plt.close('all')
-
     #  plotdir_xr = None
     #  if plotdir is not None:
     #      plotdir_xr = os.path.join(plotdir, 'xarr_plots')
 
-    plotdir_xr = os.path.join(plotdir, 'xarr_plots')
-    t0 = time.time()
-    dtplot_container = data_container.plot_dataset(plotdir_xr,
-                                                   num_chains=num_chains,
-                                                   therm_frac=therm_frac,
-                                                   ridgeplots=True,
-                                                   cmap=cmap,
-                                                   profile=profile)
+    plotdir_xr = None
+    if plotdir is not None:
+        plotdir_xr = os.path.join(plotdir, 'xarr_plots')
 
-    plt.close('all')
+    t0 = time.time()
+    dataset, dtplot = data_container.plot_dataset(plotdir_xr,
+                                                  num_chains=num_chains,
+                                                  therm_frac=therm_frac,
+                                                  ridgeplots=True,
+                                                  cmap=cmap,
+                                                  profile=profile)
+
+    if not with_jupyter:
+        plt.close('all')
+
     plot_times['data_container.plot_dataset'] = {'total': time.time() - t0}
-    for key, val in dtplot_container.items():
+    for key, val in dtplot.items():
         plot_times['data_container.plot_dataset'][key] = val
 
     if not hmc and 'Hwf' in data_dict.keys():
@@ -698,7 +734,8 @@ def plot_data(
     _ = mcmc_avg_lineplots(data_dict, title, plotdir)
     plot_times['mcmc_avg_lineplots'] = time.time() - t0
 
-    plt.close('all')
+    if not with_jupyter:
+        plt.close('all')
 
     output.update({
         'data_container': data_container,

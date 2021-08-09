@@ -10,6 +10,33 @@ from utils.logger import Logger
 
 logger = Logger()
 
+if tf.__version__.startswith('1'):
+    try:
+        tf.compat.v1.enable_v2_behavior()
+    except AttributeError:
+        print('Unable to call \n'
+              '`tf.compat.v1.enable_v2_behavior()`. Continuing...')
+    try:
+        tf.compat.v1.enable_control_flow_v2()
+    except AttributeError:
+        print('Unable to call \n'
+              '`tf.compat.v1.enable_control_flow_v2()`. Continuing...')
+    try:
+        tf.compat.v1.enable_v2_tensorshape()
+    except AttributeError:
+        print('Unable to call \n'
+              '`tf.compat.v1.enable_v2_tensorshape()`. Continuing...')
+    try:
+        tf.compat.v1.enable_eager_execution()
+    except AttributeError:
+        print('Unable to call \n'
+              '`tf.compat.v1.enable_eager_execution()`. Continuing...')
+    try:
+        tf.compat.v1.enable_resource_variables()
+    except AttributeError:
+        print('Unable to call \n'
+              '`tf.compat.v1.enable_resource_variables()`. Continuing...')
+
 try:
     import horovod
     import horovod.tensorflow as hvd

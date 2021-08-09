@@ -30,8 +30,6 @@ import os
 import json
 import time
 
-#io = import_module('l2hmc-qcd.utils.io'
-
 from math import pi
 from typing import Any, Optional, Tuple, Union
 
@@ -53,6 +51,7 @@ except ImportError:
     COMPRESS = False
     NUM_RANKS = 1
     NUM_WORKERS = 1
+
 
 here = os.path.dirname(__file__)
 parent = os.path.abspath(os.path.dirname(here))
@@ -78,22 +77,21 @@ from dynamics.base_dynamics import (BaseDynamics, MonteCarloStates, NetWeights,
 TIMING_FILE = os.path.join(BIN_DIR, 'timing_file.log')
 TF_FLOAT = tf.keras.backend.floatx()
 
-#  INPUTS = Tuple[tf.Tensor, tf.Tensor]
-
 logger = Logger()
 
-def project_angle(x):
+
+def project_angle(x: tf.Tensor) -> tf.Tensor:
     """Returns the projection of an angle `x` from [-4pi, 4pi] to [-pi, pi]."""
     return x - 2 * np.pi * tf.math.floor((x + np.pi) / (2 * np.pi))
 
 
-def convert_to_angle(x):
+def convert_to_angle(x: tf.Tensor) -> tf.Tensor:
     """Returns x in -pi <= x < pi."""
     x = tf.math.floormod(x + pi, 2 * pi) - pi
     return x
 
 
-def build_test_dynamics():
+def build_test_dynamics() -> GaugeDynamics:
     """Build quick test dynamics for debugging."""
     jfile = os.path.abspath(os.path.join(BIN_DIR, 'test_dynamics_flags.json'))
     with open(jfile, 'rt') as f:
@@ -147,8 +145,7 @@ class GaugeDynamics(BaseDynamics):
             lr_config: Optional[LearningRateConfig] = None,
             conv_config: Optional[ConvolutionConfig] = None,
     ):
-        # ====
-        # Set attributes from `config`
+        # -- Set attributes from `config` -----------
         self.aux_weight = config.aux_weight
         self.plaq_weight = config.plaq_weight
         self.charge_weight = config.charge_weight
@@ -213,7 +210,6 @@ class GaugeDynamics(BaseDynamics):
             self.xnet, self.vnet = self._build_networks(
                 net_config=self.net_config,
                 conv_config=self.conv_config,
-                #  log_dir=self.config.get('log_dir', None)
             )
 
         if self.config.net_weights is None:
@@ -222,7 +218,6 @@ class GaugeDynamics(BaseDynamics):
             net_weights = NetWeights(*self.config.net_weights)
             self.net_weights = self._parse_net_weights(net_weights)
 
-        #  if self._has_trainable_params:
         if not self.config.hmc and not self.config.eps_fixed:
             self.lr_config = lr_config
             self.lr = self._create_lr(lr_config, auto=True)
@@ -470,8 +465,6 @@ class GaugeDynamics(BaseDynamics):
             'intQ': intq,
             'plaqs': plaqs,
             'p4x4': p4x4,
-            #  'sinQ': sinq.write(0, charges.sinQ),
-            #  'intQ': intq.write(0, charges.intQ),
         })
 
         return metrics
@@ -506,14 +499,12 @@ class GaugeDynamics(BaseDynamics):
 
         def _get_metrics(state, logdet):
             energy = self.hamiltonian(state)
-            #  charges = self.lattice.calc_both_charges(x=state_prop.x)
             plaqs, charges, p4x4 = self._calc_observables(state)
             escaled = energy - logdet
             return {
                 'H': energy, 'Hw': escaled, 'logdets': logdet,
                 'sinQ': charges.sinQ, 'intQ': charges.intQ,
                 'plaqs': plaqs, 'p4x4': p4x4,
-                #  'sinQ': charges.sinQ, 'intQ': charges.intQ,
             }
 
         def _stack_metrics():
@@ -522,8 +513,7 @@ class GaugeDynamics(BaseDynamics):
                     metrics[key] = val.stack()
             return metrics
 
-        # ====
-        # Forward for first half of trajectory
+        # -- Forward for first half of trajectory ---------------------------
         for step in range(self.config.num_steps // 2):
             state_prop, logdet = self._forward_lf(step, state_prop, training)
             sumlogdet += logdet
@@ -531,12 +521,10 @@ class GaugeDynamics(BaseDynamics):
                 data = _get_metrics(state_prop, sumlogdet)
                 metrics = _update_metrics(data, step+1)
 
-        # ====
-        # Flip momentum
+        # -- Flip momentum --------------------------------------------------
         state_prop = State(state_prop.x, -1. * state_prop.v, state_prop.beta)
 
-        # ====
-        # Backward for second half of trajectory
+        # -- Backward for second half of trajectory -------------------------
         for step in range(self.config.num_steps // 2, self.config.num_steps):
             state_prop, logdet = self._backward_lf(step, state_prop, training)
             sumlogdet += logdet
@@ -611,7 +599,7 @@ class GaugeDynamics(BaseDynamics):
         metrics['accept_prob'] = accept_prob
         if self._verbose:
             data = _get_metrics(state_prop, sumlogdet)
-            metrics = _update_metrics(data, step+1)
+            metrics = _update_metrics(data, step + 1)
             metrics = _stack_metrics()
 
         return state_prop, metrics
@@ -781,12 +769,10 @@ class GaugeDynamics(BaseDynamics):
 
     def _scattered_xnet(self, inputs, mask, step, training=None):
         """Call `self.xnet` on non-zero entries of `x` via `tf.gather_nd`."""
-        #  m, _ = masks
         if len(mask) == 2:
             mask, _ = mask
 
         x, v = inputs
-        #  x, v, t = inputs
         shape = (self.batch_size, -1)
         m = tf.reshape(mask, shape)
         idxs = tf.where(m)
@@ -980,8 +966,6 @@ class GaugeDynamics(BaseDynamics):
         """
         if self.config.hmc:
             return super()._update_x_forward(state, step, masks, training)
-        #  if self.config.use_ncp:
-        #      return self._update_xf_ncp(state, step, masks, training)
 
         m, mc = masks
         eps = self.xeps[step]
@@ -1090,8 +1074,6 @@ class GaugeDynamics(BaseDynamics):
         eps = self.veps[step]
         x = self.normalizer(state.x)
         grad = self.grad_potential(x, state.beta)
-        #  t = self._get_time(step, tile=tf.shape(x)[0])
-        #  S, T, Q = self._call_vnet((x, grad, t), step, training)
         S, T, Q = self._call_vnet((x, grad), step, training)
 
         scale = self._vsw * (-0.5 * eps * S)
@@ -1151,15 +1133,11 @@ class GaugeDynamics(BaseDynamics):
         """
         if self.config.hmc:
             return super()._update_x_backward(state, step, masks, training)
-        #  if self.config.use_ncp:
-        #      return self._update_xb_ncp(state, step, masks, training)
 
         # Call `XNet` using `self._scattered_xnet`
         m, mc = masks
         eps = self.xeps[step]
         x = self.normalizer(state.x)
-        #  t = self._get_time(step, tile=tf.shape(x)[0])
-        #  S, T, Q = self._call_xnet((x, state.v, t), m, step, training, first)
         S, T, Q = self._call_xnet((x, state.v), m, step, training, first)
 
         scale = self._xsw * (-eps * S)
@@ -1228,7 +1206,6 @@ class GaugeDynamics(BaseDynamics):
         if step is None:
             step = self.optimizer.iterations
 
-        #  if isinstance(self.lr, callable):
         if callable(self.lr):
             return self.lr(step)
 
@@ -1331,11 +1308,6 @@ class GaugeDynamics(BaseDynamics):
 
         data.update(metrics)
         data.update(self.calc_observables(states))
-        #  data.update({k: v for k, v in metrics.items()})
-        #  data.update({
-        #      k: v for k, v in self.calc_observables(states).items()
-        #  })
-        #  data.update(**metrics)
 
         return states.out.x, data
 
@@ -1382,10 +1354,6 @@ class GaugeDynamics(BaseDynamics):
                 data.update(**_traj_summ(vb, f'{kb}b'))
         data.update(metrics)
         data.update(self.calc_observables(states))
-        #  data.update({k: v for k, v in metrics.items()})
-        #  data.update({
-        #      k: v for k, v in self.calc_observables(states).items()
-        #  })
 
         return states.out.x, data
 
@@ -1398,9 +1366,7 @@ class GaugeDynamics(BaseDynamics):
         """
         wloops = self.lattice.calc_wilson_loops(state.x)
         p4x4_obs = self.lattice.calc_plaqs4x4(x=state.x, beta=state.beta)
-        #  p4x4_exp = area_law(state.beta, 16)  # 4x4 plaquette, area = 16
         p4x4_err = p4x4_obs # - p4x4_exp
-        #  wloops4x4 = self.lattice.calc_wilson_loops4x4(state.x)
         charges = self.lattice.calc_both_charges(x=state.x)
         plaqs = self.lattice.calc_plaqs(wloops=wloops, beta=state.beta)
 
@@ -1457,10 +1423,6 @@ class GaugeDynamics(BaseDynamics):
         for step in [0, 1, ..., num_steps], and reshape so that each chain in
         our batch of inputs gets a copy.
         """
-        #  if self.config.separate_networks:
-        #      trig_t = tf.squeeze([0, 0])
-        #  else:
-        #  i = tf.cast(i, dtype=TF_FLOAT)
         trig_t = tf.squeeze([
             tf.cos(2 * np.pi * i / self.config.num_steps),
             tf.sin(2 * np.pi * i / self.config.num_steps),
@@ -1486,7 +1448,6 @@ class GaugeDynamics(BaseDynamics):
         """Construct different binary masks for different time steps."""
         masks = []
         zeros = np.zeros(self.lattice_shape, dtype=np.float32)
-        #  zeros = tf.zeros(self.lattice_shape, dtype=TF_FLOAT)
 
         def rolled_reshape(m, ax, shape=None):
             if shape is None:

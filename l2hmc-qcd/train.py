@@ -18,7 +18,6 @@ from pathlib import Path
 from typing import Any, Union
 import warnings
 import tensorflow as tf
-#  from tensorflow.python.ops.gen_math_ops import Any
 
 
 #  try:
@@ -43,15 +42,6 @@ logger = Logger()
 #  os.environ['TF_CPP_MIN_VLOG_LEVEL'] = '3'
 #  os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
-#  warnings.filterwarnings('once')
-#  warnings.filterwarnings('once', message='Custom mask layers', lineno=494)
-#  warnings.filterwarnings('ignore', 'WARNING:matplotlib')
-#  warnings.filterwarnings('once', message='Tight', module='seaborn', append=True)
-#  warnings.filterwarnings('once', 'CustomMaskWarning', append=True)
-#  warnings.filterwarnings('ignore', module='generic_utils.py', append=True)
-#  warnings.filterwarnings(action='once', category=UserWarning)
-#  warnings.filterwarnings('once', 'keras')
-
 names = ['month', 'time', 'hour', 'minute', 'second']
 formats = [
     '%Y_%m',
@@ -63,13 +53,6 @@ formats = [
 TSTAMPS = {
     k: io.get_timestamp(v) for k, v in dict(zip(names, formats)).items()
 }
-
-#  logger = logging.getLogger(__name__)
-#  logging_datefmt = '%Y-%m-%d %H:%M:%S'
-#  logging_level = logging.WARNING
-#  logging_format = (
-#      '%(asctime)s %(levelname)s:%(process)s:%(thread)s:%(name)s:%(message)s'
-#  )
 
 logger.info(f'using tensorflow version: {tf.__version__}')
 logger.info(f'using tensorflow from: {tf.__file__}')
@@ -116,20 +99,18 @@ def dict_to_str(d):
 
 def main(configs: dict[str, Any]):
     """Main method for training."""
-    # TODO: Move setup code to separate function and refactor
-    #  configs = setup(configs)
     #  tf.keras.backend.set_floatx('float32')
-    train_out = train(configs=configs, make_plots=True) # , num_chains=nchains)
+
+    # -- Train model ----------------------------------------------------
+    train_out = train(configs=configs, make_plots=True)
     x = train_out.x
-    #  logdir = train_out.logdir
-    #  train_data = train_out.data
     dynamics = train_out.dynamics
     configs = train_out.configs
+    # ------------------------------------------------------------------
 
+
+    # -- Run inference on trained model ---------------------------------
     run_steps = configs.get('run_steps', 20000)
-
-    # ====
-    # Run inference on trained model
     if run_steps > 0:
         beta = configs.get('beta_final')
         nchains = configs.get('num_chains', configs.get('nchains', 16))
@@ -138,36 +119,11 @@ def main(configs: dict[str, Any]):
             old_shape = configs['dynamics_config']['x_shape']
             new_shape = (batch_size, *old_shape[1:])
             configs['dynamics_config']['x_shape'] = new_shape
-            dynamics = build_dynamics(configs)  # , log_dir=logdir)
+            dynamics = build_dynamics(configs)
             x = x[:batch_size]
 
         _ = run(dynamics, configs, x, beta=beta, make_plots=True,
                 therm_frac=0.1, num_chains=nchains, save_x=False)
-        #  try:
-        #      run_data = results.run_data
-        #      #  run_dir = run_data.dirs['run_dir']
-        #      #  dataset = run_data.save_dataset(run_dir, therm_frac=0.)
-        #  except:
-        #      # TODO: Properly catch exception (if thrown)
-        #      pass
-        #
-
-        #  _ = run_inference_from_log_dir(log_dir=log_dir,
-        #                                 run_steps=run_steps,
-        #                                 beta=beta,
-        #                                 num_chains=num_chains,
-        #                                 batch_size=batch_size,
-        #                                 therm_frac=0.2,
-        #                                 make_plots=True,
-        #                                 train_steps=0,
-        #                                 x=xbatch)
-        # Run with random start
-        #  _ = run(dynamics, args)
-        #  # Run HMC
-        #  args.hmc = True
-        #  args.dynamics_config['eps'] = 0.15
-        #  hmc_dir = os.path.join(args.log_dir, 'inference_hmc')
-        #  _ = run_hmc(args=args, hmc_dir=hmc_dir)
 
 
 if __name__ == '__main__':
@@ -181,9 +137,6 @@ if __name__ == '__main__':
     cdict = configs.__dict__
     logger.log(f'configs:\n {json.dumps(cdict)}')
     main(cdict)
-    #  if RANK == 0:
-    #      console.save_text(os.path.join(os.getcwd(), 'train.log'), styles=False)
 
-    #
     #  debug_events_writer.FlushExecutionFiles()
     #  debug_events_writer.FlushNonExecutionFiles()
