@@ -200,8 +200,8 @@ def plot_models(dynamics: GaugeDynamics, logdir: Union[str, Path]):
         }
     else:
         networks = {
-            'dynamics_vnet': dynamics.vnet,
-            'dynamics_xnet': dynamics.xnet,
+            'dynamics_vnet': dynamics.vnet[0],
+            'dynamics_xnet': dynamics.xnet[0],
         }
 
     for key, val in networks.items():
@@ -240,7 +240,7 @@ def find_conflicts(
         new: dict,
         old: dict,
         name: str = None,
-):
+) -> list[str]:
     conflicts = []
     for key in new.keys():
         old_ = old.get(key, None)
@@ -260,7 +260,7 @@ def find_conflicts(
     return conflicts
 
 
-def check_compatibility(new: dict, old: dict, strict: bool = False):
+def check_compatibility(new: dict, old: dict, strict: bool = False) -> dict:
     use_conv_net_old = old['dynamics_config']['use_conv_net']  # type: bool
     use_conv_net_new = new['dynamics_config']['use_conv_net']  # type: bool
 
@@ -274,18 +274,25 @@ def check_compatibility(new: dict, old: dict, strict: bool = False):
     bf_new = new['beta_final']  # type: float
 
     assert lf_old == lf_new
-    assert bf_old == bf_new
     assert use_conv_net_old == use_conv_net_new
 
-    if bi_old == bi_new and bf_old == bf_new and lf_old == lf_new:
-        new['ensure_new'] = False
-    else:
+    bi_conflict = (bi_new != bi_old)
+    bf_conflict = (bf_new != bf_old)
+    if bi_conflict or bf_conflict:
         new['ensure_new'] = True
 
     names = ['dynamics_config', 'network_config']
     if new['dynamics_config']['use_conv_net']:
         names.append('conv_config')
 
+    # -- example ----------------------------------------------
+    # conflicts = {
+    #    'dynamics_config': ['num_steps', 'use_conv_net', ...],
+    #    ...,
+    # }
+    # would imply there was a conflict found in:
+    #   - configs['dynamics_config']['num_steps']
+    #   - configs['dynamics_config']['use_conv_net']
     conflicts = {
         name: find_conflicts(new[name], old[name], name=name)
         for name in names
@@ -294,24 +301,53 @@ def check_compatibility(new: dict, old: dict, strict: bool = False):
         if len(conflict) == 0:
             continue
 
-        if strict and len(conflict) > 0:
-            raise ValueError(
-                f'Incompatible configurations.\n {name}: {conflict}'
-            )
-
-        old_ = old[name][conflict]
-        new_ = new[name][conflict]
-        logger.warning(f'Overwriting {name}[{conflict}] with restored val')
-        logger.warning(f'{name}[{conflict}]={new_} --> {old_}')
-        new[name][conflict] = old_
+        if strict:
+            raise AssertionError('\n'.join([
+                'Incompatible configs.', f'{name}: {conflict}',
+            ]))
+        else:
+            old_ = old[name][conflict]
+            new_ = new[name][conflict]
+            logger.warning(f'Overwriting {name}[{conflict}] with restored val')
+            logger.warning(f'{name}[{conflict}]={new_} --> {old_}')
+            new[name][conflict] = old_
 
     return new
+
+
+def restore_from(
+        configs: dict,
+        restore_dir: Union[str, Path],
+        strict: bool = False
+) -> GaugeDynamics:
+    """Load trained networks and restore model from checkpoint."""
+    logger.warning(f'Loading networks from: {restore_dir}')
+
+    restored = None
+    if restore_dir is not None:
+        restored = load_configs_from_logdir(restore_dir)
+        configs = check_compatibility(configs, restored, strict=strict)
+        configs['restored'] = True
+        configs['restored_configs'] = restored
+
+    dynamics = build_dynamics(configs)
+    networks = dynamics._load_networks(str(restore_dir))
+    dynamics.xnet = networks['xnet']
+    dynamics.vnet = networks['vnet']
+
+    ckptdir = os.path.join(restore_dir, 'training', 'checkpoints')
+    ckpt = tf.train.Checkpoint(dynamics=dynamics, optimizer=dynamics.optimizer)
+    manager = tf.train.CheckpointManager(ckpt, ckptdir, max_to_keep=5)
+    ckpt.restore(manager.latest_checkpoint)
+    if manager.latest_checkpoint:
+        logger.warning(f'Restored from {manager.latest_checkpoint}')
+
+    return dynamics
 
 
 def setup_directories(configs: dict) -> dict:
     """Setup directories for training."""
     logfile = os.path.join(os.getcwd(), 'log_dirs.txt')
-
     ensure_new = configs.get('ensure_new', False)
     logdir = configs.get('logdir', configs.get('log_dir', None))
     if logdir is not None:
@@ -345,36 +381,6 @@ def setup_directories(configs: dict) -> dict:
                 io.save_dict(restored, logdir, name='restored_train_configs')
 
     return configs
-
-
-def restore_from(
-        configs: dict,
-        restore_dir: Union[str, Path],
-        strict: bool = False
-) -> GaugeDynamics:
-    """Load trained networks and restore model from checkpoint."""
-    logger.warning(f'Loading networks from: {restore_dir}')
-
-    restored = None
-    if restore_dir is not None:
-        restored = load_configs_from_logdir(restore_dir)
-        configs = check_compatibility(configs, restored, strict=strict)
-        configs['restored'] = True
-        configs['restored_configs'] = restored
-
-    dynamics = build_dynamics(configs)
-    networks = dynamics._load_networks(str(restore_dir))
-    dynamics.xnet = networks['xnet']
-    dynamics.vnet = networks['vnet']
-
-    ckptdir = os.path.join(restore_dir, 'training', 'checkpoints')
-    ckpt = tf.train.Checkpoint(dynamics=dynamics, optimizer=dynamics.optimizer)
-    manager = tf.train.CheckpointManager(ckpt, ckptdir, max_to_keep=5)
-    ckpt.restore(manager.latest_checkpoint)
-    if manager.latest_checkpoint:
-        logger.warning(f'Restored from {manager.latest_checkpoint}')
-
-    return dynamics
 
 
 def setup_betas(
@@ -545,7 +551,7 @@ def train(
         x: tf.Tensor = None,
         num_chains: int = 32,
         make_plots: bool = True,
-        therm_frac: float = 0.33,
+        **kwargs,
         #  restore_x: bool = False,
         #  ensure_new: bool = False,
         #  should_track: bool = True,
@@ -569,8 +575,7 @@ def train(
     train_data = config['train_data']
 
     dynamics.save_config(dirs['config_dir'])
-    # ------------------------------------
-    # Train dynamics
+    # -- Train dynamics -----------------------------------------
     logger.rule('TRAINING')
     t0 = time.time()
     x, train_data = train_dynamics(dynamics, config, dirs, x=x)
@@ -581,7 +586,8 @@ def train(
     #                                 should_track=SHOULD_TRACK)
 
     if IS_CHIEF and make_plots:
-        output_dir = os.path.join(dirs['train_dir'], 'outputs')
+        train_dir = dirs['train_dir']
+        output_dir = os.path.join(train_dir, 'outputs')
         train_data.save_data(output_dir, save_dataset=True)
 
         params = {
@@ -592,9 +598,15 @@ def train(
             'net_weights': dynamics.net_weights,
         }
         t0 = time.time()
-        output = plot_data(data_container=train_data, flags=configs,
-                           params=params, out_dir=dirs['train_dir'],
-                           therm_frac=therm_frac, num_chains=num_chains)
+        logging_steps = configs.get('logging_steps', None)
+        _ = plot_data(data_container=train_data,
+                      configs=configs,
+                      params=params,
+                      out_dir=train_dir,
+                      therm_frac=0,
+                      cmap='flare',
+                      num_chains=num_chains,
+                      logging_steps=logging_steps, **kwargs)
         #  data_container = output['data_container']
         #  data_container.plot_dataset(output['out_dir'],
         #                              num_chains=num_chains,
@@ -608,20 +620,20 @@ def train(
     logger.info(f'Done training model! took: {time.time() - start:.4f}s')
     io.save_dict(dict(configs), dirs['log_dir'], 'configs')
 
-    #  return x, dynamics, train_data, configs
     return TrainOutputs(x, dirs['log_dir'], configs, train_data, dynamics)
 
 
 def run_md(
         dynamics: GaugeDynamics,
-        inputs: tuple[tf.Tensor, tf.Tensor],
+        inputs: tuple,
         md_steps: int,
 ):
     x, beta = inputs
+    beta = tf.constant(beta)
     logger.debug(f'Running {md_steps} MD updates!')
     for _ in range(md_steps):
         mc_states, _ = dynamics.md_update((x, beta), training=True)
-        x = mc_states.out.x
+        x = mc_states.out.x  # type: tf.Tensor
     logger.debug(f'Done!')
 
     return x
@@ -629,12 +641,13 @@ def run_md(
 
 def run_profiler(
         dynamics: GaugeDynamics,
-        inputs: tuple[tf.Tensor, tf.Tensor],
+        inputs: tuple[tf.Tensor, Union[float, tf.Tensor]],
         logdir: str,
         steps: int = 10
 ):
     logger.debug(f'Running {steps} profiling steps!')
     x, beta = inputs
+    beta = tf.constant(beta)
     metrics = None
     for step in range(steps):
         with tf.profiler.experimental.Trace('train', step_num=step, _r=1):
@@ -653,7 +666,7 @@ def train_dynamics(
         input: dict[str, Any],
         dirs: Optional[dict[str, str]] = None,
         x: Optional[tf.Tensor] = None,
-        betas: Optional[tf.Tensor] = None,
+        #  betas: Optional[tf.Tensor] = None,
         #  should_track: bool = False,
 ):
     """Train model."""
@@ -684,16 +697,27 @@ def train_dynamics(
     def should_save(step: int) -> bool:
         return step % save_steps == 0 and ckpt is not None
 
-    betas = input.get('betas')
-    if dirs is None:
-        dirs = input.get('dirs')
+    xshape = dynamics._xshape
+    xr = tf.random.uniform(xshape, -PI, PI)
+    x = input.get('x', xr) if x is None else x
+    assert x is not None
 
-    steps = input['steps']
-    writer = input['writer']
+    betas = np.array(input.get('betas', None))
+    assert betas is not None and betas.shape[0] > 0
+
+    steps = np.array(input.get('steps'))
+    assert steps is not None and steps.shape[0] > 0
+
+    dirs = input.get('dirs') if dirs is None else dirs
+    assert dirs is not None
+
     manager = input['manager']
     ckpt = input['checkpoint']
     train_data = input['train_data']
 
+    #  tf.compat.v1.autograph.experimental.do_not_convert(dynamics.train_step)
+
+    # -- Setup dynamic learning rate schedule -------------------
     assert dynamics.lr_config is not None
     warmup_steps = dynamics.lr_config.warmup_steps
     reduce_lr = ReduceLROnPlateau(monitor='loss', mode='min',
@@ -702,46 +726,28 @@ def train_dynamics(
                                   verbose=1, patience=patience)
     reduce_lr.set_model(dynamics)
 
+    # -- Setup summary writer -----------
+    writer = input.get('writer', None)
     if IS_CHIEF and writer is not None:
         writer.set_as_default()
 
-    #  tf.compat.v1.autograph.experimental.do_not_convert(dynamics.train_step)
-
-    # -- Try running compiled `train_step` fn otherwise run imperatively ----
-    assert betas is not None and len(betas) > 0
-    b0 = tf.constant(betas[0])
-    xshape = dynamics._xshape
-    #  xshape = tuple(dynamics.config.x_shape)
-    xr = tf.random.uniform(xshape, -PI, PI)
-    x = input.get('x', xr) if x is None else x
-
-    assert x is not None
-    assert b0 is not None
-    assert dirs is not None
+    # -- Run profiler? ------------------------------------------------------
     if configs.get('profiler', False):
-        #  sdir = dirs.get('summary_dir', )
         sdir = dirs['summary_dir']
-        x, metrics = run_profiler(dynamics, (x, b0), logdir=sdir, steps=10)
+        x, metrics = run_profiler(dynamics, (x, betas[0]),
+                                  logdir=sdir, steps=10)
     else:
-        x, metrics = dynamics.train_step((x, b0))
+        x, metrics = dynamics.train_step((x, betas[0]))
 
     # -- Run MD update to not get stuck -----------------
     md_steps = configs.get('md_steps', 0)
     if md_steps > 0:
-        b0 = tf.constant(b0, )
-        x = run_md(dynamics, (x, b0), md_steps)
-
-
-    # -- Final setup; create timing wrapper for `train_step` function -------
-    # -- and get formatted header string to display during training. --------
+        x = run_md(dynamics, (x, betas[0]), md_steps)
 
     warmup_steps = dynamics.lr_config.warmup_steps
-    total_steps = steps[-1].numpy()
+    total_steps = steps[-1]
     if len(steps) != len(betas):
         betas = betas[steps[0]:]
-        #  logger.warning(f'len(steps) != len(betas) Restarting step count!')
-        #  logger.warning(f'len(steps): {len(steps)}, len(betas): {len(betas)}')
-        #  steps = np.arange(len(betas))
 
     keep = ['dt', 'loss', 'accept_prob', 'beta',
             'Hwb_start', 'Hwf_start',
@@ -763,17 +769,21 @@ def train_dynamics(
     logdir = dirs['log_dir']
     data_dir = dirs['data_dir']
     logfile = dirs['log_file']
-    assert manager is not None
+
     assert x is not None
+    assert manager is not None
+    assert len(steps) == len(betas)
     #  for idx, (step, beta) in iterable:
     #  for idx, (step, beta) in enumerate(zip(steps, betas)):
     for step, beta in zip(steps, betas):
         x, metrics = train_step(x, beta)
 
+        # ---------------------------------------------------------------
         # TODO: Run inference when beta hits an integer
         # >>> beta_inf = {i: False, for i in np.arange(beta_final)}
         # >>> if any(np.isclose(beta, np.array(list(beta_inf.keys())))):
         # >>>     run_inference(...)
+        # ---------------------------------------------------------------
 
         if (step + 1) > warmup_steps and (step + 1) % steps_per_epoch == 0:
             reduce_lr.on_epoch_end(step+1, {'loss': metrics.loss})
@@ -822,8 +832,6 @@ def train_dynamics(
 
         # -- Update summary objects ---------------------
         if should_log(step):
-            #  logger.rule('')
-            #  logger.info('Updating summaries')
             train_data.update(step, metrics)
             if writer is not None:
                 update_summaries(step, metrics, dynamics)
@@ -834,8 +842,7 @@ def train_dynamics(
     if IS_CHIEF:
         manager.save()
         logger.log(f'Checkpoint saved to: {manager.latest_checkpoint}')
-        train_data.save_and_flush(data_dir, logfile,
-                                  rank=RANK, mode='a')
+        train_data.save_and_flush(data_dir, logfile, rank=RANK, mode='a')
 
         logfile = os.path.join(logdir, 'training', 'train_log.txt')
         with open(logfile, 'a') as f:
