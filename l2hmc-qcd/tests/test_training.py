@@ -291,7 +291,6 @@ def test(make_plots: bool = False):
         _ = test_hmc_run(configs, make_plots=False)
 
     logger.info(f'All tests passed! Took: {time.time() - t0:.4f} s')
-    logger.rule()
 
 
 def main(args, flags=None):
