@@ -18,25 +18,8 @@ import numpy as np
 import tensorflow as tf
 from rich import get_console
 
-#  from utils.hvd_init import RANK, SIZE
 from utils.logger_config import in_notebook
 from utils.logger_config import logger as log
-
-#  warnings.filterwarnings('once', 'seaborn')
-#  warnings.filterwarnings('once', 'keras')
-#  warnings.filterwarnings('once', 'UserWarning:')
-#  warnings.filterwarnings('once', 'CustomMaskWarning:')
-#  try:
-#      import horovod
-#      import horovod.tensorflow as hvd
-#      try:
-#          RANK = hvd.rank()
-#      except AttributeError:
-#          hvd.init()
-#
-#      RANK = hvd.rank()
-#  except (ImportError, ModuleNotFoundError):
-#      RANK = 0
 
 
 WIDTH, _ = shutil.get_terminal_size(fallback=(156, 50))
@@ -300,4 +283,3 @@ def savez(obj: Any, fpath: str, name: str = None):
         logger.log(f'Saving {obj.__class__} to {os.path.relpath(fpath)}.')
 
     joblib.dump(obj, fpath)
-
