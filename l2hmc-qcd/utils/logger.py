@@ -246,8 +246,6 @@ class Logger:
         (f'Saving metrics to: {os.path.relpath(outdir)}')
         savez(metrics, outfile, name=fname.split('.')[0])
 
-        return
-
 
 logger = Logger()
 
