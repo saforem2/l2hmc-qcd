@@ -3,24 +3,23 @@ config.py
 
 Contains configuration objects for various `Dynamics`.
 """
-import os
+from __future__ import absolute_import, annotations, division, print_function
 
 from collections import namedtuple
+from dataclasses import dataclass, field
+#  from config import BIN_DIR, TIMING_FILE
+from typing import NamedTuple, Optional
 
 import tensorflow as tf
 
-from config import BIN_DIR, TIMING_FILE
-from typing import NamedTuple
 from utils.attr_dict import AttrDict
-from dataclasses import dataclass
-
 
 TF_FLOAT = tf.keras.backend.floatx()
 
 ACTIVATIONS = {
     'relu': tf.nn.relu,
     'tanh': tf.nn.tanh,
-    'leaky_relu': tf.nn.leaky_relu
+    'leaky_relu': tf.nn.leaky_relu,
 }
 
 
@@ -67,7 +66,7 @@ class GaugeDynamicsConfig:
     use_mixed_loss: bool = False        # Use mixed loss?
     verbose: bool = False               # Verbose metric logging?
     use_ncp: bool = False               # Transform x using NCP?
-    x_shape: tuple = None               # (batch_size Lt Lx 2)
+    x_shape: list[int] = field(default_factory=list)   # (batch_size Lt Lx 2)
     plaq_weight: float = 0.             # Weight of plaq term in loss
     charge_weight: float = 0.           # Weight of charge term in loss
     zero_init: bool = False             # Initialize weights as zeros?
@@ -78,6 +77,6 @@ class GaugeDynamicsConfig:
     use_scattered_xnet_update: bool = False  # scattered xupdate?
     use_tempered_traj: bool = False     # Use tempered trajectory?
     gauge_eq_masks: bool = False        # Use gauge eq. masks?
-    log_dir: str = None                 # `log_dir` containing loadable nets
+    log_dir: Optional[str] = None                 # `log_dir` containing loadable nets
     optimizer: str = 'adam'             # optimizer to use for backprop
-    net_weights: NetWeights = None
+    net_weights: Optional[NetWeights] = None

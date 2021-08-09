@@ -499,3 +499,12 @@ l2hmc-qcd/notebooks/*Copy*
 l2hmc-qcd/notebooks/*test*
 *.numbers
 *.csv
+pyrightconfig1.json
+notebooks/HMC_data_plots.ipynb
+notebooks/autocorrelations.ipynb
+bin/*beta*
+bin/*hmc*
+bin/*experiments*
+*node_modules*
+*2021_*
+bin/*scale_*

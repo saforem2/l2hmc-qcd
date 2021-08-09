@@ -76,12 +76,12 @@ class PeriodicPadding(layers.Layer):
 
 # pylint:disable=too-many-locals, too-many-arguments
 def get_generic_network(
-        input_shape: Tuple,
+        input_shape: tuple,
         net_config: NetworkConfig,
-        kernel_initializer: str = None,
-        input_shapes: Tuple = None,
+        input_shapes: dict[str, tuple],
         factor: float = 1.,
         name: str = None,
+        #  kernel_initializer: str = None,
 ):
     """Returns a (functional) `tf.keras.Model`."""
     h1 = net_config.units[0]
@@ -148,28 +148,31 @@ def get_generic_network(
 
 # pylint:disable=too-many-locals, too-many-arguments, too-many-statements
 def get_gauge_network(
-        x_shape: Tuple,
+        x_shape: tuple,
         net_config: NetworkConfig,
-        conv_config: ConvolutionConfig = None,
         kernel_initializer: str = None,
-        input_shapes: dict = None,
+        conv_config: ConvolutionConfig = None,
+        input_shapes: dict[str, tuple] = None,
         factor: float = 1.,
-        batch_size: Tuple = None,
-        name: str = None,
+        batch_size: tuple = None,
+        name: str = 'GaugeNetwork',
 ):
     """Returns a (functional) `tf.keras.Model`."""
+    # -- Check shapes ---------------------------------------------
     if len(x_shape) == 4:
         batch_size, T, X, d = x_shape
     elif len(x_shape) == 3:
         T, X, d = x_shape
+    else:
+        raise ValueError('Incorrect shape passed for `x_shape`.')
 
     xdim = T * X * d
-    #  if len(x_shape) == 4:
-    #      batch_size, T, X, d = x_shape
-    #  elif len(x_shape) == 3:
-    #      T, X, d = x_shape
-    #
-    #  xdim = T * X * d
+    if input_shapes is None:
+        input_shapes = {
+            'x': (xdim, 2), 'v': (xdim,),
+        }
+
+    # -- Define activation function to use -------------------------
     activation_fn = net_config.activation_fn
     if isinstance(activation_fn, str):
         activation_fn = ACTIVATION_FNS.get(activation_fn, None)
@@ -179,27 +182,16 @@ def get_gauge_network(
                 f'Expected one of: {tuple(ACTIVATION_FNS.keys())}.'
             )
 
-    if input_shapes is None:
-        input_shapes = {
-            'x': (xdim, 2), 'v': (xdim,), # 't': (2,)
-        }
-
-    if name is None:
-        name = 'GaugeNetwork'
-
     def s_(x):
         return f'{name}_{x}'
 
     def get_input(s):
         return keras.Input(input_shapes[s], name=s_(s), batch_size=batch_size)
 
-    # +-----------------------+
-    # |     BUILD NETWORK     |
-    # +-----------------------+
+    # -- Build network --------------------------------------------
     with tf.name_scope(name):
         x_input = get_input('x')
         v_input = get_input('v')
-        #  t_input = get_input('t')
 
         coeff_kwargs = {
             'trainable': True, 'initial_value': tf.zeros([1, xdim]),
@@ -238,7 +230,6 @@ def get_gauge_network(
         args = {
             'x': (net_config.units[0], factor / 2., f'{name}_x'),
             'v': (net_config.units[0], 1. / 2., f'{name}_v'),
-            #  't': (net_config.units[0], 1. / 3., f'{name}_t'),
             'scale': (xdim, 0.001, f'{name}_scale'),
             'transl': (xdim, 0.001, f'{name}_transl'),
             'transf': (xdim, 0.001, f'{name}_transf'),
@@ -246,23 +237,21 @@ def get_gauge_network(
 
         x = custom_dense(*args['x'])(x)
         v = custom_dense(*args['v'])(v_input)
-        #  t = custom_dense(*args['t'])(t_input)
 
         z = layers.Add()([x, v])
-        #  z = layers.Add()([x, v, t])
         z = activation_fn(z)
         #  z = keras.activations.relu(z)
+        # ------------------------------------------
+        # TODO: Replace 1./2. in custom_dense with:
+        # 1 / len(net_config.units[1:])
+        # ------------------------------------------
         for idx, units in enumerate(net_config.units[1:]):
             z = custom_dense(units, 1./2., f'{name}_h{idx}',
                              activation=activation_fn)(z)
 
-        #  z = custom_dense(*args['h1'])(z)
-        #  z = custom_dense(*args['h2'])(z)
-
         if net_config.dropout_prob > 0:
             z = layers.Dropout(net_config.dropout_prob)(z)
 
-        #  if net_config.get('use_batch_norm', False):
         if net_config.use_batch_norm:
             z = layers.BatchNormalization(-1, name=f'{name}_batch_norm1')(z)
 
