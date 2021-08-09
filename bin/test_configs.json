@@ -13,13 +13,13 @@
     "steps_per_epoch": 3,
     "patience": 1,
     "min_lr": 1e-5,
-    "save_steps": 2,
+    "save_steps": 5,
     "run_steps": 10,
-    "train_steps": 5,
+    "train_steps": 10,
     "dynamics_config": {
         "verbose": true,
-        "eps": 0.1,
-        "num_steps": 2,
+        "eps": 0.01,
+        "num_steps": 5,
         "hmc": false,
         "use_ncp": true,
         "eps_fixed": false,
@@ -39,9 +39,9 @@
         "log_dir": null
     },
     "network_config": {
-        "units": [16, 16, 16],
+        "units": [8, 8, 8, 8],
         "activation_fn": "relu",
-        "dropout_prob": 0.1,
+        "dropout_prob": 0.05,
         "use_batch_norm": true
     },
     "lr_config": {
@@ -51,7 +51,7 @@
         "warmup_steps": 100 
     },
     "conv_config": {
-        "filters": [16, 32],
+        "filters": [8, 16],
         "sizes": [2, 2],
         "pool_sizes": [2, 2],
         "conv_activations": ["relu", "relu"],
