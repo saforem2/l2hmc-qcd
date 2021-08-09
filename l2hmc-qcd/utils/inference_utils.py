@@ -32,7 +32,8 @@ from utils.logger import Logger
 SHOULD_TRACK = not os.environ.get('NOTRACK', False)
 
 InferenceResults = namedtuple('InferenceResults',
-                              ['dynamics', 'run_data', 'x', 'x_arr'])
+                              ['dynamics', 'x', 'x_arr',
+                               'run_data', 'data_strs'])
 
 logger = Logger()
 
@@ -150,7 +151,7 @@ def run_hmc(
         - 'x_shape'
     """
     if not IS_CHIEF:
-        return InferenceResults(None, None, None, None)
+        return InferenceResults(None, None, None, None, None)
 
     if hmc_dir is None:
         month_str = io.get_timestamp('%Y_%m')
@@ -167,7 +168,7 @@ def run_hmc(
         if len(matches) > 0:
             logger.warning('Existing run with current parameters found!')
             logger.print_dict(configs)
-            return InferenceResults(None, None, None, None)
+            return InferenceResults(None, None, None, None, None)
 
     dynamics = build_dynamics(configs)
     try:
@@ -176,7 +177,7 @@ def run_hmc(
                                 save_x=save_x, therm_frac=therm_frac,
                                 num_chains=num_chains)
     except FileExistsError:
-        inference_results = InferenceResults(None, None, None, None)
+        inference_results = InferenceResults(None, None, None, None, None)
         logger.warning('Existing run with current parameters found! Skipping!')
 
     return inference_results
@@ -190,7 +191,7 @@ def load_and_run(
 ) -> InferenceResults:
     """Load trained model from checkpoint and run inference."""
     if not IS_CHIEF:
-        return InferenceResults(None, None, None, None)
+        return InferenceResults(None, None, None, None, None)
 
     io.print_dict(args)
     ckpt_dir = os.path.join(args.log_dir, 'training', 'checkpoints')
@@ -303,10 +304,10 @@ def run(
         md_steps: int = 50,
         skip_existing: bool = False,
         run_steps: int = None,
-) -> (InferenceResults):
+) -> InferenceResults:
     """Run inference. (Note: Higher-level than `run_dynamics`)."""
     if not IS_CHIEF:
-        return InferenceResults(None, None, None, None)
+        return InferenceResults(None, None, None, None, None)
 
     if num_chains > 16:
         logger.warning(f'Reducing `num_chains` from: {num_chains} to {16}.')
@@ -341,18 +342,19 @@ def run(
         x = convert_to_angle(tf.random.uniform(shape=dynamics.x_shape,
                                                minval=-PI, maxval=PI))
 
+
+    # == RUN DYNAMICS =======================================================
     nw = dynamics.net_weights
-    type = 'HMC' if dynamics.config.hmc else 'inference'
-    logger.info(f'Running {type}, beta={beta}, nw={nw}')
-    logger.rule(f'Running {type}, beta={beta}, nw={nw}')
+    inf_type = 'HMC' if dynamics.config.hmc else 'inference'
+    logger.info(', '.join([f'Running {inf_type}', f'beta={beta}', f'nw={nw}']))
     t0 = time.time()
-    results = run_dynamics(dynamics=dynamics, flags=configs,
+    results = run_dynamics(dynamics, flags=configs,
                            x=x, beta=beta, save_x=save_x,
                            md_steps=md_steps)
-    logger.rule(f'Done running {type}. took: {time.time() - t0:.4f} s')
-    logger.info(f'Done running {type}. took: {time.time() - t0:.4f} s')
-    run_data = results.run_data
+    logger.info(f'Done running {inf_type}. took: {time.time() - t0:.4f} s')
+    #========================================================================
 
+    run_data = results.run_data
     run_data.update_dirs({'log_dir': logdir, 'run_dir': run_dir})
     run_params = {
         'hmc': dynamics.config.hmc,
@@ -366,6 +368,10 @@ def run(
         'net_weights': dynamics.net_weights,
         'input_shape': dynamics.x_shape,
     }
+
+    inf_log_fpath = os.path.join(run_dir, 'inference_log.txt')
+    with open(inf_log_fpath, 'a') as f:
+        f.writelines('\n'.join(results.data_strs))
 
     traj_len = dynamics.config.num_steps * tf.reduce_mean(dynamics.xeps)
     if hasattr(dynamics, 'xeps') and hasattr(dynamics, 'veps'):
@@ -392,13 +398,15 @@ def run(
     plot_times = {}
     if make_plots:
         output = plot_data(data_container=run_data,
-                           flags=configs,
+                           configs=configs,
                            params=run_params,
                            out_dir=run_dir,
                            hmc=dynamics.config.hmc,
                            therm_frac=therm_frac,
                            num_chains=num_chains,
-                           profile=True)
+                           profile=True,
+                           cmap='crest',
+                           logging_steps=1)
 
         save_times = io.SortedDict(**output['save_times'])
         plot_times = io.SortedDict(**output['plot_times'])
@@ -446,8 +454,11 @@ def run(
     io.save_dict(plot_times, profdir, name='plot_times')
     io.save_dict(save_times, profdir, name='save_times')
 
-    return InferenceResults(dynamics=results.dynamics, run_data=run_data,
-                            x=results.x, x_arr=results.x_arr)
+    return InferenceResults(dynamics=results.dynamics,
+                            x=results.x, x_arr=results.x_arr,
+                            run_data=results.run_data,
+                            data_strs=results.data_strs)
+
 
 
 def run_dynamics(
@@ -461,12 +472,12 @@ def run_dynamics(
 ) -> (InferenceResults):
     """Run inference on trained dynamics."""
     if not IS_CHIEF:
-        return InferenceResults(None, None, None, None)
+        return InferenceResults(None, None, None, None, None)
 
     # -- Setup -----------------------------
     print_steps = flags.get('print_steps', 5)
     if beta is None:
-        beta = flags.get('beta', flags.get('beta_final', None))
+        beta = flags.get('beta', flags.get('beta_final', None))  # type: float
         assert beta is not None
 
     test_step = dynamics.test_step
@@ -522,7 +533,8 @@ def run_dynamics(
     keep_ = ['step', 'dt', 'loss', 'accept_prob', 'beta',
              'dq_int', 'dq_sin', 'dQint', 'dQsin', 'plaqs', 'p4x4']
 
-    beta = tf.constant(beta, dtype=TF_FLOAT)
+    beta = tf.constant(beta, dtype=TF_FLOAT)  # type: tf.Tensor
+    data_strs = []
     for idx, step in enumerate(steps):
         x, metrics = timed_step(x, beta)
         run_data.update(step, metrics)  # update data after every accept/reject
@@ -532,6 +544,8 @@ def run_dynamics(
 
         if step % print_steps == 0:
             pre = [f'step={step}/{steps[-1]}']
-            _ = logger.print_metrics(metrics, window=50, pre=pre, keep=keep_)
+            ms = logger.print_metrics(metrics, window=50, pre=pre, keep=keep_)
+            data_strs.append(ms)
 
-    return InferenceResults(dynamics, run_data, x, x_arr)
+    return InferenceResults(dynamics=dynamics, x=x, x_arr=x_arr,
+                            run_data=run_data, data_strs=data_strs)
