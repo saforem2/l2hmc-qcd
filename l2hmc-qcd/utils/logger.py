@@ -16,6 +16,7 @@ from typing import Any, Union
 import joblib
 import numpy as np
 import tensorflow as tf
+from rich import get_console
 
 #  from utils.hvd_init import RANK, SIZE
 from utils.logger_config import in_notebook
@@ -117,6 +118,11 @@ class Logger:
 
 
             with_jupyter = in_notebook()
+            if with_jupyter:
+                console = get_console()
+                console._width = 180
+
+            console = get_console()
             console = RichConsole(record=False, log_path=False,
                                   force_jupyter=with_jupyter,
                                   force_terminal=(not with_jupyter),

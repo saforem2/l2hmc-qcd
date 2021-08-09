@@ -298,7 +298,7 @@ class DataContainer:
             make_ridgeplots(dataset, num_chains=num_chains,
                             out_dir=out_dir, cmap=cmap)
 
-        return tdict
+        return dataset, tdict
 
     def flush_data_strs(self, out_file, rank=0, mode='a'):
         """Dump `data_strs` to `out_file` and return new, empty list."""
