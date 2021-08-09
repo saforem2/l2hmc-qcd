@@ -46,5 +46,4 @@ class Dynamics(tf.keras.Model):
         self.xnet = networks.xnet
         self.vnet = networks.vnet
         self.config = config
-
-
+        pass

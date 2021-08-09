@@ -16,7 +16,6 @@ import os
 import contextlib
 from pathlib import Path
 from typing import Any, Union
-import warnings
 import tensorflow as tf
 
 
