@@ -165,7 +165,10 @@ def catch_exception(fn):
     return wrapper
 
 
-def test_hmc_run(configs: dict[str, Any]):
+def test_hmc_run(
+        configs: dict[str, Any],
+        make_plots: bool = True,
+) -> TestOutputs:
     """Testing generic HMC."""
     logger.info(f'Testing generic HMC')
     t0 = time.time()
@@ -174,18 +177,16 @@ def test_hmc_run(configs: dict[str, Any]):
     #  hmc_dir = os.path.join(os.path.dirname(PROJECT_DIR),
     #                         'gauge_logs_eager', 'test', 'hmc_runs')
     hmc_dir = os.path.join(GAUGE_LOGS_DIR, 'hmc_test_logs')
-    dynamics, run_data, x, _ = run_hmc(configs, hmc_dir=hmc_dir,
-                                       make_plots=False)
+    run_out = run_hmc(configs, hmc_dir=hmc_dir, make_plots=make_plots)
 
     logger.info(f'Passed! Took: {time.time() - t0:.4f} seconds')
-    return {
-        'x': x,
-        'dynamics': dynamics,
-        'run_data': run_data,
-    }
+    return TestOutputs(None, run_out)
 
 
-def test_conv_net(configs: dict[str, Any]) -> TestOutputs:
+def test_conv_net(
+        configs: dict[str, Any],
+        make_plots: bool = True,
+) -> TestOutputs:
     """Test convolutional networks."""
     t0 = time.time()
     logger.info(f'Testing convolutional network')
@@ -201,36 +202,44 @@ def test_conv_net(configs: dict[str, Any]) -> TestOutputs:
         conv_activations=['relu', 'relu'],
         input_shape=configs['dynamics_config']['x_shape'][1:],
     )
-    train_out = train(configs, make_plots=False)
+    train_out = train(configs, make_plots=make_plots,
+                      num_chains=8, verbose=False)
     runs_dir = os.path.join(train_out.logdir, 'inference')
     run_out = None
     if RANK == 0:
         run_out = run(train_out.dynamics, configs, x=train_out.x,
-                      runs_dir=runs_dir, make_plots=False)
+                      runs_dir=runs_dir, make_plots=make_plots)
     logger.info(f'Passed! Took: {time.time() - t0:.4f} seconds')
+
     return TestOutputs(train_out, run_out)
 
 
-
-def test_single_network(configs: dict[str, Any]) -> TestOutputs:
+def test_single_network(
+        configs: dict[str, Any],
+        make_plots: bool = True,
+) -> TestOutputs:
     """Test training on single network."""
     t0 = time.time()
     logger.info(f'Testing single network')
     configs_ = dict(copy.deepcopy(configs))
     configs_['dynamics_config']['separate_networks'] = False
-    train_out = train(configs_, make_plots=False)
+    train_out = train(configs_, make_plots=make_plots,
+                      verbose=False, num_chains=8)
     logdir = train_out.logdir
     runs_dir = os.path.join(logdir, 'inference')
     run_out = None
     if RANK == 0:
         run_out = run(train_out.dynamics, configs_, x=train_out.x,
-                      runs_dir=runs_dir, make_plots=False)
+                      runs_dir=runs_dir, make_plots=make_plots)
 
     logger.info(f'Passed! Took: {time.time() - t0:.4f} seconds')
     return TestOutputs(train_out, run_out)
 
 
-def test_separate_networks(configs: dict[str, Any]) -> TestOutputs:
+def test_separate_networks(
+        configs: dict[str, Any],
+        make_plots: bool = True,
+) -> TestOutputs:
     """Test training on separate networks."""
     t0 = time.time()
     logger.info(f'Testing separate networks')
@@ -238,7 +247,8 @@ def test_separate_networks(configs: dict[str, Any]) -> TestOutputs:
     configs_['hmc_steps'] = 0
     configs_['dynamics_config']['separate_networks'] = True
     configs_['compile'] = False
-    train_out = train(configs_, make_plots=False)
+    train_out = train(configs_, make_plots=make_plots,
+                      verbose=False, num_chains=8)
     x = train_out.x
     dynamics = train_out.dynamics
     logdir = train_out.logdir
@@ -246,14 +256,17 @@ def test_separate_networks(configs: dict[str, Any]) -> TestOutputs:
     run_out = None
     if RANK == 0:
         run_out = run(dynamics, configs_, x=x,
-                      runs_dir=runs_dir, make_plots=True)
+                      runs_dir=runs_dir, make_plots=make_plots)
 
     logger.info(f'Passed! Took: {time.time() - t0:.4f} seconds')
     return TestOutputs(train_out, run_out)
 
 
 
-def test_resume_training(configs: dict[str, Any]) -> TestOutputs:
+def test_resume_training(
+        configs: dict[str, Any],
+        make_plots: bool = True,
+) -> TestOutputs:
     """Test restoring a training session from a checkpoint."""
     t0 = time.time()
     logger.info(f'Testing resuming training')
@@ -293,7 +306,8 @@ def test_resume_training(configs: dict[str, Any]) -> TestOutputs:
     configs_ = copy.deepcopy(configs)
     assert configs_.get('restore_from', None) is not None
 
-    train_out = train(configs_, make_plots=False)
+    train_out = train(configs_, make_plots=make_plots,
+                      verbose=False, num_chains=8)
     dynamics = train_out.dynamics
     logdir = train_out.logdir
     x = train_out.x
@@ -314,23 +328,24 @@ def test():
     conv_configs = copy.deepcopy(configs)
     single_configs = copy.deepcopy(configs)
 
-    sep_out = test_separate_networks(sep_configs)
+    sep_out = test_separate_networks(sep_configs, make_plots=True)
 
     #  sep_configs_copy = copy.deepcopy(sep_out.train.configs)
     sep_configs['train_steps'] += 10
     sep_configs['restore_from'] = sep_out.train.logdir
     sep_configs['log_dir'] = None
-    _ = test_resume_training(sep_configs)
+    _ = test_resume_training(sep_configs, make_plots=True)
 
     bf = sep_configs.get('beta_final')
     beta_final = bf + 1
     sep_configs['beta_final'] = beta_final
     logger.log(f'Increasing beta: {bf} -> {beta_final}')
+    sep_configs['ensure_new'] = True
     sep_configs['beta_final'] = sep_configs['beta_final'] + 1
 
-    _ = test_resume_training(sep_configs)
+    _ = test_resume_training(sep_configs, make_plots=True)
 
-    single_net_out = test_single_network(single_configs)
+    single_net_out = test_single_network(single_configs, make_plots=True)
     single_configs['restore_from'] = single_net_out.train.logdir
     #  single_configs_copy['ensure_new'] = False
     #  single_configs_copy = copy.deepcopy(single_net_out.train.configs)
