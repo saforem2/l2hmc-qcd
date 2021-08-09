@@ -263,10 +263,10 @@ class GaugeDynamics(BaseDynamics):
         models_dir = os.path.join(log_dir, 'training', 'models')
         if not self.config.separate_networks:
             vp = os.path.join(models_dir, 'dynamics_vnet')
-            vnet = tf.keras.models.load_model(vp)
+            vnet = [tf.keras.models.load_model(vp)]
 
             xp = os.path.join(models_dir, 'dynamics_xnet')
-            xnet = tf.keras.models.load_model(xp)
+            xnet = [tf.keras.models.load_model(xp)]
         else:
             xnet, vnet = [], []
             for i in range(self.config.num_steps):
@@ -319,23 +319,17 @@ class GaugeDynamics(BaseDynamics):
             ]
 
             paths = zip(xnet_first_paths, xnet_second_paths, vnet_paths)
-            #  for idx, (xf0, xf1, vf) in enumerate(zip(xnet_paths, vnet_paths)):
             for idx, (xf0, xf1, vf) in enumerate(paths):
                 xnets = self.xnet[idx]  # type: tf.keras.models.Model
                 vnet = self.vnet[idx]  # type: tf.keras.models.Model
-                #  io.log(f'Saving `xnet_first{idx}` to {xf0}.')
-                #  io.log(f'Saving `xnet_second{idx}` to {xf1}.')
-                #  io.log(f'Saving `vnet{idx}` to {vf}.')
                 xnets[0].save(xf0)
                 xnets[1].save(xf1)
                 vnet.save(vf)
         else:
-            xnet_paths = os.path.join(models_dir, 'dynamics_xnet')
-            vnet_paths = os.path.join(models_dir, 'dynamics_vnet')
-            #  io.log(f'Saving `xnet` to {xnet_paths}.')
-            #  io.log(f'Saving `vnet` to {vnet_paths}.')
-            self.xnet.save(xnet_paths)
-            self.vnet.save(vnet_paths)
+            xnet = self.xnet[0]  # type: tf.keras.models.Model
+            vnet = self.vnet[0]  # type: tf.keras.models.Model
+            xnet.save(os.path.join(models_dir, 'dynamics_xnet'))
+            vnet.save(os.path.join(models_dir, 'dynamics_vnet'))
 
     def _get_network_configs(
             self,
@@ -349,36 +343,28 @@ class GaugeDynamics(BaseDynamics):
         if conv_config is None and self.config.use_conv_net:
             conv_config = self.conv_config
 
-        xshape = (self.xdim, 2)
+        # -- xNetwork ---------------------------------------------
+        xshape = (self.xdim, 2)  # NOTE: x = [cos(x), sin(x)]
         if self.config.use_conv_net:
             xshape = (*self.lattice_shape[1:], 2)
 
-        kinit = None
-        if self.config.zero_init:
-            kinit = 'zeros'
-
-        # ==== xNet
         xnet_cfg = {
-            'factor': 2.0,
+            'factor': 2.0,              # xFactor
             'net_config': net_config,
             'conv_config': conv_config,
-            'kernel_initializer': kinit,
             'x_shape': self.lattice_shape,
-            'input_shapes': {
-                'x': xshape, 'v': (self.xdim,), 't': (2,)
-            }
+            # NOTE: input_shapes differ for xNet, vNet
+            'input_shapes': {'x': xshape, 'v': (self.xdim,)}
         }
 
-        # ==== vNet
+        # -- vNetwork ---------------------------------------------
         vnet_cfg = {
-            'factor': 1.0,
+            'factor': 1.0,              # vFactor
             'net_config': net_config,
-            'conv_config': None,
-            'kernel_initializer': kinit,
+            'conv_config': None,        # use dense layers for vNet
             'x_shape': self.lattice_shape,
-            'input_shapes': {
-                'x': (self.xdim,), 'v': (self.xdim,), 't': (2,)
-            }
+            # NOTE: input_shapes differ for xNet, vNet
+            'input_shapes': {'x': (self.xdim,), 'v': (self.xdim,)}
         }
 
         return AttrDict({'xnet': xnet_cfg, 'vnet': vnet_cfg})
@@ -447,8 +433,8 @@ class GaugeDynamics(BaseDynamics):
 
         else:
             logger.debug('Using a single (x, v)-network for all LF steps!!')
-            vnet = get_gauge_network(**cfgs['vnet'], name='vnet')
-            xnet = get_gauge_network(**cfgs['xnet'], name='xnet')
+            vnet = [get_gauge_network(**cfgs['vnet'], name='vnet')]
+            xnet = [get_gauge_network(**cfgs['xnet'], name='xnet')]
 
         return xnet, vnet
 
@@ -818,25 +804,12 @@ class GaugeDynamics(BaseDynamics):
         """Call `self.xnet` to get Sx, Tx, Qx for updating `x`."""
         if self.config.hmc:
             return [tf.zeros_like(inputs[0]) for _ in range(3)]
-        #  try:
-        #      return self.vnet[step](inputs, training)
-        #  except IndexError:
-        #      return self.vnet(inputs, training)
-        #  if not self.config.separate_networks:
-        #      return self.vnet(inputs, training)
-        #
-        #  vnet = self.vnet[step]
-        #  return vnet(inputs, training)
-        vout = (
-            self.vnet[step](inputs, training) if self.config.separate_networks
-            else self.vnet(inputs, training)
-        )
-        return vout
 
+        step = 0 if not self.config.separate_networks else step
+        return self.vnet[step](inputs, training)
 
     def _convert_to_cartesian(self, x: tf.Tensor, mask: tf.Tensor):
         """Convert `x` from an angle to [cos(x), sin(x)]."""
-        #  if len(mask) == 2:
         if mask.shape[0] == 2:
             mask, _ = mask
 
@@ -859,42 +832,21 @@ class GaugeDynamics(BaseDynamics):
             first: bool = False
     ):
         """Call `self.xnet` to get Sx, Tx, Qx for updating `x`."""
-        #  x, v, t = inputs
-        x, v = inputs
-        #  x, v, t = inputs
         if self.config.hmc:
             return [tf.zeros_like(inputs[0]) for _ in range(3)]
 
+        x, v = inputs
         x = self._convert_to_cartesian(x, mask)
-        if not self.config.separate_networks:
-            return self.xnet((x, v), training)
 
-
-        #  if not self.config.separate_networks:
-        #      return self.xnet((x, v), training)
-        #      #  return self.xnet((x, v, t), training)
-
-        #  except IndexError:
-        #  xnet = self.xnet[step]
-        #  if callable(xnet):
-        #      return xnet((x, v), training)
-        #  if first:
-        #      return xnet[0]((x, v), training)
-        #  return xnet[1]((x, v), training)
-        #  try:
-        #      if first:
-        #          return self.xnet[step][0]((x, v), training)
-        #      else:
-        #          return self.xnet[step][1]((x, v), training)
-        #  except IndexError:
-        #      assert callable(self.xnet)
-        #      return self.xnet((x, v), training)
+        # -- self.xnet is a list of tf.keras.Models -----------
+        step = 0 if not self.config.separate_networks else step
         xnet = self.xnet[step]
+        # -- only a single xnet -------------------------------
         if callable(xnet):
             return xnet((x, v), training)
+        # -- xnets split into even/odd updates-----------------
         if first:
             return xnet[0]((x, v), training)
-
         return xnet[1]((x, v), training)
 
     def _full_v_update_forward(
@@ -907,9 +859,6 @@ class GaugeDynamics(BaseDynamics):
         eps = self.veps[step]
         x = self.normalizer(state.x)
         grad = self.grad_potential(x, state.beta)
-        #  t = self._get_time(step, tile=tf.shape(x)[0])
-
-        #  S, T, Q = self._call_vnet((x, grad, t), step, training)
         S, T, Q = self._call_vnet((x, grad), step, training)
 
         scale = self._vsw * (eps * S)
@@ -936,9 +885,6 @@ class GaugeDynamics(BaseDynamics):
         eps = self.veps[step]
         x = self.normalizer(state.x)
         grad = self.grad_potential(x, state.beta)
-        #  t = self._get_time(step, tile=tf.shape(x)[0])
-
-        #  S, T, Q = self._call_vnet((x, grad, t), step, training)
         S, T, Q = self._call_vnet((x, grad), step, training)
 
         scale = self._vsw * (0.5 * eps * S)
@@ -979,9 +925,6 @@ class GaugeDynamics(BaseDynamics):
         eps = self.veps[step]
         x = self.normalizer(state.x)
         grad = self.grad_potential(x, state.beta)
-        #  t = self._get_time(step, tile=tf.shape(x)[0])
-
-        #  S, T, Q = self._call_vnet((x, grad, t), step, training)
         S, T, Q = self._call_vnet((x, grad), step, training)
 
         scale = self._vsw * (0.5 * eps * S)
@@ -1043,9 +986,7 @@ class GaugeDynamics(BaseDynamics):
         m, mc = masks
         eps = self.xeps[step]
         x = self.normalizer(state.x)
-        #  t = self._get_time(step, tile=tf.shape(x)[0])
 
-        #  S, T, Q = self._call_xnet((x, state.v, t), m, step, training, first)
         S, T, Q = self._call_xnet((x, state.v), m, step, training, first)
 
         scale = self._xsw * (eps * S)
@@ -1086,8 +1027,6 @@ class GaugeDynamics(BaseDynamics):
         eps = self.veps[step_r]
         x = self.normalizer(state.x)
         grad = self.grad_potential(x, state.beta)
-        #  t = self._get_time(step_r, tile=tf.shape(x)[0])
-        #  S, T, Q = self._call_vnet((x, grad, t), step_r, training)
         S, T, Q = self._call_vnet((x, grad), step_r, training)
 
         scale = self._vsw * (-eps * S)
@@ -1115,8 +1054,6 @@ class GaugeDynamics(BaseDynamics):
         eps = self.veps[step_r]
         x = self.normalizer(state.x)
         grad = self.grad_potential(x, state.beta)
-        #  t = self._get_time(step_r, tile=tf.shape(x)[0])
-        #  S, T, Q = self._call_vnet((x, grad, t), step_r, training)
         S, T, Q = self._call_vnet((x, grad), step_r, training)
 
         scale = self._vsw * (-0.5 * eps * S)
@@ -1134,10 +1071,10 @@ class GaugeDynamics(BaseDynamics):
         return state_out, logdet
 
     def _update_v_backward(
-                self,
-                state: State,
-                step: int,
-                training: bool = None
+            self,
+            state: State,
+            step: int,
+            training: bool = None
     ):
         """Update the momentum `v` in the backward leapfrog step.
 
@@ -1263,7 +1200,7 @@ class GaugeDynamics(BaseDynamics):
         wl_prop = self.lattice.calc_wilson_loops(states.proposed.x)
 
         # Calculate the plaquette loss
-        ploss = 0.
+        ploss = tf.constant(0.)
         if self.plaq_weight > 0:
             dwloops = 2 * (1. - tf.math.cos(wl_prop - wl_init))
             ploss = accept_prob * tf.reduce_sum(dwloops, axis=(1, 2))
@@ -1275,7 +1212,7 @@ class GaugeDynamics(BaseDynamics):
                 ploss = tf.reduce_mean(-ploss / self.plaq_weight, axis=0)
 
         # Calculate the charge loss
-        qloss = 0.
+        qloss = tf.constant(0.)
         if self.charge_weight > 0:
             q_init = tf.reduce_sum(tf.sin(wl_init), axis=(1, 2)) / (2 * np.pi)
             q_prop = tf.reduce_sum(tf.sin(wl_prop), axis=(1, 2)) / (2 * np.pi)
@@ -1301,7 +1238,7 @@ class GaugeDynamics(BaseDynamics):
     def train_step(
             self,
             inputs: Tuple[tf.Tensor, tf.Tensor],
-    ) -> (tf.Tensor, AttrDict):
+    ) -> tuple[tf.Tensor, AttrDict]:
         """Perform a single training step.
 
         Returns:
