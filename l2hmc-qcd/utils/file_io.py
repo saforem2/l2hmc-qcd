@@ -195,6 +195,7 @@ def setup_directories(
                               model_type='GaugeModel',
                               timestamps=timestamps)
 
+    now = get_timestamp('%Y-%m-%d-%H%M%S')
     train_dir = os.path.join(logdir, name)
     train_paths = {
         'log_dir': logdir,
@@ -203,7 +204,7 @@ def setup_directories(
         'data_dir': os.path.join(train_dir, 'train_data'),
         'models_dir': os.path.join(train_dir, 'models'),
         'ckpt_dir': os.path.join(train_dir, 'checkpoints'),
-        'summary_dir': os.path.join(train_dir, 'summaries'),
+        'summary_dir': os.path.join(train_dir, f'summaries_{now}'),
         'log_file': os.path.join(train_dir, 'train_log.txt'),
         'config_dir': os.path.join(train_dir, 'dynamics_configs'),
     }
