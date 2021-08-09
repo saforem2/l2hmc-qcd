@@ -6,7 +6,6 @@ Implements `TrainData` class, for working with training data.
 from __future__ import absolute_import, division, print_function
 
 import os
-from copy import deepcopy
 import time
 
 from collections import defaultdict
@@ -29,12 +28,17 @@ from utils.plotting_utils import (set_size, make_ridgeplots, mcmc_lineplot,
                                   mcmc_traceplot, get_title_str_from_params,
                                   plot_data)
 
+from utils.logger import Logger
+
+logger = Logger()
 
 plt.style.use('default')
 sns.set_context('paper')
 sns.set_style('whitegrid')
 sns.set_palette('bright')
 
+
+VERBOSE = os.environ.get('VERBOSE', False)
 
 class DataContainer:
     """Base class for dealing with data."""
@@ -99,11 +103,11 @@ class DataContainer:
         """Save `self.data` as `xr.Dataset` to `out_dir/dataset.nc`."""
         dataset = self.get_dataset(therm_frac)
         out_file = os.path.join(out_dir, 'dataset.nc')
-        io.log(f'Saving dataset to: {out_file}.')
+        logger.debug(f'Saving dataset to: {out_file}.')
         try:
             dataset.to_netcdf(os.path.join(out_dir, 'dataset.nc'))
         except ValueError:
-            io.log('Unable to save dataset! Continuing...')
+            logger.warning('Unable to save dataset! Continuing...')
 
         return dataset
 
@@ -200,11 +204,10 @@ class DataContainer:
         x_file = os.path.join(data_dir, f'x_rank{rank}-{local_rank}.z')
         try:
             x = io.loadz(x_file)
-            io.log(f'Restored `x` from: {x_file}.')
+            logger.info(f'Restored `x` from: {x_file}.')
         except FileNotFoundError:
-            io.log(f'Unable to load `x` from {x_file}.', level='WARNING')
-            io.log('Using random normal init.', level='WARNING')
-            x = tf.random.normal(x_shape)
+            logger.warning(f'Unable to load `x` from {x_file}.')
+            x = tf.random.uniform(x_shape, minval=np.pi, maxval=np.pi)
 
         data = self.load_data(data_dir)
         for key, val in data.items():
@@ -223,8 +226,11 @@ class DataContainer:
         for key, val in zip(keys, data_files):
             if 'x_rank' in key:
                 continue
-            io.log(f'Restored {key} from {val}.')
+
             data[key] = io.loadz(val)
+            if VERBOSE:
+                logger.info(f'Restored {key} from {val}.')
+
 
         return AttrDict(data)
 
@@ -253,10 +259,11 @@ class DataContainer:
     def plot_dataset(
             self,
             out_dir: str = None,
-            therm_frac: int = 0.,
+            therm_frac: float = 0.,
             num_chains: int = None,
             ridgeplots: bool = True,
             profile: bool = False,
+            cmap: str = 'viridis_r',
     ):
         """Create trace plot + histogram for each entry in self.data."""
         tdict = {}
@@ -283,16 +290,16 @@ class DataContainer:
 
             if profile:
                 tdict[key] = time.time() - t0
-                io.log(f'time spent plotting {key}: {tdict[key]}')
 
         if out_dir is not None:
             out_dir = os.path.join(out_dir, 'ridgeplots')
             io.check_else_make_dir(out_dir)
 
         if ridgeplots:
-            make_ridgeplots(dataset, num_chains=num_chains, out_dir=out_dir)
+            make_ridgeplots(dataset, num_chains=num_chains,
+                            out_dir=out_dir, cmap=cmap)
 
-        return tdict
+        return dataset, tdict
 
     def flush_data_strs(self, out_file, rank=0, mode='a'):
         """Dump `data_strs` to `out_file` and return new, empty list."""
@@ -319,14 +326,12 @@ class DataContainer:
                 avg_data['steps'] = len(steps)
             avg_data[key] = np.mean(arr)
 
-            #  avg_data[key] = tf.reduce_mean(arr)
-
         avg_df = pd.DataFrame(avg_data, index=[0])
         outdir = os.path.join(BASE_DIR, 'logs', 'GaugeModel_logs')
         csv_file = os.path.join(outdir, 'inference.csv')
         head, tail = os.path.split(csv_file)
         io.check_else_make_dir(head)
-        io.log(f'Appending inference results to {csv_file}.')
+        logger.info(f'Appending inference results to {csv_file}.')
         if not os.path.isfile(csv_file):
             avg_df.to_csv(csv_file, header=True, index=False, mode='w')
         else:
@@ -336,8 +341,6 @@ class DataContainer:
     def dump_configs(x, data_dir, rank=0, local_rank=0):
         """Save configs `x` separately for each rank."""
         xfile = os.path.join(data_dir, f'x_rank{rank}-{local_rank}.z')
-        #  io.log('Saving configs from rank '
-        #         f'{rank}-{local_rank} to: {xfile}.')
         head, _ = os.path.split(xfile)
         io.check_else_make_dir(head)
         joblib.dump(x, xfile)

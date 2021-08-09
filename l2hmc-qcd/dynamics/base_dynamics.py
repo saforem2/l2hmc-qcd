@@ -17,11 +17,10 @@ https://infoscience.epfl.ch/record/264887/files/robust_parameter_estimation.pdf
 Author: Sam Foreman (github: @saforem2)
 Date: 6/30/2020
 """
-from __future__ import absolute_import, division, print_function
-import os
+from __future__ import absolute_import, annotations, division, print_function
 
-import typing
-from typing import Callable, List, Optional, Tuple, Union, NamedTuple
+import os
+from typing import Any, Callable, List, Optional, Tuple, Union
 
 import numpy as np
 import tensorflow as tf
@@ -31,18 +30,15 @@ import utils.file_io as io
 
 try:
     import horovod.tensorflow as hvd
-
     HAS_HOROVOD = True
     NUM_RANKS = hvd.size()
 except (ImportError, ModuleNotFoundError):
     HAS_HOROVOD = False
     NUM_RANKS = 1
 
-from network.config import (ConvolutionConfig,
-                            LearningRateConfig, NetworkConfig)
-from dynamics.config import (DynamicsConfig,
-                             State, MonteCarloStates,
-                             NetWeights, TF_FLOAT)
+from dynamics.config import (TF_FLOAT, DynamicsConfig, MonteCarloStates,
+                             NetWeights, State)
+from network.config import ConvolutionConfig, LearningRateConfig, NetworkConfig
 from utils.attr_dict import AttrDict
 from utils.learning_rate import WarmupExponentialDecay
 
@@ -56,10 +52,12 @@ OPTIMIZERS_MAP = {
 
 # pylint:disable=invalid-name
 
-def identity(x):
+def identity(x: tf.Tensor) -> tf.Tensor:
     """Returns x"""
     return x
 
+
+Inputs = tuple[tf.Tensor, tf.Tensor]
 
 # pylint:disable=attribute-defined-outside-init
 # pylint:disable=invalid-name, too-many-instance-attributes
@@ -148,9 +146,8 @@ class BaseDynamics(tf.keras.Model):
 
     def call(
             self,
-            inputs: Tuple[tf.Tensor, tf.Tensor],
+            inputs: Inputs,
             training: bool = None,
-            mask=None
     ):
         """Calls the model on new inputs.
 
@@ -184,7 +181,7 @@ class BaseDynamics(tf.keras.Model):
     @staticmethod
     def calc_esjd(
             x: tf.Tensor, y: tf.Tensor, accept_prob: tf.Tensor
-    ):
+    ) -> tf.Tensor:
         """Calculate the expected squared jump distance, ESJD."""
         return accept_prob * tf.reduce_sum((x - y) ** 2, axis=1) + 1e-4
 
@@ -193,7 +190,7 @@ class BaseDynamics(tf.keras.Model):
             x: tf.Tensor,
             y: tf.Tensor,
             accept_prob: tf.Tensor,
-            scale: tf.Tensor = None,
+            scale: float
     ):
         """Compute the mixed loss as: scale / esjd - esjd / scale."""
         if scale is None:
@@ -216,7 +213,7 @@ class BaseDynamics(tf.keras.Model):
 
     def train_step(  # pylint:disable=arguments-differ
             self,
-            inputs: Tuple[tf.Tensor, tf.Tensor],
+            inputs: Inputs,
     ):
         """Perform a single training step.
 
@@ -228,7 +225,7 @@ class BaseDynamics(tf.keras.Model):
 
     def test_step(  # pylint:disable=arguments-differ
             self,
-            inputs: Tuple[tf.Tensor, tf.Tensor],
+            inputs: Inputs,
     ):
         """Perform a single inference step.
 
@@ -241,7 +238,7 @@ class BaseDynamics(tf.keras.Model):
 
     def _forward(
             self,
-            inputs: Union[tf.Tensor, List[tf.Tensor]],
+            inputs: Inputs,
             training: bool = None,
     ):
         """Propose a new state by running the leapfrog integrator forward."""
@@ -262,7 +259,7 @@ class BaseDynamics(tf.keras.Model):
 
     def _backward(
             self,
-            inputs: Union[tf.Tensor, List[tf.Tensor]],
+            inputs: Inputs,
             training: bool = None,
     ):
         """Propose a new state by running the leapfrog integrator forward."""
@@ -283,9 +280,9 @@ class BaseDynamics(tf.keras.Model):
 
     def _random_direction(
             self,
-            inputs: Union[tf.Tensor, List[tf.Tensor]],
+            inputs: Inputs,
             training: bool = None
-    ) -> (MonteCarloStates, AttrDict):
+    ) -> tuple[MonteCarloStates, AttrDict]:
         """Propose a new state and perform the accept/reject step."""
         forward = tf.cast((tf.random.uniform(shape=[]) < 0.5), dtype=tf.bool)
         state_init, state_prop, data = self._transition(inputs,
@@ -307,9 +304,10 @@ class BaseDynamics(tf.keras.Model):
         return mc_states, data
 
     def _hmc_transition(
-            self, inputs: tuple, training: Optional[bool] = None,
-    ) -> (MonteCarloStates, AttrDict):
+            self, inputs: list[tf.Tensor], training: bool = None,
+    ) -> tuple[MonteCarloStates, AttrDict]:
         """Propose a new state and perform the accept/reject step."""
+        x, v, beta = None, None, None
         if len(inputs) == 2:
             x, beta = inputs
             v = tf.random.normal(x.shape, dtype=x.dtype)
@@ -321,7 +319,8 @@ class BaseDynamics(tf.keras.Model):
         state, state_prop, data = self._transition(state, forward=True,
                                                    training=training)
 
-        accept_prob = data.get('accept_prob')
+        sumlogdet = data.get('sumlogdet', None)
+        accept_prob = data.get('accept_prob', None)
         ma_, mr_ = self._get_accept_masks(accept_prob)
         ma = ma_[:, None]
         mr = mr_[:, None]
@@ -329,7 +328,7 @@ class BaseDynamics(tf.keras.Model):
         # Construct the output configuration
         v_out = ma * state_prop.v + mr * state.v
         x_out = self.normalizer(ma * state_prop.x + mr * state.x)
-        sumlogdet = ma_ * data['sumlogdet']  # NOTE: initial sumlogdet = 0
+        sumlogdet = ma_ * sumlogdet  # NOTE: initial sumlogdet = 0
 
         #  state_init = State(x=x, v=state_init.v, beta=beta)
         state_prop = State(x=state_prop.x, v=state_prop.v, beta=state.beta)
@@ -346,11 +345,12 @@ class BaseDynamics(tf.keras.Model):
 
     def _transition(
             self,
-            inputs: Union[tf.Tensor, List[tf.Tensor]],
+            inputs: tuple[tf.Tensor, ...],
             forward: bool,
             training: bool = None
-    ) -> (State, State, AttrDict):
+    ) -> tuple[State, State, AttrDict]:
         """Run the augmented leapfrog integrator."""
+        x, v, beta = None, None, None
         if not isinstance(inputs, (tuple, List)):
             raise ValueError(
                 f'Expected inputs to be one of: [list, tuple]. \n'
@@ -370,8 +370,8 @@ class BaseDynamics(tf.keras.Model):
         return state, state_, data
 
     def apply_transition(
-            self, inputs: Tuple[tf.Tensor], training: Optional[bool] = None,
-    ) -> (MonteCarloStates, AttrDict):
+            self, inputs: Inputs, training: Optional[bool] = None,
+    ) -> tuple[MonteCarloStates, AttrDict]:
         """Propose a new state and perform the accept/reject step.
 
         NOTE: We simulate the dynamics both forward and backward, and use
@@ -438,9 +438,9 @@ class BaseDynamics(tf.keras.Model):
 
     def md_update(
             self,
-            inputs: Union[tf.Tensor, List[tf.Tensor]],
+            inputs: tuple[tf.Tensor, tf.Tensor],
             training: bool = None
-    ) -> (MonteCarloStates, MonteCarloStates):
+    ) -> Tuple[MonteCarloStates[State], MonteCarloStates[float]]:
         """Perform the molecular dynamics (MD) update w/o accept/reject.
 
         NOTE: We simulate the dynamics both forward and backward, and use
@@ -669,8 +669,6 @@ class BaseDynamics(tf.keras.Model):
                                                                   sumlogdet)
                     metrics['Hw'] = metrics['Hw'].write(step+1,
                                                         energy - sumlogdet)
-                #  metrics = self._update_metrics(metrics, step+1,
-                #                                 state_prop, sumlogdet)
 
         state_prop, logdet = self._half_v_update_forward(state_prop,
                                                          step, training)
@@ -720,6 +718,7 @@ class BaseDynamics(tf.keras.Model):
                                                                   sumlogdet)
                     metrics['Hw'] = metrics['Hw'].write(step+1,
                                                         energy - sumlogdet)
+        step = self.config.num_steps - 1
         state_prop, logdet = self._half_v_update_backward(state_prop,
                                                           step, training)
         sumlogdet += logdet
@@ -745,7 +744,7 @@ class BaseDynamics(tf.keras.Model):
             state: State,
             forward: bool,
             training: Optional[bool] = None,
-            verbose: Optional[bool] = False,
+            #  verbose: Optional[bool] = False,
     ):
         """Transition kernel of the augmented leapfrog integrator."""
         lf_fn = self._forward_lf if forward else self._backward_lf
@@ -768,6 +767,7 @@ class BaseDynamics(tf.keras.Model):
         accept_prob = self.compute_accept_prob(state, state_prop, sumlogdet)
         metrics['sumlogdet'] = sumlogdet
         metrics['accept_prob'] = accept_prob
+        step = self.config.num_steps - 1
         if self._verbose:
             energy = self.hamiltonian(state_prop)
             metrics['H'] = metrics['H'].write(step+1, energy)
@@ -778,13 +778,6 @@ class BaseDynamics(tf.keras.Model):
             metrics['H'] = metrics['H'].stack()
             metrics['logdets'] = metrics['logdets'].stack()
             metrics['Hw'] = metrics['Hw'].stack()
-            #  for step in range(self.config.num_steps+1):
-            #      metrics['H'] = [metrics['H'].read(step)]
-            #      metrics['logdets'] = [metrics['logdets'].read(step)]
-            #      metrics['Hw'] = [metrics['Hw'].read(step)]
-        #  metrics = self._update_metrics(metrics, step+1,
-        #                                 state_prop, sumlogdet,
-        #                                 accept_prob=accept_prob)
 
         return state_prop, metrics
 
@@ -845,7 +838,7 @@ class BaseDynamics(tf.keras.Model):
 
     def _call_vnet(
             self,
-            inputs: tuple,
+            inputs: Inputs,
             step: int,
             training: bool = None
     ):
@@ -854,7 +847,7 @@ class BaseDynamics(tf.keras.Model):
 
     def _call_xnet(
             self,
-            inputs: tuple,
+            inputs: Inputs,
             mask: tf.Tensor,
             step: int,
             training: bool = None,
@@ -873,9 +866,6 @@ class BaseDynamics(tf.keras.Model):
         eps = self.veps[step]
         x = self.normalizer(state.x)
         grad = self.grad_potential(x, state.beta)
-        t = self._get_time(step, tile=tf.shape(x)[0])
-
-        #  S, T, Q = self._call_vnet((x, grad, t), step, training)
         S, T, Q = self._call_vnet((x, grad), step, training)
 
         scale = self._vsw * (0.5 * eps * S)
@@ -901,10 +891,8 @@ class BaseDynamics(tf.keras.Model):
         """Perform a half-step momentum update in the forward direction."""
         x = self.normalizer(state.x)
         grad = self.grad_potential(x, state.beta)
-        t = self._get_time(step, tile=tf.shape(x)[0])
         eps = self.veps[step]
 
-        #  S, T, Q = self._call_vnet((x, grad, t), step, training)
         S, T, Q = self._call_vnet((x, grad), step, training)
 
         scale = self._vsw * (0.5 * eps * S)
@@ -940,11 +928,8 @@ class BaseDynamics(tf.keras.Model):
             logdet (float): Jacobian factor
         """
         x = self.normalizer(state.x)
-        t = self._get_time(step, tile=tf.shape(x)[0])
         eps = self.veps[step]
         grad = self.grad_potential(x, state.beta)
-        #  S, T, Q = self.vnet((x, grad, t), training)
-        #  S, T, Q = self.vnet((x, grad), training)
         S, T, Q = self._call_vnet((x, grad), step, training)
 
         transl = self._vtw * T
@@ -1013,11 +998,9 @@ class BaseDynamics(tf.keras.Model):
         """
         m, mc = masks
         x = self.normalizer(state.x)
-        t = self._get_time(step, tile=tf.shape(x)[0])
         eps = self.xeps[step]
 
         S, T, Q = self.xnet((m * x, state.v), training)
-        #  S, T, Q = self.xnet((m * x, state.v, t), training)
 
         transl = self._xtw * T
         scale = self._xsw * (eps * S)
@@ -1046,9 +1029,7 @@ class BaseDynamics(tf.keras.Model):
         step_r = self.config.num_steps - step - 1
         x = self.normalizer(state.x)
         grad = self.grad_potential(x, state.beta)
-        t = self._get_time(step_r, tile=tf.shape(x)[0])
         eps = self.veps[step_r]
-        #  S, T, Q = self._call_vnet((x, grad, t), step_r, training)
         S, T, Q = self._call_vnet((x, grad), step_r, training)
 
         scale = self._vsw * (-0.5 * eps * S)
@@ -1075,9 +1056,7 @@ class BaseDynamics(tf.keras.Model):
         step_r = self.config.num_steps - step - 1
         x = self.normalizer(state.x)
         grad = self.grad_potential(x, state.beta)
-        t = self._get_time(step_r, tile=tf.shape(x)[0])
         eps = self.veps[step]
-        #  S, T, Q = self._call_vnet((x, grad, t), step_r, training)
         S, T, Q = self._call_vnet((x, grad), step_r, training)
 
         scale = self._vsw * (-0.5 * eps * S)
@@ -1112,12 +1091,9 @@ class BaseDynamics(tf.keras.Model):
             logdet (float): Jacobian factor.
         """
         x = self.normalizer(state.x)
-        t = self._get_time(step, tile=tf.shape(x)[0])
         eps = self.veps[step]
 
         grad = self.grad_potential(x, state.beta)
-        #  S, T, Q = self.vnet((x, grad, t), training)
-        #  S, T, Q = self.vnet((x, grad), training)
         S, T, Q = self._call_vnet((x, grad), step, training)
 
         scale = self._vsw * (-0.5 * eps * S)
@@ -1177,10 +1153,8 @@ class BaseDynamics(tf.keras.Model):
         """
         m, mc = masks
         x = self.normalizer(state.x)
-        t = self._get_time(step, tile=tf.shape(x)[0])
         eps = self.xeps[step]
-        #  S, T, Q = self.xnet((m * x, state.v), training)
-        S, T, Q = self.xnet((m * x, state.v, t), training)
+        S, T, Q = self.xnet((m * x, state.v), training)
 
         scale = self._xsw * (-eps * S)
         transl = self._xtw * T
@@ -1454,7 +1428,11 @@ class BaseDynamics(tf.keras.Model):
 
         return net_weights
 
-    def _parse_params(self, params: AttrDict, net_weights: NetWeights = None):
+    def _parse_params(
+            self,
+            params: dict[str, Any],
+            net_weights: NetWeights = None
+    ):
         """Set instance attributes from `params`."""
         self.xdim = params.get('xdim', None)
         self.batch_size = params.get('batch_size', None)
@@ -1482,11 +1460,9 @@ class BaseDynamics(tf.keras.Model):
         self._vtw = self.net_weights.v_translation
         self._vqw = self.net_weights.v_transformation
 
-        params = AttrDict({
+        return {
             'xdim': self.xdim,
             'batch_size': self.batch_size,
             'x_shape': self.x_shape,
             'clip_val': self.clip_val,
-        })
-
-        return params
+        }

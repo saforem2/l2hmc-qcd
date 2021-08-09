@@ -5,127 +5,37 @@ file_io.py
 # pylint:disable=too-many-branches, too-many-statements
 # pylint:disable=too-many-locals,invalid-name,too-many-locals
 # pylint:disable=too-many-arguments
-from __future__ import absolute_import, division, print_function
+from __future__ import absolute_import, annotations, division, print_function
 
+import datetime
+import json
 import os
 import shutil
 import sys
-import json
 import time
 import typing
-import logging
-import datetime
-import tensorflow as tf
-
-from typing import Any, Dict, Type
+from collections import OrderedDict
 from pathlib import Path
+from typing import Any, Dict, Type, Union
 
 import h5py
 import joblib
 import numpy as np
+import tensorflow as tf
 
-from tqdm.auto import tqdm
-
-from config import NetWeights, PROJECT_DIR, GREEN, RED, BLUE
+from config import BLUE, GREEN, PROJECT_DIR, RED, NetWeights
 from utils.attr_dict import AttrDict
+from utils.logger import Logger, strformat
+from utils.hvd_init import HAS_HOROVOD, RANK, IS_CHIEF
+#  from utils.logger_config import log
+
+#  from tqdm.auto import tqdm
+
 #  from rich.theme import Theme
 #  from rich.console import Console as RichConsole
 #  from rich.logging import RichHandler
 #  from rich.progress import (BarColumn, DownloadColumn, Progress, TaskID,
 #                             TextColumn, TimeRemainingColumn)
-
-WIDTH, _ = shutil.get_terminal_size(fallback=(156, 50))
-
-
-def in_notebook():
-    """Check if we're currently in a jupyter notebook."""
-    try:
-        # pylint:disable=import-outside-toplevel
-        from IPython import get_ipython
-
-        try:
-            cfg = get_ipython().config
-            if 'IPKernelApp' not in cfg:
-                return False
-        except AttributeError:
-            return False
-    except ImportError:
-        return False
-    return True
-
-
-
-# noqa:E999
-
-class Console:
-    """Fallback console object in case Rich isn't installed."""
-    def __init__(self, width: int = None):
-        if width is None:
-            width = WIDTH
-
-        self.width = width
-
-    @staticmethod
-    def log(s, *args, **kwargs):
-        now = get_timestamp('%X')
-        print(f'[{now}] {s}', *args, **kwargs)
-
-
-
-class Logger:
-    def __init__(self, width: int = None):
-        # pylint:disable=import-outside-toplevel
-        if width is None:
-            width = WIDTH
-
-        try:
-            from rich.console import Console as RichConsole
-            #  from rich.theme import Theme
-            #  theme = Theme({
-            #      'repr.number': 'bold bright_magenta',
-            #      'repr.attrib_name':
-            console = RichConsole(record=False,
-                                  log_time_format='[%X] ',
-                                  log_path=False, width=width,
-                                  force_jupyter=in_notebook())
-        except (ImportError, ModuleNotFoundError):
-            console = Console(width)
-
-        self.width = width
-        self.console = console
-
-    def rule(self, s: str, *args, **kwargs):
-        """Print horizontal line."""
-        w = kwargs.pop('width', self.width)
-        strlen = (w - len(s) - 2) // 2
-        line = '-' * strlen
-        #  line = '-' * (w - len(s) - 2) // 2
-        self.console.log(' '.join([line, s, line]))
-
-    def log(self, s: str, *args, **kwargs):
-        """Print `s` using `self.console` object."""
-        self.console.log(s, *args, **kwargs)
-
-    def print_metrics(
-        self,
-        metrics: dict,
-        pre: list = None,
-        outfile: str = None,
-    ):
-        """Print nicely formatted representation of data in `metrics`."""
-        outstr = ' '.join([
-            strformat(k, v) for k, v in metrics.items()
-        ])
-        if pre is not None:
-            outstr = ' '.join([*pre, outstr])
-
-        self.log(outstr)
-        if outfile is not None:
-            with open(outfile, 'a') as f:
-                f.write(outstr)
-
-        return outstr
-
 
 #  console = Console(record=False,
 #                    log_path=False,
@@ -133,58 +43,58 @@ class Logger:
 #                    log_time_format='[%X] ',
 #                    theme=Theme({'repr.path': BLUE,
 #                                 'repr.number': GREEN}))
-logger = Logger()
-console = logger.console
-
 
 # pylint:disable=wrong-import-position
-try:
-    import horovod
-    import horovod.tensorflow as hvd
+#  try:
+#      import horovod
+#      import horovod.tensorflow as hvd
+#
+#      HAS_HOROVOD = True
+#      RANK = hvd.rank()
+#      LOCAL_RANK = hvd.local_rank()
+#      NUM_WORKERS = hvd.size()
+#      IS_CHIEF = (RANK == 0)
+#      print(80 * '=')
+#
+#  except (ImportError, ModuleNotFoundError):
+#      HAS_HOROVOD = False
+#      RANK = LOCAL_RANK = 0
+#      NUM_WORKERS = 1
+#      IS_CHIEF = True
 
-    HAS_HOROVOD = True
-    RANK = hvd.rank()
-    LOCAL_RANK = hvd.local_rank()
-    NUM_WORKERS = hvd.size()
-    IS_CHIEF = (RANK == 0)
-    console.log(f'{RANK} :: Using horovod version: {horovod.__version__}')
-    console.log(f'{RANK} :: Using horovod from: {horovod.__file__}')
+#  LOG_LEVELS_AS_INTS = {
+#      'CRITICAL': 50,
+#      'ERROR': 40,
+#      'WARNING': 30,
+#      'INFO': 20,
+#      'DEBUG': 10,
+#  }
+#
+#  LOG_LEVELS = {
+#      'CRITICAL': logging.CRITICAL,
+#      'ERROR': logging.ERROR,
+#      'WARNING': logging.WARNING,
+#      'INFO': logging.INFO,
+#      'DEBUG': logging.DEBUG,
+#  }
+#
+#
+#  logging.getLogger('tensorflow').setLevel(logging.ERROR)
+#  logging.getLogger('matplotlib').setLevel(logging.ERROR)
+#  logging.getLogger('arviz').setLevel(logging.ERROR)
 
-except (ImportError, ModuleNotFoundError):
-    HAS_HOROVOD = False
-    RANK = LOCAL_RANK = 0
-    NUM_WORKERS = 1
-    IS_CHIEF = True
+#  if HAS_HOROVOD:
+#      print(' '.join([f'rank: {hvd.rank()}',
+#                      f'local_rank: {hvd.local_rank()}',
+#                      f'size: {hvd.size()}',
+#                      f'local_size: {hvd.local_size()}']))
 
-LOG_LEVELS_AS_INTS = {
-    'CRITICAL': 50,
-    'ERROR': 40,
-    'WARNING': 30,
-    'INFO': 20,
-    'DEBUG': 10,
-}
+logger = Logger()
 
-LOG_LEVELS = {
-    'CRITICAL': logging.CRITICAL,
-    'ERROR': logging.ERROR,
-    'WARNING': logging.WARNING,
-    'INFO': logging.INFO,
-    'DEBUG': logging.DEBUG,
-}
-
-logging.getLogger('tensorflow').setLevel(logging.WARNING)
-logging.getLogger('arviz').setLevel(logging.ERROR)
-
-if HAS_HOROVOD:
-    console.log(' '.join([f'rank: {hvd.rank()}',
-                          f'local_rank: {hvd.local_rank()}',
-                          f'size: {hvd.size()}',
-                          f'local_size: {hvd.local_size()}']))
+VERBOSE = os.environ.get('VERBOSE', False)
 
 #  if typing.TYPE_CHECKING:
 #      from dynamics.base_dynamics import BaseDynamics
-
-from collections import OrderedDict
 
 class SortedDict(OrderedDict):
     def __init__(self, **kwargs):
@@ -232,21 +142,24 @@ def find_matching_files(d, search_str):
 def print_header(header):
     strs = header.split('\n')
     for s in strs:
-        console.print(s, style='bold red')
+        logger.log(s, style='bold red')
 
 
 def rule(s: str = ' ', with_time: bool= True, **kwargs: dict):
     day = get_timestamp('%Y-%m-%d')
     t = get_timestamp('%H:%M')
     s = f'[{day} {t}] {s}'
-    console.rule(s, **kwargs)
+    logger.rule(s, **kwargs)
 
 
-def log(s: str, level: str = 'INFO', out=console, style=None):
+def log(s: str, *args, **kwargs):
+    #  def log(s: str, level: str = 'INFO', out=console, style=None):
     """Print string `s` to stdout if and only if hvd.rank() == 0."""
     if RANK != 0:
         return
-    console.log(s, style=style, markup=True, highlight=True)
+
+    #  console.log(s, style=style, markup=True, highlight=True)
+    logger.log(s, *args, **kwargs)
 
 
 def write(s: str, f: str, mode: str = 'a', nl: bool = True):
@@ -257,47 +170,51 @@ def write(s: str, f: str, mode: str = 'a', nl: bool = True):
         f_.write(s + '\n' if nl else ' ')
 
 
-def print_dict(d: Dict, indent: int = 0, name: str = None, **kwargs):
+def print_dict(d: dict, *args, **kwargs):
     """Print nicely-formatted dictionary."""
-    console.print(d)
+    logger.log(d, *args, **kwargs)
 
 
 def print_flags(flags: AttrDict):
     """Helper method for printing flags."""
     strs = [80 * '=', 'FLAGS:', *[f' {k}={v}' for k, v in flags.items()]]
-    log('\n'.join(strs))
+    logger.log('\n'.join(strs))
 
 
 def setup_directories(
-        flags: AttrDict,
+        configs: dict[str, Any],
         name: str = 'training',
-        save_flags: bool = True
+        save_flags: bool = True,
+        timestamps: dict[str, str] = None,
 ):
     """Setup relevant directories for training."""
-    if isinstance(flags, dict):
-        flags = AttrDict(flags)
+    #  if configs.get('log_dir', configs.get('logdir', None)) is None:
+    logdir = configs.get('logdir', configs.get('log_dir', None))
+    if logdir is None:
+        logdir = make_log_dir(configs=configs,
+                              model_type='GaugeModel',
+                              timestamps=timestamps)
 
-    if flags.get('log_dir', None) is None:
-        flags.log_dir = make_log_dir(flags, name)
-
-    train_dir = os.path.join(flags.log_dir, name)
-    train_paths = AttrDict({
-        'log_dir': flags.log_dir,
+    now = get_timestamp('%Y-%m-%d-%H%M%S')
+    train_dir = os.path.join(logdir, name)
+    train_paths = {
+        'log_dir': logdir,
+        'logdir': logdir,
         'train_dir': train_dir,
         'data_dir': os.path.join(train_dir, 'train_data'),
         'models_dir': os.path.join(train_dir, 'models'),
         'ckpt_dir': os.path.join(train_dir, 'checkpoints'),
-        'summary_dir': os.path.join(train_dir, 'summaries'),
+        'summary_dir': os.path.join(train_dir, f'summaries_{now}'),
         'log_file': os.path.join(train_dir, 'train_log.txt'),
         'config_dir': os.path.join(train_dir, 'dynamics_configs'),
-    })
+    }
 
     if IS_CHIEF:
-        check_else_make_dir(
-            [d for k, d in train_paths.items() if 'file' not in k],
-        )
+        for k, v in train_paths.items():
+            if 'file' not in k:
+                check_else_make_dir(v)
         if save_flags:
-            save_params(dict(flags), train_dir, 'FLAGS')
+            save_params(dict(configs), train_dir, 'FLAGS')
 
     return train_paths
 
@@ -334,7 +251,7 @@ def log_and_write(
         nl: bool = True
 ):
     """Print string `s` to std out and also write to file `f`."""
-    log(s)
+    logger.log(s)
     write(s, f, mode=mode, nl=nl)
 
 
@@ -350,7 +267,7 @@ def check_else_make_dir(d: str):
             check_else_make_dir(i)
     else:
         if not os.path.isdir(d):
-            log(f"Creating directory: {d}")
+            logger.debug(f"Creating directory: {d}")
             os.makedirs(d, exist_ok=True)
 
 
@@ -377,11 +294,24 @@ def save_params(params: dict, out_dir: str, name: str = None):
     if name is None:
         name = 'params'
     params_txt_file = os.path.join(out_dir, f'{name}.txt')
-    zfile = os.path.join(out_dir, f'{name}.z')
     with open(params_txt_file, 'w') as f:
         for key, val in params.items():
             f.write(f"{key}: {val}\n")
+
+    zfile = os.path.join(out_dir, f'{name}.z')
     savez(params, zfile, name=name)
+
+
+def dict_as_json(d: dict[Any, Any]):
+    copy = {}
+    for key, val in d.items():
+        strkey = str(key)
+        if isinstance(val, dict):
+            copy[strkey] = dict_as_json(val)
+        else:
+            copy[strkey] = val
+
+    return copy
 
 
 def save_dict(d: dict, out_dir: str, name: str = None):
@@ -396,9 +326,11 @@ def save_dict(d: dict, out_dir: str, name: str = None):
     savez(d, zfile, name=name)
 
     json_file = os.path.join(out_dir, f'{name}.json')
+    jd = dict_as_json(d)
     try:
         with open(json_file, 'w') as f:
-            json.dump(d, f, indent=4, ensure_ascii=False, cls=NumpyEncoder)
+            json.dump(jd, f, indent=4, ensure_ascii=False, cls=NumpyEncoder)
+            #  json.dump(jd, f, indent=4, ensure_ascii=False, cls=NumpyEncoder)
     except TypeError:
         log('Unable to save to `.json` file. Continuing...')
 
@@ -406,40 +338,6 @@ def save_dict(d: dict, out_dir: str, name: str = None):
     with open(txt_file, 'w') as f:
         for key, val in d.items():
             f.write(f'{key}: {val}\n')
-
-
-def strformat(k, v, window: int = 0):
-    if v is None:
-        v = 'None'
-
-    outstr = ''
-    if isinstance(v, bool):
-        v = 'True' if v else 'False'
-        return f'{str(k)}={v}'
-
-    if isinstance(v, dict):
-        outstr_arr = []
-        for key, val in v.items():
-            outstr_arr.append(strformat(key, val, window))
-        outstr = '\n'.join(outstr_arr)
-    else:
-        if isinstance(v, (tuple, list, np.ndarray, tf.Tensor)):
-            v = np.array(v)
-            if window > 0 and len(v.shape) > 0:
-                window = min((v.shape[0], window))
-                avgd = np.mean(v[-window:])
-            else:
-                avgd = np.mean(v)
-            outstr = f'{str(k)}={avgd:<5.4g}'
-        else:
-            if isinstance(v, float):
-                outstr = f'{str(k)}={v:<5.4g}'
-            else:
-                try:
-                    outstr = f'{str(k)}={v:<5g}'
-                except ValueError:
-                    outstr = f'{str(k)}={v:<5}'
-    return outstr
 
 
 def print_args(args: dict, name: str = None):
@@ -468,10 +366,10 @@ def savez(obj: Any, fpath: str, name: str = None):
     if not fpath.endswith('.z'):
         fpath += '.z'
 
-    if name is not None:
-        console.log(f'Saving {name} to {os.path.abspath(fpath)}.')
-    else:
-        console.log(f'Saving {obj.__class__} to {os.path.abspath(fpath)}.')
+    if VERBOSE:
+        if name is not None:
+            name = obj.get('__class__', type(name))
+        logger.debug(f'Saving {name} to {os.path.abspath(fpath)}.')
 
     joblib.dump(obj, fpath)
 
@@ -550,9 +448,9 @@ def get_run_num(run_dir: str):
     return sorted([int(i.split('_')[-1]) for i in dirnames])[-1] + 1
 
 
-def get_run_dir_fstr(flags: AttrDict):
+def get_run_dir_fstr(flags: AttrDict, beta: float):
     """Parse FLAGS and create unique fstr for `run_dir`."""
-    beta = flags.get('beta', None)
+    #  beta = flags.get('beta', None)
     config = flags.get('dynamics_config', None)
 
     eps = config.get('eps', None)
@@ -571,8 +469,7 @@ def get_run_dir_fstr(flags: AttrDict):
                 f'L{x_shape[1]}_T{x_shape[2]}_b{x_shape[0]}_'
             )
 
-    if beta is not None:
-        fstr += f'beta{beta:.3g}'.replace('.', '')
+    fstr += f'beta{beta:.3g}'.replace('.', '')
     if num_steps is not None:
         fstr += f'_lf{num_steps}'
     if eps is not None:
@@ -580,17 +477,18 @@ def get_run_dir_fstr(flags: AttrDict):
     return fstr
 
 
-def parse_configs(flags: AttrDict, debug: bool = False):
+def parse_configs(configs: dict[str, Any], debug: bool = False):
     """Parse configs to construct unique string for naming `log_dir`."""
-    config = AttrDict(flags.get('dynamics_config', None))
-    net_config = AttrDict(flags.get('network_config', None))
+    config = AttrDict(configs.get('dynamics_config', None))
+    net_config = AttrDict(configs.get('network_config', None))
     #  lr_config = flags.get('lr_config', None)
     #  conv_config = flags.get('conv_config', None)
     fstr = ''
     if config.get('hmc', False):
         fstr += 'HMC_'
 
-    if debug or 0 < flags.get('train_steps', None) < 1e3:
+    train_steps = configs.get('train_steps', 1e5)
+    if debug or 0 < train_steps < 5e3:
         fstr += 'DEBUG_'
 
     x_shape = config.get('x_shape', None)
@@ -618,19 +516,24 @@ def parse_configs(flags: AttrDict, debug: bool = False):
         if eps is not None:
             fstr += f'_eps{eps}'.replace('.', '')
 
-    bi = flags.get('beta_init', None)
-    bf = flags.get('beta_final', None)
+    bi = configs.get('beta_init', None)
+    bf = configs.get('beta_final', None)
     fstr += f'_bi{bi:.3g}_bf{bf:.3g}'
 
-    dp = net_config.get('dropout_prob', None)
+    dp = net_config.get('dropout_prob', 0.)
     if dp > 0:
         fstr += f'_dp{dp}'
 
+    hstr = ''.join([f'{i}' for i in net_config.get('units', [])])
+    if len(hstr) > 0:
+        fstr += f'_nh{hstr}'
+
+
     eps = config.get('eps', None)
-    if flags.get('eps_fixed', False):
+    if configs.get('eps_fixed', False):
         fstr += f'_eps{eps:.3g}'
 
-    cv = flags.get('clip_val', None)
+    cv = configs.get('clip_val', 0.)
     if cv > 0:
         fstr += f'_clip{cv}'
 
@@ -646,7 +549,7 @@ def parse_configs(flags: AttrDict, debug: bool = False):
     if config.get('use_conv_net', False):
         fstr += '_ConvNets'
 
-        conv_config = flags.get('conv_config', None)
+        conv_config = configs.get('conv_config', {})
         use_bn = conv_config.get('use_batch_norm', False)
         if use_bn:
             fstr += '_bNorm'
@@ -666,8 +569,12 @@ def parse_configs(flags: AttrDict, debug: bool = False):
     if config.get('use_batch_norm', False):
         fstr += '_bNorm'
 
-    if config.get('net_weights', None) is not None:
-        nw = config.get('net_weights', None)
+    nw = config.get('net_weights', None)
+    #  if config.get('net_weights', None) is not None:
+    if nw is not None:
+        if isinstance(nw, tuple):
+            nw = NetWeights(*nw)
+
         if nw != NetWeights(1., 1., 1., 1., 1., 1.):
             nwstr = ''.join([str(int(i)) for i in tuple(nw)])
             fstr += f'_nw{nwstr}'
@@ -684,12 +591,14 @@ def get_timestamp(fstr=None):
 
 
 def make_log_dir(
-        configs: AttrDict,
+        configs: Union[dict[str, Any], AttrDict],
         model_type: str = None,
         log_file: str = None,
         root_dir: str = None,
-        timestamps: AttrDict = None,
+        timestamps: dict[str, str] = None,
         skip_existing: bool = False,
+        ensure_new: bool = False,
+        name: str = None,
 ):
     """Automatically create and name `log_dir` to save model data to.
 
@@ -702,13 +611,13 @@ def make_log_dir(
     cfg_str = parse_configs(configs)
 
     if timestamps is None:
-        timestamps = AttrDict({
+        timestamps = {
             'month': get_timestamp('%Y_%m'),
-            'time': get_timestamp('%Y-%M-%d-%H%M%S'),
+            'time': get_timestamp('%Y-%m-%d-%H%M%S'),
             'hour': get_timestamp('%Y-%m-%d-%H'),
             'minute': get_timestamp('%Y-%m-%d-%H%M'),
             'second': get_timestamp('%Y-%m-%d-%H%M%S'),
-        })
+        }
 
     if root_dir is None:
         root_dir = PROJECT_DIR
@@ -723,19 +632,15 @@ def make_log_dir(
     if cfg_str.startswith('DEBUG'):
         dirs.append('test')
 
-    log_dir = os.path.join(*dirs, timestamps.month, cfg_str)
-    if os.path.isdir(log_dir) and NUM_WORKERS == 1:
-        log_dir = os.path.join(*dirs, timestamps.month,
-                               f'{cfg_str}-{timestamps.hour}')
-        if os.path.isdir(log_dir):
-            log_dir = os.path.join(*dirs, timestamps.month,
-                                   f'{cfg_str}-{timestamps.minute}')
+    log_dir = os.path.join(*dirs, timestamps['month'], cfg_str)
+    if os.path.isdir(log_dir):
+        if configs.get('ensure_new', False):
+            logger.warning('Forcing new directory!')
+            log_dir = os.path.join(*dirs, timestamps['month'],
+                                   f'{cfg_str}-{timestamps["second"]}')
+            if skip_existing:
+                raise FileExistsError(f'`log_dir`: {log_dir} already exists! ')
 
-        if skip_existing:
-            raise FileExistsError(f'`log_dir`: {log_dir} already exists! ')
-
-        log('\n'.join(['Existing directory found with the same name!',
-                       'Modifying the date string to include seconds.']))
 
     if RANK == 0:
         check_else_make_dir(log_dir)
@@ -749,10 +654,11 @@ def make_log_dir(
 def make_run_dir(
         configs: AttrDict,
         base_dir: str,
+        beta: float,
         skip_existing: bool = False
 ):
     """Automatically create `run_dir` for storing inference data."""
-    fstr = get_run_dir_fstr(configs)
+    fstr = get_run_dir_fstr(configs, beta)
     now = datetime.datetime.now()
     dstr = now.strftime('%Y-%m-%d-%H%M')
     run_str = f'{fstr}-{dstr}'
@@ -768,6 +674,7 @@ def make_run_dir(
 
     if RANK == 0:
         check_else_make_dir(run_dir)
+        configs['beta'] = beta
         save_dict(configs, run_dir, name='inference_configs')
 
     return run_dir
@@ -885,9 +792,9 @@ def get_hmc_dirs(extra_paths=None):
     hmc_dirs = []
     for d in base_dirs:
         if os.path.isdir(d):
-            console.log(f'Looking in: {d}...')
+            logger.debug(f'Looking in: {d}...')
             hmc_dirs += [x for x in Path(d).rglob('*HMC_L16*') if x.is_dir()]
-            console.log(f'len(hmc_dirs): {len(hmc_dirs)}')
+            logger.debug(f'len(hmc_dirs): {len(hmc_dirs)}')
 
     return list(np.unique(hmc_dirs))
 
@@ -931,7 +838,7 @@ def get_l2hmc_dirs(base_dirs=None, extra_paths=None):
     #  ]
     l2hmc_dirs = []
     for d in base_dirs:
-        console.log(f'Looking in: {d}...')
+        logger.debug(f'Looking in: {d}...')
         conds = (
             lambda x: 'GaugeModel_logs' in (str(x)),
             lambda x: 'HMC_' not in str(x),
@@ -940,6 +847,6 @@ def get_l2hmc_dirs(base_dirs=None, extra_paths=None):
             lambda x: os.path.isfile(os.path.join(str(x), 'run_params.z')),
         )
         l2hmc_dirs += _look(d, 'L16_b', conds)
-        console.log(f'len(l2hmc_dirs): {len(l2hmc_dirs)}')
+        logger.debug(f'len(l2hmc_dirs): {len(l2hmc_dirs)}')
 
     return list(np.unique(l2hmc_dirs))

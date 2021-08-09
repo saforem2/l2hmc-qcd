@@ -3,33 +3,39 @@ plotting.py
 
 Methods for plotting data.
 """
+from __future__ import absolute_import, print_function, division, annotations
 import matplotlib.style as mplstyle
-mplstyle.use('fast')
-import time
-import os
 
-import arviz as az
-import numpy as np
-import xarray as xr
-import pandas as pd
-import tensorflow as tf
-import seaborn as sns
-import matplotlib.pyplot as plt
+mplstyle.use('fast')
 import itertools as it
+import os
+import time
+import warnings
+from copy import deepcopy
 from pathlib import Path
 
-from utils import SKEYS
-from copy import deepcopy
+import arviz as az
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import seaborn as sns
+import tensorflow as tf
+import xarray as xr
+
 import utils.file_io as io
-from utils.file_io import timeit
+#  from config import NP_FLOAT, TF_FLOAT
+from dynamics.config import NetWeights
+from utils import SKEYS
 from utils.attr_dict import AttrDict
 from utils.autocorr import calc_tau_int_vs_draws
-
-from config import TF_FLOAT, NP_FLOAT
-from dynamics.config import NetWeights
+#  from utils.file_io import timeit
+from utils.logger import Logger
+from utils.logger_config import in_notebook
+from dynamics.gauge_dynamics import GaugeDynamics
 
 #  TF_FLOAT = FLOATS[tf.keras.backend.floatx()]
 #  NP_FLOAT = NP_FLOATS[tf.keras.backend.floatx()]
+logger = Logger()
 
 COLORS = 100 * ['C0', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9']
 
@@ -37,6 +43,8 @@ plt.style.use('default')
 sns.set_context('paper')
 sns.set_style('whitegrid')
 sns.set_palette('bright')
+warnings.filterwarnings('once', 'UserWarning:')
+warnings.filterwarnings('once', 'seaborn')
 
 #  if TYPE_CHECKING:
 #      from utils.data_containers import DataContainer
@@ -71,78 +79,79 @@ def truncate_colormap(
     return new_cmap
 
 
-@timeit
 def make_ridgeplots(
-        dataset,
-        num_chains=None,
-        out_dir=None,
-        drop_zeros=False,
-        cmap='viridis_r'
+        dataset: xr.Dataset,
+        num_chains: int = None,
+        out_dir: str = None,
+        drop_zeros: bool = False,
+        cmap: str = 'crest',
+        default_style: dict = None,
 ):
-    sns.set(style='white', rc={"axes.facecolor": (0, 0, 0, 0)})
-    for key, val in dataset.data_vars.items():
-        if 'leapfrog' in val.coords.dims:
-            lf_data = {
-                key: [],
-                'lf': [],
-            }
-            for lf in val.leapfrog.values:
-                # val.shape = (chain, leapfrog, draw)
-                # x.shape = (chain, draw);  selects data for a single lf
-                x = val[{'leapfrog': lf}].values
-                # if num_chains is not None, keep `num_chains` for plotting
-                if num_chains is not None:
-                    x = x[:num_chains, :]
+    data = {}
+    with sns.axes_style('white', rc={'axes.facecolor': (0, 0, 0, 0)}):
+        for key, val in dataset.data_vars.items():
+            if 'leapfrog' in val.coords.dims:
+                lf_data = {
+                    key: [],
+                    'lf': [],
+                }
+                for lf in val.leapfrog.values:
+                    # val.shape = (chain, leapfrog, draw)
+                    # x.shape = (chain, draw);  selects data for a single lf
+                    x = val[{'leapfrog': lf}].values
+                    # if num_chains is not None, keep `num_chains` for plotting
+                    if num_chains is not None:
+                        x = x[:num_chains, :]
 
-                x = x.flatten()
-                if drop_zeros:
-                    x = x[x != 0]
-                #  x = val[{'leapfrog': lf}].values.flatten()
-                lf_arr = np.array(len(x) * [f'{lf}'])
-                lf_data[key].extend(x)
-                lf_data['lf'].extend(lf_arr)
+                    x = x.flatten()
+                    if drop_zeros:
+                        x = x[x != 0]
+                    #  x = val[{'leapfrog': lf}].values.flatten()
+                    lf_arr = np.array(len(x) * [f'{lf}'])
+                    lf_data[key].extend(x)
+                    lf_data['lf'].extend(lf_arr)
 
-            lfdf = pd.DataFrame(lf_data)
+                lfdf = pd.DataFrame(lf_data)
+                data[key] = lfdf
 
-            # Initialize the FacetGrid object
-            pal = sns.color_palette(cmap, n_colors=len(val.leapfrog.values))
-            g = sns.FacetGrid(lfdf, row='lf', hue='lf', # hue_kws={'cmap': pal},
-                              aspect=15, height=0.25, palette=pal)
+                # Initialize the FacetGrid object
+                pal = sns.color_palette(cmap, n_colors=len(val.leapfrog.values))
+                g = sns.FacetGrid(lfdf, row='lf', hue='lf',
+                                  aspect=15, height=0.25, palette=pal)
 
-            # Draw the densities in a few steps
-            _ = g.map(sns.kdeplot, key, cut=1,
-                      shade=True, alpha=0.7, linewidth=1.25)
-            _ = g.map(plt.axhline, y=0, lw=1.5, alpha=0.7, clip_on=False)
+                # Draw the densities in a few steps
+                _ = g.map(sns.kdeplot, key, cut=1,
+                          shade=True, alpha=0.7, linewidth=1.25)
+                _ = g.map(plt.axhline, y=0, lw=1.5, alpha=0.7, clip_on=False)
 
-            # Define and use a simple function to
-            # label the plot in axes coords:
-            def label(x, color, label):
-                ax = plt.gca()
-                ax.text(0, 0.10, label, fontweight='bold', color=color,
-                        ha='left', va='center', transform=ax.transAxes,
-                        fontsize='small')
+                # Define and use a simple function to
+                # label the plot in axes coords:
+                def label(x, color, label):
+                    ax = plt.gca()
+                    ax.text(0, 0.10, label, fontweight='bold', color=color,
+                            ha='left', va='center', transform=ax.transAxes,
+                            fontsize='small')
 
-            _ = g.map(label, key)
-            # Set the subplots to overlap
-            _ = g.fig.subplots_adjust(hspace=-0.75)
-            # Remove the axes details that don't play well with overlap
-            _ = g.set_titles('')
-            _ = g.set(yticks=[])
-            _ = g.despine(bottom=True, left=True)
-            if out_dir is not None:
-                io.check_else_make_dir(out_dir)
-                out_file = os.path.join(out_dir, f'{key}_ridgeplot.pdf')
-                io.log(f'Saving figure to: {out_file}.')
-                plt.savefig(out_file, dpi=400, bbox_inches='tight')
+                _ = g.map(label, key)
+                # Set the subplots to overlap
+                _ = g.fig.subplots_adjust(hspace=-0.75)
+                # Remove the axes details that don't play well with overlap
+                _ = g.set_titles('')
+                _ = g.set(yticks=[])
+                _ = g.despine(bottom=True, left=True)
+                if out_dir is not None:
+                    io.check_else_make_dir(out_dir)
+                    out_file = os.path.join(out_dir, f'{key}_ridgeplot.pdf')
+                    #  logger.log(f'Saving figure to: {out_file}.')
+                    plt.savefig(out_file, dpi=400, bbox_inches='tight')
 
             #plt.close('all')
 
-    plt.style.use('default')
-    sns.set(style='whitegrid', palette='bright', context='paper')
+    #  sns.set(style='whitegrid', palette='bright', context='paper')
     fig = plt.gcf()
     ax = plt.gca()
 
-    return fig, ax
+    return fig, ax, data
 
 
 def set_size(
@@ -179,10 +188,9 @@ def drop_sequential_duplicates(chain):
     return np.array([i[0] for i in it.groupby(chain)])
 
 
-@timeit
 def savefig(fig, fpath):
     io.check_else_make_dir(os.path.dirname(fpath))
-    io.log(f'Saving figure to: {fpath}.')
+    #  logger.log(f'Saving figure to: {fpath}.')
     fig.savefig(fpath, dpi=400, bbox_inches='tight')
     fig.clf()
     plt.close('all')
@@ -208,7 +216,6 @@ def therm_arr(arr, therm_frac=0., ret_steps=True):
     return arr
 
 
-@timeit
 def plot_energy_distributions(data, out_dir=None, title=None):
     """Plot energy distributions at beginning, middle, and end of trajectory.
 
@@ -222,8 +229,8 @@ def plot_energy_distributions(data, out_dir=None, title=None):
     try:
         chains, leapfrogs, draws = data['Hwf'].shape
     except KeyError:
-        io.log('WARNING: `Hwf` not in `data.keys()`.', style='#ffff00')
-        io.log('Not creating energy distribution plots, returning!')
+        logger.warning('WARNING: `Hwf` not in `data.keys()`.', style='#ffff00')
+        logger.warning('Not creating energy distribution plots, returning!')
 
     midpt = leapfrogs // 2
     energies_combined = {
@@ -264,7 +271,6 @@ def plot_energy_distributions(data, out_dir=None, title=None):
     return fig, axes.flatten()
 
 
-@timeit
 def energy_traceplot(key, arr, out_dir=None, title=None):
     if out_dir is not None:
         out_dir = os.path.join(out_dir, 'energy_traceplots')
@@ -285,7 +291,6 @@ def energy_traceplot(key, arr, out_dir=None, title=None):
         _ = mcmc_traceplot(new_key, data_arr, title, tplot_fname)
 
 
-@timeit
 def plot_charges(steps, charges, title=None, out_dir=None):
     charges = charges.T
     if charges.shape[0] > 4:
@@ -310,7 +315,6 @@ def plot_charges(steps, charges, title=None, out_dir=None):
     return fig, ax
 
 
-@timeit
 def get_title_str_from_params(params):
     """Create a formatted string with relevant params from `params`."""
     net_weights = params.get('net_weights', None)
@@ -343,9 +347,9 @@ def get_title_str_from_params(params):
     return title_str
 
 
-@timeit
 def mcmc_avg_lineplots(data, title=None, out_dir=None):
     """Plot trace of avg."""
+    fig, axes = None, None
     for idx, (key, val) in enumerate(data.items()):
         fig, axes = plt.subplots(ncols=2, figsize=(8, 4),
                                  constrained_layout=True)
@@ -395,7 +399,6 @@ def mcmc_avg_lineplots(data, title=None, out_dir=None):
     return fig, axes
 
 
-@timeit
 def mcmc_lineplot(data, labels, title=None,
                   fpath=None, show_avg=False, **kwargs):
     """Make a simple lineplot."""
@@ -420,7 +423,6 @@ def mcmc_lineplot(data, labels, title=None,
     return fig, ax
 
 
-@timeit
 def mcmc_traceplot(key, val, title=None, fpath=None, **kwargs):
     if '_' in key:
         key = ' '.join(key.split('_'))
@@ -440,7 +442,6 @@ def mcmc_traceplot(key, val, title=None, fpath=None, **kwargs):
         return None
 
 
-@timeit
 def plot_autocorrs_vs_draws(
         qarr: np.ndarray,
         num_pts: int = 20,
@@ -448,6 +449,7 @@ def plot_autocorrs_vs_draws(
         therm_frac: float = 0.2,
         out_dir: str = None,
         lf: int = None,
+        title: str = None,
 ):
     tint_dict = calc_tau_int_vs_draws(qarr, num_pts, nstart, therm_frac)
     fig, ax = plt.subplots()
@@ -464,22 +466,24 @@ def plot_autocorrs_vs_draws(
     _ = ax.errorbar(tint_dict['narr'], y, yerr, marker='.', ls='')
     _ = ax.set_ylabel(ylabel)
     _ = ax.set_xlabel(xlabel)
+    if title is not None:
+        ax.set_title(title)
+
     if out_dir is not None:
         out_file = os.path.join(out_dir, 'tint_vs_draws.pdf')
-        io.log(f'Saving figure to: {out_file}')
+        logger.log(f'Saving figure to: {out_file}')
         plt.savefig(out_file, dpi=400, bbox_inches='tight')
 
     return tint_dict, (fig, ax)
 
 
-@timeit
 def plot_autocorrs1(
     beta: float,
     data: dict,
     data_compare: dict = None,
-    out_dir: str = None,
     ax: plt.Axes = None,
-    labels: tuple = None,
+    #  out_dir: str = None,
+    #  labels: tuple = None,
     cmap: str = 'Blues',
 ):
     if ax is None:
@@ -515,40 +519,93 @@ def plot_autocorrs1(
             pass
 
 
-@timeit
+def get_params_from_configs(configs: dict):
+    keys = ['num_steps', 'beta_init', 'beta_final', 'x_shape',
+            'net_weights']
+
+    #  eps = dynamics.eps.numpy()
+    num_steps = configs['dynamics_config']['num_steps']
+    beta_init = configs['beta_init']
+    beta_final = configs['beta_final']
+    x_shape = configs['dynamics_config']['x_shape']
+    net_weights = configs['dynamics_config']['net_weights']
+    params = {
+        'num_steps': configs['dynamics_config']['num_steps'],
+        'x_shape': configs['dynamics_config']['x_shape'],
+        'beta_init': configs['beta_init'],
+        'beta_final': configs['beta_final'],
+        'net_weights': configs['dynamics_config']['net_weights'],
+    }
+
+
+
 def plot_data(
         data_container: "DataContainer",  # noqa:F821
-        out_dir: str,
-        flags: AttrDict = None,
+        configs: dict,
+        out_dir: str = None,
         therm_frac: float = 0,
         params: AttrDict = None,
         hmc: bool = None,
         num_chains: int = 32,
         profile: bool = False,
+        cmap: str = 'crest',
+        verbose: bool = False,
+        logging_steps: int = 1,
 ):
     """Plot data from `data_container.data`."""
-    keep_strs = [
-        'charges', 'plaqs', 'accept_prob',
-        'Hf_start', 'Hf_mid', 'Hf_end',
-        'Hb_start', 'Hb_mid', 'Hb_end',
-        'Hwf_start', 'Hwf_mid', 'Hwf_end',
-        'Hwb_start', 'Hwb_mid', 'Hwb_end',
-        'xeps_start', 'xeps_mid', 'xeps_end',
-        'veps_start', 'veps_mid', 'veps_end'
-    ]
+    if verbose:
+        keep_strs = list(data_container.data.keys())
+
+    else:
+        keep_strs = [
+            'charges', 'plaqs', 'accept_prob',
+            'Hf_start', 'Hf_mid', 'Hf_end',
+            'Hb_start', 'Hb_mid', 'Hb_end',
+            'Hwf_start', 'Hwf_mid', 'Hwf_end',
+            'Hwb_start', 'Hwb_mid', 'Hwb_end',
+            'xeps_start', 'xeps_mid', 'xeps_end',
+            'veps_start', 'veps_mid', 'veps_end'
+        ]
+
+    with_jupyter = in_notebook()
+    # -- TODO: --------------------------------------
+    #  * Get rid of unnecessary `params` argument,
+    #    all of the entries exist in `configs`.
+    # ----------------------------------------------
     if num_chains > 16:
-        io.log(f'Reducing `num_chains` from {num_chains} to 16 for plotting.')
+        logger.warning(
+            f'Reducing `num_chains` from {num_chains} to 16 for plotting.'
+        )
         num_chains = 16
 
     plot_times = {}
     save_times = {}
+
+    title = None if params is None else get_title_str_from_params(params)
+    if params is None:
+        params = {
+            'beta_init': configs['beta_init'],
+            'beta_final': configs['beta_final'],
+            'x_shape': configs['dynamics_config']['x_shape'],
+            'num_steps': configs['dynamics_config']['num_steps'],
+            'net_weights': configs['dynamics_config']['net_weights'],
+        }
+
+    tstamp = io.get_timestamp('%Y-%m-%d-%H%M%S')
+    plotdir = None
+    if out_dir is not None:
+        plotdir = os.path.join(out_dir, f'plots_{tstamp}')
+        io.check_else_make_dir(plotdir)
+
+    tint_data = {}
+    output = {}
     if 'charges' in data_container.data:
-        lf = flags['dynamics_config']['num_steps']
-        charges = np.array(data_container.data['charges'])
+        lf = configs['dynamics_config']['num_steps']  # type: int
+        qarr = np.array(data_container.data['charges'])
         t0 = time.time()
-        tint_dict, _ = plot_autocorrs_vs_draws(charges, num_pts=20,
+        tint_dict, _ = plot_autocorrs_vs_draws(qarr, num_pts=20,
                                                nstart=1000, therm_frac=0.2,
-                                               out_dir=out_dir, lf=lf)
+                                               out_dir=plotdir, lf=lf)
         plot_times['plot_autocorrs_vs_draws'] = time.time() - t0
 
         tint_data = deepcopy(params)
@@ -566,33 +623,23 @@ def plot_data(
                 io.savez(tint_data, tint_file, 'tint_data')
                 save_times['tint_data'] = time.time() - t0
 
-    out_dir = os.path.join(out_dir, 'plots')
-    io.check_else_make_dir(out_dir)
-    if hmc is None:
-        if params is not None:
-            hmc = params.get('hmc', False)
-        hmc = False
+        t0 = time.time()
+        qsteps = logging_steps * np.arange(qarr.shape[0])
+        _ = plot_charges(qsteps, qarr, out_dir=plotdir, title=title)
+        plot_times['plot_charges'] = time.time() - t0
 
-    if hmc:
-        skip_strs = ['Hw', 'ld', 'sld', 'sumlogdet']
+        output.update({
+            'tint_dict': tint_dict,
+            'charges_steps': qsteps,
+            'charges_arr': qarr,
+        })
 
-    title = None if params is None else get_title_str_from_params(params)
-
-    if flags is not None:
-        logging_steps = flags.get('logging_steps', 1)
-        flags_file = os.path.join(out_dir, 'FLAGS.z')
-        if os.path.isfile(flags_file):
-            train_flags = io.loadz(flags_file)
-            logging_steps = train_flags.get('logging_steps', 1)
-    else:
-        logging_steps = 1
+    hmc = params.get('hmc', False) if hmc is None else hmc
 
     data_dict = {}
     data_vars = {}
-    charges_steps = []
-    charges_arr = []
-    plots_dir = out_dir
-    #  out_dir_ = out_dir
+    #  charges_steps = []
+    #  charges_arr = []
     for key, val in data_container.data.items():
         if key in SKEYS and key not in keep_strs:
             continue
@@ -603,118 +650,100 @@ def plot_data(
         # Conditional to skip logdet-related data
         # from being plotted if data generated from HMC run
         if hmc:
-            for skip_str in skip_strs:
+            for skip_str in ['Hw', 'ld', 'sld', 'sumlogdet']:
                 if skip_str in key:
                     continue
 
         arr = np.array(val)
         steps = logging_steps * np.arange(len(arr))
 
-        try:
-            if np.std(arr.flatten()) < 1e-2:
-                continue
-        except ValueError:
-            pass
+        if logging_steps == 1 and therm_frac > 0:
+            arr, steps = therm_arr(arr, therm_frac=therm_frac)
 
-        arr, steps = therm_arr(arr, therm_frac=therm_frac)
-        #  steps = steps[::logging_setps]
-        #  steps *= logging_steps
+        #  if arr.flatten().std() < 1e-2:
+        #      logger.warning(f'Skipping plot for: {key}')
+        #      logger.warning(f'std({key}) = {arr.flatten().std()} < 1e-2')
 
         labels = ('MC Step', key)
         data = (steps, arr)
-        if key == 'charges':
-            charges_steps = steps
-            charges_arr = arr
 
-        if len(arr.shape) == 1:  # shape: (draws,)
-            out_dir_ = os.path.join(plots_dir, f'mcmc_lineplots')
-            io.check_else_make_dir(out_dir_)
-            lplot_fname = os.path.join(out_dir_, f'{key}.pdf')
+        # -- NOTE: arr.shape: (draws,) = (D,) -------------------------------
+        if len(arr.shape) == 1:
             data_dict[key] = xr.DataArray(arr, dims=['draw'], coords=[steps])
-            #  _, _ = mcmc_lineplot(data, labels, title,
-            #                       lplot_fname, show_avg=True)
+            #  if verbose:
+            #      plotdir_ = os.path.join(plotdir, f'mcmc_lineplots')
+            #      io.check_else_make_dir(plotdir_)
+            #      lplot_fname = os.path.join(plotdir_, f'{key}.pdf')
+            #      _, _ = mcmc_lineplot(data, labels, title,
+            #                           lplot_fname, show_avg=True)
+            #      plt.close('all')
 
-        elif len(arr.shape) == 2:  # shape: (draws, chains)
+        # -- NOTE: arr.shape: (draws, chains) = (D, C) ----------------------
+        elif len(arr.shape) == 2:
             data_dict[key] = data
-            out_dir_ = os.path.join(plots_dir, 'traceplots')
             chains = np.arange(arr.shape[1])
             data_arr = xr.DataArray(arr.T,
                                     dims=['chain', 'draw'],
                                     coords=[chains, steps])
             data_dict[key] = data_arr
             data_vars[key] = data_arr
+            #  if verbose:
+            #      plotdir_ = os.path.join(plotdir, 'traceplots')
+            #      tplot_fname = os.path.join(plotdir_, f'{key}_traceplot.pdf')
+            #      _ = mcmc_traceplot(key, data_arr, title, tplot_fname)
+            #      plt.close('all')
 
-            #  tplot_fname = os.path.join(out_dir_, f'{key}_traceplot.png')
-            #  _ = mcmc_traceplot(key, data_arr, title, tplot_fname)
-
-        #
-        elif len(arr.shape) == 3:  # shape: (draws, leapfrogs, chains)
-            steps_, leapfrogs_, chains_ = arr.shape
+        # -- NOTE: arr.shape: (draws, leapfrogs, chains) = (D, L, C) ---------
+        elif len(arr.shape) == 3:
+            _, leapfrogs_, chains_ = arr.shape
             chains = np.arange(chains_)
             leapfrogs = np.arange(leapfrogs_)
-            data_dict[key] = xr.DataArray(arr.T,
+            data_dict[key] = xr.DataArray(arr.T,  # NOTE: [arr.T] = (C, L, D)
                                           dims=['chain', 'leapfrog', 'draw'],
                                           coords=[chains, leapfrogs, steps])
 
-        #  else:
-        #      raise ValueError('Unexpected shape encountered in data.')
+    #  plotdir_xr = None
+    #  if plotdir is not None:
+    #      plotdir_xr = os.path.join(plotdir, 'xarr_plots')
 
+    plotdir_xr = None
+    if plotdir is not None:
+        plotdir_xr = os.path.join(plotdir, 'xarr_plots')
+
+    t0 = time.time()
+    dataset, dtplot = data_container.plot_dataset(plotdir_xr,
+                                                  num_chains=num_chains,
+                                                  therm_frac=therm_frac,
+                                                  ridgeplots=True,
+                                                  cmap=cmap,
+                                                  profile=profile)
+
+    if not with_jupyter:
         plt.close('all')
 
-    #  out_dir_xr = None
-    #  if out_dir is not None:
-    #      out_dir_xr = os.path.join(out_dir, 'xarr_plots')
-
-    out_dir_xr = os.path.join(plots_dir, 'xarr_plots')
-    t0 = time.time()
-    dtplot_container = data_container.plot_dataset(out_dir_xr,
-                                                   num_chains=num_chains,
-                                                   therm_frac=therm_frac,
-                                                   ridgeplots=True,
-                                                   profile=profile)
-    plot_times['data_container.plot_dataset'] = {
-        'total': time.time() - t0,
-    }
-    for key, val in dtplot_container.items():
+    plot_times['data_container.plot_dataset'] = {'total': time.time() - t0}
+    for key, val in dtplot.items():
         plot_times['data_container.plot_dataset'][key] = val
 
-    plt.close('all')
-    #  try:
     if not hmc and 'Hwf' in data_dict.keys():
         t0 = time.time()
-        _ = plot_energy_distributions(data_dict, out_dir=out_dir, title=title)
+        _ = plot_energy_distributions(data_dict, out_dir=plotdir, title=title)
         plot_times['plot_energy_distributions'] = time.time() - t0
-    #  except KeyError:
-    #      import pudb; pudb.set_trace()
-    #      pass
 
     t0 = time.time()
-    _ = mcmc_avg_lineplots(data_dict, title, out_dir)
+    _ = mcmc_avg_lineplots(data_dict, title, plotdir)
     plot_times['mcmc_avg_lineplots'] = time.time() - t0
 
-    output = {
+    if not with_jupyter:
+        plt.close('all')
+
+    output.update({
         'data_container': data_container,
         'data_dict': data_dict,
         'data_vars': data_vars,
-        'out_dir': out_dir_,
+        'out_dir': plotdir,
         'save_times': save_times,
-    }
-
-    if 'charges' in data_container.data:
-        t0 = time.time()
-        _ = plot_charges(charges_steps, charges_arr, out_dir=out_dir,
-                         title=title)
-        plot_times['plot_charges'] = time.time() - t0
-        output.update({
-            'tint_dict': tint_dict,
-            'charges_steps': charges_steps,
-            'charges_arr': charges_arr,
-        })
-
-    output['plot_times'] = plot_times
-
-
-    plt.close('all')
-
+        'plot_times': plot_times,
+    })
 
     return output

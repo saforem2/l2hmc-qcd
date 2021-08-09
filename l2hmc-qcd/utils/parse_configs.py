@@ -6,7 +6,8 @@ Implements a method for parsing configuration objects from JSON file.
 from __future__ import absolute_import, division, print_function
 import argparse
 import json
-from utils.attr_dict import AttrDict
+
+from tensorflow.python.ops.gen_math_ops import log1p_eager_fallback
 
 
 def parse_configs():
@@ -22,21 +23,39 @@ def parse_configs():
                         help=("""Log directory to use from previous run.  If
                         this argument is not passed, a new directory will be
                         created."""))
+    parser.add_argument('--restore_from',
+                        dest='restore_from',
+                        type=str,
+                        default=None,
+                        required=False,
+                        help=("""Directory to restore from."""))
     parser.add_argument("--json_file",
                         dest="json_file",
                         type=str,
                         default=None,
                         required=True,
                         help=("""Path to JSON file containing configs."""))
-    args = parser.parse_args()
-    with open(args.json_file, 'rt') as f:
-        targs = argparse.Namespace()
-        targs.__dict__.update(json.load(f))
-        args = parser.parse_args(namespace=targs)
 
-    flags = AttrDict(args.__dict__)
-    for key, val in flags.items():
-        if isinstance(val, dict):
-            flags[key] = AttrDict(val)
+    args = parser.parse_args()
+    logdir = args.log_dir
+    assert args.log_dir is not None or args.json_file is not None
+
+    if args.json_file is not None:
+        with open(args.json_file, 'rt') as f:
+            targs = argparse.Namespace()
+            targs.__dict__.update(json.load(f))
+            args = parser.parse_args(namespace=targs)
+
+    if logdir is not None:
+        args.__dict__['log_dir'] = logdir
+
+    restore_from = args.restore_from
+    if restore_from is not None:
+        args.__dict__['restore_from'] = restore_from
+
+    #  flags = AttrDict(args.__dict__)
+    #  for key, val in flags.items():
+    #      if isinstance(val, dict):
+    #          flags[key] = AttrDict(val)
 
     return args

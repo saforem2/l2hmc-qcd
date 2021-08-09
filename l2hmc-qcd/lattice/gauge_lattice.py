@@ -126,8 +126,8 @@ class GaugeLattice:
             except ValueError as err:
                 print('One of `x` or `wloops` must be specified.')
                 raise err
-        if beta is not None:
-            return area_law(beta, 16) - tf.reduce_mean(tf.cos(wloops), (1, 2))
+        #  if beta is not None:
+        #      return area_law(beta, 16) - tf.reduce_mean(tf.cos(wloops), (1, 2))
 
         return tf.reduce_mean(tf.cos(wloops), (1, 2))
 
@@ -140,8 +140,8 @@ class GaugeLattice:
                 print('One of `x` or `wloops` must be specified.')
                 raise err
 
-        if beta is not None:
-            return plaq_exact(beta) - tf.reduce_mean(tf.cos(wloops), (1, 2))
+        #  if beta is not None:
+        #      return plaq_exact(beta) - tf.reduce_mean(tf.cos(wloops), (1, 2))
 
         return tf.reduce_mean(tf.cos(wloops), axis=(1, 2))
 
