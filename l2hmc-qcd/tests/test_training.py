@@ -3,77 +3,35 @@ test.py
 
 Test training on 2D U(1) model.
 """
-from __future__ import absolute_import, division, print_function, annotations
-from dataclasses import dataclass
+from __future__ import absolute_import, annotations, division, print_function
 
+import argparse
+import copy
+import json
 import os
 import sys
 import time
-import json
-import copy
-import argparse
 import warnings
-from typing import Union
+from dataclasses import dataclass
+from functools import wraps
+from typing import Union, Any
 
-import tensorflow as tf
-from tensorflow.python.ops.gen_math_ops import Any
 
 warnings.filterwarnings(action='once', category=UserWarning)
 warnings.filterwarnings('once', 'keras')
-
-if tf.__version__.startswith('1'):
-    try:
-        tf.compat.v1.enable_v2_behavior()
-    except AttributeError:
-        print('Unable to call \n'
-              '`tf.compat.v1.enable_v2_behavior()`. Continuing...')
-    try:
-        tf.compat.v1.enable_control_flow_v2()
-    except AttributeError:
-        print('Unable to call \n'
-              '`tf.compat.v1.enable_control_flow_v2()`. Continuing...')
-    try:
-        tf.compat.v1.enable_v2_tensorshape()
-    except AttributeError:
-        print('Unable to call \n'
-              '`tf.compat.v1.enable_v2_tensorshape()`. Continuing...')
-    try:
-        tf.compat.v1.enable_eager_execution()
-    except AttributeError:
-        print('Unable to call \n'
-              '`tf.compat.v1.enable_eager_execution()`. Continuing...')
-    try:
-        tf.compat.v1.enable_resource_variables()
-    except AttributeError:
-        print('Unable to call \n'
-              '`tf.compat.v1.enable_resource_variables()`. Continuing...')
-
-
-#  try:
-#      import horovod.tensorflow as hvd
-#  except ImportError:
-#      pass
-
 
 MODULEPATH = os.path.join(os.path.dirname(__file__), '..')
 if MODULEPATH not in sys.path:
     sys.path.append(MODULEPATH)
 
 
-#  CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
-#  PARENT_DIR = os.path.dirname(CURRENT_DIR)
-#  if PARENT_DIR not in sys.path:
-#      sys.path.append(PARENT_DIR)
-from functools import wraps
-
 import utils.file_io as io
-
-from utils.hvd_init import RANK
 from config import BIN_DIR, GAUGE_LOGS_DIR
 from utils.attr_dict import AttrDict
-from utils.training_utils import train, TrainOutputs
+from utils.hvd_init import RANK
 from utils.inference_utils import InferenceResults, run, run_hmc
 from utils.logger import Logger
+from utils.training_utils import TrainOutputs, train
 
 logger = Logger()
 
@@ -82,15 +40,11 @@ logger = Logger()
 TIMING_FILE = os.path.join(BIN_DIR, 'test_benchmarks.log')
 LOG_FILE = os.path.join(BIN_DIR, 'log_dirs.txt')
 
-#  LOG_FILE = os.path.join(
-#      os.path.dirname(PROJECT_DIR), 'bin', 'log_dirs.txt'
-#  )
+
 @dataclass
 class TestOutputs:
     train: TrainOutputs
     run: Union[InferenceResults, None]
-
-
 
 
 def parse_args():
@@ -203,7 +157,7 @@ def test_conv_net(
         input_shape=configs['dynamics_config']['x_shape'][1:],
     )
     train_out = train(configs, make_plots=make_plots,
-                      num_chains=8, verbose=False)
+                      num_chains=4, verbose=False)
     runs_dir = os.path.join(train_out.logdir, 'inference')
     run_out = None
     if RANK == 0:
@@ -224,7 +178,7 @@ def test_single_network(
     configs_ = dict(copy.deepcopy(configs))
     configs_['dynamics_config']['separate_networks'] = False
     train_out = train(configs_, make_plots=make_plots,
-                      verbose=False, num_chains=8)
+                      verbose=False, num_chains=4)
     logdir = train_out.logdir
     runs_dir = os.path.join(logdir, 'inference')
     run_out = None
@@ -248,7 +202,7 @@ def test_separate_networks(
     configs_['dynamics_config']['separate_networks'] = True
     configs_['compile'] = False
     train_out = train(configs_, make_plots=make_plots,
-                      verbose=False, num_chains=8)
+                      verbose=False, num_chains=4)
     x = train_out.x
     dynamics = train_out.dynamics
     logdir = train_out.logdir
@@ -307,7 +261,7 @@ def test_resume_training(
     assert configs_.get('restore_from', None) is not None
 
     train_out = train(configs_, make_plots=make_plots,
-                      verbose=False, num_chains=8)
+                      verbose=False, num_chains=4)
     dynamics = train_out.dynamics
     logdir = train_out.logdir
     x = train_out.x
@@ -322,6 +276,7 @@ def test_resume_training(
 
 def test():
     """Run tests."""
+    t0 = time.time()
     configs = parse_test_configs()
 
     sep_configs = copy.deepcopy(configs)
@@ -350,24 +305,25 @@ def test():
     #  single_configs_copy['ensure_new'] = False
     #  single_configs_copy = copy.deepcopy(single_net_out.train.configs)
     single_configs['dynamics_config']['separate_networks'] = False
-    _ = test_resume_training(single_configs)
+    _ = test_resume_training(single_configs, make_plots=False)
 
     configs['ensure_new'] = True
     configs['log_dir'] = None
 
-    _ = test_separate_networks(configs)
+    _ = test_separate_networks(configs, make_plots=False)
 
     configs['ensure_new'] = True
     configs['log_dir'] = None
 
-    _ = test_single_network(configs)
+    _ = test_single_network(configs, make_plots=False)
 
-    _ = test_conv_net(conv_configs)
+    _ = test_conv_net(conv_configs, make_plots=True)
 
     if RANK  == 0:
-        _ = test_hmc_run(configs)
+        _ = test_hmc_run(configs, make_plots=False)
 
-    logger.info(f'All tests passed!')
+    logger.info(f'All tests passed! Took: {time.time() - t0:.4f} s')
+    logger.rule()
 
 
 def main(args, flags=None):
@@ -378,7 +334,6 @@ def main(args, flags=None):
         'test_single_network': test_single_network,
         'test_resume_training': test_resume_training,
         'test_conv_net': test_conv_net,
-        #  'test_inference_from_model': test_inference_from_model,
     }
     if flags is None:
         flags = parse_test_configs()
