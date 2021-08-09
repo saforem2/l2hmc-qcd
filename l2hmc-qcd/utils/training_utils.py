@@ -281,12 +281,12 @@ def check_compatibility(new: dict, old: dict, strict: bool = False) -> dict:
             raise AssertionError('\n'.join([
                 'Incompatible configs.', f'{name}: {conflict}',
             ]))
-        else:
-            old_ = old[name][conflict]
-            new_ = new[name][conflict]
-            logger.warning(f'Overwriting {name}[{conflict}] with restored val')
-            logger.warning(f'{name}[{conflict}]={new_} --> {old_}')
-            new[name][conflict] = old_
+
+        old_ = old[name][conflict]
+        new_ = new[name][conflict]
+        logger.warning(f'Overwriting {name}[{conflict}] with restored val')
+        logger.warning(f'{name}[{conflict}]={new_} --> {old_}')
+        new[name][conflict] = old_
 
     return new
 
@@ -297,7 +297,6 @@ def restore_from(
         strict: bool = False
 ) -> GaugeDynamics:
     """Load trained networks and restore model from checkpoint."""
-    logger.warning(f'Loading networks from: {restore_dir}')
 
     restored = None
     if restore_dir is not None:
@@ -307,9 +306,11 @@ def restore_from(
         configs['restored_configs'] = restored
 
     dynamics = build_dynamics(configs)
+
     networks = dynamics._load_networks(str(restore_dir))
     dynamics.xnet = networks['xnet']
     dynamics.vnet = networks['vnet']
+    logger.info(f'Networks successfully loaded from: {restore_dir}')
 
     ckptdir = os.path.join(restore_dir, 'training', 'checkpoints')
     ckpt = tf.train.Checkpoint(dynamics=dynamics, optimizer=dynamics.optimizer)
@@ -372,11 +373,6 @@ def setup_betas(
     else:
         betas = get_betas(train_steps, bi, bf)
 
-    #  remaining_steps = train_steps - current_step
-    #  if len(betas) < remaining_steps:
-    #      diff = remaining_steps - len(betas)
-    #      betas = list(betas) + diff * [tf.constant(bf)]
-
     if current_step > 0:
         betas = betas[current_step:]
 
@@ -417,7 +413,8 @@ def setup(
         datadir = os.path.join(logdir, 'training', 'train_data')
         try:
             dynamics = restore_from(configs, logdir, strict=strict)
-        except:
+        except OSError:
+            logger.error(f'Unable to restore dynamics! Creating fresh...')
             dynamics = build_dynamics(configs)
 
     current_step = dynamics.optimizer.iterations.numpy()
@@ -599,13 +596,13 @@ def run_profiler(
 # pylint: disable=too-many-arguments,too-many-statements, too-many-branches
 def train_dynamics(
         dynamics: GaugeDynamics,
-        input: dict[str, Any],
+        inputs: dict[str, Any],
         dirs: Optional[dict[str, str]] = None,
         x: Optional[tf.Tensor] = None,
 ) -> tuple[tf.Tensor, GaugeDynamics]:
     """Train model."""
 
-    configs = input['configs']
+    configs = inputs['configs']
     steps = configs.get('steps', [])
     min_lr = configs.get('min_lr', 1e-5)
     patience = configs.get('patience', 10)
@@ -633,21 +630,21 @@ def train_dynamics(
 
     xshape = dynamics._xshape
     xr = tf.random.uniform(xshape, -PI, PI)
-    x = input.get('x', xr) if x is None else x
+    x = inputs.get('x', xr) if x is None else x
     assert x is not None
 
-    betas = np.array(input.get('betas', None))
+    betas = np.array(inputs.get('betas', None))
     assert betas is not None and betas.shape[0] > 0
 
-    steps = np.array(input.get('steps'))
+    steps = np.array(inputs.get('steps'))
     assert steps is not None and steps.shape[0] > 0
 
-    dirs = input.get('dirs') if dirs is None else dirs
+    dirs = inputs.get('dirs') if dirs is None else dirs
     assert dirs is not None
 
-    manager = input['manager']
-    ckpt = input['checkpoint']
-    train_data = input['train_data']
+    manager = inputs['manager']
+    ckpt = inputs['checkpoint']
+    train_data = inputs['train_data']
 
     #  tf.compat.v1.autograph.experimental.do_not_convert(dynamics.train_step)
 
@@ -661,7 +658,7 @@ def train_dynamics(
     reduce_lr.set_model(dynamics)
 
     # -- Setup summary writer -----------
-    writer = input.get('writer', None)
+    writer = inputs.get('writer', None)
     if IS_CHIEF and writer is not None:
         writer.set_as_default()
 
