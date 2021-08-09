@@ -261,6 +261,7 @@ class DataContainer:
             num_chains: int = None,
             ridgeplots: bool = True,
             profile: bool = False,
+            cmap: str = 'viridis_r',
     ):
         """Create trace plot + histogram for each entry in self.data."""
         tdict = {}
@@ -294,7 +295,8 @@ class DataContainer:
             io.check_else_make_dir(out_dir)
 
         if ridgeplots:
-            make_ridgeplots(dataset, num_chains=num_chains, out_dir=out_dir)
+            make_ridgeplots(dataset, num_chains=num_chains,
+                            out_dir=out_dir, cmap=cmap)
 
         return tdict
 
