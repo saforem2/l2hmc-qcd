@@ -57,7 +57,7 @@ def identity(x: tf.Tensor) -> tf.Tensor:
     return x
 
 
-Inputs = tuple[tf.Tensor, tf.Tensor]
+Inputs = Tuple[tf.Tensor, tf.Tensor]
 
 # pylint:disable=attribute-defined-outside-init
 # pylint:disable=invalid-name, too-many-instance-attributes
