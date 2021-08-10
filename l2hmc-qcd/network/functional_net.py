@@ -8,6 +8,7 @@ Author: Sam Foreman (github: @saforem2)
 Date: 09/14/2020
 
 """
+from __future__ import absolute_import, print_function, division, annotations
 import numpy as np
 # pylint:disable=invalid-name
 from typing import Tuple
