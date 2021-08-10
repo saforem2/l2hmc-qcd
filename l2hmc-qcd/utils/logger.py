@@ -91,14 +91,6 @@ class Logger:
             # pylint:disable=import-outside-toplevel
             from rich.console import Console as RichConsole
             from rich.theme import Theme
-            if theme is None:
-                if in_notebook():
-                    theme = {
-                        'repr.number': 'bold #87ff00',
-                        'repr.attrib_name': 'bold #ff5fff',
-                        'repr.str': 'italic #FFFF00',
-                    }
-
 
             with_jupyter = in_notebook()
             if with_jupyter:
@@ -139,10 +131,6 @@ class Logger:
 
     def log(self, s: Any, *args, **kwargs):
         """Print `s` using `self.console` object."""
-        #  pre = None
-        #  if SIZE > 1 and RANK == 0:
-        #      pre = f'{RANK}: '
-
         if is_dataclass(s):
             s = asdict(s)
         if isinstance(s, dict):
