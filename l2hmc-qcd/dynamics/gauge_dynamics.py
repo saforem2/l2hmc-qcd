@@ -38,19 +38,17 @@ import tensorflow as tf
 
 from tensorflow.python.keras import backend as K
 
+from utils.hvd_init import SIZE, RANK, LOCAL_RANK, HAS_HOROVOD
+
 
 try:
     import horovod.tensorflow as hvd
     COMPRESS = True
     HAS_HOROVOD = True
-    NUM_RANKS = hvd.size()
-    NUM_WORKERS = hvd.size()
 except ImportError:
     from utils import Horovod as hvd
     HAS_HOROVOD = False
     COMPRESS = False
-    NUM_RANKS = 1
-    NUM_WORKERS = 1
 
 
 here = os.path.dirname(__file__)
@@ -79,15 +77,17 @@ TF_FLOAT = tf.keras.backend.floatx()
 
 logger = Logger()
 
+PI = pi
+TWO_PI = 2. * PI
 
 def project_angle(x: tf.Tensor) -> tf.Tensor:
     """Returns the projection of an angle `x` from [-4pi, 4pi] to [-pi, pi]."""
-    return x - 2 * np.pi * tf.math.floor((x + np.pi) / (2 * np.pi))
+    return x - TWO_PI * tf.math.floor((x + PI) / TWO_PI)
 
 
 def convert_to_angle(x: tf.Tensor) -> tf.Tensor:
     """Returns x in -pi <= x < pi."""
-    x = tf.math.floormod(x + pi, 2 * pi) - pi
+    x = tf.math.floormod(x + PI, TWO_PI) - PI
     return x
 
 
@@ -141,9 +141,9 @@ class GaugeDynamics(BaseDynamics):
             self,
             params: AttrDict,
             config: GaugeDynamicsConfig,
-            network_config: Optional[NetworkConfig] = None,
-            lr_config: Optional[LearningRateConfig] = None,
-            conv_config: Optional[ConvolutionConfig] = None,
+            network_config: NetworkConfig = None,
+            lr_config: LearningRateConfig = None,
+            conv_config: ConvolutionConfig = None,
     ):
         # -- Set attributes from `config` -----------
         self.aux_weight = config.aux_weight
@@ -165,12 +165,13 @@ class GaugeDynamics(BaseDynamics):
         self.conv_config = conv_config
         self.net_config = network_config
 
-        self._fp16 = None
         if HAS_HOROVOD:
             if COMPRESS:
                 self._fp16 = hvd.Compression.fp16
             else:
                 self._fp16 = hvd.Compression.none
+        else:
+            self._fp16 = None
 
         if not self.config.use_conv_net:
             self.conv_config = None
