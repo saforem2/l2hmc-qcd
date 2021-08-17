@@ -165,7 +165,7 @@ def update_joint_plots(
 
 def init_live_plot(
     dpi: int = 400,
-    figsize: tuple[int] = None,
+    figsize: tuple[int, int] = None,
     xlabel: str = None,
     ylabel: str = None,
     configs: dict = None,
