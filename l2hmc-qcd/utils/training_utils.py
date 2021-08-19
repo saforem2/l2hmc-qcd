@@ -204,7 +204,7 @@ def load_configs_from_logdir(logdir: Union[str, Path]) -> dict[str, Any]:
     try:
         configs_file = os.path.join(logdir, 'train_configs.z')
         configs = io.loadz(configs_file)
-    except EOFError:
+    except (EOFError, KeyError, ValueError):
         configs_file = os.path.join(logdir, 'train_configs.json')
         with open(configs_file, 'r') as f:
             configs = json.load(f)
@@ -282,11 +282,12 @@ def check_compatibility(new: dict, old: dict, strict: bool = False) -> dict:
                 'Incompatible configs.', f'{name}: {conflict}',
             ]))
 
-        old_ = old[name][conflict]
-        new_ = new[name][conflict]
-        logger.warning(f'Overwriting {name}[{conflict}] with restored val')
-        logger.warning(f'{name}[{conflict}]={new_} --> {old_}')
-        new[name][conflict] = old_
+        for c in conflict:
+            old_ = old[name][c]
+            new_ = new[name][c]
+            logger.warning(f'Overwriting {name}[{c}] with restored val')
+            logger.warning(f'{name}[{c}]={new_} --> {old_}')
+            new[name][c] = old_
 
     return new
 
@@ -348,9 +349,6 @@ def setup_directories(configs: dict) -> dict:
     configs['logdir'] = logdir
 
     if RANK == 0:
-        io.save_dict(configs, logdir, name='train_configs')
-        io.write(f'{logdir}', logfile, 'a')
-
         restore_from = configs.get('restore_from', None)
         if restore_from is not None:
             restored = load_configs_from_logdir(restore_from)
@@ -424,12 +422,16 @@ def setup(
     train_data.steps = train_steps
 
     if os.path.isdir(datadir):
-        logger.warning(f'Restoring x from {datadir}')
-        x = train_data.restore(datadir, step=current_step,
-                               x_shape=dynamics.x_shape,
-                               rank=RANK, local_rank=LOCAL_RANK)
+        try:
+            x = train_data.restore(datadir, step=current_step,
+                                   x_shape=dynamics.x_shape,
+                                   rank=RANK, local_rank=LOCAL_RANK)
+            logger.info(f'Restored `x` from:\n `{datadir}`')
+        except ValueError:
+            logger.warning('Unable to restore `x`, re-sampling from [-pi,pi)')
+            x = tf.random.uniform(dynamics.x_shape, minval=-PI, maxval=PI)
     else:
-        x = tf.random.uniform(dynamics.x_shape, minval=(-PI), maxval=PI)
+        x = tf.random.uniform(dynamics.x_shape, minval=-PI, maxval=PI)
 
 
     # Reshape x from [batch_size, Nt, Nx, Nd] --> [batch_size, Nt * Nx * Nd]
@@ -495,6 +497,7 @@ def train(
         x: tf.Tensor = None,
         num_chains: int = 32,
         make_plots: bool = True,
+        steps_dict: dict[str, int] = None,
         **kwargs,
 ) -> TrainOutputs:
     """Train model.
@@ -516,10 +519,23 @@ def train(
     train_data = config['train_data']
 
     dynamics.save_config(dirs['config_dir'])
+    if RANK == 0:
+        logfile = os.path.join(os.getcwd(), 'log_dirs.txt')
+        logdir = configs.get('logdir', configs.get('log_dir', None))  # str
+        io.save_dict(configs, logdir, name='train_configs')
+        io.write(f'{logdir}', logfile, 'a')
+
+        restore_from = configs.get('restore_from', None)
+        if restore_from is not None:
+            restored = load_configs_from_logdir(restore_from)
+            if restored is not None:
+                io.save_dict(restored, logdir, name='restored_train_configs')
+
     # -- Train dynamics -----------------------------------------
     logger.rule('TRAINING')
     t0 = time.time()
-    x, train_data = train_dynamics(dynamics, config, dirs, x=x)
+    x, train_data = train_dynamics(dynamics, config, dirs,
+                                   x=x, steps_dict=steps_dict)
     logger.rule(f'DONE TRAINING. TOOK: {time.time() - t0:.4f}')
     logger.info(f'Training took: {time.time() - t0:.4f}')
     # ------------------------------------
@@ -527,7 +543,7 @@ def train(
     if IS_CHIEF and make_plots:
         train_dir = dirs['train_dir']
         output_dir = os.path.join(train_dir, 'outputs')
-        train_data.save_data(output_dir, save_dataset=True)
+        train_data.save_data(output_dir, save_dataset=False)
 
         params = {
             'beta_init': train_data.data.beta[0],
@@ -597,20 +613,27 @@ def run_profiler(
 def train_dynamics(
         dynamics: GaugeDynamics,
         inputs: dict[str, Any],
-        dirs: Optional[dict[str, str]] = None,
-        x: Optional[tf.Tensor] = None,
-) -> tuple[tf.Tensor, GaugeDynamics]:
+        dirs: dict[str, str] = None,
+        x: tf.Tensor = None,
+        steps_dict: dict[str, int] = None,
+) -> tuple[tf.Tensor, DataContainer]:
     """Train model."""
-
     configs = inputs['configs']
     steps = configs.get('steps', [])
     min_lr = configs.get('min_lr', 1e-5)
     patience = configs.get('patience', 10)
-    save_steps = configs.get('save_steps', None)
     factor = configs.get('reduce_lr_factor', 0.5)
+
+    save_steps = configs.get('save_steps', 10000)
     print_steps = configs.get('print_steps', 1000)
-    logging_steps = configs.get('logging_steps', None)
+    logging_steps = configs.get('logging_steps', 500)
     steps_per_epoch = configs.get('steps_per_epoch', 1000)
+    if steps_dict is not None:
+        save_steps = steps_dict.get('save', None)
+        print_steps = steps_dict.get('print', None)
+        logging_steps = steps_dict.get('logging_steps', None)
+        steps_per_epoch = steps_dict.get('steps_per_epoch', None)
+
 
     # -- Helper functions for training, logging, saving, etc. --------------
     def train_step(x: tf.Tensor, beta: tf.Tensor):
