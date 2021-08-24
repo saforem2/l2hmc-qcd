@@ -3,12 +3,14 @@ data_containers.py
 
 Implements `TrainData` class, for working with training data.
 """
-from __future__ import absolute_import, division, print_function
+from __future__ import absolute_import, division, print_function, annotations
 
 import os
+from pathlib import Path
 import time
 
 from collections import defaultdict
+from typing import Union
 
 import joblib
 import xarray as xr
@@ -216,7 +218,7 @@ class DataContainer:
         return x
 
     @staticmethod
-    def load_data(data_dir):
+    def load_data(data_dir: Union[str, Path]):
         """Load data from `data_dir` and populate `self.data`."""
         contents = os.listdir(data_dir)
         fnames = [i for i in contents if i.endswith('.z')]
@@ -234,12 +236,18 @@ class DataContainer:
 
         return AttrDict(data)
 
-    def save_data(self, data_dir, rank=0, save_dataset=False, skip_keys=None):
+    def save_data(
+            self,
+            data_dir: Union[str, Path],
+            save_dataset: bool = False,
+            skip_keys: list[str] = None,
+            rank: int = 0
+    ):
         """Save `self.data` entries to individual files in `output_dir`."""
         if rank != 0:
             return
 
-        io.check_else_make_dir(data_dir)
+        io.check_else_make_dir(str(data_dir))
         for key, val in self.data.items():
             if skip_keys is not None:
                 if key in skip_keys:
@@ -251,10 +259,7 @@ class DataContainer:
             io.savez(np.array(val), out_file)
 
         if save_dataset:
-            try:
-                self.save_dataset(data_dir)
-            except ValueError:
-                io.console.log('Unable to save `xarray.Dataset`, continuing')
+            self.save_dataset(data_dir)
 
     def plot_dataset(
             self,
