@@ -53,11 +53,37 @@ def vs_init(factor, kernel_initializer=None):
     )
 
 
-# pylint:disable=unused-argument
 class PeriodicPadding(layers.Layer):
+    """Implements a PeriodicPadding as a `tf.keras.layers.Layer` object."""
+    def __init__(self, size: int, **kwargs):
+        super(PeriodicPadding, self).__init__(**kwargs)
+        self.size = size
+
+    def call(self, inputs: tf.Tensor):
+        """Call the layer in the foreward direction."""
+        x0 = inputs[:, -self.size:, :, ...]
+        x1 = inputs[:, 0:self.size, :, ...]
+
+        inputs = tf.concat([x0, inputs, x1], 1)
+
+        y0 = inputs[:, :, -self.size:, ...]
+        y1 = inputs[:, :, 0:self.size, ...]
+
+        inputs = tf.concat([y0, inputs, y1], 2)
+
+        return inputs
+
+    def get_config(self):
+        config = super(PeriodicPadding, self).get_config()
+        config.udpate({'size': self.size})
+        return config
+
+
+# pylint:disable=unused-argument
+class PeriodicPaddingLayer(layers.Layer):
     """Implements PeriodicPadding as a `tf.keras.layers.Layer`."""
     def __init__(self, size, **kwargs):
-        super(PeriodicPadding, self).__init__(**kwargs)
+        super(PeriodicPaddingLayer, self).__init__(**kwargs)
         self._size = size
 
     def call(self, inputs, training=None, masks=None):
@@ -102,7 +128,6 @@ def get_generic_network(
         input_shapes = {
             'x': (input_shape[1],),
             'v': (input_shape[1],),
-            #  't': (2,),
         }
 
     def get_input(s):
@@ -187,7 +212,7 @@ def get_gauge_network(
         return f'{name}_{x}'
 
     def get_input(s):
-        return keras.Input(input_shapes[s], name=s_(s), batch_size=batch_size)
+        return keras.Input(input_shapes[s], name=s_(s))#, batch_size=batch_size)
 
     # -- Build network --------------------------------------------
     with tf.name_scope(name):
@@ -208,9 +233,9 @@ def get_gauge_network(
             p1 = conv_config.pool_sizes[0]
 
             if 'xnet' in name.lower():
-                x = tf.reshape(x_input, shape=(batch_size, T, X, d + 2))
+                x = tf.reshape(x_input, shape=(-1, T, X, d + 2))
             else:
-                x = tf.reshape(x_input, shape=(batch_size, T, X, d))
+                x = tf.reshape(x_input, shape=(-1, T, X, d))
 
             x = PeriodicPadding(f1 - 1)(x)
             x = layers.Conv2D(n1, f1, activation='relu',
