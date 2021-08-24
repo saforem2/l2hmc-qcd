@@ -4,6 +4,7 @@ plotting.py
 Methods for plotting data.
 """
 from __future__ import absolute_import, print_function, division, annotations
+from typing import Union
 import matplotlib.style as mplstyle
 
 mplstyle.use('fast')
@@ -317,14 +318,15 @@ def plot_charges(steps, charges, title=None, out_dir=None):
 
 def get_title_str_from_params(params):
     """Create a formatted string with relevant params from `params`."""
-    net_weights = params.get('net_weights', None)
-    num_steps = params.get('num_steps', None)
+    nw = params.get('net_weights', None)  # type: NetWeights
+    dconfig = params.get('dynamics_config', None)
+    xshape, num_steps = '?', '?'
+    if dconfig is not None:
+        num_steps = dconfig.get('num_steps', None)
+        xshape = dconfig.get('x_shape', dconfig.get('xshape', None))
 
-    x_shape = None
-    dynamics_config = params.get('dynamics_config', None)
-    if dynamics_config is not None:
-        x_shape = dynamics_config.get('x_shape', None)
-
+    #  if num_steps is None:
+    #      import pdb; pdb.set_trace()
     #  x_shape = params.get('x_shape', None)
 
     title_str = (r"$N_{\mathrm{LF}} = $" + f'{num_steps}, ')
@@ -338,11 +340,15 @@ def get_title_str_from_params(params):
         beta = params.get('beta', None)
         title_str += r"$\beta = $" + f'{beta:.3g}, '
 
-    if x_shape is not None:
-        title_str += f'shape: {tuple(x_shape)}'
+    if xshape is not None:
+        title_str += f'shape: {tuple(xshape)}'
 
-    if net_weights == NetWeights(0., 0., 0., 0., 0., 0.):
-        title_str += ', (HMC)'
+    if nw is not None:
+        if nw != NetWeights(*np.ones(6)):       # if not l2hmc default
+            if nw == NetWeights(*np.zeros(6)):  #   hmc?
+                title_str += ', (HMC)'
+            else:
+                title_str += f'nw: ({", ".join([str(i) for i in nw])})'
 
     return title_str
 
@@ -544,7 +550,7 @@ def plot_data(
         configs: dict,
         out_dir: str = None,
         therm_frac: float = 0,
-        params: AttrDict = None,
+        params: Union[dict, AttrDict] = None,
         hmc: bool = None,
         num_chains: int = 32,
         profile: bool = False,
@@ -581,8 +587,14 @@ def plot_data(
     plot_times = {}
     save_times = {}
 
-    title = None if params is None else get_title_str_from_params(params)
-    if params is None:
+    title = None
+    if params is not None:
+        try:
+            title = get_title_str_from_params(params)
+        except:
+            title = None
+
+    else:
         params = {
             'beta_init': configs['beta_init'],
             'beta_final': configs['beta_final'],
