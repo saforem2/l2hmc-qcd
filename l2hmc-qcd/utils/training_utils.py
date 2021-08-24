@@ -216,9 +216,13 @@ def find_conflicts(
         new: dict,
         old: dict,
         name: str = None,
+        skips: list[str] = None,
 ) -> list[str]:
     conflicts = []
     for key in new.keys():
+        if key in skips:
+            continue
+
         old_ = old.get(key, None)
         new_ = new.get(key, None)
         if new_ != old_:
@@ -269,8 +273,9 @@ def check_compatibility(new: dict, old: dict, strict: bool = False) -> dict:
     # would imply there was a conflict found in:
     #   - configs['dynamics_config']['num_steps']
     #   - configs['dynamics_config']['use_conv_net']
+    skips = ['x_shape', 'input_shape']
     conflicts = {
-        name: find_conflicts(new[name], old[name], name=name)
+        name: find_conflicts(new[name], old[name], name=name, skips=skips)
         for name in names
     }
     for name, conflict in conflicts.items():
@@ -384,6 +389,7 @@ def setup(
         x: tf.Tensor = None,
         betas: list[tf.Tensor]=None,
         strict: bool = False,
+        try_restore: bool = False,
 ):
     """Setup training."""
     train_steps = configs.get('train_steps', None)  # type: int
@@ -417,11 +423,11 @@ def setup(
 
     current_step = dynamics.optimizer.iterations.numpy()
     if train_steps <= current_step:
-        train_steps = current_step + save_steps
+        train_steps = current_step + min(save_steps, print_steps)
 
     train_data.steps = train_steps
 
-    if os.path.isdir(datadir):
+    if os.path.isdir(datadir) and try_restore:
         try:
             x = train_data.restore(datadir, step=current_step,
                                    x_shape=dynamics.x_shape,
@@ -492,12 +498,25 @@ class TrainOutputs:
     dynamics: GaugeDynamics
 
 
+
+def setup_training(
+    configs: dict[str, Any],
+    x: tf.Tensor = None,
+    num_chains: int = 32,
+    make_plots: bool = True,
+    steps_dict: dict[str, int] = None,
+    restore_data: bool = False,
+):
+    pass
+
 def train(
         configs: dict[str, Any],
         x: tf.Tensor = None,
         num_chains: int = 32,
         make_plots: bool = True,
         steps_dict: dict[str, int] = None,
+        save_metrics: bool = True,
+        save_dataset: bool = False,
         **kwargs,
 ) -> TrainOutputs:
     """Train model.
@@ -512,7 +531,8 @@ def train(
     """
     start = time.time()
     configs = setup_directories(configs)
-    config = setup(configs, x=x)
+    try_restore = kwargs.pop('try_restore', True)
+    config = setup(configs, x=x, try_restore=try_restore)
     dynamics = config['dynamics']
     dirs = config['dirs']
     configs = config['configs']
@@ -535,40 +555,47 @@ def train(
     logger.rule('TRAINING')
     t0 = time.time()
     x, train_data = train_dynamics(dynamics, config, dirs,
-                                   x=x, steps_dict=steps_dict)
+                                   x=x, steps_dict=steps_dict,
+                                   save_metrics=save_metrics)
     logger.rule(f'DONE TRAINING. TOOK: {time.time() - t0:.4f}')
     logger.info(f'Training took: {time.time() - t0:.4f}')
     # ------------------------------------
 
-    if IS_CHIEF and make_plots:
+    if IS_CHIEF:
+        logdir = dirs['logdir']
         train_dir = dirs['train_dir']
-        output_dir = os.path.join(train_dir, 'outputs')
-        train_data.save_data(output_dir, save_dataset=False)
+        io.save_dict(dict(configs), dirs['log_dir'], 'configs')
+        logger.info(f'Done training model! took: {time.time() - start:.4f}s')
 
-        params = {
-            'beta_init': train_data.data.beta[0],
-            'beta_final': train_data.data.beta[-1],
-            'x_shape': dynamics.config.x_shape,
-            'num_steps': dynamics.config.num_steps,
-            'net_weights': dynamics.net_weights,
-        }
-        t0 = time.time()
-        logging_steps = configs.get('logging_steps', None)
-        _ = plot_data(data_container=train_data,
-                      configs=configs,
-                      params=params,
-                      out_dir=train_dir,
-                      therm_frac=0,
-                      cmap='flare',
-                      num_chains=num_chains,
-                      logging_steps=logging_steps, **kwargs)
-        dt = time.time() - t0
-        logger.debug(
-            f'Time spent plotting: {dt}s = {dt // 60}m {(dt % 60):.4f}s'
-        )
+        if make_plots:
+            params = {
+                'beta_init': train_data.data.beta[0],
+                'beta_final': train_data.data.beta[-1],
+                'x_shape': dynamics.config.x_shape,
+                'num_steps': dynamics.config.num_steps,
+                'net_weights': dynamics.net_weights,
+            }
+            t0 = time.time()
+            logging_steps = configs.get('logging_steps', None)  # type: int
+            _ = plot_data(data_container=train_data,
+                          configs=configs,
+                          params=params,
+                          out_dir=train_dir,
+                          therm_frac=0,
+                          cmap='flare',
+                          num_chains=num_chains,
+                          logging_steps=logging_steps, **kwargs)
+            dt = time.time() - t0
+            logger.debug(
+                f'Time spent plotting: {dt}s = {dt // 60}m {(dt % 60):.4f}s'
+            )
 
-    logger.info(f'Done training model! took: {time.time() - start:.4f}s')
-    io.save_dict(dict(configs), dirs['log_dir'], 'configs')
+        if save_metrics:
+            output_dir = os.path.join(train_dir, 'outputs')
+            train_data.save_data(output_dir, save_dataset=save_dataset)
+
+        if not dynamics.config.hmc:
+            dynamics.save_networks(logdir)
 
     return TrainOutputs(x, dirs['log_dir'], configs, train_data, dynamics)
 
@@ -616,6 +643,7 @@ def train_dynamics(
         dirs: dict[str, str] = None,
         x: tf.Tensor = None,
         steps_dict: dict[str, int] = None,
+        save_metrics: bool = True,
 ) -> tuple[tf.Tensor, DataContainer]:
     """Train model."""
     configs = inputs['configs']
@@ -794,17 +822,16 @@ def train_dynamics(
     if IS_CHIEF:
         manager.save()
         logger.log(f'Checkpoint saved to: {manager.latest_checkpoint}')
-        train_data.save_and_flush(data_dir, logfile, rank=RANK, mode='a')
 
         logfile = os.path.join(logdir, 'training', 'train_log.txt')
         with open(logfile, 'a') as f:
             f.writelines('\n'.join(data_strs))
 
+        if save_metrics:
+            train_data.save_and_flush(data_dir, logfile, rank=RANK, mode='a')
+
         if not dynamics.config.hmc:
-            try:
-                dynamics.save_networks(logdir)
-            except (AttributeError, TypeError):
-                pass
+            dynamics.save_networks(logdir)
 
         if writer is not None:
             writer.flush()
