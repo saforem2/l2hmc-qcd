@@ -93,16 +93,13 @@ class Logger:
             from rich.theme import Theme
 
             with_jupyter = in_notebook()
-            if with_jupyter:
-                console = get_console()
-                console._width = 180
-
             console = get_console()
+            width = os.environ.get('COLUMNS', 120)
             console = RichConsole(record=False, log_path=False,
                                   force_jupyter=with_jupyter,
                                   force_terminal=(not with_jupyter),
-                                  log_time_format='[%x %X] ',
-                                  theme=Theme(theme))#, width=width)
+                                  log_time_format='[%x %X] ')
+                                  #  theme=Theme(theme))#, width=width)
 
         except (ImportError, ModuleNotFoundError):
             console = Console()

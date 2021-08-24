@@ -102,15 +102,6 @@ def in_notebook():
     return True
 
 
-theme = {}
-if in_notebook():
-    theme = {
-        'repr.number': 'bold #87ff00',
-        'repr.attrib_name': 'bold #ff5fff',
-        'repr.str': 'italic #FFFF00',
-    }
-
-
 with_jupyter = in_notebook()
 #  console = RichConsole(record=False, log_path=False,
 #                        force_jupyter=with_jupyter,
@@ -119,8 +110,10 @@ with_jupyter = in_notebook()
 #                        theme=Theme(theme))#, width=width)
 logging.config.dictConfig(logging_config)
 logger = logging.getLogger('root')
+from rich.console import Console
 logger.handlers[0] = RichHandler(markup=True,
                                  rich_tracebacks=True,
+                                 #  console=Console(color_system='truecolor'),
                                  #  console=console,
                                  show_path=False)
 
