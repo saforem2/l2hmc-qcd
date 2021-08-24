@@ -27,6 +27,9 @@ import tensorflow as tf
 from tensorflow.python.keras import backend as K
 
 import utils.file_io as io
+from utils.logger import Logger
+
+logger = Logger()
 
 try:
     import horovod.tensorflow as hvd
@@ -304,7 +307,7 @@ class BaseDynamics(tf.keras.Model):
         return mc_states, data
 
     def _hmc_transition(
-            self, inputs: list[tf.Tensor], training: bool = None,
+            self, inputs: Inputs, training: bool = None,
     ) -> tuple[MonteCarloStates, AttrDict]:
         """Propose a new state and perform the accept/reject step."""
         x, v, beta = None, None, None
@@ -560,16 +563,23 @@ class BaseDynamics(tf.keras.Model):
 
         kwargs = {
             'dynamic_size': False,
-            'element_shape': (self.batch_size,),
+            'element_shape': (state.x.shape[0],),
             'size': self.config.num_steps + 1,
             'clear_after_read': False
         }
+        if state.x.shape[0] != self.batch_size:
+            logger.warning(f'state.x.shape[0] != self.batch_size')
+            logger.warning(f'state.x.shape[0]: {state.x.shape[0]}')
+            logger.warning(f'self.batch_size: {self.batch_size}')
+            logger.warning(f'Setting self.batch_size to {state.x.shape[0]}')
+            self.batch_size = state.x.shape[0]
+
         logdets = tf.TensorArray(TF_FLOAT, **kwargs)
         energies = tf.TensorArray(TF_FLOAT, **kwargs)
         energies_scaled = tf.TensorArray(TF_FLOAT, **kwargs)
 
         energy = self.hamiltonian(state)
-        logdet = tf.zeros((self.batch_size))
+        logdet = tf.zeros((state.x.shape[0]))
         energy_scaled = energy - logdet
         metrics.update({
             'H': energies.write(0, energy),
@@ -611,7 +621,7 @@ class BaseDynamics(tf.keras.Model):
         #  logdets = metrics['logdets']
         kwargs = {
             'size': self.config.num_steps+1,
-            'element_shape': (self.batch_size,),
+            'element_shape': (state.x.shape[0],),
         }
         logdets = tf.TensorArray(TF_FLOAT, **kwargs).unstack(
             metrics['logdets']
@@ -645,7 +655,7 @@ class BaseDynamics(tf.keras.Model):
             training: bool = None
     ):
         """Run the augmented leapfrog sampler in the forward direction."""
-        sumlogdet = tf.zeros((self.batch_size,))
+        sumlogdet = tf.zeros((state.x.shape[0],))
         state_prop = State(self.normalizer(state.x), state.v, state.beta)
         metrics = self._init_metrics(state_prop)
         state_prop, logdet = self._half_v_update_forward(state_prop, step=0,
@@ -695,7 +705,7 @@ class BaseDynamics(tf.keras.Model):
             training: bool = None
     ):
         """Run the augmented leapfrog sampler in the forward direction."""
-        sumlogdet = tf.zeros((self.batch_size,))
+        sumlogdet = tf.zeros((state.x.shape[0],))
         state_prop = State(state.x, state.v, state.beta)
         metrics = self._init_metrics(state_prop)
 
@@ -749,7 +759,7 @@ class BaseDynamics(tf.keras.Model):
         """Transition kernel of the augmented leapfrog integrator."""
         lf_fn = self._forward_lf if forward else self._backward_lf
         state_prop = State(x=state.x, v=state.v, beta=state.beta)
-        sumlogdet = tf.zeros((self.batch_size,), dtype=TF_FLOAT)
+        sumlogdet = tf.zeros((state.x.shape[0],), dtype=TF_FLOAT)
         metrics = self._init_metrics(state_prop)
         for step in range(self.config.num_steps):
             state_prop, logdet = lf_fn(step, state_prop, training)
@@ -757,10 +767,10 @@ class BaseDynamics(tf.keras.Model):
             if self._verbose:
                 energy = self.hamiltonian(state_prop)
                 metrics['H'] = metrics['H'].write(step+1, energy)
+                metrics['Hw'] = metrics['Hw'].write(step+1, energy - sumlogdet)
+
                 metrics['logdets'] = metrics['logdets'].write(step+1,
                                                               sumlogdet)
-                metrics['Hw'] = metrics['Hw'].write(step+1,
-                                                    energy - sumlogdet)
             #  metrics = self._update_metrics(metrics, step+1,
             #                                 state_prop, sumlogdet)
 
@@ -799,7 +809,7 @@ class BaseDynamics(tf.keras.Model):
         """Run the augmented leapfrog integrator in the forward direction."""
         # === NOTE: m = random mask (half 1s, half 0s); mc = 1. - m
         m, mc = self._get_mask(step)  # pylint: disable=invalid-name
-        sumlogdet = tf.zeros((self.batch_size,))
+        sumlogdet = tf.zeros((state.x.shape[0],))
 
         state, logdet = self._update_v_forward(state, step, training)
         sumlogdet += logdet
@@ -818,7 +828,7 @@ class BaseDynamics(tf.keras.Model):
         """Run the augmented leapfrog integrator in the backward direction."""
         step_r = self.config.num_steps - step - 1
         m, mc = self._get_mask(step_r)
-        sumlogdet = tf.zeros((self.batch_size))
+        sumlogdet = tf.zeros((state.x.shape[0]))
 
         state, logdet = self._update_v_backward(state, step_r, training)
         sumlogdet += logdet
@@ -954,7 +964,7 @@ class BaseDynamics(tf.keras.Model):
     ):
         """Perform a full-step position update in the forward direction."""
         m, mc = self._get_mask(step)
-        sumlogdet = tf.zeros((self.batch_size,))
+        sumlogdet = tf.zeros((state.x.shape[0],))
         state, logdet = self._update_x_forward(state, step,
                                                (m, mc), training, first=True)
         sumlogdet += logdet
@@ -1119,7 +1129,7 @@ class BaseDynamics(tf.keras.Model):
         """Perform a full-step position update in the backward direction."""
         step_r = self.config.num_steps - step - 1
         m, mc = self._get_mask(step_r)
-        sumlogdet = tf.zeros((self.batch_size,))
+        sumlogdet = tf.zeros((state.x.shape[0],))
 
         state, logdet = self._update_x_backward(state, step_r,
                                                 (mc, m), training)
@@ -1173,39 +1183,35 @@ class BaseDynamics(tf.keras.Model):
 
     def grad_potential(self, x: tf.Tensor, beta: tf.Tensor):
         """Compute the gradient of the potential function."""
-        with tf.name_scope('grad_potential'):
-            x = self.normalizer(x)
-            if tf.executing_eagerly():
-                with tf.GradientTape() as tape:
-                    tape.watch(x)
-                    pe = self.potential_energy(x, beta)
-                grad = tape.gradient(pe, x)
-                #  grad = tf.reshape(tape.gradient(pe, x),
-                #                    (self.batch_size, -1))
-            else:
-                grad = tf.gradients(self.potential_energy(x, beta), [x])[0]
+        x = self.normalizer(x)
+        if tf.executing_eagerly():
+            with tf.GradientTape() as tape:
+                tape.watch(x)
+                pe = self.potential_energy(x, beta)
+            grad = tape.gradient(pe, x)
+            #  grad = tf.reshape(tape.gradient(pe, x),
+            #                    (self.batch_size, -1))
+        else:
+            grad = tf.gradients(self.potential_energy(x, beta), [x])[0]
 
         return grad
 
     def potential_energy(self, x: tf.Tensor, beta: tf.Tensor):
         """Compute the potential energy as beta times the potential fn."""
-        with tf.name_scope('potential_energy'):
-            x = self.normalizer(x)
-            pe = beta * self.potential_fn(x)
+        x = self.normalizer(x)
+        pe = beta * self.potential_fn(x)
 
         return pe
 
     @staticmethod
     def kinetic_energy(v: tf.Tensor):
         """Compute the kinetic energy of the momentum as 0.5 * (v ** 2)."""
-        with tf.name_scope('kinetic_energy'):
-            return 0.5 * tf.reduce_sum(v ** 2, axis=1)
+        return 0.5 * tf.reduce_sum(tf.keras.layers.Flatten()(v) ** 2, axis=-1)
 
     def hamiltonian(self, state: State):
         """Compute the overall Hamiltonian."""
-        with tf.name_scope('hamiltonian'):
-            kinetic = self.kinetic_energy(state.v)
-            potential = self.potential_energy(state.x, state.beta)
+        kinetic = self.kinetic_energy(state.v)
+        potential = self.potential_energy(state.x, state.beta)
 
         return potential + kinetic
 

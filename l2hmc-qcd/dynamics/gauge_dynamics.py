@@ -437,7 +437,7 @@ class GaugeDynamics(BaseDynamics):
     def _init_metrics(
             self,
             state: State,
-    ) -> Tuple[tf.TensorArray, tf.TensorArray]:
+    ) -> dict[str, tf.TensorArray]:
         """Create logdet/energy metrics for verbose logging."""
         metrics = super()._init_metrics(state)
 
@@ -446,7 +446,7 @@ class GaugeDynamics(BaseDynamics):
 
         kwargs = {
             'size': self.config.num_steps+1,
-            'element_shape': (self.batch_size,),
+            'element_shape': (state.x.shape[0],),
             'dynamic_size': False,
             'clear_after_read': False
         }
@@ -486,7 +486,7 @@ class GaugeDynamics(BaseDynamics):
     ):
         """Implements a series of directional updates."""
         state_prop = State(x=state.x, v=state.v, beta=state.beta)
-        sumlogdet = tf.zeros((self.batch_size,))
+        sumlogdet = tf.zeros((state.x.shape[0],))
         metrics = self._init_metrics(state_prop)
 
         def _update_metrics(data, step):
@@ -550,7 +550,7 @@ class GaugeDynamics(BaseDynamics):
     ):
         """Run the augmented leapfrog sampler in the forward direction."""
         state_prop = State(x=state.x, v=state.v, beta=state.beta)
-        sumlogdet = tf.zeros((self.batch_size,))
+        sumlogdet = tf.zeros((state.x.shape[0],))
         metrics = self._init_metrics(state_prop)
 
         def _update_metrics(data, step):
@@ -612,7 +612,7 @@ class GaugeDynamics(BaseDynamics):
     ):
         """Run the augmented leapfrog sampler in the forward direction."""
         state_prop = State(x=state.x, v=state.v, beta=state.beta)
-        sumlogdet = tf.zeros((self.batch_size,))
+        sumlogdet = tf.zeros((state.x.shape[0],))
         metrics = self._init_metrics(state_prop)
 
         def _update_metrics(data, step):
@@ -700,7 +700,7 @@ class GaugeDynamics(BaseDynamics):
         # -- Setup -------------------------------------------------
         lf_fn = self._forward_lf if forward else self._backward_lf
         state_prop = State(x=state.x, v=state.v, beta=state.beta)
-        sumlogdet = tf.zeros((self.batch_size,))
+        sumlogdet = tf.zeros((state.x.shape[0],))
         metrics = self._init_metrics(state_prop)
 
         def _update_metrics(data, step):
@@ -774,7 +774,7 @@ class GaugeDynamics(BaseDynamics):
             mask, _ = mask
 
         x, v = inputs
-        shape = (self.batch_size, -1)
+        shape = (x.shape[0], -1)
         m = tf.reshape(mask, shape)
         idxs = tf.where(m)
         _x = tf.reshape(tf.gather_nd(x, idxs), shape)
@@ -936,7 +936,7 @@ class GaugeDynamics(BaseDynamics):
     ):
         """Perform a full-step position update in the forward direction."""
         m, mc = self._get_mask(step)
-        sumlogdet = tf.zeros((self.batch_size,))
+        sumlogdet = tf.zeros((state.x.shape[0],))
         state, logdet = self._update_x_forward(state, step,
                                                (m, mc), training, first=True)
         sumlogdet += logdet
@@ -1100,7 +1100,7 @@ class GaugeDynamics(BaseDynamics):
         """Perform a full-step position update in the backward direction."""
         step_r = self.config.num_steps - step - 1
         m, mc = self._get_mask(step_r)
-        sumlogdet = tf.zeros((self.batch_size,))
+        sumlogdet = tf.zeros((state.x.shape[0],))
 
         state, logdet = self._update_x_backward(state, step_r,
                                                 (mc, m), training)
