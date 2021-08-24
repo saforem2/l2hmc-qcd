@@ -21,6 +21,9 @@ from scipy.optimize import minimize
 import utils.file_io as io
 
 from utils.data_utils import therm_arr
+from utils.logger import Logger
+
+logger = Logger()
 
 sns.set_palette('bright')
 
@@ -110,7 +113,8 @@ def look(p: str, s: str, conds: [list, callable] = None):
     Returns:
         matches (list): List of matches.
     """
-    io.log(f'Looking in {p}...')
+    #  logger.info(f'Looking in {p}...')
+    logger.info(f'Looking in: {p}')
     matches = [x for x in Path(p).rglob(f'*{s}*')]
     if conds is not None:
         if isinstance(conds, (list, tuple)):
@@ -134,7 +138,7 @@ def get_hmc_dirs(dirs: list = None, glob='HMC_L16'):
 
     hdirs = []
     for d in dirs:
-        io.log(f'len(hdirs): {len(hdirs)}')
+        logger.info(f'len(hdirs): {len(hdirs)}')
         if os.path.isdir(d):
             hdirs += [x for x in Path(d).rglob(f'*{glob}*') if x.is_dir()]
 
@@ -150,7 +154,7 @@ def get_l2hmc_dirs(dirs: list = None, glob: str = None):
 
     ldirs = []
     for d in dirs:
-        io.log(f'len(ldirs): {len(ldirs)}')
+        logger.info(f'len(ldirs): {len(ldirs)}')
         if os.path.isdir(d):
             ldirs += [x for x in Path(d).rglob(f'*{glob}*') if x.is_dir()]
 
@@ -184,13 +188,13 @@ def load_charges_from_dir(
 ):
 
     """Load charge data from `d`."""
-    io.log(f'Looking in {d}...')
+    logger.info(f'Looking in {d}...')
 
     if not os.path.isdir(os.path.abspath(d)):
-        io.log(', '.join([
+        logger.info(', '.join([
             'WARNING: Skipping entry!',
             f'{d} is not a directory.',
-        ]), style='yellow')
+        ]))
 
         return None
 
@@ -220,7 +224,7 @@ def load_charges_from_dir(
             midpt = px.shape[0] // 2
             px_avg = np.mean(px[midpt:])
             if px_avg < px_cutoff:
-                io.log(', '.join([
+                logger.info(', '.join([
                     f'{WSTR}: Bad acceptance prob.',
                     f'px_avg: {px_avg:.3g} < 0.1',
                     f'dir: {d}',
@@ -239,7 +243,7 @@ def load_charges_from_dir(
                 raise ValueError('Unable to determine eps.')
 
         #  eps = tf.reduce_mean(eps).numpy()
-        io.log('Loading data for: ' + ', '.join([
+        logger.info('Loading data for: ' + ', '.join([
             f'beta: {str(beta)}', f'lf: {str(lf)}',
             f'eps: {str(eps)}', f'run_dir: {run_dir}',
         ]))
@@ -503,18 +507,18 @@ def calc_tau_int(
             traj_len = lf * eps
             draws, chains = qarr.shape
             if chains < min_chains:
-                io.log(', '.join([
+                logger.info(', '.join([
                     'WARNING: Skipping entry!',
                     f'\tchains: {chains} < min_chains: {min_chains}'
-                ]), style='yellow')
+                ]))
 
                 continue
 
             if draws < min_draws:
-                io.log(', '.join([
+                logger.info(', '.join([
                     'WARNING: Skipping entry!',
                     f'\tdraws: {draws} < min_draws: {min_draws}'
-                ]), style='yellow')
+                ]))
 
                 continue
 
@@ -529,12 +533,12 @@ def calc_tau_int(
                     n, tint = calc_autocorr(qarr.T, num_pts=num_pts,
                                             nstart=nstart)
             except ZeroDivisionError:
-                io.log(f'ZeroDivisionError, skipping! ({key}, {k})')
+                logger.info(f'ZeroDivisionError, skipping! ({key}, {k})')
                 continue
 
             # -- Only keep finite estimates
             if np.isfinite(tint[-1].mean()):
-                io.log(', '.join([
+                logger.info(', '.join([
                     f'lf: {lf}',
                     f'eps: {eps:.3g}',
                     f'traj_len: {traj_len:.3g}',
@@ -554,10 +558,10 @@ def calc_tau_int(
                 }
 
             else:
-                io.log(', '.join([
+                logger.info(', '.join([
                     'WARNING: Skipping entry!',
                     f'\tint[-1] is np.nan'
-                ]), style='yellow')
+                ]))
 
     # -- Sort data by trajectory length, k[0] = (lf, eps)
     data = {}
@@ -696,7 +700,7 @@ def _get_important_params(path):
     try:
         params = io.loadz(params_file)
     except FileNotFoundError as err:
-        io.log(f'Unable to locate {params_file}.', style='red')
+        logger.info(f'Unable to locate {params_file}.')
         raise err
 
     lf = params.get('num_steps', None)
@@ -738,7 +742,7 @@ def _deal_with_new_data(tint_file: str, save: bool = False):
     try:
         params = _get_important_params(head)
     except (ValueError, FileNotFoundError) as err:
-        io.log(f'Error loading params from {head}, skipping!', style='red')
+        logger.info(f'Error loading params from {head}, skipping!')
         raise err
 
     lf = params.get('lf', None)
@@ -757,7 +761,7 @@ def _deal_with_new_data(tint_file: str, save: bool = False):
     }
     if save:
         outfile = os.path.join(head, 'tint_data.z')
-        io.log(f'Saving tint data to: {outfile}.')
+        logger.info(f'Saving tint data to: {outfile}.')
         io.savez(data, outfile, 'tint_data')
 
     return data
@@ -776,7 +780,7 @@ def deal_with_new_data(path: str, save: bool = False):
         try:
             tint = _deal_with_new_data(tint_file, save=save)
         except (ValueError, FileNotFoundError) as err:
-            io.log(f'Unable to get tint data from: {tint_file}, skipping!')
+            logger.info(f'Unable to get tint data from: {tint_file}, skipping!')
             continue
 
         beta = tint['beta']
@@ -798,14 +802,14 @@ def deal_with_new_data(path: str, save: bool = False):
 
         if save:
             outfile = os.path.join(run_dir, 'tint_data.z')
-            io.log(f'Saving tint_data to: {outfile}.')
+            logger.info(f'Saving tint_data to: {outfile}.')
             io.savez(tint, outfile, 'tint_data')
 
     for tau_int_file in tau_int_files:
         try:
             tint = _deal_with_new_data(tau_int_file, save=save)
         except (ValueError, FileNotFoundError) as err:
-            io.log(f'Unable to get tint data from: {tau_int_file}, skipping!')
+            logger.info(f'Unable to get tint data from: {tau_int_file}, skipping!')
             continue
         beta = tint['beta']
         traj_len = tint['traj_len']
@@ -822,7 +826,7 @@ def deal_with_new_data(path: str, save: bool = False):
                 tint_data[beta][traj_len] = tint
         if save:
             outfile = os.path.join(run_dir, 'tint_data.z')
-            io.log(f'Saving tint data to: {outfile}.')
+            logger.info(f'Saving tint data to: {outfile}.')
             io.savez(tint, outfile, 'tint_data')
 
     return tint_data
@@ -871,10 +875,10 @@ def calc_tau_int_from_dir(
     """
     output_arr = load_charges_from_dir(input_path, hmc=hmc)
     if output_arr is None:
-        io.log(', '.join([
+        logger.info(', '.join([
             'WARNING: Skipping entry!',
             f'\t unable to load charge data from {input_path}',
-        ]), style='yellow')
+        ]))
 
         return None
 
@@ -906,10 +910,10 @@ def calc_tau_int_from_dir(
         if c1 or c11 or c2 or c3:
             loaded = io.loadz(outfile)
             output.update(loaded)
-            io.log(', '.join([
+            logger.info(', '.join([
                 'WARNING: Loading existing data'
                 f'\t Found existing data at: {outfile}.',
-            ]), style='yellow')
+            ]))
             loaded = io.loadz(outfile)
             n = loaded.get('draws', loaded.get('narr', None))
             tint = loaded.get('tau_int', loaded.get('tint', None))
@@ -980,7 +984,7 @@ def calc_tau_int_from_dir(
             _ = ax.set_xscale('log')
             _ = ax.set_yscale('log')
             _ = ax.grid(alpha=0.4)
-            io.log(f'Saving figure to: {fdraws}')
+            logger.info(f'Saving figure to: {fdraws}')
             _ = plt.savefig(fdraws, dpi=400, bbox_inches='tight')
             plt.close('all')
 
@@ -992,7 +996,7 @@ def calc_tau_int_from_dir(
             _ = ax.set_title(title)
             _ = ax.set_yscale('log')
             _ = ax.grid(True, alpha=0.4)
-            io.log(f'Saving figure to: {ftlen}')
+            logger.info(f'Saving figure to: {ftlen}')
             _ = plt.savefig(ftlen, dpi=400, bbox_inches='tight')
             plt.close('all')
 
