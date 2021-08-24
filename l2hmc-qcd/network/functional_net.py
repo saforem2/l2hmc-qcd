@@ -53,6 +53,7 @@ def vs_init(factor, kernel_initializer=None):
     )
 
 
+# pylint:disable=unused-argument
 class PeriodicPadding(layers.Layer):
     """Implements a PeriodicPadding as a `tf.keras.layers.Layer` object."""
     def __init__(self, size: int, **kwargs):
@@ -75,30 +76,8 @@ class PeriodicPadding(layers.Layer):
 
     def get_config(self):
         config = super(PeriodicPadding, self).get_config()
-        config.udpate({'size': self.size})
+        config.update({'size': self.size})
         return config
-
-
-# pylint:disable=unused-argument
-class PeriodicPaddingLayer(layers.Layer):
-    """Implements PeriodicPadding as a `tf.keras.layers.Layer`."""
-    def __init__(self, size, **kwargs):
-        super(PeriodicPaddingLayer, self).__init__(**kwargs)
-        self._size = size
-
-    def call(self, inputs, training=None, masks=None):
-        """Call the network (forward-pass)."""
-        z1 = inputs[:, -self._size:, :, ...]
-        z2 = inputs[:, 0:self._size, :, ...]
-
-        inputs = tf.concat([z1, inputs, z2], 1)
-
-        z3 = inputs[:, :, -self._size:, ...]
-        z4 = inputs[:, :, 0:self._size, ...]
-
-        inputs = tf.concat([z3, inputs, z4], 2)
-
-        return inputs
 
 
 # pylint:disable=too-many-locals, too-many-arguments
