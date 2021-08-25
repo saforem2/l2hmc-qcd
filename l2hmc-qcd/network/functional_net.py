@@ -9,24 +9,36 @@ Date: 09/14/2020
 
 """
 from __future__ import absolute_import, print_function, division, annotations
-import numpy as np
+#  import numpy as np
 # pylint:disable=invalid-name
-from typing import Tuple
+#  from typing import Tuple
 
 import tensorflow as tf
 
 from tensorflow import keras
+from tensorflow.keras.layers import (
+    Layer, Add, Dropout, Dense, Flatten, Conv2D, MaxPooling2D,
+    BatchNormalization, Input
+)
+from tensorflow.keras import Model
+from tensorflow.keras.initializers import VarianceScaling
 
 from network.config import ConvolutionConfig, NetworkConfig
 #  from network.layers import ScaledTanhLayer
 
-layers = tf.keras.layers
+#  layers = tf.keras.layers
 
 ACTIVATION_FNS = {
     'relu': tf.keras.activations.relu,
     'tanh': tf.keras.activations.tanh,
     'swish': tf.keras.activations.swish,
 }
+
+def get_kinit(scale: float = 1., seed: int = None):
+    return VarianceScaling(scale=2. * scale,
+                           mode='fan_in', seed=seed,
+                           distribution='truncated_normal')
+
 
 
 def custom_dense(units, scale=1., name=None, activation=None):
@@ -36,10 +48,9 @@ def custom_dense(units, scale=1., name=None, activation=None):
         distribution='truncated_normal',
     )
 
-    return layers.Dense(units,
-                        name=f'{name}_layer',
-                        activation=activation,
-                        kernel_initializer=kinit)
+    return Dense(units, name=f'{name}_layer',
+                 activation=activation,
+                 kernel_initializer=kinit)
 
 
 def vs_init(factor, kernel_initializer=None):
@@ -54,7 +65,7 @@ def vs_init(factor, kernel_initializer=None):
 
 
 # pylint:disable=unused-argument
-class PeriodicPadding(layers.Layer):
+class PeriodicPadding(Layer):
     """Implements a PeriodicPadding as a `tf.keras.layers.Layer` object."""
     def __init__(self, size: int, **kwargs):
         super(PeriodicPadding, self).__init__(**kwargs)
@@ -118,16 +129,17 @@ def get_generic_network(
         v_input = get_input('v')
         #  t_input = get_input('t')
 
+        #  x = Dense(h1,
         x = custom_dense(h1, factor/2., f'{name}_x')(x_input)
         v = custom_dense(h1, 1./2., f'{name}_v')(v_input)
         #  t = custom_dense(h1, 1./3., f'{name}_t')(t_input)
-        z = layers.Add()([x, v])
+        z = Add()([x, v])
         #  z = layers.Add()([x, v, t])
         z = keras.activations.relu(z)
         z = custom_dense(h2, 1., f'{name}_h1')(z)
         z = custom_dense(h2, 1., f'{name}_h2')(z)
         if net_config.dropout_prob > 0:
-            z = layers.Dropout(net_config.dropout_prob)(z)
+            z = Dropout(net_config.dropout_prob)(z)
 
         transl = custom_dense(xdim, 0.001, name=f'{name}_transl')(z)
         scale = tf.exp(scale_coeff) * tf.keras.activations.tanh(
@@ -142,11 +154,9 @@ def get_generic_network(
         #      inputs=[x_input, v_input, t_input],
         #      outputs=[scale, transl, transf]
         #  )
-        model = keras.Model(
-            name=name,
-            inputs=[x_input, v_input],
-            outputs=[scale, transl, transf]
-        )
+        model = Model(name=name,
+                      inputs=[x_input, v_input],
+                      outputs=[scale, transl, transf])
 
     return model
 
@@ -187,11 +197,15 @@ def get_gauge_network(
                 f'Expected one of: {tuple(ACTIVATION_FNS.keys())}.'
             )
 
-    def s_(x):
-        return f'{name}_{x}'
 
-    def get_input(s):
-        return keras.Input(input_shapes[s], name=s_(s))#, batch_size=batch_size)
+    def sub_s(s):
+        return f'{name}_{s}'
+
+    def get_input(i):
+        #  return keras.Input(input_shapes[s], sub_s(s), batch_size)
+        #  return keras.Input(input_shapes[s], name=sub_s(s),
+        #                     batch_size=batch_size)
+        return Input(input_shapes[i], name=sub_s(i))#
 
     # -- Build network --------------------------------------------
     with tf.name_scope(name):
@@ -201,8 +215,8 @@ def get_gauge_network(
         coeff_kwargs = {
             'trainable': True, 'initial_value': tf.zeros([1, xdim]),
         }
-        scale_coeff = tf.Variable(name=f'{name}_scale_coeff', **coeff_kwargs)
-        transf_coeff = tf.Variable(name=f'{name}_transf_coeff', **coeff_kwargs)
+        scale_coeff = tf.Variable(name=f'{name}/scale_coeff', **coeff_kwargs)
+        transf_coeff = tf.Variable(name=f'{name}/transf_coeff', **coeff_kwargs)
 
         if conv_config is not None:
             n1 = conv_config.filters[0]
@@ -217,33 +231,63 @@ def get_gauge_network(
                 x = tf.reshape(x_input, shape=(-1, T, X, d))
 
             x = PeriodicPadding(f1 - 1)(x)
-            x = layers.Conv2D(n1, f1, activation='relu',
-                              name=f'{name}_xconv1')(x)
-            x = layers.Conv2D(n2, f2, activation='relu',
-                              name=f'{name}_xconv2')(x)
-            x = layers.MaxPooling2D(p1, name=f'{name}_xpool')(x)
-            x = layers.Conv2D(n2, f2, activation='relu',
-                              name=f'{name}_xconv3')(x)
-            x = layers.Conv2D(n1, f1, activation='relu',
-                              name=f'{name}_xconv4')(x)
-            x = layers.Flatten()(x)
+            x = Conv2D(n1, f1, activation='relu',
+                              name=f'{name}/xconv1')(x)
+            x = Conv2D(n2, f2, activation='relu',
+                              name=f'{name}/xconv2')(x)
+            x = MaxPooling2D(p1, name=f'{name}_xpool')(x)
+            x = Conv2D(n2, f2, activation='relu',
+                              name=f'{name}/xconv3')(x)
+            x = Conv2D(n1, f1, activation='relu',
+                              name=f'{name}/xconv4')(x)
+            x = Flatten()(x)
             if conv_config.use_batch_norm:
-                x = layers.BatchNormalization(-1, name=f'{name}_batch_norm')(x)
+                x = BatchNormalization(-1, name=f'{name}_batch_norm')(x)
         else:
-            x = layers.Flatten()(x_input)
+            x = Flatten()(x_input)
 
+        #  args = {
+        #      'x': (net_config.units[0], factor / 2., f'{name}/x'),
+        #      'v': (net_config.units[0], 1. / 2., f'{name}/v'),
+        #      'scale': (xdim, 0.001, f'{name}/scale'),
+        #      'transl': (xdim, 0.001, f'{name}/transl'),
+        #      'transf': (xdim, 0.001, f'{name}/transf'),
+        #  }
         args = {
-            'x': (net_config.units[0], factor / 2., f'{name}_x'),
-            'v': (net_config.units[0], 1. / 2., f'{name}_v'),
-            'scale': (xdim, 0.001, f'{name}_scale'),
-            'transl': (xdim, 0.001, f'{name}_transl'),
-            'transf': (xdim, 0.001, f'{name}_transf'),
+            'x': {
+                'units': net_config.units[0],
+                'name': f'{name}/x',
+                'kernel_initializer': get_kinit(factor/2.)
+            },
+            'v': {
+                'units': net_config.units[0],
+                'name': f'{name}/v',
+                'kernel_initializer': get_kinit(1./2.)
+            },
+            'scale': {
+                'units': xdim,
+                'name': f'{name}/scale',
+                'kernel_initializer': get_kinit(0.001/2.),
+            },
+            'transl': {
+                'units': xdim,
+                'name': f'{name}/transl',
+                'kernel_initializer': get_kinit(0.001/2.),
+            },
+            'transf': {
+                'units': xdim,
+                'name': f'{name}/transf',
+                'kernel_initializer': get_kinit(0.001/2.),
+            },
         }
 
-        x = custom_dense(*args['x'])(x)
-        v = custom_dense(*args['v'])(v_input)
+        v = Dense(**args['v'])(v_input)
+        x = Dense(**args['x'])(x)
 
-        z = layers.Add()([x, v])
+        #  x = custom_dense(*args['x'])(x)
+        #  v = custom_dense(*args['v'])(v_input)
+
+        z = Add()([x, v])
         z = activation_fn(z)
         #  z = keras.activations.relu(z)
         # ------------------------------------------
@@ -251,24 +295,29 @@ def get_gauge_network(
         # 1 / len(net_config.units[1:])
         # ------------------------------------------
         for idx, units in enumerate(net_config.units[1:]):
-            z = custom_dense(units, 1./2., f'{name}_h{idx}',
-                             activation=activation_fn)(z)
+            z = Dense(units, name=f'{name}_h{idx}',
+                      activation=activation_fn,
+                      kernel_initializer=get_kinit(1./2.))(z)
+            #  z = custom_dense(units, 1./2., f'{name}_h{idx}',
+            #                   activation=activation_fn)(z)
 
         if net_config.dropout_prob > 0:
-            z = layers.Dropout(net_config.dropout_prob)(z)
+            z = Dropout(net_config.dropout_prob)(z)
 
         if net_config.use_batch_norm:
-            z = layers.BatchNormalization(-1, name=f'{name}_batch_norm1')(z)
+            z = BatchNormalization(-1, name=f'{name}_batch_norm1')(z)
 
-        scale = custom_dense(*args['scale'], activation='tanh')(z)
-        transl = custom_dense(*args['transl'])(z)
-        transf = custom_dense(*args['transf'], activation='tanh')(z)
+        scale = Dense(**args['scale'], activation='tanh')(z)
+        transl = Dense(**args['transl'])(z)
+        transf = Dense(**args['transf'])(z)
+        #  scale = custom_dense(*args['scale'], activation='tanh')(z)
+        #  transl = custom_dense(*args['transl'])(z)
+        #  transf = custom_dense(*args['transf'], activation='tanh')(z)
 
         scale *= tf.exp(scale_coeff)
         transf *= tf.exp(transf_coeff)
 
-        model = keras.Model(name=name,
-                            inputs=[x_input, v_input], #, t_input],
-                            outputs=[scale, transl, transf])
-
+        model = Model(name=name,
+                      inputs=[x_input, v_input], #, t_input],
+                      outputs=[scale, transl, transf])
     return model
