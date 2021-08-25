@@ -17,6 +17,7 @@ from typing import Any, Optional, Union
 
 import numpy as np
 import tensorflow as tf
+from tensorflow.python.ops.summary_ops_v2 import SummaryWriter
 
 import utils.file_io as io
 import utils.live_plots as plotter
@@ -616,6 +617,30 @@ def run_md(
     return x
 
 
+def trace_train_step(
+        dynamics: GaugeDynamics,
+        writer: SummaryWriter,
+        outdir: str,
+        x: tf.Tensor = None,
+        beta: float = None,
+        graph: bool = True,
+        profiler: bool = True,
+):
+    if x is None:
+        x = tf.random.uniform(dynamics.x_shape, *(-PI, PI))
+    if beta is None:
+        beta = 1.
+
+    # Bracket the function call with
+    # tf.summary.trace_on() and tf.summary.trace_export()
+    tf.summary.trace_on(graph=graph, profiler=profiler)
+    # Call only one tf.function when tracing
+    x, metrics = dynamics.train_step((x, beta))
+    with writer.as_default():
+        tf.summary.trace_export(name='dynamics_train_step', step=0,
+                                profiler_outdir=outdir)
+
+
 def run_profiler(
         dynamics: GaugeDynamics,
         inputs: tuple[tf.Tensor, Union[float, tf.Tensor]],
@@ -709,13 +734,18 @@ def train_dynamics(
     reduce_lr.set_model(dynamics)
 
     # -- Setup summary writer -----------
-    writer = inputs.get('writer', None)
+    writer = inputs.get('writer', None)  # type: tf.SummaryWriter
     if IS_CHIEF and writer is not None:
         writer.set_as_default()
 
     # -- Run profiler? ------------------------------------------------------
     if configs.get('profiler', False):
         sdir = dirs['summary_dir']
+        trace_train_step(dynamics,
+                         graph=True,
+                         profiler=True,
+                         outdir=sdir,
+                         writer=writer)
         x, metrics = run_profiler(dynamics, (x, betas[0]),
                                   logdir=sdir, steps=10)
     else:
