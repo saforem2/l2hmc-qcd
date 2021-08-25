@@ -188,7 +188,6 @@ def setup_directories(
         timestamps: dict[str, str] = None,
 ):
     """Setup relevant directories for training."""
-    #  if configs.get('log_dir', configs.get('logdir', None)) is None:
     logdir = configs.get('logdir', configs.get('log_dir', None))
     if logdir is None:
         logdir = make_log_dir(configs=configs,
@@ -204,7 +203,7 @@ def setup_directories(
         'data_dir': os.path.join(train_dir, 'train_data'),
         'models_dir': os.path.join(train_dir, 'models'),
         'ckpt_dir': os.path.join(train_dir, 'checkpoints'),
-        'summary_dir': os.path.join(train_dir, f'summaries_{now}'),
+        'summary_dir': os.path.join(train_dir, f'summaries'),
         'log_file': os.path.join(train_dir, 'train_log.txt'),
         'config_dir': os.path.join(train_dir, 'dynamics_configs'),
     }
@@ -632,14 +631,17 @@ def make_log_dir(
     if cfg_str.startswith('DEBUG'):
         dirs.append('test')
 
-    log_dir = os.path.join(*dirs, timestamps['month'], cfg_str)
+    log_dir = os.path.join(*dirs, timestamps['month'],
+                           cfg_str, timestamps['second'])
+    '''
     if os.path.isdir(log_dir):
         if configs.get('ensure_new', False):
             logger.warning('Forcing new directory!')
             log_dir = os.path.join(*dirs, timestamps['month'],
-                                   f'{cfg_str}-{timestamps["second"]}')
+                                   f'{cfg_str}', f'{timestamps["second"]}')
             if skip_existing:
                 raise FileExistsError(f'`log_dir`: {log_dir} already exists! ')
+    '''
 
 
     if RANK == 0:
