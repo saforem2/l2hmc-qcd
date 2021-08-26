@@ -350,11 +350,12 @@ def setup_directories(configs: dict) -> dict:
     # Create `logdir`, `logdir/training/...`' etc
     dirs = io.setup_directories(configs, timestamps=TSTAMPS)
     configs['dirs'] = dirs
-    logdir = dirs.get('logdir', dirs.get('log_dir', None))
+    logdir = dirs.get('logdir', dirs.get('log_dir', None))  # type: str
     configs['log_dir'] = logdir
     configs['logdir'] = logdir
 
     if RANK == 0:
+        io.check_else_make_dir(logdir)
         restore_from = configs.get('restore_from', None)
         if restore_from is not None:
             restored = load_configs_from_logdir(restore_from)
@@ -746,8 +747,8 @@ def train_dynamics(
                          profiler=True,
                          outdir=sdir,
                          writer=writer)
-        x, metrics = run_profiler(dynamics, (x, betas[0]),
-                                  logdir=sdir, steps=10)
+        #  x, metrics = run_profiler(dynamics, (x, betas[0]),
+        #                            logdir=sdir, steps=10)
     else:
         x, metrics = dynamics.train_step((x, betas[0]))
 
