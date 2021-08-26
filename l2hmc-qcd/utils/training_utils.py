@@ -519,6 +519,7 @@ def train(
         steps_dict: dict[str, int] = None,
         save_metrics: bool = True,
         save_dataset: bool = False,
+        custom_betas: Union[list, np.ndarray] = None,
         **kwargs,
 ) -> TrainOutputs:
     """Train model.
@@ -558,6 +559,7 @@ def train(
     t0 = time.time()
     x, train_data = train_dynamics(dynamics, config, dirs,
                                    x=x, steps_dict=steps_dict,
+                                   custom_betas=custom_betas,
                                    save_metrics=save_metrics)
     logger.rule(f'DONE TRAINING. TOOK: {time.time() - t0:.4f}')
     logger.info(f'Training took: {time.time() - t0:.4f}')
@@ -670,6 +672,7 @@ def train_dynamics(
         x: tf.Tensor = None,
         steps_dict: dict[str, int] = None,
         save_metrics: bool = True,
+        custom_betas: Union[list, np.ndarray] = None,
 ) -> tuple[tf.Tensor, DataContainer]:
     """Train model."""
     configs = inputs['configs']
@@ -710,11 +713,17 @@ def train_dynamics(
     x = inputs.get('x', xr) if x is None else x
     assert x is not None
 
-    betas = np.array(inputs.get('betas', None))
-    assert betas is not None and betas.shape[0] > 0
+    if custom_betas is None:
+        betas = np.array(inputs.get('betas', None))
+        assert betas is not None and betas.shape[0] > 0
 
-    steps = np.array(inputs.get('steps'))
-    assert steps is not None and steps.shape[0] > 0
+        steps = np.array(inputs.get('steps'))
+        assert steps is not None and steps.shape[0] > 0
+    else:
+        betas = np.array(custom_betas)
+        start = dynamics.optimizer.iterations
+        nsteps = len(betas)
+        steps = np.arange(start, start + nsteps)
 
     dirs = inputs.get('dirs') if dirs is None else dirs
     assert dirs is not None
@@ -780,6 +789,7 @@ def train_dynamics(
     logdir = dirs['log_dir']
     data_dir = dirs['data_dir']
     logfile = dirs['log_file']
+    logfile = os.path.join(logdir, 'training', 'train_log.txt')
 
     assert x is not None
     assert manager is not None
@@ -807,6 +817,8 @@ def train_dynamics(
                 manager.save()
                 mstr = f'Checkpoint saved to: {manager.latest_checkpoint}'
                 logger.info(mstr)
+                with open(logfile, 'w') as f:
+                    f.writelines('\n'.join(data_strs))
                 # -- Save train_data and free consumed memory --------
                 train_data.save_and_flush(data_dir, logfile,
                                           rank=RANK, mode='a')
@@ -818,17 +830,17 @@ def train_dynamics(
         # -- Print current training state and metrics ---------------
         if should_print(step):
             train_data.update(step, metrics)
-            if step % 5000 == 0:
-                pre = [f'step={step}/{total_steps}']
-                keep_ = keep + ['xeps_start', 'xeps_mid', 'xeps_end',
-                                'veps_start', 'veps_mid', 'veps_end']
-                data_str = logger.print_metrics(metrics, pre=pre, keep=keep_)
-            else:
-                keep_ = ['step', 'dt', 'loss', 'accept_prob', 'beta',
-                         'dq_int', 'dq_sin', 'dQint', 'dQsin', 'plaqs', 'p4x4']
-                pre = [f'step={step}/{total_steps}']
-                data_str = logger.print_metrics(metrics, window=50,
-                                                pre=pre, keep=keep_)
+            #if step % 5000 == 0:
+            #    pre = [f'step={step}/{total_steps}']
+            #    keep_ = keep + ['xeps_start', 'xeps_mid', 'xeps_end',
+            #                    'veps_start', 'veps_mid', 'veps_end']
+            #    data_str = logger.print_metrics(metrics, pre=pre, keep=keep_)
+            #else:
+            keep_ = ['step', 'dt', 'loss', 'accept_prob', 'beta',
+                     'dq_int', 'dq_sin', 'dQint', 'dQsin', 'plaqs', 'p4x4']
+            pre = [f'step={step}/{total_steps}']
+            data_str = logger.print_metrics(metrics, window=50,
+                                            pre=pre, keep=keep_)
 
             data_strs.append(data_str)
 
@@ -854,8 +866,7 @@ def train_dynamics(
         manager.save()
         logger.log(f'Checkpoint saved to: {manager.latest_checkpoint}')
 
-        logfile = os.path.join(logdir, 'training', 'train_log.txt')
-        with open(logfile, 'a') as f:
+        with open(logfile, 'w') as f:
             f.writelines('\n'.join(data_strs))
 
         if save_metrics:
