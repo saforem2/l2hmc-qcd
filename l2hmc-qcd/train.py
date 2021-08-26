@@ -17,6 +17,7 @@ import contextlib
 from pathlib import Path
 from typing import Any, Union
 import tensorflow as tf
+from config import PI
 
 
 #  try:
@@ -99,9 +100,28 @@ def dict_to_str(d):
 def main(configs: dict[str, Any]):
     """Main method for training."""
     #  tf.keras.backend.set_floatx('float32')
+    import numpy as np
+    custom_betas = None
+    if configs.get('discrete_beta', False):
+        b0 = configs.get('beta_init', None)  # type: float
+        b1 = configs.get('beta_final', None)  # type: float
+        db = b1 - b0
+        #  per_step = (b1 - b0) // configs.get('train_steps', None)
+        per_step = int(configs.get('train_steps', None) // (b1 + 1 - b0))
+        custom_betas = []
+        for b in range(int(b0), int(b1+1)):
+            betas_ = b * np.ones(per_step)
+            custom_betas.append(betas_)
+
+        custom_betas = np.stack(np.array(custom_betas))
+        custom_betas = tf.convert_to_tensor(custom_betas.flatten(),
+                                            dtype=tf.keras.backend.floatx())
+        logger.info(f'Using discrete betas!!!')
+        logger.info(f'custom_betas: {custom_betas}')
 
     # -- Train model ----------------------------------------------------
-    train_out = train(configs=configs, make_plots=True)
+    train_out = train(configs=configs, make_plots=True,
+                      custom_betas=custom_betas)
     x = train_out.x
     dynamics = train_out.dynamics
     configs = train_out.configs
@@ -111,15 +131,18 @@ def main(configs: dict[str, Any]):
     # -- Run inference on trained model ---------------------------------
     run_steps = configs.get('run_steps', 20000)
     if run_steps > 0:
+        x = tf.random.uniform(x.shape, *(-PI, PI))
         beta = configs.get('beta_final')
-        nchains = configs.get('num_chains', configs.get('nchains', 16))
-        if configs.get('small_batch', False):
-            batch_size = 256
-            old_shape = configs['dynamics_config']['x_shape']
-            new_shape = (batch_size, *old_shape[1:])
-            configs['dynamics_config']['x_shape'] = new_shape
-            dynamics = build_dynamics(configs)
-            x = x[:batch_size]
+        nchains = configs.get('num_chains', configs.get('nchains', None))
+        if nchains is not None:
+            x = x[:nchains]
+        #  if configs.get('small_batch', False):
+        #      batch_size = 256
+        #      old_shape = configs['dynamics_config']['x_shape']
+        #      new_shape = (batch_size, *old_shape[1:])
+        #      configs['dynamics_config']['x_shape'] = new_shape
+        #      dynamics = build_dynamics(configs)
+        #      x = x[:batch_size]
 
         _ = run(dynamics, configs, x, beta=beta, make_plots=True,
                 therm_frac=0.1, num_chains=nchains, save_x=False)
