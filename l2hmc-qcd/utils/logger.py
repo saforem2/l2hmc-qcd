@@ -55,15 +55,15 @@ def strformat(k, v, window: int = 0):
                 avgd = np.mean(v[-window:])
             else:
                 avgd = np.mean(v)
-            outstr = f'{str(k)}={avgd:<5.4g}'
+            outstr = f'{str(k)}={avgd:<4.3f}'
         else:
             if isinstance(v, float):
-                outstr = f'{str(k)}={v:<5.4g}'
+                outstr = f'{str(k)}={v:<4.3f}'
             else:
                 try:
-                    outstr = f'{str(k)}={v:<5g}'
+                    outstr = f'{str(k)}={v:<4f}'
                 except ValueError:
-                    outstr = f'{str(k)}={v:<5}'
+                    outstr = f'{str(k)}={v:<4}'
     return outstr
 
 
