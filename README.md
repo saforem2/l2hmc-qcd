@@ -4,18 +4,16 @@
 
 <!---![HitCount] (http://hits.dwyl.com/saforem2/l2hmc-qcd.svg)--->
 
----
 
- :white_check_mark:   Accepted as a contribution to the [Deep Learning for Simulation (SimDL) Workshop](https://simdl.github.io/overview/) at ICLR 2021 🎊 :🎉 
+ ## 📒 [Example Notebook](./l2hmc-qcd/notebooks/l2hmc-qcd.ipynb)
 
-- **Paper**: [arXiv:2105.03418](https://simdl.github.io/files/57.pdf)
-- **Poster**: [bit.ly/l2hmc_poster](https://www.bit.ly/l2hmc_poster)
 
+- [x]   Accepted to the [Deep Learning for Simulation (SimDL) Workshop](https://simdl.github.io/overview/) at **ICLR 2021**
+  - 📚 : [arXiv:2105.03418](https://arxiv.org/abs/2105.03418)  
+  - 📊 : [poster](https://www.bit.ly/l2hmc_poster)
 ---
 
 ## Overview
-
-**Note:** An end-to-end example of how to run training + inference can be found in [this notebook](l2hmc-qcd/notebooks/complete_example_2021_01_26.ipynb).
 
 The L2HMC algorithm aims to improve upon [HMC](https://en.wikipedia.org/wiki/Hamiltonian_Monte_Carlo) by optimizing a carefully chosen loss function which is designed to minimize autocorrelations within the Markov Chain, thereby improving the efficiency of the sampler.
 
