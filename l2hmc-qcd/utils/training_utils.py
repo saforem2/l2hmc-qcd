@@ -642,6 +642,11 @@ def trace_train_step(
     with writer.as_default():
         tf.summary.trace_export(name='dynamics_train_step', step=0,
                                 profiler_outdir=outdir)
+    #  for step in range(3):
+    #      with tf.profiler.experimental.Trace('train', step_num=step, _r=1):
+    #          tf.profiler.experimental.start(logdir=outdir)
+    #          x, metrics = dynamics.train_step((x, beta))
+
 
 
 def run_profiler(
@@ -654,10 +659,11 @@ def run_profiler(
     x, beta = inputs
     beta = tf.constant(beta)
     metrics = None
-    for step in range(steps):
-        with tf.profiler.experimental.Trace('train', step_num=step, _r=1):
-            tf.profiler.experimental.start(logdir=logdir)
-            x, metrics = dynamics.train_step((x, beta))
+    tf.profiler.experimental.start(logdir=logdir)
+    x, metrics = dynamics.train_step((x, beta))
+    tf.profiler.experimental.stop(save=True)
+    #  for step in range(steps):
+        #  with tf.profiler.experimental.Trace('train', step_num=step, _r=1):
 
     logger.debug(f'Done!')
 
@@ -750,14 +756,15 @@ def train_dynamics(
 
     # -- Run profiler? ------------------------------------------------------
     if configs.get('profiler', False):
-        sdir = dirs['summary_dir']
-        trace_train_step(dynamics,
-                         graph=True,
-                         profiler=True,
-                         outdir=sdir,
-                         writer=writer)
-        #  x, metrics = run_profiler(dynamics, (x, betas[0]),
-        #                            logdir=sdir, steps=10)
+        if RANK == 0:
+            sdir = dirs['summary_dir']
+            #  trace_train_step(dynamics,
+            #                   graph=True,
+            #                   profiler=True,
+            #                   outdir=sdir,
+            #                   writer=writer)
+            x, metrics = run_profiler(dynamics, (x, betas[0]),
+                                      logdir=sdir, steps=3)
     else:
         x, metrics = dynamics.train_step((x, betas[0]))
 
