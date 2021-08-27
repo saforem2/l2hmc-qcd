@@ -411,11 +411,11 @@ def test(make_plots: bool = False, with_comparisons: bool = False):
     sep_out = test_separate_networks(sep_configs,
                                      make_plots=make_plots,
                                      custom_betas=betas)
+    sep_configs['profiler'] = False
     if with_comparisons:
         test_aux_weight(configs, make_plots=make_plots, custom_betas=betas)
         test_mixed_loss(configs, make_plots=make_plots, custom_betas=betas)
 
-    sep_configs['profiler'] = False
 
     sep_configs['train_steps'] += 10
     sep_configs['restore_from'] = sep_out.train.logdir
