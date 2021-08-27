@@ -32,7 +32,7 @@ from utils.autocorr import calc_tau_int_vs_draws
 #  from utils.file_io import timeit
 from utils.logger import Logger
 from utils.logger_config import in_notebook
-from dynamics.gauge_dynamics import GaugeDynamics
+#  from dynamics.gauge_dynamics import GaugeDynamics
 
 #  TF_FLOAT = FLOATS[tf.keras.backend.floatx()]
 #  NP_FLOAT = NP_FLOATS[tf.keras.backend.floatx()]
@@ -546,7 +546,7 @@ def get_params_from_configs(configs: dict):
 
 
 def plot_data(
-        data_container: "DataContainer",  # noqa:F821
+        data_container: DataContainer, #  "DataContainer",  # noqa:F821
         configs: dict,
         out_dir: str = None,
         therm_frac: float = 0,
@@ -668,6 +668,14 @@ def plot_data(
 
         arr = np.array(val)
         steps = logging_steps * np.arange(len(arr))
+
+        if therm_frac > 0:
+            if logging_steps == 1:
+                arr, steps = therm_arr(arr, therm_frac=therm_frac)
+            else:
+                drop = int(therm_frac * arr.shape[0])
+                arr = arr[drop:]
+                steps = steps[drop:]
 
         if logging_steps == 1 and therm_frac > 0:
             arr, steps = therm_arr(arr, therm_frac=therm_frac)
