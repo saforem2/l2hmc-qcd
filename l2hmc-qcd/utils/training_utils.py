@@ -63,6 +63,13 @@ PlotData = plotter.LivePlotData
 
 logger = Logger()
 
+OPTIONS = tf.profiler.experimental.ProfilerOptions(
+    host_tracer_level=2,
+    python_tracer_level=1,
+    device_tracer_level=1,
+    delay_ms=None,
+)
+
 def update_plots(
         history: dict,
         plots: dict,
@@ -659,12 +666,15 @@ def run_profiler(
     x, beta = inputs
     beta = tf.constant(beta)
     metrics = None
-    tf.profiler.experimental.start(logdir=logdir)
-    x, metrics = dynamics.train_step((x, beta))
-    tf.profiler.experimental.stop(save=True)
-    #  for step in range(steps):
-        #  with tf.profiler.experimental.Trace('train', step_num=step, _r=1):
+    for _ in range(steps):
+        x, metrics = dynamics.train_step((x, beta))
 
+    tf.profiler.experimental.start(logdir=logdir, options=OPTIONS)
+    for step in range(steps):
+        with tf.profiler.experimental.Trace('train', step_num=step, _r=1):
+            x, metrics = dynamics.train_step((x, beta))
+
+    tf.profiler.experimental.stop(save=True)
     logger.debug(f'Done!')
 
     return x, metrics
@@ -764,7 +774,7 @@ def train_dynamics(
             #                   outdir=sdir,
             #                   writer=writer)
             x, metrics = run_profiler(dynamics, (x, betas[0]),
-                                      logdir=sdir, steps=3)
+                                      logdir=sdir, steps=5)
     else:
         x, metrics = dynamics.train_step((x, betas[0]))
 
