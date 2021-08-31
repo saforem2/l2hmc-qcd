@@ -487,7 +487,7 @@ def parse_configs(configs: dict[str, Any], debug: bool = False):
         fstr += 'HMC_'
 
     train_steps = configs.get('train_steps', 1e5)
-    if debug or 0 < train_steps < 1e4:
+    if debug or 0 < train_steps < 2e4:
         fstr += 'DEBUG_'
 
     x_shape = config.get('x_shape', None)
