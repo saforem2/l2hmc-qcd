@@ -45,6 +45,7 @@ PLOT_STEPS = 10
 DEFAULT_INTEROP = int(os.cpu_count() / 4)
 DEFAULT_INTRAOP = int(os.cpu_count() / 4)
 
+tf.random.set_seed(1234)
 tf.config.threading.set_inter_op_parallelism_threads(DEFAULT_INTEROP)
 tf.config.threading.set_intra_op_parallelism_threads(DEFAULT_INTRAOP)
 
