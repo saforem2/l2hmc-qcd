@@ -12,17 +12,27 @@ import warnings
 from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from typing import Any, Union
+from config import PROJECT_DIR
 
 import joblib
 import numpy as np
 import tensorflow as tf
 from rich import get_console
+import logging
+import logging.config
 
-from utils.logger_config import in_notebook
-from utils.logger_config import logger as log
+from rich.logging import RichHandler
+from utils.log_config import logging_config
+
+#  from utils.logger_config import in_notebook
+#  from utils.logger_config import logger as log
 
 
-WIDTH, _ = shutil.get_terminal_size(fallback=(156, 50))
+#  WIDTH, _ = shutil.get_terminal_size(fallback=(156, 50))
+#  logging.config.fileConfig(Path(PROJECT_DIR).joinpath('logging.config'))
+logging.config.dictConfig(logging_config)
+log = logging.getLogger('root')
+log.handlers[0] = RichHandler(markup=True, show_path=False)
 
 def get_timestamp(fstr=None):
     """Get formatted timestamp."""
@@ -67,6 +77,21 @@ def strformat(k, v, window: int = 0):
     return outstr
 
 
+def in_notebook():
+    """Check if we're currently in a jupyter notebook."""
+    try:
+        # pylint:disable=import-outside-toplevel
+        from IPython import get_ipython
+        try:
+            if 'IPKernelApp' not in get_ipython().config:
+                return False
+        except AttributeError:
+            return False
+    except ImportError:
+        return False
+    return True
+
+
 # noqa: E999
 # pylint:disable=too-few-public-methods,redefined-outer-name
 # pylint:disable=missing-function-docstring,missing-class-docstring
@@ -92,12 +117,12 @@ class Logger:
             from rich.console import Console as RichConsole
             from rich.theme import Theme
 
-            with_jupyter = in_notebook()
+            #  with_jupyter = in_notebook()
             console = get_console()
             width = os.environ.get('COLUMNS', 120)
             console = RichConsole(record=False, log_path=False,
-                                  force_jupyter=with_jupyter,
-                                  force_terminal=(not with_jupyter),
+                                  #  force_jupyter=with_jupyter,
+                                  #  force_terminal=(not with_jupyter),
                                   log_time_format='[%x %X] ')
                                   #  theme=Theme(theme))#, width=width)
 
