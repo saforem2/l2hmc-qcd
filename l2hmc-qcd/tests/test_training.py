@@ -36,6 +36,8 @@ from utils.hvd_init import RANK
 from utils.inference_utils import InferenceResults, run, run_hmc
 from utils.logger import Logger
 from utils.training_utils import TrainOutputs, train
+from dynamics.config import DynamicsConfig
+from network.config import ConvolutionConfig, LearningRateConfig
 
 logger = Logger()
 
@@ -60,6 +62,9 @@ def parse_args():
     parser = argparse.ArgumentParser(
         description=description,
     )
+    parser.add_argument('--configs_file', default=None, type=str,
+                        help=("""Path to `configs.json` file."""))
+
     parser.add_argument('--make_plots', action='store_true',
                         help=("""Whether or not to make plots."""))
 
@@ -101,21 +106,34 @@ def parse_args():
     return args
 
 
-def parse_test_configs(
-    configs: dict[str, Any] = None,
-    configs_fpath: str = None
-):
+def load_configs(configs_file) -> dict[str, Any]:
     """Parse `test_config.json`."""
-    if configs is None:
-        configs = get_test_configs()
-    if configs_fpath is not None:
-        with open(configs_fpath, 'rt') as f:
-            configs = json.load(f)
+    logger.info(f'Loading configs from: {configs_file}')
+    with open(configs_file, 'r') as f:
+        configs = json.load(f)
 
-    #  test_flags = AttrDict(dict(test_flags))
-    #  for key, val in test_flags.items():
-    #      if isinstance(val, dict):
-    #          test_flags[key] = AttrDict(val)
+    return configs
+
+def get_configs(
+        configs_file: str = None,
+        updates: dict[str, Any] = None
+) -> dict[str, Any]:
+    """Get fresh copy of `bin/test_configs.json` for running tests."""
+    configs = load_configs(configs_file)
+
+    if updates is not None:
+        dconfig = updates.get('dynamics_config', None)
+        nconfig = updates.get('network_config', None)
+        lconfig = updates.get('lr_config', None)
+        cconfig = updates.get('conv_config', None)
+        if dconfig is not None:
+            configs['dynamics_config'].update(dconfig)
+        if nconfig is not None:
+            configs['network_config'].update(nconfig)
+        if lconfig is not None:
+            configs['lr_config'].update(lconfig)
+        if cconfig is not None:
+            configs['conv_config'].update(cconfig)
 
     return configs
 
@@ -215,9 +233,7 @@ def test_separate_networks(
     t0 = time.time()
     logger.info(f'Testing separate networks')
     configs_ = dict(copy.deepcopy(configs))
-    configs_['hmc_steps'] = 0
     configs_['dynamics_config']['separate_networks'] = True
-    configs_['compile'] = False
     train_out = train(configs_, make_plots=make_plots,
                       verbose=False, num_chains=4, **kwargs)
     x = train_out.x
@@ -260,119 +276,42 @@ def test_resume_training(
     return TestOutputs(train_out, run_out)
 
 
-def get_test_configs(updates: dict[str, Any] = None) -> dict[str, Any]:
-    """Get fresh copy of `bin/test_configs.json` for running tests."""
-    fpath = Path(BIN_DIR).joinpath('test_configs.json')
-    with open(fpath, 'r') as f:
-        configs = json.load(f)
-
-    if updates is not None:
-        dconfig = updates.get('dynamics_config', None)
-        nconfig = updates.get('network_config', None)
-        lconfig = updates.get('lr_config', None)
-        cconfig = updates.get('conv_config', None)
-        if dconfig is not None:
-            configs['dynamics_config'].update(dconfig)
-        if nconfig is not None:
-            configs['network_config'].update(nconfig)
-        if lconfig is not None:
-            configs['lr_config'].update(lconfig)
-        if cconfig is not None:
-            configs['conv_config'].update(cconfig)
-
-    return configs
-
-#
-#  @dataclass
-#  class Configs:
-#      train_config: TrainConfig
-#
-#
-#  @dataclass
-#  class TrainConfig:
-#      log_dir: str = None
-#      ensure_new: bool = False
-#      profiler: bool = False
-#      beta_init: float = 1.
-#      beta_final: float = 1.
-#      clip_val: float = 0.0
-#      loss_scale: float = 0.1
-#      min_lr: float = 1e-5
-#      patience: int = 1
-#      hmc_steps: int = 10
-#      md_steps: int = 100
-#      steps_per_epoch: int = 5
-#      train_steps: int = 500
-#      print_steps: int = 10
-#      save_steps: int = 50
-#      logging_steps: int = 10
-#      run_steps: int = 500
-#
-#  @dataclass
-#  class StepsConfig:
-#      train: int          # -- num training steps --------------
-#      run: int            # -- num inference steps -------------
-#      md: int = 0         # -- Steps prior to training to avoid stuck chains
-#      hmc: int = 0        # -- Steps prior to training to `warm up` from HMC
-#      print: int = 1      # -- How frequently metrics are printed
-#      logging: int = 1    # -- How frequently metrics are logged to TensorBoard
-#      per_epoch: int = 1  # -- How long to wait inside a plateau before reducing lr
-#
-#
-#  @dataclass DynamicsConfig:
-#      verbose: bool = False
-#      eps: float = 0.001
-#      num_steps: int = 5
-#      hmc: bool = False
-#      use_ncp: bool = True
-#      eps_fixed: bool = False
-#      aux_weight: float = 0.
-#      plaq_weight: float = 0.
-#      charge_weight: float = 0.01
-#      zero_init: bool = False
-#      separate_networks: bool = True
-#      use_conv_net: bool = False
-#      use_mixed_loss: bool = False
-#      directional_updates: bool = False
-#      combined_updates: bool = False
-#      use_scattered_xnet_update: False
-#      use_tempered_traj: bool = False
-#      gauge_eq_masks: bool = False
-#      x_shape: tuple[int] = (None, 16, 16, 2)
-#      log_dir: None
-#
-#
-#  @dataclass
-#  class NetworkConfig:
-#      units: list[int]
-#      activation_fn: str = 'relu'
-#      dropout_prob: float = 0.05
-#      use_batch_norm: bool = True
-#
-#
-
-def test_aux_weight(configs: dict[str, Any] = None, **kwargs):
+def test_aux_weight(
+        configs: dict[str, Any] = None,
+        configs_file: str = None,
+        **kwargs
+) -> TestOutputs:
     if configs is None:
-        configs = get_test_configs()
+        configs = get_configs(configs_file)
 
     configs_ = copy.deepcopy(configs)
 
+    # get current value of aux_weight and flip it in new configs
     aw = configs['dynamics_config']['aux_weight']  # type: float
     configs_['dynamics_config']['aux_weight'] = float(not bool(aw))
+
+    # determine if we're using a single or separate networks
     sep_nets = configs['dynamics_config']['separate_networks']  # type: bool
     test_fn = test_separate_networks if sep_nets else test_single_network
 
     return test_fn(configs_, **kwargs)
 
-def test_mixed_loss(configs: dict[str, Any] = None, **kwargs):
+
+def test_mixed_loss(
+        configs: dict[str, Any] = None,
+        configs_file: str = None,
+        **kwargs
+) -> TestOutputs:
     if configs is None:
-        configs = get_test_configs()
+        configs = get_configs(configs_file)
 
     configs_ = copy.deepcopy(configs)
+    # get current value of use_mixed_loss and flip it in new configs
     mixed_loss = configs['dynamics_config']['use_mixed_loss']  # type: bool
-    sep_nets = configs['dynamics_config']['separate_networks']
+    configs_['dynamics_config']['use_mixed_loss'] = (not mixed_loss)
 
-    configs_['dynamics_config']['use_mixed_loss'] = not mixed_loss
+    # determine if we're using a single or separate networks
+    sep_nets = configs['dynamics_config']['separate_networks']
     test_fn = test_separate_networks if sep_nets else test_single_network
 
     return test_fn(configs_, **kwargs)
@@ -389,84 +328,81 @@ def setup_betas(configs):
 
     betas = np.stack(np.array(betas))
     betas = tf.convert_to_tensor(betas.flatten(),
-                                        dtype=tf.keras.backend.floatx())
+                                 dtype=tf.keras.backend.floatx())
     return betas
 
 
-def test(make_plots: bool = False, with_comparisons: bool = False):
+
+def test(
+    configs_file: str = None,
+    make_plots: bool = False,
+    with_comparisons: bool = False
+):
     """Run tests."""
     t0 = time.time()
-    configs = parse_test_configs()
+    configs = get_configs(configs_file=configs_file)
+
     betas = None
     if configs.get('discrete_beta', configs.get('discrete_betas', False)):
         betas = setup_betas(configs)
-
 
     sep_configs = copy.deepcopy(configs)
     conv_configs = copy.deepcopy(configs)
     single_configs = copy.deepcopy(configs)
 
-    sep_configs = get_test_configs()
-    sep_configs['profiler'] = True
     sep_out = test_separate_networks(sep_configs,
                                      make_plots=make_plots,
                                      custom_betas=betas)
-    sep_configs['profiler'] = False
     if with_comparisons:
-        test_aux_weight(configs, make_plots=make_plots, custom_betas=betas)
-        test_mixed_loss(configs, make_plots=make_plots, custom_betas=betas)
+        _ = test_aux_weight(configs=sep_configs,
+                            make_plots=make_plots,
+                            custom_betas=betas)
+        _ = test_mixed_loss(configs=sep_configs,
+                            make_plots=make_plots,
+                            custom_betas=betas)
 
+    else:
+        sep_configs['train_steps'] += 10
+        sep_configs['restore_from'] = sep_out.train.logdir
+        sep_configs['log_dir'] = None
+        _ = test_resume_training(sep_configs,
+                                 make_plots=make_plots,
+                                 custom_betas=betas)
 
-    sep_configs['train_steps'] += 10
-    sep_configs['restore_from'] = sep_out.train.logdir
-    sep_configs['log_dir'] = None
-    _ = test_resume_training(sep_configs,
-                             make_plots=make_plots,
-                             custom_betas=betas)
-
-    bf = sep_configs.get('beta_final')
-    beta_final = bf + 1
-    sep_configs['beta_final'] = beta_final
-    logger.log(f'Increasing beta: {bf} -> {beta_final}')
-    sep_configs['ensure_new'] = True
-    sep_configs['beta_final'] = sep_configs['beta_final'] + 1
-
-    _ = test_resume_training(sep_configs,
-                             make_plots=make_plots,
-                             custom_betas=betas)
+        bf = sep_configs.get('beta_final', None)  # type: int
+        beta_final = bf + 1
+        sep_configs['beta_final'] = beta_final  # try changing beta final
+        logger.log(f'Increasing beta: {bf} -> {beta_final}')
+        sep_configs['ensure_new'] = True
+        _ = test_resume_training(sep_configs,
+                                 make_plots=make_plots,
+                                 custom_betas=betas)
 
     single_net_out = test_single_network(single_configs,
                                          make_plots=make_plots,
                                          custom_betas=betas)
-    single_configs['restore_from'] = single_net_out.train.logdir
-    single_configs['dynamics_config']['separate_networks'] = False
-    _ = test_resume_training(single_configs,
-                             make_plots=True,
-                             custom_betas=betas)
-
-    configs['ensure_new'] = True
-    configs['log_dir'] = None
-    _ = test_separate_networks(configs,
-                               make_plots=True,
-                               custom_betas=betas)
-
-    configs['ensure_new'] = True
-    configs['log_dir'] = None
-    _ = test_single_network(configs,
-                            make_plots=True,
+    if with_comparisons:
+        _ = test_aux_weight(configs=single_configs,
+                            make_plots=make_plots,
                             custom_betas=betas)
+        _ = test_mixed_loss(configs=single_configs,
+                            make_plots=make_plots,
+                            custom_betas=betas)
+    else:
+        single_configs['restore_from'] = single_net_out.train.logdir
+        single_configs['dynamics_config']['separate_networks'] = False
+        _ = test_resume_training(configs=single_configs,
+                                 make_plots=True,
+                                 custom_betas=betas)
 
     _ = test_conv_net(conv_configs, make_plots=make_plots, custom_betas=betas)
-
-    updates = {
-        'dynamics-config': {
-            'aux_weight': 1.0,
-            'use_mixed_loss': True,
-        },
-    }
-    configs = get_test_configs(updates)
-    _ = test_conv_net(configs, make_plots=make_plots, custom_betas=betas)
-    _ = test_separate_networks(configs, make_plots=True, custom_betas=betas)
+    if with_comparisons:
+        _ = test_aux_weight(conv_configs,
+                            make_plots=make_plots,
+                            custom_betas=betas)
+        _ = test_mixed_loss(conv_configs,
+                            make_plots=make_plots,
+                            custom_betas=betas)
 
     if RANK  == 0:
         _ = test_hmc_run(configs, make_plots=True)
@@ -474,7 +410,7 @@ def test(make_plots: bool = False, with_comparisons: bool = False):
     logger.info(f'All tests passed! Took: {time.time() - t0:.4f} s')
 
 
-def main(args, flags=None):
+def main(args, configs: dict[str, Any] = None, configs_file: str = None):
     """Main method."""
     fn_map = {
         'test_hmc_run': test_hmc_run,
@@ -483,15 +419,15 @@ def main(args, flags=None):
         'test_resume_training': test_resume_training,
         'test_conv_net': test_conv_net,
     }
-    if flags is None:
-        flags = parse_test_configs()
+    if configs is None:
+        configs = get_configs(configs_file)
 
     for arg, fn in fn_map.items():
         if args.__dict__.get(arg):
             if arg == 'test_resume_training':
                 _ = fn(args.log_dir)
             else:
-                _ = fn(flags)
+                _ = fn(configs)
 
 
 if __name__ == '__main__':
@@ -499,7 +435,9 @@ if __name__ == '__main__':
     if ARGS.horovod:
         ARGS.horovod = True
 
-    _ = (
-        test(ARGS.make_plots, ARGS.with_comparisons) if ARGS.test_all
-        else main(ARGS)
-    )
+    if ARGS.test_all:
+        test(configs_file=ARGS.configs_file,
+             make_plots=ARGS.make_plots,
+             with_comparisons=ARGS.with_comparisons)
+    else:
+        main(ARGS)
