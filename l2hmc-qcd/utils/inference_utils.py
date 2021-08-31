@@ -537,7 +537,7 @@ def run_dynamics(
             summarize_dict(metrics, step, prefix='testing')
 
         if step % print_steps == 0:
-            pre = [f'step={step}/{steps[-1]}']
+            pre = [f'{step}/{steps[-1]}']
             ms = run_data.print_metrics(metrics, window=50,
                                         pre=pre, keep=keep_)
             #  ms = logger.print_metrics(metrics, window=50, pre=pre, keep=keep_)
