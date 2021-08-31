@@ -64,6 +64,36 @@ def vs_init(factor, kernel_initializer=None):
     )
 
 
+class CustomDense(Layer):
+    def __init__(
+            self,
+            units: int,
+            scale: float = 1.,
+            activation: str = None,
+            **kwargs,
+    ):
+        super(CustomDense, self).__init__(**kwargs)
+        self.units = units
+        self.scale = scale
+        kinit = tf.keras.initializers.VarianceScaling(
+            mode='fan_in', scale=2.*self.scale,
+            distribution='truncated_normal',
+        )
+        self.layer = Dense(self.units,
+                           name=self.name,
+                           activation=activation,
+                           kernel_initializer=kinit)
+
+    def get_config(self):
+        config = super(CustomDense, self).get_config()
+        config.update({'units': self.units, 'scale': self.scale})
+        return config
+
+    def call(self, x: tf.Tensor):
+        return self.layer(x)
+
+
+
 # pylint:disable=unused-argument
 class PeriodicPadding(Layer):
     """Implements a PeriodicPadding as a `tf.keras.layers.Layer` object."""
@@ -130,23 +160,26 @@ def get_generic_network(
         #  t_input = get_input('t')
 
         #  x = Dense(h1,
-        x = custom_dense(h1, factor/2., f'{name}_x')(x_input)
-        v = custom_dense(h1, 1./2., f'{name}_v')(v_input)
+        x = CustomDense(h1, factor/2., name=f'{name}_x')(x_input)
+        #  x = custom_dense(h1, factor/2., f'{name}_x')(x_input)
+        v = CustomDense(h1, 1./2., name=f'{name}_v')(v_input)
         #  t = custom_dense(h1, 1./3., f'{name}_t')(t_input)
         z = Add()([x, v])
         #  z = layers.Add()([x, v, t])
         z = keras.activations.relu(z)
-        z = custom_dense(h2, 1., f'{name}_h1')(z)
-        z = custom_dense(h2, 1., f'{name}_h2')(z)
+        z = CustomDense(h2, 1., name=f'{name}_h1')(z)
+        z = CustomDense(h2, 1., name=f'{name}_h2')(z)
+        #  z = custom_dense(h2, 1., name=f'{name}_h1')(z)
+        #  z = custom_dense(h2, 1., name=f'{name}_h2')(z)
         if net_config.dropout_prob > 0:
             z = Dropout(net_config.dropout_prob)(z)
 
-        transl = custom_dense(xdim, 0.001, name=f'{name}_transl')(z)
+        transl = CustomDense(xdim, 0.001, name=f'{name}_transl')(z)
         scale = tf.exp(scale_coeff) * tf.keras.activations.tanh(
-            custom_dense(xdim, 0.001, name=f'{name}_scale')(z)
+            CustomDense(xdim, 0.001, name=f'{name}_scale')(z)
         )
         transf = tf.exp(transf_coeff) * tf.keras.activations.tanh(
-            custom_dense(xdim, 0.001, name=f'{name}_transformation')(z)
+            CustomDense(xdim, 0.001, name=f'{name}_transformation')(z)
         )
 
         #  model = keras.Model(
@@ -165,7 +198,7 @@ def get_generic_network(
 def get_gauge_network(
         x_shape: tuple,
         net_config: NetworkConfig,
-        kernel_initializer: str = None,
+        #  kernel_initializer: str = None,
         conv_config: ConvolutionConfig = None,
         input_shapes: dict[str, tuple] = None,
         factor: float = 1.,
@@ -199,7 +232,7 @@ def get_gauge_network(
 
 
     def sub_s(s):
-        return f'{name}_{s}'
+        return f'{name}/{s}'
 
     def get_input(i):
         #  return keras.Input(input_shapes[s], sub_s(s), batch_size)
@@ -231,18 +264,14 @@ def get_gauge_network(
                 x = tf.reshape(x_input, shape=(-1, T, X, d))
 
             x = PeriodicPadding(f1 - 1)(x)
-            x = Conv2D(n1, f1, activation='relu',
-                              name=f'{name}/xconv1')(x)
-            x = Conv2D(n2, f2, activation='relu',
-                              name=f'{name}/xconv2')(x)
-            x = MaxPooling2D(p1, name=f'{name}_xpool')(x)
-            x = Conv2D(n2, f2, activation='relu',
-                              name=f'{name}/xconv3')(x)
-            x = Conv2D(n1, f1, activation='relu',
-                              name=f'{name}/xconv4')(x)
+            x = Conv2D(n1, f1, activation='relu', name=f'{name}/xconv1')(x)
+            x = Conv2D(n2, f2, activation='relu', name=f'{name}/xconv2')(x)
+            x = MaxPooling2D(p1, name=f'{name}/xpool')(x)
+            x = Conv2D(n2, f2, activation='relu', name=f'{name}/xconv3')(x)
+            x = Conv2D(n1, f1, activation='relu', name=f'{name}/xconv4')(x)
             x = Flatten()(x)
             if conv_config.use_batch_norm:
-                x = BatchNormalization(-1, name=f'{name}_batch_norm')(x)
+                x = BatchNormalization(-1, name=f'{name}/batch_norm')(x)
         else:
             x = Flatten()(x_input)
 
@@ -256,33 +285,40 @@ def get_gauge_network(
         args = {
             'x': {
                 'units': net_config.units[0],
-                'name': f'{name}/x',
-                'kernel_initializer': get_kinit(factor/2.)
+                'scale': factor / 2.,
+                'name': f'{name}/xlayer',
+                #  'kernel_initializer': get_kinit(factor/2.)
             },
             'v': {
                 'units': net_config.units[0],
-                'name': f'{name}/v',
-                'kernel_initializer': get_kinit(1./2.)
+                'scale': 1. / 2.,
+                'name': f'{name}/vlayer',
+                #  'kernel_initializer': get_kinit(1./2.)
             },
             'scale': {
                 'units': xdim,
+                'scale': 0.001 / 2.,
                 'name': f'{name}/scale',
-                'kernel_initializer': get_kinit(0.001/2.),
+                #  'kernel_initializer': get_kinit(0.001/2.),
             },
             'transl': {
                 'units': xdim,
+                'scale': 0.001 / 2.,
                 'name': f'{name}/transl',
-                'kernel_initializer': get_kinit(0.001/2.),
+                #  'kernel_initializer': get_kinit(0.001/2.),
             },
             'transf': {
                 'units': xdim,
+                'scale': 0.001 / 2.,
                 'name': f'{name}/transf',
-                'kernel_initializer': get_kinit(0.001/2.),
+                #  'kernel_initializer': get_kinit(0.001/2.),
             },
         }
 
-        v = Dense(**args['v'])(v_input)
-        x = Dense(**args['x'])(x)
+        v = CustomDense(**args['v'])(v_input)
+        x = CustomDense(**args['x'])(x)
+        #  v = Dense(**args['v'])(v_input)
+        #  x = Dense(**args['x'])(x)
 
         #  x = custom_dense(*args['x'])(x)
         #  v = custom_dense(*args['v'])(v_input)
@@ -294,10 +330,15 @@ def get_gauge_network(
         # TODO: Replace 1./2. in custom_dense with:
         # 1 / len(net_config.units[1:])
         # ------------------------------------------
+        nlayers = len(net_config.units[1:])
+        scale = 1. / (2. * nlayers)
         for idx, units in enumerate(net_config.units[1:]):
-            z = Dense(units, name=f'{name}_h{idx}',
-                      activation=activation_fn,
-                      kernel_initializer=get_kinit(1./2.))(z)
+            z = CustomDense(units, scale=scale,
+                            name=f'{name}/h{idx}',
+                            activation=activation_fn)(z)
+            #  z = Dense(units, name=f'{name}/h{idx}',
+            #            activation=activation_fn,
+            #            kernel_initializer=get_kinit(1./2.))(z)
             #  z = custom_dense(units, 1./2., f'{name}_h{idx}',
             #                   activation=activation_fn)(z)
 
@@ -305,11 +346,11 @@ def get_gauge_network(
             z = Dropout(net_config.dropout_prob)(z)
 
         if net_config.use_batch_norm:
-            z = BatchNormalization(-1, name=f'{name}_batch_norm1')(z)
+            z = BatchNormalization(-1, name=f'{name}/batch_norm1')(z)
 
-        scale = Dense(**args['scale'], activation='tanh')(z)
-        transl = Dense(**args['transl'])(z)
-        transf = Dense(**args['transf'])(z)
+        scale = CustomDense(**args['scale'], activation='tanh')(z)
+        transl = CustomDense(**args['transl'])(z)
+        transf = CustomDense(**args['transf'], activation='tanh')(z)
         #  scale = custom_dense(*args['scale'], activation='tanh')(z)
         #  transl = custom_dense(*args['transl'])(z)
         #  transf = custom_dense(*args['transf'], activation='tanh')(z)
