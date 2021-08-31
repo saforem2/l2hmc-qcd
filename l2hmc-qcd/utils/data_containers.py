@@ -19,6 +19,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import tensorflow as tf
+import h5py
 
 from utils import SKEYS
 import utils.file_io as io
@@ -26,6 +27,7 @@ import utils.file_io as io
 from config import BASE_DIR
 from utils.attr_dict import AttrDict
 from utils.data_utils import therm_arr
+from utils.hvd_init import RANK
 from utils.plotting_utils import (set_size, make_ridgeplots, mcmc_lineplot,
                                   mcmc_traceplot, get_title_str_from_params,
                                   plot_data)
@@ -54,7 +56,7 @@ class DataContainer:
         self.dirs = dirs
         self.steps = steps
         self.steps_arr = []
-        self.data_strs = [header]
+        self.data_strs = []
         self.print_steps = print_steps
         self.data = AttrDict(defaultdict(list))
 
@@ -112,6 +114,43 @@ class DataContainer:
             logger.warning('Unable to save dataset! Continuing...')
 
         return dataset
+
+    def to_h5pyfile(self, hfile: Union[str, Path], **kwargs):
+        logger.debug(f'Saving self.data to {hfile}')
+        f = h5py.File(hfile, 'a')
+        for key, val in self.data.items():
+            arr = np.array(val)
+            if len(arr) == 0:
+                continue
+
+            if key in list(f.keys()):
+                f[key].resize((f[key].shape[0] + arr.shape[0]), axis=0)
+                f[key][-arr.shape[0]:] = arr
+            else:
+                maxshape = (None,)
+                if len(arr.shape) > 1:
+                    maxshape = (None, *arr.shape[1:])
+                f.create_dataset(key, data=arr, maxshape=maxshape, **kwargs)
+
+            #  self.data[key] = []
+
+        f.close()
+
+    def restore_data(self, hfile):
+        self.data = self.from_h5pyfile(hfile)
+
+    def from_h5pyfile(self, hfile: Union[str, Path]):
+        logger.debug(f'Loading from {hfile}')
+        f = h5py.File(hfile, 'r')
+        data = {key: f[key] for key in list(f.keys())}
+        f.close()
+
+        return data
+
+    def print_metrics(self, metrics: dict, **kwargs):
+        data_str = logger.print_metrics(metrics, **kwargs)
+        self.data_strs.append(data_str)
+        return data_str
 
     def update(self, step, metrics):
         """Update `self.data` with new values from `data`."""
@@ -236,30 +275,24 @@ class DataContainer:
 
         return AttrDict(data)
 
-    def save_data(
-            self,
-            data_dir: Union[str, Path],
-            save_dataset: bool = False,
-            skip_keys: list[str] = None,
-            rank: int = 0
-    ):
+    def save_data(self, data_dir: Union[str, Path], **kwargs):
         """Save `self.data` entries to individual files in `output_dir`."""
-        if rank != 0:
-            return
-
+        data_dir = Path(data_dir)
         io.check_else_make_dir(str(data_dir))
-        for key, val in self.data.items():
-            if skip_keys is not None:
-                if key in skip_keys:
-                    continue
-
-            out_file = os.path.join(data_dir, f'{key}.z')
-            head, tail = os.path.split(out_file)
-            io.check_else_make_dir(head)
-            io.savez(np.array(val), out_file)
-
-        if save_dataset:
-            self.save_dataset(data_dir)
+        hfile = data_dir.joinpath(f'data_rank{RANK}.hdf5')
+        self.to_h5pyfile(hfile, compression='gzip')
+        #  for key, val in self.data.items():
+        #      if skip_keys is not None:
+        #          if key in skip_keys:
+        #              continue
+        #
+        #      out_file = os.path.join(data_dir, f'{key}.z')
+        #      head, tail = os.path.split(out_file)
+        #      io.check_else_make_dir(head)
+        #      io.savez(np.array(val), out_file)
+        #
+        #  if save_dataset:
+        #      self.save_dataset(data_dir)
 
     def plot_dataset(
             self,
@@ -352,7 +385,7 @@ class DataContainer:
 
     # pylint:disable=too-many-arguments
     def save_and_flush(
-            self, data_dir=None, log_file=None, rank=0, mode='a'
+            self, data_dir=None, log_file=None, rank=0, mode='a', **kwargs
     ):
         """Call `self.save_data` and `self.flush_data_strs`."""
         if data_dir is None:
@@ -360,5 +393,8 @@ class DataContainer:
         if log_file is None:
             log_file = self.dirs.get('log_file', None)
 
-        self.save_data(data_dir, rank=rank, save_dataset=False)
+        if log_file is None:
+            log_file = Path(data_dir).joinpath('output.log')
+
+        self.save_data(data_dir, **kwargs)
         self.flush_data_strs(log_file, rank=rank, mode=mode)

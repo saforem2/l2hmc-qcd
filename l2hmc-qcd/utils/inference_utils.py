@@ -430,7 +430,10 @@ def run(
         save_times['savez_tint_data'] = time.time() - t0
 
     t0 = time.time()
-    run_data.flush_data_strs(log_file, mode='a')
+
+    logfile = os.path.join(run_dir, 'inference.log')
+    run_data.save_and_flush(data_dir=data_dir, log_file=logfile)
+    #  run_data.flush_data_strs(log_file, mode='a')
     save_times['run_data.flush_data_strs'] = time.time() - t0
 
     t0 = time.time()
@@ -441,14 +444,6 @@ def run(
     io.save_inference(run_dir, run_data)
     save_times['io.save_inference'] = time.time() - t0
 
-    if configs.get('save_run_data', True):
-        t0 = time.time()
-        run_data.save_data(data_dir)
-        save_times['run_data.save_data'] = time.time() - t0
-
-    #  tstamp = io.get_timestamp('%Y-%m-%d-%H%M%S')
-    #  infodir = os.path.join(os.getcwd(), f'profile_info_{tstamp}')
-
     profdir = os.path.join(run_dir, 'profile_info')
     io.check_else_make_dir(profdir)
     io.save_dict(plot_times, profdir, name='plot_times')
@@ -458,7 +453,6 @@ def run(
                             x=results.x, x_arr=results.x_arr,
                             run_data=results.run_data,
                             data_strs=results.data_strs)
-
 
 
 def run_dynamics(
@@ -544,7 +538,9 @@ def run_dynamics(
 
         if step % print_steps == 0:
             pre = [f'step={step}/{steps[-1]}']
-            ms = logger.print_metrics(metrics, window=50, pre=pre, keep=keep_)
+            ms = run_data.print_metrics(metrics, window=50,
+                                        pre=pre, keep=keep_)
+            #  ms = logger.print_metrics(metrics, window=50, pre=pre, keep=keep_)
             data_strs.append(ms)
 
     return InferenceResults(dynamics=dynamics, x=x, x_arr=x_arr,
