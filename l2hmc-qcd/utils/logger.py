@@ -27,6 +27,8 @@ from utils.log_config import logging_config
 #  from utils.logger_config import in_notebook
 #  from utils.logger_config import logger as log
 
+os.environ['COLUMNS'] = str(shutil.get_terminal_size((120, 24))[0])
+
 
 #  WIDTH, _ = shutil.get_terminal_size(fallback=(156, 50))
 #  logging.config.fileConfig(Path(PROJECT_DIR).joinpath('logging.config'))
