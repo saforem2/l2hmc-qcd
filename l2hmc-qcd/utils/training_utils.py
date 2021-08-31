@@ -8,9 +8,10 @@ Implements helper functions for training the model.
 """
 from __future__ import absolute_import, annotations, division, print_function
 
-import json
 import os
+import json
 import time
+import h5py
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional, Union
@@ -40,6 +41,13 @@ elif tf.__version__.startswith('2.'):
     TF_VERSION = 2
 
 PLOT_STEPS = 10
+
+DEFAULT_INTEROP = int(os.cpu_count() / 4)
+DEFAULT_INTRAOP = int(os.cpu_count() / 4)
+
+tf.config.threading.set_inter_op_parallelism_threads(DEFAULT_INTEROP)
+tf.config.threading.set_intra_op_parallelism_threads(DEFAULT_INTRAOP)
+
 
 TO_KEEP = [
     'H', 'Hf', 'plaqs', 'actions', 'charges', 'sin_charges', 'dqint', 'dqsin',
@@ -145,6 +153,8 @@ def train_hmc(
         output_dir = os.path.join(dirs['train_dir'], 'outputs')
         io.check_else_make_dir(output_dir)
         train_data.save_data(output_dir)
+        datafile = Path(output_dir).joinpath(f'data_rank{RANK}.hdf5')
+        train_data.restore_data(datafile)
 
         params = {
             'eps': dynamics.eps.numpy(),
@@ -391,6 +401,11 @@ def setup_betas(
     return tf.convert_to_tensor(betas)
 
 
+def look_for_previous(logdir):
+    parent = Path(logdir).parent
+    # TODO: Complete method !!!
+    pass
+
 # TODO: Add type annotations
 # pylint:disable=too-many-statements, too-many-branches
 def setup(
@@ -441,7 +456,6 @@ def setup(
             x = train_data.restore(datadir, step=current_step,
                                    x_shape=dynamics.x_shape,
                                    rank=RANK, local_rank=LOCAL_RANK)
-            logger.info(f'Restored `x` from:\n `{datadir}`')
         except ValueError:
             logger.warning('Unable to restore `x`, re-sampling from [-pi,pi)')
             x = tf.random.uniform(dynamics.x_shape, minval=-PI, maxval=PI)
@@ -507,17 +521,6 @@ class TrainOutputs:
     dynamics: GaugeDynamics
 
 
-
-def setup_training(
-    configs: dict[str, Any],
-    x: tf.Tensor = None,
-    num_chains: int = 32,
-    make_plots: bool = True,
-    steps_dict: dict[str, int] = None,
-    restore_data: bool = False,
-):
-    pass
-
 def train(
         configs: dict[str, Any],
         x: tf.Tensor = None,
@@ -562,7 +565,8 @@ def train(
                 io.save_dict(restored, logdir, name='restored_train_configs')
 
     # -- Train dynamics -----------------------------------------
-    logger.rule('TRAINING')
+    #  logger.rule('TRAINING')
+    logger.info(f'Starting training at: {io.get_timestamp("%x %X")}')
     t0 = time.time()
     x, train_data = train_dynamics(dynamics, config, dirs,
                                    x=x, steps_dict=steps_dict,
@@ -577,6 +581,16 @@ def train(
         train_dir = dirs['train_dir']
         io.save_dict(dict(configs), dirs['log_dir'], 'configs')
         logger.info(f'Done training model! took: {time.time() - start:.4f}s')
+        train_data.save_and_flush(dirs['data_dir'])
+
+        #  outdir = Path(train_dir)
+        #  hfile = Path(outdir).joinpath(f'data_rank{RANK}.hdf5')
+        #
+        #  outdir.mkdir(parents=True, exist_ok=True)
+        #  train_data.save_and_flush(outdir)
+
+        #  f = h5py.File(hfile, 'r')
+        #  train_data.data = AttrDict({key: f[key] for key in list(f.keys())})
 
         if make_plots:
             params = {
@@ -600,10 +614,11 @@ def train(
             logger.debug(
                 f'Time spent plotting: {dt}s = {dt // 60}m {(dt % 60):.4f}s'
             )
-
-        if save_metrics:
-            output_dir = os.path.join(train_dir, 'outputs')
-            train_data.save_data(output_dir, save_dataset=save_dataset)
+        #
+        #  if save_metrics:
+        #      output_dir = os.path.join(train_dir, 'outputs')
+        #      train_data.save_data(output_dir, save_dataset=save_dataset)
+        #  f.close()
 
         if not dynamics.config.hmc:
             dynamics.save_networks(logdir)
@@ -697,15 +712,15 @@ def train_dynamics(
     patience = configs.get('patience', 10)
     factor = configs.get('reduce_lr_factor', 0.5)
 
-    save_steps = configs.get('save_steps', 10000)
-    print_steps = configs.get('print_steps', 1000)
-    logging_steps = configs.get('logging_steps', 500)
-    steps_per_epoch = configs.get('steps_per_epoch', 1000)
+    save_steps = configs.get('save_steps', 10000)           # type: int
+    print_steps = configs.get('print_steps', 1000)          # type: int
+    logging_steps = configs.get('logging_steps', 500)       # type: int
+    steps_per_epoch = configs.get('steps_per_epoch', 1000)  # type: int
     if steps_dict is not None:
-        save_steps = steps_dict.get('save', None)
-        print_steps = steps_dict.get('print', None)
-        logging_steps = steps_dict.get('logging_steps', None)
-        steps_per_epoch = steps_dict.get('steps_per_epoch', None)
+        save_steps = steps_dict.get('save', 10000)          # type: int
+        print_steps = steps_dict.get('print', 1000)         # type: int
+        logging_steps = steps_dict.get('logging_steps', 500)       # type: int
+        steps_per_epoch = steps_dict.get('steps_per_epoch', 1000)  # type: int
 
 
     # -- Helper functions for training, logging, saving, etc. --------------
@@ -741,16 +756,16 @@ def train_dynamics(
         nsteps = len(betas)
         steps = np.arange(start, start + nsteps)
 
-    dirs = inputs.get('dirs') if dirs is None else dirs
+    dirs = inputs.get('dirs', None) if dirs is None else dirs  # type: dict
     assert dirs is not None
 
-    manager = inputs['manager']
-    ckpt = inputs['checkpoint']
-    train_data = inputs['train_data']
+    manager = inputs['manager']  # type: tf.train.CheckpointManager
+    ckpt = inputs['checkpoint']  # type: tf.train.Checkpoint
+    train_data = inputs['train_data']  # type: DataContainer
 
     #  tf.compat.v1.autograph.experimental.do_not_convert(dynamics.train_step)
 
-    # -- Setup dynamic learning rate schedule -------------------
+    # -- Setup dynamic learning rate schedule -----------------
     assert dynamics.lr_config is not None
     warmup_steps = dynamics.lr_config.warmup_steps
     reduce_lr = ReduceLROnPlateau(monitor='loss', mode='min',
@@ -760,11 +775,11 @@ def train_dynamics(
     reduce_lr.set_model(dynamics)
 
     # -- Setup summary writer -----------
-    writer = inputs.get('writer', None)  # type: tf.SummaryWriter
+    writer = inputs.get('writer', None)  # type: tf.summary.SummaryWriter
     if IS_CHIEF and writer is not None:
         writer.set_as_default()
 
-    # -- Run profiler? ------------------------------------------------------
+    # -- Run profiler? ----------------------------------------
     if configs.get('profiler', False):
         if RANK == 0:
             sdir = dirs['summary_dir']
@@ -778,7 +793,7 @@ def train_dynamics(
     else:
         x, metrics = dynamics.train_step((x, betas[0]))
 
-    # -- Run MD update to not get stuck -----------------
+    # -- Run MD update to not get stuck ----------------------
     md_steps = configs.get('md_steps', 0)
     if md_steps > 0:
         x = run_md(dynamics, (x, betas[0]), md_steps)
@@ -788,20 +803,15 @@ def train_dynamics(
     if len(steps) != len(betas):
         betas = betas[steps[0]:]
 
-    keep = ['dt', 'loss', 'accept_prob', 'beta',
-            'Hwb_start', 'Hwf_start',
-            'Hwb_mid', 'Hwf_mid',
-            'Hwb_end', 'Hwf_end',
-            'xeps', 'veps',
-            'dq', 'dq_sin',
-            'plaqs', 'p4x4',
-            'charges', 'sin_charges']
+    #  keep = ['dt', 'loss', 'accept_prob', 'beta', 'Hwb_start', 'Hwf_start',
+    #          'Hwb_mid', 'Hwf_mid', 'Hwb_end', 'Hwf_end', 'xeps', 'veps',
+    #          'dq', 'dq_sin', 'plaqs', 'p4x4', 'charges', 'sin_charges']
 
     plots = {}
     if in_notebook():
         plots = plotter.init_plots(configs, figsize=(9, 3), dpi=125)
 
-    # -- Training loop ----------------------------------------------------
+    # -- Training loop ---------------------------------------------------
     data_strs = []
     logdir = dirs['log_dir']
     data_dir = dirs['data_dir']
@@ -814,51 +824,46 @@ def train_dynamics(
     for step, beta in zip(steps, betas):
         x, metrics = train_step(x, beta)
 
-        # ---------------------------------------------------------------
+        # ----------------------------------------------------------------
         # TODO: Run inference when beta hits an integer
         # >>> beta_inf = {i: False, for i in np.arange(beta_final)}
         # >>> if any(np.isclose(beta, np.array(list(beta_inf.keys())))):
         # >>>     run_inference(...)
-        # ---------------------------------------------------------------
+        # ----------------------------------------------------------------
 
         if (step + 1) > warmup_steps and (step + 1) % steps_per_epoch == 0:
             reduce_lr.on_epoch_end(step+1, {'loss': metrics.loss})
 
-        # -- Save checkpoints and dump configs `x` from each rank ----------
+        # -- Save checkpoints and dump configs `x` from each rank --------
         if should_save(step + 1):
             train_data.update(step, metrics)
             train_data.dump_configs(x, data_dir, rank=RANK,
                                     local_rank=LOCAL_RANK)
             if IS_CHIEF:
-                # -- Save CheckpointManager -------------
+                # -- Save CheckpointManager ------------------------------
                 manager.save()
                 mstr = f'Checkpoint saved to: {manager.latest_checkpoint}'
                 logger.info(mstr)
                 with open(logfile, 'w') as f:
                     f.writelines('\n'.join(data_strs))
-                # -- Save train_data and free consumed memory --------
+                # -- Save train_data and free consumed memory ------------
                 train_data.save_and_flush(data_dir, logfile,
                                           rank=RANK, mode='a')
                 if not dynamics.config.hmc:
-                    # -- Save network weights -------------------------------
+                    # -- Save network weights ----------------------------
                     dynamics.save_networks(logdir)
                     logger.info(f'Networks saved to: {logdir}')
 
-        # -- Print current training state and metrics ---------------
+        # -- Print current training state and metrics -------------------
         if should_print(step):
             train_data.update(step, metrics)
-            #if step % 5000 == 0:
-            #    pre = [f'step={step}/{total_steps}']
-            #    keep_ = keep + ['xeps_start', 'xeps_mid', 'xeps_end',
-            #                    'veps_start', 'veps_mid', 'veps_end']
-            #    data_str = logger.print_metrics(metrics, pre=pre, keep=keep_)
-            #else:
             keep_ = ['step', 'dt', 'loss', 'accept_prob', 'beta',
                      'dq_int', 'dq_sin', 'dQint', 'dQsin', 'plaqs', 'p4x4']
-            pre = [f'step={step}/{total_steps}']
-            data_str = logger.print_metrics(metrics, window=50,
-                                            pre=pre, keep=keep_)
-
+            pre = [f'{step:>4g}/{total_steps:<4g}']
+            #  data_str = logger.print_metrics(metrics, window=50,
+            #                                  pre=pre, keep=keep_)
+            data_str = train_data.print_metrics(metrics, window=50,
+                                                pre=pre, keep=keep_)
             data_strs.append(data_str)
 
         if in_notebook() and step % PLOT_STEPS == 0 and IS_CHIEF:
