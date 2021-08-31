@@ -49,6 +49,7 @@ def parse_configs():
     if logdir is not None:
         args.__dict__['log_dir'] = logdir
 
+    # TODO: Clean this up
     restore_from = args.restore_from
     if restore_from is not None:
         args.__dict__['restore_from'] = restore_from
