@@ -22,25 +22,25 @@ REPO = 'l2hmc-qcd'
 # Directories
 #BASE_DIR = Path(__file__).parent.parent.absolute()
 BASE_DIR = Path(str(os.getcwd()))
-CONFIG_DIR = Path(BASE_DIR, 'config')
-LOGS_DIR = Path(BASE_DIR, 'l2hmclogs')
-DATA_DIR = Path(BASE_DIR, 'data')
-MODEL_DIR = Path(BASE_DIR, 'model')
-STORES_DIR = Path(BASE_DIR, 'stores')
+#  CONFIG_DIR = Path(BASE_DIR, 'config')
+#  LOGS_DIR = Path(BASE_DIR, 'l2hmclogs')
+#  DATA_DIR = Path(BASE_DIR, 'data')
+#  MODEL_DIR = Path(BASE_DIR, 'model')
+#  STORES_DIR = Path(BASE_DIR, 'stores')
 
 # Local stores
-BLOB_STORE = Path(STORES_DIR, 'blob')
-FEATURE_STORE = Path(STORES_DIR, 'feature')
-MODEL_REGISTRY = Path(STORES_DIR, 'model')
+#  BLOB_STORE = Path(STORES_DIR, 'blob')
+#  FEATURE_STORE = Path(STORES_DIR, 'feature')
+#  MODEL_REGISTRY = Path(STORES_DIR, 'model')
 
 # Create dirs
-LOGS_DIR.mkdir(parents=True, exist_ok=True)
-DATA_DIR.mkdir(parents=True, exist_ok=True)
-MODEL_DIR.mkdir(parents=True, exist_ok=True)
-STORES_DIR.mkdir(parents=True, exist_ok=True)
-BLOB_STORE.mkdir(parents=True, exist_ok=True)
-FEATURE_STORE.mkdir(parents=True, exist_ok=True)
-MODEL_REGISTRY.mkdir(parents=True, exist_ok=True)
+#  LOGS_DIR.mkdir(parents=True, exist_ok=True)
+#  DATA_DIR.mkdir(parents=True, exist_ok=True)
+#  MODEL_DIR.mkdir(parents=True, exist_ok=True)
+#  STORES_DIR.mkdir(parents=True, exist_ok=True)
+#  BLOB_STORE.mkdir(parents=True, exist_ok=True)
+#  FEATURE_STORE.mkdir(parents=True, exist_ok=True)
+#  MODEL_REGISTRY.mkdir(parents=True, exist_ok=True)
 
 
 # Logger
@@ -62,7 +62,7 @@ logging_config = {
         },
         "info": {
             "class": "logging.handlers.RotatingFileHandler",
-            "filename": Path(LOGS_DIR, "info.log"),
+            "filename": Path(BASE_DIR, "info.log"),
             "maxBytes": 10485760,  # 1 MB
             "backupCount": 10,
             "formatter": "detailed",
@@ -70,7 +70,7 @@ logging_config = {
         },
         "error": {
             "class": "logging.handlers.RotatingFileHandler",
-            "filename": Path(LOGS_DIR, "error.log"),
+            "filename": Path(BASE_DIR, "error.log"),
             "maxBytes": 10485760,  # 1 MB
             "backupCount": 10,
             "formatter": "detailed",
@@ -110,7 +110,6 @@ with_jupyter = in_notebook()
 #                        theme=Theme(theme))#, width=width)
 logging.config.dictConfig(logging_config)
 logger = logging.getLogger('root')
-from rich.console import Console
 logger.handlers[0] = RichHandler(markup=True,
                                  rich_tracebacks=True,
                                  #  console=Console(color_system='truecolor'),
