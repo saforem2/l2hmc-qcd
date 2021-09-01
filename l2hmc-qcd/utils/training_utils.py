@@ -42,14 +42,6 @@ elif tf.__version__.startswith('2.'):
 
 PLOT_STEPS = 10
 
-DEFAULT_INTEROP = int(os.cpu_count() / 4)
-DEFAULT_INTRAOP = int(os.cpu_count() / 4)
-
-tf.random.set_seed(1234)
-tf.config.threading.set_inter_op_parallelism_threads(DEFAULT_INTEROP)
-tf.config.threading.set_intra_op_parallelism_threads(DEFAULT_INTRAOP)
-
-
 TO_KEEP = [
     'H', 'Hf', 'plaqs', 'actions', 'charges', 'sin_charges', 'dqint', 'dqsin',
     'accept_prob', 'accept_mask', 'xeps', 'veps', 'sumlogdet', 'beta', 'loss',
@@ -315,29 +307,42 @@ def check_compatibility(new: dict, old: dict, strict: bool = False) -> dict:
 
     return new
 
+def look_for_previous_logdir(logdir: Union[str, Path]):
+    logdir = Path(logdir)
+    parent = logdir.parent
+    candidates = [
+        i for i in sorted(parent.glob('*/'), key=os.path.getmtime)
+        if i.is_dir()
+    ]
+    prev = candidates[-1]
+    if len(candidates) > 1:
+        prev = candidates[-2]
+
+    return prev
+
 
 def restore_from(
         configs: dict,
-        restore_dir: Union[str, Path],
+        logdir: Union[str, Path],
         strict: bool = False
 ) -> GaugeDynamics:
     """Load trained networks and restore model from checkpoint."""
 
     restored = None
-    if restore_dir is not None:
-        restored = load_configs_from_logdir(restore_dir)
+    if logdir is not None:
+        restored = load_configs_from_logdir(logdir)
         configs = check_compatibility(configs, restored, strict=strict)
         configs['restored'] = True
         configs['restored_configs'] = restored
 
     dynamics = build_dynamics(configs)
 
-    networks = dynamics._load_networks(str(restore_dir))
+    networks = dynamics._load_networks(str(logdir))
     dynamics.xnet = networks['xnet']
     dynamics.vnet = networks['vnet']
-    logger.info(f'Networks successfully loaded from: {restore_dir}')
+    logger.info(f'Networks successfully loaded from: {logdir}')
 
-    ckptdir = os.path.join(restore_dir, 'training', 'checkpoints')
+    ckptdir = os.path.join(logdir, 'training', 'checkpoints')
     ckpt = tf.train.Checkpoint(dynamics=dynamics, optimizer=dynamics.optimizer)
     manager = tf.train.CheckpointManager(ckpt, ckptdir, max_to_keep=5)
     ckpt.restore(manager.latest_checkpoint)
@@ -402,11 +407,6 @@ def setup_betas(
     return tf.convert_to_tensor(betas)
 
 
-def look_for_previous(logdir):
-    parent = Path(logdir).parent
-    # TODO: Complete method !!!
-    pass
-
 # TODO: Add type annotations
 # pylint:disable=too-many-statements, too-many-branches
 def setup(
@@ -439,12 +439,17 @@ def setup(
         dynamics = restore_from(configs, restore_dir, strict=strict)
         datadir = os.path.join(restore_dir, 'training', 'train_data')
     else:
+        prev_logdir = look_for_previous_logdir(logdir)
         datadir = os.path.join(logdir, 'training', 'train_data')
         try:
-            dynamics = restore_from(configs, logdir, strict=strict)
+            dynamics = restore_from(configs, prev_logdir, strict=strict)
         except OSError:
-            logger.error(f'Unable to restore dynamics! Creating fresh...')
-            dynamics = build_dynamics(configs)
+            logger.error(f'Unable to restore dynamics from previous logdir!')
+            try:
+                dynamics = restore_from(configs, logdir, strict=strict)
+            except OSError:
+                logger.error(f'Unable to restore dynamics! Creating fresh...')
+                dynamics = build_dynamics(configs)
 
     current_step = dynamics.optimizer.iterations.numpy()
     if train_steps <= current_step:
@@ -694,6 +699,7 @@ def run_profiler(
     logger.debug(f'Done!')
 
     return x, metrics
+
 
 # pylint: disable=broad-except
 # pylint: disable=too-many-arguments,too-many-statements, too-many-branches
