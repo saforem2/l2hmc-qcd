@@ -44,7 +44,7 @@ class TestOutputs:
     run: Union[InferenceResults, None]
 
 
-Configs = dict[str, Any]
+Configs = "dict[str, Any]"
 
 
 
