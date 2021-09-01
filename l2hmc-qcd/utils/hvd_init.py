@@ -5,8 +5,19 @@ Initialize Horovod and check ranks.
 """
 from __future__ import absolute_import, division, print_function, annotations
 
+import os
 import tensorflow as tf
 from utils.logger import Logger
+
+DEFAULT_INTEROP = int(os.cpu_count() / 4)
+DEFAULT_INTRAOP = int(os.cpu_count() / 4)
+
+tf.random.set_seed(1234)
+try:
+    tf.config.threading.set_inter_op_parallelism_threads(DEFAULT_INTEROP)
+    tf.config.threading.set_intra_op_parallelism_threads(DEFAULT_INTRAOP)
+except RuntimeError:
+    pass
 
 logger = Logger()
 
