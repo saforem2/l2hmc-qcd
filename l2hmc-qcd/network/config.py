@@ -6,8 +6,6 @@ Contains configuration objects for networks.
 from dataclasses import dataclass
 import tensorflow as tf
 
-
-
 @dataclass
 class LearningRateConfig:
     """Learning rate configuration object."""

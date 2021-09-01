@@ -105,3 +105,42 @@ NAMES = [
 HSTR = ''.join(["{:^12s}".format(name) for name in NAMES])
 SEP = '-' * len(HSTR)
 HEADER = '\n'.join([SEP, HSTR, SEP])
+
+#  @dataclass
+#  class Configs:
+#      train_config: TrainConfig
+#      steps_config: StepsConfig
+#      dynamics_config: DynamicsConfig
+#      network_config: NetworkConfig
+#      convolution_config: ConvolutionConfig = None
+#
+#
+#  @dataclass
+#  class TrainConfig:
+#      log_dir: str = None
+#      ensure_new: bool = False
+#      profiler: bool = False
+#      beta_init: float = 1.
+#      beta_final: float = 1.
+#      clip_val: float = 0.0
+#      loss_scale: float = 0.1
+#      min_lr: float = 1e-5
+#      patience: int = 1
+#      hmc_steps: int = 10
+#      md_steps: int = 100
+#      steps_per_epoch: int = 5
+#      train_steps: int = 500
+#      print_steps: int = 10
+#      save_steps: int = 50
+#      logging_steps: int = 10
+#      run_steps: int = 500
+#
+#  @dataclass
+#  class StepsConfig:
+#      train: int          # -- num training steps --------------
+#      run: int            # -- num inference steps -------------
+#      md: int = 0         # -- Steps prior to training to avoid stuck chains
+#      hmc: int = 0        # -- Steps prior to training to `warm up` from HMC
+#      print: int = 1      # -- How frequently metrics are printed
+#      logging: int = 1    # -- How frequently metrics are logged to TensorBoard
+#      per_epoch: int = 1  # -- How long to wait inside a plateau before reducing lr

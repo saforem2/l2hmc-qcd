@@ -80,3 +80,26 @@ class GaugeDynamicsConfig:
     log_dir: Optional[str] = None                 # `log_dir` containing loadable nets
     optimizer: str = 'adam'             # optimizer to use for backprop
     net_weights: Optional[NetWeights] = None
+
+
+#  @dataclass DynamicsConfig:
+#      verbose: bool = False
+#      eps: float = 0.001
+#      num_steps: int = 5
+#      hmc: bool = False
+#      use_ncp: bool = True
+#      eps_fixed: bool = False
+#      aux_weight: float = 0.
+#      plaq_weight: float = 0.
+#      charge_weight: float = 0.01
+#      zero_init: bool = False
+#      separate_networks: bool = True
+#      use_conv_net: bool = False
+#      use_mixed_loss: bool = False
+#      directional_updates: bool = False
+#      combined_updates: bool = False
+#      use_scattered_xnet_update: False
+#      use_tempered_traj: bool = False
+#      gauge_eq_masks: bool = False
+#      x_shape: tuple[int] = (None, 16, 16, 2)
+#      log_dir: None
