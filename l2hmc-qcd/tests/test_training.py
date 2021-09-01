@@ -62,6 +62,9 @@ def parse_args():
     parser = argparse.ArgumentParser(
         description=description,
     )
+    parser.add_argument('--restore_from', default=None, type=str,
+                        help=("""Directory to look in for restoring model."""))
+
     parser.add_argument('--configs_file', default=None, type=str,
                         help=("""Path to `configs.json` file."""))
 
@@ -317,7 +320,7 @@ def test_mixed_loss(
     return test_fn(configs_, **kwargs)
 
 
-def setup_betas(configs):
+def setup_betas(configs: dict[str, Any]) -> tf.Tensor:
     b0 = configs.get('beta_init', None)  # type: float
     b1 = configs.get('beta_final', None)  # type: float
     nb = int(configs.get('train_steps', None) // (b1 + 1 - b0))
@@ -326,21 +329,20 @@ def setup_betas(configs):
         betas_ = b * np.ones(nb)
         betas.append(betas_)
 
-    betas = np.stack(np.array(betas))
-    betas = tf.convert_to_tensor(betas.flatten(),
-                                 dtype=tf.keras.backend.floatx())
+    betas = np.stack(betas).flatten()
+    betas = tf.convert_to_tensor(betas, dtype=tf.keras.backend.floatx())
     return betas
 
 
-
-def test(
-    configs_file: str = None,
-    make_plots: bool = False,
-    with_comparisons: bool = False
-):
+def test(args: argparse.Namespace):
     """Run tests."""
     t0 = time.time()
-    configs = get_configs(configs_file=configs_file)
+    configs = get_configs(configs_file=args.configs_file)
+
+    make_plots = args.make_plots
+    with_comparisons = args.with_comparisons
+    if args.restore_from is not None:
+        configs.update({'restore_from': args.restore_from})
 
     betas = None
     if configs.get('discrete_beta', configs.get('discrete_betas', False)):
@@ -408,6 +410,13 @@ def test(
         _ = test_hmc_run(configs, make_plots=True)
 
     logger.info(f'All tests passed! Took: {time.time() - t0:.4f} s')
+    return 0
+
+
+# TODO: Finish
+class Tester:
+    def __init__(*args, **kwargs):
+        pass
 
 
 def main(args, configs: dict[str, Any] = None, configs_file: str = None):
@@ -428,16 +437,16 @@ def main(args, configs: dict[str, Any] = None, configs_file: str = None):
                 _ = fn(args.log_dir)
             else:
                 _ = fn(configs)
+    return 0
 
 
 if __name__ == '__main__':
     ARGS = parse_args()
-    if ARGS.horovod:
-        ARGS.horovod = True
-
-    if ARGS.test_all:
-        test(configs_file=ARGS.configs_file,
-             make_plots=ARGS.make_plots,
-             with_comparisons=ARGS.with_comparisons)
-    else:
-        main(ARGS)
+    #  if ARGS.horovod:
+    #      ARGS.horovod = True
+    #
+    test(ARGS) if ARGS.test_all else main(ARGS)
+    #  if ARGS.test_all:
+    #      test(ARGS)
+    #  else:
+    #      main(ARGS)
