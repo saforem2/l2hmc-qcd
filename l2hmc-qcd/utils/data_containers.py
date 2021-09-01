@@ -252,13 +252,17 @@ class DataContainer:
 
         data = self.load_data(data_dir)
         for key, val in data.items():
-            self.data[key] = np.array(val).tolist()
+            arr = np.array(val)
+            shape = arr.shape
+            self.data[key] = arr.tolist()
+            logger.debug(f'Restored: train_data.data[{key}].shape={shape}')
 
         return x
 
     @staticmethod
     def load_data(data_dir: Union[str, Path]):
         """Load data from `data_dir` and populate `self.data`."""
+        # TODO: Update to use h5py for `.hdf5` files
         contents = os.listdir(data_dir)
         fnames = [i for i in contents if i.endswith('.z')]
         keys = [i.rstrip('.z') for i in fnames]
