@@ -334,6 +334,7 @@ def restore_from(
         configs = check_compatibility(configs, restored, strict=strict)
         configs['restored'] = True
         configs['restored_configs'] = restored
+        configs['profiler'] = False
 
     dynamics = build_dynamics(configs)
 
@@ -347,7 +348,7 @@ def restore_from(
     manager = tf.train.CheckpointManager(ckpt, ckptdir, max_to_keep=5)
     ckpt.restore(manager.latest_checkpoint)
     if manager.latest_checkpoint:
-        logger.warning(f'Restored from {manager.latest_checkpoint}')
+        logger.info(f'Restored from {manager.latest_checkpoint}')
 
     return dynamics
 
@@ -377,13 +378,38 @@ def setup_directories(configs: dict) -> dict:
     configs['log_dir'] = logdir
     configs['logdir'] = logdir
 
+    restore_dir = configs.get('restore_from', None)
+    if restore_dir is None:
+        candidate = look_for_previous_logdir(logdir)
+        if candidate != logdir:
+            if candidate.is_dir():
+                nckpts = len(list(candidate.rglob('checkpoint')))
+                if nckpts > 0:
+                    restore_dir = candidate
+                    configs['restore_from'] = restore_dir
+
+    if restore_dir is not None:
+        try:
+            restored = load_configs_from_logdir(restore_dir)
+            if restored is not None:
+                io.save_dict(restored, logdir,
+                             name='restored_train_configs')
+        except FileNotFoundError:
+            logger.warning(f'Unable to load configs from {restore_dir}')
+            pass
+
     if RANK == 0:
         io.check_else_make_dir(logdir)
-        restore_from = configs.get('restore_from', None)
-        if restore_from is not None:
-            restored = load_configs_from_logdir(restore_from)
-            if restored is not None:
-                io.save_dict(restored, logdir, name='restored_train_configs')
+        restore_dir = configs.get('restore_dir', None)
+        if restore_dir is not None:
+            try:
+                restored = load_configs_from_logdir(restore_dir)
+                if restored is not None:
+                    io.save_dict(restored, logdir,
+                                 name='restored_train_configs')
+            except FileNotFoundError:
+                logger.warning(f'Unable to load configs from {restore_dir}')
+                pass
 
     return configs
 
@@ -478,7 +504,7 @@ def setup(
     manager = tf.train.CheckpointManager(ckpt, ckptdir, max_to_keep=5)
     ckpt.restore(manager.latest_checkpoint)
     if manager.latest_checkpoint:
-        logger.warning(f'Restored ckpt from: {manager.latest_checkpoint}')
+        logger.info(f'Restored ckpt from: {manager.latest_checkpoint}')
 
     # Setup summary writer for logging metrics through tensorboard
     summdir = dirs['summary_dir']
