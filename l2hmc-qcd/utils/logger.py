@@ -27,14 +27,16 @@ from utils.log_config import logging_config
 #  from utils.logger_config import in_notebook
 #  from utils.logger_config import logger as log
 
-os.environ['COLUMNS'] = str(shutil.get_terminal_size((120, 24))[0])
+os.environ['COLUMNS'] = str(shutil.get_terminal_size((180, 24))[0])
 
 
 #  WIDTH, _ = shutil.get_terminal_size(fallback=(156, 50))
 #  logging.config.fileConfig(Path(PROJECT_DIR).joinpath('logging.config'))
 logging.config.dictConfig(logging_config)
 log = logging.getLogger('root')
-log.handlers[0] = RichHandler(markup=True, show_path=False)
+log.handlers[0] = RichHandler(markup=True,
+                              show_path=False,
+                              rich_tracebacks=True)
 
 def get_timestamp(fstr=None):
     """Get formatted timestamp."""
