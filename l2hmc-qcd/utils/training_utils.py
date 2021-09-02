@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Optional, Union
 
 import numpy as np
+import pandas as pd
 import tensorflow as tf
 from tensorflow.python.ops.summary_ops_v2 import SummaryWriter
 
@@ -29,7 +30,7 @@ from network.config import LearningRateConfig
 from utils.annealing_schedules import get_betas
 from utils.attr_dict import AttrDict
 from utils.data_containers import DataContainer
-from utils.hvd_init import IS_CHIEF, LOCAL_RANK, RANK
+from utils.hvd_init import IS_CHIEF, LOCAL_RANK, RANK, SIZE
 from utils.learning_rate import ReduceLROnPlateau
 from utils.logger import Logger, in_notebook
 from utils.plotting_utils import plot_data
@@ -383,13 +384,20 @@ def setup_directories(configs: dict) -> dict:
         candidate = look_for_previous_logdir(logdir)
         if candidate != logdir:
             if candidate.is_dir():
-                nckpts = len([
-                    i for i in list(candidate.rglob('*checkpoint*'))
-                    if i.is_file()
-                ])
+                nckpts = len(list(candidate.rglob('checkpoint')))
                 if nckpts > 0:
                     restore_dir = candidate
                     configs['restore_from'] = restore_dir
+
+    if restore_dir is not None:
+        try:
+            restored = load_configs_from_logdir(restore_dir)
+            if restored is not None:
+                io.save_dict(restored, logdir,
+                             name='restored_train_configs')
+        except FileNotFoundError:
+            logger.warning(f'Unable to load configs from {restore_dir}')
+            pass
 
     if RANK == 0:
         io.check_else_make_dir(logdir)
@@ -402,7 +410,7 @@ def setup_directories(configs: dict) -> dict:
                                  name='restored_train_configs')
             except FileNotFoundError:
                 logger.warning(f'Unable to load configs from {restore_dir}')
-                configs['restore_dir'] = None
+                pass
 
     return configs
 
@@ -454,35 +462,22 @@ def setup(
 
     # Check if we want to restore from existing directory
     restore_dir = configs.get('restore_from', None)
-    dynamics = None  # type: Union[None, GaugeDynamics]
-    datadir = os.path.join(logdir, 'training', 'train_data')
     if restore_dir is not None:
-        try:
-            dynamics = restore_from(configs, restore_dir, strict=strict)
-            datadir = os.path.join(restore_dir, 'training', 'train_data')
-        except FileNotFoundError:
-            logger.error(f'Unable to restore dynamics from previous logdir!')
-            configs['restore_from'] = None
+        dynamics = restore_from(configs, restore_dir, strict=strict)
+        datadir = os.path.join(restore_dir, 'training', 'train_data')
     else:
         prev_logdir = look_for_previous_logdir(logdir)
-        if prev_logdir != logdir:
-            try:
-                dynamics = restore_from(configs, prev_logdir, strict=strict)
-                configs['restore_from'] = prev_logdir
-                datadir = os.path.join(logdir, 'training', 'train_data')
-            except OSError:
-                logger.error(f'Unable to restore dynamics from prev logdir!')
-                try:
-                    dynamics = restore_from(configs, logdir, strict=strict)
-                except OSError:
-                    logger.error(f'Unable to restore dynamics!')
-    if dynamics is None:
-        logger.info(f'Creating new dynamics object')
-        dynamics = build_dynamics(configs)
-        configs['restore_from'] = None
         datadir = os.path.join(logdir, 'training', 'train_data')
+        try:
+            dynamics = restore_from(configs, prev_logdir, strict=strict)
+        except OSError:
+            logger.error(f'Unable to restore dynamics from previous logdir!')
+            try:
+                dynamics = restore_from(configs, logdir, strict=strict)
+            except OSError:
+                logger.error(f'Unable to restore dynamics! Creating fresh...')
+                dynamics = build_dynamics(configs)
 
-    assert dynamics is not None
     current_step = dynamics.optimizer.iterations.numpy()
     if train_steps <= current_step:
         train_steps = current_step + min(save_steps, print_steps)
@@ -498,7 +493,7 @@ def setup(
             logger.warning('Unable to restore `x`, re-sampling from [-pi,pi)')
             x = tf.random.uniform(dynamics.x_shape, minval=-PI, maxval=PI)
     else:
-        x = tf.random.uniform(dynamics.x_shape, *(-PI, PI))
+        x = tf.random.uniform(dynamics.x_shape, minval=-PI, maxval=PI)
 
 
     # Reshape x from [batch_size, Nt, Nx, Nd] --> [batch_size, Nt * Nx * Nd]
@@ -700,7 +695,7 @@ def trace_train_step(
     # Call only one tf.function when tracing
     x, metrics = dynamics.train_step((x, beta))
     with writer.as_default():
-        tf.summary.trace_export(name='train_step', step=0,
+        tf.summary.trace_export(name='dynamics_train_step', step=0,
                                 profiler_outdir=outdir)
     #  for step in range(3):
     #      with tf.profiler.experimental.Trace('train', step_num=step, _r=1):
@@ -763,10 +758,12 @@ def train_dynamics(
 
 
     # -- Helper functions for training, logging, saving, etc. --------------
+    step_times = []
     def train_step(x: tf.Tensor, beta: tf.Tensor):
         start = time.time()
         x, metrics = dynamics.train_step((x, tf.constant(beta)))
         metrics.dt = time.time() - start
+        step_times.append(metrics.dt)
         return x, metrics
 
     def should_print(step: int) -> bool:
@@ -817,14 +814,18 @@ def train_dynamics(
     writer = inputs.get('writer', None)  # type: tf.summary.SummaryWriter
     if IS_CHIEF and writer is not None:
         writer.set_as_default()
-        if configs.get('profiler', False):
-            # -- Run profiler? ----------------------------------------
+
+    # -- Run profiler? ----------------------------------------
+    if configs.get('profiler', False):
+        if RANK == 0:
             sdir = dirs['summary_dir']
+            #  trace_train_step(dynamics,
+            #                   graph=True,
+            #                   profiler=True,
+            #                   outdir=sdir,
+            #                   writer=writer)
             x, metrics = run_profiler(dynamics, (x, betas[0]),
                                       logdir=sdir, steps=5)
-            trace_train_step(dynamics,
-                             graph=True, profiler=True,
-                             outdir=sdir, writer=writer)
     else:
         x, metrics = dynamics.train_step((x, betas[0]))
 
@@ -894,7 +895,7 @@ def train_dynamics(
             train_data.update(step, metrics)
             keep_ = ['step', 'dt', 'loss', 'accept_prob', 'beta',
                      'dq_int', 'dq_sin', 'dQint', 'dQsin', 'plaqs', 'p4x4']
-            pre = [f'{step:>4g}/{total_steps+1:<4g}']
+            pre = [f'{step:>4g}/{total_steps:<4g}']
             #  data_str = logger.print_metrics(metrics, window=50,
             #                                  pre=pre, keep=keep_)
             data_str = train_data.print_metrics(metrics, window=50,
@@ -935,5 +936,17 @@ def train_dynamics(
         if writer is not None:
             writer.flush()
             writer.close()
+
+        ngrad_evals =  SIZE * dynamics.config.num_steps * len(step_times)
+        eval_rate = ngrad_evals / np.sum(step_times)
+        outstr = '\n'.join([f'ngrad_evals: {ngrad_evals}',
+                            f'sum(step_times): {np.sum(step_times)}',
+                            f'eval rate: {eval_rate}'])
+        with open(Path(logdir).joinpath('eval_rate.txt'), 'a') as f:
+            f.write(outstr)
+
+        csvfile = Path(logdir).joinpath('dt_train.csv')
+        pd.DataFrame(step_times).to_csv(csvfile, mode='a')
+
 
     return x, train_data
