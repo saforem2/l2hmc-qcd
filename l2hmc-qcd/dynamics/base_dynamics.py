@@ -18,6 +18,7 @@ Author: Sam Foreman (github: @saforem2)
 Date: 6/30/2020
 """
 from __future__ import absolute_import, annotations, division, print_function
+from dataclasses import dataclass
 
 import os
 from typing import Any, Callable, List, Optional, Tuple, Union
@@ -58,6 +59,21 @@ OPTIMIZERS_MAP = {
 def identity(x: tf.Tensor) -> tf.Tensor:
     """Returns x"""
     return x
+
+
+class hmcNetworks:
+    def __init__(self):
+        self._xnet = lambda inputs, *args: [
+            tf.zeros_like(inputs[0]) for _ in range(3)
+        ]
+        self._vnet = lambda inputs, *args: [
+            tf.zeros_like(inputs[0]) for _ in range(3)
+        ]
+
+    def xnet(self, inputs, *args):
+        return [tf.zeros_like(inputs[0]) for _ in range(3)
+
+
 
 
 Inputs = Tuple[tf.Tensor, tf.Tensor]
