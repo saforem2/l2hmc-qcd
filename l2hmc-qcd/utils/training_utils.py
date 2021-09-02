@@ -315,9 +315,11 @@ def look_for_previous_logdir(logdir: Union[str, Path]):
         i for i in sorted(parent.glob('*/'), key=os.path.getmtime)
         if i.is_dir()
     ]
-    prev = candidates[-1]
-    if len(candidates) > 1:
-        prev = candidates[-2]
+    prev = logdir
+    if len(candidates) > 0:
+        prev = candidates[-1]
+        if len(candidates) > 1:
+            prev = candidates[-2]
 
     return prev
 
