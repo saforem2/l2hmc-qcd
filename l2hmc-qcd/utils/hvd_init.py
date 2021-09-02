@@ -8,7 +8,6 @@ from __future__ import absolute_import, division, print_function, annotations
 import os
 import tensorflow as tf
 os.environ['TF_DETERMINISTIC_OPS'] = '1'
-tf.random.set_seed(1234)
 
 from utils.logger import Logger
 
@@ -85,7 +84,7 @@ try:
         gpu = GPUS[hvd.local_rank()]
         tf.config.experimental.set_visible_devices(gpu, 'GPU')
 
-except (ImportError, ModuleNotFoundError) as err:
+except (ImportError, ModuleNotFoundError):
     RANK = 0
     SIZE = 1
     LOCAL_SIZE = 1
@@ -93,4 +92,6 @@ except (ImportError, ModuleNotFoundError) as err:
     IS_CHIEF = True
     HAS_HOROVOD = False
     logger.error('Unable to initialize horovod!!!')
-    logger.error(err)
+
+
+tf.random.set_seed(int(RANK * 1234))
