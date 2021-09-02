@@ -61,18 +61,22 @@ def identity(x: tf.Tensor) -> tf.Tensor:
     return x
 
 
-class hmcNetworks:
-    def __init__(self):
-        self._xnet = lambda inputs, *args: [
-            tf.zeros_like(inputs[0]) for _ in range(3)
-        ]
-        self._vnet = lambda inputs, *args: [
-            tf.zeros_like(inputs[0]) for _ in range(3)
-        ]
+class hmcNetwork:
+    def __call__(self, inputs, *args):
+        return [tf.zeros_like(inputs[0]) for _ in range(3)]
 
-    def xnet(self, inputs, *args):
-        return [tf.zeros_like(inputs[0]) for _ in range(3)
-
+#  class hmcNetworks:
+#      def __init__(self):
+#          self._xnet = lambda inputs, *args: [
+#              tf.zeros_like(inputs[0]) for _ in range(3)
+#          ]
+#          self._vnet = lambda inputs, *args: [
+#              tf.zeros_like(inputs[0]) for _ in range(3)
+#          ]
+#
+#      def xnet(self, inputs, *args):
+#          return [tf.zeros_like(inputs[0]) for _ in range(3)]
+#
 
 
 
