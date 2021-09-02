@@ -122,21 +122,26 @@ def get_configs(
         updates: dict[str, Any] = None
 ) -> dict[str, Any]:
     """Get fresh copy of `bin/test_configs.json` for running tests."""
-    configs = load_configs(configs_file)
+    if configs_file is None:
+        configs_file = Path(BIN_DIR).joinpath('test_configs.json')
+        logger.warning(f'configs not specified!! loading from: {configs_file}')
 
-    if updates is not None:
-        dconfig = updates.get('dynamics_config', None)
-        nconfig = updates.get('network_config', None)
-        lconfig = updates.get('lr_config', None)
-        cconfig = updates.get('conv_config', None)
-        if dconfig is not None:
-            configs['dynamics_config'].update(dconfig)
-        if nconfig is not None:
-            configs['network_config'].update(nconfig)
-        if lconfig is not None:
-            configs['lr_config'].update(lconfig)
-        if cconfig is not None:
-            configs['conv_config'].update(cconfig)
+    configs = load_configs(configs_file)
+    if updates is None:
+        return configs
+
+    dconfig = updates.get('dynamics_config', None)
+    nconfig = updates.get('network_config', None)
+    lconfig = updates.get('lr_config', None)
+    cconfig = updates.get('conv_config', None)
+    if dconfig is not None:
+        configs['dynamics_config'].update(dconfig)
+    if nconfig is not None:
+        configs['network_config'].update(nconfig)
+    if lconfig is not None:
+        configs['lr_config'].update(lconfig)
+    if cconfig is not None:
+        configs['conv_config'].update(cconfig)
 
     return configs
 
@@ -183,15 +188,15 @@ def test_conv_net(
     configs = AttrDict(**dict(copy.deepcopy(configs)))
     #  flags.use_conv_net = True
     configs['dynamics_config']['use_conv_net'] = True
-    configs['conv_config'] = dict(
-        sizes=[2, 2],
-        filters=[4, 8],
-        pool_sizes=[2, 2],
-        use_batch_norm=True,
-        conv_paddings=['valid', 'valid'],
-        conv_activations=['relu', 'relu'],
-        input_shape=configs['dynamics_config']['x_shape'][1:],
-    )
+    #  configs['conv_config'] = dict(
+    #      sizes=[2, 2],
+    #      filters=[4, 8],
+    #      pool_sizes=[2, 2],
+    #      use_batch_norm=True,
+    #      conv_paddings=['valid', 'valid'],
+    #      conv_activations=['relu', 'relu'],
+    #      input_shape=configs['dynamics_config']['x_shape'][1:],
+    #  )
     train_out = train(configs, make_plots=make_plots,
                       num_chains=4, verbose=False, **kwargs)
     runs_dir = os.path.join(train_out.logdir, 'inference')
@@ -352,9 +357,14 @@ def test(args: argparse.Namespace):
     conv_configs = copy.deepcopy(configs)
     single_configs = copy.deepcopy(configs)
 
+    sep_configs['profiler'] = True
     sep_out = test_separate_networks(sep_configs,
                                      make_plots=make_plots,
                                      custom_betas=betas)
+    sep_configs['profiler'] = False
+    conv_configs['profiler'] = False
+    single_configs['profiler'] = False
+
     if with_comparisons:
         _ = test_aux_weight(configs=sep_configs,
                             make_plots=make_plots,
