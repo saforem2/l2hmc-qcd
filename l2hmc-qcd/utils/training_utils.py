@@ -29,7 +29,7 @@ from dynamics.gauge_dynamics import GaugeDynamics, build_dynamics
 from network.config import LearningRateConfig
 from utils.annealing_schedules import get_betas
 from utils.attr_dict import AttrDict
-from utils.data_containers import DataContainer
+from utils.data_containers import DataContainer, StepTimer
 from utils.hvd_init import IS_CHIEF, LOCAL_RANK, RANK, SIZE
 from utils.learning_rate import ReduceLROnPlateau
 from utils.logger import Logger, in_notebook
@@ -232,8 +232,9 @@ def find_conflicts(
 ) -> list[str]:
     conflicts = []
     for key in new.keys():
-        if key in skips:
-            continue
+        if skips is not None:
+            if key in skips:
+                continue
 
         old_ = old.get(key, None)
         new_ = new.get(key, None)
@@ -399,7 +400,6 @@ def setup_directories(configs: dict) -> dict:
                              name='restored_train_configs')
         except FileNotFoundError:
             logger.warning(f'Unable to load configs from {restore_dir}')
-            pass
 
     if RANK == 0:
         io.check_else_make_dir(logdir)
@@ -760,12 +760,15 @@ def train_dynamics(
 
 
     # -- Helper functions for training, logging, saving, etc. --------------
-    step_times = []
+    #  step_times = []
+    timer = StepTimer(evals_per_step=dynamics.config.num_steps)
+
     def train_step(x: tf.Tensor, beta: tf.Tensor):
-        start = time.time()
+        #  start = time.time()
+        timer.start()
         x, metrics = dynamics.train_step((x, tf.constant(beta)))
-        metrics.dt = time.time() - start
-        step_times.append(metrics.dt)
+        dt = timer.stop()
+        metrics.dt = dt
         return x, metrics
 
     def should_print(step: int) -> bool:
@@ -878,12 +881,14 @@ def train_dynamics(
             train_data.dump_configs(x, data_dir, rank=RANK,
                                     local_rank=LOCAL_RANK)
             if IS_CHIEF:
+                _ = timer.save_and_write(logdir, mode='w')
                 # -- Save CheckpointManager ------------------------------
                 manager.save()
                 mstr = f'Checkpoint saved to: {manager.latest_checkpoint}'
                 logger.info(mstr)
                 with open(logfile, 'w') as f:
                     f.writelines('\n'.join(data_strs))
+
                 # -- Save train_data and free consumed memory ------------
                 train_data.save_and_flush(data_dir, logfile,
                                           rank=RANK, mode='a')
@@ -939,16 +944,16 @@ def train_dynamics(
             writer.flush()
             writer.close()
 
-        ngrad_evals =  SIZE * dynamics.config.num_steps * len(step_times)
-        eval_rate = ngrad_evals / np.sum(step_times)
-        outstr = '\n'.join([f'ngrad_evals: {ngrad_evals}',
-                            f'sum(step_times): {np.sum(step_times)}',
-                            f'eval rate: {eval_rate}'])
-        with open(Path(logdir).joinpath('eval_rate.txt'), 'a') as f:
-            f.write(outstr)
-
-        csvfile = Path(logdir).joinpath('dt_train.csv')
-        pd.DataFrame(step_times).to_csv(csvfile, mode='a')
+        #  ngrad_evals =  SIZE * dynamics.config.num_steps * len(step_times)
+        #  eval_rate = ngrad_evals / np.sum(step_times)
+        #  outstr = '\n'.join([f'ngrad_evals: {ngrad_evals}',
+        #                      f'sum(step_times): {np.sum(step_times)}',
+        #                      f'eval rate: {eval_rate}'])
+        #  with open(Path(logdir).joinpath('eval_rate.txt'), 'a') as f:
+        #      f.write(outstr)
+        #
+        #  csvfile = Path(logdir).joinpath('dt_train.csv')
+        #  pd.DataFrame(step_times).to_csv(csvfile, mode='a')
 
 
     return x, train_data

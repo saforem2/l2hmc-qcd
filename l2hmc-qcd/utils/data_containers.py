@@ -27,7 +27,7 @@ import utils.file_io as io
 from config import BASE_DIR
 from utils.attr_dict import AttrDict
 from utils.data_utils import therm_arr
-from utils.hvd_init import RANK
+from utils.hvd_init import RANK, SIZE
 from utils.plotting_utils import (set_size, make_ridgeplots, mcmc_lineplot,
                                   mcmc_traceplot, get_title_str_from_params,
                                   plot_data)
@@ -43,6 +43,86 @@ sns.set_palette('bright')
 
 
 VERBOSE = os.environ.get('VERBOSE', False)
+
+class StepTimer:
+    def __init__(self, evals_per_step: int = 1):
+        self.data = []
+        self.t = time.time()
+        self.evals_per_step = evals_per_step
+
+    def start(self):
+        self.t = time.time()
+
+    def stop(self):
+        dt = time.time() - self.t
+        self.data.append(dt)
+
+        return dt
+
+    def reset(self):
+        self.data = []
+        self.t0, self.t1 = 0., 0.
+
+    def get_eval_rate(self, evals_per_step: int = None):
+        if evals_per_step is None:
+            evals_per_step = self.evals_per_step
+
+        output = {
+            'total_time': (elapsed := np.sum(self.data)),
+            'num_evals': (nevals := SIZE * evals_per_step * len(self.data)),
+            'eval_rate': nevals / elapsed,
+        }
+
+        return output
+
+    def save_and_write(
+            self,
+            outdir: Union[str, Path],
+            mode: str = 'w',
+            **kwargs,
+    ):
+        eval_rate = self.write_eval_rate(outdir, mode=mode, **kwargs)
+        data = self.save_data(outdir, mode=mode)
+        return {'eval_rate': eval_rate, 'step_times': data}
+
+    def write_eval_rate(
+            self,
+            outdir: Union[str, Path],
+            mode: str = 'w',
+            **kwargs,
+    ):
+        eval_rate = self.get_eval_rate(**kwargs)
+        outfile = Path(outdir).joinpath('eval_rate.txt')
+        logger.debug(f'Writing eval rate to: {outfile}')
+        with open(outfile, mode) as f:
+            f.write('\n'.join([f'{k}: {v}' for k, v  in eval_rate.items()]))
+
+        return eval_rate
+
+    def save_data(self, fpath: Union[str, Path], mode='w'):
+        df = pd.DataFrame(self.data)
+
+        outfile = Path(fpath)
+
+        if outfile.is_dir():
+            outfile.mkdir(exist_ok=True)
+            outfile = outfile.joinpath('step_times.csv')
+
+        if outfile.is_file():
+            logger.debug(f'Saving step times to: {outfile}')
+            df.to_csv(outfile, mode=mode)
+            return df
+
+        raise TypeError(f'fpath should be: str | Path, got: {type(fpath)}')
+
+
+
+
+
+
+
+
+
 
 class DataContainer:
     """Base class for dealing with data."""
