@@ -82,7 +82,8 @@ class StepTimer:
             **kwargs,
     ):
         eval_rate = self.write_eval_rate(outdir, mode=mode, **kwargs)
-        data = self.save_data(outdir, mode=mode)
+        outfile = str(Path(outdir).joinpath('step_times.csv'))
+        data = self.save_data(outfile, mode=mode)
         return {'eval_rate': eval_rate, 'step_times': data}
 
     def write_eval_rate(
@@ -99,21 +100,16 @@ class StepTimer:
 
         return eval_rate
 
-    def save_data(self, fpath: Union[str, Path], mode='w'):
+    def save_data(self, outfile: str, mode='w'):
         df = pd.DataFrame(self.data)
 
-        outfile = Path(fpath)
+        fpath = Path(outfile).resolve()
+        fpath.parent.mkdir(parents=True, exist_ok=True)
 
-        if outfile.is_dir():
-            outfile.mkdir(exist_ok=True)
-            outfile = outfile.joinpath('step_times.csv')
+        logger.debug(f'Saving step times to: {outfile}')
+        df.to_csv(str(fpath), mode=mode)
 
-        if outfile.is_file():
-            logger.debug(f'Saving step times to: {outfile}')
-            df.to_csv(outfile, mode=mode)
-            return df
-
-        raise TypeError(f'fpath should be: str | Path, got: {type(fpath)}')
+        return df
 
 
 
