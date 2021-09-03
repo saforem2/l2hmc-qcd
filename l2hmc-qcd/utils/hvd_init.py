@@ -23,6 +23,12 @@ except RuntimeError:
 
 logger = Logger()
 
+def shutdown():
+    if HAS_HOROVOD:
+        hvd.shutdown()
+
+    return
+
 if tf.__version__.startswith('1'):
     try:
         tf.compat.v1.enable_v2_behavior()

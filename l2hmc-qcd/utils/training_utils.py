@@ -30,7 +30,7 @@ from network.config import LearningRateConfig
 from utils.annealing_schedules import get_betas
 from utils.attr_dict import AttrDict
 from utils.data_containers import DataContainer, StepTimer
-from utils.hvd_init import IS_CHIEF, LOCAL_RANK, RANK, SIZE
+from utils.hvd_init import IS_CHIEF, LOCAL_RANK, RANK, SIZE, shutdown
 from utils.learning_rate import ReduceLROnPlateau
 from utils.logger import Logger, in_notebook
 from utils.plotting_utils import plot_data
@@ -383,7 +383,7 @@ def setup_directories(configs: dict) -> dict:
     configs['logdir'] = logdir
 
     restore_dir = configs.get('restore_from', None)
-    if restore_dir is None:
+    if restore_dir is None and not ensure_new:
         candidate = look_for_previous_logdir(logdir)
         if candidate != logdir:
             if candidate.is_dir():
@@ -392,7 +392,7 @@ def setup_directories(configs: dict) -> dict:
                     restore_dir = candidate
                     configs['restore_from'] = restore_dir
 
-    if restore_dir is not None:
+    if restore_dir is not None and not ensure_new:
         try:
             restored = load_configs_from_logdir(restore_dir)
             if restored is not None:
@@ -404,7 +404,7 @@ def setup_directories(configs: dict) -> dict:
     if RANK == 0:
         io.check_else_make_dir(logdir)
         restore_dir = configs.get('restore_dir', None)
-        if restore_dir is not None:
+        if restore_dir is not None and not ensure_new:
             try:
                 restored = load_configs_from_logdir(restore_dir)
                 if restored is not None:
@@ -463,22 +463,28 @@ def setup(
     train_data = DataContainer(train_steps, dirs=dirs, print_steps=print_steps)
 
     # Check if we want to restore from existing directory
+    ensure_new = configs.get('ensure_new', False)
     restore_dir = configs.get('restore_from', None)
-    if restore_dir is not None:
-        dynamics = restore_from(configs, restore_dir, strict=strict)
-        datadir = os.path.join(restore_dir, 'training', 'train_data')
+    datadir = os.path.join(logdir, 'training', 'train_data')
+    if ensure_new:
+        dynamics = build_dynamics(configs)
+
     else:
-        prev_logdir = look_for_previous_logdir(logdir)
-        datadir = os.path.join(logdir, 'training', 'train_data')
-        try:
-            dynamics = restore_from(configs, prev_logdir, strict=strict)
-        except OSError:
-            logger.error(f'Unable to restore dynamics from previous logdir!')
+        if restore_dir is not None:
+            dynamics = restore_from(configs, restore_dir, strict=strict)
+            datadir = os.path.join(restore_dir, 'training', 'train_data')
+        else:
+            prev_logdir = look_for_previous_logdir(logdir)
+            datadir = os.path.join(logdir, 'training', 'train_data')
             try:
-                dynamics = restore_from(configs, logdir, strict=strict)
+                dynamics = restore_from(configs, prev_logdir, strict=strict)
             except OSError:
-                logger.error(f'Unable to restore dynamics! Creating fresh...')
-                dynamics = build_dynamics(configs)
+                logger.error(f'Unable to restore dynamics!')
+                try:
+                    dynamics = restore_from(configs, logdir, strict=strict)
+                except OSError:
+                    logger.error(f'Creating new GaugeDynamics...')
+                    dynamics = build_dynamics(configs)
 
     current_step = dynamics.optimizer.iterations.numpy()
     if train_steps <= current_step:
@@ -486,7 +492,7 @@ def setup(
 
     train_data.steps = train_steps
 
-    if os.path.isdir(datadir) and try_restore:
+    if os.path.isdir(datadir) and try_restore and not ensure_new:
         try:
             x = train_data.restore(datadir, step=current_step,
                                    x_shape=dynamics.x_shape,
@@ -609,6 +615,8 @@ def train(
                                    save_metrics=save_metrics)
     logger.rule(f'DONE TRAINING. TOOK: {time.time() - t0:.4f}')
     logger.info(f'Training took: {time.time() - t0:.4f}')
+    shutdown()
+
     # ------------------------------------
 
     if IS_CHIEF:
