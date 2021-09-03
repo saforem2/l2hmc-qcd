@@ -67,24 +67,19 @@ class StepTimer:
         if evals_per_step is None:
             evals_per_step = self.evals_per_step
 
+        elapsed = np.sum(self.data)
+        num_evals = SIZE * evals_per_step * len(self.data)
+        eval_rate = num_evals / elapsed
         output = {
-            'total_time': (elapsed := np.sum(self.data)),
-            'num_evals': (nevals := SIZE * evals_per_step * len(self.data)),
-            'eval_rate': nevals / elapsed,
+            'eval_rate': eval_rate,
+            'total_time': elapsed,
+            'num_evals': num_evals,
+            'size': SIZE,
+            'num_steps': len(self.data),
+            'evals_per_step': evals_per_step,
         }
 
         return output
-
-    def save_and_write(
-            self,
-            outdir: Union[str, Path],
-            mode: str = 'w',
-            **kwargs,
-    ):
-        eval_rate = self.write_eval_rate(outdir, mode=mode, **kwargs)
-        outfile = str(Path(outdir).joinpath('step_times.csv'))
-        data = self.save_data(outfile, mode=mode)
-        return {'eval_rate': eval_rate, 'step_times': data}
 
     def write_eval_rate(
             self,
@@ -100,6 +95,17 @@ class StepTimer:
 
         return eval_rate
 
+    def save_and_write(
+            self,
+            outdir: Union[str, Path],
+            mode: str = 'w',
+            **kwargs,
+    ):
+        eval_rate = self.write_eval_rate(outdir, mode=mode, **kwargs)
+        outfile = str(Path(outdir).joinpath('step_times.csv'))
+        data = self.save_data(outfile, mode=mode)
+        return {'eval_rate': eval_rate, 'step_times': data}
+
     def save_data(self, outfile: str, mode='w'):
         df = pd.DataFrame(self.data)
 
@@ -110,14 +116,6 @@ class StepTimer:
         df.to_csv(str(fpath), mode=mode)
 
         return df
-
-
-
-
-
-
-
-
 
 
 class DataContainer:
