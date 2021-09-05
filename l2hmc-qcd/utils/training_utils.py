@@ -615,7 +615,7 @@ def train(
                                    save_metrics=save_metrics)
     logger.rule(f'DONE TRAINING. TOOK: {time.time() - t0:.4f}')
     logger.info(f'Training took: {time.time() - t0:.4f}')
-    shutdown()
+    #  shutdown()
 
     # ------------------------------------
 
