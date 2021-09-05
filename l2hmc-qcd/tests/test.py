@@ -78,9 +78,9 @@ def main(configs: dict[str, Any], **kwargs):
     t0 = time.time()
     train_out = train(configs, **kwargs)
     run_out = None
-    #  if RANK == 0:
-    #      run_out = run(train_out.dynamics, configs, make_plots=True,
-    #                    runs_dir=os.path.join(train_out.logdir, 'inference'))
+    if RANK == 0:
+        run_out = run(train_out.dynamics, configs, make_plots=True,
+                      runs_dir=os.path.join(train_out.logdir, 'inference'))
 
     logger.info(f'Passed! Took: {time.time() - t0:.4f} seconds')
     return TestOutputs(train_out, run_out)
