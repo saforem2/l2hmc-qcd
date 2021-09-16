@@ -137,7 +137,7 @@ If you use this code or found this work interesting, please cite our work along 
 This research used resources of the Argonne Leadership Computing Facility, which is a DOE Office of Science User Facility supported under contract DE_AC02-06CH11357.  This work describes objective technical results and analysis. Any subjective views or opinions that might be expressed in the work do not necessarily represent the views of the U.S. DOE or the United States
 Government. Declaration of Interests - None.
 
+[![Hits](https://hits.seeyoufarm.com/api/count/incr/badge.svg?url=https%3A%2F%2Fgithub.com%2Fsaforem2%2Fl2hmc-qcd&count_bg=%2379C83D&title_bg=%23555555&icon=&icon_color=%23E7E7E7&title=hits&edge_flat=false)](https://hits.seeyoufarm.com)
 
-## Stargazers over time
 
 [![Stargazers over time](https://starchart.cc/saforem2/l2hmc-qcd.svg)](https://starchart.cc/saforem2/l2hmc-qcd)
