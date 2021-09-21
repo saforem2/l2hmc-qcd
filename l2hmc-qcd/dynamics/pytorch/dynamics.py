@@ -979,7 +979,7 @@ def train_and_test(
         x = x.reshape(x.shape[0], -1)
 
     train_logs = []
-    train_history = History()
+    train_history = History() if train_history is None else train_history
     timer = StepTimer()
     if logger is None:
         from rich.logging import log as Logger
@@ -994,8 +994,8 @@ def train_and_test(
         train_history.update(metrics, step)
         pre = [f'{step}/{steps.train}']
         mstr = train_history.metrics_summary(window=window, pre=pre,
-                                       keep=keep, skip=skip,
-                                       should_print=should_print)
+                                             keep=keep, skip=skip,
+                                             should_print=should_print)
         if not should_print:
             logger.log(mstr)
 
@@ -1015,7 +1015,7 @@ def train_and_test(
     dynamics.eval()
 
     test_logs = []
-    test_history = History()
+    test_history = History() if test_history is None else test_history
     timer_ = StepTimer()
     for step in range(steps.test):
         x, metrics = test_step((x, beta), dynamics, timer=timer_)
