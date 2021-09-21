@@ -8,11 +8,11 @@ from __future__ import absolute_import, annotations, division, print_function
 import datetime
 import os
 import shutil
-import warnings
+# import warnings
 from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from typing import Any, Union
-from config import PROJECT_DIR
+# from config import PROJECT_DIR
 
 import joblib
 import numpy as np
@@ -22,10 +22,17 @@ import logging
 import logging.config
 
 from rich.logging import RichHandler
-from utils.log_config import logging_config
+from .log_config import logging_config
+# from utils.log_config import logging_config
 
 #  from utils.logger_config import in_notebook
 #  from utils.logger_config import logger as log
+try:
+    import torch
+    HAS_TORCH = True
+except ImportError:
+    HAS_TORCH = False
+
 
 os.environ['COLUMNS'] = str(shutil.get_terminal_size((180, 24))[0])
 
@@ -37,6 +44,7 @@ log = logging.getLogger('root')
 log.handlers[0] = RichHandler(markup=True,
                               show_path=False,
                               rich_tracebacks=True)
+
 
 def get_timestamp(fstr=None):
     """Get formatted timestamp."""
@@ -62,22 +70,36 @@ def strformat(k, v, window: int = 0):
         outstr = '\n'.join(outstr_arr)
     else:
         #  if isinstance(v, (tuple, list, np.ndarray)):
-        if isinstance(v, (tuple, list, np.ndarray, tf.Tensor)):
-            v = np.array(v)
+        tensor_types = [list, np.ndarray, tf.Tensor]
+        if isinstance(v, tensor_types):
+            if HAS_TORCH:
+                if isinstance(v, torch.Tensor):
+                    v = v.detach().numpy()
+
+            if isinstance(v, tf.Tensor):
+                v = v.numpy()
+
+            elif isinstance(v, list):
+                v = np.array(v)
+            else:
+                raise ValueError(f'Unexpected type encountered: {type(v)}')
+
+            assert isinstance(v, np.ndarray)
+
             if window > 0 and len(v.shape) > 0:
                 window = min((v.shape[0], window))
                 avgd = np.mean(v[-window:])
             else:
                 avgd = np.mean(v)
-            outstr = f'{str(k)}={avgd:<4.3f}'
+            outstr = f'{str(k)}={avgd:<3.3f}'
         else:
             if isinstance(v, float):
-                outstr = f'{str(k)}={v:<4.3f}'
+                outstr = f'{str(k)}={v:<3.3f}'
             else:
                 try:
-                    outstr = f'{str(k)}={v:<4f}'
+                    outstr = f'{str(k)}={v:<3f}'
                 except ValueError:
-                    outstr = f'{str(k)}={v:<4}'
+                    outstr = f'{str(k)}={v:<3}'
     return outstr
 
 
@@ -129,6 +151,7 @@ class Logger:
                                   #  force_terminal=(not with_jupyter),
                                   log_time_format='[%x %X] ')
                                   #  theme=Theme(theme))#, width=width)
+            console.width = width
 
         except (ImportError, ModuleNotFoundError):
             console = Console()
@@ -149,7 +172,10 @@ class Logger:
         self.console.rule(s, *args, **kwargs)
 
     def info(self, s: Any, *args, **kwargs):
-        log.info(s, *args, **kwargs)
+        if in_notebook():
+            self.console.log(s, *args, **kwargs)
+        else:
+            log.info(s, *args, **kwargs)
 
     def load_metrics(self, infile: str = None):
         """Try loading metrics from infile."""
@@ -163,7 +189,7 @@ class Logger:
              _ = self.print_dict(s)
              return
 
-        log.info(s, *args, **kwargs)
+        self.info(s, *args, **kwargs)
 
     def print_metrics(
             self,
