@@ -526,20 +526,11 @@ def plot_autocorrs1(
 
 
 def get_params_from_configs(configs: dict):
-    keys = ['num_steps', 'beta_init', 'beta_final', 'x_shape',
-            'net_weights']
-
-    #  eps = dynamics.eps.numpy()
-    num_steps = configs['dynamics_config']['num_steps']
-    beta_init = configs['beta_init']
-    beta_final = configs['beta_final']
-    x_shape = configs['dynamics_config']['x_shape']
-    net_weights = configs['dynamics_config']['net_weights']
-    params = {
-        'num_steps': configs['dynamics_config']['num_steps'],
-        'x_shape': configs['dynamics_config']['x_shape'],
+    return {
         'beta_init': configs['beta_init'],
         'beta_final': configs['beta_final'],
+        'x_shape': configs['dynamics_config']['x_shape'],
+        'num_steps': configs['dynamics_config']['num_steps'],
         'net_weights': configs['dynamics_config']['net_weights'],
     }
 
@@ -547,7 +538,7 @@ def get_params_from_configs(configs: dict):
 
 def plot_data(
         data_container: DataContainer, #  "DataContainer",  # noqa:F821
-        configs: dict,
+        configs: dict = None,
         out_dir: str = None,
         therm_frac: float = 0,
         params: Union[dict, AttrDict] = None,
@@ -595,13 +586,16 @@ def plot_data(
             title = None
 
     else:
-        params = {
-            'beta_init': configs['beta_init'],
-            'beta_final': configs['beta_final'],
-            'x_shape': configs['dynamics_config']['x_shape'],
-            'num_steps': configs['dynamics_config']['num_steps'],
-            'net_weights': configs['dynamics_config']['net_weights'],
-        }
+        if configs is not None:
+            params = {
+                'beta_init': configs['beta_init'],
+                'beta_final': configs['beta_final'],
+                'x_shape': configs['dynamics_config']['x_shape'],
+                'num_steps': configs['dynamics_config']['num_steps'],
+                'net_weights': configs['dynamics_config']['net_weights'],
+            }
+        else:
+            params = {}
 
     tstamp = io.get_timestamp('%Y-%m-%d-%H%M%S')
     plotdir = None
@@ -612,7 +606,10 @@ def plot_data(
     tint_data = {}
     output = {}
     if 'charges' in data_container.data:
-        lf = configs['dynamics_config']['num_steps']  # type: int
+        if configs is not None:
+            lf = configs['dynamics_config']['num_steps']  # type: int
+        else:
+            lf = 0
         qarr = np.array(data_container.data['charges'])
         t0 = time.time()
         tint_dict, _ = plot_autocorrs_vs_draws(qarr, num_pts=20,
