@@ -54,8 +54,12 @@ def plaq_exact(beta: float):
     return i1(beta) / i0(beta)
 
 
-def project_angle(x: torch.Tensor):
-    return x - TWO_PI * torch.floor(x + PI / TWO_PI)
+# def project_angle(x: torch.Tensor):
+#     return x - TWO_PI * torch.floor(x + PI / TWO_PI)
+
+def project_angle(x: torch.Tensor) -> torch.Tensor:
+    """For x in [-4pi, 4pi], returns x in [-pi, pi]."""
+    return x - TWO_PI * torch.floor((x + PI) / TWO_PI)
 
 
 class Lattice:
@@ -69,44 +73,46 @@ class Lattice:
     def unnormalized_log_prob(self, x: torch.Tensor):
         return self.calc_actions(x=x)
 
-    def calc_observables(self, x: torch.Tensor):
+    def calc_observables(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
         wloops = self.calc_wilson_loops(x)
         #  actions = self.calc_actions(wloops=wloops)
         charges = self.calc_both_charges(wloops=wloops)
         plaqs = self.calc_plaqs(wloops=wloops) # , beta=beta)
+        p4x4 = self.calc_plaqs4x4(x=x)
         metrics = {
-            'plaqs': plaqs, # 'p4x4': p4x4,
-            'intQ': charges.intQ, 'sinQ': charges.sinQ,
+            'p4x4': p4x4,
+            'plaqs': plaqs, 
+            'intQ': charges.intQ,
+            'sinQ': charges.sinQ,
         }
         # return Metrics(**metrics)
         return metrics
 
     def calc_wilson_loops(self, x: torch.Tensor):
         """Calculate the Wilson loops by summing links in CCW direction."""
-        x = x.reshape(-1, *self.x_shape)
-        return (x[..., 0]
-                - x[..., 1]
-                - x[..., 0].roll(-1, dims=2)
-                + x[..., 1].roll(-1, dims=1))
+        x0, x1 = x.reshape(-1, *self.x_shape).T
+        return (x0 + x1.roll(-1, dims=0) - x0.roll(-1, dims=1) - x1).T
 
     def calc_wilson_loops4x4(self, x: torch.Tensor):
-        x = x.reshape(-1, *self.x_shape)
-        wl4x4 = (x[..., 0]                                       # U0(x, y)
-                 + torch.roll(x[..., 0], -1, dims=2)             # U0(x+1, y)
-                 + torch.roll(x[..., 0], -2, dims=2)             # U0(x+2, y)
-                 + torch.roll(x[..., 0], -3, dims=2)             # U0(x+3, y)
-                 + torch.roll(x[..., 1], -4, dims=2)             # U1(x+4, y)
-                 + torch.roll(x[..., 1], (-4, -1), dims=(2, 1))  # U1(x+4, y+1)
-                 + torch.roll(x[..., 1], (-4, -2), dims=(2, 1))  # U1(x+4, y+2)
-                 + torch.roll(x[..., 1], (-4, -3), dims=(2, 1))  # U1(x+4, y+3)
-                 - torch.roll(x[..., 0], (-3, -4), dims=(2, 1))  # U0(x+3, y+4)
-                 - torch.roll(x[..., 0], (-2, -4), dims=(2, 1))  # U0(x+2, y+4)
-                 - torch.roll(x[..., 0], (-1, -4), dims=(2, 1))  # U0(x+1, y+4)
-                 - torch.roll(x[..., 0], -4, dims=1)             # U0(x, y+4)
-                 - torch.roll(x[..., 1], -3, dims=1)             # U1(x, y+3)
-                 - torch.roll(x[..., 1], -2, dims=1)             # U1(x, y+2)
-                 - torch.roll(x[..., 1], -1, dims=1)             # U1(x, y+1)
-                 - x[..., 1])                                    # U1(x, y)
+        x = x.reshape(-1, *self.x_shape).T
+        # x0 = x[0]
+        # x1 = x[..., 1]
+        wl4x4 = (x[0]                                 # U0(x, y)
+                + x[0].roll(-1, dims=2)               # U0(x+1, y)
+                + x[0].roll(-2, dims=2)               # U0(x+2, y)
+                + x[0].roll(-3, dims=2)               # U0(x+3, y)
+                + x[0].roll(-4, dims=2)               # U0(x+4, y)
+                + x[1].roll((-4, -1), dims=(2, 1))    # U1(x+4, y+1)
+                + x[1].roll((-4, -2), dims=(2, 1))    # U1(x+4, y+2)
+                + x[1].roll((-4, -3), dims=(2, 1))    # U1(x+4, y+3)
+                - x[0].roll((-3, -4), dims=(2, 1))    # U0*(x+3, y+4)
+                - x[0].roll((-2, -4), dims=(2, 1))    # U0*(x+2, y+4)
+                - x[0].roll((-1, -4), dims=(2, 1))    # U0*(x+1, y+4)
+                - x[1].roll(-4, dims=1)               # U0*(x, y+4)
+                - x[1].roll(-3, dims=1)               # U1*(x, y+3)
+                - x[1].roll(-2, dims=1)               # U1*(x, y+2)
+                - x[1].roll(-1, dims=1)               # U1*(x, y+1)
+                - x[1])                               # U1*(x, y)
 
         return wl4x4
 
