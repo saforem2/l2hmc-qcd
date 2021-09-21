@@ -14,15 +14,26 @@ import numpy as np
 from dataclasses import dataclass, asdict, field
 from math import pi as PI
 
+from utils.logger import Logger
 from network.pytorch.network import (NetworkConfig, LearningRateConfig,
                                      ConvolutionConfig, GaugeNetwork, init_weights)
 from lattice.pytorch.lattice import Lattice
-from utils.pytorch.metrics import History, Metrics
+# from utils.pytorch.metrics import History, Metrics
+
+from utils.data_containers import History, StepTimer, Metrics
+# from utils.data_containers import History, StepTimer, Metrics, innerHistory
 
 
 TWO_PI = 2. * PI
 
 NetworkOutputs = tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+
+logger = Logger()
+
+
+def rand_unif(shape: tuple, a: float, b: float, requires_grad: bool):
+    return (a - b) * torch.rand(shape, requires_grad=requires_grad) + b
+
 
 def grab(x: torch.Tensor):
     return x.detach().cpu().numpy()
@@ -54,6 +65,7 @@ class DynamicsConfig:
     charge_weight: float = 0.
     optimizer: str = 'adam'
     clip_val: float = 0.
+    separate_networks: bool = True
     net_weights: NetWeights = field(default_factory=NetWeights)
 
     def __post_init__(self):
@@ -91,7 +103,34 @@ class MonteCarloStates:
 
 
 def to_u1(x: torch.Tensor) -> torch.Tensor:
-    return (x + PI % TWO_PI) - PI
+    return ((x + PI) % TWO_PI) - PI
+
+
+def project_angle(x):
+    """For x in [-4pi, 4pi], returns x in [-pi, pi]."""
+    return x - TWO_PI * torch.floor((x + PI) / TWO_PI)
+
+
+
+def save_dynamics(dynamics: GaugeDynamics, outdir: Union[str, Path]):
+    outfile = Path(outdir).joinpath('gauge_dynamics.pt')
+    torch.save(dynamics.state_dict(), outfile)
+
+
+# Metrics = dict[str, Union[torch.Tensor, np.ndarray]]
+
+class Clamp(torch.autograd.Function):
+    def __init__(self, a: float = 0., b: float = 1., **kwargs):
+        super().__init__(**kwargs)
+        self._a = a
+        self._b = b
+
+    def forward(self, ctx, input):
+        return input.clamp(min=self._a, max=self._b)
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        return grad_output.clone()
 
 
 class GaugeDynamics(nn.Module):
@@ -130,12 +169,18 @@ class GaugeDynamics(nn.Module):
 
         xeps = []
         veps = []
-        reqs_grad = (not self.config.eps_fixed)
+        # clamp = Clamp(0., 1.)
+        rg = (not self.config.eps_fixed)
         for _ in range(self.lf):
-            xeps.append(nn.Parameter(torch.tensor(self.config.eps),
-                                     requires_grad=reqs_grad))
-            veps.append(nn.Parameter(torch.tensor(self.config.eps),
-                                     requires_grad=reqs_grad))
+            alpha = torch.log(torch.tensor(self.config.eps))
+            xe = nn.Parameter(torch.exp(alpha), requires_grad=rg)
+            ve = nn.Parameter(torch.exp(alpha), requires_grad=rg)
+            xeps.append(xe)
+            veps.append(ve)
+            # xeps.append(clamp.apply(xe))
+            # veps.append(clamp.apply(ve))
+            # xeps.append(nn.Parameter(torch.tensor(self.config.eps), requires_grad=rg))
+            # veps.append(nn.Parameter(torch.tensor(self.config.eps), requires_grad=rg))
 
         self.xeps = nn.ParameterList(xeps)
         self.veps = nn.ParameterList(veps)
@@ -153,21 +198,25 @@ class GaugeDynamics(nn.Module):
             ]
         else:
             networks = self.build_networks(self.net_config)
-            self.vnet = networks['v']
-            self.xnet0 = networks['x0']
-            self.xnet1 = networks['x1']
+            if self.config.separate_networks:
+                self.vnet = networks['v']
+                self.xnet0 = networks['x0']
+                self.xnet1 = networks['x1']
+            else:
+                self.vnet = networks['v']
+                self.xnet = networks['x']
 
     def forward(
             self,
             inputs: tuple[torch.Tensor, float]
-    ) -> tuple[MonteCarloStates, dict[str, torch.Tensor]]:
+    ) -> tuple[MonteCarloStates, Metrics]:
 
         return self.apply_transition(inputs)
 
     def apply_transition(
             self,
             inputs: tuple[torch.Tensor, float]
-    ) -> tuple[MonteCarloStates, dict[str, torch.Tensor]]:
+    ) -> tuple[MonteCarloStates, Metrics]:
         if self.config.hmc:
             return self._hmc_transition(inputs)
 
@@ -181,7 +230,7 @@ class GaugeDynamics(nn.Module):
         sldb = metricsb.sumlogdet
         pxb = metricsb.accept_prob
 
-        mf_, mb_ = self._get_direction_masks()
+        mf_, mb_ = self._get_direction_masks(batch_size=x.shape[0])
         mf = mf_[:, None]
         mb = mb_[:, None]
 
@@ -221,10 +270,31 @@ class GaugeDynamics(nn.Module):
     ):
         x, beta = inputs
         v = torch.randn_like(x)
-        state = State(x=x, v=v, beta=beta)
+        state = State(x=to_u1(x), v=v, beta=beta)
         state_, metrics = self.transition_kernel(state, forward)
 
         return state, state_, metrics
+
+    def md_update(
+            self,
+            inputs: tuple[torch.Tensor, float],
+            forward: bool = True,
+    ):
+        """Perform the molecular dynamics (MD) update w/o accept/reject.
+
+        NOTE: We simulate the dynamics both forward and backward, and use
+        sampled Bernoulli masks to compute the actual solutions
+        """
+        x, beta = inputs
+        v = torch.randn_like(x)
+        state = State(x=to_u1(x), v=v, beta=beta)
+        # sumlogdet = torch.zeros(state.x.shape[0])
+        lf_fn = self._forward_lf if forward else self._backward_lf
+        for step in range(self.lf):
+            state, _ = lf_fn(step, state)
+            # sumlogdet = sumlogdet + logdet
+
+        return to_u1(state.x)
 
     def _transition_kernel(self, state: State, forward: bool):
         """Implements the transition kernel."""
@@ -261,7 +331,6 @@ class GaugeDynamics(nn.Module):
         """Transition kernel of the augmented leapfrog integrator."""
         return self._transition_kernel(state, forward)
 
-
     def get_network_configs(
             self,
             net_config: NetworkConfig = None,
@@ -297,20 +366,24 @@ class GaugeDynamics(nn.Module):
             net_config: NetworkConfig = None,
             # conv_config: ConvolutionConfig = None,
     ) -> dict[str, torch.nn.ModuleList]:
-            
         cfgs = self.get_network_configs(net_config)
-        vnet = nn.ModuleList([
-            GaugeNetwork(**cfgs['vnet']) for _ in range(self.lf)
-        ])
-        xnet0 = nn.ModuleList([
-            GaugeNetwork(**cfgs['xnet']) for _ in range(self.lf)
-        ])
-        xnet1 = nn.ModuleList([
-            GaugeNetwork(**cfgs['xnet']) for _ in range(self.lf)
-        ])
+        if self.config.separate_networks:
+            vnet = nn.ModuleList([
+                GaugeNetwork(**cfgs['vnet']) for _ in range(self.lf)
+            ])
+            xnet0 = nn.ModuleList([
+                GaugeNetwork(**cfgs['xnet']) for _ in range(self.lf)
+            ])
+            xnet1 = nn.ModuleList([
+                GaugeNetwork(**cfgs['xnet']) for _ in range(self.lf)
+            ])
+            networks = {'v': vnet, 'x0': xnet0, 'x1': xnet1}
+        else:
+            vnet = GaugeNetwork(**cfgs['vnet'])
+            xnet = GaugeNetwork(**cfgs['xnet'])
+            networks = {'v': vnet, 'x': xnet}
 
-        return {'v': vnet, 'x0': xnet0, 'x1': xnet1}
-
+        return networks
 
     def compute_accept_prob(
             self,
@@ -331,8 +404,8 @@ class GaugeDynamics(nn.Module):
 
         return ma, mr
 
-    def _get_direction_masks(self):
-        mf = (torch.rand(self.batch_size) > 0.5).to(torch.float)
+    def _get_direction_masks(self, batch_size: int):
+        mf = (torch.rand(batch_size) > 0.5).to(torch.float)
         mb = 1. - mf
 
         return mf, mb
@@ -345,7 +418,7 @@ class GaugeDynamics(nn.Module):
         q_init = self.lattice.calc_charges(x=states.init.x, use_sin=True)
         q_prop = self.lattice.calc_charges(x=states.prop.x, use_sin=True)
         qloss = (accept_prob * (q_prop - q_init) ** 2) + 1e-4
-        qloss = -qloss / self.charge_weight
+        qloss = qloss / self.charge_weight
 
         return qloss.mean()
 
@@ -353,7 +426,7 @@ class GaugeDynamics(nn.Module):
         x, beta = inputs
         sf_init, sf_prop, metricsf = self._transition(inputs, forward=True)
         sb_init, sb_prop, metricsb = self._transition(inputs, forward=False)
-        mf_, mb_ = self._get_direction_masks()
+        mf_, mb_ = self._get_direction_masks(batch_size=x.shape[0])
         mf = mf_[:, None]
         mb = mb_[:, None]
 
@@ -406,7 +479,7 @@ class GaugeDynamics(nn.Module):
 
         # for i in range(self.lf):
         #     m = p if i % 2 == 0 else (1. - p)
-        #     mask = m.reshape((self.batch_size, -1))
+        #     mask = m.reshape((state.x.shape[0], -1))
         #     mask = torch.from_numpy(mask)
         #     masks.append(mask)
 
@@ -414,9 +487,9 @@ class GaugeDynamics(nn.Module):
 
     def _init_metrics(self, state: State) -> History:
         """Initialize metrics using info from `state`."""
-        logdets = torch.zeros(self.batch_size)
-        accept_prob = torch.zeros(self.batch_size)
-        sumlogdet = torch.zeros(self.batch_size)
+        logdets = torch.zeros(state.x.shape[0])
+        accept_prob = torch.zeros(state.x.shape[0])
+        sumlogdet = torch.zeros(state.x.shape[0])
         energy = self.hamiltonian(state)
         energy_scaled = energy - logdets
         metrics = self.lattice.calc_observables(x=state.x)
@@ -454,7 +527,12 @@ class GaugeDynamics(nn.Module):
         if hmc or self.config.hmc:
             return self._hmc_net(inputs[0])
 
-        return self.vnet[step](inputs)
+        if self.config.separate_networks:
+            vnet = self.vnet[step]
+        else:
+            vnet = self.vnet
+
+        return vnet(inputs)
 
     def _convert_to_cartesian(
             self,
@@ -486,7 +564,11 @@ class GaugeDynamics(nn.Module):
 
         x, v = inputs
         x = self._convert_to_cartesian(x, mask)
-        xnet = self.xnet0[step] if first else self.xnet1[step]
+        if self.config.separate_networks:
+            xnet = self.xnet0[step] if first else self.xnet1[step]
+        else:
+            xnet = self.xnet
+
         return xnet((x, v))
 
     def _hmc_forward_lf(self, step: int, state: State):
@@ -494,7 +576,7 @@ class GaugeDynamics(nn.Module):
         state_, _ = self._hmc_update_x_forward(step, state_)
         state_, _ = self._hmc_update_v_forward(step, state_)
 
-        return state_, torch.zeros(self.batch_size)
+        return state_, torch.zeros(state.x.shape[0])
 
     def _hmc_backward_lf(self, step: int, state: State):
         step_r = self.lf - step - 1
@@ -502,7 +584,7 @@ class GaugeDynamics(nn.Module):
         state_, _ = self._hmc_update_x_backward(step_r, state_)
         state_, _ = self._hmc_update_v_backward(step_r, state_)
 
-        return state_, torch.zeros(self.batch_size)
+        return state_, torch.zeros(state.x.shape[0])
 
     def _forward_lf(self, step: int, state: State):
         if self.config.hmc:
@@ -553,10 +635,10 @@ class GaugeDynamics(nn.Module):
 
     def _hmc_update_v_forward(self, step: int, state: State):
         x = to_u1(state.x)
-        eps = self.veps[step]
         grad = self.grad_potential(x, state.beta)
+        eps = self.veps[step]
         vf = state.v - 0.5 * eps * grad
-        logdet = torch.zeros(self.batch_size)
+        logdet = torch.zeros(state.x.shape[0])
         state_ = State(x=x, v=vf, beta=state.beta)
         return state_, logdet
 
@@ -585,7 +667,7 @@ class GaugeDynamics(nn.Module):
         eps = self.veps[step]
         grad = self.grad_potential(x, state.beta)
         vb = state.v - 0.5 * eps * grad
-        logdet = torch.zeros(self.batch_size)
+        logdet = torch.zeros(state.x.shape[0])
         state_ = State(x=x, v=vb, beta=state.beta)
 
         return state_, logdet
@@ -617,7 +699,7 @@ class GaugeDynamics(nn.Module):
         xf = to_u1(x + eps * v)
         state_ = State(x=xf, v=v, beta=state.beta)
 
-        return state_, torch.zeros(self.batch_size)
+        return state_, torch.zeros(state.x.shape[0])
 
     def _update_x_forward(
             self,
@@ -631,7 +713,7 @@ class GaugeDynamics(nn.Module):
 
         m, mc = masks
         eps = self.xeps[step]
-        x = to_u1(state.x)
+        x = state.x
         v = state.v
         s_, t_, q_ = self._call_xnet(step, (x, v), m, first=first)
 
@@ -665,7 +747,7 @@ class GaugeDynamics(nn.Module):
         xf = to_u1(to_u1(state.x) + self.xeps[step] * state.v)
         state_ = State(x=xf, v=state.v, beta=state.beta)
 
-        return state_, torch.zeros(self.batch_size)
+        return state_, torch.zeros(state.x.shape[0])
 
     def _update_x_backward(
             self,
@@ -734,50 +816,228 @@ class GaugeDynamics(nn.Module):
         dsdx, = torch.autograd.grad(s, x,
                                     # retain_graph=True,
                                     create_graph=create_graph,
-                                    grad_outputs=torch.ones(self.batch_size))
-        return dsdx.detach()
+                                    grad_outputs=torch.ones(x.shape[0]))
+        # return dsdx.detach()
+        return dsdx
+
+    def calc_metrics(self, mc_states: MonteCarloStates) -> Metrics:
+        x0 = to_u1(mc_states.init.x)
+        x1 = to_u1(mc_states.out.x)
+        metrics = self.lattice.calc_observables(x1)
+
+        q0 = self.lattice.calc_both_charges(x0)
+        q1 = self.lattice.calc_both_charges(x1)
+        metrics['dQint'] = torch.abs(q1.intQ - q0.intQ)
+        metrics['dQsin'] = torch.abs(q1.sinQ - q0.sinQ)
+
+        return metrics
+
+    def train_step(
+            self,
+            inputs: tuple[torch.Tensor, torch.Tensor],
+            optimizer: optim.Optimizer
+    ) -> tuple[torch.Tensor, Metrics]:
+        """Perform a single training step."""
+        x, beta = inputs
+        loss = torch.tensor(0.0)
+        if torch.cuda.is_available():
+            x, loss = x.cuda(), loss.cuda()
+
+        mc_states, outputs = self((to_u1(x), beta))
+        loss = -self.calc_losses(mc_states, outputs['accept_prob'])
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+        loss.detach()
+
+        metrics = self.calc_metrics(mc_states)
+        metrics.update({
+            'loss': loss.detach(),
+            'acc': outputs['accept_mask'].detach(),
+            'px': outputs['accept_prob'].detach()
+        })
+
+        return mc_states.out.x.detach(), metrics
+
 
 
 def train_step(
-    inputs: tuple[torch.Tensor, torch.Tensor],
-    dynamics: GaugeDynamics,
-    optimizer: optim.Optimizer
+        inputs: tuple[torch.Tensor, float],
+        dynamics: GaugeDynamics,
+        optimizer: optim.Optimizer,
+        timer: StepTimer = None,
 ):
+    """Perform a single training step"""
+    timer = StepTimer() if timer is None else timer
+    dynamics.train()
+    x, beta = inputs
+
+    # loss = torch.tensor(0.0)
+
+    if torch.cuda.is_available():
+        x = x.cuda()
+
+    # optimizer.zero_grad()
+
+    timer.start()
+    mc_states, outputs = dynamics((to_u1(x), beta))
+    loss = - dynamics.calc_losses(mc_states, outputs['accept_prob'])
+
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
+    dt = timer.stop()
+    # loss.detach()
+
+
+    # x.detach()
+    # loss.detach()
+
+    metrics = {
+        'dt': dt,
+        'loss': loss.detach(),
+        'beta': mc_states.out.beta,
+        'acc': outputs['accept_mask'].detach(),
+        'px': outputs['accept_prob'].detach()
+    }
+    dmetrics = dynamics.calc_metrics(mc_states)
+    metrics.update(**dmetrics)
+
+    return to_u1(mc_states.out.x).detach(), metrics
+
+
+def test_step(
+    inputs: tuple[torch.Tensor, float],
+    dynamics: GaugeDynamics,
+    timer: StepTimer = None,
+):
+    """Perform a single training step"""
+    from utils.data_containers import History, StepTimer
+    dynamics.eval()
 
     x, beta = inputs
+    timer = StepTimer() if timer is None else timer
 
     loss = torch.tensor(0.0)
 
     if torch.cuda.is_available():
         x = x.cuda()
         loss = loss.cuda()
-        beta = beta.cuda()
 
+    timer.start()
     mc_states, outputs = dynamics((to_u1(x), beta))
-    loss = dynamics.calc_losses(mc_states, outputs['accept_prob'])
-    optimizer.zero_grad()
-    loss.backward()
-    optimizer.step()
-    loss.detach()
-    x.detach()
-
-    beta = mc_states.out.beta
-    xin = to_u1(mc_states.init.x)
-    xout = to_u1(mc_states.out.x)
-    latmetrics = dynamics.lattice.calc_observables(xout)
-    qinit = dynamics.lattice.calc_both_charges(xin)
-    dqint = torch.abs(latmetrics['intQ'] - qinit.intQ)
-    dqsin = torch.abs(latmetrics['sinQ'] - qinit.sinQ)
+    # TODO: Turn off `x.requires_grad_ = False` here???
+    loss = - dynamics.calc_losses(mc_states, outputs['accept_prob'])
+    dt = timer.stop()
 
     metrics = {
-        'loss': loss,
+        'dt': dt,
+        'loss': loss.detach(),
+        'beta': mc_states.out.beta,
         'acc': outputs['accept_mask'].detach(),
-        'px': outputs['accept_prob'].detach(),
-        'sld': outputs['sumlogdet'].detach(),
-        'dQint': dqint.detach(),
-        'dQsin': dqsin.detach(),
-        'plaq': latmetrics['plaqs'].detach(),
-        # 'p4x4': latmetrics['p4x4'],
+        'px': outputs['accept_prob'].detach()
+    }
+    dmetrics = dynamics.calc_metrics(mc_states)
+    metrics.update(**dmetrics)
+
+    return mc_states.out.x, metrics
+
+
+@dataclass
+class Steps:
+    train: int
+    test: int
+    log: int = 1
+    save: int = 0
+
+    def __post_init__(self):
+        if self.save == 0:
+            self.save == int(self.train // 4)
+
+
+def train_and_test(
+        dynamics: GaugeDynamics,
+        optimizer: optim.Optimizer,
+        steps: Steps,
+        beta: float,
+        window: int = 10,
+        x: torch.Tensor = None,
+        skip: Union[str, list[str]] = None,
+        keep: Union[str, list[str]] = None,
+        logger: Logger = None,
+        train_history: History = None,
+        test_history: History = None,
+) -> dict[str, dict[str, Union[History, StepTimer]]]:
+    """Run training and evaluate the trained model."""
+    from utils.logger import in_notebook
+    from utils.data_containers import History, StepTimer
+
+    dynamics.train()
+
+    if x is None:
+        x = rand_unif(dynamics.config.x_shape, *(-PI, PI), requires_grad=True)
+        x = x.reshape(x.shape[0], -1)
+
+    train_logs = []
+    train_history = History()
+    timer = StepTimer()
+    if logger is None:
+        from rich.logging import log as Logger
+        logger = Logger()
+
+    should_print = (not in_notebook())
+
+    logger.log(f'Training for {steps.train} steps...')
+    for step in range(steps.train):
+        x, metrics = train_step((to_u1(x), beta), dynamics=dynamics,
+                                optimizer=optimizer, timer=timer)
+        train_history.update(metrics, step)
+        pre = [f'{step}/{steps.train}']
+        mstr = train_history.metrics_summary(window=window, pre=pre,
+                                       keep=keep, skip=skip,
+                                       should_print=should_print)
+        if not should_print:
+            logger.log(mstr)
+
+        train_logs.append(mstr)
+
+    logger.log(80 * '-')
+    rate = timer.get_eval_rate(evals_per_step=dynamics.config.num_steps)
+    logger.log(f'Done training! took: {rate["total_time"]}')
+    logger.log(f'Timing info:')
+    for key, val in rate.items():
+        logger.log(f' - {key}={val}')
+
+
+    logger.log(80 * '-')
+    logger.log(f'Running inference...')
+
+    dynamics.eval()
+
+    test_logs = []
+    test_history = History()
+    timer_ = StepTimer()
+    for step in range(steps.test):
+        x, metrics = test_step((x, beta), dynamics, timer=timer_)
+        test_history.update(metrics, step)
+        pre = [f'{step}/{steps.test}']
+        mstr = test_history.metrics_summary(window=0, pre=pre,
+                                            keep=keep, skip=skip,
+                                            should_print=should_print)
+        if not should_print:
+            logger.log(mstr)
+
+        test_logs.append(mstr)
+
+    rate = timer_.get_eval_rate(evals_per_step=dynamics.config.num_steps)
+    logger.log(f'Done training! took: {rate["total_time"]}')
+    logger.log(f'Timing info:')
+    for key, val in rate.items():
+        logger.log(f' - {key}={val}')
+
+    outputs = {
+        'train': {'history': train_history, 'timer': timer},
+        'test': {'history': test_history, 'timer': timer_},
     }
 
-    return xout.detach(), metrics
+    return outputs
