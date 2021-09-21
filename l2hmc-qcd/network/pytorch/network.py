@@ -82,6 +82,11 @@ def init_weights(m):
         torch.nn.init.kaiming_normal_(m.weight)
 
 
+def init_zero_weights(m):
+    if isinstance(m, nn.Linear):
+        torch.nn.init.zeros_(m.weight)
+
+
 # pylint:disable=invalid-name
 class GenericNetwork(nn.Module):
     def __init__(self, xdim: int, net_config: NetworkConfig):
