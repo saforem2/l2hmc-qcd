@@ -21,7 +21,7 @@ from network.pytorch.network import (NetworkConfig, LearningRateConfig,
 from lattice.pytorch.lattice import Lattice
 # from utils.pytorch.metrics import History, Metrics
 
-from utils.data_containers import History, StepTimer, Metrics
+from utils.data_containers import History, StepTimer, Metrics, innerHistory
 
 # from utils.data_containers import History, StepTimer, Metrics, innerHistory
 
@@ -320,7 +320,7 @@ class GaugeDynamics(nn.Module):
         #                    'plaqs', 'p4x4',
         #                    'logdets', 'sumlogdet',
         #                    'H', 'Hw', 'accept_prob'])
-        history = History()
+        history = innerHistory()
         metrics = Metrics()
 
         sumlogdet = torch.zeros(state.x.shape[0])
@@ -500,7 +500,7 @@ class GaugeDynamics(nn.Module):
 
         return masks
 
-    def _init_metrics(self, state: State) -> History:
+    def _init_metrics(self, state: State) -> innerHistory:
         """Initialize metrics using info from `state`."""
         logdets = torch.zeros(state.x.shape[0])
         accept_prob = torch.zeros(state.x.shape[0])
@@ -508,15 +508,15 @@ class GaugeDynamics(nn.Module):
         energy = self.hamiltonian(state)
         energy_scaled = energy - logdets
         metrics = self.lattice.calc_observables(x=state.x)
-        return History(dict(H=[energy],
-                            Hw=[energy_scaled],
-                            logdets=[logdets],
-                            Qs=[metrics.Qs],
-                            Qi=[metrics.Qi],
-                            plaqs=[metrics.plaqs],
-                            p4x4=[metrics.p4x4],
-                            accept_prob=accept_prob,
-                            sumlogdet=sumlogdet))
+        return innerHistory(dict(H=[energy],
+                                 Hw=[energy_scaled],
+                                 logdets=[logdets],
+                                 Qs=[metrics.Qs],
+                                 Qi=[metrics.Qi],
+                                 plaqs=[metrics.plaqs],
+                                 p4x4=[metrics.p4x4],
+                                 accept_prob=accept_prob,
+                                 sumlogdet=sumlogdet))
 
     def get_metrics(self, state: State, logdet: torch.Tensor) -> Metrics:
         energy = self.hamiltonian(state)
