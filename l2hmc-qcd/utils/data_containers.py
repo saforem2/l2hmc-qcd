@@ -304,6 +304,9 @@ class History:
 
         for k, v in metrics.items():
             if isinstance(v, torch.Tensor):
+                if torch.cuda.is_available():
+                    v = v.cpu()
+
                 v = v.detach().numpy().squeeze()
             try:
                 self.data[k].append(v)
