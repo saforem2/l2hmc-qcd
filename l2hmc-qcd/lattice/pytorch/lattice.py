@@ -20,15 +20,15 @@ TWO_PI = 2. * PI
 
 @dataclass
 class Charges:
-    sinQ: torch.Tensor
-    intQ: torch.Tensor
+    Qs: torch.Tensor
+    Qi: torch.Tensor
 
     def asdict(self):
         return asdict(self)
 
 
 LatticeMetrics = namedtuple('LatticeMetrics', ['plaqs', 'p4x4',
-                                               'sinQ', 'intQ'])
+                                               'Qs', 'Qi'])
 
 
 # TODO: Deal with bessel functions in `area_law` and `plaq_exact`
@@ -80,10 +80,10 @@ class Lattice:
         plaqs = self.calc_plaqs(wloops=wloops) # , beta=beta)
         p4x4 = self.calc_plaqs4x4(x=x)
         metrics = {
-            'p4x4': p4x4,
+            'p4': p4x4,
             'plaqs': plaqs, 
-            'intQ': charges.intQ,
-            'sinQ': charges.sinQ,
+            'Qi': charges.Qi,
+            'Qs': charges.Qs,
         }
         # return Metrics(**metrics)
         return metrics
@@ -201,7 +201,7 @@ class Lattice:
             else:
                 raise ValueError('One of `x` or `wloops` must be specified.')
 
-        sinq = torch.sin(wloops).sum((1, 2)) / TWO_PI
-        intq = project_angle(wloops).sum((1, 2)) / TWO_PI
+        qs = torch.sin(wloops).sum((1, 2)) / TWO_PI
+        qi = project_angle(wloops).sum((1, 2)) / TWO_PI
 
-        return Charges(sinQ=sinq, intQ=intq)
+        return Charges(Qs=qs, Qi=qi)
