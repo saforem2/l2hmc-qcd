@@ -151,7 +151,7 @@ class Logger:
                                   #  force_terminal=(not with_jupyter),
                                   log_time_format='[%x %X] ')
                                   #  theme=Theme(theme))#, width=width)
-            console.width = width
+            console._width = width
 
         except (ImportError, ModuleNotFoundError):
             console = Console()
