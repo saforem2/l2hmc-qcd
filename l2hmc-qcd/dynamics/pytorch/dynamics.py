@@ -283,7 +283,7 @@ class GaugeDynamics(nn.Module):
             forward: bool
     ):
         x, beta = inputs
-        v = torch.randn_like(x)
+        v = torch.randn_like(x, device=x.device)
         state = State(x=to_u1(x), v=v, beta=beta)
         state_, metrics = self.transition_kernel(state, forward)
 
@@ -300,7 +300,7 @@ class GaugeDynamics(nn.Module):
         sampled Bernoulli masks to compute the actual solutions
         """
         x, beta = inputs
-        v = torch.randn_like(x)
+        v = torch.randn_like(x, device=x.device)
         state = State(x=to_u1(x), v=v, beta=beta)
         # sumlogdet = torch.zeros(state.x.shape[0])
         lf_fn = self._forward_lf if forward else self._backward_lf
