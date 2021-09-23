@@ -8,31 +8,45 @@ from pathlib import Path
 from typing import Union
 import torch
 import json
-from torch import optim
+import torch
 import torch.nn as nn
+from torch import optim
 import numpy as np
 from dataclasses import dataclass, asdict, field
 from math import pi as PI
 
-from utils.logger import Logger
+from utils.logger import Logger, in_notebook
 from network.pytorch.network import (NetworkConfig, LearningRateConfig,
                                      ConvolutionConfig, GaugeNetwork, init_weights)
 from lattice.pytorch.lattice import Lattice
 # from utils.pytorch.metrics import History, Metrics
 
 from utils.data_containers import History, StepTimer, Metrics
+
 # from utils.data_containers import History, StepTimer, Metrics, innerHistory
 
+# logger = Logger()
+if in_notebook:
+    import rich.console as console
+    logger = console.Console(width=135,
+                             log_path=False,
+                             log_time_format='[%x %X]',
+                             color_system='truecolor')
+else:
+    logger = Logger()
+# if in_notebook:
+#     logger = logger.console
 
 TWO_PI = 2. * PI
 
 NetworkOutputs = tuple[torch.Tensor, torch.Tensor, torch.Tensor]
 
-logger = Logger()
 
-
-def rand_unif(shape: tuple, a: float, b: float, requires_grad: bool):
+def rand_unif(shape: Union[tuple, list], a: float, b: float, requires_grad: bool):
     return (a - b) * torch.rand(shape, requires_grad=requires_grad) + b
+
+def random_angle(shape: tuple, requires_grad: bool = True):
+    return TWO_PI * torch.rand(shape, requires_grad=requires_grad) - PI
 
 
 def grab(x: torch.Tensor):
@@ -173,8 +187,8 @@ class GaugeDynamics(nn.Module):
         rg = (not self.config.eps_fixed)
         for _ in range(self.lf):
             alpha = torch.log(torch.tensor(self.config.eps))
-            xe = nn.Parameter(torch.exp(alpha), requires_grad=rg)
-            ve = nn.Parameter(torch.exp(alpha), requires_grad=rg)
+            xe = nn.parameter.Parameter(torch.exp(alpha), requires_grad=rg)
+            ve = nn.parameter.Parameter(torch.exp(alpha), requires_grad=rg)
             xeps.append(xe)
             veps.append(ve)
             # xeps.append(clamp.apply(xe))
@@ -302,10 +316,11 @@ class GaugeDynamics(nn.Module):
 
         # copy initial state into proposed state `state_`
         state_ = State(x=state.x, v=state.v, beta=state.beta)
-        history = History(['sinQ', 'intQ',
-                           'plaqs', 'p4x4',
-                           'logdets', 'sumlogdet',
-                           'H', 'Hw', 'accept_prob'])
+        # history = History(['sinQ', 'intQ',
+        #                    'plaqs', 'p4x4',
+        #                    'logdets', 'sumlogdet',
+        #                    'H', 'Hw', 'accept_prob'])
+        history = History()
         metrics = Metrics()
 
         sumlogdet = torch.zeros(state.x.shape[0])
@@ -496,8 +511,8 @@ class GaugeDynamics(nn.Module):
         return History(dict(H=[energy],
                             Hw=[energy_scaled],
                             logdets=[logdets],
-                            sinQ=[metrics.sinQ],
-                            intQ=[metrics.intQ],
+                            Qs=[metrics.Qs],
+                            Qi=[metrics.Qi],
                             plaqs=[metrics.plaqs],
                             p4x4=[metrics.p4x4],
                             accept_prob=accept_prob,
@@ -827,8 +842,8 @@ class GaugeDynamics(nn.Module):
 
         q0 = self.lattice.calc_both_charges(x0)
         q1 = self.lattice.calc_both_charges(x1)
-        metrics['dQint'] = torch.abs(q1.intQ - q0.intQ)
-        metrics['dQsin'] = torch.abs(q1.sinQ - q0.sinQ)
+        metrics['dQi'] = torch.abs(q1.Qi - q0.Qi)
+        metrics['dQs'] = torch.abs(q1.Qs - q0.Qs)
 
         return metrics
 
@@ -912,7 +927,6 @@ def test_step(
     timer: StepTimer = None,
 ):
     """Perform a single training step"""
-    from utils.data_containers import History, StepTimer
     dynamics.eval()
 
     x, beta = inputs
@@ -955,89 +969,140 @@ class Steps:
             self.save == int(self.train // 4)
 
 
-def train_and_test(
+def train(
         dynamics: GaugeDynamics,
         optimizer: optim.Optimizer,
         steps: Steps,
-        beta: float,
+        beta: Union[list[float], float],
         window: int = 10,
         x: torch.Tensor = None,
         skip: Union[str, list[str]] = None,
         keep: Union[str, list[str]] = None,
-        logger: Logger = None,
-        train_history: History = None,
-        test_history: History = None,
-) -> dict[str, dict[str, Union[History, StepTimer]]]:
-    """Run training and evaluate the trained model."""
-    from utils.logger import in_notebook
-    from utils.data_containers import History, StepTimer
-
+        history: History = None,
+) -> History:
+    """Train dynamics."""
     dynamics.train()
 
     if x is None:
-        x = rand_unif(dynamics.config.x_shape, *(-PI, PI), requires_grad=True)
+        x = random_angle(dynamics.config.x_shape, requires_grad=True)
         x = x.reshape(x.shape[0], -1)
 
     train_logs = []
-    train_history = History() if train_history is None else train_history
-    timer = StepTimer()
-    if logger is None:
-        from rich.logging import log as Logger
-        logger = Logger()
+    if history is None:
+        history = History()
 
     should_print = (not in_notebook())
 
-    logger.log(f'Training for {steps.train} steps...')
-    for step in range(steps.train):
-        x, metrics = train_step((to_u1(x), beta), dynamics=dynamics,
-                                optimizer=optimizer, timer=timer)
-        train_history.update(metrics, step)
+    # logger.log(f'Training for {steps.train} steps...')
+
+    if isinstance(beta, list):
+        assert len(beta) == steps.train
+    elif isinstance(beta, float):
+        beta = np.array(steps.train * [beta], dtype=np.float32).tolist()
+    else:
+        raise ValueError(f'Unexpected value for beta: {beta}')
+
+    assert isinstance(beta, list)
+    assert len(beta) == steps.train
+    assert isinstance(beta[0], float)
+
+    for step, b in zip(range(steps.train), beta):
+        x, metrics = train_step((to_u1(x), b), dynamics=dynamics,
+                                optimizer=optimizer, timer=history.timer)
+        history.update(metrics, step)
         pre = [f'{step}/{steps.train}']
-        mstr = train_history.metrics_summary(window=window, pre=pre,
-                                             keep=keep, skip=skip,
-                                             should_print=should_print)
+        mstr = history.metrics_summary(window=window, pre=pre,
+                                       keep=keep, skip=skip,
+                                       should_print=should_print)
         if not should_print:
             logger.log(mstr)
 
         train_logs.append(mstr)
 
     logger.log(80 * '-')
-    rate = timer.get_eval_rate(evals_per_step=dynamics.config.num_steps)
+    rate = history.timer.get_eval_rate(evals_per_step=dynamics.config.num_steps)
     logger.log(f'Done training! took: {rate["total_time"]}')
     logger.log(f'Timing info:')
     for key, val in rate.items():
         logger.log(f' - {key}={val}')
 
+    return history
 
+
+def test(
+        dynamics: GaugeDynamics,
+        steps: Steps,
+        beta: Union[list[float], float],
+        x: torch.Tensor = None,
+        skip: Union[str, list[str]] = None,
+        keep: Union[str, list[str]] = None,
+        history: History = None,
+        nchains_test: int = None,
+) -> History:
+    """Run training and evaluate the trained model."""
     logger.log(80 * '-')
     logger.log(f'Running inference...')
+    should_print = not in_notebook()
 
     dynamics.eval()
 
+    if history is None:
+        history = History()
+
+    if x is None:
+        x = random_angle(dynamics.config.x_shape, requires_grad=True)
+
+    if isinstance(beta, float):
+        beta = np.array(steps.train * [beta], dtype=np.float32).tolist()
+
+    assert isinstance(beta, list)
+    assert len(beta) == steps.train
+    assert isinstance(beta[0], float)
+
     test_logs = []
-    test_history = History() if test_history is None else test_history
-    timer_ = StepTimer()
+    test_beta = beta[-1]
+    x = x.reshape(x.shape[0], -1)
+
     for step in range(steps.test):
-        x, metrics = test_step((x, beta), dynamics, timer=timer_)
-        test_history.update(metrics, step)
+        x, metrics = test_step((x, test_beta), dynamics, timer=history.timer)
+        history.update(metrics, step)
         pre = [f'{step}/{steps.test}']
-        mstr = test_history.metrics_summary(window=0, pre=pre,
-                                            keep=keep, skip=skip,
-                                            should_print=should_print)
+        mstr = history.metrics_summary(window=0, pre=pre,
+                                       keep=keep, skip=skip,
+                                       should_print=should_print)
         if not should_print:
             logger.log(mstr)
 
         test_logs.append(mstr)
 
-    rate = timer_.get_eval_rate(evals_per_step=dynamics.config.num_steps)
+    rate = history.timer.get_eval_rate(evals_per_step=dynamics.config.num_steps)
     logger.log(f'Done training! took: {rate["total_time"]}')
     logger.log(f'Timing info:')
     for key, val in rate.items():
         logger.log(f' - {key}={val}')
 
-    outputs = {
-        'train': {'history': train_history, 'timer': timer},
-        'test': {'history': test_history, 'timer': timer_},
-    }
+    return history
 
-    return outputs
+
+def train_and_test(
+        dynamics: GaugeDynamics,
+        optimizer: optim.Optimizer,
+        steps: Steps,
+        beta: Union[list[float], float],
+        window: int = 10,
+        x: torch.Tensor = None,
+        skip: Union[str, list[str]] = None,
+        keep: Union[str, list[str]] = None,
+        train_history: History = None,
+        test_history: History = None,
+        nchains_test: int = None,
+) -> dict[str, History]:
+    """Train and test"""
+    train_out = train(dynamics=dynamics, optimizer=optimizer,
+                      steps=steps, beta=beta, keep=keep,
+                      skip=skip, window=window, history=train_history)
+    test_out = test(dynamics=dynamics, steps=steps,
+                    beta=beta, x=x, skip=skip,
+                    keep=keep, history=test_history, nchains_test=nchains_test)
+
+    return {'train': train_out, 'test': test_out}
