@@ -59,6 +59,80 @@ class Metrics:
         return self.__dict__
 
 
+class StepTimer:
+    def __init__(self, evals_per_step: int = 1):
+        self.data = []
+        self.t = time.time()
+        self.evals_per_step = evals_per_step
+
+    def start(self):
+        self.t = time.time()
+
+    def stop(self):
+        dt = time.time() - self.t
+        self.data.append(dt)
+
+        return dt
+
+    def reset(self):
+        self.data = []
+
+    def get_eval_rate(self, evals_per_step: int = None):
+        if evals_per_step is None:
+            evals_per_step = self.evals_per_step
+
+        elapsed = np.sum(self.data)
+        num_evals = SIZE * evals_per_step * len(self.data)
+        eval_rate = num_evals / elapsed
+        output = {
+            'eval_rate': eval_rate,
+            'total_time': elapsed,
+            'num_evals': num_evals,
+            'size': SIZE,
+            'num_steps': len(self.data),
+            'evals_per_step': evals_per_step,
+        }
+
+        return output
+
+    def write_eval_rate(
+            self,
+            outdir: Union[str, Path],
+            mode: str = 'w',
+            **kwargs,
+    ):
+        eval_rate = self.get_eval_rate(**kwargs)
+        outfile = Path(outdir).joinpath('eval_rate.txt')
+        logger.debug(f'Writing eval rate to: {outfile}')
+        with open(outfile, mode) as f:
+            f.write('\n'.join([f'{k}: {v}' for k, v  in eval_rate.items()]))
+
+        return eval_rate
+
+    def save_and_write(
+            self,
+            outdir: Union[str, Path],
+            mode: str = 'w',
+            **kwargs,
+    ):
+        eval_rate = self.write_eval_rate(outdir, mode=mode, **kwargs)
+        outfile = str(Path(outdir).joinpath('step_times.csv'))
+        data = self.save_data(outfile, mode=mode)
+        return {'eval_rate': eval_rate, 'step_times': data}
+
+    def save_data(self, outfile: str, mode='w'):
+        df = pd.DataFrame(self.data)
+
+        fpath = Path(outfile).resolve()
+        fpath.parent.mkdir(parents=True, exist_ok=True)
+
+        logger.debug(f'Saving step times to: {outfile}')
+        df.to_csv(str(fpath), mode=mode)
+
+        return df
+
+
+
 class innerHistory:
     def __init__(self, names=None):
         self.__dict__ = {}
@@ -78,19 +152,26 @@ class innerHistory:
 
                 self.__dict__[key] = [val]
 
+
+class TimedHistory:
+    def __init__(self, history: History = None, timer: StepTimer = None):
+        self.history = history
+        self.timer = timer
+
+
+
 class History:
-    def __init__(self, names: list[str] = None):  #, data: dict[str, list] = None):
+    def __init__(self, names: list[str] = None, timer: StepTimer = None):  #, data: dict[str, list] = None):
         self.steps = []
         self.running_avgs = {}
         self._names = names
-        self.data = ({name: [] for name in names}
-                     if names is not None else {})
-        # else:
-        #     assert isinstance(data, dict)
-        #     self.data = data
-
-        # if logger is None:
-        #     logger = Logger()
+        if timer is None:
+            self.step = 0
+            self.timer = StepTimer()
+        else:
+            self.step = len(timer.data)
+        self.timer = timer if timer is not None else StepTimer()
+        self.data = {name: [] for name in names} if names is not None else {}
 
     def _reset(self):
         self.steps = []
@@ -288,7 +369,7 @@ class History:
 
             figsize = (2 * figsize[0], figsize[1])
 
-            fig = plt.figure(figsize=figsize, constrained_layout=True)
+            fig = plt.figure(figsize=figsize, constrained_layout=True, dpi=200)
             subfigs = fig.subfigures(1, 2, wspace=0.1, width_ratios=[1., 1.5])
 
             gs_kw = {'width_ratios': [1.25, 0.5]}
@@ -317,7 +398,6 @@ class History:
                 fig, ax = plt.subplots(**subplots_kwargs)
                 ax.plot(steps, arr, **plot_kwargs)
                 axes = ax
-        
             elif len(arr.shape) == 3:
                 fig, ax = plt.subplots(**subplots_kwargs)
                 for idx in range(arr.shape[1]):
@@ -419,79 +499,6 @@ class History:
         return xr.Dataset(data_vars)
 
 
-
-class StepTimer:
-    def __init__(self, evals_per_step: int = 1):
-        self.data = []
-        self.t = time.time()
-        self.evals_per_step = evals_per_step
-
-    def start(self):
-        self.t = time.time()
-
-    def stop(self):
-        dt = time.time() - self.t
-        self.data.append(dt)
-
-        return dt
-
-    def reset(self):
-        self.data = []
-        self.t0, self.t1 = 0., 0.
-
-    def get_eval_rate(self, evals_per_step: int = None):
-        if evals_per_step is None:
-            evals_per_step = self.evals_per_step
-
-        elapsed = np.sum(self.data)
-        num_evals = SIZE * evals_per_step * len(self.data)
-        eval_rate = num_evals / elapsed
-        output = {
-            'eval_rate': eval_rate,
-            'total_time': elapsed,
-            'num_evals': num_evals,
-            'size': SIZE,
-            'num_steps': len(self.data),
-            'evals_per_step': evals_per_step,
-        }
-
-        return output
-
-    def write_eval_rate(
-            self,
-            outdir: Union[str, Path],
-            mode: str = 'w',
-            **kwargs,
-    ):
-        eval_rate = self.get_eval_rate(**kwargs)
-        outfile = Path(outdir).joinpath('eval_rate.txt')
-        logger.debug(f'Writing eval rate to: {outfile}')
-        with open(outfile, mode) as f:
-            f.write('\n'.join([f'{k}: {v}' for k, v  in eval_rate.items()]))
-
-        return eval_rate
-
-    def save_and_write(
-            self,
-            outdir: Union[str, Path],
-            mode: str = 'w',
-            **kwargs,
-    ):
-        eval_rate = self.write_eval_rate(outdir, mode=mode, **kwargs)
-        outfile = str(Path(outdir).joinpath('step_times.csv'))
-        data = self.save_data(outfile, mode=mode)
-        return {'eval_rate': eval_rate, 'step_times': data}
-
-    def save_data(self, outfile: str, mode='w'):
-        df = pd.DataFrame(self.data)
-
-        fpath = Path(outfile).resolve()
-        fpath.parent.mkdir(parents=True, exist_ok=True)
-
-        logger.debug(f'Saving step times to: {outfile}')
-        df.to_csv(str(fpath), mode=mode)
-
-        return df
 
 
 class DataContainer:
