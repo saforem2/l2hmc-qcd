@@ -5,8 +5,11 @@
 <!---![HitCount] (http://hits.dwyl.com/saforem2/l2hmc-qcd.svg)--->
 
 
- ## 📒 [Example Notebook](./l2hmc-qcd/notebooks/l2hmc-qcd.ipynb)
+## 📊 [Slides](https:/bit.ly/l2hmc-ect2021)
+  - Recent talk on **Training Topological Samplers for Lattice Gauge Theory** 
+    from the [*Machine Learning for High Energy Physics, on and off the Lattice*](https://indico.ectstar.eu/event/77/) @ ect* Trento (09/30/2021)
 
+ ## 📒 [Example Notebook](./l2hmc-qcd/notebooks/l2hmc-qcd.ipynb)
 
 - [x]   Accepted to the [Deep Learning for Simulation (SimDL) Workshop](https://simdl.github.io/overview/) at **ICLR 2021**
   - 📚 : [arXiv:2105.03418](https://arxiv.org/abs/2105.03418)  
