@@ -5,7 +5,7 @@
 <!---![HitCount] (http://hits.dwyl.com/saforem2/l2hmc-qcd.svg)--->
 
 
-## 📊 [Slides](https:/bit.ly/l2hmc-ect2021)
+## 📊 [Slides](https://www.bit.ly/l2hmc-ect2021)
   - Recent talk on **Training Topological Samplers for Lattice Gauge Theory** 
     from the [*Machine Learning for High Energy Physics, on and off the Lattice*](https://indico.ectstar.eu/event/77/) @ ect* Trento (09/30/2021)
 
