@@ -36,7 +36,7 @@ from utils.plotting_utils import (set_size, make_ridgeplots, mcmc_lineplot,
 from utils.logger import Logger, in_notebook
 
 logger = Logger()
-LW = plt.rcParams['axes.linewidth']
+LW = int(plt.rcParams['axes.linewidth'])
 
 plt.style.use('default')
 sns.set_context('paper')
@@ -159,6 +159,10 @@ class TimedHistory:
         self.timer = timer
 
 
+def grab(x: torch.Tensor):
+    if x.device == torch.device('cuda'):
+        return x.cpu().detach().numpy().squeeze()
+    return x.detach().numpy().squeeze()
 
 class History:
     def __init__(self, names: list[str] = None, timer: StepTimer = None):  #, data: dict[str, list] = None):
@@ -217,7 +221,8 @@ class History:
 
         else:
             if isinstance(v, torch.Tensor):
-                v = v.detach().numpy().squeeze()
+                v = grab(v)
+                # v = v.detach().numpy().squeeze()
 
             if isinstance(v, tf.Tensor):
                 v = v.numpy().squeeze()
@@ -304,10 +309,11 @@ class History:
 
         for k, v in metrics.items():
             if isinstance(v, torch.Tensor):
-                if torch.cuda.is_available():
-                    v = v.cpu()
+                v = grab(v.to('cpu').detach())
+                # if torch.cuda.is_available():
+                #     v = v.cpu()
 
-                v = v.detach().numpy().squeeze()
+                # v = v.detach().numpy().squeeze()
             try:
                 self.data[k].append(v)
             except KeyError:
@@ -347,27 +353,47 @@ class History:
 
         # val = self.data[key]
         # color = f'C{idx%9}'
-        tmp = val[0]
-        if isinstance(tmp, torch.Tensor):
-            arr = val.detach().numpy()
-        elif isinstance(tmp, tf.Tensor):
-            arr = val.numpy()
-        elif isinstance(tmp, float):
-            arr = np.array(val)
+        # tmp = val[0]
+        # -----
+        if isinstance(val, torch.Tensor):
+            if isinstance(val[0], torch.Tensor):
+                try:
+                    val = np.array([grab(i) for i in val])
+                except (AttributeError, ValueError) as exc:
+                    raise exc
+            else:
+                val = grab(val)
         else:
             try:
-                arr = np.array([np.array(i) for i in val])
+                val = np.array([np.array(grab(i)) for i in val])
             except (AttributeError, ValueError) as exc:
                 raise exc
+        # if isinstance(tmp, torch.Tensor):
+        #     arr = grab(val.detach().numpy())
+        # elif isinstance(tmp, tf.Tensor):
+        #     arr = val.numpy()
+        # elif isinstance(tmp, float):
+        #     arr = np.array(val)
+        # else:
+        #     try:
+        #         arr = np.array([np.array(i) for i in val])
+        #     except (AttributeError, ValueError) as exc:
+        #         raise exc
 
+        # -----------------------
         subfigs = None
-        steps = np.arange(arr.shape[0])
+        # steps = np.arange(arr.shape[0])
+        if len(val.shape) == 0:
+            steps = np.arange(len(val))
+        else:
+            steps = np.arange(val.shape[0])
+
         if therm_frac > 0:
-            drop = int(therm_frac * arr.shape[0])
-            arr = arr[drop:]
+            drop = int(therm_frac * val.shape[0])
+            val = val[drop:]
             steps = steps[drop:]
 
-        if len(arr.shape) == 2:
+        if len(val.shape) == 2:
             _ = subplots_kwargs.pop('constrained_layout', True)
 
             figsize = (2 * figsize[0], figsize[1])
@@ -381,9 +407,9 @@ class History:
             # gs = fig.add_gridspec(ncols=3, nrows=1, width_ratios=[1.5, 1., 1.5])
             color = plot_kwargs.get('color', None)
             label = r'$\langle$' + f' {key} ' + r'$\rangle$'
-            ax.plot(steps, arr.mean(-1), lw=2. * LW, label=label, **plot_kwargs)
+            ax.plot(steps, val.mean(-1), lw=2.*LW, label=label, **plot_kwargs)
 
-            sns.kdeplot(y=arr.flatten(), ax=ax1, color=color, shade=True)
+            sns.kdeplot(y=val.flatten(), ax=ax1, color=color, shade=True)
             #ax1.set_yticks([])
             #ax1.set_yticklabels([])
             ax1.set_xticks([])
@@ -397,24 +423,24 @@ class History:
             ax.set_ylabel(key, fontsize='large')
             axes = (ax, ax1)
         else:
-            if len(arr.shape) == 1:
+            if len(val.shape) == 1:
                 fig, ax = plt.subplots(**subplots_kwargs)
-                ax.plot(steps, arr, **plot_kwargs)
+                ax.plot(steps, val, **plot_kwargs)
                 axes = ax
-            elif len(arr.shape) == 3:
+            elif len(val.shape) == 3:
                 fig, ax = plt.subplots(**subplots_kwargs)
-                for idx in range(arr.shape[1]):
-                    ax.plot(steps, arr[:, idx, :].mean(-1), label='idx', **plot_kwargs)
+                for idx in range(val.shape[1]):
+                    ax.plot(steps, val[:, idx, :].mean(-1), label='idx', **plot_kwargs)
                 axes = ax
             else:
                 raise ValueError('Unexpected shape encountered')
 
             ax.set_ylabel(key)
 
-        if num_chains > 0 and len(arr.shape) > 1:
-            num_chains = arr.shape[1] if (num_chains > arr.shape[1]) else num_chains
+        if num_chains > 0 and len(val.shape) > 1:
+            num_chains = val.shape[1] if (num_chains > val.shape[1]) else num_chains
             for idx in range(num_chains):
-                ax.plot(steps, arr[:, idx], alpha=0.5, lw=LW/4, **plot_kwargs)
+                ax.plot(steps, val[:, idx], alpha=0.5, lw=LW/4, **plot_kwargs)
 
         ax.set_xlabel('draw', fontsize='large')
         if title is not None:
@@ -616,11 +642,16 @@ class DataContainer:
         """Update `self.data` with new values from `data`."""
         self.steps_arr.append(step)
         for key, val in metrics.items():
+            if key not in self.data.keys():
+                self.data[key] = []
+
+            assert isinstance(self.data[key], list)
             if isinstance(val, np.ndarray):
                 self.data[key].append(val)
             else:
                 try:
-                    val.detach()
+                    val = grab(val)
+                    # val.detach()
                 except AttributeError:
                     try:
                         self.data[key].append(val.numpy())
