@@ -17,6 +17,8 @@ from dataclasses import dataclass, field
 from torch import nn
 import torch.nn.functional as F
 
+DEVICE = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+
 
 MODULEPATH = os.path.join(os.path.dirname(__file__), '..', '..')
 if MODULEPATH not in sys.path:
@@ -87,6 +89,9 @@ def init_zero_weights(m):
         torch.nn.init.zeros_(m.weight)
 
 
+from collections import namedtuple
+NetworkOutputs = namedtuple('NetworkOutputs', ['s', 't', 'q'])
+
 # pylint:disable=invalid-name
 class GenericNetwork(nn.Module):
     def __init__(self, xdim: int, net_config: NetworkConfig):
@@ -98,8 +103,8 @@ class GenericNetwork(nn.Module):
         self.units = net_config.units
         self.input_shapes = {'x': self.xdim, 'v': self.xdim}
         #  self.batch_size, self.xdim = input_shape
-        self.scale_coeff = torch.zeros(1, self.xdim)
-        self.transf_coeff = torch.zeros(1, self.xdim)
+        self.scale_coeff = torch.zeros(1, self.xdim, device=DEVICE)
+        self.transf_coeff = torch.zeros(1, self.xdim, device=DEVICE)
         self.h1 = net_config.units[0]
         self.h2 = net_config.units[1]
 
@@ -237,4 +242,4 @@ class GaugeNetwork(nn.Module):
         transl = self.transl(z)
         transf = torch.exp(self.q_coeff) * torch.tanh(self.transf(z))
 
-        return scale, transl, transf
+        return NetworkOutputs(s=scale, t=transl, q=transf)
