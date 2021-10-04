@@ -74,14 +74,14 @@ try:
     #  logging.info(f'using horovod version: {horovod.__version__}')
     prefix = f'{RANK} / {SIZE} ::'
     if IS_CHIEF:
-        logger.info(80 * '=')
-        logger.info(f'{prefix} Using tensorflow version: {tf.__version__}')
-        logger.info(f'{prefix} Using tensorflow from: {tf.__file__}')
-        logger.info(f'{prefix} Using horovod version: {horovod.__version__}')
-        logger.info(f'{prefix} Using horovod from: {horovod.__file__}')
-        logger.info(80 * '=')
+        print(80 * '=')
+        print(f'{prefix} Using tensorflow version: {tf.__version__}')
+        print(f'{prefix} Using tensorflow from: {tf.__file__}')
+        print(f'{prefix} Using horovod version: {horovod.__version__}')
+        print(f'{prefix} Using horovod from: {horovod.__file__}')
+        print(80 * '=')
     else:
-        logger.info(f'Hello, im rank: {RANK} of {SIZE} total ranks')
+        print(f'Hello, im rank: {RANK} of {SIZE} total ranks')
 
     GPUS = tf.config.experimental.list_physical_devices('GPU')
     for gpu in GPUS:
