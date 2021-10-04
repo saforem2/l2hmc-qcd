@@ -94,7 +94,7 @@ class Lattice:
         return (x0 + x1.roll(-1, dims=0) - x0.roll(-1, dims=1) - x1).T
 
     def calc_wilson_loops4x4(self, x: torch.Tensor):
-        x = x.reshape(-1, *self.x_shape).T
+        x = x.reshape(-1, *self.x_shape)
         # x0 = x[0]
         # x1 = x[..., 1]
         wl4x4 = (x[0]                                 # U0(x, y)
