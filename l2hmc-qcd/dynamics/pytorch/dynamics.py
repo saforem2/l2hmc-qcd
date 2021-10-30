@@ -1022,8 +1022,8 @@ def train(
             history.update(metrics, step)
             pre = [f'{step+1}/{steps.train}']
             mstr = history.metrics_summary(window=window, pre=pre,
-                                           keep=keep, skip=skip,
-                                           should_print=should_print)
+                                           keep=keep, skip=skip)
+                                           # should_print=should_print)
             if not should_print:
                 logger.log(mstr)
 
@@ -1080,8 +1080,8 @@ def test(
         history.update(metrics, step)
         pre = [f'{step}/{steps.test}']
         mstr = history.metrics_summary(window=0, pre=pre,
-                                       keep=keep, skip=skip,
-                                       should_print=should_print)
+                                       keep=keep, skip=skip)
+                                       # should_print=should_print)
         if not should_print:
             logger.log(mstr)
 
