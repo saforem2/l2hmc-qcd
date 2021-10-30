@@ -34,7 +34,7 @@ except ImportError:
     HAS_TORCH = False
 
 
-os.environ['COLUMNS'] = str(shutil.get_terminal_size((180, 24))[0])
+# os.environ['COLUMNS'] = str(shutil.get_terminal_size((180, 24))[0])
 
 
 #  WIDTH, _ = shutil.get_terminal_size(fallback=(156, 50))
@@ -70,7 +70,7 @@ def strformat(k, v, window: int = 0):
         outstr = '\n'.join(outstr_arr)
     else:
         #  if isinstance(v, (tuple, list, np.ndarray)):
-        tensor_types = [list, np.ndarray, tf.Tensor]
+        tensor_types = (list, np.ndarray, tf.Tensor)
         if isinstance(v, tensor_types):
             if HAS_TORCH:
                 if isinstance(v, torch.Tensor):
@@ -84,7 +84,7 @@ def strformat(k, v, window: int = 0):
             else:
                 raise ValueError(f'Unexpected type encountered: {type(v)}')
 
-            assert isinstance(v, np.ndarray)
+            # assert isinstance(v, np.ndarray)
 
             if window > 0 and len(v.shape) > 0:
                 window = min((v.shape[0], window))
@@ -149,7 +149,7 @@ class Logger:
             console = RichConsole(record=False, log_path=False,
                                   #  force_jupyter=with_jupyter,
                                   #  force_terminal=(not with_jupyter),
-                                  log_time_format='[%x %X] ')
+                                  log_time_format='[%X] ')
                                   #  theme=Theme(theme))#, width=width)
             console._width = width
 
