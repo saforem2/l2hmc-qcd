@@ -1,5 +1,5 @@
 """
-data_containers.py
+step_timer.py
 
 Implements `TrainData` class, for working with training data.
 """
@@ -28,15 +28,16 @@ import utils.file_io as io
 from config import BASE_DIR
 from utils.attr_dict import AttrDict
 from utils.data_utils import therm_arr
-from utils.hvd_init import RANK, SIZE
-from utils.plotting_utils import (set_size, make_ridgeplots, mcmc_lineplot,
-                                  mcmc_traceplot, get_title_str_from_params,
+from utils.hvd_init import RANK
+from utils.plotting_utils import (set_size, make_ridgeplots,
+                                  # get_title_str_from_params,
                                   plot_data)
 
-from utils.logger import Logger, in_notebook
+from utils.step_timer import StepTimer
+from utils.logger import Logger # , in_notebook
 
 logger = Logger()
-LW = int(plt.rcParams['axes.linewidth'])
+LW = plt.rcParams['axes.linewidth']
 
 plt.style.use('default')
 sns.set_context('paper')
@@ -57,80 +58,6 @@ class Metrics:
 
     def to_dict(self):
         return self.__dict__
-
-
-class StepTimer:
-    def __init__(self, evals_per_step: int = 1):
-        self.data = []
-        self.t = time.time()
-        self.evals_per_step = evals_per_step
-
-    def start(self):
-        self.t = time.time()
-
-    def stop(self):
-        dt = time.time() - self.t
-        self.data.append(dt)
-
-        return dt
-
-    def reset(self):
-        self.data = []
-
-    def get_eval_rate(self, evals_per_step: int = None):
-        if evals_per_step is None:
-            evals_per_step = self.evals_per_step
-
-        elapsed = np.sum(self.data)
-        num_evals = SIZE * evals_per_step * len(self.data)
-        eval_rate = num_evals / elapsed
-        output = {
-            'eval_rate': eval_rate,
-            'total_time': elapsed,
-            'num_evals': num_evals,
-            'size': SIZE,
-            'num_steps': len(self.data),
-            'evals_per_step': evals_per_step,
-        }
-
-        return output
-
-    def write_eval_rate(
-            self,
-            outdir: Union[str, Path],
-            mode: str = 'w',
-            **kwargs,
-    ):
-        eval_rate = self.get_eval_rate(**kwargs)
-        outfile = Path(outdir).joinpath('eval_rate.txt')
-        logger.debug(f'Writing eval rate to: {outfile}')
-        with open(outfile, mode) as f:
-            f.write('\n'.join([f'{k}: {v}' for k, v  in eval_rate.items()]))
-
-        return eval_rate
-
-    def save_and_write(
-            self,
-            outdir: Union[str, Path],
-            mode: str = 'w',
-            **kwargs,
-    ):
-        eval_rate = self.write_eval_rate(outdir, mode=mode, **kwargs)
-        outfile = str(Path(outdir).joinpath('step_times.csv'))
-        data = self.save_data(outfile, mode=mode)
-        return {'eval_rate': eval_rate, 'step_times': data}
-
-    def save_data(self, outfile: str, mode='w'):
-        df = pd.DataFrame(self.data)
-
-        fpath = Path(outfile).resolve()
-        fpath.parent.mkdir(parents=True, exist_ok=True)
-
-        logger.debug(f'Saving step times to: {outfile}')
-        df.to_csv(str(fpath), mode=mode)
-
-        return df
-
 
 
 class innerHistory:
@@ -159,10 +86,6 @@ class TimedHistory:
         self.timer = timer
 
 
-def grab(x: torch.Tensor):
-    if x.device == torch.device('cuda'):
-        return x.cpu().detach().numpy().squeeze()
-    return x.detach().numpy().squeeze()
 
 class History:
     def __init__(self, names: list[str] = None, timer: StepTimer = None):  #, data: dict[str, list] = None):
@@ -221,8 +144,7 @@ class History:
 
         else:
             if isinstance(v, torch.Tensor):
-                v = grab(v)
-                # v = v.detach().numpy().squeeze()
+                v = v.detach().numpy().squeeze()
 
             if isinstance(v, tf.Tensor):
                 v = v.numpy().squeeze()
@@ -268,7 +190,6 @@ class History:
         return outstr
 
     def metrics_summary(self, **kwargs) -> str:
-        should_print = kwargs.pop('should_print', False) 
         mstr = self.generic_summary(self.data, **kwargs)
         # if should_print:
         #     self.logger.log(mstr)
@@ -290,7 +211,7 @@ class History:
 
         return mstr
 
-    def running_avgs_summary(self, **kwargs) -> str:
+    def running_avgs_summary(self) -> str:
         # if len(list(self.running_avgs.keys())) == 0:
         #     self.update_running_avgs()
 
@@ -309,11 +230,10 @@ class History:
 
         for k, v in metrics.items():
             if isinstance(v, torch.Tensor):
-                v = grab(v.to('cpu').detach())
-                # if torch.cuda.is_available():
-                #     v = v.cpu()
+                if torch.cuda.is_available():
+                    v = v.cpu()
 
-                # v = v.detach().numpy().squeeze()
+                v = v.detach().numpy().squeeze()
             try:
                 self.data[k].append(v)
             except KeyError:
@@ -353,47 +273,27 @@ class History:
 
         # val = self.data[key]
         # color = f'C{idx%9}'
-        # tmp = val[0]
-        # -----
-        if isinstance(val, torch.Tensor):
-            if isinstance(val[0], torch.Tensor):
-                try:
-                    val = np.array([grab(i) for i in val])
-                except (AttributeError, ValueError) as exc:
-                    raise exc
-            else:
-                val = grab(val)
+        tmp = val[0]
+        if isinstance(tmp, torch.Tensor):
+            arr = val.detach().numpy()
+        elif isinstance(tmp, tf.Tensor):
+            arr = val.numpy()
+        elif isinstance(tmp, float):
+            arr = np.array(val)
         else:
             try:
-                val = np.array([np.array(grab(i)) for i in val])
+                arr = np.array([np.array(i) for i in val])
             except (AttributeError, ValueError) as exc:
                 raise exc
-        # if isinstance(tmp, torch.Tensor):
-        #     arr = grab(val.detach().numpy())
-        # elif isinstance(tmp, tf.Tensor):
-        #     arr = val.numpy()
-        # elif isinstance(tmp, float):
-        #     arr = np.array(val)
-        # else:
-        #     try:
-        #         arr = np.array([np.array(i) for i in val])
-        #     except (AttributeError, ValueError) as exc:
-        #         raise exc
 
-        # -----------------------
         subfigs = None
-        # steps = np.arange(arr.shape[0])
-        if len(val.shape) == 0:
-            steps = np.arange(len(val))
-        else:
-            steps = np.arange(val.shape[0])
-
+        steps = np.arange(arr.shape[0])
         if therm_frac > 0:
-            drop = int(therm_frac * val.shape[0])
-            val = val[drop:]
+            drop = int(therm_frac * arr.shape[0])
+            arr = arr[drop:]
             steps = steps[drop:]
 
-        if len(val.shape) == 2:
+        if len(arr.shape) == 2:
             _ = subplots_kwargs.pop('constrained_layout', True)
 
             figsize = (2 * figsize[0], figsize[1])
@@ -407,9 +307,9 @@ class History:
             # gs = fig.add_gridspec(ncols=3, nrows=1, width_ratios=[1.5, 1., 1.5])
             color = plot_kwargs.get('color', None)
             label = r'$\langle$' + f' {key} ' + r'$\rangle$'
-            ax.plot(steps, val.mean(-1), lw=2.*LW, label=label, **plot_kwargs)
+            ax.plot(steps, arr.mean(-1), lw=2. * LW, label=label, **plot_kwargs)
 
-            sns.kdeplot(y=val.flatten(), ax=ax1, color=color, shade=True)
+            sns.kdeplot(y=arr.flatten(), ax=ax1, color=color, shade=True)
             #ax1.set_yticks([])
             #ax1.set_yticklabels([])
             ax1.set_xticks([])
@@ -423,24 +323,24 @@ class History:
             ax.set_ylabel(key, fontsize='large')
             axes = (ax, ax1)
         else:
-            if len(val.shape) == 1:
+            if len(arr.shape) == 1:
                 fig, ax = plt.subplots(**subplots_kwargs)
-                ax.plot(steps, val, **plot_kwargs)
+                ax.plot(steps, arr, **plot_kwargs)
                 axes = ax
-            elif len(val.shape) == 3:
+            elif len(arr.shape) == 3:
                 fig, ax = plt.subplots(**subplots_kwargs)
-                for idx in range(val.shape[1]):
-                    ax.plot(steps, val[:, idx, :].mean(-1), label='idx', **plot_kwargs)
+                for idx in range(arr.shape[1]):
+                    ax.plot(steps, arr[:, idx, :].mean(-1), label='idx', **plot_kwargs)
                 axes = ax
             else:
                 raise ValueError('Unexpected shape encountered')
 
             ax.set_ylabel(key)
 
-        if num_chains > 0 and len(val.shape) > 1:
-            num_chains = val.shape[1] if (num_chains > val.shape[1]) else num_chains
+        if num_chains > 0 and len(arr.shape) > 1:
+            num_chains = arr.shape[1] if (num_chains > arr.shape[1]) else num_chains
             for idx in range(num_chains):
-                ax.plot(steps, val[:, idx], alpha=0.5, lw=LW/4, **plot_kwargs)
+                ax.plot(steps, arr[:, idx], alpha=0.5, lw=LW/4, **plot_kwargs)
 
         ax.set_xlabel('draw', fontsize='large')
         if title is not None:
@@ -533,26 +433,31 @@ class History:
 class DataContainer:
     """Base class for dealing with data."""
 
-    def __init__(self, steps, header=None, dirs=None, print_steps=100):
-        if dirs is not None:
-            dirs = AttrDict(**dirs)
-            names = [v for k, v in dirs.items() if 'file' not in k]
-            io.check_else_make_dir(names)
-
-        self.dirs = dirs
+    def __init__(self,
+            steps: int = None,
+            # header: str = None,
+            dirs: dict[str, Union[str, Path]] = None,
+            print_steps: int = 100,
+    ):
         self.steps = steps
-        self.steps_arr = []
         self.data_strs = []
+        self.steps_arr = []
         self.print_steps = print_steps
         self.data = AttrDict(defaultdict(list))
 
+        if dirs is not None:
+            names = [v for k, v in dirs.items() if 'file' not in k]
+            io.check_else_make_dir(names)
+        else:
+            dirs = {}
+
+        self.dirs = {k: Path(v).resolve() for k, v in dirs.items()}
+
+
     def update_dirs(self, dirs: dict):
         """Update `self.dirs` with key, val pairs from `dirs`."""
-        if self.dirs is None:
-            self.dirs = AttrDict(**dirs)
-        else:
-            for key, val in dirs.items():
-                self.dirs.update({key: val})
+        for key, val in dirs.items():
+            self.dirs.update({key: val})
 
     def plot_data(
             self,
@@ -601,10 +506,18 @@ class DataContainer:
 
         return dataset
 
-    def to_h5pyfile(self, hfile: Union[str, Path], **kwargs):
-        logger.debug(f'Saving self.data to {hfile}')
+    def to_h5pyfile(
+            self,
+            hfile: Union[str, Path],
+            skip_keys: list[str] = None
+    ):
         f = h5py.File(hfile, 'a')
+        logger.debug(f'Saving self.data to {hfile}')
+        skip_keys = [] if skip_keys is None else skip_keys
         for key, val in self.data.items():
+            if key in skip_keys:
+                continue
+
             arr = np.array(val)
             if len(arr) == 0:
                 continue
@@ -616,7 +529,7 @@ class DataContainer:
                 maxshape = (None,)
                 if len(arr.shape) > 1:
                     maxshape = (None, *arr.shape[1:])
-                f.create_dataset(key, data=arr, maxshape=maxshape, **kwargs)
+                f.create_dataset(key, data=arr, maxshape=maxshape)
 
             #  self.data[key] = []
 
@@ -642,26 +555,19 @@ class DataContainer:
         """Update `self.data` with new values from `data`."""
         self.steps_arr.append(step)
         for key, val in metrics.items():
-            if key not in self.data.keys():
-                self.data[key] = []
-
-            assert isinstance(self.data[key], list)
             if isinstance(val, np.ndarray):
                 self.data[key].append(val)
             else:
+                if isinstance(val, torch.Tensor):
+                    val.detach().numpy()
+
+                if isinstance(val, tf.Tensor):
+                    val = val.numpy()
+
                 try:
-                    val = grab(val)
-                    # val.detach()
-                except AttributeError:
-                    try:
-                        self.data[key].append(val.numpy())
-                    except KeyError:
-                        try:
-                            val.detach()
-                        except AttributeError:
-                            self.data[key] = [val.numpy()]
-            # try:
-            #     self.data[key].append(val))
+                    self.data[key].append(val)
+                except KeyError:
+                    self.data[key] = [val]
 
 
     # pylint:disable=too-many-arguments
@@ -782,24 +688,45 @@ class DataContainer:
 
         return AttrDict(data)
 
-    def save_data(self, data_dir: Union[str, Path], **kwargs):
+    def save_data(
+            self,
+            data_dir: Union[str, Path],
+            skip_keys: list[str] = None,
+            use_hdf5: bool = True,
+            save_dataset: bool = False,
+            # compression: str = 'gzip',
+    ):
         """Save `self.data` entries to individual files in `output_dir`."""
         data_dir = Path(data_dir)
         io.check_else_make_dir(str(data_dir))
-        hfile = data_dir.joinpath(f'data_rank{RANK}.hdf5')
-        self.to_h5pyfile(hfile, compression='gzip')
-        #  for key, val in self.data.items():
-        #      if skip_keys is not None:
-        #          if key in skip_keys:
-        #              continue
-        #
-        #      out_file = os.path.join(data_dir, f'{key}.z')
-        #      head, tail = os.path.split(out_file)
-        #      io.check_else_make_dir(head)
-        #      io.savez(np.array(val), out_file)
-        #
-        #  if save_dataset:
-        #      self.save_dataset(data_dir)
+        if use_hdf5:
+            # ----------------
+            # Save using h5py
+            # ----------------
+            hfile = data_dir.joinpath(f'data_rank{RANK}.hdf5')
+            self.to_h5pyfile(hfile,
+                             skip_keys=skip_keys)
+                             #compression=compression, 
+        elif save_dataset:
+            # ----------------------------------------------------
+            # Save to `netCDF4` file using hierarchical grouping
+            # ----------------------------------------------------
+             self.save_dataset(data_dir)
+        else:
+            # -------------------------------------------------
+            # Save each `{key: val}` entry in `self.data` as a 
+            # compressed file, named `f'{key}.z'` .
+            # -------------------------------------------------
+             for key, val in self.data.items():
+                 if skip_keys is not None:
+                     if key in skip_keys:
+                         continue
+            
+                 out_file = os.path.join(data_dir, f'{key}.z')
+                 head, tail = os.path.split(out_file)
+                 io.check_else_make_dir(head)
+                 io.savez(np.array(val), out_file)
+            
 
     def plot_dataset(
             self,
@@ -900,16 +827,21 @@ class DataContainer:
 
     # pylint:disable=too-many-arguments
     def save_and_flush(
-            self, data_dir=None, log_file=None, rank=0, mode='a', **kwargs
+            self,
+            data_dir: Union[str, Path] =None,
+            log_file: Union[str, Path] = None,
+            rank: int = 0,
+            mode: str = 'a',
+            skip_keys: list = None,
+            save_dataset: bool = False,
+            use_hdf5: bool = False,
     ):
         """Call `self.save_data` and `self.flush_data_strs`."""
         if data_dir is None:
             data_dir = self.dirs.get('data_dir', None)
         if log_file is None:
-            log_file = self.dirs.get('log_file', None)
-
-        if log_file is None:
             log_file = Path(data_dir).joinpath('output.log')
 
-        self.save_data(data_dir, **kwargs)
+        self.save_data(data_dir, skip_keys, use_hdf5=use_hdf5,
+                       save_dataset=save_dataset)
         self.flush_data_strs(log_file, rank=rank, mode=mode)
