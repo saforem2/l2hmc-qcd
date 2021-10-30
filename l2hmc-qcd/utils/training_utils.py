@@ -29,12 +29,13 @@ from dynamics.gauge_dynamics import GaugeDynamics, build_dynamics
 from network.config import LearningRateConfig
 from utils.annealing_schedules import get_betas
 from utils.attr_dict import AttrDict
-from utils.data_containers import DataContainer, StepTimer
+from utils.step_timer import StepTimer
+from utils.data_containers import DataContainer
 from utils.hvd_init import IS_CHIEF, LOCAL_RANK, RANK, SIZE, shutdown
 from utils.learning_rate import ReduceLROnPlateau
 from utils.logger import Logger, in_notebook
-from utils.plotting_utils import plot_data
 from utils.summary_utils import update_summaries
+from utils.plotting_utils import plot_data
 
 if tf.__version__.startswith('1.'):
     TF_VERSION = 1
@@ -342,10 +343,15 @@ def restore_from(
 
     dynamics = build_dynamics(configs)
 
-    networks = dynamics._load_networks(str(logdir))
-    dynamics.xnet = networks['xnet']
-    dynamics.vnet = networks['vnet']
-    logger.info(f'Networks successfully loaded from: {logdir}')
+    try:
+        networks = dynamics._load_networks(str(logdir))
+        dynamics.xnet = networks['xnet']
+        dynamics.vnet = networks['vnet']
+        logger.info(f'Networks successfully loaded from: {logdir}')
+    except OSError:
+        logger.debug('OSError trying to `dynamics._load_networks(logdir)')
+        logger.debug(f'logdir: {logdir}')
+
 
     ckptdir = os.path.join(logdir, 'training', 'checkpoints')
     ckpt = tf.train.Checkpoint(dynamics=dynamics, optimizer=dynamics.optimizer)
@@ -505,7 +511,7 @@ def setup(
 
 
     # Reshape x from [batch_size, Nt, Nx, Nd] --> [batch_size, Nt * Nx * Nd]
-    x = tf.reshape(x, (x.shape[0], -1))
+    x = tf.cast(tf.reshape(x, (x.shape[0], -1)), tf.keras.backend.floatx())
 
     # Create checkpoint and checkpoint manager for saving during training
     ckptdir = os.path.join(logdir, 'training', 'checkpoints')
@@ -568,8 +574,10 @@ def train(
         num_chains: int = 32,
         make_plots: bool = True,
         steps_dict: dict[str, int] = None,
+        skip_keys: list[str] = None,
         save_metrics: bool = True,
         save_dataset: bool = False,
+        use_hdf5: bool = False,
         custom_betas: Union[list, np.ndarray] = None,
         **kwargs,
 ) -> TrainOutputs:
@@ -613,7 +621,7 @@ def train(
                                    x=x, steps_dict=steps_dict,
                                    custom_betas=custom_betas,
                                    save_metrics=save_metrics)
-    logger.rule(f'DONE TRAINING. TOOK: {time.time() - t0:.4f}')
+    logger.info(f'DONE TRAINING. TOOK: {time.time() - t0:.4f}')
     logger.info(f'Training took: {time.time() - t0:.4f}')
     #  shutdown()
 
@@ -623,8 +631,12 @@ def train(
         logdir = dirs['logdir']
         train_dir = dirs['train_dir']
         io.save_dict(dict(configs), dirs['log_dir'], 'configs')
+        train_data.save_and_flush(dirs['data_dir'],
+                                  log_file=dirs['log_file'],
+                                  use_hdf5=use_hdf5,
+                                  save_dataset=save_dataset,
+                                  skip_keys=skip_keys) #['forward', 'backward'])
         logger.info(f'Done training model! took: {time.time() - start:.4f}s')
-        train_data.save_and_flush(dirs['data_dir'])
 
         #  outdir = Path(train_dir)
         #  hfile = Path(outdir).joinpath(f'data_rank{RANK}.hdf5')
@@ -657,11 +669,6 @@ def train(
             logger.debug(
                 f'Time spent plotting: {dt}s = {dt // 60}m {(dt % 60):.4f}s'
             )
-        #
-        #  if save_metrics:
-        #      output_dir = os.path.join(train_dir, 'outputs')
-        #      train_data.save_data(output_dir, save_dataset=save_dataset)
-        #  f.close()
 
         if not dynamics.config.hmc:
             dynamics.save_networks(logdir)
@@ -898,8 +905,11 @@ def train_dynamics(
                     f.writelines('\n'.join(data_strs))
 
                 # -- Save train_data and free consumed memory ------------
-                train_data.save_and_flush(data_dir, logfile,
-                                          rank=RANK, mode='a')
+                train_data.save_and_flush(data_dir,
+                                          log_file=logfile,
+                                          rank=RANK,
+                                          mode='a')
+                )
                 if not dynamics.config.hmc:
                     # -- Save network weights ----------------------------
                     dynamics.save_networks(logdir)
