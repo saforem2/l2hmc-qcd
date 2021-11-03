@@ -303,6 +303,9 @@ def run(
         save_x: bool = False,
         md_steps: int = 50,
         skip_existing: bool = False,
+        save_dataset: bool = True,
+        use_hdf5: bool = False,
+        skip_keys: list[str] = None,
         run_steps: int = None,
 ) -> InferenceResults:
     """Run inference. (Note: Higher-level than `run_dynamics`)."""
@@ -432,8 +435,12 @@ def run(
     t0 = time.time()
 
     logfile = os.path.join(run_dir, 'inference.log')
-    run_data.save_and_flush(data_dir=data_dir, log_file=logfile)
-    #  run_data.flush_data_strs(log_file, mode='a')
+    run_data.save_and_flush(data_dir=data_dir,
+                            log_file=logfile,
+                            use_hdf5=use_hdf5,
+                            skip_keys=skip_keys,
+                            save_dataset=save_dataset)
+
     save_times['run_data.flush_data_strs'] = time.time() - t0
 
     t0 = time.time()
@@ -444,10 +451,9 @@ def run(
 
     save_times['run_data.write_to_csv'] = time.time() - t0
 
-    t0 = time.time()
-    io.save_inference(run_dir, run_data)
-    save_times['io.save_inference'] = time.time() - t0
-
+    # t0 = time.time()
+    # io.save_inference(run_dir, run_data)
+    # save_times['io.save_inference'] = time.time() - t0
     profdir = os.path.join(run_dir, 'profile_info')
     io.check_else_make_dir(profdir)
     io.save_dict(plot_times, profdir, name='plot_times')
