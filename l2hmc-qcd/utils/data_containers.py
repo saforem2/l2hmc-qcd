@@ -130,13 +130,12 @@ class DataContainer:
         data = self.data if data is None else data
         data_vars = {}
         for key, val in data.items():
-            if isinstance(val, list):
-                if isinstance(val[0], (dict, AttrDict)):
-                    tmp = invert_list_of_dicts(val)
-                    for k, v in tmp.items():
-                        data_vars[f'{key}_{k}'] = self.to_DataArray(v)
-
-            data_vars[key] = self.to_DataArray(val)
+            if isinstance(val[0], (dict, AttrDict)):
+                tmp = invert_list_of_dicts(val)
+                for k, v in tmp.items():
+                    data_vars[f'{key}/{k}'] = self.to_DataArray(v)
+            else:
+                data_vars[key] = self.to_DataArray(val)
 
         return xr.Dataset(data_vars)
 
@@ -183,15 +182,30 @@ class DataContainer:
     def save_dataset(self, out_dir, therm_frac=0.):
         """Save `self.data` as `xr.Dataset` to `out_dir/dataset.nc`."""
         dataset = self.get_dataset(therm_frac)
-        out_file = os.path.join(out_dir, 'dataset.nc')
-        logger.debug(f'Saving dataset to: {out_file}.')
-        try:
-            outfile = os.path.join(out_dir, 'dataset.nc')
-            dataset.to_netcdf(outfile, mode='a')
-        except ValueError:
-            logger.warning('Unable to save dataset! Continuing...')
+        io.check_else_make_dir(out_dir)
+        outfile = Path(out_dir).joinpath('dataset.nc')
+        mode = 'a' if outfile.is_file() else 'w'
+        logger.debug(f'Saving dataset to: {outfile}.')
+        dataset.to_netcdf(str(outfile), mode=mode)
 
-        return dataset
+    def _to_h5pyfile(
+            self,
+            key: str,
+            arr: np.ndarray,
+            hfile: Union[str, Path, h5py.File],
+    ):
+        if isinstance(hfile, (str, Path)):
+            hfile = h5py.File(str(hfile), 'a')
+
+        if key in list(hfile.keys()):
+            hfile[key].resize((f[key].shape[0] + arr.shape[0]), axis=0)
+            hfile[key][-arr.shape[0]:] = arr
+        else:
+            maxshape = (None,)
+            if len(arr.shape) > 1:
+                maxshape = (None, *arr.shape[1:])
+            hfile.create_dataset(key, data=arr, maxshape=maxshape)
+
 
     def to_h5pyfile(
             self,
@@ -209,16 +223,15 @@ class DataContainer:
             if len(arr) == 0:
                 continue
 
-            if key in list(f.keys()):
-                f[key].resize((f[key].shape[0] + arr.shape[0]), axis=0)
-                f[key][-arr.shape[0]:] = arr
+            # If arr is an array of dicts, convert to dict of lists
+            if isinstance(arr[0], (dict, AttrDict)):
+                dlist = invert_list_of_dicts(arr)
+                for k, v in dlist.items():
+                    self._to_h5pyfile(key=f'{key}/{k}',
+                                      arr=np.array(v),
+                                      hfile=f)
             else:
-                maxshape = (None,)
-                if len(arr.shape) > 1:
-                    maxshape = (None, *arr.shape[1:])
-                f.create_dataset(key, data=arr, maxshape=maxshape)
-
-            #  self.data[key] = []
+                self._to_h5pyfile(key=key, arr=arr, hfile=f)
 
         f.close()
 
@@ -382,34 +395,31 @@ class DataContainer:
             # compression: str = 'gzip',
     ):
         """Save `self.data` entries to individual files in `output_dir`."""
+        success = 0
         data_dir = Path(data_dir)
         io.check_else_make_dir(str(data_dir))
         if use_hdf5:
-            # ----------------
-            # Save using h5py
-            # ----------------
+            # ------------ Save using h5py -------------------
             hfile = data_dir.joinpath(f'data_rank{RANK}.hdf5')
-            self.to_h5pyfile(hfile,
-                             skip_keys=skip_keys)
-                             #compression=compression, 
+            self.to_h5pyfile(hfile, skip_keys=skip_keys)
+            success = 1
         if save_dataset:
-            # ----------------------------------------------------
-            # Save to `netCDF4` file using hierarchical grouping
-            # ----------------------------------------------------
-             self.save_dataset(data_dir)
-        else:
+            # ----- Save to `netCDF4` file using hierarchical grouping ------
+            self.save_dataset(data_dir)
+            success = 1
+        if success == 0:
             # -------------------------------------------------
             # Save each `{key: val}` entry in `self.data` as a 
             # compressed file, named `f'{key}.z'` .
             # -------------------------------------------------
-             for key, val in self.data.items():
-                 if skip_keys is not None:
-                     if key in skip_keys:
-                         continue
-                 out_file = os.path.join(data_dir, f'{key}.z')
-                 head, _ = os.path.split(out_file)
-                 io.check_else_make_dir(head)
-                 io.savez(np.array(val), out_file)
+            skip_keys = [] if skip_keys is None else skip_keys
+            logger.info(f'Saving individual entries to {data_dir}.')
+            for key, val in self.data.items():
+                if key in skip_keys:
+                    continue
+                out_file = os.path.join(data_dir, f'{key}.z')
+                io.savez(np.array(val), out_file)
+
 
     def plot_dataset(
             self,
@@ -493,7 +503,8 @@ class DataContainer:
             #     except ValueError:
             #         arr = val
             try:
-                avg_data[key] = val.mean()
+                avg_data[key] = np.mean(val)
+                # avg_data[key] = val.mean()
             except AttributeError:
                 raise AttributeError(f'Unable to call `val.mean()` on {val}')
 
