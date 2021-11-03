@@ -20,8 +20,11 @@ from network.pytorch.network import (NetworkConfig, LearningRateConfig,
                                      ConvolutionConfig, GaugeNetwork, init_weights, NetworkOutputs)
 from lattice.pytorch.lattice import Lattice
 # from utils.pytorch.metrics import History, Metrics
+from utils.pytorch.history import Metrics, History, innerHistory
 
-from utils.data_containers import History, StepTimer, Metrics, innerHistory
+# from utils.data_containers import Metrics
+# from utils.history import History, innerHistory
+from utils.step_timer import StepTimer
 
 # from utils.data_containers import History, StepTimer, Metrics, innerHistory
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -44,8 +47,14 @@ TWO_PI = 2. * PI
 # NetworkOutputs = "tuple[torch.Tensor, torch.Tensor, torch.Tensor]"
 
 
-def rand_unif(shape: Union[tuple, list], a: float, b: float, requires_grad: bool):
+def rand_unif(
+        shape: Union[tuple, list],
+        a: float,
+        b: float,
+        requires_grad: bool
+):
     return (a - b) * torch.rand(shape, requires_grad=requires_grad) + b
+
 
 def random_angle(shape: tuple, requires_grad: bool = True):
     return TWO_PI * torch.rand(shape, requires_grad=requires_grad) - PI
@@ -111,6 +120,7 @@ class State:
     v: torch.Tensor
     beta: float
 
+
 @dataclass
 class MonteCarloStates:
     init: State
@@ -125,7 +135,6 @@ def to_u1(x: torch.Tensor) -> torch.Tensor:
 def project_angle(x):
     """For x in [-4pi, 4pi], returns x in [-pi, pi]."""
     return x - TWO_PI * torch.floor((x + PI) / TWO_PI)
-
 
 
 def save_dynamics(dynamics: GaugeDynamics, outdir: Union[str, Path]):
@@ -195,8 +204,12 @@ class GaugeDynamics(nn.Module):
             veps.append(ve)
             # xeps.append(clamp.apply(xe))
             # veps.append(clamp.apply(ve))
-            # xeps.append(nn.Parameter(torch.tensor(self.config.eps), requires_grad=rg))
-            # veps.append(nn.Parameter(torch.tensor(self.config.eps), requires_grad=rg))
+            # xeps.append(
+            #     nn.Parameter(torch.tensor(self.config.eps), requires_grad=rg)
+            # )
+            # veps.append(
+            #     nn.Parameter(torch.tensor(self.config.eps), requires_grad=rg)
+            # )
 
         self.xeps = nn.ParameterList(xeps)
         self.veps = nn.ParameterList(veps)
@@ -1018,19 +1031,19 @@ def train(
     for step, b in zip(range(steps.train), beta):
         x, metrics = train_step((to_u1(x), b), dynamics=dynamics,
                                 optimizer=optimizer, timer=history.timer)
-        if (step + 1) % steps.log ==  0:
+        if (step + 1) % steps.log == 0:
             history.update(metrics, step)
             pre = [f'{step+1}/{steps.train}']
             mstr = history.metrics_summary(window=window, pre=pre,
                                            keep=keep, skip=skip)
-                                           # should_print=should_print)
+            # should_print=should_print)
             if not should_print:
                 logger.log(mstr)
 
             train_logs.append(mstr)
 
     logger.log(80 * '-')
-    rate = history.timer.get_eval_rate(evals_per_step=dynamics.config.num_steps)
+    rate = history.timer.get_eval_rate(dynamics.config.num_steps)
     logger.log(f'Done training! took: {rate["total_time"]}')
     logger.log(f'Timing info:')
     for key, val in rate.items():
