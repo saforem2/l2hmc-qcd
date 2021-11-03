@@ -3,17 +3,19 @@ history.py
 
 Implements the History class for keeping a history of data.
 """
+import tensorflow as tf
 import numpy as np
 from typing import Union, Any
 import matplotlib.pyplot as plt
 from utils.step_timer import StepTimer
-import torch
 import xarray as xr
+from pathlib import Path
 from utils.logger import logger
-import torch
 import seaborn as sns
 
-LW = plt.rcParams['axes.linewidth']
+from utils.data_containers import invert_list_of_dicts
+
+LW = int(plt.rcParams.get('axes.linewidth', 1))
 
 
 class Metrics:
@@ -99,8 +101,11 @@ class History:
             outstr = '\n'.join(outstr_arr)
 
         else:
-            if isinstance(v, torch.Tensor):
-                v = v.detach().numpy().squeeze()
+            # if isinstance(v, torch.Tensor):
+            #     v = v.detach().numpy().squeeze()
+
+            if isinstance(v, tf.Tensor):
+                v = v.numpy().squeeze()
 
             if isinstance(v, (list, np.ndarray)):
                 v = np.array(v).squeeze()
@@ -180,11 +185,11 @@ class History:
             self.steps.append(step)
 
         for k, v in metrics.items():
-            if isinstance(v, torch.Tensor):
-                if torch.cuda.is_available():
-                    v = v.cpu()
+            # if isinstance(v, torch.Tensor):
+            #     if torch.cuda.is_available():
+            #         v = v.cpu()
 
-                v = v.detach().numpy().squeeze()
+            #     v = v.detach().numpy().squeeze()
             try:
                 self.data[k].append(v)
             except KeyError:
@@ -197,9 +202,9 @@ class History:
         data = {}
         for key, val in self.data.items():
             try:
-                arr = torch.Tensor(val).numpy()
+                arr = tf.Tensor(val).numpy()
             except:
-                arr = torch.Tensor([i.numpy() for i in val]).numpy()
+                arr = tf.Tensor([i.numpy() for i in val]).numpy()
 
             data[key] = arr
 
@@ -208,7 +213,7 @@ class History:
 
     def plot(
             self,
-            val: torch.Tensor,
+            val: tf.Tensor,
             key: str = None,
             therm_frac: float = 0.,
             num_chains: int = 0,
@@ -218,17 +223,27 @@ class History:
             plot_kwargs: dict[str, Any] = None,
     ):
         plot_kwargs = {} if plot_kwargs is None else plot_kwargs
-        subplots_kwargs = {'figsize': (4, 3)} if subplots_kwargs is None else subplots_kwargs
+        if subplots_kwargs is None:
+            subplots_kwargs = {'figsize': (4, 3)}
+
         figsize = subplots_kwargs.get('figsize', (4, 3))
         # assert key in self.data
 
         # val = self.data[key]
         # color = f'C{idx%9}'
-        tmp = val[0]
-        if isinstance(tmp, torch.Tensor):
-            arr = val.detach().numpy()
+        assert val is not None
+        try:
+            tmp = val[0]
+        except IndexError:
+            raise IndexError(f'Unable to index {val},\n'
+                             f'type(val)={type(val)}')
+
+        if isinstance(tmp, tf.Tensor):
+            arr = val.numpy()
+
         elif isinstance(tmp, float):
             arr = np.array(val)
+
         else:
             try:
                 arr = np.array([np.array(i) for i in val])
@@ -279,8 +294,7 @@ class History:
             elif len(arr.shape) == 3:
                 fig, ax = plt.subplots(**subplots_kwargs)
                 for idx in range(arr.shape[1]):
-                    ax.plot(steps, arr[:, idx, :].mean(-1),
-                            label='idx', **plot_kwargs)
+                    ax.plot(steps, arr[:, idx, :].mean(-1), label='idx', **plot_kwargs)
                 axes = ax
             else:
                 raise ValueError('Unexpected shape encountered')
@@ -288,10 +302,7 @@ class History:
             ax.set_ylabel(key)
 
         if num_chains > 0 and len(arr.shape) > 1:
-            num_chains = (
-                arr.shape[1] if (num_chains > arr.shape[1]) else num_chains
-            )
-            num_chains = arr.shape[1]
+            num_chains = arr.shape[1] if (num_chains > arr.shape[1]) else num_chains
             for idx in range(num_chains):
                 ax.plot(steps, arr[:, idx], alpha=0.5, lw=LW/4, **plot_kwargs)
 
@@ -322,7 +333,8 @@ class History:
             plot_kwargs['color'] = color
 
             _, subfigs, ax = self.plot(
-                val=torch.from_numpy(val.values).T,
+                # val=torch.from_numpy(val.values).T,
+                val=tf.Tensor(val.values).T,
                 key=str(key),
                 title=title,
                 outdir=outdir,
@@ -366,6 +378,30 @@ class History:
         arr = np.array(x)
         steps = np.arange(len(arr))
         if len(arr.shape) == 1:
+            # [draws]
+            dims = ['draw']
+            coords = [steps]
+        elif len(arr.shape) == 2:
+            # [draws, chains]
+            arr = arr.T  # xarray.InferenceData expects this shape
+            nchains = arr.shape[1]
+            dims = ['chain', 'draw']
+            coords = [np.arange(nchains), steps]
+        elif len(arr.shape) == 3:
+            # [draws, lf, chains] --> [chains, lf, draws]
+            arr = arr.T  # xarray.InferenceData expects this shape
+            nchains, nlf, nsteps = arr.shape
+            dims = ['chain', 'leapfrog', 'draw']
+            coords = [np.arange(nchains), np.arange(nlf), np.arange(nsteps)]
+        else:
+            raise ValueError('Invalid shape encountered')
+
+        return xr.DataArray(arr, dims=dims, coords=coords)
+
+    def to_DataArray1(self, x: Union[list, np.ndarray]) -> xr.DataArray:
+        arr = np.array(x)
+        steps = np.arange(len(arr))
+        if len(arr.shape) == 1:
             dims = ['draw']
             coords = [steps]
         elif len(arr.shape) == 2:
@@ -373,7 +409,7 @@ class History:
             dims = ['chain', 'draw']
             coords = [np.arange(nchains), steps]
         elif len(arr.shape) == 3:
-            arr = arr.T
+            # arr = arr.T
             nchains, nlf, _ = arr.shape
             dims = ['chain', 'leapfrog', 'draw']
             coords = [np.arange(nchains), np.arange(nlf), steps]
@@ -390,9 +426,13 @@ class History:
             # if isinstance(val, list):
             #     if isinstance(val[0], (dict, AttrDict)):
             #         tmp = invert
-            #      data_vars[key] = dataset = self.get_dataset(val)
 
-            data_vars[key] = self.to_DataArray(val)
+            #      data_vars[key] = dataset = self.get_dataset(val)
+            try:
+                data_vars[key] = self.to_DataArray(val)
+            except:
+                logger.warning(f'Unable to create dataArray for {key}')
+                continue
 
         return xr.Dataset(data_vars)
 

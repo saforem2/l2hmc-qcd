@@ -91,10 +91,12 @@ def strformat(k, v, window: int = 0):
                 avgd = np.mean(v[-window:])
             else:
                 avgd = np.mean(v)
-            outstr = f'{str(k)}={avgd:<3.3f}'
+
+            outstr = f'{str(k)}={avgd:<3.2f}'
+
         else:
             if isinstance(v, float):
-                outstr = f'{str(k)}={v:<3.3f}'
+                outstr = f'{str(k)}={v:<3.2f}'
             else:
                 try:
                     outstr = f'{str(k)}={v:<3f}'
@@ -172,10 +174,10 @@ class Logger:
         self.console.rule(s, *args, **kwargs)
 
     def info(self, s: Any, *args, **kwargs):
-        if in_notebook():
-            self.console.log(s, *args, **kwargs)
-        else:
-            log.info(s, *args, **kwargs)
+        log.info(s, *args, **kwargs)
+        # if in_notebook():
+        #     self.console.log(s, *args, **kwargs)
+        # else:
 
     def load_metrics(self, infile: str = None):
         """Try loading metrics from infile."""
