@@ -99,74 +99,6 @@ def check_if_int(x: tf.Tensor) -> tf.Tensor:
     return tf.math.abs(x - nearest_int) < 1e-3
 
 
-def train_hmc(
-        configs: AttrDict,
-        make_plots: bool = True,
-        num_chains: int = 32,
-        #  therm_frac: float = 0.33,
-):
-    """Main method for training HMC model."""
-    hconfigs = AttrDict(dict(configs).copy())
-    lr_config = AttrDict(hconfigs.pop('lr_config', None))
-    config = AttrDict(hconfigs.pop('dynamics_config', None))
-    net_config = AttrDict(hconfigs.pop('network_config', None))
-    hconfigs.train_steps = hconfigs.pop('hmc_steps', None)
-    hconfigs.beta_init = hconfigs.beta_final
-
-    config.update({
-        'hmc': True,
-        'use_ncp': False,
-        'aux_weight': 0.,
-        'zero_init': False,
-        'separate_networks': False,
-        'use_conv_net': False,
-        'directional_updates': False,
-        'use_scattered_xnet_update': False,
-        'use_tempered_traj': False,
-        'gauge_eq_masks': False,
-    })
-
-    lr_config = LearningRateConfig(
-        warmup_steps=0,
-        decay_rate=0.9,
-        decay_steps=hconfigs.train_steps // 10,
-        lr_init=lr_config.get('lr_init', None),
-    )
-    dirs = io.setup_directories(hconfigs, 'training_hmc')
-    hconfigs.update({
-        'profiler': False,
-        'make_summaries': True,
-        'lr_config': lr_config,
-        'dirs': dirs,
-    })
-
-    dynamics = GaugeDynamics(hconfigs, config, net_config, lr_config)
-    dynamics.save_config(dirs['config_dir'])
-
-    x, train_data = train_dynamics(dynamics, hconfigs, dirs=dirs)
-    if IS_CHIEF and make_plots:
-        output_dir = os.path.join(dirs['train_dir'], 'outputs')
-        io.check_else_make_dir(output_dir)
-        train_data.save_data(output_dir)
-        datafile = Path(output_dir).joinpath(f'data_rank{RANK}.hdf5')
-        train_data.restore_data(datafile)
-
-        params = {
-            'eps': dynamics.eps.numpy(),
-            'num_steps': dynamics.config.num_steps,
-            'beta_init': train_data.data.beta[0],
-            'beta_final': train_data.data.beta[-1],
-            'x_shape': dynamics.config.x_shape,
-            'net_weights': NET_WEIGHTS_HMC,
-        }
-        _ = plot_data(data_container=train_data, flags=hconfigs,
-                      params=params, out_dir=dirs['train_dir'],
-                      therm_frac=0.0, num_chains=num_chains)
-        #  data_container = output['data_container']
-
-    return x, dynamics, train_data, hconfigs
-
-
 def random_init_from_configs(configs: dict[str, Any]) -> tf.Tensor:
     xshape = configs.get('dynamics_config', {}).get('x_shape', None)
     assert xshape is not None
@@ -631,6 +563,7 @@ def train(
         logdir = dirs['logdir']
         train_dir = dirs['train_dir']
         io.save_dict(dict(configs), dirs['log_dir'], 'configs')
+        # train_data.save_and_flush(dirs['data_dir'])
         train_data.save_and_flush(dirs['data_dir'],
                                   log_file=dirs['log_file'],
                                   use_hdf5=use_hdf5,
@@ -638,19 +571,12 @@ def train(
                                   skip_keys=skip_keys) #['forward', 'backward'])
         logger.info(f'Done training model! took: {time.time() - start:.4f}s')
 
-        #  outdir = Path(train_dir)
-        #  hfile = Path(outdir).joinpath(f'data_rank{RANK}.hdf5')
-        #
-        #  outdir.mkdir(parents=True, exist_ok=True)
-        #  train_data.save_and_flush(outdir)
-
-        #  f = h5py.File(hfile, 'r')
-        #  train_data.data = AttrDict({key: f[key] for key in list(f.keys())})
-
+        b0 = configs.get('beta_init', None)
+        b1 = configs.get('beta_final', None)
         if make_plots:
             params = {
-                'beta_init': train_data.data.beta[0],
-                'beta_final': train_data.data.beta[-1],
+                'beta_init': train_data.data.get('beta', [b0])[0],
+                'beta_final': train_data.data.get('beta', [b1])[0],
                 'x_shape': dynamics.config.x_shape,
                 'num_steps': dynamics.config.num_steps,
                 'net_weights': dynamics.net_weights,
@@ -859,10 +785,11 @@ def train_dynamics(
     if len(steps) != len(betas):
         betas = betas[steps[0]:]
 
-    #  keep = ['dt', 'loss', 'accept_prob', 'beta', 'Hwb_start', 'Hwf_start',
-    #          'Hwb_mid', 'Hwf_mid', 'Hwb_end', 'Hwf_end', 'xeps', 'veps',
-    #          'dq', 'dq_sin', 'plaqs', 'p4x4', 'charges', 'sin_charges']
-
+    keep = [
+        'dt', 'loss', 'accept_prob', 'beta', 'Hwb_start', 'Hwf_start',
+        'Hwb_mid', 'Hwf_mid', 'Hwb_end', 'Hwf_end', 'xeps', 'veps',
+        'dq', 'dq_sin', 'plaqs', 'p4x4', 'charges', 'sin_charges'
+    ]
     plots = {}
     if in_notebook():
         plots = plotter.init_plots(configs, figsize=(9, 3), dpi=125)
@@ -905,11 +832,8 @@ def train_dynamics(
                     f.writelines('\n'.join(data_strs))
 
                 # -- Save train_data and free consumed memory ------------
-                train_data.save_and_flush(data_dir,
-                                          log_file=logfile,
-                                          rank=RANK,
-                                          mode='a')
-                )
+                train_data.save_and_flush(data_dir, logfile,
+                                          rank=RANK, mode='a')
                 if not dynamics.config.hmc:
                     # -- Save network weights ----------------------------
                     dynamics.save_networks(logdir)

@@ -437,7 +437,11 @@ def run(
     save_times['run_data.flush_data_strs'] = time.time() - t0
 
     t0 = time.time()
-    run_data.write_to_csv(logdir, run_dir, hmc=dynamics.config.hmc)
+    try:
+        run_data.write_to_csv(logdir, run_dir, hmc=dynamics.config.hmc)
+    except TypeError:
+        logger.warning(f'Unable to write to csv. Continuing...')
+
     save_times['run_data.write_to_csv'] = time.time() - t0
 
     t0 = time.time()

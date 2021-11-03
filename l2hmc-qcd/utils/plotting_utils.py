@@ -30,8 +30,7 @@ from utils import SKEYS
 from utils.attr_dict import AttrDict
 from utils.autocorr import calc_tau_int_vs_draws
 #  from utils.file_io import timeit
-from utils.logger import Logger
-from utils.logger_config import in_notebook
+from utils.logger import Logger, in_notebook
 #  from dynamics.gauge_dynamics import GaugeDynamics
 
 #  TF_FLOAT = FLOATS[tf.keras.backend.floatx()]
@@ -85,7 +84,7 @@ def make_ridgeplots(
         num_chains: int = None,
         out_dir: str = None,
         drop_zeros: bool = False,
-        cmap: str = 'crest',
+        cmap: str = 'viridis_r',
         default_style: dict = None,
 ):
     data = {}
@@ -139,6 +138,7 @@ def make_ridgeplots(
                 # Remove the axes details that don't play well with overlap
                 _ = g.set_titles('')
                 _ = g.set(yticks=[])
+                _ = g.set(yticklabels=[])
                 _ = g.despine(bottom=True, left=True)
                 if out_dir is not None:
                     io.check_else_make_dir(out_dir)
@@ -548,7 +548,7 @@ def plot_data(
         cmap: str = 'crest',
         verbose: bool = False,
         logging_steps: int = 1,
-):
+) -> dict:
     """Plot data from `data_container.data`."""
     if verbose:
         keep_strs = list(data_container.data.keys())
