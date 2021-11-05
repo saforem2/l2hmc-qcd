@@ -266,7 +266,7 @@ class GaugeDynamics(BaseDynamics):
         else:
             xnet, vnet = [], []
             for i in range(self.config.num_steps):
-                vp = os.path.join(models_dir, f'dynamics_vnet{i}')
+                vp = os.path.join(models_dir, rf'dynamics_vnet{i}')
                 logger.debug(f'Loading vnet{i}_second from: {vp}...')
                 vnet.append(tf.keras.models.load_model(vp))
 
@@ -1326,7 +1326,10 @@ class GaugeDynamics(BaseDynamics):
         def _traj_summ(x, key=None):
             """Helper fn for summarizing `x` along the trajectory"""
             return (x[0], x[midpt], x[1]) if key is None else {
-                f'{key}': tf.squeeze(x)
+                f'{key}': tf.squeeze(x),
+                f'{key}_start': x[0],
+                f'{key}_mid': x[midpt],
+                f'{key}_end': x[-1],
             }
 
         start = time.time()
@@ -1344,13 +1347,15 @@ class GaugeDynamics(BaseDynamics):
         data.update({
             'accept_prob': accept_prob,
             'beta': states.init.beta,
+            'sumlogdet': metrics.get('sumlogdet', None)
         })
         data.update(**_traj_summ(self.xeps, 'xeps'))
         data.update(**_traj_summ(self.veps, 'veps'))
 
         if self._verbose and not self.config.hmc:
-            for (kf, vf), (kb, vb) in zip(metrics.forward.items(),
-                                          metrics.backward.items()):
+            mf = metrics.get('forward', None)
+            mb = metrics.get('backward', None)
+            for (kf, vf), (kb, vb) in zip(mf.items(), mb.items()):
                 data.update(**_traj_summ(vf, f'{kf}f'))
                 data.update(**_traj_summ(vb, f'{kb}b'))
         data.update(metrics)
