@@ -108,28 +108,35 @@ class DataContainer:
             # [draws]
             dims = ['draw']
             coords = [steps]
-        elif len(arr.shape) == 2:
+            return xr.DataArray(arr, dims=dims, coords=coords)
+
+        if len(arr.shape) == 2:
             # [draws, chains]
-            arr = arr.T  # xarray.InferenceData expects this shape
             nchains = arr.shape[1]
+            # nchains, nsteps = arr.shape
             dims = ['chain', 'draw']
             coords = [np.arange(nchains), steps]
-        elif len(arr.shape) == 3:
+            return xr.DataArray(arr.T, dims=dims, coords=coords)
+
+        if len(arr.shape) == 3:
             # [draws, lf, chains] --> [chains, lf, draws]
-            arr = arr.T  # xarray.InferenceData expects this shape
+            arr = arr.T
             nchains, nlf, nsteps = arr.shape
             dims = ['chain', 'leapfrog', 'draw']
             coords = [np.arange(nchains), np.arange(nlf), np.arange(nsteps)]
-        else:
-            raise ValueError('Invalid shape encountered')
+            return xr.DataArray(arr.T, dims=dims, coords=coords)
 
-        return xr.DataArray(arr.T, dims=dims, coords=coords)
+        raise ValueError('Invalid shape encountered')
 
-    def _get_dataset(self, data: dict = None):
+    def _get_dataset(self, data: dict = None, skip: list[str] = None):
         """Create `xr.Dataset` from `self.data`."""
         data = self.data if data is None else data
         data_vars = {}
+        skip = [] if skip is None else skip
         for key, val in data.items():
+            if key in skip:
+                continue
+
             if isinstance(val[0], (dict, AttrDict)):
                 tmp = invert_list_of_dicts(val)
                 for k, v in tmp.items():
@@ -251,7 +258,7 @@ class DataContainer:
         self.data_strs.append(data_str)
         return data_str
 
-    def update(self, step, metrics):
+    def update(self, step: int, metrics: dict):
         """Update `self.data` with new values from `data`."""
         self.steps_arr.append(step)
         for key, val in metrics.items():
