@@ -21,7 +21,7 @@ from utils import SKEYS
 from utils.hvd_init import IS_CHIEF
 #  from utils.file_io import IS_CHIEF, NUM_WORKERS
 from utils.attr_dict import AttrDict
-from utils.summary_utils import summarize_dict
+from utils.summary_utils import summarize_dict, update_summaries
 from utils.plotting_utils import plot_data
 from utils.data_containers import DataContainer
 from dynamics.config import GaugeDynamicsConfig
@@ -345,7 +345,6 @@ def run(
         x = convert_to_angle(tf.random.uniform(shape=dynamics.x_shape,
                                                minval=-PI, maxval=PI))
 
-
     # == RUN DYNAMICS =======================================================
     nw = dynamics.net_weights
     inf_type = 'HMC' if dynamics.config.hmc else 'inference'
@@ -355,7 +354,7 @@ def run(
                            x=x, beta=beta, save_x=save_x,
                            md_steps=md_steps)
     logger.info(f'Done running {inf_type}. took: {time.time() - t0:.4f} s')
-    #========================================================================
+    # =======================================================================
 
     run_data = results.run_data
     run_data.update_dirs({'log_dir': logdir, 'run_dir': run_dir})
@@ -468,6 +467,7 @@ def run(
 def run_dynamics(
         dynamics: GaugeDynamics,
         flags: dict,
+        summary_writer: tf.summary.SummaryWriter,
         x: tf.Tensor = None,
         beta: float = None,
         save_x: bool = False,
@@ -544,7 +544,8 @@ def run_dynamics(
         run_data.update(step, metrics)  # update data after every accept/reject
 
         if step % summary_steps == 0:
-            summarize_dict(metrics, step, prefix='testing')
+            update_summaries(step, metrics, dynamics)
+            # summarize_dict(metrics, step, prefix='testing')
 
         if step % print_steps == 0:
             pre = [f'{step}/{steps[-1]}']
