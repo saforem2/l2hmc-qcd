@@ -23,6 +23,17 @@ PINK = '#F92672'
 BLUE = '#007dff'
 RED = '#ff4050'
 
+COLORS = {
+    'pink': '#F92672',
+    'red': '#FF4050',
+    'orange': '#FD971F',
+    'yellow': '#FFFF00',
+    'green': '#87ff00',
+    'blue': '#007dff',
+    'cyan': '#00CCFF',
+    'purple': '#8EAFFF',
+}
+
 SNAME = 'scale_layer'
 TNAME = 'translation_layer'
 QNAME = 'transformation_layer'
