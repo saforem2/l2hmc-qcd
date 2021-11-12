@@ -274,9 +274,8 @@ def run(
     inf_type = 'HMC' if dynamics.config.hmc else 'inference'
     logger.info(', '.join([f'Running {inf_type}', f'beta={beta}', f'nw={nw}']))
     t0 = time.time()
-    results = run_dynamics(dynamics, flags=configs,
-                           x=x, beta=beta, save_x=save_x,
-                           md_steps=md_steps)
+    results = run_dynamics(dynamics, flags=configs, beta=beta, x=x,
+                           writer=writer, save_x=save_x, md_steps=md_steps)
     logger.info(f'Done running {inf_type}. took: {time.time() - t0:.4f} s')
     # =======================================================================
 
@@ -391,7 +390,7 @@ def run(
 def run_dynamics(
         dynamics: GaugeDynamics,
         flags: dict,
-        summary_writer: tf.summary.SummaryWriter,
+        writer: tf.summary.SummaryWriter = None,
         x: tf.Tensor = None,
         beta: float = None,
         save_x: bool = False,
@@ -457,6 +456,9 @@ def run_dynamics(
 
     summary_steps = max(run_steps // 100, 50)
 
+    if writer is not None:
+        writer.set_as_default()
+
     steps = tf.range(run_steps, dtype=tf.int64)
     keep_ = ['step', 'dt', 'loss', 'accept_prob', 'beta',
              'dq_int', 'dq_sin', 'dQint', 'dQsin', 'plaqs', 'p4x4']
@@ -475,7 +477,6 @@ def run_dynamics(
             pre = [f'{step}/{steps[-1]}']
             ms = run_data.print_metrics(metrics, window=50,
                                         pre=pre, keep=keep_)
-            #  ms = logger.print_metrics(metrics, window=50, pre=pre, keep=keep_)
             data_strs.append(ms)
 
     return InferenceResults(dynamics=dynamics, x=x, x_arr=x_arr,
