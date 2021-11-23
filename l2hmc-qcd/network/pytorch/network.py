@@ -158,7 +158,6 @@ class GenericNetwork(nn.Module):
         return scale, transl, transf
 
 
-
 class GaugeNetwork(nn.Module):
     def __init__(
             self,
@@ -186,16 +185,12 @@ class GaugeNetwork(nn.Module):
         self.net_config = net_config
         self.units = net_config.units
         self.input_shapes = input_shapes
-        # self.input_shapes = {'x': 2 * self.xdim, 'v': self.xdim}
 
         self.s_coeff = nn.Parameter(torch.zeros(1, self.xdim))
         self.q_coeff = nn.Parameter(torch.zeros(1, self.xdim))
-        # self.flatten = nn.Flatten()
 
         self.x_layer = nn.Linear(self.input_shapes['x'], self.units[0])
         self.v_layer = nn.Linear(self.input_shapes['v'], self.units[0])
-        #nn.init.kaiming_normal_(self.x_layer.weight, mode='fan_in', nonlinearity='linear')
-        #nn.init.kaiming_normal_(self.v_layer.weight, mode='fan_in', nonlinearity='linear')
 
         self.activation_fn = net_config.activation_fn
 

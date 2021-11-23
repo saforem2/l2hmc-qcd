@@ -17,7 +17,8 @@ from math import pi as PI
 
 from utils.logger import Logger, in_notebook
 from network.pytorch.network import (NetworkConfig, LearningRateConfig,
-                                     ConvolutionConfig, GaugeNetwork, init_weights, NetworkOutputs)
+                                     ConvolutionConfig, GaugeNetwork,
+                                     NetworkOutputs)
 from lattice.pytorch.lattice import Lattice
 # from utils.pytorch.metrics import History, Metrics
 from utils.pytorch.history import Metrics, History, innerHistory
@@ -298,7 +299,7 @@ class GaugeDynamics(nn.Module):
             forward: bool
     ):
         x, beta = inputs
-        v = torch.randn_like(x)#, device=x.device)
+        v = torch.randn_like(x)  # , device=x.device)
         state = State(x=to_u1(x), v=v, beta=beta)
         state_, metrics = self.transition_kernel(state, forward)
 
@@ -421,24 +422,30 @@ class GaugeDynamics(nn.Module):
             state_prop: State,
             sumlogdet: torch.Tensor
     ):
-        h_init = self.hamiltonian(state_init)
-        h_prop = self.hamiltonian(state_prop)
-        dh = h_init - h_prop + sumlogdet
-        prob = torch.exp(torch.minimum(dh, torch.zeros_like(dh, device=dh.device)))
+        h_init = self.hamiltonian(state_init)  # initial config  := x
+        h_prop = self.hamiltonian(state_prop)  # proposed config := x'
+        dh = h_init - h_prop + sumlogdet       # [ p(x') / p(x) ] * | dx'/dx |
+        # --> A(x'|x) = exp( min[0, -dh] ) = min[1, exp(-dh)]
+        # ref: Eq.(7) of [https://arxiv.org/pdf/2105.03418.pdf]
+        prob = torch.exp(
+            torch.minimum(dh, torch.zeros_like(dh, device=dh.device))
+        )
+
         return prob
 
     @staticmethod
-    def _get_accept_masks(accept_prob: torch.Tensor):
-        ma = (accept_prob > torch.rand_like(accept_prob).to(DEVICE)).to(torch.float)
-        mr = 1. - ma
+    def _get_accept_masks(px: torch.Tensor):
+        acc = (px > torch.rand_like(px).to(DEVICE)).to(torch.float)
+        rej = 1. - acc
 
-        return ma, mr
+        return acc, rej
 
-    def _get_direction_masks(self, batch_size: int):
-        mf = (torch.rand(batch_size).to(DEVICE) > 0.5).to(torch.float)
-        mb = 1. - mf
+    @staticmethod
+    def _get_direction_masks(batch_size: int):
+        fwd = (torch.rand(batch_size).to(DEVICE) > 0.5).to(torch.float)
+        bwd = 1. - fwd
 
-        return mf, mb
+        return fwd, bwd
 
     def calc_losses(
             self,
@@ -543,11 +550,9 @@ class GaugeDynamics(nn.Module):
 
         return Metrics(**metrics)
 
-
     @staticmethod
     def _hmc_net(x: torch.Tensor) -> NetworkOutputs:
         out = torch.zeros_like(x, device=x.device)
-        # return (torch.zeros_like(x), torch.zeros_like(x), torch.zeros_like(x))
         return NetworkOutputs(s=out, t=out, q=out)
 
     def _call_vnet(
@@ -659,7 +664,7 @@ class GaugeDynamics(nn.Module):
         sumlogdet = sumlogdet + logdet
 
         state_, logdet = self._update_x_backward(step_r, state_,
-                                                (m, mc), first=True)
+                                                 (m, mc), first=True)
         sumlogdet = sumlogdet + logdet
 
         state_, logdet = self._update_v_backward(step_r, state_)
@@ -817,7 +822,7 @@ class GaugeDynamics(nn.Module):
             logdet_ = torch.log(exp_s / (cterm + sterm))
             logdet = (mc * logdet_).sum(dim=1)
         else:
-            xnew = exp_s * (x - eps * (v * exp_q +  t))
+            xnew = exp_s * (x - eps * (v * exp_q + t))
             xb = m * x + mc * xnew
             logdet = (mc * s).sum(dim=1)
 
@@ -851,10 +856,9 @@ class GaugeDynamics(nn.Module):
         x.requires_grad_(True)
         s = self.potential_energy(x, beta)
         dsdx, = torch.autograd.grad(s, x,
-                                    # retain_graph=True,
                                     create_graph=create_graph,
-                                    grad_outputs=torch.ones(x.shape[0], device=x.device))
-        # return dsdx.detach()
+                                    grad_outputs=torch.ones(x.shape[0],
+                                                            device=x.device))
         return dsdx
 
     def calc_metrics(self, mc_states: MonteCarloStates) -> Metrics:
@@ -897,7 +901,6 @@ class GaugeDynamics(nn.Module):
         return mc_states.out.x.detach(), metrics
 
 
-
 def train_step(
         inputs: tuple[torch.Tensor, float],
         dynamics: GaugeDynamics,
@@ -925,7 +928,6 @@ def train_step(
     optimizer.step()
     dt = timer.stop()
     # loss.detach()
-
 
     # x.detach()
     # loss.detach()
@@ -1015,25 +1017,24 @@ def train(
 
     should_print = (not in_notebook())
 
-    # logger.log(f'Training for {steps.train} steps...')
-
     if isinstance(beta, list):
         assert len(beta) == steps.train
     elif isinstance(beta, float):
         beta = np.array(steps.train * [beta], dtype=np.float32).tolist()
     else:
-        raise ValueError(f'Unexpected value for beta: {beta}')
+        raise TypeError(
+            f'beta expected to be `float | list[float]`,\n got: {type(beta)}'
+        )
 
-    assert isinstance(beta, list)
-    assert len(beta) == steps.train
-    assert isinstance(beta[0], float)
+    assert (isinstance(beta, list) and isinstance(beta[0], float))
 
     for step, b in zip(range(steps.train), beta):
         x, metrics = train_step((to_u1(x), b), dynamics=dynamics,
                                 optimizer=optimizer, timer=history.timer)
         if (step + 1) % steps.log == 0:
             history.update(metrics, step)
-            pre = [f'{step+1}/{steps.train}']
+            # pre = [f'{step}/{steps.train}']
+            pre = [f'{int((step / steps.train) * 100)}%']
             mstr = history.metrics_summary(window=window, pre=pre,
                                            keep=keep, skip=skip)
             # should_print=should_print)
@@ -1094,13 +1095,12 @@ def test(
         pre = [f'{step}/{steps.test}']
         mstr = history.metrics_summary(window=0, pre=pre,
                                        keep=keep, skip=skip)
-                                       # should_print=should_print)
         if not should_print:
             logger.log(mstr)
 
         test_logs.append(mstr)
 
-    rate = history.timer.get_eval_rate(evals_per_step=dynamics.config.num_steps)
+    rate = history.timer.get_eval_rate(dynamics.config.num_steps)
     logger.log(f'Done training! took: {rate["total_time"]}')
     logger.log(f'Timing info:')
     for key, val in rate.items():
