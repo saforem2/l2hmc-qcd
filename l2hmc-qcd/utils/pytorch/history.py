@@ -7,13 +7,15 @@ import numpy as np
 from typing import Union, Any
 import matplotlib.pyplot as plt
 from utils.step_timer import StepTimer
+from pathlib import Path
 import torch
 import xarray as xr
 from utils.logger import logger
+from utils.data_containers import invert_list_of_dicts
 import torch
 import seaborn as sns
 
-LW = plt.rcParams['axes.linewidth']
+LW = plt.rcParams.get('axes.linewidth', 1.75)
 
 
 class Metrics:
@@ -125,10 +127,10 @@ class History:
             self,
             data: dict,
             window: int = 0,
-            skip: list[str] = None,
-            keep: list[str] = None,
-            pre: Union[str, list, tuple] = None,
-    ):
+            pre: Union[str, list[str]] = None,
+            skip: Union[str, list[str]] = None,
+            keep: Union[str, list[str]] = None,
+    ) -> str:
         skip = [] if skip is None else skip
         keep = list(data.keys()) if keep is None else keep
         fstrs = [
@@ -143,10 +145,21 @@ class History:
         return outstr
 
     def metrics_summary(self, **kwargs) -> str:
-        mstr = self.generic_summary(self.data, **kwargs)
-        # if should_print:
-        #     self.logger.log(mstr)
-        # logger.console.log(mstr) if in_notebook() else logger.info(mstr)
+        """A wrapper around generic summary, using self.data"""
+        return self.generic_summary(self.data, **kwargs)
+
+    def summary(
+            self,
+            data: dict = None,
+            window: int = 0,
+            pre: Union[str, list[str]] = None,
+            skip: Union[str, list[str]] = None,
+            keep: Union[str, list[str]] = None,
+    ) -> str:
+        """Returns a summary of the items in `data` over the last `window`"""
+        data = self.data if data is None else data
+        mstr = self.generic_summary(data=data, window=window,
+                                    skip=skip, keep=keep, pre=pre)
 
         return mstr
 
@@ -161,13 +174,6 @@ class History:
         logger.log(f'{mstr}')
 
         return mstr
-
-    def running_avgs_summary(self) -> str:
-        # if len(list(self.running_avgs.keys())) == 0:
-        #     self.update_running_avgs()
-
-        # return self.generic_summary(self.running_avgs, **kwargs)
-        pass
 
     def update(
         self,
@@ -359,7 +365,7 @@ class History:
     def finalize_data(self):
         for key, val in self.data.items():
             if isinstance(val, list):
-                if isinstance(val[0], (dict, AttrDict)):
+                if isinstance(val[0], dict):
                     self.data[key] = invert_list_of_dicts(val)
 
     def to_DataArray(self, x: Union[list, np.ndarray]) -> xr.DataArray:
