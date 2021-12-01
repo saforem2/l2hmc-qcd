@@ -3,6 +3,7 @@ history.py
 
 Implements the History class for keeping a history of data.
 """
+from __future__ import absolute_import, division, print_function, annotations
 import numpy as np
 from typing import Union, Any
 import matplotlib.pyplot as plt

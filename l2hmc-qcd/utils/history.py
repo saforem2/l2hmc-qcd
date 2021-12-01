@@ -3,6 +3,7 @@ history.py
 
 Implements the History class for keeping a history of data.
 """
+from __future__ import absolute_import, print_function, division, annotations
 import tensorflow as tf
 import numpy as np
 from typing import Union, Any
