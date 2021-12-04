@@ -18,6 +18,9 @@ from scipy.special import i1, i0
 
 TWO_PI = 2. * PI
 
+
+LatticeMetrics = namedtuple('LatticeMetrics', ['plaqs', 'p4x4', 'Qs', 'Qi'])
+
 @dataclass
 class Charges:
     Qs: torch.Tensor
@@ -25,10 +28,6 @@ class Charges:
 
     def asdict(self):
         return asdict(self)
-
-
-LatticeMetrics = namedtuple('LatticeMetrics', ['plaqs', 'p4x4',
-                                               'Qs', 'Qi'])
 
 
 # TODO: Deal with bessel functions in `area_law` and `plaq_exact`
@@ -39,11 +38,9 @@ def bessel_i1(x: torch.Tensor, N=100):
     def denominator(k):
         return factorial(k) * factorial(k + 1)
 
-
     return 0.5 * x * torch.from_numpy(np.cumsum(np.array([
         numerator(x, k) / denominator(k) for k in range(N)
     ])))
-
 
 
 def area_law(beta: float, num_plaqs: int):
@@ -77,11 +74,11 @@ class Lattice:
         wloops = self.calc_wilson_loops(x)
         #  actions = self.calc_actions(wloops=wloops)
         charges = self.calc_both_charges(wloops=wloops)
-        plaqs = self.calc_plaqs(wloops=wloops) # , beta=beta)
+        plaqs = self.calc_plaqs(wloops=wloops)  # , beta=beta)
         p4x4 = self.calc_plaqs4x4(x=x)
         metrics = {
             'p4': p4x4,
-            'plaqs': plaqs, 
+            'plaqs': plaqs,
             'Qi': charges.Qi,
             'Qs': charges.Qs,
         }
@@ -90,29 +87,42 @@ class Lattice:
 
     def calc_wilson_loops(self, x: torch.Tensor):
         """Calculate the Wilson loops by summing links in CCW direction."""
+        # --------------------------
+        # NOTE: Watch your shapes!
+        # --------------------------
+        # * First, x.shape = [-1, Lt, Lx, 2], so
+        #       (x_reshaped).T.shape = [2, Lx, Lt, -1]
+        #   and,
+        #       x0.shape = x1.shape = [Lx, Lt, -1]
+        #   where x0 and x1 are the links along the 2 (t, x) dimensions.
+        #
+        # * The Wilson loop is then:
+        #       wloop = U0(x, y) +  U1(x+1, y) - U0(x, y+1) - U(1)(x, y)
+        #   and so output = wloop.T, with output.shape = [-1, Lt, Lx]
+        # --------------------------
         x0, x1 = x.reshape(-1, *self.x_shape).T
         return (x0 + x1.roll(-1, dims=0) - x0.roll(-1, dims=1) - x1).T
 
     def calc_wilson_loops4x4(self, x: torch.Tensor):
-        x = x.reshape(-1, *self.x_shape)
+        x0, x1 = x.reshape(-1, *self.x_shape).T
         # x0 = x[0]
         # x1 = x[..., 1]
-        wl4x4 = (x[0]                                 # U0(x, y)
-                + x[0].roll(-1, dims=2)               # U0(x+1, y)
-                + x[0].roll(-2, dims=2)               # U0(x+2, y)
-                + x[0].roll(-3, dims=2)               # U0(x+3, y)
-                + x[0].roll(-4, dims=2)               # U0(x+4, y)
-                + x[1].roll((-4, -1), dims=(2, 1))    # U1(x+4, y+1)
-                + x[1].roll((-4, -2), dims=(2, 1))    # U1(x+4, y+2)
-                + x[1].roll((-4, -3), dims=(2, 1))    # U1(x+4, y+3)
-                - x[0].roll((-3, -4), dims=(2, 1))    # U0*(x+3, y+4)
-                - x[0].roll((-2, -4), dims=(2, 1))    # U0*(x+2, y+4)
-                - x[0].roll((-1, -4), dims=(2, 1))    # U0*(x+1, y+4)
-                - x[1].roll(-4, dims=1)               # U0*(x, y+4)
-                - x[1].roll(-3, dims=1)               # U1*(x, y+3)
-                - x[1].roll(-2, dims=1)               # U1*(x, y+2)
-                - x[1].roll(-1, dims=1)               # U1*(x, y+1)
-                - x[1])                               # U1*(x, y)
+        wl4x4 = (x0                                  # U0(x, y)
+                 + x0.roll(-1, dims=2)               # U0(x+1, y)
+                 + x0.roll(-2, dims=2)               # U0(x+2, y)
+                 + x0.roll(-3, dims=2)               # U0(x+3, y)
+                 + x0.roll(-4, dims=2)               # U0(x+4, y)
+                 + x1.roll((-4, -1), dims=(2, 1))    # U1(x+4, y+1)
+                 + x1.roll((-4, -2), dims=(2, 1))    # U1(x+4, y+2)
+                 + x1.roll((-4, -3), dims=(2, 1))    # U1(x+4, y+3)
+                 - x0.roll((-3, -4), dims=(2, 1))    # U0*(x+3, y+4)
+                 - x0.roll((-2, -4), dims=(2, 1))    # U0*(x+2, y+4)
+                 - x0.roll((-1, -4), dims=(2, 1))    # U0*(x+1, y+4)
+                 - x1.roll(-4, dims=1)               # U0*(x, y+4)
+                 - x1.roll(-3, dims=1)               # U1*(x, y+3)
+                 - x1.roll(-2, dims=1)               # U1*(x, y+2)
+                 - x1.roll(-1, dims=1)               # U1*(x, y+1)
+                 - x1)                               # U1*(x, y)
 
         return wl4x4
 
