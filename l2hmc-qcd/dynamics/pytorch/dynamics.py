@@ -164,14 +164,14 @@ class GaugeDynamics(nn.Module):
             self,
             dynamics_config: DynamicsConfig,
             network_config: NetworkConfig,
-            lr_config: LearningRateConfig,
+            # lr_config: LearningRateConfig,
             conv_config: ConvolutionConfig = None,
     ):
         super().__init__()
 
         self.config = dynamics_config
         self.net_config = network_config
-        self.lr_config = lr_config
+        # self.lr_config = lr_config
         self.conv_config = conv_config
         self.lf = self.config.num_steps
         self.nw = self.config.net_weights
