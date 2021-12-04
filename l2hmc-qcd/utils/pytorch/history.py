@@ -371,23 +371,30 @@ class History:
 
     def to_DataArray(self, x: Union[list, np.ndarray]) -> xr.DataArray:
         arr = np.array(x)
-        steps = np.arange(len(arr))
-        if len(arr.shape) == 1:
+        # steps = np.arange(len(arr))
+        if len(arr.shape) == 1:                     # [ndraws]
+            ndraws = arr.shape[0]
             dims = ['draw']
-            coords = [steps]
-        elif len(arr.shape) == 2:
-            nchains = arr.shape[1]
-            dims = ['chain', 'draw']
-            coords = [np.arange(nchains), steps]
-        elif len(arr.shape) == 3:
+            coords = [np.arange(len(arr))]
+            return xr.DataArray(arr, dims=dims, coords=coords)
+
+        if len(arr.shape) == 2:                   # [nchains, ndraws]
             arr = arr.T
-            nchains, nlf, _ = arr.shape
-            dims = ['chain', 'leapfrog', 'draw']
-            coords = [np.arange(nchains), np.arange(nlf), steps]
+            nchains, ndraws = arr.shape
+            dims = ('chain', 'draw')
+            coords = [np.arange(nchains), np.arange(ndraws)]
+            return xr.DataArray(arr, dims=dims, coords=coords)
+
+        if len(arr.shape) == 3:                   # [nchains, nlf, ndraws]
+            arr = arr.T
+            nchains, nlf, ndraws = arr.shape
+            dims = ('chain', 'leapfrog', 'draw')
+            coords = [np.arange(nchains), np.arange(nlf), np.arange(ndraws)]
+            return xr.DataArray(arr, dims=dims, coords=coords)
+
         else:
             raise ValueError('Invalid shape encountered')
 
-        return xr.DataArray(arr.T, dims=dims, coords=coords)
 
     def get_dataset(self, data: dict[str, Union[list, np.ndarray]] = None):
         data = self.data if data is None else data
