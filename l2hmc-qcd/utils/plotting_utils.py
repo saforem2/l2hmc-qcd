@@ -8,6 +8,7 @@ from typing import Union
 import matplotlib.style as mplstyle
 
 mplstyle.use('fast')
+import matplotlib as mpl
 import itertools as it
 import os
 import time
@@ -63,13 +64,13 @@ warnings.filterwarnings('once', 'seaborn')
 #  ))
 #
 
+
 def truncate_colormap(
         cmap: str,
-        minval:float = 0.0,
-        maxval:float = 1.0,
-        n:int = 100,
+        minval: float = 0.0,
+        maxval: float = 1.0,
+        n: int = 100,
 ):
-    import matplotlib as mpl
     if isinstance(cmap, str):
         cmap = plt.get_cmap(cmap)
     new_cmap = mpl.colors.LinearSegmentedColormap.from_list(
@@ -85,8 +86,9 @@ def make_ridgeplots(
         out_dir: str = None,
         drop_zeros: bool = False,
         cmap: str = 'viridis_r',
-        default_style: dict = None,
+        # default_style: dict = None,
 ):
+    """Make ridgeplots."""
     data = {}
     with sns.axes_style('white', rc={'axes.facecolor': (0, 0, 0, 0)}):
         for key, val in dataset.data_vars.items():
@@ -115,7 +117,8 @@ def make_ridgeplots(
                 data[key] = lfdf
 
                 # Initialize the FacetGrid object
-                pal = sns.color_palette(cmap, n_colors=len(val.leapfrog.values))
+                ncolors = len(val.leapfrog.values)
+                pal = sns.color_palette(cmap, n_colors=ncolors)
                 g = sns.FacetGrid(lfdf, row='lf', hue='lf',
                                   aspect=15, height=0.25, palette=pal)
 
