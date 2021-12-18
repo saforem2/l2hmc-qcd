@@ -21,6 +21,7 @@ TWO_PI = 2. * PI
 
 LatticeMetrics = namedtuple('LatticeMetrics', ['plaqs', 'p4x4', 'Qs', 'Qi'])
 
+
 @dataclass
 class Charges:
     Qs: torch.Tensor
@@ -67,7 +68,7 @@ class Lattice:
         self.num_plaqs = self._nt * self._nx
         self.num_links = self.num_plaqs * self._dim
 
-    def unnormalized_log_prob(self, x: torch.Tensor):
+    def unnormalized_log_prob(self, x: torch.Tensor) -> torch.Tensor:
         return self.calc_actions(x=x)
 
     def calc_observables(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
@@ -85,7 +86,7 @@ class Lattice:
         # return Metrics(**metrics)
         return metrics
 
-    def calc_wilson_loops(self, x: torch.Tensor):
+    def calc_wilson_loops(self, x: torch.Tensor) -> torch.Tensor:
         """Calculate the Wilson loops by summing links in CCW direction."""
         # --------------------------
         # NOTE: Watch your shapes!
@@ -103,45 +104,35 @@ class Lattice:
         x0, x1 = x.reshape(-1, *self.x_shape).T
         return (x0 + x1.roll(-1, dims=0) - x0.roll(-1, dims=1) - x1).T
 
-    def calc_wilson_loops4x4(self, x: torch.Tensor):
+    def calc_wilson_loops4x4(self, x: torch.Tensor) -> torch.Tensor:
         x0, x1 = x.reshape(-1, *self.x_shape).T
-        # x0 = x[0]
-        # x1 = x[..., 1]
-        wl4x4 = (x0                                  # U0(x, y)
-                 + x0.roll(-1, dims=2)               # U0(x+1, y)
-                 + x0.roll(-2, dims=2)               # U0(x+2, y)
-                 + x0.roll(-3, dims=2)               # U0(x+3, y)
-                 + x0.roll(-4, dims=2)               # U0(x+4, y)
-                 + x1.roll((-4, -1), dims=(2, 1))    # U1(x+4, y+1)
-                 + x1.roll((-4, -2), dims=(2, 1))    # U1(x+4, y+2)
-                 + x1.roll((-4, -3), dims=(2, 1))    # U1(x+4, y+3)
-                 - x0.roll((-3, -4), dims=(2, 1))    # U0*(x+3, y+4)
-                 - x0.roll((-2, -4), dims=(2, 1))    # U0*(x+2, y+4)
-                 - x0.roll((-1, -4), dims=(2, 1))    # U0*(x+1, y+4)
-                 - x1.roll(-4, dims=1)               # U0*(x, y+4)
-                 - x1.roll(-3, dims=1)               # U1*(x, y+3)
-                 - x1.roll(-2, dims=1)               # U1*(x, y+2)
-                 - x1.roll(-1, dims=1)               # U1*(x, y+1)
-                 - x1)                               # U1*(x, y)
-
-        return wl4x4
+        return (x0                                  # U0(x, y)
+                + x0.roll(-1, dims=2)               # U0(x+1, y)
+                + x0.roll(-2, dims=2)               # U0(x+2, y)
+                + x0.roll(-3, dims=2)               # U0(x+3, y)
+                + x0.roll(-4, dims=2)               # U0(x+4, y)
+                + x1.roll((-4, -1), dims=(2, 1))    # U1(x+4, y+1)
+                + x1.roll((-4, -2), dims=(2, 1))    # U1(x+4, y+2)
+                + x1.roll((-4, -3), dims=(2, 1))    # U1(x+4, y+3)
+                - x0.roll((-3, -4), dims=(2, 1))    # U0*(x+3, y+4)
+                - x0.roll((-2, -4), dims=(2, 1))    # U0*(x+2, y+4)
+                - x0.roll((-1, -4), dims=(2, 1))    # U0*(x+1, y+4)
+                - x1.roll(-4, dims=1)               # U0*(x, y+4)
+                - x1.roll(-3, dims=1)               # U1*(x, y+3)
+                - x1.roll(-2, dims=1)               # U1*(x, y+2)
+                - x1.roll(-1, dims=1)               # U1*(x, y+1)
+                - x1)                               # U1*(x, y)
 
     def calc_plaqs4x4(
             self,
             x: torch.Tensor = None,
             wloops4x4: torch.Tensor = None,
-            # beta: float = None
-    ):
+    ) -> torch.Tensor:
         """Calculate the 4x4 Wilson loops for a batch of lattices."""
-        if x is None and wloops4x4 is None:
-            raise ValueError('One of `x` or `wloops` must be specified.')
-
         if wloops4x4 is None:
-            assert isinstance(x, (torch.Tensor, np.ndarray))
+            if x is None:
+                raise ValueError('One of `x` or `wloops` must be specified.')
             wloops4x4 = self.calc_wilson_loops4x4(x)
-
-        # if beta is not None:
-        #     return area_law(beta, 16) - p4x4
 
         return torch.cos(wloops4x4).mean((1, 2))
 
@@ -150,22 +141,14 @@ class Lattice:
             x: torch.Tensor = None,
             wloops: torch.Tensor = None,
             # beta: float = None
-    ):
+    ) -> torch.Tensor:
         """Calculate the average plaquettes for a batch of lattices."""
         if wloops is None:
-            try:
-                assert isinstance(x, (torch.Tensor, np.ndarray))
-                wloops = self.calc_wilson_loops(x)
-            except ValueError:
-                raise
-
-        # plaqs = torch.mean(torch.cos(wloops), (1, 2))
-
-        # if beta is not None:
-        #     return plaq_exact(beta) - plaqs
+            if x is None:
+                raise ValueError('One of `x` or `wloops` must be specified.')
+            wloops = self.calc_wilson_loops(x)
 
         return torch.cos(wloops).mean((1, 2))
-
 
     def calc_actions(
             self,
@@ -174,11 +157,9 @@ class Lattice:
     ):
         """Calculate the Wilson gauge action for a batch of lattices."""
         if wloops is None:
-            try:
-                assert isinstance(x, (torch.Tensor, np.ndarray))
-                wloops = self.calc_wilson_loops(x)
-            except ValueError:
-                raise
+            if x is None:
+                raise ValueError('One of `x` or `wloops` must be specified.')
+            wloops = self.calc_wilson_loops(x)
 
         return (1. - torch.cos(wloops)).sum((1, 2))
 
@@ -189,11 +170,9 @@ class Lattice:
             use_sin: bool = False
     ):
         if wloops is None:
-            try:
-                assert isinstance(x, (torch.Tensor, np.ndarray))
-                wloops = self.calc_wilson_loops(x)
-            except ValueError:
-                raise
+            if x is None:
+                raise ValueError('One of `x` or `wloops` must be specified.')
+            wloops = self.calc_wilson_loops(x)
 
         q = torch.sin(wloops) if use_sin else project_angle(wloops)
 

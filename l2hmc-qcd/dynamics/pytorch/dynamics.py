@@ -6,26 +6,30 @@ Implements dynamics engine for augmented L2HMC leapfrog integrator.
 from __future__ import absolute_import, print_function, division, annotations
 from pathlib import Path
 from typing import Union
-import torch
 import json
+from dataclasses import dataclass, asdict, field
+
+from math import pi as PI
+
 import torch
 import torch.nn as nn
 from torch import optim
 import numpy as np
-from dataclasses import dataclass, asdict, field
-from math import pi as PI
 
-from utils.logger import Logger, in_notebook
-from network.pytorch.network import (NetworkConfig, LearningRateConfig,
+from network.pytorch.network import (NetworkConfig,
                                      ConvolutionConfig, GaugeNetwork,
                                      NetworkOutputs)
+from utils.logger import Logger, in_notebook
 from lattice.pytorch.lattice import Lattice
-# from utils.pytorch.metrics import History, Metrics
 from utils.pytorch.history import Metrics, History, innerHistory
-
-# from utils.data_containers import Metrics
-# from utils.history import History, innerHistory
 from utils.step_timer import StepTimer
+# from network.pytorch.network import (NetworkConfig, LearningRateConfig,
+#                                      ConvolutionConfig, GaugeNetwork,
+#                                      NetworkOutputs)
+# from utils.logger import Logger, in_notebook
+# from lattice.pytorch.lattice import Lattice
+# from utils.pytorch.history import Metrics, History, innerHistory
+# from utils.step_timer import StepTimer
 
 # from utils.data_containers import History, StepTimer, Metrics, innerHistory
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
