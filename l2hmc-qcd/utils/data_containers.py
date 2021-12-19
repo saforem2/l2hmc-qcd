@@ -17,6 +17,7 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import logging
 import tensorflow as tf
 import h5py
 
@@ -27,19 +28,21 @@ from config import BASE_DIR
 from utils.attr_dict import AttrDict
 from utils.data_utils import therm_arr
 from utils.hvd_init import RANK
+from .logger import metrics_summary
 from utils.plotting_utils import (set_size, make_ridgeplots,
                                   # get_title_str_from_params,
                                   plot_data)
 
-from utils.logger import logger  # , in_notebook
+# from utils.logger import logger  # , in_notebook
 
 # logger = Logger()
-LW = plt.rcParams['axes.linewidth']
+logger = logging.getLogger('l2hmc')
+# LW = plt.rcParams['axes.linewidth']
 
-plt.style.use('default')
-sns.set_context('paper')
-sns.set_style('whitegrid')
-sns.set_palette('bright')
+# plt.style.use('default')
+# sns.set_context('paper')
+# sns.set_style('whitegrid')
+# sns.set_palette('bright')
 
 
 VERBOSE = os.environ.get('VERBOSE', False)
@@ -254,7 +257,7 @@ class DataContainer:
         return data
 
     def print_metrics(self, metrics: dict, **kwargs):
-        data_str = logger.print_metrics(metrics, **kwargs)
+        data_str = metrics_summary(metrics, **kwargs)
         self.data_strs.append(data_str)
         return data_str
 
@@ -465,7 +468,7 @@ class DataContainer:
             _ = val.plot(ax=ax)
             if out_dir is not None:
                 io.check_else_make_dir(out_dir)
-                out_file = os.path.join(out_dir, f'{key}_xrPlot.png')
+                out_file = os.path.join(out_dir, f'{key}_xrPlot.svg')
                 fig.savefig(out_file, dpi=400, bbox_inches='tight')
                 plt.close('all')
                 plt.clf()

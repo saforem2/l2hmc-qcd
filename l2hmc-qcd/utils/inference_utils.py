@@ -23,11 +23,12 @@ from utils.hvd_init import IS_CHIEF
 from utils.attr_dict import AttrDict
 from utils.summary_utils import summarize_dict, update_summaries
 from utils.plotting_utils import plot_data
-from utils.data_containers import DataContainer
+from .data_containers import DataContainer
 from dynamics.config import GaugeDynamicsConfig
 from dynamics.gauge_dynamics import (build_dynamics, convert_to_angle,
                                      GaugeDynamics)
 from utils.logger import Logger
+from .logger import metrics_summary
 
 SHOULD_TRACK = not os.environ.get('NOTRACK', False)
 
@@ -100,7 +101,10 @@ def short_training(
         x, metrics = dynamics.train_step((x, tf.constant(beta)))
         metrics.dt = time.time() - start
         train_data.update(step, metrics)
-        logger.print_metrics(metrics)
+        data_str = train_data.print_metrics(metrics)
+        logger.info(data_str)
+
+        # logger.print_metrics(metrics)
         #  data_str = train_data.get_fstr(step, metrics, skip=SKEYS)
         #  io.log(data_str)
 
@@ -389,12 +393,13 @@ def run(
 
 def run_dynamics(
         dynamics: GaugeDynamics,
-        flags: dict,
+        flags: dict[str, Any],
         writer: tf.summary.SummaryWriter = None,
         x: tf.Tensor = None,
         beta: float = None,
         save_x: bool = False,
         md_steps: int = 0,
+        # window: int = 0,
         #  should_track: bool = False,
 ) -> (InferenceResults):
     """Run inference on trained dynamics."""
@@ -405,7 +410,10 @@ def run_dynamics(
     print_steps = flags.get('print_steps', 5)
     if beta is None:
         beta = flags.get('beta', flags.get('beta_final', None))  # type: float
-        assert beta is not None
+        if beta is None:
+            logger.warning(f'beta unspecified! setting to 1')
+            beta = 1.
+        assert beta is not None and isinstance(beta, float)
 
     test_step = dynamics.test_step
     if flags.get('compile', True):
@@ -413,9 +421,10 @@ def run_dynamics(
         io.log('Compiled `dynamics.test_step` using tf.function!')
 
     if x is None:
-        x = tf.random.uniform(shape=dynamics.x_shape,
-                              minval=-PI, maxval=PI,
-                              dtype=TF_FLOAT)
+        x = tf.random.uniform(shape=dynamics.x_shape, *(-PI, PI))
+                              # minval, maxval=PI,
+                              # dtype=TF_FLOAT)
+    assert tf.is_tensor(x)
 
     run_steps = flags.get('run_steps', 20000)
     run_data = DataContainer(run_steps)
@@ -475,7 +484,7 @@ def run_dynamics(
 
         if step % print_steps == 0:
             pre = [f'{step}/{steps[-1]}']
-            ms = run_data.print_metrics(metrics, window=50,
+            ms = run_data.print_metrics(metrics,
                                         pre=pre, keep=keep_)
             data_strs.append(ms)
 

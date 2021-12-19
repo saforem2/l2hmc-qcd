@@ -40,10 +40,10 @@ logger = Logger()
 
 COLORS = 100 * ['C0', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9']
 
-plt.style.use('default')
-sns.set_context('paper')
-sns.set_style('whitegrid')
-sns.set_palette('bright')
+# plt.style.use('default')
+# sns.set_context('paper')
+# sns.set_style('whitegrid')
+# sns.set_palette('bright')
 warnings.filterwarnings('once', 'UserWarning:')
 warnings.filterwarnings('once', 'seaborn')
 
@@ -145,7 +145,7 @@ def make_ridgeplots(
                 _ = g.despine(bottom=True, left=True)
                 if out_dir is not None:
                     io.check_else_make_dir(out_dir)
-                    out_file = os.path.join(out_dir, f'{key}_ridgeplot.pdf')
+                    out_file = os.path.join(out_dir, f'{key}_ridgeplot.svg')
                     #  logger.log(f'Saving figure to: {out_file}.')
                     plt.savefig(out_file, dpi=400, bbox_inches='tight')
 
@@ -164,8 +164,7 @@ def set_size(
         subplots: tuple = (1, 1)
 ):
     """Set figure dimensions to avoid scaling in LaTeX."""
-    if width is None:
-        width_pt = 345
+    width_pt = 345.0
     if width == 'thesis':
         width_pt = 426.79135
     elif width == 'beamer':
@@ -250,7 +249,8 @@ def plot_energy_distributions(data, out_dir=None, title=None):
         }
     }
 
-    fig, axes = plt.subplots(nrows=1, ncols=2, sharex='col', figsize=(8, 4),
+    fig, axes = plt.subplots(nrows=1, ncols=2, sharex='col',
+                             figsize=set_size(subplots=(1, 2)),
                              constrained_layout=True)
     for idx, (key, val) in enumerate(energies_combined.items()):
         ax = axes[idx]
@@ -269,7 +269,7 @@ def plot_energy_distributions(data, out_dir=None, title=None):
     if title is not None:
         _ = fig.suptitle(title)
     if out_dir is not None:
-        out_file = os.path.join(out_dir, 'energy_dists_traj.pdf')
+        out_file = os.path.join(out_dir, 'energy_dists_traj.svg')
         savefig(fig, out_file)
 
     return fig, axes.flatten()
@@ -360,7 +360,7 @@ def mcmc_avg_lineplots(data, title=None, out_dir=None):
     """Plot trace of avg."""
     fig, axes = None, None
     for idx, (key, val) in enumerate(data.items()):
-        fig, axes = plt.subplots(ncols=2, figsize=(8, 4),
+        fig, axes = plt.subplots(ncols=2, figsize=set_size(subplots=(1, 2)),
                                  constrained_layout=True)
         axes = axes.flatten()
         if len(val) == 2:
