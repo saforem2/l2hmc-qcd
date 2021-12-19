@@ -9,12 +9,14 @@ from typing import Union, Any
 import matplotlib.pyplot as plt
 from utils.step_timer import StepTimer
 from pathlib import Path
+import matplotx
 import torch
 import xarray as xr
 from utils.logger import logger
 from utils.data_containers import invert_list_of_dicts
 import torch
 import seaborn as sns
+from utils.plotting_utils import set_size
 
 LW = plt.rcParams.get('axes.linewidth', 1.75)
 
@@ -225,12 +227,10 @@ class History:
             plot_kwargs: dict[str, Any] = None,
     ):
         plot_kwargs = {} if plot_kwargs is None else plot_kwargs
-        subplots_kwargs = {'figsize': (4, 3)} if subplots_kwargs is None else subplots_kwargs
-        figsize = subplots_kwargs.get('figsize', (4, 3))
-        # assert key in self.data
+        subplots_kwargs = {} if subplots_kwargs is None else subplots_kwargs
+        figsize = subplots_kwargs.get('figsize', set_size())
+        subplots_kwargs.update({'figsize': figsize})
 
-        # val = self.data[key]
-        # color = f'C{idx%9}'
         tmp = val[0]
         if isinstance(tmp, torch.Tensor):
             arr = val.detach().numpy()
@@ -251,32 +251,36 @@ class History:
 
         if len(arr.shape) == 2:
             _ = subplots_kwargs.pop('constrained_layout', True)
+            figsize = (3 * figsize[0], 1.5 * figsize[1])
 
-            figsize = (2 * figsize[0], figsize[1])
+            fig = plt.figure(figsize=figsize, constrained_layout=True)
+            # subfigs = fig.subfigures((1, 2), wspace=0.01)#, width_ratios=[1., 1.5])
+            subfigs = fig.subfigures(1, 2)#, wspace=0.1)#, width_ratios=[1., 1.5])
 
-            fig = plt.figure(figsize=figsize, constrained_layout=True, dpi=200)
-            subfigs = fig.subfigures(1, 2, wspace=0.1, width_ratios=[1., 1.5])
-
-            gs_kw = {'width_ratios': [1.25, 0.5]}
-            (ax, ax1) = subfigs[1].subplots(1, 2, gridspec_kw=gs_kw, sharey=True)
+            gs_kw = {'width_ratios': [1.33, 0.33]}
+            (ax, ax1) = subfigs[1].subplots(1, 2, sharey=True,
+                                            gridspec_kw=gs_kw)
+            ax.grid(alpha=0.2)
+            ax1.grid(False)
             # (ax, ax1) = fig.subfigures(1, 1).subplots(1, 2)
             # gs = fig.add_gridspec(ncols=3, nrows=1, width_ratios=[1.5, 1., 1.5])
             color = plot_kwargs.get('color', None)
             label = r'$\langle$' + f' {key} ' + r'$\rangle$'
-            ax.plot(steps, arr.mean(-1), lw=2. * LW, label=label, **plot_kwargs)
-
+            ax.plot(steps, arr.mean(-1), lw=1.5*LW, label=label, **plot_kwargs)
             sns.kdeplot(y=arr.flatten(), ax=ax1, color=color, shade=True)
-            #ax1.set_yticks([])
-            #ax1.set_yticklabels([])
             ax1.set_xticks([])
             ax1.set_xticklabels([])
+            # ax1.set_yticks([])
+            # ax1.set_yticklabels([])
             sns.despine(ax=ax, top=True, right=True)
             sns.despine(ax=ax1, top=True, right=True, left=True, bottom=True)
-            ax.legend(loc='best', frameon=False)
-            ax1.grid(False)
+            # ax.legend(loc='best', frameon=False)
             ax1.set_xlabel('')
             ax1.set_ylabel('')
-            ax.set_ylabel(key, fontsize='large')
+            # ax.set_yticks(ax.get_yticks())
+            # ax.set_yticklabels(ax.get_yticklabels())
+            # ax.set_ylabel(key)
+            # _ = subfigs[1].subplots_adjust(wspace=-0.75)
             axes = (ax, ax1)
         else:
             if len(arr.shape) == 1:
@@ -293,21 +297,21 @@ class History:
                 raise ValueError('Unexpected shape encountered')
 
             ax.set_ylabel(key)
-
         if num_chains > 0 and len(arr.shape) > 1:
-            num_chains = (
-                arr.shape[1] if (num_chains > arr.shape[1]) else num_chains
-            )
-            num_chains = arr.shape[1]
-            for idx in range(num_chains):
-                ax.plot(steps, arr[:, idx], alpha=0.5, lw=LW/4, **plot_kwargs)
+            lw = LW / 2.
+            for idx in range(min(num_chains, arr.shape[1])):
+                # plot values of invidual chains, arr[:, idx]
+                # where arr[:, idx].shape = [ndraws, 1]
+                ax.plot(steps, arr[:, idx], alpha=0.5, lw=lw/2., **plot_kwargs)
 
-        ax.set_xlabel('draw', fontsize='large')
+        matplotx.line_labels()
+        ax.set_xlabel('draw')
         if title is not None:
             fig.suptitle(title)
 
         if outdir is not None:
-            fig.savefig(Path(outdir).joinpath(f'{key}.pdf'))
+            fig.savefig(Path(outdir).joinpath(f'{key}.svg'))
+
 
         return fig, subfigs, axes
 
@@ -338,11 +342,7 @@ class History:
                 plot_kwargs=plot_kwargs,
                 subplots_kwargs=subplots_kwargs,
             )
-            # if isinstance(subfigs, tuple):
             if subfigs is not None:
-                # _, subfigs = fig
-                # ax1 = subfigs[1].subplots(1, 1)
-
                 edgecolor = plt.rcParams['axes.edgecolor']
                 plt.rcParams['axes.edgecolor'] = plt.rcParams['axes.facecolor']
                 ax = subfigs[0].subplots(1, 1)
@@ -352,10 +352,10 @@ class History:
                     # 'orientation': 'horizontal',
                 }
                 im = val.plot(ax=ax, cbar_kwargs=cbar_kwargs)
-                im.colorbar.set_label(f'{key}', fontsize='large') #, labelpad=1.25)
+                im.colorbar.set_label(f'{key}') #, labelpad=1.25)
                 sns.despine(subfigs[0], top=True, right=True, left=True, bottom=True)
                 # sns.despine(im.axes, top=True, right=True, left=True, bottom=True)
-                plt.rcParams['axes.edgecolor'] = edgecolor
+                #plt.rcParams['axes.edgecolor'] = edgecolor
 
             # else:
             #     ax1 = fig.add_subplot(1, 2, 2)
