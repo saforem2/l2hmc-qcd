@@ -12,7 +12,6 @@ from pathlib import Path
 import matplotx
 import torch
 import xarray as xr
-from utils.logger import logger
 from utils.data_containers import invert_list_of_dicts
 import torch
 import seaborn as sns
@@ -20,6 +19,15 @@ from utils.plotting_utils import set_size
 
 LW = plt.rcParams.get('axes.linewidth', 1.75)
 
+plt.rcParams.update({
+    "figure.facecolor":  (0.11, 0.11, 0.11, 0.0),  # transparent
+    "axes.facecolor":    (0.11, 0.11, 0.11, 0.0),
+    "savefig.facecolor": (0.11, 0.11, 0.11, 0.0),
+})
+
+import logging
+
+logger = logging.getLogger('l2hmc')
 
 class Metrics:
     def __init__(self, **kwargs):
@@ -276,7 +284,7 @@ class History:
             sns.despine(ax=ax1, top=True, right=True, left=True, bottom=True)
             # ax.legend(loc='best', frameon=False)
             ax1.set_xlabel('')
-            ax1.set_ylabel('')
+            # ax1.set_ylabel('')
             # ax.set_yticks(ax.get_yticks())
             # ax.set_yticklabels(ax.get_yticklabels())
             # ax.set_ylabel(key)
@@ -310,8 +318,8 @@ class History:
             fig.suptitle(title)
 
         if outdir is not None:
-            fig.savefig(Path(outdir).joinpath(f'{key}.svg'))
-
+            plt.savefig(Path(outdir).joinpath(f'{key}.svg'),
+                        dpi=400, bbox_inches='tight')
 
         return fig, subfigs, axes
 
@@ -356,6 +364,11 @@ class History:
                 sns.despine(subfigs[0], top=True, right=True, left=True, bottom=True)
                 # sns.despine(im.axes, top=True, right=True, left=True, bottom=True)
                 #plt.rcParams['axes.edgecolor'] = edgecolor
+                if outdir is not None:
+                    Path(outdir).mkdir(exist_ok=True)
+                    outfile = Path(outdir).joinpath(f'{key}.svg').as_posix()
+                    logger.debug(f'Saving figure to: {outfile}')
+                    plt.savefig(outfile, dpi=400, bbox_inches='tight')
 
             # else:
             #     ax1 = fig.add_subplot(1, 2, 2)
