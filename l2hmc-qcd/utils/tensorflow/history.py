@@ -236,8 +236,7 @@ class History:
             arr = val.numpy()
         elif isinstance(val[0], float):
             arr = np.array(val)
-
-        if isinstance(val, list):
+        else:
             try:
                 arr = np.array([np.array(i) for i in val])
             except (AttributeError, ValueError) as exc:
