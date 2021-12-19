@@ -20,7 +20,9 @@ from network.pytorch.network import (NetworkConfig,
                                      ConvolutionConfig, GaugeNetwork,
                                      NetworkOutputs)
 from utils.logger import Logger, in_notebook
+absolute_import
 from lattice.pytorch.lattice import Lattice
+# from lattice.pytorch.lattice import Lattice
 from utils.pytorch.history import Metrics, History, innerHistory
 from utils.step_timer import StepTimer
 # from network.pytorch.network import (NetworkConfig, LearningRateConfig,
@@ -189,8 +191,8 @@ class GaugeDynamics(nn.Module):
         self.clip_val = self.config.clip_val
 
         self.lattice_shape = self.config.x_shape
-        self.lattice = Lattice(self.lattice_shape)
-        self.potential_fn = self.lattice.calc_actions
+        self.lattice = Lattice(self.lattice_shape)  # type: Lattice
+        self.potential_fn = self.lattice.action
 
         self.batch_size = self.lattice_shape[0]
         self.xdim = np.cumprod(self.lattice_shape[1:])[-1]
@@ -456,8 +458,8 @@ class GaugeDynamics(nn.Module):
             states: MonteCarloStates,
             accept_prob: torch.Tensor,
     ):
-        q_init = self.lattice.calc_charges(x=states.init.x, use_sin=True)
-        q_prop = self.lattice.calc_charges(x=states.prop.x, use_sin=True)
+        q_init = self.lattice.sin_charges(x=states.init.x)
+        q_prop = self.lattice.sin_charges(x=states.prop.x)
         qloss = (accept_prob * (q_prop - q_init) ** 2) + 1e-4
         qloss = qloss / self.charge_weight
 
@@ -534,12 +536,12 @@ class GaugeDynamics(nn.Module):
         # sumlogdet = torch.zeros(state.x.shape[0])
         energy = self.hamiltonian(state)
         energy_scaled = energy - logdets
-        metrics = self.lattice.calc_observables(x=state.x)
+        metrics = self.lattice.observables(x=state.x)
         return innerHistory(dict(H=[energy],
                                  Hw=[energy_scaled],
                                  logdets=[logdets],
-                                 Qs=[metrics.Qs],
-                                 Qi=[metrics.Qi],
+                                 Qs=[metrics.charges.sinQ],
+                                 Qi=[metrics.charges.intQ],
                                  plaqs=[metrics.plaqs],
                                  p4x4=[metrics.p4x4],
                                  accept_prob=accept_prob,
@@ -548,10 +550,16 @@ class GaugeDynamics(nn.Module):
     def get_metrics(self, state: State, logdet: torch.Tensor) -> Metrics:
         energy = self.hamiltonian(state)
         energy_scaled = energy - logdet
-        lmetrics = self.lattice.calc_observables(x=state.x)
-        emetrics = {'H': energy, 'Hw': energy_scaled, 'logdets': logdet}
-        metrics = {**lmetrics, **emetrics}
-
+        obs = self.lattice.observables(x=state.x)
+        metrics = {
+            'H': energy,
+            'Hw': energy_scaled,
+            'logdets': logdet,
+            'plaqs': obs.plaqs,
+            'p4x4': obs.p4x4,
+            'intQ': obs.charges.intQ,
+            'sinQ': obs.charges.sinQ
+        }
         return Metrics(**metrics)
 
     @staticmethod
@@ -868,14 +876,20 @@ class GaugeDynamics(nn.Module):
     def calc_metrics(self, mc_states: MonteCarloStates) -> Metrics:
         x0 = to_u1(mc_states.init.x)
         x1 = to_u1(mc_states.out.x)
-        metrics = self.lattice.calc_observables(x1)
+        obs1 = self.lattice.observables(x1)
 
-        q0 = self.lattice.calc_both_charges(x0)
-        q1 = self.lattice.calc_both_charges(x1)
-        metrics['dQi'] = torch.abs(q1.Qi - q0.Qi)
-        metrics['dQs'] = torch.abs(q1.Qs - q0.Qs)
+        q1 = obs1.charges
+        q0 = self.lattice.charges(x0)
+        # q1 = self.lattice.charges(x1)
+        return {
+            'plaqs': obs1.plaqs,
+            'p4x4': obs1.p4x4,
+            'intQ': obs1.charges.intQ,
+            'sinQ': obs1.charges.sinQ,
+            'dsinQ': torch.abs(q1.intQ - q0.intQ),
+            'dintQ': torch.abs(q1.sinQ - q0.sinQ),
+        }
 
-        return metrics
 
     def train_step(
             self,
