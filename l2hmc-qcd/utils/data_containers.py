@@ -400,7 +400,7 @@ class DataContainer:
             self,
             data_dir: Union[str, Path],
             skip_keys: list[str] = None,
-            use_hdf5: bool = False,
+            use_hdf5: bool = True,
             save_dataset: bool = True,
             # compression: str = 'gzip',
     ):
