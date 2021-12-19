@@ -12,12 +12,14 @@ from pathlib import Path
 import matplotx
 import tensorflow as tf
 import xarray as xr
-from utils.logger import logger
 from utils.data_containers import invert_list_of_dicts
 import seaborn as sns
 from utils.plotting_utils import set_size
 
 LW = plt.rcParams.get('axes.linewidth', 1.75)
+
+import logging
+logger = logging.getLogger('l2hmc')
 
 
 class Metrics:
@@ -226,11 +228,14 @@ class History:
             outdir: str = None,
             subplots_kwargs: dict[str, Any] = None,
             plot_kwargs: dict[str, Any] = None,
+            ext: str = 'svg',
     ):
         plot_kwargs = {} if plot_kwargs is None else plot_kwargs
         subplots_kwargs = {} if subplots_kwargs is None else subplots_kwargs
         figsize = subplots_kwargs.get('figsize', set_size())
         subplots_kwargs.update({'figsize': figsize})
+        key = '' if key is None else key
+        label = ' '.join([r'$\langle$', f'{key}', r'$\rangle$'])
 
         if isinstance(val[0], tf.Tensor):
             arr = val.numpy()
@@ -254,64 +259,58 @@ class History:
             figsize = (3 * figsize[0], 1.5 * figsize[1])
 
             fig = plt.figure(figsize=figsize, constrained_layout=True)
-            # subfigs = fig.subfigures((1, 2), wspace=0.01)#, width_ratios=[1., 1.5])
-            subfigs = fig.subfigures(1, 2)#, wspace=0.1)#, width_ratios=[1., 1.5])
+            subfigs = fig.subfigures(1, 2)
+            # , wspace=0.1)#, width_ratios=[1., 1.5])
 
             gs_kw = {'width_ratios': [1.33, 0.33]}
             (ax, ax1) = subfigs[1].subplots(1, 2, sharey=True,
                                             gridspec_kw=gs_kw)
             ax.grid(alpha=0.2)
             ax1.grid(False)
-            # (ax, ax1) = fig.subfigures(1, 1).subplots(1, 2)
-            # gs = fig.add_gridspec(ncols=3, nrows=1, width_ratios=[1.5, 1., 1.5])
             color = plot_kwargs.get('color', None)
-            label = r'$\langle$' + f' {key} ' + r'$\rangle$'
             ax.plot(steps, arr.mean(-1), lw=1.5*LW, label=label, **plot_kwargs)
             sns.kdeplot(y=arr.flatten(), ax=ax1, color=color, shade=True)
             ax1.set_xticks([])
             ax1.set_xticklabels([])
-            # ax1.set_yticks([])
-            # ax1.set_yticklabels([])
             sns.despine(ax=ax, top=True, right=True)
             sns.despine(ax=ax1, top=True, right=True, left=True, bottom=True)
-            # ax.legend(loc='best', frameon=False)
             ax1.set_xlabel('')
             ax1.set_ylabel('')
-            # ax.set_yticks(ax.get_yticks())
-            # ax.set_yticklabels(ax.get_yticklabels())
-            # ax.set_ylabel(key)
-            # _ = subfigs[1].subplots_adjust(wspace=-0.75)
             axes = (ax, ax1)
+            matplotx.line_labels(ax=ax)
         else:
             if len(arr.shape) == 1:
                 fig, ax = plt.subplots(**subplots_kwargs)
-                ax.plot(steps, arr, **plot_kwargs)
+                ax.plot(steps, arr, label=label, **plot_kwargs)
                 axes = ax
+                matplotx.line_labels(ax=ax)
             elif len(arr.shape) == 3:
                 fig, ax = plt.subplots(**subplots_kwargs)
                 for idx in range(arr.shape[1]):
-                    ax.plot(steps, arr[:, idx, :].mean(-1),
-                            label='idx', **plot_kwargs)
+                    if idx == 0:
+                        ax.plot(steps, arr[:, idx, :].mean(-1),
+                                label=label, **plot_kwargs)
+                    else:
+                        ax.plot(steps, arr[:, idx, :].mean(-1), **plot_kwargs)
                 axes = ax
+                matplotx.line_labels(ax=ax)
             else:
                 raise ValueError('Unexpected shape encountered')
 
             ax.set_ylabel(key)
+
         if num_chains > 0 and len(arr.shape) > 1:
-            lw = LW / 2.
             for idx in range(min(num_chains, arr.shape[1])):
                 # plot values of invidual chains, arr[:, idx]
                 # where arr[:, idx].shape = [ndraws, 1]
-                ax.plot(steps, arr[:, idx], alpha=0.5, lw=lw/2., **plot_kwargs)
+                ax.plot(steps, arr[:, idx], alpha=0.4, lw=LW/5., **plot_kwargs)
 
-        matplotx.line_labels()
         ax.set_xlabel('draw')
         if title is not None:
             fig.suptitle(title)
 
         if outdir is not None:
-            fig.savefig(Path(outdir).joinpath(f'{key}.svg'))
-
+            fig.savefig(Path(outdir).joinpath(f'{key}.{ext}'))
 
         return fig, subfigs, axes
 
@@ -324,6 +323,7 @@ class History:
             subplots_kwargs: dict[str, Any] = None,
             plot_kwargs: dict[str, Any] = None,
             skip: list[str] = None,
+            ext: str = 'svg',
     ):
         plot_kwargs = {} if plot_kwargs is None else plot_kwargs
         subplots_kwargs = {} if subplots_kwargs is None else subplots_kwargs
@@ -345,26 +345,25 @@ class History:
                 num_chains=num_chains,
                 plot_kwargs=plot_kwargs,
                 subplots_kwargs=subplots_kwargs,
+                ext=ext,
             )
             if subfigs is not None:
+                edgecolor = plt.rcParams['axes.edgecolor']
                 plt.rcParams['axes.edgecolor'] = plt.rcParams['axes.facecolor']
                 ax = subfigs[0].subplots(1, 1)
-                # ax = fig[1].subplots(constrained_layout=True)
-                cbar_kwargs = {
-                    # 'location': 'top',
-                    # 'orientation': 'horizontal',
-                }
-                im = val.plot(ax=ax, cbar_kwargs=cbar_kwargs)
-                im.colorbar.set_label(f'{key}') #, labelpad=1.25)
-                sns.despine(subfigs[0], top=True, right=True, left=True, bottom=True)
-                # sns.despine(im.axes, top=True, right=True, left=True, bottom=True)
-                #plt.rcParams['axes.edgecolor'] = edgecolor
-                if 'eps' in key:
-                    ax.set_ylabel('Leapfrog step')
+                im = val.plot(ax=ax, robust=True)  # , rasterized=True
+                im.colorbar.set_label(f'{key}')
+                sns.despine(subfigs[0], top=True,
+                            right=True, left=True, bottom=True)
 
-            # else:
-            #     ax1 = fig.add_subplot(1, 2, 2)
-            #     val.plot(ax=ax1)
+                if 'eps' in key:
+                    ax.set_ylabel('leapfrog step')
+
+                if outdir is not None:
+                    Path(outdir).mkdir(exist_ok=True)
+                    outfile = Path(outdir).joinpath(f'{key}.{ext}').as_posix()
+                    logger.debug(f'Saving figure to: {outfile}')
+                    plt.savefig(outfile)
 
         return dataset
 
