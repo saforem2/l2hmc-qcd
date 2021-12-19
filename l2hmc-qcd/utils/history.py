@@ -332,18 +332,21 @@ class History:
         for idx, (key, val) in enumerate(dataset.data_vars.items()):
             color = f'C{idx%9}'
             plot_kwargs['color'] = color
-
-            _, subfigs, ax = self.plot(
-                # val=torch.from_numpy(val.values).T,
-                val=tf.Tensor(val.values).T,
-                key=str(key),
-                title=title,
-                outdir=outdir,
-                therm_frac=therm_frac,
-                num_chains=num_chains,
-                plot_kwargs=plot_kwargs,
-                subplots_kwargs=subplots_kwargs,
-            )
+            try:
+                _, subfigs, ax = self.plot(
+                    # val=torch.from_numpy(val.values).T,
+                    # val=tf.Tensor(val.values).T,
+                    val=val.values.T,
+                    key=str(key),
+                    title=title,
+                    outdir=outdir,
+                    therm_frac=therm_frac,
+                    num_chains=num_chains,
+                    plot_kwargs=plot_kwargs,
+                    subplots_kwargs=subplots_kwargs,
+                )
+            except:
+                logger.warning(f'Unable to plot {key}, skipping')
             # if isinstance(subfigs, tuple):
             if subfigs is not None:
                 # _, subfigs = fig
