@@ -36,6 +36,7 @@ from utils.learning_rate import ReduceLROnPlateau
 from utils.logger import Logger, in_notebook
 from utils.summary_utils import update_summaries
 from utils.plotting_utils import plot_data
+import logging
 
 if tf.__version__.startswith('1.'):
     TF_VERSION = 1
@@ -64,7 +65,7 @@ TSTAMPS = {
 
 PlotData = plotter.LivePlotData
 
-logger = Logger()
+# logger = Logger()
 
 OPTIONS = tf.profiler.experimental.ProfilerOptions(
     host_tracer_level=2,
@@ -72,6 +73,11 @@ OPTIONS = tf.profiler.experimental.ProfilerOptions(
     device_tracer_level=1,
     delay_ms=None,
 )
+
+if in_notebook():
+    logger = logging.getLogger('jupyter')
+else:
+    logger = logging.getLogger('l2hmc')
 
 def update_plots(
         history: dict,
@@ -681,6 +687,7 @@ def train_dynamics(
         steps_dict: dict[str, int] = None,
         save_metrics: bool = True,
         custom_betas: Union[list, np.ndarray] = None,
+        window: int = 0,
 ) -> tuple[tf.Tensor, DataContainer]:
     """Train model."""
     configs = inputs['configs']
@@ -847,7 +854,7 @@ def train_dynamics(
             pre = [f'{step:>4g}/{total_steps:<4g}']
             #  data_str = logger.print_metrics(metrics, window=50,
             #                                  pre=pre, keep=keep_)
-            data_str = train_data.print_metrics(metrics, window=50,
+            data_str = train_data.print_metrics(metrics, window=window,
                                                 pre=pre, keep=keep_)
             data_strs.append(data_str)
 
@@ -871,7 +878,7 @@ def train_dynamics(
     train_data.dump_configs(x, data_dir, rank=RANK, local_rank=LOCAL_RANK)
     if IS_CHIEF:
         manager.save()
-        logger.log(f'Checkpoint saved to: {manager.latest_checkpoint}')
+        logger.info(f'Checkpoint saved to: {manager.latest_checkpoint}')
 
         with open(logfile, 'w') as f:
             f.writelines('\n'.join(data_strs))
