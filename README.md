@@ -112,7 +112,7 @@ Or via the [` bin/train.sh `](bin/train.sh) script provided in [` bin/ `](bin/).
 
 If you use this code or found this work interesting, please cite our work along with the original paper:
 
-```latex
+```bibtex
 @misc{foreman2021deep,
       title={Deep Learning Hamiltonian Monte Carlo}, 
       author={Sam Foreman and Xiao-Yong Jin and James C. Osborn},
@@ -123,7 +123,7 @@ If you use this code or found this work interesting, please cite our work along 
 }
 ```
 
-```latex
+```bibtex
 @article{levy2017generalizing,
   title={Generalizing Hamiltonian Monte Carlo with Neural Networks},
   author={Levy, Daniel and Hoffman, Matthew D. and Sohl-Dickstein, Jascha},
