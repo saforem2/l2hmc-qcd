@@ -540,7 +540,7 @@ def get_params_from_configs(configs: dict):
 
 
 def plot_data(
-        data_container: DataContainer, #  "DataContainer",  # noqa:F821
+        data_container: "DataContainer", #  type: "DataContainer",  # noqa:F821
         configs: dict = None,
         out_dir: str = None,
         therm_frac: float = 0,
