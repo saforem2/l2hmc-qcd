@@ -353,10 +353,10 @@ def get_gauge_network(
         #  transl = custom_dense(*args['transl'])(z)
         #  transf = custom_dense(*args['transf'], activation='tanh')(z)
 
-        scale *= tf.exp(scale_coeff)
-        transf *= tf.exp(transf_coeff)
+        scale *= tf.math.exp(scale_coeff)
+        transf *= tf.math.exp(transf_coeff)
 
         model = Model(name=name,
-                      inputs=[x_input, v_input], #, t_input],
+                      inputs=[x_input, v_input],  # , t_input],
                       outputs=[scale, transl, transf])
     return model
