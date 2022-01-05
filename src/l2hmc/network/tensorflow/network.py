@@ -229,7 +229,6 @@ def get_network(
 
     cfg = get_network_configs(name=name,
                               xdim=xdim,
-                              factor=factor,
                               network_config=network_config,
                               activation_fn=network_config.activation_fn)
 
