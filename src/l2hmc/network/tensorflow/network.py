@@ -28,13 +28,20 @@ from src.l2hmc.configs import (
     BaseNetworkFactory,
     Shape,
 )
+from src.l2hmc.network.tensorflow.utils import PeriodicPadding
 
 
 Tensor = tf.Tensor
 Model = tf.keras.Model
+PI = np.pi
+TWO_PI = 2. * PI
 
 NetworkInputs = tuple[Tensor, Tensor]
 NetworkOutputs = tuple[Tensor, Tensor, Tensor]
+
+
+def to_u1(x: Tensor) -> Tensor:
+    return (tf.add(x, PI) % TWO_PI) - PI
 
 
 def linear_activation(x: Tensor) -> Tensor:
@@ -129,43 +136,10 @@ class CustomDense(Layer):
         return self.layer(x)
 
 
-# pylint:disable=unused-argument
-class PeriodicPadding(Layer):
-    """Implements a PeriodicPadding as a `tf.keras.layers.Layer` object."""
-    def __init__(self, size: int, **kwargs):
-        super(PeriodicPadding, self).__init__(**kwargs)
-        self.size = size
-
-    def call(self, v: Tensor):
-        """Call the layer in the foreward direction.
-        NOTE: We assume inputs.shape = (batch, Nx, Ny, *)
-        """
-        assert len(v.shape) >= 3, 'Expected len(v.shape) >= 3'
-        assert tf.is_tensor(v)
-        # 1. pad along x axis
-        x0 = v[:, -self.size:, :, ...]
-        x1 = v[:, 0:self.size, :, ...]
-        inputs = tf.concat([x0, v, x1], 1)
-
-        # 2. pad along y axis
-        y0 = v[:, :, -self.size:, ...]
-        y1 = v[:, :, 0:self.size, ...]
-
-        inputs = tf.concat([y0, inputs, y1], 2)
-
-        return inputs
-
-    def get_config(self):
-        config = super(PeriodicPadding, self).get_config()
-        config.update({'size': self.size})
-        return config
-
-
-
 def get_network_configs(
         xdim: int,
         network_config: NetworkConfig,
-        factor: float = 1.,
+        # factor: float = 1.,
         activation_fn: str | Callable = None,
         name: str = 'Network',
 ) -> dict:
@@ -240,7 +214,7 @@ def get_network(
         conv_config: ConvolutionConfig = None,
         factor: float = 1.,
         name: str = None,
-) -> tf.keras.Model:
+) -> Model:
     """Returns a functional `tf.keras.Model`."""
     xdim = np.cumprod(xshape[1:])[-1]
     name = 'GaugeNetwork' if name is None else name
@@ -321,7 +295,6 @@ def get_network(
     scale = net_weight.s * s
     transl = net_weight.t * t
     transf = net_weight.q * q
-
 
     model = Model(name=name,
                   inputs=[x_input, v_input],

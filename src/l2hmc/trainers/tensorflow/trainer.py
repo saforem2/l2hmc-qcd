@@ -30,8 +30,8 @@ def train_step(
         x_prop = metrics.pop('mc_states').proposed.x
         loss = loss_fn(x_init=x_init, x_prop=x_prop, acc=metrics['acc'])
 
-    grads = tape.gradient(loss, dynamics.trainable_weights)
-    optimizer.apply_gradients(zip(grads, dynamics.trainable_weights))
+    grads = tape.gradient(loss, dynamics.trainable_variables)
+    optimizer.apply_gradients(zip(grads, dynamics.trainable_variables))
     metrics['dt'] = time.time() - start
     metrics['loss'] = loss
 
