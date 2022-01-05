@@ -16,12 +16,13 @@ from math import pi as PI
 from scipy.special import i1, i0
 
 TWO_PI = 2. * PI
+Tensor = torch.Tensor
 
 
 @dataclass
 class Charges:
-    intQ: torch.Tensor
-    sinQ: torch.Tensor
+    intQ: Tensor
+    sinQ: Tensor
 
     def asdict(self):
         return {'intQ': self.intQ, 'sinQ': self.sinQ}
@@ -29,9 +30,9 @@ class Charges:
 
 @dataclass
 class LatticeMetrics:
-    plaqs: torch.Tensor
+    plaqs: Tensor
     charges: Charges
-    p4x4: torch.Tensor
+    p4x4: Tensor
 
     def asdict(self):
         return {
@@ -43,7 +44,7 @@ class LatticeMetrics:
 
 
 # TODO: Deal with bessel functions in `area_law` and `plaq_exact`
-def bessel_i1(x: torch.Tensor, N=100):
+def bessel_i1(x: Tensor, N=100):
     def numerator(x, k):
         return ((x ** 2 / 4) ** k)
 
@@ -63,10 +64,10 @@ def plaq_exact(beta: float):
     return i1(beta) / i0(beta)
 
 
-# def project_angle(x: torch.Tensor):
+# def project_angle(x: Tensor):
 #     return x - TWO_PI * torch.floor(x + PI / TWO_PI)
 
-def project_angle(x: torch.Tensor) -> torch.Tensor:
+def project_angle(x: Tensor) -> Tensor:
     """For x in [-4pi, 4pi], returns x in [-pi, pi]."""
     return x - TWO_PI * torch.floor((x + PI) / TWO_PI)
 
@@ -84,16 +85,22 @@ class Lattice:
         unif = torch.rand(self._shape, requires_grad=requires_grad)
         return TWO_PI * unif - PI
 
-    def unnormalized_log_prob(self, x: torch.Tensor) -> torch.Tensor:
+    def unnormalized_log_prob(self, x: Tensor) -> Tensor:
         return self.action(x=x)
 
-    def observables(self, x: torch.Tensor) -> LatticeMetrics:
+    def calc_metrics(self, x: Tensor) -> dict[str, Tensor]:
+        wloops = self.wilson_loops(x)
+        plaqs = self.plaqs(wloops=wloops)
+        charges = self.charges(wloops=wloops)
+        return {'plaqs': plaqs, 'intQ': charges.intQ, 'sinQ': charges.sinQ}
+
+    def observables(self, x: Tensor) -> LatticeMetrics:
         wloops = self.wilson_loops(x)
         return LatticeMetrics(p4x4=self.plaqs4x4(x=x),
                               plaqs=self.plaqs(wloops=wloops),
                               charges=self.charges(wloops=wloops))
 
-    def wilson_loops(self, x: torch.Tensor) -> torch.Tensor:
+    def wilson_loops(self, x: Tensor) -> Tensor:
         """Calculate the Wilson loops by summing links in CCW direction."""
         # --------------------------
         # NOTE: Watch your shapes!
@@ -111,7 +118,7 @@ class Lattice:
         x0, x1 = x.reshape(-1, *self.x_shape).T
         return (x0 + x1.roll(-1, dims=0) - x0.roll(-1, dims=1) - x1).T
 
-    def wilson_loops4x4(self, x: torch.Tensor) -> torch.Tensor:
+    def wilson_loops4x4(self, x: Tensor) -> Tensor:
         """Calculate the 4x4 Wilson loops"""
         x0, x1 = x.reshape(-1, *self.x_shape).T
         return (
@@ -135,10 +142,10 @@ class Lattice:
 
     def plaqs(
             self,
-            x: torch.Tensor = None,
-            wloops: torch.Tensor = None,
+            x: Tensor = None,
+            wloops: Tensor = None,
             # beta: float = None
-    ) -> torch.Tensor:
+    ) -> Tensor:
         """Calculate the average plaquettes for a batch of lattices."""
         if wloops is None:
             if x is None:
@@ -147,14 +154,10 @@ class Lattice:
 
         return torch.cos(wloops).mean((1, 2))
 
-    def _plaqs4x4(self, wloops4x4: torch.Tensor) -> torch.Tensor:
+    def _plaqs4x4(self, wloops4x4: Tensor) -> Tensor:
         return torch.cos(wloops4x4).mean((1, 2))
 
-    def plaqs4x4(
-            self,
-            x: torch.Tensor = None,
-            wloops4x4: torch.Tensor = None,
-    ) -> torch.Tensor:
+    def plaqs4x4(self, x: Tensor = None, wloops4x4: Tensor = None) -> Tensor:
         """Calculate the 4x4 Wilson loops for a batch of lattices."""
         if wloops4x4 is None:
             if x is None:
@@ -163,19 +166,15 @@ class Lattice:
 
         return self._plaqs4x4(wloops4x4)
 
-    def _sin_charges(self, wloops: torch.Tensor) -> torch.Tensor:
+    def _sin_charges(self, wloops: Tensor) -> Tensor:
         """Calculate sinQ from Wilson loops."""
         return torch.sin(wloops).sum((1, 2)) / TWO_PI
 
-    def _int_charges(self, wloops: torch.Tensor) -> torch.Tensor:
+    def _int_charges(self, wloops: Tensor) -> Tensor:
         """Calculate intQ from Wilson loops."""
         return project_angle(wloops).sum((1, 2)) / TWO_PI
 
-    def sin_charges(
-            self,
-            x: torch.Tensor = None,
-            wloops: torch.Tensor = None,
-    ) -> torch.Tensor:
+    def sin_charges(self, x: Tensor = None, wloops: Tensor = None) -> Tensor:
         """Calculate the real-valued charge approximation, sin(Q)."""
         if wloops is None:
             if x is None:
@@ -184,11 +183,7 @@ class Lattice:
 
         return self._sin_charges(wloops)
 
-    def int_charges(
-            self,
-            x: torch.Tensor = None,
-            wloops: torch.Tensor = None,
-    ) -> torch.Tensor:
+    def int_charges(self, x: Tensor = None, wloops: Tensor = None) -> Tensor:
         """Calculate the integer valued topological charge, int(Q)."""
         if wloops is None:
             if x is None:
@@ -197,11 +192,7 @@ class Lattice:
 
         return self._int_charges(wloops)
 
-    def charges(
-            self,
-            x: torch.Tensor = None,
-            wloops: torch.Tensor = None,
-    ) -> Charges:
+    def charges(self, x: Tensor = None, wloops: Tensor = None) -> Charges:
         """Calculate both charge representations and return as single object"""
         if wloops is None:
             if x is None:
@@ -212,11 +203,7 @@ class Lattice:
         intQ = self._int_charges(wloops)
         return Charges(intQ=intQ, sinQ=sinQ)
 
-    def action(
-            self,
-            x: torch.Tensor = None,
-            wloops: torch.Tensor = None,
-    ) -> torch.Tensor:
+    def action(self, x: Tensor = None, wloops: Tensor = None) -> Tensor:
         """Calculate the Wilson gauge action for a batch of lattices."""
         if wloops is None:
             if x is None:

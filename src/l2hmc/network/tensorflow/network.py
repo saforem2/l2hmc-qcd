@@ -3,17 +3,328 @@ tensorflow/network.py
 
 Tensorflow implementation of the network used to train the L2HMC sampler.
 """
-from __future__ import absolute_import, print_function, division, annotations
+from __future__ import absolute_import, annotations, division, print_function
 
+import numpy as np
 import tensorflow as tf
-
-from tensorflow import keras
-
+from tensorflow.keras.initializers import VarianceScaling
 from tensorflow.keras.layers import (
-    Layer, Add, Dropout, Dense, Flatten, Conv2D, MaxPooling2D,
-    BatchNormalization, Input
+    Add,
+    BatchNormalization,
+    Conv2D,
+    Dense,
+    Dropout,
+    Flatten,
+    Input,
+    Layer,
+    MaxPooling2D,
+)
+from tensorflow.python.types.core import Callable
+
+from src.l2hmc.configs import (
+    ConvolutionConfig,
+    NetWeight,
+    NetworkConfig,
+    BaseNetworkFactory,
+    Shape,
 )
 
-ACTIVATION_FNS = {
+
+Tensor = tf.Tensor
+Model = tf.keras.Model
+
+NetworkInputs = tuple[Tensor, Tensor]
+NetworkOutputs = tuple[Tensor, Tensor, Tensor]
+
+
+def linear_activation(x: Tensor) -> Tensor:
+    return x
+
+
+ACTIVATIONS = {
+    'relu': tf.keras.activations.relu,
+    'tanh': tf.keras.activations.tanh,
+    'swish': tf.keras.activations.swish,
+    'linear': linear_activation,
 }
 
+
+class NetworkFactory(BaseNetworkFactory):
+    def build_networks(self, n: int, split_xnets: bool) -> dict:
+        """Build LeapfrogNetwork."""
+        # TODO: if n == 0: build hmcNetwork (return zeros)
+        assert n >= 1, 'Must build at least one network'
+
+        cfg = self.get_build_configs()
+        if n == 1:
+            return {
+                'xnet': get_network(**cfg['xnet'], name='xNet'),
+                'vnet': get_network(**cfg['vnet'], name='vNet'),
+            }
+
+        vnet = {
+            str(i): get_network(**cfg['vnet'], name=f'vNet/lfLayer{i}')
+            for i in range(n)
+        }
+        if split_xnets:
+            n1 = lambda m: f'xNet/lfLayer{m}/first'
+            n2 = lambda m: f'xNet/lfLayer{m}/second'
+            xnet = {}
+            for i in range(n):
+                xnet[str(i)] = {
+                    'first': get_network(**cfg['xnet'], name=n1(i)),
+                    'second': get_network(**cfg['xnet'], name=n2(i)),
+                }
+        else:
+            xnet = {
+                str(i): get_network(**cfg['xnet'], name=f'xNet/lfLayer{i}')
+                for i in range(n)
+            }
+
+        return {'xnet': xnet, 'vnet': vnet}
+
+
+def get_kinit(scale: float = 1., seed: int = None):
+    return VarianceScaling(scale=2. * scale,
+                           mode='fan_in', seed=seed,
+                           distribution='truncated_normal')
+
+
+
+class CustomDense(Layer):
+    def __init__(
+            self,
+            units: int,
+            scale: float = 1.,
+            activation: str | Callable = None,
+            **kwargs,
+    ):
+        super(CustomDense, self).__init__(**kwargs)
+        if isinstance(activation, str):
+            activation = ACTIVATIONS.get(activation, ACTIVATIONS['relu'])
+
+        self.units = units
+        self.scale = scale
+        self.activation = activation
+        kinit = tf.keras.initializers.VarianceScaling(
+            mode='fan_in',
+            scale=2.*self.scale,
+            distribution='truncated_normal',
+        )
+        self.layer = Dense(self.units,
+                           name=self.name,
+                           activation=activation,
+                           kernel_initializer=kinit)
+
+    def get_config(self) -> dict:
+        config = super(CustomDense, self).get_config()
+        config.update({
+            'units': self.units,
+            'scale': self.scale,
+            'activation': self.activation,
+        })
+        return config
+
+    def call(self, x: Tensor) -> Tensor:
+        return self.layer(x)
+
+
+# pylint:disable=unused-argument
+class PeriodicPadding(Layer):
+    """Implements a PeriodicPadding as a `tf.keras.layers.Layer` object."""
+    def __init__(self, size: int, **kwargs):
+        super(PeriodicPadding, self).__init__(**kwargs)
+        self.size = size
+
+    def call(self, v: Tensor):
+        """Call the layer in the foreward direction.
+        NOTE: We assume inputs.shape = (batch, Nx, Ny, *)
+        """
+        assert len(v.shape) >= 3, 'Expected len(v.shape) >= 3'
+        assert tf.is_tensor(v)
+        # 1. pad along x axis
+        x0 = v[:, -self.size:, :, ...]
+        x1 = v[:, 0:self.size, :, ...]
+        inputs = tf.concat([x0, v, x1], 1)
+
+        # 2. pad along y axis
+        y0 = v[:, :, -self.size:, ...]
+        y1 = v[:, :, 0:self.size, ...]
+
+        inputs = tf.concat([y0, inputs, y1], 2)
+
+        return inputs
+
+    def get_config(self):
+        config = super(PeriodicPadding, self).get_config()
+        config.update({'size': self.size})
+        return config
+
+
+
+def get_network_configs(
+        xdim: int,
+        network_config: NetworkConfig,
+        factor: float = 1.,
+        activation_fn: str | Callable = None,
+        name: str = 'Network',
+) -> dict:
+    """Returns network configs."""
+    if isinstance(activation_fn, str):
+        activation_fn = ACTIVATIONS.get(activation_fn, ACTIVATIONS['relu'])
+
+    assert callable(activation_fn)
+    names = {
+        'x_input': f'{name}/xInput',
+        'v_input': f'{name}/vInput',
+        'x_layer': f'{name}/xLayer',
+        'v_layer': f'{name}/vLayer',
+        'scale': f'{name}/scaleLayer',
+        'transl': f'{name}/translationLayer',
+        'transf': f'{name}/transformationLayer',
+        's_coeff': f'{name}/scaleCoeff',
+        'q_coeff': f'{name}/transformationCoeff',
+    }
+    coeff_kwargs = {
+        'trainable': True,
+        'initial_value': tf.zeros([1, xdim]),
+    }
+
+    args = {
+        'x': {
+            # 'scale': factor / 2.,
+            'name': names['x_layer'],
+            'units': network_config.units[0],
+            'activation': linear_activation,
+        },
+        'v': {
+            # 'scale': 1. / 2.,
+            'name': names['v_layer'],
+            'units': network_config.units[0],
+            'activation': linear_activation,
+        },
+        'scale': {
+            # 'scale': 0.001 / 2.,
+            'name': names['scale'],
+            'units': xdim,
+            'activation': linear_activation,
+        },
+        'transl': {
+            # 'scale': 0.001 / 2.,
+            'name': names['transl'],
+            'units': xdim,
+            'activation': linear_activation,
+        },
+        'transf': {
+            # 'scale': 0.001 / 2.,
+            'name': names['transf'],
+            'units': xdim,
+            'activation': linear_activation,
+        },
+    }
+
+    return {
+        'args': args,
+        'names': names,
+        'activation': activation_fn,
+        'coeff_kwargs': coeff_kwargs,
+    }
+
+
+# pylint:disable=too-many-locals, too-many-arguments
+def get_network(
+        xshape: Shape,
+        network_config: NetworkConfig,
+        input_shapes: dict[str, tuple[int]] = None,
+        net_weight: NetWeight = None,
+        conv_config: ConvolutionConfig = None,
+        factor: float = 1.,
+        name: str = None,
+) -> tf.keras.Model:
+    """Returns a functional `tf.keras.Model`."""
+    xdim = np.cumprod(xshape[1:])[-1]
+    name = 'GaugeNetwork' if name is None else name
+
+    if net_weight is None:
+        net_weight = NetWeight(1., 1., 1.)
+
+    if input_shapes is None:
+        input_shapes = {
+            'x': (xdim,), 'v': (xdim,),
+        }
+
+    cfg = get_network_configs(name=name,
+                              xdim=xdim,
+                              factor=factor,
+                              network_config=network_config,
+                              activation_fn=network_config.activation_fn)
+
+    args = cfg['args']
+    names = cfg['names']
+    act_fn = cfg['activation']
+
+    x_input = Input(input_shapes['x'], name=names['x_input'])
+    v_input = Input(input_shapes['v'], name=names['v_input'])
+
+    s_coeff = tf.Variable(**cfg['coeff_kwargs'], name=names['s_coeff'])
+    q_coeff = tf.Variable(**cfg['coeff_kwargs'], name=names['q_coeff'])
+
+    if conv_config is not None:
+        if len(xshape) == 3:
+            nt, nx, d = xshape
+        elif len(xshape) == 4:
+            _, nt, nx, d = xshape
+        else:
+            raise ValueError(f'Invalid value for `xshape`: {xshape}')
+
+        n1 = conv_config.filters[0]
+        n2 = conv_config.filters[1]
+        f1 = conv_config.sizes[0]
+        f2 = conv_config.sizes[1]
+        p1 = conv_config.pool[0]
+
+        if 'xnet' in name.lower():
+            x = tf.reshape(x_input, shape=(-1, nt, nx, d + 2))
+        else:
+            x = tf.reshape(x_input, shape=(-1, nt, nx, d))
+
+        x = PeriodicPadding(f1 - 1)(x)
+        x = Conv2D(n1, f1, activation='relu', name=f'{name}/xConv1')(x)
+        x = Conv2D(n2, f2, activation='relu', name=f'{name}/xConv2')(x)
+        x = MaxPooling2D(p1, name=f'{name}/xPool')(x)
+        x = Conv2D(n2, f2, activation='relu', name=f'{name}/xConv3')(x)
+        x = Conv2D(n1, f1, activation='relu', name=f'{name}/xConv4')(x)
+        x = Flatten()(x)
+        if conv_config.use_batch_norm:
+            x = BatchNormalization(-1, name=f'{name}/batch_norm')(x)
+    else:
+        x = Flatten()(x_input)
+
+    x = Dense(**args['x'])(x)
+    v = Dense(**args['v'])(v_input)
+    z = act_fn(Add()([x, v]))
+    for idx, units in enumerate(network_config.units[1:]):
+        z = Dense(units, 
+                  activation=act_fn,
+                  name=f'{name}/hLayer{idx}')(z)
+
+    if network_config.dropout_prob > 0:
+        z = Dropout(network_config.dropout_prob)(z)
+
+    if network_config.use_batch_norm:
+        z = BatchNormalization(-1, name=f'{name}/BatchNorm')(z)
+
+    s = tf.math.exp(s_coeff) * tf.math.tanh(Dense(**args['scale'])(z))
+    t = Dense(**args['transl'])(z)
+    q = tf.math.exp(q_coeff) * tf.math.tanh(Dense(**args['transf'])(z))
+
+    scale = net_weight.s * s
+    transl = net_weight.t * t
+    transf = net_weight.q * q
+
+
+    model = Model(name=name,
+                  inputs=[x_input, v_input],
+                  outputs=[scale, transl, transf])
+
+    return model
