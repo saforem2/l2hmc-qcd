@@ -12,11 +12,13 @@ from dataclasses import dataclass, asdict
 PI = tf.constant(np.pi)
 TWO_PI = 2. * PI
 
+Tensor = tf.Tensor
+
 
 @dataclass
 class Charges:
-    intQ: tf.Tensor
-    sinQ: tf.Tensor
+    intQ: Tensor
+    sinQ: Tensor
 
     def asdict(self):
         return asdict(self)
@@ -24,9 +26,9 @@ class Charges:
 
 @dataclass
 class LatticeMetrics:
-    plaqs: tf.Tensor
+    plaqs: Tensor
     charges: Charges
-    p4x4: tf.Tensor
+    p4x4: Tensor
 
     def asdict(self):
         return {
@@ -52,7 +54,7 @@ def project_angle(x):
     return x - TWO_PI * tf.math.floor((x + PI) / TWO_PI)
 
 
-Observables = dict[str, tf.Tensor]
+Observables = dict[str, Tensor]
 
 
 class Lattice:
@@ -63,21 +65,31 @@ class Lattice:
         self.nplaqs = self.nt * self.nx
         self.nlinks = self.nplaqs * self._dim
 
-    def draw_uniform_batch(self) -> tf.Tensor:
+    def draw_uniform_batch(self) -> Tensor:
         """Draw batch of samples, uniformly from [-pi, pi)."""
         return tf.random.uniform(self._shape, *(-PI, PI))
 
-    def unnormalized_log_prob(self, x: tf.Tensor) -> tf.Tensor:
+    def unnormalized_log_prob(self, x: Tensor) -> Tensor:
         return self.action(x)
 
-    def observables(self, x: tf.Tensor) -> LatticeMetrics:
+    def calc_metrics(self, x: Tensor) -> Observables:
+        wloops = self.wilson_loops(x)
+        plaqs = self.plaqs(wloops=wloops)
+        charges = self.charges(wloops=wloops)
+        return {
+            'plaqs': plaqs,
+            'intQ': charges.intQ,
+            'sinQ': charges.sinQ,
+        }
+
+    def observables(self, x: Tensor) -> LatticeMetrics:
         """Calculate Lattice observables."""
         wloops = self.wilson_loops(x)
         return LatticeMetrics(p4x4=self.plaqs4x4(x=x),
                               plaqs=self.plaqs(wloops=wloops),
                               charges=self.charges(wloops=wloops))
 
-    def wilson_loops(self, x: tf.Tensor) -> tf.Tensor:
+    def wilson_loops(self, x: Tensor) -> Tensor:
         """Calculate the Wilson loops by summing links in CCW direction."""
         # --------------------------
         # NOTE: Watch your shapes!
@@ -92,12 +104,19 @@ class Lattice:
         #       wloop = U0(x, y) +  U1(x+1, y) - U0(x, y+1) - U(1)(x, y)
         #   and so output = wloop.T, with output.shape = [-1, Lt, Lx]
         # --------------------------
-        x0, x1 = tf.transpose(tf.reshape(x, (-1, *self.x_shape)))
+        x = tf.reshape(x, shape=(-1, *self.x_shape))
+        wilson_loops = (x[..., 0]
+                        - x[..., 1]
+                        - tf.roll(x[..., 0], -1, axis=2)
+                        + tf.roll(x[..., 1], -1, axis=1))
+        return wilson_loops
+        # x0, x1 = tf.transpose(tf.reshape(x, (-1, *self.x_shape)))
+        # return tf.transpose(x0 + tf.roll(x1, -1, 0) - tf.roll(x0, -1, 1) - x1)
+        # ---
         # x0, x1 = tf.reshape(x, (-1, *self.x_shape)).T
+        # return tf.transpose(x[0] + tf.roll(x[1], -1, 0) - tf.roll(x[0], -1, 1) - x[1])
 
-        return tf.transpose(x0 + tf.roll(x1, -1, 0) - tf.roll(x0, -1, 1) - x1)
-
-    def wilson_loops4x4(self, x: tf.Tensor) -> tf.Tensor:
+    def wilson_loops4x4(self, x: Tensor) -> Tensor:
         """Calculate the 4x4 Wilson loops"""
         x0, x1 = tf.transpose(tf.reshape(x, (-1, *self.x_shape)))
         return tf.transpose(
@@ -121,9 +140,9 @@ class Lattice:
 
     def plaqs(
             self,
-            x: tf.Tensor = None,
-            wloops: tf.Tensor = None,
-    ) -> tf.Tensor:
+            x: Tensor = None,
+            wloops: Tensor = None,
+    ) -> Tensor:
         """Calculate the avg plaq for each of the lattices in x."""
         if wloops is None:
             if x is None:
@@ -131,14 +150,14 @@ class Lattice:
             wloops = self.wilson_loops(x)
         return tf.reduce_mean(tf.math.cos(wloops), (1, 2))
 
-    def _plaqs4x4(self, wloops4x4: tf.Tensor) -> tf.Tensor:
+    def _plaqs4x4(self, wloops4x4: Tensor) -> Tensor:
         return tf.reduce_mean(tf.math.cos(wloops4x4), (1, 2))
 
     def plaqs4x4(
             self,
-            x: tf.Tensor = None,
-            wloops4x4: tf.Tensor = None
-    ) -> tf.Tensor:
+            x: Tensor = None,
+            wloops4x4: Tensor = None
+    ) -> Tensor:
         """Calculate 4x4 wilson loops."""
         if wloops4x4 is None:
             if x is None:
@@ -147,18 +166,18 @@ class Lattice:
 
         return self._plaqs4x4(wloops4x4)
 
-    def _sin_charges(self, wloops: tf.Tensor) -> tf.Tensor:
+    def _sin_charges(self, wloops: Tensor) -> Tensor:
         """Calculate sinQ from Wilson loops."""
         return tf.reduce_sum(tf.math.sin(wloops), (1, 2)) / TWO_PI
 
-    def _int_charges(self, wloops: tf.Tensor) -> tf.Tensor:
+    def _int_charges(self, wloops: Tensor) -> Tensor:
         return tf.reduce_sum(project_angle(wloops), (1, 2)) / TWO_PI
 
     def sin_charges(
             self,
-            x: tf.Tensor = None,
-            wloops: tf.Tensor = None
-    ) -> tf.Tensor:
+            x: Tensor = None,
+            wloops: Tensor = None
+    ) -> Tensor:
         """Calculate the real-valued charge approximation, sin(Q)"""
         if wloops is None:
             if x is None:
@@ -169,9 +188,9 @@ class Lattice:
 
     def int_charges(
             self,
-            x: tf.Tensor = None,
-            wloops: tf.Tensor = None
-    ) -> tf.Tensor:
+            x: Tensor = None,
+            wloops: Tensor = None
+    ) -> Tensor:
         """Calculate the integer valued charges."""
         if wloops is None:
             if x is None:
@@ -182,8 +201,8 @@ class Lattice:
 
     def charges(
             self,
-            x: tf.Tensor = None,
-            wloops: tf.Tensor = None,
+            x: Tensor = None,
+            wloops: Tensor = None,
     ) -> Charges:
         """Calculate both charge representations and return as single object"""
         if wloops is None:
@@ -197,9 +216,9 @@ class Lattice:
 
     def action(
             self,
-            x: tf.Tensor = None,
-            wloops: tf.Tensor = None,
-    ) -> tf.Tensor:
+            x: Tensor = None,
+            wloops: Tensor = None,
+    ) -> Tensor:
         """Calculate the Wilson gauge action for a batch of lattices."""
         if wloops is None:
             if x is None:

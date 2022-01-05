@@ -5,24 +5,21 @@ Contains the pytorch implementation of the Normalizing Flow network
 
 used to train the L2HMC model.
 """
-from __future__ import absolute_import, division, print_function, annotations
-from collections import namedtuple
-import os
+from __future__ import absolute_import, annotations, division, print_function
+from typing import Callable
+
 import numpy as np
-import sys
-
-from src.l2hmc.configs import NetworkConfig
-
 import torch
-
-from typing import Callable, Union, NamedTuple
-from dataclasses import dataclass, field
-from collections import namedtuple
-
-
-
 from torch import nn
 import torch.nn.functional as F
+
+from src.l2hmc.configs import (
+    NetWeight,
+    NetworkConfig,
+    BaseNetworkFactory,
+)
+
+Tensor = torch.Tensor
 
 DEVICE = (
     torch.device('cuda') if torch.cuda.is_available()
@@ -36,16 +33,6 @@ ACTIVATION_FNS = {
     'swish': F.silu,
     'leaky_relu': F.leaky_relu,
 }
-
-class NetworkInputs(NamedTuple):
-    x: torch.Tensor
-    v: torch.Tensor
-
-class NetworkOutputs(NamedTuple):
-    s: torch.Tensor
-    t: torch.Tensor
-    q: torch.Tensor
-
 
 def flatten(x: torch.Tensor) -> torch.Tensor:
     return x.reshape(x.shape[0], -1)
@@ -63,27 +50,78 @@ def init_weights(m: nn.Module, use_zeros: bool = False):
             torch.nn.init.kaiming_normal_(m.weight)
 
 
+class NetworkFactory(BaseNetworkFactory):
+    def build_networks(self, n: int, split_xnets: bool) -> nn.ModuleDict:
+        """Build LeapfrogNetwork."""
+        # TODO: if n == 0: build hmcNetwork (return zeros)
+        assert n >= 1, 'Must build at least one network'
+
+        cfg = self.get_build_configs()
+        if n == 1:
+            return nn.ModuleDict({
+                'xnet': Network(**cfg['xnet']),
+                'vnet': Network(**cfg['vnet']),
+            })
+
+        vnet = nn.ModuleDict({
+            str(i): Network(**cfg['vnet']) for i in range(n)
+        })
+
+        if split_xnets:
+            xnet = {}
+            for i in range(n):
+                xnet[str(i)] = nn.ModuleDict({
+                    'first': Network(**cfg['xnet']),
+                    'second': Network(**cfg['xnet']),
+                })
+            xnet = nn.ModuleDict(xnet)
+        else:
+            xnet = nn.ModuleDict({
+                str(i): Network(**cfg['xnet']) for i in range(n)
+            })
+
+        return nn.ModuleDict({'xnet': xnet, 'vnet': vnet})
+
+
+NetworkInputs = tuple[Tensor, Tensor]
+NetworkOutputs = tuple[Tensor, Tensor, Tensor]
+
 class Network(nn.Module):
     def __init__(
             self,
             xshape: tuple[int],
             network_config: NetworkConfig,
             input_shapes: dict[str, int] = None,
+            net_weight: NetWeight = None,
     ):
         super().__init__()
-        self._device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        if net_weight is None:
+            net_weight = NetWeight(1., 1., 1.)
+
         self.xshape = xshape
         self.net_config = network_config
+        self.nw = net_weight
+
         self.xdim = np.cumprod(xshape[1:])[-1]
 
         if input_shapes is None:
             input_shapes = {'x': self.xdim, 'v': self.xdim}
 
-        self.input_shapes = input_shapes
+        self.input_shapes = {}
+        for key, val in input_shapes.items():
+            if isinstance(val, tuple):
+                self.input_shapes[key] = np.cumprod(val)[-1]
+            elif isinstance(val, int):
+                self.input_shapes[key] = val
+            else:
+                raise ValueError('Unexpected value in input_shapes')
+
+        self._device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
         self.units = self.net_config.units
 
-        self.s_coeff = nn.Parameter(torch.zeros(1, self.xdim))
-        self.q_coeff = nn.Parameter(torch.zeros(1, self.xdim))
+        self.s_coeff = nn.parameter.Parameter(torch.zeros(1, self.xdim))
+        self.q_coeff = nn.parameter.Parameter(torch.zeros(1, self.xdim))
 
         self.x_layer = nn.Linear(self.input_shapes['x'], self.units[0])
         self.v_layer = nn.Linear(self.input_shapes['v'], self.units[0])
@@ -130,4 +168,8 @@ class Network(nn.Module):
         transl = self.transl(z)
         transf = torch.exp(self.q_coeff) * torch.tanh(self.transf(z))
 
-        return NetworkOutputs(scale, transl, transf)
+        s = torch.mul(self.nw.s, scale)
+        t = torch.mul(self.nw.t, transl)
+        q = torch.mul(self.nw.q, transf)
+
+        return (s, t, q)
