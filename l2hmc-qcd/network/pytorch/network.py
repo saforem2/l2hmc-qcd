@@ -17,7 +17,10 @@ from dataclasses import dataclass, field
 from torch import nn
 import torch.nn.functional as F
 
-DEVICE = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+DEVICE = (
+    torch.device('cuda') if torch.cuda.is_available()
+    else torch.device('cpu')
+)
 
 
 MODULEPATH = os.path.join(os.path.dirname(__file__), '..', '..')
@@ -92,6 +95,7 @@ def init_zero_weights(m):
 from collections import namedtuple
 NetworkOutputs = namedtuple('NetworkOutputs', ['s', 't', 'q'])
 
+
 # pylint:disable=invalid-name
 class GenericNetwork(nn.Module):
     def __init__(self, xdim: int, net_config: NetworkConfig):
@@ -133,8 +137,8 @@ class GenericNetwork(nn.Module):
         return num_features
 
     def forward(
-            self,
-            inputs: NetworkInputs
+        self,
+        inputs: NetworkInputs
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         x = self.x_layer(inputs.x)
         v = self.v_layer(inputs.v)
@@ -160,13 +164,13 @@ class GenericNetwork(nn.Module):
 
 class GaugeNetwork(nn.Module):
     def __init__(
-            self,
-            xshape: tuple,
-            net_config: NetworkConfig,
-            conv_config: ConvolutionConfig = None,
-            input_shapes: dict[str, int] = None,
-            factor: float = 1.,
-            batch_size: tuple = None,
+        self,
+        xshape: tuple,
+        net_config: NetworkConfig,
+        conv_config: ConvolutionConfig = None,
+        input_shapes: dict[str, int] = None,
+        factor: float = 1.,
+        batch_size: tuple = None,
     ):
         super().__init__()
         if len(xshape) == 4:
@@ -211,15 +215,15 @@ class GaugeNetwork(nn.Module):
             self.batch_norm = nn.BatchNorm1d(self.units[-1])
 
     def forward(
-            self,
-            inputs: tuple[torch.Tensor, torch.Tensor],
+        self,
+        inputs: tuple[torch.Tensor, torch.Tensor],
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         # stack `x` as (cos(x), sin(x))
         x, v = inputs
 
         # v = v.reshape(v.shape[0], -1)
         x = x.reshape(x.shape[0], -1)
-        #xy = self.flatten(torch.stack([torch.cos(x), torch.sin(x)], dim=-1))
+        # xy = self.flatten(torch.stack([torch.cos(x), torch.sin(x)], dim=-1))
         z = self.activation_fn(self.x_layer(x) + self.v_layer(v))
         #  z = (x + v).clamp(min=0)
         for layer in self.hidden_layers:
