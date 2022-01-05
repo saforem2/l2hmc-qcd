@@ -65,7 +65,7 @@ def xy_repr(x: Tensor) -> Tensor:
 CallableNetwork = Callable[[NetworkInputs, bool], NetworkOutputs]
 
 
-class Dynamics(tf.keras.Model):
+class Dynamics(Model):
     def __init__(
             self,
             potential_fn: Callable,
@@ -265,7 +265,7 @@ class Dynamics(tf.keras.Model):
                     val = val.stack()
                 if tf.is_tensor(val):
                     try:
-                        val = val.numpy()  # pyright: ignore this line
+                        val = val.numpy()  # type: ignore
                     except AttributeError:
                         continue
                 hist[key] = val
@@ -454,7 +454,6 @@ class Dynamics(tf.keras.Model):
         s, t, q = self._call_vnet(step, (state.x, grad), training=training)
 
         s = tf.scalar_mul(0.5 * eps, s)
-        # s = 0.5 * eps * s
         q = tf.scalar_mul(eps, q)
 
         vf = state.v * tf.exp(s) - 0.5 * eps * (grad * tf.exp(q) - t)
@@ -473,8 +472,6 @@ class Dynamics(tf.keras.Model):
         s, t, q = self._call_vnet(step, (state.x, grad), training=training)
         s = tf.scalar_mul(-0.5 * eps, s)
         q = tf.scalar_mul(eps, q)
-        # s = -0.5 * eps * s
-        # q = eps * q
         vb = tf.exp(s) * (state.v + 0.5 * eps * (grad * tf.exp(q) - t))
         logdet = tf.reduce_sum(s, axis=1)
 
@@ -491,9 +488,11 @@ class Dynamics(tf.keras.Model):
         """Single x update in the forward direction"""
         eps = self.xeps[step]
         mb = tf.ones_like(m) - m
-        mx = tf.multiply(m, state.x)
-        inputs = (mx, state.v)
+        xm_init = tf.multiply(m, state.x)
+        inputs = (xm_init, state.v)
         s, t, q = self._call_xnet(step, inputs, first=first, training=training)
+        s = eps * s
+        q = eps * q
         s = tf.scalar_mul(eps, s)
         q = tf.scalar_mul(eps, q)
 
@@ -501,18 +500,17 @@ class Dynamics(tf.keras.Model):
         exp_q = tf.exp(q)
 
         if self.config.use_ncp:
-            xby2 = tf.scalar_mul(0.5, state.x)
-            _x = tf.scalar_mul(2., tf.math.atan(tf.math.tan(xby2) * exp_s))
+            halfx = tf.divide(state.x, 2.)
+            _x = tf.scalar_mul(2., tf.math.atan(tf.math.tan(halfx) * exp_s))
             xnew = _x + eps * (state.v * exp_q + t)
-            xf = mx + (mb * xnew)
-
-            cterm = tf.math.square(tf.math.cos(xby2))
-            sterm = tf.math.square(exp_s * tf.math.sin(xby2))
-            logdet_ = tf.math.log(exp_s / tf.add(cterm, sterm))
+            xf = xm_init + (mb * xnew)
+            cterm = tf.math.square(tf.math.cos(halfx))
+            sterm = (exp_s * tf.math.sin(halfx)) ** 2
+            logdet_ = tf.math.log(exp_s / (cterm + sterm))
             logdet = tf.reduce_sum(mb * logdet_, axis=1)
         else:
             xnew = state.x * exp_s + eps * (state.v * exp_q + t)
-            xf = tf.multiply(m, state.x) + (mb * xnew)
+            xf = xm_init + (mb * xnew)
             logdet = tf.reduce_sum(mb * s, axis=1)
 
         return State(x=xf, v=state.v, beta=state.beta), logdet
@@ -527,27 +525,28 @@ class Dynamics(tf.keras.Model):
     ) -> tuple[State, Tensor]:
         eps = self.xeps[step]
         mb = tf.ones_like(m) - m
-        xm = tf.multiply(m, state.x)
-        inputs = (xm, state.v)
+        xm_init = tf.multiply(m, state.x)
+        inputs = (xm_init, state.v)
         s, t, q = self._call_xnet(step, inputs, first=first, training=training)
         s = tf.scalar_mul(-eps, s)
         q = tf.scalar_mul(eps, q)
-        exp_s = tf.exp(s)
         exp_q = tf.exp(q)
+        exp_s = tf.exp(s)
 
         if self.config.use_ncp:
-            xby2 = tf.scalar_mul(0.5, state.x)
-            x1 = tf.scalar_mul(2., tf.math.atan(tf.math.tan(xby2) * exp_s))
-            x2 = exp_s * eps * (state.v * exp_q + t)
-            xnew = x1 - x2
-            xb = xm + (mb * xnew)
-            cterm = tf.math.square(tf.math.cos(xby2))
-            sterm = tf.math.square(exp_s * tf.math.sin(xby2))
-            logdet_ = tf.math.log(exp_s / tf.add(cterm, sterm))
+            halfx = tf.scalar_mul(0.5, state.x)
+            halfx_scale = tf.multiply(exp_s, tf.math.tan(halfx))
+            term1 = tf.scalar_mul(2., tf.math.atan(halfx_scale))
+            term2 = exp_s * eps * (state.v * exp_q + t)
+            xnew = term1 - term2
+            cterm = tf.math.square(tf.math.cos(halfx))
+            xb = xm_init + (mb * xnew)
+            sterm = (exp_s * tf.math.sin(halfx)) ** 2
+            logdet_ = tf.math.log(exp_s / (cterm + sterm))
             logdet = tf.reduce_sum(mb * logdet_, axis=1)
         else:
-            xnew = tf.multiply(exp_s, (state.x - eps * (state.v * exp_q) + t))
-            xb = xm + (mb * xnew)
+            xnew  = exp_s * (state.x - eps * (state.v * exp_q + t))
+            xb = xm_init + mb * xnew
             logdet = tf.reduce_sum(mb * s, axis=1)
 
         return State(x=xb, v=state.v, beta=state.beta), logdet
@@ -559,7 +558,6 @@ class Dynamics(tf.keras.Model):
 
     @staticmethod
     def kinetic_energy(v: Tensor) -> Tensor:
-        # return tf.reduce_sum(0.5 * (v ** 2), axis=-1)
         return 0.5 * tf.reduce_sum(tf.keras.layers.Flatten()(v) ** 2, axis=-1)
 
     def potential_energy(self, x: Tensor, beta: Tensor) -> Tensor:

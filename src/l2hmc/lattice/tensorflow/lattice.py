@@ -104,21 +104,17 @@ class Lattice:
         #       wloop = U0(x, y) +  U1(x+1, y) - U0(x, y+1) - U(1)(x, y)
         #   and so output = wloop.T, with output.shape = [-1, Lt, Lx]
         # --------------------------
-        x = tf.reshape(x, shape=(-1, *self.x_shape))
-        wilson_loops = (x[..., 0]
-                        - x[..., 1]
-                        - tf.roll(x[..., 0], -1, axis=2)
-                        + tf.roll(x[..., 1], -1, axis=1))
-        return wilson_loops
-        # x0, x1 = tf.transpose(tf.reshape(x, (-1, *self.x_shape)))
-        # return tf.transpose(x0 + tf.roll(x1, -1, 0) - tf.roll(x0, -1, 1) - x1)
-        # ---
-        # x0, x1 = tf.reshape(x, (-1, *self.x_shape)).T
-        # return tf.transpose(x[0] + tf.roll(x[1], -1, 0) - tf.roll(x[0], -1, 1) - x[1])
+        xt = tf.transpose(tf.reshape(x, (-1, *self.x_shape)))
+        x0 = xt[0]
+        x1 = xt[1]
+        wl = x0 + tf.roll(x1, -1, axis=0) - tf.roll(x0, -1, axis=1) - x1
+        return tf.transpose(wl)
 
     def wilson_loops4x4(self, x: Tensor) -> Tensor:
         """Calculate the 4x4 Wilson loops"""
-        x0, x1 = tf.transpose(tf.reshape(x, (-1, *self.x_shape)))
+        xt = tf.transpose(tf.reshape(x, (-1, *self.x_shape)))
+        x0 = xt[0]
+        x1 = xt[1]
         return tf.transpose(
             x0                                      # Ux [x, y]
             + tf.roll(x0, -1, 2)                    # Ux [x+1, y]

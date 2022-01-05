@@ -45,32 +45,16 @@ class LatticeLoss:
         # ploss = tf.add(acc * tf.reduce_sum(dwloops, axis=(1, 2)), 1e-4)
         ploss = acc * tf.reduce_sum(dwloops, axis=(1, 2)) + 1e-4
         if self.config.use_mixed_loss:
-            loss = self.mixed_loss(ploss, self.config.plaq_weight)
-        else:
-            loss = -ploss / self.config.plaq_weight
+            return self.mixed_loss(ploss, self.config.plaq_weight)
+        return tf.reduce_mean(-ploss / self.config.plaq_weight, axis=0)
 
-        return tf.reduce_mean(loss, axis=0)
     def _charge_loss(self, w1: Tensor, w2: Tensor, acc: Tensor) -> Tensor:
-
         q1 = tf.reduce_sum(tf.sin(w1), axis=(1, 2)) / (2 * np.pi)
         q2 = tf.reduce_sum(tf.sin(w2), axis=(1, 2)) / (2 * np.pi)
         qloss = (acc * (q2 - q1) ** 2) + 1e-4
         if self.config.use_mixed_loss:
-            qloss = self.mixed_loss(qloss, self.charge_weight)
-        else:
-            qloss = tf.reduce_mean(-qloss / self.charge_weight, axis=0)
-
-        # q1 = self.lattice._sin_charges(wloops=w1)
-        q2 = self.lattice._sin_charges(wloops=w2)
-        qloss = (acc * (q2 - q1) ** 2) + 1e-4
-        # qloss = (acc * (q2 - q1) ** 2) + 1e-4
-        # qloss = tf.add(tf.multiply(acc, tf.square(tf.subtract(q2, q1))), 1e-4)
-        if self.config.use_mixed_loss:
-            loss = self.mixed_loss(qloss, self.config.charge_weight)
-        else:
-            loss = (-qloss / self.config.charge_weight)
-
-        return tf.reduce_mean(loss, axis=0)
+            return self.mixed_loss(qloss, self.config.charge_weight)
+        return tf.reduce_mean(-qloss / self.config.charge_weight, axis=0)
 
     def call(self, x_init: Tensor, x_prop: Tensor, acc: Tensor) -> Tensor:
         wl_init = self.lattice.wilson_loops(x=x_init)
@@ -84,4 +68,4 @@ class LatticeLoss:
         if self.config.charge_weight > 0:
             charge_loss = self._charge_loss(w1=wl_init, w2=wl_prop, acc=acc)
 
-        return tf.add(charge_loss, plaq_loss)
+        return tf.reduce_sum([plaq_loss, charge_loss])

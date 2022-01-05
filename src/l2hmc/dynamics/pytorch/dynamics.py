@@ -8,16 +8,13 @@ from dataclasses import dataclass
 from math import pi
 from typing import Callable, Union
 
-import time
 from src.l2hmc.configs import DynamicsConfig
-from src.l2hmc.loss.pytorch.loss import LatticeLoss
 from src.l2hmc.network.pytorch.network import (
     NetworkFactory,
     NetworkInputs,
     NetworkOutputs,
 )
 import numpy as np
-import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 
@@ -45,10 +42,6 @@ def rand_unif(shape: Shape,
 def random_angle(shape: Shape, requires_grad: bool = True) -> Tensor:
     return rand_unif(shape, -pi, pi, requires_grad=requires_grad)
 
-
-# class DynamicsInput(NamedTuple):
-#     x: Tensor
-#     beta: float
 
 DynamicsInput = tuple[Tensor, float]
 
