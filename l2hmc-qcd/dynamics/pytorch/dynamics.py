@@ -873,7 +873,7 @@ class GaugeDynamics(nn.Module):
                                                             device=x.device))
         return dsdx
 
-    def calc_metrics(self, mc_states: MonteCarloStates) -> Metrics:
+    def calc_metrics(self, mc_states: MonteCarloStates) -> dict:
         x0 = to_u1(mc_states.init.x)
         x1 = to_u1(mc_states.out.x)
         obs1 = self.lattice.observables(x1)

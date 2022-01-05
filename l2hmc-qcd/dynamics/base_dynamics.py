@@ -18,10 +18,9 @@ Author: Sam Foreman (github: @saforem2)
 Date: 6/30/2020
 """
 from __future__ import absolute_import, annotations, division, print_function
-from dataclasses import dataclass
 
 import os
-from typing import Any, Callable, List, Optional, Tuple, Union
+from typing import Any, Callable, List, Optional, Tuple
 
 import numpy as np
 import tensorflow as tf
@@ -131,7 +130,6 @@ class BaseDynamics(tf.keras.Model):
         self.batch_size = params.get('batch_size', None)
 
         self.x_shape = (self.batch_size, self.xdim)
-        #  self.eps = self._build_eps(use_log=False)
         self.veps = [
             self._build_eps(use_log=False) for _ in
             range(self.config.num_steps)
