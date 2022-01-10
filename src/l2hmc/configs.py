@@ -28,12 +28,25 @@ MonteCarloStates = namedtuple('MonteCarloStates', ['init', 'proposed', 'out'])
 
 @dataclass
 class BaseConfig:
-    def to_json(self):
+    def to_json(self) -> str:
         return json.dumps(self.__dict__)
 
-    def to_file(self, fpath: os.PathLike):
+    def get_config(self) -> dict:
+        return asdict(self)
+
+    def asdict(self) -> dict:
+        return asdict(self)
+
+    def to_file(self, fpath: os.PathLike) -> None:
         with open(fpath, 'w') as f:
             json.dump(self.to_json(), f, indent=4)
+
+    def from_file(self, fpath: os.PathLike) -> None:
+        with open(fpath, 'w') as f:
+            with open(fpath, 'r') as f:
+                config = json.load(f)
+
+        self.__init__(**config)
 
 
 class NetWeight(NamedTuple):
@@ -48,13 +61,24 @@ class NetWeight(NamedTuple):
     t: float = 1.
     q: float = 1.
 
+    def to_str(self):
+        return f's{self.s:2.1g}t{self.t:2.1g}q{self.t:2.1g}'
+
 
 @dataclass
-class NetWeights:
+class NetWeights(BaseConfig):
     """Object for selectively scaling different components of x, v networks."""
     x: Optional[NetWeight] = field(default_factory=NetWeight)
     v: Optional[NetWeight] = field(default_factory=NetWeight)
 
+    def __post_init__(self):
+        if self.x is None:
+            self.x = NetWeight(1., 1., 1.)
+            self.v = NetWeight(1., 1., 1.)
+
+    def to_str(self):
+        assert self.x is not None and self.v is not None
+        return f'xNW-{self.x.to_str()}_vNW-{self.v.to_str()}'
 
 
 @dataclass
@@ -65,13 +89,17 @@ class LearningRateConfig(BaseConfig):
     decay_steps: int = -1
     decay_rate: float = 1.0
 
+    def to_str(self):
+        return f'lr-{self.lr_init:3.2g}'
 
-@dataclass
-class NetworkConfig(BaseConfig):
-    units: list[int]
-    activation_fn: str
-    dropout_prob: float
-    use_batch_norm: bool = True
+
+def list_to_str(x: list) -> str:
+    if isinstance(x[0], int):
+        return '-'.join([str(int(i)) for i in x])
+    elif isinstance(x[0], float):
+        return '-'.join([f'{i:2.1g}' for i in x])
+    else:
+        return '-'.join([str(i) for i in x])
 
 
 @dataclass
@@ -82,7 +110,35 @@ class ConvolutionConfig(BaseConfig):
     pool: list[int]
     activation: str
     paddings: list[int]
-    use_batch_norm: bool = False
+
+    def to_str(self):
+        outstr = [
+            list_to_str(self.filters),
+            list_to_str(self.sizes),
+            list_to_str(self.pool)
+        ]
+
+        return '_'.join(outstr)
+
+@dataclass
+class NetworkConfig(BaseConfig):
+    units: list[int]
+    activation_fn: str
+    dropout_prob: float
+    use_batch_norm: bool = True
+    conv_config: Optional[ConvolutionConfig] = None
+
+    def to_str(self):
+        ustr = ''.join([str(int(i)) for i in self.units])
+        outstr = [f'nh-{ustr}_act-{self.activation_fn}']
+        if self.dropout_prob > 0:
+            outstr.append(f'dp-{self.dropout_prob:2.1g}')
+        if self.use_batch_norm:
+            outstr.append(f'bNorm')
+
+        return '_'.join(outstr)
+
+
 
 
 @dataclass
