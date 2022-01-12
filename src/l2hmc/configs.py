@@ -4,14 +4,15 @@ config.py
 Implements various configuration objects
 """
 from __future__ import absolute_import, annotations, division, print_function
-from abc import ABC, abstractmethod
 from collections import namedtuple
 from dataclasses import asdict, dataclass, field
 import json
-import numpy as np
 import os
 from pathlib import Path
 from typing import NamedTuple, Optional
+
+from hydra.core.config_store import ConfigStore
+import numpy as np
 
 
 SRC = Path(os.path.abspath(__file__)).parent
@@ -19,7 +20,7 @@ PROJECT_DIR = SRC.parent
 LOGS_DIR = PROJECT_DIR.joinpath('logs')
 
 
-Shape = tuple[int]
+Shape = list[int]
 
 State = namedtuple('State', ['x', 'v', 'beta'])
 
@@ -120,6 +121,7 @@ class ConvolutionConfig(BaseConfig):
 
         return '_'.join(outstr)
 
+
 @dataclass
 class NetworkConfig(BaseConfig):
     units: list[int]
@@ -134,23 +136,24 @@ class NetworkConfig(BaseConfig):
         if self.dropout_prob > 0:
             outstr.append(f'dp-{self.dropout_prob:2.1g}')
         if self.use_batch_norm:
-            outstr.append(f'bNorm')
+            outstr.append('bNorm')
 
         return '_'.join(outstr)
 
 
-
-
 @dataclass
 class DynamicsConfig(BaseConfig):
-    xdim: int
+    xshape: list[int]
     nleapfrog: int
-    # hmc: bool = False
     eps: float = 0.01
-    eps_fixed: bool = False
     use_ncp: bool = True
+    verbose: bool = False
+    eps_fixed: bool = False
     use_split_xnets: bool = True
     use_separate_networks: bool = True
+
+    def __post_init__(self):
+        self.xdim = int(np.cumprod(self.xshape[1:])[-1])
 
 
 @dataclass
@@ -162,25 +165,27 @@ class LossConfig(BaseConfig):
 
 @dataclass
 class Steps:
-    train: int
+    nera: int
+    nepoch: int
     test: int
-    log: int = 1
-    save: int = 0
+    log: int = 10
+    print: int = 0
 
     def __post_init__(self):
-        if self.save == 0:
-            self.save == int(self.train // 4)
+        self.total = self.nera * self.nepoch
+        if self.print == 0:
+            self.print = self.nepoch // 4
 
 
 @dataclass
 class InputShapes(BaseConfig):
-    x: Shape
-    v: Shape
+    x: list[int]
+    v: list[int]
 
 
 @dataclass
 class InputSpec(BaseConfig):
-    xshape: Shape
+    xshape: list[int]
     xnet: Optional[InputShapes] = None
     vnet: Optional[InputShapes] = None
 
@@ -198,43 +203,29 @@ class InputSpec(BaseConfig):
             self.vnet = InputShapes(x=self.xshape, v=self.xshape)
 
 
-class BaseNetworkFactory(ABC):
-    def __init__(
-            self,
-            input_spec: InputSpec,
-            network_config: NetworkConfig,
-            net_weights: Optional[NetWeights] = None,
-    ):
-        if net_weights is None:
-            net_weights = NetWeights(x=NetWeight(1., 1., 1.),  # (s, t, q)
-                                     v=NetWeight(1., 1., 1.))
+@dataclass
+class Config:
+    steps: Steps
+    network: NetworkConfig
+    dynamics: DynamicsConfig
+    loss: LossConfig
+    net_weights: NetWeights
+    conv: Optional[ConvolutionConfig] = None
 
-        self.nw = net_weights
-        self.input_spec = input_spec
-        self.network_config = network_config
-        self.config = {
-            'net_weights': asdict(self.nw),
-            'input_spec': asdict(self.input_spec),
-            'network_config': asdict(self.network_config),
-        }
+    def __post_init__(self):
+        self.xshape = Shape(self.dynamics.xshape)
+        xdim = self.dynamics.xdim
+        self.input_spec = InputSpec(
+            xshape=self.dynamics.xshape,
+            xnet=InputShapes(x=[xdim, 2], v=[xdim, ]),
+            vnet=InputShapes(x=[xdim, ], v=[xdim, ]),
+        )
 
-    def get_build_configs(self):
-        return {
-            'xnet': {
-                'net_weight': self.nw.x,
-                'xshape': self.input_spec.xshape,
-                'input_shapes': self.input_spec.xnet,
-                'network_config': self.network_config,
-            },
-            'vnet': {
-                'net_weight': self.nw.v,
-                'xshape': self.input_spec.xshape,
-                'input_shapes': self.input_spec.vnet,
-                'network_config': self.network_config,
-            }
-        }
 
-    @abstractmethod
-    def build_networks(self, nleapfrog: int = 0):
-        """Build Networks."""
-        pass
+def register_configs() -> None:
+    cs = ConfigStore.instance()
+    cs.store(
+        group="dynamics",
+        name="dynamics",
+        node=DynamicsConfig,
+    )
