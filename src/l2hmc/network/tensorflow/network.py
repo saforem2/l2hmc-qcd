@@ -25,9 +25,9 @@ from src.l2hmc.configs import (
     ConvolutionConfig,
     NetWeight,
     NetworkConfig,
-    BaseNetworkFactory,
     Shape,
 )
+from src.l2hmc.network.factory import BaseNetworkFactory
 from src.l2hmc.network.tensorflow.utils import PeriodicPadding
 
 

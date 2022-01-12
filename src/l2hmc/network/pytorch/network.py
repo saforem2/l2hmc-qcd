@@ -16,8 +16,9 @@ import torch.nn.functional as F
 from src.l2hmc.configs import (
     NetWeight,
     NetworkConfig,
-    BaseNetworkFactory,
 )
+
+from src.l2hmc.network.factory import BaseNetworkFactory
 
 Tensor = torch.Tensor
 
