@@ -52,6 +52,7 @@ class MonteCarloProposal:
     init: State
     proposed: State
 
+
 @dataclass
 class DynamicsOutput:
     mc_states: MonteCarloStates
@@ -71,32 +72,15 @@ class Dynamics(Model):
             potential_fn: Callable,
             config: DynamicsConfig,
             network_factory: NetworkFactory,
-            verbose: bool = True,
     ):
         super(Dynamics, self).__init__()
-        self._verbose = verbose
         self.config = config
         self.xdim = self.config.xdim
         self.xshape = network_factory.input_spec.xshape
         self.potential_fn = potential_fn
         self.nlf = self.config.nleapfrog
         self.xnet, self.vnet = self._build_networks(network_factory)
-        # self.num_networks = (
-        #     self.nlf if self.config.use_separate_networks else 1
-        # )
-        # networks = network_factory.build_networks(
-        #     n=self.num_networks,
-        #     split_xnets=self.config.use_split_xnets
-        # )
-        # self.xnet = networks['xnet']
-        # self.vnet = networks['vnet']
-        # self.xnet = networks['xnet']
-        # self.vnet = networks['vnet']
-        # self.vnet = {k: v for k, v in networks['vnet'].items()}
-        # self.xnet = self.networks['xnet']
-        # self.vnet = self.networks['vnet']
         self.masks = self._build_masks()
-        # eps_init = tf.constant(tf.math.exp(tf.math.log(self.config.eps)))
 
         self.xeps = [
             self._get_eps(name=f'xeps/lf{lf}')
@@ -157,7 +141,7 @@ class Dynamics(Model):
 
         v_out = ma * v_prop + mr * v_init
         x_out = ma * x_prop + mr * x
-        logdet = ma_ * logdet_prop  # + mr_ * logdet_init (= 0.) 
+        logdet = ma_ * logdet_prop  # + mr_ * logdet_init (= 0.)
 
         state_init = State(x=x, v=v_init, beta=beta)
         state_prop = State(x=x_prop, v=v_prop, beta=beta)
@@ -204,7 +188,7 @@ class Dynamics(Model):
 
     def _new_history(self, state: State) -> dict:
         """Create new history object to track metrics over trajectory.."""
-        if not self._verbose:
+        if not self.config.verbose:
             return {}
 
         kwargs = {
@@ -216,12 +200,12 @@ class Dynamics(Model):
         logdets = tf.TensorArray(TF_FLOAT, **kwargs)
         energies = tf.TensorArray(TF_FLOAT, **kwargs)
         logprobs = tf.TensorArray(TF_FLOAT, **kwargs)
-        
+
         return {
             # by duplicating the first elements in xeps and veps,
             # all of the entries in this dict have size nleapfrog + 1
-            'xeps': [self.xeps[0], *self.xeps],
-            'veps': [self.veps[0], *self.veps],
+            'xeps': [self.xeps[0]],
+            'veps': [self.veps[0]],
             'energy': energies.write(0, hamil := self.hamiltonian(state)),
             'logdet': logdets.write(0, logd := tf.zeros(state.x.shape[0])),
             'logprob': logprobs.write(0, hamil - logd),
@@ -251,8 +235,6 @@ class Dynamics(Model):
             return hist
 
         def _get_metrics(s: State, logdet: Tensor) -> dict[str, Tensor]:
-            # h = self.hamiltonian(s)
-            # metrics = self._calc_metrics(s)
             return {
                 'energy': (h := self.hamiltonian(s)),
                 'logdet': logdet,
@@ -275,13 +257,13 @@ class Dynamics(Model):
         for step in range(self.config.nleapfrog):
             state_, logdet = lf_fn(step, state_, training)
             sumlogdet = sumlogdet + logdet
-            if self._verbose:
+            if self.config.verbose:
                 metrics = _get_metrics(state_, sumlogdet)
                 history = _update_history(history, metrics, step+1)
 
         acc = self.compute_accept_prob(state, state_, sumlogdet)
         history.update({'acc': acc, 'sumlogdet': sumlogdet})
-        if self._verbose:
+        if self.config.verbose:
             history = _stack_history(history)
 
         return state_, history
@@ -346,7 +328,6 @@ class Dynamics(Model):
         return (m := self.masks[i], tf.ones_like(m) - m)
 
     def _get_vnet(self, step: int) -> CallableNetwork:
-        # vnet = self.networks['vnet']
         vnet = self.vnet
         if self.config.use_separate_networks:
             return vnet[str(step)]
@@ -363,7 +344,6 @@ class Dynamics(Model):
         return vnet(inputs, training)
 
     def _get_xnet(self, step: int, first: bool) -> CallableNetwork:
-        # xnet = self.networks['xnet']
         xnet = self.xnet
         if self.config.use_separate_networks:
             xnet = xnet[str(step)]
@@ -404,10 +384,12 @@ class Dynamics(Model):
         state, logdet = self._update_v_fwd(step, state, training)
         sumlogdet += logdet
 
-        state, logdet = self._update_x_fwd(step, state, m, first=True, training=training)
+        state, logdet = self._update_x_fwd(step, state, m,
+                                           first=True, training=training)
         sumlogdet += logdet
 
-        state, logdet = self._update_x_fwd(step, state, mb, first=False, training=training)
+        state, logdet = self._update_x_fwd(step, state, mb,
+                                           first=False, training=training)
         sumlogdet += logdet
 
         state, logdet = self._update_v_fwd(step, state, training)
@@ -545,7 +527,7 @@ class Dynamics(Model):
             logdet_ = tf.math.log(exp_s / (cterm + sterm))
             logdet = tf.reduce_sum(mb * logdet_, axis=1)
         else:
-            xnew  = exp_s * (state.x - eps * (state.v * exp_q + t))
+            xnew = exp_s * (state.x - eps * (state.v * exp_q + t))
             xb = xm_init + mb * xnew
             logdet = tf.reduce_sum(mb * s, axis=1)
 

@@ -25,22 +25,7 @@ TWO_PI = 2. * PI
 
 Shape = Union[tuple, list]
 Tensor = torch.Tensor
-
-
-def to_u1(x: Tensor) -> Tensor:
-    return ((x + PI) % TWO_PI) - PI
-
-
-def rand_unif(shape: Shape,
-              a: float,
-              b: float,
-              requires_grad: bool) -> Tensor:
-    """Draw tensor from random uniform distribution U[a, b]"""
-    return torch.tensor((a - b) * torch.rand(shape) + b).requires_grad_(requires_grad)
-
-
-def random_angle(shape: Shape, requires_grad: bool = True) -> Tensor:
-    return rand_unif(shape, -pi, pi, requires_grad=requires_grad)
+Array = np.ndarray
 
 
 DynamicsInput = tuple[Tensor, float]
@@ -60,6 +45,23 @@ class MonteCarloStates:
     out: State
 
 
+def to_u1(x: Tensor) -> Tensor:
+    return ((x + PI) % TWO_PI) - PI
+
+
+def rand_unif(shape: Shape,
+              a: float,
+              b: float,
+              requires_grad: bool) -> Tensor:
+    """Draw tensor from random uniform distribution U[a, b]"""
+    rand = (a - b) * torch.rand(shape) + b
+    return torch.tensor(rand).requires_grad_(requires_grad)
+
+
+def random_angle(shape: Shape, requires_grad: bool = True) -> Tensor:
+    return rand_unif(shape, -pi, pi, requires_grad=requires_grad)
+
+
 class Mask:
     def __init__(self, m: Tensor):
         self.m = m
@@ -69,24 +71,21 @@ class Mask:
         return self.m * x + self.mb * y
 
 
+def grab(x: Tensor) -> Array:
+    return x.detach().cpu().numpy()
+
+
 class Dynamics(nn.Module):
     def __init__(
             self,
             potential_fn: Callable,
             config: DynamicsConfig,
             network_factory: NetworkFactory,
-            # loss_fn: Callable,
-            verbose: bool = True,
     ):
         """Initialization method."""
         super().__init__()
-        self._verbose = verbose
         self.config = config
         self.xdim = self.config.xdim
-        # self.loss_fn = loss_fn
-        # self.optimizer = self.configure_optimizers()
-        # self.lattice = lattice
-        # self.potential_fn = self.lattice.action
         self.xshape = network_factory.input_spec.xshape
         self.potential_fn = potential_fn
         self.network_factory = network_factory
@@ -109,8 +108,6 @@ class Dynamics(nn.Module):
             ve = torch.clamp(torch.exp(alpha), min=0., max=1.)
             xeps.append(nn.parameter.Parameter(xe, requires_grad=rg))
             veps.append(nn.parameter.Parameter(ve, requires_grad=rg))
-            # xeps.append(torch.clamp(xe, min=0., max=1.))
-            # veps.append(torch.clamp(ve, min=0., max=1.))
 
         self.xeps = nn.ParameterList(xeps)
         self.veps = nn.ParameterList(veps)
@@ -123,16 +120,14 @@ class Dynamics(nn.Module):
         fwd = self._transition(inputs, forward=True)
         bwd = self._transition(inputs, forward=False)
 
-        # sf_init = fwd['init']
-        # sf_prop = fwd['proposed']
-        # metricsf = fwd['metrics']
-
         mf_, mb_ = self._get_direction_masks(batch_size=x.shape[0])
         mf = mf_.unsqueeze(-1)  # mf = mf_[:, None]
         mb = mb_.unsqueeze(-1)  # mb = mb_[:, None]
 
         v_init = mf * fwd['init'].v + mb * bwd['init'].v
 
+        # xp = mf * xf' + mb * xb'
+        # vp = mf * vf' + mb * vb'
         xp = mf * fwd['proposed'].x + mb * bwd['proposed'].x
         vp = mf * fwd['proposed'].v + mb * bwd['proposed'].v
 
@@ -148,7 +143,7 @@ class Dynamics(nn.Module):
 
         v_out = ma * vp + mr * v_init
         x_out = ma * xp + mr * x
-        logdet = ma_ * logdetp  # + mr_ * logdet_init = 0
+        logdet = ma_ * logdetp  # NOTE: + mr_ * logdet_init = 0
 
         state_init = State(x=x, v=v_init, beta=beta)
         state_prop = State(x=xp, v=vp, beta=beta)
@@ -161,9 +156,9 @@ class Dynamics(nn.Module):
             'acc_mask': ma_,
             'logdet': logdet,
             'mc_states': mc_states,
-            'forward': mfwd,
-            'backward': mbwd,
         }
+        metrics.update(**{f'forward/{key}': val for key, val in mfwd.items()})
+        metrics.update(**{f'backward/{key}': val for key, val in mbwd.items()})
 
         return mc_states.out.x, metrics
 
@@ -187,12 +182,24 @@ class Dynamics(nn.Module):
 
         return {'init': state_init, 'proposed': state_prop, 'metrics': metrics}
 
-    def get_metrics(self, state: State, logdet: Tensor) -> dict[str, Tensor]:
-        return {
-            'energy': (h := self.hamiltonian(state)),
-            'logprob': h - logdet,
-            'logdet': logdet,
+    def get_metrics(
+            self,
+            state: State,
+            logdet: Tensor,
+            step: int = None
+    ) -> dict:
+        metrics = {
+            'energy': (h := grab(self.hamiltonian(state))),
+            'logdet': (ld := grab(logdet)),
+            'logprob': (h - ld),
         }
+        if step is not None:
+            metrics.update({
+                'xeps': self.xeps[step],
+                'veps': self.veps[step],
+            })
+
+        return metrics
 
     def _transition_kernel(
             self,
@@ -207,19 +214,19 @@ class Dynamics(nn.Module):
         sumlogdet = torch.zeros(state.x.shape[0], device=state.x.device)
         # lf_metrics = {n: {} for n in range(self.config.nleapfrog)}
         history = {}
-        if self._verbose:
+        if self.config.verbose:
             history = {
-                'xeps': [self.xeps[0], *self.xeps],
-                'veps': [self.veps[0], *self.veps],
-                'energy': [(h := self.hamiltonian(state))],
-                'logdet': [sumlogdet],
-                'logprob': [h - sumlogdet],
+                'xeps': [self.xeps[0]],
+                'veps': [self.veps[0]],
+                'energy': [(h := grab(self.hamiltonian(state)))],
+                'logdet': [(ld := grab(sumlogdet))],
+                'logprob': [(h - ld)],
             }
 
         for step in range(self.config.nleapfrog):
             state_, logdet = lf_fn(step, state_)
             sumlogdet = sumlogdet + logdet
-            if self._verbose:
+            if self.config.verbose:
                 metrics = self.get_metrics(state_, sumlogdet)
                 for key, val in metrics.items():
                     history[key].append(val)
@@ -228,10 +235,10 @@ class Dynamics(nn.Module):
         history.update({'acc': acc, 'sumlogdet': sumlogdet})
         new_state = State(x=state_.x, v=state_.v, beta=state_.beta)
 
-        if self._verbose:
+        if self.config.verbose:
             for key, val in history.items():
-                if isinstance(val, list):
-                    history[key] = torch.stack(val).detach().numpy()
+                if isinstance(val, list) and isinstance(val[0], Tensor):
+                    history[key] = torch.stack(val)
 
         return new_state, history
 
@@ -356,20 +363,20 @@ class Dynamics(nn.Module):
     def _backward_lf(self, step: int, state: State) -> tuple[State, Tensor]:
         """Complete update (leapfrog step) in the backward direction"""
         # NOTE: Reverse the step count, i.e. count from end of trajectory
-        step = self.config.nleapfrog - step - 1
-        m, mb = self._get_mask(step)
+        step_r = self.config.nleapfrog - step - 1
+        m, mb = self._get_mask(step_r)
         sumlogdet = torch.zeros(state.x.shape[0], device=state.x.device)
 
-        state_, logdet = self._update_v_bwd(step, state)
+        state_, logdet = self._update_v_bwd(step_r, state)
         sumlogdet = sumlogdet + logdet
 
-        state_, logdet = self._update_x_bwd(step, state_, mb, first=False)
+        state_, logdet = self._update_x_bwd(step_r, state_, mb, first=False)
         sumlogdet = sumlogdet + logdet
 
-        state_, logdet = self._update_x_bwd(step, state_, m, first=True)
+        state_, logdet = self._update_x_bwd(step_r, state_, m, first=True)
         sumlogdet = sumlogdet + logdet
 
-        state_, logdet = self._update_v_bwd(step, state_)
+        state_, logdet = self._update_v_bwd(step_r, state_)
         sumlogdet = sumlogdet + logdet
 
         return state_, sumlogdet
