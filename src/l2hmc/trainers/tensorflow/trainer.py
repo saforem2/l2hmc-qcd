@@ -16,7 +16,8 @@ from src.l2hmc.configs import Steps
 from src.l2hmc.dynamics.tensorflow.dynamics import Dynamics, to_u1
 from src.l2hmc.loss.tensorflow.loss import LatticeLoss
 
-from src.l2hmc.utils.history import StateHistory, History
+from src.l2hmc.utils.history import StateHistory, History, summarize_dict
+from src.l2hmc.utils.step_timer import StepTimer
 
 Tensor = tf.Tensor
 console = Console(color_system='truecolor', log_path=False)
@@ -24,44 +25,96 @@ console = Console(color_system='truecolor', log_path=False)
 
 class Trainer:
     def __init__(
+            self,
+            steps: Steps,
+            dynamics: Dynamics,
+            optimizer: Optimizer,
+            loss_fn: Callable = LatticeLoss,
+            keep: str | list[str] = None,
+            skip: str | list[str] = None,
+    ) -> None:
+        self.steps = steps
+        self.dynamics = dynamics
+        self.optimizer = optimizer
+        self.loss_fn = loss_fn
+
+        self.history = History(steps=steps)
+
+        evals_per_step = self.dynamics.config.nleapfrog * steps.log
+        self.timer = StepTimer(evals_per_step=evals_per_step)
+
+        self.keep = [] if keep is None else keep
+        self.skip = [] if skip is None else skip
+        if isinstance(self.keep, str):
+            self.keep = [self.keep]
+        if isinstance(self.skip, str):
+            self.skip = [self.skip]
+
+    @tf.function
+    def train_step(self, inputs: tuple[Tensor, float]) -> tuple[Tensor, dict]:
+        self.timer.start()
+        xinit, beta = inputs
+        with tf.GradientTape() as tape:
+            x_out, metrics = self.dynamics((to_u1(xinit), tf.constant(beta)))
+            xprop = to_u1(metrics.pop('mc_states').proposed.x)
+            loss = self.loss_fn(x_init=xinit, x_prop=xprop, acc=metrics['acc'])
+
+        grads = tape.gradient(loss, self.dynamics.trainable_variables)
+        updates = zip(grads, self.dynamics.trainable_variables)
+        self.optimizer.apply_gradients(updates)
+        record = {
+            'loss': loss,
+        }
+        for key, val in metrics.items():
+            record[key] = val
+
+        return to_u1(x_out), record
+
+    def train(
         self,
-        dynamics: Dynamics,
-        beta: list,
-        optimizer: Optimizer,
-        loss_fn: Callable = LatticeLoss,
-    ):
-        pass
+        xinit: Tensor = None,
+        beta: float = 1.,
+    ) -> dict:
+        if xinit is None:
+            x = tf.random.uniform(self.dynamics.xshape, *(-np.pi, np.pi))
+            x = tf.reshape(x, (x.shape[0], -1))
+        else:
+            x = tf.constant(xinit)
+        assert isinstance(x, Tensor)
+        self.dynamics.compile(optimizer=self.optimizer, loss=self.loss_fn)
 
+        summaries = []
+        for era in range(self.steps.nera):
+            console.rule(f'ERA: {era}')
+            estart = time.time()
+            for epoch in range(self.steps.nepoch):
+                self.timer.start()
+                x, metrics = self.train_step((x, beta))
 
-@tf.function
-def train_step(
-        inputs: tuple[Tensor, Tensor | float],
-        dynamics: Dynamics,
-        optimizer: Optimizer,
-        loss_fn: Callable = LatticeLoss,
-) -> tuple[Tensor, dict]:
-    x_init, beta = inputs
-    with tf.GradientTape() as tape:
-        x_out, tmetrics = dynamics((to_u1(x_init), tf.constant(beta)))
-        x_prop = tmetrics.pop('mc_states').proposed.x
-        # x_prop = metrics.pop('mc_states').proposed.x
-        loss = loss_fn(x_init=x_init, x_prop=x_prop, acc=tmetrics['acc'])
+                should_log = (epoch % self.steps.log == 0)
+                should_print = (epoch % self.steps.print == 0)
+                if should_log or should_print:
+                    record = {
+                        'era': era,
+                        'epoch': epoch,
+                        'dt': self.timer.stop(),
+                    }
 
-    grads = tape.gradient(loss, dynamics.trainable_variables)
-    optimizer.apply_gradients(zip(grads, dynamics.trainable_variables))
-    metrics = {
-        'loss': loss,
-    }
-    for key, val in tmetrics.items():
-        metrics[key] = val
+                    record.update(metrics)
+                    avgs = self.history.update(record)
+                    summary = summarize_dict(avgs)
+                    summaries.append(summary)
+                    if should_print:
+                        console.log(summary)
 
-    return to_u1(x_out), metrics
+            console.rule()
+            console.log('\n'.join([
+                f'Era {era} took: {time.time() - estart:<3.2g}s',
+                f'Avgs over last era:\n {self.history.era_summary(era)}',
+            ]))
+            console.rule()
 
-
-def setup_beta(beta: list | float):  # -> list[float]
-    # TODO: Deal with making sure len(beta) == len(train_steps)
-    beta = beta
-    pass
+        return {'summaries': summaries, 'history': self.history}
 
 
 def train(
@@ -123,3 +176,34 @@ def train(
         'optimizer': optimizer,
         'state_history': states,
     }
+
+
+def setup_beta(beta: list | float):  # -> list[float]
+    # TODO: Deal with making sure len(beta) == len(train_steps)
+    beta = beta
+    pass
+
+
+@tf.function
+def train_step(
+        inputs: tuple[Tensor, Tensor | float],
+        dynamics: Dynamics,
+        optimizer: Optimizer,
+        loss_fn: Callable = LatticeLoss,
+) -> tuple[Tensor, dict]:
+    x_init, beta = inputs
+    with tf.GradientTape() as tape:
+        x_out, tmetrics = dynamics((to_u1(x_init), tf.constant(beta)))
+        x_prop = tmetrics.pop('mc_states').proposed.x
+        # x_prop = metrics.pop('mc_states').proposed.x
+        loss = loss_fn(x_init=x_init, x_prop=x_prop, acc=tmetrics['acc'])
+
+    grads = tape.gradient(loss, dynamics.trainable_variables)
+    optimizer.apply_gradients(zip(grads, dynamics.trainable_variables))
+    metrics = {
+        'loss': loss,
+    }
+    for key, val in tmetrics.items():
+        metrics[key] = val
+
+    return to_u1(x_out), metrics
