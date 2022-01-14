@@ -10,46 +10,96 @@ import time
 from torch import optim
 from rich.console import Console
 from typing import Callable
-import numpy as np
 from src.l2hmc.configs import Steps
 from src.l2hmc.dynamics.pytorch.dynamics import Dynamics, to_u1, random_angle
 from src.l2hmc.loss.pytorch.loss import LatticeLoss
-from src.l2hmc.utils.history import History, StateHistory
+from src.l2hmc.utils.history import History, StateHistory, summarize_dict
+from src.l2hmc.utils.step_timer import StepTimer
 
 Tensor = torch.Tensor
 
 console = Console(color_system='truecolor', log_path=False, )
 
 
-def train_step(
-        inputs: tuple[Tensor, float],
-        dynamics: Dynamics,
-        optimizer: optim.Optimizer,
-        loss_fn: Callable = LatticeLoss,
-) -> tuple[Tensor, dict]:
-    start = time.time()
-    dynamics.train()
-    x_init, beta = inputs
-    if torch.cuda.is_available():
-        x_init = x_init.cuda()
+class Trainer:
+    def __init__(
+            self,
+            steps: Steps,
+            dynamics: Dynamics,
+            optimizer: optim.Optimizer,
+            loss_fn: Callable = LatticeLoss,
+    ) -> None:
+        self.steps = steps
+        self.dynamics = dynamics
+        self.optimizer = optimizer
+        self.loss_fn = loss_fn
 
-    x_out, tmetrics = dynamics((to_u1(x_init), beta))
-    x_prop = tmetrics.get('mc_states').proposed.x
-    loss = loss_fn(x_init=x_init, x_prop=x_prop, acc=tmetrics['acc'])
-    optimizer.zero_grad()
-    loss.backward()
-    optimizer.step()
-    metrics = {
-        'dt': time.time() - start,
-        'loss': loss.detach().cpu().numpy(),
-    }
-    for key, val in tmetrics.items():
-        if isinstance(val, Tensor):
-            metrics[key] = val.detach().cpu().numpy()
-        else:
-            metrics[key] = val
+        self.history = History(steps=steps)
+        evals_per_step = self.dynamics.config.nleapfrog * steps.log
+        self.timer = StepTimer(evals_per_step=evals_per_step)
 
-    return to_u1(x_out).detach(), metrics
+    def train_step(self, inputs: tuple[Tensor, float]) -> tuple[Tensor, dict]:
+        self.timer.start()
+        self.dynamics.train()
+        x_init, beta = inputs
+        if torch.cuda.is_available():
+            x_init = x_init.cuda()
+
+        x_out, metrics = self.dynamics((to_u1(x_init), beta))
+        x_prop = to_u1(metrics.pop('mc_states').proposed.x)
+        loss = self.loss_fn(x_init=x_init, x_prop=x_prop, acc=metrics['acc'])
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+        record = {
+            'dt': self.timer.stop(),
+            'loss': loss.detach().cpu().numpy(),
+        }
+        for key, val in metrics.items():
+            if isinstance(val, Tensor):
+                record[key] = val.detach().cpu().numpy()
+            else:
+                record[key] = val
+
+        return to_u1(x_out).detach(), record
+
+    def train(self, xinit: Tensor = None, beta: float = 1.) -> dict:
+        summaries = []
+        x = xinit
+        if x is None:
+            x = random_angle(self.dynamics.xshape, requires_grad=True)
+            x = x.reshape(x.shape[0], -1)
+
+        for era in range(self.steps.nera):
+            console.rule(f'ERA: {era}')
+            estart = time.time()
+            for epoch in range(self.steps.nepoch):
+                x, metrics = self.train_step((x, beta))
+                should_print = (epoch % self.steps.print == 0)
+                should_log = (epoch % self.steps.log == 0)
+                if should_print or should_log:
+                    record = {
+                        'era': era,
+                        'epoch': epoch,
+                        'dt': self.timer.stop(),
+                    }
+
+                    # Update metrics with train step metrics, tmetrics
+                    record.update(metrics)
+                    avgs = self.history.update(record)
+                    summary = summarize_dict(avgs)
+                    summaries.append(summary)
+                    if should_print:
+                        console.log(summary)
+
+            console.rule()
+            console.log('\n'.join([
+                f'Era {era} took: {time.time() - estart:<3.2g}s',
+                f'Avgs over last era:\n {self.history.era_summary(era)}',
+            ]))
+            console.rule()
+
+        return {'summaries': summaries, 'history': self.history}
 
 
 def train(
@@ -109,3 +159,34 @@ def train(
         'optimizer': optimizer,
         'state_history': states,
     }
+
+
+def train_step(
+        inputs: tuple[Tensor, float],
+        dynamics: Dynamics,
+        optimizer: optim.Optimizer,
+        loss_fn: Callable = LatticeLoss,
+) -> tuple[Tensor, dict]:
+    start = time.time()
+    dynamics.train()
+    x_init, beta = inputs
+    if torch.cuda.is_available():
+        x_init = x_init.cuda()
+
+    x_out, tmetrics = dynamics((to_u1(x_init), beta))
+    x_prop = tmetrics.get('mc_states').proposed.x
+    loss = loss_fn(x_init=x_init, x_prop=x_prop, acc=tmetrics['acc'])
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
+    metrics = {
+        'dt': time.time() - start,
+        'loss': loss.detach().cpu().numpy(),
+    }
+    for key, val in tmetrics.items():
+        if isinstance(val, Tensor):
+            metrics[key] = val.detach().cpu().numpy()
+        else:
+            metrics[key] = val
+
+    return to_u1(x_out).detach(), metrics
