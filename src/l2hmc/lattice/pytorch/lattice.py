@@ -9,9 +9,7 @@ Date: 06/02/2021
 from __future__ import absolute_import, division, print_function, annotations
 
 import torch
-import numpy as np
 from dataclasses import dataclass
-from math import factorial
 from math import pi as PI
 from scipy.special import i1, i0
 
@@ -43,19 +41,6 @@ class LatticeMetrics:
         }
 
 
-# TODO: Deal with bessel functions in `area_law` and `plaq_exact`
-def bessel_i1(x: Tensor, N=100):
-    def numerator(x, k):
-        return ((x ** 2 / 4) ** k)
-
-    def denominator(k):
-        return factorial(k) * factorial(k + 1)
-
-    return 0.5 * x * torch.from_numpy(np.cumsum(np.array([
-        numerator(x, k) / denominator(k) for k in range(N)
-    ])))
-
-
 def area_law(beta: float, nplaqs: int):
     return (i1(beta) / i0(beta)) ** nplaqs
 
@@ -63,9 +48,6 @@ def area_law(beta: float, nplaqs: int):
 def plaq_exact(beta: float):
     return i1(beta) / i0(beta)
 
-
-# def project_angle(x: Tensor):
-#     return x - TWO_PI * torch.floor(x + PI / TWO_PI)
 
 def project_angle(x: Tensor) -> Tensor:
     """For x in [-4pi, 4pi], returns x in [-pi, pi]."""
