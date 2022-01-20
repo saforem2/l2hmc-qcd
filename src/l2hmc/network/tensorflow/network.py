@@ -36,6 +36,8 @@ Model = tf.keras.Model
 PI = np.pi
 TWO_PI = 2. * PI
 
+TF_FLOAT = tf.keras.backend.floatx()
+
 NetworkInputs = tuple[Tensor, Tensor]
 NetworkOutputs = tuple[Tensor, Tensor, Tensor]
 
@@ -74,14 +76,15 @@ class NetworkFactory(BaseNetworkFactory):
             for i in range(n)
         }
         if split_xnets:
-            n1 = lambda m: f'xNet/lfLayer{m}/first'
-            n2 = lambda m: f'xNet/lfLayer{m}/second'
+            xstr = 'xNet/lfLayer'
+            labels = ['first', 'second']
             xnet = {}
             for i in range(n):
-                xnet[str(i)] = {
-                    'first': get_network(**cfg['xnet'], name=n1(i)),
-                    'second': get_network(**cfg['xnet'], name=n2(i)),
-                }
+                nets = [
+                    get_network(**cfg['xnet'], name=f'{xstr}{i}/first'),
+                    get_network(**cfg['xnet'], name=f'{xstr}{i}/second')
+                ]
+                xnet[str(i)] = dict(zip(labels, nets))
         else:
             xnet = {
                 str(i): get_network(**cfg['xnet'], name=f'xNet/lfLayer{i}')
@@ -95,7 +98,6 @@ def get_kinit(scale: float = 1., seed: int = None):
     return VarianceScaling(scale=2. * scale,
                            mode='fan_in', seed=seed,
                            distribution='truncated_normal')
-
 
 
 class CustomDense(Layer):
@@ -161,7 +163,7 @@ def get_network_configs(
     }
     coeff_kwargs = {
         'trainable': True,
-        'initial_value': tf.zeros([1, xdim]),
+        'initial_value': tf.zeros([1, xdim], dtype=TF_FLOAT),
     }
 
     args = {
@@ -212,7 +214,7 @@ def get_network(
         input_shapes: dict[str, tuple[int]] = None,
         net_weight: NetWeight = None,
         conv_config: ConvolutionConfig = None,
-        factor: float = 1.,
+        # factor: float = 1.,
         name: str = None,
 ) -> Model:
     """Returns a functional `tf.keras.Model`."""
@@ -231,16 +233,19 @@ def get_network(
                               xdim=xdim,
                               network_config=network_config,
                               activation_fn=network_config.activation_fn)
-
     args = cfg['args']
     names = cfg['names']
     act_fn = cfg['activation']
 
-    x_input = Input(input_shapes['x'], name=names['x_input'])
-    v_input = Input(input_shapes['v'], name=names['v_input'])
+    x_input = Input(input_shapes['x'], name=names['x_input'], dtype=TF_FLOAT)
+    v_input = Input(input_shapes['v'], name=names['v_input'], dtype=TF_FLOAT)
 
-    s_coeff = tf.Variable(**cfg['coeff_kwargs'], name=names['s_coeff'])
-    q_coeff = tf.Variable(**cfg['coeff_kwargs'], name=names['q_coeff'])
+    s_coeff = tf.Variable(**cfg['coeff_kwargs'],
+                          name=names['s_coeff'],
+                          dtype=TF_FLOAT)
+    q_coeff = tf.Variable(**cfg['coeff_kwargs'],
+                          name=names['q_coeff'],
+                          dtype=TF_FLOAT)
 
     if conv_config is not None:
         if len(xshape) == 3:
@@ -268,17 +273,18 @@ def get_network(
         x = Conv2D(n2, f2, activation='relu', name=f'{name}/xConv3')(x)
         x = Conv2D(n1, f1, activation='relu', name=f'{name}/xConv4')(x)
         x = Flatten()(x)
-        if conv_config.use_batch_norm:
+        if network_config.use_batch_norm:
             x = BatchNormalization(-1, name=f'{name}/batch_norm')(x)
     else:
         x = Flatten()(x_input)
 
-    x = Dense(**args['x'])(x)
-    v = Dense(**args['v'])(v_input)
+    x = Dense(**args['x'], dtype=TF_FLOAT)(x)
+    v = Dense(**args['v'], dtype=TF_FLOAT)(v_input)
     z = act_fn(Add()([x, v]))
     for idx, units in enumerate(network_config.units[1:]):
-        z = Dense(units, 
+        z = Dense(units,
                   activation=act_fn,
+                  dtype=TF_FLOAT,
                   name=f'{name}/hLayer{idx}')(z)
 
     if network_config.dropout_prob > 0:
@@ -287,9 +293,13 @@ def get_network(
     if network_config.use_batch_norm:
         z = BatchNormalization(-1, name=f'{name}/BatchNorm')(z)
 
-    s = tf.math.exp(s_coeff) * tf.math.tanh(Dense(**args['scale'])(z))
-    t = Dense(**args['transl'])(z)
-    q = tf.math.exp(q_coeff) * tf.math.tanh(Dense(**args['transf'])(z))
+    s_layer = Dense(**args['scale'])
+    t_layer = Dense(**args['transl'])
+    q_layer = Dense(**args['transf'])
+
+    s = tf.math.exp(s_coeff) * tf.math.tanh(s_layer(z))
+    t = t_layer(z)
+    q = tf.math.exp(q_coeff) * tf.math.tanh(q_layer(z))
 
     scale = net_weight.s * s
     transl = net_weight.t * t

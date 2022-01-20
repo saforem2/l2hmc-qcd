@@ -19,6 +19,7 @@ from src.l2hmc.loss.tensorflow.loss import LatticeLoss
 from src.l2hmc.utils.history import StateHistory, History, summarize_dict
 from src.l2hmc.utils.step_timer import StepTimer
 
+TF_FLOAT = tf.keras.backend.floatx()
 Tensor = tf.Tensor
 console = Console(color_system='truecolor', log_path=False)
 
@@ -50,7 +51,6 @@ class Trainer:
         if isinstance(self.skip, str):
             self.skip = [self.skip]
 
-    @tf.function
     def train_step(self, inputs: tuple[Tensor, float]) -> tuple[Tensor, dict]:
         self.timer.start()
         xinit, beta = inputs
@@ -74,14 +74,22 @@ class Trainer:
         self,
         xinit: Tensor = None,
         beta: float = 1.,
+        compile: bool = True,
     ) -> dict:
         if xinit is None:
-            x = tf.random.uniform(self.dynamics.xshape, *(-np.pi, np.pi))
+            x = tf.random.uniform(self.dynamics.xshape,
+                                  *(-np.pi, np.pi), dtype=TF_FLOAT)
             x = tf.reshape(x, (x.shape[0], -1))
         else:
-            x = tf.constant(xinit)
-        assert isinstance(x, Tensor)
-        self.dynamics.compile(optimizer=self.optimizer, loss=self.loss_fn)
+            x = tf.constant(xinit, dtype=TF_FLOAT)
+
+        assert isinstance(x, Tensor) and x.dtype == TF_FLOAT
+
+        if compile:
+            train_step = tf.function(self.train_step)
+            self.dynamics.compile(optimizer=self.optimizer, loss=self.loss_fn)
+        else:
+            train_step = self.train_step
 
         summaries = []
         for era in range(self.steps.nera):
@@ -89,7 +97,7 @@ class Trainer:
             estart = time.time()
             for epoch in range(self.steps.nepoch):
                 self.timer.start()
-                x, metrics = self.train_step((x, beta))
+                x, metrics = train_step((x, beta))
 
                 should_log = (epoch % self.steps.log == 0)
                 should_print = (epoch % self.steps.print == 0)
