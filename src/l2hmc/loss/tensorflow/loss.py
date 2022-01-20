@@ -11,6 +11,7 @@ import numpy as np
 from src.l2hmc.configs import LossConfig
 from src.l2hmc.lattice.tensorflow.lattice import Lattice
 
+TF_FLOAT = tf.keras.backend.floatx()
 Tensor = tf.Tensor
 
 
@@ -24,11 +25,11 @@ class LatticeLoss:
         wl_init = self.lattice.wilson_loops(x=x_init)
         wl_prop = self.lattice.wilson_loops(x=x_prop)
 
-        plaq_loss = tf.constant(0.)
+        plaq_loss = tf.constant(0., dtype=TF_FLOAT)
         if self.config.plaq_weight > 0:
             plaq_loss = self._plaq_loss(w1=wl_init, w2=wl_prop, acc=acc)
 
-        charge_loss = tf.constant(0.)
+        charge_loss = tf.constant(0., dtype=TF_FLOAT)
         if self.config.charge_weight > 0:
             charge_loss = self._charge_loss(w1=wl_init, w2=wl_prop, acc=acc)
 
@@ -60,11 +61,11 @@ class LatticeLoss:
         wl_init = self.lattice.wilson_loops(x=x_init)
         wl_prop = self.lattice.wilson_loops(x=x_prop)
 
-        plaq_loss = tf.constant(0.)
+        plaq_loss = tf.constant(0., dtype=TF_FLOAT)
         if self.config.plaq_weight > 0:
             plaq_loss = self._plaq_loss(w1=wl_init, w2=wl_prop, acc=acc)
 
-        charge_loss = tf.constant(0.)
+        charge_loss = tf.constant(0., dtype=TF_FLOAT)
         if self.config.charge_weight > 0:
             charge_loss = self._charge_loss(w1=wl_init, w2=wl_prop, acc=acc)
 

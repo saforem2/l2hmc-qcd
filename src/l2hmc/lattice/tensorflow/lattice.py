@@ -9,6 +9,7 @@ import numpy as np
 import tensorflow as tf
 from dataclasses import dataclass, asdict
 
+TF_FLOAT = tf.keras.backend.floatx()
 PI = tf.constant(np.pi)
 TWO_PI = 2. * PI
 
@@ -67,7 +68,7 @@ class Lattice:
 
     def draw_uniform_batch(self) -> Tensor:
         """Draw batch of samples, uniformly from [-pi, pi)."""
-        return tf.random.uniform(self._shape, *(-PI, PI))
+        return tf.random.uniform(self._shape, *(-PI, PI), dtype=TF_FLOAT)
 
     def unnormalized_log_prob(self, x: Tensor) -> Tensor:
         return self.action(x)
@@ -140,10 +141,7 @@ class Lattice:
             wloops: Tensor = None,
     ) -> Tensor:
         """Calculate the avg plaq for each of the lattices in x."""
-        if wloops is None:
-            if x is None:
-                raise ValueError('One of `x` or `wloops` must be specified')
-            wloops = self.wilson_loops(x)
+        wloops = self._get_wloops(x) if wloops is None else wloops
         return tf.reduce_mean(tf.math.cos(wloops), (1, 2))
 
     def _plaqs4x4(self, wloops4x4: Tensor) -> Tensor:
@@ -169,17 +167,18 @@ class Lattice:
     def _int_charges(self, wloops: Tensor) -> Tensor:
         return tf.reduce_sum(project_angle(wloops), (1, 2)) / TWO_PI
 
+    def _get_wloops(self, x: Tensor = None) -> Tensor:
+        if x is None:
+            raise ValueError('Expected input `x`')
+        return self.wilson_loops(x)
+
     def sin_charges(
             self,
             x: Tensor = None,
             wloops: Tensor = None
     ) -> Tensor:
         """Calculate the real-valued charge approximation, sin(Q)"""
-        if wloops is None:
-            if x is None:
-                raise ValueError('One of `x` or `wloops` must be specified')
-            wloops = self.wilson_loops(x)
-
+        wloops = self._get_wloops(x) if wloops is None else wloops
         return self._sin_charges(wloops)
 
     def int_charges(
@@ -188,11 +187,7 @@ class Lattice:
             wloops: Tensor = None
     ) -> Tensor:
         """Calculate the integer valued charges."""
-        if wloops is None:
-            if x is None:
-                raise ValueError('One of `x` or `wloops` must be specified')
-            wloops = self.wilson_loops(x)
-
+        wloops = self._get_wloops(x) if wloops is None else wloops
         return self._int_charges(wloops)
 
     def charges(
@@ -201,11 +196,7 @@ class Lattice:
             wloops: Tensor = None,
     ) -> Charges:
         """Calculate both charge representations and return as single object"""
-        if wloops is None:
-            if x is None:
-                raise ValueError('One of `x` or `wloops` must be specified.')
-            wloops = self.wilson_loops(x)
-
+        wloops = self._get_wloops(x) if wloops is None else wloops
         sinQ = self._sin_charges(wloops)
         intQ = self._int_charges(wloops)
         return Charges(intQ=intQ, sinQ=sinQ)
@@ -216,9 +207,6 @@ class Lattice:
             wloops: Tensor = None,
     ) -> Tensor:
         """Calculate the Wilson gauge action for a batch of lattices."""
-        if wloops is None:
-            if x is None:
-                raise ValueError('One of `x` or `wloops` must be specified.')
-            wloops = self.wilson_loops(x)
-
-        return tf.reduce_sum(tf.constant(1.) - tf.math.cos(wloops), (1, 2))
+        wloops = self._get_wloops(x) if wloops is None else wloops
+        local_action = tf.ones_like(wloops) - tf.math.cos(wloops)
+        return tf.reduce_sum(local_action, (1, 2))

@@ -105,9 +105,12 @@ class Dynamics(Model):
         return self.apply_transition(inputs, training=training)
 
     def _get_eps(self, name: str) -> tf.Variable:
-        init = tf.constant(tf.math.exp(tf.math.log(self.config.eps)))
+        einit = tf.cast(self.config.eps, dtype=TF_FLOAT)
+        init = tf.constant(tf.math.exp(tf.math.log(einit)))
+        # init = tf.cast(init, dtype=TF_FLOAT)
         return tf.Variable(initial_value=init,
                            name=name,
+                           dtype=TF_FLOAT,
                            constraint=tf.keras.constraints.non_neg(),
                            trainable=(not self.config.eps_fixed))
 
@@ -178,7 +181,7 @@ class Dynamics(Model):
             training: bool = True,
     ) -> dict:
         x, beta = inputs
-        v = tf.random.normal(x.shape)
+        v = tf.random.normal(x.shape, dtype=TF_FLOAT)
         state_init = State(x=x, v=v, beta=beta)
         state_prop, metrics = self.transition_kernel(state_init,
                                                      forward=forward,
@@ -201,14 +204,17 @@ class Dynamics(Model):
         energies = tf.TensorArray(TF_FLOAT, **kwargs)
         logprobs = tf.TensorArray(TF_FLOAT, **kwargs)
 
+        energy = self.hamiltonian(state)
+        logdet = tf.zeros(state.x.shape[0], dtype=TF_FLOAT)
+
         return {
             # by duplicating the first elements in xeps and veps,
             # all of the entries in this dict have size nleapfrog + 1
-            'xeps': [self.xeps[0]],
-            'veps': [self.veps[0]],
-            'energy': energies.write(0, hamil := self.hamiltonian(state)),
-            'logdet': logdets.write(0, logd := tf.zeros(state.x.shape[0])),
-            'logprob': logprobs.write(0, hamil - logd),
+            'xeps': [self.xeps[0], *self.xeps],
+            'veps': [self.veps[0], *self.veps],
+            'energy': energies.write(0, energy),
+            'logdet': logdets.write(0, logdet),
+            'logprob': logprobs.write(0, energy - logdet),
         }
 
     def _transition_kernel(
@@ -221,7 +227,7 @@ class Dynamics(Model):
         lf_fn = self._forward_lf if forward else self._backward_lf
         # Copy initial state into proposed state
         state_ = State(x=state.x, v=state.v, beta=state.beta)
-        sumlogdet = tf.zeros((state.x.shape[0],))
+        sumlogdet = tf.zeros((state.x.shape[0],), dtype=TF_FLOAT)
         history = self._new_history(state_)
 
         def _update_history(hist: dict, data: dict, step: int) -> dict:
@@ -294,7 +300,8 @@ class Dynamics(Model):
     @staticmethod
     def _get_accept_masks(px: Tensor) -> tuple:
         acc = tf.cast(
-            px > tf.random.uniform(tf.shape(px)), dtype=TF_FLOAT,
+            px > tf.random.uniform(tf.shape(px), dtype=TF_FLOAT),
+            dtype=TF_FLOAT,
         )
         rej = tf.ones_like(acc) - acc
 
@@ -302,7 +309,7 @@ class Dynamics(Model):
 
     def _get_direction_masks(self, batch_size) -> tuple:
         fwd = tf.cast(
-            tf.random.uniform((batch_size,)) > 0.5,
+            tf.random.uniform((batch_size,), dtype=TF_FLOAT) > 0.5,
             dtype=TF_FLOAT,
         )
         bwd = tf.ones_like(fwd) - fwd
@@ -379,7 +386,7 @@ class Dynamics(Model):
     ) -> tuple[State, Tensor]:
         """Complete update (leapfrog step) in the forward direction."""
         m, mb = self._get_mask(step)
-        sumlogdet = tf.zeros((state.x.shape[0],))
+        sumlogdet = tf.zeros((state.x.shape[0],), dtype=TF_FLOAT)
 
         state, logdet = self._update_v_fwd(step, state, training)
         sumlogdet += logdet
@@ -407,7 +414,7 @@ class Dynamics(Model):
         # Note: Reverse the step count, i.e. count from end of trajectory.
         step_r = self.config.nleapfrog - step - 1
         m, mb = self._get_mask(step_r)
-        sumlogdet = tf.zeros((state.x.shape[0],))
+        sumlogdet = tf.zeros((state.x.shape[0],), dtype=TF_FLOAT)
 
         state, logdet = self._update_v_bwd(step_r, state, training=training)
         sumlogdet += logdet
@@ -432,13 +439,16 @@ class Dynamics(Model):
             training: bool = True,
     ) -> tuple[State, Tensor]:
         eps = self.veps[step]
+        half_eps = tf.cast(eps / 2, dtype=TF_FLOAT)
+        # half_eps = tf.scalar_mul(0.5, eps)
+        # half_eps = tf.cast(tf.scalar_mul(0.5, eps), dtyp
         grad = self.grad_potential(state.x, state.beta)
         s, t, q = self._call_vnet(step, (state.x, grad), training=training)
 
-        s = tf.scalar_mul(0.5 * eps, s)
+        s = tf.scalar_mul(half_eps, s)
         q = tf.scalar_mul(eps, q)
 
-        vf = state.v * tf.exp(s) - 0.5 * eps * (grad * tf.exp(q) - t)
+        vf = state.v * tf.exp(s) - half_eps * (grad * tf.exp(q) - t)
         logdet = tf.reduce_sum(s, axis=1)
 
         return State(state.x, vf, state.beta), logdet
@@ -450,11 +460,12 @@ class Dynamics(Model):
             training: bool = True,
     ) -> tuple[State, Tensor]:
         eps = self.veps[step]
+        half_eps = tf.constant(eps / 2., dtype=TF_FLOAT)
         grad = self.grad_potential(state.x, state.beta)
         s, t, q = self._call_vnet(step, (state.x, grad), training=training)
-        s = tf.scalar_mul(-0.5 * eps, s)
+        s = tf.scalar_mul(half_eps, s)
         q = tf.scalar_mul(eps, q)
-        vb = tf.exp(s) * (state.v + 0.5 * eps * (grad * tf.exp(q) - t))
+        vb = tf.exp(s) * (state.v + half_eps * (grad * tf.exp(q) - t))
         logdet = tf.reduce_sum(s, axis=1)
 
         return State(state.x, vb, state.beta), logdet
