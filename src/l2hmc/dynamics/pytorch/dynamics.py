@@ -49,13 +49,15 @@ def to_u1(x: Tensor) -> Tensor:
     return ((x + PI) % TWO_PI) - PI
 
 
-def rand_unif(shape: Shape,
-              a: float,
-              b: float,
-              requires_grad: bool) -> Tensor:
+def rand_unif(
+        shape: Shape,
+        a: float,
+        b: float,
+        requires_grad: bool
+) -> Tensor:
     """Draw tensor from random uniform distribution U[a, b]"""
     rand = (a - b) * torch.rand(shape) + b
-    return torch.tensor(rand).requires_grad_(requires_grad)
+    return rand.clone().detach().requires_grad_(requires_grad)
 
 
 def random_angle(shape: Shape, requires_grad: bool = True) -> Tensor:
