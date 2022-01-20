@@ -156,40 +156,29 @@ class Lattice:
         """Calculate intQ from Wilson loops."""
         return project_angle(wloops).sum((1, 2)) / TWO_PI
 
+    def _get_wloops(self, x: Tensor = None) -> Tensor:
+        if x is None:
+            raise ValueError('One of `x` or `wloops` must be specified.')
+        return self.wilson_loops(x)
+
     def sin_charges(self, x: Tensor = None, wloops: Tensor = None) -> Tensor:
         """Calculate the real-valued charge approximation, sin(Q)."""
-        if wloops is None:
-            if x is None:
-                raise ValueError('One of `x` or `wloops` must be specified.')
-            wloops = self.wilson_loops(x)
-
+        wloops = self._get_wloops(x) if wloops is None else wloops
         return self._sin_charges(wloops)
 
     def int_charges(self, x: Tensor = None, wloops: Tensor = None) -> Tensor:
         """Calculate the integer valued topological charge, int(Q)."""
-        if wloops is None:
-            if x is None:
-                raise ValueError('One of `x` or `wloops` must be specified.')
-            wloops = self.wilson_loops(x)
-
+        wloops = self._get_wloops(x) if wloops is None else wloops
         return self._int_charges(wloops)
 
     def charges(self, x: Tensor = None, wloops: Tensor = None) -> Charges:
         """Calculate both charge representations and return as single object"""
-        if wloops is None:
-            if x is None:
-                raise ValueError('One of `x` or `wloops` must be specified.')
-            wloops = self.wilson_loops(x)
-
+        wloops = self._get_wloops(x) if wloops is None else wloops
         sinQ = self._sin_charges(wloops)
         intQ = self._int_charges(wloops)
         return Charges(intQ=intQ, sinQ=sinQ)
 
     def action(self, x: Tensor = None, wloops: Tensor = None) -> Tensor:
         """Calculate the Wilson gauge action for a batch of lattices."""
-        if wloops is None:
-            if x is None:
-                raise ValueError('One of `x` or `wloops` must be specified.')
-            wloops = self.wilson_loops(x)
-
+        wloops = self._get_wloops(x) if wloops is None else wloops
         return (1. - torch.cos(wloops)).sum((1, 2))
