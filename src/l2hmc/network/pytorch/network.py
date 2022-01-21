@@ -35,6 +35,7 @@ ACTIVATION_FNS = {
     'leaky_relu': F.leaky_relu,
 }
 
+
 def flatten(x: torch.Tensor) -> torch.Tensor:
     return x.reshape(x.shape[0], -1)
 
