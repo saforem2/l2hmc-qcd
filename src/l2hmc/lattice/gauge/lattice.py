@@ -175,16 +175,16 @@ class LatticeSU3:
         grad_arr = np.zeros(links.shape)
         for n in self.iter_sites():
             for u in range(self.dim):
-                # grad = np.float32(0.0)
-                grad = 0.
+                grad = np.floating(0.0)
                 for v in range(self.dim):
                     if v != u:
-                        m = np.mod((n - self.bases[v]), self.site_idxs)
+                        m = tuple(np.mod((n - self.bases[v]), self.site_idxs))
                         p1 = self._plaq_op(n, u, v, links)
                         p2 = self._plaq_op(m, u, v, links)
-                        dsdp1 = self._grad_action_op(p1)
-                        dsdp2 = self._grad_action_op(p2)
-                        grad += (dsdp1 - dsdp2)
+                        staple = (np.trace(p1).imag() - np.trace(p2).imag())
+                        grad += staple / self.link_shape[0]
+                        # dsdp1 = self._grad_action_op(p1)
+                        # dsdp2 = self._grad_action_op(p2)
 
                 grad_arr[n][u] = beta * grad
         if flatten:
@@ -203,10 +203,15 @@ class LatticeSU3:
     def _grad_action_op(self, plaq: Array) -> Array:
         return np.trace(plaq).imag() / self.link_shape[0]
 
-    def _link_staple_op(self, link: Array, staple: Array):
+    def _link_staple_op(self, link: Array, staple: Array) -> Array:
         return link @ staple
 
-    def _plaq_op(self, site, u, v, links):
+    def _plaq_op(
+            self,
+            site: tuple[int],
+            u: int,
+            v: int, links: Array
+    ) -> Array:
         shape = self.site_idxs
         l1 = self.get_link(site, u, shape, links)
         l2 = self.get_link(site + self.bases[u], v, shape, links)
@@ -220,7 +225,7 @@ class LatticeSU3:
     def _action_op(self, plaq: Array) -> Array:
         return 1.0 * np.trace(plaq).real() / self.link_shape[0]
 
-    def _get_staples(self, site: Array, u: int, links: Array):
+    def _get_staples(self, site: Array, u: int, links: Array) -> list[Array]:
         if len(links.shape) == 2:  # (nbatch, *)
             links = links.reshape((links.shape[0], *self.shape))
 
@@ -228,6 +233,7 @@ class LatticeSU3:
         staples = []
         args = (self.site_idxs, links)
         for v in range(self.dim):
+            staple = 0
             if v != u:
                 ub = self.bases[u]
                 vb = self.bases[v]
@@ -240,8 +246,8 @@ class LatticeSU3:
 
                 prod1 = link1 @ link2.conj().T @ link3.conj().T
                 prod2 = link4.conj().T @ link5.conj().T @ link6
-                _sum = prod1 + prod2
+                staple = prod1 + prod2
 
-            staples.append(_sum)
+            staples.append(staple)
 
         return staples
