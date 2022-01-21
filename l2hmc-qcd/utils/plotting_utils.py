@@ -8,6 +8,7 @@ from typing import Union
 import matplotlib.style as mplstyle
 
 mplstyle.use('fast')
+import matplotlib as mpl
 import itertools as it
 import os
 import time
@@ -30,8 +31,7 @@ from utils import SKEYS
 from utils.attr_dict import AttrDict
 from utils.autocorr import calc_tau_int_vs_draws
 #  from utils.file_io import timeit
-from utils.logger import Logger
-from utils.logger_config import in_notebook
+from utils.logger import Logger, in_notebook
 #  from dynamics.gauge_dynamics import GaugeDynamics
 
 #  TF_FLOAT = FLOATS[tf.keras.backend.floatx()]
@@ -40,10 +40,10 @@ logger = Logger()
 
 COLORS = 100 * ['C0', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9']
 
-plt.style.use('default')
-sns.set_context('paper')
-sns.set_style('whitegrid')
-sns.set_palette('bright')
+# plt.style.use('default')
+# sns.set_context('paper')
+# sns.set_style('whitegrid')
+# sns.set_palette('bright')
 warnings.filterwarnings('once', 'UserWarning:')
 warnings.filterwarnings('once', 'seaborn')
 
@@ -64,13 +64,13 @@ warnings.filterwarnings('once', 'seaborn')
 #  ))
 #
 
+
 def truncate_colormap(
         cmap: str,
-        minval:float = 0.0,
-        maxval:float = 1.0,
-        n:int = 100,
+        minval: float = 0.0,
+        maxval: float = 1.0,
+        n: int = 100,
 ):
-    import matplotlib as mpl
     if isinstance(cmap, str):
         cmap = plt.get_cmap(cmap)
     new_cmap = mpl.colors.LinearSegmentedColormap.from_list(
@@ -85,9 +85,10 @@ def make_ridgeplots(
         num_chains: int = None,
         out_dir: str = None,
         drop_zeros: bool = False,
-        cmap: str = 'crest',
-        default_style: dict = None,
+        cmap: str = 'viridis_r',
+        # default_style: dict = None,
 ):
+    """Make ridgeplots."""
     data = {}
     with sns.axes_style('white', rc={'axes.facecolor': (0, 0, 0, 0)}):
         for key, val in dataset.data_vars.items():
@@ -116,7 +117,8 @@ def make_ridgeplots(
                 data[key] = lfdf
 
                 # Initialize the FacetGrid object
-                pal = sns.color_palette(cmap, n_colors=len(val.leapfrog.values))
+                ncolors = len(val.leapfrog.values)
+                pal = sns.color_palette(cmap, n_colors=ncolors)
                 g = sns.FacetGrid(lfdf, row='lf', hue='lf',
                                   aspect=15, height=0.25, palette=pal)
 
@@ -139,10 +141,11 @@ def make_ridgeplots(
                 # Remove the axes details that don't play well with overlap
                 _ = g.set_titles('')
                 _ = g.set(yticks=[])
+                _ = g.set(yticklabels=[])
                 _ = g.despine(bottom=True, left=True)
                 if out_dir is not None:
                     io.check_else_make_dir(out_dir)
-                    out_file = os.path.join(out_dir, f'{key}_ridgeplot.pdf')
+                    out_file = os.path.join(out_dir, f'{key}_ridgeplot.svg')
                     #  logger.log(f'Saving figure to: {out_file}.')
                     plt.savefig(out_file, dpi=400, bbox_inches='tight')
 
@@ -161,8 +164,7 @@ def set_size(
         subplots: tuple = (1, 1)
 ):
     """Set figure dimensions to avoid scaling in LaTeX."""
-    if width is None:
-        width_pt = 345
+    width_pt = 345.0
     if width == 'thesis':
         width_pt = 426.79135
     elif width == 'beamer':
@@ -247,7 +249,8 @@ def plot_energy_distributions(data, out_dir=None, title=None):
         }
     }
 
-    fig, axes = plt.subplots(nrows=1, ncols=2, sharex='col', figsize=(8, 4),
+    fig, axes = plt.subplots(nrows=1, ncols=2, sharex='col',
+                             figsize=set_size(subplots=(1, 2)),
                              constrained_layout=True)
     for idx, (key, val) in enumerate(energies_combined.items()):
         ax = axes[idx]
@@ -266,7 +269,7 @@ def plot_energy_distributions(data, out_dir=None, title=None):
     if title is not None:
         _ = fig.suptitle(title)
     if out_dir is not None:
-        out_file = os.path.join(out_dir, 'energy_dists_traj.pdf')
+        out_file = os.path.join(out_dir, 'energy_dists_traj.svg')
         savefig(fig, out_file)
 
     return fig, axes.flatten()
@@ -357,7 +360,7 @@ def mcmc_avg_lineplots(data, title=None, out_dir=None):
     """Plot trace of avg."""
     fig, axes = None, None
     for idx, (key, val) in enumerate(data.items()):
-        fig, axes = plt.subplots(ncols=2, figsize=(8, 4),
+        fig, axes = plt.subplots(ncols=2, figsize=set_size(subplots=(1, 2)),
                                  constrained_layout=True)
         axes = axes.flatten()
         if len(val) == 2:
@@ -526,28 +529,19 @@ def plot_autocorrs1(
 
 
 def get_params_from_configs(configs: dict):
-    keys = ['num_steps', 'beta_init', 'beta_final', 'x_shape',
-            'net_weights']
-
-    #  eps = dynamics.eps.numpy()
-    num_steps = configs['dynamics_config']['num_steps']
-    beta_init = configs['beta_init']
-    beta_final = configs['beta_final']
-    x_shape = configs['dynamics_config']['x_shape']
-    net_weights = configs['dynamics_config']['net_weights']
-    params = {
-        'num_steps': configs['dynamics_config']['num_steps'],
-        'x_shape': configs['dynamics_config']['x_shape'],
+    return {
         'beta_init': configs['beta_init'],
         'beta_final': configs['beta_final'],
+        'x_shape': configs['dynamics_config']['x_shape'],
+        'num_steps': configs['dynamics_config']['num_steps'],
         'net_weights': configs['dynamics_config']['net_weights'],
     }
 
 
 
 def plot_data(
-        data_container: DataContainer, #  "DataContainer",  # noqa:F821
-        configs: dict,
+        data_container: "DataContainer", #  type: "DataContainer",  # noqa:F821
+        configs: dict = None,
         out_dir: str = None,
         therm_frac: float = 0,
         params: Union[dict, AttrDict] = None,
@@ -557,7 +551,7 @@ def plot_data(
         cmap: str = 'crest',
         verbose: bool = False,
         logging_steps: int = 1,
-):
+) -> dict:
     """Plot data from `data_container.data`."""
     if verbose:
         keep_strs = list(data_container.data.keys())
@@ -595,13 +589,16 @@ def plot_data(
             title = None
 
     else:
-        params = {
-            'beta_init': configs['beta_init'],
-            'beta_final': configs['beta_final'],
-            'x_shape': configs['dynamics_config']['x_shape'],
-            'num_steps': configs['dynamics_config']['num_steps'],
-            'net_weights': configs['dynamics_config']['net_weights'],
-        }
+        if configs is not None:
+            params = {
+                'beta_init': configs['beta_init'],
+                'beta_final': configs['beta_final'],
+                'x_shape': configs['dynamics_config']['x_shape'],
+                'num_steps': configs['dynamics_config']['num_steps'],
+                'net_weights': configs['dynamics_config']['net_weights'],
+            }
+        else:
+            params = {}
 
     tstamp = io.get_timestamp('%Y-%m-%d-%H%M%S')
     plotdir = None
@@ -612,7 +609,10 @@ def plot_data(
     tint_data = {}
     output = {}
     if 'charges' in data_container.data:
-        lf = configs['dynamics_config']['num_steps']  # type: int
+        if configs is not None:
+            lf = configs['dynamics_config']['num_steps']  # type: int
+        else:
+            lf = 0
         qarr = np.array(data_container.data['charges'])
         t0 = time.time()
         tint_dict, _ = plot_autocorrs_vs_draws(qarr, num_pts=20,

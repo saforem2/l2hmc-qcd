@@ -142,7 +142,7 @@ def find_matching_files(d, search_str):
 def print_header(header):
     strs = header.split('\n')
     for s in strs:
-        logger.log(s, style='bold red')
+        logger.info(s, style='bold red')
 
 
 def rule(s: str = ' ', with_time: bool= True, **kwargs: dict):
@@ -159,7 +159,7 @@ def log(s: str, *args, **kwargs):
         return
 
     #  console.log(s, style=style, markup=True, highlight=True)
-    logger.log(s, *args, **kwargs)
+    logger.info(s, *args, **kwargs)
 
 
 def write(s: str, f: str, mode: str = 'a', nl: bool = True):
@@ -172,7 +172,7 @@ def write(s: str, f: str, mode: str = 'a', nl: bool = True):
 
 def print_dict(d: dict, *args, **kwargs):
     """Print nicely-formatted dictionary."""
-    logger.log(d, *args, **kwargs)
+    logger.info(d, *args, **kwargs)
 
 
 def print_flags(flags: AttrDict):

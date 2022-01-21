@@ -12,7 +12,6 @@ from __future__ import absolute_import, division, print_function
 import numpy as np
 import tensorflow as tf
 from dataclasses import dataclass
-from utils.attr_dict import AttrDict
 
 @dataclass
 class Charges:
@@ -27,12 +26,12 @@ class LatticeMetrics:
     plaqs: tf.Tensor
 
 
-def area_law(beta, num_plaqs):
+def area_law(beta: float, num_plaqs: int) -> float:
     """Returns the expected value of the Wilson loop containing `num_plaqs`."""
     return (tf.math.bessel_i1(beta) / tf.math.bessel_i0(beta)) ** num_plaqs
 
 
-def plaq_exact(beta):
+def plaq_exact(beta: float) -> float:
     """Computes the expected value of the avg. plaquette for 2D U(1)."""
     return tf.math.bessel_i1(beta) / tf.math.bessel_i0(beta)
 

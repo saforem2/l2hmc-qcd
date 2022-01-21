@@ -62,6 +62,9 @@ def parse_args():
     parser = argparse.ArgumentParser(
         description=description,
     )
+    parser.add_argument('--restore_from', default=None, type=str,
+                        help=("""Directory to look in for restoring model."""))
+
     parser.add_argument('--configs_file', default=None, type=str,
                         help=("""Path to `configs.json` file."""))
 
@@ -119,21 +122,26 @@ def get_configs(
         updates: dict[str, Any] = None
 ) -> dict[str, Any]:
     """Get fresh copy of `bin/test_configs.json` for running tests."""
-    configs = load_configs(configs_file)
+    if configs_file is None:
+        configs_file = Path(BIN_DIR).joinpath('test_configs.json')
+        logger.warning(f'configs not specified!! loading from: {configs_file}')
 
-    if updates is not None:
-        dconfig = updates.get('dynamics_config', None)
-        nconfig = updates.get('network_config', None)
-        lconfig = updates.get('lr_config', None)
-        cconfig = updates.get('conv_config', None)
-        if dconfig is not None:
-            configs['dynamics_config'].update(dconfig)
-        if nconfig is not None:
-            configs['network_config'].update(nconfig)
-        if lconfig is not None:
-            configs['lr_config'].update(lconfig)
-        if cconfig is not None:
-            configs['conv_config'].update(cconfig)
+    configs = load_configs(configs_file)
+    if updates is None:
+        return configs
+
+    dconfig = updates.get('dynamics_config', None)
+    nconfig = updates.get('network_config', None)
+    lconfig = updates.get('lr_config', None)
+    cconfig = updates.get('conv_config', None)
+    if dconfig is not None:
+        configs['dynamics_config'].update(dconfig)
+    if nconfig is not None:
+        configs['network_config'].update(nconfig)
+    if lconfig is not None:
+        configs['lr_config'].update(lconfig)
+    if cconfig is not None:
+        configs['conv_config'].update(cconfig)
 
     return configs
 
@@ -180,15 +188,15 @@ def test_conv_net(
     configs = AttrDict(**dict(copy.deepcopy(configs)))
     #  flags.use_conv_net = True
     configs['dynamics_config']['use_conv_net'] = True
-    configs['conv_config'] = dict(
-        sizes=[2, 2],
-        filters=[4, 8],
-        pool_sizes=[2, 2],
-        use_batch_norm=True,
-        conv_paddings=['valid', 'valid'],
-        conv_activations=['relu', 'relu'],
-        input_shape=configs['dynamics_config']['x_shape'][1:],
-    )
+    #  configs['conv_config'] = dict(
+    #      sizes=[2, 2],
+    #      filters=[4, 8],
+    #      pool_sizes=[2, 2],
+    #      use_batch_norm=True,
+    #      conv_paddings=['valid', 'valid'],
+    #      conv_activations=['relu', 'relu'],
+    #      input_shape=configs['dynamics_config']['x_shape'][1:],
+    #  )
     train_out = train(configs, make_plots=make_plots,
                       num_chains=4, verbose=False, **kwargs)
     runs_dir = os.path.join(train_out.logdir, 'inference')
@@ -317,7 +325,7 @@ def test_mixed_loss(
     return test_fn(configs_, **kwargs)
 
 
-def setup_betas(configs):
+def setup_betas(configs: dict[str, Any]) -> tf.Tensor:
     b0 = configs.get('beta_init', None)  # type: float
     b1 = configs.get('beta_final', None)  # type: float
     nb = int(configs.get('train_steps', None) // (b1 + 1 - b0))
@@ -326,21 +334,20 @@ def setup_betas(configs):
         betas_ = b * np.ones(nb)
         betas.append(betas_)
 
-    betas = np.stack(np.array(betas))
-    betas = tf.convert_to_tensor(betas.flatten(),
-                                 dtype=tf.keras.backend.floatx())
+    betas = np.stack(betas).flatten()
+    betas = tf.convert_to_tensor(betas, dtype=tf.keras.backend.floatx())
     return betas
 
 
-
-def test(
-    configs_file: str = None,
-    make_plots: bool = False,
-    with_comparisons: bool = False
-):
+def test(args: argparse.Namespace):
     """Run tests."""
     t0 = time.time()
-    configs = get_configs(configs_file=configs_file)
+    configs = get_configs(configs_file=args.configs_file)
+
+    make_plots = args.make_plots
+    with_comparisons = args.with_comparisons
+    if args.restore_from is not None:
+        configs.update({'restore_from': args.restore_from})
 
     betas = None
     if configs.get('discrete_beta', configs.get('discrete_betas', False)):
@@ -350,9 +357,14 @@ def test(
     conv_configs = copy.deepcopy(configs)
     single_configs = copy.deepcopy(configs)
 
+    sep_configs['profiler'] = True
     sep_out = test_separate_networks(sep_configs,
                                      make_plots=make_plots,
                                      custom_betas=betas)
+    sep_configs['profiler'] = False
+    conv_configs['profiler'] = False
+    single_configs['profiler'] = False
+
     if with_comparisons:
         _ = test_aux_weight(configs=sep_configs,
                             make_plots=make_plots,
@@ -408,6 +420,13 @@ def test(
         _ = test_hmc_run(configs, make_plots=True)
 
     logger.info(f'All tests passed! Took: {time.time() - t0:.4f} s')
+    return 0
+
+
+# TODO: Finish
+class Tester:
+    def __init__(*args, **kwargs):
+        pass
 
 
 def main(args, configs: dict[str, Any] = None, configs_file: str = None):
@@ -428,16 +447,16 @@ def main(args, configs: dict[str, Any] = None, configs_file: str = None):
                 _ = fn(args.log_dir)
             else:
                 _ = fn(configs)
+    return 0
 
 
 if __name__ == '__main__':
     ARGS = parse_args()
-    if ARGS.horovod:
-        ARGS.horovod = True
-
-    if ARGS.test_all:
-        test(configs_file=ARGS.configs_file,
-             make_plots=ARGS.make_plots,
-             with_comparisons=ARGS.with_comparisons)
-    else:
-        main(ARGS)
+    #  if ARGS.horovod:
+    #      ARGS.horovod = True
+    #
+    test(ARGS) if ARGS.test_all else main(ARGS)
+    #  if ARGS.test_all:
+    #      test(ARGS)
+    #  else:
+    #      main(ARGS)
