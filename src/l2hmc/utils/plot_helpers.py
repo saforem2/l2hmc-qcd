@@ -17,6 +17,10 @@ import seaborn as sns
 import xarray as xr
 
 
+import warnings
+warnings.filterwarnings('ignore')
+
+
 LW = plt.rcParams.get('axes.linewidth', 1.75)
 
 
@@ -153,8 +157,136 @@ def plot_leapfrogs(
     return fig, ax
 
 
+def plot_dataArray(
+        val: xr.DataArray,
+        key: str = None,
+        therm_frac: float = 0.,
+        num_chains: int = 0,
+        title: str = None,
+        outdir: str = None,
+        subplots_kwargs: dict[str, Any] = None,
+        plot_kwargs: dict[str, Any] = None,
 
+) -> tuple:
+    plot_kwargs = {} if plot_kwargs is None else plot_kwargs
+    subplots_kwargs = {} if subplots_kwargs is None else subplots_kwargs
+    figsize = subplots_kwargs.get('figsize', set_size())
+    subplots_kwargs.update({'figsize': figsize})
+    subfigs = None
 
+    if key == 'dt':
+        therm_frac = 0.2
+
+    # tmp = val[0]
+    arr = val.values  # shape: [nchains, ndraws]
+    steps = np.arange(len(val.coords['draw']))
+
+    if therm_frac > 0:
+        drop = int(therm_frac * arr.shape[0])
+        arr = arr[drop:]
+        steps = steps[drop:]
+
+    if len(arr.shape) == 2:
+        _ = subplots_kwargs.pop('constrained_layout', True)
+        figsize = (3 * figsize[0], 1.5 * figsize[1])
+
+        fig = plt.figure(figsize=figsize, constrained_layout=True)
+        subfigs = fig.subfigures(1, 2)
+
+        gs_kw = {'width_ratios': [1.33, 0.33]}
+        (ax, ax1) = subfigs[1].subplots(1, 2, sharey=True,
+                                        gridspec_kw=gs_kw)
+        ax.grid(alpha=0.2)
+        ax1.grid(False)
+        vmin = np.min(val)
+        vmax = np.max(val)
+        cmap = None
+        if vmin < 0 < vmax:
+            # BWR: uniform cmap from blue -> white == 0 -> red
+            color = '#FF5252' if val.mean() > 0 else '#007DFF'
+            cmap = 'RdBu_r'
+        elif 0 < vmin < vmax:
+            # viridis: uniform cmap from 0 < blue -> green -> yellow
+            cmap = 'mako'
+            # color = '#4DC26B'
+            # color = '#B2DD2D'
+            color = '#3FB5AD'
+        else:
+            color = plot_kwargs.get('color', f'C{np.random.randint(4)}')
+
+        label = r'$\langle$' + f' {key} ' + r'$\rangle$'
+        ax.plot(steps, val.mean('chain'),
+                label=label, lw=1.5*LW, **plot_kwargs)
+        sns.kdeplot(y=arr.flatten(), ax=ax1, color=color, shade=True)
+        ax1.set_xticks([])
+        ax1.set_xticklabels([])
+        sns.despine(ax=ax, top=True, right=True)
+        sns.despine(ax=ax1, top=True, right=True, left=True, bottom=True)
+        ax1.set_xlabel('')
+        # _ = subfigs[1].subplots_adjust(wspace=-0.75)
+        axes = (ax, ax1)
+
+        ax0 = subfigs[0].subplots(1, 1)
+        val = val.dropna('chain')
+        nchains = min((num_chains, len(val.coords['chain'])))
+        _ = xr.plot.pcolormesh(val, 'draw', 'chain',
+                               ax=ax0, robust=True,
+                               cmap=cmap, add_colorbar=True)
+
+        if key is not None and 'eps' in key:
+            _ = ax0.set_ylabel('leapfrog')
+
+        sns.despine(subfigs[0])
+        plt.autoscale(enable=True, axis=ax0)
+
+        ax.plot(steps, arr.mean(0), lw=2., color='k', label='avg')
+        for idx in range(min(num_chains, arr.shape[0])):
+            ax.plot(steps, arr[idx, :], lw=1., alpha=0.7, color=color)
+
+        ax.legend(loc='best')
+
+    else:
+        if len(arr.shape) == 1:
+            fig, ax = plt.subplots(**subplots_kwargs)
+            ax.plot(steps, arr, **plot_kwargs)
+            axes = ax
+        elif len(arr.shape) == 3:
+            fig, ax = plt.subplots(**subplots_kwargs)
+            cmap = plt.get_cmap('viridis')
+            y = val.mean('chain')
+            for idx in range(len(val.coords['leapfrog'])):
+                pkwargs = {
+                    'color': cmap(idx / len(val.coords['leapfrog'])),
+                    'label': f'{idx}',
+                }
+                ax.plot(steps, y[idx], **pkwargs)
+            axes = ax
+        else:
+            raise ValueError('Unexpected shape encountered')
+
+        ax.set_ylabel(key)
+
+        # if num_chains > 0 and len(arr.shape) > 1:
+        #     lw = LW / 2.
+        #     #for idx in range(min(num_chains, arr.shape[1])):
+        #     nchains = len(val.coords['chains'])
+        #     for idx in range(min(nchains, num_chains)):
+        #         # ax = subfigs[0].subplots(1, 1)
+        #         # plot values of invidual chains, arr[:, idx]
+        #         # where arr[:, idx].shape = [ndraws, 1]
+        #         ax.plot(steps, val
+        #                 alpha=0.5, lw=lw/2., **plot_kwargs)
+
+    matplotx.line_labels()
+    ax.set_xlabel('draw')
+    if title is not None:
+        fig.suptitle(title)
+
+    if outdir is not None:
+        plt.savefig(Path(outdir).joinpath(f'{key}.svg'),
+                    dpi=400, bbox_inches='tight')
+
+    return (fig, subfigs, axes)
 
 
 def plot_array(
@@ -170,7 +302,7 @@ def plot_array(
 
     # arr.shape = [ndraws, nleapfrog, nchains]
     if len(arr.shape) == 3:
-        ndraws, nlf, nchains = arr.shape
+        ndraws, nlf, _ = arr.shape
         lfarr = np.arange(nlf)
         cmap = plt.get_cmap('viridis')
         colors = {lf: cmap(lf / nlf) for lf in lfarr}
@@ -183,7 +315,6 @@ def plot_array(
 
         x = np.arange(ndraws)
         _ = ax.plot(x, yarr.mean((0, 1)), **kwargs)
-
         # arr = arr.mean()
 
     # arr.shape = [ndraws, nchains]
@@ -205,7 +336,14 @@ def plot_array(
     else:
         raise ValueError(f'Unexpected shape encountered: {arr.shape}')
 
+    if xlabel is not None:
+        ax.set_xlabel(xlabel)
+
+    if title is not None:
+        ax.set_title(title)
+
     _ = ax.legend(loc='best')
+
     return fig, ax
 
 
@@ -280,6 +418,7 @@ def plot_metric(
         ax.plot(steps, arr.mean(-1), lw=1.5*LW, label=label, **plot_kwargs)
         if num_chains > 0:
             for chain in range(min((num_chains, arr.shape[1]))):
+                plot_kwargs.update({'label': None})
                 ax.plot(steps, arr[:, chain], lw=LW/2., **plot_kwargs)
         sns.kdeplot(y=arr.flatten(), ax=ax1, color=color, shade=True)
         ax1.set_xticks([])
@@ -428,4 +567,5 @@ def make_ridgeplots(
         drop_zeros: bool = False,
         cmap: str = 'viridis_r',
 ) -> None:
+    # TODO: FINISH, use `l2hmc-qcd/utils/plotting_utils.py` as reference
     pass
