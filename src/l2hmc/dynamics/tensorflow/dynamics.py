@@ -107,7 +107,6 @@ class Dynamics(Model):
     def _get_eps(self, name: str) -> tf.Variable:
         einit = tf.cast(self.config.eps, dtype=TF_FLOAT)
         init = tf.constant(tf.math.exp(tf.math.log(einit)))
-        # init = tf.cast(init, dtype=TF_FLOAT)
         return tf.Variable(initial_value=init,
                            name=name,
                            dtype=TF_FLOAT,
@@ -440,8 +439,6 @@ class Dynamics(Model):
     ) -> tuple[State, Tensor]:
         eps = self.veps[step]
         half_eps = tf.cast(eps / 2, dtype=TF_FLOAT)
-        # half_eps = tf.scalar_mul(0.5, eps)
-        # half_eps = tf.cast(tf.scalar_mul(0.5, eps), dtyp
         grad = self.grad_potential(state.x, state.beta)
         s, t, q = self._call_vnet(step, (state.x, grad), training=training)
 
@@ -460,7 +457,7 @@ class Dynamics(Model):
             training: bool = True,
     ) -> tuple[State, Tensor]:
         eps = self.veps[step]
-        half_eps = tf.constant(eps / 2., dtype=TF_FLOAT)
+        half_eps = tf.cast(eps / 2, dtype=TF_FLOAT)
         grad = self.grad_potential(state.x, state.beta)
         s, t, q = self._call_vnet(step, (state.x, grad), training=training)
         s = tf.scalar_mul(half_eps, s)
@@ -484,8 +481,6 @@ class Dynamics(Model):
         xm_init = tf.multiply(m, state.x)
         inputs = (xm_init, state.v)
         s, t, q = self._call_xnet(step, inputs, first=first, training=training)
-        s = eps * s
-        q = eps * q
         s = tf.scalar_mul(eps, s)
         q = tf.scalar_mul(eps, q)
 
