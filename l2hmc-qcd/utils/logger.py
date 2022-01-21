@@ -12,7 +12,7 @@ import warnings
 from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from typing import Any, Union
-from config import PROJECT_DIR
+# from config import PROJECT_DIR
 
 import joblib
 import numpy as np
@@ -20,21 +20,65 @@ import tensorflow as tf
 from rich import get_console
 import logging
 import logging.config
+import rich
 
+from rich.console import Console as rConsole
 from rich.logging import RichHandler
-from utils.log_config import logging_config
+from .log_config import logging_config
+# from utils.log_config import logging_config
 
 #  from utils.logger_config import in_notebook
 #  from utils.logger_config import logger as log
+try:
+    import torch
+    HAS_TORCH = True
+except ImportError:
+    HAS_TORCH = False
 
-os.environ['COLUMNS'] = str(shutil.get_terminal_size((120, 24))[0])
 
+warnings.simplefilter('once')
+# os.environ['COLUMNS'] = str(shutil.get_terminal_size((180, 24))[0])
+
+logging.config.dictConfig(logging_config)
 
 #  WIDTH, _ = shutil.get_terminal_size(fallback=(156, 50))
 #  logging.config.fileConfig(Path(PROJECT_DIR).joinpath('logging.config'))
-logging.config.dictConfig(logging_config)
-log = logging.getLogger('root')
-log.handlers[0] = RichHandler(markup=True, show_path=False)
+def in_notebook():
+    """Check if we're currently in a jupyter notebook."""
+    try:
+        # pylint:disable=import-outside-toplevel
+        from IPython import get_ipython
+        try:
+            if 'IPKernelApp' not in get_ipython().config:
+                return False
+        except AttributeError:
+            return False
+    except ImportError:
+        return False
+    return True
+
+if in_notebook():
+    logger = logging.getLogger('jupyter')
+    console = rConsole(color_system='truecolor',
+                       log_path=False, log_time_format='[%X]')
+    for handler in logger.handlers:
+        if isinstance(handler, RichHandler):
+            handler.console = console
+
+else:
+    logger = logging.getLogger('l2hmc')
+
+    console = rConsole(color_system='truecolor')
+
+    for handler in logger.handlers:
+        if isinstance(handler, RichHandler):
+            handler.console = console
+
+
+# log.handlers[0] = RichHandler(markup=True,
+#                               show_path=False,
+#                               rich_tracebacks=True)
+
 
 def get_timestamp(fstr=None):
     """Get formatted timestamp."""
@@ -60,38 +104,72 @@ def strformat(k, v, window: int = 0):
         outstr = '\n'.join(outstr_arr)
     else:
         #  if isinstance(v, (tuple, list, np.ndarray)):
-        if isinstance(v, (tuple, list, np.ndarray, tf.Tensor)):
-            v = np.array(v)
+        tensor_types = (list, np.ndarray, tf.Tensor)
+        if isinstance(v, tensor_types):
+            if HAS_TORCH:
+                if isinstance(v, torch.Tensor):
+                    v = v.detach().numpy()
+
+            if isinstance(v, tf.Tensor):
+                v = v.numpy()
+
+            elif isinstance(v, list):
+                v = np.array(v)
+            else:
+                raise ValueError(f'Unexpected type encountered: {type(v)}')
+
+            # assert isinstance(v, np.ndarray)
+
             if window > 0 and len(v.shape) > 0:
                 window = min((v.shape[0], window))
                 avgd = np.mean(v[-window:])
             else:
                 avgd = np.mean(v)
-            outstr = f'{str(k)}={avgd:<4.3f}'
+
+            outstr = f'{str(k)}={avgd:^3.2f}'
+
         else:
             if isinstance(v, float):
-                outstr = f'{str(k)}={v:<4.3f}'
+                outstr = f'{str(k)}={v:^3.2f}'
             else:
                 try:
-                    outstr = f'{str(k)}={v:<4f}'
+                    outstr = f'{str(k)}={v:^3f}'
                 except ValueError:
-                    outstr = f'{str(k)}={v:<4}'
+                    outstr = f'{str(k)}={v:^3}'
     return outstr
 
 
-def in_notebook():
-    """Check if we're currently in a jupyter notebook."""
-    try:
-        # pylint:disable=import-outside-toplevel
-        from IPython import get_ipython
-        try:
-            if 'IPKernelApp' not in get_ipython().config:
-                return False
-        except AttributeError:
-            return False
-    except ImportError:
-        return False
-    return True
+def metrics_summary(
+        metrics: dict,
+        window: int = 0,
+        outfile: str = None,
+        skip: list[str] = None,
+        keep: list[str] = None,
+        pre: Union[str, list, tuple] = None,
+):
+    """Print nicely formatted string of summary of items in `metrics`."""
+    if skip is None:
+        skip = []
+    if keep is None:
+        keep = list(metrics.keys())
+
+    fstrs = [
+        strformat(k, v, window) for k, v in metrics.items()
+        if k not in skip
+        and k in keep
+    ]
+    if pre is not None:
+        fstrs = [pre, *fstrs] if isinstance(pre, str) else [*pre] + fstrs
+
+    outstr = ' '.join(fstrs)
+    logger.info(outstr)
+    #  log.info(outstr)
+    if outfile is not None:
+        with open(outfile, 'a') as f:
+            f.write(outstr)
+
+    return outstr
+
 
 
 # noqa: E999
@@ -111,27 +189,31 @@ class Console:
 
 
 
+log = logging.getLogger('l2hmc')
 class Logger:
     """Logger class for pretty printing metrics during training/testing."""
     def __init__(self, theme: dict = None):
-        try:
-            # pylint:disable=import-outside-toplevel
-            from rich.console import Console as RichConsole
-            from rich.theme import Theme
+        pass
+        # try:
+        #     # pylint:disable=import-outside-toplevel
+        #     from rich.console import Console as RichConsole
+        #     from rich.theme import Theme
 
-            #  with_jupyter = in_notebook()
-            console = get_console()
-            width = os.environ.get('COLUMNS', 120)
-            console = RichConsole(record=False, log_path=False,
-                                  #  force_jupyter=with_jupyter,
-                                  #  force_terminal=(not with_jupyter),
-                                  log_time_format='[%x %X] ')
-                                  #  theme=Theme(theme))#, width=width)
+        #     #  with_jupyter = in_notebook()
+        #     # self._log = logging.getLogger('l2hmc')
+        #     # console = get_console()
+        #     # width = os.environ.get('COLUMNS', 120)
+        #     # console = RichConsole(record=False, log_path=False,
+        #     #                       #  force_jupyter=with_jupyter,
+        #     #                       #  force_terminal=(not with_jupyter),
+        #     #                       log_time_format='[%X] ')
+        #     #                       #  theme=Theme(theme))#, width=width)
+        #     # console._width = width
 
-        except (ImportError, ModuleNotFoundError):
-            console = Console()
+        # except (ImportError, ModuleNotFoundError):
+        #     console = Console()
 
-        self.console = console
+        # # self.console = console
 
     def error(self, s: str, *args, **kwargs):
         log.error(s, *args, **kwargs)
@@ -148,6 +230,9 @@ class Logger:
 
     def info(self, s: Any, *args, **kwargs):
         log.info(s, *args, **kwargs)
+        # if in_notebook():
+        #     self.console.log(s, *args, **kwargs)
+        # else:
 
     def load_metrics(self, infile: str = None):
         """Try loading metrics from infile."""
@@ -161,7 +246,7 @@ class Logger:
              _ = self.print_dict(s)
              return
 
-        log.info(s, *args, **kwargs)
+        self.info(s, *args, **kwargs)
 
     def print_metrics(
             self,
@@ -242,7 +327,7 @@ class Logger:
         savez(metrics, outfile, name=fname.split('.')[0])
 
 
-logger = Logger()
+# logger = Logger()
 
 
 def print_dict(d: dict, indent=0, name: str = None):

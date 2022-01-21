@@ -20,7 +20,7 @@ Date: 6/30/2020
 from __future__ import absolute_import, annotations, division, print_function
 
 import os
-from typing import Any, Callable, List, Optional, Tuple, Union
+from typing import Any, Callable, List, Optional, Tuple
 
 import numpy as np
 import tensorflow as tf
@@ -58,6 +58,25 @@ OPTIMIZERS_MAP = {
 def identity(x: tf.Tensor) -> tf.Tensor:
     """Returns x"""
     return x
+
+
+class hmcNetwork:
+    def __call__(self, inputs, *args):
+        return [tf.zeros_like(inputs[0]) for _ in range(3)]
+
+#  class hmcNetworks:
+#      def __init__(self):
+#          self._xnet = lambda inputs, *args: [
+#              tf.zeros_like(inputs[0]) for _ in range(3)
+#          ]
+#          self._vnet = lambda inputs, *args: [
+#              tf.zeros_like(inputs[0]) for _ in range(3)
+#          ]
+#
+#      def xnet(self, inputs, *args):
+#          return [tf.zeros_like(inputs[0]) for _ in range(3)]
+#
+
 
 
 Inputs = Tuple[tf.Tensor, tf.Tensor]
@@ -111,7 +130,6 @@ class BaseDynamics(tf.keras.Model):
         self.batch_size = params.get('batch_size', None)
 
         self.x_shape = (self.batch_size, self.xdim)
-        #  self.eps = self._build_eps(use_log=False)
         self.veps = [
             self._build_eps(use_log=False) for _ in
             range(self.config.num_steps)

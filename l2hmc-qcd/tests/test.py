@@ -44,10 +44,6 @@ class TestOutputs:
     run: Union[InferenceResults, None]
 
 
-Configs = "dict[str, Any]"
-
-
-
 def parse_args():
     """Method for parsing CLI flags."""
     description = (
@@ -66,7 +62,7 @@ def parse_args():
 
 
 
-def get_configs(fpath: os.PathLike = None) -> Configs:
+def get_configs(fpath: os.PathLike = None) -> dict[str, Any]:
     """Get fresh copy of `bin/test_configs.json` for running tests."""
     if fpath is None:
         fpath = Path(BIN_DIR).joinpath('test_configs.json')
@@ -78,7 +74,7 @@ def get_configs(fpath: os.PathLike = None) -> Configs:
     return configs
 
 
-def main(configs: Configs, **kwargs):
+def main(configs: dict[str, Any], **kwargs):
     t0 = time.time()
     train_out = train(configs, **kwargs)
     run_out = None

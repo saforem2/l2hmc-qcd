@@ -2,11 +2,10 @@
 functional_net.py
 
 Contains a functional `tf.keras.Model` that implements the network architecture
-from `GaugeeNetwork` in `network/gauge_network.py`.
+from `GaueNetwork` in `network/gauge_network.py`.
 
 Author: Sam Foreman (github: @saforem2)
 Date: 09/14/2020
-
 """
 from __future__ import absolute_import, print_function, division, annotations
 #  import numpy as np
@@ -230,7 +229,6 @@ def get_gauge_network(
                 f'Expected one of: {tuple(ACTIVATION_FNS.keys())}.'
             )
 
-
     def sub_s(s):
         return f'{name}/{s}'
 
@@ -355,10 +353,10 @@ def get_gauge_network(
         #  transl = custom_dense(*args['transl'])(z)
         #  transf = custom_dense(*args['transf'], activation='tanh')(z)
 
-        scale *= tf.exp(scale_coeff)
-        transf *= tf.exp(transf_coeff)
+        scale *= tf.math.exp(scale_coeff)
+        transf *= tf.math.exp(transf_coeff)
 
         model = Model(name=name,
-                      inputs=[x_input, v_input], #, t_input],
+                      inputs=[x_input, v_input],  # , t_input],
                       outputs=[scale, transl, transf])
     return model

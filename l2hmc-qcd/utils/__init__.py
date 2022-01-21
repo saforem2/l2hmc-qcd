@@ -13,18 +13,18 @@ import os
 #  from tqdm.auto import tqdm
 import tensorflow as tf
 print(f'tf.__version__: {tf.__version__}')
-if tf.__version__.startswith('1.'):
-    def _try_except(function):
-        try:
-            function()
-        except AttributeError:
-            print(f'Unable to call `{function}`. Continuing...')
-
-    _try_except(tf.compat.v1.enable_v2_behavior)
-    _try_except(tf.compat.v1.enable_control_flow_v2)
-    _try_except(tf.compat.v1.enable_v2_tensorshape)
-    _try_except(tf.compat.v1.enable_eager_execution)
-    _try_except(tf.compat.v1.enable_resource_variables)
+#  if tf.__version__.startswith('1.'):
+#      def _try_except(function):
+#          try:
+#              function()
+#          except AttributeError:
+#              print(f'Unable to call `{function}`. Continuing...')
+#
+#      _try_except(tf.compat.v1.enable_v2_behavior)
+#      _try_except(tf.compat.v1.enable_control_flow_v2)
+#      _try_except(tf.compat.v1.enable_v2_tensorshape)
+#      _try_except(tf.compat.v1.enable_eager_execution)
+#      _try_except(tf.compat.v1.enable_resource_variables)
 
 
 try:

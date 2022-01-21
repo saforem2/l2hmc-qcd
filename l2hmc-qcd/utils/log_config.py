@@ -20,28 +20,40 @@ logging_config = {
             "formatter": "minimal",
             "level": logging.DEBUG,
         },
+        "rich": {
+            "class": "rich.logging.RichHandler",
+        },
+        "ipython": {
+            "class": "rich.logging.RichHandler",
+        },
         "info": {
             "class": "logging.handlers.RotatingFileHandler",
-            "filename": Path(BASE_DIR, "info.log"),
+            "filename": str(Path(os.getcwd()).joinpath("info.log")),
             "maxBytes": 10485760,  # 1 MB
             "backupCount": 10,
             "formatter": "detailed",
             "level": logging.INFO,
+            "mode": "a",
         },
         "error": {
             "class": "logging.handlers.RotatingFileHandler",
-            "filename": Path(BASE_DIR, "error.log"),
+            "filename": str(Path(os.getcwd()).joinpath("error.log")),
             "maxBytes": 10485760,  # 1 MB
             "backupCount": 10,
             "formatter": "detailed",
             "level": logging.ERROR,
+            "mode": "a",
         },
     },
     "loggers": {
-        "root": {
-            "handlers": ["console", "info", "error"],
+        "l2hmc": {
+            "handlers": ["rich", "info", "error"],
             "level": logging.DEBUG,
-            "propagate": False,
+            # "propagate": True,
+        },
+        "jupyter": {
+            "handlers": ["ipython"],
+            "level": logging.DEBUG,
         },
     },
 }
