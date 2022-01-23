@@ -3,22 +3,23 @@ trainer.py
 
 Implements methods for training L2HMC sampler.
 """
-from __future__ import absolute_import, division, print_function, annotations
-
-import torch
+from __future__ import absolute_import, annotations, division, print_function
 import time
-from torch import optim
-from rich.console import Console
 from typing import Callable
+
+from accelerate import Accelerator
+from rich.console import Console
 from src.l2hmc.configs import Steps
-from src.l2hmc.dynamics.pytorch.dynamics import Dynamics, to_u1, random_angle
+from src.l2hmc.dynamics.pytorch.dynamics import Dynamics, random_angle, to_u1
 from src.l2hmc.loss.pytorch.loss import LatticeLoss
 from src.l2hmc.utils.history import History, StateHistory, summarize_dict
 from src.l2hmc.utils.step_timer import StepTimer
+import torch
+from torch import optim
 
 Tensor = torch.Tensor
 
-console = Console(color_system='truecolor', log_path=False, )
+console = Console(color_system='truecolor', log_path=False)
 
 
 class Trainer:
@@ -27,12 +28,18 @@ class Trainer:
             steps: Steps,
             dynamics: Dynamics,
             optimizer: optim.Optimizer,
-            loss_fn: Callable = LatticeLoss,
+            loss_fn: Callable,
+            accelerator: Accelerator,
+            # device: torch.device | str = None,
     ) -> None:
         self.steps = steps
         self.dynamics = dynamics
         self.optimizer = optimizer
         self.loss_fn = loss_fn
+        self._with_cuda = torch.cuda.is_available()
+        self.accelerator = accelerator
+
+        # self.device = device if device is not None else
 
         self.history = History(steps=steps)
         evals_per_step = self.dynamics.config.nleapfrog * steps.log
@@ -41,15 +48,16 @@ class Trainer:
     def train_step(self, inputs: tuple[Tensor, float]) -> tuple[Tensor, dict]:
         self.timer.start()
         self.dynamics.train()
+
         x_init, beta = inputs
-        if torch.cuda.is_available():
-            x_init = x_init.cuda()
+        x_init = x_init.to(self.accelerator.device)
 
         x_out, metrics = self.dynamics((to_u1(x_init), beta))
         x_prop = to_u1(metrics.pop('mc_states').proposed.x)
         loss = self.loss_fn(x_init=x_init, x_prop=x_prop, acc=metrics['acc'])
         self.optimizer.zero_grad()
-        loss.backward()
+        self.accelerator.backward(loss)
+        # loss.backward()
         self.optimizer.step()
         record = {
             'dt': self.timer.stop(),
