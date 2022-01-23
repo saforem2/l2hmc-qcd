@@ -6,7 +6,6 @@ Contains helpers for plotting.
 from __future__ import absolute_import, annotations, division, print_function
 import datetime
 import os
-import matplotlib as mpl
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +19,7 @@ import xarray as xr
 import warnings
 warnings.filterwarnings('ignore')
 
+xplt = xr.plot
 
 LW = plt.rcParams.get('axes.linewidth', 1.75)
 
@@ -214,9 +214,6 @@ def plot_dataArray(
         else:
             color = plot_kwargs.get('color', f'C{np.random.randint(4)}')
 
-        label = r'$\langle$' + f' {key} ' + r'$\rangle$'
-        ax.plot(steps, val.mean('chain'),
-                label=label, lw=1.5*LW, **plot_kwargs)
         sns.kdeplot(y=arr.flatten(), ax=ax1, color=color, shade=True)
         ax1.set_xticks([])
         ax1.set_xticklabels([])
@@ -228,10 +225,9 @@ def plot_dataArray(
 
         ax0 = subfigs[0].subplots(1, 1)
         val = val.dropna('chain')
-        nchains = min((num_chains, len(val.coords['chain'])))
-        _ = xr.plot.pcolormesh(val, 'draw', 'chain',
-                               ax=ax0, robust=True,
-                               cmap=cmap, add_colorbar=True)
+        _ = xplt.pcolormesh(val, 'draw', 'chain',
+                            ax=ax0, robust=True,
+                            cmap=cmap, add_colorbar=True)
 
         if key is not None and 'eps' in key:
             _ = ax0.set_ylabel('leapfrog')
@@ -239,11 +235,12 @@ def plot_dataArray(
         sns.despine(subfigs[0])
         plt.autoscale(enable=True, axis=ax0)
 
-        ax.plot(steps, arr.mean(0), lw=2., color='k', label='avg')
-        for idx in range(min(num_chains, arr.shape[0])):
-            ax.plot(steps, arr[idx, :], lw=1., alpha=0.7, color=color)
-
-        ax.legend(loc='best')
+        nchains = min((num_chains, len(val.coords['chain'])))
+        label = r'$\langle$' + f' {key} ' + r'$\rangle$'
+        ax.plot(steps, val.mean('chain'),  color=color, label=label,
+                lw=1.5*LW, **plot_kwargs)
+        for idx in range(nchains):
+            ax.plot(steps, arr[idx, :], lw=LW/2, alpha=0.6, color=color)
 
     else:
         if len(arr.shape) == 1:
