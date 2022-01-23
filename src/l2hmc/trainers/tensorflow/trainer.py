@@ -75,6 +75,7 @@ class Trainer:
         xinit: Tensor = None,
         beta: float = 1.,
         compile: bool = True,
+        jit_compile: bool = False,
     ) -> dict:
         if xinit is None:
             x = tf.random.uniform(self.dynamics.xshape,
@@ -86,8 +87,8 @@ class Trainer:
         assert isinstance(x, Tensor) and x.dtype == TF_FLOAT
 
         if compile:
-            train_step = tf.function(self.train_step)
             self.dynamics.compile(optimizer=self.optimizer, loss=self.loss_fn)
+            train_step = tf.function(self.train_step, jit_compile=jit_compile)
         else:
             train_step = self.train_step
 
@@ -97,9 +98,9 @@ class Trainer:
             estart = time.time()
             for epoch in range(self.steps.nepoch):
                 self.timer.start()
-                x, metrics = train_step((x, beta))
-
+                x, metrics = train_step((x, beta))  # type: ignore
                 should_log = (epoch % self.steps.log == 0)
+
                 should_print = (epoch % self.steps.print == 0)
                 if should_log or should_print:
                     record = {
@@ -153,7 +154,7 @@ def train(
         estart = time.time()
         for epoch in range(steps.nepoch):
             tstart = time.time()
-            x, metrics = train_step((x, beta),
+            x, metrics = train_step((x, beta),  # type: ignore
                                     dynamics=dynamics,
                                     optimizer=optimizer,
                                     loss_fn=loss_fn)
