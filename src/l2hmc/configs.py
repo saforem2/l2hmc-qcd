@@ -151,6 +151,7 @@ class DynamicsConfig(BaseConfig):
     eps_fixed: bool = False
     use_split_xnets: bool = True
     use_separate_networks: bool = True
+    merge_directions: bool = False
 
     def __post_init__(self):
         self.xdim = int(np.cumprod(self.xshape[1:])[-1])
