@@ -53,15 +53,6 @@ class History:
         if isinstance(val, list):
             val = np.array(val)
 
-        try:
-            val = val.numpy()
-        except (AttributeError, Exception):
-            val = None
-            pass
-
-        # if hasattr(val, 'numpy'):
-        #     val = val.numpy()
-
         if val is not None:
             try:
                 self.history[key].append(val)
