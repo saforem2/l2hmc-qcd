@@ -12,6 +12,7 @@ from typing import Any
 import matplotlib.pyplot as plt
 import matplotx
 import numpy as np
+import pandas as pd
 import seaborn as sns
 import xarray as xr
 
@@ -32,7 +33,7 @@ def get_timestamp(fstr=None):
     return now.strftime(fstr)
 
 
-FigAxes = tuple[plt.Figure, plt.Axes]
+FigAxes = "tuple[plt.Figure, plt.Axes]"
 
 
 def savefig(fig: plt.Figure, outfile: os.PathLike):
@@ -560,9 +561,79 @@ def plot_dataset(
 def make_ridgeplots(
         dataset: xr.Dataset,
         num_chains: int = None,
-        out_dir: os.PathLike = None,
+        out_dir: str = None,
         drop_zeros: bool = False,
         cmap: str = 'viridis_r',
-) -> None:
-    # TODO: FINISH, use `l2hmc-qcd/utils/plotting_utils.py` as reference
-    pass
+        # default_style: dict = None,
+):
+    """Make ridgeplots."""
+    data = {}
+    # with sns.axes_style('white', rc={'axes.facecolor': (0, 0, 0, 0)}):
+    for key, val in dataset.data_vars.items():
+        if 'leapfrog' in val.coords.dims:
+            lf_data = {
+                key: [],
+                'lf': [],
+            }
+            for lf in val.leapfrog.values:
+                # val.shape = (chain, leapfrog, draw)
+                # x.shape = (chain, draw);  selects data for a single lf
+                x = val[{'leapfrog': lf}].values
+                # if num_chains is not None, keep `num_chains` for plotting
+                if num_chains is not None:
+                    x = x[:num_chains, :]
+
+                x = x.flatten()
+                if drop_zeros:
+                    x = x[x != 0]
+                #  x = val[{'leapfrog': lf}].values.flatten()
+                lf_arr = np.array(len(x) * [f'{lf}'])
+                lf_data[key].extend(x)
+                lf_data['lf'].extend(lf_arr)
+
+            lfdf = pd.DataFrame(lf_data)
+            data[key] = lfdf
+
+            # Initialize the FacetGrid object
+            ncolors = len(val.leapfrog.values)
+            pal = sns.color_palette(cmap, n_colors=ncolors)
+            g = sns.FacetGrid(lfdf, row='lf', hue='lf',
+                              aspect=15, height=0.25, palette=pal)
+
+            # Draw the densities in a few steps
+            _ = g.map(sns.kdeplot, key, cut=1,
+                      shade=True, alpha=0.7, linewidth=1.25)
+            _ = g.map(plt.axhline, y=0, lw=1.5, alpha=0.7, clip_on=False)
+
+            # Define and use a simple function to
+            # label the plot in axes coords:
+            def label(x, color, label):
+                ax = plt.gca()
+                ax.set_ylabel('')
+                ax.set_yticks([])
+                ax.set_yticklabels([])
+                ax.text(0, 0.10, label, fontweight='bold', color=color,
+                        ha='left', va='center', transform=ax.transAxes,
+                        fontsize='small')
+
+            _ = g.map(label, key)
+            # Set the subplots to overlap
+            _ = g.fig.subplots_adjust(hspace=-0.75)
+            # Remove the axes details that don't play well with overlap
+            _ = g.set_titles('')
+            _ = g.set(yticks=[])
+            _ = g.set(yticklabels=[])
+            _ = g.despine(bottom=True, left=True)
+            if out_dir is not None:
+                # io.check_else_make_dir(out_dir)
+                out_file = os.path.join(out_dir, f'{key}_ridgeplot.svg')
+                #  logger.log(f'Saving figure to: {out_file}.')
+                plt.savefig(out_file, dpi=400, bbox_inches='tight')
+
+        #plt.close('all')
+
+    #  sns.set(style='whitegrid', palette='bright', context='paper')
+    fig = plt.gcf()
+    ax = plt.gca()
+
+    return fig, ax, data
