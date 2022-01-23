@@ -9,6 +9,7 @@ from math import pi as PI
 import os
 import pathlib
 from typing import Callable, Union
+from typing import Tuple
 
 from src.l2hmc.configs import DynamicsConfig
 from src.l2hmc.network.pytorch.network import (
@@ -29,8 +30,8 @@ Tensor = torch.Tensor
 Array = np.ndarray
 
 
-DynamicsInput = tuple[Tensor, float]
-DynamicsOutput = tuple[Tensor, dict]
+DynamicsInput = Tuple[Tensor, float]
+DynamicsOutput = Tuple[Tensor, dict]
 
 
 @dataclass
@@ -115,12 +116,9 @@ class Dynamics(nn.Module):
         veps = []
         rg = (not self.config.eps_fixed)
         for _ in range(self.config.nleapfrog):
-            if not self.config.merge_directions:
-                alpha = torch.log(torch.tensor(self.config.eps))
-                xe = torch.clamp(torch.exp(alpha), min=0., max=1.)
-                ve = torch.clamp(torch.exp(alpha), min=0., max=1.)
-            else:
-                xe = ve = torch.tensor(self.config.eps)
+            alpha = torch.log(torch.tensor(self.config.eps))
+            xe = torch.clamp(torch.exp(alpha), min=0., max=1.)
+            ve = torch.clamp(torch.exp(alpha), min=0., max=1.)
             xeps.append(nn.parameter.Parameter(xe, requires_grad=rg))
             veps.append(nn.parameter.Parameter(ve, requires_grad=rg))
 

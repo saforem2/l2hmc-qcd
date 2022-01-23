@@ -20,7 +20,7 @@ PROJECT_DIR = SRC.parent
 LOGS_DIR = PROJECT_DIR.joinpath('logs')
 
 
-Shape = list[int]
+Shape = "list[int]"
 
 State = namedtuple('State', ['x', 'v', 'beta'])
 
