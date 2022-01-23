@@ -16,9 +16,10 @@ import matplotlib.pyplot as plt
 import matplotx
 import seaborn as sns
 from src.l2hmc.configs import MonteCarloStates, Steps
-from src.l2hmc.utils.plot_helpers import set_size
+import src.l2hmc.utils.plot_helpers as hplt
 
 
+xplt = xr.plot
 LW = plt.rcParams.get('axes.linewidth', 1.75)
 
 
@@ -52,13 +53,20 @@ class History:
         if isinstance(val, list):
             val = np.array(val)
 
-        if hasattr(val, 'numpy'):
-            val = val.numpy()
-
         try:
-            self.history[key].append(val)
-        except KeyError:
-            self.history[key] = [val]
+            val = val.numpy()
+        except (AttributeError, Exception):
+            val = None
+            pass
+
+        # if hasattr(val, 'numpy'):
+        #     val = val.numpy()
+
+        if val is not None:
+            try:
+                self.history[key].append(val)
+            except KeyError:
+                self.history[key] = [val]
 
         if isinstance(val, (float, int)):
             return val
@@ -84,7 +92,9 @@ class History:
                     name = f'{key}/{k}'
                     try:
                         avg = self._update(key=name, val=v)
-                    except Exception:
+                    # TODO: Figure out how to deal with exception
+                    except Exception:  # some weird tensorflow exception
+                        #
                         continue
             else:
                 avg = self._update(key=key, val=val)
@@ -111,7 +121,7 @@ class History:
     ) -> tuple:
         plot_kwargs = {} if plot_kwargs is None else plot_kwargs
         subplots_kwargs = {} if subplots_kwargs is None else subplots_kwargs
-        figsize = subplots_kwargs.get('figsize', set_size())
+        figsize = subplots_kwargs.get('figsize', hplt.set_size())
         subplots_kwargs.update({'figsize': figsize})
         subfigs = None
 
@@ -211,7 +221,7 @@ class History:
     ):
         plot_kwargs = {} if plot_kwargs is None else plot_kwargs
         subplots_kwargs = {} if subplots_kwargs is None else subplots_kwargs
-        figsize = subplots_kwargs.get('figsize', set_size())
+        figsize = subplots_kwargs.get('figsize', hplt.set_size())
         subplots_kwargs.update({'figsize': figsize})
 
         # tmp = val[0]
@@ -327,12 +337,10 @@ class History:
                 plt.rcParams['axes.edgecolor'] = plt.rcParams['axes.facecolor']
                 ax = subfigs[0].subplots(1, 1)
                 # ax = fig[1].subplots(constrained_layout=True)
-                cbar_kwargs = {
-                    # 'location': 'top',
-                    # 'orientation': 'horizontal',
-                }
-                im = val.plot(ax=ax, cbar_kwargs=cbar_kwargs)
-                im.colorbar.set_label(f'{key}')  # , labelpad=1.25)
+                _ = xplt.pcolormesh(val, 'draw', 'chain', ax=ax,
+                                    robust=True, add_colorbar=True)
+                # im = val.plot(ax=ax, cbar_kwargs=cbar_kwargs)
+                # im.colorbar.set_label(f'{key}')  # , labelpad=1.25)
                 sns.despine(subfigs[0], top=True, right=True,
                             left=True, bottom=True)
                 if outdir is not None:
