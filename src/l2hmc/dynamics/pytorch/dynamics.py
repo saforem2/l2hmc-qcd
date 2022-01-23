@@ -5,7 +5,9 @@ Contains pytorch implementation of Dynamics object for training L2HMC sampler.
 """
 from __future__ import absolute_import, annotations, division, print_function
 from dataclasses import dataclass
-from math import pi
+from math import pi as PI
+import os
+import pathlib
 from typing import Callable, Union
 
 from src.l2hmc.configs import DynamicsConfig
@@ -20,7 +22,6 @@ import torch.nn as nn
 
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-PI = np.pi
 TWO_PI = 2. * PI
 
 Shape = Union[tuple, list]
@@ -29,6 +30,7 @@ Array = np.ndarray
 
 
 DynamicsInput = tuple[Tensor, float]
+DynamicsOutput = tuple[Tensor, dict]
 
 
 @dataclass
@@ -61,7 +63,7 @@ def rand_unif(
 
 
 def random_angle(shape: Shape, requires_grad: bool = True) -> Tensor:
-    return rand_unif(shape, -pi, pi, requires_grad=requires_grad)
+    return rand_unif(shape, -PI, PI, requires_grad=requires_grad)
 
 
 class Mask:
@@ -85,6 +87,13 @@ class Dynamics(nn.Module):
             network_factory: NetworkFactory,
     ):
         """Initialization method."""
+        if config.merge_directions:
+            assert config.nleapfrog % 2 == 0, (' '.join([
+                'If `config.merge_directions`, ',
+                'we restrict `config.nleapfrog % 2 == 0` ',
+                'to preserve reversibility.'
+            ]))
+
         super().__init__()
         self.config = config
         self.xdim = self.config.xdim
@@ -92,6 +101,7 @@ class Dynamics(nn.Module):
         self.potential_fn = potential_fn
         self.network_factory = network_factory
         self.nlf = self.config.nleapfrog
+        self.midpt = self.nlf // 2
         self.num_networks = (
             self.nlf if self.config.use_separate_networks else 1
         )
@@ -105,19 +115,54 @@ class Dynamics(nn.Module):
         veps = []
         rg = (not self.config.eps_fixed)
         for _ in range(self.config.nleapfrog):
-            alpha = torch.log(torch.tensor(self.config.eps))
-            xe = torch.clamp(torch.exp(alpha), min=0., max=1.)
-            ve = torch.clamp(torch.exp(alpha), min=0., max=1.)
+            if not self.config.merge_directions:
+                alpha = torch.log(torch.tensor(self.config.eps))
+                xe = torch.clamp(torch.exp(alpha), min=0., max=1.)
+                ve = torch.clamp(torch.exp(alpha), min=0., max=1.)
+            else:
+                xe = ve = torch.tensor(self.config.eps)
             xeps.append(nn.parameter.Parameter(xe, requires_grad=rg))
             veps.append(nn.parameter.Parameter(ve, requires_grad=rg))
 
         self.xeps = nn.ParameterList(xeps)
         self.veps = nn.ParameterList(veps)
 
-    def forward(self, inputs: DynamicsInput) -> tuple[Tensor, dict]:
+    def save(self, outdir: os.PathLike):
+        outfile = pathlib.Path(outdir).joinpath('dynamics.pt').as_posix()
+        print(f'Saving dynamics to: {outfile}')
+        torch.save(self.state_dict(), outfile)
+
+    def forward(self, inputs: DynamicsInput) -> DynamicsOutput:
+        if self.config.merge_directions:
+            return self.apply_transition_fb(inputs)
+
         return self.apply_transition(inputs)
 
-    def apply_transition(self, inputs: DynamicsInput) -> tuple[Tensor, dict]:
+    def apply_transition_fb(self, inputs: DynamicsInput) -> DynamicsOutput:
+        data = self._transition_fb(inputs)
+
+        ma_, mr_ = self._get_accept_masks(data['metrics']['acc'])
+        ma = ma_.unsqueeze(-1)
+        mr = mr_.unsqueeze(-1)
+
+        v_out = ma * data['proposed'].v + mr * data['init'].v
+        x_out = ma * data['proposed'].x + mr * data['init'].x
+        # NOTE: sumlogdet = (accept * logdet) + (reject * 0)
+        logdet = ma_ * data['metrics']['sumlogdet']
+
+        state_out = State(x=x_out, v=v_out, beta=data['init'].beta)
+        mc_states = MonteCarloStates(init=data['init'],
+                                     proposed=data['proposed'],
+                                     out=state_out)
+        data['metrics'].update({
+            'acc_mask': ma_,
+            'logdet': logdet,
+            'mc_states': mc_states,
+        })
+
+        return x_out, data['metrics']
+
+    def apply_transition(self, inputs: DynamicsInput) -> DynamicsOutput:
         x, beta = inputs
         fwd = self._transition(inputs, forward=True)
         bwd = self._transition(inputs, forward=False)
@@ -128,8 +173,15 @@ class Dynamics(nn.Module):
 
         v_init = mf * fwd['init'].v + mb * bwd['init'].v
 
-        # xp = mf * xf' + mb * xb'
-        # vp = mf * vf' + mb * vb'
+        # -------------------------------------------------------------------
+        # NOTE:
+        #   To get the output, we combine forward and backward proposals
+        #   where mf, mb are (forward/backward) masks and primed vars are
+        #   proposals, e.g. xf' is the proposal from obtained from xf
+        #   by running the dynamics in the forward direction. Explicitly,
+        #                xp = mf * xf' + mb * xb',
+        #                vp = mf * vf' + mb * vb'
+        # -------------------------------------------------------------------
         xp = mf * fwd['proposed'].x + mb * bwd['proposed'].x
         vp = mf * fwd['proposed'].v + mb * bwd['proposed'].v
 
@@ -164,6 +216,12 @@ class Dynamics(nn.Module):
 
         return mc_states.out.x, metrics
 
+    def _transition_fb(
+            self,
+            inputs: DynamicsInput,
+    ) -> dict:
+        return self.generate_proposal_fb(inputs)
+
     def _transition(
             self,
             inputs: DynamicsInput,
@@ -171,6 +229,17 @@ class Dynamics(nn.Module):
     ) -> dict:
         """Run the transition kernel"""
         return self.generate_proposal(inputs, forward)
+
+    def generate_proposal_fb(
+            self,
+            inputs: DynamicsInput,
+    ) -> dict:
+        x, beta = inputs
+        v = torch.randn_like(x)
+        state_init = State(x=x, v=v, beta=beta)
+        state_prop, metrics = self._transition_kernel_fb(state_init)
+
+        return {'init': state_init, 'proposed': state_prop, 'metrics': metrics}
 
     def generate_proposal(
             self,
@@ -188,20 +257,63 @@ class Dynamics(nn.Module):
             self,
             state: State,
             logdet: Tensor,
-            step: int = None
+            # step: int = None
     ) -> dict:
         metrics = {
             'energy': (h := grab(self.hamiltonian(state))),
             'logdet': (ld := grab(logdet)),
             'logprob': (h - ld),
         }
-        if step is not None:
-            metrics.update({
-                'xeps': self.xeps[step],
-                'veps': self.veps[step],
-            })
+        # if step is not None:
+        #     metrics.update({
+        #         'xeps': self.xeps[step],
+        #         'veps': self.veps[step],
+        #     })
 
         return metrics
+
+    def _transition_kernel_fb(
+            self,
+            state: State,
+    ) -> tuple[State, dict]:
+        state_ = State(x=state.x, v=state.v, beta=state.beta)
+        sumlogdet = torch.zeros(state.x.shape[0], device=state.x.device)
+
+        history = {}
+        if self.config.verbose:
+            history = {
+                'xeps': [self.xeps[0], *self.xeps],
+                'veps': [self.veps[0], *self.veps],
+                'energy': [(h := grab(self.hamiltonian(state)))],
+                'logdet': [(ld := grab(sumlogdet))],
+                'logprob': [(h - ld)],
+            }
+
+        for step in range(self.midpt):
+            state_, logdet = self._forward_lf(step, state_)
+            sumlogdet = sumlogdet + logdet
+            if self.config.verbose:
+                metrics = self.get_metrics(state_, sumlogdet)
+                for key, val in metrics.items():
+                    history[key].append(val)
+
+        for step in range(self.midpt, self.config.nleapfrog):
+            state_, logdet = self._backward_lf(step, state_)
+            sumlogdet = sumlogdet + logdet
+            if self.config.verbose:
+                metrics = self.get_metrics(state_, sumlogdet)
+                for key, val in metrics.items():
+                    history[key].append(val)
+
+        acc = self.compute_accept_prob(state, state_, sumlogdet)
+        history.update({'acc': acc, 'sumlogdet': sumlogdet})
+
+        if self.config.verbose:
+            for key, val in history.items():
+                if isinstance(val, list) and isinstance(val[0], Tensor):
+                    history[key] = torch.stack(val)
+
+        return state_, history
 
     def _transition_kernel(
             self,
@@ -235,14 +347,14 @@ class Dynamics(nn.Module):
 
         acc = self.compute_accept_prob(state, state_, sumlogdet)
         history.update({'acc': acc, 'sumlogdet': sumlogdet})
-        new_state = State(x=state_.x, v=state_.v, beta=state_.beta)
+        # new_state = State(x=state_.x, v=state_.v, beta=state_.beta)
 
         if self.config.verbose:
             for key, val in history.items():
                 if isinstance(val, list) and isinstance(val[0], Tensor):
                     history[key] = torch.stack(val)
 
-        return new_state, history
+        return state_, history
 
     def transition_kernel(
             self,
@@ -364,8 +476,12 @@ class Dynamics(nn.Module):
 
     def _backward_lf(self, step: int, state: State) -> tuple[State, Tensor]:
         """Complete update (leapfrog step) in the backward direction"""
-        # NOTE: Reverse the step count, i.e. count from end of trajectory
-        step_r = self.config.nleapfrog - step - 1
+        if self.config.merge_directions:
+            step_r = step
+        else:
+            # NOTE: Reverse the step count, i.e. count from end of trajectory
+            step_r = self.config.nleapfrog - step - 1
+
         m, mb = self._get_mask(step_r)
         sumlogdet = torch.zeros(state.x.shape[0], device=state.x.device)
 
