@@ -1,0 +1,49 @@
+steps:
+  nera: 10
+  nepoch: 100
+  log: 100
+  test: 1000
+
+dynamics:
+  xshape: [128, 16, 16, 2]
+  eps: 0.01
+  nleapfrog: 10
+  eps_fixed: false
+  use_ncp: true
+  use_split_xnets: true
+  use_separate_networks: true
+
+network:
+  units: [16, 16, 16, 16]
+  dropout_prob: 0.0
+  activation_fn: "relu"
+  use_batch_norm: false
+
+loss:
+  plaq_weight: 0.0
+  charge_weight: 0.01
+  use_mixed_loss: true
+
+netweights:
+  x:
+    s: 1.0
+    t: 1.0
+    q: 1.0
+  v:
+    s: 1.0
+    t: 1.0
+    q: 1.0
+
+lr:
+  init: 0.001
+  warmup_steps: 0
+  decay_steps: -1
+  decay_rate: 1.0
+
+conv:
+  filters: [16, 16, 16, 16]
+  sizes: [2, 2,  2, 2]
+  pool_sizes: [2, 2, 2, 2]
+  activations: ["relu", "relu", "relu", "relu"]
+  conv_paddings: ["valid", "valid", "valid", "valid"] 
+  use_batch_norm: true
