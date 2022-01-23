@@ -38,8 +38,8 @@ TWO_PI = 2. * PI
 
 TF_FLOAT = tf.keras.backend.floatx()
 
-NetworkInputs = tuple[Tensor, Tensor]
-NetworkOutputs = tuple[Tensor, Tensor, Tensor]
+NetworkInputs = "tuple[Tensor, Tensor]"
+NetworkOutputs = "tuple[Tensor, Tensor, Tensor]"
 
 
 def to_u1(x: Tensor) -> Tensor:
