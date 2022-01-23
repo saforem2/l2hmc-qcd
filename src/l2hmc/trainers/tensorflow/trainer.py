@@ -70,6 +70,14 @@ class Trainer:
 
         return to_u1(x_out), record
 
+    @staticmethod
+    def metrics_to_numpy(metrics: dict) -> dict:
+        for key, val in metrics.items():
+            if isinstance(val, Tensor):
+                metrics[key] = val.numpy()  # type: ignore
+
+        return metrics
+
     def train(
         self,
         xinit: Tensor = None,
@@ -109,7 +117,7 @@ class Trainer:
                         'dt': self.timer.stop(),
                     }
 
-                    record.update(metrics)
+                    record.update(self.metrics_to_numpy(metrics))
                     avgs = self.history.update(record)
                     summary = summarize_dict(avgs)
                     summaries.append(summary)
