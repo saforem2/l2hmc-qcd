@@ -55,9 +55,6 @@ def project_angle(x):
     return x - TWO_PI * tf.math.floor((x + PI) / TWO_PI)
 
 
-Observables = dict[str, Tensor]
-
-
 class Lattice:
     def __init__(self, shape: tuple):
         self._shape = shape
@@ -73,7 +70,7 @@ class Lattice:
     def unnormalized_log_prob(self, x: Tensor) -> Tensor:
         return self.action(x)
 
-    def calc_metrics(self, x: Tensor) -> Observables:
+    def calc_metrics(self, x: Tensor) -> dict[str, Tensor]:
         wloops = self.wilson_loops(x)
         plaqs = self.plaqs(wloops=wloops)
         charges = self.charges(wloops=wloops)
