@@ -1,0 +1,5 @@
+InputSpec:
+  xshape: [128, 8, 8, 2]
+  xnet:
+    x: 
+
