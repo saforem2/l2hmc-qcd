@@ -6,6 +6,8 @@ Tensorflow implementation of Dynamics object for training L2HMC sampler.
 from __future__ import absolute_import, annotations, division, print_function
 from dataclasses import dataclass
 from typing import Callable
+from math import pi as PI
+
 
 import numpy as np
 import tensorflow as tf
@@ -17,8 +19,6 @@ from src.l2hmc.network.tensorflow.network import (
 )
 from src.l2hmc.configs import DynamicsConfig
 
-
-PI = np.pi
 TWO_PI = 2. * PI
 
 Tensor = tf.Tensor
@@ -27,6 +27,7 @@ TF_FLOAT = tf.keras.backend.floatx()
 
 
 DynamicsInput = tuple[Tensor, Tensor]
+DynamicsOutput = tuple[Tensor, dict]
 
 
 def to_u1(x: Tensor) -> Tensor:
@@ -53,10 +54,10 @@ class MonteCarloProposal:
     proposed: State
 
 
-@dataclass
-class DynamicsOutput:
-    mc_states: MonteCarloStates
-    metrics: dict
+# @dataclass
+# class DynamicsOutput:
+#     mc_states: MonteCarloStates
+#     metrics: dict
 
 
 def xy_repr(x: Tensor) -> Tensor:
@@ -73,12 +74,20 @@ class Dynamics(Model):
             config: DynamicsConfig,
             network_factory: NetworkFactory,
     ):
+        if config.merge_directions:
+            assert config.nleapfrog % 2 == 0, (' '.join([
+                'If `config.merge_directions`, ',
+                'we restrict `config.nleapfrog % 2 == 0` ',
+                'to preserve reversibility.'
+            ]))
+
         super(Dynamics, self).__init__()
         self.config = config
         self.xdim = self.config.xdim
         self.xshape = network_factory.input_spec.xshape
         self.potential_fn = potential_fn
         self.nlf = self.config.nleapfrog
+        self.midpt = self.config.nleapfrog // 2
         self.xnet, self.vnet = self._build_networks(network_factory)
         self.masks = self._build_masks()
 
@@ -97,27 +106,61 @@ class Dynamics(Model):
         networks = network_factory.build_networks(n, split)
         return networks['xnet'], networks['vnet']
 
+    def _get_eps(self, name: str) -> tf.Variable:
+        # if not self.config.merge_directions:
+        constraint = tf.keras.constraints.non_neg()
+        einit = tf.cast(self.config.eps, dtype=TF_FLOAT)
+        init = tf.constant(tf.math.exp(tf.math.log(einit)))
+        # else:
+        #     constraint = None
+        #     init = tf.constant(tf.cast(self.config.eps, dtype=TF_FLOAT))
+
+        return tf.Variable(initial_value=init,
+                           name=name,
+                           dtype=TF_FLOAT,
+                           constraint=constraint,
+                           trainable=(not self.config.eps_fixed))
+
     def call(
             self,
             inputs: DynamicsInput,
             training: bool = True
-    ) -> tuple[Tensor, dict]:
+    ) -> DynamicsOutput:
+        if self.config.merge_directions:
+            return self.apply_transition_fb(inputs, training=training)
         return self.apply_transition(inputs, training=training)
 
-    def _get_eps(self, name: str) -> tf.Variable:
-        einit = tf.cast(self.config.eps, dtype=TF_FLOAT)
-        init = tf.constant(tf.math.exp(tf.math.log(einit)))
-        return tf.Variable(initial_value=init,
-                           name=name,
-                           dtype=TF_FLOAT,
-                           constraint=tf.keras.constraints.non_neg(),
-                           trainable=(not self.config.eps_fixed))
+    def apply_transition_fb(
+            self,
+            inputs: DynamicsInput,
+            training: bool = True,
+    ) -> DynamicsOutput:
+        data = self._transition_fb(inputs, training)
+        ma_, mr_ = self._get_accept_masks(data['metrics']['acc'])
+        ma = ma_[:, None]
+        mr = mr_[:, None]
+
+        v_out = ma * data['proposed'].v + mr * data['init'].v
+        x_out = ma * data['proposed'].x + mr * data['init'].x
+        logdet = ma_ * data['metrics']['sumlogdet']
+
+        state_out = State(x=x_out, v=v_out, beta=data['init'].beta)
+        mc_states = MonteCarloStates(init=data['init'],
+                                     proposed=data['proposed'],
+                                     out=state_out)
+        data['metrics'].update({
+            'acc_mask': ma_,
+            'logdet': logdet,
+            'mc_states': mc_states,
+        })
+
+        return x_out, data['metrics']
 
     def apply_transition(
             self,
             inputs: DynamicsInput,
             training: bool = True
-    ) -> tuple[Tensor, dict]:
+    ) -> DynamicsOutput:
         x, beta = inputs
         fwd = self._transition(inputs, forward=True, training=training)
         bwd = self._transition(inputs, forward=False, training=training)
@@ -162,7 +205,14 @@ class Dynamics(Model):
             'backward': mbwd,
         }
 
-        return mc_states.out.x, metrics
+        return (mc_states.out.x, metrics)
+
+    def _transition_fb(
+            self,
+            inputs: DynamicsInput,
+            training: bool = True,
+    ) -> dict:
+        return self.generate_proposal_fb(inputs, training)
 
     def _transition(
             self,
@@ -172,6 +222,19 @@ class Dynamics(Model):
     ) -> dict:
         """Run the transition kernel to generate a proposal configuration."""
         return self.generate_proposal(inputs, forward, training=training)
+
+    def generate_proposal_fb(
+            self,
+            inputs: DynamicsInput,
+            training: bool = True,
+    ) -> dict:
+        x, beta = inputs
+        v = tf.random.normal(x.shape, dtype=x.dtype)
+        init = State(x, v, beta)
+        proposed, metrics = self.transition_kernel_fb(init,
+                                                      training=training)
+
+        return {'init': init, 'proposed': proposed, 'metrics': metrics}
 
     def generate_proposal(
             self,
@@ -196,25 +259,122 @@ class Dynamics(Model):
         kwargs = {
             'dynamic_size': False,
             'clear_after_read': False,
-            'size': self.config.nleapfrog + 1,
+            'size': self.config.nleapfrog,
             'element_shape': (state.x.shape[0],),
         }
         logdets = tf.TensorArray(TF_FLOAT, **kwargs)
         energies = tf.TensorArray(TF_FLOAT, **kwargs)
         logprobs = tf.TensorArray(TF_FLOAT, **kwargs)
 
-        energy = self.hamiltonian(state)
-        logdet = tf.zeros(state.x.shape[0], dtype=TF_FLOAT)
+        # energy = self.hamiltonian(state)
+        # logdet = tf.zeros(state.x.shape[0], dtype=TF_FLOAT)
 
         return {
             # by duplicating the first elements in xeps and veps,
             # all of the entries in this dict have size nleapfrog + 1
             'xeps': [self.xeps[0], *self.xeps],
             'veps': [self.veps[0], *self.veps],
-            'energy': energies.write(0, energy),
-            'logdet': logdets.write(0, logdet),
-            'logprob': logprobs.write(0, energy - logdet),
+            'energy': energies,   # energies.write(0, energy),
+            'logdet': logdets,    # logdets.write(0, logdet),
+            'logprob': logprobs,  # logprobs.write(0, energy - logdet),
         }
+
+    def _get_metrics(self, s: State, logdet: Tensor) -> dict[str, Tensor]:
+        h = self.hamiltonian(s)
+        logprob = tf.subtract(h, logdet)
+        return {
+            'energy': h,
+            'logdet': logdet,
+            'logprob': logprob,
+        }
+
+    @staticmethod
+    def _update_history(history: dict, data: dict, step: int) -> dict:
+        for key, val in data.items():
+            try:
+                history[key] = history[key].write(step, val)
+            except AttributeError:
+                continue
+            # else:
+            #     try:
+            #         v = val.numpy()
+            #     except AttributeError:
+            #         v = val
+            #     try:
+            #         history[key].append(v)
+            #     except KeyError:
+            #         history[key] = [v]
+
+        return history
+
+    def _transition_kernel_fb(
+            self,
+            state: State,
+            training: bool = True,
+    ) -> tuple[State, dict]:
+        state_ = State(state.x, state.v, state.beta)
+        sumlogdet = tf.zeros((state.x.shape[0],), dtype=TF_FLOAT)
+        history = self._new_history(state_)
+
+        def _stack_history(hist: dict) -> dict:
+            for key, val in hist.items():
+                if isinstance(val, tf.TensorArray):
+                    val = val.stack()
+                if tf.is_tensor(val):
+                    try:
+                        val = val.numpy()  # type: ignore
+                    except:
+                        continue
+
+                hist[key] = val
+            return hist
+
+        # Loop over leapfrog steps
+        for step in range(self.config.nleapfrog):
+            if step < self.midpt:
+                state_, logdet = self._forward_lf(step, state_, training)
+            else:
+                state_, logdet = self._backward_lf(step, state_, training)
+
+            sumlogdet = sumlogdet + logdet
+            if self.config.verbose:
+                metrics = self._get_metrics(state_, sumlogdet)
+                history = self._update_history(history, metrics, step)
+
+        # for step in range(self.midpt, self.config.nleapfrog):
+        #     state_, logdet = self._backward_lf(step, state_, training)
+        #     if self.config.verbose:
+        #     sumlogdet = sumlogdet + logdet
+        #         metrics = _get_metrics(state_, sumlogdet)
+        #         history = _update_history(history, metrics, step)
+
+        acc = self.compute_accept_prob(state, state_, sumlogdet)
+        metrics = {
+            'acc': acc,
+            'sumlogdet': sumlogdet,
+        }
+        if self.config.verbose:
+            for key, val in history.items():
+                v = val
+                if isinstance(val, tf.TensorArray):
+                    v = val.stack()
+                else:
+                    if tf.is_tensor(val):
+                        try:
+                            v = val.eval()  # type: ignore
+                        except Exception:
+                            continue
+                    elif isinstance(val, list):
+                        v = tf.constant(val)
+                    else:
+                        v = None
+
+                if v is not None:
+                    metrics[key] = v
+
+            # history = _stack_history(history)
+
+        return state_, metrics
 
     def _transition_kernel(
             self,
@@ -239,13 +399,6 @@ class Dynamics(Model):
 
             return hist
 
-        def _get_metrics(s: State, logdet: Tensor) -> dict[str, Tensor]:
-            return {
-                'energy': (h := self.hamiltonian(s)),
-                'logdet': logdet,
-                'logprob': tf.subtract(h, logdet),
-            }
-
         def _stack_history(hist: dict) -> dict:
             for key, val in hist.items():
                 if isinstance(val, tf.TensorArray):
@@ -263,7 +416,7 @@ class Dynamics(Model):
             state_, logdet = lf_fn(step, state_, training)
             sumlogdet = sumlogdet + logdet
             if self.config.verbose:
-                metrics = _get_metrics(state_, sumlogdet)
+                metrics = self._get_metrics(state_, sumlogdet)
                 history = _update_history(history, metrics, step+1)
 
         acc = self.compute_accept_prob(state, state_, sumlogdet)
@@ -281,6 +434,13 @@ class Dynamics(Model):
     ) -> tuple[State, dict]:
         """Transition kernel of the augmented leapfrog integrator."""
         return self._transition_kernel(state, forward, training)
+
+    def transition_kernel_fb(
+            self,
+            state: State,
+            training: bool = True,
+    ) -> tuple[State, dict]:
+        return self._transition_kernel_fb(state, training)
 
     def compute_accept_prob(
             self,
@@ -331,7 +491,9 @@ class Dynamics(Model):
         return masks
 
     def _get_mask(self, i: int) -> tuple[Tensor, Tensor]:
-        return (m := self.masks[i], tf.ones_like(m) - m)
+        m = self.masks[i]
+        mb = tf.ones_like(m) - m
+        return (m, mb)
 
     def _get_vnet(self, step: int) -> CallableNetwork:
         vnet = self.vnet
@@ -387,7 +549,7 @@ class Dynamics(Model):
         m, mb = self._get_mask(step)
         sumlogdet = tf.zeros((state.x.shape[0],), dtype=TF_FLOAT)
 
-        state, logdet = self._update_v_fwd(step, state, training)
+        state, logdet = self._update_v_fwd(step, state, training=training)
         sumlogdet += logdet
 
         state, logdet = self._update_x_fwd(step, state, m,
@@ -398,7 +560,7 @@ class Dynamics(Model):
                                            first=False, training=training)
         sumlogdet += logdet
 
-        state, logdet = self._update_v_fwd(step, state, training)
+        state, logdet = self._update_v_fwd(step, state, training=training)
         sumlogdet += logdet
 
         return state, sumlogdet
@@ -410,8 +572,12 @@ class Dynamics(Model):
             training: bool = True,
     ) -> tuple[State, Tensor]:
         """Complete update (leapfrog step) in the backward direction."""
-        # Note: Reverse the step count, i.e. count from end of trajectory.
-        step_r = self.config.nleapfrog - step - 1
+        if self.config.merge_directions:
+            step_r = step
+        else:
+            # Note: Reverse the step count, i.e. count from end of trajectory.
+            step_r = self.config.nleapfrog - step - 1
+
         m, mb = self._get_mask(step_r)
         sumlogdet = tf.zeros((state.x.shape[0],), dtype=TF_FLOAT)
 
