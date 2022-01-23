@@ -37,11 +37,12 @@ class LatticeLoss:
 
     @staticmethod
     def mixed_loss(loss: Tensor, weight: float) -> Tensor:
-        return tf.reduce_mean((weight / loss) - (loss / weight))
+        w = tf.constant(weight, dtype=loss.dtype)
+        return tf.reduce_mean((w / loss) - (loss / w))
 
     def _plaq_loss(self, w1: Tensor, w2: Tensor, acc: Tensor) -> Tensor:
-        # dw = tf.subtract(w2, w1)
-        dwloops = 2. * (tf.ones_like(w1) - tf.math.cos(w2 - w1))
+        dw = tf.subtract(w2, w1)
+        dwloops = 2. * (tf.ones_like(w1) - tf.math.cos(dw))
         # dwloops = tf.scalar_mul(2., tf.subtract(1., tf.math.cos(dw)))
         # ploss = tf.add(acc * tf.reduce_sum(dwloops, axis=(1, 2)), 1e-4)
         ploss = acc * tf.reduce_sum(dwloops, axis=(1, 2)) + 1e-4
