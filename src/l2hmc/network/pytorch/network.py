@@ -22,11 +22,6 @@ from src.l2hmc.network.factory import BaseNetworkFactory
 
 Tensor = torch.Tensor
 
-DEVICE = (
-    torch.device('cuda') if torch.cuda.is_available()
-    else torch.device('cpu')
-)
-
 ACTIVATION_FNS = {
     'elu': F.elu,
     'tanh': F.tanh,
@@ -85,8 +80,9 @@ class NetworkFactory(BaseNetworkFactory):
         return nn.ModuleDict({'xnet': xnet, 'vnet': vnet})
 
 
-NetworkInputs = tuple[Tensor, Tensor]
-NetworkOutputs = tuple[Tensor, Tensor, Tensor]
+NetworkInputs = "tuple[Tensor, Tensor]"
+NetworkOutputs = "tuple[Tensor, Tensor, Tensor]"
+
 
 class Network(nn.Module):
     def __init__(
@@ -117,8 +113,6 @@ class Network(nn.Module):
                 self.input_shapes[key] = val
             else:
                 raise ValueError('Unexpected value in input_shapes')
-
-        self._device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
         self.units = self.net_config.units
 
