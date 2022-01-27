@@ -8,6 +8,7 @@ import datetime
 import os
 from pathlib import Path
 from typing import Any
+import warnings
 
 import matplotlib.pyplot as plt
 import matplotx
@@ -15,14 +16,40 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 import xarray as xr
-
-
-import warnings
 warnings.filterwarnings('ignore')
 
 xplt = xr.plot
 
 LW = plt.rcParams.get('axes.linewidth', 1.75)
+
+plt.style.use('default')
+colors = {
+    'blue':     '#007DFF',
+    'red':      '#FF5252',
+    'green':    '#63FF5B',
+    'yellow':   '#FFFF00',
+    'orange':   '#FD971F',
+    'purple':   '#AE81FF',
+    'pink':     '#F92672',
+    'teal':     '#00CC99',
+    'white':    '#CFCFCF',
+}
+
+plt.style.use(matplotx.styles.dufte)
+sns.set_palette(list(colors.values()))
+# sns.set_context('notebook', font_scale=0.8)
+plt.rcParams.update({
+    'image.cmap': 'viridis',
+    'figure.facecolor': (1.0, 1.0, 1.0, 0.),
+    'axes.facecolor': (1.0, 1.0, 1.0, 0.),
+    'axes.grid': False,
+    # 'grid.color': '#cfcfcf',
+    'figure.dpi': plt.rcParamsDefault['figure.dpi'],
+    'figure.figsize': plt.rcParamsDefault['figure.figsize'],
+})
+
+
+
 
 
 def get_timestamp(fstr=None):
