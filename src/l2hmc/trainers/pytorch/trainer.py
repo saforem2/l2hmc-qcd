@@ -8,18 +8,21 @@ import time
 from typing import Callable
 
 from accelerate import Accelerator
-from rich.console import Console
-from src.l2hmc.configs import Steps
-from src.l2hmc.dynamics.pytorch.dynamics import Dynamics, random_angle, to_u1
-from src.l2hmc.loss.pytorch.loss import LatticeLoss
-from src.l2hmc.utils.history import History, StateHistory, summarize_dict
-from src.l2hmc.utils.step_timer import StepTimer
+import numpy as np
 import torch
 from torch import optim
 
-Tensor = torch.Tensor
+from configs import Steps
+from dynamics.pytorch.dynamics import Dynamics, random_angle, to_u1
+from utils.history import History, summarize_dict
+from utils.step_timer import StepTimer
+from utils.console import console
 
-console = Console(color_system='truecolor', log_path=False)
+from rich.table import Table
+from rich.live import Live
+
+
+Tensor = torch.Tensor
 
 
 class Trainer:
@@ -46,9 +49,6 @@ class Trainer:
         self.timer = StepTimer(evals_per_step=evals_per_step)
 
     def train_step(self, inputs: tuple[Tensor, float]) -> tuple[Tensor, dict]:
-        self.timer.start()
-        self.dynamics.train()
-
         x_init, beta = inputs
         x_init = x_init.to(self.accelerator.device)
 
@@ -60,51 +60,110 @@ class Trainer:
         # loss.backward()
         self.optimizer.step()
         record = {
-            'dt': self.timer.stop(),
             'loss': loss.detach().cpu().numpy(),
         }
         for key, val in metrics.items():
-            if isinstance(val, Tensor):
-                record[key] = val.detach().cpu().numpy()
-            else:
-                record[key] = val
+            record[key] = val
 
         return to_u1(x_out).detach(), record
 
-    def train(self, xinit: Tensor = None, beta: float = 1.) -> dict:
+    def metrics_to_numpy(
+            self,
+            metrics: dict[str, Tensor | list | np.ndarray]
+    ) -> dict[str, Tensor | list | np.ndarray]:
+        for key, val in metrics.items():
+            if isinstance(val, dict):
+                metrics_ = self.metrics_to_numpy(val)
+                metrics.update({f'{key}/{k}': v for k, v in metrics_.items()})
+
+            else:
+                if isinstance(val, list):
+                    if isinstance(val[0], Tensor):
+                        val = torch.stack(val)
+                    elif isinstance(val[0], np.ndarray):
+                        val = np.stack(val)
+                    else:
+                        raise ValueError(
+                            f'Unexpected value encountered: {type(val)}'
+                        )
+
+                if not isinstance(val, Tensor):
+                    val = torch.Tensor(val)
+
+                metrics[key] = val.detach().cpu().numpy()
+
+        return metrics
+
+    def train(
+            self,
+            x: Tensor = None,
+            beta: float = 1.,
+            skip: str | list[str] = None,
+            # keep: str | list[str] = None,
+    ) -> dict:
+        # x = xinit
         summaries = []
-        x = xinit
+        self.dynamics.train()
+        if isinstance(skip, str):
+            skip = [skip]
         if x is None:
             x = random_angle(self.dynamics.xshape, requires_grad=True)
             x = x.reshape(x.shape[0], -1)
 
+        should_log = lambda epoch: (epoch % self.steps.log == 0)      # noqa
+        should_print = lambda epoch: (epoch % self.steps.print == 0)  # noqa
+
+        xdict = {}
+        summaries = []
+        # skip = ['FORWARD', 'BACKWARD']
+        styles = {
+            'ERA': 'progress.elapsed',
+            'EPOCH': 'progress.percentage',
+            'LOSS': 'magenta',
+            'ACC': 'green',
+            'DT': 'red',
+            'ACC_MASK': 'white',
+        }
+        table = Table(expand=True,
+                      highlight=True,
+                      show_footer=False,
+                      row_styles=['dim', 'none'])
         for era in range(self.steps.nera):
-            console.rule(f'ERA: {era}')
+            xdict[str(era)] = x
             estart = time.time()
-            for epoch in range(self.steps.nepoch):
-                x, metrics = self.train_step((x, beta))
-                should_print = (epoch % self.steps.print == 0)
-                should_log = (epoch % self.steps.log == 0)
-                if should_print or should_log:
-                    record = {
-                        'era': era,
-                        'epoch': epoch,
-                        'dt': self.timer.stop(),
-                    }
+            console.rule(f'ERA: {era}')
+            with Live(table, screen=False, auto_refresh=False) as live:
+                for epoch in range(self.steps.nepoch):
+                    self.timer.start()
+                    x, metrics = self.train_step((x, beta))
+                    dt = self.timer.stop()
+                    if should_print(epoch) or should_log(epoch):
+                        record = {'era': era, 'epoch': epoch, 'dt': dt}
 
-                    # Update metrics with train step metrics, tmetrics
-                    record.update(metrics)
-                    avgs = self.history.update(record)
-                    summary = summarize_dict(avgs)
-                    summaries.append(summary)
-                    if should_print:
-                        console.log(summary)
+                        # Update metrics with train step metrics, tmetrics
+                        record.update(self.metrics_to_numpy(metrics))
+                        avgs = self.history.update(record)
+                        summary = summarize_dict(avgs)
+                        summaries.append(summary)
+                        if epoch == 0 and era == 0:
+                            for h in [str(i).upper() for i in avgs.keys()]:
+                                cargs = {'header': h, 'justify': 'center'}
+                                table.add_column(**cargs)
 
-            console.rule()
-            console.log('\n'.join([
-                f'Era {era} took: {time.time() - estart:<3.2g}s',
-                f'Avgs over last era:\n {self.history.era_summary(era)}',
-            ]))
-            console.rule()
+                        table.add_row(*[f'{v:5}' for _, v in avgs.items()])
+                        live.refresh()
 
-        return {'summaries': summaries, 'history': self.history}
+                live.console.rule(
+                    f'Era {era} took: {time.time() - estart:<3.2g}s',
+                )
+                live.console.log(
+                    f'Avgs over last era:\n {self.history.era_summary(era)}',
+                )
+                live.console.rule()
+
+        return {
+            'xdict': xdict,
+            'summaries': summaries,
+            'history': self.history,
+            'table': table,
+        }

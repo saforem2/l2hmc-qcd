@@ -10,18 +10,22 @@ from typing import Callable
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras.optimizers import Optimizer
-from rich.console import Console
 
-from src.l2hmc.configs import Steps
-from src.l2hmc.dynamics.tensorflow.dynamics import Dynamics, to_u1
-from src.l2hmc.loss.tensorflow.loss import LatticeLoss
+from configs import Steps
+from dynamics.tensorflow.dynamics import Dynamics, to_u1
+from loss.tensorflow.loss import LatticeLoss
 
-from src.l2hmc.utils.history import StateHistory, History, summarize_dict
-from src.l2hmc.utils.step_timer import StepTimer
+from utils.history import summarize_dict
+from utils.tensorflow.history import tfHistory as History
+from utils.step_timer import StepTimer
+from rich.table import Table
+from rich.live import Live
+from utils.console import console
 
 TF_FLOAT = tf.keras.backend.floatx()
 Tensor = tf.Tensor
-console = Console(color_system='truecolor', log_path=False)
+# console = Console(record=True, file=io.StringIO(),
+#                   color_system='truecolor', log_path=False)
 
 
 class Trainer:
@@ -52,7 +56,6 @@ class Trainer:
             self.skip = [self.skip]
 
     def train_step(self, inputs: tuple[Tensor, float]) -> tuple[Tensor, dict]:
-        self.timer.start()
         xinit, beta = inputs
         with tf.GradientTape() as tape:
             x_out, metrics = self.dynamics((to_u1(xinit), tf.constant(beta)))
@@ -70,13 +73,63 @@ class Trainer:
 
         return to_u1(x_out), record
 
-    @staticmethod
-    def metrics_to_numpy(metrics: dict) -> dict:
-        for key, val in metrics.items():
-            if isinstance(val, Tensor):
-                metrics[key] = val.numpy()  # type: ignore
+    # type: ignore
+    def metric_to_numpy(
+            self,
+            metric: Tensor | list | np.ndarray,
+            # key: str = '',
+    ) -> np.ndarray:
+        """Consistently convert `metric` to np.ndarray."""
+        if isinstance(metric, np.ndarray):
+            return metric
 
-        return metrics
+        if (
+                isinstance(metric, Tensor)
+                and hasattr(metric, 'numpy')
+                and isinstance(metric.numpy, Callable)
+        ):
+            return metric.numpy()
+
+        elif isinstance(metric, list):
+            if isinstance(metric[0], np.ndarray):
+                return np.stack(metric)
+
+            if isinstance(metric[0], Tensor):
+                stack = tf.stack(metric)
+                if (
+                        hasattr(stack, 'numpy')
+                        and isinstance(stack.numpy, Callable)
+                ):
+                    return stack.numpy()
+            else:
+                return np.array(metric)
+
+            return np.array(metric)
+
+        else:
+            raise ValueError(
+                f'Unexpected type for metric: {type(metric)}'
+            )
+
+    def metrics_to_numpy(
+            self,
+            metrics: dict[str, Tensor | list | np.ndarray]
+    ) -> dict:
+        m = {}
+        for key, val in metrics.items():
+            if isinstance(val, dict):
+                for k, v in val.items():
+                    m[f'{key}/{k}'] = self.metric_to_numpy(v)
+            else:
+                try:
+                    m[key] = self.metric_to_numpy(val)
+                except (ValueError, tf.errors.InvalidArgumentError):
+                    console.log(
+                        f'Error converting metrics[{key}] to numpy. Skipping!'
+                    )
+                    continue
+
+        return m
 
     def train(
         self,
@@ -100,127 +153,49 @@ class Trainer:
         else:
             train_step = self.train_step
 
+        should_log = lambda epoch: (epoch % self.steps.log == 0)  # noqa
+        should_print = lambda epoch: (epoch % self.steps.print == 0)  # noqa
+
+        xdict = {}
         summaries = []
+        # keys = {'ERA', 'EPOCH', 'DT', 'LOSS', 'ACC', 'ACC_MASK'}
+        table = Table(show_footer=False,
+                      expand=True, highlight=True,
+                      row_styles=['dim', 'none'])
         for era in range(self.steps.nera):
-            console.rule(f'ERA: {era}')
+            xdict[str(era)] = x
             estart = time.time()
-            for epoch in range(self.steps.nepoch):
-                self.timer.start()
-                x, metrics = train_step((x, beta))  # type: ignore
-                should_log = (epoch % self.steps.log == 0)
+            with Live(table, screen=False, auto_refresh=False) as live:
+                for epoch in range(self.steps.nepoch):
+                    self.timer.start()
+                    x, metrics = train_step((x, beta))  # type: ignore
+                    dt = self.timer.stop()
+                    if should_log(epoch) or should_print(epoch):
+                        record = {'era': era, 'epoch': epoch, 'dt': dt}
+                        # Update metrics with train step metrics, tmetrics
+                        record.update(self.metrics_to_numpy(metrics))
+                        avgs = self.history.update(record)
+                        summary = summarize_dict(avgs)
+                        summaries.append(summary)
 
-                should_print = (epoch % self.steps.print == 0)
-                if should_log or should_print:
-                    record = {
-                        'era': era,
-                        'epoch': epoch,
-                        'dt': self.timer.stop(),
-                    }
+                        if epoch == 0 and era == 0:
+                            for h in [str(i).upper() for i in avgs.keys()]:
+                                cargs = {'header': h, 'justify': 'center'}
+                                table.add_column(**cargs)
+                        table.add_row(*[f'{v:5}' for v in list(avgs.values())])
+                        live.refresh()
 
-                    record.update(self.metrics_to_numpy(metrics))
-                    avgs = self.history.update(record)
-                    summary = summarize_dict(avgs)
-                    summaries.append(summary)
-                    if should_print:
-                        console.log(summary)
+                live.console.rule()
+                live.console.log('\n'.join([
+                    f'Era {era} took: {time.time() - estart:<3.2g}s',
+                    f'Avgs over last era:\n {self.history.era_summary(era)}',
+                ]))
+                live.console.rule()
+                live.refresh()
 
-            console.rule()
-            console.log('\n'.join([
-                f'Era {era} took: {time.time() - estart:<3.2g}s',
-                f'Avgs over last era:\n {self.history.era_summary(era)}',
-            ]))
-            console.rule()
-
-        return {'summaries': summaries, 'history': self.history}
-
-
-def train(
-        steps: Steps,
-        dynamics: Dynamics,
-        beta: float,
-        optimizer: Optimizer,
-        loss_fn: Callable = LatticeLoss,
-        xinit: Tensor = None,
-        record_states: bool = False,
-) -> dict:
-    """Train the L2HMC sampler"""
-    history = History(steps)
-    states = StateHistory()
-    mstrs = []
-
-    if xinit is None:
-        x = tf.random.uniform(dynamics.xshape, *(-np.pi, np.pi))
-        x = tf.reshape(x, (x.shape[0], -1))
-    else:
-        x = tf.constant(xinit)
-
-    assert isinstance(x, Tensor)
-    dynamics.compile(optimizer=optimizer, loss=loss_fn)
-    # train_step_ = tf.function(train_step)
-    for era in range(steps.nera):
-        console.rule(f'ERA: {era}')
-        estart = time.time()
-        for epoch in range(steps.nepoch):
-            tstart = time.time()
-            x, metrics = train_step((x, beta),  # type: ignore
-                                    dynamics=dynamics,
-                                    optimizer=optimizer,
-                                    loss_fn=loss_fn)
-            if (epoch % steps.log == 0) or (epoch % steps.print == 0):
-                record = {
-                    'era': era,
-                    'epoch': epoch,
-                    'dt': time.time() - tstart,
-                }
-                mc_states = metrics.pop('mc_states', None)
-                if record_states and mc_states is not None:
-                    states.update(mc_states)
-
-                record.update(metrics)
-                mstr = history.update(record)
-                mstrs.append(mstr)
-                if epoch % steps.print == 0:
-                    console.log(mstr)
-
-        console.rule()
-        console.log(f'Era {era} took: {time.time() - estart:<3.2g}s')
-        console.log(f'Avgs over last era:\n {history.era_summary(era)}')
-        console.rule()
-
-    return {
-        'history': history,
-        'dynamics': dynamics,
-        'optimizer': optimizer,
-        'state_history': states,
-    }
-
-
-def setup_beta(beta: list | float):  # -> list[float]
-    # TODO: Deal with making sure len(beta) == len(train_steps)
-    beta = beta
-    pass
-
-
-@tf.function
-def train_step(
-        inputs: tuple[Tensor, Tensor | float],
-        dynamics: Dynamics,
-        optimizer: Optimizer,
-        loss_fn: Callable = LatticeLoss,
-) -> tuple[Tensor, dict]:
-    x_init, beta = inputs
-    with tf.GradientTape() as tape:
-        x_out, tmetrics = dynamics((to_u1(x_init), tf.constant(beta)))
-        x_prop = tmetrics.pop('mc_states').proposed.x
-        # x_prop = metrics.pop('mc_states').proposed.x
-        loss = loss_fn(x_init=x_init, x_prop=x_prop, acc=tmetrics['acc'])
-
-    grads = tape.gradient(loss, dynamics.trainable_variables)
-    optimizer.apply_gradients(zip(grads, dynamics.trainable_variables))
-    metrics = {
-        'loss': loss,
-    }
-    for key, val in tmetrics.items():
-        metrics[key] = val
-
-    return to_u1(x_out), metrics
+        return {
+            'xdict': xdict,
+            'summaries': summaries,
+            'history': self.history,
+            'table': table,
+        }
