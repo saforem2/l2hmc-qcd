@@ -15,8 +15,8 @@ import xarray as xr
 import matplotlib.pyplot as plt
 import matplotx
 import seaborn as sns
-from src.l2hmc.configs import MonteCarloStates, Steps
-import src.l2hmc.utils.plot_helpers as hplt
+from configs import MonteCarloStates, Steps
+import utils.plot_helpers as hplt
 
 
 xplt = xr.plot
@@ -50,14 +50,16 @@ class History:
         self.era_metrics = {str(era): {} for era in range(steps.nera)}
 
     def _update(self, key: str, val: Any) -> float:
+        if val is None:
+            raise ValueError(f'None encountered: {key}: {val}')
+
         if isinstance(val, list):
             val = np.array(val)
 
-        if val is not None:
-            try:
-                self.history[key].append(val)
-            except KeyError:
-                self.history[key] = [val]
+        try:
+            self.history[key].append(val)
+        except KeyError:
+            self.history[key] = [val]
 
         if isinstance(val, (float, int)):
             return val
@@ -76,25 +78,27 @@ class History:
         era = metrics.get('era', None)
         assert era is not None
         for key, val in metrics.items():
-            name = key
             avg = None
-            if isinstance(val, dict):
-                for k, v in val.items():
-                    name = f'{key}/{k}'
-                    try:
-                        avg = self._update(key=name, val=v)
-                    # TODO: Figure out how to deal with exception
-                    except Exception:  # some weird tensorflow exception
-                        #
-                        continue
+            if isinstance(val, (float, int)):
+                avg = val
             else:
-                avg = self._update(key=key, val=val)
+                if isinstance(val, dict):
+                    for k, v in val.items():
+                        key = f'{key}/{k}'
+                        try:
+                            avg = self._update(key=key, val=v)
+                        # TODO: Figure out how to deal with exception
+                        except Exception:  # some weird tensorflow exception
+                            continue
+                else:
+                    avg = self._update(key=key, val=val)
 
-            avgs[name] = avg
-            try:
-                self.era_metrics[str(era)][name].append(avg)
-            except KeyError:
-                self.era_metrics[str(era)][name] = [avg]
+            if avg is not None:
+                avgs[key] = avg
+                try:
+                    self.era_metrics[str(era)][key].append(avg)
+                except KeyError:
+                    self.era_metrics[str(era)][key] = [avg]
 
         return avgs
 
