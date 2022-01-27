@@ -20,11 +20,18 @@ PROJECT_DIR = SRC.parent
 LOGS_DIR = PROJECT_DIR.joinpath('logs')
 
 
-Shape = "list[int]"
-
 State = namedtuple('State', ['x', 'v', 'beta'])
 
 MonteCarloStates = namedtuple('MonteCarloStates', ['init', 'proposed', 'out'])
+
+
+def list_to_str(x: list) -> str:
+    if isinstance(x[0], int):
+        return '-'.join([str(int(i)) for i in x])
+    elif isinstance(x[0], float):
+        return '-'.join([f'{i:2.1g}' for i in x])
+    else:
+        return '-'.join([str(i) for i in x])
 
 
 @dataclass
@@ -94,13 +101,23 @@ class LearningRateConfig(BaseConfig):
         return f'lr-{self.lr_init:3.2g}'
 
 
-def list_to_str(x: list) -> str:
-    if isinstance(x[0], int):
-        return '-'.join([str(int(i)) for i in x])
-    elif isinstance(x[0], float):
-        return '-'.join([f'{i:2.1g}' for i in x])
-    else:
-        return '-'.join([str(i) for i in x])
+@dataclass
+class AnnealingSchedule:
+    beta_init: float
+    beta_final: float
+    steps: Steps
+    # TODO: Add methods for specifying different annealing schedules
+
+    def __post_init__(self):
+        self.beta = np.arange(self.beta_init,
+                              self.beta_final,
+                              self.steps.total)
+
+
+@dataclass
+class TrainingConfig:
+    lr_config: LearningRateConfig
+    annealing_schedule: AnnealingSchedule
 
 
 @dataclass
@@ -180,15 +197,15 @@ class Steps:
 
 @dataclass
 class InputShapes(BaseConfig):
-    x: list[int]
-    v: list[int]
+    x: list[int] | tuple[int]
+    v: list[int] | tuple[int]
 
 
 @dataclass
 class InputSpec(BaseConfig):
-    xshape: list[int]
-    xnet: Optional[InputShapes] = None
-    vnet: Optional[InputShapes] = None
+    xshape: list[int] | tuple[int]
+    xnet: Optional[dict[str, list | tuple]]
+    vnet: Optional[dict[str, list | tuple]]
 
     def __post_init__(self):
         if len(self.xshape) == 2:
@@ -199,13 +216,13 @@ class InputSpec(BaseConfig):
             raise ValueError(f'Invalid `xshape`: {self.xshape}')
 
         if self.xnet is None:
-            self.xnet = InputShapes(x=self.xshape, v=self.xshape)
+            self.xnet = {'x': self.xshape, 'v': self.xshape}
         if self.vnet is None:
-            self.vnet = InputShapes(x=self.xshape, v=self.xshape)
+            self.vnet = {'x': self.xshape, 'v': self.xshape}
 
 
 @dataclass
-class Config:
+class U1Config:
     steps: Steps
     network: NetworkConfig
     dynamics: DynamicsConfig
@@ -214,12 +231,14 @@ class Config:
     conv: Optional[ConvolutionConfig] = None
 
     def __post_init__(self):
-        self.xshape = Shape(self.dynamics.xshape)
+        self.xshape = self.dynamics.xshape
         xdim = self.dynamics.xdim
         self.input_spec = InputSpec(
             xshape=self.dynamics.xshape,
-            xnet=InputShapes(x=[xdim, 2], v=[xdim, ]),
-            vnet=InputShapes(x=[xdim, ], v=[xdim, ]),
+            xnet={'x': (xdim, 2), 'v': (xdim)},
+            vnet={'x': (xdim,), 'v': (xdim,)}
+            # (x=[xdim, 2], v=[xdim, ]),
+            # vnet=InputShapes(x=[xdim, ], v=[xdim, ]),
         )
 
 
@@ -229,4 +248,24 @@ def register_configs() -> None:
         group="dynamics",
         name="dynamics",
         node=DynamicsConfig,
+    )
+    cs.store(
+        group="steps",
+        name="steps",
+        node=Steps,
+    )
+    cs.store(
+        group="network",
+        name="NetworkConfig",
+        node=NetworkConfig,
+    )
+    cs.store(
+        group="loss",
+        name="loss",
+        node=LossConfig,
+    )
+    cs.store(
+        group="net_weights",
+        name="NetWeights",
+        node=NetWeights,
     )
