@@ -21,14 +21,13 @@ from tensorflow.keras.layers import (
 )
 from tensorflow.python.types.core import Callable
 
-from src.l2hmc.configs import (
+from configs import (
     ConvolutionConfig,
     NetWeight,
     NetworkConfig,
-    Shape,
 )
-from src.l2hmc.network.factory import BaseNetworkFactory
-from src.l2hmc.network.tensorflow.utils import PeriodicPadding
+from network.factory import BaseNetworkFactory
+from network.tensorflow.utils import PeriodicPadding
 
 
 Tensor = tf.Tensor
@@ -37,9 +36,6 @@ PI = np.pi
 TWO_PI = 2. * PI
 
 TF_FLOAT = tf.keras.backend.floatx()
-
-NetworkInputs = "tuple[Tensor, Tensor]"
-NetworkOutputs = "tuple[Tensor, Tensor, Tensor]"
 
 
 def to_u1(x: Tensor) -> Tensor:
@@ -209,7 +205,7 @@ def get_network_configs(
 
 # pylint:disable=too-many-locals, too-many-arguments
 def get_network(
-        xshape: Shape,
+        xshape: tuple,
         network_config: NetworkConfig,
         input_shapes: dict[str, tuple[int]] = None,
         net_weight: NetWeight = None,

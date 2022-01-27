@@ -13,12 +13,12 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 
-from src.l2hmc.configs import (
+from configs import (
     NetWeight,
     NetworkConfig,
 )
 
-from src.l2hmc.network.factory import BaseNetworkFactory
+from network.factory import BaseNetworkFactory
 
 Tensor = torch.Tensor
 
@@ -78,10 +78,6 @@ class NetworkFactory(BaseNetworkFactory):
             })
 
         return nn.ModuleDict({'xnet': xnet, 'vnet': vnet})
-
-
-NetworkInputs = "tuple[Tensor, Tensor]"
-NetworkOutputs = "tuple[Tensor, Tensor, Tensor]"
 
 
 class Network(nn.Module):
@@ -144,8 +140,10 @@ class Network(nn.Module):
         if self.net_config.use_batch_norm:
             self.batch_norm = nn.BatchNorm1d(self.units[-1])
 
-
-    def forward(self, inputs: NetworkInputs) -> NetworkOutputs:
+    def forward(
+            self,
+            inputs: tuple[Tensor, Tensor]
+    ) -> tuple[Tensor, Tensor, Tensor]:
         x, v = inputs
         v = self.v_layer(v)
         x = self.x_layer(flatten(x))
