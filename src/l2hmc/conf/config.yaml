@@ -1,17 +1,36 @@
+default:
+  override hydra/job_logging: colorlog
+  override hydra/hydra_logging: colorlog
+  # override hydra/launcher: joblib
+  compile: true
+  jit_compile: False
+
+# hydra:
+#   sweep:
+#     dir: multirun
+#     subdir: ${hydra.job.override_dirname}/seed=${seed}
+#   job:
+#     config:
+#       override_dirname:
+#         exclude_keys:
+#           seed
+
 steps:
-  nera: 10
-  nepoch: 100
-  log: 100
-  test: 1000
+  nera: 20
+  nepoch: 50
+  log: 10
+  print: 50
+  test: 0
 
 dynamics:
-  xshape: [128, 16, 16, 2]
+  xshape: [64, 8, 8, 2]
   eps: 0.01
-  nleapfrog: 10
+  nleapfrog: 9
   eps_fixed: false
   use_ncp: true
   use_split_xnets: true
   use_separate_networks: true
+  merge_directions: false
 
 network:
   units: [16, 16, 16, 16]
@@ -24,7 +43,7 @@ loss:
   charge_weight: 0.01
   use_mixed_loss: true
 
-netweights:
+net_weights:
   x:
     s: 1.0
     t: 1.0
