@@ -1,0 +1,24 @@
+# This CITATION.cff file was generated with cffinit.
+# Visit https://bit.ly/cffinit to generate yours today!
+
+cff-version: 1.2.0
+title: l2hmc-qcd
+message: >-
+  If you use this software, please cite it using the
+  metadata from this file.
+type: software
+authors:
+  - given-names: Sam
+    family-names: Foreman
+    email: foremans@anl.gov
+    affiliation: Argonne National Laboratory
+    orcid: 'https://orcid.org/0000-0002-9981-0876'
+repository-code: 'https://github.com/saforem2/l2hmc-qcd'
+keywords:
+  - machine learning
+  - normalizing flows
+  - lattice qcd
+  - lattice gauge theory
+  - markov chain monte carlo
+  - hamiltonian monte carlo
+license: Apache-2.0
