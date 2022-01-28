@@ -10,9 +10,12 @@ from pathlib import Path
 from accelerate import Accelerator
 import hydra
 from omegaconf import DictConfig, OmegaConf
+from rich.table import Table
 import torch
+import xarray as xr
 
-from configs import (
+from l2hmc.common import plot_dataset, save_logs, setup_common, setup_pytorch
+from l2hmc.configs import (
     DynamicsConfig,
     InputSpec,
     LossConfig,
@@ -20,79 +23,101 @@ from configs import (
     NetworkConfig,
     Steps,
 )
-from dynamics.pytorch.dynamics import Dynamics
-from lattice.pytorch.lattice import Lattice
-from loss.pytorch.loss import LatticeLoss
-from network.pytorch.network import NetworkFactory
-from trainers.pytorch.trainer import Trainer
-from utils.console import console
-import utils.plot_helpers as hplt
+from l2hmc.dynamics.pytorch.dynamics import Dynamics
+from l2hmc.lattice.pytorch.lattice import Lattice
+from l2hmc.loss.pytorch.loss import LatticeLoss
+from l2hmc.network.pytorch.network import NetworkFactory
+from l2hmc.trainers.pytorch.trainer import Trainer
+from l2hmc.utils.console import console
+from l2hmc.utils.plot_helpers import plot_dataArray
 
 
 @hydra.main(config_path='./conf', config_name='config')
 def main(cfg: DictConfig) -> None:
     console.log(OmegaConf.to_yaml(cfg))
-    steps = Steps(**cfg.steps)
-    loss_config = LossConfig(**cfg.loss)
-    net_weights = NetWeights(**cfg.net_weights)
-    network_config = NetworkConfig(**cfg.network)
-    dynamics_config = DynamicsConfig(**cfg.dynamics)
-
-    xdim = dynamics_config.xdim
-    xshape = dynamics_config.xshape
-
-    input_spec = InputSpec(xshape=xshape,
-                           vnet={'v': (xdim,), 'x': (xdim,)},
-                           xnet={'v': (xdim,), 'x': (xdim, 2)})
-    network_factory = NetworkFactory(input_spec=input_spec,
-                                     net_weights=net_weights,
-                                     network_config=network_config)
-    lattice = Lattice(tuple(xshape))
-    dynamics = Dynamics(config=dynamics_config,
-                        potential_fn=lattice.action,
-                        network_factory=network_factory)
-    loss_fn = LatticeLoss(lattice=lattice, loss_config=loss_config)
-    accelerator = Accelerator()
-
-    optimizer = torch.optim.Adam(dynamics.parameters())
-    dynamics = dynamics.to(accelerator.device)
-    dynamics, optimizer = accelerator.prepare(dynamics, optimizer)
-    trainer = Trainer(steps=steps,
-                      loss_fn=loss_fn,
-                      dynamics=dynamics,
-                      optimizer=optimizer,
-                      accelerator=accelerator)
-    output = trainer.train()
+    common = setup_common(cfg)
+    setup = setup_pytorch(common)
+    output = setup['trainer'].train()
     history = output['history']
-    data = history.get_dataset()
-    num_chains = min((xshape[0] // 2, dynamics_config.nleapfrog))
-    for key, val in data.items():
-        fig, _, _ = hplt.plot_dataArray(val,
-                                        key=key,
-                                        title='PyTorch',
-                                        num_chains=num_chains)
-        outdir = Path(os.getcwd()).joinpath('plots', 'training')
-        outfile = outdir.joinpath(f'{key}.svg')
-        outfile.parent.mkdir(exist_ok=True, parents=True)
-        console.log(f'Saving figure to: {outfile.as_posix()}')
-        fig.savefig(outfile, dpi=500, bbox_inches='tight')
+    dataset = history.get_dataset()
 
-    fout = Path(os.getcwd()).joinpath('logs', 'training', 'console.txt')
-    fout.parent.mkdir(exist_ok=True, parents=True)
 
-    table = output['table']
-    console.print(table)
-    text = console.export_text()
-    with open(fout.as_posix(), 'w') as f:
-        f.write(text)
+    nchains = min((cfg.dynamics.xshape[0], cfg.dynamics.nleapfrog))
 
-    console.print(table)
-    html = console.export_html(clear=False)
-    fout = Path(os.getcwd()).joinpath('logs', 'training', 'table_export.html')
-    with open(fout, 'w') as f:
-        f.write(html)
+    day = get_timestamp('%Y-%H-%m')
+    time = get_timestamp('%H-%m-%S')
+    lfstr = f'nlf{cfg.dynamics.nleapfrog}'
+    vstr = f'{cfg.dynamics.xshape[1]}x{cfg.dynamics.xshape[2]}'
+    outdir = Path(os.getcwd()).joinpath(
+        'output', 'tensorflow',
+        vstr, lfstr, day, time,
+        'training'
+    )
+    outdir.mkdir(exist_ok=True, parents=True)
 
-    console.save_text(fout.as_posix())
+    dirs = {'outdir': outdir}
+    for key in ['logs', 'plots', 'data']:
+        d = dirs['outdir'].joinpath(key)
+        d.mkdir(exist_ok=True, parents=True)
+        dirs[key] = d
+
+    plot_dataset(dataset, nchains=nchains, outdir=dirs['plots'])
+
+    console.log(
+        f'Saving logs and training table to: {dirs["logs"].as_posix()}'
+    )
+    save_logs(output['tables'], logdir=dirs['logs'])
+
+    datafile = dirs['data'].joinpath('history_dataset.nc')
+    mode = 'a' if datafile.is_file() else 'w'
+    console.log(f'Saving dataset to: {datafile.as_posix()}')
+    datafile.parent.mkdir(exist_ok=True, parents=True)
+    dataset.to_netcdf(datafile.as_posix(), mode=mode)
+
+
+
+
+    # logdir = Path(os.getcwd()).joinpath('')
+    # nchains = min((cfg.dynamics.xshape[0], cfg.dynamics.nleapfrog))
+    # plotdir = Path(os.getcwd()).joinpath('plots', 'training')
+    # plot_dataset(dataset, nchains=nchains, outdir=plotdir)
+
+    # logdir = Path(os.getcwd()).joinpath('logs', 'training')
+    # logdir.mkdir(exist_ok=True, parents=True)
+    # console.log(f'Saving logs and training table to: {logdir.as_posix()}')
+    # save_logs(output['tables'], logdir=logdir)
+
+    # datadir = Path(os.getcwd()).joinpath('data', 'training')
+    # datafile = datadir.joinpath('history_dataset.nc')
+    # datafile.parent.mkdir(exist_ok=True, parents=True)
+    # mode = 'a' if datafile.is_file() else 'w'
+    # console.log(f'Saving dataset to: {datafile.as_posix()}')
+    # dataset.to_netcdf(datafile.as_posix(), mode=mode)
+
+
+# @hydra.main(config_path='./conf', config_name='config')
+# def main(cfg: DictConfig) -> None:
+#     console.log(OmegaConf.to_yaml(cfg))
+#     init = setup(cfg)
+#     output = init['trainer'].train()
+#     # output = trainer.train()
+#     history = output['history']
+#     dataset = history.get_dataset()  # type: xr.Dataset
+#     nchains = min((cfg.dynamics.xshape[0], cfg.dynamics.nleapfrog))
+
+#     plotdir = Path(os.getcwd()).joinpath('plots', 'training')
+#     plot_dataset(dataset, nchains=nchains, outdir=plotdir)
+
+#     logdir = Path(os.getcwd()).joinpath('logs', 'training')
+#     logdir.mkdir(exist_ok=True, parents=True)
+#     console.log(f'Saving logs and training table to: {logdir.as_posix()}')
+#     save_logs(output['tables'], logdir=logdir)
+
+#     datadir = Path(os.getcwd()).joinpath('data', 'training')
+#     datafile = datadir.joinpath('history_dataset.nc')
+#     mode = 'a' if datafile.is_file() else 'w'
+#     console.log(f'Saving dataset to: {datafile.as_posix()}')
+#     dataset.to_netcdf(datafile.as_posix(), mode=mode)
 
 
 if __name__ == '__main__':

@@ -12,11 +12,11 @@ import numpy as np
 import torch
 from torch import optim
 
-from configs import Steps
-from dynamics.pytorch.dynamics import Dynamics, random_angle, to_u1
-from utils.history import History, summarize_dict
-from utils.step_timer import StepTimer
-from utils.console import console
+from l2hmc.configs import Steps
+from l2hmc.dynamics.pytorch.dynamics import Dynamics, random_angle, to_u1
+from l2hmc.utils.history import History, summarize_dict
+from l2hmc.utils.step_timer import StepTimer
+from l2hmc.utils.console import console
 
 from rich.table import Table
 from rich.live import Live
@@ -124,14 +124,19 @@ class Trainer:
             'DT': 'red',
             'ACC_MASK': 'white',
         }
-        table = Table(expand=True,
-                      highlight=True,
-                      show_footer=False,
-                      row_styles=['dim', 'none'])
+        # table = Table(expand=True,
+        #               highlight=True,
+        #               show_footer=False,
+        #               row_styles=['dim', 'none'])
+        tables = {}
         for era in range(self.steps.nera):
             xdict[str(era)] = x
             estart = time.time()
             console.rule(f'ERA: {era}')
+            table = Table(expand=True,
+                          highlight=True,
+                          show_footer=False,
+                          row_styles=['dim', 'none'])
             with Live(table, screen=False, auto_refresh=False) as live:
                 for epoch in range(self.steps.nepoch):
                     self.timer.start()
@@ -145,7 +150,7 @@ class Trainer:
                         avgs = self.history.update(record)
                         summary = summarize_dict(avgs)
                         summaries.append(summary)
-                        if epoch == 0 and era == 0:
+                        if epoch == 0:
                             for h in [str(i).upper() for i in avgs.keys()]:
                                 cargs = {'header': h, 'justify': 'center'}
                                 table.add_column(**cargs)
@@ -161,9 +166,11 @@ class Trainer:
                 )
                 live.console.rule()
 
+            tables[str(era)] = table
+
         return {
             'xdict': xdict,
             'summaries': summaries,
             'history': self.history,
-            'table': table,
+            'tables': tables,
         }
