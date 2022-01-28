@@ -8,8 +8,8 @@ from __future__ import absolute_import, annotations, division, print_function
 import tensorflow as tf
 import numpy as np
 
-from configs import LossConfig
-from lattice.tensorflow.lattice import Lattice
+from l2hmc.configs import LossConfig
+from l2hmc.lattice.tensorflow.lattice import Lattice
 
 TF_FLOAT = tf.keras.backend.floatx()
 Tensor = tf.Tensor

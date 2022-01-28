@@ -13,12 +13,12 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 
-from configs import (
+from l2hmc.configs import (
     NetWeight,
     NetworkConfig,
 )
 
-from network.factory import BaseNetworkFactory
+from l2hmc.network.factory import BaseNetworkFactory
 
 Tensor = torch.Tensor
 

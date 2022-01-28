@@ -15,8 +15,8 @@ import xarray as xr
 import matplotlib.pyplot as plt
 import matplotx
 import seaborn as sns
-from configs import MonteCarloStates, Steps
-import utils.plot_helpers as hplt
+from l2hmc.configs import MonteCarloStates, Steps
+import l2hmc.utils.plot_helpers as hplt
 
 
 xplt = xr.plot

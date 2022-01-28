@@ -7,8 +7,8 @@ from __future__ import absolute_import, annotations, division, print_function
 
 import torch
 
-from configs import LossConfig
-from lattice.pytorch.lattice import Lattice
+from l2hmc.configs import LossConfig
+from l2hmc.lattice.pytorch.lattice import Lattice
 
 Tensor = torch.Tensor
 

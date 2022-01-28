@@ -21,13 +21,13 @@ from tensorflow.keras.layers import (
 )
 from tensorflow.python.types.core import Callable
 
-from configs import (
+from l2hmc.configs import (
     ConvolutionConfig,
     NetWeight,
     NetworkConfig,
 )
-from network.factory import BaseNetworkFactory
-from network.tensorflow.utils import PeriodicPadding
+from l2hmc.network.factory import BaseNetworkFactory
+from l2hmc.network.tensorflow.utils import PeriodicPadding
 
 
 Tensor = tf.Tensor

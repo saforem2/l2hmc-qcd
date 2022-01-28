@@ -9,7 +9,7 @@ from typing import Any
 
 import tensorflow as tf
 import numpy as np
-from utils.history import History
+from l2hmc.utils.history import History
 
 
 class tfHistory(History):

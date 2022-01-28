@@ -11,8 +11,8 @@ import pathlib
 from typing import Callable, Union
 from typing import Tuple
 
-from configs import DynamicsConfig
-from network.pytorch.network import (
+from l2hmc.configs import DynamicsConfig
+from l2hmc.network.pytorch.network import (
     NetworkFactory,
 )
 import numpy as np
