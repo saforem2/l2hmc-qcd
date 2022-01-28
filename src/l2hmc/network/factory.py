@@ -10,8 +10,7 @@ from dataclasses import asdict
 
 from typing import Optional
 
-from src.l2hmc.configs import (InputSpec, NetworkConfig,
-                               NetWeights, NetWeight,)
+from l2hmc.configs import InputSpec, NetworkConfig, NetWeights, NetWeight
 
 
 class BaseNetworkFactory(ABC):

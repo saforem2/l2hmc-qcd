@@ -49,9 +49,6 @@ plt.rcParams.update({
 })
 
 
-
-
-
 def get_timestamp(fstr=None):
     """Get formatted timestamp."""
     now = datetime.datetime.now()

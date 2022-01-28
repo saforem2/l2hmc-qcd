@@ -13,8 +13,8 @@ from typing import Tuple
 import numpy as np
 import tensorflow as tf
 
-from network.tensorflow.network import NetworkFactory
-from configs import DynamicsConfig
+from l2hmc.configs import DynamicsConfig
+from l2hmc.network.tensorflow.network import NetworkFactory
 
 TWO_PI = 2. * PI
 TWO = tf.constant(2.)
