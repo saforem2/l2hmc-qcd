@@ -8,19 +8,18 @@ import time
 from typing import Callable
 
 import numpy as np
+from rich.live import Live
+from rich.table import Table
 import tensorflow as tf
 from tensorflow.keras.optimizers import Optimizer
 
-from configs import Steps
-from dynamics.tensorflow.dynamics import Dynamics, to_u1
-from loss.tensorflow.loss import LatticeLoss
-
-from utils.history import summarize_dict
-from utils.tensorflow.history import tfHistory as History
-from utils.step_timer import StepTimer
-from rich.table import Table
-from rich.live import Live
-from utils.console import console
+from l2hmc.configs import Steps
+from l2hmc.dynamics.tensorflow.dynamics import Dynamics, to_u1
+from l2hmc.loss.tensorflow.loss import LatticeLoss
+from l2hmc.utils.console import console
+from l2hmc.utils.history import summarize_dict
+from l2hmc.utils.step_timer import StepTimer
+from l2hmc.utils.tensorflow.history import tfHistory as History
 
 TF_FLOAT = tf.keras.backend.floatx()
 Tensor = tf.Tensor
@@ -159,12 +158,13 @@ class Trainer:
         xdict = {}
         summaries = []
         # keys = {'ERA', 'EPOCH', 'DT', 'LOSS', 'ACC', 'ACC_MASK'}
-        table = Table(show_footer=False,
-                      expand=True, highlight=True,
-                      row_styles=['dim', 'none'])
+        tables = {}
         for era in range(self.steps.nera):
             xdict[str(era)] = x
             estart = time.time()
+            table = Table(show_footer=False,
+                          expand=True, highlight=True,
+                          row_styles=['dim', 'none'])
             with Live(table, screen=False, auto_refresh=False) as live:
                 for epoch in range(self.steps.nepoch):
                     self.timer.start()
@@ -178,7 +178,7 @@ class Trainer:
                         summary = summarize_dict(avgs)
                         summaries.append(summary)
 
-                        if epoch == 0 and era == 0:
+                        if epoch == 0:
                             for h in [str(i).upper() for i in avgs.keys()]:
                                 cargs = {'header': h, 'justify': 'center'}
                                 table.add_column(**cargs)
@@ -193,9 +193,11 @@ class Trainer:
                 live.console.rule()
                 live.refresh()
 
+            tables[str(era)] = table
+
         return {
             'xdict': xdict,
             'summaries': summaries,
             'history': self.history,
-            'table': table,
+            'tables': tables,
         }
