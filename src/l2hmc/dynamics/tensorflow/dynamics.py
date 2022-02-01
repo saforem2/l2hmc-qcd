@@ -128,27 +128,27 @@ class Dynamics(Model):
             inputs: tuple[Tensor, Tensor],
             training: bool = True,
     ) -> tuple[Tensor, dict]:
-        data = self._transition_fb(inputs, training)
+        # data = self._transition_fb(inputs, training)
+        data = self.generate_proposal_fb(inputs, training)
         ma_, mr_ = self._get_accept_masks(data['metrics']['acc'])
         ma = ma_[:, None]
         mr = mr_[:, None]
 
         v_out = ma * data['proposed'].v + mr * data['init'].v
         x_out = ma * data['proposed'].x + mr * data['init'].x
-        logdet = ma_ * data['metrics']['sumlogdet']
+        sumlogdet = ma_ * data['metrics']['sumlogdet']
 
         state_out = State(x=x_out, v=v_out, beta=data['init'].beta)
         mc_states = MonteCarloStates(init=data['init'],
                                      proposed=data['proposed'],
                                      out=state_out)
-        metrics = {
-            'acc': data['metrics']['acc'],
+        data['metrics'].update({
             'acc_mask': ma_,
-            'sumlogdet': logdet,
+            'sumlogdet': sumlogdet,
             'mc_states': mc_states,
-        }
+        })
 
-        return (mc_states.out.x, metrics)
+        return (mc_states.out.x, data['metrics'])
 
     def apply_transition(
             self,
@@ -156,8 +156,8 @@ class Dynamics(Model):
             training: bool = True
     ) -> tuple[Tensor,  dict]:
         x, beta = inputs
-        fwd = self._transition(inputs, forward=True, training=training)
-        bwd = self._transition(inputs, forward=False, training=training)
+        fwd = self.generate_proposal(inputs, forward=True, training=training)
+        bwd = self.generate_proposal(inputs, forward=False, training=training)
 
         mf_, mb_ = self._get_direction_masks(batch_size=x.shape[0])
         mf = mf_[:, None]
@@ -180,7 +180,7 @@ class Dynamics(Model):
 
         v_out = ma * v_prop + mr * v_init
         x_out = ma * x_prop + mr * x
-        logdet = ma_ * logdet_prop  # + mr_ * logdet_init (= 0.)
+        sumlogdet = ma_ * logdet_prop  # + mr_ * logdet_init (= 0.)
 
         init = State(x=x, v=v_init, beta=beta)
         prop = State(x=x_prop, v=v_prop, beta=beta)
@@ -191,31 +191,13 @@ class Dynamics(Model):
         metrics = {
             'acc': acc,
             'acc_mask': ma_,
-            'sumlogdet': logdet,
+            'sumlogdet': sumlogdet,
             'mc_states': mc_states,
-            # 'logdet': logdet,
-            # 'forward': mfwd,
-            # 'backward': mbwd,
         }
-        metrics.update({f'forward/{k}': v for k, v in mfwd.items()})
-        metrics.update({f'backward/{k}': v for k, v in mbwd.items()})
+        metrics.update({f'fwd/{k}': v for k, v in mfwd.items()})
+        metrics.update({f'bwd/{k}': v for k, v in mbwd.items()})
 
-        return (mc_states.out.x, metrics)
-
-    def _transition_fb(
-            self, inputs: tuple[Tensor, Tensor], training: bool = True,
-    ) -> dict:
-        """Run the transition kernel to generate a proposal configuration."""
-        return self.generate_proposal_fb(inputs, training=training)
-
-    def _transition(
-            self,
-            inputs: tuple[Tensor, Tensor],
-            forward: bool,
-            training: bool = True,
-    ) -> dict:
-        """Run the transition kernel to generate a proposal configuration."""
-        return self.generate_proposal(inputs, forward, training=training)
+        return x_out, metrics
 
     def generate_proposal_fb(
             self,
@@ -249,12 +231,12 @@ class Dynamics(Model):
         if not self.config.verbose:
             return {}
 
-        kwargs = {
-            'dynamic_size': False,
-            'clear_after_read': False,
-            'size': self.config.nleapfrog+1,
-            'element_shape': (state.x.shape[0],),
-        }
+        # kwargs = {
+        #     'dynamic_size': False,
+        #     'clear_after_read': False,
+        #     'size': self.config.nleapfrog+1,
+        #     'element_shape': (state.x.shape[0],),
+        # }
         # sumlogdet = tf.TensorArray(TF_FLOAT, **kwargs)
         # energies = tf.TensorArray(TF_FLOAT, **kwargs)
         # logprobs = tf.TensorArray(TF_FLOAT, **kwargs)
@@ -273,22 +255,37 @@ class Dynamics(Model):
             'logprob': energy - logdet,  # .write(0, energy - logdet),
         }
 
-    def _get_metrics(self, s: State, sumlogdet: Tensor) -> dict[str, Tensor]:
-        h = self.hamiltonian(s)
-        logprob = tf.subtract(h, sumlogdet)
-        return {
-            'energy': h,
-            'sumlogdet': sumlogdet,
+    def get_metrics(
+            self,
+            state: State,
+            logdet: Tensor,
+            step: int = None,
+    ) -> dict:
+        energy = self.hamiltonian(state)
+        logprob = tf.subtract(energy, logdet)
+        metrics = {
+            'energy': energy,
+            'logdet': logdet,
             'logprob': logprob,
         }
+        if step is not None:
+            metrics.update({
+                'xeps': self.xeps[step],
+                'veps': self.veps[step],
+            })
 
-    @staticmethod
-    def _update_history(history: dict, data: dict, step: int) -> dict:
-        for key, val in data.items():
+        return metrics
+
+    def update_history(
+            self,
+            metrics: dict,
+            history: dict,
+    ) -> dict:
+        for key, val in metrics.items():
             try:
-                history[key] = history[key].write(step, val)
-            except AttributeError:
-                continue
+                history[key].append(val)
+            except KeyError:
+                history[key] = [val]
 
         return history
 
@@ -300,57 +297,30 @@ class Dynamics(Model):
         state_ = State(state.x, state.v, state.beta)
         sumlogdet = tf.zeros((state.x.shape[0],), dtype=TF_FLOAT)
         # history = self._new_history(state_)
+
+        # metrics = self.get_metrics(state_, sumlogdet, step=1)
+        # history = self.update_history(metrics, history={})
         history = {}
-
-        def _update_history(hist: dict, data: dict, step: int) -> dict:
-            for key, val in data.items():
-                # try:
-                #     hist[key] = hist[key].write(step, val)
-                # except AttributeError:
-                #     continue
-                try:
-                    hist[key].append(val)
-                except KeyError:
-                    hist[key] = [val]
-
-            return hist
-
-        def _stack_history(hist: dict) -> dict:
-            for key, val in hist.items():
-                if isinstance(val, tf.TensorArray):
-                    val = val.stack()
-                if tf.is_tensor(val):
-                    try:
-                        val = val.numpy()  # type: ignore
-                    except Exception:
-                        continue
-                hist[key] = val
-            return hist
-
         # Loop over leapfrog steps
         for step in range(self.config.nleapfrog):
             if step <= self.config.nleapfrog // 2:
                 state_, logdet = self._forward_lf(step, state_, training)
             else:
-                step_r = self.config.nleapfrog - step - 1
-                state_, logdet = self._backward_lf(step_r, state_, training)
+                step = self.config.nleapfrog - step - 1
+                state_, logdet = self._backward_lf(step, state_, training)
 
             sumlogdet = sumlogdet + logdet
             if self.config.verbose:
-                metrics = self._get_metrics(state_, sumlogdet)
-                history = _update_history(history, metrics, step+1)
+                metrics = self.get_metrics(state_, sumlogdet, step=step)
+                history = self.update_history(metrics, history=history)
 
         acc = self.compute_accept_prob(state, state_, sumlogdet)
-        history.update({
-            'acc': acc,
-            'sumlogdet': sumlogdet,
-            'xeps': tf.convert_to_tensor([self.xeps[0], *self.xeps]),
-            'veps': tf.convert_to_tensor([self.veps[0], *self.veps]),
-            # 'xeps': [self.xeps[0], *self.xeps],
-            # 'veps': [self.veps[0], *self.veps],
-        })
+        history['acc'] = acc
+        history['sumlogdet'] = sumlogdet
         if self.config.verbose:
-            history = _stack_history(history)
+            for key, val in history.items():
+                if isinstance(val, list) and isinstance(val[0], Tensor):
+                    history[key] = tf.stack(val)
 
         return state_, history
 
@@ -365,47 +335,29 @@ class Dynamics(Model):
         # Copy initial state into proposed state
         state_ = State(x=state.x, v=state.v, beta=state.beta)
         sumlogdet = tf.zeros((state.x.shape[0],), dtype=TF_FLOAT)
-        history = self._new_history(state_)
-
-        def _update_history(hist: dict, data: dict, step: int) -> dict:
-            # we implicitly assume that all of data's entries are TensorArray's
-            for key, val in data.items():
-                try:
-                    hist[key] = hist[key].write(step, val)
-                except AttributeError:  # can't call write method on entry
-                    continue
-
-            return hist
-
-        def _stack_history(hist: dict) -> dict:
-            for key, val in hist.items():
-                if isinstance(val, tf.TensorArray):
-                    val = val.stack()
-                if tf.is_tensor(val):
-                    try:
-                        val = val.numpy()  # type: ignore
-                    except AttributeError:
-                        continue
-                hist[key] = val
-            return hist
-
+        # history = self._new_history(state_)
         # Loop over leapfrog steps
+        # metrics = self.get_metrics(state_, sumlogdet, step=1)
+        # history = self.update_history(metrics, history={})
+        history = {
+            'xeps': [self.xeps[0]],
+            'veps': [self.veps[0]],
+        }
         for step in range(self.config.nleapfrog):
             state_, logdet = lf_fn(step, state_, training)
             sumlogdet = sumlogdet + logdet
             if self.config.verbose:
-                metrics = self._get_metrics(state_, sumlogdet)
-                history = _update_history(history, metrics, step+1)
+                metrics = self.get_metrics(state, sumlogdet, step=step)
+                history = self.update_history(metrics, history=history)
 
         acc = self.compute_accept_prob(state, state_, sumlogdet)
-        history.update({
-            'acc': acc,
-            'sumlogdet': sumlogdet,
-            'xeps': tf.convert_to_tensor([self.xeps[0], *self.xeps]),
-            'veps': tf.convert_to_tensor([self.veps[0], *self.veps]),
-        })
+        history['acc'] = acc  # type: ignore
+        history['sumlogdet'] = sumlogdet
+        # history.update({'acc': acc, 'sumlogdet': sumlogdet})
         if self.config.verbose:
-            history = _stack_history(history)
+            for key, val in history.items():
+                if isinstance(val, list) and isinstance(val[0], Tensor):
+                    history[key] = tf.stack(val)  # type: ignore
 
         return state_, history
 
@@ -447,7 +399,7 @@ class Dynamics(Model):
         )
         rej = tf.ones_like(acc) - acc
 
-        return acc, rej
+        return (acc, rej)
 
     def _get_direction_masks(self, batch_size) -> tuple:
         fwd = tf.cast(
@@ -555,9 +507,6 @@ class Dynamics(Model):
             training: bool = True,
     ) -> tuple[State, Tensor]:
         """Complete update (leapfrog step) in the backward direction."""
-        # if self.config.merge_directions:
-        #     step_r = step
-        # else:
         # Note: Reverse the step count, i.e. count from end of trajectory.
         step_r = self.config.nleapfrog - step - 1
 
@@ -587,7 +536,6 @@ class Dynamics(Model):
             training: bool = True,
     ) -> tuple[State, Tensor]:
         eps = self.veps[step]
-        # half_eps = tf.cast(eps / 2, dtype=TF_FLOAT)
         force = self.grad_potential(state.x, state.beta)
         s, t, q = self._call_vnet(step, (state.x, force), training=training)
 
@@ -598,12 +546,6 @@ class Dynamics(Model):
         exp_q = tf.exp(eps * q)
         vf = exp_s * state.v - (eps * (force * exp_q + t) / 2.)
 
-        # s = tf.scalar_mul(half_eps, s)
-        # q = tf.scalar_mul(eps, q)
-
-        # vf = state.v * tf.exp(s) - half_eps * (force * tf.exp(q) - t)
-        # logdet = tf.reduce_sum(s, axis=1)
-
         return State(state.x, vf, state.beta), logdet
 
     def _update_v_bwd(
@@ -613,7 +555,6 @@ class Dynamics(Model):
             training: bool = True,
     ) -> tuple[State, Tensor]:
         eps = self.veps[step]
-        # half_eps = tf.cast(eps / 2, dtype=TF_FLOAT)
         force = self.grad_potential(state.x, state.beta)
         s, t, q = self._call_vnet(step, (state.x, force), training=training)
         jac = (-eps * s / 2.)
@@ -621,10 +562,6 @@ class Dynamics(Model):
         exp_s = tf.exp(jac)
         exp_q = tf.exp(eps * q)
         vb = exp_s * (state.v + 0.5 * eps * (force * exp_q + t))
-        # s = tf.scalar_mul(half_eps, s)
-        # q = tf.scalar_mul(eps, q)
-        # vb = tf.exp(s) * (state.v + half_eps * (force * tf.exp(q) - t))
-        # logdet = tf.reduce_sum(s, axis=1)
 
         return State(state.x, vb, state.beta), logdet
 
@@ -647,9 +584,8 @@ class Dynamics(Model):
         exp_s = tf.exp(s)
         exp_q = tf.exp(q)
         if self.config.use_ncp:
-            # halfx = tf.divide(state.x, 2.)
-            halfx = state.x / tf.constant(2.)
-            _x = tf.constant(2.) * tf.math.atan(tf.math.tan(halfx) * exp_s)
+            halfx = state.x / TWO
+            _x = TWO * tf.math.atan(tf.math.tan(halfx) * exp_s)
             xp = _x + eps * (state.v * exp_q + t)
             xf = xm_init + (mb * xp)
             cterm = tf.math.square(tf.math.cos(halfx))
@@ -707,7 +643,7 @@ class Dynamics(Model):
 
     @staticmethod
     def kinetic_energy(v: Tensor) -> Tensor:
-        return tf.reduce_sum(tf.math.square(v), axis=1) / 2.
+        return tf.reduce_sum(tf.math.square(v), axis=-1) / 2.
 
     def potential_energy(self, x: Tensor, beta: Tensor) -> Tensor:
         return tf.multiply(beta, self.potential_fn(x))
