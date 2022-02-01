@@ -1,28 +1,31 @@
 """
 lattice.py
 
-Contains pytorch implementation of Lattice object.
+Implements BaseLattice class from which
 
-Author: Sam Foreman
-Date: 06/02/2021
+  ``lattice/pytorch/lattice.py``
+
+and
+
+ ``lattice/tensorflow/lattice.py``
+
+inherit.
 """
-from __future__ import absolute_import, annotations, division, print_function
+from __future__ import absolute_import, division, print_function, annotations
 from dataclasses import dataclass
 from math import pi as PI
+from scipy.special import i1, i0
 
-from scipy.special import i0, i1
-import torch
-
-from l2hmc.lattice.lattice import BaseLattice
+import numpy as np
 
 TWO_PI = 2. * PI
-Tensor = torch.Tensor
+Array = np.ndarray
 
 
 @dataclass
 class Charges:
-    intQ: Tensor
-    sinQ: Tensor
+    intQ: Array
+    sinQ: Array
 
     def asdict(self):
         return {'intQ': self.intQ, 'sinQ': self.sinQ}
@@ -30,9 +33,9 @@ class Charges:
 
 @dataclass
 class LatticeMetrics:
-    plaqs: Tensor
+    plaqs: Array
     charges: Charges
-    p4x4: Tensor
+    p4x4: Array
 
     def asdict(self):
         return {
@@ -48,55 +51,47 @@ def area_law(beta: float, nplaqs: int):
 
 
 def plaq_exact(beta: float):
-    return i1(beta) / i0(beta)
+    return area_law(beta, nplaqs=1)
 
 
-def project_angle(x: Tensor) -> Tensor:
-    """For x in [-4pi, 4pi], returns x in [-pi, pi]."""
-    return x - TWO_PI * torch.floor((x + PI) / TWO_PI)
+def project_angle(x: Array) -> Array:
+    return x - TWO_PI * np.floor((x + PI) / TWO_PI)
 
 
-class Lattice(BaseLattice):
+class BaseLattice:
     def __init__(self, shape: tuple):
-        super().__init__(shape=shape)
+        self._shape = shape
+        self.batch_size, self.xshape = shape[0], shape[1:]
+        self.nt, self.nx, self._dim = self.xshape
 
-    def draw_uniform_batch(self, requires_grad=True) -> Tensor:
-        """Draw batch of samples, uniformly from [-pi, pi)."""
-        unif = torch.rand(self._shape, requires_grad=requires_grad)
+        self.nplaqs = self.nt * self.nx
+        self.nlinks = self.nplaqs * self._dim
+
+    def draw_uniform_batch(self):
+        unif = np.random.uniform(self._shape)
         return TWO_PI * unif - PI
 
-    def unnormalized_log_prob(self, x: Tensor) -> Tensor:
+    def unnormalized_log_prob(self, x: Array) -> Array:
         return self.action(x=x)
 
-    def action(self, x: Tensor = None, wloops: Tensor = None) -> Tensor:
+    def action(self, x: Array = None, wloops: Array = None) -> Array:
         """Calculate the Wilson gauge action for a batch of lattices."""
         wloops = self._get_wloops(x) if wloops is None else wloops
-        return (1. - torch.cos(wloops)).sum((1, 2))
+        return (1. - np.cos(wloops)).sum((1, 2))
 
-    def plaqs_diff(
-            self,
-            beta: float,
-            x: Tensor = None,
-            wloops: Tensor = None,
-    ) -> Tensor:
-        wloops = self._get_wloops(x) if wloops is None else wloops
-        plaqs = self.plaqs(wloops=wloops)
-        pexact = plaq_exact(beta) * torch.ones_like(plaqs)
-        return pexact - self.plaqs(wloops=wloops)
-
-    def calc_metrics(self, x: Tensor) -> dict[str, Tensor]:
+    def calc_metrics(self, x: Array) -> dict[str, Array]:
         wloops = self.wilson_loops(x)
         plaqs = self.plaqs(wloops=wloops)
         charges = self.charges(wloops=wloops)
         return {'plaqs': plaqs, 'intQ': charges.intQ, 'sinQ': charges.sinQ}
 
-    def observables(self, x: Tensor) -> LatticeMetrics:
+    def observables(self, x: Array) -> LatticeMetrics:
         wloops = self.wilson_loops(x)
         return LatticeMetrics(p4x4=self.plaqs4x4(x=x),
                               plaqs=self.plaqs(wloops=wloops),
                               charges=self.charges(wloops=wloops))
 
-    def wilson_loops(self, x: Tensor) -> Tensor:
+    def wilson_loops(self, x: Array) -> Array:
         """Calculate the Wilson loops by summing links in CCW direction."""
         # --------------------------
         # NOTE: Watch your shapes!
@@ -114,7 +109,7 @@ class Lattice(BaseLattice):
         x0, x1 = x.reshape(-1, *self.xshape).T
         return (x0 + x1.roll(-1, dims=0) - x0.roll(-1, dims=1) - x1).T
 
-    def wilson_loops4x4(self, x: Tensor) -> Tensor:
+    def wilson_loops4x4(self, x: Array) -> Array:
         """Calculate the 4x4 Wilson loops"""
         x0, x1 = x.reshape(-1, *self.xshape).T
         return (
@@ -138,22 +133,22 @@ class Lattice(BaseLattice):
 
     def plaqs(
             self,
-            x: Tensor = None,
-            wloops: Tensor = None,
+            x: Array = None,
+            wloops: Array = None,
             # beta: float = None
-    ) -> Tensor:
+    ) -> Array:
         """Calculate the average plaquettes for a batch of lattices."""
         if wloops is None:
             if x is None:
                 raise ValueError('One of `x` or `wloops` must be specified.')
             wloops = self.wilson_loops(x)
 
-        return torch.cos(wloops).mean((1, 2))
+        return np.cos(wloops).mean((1, 2))
 
-    def _plaqs4x4(self, wloops4x4: Tensor) -> Tensor:
-        return torch.cos(wloops4x4).mean((1, 2))
+    def _plaqs4x4(self, wloops4x4: Array) -> Array:
+        return np.cos(wloops4x4).mean((1, 2))
 
-    def plaqs4x4(self, x: Tensor = None, wloops4x4: Tensor = None) -> Tensor:
+    def plaqs4x4(self, x: Array = None, wloops4x4: Array = None) -> Array:
         """Calculate the 4x4 Wilson loops for a batch of lattices."""
         if wloops4x4 is None:
             if x is None:
@@ -162,30 +157,30 @@ class Lattice(BaseLattice):
 
         return self._plaqs4x4(wloops4x4)
 
-    def _sin_charges(self, wloops: Tensor) -> Tensor:
+    def _sin_charges(self, wloops: Array) -> Array:
         """Calculate sinQ from Wilson loops."""
-        return torch.sin(wloops).sum((1, 2)) / TWO_PI
+        return np.sin(wloops).sum((1, 2)) / TWO_PI
 
-    def _int_charges(self, wloops: Tensor) -> Tensor:
+    def _int_charges(self, wloops: Array) -> Array:
         """Calculate intQ from Wilson loops."""
         return project_angle(wloops).sum((1, 2)) / TWO_PI
 
-    def _get_wloops(self, x: Tensor = None) -> Tensor:
+    def _get_wloops(self, x: Array = None) -> Array:
         if x is None:
             raise ValueError('One of `x` or `wloops` must be specified.')
         return self.wilson_loops(x)
 
-    def sin_charges(self, x: Tensor = None, wloops: Tensor = None) -> Tensor:
+    def sin_charges(self, x: Array = None, wloops: Array = None) -> Array:
         """Calculate the real-valued charge approximation, sin(Q)."""
         wloops = self._get_wloops(x) if wloops is None else wloops
         return self._sin_charges(wloops)
 
-    def int_charges(self, x: Tensor = None, wloops: Tensor = None) -> Tensor:
+    def int_charges(self, x: Array = None, wloops: Array = None) -> Array:
         """Calculate the integer valued topological charge, int(Q)."""
         wloops = self._get_wloops(x) if wloops is None else wloops
         return self._int_charges(wloops)
 
-    def charges(self, x: Tensor = None, wloops: Tensor = None) -> Charges:
+    def charges(self, x: Array = None, wloops: Array = None) -> Charges:
         """Calculate both charge representations and return as single object"""
         wloops = self._get_wloops(x) if wloops is None else wloops
         sinQ = self._sin_charges(wloops)
