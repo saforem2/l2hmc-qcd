@@ -103,12 +103,16 @@ class Network(nn.Module):
 
         self.input_shapes = {}
         for key, val in input_shapes.items():
-            if isinstance(val, tuple):
+            if isinstance(val, (list, tuple)):
                 self.input_shapes[key] = np.cumprod(val)[-1]
             elif isinstance(val, int):
                 self.input_shapes[key] = val
             else:
-                raise ValueError('Unexpected value in input_shapes')
+                raise ValueError(
+                    'Unexpected value in input_shapes!\n'
+                    f'\tinput_shapes: {input_shapes}\n'
+                    f'\t  val: {val}'
+                )
 
         self.units = self.net_config.units
 
