@@ -5,18 +5,20 @@ Implements various configuration objects
 """
 from __future__ import absolute_import, annotations, division, print_function
 from collections import namedtuple
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 import json
 import os
 from pathlib import Path
 from typing import NamedTuple, Optional
+from omegaconf import MISSING
 
 from hydra.core.config_store import ConfigStore
 import numpy as np
 
 
-SRC = Path(os.path.abspath(__file__)).parent
-PROJECT_DIR = SRC.parent
+HERE = Path(os.path.abspath(__file__)).parent
+PROJECT_DIR = HERE.parent.parent
+CONF_DIR = HERE.joinpath('conf')
 LOGS_DIR = PROJECT_DIR.joinpath('logs')
 
 
@@ -57,6 +59,31 @@ class BaseConfig:
         self.__init__(**config)
 
 
+defaults = [
+    {'backend': MISSING}
+]
+
+
+@dataclass
+class U1Config(BaseConfig):
+    steps: Steps
+    network: NetworkConfig
+    dynamics: DynamicsConfig
+    loss: LossConfig
+    net_weights: NetWeights
+    conv: Optional[ConvolutionConfig] = None
+    backend: str = MISSING
+
+    def __post_init__(self):
+        self.xshape = self.dynamics.xshape
+        xdim = self.dynamics.xdim
+        self.input_spec = InputSpec(
+            xshape=self.dynamics.xshape,
+            xnet={'x': [xdim, int(2)], 'v': [xdim, ]},
+            vnet={'x': [xdim, ], 'v': [xdim, ]}
+        )
+
+
 class NetWeight(NamedTuple):
     """Object for selectively scaling different components of learned fns.
 
@@ -76,17 +103,14 @@ class NetWeight(NamedTuple):
 @dataclass
 class NetWeights(BaseConfig):
     """Object for selectively scaling different components of x, v networks."""
-    x: Optional[NetWeight] = field(default_factory=NetWeight)
-    v: Optional[NetWeight] = field(default_factory=NetWeight)
+    x: Optional[NetWeight] = None
+    v: Optional[NetWeight] = None
 
     def __post_init__(self):
         if self.x is None:
-            self.x = NetWeight(1., 1., 1.)
-            self.v = NetWeight(1., 1., 1.)
-
-    def to_str(self):
-        assert self.x is not None and self.v is not None
-        return f'xNW-{self.x.to_str()}_vNW-{self.v.to_str()}'
+            self.x = NetWeight(s=1., t=1., q=1.)
+        if self.v is None:
+            self.v = NetWeight(s=1., t=1., q=1.)
 
 
 @dataclass
@@ -102,7 +126,7 @@ class LearningRateConfig(BaseConfig):
 
 
 @dataclass
-class AnnealingSchedule:
+class AnnealingSchedule(BaseConfig):
     beta_init: float
     beta_final: float
     steps: Steps
@@ -115,7 +139,7 @@ class AnnealingSchedule:
 
 
 @dataclass
-class TrainingConfig:
+class TrainingConfig(BaseConfig):
     lr_config: LearningRateConfig
     annealing_schedule: AnnealingSchedule
 
@@ -171,6 +195,8 @@ class DynamicsConfig(BaseConfig):
     merge_directions: bool = False
 
     def __post_init__(self):
+        assert len(self.xshape) == 4
+        self.nchains, self.nt, self.nx, self.dim = self.xshape
         self.xdim = int(np.cumprod(self.xshape[1:])[-1])
 
 
@@ -196,16 +222,10 @@ class Steps:
 
 
 @dataclass
-class InputShapes(BaseConfig):
-    x: list[int] | tuple[int]
-    v: list[int] | tuple[int]
-
-
-@dataclass
 class InputSpec(BaseConfig):
     xshape: list[int] | tuple[int]
-    xnet: Optional[dict[str, list | tuple]]
-    vnet: Optional[dict[str, list | tuple]]
+    xnet: Optional[dict[str, list[int] | tuple[int]]] = None
+    vnet: Optional[dict[str, list[int] | tuple[int]]] = None
 
     def __post_init__(self):
         if len(self.xshape) == 2:
@@ -221,51 +241,30 @@ class InputSpec(BaseConfig):
             self.vnet = {'x': self.xshape, 'v': self.xshape}
 
 
-@dataclass
-class U1Config:
-    steps: Steps
-    network: NetworkConfig
-    dynamics: DynamicsConfig
-    loss: LossConfig
-    net_weights: NetWeights
-    conv: Optional[ConvolutionConfig] = None
-
-    def __post_init__(self):
-        self.xshape = self.dynamics.xshape
-        xdim = self.dynamics.xdim
-        self.input_spec = InputSpec(
-            xshape=self.dynamics.xshape,
-            xnet={'x': (xdim, 2), 'v': (xdim)},
-            vnet={'x': (xdim,), 'v': (xdim,)}
-            # (x=[xdim, 2], v=[xdim, ]),
-            # vnet=InputShapes(x=[xdim, ], v=[xdim, ]),
-        )
-
-
-def register_configs() -> None:
-    cs = ConfigStore.instance()
-    cs.store(
-        group="dynamics",
-        name="dynamics",
-        node=DynamicsConfig,
-    )
-    cs.store(
-        group="steps",
-        name="steps",
-        node=Steps,
-    )
-    cs.store(
-        group="network",
-        name="NetworkConfig",
-        node=NetworkConfig,
-    )
-    cs.store(
-        group="loss",
-        name="loss",
-        node=LossConfig,
-    )
-    cs.store(
-        group="net_weights",
-        name="NetWeights",
-        node=NetWeights,
-    )
+# def register_configs() -> None:
+cs = ConfigStore.instance()
+cs.store(
+    group="dynamics",
+    name="dynamics",
+    node=DynamicsConfig,
+)
+cs.store(
+    group="steps",
+    name="steps",
+    node=Steps,
+)
+cs.store(
+    group="network",
+    name="network",
+    node=NetworkConfig,
+)
+cs.store(
+    group="loss",
+    name="loss",
+    node=LossConfig,
+)
+# cs.store(
+#     group="net_weights",
+#     name="net_weights",
+#     node=NetWeights,
+# )
