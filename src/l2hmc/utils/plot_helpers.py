@@ -18,11 +18,10 @@ import seaborn as sns
 import xarray as xr
 warnings.filterwarnings('ignore')
 
-xplt = xr.plot
+xplt = xr.plot  # type: ignore
 
 LW = plt.rcParams.get('axes.linewidth', 1.75)
 
-plt.style.use('default')
 colors = {
     'blue':     '#007DFF',
     'red':      '#FF5252',
@@ -35,18 +34,17 @@ colors = {
     'white':    '#CFCFCF',
 }
 
-plt.style.use(matplotx.styles.dufte)
-sns.set_palette(list(colors.values()))
+# sns.set_palette(list(colors.values()))
 # sns.set_context('notebook', font_scale=0.8)
-plt.rcParams.update({
-    'image.cmap': 'viridis',
-    'figure.facecolor': (1.0, 1.0, 1.0, 0.),
-    'axes.facecolor': (1.0, 1.0, 1.0, 0.),
-    'axes.grid': False,
-    # 'grid.color': '#cfcfcf',
-    'figure.dpi': plt.rcParamsDefault['figure.dpi'],
-    'figure.figsize': plt.rcParamsDefault['figure.figsize'],
-})
+# plt.rcParams.update({
+#     'image.cmap': 'viridis',
+#     'figure.facecolor': (1.0, 1.0, 1.0, 0.),
+#     'axes.facecolor': (1.0, 1.0, 1.0, 0.),
+#     'axes.grid': False,
+#     # 'grid.color': '#cfcfcf',
+#     'figure.dpi': plt.rcParamsDefault['figure.dpi'],
+#     'figure.figsize': plt.rcParamsDefault['figure.figsize'],
+# })
 
 
 def get_timestamp(fstr=None):
@@ -57,7 +55,7 @@ def get_timestamp(fstr=None):
     return now.strftime(fstr)
 
 
-FigAxes = "tuple[plt.Figure, plt.Axes]"
+FigAxes = tuple[plt.Figure, plt.Axes]
 
 
 def savefig(fig: plt.Figure, outfile: os.PathLike):
@@ -182,16 +180,78 @@ def plot_leapfrogs(
     return fig, ax
 
 
+def plot_combined(
+        val: xr.DataArray,
+        key: str = None,
+        num_chains: int = 10,
+        # title: str = None,
+        # outdir: str = None,
+        subplots_kwargs: dict[str, Any] = None,
+        plot_kwargs: dict[str, Any] = None,
+) -> tuple:
+    plot_kwargs = {} if plot_kwargs is None else plot_kwargs
+    subplots_kwargs = {} if subplots_kwargs is None else subplots_kwargs
+    figsize = subplots_kwargs.get('figsize', set_size())
+    subplots_kwargs.update({'figsize': figsize})
+    subfigs = None
+
+    _ = subplots_kwargs.pop('constrained_layout', True)
+    figsize = (3 * figsize[0], 1.5 * figsize[1])
+    fig = plt.figure(figsize=figsize, constrained_layout=True)
+    subfigs = fig.subfigures(1, 2)
+    gs_kw = {'width_ratios': [1.33, 0.33]}
+    vmin = np.min(val)
+    vmax = np.max(val)
+    if vmin < 0 < vmax:
+        color = '#FF5252' if val.mean() > 0 else '#007DFF'
+    elif 0 < vmin < vmax:
+        color = '#3FB5AD'
+    else:
+        color = plot_kwargs.get('color', f'C{np.random.randint(5)}')
+
+    (ax1, ax2) = subfigs[1].subplots(1, 2, sharey=True, gridspec_kw=gs_kw)
+    ax1.grid(alpha=0.2)
+    ax2.grid(False)
+    sns.kdeplot(y=val.values.flatten(), ax=ax2, color=color, shade=True)
+    axes = (ax1, ax2)
+    ax0 = subfigs[0].subplots(1, 1)
+    val = val.dropna('chain')
+    _ = xplt.pcolormesh(val, 'draw', 'chain', ax=ax0,
+                        robust=True, add_colorbar=True)
+    nchains = min((num_chains, len(val.coords['chain'])))
+    label = r'$\langle$' + f'{key} ' + r'$\rangle$'
+    steps = np.arange(len(val.coords['draw']))
+    chain_axis = val.get_axis_num('chain')
+    if chain_axis == 0:
+        for idx in range(nchains):
+            ax1.plot(steps, val.values[idx, :],
+                     color=color, lw=LW/2., alpha=0.6)
+
+    ax1.plot(steps, val.mean('chain'), color=color, label=label, lw=1.5*LW)
+    if key is not None and 'eps' in key:
+        _ = ax0.set_ylabel('leapfrog')
+
+    ax2.set_xticks([])
+    ax2.set_xticklabels([])
+    sns.despine(ax=ax1, top=True, right=True, left=True, bottom=True)
+    sns.despine(ax=ax2, top=True, right=True, left=True, bottom=True)
+    ax2.set_xlabel('')
+    ax1.set_xlabel('draw')
+    sns.despine(subfigs[0])
+    plt.autoscale(enable=True, axis=ax0)
+
+    return (fig, axes)
+
+
 def plot_dataArray(
         val: xr.DataArray,
         key: str = None,
         therm_frac: float = 0.,
-        num_chains: int = 0,
+        num_chains: int = 10,
         title: str = None,
         outdir: str = None,
         subplots_kwargs: dict[str, Any] = None,
         plot_kwargs: dict[str, Any] = None,
-
 ) -> tuple:
     plot_kwargs = {} if plot_kwargs is None else plot_kwargs
     subplots_kwargs = {} if subplots_kwargs is None else subplots_kwargs
@@ -209,64 +269,13 @@ def plot_dataArray(
     if therm_frac > 0:
         drop = int(therm_frac * arr.shape[0])
         arr = arr[drop:]
+
         steps = steps[drop:]
-
     if len(arr.shape) == 2:
-        _ = subplots_kwargs.pop('constrained_layout', True)
-        figsize = (3 * figsize[0], 1.5 * figsize[1])
-
-        fig = plt.figure(figsize=figsize, constrained_layout=True)
-        subfigs = fig.subfigures(1, 2)
-
-        gs_kw = {'width_ratios': [1.33, 0.33]}
-        (ax, ax1) = subfigs[1].subplots(1, 2, sharey=True,
-                                        gridspec_kw=gs_kw)
-        ax.grid(alpha=0.2)
-        ax1.grid(False)
-        vmin = np.min(val)
-        vmax = np.max(val)
-        cmap = None
-        if vmin < 0 < vmax:
-            # BWR: uniform cmap from blue -> white == 0 -> red
-            color = '#FF5252' if val.mean() > 0 else '#007DFF'
-            cmap = 'RdBu_r'
-        elif 0 < vmin < vmax:
-            # viridis: uniform cmap from 0 < blue -> green -> yellow
-            cmap = 'mako'
-            # color = '#4DC26B'
-            # color = '#B2DD2D'
-            color = '#3FB5AD'
-        else:
-            color = plot_kwargs.get('color', f'C{np.random.randint(4)}')
-
-        sns.kdeplot(y=arr.flatten(), ax=ax1, color=color, shade=True)
-        ax1.set_xticks([])
-        ax1.set_xticklabels([])
-        sns.despine(ax=ax, top=True, right=True)
-        sns.despine(ax=ax1, top=True, right=True, left=True, bottom=True)
-        ax1.set_xlabel('')
-        # _ = subfigs[1].subplots_adjust(wspace=-0.75)
-        axes = (ax, ax1)
-
-        ax0 = subfigs[0].subplots(1, 1)
-        val = val.dropna('chain')
-        _ = xplt.pcolormesh(val, 'draw', 'chain',
-                            ax=ax0, robust=True,
-                            cmap=cmap, add_colorbar=True)
-
-        if key is not None and 'eps' in key:
-            _ = ax0.set_ylabel('leapfrog')
-
-        sns.despine(subfigs[0])
-        plt.autoscale(enable=True, axis=ax0)
-
-        nchains = min((num_chains, len(val.coords['chain'])))
-        label = r'$\langle$' + f' {key} ' + r'$\rangle$'
-        ax.plot(steps, val.mean('chain'),  color=color, label=label,
-                lw=1.5*LW, **plot_kwargs)
-        for idx in range(nchains):
-            ax.plot(steps, arr[idx, :], lw=LW/2, alpha=0.6, color=color)
-
+        fig, axes = plot_combined(val, key=key,
+                                  num_chains=num_chains,
+                                  plot_kwargs=plot_kwargs,
+                                  subplots_kwargs=subplots_kwargs)
     else:
         if len(arr.shape) == 1:
             fig, ax = plt.subplots(**subplots_kwargs)
@@ -286,7 +295,10 @@ def plot_dataArray(
         else:
             raise ValueError('Unexpected shape encountered')
 
+        ax = plt.gca()
         ax.set_ylabel(key)
+        ax.set_xlabel('draw')
+        matplotx.line_labels()
 
         # if num_chains > 0 and len(arr.shape) > 1:
         #     lw = LW / 2.
@@ -299,9 +311,8 @@ def plot_dataArray(
         #         ax.plot(steps, val
         #                 alpha=0.5, lw=lw/2., **plot_kwargs)
 
-    matplotx.line_labels()
-    ax.set_xlabel('draw')
     if title is not None:
+        fig = plt.gcf()
         fig.suptitle(title)
 
     if outdir is not None:
@@ -397,7 +408,7 @@ def set_size(
 
 
 def plot_metric(
-        val: np.ndarray,
+        val: np.ndarray | xr.DataArray,
         key: str = None,
         therm_frac: float = 0.,
         num_chains: int = 0,
@@ -436,6 +447,7 @@ def plot_metric(
         ax.grid(alpha=0.2)
         ax1.grid(False)
         color = plot_kwargs.get('color', 'C0')
+        label = plot_kwargs.pop('label', None)
         label = r'$\langle$' + f' {key} ' + r'$\rangle$'
         ax.plot(steps, arr.mean(-1), lw=1.5*LW, label=label, **plot_kwargs)
         if num_chains > 0:
@@ -654,7 +666,7 @@ def make_ridgeplots(
                 #  logger.log(f'Saving figure to: {out_file}.')
                 plt.savefig(out_file, dpi=400, bbox_inches='tight')
 
-        #plt.close('all')
+        # plt.close('all')
 
     #  sns.set(style='whitegrid', palette='bright', context='paper')
     fig = plt.gcf()
