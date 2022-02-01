@@ -14,12 +14,17 @@ from torch import optim
 
 from l2hmc.configs import Steps
 from l2hmc.dynamics.pytorch.dynamics import Dynamics, random_angle, to_u1
-from l2hmc.utils.history import History, summarize_dict
+from l2hmc.utils.history import summarize_dict, BaseHistory
+# from l2hmc.utils.pytorch.history import History
 from l2hmc.utils.step_timer import StepTimer
-from l2hmc.utils.console import console
+from l2hmc.utils.console import is_interactive, console
 
 from rich.table import Table
 from rich.live import Live
+
+import logging
+
+log = logging.getLogger(__name__)
 
 
 Tensor = torch.Tensor
@@ -44,7 +49,7 @@ class Trainer:
 
         # self.device = device if device is not None else
 
-        self.history = History(steps=steps)
+        self.history = BaseHistory(steps=steps)
         evals_per_step = self.dynamics.config.nleapfrog * steps.log
         self.timer = StepTimer(evals_per_step=evals_per_step)
 
@@ -99,6 +104,8 @@ class Trainer:
             x: Tensor = None,
             beta: float = 1.,
             skip: str | list[str] = None,
+            save_x: bool = False,
+            width: int = 0,
             # keep: str | list[str] = None,
     ) -> dict:
         # x = xinit
@@ -113,37 +120,34 @@ class Trainer:
         should_log = lambda epoch: (epoch % self.steps.log == 0)      # noqa
         should_print = lambda epoch: (epoch % self.steps.print == 0)  # noqa
 
-        xdict = {}
+        xarr = []
         summaries = []
+        colors = 10 * ['red', 'yellow', 'green', 'blue', 'magenta', 'cyan']
         # skip = ['FORWARD', 'BACKWARD']
-        styles = {
-            'ERA': 'progress.elapsed',
-            'EPOCH': 'progress.percentage',
-            'LOSS': 'magenta',
-            'ACC': 'green',
-            'DT': 'red',
-            'ACC_MASK': 'white',
-        }
         # table = Table(expand=True,
         #               highlight=True,
-        #               show_footer=False,
         #               row_styles=['dim', 'none'])
+        #               show_footer=False,
         tables = {}
+        era = 0
+        # interactive = is_interactive()
         for era in range(self.steps.nera):
-            xdict[str(era)] = x
-            estart = time.time()
-            console.rule(f'ERA: {era}')
-            table = Table(expand=True,
-                          highlight=True,
-                          show_footer=False,
+            table = Table(collapse_padding=True,
+                          # safe_box=interactive,
                           row_styles=['dim', 'none'])
-            with Live(table, screen=False, auto_refresh=False) as live:
+            with Live(table, console=console, screen=False) as live:
+                if is_interactive() and width > 0:
+                    live.console.width = width
+
+                estart = time.time()
                 for epoch in range(self.steps.nepoch):
                     self.timer.start()
                     x, metrics = self.train_step((x, beta))
                     dt = self.timer.stop()
                     if should_print(epoch) or should_log(epoch):
                         record = {'era': era, 'epoch': epoch, 'dt': dt}
+                        if save_x:
+                            xarr.append(x.detach().cpu())
 
                         # Update metrics with train step metrics, tmetrics
                         record.update(self.metrics_to_numpy(metrics))
@@ -151,25 +155,24 @@ class Trainer:
                         summary = summarize_dict(avgs)
                         summaries.append(summary)
                         if epoch == 0:
-                            for h in [str(i).upper() for i in avgs.keys()]:
-                                cargs = {'header': h, 'justify': 'center'}
-                                table.add_column(**cargs)
+                            for idx, key in enumerate(avgs.keys()):
+                                table.add_column(str(key).upper(),
+                                                 justify='center',
+                                                 style=colors[idx])
+                        if should_print(epoch):
+                            table.add_row(*[f'{v:5}' for _, v in avgs.items()])
 
-                        table.add_row(*[f'{v:5}' for _, v in avgs.items()])
-                        live.refresh()
-
-                live.console.rule(
+                live.console.log(
                     f'Era {era} took: {time.time() - estart:<3.2g}s',
                 )
                 live.console.log(
                     f'Avgs over last era:\n {self.history.era_summary(era)}',
                 )
-                live.console.rule()
 
             tables[str(era)] = table
 
         return {
-            'xdict': xdict,
+            'xarr': xarr,
             'summaries': summaries,
             'history': self.history,
             'tables': tables,

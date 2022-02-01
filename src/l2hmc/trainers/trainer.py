@@ -5,7 +5,6 @@ Contains BaseTrainer (ABC) object for training L2HMC dynamics
 """
 from __future__ import absolute_import, division, print_function, annotations
 import time
-from rich.console import Console
 from typing import Callable
 import numpy as np
 from src.l2hmc.configs import Steps
