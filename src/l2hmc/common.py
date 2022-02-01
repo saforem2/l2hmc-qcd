@@ -8,7 +8,6 @@ import datetime
 import logging
 import os
 from pathlib import Path
-from typing import Any
 
 import joblib
 import matplotlib.pyplot as plt
@@ -279,7 +278,7 @@ def train(cfg: DictConfig) -> dict:
 
     nchains = min((cfg.dynamics.xshape[0], cfg.dynamics.nleapfrog))
 
-    outdir = cfg.get('outdir', Path(os.getcwd()))
+    outdir = Path(cfg.get('outdir', os.getcwd()))
     outdir.mkdir(exist_ok=True, parents=True)
 
     dirs = {'outdir': outdir}
