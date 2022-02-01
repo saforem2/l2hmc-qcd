@@ -1,9 +1,101 @@
-default:
-  override hydra/job_logging: colorlog
-  override hydra/hydra_logging: colorlog
-  # override hydra/launcher: joblib
-  compile: true
-  jit_compile: False
+hydra:
+  sweep:
+    dir: multirun
+    subdir: ${hydra.job.num}
+    # subdir: ${hydra.job.override_dirname}
+  run:
+    dir: "outputs/runs/${framework}\
+      /${dynamics.xshape[1]}x${dynamics.xshape[2]}\
+      /beta-${beta}\
+      /nlf-${dynamics.nleapfrog}\
+      /merge_directions-${dynamics.merge_directions}\
+      /use_mixed_loss-${loss.use_mixed_loss}\
+      /charge_weight-${loss.charge_weight}\
+      /plaq_weight-${loss.plaq_weight}\
+      /${now:%Y-%m-%d}\
+      /${now:%H-%M-%S}"
+
+defaults:
+  - _self_
+  - steps: default.yaml
+  - dynamics: default.yaml
+  - loss: default.yaml
+  - network: default.yaml
+  - net_weights: default.yaml
+  # modes are special collections of config options for different purposes, e.g. debugging
+  - mode: default.yaml
+  # - mode: default.yaml
+
+  # experiment configs allow for version control of specific configurations
+  # for example, use them to store best hyperparameters for each model configuration
+  # - experiment: null
+
+  # - optional local: default.yaml
+  - override hydra/hydra_logging: colorlog
+  - override hydra/job_logging: colorlog
+
+  # - override hydra/launcher: joblib
+  # specify framework, either tensorflow or pytorch
+
+beta: ???
+framework: ???
+
+save_x: True
+# pretty print config at the start of the run using Rich library
+print_config: True
+# disable python warnings if they annoy you
+ignore_warnings: True
+# seed for random number generators in pytorch, numpy and python.random
+seed: null
+
+compile: True
+
+# name of the run, should be used along with experiment mode
+name: null
+
+  # https://hydra.cc/docs/tutorials/basic/running_your_app/logging/
+  # use this to set level of only chosen command line loggers to 'DEBUG'
+  # verbose: [src.train, src.utils]
+
+# evaluate on test set, using best model weights achieved during training
+# lightning chooses best weights based on metric specified in checkpoint callback
+# test_after_training: True
+
+# hydra:
+#   sweep:
+#     dir: multirun
+#     subdir: ${hydra.job.override_dirname}/seed=${seed}
+#   job:
+#     config:
+#       override_dirname:
+#         exclude_keys:
+#           seed
+  # launcher:
+    # override the number of jobs from joblib
+    # n_jobs = 10
+
+# hydra:
+#   launcher:
+#     # override the number of jobs from joblib
+#     n_jobs = 10
+
+
+# path to original working directory
+# hydra hijacks working directory by changing it to the new log directory
+# so it's useful to have this path as a special variable
+# https://hydra.cc/docs/next/tutorials/basic/running_your_app/working_directory
+# work_dir: ${hydra:runtime.cwd}
+
+# path to folder with data
+# data_dir: ${work_dir}/data/
+
+
+# default:
+#   override hydra/job_logging: colorlog
+#   override hydra/hydra_logging: colorlog
+#   # override hydra/launcher: joblib
+#   compile: true
+#   jit_compile: False
 
 # hydra:
 #   sweep:
@@ -15,54 +107,56 @@ default:
 #         exclude_keys:
 #           seed
 
-steps:
-  nera: 20
-  nepoch: 50
-  log: 10
-  print: 50
-  test: 0
+# backend: ???
 
-dynamics:
-  xshape: [64, 8, 8, 2]
-  eps: 0.01
-  nleapfrog: 9
-  eps_fixed: false
-  use_ncp: true
-  use_split_xnets: true
-  use_separate_networks: true
-  merge_directions: false
+# steps:
+#   nera: 20
+#   nepoch: 50
+#   log: 10
+#   print: 50
+#   test: 0
 
-network:
-  units: [16, 16, 16, 16]
-  dropout_prob: 0.0
-  activation_fn: "relu"
-  use_batch_norm: false
+# dynamics:
+#   xshape: [64, 8, 8, 2]
+#   eps: 0.01
+#   nleapfrog: 9
+#   eps_fixed: false
+#   use_ncp: true
+#   use_split_xnets: true
+#   use_separate_networks: true
+#   merge_directions: false
 
-loss:
-  plaq_weight: 0.0
-  charge_weight: 0.01
-  use_mixed_loss: true
+# network:
+#   units: [16, 16, 16, 16]
+#   dropout_prob: 0.0
+#   activation_fn: "relu"
+#   use_batch_norm: false
 
-net_weights:
-  x:
-    s: 1.0
-    t: 1.0
-    q: 1.0
-  v:
-    s: 1.0
-    t: 1.0
-    q: 1.0
+# loss:
+#   plaq_weight: 0.0
+#   charge_weight: 0.01
+#   use_mixed_loss: true
 
-lr:
-  init: 0.001
-  warmup_steps: 0
-  decay_steps: -1
-  decay_rate: 1.0
+# net_weights:
+#   x:
+#     s: 1.0
+#     t: 1.0
+#     q: 1.0
+#   v:
+#     s: 1.0
+#     t: 1.0
+#     q: 1.0
 
-conv:
-  filters: [16, 16, 16, 16]
-  sizes: [2, 2,  2, 2]
-  pool_sizes: [2, 2, 2, 2]
-  activations: ["relu", "relu", "relu", "relu"]
-  conv_paddings: ["valid", "valid", "valid", "valid"] 
-  use_batch_norm: true
+# lr:
+#   init: 0.001
+#   warmup_steps: 0
+#   decay_steps: -1
+#   decay_rate: 1.0
+
+# conv:
+#   filters: [16, 16, 16, 16]
+#   sizes: [2, 2,  2, 2]
+#   pool_sizes: [2, 2, 2, 2]
+#   activations: ["relu", "relu", "relu", "relu"]
+#   conv_paddings: ["valid", "valid", "valid", "valid"] 
+#   use_batch_norm: true

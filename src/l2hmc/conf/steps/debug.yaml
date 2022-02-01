@@ -1,0 +1,8 @@
+defaults:
+  - default.yaml
+
+nera: 5
+nepoch: 50
+test: 10
+log: 5
+print: 10

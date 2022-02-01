@@ -1,9 +1,0 @@
-dynamics:
-  xshape: [128, 16, 16, 2]
-  eps: 0.01
-  nleapfrog: 10
-  eps_fixed: false
-  use_ncp: true
-  use_split_xnets: true
-  use_separate_networks: true
-
