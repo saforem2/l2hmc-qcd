@@ -7,4 +7,9 @@ from __future__ import absolute_import, division, annotations, print_function
 from rich.console import Console
 
 
+def is_interactive():
+    from IPython import get_ipython
+    return get_ipython() is not None
+
+
 console = Console(record=True, color_system='truecolor', log_path=False)
