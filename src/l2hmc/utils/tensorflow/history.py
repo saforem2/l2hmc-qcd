@@ -9,10 +9,10 @@ from typing import Any
 
 import tensorflow as tf
 import numpy as np
-from l2hmc.utils.history import History
+from l2hmc.utils.history import BaseHistory
 
 
-class tfHistory(History):
+class History(BaseHistory):
     def update(self, metrics: dict) -> dict:
         avgs = {}
         era = metrics.get('era', None)
@@ -59,5 +59,5 @@ class tfHistory(History):
 
         try:
             return tf.reduce_mean(val)
-        except:
+        except Exception:
             return val

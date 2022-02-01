@@ -43,7 +43,7 @@ class StateHistory:
         self.out['v'].append(mc_states.out.v.numpy())
 
 
-class History:
+class BaseHistory:
     def __init__(self, steps: Steps):
         self.steps = steps
         self.history = {}
@@ -68,7 +68,7 @@ class History:
 
     def era_summary(self, era) -> str:
         emetrics = self.era_metrics[str(era)]
-        return '\n'.join([
+        return ', '.join([
             f'{k}={np.mean(v):<3.2g}' for k, v in emetrics.items()
             if k not in ['era', 'epoch']
         ])
@@ -284,7 +284,7 @@ class History:
         if num_chains > 0 and len(arr.shape) > 1:
             lw = LW / 2.
             for idx in range(min(num_chains, arr.shape[1])):
-                #ax = subfigs[0].subplots(1, 1)
+                # ax = subfigs[0].subplots(1, 1)
                 # plot values of invidual chains, arr[:, idx]
                 # where arr[:, idx].shape = [ndraws, 1]
                 ax.plot(steps, arr[:, idx], alpha=0.5, lw=lw/2., **plot_kwargs)
