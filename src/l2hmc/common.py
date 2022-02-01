@@ -279,7 +279,7 @@ def train(cfg: DictConfig) -> dict:
 
     nchains = min((cfg.dynamics.xshape[0], cfg.dynamics.nleapfrog))
 
-    outdir = Path(os.getcwd())
+    outdir = cfg.get('outdir', Path(os.getcwd()))
     outdir.mkdir(exist_ok=True, parents=True)
 
     dirs = {'outdir': outdir}
