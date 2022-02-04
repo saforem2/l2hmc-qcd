@@ -1,7 +1,7 @@
 """
-dynamics.py
+pytorch/dynamics.py
 
-Contains pytorch implementation of Dynamics object for training L2HMC sampler.
+Pytorch implementation of Dynamics object for training L2HMC sampler.
 """
 from __future__ import absolute_import, annotations, division, print_function
 from dataclasses import dataclass
@@ -103,14 +103,15 @@ class Dynamics(nn.Module):
             network_factory: NetworkFactory,
     ):
         """Initialization method."""
-        if config.merge_directions:
-            assert config.nleapfrog % 2 == 1, (' '.join([
-                'If `config.merge_directions`, ',
-                'we restrict `config.nleapfrog % 2 == 0` ',
-                'to preserve reversibility.'
-            ]))
+        # if config.merge_directions:
+        #     assert config.nleapfrog % 2 == 1, (' '.join([
+        #         'If `config.merge_directions`, ',
+        #         'we restrict `config.nleapfrog % 2 == 0` ',
+        #         'to preserve reversibility.'
+        #     ]))
 
         super(Dynamics, self).__init__()
+        # TODO: Implement reversibility check
         self.config = config
         self.xdim = self.config.xdim
         self.xshape = network_factory.input_spec.xshape
@@ -307,17 +308,21 @@ class Dynamics(nn.Module):
         sumlogdet = torch.zeros(state.x.shape[0], device=state.x.device,
                                 requires_grad=state.x.requires_grad)
 
-        # metrics = self.get_metrics(state_, sumlogdet, step=0)
-        # history = self.update_history(metrics=metrics, history={})
         history = {}
+        for step in range(self.config.nleapfrog):
+            # forward
+            state_, logdet = self._forward_lf(step, state_)
+            sumlogdet = sumlogdet + logdet
+            if self.config.verbose:
+                metrics = self.get_metrics(state_, sumlogdet, step=step)
+                history = self.update_history(metrics, history=history)
+
+        # Flip momentum
+        state_ = State(state_.x, -1. * state_.v, state_.beta)
 
         for step in range(self.config.nleapfrog):
-            if step <= self.config.nleapfrog // 2:
-                state_, logdet = self._forward_lf(step, state_)
-            else:
-                step = self.config.nleapfrog - step - 1
-                state_, logdet = self._backward_lf(step, state_)
-
+            # backward
+            state_, logdet = self._backward_lf(step, state_)
             sumlogdet = sumlogdet + logdet
             if self.config.verbose:
                 metrics = self.get_metrics(state_, sumlogdet, step=step)
