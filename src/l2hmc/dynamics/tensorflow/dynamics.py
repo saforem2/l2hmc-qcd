@@ -66,14 +66,15 @@ class Dynamics(Model):
             config: DynamicsConfig,
             network_factory: NetworkFactory,
     ):
-        if config.merge_directions:
-            assert config.nleapfrog % 2 == 1, (' '.join([
-                'If `config.merge_directions`, ',
-                'we restrict `config.nleapfrog % 2 == 0` ',
-                'to preserve reversibility.'
-            ]))
+        # if config.merge_directions:
+        #     assert config.nleapfrog % 2 == 1, (' '.join([
+        #         'If `config.merge_directions`, ',
+        #         'we restrict `config.nleapfrog % 2 == 0` ',
+        #         'to preserve reversibility.'
+        #     ]))
 
         super(Dynamics, self).__init__()
+        # TODO: Implement reversibility check
         self.config = config
         self.xdim = self.config.xdim
         self.xshape = network_factory.input_spec.xshape
@@ -301,14 +302,18 @@ class Dynamics(Model):
         # metrics = self.get_metrics(state_, sumlogdet, step=1)
         # history = self.update_history(metrics, history={})
         history = {}
-        # Loop over leapfrog steps
         for step in range(self.config.nleapfrog):
-            if step <= self.config.nleapfrog // 2:
-                state_, logdet = self._forward_lf(step, state_, training)
-            else:
-                step = self.config.nleapfrog - step - 1
-                state_, logdet = self._backward_lf(step, state_, training)
+            state_, logdet = self._forward_lf(step, state_, training)
+            sumlogdet = sumlogdet + logdet
+            if self.config.verbose:
+                metrics = self.get_metrics(state_, sumlogdet, step=step)
+                history = self.update_history(metrics, history=history)
 
+        # Flip momentum
+        state_ = State(state_.x, -tf.constant(1.) * state_.v, state_.beta)
+
+        for step in range(self.config.nleapfrog):
+            state_, logdet = self._backward_lf(step, state_, training)
             sumlogdet = sumlogdet + logdet
             if self.config.verbose:
                 metrics = self.get_metrics(state_, sumlogdet, step=step)
