@@ -10,8 +10,6 @@ import os
 from pathlib import Path
 
 import joblib
-import matplotlib.pyplot as plt
-import matplotx
 import numpy as np
 from omegaconf import DictConfig
 from rich.table import Table
@@ -26,7 +24,7 @@ from l2hmc.configs import (
     Steps,
 )
 from l2hmc.utils.console import console, is_interactive
-from l2hmc.utils.plot_helpers import plot_dataArray
+from l2hmc.utils.plot_helpers import plot_dataArray, plot_plaqs
 
 log = logging.getLogger(__name__)
 
@@ -90,6 +88,25 @@ def setup_pytorch(configs: dict) -> dict:
 
 
 def setup_tensorflow(configs: dict) -> dict:
+    try:
+        import tensorflow as tf
+        import horovod.tensorflow as hvd
+        hvd.init()
+        # RANK = hvd.rank()  # type: ignore
+        # SIZE = hvd.size()  # type: ignore
+        gpus = tf.config.experimental.list_physical_devices('GPU')
+        if len(gpus) > 0:
+            for gpu in gpus:
+                tf.config.experimental.set_memory_growth(gpu, True)
+
+            gpu = gpus[hvd.local_rank()]
+            tf.config.experimental.set_visible_devices(gpu, 'GPU')
+
+    except (ImportError, ModuleNotFoundError):
+        pass
+        # RANK = 0
+        # SIZE = 1
+
     from l2hmc.dynamics.tensorflow.dynamics import Dynamics
     from l2hmc.lattice.tensorflow.lattice import Lattice
     from l2hmc.loss.tensorflow.loss import LatticeLoss
@@ -146,36 +163,6 @@ def setup_common(cfg: DictConfig) -> dict:
         'network_config': network_config,
         'dynamics_config': dynamics_config,
     }
-
-
-def plot_plaqs(
-        plaqs: np.ndarray,
-        nchains: int = 10,
-        outdir: os.PathLike = None,
-):
-    # plaqs = []
-    # for x in xarr:
-    #     plaqs.append(lattice.plaqs_diff(beta, x=x))
-
-    # plaqs = np.array(plaqs)
-    assert len(plaqs.shape) == 2
-    ndraws, nchains = plaqs.shape
-    xplot = np.arange(ndraws)
-    fig, ax = plt.subplots(constrained_layout=True)
-    _ = ax.plot(xplot, plaqs.mean(-1), label='avg', lw=2.0, color='C0')
-    for idx in range(min(nchains, plaqs.shape[1])):
-        _ = ax.plot(xplot, plaqs[:, idx], lw=1.0, alpha=0.5, color='C0')
-
-    _ = ax.set_ylabel(r'$\delta x_{P}$')
-    _ = ax.set_xlabel('Train Epoch')
-    _ = ax.grid(True, alpha=0.4)
-    _ = matplotx.line_labels()
-    if outdir is not None:
-        outfile = Path(outdir).joinpath('plaqs_diffs.svg')
-        log.info(f'Saving figure to: {outfile}')
-        fig.savefig(outfile.as_posix(), dpi=500, bbox_inches='tight')
-
-    return fig, ax
 
 
 def plot_dataset(
@@ -271,16 +258,12 @@ def train(cfg: DictConfig) -> dict:
             raise ValueError(f'Unexpected framework: {framework}')
 
     log.info(f'Using {framework}, with trainer: {setup["trainer"]}')
-    output = setup['trainer'].train(**kwargs)
-    history = output['history']
-
+    train_output = setup['trainer'].train(**kwargs)
+    history = train_output['history']
     dataset = history.get_dataset()
-
     nchains = min((cfg.dynamics.xshape[0], cfg.dynamics.nleapfrog))
-
     outdir = Path(cfg.get('outdir', os.getcwd()))
     outdir.mkdir(exist_ok=True, parents=True)
-
     dirs = {'outdir': outdir}
     for key in ['logs', 'plots', 'data']:
         d = dirs['outdir'].joinpath(key)
@@ -296,12 +279,10 @@ def train(cfg: DictConfig) -> dict:
     log.info(f'Saving dataset to: {datafile.as_posix()}')
     datafile.parent.mkdir(exist_ok=True, parents=True)
     dataset.to_netcdf(datafile.as_posix(), mode=mode)
-
-    output.update(**setup)
     if cfg.get('save_x', False):
-        xarr = output['xarr']
+        xarr = train_output['xarr']
         beta = cfg.get('beta', None)
-        lattice = output['lattice']
+        lattice = setup['lattice']
         plaqs_diffs = []
         for x in xarr:
             plaqs_diffs.append(lattice.plaqs_diff(beta=beta, x=x).numpy())
@@ -312,12 +293,19 @@ def train(cfg: DictConfig) -> dict:
         log.info(f'saving xarr to: {xfile}')
         joblib.dump(xarr, xfile)
 
+    output = {
+        'train_output': train_output,
+        'setup': setup,
+        'dirs': dirs,
+        'dataset': dataset,
+        'history': history,
+    }
     if is_interactive():
         return output
 
     log.info(
         f'Saving logs and training table to: {dirs["logs"].as_posix()}'
     )
-    save_logs(output['tables'], logdir=dirs['logs'])
+    save_logs(train_output['tables'], logdir=dirs['logs'])
 
     return output

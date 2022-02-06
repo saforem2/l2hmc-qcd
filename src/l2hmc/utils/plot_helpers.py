@@ -673,3 +673,35 @@ def make_ridgeplots(
     ax = plt.gca()
 
     return fig, ax, data
+
+
+def plot_plaqs(
+        plaqs: np.ndarray,
+        nchains: int = 10,
+        outdir: os.PathLike = None,
+):
+    # plaqs = []
+    # for x in xarr:
+    #     plaqs.append(lattice.plaqs_diff(beta, x=x))
+
+    # plaqs = np.array(plaqs)
+    assert len(plaqs.shape) == 2
+    ndraws, nchains = plaqs.shape
+    xplot = np.arange(ndraws)
+    fig, ax = plt.subplots(constrained_layout=True)
+    _ = ax.plot(xplot, plaqs.mean(-1), label='avg', lw=2.0, color='C0')
+    for idx in range(min(nchains, plaqs.shape[1])):
+        _ = ax.plot(xplot, plaqs[:, idx], lw=1.0, alpha=0.5, color='C0')
+
+    _ = ax.set_ylabel(r'$\delta x_{P}$')
+    _ = ax.set_xlabel('Train Epoch')
+    _ = ax.grid(True, alpha=0.4)
+    _ = matplotx.line_labels()
+    if outdir is not None:
+        outfile = Path(outdir).joinpath('plaqs_diffs.svg')
+        log.info(f'Saving figure to: {outfile}')
+        fig.savefig(outfile.as_posix(), dpi=500, bbox_inches='tight')
+
+    return fig, ax
+
+
