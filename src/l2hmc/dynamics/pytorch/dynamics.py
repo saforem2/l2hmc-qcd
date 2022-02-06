@@ -103,13 +103,6 @@ class Dynamics(nn.Module):
             network_factory: NetworkFactory,
     ):
         """Initialization method."""
-        # if config.merge_directions:
-        #     assert config.nleapfrog % 2 == 1, (' '.join([
-        #         'If `config.merge_directions`, ',
-        #         'we restrict `config.nleapfrog % 2 == 0` ',
-        #         'to preserve reversibility.'
-        #     ]))
-
         super(Dynamics, self).__init__()
         # TODO: Implement reversibility check
         self.config = config
@@ -118,22 +111,14 @@ class Dynamics(nn.Module):
         self.potential_fn = potential_fn
         self.network_factory = network_factory
         self.nlf = self.config.nleapfrog
-        self.midpt = self.nlf // 2
-        self.num_networks = (
-            self.nlf if self.config.use_separate_networks else 1
-        )
         self.networks = network_factory.build_networks(
-            n=self.num_networks,
+            n=(self.nlf if self.config.use_separate_networks else 1),
             split_xnets=self.config.use_split_xnets
         )
         self.masks = self._build_masks()
-        # alpha = torch.exp(
-        #     torch.log(torch.tensor(self.config.eps))
-        # ).clamp(0.)
-        # alpha = torch.expself.config.eps))
-        rg = (not self.config.eps_fixed)
         xeps = {}
         veps = {}
+        rg = (not self.config.eps_fixed)
         for lf in range(self.config.nleapfrog):
             xeps[str(lf)] = nn.parameter.Parameter(
                 data=torch.tensor(self.config.eps), requires_grad=rg
@@ -171,6 +156,7 @@ class Dynamics(nn.Module):
 
         v_out = ma * data['proposed'].v + mr * data['init'].v
         x_out = ma * data['proposed'].x + mr * data['init'].x
+
         # NOTE: sumlogdet = (accept * logdet) + (reject * 0)
         sumlogdet = ma_ * data['metrics']['sumlogdet']
 
@@ -243,6 +229,11 @@ class Dynamics(nn.Module):
 
         return x_out, metrics
 
+    def random_state(self, beta: float) -> State:
+        x = torch.rand(self.config.xshape).reshape(self.config.xshape[0], -1)
+        v = torch.randn_like(x)
+        return State(x=x, v=v, beta=torch.tensor(beta))
+
     def generate_proposal_fb(
             self,
             inputs: tuple[Tensor, Tensor],
@@ -300,15 +291,16 @@ class Dynamics(nn.Module):
 
         return history
 
-    def _transition_kernel_fb(
+    def transition_kernel_fb(
             self,
             state: State,
     ) -> tuple[State, dict]:
         state_ = State(x=state.x, v=state.v, beta=state.beta)
-        sumlogdet = torch.zeros(state.x.shape[0], device=state.x.device,
-                                requires_grad=state.x.requires_grad)
+        sumlogdet = torch.zeros(state.x.shape[0], device=state.x.device)
+                                # requires_grad=state.x.requires_grad)
 
-        history = {}
+        metrics = self.get_metrics(state_, sumlogdet, step=0)
+        history = self.update_history(metrics, history={})
         for step in range(self.config.nleapfrog):
             # forward
             state_, logdet = self._forward_lf(step, state_)
@@ -337,7 +329,15 @@ class Dynamics(nn.Module):
 
         return state_, history
 
-    def _transition_kernel(
+    def test_reversibility(self) -> dict[str, Tensor]:
+        state = self.random_state(beta=1.)
+        state_fwd, _ = self.transition_kernel(state, forward=True)
+        state_, _ = self.transition_kernel(state_fwd, forward=False)
+        dx = torch.abs(state.x - state_.x)
+        dv = torch.abs(state.v - state_.v)
+        return {'dx': dx, 'dv': dv}
+
+    def transition_kernel(
             self,
             state: State,
             forward: bool
@@ -347,11 +347,10 @@ class Dynamics(nn.Module):
 
         # Copy initial state into proposed state
         state_ = State(x=state.x, v=state.v, beta=state.beta)
-        sumlogdet = torch.zeros(state.x.shape[0], device=state.x.device,
-                                requires_grad=state.x.requires_grad)
-        # metrics = self.get_metrics(state_, sumlogdet, step=0)
-        # history = self.update_history(metrics, history={})
-        history = {}
+        sumlogdet = torch.zeros(state.x.shape[0], device=state.x.device)
+        metrics = self.get_metrics(state_, sumlogdet, step=0)
+        history = self.update_history(metrics, history={})
+
         for step in range(self.config.nleapfrog):
             state_, logdet = lf_fn(step, state_)
             sumlogdet = sumlogdet + logdet
@@ -364,19 +363,9 @@ class Dynamics(nn.Module):
         if self.config.verbose:
             for key, val in history.items():
                 if isinstance(val, list) and isinstance(val[0], Tensor):
-                    history[key] = torch.stack(val).detach().numpy()
+                    history[key] = torch.stack(val).detach()
 
         return state_, history
-
-    def transition_kernel_fb(self, state: State) -> tuple[State, dict]:
-        return self._transition_kernel_fb(state)
-
-    def transition_kernel(
-            self,
-            state: State,
-            forward: bool
-    ) -> tuple[State, dict]:
-        return self._transition_kernel(state, forward)
 
     def compute_accept_prob(
         self,
@@ -425,12 +414,14 @@ class Dynamics(nn.Module):
         return masks
 
     def _get_vnet(self, step: int) -> nn.Module:
+        """Returns momentum network to be used for updating v."""
         vnet = self.networks.get_submodule('vnet')
         if self.config.use_separate_networks:
             return vnet.get_submodule(str(step))
         return vnet
 
     def _get_xnet(self, step: int, first: bool = False) -> nn.Module:
+        """Returns position network to be used for updating x."""
         xnet = self.networks.get_submodule('xnet')
         if self.config.use_separate_networks:
             xnet = xnet.get_submodule(str(step))
@@ -442,6 +433,7 @@ class Dynamics(nn.Module):
         return xnet
 
     def _stack_as_xy(self, x: Tensor) -> Tensor:
+        """Returns -pi < x <= pi stacked as [cos(x), sin(x)]"""
         # TODO: Deal with ConvNet here
         # if self.config.use_conv_net:
         #     xcos = xcos.reshape(self.lattice_shape)
@@ -580,6 +572,7 @@ class Dynamics(nn.Module):
             m: Tensor,
             first: bool,
     ) -> tuple[State, Tensor]:
+        """Update the position in the backward direction."""
         eps = self.xeps[str(step)]
         mb = torch.ones_like(m) - m
         xm_init = m * state.x
@@ -609,14 +602,17 @@ class Dynamics(nn.Module):
         return State(x=xb, v=state.v, beta=state.beta), logdet
 
     def hamiltonian(self, state: State) -> Tensor:
+        """Returns the total energy H = KE + PE."""
         kinetic = self.kinetic_energy(state.v)
         potential = self.potential_energy(state.x, state.beta)
         return kinetic + potential
 
     def kinetic_energy(self, v: Tensor) -> Tensor:
+        """Returns the kinetic energy, KE = 0.5 * v ** 2."""
         return 0.5 * (v ** 2).sum(dim=-1)
 
     def potential_energy(self, x: Tensor, beta: Tensor):
+        """Returns the potential energy, PE = beta * action(x)."""
         return beta * self.potential_fn(x)
 
     def grad_potential(
@@ -625,6 +621,7 @@ class Dynamics(nn.Module):
         beta: Tensor,
         create_graph: bool = True,
     ) -> Tensor:
+        """Compute the gradient of the potential function."""
         x.requires_grad_(True)
         s = self.potential_energy(x, beta)
         id = torch.ones(x.shape[0], device=x.device)
