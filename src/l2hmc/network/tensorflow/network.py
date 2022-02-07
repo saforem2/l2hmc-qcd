@@ -90,50 +90,6 @@ class NetworkFactory(BaseNetworkFactory):
         return {'xnet': xnet, 'vnet': vnet}
 
 
-def get_kinit(scale: float = 1., seed: int = None):
-    return VarianceScaling(scale=2. * scale,
-                           mode='fan_in', seed=seed,
-                           distribution='truncated_normal')
-
-
-class CustomDense(Layer):
-    def __init__(
-            self,
-            units: int,
-            scale: float = 1.,
-            activation: str | Callable = None,
-            **kwargs,
-    ):
-        super(CustomDense, self).__init__(**kwargs)
-        if isinstance(activation, str):
-            activation = ACTIVATIONS.get(activation, ACTIVATIONS['relu'])
-
-        self.units = units
-        self.scale = scale
-        self.activation = activation
-        kinit = tf.keras.initializers.VarianceScaling(
-            mode='fan_in',
-            scale=2.*self.scale,
-            distribution='truncated_normal',
-        )
-        self.layer = Dense(self.units,
-                           name=self.name,
-                           activation=activation,
-                           kernel_initializer=kinit)
-
-    def get_config(self) -> dict:
-        config = super(CustomDense, self).get_config()
-        config.update({
-            'units': self.units,
-            'scale': self.scale,
-            'activation': self.activation,
-        })
-        return config
-
-    def call(self, x: Tensor) -> Tensor:
-        return self.layer(x)
-
-
 def get_network_configs(
         xdim: int,
         network_config: NetworkConfig,
@@ -251,26 +207,27 @@ def get_network(
         else:
             raise ValueError(f'Invalid value for `xshape`: {xshape}')
 
-        n1 = conv_config.filters[0]
-        n2 = conv_config.filters[1]
-        f1 = conv_config.sizes[0]
-        f2 = conv_config.sizes[1]
-        p1 = conv_config.pool[0]
-
         if 'xnet' in name.lower():
             x = tf.reshape(x_input, shape=(-1, nt, nx, d + 2))
         else:
-            x = tf.reshape(x_input, shape=(-1, nt, nx, d))
+            try:
+                x = tf.reshape(x_input, shape=(-1, nt, nx, d + 2))
+            except ValueError:
+                x = tf.reshape(x_input, shape=(-1, nt, nx, d))
 
-        x = PeriodicPadding(f1 - 1)(x)
-        x = Conv2D(n1, f1, activation='relu', name=f'{name}/xConv1')(x)
-        x = Conv2D(n2, f2, activation='relu', name=f'{name}/xConv2')(x)
-        x = MaxPooling2D(p1, name=f'{name}/xPool')(x)
-        x = Conv2D(n2, f2, activation='relu', name=f'{name}/xConv3')(x)
-        x = Conv2D(n1, f1, activation='relu', name=f'{name}/xConv4')(x)
+        iterable = zip(conv_config.filters, conv_config.sizes)
+        for idx, (f, n) in enumerate(iterable):
+            x = PeriodicPadding(n - 1)(x)
+            x = Conv2D(f, n, name=f'{name}/xConv{idx}',
+                       activation=act_fn)(x)
+            if (idx + 1) % 2 == 0:
+                p = conv_config.pool[idx]
+                x = MaxPooling2D((p, p), name=f'{name}/xPool{idx}')(x)
+
         x = Flatten()(x)
         if network_config.use_batch_norm:
-            x = BatchNormalization(-1, name=f'{name}/batch_norm')(x)
+            x = BatchNormalization(-1)(x)
+
     else:
         x = Flatten()(x_input)
 

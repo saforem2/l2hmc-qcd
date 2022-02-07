@@ -28,26 +28,26 @@ class PeriodicPadding(Layer):
         super(PeriodicPadding, self).__init__(**kwargs)
         self.size = size
 
-    def call(self, v: Tensor) -> Tensor:
+    def call(self, x: Tensor) -> Tensor:
         """Call the layer in the foreward direction.
         NOTE: We assume inputs.shape = (batch, Nx, Ny, *)
         """
-        assert len(v.shape) >= 3, 'Expected len(v.shape) >= 3'
-        assert tf.is_tensor(v)
-        assert isinstance(v, Tensor)
+        assert len(x.shape) >= 3, 'Expected len(v.shape) >= 3'
+        assert tf.is_tensor(x)
+        assert isinstance(x, Tensor)
         # 1. pad along x axis
         # inputs = tf.concat([v[:, -self.size:], v, v[:, 0:self.size]], axis=1)
-        x0 = v[:, -self.size:, :, ...]  # pyright: ignore
-        x1 = v[:, 0:self.size, :, ...]  # pyright: ignore
-        inputs = tf.concat([x0, v, x1], 1)
+        x0 = x[:, -self.size:, ...]  # type: ignore
+        x1 = x[:, 0:self.size, ...]  # type: ignore
+        x = tf.concat([x0, x, x1], 1)
 
         # 2. pad along y axis
-        y0 = v[:, :, -self.size:, ...]
-        y1 = v[:, :, 0:self.size, ...]
+        y0 = x[:, :, -self.size:, ...]  # type: ignore
+        y1 = x[:, :, 0:self.size, ...]  # type: ignore
 
-        inputs = tf.concat([y0, inputs, y1], 2)
+        x = tf.concat([y0, x, y1], 2)
 
-        return inputs
+        return x
 
     def get_config(self):
         config = super(PeriodicPadding, self).get_config()
