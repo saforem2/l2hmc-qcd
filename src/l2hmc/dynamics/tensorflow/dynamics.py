@@ -55,8 +55,8 @@ def xy_repr(x: Tensor) -> Tensor:
     return tf.stack([tf.math.cos(x), tf.math.sin(x)], axis=-1)
 
 
-CallableNetwork = Callable[[tuple[Tensor, Tensor], bool],
-                           tuple[Tensor, Tensor, Tensor]]
+CallableNetwork = Callable[[Tuple[Tensor, Tensor], bool],
+                           Tuple[Tensor, Tensor, Tensor]]
 
 
 class Dynamics(Model):
