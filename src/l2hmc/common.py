@@ -21,6 +21,7 @@ from l2hmc.configs import (
     LossConfig,
     NetWeights,
     NetworkConfig,
+    ConvolutionConfig,
     Steps,
 )
 from l2hmc.utils.console import console, is_interactive
@@ -50,6 +51,7 @@ def setup_pytorch(configs: dict) -> dict:
     loss_config = configs['loss_config']
     net_weights = configs['net_weights']
     network_config = configs['network_config']
+    conv_config = configs.get('conv_config', None)
     dynamics_config = configs['dynamics_config']
 
     xdim = dynamics_config.xdim
@@ -60,7 +62,8 @@ def setup_pytorch(configs: dict) -> dict:
                            xnet={'v': [xdim, ], 'x': [xdim, 2]})
     network_factory = NetworkFactory(input_spec=input_spec,
                                      net_weights=net_weights,
-                                     network_config=network_config)
+                                     network_config=network_config,
+                                     conv_config=conv_config)
     lattice = Lattice(tuple(xshape))
     dynamics = Dynamics(config=dynamics_config,
                         potential_fn=lattice.action,
@@ -104,8 +107,6 @@ def setup_tensorflow(configs: dict) -> dict:
 
     except (ImportError, ModuleNotFoundError):
         pass
-        # RANK = 0
-        # SIZE = 1
 
     from l2hmc.dynamics.tensorflow.dynamics import Dynamics
     from l2hmc.lattice.tensorflow.lattice import Lattice
@@ -118,6 +119,7 @@ def setup_tensorflow(configs: dict) -> dict:
     loss_config = configs['loss_config']
     net_weights = configs['net_weights']
     network_config = configs['network_config']
+    conv_config = configs.get('conv_config', None)
     dynamics_config = configs['dynamics_config']
 
     xdim = dynamics_config.xdim
@@ -128,7 +130,8 @@ def setup_tensorflow(configs: dict) -> dict:
                            xnet={'v': [xdim, ], 'x': [xdim, 2]})
     network_factory = NetworkFactory(input_spec=input_spec,
                                      net_weights=net_weights,
-                                     network_config=network_config)
+                                     network_config=network_config,
+                                     conv_config=conv_config)
     lattice = Lattice(tuple(xshape))
     dynamics = Dynamics(config=dynamics_config,
                         potential_fn=lattice.action,
@@ -155,6 +158,10 @@ def setup_common(cfg: DictConfig) -> dict:
     net_weights = NetWeights(**cfg.net_weights)
     network_config = NetworkConfig(**cfg.network)
     dynamics_config = DynamicsConfig(**cfg.dynamics)
+    if len(cfg.conv.keys()) > 0:
+        conv_config = ConvolutionConfig(**cfg.conv)
+    else:
+        conv_config = None
 
     return {
         'steps': steps,
@@ -162,6 +169,7 @@ def setup_common(cfg: DictConfig) -> dict:
         'net_weights': net_weights,
         'network_config': network_config,
         'dynamics_config': dynamics_config,
+        'conv_config': conv_config,
     }
 
 

@@ -1,14 +1,14 @@
 hydra:
   sweep:
-    dir: multirun
-    subdir: ${hydra.job.num}
-    # subdir: ${hydra.job.override_dirname}
+    dir: "outputs/multirun"
+    # subdir: ${hydra.job.num}
+    subdir: ${hydra.job.override_dirname}
   run:
     dir: "outputs/runs/${framework}\
       /${dynamics.xshape[1]}x${dynamics.xshape[2]}\
-      /beta-${beta}\
       /nlf-${dynamics.nleapfrog}\
       /merge_directions-${dynamics.merge_directions}\
+      /beta-${beta}\
       /use_mixed_loss-${loss.use_mixed_loss}\
       /charge_weight-${loss.charge_weight}\
       /plaq_weight-${loss.plaq_weight}\
@@ -22,6 +22,7 @@ defaults:
   - loss: default.yaml
   - network: default.yaml
   - net_weights: default.yaml
+  - conv: none.yaml
   # modes are special collections of config options for different purposes, e.g. debugging
   - mode: default.yaml
   # - mode: default.yaml

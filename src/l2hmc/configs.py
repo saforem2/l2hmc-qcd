@@ -71,7 +71,7 @@ class U1Config(BaseConfig):
     dynamics: DynamicsConfig
     loss: LossConfig
     net_weights: NetWeights
-    conv: Optional[ConvolutionConfig] = None
+    # conv: Optional[ConvolutionConfig] = None
     backend: str = MISSING
 
     def __post_init__(self):
@@ -146,12 +146,11 @@ class TrainingConfig(BaseConfig):
 
 @dataclass
 class ConvolutionConfig(BaseConfig):
-    input_shape: list[int]
     filters: list[int]
     sizes: list[int]
     pool: list[int]
-    activation: str
-    paddings: list[int]
+    # activation: str
+    # paddings: list[int]
 
     def to_str(self):
         outstr = [
@@ -169,7 +168,7 @@ class NetworkConfig(BaseConfig):
     activation_fn: str
     dropout_prob: float
     use_batch_norm: bool = True
-    conv_config: Optional[ConvolutionConfig] = None
+    # conv_config: Optional[ConvolutionConfig] = None
 
     def to_str(self):
         ustr = ''.join([str(int(i)) for i in self.units])
@@ -254,9 +253,14 @@ cs.store(
     node=Steps,
 )
 cs.store(
-    group="network",
-    name="network",
+    group='network',
+    name='network',
     node=NetworkConfig,
+)
+cs.store(
+    group='conv_config',
+    name='conv_config',
+    node=ConvolutionConfig,
 )
 cs.store(
     group="loss",
