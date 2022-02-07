@@ -346,8 +346,15 @@ class BaseHistory:
 
         return dataset
 
-    def to_DataArray(self, x: Union[list, np.ndarray]) -> xr.DataArray:
+    def to_DataArray(
+            self,
+            x: Union[list, np.ndarray],
+            therm_frac: float = 0.0,
+    ) -> xr.DataArray:
         arr = np.array(x)
+        if therm_frac > 0:
+            drop = therm_frac * arr.shape[0]
+            arr = arr[drop:]
         # steps = np.arange(len(arr))
         if len(arr.shape) == 1:                     # [ndraws]
             ndraws = arr.shape[0]
@@ -372,7 +379,11 @@ class BaseHistory:
         else:
             raise ValueError('Invalid shape encountered')
 
-    def get_dataset(self, data: dict[str, Union[list, np.ndarray]] = None):
+    def get_dataset(
+            self,
+            data: dict[str, Union[list, np.ndarray]] = None,
+            therm_frac: float = 0.0,
+    ):
         data = self.history if data is None else data
         data_vars = {}
         for key, val in data.items():
@@ -382,6 +393,6 @@ class BaseHistory:
             #         tmp = invert
             #      data_vars[key] = dataset = self.get_dataset(val)
 
-            data_vars[key] = self.to_DataArray(val)
+            data_vars[key] = self.to_DataArray(val, therm_frac)
 
         return xr.Dataset(data_vars)
