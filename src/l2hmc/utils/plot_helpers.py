@@ -7,7 +7,7 @@ from __future__ import absolute_import, annotations, division, print_function
 import datetime
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Tuple
 import warnings
 
 import matplotlib.pyplot as plt
@@ -59,7 +59,7 @@ def get_timestamp(fstr=None):
     return now.strftime(fstr)
 
 
-FigAxes = tuple[plt.Figure, plt.Axes]
+FigAxes = Tuple[plt.Figure, plt.Axes]
 
 
 def savefig(fig: plt.Figure, outfile: os.PathLike):
