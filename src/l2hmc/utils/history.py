@@ -44,10 +44,11 @@ class StateHistory:
 
 
 class BaseHistory:
-    def __init__(self, steps: Steps):
+    def __init__(self, steps: Steps = None):
         self.steps = steps
         self.history = {}
-        self.era_metrics = {str(era): {} for era in range(steps.nera)}
+        nera = 1 if steps is None else steps.nera
+        self.era_metrics = {str(era): {} for era in range(nera)}
 
     def _update(self, key: str, val: Any) -> float:
         if val is None:
@@ -75,8 +76,7 @@ class BaseHistory:
 
     def update(self, metrics: dict) -> dict:
         avgs = {}
-        era = metrics.get('era', None)
-        assert era is not None
+        era = metrics.get('era', 0)
         for key, val in metrics.items():
             avg = None
             if isinstance(val, (float, int)):
