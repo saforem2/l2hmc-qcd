@@ -107,7 +107,7 @@ class Dynamics(nn.Module):
         # TODO: Implement reversibility check
         self.config = config
         self.xdim = self.config.xdim
-        self.xshape = network_factory.input_spec.xshape
+        self.xshape = tuple(network_factory.input_spec.xshape)
         self.potential_fn = potential_fn
         self.network_factory = network_factory
         self.nlf = self.config.nleapfrog
@@ -230,7 +230,7 @@ class Dynamics(nn.Module):
         return x_out, metrics
 
     def random_state(self, beta: float) -> State:
-        x = torch.rand(self.config.xshape).reshape(self.config.xshape[0], -1)
+        x = torch.rand(tuple(self.xshape)).reshape(self.xshape[0], -1)
         v = torch.randn_like(x)
         return State(x=x, v=v, beta=torch.tensor(beta))
 
@@ -267,8 +267,8 @@ class Dynamics(nn.Module):
         logprob = energy - logdet
         metrics = {
             'energy': energy,
-            'logdet': logdet,
             'logprob': logprob,
+            'logdet': logdet,
         }
         if step is not None:
             metrics.update({
@@ -297,12 +297,11 @@ class Dynamics(nn.Module):
     ) -> tuple[State, dict]:
         state_ = State(x=state.x, v=state.v, beta=state.beta)
         sumlogdet = torch.zeros(state.x.shape[0], device=state.x.device)
-                                # requires_grad=state.x.requires_grad)
-
         metrics = self.get_metrics(state_, sumlogdet, step=0)
         history = self.update_history(metrics, history={})
+
+        # Forward
         for step in range(self.config.nleapfrog):
-            # forward
             state_, logdet = self._forward_lf(step, state_)
             sumlogdet = sumlogdet + logdet
             if self.config.verbose:
@@ -312,8 +311,8 @@ class Dynamics(nn.Module):
         # Flip momentum
         state_ = State(state_.x, -1. * state_.v, state_.beta)
 
+        # Backward
         for step in range(self.config.nleapfrog):
-            # backward
             state_, logdet = self._backward_lf(step, state_)
             sumlogdet = sumlogdet + logdet
             if self.config.verbose:
@@ -335,7 +334,7 @@ class Dynamics(nn.Module):
         state_, _ = self.transition_kernel(state_fwd, forward=False)
         dx = torch.abs(state.x - state_.x)
         dv = torch.abs(state.v - state_.v)
-        return {'dx': dx, 'dv': dv}
+        return {'dx': dx.detach().numpy(), 'dv': dv.detach().numpy()}
 
     def transition_kernel(
             self,

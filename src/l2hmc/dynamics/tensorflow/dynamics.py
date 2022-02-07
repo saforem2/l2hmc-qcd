@@ -71,7 +71,7 @@ class Dynamics(Model):
         # TODO: Implement reversibility check
         self.config = config
         self.xdim = self.config.xdim
-        self.xshape = network_factory.input_spec.xshape
+        self.xshape = tuple(network_factory.input_spec.xshape)
         self.potential_fn = potential_fn
         self.nlf = self.config.nleapfrog
         self.midpt = self.config.nleapfrog // 2
@@ -113,8 +113,7 @@ class Dynamics(Model):
 
     def random_state(self, beta: float = 1.) -> State:
         """Returns a random State."""
-        x = tf.random.uniform(*(-PI, PI),
-                              shape=self.config.xshape, dtype=TF_FLOAT)
+        x = tf.random.uniform(self.config.xshape, dtype=TF_FLOAT)
         x = tf.reshape(x, (self.config.xshape[0], -1))
         v = tf.random.normal(x.shape, dtype=TF_FLOAT)
         return State(x=x, v=v, beta=tf.constant(beta))
@@ -127,7 +126,7 @@ class Dynamics(Model):
         dx = tf.abs(tf.subtract(state.x, state_.x))
         dv = tf.abs(tf.subtract(state.v, state_.v))
 
-        return {'dx': dx, 'dv': dv}
+        return {'dx': dx.numpy(), 'dv': dv.numpy()}
 
     def apply_transition_fb(
             self,
@@ -256,8 +255,8 @@ class Dynamics(Model):
         logprob = tf.subtract(energy, logdet)
         metrics = {
             'energy': energy,
-            'logdet': logdet,
             'logprob': logprob,
+            'logdet': logdet,
         }
         if step is not None:
             metrics.update({
@@ -537,7 +536,7 @@ class Dynamics(Model):
 
         exp_s = tf.exp(jac)
         exp_q = tf.exp(eps * q)
-        vf = exp_s * state.v - (eps * (force * exp_q + t) / 2.)
+        vf = exp_s * state.v - 0.5 * eps * (force * exp_q + t)
 
         return State(state.x, vf, state.beta), logdet
 
