@@ -15,8 +15,7 @@ from l2hmc.utils.history import BaseHistory
 class History(BaseHistory):
     def update(self, metrics: dict) -> dict:
         avgs = {}
-        era = metrics.get('era', None)
-        assert era is not None
+        era = metrics.get('era', 0)
         for key, val in metrics.items():
             avg = None
             if isinstance(val, (float, int)):
