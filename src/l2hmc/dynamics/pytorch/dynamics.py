@@ -324,7 +324,7 @@ class Dynamics(nn.Module):
         if self.config.verbose:
             for key, val in history.items():
                 if isinstance(val, list) and isinstance(val[0], Tensor):
-                    history[key] = torch.stack(val).detach().numpy()
+                    history[key] = torch.stack(val)
 
         return state_, history
 

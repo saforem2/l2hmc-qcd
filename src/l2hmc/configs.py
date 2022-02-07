@@ -9,7 +9,7 @@ from dataclasses import asdict, dataclass
 import json
 import os
 from pathlib import Path
-from typing import NamedTuple, Optional
+from typing import NamedTuple, Optional, List, Tuple, Dict
 from omegaconf import MISSING
 
 from hydra.core.config_store import ConfigStore
@@ -146,9 +146,9 @@ class TrainingConfig(BaseConfig):
 
 @dataclass
 class ConvolutionConfig(BaseConfig):
-    filters: list[int]
-    sizes: list[int]
-    pool: list[int]
+    filters: List[int]
+    sizes: List[int]
+    pool: List[int]
     # activation: str
     # paddings: list[int]
 
@@ -164,7 +164,7 @@ class ConvolutionConfig(BaseConfig):
 
 @dataclass
 class NetworkConfig(BaseConfig):
-    units: list[int]
+    units: List[int]
     activation_fn: str
     dropout_prob: float
     use_batch_norm: bool = True
@@ -183,7 +183,7 @@ class NetworkConfig(BaseConfig):
 
 @dataclass
 class DynamicsConfig(BaseConfig):
-    xshape: list[int]
+    xshape: List[int]
     nleapfrog: int
     eps: float = 0.01
     use_ncp: bool = True
@@ -222,9 +222,9 @@ class Steps:
 
 @dataclass
 class InputSpec(BaseConfig):
-    xshape: list[int] | tuple[int]
-    xnet: Optional[dict[str, list[int] | tuple[int]]] = None
-    vnet: Optional[dict[str, list[int] | tuple[int]]] = None
+    xshape: List[int] | Tuple[int]
+    xnet: Optional[Dict[str, List[int] | Tuple[int]]] = None
+    vnet: Optional[Dict[str, List[int] | Tuple[int]]] = None
 
     def __post_init__(self):
         if len(self.xshape) == 2:
@@ -241,34 +241,34 @@ class InputSpec(BaseConfig):
 
 
 # def register_configs() -> None:
-cs = ConfigStore.instance()
-cs.store(
-    group="dynamics",
-    name="dynamics",
-    node=DynamicsConfig,
-)
-cs.store(
-    group="steps",
-    name="steps",
-    node=Steps,
-)
-cs.store(
-    group='network',
-    name='network',
-    node=NetworkConfig,
-)
-cs.store(
-    group='conv_config',
-    name='conv_config',
-    node=ConvolutionConfig,
-)
-cs.store(
-    group="loss",
-    name="loss",
-    node=LossConfig,
-)
+# cs = ConfigStore.instance()
 # cs.store(
-#     group="net_weights",
-#     name="net_weights",
-#     node=NetWeights,
+#     group="dynamics",
+#     name="l2hmc.configs.DynamicsConfig",
+#     node=DynamicsConfig,
 # )
+# cs.store(
+#     group="steps",
+#     name="steps",
+#     node=Steps,
+# )
+# cs.store(
+#     group='network',
+#     name='network',
+#     node=NetworkConfig,
+# )
+# # cs.store(
+# #     group='conv_config',
+# #     name='conv_config',
+# #     node=ConvolutionConfig,
+# # )
+# cs.store(
+#     group="loss",
+#     name="loss",
+#     node=LossConfig,
+# )
+# # cs.store(
+# #     group="net_weights",
+# #     name="net_weights",
+# #     node=NetWeights,
+# # )
