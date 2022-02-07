@@ -50,6 +50,7 @@ class Trainer:
         # self.device = device if device is not None else
 
         self.history = BaseHistory(steps=steps)
+        self.eval_history = BaseHistory()
         evals_per_step = self.dynamics.config.nleapfrog * steps.log
         self.timer = StepTimer(evals_per_step=evals_per_step)
 
@@ -71,6 +72,17 @@ class Trainer:
             record[key] = val
 
         return to_u1(x_out).detach(), record
+
+    def eval_step(self, inputs: tuple[Tensor, float]) -> tuple[Tensor, dict]:
+        xinit, beta = inputs
+        with torch.no_grad():
+            xinit = xinit.to(self.accelerator.device)
+            xout, metrics = self.dynamics((to_u1(xinit), beta))
+            xprop = to_u1(metrics.pop('mc_states').proposed.x)
+            loss = self.loss_fn(x_init=xinit, x_prop=xprop, acc=metrics['acc'])
+            metrics.update({'loss': loss.cpu().numpy()})
+
+        return to_u1(xout).detach(), metrics
 
     def metrics_to_numpy(
             self,
@@ -98,6 +110,59 @@ class Trainer:
                 metrics[key] = val.detach().cpu().numpy()
 
         return metrics
+
+    def eval(
+            self,
+            x: Tensor = None,
+            beta: float = 1.,
+            skip: str | list[str] = None,
+            width: int = 0,
+    ) -> dict:
+        summaries = []
+        self.dynamics.eval()
+        if isinstance(skip, str):
+            skip = [skip]
+
+        if x is None:
+            x = random_angle(self.dynamics.xshape)
+            x = x.reshape(x.shape[0], -1)
+
+        should_print = lambda epoch: (epoch % self.steps.print == 0)  # noqa
+        xarr = []
+        summaries = []
+        tables = {}
+        table = Table(collapse_padding=True,
+                      # safe_box=interactive,
+                      row_styles=['dim', 'none'])
+        with Live(table, console=console, screen=False) as live:
+            if is_interactive() and width > 0:
+                live.console.width = width
+
+            for step in range(self.steps.test):
+                self.timer.start()
+                x, metrics = self.eval_step((x, beta))
+                dt = self.timer.stop()
+                xarr.append(x)
+                loss = metrics.pop('loss').numpy()
+                record = {'step': step, 'dt': dt, 'loss': loss}
+                record.update(self.metrics_to_numpy(metrics))
+                avgs = self.eval_history.update(record)
+                summary = summarize_dict(avgs)
+                summaries.append(summary)
+                if step == 0:
+                    for key in avgs.keys():
+                        table.add_column(str(key), justify='center')
+                if step % self.steps.print == 0:
+                    table.add_row(*[f'{v:5}' for _, v in avgs.items()])
+
+            tables[str(0)] = table
+
+        return {
+            'xarr': xarr,
+            'history': self.eval_history,
+            'summaries': summaries,
+            'tables': tables,
+        }
 
     def train(
             self,

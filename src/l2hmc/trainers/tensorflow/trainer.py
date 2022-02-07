@@ -22,7 +22,7 @@ from tensorflow.python.keras.optimizers import TFOptimizer as Optimizer
 from l2hmc.configs import Steps
 from l2hmc.dynamics.tensorflow.dynamics import Dynamics, to_u1
 from l2hmc.loss.tensorflow.loss import LatticeLoss
-from l2hmc.utils.console import is_interactive
+from l2hmc.utils.console import console, is_interactive
 from l2hmc.utils.history import summarize_dict
 from l2hmc.utils.step_timer import StepTimer
 from l2hmc.utils.tensorflow.history import History
@@ -63,6 +63,7 @@ class Trainer:
         self.loss_fn = loss_fn
 
         self.history = History(steps=steps)
+        self.eval_history = History()
 
         evals_per_step = self.dynamics.config.nleapfrog * steps.log
         self.timer = StepTimer(evals_per_step=evals_per_step)
@@ -91,6 +92,15 @@ class Trainer:
             record[key] = val
 
         return to_u1(x_out), record
+
+    def eval_step(self, inputs: tuple[Tensor, float]) -> tuple[Tensor, dict]:
+        xinit, beta = inputs
+        xout, metrics = self.dynamics((to_u1(xinit), tf.constant(beta)))
+        xprop = to_u1(metrics.pop('mc_states').proposed.x)
+        loss = self.loss_fn(x_init=xinit, x_prop=xprop, acc=metrics['acc'])
+        metrics.update({'loss': loss})
+
+        return to_u1(xout), metrics
 
     # type: ignore
     def metric_to_numpy(
@@ -149,6 +159,69 @@ class Trainer:
                     continue
 
         return m
+
+    def eval(
+            self,
+            beta: float,
+            xinit: Tensor = None,
+            skip: str | list[str] = None,
+            compile: bool = True,
+            jit_compile: bool = False,
+            width: int = 0,
+    ) -> dict:
+        """Evaluate model."""
+        if isinstance(skip, str):
+            skip = [skip]
+
+        if xinit is None:
+            x = tf.random.uniform(self.dynamics.xshape,
+                                  *(-np.pi, np.pi), dtype=TF_FLOAT)
+            x = tf.reshape(x, (x.shape[0], -1))
+        else:
+            x = tf.constant(xinit, dtype=TF_FLOAT)
+
+        assert isinstance(x, Tensor) and x.dtype == TF_FLOAT
+
+        if compile:
+            self.dynamics.compile(optimizer=self.optimizer, loss=self.loss_fn)
+            eval_step = tf.function(self.eval_step, jit_compile=jit_compile)
+        else:
+            eval_step = self.eval_step
+
+        xarr = []
+        tables = {}
+        summaries = []
+        table = Table(collapse_padding=True, row_styles=['dim', 'none'])
+        with Live(table, console=console, screen=False) as live:
+            if is_interactive() and width > 0:
+                live.console.width = width
+
+            for step in range(self.steps.test):
+                self.timer.start()
+                x, metrics = eval_step((x, beta))  # type: ignore
+                dt = self.timer.stop()
+                xarr.append(x)
+                loss = metrics.pop('loss').numpy()
+                record = {'step': step, 'dt': dt, 'loss': loss}
+                record.update(self.metrics_to_numpy(metrics))
+                avgs = self.eval_history.update(record)
+                summary = summarize_dict(avgs)
+                summaries.append(summary)
+                if step == 0:
+                    for key in avgs.keys():
+                        table.add_column(str(key), justify='center')
+
+                if step % self.steps.print == 0:
+                    table.add_row(*[f'{v:5}' for _, v in avgs.items()])
+
+            tables[str(0)] = table
+
+        return {
+            'xarr': xarr,
+            'history': self.eval_history,
+            'summaries': summaries,
+            'tables': tables,
+        }
 
     def train(
             self,
