@@ -14,6 +14,7 @@ import numpy as np
 from omegaconf import DictConfig
 from rich.table import Table
 import xarray as xr
+from l2hmc.lattice.lattice import BaseLattice
 
 from l2hmc.configs import (
     DynamicsConfig,
@@ -25,7 +26,7 @@ from l2hmc.configs import (
     Steps,
 )
 from l2hmc.utils.console import console, is_interactive
-from l2hmc.utils.plot_helpers import plot_dataArray, plot_plaqs
+from l2hmc.utils.plot_helpers import plot_dataArray, plot_chains
 
 log = logging.getLogger(__name__)
 
@@ -34,6 +35,7 @@ def get_timestamp(fstr=None):
     """Get formatted timestamp."""
     now = datetime.datetime.now()
     if fstr is None:
+
         return now.strftime('%Y-%m-%d-%H%M%S')
     return now.strftime(fstr)
 
@@ -173,11 +175,24 @@ def setup_common(cfg: DictConfig) -> dict:
     }
 
 
+def save_dataset(
+        dataset: xr.Dataset,
+        outdir: os.PathLike,
+        name: str = None,
+) -> None:
+    fname = 'dataset.nc' if name is None else f'{name}_dataset.nc'
+    datafile = Path(outdir).joinpath(fname)
+    mode = 'a' if datafile.is_file() else 'w'
+    log.info(f'Saving dataset to: {datafile.as_posix()}')
+    datafile.parent.mkdir(exist_ok=True, parents=True)
+    dataset.to_netcdf(datafile.as_posix(), mode=mode)
+
+
 def plot_dataset(
-    dataset: xr.Dataset,
-    nchains: int = 10,
-    outdir: os.PathLike = None,
-    title: str = None,
+        dataset: xr.Dataset,
+        nchains: int = 10,
+        outdir: os.PathLike = None,
+        title: str = None,
 ) -> None:
     if outdir is None:
         outdir = Path(os.getcwd()).joinpath('plots', 'training')
@@ -235,6 +250,63 @@ def save_logs(
             f.write(text)
 
 
+def make_subdirs(basedir: os.PathLike):
+    dirs = {}
+    for key in ['logs', 'data', 'plots']:
+        d = Path(basedir).joinpath(key)
+        d.mkdir(exist_ok=True, parents=True)
+        dirs[key] = d
+
+    return dirs
+
+
+def analyze_dataset(
+        dataset: xr.Dataset,
+        outdir: os.PathLike,
+        lattice: BaseLattice = None,
+        xarr: list | np.ndarray = None,
+        nchains: int = 16,
+        title: str = None,
+        name: str = 'dataset',
+):
+    dirs = make_subdirs(outdir)
+    plot_dataset(dataset,
+                 nchains=nchains,
+                 title=title,
+                 outdir=dirs['plots'])
+    save_dataset(dataset, outdir=dirs['data'], name=name)
+    history = {}
+    if xarr is not None and lattice is not None:
+        metrics = lattice.calc_metrics(xarr[0])
+        history = {
+            key: [val.numpy()]  # type: ignore
+            for key, val in metrics.items()
+        }
+        for x in xarr[1:]:
+            metrics = lattice.calc_metrics(x)
+            for key, val in metrics.items():
+                try:
+                    history[key].append(val.numpy())  # type: ignore
+                except KeyError:
+                    history[key] = [val.numpy()]  # type: ignore
+
+        for key, val in history.items():
+            val = np.array(val)
+            pfile = dirs['plots'].joinpath(f'{key}.svg')
+            _ = plot_chains(y=val, num_chains=nchains,
+                            label=key, xlabel='eval step',
+                            ylabel=key, outfile=pfile)
+            dfile = dirs['data'].joinpath(f'{key}.z')
+            log.info(f'Saving {key} to {dfile}')
+            joblib.dump(val, dfile)
+
+        xfile = dirs['data'].joinpath('xarr.z')
+        log.info(f'Saving xarr to: {xfile}')
+        joblib.dump(xarr, xfile)
+
+    return history
+
+
 def train(cfg: DictConfig) -> dict:
     beta = cfg.get('beta', None)
     if beta is None:
@@ -246,7 +318,7 @@ def train(cfg: DictConfig) -> dict:
     width = cfg.get('width', 0)
     assert framework is not None
 
-    kwargs = {'beta': beta, 'save_x': save_x, }
+    kwargs = {'beta': beta, 'save_x': save_x}
     if width > 0:
         kwargs['width'] = width
 
@@ -265,55 +337,58 @@ def train(cfg: DictConfig) -> dict:
         else:
             raise ValueError(f'Unexpected framework: {framework}')
 
-    log.info(f'Using {framework}, with trainer: {setup["trainer"]}')
-    train_output = setup['trainer'].train(**kwargs)
-    history = train_output['history']
-    dataset = history.get_dataset()
-    nchains = min((cfg.dynamics.xshape[0], cfg.dynamics.nleapfrog))
     outdir = Path(cfg.get('outdir', os.getcwd()))
-    outdir.mkdir(exist_ok=True, parents=True)
-    dirs = {'outdir': outdir}
-    for key in ['logs', 'plots', 'data']:
-        d = dirs['outdir'].joinpath(key)
-        d.mkdir(exist_ok=True, parents=True)
-        dirs[key] = d
+    train_dir = outdir.joinpath('train')
+    eval_dir = outdir.joinpath('eval')
+    nchains = min((cfg.dynamics.xshape[0], cfg.dynamics.nleapfrog))
 
-    plot_dataset(dataset,
-                 nchains=nchains,
-                 title=framework,
-                 outdir=dirs['plots'])
-    datafile = dirs['data'].joinpath('history_dataset.nc')
-    mode = 'a' if datafile.is_file() else 'w'
-    log.info(f'Saving dataset to: {datafile.as_posix()}')
-    datafile.parent.mkdir(exist_ok=True, parents=True)
-    dataset.to_netcdf(datafile.as_posix(), mode=mode)
-    if cfg.get('save_x', False):
-        xarr = train_output['xarr']
-        beta = cfg.get('beta', None)
-        lattice = setup['lattice']
-        plaqs_diffs = []
-        for x in xarr:
-            plaqs_diffs.append(lattice.plaqs_diff(beta=beta, x=x).numpy())
+    log.info(f'Using {framework}, with trainer: {setup["trainer"]}')
 
-        plaqs_diffs = np.array(plaqs_diffs)
-        _ = plot_plaqs(plaqs=plaqs_diffs, nchains=10, outdir=dirs['plots'])
-        xfile = dirs['data'].joinpath('xarr.z')
-        log.info(f'saving xarr to: {xfile}')
-        joblib.dump(xarr, xfile)
+    train_output = setup['trainer'].train(**kwargs)
+    train_history = train_output['history']
+    train_dataset = train_history.get_dataset()
+    analyze_dataset(train_dataset,
+                    outdir=train_dir,
+                    lattice=setup['lattice'],
+                    xarr=train_output['xarr'],
+                    nchains=nchains,
+                    title=framework,
+                    name='train')
+
+    _ = kwargs.pop('save_x', None)
+    eval_output = setup['trainer'].eval(**kwargs)
+    eval_history = eval_output['history']
+    eval_dataset = eval_history.get_dataset()
+    analyze_dataset(eval_dataset,
+                    outdir=eval_dir,
+                    lattice=setup['lattice'],
+                    xarr=eval_output['xarr'],
+                    nchains=nchains,
+                    title=framework,
+                    name='train')
+
+    if not is_interactive():
+        tdir = train_dir.joinpath('logs')
+        edir = eval_dir.joinpath('logs')
+        tdir.mkdir(exist_ok=True, parents=True)
+        edir.mkdir(exist_ok=True, parents=True)
+        log.info(f'Saving train logs to: {tdir.as_posix()}')
+        save_logs(train_output['tables'], logdir=tdir)
+        log.info(f'Saving eval logs to: {edir.as_posix()}')
+        save_logs(eval_output['tables'], logdir=edir)
 
     output = {
-        'train_output': train_output,
         'setup': setup,
-        'dirs': dirs,
-        'dataset': dataset,
-        'history': history,
+        'train': {
+            'output': train_output,
+            'dataset': train_dataset,
+            'history': train_history,
+        },
+        'eval': {
+            'output': eval_output,
+            'dataset': eval_dataset,
+            'history': eval_history,
+        },
     }
-    if is_interactive():
-        return output
-
-    log.info(
-        f'Saving logs and training table to: {dirs["logs"].as_posix()}'
-    )
-    save_logs(train_output['tables'], logdir=dirs['logs'])
 
     return output
