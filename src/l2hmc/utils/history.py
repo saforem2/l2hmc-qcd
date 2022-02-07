@@ -353,7 +353,7 @@ class BaseHistory:
     ) -> xr.DataArray:
         arr = np.array(x)
         if therm_frac > 0:
-            drop = therm_frac * arr.shape[0]
+            drop = int(therm_frac * arr.shape[0])
             arr = arr[drop:]
         # steps = np.arange(len(arr))
         if len(arr.shape) == 1:                     # [ndraws]
@@ -392,7 +392,8 @@ class BaseHistory:
             #     if isinstance(val[0], (dict, AttrDict)):
             #         tmp = invert
             #      data_vars[key] = dataset = self.get_dataset(val)
+            name = key.replace('/', '_')
 
-            data_vars[key] = self.to_DataArray(val, therm_frac)
+            data_vars[name] = self.to_DataArray(val, therm_frac)
 
         return xr.Dataset(data_vars)
