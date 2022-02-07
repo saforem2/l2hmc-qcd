@@ -125,10 +125,11 @@ def plot_chains(
     else:
         fig, ax = fig_axes
 
-    _ = ax.plot(x, y.mean(-1), label=label, **kwargs)
+    label = f'{label}, avg: {y.mean()}'
+    _ = ax.plot(x, y.mean(-1), label=label, lw=2.0, **kwargs)
 
     for idx in range(nchains):
-        _ = ax.plot(x, y[:, idx], lw=LW/4., alpha=0.7, **kwargs)
+        _ = ax.plot(x, y[:, idx], lw=1.0, alpha=0.7, **kwargs)
 
     if xlabel is not None:
         _ = ax.set_xlabel(xlabel)
@@ -136,8 +137,8 @@ def plot_chains(
     if ylabel is not None:
         _ = ax.set_ylabel(ylabel)
 
-    # if label is not None:
-    #     _ = matplotx.line_labels()
+    if label is not None:
+        _ = matplotx.line_labels()
 
     if outfile is not None:
         savefig(fig, outfile)
