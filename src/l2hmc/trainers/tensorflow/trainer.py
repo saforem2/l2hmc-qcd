@@ -15,7 +15,9 @@ from rich.panel import Panel
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 import tensorflow as tf
-from tensorflow.keras.optimizers import Optimizer
+
+from tensorflow.python.keras.optimizers import TFOptimizer as Optimizer
+
 
 from l2hmc.configs import Steps
 from l2hmc.dynamics.tensorflow.dynamics import Dynamics, to_u1
@@ -39,15 +41,9 @@ def make_layout() -> Layout:
     layout = Layout(name="root")
 
     layout.split(
-        # Layout(name="header", size=3),
         Layout(name="main"),
         Layout(name="footer", size=5),
     )
-    # layout["main"].split_row(
-    #     # Layout(name="side"),
-    #     Layout(name="body", minimum_size=80),
-    # )
-    # layout["side"].split(Layout(name="box1"), Layout(name="box2"))
     return layout
 
 
