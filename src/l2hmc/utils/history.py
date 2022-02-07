@@ -69,7 +69,7 @@ class BaseHistory:
     def era_summary(self, era) -> str:
         emetrics = self.era_metrics[str(era)]
         return ', '.join([
-            f'{k}={np.mean(v):<3.2g}' for k, v in emetrics.items()
+            f'{k}={np.mean(v):<5.4g}' for k, v in emetrics.items()
             if k not in ['era', 'epoch']
         ])
 
