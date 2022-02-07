@@ -16,7 +16,11 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 import xarray as xr
+import logging
+
 warnings.filterwarnings('ignore')
+
+log = logging.getLogger(__name__)
 
 xplt = xr.plot  # type: ignore
 
@@ -167,7 +171,7 @@ def plot_leapfrogs(
     for lf in range(nlf):
         _ = ax.plot(x, yavg[:, lf], color=colors[lf], label=f'{lf}')
 
-    _ = matplotx.line_labels()
+    _ = matplotx.line_labels(font_kwargs={'size': 'small'})
 
     if xlabel is not None:
         _ = ax.set_xlabel(xlabel)
@@ -499,7 +503,7 @@ def plot_metric(
             # where arr[:, idx].shape = [ndraws, 1]
             ax.plot(steps, arr[:, idx], alpha=0.5, lw=lw/2., **plot_kwargs)
 
-    matplotx.line_labels()
+    matplotx.line_labels(font_kwargs={'size': 'small'})
     ax.set_xlabel('draw')
     if title is not None:
         fig.suptitle(title)
@@ -680,16 +684,13 @@ def plot_plaqs(
         nchains: int = 10,
         outdir: os.PathLike = None,
 ):
-    # plaqs = []
-    # for x in xarr:
-    #     plaqs.append(lattice.plaqs_diff(beta, x=x))
-
-    # plaqs = np.array(plaqs)
     assert len(plaqs.shape) == 2
     ndraws, nchains = plaqs.shape
     xplot = np.arange(ndraws)
     fig, ax = plt.subplots(constrained_layout=True)
-    _ = ax.plot(xplot, plaqs.mean(-1), label='avg', lw=2.0, color='C0')
+    plaq_avg = plaqs.mean()
+    label = f'avg: {plaq_avg:.4g}'
+    _ = ax.plot(xplot, plaqs.mean(-1), label=label, lw=2.0, color='C0')
     for idx in range(min(nchains, plaqs.shape[1])):
         _ = ax.plot(xplot, plaqs[:, idx], lw=1.0, alpha=0.5, color='C0')
 
@@ -703,5 +704,3 @@ def plot_plaqs(
         fig.savefig(outfile.as_posix(), dpi=500, bbox_inches='tight')
 
     return fig, ax
-
-
