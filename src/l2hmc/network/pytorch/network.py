@@ -12,6 +12,7 @@ import numpy as np
 import torch
 from torch import nn
 import torch.nn.functional as F
+from torch.nn.modules.conv import Conv2d
 
 from l2hmc.configs import (
     NetWeight,
@@ -56,15 +57,15 @@ class PeriodicPadding(nn.Module):
     def forward(self, x: Tensor) -> Tensor:
         assert len(x.shape) >= 3, 'Expected len(x.shape) >= 3'
         assert isinstance(x, Tensor)
-        x0 = x[:, -self.size:, :, ...]
-        x1 = x[:, 0:self.size, :, ...]
-        inputs = torch.concat([x0, x, x1], 1)
+        x0 = x[:, :, -self.size:, :]
+        x1 = x[:, :, 0:self.size, :]
+        x = torch.concat([x0, x, x1], 2)
 
-        y0 = x[:, :, -self.size:, ...]
-        y1 = x[:, :, 0:self.size, ...]
-        inputs = torch.concat([y0, inputs, y1], 2)
+        y0 = x[:, :, :, -self.size:]
+        y1 = x[:, :, :, 0:self.size]
+        x = torch.concat([y0, x, y1], 3)
 
-        return inputs
+        return x
 
 
 class Network(nn.Module):
@@ -129,11 +130,16 @@ class Network(nn.Module):
             self.nx = nx
             self.d = d
             # p0 = PeriodicPadding(conv_config.sizes[0] - 1)
-            conv_stack = []
-            iterable = zip(conv_config.filters, conv_config.sizes)
+            conv_stack = [
+                PeriodicPadding(conv_config.sizes[0] - 1),
+                Conv2d(d, conv_config.filters[0], conv_config.sizes[0])
+            ]
+            iterable = zip(conv_config.filters[1:], conv_config.sizes[1:])
             for idx, (f, n) in enumerate(iterable):
-                conv_stack.append(nn.LazyConv2d(f, n, padding_mode='circular'))
-                conv_stack.append(self.activation_fn)
+                conv_stack.append(PeriodicPadding(n - 1))
+                conv_stack.append(nn.LazyConv2d(n, f))
+                # , padding=(n-1), padding_mode='circular'))
+                # conv_stack.append(self.activation_fn)
                 if (idx + 1) % 2 == 0:
                     conv_stack.append(nn.MaxPool2d(conv_config.pool[idx]))
 
@@ -170,16 +176,13 @@ class Network(nn.Module):
     ) -> tuple[Tensor, Tensor, Tensor]:
         x, v = inputs
         if len(self.conv_stack) > 0:
-            if 'xnet' in self.name.lower():
+            try:
                 x = x.reshape(-1, self.d + 2, self.nt, self.nx)
-            else:
-                try:
-                    x = x.reshape(-1, self.d + 2, self.nt, self.nx)
-                except ValueError:
-                    x = x.reshape(-1, self.d, self.nt, self.nx)
+            except ValueError:
+                x = x.reshape(-1, self.d, self.nt, self.nx)
 
             for layer in self.conv_stack:
-                x = layer(x)
+                x = self.activation_fn(layer(x))
 
         v = self.v_layer(v)
         x = self.x_layer(flatten(x))
