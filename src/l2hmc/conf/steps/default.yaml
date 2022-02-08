@@ -1,6 +1,6 @@
 nera: 10
 nepoch: 100
-test: 0
+test: 1000
 log: 10
-print: 50
+print: 20
 
