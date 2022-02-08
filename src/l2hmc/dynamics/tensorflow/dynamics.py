@@ -205,6 +205,18 @@ class Dynamics(Model):
 
         return x_out, metrics
 
+    def generate_proposal_hmc(
+            self,
+            inputs: tuple[Tensor, Tensor],
+            training: bool = True,
+    ) -> dict:
+        x, beta = inputs
+        v = tf.random.normal(x.shape, dtype=x.dtype)
+        init = State(x, v, beta)
+        proposed, metrics = self.transition_kernel_hmc(init, training=training)
+
+        return {'init': init, 'proposed': proposed, 'metrics': metrics}
+
     def generate_proposal_fb(
             self,
             inputs: tuple[Tensor, Tensor],
@@ -280,6 +292,47 @@ class Dynamics(Model):
 
         return history
 
+    def leapfrog_hmc(
+            self,
+            state: State,
+            step: int,
+    ) -> State:
+        """Perform standard HMC leapfrog update."""
+        force1 = self.grad_potential(state.x, state.beta)
+        v1 = state.v - 0.5 * self.veps[step] * force1
+
+        xp = state.x + self.xeps[step] * v1
+
+        force2 = self.grad_potential(xp, state.beta)
+        v2 = v1 - 0.5 * self.veps[step] * force2
+
+        return State(x=xp, v=v2, beta=state.beta)
+
+    def transition_kernel_hmc(
+            self,
+            state: State,
+    ) -> tuple[State, dict]:
+        """Run the generic HMC transition kernel."""
+        state_ = State(x=state.x, v=state.v, beta=state.beta)
+        sumlogdet = tf.zeros((state.x.shape[0],), dtype=TF_FLOAT)
+        metrics = self.get_metrics(state_, sumlogdet)
+        history = self.update_history(metrics, history={})
+        for step in range(self.config.nleapfrog):
+            state_ = self.leapfrog_hmc(state_, step)
+            if self.config.verbose:
+                metrics = self.get_metrics(state_, sumlogdet, step=step)
+                history = self.update_history(metrics, history=history)
+
+        acc = self.compute_accept_prob(state, state_, sumlogdet)
+        history.update({'acc': acc, 'sumlogdet': sumlogdet})
+
+        if self.config.verbose:
+            for key, val in history.items():
+                if isinstance(val, list) and isinstance(val[0], Tensor):
+                    history[key] = tf.stack(val)
+
+        return state_, history
+
     def transition_kernel_fb(
             self,
             state: State,
@@ -293,7 +346,7 @@ class Dynamics(Model):
         state_ = State(state.x, state.v, state.beta)
         sumlogdet = tf.zeros((state.x.shape[0],), dtype=TF_FLOAT)
 
-        metrics = self.get_metrics(state_, sumlogdet, step=0)
+        metrics = self.get_metrics(state_, sumlogdet)
         history = self.update_history(metrics, history={})
 
         # Forward
@@ -312,6 +365,7 @@ class Dynamics(Model):
             state_, logdet = self._backward_lf(step, state_, training)
             sumlogdet = sumlogdet + logdet
             if self.config.verbose:
+                step = self.config.nleapfrog - step - 1
                 metrics = self.get_metrics(state_, sumlogdet, step=step)
                 history = self.update_history(metrics, history=history)
 
@@ -341,7 +395,7 @@ class Dynamics(Model):
         # Copy initial state into proposed state
         state_ = State(x=state.x, v=state.v, beta=state.beta)
         sumlogdet = tf.zeros((state.x.shape[0],), dtype=TF_FLOAT)
-        metrics = self.get_metrics(state_, sumlogdet, step=0)
+        metrics = self.get_metrics(state_, sumlogdet)
         history = self.update_history(metrics, history={})
 
         for step in range(self.config.nleapfrog):
