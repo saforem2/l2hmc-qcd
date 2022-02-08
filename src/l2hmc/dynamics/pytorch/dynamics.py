@@ -234,6 +234,25 @@ class Dynamics(nn.Module):
         v = torch.randn_like(x)
         return State(x=x, v=v, beta=torch.tensor(beta))
 
+    def test_reversibility(self) -> dict[str, Tensor]:
+        state = self.random_state(beta=1.)
+        state_fwd, _ = self.transition_kernel(state, forward=True)
+        state_, _ = self.transition_kernel(state_fwd, forward=False)
+        dx = torch.abs(state.x - state_.x)
+        dv = torch.abs(state.v - state_.v)
+        return {'dx': dx.detach().numpy(), 'dv': dv.detach().numpy()}
+
+    def generate_proposal_hmc(
+            self,
+            inputs: tuple[Tensor, Tensor],
+    ) -> dict:
+        x, beta = inputs
+        v = torch.randn_like(x)
+        init = State(x=x, v=v, beta=beta)
+        proposed, metrics = self.transition_kernel_hmc(init)
+
+        return {'init': init, 'proposed': proposed, 'metrics': metrics}
+
     def generate_proposal_fb(
             self,
             inputs: tuple[Tensor, Tensor],
@@ -291,13 +310,51 @@ class Dynamics(nn.Module):
 
         return history
 
+    def leapfrog_hmc(
+            self,
+            state: State,
+            step: int,
+    ) -> State:
+        force1 = self.grad_potential(state.x, state.beta)
+        v1 = state.v - 0.5 * self.veps[str(step)] * force1
+
+        xp = state.x + self.xeps[str(step)] * v1
+
+        force2 = self.grad_potential(xp, state.beta)
+        v2 = v1 - 0.5 * self.veps[str(step)] * force2
+
+        return State(x=xp, v=v2, beta=state.beta)
+
+    def transition_kernel_hmc(
+            self,
+            state: State,
+    ) -> tuple[State, dict]:
+        state_ = State(x=state.x, v=state.v, beta=state.beta)
+        sumlogdet = torch.zeros(state.x.shape[0], device=state.x.device)
+        metrics = self.get_metrics(state_, sumlogdet)
+        history = self.update_history(metrics, history={})
+        for step in range(self.config.nleapfrog):
+            state_ = self.leapfrog_hmc(state_, step)
+            if self.config.verbose:
+                metrics = self.get_metrics(state_, sumlogdet, step=step)
+                history = self.update_history(metrics, history=history)
+
+        acc = self.compute_accept_prob(state, state_, sumlogdet)
+        history.update({'acc': acc, 'sumlogdet': sumlogdet})
+        if self.config.verbose:
+            for key, val in history.items():
+                if isinstance(val, list) and isinstance(val[0], Tensor):
+                    history[key] = torch.stack(val)
+
+        return state_, history
+
     def transition_kernel_fb(
             self,
             state: State,
     ) -> tuple[State, dict]:
         state_ = State(x=state.x, v=state.v, beta=state.beta)
         sumlogdet = torch.zeros(state.x.shape[0], device=state.x.device)
-        metrics = self.get_metrics(state_, sumlogdet, step=0)
+        metrics = self.get_metrics(state_, sumlogdet)
         history = self.update_history(metrics, history={})
 
         # Forward
@@ -327,14 +384,6 @@ class Dynamics(nn.Module):
                     history[key] = torch.stack(val)
 
         return state_, history
-
-    def test_reversibility(self) -> dict[str, Tensor]:
-        state = self.random_state(beta=1.)
-        state_fwd, _ = self.transition_kernel(state, forward=True)
-        state_, _ = self.transition_kernel(state_fwd, forward=False)
-        dx = torch.abs(state.x - state_.x)
-        dv = torch.abs(state.v - state_.v)
-        return {'dx': dx.detach().numpy(), 'dv': dv.detach().numpy()}
 
     def transition_kernel(
             self,
