@@ -17,6 +17,7 @@ import xarray as xr
 from l2hmc.lattice.lattice import BaseLattice
 
 from l2hmc.configs import (
+    AnnealingSchedule,
     DynamicsConfig,
     InputSpec,
     LossConfig,
@@ -49,12 +50,13 @@ def setup_pytorch(configs: dict) -> dict:
     from l2hmc.trainers.pytorch.trainer import Trainer
     from l2hmc.loss.pytorch.loss import LatticeLoss
 
-    steps = configs['steps']
-    loss_config = configs['loss_config']
-    net_weights = configs['net_weights']
-    network_config = configs['network_config']
-    conv_config = configs.get('conv_config', None)
-    dynamics_config = configs['dynamics_config']
+    steps = configs['steps']  # type: Steps
+    schedule = configs['schedule']  # type: AnnealingSchedule
+    loss_config = configs['loss_config']  # type: LossConfig
+    net_weights = configs['net_weights']  # type: NetWeights
+    network_config = configs['network_config']  # type: NetworkConfig
+    conv_config = configs.get('conv_config', None)  # type: ConvolutionConfig
+    dynamics_config = configs['dynamics_config']  # type: DynamicsConfig
 
     xdim = dynamics_config.xdim
     xshape = dynamics_config.xshape
@@ -79,8 +81,10 @@ def setup_pytorch(configs: dict) -> dict:
     trainer = Trainer(steps=steps,
                       loss_fn=loss_fn,
                       dynamics=dynamics,
+                      schedule=schedule,
                       optimizer=optimizer,
-                      accelerator=accelerator)
+                      accelerator=accelerator,
+                      aux_weight=loss_config.aux_weight)
 
     return {
         'lattice': lattice,
@@ -118,11 +122,12 @@ def setup_tensorflow(configs: dict) -> dict:
     import tensorflow as tf
 
     steps = configs['steps']
-    loss_config = configs['loss_config']
-    net_weights = configs['net_weights']
-    network_config = configs['network_config']
-    conv_config = configs.get('conv_config', None)
-    dynamics_config = configs['dynamics_config']
+    loss_config = configs['loss_config']  # type: LossConfig
+    net_weights = configs['net_weights']  # type: NetWeights
+    network_config = configs['network_config']  # type: NetworkConfig
+    conv_config = configs.get('conv_config', None)  # type: ConvolutionConfig
+    dynamics_config = configs['dynamics_config']  # type: DynamicsConfig
+    schedule = configs['schedule']  # type: AnnealingSchedule
 
     xdim = dynamics_config.xdim
     xshape = dynamics_config.xshape
@@ -142,8 +147,10 @@ def setup_tensorflow(configs: dict) -> dict:
     optimizer = tf.keras.optimizers.Adam()
     trainer = Trainer(steps=steps,
                       loss_fn=loss_fn,
+                      schedule=schedule,
                       dynamics=dynamics,
-                      optimizer=optimizer)
+                      optimizer=optimizer,
+                      aux_weight=loss_config.aux_weight)
 
     return {
         'lattice': lattice,
@@ -165,8 +172,26 @@ def setup_common(cfg: DictConfig) -> dict:
     else:
         conv_config = None
 
+    beta_init = cfg.get('beta_init', None)
+    beta_final = cfg.get('beta_final', None)
+    if beta_init is None:
+        beta_init = 1.
+        log.warn(
+            'beta_init not specified!'
+            f'using default: beta_init = {beta_init}'
+        )
+    if beta_final is None:
+        beta_final = beta_init
+        log.warn(
+            'beta_final not specified!'
+            f'using beta_final = beta_init = {beta_init}'
+        )
+
+    schedule = AnnealingSchedule(beta_init, beta_final, steps)
+
     return {
         'steps': steps,
+        'schedule': schedule,
         'loss_config': loss_config,
         'net_weights': net_weights,
         'network_config': network_config,
@@ -215,10 +240,11 @@ def plot_dataset(
 
 def save_logs(
         tables: dict[str, Table],
+        summaries: list[str] = None,
         logdir: os.PathLike = None
 ) -> None:
     if logdir is None:
-        logdir = Path(os.getcwd()).joinpath('logs', 'training')
+        logdir = Path(os.getcwd()).joinpath('logs')
     else:
         logdir = Path(logdir)
 
@@ -249,6 +275,11 @@ def save_logs(
         with open(tfile, 'a') as f:
             f.write(text)
 
+    if summaries is not None:
+        sfile = logdir.joinpath('summaries.txt').as_posix()
+        with open(sfile, 'w') as f:
+            f.writelines(summaries)
+
 
 def make_subdirs(basedir: os.PathLike):
     dirs = {}
@@ -268,13 +299,16 @@ def analyze_dataset(
         nchains: int = 16,
         title: str = None,
         name: str = 'dataset',
+        save: bool = True,
 ):
     dirs = make_subdirs(outdir)
     plot_dataset(dataset,
                  nchains=nchains,
                  title=title,
                  outdir=dirs['plots'])
-    save_dataset(dataset, outdir=dirs['data'], name=name)
+    if save:
+        save_dataset(dataset, outdir=dirs['data'], name=name)
+
     history = {}
     if xarr is not None and lattice is not None:
         metrics = lattice.calc_metrics(xarr[0])
@@ -290,11 +324,24 @@ def analyze_dataset(
                 except KeyError:
                     history[key] = [val.numpy()]  # type: ignore
 
+        intQ = np.array(history['intQ'])
+        sinQ = np.array(history['sinQ'])
+        dQint = np.abs(intQ[1:] - intQ[:-1])  # type: ignore
+        dQsin = np.abs(sinQ[1:] - sinQ[:-1])  # type: ignore
+        history['dQint'] = [intQ[0], *dQint]
+        history['dQsin'] = [sinQ[0], *dQsin]
+
+        xlabel = 'Step'
+        if name == 'train':
+            xlabel = 'Train Epoch'
+        elif name == 'eval':
+            xlabel = 'Eval Step'
+
         for key, val in history.items():
             val = np.array(val)
             pfile = dirs['plots'].joinpath(f'{key}.svg')
             _ = plot_chains(y=val, num_chains=nchains,
-                            label=key, xlabel='eval step',
+                            label=key, xlabel=xlabel,
                             ylabel=key, outfile=pfile)
             dfile = dirs['data'].joinpath(f'{key}.z')
             log.info(f'Saving {key} to {dfile}')
@@ -308,17 +355,16 @@ def analyze_dataset(
 
 
 def train(cfg: DictConfig) -> dict:
-    beta = cfg.get('beta', None)
-    if beta is None:
-        log.warn('Beta not specified! Using beta = 1.0')
-        beta = 1.0
-
     save_x = cfg.get('save_x', False)
     framework = cfg.get('framework', None)
-    width = cfg.get('width', 0)
+    if framework is None:
+        framework = 'tensorflow'
+        log.warn('Framework not specified. Using TensorFlow.')
+
     assert framework is not None
 
-    kwargs = {'beta': beta, 'save_x': save_x}
+    kwargs = {'save_x': save_x}
+    width = cfg.get('width', 0)
     if width > 0:
         kwargs['width'] = width
 
@@ -360,12 +406,12 @@ def train(cfg: DictConfig) -> dict:
     eval_history = eval_output['history']
     eval_dataset = eval_history.get_dataset()
     analyze_dataset(eval_dataset,
+                    name='eval',
                     outdir=eval_dir,
                     lattice=setup['lattice'],
                     xarr=eval_output['xarr'],
                     nchains=nchains,
-                    title=framework,
-                    name='train')
+                    title=framework)
 
     if not is_interactive():
         tdir = train_dir.joinpath('logs')
@@ -373,9 +419,13 @@ def train(cfg: DictConfig) -> dict:
         tdir.mkdir(exist_ok=True, parents=True)
         edir.mkdir(exist_ok=True, parents=True)
         log.info(f'Saving train logs to: {tdir.as_posix()}')
-        save_logs(train_output['tables'], logdir=tdir)
+        save_logs(logdir=tdir,
+                  tables=train_output['tables'],
+                  summaries=train_output['summaries'])
         log.info(f'Saving eval logs to: {edir.as_posix()}')
-        save_logs(eval_output['tables'], logdir=edir)
+        save_logs(logdir=edir,
+                  tables=eval_output['tables'],
+                  summaries=eval_output['summaries'])
 
     output = {
         'setup': setup,
