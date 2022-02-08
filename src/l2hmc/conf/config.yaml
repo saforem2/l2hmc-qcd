@@ -8,10 +8,6 @@ hydra:
       /${dynamics.xshape[1]}x${dynamics.xshape[2]}\
       /nlf-${dynamics.nleapfrog}\
       /merge_directions-${dynamics.merge_directions}\
-      /beta-${beta}\
-      /use_mixed_loss-${loss.use_mixed_loss}\
-      /charge_weight-${loss.charge_weight}\
-      /plaq_weight-${loss.plaq_weight}\
       /${now:%Y-%m-%d}\
       /${now:%H-%M-%S}"
 
@@ -38,8 +34,9 @@ defaults:
   # - override hydra/launcher: joblib
   # specify framework, either tensorflow or pytorch
 
-beta: ???
 framework: ???
+beta_init: ???
+beta_final: ???
 
 save_x: True
 # pretty print config at the start of the run using Rich library

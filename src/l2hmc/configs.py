@@ -133,9 +133,10 @@ class AnnealingSchedule(BaseConfig):
     # TODO: Add methods for specifying different annealing schedules
 
     def __post_init__(self):
-        self.beta = np.arange(self.beta_init,
-                              self.beta_final,
-                              self.steps.total)
+        betas = np.linspace(self.beta_init, self.beta_final, self.steps.nera)
+        self.betas = {
+            str(era): betas[era] for era in range(self.steps.nera)
+        }
 
 
 @dataclass
@@ -204,6 +205,7 @@ class LossConfig(BaseConfig):
     use_mixed_loss: bool = False
     charge_weight: float = 0.01
     plaq_weight: float = 0.
+    aux_weight: float = 0.0
 
 
 @dataclass
@@ -241,32 +243,32 @@ class InputSpec(BaseConfig):
 
 
 # def register_configs() -> None:
-# cs = ConfigStore.instance()
-# cs.store(
-#     group="dynamics",
-#     name="l2hmc.configs.DynamicsConfig",
-#     node=DynamicsConfig,
-# )
-# cs.store(
-#     group="steps",
-#     name="steps",
-#     node=Steps,
-# )
-# cs.store(
-#     group='network',
-#     name='network',
-#     node=NetworkConfig,
-# )
-# # cs.store(
-# #     group='conv_config',
-# #     name='conv_config',
-# #     node=ConvolutionConfig,
-# # )
-# cs.store(
-#     group="loss",
-#     name="loss",
-#     node=LossConfig,
-# )
+cs = ConfigStore.instance()
+cs.store(
+    group="dynamics",
+    name="dynamics",
+    node=DynamicsConfig,
+)
+cs.store(
+    group="steps",
+    name="steps",
+    node=Steps,
+)
+cs.store(
+    group='network',
+    name='network',
+    node=NetworkConfig,
+)
+cs.store(
+    group='conv',
+    name='conv',
+    node=ConvolutionConfig,
+)
+cs.store(
+    group="loss",
+    name="loss",
+    node=LossConfig,
+)
 # # cs.store(
 # #     group="net_weights",
 # #     name="net_weights",

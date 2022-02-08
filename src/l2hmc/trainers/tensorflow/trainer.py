@@ -19,7 +19,7 @@ import tensorflow as tf
 from tensorflow.python.keras.optimizers import TFOptimizer as Optimizer
 
 
-from l2hmc.configs import Steps
+from l2hmc.configs import Steps, AnnealingSchedule
 from l2hmc.dynamics.tensorflow.dynamics import Dynamics, to_u1
 from l2hmc.loss.tensorflow.loss import LatticeLoss
 from l2hmc.utils.console import console, is_interactive
@@ -47,13 +47,37 @@ def make_layout() -> Layout:
     return layout
 
 
+def add_columns(avgs: dict, table: Table) -> Table:
+    for key in avgs.keys():
+        if key == 'loss':
+            table.add_column(str(key),
+                             justify='center',
+                             style='green')
+        elif key == 'dt':
+            table.add_column(str(key),
+                             justify='center',
+                             style='red')
+
+        elif key == 'acc':
+            table.add_column(str(key),
+                             justify='center',
+                             style='magenta')
+        else:
+            table.add_column(str(key),
+                             justify='center')
+
+    return table
+
+
 class Trainer:
     def __init__(
             self,
             steps: Steps,
             dynamics: Dynamics,
             optimizer: Optimizer,
+            schedule: AnnealingSchedule,
             loss_fn: Callable = LatticeLoss,
+            aux_weight: float = 0.0,
             keep: str | list[str] = None,
             skip: str | list[str] = None,
     ) -> None:
@@ -61,26 +85,31 @@ class Trainer:
         self.dynamics = dynamics
         self.optimizer = optimizer
         self.loss_fn = loss_fn
+        self.schedule = schedule
+        self.aux_weight = aux_weight
+        self.keep = [keep] if isinstance(keep, str) else keep
+        self.skip = [skip] if isinstance(skip, str) else skip
 
         self.history = History(steps=steps)
         self.eval_history = History()
-
         evals_per_step = self.dynamics.config.nleapfrog * steps.log
         self.timer = StepTimer(evals_per_step=evals_per_step)
-
-        self.keep = [] if keep is None else keep
-        self.skip = [] if skip is None else skip
-        if isinstance(self.keep, str):
-            self.keep = [self.keep]
-        if isinstance(self.skip, str):
-            self.skip = [self.skip]
 
     def train_step(self, inputs: tuple[Tensor, float]) -> tuple[Tensor, dict]:
         xinit, beta = inputs
         with tf.GradientTape() as tape:
-            x_out, metrics = self.dynamics((to_u1(xinit), tf.constant(beta)))
+            x_out, metrics = self.dynamics((to_u1(xinit), beta))
             xprop = to_u1(metrics.pop('mc_states').proposed.x)
             loss = self.loss_fn(x_init=xinit, x_prop=xprop, acc=metrics['acc'])
+
+            if self.aux_weight > 0:
+                yinit = to_u1(self.draw_x())
+                _, metrics_ = self.dynamics((yinit, beta))
+                yprop = to_u1(metrics_.pop('mc_states').proposed.x)
+                aux_loss = self.aux_weight * self.loss_fn(x_init=yinit,
+                                                          x_prop=yprop,
+                                                          acc=metrics_['acc'])
+                loss = (loss + aux_loss) / (1. + self.aux_weight)
 
         grads = tape.gradient(loss, self.dynamics.trainable_variables)
         updates = zip(grads, self.dynamics.trainable_variables)
@@ -162,8 +191,8 @@ class Trainer:
 
     def eval(
             self,
-            beta: float,
-            xinit: Tensor = None,
+            beta: float = None,
+            x: Tensor = None,
             skip: str | list[str] = None,
             compile: bool = True,
             jit_compile: bool = False,
@@ -173,12 +202,15 @@ class Trainer:
         if isinstance(skip, str):
             skip = [skip]
 
-        if xinit is None:
-            x = tf.random.uniform(self.dynamics.xshape,
-                                  *(-np.pi, np.pi), dtype=TF_FLOAT)
-            x = tf.reshape(x, (x.shape[0], -1))
+        if beta is None:
+            beta = self.schedule.beta_final
+
+        if x is None:
+            unif = tf.random.uniform(self.dynamics.xshape,
+                                     *(-np.pi, np.pi), dtype=TF_FLOAT)
+            x = tf.reshape(unif, (unif.shape[0], -1))
         else:
-            x = tf.constant(xinit, dtype=TF_FLOAT)
+            x = tf.constant(x, dtype=TF_FLOAT)
 
         assert isinstance(x, Tensor) and x.dtype == TF_FLOAT
 
@@ -208,8 +240,7 @@ class Trainer:
                 summary = summarize_dict(avgs)
                 summaries.append(summary)
                 if step == 0:
-                    for key in avgs.keys():
-                        table.add_column(str(key), justify='center')
+                    table = add_columns(avgs, table)
 
                 if step % self.steps.print == 0:
                     table.add_row(*[f'{v:5}' for _, v in avgs.items()])
@@ -223,10 +254,18 @@ class Trainer:
             'tables': tables,
         }
 
+    def draw_x(
+            self,
+    ) -> Tensor:
+        x = tf.random.uniform(self.dynamics.xshape,
+                              *(-np.pi, np.pi), dtype=TF_FLOAT)
+        x = tf.reshape(x, (x.shape[0], -1))
+
+        return x
+
     def train(
             self,
             xinit: Tensor = None,
-            beta: float = 1.,
             skip: str | list[str] = None,
             compile: bool = True,
             jit_compile: bool = False,
@@ -238,9 +277,7 @@ class Trainer:
         if isinstance(skip, str):
             skip = [skip]
         if xinit is None:
-            x = tf.random.uniform(self.dynamics.xshape,
-                                  *(-np.pi, np.pi), dtype=TF_FLOAT)
-            x = tf.reshape(x, (x.shape[0], -1))
+            x = self.draw_x()
         else:
             x = tf.constant(xinit, dtype=TF_FLOAT)
 
@@ -254,18 +291,18 @@ class Trainer:
 
         # nera = self.steps.nera
         # nepoch = self.steps.nepoch
-        interactive = is_interactive()
         should_log = lambda epoch: (epoch % self.steps.log == 0)  # noqa
         should_print = lambda epoch: (epoch % self.steps.print == 0)  # noqa
 
         xarr = []
         tables = {}
         summaries = []
+        screen = (not is_interactive())
         for era in range(self.steps.nera):
-            table = Table(collapse_padding=True,
-                          safe_box=interactive,
-                          row_styles=['dim', 'none'])
-            with Live(table, screen=False) as live:
+            beta = tf.constant(self.schedule.betas[str(era)])
+            console.rule(f'ERA: {era}, BETA: {beta.numpy()}')
+            table = Table(row_styles=['dim', 'none'])
+            with Live(table, console=console, screen=screen) as live:
                 if is_interactive() and width > 0:
                     live.console.width = width
                 estart = time.time()
@@ -277,19 +314,19 @@ class Trainer:
                         if save_x:
                             xarr.append(x.numpy())  # type: ignore
 
-                        record = {'era': era, 'epoch': epoch, 'dt': dt}
+                        record = {
+                            'era': era, 'epoch': epoch,
+                            'beta': beta, 'dt': dt
+                        }
                         record.update(self.metrics_to_numpy(metrics))
                         avgs = self.history.update(record)
                         summary = summarize_dict(avgs)
                         summaries.append(summary)
                         if epoch == 0:
-                            for idx, key in enumerate(avgs.keys()):
-                                table.add_column(str(key).upper(),
-                                                 justify='center',
-                                                 style=COLORS[idx])
+                            table = add_columns(avgs, table)
 
                         if should_print(epoch):
-                            table.add_row(*[f'{v:5}' for _, v in avgs.items()])
+                            table.add_row(*[f'{v}' for _, v in avgs.items()])
 
                 live.console.log(
                     f'Era {era} took: {time.time() - estart:<3.2g}s'
