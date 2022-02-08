@@ -125,11 +125,13 @@ def plot_chains(
     else:
         fig, ax = fig_axes
 
-    label = f'{label}, avg: {y.mean()}'
-    _ = ax.plot(x, y.mean(-1), label=label, lw=2.0, **kwargs)
+    label = f'{label}, avg: {y.mean():4.3g}'
+    _ = kwargs.pop('color', None)
+    color = f'C{np.random.randint(8)}'
+    _ = ax.plot(x, y.mean(-1), label=label, color=color, lw=2.0, **kwargs)
 
     for idx in range(nchains):
-        _ = ax.plot(x, y[:, idx], lw=1.0, alpha=0.7, **kwargs)
+        _ = ax.plot(x, y[:, idx], lw=1.0, color=color, alpha=0.7, **kwargs)
 
     if xlabel is not None:
         _ = ax.set_xlabel(xlabel)
