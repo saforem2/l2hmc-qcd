@@ -4,12 +4,13 @@ hydra:
     # subdir: ${hydra.job.num}
     subdir: ${hydra.job.override_dirname}
   run:
-    dir: "outputs/runs/${framework}\
+    # dir: "outputs/runs/${framework}\
+    dir: "outputs/runs/\
       /${dynamics.xshape[1]}x${dynamics.xshape[2]}\
       /nlf-${dynamics.nleapfrog}\
-      /merge_directions-${dynamics.merge_directions}\
-      /${now:%Y-%m-%d}\
-      /${now:%H-%M-%S}"
+      /merge_directions-${dynamics.merge_directions}"
+      # /${now:%Y-%m-%d}\
+      # /${now:%H-%M-%S}"
 
 defaults:
   - _self_
@@ -25,7 +26,7 @@ defaults:
 
   # experiment configs allow for version control of specific configurations
   # for example, use them to store best hyperparameters for each model configuration
-  # - experiment: null
+  - experiment: null
 
   # - optional local: default.yaml
   - override hydra/hydra_logging: colorlog
@@ -34,8 +35,8 @@ defaults:
   # - override hydra/launcher: joblib
   # specify framework, either tensorflow or pytorch
 
-framework: ???
-beta_init: ???
+# framework: ???
+beta_init: 1.0
 beta_final: ???
 
 save_x: True
@@ -44,7 +45,7 @@ print_config: True
 # disable python warnings if they annoy you
 ignore_warnings: True
 # seed for random number generators in pytorch, numpy and python.random
-seed: null
+# seed: null
 
 compile: True
 
