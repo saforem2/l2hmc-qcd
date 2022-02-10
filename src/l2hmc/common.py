@@ -29,6 +29,7 @@ from l2hmc.configs import (
 from l2hmc.utils.console import console, is_interactive
 from l2hmc.utils.plot_helpers import plot_dataArray, plot_chains
 
+os.environ['AUTOGRAPH_VERBOSITY'] = '0'
 log = logging.getLogger(__name__)
 
 
@@ -41,14 +42,38 @@ def get_timestamp(fstr=None):
     return now.strftime(fstr)
 
 
+def setup_annealing_schedule(cfg: DictConfig) -> AnnealingSchedule:
+    steps = Steps(**cfg.steps)
+    beta_init = cfg.get('beta_init', None)
+    beta_final = cfg.get('beta_final', None)
+    if beta_init is None:
+        beta_init = 1.
+        log.warn(
+            'beta_init not specified!'
+            f'using default: beta_init = {beta_init}'
+        )
+    if beta_final is None:
+        beta_final = beta_init
+        log.warn(
+            'beta_final not specified!'
+            f'using beta_final = beta_init = {beta_init}'
+        )
+
+    return AnnealingSchedule(beta_init, beta_final, steps)
+
+
+
 def setup_pytorch(configs: dict) -> dict:
     import torch
     from accelerate import Accelerator
+    accelerator = Accelerator()
+
     from l2hmc.dynamics.pytorch.dynamics import Dynamics
     from l2hmc.lattice.pytorch.lattice import Lattice
     from l2hmc.network.pytorch.network import NetworkFactory
     from l2hmc.trainers.pytorch.trainer import Trainer
     from l2hmc.loss.pytorch.loss import LatticeLoss
+    RANK = 0 if accelerator.is_main_process else None
 
     steps = configs['steps']  # type: Steps
     schedule = configs['schedule']  # type: AnnealingSchedule
@@ -87,6 +112,7 @@ def setup_pytorch(configs: dict) -> dict:
                       aux_weight=loss_config.aux_weight)
 
     return {
+        'rank': RANK,
         'lattice': lattice,
         'loss_fn': loss_fn,
         'dynamics': dynamics,
@@ -97,23 +123,6 @@ def setup_pytorch(configs: dict) -> dict:
 
 
 def setup_tensorflow(configs: dict) -> dict:
-    try:
-        import tensorflow as tf
-        import horovod.tensorflow as hvd
-        hvd.init()
-        # RANK = hvd.rank()  # type: ignore
-        # SIZE = hvd.size()  # type: ignore
-        gpus = tf.config.experimental.list_physical_devices('GPU')
-        if len(gpus) > 0:
-            for gpu in gpus:
-                tf.config.experimental.set_memory_growth(gpu, True)
-
-            gpu = gpus[hvd.local_rank()]
-            tf.config.experimental.set_visible_devices(gpu, 'GPU')
-
-    except (ImportError, ModuleNotFoundError):
-        pass
-
     from l2hmc.dynamics.tensorflow.dynamics import Dynamics
     from l2hmc.lattice.tensorflow.lattice import Lattice
     from l2hmc.loss.tensorflow.loss import LatticeLoss
@@ -312,17 +321,27 @@ def analyze_dataset(
     history = {}
     if xarr is not None and lattice is not None:
         metrics = lattice.calc_metrics(xarr[0])
-        history = {
-            key: [val.numpy()]  # type: ignore
-            for key, val in metrics.items()
-        }
+        history = {}
+        for key, val in metrics.items():
+            try:
+                val = val.cpu().numpy()     # type: ignore
+            except AttributeError:
+                val = val.numpy()           # type: ignore
+
+            history[key] = [val]
+
         for x in xarr[1:]:
             metrics = lattice.calc_metrics(x)
             for key, val in metrics.items():
                 try:
-                    history[key].append(val.numpy())  # type: ignore
+                    val = val.cpu().numpy()  # type: ignore
+                except AttributeError:
+                    val = val.numpy()        # type: ignore
+
+                try:
+                    history[key].append(val)  # type: ignore
                 except KeyError:
-                    history[key] = [val.numpy()]  # type: ignore
+                    history[key] = [val]      # type: ignore
 
         intQ = np.array(history['intQ'])
         sinQ = np.array(history['sinQ'])
@@ -364,7 +383,7 @@ def train(cfg: DictConfig) -> dict:
     assert framework is not None
 
     kwargs = {'save_x': save_x}
-    width = cfg.get('width', 0)
+    width = cfg.get('width', 150)
     if width > 0:
         kwargs['width'] = width
 
@@ -384,6 +403,7 @@ def train(cfg: DictConfig) -> dict:
             raise ValueError(f'Unexpected framework: {framework}')
 
     outdir = Path(cfg.get('outdir', os.getcwd()))
+    RANK = setup.get('rank', None)
     train_dir = outdir.joinpath('train')
     eval_dir = outdir.joinpath('eval')
     nchains = min((cfg.dynamics.xshape[0], cfg.dynamics.nleapfrog))
@@ -391,29 +411,30 @@ def train(cfg: DictConfig) -> dict:
     log.info(f'Using {framework}, with trainer: {setup["trainer"]}')
 
     train_output = setup['trainer'].train(**kwargs)
-    train_history = train_output['history']
-    train_dataset = train_history.get_dataset()
-    analyze_dataset(train_dataset,
-                    outdir=train_dir,
-                    lattice=setup['lattice'],
-                    xarr=train_output['xarr'],
-                    nchains=nchains,
-                    title=framework,
-                    name='train')
+    if RANK == 0:
+        train_history = train_output['history']
+        train_dataset = train_history.get_dataset()
+        analyze_dataset(train_dataset,
+                        outdir=train_dir,
+                        lattice=setup['lattice'],
+                        xarr=train_output['xarr'],
+                        nchains=nchains,
+                        title=framework,
+                        name='train')
 
-    _ = kwargs.pop('save_x', None)
-    eval_output = setup['trainer'].eval(**kwargs)
-    eval_history = eval_output['history']
-    eval_dataset = eval_history.get_dataset()
-    analyze_dataset(eval_dataset,
-                    name='eval',
-                    outdir=eval_dir,
-                    lattice=setup['lattice'],
-                    xarr=eval_output['xarr'],
-                    nchains=nchains,
-                    title=framework)
+        _ = kwargs.pop('save_x', None)
+        eval_output = setup['trainer'].eval(**kwargs)
+        eval_history = eval_output['history']
+        eval_dataset = eval_history.get_dataset()
+        analyze_dataset(eval_dataset,
+                        name='eval',
+                        outdir=eval_dir,
+                        lattice=setup['lattice'],
+                        xarr=eval_output['xarr'],
+                        nchains=nchains,
+                        title=framework)
 
-    if not is_interactive():
+    if not is_interactive() and RANK == 0:
         tdir = train_dir.joinpath('logs')
         edir = eval_dir.joinpath('logs')
         tdir.mkdir(exist_ok=True, parents=True)
