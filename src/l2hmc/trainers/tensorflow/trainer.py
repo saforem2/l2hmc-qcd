@@ -5,9 +5,11 @@ Implements methods for training L2HMC sampler
 """
 from __future__ import absolute_import, annotations, division, print_function
 import logging
+import os
 import time
 from typing import Callable
 
+import horovod.tensorflow as hvd
 import numpy as np
 from rich.layout import Layout
 from rich.live import Live
@@ -15,18 +17,27 @@ from rich.panel import Panel
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 import tensorflow as tf
+from tensorflow.python.keras.optimizers import Optimizer
 
-from tensorflow.python.keras.optimizers import TFOptimizer as Optimizer
-
-
-from l2hmc.configs import Steps, AnnealingSchedule
+from l2hmc.configs import AnnealingSchedule, Steps
 from l2hmc.dynamics.tensorflow.dynamics import Dynamics, to_u1
 from l2hmc.loss.tensorflow.loss import LatticeLoss
 from l2hmc.utils.console import console, is_interactive
 from l2hmc.utils.history import summarize_dict
 from l2hmc.utils.step_timer import StepTimer
 from l2hmc.utils.tensorflow.history import History
+tf.autograph.set_verbosity(0)
+os.environ['AUTOGRAPH_VERBOSITY'] = '0'
 
+
+try:
+    RANK = hvd.rank()
+except ValueError:
+    hvd.init()
+
+RANK = hvd.rank()
+SIZE = hvd.size()
+IS_CHIEF = (RANK == 0)
 
 COLORS = 10 * ['red', 'yellow', 'green', 'blue', 'magenta', 'cyan']
 log = logging.getLogger(__name__)
@@ -95,7 +106,11 @@ class Trainer:
         evals_per_step = self.dynamics.config.nleapfrog * steps.log
         self.timer = StepTimer(evals_per_step=evals_per_step)
 
-    def train_step(self, inputs: tuple[Tensor, float]) -> tuple[Tensor, dict]:
+    def train_step(
+            self,
+            inputs: tuple[Tensor, float],
+            first_step: bool = False
+    ) -> tuple[Tensor, dict]:
         xinit, beta = inputs
         with tf.GradientTape() as tape:
             x_out, metrics = self.dynamics((to_u1(xinit), beta))
@@ -110,6 +125,11 @@ class Trainer:
                                                           x_prop=yprop,
                                                           acc=metrics_['acc'])
                 loss = (loss + aux_loss) / (1. + self.aux_weight)
+
+        hvd.DistributedGradientTape(tape)
+        if first_step:
+            hvd.broadcast_variables(self.dynamics.variables, root_rank=0)
+            hvd.broadcast_variables(self.optimizer.variables(), root_rank=0)
 
         grads = tape.gradient(loss, self.dynamics.trainable_variables)
         updates = zip(grads, self.dynamics.trainable_variables)
@@ -225,7 +245,7 @@ class Trainer:
         summaries = []
         table = Table(collapse_padding=True, row_styles=['dim', 'none'])
         with Live(table, console=console, screen=False) as live:
-            if is_interactive() and width > 0:
+            if width > 0:
                 live.console.width = width
 
             for step in range(self.steps.test):
@@ -291,8 +311,11 @@ class Trainer:
 
         # nera = self.steps.nera
         # nepoch = self.steps.nepoch
-        should_log = lambda epoch: (epoch % self.steps.log == 0)  # noqa
-        should_print = lambda epoch: (epoch % self.steps.print == 0)  # noqa
+        def should_log(epoch):
+            return epoch % self.steps.log == 0 and RANK == 0
+
+        def should_print(epoch):
+            return epoch % self.steps.print == 0 and RANK == 0
 
         xarr = []
         tables = {}
@@ -329,9 +352,11 @@ class Trainer:
                             table.add_row(*[f'{v}' for _, v in avgs.items()])
 
                 live.console.log(
+                    f'[{RANK}] :: '
                     f'Era {era} took: {time.time() - estart:<3.2g}s'
                 )
                 live.console.log(
+                    f'[{RANK}] :: '
                     f'Avgs over last era:\n{self.history.era_summary(era)}'
                 )
 
