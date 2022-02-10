@@ -226,7 +226,8 @@ def plot_combined(
     _ = xplt.pcolormesh(val, 'draw', 'chain', ax=ax0,
                         robust=True, add_colorbar=True)
     nchains = min((num_chains, len(val.coords['chain'])))
-    label = r'$\langle$' + f'{key} ' + r'$\rangle$'
+    label = f'{key}_avg'
+    # label = r'$\langle$' + f'{key} ' + r'$\rangle$'
     steps = np.arange(len(val.coords['draw']))
     chain_axis = val.get_axis_num('chain')
     if chain_axis == 0:
@@ -455,7 +456,8 @@ def plot_metric(
         ax1.grid(False)
         color = plot_kwargs.get('color', 'C0')
         label = plot_kwargs.pop('label', None)
-        label = r'$\langle$' + f' {key} ' + r'$\rangle$'
+        # label = r'$\langle$' + f' {key} ' + r'$\rangle$'
+        label = f'{key}_avg'
         ax.plot(steps, arr.mean(-1), lw=1.5*LW, label=label, **plot_kwargs)
         if num_chains > 0:
             for chain in range(min((num_chains, arr.shape[1]))):
@@ -697,7 +699,7 @@ def plot_plaqs(
     for idx in range(min(nchains, plaqs.shape[1])):
         _ = ax.plot(xplot, plaqs[:, idx], lw=1.0, alpha=0.5, color='C0')
 
-    _ = ax.set_ylabel(r'$\delta x_{P}$')
+    _ = ax.set_ylabel('dxp')
     _ = ax.set_xlabel('Train Epoch')
     _ = ax.grid(True, alpha=0.4)
     _ = matplotx.line_labels()
