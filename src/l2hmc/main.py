@@ -14,14 +14,14 @@ log = logging.getLogger(__name__)
 
 
 def train_tensorflow(cfg: DictConfig) -> dict:
-    from l2hmc.train_tensorflow import train
+    from l2hmc.main_tensorflow import train
     output = train(cfg)
 
     return output
 
 
 def train_pytorch(cfg: DictConfig) -> dict:
-    from l2hmc.train_pytorch import train
+    from l2hmc.main_pytorch import train
     output = train(cfg)
     return output
 
