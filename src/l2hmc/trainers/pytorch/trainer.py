@@ -188,7 +188,7 @@ class Trainer:
         table = Table(row_styles=['dim', 'none'])
         screen = (not is_interactive())
         with Live(table, console=console, screen=screen) as live:
-            if is_interactive() and width > 0:
+            if width > 0:
                 live.console.width = width
 
             for step in range(self.steps.test):
