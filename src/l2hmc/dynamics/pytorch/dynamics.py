@@ -28,25 +28,26 @@ Tensor = torch.Tensor
 Array = np.ndarray
 
 
-DynamicsInput = Tuple[Tensor, float]
-DynamicsOutput = Tuple[Tensor, dict]
+DynamicsInput = Tuple[Tensor, float]  # (xinit, beta)
+DynamicsOutput = Tuple[Tensor, dict]  # (xout, metrics)
 
 
 @dataclass
 class State:
-    x: Tensor
-    v: Tensor
-    beta: Tensor
+    x: Tensor               # gauge links
+    v: Tensor               # conj. momenta
+    beta: Tensor            # inv. coupling const.
 
 
 @dataclass
 class MonteCarloStates:
-    init: State
-    proposed: State
-    out: State
+    init: State             # Input state
+    proposed: State         # Proposal state
+    out: State              # Output state (after acc/rej)
 
 
 def to_u1(x: Tensor) -> Tensor:
+    """Returns x as U(1) link variable in [-pi, pi)."""
     return ((x + PI) % TWO_PI) - PI
 
 
@@ -56,15 +57,17 @@ def rand_unif(
         b: float,
         requires_grad: bool
 ) -> Tensor:
-    """Draw tensor from random uniform distribution U[a, b]"""
+    """Returns tensor from random uniform distribution ~U[a, b]."""
     rand = (a - b) * torch.rand(tuple(shape)) + b
     return rand.clone().detach().requires_grad_(requires_grad)
 
 
 def random_angle(shape: Shape, requires_grad: bool = True) -> Tensor:
+    """Returns random angle with `shape` and values in [-pi, pi)."""
     return rand_unif(shape, -PI, PI, requires_grad=requires_grad)
 
 
+# TODO: Remove or finish implementation ?
 class Mask:
     def __init__(self, m: Tensor):
         self.m = m
@@ -75,24 +78,8 @@ class Mask:
 
 
 def grab(x: Tensor) -> Array:
+    """Detach tensor and return as numpy array on CPU."""
     return x.detach().cpu().numpy()
-
-
-def get_parameter_list(
-        init: Tensor,
-        nleapfrog: int,
-        requires_grad: bool = True,
-        # clamp_min: float = 0.,
-) -> nn.ParameterList:
-    """Returns a list of trainable parameters initialized from `eps`."""
-    return nn.ParameterList([
-        nn.parameter.Parameter(
-            init,
-            # torch.exp(torch.log(torch.tensor(eps))).clamp_(clamp_min),
-            requires_grad=requires_grad,
-        )
-        for _ in range(nleapfrog)
-    ])
 
 
 class Dynamics(nn.Module):
@@ -104,7 +91,6 @@ class Dynamics(nn.Module):
     ):
         """Initialization method."""
         super(Dynamics, self).__init__()
-        # TODO: Implement reversibility check
         self.config = config
         self.xdim = self.config.xdim
         self.xshape = tuple(network_factory.input_spec.xshape)
