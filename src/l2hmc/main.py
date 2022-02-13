@@ -8,7 +8,6 @@ from omegaconf import DictConfig, OmegaConf
 import os
 import hydra
 import logging
-from l2hmc.common import train
 
 log = logging.getLogger(__name__)
 
@@ -30,7 +29,14 @@ def train_pytorch(cfg: DictConfig) -> dict:
 def main(cfg: DictConfig) -> None:
     print("Working directory : {}".format(os.getcwd()))
     print(OmegaConf.to_yaml(cfg))
-    _ = train(cfg)
+    framework = cfg.get('framework', None)
+    assert framework is not None, (
+        'Framework must be specified, one of: [pytorch, tensorflow]'
+    )
+    if framework in ['tf', 'tensorflow']:
+        _ = train_tensorflow(cfg)
+    elif framework in ['pt', 'pytorch']:
+        _ = train_pytorch(cfg)
 
 
 if __name__ == '__main__':

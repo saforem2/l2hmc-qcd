@@ -11,7 +11,7 @@ from pathlib import Path
 import hydra
 from omegaconf import DictConfig, OmegaConf
 import tensorflow as tf
-from l2hmc.utils.hvd_init import IS_CHIEF
+from l2hmc.utils.hvd_init import RANK, IS_CHIEF
 
 from l2hmc.common import (
     analyze_dataset,
