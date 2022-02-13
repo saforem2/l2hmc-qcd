@@ -86,45 +86,6 @@ class Trainer:
         x = x.reshape(x.shape[0], -1)
         return x
 
-    def train_step(self, inputs: tuple[Tensor, float]) -> tuple[Tensor, dict]:
-        x_init, beta = inputs
-        x_init = x_init.to(self.accelerator.device)
-
-        x_out, metrics = self.dynamics((to_u1(x_init), beta))
-        x_prop = to_u1(metrics.pop('mc_states').proposed.x)
-        loss = self.loss_fn(x_init=x_init, x_prop=x_prop, acc=metrics['acc'])
-
-        if self.aux_weight > 0:
-            yinit = to_u1(self.draw_x())
-            _, metrics_ = self.dynamics((yinit, beta))
-            yprop = to_u1(metrics_.pop('mc_states').proposed.x)
-            aux_loss = self.aux_weight * self.loss_fn(x_init=yinit,
-                                                      x_prop=yprop,
-                                                      acc=metrics_['acc'])
-            loss = (loss + aux_loss) / (1. + self.aux_weight)
-
-        self.optimizer.zero_grad()
-        self.accelerator.backward(loss)
-        # loss.backward()
-        self.optimizer.step()
-        record = {
-            'loss': loss.detach().cpu().numpy(),
-        }
-        for key, val in metrics.items():
-            record[key] = val
-
-        return to_u1(x_out).detach(), record
-
-    def eval_step(self, inputs: tuple[Tensor, float]) -> tuple[Tensor, dict]:
-        xinit, beta = inputs
-        xinit = xinit.to(self.accelerator.device)
-        xout, metrics = self.dynamics((to_u1(xinit), beta))
-        xprop = to_u1(metrics.pop('mc_states').proposed.x)
-        loss = self.loss_fn(x_init=xinit, x_prop=xprop, acc=metrics['acc'])
-        metrics.update({'loss': loss.detach().cpu().numpy()})
-
-        return to_u1(xout).detach(), metrics
-
     def metric_to_numpy(
             self,
             metric: Tensor | list | np.ndarray,
@@ -162,6 +123,16 @@ class Trainer:
                     continue
 
         return metrics
+
+    def eval_step(self, inputs: tuple[Tensor, float]) -> tuple[Tensor, dict]:
+        xinit, beta = inputs
+        xinit = xinit.to(self.accelerator.device)
+        xout, metrics = self.dynamics((to_u1(xinit), beta))
+        xprop = to_u1(metrics.pop('mc_states').proposed.x)
+        loss = self.loss_fn(x_init=xinit, x_prop=xprop, acc=metrics['acc'])
+        metrics.update({'loss': loss.detach().cpu().numpy()})
+
+        return to_u1(xout).detach(), metrics
 
     def eval(
             self,
@@ -216,6 +187,35 @@ class Trainer:
             'tables': tables,
         }
 
+    def train_step(self, inputs: tuple[Tensor, float]) -> tuple[Tensor, dict]:
+        x_init, beta = inputs
+        x_init = x_init.to(self.accelerator.device)
+
+        x_out, metrics = self.dynamics((to_u1(x_init), beta))
+        x_prop = to_u1(metrics.pop('mc_states').proposed.x)
+        loss = self.loss_fn(x_init=x_init, x_prop=x_prop, acc=metrics['acc'])
+
+        if self.aux_weight > 0:
+            yinit = to_u1(self.draw_x())
+            _, metrics_ = self.dynamics((yinit, beta))
+            yprop = to_u1(metrics_.pop('mc_states').proposed.x)
+            aux_loss = self.aux_weight * self.loss_fn(x_init=yinit,
+                                                      x_prop=yprop,
+                                                      acc=metrics_['acc'])
+            loss = (loss + aux_loss) / (1. + self.aux_weight)
+
+        self.optimizer.zero_grad()
+        self.accelerator.backward(loss)
+        # loss.backward()
+        self.optimizer.step()
+        record = {
+            'loss': loss.detach().cpu().numpy(),
+        }
+        for key, val in metrics.items():
+            record[key] = val
+
+        return to_u1(x_out).detach(), record
+
     def train(
             self,
             x: Tensor = None,
@@ -251,7 +251,6 @@ class Trainer:
             beta = self.schedule.betas[str(era)]
             console.rule(f'ERA: {era}, BETA: {beta}')
             table = Table(collapse_padding=True,
-                          # safe_box=interactive,
                           row_styles=['dim', 'none'])
             with Live(table, console=console, screen=False) as live:
                 if is_interactive() and width > 0:

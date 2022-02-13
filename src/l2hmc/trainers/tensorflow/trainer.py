@@ -17,8 +17,9 @@ from rich.panel import Panel
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 import tensorflow as tf
-from tensorflow.python.keras.optimizers import Optimizer
 
+from tensorflow.keras.optimizers import Optimizer
+from l2hmc.utils.hvd_init import RANK, SIZE, IS_CHIEF
 from l2hmc.configs import AnnealingSchedule, Steps
 from l2hmc.dynamics.tensorflow.dynamics import Dynamics, to_u1
 from l2hmc.loss.tensorflow.loss import LatticeLoss
@@ -30,18 +31,7 @@ tf.autograph.set_verbosity(0)
 os.environ['AUTOGRAPH_VERBOSITY'] = '0'
 
 
-try:
-    RANK = hvd.rank()
-except ValueError:
-    hvd.init()
-
-RANK = hvd.rank()
-SIZE = hvd.size()
-IS_CHIEF = (RANK == 0)
-
-COLORS = 10 * ['red', 'yellow', 'green', 'blue', 'magenta', 'cyan']
 log = logging.getLogger(__name__)
-
 
 TF_FLOAT = tf.keras.backend.floatx()
 Tensor = tf.Tensor
@@ -80,6 +70,7 @@ def add_columns(avgs: dict, table: Table) -> Table:
     return table
 
 
+
 class Trainer:
     def __init__(
             self,
@@ -91,6 +82,7 @@ class Trainer:
             aux_weight: float = 0.0,
             keep: str | list[str] = None,
             skip: str | list[str] = None,
+            compression: bool = True,
     ) -> None:
         self.steps = steps
         self.dynamics = dynamics
@@ -100,56 +92,22 @@ class Trainer:
         self.aux_weight = aux_weight
         self.keep = [keep] if isinstance(keep, str) else keep
         self.skip = [skip] if isinstance(skip, str) else skip
+        if compression:
+            self.compression = hvd.Compression.fp16
+        else:
+            self.compression = hvd.Compression.none
 
         self.history = History(steps=steps)
         self.eval_history = History()
         evals_per_step = self.dynamics.config.nleapfrog * steps.log
         self.timer = StepTimer(evals_per_step=evals_per_step)
 
-    def train_step(
-            self,
-            inputs: tuple[Tensor, float],
-            first_step: bool = False
-    ) -> tuple[Tensor, dict]:
-        xinit, beta = inputs
-        with tf.GradientTape() as tape:
-            x_out, metrics = self.dynamics((to_u1(xinit), beta))
-            xprop = to_u1(metrics.pop('mc_states').proposed.x)
-            loss = self.loss_fn(x_init=xinit, x_prop=xprop, acc=metrics['acc'])
+    def draw_x(self) -> Tensor:
+        x = tf.random.uniform(self.dynamics.xshape,
+                              *(-np.pi, np.pi), dtype=TF_FLOAT)
+        x = tf.reshape(x, (x.shape[0], -1))
 
-            if self.aux_weight > 0:
-                yinit = to_u1(self.draw_x())
-                _, metrics_ = self.dynamics((yinit, beta))
-                yprop = to_u1(metrics_.pop('mc_states').proposed.x)
-                aux_loss = self.aux_weight * self.loss_fn(x_init=yinit,
-                                                          x_prop=yprop,
-                                                          acc=metrics_['acc'])
-                loss = (loss + aux_loss) / (1. + self.aux_weight)
-
-        hvd.DistributedGradientTape(tape)
-        if first_step:
-            hvd.broadcast_variables(self.dynamics.variables, root_rank=0)
-            hvd.broadcast_variables(self.optimizer.variables(), root_rank=0)
-
-        grads = tape.gradient(loss, self.dynamics.trainable_variables)
-        updates = zip(grads, self.dynamics.trainable_variables)
-        self.optimizer.apply_gradients(updates)
-        record = {
-            'loss': loss,
-        }
-        for key, val in metrics.items():
-            record[key] = val
-
-        return to_u1(x_out), record
-
-    def eval_step(self, inputs: tuple[Tensor, float]) -> tuple[Tensor, dict]:
-        xinit, beta = inputs
-        xout, metrics = self.dynamics((to_u1(xinit), tf.constant(beta)))
-        xprop = to_u1(metrics.pop('mc_states').proposed.x)
-        loss = self.loss_fn(x_init=xinit, x_prop=xprop, acc=metrics['acc'])
-        metrics.update({'loss': loss})
-
-        return to_u1(xout), metrics
+        return x
 
     # type: ignore
     def metric_to_numpy(
@@ -209,6 +167,15 @@ class Trainer:
 
         return m
 
+    def eval_step(self, inputs: tuple[Tensor, float]) -> tuple[Tensor, dict]:
+        xinit, beta = inputs
+        xout, metrics = self.dynamics((to_u1(xinit), tf.constant(beta)))
+        xprop = to_u1(metrics.pop('mc_states').proposed.x)
+        loss = self.loss_fn(x_init=xinit, x_prop=xprop, acc=metrics['acc'])
+        metrics.update({'loss': loss})
+
+        return to_u1(xout), metrics
+
     def eval(
             self,
             beta: float = None,
@@ -235,7 +202,11 @@ class Trainer:
         assert isinstance(x, Tensor) and x.dtype == TF_FLOAT
 
         if compile:
-            self.dynamics.compile(optimizer=self.optimizer, loss=self.loss_fn)
+            self.dynamics.compile(
+                optimizer=self.optimizer,
+                loss=self.loss_fn,
+                experimental_run_tf_functions=False,
+            )
             eval_step = tf.function(self.eval_step, jit_compile=jit_compile)
         else:
             eval_step = self.eval_step
@@ -274,14 +245,41 @@ class Trainer:
             'tables': tables,
         }
 
-    def draw_x(
+    def train_step(
             self,
-    ) -> Tensor:
-        x = tf.random.uniform(self.dynamics.xshape,
-                              *(-np.pi, np.pi), dtype=TF_FLOAT)
-        x = tf.reshape(x, (x.shape[0], -1))
+            inputs: tuple[Tensor, float],
+            first_step: bool = False
+    ) -> tuple[Tensor, dict]:
+        xinit, beta = inputs
+        with tf.GradientTape() as tape:
+            x_out, metrics = self.dynamics((to_u1(xinit), beta))
+            xprop = to_u1(metrics.pop('mc_states').proposed.x)
+            loss = self.loss_fn(x_init=xinit, x_prop=xprop, acc=metrics['acc'])
 
-        return x
+            if self.aux_weight > 0:
+                yinit = to_u1(self.draw_x())
+                _, metrics_ = self.dynamics((yinit, beta))
+                yprop = to_u1(metrics_.pop('mc_states').proposed.x)
+                aux_loss = self.aux_weight * self.loss_fn(x_init=yinit,
+                                                          x_prop=yprop,
+                                                          acc=metrics_['acc'])
+                loss = (loss + aux_loss) / (1. + self.aux_weight)
+
+        tape = hvd.DistributedGradientTape(tape, compression=self.compression)
+        grads = tape.gradient(loss, self.dynamics.trainable_variables)
+        updates = zip(grads, self.dynamics.trainable_variables)
+        self.optimizer.apply_gradients(updates)
+        if first_step:
+            hvd.broadcast_variables(self.dynamics.variables, root_rank=0)
+            hvd.broadcast_variables(self.optimizer.variables(), root_rank=0)
+
+        record = {
+            'loss': loss,
+        }
+        for key, val in metrics.items():
+            record[key] = val
+
+        return to_u1(x_out), record
 
     def train(
             self,
@@ -325,7 +323,7 @@ class Trainer:
             beta = tf.constant(self.schedule.betas[str(era)])
             console.rule(f'ERA: {era}, BETA: {beta.numpy()}')
             table = Table(row_styles=['dim', 'none'])
-            with Live(table, console=console, screen=screen) as live:
+            with Live(table, console=console, screen=False) as live:
                 if is_interactive() and width > 0:
                     live.console.width = width
                 estart = time.time()
