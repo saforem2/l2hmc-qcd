@@ -1,8 +1,9 @@
 """
 utils/hvd_init.py
 """
-from __future__ import absolute_import, print_function, division, annotations
+from __future__ import absolute_import, annotations, division, print_function
 import logging
+import os
 log = logging.getLogger(__name__)
 
 try:
@@ -33,11 +34,15 @@ try:
         log.info(f'Hello, im rank: {RANK} of {SIZE} total ranks')
 
     GPUS = tf.config.experimental.list_physical_devices('GPU')
-    for gpu in GPUS:
-        tf.config.experimental.set_memory_growth(gpu, True)
+    if len(GPUS) > 0:
+        for gpu in GPUS:
+            tf.config.experimental.set_memory_growth(gpu, True)
     if GPUS:
         gpu = GPUS[hvd.local_rank()]
         tf.config.experimental.set_visible_devices(gpu, 'GPU')
+    else:
+        os.environ['CUDA_VISIBLE_DEVICES'] = "-1"
+
 
 except (ImportError, ModuleNotFoundError):
     RANK = 0
