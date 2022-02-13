@@ -62,7 +62,6 @@ def setup_annealing_schedule(cfg: DictConfig) -> AnnealingSchedule:
     return AnnealingSchedule(beta_init, beta_final, steps)
 
 
-
 def setup_pytorch(configs: dict) -> dict:
     import torch
     from accelerate import Accelerator
