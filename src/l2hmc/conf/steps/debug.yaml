@@ -1,5 +1,4 @@
-defaults:
-  - default.yaml
+_target_: l2hmc.configs.Steps
 
 nera: 5
 nepoch: 50

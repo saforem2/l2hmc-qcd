@@ -1,0 +1,12 @@
+_target_: l2hmc.configs.LearningRateConfig
+
+lr_init: 1e-3
+mode: 'auto'
+monitor: 'loss'
+patience: 5
+cooldown: 0
+warmup: 1000
+verbose: true
+min_lr: 1e-6
+factor: 0.98
+min_delta: 1e-4

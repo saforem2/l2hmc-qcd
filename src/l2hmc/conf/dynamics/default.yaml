@@ -1,3 +1,5 @@
+_target_: l2hmc.configs.DynamicsConfig
+
 xshape: [256, 16, 16, 2]
 eps: 0.01
 nleapfrog: 8

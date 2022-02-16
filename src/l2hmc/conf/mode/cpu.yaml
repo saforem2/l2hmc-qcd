@@ -8,7 +8,7 @@
 
 defaults:
   - override /dynamics: default_cpu.yaml
-  - override /steps: debug.yaml
+  - override /steps: default.yaml
   - override /network: default_cpu.yaml
 
 debug_mode: False
