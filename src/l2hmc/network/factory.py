@@ -4,14 +4,17 @@ network/factory.py
 Contains implementation of NetworkFactory, an Abstract
 Base Class for building networks.
 """
-from __future__ import absolute_import, division, print_function, annotations
+from __future__ import absolute_import, annotations, division, print_function
 from abc import ABC, abstractmethod
 from dataclasses import asdict
-
 from typing import Optional
 
 from l2hmc.configs import (
-    InputSpec, NetworkConfig, NetWeights, NetWeight, ConvolutionConfig
+    ConvolutionConfig,
+    InputSpec,
+    NetWeight,
+    NetWeights,
+    NetworkConfig,
 )
 
 
@@ -32,9 +35,10 @@ class BaseNetworkFactory(ABC):
         self.network_config = network_config
         self.conv_config = conv_config
         self.config = {
-            'net_weights': asdict(self.nw),
-            'input_spec': asdict(self.input_spec),
-            'network_config': asdict(self.network_config),
+            'net_weights': self.nw,
+            'input_spec': self.input_spec,
+            'network_config': self.network_config,
+            # 'network_config': asdict(self.network_config),
         }
         if conv_config is not None:
             self.config.update({'conv_config': asdict(self.conv_config)})
