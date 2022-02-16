@@ -117,9 +117,9 @@ class NetWeights(BaseConfig):
 class LearningRateConfig(BaseConfig):
     """Learning rate configuration object."""
     lr_init: float
-    warmup_steps: int = 0
     decay_steps: int = -1
     decay_rate: float = 1.0
+    warmup_steps: int = 100
 
     def to_str(self):
         return f'lr-{self.lr_init:3.2g}'
@@ -213,13 +213,13 @@ class Steps:
     nera: int
     nepoch: int
     test: int
-    log: int = 10
+    log: int = 0
     print: int = 0
 
     def __post_init__(self):
         self.total = self.nera * self.nepoch
-        if self.print == 0:
-            self.print = self.nepoch // 4
+        self.log = self.nepoch // 20 if self.log == 0 else self.log
+        self.print = self.nepoch // 10 if self.print == 0 else self.print
 
 
 @dataclass
