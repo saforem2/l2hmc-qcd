@@ -5,33 +5,32 @@ Implements methods for training L2HMC sampler
 """
 from __future__ import absolute_import, annotations, division, print_function
 import logging
+from math import pi as PI
 import os
+from pathlib import Path
 import time
 from typing import Callable
 
-import tensorflow as tf
 import horovod.tensorflow as hvd
 import numpy as np
-
 from rich.layout import Layout
 from rich.live import Live
 from rich.panel import Panel
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
 from rich.table import Table
+import tensorflow as tf
 
-from pathlib import Path
-from math import pi as PI
-
-# from tensorflow.keras.optimizers import Optimizer
-from l2hmc.utils.hvd_init import RANK, IS_CHIEF
-from l2hmc.configs import AnnealingSchedule, Steps, LearningRateConfig
+from l2hmc.configs import (
+    AnnealingSchedule, DynamicsConfig, LearningRateConfig, Steps
+)
 from l2hmc.dynamics.tensorflow.dynamics import Dynamics, to_u1
+from l2hmc.learning_rate.tensorflow.learning_rate import ReduceLROnPlateau
 from l2hmc.loss.tensorflow.loss import LatticeLoss
 from l2hmc.utils.console import console
 from l2hmc.utils.history import summarize_dict
+from l2hmc.utils.hvd_init import IS_CHIEF, RANK
 from l2hmc.utils.step_timer import StepTimer
 from l2hmc.utils.tensorflow.history import History
-from l2hmc.learning_rate.tensorflow.learning_rate import ReduceLROnPlateau
 # from l2hmc.learning_ra
 tf.autograph.set_verbosity(0)
 os.environ['AUTOGRAPH_VERBOSITY'] = '0'
