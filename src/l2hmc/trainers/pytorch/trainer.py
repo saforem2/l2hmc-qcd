@@ -5,26 +5,26 @@ Implements methods for training L2HMC sampler.
 """
 from __future__ import absolute_import, annotations, division, print_function
 from dataclasses import asdict
+import logging
 import time
 from typing import Callable
 
 from accelerate import Accelerator
 from accelerate.utils import extract_model_from_parallel
 import numpy as np
+from rich.live import Live
+from rich.table import Table
 import torch
 from torch import optim
-from l2hmc.loss.pytorch.loss import LatticeLoss
 
-from l2hmc.configs import Steps, AnnealingSchedule, DynamicsConfig
+from l2hmc.configs import (
+    AnnealingSchedule, DynamicsConfig, LearningRateConfig, Steps
+)
 from l2hmc.dynamics.pytorch.dynamics import Dynamics, random_angle, to_u1
-from l2hmc.utils.history import summarize_dict, BaseHistory
+from l2hmc.loss.pytorch.loss import LatticeLoss
+from l2hmc.utils.console import console, is_interactive
+from l2hmc.utils.history import BaseHistory, summarize_dict
 from l2hmc.utils.step_timer import StepTimer
-from l2hmc.utils.console import is_interactive, console
-
-from rich.table import Table
-from rich.live import Live
-
-import logging
 
 log = logging.getLogger(__name__)
 
@@ -59,13 +59,15 @@ class Trainer:
             self,
             steps: Steps,
             dynamics: Dynamics,
+            accelerator: Accelerator,
             optimizer: optim.Optimizer,
             schedule: AnnealingSchedule,
-            accelerator: Accelerator,
+            lr_config: LearningRateConfig,
             loss_fn: Callable = LatticeLoss,
-            aux_weight: float = 0.0,
             keep: str | list[str] = None,
             skip: str | list[str] = None,
+            aux_weight: float = 0.0,
+            evals_per_step: int = 1,
             dynamics_config: DynamicsConfig = None,
     ) -> None:
         self.steps = steps
@@ -76,10 +78,13 @@ class Trainer:
         self.aux_weight = aux_weight
         self._with_cuda = torch.cuda.is_available()
         self.accelerator = accelerator
+        self.lr_config = lr_config
         self.keep = [keep] if isinstance(keep, str) else keep
         self.skip = [skip] if isinstance(skip, str) else skip
         if dynamics_config is None:
-            cfg = extract_model_from_parallel(self.dynamics).config
+            dynamics_ = extract_model_from_parallel(self.dynamics)
+            cfg = dynamics_.config  # type: ignore
+
             dynamics_config = DynamicsConfig(**asdict(cfg))
 
         self.dynamics_config = dynamics_config
