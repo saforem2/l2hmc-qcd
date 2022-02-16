@@ -5,15 +5,16 @@ Implements various configuration objects
 """
 from __future__ import absolute_import, annotations, division, print_function
 from collections import namedtuple
+from copy import deepcopy
 from dataclasses import asdict, dataclass
 import json
 import os
 from pathlib import Path
-from typing import NamedTuple, Optional, List, Tuple, Dict
-from omegaconf import MISSING
+from typing import Dict, List, Optional, Tuple  # NamedTuple,
 
 from hydra.core.config_store import ConfigStore
 import numpy as np
+from omegaconf import MISSING
 
 
 HERE = Path(os.path.abspath(__file__)).parent
@@ -47,6 +48,9 @@ class BaseConfig:
     def asdict(self) -> dict:
         return asdict(self)
 
+    def to_dict(self):
+        return deepcopy(self.__dict__)
+
     def to_file(self, fpath: os.PathLike) -> None:
         with open(fpath, 'w') as f:
             json.dump(self.to_json(), f, indent=4)
@@ -62,6 +66,22 @@ class BaseConfig:
 defaults = [
     {'backend': MISSING}
 ]
+
+
+@dataclass
+class ExperimentConfig(BaseConfig):
+    framework: str
+    steps: Steps
+    dynamics: DynamicsConfig
+    loss: LossConfig
+    network: NetworkConfig
+    conv: ConvolutionConfig
+    net_weights: NetWeights
+    schedule: AnnealingSchedule
+    learning_rate: LearningRateConfig
+
+    def __post_init__(self):
+        self.schedule.setup(self.steps)
 
 
 @dataclass
@@ -84,7 +104,8 @@ class U1Config(BaseConfig):
         )
 
 
-class NetWeight(NamedTuple):
+@dataclass
+class NetWeight(BaseConfig):
     """Object for selectively scaling different components of learned fns.
 
     Explicitly,
@@ -96,6 +117,9 @@ class NetWeight(NamedTuple):
     t: float = 1.
     q: float = 1.
 
+    def to_dict(self):
+        return {'s': self.s, 't': self.t, 'q': self.q}
+
     def to_str(self):
         return f's{self.s:2.1g}t{self.t:2.1g}q{self.t:2.1g}'
 
@@ -103,23 +127,44 @@ class NetWeight(NamedTuple):
 @dataclass
 class NetWeights(BaseConfig):
     """Object for selectively scaling different components of x, v networks."""
-    x: Optional[NetWeight] = None
-    v: Optional[NetWeight] = None
+    x: NetWeight = NetWeight(1., 1., 1.)
+    v: NetWeight = NetWeight(1., 1., 1.)
+
+    def to_dict(self):
+        return {
+            'x': self.x.to_dict(),
+            'v': self.v.to_dict(),
+        }
 
     def __post_init__(self):
-        if self.x is None:
-            self.x = NetWeight(s=1., t=1., q=1.)
-        if self.v is None:
-            self.v = NetWeight(s=1., t=1., q=1.)
+        if not isinstance(self.x, NetWeight):
+            self.x = NetWeight(**self.x)
+        if not isinstance(self.v, NetWeight):
+            self.v = NetWeight(**self.v)
+        # if self.x is None:
+        #     self.x = NetWeight(s=1., t=1., q=1.)
+        # if self.v is None:
+        #     self.v = NetWeight(s=1., t=1., q=1.)
 
 
 @dataclass
 class LearningRateConfig(BaseConfig):
     """Learning rate configuration object."""
-    lr_init: float
-    decay_steps: int = -1
-    decay_rate: float = 1.0
-    warmup_steps: int = 100
+    lr_init: float = 1e-3
+    mode: str = 'auto'
+    monitor: str = 'loss'
+    patience: int = 5
+    cooldown: int = 0
+    warmup: int = 1000
+    verbose: bool = True
+    min_lr: float = 1e-6
+    factor: float = 0.98
+    min_delta: float = 1e-4
+    # decay_steps: int = -1
+    # decay_rate: float = 1.0
+    # warmup_steps: int = 100
+    # min_lr: float = 1e-5
+    # patience: int = 5
 
     def to_str(self):
         return f'lr-{self.lr_init:3.2g}'
@@ -129,13 +174,13 @@ class LearningRateConfig(BaseConfig):
 class AnnealingSchedule(BaseConfig):
     beta_init: float
     beta_final: float
-    steps: Steps
+    # steps: Steps
     # TODO: Add methods for specifying different annealing schedules
 
-    def __post_init__(self):
-        betas = np.linspace(self.beta_init, self.beta_final, self.steps.nera)
+    def setup(self, steps: Steps) -> None:
+        betas = np.linspace(self.beta_init, self.beta_final, steps.nera)
         self.betas = {
-            str(era): betas[era] for era in range(self.steps.nera)
+            str(era): betas[era] for era in range(steps.nera)
         }
 
 
@@ -243,16 +288,22 @@ class InputSpec(BaseConfig):
 
 
 # def register_configs() -> None:
-cs = ConfigStore.instance()
+cs = ConfigStore()
+cs.store(name='config_schema', node=ExperimentConfig)
+cs.store(
+    group="steps",
+    name="steps",
+    node=Steps,
+)
 cs.store(
     group="dynamics",
     name="dynamics",
     node=DynamicsConfig,
 )
 cs.store(
-    group="steps",
-    name="steps",
-    node=Steps,
+    group="loss",
+    name="loss",
+    node=LossConfig,
 )
 cs.store(
     group='network',
@@ -265,12 +316,17 @@ cs.store(
     node=ConvolutionConfig,
 )
 cs.store(
-    group="loss",
-    name="loss",
-    node=LossConfig,
+    group="net_weights",
+    name="net_weights",
+    node=NetWeights,
 )
-# # cs.store(
-# #     group="net_weights",
-# #     name="net_weights",
-# #     node=NetWeights,
-# # )
+cs.store(
+    group="annealing_schedule",
+    name="annealing_schedule",
+    node=AnnealingSchedule,
+)
+cs.store(
+    group="learning_rate",
+    name="learning_rate",
+    node=LearningRateConfig,
+)
