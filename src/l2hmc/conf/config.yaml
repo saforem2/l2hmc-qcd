@@ -1,6 +1,6 @@
 hydra:
   sweep:
-    dir: "outputs/multirun"
+    dir: "outputs/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}"
     # subdir: ${hydra.job.num}
     subdir: ${hydra.job.override_dirname}
   run:
@@ -20,8 +20,10 @@ defaults:
   - dynamics: default.yaml
   - loss: default.yaml
   - network: default.yaml
-  - net_weights: default.yaml
   - conv: none.yaml
+  - net_weights: default.yaml
+  - learning_rate: default.yaml
+  - annealing_schedule: default.yaml
   # modes are special collections of config options for different purposes, e.g. debugging
   - mode: default.yaml
   # - mode: default.yaml
@@ -38,8 +40,8 @@ defaults:
   # specify framework, either tensorflow or pytorch
 
 framework: ???
-beta_init: 1.0
-beta_final: ???
+# beta_init: 1.0
+# beta_final: ???
 
 save_x: True
 # pretty print config at the start of the run using Rich library
