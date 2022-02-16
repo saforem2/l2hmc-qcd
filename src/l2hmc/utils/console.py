@@ -3,8 +3,12 @@ console.py
 
 Contains global rich console to use in live displays.
 """
-from __future__ import absolute_import, division, annotations, print_function
+from __future__ import absolute_import, annotations, division, print_function
+import os
+
 from rich.console import Console
+
+WIDTH = max(150, int(os.environ['WIDTH']))
 
 
 def is_interactive():
@@ -12,4 +16,7 @@ def is_interactive():
     return get_ipython() is not None
 
 
-console = Console(record=True, color_system='truecolor', log_path=False)
+console = Console(record=True,
+                  color_system='truecolor',
+                  log_path=False,
+                  width=WIDTH)
