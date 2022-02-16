@@ -26,7 +26,7 @@ from l2hmc.configs import (
     ConvolutionConfig,
     Steps,
 )
-from l2hmc.utils.console import console, is_interactive
+from l2hmc.utils.console import console  # , is_interactive
 from l2hmc.utils.plot_helpers import plot_dataArray, plot_chains
 
 os.environ['AUTOGRAPH_VERBOSITY'] = '0'
@@ -372,93 +372,93 @@ def analyze_dataset(
     return history
 
 
-def train(cfg: DictConfig) -> dict:
-    save_x = cfg.get('save_x', False)
-    framework = cfg.get('framework', None)
-    if framework is None:
-        framework = 'tensorflow'
-        log.warn('Framework not specified. Using TensorFlow.')
+# def train(cfg: DictConfig) -> dict:
+#     save_x = cfg.get('save_x', False)
+#     framework = cfg.get('framework', None)
+#     if framework is None:
+#         framework = 'tensorflow'
+#         log.warn('Framework not specified. Using TensorFlow.')
 
-    assert framework is not None
+#     assert framework is not None
 
-    kwargs = {'save_x': save_x}
-    width = cfg.get('width', 150)
-    if width > 0:
-        kwargs['width'] = width
+#     kwargs = {'save_x': save_x}
+#     width = cfg.get('width', 150)
+#     if width > 0:
+#         kwargs['width'] = width
 
-    common = setup_common(cfg)
-    if framework in ['pytorch', 'torch', 'pt']:
-        framework = 'pytorch'
-        setup = setup_pytorch(common)
-    else:
-        if framework in ['tensorflow', 'tf']:
-            framework = 'tensorflow'
-            setup = setup_tensorflow(common)
-            kwargs.update({
-                'compile': cfg.get('compile', True),
-                'jit_compile': cfg.get('jit_compile', False),
-            })
-        else:
-            raise ValueError(f'Unexpected framework: {framework}')
+#     common = setup_common(cfg)
+#     if framework in ['pytorch', 'torch', 'pt']:
+#         framework = 'pytorch'
+#         setup = setup_pytorch(common)
+#     else:
+#         if framework in ['tensorflow', 'tf']:
+#             framework = 'tensorflow'
+#             setup = setup_tensorflow(common)
+#             kwargs.update({
+#                 'compile': cfg.get('compile', True),
+#                 'jit_compile': cfg.get('jit_compile', False),
+#             })
+#         else:
+#             raise ValueError(f'Unexpected framework: {framework}')
 
-    outdir = Path(cfg.get('outdir', os.getcwd()))
-    RANK = setup.get('rank', None)
-    train_dir = outdir.joinpath('train')
-    eval_dir = outdir.joinpath('eval')
-    nchains = min((cfg.dynamics.xshape[0], cfg.dynamics.nleapfrog))
+#     outdir = Path(cfg.get('outdir', os.getcwd()))
+#     RANK = setup.get('rank', None)
+#     train_dir = outdir.joinpath('train')
+#     eval_dir = outdir.joinpath('eval')
+#     nchains = min((cfg.dynamics.xshape[0], cfg.dynamics.nleapfrog))
 
-    log.info(f'Using {framework}, with trainer: {setup["trainer"]}')
+#     log.info(f'Using {framework}, with trainer: {setup["trainer"]}')
 
-    train_output = setup['trainer'].train(**kwargs)
-    if RANK == 0:
-        train_history = train_output['history']
-        train_dataset = train_history.get_dataset()
-        analyze_dataset(train_dataset,
-                        outdir=train_dir,
-                        lattice=setup['lattice'],
-                        xarr=train_output['xarr'],
-                        nchains=nchains,
-                        title=framework,
-                        name='train')
+#     train_output = setup['trainer'].train(**kwargs)
+#     if RANK == 0:
+#         train_history = train_output['history']
+#         train_dataset = train_history.get_dataset()
+#         analyze_dataset(train_dataset,
+#                         outdir=train_dir,
+#                         lattice=setup['lattice'],
+#                         xarr=train_output['xarr'],
+#                         nchains=nchains,
+#                         title=framework,
+#                         name='train')
 
-        _ = kwargs.pop('save_x', None)
-        eval_output = setup['trainer'].eval(**kwargs)
-        eval_history = eval_output['history']
-        eval_dataset = eval_history.get_dataset()
-        analyze_dataset(eval_dataset,
-                        name='eval',
-                        outdir=eval_dir,
-                        lattice=setup['lattice'],
-                        xarr=eval_output['xarr'],
-                        nchains=nchains,
-                        title=framework)
+#         _ = kwargs.pop('save_x', None)
+#         eval_output = setup['trainer'].eval(**kwargs)
+#         eval_history = eval_output['history']
+#         eval_dataset = eval_history.get_dataset()
+#         analyze_dataset(eval_dataset,
+#                         name='eval',
+#                         outdir=eval_dir,
+#                         lattice=setup['lattice'],
+#                         xarr=eval_output['xarr'],
+#                         nchains=nchains,
+#                         title=framework)
 
-    if not is_interactive() and RANK == 0:
-        tdir = train_dir.joinpath('logs')
-        edir = eval_dir.joinpath('logs')
-        tdir.mkdir(exist_ok=True, parents=True)
-        edir.mkdir(exist_ok=True, parents=True)
-        log.info(f'Saving train logs to: {tdir.as_posix()}')
-        save_logs(logdir=tdir,
-                  tables=train_output['tables'],
-                  summaries=train_output['summaries'])
-        log.info(f'Saving eval logs to: {edir.as_posix()}')
-        save_logs(logdir=edir,
-                  tables=eval_output['tables'],
-                  summaries=eval_output['summaries'])
+#     if not is_interactive() and RANK == 0:
+#         tdir = train_dir.joinpath('logs')
+#         edir = eval_dir.joinpath('logs')
+#         tdir.mkdir(exist_ok=True, parents=True)
+#         edir.mkdir(exist_ok=True, parents=True)
+#         log.info(f'Saving train logs to: {tdir.as_posix()}')
+#         save_logs(logdir=tdir,
+#                   tables=train_output['tables'],
+#                   summaries=train_output['summaries'])
+#         log.info(f'Saving eval logs to: {edir.as_posix()}')
+#         save_logs(logdir=edir,
+#                   tables=eval_output['tables'],
+#                   summaries=eval_output['summaries'])
 
-    output = {
-        'setup': setup,
-        'train': {
-            'output': train_output,
-            'dataset': train_dataset,
-            'history': train_history,
-        },
-        'eval': {
-            'output': eval_output,
-            'dataset': eval_dataset,
-            'history': eval_history,
-        },
-    }
+#     output = {
+#         'setup': setup,
+#         'train': {
+#             'output': train_output,
+#             'dataset': train_dataset,
+#             'history': train_history,
+#         },
+#         'eval': {
+#             'output': eval_output,
+#             'dataset': eval_dataset,
+#             'history': eval_history,
+#         },
+#     }
 
-    return output
+#     return output
