@@ -80,6 +80,8 @@ def setup(cfg: DictConfig) -> dict:
                       schedule=schedule,
                       optimizer=optimizer,
                       accelerator=accelerator,
+                      dynamics_config=dynamics_cfg,
+                      # evals_per_step=nlf,
                       aux_weight=loss_cfg.aux_weight)
 
     return {
@@ -96,64 +98,70 @@ def setup(cfg: DictConfig) -> dict:
 def train(cfg: DictConfig) -> dict:
     objs = setup(cfg)
     trainer = objs['trainer']  # type: Trainer
+    accelerator = objs['accelerator']  # type: Accelerator
     kwargs = {
         'save_x': cfg.get('save_x', False),
         'width': cfg.get('width', None),
     }
 
-    outdir = Path(cfg.get('outdir', os.getcwd()))
-    day = get_timestamp('%Y-%m-%d')
-    time = get_timestamp('%H-%M-%S')
-    outdir = outdir.joinpath('pytorch').joinpath(day, time)
-    train_dir = outdir.joinpath('train')
+    # outdir = Path(cfg.get('outdir', os.getcwd()))
+    # day = get_timestamp('%Y-%m-%d')
+    # time = get_timestamp('%H-%M-%S')
+    # outdir = outdir.joinpath('pytorch').joinpath(day, time)
+    # train_dir = outdir.joinpath('train')
     train_output = trainer.train(**kwargs)
-    train_dataset = train_output['history'].get_dataset()
-    nchains = min((cfg.dynamics.xshape[0], cfg.dynamics.nleapfrog))
-    analyze_dataset(train_dataset,
-                    name='train',
-                    nchains=nchains,
-                    outdir=train_dir,
-                    lattice=objs['lattice'],
-                    xarr=train_output['xarr'],
-                    title='Training: TensorFlow')
-
-    _ = kwargs.pop('save_x', False)
-    therm_frac = cfg.get('therm_frac', 0.2)
-    eval_dir = outdir.joinpath('eval')
-    eval_output = trainer.eval(**kwargs)
-    eval_dataset = eval_output['history'].get_dataset(therm_frac=therm_frac)
-    analyze_dataset(eval_dataset,
-                    name='eval',
-                    nchains=nchains,
-                    outdir=eval_dir,
-                    lattice=objs['lattice'],
-                    xarr=eval_output['xarr'],
-                    title='Evaluating: TensorFlow')
-
-    if not is_interactive():
-        tdir = train_dir.joinpath('logs')
-        edir = eval_dir.joinpath('logs')
-        tdir.mkdir(exist_ok=True, parents=True)
-        edir.mkdir(exist_ok=True, parents=True)
-        log.info(f'Saving train logs to: {tdir.as_posix()}')
-        save_logs(logdir=tdir,
-                  tables=train_output['tables'],
-                  summaries=train_output['summaries'])
-        log.info(f'Saving eval logs to: {edir.as_posix()}')
-        save_logs(logdir=edir,
-                  tables=eval_output['tables'],
-                  summaries=eval_output['summaries'])
     output = {
         'setup': setup,
-        'train': {
-            'output': train_output,
-            'dataset': train_dataset,
-        },
-        'eval': {
-            'output': eval_output,
-            'dataset': eval_dataset,
-        },
+        'train': train_output,
     }
+    if accelerator.is_local_main_process:
+        outdir = Path(cfg.get('outdir', os.getcwd()))
+        # day = get_timestamp('%Y-%m-%d')
+        # time = get_timestamp('%H-%M-%S')
+        # outdir = outdir.joinpath('pytorch', day, time)
+        train_dir = outdir.joinpath('train')
+
+        train_dset = train_output['history'].get_dataset()
+        nchains = min((cfg.dynamics.xshape[0], cfg.dynamics.nleapfrog))
+
+        analyze_dataset(train_dset,
+                        name='train',
+                        nchains=nchains,
+                        outdir=train_dir,
+                        lattice=objs['lattice'],
+                        xarr=train_output['xarr'],
+                        title='Training: PyTorch')
+
+        _ = kwargs.pop('save_x', False)
+        therm_frac = cfg.get('therm_frac', 0.2)
+        eval_dir = outdir.joinpath('eval')
+        eval_output = trainer.eval(**kwargs)
+        eval_dset = eval_output['history'].get_dataset(
+            therm_frac=therm_frac
+        )
+        analyze_dataset(eval_dset,
+                        name='eval',
+                        nchains=nchains,
+                        outdir=eval_dir,
+                        lattice=objs['lattice'],
+                        xarr=eval_output['xarr'],
+                        title='Evaluating: PyTorch')
+
+        if not is_interactive():
+            tdir = train_dir.joinpath('logs')
+            edir = eval_dir.joinpath('logs')
+            tdir.mkdir(exist_ok=True, parents=True)
+            edir.mkdir(exist_ok=True, parents=True)
+            log.info(f'Saving train logs to: {tdir.as_posix()}')
+            save_logs(logdir=tdir,
+                      tables=train_output['tables'],
+                      summaries=train_output['summaries'])
+            log.info(f'Saving eval logs to: {edir.as_posix()}')
+            save_logs(logdir=edir,
+                      tables=eval_output['tables'],
+                      summaries=eval_output['summaries'])
+
+        output.update({'eval': eval_output})
 
     return output
 

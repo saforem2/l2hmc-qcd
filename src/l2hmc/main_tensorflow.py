@@ -11,7 +11,7 @@ from pathlib import Path
 import hydra
 from omegaconf import DictConfig, OmegaConf
 import tensorflow as tf
-from l2hmc.utils.hvd_init import RANK, IS_CHIEF
+from l2hmc.utils.hvd_init import IS_CHIEF
 
 from l2hmc.common import (
     analyze_dataset,
@@ -87,24 +87,26 @@ def train(cfg: DictConfig) -> dict:
     trainer = objs['trainer']  # type: Trainer
     kwargs = {
         'save_x': cfg.get('save_x', False),
-        'width': cfg.get('width', None),
+        'width': cfg.get('width', 150),
         'compile': cfg.get('compile', True),
         'jit_compile': cfg.get('jit_compile', False),
     }
 
-    outdir = Path(cfg.get('outdir', os.getcwd()))
-    day = get_timestamp('%Y-%m-%d')
-    time = get_timestamp('%H-%M-%S')
-    outdir = outdir.joinpath('tensorflow', day, time)
-    train_dir = outdir.joinpath('train')
     train_output = trainer.train(**kwargs)
     output = {
         'setup': setup,
         'train': train_output,
     }
     if IS_CHIEF:
+        outdir = Path(cfg.get('outdir', os.getcwd()))
+        # day = get_timestamp('%Y-%m-%d')
+        # time = get_timestamp('%H-%M-%S')
+        # outdir = outdir.joinpath('tensorflow', day, time)
+        train_dir = outdir.joinpath('train')
+
         train_dataset = train_output['history'].get_dataset()
         nchains = min((cfg.dynamics.xshape[0], cfg.dynamics.nleapfrog))
+
         analyze_dataset(train_dataset,
                         name='train',
                         nchains=nchains,
