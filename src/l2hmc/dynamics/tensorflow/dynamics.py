@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 from typing import Callable
 from typing import Tuple
+import logging
 
 import numpy as np
 import tensorflow as tf
@@ -23,6 +24,9 @@ TWO = tf.constant(2.)
 Tensor = tf.Tensor
 Model = tf.keras.Model
 TF_FLOAT = tf.keras.backend.floatx()
+
+
+log = logging.getLogger(__name__)
 
 
 DynamicsOutput = Tuple[Tensor, dict]
@@ -84,13 +88,13 @@ class Dynamics(Model):
         for lf in range(self.config.nleapfrog):
             self.xeps.append(
                 tf.Variable(initial_value=self.config.eps,
-                            name=f'xeps/lf{lf}', dtype=TF_FLOAT,
+                            name=f'xeps_lf{lf}', dtype=TF_FLOAT,
                             trainable=(not self.config.eps_fixed),
                             constraint=tf.keras.constraints.non_neg())
             )
             self.veps.append(
                 tf.Variable(initial_value=self.config.eps,
-                            name=f'veps/lf{lf}', dtype=TF_FLOAT,
+                            name=f'veps_lf{lf}', dtype=TF_FLOAT,
                             trainable=(not self.config.eps_fixed),
                             constraint=tf.keras.constraints.non_neg())
             )
@@ -711,47 +715,90 @@ class Dynamics(Model):
 
         return grad
 
-    def save_networks(self, outdir: os.PathLike):
-        outdir = Path(outdir)
+    def load_networks(self, d: os.PathLike):
+        d = Path(d)
+        assert d.is_dir(), f'Directory {d} does not exist'
+        fveps = d.joinpath('veps.npy')
+        fxeps = d.joinpath('xeps.npy')
+        veps = tf.constant(np.load(fveps.as_posix()), dtype=TF_FLOAT)
+        xeps = tf.constant(np.load(fxeps.as_posix()), dtype=TF_FLOAT)
+        if self.config.use_separate_networks:
+            xnet = {}
+            vnet = {}
+            for lf in range(self.config.nleapfrog):
+                fvnet = d.joinpath(f'vNet-{lf}')
+                fxnet1 = d.joinpath(f'xNet-{lf}_first')
+                vnet[str(lf)] = tf.keras.models.load_model(fvnet.as_posix())
+                xnet[str(lf)] = {
+                    'first': tf.keras.models.load_model(fxnet1.as_posix())
+                }
+                if self.config.use_split_xnets:
+                    fxnet2 = d.joinpath(f'xNet-{lf}_second')
+                    xnet[str(lf)].update({
+                        'second': tf.keras.models.load_model(fxnet2.as_posix())
+                    })
+        else:
+            vnet = tf.keras.models.load_model(d.joinpath('vNet').as_posix())
+            xnet1 = tf.keras.models.load_model(
+                d.joinpath('xNet_first').as_posix()
+            )
+            vnet = {'0': vnet}
+            xnet = {'0': {'first': xnet1}}
+            if self.config.use_split_xnets:
+                xnet2 = tf.keras.models.load_model(
+                    d.joinpath('xNet_second').as_posix()
+                )
+                xnet['0'].update({'second': xnet2})
+
+        return {'vnet': vnet, 'xnet': xnet, 'veps': veps, 'xeps': xeps}
+
+    def save_networks(self, outdir: os.PathLike) -> None:
+        """Save networks to `outdir`."""
+        outdir = Path(outdir).joinpath('networks')
         outdir.mkdir(exist_ok=True, parents=True)
-        fveps = outdir.joinpath('veps.z')
-        fxeps = outdir.joinpath('xeps.z')
+        log.info(f'Saving `xeps`, `veps`, `vNet`, `xNet` to: {outdir}')
+
         veps = np.array([e.numpy() for e in self.veps])
         xeps = np.array([e.numpy() for e in self.xeps])
-        np.savetxt(fxeps, xeps)
-        np.savetxt(fveps, veps)
+
+        np.savetxt(outdir.joinpath('veps.txt').as_posix(), xeps)
+        np.savetxt(outdir.joinpath('xeps.txt').as_posix(), veps)
+        np.save(outdir.joinpath('veps.npy').as_posix(), veps)
+        np.save(outdir.joinpath('xeps.npy').as_posix(), xeps)
+
         if self.config.use_separate_networks:
             for lf in range(self.config.nleapfrog):
+                fvnet = outdir.joinpath(f'vNet-{lf}').as_posix()
+                fxnet1 = outdir.joinpath(f'xNet-{lf}_first').as_posix()
+
                 vnet = self._get_vnet(lf)
-                vnet.save(outdir.joinpath(f'dynamics_vnet_{lf}'))
                 xnet1 = self._get_xnet(lf, first=True)
-                xnet1.save(outdir.joinpath(f'dynamics_xnet_{lf}_first'))
+
+                log.info(f'Saving `vNet-{lf} to {fvnet}')
+                log.info(f'Saving `xNet-{lf}_first to {fxnet1}')
+
+                vnet.save(fvnet)
+                xnet1.save(fxnet1)
+
                 if self.config.use_split_xnets:
                     xnet2 = self._get_xnet(lf, first=False)
-                    xnet2.save(outdir.joinpath(f'dynamics_xnet_{lf}_second'))
+                    fxnet2 = outdir.joinpath(f'xNet-{lf}_second').as_posix()
+                    log.info(f'Saving `xNet-{lf}_second to {fxnet2}')
+                    xnet2.save(fxnet2)
+        else:
+            vnet = self._get_vnet(0)
+            xnet1 = self._get_xnet(0, first=True)
 
-        if self.config.use_separate_networks:
-            fvnets = {}
+            fvnet = outdir.joinpath('vNet').as_posix()
+            fxnet1 = outdir.joinpath('xNet_first').as_posix()
+
+            log.info(f'Saving vNet to: {fvnet}')
+            vnet.save(fvnet)
+            log.info(f'Saving xNet_first to: {fxnet1}')
+            xnet1.save(fxnet1)
+
             if self.config.use_split_xnets:
-                fxnets = {}
-            fvnets = []
-            fxnets_first = []
-            fxnets_second = []
-
-            fxnets_first = [
-                outdir.joinpath(f'dynamics_xnet_{lf}_first')
-                for lf in range(self.config.nleapfrog)
-            ]
-            fxnets_second = [
-                outdir.joinpath(f'dynamics_xnet_{lf}_second')
-                for lf in range(self.config.nleapfrog)
-            ]
-            fvnets = [
-                os.a
-            ]
-
-
-
-
-
-
+                xnet2 = self._get_xnet(0, first=False)
+                fxnet2 = outdir.joinpath('xNet_second').as_posix()
+                log.info(f'Saving xNet_second to: {fxnet2}')
+                xnet2.save(fxnet2)
