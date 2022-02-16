@@ -8,9 +8,11 @@ hydra:
     dir: "outputs/runs/\
       /${dynamics.xshape[1]}x${dynamics.xshape[2]}\
       /nlf-${dynamics.nleapfrog}\
-      /merge_directions-${dynamics.merge_directions}"
-      # /${now:%Y-%m-%d}\
-      # /${now:%H-%M-%S}"
+      /beta-${beta_final}\
+      /merge_directions-${dynamics.merge_directions}\
+      /${framework}\
+      /${now:%Y-%m-%d}\
+      /${now:%H-%M-%S}"
 
 defaults:
   - _self_
@@ -35,7 +37,7 @@ defaults:
   # - override hydra/launcher: joblib
   # specify framework, either tensorflow or pytorch
 
-# framework: ???
+framework: ???
 beta_init: 1.0
 beta_final: ???
 
