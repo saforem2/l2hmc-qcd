@@ -14,14 +14,19 @@ import tensorflow as tf
 from tensorflow.python.keras import backend as K
 
 # pylint:disable=import-error
-from tensorflow.python.framework import ops
+# from tensorflow.python.framework import ops
+
 
 # import utils.file_io as io
-from tensorflow.keras.optimizers.schedules import LearningRateSchedule
+# from tensorflow.keras.optimizers.schedules import LearningRateSchedule
 
 from l2hmc.configs import LearningRateConfig
 # from network.config import LearningRateConfig
+
 log = logging.getLogger(__name__)
+
+Optimizer = tf.keras.optimizers.Optimizer
+LearningRateSchedule = tf.keras.optimizers.schedules.LearningRateSchedule
 
 
 def moving_average(x, n=1000):
@@ -62,43 +67,60 @@ class ReduceLROnPlateau(tf.keras.callbacks.Callback):
     """
     def __init__(
             self,
-            monitor='loss',
-            factor=0.5,
-            patience=10,
-            verbose=1,
-            mode='auto',
-            warmup_steps=1000,
-            min_delta=1e-4,
-            cooldown=0,
-            min_lr=1e-6,
+            lr_config: LearningRateConfig,
+            # monitor='loss',
+            # factor=0.5,
+            # patience=10,
+            # verbose=1,
+            # mode='auto',
+            # warmup_steps=1000,
+            # min_delta=1e-4,
+            # cooldown=0,
+            # min_lr=1e-6,
             **kwargs
     ):
         super(ReduceLROnPlateau, self).__init__()
-        self.monitor = monitor
-        if factor >= 1.0:
+        self.cfg = lr_config
+        self.monitor = self.cfg.monitor
+        self.factor = self.cfg.factor
+        self.patience = self.cfg.patience
+        self.mode = self.cfg.mode
+        self.warmup_steps = self.cfg.warmup
+        self.min_delta = self.cfg.min_delta
+        self.cooldown = self.cfg.cooldown
+        self.min_lr = self.cfg.min_lr
+        self.verbose = self.cfg.verbose
+        # self.monitor = monitor
+        if self.factor >= 1.0:
             raise ValueError('ReduceLROnPlateau '
                              'does not support a factor >= 1.0.')
         if 'epsilon' in kwargs:
-            min_delta = kwargs.pop('epsilon')
+            self.min_delta = kwargs.pop('epsilon')
             log.warning('`epsilon` argument is deprecated and '
                         'will be removed, use `min_delta` instead.')
-        if mode not in ['auto', 'min', 'max']:
+        if self.mode not in ['auto', 'min', 'max']:
             log.warning('Learning Rate Plateau Reducing mode '
                         f'{self.mode} is unknown, fallback to auto mode.')
-            mode = 'auto'
+            self.mode = 'auto'
 
-        self.factor = factor
-        self.min_lr = min_lr
-        self.min_delta = min_delta
-        self.warmup_steps = warmup_steps
-        self.patience = patience
-        self.verbose = verbose
-        self.cooldown = cooldown
-        self.cooldown_counter = 0  # Cooldown counter.
         self.wait = 0
         self.best = 0
-        self.mode = mode
+        self.cooldown_counter = 0  # Cooldown counter.
+        # self.mode = mode
         self._reset()
+
+        # self.factor = factor
+        # self.min_lr = min_lr
+        # self.min_delta = min_delta
+        # self.warmup_steps = warmup_steps
+        # self.patience = patience
+        # self.verbose = verbose
+        # self.cooldown = cooldown
+        # self.cooldown_counter = 0  # Cooldown counter.
+        # self.wait = 0
+        # self.best = 0
+        # # self.mode = mode
+        # self._reset()
 
     def monitor_op(self, current: float, best: float) -> bool:
         m = self.mode
@@ -126,6 +148,9 @@ class ReduceLROnPlateau(tf.keras.callbacks.Callback):
     def on_train_begin(self, logs=None):  # type:ignore noqa pyright: ignore
         self._reset()
 
+    def set_optimizer(self, optimizer: Optimizer):
+        self.optimizer = optimizer
+
     def on_epoch_end(self, step, logs=None):
         if step < self.warmup_steps:
             return
@@ -149,12 +174,13 @@ class ReduceLROnPlateau(tf.keras.callbacks.Callback):
             elif not self.in_cooldown():
                 self.wait += 1
                 if self.wait >= self.patience:
-                    step = self.model.optimizer.iterations
-                    old_lr = self.model._get_lr(step)
+                    step = self.optimizer.iterations
+                    old_lr = K.get_value(self.optimizer.lr)
+                    # old_lr = self.model._get_lr(step)
                     if old_lr > self.min_lr:
                         new_lr = old_lr * self.factor
                         new_lr = max(new_lr, self.min_lr)
-                        K.set_value(self.model.optimizer.lr, new_lr)
+                        K.set_value(self.optimizer.lr, new_lr)
                         if self.verbose > 0:
                             log.warning(
                                 f'ReduceLROnPlateau (step {step}):'
@@ -172,58 +198,58 @@ class ReduceLROnPlateau(tf.keras.callbacks.Callback):
         return self.cooldown_counter > 0
 
 
-class WarmupExponentialDecay(LearningRateSchedule):
-    """A lr schedule that slowly increases before an ExponentialDecay."""
+# class WarmupExponentialDecay(LearningRateSchedule):
+#     """A lr schedule that slowly increases before an ExponentialDecay."""
 
-    def __init__(
-            self,
-            lr_config: LearningRateConfig,
-            staircase: bool = True,
-            name: str = 'WarmupExponentialDecay',
-    ):
-        super(WarmupExponentialDecay, self).__init__()
-        #  self.dtype = lr_config.lr_init.dtype
-        self.lr_config = lr_config
-        self.staircase = staircase
-        self.name = name
+#     def __init__(
+#             self,
+#             lr_config: LearningRateConfig,
+#             staircase: bool = True,
+#             name: str = 'WarmupExponentialDecay',
+#     ):
+#         super(WarmupExponentialDecay, self).__init__()
+#         #  self.dtype = lr_config.lr_init.dtype
+#         self.lr_config = lr_config
+#         self.staircase = staircase
+#         self.name = name
 
-    @tf.function
-    def __call__(self, step):
-        with tf.name_scope(self.name or 'WarmupExponentialDecay') as name:
-            initial_learning_rate = ops.convert_to_tensor_v2(
-                self.lr_config.lr_init, name='initial_learning_rate'
-            )
-            dtype = initial_learning_rate.dtype
-            decay_steps = tf.cast(self.lr_config.decay_steps, dtype)
-            decay_rate = tf.cast(self.lr_config.decay_rate, dtype)
-            warmup_steps = tf.cast(self.lr_config.warmup_steps, dtype)
-            global_step_recomp = tf.cast(step, dtype)
-            min_lr = tf.constant(1e-5, dtype)
+#     @tf.function
+#     def __call__(self, step):
+#         with tf.name_scope(self.name or 'WarmupExponentialDecay') as name:
+#             initial_learning_rate = ops.convert_to_tensor_v2(
+#                 self.lr_config.lr_init, name='initial_learning_rate'
+#             )
+#             dtype = initial_learning_rate.dtype
+#             decay_steps = tf.cast(self.lr_config.decay_steps, dtype)
+#             decay_rate = tf.cast(self.lr_config.decay_rate, dtype)
+#             warmup_steps = tf.cast(self.lr_config.warmup_steps, dtype)
+#             global_step_recomp = tf.cast(step, dtype)
+#             min_lr = tf.constant(1e-5, dtype)
 
-            # warming up?
-            if tf.less(global_step_recomp, warmup_steps):
-                return min_lr + tf.math.multiply(
-                    initial_learning_rate,
-                    tf.math.divide(global_step_recomp, warmup_steps),
-                    name=name
-                )
+#             # warming up?
+#             if tf.less(global_step_recomp, warmup_steps):
+#                 return min_lr + tf.math.multiply(
+#                     initial_learning_rate,
+#                     tf.math.divide(global_step_recomp, warmup_steps),
+#                     name=name
+#                 )
 
-            p = global_step_recomp / tf.constant(decay_steps)
-            if self.staircase:
-                p = tf.math.floor(p)
+#             p = global_step_recomp / tf.constant(decay_steps)
+#             if self.staircase:
+#                 p = tf.math.floor(p)
 
-            return tf.math.multiply(
-                initial_learning_rate, tf.math.pow(decay_rate, p),
-                name=name
-            )
+#             return tf.math.multiply(
+#                 initial_learning_rate, tf.math.pow(decay_rate, p),
+#                 name=name
+#             )
 
-    def get_config(self):
-        """Return config for serialization."""
-        return {
-            'name': self.name,
-            'staircase': self.staircase,
-            'decay_rate': self.lr_config.decay_rate,
-            'decay_steps': self.lr_config.decay_steps,
-            'warmup_steps': self.lr_config.warmup_steps,
-            'initial_learning_rate': self.lr_config.lr_init,
-        }
+#     def get_config(self):
+#         """Return config for serialization."""
+#         return {
+#             'name': self.name,
+#             'staircase': self.staircase,
+#             'decay_rate': self.lr_config.decay_rate,
+#             'decay_steps': self.lr_config.decay_steps,
+#             'warmup_steps': self.lr_config.warmup_steps,
+#             'initial_learning_rate': self.lr_config.lr_init,
+#         }

@@ -4,10 +4,12 @@ tensorflow/network.py
 Tensorflow implementation of the network used to train the L2HMC sampler.
 """
 from __future__ import absolute_import, annotations, division, print_function
+from typing import Optional
 
 import numpy as np
 import tensorflow as tf
-from tensorflow.keras.initializers import VarianceScaling
+# from tensorflow.keras.initializers import VarianceScaling
+from dataclasses import asdict
 from tensorflow.keras.layers import (
     Add,
     Multiply,
@@ -76,22 +78,22 @@ class NetworkFactory(BaseNetworkFactory):
             }
 
         vnet = {
-            str(i): get_network(**cfg['vnet'], name=f'vNet/lfLayer{i}')
+            str(i): get_network(**cfg['vnet'], name=f'vNet_{i}')
             for i in range(n)
         }
         if split_xnets:
-            xstr = 'xNet/lfLayer'
+            xstr = 'xNet'
             labels = ['first', 'second']
             xnet = {}
             for i in range(n):
                 nets = [
-                    get_network(**cfg['xnet'], name=f'{xstr}{i}/first'),
-                    get_network(**cfg['xnet'], name=f'{xstr}{i}/second')
+                    get_network(**cfg['xnet'], name=f'xNet_{i}_first'),
+                    get_network(**cfg['xnet'], name=f'xNet_{i}_second')
                 ]
                 xnet[str(i)] = dict(zip(labels, nets))
         else:
             xnet = {
-                str(i): get_network(**cfg['xnet'], name=f'xNet/lfLayer{i}')
+                str(i): get_network(**cfg['xnet'], name=f'xNet_{i}')
                 for i in range(n)
             }
 
@@ -113,15 +115,15 @@ def get_network_configs(
 
     assert callable(activation_fn)
     names = {
-        'x_input': f'{name}/xInput',
-        'v_input': f'{name}/vInput',
-        'x_layer': f'{name}/xLayer',
-        'v_layer': f'{name}/vLayer',
-        'scale': f'{name}/scaleLayer',
-        'transl': f'{name}/translationLayer',
-        'transf': f'{name}/transformationLayer',
-        's_coeff': f'{name}/scaleCoeff',
-        'q_coeff': f'{name}/transformationCoeff',
+        'x_input': f'{name}_xInput',
+        'v_input': f'{name}_vInput',
+        'x_layer': f'{name}_xLayer',
+        'v_layer': f'{name}_vLayer',
+        'scale': f'{name}_scaleLayer',
+        'transf': f'{name}_transformationLayer',
+        'transl': f'{name}_translationLayer',
+        's_coeff': f'{name}_scaleCoeff',
+        'q_coeff': f'{name}_transformationCoeff',
     }
     coeff_kwargs = {
         'trainable': True,
@@ -176,7 +178,7 @@ def get_network(
         network_config: NetworkConfig,
         input_shapes: dict[str, tuple[int]] = None,
         net_weight: NetWeight = None,
-        conv_config: ConvolutionConfig = None,
+        conv_config: Optional[ConvolutionConfig] = None,
         # factor: float = 1.,
         name: str = None,
 ) -> Model:
