@@ -59,7 +59,9 @@ def setup_annealing_schedule(cfg: DictConfig) -> AnnealingSchedule:
             f'using beta_final = beta_init = {beta_init}'
         )
 
-    return AnnealingSchedule(beta_init, beta_final, steps)
+    sched = AnnealingSchedule(beta_init, beta_final)
+    sched.setup(steps)
+    return sched
 
 
 def setup_pytorch(configs: dict) -> dict:
