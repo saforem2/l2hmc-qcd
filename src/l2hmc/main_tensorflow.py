@@ -9,51 +9,41 @@ import os
 from pathlib import Path
 
 import hydra
+from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
 import tensorflow as tf
-from l2hmc.utils.hvd_init import IS_CHIEF
 
-from l2hmc.common import (
-    analyze_dataset,
-    get_timestamp,
-    save_logs,
-    setup_annealing_schedule,
-)
-from l2hmc.configs import (
-    ConvolutionConfig,
-    DynamicsConfig,
-    InputSpec,
-    LossConfig,
-    NetWeights,
-    NetworkConfig,
-    Steps,
-)
+from l2hmc.common import analyze_dataset, save_logs
+from l2hmc.configs import InputSpec
 from l2hmc.dynamics.tensorflow.dynamics import Dynamics
 from l2hmc.lattice.tensorflow.lattice import Lattice
 from l2hmc.loss.tensorflow.loss import LatticeLoss
 from l2hmc.network.tensorflow.network import NetworkFactory
 from l2hmc.trainers.tensorflow.trainer import Trainer
 from l2hmc.utils.console import is_interactive
+from l2hmc.utils.hvd_init import IS_CHIEF
+
 log = logging.getLogger(__name__)
 
 
 def setup(cfg: DictConfig) -> dict:
-    steps = Steps(**cfg.steps)
-    loss_cfg = LossConfig(**cfg.loss)
-    net_weights = NetWeights(**cfg.net_weights)
-    network_cfg = NetworkConfig(**cfg.network)
-    dynamics_cfg = DynamicsConfig(**cfg.dynamics)
-    schedule = setup_annealing_schedule(cfg)
-    conv_cfg = cfg.get('conv', None)
-    if conv_cfg is not None:
-        conv_cfg = (
-            ConvolutionConfig(**cfg.conv)
-            if len(cfg.conv.keys()) > 0
-            else None
-        )
+    steps = instantiate(cfg.steps)
+    loss_cfg = instantiate(cfg.loss)
+    network_cfg = instantiate(cfg.network)
+    lr_cfg = instantiate(cfg.learning_rate)
+    dynamics_cfg = instantiate(cfg.dynamics)
+    net_weights = instantiate(cfg.net_weights)
+    schedule = instantiate(cfg.annealing_schedule)
+    schedule.setup(steps)
+
+    try:
+        conv_cfg = instantiate(cfg.get('conv', None))
+    except TypeError:
+        conv_cfg = None
 
     xdim = dynamics_cfg.xdim
     xshape = dynamics_cfg.xshape
+    lattice = Lattice(tuple(xshape))
     input_spec = InputSpec(xshape=xshape,
                            vnet={'v': [xdim, ], 'x': [xdim, ]},
                            xnet={'v': [xdim, ], 'x': [xdim, 2]})
@@ -61,14 +51,14 @@ def setup(cfg: DictConfig) -> dict:
                                  net_weights=net_weights,
                                  network_config=network_cfg,
                                  conv_config=conv_cfg)
-    lattice = Lattice(tuple(xshape))
     dynamics = Dynamics(config=dynamics_cfg,
                         potential_fn=lattice.action,
                         network_factory=net_factory)
     loss_fn = LatticeLoss(lattice=lattice, loss_config=loss_cfg)
-    optimizer = tf.keras.optimizers.Adam()
+    optimizer = tf.keras.optimizers.Adam(cfg.learning_rate.lr_init)
     trainer = Trainer(steps=steps,
                       loss_fn=loss_fn,
+                      lr_config=lr_cfg,
                       schedule=schedule,
                       dynamics=dynamics,
                       optimizer=optimizer,
@@ -85,28 +75,25 @@ def setup(cfg: DictConfig) -> dict:
 def train(cfg: DictConfig) -> dict:
     objs = setup(cfg)
     trainer = objs['trainer']  # type: Trainer
+    outdir = Path(cfg.get('outdir', os.getcwd()))
+    train_dir = outdir.joinpath('train')
+    train_dir.mkdir(exist_ok=True, parents=True)
     kwargs = {
         'save_x': cfg.get('save_x', False),
-        'width': cfg.get('width', 150),
+        'width': cfg.get('width', os.environ.get('COLUMNS', 150)),
         'compile': cfg.get('compile', True),
         'jit_compile': cfg.get('jit_compile', False),
     }
 
-    train_output = trainer.train(**kwargs)
-    output = {
-        'setup': setup,
-        'train': train_output,
-    }
+    train_output = trainer.train(train_dir=train_dir, **kwargs)
+    output = {'setup': setup, 'train': train_output}
     if IS_CHIEF:
         outdir = Path(cfg.get('outdir', os.getcwd()))
         # day = get_timestamp('%Y-%m-%d')
         # time = get_timestamp('%H-%M-%S')
         # outdir = outdir.joinpath('tensorflow', day, time)
-        train_dir = outdir.joinpath('train')
-
         train_dataset = train_output['history'].get_dataset()
         nchains = min((cfg.dynamics.xshape[0], cfg.dynamics.nleapfrog))
-
         analyze_dataset(train_dataset,
                         name='train',
                         nchains=nchains,
@@ -116,9 +103,10 @@ def train(cfg: DictConfig) -> dict:
                         title='Training: TensorFlow')
 
         _ = kwargs.pop('save_x', False)
-        tfrac = cfg.get('therm_frac', 0.2)
         eval_dir = outdir.joinpath('eval')
-        eval_output = trainer.eval(**kwargs)
+        eval_dir.mkdir(exist_ok=True, parents=True)
+        eval_output = trainer.eval(eval_dir=eval_dir, **kwargs)
+        tfrac = cfg.get('therm_frac', 0.2)
         eval_dataset = eval_output['history'].get_dataset(therm_frac=tfrac)
         analyze_dataset(eval_dataset,
                         name='eval',

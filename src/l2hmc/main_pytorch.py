@@ -4,78 +4,76 @@ main_pytorch.py
 Contains entry-point for training and inference.
 """
 from __future__ import absolute_import, annotations, division, print_function
-from omegaconf import DictConfig, OmegaConf
-import os
-import hydra
 import logging
+import os
 from pathlib import Path
+
+from accelerate import Accelerator
+import hydra
+from hydra.utils import instantiate
+from omegaconf import DictConfig, OmegaConf
 import torch
 from torch.distributed.elastic.multiprocessing.errors import record
-from accelerate import Accelerator
 
-from l2hmc.dynamics.pytorch.dynamics import Dynamics
-from l2hmc.lattice.pytorch.lattice import Lattice
-from l2hmc.network.pytorch.network import NetworkFactory
-from l2hmc.trainers.pytorch.trainer import Trainer
-from l2hmc.loss.pytorch.loss import LatticeLoss
-
-
-from l2hmc.common import (
-    analyze_dataset, save_logs, setup_annealing_schedule,
-    get_timestamp,
-)
-from l2hmc.utils.console import is_interactive
-
+from l2hmc.common import analyze_dataset, save_logs
 from l2hmc.configs import (
     ConvolutionConfig,
+    AnnealingSchedule,
     DynamicsConfig,
     InputSpec,
     LossConfig,
     NetWeights,
+    LearningRateConfig,
     NetworkConfig,
     Steps,
 )
+from l2hmc.dynamics.pytorch.dynamics import Dynamics
+from l2hmc.lattice.pytorch.lattice import Lattice
+from l2hmc.loss.pytorch.loss import LatticeLoss
+from l2hmc.network.pytorch.network import NetworkFactory
+from l2hmc.trainers.pytorch.trainer import Trainer
+from l2hmc.utils.console import is_interactive
+
 
 log = logging.getLogger(__name__)
 
 
 def setup(cfg: DictConfig) -> dict:
     accelerator = Accelerator()
-    steps = Steps(**cfg.steps)
-    loss_cfg = LossConfig(**cfg.loss)
-    net_weights = NetWeights(**cfg.net_weights)
-    network_cfg = NetworkConfig(**cfg.network)
-    dynamics_cfg = DynamicsConfig(**cfg.dynamics)
-    schedule = setup_annealing_schedule(cfg)
-    conv_cfg = cfg.get('conv', None)
-    if conv_cfg is not None:
-        conv_cfg = (
-            ConvolutionConfig(**cfg.conv)
-            if len(cfg.conv.keys()) > 0
-            else None
-        )
+    steps = instantiate(cfg.steps)                  # type: Steps
+    loss_cfg = instantiate(cfg.loss)                # type: LossConfig
+    network_cfg = instantiate(cfg.network)          # type: NetworkConfig
+    lr_cfg = instantiate(cfg.learning_rate)         # type: LearningRateConfig
+    dynamics_cfg = instantiate(cfg.dynamics)        # type: DynamicsConfig
+    net_weights = instantiate(cfg.net_weights)      # type: NetWeights
+    schedule = instantiate(cfg.annealing_schedule)  # type: AnnealingSchedule
+    schedule.setup(steps)
+
+    try:
+        ccfg = instantiate(cfg.get('conv', None))   # type: ConvolutionConfig
+    except TypeError:
+        ccfg = None  # type: ignore
 
     xdim = dynamics_cfg.xdim
     xshape = dynamics_cfg.xshape
-
+    lattice = Lattice(tuple(xshape))
     input_spec = InputSpec(xshape=xshape,
                            vnet={'v': [xdim, ], 'x': [xdim, ]},
                            xnet={'v': [xdim, ], 'x': [xdim, 2]})
-    network_factory = NetworkFactory(input_spec=input_spec,
-                                     net_weights=net_weights,
-                                     network_config=network_cfg,
-                                     conv_config=conv_cfg)
-    lattice = Lattice(tuple(xshape))
+    net_factory = NetworkFactory(input_spec=input_spec,
+                                 net_weights=net_weights,
+                                 network_config=network_cfg,
+                                 conv_config=ccfg)
     dynamics = Dynamics(config=dynamics_cfg,
                         potential_fn=lattice.action,
-                        network_factory=network_factory)
+                        network_factory=net_factory)
     loss_fn = LatticeLoss(lattice=lattice, loss_config=loss_cfg)
-
     optimizer = torch.optim.Adam(dynamics.parameters())
     dynamics = dynamics.to(accelerator.device)
     dynamics, optimizer = accelerator.prepare(dynamics, optimizer)
     trainer = Trainer(steps=steps,
                       loss_fn=loss_fn,
+                      lr_config=lr_cfg,
                       dynamics=dynamics,
                       schedule=schedule,
                       optimizer=optimizer,
