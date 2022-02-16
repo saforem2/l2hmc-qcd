@@ -5,10 +5,11 @@ Tensorflow implementation of Dynamics object for training L2HMC sampler.
 """
 from __future__ import absolute_import, annotations, division, print_function
 from dataclasses import dataclass
-from typing import Callable
 from math import pi as PI
+import os
+from pathlib import Path
+from typing import Callable
 from typing import Tuple
-
 
 import numpy as np
 import tensorflow as tf
@@ -208,12 +209,11 @@ class Dynamics(Model):
     def generate_proposal_hmc(
             self,
             inputs: tuple[Tensor, Tensor],
-            training: bool = True,
     ) -> dict:
         x, beta = inputs
         v = tf.random.normal(x.shape, dtype=x.dtype)
         init = State(x, v, beta)
-        proposed, metrics = self.transition_kernel_hmc(init, training=training)
+        proposed, metrics = self.transition_kernel_hmc(init)
 
         return {'init': init, 'proposed': proposed, 'metrics': metrics}
 
@@ -710,3 +710,48 @@ class Dynamics(Model):
             grad = tf.gradients(self.potential_energy(x, beta), [x])[0]
 
         return grad
+
+    def save_networks(self, outdir: os.PathLike):
+        outdir = Path(outdir)
+        outdir.mkdir(exist_ok=True, parents=True)
+        fveps = outdir.joinpath('veps.z')
+        fxeps = outdir.joinpath('xeps.z')
+        veps = np.array([e.numpy() for e in self.veps])
+        xeps = np.array([e.numpy() for e in self.xeps])
+        np.savetxt(fxeps, xeps)
+        np.savetxt(fveps, veps)
+        if self.config.use_separate_networks:
+            for lf in range(self.config.nleapfrog):
+                vnet = self._get_vnet(lf)
+                vnet.save(outdir.joinpath(f'dynamics_vnet_{lf}'))
+                xnet1 = self._get_xnet(lf, first=True)
+                xnet1.save(outdir.joinpath(f'dynamics_xnet_{lf}_first'))
+                if self.config.use_split_xnets:
+                    xnet2 = self._get_xnet(lf, first=False)
+                    xnet2.save(outdir.joinpath(f'dynamics_xnet_{lf}_second'))
+
+        if self.config.use_separate_networks:
+            fvnets = {}
+            if self.config.use_split_xnets:
+                fxnets = {}
+            fvnets = []
+            fxnets_first = []
+            fxnets_second = []
+
+            fxnets_first = [
+                outdir.joinpath(f'dynamics_xnet_{lf}_first')
+                for lf in range(self.config.nleapfrog)
+            ]
+            fxnets_second = [
+                outdir.joinpath(f'dynamics_xnet_{lf}_second')
+                for lf in range(self.config.nleapfrog)
+            ]
+            fvnets = [
+                os.a
+            ]
+
+
+
+
+
+
