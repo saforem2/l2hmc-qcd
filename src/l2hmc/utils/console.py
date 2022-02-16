@@ -8,7 +8,8 @@ import os
 
 from rich.console import Console
 
-WIDTH = max(150, int(os.environ['WIDTH']))
+
+WIDTH = max(150, int(os.environ.get('COLUMNS', 100)))
 
 
 def is_interactive():
