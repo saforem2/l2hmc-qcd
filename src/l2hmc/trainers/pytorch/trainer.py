@@ -4,16 +4,18 @@ trainer.py
 Implements methods for training L2HMC sampler.
 """
 from __future__ import absolute_import, annotations, division, print_function
+from dataclasses import asdict
 import time
 from typing import Callable
 
 from accelerate import Accelerator
+from accelerate.utils import extract_model_from_parallel
 import numpy as np
 import torch
 from torch import optim
 from l2hmc.loss.pytorch.loss import LatticeLoss
 
-from l2hmc.configs import Steps, AnnealingSchedule
+from l2hmc.configs import Steps, AnnealingSchedule, DynamicsConfig
 from l2hmc.dynamics.pytorch.dynamics import Dynamics, random_angle, to_u1
 from l2hmc.utils.history import summarize_dict, BaseHistory
 from l2hmc.utils.step_timer import StepTimer
@@ -64,6 +66,7 @@ class Trainer:
             aux_weight: float = 0.0,
             keep: str | list[str] = None,
             skip: str | list[str] = None,
+            dynamics_config: DynamicsConfig = None,
     ) -> None:
         self.steps = steps
         self.dynamics = dynamics
@@ -75,14 +78,22 @@ class Trainer:
         self.accelerator = accelerator
         self.keep = [keep] if isinstance(keep, str) else keep
         self.skip = [skip] if isinstance(skip, str) else skip
+        if dynamics_config is None:
+            cfg = extract_model_from_parallel(self.dynamics).config
+            dynamics_config = DynamicsConfig(**asdict(cfg))
+
+        self.dynamics_config = dynamics_config
+        self.xshape = dynamics_config.xshape
+        self.nlf = dynamics_config.nleapfrog
 
         self.history = BaseHistory(steps=steps)
         self.eval_history = BaseHistory()
-        evals_per_step = self.dynamics.config.nleapfrog * steps.log
+        evals_per_step = self.nlf * steps.log
+        # evals_per_step = self.dynamics.config.nleapfrog * steps.log
         self.timer = StepTimer(evals_per_step=evals_per_step)
 
     def draw_x(self) -> Tensor:
-        x = random_angle(self.dynamics.xshape)
+        x = random_angle(self.xshape)
         x = x.reshape(x.shape[0], -1)
         return x
 
@@ -139,7 +150,7 @@ class Trainer:
             beta: float = None,
             x: Tensor = None,
             skip: str | list[str] = None,
-            width: int = 0,
+            width: int = 150,
     ) -> dict:
         summaries = []
         self.dynamics.eval()
@@ -150,16 +161,17 @@ class Trainer:
             beta = self.schedule.beta_final
 
         if x is None:
-            x = random_angle(self.dynamics.xshape)
+            x = random_angle(self.xshape)
             x = x.reshape(x.shape[0], -1)
 
         xarr = []
         summaries = []
         tables = {}
         table = Table(row_styles=['dim', 'none'])
-        screen = (not is_interactive())
-        with Live(table, console=console, screen=screen) as live:
-            if width > 0:
+        # screen = (not is_interactive())
+
+        with Live(table, console=console, screen=False) as live:
+            if width is not None and width > 0:
                 live.console.width = width
 
             for step in range(self.steps.test):
@@ -175,7 +187,8 @@ class Trainer:
                 summaries.append(summary)
                 if step == 0:
                     table = add_columns(avgs, table)
-                if step % self.steps.print == 0:
+                # if step % self.steps.print == 0:
+                if self.should_print(step):
                     table.add_row(*[f'{v:5}' for _, v in avgs.items()])
 
             tables[str(0)] = table
@@ -186,6 +199,18 @@ class Trainer:
             'summaries': summaries,
             'tables': tables,
         }
+
+    def should_log(self, epoch):
+        return (
+            epoch % self.steps.log == 0
+            and self.accelerator.is_local_main_process
+        )
+
+    def should_print(self, epoch):
+        return (
+            epoch % self.steps.print == 0
+            and self.accelerator.is_local_main_process
+        )
 
     def train_step(self, inputs: tuple[Tensor, float]) -> tuple[Tensor, dict]:
         x_init, beta = inputs
@@ -230,11 +255,8 @@ class Trainer:
         if isinstance(skip, str):
             skip = [skip]
         if x is None:
-            x = random_angle(self.dynamics.xshape, requires_grad=True)
+            x = random_angle(self.xshape, requires_grad=True)
             x = x.reshape(x.shape[0], -1)
-
-        should_log = lambda epoch: (epoch % self.steps.log == 0)      # noqa
-        should_print = lambda epoch: (epoch % self.steps.print == 0)  # noqa
 
         xarr = []
         summaries = []
@@ -261,7 +283,7 @@ class Trainer:
                     self.timer.start()
                     x, metrics = self.train_step((x, beta))
                     dt = self.timer.stop()
-                    if should_print(epoch) or should_log(epoch):
+                    if self.should_print(epoch) or self.should_log(epoch):
                         if save_x:
                             xarr.append(x.detach().cpu())
 
@@ -276,7 +298,7 @@ class Trainer:
                         summaries.append(summary)
                         if epoch == 0:
                             table = add_columns(avgs, table)
-                        if should_print(epoch):
+                        if self.should_print(epoch):
                             table.add_row(*[f'{v}' for _, v in avgs.items()])
 
                 live.console.log(

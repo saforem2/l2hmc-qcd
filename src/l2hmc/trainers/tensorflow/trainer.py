@@ -19,11 +19,11 @@ from rich.table import Table
 import tensorflow as tf
 
 from tensorflow.keras.optimizers import Optimizer
-from l2hmc.utils.hvd_init import RANK, SIZE, IS_CHIEF
+from l2hmc.utils.hvd_init import RANK
 from l2hmc.configs import AnnealingSchedule, Steps
 from l2hmc.dynamics.tensorflow.dynamics import Dynamics, to_u1
 from l2hmc.loss.tensorflow.loss import LatticeLoss
-from l2hmc.utils.console import console, is_interactive
+from l2hmc.utils.console import console
 from l2hmc.utils.history import summarize_dict
 from l2hmc.utils.step_timer import StepTimer
 from l2hmc.utils.tensorflow.history import History
@@ -70,7 +70,6 @@ def add_columns(avgs: dict, table: Table) -> Table:
     return table
 
 
-
 class Trainer:
     def __init__(
             self,
@@ -83,6 +82,7 @@ class Trainer:
             keep: str | list[str] = None,
             skip: str | list[str] = None,
             compression: bool = True,
+            evals_per_step: int = 1,
     ) -> None:
         self.steps = steps
         self.dynamics = dynamics
@@ -99,7 +99,7 @@ class Trainer:
 
         self.history = History(steps=steps)
         self.eval_history = History()
-        evals_per_step = self.dynamics.config.nleapfrog * steps.log
+        # evals_per_step = self.dynamics.config.nleapfrog * steps.log
         self.timer = StepTimer(evals_per_step=evals_per_step)
 
     def draw_x(self) -> Tensor:
@@ -183,7 +183,7 @@ class Trainer:
             skip: str | list[str] = None,
             compile: bool = True,
             jit_compile: bool = False,
-            width: int = 0,
+            width: int = 150,
     ) -> dict:
         """Evaluate model."""
         if isinstance(skip, str):
@@ -205,7 +205,7 @@ class Trainer:
             self.dynamics.compile(
                 optimizer=self.optimizer,
                 loss=self.loss_fn,
-                experimental_run_tf_functions=False,
+                experimental_run_tf_function=False,
             )
             eval_step = tf.function(self.eval_step, jit_compile=jit_compile)
         else:
@@ -215,8 +215,9 @@ class Trainer:
         tables = {}
         summaries = []
         table = Table(collapse_padding=True, row_styles=['dim', 'none'])
+        # console = get_console(width=width)
         with Live(table, console=console, screen=False) as live:
-            if width > 0:
+            if width is not None and width > 0:
                 live.console.width = width
 
             for step in range(self.steps.test):
@@ -288,7 +289,7 @@ class Trainer:
             compile: bool = True,
             jit_compile: bool = False,
             save_x: bool = False,
-            width: int = 0,
+            width: int = 150,
     ) -> dict:
         """Train l2hmc Dynamics."""
         summaries = []
@@ -318,13 +319,14 @@ class Trainer:
         xarr = []
         tables = {}
         summaries = []
-        screen = (not is_interactive())
+        # screen = (not is_interactive())
+        # console = get_console(width=width)
         for era in range(self.steps.nera):
             beta = tf.constant(self.schedule.betas[str(era)])
             console.rule(f'ERA: {era}, BETA: {beta.numpy()}')
             table = Table(row_styles=['dim', 'none'])
             with Live(table, console=console, screen=False) as live:
-                if is_interactive() and width > 0:
+                if width is not None and width > 0:
                     live.console.width = width
                 estart = time.time()
                 for epoch in range(self.steps.nepoch):
