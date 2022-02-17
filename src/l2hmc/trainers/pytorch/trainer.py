@@ -7,6 +7,8 @@ from __future__ import absolute_import, annotations, division, print_function
 from dataclasses import asdict
 import logging
 import time
+import os
+from pathlib import Path
 from typing import Callable
 
 from accelerate import Accelerator
@@ -22,7 +24,7 @@ from l2hmc.configs import (
 )
 from l2hmc.dynamics.pytorch.dynamics import Dynamics, random_angle, to_u1
 from l2hmc.loss.pytorch.loss import LatticeLoss
-from l2hmc.utils.console import console, is_interactive
+from l2hmc.utils.console import console
 from l2hmc.utils.history import BaseHistory, summarize_dict
 from l2hmc.utils.step_timer import StepTimer
 
@@ -30,6 +32,10 @@ log = logging.getLogger(__name__)
 
 
 Tensor = torch.Tensor
+
+def grab(x: Tensor) -> np.ndarray:
+    return x.detach().cpu().numpy()
+
 
 
 def add_columns(avgs: dict, table: Table) -> Table:
@@ -246,15 +252,42 @@ class Trainer:
 
         return to_u1(x_out).detach(), record
 
+    def save_ckpt(self, era, epoch, train_dir, **kwargs) -> None:
+        dynamics = extract_model_from_parallel(self.dynamics)
+        ckpt_dir = Path(train_dir).joinpath('checkpoints')
+        ckpt_dir.mkdir(exist_ok=True, parents=True)
+        ckpt_file = ckpt_dir.joinpath(f'ckpt-{era}-{epoch}.tar')
+        log.info(f'Saving checkpoint to: {ckpt_file.as_posix()}')
+        dynamics.save(train_dir)  # type: ignore
+        xeps = {
+            k: grab(v) for k, v in dynamics.xeps.items()  # type:ignore
+        }
+        veps = {
+            k: grab(v) for k, v in dynamics.veps.items()  # type:ignore
+        }
+        torch.save({
+            'era': era,
+            'epoch': epoch,
+            'xeps': xeps,
+            'veps': veps,
+            'model_state_dict': dynamics.state_dict(),  # type: ignore
+            'optimizer_state_dict': self.optimizer.state_dict(),
+            **kwargs,
+        }, ckpt_file)
+
     def train(
             self,
             x: Tensor = None,
             skip: str | list[str] = None,
             save_x: bool = False,
-            width: int = 0,
+            width: int = 80,
+            train_dir: os.PathLike = None,
             # keep: str | list[str] = None,
     ) -> dict:
         # x = xinit
+        if train_dir is None:
+            train_dir = Path(os.getcwd()).joinpath('train')
+
         summaries = []
         self.dynamics.train()
         if isinstance(skip, str):
@@ -263,24 +296,18 @@ class Trainer:
             x = random_angle(self.xshape, requires_grad=True)
             x = x.reshape(x.shape[0], -1)
 
-        xarr = []
-        summaries = []
-        # colors = 10 * ['red', 'yellow', 'green', 'blue', 'magenta', 'cyan']
-        # skip = ['FORWARD', 'BACKWARD']
-        # table = Table(expand=True,
-        #               highlight=True,
-        #               row_styles=['dim', 'none'])
-        #               show_footer=False,
-        tables = {}
         era = 0
-        # interactive = is_interactive()
+        epoch = 0
+        xarr = []
+        tables = {}
+        metrics = {}
+        summaries = []
         for era in range(self.steps.nera):
             beta = self.schedule.betas[str(era)]
             console.rule(f'ERA: {era}, BETA: {beta}')
-            table = Table(collapse_padding=True,
-                          row_styles=['dim', 'none'])
+            table = Table(row_styles=['dim', 'none'])
             with Live(table, console=console, screen=False) as live:
-                if is_interactive() and width > 0:
+                if width != 0:
                     live.console.width = width
 
                 estart = time.time()
@@ -306,6 +333,8 @@ class Trainer:
                         if self.should_print(epoch):
                             table.add_row(*[f'{v}' for _, v in avgs.items()])
 
+            if self.accelerator.is_local_main_process:
+                self.save_ckpt(era, epoch, train_dir, loss=metrics['loss'])
                 live.console.log(
                     f'Era {era} took: {time.time() - estart:<5g}s',
                 )

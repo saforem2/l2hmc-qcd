@@ -7,7 +7,8 @@ from __future__ import absolute_import, annotations, division, print_function
 from dataclasses import dataclass
 from math import pi as PI
 import os
-import pathlib
+from pathlib import Path
+import logging
 from typing import Callable, Union
 from typing import Tuple
 
@@ -20,6 +21,8 @@ import torch
 from torch import nn
 
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+log = logging.getLogger(__name__)
 
 TWO_PI = 2. * PI
 
@@ -116,10 +119,95 @@ class Dynamics(nn.Module):
         self.xeps = nn.ParameterDict(xeps)
         self.veps = nn.ParameterDict(veps)
 
-    def save(self, outdir: os.PathLike):
-        outfile = pathlib.Path(outdir).joinpath('dynamics.pt').as_posix()
-        print(f'Saving dynamics to: {outfile}')
-        torch.save(self.state_dict(), outfile)
+    def save(self, outdir: os.PathLike) -> None:
+        netdir = Path(outdir).joinpath('networks')
+        fxeps = netdir.joinpath('xeps.npy')
+        fveps = netdir.joinpath('veps.npy')
+        outfile = netdir.joinpath('dynamics.pt')
+        netdir.mkdir(exist_ok=True, parents=True)
+        log.info(
+            f'Saving `xeps`, `veps`, `self.state_dict()` to: {netdir}'
+        )
+        xeps = np.array([
+            i.detach().cpu().numpy() for i in list(self.xeps.values())
+        ])
+        veps = np.array([
+            i.detach().cpu().numpy() for i in list(self.veps.values())
+        ])
+        np.save(fxeps, xeps)
+        np.save(fveps, veps)
+        np.savetxt(netdir.joinpath('xeps.txt').as_posix(), xeps)
+        np.savetxt(netdir.joinpath('veps.txt').as_posix(), veps)
+        log.info(f'Saving dynamics to: {outfile}')
+        torch.save(self.state_dict(), outfile.as_posix())
+
+    def save_eps(self, outdir: os.PathLike) -> None:
+        netdir = Path(outdir).joinpath('networks')
+        fxeps = netdir.joinpath('xeps.npy')
+        fveps = netdir.joinpath('veps.npy')
+        xeps = np.array([
+            i.detach().cpu().numpy() for i in list(self.xeps.values())
+        ])
+        veps = np.array([
+            i.detach().cpu().numpy() for i in list(self.veps.values())
+        ])
+        log.info(f'Saving `xeps`, `veps` to: {netdir}')
+        np.save(fxeps, xeps)
+        np.save(fveps, veps)
+        np.savetxt(netdir.joinpath('xeps.txt').as_posix(), xeps)
+        np.savetxt(netdir.joinpath('veps.txt').as_posix(), veps)
+
+    def load(self, outdir: os.PathLike) -> None:
+        netdir = Path(outdir).joinpath('networks')
+        netfile = netdir.joinpath('dynamics.pt')
+        self.load_state_dict(torch.load(netfile))
+        eps = self.load_eps(outdir)
+        self.assign_eps(eps)
+
+    def load_eps(
+            self,
+            outdir: os.PathLike
+    ) -> dict[str, dict[str, Tensor]]:
+        netdir = Path(outdir).joinpath('networks')
+        fxeps = netdir.joinpath('xeps.npy')
+        fveps = netdir.joinpath('veps.npy')
+        xe = torch.from_numpy(np.load(fxeps))
+        ve = torch.from_numpy(np.load(fveps))
+        xeps = {}
+        veps = {}
+        rg = (not self.config.eps_fixed)
+        for lf in range(self.config.nleapfrog):
+            xeps[str(lf)] = torch.tensor(xe[lf], requires_grad=rg)
+            veps[str(lf)] = torch.tensor(ve[lf], requires_grad=rg)
+
+        return {'xeps': xeps, 'veps': veps}
+
+    def restore_eps(self, outdir: os.PathLike) -> None:
+        eps = self.load_eps(Path(outdir).joinpath('networks'))
+        self.assign_eps(eps)
+
+    def assign_eps(
+            self,
+            eps: dict[str, dict[str, Tensor]]
+    ) -> None:
+        xe = eps['xeps']
+        ve = eps['veps']
+        rg = (not self.config.eps_fixed)
+        xeps = {}
+        veps = {}
+        for lf in range(self.config.nleapfrog):
+            xe[str(lf)] = nn.parameter.Parameter(
+                data=torch.tensor(xe[str(lf)]), requires_grad=rg
+            )
+            ve[str(lf)] = nn.parameter.Parameter(
+                data=torch.tensor(ve[str(lf)]), requires_grad=rg
+            )
+
+        xeps = nn.ParameterDict(xeps)
+        veps = nn.ParameterDict(veps)
+
+        self.xeps = xeps
+        self.veps = veps
 
     def forward(
             self,
