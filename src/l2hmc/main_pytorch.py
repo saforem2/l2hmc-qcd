@@ -38,6 +38,33 @@ from l2hmc.utils.console import is_interactive
 log = logging.getLogger(__name__)
 
 
+def load_from_ckpt(
+        dynamics: Dynamics,
+        optimizer: torch.optim.Optimizer,
+        cfg: DictConfig,
+) -> tuple[torch.nn.Module, torch.optim.Optimizer, dict]:
+    outdir = Path(cfg.get('outdir', os.getcwd()))
+    ckpts = list(outdir.joinpath('train', 'checkpoints').rglob('*.tar'))
+    if len(ckpts) > 0:
+        latest = max(ckpts, key=lambda p: p.stat().st_ctime)
+        if latest.is_file():
+            log.info(f'Loading from checkpoint: {latest}')
+            ckpt = torch.load(latest)
+        else:
+            raise FileNotFoundError(f'No checkpoints found in {outdir}')
+    else:
+        raise FileNotFoundError(f'No checkpoints found in {outdir}')
+
+    dynamics.load_state_dict(ckpt['model_state_dict'])
+    optimizer.load_state_dict(ckpt['optimizer_state_dict'])
+    dynamics.assign_eps({
+        'xeps': ckpt['xeps'],
+        'veps': ckpt['veps'],
+    })
+
+    return dynamics, optimizer, ckpt
+
+
 def setup(cfg: DictConfig) -> dict:
     accelerator = Accelerator()
     steps = instantiate(cfg.steps)                  # type: Steps
@@ -69,6 +96,11 @@ def setup(cfg: DictConfig) -> dict:
                         network_factory=net_factory)
     loss_fn = LatticeLoss(lattice=lattice, loss_config=loss_cfg)
     optimizer = torch.optim.Adam(dynamics.parameters())
+    try:
+        dynamics, optimizer, ckpt = load_from_ckpt(dynamics, optimizer, cfg)
+    except FileNotFoundError:
+        pass
+
     dynamics = dynamics.to(accelerator.device)
     dynamics, optimizer = accelerator.prepare(dynamics, optimizer)
     trainer = Trainer(steps=steps,
