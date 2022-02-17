@@ -245,13 +245,13 @@ def get_network(
         z = Dense(units,
                   activation=act_fn,
                   dtype=TF_FLOAT,
-                  name=f'{name}/hLayer{idx}')(z)
+                  name=f'{name}_hLayer{idx}')(z)
 
     if network_config.dropout_prob > 0:
         z = Dropout(network_config.dropout_prob)(z)
 
     if network_config.use_batch_norm:
-        z = BatchNormalization(-1, name=f'{name}/BatchNorm')(z)
+        z = BatchNormalization(-1, name=f'{name}_BatchNorm')(z)
 
     # Scaling
     s = Multiply()([
@@ -267,14 +267,6 @@ def get_network(
         net_weight.q * tf.math.exp(q_coeff),
         tf.math.tanh(Dense(**args['transf'])(z))
     ])
-
-    # s = tf.math.exp(s_coeff) * tf.math.tanh(s_layer(z))
-    # t = t_layer(z)
-    # q = tf.math.exp(q_coeff) * tf.math.tanh(q_layer(z))
-
-    # scale = net_weight.s * s
-    # transl = net_weight.t * t
-    # transf = net_weight.q * q
 
     model = Model(name=name,
                   inputs=[x_input, v_input],

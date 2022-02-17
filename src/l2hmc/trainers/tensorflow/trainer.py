@@ -414,7 +414,8 @@ class Trainer:
         # console = get_console(width=width)
         for era in range(self.steps.nera):
             beta = tf.constant(self.schedule.betas[str(era)])
-            console.rule(f'ERA: {era}, BETA: {beta.numpy()}')
+            if IS_CHIEF:
+                console.rule(f'ERA: {era}, BETA: {beta.numpy()}')
             table = Table(row_styles=['dim', 'none'])
             with Live(table, console=console, screen=False) as live:
                 if width is not None and width > 0:
@@ -452,12 +453,12 @@ class Trainer:
                 manager.save()
                 self.dynamics.save_networks(train_dir)
 
-            live.console.log(
-                f'[{RANK}] :: Era {era} took: {time.time()-estart:.5g}s'
-            )
-            live.console.log(
-                f'[{RANK}] :: Avgs:\n{self.history.era_summary(era)}'
-            )
+                log.info(
+                    f'[{RANK}] :: Era {era} took: {time.time()-estart:.5g}s'
+                )
+                live.console.log(
+                    f'[{RANK}] :: Avgs:\n{self.history.era_summary(era)}'
+                )
 
             tables[str(era)] = table
 
