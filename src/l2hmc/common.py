@@ -8,6 +8,7 @@ import datetime
 import logging
 import os
 from pathlib import Path
+import wandb
 
 import joblib
 import numpy as np
@@ -228,11 +229,28 @@ def plot_dataset(
         nchains: int = 10,
         outdir: os.PathLike = None,
         title: str = None,
+        prefix: str | list = None,
 ) -> None:
-    if outdir is None:
-        outdir = Path(os.getcwd()).joinpath('plots', 'training')
+    name = []
+    outdir = Path(outdir) if outdir is not None else Path(os.getcwd())
+    outdir = outdir.joinpath('plots')
+    if prefix is None:
+        if outdir is not None:
+            if 'train' in outdir.as_posix():
+                name.append('train')
+            elif 'eval' in outdir.as_posix():
+                name.append('eval')
+        if title is not None:
+            if 'train' in title.lower():
+                name.append('train')
+            elif 'eval' in title.lower():
+                name.append('eval')
     else:
-        outdir = Path(outdir)
+        if isinstance(prefix, str):
+            name.append(prefix)
+
+        elif isinstance(prefix, list):
+            name.append(*prefix)
 
     for key, val in dataset.data_vars.items():
         if key == 'x':
@@ -242,6 +260,8 @@ def plot_dataset(
                                    key=key,
                                    title=title,
                                    num_chains=nchains)
+        # chart_name = '/'.join([*name, f'{key}_chart'])
+        # wandb.log({key_: fig})
         outfile = outdir.joinpath(f'{key}.svg')
         outfile.parent.mkdir(exist_ok=True, parents=True)
         log.info(f'Saving figure to: {outfile.as_posix()}')
