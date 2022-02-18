@@ -8,12 +8,12 @@ import logging
 import os
 from pathlib import Path
 
-
 import hydra
 from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
 import tensorflow as tf
-from l2hmc.utils.hvd_init import RANK
+import wandb
+from wandb.util import generate_id
 
 from l2hmc.common import analyze_dataset, save_logs
 from l2hmc.configs import InputSpec
@@ -23,6 +23,7 @@ from l2hmc.loss.tensorflow.loss import LatticeLoss
 from l2hmc.network.tensorflow.network import NetworkFactory
 from l2hmc.trainers.tensorflow.trainer import Trainer
 from l2hmc.utils.console import is_interactive
+from l2hmc.utils.hvd_init import RANK
 
 log = logging.getLogger(__file__)
 
@@ -87,8 +88,23 @@ def train(cfg: DictConfig) -> dict:
         'compile': cfg.get('compile', True),
         'jit_compile': cfg.get('jit_compile', False),
     }
+    if objs['rank'] == 0:
+        id = generate_id()
+        summary_dir = Path(train_dir).joinpath('summaries')
+        # wandb.tensorboard.patch(root_logdir=summary_dir.as_posix())
+        run = wandb.init(id=id,
+                         resume='allow',
+                         group='tensorflow',
+                         sync_tensorboard=True,
+                         entity=cfg.wandb.setup.entity,
+                         project=cfg.wandb.setup.project,
+                         settings=wandb.Settings(start_method='thread'),
+                         config=OmegaConf.to_container(cfg, resolve=True))
+        # run.watch(objs['dynamics'], objs['loss_fn'])
+    else:
+        run = None
 
-    train_output = trainer.train(train_dir=train_dir, **kwargs)
+    train_output = trainer.train(run=run, train_dir=train_dir, **kwargs)
     output = {'setup': objs, 'train': train_output}
     if objs['rank'] == 0:
         outdir = Path(cfg.get('outdir', os.getcwd()))
@@ -108,7 +124,7 @@ def train(cfg: DictConfig) -> dict:
         _ = kwargs.pop('save_x', False)
         eval_dir = outdir.joinpath('eval')
         eval_dir.mkdir(exist_ok=True, parents=True)
-        eval_output = trainer.eval(**kwargs)
+        eval_output = trainer.eval(run=run, **kwargs)
         tfrac = cfg.get('therm_frac', 0.2)
         eval_dataset = eval_output['history'].get_dataset(therm_frac=tfrac)
         analyze_dataset(eval_dataset,

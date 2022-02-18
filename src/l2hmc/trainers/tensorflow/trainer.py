@@ -9,7 +9,7 @@ from math import pi as PI
 import os
 from pathlib import Path
 import time
-from typing import Callable
+from typing import Any, Callable
 
 import horovod.tensorflow as hvd
 import numpy as np
@@ -268,6 +268,7 @@ class Trainer:
             compile: bool = True,
             jit_compile: bool = False,
             width: int = 150,
+            run: Any = None,
     ) -> dict:
         """Evaluate model."""
         if isinstance(skip, str):
@@ -312,6 +313,9 @@ class Trainer:
                 loss = metrics.pop('loss').numpy()
                 record = {'step': step, 'dt': dt, 'loss': loss}
                 record.update(self.metrics_to_numpy(metrics))
+                if run is not None:
+                    run.log({'eval': record})
+
                 avgs = self.eval_history.update(record)
                 summary = summarize_dict(avgs)
                 summaries.append(summary)
@@ -375,6 +379,7 @@ class Trainer:
             save_x: bool = False,
             width: int = 150,
             train_dir: os.PathLike = None,
+            run: Any = None,
     ) -> dict:
         """Train l2hmc Dynamics."""
         if isinstance(skip, str):
@@ -429,10 +434,11 @@ class Trainer:
                             xarr.append(x.numpy())  # type: ignore
 
                         record = {
-                            'era': era, 'epoch': epoch,
-                            'beta': beta, 'dt': dt
+                            'era': era, 'epoch': epoch, 'beta': beta, 'dt': dt
                         }
                         record.update(self.metrics_to_numpy(metrics))
+                        if run is not None:
+                            run.log({'train': record})
                         avgs = self.history.update(record)
                         summary = summarize_dict(avgs)
                         summaries.append(summary)

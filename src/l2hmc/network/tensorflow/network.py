@@ -8,22 +8,7 @@ from typing import Optional
 
 import numpy as np
 import tensorflow as tf
-# from tensorflow.keras.initializers import VarianceScaling
-from dataclasses import asdict
-from tensorflow.keras.layers import (
-    Add,
-    Multiply,
-    BatchNormalization,
-    LeakyReLU,
-    Conv2D,
-    Dense,
-    Dropout,
-    Flatten,
-    Input,
-    MaxPooling2D,
-    Reshape,
-    Activation,
-)
+
 from tensorflow.python.types.core import Callable
 
 from l2hmc.configs import (
@@ -34,9 +19,20 @@ from l2hmc.configs import (
 from l2hmc.network.factory import BaseNetworkFactory
 from l2hmc.network.tensorflow.utils import PeriodicPadding
 
-
 Tensor = tf.Tensor
 Model = tf.keras.Model
+Add = tf.keras.layers.Add
+Input = tf.keras.layers.Input
+Dense = tf.keras.layers.Dense
+Conv2D = tf.keras.layers.Conv2D
+Dropout = tf.keras.layers.Dropout
+Flatten = tf.keras.layers.Flatten
+Reshape = tf.keras.layers.Reshape
+Multiply = tf.keras.layers.Multiply
+Activation = tf.keras.layers.Activation
+MaxPooling2D = tf.keras.layers.MaxPooling2D
+BatchNormalization = tf.keras.layers.BatchNormalization
+
 PI = np.pi
 TWO_PI = 2. * PI
 
@@ -73,27 +69,27 @@ class NetworkFactory(BaseNetworkFactory):
         cfg = self.get_build_configs()
         if n == 1:
             return {
-                'xnet': get_network(**cfg['xnet'], name='xNet'),
-                'vnet': get_network(**cfg['vnet'], name='vNet'),
+                'xnet': get_network(**cfg['xnet'], name='xnet'),
+                'vnet': get_network(**cfg['vnet'], name='vnet'),
             }
 
         vnet = {
-            str(i): get_network(**cfg['vnet'], name=f'vNet_{i}')
+            str(i): get_network(**cfg['vnet'], name=f'vnet_{i}')
             for i in range(n)
         }
         if split_xnets:
-            xstr = 'xNet'
+            # xstr = 'xnet'
             labels = ['first', 'second']
             xnet = {}
             for i in range(n):
                 nets = [
-                    get_network(**cfg['xnet'], name=f'xNet_{i}_first'),
-                    get_network(**cfg['xnet'], name=f'xNet_{i}_second')
+                    get_network(**cfg['xnet'], name=f'xnet_{i}_first'),
+                    get_network(**cfg['xnet'], name=f'xnet_{i}_second')
                 ]
                 xnet[str(i)] = dict(zip(labels, nets))
         else:
             xnet = {
-                str(i): get_network(**cfg['xnet'], name=f'xNet_{i}')
+                str(i): get_network(**cfg['xnet'], name=f'xnet_{i}')
                 for i in range(n)
             }
 
@@ -105,7 +101,7 @@ def get_network_configs(
         network_config: NetworkConfig,
         # factor: float = 1.,
         activation_fn: str | Callable = None,
-        name: str = 'Network',
+        name: str = 'network',
 ) -> dict:
     """Returns network configs."""
     if isinstance(activation_fn, str):
@@ -115,8 +111,8 @@ def get_network_configs(
 
     assert callable(activation_fn)
     names = {
-        'x_input': f'{name}_xInput',
-        'v_input': f'{name}_vInput',
+        'x_input': f'{name}_xinput',
+        'v_input': f'{name}_vinput',
         'x_layer': f'{name}_xLayer',
         'v_layer': f'{name}_vLayer',
         'scale': f'{name}_scaleLayer',
@@ -251,7 +247,7 @@ def get_network(
         z = Dropout(network_config.dropout_prob)(z)
 
     if network_config.use_batch_norm:
-        z = BatchNormalization(-1, name=f'{name}_BatchNorm')(z)
+        z = BatchNormalization(-1, name=f'{name}_batchnorm')(z)
 
     # Scaling
     s = Multiply()([
