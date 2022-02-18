@@ -9,15 +9,17 @@ import logging
 import time
 import os
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Any
 
 from accelerate import Accelerator
 from accelerate.utils import extract_model_from_parallel
 import numpy as np
 from rich.live import Live
 from rich.table import Table
+from rich import box
 import torch
 from torch import optim
+import wandb
 
 from l2hmc.configs import (
     AnnealingSchedule, DynamicsConfig, LearningRateConfig, Steps
@@ -28,14 +30,15 @@ from l2hmc.utils.console import console
 from l2hmc.utils.history import BaseHistory, summarize_dict
 from l2hmc.utils.step_timer import StepTimer
 
+
 log = logging.getLogger(__name__)
 
 
 Tensor = torch.Tensor
 
+
 def grab(x: Tensor) -> np.ndarray:
     return x.detach().cpu().numpy()
-
 
 
 def add_columns(avgs: dict, table: Table) -> Table:
@@ -162,6 +165,7 @@ class Trainer:
             x: Tensor = None,
             skip: str | list[str] = None,
             width: int = 150,
+            run: Any = None,
     ) -> dict:
         summaries = []
         self.dynamics.eval()
@@ -178,7 +182,7 @@ class Trainer:
         xarr = []
         summaries = []
         tables = {}
-        table = Table(row_styles=['dim', 'none'])
+        table = Table(row_styles=['dim', 'none'], box=box.SIMPLE)
         # screen = (not is_interactive())
 
         with Live(table, console=console, screen=False) as live:
@@ -193,6 +197,9 @@ class Trainer:
                 loss = metrics.pop('loss')
                 record = {'step': step, 'dt': dt, 'loss': loss}
                 record.update(self.metrics_to_numpy(metrics))
+                if run is not None:
+                    run.log({'eval': record})
+
                 avgs = self.eval_history.update(record)
                 summary = summarize_dict(avgs)
                 summaries.append(summary)
@@ -282,6 +289,7 @@ class Trainer:
             save_x: bool = False,
             width: int = 80,
             train_dir: os.PathLike = None,
+            run: Any = None,
             # keep: str | list[str] = None,
     ) -> dict:
         # x = xinit
@@ -305,7 +313,7 @@ class Trainer:
         for era in range(self.steps.nera):
             beta = self.schedule.betas[str(era)]
             console.rule(f'ERA: {era}, BETA: {beta}')
-            table = Table(row_styles=['dim', 'none'])
+            table = Table(row_styles=['dim', 'none'], box=box.SIMPLE)
             with Live(table, console=console, screen=False) as live:
                 if width != 0:
                     live.console.width = width
@@ -316,15 +324,16 @@ class Trainer:
                     x, metrics = self.train_step((x, beta))
                     dt = self.timer.stop()
                     if self.should_print(epoch) or self.should_log(epoch):
+                        record = {
+                            'era': era, 'epoch': epoch, 'beta': beta, 'dt': dt
+                        }
                         if save_x:
                             xarr.append(x.detach().cpu())
 
                         # Update metrics with train step metrics, tmetrics
-                        record = {
-                            'era': era, 'epoch': epoch,
-                            'beta': beta, 'dt': dt
-                        }
                         record.update(self.metrics_to_numpy(metrics))
+                        if run is not None:
+                            run.log({'train': record})
                         avgs = self.history.update(record)
                         summary = summarize_dict(avgs)
                         summaries.append(summary)

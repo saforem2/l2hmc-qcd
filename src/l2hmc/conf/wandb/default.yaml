@@ -1,0 +1,8 @@
+---
+setup:
+    project: l2hmc-qcd
+    entity: saforem2
+    mode: online
+# watch:
+  # log: all
+  # log_freq: 100

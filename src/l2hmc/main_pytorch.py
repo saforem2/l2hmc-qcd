@@ -13,17 +13,17 @@ import hydra
 from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
 import torch
-from torch.distributed.elastic.multiprocessing.errors import record
+# from torch.distributed.elastic.multiprocessing.errors import record
 
 from l2hmc.common import analyze_dataset, save_logs
 from l2hmc.configs import (
-    ConvolutionConfig,
     AnnealingSchedule,
+    ConvolutionConfig,
     DynamicsConfig,
     InputSpec,
+    LearningRateConfig,
     LossConfig,
     NetWeights,
-    LearningRateConfig,
     NetworkConfig,
     Steps,
 )
@@ -33,6 +33,8 @@ from l2hmc.loss.pytorch.loss import LatticeLoss
 from l2hmc.network.pytorch.network import NetworkFactory
 from l2hmc.trainers.pytorch.trainer import Trainer
 from l2hmc.utils.console import is_interactive
+import wandb
+from wandb.util import generate_id
 
 
 log = logging.getLogger(__name__)
@@ -97,7 +99,7 @@ def setup(cfg: DictConfig) -> dict:
     loss_fn = LatticeLoss(lattice=lattice, loss_config=loss_cfg)
     optimizer = torch.optim.Adam(dynamics.parameters())
     try:
-        dynamics, optimizer, ckpt = load_from_ckpt(dynamics, optimizer, cfg)
+        dynamics, optimizer, _ = load_from_ckpt(dynamics, optimizer, cfg)
     except FileNotFoundError:
         pass
 
@@ -124,8 +126,18 @@ def setup(cfg: DictConfig) -> dict:
     }
 
 
-@record
+# @record
 def train(cfg: DictConfig) -> dict:
+    id = generate_id()
+    run = wandb.init(id=id,
+                     group='DDP',
+                     resume='allow',
+                     # job_type='train',
+                     entity=cfg.wandb.setup.entity,
+                     project=cfg.wandb.setup.project,
+                     settings=wandb.Settings(start_method='thread'),
+                     config=OmegaConf.to_container(cfg, resolve=True))
+
     objs = setup(cfg)
     trainer = objs['trainer']  # type: Trainer
     accelerator = objs['accelerator']  # type: Accelerator
@@ -133,26 +145,32 @@ def train(cfg: DictConfig) -> dict:
         'save_x': cfg.get('save_x', False),
         'width': cfg.get('width', None),
     }
+    run.watch(objs['dynamics'], objs['loss_fn'], log='all')
 
     # outdir = Path(cfg.get('outdir', os.getcwd()))
     # day = get_timestamp('%Y-%m-%d')
     # time = get_timestamp('%H-%M-%S')
     # outdir = outdir.joinpath('pytorch').joinpath(day, time)
     # train_dir = outdir.joinpath('train')
-    train_output = trainer.train(**kwargs)
+    outdir = Path(cfg.get('outdir', os.getcwd()))
+    train_dir = outdir.joinpath('train')
+    train_dir.mkdir(exist_ok=True, parents=True)
+    train_output = trainer.train(run=run, train_dir=train_dir, **kwargs)
+
+    # outdir = Path(cfg.get('outdir', os.getcwd()))
     output = {
         'setup': setup,
+        'outdir': outdir,
         'train': train_output,
     }
+    nchains = min((cfg.dynamics.xshape[0], cfg.dynamics.nleapfrog))
     if accelerator.is_local_main_process:
-        outdir = Path(cfg.get('outdir', os.getcwd()))
         # day = get_timestamp('%Y-%m-%d')
         # time = get_timestamp('%H-%M-%S')
         # outdir = outdir.joinpath('pytorch', day, time)
-        train_dir = outdir.joinpath('train')
+        # train_dir = outdir.joinpath('train')
 
         train_dset = train_output['history'].get_dataset()
-        nchains = min((cfg.dynamics.xshape[0], cfg.dynamics.nleapfrog))
 
         analyze_dataset(train_dset,
                         name='train',
@@ -161,14 +179,21 @@ def train(cfg: DictConfig) -> dict:
                         lattice=objs['lattice'],
                         xarr=train_output['xarr'],
                         title='Training: PyTorch')
+        if not is_interactive():
+            tdir = train_dir.joinpath('logs')
+            tdir.mkdir(exist_ok=True, parents=True)
+            log.info(f'Saving train logs to: {tdir.as_posix()}')
+            save_logs(logdir=tdir,
+                      tables=train_output['tables'],
+                      summaries=train_output['summaries'])
 
+    if accelerator.is_local_main_process:
         _ = kwargs.pop('save_x', False)
         therm_frac = cfg.get('therm_frac', 0.2)
+
         eval_dir = outdir.joinpath('eval')
-        eval_output = trainer.eval(**kwargs)
-        eval_dset = eval_output['history'].get_dataset(
-            therm_frac=therm_frac
-        )
+        eval_output = trainer.eval(run=run, **kwargs)
+        eval_dset = eval_output['history'].get_dataset(therm_frac=therm_frac)
         analyze_dataset(eval_dset,
                         name='eval',
                         nchains=nchains,
@@ -178,21 +203,18 @@ def train(cfg: DictConfig) -> dict:
                         title='Evaluating: PyTorch')
 
         if not is_interactive():
-            tdir = train_dir.joinpath('logs')
             edir = eval_dir.joinpath('logs')
-            tdir.mkdir(exist_ok=True, parents=True)
             edir.mkdir(exist_ok=True, parents=True)
-            log.info(f'Saving train logs to: {tdir.as_posix()}')
-            save_logs(logdir=tdir,
-                      tables=train_output['tables'],
-                      summaries=train_output['summaries'])
             log.info(f'Saving eval logs to: {edir.as_posix()}')
             save_logs(logdir=edir,
                       tables=eval_output['tables'],
                       summaries=eval_output['summaries'])
 
+        # erun.finish()
         output.update({'eval': eval_output})
 
+    run.save()
+    run.finish()
     return output
 
 
