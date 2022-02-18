@@ -21,6 +21,17 @@ try:
     IS_CHIEF = (RANK == 0)
     LOCAL_SIZE = hvd.local_size()
     LOCAL_RANK = hvd.local_rank()
+    GPUS = tf.config.experimental.list_physical_devices('GPU')
+    if len(GPUS) > 0:
+        should_set = True
+        for gpu in GPUS:
+            try:
+                tf.config.experimental.set_memory_growth(gpu, True)
+            except RuntimeError:
+                should_set = False
+        if GPUS and should_set:
+            gpu = GPUS[hvd.local_rank()]
+            tf.config.experimental.set_visible_devices(gpu, 'GPU')
     # tf.random.set_seed(int(RANK * 1234))
     #  logging.info(f'using horovod from: {horovod.__file__}')
     #  logging.info(f'using horovod version: {horovod.__version__}')
@@ -33,15 +44,8 @@ try:
     else:
         log.info(f'Hello, im rank: {RANK} of {SIZE} total ranks')
 
-    GPUS = tf.config.experimental.list_physical_devices('GPU')
-    if len(GPUS) > 0:
-        for gpu in GPUS:
-            tf.config.experimental.set_memory_growth(gpu, True)
-    if GPUS:
-        gpu = GPUS[hvd.local_rank()]
-        tf.config.experimental.set_visible_devices(gpu, 'GPU')
-    else:
-        os.environ['CUDA_VISIBLE_DEVICES'] = "-1"
+        # else:
+        #     os.environ['CUDA_VISIBLE_DEVICES'] = "-1"
 
 
 except (ImportError, ModuleNotFoundError):
