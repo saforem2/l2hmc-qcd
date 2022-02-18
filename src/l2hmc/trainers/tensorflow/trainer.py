@@ -250,7 +250,8 @@ class Trainer:
 
     def eval_step(self, inputs: tuple[Tensor, float]) -> tuple[Tensor, dict]:
         xinit, beta = inputs
-        xout, metrics = self.dynamics((to_u1(xinit), tf.constant(beta)))
+        xout, metrics = self.dynamics((to_u1(xinit), tf.constant(beta)),
+                                      training=False)
         xprop = to_u1(metrics.pop('mc_states').proposed.x)
         loss = self.loss_fn(x_init=xinit, x_prop=xprop, acc=metrics['acc'])
         metrics.update({'loss': loss})
@@ -265,14 +266,10 @@ class Trainer:
             compile: bool = True,
             jit_compile: bool = False,
             width: int = 150,
-            eval_dir: os.PathLike = None,
     ) -> dict:
         """Evaluate model."""
         if isinstance(skip, str):
             skip = [skip]
-
-        if eval_dir is None:
-            eval_dir = Path(os.getcwd()).joinpath('eval')
 
         if beta is None:
             beta = self.schedule.beta_final
@@ -338,13 +335,13 @@ class Trainer:
     ) -> tuple[Tensor, dict]:
         xinit, beta = inputs
         with tf.GradientTape() as tape:
-            x_out, metrics = self.dynamics((to_u1(xinit), beta))
+            x_out, metrics = self.dynamics((to_u1(xinit), beta), training=True)
             xprop = to_u1(metrics.pop('mc_states').proposed.x)
             loss = self.loss_fn(x_init=xinit, x_prop=xprop, acc=metrics['acc'])
 
             if self.aux_weight > 0:
                 yinit = to_u1(self.draw_x())
-                _, metrics_ = self.dynamics((yinit, beta))
+                _, metrics_ = self.dynamics((yinit, beta), training=True)
                 yprop = to_u1(metrics_.pop('mc_states').proposed.x)
                 aux_loss = self.aux_weight * self.loss_fn(x_init=yinit,
                                                           x_prop=yprop,
@@ -456,7 +453,7 @@ class Trainer:
                 log.info(
                     f'[{RANK}] :: Era {era} took: {time.time()-estart:.5g}s'
                 )
-                live.console.log(
+                log.info(
                     f'[{RANK}] :: Avgs:\n{self.history.era_summary(era)}'
                 )
 
@@ -556,10 +553,9 @@ class Trainer:
                 job_progress.advance(era_task)
 
                 # live.console.rule()
-                log.info('\n'.join([
-                    f'Era {era} took: {time.time() - estart:<3.2g}s',
-                    f'Avgs over last era:\n {self.history.era_summary(era)}',
-                ]))
+                log.info(f'Era {era} took: {time.time() - estart:<3.2g}s')
+                esumm = self.history.era_summary(era)
+                log.info(f'Avgs over last era: {esumm}')
                 # live.refresh()
 
             tables[str(era)] = table
