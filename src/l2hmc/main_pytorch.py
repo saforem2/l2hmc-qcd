@@ -128,16 +128,6 @@ def setup(cfg: DictConfig) -> dict:
 
 # @record
 def train(cfg: DictConfig) -> dict:
-    id = generate_id()
-    run = wandb.init(id=id,
-                     group='DDP',
-                     resume='allow',
-                     # job_type='train',
-                     entity=cfg.wandb.setup.entity,
-                     project=cfg.wandb.setup.project,
-                     settings=wandb.Settings(start_method='thread'),
-                     config=OmegaConf.to_container(cfg, resolve=True))
-
     objs = setup(cfg)
     trainer = objs['trainer']  # type: Trainer
     accelerator = objs['accelerator']  # type: Accelerator
@@ -145,7 +135,20 @@ def train(cfg: DictConfig) -> dict:
         'save_x': cfg.get('save_x', False),
         'width': cfg.get('width', None),
     }
-    run.watch(objs['dynamics'], objs['loss_fn'], log='all')
+    if accelerator.is_local_main_process:
+        id = generate_id()
+        run = wandb.init(id=id,
+                         group='DDP',
+                         resume='allow',
+                         # job_type='train',
+                         entity=cfg.wandb.setup.entity,
+                         project=cfg.wandb.setup.project,
+                         settings=wandb.Settings(start_method='thread'),
+                         config=OmegaConf.to_container(cfg, resolve=True))
+
+        run.watch(objs['dynamics'], objs['loss_fn'], log='all')
+    else:
+        run = None
 
     # outdir = Path(cfg.get('outdir', os.getcwd()))
     # day = get_timestamp('%Y-%m-%d')
@@ -213,8 +216,10 @@ def train(cfg: DictConfig) -> dict:
         # erun.finish()
         output.update({'eval': eval_output})
 
-    run.save()
-    run.finish()
+    if run is not None:
+        run.save()
+        run.finish()
+
     return output
 
 

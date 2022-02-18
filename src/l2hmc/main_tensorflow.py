@@ -108,7 +108,7 @@ def train(cfg: DictConfig) -> dict:
         _ = kwargs.pop('save_x', False)
         eval_dir = outdir.joinpath('eval')
         eval_dir.mkdir(exist_ok=True, parents=True)
-        eval_output = trainer.eval(eval_dir=eval_dir, **kwargs)
+        eval_output = trainer.eval(**kwargs)
         tfrac = cfg.get('therm_frac', 0.2)
         eval_dataset = eval_output['history'].get_dataset(therm_frac=tfrac)
         analyze_dataset(eval_dataset,
