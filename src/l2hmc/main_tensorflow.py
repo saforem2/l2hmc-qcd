@@ -8,10 +8,12 @@ import logging
 import os
 from pathlib import Path
 
+
 import hydra
 from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
 import tensorflow as tf
+from l2hmc.utils.hvd_init import RANK
 
 from l2hmc.common import analyze_dataset, save_logs
 from l2hmc.configs import InputSpec
@@ -21,9 +23,8 @@ from l2hmc.loss.tensorflow.loss import LatticeLoss
 from l2hmc.network.tensorflow.network import NetworkFactory
 from l2hmc.trainers.tensorflow.trainer import Trainer
 from l2hmc.utils.console import is_interactive
-from l2hmc.utils.hvd_init import IS_CHIEF
 
-log = logging.getLogger(__name__)
+log = logging.getLogger(__file__)
 
 
 def setup(cfg: DictConfig) -> dict:
@@ -57,6 +58,7 @@ def setup(cfg: DictConfig) -> dict:
     loss_fn = LatticeLoss(lattice=lattice, loss_config=loss_cfg)
     optimizer = tf.keras.optimizers.Adam(cfg.learning_rate.lr_init)
     trainer = Trainer(steps=steps,
+                      rank=RANK,
                       loss_fn=loss_fn,
                       lr_config=lr_cfg,
                       schedule=schedule,
@@ -69,6 +71,7 @@ def setup(cfg: DictConfig) -> dict:
         'dynamics': dynamics,
         'trainer': trainer,
         'optimizer': optimizer,
+        'rank': RANK,
     }
 
 
@@ -86,8 +89,8 @@ def train(cfg: DictConfig) -> dict:
     }
 
     train_output = trainer.train(train_dir=train_dir, **kwargs)
-    output = {'setup': setup, 'train': train_output}
-    if IS_CHIEF:
+    output = {'setup': objs, 'train': train_output}
+    if objs['rank'] == 0:
         outdir = Path(cfg.get('outdir', os.getcwd()))
         # day = get_timestamp('%Y-%m-%d')
         # time = get_timestamp('%H-%M-%S')
@@ -143,4 +146,5 @@ def main(cfg: DictConfig) -> None:
 
 
 if __name__ == '__main__':
+
     main()
