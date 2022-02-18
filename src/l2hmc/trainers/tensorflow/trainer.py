@@ -28,7 +28,7 @@ from l2hmc.learning_rate.tensorflow.learning_rate import ReduceLROnPlateau
 from l2hmc.loss.tensorflow.loss import LatticeLoss
 from l2hmc.utils.console import console
 from l2hmc.utils.history import summarize_dict
-from l2hmc.utils.hvd_init import IS_CHIEF, RANK
+# from l2hmc.utils.hvd_init import IS_CHIEF, RANK
 from l2hmc.utils.step_timer import StepTimer
 from l2hmc.utils.tensorflow.history import History
 # from l2hmc.learning_ra
@@ -108,6 +108,7 @@ class Trainer:
             optimizer: Optimizer,
             schedule: AnnealingSchedule,
             lr_config: LearningRateConfig,
+            rank: int = 0,
             loss_fn: Callable = LatticeLoss,
             aux_weight: float = 0.0,
             keep: str | list[str] = None,
@@ -116,6 +117,7 @@ class Trainer:
             evals_per_step: int = 1,
             dynamics_config: DynamicsConfig = None,
     ) -> None:
+        self.rank = rank
         self.steps = steps
         self.dynamics = dynamics
         self.optimizer = optimizer
@@ -144,7 +146,7 @@ class Trainer:
     def setup_FileWriter(self, outdir: os.PathLike):
         """Setup file writer for saving TensorBoard summaries."""
         writer = None
-        if IS_CHIEF:
+        if self.rank == 0:
             sumdir = Path(outdir).joinpath('summaries')
             figdir = Path(outdir).joinpath('networks', 'figures')
 
@@ -394,14 +396,14 @@ class Trainer:
         _ = self.dynamics((x, tf.constant(1.)), training=True)
 
         writer = self.setup_FileWriter(train_dir)
-        if IS_CHIEF and writer is not None:
+        if self.rank == 0 and writer is not None:
             writer.set_as_default()
 
         def should_log(epoch):
-            return epoch % self.steps.log == 0 and RANK == 0
+            return epoch % self.steps.log == 0 and self.rank == 0
 
         def should_print(epoch):
-            return epoch % self.steps.print == 0 and RANK == 0
+            return epoch % self.steps.print == 0 and self.rank == 0
 
         xarr = []
         tables = {}
@@ -411,7 +413,7 @@ class Trainer:
         # console = get_console(width=width)
         for era in range(self.steps.nera):
             beta = tf.constant(self.schedule.betas[str(era)])
-            if IS_CHIEF:
+            if self.rank == 0:
                 console.rule(f'ERA: {era}, BETA: {beta.numpy()}')
             table = Table(row_styles=['dim', 'none'])
             with Live(table, console=console, screen=False) as live:
@@ -443,7 +445,7 @@ class Trainer:
             self.reduce_lr.on_epoch_end((era + 1) * self.steps.nepoch, {
                 'loss': metrics.get('loss', np.Inf),
             })
-            if IS_CHIEF:
+            if self.rank == 0:
                 log.info(
                     f'Saving checkpoint to: {manager.latest_checkpoint}'
                 )
@@ -451,10 +453,10 @@ class Trainer:
                 self.dynamics.save_networks(train_dir)
 
                 log.info(
-                    f'[{RANK}] :: Era {era} took: {time.time()-estart:.5g}s'
+                    f'Era {era} took: {time.time()-estart:.5g}s'
                 )
                 log.info(
-                    f'[{RANK}] :: Avgs:\n{self.history.era_summary(era)}'
+                    f'Avgs:\n{self.history.era_summary(era)}'
                 )
 
             tables[str(era)] = table
