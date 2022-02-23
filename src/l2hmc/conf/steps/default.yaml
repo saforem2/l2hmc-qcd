@@ -3,6 +3,6 @@ _target_: l2hmc.configs.Steps
 nera: 10
 nepoch: 100
 test: 1000
-log: 10
-print: 20
+log: ${steps.nepoch} // 50
+print: ${steps.nepoch} // 10
 
