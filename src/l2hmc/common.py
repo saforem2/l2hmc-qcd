@@ -8,6 +8,7 @@ import datetime
 import logging
 import os
 from pathlib import Path
+from typing import Any
 import wandb
 
 import joblib
@@ -28,7 +29,9 @@ from l2hmc.configs import (
     Steps,
 )
 from l2hmc.utils.console import console  # , is_interactive
-from l2hmc.utils.plot_helpers import plot_dataArray, plot_chains
+from l2hmc.utils.plot_helpers import (
+    plot_dataArray, plot_chains, make_ridgeplots
+)
 
 os.environ['AUTOGRAPH_VERBOSITY'] = '0'
 log = logging.getLogger(__name__)
@@ -106,6 +109,7 @@ def setup_pytorch(configs: dict) -> dict:
     dynamics = dynamics.to(accelerator.device)
     dynamics, optimizer = accelerator.prepare(dynamics, optimizer)
     trainer = Trainer(steps=steps,
+                      lr_config=lr_config,
                       loss_fn=loss_fn,
                       dynamics=dynamics,
                       schedule=schedule,
@@ -224,50 +228,6 @@ def save_dataset(
     dataset.to_netcdf(datafile.as_posix(), mode=mode)
 
 
-def plot_dataset(
-        dataset: xr.Dataset,
-        nchains: int = 10,
-        outdir: os.PathLike = None,
-        title: str = None,
-        prefix: str | list = None,
-) -> None:
-    name = []
-    outdir = Path(outdir) if outdir is not None else Path(os.getcwd())
-    outdir = outdir.joinpath('plots')
-    if prefix is None:
-        if outdir is not None:
-            if 'train' in outdir.as_posix():
-                name.append('train')
-            elif 'eval' in outdir.as_posix():
-                name.append('eval')
-        if title is not None:
-            if 'train' in title.lower():
-                name.append('train')
-            elif 'eval' in title.lower():
-                name.append('eval')
-    else:
-        if isinstance(prefix, str):
-            name.append(prefix)
-
-        elif isinstance(prefix, list):
-            name.append(*prefix)
-
-    for key, val in dataset.data_vars.items():
-        if key == 'x':
-            continue
-
-        fig, _, _ = plot_dataArray(val,
-                                   key=key,
-                                   title=title,
-                                   num_chains=nchains)
-        # chart_name = '/'.join([*name, f'{key}_chart'])
-        # wandb.log({key_: fig})
-        outfile = outdir.joinpath(f'{key}.svg')
-        outfile.parent.mkdir(exist_ok=True, parents=True)
-        log.info(f'Saving figure to: {outfile.as_posix()}')
-        fig.savefig(outfile.as_posix(), dpi=500, bbox_inches='tight')
-
-
 def save_logs(
         tables: dict[str, Table],
         summaries: list[str] = None,
@@ -321,6 +281,58 @@ def make_subdirs(basedir: os.PathLike):
     return dirs
 
 
+def plot_dataset(
+        dataset: xr.Dataset,
+        nchains: int = 10,
+        outdir: os.PathLike = None,
+        title: str = None,
+        prefix: str | list = None,
+) -> None:
+    outdir = Path(outdir) if outdir is not None else Path(os.getcwd())
+    outdir = outdir.joinpath('plots')
+    if prefix is None:
+        if outdir is not None:
+            if 'train' in outdir.as_posix():
+                prefix = 'train'
+            elif 'eval' in outdir.as_posix():
+                prefix = 'eval'
+
+    name = []
+    if prefix is not None:
+        name.append(prefix)
+
+    tag = '/'.join(name)
+    pngs = {tag: {}}
+    for key, val in dataset.data_vars.items():
+        if key == 'x':
+            continue
+
+        fig, _, _ = plot_dataArray(val,
+                                   key=key,
+                                   title=title,
+                                   line_labels=False,
+                                   num_chains=nchains)
+        # try:
+        #     wandb.log({f'chart/{name}': fig})
+        # except AttributeError:
+        #     # log.error(err.name)
+        #     log.error(
+        #         f'Error logging `chart/{name}` with `wandb.log`, skipping!',
+        #     )
+        # chart_name = '/'.join([*name, f'{key}_chart'])
+        # wandb.log({key_: fig})
+        outfile = outdir.joinpath(f'{key}.svg')
+        outfile.parent.mkdir(exist_ok=True, parents=True)
+        log.info(f'Saving figure to: {outfile.as_posix()}')
+        fig.savefig(outfile.as_posix(), dpi=500, bbox_inches='tight')
+        outpng = outdir.joinpath(f'{key}.png')
+        fig.savefig(outpng.as_posix(), dpi=500, bbox_inches='tight')
+        pngs[tag].update({key: outpng.as_posix()})
+
+    wandb.log(pngs)
+    _ = make_ridgeplots(dataset, num_chains=nchains, out_dir=outdir)
+
+
 def analyze_dataset(
         dataset: xr.Dataset,
         outdir: os.PathLike,
@@ -328,16 +340,17 @@ def analyze_dataset(
         xarr: list | np.ndarray = None,
         nchains: int = 16,
         title: str = None,
-        name: str = 'dataset',
+        prefix: str = 'dataset',
         save: bool = True,
 ):
     dirs = make_subdirs(outdir)
     plot_dataset(dataset,
                  nchains=nchains,
                  title=title,
+                 prefix=prefix,
                  outdir=dirs['plots'])
     if save:
-        save_dataset(dataset, outdir=dirs['data'], name=name)
+        save_dataset(dataset, outdir=dirs['data'], name=prefix)
 
     history = {}
     if xarr is not None and lattice is not None:
@@ -351,8 +364,9 @@ def analyze_dataset(
 
             history[key] = [val]
 
-        for x in xarr[1:]:
+        for idx, x in enumerate(xarr[1:]):
             metrics = lattice.calc_metrics(x)
+            metrics_np = {}
             for key, val in metrics.items():
                 try:
                     val = val.cpu().numpy()  # type: ignore
@@ -364,6 +378,10 @@ def analyze_dataset(
                 except KeyError:
                     history[key] = [val]      # type: ignore
 
+                metrics_np[key] = val
+
+            wandb.log({prefix: {'lattice': metrics_np}})
+
         intQ = np.array(history['intQ'])
         sinQ = np.array(history['sinQ'])
         dQint = np.abs(intQ[1:] - intQ[:-1])  # type: ignore
@@ -372,24 +390,25 @@ def analyze_dataset(
         history['dQsin'] = [sinQ[0], *dQsin]
 
         xlabel = 'Step'
-        if name == 'train':
+        if prefix == 'train':
             xlabel = 'Train Epoch'
-        elif name == 'eval':
+        elif prefix == 'eval':
             xlabel = 'Eval Step'
 
         for key, val in history.items():
             val = np.array(val)
             pfile = dirs['plots'].joinpath(f'{key}.svg')
-            _ = plot_chains(y=val, num_chains=nchains,
-                            label=key, xlabel=xlabel,
-                            ylabel=key, outfile=pfile)
+            fig, _ = plot_chains(y=val, num_chains=nchains,
+                                 label=key, xlabel=xlabel,
+                                 ylabel=key, outfile=pfile)
+
             dfile = dirs['data'].joinpath(f'{key}.z')
             log.info(f'Saving {key} to {dfile}')
             joblib.dump(val, dfile)
 
-        xfile = dirs['data'].joinpath('xarr.z')
-        log.info(f'Saving xarr to: {xfile}')
-        joblib.dump(xarr, xfile)
+        # xfile = dirs['data'].joinpath('xarr.z')
+        # log.info(f'Saving xarr to: {xfile}')
+        # joblib.dump(xarr, xfile)
 
     return history
 
