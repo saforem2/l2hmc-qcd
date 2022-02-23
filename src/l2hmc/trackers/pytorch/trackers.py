@@ -7,9 +7,8 @@ from __future__ import absolute_import, print_function, division, annotations
 from typing import Union
 
 import torch
-from torch.utils.tensorboard.writer import FileWriter
 import numpy as np
-from torch.utils.tensorboard import SummaryWriter
+from torch.utils.tensorboard.writer import SummaryWriter
 
 Tensor = torch.Tensor
 Array = np.ndarray
@@ -31,24 +30,11 @@ def log_item(
             or isinstance(val, (float, int, bool))
     ):
         writer.add_scalar(tag=tag, scalar_value=val, global_step=step)
-        return
     else:
         writer.add_histogram(tag=tag, values=val, global_step=step)
-        writer.add_scalar(tag=f'{tag}_avg',
+        writer.add_scalar(tag=f'{tag}/avg',
                           global_step=step,
                           scalar_value=val.mean())
-        # elif isinstance(val, (Tensor, Array)):
-        #     if len(val.shape) > 1:
-        #         writer.add_histogram(tag=tag,
-        #                              values=val,
-        #                              global_step=step)
-        #         writer.add_scalar(tag=f'{tag}_avg',
-        #                           global_step=step,
-        #                           scalar_value=val.mean())
-        #     elif isinstance(val, (float, int, bool)):
-        #         writer.add_scalar(tag=tag,
-        #                           global_step=step,
-        #                           scalar_value=val)
 
 
 def log_dict(
@@ -58,13 +44,11 @@ def log_dict(
         prefix: str = None
 ):
     """Create TensorBoard summaries for all items in `d`."""
-    prefix = '' if prefix is None else prefix
     for key, val in d.items():
         pre = key if prefix is None else f'{prefix}/{key}'
         if isinstance(val, dict):
-            log_dict(writer=writer, d=val, step=step, prefix=pre)
-        elif isinstance(val, list):
-            log_list(writer=writer, x=val, step=step, prefix=pre)
+            for k, v in val.items():
+                log_item(writer=writer, tag=f'{pre}/{k}', val=v, step=step)
         else:
             log_item(writer=writer, val=val, step=step, tag=pre)
 
@@ -72,16 +56,13 @@ def log_dict(
 def log_list(
         writer: SummaryWriter,
         x: list,
+        prefix: str,
         step: int = None,
-        prefix: str = None
 ):
     """Create TensorBoard summaries for all entries in `x`."""
     for t in x:
-        name = ''
-        if hasattr(t, 'name'):
-            name = getattr(t, 'name', '')
-
-        tag = f'{prefix}/{name}' if prefix is not None else name
+        name = getattr(t, 'name', None)
+        tag = f'{prefix}/{name}' if name is not None else prefix
         log_item(writer=writer, val=t, step=step, tag=tag)
 
 
@@ -97,7 +78,7 @@ def update_summaries(
         pre = 'metrics' if prefix is None else '/'.join([prefix, 'metrics'])
         log_dict(writer=writer, d=metrics, step=step, prefix=pre)
     if model is not None:
-        pre = 'model' if prefix is None else '/'.join([prefix, 'metrics'])
+        pre = 'model' if prefix is None else '/'.join(['model', prefix])
         for name, param in model.named_parameters():
             if param.requires_grad:
                 tag = f'{pre}/{name}'
