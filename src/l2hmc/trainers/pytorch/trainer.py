@@ -6,29 +6,30 @@ Implements methods for training L2HMC sampler.
 from __future__ import absolute_import, annotations, division, print_function
 from dataclasses import asdict
 import logging
-import time
 import os
 from pathlib import Path
-from typing import Callable, Any
+import time
+from typing import Any, Callable
 
 from accelerate import Accelerator
 from accelerate.utils import extract_model_from_parallel
 import numpy as np
+from rich import box
 from rich.live import Live
 from rich.table import Table
-from rich import box
 import torch
 from torch import optim
+from torch.utils.tensorboard import SummaryWriter
 import wandb
 
-from l2hmc.configs import (
-    AnnealingSchedule, DynamicsConfig, LearningRateConfig, Steps
-)
+from l2hmc.configs import AnnealingSchedule, DynamicsConfig, LearningRateConfig, Steps
 from l2hmc.dynamics.pytorch.dynamics import Dynamics, random_angle, to_u1
 from l2hmc.loss.pytorch.loss import LatticeLoss
+from l2hmc.trackers.pytorch.trackers import update_summaries
 from l2hmc.utils.console import console
 from l2hmc.utils.history import BaseHistory, summarize_dict
 from l2hmc.utils.step_timer import StepTimer
+from torchinfo import summary as model_summary
 
 
 log = logging.getLogger(__name__)
@@ -165,6 +166,7 @@ class Trainer:
             x: Tensor = None,
             skip: str | list[str] = None,
             width: int = 150,
+            eval_dir: os.PathLike = None,
             run: Any = None,
     ) -> dict:
         summaries = []
@@ -183,7 +185,13 @@ class Trainer:
         summaries = []
         tables = {}
         table = Table(row_styles=['dim', 'none'], box=box.SIMPLE)
+        if eval_dir is None:
+            eval_dir = Path(os.getcwd()).joinpath('eval')
         # screen = (not is_interactive())
+
+        writer = None
+        if self.accelerator.is_local_main_process:
+            writer = self.setup_SummaryWriter(eval_dir)
 
         with Live(table, console=console, screen=False) as live:
             if width is not None and width > 0:
@@ -199,6 +207,12 @@ class Trainer:
                 record.update(self.metrics_to_numpy(metrics))
                 if run is not None:
                     run.log({'eval': record})
+
+                if writer is not None:
+                    update_summaries(writer=writer,
+                                     step=step,
+                                     metrics=record,
+                                     prefix='eval')
 
                 avgs = self.eval_history.update(record)
                 summary = summarize_dict(avgs)
@@ -282,6 +296,14 @@ class Trainer:
             **kwargs,
         }, ckpt_file)
 
+    def setup_SummaryWriter(self, outdir: os.PathLike = None):
+        """Setup SummaryWriter for TensorBoard summaries."""
+        if self.accelerator.is_local_main_process:
+            return SummaryWriter(
+                Path(outdir).as_posix() if outdir is not None else None
+            )
+        return None
+
     def train(
             self,
             x: Tensor = None,
@@ -304,6 +326,15 @@ class Trainer:
             x = random_angle(self.xshape, requires_grad=True)
             x = x.reshape(x.shape[0], -1)
 
+        writer = self.setup_SummaryWriter(train_dir)
+        if self.accelerator.is_local_main_process and writer is not None:
+            # model_summary(self.dynamics, input_data=[(x, torch.tensor(1.))])
+            # writer.add_graph(self.dynamics,
+            #                  # [x, torch.tensor(1.0)],
+            #                  verbose=True,
+            #                  use_strict_trace=False)
+            update_summaries(writer=writer, step=0, model=self.dynamics)
+
         era = 0
         epoch = 0
         xarr = []
@@ -324,16 +355,23 @@ class Trainer:
                     x, metrics = self.train_step((x, beta))
                     dt = self.timer.stop()
                     if self.should_print(epoch) or self.should_log(epoch):
-                        record = {
-                            'era': era, 'epoch': epoch, 'beta': beta, 'dt': dt
-                        }
                         if save_x:
                             xarr.append(x.detach().cpu())
 
+                        record = {
+                            'era': era, 'epoch': epoch, 'beta': beta, 'dt': dt
+                        }
                         # Update metrics with train step metrics, tmetrics
                         record.update(self.metrics_to_numpy(metrics))
                         if run is not None:
                             run.log({'train': record})
+                        if writer is not None:
+                            step = (epoch + 1) * (era + 1)
+                            update_summaries(writer=writer,
+                                             step=step,
+                                             metrics=record,
+                                             prefix='train')
+
                         avgs = self.history.update(record)
                         summary = summarize_dict(avgs)
                         summaries.append(summary)
