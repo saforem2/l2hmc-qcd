@@ -139,7 +139,7 @@ class Dynamics(Model):
             training: bool = True,
     ) -> tuple[Tensor, dict]:
         """Apply transition using single forward/backward update."""
-        data = self.generate_proposal_fb(inputs, training)
+        data = self.generate_proposal_fb(inputs, training=training)
         ma_, mr_ = self._get_accept_masks(data['metrics']['acc'])
         ma = ma_[:, None]
         mr = mr_[:, None]
@@ -362,7 +362,8 @@ class Dynamics(Model):
                 history = self.update_history(metrics, history=history)
 
         # Flip momentum
-        state_ = State(state_.x, -tf.constant(1.) * state_.v, state_.beta)
+        m1 = -1.0 * tf.ones_like(state_.v)
+        state_ = State(state_.x, m1 * state_.v, state_.beta)
 
         # Backward
         for step in range(self.config.nleapfrog):
@@ -720,8 +721,8 @@ class Dynamics(Model):
         assert d.is_dir(), f'Directory {d} does not exist'
         fveps = d.joinpath('veps.npy')
         fxeps = d.joinpath('xeps.npy')
-        veps = tf.constant(np.load(fveps.as_posix()), dtype=TF_FLOAT)
-        xeps = tf.constant(np.load(fxeps.as_posix()), dtype=TF_FLOAT)
+        veps = tf.Variable(np.load(fveps.as_posix()), dtype=TF_FLOAT)
+        xeps = tf.Variable(np.load(fxeps.as_posix()), dtype=TF_FLOAT)
         if self.config.use_separate_networks:
             xnet = {}
             vnet = {}
