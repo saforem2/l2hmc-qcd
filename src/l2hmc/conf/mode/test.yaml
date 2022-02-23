@@ -7,9 +7,10 @@
 # `python run.py mode=debug`
 
 defaults:
-  - override /dynamics: debug.yaml
-  - override /steps: debug.yaml
-  - override /network: debug.yaml
+  - override /dynamics: test.yaml
+  - override /steps: test.yaml
+  - override /network: test.yaml
+  - override /annealing_schedule: constant.yaml
 
 # debug_mode: True
 

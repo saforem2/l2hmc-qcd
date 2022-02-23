@@ -5,16 +5,20 @@
 # also sets level od command line logger to DEBUG
 # example usage:
 # `python run.py mode=debug`
+default_mode: True
+ignore_warnings: True
+# disable rich config printing, since it will be already printed by hydra when `verbose: True`
+print_config: True
 
 defaults:
+  - _self_
   - override /dynamics: default_cpu.yaml
   - override /steps: default.yaml
   - override /network: default_cpu.yaml
 
-debug_mode: False
+# hydra:
+#   verbose: [l2hmc]
 
-hydra:
-#   # sets level of all command line loggers to 'DEBUG'
 #   verbose: True
 #   run:
 #     dir: outputs/debug/runs/${now:%Y-%m-%d}/${now:%H-%M-%S}
@@ -24,7 +28,6 @@ hydra:
 
   # https://hydra.cc/docs/tutorials/basic/running_your_app/logging/
   # use this to set level of only chosen command line loggers to 'DEBUG'
-  verbose: [l2hmc]
 
   # run:
   #   dir: outputs/debug/runs/${now:%Y-%m-%d}/${now:%H-%M-%S}
@@ -32,5 +35,3 @@ hydra:
   #   dir: debug/multiruns/${now:%Y-%m-%d}/${now:%H-%M-%S}
   #   subdir: ${hydra.job.num}
 
-# disable rich config printing, since it will be already printed by hydra when `verbose: True`
-print_config: True
