@@ -260,6 +260,7 @@ def plot_dataArray(
         outdir: str = None,
         subplots_kwargs: dict[str, Any] = None,
         plot_kwargs: dict[str, Any] = None,
+        line_labels: bool = True,
 ) -> tuple:
     plot_kwargs = {} if plot_kwargs is None else plot_kwargs
     subplots_kwargs = {} if subplots_kwargs is None else subplots_kwargs
@@ -305,8 +306,9 @@ def plot_dataArray(
 
         ax = plt.gca()
         ax.set_ylabel(key)
-        ax.set_xlabel('draw')
-        matplotx.line_labels()
+        # matplotx.line_labels()
+        if line_labels:
+            matplotx.line_labels()
 
         # if num_chains > 0 and len(arr.shape) > 1:
         #     lw = LW / 2.
@@ -606,7 +608,7 @@ def plot_dataset(
 def make_ridgeplots(
         dataset: xr.Dataset,
         num_chains: int = None,
-        out_dir: str = None,
+        out_dir: os.PathLike = None,
         drop_zeros: bool = False,
         cmap: str = 'viridis_r',
         # default_style: dict = None,
@@ -671,9 +673,11 @@ def make_ridgeplots(
             _ = g.despine(bottom=True, left=True)
             if out_dir is not None:
                 # io.check_else_make_dir(out_dir)
-                out_file = os.path.join(out_dir, f'{key}_ridgeplot.svg')
+                # out_file = os.path.join(out_dir, f'{key}_ridgeplot.svg')
+                outfile = Path(out_dir).joinpath(f'{key}_ridgeplot.svg')
+                outfile.parent.mkdir(exist_ok=True, parents=True)
                 #  logger.log(f'Saving figure to: {out_file}.')
-                plt.savefig(out_file, dpi=400, bbox_inches='tight')
+                plt.savefig(outfile.as_posix(), dpi=400, bbox_inches='tight')
 
         # plt.close('all')
 
