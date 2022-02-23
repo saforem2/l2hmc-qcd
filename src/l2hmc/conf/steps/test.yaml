@@ -1,0 +1,7 @@
+_target_: l2hmc.configs.Steps
+
+nera: 5
+nepoch: 10
+test: 50
+log: 2
+print: 2

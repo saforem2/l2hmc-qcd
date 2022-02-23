@@ -1,0 +1,11 @@
+_target_: l2hmc.configs.DynamicsConfig
+
+xshape: [4, 8, 8, 2]
+eps: 0.01
+nleapfrog: 3
+eps_fixed: false
+use_ncp: true
+use_split_xnets: true
+use_separate_networks: true
+merge_directions: true
+verbose: true
