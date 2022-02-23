@@ -19,17 +19,19 @@ from rich.live import Live
 from rich.table import Table
 import torch
 from torch import optim
-from torch.utils.tensorboard import SummaryWriter
+from torch.utils.tensorboard.writer import SummaryWriter
 import wandb
 
-from l2hmc.configs import AnnealingSchedule, DynamicsConfig, LearningRateConfig, Steps
+from l2hmc.configs import (
+    AnnealingSchedule, DynamicsConfig, LearningRateConfig, Steps
+)
 from l2hmc.dynamics.pytorch.dynamics import Dynamics, random_angle, to_u1
 from l2hmc.loss.pytorch.loss import LatticeLoss
 from l2hmc.trackers.pytorch.trackers import update_summaries
 from l2hmc.utils.console import console
 from l2hmc.utils.history import BaseHistory, summarize_dict
 from l2hmc.utils.step_timer import StepTimer
-from torchinfo import summary as model_summary
+# from torchinfo import summary as model_summary
 
 
 log = logging.getLogger(__name__)
@@ -189,9 +191,9 @@ class Trainer:
             eval_dir = Path(os.getcwd()).joinpath('eval')
         # screen = (not is_interactive())
 
-        writer = None
-        if self.accelerator.is_local_main_process:
-            writer = self.setup_SummaryWriter(eval_dir)
+        writer = self.setup_SummaryWriter(eval_dir)
+        # if self.accelerator.is_local_main_process and writer is:
+        #     writer = self.setup_SummaryWriter(eval_dir)
 
         with Live(table, console=console, screen=False) as live:
             if width is not None and width > 0:
@@ -209,10 +211,11 @@ class Trainer:
                     run.log({'eval': record})
 
                 if writer is not None:
-                    update_summaries(writer=writer,
-                                     step=step,
+                    wandb.log({'wandb': {'eval': record}})
+                    update_summaries(step=step,
+                                     prefix='eval',
                                      metrics=record,
-                                     prefix='eval')
+                                     writer=writer)
 
                 avgs = self.eval_history.update(record)
                 summary = summarize_dict(avgs)
@@ -311,7 +314,7 @@ class Trainer:
             save_x: bool = False,
             width: int = 80,
             train_dir: os.PathLike = None,
-            run: Any = None,
+            # run: Any = None,
             # keep: str | list[str] = None,
     ) -> dict:
         # x = xinit
@@ -328,12 +331,14 @@ class Trainer:
 
         writer = self.setup_SummaryWriter(train_dir)
         if self.accelerator.is_local_main_process and writer is not None:
+            dynamics = extract_model_from_parallel(self.dynamics)
+            writer.add_graph(dynamics, input_to_model=[(x, torch.tensor(1.))])
             # model_summary(self.dynamics, input_data=[(x, torch.tensor(1.))])
             # writer.add_graph(self.dynamics,
             #                  # [x, torch.tensor(1.0)],
             #                  verbose=True,
             #                  use_strict_trace=False)
-            update_summaries(writer=writer, step=0, model=self.dynamics)
+            # update_summaries(writer=writer, step=0, model=self.dynamics)
 
         era = 0
         epoch = 0
@@ -343,7 +348,8 @@ class Trainer:
         summaries = []
         for era in range(self.steps.nera):
             beta = self.schedule.betas[str(era)]
-            console.rule(f'ERA: {era}, BETA: {beta}')
+            if self.accelerator.is_local_main_process:
+                console.rule(f'ERA: {era}, BETA: {beta}')
             table = Table(row_styles=['dim', 'none'], box=box.SIMPLE)
             with Live(table, console=console, screen=False) as live:
                 if width != 0:
@@ -363,12 +369,17 @@ class Trainer:
                         }
                         # Update metrics with train step metrics, tmetrics
                         record.update(self.metrics_to_numpy(metrics))
-                        if run is not None:
-                            run.log({'train': record})
                         if writer is not None:
-                            step = (epoch + 1) * (era + 1)
+                            gstep = self.optimizer.state[
+                                self.optimizer.param_groups[0]['params'][-1]
+                            ]['step']
+                            wandb.log({'wandb': {'train': record}})
+                            dynamics = extract_model_from_parallel(
+                                self.dynamics
+                            )
                             update_summaries(writer=writer,
-                                             step=step,
+                                             model=dynamics,  # type: ignore
+                                             step=gstep,
                                              metrics=record,
                                              prefix='train')
 
