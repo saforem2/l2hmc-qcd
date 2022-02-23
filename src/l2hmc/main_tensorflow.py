@@ -90,31 +90,37 @@ def train(cfg: DictConfig) -> dict:
     }
     if objs['rank'] == 0:
         id = generate_id()
-        summary_dir = Path(train_dir).joinpath('summaries')
-        # wandb.tensorboard.patch(root_logdir=summary_dir.as_posix())
-        run = wandb.init(id=id,
-                         resume='allow',
-                         group='tensorflow',
-                         sync_tensorboard=True,
-                         entity=cfg.wandb.setup.entity,
-                         project=cfg.wandb.setup.project,
-                         settings=wandb.Settings(start_method='thread'),
-                         config=OmegaConf.to_container(cfg, resolve=True))
-        # run.watch(objs['dynamics'], objs['loss_fn'])
-    else:
-        run = None
+        # wandb.tensorboard.patch(root_logdir=outdir.as_posix(), pytorch=False)
+        gpus = tf.config.experimental.list_physical_devices('gpu')
+        gnames = ['tensorflow']
+        # if len(gpus) > 1:
+        #     gnames.append('hvd')
 
-    train_output = trainer.train(run=run, train_dir=train_dir, **kwargs)
+        gnames.append('gpu') if len(gpus) > 0 else gnames.append('cpu')
+        if 'debug' in train_dir.as_posix():
+            gnames.append('debug')
+
+        group = '/'.join(gnames)
+        wandb.init(id=id,
+                   group=group,
+                   resume='allow',
+                   sync_tensorboard=True,
+                   entity=cfg.wandb.setup.entity,
+                   project=cfg.wandb.setup.project,
+                   settings=wandb.Settings(start_method='thread'),
+                   config=OmegaConf.to_container(cfg, resolve=True))
+        # run.watch(objs['dynamics'], objs['loss_fn'])
+    # else:
+    #     run = None
+
+    train_output = trainer.train(train_dir=train_dir, **kwargs)
     output = {'setup': objs, 'train': train_output}
     if objs['rank'] == 0:
         outdir = Path(cfg.get('outdir', os.getcwd()))
-        # day = get_timestamp('%Y-%m-%d')
-        # time = get_timestamp('%H-%M-%S')
-        # outdir = outdir.joinpath('tensorflow', day, time)
         train_dataset = train_output['history'].get_dataset()
         nchains = min((cfg.dynamics.xshape[0], cfg.dynamics.nleapfrog))
         analyze_dataset(train_dataset,
-                        name='train',
+                        prefix='train',
                         nchains=nchains,
                         outdir=train_dir,
                         lattice=objs['lattice'],
@@ -124,11 +130,11 @@ def train(cfg: DictConfig) -> dict:
         _ = kwargs.pop('save_x', False)
         eval_dir = outdir.joinpath('eval')
         eval_dir.mkdir(exist_ok=True, parents=True)
-        eval_output = trainer.eval(run=run, **kwargs)
+        eval_output = trainer.eval(eval_dir=eval_dir, **kwargs)
         tfrac = cfg.get('therm_frac', 0.2)
         eval_dataset = eval_output['history'].get_dataset(therm_frac=tfrac)
         analyze_dataset(eval_dataset,
-                        name='eval',
+                        prefix='eval',
                         nchains=nchains,
                         outdir=eval_dir,
                         lattice=objs['lattice'],
@@ -162,5 +168,4 @@ def main(cfg: DictConfig) -> None:
 
 
 if __name__ == '__main__':
-
     main()
