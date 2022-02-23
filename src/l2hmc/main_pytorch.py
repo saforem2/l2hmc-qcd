@@ -9,10 +9,12 @@ import os
 from pathlib import Path
 
 from accelerate import Accelerator
+from accelerate.utils import extract_model_from_parallel
 import hydra
 from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
 import torch
+from torchinfo import summary as model_summary
 # from torch.distributed.elastic.multiprocessing.errors import record
 
 from l2hmc.common import analyze_dataset, save_logs
@@ -131,15 +133,36 @@ def train(cfg: DictConfig) -> dict:
     objs = setup(cfg)
     trainer = objs['trainer']  # type: Trainer
     accelerator = objs['accelerator']  # type: Accelerator
+    dynamics = extract_model_from_parallel(objs['dynamics'])
+
+    outdir = Path(cfg.get('outdir', os.getcwd()))
+    train_dir = outdir.joinpath('train')
+    train_dir.mkdir(exist_ok=True, parents=True)
+    state = objs['dynamics'].random_state(1.0)
+    x = torch.tensor(state.x, requires_grad=True)
+    model_summary(dynamics, depth=5)  # , input_data=[(x, state.beta)])
+
     kwargs = {
         'save_x': cfg.get('save_x', False),
         'width': cfg.get('width', None),
     }
     if accelerator.is_local_main_process:
         id = generate_id()
+        gnames = ['pytorch']
+        wandb.tensorboard.patch(root_logdir=outdir.as_posix(), pytorch=True)
+        wcuda = torch.cuda.is_available()
+        gnames.append('gpu') if wcuda else gnames.append('cpu')
+        if torch.cuda.device_count() > 1:
+            gnames.append('DDP')
+
+        if 'debug' in train_dir.as_posix():
+            gnames.append('debug')
+
+        group = '/'.join(gnames)
         run = wandb.init(id=id,
-                         group='DDP',
+                         group=group,
                          resume='allow',
+                         sync_tensorboard=True,
                          # job_type='train',
                          entity=cfg.wandb.setup.entity,
                          project=cfg.wandb.setup.project,
@@ -155,9 +178,6 @@ def train(cfg: DictConfig) -> dict:
     # time = get_timestamp('%H-%M-%S')
     # outdir = outdir.joinpath('pytorch').joinpath(day, time)
     # train_dir = outdir.joinpath('train')
-    outdir = Path(cfg.get('outdir', os.getcwd()))
-    train_dir = outdir.joinpath('train')
-    train_dir.mkdir(exist_ok=True, parents=True)
     train_output = trainer.train(run=run, train_dir=train_dir, **kwargs)
 
     # outdir = Path(cfg.get('outdir', os.getcwd()))
@@ -176,7 +196,7 @@ def train(cfg: DictConfig) -> dict:
         train_dset = train_output['history'].get_dataset()
 
         analyze_dataset(train_dset,
-                        name='train',
+                        prefix='train',
                         nchains=nchains,
                         outdir=train_dir,
                         lattice=objs['lattice'],
@@ -198,7 +218,7 @@ def train(cfg: DictConfig) -> dict:
         eval_output = trainer.eval(run=run, **kwargs)
         eval_dset = eval_output['history'].get_dataset(therm_frac=therm_frac)
         analyze_dataset(eval_dset,
-                        name='eval',
+                        prefix='eval',
                         nchains=nchains,
                         outdir=eval_dir,
                         lattice=objs['lattice'],
