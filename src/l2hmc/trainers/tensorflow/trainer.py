@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import time
 from typing import Any, Callable
+import wandb
 
 import horovod.tensorflow as hvd
 import numpy as np
@@ -18,7 +19,9 @@ from rich.live import Live
 from rich.panel import Panel
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
 from rich.table import Table
+from rich import box
 import tensorflow as tf
+from tensorflow.python.keras import backend as K
 
 from l2hmc.configs import (
     AnnealingSchedule, DynamicsConfig, LearningRateConfig, Steps
@@ -28,6 +31,7 @@ from l2hmc.learning_rate.tensorflow.learning_rate import ReduceLROnPlateau
 from l2hmc.loss.tensorflow.loss import LatticeLoss
 from l2hmc.utils.console import console
 from l2hmc.utils.history import summarize_dict
+from l2hmc.trackers.tensorflow.trackers import update_summaries
 # from l2hmc.utils.hvd_init import IS_CHIEF, RANK
 from l2hmc.utils.step_timer import StepTimer
 from l2hmc.utils.tensorflow.history import History
@@ -145,7 +149,6 @@ class Trainer:
 
     def setup_FileWriter(self, outdir: os.PathLike):
         """Setup file writer for saving TensorBoard summaries."""
-        writer = None
         if self.rank == 0:
             sumdir = Path(outdir).joinpath('summaries')
             figdir = Path(outdir).joinpath('networks', 'figures')
@@ -154,11 +157,7 @@ class Trainer:
             sumdir.mkdir(exist_ok=True, parents=True)
 
             plot_models(self.dynamics, figdir)
-
-            try:
-                writer = tf.summary.create_file_writer(sumdir.as_posix())
-            except AttributeError:
-                writer = None
+            writer = tf.summary.create_file_writer(sumdir.as_posix())
 
         return writer
 
@@ -260,6 +259,41 @@ class Trainer:
 
         return to_u1(xout), metrics
 
+    def train_step(
+            self,
+            inputs: tuple[Tensor, float],
+            # first_step: bool = False
+    ) -> tuple[Tensor, dict]:
+        xinit, beta = inputs
+        record = {'loss': None}
+        with tf.GradientTape() as tape:
+            tape.watch(xinit)
+            x_out, metrics = self.dynamics((to_u1(xinit), beta), training=True)
+            xprop = to_u1(metrics.pop('mc_states').proposed.x)
+            loss = self.loss_fn(x_init=xinit, x_prop=xprop, acc=metrics['acc'])
+
+            if self.aux_weight > 0:
+                yinit = to_u1(self.draw_x())
+                _, metrics_ = self.dynamics((yinit, beta), training=True)
+                yprop = to_u1(metrics_.pop('mc_states').proposed.x)
+                aux_loss = self.aux_weight * self.loss_fn(x_init=yinit,
+                                                          x_prop=yprop,
+                                                          acc=metrics_['acc'])
+                loss = (loss + aux_loss) / (1. + self.aux_weight)
+
+            record['loss'] = loss
+            record.update(metrics)
+
+        tape = hvd.DistributedGradientTape(tape, compression=self.compression)
+        grads = tape.gradient(loss, self.dynamics.trainable_variables)
+        updates = zip(grads, self.dynamics.trainable_variables)
+        self.optimizer.apply_gradients(updates)
+        # if first_step:
+        #     hvd.broadcast_variables(self.dynamics.variables, root_rank=0)
+        #     hvd.broadcast_variables(self.optimizer.variables(), root_rank=0)
+
+        return to_u1(x_out), record
+
     def eval(
             self,
             beta: float = None,
@@ -268,7 +302,8 @@ class Trainer:
             compile: bool = True,
             jit_compile: bool = False,
             width: int = 150,
-            run: Any = None,
+            eval_dir: os.PathLike = None,
+            # run: Any = None,
     ) -> dict:
         """Evaluate model."""
         if isinstance(skip, str):
@@ -277,20 +312,26 @@ class Trainer:
         if beta is None:
             beta = self.schedule.beta_final
 
+        if eval_dir is None:
+            eval_dir = Path(os.getcwd()).joinpath('eval')
+
         if x is None:
             unif = tf.random.uniform(self.dynamics.xshape,
                                      *(-PI, PI), dtype=TF_FLOAT)
             x = tf.reshape(unif, (unif.shape[0], -1))
         else:
-            x = tf.constant(x, dtype=TF_FLOAT)
+            x = tf.Variable(x, dtype=TF_FLOAT)
+
+        writer = self.setup_FileWriter(Path(eval_dir))
+        if self.rank == 0 and writer is not None:
+            writer.set_as_default()
 
         assert isinstance(x, Tensor) and x.dtype == TF_FLOAT
 
         if compile:
             self.dynamics.compile(
-                optimizer=self.optimizer,
                 loss=self.loss_fn,
-                experimental_run_tf_function=False,
+                # experimental_run_tf_function=False,
             )
             eval_step = tf.function(self.eval_step, jit_compile=jit_compile)
         else:
@@ -299,8 +340,7 @@ class Trainer:
         xarr = []
         tables = {}
         summaries = []
-        table = Table(collapse_padding=True, row_styles=['dim', 'none'])
-        # console = get_console(width=width)
+        table = Table(row_styles=['dim', 'none'], box=box.SIMPLE)
         with Live(table, console=console, screen=True) as live:
             if width is not None and width > 0:
                 live.console.width = width
@@ -313,8 +353,18 @@ class Trainer:
                 loss = metrics.pop('loss').numpy()
                 record = {'step': step, 'dt': dt, 'loss': loss}
                 record.update(self.metrics_to_numpy(metrics))
-                if run is not None:
-                    run.log({'eval': record})
+                # if run is not None:
+                #     run.log({'wandb/eval': record})
+
+                if writer is not None:
+                    wandb.log({'wandb': {'eval': record}})
+                    # gstep = self.optimizer.iterations.numpy()
+                    update_summaries(step=step,
+                                     prefix='eval',
+                                     metrics=record)
+
+                if step % 50 == 0:
+                    writer.flush()
 
                 avgs = self.eval_history.update(record)
                 summary = summarize_dict(avgs)
@@ -334,42 +384,6 @@ class Trainer:
             'tables': tables,
         }
 
-    def train_step(
-            self,
-            inputs: tuple[Tensor, float],
-            first_step: bool = False
-    ) -> tuple[Tensor, dict]:
-        xinit, beta = inputs
-        with tf.GradientTape() as tape:
-            x_out, metrics = self.dynamics((to_u1(xinit), beta), training=True)
-            xprop = to_u1(metrics.pop('mc_states').proposed.x)
-            loss = self.loss_fn(x_init=xinit, x_prop=xprop, acc=metrics['acc'])
-
-            if self.aux_weight > 0:
-                yinit = to_u1(self.draw_x())
-                _, metrics_ = self.dynamics((yinit, beta), training=True)
-                yprop = to_u1(metrics_.pop('mc_states').proposed.x)
-                aux_loss = self.aux_weight * self.loss_fn(x_init=yinit,
-                                                          x_prop=yprop,
-                                                          acc=metrics_['acc'])
-                loss = (loss + aux_loss) / (1. + self.aux_weight)
-
-        tape = hvd.DistributedGradientTape(tape, compression=self.compression)
-        grads = tape.gradient(loss, self.dynamics.trainable_variables)
-        updates = zip(grads, self.dynamics.trainable_variables)
-        self.optimizer.apply_gradients(updates)
-        if first_step:
-            hvd.broadcast_variables(self.dynamics.variables, root_rank=0)
-            hvd.broadcast_variables(self.optimizer.variables(), root_rank=0)
-
-        record = {
-            'loss': loss,
-        }
-        for key, val in metrics.items():
-            record[key] = val
-
-        return to_u1(x_out), record
-
     def train(
             self,
             xinit: Tensor = None,
@@ -377,18 +391,20 @@ class Trainer:
             compile: bool = True,
             jit_compile: bool = False,
             save_x: bool = False,
-            width: int = 150,
+            width: int = None,
             train_dir: os.PathLike = None,
-            run: Any = None,
+            # run: Any = None,
     ) -> dict:
         """Train l2hmc Dynamics."""
+        if width is None:
+            width = max((150, int(os.environ.get('COLUMNS', 150))))
         if isinstance(skip, str):
             skip = [skip]
 
         if train_dir is None:
             train_dir = Path(os.getcwd()).joinpath('train')
 
-        x = self.draw_x() if xinit is None else tf.constant(xinit, TF_FLOAT)
+        x = self.draw_x() if xinit is None else tf.Variable(xinit, TF_FLOAT)
         assert isinstance(x, Tensor) and x.dtype == TF_FLOAT
         manager = self.setup_CheckpointManager(train_dir)
 
@@ -398,11 +414,13 @@ class Trainer:
         else:
             train_step = self.train_step
 
-        _ = self.dynamics((x, tf.constant(1.)), training=True)
-
-        writer = self.setup_FileWriter(train_dir)
+        x, _ = self.dynamics((x, tf.constant(1.)), training=True)
+        gstep = self.optimizer.iterations.numpy()
+        writer = self.setup_FileWriter(Path(train_dir))
         if self.rank == 0 and writer is not None:
             writer.set_as_default()
+            update_summaries(step=gstep, model=self.dynamics, prefix=None)
+            update_summaries(step=gstep, optimizer=self.optimizer, prefix=None)
 
         def should_log(epoch):
             return epoch % self.steps.log == 0 and self.rank == 0
@@ -416,18 +434,27 @@ class Trainer:
         summaries = []
         # screen = (not is_interactive())
         # console = get_console(width=width)
+        # if self.rank == 0:
+        #     wandb.log({'wandb': {'model': self.dynamics.variables}},
+        #               commit=False)
+        #     wandb.log({'wandb': {'optimizer': self.optimizer.variables()}},
+        #               commit=False)
+        #     wandb.log({'lr': K.get_value(self.optimizer.lr)})
+
+        gstep = 0
         for era in range(self.steps.nera):
             beta = tf.constant(self.schedule.betas[str(era)])
             if self.rank == 0:
+                console.width = width
                 console.rule(f'ERA: {era}, BETA: {beta.numpy()}')
-            table = Table(row_styles=['dim', 'none'])
+
+            table = Table(row_styles=['dim', 'none'], box=box.SIMPLE)
             with Live(table, console=console, screen=False) as live:
-                if width is not None and width > 0:
-                    live.console.width = width
+                live.console.width = width
                 estart = time.time()
                 for epoch in range(self.steps.nepoch):
-                    self.timer.start()
                     x, metrics = train_step((x, beta))  # type: ignore
+                    self.timer.start()
                     dt = self.timer.stop()
                     if should_print(epoch) or should_log(epoch):
                         if save_x:
@@ -437,19 +464,38 @@ class Trainer:
                             'era': era, 'epoch': epoch, 'beta': beta, 'dt': dt
                         }
                         record.update(self.metrics_to_numpy(metrics))
-                        if run is not None:
-                            run.log({'train': record})
+
+                        # if run is not None:
+                        #     run.log({'train': record})
+
+                        if writer is not None:
+                            wandb.log({'wandb': {'train': record}},
+                                      commit=False)
+                            gstep = self.optimizer.iterations.numpy()
+                            update_summaries(step=gstep,
+                                             prefix='train',
+                                             metrics=record,
+                                             model=self.dynamics,
+                                             optimizer=self.optimizer)
+                            writer.flush()
+
+                        wandb.log({'summaries/train': record})
                         avgs = self.history.update(record)
                         summary = summarize_dict(avgs)
-                        summaries.append(summary)
+                        # summaries.append(summary)
+                        # wandb.log(summary)
                         if epoch == 0:
                             table = add_columns(avgs, table)
+                            hvd.broadcast_variables(self.dynamics.variables,
+                                                    root_rank=0)
+                            hvd.broadcast_variables(self.optimizer.variables(),
+                                                    root_rank=0)
 
                         if should_print(epoch):
                             table.add_row(*[f'{v}' for _, v in avgs.items()])
 
             self.reduce_lr.on_epoch_end((era + 1) * self.steps.nepoch, {
-                'loss': metrics.get('loss', np.Inf),
+                'loss': metrics.get('loss', tf.constant(np.Inf)),
             })
             if self.rank == 0:
                 log.info(
@@ -474,6 +520,7 @@ class Trainer:
             'tables': tables,
         }
 
+    """
     def train_interactive(
             self,
             xinit: Tensor = None,
@@ -574,3 +621,4 @@ class Trainer:
             'history': self.history,
             'tables': tables,
         }
+    """
