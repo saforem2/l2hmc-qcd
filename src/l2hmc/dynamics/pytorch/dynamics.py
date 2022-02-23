@@ -365,8 +365,8 @@ class Dynamics(nn.Module):
         }
         if step is not None:
             metrics.update({
-                'xeps': self.xeps[str(step)].clone(),
-                'veps': self.veps[str(step)].clone(),
+                'xeps': self.xeps[str(step)].clone().detach(),
+                'veps': self.veps[str(step)].clone().detach(),
             })
 
         return metrics
@@ -629,7 +629,6 @@ class Dynamics(nn.Module):
     def _update_v_fwd(self, step: int, state: State) -> tuple[State, Tensor]:
         """Single v update in the forward direction"""
         eps = self.veps[str(step)]
-        # state.x.requires_grad_(True)
         force = self.grad_potential(state.x, state.beta)
         s, t, q = self._call_vnet(step, (state.x, force))
 
@@ -747,11 +746,8 @@ class Dynamics(nn.Module):
         """Compute the gradient of the potential function."""
         x.requires_grad_(True)
         s = self.potential_energy(x, beta)
-        s.requires_grad_(True)
-        # s.requires_grad_(True)
-        id = torch.ones(x.shape[0])
+        id = torch.ones(x.shape[0], device=x.device)
         dsdx, = torch.autograd.grad(s, x,
-                                    allow_unused=True,
                                     create_graph=create_graph,
-                                    grad_outputs=id, )
+                                    grad_outputs=id)
         return dsdx
