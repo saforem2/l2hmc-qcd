@@ -1,7 +1,7 @@
 """
 step_timer.py
 
-Contains implementation of StepTimer to automatically track timing data. 
+Contains implementation of StepTimer to automatically track timing data.
 """
 from __future__ import absolute_import, annotations, division, print_function
 import time
@@ -17,6 +17,7 @@ class StepTimer:
     def __init__(self, evals_per_step: int = 1) -> None:
         self.data = []
         self.t = time.time()
+        self.iterations = 0
         self.evals_per_step = evals_per_step
 
     def start(self) -> None:
@@ -25,6 +26,7 @@ class StepTimer:
     def stop(self) -> float:
         dt = time.time() - self.t
         self.data.append(dt)
+        self.iterations += 1
         return dt
 
     def get_eval_rate(self, evals_per_step: int = None) -> dict:
@@ -71,4 +73,10 @@ class StepTimer:
             mode: str = 'w',
             evals_per_step: int = None,
     ) -> dict:
-        pass
+        outfile = Path(outdir).joinpath('step_timer.csv')
+        df = self.save_data(outfile=outfile, mode=mode)
+        data = self.write_eval_rate(outdir=outdir,
+                                    evals_per_step=evals_per_step)
+        data.update({'df': df})
+
+        return data
