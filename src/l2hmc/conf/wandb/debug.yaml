@@ -1,5 +1,5 @@
 ---
 setup:
-    project: l2hmc-qcd
+    project: l2hmc-qcd-debug
     entity: saforem2
     mode: online
