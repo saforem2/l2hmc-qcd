@@ -39,6 +39,8 @@ from l2hmc.utils.tensorflow.history import History
 tf.autograph.set_verbosity(0)
 os.environ['AUTOGRAPH_VERBOSITY'] = '0'
 
+# wandb.Histogram
+
 
 log = logging.getLogger(__name__)
 
@@ -145,7 +147,9 @@ class Trainer:
         self.history = History(steps=steps)
         self.eval_history = History()
         # evals_per_step = self.dynamics.config.nleapfrog * steps.log
+        evals_per_step = self.dynamics.config.nleapfrog
         self.timer = StepTimer(evals_per_step=evals_per_step)
+        self.eval_timer = StepTimer(evals_per_step=evals_per_step)
 
     def setup_FileWriter(self, outdir: os.PathLike):
         """Setup file writer for saving TensorBoard summaries."""
@@ -349,25 +353,20 @@ class Trainer:
                 live.console.width = width
 
             for step in range(self.steps.test):
-                self.timer.start()
+                self.eval_timer.start()
                 x, metrics = eval_step((x, beta))  # type: ignore
-                dt = self.timer.stop()
+                dt = self.eval_timer.stop()
                 xarr.append(x)
                 loss = metrics.pop('loss').numpy()
                 record = {'step': step, 'dt': dt, 'loss': loss}
                 record.update(self.metrics_to_numpy(metrics))
-                # if run is not None:
-                #     run.log({'wandb/eval': record})
-
                 if writer is not None:
-                    wandb.log({'wandb': {'eval': record}})
-                    # gstep = self.optimizer.iterations.numpy()
                     update_summaries(step=step,
                                      prefix='eval',
                                      metrics=record)
+                    writer.flush()
 
-                if step % 50 == 0 and writer is not None:
-                    writer.flush()  # type: ignore
+                    wandb.log({'wandb/eval': record})
 
                 avgs = self.eval_history.update(record)
                 summary = summarize_dict(avgs)
@@ -386,6 +385,18 @@ class Trainer:
             'summaries': summaries,
             'tables': tables,
         }
+
+    def should_log(self, epoch):
+        return (
+            epoch % self.steps.log == 0
+            and self.rank == 0
+        )
+
+    def should_print(self, epoch):
+        return (
+            epoch % self.steps.print == 0
+            and self.rank == 0
+        )
 
     def train(
             self,
@@ -422,8 +433,6 @@ class Trainer:
         writer = self.setup_FileWriter(Path(train_dir))
         if self.rank == 0 and writer is not None:
             writer.set_as_default()
-            # update_summaries(step=gstep, model=self.dynamics, prefix=None)
-            # update_summaries(step=gstep, optimizer=self.optimizer, prefix=None)
 
         def should_log(epoch):
             return epoch % self.steps.log == 0 and self.rank == 0
@@ -435,16 +444,8 @@ class Trainer:
         tables = {}
         metrics = {}
         summaries = []
-        # screen = (not is_interactive())
-        # console = get_console(width=width)
-        # if self.rank == 0:
-        #     wandb.log({'wandb': {'model': self.dynamics.variables}},
-        #               commit=False)
-        #     wandb.log({'wandb': {'optimizer': self.optimizer.variables()}},
-        #               commit=False)
-        #     wandb.log({'lr': K.get_value(self.optimizer.lr)})
 
-        # gstep = 0
+        gstep = self.optimizer.iterations.numpy()
         for era in range(self.steps.nera):
             beta = tf.constant(self.schedule.betas[str(era)])
             if self.rank == 0:
@@ -453,12 +454,15 @@ class Trainer:
 
             table = Table(row_styles=['dim', 'none'], box=box.SIMPLE)
             with Live(table, console=console, screen=False) as live:
-                live.console.width = width
+                if width != 0:
+                    live.console.width = width
+
                 estart = time.time()
                 for epoch in range(self.steps.nepoch):
                     self.timer.start()
                     x, metrics = train_step((x, beta))  # type: ignore
                     dt = self.timer.stop()
+                    gstep += 1
                     if should_print(epoch) or should_log(epoch):
                         if save_x:
                             xarr.append(x.numpy())  # type: ignore
@@ -467,16 +471,14 @@ class Trainer:
                             'era': era, 'epoch': epoch, 'beta': beta, 'dt': dt
                         }
                         record.update(self.metrics_to_numpy(metrics))
-
                         if writer is not None:
-                            wandb.log({'wandb': {'train': record}})
-                            gstep = self.optimizer.iterations.numpy()
                             update_summaries(step=gstep,
                                              prefix='train',
                                              metrics=record,
                                              model=self.dynamics,
                                              optimizer=self.optimizer)
                             writer.flush()
+                            wandb.log({'wandb/train': record})
 
                         avgs = self.history.update(record)
                         summary = summarize_dict(avgs)
