@@ -9,8 +9,8 @@ from math import pi as PI
 import os
 from pathlib import Path
 import time
-from typing import Callable
-import wandb
+from typing import Callable, Any
+# import wandb
 
 import horovod.tensorflow as hvd
 import numpy as np
@@ -75,6 +75,14 @@ def add_columns(avgs: dict, table: Table) -> Table:
             table.add_column(str(key),
                              justify='center',
                              style='magenta')
+        elif key == 'dQint':
+            table.add_column(str(key),
+                             justify='center',
+                             style='cyan')
+        elif key == 'dQsin':
+            table.add_column(str(key),
+                             justify='center',
+                             style='yellow')
         else:
             table.add_column(str(key),
                              justify='center')
@@ -262,6 +270,9 @@ class Trainer:
                                       training=False)
         xprop = to_u1(metrics.pop('mc_states').proposed.x)
         loss = self.loss_fn(x_init=xinit, x_prop=xprop, acc=metrics['acc'])
+        lmetrics = self.loss_fn.lattice_metrics(xinit=to_u1(xinit),
+                                                xout=to_u1(xout))
+        metrics.update(lmetrics)
         metrics.update({'loss': loss})
 
         return to_u1(xout), metrics
@@ -275,7 +286,7 @@ class Trainer:
         record = {'loss': None}
         with tf.GradientTape() as tape:
             tape.watch(xinit)
-            x_out, metrics = self.dynamics((to_u1(xinit), beta), training=True)
+            xout, metrics = self.dynamics((to_u1(xinit), beta), training=True)
             xprop = to_u1(metrics.pop('mc_states').proposed.x)
             loss = self.loss_fn(x_init=xinit, x_prop=xprop, acc=metrics['acc'])
 
@@ -295,11 +306,16 @@ class Trainer:
         grads = tape.gradient(loss, self.dynamics.trainable_variables)
         updates = zip(grads, self.dynamics.trainable_variables)
         self.optimizer.apply_gradients(updates)
+
+        # bconst = tf.cast(beta, dtype=TF_FLOAT)
+        lmetrics = self.loss_fn.lattice_metrics(xinit=to_u1(xinit),
+                                                xout=to_u1(xout))
+        record.update(lmetrics)
         # if first_step:
         #     hvd.broadcast_variables(self.dynamics.variables, root_rank=0)
         #     hvd.broadcast_variables(self.optimizer.variables(), root_rank=0)
 
-        return to_u1(x_out), record
+        return to_u1(xout), record
 
     def eval(
             self,
@@ -310,7 +326,8 @@ class Trainer:
             jit_compile: bool = False,
             width: int = 150,
             eval_dir: os.PathLike = None,
-            # run: Any = None,
+            run: Any = None,
+            writer: Any = None,
     ) -> dict:
         """Evaluate model."""
         if isinstance(skip, str):
@@ -329,8 +346,9 @@ class Trainer:
         else:
             x = tf.Variable(x, dtype=TF_FLOAT)
 
-        writer = self.setup_FileWriter(Path(eval_dir))
-        if self.rank == 0 and writer is not None:
+        # writer = self.setup_FileWriter(Path(eval_dir))
+        # if self.rank == 0 and writer is not None:
+        if writer is not None:
             writer.set_as_default()
 
         assert isinstance(x, Tensor) and x.dtype == TF_FLOAT
@@ -348,6 +366,8 @@ class Trainer:
         tables = {}
         summaries = []
         table = Table(row_styles=['dim', 'none'], box=box.SIMPLE)
+        # width = max((width, int(os.environ.get("COLUMNS", 150))))
+        nprint = self.steps.test // 20
         with Live(table, console=console, screen=True) as live:
             if width is not None and width > 0:
                 live.console.width = width
@@ -358,7 +378,12 @@ class Trainer:
                 dt = self.eval_timer.stop()
                 xarr.append(x)
                 loss = metrics.pop('loss').numpy()
-                record = {'step': step, 'dt': dt, 'loss': loss}
+                dQint = metrics.pop('dQint').numpy()
+                dQsin = metrics.pop('dQsin').numpy()
+                record = {
+                    'step': step, 'dt': dt, 'loss': loss,
+                    'dQint': dQint, 'dQsin': dQsin,
+                }
                 record.update(self.metrics_to_numpy(metrics))
                 if writer is not None:
                     update_summaries(step=step,
@@ -366,7 +391,8 @@ class Trainer:
                                      metrics=record)
                     writer.flush()
 
-                    wandb.log({'wandb/eval': record})
+                if run is not None:
+                    run.log({'wandb/eval': record})
 
                 avgs = self.eval_history.update(record)
                 summary = summarize_dict(avgs)
@@ -374,7 +400,7 @@ class Trainer:
                 if step == 0:
                     table = add_columns(avgs, table)
 
-                if step % self.steps.print == 0:
+                if step % nprint == 0:
                     table.add_row(*[f'{v:5}' for _, v in avgs.items()])
 
             tables[str(0)] = table
@@ -407,7 +433,8 @@ class Trainer:
             save_x: bool = False,
             width: int = None,
             train_dir: os.PathLike = None,
-            # run: Any = None,
+            run: Any = None,
+            writer: Any = None,
     ) -> dict:
         """Train l2hmc Dynamics."""
         if width is None:
@@ -430,15 +457,10 @@ class Trainer:
 
         x, _ = self.dynamics((x, tf.constant(1.)), training=True)
         # gstep = self.optimizer.iterations.numpy()
-        writer = self.setup_FileWriter(Path(train_dir))
-        if self.rank == 0 and writer is not None:
+        # writer = self.setup_FileWriter(Path(train_dir))
+        # if self.rank == 0 and writer is not None:
+        if writer is not None:
             writer.set_as_default()
-
-        def should_log(epoch):
-            return epoch % self.steps.log == 0 and self.rank == 0
-
-        def should_print(epoch):
-            return epoch % self.steps.print == 0 and self.rank == 0
 
         xarr = []
         tables = {}
@@ -449,8 +471,8 @@ class Trainer:
         for era in range(self.steps.nera):
             beta = tf.constant(self.schedule.betas[str(era)])
             if self.rank == 0:
-                console.width = width
                 console.rule(f'ERA: {era}, BETA: {beta.numpy()}')
+                console.width = width
 
             table = Table(row_styles=['dim', 'none'], box=box.SIMPLE)
             with Live(table, console=console, screen=False) as live:
@@ -463,7 +485,7 @@ class Trainer:
                     x, metrics = train_step((x, beta))  # type: ignore
                     dt = self.timer.stop()
                     gstep += 1
-                    if should_print(epoch) or should_log(epoch):
+                    if self.should_print(epoch) or self.should_log(epoch):
                         if save_x:
                             xarr.append(x.numpy())  # type: ignore
 
@@ -478,7 +500,9 @@ class Trainer:
                                              model=self.dynamics,
                                              optimizer=self.optimizer)
                             writer.flush()
-                            wandb.log({'wandb/train': record})
+
+                        if run is not None:
+                            run.log({'wandb/train': record})
 
                         avgs = self.history.update(record)
                         summary = summarize_dict(avgs)
@@ -490,8 +514,16 @@ class Trainer:
                             hvd.broadcast_variables(self.optimizer.variables(),
                                                     root_rank=0)
 
-                        if should_print(epoch):
+                        if self.should_print(epoch):
                             table.add_row(*[f'{v}' for _, v in avgs.items()])
+                if self.rank == 0:
+                    live.console.log(
+                        f'Era {era} took: {time.time() - estart:<5g}s',
+                    )
+                    live.console.log(
+                        f'Avgs over last era:\n'
+                        f'{self.history.era_summary(era)}',
+                    )
 
             self.reduce_lr.on_epoch_end((era + 1) * self.steps.nepoch, {
                 'loss': metrics.get('loss', tf.constant(np.Inf)),
@@ -502,13 +534,6 @@ class Trainer:
                 )
                 manager.save()
                 self.dynamics.save_networks(train_dir)
-
-                log.info(
-                    f'Era {era} took: {time.time()-estart:.5g}s'
-                )
-                log.info(
-                    f'Avgs:\n{self.history.era_summary(era)}'
-                )
 
             tables[str(era)] = table
 
