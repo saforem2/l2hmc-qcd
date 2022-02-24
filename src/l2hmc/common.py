@@ -8,8 +8,6 @@ import datetime
 import logging
 import os
 from pathlib import Path
-from typing import Any
-import wandb
 
 import joblib
 import numpy as np
@@ -66,153 +64,6 @@ def setup_annealing_schedule(cfg: DictConfig) -> AnnealingSchedule:
     sched = AnnealingSchedule(beta_init, beta_final)
     sched.setup(steps)
     return sched
-
-
-def setup_pytorch(configs: dict) -> dict:
-    import torch
-    from accelerate import Accelerator
-    accelerator = Accelerator()
-
-    from l2hmc.dynamics.pytorch.dynamics import Dynamics
-    from l2hmc.lattice.pytorch.lattice import Lattice
-    from l2hmc.network.pytorch.network import NetworkFactory
-    from l2hmc.trainers.pytorch.trainer import Trainer
-    from l2hmc.loss.pytorch.loss import LatticeLoss
-    RANK = 0 if accelerator.is_main_process else None
-
-    steps = configs['steps']  # type: Steps
-    schedule = configs['schedule']  # type: AnnealingSchedule
-    loss_config = configs['loss_config']  # type: LossConfig
-    net_weights = configs['net_weights']  # type: NetWeights
-    network_config = configs['network_config']  # type: NetworkConfig
-    conv_config = configs.get('conv_config', None)  # type: ConvolutionConfig
-    dynamics_config = configs['dynamics_config']  # type: DynamicsConfig
-
-    xdim = dynamics_config.xdim
-    xshape = dynamics_config.xshape
-
-    input_spec = InputSpec(xshape=xshape,
-                           vnet={'v': [xdim, ], 'x': [xdim, ]},
-                           xnet={'v': [xdim, ], 'x': [xdim, 2]})
-    network_factory = NetworkFactory(input_spec=input_spec,
-                                     net_weights=net_weights,
-                                     network_config=network_config,
-                                     conv_config=conv_config)
-    lattice = Lattice(tuple(xshape))
-    dynamics = Dynamics(config=dynamics_config,
-                        potential_fn=lattice.action,
-                        network_factory=network_factory)
-    loss_fn = LatticeLoss(lattice=lattice, loss_config=loss_config)
-    accelerator = Accelerator()
-
-    optimizer = torch.optim.Adam(dynamics.parameters())
-    dynamics = dynamics.to(accelerator.device)
-    dynamics, optimizer = accelerator.prepare(dynamics, optimizer)
-    trainer = Trainer(steps=steps,
-                      lr_config=lr_config,
-                      loss_fn=loss_fn,
-                      dynamics=dynamics,
-                      schedule=schedule,
-                      optimizer=optimizer,
-                      accelerator=accelerator,
-                      aux_weight=loss_config.aux_weight)
-
-    return {
-        'rank': RANK,
-        'lattice': lattice,
-        'loss_fn': loss_fn,
-        'dynamics': dynamics,
-        'trainer': trainer,
-        'optimizer': optimizer,
-        'accelerator': accelerator,
-    }
-
-
-def setup_tensorflow(configs: dict) -> dict:
-    from l2hmc.dynamics.tensorflow.dynamics import Dynamics
-    from l2hmc.lattice.tensorflow.lattice import Lattice
-    from l2hmc.loss.tensorflow.loss import LatticeLoss
-    from l2hmc.network.tensorflow.network import NetworkFactory
-    from l2hmc.trainers.tensorflow.trainer import Trainer
-    import tensorflow as tf
-
-    steps = configs['steps']
-    loss_config = configs['loss_config']  # type: LossConfig
-    net_weights = configs['net_weights']  # type: NetWeights
-    network_config = configs['network_config']  # type: NetworkConfig
-    conv_config = configs.get('conv_config', None)  # type: ConvolutionConfig
-    dynamics_config = configs['dynamics_config']  # type: DynamicsConfig
-    schedule = configs['schedule']  # type: AnnealingSchedule
-
-    xdim = dynamics_config.xdim
-    xshape = dynamics_config.xshape
-
-    input_spec = InputSpec(xshape=xshape,
-                           vnet={'v': [xdim, ], 'x': [xdim, ]},
-                           xnet={'v': [xdim, ], 'x': [xdim, 2]})
-    network_factory = NetworkFactory(input_spec=input_spec,
-                                     net_weights=net_weights,
-                                     network_config=network_config,
-                                     conv_config=conv_config)
-    lattice = Lattice(tuple(xshape))
-    dynamics = Dynamics(config=dynamics_config,
-                        potential_fn=lattice.action,
-                        network_factory=network_factory)
-    loss_fn = LatticeLoss(lattice=lattice, loss_config=loss_config)
-    optimizer = tf.keras.optimizers.Adam()
-    trainer = Trainer(steps=steps,
-                      loss_fn=loss_fn,
-                      schedule=schedule,
-                      dynamics=dynamics,
-                      optimizer=optimizer,
-                      aux_weight=loss_config.aux_weight)
-
-    return {
-        'lattice': lattice,
-        'loss_fn': loss_fn,
-        'dynamics': dynamics,
-        'trainer': trainer,
-        'optimizer': optimizer,
-    }
-
-
-def setup_common(cfg: DictConfig) -> dict:
-    steps = Steps(**cfg.steps)
-    loss_config = LossConfig(**cfg.loss)
-    net_weights = NetWeights(**cfg.net_weights)
-    network_config = NetworkConfig(**cfg.network)
-    dynamics_config = DynamicsConfig(**cfg.dynamics)
-    if len(cfg.conv.keys()) > 0:
-        conv_config = ConvolutionConfig(**cfg.conv)
-    else:
-        conv_config = None
-
-    beta_init = cfg.get('beta_init', None)
-    beta_final = cfg.get('beta_final', None)
-    if beta_init is None:
-        beta_init = 1.
-        log.warn(
-            'beta_init not specified!'
-            f'using default: beta_init = {beta_init}'
-        )
-    if beta_final is None:
-        beta_final = beta_init
-        log.warn(
-            'beta_final not specified!'
-            f'using beta_final = beta_init = {beta_init}'
-        )
-
-    schedule = AnnealingSchedule(beta_init, beta_final, steps)
-
-    return {
-        'steps': steps,
-        'schedule': schedule,
-        'loss_config': loss_config,
-        'net_weights': net_weights,
-        'network_config': network_config,
-        'dynamics_config': dynamics_config,
-        'conv_config': conv_config,
-    }
 
 
 def save_dataset(
@@ -329,7 +180,9 @@ def plot_dataset(
         fig.savefig(outpng.as_posix(), dpi=500, bbox_inches='tight')
         pngs[tag].update({key: outpng.as_posix()})
 
-    wandb.log(pngs)
+    # for tag, fname in pngs.items():
+    #     wandb.log({'pngs': wandb.Image(fname)})
+
     _ = make_ridgeplots(dataset, num_chains=nchains, out_dir=outdir)
 
 
@@ -380,7 +233,8 @@ def analyze_dataset(
 
                 metrics_np[key] = val
 
-            wandb.log({prefix: {'lattice': metrics_np}})
+            # wandb.log({'lattice': {prefix: metrics_np}}, step=idx+1)
+            # wandb.log({prefix: {'lattice': metrics_np}}, step=idx)
 
         intQ = np.array(history['intQ'])
         sinQ = np.array(history['sinQ'])
@@ -388,6 +242,8 @@ def analyze_dataset(
         dQsin = np.abs(sinQ[1:] - sinQ[:-1])  # type: ignore
         history['dQint'] = [intQ[0], *dQint]
         history['dQsin'] = [sinQ[0], *dQsin]
+        # wandb.summary({prefix: {'dQint': history['']}})
+        # wandb.log({'lattice': {prefix: history}})
 
         xlabel = 'Step'
         if prefix == 'train':
