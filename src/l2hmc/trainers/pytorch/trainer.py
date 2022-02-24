@@ -9,7 +9,7 @@ import logging
 import os
 from pathlib import Path
 import time
-from typing import Any, Callable
+from typing import Callable
 
 from accelerate import Accelerator
 from accelerate.utils import extract_model_from_parallel
@@ -79,7 +79,7 @@ class Trainer:
             keep: str | list[str] = None,
             skip: str | list[str] = None,
             aux_weight: float = 0.0,
-            evals_per_step: int = 1,
+            # evals_per_step: int = 1,
             dynamics_config: DynamicsConfig = None,
     ) -> None:
         self.steps = steps
@@ -105,9 +105,10 @@ class Trainer:
 
         self.history = BaseHistory(steps=steps)
         self.eval_history = BaseHistory()
-        evals_per_step = self.nlf * steps.log
+        # evals_per_step = self.nlf * steps.log
         # evals_per_step = self.dynamics.config.nleapfrog * steps.log
-        self.timer = StepTimer(evals_per_step=evals_per_step)
+        self.timer = StepTimer(evals_per_step=self.nlf)
+        self.eval_timer = StepTimer(evals_per_step=self.nlf)
 
     def draw_x(self) -> Tensor:
         x = random_angle(self.xshape)
@@ -169,7 +170,6 @@ class Trainer:
             skip: str | list[str] = None,
             width: int = 150,
             eval_dir: os.PathLike = None,
-            run: Any = None,
     ) -> dict:
         summaries = []
         self.dynamics.eval()
@@ -189,44 +189,41 @@ class Trainer:
         table = Table(row_styles=['dim', 'none'], box=box.SIMPLE)
         if eval_dir is None:
             eval_dir = Path(os.getcwd()).joinpath('eval')
-        # screen = (not is_interactive())
 
         writer = self.setup_SummaryWriter(eval_dir)
-        # if self.accelerator.is_local_main_process and writer is:
-        #     writer = self.setup_SummaryWriter(eval_dir)
-
-        with Live(table, console=console, screen=False) as live:
+        with Live(table, console=console, screen=True) as live:
             if width is not None and width > 0:
                 live.console.width = width
 
             for step in range(self.steps.test):
-                self.timer.start()
+                self.eval_timer.start()
                 x, metrics = self.eval_step((x, beta))
-                dt = self.timer.stop()
+                dt = self.eval_timer.stop()
                 xarr.append(x)
                 loss = metrics.pop('loss')
                 record = {'step': step, 'dt': dt, 'loss': loss}
                 record.update(self.metrics_to_numpy(metrics))
-                if run is not None:
-                    run.log({'eval': record})
-
+                # if self.accelerator.is_local_main_process:
                 if writer is not None:
-                    wandb.log({'wandb': {'eval': record}})
                     update_summaries(step=step,
                                      prefix='eval',
                                      metrics=record,
                                      writer=writer)
+                    writer.flush()
+                    wandb.log({'wandb/eval': record})
 
                 avgs = self.eval_history.update(record)
                 summary = summarize_dict(avgs)
                 summaries.append(summary)
                 if step == 0:
                     table = add_columns(avgs, table)
-                # if step % self.steps.print == 0:
-                if self.should_print(step):
+
+                if step % self.steps.print == 0:
                     table.add_row(*[f'{v:5}' for _, v in avgs.items()])
 
             tables[str(0)] = table
+            if writer is not None:
+                writer.close()
 
         return {
             'xarr': xarr,
@@ -330,15 +327,15 @@ class Trainer:
             x = x.reshape(x.shape[0], -1)
 
         writer = self.setup_SummaryWriter(train_dir)
-        if self.accelerator.is_local_main_process and writer is not None:
-            dynamics = extract_model_from_parallel(self.dynamics)
-            writer.add_graph(dynamics, input_to_model=[(x, torch.tensor(1.))])
-            # model_summary(self.dynamics, input_data=[(x, torch.tensor(1.))])
-            # writer.add_graph(self.dynamics,
-            #                  # [x, torch.tensor(1.0)],
-            #                  verbose=True,
-            #                  use_strict_trace=False)
-            # update_summaries(writer=writer, step=0, model=self.dynamics)
+        # if self.accelerator.is_local_main_process and writer is not None:
+        #     dynamics = extract_model_from_parallel(self.dynamics)
+        #     # writer.add_graph(dynamics, use_strict_trace=False)
+        #                      # input_to_model=[(x, torch.tensor(1.))])
+        #     # writer.add_graph(self.dynamics,
+        #     #                  # [x, torch.tensor(1.0)],
+        #     #                  verbose=True,
+        #     #                  use_strict_trace=False)
+        #     # update_summaries(writer=writer, step=0, model=self.dynamics)
 
         era = 0
         epoch = 0
@@ -346,10 +343,12 @@ class Trainer:
         tables = {}
         metrics = {}
         summaries = []
+        gstep = 0
         for era in range(self.steps.nera):
             beta = self.schedule.betas[str(era)]
             if self.accelerator.is_local_main_process:
                 console.rule(f'ERA: {era}, BETA: {beta}')
+
             table = Table(row_styles=['dim', 'none'], box=box.SIMPLE)
             with Live(table, console=console, screen=False) as live:
                 if width != 0:
@@ -359,6 +358,7 @@ class Trainer:
                 for epoch in range(self.steps.nepoch):
                     self.timer.start()
                     x, metrics = self.train_step((x, beta))
+                    gstep += 1
                     dt = self.timer.stop()
                     if self.should_print(epoch) or self.should_log(epoch):
                         if save_x:
@@ -370,26 +370,28 @@ class Trainer:
                         # Update metrics with train step metrics, tmetrics
                         record.update(self.metrics_to_numpy(metrics))
                         if writer is not None:
-                            gstep = self.optimizer.state[
-                                self.optimizer.param_groups[0]['params'][-1]
-                            ]['step']
-                            wandb.log({'wandb': {'train': record}})
-                            dynamics = extract_model_from_parallel(
-                                self.dynamics
-                            )
+                            # dynamics = extract_model_from_parallel(
+                            #     self.dynamics
+                            # )
                             update_summaries(writer=writer,
-                                             model=dynamics,  # type: ignore
+                                             # model=dynamics,  # type:ignore
                                              step=gstep,
                                              metrics=record,
                                              prefix='train')
+                            writer.flush()
+                            wandb.log({'wandb/train': record})
 
                         avgs = self.history.update(record)
+                        # wandb.log({'train/avgs': avgs})
                         summary = summarize_dict(avgs)
                         summaries.append(summary)
                         if epoch == 0:
                             table = add_columns(avgs, table)
                         if self.should_print(epoch):
                             table.add_row(*[f'{v}' for _, v in avgs.items()])
+
+            if writer is not None:
+                writer.close()
 
             if self.accelerator.is_local_main_process:
                 self.save_ckpt(era, epoch, train_dir, loss=metrics['loss'])
