@@ -616,6 +616,9 @@ def make_ridgeplots(
     """Make ridgeplots."""
     data = {}
     # with sns.axes_style('white', rc={'axes.facecolor': (0, 0, 0, 0)}):
+    sns.set(style='white', palette='bright', context='paper')
+    plt.rcParams['axes.facecolor'] = (0, 0, 0, 0.0)
+    plt.rcParams['figure.facecolor'] = (0, 0, 0, 0.0)
     for key, val in dataset.data_vars.items():
         if 'leapfrog' in val.coords.dims:
             lf_data = {
