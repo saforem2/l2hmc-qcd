@@ -40,6 +40,26 @@ class LatticeLoss:
             return self.mixed_loss(qloss, self.config.charge_weight).mean(0)
         return (-qloss / self.config.charge_weight).mean(0)
 
+    def lattice_metrics(
+            self,
+            xinit: Tensor,
+            xout: Tensor = None,
+            beta: float = None,
+    ) -> dict[str, Tensor]:
+        metrics = self.lattice.calc_metrics(x=xinit, beta=beta)
+        if xout is not None:
+            qint_init = metrics['intQ']
+            qsin_init = metrics['sinQ']
+            wl_out = self.lattice.wilson_loops(x=xout)
+            qint_out = self.lattice._int_charges(wloops=wl_out)
+            qsin_out = self.lattice._sin_charges(wloops=wl_out)
+            metrics.update({
+                'dQint': (qint_out - qint_init).abs(),
+                'dQsin': (qsin_out - qsin_init).abs(),
+            })
+
+        return metrics
+
     def calc_loss(self, x_init: Tensor, x_prop: Tensor, acc: Tensor) -> Tensor:
         wl_init = self.lattice.wilson_loops(x=x_init)
         wl_prop = self.lattice.wilson_loops(x=x_prop)

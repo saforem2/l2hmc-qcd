@@ -6,7 +6,6 @@ Contains tensorflow implementation of loss function for training L2HMC sampler.
 from __future__ import absolute_import, annotations, division, print_function
 
 import tensorflow as tf
-import numpy as np
 
 from l2hmc.configs import LossConfig
 from l2hmc.lattice.tensorflow.lattice import Lattice
@@ -50,6 +49,23 @@ class LatticeLoss:
                 self.mixed_loss(qloss, self.charge_weight), axis=0
             )
         return tf.reduce_mean(-qloss / self.charge_weight, axis=0)
+
+    def lattice_metrics(
+            self,
+            xinit: Tensor,
+            xout: Tensor = None,
+    ) -> dict[str, Tensor]:
+        metrics = self.lattice.calc_metrics(x=xinit)
+        if xout is not None:
+            wl_out = self.lattice.wilson_loops(x=xout)
+            qint_out = self.lattice._int_charges(wloops=wl_out)
+            qsin_out = self.lattice._sin_charges(wloops=wl_out)
+            metrics.update({
+                'dQint': tf.math.abs(tf.subtract(qint_out, metrics['intQ'])),
+                'dQsin': tf.math.abs(tf.subtract(qsin_out, metrics['sinQ']))
+            })
+
+        return metrics
 
     def calc_loss(self, x_init: Tensor, x_prop: Tensor, acc: Tensor) -> Tensor:
         wl_init = self.lattice.wilson_loops(x=x_init)
