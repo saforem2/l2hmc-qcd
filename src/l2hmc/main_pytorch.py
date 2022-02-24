@@ -9,12 +9,12 @@ import os
 from pathlib import Path
 
 from accelerate import Accelerator
-from accelerate.utils import extract_model_from_parallel
+# from accelerate.utils import extract_model_from_parallel
 import hydra
 from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
 import torch
-from torchinfo import summary as model_summary
+# from torchinfo import summary as model_summary
 # from torch.distributed.elastic.multiprocessing.errors import record
 
 from l2hmc.common import analyze_dataset, save_logs
@@ -133,14 +133,14 @@ def train(cfg: DictConfig) -> dict:
     objs = setup(cfg)
     trainer = objs['trainer']  # type: Trainer
     accelerator = objs['accelerator']  # type: Accelerator
-    dynamics = extract_model_from_parallel(objs['dynamics'])
+    # dynamics = extract_model_from_parallel(objs['dynamics'])
 
     outdir = Path(cfg.get('outdir', os.getcwd()))
     train_dir = outdir.joinpath('train')
     train_dir.mkdir(exist_ok=True, parents=True)
-    state = objs['dynamics'].random_state(1.0)
-    x = torch.tensor(state.x, requires_grad=True)
-    model_summary(dynamics, depth=5)  # , input_data=[(x, state.beta)])
+    # state = objs['dynamics'].random_state(1.0)
+    # x = torch.tensor(state.x, requires_grad=True)
+    # model_summary(dynamics, depth=5)  # , input_data=[(x, state.beta)])
 
     kwargs = {
         'save_x': cfg.get('save_x', False),
@@ -149,7 +149,7 @@ def train(cfg: DictConfig) -> dict:
     if accelerator.is_local_main_process:
         id = generate_id()
         gnames = ['pytorch']
-        wandb.tensorboard.patch(root_logdir=outdir.as_posix(), pytorch=True)
+        wandb.tensorboard.patch(root_logdir=outdir.as_posix())
         wcuda = torch.cuda.is_available()
         gnames.append('gpu') if wcuda else gnames.append('cpu')
         if torch.cuda.device_count() > 1:
@@ -159,42 +159,28 @@ def train(cfg: DictConfig) -> dict:
             gnames.append('debug')
 
         group = '/'.join(gnames)
-        run = wandb.init(id=id,
-                         group=group,
-                         resume='allow',
-                         sync_tensorboard=True,
-                         # job_type='train',
-                         entity=cfg.wandb.setup.entity,
-                         project=cfg.wandb.setup.project,
-                         settings=wandb.Settings(start_method='thread'),
-                         config=OmegaConf.to_container(cfg, resolve=True))
+        wandb.init(id=id,
+                   group=group,
+                   resume='allow',
+                   # magic=True,
+                   # sync_tensorboard=True,
+                   # pytorch=True,
+                   # job_type='train',
+                   entity=cfg.wandb.setup.entity,
+                   project=cfg.wandb.setup.project,
+                   settings=wandb.Settings(start_method='thread'),
+                   config=OmegaConf.to_container(cfg, resolve=True))
+        # run.watch(objs['dynamics'], objs['loss_fn'], log='all')
 
-        run.watch(objs['dynamics'], objs['loss_fn'], log='all')
-    else:
-        run = None
-
-    # outdir = Path(cfg.get('outdir', os.getcwd()))
-    # day = get_timestamp('%Y-%m-%d')
-    # time = get_timestamp('%H-%M-%S')
-    # outdir = outdir.joinpath('pytorch').joinpath(day, time)
-    # train_dir = outdir.joinpath('train')
-    train_output = trainer.train(run=run, train_dir=train_dir, **kwargs)
-
-    # outdir = Path(cfg.get('outdir', os.getcwd()))
+    train_output = trainer.train(train_dir=train_dir, **kwargs)
     output = {
-        'setup': setup,
+        'setup': objs,
         'outdir': outdir,
         'train': train_output,
     }
-    nchains = min((cfg.dynamics.xshape[0], cfg.dynamics.nleapfrog))
     if accelerator.is_local_main_process:
-        # day = get_timestamp('%Y-%m-%d')
-        # time = get_timestamp('%H-%M-%S')
-        # outdir = outdir.joinpath('pytorch', day, time)
-        # train_dir = outdir.joinpath('train')
-
         train_dset = train_output['history'].get_dataset()
-
+        nchains = min((cfg.dynamics.xshape[0], cfg.dynamics.nleapfrog))
         analyze_dataset(train_dset,
                         prefix='train',
                         nchains=nchains,
@@ -210,12 +196,12 @@ def train(cfg: DictConfig) -> dict:
                       tables=train_output['tables'],
                       summaries=train_output['summaries'])
 
-    if accelerator.is_local_main_process:
+        # if accelerator.is_local_main_process:
         _ = kwargs.pop('save_x', False)
         therm_frac = cfg.get('therm_frac', 0.2)
 
         eval_dir = outdir.joinpath('eval')
-        eval_output = trainer.eval(run=run, **kwargs)
+        eval_output = trainer.eval(**kwargs)
         eval_dset = eval_output['history'].get_dataset(therm_frac=therm_frac)
         analyze_dataset(eval_dset,
                         prefix='eval',
@@ -235,10 +221,6 @@ def train(cfg: DictConfig) -> dict:
 
         # erun.finish()
         output.update({'eval': eval_output})
-
-    if run is not None:
-        run.save()
-        run.finish()
 
     return output
 

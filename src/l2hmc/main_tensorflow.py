@@ -104,19 +104,22 @@ def train(cfg: DictConfig) -> dict:
         wandb.init(id=id,
                    group=group,
                    resume='allow',
+                   # magic=True,
                    sync_tensorboard=True,
                    entity=cfg.wandb.setup.entity,
                    project=cfg.wandb.setup.project,
                    settings=wandb.Settings(start_method='thread'),
                    config=OmegaConf.to_container(cfg, resolve=True))
         # run.watch(objs['dynamics'], objs['loss_fn'])
-    # else:
-    #     run = None
 
     train_output = trainer.train(train_dir=train_dir, **kwargs)
-    output = {'setup': objs, 'train': train_output}
+    output = {
+        'setup': objs,
+        'outdir': outdir,
+        'train': train_output,
+    }
     if objs['rank'] == 0:
-        outdir = Path(cfg.get('outdir', os.getcwd()))
+        # outdir = Path(cfg.get('outdir', os.getcwd()))
         train_dataset = train_output['history'].get_dataset()
         nchains = min((cfg.dynamics.xshape[0], cfg.dynamics.nleapfrog))
         analyze_dataset(train_dataset,
