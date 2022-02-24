@@ -11,6 +11,7 @@ defaults:
   - override /steps: test.yaml
   - override /network: test.yaml
   - override /annealing_schedule: constant.yaml
+  - override /wandb: debug.yaml
 
 # debug_mode: True
 

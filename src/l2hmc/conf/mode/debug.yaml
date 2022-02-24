@@ -10,6 +10,8 @@ defaults:
   - override /dynamics: debug.yaml
   - override /steps: debug.yaml
   - override /network: debug.yaml
+  - override /annealing_schedule: constant.yaml
+  - override /wandb: debug.yaml
 
 debug_mode: True
 
