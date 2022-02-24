@@ -16,6 +16,7 @@ from omegaconf import DictConfig, OmegaConf
 import torch
 # from torchinfo import summary as model_summary
 # from torch.distributed.elastic.multiprocessing.errors import record
+from torch.utils.tensorboard.writer import SummaryWriter
 
 from l2hmc.common import analyze_dataset, save_logs
 from l2hmc.configs import (
@@ -138,18 +139,24 @@ def train(cfg: DictConfig) -> dict:
     outdir = Path(cfg.get('outdir', os.getcwd()))
     train_dir = outdir.joinpath('train')
     train_dir.mkdir(exist_ok=True, parents=True)
+    train_summary_dir = train_dir.joinpath('summaries')
+    train_summary_dir.mkdir(exist_ok=True, parents=True)
     # state = objs['dynamics'].random_state(1.0)
     # x = torch.tensor(state.x, requires_grad=True)
     # model_summary(dynamics, depth=5)  # , input_data=[(x, state.beta)])
 
-    kwargs = {
-        'save_x': cfg.get('save_x', False),
-        'width': cfg.get('width', None),
-    }
+    id = None
+    group = None
+    train_run = None
+    train_writer = None
+
+    wandb_cfg = OmegaConf.to_container(cfg, resolve=True)
+    nchains = min((cfg.dynamics.xshape[0], cfg.dynamics.nleapfrog))
+    width = max((150, int(cfg.get('width', os.environ.get('COLUMNS', 150)))))
     if accelerator.is_local_main_process:
         id = generate_id()
         gnames = ['pytorch']
-        wandb.tensorboard.patch(root_logdir=outdir.as_posix())
+        # wandb.tensorboard.patch(root_logdir=outdir.as_posix())
         wcuda = torch.cuda.is_available()
         gnames.append('gpu') if wcuda else gnames.append('cpu')
         if torch.cuda.device_count() > 1:
@@ -159,20 +166,25 @@ def train(cfg: DictConfig) -> dict:
             gnames.append('debug')
 
         group = '/'.join(gnames)
-        wandb.init(id=id,
-                   group=group,
-                   resume='allow',
-                   # magic=True,
-                   # sync_tensorboard=True,
-                   # pytorch=True,
-                   # job_type='train',
-                   entity=cfg.wandb.setup.entity,
-                   project=cfg.wandb.setup.project,
-                   settings=wandb.Settings(start_method='thread'),
-                   config=OmegaConf.to_container(cfg, resolve=True))
+        train_run = wandb.init(id=id,
+                               group=group,
+                               resume='allow',
+                               config=wandb_cfg,
+                               # magic=True,
+                               sync_tensorboard=True,
+                               # pytorch=True,
+                               job_type='train',
+                               entity=cfg.wandb.setup.entity,
+                               project=cfg.wandb.setup.project,
+                               settings=wandb.Settings(start_method='thread'))
+        train_writer = SummaryWriter(train_summary_dir.as_posix())
         # run.watch(objs['dynamics'], objs['loss_fn'], log='all')
 
-    train_output = trainer.train(train_dir=train_dir, **kwargs)
+    train_output = trainer.train(run=train_run,
+                                 train_dir=train_dir,
+                                 writer=train_writer,
+                                 width=width,
+                                 save_x=cfg.get('save_x', False))
     output = {
         'setup': objs,
         'outdir': outdir,
@@ -180,14 +192,12 @@ def train(cfg: DictConfig) -> dict:
     }
     if accelerator.is_local_main_process:
         train_dset = train_output['history'].get_dataset()
-        nchains = min((cfg.dynamics.xshape[0], cfg.dynamics.nleapfrog))
-        analyze_dataset(train_dset,
-                        prefix='train',
-                        nchains=nchains,
-                        outdir=train_dir,
-                        lattice=objs['lattice'],
-                        xarr=train_output['xarr'],
-                        title='Training: PyTorch')
+        _ = analyze_dataset(train_dset,
+                            prefix='train',
+                            nchains=nchains,
+                            outdir=train_dir,
+                            # xarr=train_output['xarr'],
+                            title='Training: PyTorch')
         if not is_interactive():
             tdir = train_dir.joinpath('logs')
             tdir.mkdir(exist_ok=True, parents=True)
@@ -196,20 +206,44 @@ def train(cfg: DictConfig) -> dict:
                       tables=train_output['tables'],
                       summaries=train_output['summaries'])
 
-        # if accelerator.is_local_main_process:
-        _ = kwargs.pop('save_x', False)
-        therm_frac = cfg.get('therm_frac', 0.2)
+    if train_writer is not None:
+        train_writer.close()
 
+    if train_run is not None:
+        train_run.finish()
+
+    if accelerator.is_local_main_process:
+        therm_frac = cfg.get('therm_frac', 0.2)
         eval_dir = outdir.joinpath('eval')
-        eval_output = trainer.eval(**kwargs)
+        eval_summary_dir = eval_dir.joinpath('summaries')
+        eval_summary_dir.mkdir(exist_ok=True, parents=True)
+
+        eval_run = wandb.init(id=id,
+                              group=group,
+                              resume='allow',
+                              config=wandb_cfg,
+                              # magic=True,
+                              sync_tensorboard=True,
+                              # pytorch=True,
+                              job_type='eval',
+                              entity=cfg.wandb.setup.entity,
+                              project=cfg.wandb.setup.project,
+                              settings=wandb.Settings(start_method='thread'))
+
+        eval_writer = SummaryWriter(eval_summary_dir.as_posix())
+
+        eval_output = trainer.eval(run=eval_run,
+                                   width=width,
+                                   writer=eval_writer)
+
         eval_dset = eval_output['history'].get_dataset(therm_frac=therm_frac)
-        analyze_dataset(eval_dset,
-                        prefix='eval',
-                        nchains=nchains,
-                        outdir=eval_dir,
-                        lattice=objs['lattice'],
-                        xarr=eval_output['xarr'],
-                        title='Evaluating: PyTorch')
+        _ = analyze_dataset(eval_dset,
+                            prefix='eval',
+                            nchains=nchains,
+                            outdir=eval_dir,
+                            # lattice=objs['lattice'],
+                            # xarr=eval_output['xarr'],
+                            title='Evaluating: PyTorch')
 
         if not is_interactive():
             edir = eval_dir.joinpath('logs')
@@ -218,6 +252,9 @@ def train(cfg: DictConfig) -> dict:
             save_logs(logdir=edir,
                       tables=eval_output['tables'],
                       summaries=eval_output['summaries'])
+
+        eval_run.finish()
+        eval_writer.close()
 
         # erun.finish()
         output.update({'eval': eval_output})

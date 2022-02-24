@@ -9,7 +9,7 @@ import logging
 import os
 from pathlib import Path
 import time
-from typing import Callable
+from typing import Callable, Any
 
 from accelerate import Accelerator
 from accelerate.utils import extract_model_from_parallel
@@ -20,7 +20,6 @@ from rich.table import Table
 import torch
 from torch import optim
 from torch.utils.tensorboard.writer import SummaryWriter
-import wandb
 
 from l2hmc.configs import (
     AnnealingSchedule, DynamicsConfig, LearningRateConfig, Steps
@@ -54,6 +53,14 @@ def add_columns(avgs: dict, table: Table) -> Table:
             table.add_column(str(key),
                              justify='center',
                              style='red')
+        elif key == 'dQint':
+            table.add_column(str(key),
+                             justify='center',
+                             style='cyan')
+        elif key == 'dQsin':
+            table.add_column(str(key),
+                             justify='center',
+                             style='yellow')
 
         elif key == 'acc':
             table.add_column(str(key),
@@ -159,6 +166,10 @@ class Trainer:
         xout, metrics = self.dynamics((to_u1(xinit), beta))
         xprop = to_u1(metrics.pop('mc_states').proposed.x)
         loss = self.loss_fn(x_init=xinit, x_prop=xprop, acc=metrics['acc'])
+        lmetrics = self.loss_fn.lattice_metrics(xinit=to_u1(xinit),
+                                                xout=to_u1(xout))
+        metrics.update(lmetrics)
+        # metrics.update(lattice_metrics)
         metrics.update({'loss': loss.detach().cpu().numpy()})
 
         return to_u1(xout).detach(), metrics
@@ -169,7 +180,9 @@ class Trainer:
             x: Tensor = None,
             skip: str | list[str] = None,
             width: int = 150,
-            eval_dir: os.PathLike = None,
+            # eval_dir: os.PathLike = None,
+            run: Any = None,
+            writer: Any = None,
     ) -> dict:
         summaries = []
         self.dynamics.eval()
@@ -187,10 +200,14 @@ class Trainer:
         summaries = []
         tables = {}
         table = Table(row_styles=['dim', 'none'], box=box.SIMPLE)
-        if eval_dir is None:
-            eval_dir = Path(os.getcwd()).joinpath('eval')
+        nprint = self.steps.test // 20
+        # if eval_dir is None:
+        #     eval_dir = Path(os.getcwd()).joinpath('eval')
 
-        writer = self.setup_SummaryWriter(eval_dir)
+        # writer = self.setup_SummaryWriter(eval_dir)
+        # if writer is not None:
+        #     writer.set_as_default()
+
         with Live(table, console=console, screen=True) as live:
             if width is not None and width > 0:
                 live.console.width = width
@@ -201,7 +218,12 @@ class Trainer:
                 dt = self.eval_timer.stop()
                 xarr.append(x)
                 loss = metrics.pop('loss')
-                record = {'step': step, 'dt': dt, 'loss': loss}
+                dQint = metrics.pop('dQint')
+                dQsin = metrics.pop('dQsin')
+                record = {
+                    'step': step, 'dt': dt, 'loss': loss,
+                    'dQint': dQint, 'dQsin': dQsin,
+                }
                 record.update(self.metrics_to_numpy(metrics))
                 # if self.accelerator.is_local_main_process:
                 if writer is not None:
@@ -210,7 +232,8 @@ class Trainer:
                                      metrics=record,
                                      writer=writer)
                     writer.flush()
-                    wandb.log({'wandb/eval': record})
+                if run is not None:
+                    run.log({'wandb/eval': record})
 
                 avgs = self.eval_history.update(record)
                 summary = summarize_dict(avgs)
@@ -218,7 +241,7 @@ class Trainer:
                 if step == 0:
                     table = add_columns(avgs, table)
 
-                if step % self.steps.print == 0:
+                if step % nprint == 0:
                     table.add_row(*[f'{v:5}' for _, v in avgs.items()])
 
             tables[str(0)] = table
@@ -245,12 +268,12 @@ class Trainer:
         )
 
     def train_step(self, inputs: tuple[Tensor, float]) -> tuple[Tensor, dict]:
-        x_init, beta = inputs
-        x_init = x_init.to(self.accelerator.device)
+        xinit, beta = inputs
+        xinit = xinit.to(self.accelerator.device)
 
-        x_out, metrics = self.dynamics((to_u1(x_init), beta))
-        x_prop = to_u1(metrics.pop('mc_states').proposed.x)
-        loss = self.loss_fn(x_init=x_init, x_prop=x_prop, acc=metrics['acc'])
+        xout, metrics = self.dynamics((to_u1(xinit), beta))
+        xprop = to_u1(metrics.pop('mc_states').proposed.x)
+        loss = self.loss_fn(x_init=xinit, x_prop=xprop, acc=metrics['acc'])
 
         if self.aux_weight > 0:
             yinit = to_u1(self.draw_x())
@@ -265,13 +288,16 @@ class Trainer:
         self.accelerator.backward(loss)
         # loss.backward()
         self.optimizer.step()
+        lmetrics = self.loss_fn.lattice_metrics(xinit=to_u1(xinit),
+                                                xout=to_u1(xout))
+        metrics.update(lmetrics)
         record = {
             'loss': loss.detach().cpu().numpy(),
         }
         for key, val in metrics.items():
             record[key] = val
 
-        return to_u1(x_out).detach(), record
+        return to_u1(xout).detach(), record
 
     def save_ckpt(self, era, epoch, train_dir, **kwargs) -> None:
         dynamics = extract_model_from_parallel(self.dynamics)
@@ -311,12 +337,13 @@ class Trainer:
             save_x: bool = False,
             width: int = 80,
             train_dir: os.PathLike = None,
-            # run: Any = None,
+            run: Any = None,
+            writer: Any = None,
             # keep: str | list[str] = None,
     ) -> dict:
         # x = xinit
-        if train_dir is None:
-            train_dir = Path(os.getcwd()).joinpath('train')
+        # if train_dir is None:
+        #     train_dir = Path(os.getcwd()).joinpath('train')
 
         summaries = []
         self.dynamics.train()
@@ -326,7 +353,9 @@ class Trainer:
             x = random_angle(self.xshape, requires_grad=True)
             x = x.reshape(x.shape[0], -1)
 
-        writer = self.setup_SummaryWriter(train_dir)
+        # writer = self.setup_SummaryWriter(train_dir)
+        # if writer is not None:
+        #     writer.set_as_default()
         # if self.accelerator.is_local_main_process and writer is not None:
         #     dynamics = extract_model_from_parallel(self.dynamics)
         #     # writer.add_graph(dynamics, use_strict_trace=False)
@@ -370,16 +399,18 @@ class Trainer:
                         # Update metrics with train step metrics, tmetrics
                         record.update(self.metrics_to_numpy(metrics))
                         if writer is not None:
-                            # dynamics = extract_model_from_parallel(
-                            #     self.dynamics
-                            # )
+                            dynamics = extract_model_from_parallel(
+                                self.dynamics
+                            )
                             update_summaries(writer=writer,
-                                             # model=dynamics,  # type:ignore
+                                             model=dynamics,  # type:ignore
                                              step=gstep,
                                              metrics=record,
                                              prefix='train')
                             writer.flush()
-                            wandb.log({'wandb/train': record})
+
+                        if run is not None:
+                            run.log({'wandb/train': record})
 
                         avgs = self.history.update(record)
                         # wandb.log({'train/avgs': avgs})

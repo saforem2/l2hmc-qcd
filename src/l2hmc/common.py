@@ -9,26 +9,24 @@ import logging
 import os
 from pathlib import Path
 
-import joblib
-import numpy as np
 from omegaconf import DictConfig
 from rich.table import Table
 import xarray as xr
-from l2hmc.lattice.lattice import BaseLattice
+# from l2hmc.lattice.lattice import BaseLattice
 
 from l2hmc.configs import (
     AnnealingSchedule,
-    DynamicsConfig,
-    InputSpec,
-    LossConfig,
-    NetWeights,
-    NetworkConfig,
-    ConvolutionConfig,
+    # DynamicsConfig,
+    # InputSpec,
+    # LossConfig,
+    # NetWeights,
+    # NetworkConfig,
+    # ConvolutionConfig,
     Steps,
 )
 from l2hmc.utils.console import console  # , is_interactive
 from l2hmc.utils.plot_helpers import (
-    plot_dataArray, plot_chains, make_ridgeplots
+    plot_dataArray, make_ridgeplots
 )
 
 os.environ['AUTOGRAPH_VERBOSITY'] = '0'
@@ -176,7 +174,9 @@ def plot_dataset(
         outfile.parent.mkdir(exist_ok=True, parents=True)
         log.info(f'Saving figure to: {outfile.as_posix()}')
         fig.savefig(outfile.as_posix(), dpi=500, bbox_inches='tight')
-        outpng = outdir.joinpath(f'{key}.png')
+        pngdir = outdir.joinpath('pngs')
+        pngdir.mkdir(exist_ok=True, parents=True)
+        outpng = pngdir.joinpath(f'{key}.png')
         fig.savefig(outpng.as_posix(), dpi=500, bbox_inches='tight')
         pngs[tag].update({key: outpng.as_posix()})
 
@@ -189,8 +189,6 @@ def plot_dataset(
 def analyze_dataset(
         dataset: xr.Dataset,
         outdir: os.PathLike,
-        lattice: BaseLattice = None,
-        xarr: list | np.ndarray = None,
         nchains: int = 16,
         title: str = None,
         prefix: str = 'dataset',
@@ -205,68 +203,68 @@ def analyze_dataset(
     if save:
         save_dataset(dataset, outdir=dirs['data'], name=prefix)
 
-    history = {}
-    if xarr is not None and lattice is not None:
-        metrics = lattice.calc_metrics(xarr[0])
-        history = {}
-        for key, val in metrics.items():
-            try:
-                val = val.cpu().numpy()     # type: ignore
-            except AttributeError:
-                val = val.numpy()           # type: ignore
+    # history = {}
+    # if xarr is not None and lattice is not None:
+    #     metrics = lattice.calc_metrics(xarr[0])
+    #     history = {}
+    #     for key, val in metrics.items():
+    #         try:
+    #             val = val.cpu().numpy()     # type: ignore
+    #         except AttributeError:
+    #             val = val.numpy()           # type: ignore
 
-            history[key] = [val]
+    #         history[key] = [val]
 
-        for idx, x in enumerate(xarr[1:]):
-            metrics = lattice.calc_metrics(x)
-            metrics_np = {}
-            for key, val in metrics.items():
-                try:
-                    val = val.cpu().numpy()  # type: ignore
-                except AttributeError:
-                    val = val.numpy()        # type: ignore
+    #     for idx, x in enumerate(xarr[1:]):
+    #         metrics = lattice.calc_metrics(x)
+    #         metrics_np = {}
+    #         for key, val in metrics.items():
+    #             try:
+    #                 val = val.cpu().numpy()  # type: ignore
+    #             except AttributeError:
+    #                 val = val.numpy()        # type: ignore
 
-                try:
-                    history[key].append(val)  # type: ignore
-                except KeyError:
-                    history[key] = [val]      # type: ignore
+    #             try:
+    #                 history[key].append(val)  # type: ignore
+    #             except KeyError:
+    #                 history[key] = [val]      # type: ignore
 
-                metrics_np[key] = val
+    #             metrics_np[key] = val
 
-            # wandb.log({'lattice': {prefix: metrics_np}}, step=idx+1)
-            # wandb.log({prefix: {'lattice': metrics_np}}, step=idx)
+    #         # wandb.log({'lattice': {prefix: metrics_np}}, step=idx+1)
+    #         # wandb.log({prefix: {'lattice': metrics_np}}, step=idx)
 
-        intQ = np.array(history['intQ'])
-        sinQ = np.array(history['sinQ'])
-        dQint = np.abs(intQ[1:] - intQ[:-1])  # type: ignore
-        dQsin = np.abs(sinQ[1:] - sinQ[:-1])  # type: ignore
-        history['dQint'] = [intQ[0], *dQint]
-        history['dQsin'] = [sinQ[0], *dQsin]
-        # wandb.summary({prefix: {'dQint': history['']}})
-        # wandb.log({'lattice': {prefix: history}})
+    #     intQ = np.array(history['intQ'])
+    #     sinQ = np.array(history['sinQ'])
+    #     dQint = np.abs(intQ[1:] - intQ[:-1])  # type: ignore
+    #     dQsin = np.abs(sinQ[1:] - sinQ[:-1])  # type: ignore
+    #     history['dQint'] = [intQ[0], *dQint]
+    #     history['dQsin'] = [sinQ[0], *dQsin]
+    #     # wandb.summary({prefix: {'dQint': history['']}})
+    #     # wandb.log({'lattice': {prefix: history}})
 
-        xlabel = 'Step'
-        if prefix == 'train':
-            xlabel = 'Train Epoch'
-        elif prefix == 'eval':
-            xlabel = 'Eval Step'
+    #     xlabel = 'Step'
+    #     if prefix == 'train':
+    #         xlabel = 'Train Epoch'
+    #     elif prefix == 'eval':
+    #         xlabel = 'Eval Step'
 
-        for key, val in history.items():
-            val = np.array(val)
-            pfile = dirs['plots'].joinpath(f'{key}.svg')
-            fig, _ = plot_chains(y=val, num_chains=nchains,
-                                 label=key, xlabel=xlabel,
-                                 ylabel=key, outfile=pfile)
+    #     for key, val in history.items():
+    #         val = np.array(val)
+    #         pfile = dirs['plots'].joinpath(f'{key}.svg')
+    #         fig, _ = plot_chains(y=val, num_chains=nchains,
+    #                              label=key, xlabel=xlabel,
+    #                              ylabel=key, outfile=pfile)
 
-            dfile = dirs['data'].joinpath(f'{key}.z')
-            log.info(f'Saving {key} to {dfile}')
-            joblib.dump(val, dfile)
+    #         dfile = dirs['data'].joinpath(f'{key}.z')
+    #         log.info(f'Saving {key} to {dfile}')
+    #         joblib.dump(val, dfile)
 
-        # xfile = dirs['data'].joinpath('xarr.z')
-        # log.info(f'Saving xarr to: {xfile}')
-        # joblib.dump(xarr, xfile)
+    #     # xfile = dirs['data'].joinpath('xarr.z')
+    #     # log.info(f'Saving xarr to: {xfile}')
+    #     # joblib.dump(xarr, xfile)
 
-    return history
+    return dataset
 
 
 # def train(cfg: DictConfig) -> dict:

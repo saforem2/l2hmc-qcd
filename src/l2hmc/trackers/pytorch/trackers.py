@@ -25,12 +25,6 @@ def log_item(
         writer: SummaryWriter,
         step: int = None,
 ):
-    if 'train/train' in tag:
-        tag = tag.replace('train/train', 'train')
-
-    if 'eval/eval' in tag:
-        tag = tag.replace('eval/eval', 'eval')
-
     if (
             'dt' in tag
             or 'beta' in tag
@@ -54,13 +48,10 @@ def log_dict(
 ):
     """Create TensorBoard summaries for all items in `d`."""
     for key, val in d.items():
-        pre = key if prefix is None else f'{prefix}/{key}'
         if isinstance(val, dict):
-            log_dict(writer=writer, d=val, step=step, prefix=pre)
-            # for k, v in val.items():
-            #     log_item(writer=writer, tag=f'{pre}/{k}', val=v, step=step)
+            log_dict(writer=writer, d=val, step=step, prefix=f'{prefix}/{key}')
         else:
-            log_item(writer=writer, val=val, step=step, tag=pre)
+            log_item(writer=writer, val=val, step=step, tag=f'{prefix}/{key}')
 
 
 def log_list(
@@ -85,13 +76,10 @@ def update_summaries(
         prefix: str = None,
 ):
     if metrics is not None:
-        # pre = 'metrics' if prefix is None else '/'.join([prefix, 'metrics'])
         log_dict(writer=writer, d=metrics, step=step, prefix=prefix)
     if model is not None:
-        pre = 'model' if prefix is None else '/'.join(['model', prefix])
-        # params = model.named_parameters()
-        # log_dict(writer=writer, d=params, step=step, prefix=pre)
+        # pre = 'model' if prefix is None else '/'.join(['model', prefix])
         for name, param in model.named_parameters():
             if param.requires_grad:
-                tag = f'{pre}/{name}'
+                tag = f'model/{name}'
                 log_item(writer=writer, val=param, step=step, tag=tag)
