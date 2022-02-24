@@ -47,7 +47,7 @@ def area_law(beta: float, nplaqs: int):
     return (i1(beta) / i0(beta)) ** nplaqs
 
 
-def plaq_exact(beta: float):
+def plaq_exact(beta: float | Tensor):
     return i1(beta) / i0(beta)
 
 
@@ -84,11 +84,20 @@ class Lattice(BaseLattice):
         pexact = plaq_exact(beta) * torch.ones_like(plaqs)
         return pexact - self.plaqs(wloops=wloops)
 
-    def calc_metrics(self, x: Tensor) -> dict[str, Tensor]:
+    def calc_metrics(self, x: Tensor, beta: float = None) -> dict[str, Tensor]:
         wloops = self.wilson_loops(x)
         plaqs = self.plaqs(wloops=wloops)
         charges = self.charges(wloops=wloops)
-        return {'plaqs': plaqs, 'intQ': charges.intQ, 'sinQ': charges.sinQ}
+        metrics = {'plaqs': plaqs}
+        if beta is not None:
+            metrics.update({
+               'plaqs_err': plaq_exact(torch.from_numpy(beta)) - plaqs
+            })
+        metrics.update({
+            'intQ': charges.intQ, 'sinQ': charges.sinQ
+        })
+
+        return metrics
 
     def observables(self, x: Tensor) -> LatticeMetrics:
         wloops = self.wilson_loops(x)

@@ -47,9 +47,11 @@ def area_law(beta: float, num_plaqs: int) -> float:
     return (tf.math.bessel_i1(beta) / tf.math.bessel_i0(beta)) ** num_plaqs
 
 
-def plaq_exact(beta: float) -> float:
+def plaq_exact(beta: float | Tensor) -> Tensor:
     """Computes the expected value of the avg. plaquette for 2D U(1)."""
-    return tf.math.bessel_i1(beta) / tf.math.bessel_i0(beta)
+    beta = tf.constant(beta, dtype=TF_FLOAT)
+    pexact = tf.constant(tf.math.bessel_i1(beta) / tf.math.bessel_i0(beta))
+    return pexact
 
 
 def project_angle(x):
@@ -74,15 +76,25 @@ class Lattice(BaseLattice):
         local_action = tf.ones_like(wloops) - tf.math.cos(wloops)
         return tf.reduce_sum(local_action, (1, 2))
 
-    def calc_metrics(self, x: Tensor) -> dict[str, Tensor]:
+    def calc_metrics(
+            self,
+            x: Tensor,
+            beta: Tensor = None,
+    ) -> dict[str, Tensor]:
         wloops = self.wilson_loops(x)
         plaqs = self.plaqs(wloops=wloops)
         charges = self.charges(wloops=wloops)
-        return {
-            'plaqs': plaqs,
-            'intQ': charges.intQ,
-            'sinQ': charges.sinQ,
-        }
+        metrics = {'plaqs': plaqs}
+        if beta is not None:
+            pexact = plaq_exact(beta) * tf.ones_like(plaqs)
+            metrics.update({
+               'plaqs_err': pexact - plaqs
+            })
+
+        metrics.update({
+            'intQ': charges.intQ, 'sinQ': charges.sinQ
+        })
+        return metrics
 
     def observables(self, x: Tensor) -> LatticeMetrics:
         """Calculate Lattice observables."""
