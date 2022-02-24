@@ -8,12 +8,15 @@ from typing import Union
 
 import torch
 import numpy as np
+import logging
 from torch.utils.tensorboard.writer import SummaryWriter
 
 Tensor = torch.Tensor
 Array = np.ndarray
 Scalar = Union[float, int, bool]
 ArrayLike = Union[Tensor, Array, Scalar]
+
+log = logging.getLogger(__name__)
 
 
 def log_item(
@@ -22,6 +25,12 @@ def log_item(
         writer: SummaryWriter,
         step: int = None,
 ):
+    if 'train/train' in tag:
+        tag = tag.replace('train/train', 'train')
+
+    if 'eval/eval' in tag:
+        tag = tag.replace('eval/eval', 'eval')
+
     if (
             'dt' in tag
             or 'beta' in tag
@@ -47,8 +56,9 @@ def log_dict(
     for key, val in d.items():
         pre = key if prefix is None else f'{prefix}/{key}'
         if isinstance(val, dict):
-            for k, v in val.items():
-                log_item(writer=writer, tag=f'{pre}/{k}', val=v, step=step)
+            log_dict(writer=writer, d=val, step=step, prefix=pre)
+            # for k, v in val.items():
+            #     log_item(writer=writer, tag=f'{pre}/{k}', val=v, step=step)
         else:
             log_item(writer=writer, val=val, step=step, tag=pre)
 
@@ -75,10 +85,12 @@ def update_summaries(
         prefix: str = None,
 ):
     if metrics is not None:
-        pre = 'metrics' if prefix is None else '/'.join([prefix, 'metrics'])
-        log_dict(writer=writer, d=metrics, step=step, prefix=pre)
+        # pre = 'metrics' if prefix is None else '/'.join([prefix, 'metrics'])
+        log_dict(writer=writer, d=metrics, step=step, prefix=prefix)
     if model is not None:
         pre = 'model' if prefix is None else '/'.join(['model', prefix])
+        # params = model.named_parameters()
+        # log_dict(writer=writer, d=params, step=step, prefix=pre)
         for name, param in model.named_parameters():
             if param.requires_grad:
                 tag = f'{pre}/{name}'
