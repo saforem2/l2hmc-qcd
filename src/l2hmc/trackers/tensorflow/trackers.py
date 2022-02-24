@@ -40,28 +40,15 @@ def log_item(
         tf.summary.histogram(tag, val, step=step)
         tf.summary.scalar(f'{tag}/avg', tf.reduce_mean(val), step=step)
 
-    # if tag in ['era', 'epoch', 'dt', 'beta']:
-    #     tf.summary.scalar(tag, val, step=step)
-    # else:
-    #     tf.summary.histogram(tag, val, step=step)
-    #     tf.summary.histogram(f'{tag}_avg', tf.reduce_mean(val), step=step)
-    #     # elif isinstance(val, (Tensor, Array)):
-    #     #     if len(val.shape) > 1:
-    #     #         tf.summary.histogram(tag, val, step=step)
-    #     #         tf.summary.scalar(
-    #     #             f'{tag}_avg', tf.reduce_mean(val), step=step
-    #     #         )
-    #     #     else:
-    #     #         tf.summary.scalar(tag, val, step=step)
-
 
 def log_dict(d: dict, step: int, prefix: str = None):
     """Create tensorboard summaries for all items in `d`"""
     for key, val in d.items():
         pre = key if prefix is None else f'{prefix}/{key}'
         if isinstance(val, dict):
-            for k, v in val.items():
-                log_item(f'{pre}/{k}', v, step=step)
+            log_dict(val, step=step, prefix=pre)
+            # for k, v in val.items():
+            #     log_item(f'{pre}/{k}', v, step=step)
         else:
             log_item(pre, val, step=step)
 
@@ -82,12 +69,12 @@ def update_summaries(
 ):
     """"Create summary objects."""
     if metrics is not None:
-        pre = 'metrics' if prefix is None else '/'.join([prefix, 'metrics'])
-        log_dict(metrics, step, prefix=pre)
+        # pre = 'metrics' if prefix is None else '/'.join([prefix, 'metrics'])
+        log_dict(metrics, step, prefix=prefix)
 
     if model is not None:
-        mpre = 'model' if prefix is None else '/'.join(['model', prefix])
-        log_list(model.variables, step=step, prefix=mpre)
+        # mpre = 'model' if prefix is None else '/'.join(['model', prefix])
+        log_list(model.variables, step=step, prefix='model')
 
     if optimizer is not None:
         ostr = 'optimizer'
