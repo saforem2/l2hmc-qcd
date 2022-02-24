@@ -9,7 +9,7 @@ import os
 from rich.console import Console
 
 
-WIDTH = max(150, int(os.environ.get('COLUMNS', 100)))
+WIDTH = max(150, int(os.environ.get('COLUMNS', 150)))
 
 
 def is_interactive():
@@ -21,3 +21,4 @@ console = Console(record=True,
                   color_system='truecolor',
                   log_path=False,
                   width=WIDTH)
+console.width = WIDTH
