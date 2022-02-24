@@ -38,6 +38,12 @@ colors = {
     'white':    '#CFCFCF',
 }
 
+plt.style.use('default')
+plt.rcParams.update({
+    'figure.facecolor': (1.0, 1.0, 1.0, 0.0),
+    'axes.facecolor': (1.0, 1.0, 1.0, 0.0),
+    'image.cmap': 'viridis',
+})
 # sns.set_palette(list(colors.values()))
 # sns.set_context('notebook', font_scale=0.8)
 # plt.rcParams.update({
