@@ -1,6 +1,9 @@
 ## --------------------------------
 ## USER-DEFINED .gitignore below
 ## --------------------------------
+*.output
+*.error
+*.cobaltlog
 logs/
 plots/
 data/
