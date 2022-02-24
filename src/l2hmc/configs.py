@@ -258,13 +258,15 @@ class Steps:
     nera: int
     nepoch: int
     test: int
-    log: int = 0
-    print: int = 0
+    log: Optional[int] = None
+    print: Optional[int] = None
 
     def __post_init__(self):
         self.total = self.nera * self.nepoch
-        self.log = self.nepoch // 20 if self.log == 0 else self.log
-        self.print = self.nepoch // 10 if self.print == 0 else self.print
+        if self.log is None:
+            self.log = self.nepoch // 20
+        if self.print is None:
+            self.print = self.nepoch // 10
 
 
 @dataclass
