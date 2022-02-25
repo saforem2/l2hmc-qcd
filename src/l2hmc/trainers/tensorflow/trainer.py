@@ -356,7 +356,7 @@ class Trainer:
         if compile:
             self.dynamics.compile(
                 loss=self.loss_fn,
-                # experimental_run_tf_function=False,
+                experimental_run_tf_function=False,
             )
             eval_step = tf.function(self.eval_step, jit_compile=jit_compile)
         else:
@@ -367,6 +367,7 @@ class Trainer:
         summaries = []
         table = Table(row_styles=['dim', 'none'], box=box.SIMPLE)
         # width = max((width, int(os.environ.get("COLUMNS", 150))))
+        nlog = self.steps.test // 100
         nprint = self.steps.test // 20
         with Live(table, console=console, screen=True) as live:
             if width is not None and width > 0:
@@ -376,32 +377,33 @@ class Trainer:
                 self.eval_timer.start()
                 x, metrics = eval_step((x, beta))  # type: ignore
                 dt = self.eval_timer.stop()
-                xarr.append(x)
-                loss = metrics.pop('loss').numpy()
-                dQint = metrics.pop('dQint').numpy()
-                dQsin = metrics.pop('dQsin').numpy()
-                record = {
-                    'step': step, 'dt': dt, 'loss': loss,
-                    'dQint': dQint, 'dQsin': dQsin,
-                }
-                record.update(self.metrics_to_numpy(metrics))
-                if writer is not None:
-                    update_summaries(step=step,
-                                     prefix='eval',
-                                     metrics=record)
-                    writer.flush()
+                if step % nprint == 0 or step % nlog == 0:
+                    # xarr.append(x)
+                    loss = metrics.pop('loss')
+                    dQint = metrics.pop('dQint')
+                    dQsin = metrics.pop('dQsin')
+                    record = {
+                        'step': step, 'dt': dt, 'loss': loss,
+                        'dQint': dQint, 'dQsin': dQsin,
+                    }
+                    record.update(self.metrics_to_numpy(metrics))
+                    if writer is not None:
+                        update_summaries(step=step,
+                                         prefix='eval',
+                                         metrics=record)
+                        writer.flush()
 
-                if run is not None:
-                    run.log({'wandb/eval': record})
+                    if run is not None:
+                        run.log({'wandb/eval': record})
 
-                avgs = self.eval_history.update(record)
-                summary = summarize_dict(avgs)
-                summaries.append(summary)
-                if step == 0:
-                    table = add_columns(avgs, table)
+                    avgs = self.eval_history.update(record)
+                    summary = summarize_dict(avgs)
+                    summaries.append(summary)
+                    if step == 0:
+                        table = add_columns(avgs, table)
 
-                if step % nprint == 0:
-                    table.add_row(*[f'{v:5}' for _, v in avgs.items()])
+                    if step % nprint == 0:
+                        table.add_row(*[f'{v:5}' for _, v in avgs.items()])
 
             tables[str(0)] = table
 
@@ -430,7 +432,7 @@ class Trainer:
             skip: str | list[str] = None,
             compile: bool = True,
             jit_compile: bool = False,
-            save_x: bool = False,
+            # save_x: bool = False,
             width: int = None,
             train_dir: os.PathLike = None,
             run: Any = None,
@@ -486,19 +488,21 @@ class Trainer:
                     dt = self.timer.stop()
                     gstep += 1
                     if self.should_print(epoch) or self.should_log(epoch):
-                        if save_x:
-                            xarr.append(x.numpy())  # type: ignore
+                        # if save_x:
+                        #     xarr.append(x.numpy())  # type: ignore
+                        loss = metrics.pop('loss')
+                        dQint = metrics.pop('dQint')
+                        dQsin = metrics.pop('dQsin')
 
                         record = {
-                            'era': era, 'epoch': epoch, 'beta': beta, 'dt': dt
+                            'era': era, 'epoch': epoch, 'beta': beta, 'dt': dt,
+                            'loss': loss, 'dQint': dQint, 'dQsin': dQsin,
                         }
                         record.update(self.metrics_to_numpy(metrics))
                         if writer is not None:
                             update_summaries(step=gstep,
                                              prefix='train',
-                                             metrics=record,
-                                             model=self.dynamics,
-                                             optimizer=self.optimizer)
+                                             metrics=record)
                             writer.flush()
 
                         if run is not None:
@@ -516,7 +520,12 @@ class Trainer:
 
                         if self.should_print(epoch):
                             table.add_row(*[f'{v}' for _, v in avgs.items()])
+
                 if self.rank == 0:
+                    if writer is not None:
+                        update_summaries(step=gstep,
+                                         model=self.dynamics,
+                                         optimizer=self.optimizer)
                     live.console.log(
                         f'Era {era} took: {time.time() - estart:<5g}s',
                     )
