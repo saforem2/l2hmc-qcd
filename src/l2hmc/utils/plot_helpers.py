@@ -294,7 +294,13 @@ def plot_dataArray(
     else:
         if len(arr.shape) == 1:
             fig, ax = plt.subplots(**subplots_kwargs)
-            ax.plot(steps, arr, **plot_kwargs)
+            try:
+                ax.plot(steps, arr, **plot_kwargs)
+            except ValueError:
+                try:
+                    ax.plot(steps, arr[~np.isnan(arr)], **plot_kwargs)
+                except Exception:
+                    log.error(f'Unable to plot {key}! Continuing')
             axes = ax
         elif len(arr.shape) == 3:
             fig, ax = plt.subplots(**subplots_kwargs)
