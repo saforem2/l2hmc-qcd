@@ -130,21 +130,70 @@ def setup(cfg: DictConfig) -> dict:
     }
 
 
+def eval(
+        trainer: Trainer,
+        cfg: DictConfig,
+        hmc: bool = False,
+        width: int = 150,
+        nchains: int = 16,
+        **wandb_kwargs
+) -> dict:
+    therm_frac = cfg.get('therm_frac', 0.2)
+    outdir = Path(cfg.get('outdir', os.getcwd()))
+    if hmc:
+        job_type = 'hmc'
+        title = 'HMC: PyTorch'
+        eval_dir = outdir.joinpath('hmc')
+    else:
+        job_type = 'eval'
+        title = 'Evaluating: PyTorch'
+        eval_dir = outdir.joinpath('eval')
+
+    eval_summary_dir = eval_dir.joinpath('summaries')
+    eval_summary_dir.mkdir(exist_ok=True, parents=True)
+
+    eval_run = wandb.init(job_type=job_type, **wandb_kwargs)
+    eval_writer = SummaryWriter(eval_summary_dir.as_posix())
+
+    eval_output = trainer.eval(run=eval_run,
+                               hmc=hmc,
+                               width=width,
+                               writer=eval_writer)
+
+    eval_dset = eval_output['history'].get_dataset(therm_frac=therm_frac)
+    _ = analyze_dataset(eval_dset,
+                        prefix=job_type,
+                        nchains=nchains,
+                        outdir=eval_dir,
+                        # lattice=objs['lattice'],
+                        # xarr=eval_output['xarr'],
+                        title=title)
+
+    if not is_interactive():
+        edir = eval_dir.joinpath('logs')
+        edir.mkdir(exist_ok=True, parents=True)
+        log.info(f'Saving {job_type} logs to: {edir.as_posix()}')
+        save_logs(logdir=edir,
+                  tables=eval_output['tables'],
+                  summaries=eval_output['summaries'])
+
+    eval_run.finish()
+    eval_writer.close()
+
+    return eval_output
+
+
 # @record
 def train(cfg: DictConfig) -> dict:
     objs = setup(cfg)
     trainer = objs['trainer']  # type: Trainer
     accelerator = objs['accelerator']  # type: Accelerator
-    # dynamics = extract_model_from_parallel(objs['dynamics'])
 
     outdir = Path(cfg.get('outdir', os.getcwd()))
     train_dir = outdir.joinpath('train')
     train_dir.mkdir(exist_ok=True, parents=True)
     train_summary_dir = train_dir.joinpath('summaries')
     train_summary_dir.mkdir(exist_ok=True, parents=True)
-    # state = objs['dynamics'].random_state(1.0)
-    # x = torch.tensor(state.x, requires_grad=True)
-    # model_summary(dynamics, depth=5)  # , input_data=[(x, state.beta)])
 
     id = None
     group = None
@@ -154,6 +203,8 @@ def train(cfg: DictConfig) -> dict:
     schedule = objs['schedule']  # type: AnnealingSchedule
     beta_init = schedule.beta_init
     beta_final = schedule.beta_final
+
+    wandb_kwargs = {}
     wandb_cfg = OmegaConf.to_container(cfg, resolve=True)
     nchains = min((cfg.dynamics.xshape[0], cfg.dynamics.nleapfrog))
     width = max((150, int(cfg.get('width', os.environ.get('COLUMNS', 150)))))
@@ -170,19 +221,20 @@ def train(cfg: DictConfig) -> dict:
             gnames.append('debug')
 
         group = '/'.join(gnames)
-        train_run = wandb.init(id=id,
-                               group=group,
-                               resume='allow',
-                               config=wandb_cfg,
-                               # magic=True,
-                               sync_tensorboard=True,
-                               # pytorch=True,
-                               job_type='train',
-                               entity=cfg.wandb.setup.entity,
-                               project=cfg.wandb.setup.project,
-                               tags=[f'beta_init={beta_init:1.2f}',
-                                     f'beta_final={beta_final:1.2f}'],
-                               settings=wandb.Settings(start_method='thread'))
+        train_tags = [f'beta_init={beta_init:1.2f}',
+                      f'beta_final={beta_final:1.2f}']
+        wandb_kwargs = {
+            'id': id,
+            'group': group,
+            'resume': 'allow',
+            'config': wandb_cfg,
+            'tags': train_tags,
+            'sync_tensorboard': True,
+            'entity': cfg.wandb.setup.entity,
+            'project': cfg.wandb.setup.project,
+            'settings': wandb.Settings(start_method='thread'),
+        }
+        train_run = wandb.init(job_type='train', **wandb_kwargs)
         train_writer = SummaryWriter(train_summary_dir.as_posix())
         # run.watch(objs['dynamics'], objs['loss_fn'], log='all')
 
@@ -218,52 +270,25 @@ def train(cfg: DictConfig) -> dict:
         train_run.finish()
 
     if accelerator.is_local_main_process:
-        therm_frac = cfg.get('therm_frac', 0.2)
-        eval_dir = outdir.joinpath('eval')
-        eval_summary_dir = eval_dir.joinpath('summaries')
-        eval_summary_dir.mkdir(exist_ok=True, parents=True)
-
-        eval_run = wandb.init(id=id,
-                              group=group,
-                              resume='allow',
-                              config=wandb_cfg,
-                              # magic=True,
-                              sync_tensorboard=True,
-                              # pytorch=True,
-                              job_type='eval',
-                              tags=[f'beta={beta_final:1.2f}'],
-                              entity=cfg.wandb.setup.entity,
-                              project=cfg.wandb.setup.project,
-                              settings=wandb.Settings(start_method='thread'))
-
-        eval_writer = SummaryWriter(eval_summary_dir.as_posix())
-
-        eval_output = trainer.eval(run=eval_run,
-                                   width=width,
-                                   writer=eval_writer)
-
-        eval_dset = eval_output['history'].get_dataset(therm_frac=therm_frac)
-        _ = analyze_dataset(eval_dset,
-                            prefix='eval',
-                            nchains=nchains,
-                            outdir=eval_dir,
-                            # lattice=objs['lattice'],
-                            # xarr=eval_output['xarr'],
-                            title='Evaluating: PyTorch')
-
-        if not is_interactive():
-            edir = eval_dir.joinpath('logs')
-            edir.mkdir(exist_ok=True, parents=True)
-            log.info(f'Saving eval logs to: {edir.as_posix()}')
-            save_logs(logdir=edir,
-                      tables=eval_output['tables'],
-                      summaries=eval_output['summaries'])
-
-        eval_run.finish()
-        eval_writer.close()
-
+        log.warning('Evaluating trained model...')
+        eval_tag = [f'beta={beta_final:1.2f}']
+        wandb_kwargs['tags'] = eval_tag
+        eval_output = eval(trainer=trainer,
+                           cfg=cfg,
+                           hmc=False,
+                           width=width,
+                           nchains=nchains, **wandb_kwargs)
         # erun.finish()
         output.update({'eval': eval_output})
+
+        log.warning('Running generic HMC for base comparison')
+        hmc_output = eval(trainer=trainer,
+                          cfg=cfg,
+                          hmc=True,
+                          width=width,
+                          nchains=nchains, **wandb_kwargs)
+
+        output.update({'hmc': hmc_output})
 
     return output
 

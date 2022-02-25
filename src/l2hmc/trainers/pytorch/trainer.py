@@ -160,6 +160,21 @@ class Trainer:
 
         return metrics
 
+    def hmc_step(self, inputs: tuple[Tensor, float]) -> tuple[Tensor, dict]:
+        xinit, beta = inputs
+        xinit = to_u1(xinit).to(self.accelerator.device)
+        beta = torch.tensor(beta)
+        # beta = torch.tensor(beta).to(self.accelerator.device)
+        xout, metrics = self.dynamics.apply_transition_hmc((xinit, beta))
+        xprop = to_u1(metrics.pop('mc_states').proposed.x)
+        loss = self.loss_fn(x_init=xinit, x_prop=xprop, acc=metrics['acc'])
+        lmetrics = self.loss_fn.lattice_metrics(xinit=to_u1(xinit),
+                                                xout=to_u1(xout))
+        metrics.update(lmetrics)
+        metrics.update({'loss': loss.detach().cpu().numpy()})
+
+        return to_u1(xout).detach(), metrics
+
     def eval_step(self, inputs: tuple[Tensor, float]) -> tuple[Tensor, dict]:
         xinit, beta = inputs
         xinit = xinit.to(self.accelerator.device)
@@ -183,6 +198,7 @@ class Trainer:
             # eval_dir: os.PathLike = None,
             run: Any = None,
             writer: Any = None,
+            hmc: bool = False,
     ) -> dict:
         summaries = []
         self.dynamics.eval()
@@ -196,18 +212,18 @@ class Trainer:
             x = random_angle(self.xshape)
             x = x.reshape(x.shape[0], -1)
 
-        # xarr = []
+        if hmc:
+            prefix = 'hmc'
+            eval_fn = self.hmc_step
+        else:
+            prefix = 'eval'
+            eval_fn = self.eval_step
+
         summaries = []
         tables = {}
         table = Table(row_styles=['dim', 'none'], box=box.SIMPLE)
-        nlog = self.steps.test // 100
-        nprint = self.steps.test // 20
-        # if eval_dir is None:
-        #     eval_dir = Path(os.getcwd()).joinpath('eval')
-
-        # writer = self.setup_SummaryWriter(eval_dir)
-        # if writer is not None:
-        #     writer.set_as_default()
+        nlog = max(1, int(self.steps.test // 100))
+        nprint = max(1, int(self.steps.test // 20))
 
         with Live(table, console=console, screen=True) as live:
             if width is not None and width > 0:
@@ -215,27 +231,23 @@ class Trainer:
 
             for step in range(self.steps.test):
                 self.eval_timer.start()
-                x, metrics = self.eval_step((x, beta))
+                x, metrics = eval_fn((x, beta))
                 dt = self.eval_timer.stop()
                 if step % nlog == 0 or step % nprint == 0:
-                    # xarr.append(x)
-                    # loss = metrics.pop('loss')
-                    # dQint = metrics.pop('dQint')
-                    # dQsin = metrics.pop('dQsin')
                     record = {
                         'step': step, 'dt': dt, 'loss': metrics['loss'],
-                        # 'dQint': dQint, 'dQsin': dQsin,
+                        'dQint': metrics['dQint'], 'dQsin': metrics['dQsin'],
                     }
                     record.update(self.metrics_to_numpy(metrics))
                     # if self.accelerator.is_local_main_process:
                     if writer is not None:
                         update_summaries(step=step,
-                                         prefix='eval',
+                                         prefix=prefix,
                                          metrics=record,
                                          writer=writer)
                         writer.flush()
                     if run is not None:
-                        run.log({'wandb/eval': record})
+                        run.log({f'wandb/{prefix}': record})
 
                     avgs = self.eval_history.update(record)
                     summary = summarize_dict(avgs)
@@ -249,7 +261,6 @@ class Trainer:
             tables[str(0)] = table
 
         return {
-            'xarr': [],
             'history': self.eval_history,
             'summaries': summaries,
             'tables': tables,
@@ -334,7 +345,6 @@ class Trainer:
             self,
             x: Tensor = None,
             skip: str | list[str] = None,
-            # save_x: bool = False,
             width: int = 80,
             train_dir: os.PathLike = None,
             run: Any = None,
@@ -351,7 +361,6 @@ class Trainer:
 
         era = 0
         epoch = 0
-        xarr = []
         tables = {}
         metrics = {}
         summaries = []
@@ -373,12 +382,8 @@ class Trainer:
                     gstep += 1
                     dt = self.timer.stop()
                     if self.should_print(epoch) or self.should_log(epoch):
-                        # loss = metrics.pop('loss')
-                        # dQint = metrics.pop('dQint')
-                        # dQsin = metrics.pop('dQsin')
                         record = {
-                            'era': era, 'epoch': epoch, 'beta': beta, 'dt': dt,
-                            # 'loss': loss, 'dQint': dQint, 'dQsin': dQsin,
+                            'era': era, 'epoch': epoch, 'beta': beta, 'dt': dt
                         }
                         # Update metrics with train step metrics, tmetrics
                         record.update(self.metrics_to_numpy(metrics))
@@ -405,7 +410,8 @@ class Trainer:
             if self.accelerator.is_local_main_process:
                 if writer is not None:
                     model = extract_model_from_parallel(self.dynamics)
-                    update_summaries(writer=writer, step=gstep, model=model)
+                    update_summaries(writer=writer, step=gstep,
+                                     model=model)  # type: ignore
 
                 self.save_ckpt(era, epoch, train_dir, loss=metrics['loss'])
                 live.console.log(
@@ -418,7 +424,7 @@ class Trainer:
             tables[str(era)] = table
 
         return {
-            'xarr': xarr,
+            # 'xarr': xarr,
             'summaries': summaries,
             'history': self.history,
             'tables': tables,
