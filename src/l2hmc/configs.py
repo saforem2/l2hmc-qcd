@@ -264,9 +264,9 @@ class Steps:
     def __post_init__(self):
         self.total = self.nera * self.nepoch
         if self.log is None:
-            self.log = int(self.nepoch // 10)
+            self.log = max(1, int(self.nepoch // 10))
         if self.print is None:
-            self.print = int(self.nepoch // 5)
+            self.print = max(1, int(self.nepoch // 5))
 
 
 @dataclass
