@@ -124,6 +124,7 @@ def setup(cfg: DictConfig) -> dict:
         'loss_fn': loss_fn,
         'dynamics': dynamics,
         'trainer': trainer,
+        'schedule': schedule,
         'optimizer': optimizer,
         'accelerator': accelerator,
     }
@@ -150,6 +151,9 @@ def train(cfg: DictConfig) -> dict:
     train_run = None
     train_writer = None
 
+    schedule = objs['schedule']  # type: AnnealingSchedule
+    beta_init = schedule.beta_init
+    beta_final = schedule.beta_final
     wandb_cfg = OmegaConf.to_container(cfg, resolve=True)
     nchains = min((cfg.dynamics.xshape[0], cfg.dynamics.nleapfrog))
     width = max((150, int(cfg.get('width', os.environ.get('COLUMNS', 150)))))
@@ -176,6 +180,8 @@ def train(cfg: DictConfig) -> dict:
                                job_type='train',
                                entity=cfg.wandb.setup.entity,
                                project=cfg.wandb.setup.project,
+                               tags=[f'beta_init={beta_init:1.2f}',
+                                     f'beta_final={beta_final:1.2f}'],
                                settings=wandb.Settings(start_method='thread'))
         train_writer = SummaryWriter(train_summary_dir.as_posix())
         # run.watch(objs['dynamics'], objs['loss_fn'], log='all')
@@ -183,8 +189,7 @@ def train(cfg: DictConfig) -> dict:
     train_output = trainer.train(run=train_run,
                                  train_dir=train_dir,
                                  writer=train_writer,
-                                 width=width,
-                                 save_x=cfg.get('save_x', False))
+                                 width=width)
     output = {
         'setup': objs,
         'outdir': outdir,
@@ -226,6 +231,7 @@ def train(cfg: DictConfig) -> dict:
                               sync_tensorboard=True,
                               # pytorch=True,
                               job_type='eval',
+                              tags=[f'beta={beta_final:1.2f}'],
                               entity=cfg.wandb.setup.entity,
                               project=cfg.wandb.setup.project,
                               settings=wandb.Settings(start_method='thread'))

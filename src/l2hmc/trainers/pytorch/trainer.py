@@ -196,10 +196,11 @@ class Trainer:
             x = random_angle(self.xshape)
             x = x.reshape(x.shape[0], -1)
 
-        xarr = []
+        # xarr = []
         summaries = []
         tables = {}
         table = Table(row_styles=['dim', 'none'], box=box.SIMPLE)
+        nlog = self.steps.test // 100
         nprint = self.steps.test // 20
         # if eval_dir is None:
         #     eval_dir = Path(os.getcwd()).joinpath('eval')
@@ -216,40 +217,39 @@ class Trainer:
                 self.eval_timer.start()
                 x, metrics = self.eval_step((x, beta))
                 dt = self.eval_timer.stop()
-                xarr.append(x)
-                loss = metrics.pop('loss')
-                dQint = metrics.pop('dQint')
-                dQsin = metrics.pop('dQsin')
-                record = {
-                    'step': step, 'dt': dt, 'loss': loss,
-                    'dQint': dQint, 'dQsin': dQsin,
-                }
-                record.update(self.metrics_to_numpy(metrics))
-                # if self.accelerator.is_local_main_process:
-                if writer is not None:
-                    update_summaries(step=step,
-                                     prefix='eval',
-                                     metrics=record,
-                                     writer=writer)
-                    writer.flush()
-                if run is not None:
-                    run.log({'wandb/eval': record})
+                if step % nlog == 0 or step % nprint == 0:
+                    # xarr.append(x)
+                    # loss = metrics.pop('loss')
+                    # dQint = metrics.pop('dQint')
+                    # dQsin = metrics.pop('dQsin')
+                    record = {
+                        'step': step, 'dt': dt, 'loss': metrics['loss'],
+                        # 'dQint': dQint, 'dQsin': dQsin,
+                    }
+                    record.update(self.metrics_to_numpy(metrics))
+                    # if self.accelerator.is_local_main_process:
+                    if writer is not None:
+                        update_summaries(step=step,
+                                         prefix='eval',
+                                         metrics=record,
+                                         writer=writer)
+                        writer.flush()
+                    if run is not None:
+                        run.log({'wandb/eval': record})
 
-                avgs = self.eval_history.update(record)
-                summary = summarize_dict(avgs)
-                summaries.append(summary)
-                if step == 0:
-                    table = add_columns(avgs, table)
+                    avgs = self.eval_history.update(record)
+                    summary = summarize_dict(avgs)
+                    summaries.append(summary)
+                    if step == 0:
+                        table = add_columns(avgs, table)
 
-                if step % nprint == 0:
-                    table.add_row(*[f'{v:5}' for _, v in avgs.items()])
+                    if step % nprint == 0:
+                        table.add_row(*[f'{v:5}' for _, v in avgs.items()])
 
             tables[str(0)] = table
-            if writer is not None:
-                writer.close()
 
         return {
-            'xarr': xarr,
+            'xarr': [],
             'history': self.eval_history,
             'summaries': summaries,
             'tables': tables,
@@ -334,17 +334,13 @@ class Trainer:
             self,
             x: Tensor = None,
             skip: str | list[str] = None,
-            save_x: bool = False,
+            # save_x: bool = False,
             width: int = 80,
             train_dir: os.PathLike = None,
             run: Any = None,
             writer: Any = None,
             # keep: str | list[str] = None,
     ) -> dict:
-        # x = xinit
-        # if train_dir is None:
-        #     train_dir = Path(os.getcwd()).joinpath('train')
-
         summaries = []
         self.dynamics.train()
         if isinstance(skip, str):
@@ -352,19 +348,6 @@ class Trainer:
         if x is None:
             x = random_angle(self.xshape, requires_grad=True)
             x = x.reshape(x.shape[0], -1)
-
-        # writer = self.setup_SummaryWriter(train_dir)
-        # if writer is not None:
-        #     writer.set_as_default()
-        # if self.accelerator.is_local_main_process and writer is not None:
-        #     dynamics = extract_model_from_parallel(self.dynamics)
-        #     # writer.add_graph(dynamics, use_strict_trace=False)
-        #                      # input_to_model=[(x, torch.tensor(1.))])
-        #     # writer.add_graph(self.dynamics,
-        #     #                  # [x, torch.tensor(1.0)],
-        #     #                  verbose=True,
-        #     #                  use_strict_trace=False)
-        #     # update_summaries(writer=writer, step=0, model=self.dynamics)
 
         era = 0
         epoch = 0
@@ -390,20 +373,18 @@ class Trainer:
                     gstep += 1
                     dt = self.timer.stop()
                     if self.should_print(epoch) or self.should_log(epoch):
-                        if save_x:
-                            xarr.append(x.detach().cpu())
-
+                        # loss = metrics.pop('loss')
+                        # dQint = metrics.pop('dQint')
+                        # dQsin = metrics.pop('dQsin')
                         record = {
-                            'era': era, 'epoch': epoch, 'beta': beta, 'dt': dt
+                            'era': era, 'epoch': epoch, 'beta': beta, 'dt': dt,
+                            # 'loss': loss, 'dQint': dQint, 'dQsin': dQsin,
                         }
                         # Update metrics with train step metrics, tmetrics
                         record.update(self.metrics_to_numpy(metrics))
                         if writer is not None:
-                            dynamics = extract_model_from_parallel(
-                                self.dynamics
-                            )
                             update_summaries(writer=writer,
-                                             model=dynamics,  # type:ignore
+                                             # model=dynamics,  # type:ignore
                                              step=gstep,
                                              metrics=record,
                                              prefix='train')
@@ -421,10 +402,11 @@ class Trainer:
                         if self.should_print(epoch):
                             table.add_row(*[f'{v}' for _, v in avgs.items()])
 
-            if writer is not None:
-                writer.close()
-
             if self.accelerator.is_local_main_process:
+                if writer is not None:
+                    model = extract_model_from_parallel(self.dynamics)
+                    update_summaries(writer=writer, step=gstep, model=model)
+
                 self.save_ckpt(era, epoch, train_dir, loss=metrics['loss'])
                 live.console.log(
                     f'Era {era} took: {time.time() - estart:<5g}s',

@@ -16,7 +16,7 @@ import wandb
 from wandb.util import generate_id
 
 from l2hmc.common import analyze_dataset, save_logs
-from l2hmc.configs import InputSpec
+from l2hmc.configs import InputSpec, AnnealingSchedule
 from l2hmc.dynamics.tensorflow.dynamics import Dynamics
 from l2hmc.lattice.tensorflow.lattice import Lattice
 from l2hmc.loss.tensorflow.loss import LatticeLoss
@@ -69,6 +69,7 @@ def setup(cfg: DictConfig) -> dict:
     return {
         'lattice': lattice,
         'loss_fn': loss_fn,
+        'schedule': schedule,
         'dynamics': dynamics,
         'trainer': trainer,
         'optimizer': optimizer,
@@ -85,7 +86,7 @@ def train(cfg: DictConfig) -> dict:
     train_summary_dir = train_dir.joinpath('summaries')
     train_summary_dir.mkdir(exist_ok=True, parents=True)
     kwargs = {
-        'save_x': cfg.get('save_x', False),
+        # 'save_x': cfg.get('save_x', False),
         # 'width': cfg.get('width', os.environ.get('COLUMNS', 150)),
         'compile': cfg.get('compile', True),
         'jit_compile': cfg.get('jit_compile', False),
@@ -94,6 +95,9 @@ def train(cfg: DictConfig) -> dict:
     group = None
     train_run = None
     train_writer = None
+    schedule = objs['schedule']  # type: AnnealingSchedule
+    beta_init = schedule.beta_init
+    beta_final = schedule.beta_final
     wandb_cfg = OmegaConf.to_container(cfg, resolve=True)
     nchains = min((cfg.dynamics.xshape[0], cfg.dynamics.nleapfrog))
     width = max((150, int(cfg.get('width', os.environ.get('COLUMNS', 150)))))
@@ -114,6 +118,8 @@ def train(cfg: DictConfig) -> dict:
                                group=group,
                                resume='allow',
                                config=wandb_cfg,
+                               tags=[f'beta_init={beta_init:1.2f}',
+                                     f'beta_final={beta_final:1.2f}'],
                                # magic=True,
                                job_type='train',
                                sync_tensorboard=True,
@@ -163,13 +169,14 @@ def train(cfg: DictConfig) -> dict:
                               config=wandb_cfg,
                               # magic=True,
                               sync_tensorboard=True,
+                              tags=[f'beta={beta_final:1.2f}'],
                               # pytorch=True,
                               job_type='eval',
                               entity=cfg.wandb.setup.entity,
                               project=cfg.wandb.setup.project,
                               settings=wandb.Settings(start_method='thread'))
 
-        _ = kwargs.pop('save_x', False)
+        # _ = kwargs.pop('save_x', False)
         eval_dir = outdir.joinpath('eval')
         eval_summary_dir = eval_dir.joinpath('summaries')
         eval_summary_dir.mkdir(exist_ok=True, parents=True)
