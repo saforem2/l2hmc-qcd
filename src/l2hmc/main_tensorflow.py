@@ -77,6 +77,51 @@ def setup(cfg: DictConfig) -> dict:
     }
 
 
+def eval(
+        trainer: Trainer,
+        cfg: DictConfig,
+        hmc: bool = False,
+        width: int = 150,
+        nchains: int = 16,
+        **wandb_kwargs,
+) -> dict:
+    therm_frac = cfg.get('therm_frac', 0.2)
+    outdir = Path(cfg.get('outdir', os.getcwd()))
+    if hmc:
+        job_type = 'hmc'
+        title = 'HMC: TensorFlow'
+    else:
+        job_type = 'eval'
+        title = 'HMC: PyTorch'
+
+    eval_dir = outdir.joinpath(job_type)
+    summary_dir = eval_dir.joinpath('summaries')
+    summary_dir.mkdir(exist_ok=True, parents=True)
+    run = wandb.init(job_type=job_type, **wandb_kwargs)
+    writer = tf.summary.create_file_writer(summary_dir)  # type: ignore
+    output = trainer.eval(hmc=hmc,
+                          run=run,
+                          width=width,
+                          writer=writer)
+    dataset = output['history'].get_dataset(therm_frac=therm_frac)
+    _ = analyze_dataset(dataset,
+                        prefix=job_type,
+                        nchains=nchains,
+                        outdir=eval_dir,
+                        title=title)
+    if not is_interactive():
+        edir = eval_dir.joinpath('logs')
+        edir.mkdir(exist_ok=True, parents=True)
+        log.info(f'Saving {job_type} logs to: {edir.as_posix()}')
+        save_logs(logdir=edir,
+                  tables=output['tables'],
+                  summaries=output['summaries'])
+    run.finish()
+    writer.close()
+
+    return output
+
+
 def train(cfg: DictConfig) -> dict:
     objs = setup(cfg)
     trainer = objs['trainer']  # type: Trainer

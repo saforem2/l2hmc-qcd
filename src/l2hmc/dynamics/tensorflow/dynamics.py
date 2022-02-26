@@ -133,6 +133,29 @@ class Dynamics(Model):
 
         return {'dx': dx.numpy(), 'dv': dv.numpy()}
 
+    def apply_transition_hmc(
+            self,
+            inputs: tuple[Tensor, Tensor],
+    ) -> tuple[Tensor, dict]:
+        data = self.generate_proposal_hmc(inputs)
+        ma_, mr_ = self._get_accept_masks(data['metrics']['acc'])
+        ma = ma_[:, None]
+        mr = mr_[:, None]
+        vout = ma * data['proposed'].v + mr * data['init'].v
+        xout = ma * data['proposed'].x + mr * data['init'].x
+        sumlogdet = ma_ * data['metrics']['sumlogdet']
+        state_out = State(x=xout, v=vout, beta=data['init'].beta)
+        mc_states = MonteCarloStates(init=data['init'],
+                                     proposed=data['proposed'],
+                                     out=state_out)
+        data['metrics'].update({
+            'acc_mask': ma_,
+            'sumlogdet': sumlogdet,
+            'mc_states': mc_states,
+        })
+
+        return xout, data['metrics']
+
     def apply_transition_fb(
             self,
             inputs: tuple[Tensor, Tensor],
@@ -158,7 +181,7 @@ class Dynamics(Model):
             'mc_states': mc_states,
         })
 
-        return (mc_states.out.x, data['metrics'])
+        return mc_states.out.x, data['metrics']
 
     def apply_transition(
             self,
