@@ -264,6 +264,19 @@ class Trainer:
 
         return m
 
+    def hmc_step(self, inputs: tuple[Tensor, Tensor]) -> tuple[Tensor, dict]:
+        xi, beta = inputs
+        xi = to_u1(xi)
+        xo, metrics = self.dynamics.apply_transition_hmc((xi, beta))
+        xo = to_u1(xo)
+        xp = to_u1(metrics.pop('mc_states').proposed.x)
+        loss = self.loss_fn(x_init=xi, x_prop=xp, acc=metrics['acc'])
+        lmetrics = self.loss_fn.lattice_metrics(xinit=xi, xout=xo)
+        metrics.update(lmetrics)
+        metrics.update({'loss': loss})
+
+        return xo, metrics
+
     def eval_step(self, inputs: tuple[Tensor, float]) -> tuple[Tensor, dict]:
         xinit, beta = inputs
         xout, metrics = self.dynamics((to_u1(xinit), tf.constant(beta)),
@@ -328,6 +341,7 @@ class Trainer:
             eval_dir: os.PathLike = None,
             run: Any = None,
             writer: Any = None,
+            hmc: bool = False,
     ) -> dict:
         """Evaluate model."""
         if isinstance(skip, str):
@@ -346,10 +360,15 @@ class Trainer:
         else:
             x = tf.Variable(x, dtype=TF_FLOAT)
 
-        # writer = self.setup_FileWriter(Path(eval_dir))
-        # if self.rank == 0 and writer is not None:
         if writer is not None:
             writer.set_as_default()
+
+        if hmc:
+            prefix = 'hmc'
+            eval_fn = self.hmc_step
+        else:
+            prefix = 'eval'
+            eval_fn = self.eval_step
 
         assert isinstance(x, Tensor) and x.dtype == TF_FLOAT
 
@@ -358,11 +377,10 @@ class Trainer:
                 loss=self.loss_fn,
                 experimental_run_tf_function=False,
             )
-            eval_step = tf.function(self.eval_step, jit_compile=jit_compile)
+            eval_step = tf.function(eval_fn, jit_compile=jit_compile)
         else:
-            eval_step = self.eval_step
+            eval_step = eval_fn
 
-        xarr = []
         tables = {}
         summaries = []
         table = Table(row_styles=['dim', 'none'], box=box.SIMPLE)
@@ -378,13 +396,9 @@ class Trainer:
                 x, metrics = eval_step((x, beta))  # type: ignore
                 dt = self.eval_timer.stop()
                 if step % nprint == 0 or step % nlog == 0:
-                    # xarr.append(x)
-                    loss = metrics.pop('loss')
-                    dQint = metrics.pop('dQint')
-                    dQsin = metrics.pop('dQsin')
                     record = {
-                        'step': step, 'dt': dt, 'loss': loss,
-                        'dQint': dQint, 'dQsin': dQsin,
+                        'step': step, 'dt': dt, 'loss': metrics['loss'],
+                        'dQint': metrics['dQint'], 'dQsin': metrics['dQsin'],
                     }
                     record.update(self.metrics_to_numpy(metrics))
                     if writer is not None:
@@ -394,7 +408,7 @@ class Trainer:
                         writer.flush()
 
                     if run is not None:
-                        run.log({'wandb/eval': record})
+                        run.log({f'wandb/{prefix}': record})
 
                     avgs = self.eval_history.update(record)
                     summary = summarize_dict(avgs)
@@ -408,7 +422,7 @@ class Trainer:
             tables[str(0)] = table
 
         return {
-            'xarr': xarr,
+            # 'xarr': xarr,
             'history': self.eval_history,
             'summaries': summaries,
             'tables': tables,
