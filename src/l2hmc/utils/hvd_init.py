@@ -3,7 +3,6 @@ utils/hvd_init.py
 """
 from __future__ import absolute_import, annotations, division, print_function
 import logging
-import os
 log = logging.getLogger(__name__)
 
 try:
