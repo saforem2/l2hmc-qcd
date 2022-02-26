@@ -215,8 +215,8 @@ class Dynamics(nn.Module):
     ) -> tuple[Tensor, dict]:
         if self.config.merge_directions:
             return self.apply_transition_fb(inputs)
-        else:
-            return self.apply_transition(inputs)
+
+        return self.apply_transition(inputs)
 
     def apply_transition_hmc(
             self,

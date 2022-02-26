@@ -37,6 +37,7 @@ log = logging.getLogger(__name__)
 
 
 Tensor = torch.Tensor
+Module = torch.nn.modules.Module
 
 
 def grab(x: Tensor) -> np.ndarray:
@@ -98,6 +99,9 @@ class Trainer:
         self._with_cuda = torch.cuda.is_available()
         self.accelerator = accelerator
         self.lr_config = lr_config
+        self._dynamics = extract_model_from_parallel(  # type: Module
+            self.dynamics
+        )
         self.keep = [keep] if isinstance(keep, str) else keep
         self.skip = [skip] if isinstance(skip, str) else skip
         if dynamics_config is None:
@@ -165,7 +169,9 @@ class Trainer:
         xinit = to_u1(xinit).to(self.accelerator.device)
         beta = torch.tensor(beta)
         # beta = torch.tensor(beta).to(self.accelerator.device)
-        xout, metrics = self.dynamics.apply_transition_hmc((xinit, beta))
+        xout, metrics = self._dynamics.apply_transition_hmc(  # type: ignore
+            (xinit, beta)
+        )
         xprop = to_u1(metrics.pop('mc_states').proposed.x)
         loss = self.loss_fn(x_init=xinit, x_prop=xprop, acc=metrics['acc'])
         lmetrics = self.loss_fn.lattice_metrics(xinit=to_u1(xinit),
@@ -239,7 +245,6 @@ class Trainer:
                         'dQint': metrics['dQint'], 'dQsin': metrics['dQsin'],
                     }
                     record.update(self.metrics_to_numpy(metrics))
-                    # if self.accelerator.is_local_main_process:
                     if writer is not None:
                         update_summaries(step=step,
                                          prefix=prefix,
