@@ -384,9 +384,8 @@ class Trainer:
         tables = {}
         summaries = []
         table = Table(row_styles=['dim', 'none'], box=box.SIMPLE)
-        # width = max((width, int(os.environ.get("COLUMNS", 150))))
-        nlog = self.steps.test // 100
-        nprint = self.steps.test // 20
+        nlog = max(1, int(self.steps.test // 100))
+        nprint = max(1, int(self.steps.test // 20))
         with Live(table, console=console, screen=True) as live:
             if width is not None and width > 0:
                 live.console.width = width
