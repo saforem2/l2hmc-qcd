@@ -9,12 +9,16 @@ from copy import deepcopy
 from dataclasses import asdict, dataclass
 import json
 import os
+import logging
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple  # NamedTuple,
 
 from hydra.core.config_store import ConfigStore
 import numpy as np
 from omegaconf import MISSING
+
+
+log = logging.getLogger(__name__)
 
 
 HERE = Path(os.path.abspath(__file__)).parent
@@ -265,8 +269,14 @@ class Steps:
         self.total = self.nera * self.nepoch
         if self.log is None:
             self.log = max(1, int(self.nepoch // 10))
+
         if self.print is None:
             self.print = max(1, int(self.nepoch // 5))
+
+        assert isinstance(self.log, int)
+        assert isinstance(self.print, int)
+        self.log = max(1, int(self.log))
+        self.print = max(1, int(self.print))
 
 
 @dataclass
