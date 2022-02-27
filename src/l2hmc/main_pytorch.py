@@ -9,12 +9,10 @@ import os
 from pathlib import Path
 
 from accelerate import Accelerator
-# from accelerate.utils import extract_model_from_parallel
 import hydra
 from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
 import torch
-# from torchinfo import summary as model_summary
 # from torch.distributed.elastic.multiprocessing.errors import record
 from torch.utils.tensorboard.writer import SummaryWriter
 
