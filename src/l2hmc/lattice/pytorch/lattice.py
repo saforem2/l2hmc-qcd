@@ -24,23 +24,12 @@ class Charges:
     intQ: Tensor
     sinQ: Tensor
 
-    def asdict(self):
-        return {'intQ': self.intQ, 'sinQ': self.sinQ}
-
 
 @dataclass
 class LatticeMetrics:
     plaqs: Tensor
     charges: Charges
     p4x4: Tensor
-
-    def asdict(self):
-        return {
-            'plaqs': self.plaqs,
-            'p4x4': self.p4x4,
-            'sinQ': self.charges.sinQ,
-            'intQ': self.charges.intQ,
-        }
 
 
 def area_law(beta: float, nplaqs: int):
@@ -79,12 +68,14 @@ class Lattice(BaseLattice):
             x: Tensor = None,
             wloops: Tensor = None,
     ) -> Tensor:
+        """Calculate the difference between plaquettes and expected value"""
         wloops = self._get_wloops(x) if wloops is None else wloops
         plaqs = self.plaqs(wloops=wloops)
         pexact = plaq_exact(beta) * torch.ones_like(plaqs)
         return pexact - self.plaqs(wloops=wloops)
 
     def calc_metrics(self, x: Tensor, beta: float = None) -> dict[str, Tensor]:
+        """Calculate various metrics and return as dict"""
         wloops = self.wilson_loops(x)
         plaqs = self.plaqs(wloops=wloops)
         charges = self.charges(wloops=wloops)
@@ -100,6 +91,7 @@ class Lattice(BaseLattice):
         return metrics
 
     def observables(self, x: Tensor) -> LatticeMetrics:
+        """Calculate observables and return as LatticeMetrics object"""
         wloops = self.wilson_loops(x)
         return LatticeMetrics(p4x4=self.plaqs4x4(x=x),
                               plaqs=self.plaqs(wloops=wloops),
