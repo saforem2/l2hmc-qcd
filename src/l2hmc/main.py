@@ -3,32 +3,30 @@ main.py
 
 Contains entry point for training Dynamics.
 """
-from __future__ import absolute_import, print_function, division, annotations
-from omegaconf import DictConfig, OmegaConf
-import os
-import hydra
+from __future__ import absolute_import, annotations, division, print_function
 import logging
+
+import hydra
+from omegaconf import DictConfig
 
 log = logging.getLogger(__name__)
 
 
 def train_tensorflow(cfg: DictConfig) -> dict:
-    from l2hmc.main_tensorflow import train
-    output = train(cfg)
+    from l2hmc.main_tensorflow import main as main_tf
+    output = main_tf(cfg)
 
     return output
 
 
 def train_pytorch(cfg: DictConfig) -> dict:
-    from l2hmc.main_pytorch import train
-    output = train(cfg)
+    from l2hmc.main_pytorch import main as main_pt
+    output = main_pt(cfg)
     return output
 
 
 @hydra.main(config_path='./conf', config_name='config')
 def main(cfg: DictConfig) -> None:
-    print("Working directory : {}".format(os.getcwd()))
-    print(OmegaConf.to_yaml(cfg))
     framework = cfg.get('framework', None)
     assert framework is not None, (
         'Framework must be specified, one of: [pytorch, tensorflow]'
